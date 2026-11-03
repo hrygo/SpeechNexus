@@ -266,10 +266,10 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/runtime-governance.md"
       ],
-      "implementation": "CpuVadSession 为每个会话创建 detector、顺序计数和有界缓冲，单次 PCM 输入最多 250ms。；存在相关辅助组件与契约，逐 binding 真实质量资格未证。；辅助组件存在，不证明真实质量或 required 资格。",
-      "integration": "文件 ASR 命令已接入 CPU VAD；实时入口及完整链路的接线和隔离仍需验收。；required 对齐须接完整配方和终态。；须验证结果与匹配正文 revision 和完整配方关联。",
-      "verification": "合成分段不代替真实静音/流质量及停止资格。；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "文件 ASR 命令已接入 CPU VAD；实时入口及完整链路的接线和隔离仍需验收。；required 对齐须接完整配方和终态。；须验证结果与匹配正文 revision 和完整配方关联。 合成分段不代替真实静音/流质量及停止资格。；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "implementation": "CpuVadSession 为每个会话创建 detector、顺序计数和有界缓冲，单次 PCM 输入最多 250ms；存在相关辅助组件与契约，逐 binding 真实质量资格未证；辅助组件存在，不证明真实质量或 required 资格。",
+      "integration": "文件 ASR 命令已接入 CPU VAD；实时入口及完整链路的接线和隔离仍需验收；required 对齐须接完整配方和终态；须验证结果与匹配正文 revision 和完整配方关联。",
+      "verification": "合成分段不代替真实静音/流质量及停止资格；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "文件 ASR 命令已接入 CPU VAD；实时入口及完整链路的接线和隔离仍需验收；required 对齐须接完整配方和终态；须验证结果与匹配正文 revision 和完整配方关联。 合成分段不代替真实静音/流质量及停止资格；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/pull/317",
@@ -380,10 +380,10 @@
         "docs/architecture/runtime-governance.md",
         "docs/architecture/technical-blueprint.md"
       ],
-      "implementation": "JobDispatcher 定义认领、原身份查询、网关提交与发布端口；取消持久接收另有固定版本合并证据。；已有生产事务、角色与端口证据地图。；现有 runbook 为只读排查；没有任意将 unknown 改为 succeeded 的产品命令。",
-      "integration": "真实执行、停止与输出区间事实到业务恢复/结算仍待接入。；部分原生查询 envelope、真实策略和业务消费者待对照。；原执行/原代次及可信停止与资源释放由权威事务核实。",
-      "verification": "隔离事务与取消接收证据不等于真实停止或释放资格。；历史权限及双库分段测试不代表全端口和真实拓扑资格。；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "真实执行、停止与输出区间事实到业务恢复/结算仍待接入。；部分原生查询 envelope、真实策略和业务消费者待对照。；原执行/原代次及可信停止与资源释放由权威事务核实。 隔离事务与取消接收证据不等于真实停止或释放资格。；历史权限及双库分段测试不代表全端口和真实拓扑资格。；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "implementation": "JobDispatcher 定义认领、原身份查询、网关提交与发布端口；取消持久接收另有固定版本合并证据；已有生产事务、角色与端口证据地图；现有 runbook 为只读排查；没有任意将 unknown 改为 succeeded 的产品命令。",
+      "integration": "真实执行、停止与输出区间事实到业务恢复/结算仍待接入；部分原生查询 envelope、真实策略和业务消费者待对照；原执行/原代次及可信停止与资源释放由权威事务核实。",
+      "verification": "隔离事务与取消接收证据不等于真实停止或释放资格；历史权限及双库分段测试不代表全端口和真实拓扑资格；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "真实执行、停止与输出区间事实到业务恢复/结算仍待接入；部分原生查询 envelope、真实策略和业务消费者待对照；原执行/原代次及可信停止与资源释放由权威事务核实。 隔离事务与取消接收证据不等于真实停止或释放资格；历史权限及双库分段测试不代表全端口和真实拓扑资格；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/pull/335",
@@ -494,10 +494,10 @@
         "docs/architecture/runtime-governance.md",
         "docs/architecture/technical-blueprint.md"
       ],
-      "implementation": "已有取消先持久接收、只读恢复和防伪释放边界；可信 gate 和受管外发未启用。；现有释放防护拒绝调用方伪造零外发；正向静音 seal 与成功结算未实现。",
-      "integration": "须由持久权威唯一写者控制实际生产外发，并接入组合根和生成消费者。；须从 gate 获取可信事实，固定对象版本并由原执行/租约事务裁决。",
+      "implementation": "已有取消先持久接收、只读恢复和防伪释放边界；可信 gate 和受管外发未启用；现有释放防护拒绝调用方伪造零外发；正向静音 seal 与成功结算未实现。",
+      "integration": "须由持久权威唯一写者控制实际生产外发，并接入组合根和生成消费者；须从 gate 获取可信事实，固定对象版本并由原执行/租约事务裁决。",
       "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "须由持久权威唯一写者控制实际生产外发，并接入组合根和生成消费者。；须从 gate 获取可信事实，固定对象版本并由原执行/租约事务裁决。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "须由持久权威唯一写者控制实际生产外发，并接入组合根和生成消费者；须从 gate 获取可信事实，固定对象版本并由原执行/租约事务裁决。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/internal/zero-dispatch.schema.json",
@@ -520,10 +520,10 @@
         "docs/architecture/runtime-governance.md",
         "docs/architecture/technical-blueprint.md"
       ],
-      "implementation": "资产服务有持久删除账本处理；网关已有须可信协调器授权的清理事务，未提供 HTTP 入口。；取消先持久接收及原身份只读恢复已交付；静音 gate、seal 与正向结算尚未启用。",
-      "integration": "真实删除协调器、音频及跨模块依赖仍需贯通。；Job dispatcher 有网关适配器，但生产 planner 未装配，worker 不领取任务；真实 submit/observe/abort 与停止证据仍需生产联验。",
-      "verification": "合成删除许可和组件测试不证明真实端到端删除。；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "真实删除协调器、音频及跨模块依赖仍需贯通。；Job dispatcher 有网关适配器，但生产 planner 未装配，worker 不领取任务；真实 submit/observe/abort 与停止证据仍需生产联验。 合成删除许可和组件测试不证明真实端到端删除。；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "implementation": "资产服务有持久删除账本处理；网关已有须可信协调器授权的清理事务，未提供 HTTP 入口；取消先持久接收及原身份只读恢复已交付；静音 gate、seal 与正向结算尚未启用。",
+      "integration": "真实删除协调器、音频及跨模块依赖仍需贯通；Job dispatcher 有网关适配器，但生产 planner 未装配，worker 不领取任务；真实 submit/observe/abort 与停止证据仍需生产联验。",
+      "verification": "合成删除许可和组件测试不证明真实端到端删除；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "真实删除协调器、音频及跨模块依赖仍需贯通；Job dispatcher 有网关适配器，但生产 planner 未装配，worker 不领取任务；真实 submit/observe/abort 与停止证据仍需生产联验。 合成删除许可和组件测试不证明真实端到端删除；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/architecture/production-assets.md",
@@ -608,10 +608,10 @@
         "docs/architecture/speech-api.md",
         "docs/components/cpu-vad.md"
       ],
-      "implementation": "客户端及契约组件存在，真实双工准入与流恢复未完成接收。；输出区间组件已有权威锁和重放语义；真实流生产者联验未证。",
-      "integration": "仍须联验协调准入、网关及工作台的会话、epoch 和文本顺序。；内部 WS/PCM、实时服务、VAD 和正式消费者须固定同版。",
+      "implementation": "客户端及契约组件存在，真实双工准入与流恢复未完成接收；输出区间组件已有权威锁和重放语义；真实流生产者联验未证。",
+      "integration": "仍须联验协调准入、网关及工作台的会话、epoch 和文本顺序；内部 WS/PCM、实时服务、VAD 和正式消费者须固定同版。",
       "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "仍须联验协调准入、网关及工作台的会话、epoch 和文本顺序。；内部 WS/PCM、实时服务、VAD 和正式消费者须固定同版。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "仍须联验协调准入、网关及工作台的会话、epoch 和文本顺序；内部 WS/PCM、实时服务、VAD 和正式消费者须固定同版。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/realtime-events.schema.json",
@@ -722,10 +722,10 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "声音资源契约及内置声音发布组件存在，设计/克隆版本端到端资格未证。；当前 PostgreSQL 新 TTS 准入与 retire_publication 使用同一 voice 对象事务 advisory lock；准入先查原身份、锁后再查并复核发布资格，提交前再次复核。",
-      "integration": "工作台、声音权威与真实 TTS 必须固定同一版本。；静态代码显示两条路径锁键一致；正式装配、全部新引用入口和实际竞争语义仍须确认。",
+      "implementation": "声音资源契约及内置声音发布组件存在，设计/克隆版本端到端资格未证；当前 PostgreSQL 新 TTS 准入与 retire_publication 使用同一 voice 对象事务 advisory lock；准入先查原身份、锁后再查并复核发布资格，提交前再次复核。",
+      "integration": "工作台、声音权威与真实 TTS 必须固定同一版本；静态代码显示两条路径锁键一致；正式装配、全部新引用入口和实际竞争语义仍须确认。",
       "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "工作台、声音权威与真实 TTS 必须固定同一版本。；静态代码显示两条路径锁键一致；正式装配、全部新引用入口和实际竞争语义仍须确认。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "工作台、声音权威与真实 TTS 必须固定同一版本；静态代码显示两条路径锁键一致；正式装配、全部新引用入口和实际竞争语义仍须确认。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/voice-resource.schema.json",
@@ -810,7 +810,7 @@
         "docs/architecture/technical-blueprint.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "Admin App 挂载 ProfileHost 和任务中心；预设宿主提供草稿及固定修订读取，完整资源写入仍待联验。；Admin App 挂载 TaskCenterHost；默认以同源 AdminJobClient 和浏览器恢复状态创建会话，显式读取、页面隐藏时停止事件。",
+      "implementation": "Admin App 挂载 ProfileHost 和任务中心；预设宿主提供草稿及固定修订读取，完整资源写入仍待联验；Admin App 挂载 TaskCenterHost；默认以同源 AdminJobClient 和浏览器恢复状态创建会话，显式读取、页面隐藏时停止事件。",
       "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
       "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
       "gap": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
@@ -841,7 +841,7 @@
         "docs/architecture/technical-blueprint.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "工作台 App 挂载文件任务和稿件宿主；FileTaskHost 使用同源 SpeechFileClient、ASR 模式及转写导入回调。；工作台 App 以配音模式挂载 FileTaskHost；宿主默认使用同源 SpeechFileClient 与本地任务恢复。",
+      "implementation": "工作台 App 挂载文件任务和稿件宿主；FileTaskHost 使用同源 SpeechFileClient、ASR 模式及转写导入回调；工作台 App 以配音模式挂载 FileTaskHost；宿主默认使用同源 SpeechFileClient 与本地任务恢复。",
       "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
       "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
       "gap": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
@@ -945,10 +945,10 @@
         "docs/architecture/technical-blueprint.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "已有工作台页面和契约消费者；当前完整覆盖和证据目录尚需核对。；浏览器全矩阵及目标物理部署资格未核验。",
-      "integration": "盘点以正式构建和当期部署为准；旧记录保留在 Git/GitHub。；已核对静态工厂或配置；运行时与端到端接线未实测。",
+      "implementation": "已有工作台页面和契约消费者；当前完整覆盖和证据目录尚需核对；浏览器全矩阵及目标物理部署资格未核验。",
+      "integration": "盘点以正式构建和当期部署为准；旧记录保留在 Git/GitHub；已核对静态工厂或配置；运行时与端到端接线未实测。",
       "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
-      "gap": "盘点以正式构建和当期部署为准；旧记录保留在 Git/GitHub。；已核对静态工厂或配置；运行时与端到端接线未实测。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "盘点以正式构建和当期部署为准；旧记录保留在 Git/GitHub；已核对静态工厂或配置；运行时与端到端接线未实测。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/workbench/runtime.py",
@@ -992,10 +992,10 @@
         "docs/architecture/deployment-units.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "基础 Compose 声明 postgres、minio、minio-init、api、gateway；node-controller、runtime-delivery-worker、job-dispatch-worker、asset-maintain 未纳入；binding-disable、migration、engine-registration 和 web 是显式 profile。；工作台有独立运行工厂；干净制品、全部必要角色与跨机部署未核验。",
-      "integration": "默认部署中部分必要进程或能力可能未启用，需以当前清单实核。；已核对静态工厂或配置；运行时与端到端接线未实测。",
-      "verification": "孤立组件测试不证明完整部署或真实单请求停止。；本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
-      "gap": "默认部署中部分必要进程或能力可能未启用，需以当前清单实核。；已核对静态工厂或配置；运行时与端到端接线未实测。 孤立组件测试不证明完整部署或真实单请求停止。；本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "implementation": "基础 Compose 声明 postgres、minio、minio-init、api、gateway；node-controller、runtime-delivery-worker、job-dispatch-worker、asset-maintain 未纳入；binding-disable、migration、engine-registration 和 web 是显式 profile；工作台有独立运行工厂；干净制品、全部必要角色与跨机部署未核验。",
+      "integration": "默认部署中部分必要进程或能力可能未启用，需以当前清单实核；已核对静态工厂或配置；运行时与端到端接线未实测。",
+      "verification": "孤立组件测试不证明完整部署或真实单请求停止；本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "默认部署中部分必要进程或能力可能未启用，需以当前清单实核；已核对静态工厂或配置；运行时与端到端接线未实测。 孤立组件测试不证明完整部署或真实单请求停止；本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/job_dispatch_runtime.py",
@@ -1075,10 +1075,10 @@
         "docs/architecture/deployment-units.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "双平台原生部署资格本轮未核验；现有汇总不能替代原生行为证据。；独立上游尚未由现有 nginx 配置体现；联合资格和用户放行未核验。",
-      "integration": "正式接线状态本轮未核验。；已核对静态工厂或配置；运行时与端到端接线未实测。",
+      "implementation": "双平台原生部署资格本轮未核验；现有汇总不能替代原生行为证据；独立上游尚未由现有 nginx 配置体现；联合资格和用户放行未核验。",
+      "integration": "正式接线状态本轮未核验；已核对静态工厂或配置；运行时与端到端接线未实测。",
       "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
-      "gap": "正式接线状态本轮未核验。；已核对静态工厂或配置；运行时与端到端接线未实测。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "正式接线状态本轮未核验；已核对静态工厂或配置；运行时与端到端接线未实测。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/workbench/runtime.py",
@@ -1122,10 +1122,10 @@
         "docs/architecture/deployment-units.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "契约说明 MCP 工具语义，最小 Compose 明确列出基础服务与需另装配的后台角色。；浏览器全矩阵及目标物理部署资格未核验。",
-      "integration": "安装样例、依赖许可和生产运行材料尚待统一接收。；已核对静态工厂或配置；运行时与端到端接线未实测。",
-      "verification": "现有文档不证明干净安装或许可全量合规。；本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
-      "gap": "安装样例、依赖许可和生产运行材料尚待统一接收。；已核对静态工厂或配置；运行时与端到端接线未实测。 现有文档不证明干净安装或许可全量合规。；本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "implementation": "契约说明 MCP 工具语义，最小 Compose 明确列出基础服务与需另装配的后台角色；浏览器全矩阵及目标物理部署资格未核验。",
+      "integration": "安装样例、依赖许可和生产运行材料尚待统一接收；已核对静态工厂或配置；运行时与端到端接线未实测。",
+      "verification": "现有文档不证明干净安装或许可全量合规；本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "安装样例、依赖许可和生产运行材料尚待统一接收；已核对静态工厂或配置；运行时与端到端接线未实测。 现有文档不证明干净安装或许可全量合规；本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/architecture/production-assets.md",

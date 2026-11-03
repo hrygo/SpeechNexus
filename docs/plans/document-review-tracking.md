@@ -32,11 +32,11 @@
 | `docs/audits/2026-10-24-b00-megacube-environment-and-capability-gap.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
 | `docs/audits/2026-10-24-b01-default-recovery-driver.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
 | `docs/audits/2026-10-24-b01-recovery-progress.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
-| `docs/audits/2026-10-24-b02-controller-container-lifecycle-probe.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
-| `docs/audits/2026-10-24-b02-controller-http-shell-probe.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
+| `docs/audits/2026-10-24-b02-controller-container-lifecycle-probe.md` | 历史保留 | 全文阅读，合成容器的生命周期与停止证据；入口按历史探针引用，未重跑实验 |
+| `docs/audits/2026-10-24-b02-controller-http-shell-probe.md` | 历史保留 | 全文阅读，固定基线的控制器进程、重启和持久意图探针；已标明后续语义变化，未重跑实验 |
 | `docs/audits/2026-10-24-b02-real-asr-controller-probe.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
-| `docs/audits/2026-10-24-b02-reconcile-proof-source.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
-| `docs/audits/2026-10-24-b02-stop-recovery-probe.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
+| `docs/audits/2026-10-24-b02-reconcile-proof-source.md` | 历史保留 | 全文阅读，固定基线的快照证据来源与回归记录；组件文档作为历史证据引用，未重跑测试 |
+| `docs/audits/2026-10-24-b02-stop-recovery-probe.md` | 历史保留 | 全文阅读，固定版本的合成容器停止崩溃与恢复探针；后续变化另有引用，未重跑实验 |
 | `docs/audits/2026-10-24-b02-trusted-node-stop-probe.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
 | `docs/audits/2026-10-24-b02-warmup-gate-probe.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
 | `docs/audits/2026-10-24-b03-bounded-audio-probe.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |

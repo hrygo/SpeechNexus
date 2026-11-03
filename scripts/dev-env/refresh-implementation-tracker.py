@@ -76,11 +76,16 @@ def main() -> None:
     spec.loader.exec_module(delivery)
     manifest = json.loads(args.manifest.read_text())
     delivery.validate_manifest(manifest)
+    prd_text = delivery.validate_documents(manifest, ROOT)
     try:
         issues = load_issues(
             manifest["repository"],
             args.snapshot,
-            [entry["number"] for entry in manifest["entries"]],
+            [
+                manifest["program"],
+                *[epic["number"] for epic in manifest["epics"]],
+                *[number for req in manifest["requirements"] for number in req["issues"]],
+            ],
         )
     except subprocess.CalledProcessError as error:
         raise SystemExit(f"GitHub read failed: {(error.stderr or '').strip()}") from error
@@ -88,12 +93,13 @@ def main() -> None:
         manifest,
         issues,
         "离线 GitHub 快照" if args.snapshot else "实时读取 GitHub",
+        prd_text,
         None
         if args.snapshot
         else datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(timespec="seconds"),
     )
     args.output.write_text(body)
-    print(f"Refreshed {len(manifest['entries'])} current issues: {args.output}")
+    print(f"Refreshed {len(manifest['requirements'])} requirements: {args.output}")
 
 
 if __name__ == "__main__":

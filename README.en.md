@@ -70,7 +70,7 @@ Repository delivery summary as of **2026-10-26**. Independently verified modules
 | Asset upload and download | Available with explicit configuration; UTF-8 text handling verified | Object credentials disabled by default; audio inspection integration pending |
 | Real models and production operation | Partial ASR, VAD, and CustomVoice TTS probes and modules verified | Complete recognition/synthesis, quality, capacity, recovery, and cluster operation still need acceptance |
 
-Implementation details and evidence are linked from the [architecture documents (Chinese)](docs/architecture/README.md), [complete delivery matrix (Chinese)](docs/plans/delivery-tracking.md), and [audit records (Chinese)](docs/audits/README.md). [Program #336](https://github.com/hrygo/SpeechNexus/issues/336) organizes current product outcomes and deliveries. Each issue states its current implementation, integration, verification, remaining work, and acceptance criteria. The matrix is a read-only view of current GitHub facts.
+Start with the [PRD (Chinese)](docs/prd.md), [design (Chinese)](docs/architecture/README.md), and [requirement matrix (Chinese)](docs/plans/delivery-tracking.md). The matrix links all requirements to one primary Epic, implementation, integration, verification, gaps, and evidence. [Program #336](https://github.com/hrygo/SpeechNexus/issues/336) has ten mutually exclusive and collectively exhaustive Epics. Create implementation issues only when needed, each as a native direct child of one Epic; requirements without issues remain visible. See [audit records (Chinese)](docs/audits/README.md) for measured evidence.
 
 ## Quick start
 

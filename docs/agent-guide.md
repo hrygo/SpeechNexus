@@ -25,6 +25,7 @@
 | 项目统筹、接管、跨团队排期或验收 | [项目经理工作约定](project-manager-guide.md) |
 | Codex / subagent / Delegra 路由、多 Agent 交付或跨会话接续 | [交付 SOP](operations/agent-delivery-sop.md)；简单局部工作无需额外建卡 |
 | 外部反馈、实施任务、Issue/PR 模板与关闭规则 | [贡献与 Issue 指南](../CONTRIBUTING.md) |
+| 下一可验收切片、按需建卡及唯一父 Epic | [按需规划技能](../.agents/skills/speechnexus-next-delivery/SKILL.md)、[PRD](prd.md)、[需求矩阵](plans/delivery-tracking.md) |
 | 文档与工程交接 | [文档索引](README.md)、[整体技术方案](architecture/technical-blueprint.md) |
 | 模块边界与依赖方向 | [工程目录说明](architecture/repository-layout.md) |
 | 公共与内部协议、错误语义、生成类型 | [契约索引](../contracts/README.md)、[生成契约包](../packages/contracts/README.md)、[所有权矩阵](architecture/contract-ownership.md)、[HTTP 结构变化检查](architecture/http-contract-change-checks.md) |

@@ -70,7 +70,7 @@ SpeechNexus 是面向自有部署网络、按分布式架构设计的语音服�
 | 素材上传与下载 | 显式配置后可用，已验证 UTF-8 文本处理 | 默认未启用对象存储凭据；音频检查待接入 |
 | 真实模型与生产运行 | ASR、VAD、CustomVoice TTS 已有局部探针与模块验证 | 完整识别/合成、质量、容量、恢复与集群运行仍待验收 |
 
-工程实现与验证证据见[架构文档](docs/architecture/README.md)、[完整交付跟踪矩阵](docs/plans/delivery-tracking.md)和[审查记录](docs/audits/README.md)。当前产品目标与交付项由[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)组织；每项直接说明当前实现、集成、验证、剩余工作和 AC，矩阵只读汇总 GitHub 当前事实。
+产品交付从 [PRD](docs/prd.md)、[设计](docs/architecture/README.md)和[需求矩阵](docs/plans/delivery-tracking.md)进入。矩阵关联完整需求、唯一主 Epic、实现/集成/验证、缺口与证据；[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)下十个 MECE Epic 组织范围，具体实施 issue 按需创建并直属唯一 Epic。尚未建卡的需求继续保留在矩阵，实测依据见[审查记录](docs/audits/README.md)。
 
 ## 快速开始
 

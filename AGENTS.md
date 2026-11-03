@@ -2,7 +2,7 @@
 
 适用于整个仓库；目标目录的 `AGENTS.md` 补充局部规则。遵循系统、开发者与当前用户指令，已有授权持续有效。本文件规定稳定边界和任务入口；职责、排期与进度以当前授权任务及相关 issue 为准。
 
-当前交付入口为[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)和[跟踪矩阵](docs/plans/delivery-tracking.md)。新 issue 自足说明当前事实、剩余任务、具名输入及 AC；[交付清单](docs/plans/delivery-issues.json)仅登记层级与制品依赖。用 `python3 scripts/dev-env/refresh-implementation-tracker.py` 从 GitHub 只读刷新状态和证据，未知如实标注；历史按需查 Git/GitHub，不作为开工或刷新的前置。
+交付主入口为 [PRD](docs/prd.md)、相关设计和[需求矩阵](docs/plans/delivery-tracking.md)。[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)下固定十个 MECE Epic（#337–346）；新项目 issue 按需创建，原生直属唯一 Epic，不预铺 backlog。矩阵的[关联源](docs/plans/delivery-issues.json)记录稳定需求、设计、主责、实现/集成/验证事实、证据及可为空的实施 issue；GitHub 维护当前任务与状态。用 `python3 scripts/dev-env/refresh-implementation-tracker.py` 只读合并 GitHub 状态并刷新矩阵；历史按需查询，不作为开工前置。
 
 ## 执行与授权
 
@@ -48,6 +48,7 @@
 | 设计、审查或改变提交未知、幂等重放、取消释放、发布/删除竞态的恢复语义，以及相关故障验证 | [speechnexus-recovery-design](.agents/skills/speechnexus-recovery-design/SKILL.md)；具体协调事务变更再按对应行处理 |
 | 新增路由，变更或审查机器契约、协议状态/错误、生成消费者 | [speechnexus-contract-change](.agents/skills/speechnexus-contract-change/SKILL.md)、[契约目录规则](contracts/AGENTS.md) |
 | 变更或审查协调事务、锁序、租约/预算、fencing、持久恢复、相关 DDL/权限 | [speechnexus-coordination-change](.agents/skills/speechnexus-coordination-change/SKILL.md) |
+| 规划下一切片并按需创建实施 issue | [按需规划下一交付](.agents/skills/speechnexus-next-delivery/SKILL.md) |
 | 起草、创建或整理 issue | [贡献与 Issue 指南](CONTRIBUTING.md)、[speechnexus-issue-maintenance](.agents/skills/speechnexus-issue-maintenance/SKILL.md) |
 | 已授权 PR 合并主干后的收尾，或补做 issue 同步 | [sync-issues-after-merge](.agents/skills/sync-issues-after-merge/SKILL.md)；核实合并事实，按证据维护正文、任务/AC、状态及适用的既有标签 |
 | Web 实现或审查 | [web/AGENTS.md](web/AGENTS.md) |

@@ -1,75 +1,1735 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "repository": "hrygo/SpeechNexus",
-  "entries": [
-    {"id": "PROGRAM", "number": 336, "kind": "program", "parent": null, "dependencies": []},
-    {"id": "GOAL-FILE", "number": 337, "kind": "goal", "parent": "PROGRAM", "dependencies": []},
-    {"id": "GOAL-RUNTIME", "number": 338, "kind": "goal", "parent": "PROGRAM", "dependencies": []},
-    {"id": "GOAL-REALTIME", "number": 339, "kind": "goal", "parent": "PROGRAM", "dependencies": []},
-    {"id": "GOAL-VOICE", "number": 340, "kind": "goal", "parent": "PROGRAM", "dependencies": []},
-    {"id": "GOAL-WORKBENCH", "number": 341, "kind": "goal", "parent": "PROGRAM", "dependencies": []},
-    {"id": "GOAL-DEPLOY", "number": 342, "kind": "goal", "parent": "PROGRAM", "dependencies": []},
-    {"id": "GOAL-ADVANCED", "number": 343, "kind": "goal", "parent": "PROGRAM", "dependencies": []},
-    {"id": "CONTRACT-SEMANTICS", "number": 344, "kind": "delivery", "parent": "GOAL-FILE", "dependencies": []},
-    {"id": "CONFIG-RESOLVE", "number": 345, "kind": "delivery", "parent": "GOAL-FILE", "dependencies": []},
-    {"id": "CATALOG-READINESS", "number": 346, "kind": "delivery", "parent": "GOAL-FILE", "dependencies": []},
-    {"id": "ASSET-AUDIO", "number": 347, "kind": "delivery", "parent": "GOAL-FILE", "dependencies": []},
-    {"id": "JOB-ADMISSION", "number": 348, "kind": "delivery", "parent": "GOAL-FILE", "dependencies": [{"id": "CATALOG-READINESS", "artifact": "权威策略/readiness输入", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "JOB-RECOVERY", "number": 349, "kind": "delivery", "parent": "GOAL-FILE", "dependencies": [{"id": "JOB-ADMISSION", "artifact": "准入后原Job/lease/outbox身份", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "COORDINATION-QUAL", "number": 350, "kind": "delivery", "parent": "GOAL-RUNTIME", "dependencies": []},
-    {"id": "FILE-SDK", "number": 351, "kind": "delivery", "parent": "GOAL-FILE", "dependencies": [{"id": "ASSET-AUDIO", "artifact": "真实ready与固定输入", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}, {"id": "JOB-PLANNER", "artifact": "真实异步Job及固定结果发布", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "JOB-EVENTS", "number": 352, "kind": "delivery", "parent": "GOAL-FILE", "dependencies": [{"id": "JOB-RECOVERY", "artifact": "原身份权威Job状态/事件", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "CONFIG-MANAGEMENT", "number": 353, "kind": "delivery", "parent": "GOAL-FILE", "dependencies": []},
-    {"id": "MCP", "number": 354, "kind": "delivery", "parent": "GOAL-FILE", "dependencies": []},
-    {"id": "REALTIME-ASR", "number": 355, "kind": "delivery", "parent": "GOAL-REALTIME", "dependencies": [{"id": "JOB-ADMISSION", "artifact": "required完整实时配方", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "REALTIME-TTS", "number": 356, "kind": "delivery", "parent": "GOAL-REALTIME", "dependencies": [{"id": "JOB-ADMISSION", "artifact": "required完整双工配方", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "VOICE-DESIGN", "number": 357, "kind": "delivery", "parent": "GOAL-VOICE", "dependencies": []},
-    {"id": "VOICE-PUBLISH", "number": 358, "kind": "delivery", "parent": "GOAL-VOICE", "dependencies": [{"id": "VOICE-RETIRE", "artifact": "声音引用与退役原子屏障", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "VOICE-RETIRE", "number": 359, "kind": "delivery", "parent": "GOAL-VOICE", "dependencies": []},
-    {"id": "BINDING-DISABLE", "number": 360, "kind": "delivery", "parent": "GOAL-RUNTIME", "dependencies": []},
-    {"id": "CONTENT-DELETE", "number": 361, "kind": "delivery", "parent": "GOAL-DEPLOY", "dependencies": []},
-    {"id": "DATA-RECOVERY", "number": 362, "kind": "delivery", "parent": "GOAL-DEPLOY", "dependencies": [{"id": "CONTENT-DELETE", "artifact": "持久删除账本及启动重放", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "RELEASE-HANDOFF", "number": 363, "kind": "delivery", "parent": "GOAL-DEPLOY", "dependencies": []},
-    {"id": "EXECUTION-CANCEL", "number": 364, "kind": "delivery", "parent": "GOAL-RUNTIME", "dependencies": []},
-    {"id": "NODE-LIFECYCLE", "number": 365, "kind": "delivery", "parent": "GOAL-RUNTIME", "dependencies": []},
-    {"id": "FILE-ASR-BOUNDS", "number": 366, "kind": "delivery", "parent": "GOAL-FILE", "dependencies": []},
-    {"id": "REALTIME-METERING", "number": 367, "kind": "delivery", "parent": "GOAL-REALTIME", "dependencies": [{"id": "VAD", "artifact": "实时接入前取得VAD会话/切段制品，可接收已交付版本，不等整卡关闭", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "VAD", "number": 368, "kind": "delivery", "parent": "GOAL-REALTIME", "dependencies": []},
-    {"id": "MODEL-SOURCES", "number": 369, "kind": "delivery", "parent": "GOAL-DEPLOY", "dependencies": []},
-    {"id": "CAPACITY-QUAL", "number": 370, "kind": "delivery", "parent": "GOAL-DEPLOY", "dependencies": []},
-    {"id": "DEPLOY-SERVICES", "number": 371, "kind": "delivery", "parent": "GOAL-DEPLOY", "dependencies": [{"id": "WB-SERVICE-ARTIFACTS", "artifact": "服务启动/权限/配置清单", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "WB-EVIDENCE", "number": 372, "kind": "delivery", "parent": "GOAL-WORKBENCH", "dependencies": []},
-    {"id": "WB-PROJECTS", "number": 373, "kind": "delivery", "parent": "GOAL-WORKBENCH", "dependencies": []},
-    {"id": "WB-ADMIN", "number": 374, "kind": "delivery", "parent": "GOAL-WORKBENCH", "dependencies": []},
-    {"id": "WB-TASK-CENTER", "number": 375, "kind": "delivery", "parent": "GOAL-WORKBENCH", "dependencies": [{"id": "JOB-EVENTS", "artifact": "正式查询/控制/SSE及恢复", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "WB-TRANSCRIPTION", "number": 376, "kind": "delivery", "parent": "GOAL-WORKBENCH", "dependencies": [{"id": "ASSET-AUDIO", "artifact": "真实音频ready", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}, {"id": "WB-PROJECTS", "artifact": "稿件版本及固定导出", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}, {"id": "JOB-PLANNER", "artifact": "真实转写Job/Artifact", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "WB-TTS", "number": 377, "kind": "delivery", "parent": "GOAL-WORKBENCH", "dependencies": [{"id": "VOICE-PUBLISH", "artifact": "合格已发布声音", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}, {"id": "JOB-PLANNER", "artifact": "真实固定TTS Job/Artifact", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "WB-VOICE", "number": 378, "kind": "delivery", "parent": "GOAL-WORKBENCH", "dependencies": [{"id": "VOICE-DESIGN", "artifact": "设计候选与复用输入", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}, {"id": "VOICE-CLONE", "artifact": "克隆材料与复用输入", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}, {"id": "VOICE-PUBLISH", "artifact": "不可变发布/资格", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "WB-MEDIA", "number": 379, "kind": "delivery", "parent": "GOAL-WORKBENCH", "dependencies": [{"id": "REALTIME-ASR", "artifact": "真实ASR协议/流", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}, {"id": "REALTIME-TTS", "artifact": "真实TTS协议/流", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "WB-LIVE-CAPTION", "number": 380, "kind": "delivery", "parent": "GOAL-ADVANCED", "dependencies": [{"id": "WB-MEDIA", "artifact": "真实流及设备生命周期", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "WB-MEETING", "number": 381, "kind": "delivery", "parent": "GOAL-ADVANCED", "dependencies": [{"id": "WB-MEDIA", "artifact": "采集及持久转写来源", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}, {"id": "ALIGNMENT", "artifact": "匹配正文辅助版本", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}, {"id": "DIARIZATION", "artifact": "匿名身份连续性", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "WB-PROMPTER", "number": 382, "kind": "delivery", "parent": "GOAL-ADVANCED", "dependencies": [{"id": "WB-MEDIA", "artifact": "真实ASR输入与epoch", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "WB-MINUTES", "number": 383, "kind": "delivery", "parent": "GOAL-ADVANCED", "dependencies": [{"id": "WB-MEETING", "artifact": "固定sealed转写来源", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "WB-ASSISTANT", "number": 384, "kind": "delivery", "parent": "GOAL-ADVANCED", "dependencies": [{"id": "JOB-PLANNER", "artifact": "可查询Speech Job", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}, {"id": "VOICE-PUBLISH", "artifact": "已发布固定voice", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}, {"id": "WB-MEDIA", "artifact": "播放generation及插话隔离", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "WB-BOOK-GENERATION", "number": 385, "kind": "delivery", "parent": "GOAL-ADVANCED", "dependencies": []},
-    {"id": "WB-BOOK-EXPORT", "number": 386, "kind": "delivery", "parent": "GOAL-ADVANCED", "dependencies": [{"id": "WB-BOOK-GENERATION", "artifact": "固定单元/Job/Artifact与生成历史", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "WB-DELETION", "number": 387, "kind": "delivery", "parent": "GOAL-WORKBENCH", "dependencies": [{"id": "CONTENT-DELETE", "artifact": "跨模块所有权和删除水位", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "WB-SERVICE-ARTIFACTS", "number": 388, "kind": "delivery", "parent": "GOAL-DEPLOY", "dependencies": []},
-    {"id": "WB-UPSTREAMS", "number": 389, "kind": "delivery", "parent": "GOAL-DEPLOY", "dependencies": []},
-    {"id": "WB-MEDIA-BOUNDARY", "number": 390, "kind": "delivery", "parent": "GOAL-DEPLOY", "dependencies": []},
-    {"id": "WB-PLATFORM-CI", "number": 391, "kind": "delivery", "parent": "GOAL-DEPLOY", "dependencies": [{"id": "WB-SERVICE-ARTIFACTS", "artifact": "实际按服务安装清单", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}, {"id": "WB-MEDIA-BOUNDARY", "artifact": "冻结跨平台媒体能力边界", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "WB-DEPLOYMENT-QUAL", "number": 392, "kind": "delivery", "parent": "GOAL-DEPLOY", "dependencies": [{"id": "WB-PLATFORM-CI", "artifact": "两平台同版原生必需检查", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}, {"id": "WB-UPSTREAMS", "artifact": "跨机独立上游实际证据", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "WB-DELIVERY-QUAL", "number": 393, "kind": "delivery", "parent": "GOAL-DEPLOY", "dependencies": []},
-    {"id": "JOB-PLANNER", "number": 394, "kind": "delivery", "parent": "GOAL-FILE", "dependencies": [{"id": "CONFIG-RESOLVE", "artifact": "固定effective_configuration与资源revision", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}, {"id": "JOB-ADMISSION", "artifact": "完整配方准入事务", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}, {"id": "JOB-RECOVERY", "artifact": "原身份投递/终态恢复", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "ZERO-GATE", "number": 395, "kind": "delivery", "parent": "GOAL-RUNTIME", "dependencies": []},
-    {"id": "ZERO-SETTLEMENT", "number": 396, "kind": "delivery", "parent": "GOAL-RUNTIME", "dependencies": [{"id": "ZERO-GATE", "artifact": "可信门控及受管外发事实", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "ZERO-SDK", "number": 397, "kind": "delivery", "parent": "GOAL-RUNTIME", "dependencies": [{"id": "ZERO-SETTLEMENT", "artifact": "固定版本空结果封闭与结算", "condition": "接收该输入后接入；未取得时仅阻塞对应路径。"}]},
-    {"id": "FILE-TTS-BOUNDS", "number": 398, "kind": "delivery", "parent": "GOAL-FILE", "dependencies": []},
-    {"id": "VOICE-CLONE", "number": 399, "kind": "delivery", "parent": "GOAL-VOICE", "dependencies": []},
-    {"id": "ALIGNMENT", "number": 400, "kind": "delivery", "parent": "GOAL-VOICE", "dependencies": []},
-    {"id": "DIARIZATION", "number": 401, "kind": "delivery", "parent": "GOAL-VOICE", "dependencies": []},
-    {"id": "TOPOLOGY-QUAL", "number": 402, "kind": "delivery", "parent": "GOAL-DEPLOY", "dependencies": []},
-    {"id": "MIXED-LOAD-QUAL", "number": 403, "kind": "delivery", "parent": "GOAL-DEPLOY", "dependencies": []},
-    {"id": "OPS-RECONCILE", "number": 404, "kind": "delivery", "parent": "GOAL-RUNTIME", "dependencies": []}
+  "program": 336,
+  "facts_as_of": "2026-11-03",
+  "epics": [
+    {
+      "number": 337,
+      "title": "文件语音与底座内容任务",
+      "scope": "底座 Asset、Job、Operation、Artifact 生命周期，文件 ASR/TTS、静音、通用 VAD、对齐与匿名分人。",
+      "exclusions": "执行和资源结算、实时会话及工作台独立副本由相应领域负责。"
+    },
+    {
+      "number": 338,
+      "title": "执行、算力与停止结算",
+      "scope": "完整配方原子准入、调度、网关、节点实例、租约预算、真实停止、释放与结算。",
+      "exclusions": "文件或实时业务语义、模型资格及绑定生命周期由相应领域负责。"
+    },
+    {
+      "number": 339,
+      "title": "实时语音会话与双工流",
+      "scope": "实时 ASR/TTS、双工会话、时钟、事件、流控、背压、恢复与终态。",
+      "exclusions": "通用媒体辅助、执行资源及具体复合业务由相应领域负责。"
+    },
+    {
+      "number": 340,
+      "title": "声音与发音资源",
+      "scope": "声音设计、克隆、试听、资格校验、发布、退役及发音词典版本。",
+      "exclusions": "模型绑定和执行、基础界面由相应领域负责。"
+    },
+    {
+      "number": 341,
+      "title": "管理界面与基础工作台",
+      "scope": "管理端、公共组件、基础工作台、项目稿件、文件和配音界面、音色界面、共享采集播放及工作台内容生命周期。",
+      "exclusions": "语音底座实现及会议、字幕、助手、有声书、提词等复合业务由相应领域负责。"
+    },
+    {
+      "number": 342,
+      "title": "工程、部署与运维",
+      "scope": "构建交付、部署、拓扑、网络保护、观测、备份恢复、发布工具和运维交接。",
+      "exclusions": "业务语义、业务端到端接收及 SDK/MCP 能力由相应领域负责。"
+    },
+    {
+      "number": 343,
+      "title": "复合场景与内网智能助手",
+      "scope": "实时字幕、会议和纪要、语音助手、提词、有声书及受控内网 LLM 业务编排和导出。",
+      "exclusions": "通用语音、执行、基础工作台及共享媒体组件由相应领域负责。"
+    },
+    {
+      "number": 344,
+      "title": "通用契约、SDK 与 MCP",
+      "scope": "跨域机器契约、生成与兼容工具、通用 SDK 和无状态 MCP 基础。",
+      "exclusions": "具体业务操作语义、路由及业务端到端接收由各业务领域负责。"
+    },
+    {
+      "number": 345,
+      "title": "场景预设与有效配置解析",
+      "scope": "治理配置、场景预设、版本发布、profile、overrides 与 effective configuration 解析。",
+      "exclusions": "模型 binding 生命周期、发音资源和实际执行由相应领域负责。"
+    },
+    {
+      "number": 346,
+      "title": "模型绑定、资格与目录",
+      "scope": "模型和引擎来源、制品、binding revision、能力资格及目录投影。",
+      "exclusions": "实际实例启停、执行结算及声音资源发布由相应领域负责。"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "F-ASSET",
+      "epic": 337,
+      "prd": "docs/prd.md#f-asset",
+      "designs": [
+        "docs/architecture/speech-api.md",
+        "docs/architecture/runtime-governance.md"
+      ],
+      "implementation": "WAV/PCM 检查组件已存在；默认资源工厂仍使用文本检查器。",
+      "integration": "音频检查器与正式资产工厂、错误映射和网关消费者的闭环待验。",
+      "verification": "已有隔离组件证据；公开 HTTP/PG/MinIO 全链与生产环境未获确认。",
+      "gap": "音频检查器与正式资产工厂、错误映射和网关消费者的闭环待验。 已有隔离组件证据；公开 HTTP/PG/MinIO 全链与生产环境未获确认。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/asset_runtime.py",
+          "label": "默认资源装配",
+          "note": "默认使用文本检查器，不代表公开音频 ready"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/architecture/production-assets.md",
+          "label": "资产与存储",
+          "note": "文本资产和恢复路径的实现说明，不证明完整音频生命周期"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "F-ASR",
+      "epic": 337,
+      "prd": "docs/prd.md#f-asr",
+      "designs": [
+        "docs/architecture/speech-api.md",
+        "docs/architecture/runtime-governance.md"
+      ],
+      "implementation": "网关命令边界读取固定输入；结果收集核验 binding、策略、序列和源时钟，现有逻辑不猜测重叠去重。",
+      "integration": "同步转写构造需显式配方与网关配置；文件媒体组件存在不代表异步生产 planner 已装配。",
+      "verification": "已验 JSON 最小链不代表所有格式、时间戳或长音频资格。",
+      "gap": "同步转写构造需显式配方与网关配置；文件媒体组件存在不代表异步生产 planner 已装配。 已验 JSON 最小链不代表所有格式、时间戳或长音频资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/317",
+          "label": "真实同步转写",
+          "note": "固定隔离部署同步 JSON 最小链证据，非持久任务/完整资格"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/execution-gateway/src/speechnexus_gateway/interfaces/file_asr_command.py",
+          "label": "文件 ASR 命令边界",
+          "note": "负责命令与媒体执行边界，本身不证明真实 GPU 停止或公开端到端"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "F-TTS",
+      "epic": 337,
+      "prd": "docs/prd.md#f-tts",
+      "designs": [
+        "docs/architecture/speech-api.md",
+        "docs/architecture/runtime-governance.md"
+      ],
+      "implementation": "文件 TTS 命令以请求时长收紧音频和 PCM 上限；单次合成基于固定 binding，无独立默认。",
+      "integration": "公共 Job 与各 binding 的能力上限、长文本处理和发布需按正式路径校验。",
+      "verification": "短输入同步成功不代表长文本或 Base 模型资格。",
+      "gap": "公共 Job 与各 binding 的能力上限、长文本处理和发布需按正式路径校验。 短输入同步成功不代表长文本或 Base 模型资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/333",
+          "label": "真实同步合成",
+          "note": "固定隔离部署标准 SDK 与真实音频关联，不代替全部声音或物理资格"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/execution-gateway/src/speechnexus_gateway/interfaces/file_tts_command.py",
+          "label": "合成请求上限",
+          "note": "按请求时长收紧 binding 的音频与 PCM 界限"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "F-CLIENT",
+      "epic": 337,
+      "prd": "docs/prd.md#f-client",
+      "designs": [
+        "docs/architecture/speech-api.md",
+        "docs/architecture/runtime-governance.md"
+      ],
+      "implementation": "同步转写及合成已有隔离最小链，制品下载路径已有真实存储证据。",
+      "integration": "完整持久 Job、真实执行与工作台同版消费仍待联验。",
+      "verification": "两条同步链的有限证据不代表静音、长音频、故障或物理集群资格。",
+      "gap": "完整持久 Job、真实执行与工作台同版消费仍待联验。 两条同步链的有限证据不代表静音、长音频、故障或物理集群资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/317",
+          "label": "真实同步转写",
+          "note": "固定隔离部署同步 JSON 最小链证据，非持久任务/完整资格"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/333",
+          "label": "真实同步合成",
+          "note": "固定隔离部署标准 SDK 与真实音频关联，不代替全部声音或物理资格"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "F-JOB",
+      "epic": 337,
+      "prd": "docs/prd.md#f-job",
+      "designs": [
+        "docs/architecture/speech-api.md",
+        "docs/architecture/runtime-governance.md"
+      ],
+      "implementation": "API 已装配 Job router；该 router 当前只注册创建与读取。",
+      "integration": "已有后台任务调度组件；本次未在该 Job router 看到取消、重试或 SSE 路由。",
+      "verification": "组件或单路连接证据不能证明事件过期后的恢复。",
+      "gap": "已有后台任务调度组件；本次未在该 Job router 看到取消、重试或 SSE 路由。 组件或单路连接证据不能证明事件过期后的恢复。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/job_dispatch_runtime.py",
+          "label": "异步派发装配",
+          "note": "生产 planner 未装配，入口 fail-closed"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/interfaces/http/jobs.py",
+          "label": "公开任务路由",
+          "note": "此路由注册创建和读取"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "F-ARTIFACT",
+      "epic": 337,
+      "prd": "docs/prd.md#f-artifact",
+      "designs": [
+        "docs/architecture/speech-api.md",
+        "docs/architecture/runtime-governance.md"
+      ],
+      "implementation": "需求基线；当前实现待核验。",
+      "integration": "实际组合根与消费者待核验。",
+      "verification": "未取得当前真实部署验收证据。",
+      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
+          "label": "产品与架构设计",
+          "note": "需求基线；不证明现行实现或运行资格。"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "F-DELETE",
+      "epic": 337,
+      "prd": "docs/prd.md#f-delete",
+      "designs": [
+        "docs/architecture/speech-api.md",
+        "docs/architecture/runtime-governance.md"
+      ],
+      "implementation": "资产服务有持久删除账本处理；网关有可信协调器清理边界，明确未接入 HTTP。",
+      "integration": "真实删除协调器、音频及跨模块依赖仍需贯通。",
+      "verification": "合成删除许可和组件测试不证明真实端到端删除。",
+      "gap": "真实删除协调器、音频及跨模块依赖仍需贯通。 合成删除许可和组件测试不证明真实端到端删除。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/architecture/production-assets.md",
+          "label": "资产与存储",
+          "note": "文本资产和恢复路径的实现说明，不证明完整音频生命周期"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/execution-gateway/src/speechnexus_gateway/interfaces/command_redaction_transactions.py",
+          "label": "网关清理边界",
+          "note": "可信协调器进程内边界，明确未装配到 HTTP"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "F-AUX",
+      "epic": 337,
+      "prd": "docs/prd.md#f-aux",
+      "designs": [
+        "docs/architecture/speech-api.md",
+        "docs/architecture/runtime-governance.md"
+      ],
+      "implementation": "CpuVadSession 为每个会话创建 detector、顺序计数和有界缓冲，单次 PCM 输入最多 250ms。；存在相关辅助组件与契约，逐 binding 真实质量资格未证。；辅助组件存在，不证明真实质量或 required 资格。",
+      "integration": "文件与实时消费者的正式接线和隔离需要核验。；required 对齐须接完整配方和终态。；结果与匹配正文 revision 和完整配方关联。",
+      "verification": "合成分段不代替真实静音/流质量及停止资格。；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "文件与实时消费者的正式接线和隔离需要核验。；required 对齐须接完整配方和终态。；结果与匹配正文 revision 和完整配方关联。 合成分段不代替真实静音/流质量及停止资格。；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/317",
+          "label": "真实同步转写",
+          "note": "固定隔离部署同步 JSON 最小链证据，非持久任务/完整资格"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/execution-gateway/src/speechnexus_gateway/application/vad.py",
+          "label": "CPU VAD 会话",
+          "note": "独立会话状态和有界输入"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/realtime-events.schema.json",
+          "label": "realtime-events.schema.json",
+          "note": "固定产品基线的源码、契约或正式说明"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "F-ASYNC",
+      "epic": 337,
+      "prd": "docs/prd.md#f-async",
+      "designs": [
+        "docs/architecture/speech-api.md",
+        "docs/architecture/runtime-governance.md"
+      ],
+      "implementation": "已有 worker 入口与结果 publisher；生产派发依赖工厂仍直接 fail-closed。",
+      "integration": "公开 Job 到实际派发、结果发布和终态尚未贯通。",
+      "verification": "现有组件证据不证明异步生产闭环。",
+      "gap": "公开 Job 到实际派发、结果发布和终态尚未贯通。 现有组件证据不证明异步生产闭环。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/job_dispatch_runtime.py",
+          "label": "异步派发装配",
+          "note": "生产 planner 未装配，入口 fail-closed"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/application/job_dispatcher.py",
+          "label": "任务派发组件",
+          "note": "具备队列、规划、网关及结果发布端口"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "F-SILENCE",
+      "epic": 337,
+      "prd": "docs/prd.md#f-silence",
+      "designs": [
+        "docs/architecture/speech-api.md",
+        "docs/architecture/runtime-governance.md"
+      ],
+      "implementation": "已有隔离同步 ASR 最小链；不能证明静音零外发与可信结算。",
+      "integration": "同一集成版本连接公开转写 API、正式 SDK、门控、固定对象和结算。",
+      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "同一集成版本连接公开转写 API、正式 SDK、门控、固定对象和结算。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/internal/zero-dispatch.schema.json",
+          "label": "zero-dispatch.schema.json",
+          "note": "固定产品基线的源码、契约或正式说明"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/tests/contract/test_zero_dispatch_release_boundary.py",
+          "label": "test_zero_dispatch_release_boundary.py",
+          "note": "固定产品基线的源码、契约或正式说明"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "X-ADMIT",
+      "epic": 338,
+      "prd": "docs/prd.md#x-admit",
+      "designs": [
+        "docs/architecture/runtime-governance.md",
+        "docs/architecture/technical-blueprint.md"
+      ],
+      "implementation": "PG 准入事务接入原身份恢复与 binding 屏障；不能由该事务推断公平调度或所有业务 quota 已接线。",
+      "integration": "真实策略、批准计划、业务 Worker 和全部 quota 结算尚未完整接线。",
+      "verification": "隔离事务证据不能代替多调度者的真实业务闭环。",
+      "gap": "真实策略、批准计划、业务 Worker 和全部 quota 结算尚未完整接线。 隔离事务证据不能代替多调度者的真实业务闭环。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/architecture/production-coordination-storage.md",
+          "label": "协调存储和身份",
+          "note": "组件与权限设计不代替真实消费者与目标拓扑资格"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/infrastructure/admission_postgres.py",
+          "label": "准入事务",
+          "note": "事务含原身份读取及绑定屏障"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "X-RECOVER",
+      "epic": 338,
+      "prd": "docs/prd.md#x-recover",
+      "designs": [
+        "docs/architecture/runtime-governance.md",
+        "docs/architecture/technical-blueprint.md"
+      ],
+      "implementation": "JobDispatcher 定义认领、原身份查询、网关提交与发布端口；取消持久接收另有固定版本合并证据。；已有生产事务、角色与端口证据地图。；现有 runbook 为只读排查；没有任意将 unknown 改为 succeeded 的产品命令。",
+      "integration": "真实执行、停止与输出区间事实到业务恢复/结算仍待接入。；部分原生查询 envelope、真实策略和业务消费者待对照。；原执行/原代次及可信停止与资源释放由权威事务核实。",
+      "verification": "隔离事务与取消接收证据不等于真实停止或释放资格。；历史权限及双库分段测试不代表全端口和真实拓扑资格。；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "真实执行、停止与输出区间事实到业务恢复/结算仍待接入。；部分原生查询 envelope、真实策略和业务消费者待对照。；原执行/原代次及可信停止与资源释放由权威事务核实。 隔离事务与取消接收证据不等于真实停止或释放资格。；历史权限及双库分段测试不代表全端口和真实拓扑资格。；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/335",
+          "label": "取消接收与恢复",
+          "note": "取消先持久接收并只读恢复，不代表零外发成功与真实停止已验"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/operations/reconciliation-recovery.md",
+          "label": "只读对账",
+          "note": "对账说明不等于已取得真实停止与资源释放证据"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/architecture/production-coordination-storage.md",
+          "label": "协调存储和身份",
+          "note": "组件与权限设计不代替真实消费者与目标拓扑资格"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/infrastructure/admission_postgres.py",
+          "label": "准入事务",
+          "note": "事务含原身份读取及绑定屏障"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "X-GATEWAY",
+      "epic": 338,
+      "prd": "docs/prd.md#x-gateway",
+      "designs": [
+        "docs/architecture/runtime-governance.md",
+        "docs/architecture/technical-blueprint.md"
+      ],
+      "implementation": "取消先持久接收及原身份只读恢复已交付；静音 gate、seal 与正向结算尚未启用。",
+      "integration": "Job dispatcher 接网关；真实 submit/observe/abort 与停止证据仍需生产联验。",
+      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "Job dispatcher 接网关；真实 submit/observe/abort 与停止证据仍需生产联验。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/speech/application/job_dispatcher.py",
+          "label": "job_dispatcher.py",
+          "note": "固定产品基线的源码、契约或正式说明"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/tests/contract/test_zero_dispatch_release_boundary.py",
+          "label": "test_zero_dispatch_release_boundary.py",
+          "note": "固定产品基线的源码、契约或正式说明"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "X-NODE",
+      "epic": 338,
+      "prd": "docs/prd.md#x-node",
+      "designs": [
+        "docs/architecture/runtime-governance.md",
+        "docs/architecture/technical-blueprint.md"
+      ],
+      "implementation": "受限模板、预热及代次停止组件存在；持续 ready、故障和多代生产资格仍待验收。",
+      "integration": "控制器不共写准入预算，节点可信事实供原事务裁决。",
+      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "控制器不共写准入预算，节点可信事实供原事务裁决。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/node-controller/src/speechnexus_node_controller/application/runtime_control.py",
+          "label": "runtime_control.py",
+          "note": "固定产品基线的源码、契约或正式说明"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/node-controller/src/speechnexus_node_controller/infrastructure/readiness.py",
+          "label": "readiness.py",
+          "note": "固定产品基线的源码、契约或正式说明"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "X-BINDING-STOP",
+      "epic": 338,
+      "prd": "docs/prd.md#x-binding-stop",
+      "designs": [
+        "docs/architecture/runtime-governance.md",
+        "docs/architecture/technical-blueprint.md"
+      ],
+      "implementation": "已有 disable 协调与持久目标；派发取消后、引擎调用前崩溃的恢复和真实停止仍待验收。",
+      "integration": "网关按原身份查询和请求级 abort，租约由原事务处理。",
+      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "网关按原身份查询和请求级 abort，租约由原事务处理。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/speech/application/binding_disable_coordinator.py",
+          "label": "binding_disable_coordinator.py",
+          "note": "固定产品基线的源码、契约或正式说明"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/decisions/0013-binding-lifecycle-admin-http.md",
+          "label": "0013-binding-lifecycle-admin-http.md",
+          "note": "固定产品基线的源码、契约或正式说明"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "X-ZERO",
+      "epic": 338,
+      "prd": "docs/prd.md#x-zero",
+      "designs": [
+        "docs/architecture/runtime-governance.md",
+        "docs/architecture/technical-blueprint.md"
+      ],
+      "implementation": "已有取消先持久接收、只读恢复和防伪释放边界；可信 gate 和受管外发未启用。；现有释放防护拒绝调用方伪造零外发；正向静音 seal 与成功结算未实现。",
+      "integration": "须由持久权威唯一写者控制实际生产外发，并接入组合根和生成消费者。；从 gate 获可信事实，固定对象版本并由原执行/租约事务裁决。",
+      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "须由持久权威唯一写者控制实际生产外发，并接入组合根和生成消费者。；从 gate 获可信事实，固定对象版本并由原执行/租约事务裁决。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/internal/zero-dispatch.schema.json",
+          "label": "zero-dispatch.schema.json",
+          "note": "固定产品基线的源码、契约或正式说明"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/tests/contract/test_zero_dispatch_release_boundary.py",
+          "label": "test_zero_dispatch_release_boundary.py",
+          "note": "固定产品基线的源码、契约或正式说明"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "X-REDACT",
+      "epic": 338,
+      "prd": "docs/prd.md#x-redact",
+      "designs": [
+        "docs/architecture/runtime-governance.md",
+        "docs/architecture/technical-blueprint.md"
+      ],
+      "implementation": "资产服务有持久删除账本处理；网关有可信协调器清理边界，明确未接入 HTTP。；取消先持久接收及原身份只读恢复已交付；静音 gate、seal 与正向结算尚未启用。",
+      "integration": "真实删除协调器、音频及跨模块依赖仍需贯通。；Job dispatcher 接网关；真实 submit/observe/abort 与停止证据仍需生产联验。",
+      "verification": "合成删除许可和组件测试不证明真实端到端删除。；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "真实删除协调器、音频及跨模块依赖仍需贯通。；Job dispatcher 接网关；真实 submit/observe/abort 与停止证据仍需生产联验。 合成删除许可和组件测试不证明真实端到端删除。；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/architecture/production-assets.md",
+          "label": "资产与存储",
+          "note": "文本资产和恢复路径的实现说明，不证明完整音频生命周期"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/execution-gateway/src/speechnexus_gateway/interfaces/command_redaction_transactions.py",
+          "label": "网关清理边界",
+          "note": "可信协调器进程内边界，明确未装配到 HTTP"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/speech/application/job_dispatcher.py",
+          "label": "job_dispatcher.py",
+          "note": "固定产品基线的源码、契约或正式说明"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/tests/contract/test_zero_dispatch_release_boundary.py",
+          "label": "test_zero_dispatch_release_boundary.py",
+          "note": "固定产品基线的源码、契约或正式说明"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "X-REQ",
+      "epic": 338,
+      "prd": "docs/prd.md#x-req",
+      "designs": [
+        "docs/architecture/runtime-governance.md",
+        "docs/architecture/technical-blueprint.md"
+      ],
+      "implementation": "取消先持久接收及原身份只读恢复已交付；静音 gate、seal 与正向结算尚未启用。",
+      "integration": "Job dispatcher 接网关；真实 submit/observe/abort 与停止证据仍需生产联验。",
+      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "Job dispatcher 接网关；真实 submit/observe/abort 与停止证据仍需生产联验。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/speech/application/job_dispatcher.py",
+          "label": "job_dispatcher.py",
+          "note": "固定产品基线的源码、契约或正式说明"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/tests/contract/test_zero_dispatch_release_boundary.py",
+          "label": "test_zero_dispatch_release_boundary.py",
+          "note": "固定产品基线的源码、契约或正式说明"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "R-ASR",
+      "epic": 339,
+      "prd": "docs/prd.md#r-asr",
+      "designs": [
+        "docs/architecture/speech-api.md",
+        "docs/architecture/cpu-vad.md"
+      ],
+      "implementation": "Realtime 契约和工作台会话组件存在，真实服务端路径及完整业务验收未证。",
+      "integration": "公开协商和事件须与网关、工作台实际消费者一致。",
+      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "公开协商和事件须与网关、工作台实际消费者一致。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/realtime-events.schema.json",
+          "label": "realtime-events.schema.json",
+          "note": "固定产品基线的源码、契约或正式说明"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/realtime/realtime-client.ts",
+          "label": "realtime-client.ts",
+          "note": "固定产品基线的源码、契约或正式说明"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "R-TTS",
+      "epic": 339,
+      "prd": "docs/prd.md#r-tts",
+      "designs": [
+        "docs/architecture/speech-api.md",
+        "docs/architecture/cpu-vad.md"
+      ],
+      "implementation": "客户端及契约组件存在，真实双工准入与流恢复未完成接收。；输出区间组件已有权威锁和重放语义；真实流生产者联验未证。",
+      "integration": "协调准入、网关及工作台按相同会话、epoch 和文本顺序联验。；内部 WS/PCM、实时服务、VAD 和正式消费者须固定同版。",
+      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "协调准入、网关及工作台按相同会话、epoch 和文本顺序联验。；内部 WS/PCM、实时服务、VAD 和正式消费者须固定同版。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/realtime-events.schema.json",
+          "label": "realtime-events.schema.json",
+          "note": "固定产品基线的源码、契约或正式说明"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/realtime/tts-session.ts",
+          "label": "tts-session.ts",
+          "note": "固定产品基线的源码、契约或正式说明"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/execution-gateway/src/speechnexus_gateway/application/output_intervals.py",
+          "label": "output_intervals.py",
+          "note": "固定产品基线的源码、契约或正式说明"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/execution-gateway/src/speechnexus_gateway/infrastructure/output_interval_sql.py",
+          "label": "output_interval_sql.py",
+          "note": "固定产品基线的源码、契约或正式说明"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "R-QUAL",
+      "epic": 339,
+      "prd": "docs/prd.md#r-qual",
+      "designs": [
+        "docs/architecture/speech-api.md",
+        "docs/architecture/cpu-vad.md"
+      ],
+      "implementation": "已有独立组件及部分隔离模型探针。",
+      "integration": "实时双路与 VoiceDesign 同版混合负载尚无完整生产资格。",
+      "verification": "单路文件测量不能推断并发延迟与容量。",
+      "gap": "实时双路与 VoiceDesign 同版混合负载尚无完整生产资格。 单路文件测量不能推断并发延迟与容量。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/317",
+          "label": "真实同步转写",
+          "note": "固定隔离部署同步 JSON 最小链证据，非持久任务/完整资格"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/333",
+          "label": "真实同步合成",
+          "note": "固定隔离部署标准 SDK 与真实音频关联，不代替全部声音或物理资格"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "V-DESIGN",
+      "epic": 340,
+      "prd": "docs/prd.md#v-design",
+      "designs": [
+        "docs/architecture/speech-api.md",
+        "docs/architecture/data-deletion.md"
+      ],
+      "implementation": "CustomVoice 文件执行和声音工作台组件不证明 VoiceDesign/Base 资格。",
+      "integration": "设计引擎、固定材料、节点预算和工作台使用同版制品。",
+      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "设计引擎、固定材料、节点预算和工作台使用同版制品。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/voice-resource.schema.json",
+          "label": "voice-resource.schema.json",
+          "note": "固定产品基线的源码、契约或正式说明"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/voices/voice-session.ts",
+          "label": "voice-session.ts",
+          "note": "固定产品基线的源码、契约或正式说明"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "V-CLONE",
+      "epic": 340,
+      "prd": "docs/prd.md#v-clone",
+      "designs": [
+        "docs/architecture/speech-api.md",
+        "docs/architecture/data-deletion.md"
+      ],
+      "implementation": "声音工作台与 CustomVoice 不证明真实克隆模式资格。",
+      "integration": "固定样本、参考文本、来源、binding 和材料，工作台与 Base TTS 同版联验。",
+      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "固定样本、参考文本、来源、binding 和材料，工作台与 Base TTS 同版联验。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/voice-resource.schema.json",
+          "label": "voice-resource.schema.json",
+          "note": "固定产品基线的源码、契约或正式说明"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/voices/voice-session.ts",
+          "label": "voice-session.ts",
+          "note": "固定产品基线的源码、契约或正式说明"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "V-PUBLISH",
+      "epic": 340,
+      "prd": "docs/prd.md#v-publish",
+      "designs": [
+        "docs/architecture/speech-api.md",
+        "docs/architecture/data-deletion.md"
+      ],
+      "implementation": "声音资源契约及内置声音发布组件存在，设计/克隆版本端到端资格未证。；当前 PostgreSQL 新 TTS 准入与 retire_publication 使用同一 voice 对象事务 advisory lock；准入先查原身份、锁后再查并复核发布资格，提交前再次复核。",
+      "integration": "工作台、声音权威与真实 TTS 必须固定同一版本。；静态代码显示两条路径锁键一致；正式装配、全部新引用入口和实际竞争语义仍须确认。",
+      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "工作台、声音权威与真实 TTS 必须固定同一版本。；静态代码显示两条路径锁键一致；正式装配、全部新引用入口和实际竞争语义仍须确认。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/voice-resource.schema.json",
+          "label": "voice-resource.schema.json",
+          "note": "固定产品基线的源码、契约或正式说明"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/builtin_voice_publication.py",
+          "label": "builtin_voice_publication.py",
+          "note": "固定产品基线的源码、契约或正式说明"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/speech/infrastructure/admission_postgres.py",
+          "label": "admission_postgres.py",
+          "note": "固定产品基线的源码、契约或正式说明"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/speech/infrastructure/publications_sql.py",
+          "label": "publications_sql.py",
+          "note": "退役事务以 kind=voice 和 object_id 获取与准入相同的 advisory lock"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "V-LEXICON",
+      "epic": 340,
+      "prd": "docs/prd.md#v-lexicon",
+      "designs": [
+        "docs/architecture/speech-api.md",
+        "docs/architecture/data-deletion.md"
+      ],
+      "implementation": "发布事实、生命周期指针及词典草稿已有分段实现。",
+      "integration": "管理写路径、公开列表与资源固定读取需按当前契约完整核验。",
+      "verification": "已有隔离 PG 激活/回滚证据，不代表所有资源发布已完成。",
+      "gap": "管理写路径、公开列表与资源固定读取需按当前契约完整核验。 已有隔离 PG 激活/回滚证据，不代表所有资源发布已完成。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/operations/publish-binding-revision.md",
+          "label": "发布操作",
+          "note": "说明发布入口，生命周期与生产接口需另核验"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/infrastructure/publications_sql.py",
+          "label": "发布与 CAS",
+          "note": "按当前 head 和目录 revision 前提比较"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "U-PROJECT",
+      "epic": 341,
+      "prd": "docs/prd.md#u-project",
+      "designs": [
+        "docs/architecture/technical-blueprint.md",
+        "docs/architecture/data-deletion.md"
+      ],
+      "implementation": "工作台 App 挂载 ManuscriptHost；宿主接 WorkbenchClient、项目/转写操作与本地恢复，工厂装配 PostgreSQL 版本单元。",
+      "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
+      "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/App.tsx",
+          "label": "App.tsx",
+          "note": "固定基线的正式入口或装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/manuscripts/ManuscriptHost.tsx",
+          "label": "ManuscriptHost.tsx",
+          "note": "固定基线的正式入口或装配"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "U-ADMIN",
+      "epic": 341,
+      "prd": "docs/prd.md#u-admin",
+      "designs": [
+        "docs/architecture/technical-blueprint.md",
+        "docs/architecture/data-deletion.md"
+      ],
+      "implementation": "Admin App 挂载 ProfileHost 和任务中心；预设宿主提供草稿及固定修订读取，完整资源写入仍待联验。；Admin App 挂载 TaskCenterHost；默认以同源 AdminJobClient 和浏览器恢复状态创建会话，显式读取、页面隐藏时停止事件。",
+      "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
+      "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/admin/src/App.tsx",
+          "label": "App.tsx",
+          "note": "固定基线的正式入口或装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/admin/src/profiles/ProfileHost.tsx",
+          "label": "ProfileHost.tsx",
+          "note": "固定基线的正式入口或装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/admin/src/task-center/TaskCenterHost.tsx",
+          "label": "TaskCenterHost.tsx",
+          "note": "固定基线的正式入口或装配"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "U-FILE",
+      "epic": 341,
+      "prd": "docs/prd.md#u-file",
+      "designs": [
+        "docs/architecture/technical-blueprint.md",
+        "docs/architecture/data-deletion.md"
+      ],
+      "implementation": "工作台 App 挂载文件任务和稿件宿主；FileTaskHost 使用同源 SpeechFileClient、ASR 模式及转写导入回调。；工作台 App 以配音模式挂载 FileTaskHost；宿主默认使用同源 SpeechFileClient 与本地任务恢复。",
+      "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
+      "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/App.tsx",
+          "label": "App.tsx",
+          "note": "固定基线的正式入口或装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/file-workflow/FileTaskHost.tsx",
+          "label": "FileTaskHost.tsx",
+          "note": "固定基线的正式入口或装配"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "U-VOICE",
+      "epic": 341,
+      "prd": "docs/prd.md#u-voice",
+      "designs": [
+        "docs/architecture/technical-blueprint.md",
+        "docs/architecture/data-deletion.md"
+      ],
+      "implementation": "工作台 App 挂载 VoiceCreateHost；宿主以同源 SpeechFileClient 和语音 transport 创建设计/克隆会话，工厂按配置装配公开目录。",
+      "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
+      "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/App.tsx",
+          "label": "App.tsx",
+          "note": "固定基线的正式入口或装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/voices/VoiceCreateHost.tsx",
+          "label": "VoiceCreateHost.tsx",
+          "note": "固定基线的正式入口或装配"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "U-MEDIA",
+      "epic": 341,
+      "prd": "docs/prd.md#u-media",
+      "designs": [
+        "docs/architecture/technical-blueprint.md",
+        "docs/architecture/data-deletion.md"
+      ],
+      "implementation": "工作台 App 挂载实时 ASR 和 TTS 宿主；TTS 使用实时控制器，ASR 宿主使用 RealtimeClient。",
+      "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
+      "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/App.tsx",
+          "label": "App.tsx",
+          "note": "固定基线的正式入口或装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/realtime/RealtimeTtsHost.tsx",
+          "label": "RealtimeTtsHost.tsx",
+          "note": "固定基线的正式入口或装配"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "U-DELETE",
+      "epic": 341,
+      "prd": "docs/prd.md#u-delete",
+      "designs": [
+        "docs/architecture/technical-blueprint.md",
+        "docs/architecture/data-deletion.md"
+      ],
+      "implementation": "工作台 App 挂载 DeletionHost；工厂有清理身份时装配删除服务、先重放账本并启动 sweeper。",
+      "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
+      "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/App.tsx",
+          "label": "App.tsx",
+          "note": "固定基线的正式入口或装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/deletions/DeletionHost.tsx",
+          "label": "DeletionHost.tsx",
+          "note": "固定基线的正式入口或装配"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "U-ACCEPT",
+      "epic": 341,
+      "prd": "docs/prd.md#u-accept",
+      "designs": [
+        "docs/architecture/technical-blueprint.md",
+        "docs/architecture/data-deletion.md"
+      ],
+      "implementation": "已有工作台页面和契约消费者；当前完整覆盖和证据目录尚需核对。；浏览器全矩阵及目标物理部署资格未核验。",
+      "integration": "盘点以正式构建和当期部署为准；旧记录保留在 Git/GitHub。；已核对静态工厂或配置；运行时与端到端接线未实测。",
+      "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "盘点以正式构建和当期部署为准；旧记录保留在 Git/GitHub。；已核对静态工厂或配置；运行时与端到端接线未实测。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/workbench/runtime.py",
+          "label": "runtime.py",
+          "note": "固定基线源码"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "O-BACKUP",
+      "epic": 342,
+      "prd": "docs/prd.md#o-backup",
+      "designs": [
+        "docs/architecture/deployment-units.md",
+        "docs/architecture/data-deletion.md"
+      ],
+      "implementation": "资产 namespace 检查、迁移与删除账本组件已有实现。",
+      "integration": "旧 writer 隔离、历史记录采用、生产备份回退和目标拓扑联验待完成。",
+      "verification": "历史清理未知和失败须先核实当前事实，不以旧记录断言现有残留。",
+      "gap": "旧 writer 隔离、历史记录采用、生产备份回退和目标拓扑联验待完成。 历史清理未知和失败须先核实当前事实，不以旧记录断言现有残留。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/architecture/production-assets.md",
+          "label": "资产与存储",
+          "note": "文本资产和恢复路径的实现说明，不证明完整音频生命周期"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/operations/reconciliation-recovery.md",
+          "label": "只读对账",
+          "note": "对账说明不等于已取得真实停止与资源释放证据"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "O-ROLE",
+      "epic": 342,
+      "prd": "docs/prd.md#o-role",
+      "designs": [
+        "docs/architecture/deployment-units.md",
+        "docs/architecture/data-deletion.md"
+      ],
+      "implementation": "基础 Compose 声明 postgres、minio、minio-init、api、gateway；node-controller、runtime-delivery-worker、job-dispatch-worker、asset-maintain 未纳入，binding-disable 为显式 profile。；工作台有独立运行工厂；干净制品、全部必要角色与跨机部署未核验。",
+      "integration": "默认部署中部分必要进程或能力可能未启用，需以当前清单实核。；已核对静态工厂或配置；运行时与端到端接线未实测。",
+      "verification": "孤立组件测试不证明完整部署或真实单请求停止。；本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "默认部署中部分必要进程或能力可能未启用，需以当前清单实核。；已核对静态工厂或配置；运行时与端到端接线未实测。 孤立组件测试不证明完整部署或真实单请求停止。；本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/job_dispatch_runtime.py",
+          "label": "异步派发装配",
+          "note": "生产 planner 未装配，入口 fail-closed"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/operations/reconciliation-recovery.md",
+          "label": "只读对账",
+          "note": "对账说明不等于已取得真实停止与资源释放证据"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/workbench/runtime.py",
+          "label": "runtime.py",
+          "note": "固定基线源码"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "O-UPSTREAM",
+      "epic": 342,
+      "prd": "docs/prd.md#o-upstream",
+      "designs": [
+        "docs/architecture/deployment-units.md",
+        "docs/architecture/data-deletion.md"
+      ],
+      "implementation": "nginx 将工作台和 Speech 路径均转至 api:8000；Compose workbench 是 Web 制品。",
+      "integration": "已核对静态工厂或配置；运行时与端到端接线未实测。",
+      "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "已核对静态工厂或配置；运行时与端到端接线未实测。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/deploy/web/nginx.conf",
+          "label": "nginx.conf",
+          "note": "固定基线源码"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/deploy/compose.yaml",
+          "label": "compose.yaml",
+          "note": "固定基线源码"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "O-MEDIA",
+      "epic": 342,
+      "prd": "docs/prd.md#o-media",
+      "designs": [
+        "docs/architecture/deployment-units.md",
+        "docs/architecture/data-deletion.md"
+      ],
+      "implementation": "存在 Linux 音频检查进程；跨平台生产消费者和部署协议本轮未核验。",
+      "integration": "已核对静态工厂或配置；运行时与端到端接线未实测。",
+      "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "已核对静态工厂或配置；运行时与端到端接线未实测。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/speech/infrastructure/audio_inspection_process.py",
+          "label": "audio_inspection_process.py",
+          "note": "固定基线源码"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "O-PORTABLE",
+      "epic": 342,
+      "prd": "docs/prd.md#o-portable",
+      "designs": [
+        "docs/architecture/deployment-units.md",
+        "docs/architecture/data-deletion.md"
+      ],
+      "implementation": "双平台原生部署资格本轮未核验；现有汇总不能替代原生行为证据。；独立上游尚未由现有 nginx 配置体现；联合资格和用户放行未核验。",
+      "integration": "正式接线状态本轮未核验。；已核对静态工厂或配置；运行时与端到端接线未实测。",
+      "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "正式接线状态本轮未核验。；已核对静态工厂或配置；运行时与端到端接线未实测。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/workbench/runtime.py",
+          "label": "runtime.py",
+          "note": "固定基线源码"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "O-PHYSICAL",
+      "epic": 342,
+      "prd": "docs/prd.md#o-physical",
+      "designs": [
+        "docs/architecture/deployment-units.md",
+        "docs/architecture/data-deletion.md"
+      ],
+      "implementation": "控制器和网关已有隔离实例及部分故障组件。",
+      "integration": "最小 Compose 明确是同步单机引导服务，未包含控制器和异步 worker，不能作为物理集群装配证明。",
+      "verification": "单 GPU 的逻辑节点不能替代物理多机资格。",
+      "gap": "最小 Compose 明确是同步单机引导服务，未包含控制器和异步 worker，不能作为物理集群装配证明。 单 GPU 的逻辑节点不能替代物理多机资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/operations/reconciliation-recovery.md",
+          "label": "只读对账",
+          "note": "对账说明不等于已取得真实停止与资源释放证据"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/deploy/compose.yaml",
+          "label": "最小服务编排",
+          "note": "基础仅含 PostgreSQL、MinIO、初始化、API、网关"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "O-RELEASE",
+      "epic": 342,
+      "prd": "docs/prd.md#o-release",
+      "designs": [
+        "docs/architecture/deployment-units.md",
+        "docs/architecture/data-deletion.md"
+      ],
+      "implementation": "契约说明 MCP 工具语义，最小 Compose 明确列出基础服务与需另装配的后台角色。；浏览器全矩阵及目标物理部署资格未核验。",
+      "integration": "安装样例、依赖许可和生产运行材料尚待统一接收。；已核对静态工厂或配置；运行时与端到端接线未实测。",
+      "verification": "现有文档不证明干净安装或许可全量合规。；本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "安装样例、依赖许可和生产运行材料尚待统一接收。；已核对静态工厂或配置；运行时与端到端接线未实测。 现有文档不证明干净安装或许可全量合规。；本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/architecture/production-assets.md",
+          "label": "资产与存储",
+          "note": "文本资产和恢复路径的实现说明，不证明完整音频生命周期"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/contracts/README.md",
+          "label": "契约消费者范围",
+          "note": "声明 MCP 无状态投影"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/workbench/runtime.py",
+          "label": "runtime.py",
+          "note": "固定基线源码"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "W-CAPTION",
+      "epic": 343,
+      "prd": "docs/prd.md#w-caption",
+      "designs": [
+        "docs/architecture/technical-blueprint.md",
+        "docs/architecture/workbench-export-integrity.md"
+      ],
+      "implementation": "工作台 App 挂载 RealtimeHost；宿主静态使用 RealtimeClient 和会话控制器。",
+      "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
+      "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/App.tsx",
+          "label": "App.tsx",
+          "note": "固定基线的正式入口或装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/realtime/RealtimeHost.tsx",
+          "label": "RealtimeHost.tsx",
+          "note": "固定基线的正式入口或装配"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "W-MEETING",
+      "epic": 343,
+      "prd": "docs/prd.md#w-meeting",
+      "designs": [
+        "docs/architecture/technical-blueprint.md",
+        "docs/architecture/workbench-export-integrity.md"
+      ],
+      "implementation": "工作台 App 挂载 MeetingHost；宿主持有恢复会话并提供纪要动作，工厂装配 PostgreSQL 会议服务。",
+      "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
+      "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/App.tsx",
+          "label": "App.tsx",
+          "note": "固定基线的正式入口或装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/meetings/MeetingHost.tsx",
+          "label": "MeetingHost.tsx",
+          "note": "固定基线的正式入口或装配"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "W-PROMPT",
+      "epic": 343,
+      "prd": "docs/prd.md#w-prompt",
+      "designs": [
+        "docs/architecture/technical-blueprint.md",
+        "docs/architecture/workbench-export-integrity.md"
+      ],
+      "implementation": "工作台 App 挂载 TeleprompterPanel；面板接同源工作台客户端和持久提词状态，工厂能力仅声明手动阅读。",
+      "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
+      "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/App.tsx",
+          "label": "App.tsx",
+          "note": "固定基线的正式入口或装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/teleprompter/TeleprompterPanel.tsx",
+          "label": "TeleprompterPanel.tsx",
+          "note": "固定基线的正式入口或装配"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "W-MINUTES",
+      "epic": 343,
+      "prd": "docs/prd.md#w-minutes",
+      "designs": [
+        "docs/architecture/technical-blueprint.md",
+        "docs/architecture/workbench-export-integrity.md"
+      ],
+      "implementation": "会议宿主提供创建纪要动作；工厂装配 PostgreSQL 纪要任务与部署配置 LLM，已配置 profile 时启动派发。",
+      "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
+      "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/meetings/MeetingHost.tsx",
+          "label": "MeetingHost.tsx",
+          "note": "固定基线的正式入口或装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/workbench/runtime.py",
+          "label": "runtime.py",
+          "note": "固定基线的正式入口或装配"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "W-ASSIST",
+      "epic": 343,
+      "prd": "docs/prd.md#w-assist",
+      "designs": [
+        "docs/architecture/technical-blueprint.md",
+        "docs/architecture/workbench-export-integrity.md"
+      ],
+      "implementation": "工作台 App 挂载 AssistantHost；宿主消费 WorkbenchClient，工厂装配 PostgreSQL turn 和部署配置 LLM。",
+      "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
+      "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/App.tsx",
+          "label": "App.tsx",
+          "note": "固定基线的正式入口或装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/assistant/AssistantHost.tsx",
+          "label": "AssistantHost.tsx",
+          "note": "固定基线的正式入口或装配"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "W-BOOK-UNIT",
+      "epic": 343,
+      "prd": "docs/prd.md#w-book-unit",
+      "designs": [
+        "docs/architecture/technical-blueprint.md",
+        "docs/architecture/workbench-export-integrity.md"
+      ],
+      "implementation": "工作台 App 挂载 BooksHost；宿主提供建书和章节，工厂装配 PostgreSQL 书籍/单元及按客户端配置的 Speech Job。",
+      "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
+      "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/App.tsx",
+          "label": "App.tsx",
+          "note": "固定基线的正式入口或装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/books/BooksHost.tsx",
+          "label": "BooksHost.tsx",
+          "note": "固定基线的正式入口或装配"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "W-BOOK-EXPORT",
+      "epic": 343,
+      "prd": "docs/prd.md#w-book-export",
+      "designs": [
+        "docs/architecture/technical-blueprint.md",
+        "docs/architecture/workbench-export-integrity.md"
+      ],
+      "implementation": "工作台 App 挂载 BooksHost；工厂装配导出台账和媒体验证器，缺 producer 或未启用周期时不派发。",
+      "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
+      "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/App.tsx",
+          "label": "App.tsx",
+          "note": "固定基线的正式入口或装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/books/BooksHost.tsx",
+          "label": "BooksHost.tsx",
+          "note": "固定基线的正式入口或装配"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "C-MCP",
+      "epic": 344,
+      "prd": "docs/prd.md#c-mcp",
+      "designs": [
+        "contracts/README.md",
+        "docs/architecture/contract-ownership.md"
+      ],
+      "implementation": "契约说明 MCP 是 REST 的无状态投影；当前检查的 API 组合根列出 HTTP 语音路由，未看到 MCP 注册。",
+      "integration": "契约不证明生产工具已装配；须核对并接入正式工具入口与消费方。",
+      "verification": "无真实工具消费与完整语义一致证据。",
+      "gap": "契约不证明生产工具已装配；须核对并接入正式工具入口与消费方。 无真实工具消费与完整语义一致证据。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/application/effective_configuration.py",
+          "label": "已发布配置投影",
+          "note": "投影已发布事实，不证明工作区解析或执行端绑定完整"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/contracts/README.md",
+          "label": "契约消费者范围",
+          "note": "声明 MCP 无状态投影"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "C-SDK",
+      "epic": 344,
+      "prd": "docs/prd.md#c-sdk",
+      "designs": [
+        "contracts/README.md",
+        "docs/architecture/contract-ownership.md"
+      ],
+      "implementation": "契约说明 MCP 工具语义，最小 Compose 明确列出基础服务与需另装配的后台角色。",
+      "integration": "安装样例、依赖许可和生产运行材料尚待统一接收。",
+      "verification": "现有文档不证明干净安装或许可全量合规。",
+      "gap": "安装样例、依赖许可和生产运行材料尚待统一接收。 现有文档不证明干净安装或许可全量合规。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/architecture/production-assets.md",
+          "label": "资产与存储",
+          "note": "文本资产和恢复路径的实现说明，不证明完整音频生命周期"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/contracts/README.md",
+          "label": "契约消费者范围",
+          "note": "声明 MCP 无状态投影"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "P-PROFILES",
+      "epic": 345,
+      "prd": "docs/prd.md#p-profiles",
+      "designs": [
+        "docs/architecture/speech-api.md",
+        "docs/architecture/technical-blueprint.md"
+      ],
+      "implementation": "发布事实、生命周期指针及词典草稿已有分段实现。",
+      "integration": "管理写路径、公开列表与资源固定读取需按当前契约完整核验。",
+      "verification": "已有隔离 PG 激活/回滚证据，不代表所有资源发布已完成。",
+      "gap": "管理写路径、公开列表与资源固定读取需按当前契约完整核验。 已有隔离 PG 激活/回滚证据，不代表所有资源发布已完成。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/operations/publish-binding-revision.md",
+          "label": "发布操作",
+          "note": "说明发布入口，生命周期与生产接口需另核验"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/infrastructure/publications_sql.py",
+          "label": "发布与 CAS",
+          "note": "按当前 head 和目录 revision 前提比较"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "M-BINDING",
+      "epic": 346,
+      "prd": "docs/prd.md#m-binding",
+      "designs": [
+        "docs/operations/capacity-manifest.md",
+        "docs/architecture/file-tts-binding-handoff.md"
+      ],
+      "implementation": "已有文件 ASR、CustomVoice 与 VAD 的固定输入和部分隔离探针。",
+      "integration": "容量文档记录模型和引擎 pin 输入；仓库样例仍为 experimental/incomplete，注册输入不等于权威发布。",
+      "verification": "单句文件及整代停止不可外推为实时、单请求或声音复用资格。",
+      "gap": "容量文档记录模型和引擎 pin 输入；仓库样例仍为 experimental/incomplete，注册输入不等于权威发布。 单句文件及整代停止不可外推为实时、单请求或声音复用资格。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/317",
+          "label": "真实同步转写",
+          "note": "固定隔离部署同步 JSON 最小链证据，非持久任务/完整资格"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/333",
+          "label": "真实同步合成",
+          "note": "固定隔离部署标准 SDK 与真实音频关联，不代替全部声音或物理资格"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "M-QUALIFY",
+      "epic": 346,
+      "prd": "docs/prd.md#m-qualify",
+      "designs": [
+        "docs/operations/capacity-manifest.md",
+        "docs/architecture/file-tts-binding-handoff.md"
+      ],
+      "implementation": "仓库已有容量/资格 schema、操作说明和 experimental/incomplete 样例，样例不构成生产资格。",
+      "integration": "实验样例尚未证明生产资格；真实测量和部署观测待补。",
+      "verification": "同步单点样例不代替完整容量、长时与目标拓扑。",
+      "gap": "实验样例尚未证明生产资格；真实测量和部署观测待补。 同步单点样例不代替完整容量、长时与目标拓扑。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/317",
+          "label": "真实同步转写",
+          "note": "固定隔离部署同步 JSON 最小链证据，非持久任务/完整资格"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/333",
+          "label": "真实同步合成",
+          "note": "固定隔离部署标准 SDK 与真实音频关联，不代替全部声音或物理资格"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "M-DISABLE",
+      "epic": 346,
+      "prd": "docs/prd.md#m-disable",
+      "designs": [
+        "docs/operations/capacity-manifest.md",
+        "docs/architecture/file-tts-binding-handoff.md"
+      ],
+      "implementation": "已有 disable 协调与持久目标；派发取消后、引擎调用前崩溃的恢复和真实停止仍待验收。",
+      "integration": "网关按原身份查询和请求级 abort，租约由原事务处理。",
+      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "网关按原身份查询和请求级 abort，租约由原事务处理。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/speech/application/binding_disable_coordinator.py",
+          "label": "binding_disable_coordinator.py",
+          "note": "固定产品基线的源码、契约或正式说明"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/decisions/0013-binding-lifecycle-admin-http.md",
+          "label": "0013-binding-lifecycle-admin-http.md",
+          "note": "固定产品基线的源码、契约或正式说明"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "F-SHARED",
+      "epic": 337,
+      "prd": "docs/prd.md#f-shared",
+      "designs": [
+        "docs/architecture/speech-api.md",
+        "docs/architecture/runtime-governance.md"
+      ],
+      "implementation": "需求基线；当前实现待核验。",
+      "integration": "实际组合根与消费者待核验。",
+      "verification": "未取得当前真实部署验收证据。",
+      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
+          "label": "产品与架构设计",
+          "note": "需求基线；不证明现行实现或运行资格。"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "X-REALTIME-RESERVE",
+      "epic": 338,
+      "prd": "docs/prd.md#x-realtime-reserve",
+      "designs": [
+        "docs/architecture/runtime-governance.md",
+        "docs/architecture/technical-blueprint.md"
+      ],
+      "implementation": "需求基线；当前实现待核验。",
+      "integration": "实际组合根与消费者待核验。",
+      "verification": "未取得当前真实部署验收证据。",
+      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
+          "label": "产品与架构设计",
+          "note": "需求基线；不证明现行实现或运行资格。"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "R-PCM",
+      "epic": 339,
+      "prd": "docs/prd.md#r-pcm",
+      "designs": [
+        "docs/architecture/speech-api.md",
+        "docs/architecture/cpu-vad.md"
+      ],
+      "implementation": "需求基线；当前实现待核验。",
+      "integration": "实际组合根与消费者待核验。",
+      "verification": "未取得当前真实部署验收证据。",
+      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
+          "label": "产品与架构设计",
+          "note": "需求基线；不证明现行实现或运行资格。"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "V-REFERENCE",
+      "epic": 340,
+      "prd": "docs/prd.md#v-reference",
+      "designs": [
+        "docs/architecture/speech-api.md",
+        "docs/architecture/data-deletion.md"
+      ],
+      "implementation": "需求基线；当前实现待核验。",
+      "integration": "实际组合根与消费者待核验。",
+      "verification": "未取得当前真实部署验收证据。",
+      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
+          "label": "产品与架构设计",
+          "note": "需求基线；不证明现行实现或运行资格。"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "U-SHARED",
+      "epic": 341,
+      "prd": "docs/prd.md#u-shared",
+      "designs": [
+        "docs/architecture/technical-blueprint.md",
+        "docs/architecture/data-deletion.md"
+      ],
+      "implementation": "需求基线；当前实现待核验。",
+      "integration": "实际组合根与消费者待核验。",
+      "verification": "未取得当前真实部署验收证据。",
+      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
+          "label": "产品与架构设计",
+          "note": "需求基线；不证明现行实现或运行资格。"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "O-BOUNDARY",
+      "epic": 342,
+      "prd": "docs/prd.md#o-boundary",
+      "designs": [
+        "docs/architecture/deployment-units.md",
+        "docs/architecture/data-deletion.md"
+      ],
+      "implementation": "需求基线；当前实现待核验。",
+      "integration": "实际组合根与消费者待核验。",
+      "verification": "未取得当前真实部署验收证据。",
+      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
+          "label": "产品与架构设计",
+          "note": "需求基线；不证明现行实现或运行资格。"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "O-OBSERVE",
+      "epic": 342,
+      "prd": "docs/prd.md#o-observe",
+      "designs": [
+        "docs/architecture/deployment-units.md",
+        "docs/architecture/data-deletion.md"
+      ],
+      "implementation": "需求基线；当前实现待核验。",
+      "integration": "实际组合根与消费者待核验。",
+      "verification": "未取得当前真实部署验收证据。",
+      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
+          "label": "产品与架构设计",
+          "note": "需求基线；不证明现行实现或运行资格。"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "O-BUILD",
+      "epic": 342,
+      "prd": "docs/prd.md#o-build",
+      "designs": [
+        "docs/architecture/deployment-units.md",
+        "docs/architecture/data-deletion.md"
+      ],
+      "implementation": "需求基线；当前实现待核验。",
+      "integration": "实际组合根与消费者待核验。",
+      "verification": "未取得当前真实部署验收证据。",
+      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
+          "label": "产品与架构设计",
+          "note": "需求基线；不证明现行实现或运行资格。"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "W-LLM",
+      "epic": 343,
+      "prd": "docs/prd.md#w-llm",
+      "designs": [
+        "docs/architecture/technical-blueprint.md",
+        "docs/architecture/workbench-export-integrity.md"
+      ],
+      "implementation": "需求基线；当前实现待核验。",
+      "integration": "实际组合根与消费者待核验。",
+      "verification": "未取得当前真实部署验收证据。",
+      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
+          "label": "产品与架构设计",
+          "note": "需求基线；不证明现行实现或运行资格。"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "C-CONTRACT",
+      "epic": 344,
+      "prd": "docs/prd.md#c-contract",
+      "designs": [
+        "contracts/README.md",
+        "docs/architecture/contract-ownership.md"
+      ],
+      "implementation": "机器契约、Python/TS 生成消费者、文件下载及 SSE 校验已有分段实现；机器清单不证明业务路由或全部消费已接通。",
+      "integration": "工作台 HTTP 类型与传输消费者已有分段证据，正式消费者和完整事件语义按当前版本接收。",
+      "verification": "未取得当前真实部署验收证据。",
+      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
+          "label": "产品与架构设计",
+          "note": "需求基线；不证明现行实现或运行资格。"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "P-POLICY",
+      "epic": 345,
+      "prd": "docs/prd.md#p-policy",
+      "designs": [
+        "docs/architecture/speech-api.md",
+        "docs/architecture/technical-blueprint.md"
+      ],
+      "implementation": "需求基线；当前实现待核验。",
+      "integration": "实际组合根与消费者待核验。",
+      "verification": "未取得当前真实部署验收证据。",
+      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
+          "label": "产品与架构设计",
+          "note": "需求基线；不证明现行实现或运行资格。"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "M-CATALOG",
+      "epic": 346,
+      "prd": "docs/prd.md#m-catalog",
+      "designs": [
+        "docs/operations/capacity-manifest.md",
+        "docs/architecture/file-tts-binding-handoff.md"
+      ],
+      "implementation": "目录及条件请求路由已有实现，Job 读取 workspace 和 binding 时仍须核对分组语义；readiness 缺事实采用保守结果。",
+      "integration": "目录读身份需要显式配置并校验只读权限；实际引擎与质量测量来源仍需接入。",
+      "verification": "未取得当前真实部署验收证据。",
+      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
+          "label": "产品与架构设计",
+          "note": "需求基线；不证明现行实现或运行资格。"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "M-REGISTRATION",
+      "epic": 346,
+      "prd": "docs/prd.md#m-registration",
+      "designs": [
+        "docs/operations/capacity-manifest.md",
+        "docs/architecture/file-tts-binding-handoff.md"
+      ],
+      "implementation": "需求基线；当前实现待核验。",
+      "integration": "实际组合根与消费者待核验。",
+      "verification": "未取得当前真实部署验收证据。",
+      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
+          "label": "产品与架构设计",
+          "note": "需求基线；不证明现行实现或运行资格。"
+        }
+      ],
+      "issues": []
+    }
   ]
 }

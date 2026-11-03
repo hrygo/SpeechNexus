@@ -1,9 +1,25 @@
-"""Validate current issue relationships and render a GitHub-derived delivery view."""
+"""Validate requirement ownership and join live issue state into the delivery matrix."""
 
 from __future__ import annotations
 
 import re
+from datetime import date
+from pathlib import Path
 from typing import Any
+
+EPICS = set(range(337, 347))
+REQUIREMENT_KEYS = {
+    "id",
+    "epic",
+    "prd",
+    "designs",
+    "implementation",
+    "integration",
+    "verification",
+    "gap",
+    "evidence",
+    "issues",
+}
 
 
 def _unique(values: list[Any], label: str) -> None:
@@ -11,213 +27,280 @@ def _unique(values: list[Any], label: str) -> None:
         raise ValueError(f"Duplicate {label}")
 
 
-def _acyclic(graph: dict[str, list[str]], label: str) -> None:
-    visited: set[str] = set()
-    active: set[str] = set()
-
-    def visit(ident: str) -> None:
-        if ident in active:
-            raise ValueError(f"{label} cycle: {ident}")
-        if ident in visited:
-            return
-        active.add(ident)
-        for other in graph[ident]:
-            visit(other)
-        active.remove(ident)
-        visited.add(ident)
-
-    for ident in graph:
-        visit(ident)
+def _reference(value: Any) -> None:
+    if not isinstance(value, str) or not value:
+        raise ValueError("Missing document reference")
+    path, _, _anchor = value.partition("#")
+    if not path or Path(path).is_absolute() or ".." in Path(path).parts or ":" in path:
+        raise ValueError(f"Unsafe document reference: {value}")
 
 
 def validate_manifest(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
     if (
-        set(manifest) != {"schema_version", "repository", "entries"}
-        or manifest["schema_version"] != 3
+        set(manifest)
+        != {"schema_version", "repository", "program", "facts_as_of", "epics", "requirements"}
+        or manifest["schema_version"] != 4
     ):
-        raise ValueError("Expected a current issue registry (schema_version 3)")
+        raise ValueError("Expected requirement registry schema_version 4")
     if not isinstance(manifest["repository"], str) or not re.fullmatch(
         r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", manifest["repository"]
     ):
         raise ValueError("Invalid repository")
-    entries = manifest["entries"]
-    if not isinstance(entries, list) or not entries:
-        raise ValueError("Missing entries")
-    for entry in entries:
-        if not isinstance(entry, dict) or set(entry) != {
-            "id",
-            "number",
-            "kind",
-            "parent",
-            "dependencies",
-        }:
-            raise ValueError("Invalid entry fields")
-        if not isinstance(entry["id"], str) or not re.fullmatch(r"[A-Z][A-Z0-9-]*", entry["id"]):
-            raise ValueError("Invalid entry id")
-        if type(entry["number"]) is not int or entry["number"] <= 0:
-            raise ValueError("Invalid issue number")
-        if entry["kind"] not in {"program", "goal", "delivery"}:
-            raise ValueError("Invalid entry kind")
-        if entry["parent"] is not None and not isinstance(entry["parent"], str):
-            raise ValueError("Invalid parent")
-        if not isinstance(entry["dependencies"], list):
-            raise ValueError("Invalid dependencies")
-        for dep in entry["dependencies"]:
-            if not isinstance(dep, dict) or set(dep) != {"id", "artifact", "condition"}:
-                raise ValueError("Invalid dependency fields")
-            if any(not isinstance(dep[k], str) or not dep[k].strip() for k in dep):
-                raise ValueError("Missing dependency input or condition")
-        _unique([d["id"] for d in entry["dependencies"]], "dependency")
-    _unique([e["id"] for e in entries], "entry id")
-    _unique([e["number"] for e in entries], "issue number")
-    by_id = {e["id"]: e for e in entries}
-    programs = [e for e in entries if e["kind"] == "program"]
-    if len(programs) != 1 or programs[0]["parent"] is not None or programs[0]["dependencies"]:
-        raise ValueError("Expected one parentless program without dependencies")
-    for entry in entries:
-        if entry["kind"] != "program":
-            expected = "program" if entry["kind"] == "goal" else "goal"
-            parent = by_id.get(entry["parent"])
-            if parent is None or parent["kind"] != expected:
-                raise ValueError(f"Invalid parent kind: {entry['id']}")
-        if any(d["id"] not in by_id for d in entry["dependencies"]):
-            raise ValueError(f"Unknown dependency: {entry['id']}")
-    _acyclic({e["id"]: [e["parent"]] if e["parent"] else [] for e in entries}, "parent")
-    _acyclic({e["id"]: [d["id"] for d in e["dependencies"]] for e in entries}, "dependency")
-    return by_id
+    if type(manifest["program"]) is not int or manifest["program"] != 336:
+        raise ValueError("Expected program #336")
+    if not isinstance(manifest["facts_as_of"], str):
+        raise ValueError("Missing fact review date")
+    date.fromisoformat(manifest["facts_as_of"])
+    epics = manifest["epics"]
+    if not isinstance(epics, list):
+        raise ValueError("Missing epics")
+    for epic in epics:
+        if not isinstance(epic, dict) or set(epic) != {"number", "title", "scope", "exclusions"}:
+            raise ValueError("Invalid epic fields")
+        if type(epic["number"]) is not int or epic["number"] not in EPICS:
+            raise ValueError("Epic must be #337–346")
+        if any(
+            not isinstance(epic[k], str) or not epic[k].strip()
+            for k in ("title", "scope", "exclusions")
+        ):
+            raise ValueError("Epic requires a title, scope and exclusions")
+    _unique([e["number"] for e in epics], "epic")
+    if {e["number"] for e in epics} != EPICS:
+        raise ValueError("Expected exactly ten epics #337–346")
+    requirements = manifest["requirements"]
+    if not isinstance(requirements, list) or not requirements:
+        raise ValueError("Missing requirements")
+    for req in requirements:
+        if not isinstance(req, dict) or set(req) != REQUIREMENT_KEYS:
+            raise ValueError("Invalid requirement fields")
+        if not isinstance(req["id"], str) or not re.fullmatch(r"[A-Z][A-Z0-9-]*", req["id"]):
+            raise ValueError("Invalid requirement id")
+        if type(req["epic"]) is not int or req["epic"] not in EPICS:
+            raise ValueError(f"Requirement needs one primary epic: {req['id']}")
+        _reference(req["prd"])
+        if req["prd"] != f"docs/prd.md#{req['id'].lower()}":
+            raise ValueError(f"Requirement PRD anchor mismatch: {req['id']}")
+        if not isinstance(req["designs"], list) or not req["designs"]:
+            raise ValueError("Missing design mapping")
+        for ref in req["designs"]:
+            _reference(ref)
+        _unique(req["designs"], "design reference")
+        for field in ("implementation", "integration", "verification", "gap"):
+            if not isinstance(req[field], str) or not req[field].strip():
+                raise ValueError(f"Missing {field}: {req['id']}")
+        if not isinstance(req["evidence"], list):
+            raise ValueError("Invalid evidence")
+        for evidence in req["evidence"]:
+            if not isinstance(evidence, dict) or set(evidence) != {"url", "label", "note"}:
+                raise ValueError("Invalid evidence fields")
+            if any(not isinstance(v, str) or not v.strip() for v in evidence.values()):
+                raise ValueError("Empty evidence field")
+            if not evidence["url"].startswith("https://"):
+                raise ValueError("Evidence must have an explicit HTTPS source")
+        if not isinstance(req["issues"], list) or any(
+            type(n) is not int or n <= 0 or n in {336, *EPICS} for n in req["issues"]
+        ):
+            raise ValueError("Invalid implementation issue")
+        _unique(req["issues"], "implementation issue")
+    _unique([r["id"] for r in requirements], "requirement")
+    if {r["epic"] for r in requirements} != EPICS:
+        raise ValueError("Every epic must have requirements")
+    owners: dict[int, int] = {}
+    for req in requirements:
+        for number in req["issues"]:
+            if number in owners and owners[number] != req["epic"]:
+                raise ValueError("Implementation issue has conflicting epic ownership")
+            owners[number] = req["epic"]
+    return {r["id"]: r for r in requirements}
 
 
-def _cell(value: Any) -> str:
-    return str(value).replace("|", "\\|").replace("\n", "<br>")
+def _prd_titles(manifest: dict[str, Any], prd: str) -> dict[str, str]:
+    pairs = []
+    owners: dict[str, int | None] = {}
+    sections: list[int] = []
+    current_epic = None
+    for line in prd.splitlines():
+        section = re.fullmatch(r"## Epic (\d+) · .+", line)
+        if section:
+            current_epic = int(section[1])
+            sections.append(current_epic)
+        elif line.startswith("## "):
+            current_epic = None
+        match = re.fullmatch(r"### ([A-Z][A-Z0-9-]*) · (.+)", line)
+        if match:
+            pairs.append((match[1], match[2].strip()))
+            owners[match[1]] = current_epic
+    _unique(sections, "PRD epic section")
+    if set(sections) != EPICS:
+        raise ValueError("PRD epic coverage mismatch")
+    _unique([ident for ident, _ in pairs], "PRD requirement")
+    titles = dict(pairs)
+    expected = {r["id"] for r in manifest["requirements"]}
+    if set(titles) != expected:
+        raise ValueError(f"PRD coverage mismatch: {sorted(set(titles) ^ expected)}")
+    if any(owners[r["id"]] != r["epic"] for r in manifest["requirements"]):
+        raise ValueError("PRD epic ownership mismatch")
+    return titles
 
 
-def _field(issue: dict[str, Any], label: str) -> str:
-    prefix = f"{label}："
-    values = [
-        line[len(prefix) :]
-        for line in (issue.get("body") or "").splitlines()
-        if line.startswith(prefix)
-    ]
-    if len(values) != 1 or not values[0].strip():
-        return "未知"
-    value = values[0].strip()
-    if label == "优先级" and value not in {"P0", "P1", "P2"}:
-        return "未知"
-    return str(value)
+def validate_documents(manifest: dict[str, Any], root: Path) -> str:
+    validate_manifest(manifest)
+    root = root.resolve()
+    cache: dict[str, str] = {}
+    refs = [ref for r in manifest["requirements"] for ref in [r["prd"], *r["designs"]]]
+    for ref in refs:
+        path, _, anchor = ref.partition("#")
+        target = (root / path).resolve()
+        if not target.is_relative_to(root) or not target.is_file():
+            raise ValueError(f"Document missing or outside repository: {path}")
+        if path not in cache:
+            cache[path] = target.read_text()
+        if anchor:
+            text = cache[path]
+            explicit = set(re.findall(r'<a\s+id="([^"]+)"', text))
+            headings = {
+                re.sub(r"\s+", "-", re.sub(r"[^\w\s-]", "", line.lstrip("# ").lower()))
+                for line in text.splitlines()
+                if line.startswith("#")
+            }
+            if anchor not in explicit | headings:
+                raise ValueError(f"Document anchor missing: {ref}")
+    prd = cache["docs/prd.md"]
+    _prd_titles(manifest, prd)
+    return prd
+
+
+def _cell(value: str) -> str:
+    return value.replace("|", r"\|").replace("\n", "<br>")
 
 
 def _state(issue: dict[str, Any]) -> str:
-    if issue.get("state") == "closed":
+    state = issue.get("state")
+    if state == "closed":
         reason = issue.get("state_reason") or "unknown"
-        suffix = "；不计完成" if reason != "completed" else "；验收见正文证据"
-        return f"closed / {reason}{suffix}"
-    if issue.get("state") != "open":
+        meaning = "验收见需求证据" if reason == "completed" else "不计完成"
+        return f"closed / {reason}；{meaning}"
+    if state != "open":
         return "状态未知"
     labels = [
-        label["name"]
-        for label in (issue.get("labels") or [])
-        if label["name"].startswith("status:")
+        label["name"] for label in issue.get("labels") or [] if label["name"].startswith("status:")
     ]
     allowed = {"planned", "ready", "in-progress", "integration", "qualification", "blocked"}
-    if len(labels) != 1 or labels[0].removeprefix("status:") not in allowed:
-        return "状态未知（标签缺失、冲突或与 open 不一致）"
-    return f"open / {labels[0]}"
+    if len(labels) == 1 and labels[0].removeprefix("status:") in allowed:
+        return f"open / {labels[0]}"
+    return "open；状态标签待核实"
 
 
 def render(
     manifest: dict[str, Any],
     issues: list[dict[str, Any]],
     mode: str,
+    prd_text: str,
     snapshot_at: str | None = None,
 ) -> str:
-    by_id = validate_manifest(manifest)
-    _unique([i["number"] for i in issues], "remote issue number")
-    repository = manifest["repository"]
+    requirements = validate_manifest(manifest)
+    titles = _prd_titles(manifest, prd_text)
+    repo = manifest["repository"]
     for issue in issues:
-        number = issue["number"]
+        number = issue.get("number")
         if type(number) is not int or number <= 0:
             raise ValueError("Invalid remote issue number")
-        if issue.get("html_url") != f"https://github.com/{repository}/issues/{number}":
-            raise ValueError(f"Remote URL mismatch: {number}")
-        if issue.get("repository_url") not in (None, f"https://api.github.com/repos/{repository}"):
-            raise ValueError(f"Remote repository mismatch: {number}")
+        if issue.get("html_url") != f"https://github.com/{repo}/issues/{number}":
+            raise ValueError(f"Wrong remote issue source: {number}")
+        if issue.get("repository_url") not in (None, f"https://api.github.com/repos/{repo}"):
+            raise ValueError(f"Wrong remote repository: {number}")
+    _unique([i["number"] for i in issues], "remote issue")
     remote = {i["number"]: i for i in issues}
-    for entry in by_id.values():
-        tracked_issue = remote.get(entry["number"])
-        if tracked_issue is None:
-            raise ValueError(f"Issue missing from remote: {entry['number']}")
-        markers = re.findall(
-            r"<!--\s*speechnexus-delivery:[^\n]*?-->", tracked_issue.get("body") or ""
-        )
-        if markers != [f"<!-- speechnexus-delivery:{entry['id']}:v3 -->"]:
-            raise ValueError(f"Remote marker mismatch: {entry['id']}")
+    numbers = {336, *EPICS, *(n for r in requirements.values() for n in r["issues"])}
+    if not numbers <= remote.keys():
+        raise ValueError(f"Missing tracked issue: {sorted(numbers - remote.keys())}")
+    if remote[336].get("parent_issue_url"):
+        raise ValueError("Program must not have a parent")
+    for number in EPICS:
+        epic = remote[number]
+        if epic.get("parent_issue_url") != f"https://api.github.com/repos/{repo}/issues/336":
+            raise ValueError(f"Epic #{number} must be a native child of #336")
+        if "type:epic" not in {label["name"] for label in epic.get("labels") or []}:
+            raise ValueError(f"Epic #{number} is not classified as an epic")
+    for req in requirements.values():
+        for number in req["issues"]:
+            if remote[number].get("parent_issue_url") != (
+                f"https://api.github.com/repos/{repo}/issues/{req['epic']}"
+            ):
+                raise ValueError(f"Implementation #{number} has wrong native parent")
 
-    def ref(ident: str) -> str:
-        entry = by_id[ident]
-        issue = remote[entry["number"]]
-        return f"[{_cell(issue.get('title') or ident)} #{entry['number']}]({issue['html_url']})"
+    def ref(number: int) -> str:
+        issue = remote[number]
+        return f"[{_cell(issue.get('title') or str(number))} #{number}]({issue['html_url']})"
+
+    def doc(value: str, label: str) -> str:
+        return f"[{_cell(label)}](../../{value})"
 
     lines = [
-        "# SpeechNexus 产品交付跟踪",
+        "# SpeechNexus 需求与交付跟踪",
         "",
-        f"来源：{_cell(mode)}；快照时间：{snapshot_at or '未知'}。",
-        "GitHub 正文与生命周期为当前事实来源；离线快照不可视为实时状态，未知字段不补猜测。",
-        "依赖按具名输入接收，关联卡关闭不自动构成前置；完整范围与 AC、实际证据见对应 issue。",
+        f"GitHub 来源：{_cell(mode)}；快照时间：{snapshot_at or '未知'}。",
+        f"实现/集成/验证事实核验日期：{manifest['facts_as_of']}；各证据仅证明其实际覆盖范围。",
+        "PRD 定义需求，设计规定实现约束；本表关联唯一主 Epic、当前事实、实施卡与验收证据。",
+        "未建卡不等于需求遗漏；任务关闭不自动完成需求。结构校验不替代语义 MECE 审查或业务验收。",
         "",
-        "## 总控与产品目标",
+        "## 总控与十个 Epic",
         "",
-        "| 项目 | GitHub 状态 | 当前验证 |",
-        "| --- | --- | --- |",
+        f"总控：{ref(336)}。",
+        "",
+        "| Epic | 拥有的交付 / 边界 | GitHub 状态 | 需求数 |",
+        "| --- | --- | --- | --- |",
     ]
-    for entry in by_id.values():
-        if entry["kind"] != "delivery":
-            issue = remote[entry["number"]]
-            lines.append(
-                f"| {ref(entry['id'])} | {_state(issue)} | {_cell(_field(issue, '验证'))} |"
-            )
+    for epic in manifest["epics"]:
+        n = epic["number"]
+        count = sum(r["epic"] == n for r in requirements.values())
+        lines.append(
+            f"| {ref(n)} | {_cell(epic['scope'])}<br>边界：{_cell(epic['exclusions'])} | "
+            f"{_state(remote[n])} | {count} |"
+        )
     lines += [
         "",
-        "## 当前交付",
+        "## 需求、设计与交付关联",
         "",
-        "| 交付 / 产品目标 | 优先级 / 排期 / 负责人 | GitHub 状态 | "
-        "当前事实与缺口 | 必要输入 | 证据 |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| 需求 / PRD | 主 Epic / 设计 | 当前事实与缺口 | 实施 issue | 依据 |",
+        "| --- | --- | --- | --- | --- |",
     ]
-    deliveries = sorted(
-        (e for e in by_id.values() if e["kind"] == "delivery"),
-        key=lambda e: (_field(remote[e["number"]], "优先级"), e["number"]),
-    )
-    for entry in deliveries:
-        issue = remote[entry["number"]]
+    for req in sorted(requirements.values(), key=lambda r: (r["epic"], r["id"])):
         facts = "<br>".join(
-            f"{k}：{_cell(_field(issue, k))}" for k in ("实现", "集成", "验证", "阻塞")
+            f"{label}：{_cell(req[field])}"
+            for label, field in [
+                ("实现", "implementation"),
+                ("集成", "integration"),
+                ("验证", "verification"),
+            ]
         )
-        inputs = (
-            "<br>".join(
-                f"{ref(d['id'])}：{_cell(d['artifact'])}；{_cell(d['condition'])}"
-                for d in entry["dependencies"]
-            )
-            or "无已登记输入"
+        if req["gap"] not in f"{req['integration']} {req['verification']}":
+            facts += f"<br>缺口：{_cell(req['gap'])}"
+        designs = "<br>".join(doc(p, Path(p.split("#")[0]).stem) for p in req["designs"])
+        work = "<br>".join(f"{ref(n)}：{_state(remote[n])}" for n in req["issues"]) or "未建卡"
+        evidence = (
+            "；".join(f"[{_cell(e['label'])}]({e['url']})" for e in req["evidence"])
+            or "尚无独立证据"
         )
-        assignment = " / ".join(_cell(_field(issue, k)) for k in ("优先级", "排期", "交付负责人"))
         lines.append(
-            f"| {ref(entry['id'])}<br>目标：{ref(entry['parent'])} | {assignment} | "
-            f"{_state(issue)} | {facts} | {inputs} | {_cell(_field(issue, '证据'))} |"
+            f"| {doc(req['prd'], req['id'] + ' ' + titles[req['id']])} | "
+            f"{ref(req['epic'])}<br>{designs} | {facts} | {work} | {evidence} |"
         )
-    tracked = {e["number"] for e in by_id.values()}
-    extras = sorted(
-        (i for i in issues if i.get("state") == "open" and i["number"] not in tracked),
-        key=lambda i: i["number"],
-    )
-    lines += ["", "## 尚未登记的 open issue", ""]
-    if extras:
-        lines.append("以下记录覆盖待补齐，应先分类；普通反馈保留原始报告，不强制转换为实施任务。")
-        lines.extend(
-            f"- [{_cell(i.get('title') or '')} #{i['number']}]({i['html_url']})：{_state(i)}"
-            for i in extras
-        )
-    else:
-        lines.append("本次快照未发现未登记的 open issue。")
-    program = next(e for e in by_id.values() if e["kind"] == "program")
-    lines += ["", "## 下一队列", "", _field(remote[program["number"]], "下一队列"), ""]
+    extras = [i for i in issues if i.get("state") == "open" and i["number"] not in numbers]
+    lines += ["", "## 未登记的 open issue", ""]
+    if not extras:
+        lines.append("本次未发现未登记的 open issue。")
+    for issue in sorted(extras, key=lambda i: i["number"]):
+        parent = issue.get("parent_issue_url")
+        valid = parent in {f"https://api.github.com/repos/{repo}/issues/{n}" for n in EPICS}
+        note = "待关联需求" if valid else "父 Epic 未核实；待分类与关联需求"
+        lines.append(f"- {ref(issue['number'])}：{note}。")
+    lines += [
+        "",
+        "## 下一步建卡",
+        "",
+        "按当前目标调用 speechnexus-next-delivery，从未满足的需求选择下一可验收切片；"
+        "创建后核验唯一原生父 Epic，再登记关联与刷新本表。",
+        "",
+    ]
     return "\n".join(lines)

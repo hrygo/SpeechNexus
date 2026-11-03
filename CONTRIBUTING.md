@@ -34,7 +34,7 @@
 
 任务完成与验收通过分别勾选。小任务各部分可以只有一句话或一项，不增加与本问题无关的阶段。正文是当前摘要，讨论、决定和详细证据保留在相关评论、PR 或报告中；重要决定须可追溯，整理时保留仍有效的唯一证据。
 
-默认一个小 issue 由一个 PR 完整解决；确有独立交付边界或多个贡献者协作时，才拆 sub-issues。GitHub 原生父子关系和 blocked by / blocking 关系可用时优先使用；普通相关链接不自动代表阻塞。Epic、工作包、Gate 与编排矩阵只服务于实际存在的大型交付。
+默认一个小 issue 由一个 PR 完整解决。项目以[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)和十个 MECE Epic（#337–346）组织范围；维护者创建的新项目 issue 必须原生直属唯一 Epic，跨域协作记录依赖，不重复建卡或增设中间层。需求先记录在 [PRD](docs/prd.md)、相关设计和[需求矩阵](docs/plans/delivery-tracking.md)，具体任务由[按需规划技能](.agents/skills/speechnexus-next-delivery/SKILL.md)在输入就绪、准备实施时创建。未建卡不表示遗漏；Epic 不罗列已取消的历史任务。外部反馈保留原报告，由维护者按授权分类关联。
 
 ## 状态、标签与关闭
 

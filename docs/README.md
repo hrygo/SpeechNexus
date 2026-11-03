@@ -1,6 +1,6 @@
 # SpeechNexus 文档
 
-[产品与架构设计](speechnexus-product-architecture.md)是本独立项目的主文档，当前文档版本为 0.5.5。设计规定目标行为；仓库已有持久事务、语音执行和工作台消费者的分段实现，文件 ASR、CustomVoice 与 CPU VAD 已有真实隔离实验。完整公开业务链、生产准入发布和目标拓扑资格仍须分别验收；契约或组件检查通过不能代替这些证据。当前组合与管理先读[完整交付矩阵](plans/delivery-tracking.md)和[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)；[原项目交接](audits/2026-10-26-project-handoff.md)保留三队交接时点，团队 B 的详细证据见[收尾交接](audits/2026-10-26-team-b-handoff.md)。文档版本独立于软件版本。
+交付主入口是 [PRD](prd.md)、[产品架构设计](speechnexus-product-architecture.md)及[需求矩阵](plans/delivery-tracking.md)：分别规定完整需求与验收、方案约束、需求到主 Epic 和实施证据的关联。十个 Epic 维护能力边界，具体实施 issue 以后按需创建；没有实施卡的需求仍在矩阵中。设计规定目标行为；仓库已有持久事务、语音执行和工作台消费者的分段实现，文件 ASR、CustomVoice 与 CPU VAD 已有真实隔离实验。完整公开业务链、生产准入发布和目标拓扑资格仍须分别验收；契约或组件检查通过不能代替这些证据。当前组合与管理先读[完整交付矩阵](plans/delivery-tracking.md)和[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)；[原项目交接](audits/2026-10-26-project-handoff.md)保留三队交接时点，团队 B 的详细证据见[收尾交接](audits/2026-10-26-team-b-handoff.md)。文档版本独立于软件版本。
 
 | 文档                                                                                                | 职责                                                                            |
 | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -39,8 +39,9 @@
 | [本地最小可运行装配](operations/local-end-to-end.md) | 迁移→API→目录/发布/admin→网关/引擎的实跑步骤；含公开转写实测 504（worker 只登记 staging、不写终态；120s 是 API 轮询）、11.2.2 的人工 `record_stop` 字段/命令与限制，以及随附 ASR 定义缺真实容量/资格证据的边界 |
 | [agent 环境准备与验收](operations/paperclip/environment-readiness.md) | 三机工具链、隔离服务、Harness 与源码回传的实际证据、限制和启用门禁 |
 | [三团队整体实施计划](plans/2026-10-23-three-team-delivery-plan.md)                                  | 历史规划：团队分工、任务依赖、原阶段关口、集成节奏与产能估算              |
-| [完整交付跟踪矩阵](plans/delivery-tracking.md) | 当前产品目标、独立交付、实现/集成/验证、缺口、依赖和证据；GitHub 只读刷新 |
-| [交付清单](plans/delivery-issues.json) | 当前目标/交付层级和具名制品依赖；不复制状态或历史原文 |
+| [产品需求](prd.md) | 完整范围、十个 MECE 能力域、稳定需求与可观察验收条件 |
+| [需求与交付矩阵](plans/delivery-tracking.md) | 需求、设计、主 Epic、实现/集成/验证、缺口及证据；实施 issue 按需关联 |
+| [结构化关联源](plans/delivery-issues.json) | 矩阵数据源；当前实施 issue 可以为空，GitHub 状态只读刷新 |
 | [分阶段实施计划](plans/2026-10-22-speechnexus-implementation-plan.md)                               | P0–P5、退出条件、工作包、交接产物与预算假设                                     |
 | [集群协调重构计划](plans/2026-10-23-cluster-coordination-refactor.md)                               | 精简 DDL/契约/双库原型的交付与生产接入、集群故障资格的剩余验收                  |
 | [架构与契约修复闭环](audits/2026-10-23-architecture-contract-repair-closure.md)                     | 初验与终审补充的修复映射、验证证据及未验证运行边界                              |

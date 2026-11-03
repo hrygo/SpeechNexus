@@ -129,7 +129,7 @@
 | `docs/operations/agent-delivery-sop.md` | 部分核对 | 全文阅读并对照根规约的授权与工作区收尾、验证指南入口；平台实际能力及需求关联待核对 |
 | `docs/operations/backfill-binding-publication-evidence.md` | 部分核对 | 核对 CLI、映射、退出码和 0021 回退锁，补充隔离级别；回填事务及权限未逐项核实 |
 | `docs/operations/binding-activation-verification.md` | 部分核对 | 全文阅读并抽查 PG 并发和清理测试；未运行 PG 或核对全部矩阵 |
-| `docs/operations/binding-disable-worker.md` | 部分核对 | 对照配置范围、角色授权列、URL 策略、处理循环及原租约结算入口；异常分支待核对 |
+| `docs/operations/binding-disable-worker.md` | 已核对 | 对照配置范围、角色授权列、URL 策略、处理循环、异常分支及原租约结算入口；未连接部署或执行停用 |
 | `docs/operations/binding-lifecycle.md` | 部分核对 | 全文阅读并核对授权、停用响应、主要操作与部分冲突分支；并发、审计和恢复事务待核对 |
 | `docs/operations/builtin-voice-qualification.md` | 部分核对 | 核对受控窗口、资格入口和制品脚本摘要；权限及异常分支待核对 |
 | `docs/operations/capacity-manifest.md` | 部分核对 | 核对聚合检查、占位值、示例命令、校验器退出码及生命周期回滚描述；说明峰值断言与运行期聚合账本的区别，其余内容待核对 |

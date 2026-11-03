@@ -45,6 +45,9 @@ SpeechCommand
 的装配范围见[同步转写](../operations/synchronous-transcription.md)和[同步语音合成](../components/synchronous-speech.md)；
 异步与实时链须分别核对实际部署和验收证据。
 
+当前公开 Job 路由仅装配创建和按 ID 读取；列表、取消、重试与事件流仍是下表的
+契约目标。即使创建返回 `202`，生产派发 planner 尚未装配，也不能据此推断任务已执行。
+
 | 接口 | 用途与返回 |
 | --- | --- |
 | `GET /v1/models` | 部署已发布的 binding 列表；`id` 是 binding ID，`nexus.logical_model` 是展示的逻辑模型名，不暴露私有模型路径 |

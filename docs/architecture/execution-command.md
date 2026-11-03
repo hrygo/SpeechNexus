@@ -23,6 +23,11 @@ command_digest；旧 input_asset_ref 被完整命令替代。此变更不兼容�
 发音资源。两者还分别核对固定 binding、策略和执行目标；具体限制以
 [ASR 消费说明](../components/file-asr-recognition.md)及[TTS 消费说明](../components/file-tts.md#原命令消费)为准。
 
+当前文件 ASR 消费者将命令中的 `language`、`prompt` 和 `temperature` 传给识别策略；
+`prompt=null` 转为空字符串。单次识别超时取配置的调用上限与命令
+`final_deadline_ms` 的较小值，最大完成 token 数取执行侧配置。这些是当前消费者的
+装配规则，不改变命令摘要或允许消费者重新读取可变的业务默认值。
+
 各个 command.kind 冻结 ASR、TTS、声音设计/克隆/验证、对齐、说话人分离、VAD 和
 codec 阶段的输入及有效参数。生产者先解析模型/预设/音色/词典的固定版本，把
 实际生效参数全部填入，不依赖网关重新读取后来变化的默认值。ASR turn_detection、

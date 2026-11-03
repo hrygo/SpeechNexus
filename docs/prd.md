@@ -115,7 +115,7 @@
 **验收：**
 
 - 受控 Asset/Artifact 经对象长度/摘要与固定版本检查；staging 不可公开，最终发布与 Job/attempt/fencing、取消和策略裁决原子一致。
-- 固定 revision 的下载及 Range、保留和过期可复核；同步/实时默认不保存，Job 固定保存；普通结果 30 天按部署策略处理。
+- 固定 revision 的下载及 Range、保留和过期可复核；同步/实时默认不保存内容，Job 结果按固定策略保存；普通生成音频目标默认保留 30 天，其他内容按各自部署及保留策略处理。
 
 设计依据：[speech-api.md](architecture/speech-api.md)、[runtime-governance.md](architecture/runtime-governance.md)。
 

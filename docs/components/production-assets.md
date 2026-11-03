@@ -27,8 +27,10 @@ An optional idempotency key is scoped by the authoritative deployment/schema,
 asset operation and workspace. Its stored SHA-256 identifies the key without
 persisting the raw value. The request fingerprint fixes purpose, actual byte
 count/hash, optional expected hash and **requested** TTL, including omission.
-A same-key replay resolves the original before consulting changed defaults;
-a different fingerprint conflicts without a new object. Without a key a new
+A same-key replay resolves the original before applying a changed TTL default
+to a new reservation; it still receives, bounds, hashes and inspects the body
+before that lookup. A reduced current byte limit can therefore reject an old
+body before replay. A different fingerprint conflicts without a new object. Without a key a new
 upload is a new logical request; no cross-request exactly-once guarantee exists.
 
 Short transactions reserve an Asset/command/event, then persist a single writer
@@ -61,8 +63,10 @@ before a maintenance poll changes its stored state.
 `limit` expired assets, with a limit of 1–100. It closes the Asset, persists a
 hash/version-bound retention deletion ledger, and blocks live references or an
 unresolved writer. Deletion occurs outside the transaction, addresses only the
-pinned object version, and is recorded complete only after that version is
-confirmed absent. Unknown deletion replies retain the queued ledger for recovery.
+pinned object version, and when an object proof exists is recorded complete only
+after that version is confirmed absent. An asset with no object proof and no
+writer can complete without an object deletion; an unresolved writer remains blocked.
+Unknown deletion replies retain the queued ledger for recovery.
 Independent persisted poll hints rotate both bounded scans, so permanently blocked originals do not starve later recovery or deletion. They confer no publication or execution authority. Unrelated later storage versions are never swept. History and coordination
 proofs remain in the database.
 

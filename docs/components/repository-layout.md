@@ -128,7 +128,7 @@ ESLint 使用 flat config 与 TypeScript 类型感知规则；TypeScript 开启�
 | `tests/fake` | 无外部服务 | 确定性端口替身与故障注入 |
 | `tests/integration` | 隔离 PG / MySQL / MinIO | 受控事务、旧 PG 独立兜底、租约、outbox、对象发布与恢复 |
 
-`make verify` 还执行媒体和浏览器基础冒烟检查。它们证明本机工具链可采集与播放，不证明真实麦克风、模型质量、容量或完整业务流程。
+`make verify` 还执行媒体和浏览器基础冒烟检查：前者对合成音频验证重采样及 WAV / MP3 编解码，后者使用虚拟媒体设备检查录制、离线音频处理和回环 WebSocket。它们不证明真实麦克风、扬声器播放、模型质量、容量或完整业务流程。
 
 ## 6. 部署与凭据
 

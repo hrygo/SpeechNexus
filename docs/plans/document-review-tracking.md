@@ -328,7 +328,7 @@
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/assets/data.png` | 已核对 | 核对构图脚本用途，素材字节与总览 SVG 内嵌图一致；仅作装饰，不表达部署事实 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/build_diagrams.py` | 部分核对 | 核对 SVG、内容清单及模型清单输出入口；未重新生成或逐项审查绘图逻辑 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/image-prompts.json` | 已核对 | 核对 JSON 及三个素材键与构图用途；提示词是历史制作资料，不代表当前部署事实 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/model-catalog.json` | 部分核对 | 模型、引擎及加载方向与 ADR 0002 对照一致；实际制品和部署资格未验证 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/model-catalog.json` | 已核对 | 8 项的全部字段与构图脚本生成源一致，模型、引擎及加载方向与 ADR 0002 对照一致；这是目标选型，实际制品和部署资格未验证 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/render_and_validate.cjs` | 部分核对 | 核对浏览器渲染、布局及素材检查入口；未重跑或逐项审查所有断言 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/validation.json` | 部分核对 | 2026-10-26 报告中的三份素材摘要匹配当前文件；未重跑渲染或验证全部结论 |
 | `docs/audits/2026-10-25-team-c-acceptance-map.json` | 历史保留 | 对照原 AC 说明核对 41 项、278 子条件及 not_run 状态；未复核原始证据 |

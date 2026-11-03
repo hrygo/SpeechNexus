@@ -19,7 +19,7 @@ date: 2026-10-23
 
 | 协议层 | 首期范围 | 调用方依赖 |
 | --- | --- | --- |
-| OpenAI 兼容层 | Audio 转写与合成的声明子集；标准请求不要求 nexus 或工作台字段 | 标准 SDK 更换 base_url、逻辑 model / voice；共享服务密钥是契约允许的部署选项，当前公开语音处理器未实现其校验 |
+| OpenAI 兼容层 | Audio 转写与合成的声明子集；标准请求不要求 nexus 或工作台字段 | 标准 SDK 更换 base_url，同步请求的 model 使用已发布 binding ID，合成另需已发布 voice；共享服务密钥是契约允许的部署选项，当前公开语音处理器未实现其校验 |
 | SpeechNexus 增强层 | 音色创作、版本 / 预设、durable Job、能力 / 资源、管理；实时 nexus 扩展 | 公开增强 DTO / SDK；不依赖工作台 |
 | 工作台应用层 | 项目、会议 / 助手 / 提词 / 有声书编排 | 可选 `/v1/workbench` 和契约声明的 `/v2/workbench`；不宣称 OpenAI 兼容 |
 
@@ -47,8 +47,8 @@ SpeechCommand
 
 | 接口 | 用途与返回 |
 | --- | --- |
-| `GET /v1/models` | 部署已发布的逻辑模型列表；不暴露私有模型路径 |
-| `GET /v1/nexus/capabilities` | 按部署策略、工作空间和已发布绑定生成一致能力快照 |
+| `GET /v1/models` | 部署已发布的 binding 列表；`id` 是 binding ID，`nexus.logical_model` 是展示的逻辑模型名，不暴露私有模型路径 |
+| `GET /v1/nexus/capabilities` | 按部署策略、工作空间标识和已发布绑定生成能力快照；当前工作空间不参与目录过滤，详见 §1.5 |
 | `GET /v1/nexus/profiles`、`GET /v1/nexus/profiles/{profile_id}/revisions/{revision}` | 列出与读取可用的不可变预设 |
 | `POST /v1/audio/transcriptions` | multipart 文件 ASR；成功返回 JSON / text 等声明格式 |
 | `POST /v1/audio/speech` | JSON 文本 TTS；返回完整音频或声明的音频流 |

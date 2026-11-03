@@ -39,8 +39,8 @@ baseline/source, document that fails the required versioned OpenAPI shape, or a
 missing, remote/out-of-contract or recursive reference encountered by comparison
 cannot silently pass this check. This shape check is not complete OpenAPI document
 validation: for example, a missing `info.title` can go unreported. Run the separate
-source validation with `make contracts-check` as well. The comparison performs no network reference loading,
-runtime API call, permission change or migration.
+source validation with `make contracts-check` as well. The comparison performs no
+network reference loading, runtime API call, permission change or migration.
 
 A source version change is visible in the inventory and never automatically
 waives a finding. Version/upgrade descriptions and consumer acceptance remain
@@ -100,7 +100,7 @@ uv run python scripts/dev-env/check-http-contract-changes.py \
 
 This mode selects every HTTP path in `speech-openapi.yaml`, including the Nexus
 resource surface and Nexus fields on standard paths. Its inventory reports the
-source's real version and current path count. The default CLI and
+source's real version; JSON output also includes the current path count. The default CLI and
 `contracts-http-changes` retain the four-source selection and text/JSON output.
 The separate OpenAI comparison retains its five standard paths and extension
 exclusion; this extra structural check adds no formal OpenAI compatibility
@@ -183,7 +183,8 @@ Responses, the original OpenAI policy, arbitrary branch widening/removal, tag
 changes and other `oneOf` transformations retain their existing conservative
 checks. Independent regressions retain the integer overlap witness, use a
 different path/tag/field vocabulary, exercise rejected constraints and verify
-old/new request acceptance with Draft 2020-12 validators and generated consumers.
+old/new request acceptance with Draft 2020-12 validators and, for selected speech
+requests, the generated Python parser.
 
 ## Separate realtime runtime selection
 

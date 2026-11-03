@@ -301,7 +301,7 @@
 | `docs/validation/README.md` | 已核对 | 全文核对四个索引链接目标；不代表各目标正文已审阅 |
 | `docs/validation/ci-validation.md` | 部分核对 | 对照当前路由白名单、两进程覆盖率入口及六分片工作流；子脚本细节待核对，历史性能按原时点保留 |
 | `docs/validation/coordination-request-change-checks.md` | 部分核对 | 全文阅读并核对 Make/CI 入口、请求/结果方向及正反例清单；检查器比较内核的全部限制待核对 |
-| `docs/validation/http-contract-change-checks.md` | 部分核对 | 核对 CI、脚本入口及部分正反例；澄清文档形状检查不等同完整 OpenAPI 校验，其余比较内核与正反例待核对 |
+| `docs/validation/http-contract-change-checks.md` | 部分核对 | 核对 CI、脚本入口、定向比较及标签分支证明和相关正反例；澄清源校验、JSON 报告与 Python 解析器的覆盖边界，引用解析内核其余细节待核对 |
 | `docs/validation/realtime-contract-change-checks.md` | 已核对 | 全文对照 CI、Make 目标、检查脚本、绑定配置及正反例测试；结构检查不证明实时行为或生产互通 |
 | `docs/plans/document-review-tracking.md` | 待核对 | 清单自身随最终盘点核验 |
 

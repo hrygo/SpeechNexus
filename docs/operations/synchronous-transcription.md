@@ -113,10 +113,11 @@ ready 事实以及成功的 prepare intent。当前受支持的运维入口是
 
 ## 一次同步请求的链路
 
-1. 公开路由完成既有请求校验与 `AudioProbe`（生产为进程内 PyAV，无 `ffprobe` 进程）。
+1. 公开路由解析并校验请求；应用层先读取 workspace、binding 和所需 profile 事实，
+   检查 binding 对请求的支持，再检查上传大小。
+2. `AudioProbe`（生产为进程内 PyAV，无 `ffprobe` 进程）检查媒体后，应用层生成
+   `TranscriptionPlan`，包含已发布的 `binding_publication_id` 与处理后的上限。
    时长、采样率、声道来自真实解码结果；不支持或超限在调用引擎前失败。
-2. 应用层按公开 binding/workspace 事实生成 `TranscriptionPlan`，包含已发布的
-   `binding_publication_id` 与处理后的上限。
 3. `GatewayTranscriber` 把上传字节写入版本化私有输入桶，PUT 后 HEAD/GET 固定版本读回，
    核对长度与 SHA-256；未确认可读引用就不进入准入。
 4. 读 live 配额版本、池 owner/fencing、实例 generation/版本，构造既有

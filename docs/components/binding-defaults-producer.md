@@ -6,9 +6,9 @@ fixed snapshot read. Snapshot `1.0.0` and ModelBinding response bodies remain
 unchanged. The original integration targeted legacy admin `0.1.0.dev3`; the current
 admin source version is declared in `contracts/admin-openapi.yaml`. Legacy mode
 does not admit the new input or advertise the snapshot GET.
-An in-process [atomic storage port](model-binding-drafts.md#atomic-default-declarations)
-implements new-revision persistence and original-key recovery. Explicit producer
-mode now wires that port through real HTTP and a controlled four-table writer.
+The [atomic storage port](model-binding-drafts.md#atomic-default-declarations)
+defines new-revision persistence and original-key recovery. Explicit producer
+mode wires it through HTTP to a controlled PostgreSQL four-table writer.
 
 The producer request references each original field directly from the canonical
 admin `ModelBindingCreateRequest` property. It retains that request's required
@@ -16,6 +16,10 @@ fields and closure, adding only optional `parameter_defaults`. No second set of
 field types, bounds or defaults is maintained. The generated producer surface
 enters the operational OpenAPI only in producer mode, where the corresponding
 handlers are registered; the legacy fixed parent GET is also retained.
+For an existing parent, that GET also needs the separate publication-facts reader
+(`SPEECHNEXUS_BINDING_ADMIN_READER_DATABASE_URL` in the default runtime); without
+it the handler returns 503 `binding_unavailable` rather than guessing the state.
+The parameter-defaults GET uses the producer's fixed parent and snapshot reads.
 
 ## Explicit writer mode and lifecycle
 
@@ -59,11 +63,12 @@ changing omission to `{}` conflicts. A new successful command allocates a new
 revision and at most one snapshot in one transaction. No later command attaches,
 replaces or backfills defaults on that accepted or historical revision.
 
-The producer must validate tasks/capability domains, parent identity and actual
-explicit values before committing. Structurally valid but incompatible inputs
-use the existing 422 response. The schema only validates field domains; it does
-not prove that the binding supports those values. A synthetic declaration is not
-an authoritative engine-default probe or publication/quality approval.
+The producer checks selected relationships between explicit defaults and the
+binding's declared tasks and parameter domains before committing. Structurally
+valid inputs that fail these checks use the existing 422 response. The schema only
+validates individual field domains; neither check establishes referenced resource
+existence, publication or physical engine capability. A synthetic declaration is
+not an authoritative engine-default probe or publication/quality approval.
 
 The 201 binding response shape is unchanged. After a known accepted original
 command, its fixed identity addresses the snapshot GET. An unreadable creation

@@ -72,7 +72,7 @@
 | `docs/audits/README.md` | 部分核对 | 全文阅读并修正历史交接入口、补充 TTS 审计入口；各历史摘要与原文待逐项核对 |
 | `docs/components/README.md` | 已核对 | 核对索引中各目标文件、标题与候选状态；不代表目标正文已审 |
 | `docs/components/audio-asset-inspection.md` | 历史保留 | 2026-10-26 候选与资格记录，保留原时点事实；当前入口的 TextAssetInspector 装配已对照源码，历史证据未重验 |
-| `docs/components/binding-defaults-producer.md` | 部分核对 | 核对配置、Compose、契约入口、创建及固定读取处理、错误响应、声明值域校验与角色生命周期；对照测试代码澄清回环客户端范围，未重跑集成测试 |
+| `docs/components/binding-defaults-producer.md` | 部分核对 | 核对配置、Compose、契约入口、创建及固定读取处理、错误响应、声明值域校验与角色生命周期；澄清发布状态读取前提及回环客户端范围，未重跑集成测试 |
 | `docs/components/binding-parameter-defaults.md` | 部分核对 | 对照快照 schema、共享字段、解析器和生产者校验核对声明及持久化范围；当前检索未见最终合并消费入口，其他消费者与测试细节仍待核对 |
 | `docs/components/controlled-asr-generation.md` | 部分核对 | 全文阅读，核对凭据派生、模板约束、私有描述及成功终态停止证据；更新真实实例和整代次结算的历史证据，其他停止与运行资格待核对 |
 | `docs/components/cpu-vad.md` | 已核对 | 对照策略、缓冲、CPU 适配器、固定模型声明、文件消费者、Compose 静态配置及测试入口；未运行模型或验证实际部署资格 |

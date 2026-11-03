@@ -124,6 +124,8 @@ OpenAI Audio 的字段与兼容范围分别对照[转写接口](https://develope
 
 ASR `input` 只接受所选工作空间存在、功能策略允许且为 `ready` 的 `audio_asset_id`；TTS `input` 使用 `text` 或 `text_asset_id` 二选一，顶层 `voice` 使用 `{id,revision}`，可选 `pronunciation` 也使用 `{id,revision}`。任务创建时解析 `model` 为 `ModelBindingRevision`，固定所有执行依赖，在响应 `effective_configuration` 中回显；排队期间不随“默认模型”或预设发布而变化。
 
+TTS Job 可选 `model_binding={id,revision}` 固定精确版本：新意图要求该版本是当前已发布、未退役的权威指针，支持 `tts_file`，且其逻辑模型与 `model` 一致；不满足时明确拒绝，不回退其他版本。省略时当前实现将 `model` 作为 binding 对象 ID，选择其当前未退役发布版本。相同幂等键的原请求先按原身份重放，即使发布指针后来改变；结果未知时保留原键和完整请求协调，不能更换版本重试。Job 已接受不证明已执行；生产派发 planner 尚未装配，见[公开 Job 派发器](../components/production-jobs.md#公开-job-派发器del-96-第一步)。
+
 ```json
 {
   "id": "job_demo",

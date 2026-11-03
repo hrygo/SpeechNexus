@@ -300,8 +300,8 @@
 | `docs/speechnexus-product-architecture.md` | 部分核对 | 局部对照代码、契约或历史证据；对照实时、音色与工作台入口、文件 ASR 分段汇总、共享密钥、导出组合根、默认值快照、预设生命周期、绑定停用 / 数据删除、Job 派发及故障矩阵；其余内容待核对 |
 | `docs/validation/README.md` | 已核对 | 全文核对四个索引链接目标；不代表各目标正文已审阅 |
 | `docs/validation/ci-validation.md` | 部分核对 | 对照当前路由白名单、两进程覆盖率入口及六分片工作流；子脚本细节待核对，历史性能按原时点保留 |
-| `docs/validation/coordination-request-change-checks.md` | 部分核对 | 全文阅读并核对 Make/CI 入口、请求/结果方向及正反例清单；检查器比较内核的全部限制待核对 |
-| `docs/validation/http-contract-change-checks.md` | 部分核对 | 核对 CI、脚本入口、定向比较及标签分支证明和相关正反例；澄清源校验、JSON 报告与 Python 解析器的覆盖边界，引用解析内核其余细节待核对 |
+| `docs/validation/coordination-request-change-checks.md` | 已核对 | 全文对照 Make/CI、检查器及共享比较和引用解析内核、请求/结果正反例与 Python/JS fixture；不代表事务语义或部署已验收 |
+| `docs/validation/http-contract-change-checks.md` | 已核对 | 全文对照 CI、脚本、比较与引用解析内核及正反例；澄清源校验、JSON 报告与 Python 解析器的覆盖边界，不代表完整协议兼容 |
 | `docs/validation/realtime-contract-change-checks.md` | 已核对 | 全文对照 CI、Make 目标、检查脚本、绑定配置及正反例测试；结构检查不证明实时行为或生产互通 |
 | `docs/plans/document-review-tracking.md` | 待核对 | 清单自身随最终盘点核验 |
 

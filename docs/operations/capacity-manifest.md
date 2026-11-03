@@ -168,7 +168,7 @@ manifest 本身只有“每个实例/每个 slot 的包络”，没有“池总�
 | 编号 | 规则 | 失败表现 |
 | --- | --- | --- |
 | R1 | `manifest.binding_revision_id` = 报告同名字段 = `speech_binding_revisions.revision_id` = `speech_publications.revision_id` = `speech_binding_publication_evidence.revision_id` = 每个 `engine_instances.binding_revision_id` | `FAIL`，不得发布 |
-| R2 | `manifest.manifest_id` = `binding_definition.execution_recipe.capacity_manifest_id` = evidence `capacity_manifest_id` = 每个 `engine_instances.manifest_id` | 发布 CLI 退出码 `6`；脚本 `FAIL` |
+| R2 | `manifest.manifest_id` = `binding_definition.execution_recipe.capacity_manifest_id` = evidence `capacity_manifest_id` = 每个 `engine_instances.manifest_id` | 脚本检查文件、定义、证据与实例；发布写入路径检查定义声明与传入 ID，不检查实例。声明缺失或不一致对应 CLI 退出码 `6`；原意图重放另见发布指南 |
 | R3 | `report.report_id` = `manifest.qualification.qualification_report_id` = evidence `qualification_report_id` | `FAIL` |
 | R4 | `manifest.release_tier` = 报告 `release_tier` = 定义 `release_tier`（定义有该字段时）；`production` 还要求报告 `pass` | `FAIL`；`external` + `production` 直接被 schema 拒绝 |
 | R5 | 报告 `engine_components` 的 key 集合 = `stage_graph` 的 `stage_id` 集合；每个 `engine_kind` 相等 | `FAIL` |

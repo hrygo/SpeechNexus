@@ -132,7 +132,7 @@
 | `docs/operations/binding-disable-worker.md` | 已核对 | 对照配置范围、角色授权列、URL 策略、处理循环、异常分支及原租约结算入口；未连接部署或执行停用 |
 | `docs/operations/binding-lifecycle.md` | 部分核对 | 全文阅读并核对授权、停用响应、主要操作与部分冲突分支；补充 HTTP 匿名审计身份，并发与恢复事务待核对 |
 | `docs/operations/builtin-voice-qualification.md` | 部分核对 | 核对受控窗口、资格入口、制品脚本摘要、主要授权及命令退出分支；probe 内部验证细节待核对 |
-| `docs/operations/capacity-manifest.md` | 部分核对 | 核对聚合检查、占位值、校验器退出码及发布前后步骤；澄清 fixture、live 查询隔离与缺少工作区配额的范围，其余内容待核对 |
+| `docs/operations/capacity-manifest.md` | 部分核对 | 核对聚合检查、占位值、校验器退出码、账本检查及发布前后步骤；澄清发布事务与独立校验的范围、fixture、live 查询隔离和工作区配额限制，其余内容待核对 |
 | `docs/operations/compose-minimal.md` | 部分核对 | 对照 Compose 服务、迁移链、配置准备、基础角色授权、停用 worker 扫描与计数，修正权限及失败边界并更新章节引用；未执行部署，其他恢复细节待核对 |
 | `docs/operations/file-asr-binding-handoff.md` | 部分核对 | 核对候选选型、绑定定义的支持域和默认值、离线制品与忽略元数据校验、工具退出和输出、网关输出格式及停止证据边界；其余内容待核对 |
 | `docs/operations/file-asr-runtime.md` | 部分核对 | 对照配置、双 lane 共享限制、对象版本、worker 取消及结果登记恢复；停止及集成测试证据待核对 |

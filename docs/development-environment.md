@@ -24,7 +24,7 @@ date: 2026-10-22
 
 Node 版本以 `.nvmrc` 的 `26.12.1` 为准；切换本机 shell 后，`make dev-status` 会校验 Node 与 pnpm 的精确版本。
 
-PostgreSQL 与 MinIO 使用用户级 systemd 服务，状态和对象数据保存在被 Git 忽略的 `.runtime/`。服务只绑定回环地址；PostgreSQL 仅允许本机连接。`DATABASE_URL_DEV`、`DATABASE_URL_TEST`、`S3_ENDPOINT` 等非秘密地址位于 `.runtime/config/dev.env`，MinIO 凭据位于权限为 `0600` 的 `.runtime/config/minio.env`。
+PostgreSQL 与 MinIO 使用用户级 systemd 服务，状态和对象数据保存在被 Git 忽略的 `.runtime/`。服务只绑定回环地址；首次初始化的 PostgreSQL 对本地 socket 与回环连接使用 `trust`，本机其他用户也可能访问，不能将回环地址当作身份隔离。已有数据目录的配置不会由脚本重新初始化，实际权限须核验。`DATABASE_URL_DEV`、`DATABASE_URL_TEST`、`S3_ENDPOINT` 等非秘密地址位于 `.runtime/config/dev.env`，MinIO 凭据位于权限为 `0600` 的 `.runtime/config/minio.env`。
 
 协调测试用的 MySQL 是钉住摘要 `mysql@sha256:2952e3be…` 的项目受管容器，由 `scripts/dev-env/mysql-service.sh` 幂等安装与启动，数据保存在 `.runtime/data/mysql`（初始化后归容器内 `mysql` 账户），根口令写在权限为 `0600` 的 `.runtime/config/mysql.env`。参考环境不使用用户 systemd 单元管理该容器，而由 docker 的 `unless-stopped` 重启策略在守护进程启动时自动拉起；`make dev-up`、`make dev-bootstrap` 与 `make verify` 会在需要时调用同一脚本。实际 socket 权限和既有容器状态需在目标主机核实。
 
@@ -53,6 +53,8 @@ Python 开发依赖由根目录 `pyproject.toml` 和 `uv.lock` 锁定，后端�
 ```bash
 source scripts/dev-env/activate.sh
 ```
+
+该文件只导出 `dev.env` 中的开发地址和桶名，不设置下述 `SPEECHNEXUS_TEST_*` 测试变量或导出 MinIO 凭据；按测试入口另行配置隔离服务。
 
 `make verify` 包含参考 Linux 宿主的服务检查、Python 静态与测试、契约与媒体检查、Web 检查、构建和部署配置检查；实际入口及运行态副作用以 `scripts/dev-env/verify.sh` 和[验证指南](agent-verification.md)为准。它检查 systemd MinIO 后仍尝试确保默认测试 MinIO 容器，二者默认争用 `127.0.0.1:59000`；启动前须明确安排隔离端点和服务，不能假定默认组合可同时运行。可分别使用 `make contracts-check`、`make media-smoke` 和 `make browser-smoke` 调试对应部分。
 

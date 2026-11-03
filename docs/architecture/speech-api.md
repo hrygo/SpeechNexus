@@ -102,7 +102,7 @@ TTS 支持 `model`、`input`、`voice`、`response_format`、`speed`、`instruct
 
 增强参数放在 TTS JSON 的 `nexus` 对象或 ASR multipart 的 `nexus` JSON 字符串中。两者共同接受 `workspace_id`、`client_reference`、`profile_id`、`profile_revision`、`overrides` 和 `deadline_ms`；TTS 另接受 `voice_revision`、`pronunciation_revision`，ASR 的 `overrides` 只能包含 `asr` 策略，不借用 TTS 字段。同步 REST 的标准 `speed`、`instructions` 与 `nexus.pronunciation_revision` 是唯一字段来源，`nexus.overrides.tts` 不重复定义它们。完全省略 nexus 时，使用部署发布的默认工作空间、预设和音色版本解析规则，保证标准客户端能直接调用；nexus 为可选扩展，不能成为兼容路径的必填包装。
 
-普通同步 ASR/TTS 不自动建立供用户浏览的永久业务内容记录，也不自动保存源文件或音频；执行和恢复所需的私有持久事实按具体链路保留。服务端先检查输入大小、最大音频时长 / 文本长度和同步执行预算；超出预算返回 `422 async_required`，由客户端明确改为 Job，不在超时后偷偷转成后台作业。已经开始同步执行但超时的请求不保证得到结果，不能盲目新建相同意图；当前同步入口尚不支持客户端幂等键恢复，TTS 的原身份恢复按[内部恢复入口](../components/synchronous-speech.md)处理。
+普通同步 ASR/TTS 不自动建立供用户浏览的永久业务内容记录，也不自动保存源文件或音频；执行和恢复所需的私有持久事实按具体链路保留。服务端检查输入与执行上限，不在超时后偷偷转成后台作业。当前 ASR 上传超限返回 `413 payload_too_large`，音频时长超出同步上限返回 `422 async_required`；TTS 文本超出入口长度限制返回 `400 invalid_request`，生成结果超出音频上限返回 `503 speech_output_limit_exceeded`。不能把所有限额错误都视为 `async_required`；需要 Job 时由客户端明确发起。已经开始同步执行但超时的请求不保证得到结果，不能盲目新建相同意图；当前同步入口尚不支持客户端幂等键恢复，TTS 的原身份恢复按[内部恢复入口](../components/synchronous-speech.md)处理。
 
 OpenAI Audio 的字段与兼容范围分别对照[转写接口](https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create)及[语音接口](https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create)；SpeechNexus 只承诺本文列出的子集和 P0 冻结的 SDK 兼容测试，不声称支持 OpenAI 的全部模型、格式或事件。
 

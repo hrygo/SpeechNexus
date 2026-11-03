@@ -1268,7 +1268,7 @@
         "docs/architecture/technical-blueprint.md",
         "docs/components/workbench-export-integrity.md"
       ],
-      "implementation": "工作台 App 挂载 BooksHost；宿主提供建书和章节，工厂装配 PostgreSQL 书籍/单元及按客户端配置的 Speech Job。",
+      "implementation": "工作台 App 挂载 BooksHost；工厂装配 PostgreSQL 书籍/单元及按客户端配置的 Speech Job。生成页面与生产路由使用 v2；契约中的 v1 生成操作未接入。",
       "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
       "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
       "gap": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
@@ -1282,6 +1282,16 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/books/BooksHost.tsx",
           "label": "BooksHost.tsx",
           "note": "固定基线的正式入口或装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/eac21eb563efa65014b07db49ef2f638ec8083e6/backend/src/speechnexus_backend/workbench/interfaces/http_render_units.py",
+          "label": "单元路由",
+          "note": "生产路由注册的生成操作版本"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/eac21eb563efa65014b07db49ef2f638ec8083e6/web/workbench/src/manuscripts/workbench-client.ts",
+          "label": "工作台客户端",
+          "note": "生成操作使用的 v2 路径"
         }
       ],
       "issues": []

@@ -65,8 +65,11 @@ PCM buffer 和 scratch disk。每维行内 CHECK 使用
 （只获身份/状态列级 SELECT）。可变运行投影的终态和单调性由应用事务维护，数据库不再独立拒绝所有
 绕过应用的跨表违例。[权限工具](../../scripts/dev-env/coordination-grants.py) 为此草案输出双库
 对应授权语句，不是生产授权入口；生产授权见[协调存储基线](../operations/production-coordination-storage.md#安装与角色)。现有继承/全局权限须另核对，运行角色不能是 owner 或超级用户。
-规范请求正文允许在受控删除事务中单向清除；必须同时写删除 tombstone，不能清除
-协调身份、原摘要、fencing 或停止证据，也不能在执行/资源清理前先删除正文。
+`submit_intents.request_document` 允许在受控删除事务中单向清除；必须同时写删除
+tombstone，不能清除协调身份、原摘要、fencing 或停止证据，也不能在执行/资源清理前先删除正文。
+这不表示所有规范请求字段都可清除：例如本草案的 `runtime_instance_intents.request_document`
+为非空。网关的正文清理事务需要可信许可，默认协调器和 HTTP 入口尚未接入，详见
+[执行网关](../components/execution-gateway.md#10-redact_execution_command)。
 
 ## 验证与历史证据
 

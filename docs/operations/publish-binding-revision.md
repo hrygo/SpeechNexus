@@ -59,7 +59,7 @@ uv run speechnexus-publish-binding \
 | 存储不可用或提交结果未知 | 5 |
 | 容量清单与 revision 不匹配 | 6 |
 
-写入时先检查已有 publication 的 revision_id，再检查目标草稿；因此已有 publication 的 revision_id 不匹配时返回 `4`，即使草稿也不匹配。
+首次登记意图时先检查已有 publication 的 revision_id，再检查目标草稿；因此已有 publication 的 revision_id 不匹配时返回 `4`，即使草稿也不匹配。已登记意图的重放走前述重放路径，不重新执行这两项检查。
 
 ## 提交结果未知
 

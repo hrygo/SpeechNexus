@@ -60,8 +60,9 @@ PCM buffer 和 scratch disk。每维行内 CHECK 使用
 与全部权威事实一致，后台对账不能替代同步更新。带宽、对象大小、时长等其他配额遵循
 既有领域契约，尚未在这份协调 DDL 中具体化。
 
-运行角色无 DELETE、TRUNCATE 或 DDL 权限；不可变身份和预算列不获 UPDATE，追加事实
-不获 UPDATE。配额上限、policy revision、拓扑摘要、隔离阈值和 allocatable 容量只由
+运行角色无 DELETE、TRUNCATE 或 DDL 权限；不可变身份和预算配置列不获 UPDATE，追加事实
+不获 UPDATE。各所有者可更新受控的 held / quarantine 等运行投影；跨所有者的 `version`
+列授予 UPDATE 以支持行锁，不授对方状态列更新。配额上限、policy revision、拓扑摘要、隔离阈值和 allocatable 容量只由
 控制面写入，运行角色不获这些列的 UPDATE，也不能读取其他所有者的规范请求正文
 （只获身份/状态列级 SELECT）。可变运行投影的终态和单调性由应用事务维护，数据库不再独立拒绝所有
 绕过应用的跨表违例。[权限工具](../../scripts/dev-env/coordination-grants.py) 为此草案输出双库

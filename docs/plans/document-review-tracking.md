@@ -313,17 +313,17 @@
 | --- | --- | --- |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.check.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.content.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.png` | 待核对 | 非 Markdown 制品；须按用途核对来源、内容与引用 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.preview.png` | 待核对 | 非 Markdown 制品；须按用途核对来源、内容与引用 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.svg` | 待核对 | 非 Markdown 制品；须按用途核对来源、内容与引用 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.png` | 部分核对 | 确认 4K 尺寸及部署文档引用；图面内容待核对 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.preview.png` | 部分核对 | 确认预览尺寸及部署文档引用；图面内容待核对 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.svg` | 部分核对 | 确认 SVG 格式及部署文档引用；图面内容待核对 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.check.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.content.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.png` | 待核对 | 非 Markdown 制品；须按用途核对来源、内容与引用 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.preview.png` | 待核对 | 非 Markdown 制品；须按用途核对来源、内容与引用 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.svg` | 待核对 | 非 Markdown 制品；须按用途核对来源、内容与引用 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/assets/application.png` | 待核对 | 非 Markdown 制品；须按用途核对来源、内容与引用 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/assets/compute.png` | 待核对 | 非 Markdown 制品；须按用途核对来源、内容与引用 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/assets/data.png` | 待核对 | 非 Markdown 制品；须按用途核对来源、内容与引用 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.png` | 部分核对 | 确认 4K 尺寸及部署文档引用；图面内容待核对 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.preview.png` | 部分核对 | 确认预览尺寸及部署文档引用；图面内容待核对 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.svg` | 部分核对 | 确认 SVG 格式及部署文档引用；图面内容待核对 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/assets/application.png` | 部分核对 | 确认 PNG 格式及构图说明；素材与图面关系待核对 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/assets/compute.png` | 部分核对 | 确认 PNG 格式及构图说明；素材与图面关系待核对 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/assets/data.png` | 部分核对 | 确认 PNG 格式及构图说明；素材与图面关系待核对 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/build_diagrams.py` | 待核对 | 非 Markdown 制品；须按用途核对来源、内容与引用 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/image-prompts.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/model-catalog.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |

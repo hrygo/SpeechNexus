@@ -27,6 +27,11 @@ TTS planner 的子字段也完整填写。标准 TTS instructions 的 4096 上�
 语音材料格式必须由固定 binding/manifest 约定的 adapter 解码并验证；不把私有
 特征暴露为公开 receipt。跨 workspace 引用、摘要或长度不匹配均拒绝执行。
 
+命令中的对象引用固定 bucket、key、长度和摘要，但不携带 S3 version ID。当前文件 ASR
+输入适配器在每次读取时先 HEAD 获取非空版本，再对该版本执行 GET 并核验长度和摘要；
+这固定的是本次读取，不能将原命令解释为直接指定了对象版本。许可判断须在命令生产和准入
+边界完成，具体读取与失败规则见[冻结执行输入](../components/frozen-execution-inputs.md)。
+
 网关先按 schema 验证，再按 RFC 8785 canonical JSON 的 UTF-8 字节计算 SHA-256，
 比较 command_digest。禁止 Unicode normalization、隐式填默认值、NaN、Infinity
 和不成对代理字符；数值必须可由该规范无损表达。传输键顺序不影响摘要，文本或

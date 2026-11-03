@@ -33,6 +33,8 @@ binding、公开路由、音色发布、Job、预算或另一份结果账本。
 三项全部缺失保持未启用；部分提供、缺控制配置或相对路径拒绝启动。对象凭据不写入
 JSON。ASR 与 TTS 可同时配置，共用一个持久命令 worker；两者的
 `max_command_bytes`、`max_pending`、`shutdown_seconds` 必须一致，结果字节预算可分别设置。
+共用 worker 意味着 `max_pending` 是两条执行路径共同使用的本地待处理上限，不能分别当作
+ASR 和 TTS 各自独享的容量；它也不替代持久准入预算。
 配置不能与测试注入的工厂或控制服务混用。
 
 组合根为[文件语音装配](../../execution-gateway/src/speechnexus_gateway/file_speech_runtime.py)、

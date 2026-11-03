@@ -638,7 +638,7 @@
 
 **验收：**
 
-- `/v1/workbench/` 和 `/v2/workbench/` 到 Workbench 工厂，其余语音 `/v1/` 路由到 Speech 工厂；上游不同机/端口，原路径、错误、流式、Host/Origin 不被 SPA 吞掉；跨机用批准的 TLS。
+- `/v1/workbench/` 和 `/v2/workbench/` 到 Workbench 工厂，其余语音 `/v1/` 路由到 Speech 工厂；上游不同机/端口，原路径、错误、流式、Host/Origin 不被 SPA 吞掉；跨机用批准的 TLS。当前仓库的 Web 代理将这些路径发往同一 `api:8000`，尚不能证明独立上游或跨机 TLS 已通过验收。
 - Workbench停止不影响Speech，无法访问时明确失败、不误发或本地回退；用不同地址真实入口及隔离PG/对象存储验证工作台写入读取。
 - LLM默认关闭；工作台只消费公开Speech协议，不共写表、不持引擎凭据或容器管理权限；实时owner路由由相关交付承接。
 

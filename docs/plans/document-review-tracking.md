@@ -292,14 +292,14 @@
 | `docs/plans/2026-10-27-delegra-legion-closed-loop.md` | 历史保留 | 全文阅读，标明历史配置、授权和现行入口；平台状态未复验 |
 | `docs/plans/2026-10-30-zero-dispatch-settlement.md` | 历史保留 | 全文阅读，标明固定基线和候选方案的时点边界；历史验证及部署未复验 |
 | `docs/plans/README.md` | 已核对 | 核对当前 PRD、需求矩阵、结构化来源和只读刷新入口及 77 个本地链接；带日期条目作为历史索引，原时点摘要未逐项重验 |
-| `docs/plans/binding-disable-cancellation.md` | 部分核对 | 全文阅读，对照 public Job 锁、Compose 入口、网关取消窗口、组合根测试和当前需求；区分测试设计与运行结果，其余协调和验收细节待核对 |
+| `docs/plans/binding-disable-cancellation.md` | 部分核对 | 全文阅读，对照 public Job 与同步转写屏障、Compose 入口、网关取消窗口、目标分批扫描、组合根测试和当前需求；区分扫描、测试设计与实际完成证据，其余协调和验收细节待核对 |
 | `docs/plans/delivery-tracking.md` | 部分核对 | 核对生成入口、结构化来源和快照标记；逐项事实与证据仍待核对 |
 | `docs/po-sm-operating-playbook.md` | 已核对 | 全文对照交付 SOP 和 fleet-status 查询、分类及输出；修正门禁、等待、跨公司计数和模式差异，未连接平台数据库验证运行状态 |
 | `docs/prd.md` | 部分核对 | 核对 65 个需求 ID、锚点和 Epic 与结构化清单一致；逐项验收语义待核对 |
 | `docs/project-manager-guide.md` | 已核对 | 全文对照根规约、交付 SOP、军团职责及矩阵刷新入口；15 个本地链接目标存在，未核验平台实际部署与权限 |
 | `docs/speechnexus-product-architecture.md` | 部分核对 | 局部对照代码、契约或历史证据；对照实时、音色与工作台入口、文件 ASR 分段汇总、共享密钥、导出组合根、默认值快照、预设生命周期、绑定停用 / 数据删除、Job 派发及故障矩阵；其余内容待核对 |
 | `docs/validation/README.md` | 已核对 | 全文核对四个索引链接目标；不代表各目标正文已审阅 |
-| `docs/validation/ci-validation.md` | 部分核对 | 对照路由、两进程覆盖率及六分片分配与证据校验、镜像及最终门禁、制品下载、浏览器预取、Design Token、无障碍规则、栅格对比度和真实模型资格入口；其余脚本细节待核对，历史性能按原时点保留 |
+| `docs/validation/ci-validation.md` | 部分核对 | 对照路由、两进程覆盖率及六分片分配与证据校验、镜像及最终门禁、制品下载、浏览器预取、Design Token、无障碍规则、栅格对比度和真实模型资格入口；2026-11-04 只读核对 main 的三个必需检查及 Actions app 绑定一致；其余脚本细节待核对，历史性能按原时点保留 |
 | `docs/validation/coordination-request-change-checks.md` | 已核对 | 全文对照 Make/CI、检查器及共享比较和引用解析内核、请求/结果正反例与 Python/JS fixture；不代表事务语义或部署已验收 |
 | `docs/validation/http-contract-change-checks.md` | 已核对 | 全文对照 CI、脚本、比较与引用解析内核及正反例；澄清源校验、JSON 报告与 Python 解析器的覆盖边界，不代表完整协议兼容 |
 | `docs/validation/realtime-contract-change-checks.md` | 已核对 | 全文对照 CI、Make 目标、检查脚本、绑定配置及正反例测试；结构检查不证明实时行为或生产互通 |

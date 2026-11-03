@@ -32,7 +32,7 @@ date: 2026-10-25
 | `getWorkbenchStatusV2` | `GET /v2/workbench/status` | 使用 `WorkbenchStatusV2`；可发现受约束的 `minutes_profile` |
 | `listRenderUnitsV2`、`createRenderUnitV2` | `/v2/workbench/chapters/{chapter_id}/render-units` | 列表项目、创建结果均为 `RenderUnitV2`；创建显式必填 `model_binding` |
 | `getRenderUnitV2`、`updateRenderUnitV2` | `/v2/workbench/render-units/{unit_id}` | 响应必须包含固定绑定；PATCH 使用 `RenderUnitPatchV2` |
-| `generateRenderUnitV2` | `POST /v2/workbench/render-units/{unit_id}/generations` | 接收回执的嵌套单元使用 `RenderUnitV2`；仍为契约声明，尚无生产路由 |
+| `generateRenderUnitV2` | `POST /v2/workbench/render-units/{unit_id}/generations` | 接收回执的嵌套单元使用 `RenderUnitV2`；路由实现及其验证边界见本文开头 |
 
 `minutes_profile` 的缺省或 null 表示不能从状态发现可用纪要配置；消费者禁用新建，
 不能猜测模板或模型。`llm_enabled=false` 时不得返回已批准配置。

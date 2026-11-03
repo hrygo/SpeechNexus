@@ -138,7 +138,7 @@ VAD 的滞回、去抖和前缀缓冲与识别段策略版本化；预览与正�
 
 内部控制使用 HTTP / JSON，Submit 必须携带[规范执行命令](execution-command.md)与 canonical digest；实时数据使用 WebSocket 的 JSON 文本/控制事件与二进制 PCM。流连接绑定固定执行身份；二进制块的 framing、长度、序列与描述符关联由内部机器契约冻结。公开 Realtime 的编码不因此改变。文件与制品通过受控 Asset / Artifact 引用传递；内部命令携带所有者核验后的对象引用、长度和摘要，禁止将用户任意路径、对象 key 或外部 URL 当作该引用。当前文件 ASR 命令不携带 S3 version ID；适配器每次读取时固定 HEAD 所得版本并核验内容，详见[冻结执行输入](../components/frozen-execution-inputs.md)。
 
-控制流错误使用带 `stream_id / stream_epoch / seq / operation_id` 的 `stream.error` 信封和封闭错误码集合，不能把裸错误对象混入事件 union。传输级错误可要求重试，但只有 `stream.closed` 或其对应的权威操作查询能终结业务 Operation；陈旧 epoch、帧缺口和 credit 超限不得静默修改执行状态。
+控制流错误使用带 `stream_id / stream_epoch / seq / operation_id` 的 `stream.error` 信封和封闭错误码集合，不能把裸错误对象混入事件 union。传输级错误可要求重试，但不能单凭错误或断连认定执行终态；应以 `stream.closed` 或对应的权威执行查询协调该流。业务 Operation 还须汇总其必需阶段与清理事实，内部流关闭本身不证明整体成功；陈旧 epoch、帧缺口和 credit 超限不得静默修改执行状态。
 
 一次执行至少能够追溯规范命令、Operation、attempt、reservation、binding / recipe、实例 generation 与 fencing。重复提交同一意图只关联原执行；意图不一致则拒绝。查询区分未提交、正在协调与已知执行事实，传输失败不等于引擎未执行。控制响应不能凭“已接收取消”生成停止证据。
 

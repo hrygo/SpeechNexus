@@ -311,12 +311,12 @@
 
 | 文档（相对仓库根目录） | 状态 | 核对依据与结果 |
 | --- | --- | --- |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.check.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.check.json` | 部分核对 | 历史报告的 SVG 和 PNG 摘要匹配当前文件；未重跑布局检查 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.content.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.png` | 部分核对 | 确认 4K 尺寸及部署文档引用；图面内容待核对 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.preview.png` | 部分核对 | 确认尺寸、引用及图面标注为目标架构；拓扑细节待逐项核对 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.svg` | 部分核对 | 确认 SVG 格式及部署文档引用；图面内容待核对 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.check.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.check.json` | 部分核对 | 历史报告的 SVG 和 PNG 摘要匹配当前文件；未重跑布局检查 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.content.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.png` | 部分核对 | 确认 4K 尺寸及部署文档引用；图面内容待核对 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.preview.png` | 部分核对 | 确认尺寸、引用及示例容量边界；模型与拓扑细节待逐项核对 |
@@ -328,7 +328,7 @@
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/image-prompts.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/model-catalog.json` | 部分核对 | 模型、引擎及加载方向与 ADR 0002 对照一致；实际制品和部署资格未验证 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/render_and_validate.cjs` | 部分核对 | 核对浏览器渲染、布局及素材检查入口；未重跑或逐项审查所有断言 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/validation.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/validation.json` | 部分核对 | 2026-10-26 报告中的三份素材摘要匹配当前文件；未重跑渲染或验证全部结论 |
 | `docs/audits/2026-10-25-team-c-acceptance-map.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
 | `docs/audits/2026-10-26-team-a-closeout-evidence.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
 | `docs/audits/2026-10-26-team-a-issue-handoff.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |

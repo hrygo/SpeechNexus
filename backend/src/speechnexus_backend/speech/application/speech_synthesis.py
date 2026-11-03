@@ -293,6 +293,7 @@ class SpeechSynthesis:
             text=command.text,
             voice_id=voice.object_id,
             voice_revision_id=voice.revision_id,
+            voice_revision=voice.revision,
             response_format=command.response_format,
             sample_rate_hz=REST_SAMPLE_RATE_HZ,
             channels=REST_CHANNELS,

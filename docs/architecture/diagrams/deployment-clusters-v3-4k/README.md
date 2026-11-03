@@ -57,6 +57,8 @@ B1、E1、F1/G1 分别属于 `asr-batch`、`voice-creation`、`auxiliary`。
 - F 使用官方 `qwen_asr` 与 PyTorch CUDA，G 使用 NeMo 与 PyTorch CUDA；二者作为独立辅助实例参与配方。
 - H 使用 CPU ONNX Runtime；同一运行进程可复用只读模型，会话状态独立。跨主机运行的是独立模型副本，VAD 的 CPU 运行按所在运行时验证。
 
+图二中 A、C、D 的实时常驻标注仅适用于已启用并承担相应实时能力的绑定；具体绑定须预加载、热身并就绪后才能准入。它不要求未启用的实时模型常驻，也不证明这些实例已部署或通过资格验证。
+
 总览把 VAD 与媒体沙箱放在 Linux CPU 节点示例中，以复用受控执行资源。
 Linux 要求来自现有媒体沙箱；CPU VAD 本身按所在运行时验证。
 工作台的内网 LLM 是可选的独立上游，SpeechNexus 的模型实例治理范围聚焦语音底座。

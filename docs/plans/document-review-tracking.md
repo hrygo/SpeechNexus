@@ -158,7 +158,7 @@
 | `docs/operations/register-engine.md` | 已核对 | 对照命令参数、健康探测、注册事务、同代重放、readiness 刷新、投递阻断与验证查询；未连接数据库或注册实例 |
 | `docs/operations/release-preflight.md` | 已核对 | 对照脚本检查入口、配置加载和 C0–C12 判断；修正版本、身份、临时文件、资格场景、Compose 文本匹配及固定快照边界，未执行会访问服务或写入的检查 |
 | `docs/operations/release-readiness.md` | 历史保留 | 全文阅读，固定候选与核验时点的发布就绪快照；运维索引标为历史，未逐项复核历史证据 |
-| `docs/operations/synchronous-transcription.md` | 部分核对 | 核对配置、配方约束、请求校验顺序、媒体探测证据范围、提交与轮询路径、HTTP 请求和媒体错误映射及网关主要错误映射；其余实现细节待核对 |
+| `docs/operations/synchronous-transcription.md` | 已核对 | 对照配置、配方、请求校验、媒体探测、准入与网关提交轮询、结果投影和错误映射；未运行集成测试或验证真实引擎 |
 | `docs/plans/2026-10-22-speechnexus-implementation-plan.md` | 历史保留 | 全文阅读并核对引用入口；保留原阶段和预算假设，标明当前交付入口，未逐项复核历史证据 |
 | `docs/plans/2026-10-23-agent-team-startup-briefs.md` | 历史保留 | 原首轮派工文本，文首及索引注明历史性质；未逐项复核原始证据 |
 | `docs/plans/2026-10-23-architecture-contract-repairs.md` | 历史保留 | 固定审查基线的修复验收记录；未逐项复核历史验证证据 |

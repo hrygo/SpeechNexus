@@ -157,7 +157,10 @@ TTS 制品携带实际 `format`、`sample_rate_hz`、`channels`、`duration_ms`�
 
 当前 PostgreSQL 目录投影提供已发布 binding 的模型信息，`profiles` 和 `voices` 暂为空；
 能力接口对传入的 `workspace_id` 只检查标识格式，不查询其是否存在或按其过滤目录。
-因此返回快照不证明该工作空间存在、可访问或具备准入资格；提交时仍须经过各自的权威检查。
+默认目录装配未接入实时 readiness 证据，模型的 `engine_ready`、`quality_qualified` 为
+`false`，`admission_state` 为 `unavailable`，表示这些事实未由该目录建立，不单独证明
+实际引擎故障或资格失效。因此返回快照不证明工作空间存在、可访问或具备准入资格；
+提交时仍须经过各自的权威检查。
 
 绑定发布、部署资格与具体实例的运行事实分开。按需模型可以支持提交排队任务而当前尚未加载；不能用单一就绪标志混淆“支持”“可排队”“可立即执行”。实例卸载不删除绑定或音色 revision，重建后重新核对配置与资格；字段和状态由 P0 schema 冻结，组件分工见[整体技术方案](technical-blueprint.md#4-绑定资格与实例分离)。
 

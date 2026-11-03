@@ -17,13 +17,18 @@ WebSocket 路由及真实实时执行链，SDK 序列化检查不能证明这些
 
 | 能力 | 兼容范围 | 明确不支持 |
 | --- | --- | --- |
-| 模型列表 | `GET /v1/models`、`GET /v1/models/{model}` 的 OpenAI `list` / `model` 形状；`nexus` 附加绑定与就绪事实 | 不暴露模型路径、引擎端点或托管模型目录 |
+| 模型列表 | `GET /v1/models`、`GET /v1/models/{model}` 的 OpenAI `list` / `model` 形状；`nexus` 附加绑定与就绪字段 | 不暴露模型路径、引擎端点或托管模型目录 |
 | 文件转写 | `POST /v1/audio/transcriptions`：`file`、`model`、`language`、`prompt`、`response_format`、`timestamp_granularities[]` | `temperature`、`include`、`chunking_strategy`、`stream`、diarized JSON 等未声明参数显式拒绝 |
 | 文本合成 | `POST /v1/audio/speech`：`model`、`input`、`voice`、`instructions`、`response_format`、`speed`、`stream_format=audio` | `stream_format=sse`、OpenAI 托管音色名、任意 voice 对象、未验证格式 |
 | 实时转写 | `GET /v1/realtime?model=<logical-model>` 打开 transcription-only 会话；声明的事件子集 | `response.*`、conversation history、tool call、semantic VAD、双工 TTS |
 | 错误 envelope | `{"error": {"code", "type", "message", "param", ...}}`，额外携带 `request_id`、`retryable`、`retry_after_ms` | 不以 HTTP 200 包装失败，不返回非 OpenAI 形状的顶层错误 |
 
 `response_format=json` 至少返回 `text`。`verbose_json`、`srt`、`vtt` 只在绑定具备真实时间边界证据时开放；缺少证据返回 `422 unsupported_parameter`，不伪造 `segments`、词级时间戳或 `avg_logprob`。`srt` / `vtt` / `text` 使用 `text/plain`；`json` / `verbose_json` 使用 `application/json`。
+
+当前目录的 `id` 是已发布 binding ID，`nexus.logical_model` 是另一展示字段；同步请求的
+`model` 使用该 binding ID。默认目录装配不查询实时引擎或质量资格，就绪字段保守返回
+`engine_ready=false`、`quality_qualified=false` 和 `admission_state=unavailable`；这表示未由
+该目录建立事实，不能单凭这些值判定实际引擎故障或资格失效。
 
 时间戳粒度属于声明的契约范围；当前生产文件 ASR 规划器在准入前拒绝非空 `timestamp_granularities[]`，不能据此宣称显式 segment/word 请求已可用。具体证据要求见[同步转写](../operations/synchronous-transcription.md)。
 

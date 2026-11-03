@@ -412,11 +412,14 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     for statement in gateway_query_target_grants(schema, "sn_gateway"):
         conn.execute(statement)
 
-    # Transcription resolves the current published binding through the same
-    # runtime facts port. Grant only the two read relations it currently uses.
+    # Transcription resolves the selected published binding and checks its
+    # retirement through the runtime facts port.
     conn.execute(
-        sql.SQL('GRANT SELECT ON {}.speech_publications, {}.speech_binding_revisions TO {}')
+        sql.SQL('GRANT SELECT ON {}.speech_publications, {}.speech_binding_revisions, '
+                '{}.speech_publication_heads, {}.speech_publication_retirements TO {}')
         .format(
+            sql.Identifier(schema),
+            sql.Identifier(schema),
             sql.Identifier(schema),
             sql.Identifier(schema),
             sql.Identifier("sn_api"),

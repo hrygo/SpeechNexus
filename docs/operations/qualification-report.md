@@ -75,7 +75,7 @@ date: 2026-10-28
 | `cpu_arch` | `x86_64` / `arm64` | 平台 | 与主机/镜像架构一致 |
 | `hardware_class` | 硬件类别，例如 `nvidia-gb10-single-node` | 平台 | 与 topology profile/采购记录一致；不是主机名 |
 | `memory_architecture` | `unified_memory` / `discrete_device_memory` | 平台 | 与 manifest `topology_ref`、`host_nodes.memory_architecture` 相等 |
-| `total_physical_memory_bytes` | 主机总物理内存 | 平台实测/系统信息 | 不得小于 `host_nodes.allocatable_*`；样例 130,631,430,307 B（约 121.66 GiB，按报告值换算，精度有限） |
+| `total_physical_memory_bytes` | 主机总物理内存 | 平台实测/系统信息 | 只能与同口径的内存预算比较，不能与 CPU、磁盘等其他 `allocatable_*` 维度比较；脚本仅对统一内存架构检查 `allocatable_unified_physical_memory_bytes` 不超过该值。样例 130,631,430,307 B（约 121.66 GiB，按报告值换算，精度有限） |
 | `device_memory_bytes` | 离散设备显存（可选） | 平台 | 统一内存架构通常不填或为 0；不要与 unified 双计 |
 | `shared_memory` | 共享父预算 id 与共享角色 | 平台 | `parent_budget_id` 必须与共存实验记录一致；`shared_with_roles` 只能来自枚举 |
 

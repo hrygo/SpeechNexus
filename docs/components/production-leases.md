@@ -85,10 +85,15 @@ engine_instances 的基线预算类型/内存。实例基线即使已有单次�
 
 ## 存储、验证与保护边界
 
-复用现有 `0006_runtime_observation` 及最小 A/B 角色，无新增迁移、DDL 或授权扩张。
+隔离与释放复用既有协调表和最小 A/B 角色。当前释放实现对 B 的
+`failed/not_required` 事实还要求迁移 `0028_execution_release_guards` 创建的
+`execution_release_guards` 视图，以及 `release_guard_grants` 声明的视图列读取权限；
+缺少迁移、权限或对应行时该路径拒绝释放；数据库错误通常映射为 `reconciliation_required`，
+缺行映射为 `not_found`，连接状态不明仍可能返回 unknown。该视图只暴露
+无外发元数据的结构性佐证，不单独构成停止证据。授权须由部署方显式配置，不由应用启动执行。
 共享 SQL 在隔离 InnoDB 上仅作行为 oracle，不形成产品 MySQL 支持承诺。
 
-针对性测试覆盖同键竞争、跨池 stage 共享 attempt quota、两种内存架构的全部资源维度、
+针对性测试定义覆盖同键竞争、跨池 stage 共享 attempt quota、两种内存架构的全部资源维度、
 阈值、首观察保留、活动/终态拒绝、锁后数据库时间、最新 gateway 事实、版本耗尽、
 中途失败回滚，以及原生 B mark_execution_unknown → A quarantine 的数据库接线。
 释放额外覆盖真实跨池 last-stage 行锁竞争、B 新 submit 与 A release 的互斥、
@@ -96,7 +101,7 @@ engine_instances 的基线预算类型/内存。实例基线即使已有单次�
 提交确认丢失的 adapter 故障模型只验证分类策略，不声称确定远端实际提交状态。
 PG 专用回归另在实际提交后丢弃确认，验证 unknown、原 ID 只读恢复及无重复扣减；
 运行中的未知结果仍须查询，不能从超时推定提交或回滚。
-这些事实均不替代真实引擎停止、内容网络边界或集群资格。
+测试定义不证明当前环境已通过；这些范围均不替代真实引擎停止、内容网络边界或集群资格。
 
 ```sh
 uv run pytest tests/unit/test_production_leases.py -q

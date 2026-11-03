@@ -511,7 +511,10 @@ http=200
 ```
 
 `/readyz` 不调用真实模型，也不证明 binding、recipe、引擎或公开 ASR/TTS 业务成功。
-它只证明该进程、配置的数据库连接、对象存储（API）和本进程 ingress/文件 worker（gateway）已就绪。具体检查项随部署配置变化；本 Compose 为 gateway 配置了独立查询数据库连接，因此包含 `control_query_postgresql`。
+它检查数据库连接的 `SELECT 1`、API 配置的对象存储健康 URL，以及 gateway 的 ingress
+所有权和已要求的文件 worker 运行状态。对象存储健康检查不验证 bucket、版本化或读写凭据；
+具体检查项随部署配置变化，本 Compose 为 gateway 配置了独立查询数据库连接，因此包含
+`control_query_postgresql`。
 
 ## 8. 一次性注册引擎
 
@@ -545,7 +548,7 @@ instance 来“绕过”冲突；先核对旧 head、owner 和 readiness 证据�
 | API 启动报 recipe digest / `invalid transcription recipe` | 重算 `recipe_digest`，并确保 recipe 是当前 UID 所有、`0600`、普通文件 |
 | gateway 退出并报 `invalid gateway file ASR configuration` | 检查 endpoint/ recipe 身份、VAD 文件摘要、桶名、endpoint 与对象凭据是否成组提供 |
 | gateway 报 `cannot initialize the pinned CPU VAD runtime` | Python 镜像缺少固定 VAD 依赖或 ONNX 文件不是批准的 Silero 模型；不要换成任意 ONNX |
-| `/readyz` 为 `503`，`object_storage` 为 `failed` | MinIO 未 healthy、桶未初始化或 API 的 endpoint/凭据错误 |
+| `/readyz` 为 `503`，`object_storage` 为 `failed` | 检查 API 配置的 MinIO 健康 URL 和网络连通性；桶、版本化与凭据须另行验证 |
 | `/readyz` 为 `503`，`postgresql` 为 `failed` | PostgreSQL 未 healthy、角色口令/DNS 错误或实例不在同一 Compose 网络 |
 | `minio-init` 报 `bucket versioning was not enabled` | 检查 MinIO 健康、root 凭据和 bucket policy；不能删除版本化要求后继续 |
 | `engine-register` 报 `engine_unreachable` | 从 Compose 网络探测 `SPEECHNEXUS_ENGINE_HEALTH_URL`；该 URL 必须能从容器访问，不能只从宿主机访问 |

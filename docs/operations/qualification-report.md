@@ -215,6 +215,7 @@ else:
 
 - 提供 `expires_at` 时，`qualified_at` 必须早于它；样例为 90 天（2026-10-27 → 2027-01-25）；
 - `production` 不得使用 `expires_at: null`；到期即失效，不能继续支撑发布；
+- 离线脚本检查截止时间是否已过，但不检查 `qualified_at` 是否晚于当前时间；产品只读 release 校验组件还要求 `qualified_at <= now`。脚本通过不能替代该时间核验；
 - 失效事件：模型/权重/模型卡变化、引擎镜像/runtime 变化、拓扑/主机/内存架构变化、pool/service class/management mode 变化、stage graph/向量/限额/取消能力变化、语料/阈值变化、实测发现容量或质量退化、报告到期；
 - 失效后必须新 report id（通常也新 manifest/revision），保留旧报告和原始输出；不能原地改已发布 JSON。
 

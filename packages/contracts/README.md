@@ -26,16 +26,18 @@ scenario-profile sources, including root conditionals. See the
 [process-local port and qualification boundary](../../docs/components/profile-drafts.md).
 
 The separate `profile-http` TypeScript / `profile_http` Python surface selects
-only profile creation and fixed revision reads from the current admin source `0.1.0.dev3`.
+only profile creation and fixed revision reads from the current admin source
+[`admin-openapi.yaml`](../../contracts/admin-openapi.yaml).
 It validates their request/error/replay envelopes without advertising profile
 routes through the existing workspace client. The backend implements the bounded
 profile draft routes separately; no validator call creates or publishes a profile.
 
 Model binding consumers can now parse `ModelBindingCreateRequest` in `admin`,
 `ModelBindingRevision` through Python `model_bindings` / TypeScript
-`@speechnexus/contracts/model-bindings`, and the selected create/fixed GET envelopes
-through `binding_http` / `@speechnexus/contracts/binding-http`. Admin source is
-`0.1.0.dev3`; these entries do not implement routes or publish a model. See the
+`@speechnexus/contracts/model-bindings`, and the selected create, fixed GET,
+retirement and activation envelopes through `binding_http` /
+`@speechnexus/contracts/binding-http`. These entries do not implement routes or
+publish a model. See the
 [ModelBinding draft contract handoff](../../docs/components/model-binding-drafts.md)
 for original-key recovery, unknown results and the remaining producer work.
 

@@ -26,8 +26,13 @@ from speechnexus_gateway.application.tts_configuration_evidence import TtsConfig
 from speechnexus_gateway.domain.file_execution import FileExecutionLedger, FileExecutionRuntime
 from speechnexus_gateway.file_speech_runtime import load_file_speech_configuration
 from speechnexus_gateway.infrastructure.abort_authority import verify_abort_authority
+from speechnexus_gateway.infrastructure.execution_reader import (
+    PostgresExecutionReader,
+    verify_execution_reader_authority,
+)
 from speechnexus_gateway.infrastructure.postgres_pool import GatewayPool, gateway_pool
 from speechnexus_gateway.infrastructure.process_ownership import ProcessIngressOwnership
+from speechnexus_gateway.infrastructure.reader_authority import verify_execution_reader_target
 from speechnexus_gateway.infrastructure.readiness import PostgresReadinessProbe
 from speechnexus_gateway.infrastructure.recovery_configuration import load_recovery_configuration
 from speechnexus_gateway.infrastructure.recovery_worker import RecoveryWorker
@@ -77,8 +82,29 @@ def _build_readiness(settings: Settings, app: FastAPI) -> ReadinessService:
         )
     ]
     if settings.execution_control_enabled:
+        if settings.control_query_database_url is not None:
+            probes.append(
+                PostgresReadinessProbe(
+                    settings.control_query_database_url.get_secret_value(),
+                    timeout_seconds=settings.readiness_timeout_seconds,
+                    name="control_query_postgresql",
+                )
+            )
         probes.append(_ControlReadinessProbe(app))
     return ReadinessService(probes, timeout_seconds=settings.readiness_timeout_seconds)
+
+
+class _ControlPools:
+    """Close the two owned pools after all workers have joined."""
+
+    def __init__(self, writer: GatewayPool, reader: GatewayPool) -> None:
+        self._writer, self._reader = writer, reader
+
+    def close(self) -> None:
+        try:
+            self._reader.close()
+        finally:
+            self._writer.close()
 
 
 def _build_control(
@@ -88,7 +114,7 @@ def _build_control(
     ExecutionQueryService,
     InstanceDrainService,
     ProcessIngressOwnership,
-    GatewayPool,
+    _ControlPools,
     RecoveryWorker | None,
     GatewayIngress,
     PostgresSubmissionLedger,
@@ -97,10 +123,14 @@ def _build_control(
     directory = settings.ingress_lock_directory
     if directory is None:
         raise ValueError("execution control requires a host lock directory")
+    query_url = settings.control_query_database_url
+    if query_url is None:
+        raise ValueError("execution control requires an independent query database credential")
     ownership = ProcessIngressOwnership(
         directory, node_id=settings.node_id, gateway_id=settings.gateway_id
     )
     pool = None
+    query_pool = None
     try:
         pool = gateway_pool(
             settings.control_database_url.get_secret_value(), schema=settings.control_schema
@@ -111,7 +141,21 @@ def _build_control(
             pool, timeout_seconds=settings.control_timeout_seconds, enforce_binding_barrier=True
         )
         ledger.durable_abort_enabled = verify_abort_authority(pool, settings.control_schema)
-        queries = ExecutionQueryService(ingress=ingress, ledger=ledger)
+        query_pool = gateway_pool(query_url.get_secret_value(), schema=settings.control_schema)
+        query_pool.open()
+        if not verify_execution_reader_authority(query_pool, settings.control_schema):
+            raise ValueError("invalid execution query reader authority")
+        query_target = verify_execution_reader_target(pool, query_pool, settings.control_schema)
+        if query_target is None:
+            raise ValueError("invalid execution query reader target")
+        queries = ExecutionQueryService(
+            ingress=ingress,
+            ledger=PostgresExecutionReader(
+                query_pool,
+                timeout_seconds=settings.control_timeout_seconds,
+                expected_target=query_target,
+            ),
+        )
         worker = (
             None
             if configuration is None
@@ -132,15 +176,19 @@ def _build_control(
             queries,
             InstanceDrainService(ingress=ingress, ledger=ledger),
             ownership,
-            pool,
+            _ControlPools(pool, query_pool),
             worker,
             ingress,
             ledger,
         )
     except BaseException:
         try:
-            if pool is not None:
-                pool.close()
+            try:
+                if query_pool is not None:
+                    query_pool.close()
+            finally:
+                if pool is not None:
+                    pool.close()
         finally:
             ownership.close()
         raise
@@ -148,7 +196,7 @@ def _build_control(
 
 def _close_control(
     worker: RecoveryWorker | None,
-    pool: GatewayPool,
+    pool: GatewayPool | _ControlPools,
     ownership: ProcessIngressOwnership,
     file_execution: FileExecutionRuntime | None = None,
 ) -> None:
@@ -180,7 +228,7 @@ async def _join_lifecycle_call[T](call: Callable[[], T]) -> tuple[T, bool]:
 
 async def _finish_control(
     worker: RecoveryWorker | None,
-    pool: GatewayPool,
+    pool: GatewayPool | _ControlPools,
     ownership: ProcessIngressOwnership,
     file_execution: FileExecutionRuntime | None = None,
 ) -> None:

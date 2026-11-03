@@ -9,6 +9,7 @@ export type Contracts = Pick<
   | "SubmitExecutionRequest"
   | "SubmitExecutionResponse"
   | "ExecutionStatusResponse"
+  | "ExecutionRecoveryStatusResponse"
   | "AbortExecutionRequest"
   | "GatewayFencingBarrierRequest"
   | "GatewayFencingBarrierResponse"

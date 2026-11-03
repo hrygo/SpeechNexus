@@ -18,9 +18,8 @@ from speechnexus_gateway.domain.ports import (
     EngineAbortPort,
     ExecutionFactLedger,
 )
-from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
+from speechnexus_gateway.domain.recovery import ExecutionSnapshot
 from speechnexus_gateway.domain.submission import (
-    ExecutionErrorCode,
     ExecutionState,
     InvalidExecutionRequestError,
     RecordStop,
@@ -49,17 +48,16 @@ class ExecutionAbortService:
 
     def abort(self, request: AbortExecutionRequest) -> ExecutionSnapshot | None:
         """Return the recorded state after one bounded abort attempt, or None if unknown here."""
-        return self._abort_request(request, durable=False)
+        return self._abort_request(request)
 
     def abort_idempotent(self, request: AbortExecutionRequest) -> ExecutionSnapshot | None:
         """Accept an original abort receipt before claiming one external dispatch."""
+        return self._abort_request(request)
+
+    def _abort_request(self, request: AbortExecutionRequest) -> ExecutionSnapshot | None:
         if not self._durable_abort_enabled or not isinstance(self._ledger, DurableAbortLedger):
             raise SubmissionStoreUnavailableError("durable abort authority is unavailable")
-        return self._abort_request(request, durable=True)
-
-    def _abort_request(
-        self, request: AbortExecutionRequest, *, durable: bool
-    ) -> ExecutionSnapshot | None:
+        ledger = self._ledger
         self._ingress.check_ownership()
         intent = self._ledger.get(request.submit_intent_id)
         if intent is None or (
@@ -78,22 +76,29 @@ class ExecutionAbortService:
             raise StaleFencingTokenError(
                 "abort carries another fencing token than the recorded execution"
             )
+        # Receive in its own committed transaction before waiting for a local sender.
+        # Any rollback or unknown commit result must propagate without a claim or send.
+        ledger.receive_abort(request)
         with self._ingress.abort_dispatch(identity):
             current = self._ledger.get(request.submit_intent_id)
-            if current is None or current.identity != identity:
+            if (
+                current is None
+                or current.identity != identity
+                or current.request_digest != intent.request_digest
+            ):
                 raise InvalidExecutionRequestError("execution identity changed during abort")
-            if durable:
-                if not isinstance(self._ledger, DurableAbortLedger):
-                    raise SubmissionStoreUnavailableError("durable abort authority is unavailable")
-                self._ledger.receive_abort(request)
-                claimed = self._ledger.claim_abort(request)
-            else:
-                claimed = None if current.execution_state.is_terminal else current
+            claimed = ledger.claim_abort(request)
             if claimed is None:
                 current = self._ledger.get(request.submit_intent_id)
-                if current is None or current.identity != identity:
+                if (
+                    current is None
+                    or current.identity != identity
+                    or current.request_digest != intent.request_digest
+                ):
                     raise InvalidExecutionRequestError("execution identity changed during abort")
                 return ExecutionSnapshot(current)
+            if claimed.identity != identity or claimed.request_digest != intent.request_digest:
+                raise InvalidExecutionRequestError("execution identity changed during abort claim")
             outcome = self._abort.abort(
                 claimed, reason=request.reason, wait_timeout_ms=request.wait_timeout_ms
             )
@@ -103,14 +108,4 @@ class ExecutionAbortService:
                     raise InvalidExecutionRequestError("stop evidence belongs to another execution")
                 stopped = self._ledger.record_stop(RecordStop(evidence, ExecutionState.ABORTED))
                 return ExecutionSnapshot(stopped)
-            if durable:
-                return ExecutionSnapshot(claimed)
-            observed_at = max(outcome.observed_at, claimed.updated_at)
-            quarantined = self._ledger.mark_execution_unknown(
-                MarkExecutionUnknown.for_intent(
-                    claimed,
-                    reason_code=ExecutionErrorCode.CANCELLATION_UNCONFIRMED,
-                    at=observed_at,
-                )
-            )
-            return ExecutionSnapshot(quarantined)
+            return ExecutionSnapshot(claimed)

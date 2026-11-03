@@ -6,13 +6,16 @@ import psycopg
 
 
 class PostgresReadinessProbe:
-    def __init__(self, dsn: str, *, timeout_seconds: float) -> None:
+    def __init__(
+        self, dsn: str, *, timeout_seconds: float, name: str = "control_postgresql"
+    ) -> None:
         self._dsn = dsn
         self._timeout_seconds = timeout_seconds
+        self._name = name
 
     @property
     def name(self) -> str:
-        return "control_postgresql"
+        return self._name
 
     async def check(self) -> None:
         connection = await psycopg.AsyncConnection.connect(

@@ -20,6 +20,7 @@ from speechnexus_gateway.application.instance_drain import InstanceDrainService
 from speechnexus_gateway.application.query_execution import ExecutionQueryService
 from speechnexus_gateway.application.readiness import ReadinessService
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
+from speechnexus_gateway.domain.abort_intent import AbortExecutionRequest
 from speechnexus_gateway.domain.canonical import JsonValue, command_digest
 from speechnexus_gateway.domain.ports import AbortOutcome, DispatchOutcome
 from speechnexus_gateway.domain.recovery import observed_at_microseconds
@@ -29,6 +30,8 @@ from speechnexus_gateway.domain.submission import (
     ExecutionState,
     RecordStop,
     StopEvidenceKind,
+    SubmissionOutcomeUnknownError,
+    SubmissionStoreUnavailableError,
     VerifiedStopEvidence,
     derived_output_stream_id,
 )
@@ -47,6 +50,7 @@ TOKEN = "synthetic-gateway-component-token"
 HEADERS = {"Authorization": f"Bearer {TOKEN}", "X-Request-ID": "synthetic-submit-http"}
 SUBMIT_PATH = "/internal/v1/executions/submit"
 ABORT_PATH = "/internal/v1/executions/{submit_intent_id}/abort"
+ABORT_INTENT_PATH = "/internal/v1/executions/{submit_intent_id}/abort-intents"
 
 
 def contract_command(index: int = 0) -> JsonValue:
@@ -120,7 +124,9 @@ def evidence_for(submit_intent_id: str = "intent-1") -> VerifiedStopEvidence:
 class Harness:
     """One app with real ingress, an in-memory ledger and scripted engine doubles."""
 
-    def __init__(self, tmp_path: Path, *, engine_adapter: bool = True) -> None:
+    def __init__(
+        self, tmp_path: Path, *, engine_adapter: bool = True, durable_abort_enabled: bool = True
+    ) -> None:
         self.ingress = fake_ingress(timeout_seconds=0.01)
         self.ledger = InMemorySubmissionLedger(now=lambda: NOW)
         self.engine = ScriptedEngine(now=lambda: NOW)
@@ -142,7 +148,11 @@ class Harness:
                 now=lambda: NOW,
             )
             services["abort_execution"] = ExecutionAbortService(
-                ingress=self.ingress, ledger=self.ledger, abort=self.abort, now=lambda: NOW
+                ingress=self.ingress,
+                ledger=self.ledger,
+                abort=self.abort,
+                now=lambda: NOW,
+                durable_abort_enabled=durable_abort_enabled,
             )
         self.app = create_app(
             settings=Settings(
@@ -253,6 +263,73 @@ async def test_without_an_engine_adapter_nothing_is_recorded(tmp_path: Path) -> 
         assert response.json()["error"]["retryable"] is True
     assert harness.ledger.get("intent-1") is None
     assert harness.engine.dispatch_count == 0
+
+
+@pytest.mark.parametrize("path", [ABORT_PATH, ABORT_INTENT_PATH])
+async def test_without_durable_abort_authority_http_fails_closed(tmp_path: Path, path: str) -> None:
+    harness = Harness(tmp_path, durable_abort_enabled=False)
+    assert (await post(harness.app, SUBMIT_PATH, submit_body())).status_code == 200
+
+    response = await post(harness.app, path.format(submit_intent_id="intent-1"), abort_body())
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "control_store_unavailable"
+    assert harness.abort.calls == [] and not harness.ledger._abort_claimed
+    assert not harness.ledger._abort_receipts
+    stored = harness.ledger.get("intent-1")
+    assert stored is not None and stored.execution_state is ExecutionState.EXECUTING
+
+
+@pytest.mark.parametrize("path", [ABORT_PATH, ABORT_INTENT_PATH])
+@pytest.mark.parametrize("outcome", ["rollback", "unknown"])
+async def test_receive_failure_http_never_claims_or_sends(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path: str, outcome: str
+) -> None:
+    harness = Harness(tmp_path)
+    assert (await post(harness.app, SUBMIT_PATH, submit_body())).status_code == 200
+    receive = harness.ledger.receive_abort
+
+    def failed_receive(request: AbortExecutionRequest) -> None:
+        if outcome == "unknown":
+            receive(request)  # The commit may have happened before its response was lost.
+            raise SubmissionOutcomeUnknownError("synthetic lost commit acknowledgement")
+        raise SubmissionStoreUnavailableError("synthetic confirmed rollback")
+
+    monkeypatch.setattr(harness.ledger, "receive_abort", failed_receive)
+    response = await post(harness.app, path.format(submit_intent_id="intent-1"), abort_body())
+
+    assert response.status_code == 503
+    error = response.json()["error"]
+    assert error["code"] == (
+        "control_outcome_unknown" if outcome == "unknown" else "control_store_unavailable"
+    )
+    assert error["recovery"] == ("query_original" if outcome == "unknown" else "retry_transaction")
+    assert harness.abort.calls == [] and not harness.ledger._abort_claimed
+    assert ("intent-1" in harness.ledger._abort_receipts) == (outcome == "unknown")
+    stored = harness.ledger.get("intent-1")
+    assert stored is not None and stored.execution_state is ExecutionState.EXECUTING
+
+    monkeypatch.setattr(harness.ledger, "receive_abort", receive)
+    replay = await post(harness.app, path.format(submit_intent_id="intent-1"), abort_body())
+    assert replay.status_code == 200
+    assert harness.abort.calls == [("intent-1", "client_cancelled", 1000)]
+
+
+async def test_abort_routes_share_original_replay_and_reject_changed_intent(tmp_path: Path) -> None:
+    harness = Harness(tmp_path)
+    assert (await post(harness.app, SUBMIT_PATH, submit_body())).status_code == 200
+    path = ABORT_PATH.format(submit_intent_id="intent-1")
+    replay_path = ABORT_INTENT_PATH.format(submit_intent_id="intent-1")
+
+    first = await post(harness.app, path, abort_body())
+    replay = await post(harness.app, replay_path, abort_body())
+    assert first.status_code == replay.status_code == 200
+    assert first.json() == replay.json()
+    for body in (abort_body(reason="deadline_exceeded"), abort_body(wait_timeout_ms=2000)):
+        conflict = await post(harness.app, replay_path, body)
+        assert conflict.status_code == 409
+        assert conflict.json()["error"]["code"] == "control_state_conflict"
+    assert harness.abort.calls == [("intent-1", "client_cancelled", 1000)]
 
 
 async def test_a_pcm_stage_names_one_stable_stream_for_the_whole_attempt(tmp_path: Path) -> None:

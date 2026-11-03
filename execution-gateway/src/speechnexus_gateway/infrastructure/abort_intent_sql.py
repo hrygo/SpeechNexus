@@ -9,11 +9,14 @@ from speechnexus_gateway.domain.recovery import (
     MarkExecutionUnknown,
 )
 from speechnexus_gateway.domain.submission import (
+    MAX_ORIGINAL_COMMAND_BYTES,
     ExecutionErrorCode,
     ExecutionState,
     InvalidExecutionRequestError,
     SubmissionIntent,
 )
+from speechnexus_gateway.infrastructure.original_command_sql import read_original_request
+from speechnexus_gateway.infrastructure.original_command_state import read_original_document_state
 from speechnexus_gateway.infrastructure.recovery_sql import mark_execution_unknown_in_transaction
 from speechnexus_gateway.infrastructure.submit_sql import (
     SubmitCursor,
@@ -63,8 +66,12 @@ def receive_abort(
 ) -> None:
     intent = lock_submit_intent(cursor, request.submit_intent_id)
     _check(intent, request)
+    # Check the original abort intent first. A receipt can survive legal content
+    # deletion; its replay may use a validated tombstone, but a new receipt may not.
     if _receipt(cursor, request) is not None:
+        read_original_document_state(cursor, intent)
         return
+    read_original_request(cursor, intent, max_document_bytes=MAX_ORIGINAL_COMMAND_BYTES)
     cursor.execute(
         "INSERT INTO gateway_abort_intents (submit_intent_id, operation_id, attempt_id, "
         "fencing_token, reason, wait_timeout_ms, received_at_us) VALUES (%s,%s,%s,%s,%s,%s,%s)",

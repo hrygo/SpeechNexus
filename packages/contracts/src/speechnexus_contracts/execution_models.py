@@ -198,6 +198,23 @@ class OutputWatermark(TypedDict):
     hard_output_ceiling_samples: int | None
 
 
+class AbortRecoveryReceipt1(TypedDict):
+    abort_request_digest: Sha256Digest
+    received_at: str
+    claim_state: Literal["received"]
+    claimed_at: None
+
+
+class AbortRecoveryReceipt2(TypedDict):
+    abort_request_digest: Sha256Digest
+    received_at: str
+    claim_state: Literal["claimed"]
+    claimed_at: str
+
+
+type AbortRecoveryReceipt = AbortRecoveryReceipt1 | AbortRecoveryReceipt2
+
+
 class AbortExecutionRequest(TypedDict):
     operation_id: Identifier
     attempt_id: Identifier
@@ -394,9 +411,46 @@ class ExecutionStatusResponse(TypedDict):
     updated_at: str
 
 
+class ExecutionAbortRecovery(TypedDict):
+    execution_request_digest: Sha256Digest
+    document_state: Literal["verified", "redacted"]
+    receipt: AbortRecoveryReceipt | None
+
+
 type ExternalInternalExecutionCommandSchemaJsonPronunciationEntry = (
     ExternalVoiceResourceSchemaJsonPronunciationEntry
 )
+
+
+class ExecutionRecoveryStatusResponse(TypedDict):
+    submit_intent_id: Identifier
+    lease_id: Identifier
+    operation_id: Identifier
+    attempt_id: Identifier
+    stage_id: Identifier
+    workspace_id: Identifier
+    pool_id: PoolId
+    host_node_id: Identifier
+    gateway_id: Identifier
+    instance_id: Identifier
+    instance_generation: int
+    binding_revision_id: Identifier
+    policy_revision_id: Identifier
+    voice_revision_id: Identifier | None
+    fencing_token: int
+    command_digest: Sha256Digest
+    deadline_at: str
+    dispatched_at: str | None
+    sample_rate_hz: Literal[16000, 24000, 48000] | None
+    engine_request_id: NotRequired[str | None]
+    execution_state: ExecutionState
+    cleanup_state: CleanupState
+    stop_evidence_kind: StopEvidenceKind
+    output_watermark: NotRequired[OutputWatermark | None]
+    staging_artifact_ref: NotRequired[ArtifactStorageReference | None]
+    error_code: NotRequired[ExecutionErrorCode | None]
+    updated_at: str
+    abort_recovery: ExecutionAbortRecovery
 
 
 class ExternalInternalExecutionCommandSchemaJsonResolvedResources(TypedDict):
@@ -558,6 +612,7 @@ type ExecutionContracts = (
     SubmitExecutionRequest
     | SubmitExecutionResponse
     | ExecutionStatusResponse
+    | ExecutionRecoveryStatusResponse
     | AbortExecutionRequest
     | GatewayFencingBarrierRequest
     | GatewayFencingBarrierResponse

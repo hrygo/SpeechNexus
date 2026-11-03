@@ -18,6 +18,8 @@ from speechnexus_gateway.interfaces.http.control_schemas import (
 )
 from speechnexus_gateway.interfaces.http.control_security import ComponentCredential
 
+_RECOVERY_MEDIA = "application/vnd.speechnexus.execution-recovery.v1+json"
+
 
 def _service(request: Request) -> ExecutionQueryService:
     service = request.app.state.execution_query
@@ -53,7 +55,15 @@ def create_execution_query_router(*, credential: ComponentCredential) -> APIRout
             "output watermark, and cleanup evidence"
         ),
         response_model=ExecutionStatus,
-        responses={200: {"headers": headers}, **errors},
+        responses={
+            200: {
+                "headers": headers,
+                "content": {
+                    _RECOVERY_MEDIA: {"schema": wire_schema("ExecutionRecoveryStatusResponse")}
+                },
+            },
+            **errors,
+        },
     )
     async def get_execution(
         submit_intent_id: Annotated[
@@ -61,6 +71,7 @@ def create_execution_query_router(*, credential: ComponentCredential) -> APIRout
             Path(pattern=r"^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$", min_length=3, max_length=128),
         ],
         service: Annotated[ExecutionQueryService, Depends(_service)],
+        accept: Annotated[str | None, Header(alias="Accept")] = None,
         _request_id: Annotated[
             str | None, Header(alias="X-Request-ID", min_length=1, max_length=128)
         ] = None,
@@ -70,7 +81,22 @@ def create_execution_query_router(*, credential: ComponentCredential) -> APIRout
             return control_response(
                 "control_execution_not_found", "No execution is recorded on this gateway.", 404
             )
-        return parse("ExecutionStatusResponse", snapshot.status())
+        value = snapshot.status()
+        if accept is not None and accept.strip().lower() == _RECOVERY_MEDIA:
+            if snapshot.abort_recovery is None:
+                return control_response(
+                    "control_store_unavailable",
+                    "Original recovery observation is unavailable.",
+                    503,
+                    "retry_transaction",
+                )
+            return JSONResponse(
+                parse("ExecutionRecoveryStatusResponse", value),
+                media_type=_RECOVERY_MEDIA,
+                headers={"Vary": "Accept"},
+            )
+        value.pop("abort_recovery", None)
+        return JSONResponse(parse("ExecutionStatusResponse", value), headers={"Vary": "Accept"})
 
     @router.get(
         "/internal/v1/executions/{submit_intent_id}/staging-result",

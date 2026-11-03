@@ -30,6 +30,8 @@ from tests.integration.test_gateway_recovery import Ledger
 from tests.integration.test_gateway_stop_evidence import counters, new_pool
 from tests.integration.test_gateway_submit_ledger import identity_for
 from tests.integration.test_production_jobs import database as database
+from tests.support.execution_reader_database import ReaderFoundation
+from tests.support.execution_reader_database import reader_foundation as reader_foundation
 from tests.support.gateway_database import MySQLSubmissionLedger
 from tests.unit.gateway.test_file_asr_command import CapturingRecognizer
 
@@ -158,7 +160,9 @@ async def receipt(client: httpx.AsyncClient) -> dict[str, Any]:
             await asyncio.sleep(0.01)
 
 
-def worker_settings(foundation: Foundation, request: SubmitRequest, tmp_path: Path) -> Settings:
+def worker_settings(
+    foundation: Foundation, request: SubmitRequest, tmp_path: Path, query_database_url: SecretStr
+) -> Settings:
     locks = tmp_path / "ingress"
     locks.mkdir(mode=0o700)
     return Settings(
@@ -169,6 +173,7 @@ def worker_settings(foundation: Foundation, request: SubmitRequest, tmp_path: Pa
                 password="synthetic_foundation_test",
             )
         ),
+        control_query_database_url=query_database_url,
         control_schema=foundation.database.schema,
         node_id=request.identity.host_node_id,
         gateway_id=request.identity.gateway_id,
@@ -177,17 +182,17 @@ def worker_settings(foundation: Foundation, request: SubmitRequest, tmp_path: Pa
     )
 
 
-@pytest.mark.parametrize("database", ["postgresql"], indirect=True)
 async def test_owned_http_submit_runs_once_persists_result_and_restart_never_reruns(
-    foundation: Foundation,
+    reader_foundation: ReaderFoundation,
     object_store: tuple[MinioExecutionInputs, Minio, str],
     tmp_path: Path,
 ) -> None:
+    foundation = reader_foundation.foundation
     inputs, admin, bucket = object_store
     request = await asyncio.to_thread(original, foundation, admin, bucket)
     recognizer = CapturingRecognizer()
     build = factory(inputs, bucket, request, recognizer)
-    settings = worker_settings(foundation, request, tmp_path)
+    settings = worker_settings(foundation, request, tmp_path, reader_foundation.query_database_url)
     before = await asyncio.to_thread(counters, foundation)
     headers = {"Authorization": "Bearer " + TOKEN}
     app = create_app(settings=settings, file_execution_factory=build)
@@ -267,20 +272,20 @@ async def test_owned_http_submit_runs_once_persists_result_and_restart_never_rer
     assert len(await asyncio.to_thread(stored_versions)) == 1
 
 
-@pytest.mark.parametrize("database", ["postgresql"], indirect=True)
 @pytest.mark.parametrize("phase", ["acceptance", "result"])
 async def test_worker_recovers_actual_commits_after_lost_ack_without_repeating_work(
-    foundation: Foundation,
+    reader_foundation: ReaderFoundation,
     object_store: tuple[MinioExecutionInputs, Minio, str],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     phase: str,
 ) -> None:
+    foundation = reader_foundation.foundation
     inputs, admin, bucket = object_store
     request = await asyncio.to_thread(original, foundation, admin, bucket)
     recognizer = CapturingRecognizer()
     build = factory(inputs, bucket, request, recognizer)
-    settings = worker_settings(foundation, request, tmp_path)
+    settings = worker_settings(foundation, request, tmp_path, reader_foundation.query_database_url)
     fault_finished = Event()
     lost_commits = 0
 

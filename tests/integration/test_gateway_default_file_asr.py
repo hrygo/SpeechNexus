@@ -13,12 +13,11 @@ from minio import Minio
 from pydantic import SecretStr
 from tests.fake.file_asr_configuration import write_configuration
 from tests.fake.vad import ScriptedVadModel
-from tests.integration.test_coordination_foundation import Foundation
-from tests.integration.test_coordination_foundation import foundation as foundation
 from tests.integration.test_gateway_file_worker import TOKEN, original, receipt, worker_settings
 from tests.integration.test_gateway_frozen_inputs import object_store as object_store
 from tests.integration.test_gateway_stop_evidence import counters
-from tests.integration.test_production_jobs import database as database
+from tests.support.execution_reader_database import ReaderFoundation
+from tests.support.execution_reader_database import reader_foundation as reader_foundation
 from tests.unit.gateway.test_vllm_asr import response_bytes
 
 from speechnexus_gateway.app import create_app
@@ -33,15 +32,15 @@ from speechnexus_gateway.settings import Settings
 pytestmark = pytest.mark.integration
 
 
-@pytest.mark.parametrize("database", ["postgresql"], indirect=True)
 @pytest.mark.parametrize("speech", [True, False])
 async def test_default_entrypoint_consumes_original_command_and_never_reruns_after_restart(
-    foundation: Foundation,
+    reader_foundation: ReaderFoundation,
     object_store: tuple[MinioExecutionInputs, Minio, str],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     speech: bool,
 ) -> None:
+    foundation = reader_foundation.foundation
     inputs, admin, bucket = object_store
     request = await asyncio.to_thread(original, foundation, admin, bucket)
     intent_id = request.identity.submit_intent_id
@@ -101,7 +100,9 @@ async def test_default_entrypoint_consumes_original_command_and_never_reruns_aft
         )
         settings = Settings(
             **(
-                worker_settings(foundation, request, tmp_path).model_dump()
+                worker_settings(
+                    foundation, request, tmp_path, reader_foundation.query_database_url
+                ).model_dump()
                 | {
                     "file_asr_config_file": path,
                     "file_asr_object_access_key": SecretStr(

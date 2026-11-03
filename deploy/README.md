@@ -105,6 +105,10 @@ service endpoint or implicit migration-owner runtime identity:
 
 - `SPEECHNEXUS_DATABASE_URL` comes from `SPEECHNEXUS_API_DATABASE_URL`;
 - `SPEECHNEXUS_GATEWAY_CONTROL_DATABASE_URL` must name the non-owner gateway role;
+- `SPEECHNEXUS_GATEWAY_CONTROL_QUERY_DATABASE_URL` must name a separately provisioned,
+  non-owner reader with only `gateway_query_grants` column privileges. The default
+  control lifespan refuses missing or unsafe authority; it never reuses the writer
+  credential. Each original-execution GET uses one repeatable-read, read-only snapshot;
 - registration and migration use separate one-shot DSNs;
 - file-ASR/file-TTS credentials and configuration are always supplied together;
 - private files must be owner-only regular files under the mounted private path.

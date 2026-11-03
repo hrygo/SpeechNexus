@@ -127,7 +127,9 @@ def configured(
         observation=worker,
         committed_execution=worker,
     )
-    abort = ExecutionAbortService(ingress=ingress, ledger=ledger, abort=worker)
+    abort = ExecutionAbortService(
+        ingress=ingress, ledger=ledger, abort=worker, durable_abort_enabled=True
+    )
     try:
         yield ledger, pipeline, results, worker, submit, abort, ingress
     finally:
@@ -407,7 +409,13 @@ async def test_cancel_keeps_local_slot_until_database_writer_finishes() -> None:
                         100,
                     )
                 )
-            await wait_for(lambda: ticket.task is not None and ticket.task.cancelling() == 2)
+            # Observe the loop after both calls: replay cannot enqueue a second cancel.
+            processed = threading.Event()
+            loop = worker._loop
+            assert loop is not None
+            loop.call_soon_threadsafe(processed.set)
+            assert await asyncio.to_thread(processed.wait, 2)
+            assert ticket.task is not None and ticket.task.cancelling() == 1
             assert ticket.task is not None and not ticket.task.done()
             assert worker.dispatch(next_request).result is DispatchResult.NOT_SENT
             assert not ledger.finished.is_set()

@@ -110,7 +110,7 @@
 | `docs/components/workbench-voice-catalogue.md` | 已核对 | 逐节静态对照公开契约、适配器、运行配置及 Web 消费者；未运行服务 |
 | `docs/components/zero-dispatch-contract-core.md` | 已核对 | 对照候选 schema、身份引用、状态转换、恢复分类、测试定义与当前取消路径；历史交接字节证据未重验 |
 | `docs/decisions/0001-product-boundaries-and-authentication-scope.md` | 已核对 | 逐项对照当前 PRD 与产品架构的底座、工作台、身份和硬件边界；ADR 限定产品决定，不代表实现或部署已验收 |
-| `docs/decisions/0002-speech-models-engines-and-loading.md` | 部分核对 | 全文阅读并对照产品架构与资格边界，明确首个硬件验证目标的历史时点；模型运行资格仍需按目标部署取证 |
+| `docs/decisions/0002-speech-models-engines-and-loading.md` | 已核对 | 对照产品架构的模型分工、加载治理和 PRD 首轮性能口径；历史选型来源未重验，目标部署资格另行取证 |
 | `docs/decisions/0003-workbench-llm-network-boundary.md` | 已核对 | 逐项对照 PRD、产品架构和技术方案的默认关闭、内容网络与资源边界，并抽核配置和 HTTP 投影；未实测部署出站限制 |
 | `docs/decisions/0004-cluster-ready-architecture-and-single-node-mvp.md` | 已核对 | 对照产品要求、后续协调与部署决定及资源预算边界；限定历史表名和高可用示意，未验证目标部署 |
 | `docs/decisions/0005-complete-execution-and-data-lifecycle-contracts.md` | 已核对 | 对照执行与删除设计、同步错误契约、SDK 测试定义和内部停止恢复契约；修正 409 恢复范围，历史验证未重跑 |

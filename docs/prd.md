@@ -293,7 +293,7 @@
 
 **验收：**
 
-- 服务端验证权威删除 Job 与依赖，不把请求 job ID/digest 当授权；pool→lease→submit 锁下重查身份、清理终态和 lease release，正文与不可变 tombstone 原子提交。
+- 服务端验证权威删除意图及依赖，不把内部 `deletion_job_id` / digest 当授权；pool→lease→submit 锁下重查身份、清理终态和 lease release，正文与不可变 tombstone 原子提交。
 - 真实消费者验证 redact 许可、版本和 tombstone，保留最小协调、计量和停止事实；单请求停止与整代停止分别取证。
 
 设计依据：[runtime-governance.md](architecture/runtime-governance.md)、[technical-blueprint.md](architecture/technical-blueprint.md)。

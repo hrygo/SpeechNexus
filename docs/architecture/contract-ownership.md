@@ -15,10 +15,10 @@
 | ------------------------------------ | --------------------------- | --------------------------------- | ------------------------------------------------- |
 | speech OpenAPI                       | A                           | C 工作台后端/Web、MCP；A 公共接口 | 契约包及部分公开路由已有；完整异步和实时链分别验收 |
 | admin OpenAPI                        | A；B 提供实例/资格事实      | C 管理界面                        | 契约与生成消费者、部分管理路由已有；其余生产联调分别验收 |
-| workbench OpenAPI                    | C                           | C Web/MCP                         | JSON/HTTP入口与样例已交付（#73/#75/#77）；真实消费者待验收 |
+| workbench OpenAPI                    | C                           | C Web/MCP                         | JSON/HTTP 入口与部分正式 Web 消费者已有；各业务链及目标部署分别验收 |
 | realtime events                      | A；B 提供执行流事实         | C 浏览器/A 实时入口               | 公开session/事件parser与时序输入已交付（#79）；真实时序/WS待验收 |
-| execution control / stream / command | B；A 编排调用方             | A Scheduler/Worker/实时服务       | 源契约；生产联调待补                              |
-| runtime control                      | B 控制器；A 生命周期编排    | A/B                               | 源契约；生产联调待补                              |
+| execution control / stream / command | B；A 编排调用方             | A Scheduler/Worker/实时服务       | 契约与部分生产装配已有；完整调度和实时链分别验收 |
+| runtime control                      | B 控制器；A 生命周期编排    | A/B                               | 契约、固定节点客户端与持久投递已有；完整调度及目标部署待验收 |
 | coordination transactions            | A speech/runtime；B gateway | 各自 application 与 adapter       | 下表冻结归属；生产事务分别实施                    |
 
 公共契约、生成器、锁文件和 CI 由 A 串行集成。C 不导入 speech 内部模块，也不共写
@@ -77,8 +77,8 @@ B 无该表权限，私有投递端口不扩充共享18端口；见[持久投递
 | interval       | FactSnapshot      | B     |
 | runtime_intent | RuntimeSnapshot   | A     |
 
-unknown 只能查询原身份或协调，不能新建执行普通重试。B 的区间账本由 A 消费用于
-配额与结算。取消请求、TTL 和断线不是停止/释放证据。完整锁序、跨表裁决及最低
+unknown 只能查询原身份或协调，不能新建执行普通重试。B 的区间账本是 A 配额与结算
+应消费的生成事实；完整用量消费链仍待联调。取消请求、TTL 和断线不是停止/释放证据。完整锁序、跨表裁决及最低
 证据要求仍以[协调事务设计](coordination-transactions.md)为准。
 
 [租约隔离与释放事务](../components/production-leases.md)提供 A 的 quarantine_lease、release_lease 与只读 LeaseSnapshot

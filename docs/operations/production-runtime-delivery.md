@@ -82,6 +82,8 @@ CURRENT_USER，拒绝 superuser、schema CREATE 及数据库/表 owner 的角色
 
 ## 验证与剩余依赖
 
+仓库测试入口包括 [PG/InnoDB 投递事务](../../tests/integration/test_runtime_delivery.py)、[提交回执丢失](../../tests/integration/test_runtime_delivery_commit_loss.py)、[迁移](../../tests/integration/test_runtime_delivery_migration.py) 和 [原生控制器 TLS 与 worker 进程](../../tests/integration/test_runtime_delivery_tls.py)。测试代码覆盖这些场景，不代表当前环境已运行或目标部署通过；执行集成测试须使用隔离环境。
+
 共享 PG/InnoDB 测试覆盖新建原子性、并发认领、接管/旧票据拒绝、实际锁等待过期、
 最小角色、真实提交后丢失回执；实际 PG 升级验证 DDL/版本回滚和旧记录/ACL 保留。
 原生 B/SQLite 与真实回环 TLS 验证正常 POST ACK、接受后丢失响应只 GET、旧事件404不补发，

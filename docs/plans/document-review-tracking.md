@@ -151,7 +151,7 @@
 | `docs/operations/paperclip/runtime-incidents.md` | 部分核对 | 全文阅读并修正旧保全脚本及删除检查的适用边界；历史事故原件未核验 |
 | `docs/operations/paperclip.md` | 部分核对 | 核对现行工作流入口及历史环境边界；岗位、配置与平台映射尚未逐项核实 |
 | `docs/operations/production-coordination-storage.md` | 部分核对 | 核对 0002 迁移、head、基础 DDL 和授权生成器，补充释放守卫视图；全部字段与测试证据待核对 |
-| `docs/operations/production-runtime-delivery.md` | 部分核对 | 核对配置默认值与范围、租约、unknown 路径、0008 迁移、最小授权、ACK 事务及 Compose 未装配事实；测试覆盖细节待核对 |
+| `docs/operations/production-runtime-delivery.md` | 已核对 | 对照配置、租约、unknown 路径、迁移、授权、ACK、Compose 及测试入口；未执行集成测试或验证目标部署 |
 | `docs/operations/publish-binding-revision.md` | 部分核对 | 全文阅读并核对 CLI 观察、退出分类、发布意图与部分授权；事务全部分支及数据库实测待核对 |
 | `docs/operations/qualification-report.md` | 部分核对 | 核对示例命令、场景状态、有效期及 limitations 校验边界，澄清报告本身不代表通过；其余内容待核对 |
 | `docs/operations/reconciliation-recovery.md` | 部分核对 | 核对 abort 恢复查询、unknown 停止证据规则及查询 2、3 所涉主要表字段与证据标志类型；修正资源释放与预算归还顺序及代码锚点描述；查询执行及其余内容待核对 |

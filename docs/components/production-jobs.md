@@ -116,10 +116,11 @@ worker 入口/进程角色及 `create_app` 之外的组合根。生产 `SubmitEx
 ### 结果发布语义（DEL-100）
 
 发布以 `job_id + kind` 确定性派生 `artifact_id`，以 `job_id` 确定性派生 `receipt_id`，
-对象键为 `private/artifacts/{workspace_id}/{artifact_id}`。每次发布先读取版本固定的
-staging 回执对象并核对长度/SHA-256，再写入版本化 Artifact 桶并回读校验，最后才在
-短事务中提交 `speech_artifacts` ready 行；对象 I/O 不在该事务内。重复发布先查既有
-行，命中即返回原 `artifact_id`/`receipt_id`，不重写对象。DB 提交失败时对象可保留；
+对象键为 `private/artifacts/{workspace_id}/{artifact_id}`。发布先查询既有 Artifact 行；
+命中时校验所属 workspace、类型、状态与 receipt 后返回原 `artifact_id`/`receipt_id`，
+不会重新读取 staging 或重写对象。没有既有行时，读取版本固定的 staging 对象并核对长度/SHA-256，
+再写入版本化 Artifact 桶并回读校验，最后才在短事务中提交 `speech_artifacts` ready 行；
+对象 I/O 不在该事务内。DB 提交失败时对象可保留；
 重试以同一对象键与内容复用既有版本，再提交同一行。对象已写入但 DB 未提交不返回成功。
 
 ### worker 入口与运行配置（DEL-98）

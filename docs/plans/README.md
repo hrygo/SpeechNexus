@@ -2,7 +2,7 @@
 
 当前主入口为 [PRD](../prd.md)、相关设计和[需求矩阵](delivery-tracking.md)；[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)下十个 MECE Epic 维护能力边界。
 [结构化关联源](delivery-issues.json)记录完整需求、设计、主责、实现/集成/验证事实、证据及可为空的实施关联。用 `python3 scripts/dev-env/refresh-implementation-tracker.py` 从 GitHub 只读刷新任务状态；需求和事实变化先更新 PRD 或关联源。具体实施 issue 由[按需规划技能](../../.agents/skills/speechnexus-next-delivery/SKILL.md)在需要时创建，每张直属唯一 Epic，不提前铺 backlog。
-用 `python3 scripts/dev-env/refresh-implementation-tracker.py` 只读刷新视图；远端失败保留旧输出，离线不作实时状态。
+远端刷新失败时保留旧输出，离线不作实时状态。
 
 以下带日期材料保留各自时点，仅在查证相关决定或证据时读取，不承担当前排期或派工。
 

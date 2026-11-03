@@ -41,7 +41,7 @@
 | [Paperclip 工作流与团队](operations/paperclip.md) | 当前项目经理与 A/B/C、QA、审查、证据岗位的协作、工作区、预算及交付约定 |
 | [预设声音资格与发布](operations/builtin-voice-qualification.md) | 独立审批、资格探测、不可变发布、精确准入与撤销；真实资格按具体窗口取证 |
 | [本地最小可运行装配](operations/local-end-to-end.md) | 指定历史基线的迁移、发布与执行记录；当时公开转写返回 504，worker 只登记 staging，120s 用于 API 轮询。后续已补成功终态驱动，原 504 不证明当前部署结果；11.2.2 的人工 `record_stop` 仅是历史测试路径 |
-| [agent 环境准备与验收](operations/paperclip/environment-readiness.md) | 三机工具链、隔离服务、Harness 与源码回传的实际证据、限制和启用门禁 |
+| [agent 环境准备与验收](operations/paperclip/environment-readiness.md) | 历史三机工具链、隔离服务和 Harness 准备快照；旧配置与启用门禁不代表当前状态 |
 | [三团队整体实施计划](plans/2026-10-23-three-team-delivery-plan.md)                                  | 历史规划：团队分工、任务依赖、原阶段关口、集成节奏与产能估算              |
 | [产品需求](prd.md) | 完整范围、十个 MECE 能力域、稳定需求与可观察验收条件 |
 | [需求与交付矩阵](plans/delivery-tracking.md) | 需求、设计、主 Epic、实现/集成/验证、缺口及证据；实施 issue 按需关联 |
@@ -64,7 +64,7 @@
 | [B03 真实文件 ASR 与首次长窗口开销](audits/2026-10-24-b03-file-asr-probe.md) | 0.6B/1.7B、真实录音、无语音零外发、真实截断负例与同片段重复测量 |
 | [B03 TTS 适配器真实探针](audits/2026-10-24-b03-tts-adapter-probe.md) | 1.7B CustomVoice 经适配器的 WAV/MP3 交付、24→16 kHz 解码与 0.6B ASR 回环、停止与清理证据 |
 | [设计审查记录](audits/2026-10-22-speechnexus-design-review.md)                                      | 已发现问题、修正裁决、来源核验、文档检查与未验证项                              |
-| [UI/UX 设计框架终审](audits/2026-10-23-ui-ux-design-framework-audit.md)                             | 多层次排版对比度审查、DTCG Token 资产、矢量品牌、响应式与 CI 拦截能力           |
+| [UI/UX 设计框架终审](audits/2026-10-23-ui-ux-design-framework-audit.md)                             | 历史设计与 CI 审查；报告中的绝对化无障碍和拦截评级超出所列证据 |
 | [开发与测试环境](development-environment.md)                                                        | Linux 参考开发环境、独立服务、初始化和隔离边界；宿主状态需实测                |
 | [开发环境就绪审查](audits/2026-10-22-development-environment-readiness.md)                          | 2026-10-22 的环境验证与隔离边界快照，不代表当前主机状态                     |
 | [架构决策](decisions/README.md)                                                                     | 已确认范围、决策原因和影响                                                      |

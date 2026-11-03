@@ -56,6 +56,9 @@ invalid_execution_request。业务输入内容只经私有命令传输，不写�
 公开资源版本与 command.resources 一致；外层 voice_revision_id 若非空必须与
 固定音色版本一致。生产 TTS 使用的非 built-in 音色须带已发布材料；built-in 由 binding
 固定实现。发布前的候选验证须固定候选 revision 与受控材料，不得将其视为已发布声音。
+当前 `voicevalidation` 命令 schema 要求 `resources.voice` 引用，但没有独立的
+`voice_draft_id` / `draft_revision` 字段；候选与验证任务的关联须由生产者及权威记录核验，
+不能仅凭该命令通过结构校验证明关联成立。
 schema 对 `custom` 要求非空材料引用，但结构校验不能证明材料已发布或获得使用许可；
 生产者和准入边界须核验适用版本与资格，当前文件 TTS 消费者仅支持配置的 builtin。
 `SubmitExecutionRequest` 的 schema 允许省略 `voice_revision_id`，但当前网关转换代码直接

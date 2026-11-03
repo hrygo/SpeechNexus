@@ -148,7 +148,7 @@
 | `docs/operations/paperclip/roles/qa.md` | 部分核对 | 全文对照项目约定及交付 SOP；实际部署和岗位权限未核实 |
 | `docs/operations/paperclip/roles/reviewer.md` | 部分核对 | 全文对照工作约定和交付 SOP；实际部署配置与运行权限未核实 |
 | `docs/operations/paperclip/roles/workbench.md` | 部分核对 | 全文对照项目约定及交付 SOP；实际部署和岗位权限未核实 |
-| `docs/operations/paperclip/runtime-incidents.md` | 部分核对 | 全文阅读并修正旧保全脚本及删除检查的适用边界；历史事故原件未核验 |
+| `docs/operations/paperclip/runtime-incidents.md` | 历史保留 | 历史故障、处置与后续证伪记录；已限定旧操作不构成当前授权，并指向现行交付 SOP；事故原件未逐项核验 |
 | `docs/operations/paperclip.md` | 部分核对 | 核对现行工作流入口及历史环境边界；岗位、配置与平台映射尚未逐项核实 |
 | `docs/operations/production-coordination-storage.md` | 部分核对 | 核对 0002 的 13 张新增表和 4 个查询索引、迁移 head、运行角色列级授权及释放守卫视图投影；跨表约束与其他生产事务细节待核对 |
 | `docs/operations/production-runtime-delivery.md` | 已核对 | 对照配置、租约、unknown 路径、迁移、授权、ACK、Compose 及测试入口；未执行集成测试或验证目标部署 |

@@ -139,6 +139,7 @@ Linux CPU 媒体组件可与算力组件同机，但要独立核算资源，不�
 | 已核对事实 | 能证明的范围与缺口 |
 | --- | --- |
 | [当前 Compose](../../deploy/compose.yaml)默认包含 PG、MinIO、对象存储初始化、Speech API 和 Gateway；两个 Web 容器及部分运维入口须显式启用 profile | 单节点 bootstrap；不含独立 Workbench API、Controller、完整后台角色或真实模型装配，也未提供同步 TTS API 配方及结算数据库配置，不能据此宣称公开 TTS 可用 |
+| Compose 的对象存储初始化、API 及网关文件执行配置复用 MinIO 根凭据 | 这是本地 bootstrap 配置，不证明生产对象存储最小权限；生产须分别配置并验证受限身份与授权 |
 | [Web 代理](../../deploy/web/nginx.conf)监听 HTTP `8080`，将 `/v1/`、`/v1/realtime` 和 `/v2/workbench/` 发往 `api:8000` | 此配置不终止 TLS，也未接入独立 Workbench runtime 或实时 owner 路由；部署需另行配置入口保护和各服务上游 |
 | [Backend 主入口](../../backend/src/speechnexus_backend/main.py)固定启动 Speech ASGI 工厂 | `process_role` 是身份声明；设置为另一个角色不会自动选择其服务入口 |
 | [Workbench 工厂](../../backend/src/speechnexus_backend/workbench/runtime.py)可单独启动，部分后台循环由其生命周期托管 | Workbench 后台尚无独立 worker 入口；其他职责的专用后台命令见第 1 节，不能据此认定 Workbench 后台已独立交付 |

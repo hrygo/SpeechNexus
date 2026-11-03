@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | `docs/README.md` | 部分核对 | 全文阅读并抽核相关实现或历史证据；其他细节待核对 |
 | `docs/agent-guide.md` | 部分核对 | 全文阅读并抽核相关实现或历史证据；其他细节待核对 |
-| `docs/agent-verification.md` | 部分核对 | 对照 Make 目标、验证脚本和工具链声明，补充 MySQL 同名容器副作用与 verify 未覆盖的检查；探针及其他检查细节待核对 |
+| `docs/agent-verification.md` | 部分核对 | 对照 Make 目标、验证脚本、工具链声明和 Workbench PG 探针清理路径，补充容器副作用、verify 覆盖限制及日志生成条件；其他检查细节待核对 |
 | `docs/architecture/README.md` | 已核对 | 逐项核对 23 个本地链接及职责描述；不代表所链接正文已审 |
 | `docs/architecture/contract-ownership.md` | 部分核对 | 已全文阅读并核对关键边界，其他细节仍待逐项核对 |
 | `docs/architecture/coordination-transactions.md` | 部分核对 | 局部对照代码、契约或历史证据；其余内容待核对 |

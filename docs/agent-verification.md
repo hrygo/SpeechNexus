@@ -51,8 +51,9 @@ HTTP、协调或实时结构变更检查；OpenAI 兼容检查仅在本地存在
 
 `workbench-pg-probe.py` 每次创建独立的 `.runtime/team-c/pg-*` 集群。默认在确认停库后删除
 该次的 `data/`，测试失败也按此规则清理；从未启动服务器的初始化失败会清理部分数据。
-`pytest.log`、`postgres.log`、覆盖率文件及生命周期 JSON 保留，报告用 `data_removed` 标明
-是否已确认完整清理。排障确实需要数据库时显式传 `--keep-data`，完成后清理该次保留的数据。
+已生成的 `pytest.log`、`postgres.log`、覆盖率文件及生命周期 JSON 保留；这些文件并非每次
+运行都会生成，例如测试子进程超时可能没有 `pytest.log`。报告用 `data_removed` 标明是否已
+确认完整清理。排障确实需要数据库时显式传 `--keep-data`，完成后清理该次保留的数据。
 启动失败、超时或中断时，后台启动可能继续；即使暂未观察到服务，也保留数据、记录
 `startup-unconfirmed` 并使探针失败。停库失败、状态查询失败或超时同样保留数据并使探针失败。
 报告中的 `shutdown_observed` 记录停库检查当时是否观察到无运行服务且无 PID 文件；未尝试

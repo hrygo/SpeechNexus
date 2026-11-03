@@ -76,13 +76,15 @@ speechnexus-register-engine \
 | `--engine-url` | 引擎 origin 或 `/health` URL；缺省读 `SPEECHNEXUS_ENGINE_HEALTH_URL` |
 | `--generation` | 实例 generation，必须为正整数且不得回退到 high water 以下 |
 | `--workspace` | 准入 workspace（默认 `workspace-default`） |
-| `--max-attempts` | 该 workspace 首次创建时的并发 attempt 上限；已有配额只能更大 |
+| `--max-attempts` | 该 workspace 首次创建时的并发 attempt 上限；已有上限必须大于或等于请求值，不会被该命令调大 |
 | `--owner-id` | 池 owner 身份；默认 `speechnexus-operator` |
 | `--fencing-token` | 可选；已有池必须与当前 token 一致，接管已过期 owner 时必须更大 |
 | `--owner-ttl-seconds` | 池 owner 租约，默认 86400 秒 |
 | `--readiness-ttl-seconds` | readiness 收据有效期，默认 86400 秒 |
 | `--intent-deadline-seconds` | 注册 prepare intent 的期限，默认 300 秒 |
 | `--intent-id` | 可选；缺省为 `register-<instance>-g<generation>` |
+| `--health-timeout-seconds` | 健康探测超时，默认 5 秒 |
+| `--transaction-timeout-seconds` | 数据库事务超时，默认 10 秒 |
 
 命令成功时输出 JSON，包含 `outcome`、实例身份、fencing token、readiness 摘要，以及
 `engine_instances` / `runtime_instance_heads` / `runtime_instance_intents` /
@@ -122,7 +124,7 @@ host 的 allocatable 向量不会被静默放大。
 
 - `host_nodes`：按 node 幂等插入；校验 architecture / topology，拒绝 quarantined，
   必要时把非 active 节点置为 active。
-- `resource_pools`：按 pool 幂等插入；校验 service class；同 owner 续租不换 token；
+- `resource_pools`：按 pool 幂等插入；校验 service class；同 owner 保留 token，租约剩余时间足够时不更新，否则续租；
   另一个存活 owner 直接 `pool_owner_conflict`；过期 owner 接管时 token 必须更大。
 - `workspace_quotas`：按 workspace 幂等插入；已有 policy revision 必须一致，
   已有上限不得更小。
@@ -143,13 +145,17 @@ generation 返回 `previous_generation_active`。
 
 ## 验证 SQL
 
+以下示例使用 `speech` schema；若注册时使用其他 schema，应替换为同一个经批准的 schema。
+
 ```sql
-SELECT * FROM engine_instances WHERE instance_id = '<instance>';
-SELECT * FROM runtime_instance_heads WHERE instance_id = '<instance>';
+SELECT instance_id, instance_generation, instance_state, base_budget_kind
+FROM speech.engine_instances WHERE instance_id = '<instance>';
+SELECT instance_id, current_generation, generation_high_water
+FROM speech.runtime_instance_heads WHERE instance_id = '<instance>';
 SELECT target_node_id, intent_id, intent_state,
        observation_document IS NOT NULL AS has_observation,
        readiness_document IS NOT NULL AS has_readiness
-FROM runtime_instance_intents
+FROM speech.runtime_instance_intents
 WHERE instance_id = '<instance>';
 ```
 

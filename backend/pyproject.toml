@@ -26,6 +26,8 @@ speechnexus-register-engine = "speechnexus_backend.engine_registration:main"
 speechnexus-asset-maintain = "speechnexus_backend.asset_worker:main"
 speechnexus-job-dispatch-worker = "speechnexus_backend.job_dispatch_worker:main"
 speechnexus-job-migrate = "speechnexus_backend.speech.infrastructure.migrate_jobs:main"
+speechnexus-publish-builtin-voice = "speechnexus_backend.publish_builtin_voice:main"
+speechnexus-revoke-builtin-voice = "speechnexus_backend.revoke_builtin_voice:main"
 speechnexus-publish-binding = "speechnexus_backend.publish_binding:main"
 speechnexus-backfill-binding-evidence = "speechnexus_backend.backfill_binding_evidence:main"
 

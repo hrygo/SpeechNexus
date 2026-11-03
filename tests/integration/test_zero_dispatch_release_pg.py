@@ -18,8 +18,10 @@ from sqlalchemy.pool import NullPool
 from tests.integration.test_binding_lifecycle_pg import Sandbox
 from tests.integration.test_binding_lifecycle_pg import sandbox as sandbox
 from tests.integration.test_coordination_foundation import Foundation, seed
+from tests.integration.test_coordination_foundation import foundation as foundation
 from tests.integration.test_lease_release import command, stopped
 from tests.integration.test_production_jobs import JobDatabase
+from tests.integration.test_production_jobs import database as database
 from tests.integration.test_production_leases import LEASE_ID, LeaseDatabase
 
 from speechnexus_backend.speech.domain.leases import LeaseRejectedError
@@ -323,9 +325,26 @@ def test_separate_disable_settlement_role_can_consume_only_the_presence_projecti
         db.query(f'DROP ROLE "{role}"')
 
 
+@pytest.mark.parametrize(
+    "database", [("postgresql", "0028_execution_release_guards")], indirect=True
+)
 def test_view_upgrade_and_downgrade_keep_source_history_and_existing_grants(
-    lease: LeaseDatabase,
+    foundation: Foundation,
 ) -> None:
+    pool = speech_pool(
+        make_conninfo(
+            foundation.database.url,
+            user=foundation.speech_role,
+            password="synthetic_foundation_test",
+        ),
+        schema=foundation.database.schema,
+    )
+    pool.open()
+    lease = LeaseDatabase(
+        foundation,
+        PostgresLeaseTransactions(pool),
+        pool,
+    )
     no_dispatch_failure(lease)
     db, before = lease.foundation.database, lease.snapshot()
     config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
@@ -343,8 +362,8 @@ def test_view_upgrade_and_downgrade_keep_source_history_and_existing_grants(
         assert lease.port.release_lease(command(lease)).error_code == "reconciliation_required"
         with engine.connect() as connection:
             config.attributes["connection"] = connection
-            migration.upgrade(config, "head")
-            migration.upgrade(config, "head")
+            migration.upgrade(config, "0028_execution_release_guards")
+            migration.upgrade(config, "0028_execution_release_guards")
         assert lease.snapshot() == before
         # A new view requires an explicit owner grant; startup never does this.
         assert lease.port.release_lease(command(lease)).error_code == "reconciliation_required"
@@ -352,4 +371,5 @@ def test_view_upgrade_and_downgrade_keep_source_history_and_existing_grants(
             db.query(grant)
         assert lease.port.release_lease(command(lease)).outcome == "committed"
     finally:
+        pool.close()
         engine.dispose()

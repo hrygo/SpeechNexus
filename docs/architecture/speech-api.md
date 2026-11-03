@@ -450,7 +450,7 @@ REST 的完整 input 在请求接受时一次性冻结，`audio_delivery` 只能
   "client_reference": "project:prj_demo",
   "profile": {"id": "caption-live", "revision": "1"},
   "modalities": ["asr"],
-  "models": {"asr": "asr-quality"},
+  "models": {"asr": {"id": "asr-quality", "revision": "1"}},
   "audio": {
     "input": {"encoding": "pcm_s16le", "sample_rate_hz": 24000, "channels": 1}
   },
@@ -472,7 +472,7 @@ REST 的完整 input 在请求接受时一次性冻结，`audio_delivery` 只能
   "workspace_id": "ws_demo",
   "profile": {"id": "speech-interactive", "revision": "1"},
   "modalities": ["tts"],
-  "models": {"tts": "tts-interactive"},
+  "models": {"tts": {"id": "tts-interactive", "revision": "1"}},
   "voice": {"id": "voice_demo", "revision": "3"},
   "audio": {
     "output": {"encoding": "pcm_s16le", "sample_rate_hz": 24000, "channels": 1}

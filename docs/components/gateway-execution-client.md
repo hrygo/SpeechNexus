@@ -37,7 +37,8 @@ command digest，不构造执行命令，不派发调度，也不释放预算。
 普通 `query` 返回的旧表示不能替代该恢复回执。`abort_idempotent` 和 `abort_tts` 使用
 持久 abort 入口，不回退旧 `/abort`；每次传输本身不自动重试。
 
-认证使用部署签发的组件凭据（Bearer），从 `Settings.execution_gateway_*` 读取；
+认证使用部署签发的组件凭据（Bearer）；应用工厂可通过 `Settings.execution_gateway_*` 构造，
+独立 worker 和恢复工具也可由各自配置显式传入；
 凭据、响应正文和对象内容不进入异常消息或日志。
 
 ## 错误分类
@@ -64,6 +65,8 @@ command digest，不构造执行命令，不派发调度，也不释放预算。
   命令规划器会先拒绝任何非空 `timestamp_granularities`，因此不能据此宣称词级请求可用。
   不得由适配器推断缺失事实。
 - 正式应用工厂在配置满足时装配客户端；单独构造客户端不证明实例、资格、真实引擎或公开请求成功，也不推断缺失字段。
+- 仓库中还由 Job dispatch、binding 停用、TTS 结算和恢复工具及声音资格探针分别装配；
+  这些独立入口各有配置与权限要求，是否启动由目标部署决定。
 
 ## 验证
 

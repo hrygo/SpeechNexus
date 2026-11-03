@@ -247,3 +247,39 @@ SDK 的真实 WAV 成功与后续验收失败须分别记录。关联工具把�
 后续先将关联工具纳入版本管理，按显式列名比较身份并覆盖 JSON 排序回读；关联未验完时
 先保留临时账本和对象供窗口内只读核实，仍须按原期限停止并清理。不得自动重发 SDK、
 自动追加 GPU 窗口，或通过放宽关联要求结束 Goal。
+
+## 第六次独立授权窗口：完整公开 SDK 关联通过
+
+用户明确批准一次证据补验；生产仍固定
+`67f894331a8116dedbb402c2509b968e18f551d2`，SDK 和正式只读关联工具统一固定
+`cb681f0570f8119d3fd46c6103cfece2210c38af`。模型 revision、Vivian、镜像、来源截止及
+12 GiB / 单实例 / 并发 1 / 最多两个顺序代次均不变。没有重发 SDK、下载模型或修改共享服务。
+
+| 检查 | 本轮实测 |
+| --- | --- |
+| 窗口（北京时间） | 2026-11-03 14:41:27.710631 至 14:47:26.660888，358.950 秒 |
+| CPU 预检 | 2002 个生产 Git blob 一致，两份正式工具摘要一致；控制器 healthz / readyz 均 200；可用 RAM 31.525 GiB |
+| 原生 g1 | 鉴权、完整 WAV、连接中断及同代可信停止通过；连接断开没有被当作释放证据 |
+| g2 正式公开链 | 持久 prepare/outbox、真实 READY、资格 probe、声音发布，唯一标准 OpenAI SDK 请求返回 200 |
+| SDK WAV | 96044 bytes、48000 frames、2000ms，PCM16 / 24000 Hz / mono；完整解码，在十秒上限内 |
+| WAV 摘要 | `sha256:5cd5fd994bb114af6c057622adf0a972259b5ccd76c1a344d83cd4ce217afc0f` |
+| 原对象 PCM = SDK PCM | `sha256:94b893c6b89742ef09ed763c942f0b353f3782b48db1d43d992714e9dba2f15c` |
+| 完整关联 | 官方 before/after 按显式列名唯一关联原请求、operation / attempt / lease / submit、完整有效命令、原网关 GET 回执和版本固定对象；提交在原 readiness 有效期内 |
+| 结算与重放 | probe 和 SDK 各一组执行，两个 lease 均 released / cleanup complete，settlement 已结算；原 lease 重放前后快照相等 |
+| 正常停止 | stop-create → submission_started → 原 stop POST → 原 GET ACK → 正式 observe；instance stopped / base released，host 十二维、slots、quota 全零 |
+| 清理 | 服务、容器和网络在 291.433 秒内清除；含整个远端目录在 358.950 秒内清除；18 个共享容器基线不变，无新增 worktree |
+
+[第六次窗口单份脱敏证据](evidence/2026-11-03-tts-window-6.json) 保存 26 份原始 JSON
+的解析内容、原字节摘要/大小/时间、日志与 helper 摘要以及最终目录清理回执。
+不保存音频、凭据、完整日志或备份目录。其 SHA-256 为
+`e5c274e86c2aac5a9870c078cbaae89795312f03dde4a8b83d920b9708cd3fd4`。
+
+证据中的七个 `missing` 是未生成的历史派生文件名，不能单独作为通过或失败依据：
+`preflight-final` / `profile-projection` 的所需来源与身份由 source-verification、profile-identities
+及原生请求/回执提供；`window-capability-replay` 未作为本轮新增检查，沿用既有定向验证；
+`window-original-lease-replay` 由实际 `final-counters-request-replay` 覆盖；
+`window-post-sdk-database` / `window-release-core` 由原始 before/after、released 快照及 stop 回执覆盖；
+`window-qualification-diagnostic` 属失败诊断，本轮资格与发布通过。没有伪造这些派生文件补空。
+
+第五次窗口的缺口仍保留原时点事实；完整关联仅由第六次新证据证明。
+本轮只验收固定声音、单节点、单实例、短英文同步最小链，不证明物理集群、持续性能或广泛音质资格。

@@ -1781,11 +1781,16 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/technical-blueprint.md"
       ],
-      "implementation": "需求基线；当前实现待核验。",
-      "integration": "实际组合根与消费者待核验。",
+      "implementation": "已有不可变 profile 草稿分配及固定版本读取；发布、激活与默认选择仍属后续工作。",
+      "integration": "草稿路由按配置装配 PostgreSQL 端口；创建事务只分配版本，不包含 Job 或 outbox。",
       "verification": "未取得当前真实部署验收证据。",
-      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "gap": "profile 发布、治理策略变更与 outbox 原子提交及完整执行域消费仍须逐项核实和验收。",
       "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/1dc13e42039c5ff7357761f23f8e337b60cb113d/docs/components/profile-drafts.md",
+          "label": "Profile 草稿",
+          "note": "固定版本组件说明；草稿分配不等于发布或治理策略接入。"
+        },
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
           "label": "产品与架构设计",

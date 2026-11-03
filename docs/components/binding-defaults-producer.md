@@ -121,10 +121,11 @@ HTTP module selects the existing producer validator for POST/snapshot GET and th
 existing legacy validator for the fixed parent GET; it maintains no wire copies.
 The operational component namespaces remain disjoint and all references resolve.
 
-Isolated PG tests exercise the actual four-table writer, lifecycle/role refusal,
+Isolated PG test cases cover the actual four-table writer, lifecycle/role refusal,
 old history, restart, replay/conflict, committed reply loss/read pressure, keyless
-uncertainty, cancellation, corrupt/missing facts and real TCP Python/TypeScript
-consumers. InnoDB storage behavior reuses the separate atomic-port evidence; it
+uncertainty, cancellation and corrupt/missing facts. The loopback TCP case uses
+Python HTTP requests with contract response validation and the generated TypeScript
+client. InnoDB storage behavior reuses the separate atomic-port evidence; it
 does not represent a supported product DB. Neither synthetic fixture values nor
 these API tests establish an engine's defaults, publication, quality or physical
 cluster qualification. Published registry/parameter resolution remain separate.

@@ -531,8 +531,10 @@ http=200
 "outcome": "registered"
 ```
 
-完全相同的重跑应返回 `"outcome": "already_ready"`。不要修改 generation 或 instance
-来“绕过”冲突；先核对旧 head、owner 和 readiness 证据。
+完全相同的重跑在健康检查通过、已有身份、owner 和 readiness 记录一致时返回
+`"outcome": "already_ready"`；若 readiness 已过期，命令会用本次健康探测刷新它并写入
+数据库。健康探测失败、存在停止意图或原证据不一致时仍可能失败。不要修改 generation 或
+instance 来“绕过”冲突；先核对旧 head、owner 和 readiness 证据。
 
 ## 9. 失败时先看什么
 

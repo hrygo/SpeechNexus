@@ -25,9 +25,9 @@
 - [原整体实施总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)：已迁移的历史 Epic/工作包/Gate 结构，不作为当前派工入口。
 - [2026-10-23 实施跟踪矩阵](2026-10-23-implementation-tracking.md)：历史快照；原规划及 #142/#149 的范围由新矩阵完整承接。显式选择[旧编排清单](2026-10-23-implementation-issues.json)才读取旧结构，不覆盖当前矩阵。
 - [2026-10-23 三团队整体实施计划](2026-10-23-three-team-delivery-plan.md)：三环境责任、25 个工作包及六阶段关口的历史规划；当前执行按新总控和矩阵。
-- [2026-10-23 agent 三队启动指令](2026-10-23-agent-team-startup-briefs.md)：可直接下发至云环境、MegaCube、MacBook 的首轮任务与统一交接模板。
+- [2026-10-23 agent 三队启动指令](2026-10-23-agent-team-startup-briefs.md)：历史启动与交接模板，保留原时点输入，不作为当前派工依据。
 - [2026-10-23 团队 A 执行目标](2026-10-23-team-a-goal.md)：A00–A07 的历史目标、KR 和完整范围；已转交新负责人重新安排，不再作为当前排期。
-- [2026-10-23 团队 B 执行目标](2026-10-23-team-b-goal.md)：B00–B07 的持续目标、MegaCube 环境与停止证据探针、网关/控制器首个单元与阻塞条件；应用 Goal 是否启用单独核验。
+- [2026-10-23 团队 B 执行目标](2026-10-23-team-b-goal.md)：B00–B07 原目标、范围与 AC，以及环境、停止探针和阻塞条件的历史来源；由新交付承接，不据此续开 Goal 或派工。
 - [2026-10-24 团队 C 执行目标](2026-10-24-team-c-goal.md)：C00–C08 的历史目标、原接力与完成条件，现已转为 superseded；[C00 版本单元交接](2026-10-24-team-c-c00-version-handoff.md)、[C00 生成请求消费交接](2026-10-24-team-c-c00-project-boundary-handoff.md)、[C00 元数据分页交接](2026-10-24-team-c-c00-listing-handoff.md)、[C00 PostgreSQL 事务交接](2026-10-24-team-c-c00-postgres-handoff.md)、[C00 删除事务交接](2026-10-24-team-c-c00-deletion-handoff.md)、[C01 Admin 任务中心交接](2026-10-24-team-c-c01-task-center-handoff.md)、[C02 文件任务与 A00 消费交接](2026-10-24-team-c-c02-file-flow-handoff.md)、[C02 原始转写导入交接](2026-10-24-team-c-c02-transcript-import-handoff.md)、[C04 合成播放交接](2026-10-24-team-c-c04-media-handoff.md)、[C04 浏览器采集交接](2026-10-24-team-c-c04-capture-handoff.md)记录本地实现与未验证项。
 - [2026-10-24 原命令与对象输入接入](2026-10-24-b03-frozen-inputs.md)：B01/B03 原持久命令、固定版本 MinIO 和现有文件消费者的输入接入边界。
 - [2026-10-25 持久文件执行接线](2026-10-25-b03-durable-file-runner.md)：提交后启动、原身份恢复、私有回执及后台生命周期；不替代真实引擎与公开业务链资格。

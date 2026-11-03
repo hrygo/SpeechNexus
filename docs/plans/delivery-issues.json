@@ -1729,11 +1729,21 @@
         "docs/architecture/technical-blueprint.md",
         "docs/components/workbench-export-integrity.md"
       ],
-      "implementation": "需求基线；当前实现待核验。",
-      "integration": "实际组合根与消费者待核验。",
+      "implementation": "工作台按服务端配置装配文本 LLM，默认关闭；启用须同时配置端点、模型和资格引用。",
+      "integration": "适配器校验数值回环或私有地址，非回环使用 HTTPS；调用不使用环境代理或重定向。",
       "verification": "未取得当前真实部署验收证据。",
-      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "gap": "固定依赖、共享算力预算与内容不出网仍需端到端验收；地址校验不证明部署网络已限制出站。",
       "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/workbench/runtime_settings.py",
+          "label": "工作台 LLM 配置",
+          "note": "服务端默认配置与完整性校验；不证明部署资格。"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/workbench/infrastructure/openai_text_llm.py",
+          "label": "文本 LLM 适配器",
+          "note": "端点与传输限制的静态实现；不证明部署网络隔离。"
+        },
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
           "label": "产品与架构设计",

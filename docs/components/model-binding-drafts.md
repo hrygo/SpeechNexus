@@ -262,8 +262,8 @@ The supported binding operations are now
 tombstone and clears the head without deleting the publication, evidence,
 revision or historical Jobs. Activation is the rollback path: it selects an
 already-published, non-retired revision with an explicit
-`expected_current_revision` compare-and-swap. `null` is accepted only after
-retirement cleared the head. A retired revision cannot itself be reactivated;
+`expected_current_revision` compare-and-swap. Use `null` when the current head is
+absent, including after retirement cleared it. A retired revision cannot itself be reactivated;
 roll back to another surviving published revision instead.
 
 A stale activation returns `409 configuration_changed`, `retryable: false`.

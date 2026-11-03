@@ -14,6 +14,8 @@
 
 `speechnexus-publish-builtin-voice` 必须读取事先存在的独立批准；验证固定检查、来源记录、binding 公开身份与数据库证据，并对提供的原文件调用 release 验证器。binding release 验证仅证明制品内容一致，不证明物理执行或授予音色资格。发布同一事务记录公开文档、私有 speaker 映射、publication、head 和完整 intent；原身份重放先于当前资格判断。已有 generic voice publication 不能补写资格冒充本入口。
 
+来源批准、撤销和发布入口对已分类的业务拒绝返回退出码 `4`；存储不可用或结果未知的已分类分支返回 `5`，须核对原目标并按原身份及全部原输入恢复。参数或配置错误通常返回 `2`。这些退出码不覆盖所有未捕获异常；特别是命令未明确报告成功时，不能仅凭非零退出认定事务没有提交，也不能换身份重试。
+
 `tests/integration/test_builtin_voice_qualification.py` 在隔离 PostgreSQL 上使用受限发布角色、合成 TTS 证据和真实 release 验证器，覆盖发布与原意图重放、审批写权限拒绝、证据篡改回滚，以及独立连接观察到的撤销锁等待。`test_builtin_voice_revocation.py` 验证受限 writer 的两类撤销、真正提交后模拟丢回执和原身份恢复。此范围不证明真实模型资格、提交后的实际传输丢包、双库、物理多机或正式消费者装配；producer 的实现与验证范围见下文。
 
 ## 资格探针准入

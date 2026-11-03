@@ -136,7 +136,7 @@
 | `docs/operations/compose-minimal.md` | 已核对 | 对照 Compose、迁移、角色授权、探针、注册及停用恢复路径；修正权限、失败边界和探针路径，未执行部署 |
 | `docs/operations/file-asr-binding-handoff.md` | 已核对 | 对照固定制品、绑定定义、离线工具、命令消费及交接测试，补充后续旧入口屏障联验证据及故障注入限制；未重跑实验或测试 |
 | `docs/operations/file-asr-runtime.md` | 已核对 | 对照配置、双 lane 共享限制、对象版本、worker 取消、结果恢复及停止联验；修正集成测试的停止证据描述，未运行测试或部署 |
-| `docs/operations/file-tts-binding-handoff.md` | 部分核对 | 核对绑定定义的候选参数和默认值、指令长度契约上限、离线工具的忽略元数据与输出边界、后续 SDK 与租约结算证据；其余内容待核对 |
+| `docs/operations/file-tts-binding-handoff.md` | 已核对 | 对照固定制品与运行清单、绑定定义、离线工具、注册与命令消费测试及后续 SDK 和租约结算证据；保留历史实验结果，未重跑测试或模型 |
 | `docs/operations/file-tts-runtime.md` | 已核对 | 对照配置、双 lane 共享 worker、关闭边界、音频上限、测试及真实停止和结算证据；明确组件集成测试范围，未运行测试或部署 |
 | `docs/operations/local-end-to-end.md` | 历史保留 | 2026-10-28 指定基线的隔离装配与失败记录；已提示旧发布命令不适用于当前版本，现行入口按历史证据引用，原始输出未逐项复核 |
 | `docs/operations/paperclip/environment-readiness.md` | 历史保留 | 已明确标注为旧环境与部署快照，当前流程指向交付 SOP；原始证据未逐项复核 |

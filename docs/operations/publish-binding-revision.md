@@ -54,10 +54,12 @@ uv run speechnexus-publish-binding \
 | --- | --- |
 | 创建、已登记意图重放或已有事实登记 | 0 |
 | 参数、配置或标识非法 | 2 |
-| 目标三元组不存在或 revision_id 不匹配 | 3 |
-| head/版本/目标变化、同 key 意图不同、已有事实或证据冲突 | 4 |
+| 目标草稿不存在或其 revision_id 不匹配 | 3 |
+| head/版本/目标变化、同 key 意图不同、已有 publication 的 revision_id 不匹配或证据冲突 | 4 |
 | 存储不可用或提交结果未知 | 5 |
 | 容量清单与 revision 不匹配 | 6 |
+
+写入时先检查已有 publication 的 revision_id，再检查目标草稿；因此已有 publication 的 revision_id 不匹配时返回 `4`，即使草稿也不匹配。
 
 ## 提交结果未知
 

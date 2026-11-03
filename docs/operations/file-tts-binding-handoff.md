@@ -63,8 +63,11 @@ uv run python scripts/dev-env/verify-file-asr-artifacts.py \
 工具复核仓库 runtime pin 和模型，输出原 `ArtifactReference`、`EngineDescriptor`、
 revision、pin 摘要和总字节数，不输出本机路径。拒绝重复键、非有限/浮点 pin 数值、
 重复文件/标识、路径越界、文件/目录冲突、额外条目、符号链接、FIFO 及长度/摘要变化。
+清单中允许忽略的元数据可缺省；存在时只检查其为普通文件，不核验内容或摘要。
 只遍历清单要求的目录，读取有界；绑定定义允许契约合法的有限小数，不截断速度值。
 缺少 v1 VAD、给 v2 添加 VAD 或缺少注册身份，均以脱敏 usage error 拒绝。
+命令重定向会先截断同名文件；保留旧证据时使用新路径，并仅在退出成功且输出完整 JSON
+后使用结果。已分类校验失败返回 `1`、参数错误返回 `2`，错误写入 stderr。
 
 pin 是可信输入；自选 `--pin` 不证明上游真实性。离线校验不连接 Docker、引擎、
 数据库或网络，不重新证明运行镜像、源码或依赖，也不签发 generation、ready 或停止事实。

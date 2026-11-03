@@ -136,7 +136,7 @@
 | `docs/operations/compose-minimal.md` | 部分核对 | 对照 Compose 服务、迁移链、配置准备、基础角色授权与查询代码，修正权限及失败边界并更新章节引用；未执行部署，停用 worker 和其他恢复细节待核对 |
 | `docs/operations/file-asr-binding-handoff.md` | 部分核对 | 核对候选选型、离线制品与忽略元数据校验、工具退出和输出、网关输出格式及停止证据边界；其余内容待核对 |
 | `docs/operations/file-asr-runtime.md` | 部分核对 | 对照配置、对象版本、worker 取消及结果登记恢复；停止及集成测试证据待核对 |
-| `docs/operations/file-tts-binding-handoff.md` | 部分核对 | 已核对后续 SDK 与租约结算证据；其余内容待核对 |
+| `docs/operations/file-tts-binding-handoff.md` | 部分核对 | 核对离线工具的忽略元数据与输出边界、后续 SDK 与租约结算证据；其余内容待核对 |
 | `docs/operations/file-tts-runtime.md` | 部分核对 | 核对双 lane 共享 worker、配置及单请求音频上限、后续 SDK 和租约结算证据；其余内容待核对 |
 | `docs/operations/local-end-to-end.md` | 部分核对 | 核对历史边界与角色脚本并纠正数量；剩余历史输出和证据待逐项复核 |
 | `docs/operations/paperclip/environment-readiness.md` | 历史保留 | 已明确标注为旧环境与部署快照，当前流程指向交付 SOP；原始证据未逐项复核 |

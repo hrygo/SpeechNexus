@@ -160,12 +160,12 @@
 | `docs/operations/release-readiness.md` | 部分核对 | 全文阅读并抽核固定候选 planner、文件及提交关系；其余历史证据待复核 |
 | `docs/operations/synchronous-transcription.md` | 部分核对 | 核对配置、配方约束、请求校验顺序、提交与轮询路径及网关主要错误映射；其他错误分支待核对 |
 | `docs/plans/2026-10-22-speechnexus-implementation-plan.md` | 历史保留 | 全文阅读并核对引用入口；保留原阶段和预算假设，标明当前交付入口，未逐项复核历史证据 |
-| `docs/plans/2026-10-23-agent-team-startup-briefs.md` | 部分核对 | 核对历史时点、现行入口及本地链接目标；历史计划和验收结果待复核 |
-| `docs/plans/2026-10-23-architecture-contract-repairs.md` | 部分核对 | 核对历史时点、现行入口及本地链接目标；历史计划和验收结果待复核 |
-| `docs/plans/2026-10-23-cluster-coordination-refactor.md` | 部分核对 | 核对历史时点、现行入口及本地链接目标；历史计划和验收结果待复核 |
-| `docs/plans/2026-10-23-implementation-tracking.md` | 部分核对 | 核对历史时点、现行入口及本地链接目标；历史计划和验收结果待复核 |
-| `docs/plans/2026-10-23-team-a-goal.md` | 部分核对 | 核对历史时点、现行入口及本地链接目标；历史计划和验收结果待复核 |
-| `docs/plans/2026-10-23-team-b-goal.md` | 部分核对 | 核对历史时点、现行入口及本地链接目标；历史计划和验收结果待复核 |
+| `docs/plans/2026-10-23-agent-team-startup-briefs.md` | 历史保留 | 原首轮派工文本，文首及索引注明历史性质；未逐项复核原始证据 |
+| `docs/plans/2026-10-23-architecture-contract-repairs.md` | 历史保留 | 固定审查基线的修复验收记录；未逐项复核历史验证证据 |
+| `docs/plans/2026-10-23-cluster-coordination-refactor.md` | 历史保留 | 原重构计划已注明历史性质；修正当前架构入口的引用，未逐项复核历史证据 |
+| `docs/plans/2026-10-23-implementation-tracking.md` | 历史保留 | 2026-10-26 状态快照，已指向当前需求矩阵；未重新核验原远端状态 |
+| `docs/plans/2026-10-23-team-a-goal.md` | 历史保留 | 已替代的团队目标及收尾交接；未逐项复核历史证据 |
+| `docs/plans/2026-10-23-team-b-goal.md` | 历史保留 | 原团队目标及收尾交接，已明确不作当前排期；未逐项复核历史证据 |
 | `docs/plans/2026-10-23-three-team-delivery-plan.md` | 历史保留 | 固定基线的三团队分工、任务和关口规划；文首与计划索引已注明历史性质和当前入口，历史验收证据未逐项复核 |
 | `docs/plans/2026-10-24-a01-runtime-intent-unit.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
 | `docs/plans/2026-10-24-a02-asset-publication-unit.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |

@@ -14,7 +14,8 @@ date: 2026-10-24
 MySQL/InnoDB 仅用于关键协调路径验证；不采用 etcd，Redis 不承担协调权威。
 活动 DDL 已精简，规则的程序实现见[受控事务方案与契约](coordination-transactions.md)；
 测试/工具原型在真实 PostgreSQL 与 MySQL 上验证关键路径。生产调度、运行时接入与完整
-集群故障资格仍按[重构计划](../plans/2026-10-23-cluster-coordination-refactor.md)完成。
+集群故障资格的当前范围和证据见[交付跟踪矩阵](../plans/delivery-tracking.md)；
+[重构计划](../plans/2026-10-23-cluster-coordination-refactor.md)保留当时的实施安排。
 
 ## 1. 硬件无关的资源准入与调度
 

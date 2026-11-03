@@ -45,7 +45,7 @@
 - [2026-10-24 团队 C C02 正式文件转写入口](2026-10-24-team-c-c02-host-handoff.md)：真实文件与同源公开 API、跨刷新原状态/事件/取消、原始 JSON 下载及正式 Chromium 页面证据。
 
 - [2026-10-23 架构与契约修复验收](2026-10-23-architecture-contract-repairs.md)：已完成的逐项交付与闭环证据。
-- [2026-10-23 集群协调重构计划](2026-10-23-cluster-coordination-refactor.md)：精简 DDL、事务契约和双库测试原型已交付；记录生产接入、生命周期与集群故障资格的剩余验收。
+- [2026-10-23 集群协调重构计划](2026-10-23-cluster-coordination-refactor.md)：历史 DDL、事务契约和双库原型交付，以及当时的生产接入与集群资格计划。
 
 [项目主设计](../speechnexus-product-architecture.md) · [文档索引](../README.md)
 

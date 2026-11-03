@@ -471,6 +471,59 @@ export interface components {
         | "stream_disconnected";
       wait_timeout_ms: number;
     };
+    /**
+     * @description An original durable cancellation receipt. abort_request_digest is SHA-256
+     *     of RFC 8785 UTF-8 for the complete object containing submit_intent_id
+     *     from the path and the five original abort body fields: operation_id,
+     *     attempt_id, fencing_token, reason and wait_timeout_ms. It is not the
+     *     digest of the body alone. Claiming consumes the one external-abort claim;
+     *     it proves neither sending, engine stop nor resource/budget release.
+     *     received_at and the digest retain their first committed values.
+     */
+    AbortRecoveryReceipt: {
+      abort_request_digest: components["schemas"]["Sha256Digest"];
+      /** Format: date-time */
+      received_at: string;
+      /** @enum {string} */
+      claim_state: "received" | "claimed";
+      /**
+       * Format: date-time
+       * @description When claimed, this must not precede received_at.
+       */
+      claimed_at: string | null;
+    } & (
+      | {
+          /** @constant */
+          claim_state?: "received";
+          claimed_at?: null;
+        }
+      | {
+          /** @constant */
+          claim_state?: "claimed";
+          claimed_at?: string;
+        }
+    );
+    /**
+     * @description Consistent read-only observation of the original execution and its abort
+     *     receipt. execution_request_digest is the existing native digest of the
+     *     complete effective_request (execution_request plus output_stream_id),
+     *     not just command_digest or a reconstruction from status fields.
+     *     verified means the stored complete original document and identity were
+     *     checked. redacted means a legitimate terminal, released deletion
+     *     tombstone was verified; the stored digest is retained without claiming
+     *     to reverify deleted content. Missing or inconsistent source facts fail
+     *     closed. No lookup, replay or receipt authorizes new external I/O.
+     */
+    ExecutionAbortRecovery: {
+      execution_request_digest: components["schemas"]["Sha256Digest"];
+      /** @enum {string} */
+      document_state: "verified" | "redacted";
+      /**
+       * @description Null confirms this one snapshot contains no original abort receipt;
+       *     it does not prove no running execution or permit redispatch/release.
+       */
+      receipt: components["schemas"]["AbortRecoveryReceipt"] | null;
+    };
     ExecutionStatusResponse: {
       submit_intent_id: components["schemas"]["Identifier"];
       lease_id: components["schemas"]["Identifier"];
@@ -512,6 +565,54 @@ export interface components {
       components["schemas"]["ExecutionTerminalEvidenceInvariants"] &
       components["schemas"]["ExecutionCleanupEvidenceInvariants"] &
       components["schemas"]["ExecutionDispatchEvidenceInvariants"]);
+    /**
+     * @description Opt-in original execution recovery representation. Available only with
+     *     Accept: application/vnd.speechnexus.execution-recovery.v1+json on the
+     *     existing GET route. application/json keeps the original closed shape.
+     */
+    ExecutionRecoveryStatusResponse: {
+      submit_intent_id: components["schemas"]["Identifier"];
+      lease_id: components["schemas"]["Identifier"];
+      operation_id: components["schemas"]["Identifier"];
+      attempt_id: components["schemas"]["Identifier"];
+      stage_id: components["schemas"]["Identifier"];
+      workspace_id: components["schemas"]["Identifier"];
+      pool_id: components["schemas"]["PoolId"];
+      host_node_id: components["schemas"]["Identifier"];
+      gateway_id: components["schemas"]["Identifier"];
+      instance_id: components["schemas"]["Identifier"];
+      instance_generation: number;
+      binding_revision_id: components["schemas"]["Identifier"];
+      policy_revision_id: components["schemas"]["Identifier"];
+      voice_revision_id: components["schemas"]["Identifier"] | null;
+      fencing_token: number;
+      command_digest: components["schemas"]["Sha256Digest"];
+      /** Format: date-time */
+      deadline_at: string;
+      /** Format: date-time */
+      dispatched_at: string | null;
+      /** @enum {integer|null} */
+      sample_rate_hz: 16000 | 24000 | 48000 | null;
+      engine_request_id?: string | null;
+      execution_state: components["schemas"]["ExecutionState"];
+      cleanup_state: components["schemas"]["CleanupState"];
+      stop_evidence_kind: components["schemas"]["StopEvidenceKind"];
+      /**
+       * @description Null for text-only stages. Otherwise its sample_rate_hz must equal
+       *     the response-level sample_rate_hz and its generated_pcm_samples must
+       *     not exceed hard_output_ceiling_samples when that ceiling is set.
+       */
+      output_watermark?: components["schemas"]["OutputWatermark"] | null;
+      staging_artifact_ref?: components["schemas"]["ArtifactStorageReference"] | null;
+      error_code?: components["schemas"]["ExecutionErrorCode"] | null;
+      /** Format: date-time */
+      updated_at: string;
+      abort_recovery?: components["schemas"]["ExecutionAbortRecovery"];
+    } & ((components["schemas"]["ExecutionStateInvariants"] &
+      components["schemas"]["ExecutionTerminalEvidenceInvariants"] &
+      components["schemas"]["ExecutionCleanupEvidenceInvariants"] &
+      components["schemas"]["ExecutionDispatchEvidenceInvariants"]) &
+      unknown);
     GatewayFencingBarrierRequest: {
       pool_id: components["schemas"]["PoolId"];
       new_owner_scheduler_id: components["schemas"]["Identifier"];
@@ -955,6 +1056,8 @@ export interface operations {
       query?: never;
       header?: {
         "X-Request-ID"?: components["parameters"]["XRequestIdHeader"];
+        /** @description Request the exact versioned recovery media type to observe abort recovery. */
+        Accept?: string;
       };
       path: {
         submit_intent_id: components["parameters"]["SubmitIntentIdPath"];
@@ -971,6 +1074,7 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ExecutionStatusResponse"];
+          "application/vnd.speechnexus.execution-recovery.v1+json": components["schemas"]["ExecutionRecoveryStatusResponse"];
         };
       };
       401: components["responses"]["Unauthorized"];

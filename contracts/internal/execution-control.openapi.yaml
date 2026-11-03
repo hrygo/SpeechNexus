@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus internal execution control API
-  version: 0.4.0.dev0
+  version: 0.4.0.dev1
   description: |
     Authoritative internal ExecutionControlPort protocol between the scheduler /
     workers / realtime gateway and the execution-gateway. Every engine submission,
@@ -90,6 +90,12 @@ paths:
       parameters:
         - $ref: "#/components/parameters/SubmitIntentIdPath"
         - $ref: "#/components/parameters/XRequestIdHeader"
+        - name: Accept
+          in: header
+          required: false
+          description: Request the exact versioned recovery media type to observe abort recovery.
+          schema:
+            type: string
       responses:
         "200":
           description: Authoritative execution state and cleanup evidence.
@@ -100,6 +106,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ExecutionStatusResponse"
+            application/vnd.speechnexus.execution-recovery.v1+json:
+              schema:
+                $ref: "#/components/schemas/ExecutionRecoveryStatusResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -1144,7 +1153,70 @@ components:
           type: integer
           minimum: 100
           maximum: 60000
-    ExecutionStatusResponse:
+    AbortRecoveryReceipt:
+      type: object
+      additionalProperties: false
+      description: |
+        An original durable cancellation receipt. abort_request_digest is SHA-256
+        of RFC 8785 UTF-8 for the complete object containing submit_intent_id
+        from the path and the five original abort body fields: operation_id,
+        attempt_id, fencing_token, reason and wait_timeout_ms. It is not the
+        digest of the body alone. Claiming consumes the one external-abort claim;
+        it proves neither sending, engine stop nor resource/budget release.
+        received_at and the digest retain their first committed values.
+      required: [abort_request_digest, received_at, claim_state, claimed_at]
+      properties:
+        abort_request_digest:
+          $ref: "#/components/schemas/Sha256Digest"
+        received_at:
+          type: string
+          format: date-time
+        claim_state:
+          type: string
+          enum: [received, claimed]
+        claimed_at:
+          type: [string, "null"]
+          format: date-time
+          description: When claimed, this must not precede received_at.
+      oneOf:
+        - properties:
+            claim_state:
+              const: received
+            claimed_at:
+              type: "null"
+        - properties:
+            claim_state:
+              const: claimed
+            claimed_at:
+              type: string
+    ExecutionAbortRecovery:
+      type: object
+      additionalProperties: false
+      description: |
+        Consistent read-only observation of the original execution and its abort
+        receipt. execution_request_digest is the existing native digest of the
+        complete effective_request (execution_request plus output_stream_id),
+        not just command_digest or a reconstruction from status fields.
+        verified means the stored complete original document and identity were
+        checked. redacted means a legitimate terminal, released deletion
+        tombstone was verified; the stored digest is retained without claiming
+        to reverify deleted content. Missing or inconsistent source facts fail
+        closed. No lookup, replay or receipt authorizes new external I/O.
+      required: [execution_request_digest, document_state, receipt]
+      properties:
+        execution_request_digest:
+          $ref: "#/components/schemas/Sha256Digest"
+        document_state:
+          type: string
+          enum: [verified, redacted]
+        receipt:
+          anyOf:
+            - $ref: "#/components/schemas/AbortRecoveryReceipt"
+            - type: "null"
+          description: |
+            Null confirms this one snapshot contains no original abort receipt;
+            it does not prove no running execution or permit redispatch/release.
+    ExecutionStatusResponse: &ExecutionStatusBase
       type: object
       additionalProperties: false
       required:
@@ -1171,7 +1243,7 @@ components:
         - cleanup_state
         - stop_evidence_kind
         - updated_at
-      properties:
+      properties: &ExecutionStatusProperties
         submit_intent_id:
           $ref: "#/components/schemas/Identifier"
         lease_id:
@@ -1244,11 +1316,24 @@ components:
         updated_at:
           type: string
           format: date-time
-      allOf:
+      allOf: &ExecutionStatusInvariants
         - $ref: "#/components/schemas/ExecutionStateInvariants"
         - $ref: "#/components/schemas/ExecutionTerminalEvidenceInvariants"
         - $ref: "#/components/schemas/ExecutionCleanupEvidenceInvariants"
         - $ref: "#/components/schemas/ExecutionDispatchEvidenceInvariants"
+    ExecutionRecoveryStatusResponse:
+      <<: *ExecutionStatusBase
+      description: |
+        Opt-in original execution recovery representation. Available only with
+        Accept: application/vnd.speechnexus.execution-recovery.v1+json on the
+        existing GET route. application/json keeps the original closed shape.
+      properties:
+        <<: *ExecutionStatusProperties
+        abort_recovery:
+          $ref: "#/components/schemas/ExecutionAbortRecovery"
+      allOf:
+        - allOf: *ExecutionStatusInvariants
+        - required: [abort_recovery]
     GatewayFencingBarrierRequest:
       type: object
       additionalProperties: false

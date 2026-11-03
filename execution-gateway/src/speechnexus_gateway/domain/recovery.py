@@ -5,6 +5,7 @@ import re
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from speechnexus_gateway.domain.canonical import canonical_json, command_digest
 from speechnexus_gateway.domain.execution_results import (
@@ -147,8 +148,73 @@ def submission_response(intent: SubmissionIntent, *, idempotent_replay: bool) ->
 
 
 @dataclass(frozen=True, slots=True)
+class AbortReceipt:
+    """A durable receive and, independently, a consumed external-dispatch claim."""
+
+    abort_request_digest: str
+    received_at: datetime
+    claim_state: Literal["received", "claimed"]
+    claimed_at: datetime | None
+
+    def __post_init__(self) -> None:
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", self.abort_request_digest):
+            raise ValueError("invalid abort request digest")
+        contract_instant_text(self.received_at)
+        if self.claim_state == "received" and self.claimed_at is None:
+            return
+        if self.claim_state == "claimed" and self.claimed_at is not None:
+            contract_instant_text(self.claimed_at)
+            if self.claimed_at >= self.received_at:
+                return
+        raise ValueError("abort claim state and time disagree")
+
+    def value(self) -> dict[str, object]:
+        return {
+            "abort_request_digest": self.abort_request_digest,
+            "received_at": contract_instant_text(self.received_at),
+            "claim_state": self.claim_state,
+            "claimed_at": None
+            if self.claimed_at is None
+            else contract_instant_text(self.claimed_at),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class AbortRecovery:
+    """Result of one consistent read, never evidence of cancellation or release."""
+
+    execution_request_digest: str
+    document_state: Literal["verified", "redacted"]
+    receipt: AbortReceipt | None
+
+    def __post_init__(self) -> None:
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", self.execution_request_digest):
+            raise ValueError("invalid original execution request digest")
+        if self.document_state not in {"verified", "redacted"}:
+            raise ValueError("invalid original execution document state")
+        if self.receipt is not None and not isinstance(self.receipt, AbortReceipt):
+            raise ValueError("invalid abort receipt")
+
+    def value(self) -> dict[str, object]:
+        return {
+            "execution_request_digest": self.execution_request_digest,
+            "document_state": self.document_state,
+            "receipt": None if self.receipt is None else self.receipt.value(),
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ExecutionSnapshot:
     intent: SubmissionIntent
+    # None means an older path did not observe abort recovery, not receipt absence.
+    abort_recovery: AbortRecovery | None = None
+
+    def __post_init__(self) -> None:
+        if self.abort_recovery is not None and (
+            not isinstance(self.abort_recovery, AbortRecovery)
+            or self.abort_recovery.execution_request_digest != self.intent.request_digest
+        ):
+            raise ValueError("abort recovery belongs to another execution request")
 
     def status(self) -> dict[str, object]:
         intent = self.intent
@@ -160,6 +226,8 @@ class ExecutionSnapshot:
             updated_at=contract_instant_text(intent.updated_at),
             output_watermark=None,
         )
+        if self.abort_recovery is not None:
+            payload["abort_recovery"] = self.abort_recovery.value()
         if intent.output_stream_id is not None:
             payload["output_watermark"] = {
                 "output_stream_id": intent.output_stream_id,

@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     log_level: Literal["debug", "info", "warning", "error", "critical"] = "info"
 
     control_database_url: SecretStr
+    control_query_database_url: SecretStr | None = Field(default=None, repr=False)
     readiness_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
     component_token: SecretStr | None = Field(default=None, min_length=1)
     ingress_lock_directory: Path | None = None

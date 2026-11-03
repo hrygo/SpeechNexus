@@ -12,7 +12,8 @@ import asyncio
 import copy
 import json
 from collections.abc import Iterator
-from dataclasses import dataclass
+from contextlib import contextmanager
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,9 @@ from tests.integration.test_gateway_stop_evidence import counters, evidence_for,
 from tests.integration.test_gateway_submit_ledger import identity_for, seed_second_attempt
 from tests.integration.test_production_jobs import database as database
 
+from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema import (
+    gateway_abort_grants,
+)
 from speechnexus_gateway.app import create_app
 from speechnexus_gateway.application.abort_execution import ExecutionAbortService
 from speechnexus_gateway.application.barrier_control import GatewayBarrierService
@@ -44,11 +48,14 @@ from speechnexus_gateway.domain.canonical import JsonValue, command_digest
 from speechnexus_gateway.domain.ports import AbortOutcome
 from speechnexus_gateway.domain.submission import (
     SubmissionIdentity,
+    SubmitRequest,
     derived_output_stream_id,
 )
+from speechnexus_gateway.infrastructure.abort_authority import verify_abort_authority
 from speechnexus_gateway.infrastructure.postgres_pool import GatewayPool
 from speechnexus_gateway.infrastructure.process_ownership import ProcessIngressOwnership
 from speechnexus_gateway.infrastructure.submit_postgres import PostgresSubmissionLedger
+from speechnexus_gateway.infrastructure.submit_sql import from_unix_micros
 from speechnexus_gateway.settings import Settings
 
 pytestmark = [
@@ -69,6 +76,37 @@ def contract_command(index: int = 0) -> JsonValue:
     """One frozen command example: the served route validates the real command schema."""
     schema = json.loads((ROOT / "contracts/internal/execution-command.schema.json").read_text())
     return dict(copy.deepcopy(schema["examples"][index]))
+
+
+def seed_original_foundation_request(foundation: Foundation) -> SubmitRequest:
+    """Make the foundation's synthetic submit a complete canonical original request."""
+    command = contract_command()
+    identity = replace(
+        identity_for(
+            "lease-test-stage-main", submit_intent_id="submit-test", attempt_id="attempt-test"
+        ),
+        deadline_at=from_unix_micros(1),
+        command_digest=command_digest(command),
+    )
+    request = SubmitRequest(identity=identity, command=command, output_stream_id="tts-main")
+    foundation.database.query(
+        "UPDATE submit_intents SET command_digest=%s, request_digest=%s, request_document=%s "
+        "WHERE submit_intent_id=%s",
+        (identity.command_digest, request.request_digest, request.request_document, "submit-test"),
+    )
+    return request
+
+
+def grant_durable_abort_authority(foundation: Foundation) -> None:
+    for grant in gateway_abort_grants(foundation.database.schema, foundation.gateway_role):
+        foundation.database.query(grant)
+
+
+def abort_receipts(foundation: Foundation) -> list[dict[str, Any]]:
+    return foundation.database.query(
+        "SELECT submit_intent_id, reason, wait_timeout_ms, received_at_us, dispatched_at_us "
+        "FROM gateway_abort_intents ORDER BY submit_intent_id"
+    )
 
 
 def submit_body(
@@ -145,13 +183,22 @@ class LiveGateway:
         )
 
 
-@pytest.fixture
-def gateway(foundation: Foundation, tmp_path: Path) -> Iterator[LiveGateway]:
+@contextmanager
+def open_gateway(
+    foundation: Foundation, tmp_path: Path, *, durable_abort: bool
+) -> Iterator[LiveGateway]:
     seed_second_attempt(foundation)
+    original = seed_original_foundation_request(foundation)
+    if durable_abort:
+        grant_durable_abort_authority(foundation)
     pool: GatewayPool = new_pool(foundation)
     owner = ProcessIngressOwnership(tmp_path, node_id="host-test", gateway_id="gateway-test")
     ingress = GatewayIngress(owner, timeout_seconds=0.1)
     ledger = PostgresSubmissionLedger(pool)
+    stored = ledger.get("submit-test")
+    assert stored is not None and ledger.read_request(stored, max_document_bytes=16384) == original
+    if durable_abort:
+        assert verify_abort_authority(pool, foundation.database.schema)
     engine = ScriptedEngine()
     abort = ScriptedAbort()
     app = create_app(
@@ -175,7 +222,9 @@ def gateway(foundation: Foundation, tmp_path: Path) -> Iterator[LiveGateway]:
         submit_execution=SubmitExecutionService(
             ingress=ingress, ledger=ledger, dispatch=engine, observation=engine
         ),
-        abort_execution=ExecutionAbortService(ingress=ingress, ledger=ledger, abort=abort),
+        abort_execution=ExecutionAbortService(
+            ingress=ingress, ledger=ledger, abort=abort, durable_abort_enabled=durable_abort
+        ),
         readiness=ReadinessService([StaticProbe("control_postgresql")], timeout_seconds=1),
     )
     try:
@@ -183,6 +232,18 @@ def gateway(foundation: Foundation, tmp_path: Path) -> Iterator[LiveGateway]:
     finally:
         owner.close()
         pool.close()
+
+
+@pytest.fixture
+def gateway(foundation: Foundation, tmp_path: Path) -> Iterator[LiveGateway]:
+    with open_gateway(foundation, tmp_path, durable_abort=False) as live:
+        yield live
+
+
+@pytest.fixture
+def durable_gateway(foundation: Foundation, tmp_path: Path) -> Iterator[LiveGateway]:
+    with open_gateway(foundation, tmp_path, durable_abort=True) as live:
+        yield live
 
 
 def test_submit_persists_one_durable_intent_and_never_dispatches_twice(
@@ -218,6 +279,14 @@ def test_submit_persists_one_durable_intent_and_never_dispatches_twice(
     assert rows[0]["cleanup_state"] == "pending"
     assert rows[0]["dispatched_at_us"] is not None
     assert rows[0]["version"] == 2
+    intent = gateway.ledger.get("intent-http")
+    assert intent is not None
+    expected = SubmitRequest(
+        identity=replace(identity, command_digest=command_digest(command)),
+        command=command,
+        output_stream_id=derived,
+    )
+    assert gateway.ledger.read_request(intent, max_document_bytes=16384) == expected
     heads = foundation.database.query(
         "SELECT output_stream_id, sample_rate_hz FROM output_stream_heads "
         "WHERE operation_id = 'operation-test' AND attempt_id = 'attempt-alt'"
@@ -252,8 +321,9 @@ def test_a_conflicting_command_and_a_mismatched_digest_never_reach_the_engine(
 
 
 def test_an_unverified_abort_quarantines_the_execution_and_keeps_its_capacity(
-    foundation: Foundation, gateway: LiveGateway
+    foundation: Foundation, durable_gateway: LiveGateway
 ) -> None:
+    gateway = durable_gateway
     identity = identity_for(LEASE, submit_intent_id="intent-http")
     assert gateway.submit(identity, contract_command()).status_code == 200
     before = counters(foundation)
@@ -267,6 +337,15 @@ def test_an_unverified_abort_quarantines_the_execution_and_keeps_its_capacity(
     assert response.json()["error_code"] == "cancellation_unconfirmed"
     assert response.json()["cleanup_state"] == "quarantined"
     assert gateway.abort.calls == [("intent-http", "client_cancelled", 1000)]
+    receipts = abort_receipts(foundation)
+    assert len(receipts) == 1
+    receipt = receipts[0]
+    assert (receipt["submit_intent_id"], receipt["reason"], receipt["wait_timeout_ms"]) == (
+        "intent-http",
+        "client_cancelled",
+        1000,
+    )
+    assert 0 < receipt["received_at_us"] <= receipt["dispatched_at_us"]
     assert counters(foundation) == before
     stored = foundation.database.query(
         "SELECT execution_state, cleanup_state, terminated_at_us FROM submit_intents "
@@ -288,8 +367,9 @@ def test_an_unverified_abort_quarantines_the_execution_and_keeps_its_capacity(
 
 
 def test_verified_abort_evidence_closes_the_execution_without_releasing_budgets(
-    foundation: Foundation, gateway: LiveGateway
+    foundation: Foundation, durable_gateway: LiveGateway
 ) -> None:
+    gateway = durable_gateway
     identity = identity_for(LEASE, submit_intent_id="intent-http")
     assert gateway.submit(identity, contract_command()).status_code == 200
     before = counters(foundation)
@@ -297,6 +377,7 @@ def test_verified_abort_evidence_closes_the_execution_without_releasing_budgets(
     gateway.abort.script_outcome(AbortOutcome(observed_at=datetime.now(UTC), evidence=evidence))
 
     first = gateway.abort_intent("intent-http")
+    original_receipt = abort_receipts(foundation)
     replay = gateway.abort_intent("intent-http")
 
     assert first.status_code == replay.status_code == 200
@@ -308,6 +389,7 @@ def test_verified_abort_evidence_closes_the_execution_without_releasing_budgets(
     assert replay.json() == first.json()
     # A closed execution is reported from its recorded facts, so the engine is asked once.
     assert len(gateway.abort.calls) == 1
+    assert len(original_receipt) == 1 and abort_receipts(foundation) == original_receipt
     saved = foundation.database.query(
         "SELECT s.evidence_id, s.observed_at_us, s.execution_stopped, s.resources_released, "
         "i.execution_state, i.cleanup_state, i.terminated_at_us FROM execution_stop_evidence s "
@@ -326,6 +408,22 @@ def test_verified_abort_evidence_closes_the_execution_without_releasing_budgets(
     ]
     # Releasing capacity stays with the Scheduler: the gateway recorded the stop facts only.
     assert counters(foundation) == before
+
+
+def test_abort_without_durable_authority_does_not_send_or_create_receipt(
+    foundation: Foundation, gateway: LiveGateway
+) -> None:
+    identity = identity_for(LEASE, submit_intent_id="intent-http")
+    assert gateway.submit(identity, contract_command()).status_code == 200
+    assert not verify_abort_authority(gateway.ledger._pool, foundation.database.schema)
+
+    response = gateway.abort_intent("intent-http")
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "control_store_unavailable"
+    assert abort_receipts(foundation) == [] and gateway.abort.calls == []
+    intent = gateway.ledger.get("intent-http")
+    assert intent is not None and intent.execution_state.value == "executing"
 
 
 def test_submit_refuses_without_the_component_credential(

@@ -93,6 +93,7 @@ value = {
     "MINIO_ROOT_PASSWORD": secrets.token_urlsafe(32),
     "SPEECHNEXUS_API_ROLE_PASSWORD": secrets.token_urlsafe(32),
     "SPEECHNEXUS_GATEWAY_ROLE_PASSWORD": secrets.token_urlsafe(32),
+    "SPEECHNEXUS_GATEWAY_QUERY_ROLE_PASSWORD": secrets.token_urlsafe(32),
     "SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL": secrets.token_hex(32),
 }
 value["SPEECHNEXUS_API_DATABASE_URL"] = (
@@ -100,6 +101,10 @@ value["SPEECHNEXUS_API_DATABASE_URL"] = (
 )
 value["SPEECHNEXUS_GATEWAY_CONTROL_DATABASE_URL"] = (
     f"postgresql://sn_gateway:{value['SPEECHNEXUS_GATEWAY_ROLE_PASSWORD']}"
+    "@postgres:5432/speechnexus"
+)
+value["SPEECHNEXUS_GATEWAY_CONTROL_QUERY_DATABASE_URL"] = (
+    f"postgresql://sn_gateway_query:{value['SPEECHNEXUS_GATEWAY_QUERY_ROLE_PASSWORD']}"
     "@postgres:5432/speechnexus"
 )
 owner_dsn = (
@@ -279,8 +284,12 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 
 ## 6. 创建非 owner 运行角色与最小授权
 
-以下脚本必须使用 **迁移 owner DSN** 运行；它创建两个独立角色并调用仓库中声明的
-授权函数，不手抄权限 SQL。先在当前 shell 载入环境文件：
+以下脚本必须使用 **迁移 owner DSN** 运行；它创建 API、gateway writer、gateway
+query 三个独立角色并调用仓库授权函数。此段只用于新建、独占的 SpeechNexus 数据库：
+它会撤销数据库级 `PUBLIC TEMPORARY/CREATE`、`public` schema 的 CREATE 和大对象
+写函数的 PUBLIC EXECUTE。已有共享数据库应先导出 ACL、核对其他角色依赖，再由部署
+负责人评审等价最小授权；不要直接套用。应用启动只检查这些前置条件，不修改 ACL。
+先在当前 shell 载入环境文件：
 
 ```bash
 set -a
@@ -296,13 +305,34 @@ from speechnexus_backend.speech.infrastructure.asset_schema import asset_runtime
 from speechnexus_backend.speech.infrastructure.coordination_grants import (
     coordination_runtime_grants,
 )
+from speechnexus_backend.speech.infrastructure.gateway_query_grants import (
+    gateway_query_grants, gateway_query_target_grants,
+)
 
 schema = "speech"
 roles = {
     "sn_api": os.environ["SPEECHNEXUS_API_ROLE_PASSWORD"],
     "sn_gateway": os.environ["SPEECHNEXUS_GATEWAY_ROLE_PASSWORD"],
+    "sn_gateway_query": os.environ["SPEECHNEXUS_GATEWAY_QUERY_ROLE_PASSWORD"],
 }
 with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
+    database = conn.execute("SELECT current_database()").fetchone()[0]
+    conn.execute(sql.SQL("REVOKE CREATE, TEMPORARY ON DATABASE {} FROM PUBLIC")
+                 .format(sql.Identifier(database)))
+    conn.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
+    large_object_writers = (
+        "lo_create", "lo_creat", "lo_from_bytea", "lo_import", "lo_export", "lo_unlink",
+        "lo_put", "lo_truncate", "lo_truncate64", "lowrite",
+    )
+    for (signature,) in conn.execute(
+        "SELECT p.oid::regprocedure::text FROM pg_proc p "
+        "JOIN pg_namespace n ON n.oid=p.pronamespace "
+        "WHERE n.nspname='pg_catalog' AND p.proname=ANY(%s)",
+        (list(large_object_writers),),
+    ).fetchall():
+        # regprocedure is server-generated, including the complete argument types.
+        conn.execute(sql.SQL("REVOKE EXECUTE ON FUNCTION {} FROM PUBLIC")
+                     .format(sql.SQL(signature)))
     for role, password in roles.items():
         exists = conn.execute(
             "SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)
@@ -337,6 +367,10 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
         conn.execute(statement)
     for statement in asset_runtime_grants(schema, "sn_api"):
         conn.execute(statement)
+    for statement in gateway_query_grants(schema, "sn_gateway_query"):
+        conn.execute(statement)
+    for statement in gateway_query_target_grants(schema, "sn_gateway"):
+        conn.execute(statement)
 
     # Transcription resolves the current published binding through the same
     # runtime facts port. Grant only the two read relations it currently uses.
@@ -348,13 +382,34 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
             sql.Identifier("sn_api"),
         )
     )
-    print("roles ready: sn_api sn_gateway")
+    print("roles ready: sn_api sn_gateway sn_gateway_query")
 PY
 ```
 
 若这里报 `role cannot be dropped because objects depend on it`、owner membership 或 schema
 CREATE 权限，停止启动服务；不要用超级用户连接绕过检查。API 启动时还会再次核验
 `sn_api` 不是数据库/表 owner，也不是可继承的 owner 成员。
+
+Gateway query 身份仅取得六张执行恢复关系及安装身份表的必要列读取权，不得写产品或持久对象。
+原生 `pg_settings` 的默认会话参数 UPDATE 与 SET/set_config 属于会话能力，不作为
+产品写权；该例外不涵盖其他系统目录或额外授权。启动时核验登录身份、有效
+身份及可继承/切换角色、PUBLIC、owner、DDL/DML、序列和特权函数能力；额外业务读权
+也会拒绝。每次查询在单个 `REPEATABLE READ READ ONLY` 事务内核对完整原执行文档、
+身份和规范摘要，再投影取消收据；合法删除后只报告 `document_state=redacted` 并保留
+原摘要。原 GET 默认 `application/json` 保留旧封闭响应；显式发送
+`Accept: application/vnd.speechnexus.execution-recovery.v1+json` 才返回带必需
+`abort_recovery` 的版本化表示，正式客户端为 `query_abort_recovery()`。
+旧表示不携带该观察；新表示的 `receipt=null` 只表示该次快照无
+收据，`claimed` 仅表示一次外发认领已消耗，均不证明停止或预算释放。取消摘要包含
+路径中的 `submit_intent_id` 和原请求体的五个字段；不能只对 body 求摘要。
+
+启动时实际核对 writer/reader 的 primary、数据库、schema、cluster 和安装 UUID；之后
+每个 reader 快照复核固定身份及非 standby，不依赖 writer 持续在线。物理复制出来且
+保留全部身份的两个可写集群仍须由部署保证单一权威，不能把此检查称为 HA 拓扑验收。
+
+部署前保存原 ACL 与私有配置。回退时先停止本次 gateway/worker，切回已验版本和
+对应配置，再按保存的 ACL 恢复受影响的其他角色；不要通过给 reader 加写权、owner
+身份或切回 writer 凭据绕过启动检查。此变更不修改既有执行或预算数据。
 
 ## 7. 启动 API 与 gateway
 

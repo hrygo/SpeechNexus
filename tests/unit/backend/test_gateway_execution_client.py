@@ -303,6 +303,64 @@ async def test_query_retries_a_transient_5xx_and_reads_the_original_identity() -
     assert all(call.headers["authorization"] == "Bearer " + TOKEN for call in calls)
 
 
+@pytest.mark.parametrize("claim", [None, "received", "claimed"])
+async def test_original_query_consumes_abort_recovery_without_writing(claim: str | None) -> None:
+    response = status_response()
+    response["abort_recovery"] = {
+        "execution_request_digest": DIGEST,
+        "document_state": "verified",
+        "receipt": None
+        if claim is None
+        else {
+            "abort_request_digest": "sha256:" + "b" * 64,
+            "received_at": "2026-10-27T14:59:00Z",
+            "claim_state": claim,
+            "claimed_at": "2026-10-27T14:59:01Z" if claim == "claimed" else None,
+        },
+    }
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(
+            200,
+            json=response,
+            headers={"content-type": "application/vnd.speechnexus.execution-recovery.v1+json"},
+        )
+
+    async with client(handler) as gateway:
+        result = await gateway.query_abort_recovery("intent-1")
+    assert result == response
+    assert calls[0].headers["accept"] == "application/vnd.speechnexus.execution-recovery.v1+json"
+    assert [(r.method, r.url.path, r.content) for r in calls] == [
+        ("GET", "/internal/v1/executions/intent-1", b"")
+    ]
+
+
+async def test_original_query_rejects_abort_projection_with_private_body() -> None:
+    response = status_response()
+    response["abort_recovery"] = {
+        "execution_request_digest": DIGEST,
+        "document_state": "verified",
+        "receipt": None,
+        "request_document": "synthetic-private-marker",
+    }
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(
+            200,
+            json=response,
+            headers={"content-type": "application/vnd.speechnexus.execution-recovery.v1+json"},
+        )
+
+    async with client(handler) as gateway:
+        with pytest.raises(GatewayResponseError):
+            await gateway.query_abort_recovery("intent-1")
+    assert len(calls) == 1 and calls[0].method == "GET"
+
+
 async def test_staging_result_reads_the_private_receipt_path() -> None:
     calls: list[httpx.Request] = []
     receipt = {

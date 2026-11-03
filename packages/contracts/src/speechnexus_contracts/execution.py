@@ -23,6 +23,12 @@ def parse(
 
 
 @overload
+def parse(
+    name: Literal["ExecutionRecoveryStatusResponse"], value: Any
+) -> models.ExecutionRecoveryStatusResponse: ...
+
+
+@overload
 def parse(name: Literal["AbortExecutionRequest"], value: Any) -> models.AbortExecutionRequest: ...
 
 

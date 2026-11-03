@@ -35,6 +35,7 @@ from speechnexus_contracts.execution import parse
 from speechnexus_contracts.execution_models import (
     ArtifactStorageReference,
     ExecutionAudioStagingResultResponse,
+    ExecutionRecoveryStatusResponse,
     ExecutionStagingResultResponse,
     ExecutionStatusResponse,
     SubmitExecutionRequest,
@@ -290,6 +291,21 @@ class GatewayExecutionClient:
         except ValueError:
             raise self._invalid_response() from None
 
+    async def query_abort_recovery(self, submit_intent_id: str) -> ExecutionRecoveryStatusResponse:
+        """Read the original abort receipt without changing the legacy representation."""
+        path = _EXECUTION_PATH + quote(_identifier(submit_intent_id), safe="")
+        payload = await self._send(
+            "GET",
+            path,
+            body=None,
+            idempotent=True,
+            accept="application/vnd.speechnexus.execution-recovery.v1+json",
+        )
+        try:
+            return parse("ExecutionRecoveryStatusResponse", payload)
+        except ValueError:
+            raise self._invalid_response() from None
+
     async def abort(self, target: DisableExecutionTarget) -> ExecutionStatusResponse:
         """Request one abort for the persisted target; a timeout remains unknown."""
         request = parse("AbortExecutionRequest", target.abort_payload())
@@ -424,11 +440,12 @@ class GatewayExecutionClient:
         *,
         body: bytes | None,
         idempotent: bool,
+        accept: str = "application/json",
     ) -> dict[str, Any]:
         attempts = self._max_retries + 1 if idempotent else 1
         for attempt in range(attempts):
             try:
-                return await self._attempt(method, path, body)
+                return await self._attempt(method, path, body, accept=accept)
             except (GatewayConnectionError, GatewayTimeoutError, GatewayServerError) as error:
                 if attempt + 1 >= attempts or not self._retryable(error):
                     raise
@@ -441,10 +458,12 @@ class GatewayExecutionClient:
             return error.retryable is not False
         return True
 
-    async def _attempt(self, method: str, path: str, body: bytes | None) -> dict[str, Any]:
+    async def _attempt(
+        self, method: str, path: str, body: bytes | None, *, accept: str = "application/json"
+    ) -> dict[str, Any]:
         headers = {
             "Authorization": "Bearer " + self._credential.get_secret_value(),
-            "Accept": "application/json",
+            "Accept": accept,
             "Accept-Encoding": "identity",
             "X-Request-ID": uuid.uuid4().hex,
         }
@@ -466,7 +485,7 @@ class GatewayExecutionClient:
                                 request_may_have_run=True,
                                 status_code=status,
                             )
-                        self._check_success_headers(response, raw)
+                        self._check_success_headers(response, raw, expected_media=accept)
                         return _json_object(raw)
                     details = self._error_details(raw) if status >= 400 else None
                     if 400 <= status < 500:
@@ -547,7 +566,9 @@ class GatewayExecutionClient:
             buffer.extend(chunk)
         return bytes(buffer)
 
-    def _check_success_headers(self, response: httpx.Response, raw: bytes) -> None:
+    def _check_success_headers(
+        self, response: httpx.Response, raw: bytes, *, expected_media: str = "application/json"
+    ) -> None:
         encodings = response.headers.get_list("content-encoding")
         if encodings not in ([], ["identity"]):
             raise GatewayResponseError(
@@ -563,7 +584,7 @@ class GatewayExecutionClient:
                 status_code=response.status_code,
             )
         media = [part.strip().lower() for part in content_types[0].split(";")]
-        if media[0] != "application/json" or any(
+        if media[0] != expected_media or any(
             part not in ("charset=utf-8", 'charset="utf-8"') for part in media[1:]
         ):
             raise GatewayResponseError(

@@ -27,8 +27,11 @@ from tests.integration.test_gateway_stop_evidence import counters, evidence_for,
 from tests.integration.test_gateway_submit_http import (
     TOKEN,
     LiveGateway,
+    abort_receipts,
     contract_command,
+    grant_durable_abort_authority,
     post,
+    seed_original_foundation_request,
 )
 from tests.integration.test_gateway_submit_ledger import DIGEST, identity_for, seed_second_attempt
 from tests.integration.test_production_jobs import database as database
@@ -42,6 +45,7 @@ from speechnexus_gateway.application.query_execution import ExecutionQueryServic
 from speechnexus_gateway.application.readiness import ReadinessService
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
 from speechnexus_gateway.domain.ports import AbortOutcome
+from speechnexus_gateway.infrastructure.abort_authority import verify_abort_authority
 from speechnexus_gateway.infrastructure.postgres_pool import GatewayPool
 from speechnexus_gateway.infrastructure.process_ownership import ProcessIngressOwnership
 from speechnexus_gateway.infrastructure.submit_postgres import PostgresSubmissionLedger
@@ -124,13 +128,22 @@ def open_gateway(
     foundation: Foundation, tmp_path: Path, *, abort_adapter: bool
 ) -> Iterator[LiveGateway]:
     seed_second_attempt(foundation)
+    original = seed_original_foundation_request(foundation)
+    if abort_adapter:
+        grant_durable_abort_authority(foundation)
     pool: GatewayPool = new_pool(foundation)
     owner = ProcessIngressOwnership(tmp_path, node_id="host-test", gateway_id="gateway-test")
     ingress = GatewayIngress(owner, timeout_seconds=0.1)
     ledger = PostgresSubmissionLedger(pool)
+    stored = ledger.get("submit-test")
+    assert stored is not None and ledger.read_request(stored, max_document_bytes=16384) == original
+    if abort_adapter:
+        assert verify_abort_authority(pool, foundation.database.schema)
     engine = ScriptedEngine()
     abort = ScriptedAbort()
-    abort_service = ExecutionAbortService(ingress=ingress, ledger=ledger, abort=abort)
+    abort_service = ExecutionAbortService(
+        ingress=ingress, ledger=ledger, abort=abort, durable_abort_enabled=abort_adapter
+    )
     app = create_app(
         settings=Settings(
             control_database_url=SecretStr(
@@ -200,6 +213,7 @@ def test_a_drain_reports_the_recorded_work_and_writes_nothing(
     assert body["drain_state"] == "draining"
     assert body["safe_to_stop_instance"] is False
     assert intent_rows(foundation) == rows_before
+    assert abort_receipts(foundation) == []
     assert stop_evidence_rows(foundation) == []
     assert counters(foundation) == before
 
@@ -282,6 +296,13 @@ def test_a_verified_stop_closes_the_dispatched_intent_without_releasing_capacity
     assert rows["intent-http"]["execution_state"] == "aborted"
     assert rows["intent-http"]["cleanup_state"] == "complete"
     assert rows["submit-test"]["execution_state"] == "submitting"
+    receipts = abort_receipts(foundation)
+    assert len(receipts) == 1
+    assert receipts[0]["submit_intent_id"] == "intent-http"
+    assert receipts[0]["reason"] == "gateway_takeover_reconcile"
+    assert 100 <= receipts[0]["wait_timeout_ms"] <= 1000
+    assert 0 < receipts[0]["received_at_us"] <= receipts[0]["dispatched_at_us"]
+    assert len(gateway.abort.calls) == 1
     # The Scheduler still owns budget release: a verified stop publishes no capacity.
     assert counters(foundation) == before
 
@@ -310,4 +331,11 @@ def test_an_unverified_stop_quarantines_the_generation_and_keeps_holding_capacit
         "intent-http": "unknown_quarantined",
         "submit-test": "submitting",
     }
+    receipts = abort_receipts(foundation)
+    assert len(receipts) == 1
+    assert receipts[0]["submit_intent_id"] == "intent-http"
+    assert receipts[0]["reason"] == "gateway_takeover_reconcile"
+    assert 100 <= receipts[0]["wait_timeout_ms"] <= 1000
+    assert 0 < receipts[0]["received_at_us"] <= receipts[0]["dispatched_at_us"]
+    assert len(gateway.abort.calls) == 1
     assert counters(foundation) == before

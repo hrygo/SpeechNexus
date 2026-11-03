@@ -132,6 +132,7 @@ class Harness:
         *,
         abort_adapter: bool = False,
         drain_service: bool = True,
+        durable_abort_enabled: bool = True,
         monotonic: Ticking | None = None,
     ) -> None:
         self.ingress = fake_ingress(timeout_seconds=0.01)
@@ -149,7 +150,11 @@ class Harness:
             InstanceIdentity(INSTANCE, GENERATION, "node-1", "asr-batch", "gateway-1")
         )
         abort_service = ExecutionAbortService(
-            ingress=self.ingress, ledger=self.ledger, abort=self.abort, now=lambda: NOW
+            ingress=self.ingress,
+            ledger=self.ledger,
+            abort=self.abort,
+            now=lambda: NOW,
+            durable_abort_enabled=durable_abort_enabled,
         )
         services: dict[str, Any] = {
             "barrier_control": GatewayBarrierService(ingress=self.ingress, ledger=self.ledger),
@@ -265,6 +270,63 @@ def test_an_unconfirmed_stop_keeps_the_generation_quarantined(tmp_path: Path) ->
     assert body["quarantined_intent_count"] == 1
     assert body["active_intent_count"] == 0
     assert body["submitting_intent_count"] == 0
+
+
+def test_drain_without_durable_abort_authority_keeps_execution_active(tmp_path: Path) -> None:
+    harness = Harness(tmp_path, abort_adapter=True, durable_abort_enabled=False)
+    assert call(harness.app, SUBMIT_PATH, submit_body()).status_code == 200
+
+    response = call(harness.app, DRAIN_PATH, drain_body())
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "control_store_unavailable"
+    assert harness.abort.calls == [] and not harness.ledger._abort_receipts
+    stored = harness.ledger.get("intent-1")
+    assert stored is not None and stored.execution_state is ExecutionState.EXECUTING
+    assert stored.execution_state.holds_capacity
+
+
+def test_repeated_drain_reports_quarantine_without_reissuing_abort(tmp_path: Path) -> None:
+    harness = Harness(tmp_path, abort_adapter=True, monotonic=Ticking(0.0))
+    assert call(harness.app, SUBMIT_PATH, submit_body()).status_code == 200
+    first = call(harness.app, DRAIN_PATH, drain_body(max_drain_wait_ms=1000))
+    assert first.status_code == 200
+    assert first.json()["drain_state"] == "quarantined"
+
+    changed = call(harness.app, DRAIN_PATH, drain_body(max_drain_wait_ms=2000))
+
+    assert changed.status_code == 200
+    assert changed.json()["drain_state"] == "quarantined"
+    assert harness.abort.calls == [("intent-1", "gateway_takeover_reconcile", 1000)]
+    assert harness.ledger._abort_receipts["intent-1"].wait_timeout_ms == 1000
+    stored = harness.ledger.get("intent-1")
+    assert stored is not None and stored.execution_state is ExecutionState.UNKNOWN_QUARANTINED
+    assert stored.execution_state.holds_capacity
+
+
+def test_drain_cannot_replace_wait_when_an_accepted_abort_has_not_dispatched(
+    tmp_path: Path,
+) -> None:
+    harness = Harness(tmp_path, abort_adapter=True, monotonic=Ticking(0.0))
+    assert call(harness.app, SUBMIT_PATH, submit_body()).status_code == 200
+    with harness.ingress.dispatch(identity_for(COMMAND)):
+        blocked = call(harness.app, DRAIN_PATH, drain_body(max_drain_wait_ms=1000))
+    assert blocked.status_code == 503
+    assert harness.ledger._abort_receipts["intent-1"].wait_timeout_ms == 1000
+    assert not harness.ledger._abort_claimed and harness.abort.calls == []
+
+    changed = call(harness.app, DRAIN_PATH, drain_body(max_drain_wait_ms=2000))
+
+    assert changed.status_code == 409
+    assert changed.json()["error"]["code"] == "control_state_conflict"
+    assert not harness.ledger._abort_claimed and harness.abort.calls == []
+    stored = harness.ledger.get("intent-1")
+    assert stored is not None and stored.execution_state is ExecutionState.EXECUTING
+    assert stored.execution_state.holds_capacity
+
+    original = call(harness.app, DRAIN_PATH, drain_body(max_drain_wait_ms=1000))
+    assert original.status_code == 200 and original.json()["drain_state"] == "quarantined"
+    assert harness.abort.calls == [("intent-1", "gateway_takeover_reconcile", 1000)]
 
 
 def test_another_generation_or_node_is_a_conflict(tmp_path: Path) -> None:

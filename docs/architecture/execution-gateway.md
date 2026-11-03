@@ -1,8 +1,8 @@
 ---
 title: 执行网关：提交、屏障与未知执行恢复
 status: active
-version: "1.17.0"
-date: 2026-10-28
+version: "1.18.0"
+date: 2026-11-03
 ---
 
 # 执行网关：提交、屏障与未知执行恢复
@@ -254,6 +254,12 @@ fork 后不能使用或关闭父进程 lease。退出时等待仍在使用 lease
 `POST /internal/v1/executions/{submit_intent_id}/abort`（`abortExecution`）；实例级
 `POST /internal/v1/instances/{instance_id}/drain`（`drainEngineInstance`）。
 
+`/abort` 与版本化 `/abort-intents` 共用持久取消接收：先校验完整原执行并以短事务按
+pool→submit→abort 锁序提交原始取消，才等待发送锁、消耗唯一 claim 和调用 adapter。
+接收回滚或提交结果未知时不 claim、不外发；超时后查询原身份。精确原意图重放保留
+首次数据库接收时间，改变 reason 或 wait_timeout 的重放冲突。合法删除后的既有回执
+可在验证墓碑、终态及已释放租约后只读重放；缺失原文不能作为创建新取消的依据。
+
 提交路由先用冻结请求校验 command 与 `command_digest` 一致，再按 `create_submit` 落唯一 intent，
 之后才外发一次；重放返回原记录并标记 `idempotent_replay=true`，同一 intent 换命令为
 `submit_intent_conflict`，摘要与正文不符为 `invalid_execution_request`。冻结请求只带输出上限与
@@ -434,7 +440,19 @@ readiness失败，不新增运营DTO。循环存活不证明来源可用、实�
 `ExecutionQueryPort.query_outcome(submit_intent_id)` 返回原 `ExecutionSnapshot`，空身份返回 None；
 快照的 `response()` 对应协调契约 submit 分支的 `kind=execution`。认证 GET 仅返回其 execution
 投影，只接受当前 gateway/node 的记录。它不提交、观察、重试引擎，也不协调执行。
-存储读取失败为 503，不能转为 404。查询不读取命令正文，不返回内部 staging key；
+存储读取失败为 503，不能转为 404。默认组合根另建仅 SELECT 的独立 reader 池，
+必须显式配置 `SPEECHNEXUS_GATEWAY_CONTROL_QUERY_DATABASE_URL`；缺少配置或权限闭包
+核验失败时拒绝启动，不回退 writer/owner。查询在一次 `REPEATABLE READ READ ONLY`
+快照内有界读取并校验完整原命令、身份、摘要和取消收据，不向回执或日志返回私有正文。
+合法原文删除报告 `document_state=redacted`，保留原摘要而不声称重验已删除内容。
+默认 `application/json` 保留旧封闭响应；同一路由显式使用
+`Accept: application/vnd.speechnexus.execution-recovery.v1+json` 才返回必需的
+`abort_recovery`（客户端 `query_abort_recovery`）。旧表示未观测；新表示的
+`receipt=null` 仅证明该快照无
+原取消收据；`received/claimed` 均不是停止、无执行或释放证明。其摘要与时间规则见
+[机器契约](../../contracts/internal/execution-control.openapi.yaml)；部署权限、ACL影响和
+回退见[运行手册](../operations/compose-minimal.md#6-创建非-owner-运行角色与最小授权)。
+查询不返回内部 staging key；
 仅有 staging key 不足以生成完整制品引用。输出水位读取既有 `generated_pcm_samples` 持久投影，
 追加事务已由第 11 节实现；水位不代表完整区间用量或真实计量采集器取得资格。unknown 的 wire marker 为
 `unconfirmed_timeout`，不创建假停止证据行。

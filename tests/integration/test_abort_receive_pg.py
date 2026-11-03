@@ -1,0 +1,663 @@
+"""PostgreSQL proof of abort acceptance, original recovery and dispatch ordering.
+
+Uses a distinct disposable schema and synthetic commands with the production ledger;
+no real engine, shared database, network-fault or HA qualification is implied.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import time
+from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from dataclasses import dataclass, replace
+from pathlib import Path
+from threading import Event
+from typing import Any, Literal, cast
+
+import httpx
+import psycopg
+import pytest
+from psycopg.conninfo import make_conninfo
+from pydantic import SecretStr
+from tests.fake.execution import ScriptedAbort, ScriptedEngine
+from tests.fake.execution_command import command_example
+from tests.integration.test_coordination_foundation import Foundation
+from tests.integration.test_coordination_foundation import foundation as foundation
+from tests.integration.test_gateway_command_redaction import release_fixture
+from tests.integration.test_gateway_stop_evidence import evidence_for
+from tests.integration.test_gateway_submit_http import HEADERS, TOKEN, abort_body, post
+from tests.integration.test_gateway_submit_ledger import (
+    identity_for,
+    open_pool,
+    seed_second_attempt,
+)
+from tests.integration.test_tts_durable_pg import database as database
+
+from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema import (
+    gateway_abort_grants,
+)
+from speechnexus_backend.speech.infrastructure.gateway_query_grants import gateway_query_grants
+from speechnexus_gateway.app import create_app
+from speechnexus_gateway.application.abort_execution import ExecutionAbortService
+from speechnexus_gateway.application.barrier_control import GatewayBarrierService
+from speechnexus_gateway.application.ingress import GatewayIngress
+from speechnexus_gateway.application.query_execution import ExecutionQueryService
+from speechnexus_gateway.application.submit_execution import SubmitExecutionService
+from speechnexus_gateway.domain.abort_intent import AbortExecutionRequest
+from speechnexus_gateway.domain.canonical import JsonValue, canonical_json, command_digest
+from speechnexus_gateway.domain.command_redaction import (
+    AuthorizedCommandRedaction,
+    RedactExecutionCommand,
+)
+from speechnexus_gateway.domain.ports import AbortOutcome
+from speechnexus_gateway.domain.recovery import ExecutionObservationConflictError
+from speechnexus_gateway.domain.submission import (
+    ExecutionState,
+    RecordStop,
+    StopEvidenceKind,
+    SubmissionIntent,
+    SubmissionOutcomeUnknownError,
+    SubmissionStoreError,
+    SubmitRequest,
+)
+from speechnexus_gateway.infrastructure.abort_authority import verify_abort_authority
+from speechnexus_gateway.infrastructure.execution_reader import PostgresExecutionReader
+from speechnexus_gateway.infrastructure.postgres_pool import GatewayPool, gateway_pool
+from speechnexus_gateway.infrastructure.process_ownership import ProcessIngressOwnership
+from speechnexus_gateway.infrastructure.submit_postgres import PostgresSubmissionLedger
+from speechnexus_gateway.settings import Settings
+
+pytestmark = pytest.mark.integration
+PASSWORD = "synthetic_foundation_test"
+INTENT_ID = "intent-a"
+
+
+class ObservableLedger(PostgresSubmissionLedger):
+    """Observe only completed production transactions, without substituting the SQL."""
+
+    def __init__(self, pool: GatewayPool) -> None:
+        super().__init__(pool, timeout_seconds=5)
+        self.receive_started = Event()
+        self.received = Event()
+        self.claims = 0
+
+    def receive_abort(self, request: AbortExecutionRequest) -> None:
+        self.receive_started.set()
+        super().receive_abort(request)
+        self.received.set()
+
+    def claim_abort(self, request: AbortExecutionRequest) -> SubmissionIntent | None:
+        self.claims += 1
+        return super().claim_abort(request)
+
+
+@dataclass
+class LiveAbort:
+    ledger: ObservableLedger
+    ingress: GatewayIngress
+    engine: ScriptedAbort
+    request: SubmitRequest
+    abort_request: AbortExecutionRequest
+
+    def service(self, ledger: ObservableLedger | None = None) -> ExecutionAbortService:
+        return ExecutionAbortService(
+            ingress=self.ingress,
+            ledger=self.ledger if ledger is None else ledger,
+            abort=self.engine,
+            durable_abort_enabled=True,
+        )
+
+
+@pytest.fixture
+def live(foundation: Foundation, tmp_path: Path) -> Iterator[LiveAbort]:
+    for grant in gateway_abort_grants(foundation.database.schema, foundation.gateway_role):
+        foundation.database.query(grant)
+    seed_second_attempt(foundation)
+    pool = open_pool(foundation, max_size=4)
+    owner = ProcessIngressOwnership(tmp_path, node_id="host-test", gateway_id="gateway-test")
+    try:
+        assert verify_abort_authority(pool, foundation.database.schema)
+        ingress = GatewayIngress(owner, timeout_seconds=4)
+        ledger = ObservableLedger(pool)
+        command = cast(JsonValue, command_example(0))
+        identity = replace(
+            identity_for("lease-alt-stage-main", submit_intent_id=INTENT_ID),
+            command_digest=command_digest(command),
+        )
+        request = SubmitRequest(identity=identity, command=command, output_stream_id="tts-main")
+        sender = ScriptedEngine()
+        outcome = SubmitExecutionService(
+            ingress=ingress, ledger=ledger, dispatch=sender, observation=sender
+        ).submit(request)
+        assert outcome.intent.execution_state is ExecutionState.EXECUTING
+        assert sender.dispatch_count == 1
+        abort_request = AbortExecutionRequest(
+            identity.submit_intent_id,
+            identity.operation_id,
+            identity.attempt_id,
+            identity.fencing_token,
+            "client_cancelled",
+            1000,
+        )
+        yield LiveAbort(ledger, ingress, ScriptedAbort(), request, abort_request)
+    finally:
+        owner.close()
+        pool.close()
+
+
+@pytest.fixture
+def reader_pool(foundation: Foundation) -> Iterator[GatewayPool]:
+    db = foundation.database
+    role = db.schema + "_reader"
+    db.query(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")
+    pool = None
+    try:
+        for grant in gateway_query_grants(db.schema, role):
+            db.query(grant)
+        pool = gateway_pool(
+            make_conninfo(db.url, user=role, password=PASSWORD), schema=db.schema, max_size=2
+        )
+        pool.open()
+        yield pool
+    finally:
+        if pool is not None:
+            pool.close()
+        db.query(f'DROP OWNED BY "{role}"')
+        db.query(f'DROP ROLE "{role}"')
+
+
+def abort_digest(request: AbortExecutionRequest) -> str:
+    return command_digest(
+        {
+            "submit_intent_id": request.submit_intent_id,
+            "operation_id": request.operation_id,
+            "attempt_id": request.attempt_id,
+            "fencing_token": request.fencing_token,
+            "reason": request.reason,
+            "wait_timeout_ms": request.wait_timeout_ms,
+        }
+    )
+
+
+def receipt_row(foundation: Foundation) -> list[dict[str, Any]]:
+    return foundation.database.query(
+        "SELECT submit_intent_id, operation_id, attempt_id, fencing_token, reason, "
+        "wait_timeout_ms, received_at_us, dispatched_at_us "
+        "FROM gateway_abort_intents WHERE submit_intent_id=%s",
+        (INTENT_ID,),
+    )
+
+
+def test_receipt_commits_before_waiting_for_the_actual_ingress_lane(
+    foundation: Foundation, live: LiveAbort, reader_pool: GatewayPool
+) -> None:
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with live.ingress.dispatch(live.request.identity):
+            future = executor.submit(live.service().abort, live.abort_request)
+            assert live.ledger.received.wait(3)
+            # Fresh reader role and connection see the committed receipt while the
+            # real local sending lock is still held by this thread.
+            recovered = PostgresExecutionReader(reader_pool).query_outcome(INTENT_ID)
+            assert recovered is not None and recovered.abort_recovery is not None
+            recovery = recovered.abort_recovery
+            assert recovery.execution_request_digest == live.request.request_digest
+            assert recovery.document_state == "verified" and recovery.receipt is not None
+            assert recovery.receipt.abort_request_digest == abort_digest(live.abort_request)
+            assert (
+                recovery.receipt.claim_state == "received" and recovery.receipt.claimed_at is None
+            )
+            assert receipt_row(foundation)[0]["dispatched_at_us"] is None
+            assert live.ledger.claims == 0 and live.engine.calls == [] and not future.done()
+        result = future.result(timeout=4)
+    assert (
+        result is not None and result.intent.execution_state is ExecutionState.UNKNOWN_QUARANTINED
+    )
+    assert len(live.engine.calls) == 1 and live.ledger.claims == 1
+
+
+def test_receive_waits_for_pool_lock_without_sending(
+    foundation: Foundation, live: LiveAbort
+) -> None:
+    db = foundation.database
+    blocker = db.blocker()
+    try:
+        blocker.execute(
+            "SELECT pool_id FROM resource_pools WHERE pool_id=%s FOR UPDATE", ("tts-realtime",)
+        )
+        pid = blocker.execute("SELECT pg_backend_pid() AS pid").fetchone()["pid"]
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(live.service().abort, live.abort_request)
+            try:
+                assert live.ledger.receive_started.wait(2)
+                deadline = time.monotonic() + 3
+                while True:
+                    waiters = db.query(
+                        "SELECT pid FROM pg_stat_activity WHERE usename=%s "
+                        "AND %s = ANY(pg_blocking_pids(pid))",
+                        (foundation.gateway_role, pid),
+                    )
+                    if waiters:
+                        break
+                    assert time.monotonic() < deadline, "PostgreSQL lock wait was not observed"
+                    Event().wait(0.01)
+                assert receipt_row(foundation) == []
+                assert not live.ledger.received.is_set()
+                assert live.ledger.claims == 0 and live.engine.calls == []
+            finally:
+                blocker.commit()
+            assert future.result(timeout=4) is not None
+        assert live.ledger.received.is_set() and len(live.engine.calls) == 1
+    finally:
+        blocker.close()
+
+
+class ReceiveFaultPool:
+    """Inject an error at the actual pool connection's transaction exit."""
+
+    def __init__(self, pool: GatewayPool, mode: Literal["rollback", "lost_ack"]) -> None:
+        self.pool = pool
+        self.mode = mode
+        self.injected = Event()
+
+    @contextmanager
+    def connection(self, *, timeout: float) -> Iterator[Any]:
+        with self.pool.connection(timeout=timeout) as connection:
+            yield connection
+            if self.mode == "rollback":
+                self.injected.set()
+                raise psycopg.errors.CheckViolation("synthetic pre-commit rollback")
+        self.injected.set()  # Pool context returned only after the actual COMMIT.
+        raise psycopg.OperationalError("synthetic lost commit acknowledgement")
+
+
+class ReceiveFaultLedger(ObservableLedger):
+    def __init__(self, pool: GatewayPool, fault: ReceiveFaultPool) -> None:
+        super().__init__(pool)
+        self.receive_writer = PostgresSubmissionLedger(cast(GatewayPool, fault), timeout_seconds=5)
+
+    def receive_abort(self, request: AbortExecutionRequest) -> None:
+        self.receive_started.set()
+        self.receive_writer.receive_abort(request)
+        self.received.set()
+
+
+@pytest.mark.parametrize("mode", ["rollback", "lost_ack"])
+def test_receive_failure_never_claims_and_restarted_reader_recovers_original(
+    foundation: Foundation,
+    live: LiveAbort,
+    reader_pool: GatewayPool,
+    mode: Literal["rollback", "lost_ack"],
+) -> None:
+    writer_pool = open_pool(foundation)
+    try:
+        fault = ReceiveFaultPool(writer_pool, mode)
+        ledger = ReceiveFaultLedger(live.ledger._pool, fault)
+        error = SubmissionOutcomeUnknownError if mode == "lost_ack" else SubmissionStoreError
+        with pytest.raises(error):
+            live.service(ledger).abort(live.abort_request)
+        assert fault.injected.is_set()
+        assert ledger.claims == 0 and live.engine.calls == []
+        rows = receipt_row(foundation)
+        assert len(rows) == (1 if mode == "lost_ack" else 0)
+        if rows:
+            assert rows[0]["dispatched_at_us"] is None
+        # A new reader and a different restricted connection recover from database state,
+        # not from the writer, its pool or a local receipt cache.
+        recovered = PostgresExecutionReader(reader_pool).query_outcome(INTENT_ID)
+        assert recovered is not None and recovered.abort_recovery is not None
+        recovery = recovered.abort_recovery
+        assert recovered.intent.execution_state is ExecutionState.EXECUTING
+        assert recovery.document_state == "verified"
+        assert recovery.execution_request_digest == live.request.request_digest
+        if mode == "rollback":
+            assert recovery.receipt is None
+        else:
+            assert recovery.receipt is not None
+            assert recovery.receipt.abort_request_digest == abort_digest(live.abort_request)
+            assert (
+                recovery.receipt.claim_state == "received" and recovery.receipt.claimed_at is None
+            )
+    finally:
+        writer_pool.close()
+
+
+def test_exact_receive_replay_keeps_first_database_timestamp_and_conflicts(
+    foundation: Foundation, live: LiveAbort
+) -> None:
+    live.ledger.receive_abort(live.abort_request)
+    first = receipt_row(foundation)
+    assert len(first) == 1 and first[0]["received_at_us"] > 0
+    live.ledger.receive_abort(live.abort_request)
+    assert receipt_row(foundation) == first
+    for changed in (
+        replace(live.abort_request, reason="deadline_exceeded"),
+        replace(live.abort_request, wait_timeout_ms=2000),
+    ):
+        with pytest.raises(ExecutionObservationConflictError):
+            live.ledger.receive_abort(changed)
+        assert receipt_row(foundation) == first
+    assert live.ledger.claims == 0 and live.engine.calls == []
+
+
+def test_terminal_fact_after_receive_but_before_claim_is_never_rewritten(
+    foundation: Foundation, live: LiveAbort
+) -> None:
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with live.ingress.dispatch(live.request.identity):
+            future = executor.submit(live.service().abort, live.abort_request)
+            assert live.ledger.received.wait(3)
+            evidence = evidence_for(
+                foundation, evidence_kind=StopEvidenceKind.ENGINE_TERMINAL_RESPONSE
+            )
+            terminal = live.ledger.record_stop(RecordStop(evidence, ExecutionState.SUCCEEDED))
+        result = future.result(timeout=4)
+    assert result is not None and result.intent == terminal
+    assert live.ledger.get(INTENT_ID) == terminal
+    assert receipt_row(foundation)[0]["dispatched_at_us"] is None
+    assert live.engine.calls == []
+
+
+def test_terminal_fact_after_claim_survives_late_unconfirmed_abort(
+    foundation: Foundation, live: LiveAbort
+) -> None:
+    entered, resume = Event(), Event()
+
+    class BlockingAbort(ScriptedAbort):
+        def abort(
+            self, intent: SubmissionIntent, *, reason: str, wait_timeout_ms: int
+        ) -> AbortOutcome:
+            entered.set()
+            assert resume.wait(4)
+            return super().abort(intent, reason=reason, wait_timeout_ms=wait_timeout_ms)
+
+    engine = BlockingAbort()
+    service = ExecutionAbortService(
+        ingress=live.ingress, ledger=live.ledger, abort=engine, durable_abort_enabled=True
+    )
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(service.abort, live.abort_request)
+        try:
+            assert entered.wait(3)
+            assert receipt_row(foundation)[0]["dispatched_at_us"] is not None
+            current = live.ledger.get(INTENT_ID)
+            assert current is not None
+            assert current.execution_state is ExecutionState.UNKNOWN_QUARANTINED
+            terminal = live.ledger.record_stop(
+                RecordStop(evidence_for(foundation), ExecutionState.ABORTED)
+            )
+        finally:
+            resume.set()
+        assert future.result(timeout=4) is not None
+    assert live.ledger.get(INTENT_ID) == terminal
+    assert len(engine.calls) == 1
+
+
+def redact_terminal_execution(foundation: Foundation, live: LiveAbort) -> SubmissionIntent:
+    terminal = live.ledger.record_stop(RecordStop(evidence_for(foundation), ExecutionState.ABORTED))
+    # This is a synthetic Scheduler-owned release fact, not release qualification.
+    release_fixture(foundation)
+    permit = AuthorizedCommandRedaction(
+        RedactExecutionCommand(INTENT_ID, terminal.version, "delete-test", "sha256:" + "d" * 64),
+        terminal.identity,
+    )
+    redacted = live.ledger.redact_execution_command(permit)
+    assert not redacted.replayed
+    return redacted.intent
+
+
+@pytest.mark.parametrize("previously_claimed", [False, True])
+@pytest.mark.parametrize("method", ["abort", "abort_idempotent"])
+def test_exact_abort_receipt_replays_after_legitimate_command_redaction(
+    foundation: Foundation,
+    live: LiveAbort,
+    reader_pool: GatewayPool,
+    previously_claimed: bool,
+    method: str,
+) -> None:
+    if previously_claimed:
+        assert live.service().abort(live.abort_request) is not None
+    else:
+        live.ledger.receive_abort(live.abort_request)
+    redacted = redact_terminal_execution(foundation, live)
+    before_receipt = receipt_row(foundation)
+    assert len(before_receipt) == 1
+    assert (before_receipt[0]["dispatched_at_us"] is not None) is previously_claimed
+    before_calls = list(live.engine.calls)
+    before_intent = live.ledger.get(INTENT_ID)
+    before_stop = foundation.database.query(
+        "SELECT * FROM execution_stop_evidence WHERE submit_intent_id=%s", (INTENT_ID,)
+    )
+    assert before_intent == redacted
+
+    result = getattr(live.service(), method)(live.abort_request)
+
+    assert result is not None and result.intent == redacted
+    assert live.ledger.get(INTENT_ID) == before_intent
+    assert receipt_row(foundation) == before_receipt
+    assert (
+        foundation.database.query(
+            "SELECT * FROM execution_stop_evidence WHERE submit_intent_id=%s", (INTENT_ID,)
+        )
+        == before_stop
+    )
+    assert live.engine.calls == before_calls
+    recovered = PostgresExecutionReader(reader_pool).query_outcome(INTENT_ID)
+    assert recovered is not None and recovered.abort_recovery is not None
+    assert recovered.abort_recovery.document_state == "redacted"
+    assert recovered.abort_recovery.receipt is not None
+    assert recovered.abort_recovery.receipt.abort_request_digest == abort_digest(live.abort_request)
+    for changed in (
+        replace(live.abort_request, reason="deadline_exceeded"),
+        replace(live.abort_request, wait_timeout_ms=2000),
+    ):
+        with pytest.raises(ExecutionObservationConflictError):
+            getattr(live.service(), method)(changed)
+    assert receipt_row(foundation) == before_receipt and live.engine.calls == before_calls
+
+
+def test_first_abort_receipt_cannot_be_created_after_command_redaction(
+    foundation: Foundation, live: LiveAbort
+) -> None:
+    redacted = redact_terminal_execution(foundation, live)
+    with pytest.raises(SubmissionStoreError):
+        live.service().abort(live.abort_request)
+    assert receipt_row(foundation) == [] and live.engine.calls == []
+    assert live.ledger.claims == 0 and live.ledger.get(INTENT_ID) == redacted
+
+
+@pytest.mark.parametrize("suffix", ["abort", "abort-intents"])
+def test_http_abort_replay_after_redaction_preserves_all_authoritative_rows(
+    foundation: Foundation,
+    live: LiveAbort,
+    reader_pool: GatewayPool,
+    tmp_path: Path,
+    suffix: str,
+) -> None:
+    live.ledger.receive_abort(live.abort_request)
+    terminal = redact_terminal_execution(foundation, live)
+    db = foundation.database
+
+    def snapshot() -> tuple[list[dict[str, Any]], ...]:
+        return (
+            db.query("SELECT * FROM submit_intents WHERE submit_intent_id=%s", (INTENT_ID,)),
+            db.query("SELECT * FROM gateway_abort_intents WHERE submit_intent_id=%s", (INTENT_ID,)),
+            db.query(
+                "SELECT * FROM admission_leases WHERE lease_id=%s", (terminal.identity.lease_id,)
+            ),
+            db.query(
+                "SELECT * FROM execution_stop_evidence WHERE submit_intent_id=%s", (INTENT_ID,)
+            ),
+        )
+
+    before = snapshot()
+    assert before[0][0]["request_document"] is None
+    assert before[1][0]["dispatched_at_us"] is None
+    engine = ScriptedEngine()
+    app = create_app(
+        settings=Settings(
+            control_database_url=SecretStr(db.url),
+            control_schema=db.schema,
+            node_id="host-test",
+            gateway_id="gateway-test",
+            component_token=SecretStr(TOKEN),
+            ingress_lock_directory=tmp_path,
+        ),
+        barrier_control=GatewayBarrierService(ingress=live.ingress, ledger=live.ledger),
+        execution_query=ExecutionQueryService(
+            ingress=live.ingress, ledger=PostgresExecutionReader(reader_pool)
+        ),
+        submit_execution=SubmitExecutionService(
+            ingress=live.ingress, ledger=live.ledger, dispatch=engine, observation=engine
+        ),
+        abort_execution=live.service(),
+    )
+    path = f"/internal/v1/executions/{INTENT_ID}/{suffix}"
+    response = post(app, path, abort_body())
+    assert response.status_code == 200
+    assert response.json()["execution_state"] == "aborted"
+    for changed in (abort_body(reason="deadline_exceeded"), abort_body(wait_timeout_ms=2000)):
+        conflict = post(app, path, changed)
+        assert conflict.status_code == 409
+        assert conflict.json()["error"]["code"] == "control_state_conflict"
+
+    async def recover() -> httpx.Response:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://gateway"
+        ) as client:
+            return await client.get(
+                f"/internal/v1/executions/{INTENT_ID}",
+                headers={
+                    **HEADERS,
+                    "Accept": "application/vnd.speechnexus.execution-recovery.v1+json",
+                },
+            )
+
+    recovered = asyncio.run(recover())
+    assert recovered.status_code == 200
+    recovery = recovered.json()["abort_recovery"]
+    assert recovery["document_state"] == "redacted"
+    assert recovery["execution_request_digest"] == live.request.request_digest
+    assert recovery["receipt"]["abort_request_digest"] == abort_digest(live.abort_request)
+    assert recovery["receipt"]["claim_state"] == "received"
+    assert snapshot() == before
+    assert live.engine.calls == [] and engine.dispatch_count == 0
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    [
+        "deletion_digest",
+        "deletion_id",
+        "redacted_at",
+        "after_updated",
+        "unreleased",
+        "active_execution",
+        "request_digest",
+        "command_digest",
+    ],
+)
+def test_existing_abort_receipt_does_not_validate_an_illegal_tombstone(
+    foundation: Foundation, live: LiveAbort, corruption: str
+) -> None:
+    live.ledger.receive_abort(live.abort_request)
+    redact_terminal_execution(foundation, live)
+    db = foundation.database
+    if corruption == "unreleased":
+        db.query(
+            "UPDATE admission_leases SET lease_state='reserved', cleanup_state='pending', "
+            "budget_released_at_us=NULL WHERE lease_id='lease-alt-stage-main'"
+        )
+    elif corruption == "after_updated":
+        db.query(
+            "UPDATE submit_intents SET command_redacted_at_us=updated_at_us + 1 "
+            "WHERE submit_intent_id=%s",
+            (INTENT_ID,),
+        )
+    elif corruption == "active_execution":
+        db.query(
+            "UPDATE submit_intents SET execution_state='executing', cleanup_state='pending', "
+            "terminated_at_us=NULL WHERE submit_intent_id=%s",
+            (INTENT_ID,),
+        )
+    else:
+        column, value = {
+            "deletion_digest": ("command_deletion_evidence_digest", "invalid"),
+            "deletion_id": ("command_deletion_job_id", "!"),
+            "redacted_at": ("command_redacted_at_us", 1),
+            "request_digest": ("request_digest", "invalid"),
+            "command_digest": ("command_digest", "invalid"),
+        }[corruption]
+        db.query(
+            f"UPDATE submit_intents SET {column}=%s WHERE submit_intent_id=%s", (value, INTENT_ID)
+        )
+    before_receipt = receipt_row(foundation)
+    before_version = db.query(
+        "SELECT version FROM submit_intents WHERE submit_intent_id=%s", (INTENT_ID,)
+    )
+    with pytest.raises(SubmissionStoreError):
+        live.service().abort(live.abort_request)
+    assert receipt_row(foundation) == before_receipt
+    assert (
+        db.query("SELECT version FROM submit_intents WHERE submit_intent_id=%s", (INTENT_ID,))
+        == before_version
+    )
+    assert live.ledger.claims == 0 and live.engine.calls == []
+
+
+def test_changed_abort_conflicts_before_even_a_corrupt_tombstone_can_be_used(
+    foundation: Foundation, live: LiveAbort
+) -> None:
+    live.ledger.receive_abort(live.abort_request)
+    redact_terminal_execution(foundation, live)
+    foundation.database.query(
+        "UPDATE submit_intents SET command_deletion_evidence_digest=%s WHERE submit_intent_id=%s",
+        ("invalid", INTENT_ID),
+    )
+    original = receipt_row(foundation)
+    for changed in (
+        replace(live.abort_request, reason="deadline_exceeded"),
+        replace(live.abort_request, wait_timeout_ms=2000),
+    ):
+        with pytest.raises(ExecutionObservationConflictError):
+            live.service().abort_idempotent(changed)
+    assert receipt_row(foundation) == original
+    assert live.ledger.claims == 0 and live.engine.calls == []
+
+
+@pytest.mark.parametrize("corruption", ["document", "digest", "identity", "redacted"])
+def test_missing_or_corrupt_original_document_is_never_received(
+    foundation: Foundation, live: LiveAbort, corruption: str
+) -> None:
+    db = foundation.database
+    if corruption == "redacted":
+        db.query(
+            "UPDATE submit_intents SET request_document=NULL, command_redacted_at_us=1, "
+            "command_deletion_job_id='delete-synthetic', command_deletion_evidence_digest=%s "
+            "WHERE submit_intent_id=%s",
+            ("sha256:" + "d" * 64, INTENT_ID),
+        )
+    elif corruption == "digest":
+        db.query(
+            "UPDATE submit_intents SET request_digest=%s WHERE submit_intent_id=%s",
+            ("sha256:" + "0" * 64, INTENT_ID),
+        )
+    else:
+        value = json.loads(live.request.request_document)
+        if corruption == "identity":
+            value["execution_request"]["instance_generation"] += 1
+            document = canonical_json(cast(JsonValue, value))
+            digest = command_digest(cast(JsonValue, value))
+        else:
+            document, digest = "{}", live.request.request_digest
+        db.query(
+            "UPDATE submit_intents SET request_document=%s, request_digest=%s "
+            "WHERE submit_intent_id=%s",
+            (document, digest, INTENT_ID),
+        )
+    with pytest.raises(SubmissionStoreError):
+        live.service().abort(live.abort_request)
+    assert receipt_row(foundation) == []
+    assert live.ledger.claims == 0 and live.engine.calls == []

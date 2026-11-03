@@ -1,11 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "ExecutionContracts",
-  "x-nexus-bindings-version": "0.4.0.dev0",
+  "x-nexus-bindings-version": "0.4.0.dev1",
   "x-nexus-entrypoints": [
     "SubmitExecutionRequest",
     "SubmitExecutionResponse",
     "ExecutionStatusResponse",
+    "ExecutionRecoveryStatusResponse",
     "AbortExecutionRequest",
     "GatewayFencingBarrierRequest",
     "GatewayFencingBarrierResponse",
@@ -1975,6 +1976,250 @@
         }
       ]
     },
+    "ExecutionRecoveryStatusResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "submit_intent_id",
+        "lease_id",
+        "operation_id",
+        "attempt_id",
+        "stage_id",
+        "workspace_id",
+        "pool_id",
+        "host_node_id",
+        "gateway_id",
+        "instance_id",
+        "instance_generation",
+        "binding_revision_id",
+        "policy_revision_id",
+        "voice_revision_id",
+        "fencing_token",
+        "command_digest",
+        "deadline_at",
+        "dispatched_at",
+        "sample_rate_hz",
+        "execution_state",
+        "cleanup_state",
+        "stop_evidence_kind",
+        "updated_at"
+      ],
+      "properties": {
+        "submit_intent_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "lease_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "attempt_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "stage_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "workspace_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "pool_id": {
+          "$ref": "#/$defs/PoolId"
+        },
+        "host_node_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "gateway_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "instance_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "instance_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "binding_revision_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "policy_revision_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "voice_revision_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fencing_token": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "command_digest": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "deadline_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "dispatched_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "sample_rate_hz": {
+          "type": ["integer", "null"],
+          "enum": [16000, 24000, 48000, null]
+        },
+        "engine_request_id": {
+          "type": ["string", "null"]
+        },
+        "execution_state": {
+          "$ref": "#/$defs/ExecutionState"
+        },
+        "cleanup_state": {
+          "$ref": "#/$defs/CleanupState"
+        },
+        "stop_evidence_kind": {
+          "$ref": "#/$defs/StopEvidenceKind"
+        },
+        "output_watermark": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OutputWatermark"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null for text-only stages. Otherwise its sample_rate_hz must equal\nthe response-level sample_rate_hz and its generated_pcm_samples must\nnot exceed hard_output_ceiling_samples when that ceiling is set.\n"
+        },
+        "staging_artifact_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArtifactStorageReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error_code": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExecutionErrorCode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "abort_recovery": {
+          "$ref": "#/$defs/ExecutionAbortRecovery"
+        }
+      },
+      "allOf": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/ExecutionStateInvariants"
+            },
+            {
+              "$ref": "#/$defs/ExecutionTerminalEvidenceInvariants"
+            },
+            {
+              "$ref": "#/$defs/ExecutionCleanupEvidenceInvariants"
+            },
+            {
+              "$ref": "#/$defs/ExecutionDispatchEvidenceInvariants"
+            }
+          ]
+        },
+        {
+          "required": ["abort_recovery"]
+        }
+      ],
+      "description": "Opt-in original execution recovery representation. Available only with\nAccept: application/vnd.speechnexus.execution-recovery.v1+json on the\nexisting GET route. application/json keeps the original closed shape.\n"
+    },
+    "ExecutionAbortRecovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Consistent read-only observation of the original execution and its abort\nreceipt. execution_request_digest is the existing native digest of the\ncomplete effective_request (execution_request plus output_stream_id),\nnot just command_digest or a reconstruction from status fields.\nverified means the stored complete original document and identity were\nchecked. redacted means a legitimate terminal, released deletion\ntombstone was verified; the stored digest is retained without claiming\nto reverify deleted content. Missing or inconsistent source facts fail\nclosed. No lookup, replay or receipt authorizes new external I/O.\n",
+      "required": ["execution_request_digest", "document_state", "receipt"],
+      "properties": {
+        "execution_request_digest": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "document_state": {
+          "type": "string",
+          "enum": ["verified", "redacted"]
+        },
+        "receipt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AbortRecoveryReceipt"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null confirms this one snapshot contains no original abort receipt;\nit does not prove no running execution or permit redispatch/release.\n"
+        }
+      }
+    },
+    "AbortRecoveryReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "An original durable cancellation receipt. abort_request_digest is SHA-256\nof RFC 8785 UTF-8 for the complete object containing submit_intent_id\nfrom the path and the five original abort body fields: operation_id,\nattempt_id, fencing_token, reason and wait_timeout_ms. It is not the\ndigest of the body alone. Claiming consumes the one external-abort claim;\nit proves neither sending, engine stop nor resource/budget release.\nreceived_at and the digest retain their first committed values.\n",
+      "required": ["abort_request_digest", "received_at", "claim_state", "claimed_at"],
+      "properties": {
+        "abort_request_digest": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "received_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "claim_state": {
+          "type": "string",
+          "enum": ["received", "claimed"]
+        },
+        "claimed_at": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "When claimed, this must not precede received_at."
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "claim_state": {
+              "const": "received"
+            },
+            "claimed_at": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "claim_state": {
+              "const": "claimed"
+            },
+            "claimed_at": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
     "AbortExecutionRequest": {
       "type": "object",
       "additionalProperties": false,
@@ -2629,6 +2874,9 @@
     },
     {
       "$ref": "#/$defs/ExecutionStatusResponse"
+    },
+    {
+      "$ref": "#/$defs/ExecutionRecoveryStatusResponse"
     },
     {
       "$ref": "#/$defs/AbortExecutionRequest"

@@ -1,19 +1,14 @@
 """Production gateway composition root with real restricted PostgreSQL authority."""
 
-from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import httpx
-import psycopg
 import pytest
 from psycopg.conninfo import make_conninfo
-from psycopg.rows import dict_row
 from pydantic import SecretStr
-from tests.integration.test_binding_lifecycle_pg import Sandbox
-from tests.integration.test_binding_lifecycle_pg import sandbox as sandbox
 from tests.integration.test_coordination_foundation import Foundation
-from tests.integration.test_coordination_foundation import foundation as foundation
 from tests.integration.test_gateway_submit_http import (
     LEASE,
     TOKEN,
@@ -22,13 +17,16 @@ from tests.integration.test_gateway_submit_http import (
     submit_body,
 )
 from tests.integration.test_gateway_submit_ledger import identity_for, seed_second_attempt
-from tests.integration.test_production_jobs import JobDatabase
+from tests.support.execution_reader_database import ReaderFoundation
+from tests.support.execution_reader_database import reader_foundation as reader_foundation
 
 from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema import (
     gateway_abort_grants,
     gateway_binding_barrier_grants,
 )
-from speechnexus_backend.speech.infrastructure.jobs_postgres import PostgresJobTransactions
+from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
+    GatewayExecutionClient,
+)
 from speechnexus_gateway.app import create_app
 from speechnexus_gateway.domain.canonical import command_digest
 from speechnexus_gateway.domain.ports import AbortOutcome, DispatchOutcome, EngineObservation
@@ -39,19 +37,8 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
-def database(sandbox: Sandbox) -> Iterator[JobDatabase]:
-    """Explicit PG-only composition test; the shared dual-DB gate is unchanged."""
-    with psycopg.connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
-        admin.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
-        yield JobDatabase(
-            "postgresql",
-            sandbox.url,
-            sandbox.schema,
-            sandbox.role,
-            admin,
-            PostgresJobTransactions(sandbox.pool),
-            sandbox.pool,
-        )
+def foundation(reader_foundation: ReaderFoundation) -> Foundation:
+    return reader_foundation.foundation
 
 
 class SyntheticEngine:
@@ -117,7 +104,10 @@ def seed_binding(foundation: Foundation) -> None:
 
 @pytest.mark.parametrize("abort_authorized", [True, False])
 async def test_real_gateway_composition_root_abort_authority(
-    foundation: Foundation, tmp_path: Path, abort_authorized: bool
+    foundation: Foundation,
+    reader_foundation: ReaderFoundation,
+    tmp_path: Path,
+    abort_authorized: bool,
 ) -> None:
     seed_second_attempt(foundation)
     seed_binding(foundation)
@@ -131,6 +121,7 @@ async def test_real_gateway_composition_root_abort_authority(
                 db.url, user=foundation.gateway_role, password="synthetic_foundation_test"
             )
         ),
+        control_query_database_url=reader_foundation.query_database_url,
         control_schema=db.schema,
         node_id="host-test",
         gateway_id="gateway-test",
@@ -153,6 +144,13 @@ async def test_real_gateway_composition_root_abort_authority(
         )
         assert submitted.status_code == 200, submitted.text
         assert engine.dispatched == ["intent-composition"]
+        query_path = "/internal/v1/executions/intent-composition"
+        initial = await client.get(
+            query_path, headers={"Accept": "application/vnd.speechnexus.execution-recovery.v1+json"}
+        )
+        assert initial.status_code == 200, initial.text
+        assert initial.json()["abort_recovery"]["document_state"] == "verified"
+        assert initial.json()["abort_recovery"]["receipt"] is None
         path = "/internal/v1/executions/intent-composition/abort-intents"
         payload = abort_body(reason="resource_force_disabled")
         first = await client.post(path, json=payload)
@@ -168,6 +166,39 @@ async def test_real_gateway_composition_root_abort_authority(
         else:
             assert first.status_code == 503, first.text
             assert engine.aborted == []
+        # The read path has its own role and pool: closing the writer cannot turn
+        # an original outcome into an unavailable result or cause another dispatch.
+        app.state.submit_execution._ledger._pool.close()
+        recovered = await client.get(
+            query_path, headers={"Accept": "application/vnd.speechnexus.execution-recovery.v1+json"}
+        )
+        assert recovered.status_code == 200, recovered.text
+        projection = recovered.json()["abort_recovery"]
+        assert projection["document_state"] == "verified"
+        assert (projection["receipt"] is not None) is abort_authorized
+        if abort_authorized:
+            assert projection["receipt"]["abort_request_digest"] == command_digest(
+                {"submit_intent_id": "intent-composition", **payload}
+            )
+            assert projection["receipt"]["claim_state"] == "claimed"
+        assert "resource_force_disabled" not in recovered.text
+        async with GatewayExecutionClient(
+            base_url="http://gateway",
+            credential=SecretStr(TOKEN),
+            timeout_seconds=3,
+            max_retries=0,
+            backoff_seconds=0,
+            _transport=httpx.ASGITransport(app=app),
+        ) as consumer:
+            typed = await consumer.query_abort_recovery("intent-composition")
+            legacy = await consumer.query("intent-composition")
+        assert typed == recovered.json()
+        assert "abort_recovery" not in legacy
+        assert engine.dispatched == ["intent-composition"]
+        # Conversely, losing the reader never silently falls back to the writer.
+        app.state.execution_query._ledger._pool.close()
+        unavailable = await client.get(query_path)
+        assert unavailable.status_code == 503
     rows = db.query(
         "SELECT count(*) AS n FROM gateway_abort_intents WHERE submit_intent_id=%s",
         ("intent-composition",),
@@ -175,6 +206,45 @@ async def test_real_gateway_composition_root_abort_authority(
     assert rows[0]["n"] == int(abort_authorized)
     lease = db.query("SELECT lease_state FROM admission_leases WHERE lease_id=%s", (LEASE,))[0]
     assert lease["lease_state"] != "released"
+
+
+@pytest.mark.parametrize("credential", ["missing", "writer"])
+async def test_gateway_rejects_missing_or_writable_query_identity(
+    foundation: Foundation,
+    reader_foundation: ReaderFoundation,
+    tmp_path: Path,
+    credential: str,
+) -> None:
+    db = foundation.database
+    writer_url = SecretStr(
+        make_conninfo(db.url, user=foundation.gateway_role, password="synthetic_foundation_test")
+    )
+    values: dict[str, Any] = {
+        "control_database_url": writer_url,
+        "control_query_database_url": None if credential == "missing" else writer_url,
+        "control_schema": db.schema,
+        "node_id": "host-test",
+        "gateway_id": "gateway-test",
+        "component_token": SecretStr(TOKEN),
+        "ingress_lock_directory": tmp_path,
+    }
+    engine = SyntheticEngine()
+    failed = create_app(
+        settings=Settings(**values), file_execution_factory=lambda ingress, ledger: engine
+    )
+    with pytest.raises(ValueError):
+        async with failed.router.lifespan_context(failed):
+            pytest.fail("unsafe query identity reached gateway startup")
+    assert not engine.running
+    # Failed startup released its ownership and pools, so a valid reader can start.
+    valid = create_app(
+        settings=Settings(
+            **(values | {"control_query_database_url": reader_foundation.query_database_url})
+        ),
+        file_execution_factory=lambda ingress, ledger: engine,
+    )
+    async with valid.router.lifespan_context(valid):
+        assert engine.running
 
 
 async def test_worker_composition_root_opens_two_restricted_roles(
@@ -244,7 +314,10 @@ async def test_worker_composition_root_opens_two_restricted_roles(
 
 
 async def test_worker_restarts_original_abort_via_real_gateway(
-    foundation: Foundation, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    foundation: Foundation,
+    reader_foundation: ReaderFoundation,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Exercise both composition roots with a loopback HTTP hop and durable PG facts."""
     import asyncio
@@ -319,6 +392,7 @@ async def test_worker_restarts_original_abort_via_real_gateway(
                     db.url, user=foundation.gateway_role, password="synthetic_foundation_test"
                 )
             ),
+            control_query_database_url=reader_foundation.query_database_url,
             control_schema=db.schema,
             node_id="host-test",
             gateway_id="gateway-test",

@@ -50,11 +50,11 @@
 | `docs/audits/2026-10-25-b03-default-real-asr-probe.md` | 部分核对 | 核对标题、基线与历史时点边界；正文和原始证据待逐项复核 |
 | `docs/audits/2026-10-25-b03-real-cancel-settlement.md` | 历史保留 | 全文阅读，固定候选的真实取消与整代次结算实验；保留 partial 和单请求证据缺口，未重跑实验 |
 | `docs/audits/2026-10-25-b03-real-stop-settlement.md` | 历史保留 | 全文阅读，固定候选的真实整代次停止与预算结算实验；当前入口标明 fixture 限制，未重跑实验 |
-| `docs/audits/2026-10-25-coordination-port-evidence.md` | 部分核对 | 核对标题、基线与历史时点边界；正文和原始证据待逐项复核 |
+| `docs/audits/2026-10-25-coordination-port-evidence.md` | 历史保留 | 全文阅读，固定提交的协调端口和双库证据快照；当前所有权文档按快照引用，未复核历史 CI |
 | `docs/audits/2026-10-25-team-c-next-phase-integration.md` | 部分核对 | 核对标题、基线与历史时点边界；正文和原始证据待逐项复核 |
 | `docs/audits/2026-10-25-team-c-original-ac-matrix.md` | 部分核对 | 核对标题、基线与历史时点边界；正文和原始证据待逐项复核 |
-| `docs/audits/2026-10-26-b03-default-real-tts-probe.md` | 部分核对 | 核对文件开头的历史日期、基线和结果边界；正文及原始证据待逐项复核 |
-| `docs/audits/2026-10-26-b03-real-tts-stop-settlement.md` | 部分核对 | 核对文件开头的历史日期、基线和结果边界；正文及原始证据待逐项复核 |
+| `docs/audits/2026-10-26-b03-default-real-tts-probe.md` | 历史保留 | 全文阅读，固定镜像与旧 v1 配置的私有 TTS 执行实验；当前入口注明版本和范围，未重跑探针 |
+| `docs/audits/2026-10-26-b03-real-tts-stop-settlement.md` | 历史保留 | 全文阅读，固定基线的真实整代次停止和租约结算实验；保留 fixture 与未结算 base 的限制，未重跑实验 |
 | `docs/audits/2026-10-26-deployment-units-review.md` | 历史保留 | 全文阅读，固定源码基线的部署方案审查；当前规划保留审查入口，未复核历史 issue 与实验 |
 | `docs/audits/2026-10-26-project-handoff.md` | 部分核对 | 核对文件开头的历史日期、基线和结果边界；正文及原始证据待逐项复核 |
 | `docs/audits/2026-10-26-team-b-handoff.md` | 部分核对 | 核对文件开头的历史日期、基线和结果边界；正文及原始证据待逐项复核 |
@@ -65,7 +65,7 @@
 | `docs/audits/2026-10-26-team-c-input-device.md` | 历史保留 | 全文阅读，固定基线的输入选择及虚拟设备验证；未重跑测试或核验物理设备 |
 | `docs/audits/2026-10-26-team-c-operation-coverage.md` | 历史保留 | 全文阅读，固定 head 的工作台操作接线映射；历史交接按当时范围引用，未重跑映射守卫 |
 | `docs/audits/2026-10-26-team-c-realtime-focus.md` | 历史保留 | 全文阅读，固定基线的焦点修复、反例及后续合入记录；未重跑测试或复核远端 CI |
-| `docs/audits/2026-10-26-team-c-realtime-integrity.md` | 部分核对 | 核对文件开头的历史日期、基线和结果边界；正文及原始证据待逐项复核 |
+| `docs/audits/2026-10-26-team-c-realtime-integrity.md` | 历史保留 | 全文阅读，固定基线的实时发送和本地停止修复及合成验证；未重跑测试 |
 | `docs/audits/2026-10-26-team-c-remaining-gaps.md` | 历史保留 | 全文阅读，固定收尾基线的团队 C 缺口及交接条件；由历史交接引用，未将其作为当前进度 |
 | `docs/audits/2026-10-26-team-c-render-loop-status.md` | 历史保留 | 全文阅读，固定收尾基线的有声书实现与证据矩阵；由历史交接引用，未重验当时证据 |
 | `docs/audits/2026-11-03-controlled-tts-prepare.md` | 部分核对 | 全文阅读并对照第六窗口证据文件及摘要，修正最新结论；各窗口原始事实尚未逐项核验 |

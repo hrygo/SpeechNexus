@@ -64,7 +64,7 @@ fresh 请求的 before-wire 标记必须提交成功才获得一次 POST 许可�
 
 其余同前缀参数：`LEASE_SECONDS=30`、`CALL_TIMEOUT_SECONDS=3`、
 `STORAGE_TIMEOUT_SECONDS=3`、`INTERVAL_SECONDS=1`、`RETRY_SECONDS=1`、`BATCH_SIZE=8`。
-lease 必须大于 call + 3×storage + 1秒；单批1–32，所有时间有限并校验范围。
+lease 必须大于 call + 3×storage + 1 秒；单批 1–32。时间均须为有限数：lease 为 `(0, 300]` 秒、call 为 `(0, 1800]` 秒、storage 为 `(0, 30]` 秒、interval 为 `(0, 300]` 秒、retry 为 `[0.1, 300]` 秒；各项范围和上述组合约束同时生效。
 进程不读 dotenv，不从 queued command 选择端点，不使用代理、不跟随重定向或自动重试 POST。
 SIGINT/SIGTERM 在原请求之间停止，当前有界调用完成后关闭自己的连接；不向控制器发 STOP。
 输出只有批次计数和固定错误分类，不输出原正文、响应、内部地址或凭据。

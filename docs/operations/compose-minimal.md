@@ -638,6 +638,9 @@ worker 分页扫描持久意图；首次外发前先确认目标的取消意图�
 保留待处理并在后续轮次重访。日志中的 `attempted`、`queried`、`unavailable`、`settled`
 和 `pending` 是单轮计数，不是全局清理完成证明。
 
+每个 worker 只捕获、取消和结算其配置的 gateway/node 范围内的目标；其他节点需要相应
+worker 或独立恢复流程。单次捕获是有界批次，不证明已枚举全部目标或所有执行已停止。
+
 worker 的命名空间绑定具体 gateway 容器。替换 gateway 后，待其健康再显式重建 worker，
 并核对实际网络命名空间及扫描是否恢复。Compose 的 `depends_on.restart` 只处理显式 Compose
 更新；daemon 重启和外部重建须另行监管。回退时保留持久意图账本：停止 worker 只会暂停

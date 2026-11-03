@@ -1,11 +1,13 @@
 ---
 title: "SpeechNexus 深度复盘与下一阶段实施路线"
-status: active
+status: superseded
 version: "2.0.0"
 date: 2026-10-25
 ---
 
 # 从已验证组件走到第一条真实文件链路
+
+> 本文保留当时的复盘与路线；当前范围和证据见[交付跟踪矩阵](delivery-tracking.md)。
 
 本次依据用户“进行深度总结整理，继往开来”更新原复盘，日期按北京时间。
 冻结主干为 360bb81fa173e9c235abafcb2c10cb2ecc47380b，包含 B 的 #147，尚不包含 A 的 #141。

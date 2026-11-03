@@ -13,7 +13,7 @@
 | [组件与实现说明](components/README.md) | 组件职责、接口、事务及实现接线 |
 | [运维与部署文档](operations/README.md) | 安装配置、运行恢复与发布操作 |
 | [验证规则](validation/README.md) | CI 调度与契约变更结构检查的范围和限制 |
-| [上线前检查脚本](operations/release-preflight.md) | C0–C12 可执行门禁、默认只读边界、`--only` 用法与 SKIP 条件 |
+| [上线前检查脚本](operations/release-preflight.md) | C0–C11 局部检查、C12 独立验收要求、默认只读边界及历史候选假设 |
 | [产品与架构设计](speechnexus-product-architecture.md)                                               | 产品范围、AdminUI / 工作台、领域与模块、场景预设、共享访问、部署与验收          |
 | [整体技术方案](architecture/technical-blueprint.md)                                                 | 技术基线、内部协议、执行配方、事务 / 迁移、Web / 内网 LLM、观测、发布与工程交接 |
 | [部署单元与平台规划](architecture/deployment-units.md) | 独立服务、平台与节点边界、当前入口/缺口及跨平台和多机验收 |

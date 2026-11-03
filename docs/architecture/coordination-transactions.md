@@ -358,14 +358,14 @@ uv run python scripts/dev-env/coordination-grants.py \
 ## 10. 验证范围与后续交接
 
 真实双库入口见[集成测试说明](../../tests/integration/README.md)。
-当前共享测试验证 owner、完整 ready 配方、attempt quota、六维增量预算、Job/outbox、
+当前共享测试设计覆盖 owner、完整 ready 配方、attempt quota、六维增量预算、Job/outbox、
 提交去重、停止/隔离释放、非 PCM 阶段、长文本规范请求往返、正文受控清理与跨 stage 输出区间；
-使用独立连接和服务器锁等待观测覆盖关键交错。
+使用独立连接和服务器锁等待观测覆盖关键交错；实际通过与否须查看对应版本和环境的测试结果。
 它不启动真实 scheduler/worker/gateway 服务，不实施物理网络分区。
 异常注入覆盖提交前回滚和提交后响应被丢弃；真实进程 kill、提交协议中途断网、
 驱动 deadlock 重试、DB 主备切换和备份恢复仍列为后续强制验收。
 
-生产编码按以下顺序交接，每步必须保持 Node=1 与多节点同构：
+以下保留实施与验收的交接顺序，不表示各步骤均未开始或已经完成；各端口的现状以对应组件及当期证据为准。每步必须保持 Node=1 与多节点同构：
 
 1. 从契约生成/校验边界类型，完成纯预算/状态/证据规则及 fake 用例；
    纳入加载 peak/steady、runtime 指针、pre-dispatch failure、quota 全部维度、

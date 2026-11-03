@@ -118,7 +118,7 @@
 | `docs/decisions/0007-legacy-coordination-retirement.md` | 已核对 | 对照旧 fixture 与测试引用、规则映射和退出条件；保留条件性清理决定，不声称规则迁移或退出已完成 |
 | `docs/decisions/0008-runtime-intents-before-controller-observation.md` | 已核对 | 对照未观察快照、outbox 目标、生产事务及持久投递说明；保留决策时消费者顺序，未运行服务或重验历史数据库证据 |
 | `docs/decisions/0009-workbench-explicit-binding-http-version.md` | 已核对 | 对照 v1/v2 契约、渲染路由、配置发现及 Web 消费者，修正生成路由状态；未运行真实语音链 |
-| `docs/decisions/0010-private-audio-receipt-compatibility.md` | 部分核对 | 全文阅读并对照回执领域类型、音频上界、独立查询路径及组件说明；历史交付状态保留，事务实现和消费者待进一步核对 |
+| `docs/decisions/0010-private-audio-receipt-compatibility.md` | 已核对 | 对照回执类型、区间登记事务、独立查询投影和同步合成消费者；保留历史交付边界，未重跑集成测试 |
 | `docs/decisions/0011-distributed-deployment-and-platform-boundaries.md` | 部分核对 | 全文阅读并对照根工作约定与部署文档，区分历史关口与当前交付入口；平台运行未独立验证 |
 | `docs/decisions/0012-public-job-surface.md` | 部分核对 | 全文阅读并核对公开提交与完整准入原子边界；其他决策语义待核对 |
 | `docs/decisions/0013-binding-lifecycle-admin-http.md` | 已核对 | 对照管理契约、激活 CAS、原键重放、冲突提示及现行操作指南；保留拟议状态，历史审查和远端验收未重验 |

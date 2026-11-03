@@ -8,6 +8,8 @@ date: 2026-10-23
 # OpenAI 兼容与 SpeechNexus 增强边界
 
 本文冻结 P0 的 OpenAI SDK 兼容承诺、增强扩展方式和契约门禁。机器可校验源是 `contracts/speech-openapi.yaml`、`contracts/realtime-events.schema.json` 及其样例；本文解释调用边界，不替代 schema。
+下文的实时会话、事件和调用示例描述契约目标：当前生产组合根尚未装配公开 Realtime
+WebSocket 路由及真实实时执行链，SDK 序列化检查不能证明这些入口已可用。
 
 ## 1. 兼容承诺
 
@@ -100,7 +102,7 @@ const buffer = Buffer.from(await speech.arrayBuffer());
 
 ### 2.3 Realtime
 
-标准 Realtime SDK 使用 `model` 查询参数连接时，服务端创建一个仅转写的兼容会话。Python
+按契约，标准 Realtime SDK 使用 `model` 查询参数连接时，服务端应创建一个仅转写的兼容会话。Python
 客户端需要安装 `openai[realtime]`；仓库契约测试锁定并在 OpenAI Python SDK `3.39.0` 上验证
 以下请求形状：
 

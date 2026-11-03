@@ -63,7 +63,7 @@ SpeechCommand
 | `GET /v1/nexus/assets/{asset_id}/content` | 按部署功能策略下载 ready 输入，支持 Range；不暴露对象存储 key 或服务器路径 |
 | `GET /v1/nexus/artifacts/{artifact_id}`、`GET .../{artifact_id}/content` | 读取已提交产物的元数据 / 内容；内容支持 Range，过期或已删除返回 `410 artifact_unavailable`，staging 不可见 |
 | `POST /v1/nexus/realtime/sessions` | 验证并固定会话配置，返回 `201`、session_id、连接地址和过期时间 |
-| `GET /v1/nexus/realtime/sessions/{session_id}` | 查询会话、operation 终态与输入确认位置；首期没有人级 owner 授权 |
+| `GET /v1/nexus/realtime/sessions/{session_id}` | 查询会话与 operation 终态；输入确认位置 `input_ack_sample` 是可选字段，首期没有人级 owner 授权 |
 | `POST /v1/nexus/realtime/sessions/{session_id}/cancellations` | 从 HTTP 请求关闭会话，便于 WS 不可达时停止执行 |
 | `WS /v1/realtime?session_id={session_id}` | 预创建会话的实时 ASR 子集与 `nexus.*` 扩展；session_id 不是访问凭据 |
 | `WS /v1/realtime?model={model}` | OpenAI SDK 兼容的 transcription-only 模式；服务端按部署默认值建立会话，不启用 TTS / `nexus.*` 能力 |

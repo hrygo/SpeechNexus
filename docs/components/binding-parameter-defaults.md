@@ -3,8 +3,8 @@
 This A00/A02 unit defines a standalone `BindingParameterDefaultsSnapshot` format
 and same-source Python/TypeScript validators. It supplies the missing declaration
 format for the product's binding defaults → published profile → allowed overrides
-merge order. An in-process atomic draft registry now stores explicit declarations;
-the explicit producer HTTP mode exposes those fixed facts. Published retrieval
+merge order. The PostgreSQL draft adapter stores explicit declarations atomically;
+the opt-in producer HTTP mode exposes fixed snapshot lookup. Published retrieval
 and parameter resolution remain separate implementation units. This format
 creates no engine capability or qualification.
 
@@ -58,8 +58,10 @@ this snapshot uses canonical profile parameter fields.
 ## Registry integration requirements
 
 Registry producers and consumers must satisfy the following requirements. The
-current opt-in producer implements the declaration path in items 1–3; item 4
-remains a separate integration and acceptance requirement:
+current opt-in producer stores and replays declarations as described in items 2–3
+and validates selected relationships to the parent definition. Item 1 includes
+broader verification not established by that local validation, and item 4 remains
+a separate integration and acceptance requirement:
 
 1. Validate the full parent identity and the explicit values against applicable
    canonical domains and the parent's capability/parameter domains.
@@ -74,8 +76,10 @@ remains a separate integration and acceptance requirement:
    Apply the declared merge order, allowlists/ranges, final cross-field checks,
    hard deployment/workspace constraints and explicit exact-parameter behavior.
 
-The schema checks field types and individual domains. It does not perform a
-registry lookup, validate producer authority, negotiate segment budgets or prove
+The schema checks field types and individual domains. The producer additionally
+checks selected task and declared parameter-domain relationships, but does not
+establish referenced resource existence, publication or physical engine capability.
+Neither check validates producer authority, negotiates segment budgets or proves
 cross-resource/merged-parameter compatibility. Atomic draft storage and the
 explicit producer HTTP mode implement the declaration path. Binding publication CAS
 and activation are provided separately by the [publication command](../operations/publish-binding-revision.md)

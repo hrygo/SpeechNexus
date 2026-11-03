@@ -1,11 +1,13 @@
 ---
 title: "SpeechNexus C00 项目与稿件元数据分页交接"
-status: active
+status: superseded
 version: "0.1.0"
 date: 2026-10-24
 ---
 
 # C00 元数据列表交接
+
+> 历史交接：以下状态和验证保留原时点；当前范围与证据见[交付跟踪矩阵](delivery-tracking.md)。
 
 已实现 C00 内部项目/稿件列表用例和真实 PostgreSQL 查询，供后续公开路由接入；C00、C08 和[团队 C 持续目标](2026-10-24-team-c-goal.md)仍未完成。范围及设计见[实施单元](2026-10-24-team-c-c00-listing-plan.md)。
 

@@ -198,14 +198,17 @@ Migration `0019_publication_reader_view` adds
 `speech_published_binding_revisions`, a `security_barrier` view that joins only
 publication rows to the revision identity they name. `model_catalog_reader_grants`
 gives the public catalogue reader SELECT on `speech_publications`, this view,
-`speech_catalog_state` and `speech_publication_retirements`, never on
+`speech_catalog_state`, `speech_publication_retirements` and
+`speech_publication_heads`, never on
 `speech_binding_revisions`; unpublished definitions therefore stay unreadable
 even with the reader credential. Startup rejects any inherited
 predefined `pg_*` role, database CREATE or explicit TEMP grant, sequence use,
-table/view or column SELECT beyond those four relations, write authority and
+table/view or column SELECT beyond those five relations, write authority and
 SECURITY DEFINER execution. An upgraded deployment must also revoke any old
 `speech_binding_revisions` SELECT from the reader; startup fails closed while both
-the draft table and the published view are readable. Database PUBLIC TEMP remains
+the draft table and the published view are readable. The head selects the published
+revision for new reads; an absent head does not fall back to an older publication.
+Database PUBLIC TEMP remains
 a separate deployment audit as in the coordination baseline.
 
 ## Transactional catalogue revision (0022)

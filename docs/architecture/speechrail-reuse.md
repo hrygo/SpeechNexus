@@ -20,7 +20,7 @@ SpeechNexus 以独立领域与运行边界演进。本文记录可参考的领�
 | SpeechRail 来源 | 复用类别 | SpeechNexus 处理 | 必须重新验证 |
 | --- | --- | --- | --- |
 | `src/speechrail/domain/asr_policy.py` / ASRPolicy | 参考领域规则 | 保留严格类型、范围、预览与 finalization 的规则；将能力交集扩展为绑定规则 | 与 vLLM 流式 / 完整复核的实际映射；不把 rollback 参数假装成所有引擎能力 |
-| `src/speechrail/domain/render_recipe.py` / RenderRecipe | 参考模型与验证规则 | 转为 ExecutionReceipt 的内容 / 声音 / 模型 / 参数事实与 missing / unknown 语义 | 移除本机路径假设，增加部署 / 工作空间 / attempt / 绑定 revision |
+| `src/speechrail/domain/render_recipe.py` / RenderRecipe | 参考模型与验证规则 | 在 `ExecutionReceipt` 的公开白名单内区分请求、有效及观测事实，并记录 missing / unknown；不公开内容或私有运行身份 | 移除本机路径假设，分别核对内部执行上下文与公开绑定引用的边界；不假定部署 / 工作空间 / attempt 是公开回执字段 |
 | `src/speechrail/application/services.py` / AppOverrides 与组合入口 | 复用依赖注入方式 | 新组合根注入服务中立端口，不直接导入旧 build_app_services | 不能带入本机 worker 构造、selection 与单例假设 |
 | `src/speechrail/application/capability_snapshot.py` 与有效能力文档 | 复用一致快照语义 | 加入 policy revision、后端绑定与容量资格，按部署 / 工作空间呈现 | 缓存作用域、查询无副作用、提交重验状态 |
 | `src/speechrail/domain/idempotency.py` / DurableIdempotencyJournal | 复用状态与摘要规则，重写存储 | 原子唯一约束与意图协调移到 PostgreSQL | 原有 JSON 文件、进程内 RLock 与原子替换不能充当跨进程保证 |

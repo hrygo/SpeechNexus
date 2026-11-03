@@ -1,5 +1,7 @@
 # 团队 C：会议记录与纪要工作台交接
 
+> 本文保留交接时的状态与验证事实；当前范围和证据见[交付跟踪矩阵](delivery-tracking.md)。
+
 核验日期：2026-10-24。base_sha=head_sha `7cd1887905dd57e8c647238416b6030049833e38`，分支 `codex/team-c-c00-versions`。未创建提交或推送。本单元建立在此前250文件的Meeting HTTP交付上；累计包校验以 `.runtime/team-c/team-c-current.manifest.json` 为准，完整 C00–C08 Goal保持active。
 
 ## 实际行为

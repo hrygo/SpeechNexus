@@ -236,10 +236,10 @@
 | `docs/plans/2026-10-24-team-c-goal.md` | 历史保留 | 分段全文阅读，明确最终交接时点和当前入口；各轮历史验证未重跑 |
 | `docs/plans/2026-10-24-team-c-meeting-http-handoff.md` | 历史保留 | 全文阅读，标明历史交接与当前入口；历史验证未重跑 |
 | `docs/plans/2026-10-24-team-c-meeting-http-plan.md` | 历史保留 | 全文阅读，保留原基线计划；历史验证未重跑 |
-| `docs/plans/2026-10-24-team-c-meeting-ui-handoff.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
-| `docs/plans/2026-10-24-team-c-meeting-ui-plan.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
-| `docs/plans/2026-10-24-team-c-realtime-asr-handoff.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
-| `docs/plans/2026-10-24-team-c-realtime-asr-plan.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
+| `docs/plans/2026-10-24-team-c-meeting-ui-handoff.md` | 历史保留 | 全文阅读，标明历史交接与当前入口；历史验证未重跑 |
+| `docs/plans/2026-10-24-team-c-meeting-ui-plan.md` | 历史保留 | 全文阅读，保留原基线计划；历史验证未重跑 |
+| `docs/plans/2026-10-24-team-c-realtime-asr-handoff.md` | 历史保留 | 全文阅读，标明历史交接与当前入口；历史验证未重跑 |
+| `docs/plans/2026-10-24-team-c-realtime-asr-plan.md` | 历史保留 | 全文阅读，保留原基线计划；历史验证未重跑 |
 | `docs/plans/2026-10-24-team-c-realtime-tts-handoff.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
 | `docs/plans/2026-10-24-team-c-realtime-tts-plan.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
 | `docs/plans/2026-10-24-team-c-runtime-root-handoff.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |

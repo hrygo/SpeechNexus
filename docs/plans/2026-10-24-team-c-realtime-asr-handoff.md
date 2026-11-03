@@ -1,5 +1,7 @@
 # 团队 C 公开实时 ASR 消费与字幕页面交接
 
+> 本文保留交接时的状态与验证事实；当前范围和证据见[交付跟踪矩阵](delivery-tracking.md)。
+
 核验日期：2026-10-24（Asia/Shanghai）。base_sha=head_sha `9eea85987232eaebbcbd6768c46fe0a084a4d177`；未提交或推送。本文件只交接 ASR 消费者，不表示 C04、C00–C08 或 G0–G5 完成。
 
 ## 实现与边界

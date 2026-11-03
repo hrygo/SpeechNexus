@@ -148,7 +148,8 @@ staging 回执对象并核对长度/SHA-256，再写入版本化 Artifact 桶并
 | `SPEECHNEXUS_EXECUTION_RESULT_BUCKET` | 网关 staging 回执所在桶；按回执版本读取 |
 | `SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY` / `SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY` | 对象存储凭据，只从部署注入 |
 
-安装 backend wheel 后以该独立入口启动；`--once` 只做一轮有界领取，供部署冒烟：
+安装 backend wheel 后以该独立入口启动；planner 装配完成后，`--once` 最多做一轮有界领取，
+可用于获准环境的部署冒烟。当前组合根因 planner 缺失而在领取前退出，不能用它验证领取：
 
 ```sh
 export SPEECHNEXUS_PROCESS_ROLE=job-worker
@@ -214,12 +215,14 @@ make coordination-test
 make integration-test
 ```
 
-`test_production_jobs.py` 在真实 PG adapter 与 InnoDB 共享 SQL 上执行同组创建、
+集成测试 [`tests/integration/test_production_jobs.py`](../../tests/integration/test_production_jobs.py)
+在真实 PG adapter 与 InnoDB 共享 SQL 上执行同组创建、
 完整身份冲突、outbox/约束失败回滚、最低权限和恢复测试。竞争测试先观测实际
 `pg_blocking_pids` / InnoDB lock wait，再释放阻塞提交；不靠 sleep 推断发生竞争。
 MySQL 仅将 PG `COLLATE "C"` 映射为 `utf8mb4_0900_bin`；不进入产品依赖。
 
-`test_production_claims.py` 将同一生产 SQL/领域裁决用于 PG adapter 和 InnoDB
+集成测试 [`tests/integration/test_production_claims.py`](../../tests/integration/test_production_claims.py)
+将同一生产 SQL/领域裁决用于 PG adapter 和 InnoDB
 驱动 oracle，覆盖真实双 worker 行锁竞争、锁等待后重新取时、期限/版本冲突、
 终态拒绝、溢出与 gateway 认领权限负例。PG 专属测试在实际提交成功后注入确认丢失，
 证明只读恢复当前事实且没有第二次写入。合成既有协调行仅用于检查预算不变，

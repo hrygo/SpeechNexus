@@ -255,6 +255,8 @@ preview / validation 的 input 固定 voice_draft_id / draft_revision；preview 
 
 成功创作任务在 result 返回 voice_draft_id / draft_revision / preview_artifact_ids；preview 返回试听 Artifact，validation 返回 validation_id / validation_set_revision / checks / publication_eligible 与绑定 / 候选 revision。每个 check 显式标记 `required` 且名称在单个校验内唯一；只有所有 required check 均为 `passed`，且其中包含 required、passed 的 `reusable_tts` 检查时，`publication_eligible` 才能为 true。optional check 的 skipped 不冒充整体验证通过，`status=failed` 必须至少有一个 failed check。候选、校验引用、Artifact 与 Job 成功状态按 [作业与产物发布](runtime-governance.md#22-作业与产物发布) 的同一提交规则写入，不让半发布结果可见；未发布候选不进入生产音色目录。
 
+`VoiceValidation` schema 检查已列出的 required 项及 `reusable_tts` 的状态，但不保证 check 名称唯一，也不能证明固定测试集中的必需项全部列出或检查结果真实。生产者须对照固定测试集和证据执行这些校验；契约测试中的辅助检查不证明生产者已装配该逻辑。
+
 描述设计示例：
 
 ```json

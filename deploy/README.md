@@ -156,7 +156,7 @@ containers; runtime and business evidence remain separate.
 
 ## Binding disable worker
 
-See [the optional worker runbook](../docs/operations/compose-minimal.md#binding-disable-worker-opt-in)
+See [the optional worker runbook](../docs/operations/compose-minimal.md#12-按需启用-binding-停用-worker)
 for separate scanner and settlement identities, migration, grants and rollout.
 The worker shares the gateway network namespace and calls its loopback address;
 this is a single-host Compose topology, not a multi-node transport design. A

@@ -45,7 +45,7 @@ SpeechNexus 以独立领域与运行边界演进。本文记录可参考的领�
 - [资源治理](https://github.com/hrygo/SpeechRail/blob/3f57647a3ee79c04318d8bf097489b2b5185da4f/src/speechrail/runtime/resource_governor.py)、[准入队列](https://github.com/hrygo/SpeechRail/blob/3f57647a3ee79c04318d8bf097489b2b5185da4f/src/speechrail/runtime/admission.py)：资源释放与单机局限。
 - [MCP Proxy](https://github.com/hrygo/SpeechRail/blob/3f57647a3ee79c04318d8bf097489b2b5185da4f/docs/architecture/speechrail-mcp-proxy.md)：无状态 REST 工具边界。
 - [会议 / 字幕策略设计](https://github.com/hrygo/SpeechRail/blob/3f57647a3ee79c04318d8bf097489b2b5185da4f/docs/superpowers/specs/2026-10-16-meeting-caption-asr-design.md)：预览、正文与辅助结果版本的分离；其中历史实测不当作本方案的 Linux 证据。
-- [项目运行约束](https://github.com/hrygo/SpeechRail/blob/3f57647a3ee79c04318d8bf097489b2b5185da4f/pyproject.toml)、[许可证](https://github.com/hrygo/SpeechRail/blob/3f57647a3ee79c04318d8bf097489b2b5185da4f/LICENSE)：当前 macOS / Python 约束与代码来源。
+- [项目运行约束](https://github.com/hrygo/SpeechRail/blob/3f57647a3ee79c04318d8bf097489b2b5185da4f/pyproject.toml)、[许可证](https://github.com/hrygo/SpeechRail/blob/3f57647a3ee79c04318d8bf097489b2b5185da4f/LICENSE)：固定版本的 macOS / Python 约束与代码来源。
 
 
 ## 3. 来源与许可证检查

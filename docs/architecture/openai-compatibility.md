@@ -27,6 +27,8 @@ WebSocket 路由及真实实时执行链，SDK 序列化检查不能证明这些
 
 时间戳粒度属于声明的契约范围；当前生产文件 ASR 规划器在准入前拒绝非空 `timestamp_granularities[]`，不能据此宣称显式 segment/word 请求已可用。具体证据要求见[同步转写](../operations/synchronous-transcription.md)。
 
+未声明的 multipart 字段存在契约与实现差异：公开契约要求不支持的标准参数返回 `422 unsupported_parameter`，当前转写 HTTP 入口的封闭字段校验则返回 `400 invalid_request`。两者都拒绝请求；调用方目前不能假定这类字段一定得到契约中的错误码。
+
 REST `verbose_json.usage` 只使用 `{"type":"duration","seconds":...}`，与官方 SDK 的
 `TranscriptionVerbose` 响应模型一致；契约仅允许非 verbose
 `Transcription.usage` 承载真实 token usage。当前转写路由只输出已知时长用量，

@@ -111,7 +111,9 @@ uv run speechnexus-backfill-binding-evidence --export
   都会整体回滚。输出同时给出证据表 `count(*)` 前后值。
 - 幂等：相同映射重复 apply，`inserted=0`、`skipped=N`，前后计数不变；
   内容不同则冲突失败，不静默覆盖。
-- `--export` 在回滚前导出当前证据映射（JSON 到 stdout），用于保留证据事实。
+- `--export` 在回滚前导出当前证据记录（JSON 到 stdout），用于保留证据事实。导出包含
+  `evidence_source` 和 `recorded_at_us`，不能直接作为 `--mapping` 输入：映射解析器会拒绝这两个字段；
+  需要重新回填时须保留原始导出，并另行准备符合上述字段规则的映射。
 - 回填来源固定记为 `backfill`，不伪装成 `operator_cli`。
 
 退出码：
@@ -129,7 +131,8 @@ uv run speechnexus-backfill-binding-evidence --export
 
 ## 迁移回滚
 
-`downgrade` 只在证据表为空时允许 `DROP TABLE`；非空时抛出
+`downgrade` 要求 READ COMMITTED，并在检查前取得证据表的 ACCESS EXCLUSIVE 锁，
+持锁至 DDL 结束；只在证据表为空时允许 `DROP TABLE`，非空时抛出
 `Publication evidence requires export and preservation`。回滚只删除证据表与索引，
 不触碰 `speech_publications`、revision 或 draft 行。回滚前必须 `--export` 并保留字节与 SHA-256。
 回滚是维护态操作，不等于恢复生产资格。

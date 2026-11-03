@@ -13,8 +13,8 @@ DEL-120 上线就绪评估中的 C0–C12 检查变成可执行门禁。脚本�
 # 只跑指定项，便于定位（C5 默认 SKIP，C7 仍按断言）
 ./scripts/dev-env/release-preflight.sh --only C5,C7
 
-# 候选冻结后把 HEAD 锁到批准的完整 SHA
-./scripts/dev-env/release-preflight.sh --expect-head <完整 SHA>
+# 候选冻结后，先将 RELEASE_HEAD 设为已核对的完整 SHA
+./scripts/dev-env/release-preflight.sh --expect-head "$RELEASE_HEAD"
 
 # 仅在明确允许写库时执行公开 ASR/TTS E2E
 ./scripts/dev-env/release-preflight.sh --allow-write --only C5,C6
@@ -36,16 +36,16 @@ DEL-120 上线就绪评估中的 C0–C12 检查变成可执行门禁。脚本�
 
 | ID | 检查 | 何时 SKIP |
 | --- | --- | --- |
-| C0 | HEAD、`git status --porcelain`、Node/pnpm/uv/Python 版本；可用 `--expect-head` 锁定完整 SHA | 工具缺失；工作树不干净或 HEAD 不匹配时是 FAIL，不是 SKIP |
+| C0 | HEAD、`git status --porcelain`、Node/pnpm/uv/Python 版本；可用 `--expect-head` 锁定完整 SHA | 工作树不干净或 HEAD 不匹配优先判 FAIL；否则工具缺失为 SKIP，版本不匹配为 FAIL |
 | C1 | 读取当前 HEAD 的一条最新 run，要求完成且成功、各 job 均成功并达到数量下限 | `gh`/`jq` 缺失、未认证、该 commit 尚无 run、run 尚未完成，或无法读取 job 列表 |
-| C2 | `127.0.0.1:58030/readyz` 的 `status=ready` 与所有 check `ok` | `curl`/`jq` 缺失，或网关不可访问（例如 `58030` 未监听）；超时或断言失败是 FAIL |
-| C3 | `unknown_quarantined` 必须为 `0`，ready 实例至少 `1` | `docker` 缺失、`del109-pg` 不存在/未运行，或只读查询不可用 |
+| C2 | 网关 `/readyz` 的 `status=ready` 与非空 checks 全部 `ok`；默认地址为 `127.0.0.1:58030` | `curl`/`jq` 缺失，或网关不可访问（例如 `58030` 未监听）；超时或断言失败是 FAIL |
+| C3 | `unknown_quarantined` 必须为 `0`，ready 实例至少 `1`；容器默认 `del109-pg`，可用 `SN_PG_CONTAINER` 覆盖 | `docker` 缺失、目标容器不存在/未运行，或查询不可用 |
 | C4 | 在 HEAD 的网关源码中查找同一行同时包含 `record_stop(` 和 `ExecutionState.SUCCEEDED` 的非测试匹配 | `git grep` 执行失败；无匹配或只有定义是 FAIL。该文本检查不证明调用点可达 |
 | C5 | 向公开 `/v1/audio/transcriptions` 发请求，检查 HTTP 200 和非空字符串 `text` | 默认 SKIP；没有 `--allow-write`，缺少配置或样本，`curl`/`jq` 不可用，或 API 未监听 |
 | C6 | 向公开 `/v1/audio/speech` 发请求，检查 HTTP 200、字节数和 `file` 的 WAV 类型识别 | 默认 SKIP；没有 `--allow-write`，缺少配置，`curl`/`jq`/`file` 不可用，或 API 未监听 |
-| C7 | 资格报告必须是 `production`、`pass` 且所有 required 场景通过 | `jq` 缺失或报告文件不可读 |
+| C7 | 资格报告必须是 `production`、`pass`，`required_scenarios_passed=true`，且至少有一个 required 场景并全部通过 | `jq` 缺失或报告文件不可读 |
 | C8 | 候选与随仓 binding 定义各跑一次证据校验，二者都必须退出码为 0 且精确 `RESULT PASS` | `uv` 缺失、输入文件不可读，或两次 verifier 均未产生 `RESULT`；只有一次缺失结果、任一非零退出码或非 PASS 结果都是 FAIL |
-| C9 | `docker compose config --services` 必须恰好覆盖 `api gateway minio minio-init postgres`，明确排除四个未装配单元，并且 gateway 有 file-ASR/file-TTS 私有配置引用 | `docker` 或 compose 命令不可用；compose 无法解析、必需集合不完整、出现排除项或缺私有配置引用是 FAIL |
+| C9 | `docker compose config --services` 必须恰好包含 `api gateway minio minio-init postgres`；解析结果须包含 file-ASR/file-TTS 配置键名 | `docker` 或 compose 命令不可用；compose 无法解析、服务集合不符或缺配置键名是 FAIL。文本匹配不验证键属于 gateway 或配置可用 |
 | C10 | 历史检查：`speechnexus-publish-binding --help` 是否含 retire/activate/rollback | 命令不可执行且 `uv --no-sync` 也无法读取 help；help 可读但缺选项是 FAIL。当前 binding 生命周期通过[独立 HTTP 路由](binding-lifecycle.md)提供，C10 不检查这些路由，不能据其失败推断生命周期未实现 |
 | C11 | `docs/operations` 中是否有 `reconciliation_required` 文本匹配 | `rg`/`grep` 不可用或 `rg` 执行错误；没有匹配是 FAIL。匹配不验证是否存在可用的恢复入口 |
 | C12 | 最终独立验收 | 始终 SKIP；由独立验收人/agent 在最终候选上判定，脚本不代替 |
@@ -54,16 +54,18 @@ DEL-120 上线就绪评估中的 C0–C12 检查变成可执行门禁。脚本�
 
 - 脚本优先 source `SPEECHNEXUS_TOOLCHAIN_ENV`；未设置时使用部署映射中的
   `native-20261027-v1/environment.sh`。C0 仍会实际执行版本命令并核对版本。
-- C5/C6 从既有 env 文件读取配置。默认尝试
+- 除 `--help` 外，脚本无论选择哪些检查项，都会在检查前以 shell `source` 执行可读的配置文件；这些文件必须是受信任的 shell 代码，其自身可能产生副作用，不能仅凭检查项的只读属性推断配置加载也只读。业务请求配置默认尝试
   `.paperclip-runtime/del109/api.env`、`.paperclip-runtime/del109/api-transcription.env`、
   `.runtime/config/api.env`、`.runtime/config/release-preflight.env`；设置
   `SN_PREFLIGHT_ENV` 时只读该文件。脚本不内联凭据，也不回显密钥或业务正文。
 - C5/C6 是唯一会写库的检查，且只有显式 `--allow-write` 才执行。C12 永远 SKIP。
 - C5 不验证转写准确性或结果来源；它要求非空文本，因此无语音输入得到合法空转写时也会判 FAIL，须使用适合本检查的合成语音样本。C6 不解码音频，也不验证声音内容。两项均不核验停止、容量释放或完整链路证据，不能单凭 PASS 宣称业务验收通过。请求超时返回 FAIL，其他部分 curl 错误会返回 SKIP；SKIP 本身不能证明请求未被服务端接收或执行，结果未知时须协调原身份，不盲目重发。
+- C5/C6 会把响应头、转写 JSON 或生成的 WAV 写入临时目录，脚本正常退出时清理；强制终止或清理失败可能留下文件。运行时应使用受控临时目录和合成样本，并按部署的内容保管规则处理残留。
 - C1 不按 workflow 名称筛选，只读取 `gh run list --commit ... --limit 1` 返回的 run；job 数默认至少 14，可用 `SN_EXPECT_CI_JOBS` 调整。被跳过的 job 也不是 success，可能导致该检查失败。使用结果前须确认选中的 run 对应目标 workflow，并按当前 CI 规则单独核验必需检查。
+- C0 固定比较 Node `v26.12.1`、pnpm `12.14.0`、uv `0.13.5` 和 Python `3.14.9`；这反映脚本的候选环境假设，不自动代表当前项目的通用工具链要求。C3 通过容器内 `postgres` 身份执行两条 SELECT，并未使用专门的只读数据库身份或显式只读事务；运行前须确认容器身份与授权。
 - C8 会用 `uv --no-project --with` 的临时环境执行校验器；默认缓存目录为仓库下的
   `.paperclip-runtime/cache/uv`，也可由 `UV_CACHE_DIR` 覆盖。脚本未启用离线模式，
-  缺少依赖时 uv 可能访问网络并写入缓存；它不安装项目依赖、不写产品或服务运行态。
+  缺少依赖时 uv 可能访问网络并写入缓存；它不安装项目依赖、不写产品或服务运行态。校验输入和数据库快照固定为 `gb10-20261027` 文件，不读取目标部署的当前数据库。
 - C9 只解析 `deploy/compose.yaml`；它不启动、不重启任何服务，也不验证容器实际运行。
 
 ## 证据边界

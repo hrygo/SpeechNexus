@@ -19,7 +19,8 @@ GPU 主机、不发布 binding，也不代表模型/硬件资格。
 没有节点控制器时它也无法自己把实例置为 `ready`：
 `create_runtime_intent` 只创建 `preparing` 实例和 outbox，准入还要求
 `intent_state=succeeded`、`observed_instance_state=ready` 以及 readiness 收据。
-因此本任务选择运维命令，而不是增加一个必须同时改动五个服务的控制器路径。
+该运维命令适用于已运行实例的人工登记，不替代控制器观察和完整调度循环。
+节点控制器的观察与消费路径另见[控制器客户端](../components/runtime-controller-client.md)。
 
 ## 前置条件
 
@@ -29,7 +30,8 @@ GPU 主机、不发布 binding，也不代表模型/硬件资格。
 2. 已有 owner-only 私有同步转写配方（`SPEECHNEXUS_TRANSCRIPTION_RECIPE_FILE`），
    且其 `runtime_plan` / `binding` / `stage.instance_id` 是本次要注册的实例事实。
 3. 引擎健康端点可从执行命令的主机访问；命令会把 origin 补成 `/health`，也接受
-   显式 `/health` URL。
+   显式 `/health` URL。执行者须先独立核对该端点确实属于目标实例及 generation；
+   健康检查只要求 HTTP 200 和有界响应，不解析响应以验证模型或实例身份。
 4. 同一实例同一 generation 只能有一个 ready 行；同一池不能有另一个存活 owner。
 5. `speechnexus-register-engine` 控制台脚本需要 backend workspace 包已安装。仓库根
    `pyproject.toml` 是 `package=false` 的 uv workspace，某些 `uv sync` 结果不会在
@@ -129,7 +131,9 @@ host 的 allocatable 向量不会被静默放大。
   `create_in_transaction` + `observe_in_transaction`，所以 generation 单调、
   实例不得重复 ready、fencing、容量和 readiness 来源仍由领域事务校验。
 - readiness 的 `evidence_digest` 来自本次真实 `/health` 探测（URL、状态码、
-  body SHA-256、观察时间）；这是运维 attestion，不是模型资格证明。
+  body SHA-256、观察时间）和操作者提供的实例身份；这是运维确认，不是节点控制器
+  的观测或模型资格证明。写入观察中的 `observed_peak_memory` 来自批准计划的 peak，
+  不是该健康检查实测的内存峰值。
 
 重复执行完全相同的注册返回 `already_ready`，不新增实例、head 或 intent；若存储的
 readiness 已过期，则用本次 `/health` 重签 readiness 并更新 `ready_at_us`，不会新建

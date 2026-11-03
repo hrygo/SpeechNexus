@@ -7,8 +7,8 @@ date: 2026-10-28
 
 # 最小同步 ASR/TTS Compose 部署面
 
-本文给出从空目录到 `api:8000/healthz`、`gateway:8010/healthz` 与两者 `/readyz`
-返回 `200` 的可执行步骤。它只装配同步语音请求所需的 PostgreSQL、MinIO、API、
+本文给出从仓库根目录和新的本地数据卷出发，到 `api:8000/healthz`、`gateway:8010/healthz`
+与两者 `/readyz` 返回 `200` 的步骤。它只装配同步语音请求所需的 PostgreSQL、MinIO、API、
 执行网关和一次性引擎注册，不把其它未完成单元伪装成已交付。
 
 ## 仍不可用的能力
@@ -134,11 +134,13 @@ PY
 ```
 
 上面的 Python 片段必须通过环境变量 `SN_ROOT` 取得仓库绝对路径；若直接手工执行，
-先运行 `export SN_ROOT="$ROOT"`。编辑 `deploy/compose.env`，把以下三项改成实际部署值：
+先运行 `export SN_ROOT="$ROOT"`。编辑 `deploy/compose.env`，按实际部署核对以下配置：
 
 - `SPEECHNEXUS_ENGINE_HEALTH_URL`：注册命令可访问的引擎 `/health` origin；
 - `SPEECHNEXUS_NODE_ID` / `SPEECHNEXUS_GATEWAY_ID`：要与两份 gateway endpoint JSON
   以及 recipe 的 `runtime_plan.binding` 完全一致；
+- `SPEECHNEXUS_ENGINE_INSTANCE_ID` / `SPEECHNEXUS_ENGINE_GENERATION`：注册使用的实例与代次；
+  实例须与 recipe 的 `stage.instance_id` 和 ASR endpoint 一致，代次须与 ASR endpoint 一致；
 - `SPEECHNEXUS_OBJECT_STORAGE_BUCKET` / `SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET`：两份
   私有 JSON 的桶名必须同步。
 
@@ -492,8 +494,10 @@ http=200
 
 ## 8. 一次性注册引擎
 
-只有目标引擎已经在 `SPEECHNEXUS_ENGINE_HEALTH_URL` 上返回 `200` 时才执行。命令固定使用
-环境文件中的 node、gateway、instance、generation，因此重复执行不会新建实例：
+只有目标引擎已经在 `SPEECHNEXUS_ENGINE_HEALTH_URL` 上返回 `200`，且已独立核对端点
+属于目标实例和 generation 时才执行。健康响应本身不验证实例身份或模型。命令使用
+环境文件中的 node、gateway、instance、generation，并核对前三者与 recipe；重复执行
+相同注册不会新建实例，具体边界见[引擎注册](register-engine.md)：
 
 ```bash
 "${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \

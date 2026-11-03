@@ -40,6 +40,7 @@ pnpm install --frozen-lockfile
 - 只用本项目隔离的 `.runtime/` PostgreSQL / MinIO 和协调测试 MySQL，不访问同机共享或生产实例。测试会创建、修改和清理自己的临时 namespace、角色与桶。
 - `make coordination-test` 和 `make integration-test` 同时要求 `SPEECHNEXUS_TEST_DATABASE_URL`、`SPEECHNEXUS_TEST_MYSQL_URL`；后一目标还要求 `SPEECHNEXUS_TEST_MINIO_ENDPOINT`、`SPEECHNEXUS_TEST_MINIO_ACCESS_KEY`、`SPEECHNEXUS_TEST_MINIO_SECRET_KEY`。配置缺失即说明未验证，不通过跳过绕开门禁。
 - Make 目标会调用受管服务脚本；`make verify` 还提供本机隔离默认值、确保项目 MySQL / MinIO 服务并检查环境。因此这些命令包含运行态操作。授权涵盖实现与隔离测试且条件满足时继续；只有文档、查询或审查授权时不启动服务。
+- 本机 MySQL 服务脚本可能强制移除标签或镜像不匹配的同名容器；运行上述目标前核实该容器的归属和用途，详见[开发环境说明](development-environment.md#运行组件)。
 - 不把运行角色用于 DDL 或测试管理员操作。不读取无关凭据，不在日志和报告输出完整 DSN、密钥或业务内容。
 - 宿主或服务条件缺失时，完成可独立执行的检查，并报告未验证项及所需条件；不为绕过前置而改向共享服务或自行迁移环境。
 

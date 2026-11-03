@@ -82,7 +82,7 @@ CA 上限为 262,144 bytes。
 | --- | --- | --- |
 | `vad_tuning` | `config_revision`、`threshold`、`end_threshold`、`min_speech_ms`、`prefix_padding_ms`、`silence_duration_ms`、`max_segment_ms` | [VadPolicy](../../execution-gateway/src/speechnexus_gateway/domain/vad.py) |
 | `input_limits` | `max_bytes`、`memory_bytes`、`timeout_seconds` | [ExecutionInputLimits](../../execution-gateway/src/speechnexus_gateway/domain/execution_inputs.py) |
-| `decode_limits` | `max_encoded_bytes`、`max_duration_ms`、`max_frame_samples`、`timeout_seconds` | [AudioDecodeLimits](../../execution-gateway/src/speechnexus_gateway/domain/media.py) |
+| `decode_limits` | `max_encoded_bytes`、`max_duration_ms`、`max_frame_samples`、`timeout_seconds` | 共享媒体包的 [AudioDecodeLimits](../../packages/media/src/speechnexus_media/domain.py)；gateway 的 `domain.media` 兼容导出该类型 |
 | `worker_limits` | `max_result_bytes`、`max_command_bytes`、`max_pending`、`shutdown_seconds` | [FileExecutionLimits](../../execution-gateway/src/speechnexus_gateway/domain/file_execution.py) |
 
 字节、毫秒、秒与样本数由字段名明确区分；范围直接复用这些类型，不维护第二份边界规则。

@@ -23,8 +23,9 @@ export SPEECHNEXUS_DATABASE_SCHEMA=speech
 
 角色使用 `binding_lifecycle_grants`，获得：
 
-- `speech_publications`、`speech_publication_retirements` 与
-  `speech_publication_lifecycle_events` 的 `SELECT, INSERT`；
+- `speech_publications`、`speech_publication_retirements`、
+  `speech_publication_lifecycle_events` 和 `speech_binding_disable_intents` 的
+  `SELECT, INSERT`；
 - `speech_publication_heads` 的 `SELECT, INSERT, DELETE` 及
   `revision, revision_id, updated_at_us` 列级 `UPDATE`；
 - binding revision/evidence 的 `SELECT`；

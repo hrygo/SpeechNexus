@@ -108,7 +108,7 @@ API 轮询，不是提交握手**：同一 API 连接先收到 submit 200，再�
 | --- | --- | --- |
 | 1 | 隔离 PG / MinIO | 已执行 |
 | 2 | `alembic upgrade head` | 已执行 |
-| 3 | 创建四个非 owner 角色与授权 | 已执行 |
+| 3 | 创建五个非 owner 角色与授权 | 已执行 |
 | 4 | 创建私有对象桶 | 已执行 |
 | 5 | 启动 API | 已执行 |
 | 6 | 空目录读 `GET /v1/models` | 已执行 |
@@ -212,7 +212,7 @@ docker exec del109-pg psql -U postgres -d speechnexus -Atc \
 
 ### 2.3 创建非 owner 角色与最小授权
 
-四个运行时角色分工如下；**owner 只用于迁移、测试播种和清理**：
+五个运行时角色分工如下；**owner 只用于迁移、测试播种和清理**：
 
 | 角色 | 授权来源 | 用途 |
 | --- | --- | --- |
@@ -2158,7 +2158,7 @@ deadline / 租约释放联动；不是“提交握手”或“ingress 锁”。�
 **这份装配证明了**
 
 - `c435908` 的迁移可以从空库到 `0021` head；
-- 四个非 owner 角色能通过各自 provider 的启动核验，且不会回退到 owner；
+- 四个业务端口角色能通过各自 provider 的启动核验，且不会回退到 owner；另有只供 readiness 连接的 `sn_api`；
 - API 的 readiness、空目录 200/ETag/304；
 - draft POST、发布 CLI 的必填证据、幂等回放、错误码；本地测试 capacity/qualification
   ID 可以走通 draft/publish 机制，但仓库随附 ASR 定义原样会在草稿层 400，测试播种后

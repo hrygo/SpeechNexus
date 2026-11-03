@@ -16,7 +16,7 @@ date: 2026-10-28
 3. 一份真实样例如何从测量记录走到可发布证据；
 4. 一个没参与过本项目的人，如何独立产出下一份合法 manifest。
 
-本文只定义和核验证据，不修改冻结契约、不修改产品代码，也不把 `local-test-capacity-1` 一类占位值当作真实容量。样例使用的 `local-test-*` 只允许出现在隔离测试里；发布路径上的校验脚本会直接拒绝它。
+本文只定义和核验证据，不修改冻结契约、不修改产品代码，也不把 `local-test-capacity-1` 一类占位值当作真实容量。样例使用的 `local-test-*` 只允许出现在隔离测试里；独立执行的证据校验脚本会将其判为失败，发布事务本身不执行该脚本，不能依赖发布接口自动拦截占位值。
 
 ## 1. 输入、输出与权威位置
 
@@ -78,7 +78,7 @@ date: 2026-10-28
 
 ### 3.2 六个物理维度和三个计量维度
 
-`ResourceVector` 有九个数值键；任务所说的“六维”是前六个物理资源，后三个是带宽/对象存储计量。所有值都是非负整数，单位在键名里固定。
+`ResourceVector` 有九个数值键；任务所说的“六维”是前六个物理资源，后三个是带宽/对象存储计量。所有值都是非负整数；带宽字段的 `bps` 单位尚未在 schema 中明确解释，不能仅凭本文推定字节或比特，填写前须与证据提供方确认并记录单位。
 
 | 键 | 含义 | 谁提供 | 如何核验 |
 | --- | --- | --- | --- |
@@ -88,8 +88,8 @@ date: 2026-10-28
 | `cpu_decode_millicores` | CPU 解码/前后处理毫核 | 平台实测或声明 | 与 host CPU allocatable/held 对账；样例是声明值，不是实测 |
 | `host_pcm_buffer_bytes` | 主机 PCM 缓冲上界 | 引擎/平台实测或声明 | 与 host PCM allocatable/held 对账；样例是声明值 |
 | `scratch_disk_bytes` | 临时盘上界 | 平台/引擎实测或声明 | 与 host scratch allocatable/held 对账；样例声明 0，表示本实验不使用 scratch |
-| `ingress_bandwidth_bps` | 入向带宽上界（字节/秒） | 平台/网关 | 报告/监控核对；当前没有独立 host 账本列 |
-| `egress_bandwidth_bps` | 出向带宽上界（字节/秒） | 平台/网关 | 报告/监控核对；当前没有独立 host 账本列 |
+| `ingress_bandwidth_bps` | 入向带宽上界 | 平台/网关 | 报告/监控核对并确认单位；当前没有独立 host 账本列 |
+| `egress_bandwidth_bps` | 出向带宽上界 | 平台/网关 | 报告/监控核对并确认单位；当前没有独立 host 账本列 |
 | `object_storage_bytes` | 对象存储上界 | 平台/对象存储负责人 | 与资产保留/配额策略核对；当前没有独立 host 账本列 |
 
 `engine_active_slots` 是“每个端到端执行在该 stage 占用多少 slot”的基数，不是资源字节；聚合规则见下。
@@ -104,7 +104,7 @@ date: 2026-10-28
 4. `resource_envelope.realtime_reserved_slots` 必须 `<= max_active_slots`；
 5. 任一 stage 的 `loading_peak_budget` 在同一维度不得低于 `resident_budget`；`per_slot` 是增量，不是峰值替代品。
 
-脚本 `check_envelope` 会重算上述五项；任何一项不一致即 `FAIL`。不要手改 `resource_envelope` 去“修”stage，stage 才是事实源。
+脚本 `check_envelope` 会重算上述第 1–4 项；它不会比较各 stage 的加载峰值与常驻预算，第 5 项须另行逐维核对。不要手改 `resource_envelope` 去“修”stage，stage 才是事实源。
 
 ## 4. 许可、配额、生效期、适用 node/pool
 
@@ -181,6 +181,8 @@ manifest 本身只有“每个实例/每个 slot 的包络”，没有“池总�
 | R12 | `workspace_quotas.held_attempts + quarantined_attempts <= max_attempts`；`resource_pools.pool_state=active`、`service_class` 相等 | `FAIL` |
 
 脚本对 `resource_pools` 数值配额输出 `NA`（见 §4.2），不是通过；对 `database.source=fixture` 输出 `WARN`，因为 fixture 只证明查询路径，不证明真实发布或真实容量。
+
+R11 中 `held >= instance.peak` 是该校验器的额外静态断言，不能当作所有运行状态的账本不变量：prepare 成功后实例基础预算可从 peak 收缩到 steady；同时 host `held` 是主机聚合值，覆盖 peak 也不能单独证明某个实例仍持有峰值。应结合 `base_budget_kind`、各实例及租约核对账本；该断言失败也不能单凭数值认定生产账本损坏。
 
 ### 谁能超、超了报什么
 
@@ -316,7 +318,7 @@ manifest 本身只有“每个实例/每个 slot 的包络”，没有“池总�
 ### 6.5 失效与撤回
 
 - 证据到期、模型/镜像/拓扑/池/向量/限额/取消能力任一变化、实测发现容量超限或质量退化，都是失效事件；
-- 已发布 publication 是 insert-only，不能原地改证据或回滚：发布更大的 revision，并在新证据里引用旧证据作为历史；
+- 已发布 publication 是 insert-only，不能原地改写证据；需要新证据时发布新 revision，并保留旧证据作为历史。选择既有版本的回滚是另一项操作，须确认目标 revision 仍可用且其证据适用于目标部署，具体条件见 [binding 生命周期](binding-lifecycle.md)；
 - 旧 manifest/report 和原始输出保留，不覆盖、不重写；失败记录与成功记录分开；
 - 失效期间不得用旧 `experimental` 证据支撑 `production`；是否降级/停流由唯一 SM+PO 按产品 Gate 决定。
 
@@ -390,11 +392,9 @@ manifest 本身只有“每个实例/每个 slot 的包络”，没有“池总�
 
 ### 9.1 命令
 
-在隔离 checkout 中，按本任务的工具链映射执行（不要指向共享库）：
+在仓库根目录执行以下 fixture 检查；它不连接共享数据库，也不证明真实发布：
 
 ```bash
-UV_CACHE_DIR="$PWD/.uv-cache" \
-UV_PYTHON=/opt/homebrew/bin/python3.14 \
 uv run --no-project \
   --with 'jsonschema>=4.23,<5' \
   --with 'rfc8785>=0.1.4,<0.2' \
@@ -407,13 +407,12 @@ uv run --no-project \
   --artifact-pin deploy/engines/file-asr-audio/artifact-pin.json \
   --binding-definition deploy/engines/file-asr-audio/evidence/gb10-20261027/binding-definition.candidate.json \
   --database-snapshot tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json \
-  --source-body /path/to/comment-body.md \
   --require-published --require-digests --show-digests
 ```
 
 `--database-url` 与 `--database-snapshot` 二选一；live 模式只读事务（`SET TRANSACTION READ ONLY`），不会写 publication 或证据。`--source-body` 可选；不提供时 `digest.source_body=NA`，只核对记录值。
 
-退出码：`0` 表示无 `FAIL`（可能有 `WARN/NA`）；`1` 表示至少一个 `FAIL` 或输入错误；`2` 表示缺依赖/参数错误。`PASS_WITH_WARNINGS` 不是生产放行；fixture、`NA`、未验证项必须逐条解释。
+退出码：`0` 表示无 `FAIL`（可能有 `WARN/NA`）；`1` 表示至少一个 `FAIL` 或输入错误，live 模式缺少 `psycopg` 也计入此类；`2` 表示参数错误或启动时缺少 `jsonschema`、`referencing`、`rfc8785` 依赖。数据库连接等未捕获异常也可能使进程异常退出，不能只看退出码判断检查是否完整。`PASS_WITH_WARNINGS` 不是生产放行；fixture、`NA`、未验证项必须逐条解释。
 
 ### 9.2 它检查什么
 
@@ -422,7 +421,7 @@ uv run --no-project \
 - 包络聚合；
 - 报告 scenario id 一一对应、required/overall 计算、production gate、limitations；
 - manifest/report/evidence 的 id、tier、topology、时间、stage/engine 组件；
-- `artifact-pin.model` 摘要、`config_bundle_digest`、`topology_digest`、evidence 文件/逐 scenario 摘要、source body 字节；
+- `artifact-pin.model` 摘要、`config_bundle_digest`、`topology_digest`、evidence 文件/逐 scenario 摘要；仅提供 `--source-body` 时才校验 source body 字节；
 - report `evidence_digest` 与 manifest/report 文件 SHA；
 - 传入的 `--binding-definition` 与快照内定义分别检查 `capacity_manifest_id`、可识别的 `release_tier`、stage roles、tasks、max segment；
 - publication/evidence 行的身份与两个文件摘要；
@@ -486,7 +485,7 @@ SELECT workspace_id, max_attempts, held_attempts, quarantined_attempts
 FROM speech.workspace_quotas WHERE workspace_id = '<workspace-id>';
 ```
 
-判定：定义 `declared_manifest_id` = 参数/证据 `capacity_manifest_id`；publication `revision_id` = 定义 `revision_id` = 实例 `binding_revision_id`；实例六维 = manifest 三组向量；host `held >= peak` 且 `held + quarantined <= allocatable`；池 active/class 匹配；workspace `held + quarantined <= max_attempts`。
+判定：定义 `declared_manifest_id` = 参数/证据 `capacity_manifest_id`；publication `revision_id` = 定义 `revision_id` = 实例 `binding_revision_id`；实例六维 = manifest 三组向量；host `held + quarantined <= allocatable`；池 active/class 匹配；workspace `held + quarantined <= max_attempts`。校验器还要求 host `held >= peak`，其局限见 R11 下方说明；上述 SQL 只列出统一内存维度，不能单凭它核对全部六维。
 
 ## 10. 已知缺口与后续卡建议
 

@@ -28,6 +28,8 @@ PostgreSQL 与 MinIO 使用用户级 systemd 服务，状态和对象数据保�
 
 协调测试用的 MySQL 是钉住摘要 `mysql@sha256:2952e3be…` 的项目受管容器，由 `scripts/dev-env/mysql-service.sh` 幂等安装与启动，数据保存在 `.runtime/data/mysql`（初始化后归容器内 `mysql` 账户），根口令写在权限为 `0600` 的 `.runtime/config/mysql.env`。参考环境不使用用户 systemd 单元管理该容器，而由 docker 的 `unless-stopped` 重启策略在守护进程启动时自动拉起；`make dev-up`、`make dev-bootstrap` 与 `make verify` 会在需要时调用同一脚本。实际 socket 权限和既有容器状态需在目标主机核实。
 
+执行这些入口前，还须检查名为 `speechnexus-coordination-mysql` 的已有容器：脚本在标签或镜像不匹配时会强制移除该容器后重新创建，不会因其不属于本项目而自动退出。若归属或数据用途不明，应先停止操作并核实，不能依靠脚本判断移除是否获授权。`make dev-down` 也会停止同名容器。
+
 PostgreSQL 与 MinIO 分别限制为最多 4 GiB 内存、2 个 CPU 核和 512 个任务，MySQL 容器限制为 2 GiB 内存和 2 个 CPU 核，避免开发负载无界挤占同一主机上的共享服务。该限制是开发环境的保护措施，不是生产容量声明。
 
 ## 初始化与日常检查

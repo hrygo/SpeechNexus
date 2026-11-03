@@ -358,8 +358,6 @@ else:
 完整命令、依赖和 SQL 对照见 [capacity-manifest.md](capacity-manifest.md) §9。报告相关的最小运行：
 
 ```bash
-UV_CACHE_DIR="$PWD/.uv-cache" \
-UV_PYTHON=/opt/homebrew/bin/python3.14 \
 uv run --no-project \
   --with 'jsonschema>=4.23,<5' \
   --with 'rfc8785>=0.1.4,<0.2' \

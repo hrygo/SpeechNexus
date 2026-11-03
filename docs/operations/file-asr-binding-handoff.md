@@ -126,7 +126,7 @@ turn detection、分段和期限；部署必须显式提供 token/调用/输入/
 | 分段模式 | `server_vad`、`full_segment`、`rollback_tokens=0`；`max_segment_ms >= preview_interval_ms` |
 | 辅助与词表 | alignment/diarization 为 `off`，vocabulary revision 为 null，timestamp granularities 为空 |
 | 可复用资源 | voice/voice_material/voice_kind/vocabulary_source/pronunciation_source 为 null；vocabulary/pronunciation 为 [] |
-| 输出 | 请求仅 `json` / `text`；B 私有 staging 是完整 JSON 转写，A 按公开格式发布/投影 |
+| 输出 | 网关命令仅接受 `json` / `text`；B 私有 staging 是完整 JSON 转写。公开同步接口还可将 `verbose_json`、`srt`、`vtt` 映射为网关 `json` 命令，再根据真实结果证据投影；缺少所需证据时拒绝，见[同步转写](synchronous-transcription.md) |
 | prompt / language / temperature | 原命令显式给出；prompt 的 null 转为空字符串，`auto` 不向 vendor 传 language；不将合法语言标签当作已测语言资格 |
 | token / 单次期限 | 部署显式给出，分别受 `AsrPolicy` 1–4096、(0,300] s 约束；实际调用取部署上限与原命令 `final_deadline_ms / 1000` 的较小值 |
 
@@ -155,8 +155,9 @@ turn detection、分段和期限；部署必须显式提供 token/调用/输入/
 
 本单元没有新增 binding、manifest、资格或发布记录，也没有重跑模型/私人音频。
 持续 ready、可信端点与 instance/generation 对应、真实旧入口封锁、长文件与语言质量、
-混合负载及物理集群仍待验证。取消/EOF/请求清理不是停止证据，unknown 保留占用，
-只有 A 原事务凭匹配的停止与释放双证据退预算。
+混合负载及物理集群仍待验证。单凭取消、EOF 或请求清理不能证明停止；适配器取得与原
+执行匹配的可信引擎终态时，可由成功终态事务记录执行级停止证据，但它不证明整实例停止
+或直接归还预算。unknown 保留占用，只有 A 原事务凭匹配的停止与释放证据退预算。
 
 接入顺序：A 核验并注册固定制品/配置 → 按原 manifest/资格选择可服务实例 →
 B 默认装配消费同一完整命令 → A 原子发布回执 → SDK/C 同版联验。

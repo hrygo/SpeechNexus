@@ -145,7 +145,7 @@ ready 事实以及成功的 prepare intent。当前受支持的运维入口是
 | 需要分段或词证据，但结果包含字段不完整的对应条目 | `503 transcription_output_invalid`；不能将畸形条目当作有效时间戳 |
 | 请求 `verbose_json`、`srt` 或 `vtt` 但结果没有分段证据 | `422 unsupported_parameter`（`response_format`）；即使正文为空也不伪造分段 |
 | 请求 `verbose_json` 但回执无语言/时长 | `422 unsupported_parameter`（`response_format`） |
-| 请求非空 `timestamp_granularities[]` | 当前生产规划器返回 `422 unsupported_parameter`（`timestamp_granularities[]`），发生在输入写入和准入之前 |
+| 请求非空 `timestamp_granularities[]` | 通过上游请求和 binding 校验后，当前生产规划器返回 `422 unsupported_parameter`（`timestamp_granularities[]`），发生在输入写入和准入之前；上游校验也可能先拒绝请求 |
 
 结果未知时由有权检查内部执行事实的操作者保留并查询原 `submit_intent_id`；公开响应
 不承诺向客户端提供该内部身份，不能要求普通调用方凭响应自行查询。无法定位原身份时应

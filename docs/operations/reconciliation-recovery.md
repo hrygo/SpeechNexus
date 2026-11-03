@@ -13,8 +13,10 @@ date: 2026-10-28
 （`127.0.0.1:55442`，迁移 `0021_publication_evidence`）。
 
 **先给结论：当前没有面向运维的、可任意指定一条 unknown 执行并把它改成
-`succeeded` 的产品命令。** 能自动闭合 unknown 的受支持事实是同一实例代次的
-“进程/容器已退出且资源已释放”停止证明；它只把执行收口为 `aborted`。已有结果对象
+`succeeded` 的产品命令。** 当前周期恢复扫描使用同一实例代次的
+“进程/容器已退出且资源已释放”停止证明，将执行收口为 `aborted`。状态机对已有派发记录的
+unknown 还允许可信的其他双确认停止证据用于 `aborted`；是否有对应生产适配器和证据须单独
+核实，不能由领域层接受该证据推断目标部署具备此能力。已有结果对象
 不等于停止证明，也不会把 unknown 倒推成成功。`reconciliation_required` 是拒绝/恢复
 提示，不是可以查询或清理的数据库状态。
 
@@ -203,7 +205,7 @@ document 的 `storage_bucket`、`content_sha256`、`byte_length` 是读回时的
 | B. 引擎可能已运行 | `dispatched_at_us` 或 `engine_request_id` 有值，停止证据为 0 | 通过受控网关查询原 `submit_intent_id`，并用原 `engine_request_id` 关联已有执行事实；若有受支持的终止适配器，可按原身份走 abort；否则等待节点控制器的实例停止证明。任何查询超时都保持 unknown |
 | C. 结果已在对象存储 | staging key 和 document 都有；HEAD 200；长度、SHA-256 与 document 一致 | 保留固定版本对象和回执；这仍不是停止证明。unknown 不能因结果存在而写 `succeeded`，应按原身份升级核查终态与恢复证据 |
 | D. 证据缺失或互相矛盾 | stop evidence >1、document 与对象摘要/大小不一致、lease 已释放但 execution 仍 unknown、身份字段不一致、时间早于 dispatch | 立即停止恢复动作，保留现场并升级。不要改任何表、不要补第二条证据、不要重复释放 |
-| E. 只有真实实例终止证明 | 同一 instance/generation；进程或容器已退出；资源已释放；观察时间不早于 recorded/dispatched | 这是唯一能把 unknown 收口为 `aborted` 的机器事实；由网关恢复扫描消费，不由运维直接写库 |
+| E. 有真实实例终止证明 | 同一 instance/generation；进程或容器已退出；资源已释放；观察时间不早于 recorded/dispatched | 网关恢复扫描可消费该事实并将 unknown 收口为 `aborted`，不由运维直接写库。对于已有派发记录的 unknown，领域事务还允许其他匹配的可信双确认停止证据；需核实对应适配器实际可用 |
 
 分支 A 的“没看到 dispatch”不是“确定没有提交”：崩溃可能发生在持久 intent 与
 dispatch 记录之间。当前状态机要求未观测执行的 unknown 也必须有实例终止证据，不能
@@ -216,7 +218,7 @@ dispatch 记录之间。当前状态机要求未观测执行的 unknown 也必�
 | 接口/路径 | 当前事实 | 可以做什么 | 不会做什么 |
 | --- | --- | --- | --- |
 | 网关周期恢复扫描 | `ExecutionRecoveryService` 读取本 gateway/node 的 unknown；需要 `SPEECHNEXUS_GATEWAY_RECOVERY_CONFIG_FILE` 和独立节点凭据才有 worker（`execution-gateway/src/speechnexus_gateway/infrastructure/recovery_configuration.py:58`） | 向节点控制器查询 `verified-stop`；取得完整实例终止证明后调用 `record_stop(..., ABORTED)` | 不释放 A 的 lease/quota，不把成功结果改成成功终态，不在查询失败时猜停止 |
-| `POST /internal/v1/executions/{submit_intent_id}/abort` 与 `/abort-intents` | 网关已注册的组件鉴权入口；先持久接收，再等待发送锁/claim/外发 | 用原始身份与完整原意图发起有界 abort；提交结果未知时只查询原 GET，核对 `abort_recovery` 的原摘要、首次接收与 claim 状态；合法原意图重放不重新外发 | receipt、claim 或 `receipt=null` 均不证明停止或释放；file worker 只取消本进程任务，仍不直接归还预算 |
+| `POST /internal/v1/executions/{submit_intent_id}/abort` 与 `/abort-intents` | 网关已注册的组件鉴权入口；先持久接收，再等待发送锁/claim/外发 | 用原始身份与完整原意图发起有界 abort；提交结果未知时只查询原 GET，发送 `Accept: application/vnd.speechnexus.execution-recovery.v1+json` 并核对 `abort_recovery` 的原摘要、首次接收与 claim 状态；合法原意图重放不重新外发 | 普通 GET 表示不含 `abort_recovery`；receipt、claim 或 `receipt=null` 均不证明停止或释放；file worker 只取消本进程任务，仍不直接归还预算 |
 | `record_stop` / `mark_execution_unknown` | 可信进程内的 `ExecutionFactBoundary`；文件头明确 no HTTP route（`execution-gateway/src/speechnexus_gateway/interfaces/submit_transactions.py:3`） | 供生产 adapter/恢复 worker 写入不可变执行事实；`mark_execution_unknown` 只能让风险保持/升级 | 不是运维 CLI；不能用来改写任意已有 unknown，不能绕开证据或版本守卫 |
 | 后端 `release_lease` / `release_in_transaction` | `LeaseTransactionBoundary` 是进程内端口，没有 HTTP route；当前 `backend/src/speechnexus_backend/app.py` 的路由清单未装配该服务 | 在原始执行已是 terminal + complete、停止/资源释放证据齐全且 version 匹配时原子释放 lease、槽位和配额 | 不接受 unknown、timeout、404、重启或调用方自报的布尔值；不能在租约已释放后重扣预算 |
 | OpenAPI 声明的 `POST /v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases` | **契约先行，生产未实现**：[管理契约](../../contracts/admin-openapi.yaml)中有声明，但后端 router/服务中没有对应 handler；当前 `speech.admission_leases` 也没有 `quarantine_release_*` 列 | 无。不要调用或伪造该入口 | 这不是当前受支持路径；缺 API、服务和数据库证据列，属于 G7 缺口 |
@@ -230,7 +232,7 @@ lease、instance/host 和 workspace 配额。两者分属不同权威，不能�
 只有在机器证据不可得、且任务明确授权人工核验时才考虑：
 
 1. **执行已停止**：旧进程/容器确实退出（不是仅仅“进程列表看不到”）；
-2. **资源已释放**：该实例代次的槽位、显存/统一内存、host/quota 计数已有对应释放事实；
+2. **资源已释放**：有可信证据表明该执行不再占用实例代次的实际执行资源；lease、槽位和配额账目的归还仍须由后续释放事务完成；
 3. 证据必须绑定同一 `submit_intent_id`、`instance_id`、`instance_generation`、
    `fencing_token`，时间不早于 dispatch，且摘要来自原始证据而不是当前时钟；
 4. 原子地关闭全部未解决 submit intent，再释放 lease；只写证据或只释放租约都不算完成。
@@ -320,15 +322,15 @@ c707b7078ba7f8161ea3738e14beaa3b97d627193e147c009c193cb2cc4477b8  -
 
 - `execution-gateway/src/speechnexus_gateway/interfaces/submit_transactions.py:3`：
   `record_stop` / `mark_execution_unknown` 是 trusted process-local，no HTTP route。
-- `execution-gateway/src/speechnexus_gateway/domain/submission.py:756`：unknown 只能
-  在实例终止证据下收口为 `aborted`，不能变成 `succeeded`。
+- `execution-gateway/src/speechnexus_gateway/domain/submission.py:756`：unknown 不能
+  变成 `succeeded`；无派发记录时收口为 `aborted` 需要实例终止证据，有派发记录时还须按证据类型和状态机规则判断。
 - `execution-gateway/src/speechnexus_gateway/infrastructure/recovery_configuration.py:58`：
   恢复 worker 需要私有配置和独立节点凭据。
-- `execution-gateway/src/speechnexus_gateway/infrastructure/file_execution_worker.py:380`：
+- `execution-gateway/src/speechnexus_gateway/infrastructure/file_execution_worker.py` 的 `abort`：
   当前 file worker 的 abort 只取消本进程任务，不产出 stop evidence。
 - `backend/src/speechnexus_backend/speech/interfaces/lease_transactions.py:1`：
   lease 释放是进程内边界，没有 HTTP route。
-- `backend/src/speechnexus_backend/speech/domain/lease_release.py:103`：release 必须消费
+- `backend/src/speechnexus_backend/speech/domain/lease_release.py` 的 `release`：必须消费
   terminal + complete + 完整停止证据。
-- `contracts/admin-openapi.yaml:878`：只声明了 quarantine release 契约；生产实现和
+- `contracts/admin-openapi.yaml` 的 `/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases`：只声明了 quarantine release 契约；生产实现和
   `quarantine_release_*` 列当前缺失。

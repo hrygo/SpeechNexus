@@ -2004,6 +2004,7 @@
         "stop_evidence_kind",
         "updated_at"
       ],
+      "description": "Opt-in original execution recovery representation. Available only with\nAccept: application/vnd.speechnexus.execution-recovery.v1+json on the\nexisting GET route. application/json keeps the original closed shape.\n",
       "properties": {
         "submit_intent_id": {
           "$ref": "#/$defs/Identifier"
@@ -2145,8 +2146,7 @@
         {
           "required": ["abort_recovery"]
         }
-      ],
-      "description": "Opt-in original execution recovery representation. Available only with\nAccept: application/vnd.speechnexus.execution-recovery.v1+json on the\nexisting GET route. application/json keeps the original closed shape.\n"
+      ]
     },
     "ExecutionAbortRecovery": {
       "type": "object",

@@ -16,7 +16,11 @@ from tests.integration.test_coordination_foundation import Foundation
 from tests.integration.test_coordination_foundation import foundation as foundation
 from tests.integration.test_gateway_barrier import REQUEST, takeover
 from tests.integration.test_gateway_stop_evidence import counters, evidence_for, new_pool
-from tests.integration.test_production_jobs import database as database
+from tests.integration.test_gateway_submit_http import seed_original_foundation_request
+from tests.support.execution_reader_database import reader_aware_database
+from tests.support.execution_reader_database import (
+    reader_query_database_url as reader_query_database_url,
+)
 
 from speechnexus_gateway.app import create_app
 from speechnexus_gateway.domain.fencing import IngressUnavailableError
@@ -33,12 +37,14 @@ from speechnexus_gateway.settings import Settings
 
 pytestmark = pytest.mark.integration
 TOKEN = "synthetic-http-gateway-component-token"
+database = reader_aware_database
 
 
 @pytest.mark.parametrize("database", ["postgresql"], indirect=True)
 def test_real_http_wires_persistent_fencing_and_exclusive_process_lifetime(
-    foundation: Foundation, tmp_path: Path
+    foundation: Foundation, reader_query_database_url: SecretStr, tmp_path: Path
 ) -> None:
+    request = seed_original_foundation_request(foundation)
     settings = Settings(
         control_database_url=SecretStr(
             make_conninfo(
@@ -47,6 +53,7 @@ def test_real_http_wires_persistent_fencing_and_exclusive_process_lifetime(
                 password="synthetic_foundation_test",
             )
         ),
+        control_query_database_url=reader_query_database_url,
         control_schema=foundation.database.schema,
         node_id="host-test",
         gateway_id="gateway-test",
@@ -93,6 +100,7 @@ def test_real_http_wires_persistent_fencing_and_exclusive_process_lifetime(
                     assert ready.status_code == 200
                     assert {row["name"] for row in ready.json()["checks"]} == {
                         "control_postgresql",
+                        "control_query_postgresql",
                         "gateway_ingress",
                     }
                     query_path = "/internal/v1/executions/submit-test"
@@ -101,6 +109,19 @@ def test_real_http_wires_persistent_fencing_and_exclusive_process_lifetime(
                     assert pending.status_code == 200
                     assert pending.json()["execution_state"] == "submitting"
                     parse("ExecutionStatusResponse", pending.json())
+                    assert "abort_recovery" not in pending.json()
+                    recovery = client.get(
+                        query_path,
+                        headers=headers
+                        | {"Accept": "application/vnd.speechnexus.execution-recovery.v1+json"},
+                    )
+                    assert recovery.status_code == 200
+                    parse("ExecutionRecoveryStatusResponse", recovery.json())
+                    assert recovery.json()["abort_recovery"] == {
+                        "execution_request_digest": request.request_digest,
+                        "document_state": "verified",
+                        "receipt": None,
+                    }
                     evidence = evidence_for(
                         foundation,
                         submit_intent_id="submit-test",

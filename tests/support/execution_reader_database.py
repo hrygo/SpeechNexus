@@ -25,12 +25,22 @@ from speechnexus_backend.speech.infrastructure.gateway_query_grants import (
     gateway_query_grants,
     gateway_query_target_grants,
 )
+from speechnexus_backend.speech.infrastructure.job_schema import (
+    job_dispatch_grants,
+    job_runtime_grants,
+)
+from speechnexus_backend.speech.infrastructure.jobs_postgres import (
+    PostgresJobTransactions,
+    job_pool,
+)
 from tests.integration.test_coordination_foundation import Foundation
 from tests.integration.test_coordination_foundation import foundation as foundation_fixture
 from tests.integration.test_production_jobs import JobDatabase
+from tests.integration.test_production_jobs import database as shared_database_fixture
 
 _ROOT = Path(__file__).resolve().parents[2]
 _PASSWORD = "synthetic_reader_foundation_test"
+_JOB_PASSWORD = "synthetic_job_test"
 _LO_FUNCTIONS = (
     "lo_create",
     "lo_creat",
@@ -136,3 +146,84 @@ def reader_foundation() -> Iterator[ReaderFoundation]:
                 foundation,
                 SecretStr(make_conninfo(url, user=role, password=_PASSWORD)),
             )
+
+
+@contextmanager
+def _transactional_job_database(url: str) -> Iterator[JobDatabase]:
+    """A full production Job port inside a disposable reader-compatible database."""
+    suffix = uuid.uuid4().hex[:12]
+    schema, role = "sn_jobs_" + suffix, "sn_jobs_role_" + suffix
+    with ExitStack() as cleanup:
+        engine = create_engine(
+            "postgresql+psycopg://",
+            creator=lambda: psycopg.connect(url),
+            poolclass=NullPool,
+            hide_parameters=True,
+        )
+        cleanup.callback(engine.dispose)
+        config = Config(str(_ROOT / "alembic.ini"))
+        config.attributes["schema"] = schema
+        with engine.connect() as connection:
+            config.attributes["connection"] = connection
+            migrations.upgrade(config, "head")
+        admin = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+        cleanup.callback(admin.close)
+        admin.execute(sql.SQL("SET search_path TO {}, pg_catalog").format(sql.Identifier(schema)))
+        admin.execute(
+            sql.SQL("CREATE ROLE {} LOGIN PASSWORD {}").format(
+                sql.Identifier(role), sql.Literal(_JOB_PASSWORD)
+            )
+        )
+        cleanup.callback(admin.execute, sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
+        cleanup.callback(admin.execute, sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
+        for grant in (*job_runtime_grants(schema, role), *job_dispatch_grants(schema, role)):
+            admin.execute(grant)
+        pool = job_pool(make_conninfo(url, user=role, password=_JOB_PASSWORD), schema=schema)
+        pool.open()
+        cleanup.callback(pool.close)
+        yield JobDatabase(
+            "postgresql", url, schema, role, admin, PostgresJobTransactions(pool), pool
+        )
+
+
+@pytest.fixture(params=["postgresql", "mysql"])
+def reader_aware_database(request: pytest.FixtureRequest) -> Iterator[JobDatabase]:
+    """Use a private PG database only for tests that request the real reader login."""
+    if "reader_query_database_url" not in request.fixturenames:
+        yield from cast(Any, shared_database_fixture).__wrapped__(request)
+        return
+
+    # The native composition root is PostgreSQL-only. Other tests still delegate
+    # to the unmodified dual-database Job fixture and its configuration gate.
+    root_url = os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL")
+    if not root_url:
+        pytest.skip("An explicitly configured isolated PostgreSQL server is required")
+    if request.param != "postgresql":
+        pytest.fail("The production execution reader requires PostgreSQL")
+    with (
+        isolated_reader_database(root_url) as url,
+        _transactional_job_database(url) as database,
+    ):
+        yield database
+
+
+@pytest.fixture
+def reader_query_database_url(foundation: Foundation) -> Iterator[SecretStr]:
+    """A separate restricted reader and the writer's target-identification grant."""
+    database = foundation.database
+    role = "sn_reader_login_" + uuid.uuid4().hex[:12]
+    admin = database.admin
+    for statement in gateway_query_target_grants(database.schema, foundation.gateway_role):
+        admin.execute(statement)
+    admin.execute(
+        sql.SQL("CREATE ROLE {} LOGIN PASSWORD {}").format(
+            sql.Identifier(role), sql.Literal(_PASSWORD)
+        )
+    )
+    try:
+        for statement in gateway_query_grants(database.schema, role):
+            admin.execute(statement)
+        yield SecretStr(make_conninfo(database.url, user=role, password=_PASSWORD))
+    finally:
+        admin.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
+        admin.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))

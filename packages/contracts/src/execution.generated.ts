@@ -1057,7 +1057,7 @@ export interface operations {
       header?: {
         "X-Request-ID"?: components["parameters"]["XRequestIdHeader"];
         /** @description Request the exact versioned recovery media type to observe abort recovery. */
-        Accept?: string;
+        Accept?: string | null;
       };
       path: {
         submit_intent_id: components["parameters"]["SubmitIntentIdPath"];

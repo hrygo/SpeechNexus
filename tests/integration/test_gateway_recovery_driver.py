@@ -17,15 +17,18 @@ from pathlib import Path
 import httpx
 import pytest
 from psycopg.conninfo import make_conninfo
+from pydantic import SecretStr
 from tests.fake.controller import IMAGE_DIGEST, SAMPLE_IMAGE_REFERENCE
 from tests.fake.docker_api import FakeDockerEngine
 from tests.fake.execution import fake_ingress
+from tests.integration import test_gateway_submit_ledger as submit_ledger_fixtures
 from tests.integration.test_coordination_foundation import Foundation
 from tests.integration.test_coordination_foundation import foundation as foundation
 from tests.integration.test_gateway_recovery import Ledger
 from tests.integration.test_gateway_recovery import recovery_ledger as recovery_ledger
 from tests.integration.test_gateway_stop_evidence import counters
 from tests.integration.test_gateway_stop_evidence import stop_ledger as stop_ledger
+from tests.integration.test_gateway_submit_http import contract_command
 from tests.integration.test_lease_release import command
 from tests.integration.test_node_stop_gateway_recovery import (
     BINDING,
@@ -35,9 +38,12 @@ from tests.integration.test_node_stop_gateway_recovery import (
     source_for,
     uncertain_pair,
 )
-from tests.integration.test_production_jobs import database as database
 from tests.integration.test_production_leases import LeaseDatabase
 from tests.integration.test_production_leases import lease_database as lease_database
+from tests.support.execution_reader_database import reader_aware_database
+from tests.support.execution_reader_database import (
+    reader_query_database_url as reader_query_database_url,
+)
 from tests.support.gateway_recovery import recovery_document
 from tests.support.runtime_controller_tls import TOKEN, TLSFiles, controller_server
 from tests.support.runtime_controller_tls import controller_tls as controller_tls
@@ -53,6 +59,7 @@ from speechnexus_node_controller.infrastructure.sqlite_intent_store import Sqlit
 
 pytestmark = pytest.mark.integration
 GATEWAY_TOKEN = "synthetic-default-process-gateway-token"
+database = reader_aware_database
 
 
 @contextmanager
@@ -61,6 +68,7 @@ def gateway_process(
     directory: Path,
     config: Path,
     *,
+    query_database_url: SecretStr,
     node_token: str = TOKEN,
     kill: bool = False,
 ) -> Iterator[httpx.Client]:
@@ -76,6 +84,7 @@ def gateway_process(
             user=foundation.gateway_role,
             password="synthetic_foundation_test",
         ),
+        "control_query_database_url": query_database_url.get_secret_value(),
         "control_schema": foundation.database.schema,
         "node_id": "host-test",
         "gateway_id": "gateway-test",
@@ -149,6 +158,7 @@ def gateway_process(
         sock.close()
     content = log.read_text()
     assert TOKEN not in content and GATEWAY_TOKEN not in content and str(config) not in content
+    assert query_database_url.get_secret_value() not in content
     if not kill:
         assert "Application shutdown complete." in content
     replacement = ProcessIngressOwnership(directory, node_id="host-test", gateway_id="gateway-test")
@@ -180,11 +190,16 @@ def write_configuration(path: Path, tls: TLSFiles, port: int) -> None:
 def test_default_process_recovers_after_restart_without_manual_sweep_or_budget_writes(
     lease_database: LeaseDatabase,
     recovery_ledger: Ledger,
+    reader_query_database_url: SecretStr,
     controller_tls: TLSFiles,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     first_failure: str,
 ) -> None:
     lease, ledger = lease_database, recovery_ledger
+    # Persist real contract-valid requests when the shared helper creates its
+    # uncertain intents; the independent reader verifies their full originals.
+    monkeypatch.setattr(submit_ledger_fixtures, "COMMAND", contract_command())
     _, dispatch = uncertain_pair(lease, ledger)
     before = counters(lease.foundation)
     engine = FakeDockerEngine(
@@ -214,6 +229,7 @@ def test_default_process_recovers_after_restart_without_manual_sweep_or_budget_w
             lease.foundation,
             gateway_directory,
             config,
+            query_database_url=reader_query_database_url,
             node_token="synthetic-wrong-node-token" if first_failure == "credential" else TOKEN,
             kill=True,
         ) as client:
@@ -237,7 +253,12 @@ def test_default_process_recovers_after_restart_without_manual_sweep_or_budget_w
         node_directory, controller_tls, runtime_factory=native, local_observer_enabled=True
     ) as node:
         write_configuration(config, controller_tls, node.endpoint.port)
-        with gateway_process(lease.foundation, gateway_directory, config) as client:
+        with gateway_process(
+            lease.foundation,
+            gateway_directory,
+            config,
+            query_database_url=reader_query_database_url,
+        ) as client:
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline:
                 states = [

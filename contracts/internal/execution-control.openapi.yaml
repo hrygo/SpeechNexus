@@ -95,7 +95,7 @@ paths:
           required: false
           description: Request the exact versioned recovery media type to observe abort recovery.
           schema:
-            type: string
+            type: [string, "null"]
       responses:
         "200":
           description: Authoritative execution state and cleanup evidence.
@@ -1216,10 +1216,10 @@ components:
           description: |
             Null confirms this one snapshot contains no original abort receipt;
             it does not prove no running execution or permit redispatch/release.
-    ExecutionStatusResponse: &ExecutionStatusBase
+    ExecutionStatusResponse:
       type: object
       additionalProperties: false
-      required:
+      required: &ExecutionStatusRequired
         - submit_intent_id
         - lease_id
         - operation_id
@@ -1322,7 +1322,9 @@ components:
         - $ref: "#/components/schemas/ExecutionCleanupEvidenceInvariants"
         - $ref: "#/components/schemas/ExecutionDispatchEvidenceInvariants"
     ExecutionRecoveryStatusResponse:
-      <<: *ExecutionStatusBase
+      type: object
+      additionalProperties: false
+      required: *ExecutionStatusRequired
       description: |
         Opt-in original execution recovery representation. Available only with
         Accept: application/vnd.speechnexus.execution-recovery.v1+json on the

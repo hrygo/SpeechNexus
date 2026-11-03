@@ -62,6 +62,8 @@ SpeechNexus 是自部署语音服务底座与创作者平台；各部署单元�
 - `web/shared/src/assets/brand-banner.svg`：横版品牌字标与 Slogan 组合头图；
 - `web/admin/public/favicon.svg` 与 `web/workbench/public/favicon.svg`：两个入口各自匹配主题色（Emerald / Cobalt）的独立站点图标。
 
+应用外壳实际使用 `web/shared/src/ui/brand-mark.tsx` 绘制可随入口主题变化的徽标；上述 SVG 是独立静态资产，修改品牌图形时须分别核对组件和资产。
+
 SpeechNexus 采用 **“同根双面，一脉相承”** 的双生色彩系统：
 
 | 产品面 | 定位与意向 | 主题识别 | 品牌主色 (Primary / Accent) | 界面材质与氛围 |

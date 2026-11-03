@@ -79,6 +79,50 @@ def test_actual_sdk_success_and_repeat_guard(tmp_path: Path) -> None:
     assert m.main(args(tmp_path), transport=transport) != 0 and len(calls) == 1
 
 
+def test_sdk_request_fits_measured_builtin_voice_qualification(tmp_path: Path) -> None:
+    from speechnexus_backend.speech.infrastructure.builtin_voice_qualification import (
+        require_qualified_parameters,
+    )
+
+    # Window 4 measured/published this boundary. Exercise the actual SDK wire
+    # request against production admission validation, without an engine or DB.
+    capabilities = {
+        "modes": ["complete"],
+        "languages": ["en"],
+        "audio_formats": ["wav"],
+        "sample_rates_hz": [24000],
+        "max_input_codepoints": 32,
+    }
+    calls: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        calls.append(request)
+        body = json.loads(request.content)
+        require_qualified_parameters(
+            {
+                "qualified_capabilities": capabilities,
+                "public_document": {"capabilities": capabilities},
+            },
+            {
+                "text": body["input"],
+                "parameters": {
+                    "text_commit_mode": "explicit",
+                    "audio_delivery": "complete",
+                    "language": body["nexus"]["overrides"]["tts"]["language"],
+                    "response_format": body["response_format"],
+                    "speed": body["speed"],
+                    "instructions": None,
+                    "seed": None,
+                },
+            },
+            24000,
+        )
+        return httpx2.Response(200, content=wav())
+
+    assert module().main(args(tmp_path), transport=httpx2.MockTransport(handler)) == 0
+    assert len(calls) == 1
+
+
 @pytest.mark.parametrize("kind", ["error", "timeout", "truncated", "oversize"])
 def test_failures_record_sanitized_result(tmp_path: Path, kind: str) -> None:
     calls: list[httpx2.Request] = []

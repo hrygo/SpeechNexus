@@ -37,6 +37,11 @@ controller 制品摘要是受信不可变部署前提下的磁盘 Python 源或�
 正式 loader 的算法计算 `recipe_digest`。资格 probe 的原 recipe、原身份和字节保留，
 不因客户端配置修正而覆盖。
 
+首次 prepare 前，还须核对本轮私有 gateway context、gateway recovery、API context 已生成，
+其中 installation、binding revision、generation、独立角色和网关认证均与本轮记录一致。
+仅脚本导入或控制器健康检查通过，不能证明这些上下文齐备。固定 SDK 文本目前为
+27 字符，必须同时处于已批准及公开声音能力的输入上限内；不为验收扩大声音资格。
+
 API 使用正式组合根；通过已有的仓库外配置注入 speech recipe、独立 settlement DSN、
 对象存储和网关配置，不能用基础 `app.create_app` 创建一个未装 speech 的临时服务：
 
@@ -49,6 +54,19 @@ uv run uvicorn speechnexus_backend.transcription_runtime:create_app_from_env --f
 准入到期会拒绝，即使实例仍是 `ready`。将客户端截止设为 readiness、recipe、来源/资格
 及本轮运行窗口最早的截止，预留完成请求和可信停止/结算的时间；不足则不发新请求。
 不能延长旧证据 TTL 或重写 READY 时间来通过验收。
+
+资格 probe 已结算且其余准入写入静止后，保存标准 SDK 前的具名执行快照。以下关联工具
+只读正式数据库、网关回执和版本固定对象，不会提交合成或产生停止/释放事实；
+`TTS_PRIVATE_TASK_ROOT` 是本轮已核对的仓库外私有根目录，包含私有 `private/` 上下文和
+`sdk-evidence/` 输出目录，不是新授权。工具先校验数据库、schema、installation 与只读事务。
+可信读取流程须先生成 `private/public-phase-readiness.json`，包含本轮 instance、generation 和
+原 verified/expiry 时间；关联工具在 before 固化该原文件摘要，after 精确核对同一记录，
+不刷新 READY，也不因只读补验发生于到期后而新建执行。SDK 原请求摘要及有效命令同时核对。
+
+```bash
+uv run python scripts/dev-env/verify-file-tts-association.py \
+  --task-root "$TTS_PRIVATE_TASK_ROOT" --phase before
+```
 
 ```bash
 uv run python scripts/dev-env/verify-file-tts-sdk.py \
@@ -70,6 +88,15 @@ uv run python scripts/dev-env/verify-file-tts-sdk.py \
 身份，当前 SpeechPlan 也不持久化 client_reference，不能据此直接恢复。无法唯一关联时
 保持 unknown，不新建目录、换 client_reference 或原样盲重发。
 
+上述 SDK 的 output-dir 须对应本轮 `TTS_PRIVATE_TASK_ROOT/sdk-evidence`。SDK 成功且原租约
+已结算后，在网关查询与版本固定对象仍可读取时执行关联检查；身份比较使用显式列名，
+不依赖 JSON 对象键序。不能凭 HTTP 200 或 operation 数量代替该检查。
+
+```bash
+uv run python scripts/dev-env/verify-file-tts-association.py \
+  --task-root "$TTS_PRIVATE_TASK_ROOT" --phase after
+```
+
 公开成功后仍须检查 operation / submit / lease 与 voice/binding revision、generation、
 结果摘要和版本化对象的关联，检查上限、未发布/退役、失败及未知恢复语义。客户端
 不验证这些数据库和引擎事实，其一次 200 不结算整个 Goal。
@@ -80,7 +107,14 @@ uv run python scripts/dev-env/verify-file-tts-sdk.py \
 实例基础预算，并核对所有 held/quarantined 维度、slots 和 quota。独立安全守护仍须
 预先准备；若守护先物理停止，如实标注事后协调，不能补记成正常先持久化再外发。
 
-2026-11-03 三次窗口及剩余缺口见 [受控验收记录](../audits/2026-11-03-controlled-tts-prepare.md)。
-第三次窗口的标准 SDK 在原 readiness 有效期内仍返回 503，尚未证明内部拒绝原因；
-不能将 readiness 过期作为全部现场失败的解释。下一次运行前先完成隔离数据库准入诊断。
+收尾分开判断“可信停止/预算释放”和“验收证据齐全”。关联检查异常时仍按原身份停止、
+结算，但先保留专用数据库与对象，在剩余窗口内只读核实；修正只读工具不允许重发 SDK。
+删除数据库、对象存储和临时目录前，交付负责人须核验关联结果及原停止、租约重放和
+全零预算证据已经可靠保全。接收未完成不能阻止已授权窗口的硬截止：若截止前仍缺证据，
+导出可安全保留的事实与缺口后按期清理，如实保持 Goal 未完成，不补签丢失事实。
+
+2026-11-03 五次窗口及剩余缺口见 [受控验收记录](../audits/2026-11-03-controlled-tts-prepare.md)。
+第四窗口确认固定文本超出资格，第五窗口修正后取得真实标准 SDK 200/WAV；关联脚本的
+JSON 键序缺陷及过早删除临时账本使有效命令/结果的完整关联仍缺证。第三窗口在有效
+readiness 内的 503 保留历史事实，不能将 readiness 过期作为全部现场失败的解释。
 首次原生资格、正式资格 probe 或合成 transport 测试都不能替代标准 SDK 的真实链路验收。

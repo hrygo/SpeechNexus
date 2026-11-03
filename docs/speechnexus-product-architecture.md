@@ -345,6 +345,8 @@ PostgreSQL 是任务、版本、用量、资源租约和事务性 outbox 的权�
 
 Job 使用 at-least-once 执行、步骤去重和幂等发布。输出先写私有 staging，校验后与任务状态、取消、策略和 attempt 一起原子提交引用。输入按稳定区间去重；输出按各 attempt 的实际生成量计消耗。TTS 已接受但未冻结的文本保留额度，首次冻结才结算，未冻结尾部取消释放。
 
+这里描述的是完整 Job 与实时计量的目标语义，不能据此认定公开异步执行链已接通。当前结果发布组件已有，公开 Job 派发入口因生产 planner 尚未装配而在认领前失败关闭；默认 Compose 也不启动该 worker。实际范围及剩余条件见[生产 Job](components/production-jobs.md)和[最小部署](operations/compose-minimal.md)。
+
 完整的池预算、调度算法、取消 / 接管屏障、计量键、状态机、保存和删除规则见[资源治理与持久化](architecture/runtime-governance.md)。工作台项目副本与整书导出由工作台拥有，不能写底座 JobStep / Artifact。
 
 ## 8. 模型后端与执行接口

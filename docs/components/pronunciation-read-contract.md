@@ -28,8 +28,10 @@ provider. This is a service database identity, not a user/tenant boundary.
 `SPEECHNEXUS_PRONUNCIATION_READ_TIMEOUT_SECONDS` defaults to 3 (range >0–30).
 The API owns a separate pool, closes it on normal or failed startup, and can
 reopen it on restart. Host/Origin rules reuse the explicit asset HTTP settings.
-The route accepts GET with no body; framing, query/header ambiguity and bounded
-receive failure are rejected. Reads consume one local permit; saturation returns
+The route accepts GET with no body; when the reader is enabled, invalid framing,
+query/header ambiguity and bounded receive failure are rejected. After Host,
+path and method checks, an unavailable provider returns 503 before body or query
+validation. Reads consume one local permit; saturation returns
 429. Cancellation retains that permit until the actual owned handler/DB thread
 ends, even after repeated cancellation. PG statement/pool deadlines are bounded
 cooperative limits, not hard network-interruption or engine-stop guarantees.
@@ -47,7 +49,7 @@ remain untouched, and fixed reads return the declared unavailable response.
 | --- | --- |
 | 200 | Complete public revision representation, including its opaque string revision. |
 | 400 | Invalid path, query, header or unexpected request body. |
-| 401 | Existing shared unauthorized response. |
+| 401 | Shared unauthorized response declared by the contract; this route does not itself implement authentication. |
 | 403 | Host or Origin rejected by the public entry boundary. |
 | 404 | Confirmed missing fixed revision: `pronunciation_not_found`, `not_found_error`, `retryable: false`. Required `Cache-Control: no-store` and `X-Should-Retry: false`. |
 | 405 | Unsupported method; required `Allow: GET`. |
@@ -98,13 +100,14 @@ already declared wire enum; they are not publication evidence.
 and negative envelopes. Python checks the original source independently of the
 generated validator; TypeScript consumes the same examples. Native loopback TCP
 tests use a synthetic protocol server to exercise an explicit 503 then fixed GET
-200 in both languages. These prove transport parsing and caller recovery shape,
+200 in both languages. Their scope is transport parsing and caller recovery shape,
 not a production router, real database read, permission role, qualified engine
 or a complete speech workflow. Separately,
-`tests/integration/test_pronunciation_http.py` exercises the actual API/lifespan
+`tests/integration/test_pronunciation_http.py` defines checks of the actual API/lifespan
 and PG adapter under a SELECT-only role, independent login/effective role checks,
 restart and startup failure, corrupt history, pool/SQL read pressure and actual
 lock-wait cancellation. Python and generated TypeScript consume actual loopback
 HTTP backed by those PG rows, including 503 then the same fixed GET and confirmed
 404. Its seed is a synthetic private draft, not a public create, phonetic quality,
 published dictionary, real speech engine or target-topology qualification.
+These test definitions are not evidence of a passing run in the current environment.

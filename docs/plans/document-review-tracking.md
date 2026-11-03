@@ -98,7 +98,7 @@
 | `docs/components/profile-lifecycle-contract.md` | 部分核对 | 全文阅读并核对生命周期准备、不可用 verifier 和私有意图存储；契约响应及实际路由装配待逐项核对 |
 | `docs/components/profile-lifecycle-intents.md` | 部分核对 | 全文阅读并对照意图记录/恢复 SQL、0013 迁移及授权；生产装配、竞争测试及后续状态待核对 |
 | `docs/components/pronunciation-drafts.md` | 已核对 | 逐节静态对照草稿事务、权限、迁移和集成测试定义；区分固定读取与恢复校验，未运行服务 |
-| `docs/components/pronunciation-read-contract.md` | 部分核对 | 全文阅读并核对读取器装配、并发/超时配置及契约错误码；权限、HTTP 边界和消费者测试待核对 |
+| `docs/components/pronunciation-read-contract.md` | 已核对 | 静态对照读取器权限、HTTP 处理顺序、生成消费者和测试定义；未运行服务 |
 | `docs/components/public-job-model-binding.md` | 已核对 | 逐节静态核对固定 binding 选择、事务期限、恢复、工作台消费者与测试；未运行服务 |
 | `docs/components/repository-layout.md` | 部分核对 | 已对照工作区、迁移目录、接口目录、Compose 与验证入口修正布局；其余内容待核对 |
 | `docs/components/runtime-controller-client.md` | 已核对 | 逐节静态对照客户端、节点观察循环、持久投递和测试清单；未运行服务 |

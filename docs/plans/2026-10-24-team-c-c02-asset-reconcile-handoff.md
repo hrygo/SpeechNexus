@@ -1,6 +1,6 @@
 ---
 title: "团队 C C02 素材 HTTP 原身份恢复交接"
-status: active
+status: superseded
 date: 2026-10-24
 ---
 

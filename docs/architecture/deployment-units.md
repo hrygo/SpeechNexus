@@ -139,6 +139,7 @@ Linux CPU 媒体组件可与算力组件同机，但要独立核算资源，不�
 | 已核对事实 | 能证明的范围与缺口 |
 | --- | --- |
 | [当前 Compose](../../deploy/compose.yaml)默认包含 PG、MinIO、对象存储初始化、Speech API 和 Gateway；两个 Web 容器及部分运维入口须显式启用 profile | 单节点 bootstrap；不含独立 Workbench API、Controller、完整后台角色或真实模型装配，也未提供同步 TTS API 配方及结算数据库配置，不能据此宣称公开 TTS 可用 |
+| Compose 映射到宿主的 PG、MinIO、API、Gateway 和可选 Web 端口均绑定 `127.0.0.1`；容器间使用默认网络 | 这些绑定限制的是宿主端口监听地址，不构成容器网络出站隔离或生产入口认证；远程访问和部署网络策略须另行配置并验证 |
 | Compose 中 API 访问 Gateway 与 MinIO 的默认地址使用 HTTP | 这是单节点 bootstrap 连接，不能证明跨主机 TLS；分机部署须为各连接配置并验证认证与传输保护 |
 | Compose 的对象存储初始化、API 及网关文件执行配置复用 MinIO 根凭据 | 这是本地 bootstrap 配置，不证明生产对象存储最小权限；生产须分别配置并验证受限身份与授权 |
 | [Web 代理](../../deploy/web/nginx.conf)监听 HTTP `8080`，将 `/v1/`、`/v1/realtime` 和 `/v2/workbench/` 发往 `api:8000` | 此配置不终止 TLS，也未接入独立 Workbench runtime 或实时 owner 路由；部署需另行配置入口保护和各服务上游 |

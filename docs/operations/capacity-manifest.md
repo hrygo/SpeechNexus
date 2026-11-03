@@ -30,7 +30,7 @@ date: 2026-10-28
 | 样例报告 | `deploy/engines/file-asr-audio/evidence/gb10-20261027/qualification-report.json` | 与样例 manifest 配对；当前 `overall_status=incomplete` |
 | 候选定义 | `deploy/engines/file-asr-audio/evidence/gb10-20261027/binding-definition.candidate.json` | 只用于证明“未来 revision 应如何声明”，不是已部署定义，也不是对历史定义的修改 |
 | 原始证据 | `deploy/engines/file-asr-audio/evidence/gb10-20261027/evidence.json` | #243 comment `6453106316` 的结构化转述；逐 scenario 摘要的输入 |
-| 数据库快照 fixture | `tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json` | 只证明查询路径与跨表规则，不是 live DB、不是发布回执 |
+| 数据库快照 fixture | `tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json` | 用于验证快照上的跨表规则；不执行数据库查询，也不是发布回执 |
 | 校验脚本 | `scripts/dev-env/verify-release-evidence.py` | 只读；校验 schema、跨文档、摘要、DB/快照容量账本 |
 
 **样例基线**：编写时仓库 `main` 的 base SHA 为 `9d1b9bbdc1041bfb7c33505a4788490c1db5ea45`，不是当前主线承诺。样例中的模型、镜像和测量数值来自 #243 的 GPU 岗记录与仓库 artifact pin；本任务没有下载模型、没有连接 GPU、没有重跑测量。
@@ -180,7 +180,7 @@ manifest 本身只有“每个实例/每个 slot 的包络”，没有“池总�
 | R11 | 对每个物理维度：`held + quarantined <= allocatable`；`held >= instance.peak`（host 已为峰值预留）；`peak <= allocatable`；剩余 slot 的 `per_slot * remaining_slots <= allocatable - held - quarantined` | `FAIL` |
 | R12 | `workspace_quotas.held_attempts + quarantined_attempts <= max_attempts`；`resource_pools.pool_state=active`、`service_class` 相等 | `FAIL` |
 
-脚本对 `resource_pools` 数值配额输出 `NA`（见 §4.2），不是通过；对 `database.source=fixture` 输出 `WARN`，因为 fixture 只证明查询路径，不证明真实发布或真实容量。
+脚本对 `resource_pools` 数值配额输出 `NA`（见 §4.2），不是通过；对 `database.source=fixture` 输出 `WARN`，因为 fixture 只用于验证快照上的规则，不证明 live 查询、真实发布或真实容量。
 
 R11 中 `held >= instance.peak` 是该校验器的额外静态断言，不能当作所有运行状态的账本不变量：prepare 成功后实例基础预算可从 peak 收缩到 steady；同时 host `held` 是主机聚合值，覆盖 peak 也不能单独证明某个实例仍持有峰值。应结合 `base_budget_kind`、各实例及租约核对账本；该断言失败也不能单凭数值认定生产账本损坏。
 
@@ -496,7 +496,7 @@ FROM speech.workspace_quotas WHERE workspace_id = '<workspace-id>';
 5. **stage graph 未表达 VAD/对齐/分离**：如果实际执行路径包含这些阶段，必须新增 stage 并重新资格；不能仅靠 `parameter_defaults`。
 6. **产品发布校验只检查 capacity manifest id**：`publications_postgres.py` 当前不核对 release tier、topology、摘要、host/instance 账本；脚本是补强，不是产品门禁。建议后续卡把关键检查接入发布路径。
 7. **带宽/对象存储没有 host 账本列**：manifest 有声明，但主机层无法按列扣减；需要平台监控/后续 schema 演进。
-8. **fixture 不是发布回执**：`tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json` 只证明查询路径；真实发布必须用 live DB 的 publication/evidence 行重新跑 `--database-url`。
+8. **fixture 不是发布回执**：`tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json` 只用于验证快照上的规则；真实发布必须用 live DB 的 publication/evidence 行重新跑 `--database-url`。
 
 ## 11. 文件清单（本任务新增/修改）
 
@@ -509,6 +509,6 @@ FROM speech.workspace_quotas WHERE workspace_id = '<workspace-id>';
 | `deploy/engines/file-asr-audio/evidence/gb10-20261027/evidence.json` | #243 结构化转述 |
 | `deploy/engines/file-asr-audio/evidence/gb10-20261027/binding-definition.candidate.json` | 未来 revision 的候选定义（非部署） |
 | `deploy/engines/file-asr-audio/evidence/gb10-20261027/README.md` | 样例包说明与摘要 |
-| `tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json` | 查询路径 fixture |
+| `tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json` | 一致性规则 fixture |
 | `scripts/dev-env/verify-release-evidence.py` | 只读一致性校验 |
 | `docs/operations/release-evidence-verification-output.txt` | 实际运行原始输出 |

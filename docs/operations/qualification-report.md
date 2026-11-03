@@ -40,7 +40,7 @@ date: 2026-10-28
 | 模型/运行时 pin | `deploy/engines/file-asr-audio/artifact-pin.json` | 模型文件、模型卡、VAD、运行时 pin；摘要关系的权威来源 |
 | 候选定义 | `deploy/engines/file-asr-audio/evidence/gb10-20261027/binding-definition.candidate.json` | 只用于样例的“未来 revision 定义”；不是已部署定义 |
 | 校验脚本 | `scripts/dev-env/verify-release-evidence.py` | 只读校验 schema、摘要、跨文档、DB 账本 |
-| DB 快照 fixture | `tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json` | 只证明查询路径；不是真实发布 |
+| DB 快照 fixture | `tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json` | 用于验证快照上的一致性规则；不执行数据库查询，也不是真实发布 |
 
 **样例基线**：编写时仓库 `main` 的 base SHA 为 `9d1b9bbdc1041bfb7c33505a4788490c1db5ea45`，不是当前主线承诺。样例中的测量全部来自 #243 comment `6453106316` 的 GPU 岗记录；原始主记录 `DEL-103-evidence.md` 未提供，因此本任务把数值标为**他人实测、本文转述**，而不是独立复现。
 
@@ -418,6 +418,6 @@ fixture 或放宽校验消除；应由绑定作者发布新的不可变 revision
 | `deploy/engines/file-asr-audio/evidence/gb10-20261027/capacity-manifest.json` | 配对 manifest |
 | `deploy/engines/file-asr-audio/evidence/gb10-20261027/binding-definition.candidate.json` | 未来 revision 候选定义（非部署） |
 | `deploy/engines/file-asr-audio/evidence/gb10-20261027/README.md` | 样例包说明与摘要 |
-| `tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json` | 查询路径 fixture |
+| `tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json` | 一致性规则 fixture |
 | `scripts/dev-env/verify-release-evidence.py` | 只读一致性校验 |
 | `docs/operations/release-evidence-verification-output.txt` | 实际运行原始输出 |

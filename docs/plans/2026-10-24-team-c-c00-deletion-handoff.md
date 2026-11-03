@@ -1,11 +1,13 @@
 ---
 title: "SpeechNexus C00 项目与稿件删除事务交接"
-status: in-progress
+status: superseded
 version: "0.1.0"
 date: 2026-10-24
 ---
 
 # SpeechNexus C00 项目与稿件删除事务交接
+
+> 历史交接：本文状态和验证保留原时点；当前范围与证据见[交付跟踪矩阵](delivery-tracking.md)。
 
 ## 身份与适用范围
 

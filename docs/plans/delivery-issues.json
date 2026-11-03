@@ -257,9 +257,9 @@
         "docs/architecture/runtime-governance.md"
       ],
       "implementation": "CpuVadSession 为每个会话创建 detector、顺序计数和有界缓冲，单次 PCM 输入最多 250ms。；存在相关辅助组件与契约，逐 binding 真实质量资格未证。；辅助组件存在，不证明真实质量或 required 资格。",
-      "integration": "文件与实时消费者的正式接线和隔离需要核验。；required 对齐须接完整配方和终态。；须验证结果与匹配正文 revision 和完整配方关联。",
+      "integration": "文件 ASR 命令已接入 CPU VAD；实时入口及完整链路的接线和隔离仍需验收。；required 对齐须接完整配方和终态。；须验证结果与匹配正文 revision 和完整配方关联。",
       "verification": "合成分段不代替真实静音/流质量及停止资格。；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "文件与实时消费者的正式接线和隔离需要核验。；required 对齐须接完整配方和终态。；须验证结果与匹配正文 revision 和完整配方关联。 合成分段不代替真实静音/流质量及停止资格。；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "文件 ASR 命令已接入 CPU VAD；实时入口及完整链路的接线和隔离仍需验收。；required 对齐须接完整配方和终态。；须验证结果与匹配正文 revision 和完整配方关联。 合成分段不代替真实静音/流质量及停止资格。；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/pull/317",
@@ -270,6 +270,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/execution-gateway/src/speechnexus_gateway/application/vad.py",
           "label": "CPU VAD 会话",
           "note": "独立会话状态和有界输入"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/execution-gateway/src/speechnexus_gateway/interfaces/file_asr_command.py",
+          "label": "文件 ASR 命令接线",
+          "note": "构造文件媒体与 VAD 消费链；不证明实时接线或完整资格"
         },
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/realtime-events.schema.json",

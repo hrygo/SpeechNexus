@@ -285,8 +285,8 @@
 | `docs/plans/2026-10-26-ci-resource-partitions.md` | 历史保留 | 全文阅读，为当时实施与验证记录；历史验证未重跑 |
 | `docs/plans/2026-10-26-paperclip-bootstrap-plan.md` | 历史保留 | 全文阅读，标明历史状态和现行入口；历史环境未复验 |
 | `docs/plans/2026-10-26-project-manager-baseline.md` | 历史保留 | 全文阅读，修正旧总控被称为当前入口；历史证据未复验 |
-| `docs/plans/2026-10-26-team-a-final-handoff.md` | 部分核对 | 核对历史用途及入口，修正旧基线被称为当前状态；其余内容待全文核对 |
-| `docs/plans/2026-10-26-team-a-review-and-next-phase.md` | 待核对 | — |
+| `docs/plans/2026-10-26-team-a-final-handoff.md` | 历史保留 | 全文阅读，修正旧基线被称为当前状态；历史验证未重跑 |
+| `docs/plans/2026-10-26-team-a-review-and-next-phase.md` | 历史保留 | 全文阅读，已有收尾说明与 superseded 状态；历史验证未重跑 |
 | `docs/plans/2026-10-26-team-c-final-handoff.md` | 历史保留 | 全文阅读，修正旧基线被称为当前入口；历史验证未重跑 |
 | `docs/plans/2026-10-26-team-c-next-phase-execution-and-collaboration.md` | 待核对 | — |
 | `docs/plans/2026-10-27-delegra-legion-closed-loop.md` | 待核对 | — |

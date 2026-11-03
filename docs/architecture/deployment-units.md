@@ -141,7 +141,7 @@ Linux CPU 媒体组件可与算力组件同机，但要独立核算资源，不�
 | [当前 Compose](../../deploy/compose.yaml)默认包含 PG、MinIO、对象存储初始化、Speech API 和 Gateway；两个 Web 容器及部分运维入口须显式启用 profile | 单节点 bootstrap；不含独立 Workbench API、Controller、完整后台角色或真实模型装配，也未提供同步 TTS API 配方及结算数据库配置，不能据此宣称公开 TTS 可用 |
 | [Web 代理](../../deploy/web/nginx.conf)将 `/v2/workbench/` 发往 `api:8000` | 默认预览没有接入独立 Workbench runtime；分布式部署需配置各服务上游及实时 owner 路由 |
 | [Backend 主入口](../../backend/src/speechnexus_backend/main.py)固定启动 Speech ASGI 工厂 | `process_role` 是身份声明；设置为另一个角色不会自动选择其服务入口 |
-| [Workbench 工厂](../../backend/src/speechnexus_backend/workbench/runtime.py)及专用后台命令已存在 | 具备分开启动的部分入口；不能据此认定全部后台职责已独立交付 |
+| [Workbench 工厂](../../backend/src/speechnexus_backend/workbench/runtime.py)可单独启动，部分后台循环由其生命周期托管 | Workbench 后台尚无独立 worker 入口；其他职责的专用后台命令见第 1 节，不能据此认定 Workbench 后台已独立交付 |
 | [Python 镜像](../../deploy/images/python.Dockerfile)当前同步所有 workspace 包 | 共享镜像不要求服务同机，但尚未按部署单元收敛运行依赖与检查范围 |
 | [Backend 依赖](../../backend/pyproject.toml)直接包含 `av`，Workbench runtime 内托管部分后台循环 | 媒体原生依赖与 Web 生命周期仍有装配耦合；不证明必须使用 Linux，也不证明已经可以独立扩缩 |
 | [现有 CI](../../.github/workflows/ci.yml)使用 Ubuntu runner | Linux 检查不替代 macOS 原生安装/启动/行为验证；共享镜像和模块导入均不能补足平台资格 |

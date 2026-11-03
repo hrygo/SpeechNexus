@@ -294,7 +294,7 @@
 | `docs/plans/README.md` | 已核对 | 核对当前 PRD、需求矩阵、结构化来源和只读刷新入口及 77 个本地链接；带日期条目作为历史索引，原时点摘要未逐项重验 |
 | `docs/plans/binding-disable-cancellation.md` | 部分核对 | 全文阅读，对照 public Job 锁及 Compose 入口修正自相矛盾的旧描述；其余协调和验收细节待核对 |
 | `docs/plans/delivery-tracking.md` | 部分核对 | 核对生成入口、结构化来源和快照标记；逐项事实与证据仍待核对 |
-| `docs/po-sm-operating-playbook.md` | 部分核对 | 核对 fleet-status 参数及退出码，修正门禁反例表述与等待接续条件；数据库查询行为等细节待核对 |
+| `docs/po-sm-operating-playbook.md` | 已核对 | 全文对照交付 SOP 和 fleet-status 查询、分类及输出；修正门禁、等待、跨公司计数和模式差异，未连接平台数据库验证运行状态 |
 | `docs/prd.md` | 部分核对 | 核对 65 个需求 ID、锚点和 Epic 与结构化清单一致；逐项验收语义待核对 |
 | `docs/project-manager-guide.md` | 已核对 | 全文对照根规约、交付 SOP、军团职责及矩阵刷新入口；15 个本地链接目标存在，未核验平台实际部署与权限 |
 | `docs/speechnexus-product-architecture.md` | 部分核对 | 局部对照代码、契约或历史证据；对照实时、音色与工作台入口、文件 ASR 分段汇总、共享密钥、导出组合根、默认值快照、预设生命周期、绑定停用 / 数据删除、Job 派发及故障矩阵；其余内容待核对 |

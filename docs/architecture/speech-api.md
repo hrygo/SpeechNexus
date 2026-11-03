@@ -306,7 +306,7 @@ preview / validation 的 input 固定 voice_draft_id / draft_revision；preview 
 
 上述试听引用是业务要求；当前 `VoiceDraftRevision` schema 对 candidate、preview_only、validating、validated 和 published 的 `preview_artifact_ids` 只在字段存在时限制至少一项，未将该字段列为必填。生产者和消费者须另行核验引用存在且可用，不能仅凭 schema 通过推断已有试听制品。
 
-VoiceRevision 包含来源类型、后端绑定、素材摘要与依赖、样本 / 语言能力、验证结果及私有 backend_voice_handle；公开结果不返回特征向量、任意文件路径或引擎内部句柄。调用 TTS 时仍检查音色与模型绑定兼容性，不把任意后端音色资产宣称为跨模型通用。
+公开 VoiceRevision 包含来源类型、模型绑定、适用的素材摘要、样本 / 语言能力和验证摘要；引擎侧句柄及其他私有依赖由内部保存，不属于公开 VoiceRevision。公开结果不返回特征向量、任意文件路径或引擎内部句柄。调用 TTS 时仍检查音色与模型绑定兼容性，不把任意后端音色资产宣称为跨模型通用。
 
 描述式生成可能只产生试听音频。只有已验证“候选 → 可复用参考 / 特征 → 后续 TTS”的完整路径，才能发布可持久使用的声音；否则标为 preview_only，不提供 publication。Qwen3-TTS 的 VoiceDesign、Base 和 CustomVoice 具有不同角色，由各自正确的模型绑定完成适配，不依赖同一实例自动支持全部类型。[vLLM-Omni 音色与模型角色](https://docs.vllm.ai/projects/vllm-omni/en/stable/serving/speech_api/#qwen3-tts)
 

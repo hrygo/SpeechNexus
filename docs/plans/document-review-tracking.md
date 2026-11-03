@@ -149,7 +149,7 @@
 | `docs/operations/paperclip/roles/reviewer.md` | 部分核对 | 全文对照工作约定和交付 SOP；实际部署配置与运行权限未核实 |
 | `docs/operations/paperclip/roles/workbench.md` | 部分核对 | 全文对照项目约定及交付 SOP；实际部署和岗位权限未核实 |
 | `docs/operations/paperclip/runtime-incidents.md` | 历史保留 | 历史故障、处置与后续证伪记录；已限定旧操作不构成当前授权，并指向现行交付 SOP；事故原件未逐项核验 |
-| `docs/operations/paperclip.md` | 部分核对 | 核对现行工作流入口及历史环境边界；岗位、配置与平台映射尚未逐项核实 |
+| `docs/operations/paperclip.md` | 部分核对 | 核对现行工作流入口及历史环境边界，修正已取消排期的文件语音 issue 入口；岗位、配置与平台映射尚未逐项核实 |
 | `docs/operations/production-coordination-storage.md` | 已核对 | 对照 0002 表与索引、迁移链、列级授权、组合约束及释放守卫；区分基础约束与受控事务职责，未运行数据库测试 |
 | `docs/operations/production-runtime-delivery.md` | 已核对 | 对照配置、租约、unknown 路径、迁移、授权、ACK、Compose 及测试入口；未执行集成测试或验证目标部署 |
 | `docs/operations/publish-binding-revision.md` | 已核对 | 对照 CLI 观察、退出分类、发布事务的目标校验、草稿与证据检查、已有事实和原意图重放；未连接数据库或验证部署切换 |

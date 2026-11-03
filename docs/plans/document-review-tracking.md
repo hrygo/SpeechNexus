@@ -21,7 +21,7 @@
 | `docs/architecture/runtime-governance.md` | 部分核对 | 局部对照代码、契约或历史证据；其余内容待核对 |
 | `docs/architecture/speech-api.md` | 部分核对 | 核对实时入口的契约目标与当前装配边界并明确标注；其余内容待核对 |
 | `docs/architecture/speechrail-reuse.md` | 部分核对 | 核对项目复用政策、固定 commit、路径与许可证，以及上游幂等、ASR 策略、配方、能力快照、组合入口、任务存储、资源治理和 MCP 代理的部分行为；澄清设计方向及公开回执边界，其他消费者待核对 |
-| `docs/architecture/technical-blueprint.md` | 部分核对 | 局部对照代码、契约或历史证据；区分文件 ASR 目标交叠合并与当前逐 VAD 段汇总；其余内容待核对 |
+| `docs/architecture/technical-blueprint.md` | 部分核对 | 局部对照代码、契约或历史证据；修正 Python 契约生成类型，区分文件 ASR 目标交叠合并与当前逐 VAD 段汇总；其余内容待核对 |
 | `docs/archive/legacy-postgresql-coordination.md` | 历史保留 | 全文阅读，明确标为旧原型并指向现行架构；无需按当前实现改写，原始证据未逐项复核 |
 | `docs/audits/2026-10-22-development-environment-readiness.md` | 历史保留 | 2026-10-22 环境就绪快照；目录入口已说明不代表当前主机状态，未重新验证当时证据 |
 | `docs/audits/2026-10-22-speechnexus-design-review.md` | 历史保留 | 0.3.0 设计基线的审查与裁决记录；入口按审查记录引用，未重新验证当时证据 |

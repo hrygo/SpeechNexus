@@ -88,7 +88,11 @@ parsing cannot compare a response with a prior request or prove parent existence
 | Host/Origin refusal | 403 |
 | Unsupported method | 405 with required `Allow: GET` |
 
-The source also retains the existing shared-key 401 declaration. No latest/current
+The source also retains the existing shared-key 401 declaration; the current
+binding producer handler does not authenticate the `Authorization` header. The
+contract declaration alone does not establish an authenticated caller or an
+access-control boundary; deployment must verify any separately configured
+protection. No latest/current
 selection, query-by-key, mutation, Operation or new keyless recovery is added.
 Read failure never authorizes reallocating a parent, replacing defaults or
 releasing budgets. Publication/activation and the final merged parameter policy

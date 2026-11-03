@@ -154,7 +154,7 @@
 | `docs/operations/production-runtime-delivery.md` | 已核对 | 对照配置、租约、unknown 路径、迁移、授权、ACK、Compose 及测试入口；未执行集成测试或验证目标部署 |
 | `docs/operations/publish-binding-revision.md` | 已核对 | 对照 CLI 观察、退出分类、发布事务的目标校验、草稿与证据检查、已有事实和原意图重放；未连接数据库或验证部署切换 |
 | `docs/operations/qualification-report.md` | 已核对 | 对照报告契约、样例状态和摘要、离线校验器及产品只读组件；澄清发布与 fixture 边界并修正内部 VAD 描述，未重跑测量或连接数据库 |
-| `docs/operations/reconciliation-recovery.md` | 部分核对 | 核对 abort 恢复查询、unknown 停止证据规则及查询 2、3 所涉主要表字段与证据标志类型；修正资源释放与预算归还顺序及代码锚点描述；查询执行及其余内容待核对 |
+| `docs/operations/reconciliation-recovery.md` | 已核对 | 对照 unknown 停止规则、abort 恢复入口、租约释放边界及只读查询字段与回执契约；历史快照保留原时点，未连接数据库执行查询 |
 | `docs/operations/register-engine.md` | 部分核对 | 核对健康探测及重定向证据、host/owner/quota 校验、同代重放与 readiness 刷新、参数范围、配方覆盖规则及验证查询；补充提交结果未知、查询证据边界和操作员确认的投递阻断，其余内容待核对 |
 | `docs/operations/release-preflight.md` | 已核对 | 对照脚本检查入口、配置加载和 C0–C12 判断；修正版本、身份、临时文件、资格场景、Compose 文本匹配及固定快照边界，未执行会访问服务或写入的检查 |
 | `docs/operations/release-readiness.md` | 历史保留 | 全文阅读，固定候选与核验时点的发布就绪快照；运维索引标为历史，未逐项复核历史证据 |

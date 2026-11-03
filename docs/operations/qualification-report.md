@@ -87,7 +87,7 @@ date: 2026-10-28
 | `contract_version` | 契约版本，例如 `1.0.0` | 仓库 | 与 `contracts` 版本一致 |
 | `engine_components` | 每个 stage 一个对象；key 是 stage id | 引擎/平台 | key 集合 = `stage_graph[].stage_id`；不能多、不能少 |
 | `engine_components[].engine_kind` | 引擎类型 | 引擎负责人 | 与 manifest stage `engine_kind` 相等 |
-| `engine_components[].image_digest` | 引擎镜像摘要 | 构建/镜像仓库 | 与 evidence `software.engine_image_digest` 相等；脚本仅在 evidence 提供该摘要且恰有一个 vLLM/vLLM-Omni 组件时比较，否则标记 `NA`，须另行核验 |
+| `engine_components[].image_digest` | 引擎镜像摘要 | 构建/镜像仓库 | 逐 stage 与对应构建、镜像和测量证据核对；脚本仅在 evidence 提供单个 `software.engine_image_digest` 且恰有一个 vLLM/vLLM-Omni 组件时比较该组件，否则标记 `NA`，须另行核验 |
 | `engine_components[].runtime_version` | 运行时版本，例如 `vllm-0.28.0+py3.12.3` | 引擎/平台 | 与 artifact pin 的 runtime pin / requirements 一致 |
 
 ### 3.3 `test_suite` 与 `scenarios`
@@ -237,7 +237,7 @@ else:
 | `engine.source_commit` / `distribution_inventory_digest` | 引擎运行时来源与 Python 分发清单 | 报告无对应字段；reviewer 必须查 pin 与镜像构建记录 |
 | `repository_files[]` | 辅助文件（runtime pin、requirements、许可证）摘要 | 报告无对应字段；发布前按 pin 核对 |
 
-报告的 `software.engine_components[].image_digest` 与 evidence `software.engine_image_digest` 必须一致；样例为 `sha256:61cc94fec25198aeefcd93b96088a8e8db106d61d834a36d3b89ba7bf5b10765`。`artifact-pin.engine` 没有直接存 image digest，因此这个值必须来自构建/镜像记录和 evidence，不能从 pin 猜。
+样例只有一个 vLLM 组件，其 `image_digest` 与 evidence 的 `software.engine_image_digest` 一致，均为 `sha256:61cc94fec25198aeefcd93b96088a8e8db106d61d834a36d3b89ba7bf5b10765`。多组件时应逐 stage 核对对应镜像及测量记录，不能把单个 evidence 摘要当作所有组件的证明。样例的 `artifact-pin.engine` 没有直接存 image digest，因此这个值必须来自构建/镜像记录和 evidence，不能从 pin 猜。
 
 报告 `evidence_digest` 是 `evidence.json` 的**原始文件字节** SHA-256；逐 scenario `evidence_digest` 是该 scenario 对象的 **RFC 8785** 摘要。两者不能混用：
 
@@ -300,7 +300,7 @@ else:
 
 1. **固定 binding/revision**：从草稿/发布系统取得 `binding.id`、`revision`、`binding_revision_id`；不要先写报告再补身份。
 2. **固定 manifest**：manifest id、release tier、topology、stage graph 必须已存在；报告引用它，而不是另写一套容量。
-3. **固定软件**：为每个 stage 记录 `engine_kind`、`image_digest`、`runtime_version`；镜像 digest 必须来自构建/镜像记录，并与 evidence 一致。
+3. **固定软件**：为每个 stage 记录 `engine_kind`、`image_digest`、`runtime_version`；镜像 digest 必须与该 stage 的构建、镜像及测量证据一致。单个 evidence 镜像摘要不足以自动核验多个组件。
 4. **固定语料**：写 `test_suite.revision`、`corpus_revision`、`scenario_ids`；真实音频只留元数据/脱敏文本，不进入报告或平台附件。
 5. **逐场景执行/转述**：每个 scenario 写 `required`、`status`、`metrics`、`notes`（阈值/采样/边界）；转述必须标 `provenance=relayed_primary_measurement` 并记录来源。
 6. **生成 evidence.json**：每个 scenario 一个对象；不要只写报告文字。为每个对象算 RFC 8785 摘要，填入 `scenarios[].evidence_digest`；为整个文件算原始字节 SHA，填入 `evidence_digest`。

@@ -59,7 +59,7 @@ DEL-120 上线就绪评估中的 C0–C12 检查变成可执行门禁。脚本�
   `.runtime/config/api.env`、`.runtime/config/release-preflight.env`；设置
   `SN_PREFLIGHT_ENV` 时只读该文件。脚本不内联凭据，也不回显密钥或业务正文。
 - C5/C6 是唯一会写库的检查，且只有显式 `--allow-write` 才执行。C12 永远 SKIP。
-- C5 不验证转写准确性或结果来源；C6 不解码音频，也不验证声音内容。两项均不核验停止、容量释放或完整链路证据，不能单凭 PASS 宣称业务验收通过。请求超时返回 FAIL，其他部分 curl 错误会返回 SKIP；SKIP 本身不能证明请求未被服务端接收或执行，结果未知时须协调原身份，不盲目重发。
+- C5 不验证转写准确性或结果来源；它要求非空文本，因此无语音输入得到合法空转写时也会判 FAIL，须使用适合本检查的合成语音样本。C6 不解码音频，也不验证声音内容。两项均不核验停止、容量释放或完整链路证据，不能单凭 PASS 宣称业务验收通过。请求超时返回 FAIL，其他部分 curl 错误会返回 SKIP；SKIP 本身不能证明请求未被服务端接收或执行，结果未知时须协调原身份，不盲目重发。
 - C1 不按 workflow 名称筛选，只读取 `gh run list --commit ... --limit 1` 返回的 run；job 数默认至少 14，可用 `SN_EXPECT_CI_JOBS` 调整。被跳过的 job 也不是 success，可能导致该检查失败。使用结果前须确认选中的 run 对应目标 workflow，并按当前 CI 规则单独核验必需检查。
 - C8 会用 `uv --no-project --with` 的临时环境执行校验器；默认缓存目录为仓库下的
   `.paperclip-runtime/cache/uv`，也可由 `UV_CACHE_DIR` 覆盖。脚本未启用离线模式，

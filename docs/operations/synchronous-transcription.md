@@ -34,7 +34,7 @@ date: 2026-10-28
 会使 `Settings` 校验失败。两项都缺失或缺少配方、输入桶时，同步转写不装配，日志列出
 相关缺失项。基础对象存储 endpoint 和结果桶分别用于输入/结果对象访问。
 
-可选上限（均有界）：`SPEECHNEXUS_TRANSCRIPTION_POLL_SECONDS`、
+可选的有界轮询与执行配置：`SPEECHNEXUS_TRANSCRIPTION_POLL_SECONDS`、
 `SPEECHNEXUS_TRANSCRIPTION_MAX_AUDIO_MS`、`SPEECHNEXUS_TRANSCRIPTION_MAX_UPLOAD_BYTES`、
 `SPEECHNEXUS_TRANSCRIPTION_TIMEOUT_SECONDS`、`SPEECHNEXUS_TRANSCRIPTION_MAX_COMMAND_BYTES`、
 `SPEECHNEXUS_TRANSCRIPTION_STORAGE_TIMEOUT_SECONDS`。
@@ -127,6 +127,8 @@ ready 事实以及成功的 prepare intent。当前受支持的运维入口是
    不推断、不估算；`verbose_json` 因此无法渲染时返回 `422 unsupported_parameter`。
    分段和词时间戳分别要求每个非空转写片段都提供对应证据；缺少任一片段时省略该类
    时间戳，公开接口拒绝需要它的格式，不返回只覆盖部分正文的字幕或时间戳。
+   当前生产文件 ASR 命令规划器在准入前拒绝任何非空 `timestamp_granularities`；
+   即使引擎可能返回时间证据，也不代表显式请求 segment/word 粒度已经可用。
 
 ## 失败语义
 
@@ -137,12 +139,17 @@ ready 事实以及成功的 prepare intent。当前受支持的运维入口是
 | 连接失败、超时、5xx、网关响应无法解释、结果对象不可读 | 结果未知语义：`503 backend_unavailable`，不当作已失败，也不重发新执行 |
 | 网关明确 4xx 拒绝（非 408/429） | `503 backend_unavailable`，不返回部分正文 |
 | 网关终态 `failed` / `aborted` | `503 backend_unavailable` |
+| 网关状态 `unknown_quarantined`、回执身份不匹配或缺固定对象版本 | 结果未知语义：`503 backend_unavailable`，保留原身份并协调 |
 | 轮询中检查到计划等待期限到达 | `504 operation_timeout`；不表示整个 HTTP 请求的各阶段均受同一硬期限约束 |
 | 结果缺少 `text` 或字段不合规 | `503 transcription_output_invalid`，不猜 |
+| 需要分段或词证据，但结果包含字段不完整的对应条目 | `503 transcription_output_invalid`；不能将畸形条目当作有效时间戳 |
+| 请求 `verbose_json`、`srt` 或 `vtt` 但结果没有分段证据 | `422 unsupported_parameter`（`response_format`）；即使正文为空也不伪造分段 |
 | 请求 `verbose_json` 但回执无语言/时长 | `422 unsupported_parameter`（`response_format`） |
+| 请求非空 `timestamp_granularities[]` | 当前生产规划器返回 `422 unsupported_parameter`（`timestamp_granularities[]`），发生在输入写入和准入之前 |
 
-结果未知时保留原 `submit_intent_id`，由后续授权流程查询原身份；本装配不自动重提、
-不创建第二执行、不释放或归还预算。
+结果未知时由有权检查内部执行事实的操作者保留并查询原 `submit_intent_id`；公开响应
+不承诺向客户端提供该内部身份，不能要求普通调用方凭响应自行查询。无法定位原身份时应
+保留未知状态并升级协调。本装配不自动重提、不创建第二执行、不释放或归还预算。
 
 当前错误信封中的 `backend_unavailable` 和 `operation_timeout` 均标为 `retryable: true`，
 但同步转写路由拒绝 `Idempotency-Key`，不能仅凭该标志认定重发 POST 会安全重放原执行。

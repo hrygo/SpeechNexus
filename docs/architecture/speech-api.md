@@ -77,6 +77,8 @@ SpeechCommand
 
 文件转写支持 `file`、`model`、`language`、`prompt`、`response_format` 及快照声明的 `timestamp_granularities[]`。`response_format` 默认 `json`，基线为 `json`、`text`；`verbose_json`、`srt`、`vtt` 仅在具备相应时间边界证据时开放。`timestamp_granularities[]` 只接受已声明支持的 `segment` / `word`，且必须与 `response_format=verbose_json` 同用；不满足时返回 422，不伪造词级时间戳。标准 language 省略表示自动检测，内部规范化为 `asr.language=auto`，不要求标准客户端发送字面值 auto。`prompt` 是有界术语提示；不具备提示能力的绑定明确拒绝。增强结果返回实际语言或 unknown，兼容 JSON 保持所声明的字段形状。
 
+上述时间戳参数是契约范围；当前生产文件 ASR 规划器在准入前拒绝所有非空 `timestamp_granularities[]`。具体装配和结果证据要求见[同步转写](../operations/synchronous-transcription.md)。
+
 非 verbose `Transcription.usage` 可按绑定真实证据使用 duration 或 token；`verbose_json.usage` 固定为 duration，以匹配 OpenAI SDK 的响应模型。不得为了展示 token 数而破坏 `verbose_json` 的可解析性。
 
 TTS 支持 `model`、`input`、`voice`、`response_format`、`speed`、`instructions` 与 `stream_format=audio`，具体可选参数及取值域以绑定和音色快照为准。首期标准 voice 接受已发布的字符串 ID；不宣称支持 OpenAI 托管音色或任意 voice 对象。`response_format` 默认 `mp3`，基线为 `mp3 / wav / pcm`；MP3 由有界编码步骤提供并计入 CPU、缓冲与执行预算。REST `pcm` 固定为无头、24 kHz、单声道 signed 16-bit little-endian，adapter 负责必要重采样。默认 `speed=1`；非默认 speed 和 instructions 只有绑定实际支持时才接受。`stream_format` 只接受 `audio`，其余取值在 schema 层拒绝（400）；契约内但绑定未发布的格式返回 422 `unsupported_parameter`，不静默降级。禁止静默忽略参数或将默认 MP3 替换为 WAV。[OpenAI TTS 格式与默认值](https://developers.openai.com/api/docs/guides/text-to-speech)
@@ -151,7 +153,7 @@ TTS 制品携带实际 `format`、`sample_rate_hz`、`channels`、`duration_ms`�
 
 绑定发布、部署资格与具体实例的运行事实分开。按需模型可以支持提交排队任务而当前尚未加载；不能用单一就绪标志混淆“支持”“可排队”“可立即执行”。实例卸载不删除绑定或音色 revision，重建后重新核对配置与资格；字段和状态由 P0 schema 冻结，组件分工见[整体技术方案](technical-blueprint.md#4-绑定资格与实例分离)。
 
-模型 binding 的退役、激活与历史 revision 回滚已通过显式 head 指针和 append-only 审计事件落地；退役只影响后续选择，在途 Job 保持准入时固化的有效配置。内建声音已有独立资格与发布路径，受控证据见[声音资格说明](../operations/builtin-voice-qualification.md)；不能把 binding 的验证结果外推为 voice 资格，声音创建等其他路径须各自验收。
+模型 binding 的退役、激活与历史 revision 回滚已通过显式 head 指针和 append-only 审计事件落地；普通 `retire` 只影响后续选择，在途 Job 保持准入时固化的有效配置。`disable` 还登记持久停用意图，受停用屏障和清理流程约束，其回执不证明执行已停止或容量已释放，见[绑定生命周期](../operations/binding-lifecycle.md)。内建声音已有独立资格与发布路径，受控证据见[声音资格说明](../operations/builtin-voice-qualification.md)；不能把 binding 的验证结果外推为 voice 资格，声音创建等其他路径须各自验收。
 
 模型绑定发布同时负责把一个 draft revision 激活为当前 revision。请求中的 `expected_revision` 是目标 revision，`expected_current_revision` 是发布前的当前指针；两者分离，避免并发发布时“谁最后提交谁生效”的丢失更新。指针已变化返回 `409 configuration_changed`，目标不是 draft 返回 `409 binding_not_draft`；首期没有身份或审批层级，CAS 只保证操作者看到的是自己确认的版本。
 

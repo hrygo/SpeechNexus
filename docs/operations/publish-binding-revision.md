@@ -23,7 +23,7 @@ date: 2026-10-28
 uv run speechnexus-publish-binding observe --binding-id asr-quality --schema speech
 ```
 
-该命令在主库同一语句读取 `installation_id`、`database_name`、`schema_name`、`current_revision` 和 `catalog_revision`。输出的 `current_revision: null` 表示该 family 存在且当前无 head；family 不存在或读取不可靠时命令以退出码 5 报告只读观察不可用，不得解释为空。配置或 schema 无效时退出码为 2，不产生观察结果。将观察结果与目标 binding/revision/revision_id、两个 evidence ID、可选 digest 和一个新 idempotency key 一起保留，供确认和未知结果恢复。不要在提交时重新读取并替换观察值；观察后状态变化，应重新检查并形成新意图。
+该命令在主库同一语句读取 `installation_id`、`database_name`、`schema_name`、`current_revision` 和 `catalog_revision`。输出的 `current_revision: null` 表示该 family 存在且当前无 head；family 不存在、当前 head 已退役或读取不可靠时命令以退出码 5 报告只读观察不可用，不得解释为空。配置或 schema 无效时退出码为 2，不产生观察结果。将观察结果与目标 binding/revision/revision_id、两个 evidence ID、可选 digest 和一个新 idempotency key 一起保留，供确认和未知结果恢复。不要在提交时重新读取并替换观察值；观察后状态变化，应重新检查并形成新意图。
 
 ## 发布
 

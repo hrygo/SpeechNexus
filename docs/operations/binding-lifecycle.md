@@ -36,6 +36,10 @@ export SPEECHNEXUS_DATABASE_SCHEMA=speech
 
 ## 退役
 
+以下地址、binding、revision、原因和 key 均为示例。实际操作前须核对目标与当前状态；
+每个新意图使用新的高熵唯一 `Idempotency-Key`，并保存完整请求以便结果未知时按原意图
+协调。不要跨操作直接复用示例中的固定 key。
+
 ```bash
 curl -sS -X POST \
   -H 'Content-Type: application/json' \
@@ -47,6 +51,9 @@ curl -sS -X POST \
 `mode: retire` 是正常退役；`mode: disable` 使用同一选择边界，但必须给出
 `reason`，审计状态为 `disabled`。成功响应是更新后的
 `ModelBindingRevision`，其中 `publication.status` 为 `retired` 或 `disabled`。
+`disable` 还在同一事务登记持久停用意图，响应头 `X-Binding-Disable-Cleanup` 为
+`pending_or_unknown`；这不表示在途执行已经停止或容量已经释放。后续处理依赖
+[停用 worker](binding-disable-worker.md)及其停止与释放证据。
 
 退役要求 revision 是当前 head。成功后 head 被删除、墓碑写入、目录版本在同一
 事务推进；下一真实 `GET /v1/models` 不再包含该 binding，ETag 变化。重复退役的
@@ -92,8 +99,9 @@ revision。draft 也不能激活。
 ## 在途 Job 与审计
 
 Job 在准入时把完整有效配置固化到 `speech_job_submissions.effective_configuration_json`。
-退役或回滚只影响后续选择；在途 Job 不重读 head，不因退役取消、改写或失败。
-退役也不会自动停止或释放执行算力。
+普通 `retire` 或回滚只影响后续选择；在途 Job 不重读 head，不因普通退役取消、改写或失败。
+普通退役不会自动停止或释放执行算力。`disable` 另有停用屏障和持久清理流程，不应按普通
+退役推断在途执行会继续；停止与容量释放仍须分别取得证据。
 
 激活、retire 和 disable 共用部署范围的 binding 生命周期 key 命名空间，跨 binding、
 revision、调用方与 credential label；只绑定已提交结果。先前任一操作成功后，换操作、

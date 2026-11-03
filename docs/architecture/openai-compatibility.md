@@ -23,6 +23,8 @@ date: 2026-10-23
 
 `response_format=json` 至少返回 `text`。`verbose_json`、`srt`、`vtt` 只在绑定具备真实时间边界证据时开放；缺少证据返回 `422 unsupported_parameter`，不伪造 `segments`、词级时间戳或 `avg_logprob`。`srt` / `vtt` / `text` 使用 `text/plain`；`json` / `verbose_json` 使用 `application/json`。
 
+时间戳粒度属于声明的契约范围；当前生产文件 ASR 规划器在准入前拒绝非空 `timestamp_granularities[]`，不能据此宣称显式 segment/word 请求已可用。具体证据要求见[同步转写](../operations/synchronous-transcription.md)。
+
 REST `verbose_json.usage` 只使用 `{"type":"duration","seconds":...}`，与官方 SDK 的
 `TranscriptionVerbose` 响应模型一致；真实 token usage 只出现在非 verbose
 `Transcription.usage`。若服务端在 `verbose_json` 返回 token usage，官方 Python SDK

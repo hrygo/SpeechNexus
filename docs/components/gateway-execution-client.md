@@ -32,6 +32,11 @@ command digest，不构造执行命令，不派发调度，也不释放预算。
 
 派发适配器使用 `submit_document`、`query_document` 和 `staging_result_document` 传递原始 JSON 对象：这些方法检查传输和对象形状，不执行类型化方法的完整 schema 投影；请求的冻结语义与响应身份仍须由适配器和调用方校验。
 
+`query_abort_recovery` 对同一执行查询路径发送
+`Accept: application/vnd.speechnexus.execution-recovery.v1+json`，读取专用恢复响应；
+普通 `query` 返回的旧表示不能替代该恢复回执。`abort_idempotent` 和 `abort_tts` 使用
+持久 abort 入口，不回退旧 `/abort`；每次传输本身不自动重试。
+
 认证使用部署签发的组件凭据（Bearer），从 `Settings.execution_gateway_*` 读取；
 凭据、响应正文和对象内容不进入异常消息或日志。
 
@@ -39,7 +44,7 @@ command digest，不构造执行命令，不派发调度，也不释放预算。
 
 | 类别 | 异常 | 调用方动作 |
 | --- | --- | --- |
-| 连接失败 | `GatewayConnectionError` | `request_may_have_run=False` 时才可考虑重新提交；仍须先核对原身份 |
+| 连接失败 | `GatewayConnectionError` | `request_may_have_run=False` 仅表明本次调用未发出，不能证明此前同一意图未执行；先按原身份查询并遵循调用链的提交许可，再决定是否重发 |
 | 超时 | `GatewayTimeoutError` | 提交结果未知：按原 `submit_intent_id` 查询，不创建第二个执行 |
 | 4xx | `GatewayRejectedError` | 语义拒绝；按 `gateway_code` / `recovery` 处理，不盲目重试 |
 | 5xx | `GatewayServerError` | 按 `recovery` 查询或对账；只读调用可按显式策略重试 |
@@ -51,9 +56,11 @@ command digest，不构造执行命令，不派发调度，也不释放预算。
 ## 与同步转写装配的关系
 
 - 公开同步接口已有[可配置生产装配](../operations/synchronous-transcription.md)，使用准入事务和此客户端构造、提交完整 `asr_file` 命令；这与仍缺生产 planner 的公开异步 Job 派发器是不同范围。
-- 网关私有 ASR 结果现在携带真实解码的 `duration_ms`；`language`、`segments` 和
-  `words` 只在引擎实际给出时出现。缺少这些证据时，公开 `verbose_json` 必须如实
-  报 `unsupported_parameter`，不能由适配器推断。
+- 网关私有 ASR 结果携带真实解码的 `duration_ms`；`language`、`segments` 和 `words`
+  只在引擎实际给出时出现。公开 `verbose_json` 缺少语言、时长或分段证据时返回
+  `unsupported_parameter`。应用层在请求 `word` 粒度时要求词证据，但当前生产文件 ASR
+  命令规划器会先拒绝任何非空 `timestamp_granularities`，因此不能据此宣称词级请求可用。
+  不得由适配器推断缺失事实。
 - 正式应用工厂在配置满足时装配客户端；单独构造客户端不证明实例、资格、真实引擎或公开请求成功，也不推断缺失字段。
 
 ## 验证

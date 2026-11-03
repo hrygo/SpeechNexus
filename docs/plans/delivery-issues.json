@@ -738,20 +738,20 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "发布事实、生命周期指针及词典草稿已有分段实现。",
-      "integration": "管理写路径、公开列表与资源固定读取需按当前契约完整核验。",
-      "verification": "已有隔离 PG 激活/回滚证据，不代表所有资源发布已完成。",
-      "gap": "管理写路径、公开列表与资源固定读取需按当前契约完整核验。 已有隔离 PG 激活/回滚证据，不代表所有资源发布已完成。",
+      "implementation": "发音资源已有私有不可变草稿及可选固定 revision 读取；公开创建、列表和发布仍待交付。",
+      "integration": "公开生命周期及语音消费者对固定发音版本的接线仍须核验。",
+      "verification": "草稿及读取组件证据不代表发音资源发布、激活或回滚已验收。",
+      "gap": "公开生命周期及语音消费者对固定发音版本的接线仍须核验。 草稿及读取组件证据不代表发音资源发布、激活或回滚已验收。",
       "evidence": [
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/operations/publish-binding-revision.md",
-          "label": "发布操作",
-          "note": "说明发布入口，生命周期与生产接口需另核验"
+          "url": "https://github.com/hrygo/SpeechNexus/blob/c8cda316e79c74539be10083ba3d4ffc27bd8fce/docs/components/pronunciation-drafts.md",
+          "label": "发音草稿",
+          "note": "私有草稿实现及尚未交付的公开生命周期"
         },
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/infrastructure/publications_sql.py",
-          "label": "发布与 CAS",
-          "note": "按当前 head 和目录 revision 前提比较"
+          "url": "https://github.com/hrygo/SpeechNexus/blob/c8cda316e79c74539be10083ba3d4ffc27bd8fce/docs/components/pronunciation-read-contract.md",
+          "label": "固定版本读取",
+          "note": "可选只读入口及其证据边界"
         }
       ],
       "issues": []

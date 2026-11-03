@@ -248,7 +248,7 @@
 **验收：**
 
 - 只允许批准模板和固定 node/instance/generation/配置摘要，拒绝任意镜像、挂载、shell；迟到 stop 不误停替代代次。
-- 固定容器 IP/路径真实预热通过前保留 loading/峰值预算；503、重定向、超时非 ready，不经代理；整个 wall-clock deadline 有界且多 IP 不重复预热。
+- 固定容器 IP/路径真实预热通过前保留 loading/峰值预算；503、重定向、超时非 ready，不经代理；要求整个 wall-clock deadline 有界且多 IP 不重复预热。当前实现分别约束地址选择、单次预热和 daemon 调用，尚不能由这些期限推定整个动作存在硬截止，须另行验证该验收条件。
 - Memory/MemorySwap 上限由 host/统一内存 peak 保障，资格通过才转 steady；drain 拒绝新提交，退出、释放、终结及所有 lease 清理后才退 base，unknown 隔离。
 - 恢复依据持久意图、检查点及可信节点证据，诊断快照无事实权威；key 不替代 TLS、fencing、网络隔离。
 - 升级批准模板后，旧代实例仍可按原执行身份、原预算与原 runtime 接收 STOP；旧代请求不误停新代。

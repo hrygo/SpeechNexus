@@ -276,9 +276,9 @@
 | `docs/plans/2026-10-25-team-c-realtime-consent-browser-handoff.md` | 历史保留 | 已全文阅读，标明历史交接；未重跑历史验证。 |
 | `docs/plans/2026-10-25-team-c-realtime-evidence-promotion-handoff.md` | 历史保留 | 已全文阅读，标明历史交接；未重跑历史验证。 |
 | `docs/plans/2026-10-25-team-c-render-unit-create-consumer-handoff.md` | 历史保留 | 已全文阅读，标明历史交接；未重跑历史验证。 |
-| `docs/plans/2026-10-25-team-c-saved-asset-read-back-handoff.md` | 待核对 | — |
-| `docs/plans/2026-10-25-team-c-teleprompter-state-consumer-handoff.md` | 待核对 | — |
-| `docs/plans/2026-10-25-team-c-voice-revision-consumer-handoff.md` | 待核对 | — |
+| `docs/plans/2026-10-25-team-c-saved-asset-read-back-handoff.md` | 历史保留 | 全文阅读，为当时交接及证据记录；历史验证未重跑 |
+| `docs/plans/2026-10-25-team-c-teleprompter-state-consumer-handoff.md` | 历史保留 | 全文阅读，为当时交接及证据记录；历史验证未重跑 |
+| `docs/plans/2026-10-25-team-c-voice-revision-consumer-handoff.md` | 历史保留 | 全文阅读，为当时交接及证据记录；历史验证未重跑 |
 | `docs/plans/2026-10-25-web-accessibility-gate.md` | 待核对 | — |
 | `docs/plans/2026-10-26-a02-audio-receipt-handoff.md` | 待核对 | — |
 | `docs/plans/2026-10-26-a02-media-kernel-handoff.md` | 待核对 | — |

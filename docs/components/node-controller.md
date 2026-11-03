@@ -91,13 +91,14 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
   未知后不在同次观察换 IP 重发，后续观察仍按原容器/generation 继续预热。
 - `warmup.timeout_seconds` 是连接、发送、响应头与完整正文共用的累计单调时钟期限，
   持续缓慢回包不能延长它；到期主动结束客户端等待，成功响应若越过期限也不累计成功。
-  所以单次 prepare/inspect 受 TCP 探测预算和一次预热期限约束。调用方超时后查询原持久
+  单次 prepare/inspect 的网络探测受 TCP 预算和一次预热期限约束；daemon 调用另受其配置超时约束，
+  不能把这两项相加视为整个动作的硬截止。调用方超时后查询原持久
   意图，不能把超时当作实例失败、已就绪或引擎已经停止。
 - **停止与证据**：先优雅停止、等待退出、删除容器，再 inspect 确认不存在，才写出
   `process_or_container_exited` 与 `resources_released_confirmed` 双确认证据；等待超时、删除
   失败或容器仍存活时只报告当前观察，不伪造证据（意图留在未解决或 quarantine）。
-- **退出码语义**：退出码 0 与 143（SIGTERM）都是正常终止；容器是否成功服务由网关的执行事实
-  判断，控制器不把退出码当作执行结果。
+- **退出码语义**：停止证据记录 wait 与 inspect 一致的实际退出码，代码不把 0 或 143 作为唯一
+  成功条件；容器是否成功服务由网关的执行事实判断，控制器不把退出码当作执行结果。
 - **配置来源**：批准模板来自部署配置文件（`template_config.py`，未知字段拒绝），不是请求。
   `network_name` 可引用批准的自定义 Docker 网络，不能选择 `host`、`container:*` 等网络
   模式；省略时保留 daemon 默认网络行为。网络名本身不证明出站受限，真实内容路径须另外验证
@@ -161,7 +162,8 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
   `invalid_runtime_request`。
 - **幂等**：`(node_id, intent_id)` 为幂等键。完全相同的规范请求返回原记录并标记
   `idempotent_replay = true`，不再调用节点运行时；同键不同请求返回 `intent_conflict`；
-  终态意图不会被改写为新请求，重试必须使用新 `intent_id`。
+  终态意图不会被改写为新请求；新 `intent_id` 本身不授权重新执行，仍须满足原状态、
+  generation、fencing 和停止证据等准入条件。
 - **generation**：prepare 意图的 generation 必须严格大于该实例已持久化的 high water，
   否则 `stale_instance_generation`；旧 generation 的意图行保留，历史不被改写。
 - **fencing**：同一实例的 fencing token 不得下降，下降时返回 `stale_fencing_token` 并带上

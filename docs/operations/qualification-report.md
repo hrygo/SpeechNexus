@@ -77,7 +77,7 @@ date: 2026-10-28
 | `memory_architecture` | `unified_memory` / `discrete_device_memory` | 平台 | 与 manifest `topology_ref`、`host_nodes.memory_architecture` 相等 |
 | `total_physical_memory_bytes` | 主机总物理内存 | 平台实测/系统信息 | 只能与同口径的内存预算比较，不能与 CPU、磁盘等其他 `allocatable_*` 维度比较；脚本仅对统一内存架构检查 `allocatable_unified_physical_memory_bytes` 不超过该值。样例 130,631,430,307 B（约 121.66 GiB，按报告值换算，精度有限） |
 | `device_memory_bytes` | 离散设备显存（可选） | 平台 | 统一内存架构通常不填或为 0；不要与 unified 双计 |
-| `shared_memory` | 共享父预算 id 与共享角色 | 平台 | `parent_budget_id` 必须与共存实验记录一致；`shared_with_roles` 只能来自枚举 |
+| `shared_memory` | 共享父预算 id 与共享角色 | 平台 | `parent_budget_id` 必须与共存实验记录一致；`shared_with_roles` 只能来自枚举。该对象不在 `topology_digest` 的输入中，需另行核对；报告文件摘要仍固定其内容 |
 
 ### 3.2 `software`
 

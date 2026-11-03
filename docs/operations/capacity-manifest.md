@@ -156,10 +156,10 @@ manifest 本身只有“每个实例/每个 slot 的包络”，没有“池总�
 | 逻辑池 | `pool_id`、`service_class` | `resource_pools.pool_id`、`service_class`、`pool_state` | 必须存在、active、service class 相等 |
 | 逻辑节点 profile | `topology_ref.host_node_profile_id` | 无直接同名列 | 描述硬件类别；不是 `host_node_id`，不能拿它当外键 |
 | 实际主机 | 报告 `topology.host_node_id` | `host_nodes.host_node_id` | instance 的 `host_node_id` 必须指向该行；节点必须 `active` |
-| 拓扑摘要 | `topology_ref.topology_digest` | `host_nodes.topology_digest` | 必须相等；摘要描述 CPU 架构、硬件类别、内存架构、总物理内存 |
+| 拓扑摘要 | `topology_ref.topology_digest` | `host_nodes.topology_digest` | 必须相等；摘要覆盖报告中的主机 ID、CPU 架构、硬件类别、内存架构和总物理内存 |
 | 内存架构 | `topology_ref.memory_architecture` | `host_nodes.memory_architecture` | 必须相等；统一内存必须声明 `requires_shared_parent_budget=true` |
 
-样例的逻辑 profile 是 `gb10-cube-ccba-unified-121g`，实际报告主机是 `cube-ccba`；两者不是同一个标识空间。profile 说明“哪类机器”，`host_node_id` 说明“哪台机器”，`topology_digest` 把两者绑定到同一份硬件描述。
+样例的逻辑 profile 是 `gb10-cube-ccba-unified-121g`，实际报告主机是 `cube-ccba`；两者不是同一个标识空间。profile 说明“哪类机器”，`host_node_id` 说明“哪台机器”。`topology_digest` 不包含 profile ID 或报告中的 `shared_memory`，不能单凭摘要相等证明 profile、共享父预算与实际主机对应；发布前需另行核对。脚本根据 instance 的主机 ID 查询主机行并检查摘要，但不直接比较该 ID 与报告的 `host_node_id`，也应人工核对两者是否一致。
 
 ## 5. 与数据库容量向量的一致性规则
 

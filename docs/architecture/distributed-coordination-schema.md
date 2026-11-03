@@ -76,8 +76,9 @@ tombstone，不能清除协调身份、原摘要、fencing 或停止证据，也
 ## 验证与历史证据
 
 [共享行为测试](../../tests/integration/test_coordination_transactions.py) 在 PostgreSQL 和
-隔离 MySQL/InnoDB 上应用同一逻辑 DDL、运行同一期望，验证受控事务行为。
+隔离 MySQL/InnoDB 上应用同一逻辑 DDL、运行同一期望，以验证受控事务行为。
 MySQL 测试适配器将草案中的 `TEXT` 列映射为 `LONGTEXT`，避免合法长命令截断；没有业务规则分叉。
+两库均未配置时相关测试会跳过，仅配置其中一库则配置检查失败；收集或跳过不代表双库验证通过。
 它是测试/工具原型，不代表生产 Scheduler 或数据库完整替代适配器已交付。
 真实多主机、引擎、主备切换和备份恢复保持强制验收要求。
 

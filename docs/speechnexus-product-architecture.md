@@ -531,7 +531,7 @@ LLM 拥有工作台自己的任务、取消与结果，失败不改写成功转�
 
 - [整体技术方案](architecture/technical-blueprint.md)：技术基线、内部控制、事务 / 迁移、执行配方、Web / 内网 LLM、观测和当前工程交接顺序。
 - [部署单元与平台规划](architecture/deployment-units.md)：独立服务、平台要求、节点绑定、当前装配缺口与跨平台/多机验收。
-- [分阶段实施计划](plans/2026-10-22-speechnexus-implementation-plan.md)：阶段退出条件、工作包、P0 交接产物与预算假设。
+- [分阶段实施计划](plans/2026-10-22-speechnexus-implementation-plan.md)：历史阶段退出条件、工作包、P0 交接产物与初始预算假设；当前范围见[跟踪矩阵](plans/delivery-tracking.md)。
 - [SpeechRail 复用边界](architecture/speechrail-reuse.md)：可提取领域模型、需重写的基础设施、平台专属部分、固定来源及许可证。
 - [设计审查记录](audits/2026-10-22-speechnexus-design-review.md)：问题、修正裁决、核验来源和未验证项。
 - [文档索引](README.md)：主设计、配套设计、决策及过程记录。

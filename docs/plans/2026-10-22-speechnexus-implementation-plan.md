@@ -7,6 +7,8 @@ date: 2026-10-22
 
 # SpeechNexus 分阶段实施计划
 
+> 历史计划：本文保留 2026-10-22 的阶段、状态与预算假设，不作为当前排期或实现状态依据。当前交付范围与证据见[跟踪矩阵](delivery-tracking.md)。
+
 计划基准日期为 2026-10-22，依据[项目主设计](../speechnexus-product-architecture.md)、[语音接口](../architecture/speech-api.md)与[资源治理](../architecture/runtime-governance.md)。P0 的公共、管理与内部机器契约已交付并通过仓库校验；领域实现、fake、服务端路由、真实模型适配、容量与质量资格仍待实施。契约文件不等于运行时能力。
 
 ## 1. 阶段与退出条件

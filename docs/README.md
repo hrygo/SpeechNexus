@@ -46,7 +46,7 @@
 | [产品需求](prd.md) | 完整范围、十个 MECE 能力域、稳定需求与可观察验收条件 |
 | [需求与交付矩阵](plans/delivery-tracking.md) | 需求、设计、主 Epic、实现/集成/验证、缺口及证据；实施 issue 按需关联 |
 | [结构化关联源](plans/delivery-issues.json) | 矩阵数据源；当前实施 issue 可以为空，GitHub 状态只读刷新 |
-| [分阶段实施计划](plans/2026-10-22-speechnexus-implementation-plan.md)                               | P0–P5、退出条件、工作包、交接产物与预算假设                                     |
+| [分阶段实施计划](plans/2026-10-22-speechnexus-implementation-plan.md)                               | 历史 P0–P5、退出条件、工作包、交接产物与初始预算假设                           |
 | [集群协调重构计划](plans/2026-10-23-cluster-coordination-refactor.md)                               | 精简 DDL/契约/双库原型的交付与生产接入、集群故障资格的剩余验收                  |
 | [架构与契约修复闭环](audits/2026-10-23-architecture-contract-repair-closure.md)                     | 初验与终审补充的修复映射、验证证据及未验证运行边界                              |
 | [集群协调重构后的架构与契约审查](audits/2026-10-23-architecture-contract-post-refactor-review.md)   | 运行角色最小权限、双库门禁、契约结果覆盖、端口原型一致性与开放项                |

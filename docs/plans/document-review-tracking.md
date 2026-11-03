@@ -159,7 +159,7 @@
 | `docs/operations/release-preflight.md` | 已核对 | 对照脚本检查入口、配置加载和 C0–C12 判断；修正版本、身份、临时文件、资格场景、Compose 文本匹配及固定快照边界，未执行会访问服务或写入的检查 |
 | `docs/operations/release-readiness.md` | 部分核对 | 全文阅读并抽核固定候选 planner、文件及提交关系；其余历史证据待复核 |
 | `docs/operations/synchronous-transcription.md` | 部分核对 | 核对配置、配方约束、请求校验顺序、提交与轮询路径及网关主要错误映射；其他错误分支待核对 |
-| `docs/plans/2026-10-22-speechnexus-implementation-plan.md` | 待核对 | — |
+| `docs/plans/2026-10-22-speechnexus-implementation-plan.md` | 历史保留 | 全文阅读并核对引用入口；保留原阶段和预算假设，标明当前交付入口，未逐项复核历史证据 |
 | `docs/plans/2026-10-23-agent-team-startup-briefs.md` | 部分核对 | 核对历史时点、现行入口及本地链接目标；历史计划和验收结果待复核 |
 | `docs/plans/2026-10-23-architecture-contract-repairs.md` | 部分核对 | 核对历史时点、现行入口及本地链接目标；历史计划和验收结果待复核 |
 | `docs/plans/2026-10-23-cluster-coordination-refactor.md` | 部分核对 | 核对历史时点、现行入口及本地链接目标；历史计划和验收结果待复核 |

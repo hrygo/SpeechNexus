@@ -188,7 +188,7 @@ Linux CPU 媒体组件可与算力组件同机，但要独立核算资源，不�
 | 服务入口清单、按能力裁剪依赖及制品 | [#225](https://github.com/hrygo/SpeechNexus/issues/225) | 平台制品；不代替 #22/#24 的正式业务循环 |
 | 独立 Workbench API 上游与部署装配 | [#226](https://github.com/hrygo/SpeechNexus/issues/226) | Web/Workbench 装配；真实业务分别按既有 Gate 验收 |
 | Linux 音频检查部署适配决定与契约交接 | [#227](https://github.com/hrygo/SpeechNexus/issues/227) | 先确定最小形态；公开音频 ready 与真实检查仍由 #21/#30 负责 |
-| macOS/Linux 原生 CI 与平台依赖隔离 | [#228](https://github.com/hrygo/SpeechNexus/issues/228) | 实施可失败的检查和必需汇总；当前尚未交付 |
+| macOS/Linux 原生 CI 与平台依赖隔离 | [#228](https://github.com/hrygo/SpeechNexus/issues/228) | 实施可失败的检查和必需汇总；当时尚未交付 |
 | 松耦合与原生平台联合证据 | [Gate D1 #229](https://github.com/hrygo/SpeechNexus/issues/229) | 接收上述制品并核验实际行为，接入 G5，不自动放行 |
 
 | 门禁 | 必需证据 | 放行限制 |

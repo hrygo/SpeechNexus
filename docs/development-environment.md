@@ -24,6 +24,8 @@ date: 2026-10-22
 
 Node 版本以 `.nvmrc` 的 `26.12.1` 为准；切换本机 shell 后，`make dev-status` 会校验 Node 与 pnpm 的精确版本。
 
+`make dev-status` 中的 PostgreSQL 版本项只检查二进制的 `--version` 命令能否运行，并不比较输出或核实正在监听的服务版本；监听检查也只排除指定端口上的通配地址，不能证明所有监听地址均为回环。需要版本和网络边界证据时应在目标宿主另行核验。
+
 PostgreSQL 与 MinIO 使用用户级 systemd 服务，状态和对象数据保存在被 Git 忽略的 `.runtime/`。服务只绑定回环地址；首次初始化的 PostgreSQL 对本地 socket 与回环连接使用 `trust`，本机其他用户也可能访问，不能将回环地址当作身份隔离。已有数据目录的配置不会由脚本重新初始化，实际权限须核验。`DATABASE_URL_DEV`、`DATABASE_URL_TEST`、`S3_ENDPOINT` 等非秘密地址位于 `.runtime/config/dev.env`，MinIO 凭据位于权限为 `0600` 的 `.runtime/config/minio.env`。
 
 协调测试用的 MySQL 是钉住摘要 `mysql@sha256:2952e3be…` 的项目受管容器，由 `scripts/dev-env/mysql-service.sh` 幂等安装与启动，数据保存在 `.runtime/data/mysql`（初始化后归容器内 `mysql` 账户），根口令写在权限为 `0600` 的 `.runtime/config/mysql.env`。参考环境不使用用户 systemd 单元管理该容器，而由 docker 的 `unless-stopped` 重启策略在守护进程启动时自动拉起；`make dev-up`、`make dev-bootstrap` 与 `make verify` 会在需要时调用同一脚本。实际 socket 权限和既有容器状态需在目标主机核实。

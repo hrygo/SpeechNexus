@@ -11,6 +11,8 @@ SpeechNexus 以独立领域与运行边界演进。本文记录可参考的领�
 
 ## 1. 复用矩阵
 
+矩阵中的 SpeechNexus 处理与重新验证事项是设计方向，不表示对应能力已经实现或验收；实现状态以各能力的当前契约、代码与交付记录为准。
+
 > 🧠 **From Hindsight memory (SpeechRail 组件职责与权威边界)** — SpeechRail 的历史设计将语音能力与调用方编排分开，MCP 是 REST 上的无状态代理；这些边界可以继承。单 Mac 的资源 owner 与运行事实不等于企业集群的容量保证。
 
 > 🧠 **From Hindsight memory (四场景共享 ASR：策略与契约落地)** — 共享内核、场景预设、可修订预览、完整段复核、空成功与真实停止后释放资源，是可继承的设计经验。该页的 2026-10-05/06 进度只描述当时，本文以固定来源源码核对可参考对象，不沿用其“尚未实施”状态。
@@ -24,7 +26,7 @@ SpeechNexus 以独立领域与运行边界演进。本文记录可参考的领�
 | `src/speechrail/domain/idempotency.py` / DurableIdempotencyJournal | 复用状态与摘要规则，重写存储 | 原子唯一约束与意图协调移到 PostgreSQL | 原有 JSON 文件、进程内 RLock 与原子替换不能充当跨进程保证 |
 | `src/speechrail/runtime/jobs.py`、`job_runner.py` | 复用用例与故障案例，重写基础设施 | 持久任务改为 JobStep / attempt / outbox / staging 发布 | 本机文件 spool、单 runner 与 owner 规则不直接复用 |
 | `src/speechrail/runtime/resource_governor.py`、`admission.py` | 复用准入不变量与测试思想，重写调度 | 增加工作空间 / 任务公平、资源向量、全局租约与 fencing | 旧进程内锁、物理内存预算与单 Mac lane 不适用集群 |
-| `docs/architecture/speechrail-mcp-proxy.md` | 复用代理边界 | 新无状态 MCP 只代理公开语音 / 音色 REST，沿用部署入口策略 | 工具发现 / 调用、可选共享凭据、不持有 WS / 模型 |
+| `docs/architecture/speechrail-mcp-proxy.md` | 复用代理边界 | 目标是无状态 MCP，通过公开 REST 消费语音、音色、任务和能力发现等接口，沿用部署入口策略；不能据此认定代理已实现 | 工具发现 / 调用、可选共享凭据、不持有 WS / 模型 |
 | 现有契约 / 测试中的边界案例 | 参考测试思想与断言意图 | 为新规范编写新 REST / WS / MCP parity 测试 | SpeechRail 扩展不能简单改名前缀后宣称新协议成立 |
 | macOS 会话 / 有声书 / 提词文档 | 复用产品规则与体验经验 | 重建 Web 业务工作流和浏览器生命周期 | 浏览器采集、播放、后台状态、键盘和无障碍 |
 | MLX worker、CoreML Sortformer、私有 IPC、XPC / LaunchAgent、SwiftUI 视图 | 平台专属，重新实现 | Linux adapter、独立分人 / 对齐服务与 WebUI | 不复制 macOS 兼容分支或模型二进制 |

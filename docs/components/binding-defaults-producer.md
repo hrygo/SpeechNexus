@@ -108,7 +108,9 @@ remain separate registry/application acceptance.
 The `binding_defaults_producer` profile exposes `BindingDefaultsCreateRequest`.
 Its distinct `binding_defaults` HTTP surface selects `createModelBindingDraft`
 and `getModelBindingParameterDefaults`. It does not change the legacy `binding`
-surface's two operations or paths. Imports are:
+surface's operations or paths. The current `binding` surface selects draft creation,
+fixed revision GET, retirement and activation; the defaults surface remains limited
+to its two operations. Imports are:
 
 - Python: `speechnexus_contracts.binding_defaults_producer.parse` and
   `speechnexus_contracts.binding_defaults_http`.
@@ -125,9 +127,10 @@ existing same-namespace name collisions still fail closed, including boolean
 versus numeric constants. The external objects and request fields refer to their
 canonical source. Existing operational paths and negative-input tests remain.
 
-The runtime validators, generator, locks and source versions are unchanged. The
-HTTP module selects the existing producer validator for POST/snapshot GET and the
-existing legacy validator for the fixed parent GET; it maintains no wire copies.
+The server's binding HTTP handler selects the producer validator for its create
+POST and snapshot GET and the legacy validator for the fixed parent GET; it maintains
+no independent wire copies. The served producer projection combines the selected
+binding and defaults surfaces.
 The operational component namespaces remain disjoint and all references resolve.
 
 Isolated PG test cases cover the actual four-table writer, lifecycle/role refusal,

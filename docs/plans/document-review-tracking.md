@@ -127,7 +127,7 @@
 | `docs/development-environment.md` | 部分核对 | 对照初始化、服务、浏览器冒烟和契约检查脚本，修正安装、权限、端口及检查边界；参考环境版本和历史运行状态未实测 |
 | `docs/operations/README.md` | 已核对 | 核对目录定位、索引说明及所有本地链接目标；历史快照已标识 |
 | `docs/operations/agent-delivery-sop.md` | 部分核对 | 全文阅读并对照根规约的授权与工作区收尾、验证指南入口；平台实际能力及需求关联待核对 |
-| `docs/operations/backfill-binding-publication-evidence.md` | 已核对 | 对照 CLI、映射约束、回填事务、授权声明及 0021 回退锁；未连接生产库或运行回填 |
+| `docs/operations/backfill-binding-publication-evidence.md` | 已核对 | 对照 CLI、映射约束与去重计数、回填事务、授权声明及 0021 回退锁；未连接生产库或运行回填 |
 | `docs/operations/binding-activation-verification.md` | 部分核对 | 全文阅读并抽查 PG 并发和清理测试；未运行 PG 或核对全部矩阵 |
 | `docs/operations/binding-disable-worker.md` | 已核对 | 对照配置范围、角色授权列、URL 策略、处理循环、异常分支及原租约结算入口；未连接部署或执行停用 |
 | `docs/operations/binding-lifecycle.md` | 部分核对 | 全文阅读并核对授权、停用响应、主要操作与部分冲突分支；并发、审计和恢复事务待核对 |

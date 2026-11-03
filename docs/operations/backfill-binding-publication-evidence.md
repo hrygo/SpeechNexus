@@ -95,7 +95,7 @@ unresolved object_id=... revision=... revision_id=...
 - `revision` 可用十进制字符串或整数，必须是 1 至 19 位正整数，不能有前导零；
 - 两个证据 ID **没有默认值**，digest 可省略；
 - 数组不能为空，未知字段会被拒绝；
-- 同一 `(object_id, revision)` 重复映射且内容不同 → 拒绝；
+- 同一 `(object_id, revision)` 重复映射且内容不同 → 拒绝；内容相同的重复项会合并，后续计数按去重后的记录计算；
 - `capacity_manifest_id` 必须等于该 revision 的 `execution_recipe.capacity_manifest_id`。
 
 ## dry-run / apply / export
@@ -110,7 +110,7 @@ uv run speechnexus-backfill-binding-evidence --export
   仍有未解决行时退出码 `11`。
 - `--apply` 在**单个事务**内校验并写入；任一校验失败、冲突或 apply 后 `unresolved != 0`
   都会整体回滚。输出同时给出证据表 `count(*)` 前后值。
-- 幂等：没有并发数据变化时，相同映射重复 apply，`inserted=0`、`skipped=N`，前后计数不变；
+- 幂等：没有并发数据变化时，相同映射重复 apply，`inserted=0`、`skipped=N`（`N` 为去重后的映射数），前后计数不变；
   内容不同则冲突失败，不静默覆盖。
 - `--export` 在回滚前导出当前证据记录（JSON 到 stdout），用于保留证据事实。导出包含
   `evidence_source` 和 `recorded_at_us`，不能直接作为 `--mapping` 输入：映射解析器会拒绝这两个字段；

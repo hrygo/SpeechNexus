@@ -39,8 +39,9 @@ Speech `/v1/nexus/deletion-plans`、`/v1/nexus/deletions` 和 Workbench
 5. `POST deletions` 携带 `plan_id`、`expected_plan_revision`、`plan_digest`、
    `confirm_targets` 和 `Idempotency-Key`。确认集合必须恰好等于目标加全部
    cascade 依赖，不能确认 blockers 或标记为 `independent_copy / retain` 的依赖。它是明确级联确认，不提供绕过
-   停止证据的 force 标志。确认缺失、多余、重复或跨 owner 返回
-   `422 deletion_confirmation_mismatch`。
+   停止证据的 force 标志。目标契约对确认缺失、多余、重复或跨 owner 返回
+   `422 deletion_confirmation_mismatch`；当前 Workbench HTTP 对重复项先由 schema
+   校验拒绝并返回 `400 invalid_request`，合法形状但确认集合不匹配才进入应用层检查。
 6. 首次接受时，同事务验证 plan 未过期、目标和所有依赖版本仍一致、依赖集合未
    新增/删除且 eligible；原子写入删除意图、资源 tombstone 和 outbox，关闭新
    引用及新执行入口。写引用/提交执行也必须锁同一资源版本状态；不能先预检再无锁
@@ -85,8 +86,9 @@ ledger_id 必须幂等；账本缺失、对象版本不确定或执行状态未�
 
 ## Workbench 当前实现与恢复边界
 
-当前 Workbench 在查询删除幂等回执之前先拒绝重复的 `confirm_targets`；合法形状的请求
-才按原键查询回执，并在检查 plan 是否存在、过期及快照变化之前重放已接受意图。
+当前 Workbench HTTP 在查询删除幂等回执之前以 `400 invalid_request` 拒绝重复的
+`confirm_targets`；应用层也会拒绝重复项。合法形状的请求才按原键查询回执，并在检查
+plan 是否存在、过期及快照变化之前重放已接受意图。
 
 项目预检在项目行锁内保存私有内容快照，覆盖有声书、章节、渲染单元及其生成记录、
 导出和保存副本的版本与对象身份。公开 plan 仅返回依赖身份，不暴露对象地址或正文。

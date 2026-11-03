@@ -36,7 +36,7 @@
 | [受限节点控制器](components/node-controller.md)                                                   | 批准模板的 prepare / stop、generation / fencing、drain 门与停止证据规则         |
 | [执行网关提交事务](components/execution-gateway.md) | 持久意图、提交屏障、停止证据与输出区间；真实计量采集器及完整资格仍待 |
 | [契约与事务所有权](architecture/contract-ownership.md)                                              | 18 端口/表归属、快照恢复映射与首批生成契约包交接                                |
-| [UI/UX 设计框架与设计 Token 系统](design/ui-ux-design-framework-and-tokens.md)                | 2026 设计最佳实践、双面品牌调性、VoiceStudio 经验复用与三层 Token 体系          |
+| [UI/UX 设计框架与设计 Token 系统](design/ui-ux-design-framework-and-tokens.md) | 设计方向、双入口品牌、VoiceStudio 经验与三层 Token；研究为 2026 年资料，生效 Token 及实现状态以源码为准 |
 | [SpeechRail 复用边界](architecture/speechrail-reuse.md)                                             | 固定来源、可提取规则、需重写的基础设施和许可证                                  |
 | [Paperclip 工作流与团队](operations/paperclip.md) | 当前项目经理与 A/B/C、QA、审查、证据岗位的协作、工作区、预算及交付约定 |
 | [预设声音资格与发布](operations/builtin-voice-qualification.md) | 独立审批、资格探测、不可变发布、精确准入与撤销；真实资格按具体窗口取证 |

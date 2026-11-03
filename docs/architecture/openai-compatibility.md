@@ -142,7 +142,7 @@ with client.realtime.connect(model="asr-quality") as connection:
 
 ### 3.1 SpeechRail 参考
 
-SpeechRail 在固定来源 commit 上采用“标准事件子集 + 独立命名空间扩展”的方式：保留 OpenAI 的 `session.update`、`input_audio_buffer.*` 与转写事件名称，把增量 TTS、可替换假设和辅助控制放在 `speechrail.*` 事件与 `session.speechrail` 配置中；MCP 只做无状态 REST 代理，不持有实时连接。SpeechNexus 采用同一结构，但把命名空间改为 `nexus.*` / `nexus`，并把能力发现、revision pin、持久 Job 和租约语义纳入底座契约。来源与复用边界见[SpeechRail 复用边界](speechrail-reuse.md)。
+SpeechRail 在固定来源 commit 上采用“标准事件子集 + 独立命名空间扩展”的方式：保留 OpenAI 的 `session.update`、`input_audio_buffer.*` 与转写事件名称，把增量 TTS、可替换假设和辅助控制放在 `speechrail.*` 事件与 `session.speechrail` 配置中；[MCP 只做无状态 REST 代理，不持有实时连接](https://github.com/hrygo/SpeechRail/blob/3f57647a3ee79c04318d8bf097489b2b5185da4f/docs/architecture/speechrail-mcp-proxy.md)。SpeechNexus 借鉴命名空间隔离，但并非简单替换前缀：例如 SpeechRail 使用 `session.update` 更新扩展配置，而 SpeechNexus 另定义 `nexus.session.update`，并把能力发现、revision pin、持久 Job 和租约语义纳入底座契约。固定版本的[上游实时契约](https://github.com/hrygo/SpeechRail/blob/3f57647a3ee79c04318d8bf097489b2b5185da4f/contracts/realtime-openai.md)和[复用边界](speechrail-reuse.md)提供来源及差异。
 
 ### 3.2 与内部控制错误模型的边界
 

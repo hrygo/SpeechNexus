@@ -127,8 +127,9 @@ A-owned configuration tables, outside the eighteen shared coordination ports:
 The unique command INSERT waits for an earlier same-key transaction. Existing
 command/result facts are immutable, so reading them needs no UPDATE grant or
 explicit command-row lock. A new command then locks the family row and appends
-its next decimal revision. Independent commands both succeed after serialization;
-there is no client CAS rejection. The same transaction inserts the original
+its next decimal revision. Independent commands can both succeed after serialization
+without a client CAS rejection, subject to transaction deadlines and failures.
+The same transaction inserts the original
 journal, immutable result and allocation projection. No network, object storage,
 engine, Job or outbox work occurs inside it.
 
@@ -285,8 +286,9 @@ initial head have one winner without intervening writers. Revision equality is
 not an activation epoch or protection against a head changing away and back.
 See the [same-candidate verification matrix](../operations/binding-activation-verification.md).
 
-Both operations use one short transaction, a transaction-scoped advisory lock
-keyed by the catalogue object and an idempotency-key advisory lock. The head and
+Both operations use one short transaction and a transaction-scoped advisory lock
+keyed by the catalogue object; commands with an idempotency key also take a
+key-specific advisory lock. The head and
 `speech_catalog_state` advance in that same transaction: retirement advances via
 the tombstone trigger, while head changes advance explicitly. A changed head is
 therefore visible to the next catalogue/Job read and changes ETag; no read path
@@ -295,8 +297,9 @@ configuration persisted at admission and never re-read the head.
 
 Every successful first execution appends an event with the binding/revision,
 result status, request ID, actor type/label, policy revision, intent digest,
-optional idempotency digest and `change_summary_json` containing the operator
-reason. Replaying a committed key and complete intent returns the original event;
+optional idempotency digest and `change_summary_json`. Retirement and disable
+events include the operator reason; activation records a null reason. Replaying
+a committed key and complete intent returns the original event;
 a changed intent under that committed key is `409 idempotency_conflict`. An unknown
 activation retains the original complete path/body/key; changing the key or CAS
 does not resolve it. A later rejection or current-head GET cannot settle an earlier
@@ -316,7 +319,7 @@ and remove its diagnostic filter. Profile and Binding roles and pools stay separ
 
 Configure `SPEECHNEXUS_BINDING_LIFECYCLE_DATABASE_URL` with another explicit
 non-owner role provisioned by `binding_lifecycle_grants`: append-only publication
-and retirement rows, append-only lifecycle events, a mutable head, SELECT on the
+and retirement rows, append-only lifecycle events and disable intents, a mutable head, SELECT on the
 binding revision/evidence history, and column-level UPDATE on the catalogue
 version. Startup rejects owner/schema-creation authority, sequence access, other
 speech-table grants and any broader mutable-column set. A blank value keeps the

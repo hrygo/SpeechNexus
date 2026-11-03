@@ -20,8 +20,9 @@ date: 2026-10-23
   JSON。schema 修订标记为 2.0.0；这是 Nexus receipt 的有意收紧，不允许旧生产者
   透传未定义字段。没有线上历史 receipt 迁移；未来若接入既有私有部署，应先离线
   投影并验证，不能回退到任意 JSON。公开 OpenAI 标准字段不改变意义。
-- 同步 409 错误使用 error.nexus.operation_id 恢复原 Operation；
-  response_not_replayable 还必须带原成功 receipt。扩展不覆盖标准 error 字段，
+- 同步请求的 `operation_in_progress` 使用 `error.nexus.operation_id` 查询原 Operation；
+  `response_not_replayable` 还必须带原成功 receipt。其他 409 冲突按各自错误语义处理，
+  不一概要求 operation ID。扩展不覆盖标准 error 字段，
   不因内容不可重放再创建执行。Python 和 JavaScript SDK 都验证该投影。
 - 删除采用每模块自有的预检 plan、版本/摘要 pin、完整范围确认、异步 Deletion
   及独立账本。跨模块独立保存副本不会被源资源删除追赶。停止未确认保留预算；

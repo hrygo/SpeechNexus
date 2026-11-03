@@ -293,7 +293,7 @@
 | `docs/plans/2026-10-30-zero-dispatch-settlement.md` | 历史保留 | 全文阅读，标明固定基线和候选方案的时点边界；历史验证及部署未复验 |
 | `docs/plans/README.md` | 部分核对 | 核对历史索引定位及 77 个本地链接目标；历史摘要尚未逐项核实 |
 | `docs/plans/binding-disable-cancellation.md` | 部分核对 | 全文阅读，对照 public Job 锁及 Compose 入口修正自相矛盾的旧描述；其余协调和验收细节待核对 |
-| `docs/plans/delivery-tracking.md` | 待核对 | — |
+| `docs/plans/delivery-tracking.md` | 部分核对 | 核对生成入口、结构化来源和快照标记；逐项事实与证据仍待核对 |
 | `docs/po-sm-operating-playbook.md` | 部分核对 | 核对 fleet-status 参数及退出码；其他章节与数据库行为待核对 |
 | `docs/prd.md` | 部分核对 | 核对 65 个需求 ID、锚点和 Epic 与结构化清单一致；逐项验收语义待核对 |
 | `docs/project-manager-guide.md` | 待核对 | — |

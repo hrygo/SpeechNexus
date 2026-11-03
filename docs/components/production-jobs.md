@@ -110,6 +110,9 @@ Job ID 确定性派生的 `submit_intent_id`，领取者先查询原身份，只
 契约校验的 4xx 语义拒绝经 `DispatchRejectedError`（`DispatchProtocolError` 子类）进入
 终态失败，缺少合法错误码的 4xx 仍是 `DispatchProtocolError` / `unknown`。查询或回执
 的 404 仍是 `not_found`，408/429 保持 `unknown`。不得把 `unknown` 映射成 `failed`。
+进入网关阶段之前，若持久请求缺失、摘要不符或 planner 生成不合法提交，代码会走
+`job_request_unavailable` 或 `execution_result_invalid` 失败分支；这与外发后无法解释
+网关响应保持 unknown 的分支不同，也不能作为执行停止或预算释放证据。
 
 当前边界完成派发器、真实 PG 领取/终态存储、唯一网关客户端（派发器经适配器接入）、
 worker 入口/进程角色及 `create_app` 之外的组合根。生产 `SubmitExecutionRequest` planner 仍未装配（结果发布已实现，见下节）；`build_dispatch_dependencies` 因 planner 未装配显式抛错，进程以

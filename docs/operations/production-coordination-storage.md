@@ -98,9 +98,10 @@ make integration-test
 Job/outbox 与授权保留，再重复升级。两个独立迁移进程先观测真实 advisory lock wait，
 释放后串行完成；这证明迁移互斥，不等于 HA 或恢复资格。测试文件存在不等于本次或目标环境已运行通过，结果须以对应执行记录为准。
 
-ADR 0007 复核：本轮只迁入存储和权限基础，其他旧业务不变量仍未全部进入生产端口，
-保留旧必跑门禁。B 的 PG adapter、A 的准入/runtime 等后续实现与联合验收
-继续单独取证；owner 和 claim 已按各自生产单元取证，不因本迁移合入关闭 A01 或 Gate。
+ADR 0007 的原存储单元复核认为：当时只迁入存储和权限基础，其他旧业务不变量仍未全部进入生产端口，
+需保留旧必跑门禁；owner 和 claim 分别取证，不能因该迁移合入就关闭当时的 A01 或 Gate。
+这段是历史交接结论，当前实现、剩余缺口及证据关联以[交付跟踪矩阵](../plans/delivery-tracking.md)为准；
+联合验收仍须按实际候选分别取证。
 
 后续 [0005 runtime 意图存储扩展](../components/production-runtime-intents.md)为 outbox 增加严格
 Job/runtime 目标，0006保存私有readiness证据；旧请求、Job 事件及原授权保留。

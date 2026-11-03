@@ -87,7 +87,7 @@ date: 2026-10-28
 | `contract_version` | 契约版本，例如 `1.0.0` | 仓库 | 与 `contracts` 版本一致 |
 | `engine_components` | 每个 stage 一个对象；key 是 stage id | 引擎/平台 | key 集合 = `stage_graph[].stage_id`；不能多、不能少 |
 | `engine_components[].engine_kind` | 引擎类型 | 引擎负责人 | 与 manifest stage `engine_kind` 相等 |
-| `engine_components[].image_digest` | 引擎镜像摘要 | 构建/镜像仓库 | 与 evidence `software.engine_image_digest` 相等（单 vLLM 组件时脚本强校验） |
+| `engine_components[].image_digest` | 引擎镜像摘要 | 构建/镜像仓库 | 与 evidence `software.engine_image_digest` 相等；脚本仅在 evidence 提供该摘要且恰有一个 vLLM/vLLM-Omni 组件时比较，否则标记 `NA`，须另行核验 |
 | `engine_components[].runtime_version` | 运行时版本，例如 `vllm-0.28.0+py3.12.3` | 引擎/平台 | 与 artifact pin 的 runtime pin / requirements 一致 |
 
 ### 3.3 `test_suite` 与 `scenarios`

@@ -119,7 +119,7 @@
 | `docs/decisions/0008-runtime-intents-before-controller-observation.md` | 部分核对 | 全文阅读并核对历史边界与后续引用；其余事实及消费者待逐项核对 |
 | `docs/decisions/0009-workbench-explicit-binding-http-version.md` | 部分核对 | 全文阅读并核对历史边界与后续引用；其余事实及消费者待逐项核对 |
 | `docs/decisions/0010-private-audio-receipt-compatibility.md` | 部分核对 | 全文阅读并核对历史边界与后续引用；其余事实及消费者待逐项核对 |
-| `docs/decisions/0011-distributed-deployment-and-platform-boundaries.md` | 部分核对 | 全文阅读并对照根工作约定与部署文档；平台运行未独立验证 |
+| `docs/decisions/0011-distributed-deployment-and-platform-boundaries.md` | 部分核对 | 全文阅读并对照根工作约定与部署文档，区分历史关口与当前交付入口；平台运行未独立验证 |
 | `docs/decisions/0012-public-job-surface.md` | 部分核对 | 全文阅读并核对公开提交与完整准入原子边界；其他决策语义待核对 |
 | `docs/decisions/0013-binding-lifecycle-admin-http.md` | 部分核对 | 全文阅读并抽核相关实现或历史证据；其他细节待核对 |
 | `docs/decisions/README.md` | 已核对 | 对照 0001–0013 的标题、日期与 frontmatter 状态；明确拟议 ADR 不等于已接受，不代表各决策正文已审完 |

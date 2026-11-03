@@ -13,7 +13,7 @@
 | `docs/architecture/contract-ownership.md` | 已核对 | 逐项对照机器矩阵的 18 端口写入范围和 7 类查询、私有表及授权来源；更新消费者、运行控制装配与用量消费状态，未重跑集成测试 |
 | `docs/architecture/coordination-transactions.md` | 部分核对 | 局部对照代码、契约或历史证据；其余内容待核对 |
 | `docs/architecture/data-deletion.md` | 部分核对 | 全文阅读并核对删除契约、计划期限、工作台依赖分类与活动生成阻断、schema 版本、启动重放前提及清理装配；跨模块竞态待核对，未执行删除或恢复演练 |
-| `docs/architecture/deployment-units.md` | 部分核对 | 核对 Compose 服务与对象存储凭据、Web 代理路由与 TLS、镜像及依赖、主要进程入口、Job 派发失败关闭、媒体检查、TTS 结算、网关本地锁、文件 ASR 对象版本及工作台后台循环和入口；澄清导出在途任务恢复缺口；其余单元、拓扑和资格未逐项核实 |
+| `docs/architecture/deployment-units.md` | 部分核对 | 核对 Compose 服务、内部 HTTP 与对象存储凭据、Web 代理路由与 TLS、镜像及依赖、主要进程入口、Job 派发失败关闭、媒体检查、TTS 结算、网关本地锁、文件 ASR 对象版本及工作台后台循环和入口；澄清导出在途任务恢复缺口；其余单元、拓扑和资格未逐项核实 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/README.md` | 部分核对 | 对照构图与校验脚本、ADR、目录和图像摘要，修正自动检查的覆盖范围；未重渲染或核验全部拓扑 |
 | `docs/architecture/distributed-coordination-schema.md` | 部分核对 | 已全文阅读并核对关键边界，其他细节仍待逐项核对 |
 | `docs/architecture/execution-command.md` | 部分核对 | 核对提交摘要与规范数值、重放、文件 ASR 输入版本读取、文本流、文件 ASR/TTS 消费条件、音色字段省略差异、词表来源、diarization 数量及输出预算约束；区分文本流目标与当前完整文本消费、codec 对象正文设计要求与命令 schema 覆盖，其他命令类型与 adapter 边界待核对 |

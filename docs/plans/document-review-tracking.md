@@ -121,7 +121,7 @@
 | `docs/decisions/0010-private-audio-receipt-compatibility.md` | 部分核对 | 全文阅读并对照回执领域类型、音频上界、独立查询路径及组件说明；历史交付状态保留，事务实现和消费者待进一步核对 |
 | `docs/decisions/0011-distributed-deployment-and-platform-boundaries.md` | 部分核对 | 全文阅读并对照根工作约定与部署文档，区分历史关口与当前交付入口；平台运行未独立验证 |
 | `docs/decisions/0012-public-job-surface.md` | 部分核对 | 全文阅读并核对公开提交与完整准入原子边界；其他决策语义待核对 |
-| `docs/decisions/0013-binding-lifecycle-admin-http.md` | 部分核对 | 全文阅读并抽核相关实现或历史证据；其他细节待核对 |
+| `docs/decisions/0013-binding-lifecycle-admin-http.md` | 已核对 | 对照管理契约、激活 CAS、原键重放、冲突提示及现行操作指南；保留拟议状态，历史审查和远端验收未重验 |
 | `docs/decisions/README.md` | 已核对 | 对照 0001–0013 的标题、日期与 frontmatter 状态；明确拟议 ADR 不等于已接受，不代表各决策正文已审完 |
 | `docs/design/ui-ux-design-framework-and-tokens.md` | 部分核对 | 全文阅读，对照 CI、Token 来源、文案、状态和随机调用扫描范围与品牌组件，修正相关描述；其他细节待核对 |
 | `docs/development-environment.md` | 部分核对 | 对照初始化、服务、浏览器冒烟和契约检查脚本，修正安装、权限、端口及检查边界；参考环境版本和历史运行状态未实测 |

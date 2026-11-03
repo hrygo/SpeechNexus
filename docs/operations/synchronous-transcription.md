@@ -138,6 +138,12 @@ ready 事实以及成功的 prepare intent。当前受支持的运维入口是
 | 情况 | 路由结果 |
 | --- | --- |
 | multipart 包含未声明字段 | 当前入口返回 `400 invalid_request`；公开契约对不支持的标准参数要求 `422 unsupported_parameter`，两者存在差异 |
+| 请求体或媒体格式不合法、无法解码 | `400 invalid_request`；媒体错误的 `param` 为 `file` |
+| 上传超出限制 | `413 payload_too_large`（`file`） |
+| 音频超过同步时长预算 | `422 async_required` |
+| 模型未发布 | `404 model_not_found` |
+| profile 未发布或工作空间不存在 / 已禁用 | 分别为 `422 profile_not_published`、`workspace_not_found` 或 `workspace_disabled` |
+| 提供 `Idempotency-Key` | `422 unsupported_parameter`（`Idempotency-Key`）；不能据此重放同步请求 |
 | 基础配置有效，但同步转写所需配置缺失 | `503 backend_unavailable`，日志含具体环境变量名 |
 | 基础配置无效或网关/对象存储凭据未成对 | 启动配置校验失败，无可用路由响应 |
 | 连接失败、超时、5xx、网关响应无法解释、结果对象不可读 | 结果未知语义：`503 backend_unavailable`，不当作已失败，也不重发新执行 |
@@ -152,6 +158,8 @@ ready 事实以及成功的 prepare intent。当前受支持的运维入口是
 | 请求 `verbose_json`、`srt` 或 `vtt` 但结果没有分段证据 | `422 unsupported_parameter`（`response_format`）；即使正文为空也不伪造分段 |
 | 请求 `verbose_json` 但回执无语言/时长 | `422 unsupported_parameter`（`response_format`） |
 | 请求非空 `timestamp_granularities[]` | 通过上游请求和 binding 校验后，当前生产规划器返回 `422 unsupported_parameter`（`timestamp_granularities[]`），发生在输入写入和准入之前；上游校验也可能先拒绝请求 |
+
+路由在解析请求前先检查服务是否可用；服务未装配时返回 `503 backend_unavailable`，不会先给出表中的请求校验错误。
 
 结果未知时由有权检查内部执行事实的操作者保留并查询原 `submit_intent_id`；公开响应
 不承诺向客户端提供该内部身份，不能要求普通调用方凭响应自行查询。无法定位原身份时应

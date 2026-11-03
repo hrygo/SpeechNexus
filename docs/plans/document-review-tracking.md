@@ -252,9 +252,9 @@
 | `docs/plans/2026-10-24-team-c-workspaces-live-plan.md` | 历史保留 | 全文阅读，保留原基线计划；历史验证未重跑 |
 | `docs/plans/2026-10-24-team-c-workspaces-read-handoff.md` | 历史保留 | 全文阅读，标明历史交接与当前入口；历史验证未重跑 |
 | `docs/plans/2026-10-24-team-c-workspaces-read-plan.md` | 历史保留 | 全文阅读，保留原基线计划；历史验证未重跑 |
-| `docs/plans/2026-10-25-b03-durable-file-runner.md` | 待核对 | — |
-| `docs/plans/2026-10-25-b03-worker-fence.md` | 待核对 | — |
-| `docs/plans/2026-10-25-ci-path-routing.md` | 待核对 | — |
+| `docs/plans/2026-10-25-b03-durable-file-runner.md` | 历史保留 | 全文阅读，标明原实施范围与当前入口；未逐项复验执行证据 |
+| `docs/plans/2026-10-25-b03-worker-fence.md` | 历史保留 | 全文阅读，标明原单元状态与当前入口；历史验证未重跑 |
+| `docs/plans/2026-10-25-ci-path-routing.md` | 历史保留 | 全文阅读，现行维护说明见 validation/ci-validation.md；历史 CI 未重跑 |
 | `docs/plans/2026-10-25-design-token-gate.md` | 待核对 | — |
 | `docs/plans/2026-10-25-raster-gradient-contrast.md` | 待核对 | — |
 | `docs/plans/2026-10-25-team-a-realignment.md` | 待核对 | — |

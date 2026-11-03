@@ -1,10 +1,12 @@
 ---
 title: "B01/B03 原生 worker 完成观察与后续双证据接入"
-status: active
+status: superseded
 date: 2026-10-25
 ---
 
 # 原生 worker 完成观察
+
+> 本文保留原单元的实施与验证记录；当前工作与证据见[交付跟踪矩阵](delivery-tracking.md)。
 
 承接 #28 / #30 和[请求作用域单元](2026-10-24-b03-native-asr-scope.md)。#132 已合入
 main `2bd6acc`，本轮不重复请求取消修复，不关闭 B00–B07、Gate 或 Goal。

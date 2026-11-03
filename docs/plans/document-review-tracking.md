@@ -128,7 +128,7 @@
 | `docs/operations/README.md` | 已核对 | 核对目录定位、索引说明及所有本地链接目标；历史快照已标识 |
 | `docs/operations/agent-delivery-sop.md` | 部分核对 | 全文阅读并对照根规约的授权与工作区收尾、验证指南入口；平台实际能力及需求关联待核对 |
 | `docs/operations/backfill-binding-publication-evidence.md` | 已核对 | 对照 CLI、映射约束与去重计数、回填事务、授权声明及 0021 回退锁；未连接生产库或运行回填 |
-| `docs/operations/binding-activation-verification.md` | 部分核对 | 全文阅读并抽查 PG 并发和清理测试；未运行 PG 或核对全部矩阵 |
+| `docs/operations/binding-activation-verification.md` | 已核对 | 对照 PG 并发矩阵、跨操作 ASGI 测试与故障清理 fixture；澄清测试设计不等于实际运行通过，未运行 PG |
 | `docs/operations/binding-disable-worker.md` | 已核对 | 对照配置范围、角色授权列、URL 策略、处理循环、异常分支及原租约结算入口；未连接部署或执行停用 |
 | `docs/operations/binding-lifecycle.md` | 部分核对 | 全文阅读并核对授权、停用响应、主要操作与部分冲突分支；补充 HTTP 匿名审计身份，并发与恢复事务待核对 |
 | `docs/operations/builtin-voice-qualification.md` | 已核对 | 对照资格入口、授权、退出分支、制品脚本摘要、probe 音频与终态验证及受控窗口；未运行探针或核验部署权限 |

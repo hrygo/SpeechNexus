@@ -17,7 +17,7 @@ InnoDB 仅验证相同协调 SQL、约束和最小权限。固定 HTTPS 规则�
 | unsent | 认领后重新检查当前 head/generation、原 deadline、意图状态和预算形态 | 只有新建同事务记录证明尚未开始投递 |
 | unknown | 只 GET 原 node/intent；首次允许 POST 前必须先提交该标记 | 可能发送，不能推断物理占用或不存在 |
 | acknowledged | 原响应身份/绑定/内存等经既有 codec 验证后，同事务写账本与 outbox ACK | 控制器识别原身份；不证明 ready、资格、停止或释放 |
-| blocked | 原记录损坏或身份/摘要不符，保留原数据供受控诊断 | 不外发、不重建默认值、不归还预算 |
+| blocked | 原记录损坏或身份/摘要不符时保留原数据供受控诊断；[操作员登记](register-engine.md)也将无需控制器投递的未发送记录标为 `operator_attested` | worker 不外发；该状态本身不证明物理释放或预算归还 |
 
 fresh 请求的 before-wire 标记必须提交成功才获得一次 POST 许可；失去提交回执就没有许可。
 任何已开始请求，即使本次调用报告尚未发送，也不能自动变回 unsent。unknown 可在原 deadline

@@ -1,5 +1,7 @@
 # 团队 C：eb299f7 依赖集成交接
 
+> 本文保留交接时的状态与验证事实；当前范围和证据见[交付跟踪矩阵](delivery-tracking.md)。
+
 2026-10-24，本机分支 `codex/team-c-c00-versions` 从 `9eea85987232eaebbcbd6768c46fe0a084a4d177` 安全前进到 `eb299f7a6a14868be77adb09c70c0ad19a6a9987`。本轮 base_sha=head_sha 为后者，未新建提交或推送。C00–C08 全部 open，C03 planned，其余 in-progress，完整 Goal active。开工前和交付后均更新 issue 状态及任务并读回核对。
 
 ## 依赖和字节保留

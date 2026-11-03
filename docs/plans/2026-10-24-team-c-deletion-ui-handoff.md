@@ -1,5 +1,7 @@
 # 团队 C：工作台删除预检、确认与恢复页面
 
+> 本文保留交接时的状态与验证事实；当前范围和证据见[交付跟踪矩阵](delivery-tracking.md)。
+
 2026-10-24，base_sha=head_sha为 `9eea85987232eaebbcbd6768c46fe0a084a4d177`，分支 `codex/team-c-c00-versions`。沿用完整C00–C08目标，没有创建提交或推送。本单元实现、验证与唯一独立终审的一轮修复结果如下；累计包最终校验值和全部文件hash以 `.runtime/team-c/team-c-current.manifest.json` 为准。
 
 ## 已实现

@@ -146,7 +146,7 @@ SpeechNexus 的架构原则在 UI/UX 层面必须得到 100% 忠实表达，绝�
   --nexus-color-cobalt-900:   oklch(0.22 0.10 260);
 
   /* 状态警示与多路说话人图元 */
-  --nexus-color-amber-500:    oklch(0.72 0.16 75);    /* 契约/告警 */
+  --nexus-color-amber-500:    oklch(0.70 0.16 75);    /* 契约/告警 */
   --nexus-color-rose-500:     oklch(0.62 0.21 25);    /* 阻断/异常 */
   --nexus-color-violet-500:   oklch(0.64 0.19 300);   /* 说话人 B */
   --nexus-color-coral-500:    oklch(0.68 0.18 45);    /* 说话人 C */
@@ -157,7 +157,7 @@ SpeechNexus 的架构原则在 UI/UX 层面必须得到 100% 忠实表达，绝�
 ```css
 :root {
   /* 字体族 */
-  --nexus-font-sans: "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Noto Sans SC", sans-serif;
+  --nexus-font-sans: "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
   --nexus-font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 
   /* 字号与行高梯次 */
@@ -168,14 +168,14 @@ SpeechNexus 的架构原则在 UI/UX 层面必须得到 100% 忠实表达，绝�
   --nexus-text-lg:   1.125rem;   /* 18px / 28px - 卡片主标题 */
   --nexus-text-xl:   1.375rem;   /* 22px / 32px - 模块区域大标题 */
   --nexus-text-2xl:  1.75rem;    /* 28px / 36px - 主视口标题 */
-  --nexus-text-hero: clamp(2.5rem, 6vw, 4.5rem); /* Hero 超大标语 */
+  --nexus-text-hero: clamp(2.3rem, 6.2vw, 4.8rem); /* Hero 超大标语 */
 
   /* 圆角尺度 */
   --nexus-radius-xs: 4px;
   --nexus-radius-sm: 6px;
   --nexus-radius-md: 10px;
-  --nexus-radius-lg: 14px;
-  --nexus-radius-xl: 20px;
+  --nexus-radius-lg: 16px;
+  --nexus-radius-xl: 24px;
   --nexus-radius-full: 9999px;
 
   /* 空间栅格 (8px 标准步进基线) */

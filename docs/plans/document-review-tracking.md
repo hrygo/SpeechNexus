@@ -123,7 +123,7 @@
 | `docs/decisions/0012-public-job-surface.md` | 已核对 | 对照公开 Job 状态机、幂等、准入、派发及工作台消费者；修正状态转换并补充固定绑定未传递的限制，未运行服务 |
 | `docs/decisions/0013-binding-lifecycle-admin-http.md` | 已核对 | 对照管理契约、激活 CAS、原键重放、冲突提示及现行操作指南；保留拟议状态，历史审查和远端验收未重验 |
 | `docs/decisions/README.md` | 已核对 | 对照 0001–0013 的标题、日期与 frontmatter 状态；明确拟议 ADR 不等于已接受，不代表各决策正文已审完 |
-| `docs/design/ui-ux-design-framework-and-tokens.md` | 部分核对 | 全文阅读，对照 CI 路由与执行顺序、Token 来源、文案、状态和随机调用扫描范围与品牌组件，修正相关描述；其他细节待核对 |
+| `docs/design/ui-ux-design-framework-and-tokens.md` | 部分核对 | 全文阅读，对照 CI 路由与执行顺序、基础 Token、文案、状态和随机调用扫描范围与品牌组件，修正相关描述；其他细节待核对 |
 | `docs/development-environment.md` | 已核对 | 对照锁定版本、初始化与服务脚本、检查和冒烟入口；修正安装、权限及端口边界，未实测参考宿主运行状态 |
 | `docs/operations/README.md` | 已核对 | 核对目录定位、索引说明及所有本地链接目标；历史快照已标识 |
 | `docs/operations/agent-delivery-sop.md` | 部分核对 | 全文阅读并对照根规约的授权与工作区收尾、验证指南入口；平台实际能力及需求关联待核对 |

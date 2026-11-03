@@ -68,8 +68,8 @@ SpeechNexus 采用 **“同根双面，一脉相承”** 的双生色彩系统�
 
 | 产品面 | 定位与意向 | 主题识别 | 品牌主色 (Primary / Accent) | 界面材质与氛围 |
 | :--- | :--- | :--- | :--- | :--- |
-| **AdminUI** | **精准舰队座舱** (Precision Fleet Cockpit) | `data-tone="admin"` | **苍松翡翠绿 / 极光青**<br>Light: `oklch(0.50 0.16 165)` (`#087B62`)<br>Dark: `oklch(0.78 0.15 168)` (`#5EEAD4`) | 严谨、高密度、清晰遥测、数字刻度感、稳健高可用 |
-| **工作台** | **新一代声学工坊** (Next-Gen Audio Atelier) | `data-tone="workbench"` | **电光皇家蓝 / 赛博青**<br>Light: `oklch(0.52 0.22 260)` (`#1D4ED8`)<br>Dark: `oklch(0.70 0.20 255)` (`#60A5FA`) | 流畅、通透、波形律动、沉浸创作、低延迟反馈 |
+| **AdminUI** | **精准舰队座舱** (Precision Fleet Cockpit) | `data-tone="admin"` | **苍松翡翠绿 / 极光青**<br>Light: `--nexus-color-emerald-500`<br>Dark: `--nexus-color-emerald-400` | 严谨、高密度、清晰遥测、数字刻度感、稳健高可用 |
+| **工作台** | **新一代声学工坊** (Next-Gen Audio Atelier) | `data-tone="workbench"` | **电光皇家蓝 / 赛博青**<br>Light: `--nexus-color-cobalt-500`<br>Dark: `--nexus-color-cobalt-300` | 流畅、通透、波形律动、沉浸创作、低延迟反馈 |
 
 ### 3.2 架构红线与设计道德约束（硬性规则）
 SpeechNexus 的架构原则在 UI/UX 层面必须得到 100% 忠实表达，绝不允许通过“界面美化”掩盖系统真实状态：

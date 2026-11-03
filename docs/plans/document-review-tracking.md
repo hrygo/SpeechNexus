@@ -113,7 +113,7 @@
 | `docs/decisions/0002-speech-models-engines-and-loading.md` | 部分核对 | 全文阅读并对照产品架构与资格边界，明确首个硬件验证目标的历史时点；模型运行资格仍需按目标部署取证 |
 | `docs/decisions/0003-workbench-llm-network-boundary.md` | 已核对 | 逐项对照 PRD、产品架构和技术方案的默认关闭、内容网络与资源边界，并抽核配置和 HTTP 投影；未实测部署出站限制 |
 | `docs/decisions/0004-cluster-ready-architecture-and-single-node-mvp.md` | 已核对 | 对照产品要求、后续协调与部署决定及资源预算边界；限定历史表名和高可用示意，未验证目标部署 |
-| `docs/decisions/0005-complete-execution-and-data-lifecycle-contracts.md` | 部分核对 | 核对执行摘要、删除边界及同步冲突契约，修正 409 恢复范围；其余事实及消费者待核对 |
+| `docs/decisions/0005-complete-execution-and-data-lifecycle-contracts.md` | 已核对 | 对照执行与删除设计、同步错误契约、SDK 测试定义和内部停止恢复契约；修正 409 恢复范围，历史验证未重跑 |
 | `docs/decisions/0006-cluster-coordination-and-storage-portability.md` | 部分核对 | 全文阅读并核对历史边界与后续引用；其余事实及消费者待逐项核对 |
 | `docs/decisions/0007-legacy-coordination-retirement.md` | 部分核对 | 全文阅读并核对历史边界、旧 fixture 与验证入口，限定旧运行态结论时点并更新当前跟踪入口；规则迁移覆盖待核对 |
 | `docs/decisions/0008-runtime-intents-before-controller-observation.md` | 部分核对 | 全文阅读并对照生产意图与投递入口，明确旧实施计划为历史安排；其余事实及消费者待核对 |

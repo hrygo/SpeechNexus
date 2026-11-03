@@ -74,7 +74,7 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/runtime-governance.md"
       ],
-      "implementation": "WAV/PCM 检查组件已存在；默认资源工厂仍使用文本检查器。",
+      "implementation": "音频检查组件仅接收 PCM WAV 和显式描述的原始 PCM；默认资源工厂仍使用文本检查器。",
       "integration": "音频检查器与正式资产工厂、错误映射和网关消费者的闭环待验。",
       "verification": "已有隔离组件证据；公开 HTTP/PG/MinIO 全链与生产环境未获确认。",
       "gap": "音频检查器与正式资产工厂、错误映射和网关消费者的闭环待验。 已有隔离组件证据；公开 HTTP/PG/MinIO 全链与生产环境未获确认。",
@@ -88,6 +88,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/architecture/production-assets.md",
           "label": "资产与存储",
           "note": "文本资产和恢复路径的实现说明，不证明完整音频生命周期"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3140cb5bd6fe8f7fe4d5420ebc02afa4849668de/docs/components/audio-asset-inspection.md",
+          "label": "音频检查边界",
+          "note": "候选检查器格式和公开装配限制"
         }
       ],
       "issues": []

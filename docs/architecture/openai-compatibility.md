@@ -30,8 +30,8 @@ WebSocket 路由及真实实时执行链，SDK 序列化检查不能证明这些
 REST `verbose_json.usage` 只使用 `{"type":"duration","seconds":...}`，与官方 SDK 的
 `TranscriptionVerbose` 响应模型一致；契约仅允许非 verbose
 `Transcription.usage` 承载真实 token usage。当前转写路由只输出已知时长用量，
-不输出 token usage。若服务端在 `verbose_json` 返回 token usage，官方 Python SDK
-无法解析该响应，因此契约测试将其作为负例拒绝。
+不输出 token usage。`verbose_json` 中的 token usage 不符合官方 Python SDK 的
+`TranscriptionVerbose` 类型定义，契约测试将其作为负例拒绝；SDK 非严格解析行为不应作为兼容保证。
 
 非 verbose `Transcription.logprobs` 若由绑定提供真实证据，必须使用官方 SDK 的
 `token / bytes / logprob` 形状；P0 不接受 `include` 参数，因此不会为了展示效果虚构

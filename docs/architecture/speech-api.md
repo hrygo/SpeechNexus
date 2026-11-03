@@ -161,7 +161,7 @@ TTS 制品携带实际 `format`、`sample_rate_hz`、`channels`、`duration_ms`�
 
 模型绑定发布同时负责把一个 draft revision 激活为当前 revision。请求中的 `expected_revision` 是目标 revision，`expected_current_revision` 是发布前的当前指针；两者分离，避免并发发布时“谁最后提交谁生效”的丢失更新。指针已变化返回 `409 configuration_changed`，目标不是 draft 返回 `409 binding_not_draft`；首期没有身份或审批层级，CAS 只保证操作者看到的是自己确认的版本。
 
-场景预设采用同样的不可变 revision / 当前指针分离规则。`POST /v1/nexus/admin/profiles` 以 `expected_latest_revision` 原子分配下一个只读 draft revision；draft 可以没有验证记录，但公共列表与公共 revision 查询不可见。`POST .../revisions/{revision}/publications` 必须提交与目标 revision 对应的 `ProfileValidation`，服务端重新核对参数域、能力组合、override 范围和 production 资格后，才写 `published_at` 并切换当前指针。回滚使用 `.../activations` 激活既有 published revision，不复制或改写 revision；退役 / 禁用使用 `.../retirements`，当前 revision 退役后指针为空，不静默选择另一版本。已固定的 Job / 实时会话继续使用其 revision，管理操作只影响后续选择。
+场景预设的目标契约采用同样的不可变 revision / 当前指针分离规则。当前实现仅提供 `POST /v1/nexus/admin/profiles` 根据 `expected_latest_revision` 原子分配只读 draft revision 和固定 revision 读取；发布、激活及公共列表仍属未交付范围，见[Profile 草稿](../components/profile-drafts.md)。目标契约要求 `POST .../revisions/{revision}/publications` 提交对应的 `ProfileValidation`，核对参数域、能力组合、override 范围和 production 资格后才切换当前指针；回滚通过 `.../activations` 选择已发布 revision，退役通过 `.../retirements` 清除当前指针而不自动回退。已固定的 Job / 实时会话继续使用其 revision，管理操作只影响后续选择。
 
 快照按部署、工作空间、catalog 与功能策略生成；ETag 与缓存键包含这些 revision，不混用不同部署配置。配置了外部网关或共享服务密钥时，入口检查先于 304。读取不触发加载、下载或卸载，不承诺未来槽位。提交可提供 expected_catalog_revision，不匹配为 `409 configuration_changed`；执行前重新检查资源状态、功能策略和容量。首期没有按用户投影或 authorization_revision。
 

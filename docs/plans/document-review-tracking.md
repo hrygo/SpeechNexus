@@ -86,7 +86,7 @@
 | `docs/components/gateway-execution-client.md` | 已核对 | 对照客户端配置、认证、结果查询、停止身份、重试、调用方装配及测试入口；未运行测试或验证目标部署 |
 | `docs/components/model-binding-drafts.md` | 部分核对 | 全文阅读并核对四类显式数据库配置及 0010/0011 迁移，修正发布与默认参数范围描述；生命周期事务及测试待核对 |
 | `docs/components/node-controller.md` | 部分核对 | 全文阅读并核对节点配置默认值，限定历史 warmup 探针的预算结论；容器、协议及恢复细节待核对 |
-| `docs/components/node-stop-recovery.md` | 部分核对 | 全文阅读并核对 SQLite schema 版本、检查点表与 reconcile/stop 入口；崩溃恢复各分支及历史探针待核对 |
+| `docs/components/node-stop-recovery.md` | 已核对 | 静态对照检查点、停止恢复、诊断与测试定义；历史探针按原时点保留，未运行服务 |
 | `docs/components/production-admission-storage.md` | 已核对 | 静态对照存储、授权、锁序、恢复及公开 Job 原始意图；未运行服务 |
 | `docs/components/production-admission.md` | 已核对 | 静态对照配额、锁序、原身份恢复及同步 TTS settlement 重放；未运行服务 |
 | `docs/components/production-assets.md` | 已核对 | 静态对照上传、保留、授权、资产与工作区 HTTP 及测试定义；未运行服务 |

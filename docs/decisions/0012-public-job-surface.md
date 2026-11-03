@@ -50,7 +50,9 @@ Job、事件、提交文档、原 operation 及 Job/outbox 身份；生产派发
 ## 后果
 
 - 新增迁移与适配器只写 `speech_jobs` / `speech_job_events`，协调表 DDL 不变。
-- 工作台的 `submit`/`read_job` 可以直接对接，不需要改消费者契约。
+- 当时预期工作台的 `submit`/`read_job` 可沿公开协议对接。当前适配器尚未在提交中传递
+  固定 `model_binding`，因此不能据此认定固定绑定已端到端接入；具体限制见
+  [Public TTS Job 固定 binding](../components/public-job-model-binding.md)。
 - 读取路径与执行路径解耦：Job 状态由执行观察推进，不由 HTTP 请求推进，恢复语义与
   outbox 重放保持单一权威。
 - 未实现的 realtime、voice-design/clone 等面继续返回明确错误，不因新增路由而被误认为可用。

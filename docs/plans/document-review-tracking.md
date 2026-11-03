@@ -120,7 +120,7 @@
 | `docs/decisions/0009-workbench-explicit-binding-http-version.md` | 已核对 | 对照 v1/v2 契约、渲染路由、配置发现及 Web 消费者，修正生成路由状态；未运行真实语音链 |
 | `docs/decisions/0010-private-audio-receipt-compatibility.md` | 已核对 | 对照回执类型、区间登记事务、独立查询投影和同步合成消费者；保留历史交付边界，未重跑集成测试 |
 | `docs/decisions/0011-distributed-deployment-and-platform-boundaries.md` | 已核对 | 对照产品要求、部署单元与平台职责、事务和验收边界；区分历史关口与当前入口，未独立验证平台运行 |
-| `docs/decisions/0012-public-job-surface.md` | 部分核对 | 全文阅读并核对公开提交与完整准入原子边界；其他决策语义待核对 |
+| `docs/decisions/0012-public-job-surface.md` | 部分核对 | 核对公开提交、完整准入、派发和工作台适配器，补充固定绑定未传递的限制；其他决策语义待核对 |
 | `docs/decisions/0013-binding-lifecycle-admin-http.md` | 已核对 | 对照管理契约、激活 CAS、原键重放、冲突提示及现行操作指南；保留拟议状态，历史审查和远端验收未重验 |
 | `docs/decisions/README.md` | 已核对 | 对照 0001–0013 的标题、日期与 frontmatter 状态；明确拟议 ADR 不等于已接受，不代表各决策正文已审完 |
 | `docs/design/ui-ux-design-framework-and-tokens.md` | 部分核对 | 全文阅读，对照 CI、Token 来源、文案、状态和随机调用扫描范围与品牌组件，修正相关描述；其他细节待核对 |

@@ -331,7 +331,7 @@
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/validation.json` | 部分核对 | 2026-10-26 报告中的三份素材摘要匹配当前文件；未重跑渲染或验证全部结论 |
 | `docs/audits/2026-10-25-team-c-acceptance-map.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
 | `docs/audits/2026-10-26-team-a-closeout-evidence.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
-| `docs/audits/2026-10-26-team-a-issue-handoff.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
+| `docs/audits/2026-10-26-team-a-issue-handoff.json` | 历史保留 | 核对快照时间、来源、交接引用及 40 个唯一编号；未重查历史远端状态 |
 | `docs/audits/2026-10-26-team-c-operation-coverage.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
 | `docs/audits/evidence/2026-11-03-tts-prepare.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
 | `docs/audits/evidence/2026-11-03-tts-window-2.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
@@ -340,7 +340,7 @@
 | `docs/audits/evidence/2026-11-03-tts-window-5.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
 | `docs/audits/evidence/2026-11-03-tts-window-6.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
 | `docs/operations/release-evidence-verification-output.txt` | 历史保留 | 2026-10-28 固定版本的合成数据验证输出；不代表当前发布资格，原始运行未重做 |
-| `docs/plans/2026-10-23-implementation-issues.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
+| `docs/plans/2026-10-23-implementation-issues.json` | 历史保留 | 核对原基线、索引引用及 38 个唯一编号；旧编排不代表当前状态 |
 | `docs/plans/2026-10-24-team-c-c02-download-contract-candidate.yaml` | 历史保留 | 全文阅读，核对计划、交接及候选测试引用；该候选路径未出现在当前工作台 canonical 契约中 |
 | `docs/plans/2026-10-24-team-c-gateway-clock-candidate.patch` | 历史保留 | 核对两行候选内容及原计划、交接引用；仅为固定历史候选，未应用或重跑验证 |
 | `docs/plans/delivery-issues.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |

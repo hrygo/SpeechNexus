@@ -41,11 +41,11 @@
 | `docs/audits/2026-10-24-b02-warmup-gate-probe.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
 | `docs/audits/2026-10-24-b03-bounded-audio-probe.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
 | `docs/audits/2026-10-24-b03-file-asr-probe.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
-| `docs/audits/2026-10-24-b03-frozen-inputs.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
-| `docs/audits/2026-10-24-b03-native-asr-scope.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
+| `docs/audits/2026-10-24-b03-frozen-inputs.md` | 历史保留 | 全文阅读，固定基线的输入接入与 PR 审查记录；当前接口由组件文档承接，未重验当时证据 |
+| `docs/audits/2026-10-24-b03-native-asr-scope.md` | 历史保留 | 全文阅读，固定版本与基线的原生清理探针和审查记录；未重验当时证据 |
 | `docs/audits/2026-10-24-b03-tts-adapter-probe.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
 | `docs/audits/2026-10-24-b03-tts-engine-feasibility.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
-| `docs/audits/2026-10-24-b06-cpu-vad-probe.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
+| `docs/audits/2026-10-24-b06-cpu-vad-probe.md` | 历史保留 | 全文阅读，固定模型和基线的 CPU 合成探针；组件入口作为历史证据引用，未重跑探针 |
 | `docs/audits/2026-10-24-ci-efficiency.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
 | `docs/audits/2026-10-25-b03-default-real-asr-probe.md` | 部分核对 | 核对标题、基线与历史时点边界；正文和原始证据待逐项复核 |
 | `docs/audits/2026-10-25-b03-real-cancel-settlement.md` | 部分核对 | 核对标题、基线与历史时点边界；正文和原始证据待逐项复核 |

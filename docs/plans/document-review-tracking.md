@@ -157,7 +157,7 @@
 | `docs/operations/reconciliation-recovery.md` | 部分核对 | 核对 abort 恢复查询、unknown 停止证据规则及查询 2、3 所涉主要表字段与证据标志类型；修正资源释放与预算归还顺序及代码锚点描述；查询执行及其余内容待核对 |
 | `docs/operations/register-engine.md` | 部分核对 | 核对健康探测及重定向证据、host/owner/quota 校验、同代重放与 readiness 刷新、参数范围、配方覆盖规则及验证查询；补充提交结果未知、查询证据边界和操作员确认的投递阻断，其余内容待核对 |
 | `docs/operations/release-preflight.md` | 已核对 | 对照脚本检查入口、配置加载和 C0–C12 判断；修正版本、身份、临时文件、资格场景、Compose 文本匹配及固定快照边界，未执行会访问服务或写入的检查 |
-| `docs/operations/release-readiness.md` | 部分核对 | 全文阅读并抽核固定候选 planner、文件及提交关系；其余历史证据待复核 |
+| `docs/operations/release-readiness.md` | 历史保留 | 全文阅读，固定候选与核验时点的发布就绪快照；运维索引标为历史，未逐项复核历史证据 |
 | `docs/operations/synchronous-transcription.md` | 部分核对 | 核对配置、配方约束、请求校验顺序、媒体探测证据范围、提交与轮询路径、HTTP 请求和媒体错误映射及网关主要错误映射；其余实现细节待核对 |
 | `docs/plans/2026-10-22-speechnexus-implementation-plan.md` | 历史保留 | 全文阅读并核对引用入口；保留原阶段和预算假设，标明当前交付入口，未逐项复核历史证据 |
 | `docs/plans/2026-10-23-agent-team-startup-briefs.md` | 历史保留 | 原首轮派工文本，文首及索引注明历史性质；未逐项复核原始证据 |

@@ -203,6 +203,8 @@ flowchart TD
 
 标准 REST 请求不要求 nexus、workspace 或工作台项目字段。兼容范围、默认值、错误、幂等、会话状态、音色版本与调用示例以[语音接口](architecture/speech-api.md)为准。上述实时路径均为契约目标，当前生产组合根尚未装配公开 Realtime WebSocket 路由及真实实时执行链。标准 SDK 直连也只支持声明的转写子集，不能宣称任意 OpenAI Realtime 客户端无修改可用；底座不承载 LLM response、tool call 或播放完成事实。
 
+音色设计、克隆和草稿发布入口同样是目标契约，当前不构成已接通的生产音色创作链；预置音色的独立资格或受控 TTS 证据不能替代该链的验收。工作台读取公开音色目录的范围见[音色目录消费者](components/workbench-voice-catalogue.md)。
+
 ## 5. 场景参数与预设
 
 ### 5.1 四类配置分离

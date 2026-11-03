@@ -43,13 +43,13 @@
 | `docs/audits/2026-10-24-b03-file-asr-probe.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
 | `docs/audits/2026-10-24-b03-frozen-inputs.md` | 历史保留 | 全文阅读，固定基线的输入接入与 PR 审查记录；当前接口由组件文档承接，未重验当时证据 |
 | `docs/audits/2026-10-24-b03-native-asr-scope.md` | 历史保留 | 全文阅读，固定版本与基线的原生清理探针和审查记录；未重验当时证据 |
-| `docs/audits/2026-10-24-b03-tts-adapter-probe.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
-| `docs/audits/2026-10-24-b03-tts-engine-feasibility.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
+| `docs/audits/2026-10-24-b03-tts-adapter-probe.md` | 历史保留 | 全文阅读，固定镜像的 CustomVoice 适配器和 ASR 回环实验；索引限定实验范围，未重跑探针 |
+| `docs/audits/2026-10-24-b03-tts-engine-feasibility.md` | 历史保留 | 全文阅读，固定镜像的引擎可行性与早期误判纠正；记录时点的后续计划不代表当前状态，未重跑实验 |
 | `docs/audits/2026-10-24-b06-cpu-vad-probe.md` | 历史保留 | 全文阅读，固定模型和基线的 CPU 合成探针；组件入口作为历史证据引用，未重跑探针 |
 | `docs/audits/2026-10-24-ci-efficiency.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
 | `docs/audits/2026-10-25-b03-default-real-asr-probe.md` | 部分核对 | 核对标题、基线与历史时点边界；正文和原始证据待逐项复核 |
-| `docs/audits/2026-10-25-b03-real-cancel-settlement.md` | 部分核对 | 核对标题、基线与历史时点边界；正文和原始证据待逐项复核 |
-| `docs/audits/2026-10-25-b03-real-stop-settlement.md` | 部分核对 | 核对标题、基线与历史时点边界；正文和原始证据待逐项复核 |
+| `docs/audits/2026-10-25-b03-real-cancel-settlement.md` | 历史保留 | 全文阅读，固定候选的真实取消与整代次结算实验；保留 partial 和单请求证据缺口，未重跑实验 |
+| `docs/audits/2026-10-25-b03-real-stop-settlement.md` | 历史保留 | 全文阅读，固定候选的真实整代次停止与预算结算实验；当前入口标明 fixture 限制，未重跑实验 |
 | `docs/audits/2026-10-25-coordination-port-evidence.md` | 部分核对 | 核对标题、基线与历史时点边界；正文和原始证据待逐项复核 |
 | `docs/audits/2026-10-25-team-c-next-phase-integration.md` | 部分核对 | 核对标题、基线与历史时点边界；正文和原始证据待逐项复核 |
 | `docs/audits/2026-10-25-team-c-original-ac-matrix.md` | 部分核对 | 核对标题、基线与历史时点边界；正文和原始证据待逐项复核 |

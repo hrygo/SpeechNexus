@@ -318,7 +318,7 @@ ASR 客户端事件仅支持 `session.update`、`input_audio_buffer.append`、`i
 
 `session.update` 仅接受声明的 transcription 字段：`session.type=transcription` 及 `session.audio.input` 下的 `format`、`transcription`、`turn_detection`；PCM 投影为 `{type: "audio/pcm", rate: 24000}`，与当前 OpenAI Realtime transcription session 形状一致。`session.created` / `session.updated` 回显 `object=realtime.transcription_session` 的同一形状，并把绑定、profile、limits 与 config revision 放在可选 `nexus` 对象。与 `nexus.session.update` 映射到同一个配置命令，禁止两套配置状态。首期 active 会话仅允许 ASR 策略白名单在下一段边界变更，固定模型、音色、格式 / 采样率与 TTS 配方不可热换；标准事件未带 expected revision 时由单连接内串行命令按当前 revision 处理。回显实际 config_revision 与生效段，尚未生效的值不能用于当前段。P0 固化字段 schema，不接受未声明的 `include`、`response.*`、conversation history、semantic VAD 或 tool call 事件。[官方客户端字段](https://developers.openai.com/api/reference/resources/realtime/client-events)
 
-`commit` 表示关闭当前输入段并请求其最终结果；`clear` 只丢弃尚未提交的输入缓冲，不撤销已接受的 operation。重复 commit 用客户端 event_id 去重，无新音频且不是已知重试时返回 `empty_audio_buffer`。有实际音频但无语音时，最终 transcript 可以为空，reason 为 `no_speech`。
+`commit` 表示关闭当前输入段并请求其最终结果；`clear` 只丢弃尚未提交的输入缓冲，不撤销已接受的 operation。重复 commit 用客户端 event_id 去重，无新音频且不是已知重试时返回 `empty_audio_buffer`。有实际音频但无语音时，最终 transcript 可以为空。`no_speech` 是设计上的原因语义，当前标准 completed 事件 schema 未声明 reason 字段；客户端不能依赖该字段，若需对外传递原因须先补齐契约。
 
 后端 vLLM Realtime 的事件形状、commit 顺序与输入格式不必与公开接口相同；adapter 转换而非透传。[vLLM 实时转写接口](https://docs.vllm.ai/en/stable/serving/online_serving/speech_to_text/#realtime-api)
 

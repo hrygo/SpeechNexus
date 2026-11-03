@@ -1,10 +1,12 @@
 ---
 title: A01 runtime 意图持久化与恢复单元
-status: active
+status: superseded
 date: 2026-10-24
 ---
 
 # A01 runtime 意图持久化与恢复单元
+
+> 历史实施单元：以下路线和状态保留原时点，不作为当前派工或进度依据；当前范围与证据见[交付跟踪矩阵](delivery-tracking.md)。
 
 属于 [A01 #20](https://github.com/hrygo/SpeechNexus/issues/20)，消费 B02 已合并的
 控制器协议与进程。目标是先持久记录、预留及查询原意图，再经 outbox 派发；

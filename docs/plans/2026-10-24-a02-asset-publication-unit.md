@@ -1,10 +1,12 @@
 ---
 title: "A02 首个资产发布单元"
-status: active
+status: superseded
 date: 2026-10-24
 ---
 
 # A02 首个资产发布单元
+
+> 历史实施单元：以下路线和状态保留原时点，不作为当前派工或进度依据；当前范围与证据见[交付跟踪矩阵](delivery-tracking.md)。
 
 基线 `e09abad`；对应 [A02 #21](https://github.com/hrygo/SpeechNexus/issues/21)。
 本单元交付共享 workspace 与首个实际 Asset 上传/元数据/内容路径，验证对象发布、

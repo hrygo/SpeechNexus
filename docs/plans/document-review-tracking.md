@@ -167,9 +167,9 @@
 | `docs/plans/2026-10-23-team-a-goal.md` | 历史保留 | 已替代的团队目标及收尾交接；未逐项复核历史证据 |
 | `docs/plans/2026-10-23-team-b-goal.md` | 历史保留 | 原团队目标及收尾交接，已明确不作当前排期；未逐项复核历史证据 |
 | `docs/plans/2026-10-23-three-team-delivery-plan.md` | 历史保留 | 固定基线的三团队分工、任务和关口规划；文首与计划索引已注明历史性质和当前入口，历史验收证据未逐项复核 |
-| `docs/plans/2026-10-24-a01-runtime-intent-unit.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
-| `docs/plans/2026-10-24-a02-asset-publication-unit.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
-| `docs/plans/2026-10-24-a02-binding-drafts-unit.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
+| `docs/plans/2026-10-24-a01-runtime-intent-unit.md` | 历史保留 | 全文阅读，标明原实施路线的时点并修正组件文档入口；未重跑历史验证 |
+| `docs/plans/2026-10-24-a02-asset-publication-unit.md` | 历史保留 | 全文阅读，标明原实施路线与分批状态的时点；未重跑历史验证 |
+| `docs/plans/2026-10-24-a02-binding-drafts-unit.md` | 历史保留 | 全文阅读，标明原实施计划与验证结果的时点；未重跑历史验证 |
 | `docs/plans/2026-10-24-b01-default-recovery-driver.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
 | `docs/plans/2026-10-24-b03-frozen-inputs.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
 | `docs/plans/2026-10-24-b03-native-asr-scope.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |

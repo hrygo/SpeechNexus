@@ -92,7 +92,12 @@ def _cell(value: Any) -> str:
 
 
 def _field(issue: dict[str, Any], label: str) -> str:
-    values = re.findall(rf"^{re.escape(label)}：([^\r\n]*)$", issue.get("body") or "", re.MULTILINE)
+    prefix = f"{label}："
+    values = [
+        line[len(prefix) :]
+        for line in (issue.get("body") or "").splitlines()
+        if line.startswith(prefix)
+    ]
     if len(values) != 1 or not values[0].strip():
         return "未知"
     value = values[0].strip()

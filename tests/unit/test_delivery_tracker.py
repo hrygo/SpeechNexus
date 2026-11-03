@@ -67,6 +67,16 @@ def test_current_view_works_without_any_history_files(tracker: ModuleType, curre
     assert "已完成接线" in changed and "P0" in changed and "已实现局部" not in changed
 
 
+def test_lf_and_crlf_issue_bodies_render_equivalently(tracker: ModuleType, current: Any) -> None:
+    manifest, issues = current
+    issues[0]["body"] += "下一队列：先交付当前切片\n"
+    expected = tracker.render(manifest, issues, "离线快照")
+    assert "先交付当前切片" in expected and "P1 / 当前 / 待派工" in expected
+    for issue in issues:
+        issue["body"] = issue["body"].replace("\n", "\r\n")
+    assert tracker.render(manifest, issues, "离线快照") == expected
+
+
 @pytest.mark.parametrize(
     "mutation",
     [

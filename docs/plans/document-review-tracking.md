@@ -75,7 +75,7 @@
 | `docs/components/binding-defaults-producer.md` | 部分核对 | 全文阅读并核对配置、Compose 透传、运行入口及契约入口；事务、HTTP 和验证细节待逐项核对 |
 | `docs/components/binding-parameter-defaults.md` | 部分核对 | 定位 schema、HTTP 生产者与运行时装配；字段语义待逐项核对 |
 | `docs/components/controlled-asr-generation.md` | 部分核对 | 局部对照代码、契约或历史证据；其余内容待核对 |
-| `docs/components/cpu-vad.md` | 部分核对 | 局部对照代码、契约或历史证据；其余内容待核对 |
+| `docs/components/cpu-vad.md` | 部分核对 | 全文阅读，对照单次输入上限、会话入口和 fake 路径；策略、装配及实时链细节待核对 |
 | `docs/components/execution-gateway.md` | 部分核对 | 核对 HTTP/装配章节与 drain 组合根；其余提交、屏障、恢复及清理事务待逐节核对 |
 | `docs/components/execution-staging-results.md` | 已核对 | 对照回执契约、迁移、列授权、登记 CAS/重放、覆盖检查、HTTP 查询及测试入口；未运行集成测试 |
 | `docs/components/file-asr-audio.md` | 已核对 | 对照共享媒体模块、源格式、限制、时钟投影、测试入口及已知消费者装配；未重跑测试或验证部署 |

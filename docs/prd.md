@@ -140,12 +140,10 @@
 **验收：**
 
 - 并发会话相互隔离、缓冲有界，文件/实时消费者正确处理切段版本及源样本映射；无语音终态依可信执行事实裁决。
-- 以 16kHz 单声道 PCM16 和有序样本输入，前缀缓冲与策略 revision 固定；模型时钟到 24kHz wire 及源文件的映射记录真实重采样影响，不能把简单比例投影当完整源时钟。
+- CPU VAD 以 16 kHz 单声道 PCM16 和有序样本输入，前缀缓冲与策略 revision 固定；其模型时钟到 24 kHz 公共坐标及源文件的映射记录真实重采样影响，不能把简单比例投影当完整源时钟。该输入规格不替代其他辅助模型各自的格式要求。
 - 词级时间戳映射源样本，交叠不重复，错版本或旧代结果拒绝。
-- required 纳入完整配方和终态；逐 binding 质量证据缺失时明确拒绝。
-- 记录逐 binding 支持矩阵和质量；required 不隐式降级为 best_effort，并按真实 ASR 场景联验。
+- required 辅助纳入完整配方和终态，冻结语料、阈值及逐 binding 支持矩阵和质量证据；证据缺失时明确拒绝，不隐式降级为 best_effort，并按真实 ASR 场景联验。
 - 支持至多八人；不能恢复时显式标明身份连续性边界，旧结果不得覆盖新正文。
-- required 纳入完整配方和终态，冻结语料、阈值及逐 binding 质量证据，不静默降级。
 
 设计依据：[speech-api.md](architecture/speech-api.md)、[runtime-governance.md](architecture/runtime-governance.md)。
 

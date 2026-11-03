@@ -42,7 +42,7 @@ make dev-up
 make verify
 ```
 
-`make dev-bootstrap` 会安装锁定的 Python / Node 工具链和 Chromium，校验发行包摘要，初始化本地数据目录，建立 `speechnexus_dev` / `speechnexus_test` 数据库和 `speechnexus-dev` / `speechnexus-test` bucket，安装并启动隔离的协调 MySQL 容器，然后运行健康检查。重复执行会复用已有数据与浏览器缓存。
+`make dev-bootstrap` 会准备 Python / Node 工具链和 Chromium，校验脚本指定的发行包摘要，初始化本地数据目录，建立 `speechnexus_dev` / `speechnexus_test` 数据库和 `speechnexus-dev` / `speechnexus-test` bucket，安装并启动隔离的协调 MySQL 容器，然后运行健康检查。它执行 `uv sync` 而未指定 `--locked`；pnpm 有锁文件时使用 `--frozen-lockfile`，缺少锁文件时使用普通安装。重复执行会复用已有数据与浏览器缓存，但会停止并重新启动上述用户级服务。
 
 Python 开发依赖由根目录 `pyproject.toml` 和 `uv.lock` 锁定，后端与执行网关是 workspace 成员。首次初始化后使用 `uv sync --locked --all-packages --all-groups`；执行工具时使用 `uv run pytest`、`uv run ruff check` 等命令。
 
@@ -52,7 +52,7 @@ Python 开发依赖由根目录 `pyproject.toml` 和 `uv.lock` 锁定，后端�
 source scripts/dev-env/activate.sh
 ```
 
-`make verify` 包含参考 Linux 宿主的服务检查、Python 静态与测试、契约与媒体检查、Web 检查、构建和部署配置检查；实际入口及运行态副作用以 `scripts/dev-env/verify.sh` 和[验证指南](agent-verification.md)为准。可分别使用 `make contracts-check`、`make media-smoke` 和 `make browser-smoke` 调试对应部分。
+`make verify` 包含参考 Linux 宿主的服务检查、Python 静态与测试、契约与媒体检查、Web 检查、构建和部署配置检查；实际入口及运行态副作用以 `scripts/dev-env/verify.sh` 和[验证指南](agent-verification.md)为准。它检查 systemd MinIO 后仍尝试确保默认测试 MinIO 容器，二者默认争用 `127.0.0.1:59000`；启动前须明确安排隔离端点和服务，不能假定默认组合可同时运行。可分别使用 `make contracts-check`、`make media-smoke` 和 `make browser-smoke` 调试对应部分。
 
 `make contracts-check` 校验公共语音 / 工作台 / 管理 OpenAPI、Realtime 事件、预设 / 音色 / 绑定 / 实例 / 容量 / 资格 schema、内部执行与部署控制协议，并验证每个本地 `$ref` 指针存在。`CONTRACT_BASE_REF=origin/main make contracts-compat` 检查 OpenAI 公共契约的明显破坏性变更；使用前核验基线。`make integration-test` 与 `make coordination-test` 要求同时设置隔离的 `SPEECHNEXUS_TEST_DATABASE_URL` 和 `SPEECHNEXUS_TEST_MYSQL_URL`，缺任一变量直接失败，并在 DSN 指向本机默认端点时先调用[协调 MySQL 脚本](../scripts/dev-env/mysql-service.sh)启动实例。`make verify` 在环境检查前确保隔离 MySQL 容器，并为缺失配置提供默认隔离 DSN；直接调用相关共享事务 pytest 时，两项均缺会跳过，只配置一项会失败。`make integration-test` 还要求隔离 MinIO 端点与测试凭据；资产测试使用版本化独立桶，缺少配置失败。默认本机实例可由 `scripts/dev-env/minio-test-service.sh` 启动，不能与占用同一端口的 systemd / Compose MinIO 同时启动。配置与证据范围见[资产发布存储单元](components/production-assets.md)。结构检查与契约测试不替代业务路由、事件序列或真实模型 API 测试。新增契约和类型生成的门禁见[整体技术方案](architecture/technical-blueprint.md#3-契约与类型生成)。
 

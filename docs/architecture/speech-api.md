@@ -366,7 +366,7 @@ TTS、可替换预览、辅助结果与资源控制使用下表的 SpeechNexus �
 | S→C `nexus.operation.done` | `operation_id`、`kind`、`status=succeeded/cancelled/failed`、独立 `cleanup_state`、receipt、error / reason；唯一逻辑终态。`cancelled` 只允许 `not_required` / `complete`；停止未知时使用 `failed` + `quarantined` |
 | S→C `nexus.session.gap` | 输入缺口或新 epoch 的 sample_span / 原因；不得以静音假装没有丢音 |
 | C→S `nexus.session.close` | `event_id`、`mode=drain/abort`；停止接收新 operation |
-| S→C `nexus.session.closed` | 会话终态及未成功 operation 的引用 |
+| S→C `nexus.session.closed` | 会话终态、清理状态及 `operations` 引用；引用的状态可为成功、失败或取消，schema 不保证列表完整 |
 
 事件 schema 在 `nexus.session.update.overrides` 中同时声明 `asr` 和 `tts` 的结构；这只验证字段形状，不能证明活动会话允许更改 TTS 配方。活动会话仍受上文的固定配置与 ASR 白名单限制，服务端须另行执行语义校验；公开 Realtime 路由尚未装配，该限制目前是目标要求。
 

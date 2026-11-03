@@ -32,6 +32,8 @@ GPU 主机、不发布 binding，也不代表模型/硬件资格。
 3. 引擎健康端点可从执行命令的主机访问；命令会把 origin 补成 `/health`，也接受
    显式 `/health` URL。执行者须先独立核对该端点确实属于目标实例及 generation；
    健康检查只要求 HTTP 200 和有界响应，不解析响应以验证模型或实例身份。
+   探测使用标准 HTTP 重定向处理，最终响应为 200 也可能来自重定向目标；证据记录的是
+   原探测 URL，而非最终地址。部署须控制并核对完整跳转链，不能仅凭成功响应确认实例。
 4. 同一实例同一 generation 只能有一个 ready 行；同一池不能有另一个存活 owner。
 5. `speechnexus-register-engine` 控制台脚本需要 backend workspace 包已安装。仓库根
    `pyproject.toml` 是 `package=false` 的 uv workspace，某些 `uv sync` 结果不会在

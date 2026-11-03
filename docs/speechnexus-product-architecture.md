@@ -280,6 +280,8 @@ effective_max_segment_ms = min(
 )
 ```
 
+这是完整参数解析的目标规则。当前可选 producer 模式已能随新绑定草稿保存显式默认值快照并按固定身份读取；已发布快照的检索与完整合并解析仍需单独实现和验收。未声明或不可读取的快照不能当作空默认值，详见[绑定默认值契约](components/binding-parameter-defaults.md)。
+
 如果调用方设定 `constraints.require_exact_parameters=true`，任何自动收紧都返回 422；否则在 effective_configuration 中返回实际值和原因。hard deadline 与所需能力无法同时满足时拒绝，不给出看似有效的组合。
 
 Profile revision 包含 schema_version、required_capabilities、parameters、override_allowlist、override_ranges、SLO 引用与验证记录。发布前执行 schema、能力组合、负样本与质量对照检查；可发布为 experimental 或 production。`override_ranges` 只能约束 allowlist 内的路径，显式范围必须满足 `minimum <= maximum`，allowlist 项没有范围时仅受基础参数 schema 和绑定域约束；同一 capability 只能出现一次，约束不能为空或反向；ASR 的 `max_segment_ms` 不得小于 `preview_interval_ms`。生产预设只绑定具备对应质量资格的模型 / 音色。回滚只是将默认指针切回旧 revision，不修改已固定的作业。

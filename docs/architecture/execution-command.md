@@ -116,7 +116,8 @@ watermark 是传输位置，不是独立用量计量；输入用量以规范输�
 envelope.seq 的 text_seq，从 0 开始连续递增，并使用 Unicode scalar offset；ack 中 `accepted_through_text_seq=-1` 表示尚未接受任何文本事件。该序号与公开 Realtime 的 `nexus.tts.append_text.text_seq` 不同，后者从 1 起，不能直接混用。一次只发送一个
 未确认事件。按相同 text_seq 重发完全相同内容返回原 ack；不同内容冲突，跳号拒绝。
 字符额度是可接受的绝对末端位置，不是叠加赠送；UTF-8 字节与 UTF-16 code unit
-都不能作为字符数，字符额度也不豁免单条消息的字节数上限。旧事件重放返回的原 ack
+都不能作为字符数，不成对代理字符无效。单次 append 的 `text` 须为 1–16384 个字符；
+字符额度也不豁免协商的单条消息字节数上限。旧事件重放返回的原 ack
 不能覆盖较新的已接受位置或额度。commit 的位置须位于上次已提交与已接受位置之间；只向
 adapter 提交不可变前缀，重复 commit 不能重复调度该前缀。finish 精确冻结全部已接受文本并
 提交最后后缀；完成 ack 之后新的 append、commit 和 finish 均被拒绝，原事件精确重放仍成立。

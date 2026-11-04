@@ -48,7 +48,7 @@ Node Controller 镜像验证由 CI 以同提交的 [reusable workflow](../../.gi
 
 完整范围仍要求原有覆盖率、契约漂移/兼容检查及六个真实双数据库分片。集成汇总继续核对同一提交、完整收集、互斥并集和实际执行结果，不以数量或仅收集代替证据。唯一允许的跳过是 `tests/integration/test_gateway_submit_ledger.py` 中以 `[mysql]` 结尾的既有 PostgreSQL 专属产品适配器参数；这不构成 MySQL 协调路径通过的证据，其他必需用例跳过会使汇总失败。
 
-Python 测试作业通过 `python-coverage.py run --workers 2` 在同一 runner 内并发两个 `workbench-pg-probe.py --full-coverage` 进程，运行原完整非集成测试、Workbench PG／Runtime 全集，以及发布证据、绑定生命周期和停用意图三个 Speech PG 测试文件。各进程独占临时 PG、Unix socket 与 coverage 文件；Speech PG 测试在 full coverage 模式使用同一 worker 的私有 socket，不连接 runner 的系统数据库。集成分片仍使用显式配置的双库地址。作业仍只准备一次依赖、Linux inspection 环境及隔离 MinIO。父进程先准备四个 fixture 共用的 `speechnexus-workbench-saved` 测试桶，避免两个进程首次创建竞态；其对象按随机 project 前缀隔离，其余桶按文件独占或随机命名。测试按完整收集的文件分组，文件内用例不拆开，较大文件先分到当前用例数较少的一组；这是确定性的数量均衡，不是耗时均衡。
+Python 测试作业通过 `python-coverage.py run --workers 2` 在同一 runner 内并发两个 `workbench-pg-probe.py --full-coverage` 进程，运行配置的非集成测试目录、脚本显式列出的 Workbench PG／Runtime 文件，以及发布证据、绑定生命周期和停用意图三个 Speech PG 测试文件。Workbench 文件按 `WORKBENCH_PG_TESTS` 和 `WORKBENCH_RUNTIME_TESTS` 清单选择，新增文件不会自动进入此作业；其他集成用例由独立分片收集和执行。各进程独占临时 PG、Unix socket 与 coverage 文件；Speech PG 测试在 full coverage 模式使用同一 worker 的私有 socket，不连接 runner 的系统数据库。集成分片仍使用显式配置的双库地址。作业仍只准备一次依赖、Linux inspection 环境及隔离 MinIO。父进程先准备四个 fixture 共用的 `speechnexus-workbench-saved` 测试桶，避免两个进程首次创建竞态；其对象按随机 project 前缀隔离，其余桶按文件独占或随机命名。测试按完整收集的文件分组，文件内用例不拆开，较大文件先分到当前用例数较少的一组；这是确定性的数量均衡，不是耗时均衡。
 
 Python 测试作业在临时 GitHub 托管 VM 安装 `bubblewrap`，通过 [CI 专用脚本](../../scripts/dev-env/ci-inspection-profile.py)核对固定官方包与规则摘要后加载两条 AppArmor 规则，并先运行真实隔离启动探针。脚本校验仓库、事件、作业、提交及 runner 身份，拒绝覆盖既有规则，每个作业最多尝试加载一次。清理只移除确认由本次加载的规则；加载结果、规则身份或新增同 UID 进程停止状态不确定时保留策略直至 VM 销毁并使作业失败，不重试或全局重载。工作流尝试上传规则身份和清理记录，保留 7 天；作业中断或制品上传失败时不保证留存。此配置仅适用于该托管作业，不能作为其他主机或生产部署已具备隔离条件的证据。
 

@@ -170,7 +170,7 @@ TTS Job 可选 `model_binding={id,revision}` 固定精确版本：新意图要�
 
 ASR 结果的目标设计使用统一 `TranscriptDocument`：`id`、`revision`、`language`、`text`、`sample_rate_hz`、`coordinate_space`、`segments`、`auxiliary_status`。segment 包含 `segment_id`、`sample_span`、`text`、`text_revision`，以及可选 `words`、`speaker_assignments`。统一坐标为 `canonical_audio`、24 kHz，原文件解码 / 重采样映射的 revision 进入 receipt；不能把原文件 48 kHz 下标直接填入 sample_span。`auxiliary_status` 分别声明 alignment / diarization 的 `not_requested | pending | complete | failed | unavailable`。不把 segment 平均时长伪造成 word timestamps；未知说话人为 null / unknown。当前公开 Job 的 `AsrJobResult` 只固定 `transcript_artifact_id` 和 `receipt_id` 等引用，尚未在该契约中定义上述制品正文结构；消费者不能仅凭 Job schema 假定这些字段已经可用。
 
-TTS 制品携带实际 `format`、`sample_rate_hz`、`channels`、`duration_ms`、摘要与 `ExecutionReceipt`。Receipt 区分 requested / effective / observed 参数；只有实际观察到的事实进入 observed，固定 seed 也不承诺跨引擎 bitwise 一致。
+TTS 目标设计要求保留实际格式、采样率、声道、时长、摘要与执行回执。当前公开 `Artifact` / `JobArtifact` 只声明媒体类型、字节数、摘要及可选 `receipt_id` 等元数据，不直接声明 `sample_rate_hz`、`channels` 或 `duration_ms`；`TtsJobResult` 返回音频 Artifact 和 receipt 的 ID。Receipt 区分 requested / effective / observed 参数，但各事实字段并非全部必填；缺失或未知事实须按其 `missing` / `unknown` 表示，不能假定所有音频属性都已从公开响应取得。只有实际观察到的事实进入 observed，固定 seed 也不承诺跨引擎 bitwise 一致。
 
 ### 1.5 能力协商与版本
 

@@ -1142,8 +1142,13 @@
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/workbench/runtime.py",
-          "label": "runtime.py",
-          "note": "固定基线源码"
+          "label": "工作台服务工厂",
+          "note": "固定源码中的工作台装配，不证明跨平台运行资格"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/deploy/web/nginx.conf",
+          "label": "Web 代理配置",
+          "note": "语音与工作台路径指向同一上游；不证明独立上游或 TLS"
         }
       ],
       "issues": []

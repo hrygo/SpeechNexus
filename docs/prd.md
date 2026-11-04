@@ -102,7 +102,7 @@
 
 **验收：**
 
-- 查询、取消、重试、Operation/receipt 与 SSE 的权威状态一致；断线时以持久事件序号和 `Last-Event-ID` 从该序号之后续读，事件历史过期返回 `410 event_history_expired` 后读取当前 Job 状态，不伪造历史；幂等与取消语义一致。
+- 查询、取消、重试、Operation/receipt 与 SSE 的权威状态一致；断线时以持久事件序号和 `Last-Event-ID` 从该序号之后续读，事件历史过期返回 `410 event_history_expired` 后读取当前 Job 状态，不伪造历史；幂等与取消语义一致。当前创建路径在写入事务前读取工作空间和资产状态，事务内未重新核验这两类事实；资源状态变化与创建竞争须另行接入权威裁决并验收。
 - 显式重试创建新的 Job 及独立 attempt 历史，不复活旧 Job；旧执行尚未确认停止时返回 `409 execution_cleanup_pending`。当前公开 Job 路由仅装配创建与读取，取消、重试和 SSE 仍须接线验收。
 
 设计依据：[speech-api.md](architecture/speech-api.md)、[runtime-governance.md](architecture/runtime-governance.md)。

@@ -199,9 +199,9 @@
         "docs/architecture/runtime-governance.md"
       ],
       "implementation": "API 已装配 Job router；该 router 当前只注册创建与读取。",
-      "integration": "已有后台任务调度组件；本次未在该 Job router 看到取消、重试或 SSE 路由。",
+      "integration": "取消、重试及 SSE 路由尚未在该 Job router 注册；创建事务重新核验绑定，但未重查事务前读取的工作空间和资产状态。",
       "verification": "组件或单路连接证据不能证明事件过期后的恢复。",
-      "gap": "已有后台任务调度组件；本次未在该 Job router 看到取消、重试或 SSE 路由。 组件或单路连接证据不能证明事件过期后的恢复。",
+      "gap": "取消、重试及 SSE 路由尚未在该 Job router 注册；创建事务重新核验绑定，但未重查事务前读取的工作空间和资产状态。 组件或单路连接证据不能证明事件过期后的恢复。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/job_dispatch_runtime.py",
@@ -212,6 +212,16 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/interfaces/http/jobs.py",
           "label": "公开任务路由",
           "note": "此路由注册创建和读取"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/application/public_jobs.py",
+          "label": "公开任务资源检查",
+          "note": "提交前读取工作空间和资产状态"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/infrastructure/public_jobs_postgres.py",
+          "label": "公开任务创建事务",
+          "note": "事务内重新核验绑定选择；不重查工作空间或资产状态"
         }
       ],
       "issues": []

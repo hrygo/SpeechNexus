@@ -76,7 +76,7 @@
 - CustomVoice 的一次 intent 对应一次合成，绑定的输入文本最多 400 Unicode codepoints；该限制不是 token 数，也不推广为其他模型或公共任务的通用文本上限。
 - `nexus.overrides.tts.instructions` 入口上限为 2000 codepoints；标准 `SpeechRequest.instructions` 和内部执行命令 `instructions` 上限均为 4096 codepoints；固定 pipeline 的 `instructions` 默认上限为 500 codepoints。分别验证实际入口校验、配置传递与 2001–4096 准入结果，不静默截断。
 - 冻结文本、参数、声音和版本；超限明确拒绝，WAV/MP3/PCM 输出格式、长度、样本数与回执一致，失败不泄露未提交制品。
-- 请求 max_output_audio_ms 收紧执行 policy 和 PCM 上界；保留 100ms 请求不得接受 200ms 结果的反例，覆盖恰好上限、超一帧、低于 binding、重放及编码制品；已有收紧修复不代表完整矩阵已通过。
+- 目标是在请求提供 `max_output_audio_ms` 时收紧执行 policy 和 PCM 上界；保留 100ms 请求不得接受 200ms 结果的反例，覆盖恰好上限、超一帧、低于 binding、重放及编码制品。当前同步 `SpeechRequest` 尚无该字段，现行上界来自部署策略；须先补齐契约再验证请求级限制，已有收紧修复不代表完整矩阵已通过。
 
 设计依据：[speech-api.md](architecture/speech-api.md)、[runtime-governance.md](architecture/runtime-governance.md)。
 

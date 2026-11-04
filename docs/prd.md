@@ -517,7 +517,7 @@
 
 - 原始转写与追加校对修订分层、原文及历史保留；真实结果导入并按固定版本导出文本及冻结格式/语义的字幕时间轴，浏览器通过正式消费者读取，旧数据格式及失败边界保留。
 - 同键重放、冲突、取消未知、刷新/断线、事件过期及迟到保持原身份与上下文；Range、Asset/Artifact过期依契约。
-- 验证真实服务、隔离PG和生产浏览器，音频ready未交付前不标可用；4MiB文本默认上限及上传未知按原Asset/键恢复、Location和X-Should-Retry:false保持。
+- 验证真实服务、隔离 PG 和生产浏览器，音频 ready 未交付前不标可用；Asset 上传未知按原 Asset/键恢复，保持 Location 和 X-Should-Retry:false。当前 Asset 上传上限默认且最高为 4 MiB，默认检查器仅检查文本；同步转写的直接上传使用独立限制，默认 25 MiB、可配置最高 64 MiB，不能混为同一入口。
 - 固定文本、voice/profile/model revision，真实TTS试听及下载，重试不重复发布。
 - 验证Range、MP3/WAV/PCM和过期边界；取消未知、断线、迟到与原键恢复；浏览器不持引擎、数据库或组件凭据。
 - CustomVoice 每 intent 最多 400 codepoints；指令 Nexus 入口上限 2000、标准请求及内部命令上限 4096、固定版本默认 pipeline 上限 500，其有效映射待确认并验证，不静默截断。

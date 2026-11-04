@@ -788,7 +788,7 @@
 
 **验收：**
 
-- 固定稿件revision、有限跟随窗口；低置信暂缓，旧稿或旧epoch不推进；真实声音跟随、键盘与手动接管可验证。
+- 固定稿件revision、有限跟随窗口；低置信暂缓，旧稿或旧epoch不推进；真实声音跟随、键盘与手动接管可验证。 当前页面提供手动阅读与状态保存，自动语音跟随尚未接入；匹配组件或合成测试不代表真实声音跟随已验收。
 - 404 不假定位置 0，CAS 冲突不自动重试；普通提词不依赖 LLM，手动合成证据不代替真实跟随。手动接管和固定稿件版本包含在最终接收范围。
 
 设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[workbench-export-integrity.md](components/workbench-export-integrity.md)。

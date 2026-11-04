@@ -316,7 +316,7 @@
 
 **验收：**
 
-- 配方启用 1.7B 全段复核时，该阶段与 required 辅助在准入前可服务并计入全部阶段预算；未启用全段复核的配方仍须计入其 required 辅助。双工必须整体准入或整体回滚。
+- 配方启用 1.7B 全段复核时，该阶段与 required 辅助在准入前可服务并计入全部阶段预算；未启用全段复核的配方仍须计入其 required 辅助。双工必须整体准入或整体回滚。 当前准入事务具备多阶段预算与实时保留规则；公开实时双工链和公平调度尚须接通并联验，事务组件不能单独证明实时资格。
 - VoiceDesign 加载/热身/执行峰值事先预留；不足排队，不借用实时保留；只在停止与释放事实成立后归还。
 
 设计依据：[runtime-governance.md](architecture/runtime-governance.md)、[technical-blueprint.md](architecture/technical-blueprint.md)。

@@ -1038,7 +1038,7 @@
         "docs/architecture/deployment-units.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "nginx 将工作台和 Speech 路径均转至 api:8000；Compose workbench 是 Web 制品。",
+      "implementation": "nginx 将 /v1/（含 /v1/workbench/）和 /v2/workbench/ 转至同一 api:8000；Compose workbench 使用 Web 镜像，不是独立工作台 API。",
       "integration": "已核对静态工厂或配置；运行时与端到端接线未实测。",
       "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
       "gap": "已核对静态工厂或配置；运行时与端到端接线未实测。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
@@ -1052,6 +1052,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/deploy/compose.yaml",
           "label": "compose.yaml",
           "note": "固定基线源码"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/deploy/images/web.Dockerfile",
+          "label": "Web 镜像定义",
+          "note": "构建工作台前端并由 nginx 提供服务，不证明独立工作台 API"
         }
       ],
       "issues": []

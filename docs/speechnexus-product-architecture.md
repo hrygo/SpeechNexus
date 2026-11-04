@@ -197,13 +197,13 @@ flowchart TD
 | 有界文件转写 | `POST /v1/audio/transcriptions` | OpenAI Audio 转写子集；短请求同步返回，长任务显式改 Job |
 | 完整文本合成 | `POST /v1/audio/speech` | OpenAI Audio TTS 子集；默认 MP3，可声明 WAV / PCM；音频流不等于增量文本输入 |
 | 实时识别 / 增量文本合成 | 预创建 nexus session 后连接 `/v1/realtime?session_id=...`；标准 SDK 也可用 `/v1/realtime?model=...` 直连仅转写会话 | 预创建会话的 TTS、可修订预览、背压与整体终态使用 `nexus.*`；直连模式仅支持声明的转写子集 |
-| 持久化 ASR / TTS | `POST /v1/nexus/jobs` | 版本固定、查询 / 取消 / 续作与已提交 Artifact；内容可在保留期内下载 |
+| 持久化 ASR / TTS | `POST /v1/nexus/jobs` | 版本固定、查询 / 取消 / 显式重试与已提交 Artifact；显式重试创建新 Job，内容可在保留期内下载 |
 | 音色创作 | `/v1/nexus/voice-designs`、`/voice-clones` 与草稿子资源 | 生成、修改后再生成、试听、校验和显式发布；生产 TTS 只引用已发布版本 |
 | 可选应用业务 | `/v1/workbench/` 及契约声明的部分 `/v2/workbench/` 路径 | 会议、助手、提词、有声书与独立导出；不宣称 OpenAI 兼容，具体路径以工作台契约为准 |
 
 标准 REST 请求不要求 nexus、workspace 或工作台项目字段。兼容范围、默认值、错误、幂等、会话状态、音色版本与调用示例以[语音接口](architecture/speech-api.md)为准。上述实时路径均为契约目标，当前生产组合根尚未装配公开 Realtime WebSocket 路由及真实实时执行链。标准 SDK 直连也只支持声明的转写子集，不能宣称任意 OpenAI Realtime 客户端无修改可用；底座不承载 LLM response、tool call 或播放完成事实。
 
-音色设计、克隆和草稿发布入口同样是目标契约，当前不构成已接通的生产音色创作链；预置音色的独立资格或受控 TTS 证据不能替代该链的验收。工作台读取公开音色目录的范围见[音色目录消费者](components/workbench-voice-catalogue.md)。
+Job 的取消与重试也是契约目标；当前公开 Job 路由只装配创建和按 ID 读取。音色设计、克隆和草稿发布入口同样是目标契约，当前不构成已接通的生产音色创作链；预置音色的独立资格或受控 TTS 证据不能替代该链的验收。工作台读取公开音色目录的范围见[音色目录消费者](components/workbench-voice-catalogue.md)。
 
 工作台有独立 API 工厂；默认 Web 代理将上述路径转发到 `api:8000`，并未接入独立 Workbench runtime。实际部署须按[部署单元规划](architecture/deployment-units.md)配置上游，不能仅凭契约路径推断页面已连通工作台服务。
 

@@ -127,34 +127,11 @@ date: 2026-10-28
 4. 是否单次观测、是否 P95、是否重复；
 5. 通过/失败规则。
 
-样例的采样事实：
-
-| 场景 | 样本 | 采样边界 |
-| --- | --- | --- |
-| FLEURS baseline | 1 段 10.38 s | 干净朗读；CER 0；latency 单次 421 ms，不是 P95 |
-| 长音频 | 5 段，62.84–279.5 s | 25 段 FLEURS 拼接 + 400 ms 静音；朗读语音，不是自发长语音 |
-| 8 kHz | 2 个变体 | 直接重采样 + 300–3400 Hz 带限；不是真实电话录音 |
-| FLEURS 25 distinct | 25 段 | 25 个不同输入产生 25 个不同输出；反模板复读，不是质量指标 |
-| AISHELL-4 远场 | 3 段 | 公共远场会议数据，不是产品麦克风/房间 |
-| ASCEND 混说 | 1 段 | zh-en 混说；只证明拉丁词形保留与 1 个语义替换，不是混说准确率 |
-| babble | 3 个 SNR（10/5/0 dB） | 4 说话人合成 babble；0 dB 失败 |
-| 重叠 | 1 段 | 两个 FLEURS 说话人等 RMS 叠加；无分离/时间戳 |
-| 静音/噪声 | 1 段 8 s 白噪声 | 只证明该样本返回空文本，不是广泛幻觉资格 |
-| gateway E2E / cancel / concurrency / real noise / dialect | 0 | 未执行；见 §6 |
+历史实验的采样边界见[样例归档](../archive/operations/2026-10-28-qualification-report-example.md)。
 
 ### 4.3 阈值
 
-阈值不是 schema 字段；必须在 `notes` 里写“Pass rule / Fail rule”，并让非作者 reviewer 能独立重算。样例的阈值例子：
-
-- baseline：标点归一化后 CER = 0%；
-- 长音频：5 个时长全部 HTTP 200、包含最后一段、无截断；
-- 8k：两个变体 CER = 0%；
-- 25 distinct：25 个输出全部不同；
-- AISHELL-4：每个样本 CER < 5%；
-- ASCEND：所有拉丁词保留表面形式，且唯一语义替换被披露；
-- babble：10/5/0 dB 都必须保留完整目标句；0 dB 失败；
-- 重叠：必须分离说话人；当前 0%，失败；
-- 静音：8 s 白噪声返回空文本（单样本 smoke）。
+阈值不是 schema 字段；必须在 `notes` 里写“Pass rule / Fail rule”，并让非作者 reviewer 能独立重算。历史实验的具体阈值见[样例归档](../archive/operations/2026-10-28-qualification-report-example.md)。
 
 阈值必须有来源：产品 AC、场景 profile、或明确的研究问题。不能为了“让结果通过”事后改阈值；阈值变更要新测试套件 revision 和新报告。
 
@@ -185,35 +162,11 @@ else:
 
 ## 6. 失败模式、适用范围与有效期
 
-### 6.1 失败模式（样例已记录）
+### 6.1 失败模式与适用范围
 
-| 失败/限制 | 事实 | 影响 |
-| --- | --- | --- |
-| babble 0 dB | 目标句保留率 66.7%（3 个 SNR 中 0 dB 改了 1 个目标字）；babble 说话人内容泄漏到输出 | 强噪声下不能承诺逐字保留；需要降噪/分离或产品降级 |
-| 双人重叠 | 说话人分离 0%；内容混合/丢失；无时间戳/说话人标签 | 不能用于会议/多人重叠转写 |
-| 8 kHz | 仅是重采样/带限干净语音 | 不能等同于真实电话信道 |
-| 长音频 | 最长 279.5 s，拼接朗读；上下文上限未触达 | 超过该时长/自发长语音未知 |
-| AISHELL-4 | 3 个远场样本，非产品麦克风/房间 | 不能外推到产品设备 |
-| ASCEND | 1 个样本；1 个语义替换 | 不是混说准确率 |
-| 静音/噪声 | 1 个白噪声样本 | 不是广泛幻觉资格 |
-| gateway/cancel/concurrency | 未执行 | 公开网关、持久化、超时/重试、取消/隔离、并发/P95 全部未证明 |
-| 资源峰值/带宽 | 12 GiB 是 cgroup 上限；CPU/PCM/scratch/带宽未观测 | 不能把声明当实测；容量证据仍是实验级 |
+报告应按语言、信道、噪声、设备、时长、并发、取消、网关和输出逐项记录已覆盖与未覆盖范围，以及失败对产品使用的影响。历史实验的具体记录见[样例归档](../archive/operations/2026-10-28-qualification-report-example.md)。
 
-### 6.2 适用范围
-
-| 维度 | 已覆盖 | 未覆盖 |
-| --- | --- | --- |
-| 语言 | FLEURS zh；ASCEND zh-en 混说 | 方言、口音、其他语言（定义虽支持 `auto/zh/en`，但没有相应资格） |
-| 口音 | 无 | 方言/口音未测 |
-| 噪声 | 合成 babble、白噪声、AISHELL-4 远场 | 真实街道/餐厅/产品设备噪声 |
-| 信道 | 16 kHz 干净语音；8 kHz 派生 | 真实电话、产品麦克风、远场阵列之外的房间 |
-| 时长 | 10.38 s baseline；62.84–279.5 s 长音频 | >279.5 s、上下文极限、自发长语音 |
-| 并发 | 无（串行） | 并发、P95、持续吞吐、KV cache 实际上限 |
-| 取消/隔离 | 无 | abort、停止证明、quarantine 恢复、预算释放 |
-| 网关 | 无（全部直连引擎 127.0.0.1:8100） | correlation、artifact 持久化、timeout、retry |
-| 输出 | 文本/分段 | 时间戳、说话人、对齐 |
-
-### 6.3 有效期
+### 6.2 有效期
 
 - 提供 `expires_at` 时，`qualified_at` 必须早于它；样例为 90 天（2026-10-27 → 2027-01-25）；
 - `production` 不得使用 `expires_at: null`；到期即失效，不能继续支撑发布；
@@ -359,8 +312,5 @@ fixture 或放宽校验消除；应由绑定作者发布新的不可变 revision
 2. **报告不记录 license**：license 在 artifact pin；发布检查清单/法务接受需单独留痕。不要往报告塞自由字段。
 3. **报告不记录模型文件逐个 digest**：只在 artifact pin；reviewer 必须把 pin 与制品存储核对。本任务未下载模型，不能声称已核验权重字节。
 4. **内部工作与辅助阶段的覆盖**：当前样例只有 ASR stage；内部 VAD 的制品、资源和资格证据仍须覆盖。独立执行的对齐或分离阶段须在配方与 manifest 中声明并增加对应场景；报告不能只靠 `parameter_defaults` 推断。
-5. **gateway/cancel/concurrency 是 required 但未执行**：这是当前 `incomplete` 的主因。后续卡应先在隔离环境补这三类证据，再谈生产。
-6. **资源峰值/带宽未测**：12 GiB 是 cgroup 上限；CPU/PCM/scratch/带宽是声明；建议补资源高水位测量，尤其是 `host_pcm_buffer_bytes` 和 ingress/egress。
-7. **原始主记录未提供**：`DEL-103-evidence.md` 未随任务提供；本报告只能标“转述”。建议证据接收人补原始记录或明确其保留位置，否则不能升级为独立复核。
-8. **通用 binding 发布入口不验证报告原文件**：`speechnexus-publish-binding` 记录证据 ID 和可选摘要，并核对容量 manifest ID 与 binding 定义；它不读取报告文件核验完整性或摘要。离线脚本提供额外核对，不能单独当作产品门禁。内建声音资格的授权、签发和发布入口另行调用上述只读 release 核验组件，仍须遵守各自的部署和资格边界。
-9. **`local-test-capacity-1` 禁止进入真实路径**：测试可以用，但真实 manifest/report/definition/evidence 的 id 必须是稳定、可追溯的真实 ID；脚本会拒绝 `local-test-*`。
+5. **通用 binding 发布入口不验证报告原文件**：`speechnexus-publish-binding` 记录证据 ID 和可选摘要，并核对容量 manifest ID 与 binding 定义；它不读取报告文件核验完整性或摘要。离线脚本提供额外核对，不能单独当作产品门禁。内建声音资格的授权、签发和发布入口另行调用上述只读 release 核验组件，仍须遵守各自的部署和资格边界。
+6. **`local-test-capacity-1` 禁止进入真实路径**：测试可以用，但真实 manifest/report/definition/evidence 的 id 必须是稳定、可追溯的真实 ID；脚本会拒绝 `local-test-*`。

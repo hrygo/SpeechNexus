@@ -109,8 +109,8 @@ opened 必须回显相同模式、执行身份与 fencing。TTS command.text 和
 Base64 音频。每帧一个 PCM chunk，32 字节头以 `SNX1` 开始；必须先收到 `stream.opened`。
 契约要求内部管理网络的握手使用 TLS 和组件凭据，凭据只放在获准的握手头或客户端证书中，
 不能放进事件、URL 或音频帧。`stream.heartbeat` 和 `stream.closed` 的输入 / 输出
-watermark 是传输位置，不是独立用量计量；输出用量以 `output_sample_intervals` 的区间账本
-为权威，不能按最大水位结算。上述是协议要求，不证明当前流式链路或真实计量采集器已装配。
+watermark 是传输位置，不是独立用量计量；输入用量以规范输入区间账本为权威，输出用量以
+`output_sample_intervals` 的区间账本为权威，不能按最大水位结算。上述是协议要求，不证明当前流式链路或真实计量采集器已装配。
 
 收到 opened 后才能发送 append/commit/finish；三类事件在每个 epoch 共用独立于
 envelope.seq 的 text_seq，从 0 开始连续递增，并使用 Unicode scalar offset；ack 中 `accepted_through_text_seq=-1` 表示尚未接受任何文本事件。该序号与公开 Realtime 的 `nexus.tts.append_text.text_seq` 不同，后者从 1 起，不能直接混用。一次只发送一个

@@ -815,9 +815,9 @@
 **验收：**
 
 - 批准内网LLM POST返回202后GET succeeded，output_text非空，speech_job_id可真实查询且属于同turn；voice已发布并固定revision和资格。
-- queued/running/succeeded/failed/cancelled语义；同键重放、丢回执/重启不重复创建Job，同键异体409；HTTP 200/202取消与OpenAPI一致，原身份查询恢复，未获证不宣称停止释放。
+- queued/running/succeeded/failed/cancelled语义；同键重放、丢回执/重启不重复创建Job，同键异体409；HTTP 200/202取消与OpenAPI一致，原身份查询恢复，未获证不宣称停止释放。当前助手路由对活跃轮次返回200、已终态返回202，与OpenAPI的状态码描述相反，尚须修复并验收。
 - 插话先停旧播放，文本/TTS/播放器generation关联，迟到音频隔离；超时取消后远端stop/release对账。
-- 默认关闭零落库、无公有云回退；真实HTTP/隔离PG/生产浏览器、失败注入、质量和内容出站、父预算/混合负载证据独立于fake。
+- 默认关闭时不新增轮次、无公有云回退；当前创建入口先检查启用状态，关闭时已接受轮次的原键POST也被拒绝，仍可按原turn ID查询。真实HTTP/隔离PG/生产浏览器、失败注入、质量和内容出站、父预算/混合负载证据独立于fake。
 - 能力为 disabled 或 unavailable 时不提供创建入口；failed 必有错误，非 failed 不得伪造错误，succeeded 必有关联真实 Job 和非空文本。
 
 设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[workbench-export-integrity.md](components/workbench-export-integrity.md)。

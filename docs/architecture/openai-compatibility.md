@@ -137,7 +137,7 @@ with client.realtime.connect(model="asr-quality") as connection:
 
 兼容模式只保证声明的标准 ASR 事件；`conversation.item.input_audio_transcription.completed` 包含 OpenAI 形状的 `usage`，默认由已接受段样本时长计算，仅在绑定提供真实 token 证据时才允许 token 用量，不使用虚构 token 数。`session.audio.input` 的层级与官方 SDK 3.x transcription session 形状一致；`include`、semantic VAD 和未声明音频格式显式拒绝。TTS、可修订假设、辅助结果、背压 credit 与整体终态使用 `nexus.*` 事件，必须通过 `POST /v1/nexus/realtime/sessions` 创建会话后再连接 `GET /v1/realtime?session_id=...`。连接请求必须且只能提供 `session_id` 或 `model` 之一；同时提供不符合契约，不能把两个参数都省略视为有效连接。
 
-服务拒绝未声明事件而不是静默忽略。依赖 OpenAI LLM response、tool call、conversation history 或 semantic VAD 的客户端不属于兼容范围。
+契约要求服务拒绝未声明事件而不是静默忽略。依赖 OpenAI LLM response、tool call、conversation history 或 semantic VAD 的客户端不属于兼容范围。
 
 ## 3. 增强扩展规则
 
@@ -146,7 +146,7 @@ with client.realtime.connect(model="asr-quality") as connection:
 1. **路径命名空间**：增强 REST 位于 `/v1/nexus/`；工作台业务使用 `/v1/workbench/` 或契约声明的 `/v2/workbench/`。标准 `/v1/audio/*`、`/v1/models` 不承担音色创作、Job 或工作台语义。
 2. **字段命名空间**：标准 JSON 请求中的增强字段只能放在可选 `nexus` 对象；multipart 转写的 `nexus` 是 JSON 字符串，并由 `TranscriptionNexusOptions` 冻结内部 schema。标准客户端省略该字段时行为完整。
 3. **事件命名空间**：标准 ASR 事件保持 OpenAI 名称；TTS、假设修订、辅助元数据、credit、gap 和操作终态使用 `nexus.*`。同一配置只有一套状态，`session.update` 与 `nexus.session.update` 映射到同一规范命令。
-4. **严格校验**：未知字段、未知事件、布尔冒充整数、非法单位和不支持的标准参数返回稳定错误，不做静默降级或别名翻译。
+4. **严格校验**：契约要求未知字段、未知事件、布尔冒充整数、非法单位和不支持的标准参数返回稳定错误，不做静默降级或别名翻译。当前同步 TTS 对 `nexus.overrides` 顶层未知键的处理仍有缺口，见第 1 节。
 5. **版本固定**：版本字段依请求类型而异：同步 TTS 的 `nexus` 可指定 profile、voice 和 pronunciation revision，同步转写的 `nexus` 可指定 profile revision；持久 TTS Job 还可用 `model_binding` 指定绑定版本。两个同步入口的 `profile_id` 和 `profile_revision` 必须同时提供或同时省略；转写入口不接受 `voice_revision`、`pronunciation_revision` 或 `model_binding`。具体字段与限制以对应请求 schema 为准，不能假定所有入口都接受这些字段。目标设计在首次接受意图时解析并固定默认值，执行前重新核对能力、策略和容量；Job 已接受不代表资源准入或执行已完成。
 6. **职责分离**：`nexus` 只承载语音底座增强；项目、会议、助手和有声书编排留在工作台命名空间，不反向写入底座表。
 7. **可验证等价**：目标设计要求便捷入口与 `POST /v1/nexus/jobs` 映射到同一规范意图和幂等摘要。当前同步入口拒绝客户端幂等键，不能据此声称等价恢复已交付。新增扩展必须同时提供正例、负例、事件序列和所有消费者的等价测试。

@@ -27,7 +27,7 @@ date: 2026-10-26
 | A 收尾 PR | [#221](https://github.com/hrygo/SpeechNexus/pull/221)，head `b7e65f4a119999e720d594200c53dc683bec5526` | 已提交共享媒体包、私有音频检查/回执与窄消费者；尚未合入，B 尚未实际接收 |
 | A 详细交接 | [#221 固定版本交接](https://github.com/hrygo/SpeechNexus/blob/b7e65f4a119999e720d594200c53dc683bec5526/docs/plans/2026-10-26-team-a-final-handoff.md) | 随候选评审，不能当作 main 文件或公开音频 ready |
 | B 详细交接 | [团队 B 交接](2026-10-26-team-b-handoff.md) | B00–B07 剩余范围、真实探针、C 回执、归档与恢复 |
-| C 当前事实 | [有声书实现/证据矩阵](../../audits/2026-10-26-team-c-render-loop-status.md)、[证据保留事故](../../audits/2026-10-26-team-c-evidence-retention.md)、#35–#43 | 分段实现和未决审查并存，不能只读成功摘要 |
+| C 当前事实 | [有声书实现/证据矩阵](../audits/2026-10-26-team-c-render-loop-status.md)、[证据保留事故](../../audits/2026-10-26-team-c-evidence-retention.md)、#35–#43 | 分段实现和未决审查并存，不能只读成功摘要 |
 | 调度与状态 | [总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)、各 issue 正文 | 远端为当前进度来源，带日期矩阵仅为快照 |
 
 #221 不是 #220 的已合入依赖；审阅 #220 时没有将 #221 的产品改动移入本 PR。

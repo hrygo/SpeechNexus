@@ -72,8 +72,8 @@
 | `docs/audits/2026-10-26-team-c-operation-coverage.md` | 历史保留 | 全文阅读，固定 head 的工作台操作接线映射；历史交接按当时范围引用，未重跑映射守卫 |
 | `docs/audits/2026-10-26-team-c-realtime-focus.md` | 历史保留 | 全文阅读，固定基线的焦点修复、反例及后续合入记录；未重跑测试或复核远端 CI |
 | `docs/audits/2026-10-26-team-c-realtime-integrity.md` | 历史保留 | 全文阅读，固定基线的实时发送和本地停止修复及合成验证；未重跑测试 |
-| `docs/audits/2026-10-26-team-c-remaining-gaps.md` | 历史保留 | 全文阅读，固定收尾基线的团队 C 缺口及交接条件；由历史交接引用，未将其作为当前进度 |
-| `docs/audits/2026-10-26-team-c-render-loop-status.md` | 历史保留 | 全文阅读，固定收尾基线的有声书实现与证据矩阵；由历史交接引用，未重验当时证据 |
+| `docs/archive/audits/2026-10-26-team-c-remaining-gaps.md` | 历史保留 | 全文阅读，固定收尾基线的团队 C 缺口及交接条件；由历史交接引用，未将其作为当前进度 |
+| `docs/archive/audits/2026-10-26-team-c-render-loop-status.md` | 历史保留 | 全文阅读，固定收尾基线的有声书实现与证据矩阵；由历史交接引用，未重验当时证据 |
 | `docs/audits/2026-11-03-controlled-tts-prepare.md` | 历史保留 | 2026-11-03 各窗口验收与清理快照，已区分第六窗口结论和第五窗口历史缺口；各窗口原始事实未逐项重验 |
 | `docs/audits/README.md` | 已核对 | 对照选编记录的标题、摘要和证据边界，明确历史 UI/UX 评级限制与选编范围；未逐项重验原始证据 |
 | `docs/components/README.md` | 已核对 | 核对索引中各目标文件、标题与候选状态；不代表目标正文已审 |

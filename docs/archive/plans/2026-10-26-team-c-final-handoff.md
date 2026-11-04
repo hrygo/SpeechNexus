@@ -22,7 +22,7 @@ date: 2026-10-26
 | [B 收尾 #220](https://github.com/hrygo/SpeechNexus/pull/220) | 提供[项目统一交接](https://github.com/hrygo/SpeechNexus/blob/45bc90ed0fcc36264022b0c2f684e3d9006685ec/docs/audits/2026-10-26-project-handoff.md)及 B 的完整证据、归档与剩余范围；该文件目前属于待审候选 |
 | [A 收尾 #221](https://github.com/hrygo/SpeechNexus/pull/221) | head `a0006736d59e38d506cadc19a74483d73d47c3b8`（实现提交 `b7e65f4`）；[A 交接](https://github.com/hrygo/SpeechNexus/blob/a0006736d59e38d506cadc19a74483d73d47c3b8/docs/plans/2026-10-26-team-a-final-handoff.md)与共享媒体/私有检查回执，尚待集成和 B 实际接收 |
 | [本轮全量 issue 核对](../audits/2026-10-26-team-c-closeout-issue-audit.md) | 全部 40 项正文、状态与元数据核对，保留目标/AC；状态标签描述实施程度，不表示 agent 仍在自动执行 |
-| [C 实现/证据矩阵](../../audits/2026-10-26-team-c-render-loop-status.md)、[缺口表](../../audits/2026-10-26-team-c-remaining-gaps.md) | C07 已接线范围、未决代码审查和依赖，不把 C 自有风险都归为外部阻塞 |
+| [C 实现/证据矩阵](../audits/2026-10-26-team-c-render-loop-status.md)、[缺口表](../audits/2026-10-26-team-c-remaining-gaps.md) | C07 已接线范围、未决代码审查和依赖，不把 C 自有风险都归为外部阻塞 |
 | [C 协作方案](2026-10-26-team-c-next-phase-execution-and-collaboration.md) | A/B 联审后的 v1.2.0 历史方案，已转为 superseded；C-N01–07 供重新规划，不是开工指令 |
 | [阶段 Goal](2026-10-25-team-c-next-phase-goal-and-acceptance.md)、[原始 Goal](2026-10-24-team-c-goal.md) | 原 T01–T11、AC-01–12、C00–C08 范围及历史证据，均不再自动执行 |
 

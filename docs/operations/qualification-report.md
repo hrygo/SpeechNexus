@@ -389,7 +389,7 @@ uv run --no-project \
 - 对传入的 `--binding-definition` 与快照内定义分别执行同一组语义检查：`capacity_manifest_id` 存在且等于 manifest、release tier 可识别并一致、stage roles/tasks/max segment 对应（输出前缀分别为 `binding_definition.*` 与 `definition.*`）；
 - 当提供相应输入时，对 live DB 查询结果或快照中的 revision/publication/evidence/instance/host/pool/workspace 账本执行检查；快照模式不查询数据库。
 
-历史样例正例输出 `RESULT PASS_WITH_WARNINGS`（optional 非通过、fixture source），负例把定义/证据改成 `local-test-capacity-1` 后输出 `RESULT FAIL`、退出码 `1`，并给出 `definition.capacity_manifest_id`、`definition.placeholder`、`database.evidence_identity`、`database.evidence_placeholder` 等失败项。原始输出见 `docs/operations/release-evidence-verification-output.txt`；重跑时会按当前时间检查有效期，不能预设结果相同。
+历史样例正例输出 `RESULT PASS_WITH_WARNINGS`（optional 非通过、fixture source），负例把定义/证据改成 `local-test-capacity-1` 后输出 `RESULT FAIL`、退出码 `1`，并给出 `definition.capacity_manifest_id`、`definition.placeholder`、`database.evidence_identity`、`database.evidence_placeholder` 等失败项。原始输出见 `docs/archive/operations/release-evidence-verification-output.txt`；重跑时会按当前时间检查有效期，不能预设结果相同。
 
 脚本正常输出检查结果时，出现 `FAIL` 返回退出码 `1`；`PASS_WITH_WARNINGS` 和仅有 `NA` 的结果仍返回 `0`。因此必须检查各条 `WARN` / `NA` 的含义，退出码为零不证明未执行或无法判定的检查已通过。
 
@@ -424,4 +424,4 @@ fixture 或放宽校验消除；应由绑定作者发布新的不可变 revision
 | `deploy/engines/file-asr-audio/evidence/gb10-20261027/README.md` | 样例包说明与摘要 |
 | `tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json` | 一致性规则 fixture |
 | `scripts/dev-env/verify-release-evidence.py` | 只读一致性校验 |
-| `docs/operations/release-evidence-verification-output.txt` | 实际运行原始输出 |
+| `docs/archive/operations/release-evidence-verification-output.txt` | 实际运行原始输出 |

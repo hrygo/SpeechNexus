@@ -521,4 +521,4 @@ FROM speech.workspace_quotas WHERE workspace_id = '<workspace-id>';
 | `deploy/engines/file-asr-audio/evidence/gb10-20261027/README.md` | 样例包说明与摘要 |
 | `tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json` | 一致性规则 fixture |
 | `scripts/dev-env/verify-release-evidence.py` | 只读一致性校验 |
-| `docs/operations/release-evidence-verification-output.txt` | 实际运行原始输出 |
+| `docs/archive/operations/release-evidence-verification-output.txt` | 实际运行原始输出 |

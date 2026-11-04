@@ -190,7 +190,7 @@ TTS 制品携带实际 `format`、`sample_rate_hz`、`channels`、`duration_ms`�
 
 模型 binding 的退役、激活与历史 revision 回滚已通过显式 head 指针和 append-only 审计事件落地；普通 `retire` 只影响后续选择，在途 Job 保持准入时固化的有效配置。`disable` 还登记持久停用意图，受停用屏障和清理流程约束，其回执不证明执行已停止或容量已释放，见[绑定生命周期](../operations/binding-lifecycle.md)。内建声音已有独立资格与发布路径，受控证据见[声音资格说明](../operations/builtin-voice-qualification.md)；不能把 binding 的验证结果外推为 voice 资格，声音创建等其他路径须各自验收。
 
-模型绑定发布同时负责把一个 draft revision 激活为当前 revision。请求中的 `expected_revision` 是目标 revision，`expected_current_revision` 是发布前的当前指针；两者分离，避免并发发布时“谁最后提交谁生效”的丢失更新。指针已变化返回 `409 configuration_changed`，目标不是 draft 返回 `409 binding_not_draft`；首期没有身份或审批层级，CAS 只保证操作者看到的是自己确认的版本。
+目标契约中的模型绑定发布同时负责把一个 draft revision 激活为当前 revision；当前发布 HTTP 路由尚未实现，已有修订的发布使用[运维命令](../operations/publish-binding-revision.md)。契约请求中的 `expected_revision` 是目标 revision，`expected_current_revision` 是发布前的当前指针；两者分离，避免并发发布时“谁最后提交谁生效”的丢失更新。指针已变化返回 `409 configuration_changed`，目标不是 draft 返回 `409 binding_not_draft`；首期没有身份或审批层级，CAS 只保证操作者看到的是自己确认的版本。
 
 场景预设的目标契约采用同样的不可变 revision / 当前指针分离规则。当前实现仅提供 `POST /v1/nexus/admin/profiles` 根据 `expected_latest_revision` 原子分配只读 draft revision 和固定 revision 读取；发布、激活及公共列表仍属未交付范围，见[Profile 草稿](../components/profile-drafts.md)。目标契约要求 `POST .../revisions/{revision}/publications` 提交对应的 `ProfileValidation`，核对参数域、能力组合、override 范围和 production 资格后才切换当前指针；回滚通过 `.../activations` 选择已发布 revision，退役通过 `.../retirements` 清除当前指针而不自动回退。已固定的 Job / 实时会话继续使用其 revision，管理操作只影响后续选择。
 

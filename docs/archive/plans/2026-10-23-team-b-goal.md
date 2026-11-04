@@ -66,7 +66,7 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 #142 仍是 B03 阶段子任务；
 #149 是后续助手交接，不增加原 25 个主工作包的分母。
 
-真实模型分段成果继续有效：[ASR 生命周期](../../audits/2026-10-24-b02-real-asr-controller-probe.md)、
+真实模型分段成果继续有效：[ASR 生命周期](../audits/2026-10-24-b02-real-asr-controller-probe.md)、
 [文件 ASR](../../audits/2026-10-24-b03-file-asr-probe.md)、
 [CustomVoice TTS](../../audits/2026-10-24-b03-tts-adapter-probe.md)。
 CustomVoice 确实能合成；Base、VoiceDesign、克隆、实时和 P95 各自待验，不能互相替代。

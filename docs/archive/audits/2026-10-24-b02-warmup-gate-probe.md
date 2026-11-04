@@ -1,6 +1,6 @@
 ---
 title: "B02 真实 ASR 预热就绪门探针"
-status: in_progress
+status: archived
 version: "0.1.0"
 date: 2026-10-24
 ---

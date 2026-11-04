@@ -102,7 +102,7 @@ PG/InnoDB 上验证 A create→HTTP→A observe、原应用重启/精确重放�
 新增的观察循环场景运行真实 app lifespan/SQLite/回环 TLS，由脚本化 daemon 更新本地事实；
 调用方只 GET 原身份，不手动 reconcile。PG/InnoDB 分别验证：自动 ready 缺资格不缩减 peak，
 补齐合成资格后由 A 事务转 steady；自动 absent 没有停止双证据时即使 prepare 报失败，也不归还
-权威基线。真实容器上的进程重启与自动推进另见 [B02 HTTP 探针第 7 节](../audits/2026-10-24-b02-controller-http-shell-probe.md#7-节点内自动观察与未决状态下重启2026-10-24)。
+权威基线。真实容器上的进程重启与自动推进另见 [B02 HTTP 探针第 7 节](../archive/audits/2026-10-24-b02-controller-http-shell-probe.md#7-节点内自动观察与未决状态下重启2026-10-24)。
 
 停止恢复场景另装配真正的 Docker adapter 与 SQLite 检查点：合成 daemon 先退出但保留容器，
 A 消费缺少释放证明的观察后保持占用；重启同一 SQLite 后由节点循环完成删除与双证据，A 的事务

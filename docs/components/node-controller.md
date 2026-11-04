@@ -115,9 +115,9 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
   身份等**领域拒绝**仍原样抛出，不被这条翻译吞掉。
 
 合成容器上的真实 prepare → ready → stop 证据（含为何需要 `Init=true`）见
-[B02 容器生命周期探针](../audits/2026-10-24-b02-controller-container-lifecycle-probe.md)。
+[B02 容器生命周期探针](../archive/audits/2026-10-24-b02-controller-container-lifecycle-probe.md)。
 两个真实 ASR 引擎的有界加载、HTTP 健康、合成语音、回执重建与停止证据见
-[B02 真实 ASR 探针](../audits/2026-10-24-b02-real-asr-controller-probe.md)；其静音幻觉与长
+[B02 真实 ASR 探针](../archive/audits/2026-10-24-b02-real-asr-controller-probe.md)；其静音幻觉与长
 非语音慢响应仍未解决，不能宣称实时资格。
 
 **模板配置升级**：旧模板文件缺少 `container_memory_limit_bytes` 时启动即拒绝，不能静默继续
@@ -153,7 +153,7 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
   避免出现第二套字段定义；合约校验会同时验证生产投影与冻结响应形状。
 
 真实进程级证据（生产入口进程、一次性真实凭据、真实 daemon、真实持久存储、重启后意图仍在）见
-[B02 控制器 HTTP 外壳与持久意图探针](../audits/2026-10-24-b02-controller-http-shell-probe.md)。
+[B02 控制器 HTTP 外壳与持久意图探针](../archive/audits/2026-10-24-b02-controller-http-shell-probe.md)。
 
 ## 4. 可执行规则
 
@@ -262,7 +262,7 @@ TLS＋PG/InnoDB 回归分别验证自动 ready 无资格不得缩减、自动 ab
   未完成时报告 `warming_up` 并保持 peak。真实 0.6B/1.7B 容器已取得
   `loading → warming_up → ready` 序列与首轮/立即重复耗时（0.6B 约 30–32 秒 → 0.4 秒，
   1.7B 约 50 秒 → 2.2 秒），见
-  [B02 预热门探针](../audits/2026-10-24-b02-warmup-gate-probe.md)。这些是一次性单并发证据，
+  [B02 预热门探针](../archive/audits/2026-10-24-b02-warmup-gate-probe.md)。这些是一次性单并发证据，
   不是稳态 P95、并发资格，也不能单凭该探针证明 A 控制循环中的 peak→steady 预算缩减。
 - 已有 Qwen3-ASR 0.6B/1.7B 的真实 GPU `DeviceRequests`、固定容器上限、HTTP ready、合成
   语音、回执重建、warmup 与停止证据。文件 CustomVoice TTS 适配器另有真实探针；

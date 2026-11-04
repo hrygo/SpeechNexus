@@ -51,8 +51,8 @@
 | [架构与契约修复闭环](audits/2026-10-23-architecture-contract-repair-closure.md) | 历史审查：初验与终审的修复映射、验证证据及当时未验证边界 |
 | [集群协调重构后的架构与契约审查](audits/2026-10-23-architecture-contract-post-refactor-review.md) | 历史审查：运行角色、双库门禁、契约结果、端口原型与当时开放项 |
 | [B00 MegaCube 环境与能力缺口前检](audits/2026-10-24-b00-megacube-environment-and-capability-gap.md) | 历史环境快照：GB10 主机、GPU 占用、制品及首次 ASR 生命周期探针 |
-| [B02 控制器容器生命周期探针](audits/2026-10-24-b02-controller-container-lifecycle-probe.md) | 历史探针：合成容器的 prepare / ready / stop、停止双证据与清理结果 |
-| [B02 控制器 HTTP 外壳与持久意图探针](audits/2026-10-24-b02-controller-http-shell-probe.md) | 历史探针：控制器进程鉴权、生命周期、停机双证据与重启后的持久意图 |
+| [B02 控制器容器生命周期探针](archive/audits/2026-10-24-b02-controller-container-lifecycle-probe.md) | 历史探针：合成容器的 prepare / ready / stop、停止双证据与清理结果 |
+| [B02 控制器 HTTP 外壳与持久意图探针](archive/audits/2026-10-24-b02-controller-http-shell-probe.md) | 历史探针：控制器进程鉴权、生命周期、停机双证据与重启后的持久意图 |
 | [CPU VAD 原生接口](components/cpu-vad.md) | 会话隔离、有界切段、固定 CPU 模型及文件执行装配；实时链路待验 |
 | [B06 CPU VAD 合成探针](audits/2026-10-24-b06-cpu-vad-probe.md) | 历史探针：合成人声/静音/正弦音、输入分块一致性与模型状态隔离；不代表真实录音资格 |
 | [文件 ASR 有界媒体输入](components/file-asr-audio.md) | 五种格式解码/重采样、源样本时钟、文件 VAD 组合与接入边界 |

@@ -1,6 +1,6 @@
 ---
 title: "B02 有界控制器与真实 ASR 生命周期探针"
-status: in_progress
+status: archived
 version: "0.1.0"
 date: 2026-10-24
 ---
@@ -104,7 +104,7 @@ uv run python scripts/dev-env/asr-controller-probe.py \
 
 前置：明确 GPU 操作授权、固定本地镜像与模型、`espeak-ng`、本机 Docker、明确声明且
 `Internal=true` 的自定义 bridge 网络。模板 schema/范围、升级方式见
-[控制器说明](../components/node-controller.md#2-受控容器-adapter-与批准模板)。
+[控制器说明](../../components/node-controller.md#2-受控容器-adapter-与批准模板)。
 每次执行前核对其他模型与内存，不并发运行多个 GPU 探针。
 
 工具只产生合成输入，报告只输出摘要、状态和测量，不输出转写正文、凭据或宿主模型路径。
@@ -142,5 +142,5 @@ GPU/统一内存隔离与 A 的真实 warmup/资格、peak→steady、lease 清�
 - 本轮不改协调存储，未重复本机整套 PG/InnoDB/MinIO 集成；远端检查结果在对应 PR 记录。
   之前 #71 的协调/区间合成证据不能替代真实 A runtime 联调。
 
-[审查索引](README.md) · [B00](https://github.com/hrygo/SpeechNexus/issues/27) ·
-[B02](https://github.com/hrygo/SpeechNexus/issues/29) · [团队 B 目标](../archive/plans/2026-10-23-team-b-goal.md)
+[审查索引](../../audits/README.md) · [B00](https://github.com/hrygo/SpeechNexus/issues/27) ·
+[B02](https://github.com/hrygo/SpeechNexus/issues/29) · [团队 B 目标](../plans/2026-10-23-team-b-goal.md)

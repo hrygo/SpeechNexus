@@ -1,6 +1,6 @@
 ---
 title: "B02 受限控制器容器生命周期探针"
-status: in_progress
+status: archived
 version: "0.1.0"
 date: 2026-10-24
 ---
@@ -92,4 +92,4 @@ inspect 确认不存在时才写出 `process_or_container_exited` 与 `resources
 跨 generation 竞争、控制器重启后的重新发现与 reconcile、Docker 之外的容器运行时、HTTP 外壳、
 持久意图存储与部署单元。以上都不能由本记录推断为已完成。
 
-[审查记录索引](README.md) · [受限节点控制器](../components/node-controller.md) · [B02 #29](https://github.com/hrygo/SpeechNexus/issues/29)
+[审查记录索引](../../audits/README.md) · [受限节点控制器](../../components/node-controller.md) · [B02 #29](https://github.com/hrygo/SpeechNexus/issues/29)

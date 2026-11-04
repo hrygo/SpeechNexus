@@ -205,7 +205,7 @@ SpeechNexus 的架构原则在 UI/UX 层面必须得到 100% 忠实表达，绝�
 
 全局语义层负责屏蔽底层具体色彩值，建立与组件交互意图强绑定的语义映射。
 
-以下代码仅说明语义层的设计意图，不是当前可复制配置：实际值通过 `--page`、`--ink` 等别名和 OKLCH 混色定义。系统深色偏好仅在根元素未指定 `data-theme="light"` 时生效，`data-theme="dark"` 也可显式启用深色；完整选择器和值以 `web/shared/src/ui/styles.css` 为准。
+以下代码仅说明语义层的设计意图，不是当前可复制配置：实际值通过 `--page`、`--ink` 等别名和 OKLCH 混色定义。系统深色偏好仅在根元素未指定 `data-theme="light"` 时生效，`data-theme="dark"` 也可显式启用深色；这只是样式选择器，当前代码未提供主题切换控件或持久化。两个入口 HTML 的 `theme-color` 根据系统偏好选择，未跟随该显式覆盖，因此浏览器界面色可能与页面主题不同。完整选择器和值以 `web/shared/src/ui/styles.css` 为准。
 
 ```css
 :root {

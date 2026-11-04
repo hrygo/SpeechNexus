@@ -162,7 +162,7 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/runtime-governance.md"
       ],
-      "implementation": "同步转写及合成已有隔离最小链；制品下载的真实存储与公开消费须另核对证据。",
+      "implementation": "同步转写及合成已有隔离最小链；受控 TTS 窗口取得标准 SDK 成功响应与可解码 WAV，范围限固定声音、单节点、单实例和短英文。制品下载的真实存储与公开消费须另核对证据。",
       "integration": "完整持久 Job、真实执行与工作台同版消费仍待联验。",
       "verification": "两条同步链的有限证据不代表静音、长音频、故障或物理集群资格。",
       "gap": "完整持久 Job、真实执行与工作台同版消费仍待联验。 两条同步链的有限证据不代表静音、长音频、故障或物理集群资格。",
@@ -176,6 +176,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/pull/333",
           "label": "真实同步合成",
           "note": "固定隔离部署标准 SDK 与真实音频关联，不代替全部声音或物理资格"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/f3c2ca5/docs/archive/audits/2026-11-03-controlled-tts-prepare.md",
+          "label": "受控 TTS 第六窗口",
+          "note": "单节点、单实例、固定声音的短英文同步链；不代表完整验收"
         }
       ],
       "issues": []

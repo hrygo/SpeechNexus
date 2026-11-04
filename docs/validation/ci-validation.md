@@ -64,7 +64,7 @@ Python 测试作业在临时 GitHub 托管 VM 安装 `bubblewrap`，通过 [CI �
 
 随后仍执行原 `playwright install --with-deps --only-shell chromium`。信任链依赖 APT 认证的索引与上述写前强校验，不能假定安装器会重新校验完整缓存：APT 2.8 的[现有归档路径](https://github.com/Debian/apt/blob/2.8.1/apt-pkg/acquire-item.cc#L3494-L3507)可能只按大小复用。未知或无法得到强摘要的计划直接失败，不降级到弱摘要或强制信任。
 
-预取不更改软件源、APT/网络安全配置或安装器。仅对 HTTP/HTTPS 的 `Timeout`、`Pipeline-Depth`、`No-Cache`，直接 HTTP 的 `User-Agent-Non-Interactive` 及无相关控制项的情形开放；HTTPS 同名项、代理、自定义 User-Agent、地址族、速率/队列/hash、特定 APT binary、替代配置、未知/嵌套键或不可读取配置仍沿用原安装器。APT 2.8.1 的[原生实现](https://github.com/Debian/apt/blob/2.8.1/methods/http.cc)按既有配置与 systemd unit 语境选择非交互标记；apt-helper 使用同一 acquire HTTP method，不改写配置值、header 或上下文。
+预取不更改软件源、APT/网络安全配置或安装器。仅对 HTTP/HTTPS 的 `Timeout`、`Pipeline-Depth`、`No-Cache`，直接 HTTP 的 `User-Agent-Non-Interactive` 及无相关控制项的情形开放；HTTPS 同名项、代理、自定义 User-Agent、地址族、速率/队列/hash、`apt-get` 或 `apt-helper` 的 Acquire 专用配置、替代配置、HTTP/HTTPS 传输命名空间中的未知或嵌套键以及不可读取配置，触发原安装器路径。该检查不是对所有 APT 配置项的穷举审计。APT 2.8.1 的[原生实现](https://github.com/Debian/apt/blob/2.8.1/methods/http.cc)按既有配置与 systemd unit 语境选择非交互标记；apt-helper 使用同一 acquire HTTP method，不改写配置值、header 或上下文。
 
 预取策略诊断输出固定分类、退出码与错误类型；对直接字段仅允许 1–64 字符、字母开头且只含 ASCII 字母/数字/下划线/连字符的字段名。空字段另分类，其他文本只给分类/数量；该诊断不输出配置值、代理凭据、嵌套主机名、URL 或原始 stderr。原生 APT 下载与安装子进程沿用其自身标准输出和错误输出，不能把上述过滤保证扩展到它们的日志。识别出字段名不自动授予预取资格，必须先核对原生语义。未知计划、下载或校验失败会阻止安装，临时预取目录自动清理。真实 runner 的预取行为及收益须以当次运行证据验证。
 

@@ -504,9 +504,9 @@
         "docs/architecture/technical-blueprint.md"
       ],
       "implementation": "已有 disable 协调与持久目标；dispatch 标记提交后、实际外发前崩溃时不能保证自动补发取消，真实停止仍待验收。",
-      "integration": "网关按原身份查询和请求级 abort，租约由原事务处理。",
+      "integration": "网关可按原身份查询并在配置执行适配器后接收请求级 abort；取消接收不证明引擎停止，租约由原事务处理。",
       "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
-      "gap": "网关按原身份查询和请求级 abort，租约由原事务处理。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "网关可按原身份查询并在配置执行适配器后接收请求级 abort；取消接收不证明引擎停止，租约由原事务处理。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/speech/application/binding_disable_coordinator.py",
@@ -527,6 +527,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/execution-gateway/src/speechnexus_gateway/infrastructure/abort_intent_sql.py",
           "label": "取消派发标记",
           "note": "持久 dispatch 标记阻止重复认领，并保留未知状态；不证明引擎停止。"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/execution-gateway/src/speechnexus_gateway/app.py",
+          "label": "网关执行适配器装配",
+          "note": "提交和请求级取消依赖执行适配器配置；接收取消不证明引擎停止"
         }
       ],
       "issues": []
@@ -1586,9 +1591,9 @@
         "docs/operations/file-tts-binding-handoff.md"
       ],
       "implementation": "已有 disable 协调与持久目标；dispatch 标记提交后、实际外发前崩溃时不能保证自动补发取消，真实停止仍待验收。",
-      "integration": "网关按原身份查询和请求级 abort，租约由原事务处理。",
+      "integration": "网关可按原身份查询并在配置执行适配器后接收请求级 abort；取消接收不证明引擎停止，租约由原事务处理。",
       "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
-      "gap": "网关按原身份查询和请求级 abort，租约由原事务处理。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "网关可按原身份查询并在配置执行适配器后接收请求级 abort；取消接收不证明引擎停止，租约由原事务处理。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/speech/application/binding_disable_coordinator.py",
@@ -1609,6 +1614,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/execution-gateway/src/speechnexus_gateway/infrastructure/abort_intent_sql.py",
           "label": "取消派发标记",
           "note": "持久 dispatch 标记阻止重复认领，并保留未知状态；不证明引擎停止。"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/execution-gateway/src/speechnexus_gateway/app.py",
+          "label": "网关执行适配器装配",
+          "note": "提交和请求级取消依赖执行适配器配置；接收取消不证明引擎停止"
         }
       ],
       "issues": []

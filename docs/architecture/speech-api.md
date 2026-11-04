@@ -405,7 +405,7 @@ required 辅助模型使用父 Operation 的 required steps：先发正文 compl
 
 `audio_delivery=chunked` 表示生成期间持续交付音频，与 text_commit_mode 独立。下游引擎如按每个文本段独立合成，则能力声明 `acoustic_continuity=segment_independent`；不得声称模型声学状态跨段连续。默认助手按稳定句子提交，有声书使用较长、经过验证的叙述单元。[vLLM-Omni 流式接口](https://docs.vllm.ai/projects/vllm-omni/en/stable/serving/speech_api/#streaming-text-input-websocket)
 
-音频 chunk_seq 连续，start_sample / sample_count 描述该 utterance 输出时间轴。发送 complete 表示所有音频已生成并交给传输层，不能证明浏览器收到全部字节或播放结束。业务 UI 分别显示生成、缓冲与播放状态。
+音频 chunk_seq 连续，start_sample / sample_count 描述该 utterance 输出时间轴。目标语义要求全部音频生成并交给传输层后，才发送该操作的 `nexus.operation.done` 成功终态；事件 schema 不单独声明 TTS `complete` 事件，也不能验证音频是否已完整交付。成功终态不能证明浏览器收到全部字节或播放结束；业务 UI 分别显示生成、缓冲与播放状态。
 
 ### 2.6 格式、背压、断线与取消
 

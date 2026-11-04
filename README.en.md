@@ -158,7 +158,7 @@ See the [delivery tracking matrix (Chinese)](docs/plans/delivery-tracking.md) fo
 
 | I want to learn about | Start here |
 | --- | --- |
-| Project status and takeover | [Project manager baseline: team capabilities, gaps, evidence, and collaboration (Chinese)](docs/plans/2026-10-26-project-manager-baseline.md) |
+| Project status and takeover | [Project manager baseline: team capabilities, gaps, evidence, and collaboration (Chinese)](docs/archive/plans/2026-10-26-project-manager-baseline.md) |
 | Product scope and workflows | [Product design (Chinese)](docs/speechnexus-product-architecture.md) |
 | Deployment, ports, and configuration | [Deployment guide](deploy/README.md) |
 | Deployment units, host placement, and platform requirements | [Deployment unit and platform plan (Chinese)](docs/architecture/deployment-units.md) |

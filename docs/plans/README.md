@@ -6,15 +6,15 @@
 
 以下带日期材料保留各自时点，仅在查证相关决定或证据时读取，不承担当前排期或派工。
 
-- [2026-10-26 团队 A 最终交接](2026-10-26-team-a-final-handoff.md)：A00–A07、媒体/回执及原件/资源交接；原候选与验证保留时点，后续集成修复见项目经理基线。
-- [2026-10-26 团队 A 进展复盘与原下一阶段计划](2026-10-26-team-a-review-and-next-phase.md)：历史基线、KR 与故障矩阵，已由收尾交接取代当前派工。
-- [2026-10-26 团队 C 最终交接](2026-10-26-team-c-final-handoff.md)：C00–C08 已集成范围、未决风险、A/B 接收方式、证据归档和全量 issue 核对；后续由新负责人重新安排。
+- [2026-10-26 团队 A 最终交接](../archive/plans/2026-10-26-team-a-final-handoff.md)：A00–A07、媒体/回执及原件/资源交接；原候选与验证保留时点，后续集成修复见项目经理基线。
+- [2026-10-26 团队 A 进展复盘与原下一阶段计划](../archive/plans/2026-10-26-team-a-review-and-next-phase.md)：历史基线、KR 与故障矩阵，已由收尾交接取代当前派工。
+- [2026-10-26 团队 C 最终交接](../archive/plans/2026-10-26-team-c-final-handoff.md)：C00–C08 已集成范围、未决风险、A/B 接收方式、证据归档和全量 issue 核对；后续由新负责人重新安排。
 
 - [2026-10-26 Paperclip 工作流与环境准备](2026-10-26-paperclip-bootstrap-plan.md)：历史环境准备方案；保留当时的三机与 Harness 自检、回传和启用阻塞记录，当前执行按具体任务核验。
 
 - [2026-10-24 团队 C Meeting/Minutes HTTP](../archive/plans/2026-10-24-team-c-meeting-http-handoff.md)：五项持久业务操作、原子封存/纪要关联、原键恢复及会议删除依赖；默认工厂13项，显式装配18项，生产/会议页面及完整资格继续。
 
-计划按基准日期保存，阶段完成状态须有实际交付和验收证据。C 的旧 Goal 与[联审协作方案](2026-10-26-team-c-next-phase-execution-and-collaboration.md)保留原范围与审查处理，已停止自动执行。
+计划按基准日期保存，阶段完成状态须有实际交付和验收证据。C 的旧 Goal 与[联审协作方案](../archive/plans/2026-10-26-team-c-next-phase-execution-and-collaboration.md)保留原范围与审查处理，已停止自动执行。
 
 - [2026-10-24 团队 C 7cd18879集成](../archive/plans/2026-10-24-team-c-7cd-integration-handoff.md)：安全吸收#77/#79/#80/#81，保留237文件并重生成交集，新增Meeting/Minutes与公开realtime解析依赖；Python2735/PG269/Web1150及Chromium合成流程通过，实际handlers/会议与实时业务继续。
 - [2026-10-24 团队 C 项目与稿件版本工作台](../archive/plans/2026-10-24-team-c-c1-editor-handoff.md)：正式生成客户端/页面、草稿与原键恢复、历史/冲突校对；53项针对性、Web940及4个Chromium合成上下文，一次终审两项Important已TDD修复，生产装配与完整资格继续。步骤见[实施计划](../archive/plans/2026-10-24-team-c-c1-editor-plan.md)。
@@ -26,9 +26,9 @@
 - [2026-10-23 agent 三队启动指令](../archive/plans/2026-10-23-agent-team-startup-briefs.md)：历史启动与交接模板，保留原时点输入，不作为当前派工依据。
 - [2026-10-23 团队 A 执行目标](../archive/plans/2026-10-23-team-a-goal.md)：A00–A07 的历史目标、KR 和完整范围；已转交新负责人重新安排，不再作为当前排期。
 - [2026-10-23 团队 B 执行目标](../archive/plans/2026-10-23-team-b-goal.md)：B00–B07 原目标、范围与 AC，以及环境、停止探针和阻塞条件的历史来源；由新交付承接，不据此续开 Goal 或派工。
-- [2026-10-24 团队 C 执行目标](2026-10-24-team-c-goal.md)：C00–C08 的历史目标、原接力与完成条件，现已转为 superseded；[C00 版本单元交接](../archive/plans/2026-10-24-team-c-c00-version-handoff.md)、[C00 生成请求消费交接](../archive/plans/2026-10-24-team-c-c00-project-boundary-handoff.md)、[C00 元数据分页交接](../archive/plans/2026-10-24-team-c-c00-listing-handoff.md)、[C00 PostgreSQL 事务交接](../archive/plans/2026-10-24-team-c-c00-postgres-handoff.md)、[C00 删除事务交接](../archive/plans/2026-10-24-team-c-c00-deletion-handoff.md)、[C01 Admin 任务中心交接](../archive/plans/2026-10-24-team-c-c01-task-center-handoff.md)、[C02 文件任务与 A00 消费交接](../archive/plans/2026-10-24-team-c-c02-file-flow-handoff.md)、[C02 原始转写导入交接](../archive/plans/2026-10-24-team-c-c02-transcript-import-handoff.md)、[C04 合成播放交接](../archive/plans/2026-10-24-team-c-c04-media-handoff.md)、[C04 浏览器采集交接](../archive/plans/2026-10-24-team-c-c04-capture-handoff.md)记录本地实现与未验证项。
-- [2026-10-24 原命令与对象输入接入](2026-10-24-b03-frozen-inputs.md)：B01/B03 原持久命令、固定版本 MinIO 和当时文件消费者的历史输入接入边界。
-- [2026-10-25 持久文件执行接线](2026-10-25-b03-durable-file-runner.md)：提交后启动、原身份恢复、私有回执及后台生命周期；不替代真实引擎与公开业务链资格。
+- [2026-10-24 团队 C 执行目标](../archive/plans/2026-10-24-team-c-goal.md)：C00–C08 的历史目标、原接力与完成条件，现已转为 superseded；[C00 版本单元交接](../archive/plans/2026-10-24-team-c-c00-version-handoff.md)、[C00 生成请求消费交接](../archive/plans/2026-10-24-team-c-c00-project-boundary-handoff.md)、[C00 元数据分页交接](../archive/plans/2026-10-24-team-c-c00-listing-handoff.md)、[C00 PostgreSQL 事务交接](../archive/plans/2026-10-24-team-c-c00-postgres-handoff.md)、[C00 删除事务交接](../archive/plans/2026-10-24-team-c-c00-deletion-handoff.md)、[C01 Admin 任务中心交接](../archive/plans/2026-10-24-team-c-c01-task-center-handoff.md)、[C02 文件任务与 A00 消费交接](../archive/plans/2026-10-24-team-c-c02-file-flow-handoff.md)、[C02 原始转写导入交接](../archive/plans/2026-10-24-team-c-c02-transcript-import-handoff.md)、[C04 合成播放交接](../archive/plans/2026-10-24-team-c-c04-media-handoff.md)、[C04 浏览器采集交接](../archive/plans/2026-10-24-team-c-c04-capture-handoff.md)记录本地实现与未验证项。
+- [2026-10-24 原命令与对象输入接入](../archive/plans/2026-10-24-b03-frozen-inputs.md)：B01/B03 原持久命令、固定版本 MinIO 和当时文件消费者的历史输入接入边界。
+- [2026-10-25 持久文件执行接线](../archive/plans/2026-10-25-b03-durable-file-runner.md)：提交后启动、原身份恢复、私有回执及后台生命周期；不替代真实引擎与公开业务链资格。
 - [2026-10-22 分阶段实施计划](../archive/plans/2026-10-22-speechnexus-implementation-plan.md)：P0–P5、工作包、契约产物与初始预算。
 
 - [2026-10-24 团队 C C00 文本字符边界交接](../archive/plans/2026-10-24-team-c-c00-text-handoff.md)：统一拒绝不可存储字符、保留合法文本，记录失败回滚与同键重试证据。

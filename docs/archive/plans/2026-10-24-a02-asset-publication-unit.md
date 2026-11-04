@@ -6,7 +6,7 @@ date: 2026-10-24
 
 # A02 首个资产发布单元
 
-> 历史实施单元：以下路线和状态保留原时点，不作为当前派工或进度依据；当前范围与证据见[交付跟踪矩阵](delivery-tracking.md)。
+> 历史实施单元：以下路线和状态保留原时点，不作为当前派工或进度依据；当前范围与证据见[交付跟踪矩阵](../../plans/delivery-tracking.md)。
 
 基线 `e09abad`；对应 [A02 #21](https://github.com/hrygo/SpeechNexus/issues/21)。
 本单元交付共享 workspace 与首个实际 Asset 上传/元数据/内容路径，验证对象发布、
@@ -38,7 +38,7 @@ date: 2026-10-24
 ready 音频、假 duration/采样率/声道或永远没有消费者的“正在校验”任务。音频联调、
 Artifact/Operation/receipt、不可变模型/声音/预设/发音资源继续按后续单元推进。
 
-上传可显式设置契约范围内 TTL。省略 TTL 时按 [运行治理保留表](../architecture/runtime-governance.md)
+上传可显式设置契约范围内 TTL。省略 TTL 时按 [运行治理保留表](../../architecture/runtime-governance.md)
 的既有默认取值并写入部署配置：文件转写输入 7 天、普通生成音频 30 天、Job 事件与终态
 元数据 30 天；本单元实现读取该配置入口，测试使用显式策略，不把测试值当成生产默认。
 未知结果恢复不重新读取可变默认值覆盖原请求的有效配置。
@@ -55,7 +55,7 @@ Artifact/Operation/receipt、不可变模型/声音/预设/发音资源继续按
 
 ## 当前分批交付
 
-首个 PR 先交付步骤 1–3 的生产端口、实际对象适配器与保留期账本，以及真实 PG/MinIO CI 门禁。步骤 4 的 HTTP/组合根及步骤 5 的常驻维护进程随下一单元接入；本 PR 不声称三个公开路由已实现，也不关闭 A02/G1。实现与边界见 [production-assets.md](../components/production-assets.md)。
+首个 PR 先交付步骤 1–3 的生产端口、实际对象适配器与保留期账本，以及真实 PG/MinIO CI 门禁。步骤 4 的 HTTP/组合根及步骤 5 的常驻维护进程随下一单元接入；本 PR 不声称三个公开路由已实现，也不关闭 A02/G1。实现与边界见 [production-assets.md](../../components/production-assets.md)。
 
 ## HTTP 接入单元（进行中）
 

@@ -9,7 +9,7 @@ date: 2026-10-24
 
 > 历史计划：以下实施步骤和结果保留原时点；当前范围与证据见[交付跟踪矩阵](../../plans/delivery-tracking.md)。
 
-沿用[团队 C 目标](../../plans/2026-10-24-team-c-goal.md)、[版本交接](2026-10-24-team-c-c00-version-handoff.md)及 [workbench 契约](../../../contracts/workbench-openapi.yaml)的项目和稿件列表范围。基线 `cbf4a8ca1cf808fbc5ff4b125f7ff1e271496995`；已核对快进前后原有 77 个 C 文件完全一致。
+沿用[团队 C 目标](2026-10-24-team-c-goal.md)、[版本交接](2026-10-24-team-c-c00-version-handoff.md)及 [workbench 契约](../../../contracts/workbench-openapi.yaml)的项目和稿件列表范围。基线 `cbf4a8ca1cf808fbc5ff4b125f7ff1e271496995`；已核对快进前后原有 77 个 C 文件完全一致。
 
 ## 设计与边界
 

@@ -7,7 +7,7 @@ date: 2026-10-26
 
 # SpeechNexus 项目经理接管基线
 
-本文件保留 **2026-10-26（Asia/Shanghai）** 项目经理接管时的事实、风险和证据，文中的当前状态、入口及下一步均属于当时快照。现行交付入口见[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)与[交付跟踪矩阵](delivery-tracking.md)，管理规则见[项目经理工作约定](../project-manager-guide.md)。原三队的目标、范围、AC 和历史失败继续保留，旧计划不自动恢复执行。
+本文件保留 **2026-10-26（Asia/Shanghai）** 项目经理接管时的事实、风险和证据，文中的当前状态、入口及下一步均属于当时快照。现行交付入口见[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)与[交付跟踪矩阵](../../plans/delivery-tracking.md)，管理规则见[项目经理工作约定](../../project-manager-guide.md)。原三队的目标、范围、AC 和历史失败继续保留，旧计划不自动恢复执行。
 
 ## 1. 项目处于什么阶段
 
@@ -27,7 +27,7 @@ SpeechNexus 是可信部署网络内的 Linux 语音底座和创作工作台：�
 | A 合后检查 | [main41e29b6 的 CI](https://github.com/hrygo/SpeechNexus/actions/runs/40313468861)首轮分片 2 达到 10 分钟时限，314 项测试通过后作业被取消、汇总失败；浏览器准备约 354 秒。补跑以同一 run 的最新 attempt 为准，首轮失败不改写为成功 |
 | B 的接管修订 | #220 最终 head `4e55041`，合入 `8b1466d`；[精确 PR CI](https://github.com/hrygo/SpeechNexus/actions/runs/40313607678) 2 项适用检查成功、7 项跳过，补请求音频上限风险及原件接收边界 |
 
-三队详细交接继续分别查阅：[A](2026-10-26-team-a-final-handoff.md)、[B](../audits/2026-10-26-team-b-handoff.md)、[C](2026-10-26-team-c-final-handoff.md)。[原项目交接](../audits/2026-10-26-project-handoff.md)保留交接时点快照；当时的组合版本和管理入口为本文件及 #6。
+三队详细交接继续分别查阅：[A](2026-10-26-team-a-final-handoff.md)、[B](../../audits/2026-10-26-team-b-handoff.md)、[C](2026-10-26-team-c-final-handoff.md)。[原项目交接](../../audits/2026-10-26-project-handoff.md)保留交接时点快照；当时的组合版本和管理入口为本文件及 #6。
 
 ## 2. 必须掌握的架构与边界
 
@@ -47,7 +47,7 @@ flowchart LR
     WB --> Objects
 ```
 
-图表示有效设计的职责和数据流，不表示所有箭头已经生产装配。应用为 Python/FastAPI，前端为 React/TypeScript/Vite；版本以 `.python-version`、`.nvmrc`、workspace 和锁文件为准。实现定位见[目录与依赖边界](../components/repository-layout.md)，设计依据见[产品主设计](../speechnexus-product-architecture.md)、[技术方案](../architecture/technical-blueprint.md)和[ADR 索引](../decisions/README.md)。
+图表示有效设计的职责和数据流，不表示所有箭头已经生产装配。应用为 Python/FastAPI，前端为 React/TypeScript/Vite；版本以 `.python-version`、`.nvmrc`、workspace 和锁文件为准。实现定位见[目录与依赖边界](../../components/repository-layout.md)，设计依据见[产品主设计](../../speechnexus-product-architecture.md)、[技术方案](../../architecture/technical-blueprint.md)和[ADR 索引](../../decisions/README.md)。
 
 - PostgreSQL 是唯一正式产品数据库；InnoDB 只验证关键协调行为。无 etcd，Redis 只能丢失而不影响事实恢复。Job、outbox、完整配方租约与预算由同一关系事务维护。
 - 集群是实现和验收要求，`Node=1` 使用同一持久协议。业务内容不走共享本地目录或进程内全局锁；实例、节点、owner、generation/fencing 显式关联。
@@ -91,14 +91,14 @@ ADR 0001–0010 继续有效。0001–0007 覆盖产品身份/边界、模型与
 
 ## 5. 项目管理规则入口
 
-接管、排期、协作、集成验收、进度维护和证据清理统一见[项目经理工作约定](../project-manager-guide.md)。长期规则在该文档维护；本基线保留接管时点的事实、风险与待决队列，当前进度以总控 #336 和相关 issue 核实。
+接管、排期、协作、集成验收、进度维护和证据清理统一见[项目经理工作约定](../../project-manager-guide.md)。长期规则在该文档维护；本基线保留接管时点的事实、风险与待决队列，当前进度以总控 #336 和相关 issue 核实。
 
 ## 6. 证据接收、清理与恢复
 
 | 来源 | 接管核验状态 | 后续取用 |
 | --- | --- | --- |
 | A 最终原件 | 作者在 `/workspace/.speech-nexus-team-a-evidence/2026-10-26-final-handoff/` 报告归档；经理未取得该环境完整字节 | 固定 PR/公开 CI 可复核；私有 wheel/日志按 manifest 接收后再称核验，环境失效则依固定源码重建 |
-| B 最终原件 | 作者报告稳定根及 manifest/bundle，经理未访问远端 5308 文件/512351757 字节；#220 已明确区分 | 依 [B 恢复指引](../audits/2026-10-26-team-b-handoff.md)在批准环境校验，不把作者成功报告当接收方复验 |
+| B 最终原件 | 作者报告稳定根及 manifest/bundle，经理未访问远端 5308 文件/512351757 字节；#220 已明确区分 | 依 [B 恢复指引](../../audits/2026-10-26-team-b-handoff.md)在批准环境校验，不把作者成功报告当接收方复验 |
 | C 最终原件 | `/Users/hrygo/.codex/team-c-evidence/20261026T101715Z-final-handoff/`，19 份文件；经理已逐文件校验 | manifest SHA-256 为 `39fbabcd20b9ad49d98b0199a36f763585b9c5e1247538c67187d8ca6e57acb5`；是本轮新归档，不是失踪 82 原件 |
 | 本次经理集成 | `/Users/hrygo/.codex/project-manager-evidence/20261026T104016Z-integration/`，位于工作树外 | 保存 RIFF 红/绿与两项变异、请求时长复现、issue 前后/不变量、精确 CI/合并回执及清理记录；最终 manifest 以目录内文件为准 |
 | 本机工作树 | PM 工作树保留为后续工作入口；C 收尾树合入并保护原件后可归档 | 旧主目录的目标 diff、贡献模板和未知 `.paperclip` 仍受保护；未合并历史提交先保留 bundle，不强行删除外来 worktree |
@@ -116,4 +116,4 @@ gh pr view 222 --json state,mergedAt,mergeCommit,headRefOid,url
 python3 scripts/dev-env/refresh-implementation-tracker.py --output /tmp/speechnexus-tracking.md
 ```
 
-完整工程验证按[验证指南](../agent-verification.md)和受影响范围执行；Linux 隔离 PG/InnoDB/MinIO、真实模型、设备与物理拓扑各有前置。原件恢复在独立目录先校验再使用，不覆盖当前源码、数据库、对象区或配置。
+完整工程验证按[验证指南](../../agent-verification.md)和受影响范围执行；Linux 隔离 PG/InnoDB/MinIO、真实模型、设备与物理拓扑各有前置。原件恢复在独立目录先校验再使用，不覆盖当前源码、数据库、对象区或配置。

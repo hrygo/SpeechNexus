@@ -173,12 +173,12 @@
 | `docs/archive/plans/2026-10-23-team-a-goal.md` | 历史保留 | 已替代的团队目标及收尾交接；未逐项复核历史证据 |
 | `docs/archive/plans/2026-10-23-team-b-goal.md` | 历史保留 | 原团队目标及收尾交接，已明确不作当前排期；未逐项复核历史证据 |
 | `docs/archive/plans/2026-10-23-three-team-delivery-plan.md` | 历史保留 | 固定基线的三团队分工、任务和关口规划；文首与计划索引已注明历史性质和当前入口，历史验收证据未逐项复核 |
-| `docs/plans/2026-10-24-a01-runtime-intent-unit.md` | 历史保留 | 全文阅读，标明原实施路线的时点并修正组件文档入口；未重跑历史验证 |
-| `docs/plans/2026-10-24-a02-asset-publication-unit.md` | 历史保留 | 全文阅读，标明原实施路线与分批状态的时点；未重跑历史验证 |
-| `docs/plans/2026-10-24-a02-binding-drafts-unit.md` | 历史保留 | 全文阅读，标明原实施计划与验证结果的时点；未重跑历史验证 |
-| `docs/plans/2026-10-24-b01-default-recovery-driver.md` | 历史保留 | 全文阅读并标明原方案时点；未重跑历史验证 |
-| `docs/plans/2026-10-24-b03-frozen-inputs.md` | 历史保留 | 全文阅读并标明原接入范围和验收时点；未重跑历史验证 |
-| `docs/plans/2026-10-24-b03-native-asr-scope.md` | 历史保留 | 全文阅读并标明原实现和后续安排时点；未重跑历史验证 |
+| `docs/archive/plans/2026-10-24-a01-runtime-intent-unit.md` | 历史保留 | 全文阅读，标明原实施路线的时点并修正组件文档入口；未重跑历史验证 |
+| `docs/archive/plans/2026-10-24-a02-asset-publication-unit.md` | 历史保留 | 全文阅读，标明原实施路线与分批状态的时点；未重跑历史验证 |
+| `docs/archive/plans/2026-10-24-a02-binding-drafts-unit.md` | 历史保留 | 全文阅读，标明原实施计划与验证结果的时点；未重跑历史验证 |
+| `docs/archive/plans/2026-10-24-b01-default-recovery-driver.md` | 历史保留 | 全文阅读并标明原方案时点；未重跑历史验证 |
+| `docs/archive/plans/2026-10-24-b03-frozen-inputs.md` | 历史保留 | 全文阅读并标明原接入范围和验收时点；未重跑历史验证 |
+| `docs/archive/plans/2026-10-24-b03-native-asr-scope.md` | 历史保留 | 全文阅读并标明原实现和后续安排时点；未重跑历史验证 |
 | `docs/archive/plans/2026-10-24-team-c-2874-integration-handoff.md` | 历史保留 | 全文阅读，固定基线和日期的集成交接；计划索引已说明历史材料范围，未重跑验证 |
 | `docs/archive/plans/2026-10-24-team-c-7cd-integration-handoff.md` | 历史保留 | 全文阅读，固定基线和日期的集成交接；计划索引已说明历史材料范围，未重跑验证 |
 | `docs/archive/plans/2026-10-24-team-c-9ee-integration-handoff.md` | 历史保留 | 全文阅读，固定基线和日期的集成交接；计划索引已说明历史材料范围，未重跑验证 |
@@ -239,7 +239,7 @@
 | `docs/archive/plans/2026-10-24-team-c-deletion-ui-handoff.md` | 历史保留 | 全文阅读，标明历史交接与当前入口；历史验证未重跑 |
 | `docs/archive/plans/2026-10-24-team-c-deletion-ui-plan.md` | 历史保留 | 全文阅读，保留原基线计划；历史验证未重跑 |
 | `docs/archive/plans/2026-10-24-team-c-eb299-integration-handoff.md` | 历史保留 | 全文阅读，标明历史集成与当前入口；历史验证未重跑 |
-| `docs/plans/2026-10-24-team-c-goal.md` | 历史保留 | 分段全文阅读，明确最终交接时点和当前入口；各轮历史验证未重跑 |
+| `docs/archive/plans/2026-10-24-team-c-goal.md` | 历史保留 | 分段全文阅读，明确最终交接时点和当前入口；各轮历史验证未重跑 |
 | `docs/archive/plans/2026-10-24-team-c-meeting-http-handoff.md` | 历史保留 | 全文阅读，标明历史交接与当前入口；历史验证未重跑 |
 | `docs/archive/plans/2026-10-24-team-c-meeting-http-plan.md` | 历史保留 | 全文阅读，保留原基线计划；历史验证未重跑 |
 | `docs/archive/plans/2026-10-24-team-c-meeting-ui-handoff.md` | 历史保留 | 全文阅读，标明历史交接与当前入口；历史验证未重跑 |
@@ -258,12 +258,12 @@
 | `docs/archive/plans/2026-10-24-team-c-workspaces-live-plan.md` | 历史保留 | 全文阅读，保留原基线计划；历史验证未重跑 |
 | `docs/archive/plans/2026-10-24-team-c-workspaces-read-handoff.md` | 历史保留 | 全文阅读，标明历史交接与当前入口；历史验证未重跑 |
 | `docs/archive/plans/2026-10-24-team-c-workspaces-read-plan.md` | 历史保留 | 全文阅读，保留原基线计划；历史验证未重跑 |
-| `docs/plans/2026-10-25-b03-durable-file-runner.md` | 历史保留 | 全文阅读，标明原实施范围与当前入口；未逐项复验执行证据 |
-| `docs/plans/2026-10-25-b03-worker-fence.md` | 历史保留 | 全文阅读，标明原单元状态与当前入口；历史验证未重跑 |
+| `docs/archive/plans/2026-10-25-b03-durable-file-runner.md` | 历史保留 | 全文阅读，标明原实施范围与当前入口；未逐项复验执行证据 |
+| `docs/archive/plans/2026-10-25-b03-worker-fence.md` | 历史保留 | 全文阅读，标明原单元状态与当前入口；历史验证未重跑 |
 | `docs/plans/2026-10-25-ci-path-routing.md` | 历史保留 | 全文阅读，现行维护说明见 validation/ci-validation.md；历史 CI 未重跑 |
 | `docs/plans/2026-10-25-design-token-gate.md` | 历史保留 | 全文阅读，保留原门禁计划及验证；现行说明见 validation/ci-validation.md |
 | `docs/plans/2026-10-25-raster-gradient-contrast.md` | 历史保留 | 全文阅读，保留原计划及验证；现行说明见 validation/ci-validation.md |
-| `docs/plans/2026-10-25-team-a-realignment.md` | 历史保留 | 全文阅读，修正历史复盘状态并指向当前矩阵；历史验证未重跑 |
+| `docs/archive/plans/2026-10-25-team-a-realignment.md` | 历史保留 | 全文阅读，修正历史复盘状态并指向当前矩阵；历史验证未重跑 |
 | `docs/archive/plans/2026-10-25-team-c-admin-diagnostics-handoff.md` | 历史保留 | 全文阅读，修正历史状态并指向当前入口；历史验证未重跑 |
 | `docs/archive/plans/2026-10-25-team-c-assistant-honest-consumer-handoff.md` | 历史保留 | 全文阅读，标明历史状态及后续浏览器证据；历史验证未重跑 |
 | `docs/archive/plans/2026-10-25-team-c-assistant-honest-state-browser-handoff.md` | 历史保留 | 全文阅读，修正历史状态并指向当前入口；历史验证未重跑 |
@@ -274,7 +274,7 @@
 | `docs/archive/plans/2026-10-25-team-c-issue-four-part-refresh-handoff.md` | 历史保留 | 全文阅读，区分历史 issue 回读与当前状态；未查询远端 |
 | `docs/archive/plans/2026-10-25-team-c-keyboard-narrow-verification-handoff.md` | 历史保留 | 全文阅读，标明历史验证与当前入口；历史验证未重跑 |
 | `docs/archive/plans/2026-10-25-team-c-minutes-worker-handoff.md` | 历史保留 | 全文阅读，标明历史配置与验证范围；历史验证未重跑 |
-| `docs/plans/2026-10-25-team-c-next-phase-goal-and-acceptance.md` | 历史保留 | 分段全文阅读，明确历史接管依据与当前入口；历史验证未重跑 |
+| `docs/archive/plans/2026-10-25-team-c-next-phase-goal-and-acceptance.md` | 历史保留 | 分段全文阅读，明确历史接管依据与当前入口；历史验证未重跑 |
 | `docs/archive/plans/2026-10-25-team-c-orphan-probes-gated-handoff.md` | 历史保留 | 全文阅读，标明各轮历史排查与现行检查入口；历史验证未重跑 |
 | `docs/archive/plans/2026-10-25-team-c-project-rename-cas-handoff.md` | 历史保留 | 全文阅读，标明历史状态与当前入口；历史验证未重跑 |
 | `docs/archive/plans/2026-10-25-team-c-real-runtime-browser-handoff.md` | 历史保留 | 全文阅读，标明历史验证与当前入口；历史验证未重跑 |
@@ -290,12 +290,12 @@
 | `docs/plans/2026-10-26-a02-media-kernel-handoff.md` | 历史保留 | 全文阅读，为当时交接及证据记录；历史验证未重跑 |
 | `docs/plans/2026-10-26-ci-resource-partitions.md` | 历史保留 | 全文阅读，为当时实施与验证记录；历史验证未重跑 |
 | `docs/plans/2026-10-26-paperclip-bootstrap-plan.md` | 历史保留 | 全文阅读，标明历史状态和现行入口；历史环境未复验 |
-| `docs/plans/2026-10-26-project-manager-baseline.md` | 历史保留 | 全文阅读，修正旧总控被称为当前入口；历史证据未复验 |
-| `docs/plans/2026-10-26-team-a-final-handoff.md` | 历史保留 | 全文阅读，修正旧基线被称为当前状态；历史验证未重跑 |
-| `docs/plans/2026-10-26-team-a-review-and-next-phase.md` | 历史保留 | 全文阅读，已有收尾说明与 superseded 状态；历史验证未重跑 |
-| `docs/plans/2026-10-26-team-c-final-handoff.md` | 历史保留 | 全文阅读，修正旧基线被称为当前入口；历史验证未重跑 |
-| `docs/plans/2026-10-26-team-c-next-phase-execution-and-collaboration.md` | 历史保留 | 全文阅读，已有收尾说明与 superseded 状态；历史验证未重跑 |
-| `docs/plans/2026-10-27-delegra-legion-closed-loop.md` | 历史保留 | 全文阅读，标明历史配置、授权和现行入口；平台状态未复验 |
+| `docs/archive/plans/2026-10-26-project-manager-baseline.md` | 历史保留 | 全文阅读，修正旧总控被称为当前入口；历史证据未复验 |
+| `docs/archive/plans/2026-10-26-team-a-final-handoff.md` | 历史保留 | 全文阅读，修正旧基线被称为当前状态；历史验证未重跑 |
+| `docs/archive/plans/2026-10-26-team-a-review-and-next-phase.md` | 历史保留 | 全文阅读，已有收尾说明与 superseded 状态；历史验证未重跑 |
+| `docs/archive/plans/2026-10-26-team-c-final-handoff.md` | 历史保留 | 全文阅读，修正旧基线被称为当前入口；历史验证未重跑 |
+| `docs/archive/plans/2026-10-26-team-c-next-phase-execution-and-collaboration.md` | 历史保留 | 全文阅读，已有收尾说明与 superseded 状态；历史验证未重跑 |
+| `docs/archive/plans/2026-10-27-delegra-legion-closed-loop.md` | 历史保留 | 全文阅读，标明历史配置、授权和现行入口；平台状态未复验 |
 | `docs/plans/2026-10-30-zero-dispatch-settlement.md` | 历史保留 | 全文阅读，标明固定基线和候选方案的时点边界；历史验证及部署未复验 |
 | `docs/plans/README.md` | 已核对 | 核对当前 PRD、需求矩阵、结构化来源和只读刷新入口及 77 个本地链接；带日期条目作为历史索引，原时点摘要未逐项重验 |
 | `docs/plans/binding-disable-cancellation.md` | 已核对 | 全文对照当前需求、准入屏障、目标账本与受限权限、网关取消恢复、租约事务契约和隔离测试设计；补充既有 submit 的未外发失败结算条件，未运行数据库、真实引擎或多机验收 |

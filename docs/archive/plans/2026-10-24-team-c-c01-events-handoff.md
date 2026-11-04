@@ -8,7 +8,7 @@ date: 2026-10-24
 
 > 历史交接：以下状态和验证保留原时点；当前范围与证据见[交付跟踪矩阵](../../plans/delivery-tracking.md)。
 
-按[本单元计划](2026-10-24-team-c-c01-events-plan.md)，在[原任务中心](2026-10-24-team-c-c01-task-center-handoff.md)上补齐公开 SSE 消费，并接到正式 Admin 页。[完整 C00–C08 目标](../../plans/2026-10-24-team-c-goal.md)仍 active，本轮不关闭 C01/C08 或 Gate。
+按[本单元计划](2026-10-24-team-c-c01-events-plan.md)，在[原任务中心](2026-10-24-team-c-c01-task-center-handoff.md)上补齐公开 SSE 消费，并接到正式 Admin 页。[完整 C00–C08 目标](2026-10-24-team-c-goal.md)仍 active，本轮不关闭 C01/C08 或 Gate。
 
 ## 身份与实现
 

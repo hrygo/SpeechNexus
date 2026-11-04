@@ -40,4 +40,4 @@ C06内部持久纪要、无正文intent/attempt/计量保留、源/取消/删除
 
 累计192文件包以2874为基线，保留上一191文件包，新增本交接并更新当前目标/索引。已完成干净基线apply-check/实际应用、全部字节、本地链接/锚点与打包期间真实index不变核验。补丁、完整SHA-256、逐文件manifest、干净基线apply/字节/本地链接检查记录在 `.runtime/team-c/team-c-current.patch` 及相邻manifest；本地包不是已发布的main代码。全部C工作包及Gate保持未完成，完整goal active。
 
-[团队目标](../../plans/2026-10-24-team-c-goal.md) · [上一集成](2026-10-24-team-c-a98-integration-handoff.md) · [C06任务交接](2026-10-24-team-c-c06-tasks-handoff.md)
+[团队目标](2026-10-24-team-c-goal.md) · [上一集成](2026-10-24-team-c-a98-integration-handoff.md) · [C06任务交接](2026-10-24-team-c-c06-tasks-handoff.md)

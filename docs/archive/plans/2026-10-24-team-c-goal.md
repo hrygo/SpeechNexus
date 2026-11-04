@@ -7,11 +7,11 @@ date: 2026-10-24
 
 # SpeechNexus 团队 C 执行目标
 
-2026-10-26 收尾：本文件转为历史目标，后续工作由新负责人重新安排。[当时的最终交接](2026-10-26-team-c-final-handoff.md)汇总已集成范围、待审 PR、风险与证据；以下原范围、进展和 AC 均保留各自时点，历史接力顺序不再自动执行。当前范围与证据见[交付跟踪矩阵](delivery-tracking.md)。
+2026-10-26 收尾：本文件转为历史目标，后续工作由新负责人重新安排。[当时的最终交接](2026-10-26-team-c-final-handoff.md)汇总已集成范围、待审 PR、风险与证据；以下原范围、进展和 AC 均保留各自时点，历史接力顺序不再自动执行。当前范围与证据见[交付跟踪矩阵](../../plans/delivery-tracking.md)。
 
 ## 目标与范围
 
-依据[三团队实施计划](../archive/plans/2026-10-23-three-team-delivery-plan.md)、[首轮任务卡](../archive/plans/2026-10-23-agent-team-startup-briefs.md#4-c-队macbook-工作台与体验)和[总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)，原目标为完成 C00–C08。范围包括工作台后端和独立 schema/对象区/迁移、AdminUI 和 Workbench、浏览器媒体、音色工作室、会议/提词、内网 LLM/助手、有声书及独立保存/导出、业务删除恢复与应用交付资格。
+依据[三团队实施计划](2026-10-23-three-team-delivery-plan.md)、[首轮任务卡](2026-10-23-agent-team-startup-briefs.md#4-c-队macbook-工作台与体验)和[总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)，原目标为完成 C00–C08。范围包括工作台后端和独立 schema/对象区/迁移、AdminUI 和 Workbench、浏览器媒体、音色工作室、会议/提词、内网 LLM/助手、有声书及独立保存/导出、业务删除恢复与应用交付资格。
 
 本文件保留原执行范围，不证明产品能力已实现或 Codex 原生 Goal 已完成。应用目标状态以工具返回为准，工作包和 Gate 状态以具名验收证据为准。
 
@@ -86,56 +86,56 @@ date: 2026-10-24
 13. 继续独立保存/导出与业务恢复，以及音色候选/校验/发布、会议实时接线、助手等剩余切片；按有效契约和可用依赖推进，不能以领域规则或页面完成代替完整业务闭环。
 14. 在 A 协调的共同 SHA、生产迁移/部署及 A/B 确定版本就绪后，完成公开 speech/admin 的真实闭环；分别取得内容网络、真实浏览器/设备、Linux 后端和 GPU 联调证据。每轮交付标明范围、版本、测试、未验证项和依赖 owner。
 
-本次证据入口为[独立入口计划](../archive/plans/2026-10-24-team-c-runtime-root-plan.md)、[独立入口交接](../archive/plans/2026-10-24-team-c-runtime-root-handoff.md)及[真实 Workspace 联验](../archive/plans/2026-10-24-team-c-workspaces-live-handoff.md)。独立入口交接中的预审结果属于修复前记录，后续交付须更新，不据此宣布完整 Goal 完成。
+本次证据入口为[独立入口计划](2026-10-24-team-c-runtime-root-plan.md)、[独立入口交接](2026-10-24-team-c-runtime-root-handoff.md)及[真实 Workspace 联验](2026-10-24-team-c-workspaces-live-handoff.md)。独立入口交接中的预审结果属于修复前记录，后续交付须更新，不据此宣布完整 Goal 完成。
 
-[C00 文本字符边界交接](../archive/plans/2026-10-24-team-c-c00-text-handoff.md)补充项目/稿件的内容拒绝与失败重试证据。
-[C02 文件任务跨刷新恢复交接](../archive/plans/2026-10-24-team-c-c02-recovery-handoff.md)补充创建/取消原键、事件水位和浏览器刷新证据；生产入口仍待接入，上传阶段恢复见后续交接。
-[C02 文本配音交接](../archive/plans/2026-10-24-team-c-c02-tts-handoff.md)补充固定文本素材与声音/参数版本、合成音频试听下载及 TTS 刷新证据。
-[C02 上传阶段刷新恢复交接](../archive/plans/2026-10-24-team-c-c02-upload-recovery-handoff.md)补充原上传键、输入身份、素材确认与 Job 原子交接；生产入口和真实服务联调仍待接入。
-[C02 固定版本文本导出交接](../archive/plans/2026-10-24-team-c-c02-text-export-handoff.md)补充已保存原文/校对版本的 UTF-8 输出与删除屏障；公开页面和字幕协议仍待接入。
-[C02 文本下载契约候选](2026-10-24-team-c-c02-download-contract-handoff.md)提供可执行正负样例和 A/C 冻结输入，状态仍 proposed，未接生产。
-[C01 任务事件与正式入口](../archive/plans/2026-10-24-team-c-c01-events-handoff.md)补充同源公开 API 消费、水位/历史过期与生产 bundle 合成 HTTP/SSE；真实部署及跨刷新恢复仍待完成。
+[C00 文本字符边界交接](2026-10-24-team-c-c00-text-handoff.md)补充项目/稿件的内容拒绝与失败重试证据。
+[C02 文件任务跨刷新恢复交接](2026-10-24-team-c-c02-recovery-handoff.md)补充创建/取消原键、事件水位和浏览器刷新证据；生产入口仍待接入，上传阶段恢复见后续交接。
+[C02 文本配音交接](2026-10-24-team-c-c02-tts-handoff.md)补充固定文本素材与声音/参数版本、合成音频试听下载及 TTS 刷新证据。
+[C02 上传阶段刷新恢复交接](2026-10-24-team-c-c02-upload-recovery-handoff.md)补充原上传键、输入身份、素材确认与 Job 原子交接；生产入口和真实服务联调仍待接入。
+[C02 固定版本文本导出交接](2026-10-24-team-c-c02-text-export-handoff.md)补充已保存原文/校对版本的 UTF-8 输出与删除屏障；公开页面和字幕协议仍待接入。
+[C02 文本下载契约候选](../../plans/2026-10-24-team-c-c02-download-contract-handoff.md)提供可执行正负样例和 A/C 冻结输入，状态仍 proposed，未接生产。
+[C01 任务事件与正式入口](2026-10-24-team-c-c01-events-handoff.md)补充同源公开 API 消费、水位/历史过期与生产 bundle 合成 HTTP/SSE；真实部署及跨刷新恢复仍待完成。
 
-[C01 Admin 同标签页恢复](../archive/plans/2026-10-24-team-c-c01-recovery-handoff.md)补充生产入口的原取消键/目标与水位跨刷新恢复、存储故障阻断；真实部署联调仍待完成。
+[C01 Admin 同标签页恢复](2026-10-24-team-c-c01-recovery-handoff.md)补充生产入口的原取消键/目标与水位跨刷新恢复、存储故障阻断；真实部署联调仍待完成。
 
-[C02 素材 HTTP 原身份恢复](../archive/plans/2026-10-24-team-c-c02-asset-reconcile-handoff.md)补充 A 上传 helper、Asset Location、v5/v6 hint 与原素材跨刷新只读核对；正式 Workbench 宿主和真实服务仍待接入。
+[C02 素材 HTTP 原身份恢复](2026-10-24-team-c-c02-asset-reconcile-handoff.md)补充 A 上传 helper、Asset Location、v5/v6 hint 与原素材跨刷新只读核对；正式 Workbench 宿主和真实服务仍待接入。
 
-[C02 正式文件转写入口](../archive/plans/2026-10-24-team-c-c02-host-handoff.md)补充正式生产宿主、原状态恢复/事件/取消及原始 JSON 下载的真实 Chromium 合成 HTTP 证据；模型发现、校对/导出和真实服务联调继续推进；正式配音见下一单元。
+[C02 正式文件转写入口](2026-10-24-team-c-c02-host-handoff.md)补充正式生产宿主、原状态恢复/事件/取消及原始 JSON 下载的真实 Chromium 合成 HTTP 证据；模型发现、校对/导出和真实服务联调继续推进；正式配音见下一单元。
 
-[C02 正式文本配音入口](../archive/plans/2026-10-24-team-c-c02-tts-host-handoff.md)补充正式同源 TTS 宿主、固定声音/参数版本、原文本/hint 刷新恢复、WAV 试听下载与切换释放的真实 Chromium 合成 HTTP 证据；发现/资格和真实服务联调仍未完成。
+[C02 正式文本配音入口](2026-10-24-team-c-c02-tts-host-handoff.md)补充正式同源 TTS 宿主、固定声音/参数版本、原文本/hint 刷新恢复、WAV 试听下载与切换释放的真实 Chromium 合成 HTTP 证据；发现/资格和真实服务联调仍未完成。
 
-[C05 固定稿件封存](../archive/plans/2026-10-24-team-c-c05-seal-handoff.md)补充不可变 sealed revision、固定源读取及 owner-only v2/真实 PG 重放与删除证据；尚未注册公开会议路由，不把基础用例当完整 C05/C06 完成。
+[C05 固定稿件封存](2026-10-24-team-c-c05-seal-handoff.md)补充不可变 sealed revision、固定源读取及 owner-only v2/真实 PG 重放与删除证据；尚未注册公开会议路由，不把基础用例当完整 C05/C06 完成。
 
-[C05 提词跟随与手动阅读](../archive/plans/2026-10-24-team-c-c05-prompter-handoff.md)补充固定本地稿件、有限窗口/旧epoch隔离核心、正式手动阅读与显式浏览器恢复；公开实时接线、服务端提词持久化和真实语音跟随仍待完成。
+[C05 提词跟随与手动阅读](2026-10-24-team-c-c05-prompter-handoff.md)补充固定本地稿件、有限窗口/旧epoch隔离核心、正式手动阅读与显式浏览器恢复；公开实时接线、服务端提词持久化和真实语音跟随仍待完成。
 
-[服务端提词持久化](../archive/plans/2026-10-24-team-c-teleprompter-persistence-handoff.md)接入两项已声明提词操作的独立 PG 事务、旧稿 revision 拒绝与原键重放、tombstone/cleanup 级联及最小权限；公开实时接线与真实语音跟随仍待完成。
+[服务端提词持久化](2026-10-24-team-c-teleprompter-persistence-handoff.md)接入两项已声明提词操作的独立 PG 事务、旧稿 revision 拒绝与原键重放、tombstone/cleanup 级联及最小权限；公开实时接线与真实语音跟随仍待完成。
 
-[C06 内网 LLM 与纪要候选](../archive/plans/2026-10-24-team-c-c06-llm-handoff.md)补充默认关闭的固定模型/模板调用、有限响应与取消、sealed 当前源重检及真实 PG 删除屏障；持久 MinutesJob、公开路由/页面、助手 turn 和真实内容网络/混合负载资格继续推进。
+[C06 内网 LLM 与纪要候选](2026-10-24-team-c-c06-llm-handoff.md)补充默认关闭的固定模型/模板调用、有限响应与取消、sealed 当前源重检及真实 PG 删除屏障；持久 MinutesJob、公开路由/页面、助手 turn 和真实内容网络/混合负载资格继续推进。
 
-[C06 持久纪要任务](../archive/plans/2026-10-24-team-c-c06-tasks-handoff.md)补充固定源/profile/binding、原意图任务/attempt、提交未知恢复及同事务发布屏障；公开 Meeting/Minutes 接线、停止对账和真实资格仍待完成。
+[C06 持久纪要任务](2026-10-24-team-c-c06-tasks-handoff.md)补充固定源/profile/binding、原意图任务/attempt、提交未知恢复及同事务发布屏障；公开 Meeting/Minutes 接线、停止对账和真实资格仍待完成。
 
-[C07 固定依赖与局部失效](../archive/plans/2026-10-24-team-c-c07-render-handoff.md)补充固定稿件/声音/模型等版本、显式生成代次、A→B→A拒绝复活和仅目标单元/角色失效；领域源引用不授予保存/导出资格，真实持久化、公开接线、独立副本/质量确认/导出与实际资格继续推进。
+[C07 固定依赖与局部失效](2026-10-24-team-c-c07-render-handoff.md)补充固定稿件/声音/模型等版本、显式生成代次、A→B→A拒绝复活和仅目标单元/角色失效；领域源引用不授予保存/导出资格，真实持久化、公开接线、独立副本/质量确认/导出与实际资格继续推进。
 
 ## 历史首轮与接力
 
 以下为当时的接力安排，供追溯，不再自动执行。
 
-[a98b2bb 集成核验](../archive/plans/2026-10-24-team-c-a98-integration-handoff.md)记录本地已吸收 #65–#68 且保留全部团队 C 改动；该条保留原时点事实，历史单元基线保持原记录。
+[a98b2bb 集成核验](2026-10-24-team-c-a98-integration-handoff.md)记录本地已吸收 #65–#68 且保留全部团队 C 改动；该条保留原时点事实，历史单元基线保持原记录。
 
-[2874c839集成核验](../archive/plans/2026-10-24-team-c-2874-integration-handoff.md)保留该时点事实：保留191文件交付，吸收#69–#71，原样unit/contract1659、隔离探针262、Web530及四条正式Chromium合成流程通过，旧网关时钟失败解除。
+[2874c839集成核验](2026-10-24-team-c-2874-integration-handoff.md)保留该时点事实：保留191文件交付，吸收#69–#71，原样unit/contract1659、隔离探针262、Web530及四条正式Chromium合成流程通过，旧网关时钟失败解除。
 
-[7372778集成与C1 JSON消费](../archive/plans/2026-10-24-team-c-c00-c1-handoff.md)保留该时点事实：保留198文件交付，吸收#72–#74，消费项目/稿件JSON生成入口；原样1902、PG262、Web584及四条正式Chromium合成流程通过。
+[7372778集成与C1 JSON消费](2026-10-24-team-c-c00-c1-handoff.md)保留该时点事实：保留198文件交付，吸收#72–#74，消费项目/稿件JSON生成入口；原样1902、PG262、Web584及四条正式Chromium合成流程通过。
 
-[e0d8992集成与C1 HTTP接入](../archive/plans/2026-10-24-team-c-c00-http-handoff.md)保留该时点事实：保留204旧C文件及双方README，吸收#75/#76，补权威错误状态并通过既有生成流水线接入七个项目/稿件HTTP操作；原样2205、PG265（含真实loopback HTTP）、Web815通过。一次终审的默认docs公网CDN问题经TDD修复并全库回归，405 Allow的Minor转入下一单元。
+[e0d8992集成与C1 HTTP接入](2026-10-24-team-c-c00-http-handoff.md)保留该时点事实：保留204旧C文件及双方README，吸收#75/#76，补权威错误状态并通过既有生成流水线接入七个项目/稿件HTTP操作；原样2205、PG265（含真实loopback HTTP）、Web815通过。一次终审的默认docs公网CDN问题经TDD修复并全库回归，405 Allow的Minor转入下一单元。
 
-[3b8052集成与C1管理HTTP](../archive/plans/2026-10-24-team-c-c1-management-handoff.md)保留该时点事实：安全吸收#78代码而未运行VAD，保留旧217文件及双方README。C-owned组合工厂覆盖C1全部13项操作，新增作用域绑定分页、真实配置状态、项目/稿件删除预检/确认/清理查询及完整405 Allow；Python2414、PG269（真实loopback）、Web891通过。
+[3b8052集成与C1管理HTTP](2026-10-24-team-c-c1-management-handoff.md)保留该时点事实：安全吸收#78代码而未运行VAD，保留旧217文件及双方README。C-owned组合工厂覆盖C1全部13项操作，新增作用域绑定分页、真实配置状态、项目/稿件删除预检/确认/清理查询及完整405 Allow；Python2414、PG269（真实loopback）、Web891通过。
 
-[项目与稿件版本工作台](../archive/plans/2026-10-24-team-c-c1-editor-handoff.md)保留该时点事实：沿3b8052消费生成C1入口，实现项目/稿件发现创建、精确历史与追加校对、sessionStorage草稿/原键恢复、显式冲突继续及存储失败屏障；53项针对性、Web940、4个实际Chromium合成HTTP上下文通过。一轮终审两项Important经失败测试修复，累计237文件交付；Python/PG复用上一单元未变证据。
+[项目与稿件版本工作台](2026-10-24-team-c-c1-editor-handoff.md)保留该时点事实：沿3b8052消费生成C1入口，实现项目/稿件发现创建、精确历史与追加校对、sessionStorage草稿/原键恢复、显式冲突继续及存储失败屏障；53项针对性、Web940、4个实际Chromium合成HTTP上下文通过。一轮终审两项Important经失败测试修复，累计237文件交付；Python/PG复用上一单元未变证据。
 
-[7cd18879集成](../archive/plans/2026-10-24-team-c-7cd-integration-handoff.md)保留该历史单元事实，当时本地base为该SHA：安全吸收#77/#79的Meeting/Minutes及公开realtime生成入口，连同#80文件媒体准备与#81租约隔离代码；237旧C文件中232字节不变，5个交集保留双方语义，生成物由A现行流水线重建，357条HTTP样例。当时Python2735、隔离PG269、Web1150及Chromium合成流程通过，累计238文件。C2/C3解析依赖在当时交付，后续Meeting/Minutes handlers、页面及实时消费者见较新交接；共享生产root/迁移、Artifact导入/下载、独立副本/恢复、设备/Linux/GPU及完整真实资格继续推进，Goal/Gate未关闭。
+[7cd18879集成](2026-10-24-team-c-7cd-integration-handoff.md)保留该历史单元事实，当时本地base为该SHA：安全吸收#77/#79的Meeting/Minutes及公开realtime生成入口，连同#80文件媒体准备与#81租约隔离代码；237旧C文件中232字节不变，5个交集保留双方语义，生成物由A现行流水线重建，357条HTTP样例。当时Python2735、隔离PG269、Web1150及Chromium合成流程通过，累计238文件。C2/C3解析依赖在当时交付，后续Meeting/Minutes handlers、页面及实时消费者见较新交接；共享生产root/迁移、Artifact导入/下载、独立副本/恢复、设备/Linux/GPU及完整真实资格继续推进，Goal/Gate未关闭。
 
 
-[Meeting/Minutes HTTP](../archive/plans/2026-10-24-team-c-meeting-http-handoff.md)接通当前五项持久业务：Meeting创建/封存/读取与Minutes入队/读取；原键返回原接受快照，GET返回当前任务。Meeting依赖纳入项目/稿件删除预检、完整确认与清理，未知LLM执行仍阻断清理。C工厂显式装配18项，默认13项；会议页面/实时采集、save_audio保存、真实LLM、生产root/迁移及完整C00–C08资格继续，当时 Goal 文档为 active；现已转为 superseded。
+[Meeting/Minutes HTTP](2026-10-24-team-c-meeting-http-handoff.md)接通当前五项持久业务：Meeting创建/封存/读取与Minutes入队/读取；原键返回原接受快照，GET返回当前任务。Meeting依赖纳入项目/稿件删除预检、完整确认与清理，未知LLM执行仍阻断清理。C工厂显式装配18项，默认13项；会议页面/实时采集、save_audio保存、真实LLM、生产root/迁移及完整C00–C08资格继续，当时 Goal 文档为 active；现已转为 superseded。
 
 1. 核对当前共同 `integration_base_sha`、工作区改动和各队具名制品；使用短分支，公共文件按维护者串行集成。暂以本地基线开展的独立单元，须在联合联调前对齐总指挥指定 SHA。
 2. 从 C00 #35 起步：消费 A00 发布的边界类型/客户端/事件 validator；完成项目和稿件版本、独立存储边界、开发 fake 及错误场景。生成器未交付时推进不依赖 DTO 的领域规则与界面状态，不手写替代生成产物。
@@ -158,15 +158,15 @@ C00–C08 全部约定范围、生产消费者及必要真实验证均有可追�
 
 每轮交接记录 `base_sha`/`head_sha` 或补丁与校验值、契约版本、修改范围、命令/环境/结果、未验证项、阻塞 owner/解除条件及下一接入动作。依赖缺失时继续独立任务，下游明确保持待联调；不猜测字段、不绕过协议，也不重复无新证据的检查。
 
-[C00 版本单元交接](../archive/plans/2026-10-24-team-c-c00-version-handoff.md) · [C00 生成请求消费交接](../archive/plans/2026-10-24-team-c-c00-project-boundary-handoff.md) · [C00 元数据分页交接](../archive/plans/2026-10-24-team-c-c00-listing-handoff.md) · [C00 PostgreSQL 事务交接](../archive/plans/2026-10-24-team-c-c00-postgres-handoff.md) · [C00 删除事务交接](../archive/plans/2026-10-24-team-c-c00-deletion-handoff.md) · [C01 Admin 任务中心交接](../archive/plans/2026-10-24-team-c-c01-task-center-handoff.md) · [C02 文件任务与 A00 消费交接](../archive/plans/2026-10-24-team-c-c02-file-flow-handoff.md) · [C02 原始转写导入交接](../archive/plans/2026-10-24-team-c-c02-transcript-import-handoff.md) · [C04 合成播放单元交接](../archive/plans/2026-10-24-team-c-c04-media-handoff.md) · [C04 浏览器采集交接](../archive/plans/2026-10-24-team-c-c04-capture-handoff.md) · [跟踪矩阵](../archive/plans/2026-10-23-implementation-tracking.md)
+[C00 版本单元交接](2026-10-24-team-c-c00-version-handoff.md) · [C00 生成请求消费交接](2026-10-24-team-c-c00-project-boundary-handoff.md) · [C00 元数据分页交接](2026-10-24-team-c-c00-listing-handoff.md) · [C00 PostgreSQL 事务交接](2026-10-24-team-c-c00-postgres-handoff.md) · [C00 删除事务交接](2026-10-24-team-c-c00-deletion-handoff.md) · [C01 Admin 任务中心交接](2026-10-24-team-c-c01-task-center-handoff.md) · [C02 文件任务与 A00 消费交接](2026-10-24-team-c-c02-file-flow-handoff.md) · [C02 原始转写导入交接](2026-10-24-team-c-c02-transcript-import-handoff.md) · [C04 合成播放单元交接](2026-10-24-team-c-c04-media-handoff.md) · [C04 浏览器采集交接](2026-10-24-team-c-c04-capture-handoff.md) · [跟踪矩阵](2026-10-23-implementation-tracking.md)
 
-当前分段交付：[会议记录与纪要工作台](../archive/plans/2026-10-24-team-c-meeting-ui-handoff.md)提供来源绑定、封存与原键恢复的真实浏览器/隔离PG证据；C00–C08及全部真实资格仍按上述退出条件保持进行中。
+当前分段交付：[会议记录与纪要工作台](2026-10-24-team-c-meeting-ui-handoff.md)提供来源绑定、封存与原键恢复的真实浏览器/隔离PG证据；C00–C08及全部真实资格仍按上述退出条件保持进行中。
 
-当前依赖基线：[eb299f7集成交接](../archive/plans/2026-10-24-team-c-eb299-integration-handoff.md)，在[9eea859历史集成](../archive/plans/2026-10-24-team-c-9ee-integration-handoff.md)之后保留C全部业务并吸收已合并#85–#88；Python3314、Web1471、隔离PG及业务浏览器296与ASR/TTS合成浏览器回归通过。[删除预检、确认与恢复页面](../archive/plans/2026-10-24-team-c-deletion-ui-handoff.md)已提供正式消费者、原键与当前清理事实的浏览器/私有PG证据。[实时ASR消费与字幕页面](../archive/plans/2026-10-24-team-c-realtime-asr-handoff.md)补充生成事件状态机、credit/PCM、原键与最终正文草稿、断线gap及生产bundle合成REST/WS/麦克风证据。公开生产realtime、双工、会议后续流程、独立副本/恢复和其余工作包继续，完整目标未完成。
+当前依赖基线：[eb299f7集成交接](2026-10-24-team-c-eb299-integration-handoff.md)，在[9eea859历史集成](2026-10-24-team-c-9ee-integration-handoff.md)之后保留C全部业务并吸收已合并#85–#88；Python3314、Web1471、隔离PG及业务浏览器296与ASR/TTS合成浏览器回归通过。[删除预检、确认与恢复页面](2026-10-24-team-c-deletion-ui-handoff.md)已提供正式消费者、原键与当前清理事实的浏览器/私有PG证据。[实时ASR消费与字幕页面](2026-10-24-team-c-realtime-asr-handoff.md)补充生成事件状态机、credit/PCM、原键与最终正文草稿、断线gap及生产bundle合成REST/WS/麦克风证据。公开生产realtime、双工、会议后续流程、独立副本/恢复和其余工作包继续，完整目标未完成。
 
-[实时TTS消费与播放](../archive/plans/2026-10-24-team-c-realtime-tts-handoff.md)补充固定引用、文本冻结与有界Worklet播放，分别记录生成/网络/渲染及合成浏览器验证；真实服务/模型/物理设备与双工继续，完整目标未完成。
+[实时TTS消费与播放](2026-10-24-team-c-realtime-tts-handoff.md)补充固定引用、文本冻结与有界Worklet播放，分别记录生成/网络/渲染及合成浏览器验证；真实服务/模型/物理设备与双工继续，完整目标未完成。
 
-[音色设计与克隆创建任务](../archive/plans/2026-10-24-team-c-voice-create-handoff.md)接入正式双模式输入、已有素材用途确认、生成Job/Asset消费者和原键恢复、首次明确拒绝纠正及原operation显式恢复；C03首个创建单元已交付，候选/再生成/试听/校验/发布、声音复用与真实A06/B05资格继续。
+[音色设计与克隆创建任务](2026-10-24-team-c-voice-create-handoff.md)接入正式双模式输入、已有素材用途确认、生成Job/Asset消费者和原键恢复、首次明确拒绝纠正及原operation显式恢复；C03首个创建单元已交付，候选/再生成/试听/校验/发布、声音复用与真实A06/B05资格继续。
 
 **更正（第 77 轮）**：上面"6 个孤儿探针"的计数是**错的**——第 76 轮的扫描把 `.runtime/` 里的引用也算作"有人运行"，真实数字是 **15 个**（漏掉 9 个）。同轮又判定并接入 `admin-workspaces-probe`（与已在门禁的 live 版测不同路径：合成 HTTP vs A 的临时夹具），并为这条线索立了**永久守卫** `tests/integration/test_probe_inventory.py`：C 侧探针要么被门禁运行，要么必须出现在显式欠账清单里并写明域与原因，清单过期即失败。剩余 9 个欠账（5 个不同路径 + 4 个疑似被取代）已记录在案。同时核实：**credit 耗尽与迟到音频已被现有证据覆盖**（ASR 探针的 `credit_exhaustion_stopped` 与三份 web 单测），故不另写重复探针。门禁 **410**。
 
@@ -178,44 +178,44 @@ C00–C08 全部约定范围、生产消费者及必要真实验证均有可追�
 
 **第 82 轮**收尾最后一个陈旧探针的定位：让探针自己产出证据——失败点 dump 显示应用停在它文档化的"结果未定态"（`按原键重放` 未自动发送，**不把未知当成功**，行为正确）；按应用意图补上重放后仍不回恢复，且探针的 `catch {}` 原本吞掉真实原因、只在成功路径输出诊断——已改为保留真实消息并在失败时打印已尝试变更与服务端处理器错误。证据排除了两类原因（`handler errors` 为空 = 非服务端拒绝；同键两次 = 确有重放），但根因仍未解释，**不记为缺陷也不记为通过**；陈旧欠账保持 1 项并附精确诊断。
 
-[五个孤儿探针接入门禁](../archive/plans/2026-10-25-team-c-orphan-probes-gated-handoff.md)把上一轮的更正做成一次**扫描**：对 `scripts/dev-env/` 每个探针统计除自身外的引用数，C 侧有 **6 个探针无人运行**（capture / media / voice-create / admin-task-center / file-demo / admin-workspaces）。前 5 个已接入门禁并钉住各自**自曝的边界**（`physicalMicrophoneAccessed=false`、`autoplayPolicyBypassedForProbe=true`、`acceptanceNotRelease=true`、`productionScenarioExcluded=true`、`cleanupNotAssumed=true`、三个 live 声明一律必须为 false）；`admin-workspaces-probe.mjs` 暂不接入，因其与已在门禁的 live 版关系需先判定。门禁 **406**。
+[五个孤儿探针接入门禁](2026-10-25-team-c-orphan-probes-gated-handoff.md)把上一轮的更正做成一次**扫描**：对 `scripts/dev-env/` 每个探针统计除自身外的引用数，C 侧有 **6 个探针无人运行**（capture / media / voice-create / admin-task-center / file-demo / admin-workspaces）。前 5 个已接入门禁并钉住各自**自曝的边界**（`physicalMicrophoneAccessed=false`、`autoplayPolicyBypassedForProbe=true`、`acceptanceNotRelease=true`、`productionScenarioExcluded=true`、`cleanupNotAssumed=true`、三个 live 声明一律必须为 false）；`admin-workspaces-probe.mjs` 暂不接入，因其与已在门禁的 live 版关系需先判定。门禁 **406**。
 
-**更正（第 75 轮）**：上一轮"实时字幕页"交接里"C04 界面此前没有任何真实 Chromium 取证"**不准确**——`scripts/dev-env/` 里早已存在两份自包含合成实时探针（ASR 2026-10-24、TTS 2026-10-24），但它们**没有任何测试包装、不在任何门禁里**，因此准确说法是"没有进入门禁的可追溯证据"。本轮把它们接入门禁（新增 2 个用例：ASR 3 个合成会话/10 次已确认写入；TTS 收到 48000 样本并渲染 48000 无丢失），详见[合成实时探针接入门禁](../archive/plans/2026-10-25-team-c-realtime-evidence-promotion-handoff.md)。门禁探针 **401**。
+**更正（第 75 轮）**：上一轮"实时字幕页"交接里"C04 界面此前没有任何真实 Chromium 取证"**不准确**——`scripts/dev-env/` 里早已存在两份自包含合成实时探针（ASR 2026-10-24、TTS 2026-10-24），但它们**没有任何测试包装、不在任何门禁里**，因此准确说法是"没有进入门禁的可追溯证据"。本轮把它们接入门禁（新增 2 个用例：ASR 3 个合成会话/10 次已确认写入；TTS 收到 48000 样本并渲染 48000 无丢失），详见[合成实时探针接入门禁](2026-10-25-team-c-realtime-evidence-promotion-handoff.md)。门禁探针 **401**。
 
-[实时字幕页的真实浏览器取证](../archive/plans/2026-10-25-team-c-realtime-consent-browser-handoff.md)补上 C04 界面此前缺失的证据：该页承诺"先创建并连接…**再由你明确开启麦克风**"，本轮用生产包 + 真实组合根（无实时底座）并把 `getUserMedia` 换成计数器——断言的是**零次请求**：打开页面 0 次、请求会话被公开拒绝（`/v1/nexus/realtime/sessions` → 404）之后**仍然 0 次**，且未连接会话时**根本不提供**"开始麦克风采集"控件、创建表单可用键盘按顺序到达、360px 无横向滚动、无非本源出站与页面异常。真实浏览器用例增至 **7 份**，探针 **399**。
+[实时字幕页的真实浏览器取证](2026-10-25-team-c-realtime-consent-browser-handoff.md)补上 C04 界面此前缺失的证据：该页承诺"先创建并连接…**再由你明确开启麦克风**"，本轮用生产包 + 真实组合根（无实时底座）并把 `getUserMedia` 换成计数器——断言的是**零次请求**：打开页面 0 次、请求会话被公开拒绝（`/v1/nexus/realtime/sessions` → 404）之后**仍然 0 次**，且未连接会话时**根本不提供**"开始麦克风采集"控件、创建表单可用键盘按顺序到达、360px 无横向滚动、无非本源出站与页面异常。真实浏览器用例增至 **7 份**，探针 **399**。
 
-[书籍页表单的真实键盘与窄屏核查](../archive/plans/2026-10-25-team-c-keyboard-narrow-verification-handoff.md)把 C 侧可达的真实验证推深一层：新增表单此前只有鼠标/程序化填入的证据。核查先暴露真实缺陷——成功后清空输入会让提交按钮变禁用，**键盘焦点掉回 document**；已改为成功后把焦点移回该表单第一个字段。真实浏览器里用**只用键盘**的流程创建单元（7 个字段逐一 Tab 并断言焦点落到下一个具名控件、Enter 提交、焦点回落），并断言 360px 无横向滚动。workbench 单元 **596**。
+[书籍页表单的真实键盘与窄屏核查](2026-10-25-team-c-keyboard-narrow-verification-handoff.md)把 C 侧可达的真实验证推深一层：新增表单此前只有鼠标/程序化填入的证据。核查先暴露真实缺陷——成功后清空输入会让提交按钮变禁用，**键盘焦点掉回 document**；已改为成功后把焦点移回该表单第一个字段。真实浏览器里用**只用键盘**的流程创建单元（7 个字段逐一 Tab 并断言焦点落到下一个具名控件、Enter 提交、焦点回落），并断言 360px 无横向滚动。workbench 单元 **596**。
 
-[音色单修订核对](2026-10-25-team-c-voice-revision-consumer-handoff.md)关掉清点名单的最后一条，并给出**清点结论**：收紧到"方法 + 路径 + 排除测试文件"后，**已绑定操作的生产消费者缺口归零**（剩余 4 条是 A 未绑定的操作，不在 C 清点范围内）。单修订是唯一带 `retired_at`/`disabled_reason`/`model_binding` 的读取——只看目录摘要，界面无法说明一个被固定引用的音色为何不可用。真实浏览器侧只能证明**拒绝路径**（任何 C 可达的真实部署都没有语音底座：目录与单修订都是 503），成功路径待 A 的音色目录。workbench 单元 **594**。
+[音色单修订核对](../../plans/2026-10-25-team-c-voice-revision-consumer-handoff.md)关掉清点名单的最后一条，并给出**清点结论**：收紧到"方法 + 路径 + 排除测试文件"后，**已绑定操作的生产消费者缺口归零**（剩余 4 条是 A 未绑定的操作，不在 C 清点范围内）。单修订是唯一带 `retired_at`/`disabled_reason`/`model_binding` 的读取——只看目录摘要，界面无法说明一个被固定引用的音色为何不可用。真实浏览器侧只能证明**拒绝路径**（任何 C 可达的真实部署都没有语音底座：目录与单修订都是 503），成功路径待 A 的音色目录。workbench 单元 **594**。
 
-[项目改名（元数据版本 CAS）](../archive/plans/2026-10-25-team-c-project-rename-cas-handoff.md)补上 `updateProject` 这一真实缺口，并修掉一处诚实性问题：`BooksHost` 的错误映射此前没有 `revision_conflict` 分支，**明确的版本冲突被报成"结果未确认"**，会诱导盲目重试；现改为冲突文案且不自动重试。落点刻意避开 manuscripts 的持久恢复日志（加字段会改变日志格式，可能让在飞的未保存草稿判为不可恢复）。真实浏览器证据含**带外推进修订后界面用旧修订改名**的 409 场景：冲突文案出现、被拒名字不显示，HTTP 复核部署里存的是带外注入的名字、`metadata_revision=3`（旧修订没有赢）。workbench 单元 **591**。
+[项目改名（元数据版本 CAS）](2026-10-25-team-c-project-rename-cas-handoff.md)补上 `updateProject` 这一真实缺口，并修掉一处诚实性问题：`BooksHost` 的错误映射此前没有 `revision_conflict` 分支，**明确的版本冲突被报成"结果未确认"**，会诱导盲目重试；现改为冲突文案且不自动重试。落点刻意避开 manuscripts 的持久恢复日志（加字段会改变日志格式，可能让在飞的未保存草稿判为不可恢复）。真实浏览器证据含**带外推进修订后界面用旧修订改名**的 409 场景：冲突文案出现、被拒名字不显示，HTTP 复核部署里存的是带外注入的名字、`metadata_revision=3`（旧修订没有赢）。workbench 单元 **591**。
 
-[渲染单元创建补线](../archive/plans/2026-10-25-team-c-render-unit-create-consumer-handoff.md)把清点再收紧一格（**排除测试文件的调用**，6 条），并因此划掉一个"假缺口"：`getTranscriptRevision` 并非缺陷——`getTranscript` 带 `revision` query，界面的"读取固定版本"走的就是它，既有真实探针已断言历史原文可还原。真正的洞是 `createRenderUnit`（章节能建、单元不能建 → 有声书产不出任何东西）：本轮补齐客户端与表单（显式 pin 可登记，目录可用时给出下拉），并由真实浏览器证据闭环——同一生产包流程建书→建章节→建单元，再由真实 HTTP 复读单元逐字段相等、`status=pending`（**登记≠生成**，生成仍是 A 的 `generateRenderUnit`）。workbench 单元 **588**。
+[渲染单元创建补线](2026-10-25-team-c-render-unit-create-consumer-handoff.md)把清点再收紧一格（**排除测试文件的调用**，6 条），并因此划掉一个"假缺口"：`getTranscriptRevision` 并非缺陷——`getTranscript` 带 `revision` query，界面的"读取固定版本"走的就是它，既有真实探针已断言历史原文可还原。真正的洞是 `createRenderUnit`（章节能建、单元不能建 → 有声书产不出任何东西）：本轮补齐客户端与表单（显式 pin 可登记，目录可用时给出下拉），并由真实浏览器证据闭环——同一生产包流程建书→建章节→建单元，再由真实 HTTP 复读单元逐字段相等、`status=pending`（**登记≠生成**，生成仍是 A 的 `generateRenderUnit`）。workbench 单元 **588**。
 
-[有声书章节创建补线](../archive/plans/2026-10-25-team-c-chapter-create-consumer-handoff.md)先纠正我自己的错误结论：第 66/67 轮"只剩 3 条无消费者"是**方法错误**（只比路径、不分方法），按"方法+路径"重做真实为 **7 条**。其中 `createChapter` 是真实功能洞——书能开、章能列，却无法新建章节；本轮补齐（客户端断言 `book_id` 一致、失败不轮换请求键、顺带修正书籍创建每次现取新键与"按原键重试"提示矛盾的问题），并由真实浏览器证据闭环（生产包建书→建章节，再由真实 HTTP 复读同一章节，`GET /chapters/{id}` 与列表逐字段相等）。探针 **398 通过**（397+1），workbench 单元 **585**。
+[有声书章节创建补线](2026-10-25-team-c-chapter-create-consumer-handoff.md)先纠正我自己的错误结论：第 66/67 轮"只剩 3 条无消费者"是**方法错误**（只比路径、不分方法），按"方法+路径"重做真实为 **7 条**。其中 `createChapter` 是真实功能洞——书能开、章能列，却无法新建章节；本轮补齐（客户端断言 `book_id` 一致、失败不轮换请求键、顺带修正书籍创建每次现取新键与"按原键重试"提示矛盾的问题），并由真实浏览器证据闭环（生产包建书→建章节，再由真实 HTTP 复读同一章节，`GET /chapters/{id}` 与列表逐字段相等）。探针 **398 通过**（397+1），workbench 单元 **585**。
 
-[已保存副本回读的生产消费者](2026-10-25-team-c-saved-asset-read-back-handoff.md)是机械比对的结果：44 条已冻结操作里只剩 3 条没有 Web 消费者（`getSavedAsset`/`getTranscriptRevision`/`getVoiceRevision`），本轮补上 ROI-1 点名的 `getSavedAsset`——按 id 显式回读、展示服务端自己的媒体类型/字节数/sha256/来源，404 与未确认分别如实报告；真实 PG+MinIO 集成与**真实 HTTP**（真实组合根）双双证明回读不再向底座取产物、未知 id 与另一 workspace 均为 not-found；探针 **397 通过**（395+2，含新增读路径用例）；workbench 单元 **582**。一处预期修正：未配置对象区时该部署不挂载副本路由、返回 404 而非 503，已按实测改断言。
+[已保存副本回读的生产消费者](../../plans/2026-10-25-team-c-saved-asset-read-back-handoff.md)是机械比对的结果：44 条已冻结操作里只剩 3 条没有 Web 消费者（`getSavedAsset`/`getTranscriptRevision`/`getVoiceRevision`），本轮补上 ROI-1 点名的 `getSavedAsset`——按 id 显式回读、展示服务端自己的媒体类型/字节数/sha256/来源，404 与未确认分别如实报告；真实 PG+MinIO 集成与**真实 HTTP**（真实组合根）双双证明回读不再向底座取产物、未知 id 与另一 workspace 均为 not-found；探针 **397 通过**（395+2，含新增读路径用例）；workbench 单元 **582**。一处预期修正：未配置对象区时该部署不挂载副本路由、返回 404 而非 503，已按实测改断言。
 
-[九份 issue 正文按当前现实整理](../archive/plans/2026-10-25-team-c-issue-four-part-refresh-handoff.md)解决的是**issue 与工作区脱节**：九份工作包正文停留在开工计划（0 个已勾选子项、0 条证据），而工作区已有十个冻结单元与五份真实浏览器制品。整理后正文保持四段（目标/进展总结/任务清单/AC）、无平行章节与"现实核对"块；进展总结写清已交付、未集成与阻塞 owner+解除条件；**逐轮命令、计数、制品路径与补丁 SHA 全部移入评论**；只勾选 8 个有单独证据的步骤，**41 条 AC 一律未勾**。逐字回读制品：`.runtime/team-c/2026-10-25-issue-four-part-readback.json`。
+[九份 issue 正文按当前现实整理](2026-10-25-team-c-issue-four-part-refresh-handoff.md)解决的是**issue 与工作区脱节**：九份工作包正文停留在开工计划（0 个已勾选子项、0 条证据），而工作区已有十个冻结单元与五份真实浏览器制品。整理后正文保持四段（目标/进展总结/任务清单/AC）、无平行章节与"现实核对"块；进展总结写清已交付、未集成与阻塞 owner+解除条件；**逐轮命令、计数、制品路径与补丁 SHA 全部移入评论**；只勾选 8 个有单独证据的步骤，**41 条 AC 一律未勾**。逐字回读制品：`.runtime/team-c/2026-10-25-issue-four-part-readback.json`。
 
-[部署内提词状态的生产消费者](2026-10-25-team-c-teleprompter-state-consumer-handoff.md)补上两处缺口的"消费者"一端：`getTeleprompterState`/`updateTeleprompterState` 后端早已接入独立 PG，但 Web 侧**没有任何消费者**（面板只做本地阅读，文案还写着"不保存到服务端"）。新增同源读取（404=尚未保存，**绝不当作位置 0**）、显式写入（修订+位置+手动接管+请求键）、冲突保留上次读取且不重试；真实浏览器 + 真实 HTTP 复核证明"更旧修订被 409 拒绝且没有移动位置"。探针 **394 通过**（393+1）、workbench 单元 **580**。
+[部署内提词状态的生产消费者](../../plans/2026-10-25-team-c-teleprompter-state-consumer-handoff.md)补上两处缺口的"消费者"一端：`getTeleprompterState`/`updateTeleprompterState` 后端早已接入独立 PG，但 Web 侧**没有任何消费者**（面板只做本地阅读，文案还写着"不保存到服务端"）。新增同源读取（404=尚未保存，**绝不当作位置 0**）、显式写入（修订+位置+手动接管+请求键）、冲突保留上次读取且不重试；真实浏览器 + 真实 HTTP 复核证明"更旧修订被 409 拒绝且没有移动位置"。探针 **394 通过**（393+1）、workbench 单元 **580**。
 
-[Admin 部署诊断页](../archive/plans/2026-10-25-team-c-admin-diagnostics-handoff.md)把可读事实接到管理入口：AdminUI 此前只有三张写明"计划"的静态能力卡，**没有任何一处读部署自身状态**。现在同源只读 `GET /v1/workbench/status`（生成契约校验），**打开页面不发请求**、点击"读取部署状态"才读；逐条渲染服务端五个能力（状态原样）、内网模型绑定、本地化的共享部署声明（契约里是固定代码 `shared_deployment`，界面不得回显英文），并明确列出尚未接入的队列深度/预算/租约/outbox/计量/GPU；读取失败只报错、不渲染能力。证据：Admin 单元 110→**118**、真实 Chromium+生产 Admin 包+真实组合根+隔离 PG 两场景；探针 **393 通过**（原 391 + 2）。
+[Admin 部署诊断页](2026-10-25-team-c-admin-diagnostics-handoff.md)把可读事实接到管理入口：AdminUI 此前只有三张写明"计划"的静态能力卡，**没有任何一处读部署自身状态**。现在同源只读 `GET /v1/workbench/status`（生成契约校验），**打开页面不发请求**、点击"读取部署状态"才读；逐条渲染服务端五个能力（状态原样）、内网模型绑定、本地化的共享部署声明（契约里是固定代码 `shared_deployment`，界面不得回显英文），并明确列出尚未接入的队列深度/预算/租约/outbox/计量/GPU；读取失败只报错、不渲染能力。证据：Admin 单元 110→**118**、真实 Chromium+生产 Admin 包+真实组合根+隔离 PG 两场景；探针 **393 通过**（原 391 + 2）。
 
-[助手诚实态的真实浏览器资格](../archive/plans/2026-10-25-team-c-assistant-honest-state-browser-handoff.md)把上一单元的 jsdom 结论搬到真实环境：生产包 + 真实组合根 + 隔离 PG 下，默认部署（`disabled`）与"已配置内网模型但无语音底座"（`unavailable`）两种判定都被真实 Chromium 确认——诚实文案可见、**创建表单根本不存在**、`/assistant-turns` 请求为 0、重载后结论不变、出站与页面错误均为 0。这两条用例已进入 `--browser` 门禁（探针 391 通过）。
+[助手诚实态的真实浏览器资格](2026-10-25-team-c-assistant-honest-state-browser-handoff.md)把上一单元的 jsdom 结论搬到真实环境：生产包 + 真实组合根 + 隔离 PG 下，默认部署（`disabled`）与"已配置内网模型但无语音底座"（`unavailable`）两种判定都被真实 Chromium 确认——诚实文案可见、**创建表单根本不存在**、`/assistant-turns` 请求为 0、重载后结论不变、出站与页面错误均为 0。这两条用例已进入 `--browser` 门禁（探针 391 通过）。
 
-[语音助手诚实消费面](../archive/plans/2026-10-25-team-c-assistant-honest-consumer-handoff.md)在工作台里补上了此前**完全不存在**的助手界面（连导航项都没有）。消费面严格以服务端能力三态决定能否提交：未启用或缺依赖时创建表单根本不出现，可用时才显示项目/已发布音色/文本/请求键；回合按契约断言（失败必须有 error、非失败必须 error=null、成功必须有 speech_job_id、携带 job 就必须带非空文本），失败显示服务端错误码且不自动重试。本轮证据是 jsdom 单元（会话 7 项 + 宿主 4 项，全量 Web 574 通过）与门禁，**真实浏览器下的两态呈现仍待下一轮**。
+[语音助手诚实消费面](2026-10-25-team-c-assistant-honest-consumer-handoff.md)在工作台里补上了此前**完全不存在**的助手界面（连导航项都没有）。消费面严格以服务端能力三态决定能否提交：未启用或缺依赖时创建表单根本不出现，可用时才显示项目/已发布音色/文本/请求键；回合按契约断言（失败必须有 error、非失败必须 error=null、成功必须有 speech_job_id、携带 job 就必须带非空文本），失败显示服务端错误码且不自动重试。本轮证据是 jsdom 单元（会话 7 项 + 宿主 4 项，全量 Web 574 通过）与门禁，**真实浏览器下的两态呈现仍待下一轮**。
 
-[工作台状态上报真实的部署能力三态](../archive/plans/2026-10-25-team-c-capability-report-handoff.md)修掉了诚实 UI 的前提缺口：契约要求 `capabilities` 上报 transcription / meeting_minutes / assistant / teleprompter / audiobook_export 的 `available|disabled|unavailable`，实现却恒返回空数组，消费端只能靠猜。现在状态由装配事实推导（语音客户端、对象区、批准 LLM profile、导出 producer 与循环是否运行），隔离 PG 上钉住未配置部署、LLM+语音底座、导出三种情形的取值。
+[工作台状态上报真实的部署能力三态](2026-10-25-team-c-capability-report-handoff.md)修掉了诚实 UI 的前提缺口：契约要求 `capabilities` 上报 transcription / meeting_minutes / assistant / teleprompter / audiobook_export 的 `available|disabled|unavailable`，实现却恒返回空数组，消费端只能靠猜。现在状态由装配事实推导（语音客户端、对象区、批准 LLM profile、导出 producer 与循环是否运行），隔离 PG 上钉住未配置部署、LLM+语音底座、导出三种情形的取值。
 
-[导出产线在服务运行时中的预接线](../archive/plans/2026-10-25-team-c-export-production-prewiring-handoff.md)补上了"队列有人认领"这一环：导出队列、认领、对象发布与结算都在工作台侧，但 producer 属语音生成边界，此前 `ExportWorker` 只在测试里被手工调用，生产组合根从不构造它。现在 `create_runtime_app(settings, *, export_producer=None)` 提供注入点，`export_interval_seconds` 默认 `0`（关闭），只有同时具备已配置 producer 与对象区时才启动派发循环；隔离 PG + 真实 MinIO 上证明运行时自有循环能认领并完成排队导出、默认关闭时不动队列、无 producer 时不认领。producer 仍为测试替身，真实字节来源待 A。
+[导出产线在服务运行时中的预接线](2026-10-25-team-c-export-production-prewiring-handoff.md)补上了"队列有人认领"这一环：导出队列、认领、对象发布与结算都在工作台侧，但 producer 属语音生成边界，此前 `ExportWorker` 只在测试里被手工调用，生产组合根从不构造它。现在 `create_runtime_app(settings, *, export_producer=None)` 提供注入点，`export_interval_seconds` 默认 `0`（关闭），只有同时具备已配置 producer 与对象区时才启动派发循环；隔离 PG + 真实 MinIO 上证明运行时自有循环能认领并完成排队导出、默认关闭时不动队列、无 producer 时不认领。producer 仍为测试替身，真实字节来源待 A。
 
-[稿件创建消费者缺陷修复与稿件真实浏览器资格](../archive/plans/2026-10-25-team-c-authoring-consumer-fix-handoff.md)把写作面接进真实运行时资格时挖出一个**真实生产缺陷**：手工新建稿件在真实部署上永远卡在"提交结果尚未确认"、编辑器无法出现——契约与领域都规定手工稿的原始修订是 `draft`，而 Web 客户端无条件断言 `sealed`，契约 fixture 的示例也自相矛盾，两个 Web fixture 同样写错，因此单元测试一直通过。修复覆盖契约 fixture、客户端分支断言、界面文案与测试（新增缺陷用例）；配套新探针在真实 Chromium + 真实组合根 + 隔离 PG 上跑通"创建项目/原稿 → 核对当前版本 → 校对提交修订 → 读取历史版本 → 从历史保存 → 刷新保留草稿"，并如实记录既有合成稿件探针从未被调用、locator 已过期。
+[稿件创建消费者缺陷修复与稿件真实浏览器资格](2026-10-25-team-c-authoring-consumer-fix-handoff.md)把写作面接进真实运行时资格时挖出一个**真实生产缺陷**：手工新建稿件在真实部署上永远卡在"提交结果尚未确认"、编辑器无法出现——契约与领域都规定手工稿的原始修订是 `draft`，而 Web 客户端无条件断言 `sealed`，契约 fixture 的示例也自相矛盾，两个 Web fixture 同样写错，因此单元测试一直通过。修复覆盖契约 fixture、客户端分支断言、界面文案与测试（新增缺陷用例）；配套新探针在真实 Chromium + 真实组合根 + 隔离 PG 上跑通"创建项目/原稿 → 核对当前版本 → 校对提交修订 → 读取历史版本 → 从历史保存 → 刷新保留草稿"，并如实记录既有合成稿件探针从未被调用、locator 已过期。
 
-[真实运行时 × 真实本机模型 × 真实浏览器](../archive/plans/2026-10-25-team-c-real-runtime-model-browser-handoff.md)把**配置的本机模型**接进同一条真实链路：页面上排队的纪要通过轮询确认由运行时自己的派发器认领并完成（测试不执行任何任务），读回 `status=succeeded`、`llm_model` 等于配置模型、正文非空，并且页面显示的就是模型实际返回的内容；过期与级联删除同样走真实 HTTP 与真实 sweeper。探针新增两个**默认关闭**的开关（保持既有用例逐字不变），模型文本以 `model-text.txt` 落盘便于复核。
+[真实运行时 × 真实本机模型 × 真实浏览器](2026-10-25-team-c-real-runtime-model-browser-handoff.md)把**配置的本机模型**接进同一条真实链路：页面上排队的纪要通过轮询确认由运行时自己的派发器认领并完成（测试不执行任何任务），读回 `status=succeeded`、`llm_model` 等于配置模型、正文非空，并且页面显示的就是模型实际返回的内容；过期与级联删除同样走真实 HTTP 与真实 sweeper。探针新增两个**默认关闭**的开关（保持既有用例逐字不变），模型文本以 `model-text.txt` 落盘便于复核。
 
-[真实运行时 × 真实 Chromium 交付资格](../archive/plans/2026-10-25-team-c-real-runtime-browser-handoff.md)把浏览器证据从"合成服务集 + 手工装配 ASGI"提升到部署自己的组合根：真实生产包、真实启动检查、真实删除账本重放、真实隔离 PG，且不手工驱动 worker——欠账清除改由**重启后启动期重放**完成，使 ADR 0005 成为可执行证据。同时记录两个真实发现：契约入口会拒绝静态资源（API 不是静态站点，部署须由前端层代理 `/v1`），以及真实 sweeper 的中间态会掩盖旧用例的手工清理假设。
+[真实运行时 × 真实 Chromium 交付资格](2026-10-25-team-c-real-runtime-browser-handoff.md)把浏览器证据从"合成服务集 + 手工装配 ASGI"提升到部署自己的组合根：真实生产包、真实启动检查、真实删除账本重放、真实隔离 PG，且不手工驱动 worker——欠账清除改由**重启后启动期重放**完成，使 ADR 0005 成为可执行证据。同时记录两个真实发现：契约入口会拒绝静态资源（API 不是静态站点，部署须由前端层代理 `/v1`），以及真实 sweeper 的中间态会掩盖旧用例的手工清理假设。
 
-[内网 LLM 接线与纪要派发 worker](../archive/plans/2026-10-25-team-c-minutes-worker-handoff.md)在用户授权使用真实环境后补齐 C06 的启用态：设置面新增默认关闭的 LLM 绑定（仅本机或内网端点，公网主机在启动时被拒），组合根把同一绑定注入会议纪要与助手，并新增随 lifespan 启停的纪要派发 worker。真实证据：本机 oMLX 模型经真实 PG 完成"入队→派发→落库"，其中一条由真实 `create_runtime_app` lifespan 自己的循环完成，并核对 status 上报的 `llm_enabled`/`minutes_profile`；单元+契约 3997、隔离 PG 探针 379、纪要集成 32、live 2 全通过。同时记录环境发现：CLIProxyAPI 的 `omlx-*` 别名响应回上游原生模型名，不满足 C 的 pinned-model 校验，故部署配置直连本机 oMLX（仍不出机）；真实 A/B 服务、设备、Linux/GPU 与生产部署继续待联调。
+[内网 LLM 接线与纪要派发 worker](2026-10-25-team-c-minutes-worker-handoff.md)在用户授权使用真实环境后补齐 C06 的启用态：设置面新增默认关闭的 LLM 绑定（仅本机或内网端点，公网主机在启动时被拒），组合根把同一绑定注入会议纪要与助手，并新增随 lifespan 启停的纪要派发 worker。真实证据：本机 oMLX 模型经真实 PG 完成"入队→派发→落库"，其中一条由真实 `create_runtime_app` lifespan 自己的循环完成，并核对 status 上报的 `llm_enabled`/`minutes_profile`；单元+契约 3997、隔离 PG 探针 379、纪要集成 32、live 2 全通过。同时记录环境发现：CLIProxyAPI 的 `omlx-*` 别名响应回上游原生模型名，不满足 C 的 pinned-model 校验，故部署配置直连本机 oMLX（仍不出机）；真实 A/B 服务、设备、Linux/GPU 与生产部署继续待联调。
 
-[工作空间读取与依赖集成](../archive/plans/2026-10-24-team-c-workspaces-read-handoff.md)吸收A #90–#93至2a46c6e，接入Admin同源生成GET列表/详情及显式分页；Workspace为共享分组，创建/修改/配额、A真实GET/PG和完整管理资格继续。
+[工作空间读取与依赖集成](2026-10-24-team-c-workspaces-read-handoff.md)吸收A #90–#93至2a46c6e，接入Admin同源生成GET列表/详情及显式分页；Workspace为共享分组，创建/修改/配额、A真实GET/PG和完整管理资格继续。

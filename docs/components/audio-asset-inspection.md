@@ -18,7 +18,7 @@ adds a workspace dependency and private schema, with no public HTTP, migration
 or grant change.
 
 The acceptance target is [A02 #21](https://github.com/hrygo/SpeechNexus/issues/21)
-AC1/AC2 and the [file ASR roadmap](../plans/2026-10-25-team-a-realignment.md).
+AC1/AC2 and the [file ASR roadmap](../archive/plans/2026-10-25-team-a-realignment.md).
 Public `ready` still requires approved deployment/composition, public error
 mapping and actual HTTP/PG/MinIO acceptance below. A successful command alone
 is not a media fact.

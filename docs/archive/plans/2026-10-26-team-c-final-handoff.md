@@ -7,7 +7,7 @@ date: 2026-10-26
 
 # 团队 C 收尾与新负责人交接
 
-本文件保留 C 队收尾时点的交接记录；后续接管快照见[项目经理基线](2026-10-26-project-manager-baseline.md)，现行交付入口见[交付跟踪矩阵](delivery-tracking.md)。按用户 2026-10-26 的收尾要求，旧计划停止自动接力，后续 owner、优先级、集成顺序及环境窗口重新安排。原 C00–C08 范围、41 条原 AC、278 个子条件及 Gate 前置保留；交接完成不表示业务验收完成。
+本文件保留 C 队收尾时点的交接记录；后续接管快照见[项目经理基线](2026-10-26-project-manager-baseline.md)，现行交付入口见[交付跟踪矩阵](../../plans/delivery-tracking.md)。按用户 2026-10-26 的收尾要求，旧计划停止自动接力，后续 owner、优先级、集成顺序及环境窗口重新安排。原 C00–C08 范围、41 条原 AC、278 个子条件及 Gate 前置保留；交接完成不表示业务验收完成。
 
 原 C 收尾只交付文档与 issue 整理，未实施新的产品修复或模型实验。后续经理集成在 #221 修复私有 WAV 检查，#222 补统一基线和时点校准；不改变下述 C 未决风险。已实现内容、未决审查、缺少制品及证据缺失分别如下，不能由 PR 或 CI 成功互相替代。
 
@@ -21,8 +21,8 @@ date: 2026-10-26
 | [总控 #6](https://github.com/hrygo/SpeechNexus/issues/6) | 当前远端进度；25 个工作包完整验收 0/25，6 个 Gate 放行 0/6 |
 | [B 收尾 #220](https://github.com/hrygo/SpeechNexus/pull/220) | 提供[项目统一交接](https://github.com/hrygo/SpeechNexus/blob/45bc90ed0fcc36264022b0c2f684e3d9006685ec/docs/audits/2026-10-26-project-handoff.md)及 B 的完整证据、归档与剩余范围；该文件目前属于待审候选 |
 | [A 收尾 #221](https://github.com/hrygo/SpeechNexus/pull/221) | head `a0006736d59e38d506cadc19a74483d73d47c3b8`（实现提交 `b7e65f4`）；[A 交接](https://github.com/hrygo/SpeechNexus/blob/a0006736d59e38d506cadc19a74483d73d47c3b8/docs/plans/2026-10-26-team-a-final-handoff.md)与共享媒体/私有检查回执，尚待集成和 B 实际接收 |
-| [本轮全量 issue 核对](../audits/2026-10-26-team-c-closeout-issue-audit.md) | 全部 40 项正文、状态与元数据核对，保留目标/AC；状态标签描述实施程度，不表示 agent 仍在自动执行 |
-| [C 实现/证据矩阵](../audits/2026-10-26-team-c-render-loop-status.md)、[缺口表](../audits/2026-10-26-team-c-remaining-gaps.md) | C07 已接线范围、未决代码审查和依赖，不把 C 自有风险都归为外部阻塞 |
+| [本轮全量 issue 核对](../../audits/2026-10-26-team-c-closeout-issue-audit.md) | 全部 40 项正文、状态与元数据核对，保留目标/AC；状态标签描述实施程度，不表示 agent 仍在自动执行 |
+| [C 实现/证据矩阵](../../audits/2026-10-26-team-c-render-loop-status.md)、[缺口表](../../audits/2026-10-26-team-c-remaining-gaps.md) | C07 已接线范围、未决代码审查和依赖，不把 C 自有风险都归为外部阻塞 |
 | [C 协作方案](2026-10-26-team-c-next-phase-execution-and-collaboration.md) | A/B 联审后的 v1.2.0 历史方案，已转为 superseded；C-N01–07 供重新规划，不是开工指令 |
 | [阶段 Goal](2026-10-25-team-c-next-phase-goal-and-acceptance.md)、[原始 Goal](2026-10-24-team-c-goal.md) | 原 T01–T11、AC-01–12、C00–C08 范围及历史证据，均不再自动执行 |
 
@@ -79,9 +79,9 @@ date: 2026-10-26
 
 | 对象 | 当前事实与移交办法 |
 | --- | --- |
-| 原验收映射 | [41 条原 AC 矩阵](../audits/2026-10-25-team-c-original-ac-matrix.md)、[278 子条件机器映射](../audits/2026-10-25-team-c-acceptance-map.json)均保留；全部仍 not_run，旧实现分类不是当前完成率 |
-| 证据事故 | [#189 清理丢失 82 份原件](../audits/2026-10-26-team-c-evidence-retention.md)，影响 214 个条件引用。不可由摘要补勾；稳定根重建属于新证据，不能称原件找回 |
-| 当前操作映射 | [JSON](../audits/2026-10-26-team-c-operation-coverage.json)与[报告](../audits/2026-10-26-team-c-operation-coverage.md)：52 项、42 bound、10 consumer_pending；仅 workbench 接线审计，SSE/兼容退役/其他 surface/语义仍待 |
+| 原验收映射 | [41 条原 AC 矩阵](../../audits/2026-10-25-team-c-original-ac-matrix.md)、[278 子条件机器映射](../../audits/2026-10-25-team-c-acceptance-map.json)均保留；全部仍 not_run，旧实现分类不是当前完成率 |
+| 证据事故 | [#189 清理丢失 82 份原件](../../audits/2026-10-26-team-c-evidence-retention.md)，影响 214 个条件引用。不可由摘要补勾；稳定根重建属于新证据，不能称原件找回 |
+| 当前操作映射 | [JSON](../../audits/2026-10-26-team-c-operation-coverage.json)与[报告](../../audits/2026-10-26-team-c-operation-coverage.md)：52 项、42 bound、10 consumer_pending；仅 workbench 接线审计，SSE/兼容退役/其他 surface/语义仍待 |
 | 本轮稳定归档 | `/Users/hrygo/.codex/team-c-evidence/20261026T101715Z-final-handoff/`；保存旧工作区 3 份文档原件、原目标 diff、worktree/status、40 issue 前后原文/元数据、4 项写入回读、清理记录、检查结果与 manifest。只含本任务材料，不纳入 Git |
 | 旧工作区 | `/Users/hrygo/Documents/SpeechNexus`，原 C 分支 HEAD `24ea145bd7ff8f77ad7c6f96c655e4597be416dc`。本轮旧计划副本已在逐字节校验归档后移入废纸篓，临时索引入口只撤回本轮两行；既存目标 diff、贡献指南/模板和未知 `.paperclip/` 保留，不将其直接当作主干新增 |
 | 最终 PR 工作区 | `/Users/hrygo/.codex/worktrees/team-c-final-handoff/SpeechNexus`，`codex/team-c-final-handoff`，独立基于 54daef6；保留供审阅，归档原件位于 worktree 之外 |
@@ -113,6 +113,6 @@ PY
 
 ## 本轮验证与完成边界
 
-本 PR 已按[文档验证规则](../agent-verification.md)检查 10 份 Markdown 的 220 个本地链接、frontmatter、2 个 Bash 代码块语法与 diff；操作守卫实测 52/42/10、0 findings，原 Goal checkbox/阶段完整 AC 保留。4 项 issue 就地更新、全部 40 项回读通过，详见[核对记录](../audits/2026-10-26-team-c-closeout-issue-audit.md)。精确提交的 CI 以 PR 检查为准，文档路由跳过的业务项不记为通过。
+本 PR 已按[文档验证规则](../../agent-verification.md)检查 10 份 Markdown 的 220 个本地链接、frontmatter、2 个 Bash 代码块语法与 diff；操作守卫实测 52/42/10、0 findings，原 Goal checkbox/阶段完整 AC 保留。4 项 issue 就地更新、全部 40 项回读通过，详见[核对记录](../../audits/2026-10-26-team-c-closeout-issue-audit.md)。精确提交的 CI 以 PR 检查为准，文档路由跳过的业务项不记为通过。
 
 原 C 收尾未重跑业务、数据库、真实模型、设备、LLM 或目标拓扑资格。历史 #201 合后取消/清理未结、旧 ENOSPC、C 焦点/探针失败及丢失证据继续保留；绿色文档 CI 不解除这些问题。原收尾交付为可接管的记录和待审 PR，后续合入与经理接管以统一基线及 GitHub 回执为准。

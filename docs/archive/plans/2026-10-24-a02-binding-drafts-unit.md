@@ -7,7 +7,7 @@ date: 2026-10-24
 
 # ModelBinding draft persistence
 
-> Historical implementation unit: the plan and validation results below describe their original point in time. Current scope and evidence are in the [delivery tracking matrix](delivery-tracking.md).
+> Historical implementation unit: the plan and validation results below describe their original point in time. Current scope and evidence are in the [delivery tracking matrix](../../plans/delivery-tracking.md).
 
 Team A owns this A02 unit, Refs #19/#21. Integration base is
 `22d50ee451a2b9e94038ba7d3f0e282e3e7a2b5a`, including B #123/#124. The #122 contract

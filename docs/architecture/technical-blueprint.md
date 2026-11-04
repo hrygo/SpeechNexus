@@ -9,7 +9,7 @@ date: 2026-10-26
 
 本文把[产品主设计](../speechnexus-product-architecture.md)、[语音协议](speech-api.md)、[资源治理](runtime-governance.md)和已接受 ADR 衔接为可实施的工程方案，负责组件协作、技术选型、内部协议、事务和交付顺序。公共语义由语音协议及现行机器契约负责；本文不重复定义字段默认值、范围、状态枚举或错误码。
 
-本文规定目标架构与退出条件，不能把下文流程图当作已装配能力；当前实现、缺口和验收证据见[交付跟踪矩阵](../plans/delivery-tracking.md)，[2026-10-26 项目经理基线](../plans/2026-10-26-project-manager-baseline.md)仅反映当时快照。首批模型与加载策略沿用 [ADR 0002](../decisions/0002-speech-models-engines-and-loading.md)，业务内容不出网的约束见 [ADR 0003](../decisions/0003-workbench-llm-network-boundary.md)，集群就绪架构与单机 MVP 同构部署见 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md)。
+本文规定目标架构与退出条件，不能把下文流程图当作已装配能力；当前实现、缺口和验收证据见[交付跟踪矩阵](../plans/delivery-tracking.md)，[2026-10-26 项目经理基线](../archive/plans/2026-10-26-project-manager-baseline.md)仅反映当时快照。首批模型与加载策略沿用 [ADR 0002](../decisions/0002-speech-models-engines-and-loading.md)，业务内容不出网的约束见 [ADR 0003](../decisions/0003-workbench-llm-network-boundary.md)，集群就绪架构与单机 MVP 同构部署见 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md)。
 
 [ADR 0006](../decisions/0006-cluster-coordination-and-storage-portability.md)确定集群能力
 完整保留、跨表规则迁入受控应用事务、不采用 etcd，以及 PostgreSQL 正式交付 /

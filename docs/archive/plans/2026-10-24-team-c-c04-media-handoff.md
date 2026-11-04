@@ -11,7 +11,7 @@ date: 2026-10-24
 
 ## 身份与验收边界
 
-团队 C / C04；持续范围见[团队 C 目标](../../plans/2026-10-24-team-c-goal.md)。本轮交付独立播放单元及合成浏览器探针，C04、C08 和 Gate 均保持待完整验收。
+团队 C / C04；持续范围见[团队 C 目标](2026-10-24-team-c-goal.md)。本轮交付独立播放单元及合成浏览器探针，C04、C08 和 Gate 均保持待完整验收。
 
 工作基线为 `8333e4ba7c722a36cc70545fd5a0ed2beee38eea`，分支 `codex/team-c-c00-versions`。改动尚未提交，没有承载本单元的 `head_sha`，未 push 或更新远端 Issue。联合联调仍须确认共同 integration SHA。
 

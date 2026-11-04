@@ -7,15 +7,15 @@ date: 2026-10-27
 
 # Delegra 军团精简与真实闭环整改
 
-> 历史整改记录：下文中的状态、岗位配置和授权均为当时快照，不作为当前派工或操作依据。现行协作约定见[交付 SOP](../operations/agent-delivery-sop.md)，交付状态见[跟踪矩阵](delivery-tracking.md)。
+> 历史整改记录：下文中的状态、岗位配置和授权均为当时快照，不作为当前派工或操作依据。现行协作约定见[交付 SOP](../../operations/agent-delivery-sop.md)，交付状态见[跟踪矩阵](../../plans/delivery-tracking.md)。
 
 本计划落实已授权的最佳方案与文档整改，记录控制权、配置核验和闭环退出条件，不另建产品 backlog。当前是**基础设施整改阶段**；底座修复、运行配置审定、平台应用、七岗准入、指挥权切换及首轮业务闭环分别验收，不能从文档完成推断后续已通过。
 
-公开代码 / 契约以仓库当前主干为权威，产品范围与 AC 保留在 [#6](https://github.com/hrygo/SpeechNexus/issues/6)及对应 issue；执行与配置事实以当前平台回执为准。旧项目及任务已移除，历史编号仅作交接线索。[旧环境报告](../operations/paperclip/environment-readiness.md)继续保存原失败和未验事实。
+公开代码 / 契约以仓库当前主干为权威，产品范围与 AC 保留在 [#6](https://github.com/hrygo/SpeechNexus/issues/6)及对应 issue；执行与配置事实以当前平台回执为准。旧项目及任务已移除，历史编号仅作交接线索。[旧环境报告](../../operations/paperclip/environment-readiness.md)继续保存原失败和未验事实。
 
 ## 采用的结构与切换
 
-采用[军团工作流](../operations/paperclip.md)：基础设施整改及准入后，由本次整改会话转任部署记录中唯一 SM+PO，直接对 A / B / QA 及按需 C 派工。原技术协调岗改为按需集成助手；MiMo、证据岗按需调用。原产品总控会话改为按需独立架构 / 风险审查与备用接管，不保留另一条产品队列或自动巡检。
+采用[军团工作流](../../operations/paperclip.md)：基础设施整改及准入后，由本次整改会话转任部署记录中唯一 SM+PO，直接对 A / B / QA 及按需 C 派工。原技术协调岗改为按需集成助手；MiMo、证据岗按需调用。原产品总控会话改为按需独立架构 / 风险审查与备用接管，不保留另一条产品队列或自动巡检。
 
 这项选择减少产品总控、常设技术经理和实施者之间的重复拆解 / 报告交接。另一方案是保留原 SM+PO、由整改会话移交退出，但需要额外交接本轮底座 / 配置事实，且常设中间调度在当前规模下仍重复维护队列。本轮未取得运行吞吐 / 成本数据，不宣称精简已改善性能或费用。
 
@@ -70,7 +70,7 @@ B / QA 的真实 Legacy 启动记录分别核到 Sol / DS Flash 及 `model_reaso
 
 ## 源、overlay 与发布接收
 
-公开编译输入为 [common.md](../operations/paperclip/roles/common.md)和每岗聚焦正文；公司编排 skill 应同步职责模型。每岗 runtime 编译只携带必要共同边界与聚焦职责，不强制加载整本管理手册、所有角色或全部 skills。私有 overlay 只补实际身份 / 环境 / 准入映射，不扩大任务目标、权限或预算。
+公开编译输入为 [common.md](../../operations/paperclip/roles/common.md)和每岗聚焦正文；公司编排 skill 应同步职责模型。每岗 runtime 编译只携带必要共同边界与聚焦职责，不强制加载整本管理手册、所有角色或全部 skills。私有 overlay 只补实际身份 / 环境 / 准入映射，不扩大任务目标、权限或预算。
 
 部署 manifest 分别记录：源提交与逐文件 SHA-256、overlay revision / hash、编译规则版本、各岗输出 hash、平台写前值及写后回读结果。角色正文用 `baseRevision` / hash、skill 用 `expectedVersion` 做受支持的 CAS；普通配置、model 和项目字段没有 CAS，串行写并保存前值、回读验证，不声称跨字段原子。写前重读；冲突先核实并行意图。公开源与编译正文裸 hash 不同是可预期结果，不能因此覆盖已确认的新运行指令。
 

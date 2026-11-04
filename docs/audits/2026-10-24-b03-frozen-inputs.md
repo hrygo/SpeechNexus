@@ -8,7 +8,7 @@ date: 2026-10-24
 
 开工基线 `08c77de`，组合验证基线 `136effe`，保留 A 的 #129 默认快照契约及生成产物。
 对应 #28/#30；[接口说明](../components/frozen-execution-inputs.md)与
-[本单元方案](../plans/2026-10-24-b03-frozen-inputs.md)定义输入范围。
+[本单元方案](../archive/plans/2026-10-24-b03-frozen-inputs.md)定义输入范围。
 
 此前网关只把 intent 交给派发端口，原生文件 ASR 接外部流。本单元新增原完整请求的
 受限读取与桥，以及固定对象存储核验输入；没有新业务 API、默认生产派发器或停止事实生产者。

@@ -10,9 +10,9 @@ date: 2026-10-26
 本文件保留 [PR #221](https://github.com/hrygo/SpeechNexus/pull/221) 原交接时点的完整记录，覆盖 A00–A07、
 媒体实现、三队接口、全部 issue 状态、证据与资源保留、风险及接管步骤。
 #221 后经接管审查修复 WAV RIFF 尾部完整性，以最终 head `f326f5d` 的 14 项 CI 成功后合入 `41e29b6`。
-下表的候选/验证/现场是原时点事实；[项目经理基线](2026-10-26-project-manager-baseline.md)也是历史快照，现行交付入口见[交付跟踪矩阵](delivery-tracking.md)。不追溯改挂历史证据。
+下表的候选/验证/现场是原时点事实；[项目经理基线](2026-10-26-project-manager-baseline.md)也是历史快照，现行交付入口见[交付跟踪矩阵](../../plans/delivery-tracking.md)。不追溯改挂历史证据。
 用户已要求结束旧排期，后续 owner、优先级和窗口由新负责人重新安排。
-[原 Goal](../archive/plans/2026-10-23-team-a-goal.md)和[原下一阶段计划](2026-10-26-team-a-review-and-next-phase.md)
+[原 Goal](2026-10-23-team-a-goal.md)和[原下一阶段计划](2026-10-26-team-a-review-and-next-phase.md)
 已标记 superseded；历史 KR、F01–F12 和原完整范围继续保留，不据交接结算验收。
 
 ## 原交接时点的事实
@@ -36,7 +36,7 @@ B 在 #220 提供[项目整体交接](https://github.com/hrygo/SpeechNexus/blob/
 | 工作包 | 已有交付与证据入口 | 尚缺的完整范围／接收条件 |
 | --- | --- | --- |
 | [A00 #19](https://github.com/hrygo/SpeechNexus/issues/19) | #141 `a7f4d46` JSON/runtime，#169 `7dc276a` 二进制/SSE SDK，#175 字面量门禁、#181 限定 RTE、#193/#201 固定词典 GET；本 PR 补私有检查同源类型 | 公开音频错误/投影、SSE 正式消费、完整跨字段/时序及 REST/WS/MCP 同版语义。C #177 已升下载 dev1，不能沿旧 dev0 约束消费 |
-| [A01 #20](https://github.com/hrygo/SpeechNexus/issues/20) | #171 `d876585` 汇合 18 端口/7 查询/调用方与双库[证据地图](../audits/2026-10-25-coordination-port-evidence.md)，#173 `78505a8` 修复登录/有效身份 | 权威策略/readiness、生产 Scheduler/Worker、部分 B 查询 envelope/wrapper 对照及全范围联合证据；地图存在不等于端口已完成业务装配 |
+| [A01 #20](https://github.com/hrygo/SpeechNexus/issues/20) | #171 `d876585` 汇合 18 端口/7 查询/调用方与双库[证据地图](../../audits/2026-10-25-coordination-port-evidence.md)，#173 `78505a8` 修复登录/有效身份 | 权威策略/readiness、生产 Scheduler/Worker、部分 B 查询 envelope/wrapper 对照及全范围联合证据；地图存在不等于端口已完成业务装配 |
 | [A02 #21](https://github.com/hrygo/SpeechNexus/issues/21) | #139/#172 `dbbffe2` 配置原意图，#185 `7851cfb` 私有词典，#187 `5afb488` 资源身份守卫，#155 `f9dfa7c` 受限进程；本 PR 的媒体/回执见下节 | 公开音频 ready、可信 provider、发布/激活 CAS、最终参数、固定 Artifact/receipt/Operation，以及真实 HTTP/隔离 PG/MinIO 恢复 |
 | [A03 #22](https://github.com/hrygo/SpeechNexus/issues/22) | owner/claim、完整配方准入、Job/outbox、父预算/leases 与 unknown 恢复组件；#171 汇合证据，B #218 有隔离 lease 结算 | 正式调度循环、公平排队、业务 quota/区间计量/结算和可信执行/停止来源；不能把六字段 JobFact 当完整公开 Job |
 | [A04 #23](https://github.com/hrygo/SpeechNexus/issues/23) | Workspace/配置草稿/显式默认 HTTP；#201 `064c6b6` 固定 draft GET、最小 SELECT 与 404/503 区分 | 标准 ASR/TTS、完整 Job/Operation/事件/发布下载、配置创建/list/发布与完整管理/MCP；只读 draft 不等于发布 |
@@ -51,15 +51,15 @@ B 在 #220 提供[项目整体交接](https://github.com/hrygo/SpeechNexus/blob/
 
 | 制品 | 入口 | 当前事实与接收条件 |
 | --- | --- | --- |
-| 共享媒体包 | [packages/media](../../packages/media/README.md)、[源码映射](../../packages/media/source-inventory.json) | `speechnexus-media 0.1.0.dev0`；原类型逐字节迁移，decoder 仅换原生类型 import；gateway 原入口导出同一对象。A 自测通过，B 尚待消费固定源码或重建 wheel 后回执兼容范围 |
-| 私有检查命令 | [媒体交接](2026-10-26-a02-media-kernel-handoff.md) | 有界哈希/完整解码，输出输入摘要/长度和源时钟；仅 PCM WAV/显式 raw PCM，WAV RIFF 长度/声明样本与实际解码一致；B 原 FLAC/MP3/Ogg decoder 行为保留，不自动纳入本检查 profile |
-| 私有成功回执 | [canonical schema](../../contracts/internal/audio-inspection.schema.json) | `audio_inspection` 1.0.0；Python/TS 同源生成，失败/取消/未知无成功事实，不含正文/路径或发布、停止、预算许可 |
-| 窄消费者 | [ProcessAudioAssetInspector](../../backend/src/speechnexus_backend/speech/infrastructure/audio_asset_inspector.py)、[回执交接](2026-10-26-a02-audio-receipt-handoff.md) | 仅 asr_input PCM WAV；绑定实际摘要/长度、整数/源时钟/时长上限及末次取消。text_input 沿用既有行为，voice_reference 不可用；无效回执保持 unavailable |
-| 组合根与构建 | [检查边界](../components/audio-asset-inspection.md)、Python Dockerfile/uv workspace | 默认 AssetRuntime **仍为 TextAssetInspector**。Dockerfile 增加共享包 COPY，但未实际构建/安装批准检查镜像；无新增公开 HTTP、迁移/grant、Job/预算或发布写入 |
+| 共享媒体包 | [packages/media](../../../packages/media/README.md)、[源码映射](../../../packages/media/source-inventory.json) | `speechnexus-media 0.1.0.dev0`；原类型逐字节迁移，decoder 仅换原生类型 import；gateway 原入口导出同一对象。A 自测通过，B 尚待消费固定源码或重建 wheel 后回执兼容范围 |
+| 私有检查命令 | [媒体交接](../../plans/2026-10-26-a02-media-kernel-handoff.md) | 有界哈希/完整解码，输出输入摘要/长度和源时钟；仅 PCM WAV/显式 raw PCM，WAV RIFF 长度/声明样本与实际解码一致；B 原 FLAC/MP3/Ogg decoder 行为保留，不自动纳入本检查 profile |
+| 私有成功回执 | [canonical schema](../../../contracts/internal/audio-inspection.schema.json) | `audio_inspection` 1.0.0；Python/TS 同源生成，失败/取消/未知无成功事实，不含正文/路径或发布、停止、预算许可 |
+| 窄消费者 | [ProcessAudioAssetInspector](../../../backend/src/speechnexus_backend/speech/infrastructure/audio_asset_inspector.py)、[回执交接](../../plans/2026-10-26-a02-audio-receipt-handoff.md) | 仅 asr_input PCM WAV；绑定实际摘要/长度、整数/源时钟/时长上限及末次取消。text_input 沿用既有行为，voice_reference 不可用；无效回执保持 unavailable |
+| 组合根与构建 | [检查边界](../../components/audio-asset-inspection.md)、Python Dockerfile/uv workspace | 默认 AssetRuntime **仍为 TextAssetInspector**。Dockerfile 增加共享包 COPY，但未实际构建/安装批准检查镜像；无新增公开 HTTP、迁移/grant、Job/预算或发布写入 |
 
 B [#219](https://github.com/hrygo/SpeechNexus/pull/219) 于 2026-10-26 16:16:13（Asia/Shanghai）合入 `54daef6`，
 [精确合后 CI](https://github.com/hrygo/SpeechNexus/actions/runs/40291095616) 14 项成功。
-[固定交接](../operations/file-tts-binding-handoff.md)提供模型 revision、11 个运行制品、镜像/源码与完整注册输入；
+[固定交接](../../operations/file-tts-binding-handoff.md)提供模型 revision、11 个运行制品、镜像/源码与完整注册输入；
 A 未重跑其 4.52 GB 原件或 GPU 实验。注册输入不创建权威 binding、有效 manifest、资格、已发布声音或默认指针。
 
 ## 跨队接收件与待决事项
@@ -82,7 +82,7 @@ C 本机 v1.1.0 计划的 SHA256 `66fccff9c80f0c8c25395a111a19b97cdce3ef13ac620f
 
 ## 全部 issue 与验收现状
 
-[40 项交接清单](../audits/2026-10-26-team-a-issue-handoff.json)包含逐项编号、标题、状态、更新时间和公开链接。
+[40 项交接清单](../../audits/2026-10-26-team-a-issue-handoff.json)包含逐项编号、标题、状态、更新时间和公开链接。
 清单核验时间为 **2026-10-26 18:13:27 +0800（Asia/Shanghai）**，在他人本轮写入结束后再次读取 GitHub；
 40 项均 open，34 项部分实施、6 项 planned。
 每项只有一个有效 status 标签。依据用户要求，现有正文已整合替换而非追加更新段，合并重复任务和历史摘要，
@@ -147,7 +147,7 @@ C 本机 v1.1.0 计划的 SHA256 `66fccff9c80f0c8c25395a111a19b97cdce3ef13ac620f
 | 构建/树外消费 | 五包wheel/sdist；从wheel实际解码4800样本，合法回执通过/错摘要拒绝；禁止gateway/controller导入并核对均从wheel加载。Compose config和此前Docker COPY最小上下文frozen安装通过，未实际构建部署镜像 |
 | 本版交接文档 | 只改文档与审计索引；运行链接/frontmatter/JSON/清单覆盖及命令语法、diff检查。新增文档head的CI以PR为准，不借旧head结果声称通过 |
 
-命令、日志 SHA 和 wheel 摘要见[机器证据索引](../audits/2026-10-26-team-a-closeout-evidence.json)。
+命令、日志 SHA 和 wheel 摘要见[机器证据索引](../../audits/2026-10-26-team-a-closeout-evidence.json)。
 初次统一契约缺样例/根引用、解析期间取消 RED、缺 Node 依赖均修复并回归；原失败保留。
 旧 #185 ENOSPC/覆盖失败、#173 合后 Web 失败、#155 中间取消/清理未知及 #201 精确合后取消/清理未知
 仍按各 issue/PR 的原版本独立记录，新结果不改写它们。

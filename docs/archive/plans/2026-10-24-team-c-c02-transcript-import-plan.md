@@ -7,7 +7,7 @@ date: 2026-10-24
 
 # C02 原始转写导入实施计划
 
-依据[团队目标](../../plans/2026-10-24-team-c-goal.md)、[工作台契约](../../../contracts/workbench-openapi.yaml)的 speech_artifact 来源及[公开语音契约](../../../contracts/speech-openapi.yaml)的 Artifact 元数据/content。基线 `cbf4a8ca1cf808fbc5ff4b125f7ff1e271496995`，本轮 fetch 无新远端提交，保留原有 83 个 C 文件。实时生成 validator 仍缺失，继续不依赖它的真实文件导入前置。
+依据[团队目标](2026-10-24-team-c-goal.md)、[工作台契约](../../../contracts/workbench-openapi.yaml)的 speech_artifact 来源及[公开语音契约](../../../contracts/speech-openapi.yaml)的 Artifact 元数据/content。基线 `cbf4a8ca1cf808fbc5ff4b125f7ff1e271496995`，本轮 fetch 无新远端提交，保留原有 83 个 C 文件。实时生成 validator 仍缺失，继续不依赖它的真实文件导入前置。
 
 ## 设计与边界
 

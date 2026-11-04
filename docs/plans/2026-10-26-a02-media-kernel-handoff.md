@@ -18,7 +18,7 @@ date: 2026-10-26
 
 提取源固定为 `230031043a76ac6c2d04ee6bb2fe93ca38f991c5`；收尾 PR 已安全吸收
 main `54daef6ae4792b69a0e5e8645b09240ff715082e`，此来源版本及原 blob 不变。
-本文件与实现一并提交评审，尚未合入或由 B 接收；后续安排交新负责人决定，见[最终交接](2026-10-26-team-a-final-handoff.md)。
+本文件与实现一并提交评审，尚未合入或由 B 接收；后续安排交新负责人决定，见[最终交接](../archive/plans/2026-10-26-team-a-final-handoff.md)。
 独立包 `speechnexus-media 0.1.0.dev0` 保持 recipe `pcm-decode-1`。
 原生类型文件逐字节不变，decoder 只改原生类型 import；
 源 blob、原件和制品文件 SHA256 见[源码映射](../../packages/media/source-inventory.json)。

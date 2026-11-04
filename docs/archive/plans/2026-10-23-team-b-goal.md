@@ -152,7 +152,7 @@ binding、manifest 或资格。本候选补齐完整草稿注册请求和显式�
 上述取消修复在较早 `0c54c8a` 阶段未再次加载真实模型，旧实验不能转挂该版本；
 随后 `5f72b20` 的真实停止/结算实验范围见下文报告。
 
-[持久文件执行计划](../../plans/2026-10-25-b03-durable-file-runner.md)只复用原 `create_submit` 的唯一 INSERT。
+[持久文件执行计划](2026-10-25-b03-durable-file-runner.md)只复用原 `create_submit` 的唯一 INSERT。
 短 dispatch 仅准备本地接收身份；新接收观察确认提交且退出 ingress 后才启动长处理。
 重放不触发启动；重启先把遗留活动执行隔离为 unknown，保留结果，不把旧记录当重试队列。
 结果确认丢失查原回执，不再识别或 PUT。取消/协程结束不签发 GPU 停止或释放。
@@ -185,7 +185,7 @@ A 原事务先保留 base 等待 lease 清理，再分别幂等归还 slot/attem
 下一步将固定配置、私有回执及该停止链接到 A 的生产准入/发布，再与 SDK/C 联验；
 真实故障恢复、持续就绪及目标拓扑资格保留未完成。
 
-原生 worker 完成观察已作为独立组件交付，见[观察单元](../../plans/2026-10-25-b03-worker-fence.md)；
+原生 worker 完成观察已作为独立组件交付，见[观察单元](2026-10-25-b03-worker-fence.md)；
 其 `release_evidence` 恒为 false，request cleanup/unfinished=0/EOF 仍不证明 GPU 资源已释放，
 也不构成网关停止事实或预算归还依据。
 

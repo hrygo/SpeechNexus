@@ -2,7 +2,7 @@
 
 > 本文是 2026-10-25–26 的历史验收记录；文中的“当前”、未完成项与任务状态均以该时点为准。现行需求和证据入口见[需求矩阵](../plans/delivery-tracking.md)。
 
-核验日期：2026-10-25–26，Asia/Shanghai。依据：[阶段 Goal 与验收标准](../plans/2026-10-25-team-c-next-phase-goal-and-acceptance.md)，version 0.2.0。
+核验日期：2026-10-25–26，Asia/Shanghai。依据：[阶段 Goal 与验收标准](../archive/plans/2026-10-25-team-c-next-phase-goal-and-acceptance.md)，version 0.2.0。
 
 结论：PR #153 已完成共同基线集成，原6项HTTP兼容性发现已有显式版本/消费者方案并通过合前门禁。**M1仍未通过，M2/M3未验收**；Profile草稿消费者[PR #165](https://github.com/hrygo/SpeechNexus/pull/165)已于2026-10-25 22:13:48合入main `639b703`，14项合前CI全部成功；验收映射继续保留在原工作树。C02有效TTS修订和ASR导入/固定TXT消费者分别由#167/#170后续集成；仍为局部交付。下半部17:02的失败与修复记录保留为历史事实，不再作为当前HTTP阻塞。
 

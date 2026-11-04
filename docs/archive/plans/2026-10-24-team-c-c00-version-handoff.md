@@ -11,7 +11,7 @@ date: 2026-10-24
 
 ## 交付身份与范围
 
-- 团队/父任务：C / C00 #35；持续目标见[团队 C 目标](../../plans/2026-10-24-team-c-goal.md)。本单元不关闭 C00 或任何 Gate。
+- 团队/父任务：C / C00 #35；持续目标见[团队 C 目标](2026-10-24-team-c-goal.md)。本单元不关闭 C00 或任何 Gate。
 - 工作基线：`8333e4ba7c722a36cc70545fd5a0ed2beee38eea`；本机分支 `codex/team-c-c00-versions`。这是独立开发基线，不替代下一轮共同集成 SHA 的确认。
 - 当前代码为未提交工作区改动，没有承载本单元的 `head_sha`，未执行 commit/push 或远端 Issue 更新。
 - 本地补丁：仓库根目录下 `.runtime/team-c/c00-version-unit.patch`，包含新增源码、测试和文档；SHA-256 随本轮交接返回。补丁在基线文件副本中通过 `git apply --check` 并应用后逐文件比对，不代表已跨机集成。

@@ -44,4 +44,4 @@ uv run python scripts/dev-env/workbench-pg-probe.py --pg-bin /path/to/postgresql
 
 bindings/fixture 版本仍为 `0.1.0`，speech/workbench OpenAPI 的 `info.version` 为 `0.1.0.dev0`；这些文件内容与上一单元相同；本单元没有新增公开请求或响应形状。工作台 HTTP 的领域错误映射、完整生成入口、对象区、字幕/导出协议与生产组合根仍待接入。本轮没有重跑 Web/浏览器/物理设备/GPU/恢复验证，不能据此宣称生产资格通过。
 
-下一步消费 A 提供的同版项目/稿件响应、创建/校对请求与实时事件 parser，接公开 HTTP 和实时消费者；缺少入口时继续 C 所有的业务实现与契约方案，不复制生成 DTO 或假定生产闭环可用。[完整目标](../../plans/2026-10-24-team-c-goal.md)保持 active。
+下一步消费 A 提供的同版项目/稿件响应、创建/校对请求与实时事件 parser，接公开 HTTP 和实时消费者；缺少入口时继续 C 所有的业务实现与契约方案，不复制生成 DTO 或假定生产闭环可用。[完整目标](2026-10-24-team-c-goal.md)保持 active。

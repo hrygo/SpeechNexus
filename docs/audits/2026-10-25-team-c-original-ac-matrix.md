@@ -2,7 +2,7 @@
 
 > 本文及配套映射保留 2026-10-25 的历史审阅状态；文中的“当前”和未验项不代表现行进度。现行需求和证据入口见[需求矩阵](../plans/delivery-tracking.md)。
 
-核对日期：2026-10-25。依据：[下一阶段 Goal](../plans/2026-10-25-team-c-next-phase-goal-and-acceptance.md)，version 0.2.0。当前实现与验证结论见[集成报告](2026-10-25-team-c-next-phase-integration.md)。
+核对日期：2026-10-25。依据：[下一阶段 Goal](../archive/plans/2026-10-25-team-c-next-phase-goal-and-acceptance.md)，version 0.2.0。当前实现与验证结论见[集成报告](2026-10-25-team-c-next-phase-integration.md)。
 
 本矩阵保留 41 条原 AC 的完整原文，形成 278 个带稳定标识的语义子条件草案。原文是范围依据，子条件不能缩减原文含义；拆解仍需人工覆盖复核。[可追踪映射](2026-10-25-team-c-acceptance-map.json)保存逐条件状态、责任人、源码/消费者/测试锚点、摘要与证据维度。原始 issue 快照及115个无损初拆子句仍保留在忽略目录 `.runtime/team-c/next-phase/2026-10-25T155546+0800/ac-matrix.json`。
 

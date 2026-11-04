@@ -11,7 +11,7 @@ date: 2026-10-26
 
 **目标：**在同一集成版本上优先完成真实文件 ASR 与 CustomVoice TTS 的公开业务闭环，同时收口 C 自有的恢复、消费者、导出与体验缺口，逐步完成 C00–C08。
 
-**适用关系：**本文件落实本次项目复盘中的推进顺序和三队协作方式，作为接管人重新规划的参考；任务仍回填[阶段 Goal](2026-10-25-team-c-next-phase-goal-and-acceptance.md)的 T01–T11、AC-01–AC-12 及原 41 条 AC，不增加平行验收体系、不缩减原范围。总体责任沿用[三团队交付计划](../archive/plans/2026-10-23-three-team-delivery-plan.md)，整体状态见 [PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)。本文有效不表示任务、原生 Goal 或 Gate 已通过。
+**适用关系：**本文件落实本次项目复盘中的推进顺序和三队协作方式，作为接管人重新规划的参考；任务仍回填[阶段 Goal](2026-10-25-team-c-next-phase-goal-and-acceptance.md)的 T01–T11、AC-01–AC-12 及原 41 条 AC，不增加平行验收体系、不缩减原范围。总体责任沿用[三团队交付计划](2026-10-23-three-team-delivery-plan.md)，整体状态见 [PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)。本文有效不表示任务、原生 Goal 或 Gate 已通过。
 
 **技术与架构：**沿用 Python/FastAPI、PostgreSQL、MinIO、TypeScript/React、契约生成客户端与既有测试链。C 维护独立工作台领域、持久化及对象区，仅通过公开语音协议消费底座；A 维护平台权威配置与协调，B 维护执行网关、控制器及真实引擎。
 
@@ -22,10 +22,10 @@ date: 2026-10-26
 - 主干为 `54daef6ae4792b69a0e5e8645b09240ff715082e`（#219），[精确合后 CI40291095616](https://github.com/hrygo/SpeechNexus/actions/runs/40291095616) 14 项成功；不代表完整业务验收。
 - A 的共享媒体与私有音频检查/回执已提交 [#221](https://github.com/hrygo/SpeechNexus/pull/221)，head `a0006736d59e38d506cadc19a74483d73d47c3b8`（实现 `b7e65f4`），尚未合入或由 B 实际接收；默认仍 TextAssetInspector，公开音频 ready/权威配置/Job/准入/发布未贯通。
 - B 的 ASR #162、CustomVoice #219 已是主干固定注册输入；真实执行和 #218 整代停止/原执行租约结算有原版本局部证据，fixture 资格/准入/停止意图、单请求释放及未结 TTS base 保留。
-- C 的操作[映射](../audits/2026-10-26-team-c-operation-coverage.json)和[报告](../audits/2026-10-26-team-c-operation-coverage.md)统一为 52 项：42 `bound`、10 `consumer_pending`，仅为 workbench 接线审计。
-- 生成派发、结算、副本与历史已有实现；持久化/重放/CAS、分类/公平、SQL 读取和页面隔离审查未结，结算循环默认关闭，见[矩阵](../audits/2026-10-26-team-c-render-loop-status.md)。
-- 278 子条件仍 `not_run`，82 份原件丢失，影响 214 条引用；须在稳定根重建，见[事故记录](../audits/2026-10-26-team-c-evidence-retention.md)。
-- [#220](https://github.com/hrygo/SpeechNexus/pull/220) 提供项目统一交接但尚未合并；全部 40 issue 状态及本次变更见[核对记录](../audits/2026-10-26-team-c-closeout-issue-audit.md)。
+- C 的操作[映射](../../audits/2026-10-26-team-c-operation-coverage.json)和[报告](../../audits/2026-10-26-team-c-operation-coverage.md)统一为 52 项：42 `bound`、10 `consumer_pending`，仅为 workbench 接线审计。
+- 生成派发、结算、副本与历史已有实现；持久化/重放/CAS、分类/公平、SQL 读取和页面隔离审查未结，结算循环默认关闭，见[矩阵](../../audits/2026-10-26-team-c-render-loop-status.md)。
+- 278 子条件仍 `not_run`，82 份原件丢失，影响 214 条引用；须在稳定根重建，见[事故记录](../../audits/2026-10-26-team-c-evidence-retention.md)。
+- [#220](https://github.com/hrygo/SpeechNexus/pull/220) 提供项目统一交接但尚未合并；全部 40 issue 状态及本次变更见[核对记录](../../audits/2026-10-26-team-c-closeout-issue-audit.md)。
 
 以下两条工作线是原方案建议，是否采用及并行安排由新负责人决定：
 
@@ -94,7 +94,7 @@ A/B 的某个制品就绪即可接入，不等待其整包关闭；单项依赖�
 
 ### C-N01：基线、映射与证据收敛
 
-对应 T01/T02/T04/T06；C 主责，A 协助集成基线。入口为[阶段 Goal](2026-10-25-team-c-next-phase-goal-and-acceptance.md)、[原 AC 矩阵](../audits/2026-10-25-team-c-original-ac-matrix.md)、[验收映射](../audits/2026-10-25-team-c-acceptance-map.json)和[操作映射](../audits/2026-10-26-team-c-operation-coverage.json)。
+对应 T01/T02/T04/T06；C 主责，A 协助集成基线。入口为[阶段 Goal](2026-10-25-team-c-next-phase-goal-and-acceptance.md)、[原 AC 矩阵](../../audits/2026-10-25-team-c-original-ac-matrix.md)、[验收映射](../../audits/2026-10-25-team-c-acceptance-map.json)和[操作映射](../../audits/2026-10-26-team-c-operation-coverage.json)。
 
 - [ ] 核对工作区与目标 diff，保留既存未提交改动；固定共同 SHA 和本单元 head，区分历史快照与当前摘要。
 - [ ] 按当前契约核准操作集合和 10 项待处置操作；同步过时摘要，不用操作计数推导完成率。
@@ -162,7 +162,7 @@ A/B 的某个制品就绪即可接入，不等待其整包关闭；单项依赖�
 
 ## 4. 验证、证据与交付方式
 
-每个单元先固定写入文件、接口输入输出、行为断言与依赖；逻辑修复先观察反例，再做最小修复及必要回归。符号与调用定位按 `codebase-memory` 核对覆盖；工具/索引不可用时直接读源码并说明限制。具体实施按对应技能和[验证指南](../agent-verification.md)，冻结字段前不把阶段计划当成已完成接口设计。
+每个单元先固定写入文件、接口输入输出、行为断言与依赖；逻辑修复先观察反例，再做最小修复及必要回归。符号与调用定位按 `codebase-memory` 核对覆盖；工具/索引不可用时直接读源码并说明限制。具体实施按对应技能和[验证指南](../../agent-verification.md)，冻结字段前不把阶段计划当成已完成接口设计。
 
 | 改动或证据 | 验证入口及判定 |
 | --- | --- |

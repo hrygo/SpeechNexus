@@ -8,7 +8,7 @@
 `0006_runtime_observation` 保存私有 readiness 证据；0001–0005 迁移保持不变。
 独立[固定节点 HTTPS 客户端](runtime-controller-client.md)与[原意图持久投递 worker](../operations/production-runtime-delivery.md)已有运行入口；节点内未决观察循环也已有实现。GET/精确重放只读取 B 的持久观察，不能由此推断完整调度或真实部署资格已完成。
 端口验证不代表完整配方准入、
-物理停止、GPU 或多主机资格；[runtime 单元计划](../plans/2026-10-24-a01-runtime-intent-unit.md)保留原实施顺序，当前范围与证据见[交付跟踪矩阵](../plans/delivery-tracking.md)。
+物理停止、GPU 或多主机资格；[runtime 单元计划](../archive/plans/2026-10-24-a01-runtime-intent-unit.md)保留原实施顺序，当前范围与证据见[交付跟踪矩阵](../plans/delivery-tracking.md)。
 兼容边界和消费者顺序由 [ADR 0008](../decisions/0008-runtime-intents-before-controller-observation.md)登记。
 
 ## 意图与观察分别表达

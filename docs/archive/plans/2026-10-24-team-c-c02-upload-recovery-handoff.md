@@ -8,7 +8,7 @@ date: 2026-10-24
 
 > 本文保留交接时的状态与验证事实；当前范围和证据见[交付跟踪矩阵](../../plans/delivery-tracking.md)。
 
-[本单元计划](2026-10-24-team-c-c02-upload-recovery-plan.md)补充 ASR/TTS 上传结果未知、已确认素材校验中和 Job 提交之间的跨刷新恢复。交接时生产宿主尚未启用；后续文件转写宿主接入及其验证范围见[文件入口交接](2026-10-24-team-c-c02-host-handoff.md)。[完整 C00–C08 goal](../../plans/2026-10-24-team-c-goal.md)当时仍 active。
+[本单元计划](2026-10-24-team-c-c02-upload-recovery-plan.md)补充 ASR/TTS 上传结果未知、已确认素材校验中和 Job 提交之间的跨刷新恢复。交接时生产宿主尚未启用；后续文件转写宿主接入及其验证范围见[文件入口交接](2026-10-24-team-c-c02-host-handoff.md)。[完整 C00–C08 goal](2026-10-24-team-c-goal.md)当时仍 active。
 
 ## 基线与行为
 

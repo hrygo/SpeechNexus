@@ -7,7 +7,7 @@ date: 2026-10-26
 
 # SpeechNexus 工程目录与依赖边界
 
-本文记录工程布局、依赖方向与扩展入口。产品语义仍以[主设计](../speechnexus-product-architecture.md)为准；当前组合与缺口见[交付跟踪矩阵](../plans/delivery-tracking.md)，[2026-10-26 项目经理基线](../plans/2026-10-26-project-manager-baseline.md)是历史快照。不能由目录存在或健康检查推断完整能力。
+本文记录工程布局、依赖方向与扩展入口。产品语义仍以[主设计](../speechnexus-product-architecture.md)为准；当前组合与缺口见[交付跟踪矩阵](../plans/delivery-tracking.md)，[2026-10-26 项目经理基线](../archive/plans/2026-10-26-project-manager-baseline.md)是历史快照。不能由目录存在或健康检查推断完整能力。
 
 ## 1. 工作区布局
 

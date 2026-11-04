@@ -35,4 +35,4 @@
 
 没有部署或启用 LLM。资格引用只是可信部署配置字段，不证明其指向证据真实有效；应用、LLM、代理与观测的实际出站限制和同设备父物理预算/混合负载仍由 C 与部署负责人联合验证。HTTP 连接取消不等于模型计算已停止或可释放物理预算。
 
-[实施计划](2026-10-24-team-c-c06-llm-plan.md) · [持续目标](../../plans/2026-10-24-team-c-goal.md) · [ADR 0003](../../decisions/0003-workbench-llm-network-boundary.md)
+[实施计划](2026-10-24-team-c-c06-llm-plan.md) · [持续目标](2026-10-24-team-c-goal.md) · [ADR 0003](../../decisions/0003-workbench-llm-network-boundary.md)

@@ -11,7 +11,7 @@ GitHub 保存产品需求、原始验收条件、代码审查和合并事实；D
 
 按[交付 SOP](agent-delivery-sop.md)选择 Codex 会话、subagent 与 Delegra：一项切片一位交付负责人，普通局部工作直接完成；需要持久接续或专用环境时才使用军团任务。技术负责人不增加产品排序权，所有执行共用一条队列和资源额度；本页维护岗位、平台与环境边界。
 
-产品实施围绕同版公开业务链和 AC 交付，当前阶段、链路状态及关键路径以最新明确授权、[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)和当期候选证据为准，不由长期规则固化。2026-10-27 的默认语音装配 503 与 Job 缺消费者记录见 [#254](https://github.com/hrygo/SpeechNexus/issues/254)及[事故记录](paperclip/runtime-incidents.md)；它们是历史发现，不证明当前状态。[闭环整改计划](../plans/2026-10-27-delegra-legion-closed-loop.md)与[旧环境报告](paperclip/environment-readiness.md)保留原时点事实，已移除的旧项目及任务编号不再承担当前队列、环境配置或门禁入口。
+产品实施围绕同版公开业务链和 AC 交付，当前阶段、链路状态及关键路径以最新明确授权、[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)和当期候选证据为准，不由长期规则固化。2026-10-27 的默认语音装配 503 与 Job 缺消费者记录见 [#254](https://github.com/hrygo/SpeechNexus/issues/254)及[事故记录](paperclip/runtime-incidents.md)；它们是历史发现，不证明当前状态。[闭环整改计划](../archive/plans/2026-10-27-delegra-legion-closed-loop.md)与[旧环境报告](paperclip/environment-readiness.md)保留原时点事实，已移除的旧项目及任务编号不再承担当前队列、环境配置或门禁入口。
 
 ## 唯一决策方与执行结构
 
@@ -75,7 +75,7 @@ GitHub [总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)及交付 i
 
 保留关闭 timer、事件派工、单岗并发 1 及已有预算 / 价格准入保护；同时最多两个无写冲突开发切片，并受真实主机窗口约束。审查与文档也计入资源，队列约定不是 OS 硬锁。岗位恢复和任务启动由获准操作者按明确阶段执行，文档更新不自动解除暂停。
 
-模型 ID、Harness、连接、实际思考级别及有效环境须逐岗核验，不能用 Harness 名称或模型后缀推断资格。Codex、Claude 和 OpenCode 的配置字段不能混用；[整改计划](../plans/2026-10-27-delegra-legion-closed-loop.md)中的岗位矩阵仅供追溯，当前值以实际配置及回读为准。任务分配、agent / skill 创建权限也须独立检查，模型连接成功不证明这些权限适当或工具链可用。
+模型 ID、Harness、连接、实际思考级别及有效环境须逐岗核验，不能用 Harness 名称或模型后缀推断资格。Codex、Claude 和 OpenCode 的配置字段不能混用；[整改计划](../archive/plans/2026-10-27-delegra-legion-closed-loop.md)中的岗位矩阵仅供追溯，当前值以实际配置及回读为准。任务分配、agent / skill 创建权限也须独立检查，模型连接成功不证明这些权限适当或工具链可用。
 
 组织 skill 保存项目领域规则和可移植工作流；Harness 自带的系统技能由对应 Harness 管理，不成批复制进组织目录。确需跨 Harness 复用时，先核来源、版本、工具依赖和授权边界。平台原生运行控制由适配器提供；Native 控制面、Legacy 操作说明和 board 管理入口须分别匹配实际身份，工程岗不因载入管理技能取得管理权。
 

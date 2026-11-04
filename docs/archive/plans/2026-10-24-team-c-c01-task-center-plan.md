@@ -9,7 +9,7 @@ date: 2026-10-24
 
 > 历史计划：以下实施步骤和结果保留原时点；当前范围与证据见[交付跟踪矩阵](../../plans/delivery-tracking.md)。
 
-依据[团队 C 目标](../../plans/2026-10-24-team-c-goal.md)、[启动卡](2026-10-23-agent-team-startup-briefs.md#4-c-队macbook-工作台与体验)和[设计框架](../../design/ui-ux-design-framework-and-tokens.md)，实现 C01 的首个任务列表/详情/取消消费单元。C01 全范围和团队目标继续保持未完成。
+依据[团队 C 目标](2026-10-24-team-c-goal.md)、[启动卡](2026-10-23-agent-team-startup-briefs.md#4-c-队macbook-工作台与体验)和[设计框架](../../design/ui-ux-design-framework-and-tokens.md)，实现 C01 的首个任务列表/详情/取消消费单元。C01 全范围和团队目标继续保持未完成。
 
 ## 边界与设计
 

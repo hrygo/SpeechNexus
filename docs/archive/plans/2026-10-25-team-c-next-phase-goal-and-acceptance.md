@@ -7,7 +7,7 @@ date: 2026-10-25
 
 # 团队 C 下一阶段 Goal：交付基线集成与真实业务闭环验收
 
-2026-10-26 收尾：本阶段方案转为历史规划，停止自动接力。后续 owner、优先级和窗口由新负责人安排，原 T01–T11、AC-01–AC-12 及 41 条原 AC 范围保留；[团队 C 最终交接](2026-10-26-team-c-final-handoff.md)记录当时的接管依据。当前范围和证据见[交付跟踪矩阵](delivery-tracking.md)。
+2026-10-26 收尾：本阶段方案转为历史规划，停止自动接力。后续 owner、优先级和窗口由新负责人安排，原 T01–T11、AC-01–AC-12 及 41 条原 AC 范围保留；[团队 C 最终交接](2026-10-26-team-c-final-handoff.md)记录当时的接管依据。当前范围和证据见[交付跟踪矩阵](../../plans/delivery-tracking.md)。
 
 > 执行者按本文件逐任务推进，任务勾选与 AC 勾选分开维护。代码实施按当前授权和适用的 `executing-plans` 技能执行；本文件定义阶段目标与验收路径，不替代机器契约或尚未冻结接口的实施设计。
 
@@ -17,7 +17,7 @@ date: 2026-10-25
 
 **技术基线：**既有 Python/FastAPI、PostgreSQL、MinIO、TypeScript/React、生成契约客户端与浏览器测试链。具体版本按仓库锁文件，不做无关升级或重构。
 
-**范围依据：**[三团队交付计划](../archive/plans/2026-10-23-three-team-delivery-plan.md)、[C00–C08 持续目标](2026-10-24-team-c-goal.md)、[契约索引](../../contracts/README.md)和 [PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)。本文替代上一版 G-C1–G-C5 的推进排序与验收表达，不缩减原工作包或 Gate 的范围。
+**范围依据：**[三团队交付计划](2026-10-23-three-team-delivery-plan.md)、[C00–C08 持续目标](2026-10-24-team-c-goal.md)、[契约索引](../../../contracts/README.md)和 [PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)。本文替代上一版 G-C1–G-C5 的推进排序与验收表达，不缩减原工作包或 Gate 的范围。
 
 ## 一、基线与辩证判断
 
@@ -30,7 +30,7 @@ date: 2026-10-25
 | 变更与 CI | GitHub 报告 494 个变更文件；该 head 未查到 commit status、check run 或 PR workflow run | 更正原文 493；无 CI 记录不等于测试失败，也不构成通过证据 |
 | 历史候选证据 | 交接自报 workbench 597、admin 118、隔离 PG/Chromium 418，以及生产组合根和本机 LLM 的局部验证 | 截至该快照未重跑；后续本地结果见下表与报告，历史结果不推及完整真实语音或集成后的行为 |
 | 工作包 | [#35](https://github.com/hrygo/SpeechNexus/issues/35)–[#43](https://github.com/hrygo/SpeechNexus/issues/43) 均 open，原 41 条 AC 均未勾选 | 未勾选不等于没有实现；同样不能据此宣称全范围只剩外部联调 |
-| 工作台契约 | 当前候选 [workbench-openapi.yaml](../../contracts/workbench-openapi.yaml) 为 36 路径、44 操作；按 [bindings.json](../../contracts/bindings.json) 的工作台 surface 计算为 32 路径、40 个已绑定操作 | 这是候选基线的统计，不是永久常量；每个操作仍需核对实现、消费者和行为证据 |
+| 工作台契约 | 当前候选 [workbench-openapi.yaml](../../../contracts/workbench-openapi.yaml) 为 36 路径、44 操作；按 [bindings.json](../../../contracts/bindings.json) 的工作台 surface 计算为 32 路径、40 个已绑定操作 | 这是候选基线的统计，不是永久常量；每个操作仍需核对实现、消费者和行为证据 |
 
 现状判断调整为：**C 已交付大量可追溯的应用切片；下一阶段同时存在集成风险、C 自有功能缺口、外部具名依赖及真实资格缺口。必须分别解决，不能只做“体验与证据收尾”。**
 
@@ -42,21 +42,21 @@ date: 2026-10-25
 
 ### 当前执行状态（截至2026-10-26，PR #153 合并后，Asia/Shanghai）
 
-原生 Goal 已创建并保持 `active`；下表是局部进展，**M1/M2/M3 与 AC-01–AC-12 均未验收通过**。完整版本、结果与限制见[本次集成验证报告](../audits/2026-10-25-team-c-next-phase-integration.md)。
+原生 Goal 已创建并保持 `active`；下表是局部进展，**M1/M2/M3 与 AC-01–AC-12 均未验收通过**。完整版本、结果与限制见[本次集成验证报告](../../audits/2026-10-25-team-c-next-phase-integration.md)。
 
 | 任务 | 已完成的执行单元 | 尚未满足的退出条件 |
 | --- | --- | --- |
 | T01 | 固定 base `58bc51b`、PR head `f898622`；[PR #153](https://github.com/hrygo/SpeechNexus/pull/153) 于19:38:25合入 main `70ab43d`。v1/v2 与正式代理消费、双方契约和生成语义保留；精确 head 的14项合前CI全部成功，测试合并树与实际合并树一致 | 此为已集成基线；Profile草稿已按T03独立验证合入，本阶段计划与验收映射仍未提交；不能把基线CI外推为完整 M1 或合后CI |
-| T02 | 原41条AC、278个稳定子条件已保存到[可追踪映射](../audits/2026-10-25-team-c-acceptance-map.json)，全部278项已有候选映射，未审计数为0；映射、[原AC矩阵](../audits/2026-10-25-team-c-original-ac-matrix.md)、[集成验证报告](../audits/2026-10-25-team-c-next-phase-integration.md)、守卫 `scripts/dev-env/check-acceptance-map.py`、单元反例与 `make acceptance-map-check` 目标随本单元落地（快照 head `70ab43d`，原证据根 `.runtime/team-c/next-phase/2026-10-25T155546+0800` 已在清理中遗失，新证据改用仓库外稳定根）。最后26项核对了C00事件/开发演练及C07结果/副本/导出/恢复/独立验收；当前44项事件与49项导出/副本单元通过，新增反例确认非法ZIP且零章节仍可触发对象写入与完成调用（合成store，不是实际PG成功）。2026-10-26 收口清理工作树时，位于工作树内、被 git 忽略的 `.runtime` 证据根随目录删除，82 份原件不可恢复，见[证据保留事故](../audits/2026-10-26-team-c-evidence-retention.md) | 严格审计仍有126个映射角色缺项；原证据格式错误曾降为0，但清理后 main `4fcfa61` 的同一守卫报告 `evidence_invalid=86`（82份证据+3份manifest+1份metadata），原件遗失不能计为有效证据，须在稳定证据根重建；缺实现/正式消费者/行为断言继续留空，T02未完成。C07完整固定清单/检查点、独立worker/预算及版本关联质量记录仍待实施；媒体保护与公开下载分别由#174/#177局部集成，完整资格未通过；其余已登记缺口与真实流、部署/设备/辅助技术/长时资格继续按[报告](../audits/2026-10-25-team-c-next-phase-integration.md)推进。所有278项仍未验收 |
+| T02 | 原41条AC、278个稳定子条件已保存到[可追踪映射](../../audits/2026-10-25-team-c-acceptance-map.json)，全部278项已有候选映射，未审计数为0；映射、[原AC矩阵](../../audits/2026-10-25-team-c-original-ac-matrix.md)、[集成验证报告](../../audits/2026-10-25-team-c-next-phase-integration.md)、守卫 `scripts/dev-env/check-acceptance-map.py`、单元反例与 `make acceptance-map-check` 目标随本单元落地（快照 head `70ab43d`，原证据根 `.runtime/team-c/next-phase/2026-10-25T155546+0800` 已在清理中遗失，新证据改用仓库外稳定根）。最后26项核对了C00事件/开发演练及C07结果/副本/导出/恢复/独立验收；当前44项事件与49项导出/副本单元通过，新增反例确认非法ZIP且零章节仍可触发对象写入与完成调用（合成store，不是实际PG成功）。2026-10-26 收口清理工作树时，位于工作树内、被 git 忽略的 `.runtime` 证据根随目录删除，82 份原件不可恢复，见[证据保留事故](../../audits/2026-10-26-team-c-evidence-retention.md) | 严格审计仍有126个映射角色缺项；原证据格式错误曾降为0，但清理后 main `4fcfa61` 的同一守卫报告 `evidence_invalid=86`（82份证据+3份manifest+1份metadata），原件遗失不能计为有效证据，须在稳定证据根重建；缺实现/正式消费者/行为断言继续留空，T02未完成。C07完整固定清单/检查点、独立worker/预算及版本关联质量记录仍待实施；媒体保护与公开下载分别由#174/#177局部集成，完整资格未通过；其余已登记缺口与真实流、部署/设备/辅助技术/长时资格继续按[报告](../../audits/2026-10-25-team-c-next-phase-integration.md)推进。所有278项仍未验收 |
 | T03 | PR #153 已集成完整拥有资源删除、对象写入原意图/token屏障、导出取消与迟到章节列表修复；隔离 PG/MinIO/生产浏览器相关三模块最终23项通过。Profile草稿消费者已基于main 2fe90fed独立提交[PR #165](https://github.com/hrygo/SpeechNexus/pull/165)，审查3项P2修复后Admin151项、52项可访问性及隔离PG真实HTTP/Chromium验证通过；14项合前CI成功后于2026-10-25 22:13:48合入main `639b703`，测试与实际合并树一致 | PR #165仅交付草稿/固定读取/原键恢复，不结算发布/回滚/激活/退役及C01完整AC2；其余声音候选/发布、角色/生成/历史、完整导出与恢复仍待实施/联验；真实语音/格式/拓扑资格未通过 |
 | T03/T08 | TTS有效配置消费者修复由[PR #167](https://github.com/hrygo/SpeechNexus/pull/167)于2026-10-25 23:28:11合入main `a43aacd`：有效voice/profile须匹配原请求，首次model id/revision先持久确认再展示，刷新/事件/取消回读拒绝修订漂移。新增41项测试，最终相关64项通过；三个实际Chromium探针通过，14项合前CI成功，测试树与实际合并树一致 | 此为消费者局部交付；旧v2只能从有效Job建立当前模型确认，不能补证历史一致性。真实TTS生产、不可变发布/重放、格式及目标资格继续未验收；原70快照的映射保留，新增证据单独关联候选与集成版本 |
 | T03/T08：ASR稿件 | [PR #170](https://github.com/hrygo/SpeechNexus/pull/170)，当前head `5bc0b5a`，已rebase main `d876585`（#171），25个功能文件与前一候选`338a87a`逐字节相同。接通正式ASR结果→项目稿件封存导入→独立校对→固定修订TXT；来源适配器消费网关既有Transcription JSON，保留元数据/摘要/过期/长度校验。Python3.14.9来源46项、契约2700项，Workbench666、Admin151、TS契约1834与静态检查通过；实际生产包/合成HTTP浏览器及执行守卫通过，验证丢回执后刷新原键/原体重放和带BOM文本原生下载 | 最终[CI40211340749](https://github.com/hrygo/SpeechNexus/actions/runs/40211340749)14项成功后，于2026-10-26 00:38:43合入main `9d27764`；测试checkout `59f5031`与实际合并树一致。4项隔离PG纯文本/JSON导入/恢复/导出及实际浏览器守卫passed，PG停止；分片首轮依赖下载超时保留，同head一次失败job重试通过，未改门槛。本机未运行这些PG场景。真实ASR执行/公开发布链、字幕时间轴、其余格式及目标资格继续未验收；5项原条件只关联版本化局部证据，不改原70快照或完整AC |
 | T03/T09：导出完整性 | 独立[PR #174](https://github.com/hrygo/SpeechNexus/pull/174)，当前head `9a96267`，已rebase main `78505a8`（#173），19个功能文件与前一候选逐字节一致。完成进度不再补造；写入意图/PUT前真实解码WAV/MP3、校验ZIP成员/CRC/路径/限额，校验后复核取消，校验失败与持久取消交错可继续批次。Python3.14.9针对性158项及静态/契约检查通过 | 首轮CI在收集阶段因自动参数ID包含ZIP字节而超长失败，本地同入口复现后改用稳定短ID并通过，不改守卫或跳过用例；前一head CI40215905666全14项成功，35项PG/MinIO/runtime及六分片1690收集/1668通过/22既有不适用均精确核对；最终head CI40216653243全14项成功，六分片1695收集/1673通过/22既有不适用、35项导出场景全通过；2026-10-26 01:35:55合入main `39aeb41`，测试/合并tree一致，本机未运行这些服务。完整单元/版本/receipt清单、检查点/续作、正式producer、公开下载/SSE、全局预算及真实质量仍待交付，原AC未验收 |
-| T03/T09：公开下载 | [PR #177](https://github.com/hrygo/SpeechNexus/pull/177)，head `3246cc0`、base `250cf1c`，于2026-10-26 03:02:15合入main `85a4d82`。两条公开下载、完整长度/摘要、Range/416、有界spool与正式页面消费；取消焦点及重选项目缺陷已修复。最终[CI40222511230](https://github.com/hrygo/SpeechNexus/actions/runs/40222511230)经失败作业重跑后14项成功：Python6508/184子测试，六分片1696收集/1674通过/22既有不适用，8项相关runtime/生产键盘浏览器passed，6PG及覆盖PG均停止；测试/合并树一致。#42局部同步已回读，原AC不变，仍open/status:in-progress | 仅合前CI和合成媒体资格；首轮分片0/4依赖下载耗时后超时、旧DNS/UI/路由数量失败保留。saved-copy正式页面浏览器及实际过期/删除失败路径待补；完整清单/续作/公开结果生产者/SSE/全局预算/真实质量/拓扑仍未验收，278项保持not_run，详见[报告](../audits/2026-10-25-team-c-next-phase-integration.md) |
+| T03/T09：公开下载 | [PR #177](https://github.com/hrygo/SpeechNexus/pull/177)，head `3246cc0`、base `250cf1c`，于2026-10-26 03:02:15合入main `85a4d82`。两条公开下载、完整长度/摘要、Range/416、有界spool与正式页面消费；取消焦点及重选项目缺陷已修复。最终[CI40222511230](https://github.com/hrygo/SpeechNexus/actions/runs/40222511230)经失败作业重跑后14项成功：Python6508/184子测试，六分片1696收集/1674通过/22既有不适用，8项相关runtime/生产键盘浏览器passed，6PG及覆盖PG均停止；测试/合并树一致。#42局部同步已回读，原AC不变，仍open/status:in-progress | 仅合前CI和合成媒体资格；首轮分片0/4依赖下载耗时后超时、旧DNS/UI/路由数量失败保留。saved-copy正式页面浏览器及实际过期/删除失败路径待补；完整清单/续作/公开结果生产者/SSE/全局预算/真实质量/拓扑仍未验收，278项保持not_run，详见[报告](../../audits/2026-10-25-team-c-next-phase-integration.md) |
 | T03/T09：下载补充验证 | [PR #179](https://github.com/hrygo/SpeechNexus/pull/179)，head `6b2158d`、base `85a4d82`，于2026-10-26 03:19:56合入main `2671d32`。正式副本页面键盘落盘、源离线及queued/过期/删除/其他workspace拒绝已实跑，拒绝时MinIO原字节仍在。最终[CI40224858285](https://github.com/hrygo/SpeechNexus/actions/runs/40224858285)首轮14项成功：Python6511/184子测试，六分片1700收集/1678通过/22既有不适用，12项相关用例全passed，6PG及覆盖PG已停；测试/合并树一致，#42局部同步已回读 | 仅合前CI、合成媒体及render result fixture，未结算真实生成/模型、清理SLO、全局预算或完整C07。原278项仍not_run；下一步修复C03公开目录适配/身份与生命周期缺口并接收具名真实生产制品 |
 | T03/T09：音色目录修订 | [PR #180](https://github.com/hrygo/SpeechNexus/pull/180)，head `99a59be`、base `f3d0b5d`，2026-10-26 04:08:53 合入 `5164b6a`；公开源生成校验、精确身份、能力/disabled退役时间、完整2000字符原因与兼容v2正式消费者已集成。CI40228628754全14项成功，新增10项实际C/PG/HTTP/生产浏览器及既有章节探针全通过；6604项/223子测试、85.32%覆盖率，六分片1710收集/1688通过/22既有PG专用参数跳过，全部临时PG停止。旧807探针失败及修正保留；实际合并树与所测树一致。仍无真实音色发布/模型/拓扑资格，C03与原AC不结算。 |
-| T04 | 当前工作台机器清单为 52 个操作、42 `bound`/10 `consumer_pending`；生成 V2、历史 GET/页面及两条公开二进制下载已有分段接线。[映射](../audits/2026-10-26-team-c-operation-coverage.json)与[报告](../audits/2026-10-26-team-c-operation-coverage.md)已统一口径 | 仅 workbench 接线审计，不证明行为正确；六个 v1 兼容操作、v1 生成、两个读取及导出 SSE 待处置，其他 surface 与语义未全面审计，AC-03 未通过 |
-| T03/C07：生成链路 | #197/#198/#200 的派发/终态 CAS/默认关闭扫描、#202/#206/#211 的副本/待补与进程内分类、#208/#213/#214/#216/#217 的最近 100 条历史/ARIA/参数转发已集成；#174/#177/#179 有媒体完整性、公开下载与隔离 PG/MinIO 分段证据 | 先外发后持久化、同键异体/可变快照、锁前读/CAS、来源分类/饥饿/持久退避、SQL 全读后切片、刷新丢键和页面乱序/焦点审查未结。固定清单/检查点/续作/质量及真实生产者仍缺，不能把历史或副本统称未实现，详见[矩阵](../audits/2026-10-26-team-c-render-loop-status.md)；C07 与 AC 未通过 |
+| T04 | 当前工作台机器清单为 52 个操作、42 `bound`/10 `consumer_pending`；生成 V2、历史 GET/页面及两条公开二进制下载已有分段接线。[映射](../../audits/2026-10-26-team-c-operation-coverage.json)与[报告](../../audits/2026-10-26-team-c-operation-coverage.md)已统一口径 | 仅 workbench 接线审计，不证明行为正确；六个 v1 兼容操作、v1 生成、两个读取及导出 SSE 待处置，其他 surface 与语义未全面审计，AC-03 未通过 |
+| T03/C07：生成链路 | #197/#198/#200 的派发/终态 CAS/默认关闭扫描、#202/#206/#211 的副本/待补与进程内分类、#208/#213/#214/#216/#217 的最近 100 条历史/ARIA/参数转发已集成；#174/#177/#179 有媒体完整性、公开下载与隔离 PG/MinIO 分段证据 | 先外发后持久化、同键异体/可变快照、锁前读/CAS、来源分类/饥饿/持久退避、SQL 全读后切片、刷新丢键和页面乱序/焦点审查未结。固定清单/检查点/续作/质量及真实生产者仍缺，不能把历史或副本统称未实现，详见[矩阵](../../audits/2026-10-26-team-c-render-loop-status.md)；C07 与 AC 未通过 |
 | T06 | 手工建稿夹具已定位并修复；本次分片还查明独立 bucket 前置、Admin刷新边界、离线音频消息屏障及章节真实竞态，保留断言并修复；六分片完整集合1636项，1614通过，22项为原有PG-only适配器的InnoDB不适用项 | 15项探针已有实际执行守卫；全部必跑探针的交叉核验仍待完成。3项真实内网LLM资格独立保留且未执行；不适用/跳过不计通过，合成媒体不赋予物理设备资格 |
 | T05/T10：实时事实 | [PR #182](https://github.com/hrygo/SpeechNexus/pull/182) head `0320c51` 于2026-10-26 04:41:29合入main `e959c43`，基线为#168合入后的`ff224d9`。ASR成功入队后才提交本地水位/credit/身份；TTS保留closing/failed并等待关闭确认，生成终态后仍可停止缓冲。精确head CI40231216290全14项成功：Python6652/223subtests/85.48%，六分片1714收集/1692通过/22既有PG-only参数跳过；相关4项实际Worklet/合成浏览器全通过，Workbench691/Admin151/契约1870及52项自动可访问性通过；测试树与实际合并树一致 | 局部已集成，不结算物理设备、公开双工、远端停止/预算、长时及完整C04。下一C单元先复现并修正ASR采集停止Promise完成前显示idle的源码缺口；原70快照、候选及失败事实保留，78份原始文件按摘要归档，全部278条件继续not_run |
 | T05/T10：采集停止 | [PR #183](https://github.com/hrygo/SpeechNexus/pull/183) head `d8f91fb` 于2026-10-26 05:09:14合入main `f245c00`。ASR区分stopping/closed，保留迟到初始化和关闭失败，原生中断立即请求远端中止；刷新不掩盖本地失败，远端已释放后不重复取消。精确head CI40233520591全14项通过：Python6706/223subtests/85.48%，六分片1718收集/1696通过/22既有跳过；本模块8项浏览器实际通过，7个隔离PG确认停止；实际合并树与测试树一致 | 局部已集成；104份原始文件按摘要冻结，5个子条件新增版本followup，#182和原70/失败事实保留。下一单元接设备选择/切换，明确gap/新身份与旧采集释放；真实设备/权限、支持矩阵、完整无障碍/长时及A05/B04真实流仍须验收，全部278条件继续not_run |
@@ -99,7 +99,7 @@ M1/M2 是验收里程碑，不是所有工作的串行开工屏障：基线无�
 
 ### T01：收敛共同集成基线（M1；C，集成维护者协作）
 
-入口：`git status`、目标 diff、PR #153、当前主线和 [CI 配置](../../.github/workflows/ci.yml)。产物：固定的 `integration_base_sha`、`head_sha`、改动清单、冲突裁决及对应检查结果。对应 AC-01。
+入口：`git status`、目标 diff、PR #153、当前主线和 [CI 配置](../../../.github/workflows/ci.yml)。产物：固定的 `integration_base_sha`、`head_sha`、改动清单、冲突裁决及对应检查结果。对应 AC-01。
 
 - [x] 复核 PR、主线、CI 和工作区，保存其他任务改动的归属；核对双方契约及生成流水线差异。需要隔离工作时使用适合本任务的分支/worktree。
 - [x] 在授权范围内合并共同基线并逐处解决冲突，保持双方有效语义；从契约重建生成产物，不选择整份旧文件覆盖新实现。
@@ -123,7 +123,7 @@ M1/M2 是验收里程碑，不是所有工作的串行开工屏障：基线无�
 
 ### T04：固化操作集合与行为覆盖（M1；C，契约 owner 协作）
 
-入口：[工作台契约](../../contracts/workbench-openapi.yaml)、[绑定清单](../../contracts/bindings.json)、`packages/contracts/`、`scripts/dev-env/generate-contract-bindings.py`、`tests/contract/`。产物：按操作标识的覆盖映射与失败反例。对应 AC-03。
+入口：[工作台契约](../../../contracts/workbench-openapi.yaml)、[绑定清单](../../../contracts/bindings.json)、`packages/contracts/`、`scripts/dev-env/generate-contract-bindings.py`、`tests/contract/`。产物：按操作标识的覆盖映射与失败反例。对应 AC-03。
 
 - [ ] 建立“契约操作→绑定/验证器→TS/Python 边界类型→生产调用点→行为用例”的映射；生成客户端存在或组件文本引用不等于生产消费成立。
 - [ ] 显式登记四个未绑定操作及解除制品：`downloadBookExport`、`downloadSavedAsset`、`streamExportEvents`、`generateRenderUnit`。声明操作须被绑定或具名登记，不得静默遗漏；登记不赋予真实资格。
@@ -131,7 +131,7 @@ M1/M2 是验收里程碑，不是所有工作的串行开工屏障：基线无�
 
 ### T05：诚实状态、辅助技术与本地设备验证（M1；C）
 
-入口：正式 Admin/Workbench 页面、共享 Token、[UI/UX 基线](../design/ui-ux-design-framework-and-tokens.md)及已有浏览器探针。产物：页面/状态矩阵、支持矩阵与走查记录。对应 AC-04、AC-05；远端实时资格归 T10。
+入口：正式 Admin/Workbench 页面、共享 Token、[UI/UX 基线](../../design/ui-ux-design-framework-and-tokens.md)及已有浏览器探针。产物：页面/状态矩阵、支持矩阵与走查记录。对应 AC-04、AC-05；远端实时资格归 T10。
 
 - [ ] 建立项目/稿件、会议/纪要、助手、有声书、提词、转写、配音、实时及 Admin 的“页面×状态”矩阵；六类状态固定为“未配置、未启用、结果未定、被拒、冲突、配额”。逐格记录通过、失败、未运行或不适用；不适用须有契约/场景依据，每个适用状态均断言不误报成功、保留已有内容并给出可用恢复动作。
 - [ ] 逐页实测键盘、焦点、360px 小窗口及 macOS VoiceOver，记录浏览器/系统版本、实际播报、焦点顺序和结果；减少动态效果关闭非必要位移/缩放/持续动效，同时保留状态和进度可感知性。DOM/ARIA 或模拟媒体查询不能替代真实辅助技术记录。
@@ -139,7 +139,7 @@ M1/M2 是验收里程碑，不是所有工作的串行开工屏障：基线无�
 
 ### T06：查清探针失败并验证实际运行（M1；C）
 
-入口：`scripts/dev-env/workbench-manuscripts-probe.mjs`、`scripts/dev-env/workbench-manuscripts-real-probe.mjs`、`tests/integration/test_probe_inventory.py`、`scripts/dev-env/workbench-pg-probe.py`；[历史诊断](../archive/plans/2026-10-25-team-c-orphan-probes-gated-handoff.md)。对应 AC-06。
+入口：`scripts/dev-env/workbench-manuscripts-probe.mjs`、`scripts/dev-env/workbench-manuscripts-real-probe.mjs`、`tests/integration/test_probe_inventory.py`、`scripts/dev-env/workbench-pg-probe.py`；[历史诊断](2026-10-25-team-c-orphan-probes-gated-handoff.md)。对应 AC-06。
 
 - [x] 围绕最后一个未解释场景采集请求、响应契约、原键重放、pending/busy 与 UI 状态迁移，区分夹具、探针和产品问题；另一场景通过不能排除本场景缺陷。
 - [x] 修复须保留可解释的失败复现和回归；正式退役须有明确授权及等价或更强的覆盖证据。未定位时保持失败与受影响 AC 未完成，记录已排除原因后推进其他独立任务，不无证据重复重试。
@@ -186,7 +186,7 @@ M1/M2 是验收里程碑，不是所有工作的串行开工屏障：基线无�
 
 ### T11：目标部署、删除恢复与内容网络资格（M3；A07/B07 主责相应制品，C 联验）
 
-产物：目标部署资格、支持矩阵、用户及运维交接；模型/拓扑资格沿用 [资格报告契约](../../contracts/qualification-report.schema.json)，应用场景报告引用对应报告身份，不自造替代资格。对应 AC-11、AC-12。
+产物：目标部署资格、支持矩阵、用户及运维交接；模型/拓扑资格沿用 [资格报告契约](../../../contracts/qualification-report.schema.json)，应用场景报告引用对应报告身份，不自造替代资格。对应 AC-11、AC-12。
 
 - [ ] 在共同 SHA、镜像、模型绑定和批准拓扑上验证生产迁移/最小运行角色/对象区/清理身份；缺清理身份按契约拒绝，不接受无法履行的删除。
 - [ ] 联验版本化预检/确认、账本、对象擦除、API/worker 重启和备份恢复；恢复水位不倒退，先重放后开放内容，独立副本不误删；单机与要求的集群场景分别留证。
@@ -216,11 +216,11 @@ M1/M2 是验收里程碑，不是所有工作的串行开工屏障：基线无�
 
 每份证据至少记录：`evidence_id`、关联任务/原 AC 子条件、基线与 head、契约和生成版本、生产包/镜像/模型/声音绑定、拓扑、浏览器/设备、样例来源、负载/时长/阈值、运行命令、断言与结果、结果文件引用/摘要、限制及核验时间。这里只定义验收索引要求，不新增公共 wire 协议。
 
-证据原件存放在仓库外的稳定根 `/Users/hrygo/.codex/team-c-evidence/<YYYY-MM-DDTHHMMSS+0800>/`，每个根附 `manifest.json`（基线/head、命令、范围、结果摘要）；不得放在工作树内。清理工作树前必须用 `git status --ignored --short` 核对，必要时先归档。证据缺失使守卫返回非零是预期行为，不通过删除条目或放宽校验消除。事故与规则见[证据保留事故](../audits/2026-10-26-team-c-evidence-retention.md)。
+证据原件存放在仓库外的稳定根 `/Users/hrygo/.codex/team-c-evidence/<YYYY-MM-DDTHHMMSS+0800>/`，每个根附 `manifest.json`（基线/head、命令、范围、结果摘要）；不得放在工作树内。清理工作树前必须用 `git status --ignored --short` 核对，必要时先归档。证据缺失使守卫返回非零是预期行为，不通过删除条目或放宽校验消除。事故与规则见[证据保留事故](../../audits/2026-10-26-team-c-evidence-retention.md)。
 
 证据分为合成/fake、真实 HTTP/持久化/组合根、真实模型、物理设备、目标部署/集群几个维度，按实际组合标注；真实 Chromium 加合成媒体仍不属于物理设备资格。每个条件区分通过、失败、待依赖和未运行，失败/跳过不得以链接存在或重跑摘要冲掉。版本/配置/拓扑变化后复核受影响证据；没有变化的有效证据可复用，不追求测试次数。
 
-验证从仓库根目录执行，按 [AGENTS.md](../../AGENTS.md) 的改动矩阵选取：
+验证从仓库根目录执行，按 [AGENTS.md](../../../AGENTS.md) 的改动矩阵选取：
 
 | 改动 | 验证入口与判定 |
 | --- | --- |

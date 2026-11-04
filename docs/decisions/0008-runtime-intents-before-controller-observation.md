@@ -60,7 +60,7 @@ pre-release；消费以集成 SHA/生成清单锁定，不能只凭 1.0.0 信封
 JSON 语义、资源裁决及历史恢复由受控应用事务负责，不把基础约束当作完整生命周期。
 
 当时对 create_runtime_intent、observe_runtime、真实派发和联合资格的安排保留在
-[runtime 实施单元](../plans/2026-10-24-a01-runtime-intent-unit.md)；当前实现与验收范围见
+[runtime 实施单元](../archive/plans/2026-10-24-a01-runtime-intent-unit.md)；当前实现与验收范围见
 [交付跟踪矩阵](../plans/delivery-tracking.md)及本文开头的组件和运维入口。
 本决定和存储准备不证明 GPU、真实停止、多主机或完整恢复已通过资格，
 也不满足 ADR 0007 旧机制整体退出条件。

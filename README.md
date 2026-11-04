@@ -158,7 +158,7 @@ SpeechNexus 的接口设计采用 **OpenAI Audio 兼容子集 + `nexus` 扩展**
 
 | 我想了解 | 阅读入口 |
 | --- | --- |
-| 项目进展与接管 | [项目经理基线：三队能力、缺口、证据与协作](docs/plans/2026-10-26-project-manager-baseline.md) |
+| 项目进展与接管 | [项目经理基线：三队能力、缺口、证据与协作](docs/archive/plans/2026-10-26-project-manager-baseline.md) |
 | 产品范围与工作流 | [产品设计](docs/speechnexus-product-architecture.md) |
 | 部署、端口与配置 | [部署说明](deploy/README.md) |
 | 部署单元、分机拓扑与平台要求 | [部署单元与平台规划](docs/architecture/deployment-units.md) |

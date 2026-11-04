@@ -38,7 +38,7 @@ date: 2026-10-26
 | --- | --- | --- |
 | 文件 ASR | [固定制品及注册输入](../operations/file-asr-binding-handoff.md)、[默认工厂](../operations/file-asr-runtime.md)、[真实隔离实验](2026-10-25-b03-default-real-asr-probe.md)；真实 1.7B/CPU VAD、语音/静音、私有结果、原身份重放与网关重启 | 正式注册发布、生产准入、公开上传到下载完整链 |
 | 文件 CustomVoice | [固定制品及注册输入](../operations/file-tts-binding-handoff.md)、[默认工厂](../operations/file-tts-runtime.md)、[真实三格式实验](2026-10-26-b03-default-real-tts-probe.md)；WAV/MP3/PCM、24 kHz、生成区间及固定结果版本 | Base、VoiceDesign、克隆、实时、长文本或全部参数组合资格 |
-| 持久执行 | #152/#154/#158/#163/#168/#203 已集成；[执行接线](../plans/2026-10-25-b03-durable-file-runner.md)复用原 intent、回执和 worker，组件覆盖确认丢失与双消费者竞争 | 真实引擎/控制器故障及完整公开链已同版验收 |
+| 持久执行 | #152/#154/#158/#163/#168/#203 已集成；[执行接线](../archive/plans/2026-10-25-b03-durable-file-runner.md)复用原 intent、回执和 worker，组件覆盖确认丢失与双消费者竞争 | 真实引擎/控制器故障及完整公开链已同版验收 |
 | 控制器与停止 | [ASR 停止结算](2026-10-25-b03-real-stop-settlement.md)、[取消安全链](2026-10-25-b03-real-cancel-settlement.md)、[TTS 停止结算](2026-10-26-b03-real-tts-stop-settlement.md)；真实整代次双证据、默认恢复和 A 原事务幂等结算 | 单请求 GPU 释放、持续 ready、真实故障恢复或物理多机资格 |
 | CPU VAD 与区间 | [CPU VAD](../components/cpu-vad.md)、[有界媒体](../components/file-asr-audio.md)、已集成的输出区间组件 | 实时双工、对齐、匿名分人或完整 required 配方资格 |
 

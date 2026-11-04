@@ -186,7 +186,7 @@ flowchart TD
 
 语音底座首版执行角色为 `api`、`realtime-gateway`、`job-worker`、`scheduler`、`execution-gateway`；应用角色可共用镜像，backend 与 execution-gateway 独立部署。受限部署控制器属于部署基础设施，承担自动按需启停。工作台应用是可选模块，可与 API 同镜像，但通过公开 DTO / SDK 调用语音 API，不导入 vendor 代码或共写语音持久化表。工作台需要导出时增加受限 workbench-export-worker，不写底座 JobStep。开发者可以只部署底座，不启动 WebUI、工作台模块或 LLM。
 
-两类 schema 可使用同一 PostgreSQL 实例，凭据与写入权按模块职责分开；这属于组件边界，不是用户隔离。推理使用独立镜像和网络边界。所有引擎调用经过受控执行网关，API 和工作台没有可绕过网关的网络入口或凭据。vLLM batching 优化已获准请求，平台调度控制进入量、期限与预算。
+两类 schema 可使用同一 PostgreSQL 实例，凭据与写入权按模块职责分开；这属于组件边界，不是用户隔离。目标部署中推理使用独立镜像和受限网络，所有引擎调用经过受控执行网关，业务 API、worker 和工作台不能直接访问引擎或持有其凭据。网络策略与凭据分发须在实际部署中配置并验证；Compose 默认容器网络或私网地址不能证明隔离已经生效，参见[部署单元](architecture/deployment-units.md)。vLLM batching 优化已获准请求，平台调度控制进入量、期限与预算。
 
 ## 4. 语音接口与传输选择
 

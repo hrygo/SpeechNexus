@@ -194,7 +194,7 @@ flowchart TD
 
 | 使用需求 | 公开入口 | 结果与边界 |
 | --- | --- | --- |
-| 有界文件转写 | `POST /v1/audio/transcriptions` | OpenAI Audio 转写子集；短请求同步返回，长任务显式改 Job |
+| 有界文件转写 | `POST /v1/audio/transcriptions` | OpenAI Audio 转写子集；在输入与执行预算内同步处理，超限或失败按错误返回；需要持久 Job 时由客户端显式发起 |
 | 完整文本合成 | `POST /v1/audio/speech` | OpenAI Audio TTS 子集；默认 MP3，可声明 WAV / PCM；音频流不等于增量文本输入 |
 | 实时识别 / 增量文本合成 | 预创建 nexus session 后连接 `/v1/realtime?session_id=...`；标准 SDK 也可用 `/v1/realtime?model=...` 直连仅转写会话 | 预创建会话的 TTS、可修订预览、背压与整体终态使用 `nexus.*`；直连模式仅支持声明的转写子集 |
 | 持久化 ASR / TTS | `POST /v1/nexus/jobs` | 版本固定、查询 / 取消 / 显式重试与已提交 Artifact；显式重试创建新 Job，内容可在保留期内下载 |
@@ -248,7 +248,7 @@ Job 的取消与重试也是契约目标；当前公开 Job 路由只装配创�
 | `tts.seed` | integer 或 null | 只有后端声明支持时生效；不承诺跨版本相同波形 |
 | `tts.planner.max_chars` | integer；建议 40–400 | 管理员预设中的分段预算，受绑定支持范围限制 |
 | `tts.planner.max_wait_ms` | integer，100–3000 | sentence 模式等待完整句界的最大时间；到期不强制合成不安全尾部 |
-| `output.transcript_format` | `json / text / verbose_json / srt / vtt` | 后三者按实际辅助能力开放 |
+| `output.transcript_format` | `json / text / verbose_json / srt / vtt` | 后三者仅在具备相应时间边界证据时开放，不伪造时间戳 |
 | `output.audio_format` | `mp3 / wav / pcm` REST 基线 | 标准 REST 默认 mp3；实时 PCM descriptor 独立协商，其他格式经 encoder / 客户端资格验证后发布 |
 | `output.save_artifacts` | boolean | 普通同步 / 实时默认 false，Job 固定 true；受数据策略约束 |
 

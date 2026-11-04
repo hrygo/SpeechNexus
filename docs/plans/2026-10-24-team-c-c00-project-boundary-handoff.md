@@ -9,7 +9,7 @@ date: 2026-10-24
 
 > 历史交接：以下状态和验证保留原时点；当前范围与证据见[交付跟踪矩阵](delivery-tracking.md)。
 
-本单元把 A 已发布的两个生成请求接入工作台版本用例；C00、C08 和[团队 C 目标](2026-10-24-team-c-goal.md)仍未完成。此前版本、数据库和删除证据分别保留在[版本交接](2026-10-24-team-c-c00-version-handoff.md)、[PostgreSQL 交接](2026-10-24-team-c-c00-postgres-handoff.md)和[删除交接](2026-10-24-team-c-c00-deletion-handoff.md)。
+本单元把 A 已发布的两个生成请求接入工作台版本用例；C00、C08 和[团队 C 目标](2026-10-24-team-c-goal.md)仍未完成。此前版本、数据库和删除证据分别保留在[版本交接](../archive/plans/2026-10-24-team-c-c00-version-handoff.md)、[PostgreSQL 交接](../archive/plans/2026-10-24-team-c-c00-postgres-handoff.md)和[删除交接](2026-10-24-team-c-c00-deletion-handoff.md)。
 
 ## 身份与契约
 

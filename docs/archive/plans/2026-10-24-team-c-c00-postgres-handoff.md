@@ -7,13 +7,13 @@ date: 2026-10-24
 
 # SpeechNexus C00 PostgreSQL 版本事务交接
 
-> 历史交接：以下状态和验证保留原时点；当前范围与证据见[交付跟踪矩阵](delivery-tracking.md)。
+> 历史交接：以下状态和验证保留原时点；当前范围与证据见[交付跟踪矩阵](../../plans/delivery-tracking.md)。
 
-后续进展见 [C00 删除事务交接](2026-10-24-team-c-c00-deletion-handoff.md)：基线已快进到 `f210821d655bd7deb326825d750d83584c3ce159`，补充 V2 tombstone、物理正文清理及删除回执竞争修复。以下保留本轮 `b3e0ed3` 的原时点证据；当前版本适配器须与 V2 一并集成，不能据此仅部署 V1。
+后续进展见 [C00 删除事务交接](../../plans/2026-10-24-team-c-c00-deletion-handoff.md)：基线已快进到 `f210821d655bd7deb326825d750d83584c3ce159`，补充 V2 tombstone、物理正文清理及删除回执竞争修复。以下保留本轮 `b3e0ed3` 的原时点证据；当前版本适配器须与 V2 一并集成，不能据此仅部署 V1。
 
 ## 身份与边界
 
-- 团队 C / C00 #35，[持续目标](2026-10-24-team-c-goal.md)仍为 active；本单元不关闭工作包或 Gate。
+- 团队 C / C00 #35，[持续目标](../../plans/2026-10-24-team-c-goal.md)仍为 active；本单元不关闭工作包或 Gate。
 - 基线 `b3e0ed340763b827333747d464b68fd7f4981116`，分支 `codex/team-c-c00-versions`。本轮没有 commit、push、外部消息或远端状态修改；没有承载未提交改动的 `head_sha`。
 - 延续[领域/应用版本单元](2026-10-24-team-c-c00-version-handoff.md)。参照同基线 workbench/shared 契约 `0.1.0.dev0`；未修改公共机器契约、生成器、锁文件、部署配置或迁移框架。
 - 当前模块可表达并保存项目和转写版本。生产组合根、HTTP、列表/游标、对象区、speech 导入核验及业务删除尚未接入；不能据此宣称 C00 或真实文件闭环完成。

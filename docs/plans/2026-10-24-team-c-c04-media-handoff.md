@@ -57,6 +57,6 @@ date: 2026-10-24
 
 - C04 未验证：真实设备/权限/自动播放、采集和重采样、后台节流、持续实时压力、Safari/跨浏览器、fake/public WS 连接和恢复、服务端 credit/gap 映射、服务端停止证据；尚未接 UI 消费者。
 - A00 依赖：公开生成类型、客户端和运行时 validator 的确定版本；C 不手写独立公开语义副本。A/B 联调资格和 GPU 结果由对应 owner 提供。
-- C 可继续独立推进 C01/C02 的开发 fake 业务切片；C00 的生产持久化、删除恢复及真实文件闭环仍按[C00 交接](2026-10-24-team-c-c00-version-handoff.md)待集成。
+- C 可继续独立推进 C01/C02 的开发 fake 业务切片；C00 的生产持久化、删除恢复及真实文件闭环仍按[C00 交接](../archive/plans/2026-10-24-team-c-c00-version-handoff.md)待集成。
 
 本轮 Web 改动未触及 C00 Python 源码；复用其原时点 270 项单元/契约测试证据，不宣称本轮重新执行 Python 或 Linux/PG/MinIO 验证。

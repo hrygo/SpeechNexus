@@ -7,15 +7,15 @@ date: 2026-10-24
 
 # C00 元数据列表交接
 
-> 历史交接：以下状态和验证保留原时点；当前范围与证据见[交付跟踪矩阵](delivery-tracking.md)。
+> 历史交接：以下状态和验证保留原时点；当前范围与证据见[交付跟踪矩阵](../../plans/delivery-tracking.md)。
 
-已实现 C00 内部项目/稿件列表用例和真实 PostgreSQL 查询，供后续公开路由接入；C00、C08 和[团队 C 持续目标](2026-10-24-team-c-goal.md)仍未完成。范围及设计见[实施单元](2026-10-24-team-c-c00-listing-plan.md)。
+已实现 C00 内部项目/稿件列表用例和真实 PostgreSQL 查询，供后续公开路由接入；C00、C08 和[团队 C 持续目标](../../plans/2026-10-24-team-c-goal.md)仍未完成。范围及设计见[实施单元](../../plans/2026-10-24-team-c-c00-listing-plan.md)。
 
 ## 基线与契约
 
 - 本地 `base_sha = head_sha = cbf4a8ca1cf808fbc5ff4b125f7ff1e271496995`。原有 77 个 C 文件逐字节校验后，安全快进 B02 控制器交付；无 commit/push，改动以累计补丁交接。
 - workbench OpenAPI `0.1.0.dev0`，SHA256 `38b8f6776392f541c0be085b5fedd49937f3c16486934d55970d154309390068`。本轮没有改变公开协议或生成产物。
-- `contracts/bindings.json` SHA256 `7fba8b209e634442621e30cd6277f984ca9547f1baee9883520d131fa6468c3c`；A 的 workbench Python runtime profile 仍只有 `ProjectCreateRequest` / `ProjectPatch`。缺少响应与稿件入口，见[上轮依赖清单](2026-10-24-team-c-c00-project-boundary-handoff.md#剩余接入)。
+- `contracts/bindings.json` SHA256 `7fba8b209e634442621e30cd6277f984ca9547f1baee9883520d131fa6468c3c`；A 的 workbench Python runtime profile 仍只有 `ProjectCreateRequest` / `ProjectPatch`。缺少响应与稿件入口，见[上轮依赖清单](../../plans/2026-10-24-team-c-c00-project-boundary-handoff.md#剩余接入)。
 
 ## 实现与语义
 

@@ -9,7 +9,7 @@ date: 2026-10-24
 
 > 历史计划：以下实施步骤和结果保留原时点；当前范围与证据见[交付跟踪矩阵](delivery-tracking.md)。
 
-沿用[团队 C 目标](2026-10-24-team-c-goal.md)、[版本交接](2026-10-24-team-c-c00-version-handoff.md)及 [workbench 契约](../../contracts/workbench-openapi.yaml)的项目和稿件列表范围。基线 `cbf4a8ca1cf808fbc5ff4b125f7ff1e271496995`；已核对快进前后原有 77 个 C 文件完全一致。
+沿用[团队 C 目标](2026-10-24-team-c-goal.md)、[版本交接](../archive/plans/2026-10-24-team-c-c00-version-handoff.md)及 [workbench 契约](../../contracts/workbench-openapi.yaml)的项目和稿件列表范围。基线 `cbf4a8ca1cf808fbc5ff4b125f7ff1e271496995`；已核对快进前后原有 77 个 C 文件完全一致。
 
 ## 设计与边界
 
@@ -48,4 +48,4 @@ date: 2026-10-24
 
 执行使用既有 writing-plans、executing-plans、TDD 和 PostgreSQL 技能。本机共享 helper 缺失，继续手动 ledger `.runtime/team-c/c00-listing-progress.md`，保留与其他计划隔离的记录。
 
-内部实现、验证及一次独立审查已完成；完整边界和证据见[交接](2026-10-24-team-c-c00-listing-handoff.md)。最终审查未发现 P1/P2/P3，公开协议/HTTP、跨页非快照及首屏刷新语义继续按文档保留，不关闭 C00 或持续目标。
+内部实现、验证及一次独立审查已完成；完整边界和证据见[交接](../archive/plans/2026-10-24-team-c-c00-listing-handoff.md)。最终审查未发现 P1/P2/P3，公开协议/HTTP、跨页非快照及首屏刷新语义继续按文档保留，不关闭 C00 或持续目标。

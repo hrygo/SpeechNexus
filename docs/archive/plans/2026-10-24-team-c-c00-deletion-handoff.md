@@ -7,15 +7,15 @@ date: 2026-10-24
 
 # SpeechNexus C00 项目与稿件删除事务交接
 
-> 历史交接：本文状态和验证保留原时点；当前范围与证据见[交付跟踪矩阵](delivery-tracking.md)。
+> 历史交接：本文状态和验证保留原时点；当前范围与证据见[交付跟踪矩阵](../../plans/delivery-tracking.md)。
 
 ## 身份与适用范围
 
-团队 C / C00 #35、C08 #43；[持续目标](2026-10-24-team-c-goal.md)仍为 active。本单元实现当前仅含 PostgreSQL 内容的项目、稿件删除，未完成 C00/C08 或生产删除恢复资格。
+团队 C / C00 #35、C08 #43；[持续目标](../../plans/2026-10-24-team-c-goal.md)仍为 active。本单元实现当前仅含 PostgreSQL 内容的项目、稿件删除，未完成 C00/C08 或生产删除恢复资格。
 
 基线为 `f210821d655bd7deb326825d750d83584c3ce159`，分支 `codex/team-c-c00-versions`。本轮从 `b3e0ed340763b827333747d464b68fd7f4981116` 快进到已合入 A01/B00 的 main，保留 C 的未提交文件；重叠的计划索引保留双方条目。未创建提交、推送、发送外部消息或修改共享数据库。本地未提交产物没有独立的 `head_sha`。
 
-实现遵循[删除规范 1.0.0](../architecture/data-deletion.md)、[共享删除机器契约](../../contracts/shared/deletion.schema.json)和 [workbench OpenAPI 0.1.0.dev0](../../contracts/workbench-openapi.yaml)。没有修改契约、生成器、共享依赖、部署文件或 A 的迁移框架。领域对象与公开 DTO 分开；当前生成包尚未提供此删除入口的运行时 validator，本单元仅在测试中消费源 schema，未暴露 HTTP 路由。
+实现遵循[删除规范 1.0.0](../../architecture/data-deletion.md)、[共享删除机器契约](../../../contracts/shared/deletion.schema.json)和 [workbench OpenAPI 0.1.0.dev0](../../../contracts/workbench-openapi.yaml)。没有修改契约、生成器、共享依赖、部署文件或 A 的迁移框架。领域对象与公开 DTO 分开；当前生成包尚未提供此删除入口的运行时 validator，本单元仅在测试中消费源 schema，未暴露 HTTP 路由。
 
 ## 行为与边界
 

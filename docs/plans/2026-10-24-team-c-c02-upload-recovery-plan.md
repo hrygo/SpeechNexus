@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript / A 公开 client/parser / WebCrypto / Vitest / Chromium。
 
-**Spec:** [三团队 C02](2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)刷新恢复/重试不重复发布；[上一单元](2026-10-24-team-c-c02-tts-handoff.md)的上传阶段缺口；`contracts/speech-openapi.yaml` 的公开 Asset/Job 协议。
+**Spec:** [三团队 C02](2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)刷新恢复/重试不重复发布；[上一单元](../archive/plans/2026-10-24-team-c-c02-tts-handoff.md)的上传阶段缺口；`contracts/speech-openapi.yaml` 的公开 Asset/Job 协议。
 
 ## 边界与审查重点
 

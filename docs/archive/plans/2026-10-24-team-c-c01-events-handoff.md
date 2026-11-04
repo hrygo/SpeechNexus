@@ -6,20 +6,20 @@ date: 2026-10-24
 
 # 团队 C C01 Admin 任务事件与正式入口交接
 
-> 历史交接：以下状态和验证保留原时点；当前范围与证据见[交付跟踪矩阵](delivery-tracking.md)。
+> 历史交接：以下状态和验证保留原时点；当前范围与证据见[交付跟踪矩阵](../../plans/delivery-tracking.md)。
 
-按[本单元计划](2026-10-24-team-c-c01-events-plan.md)，在[原任务中心](2026-10-24-team-c-c01-task-center-handoff.md)上补齐公开 SSE 消费，并接到正式 Admin 页。[完整 C00–C08 目标](2026-10-24-team-c-goal.md)仍 active，本轮不关闭 C01/C08 或 Gate。
+按[本单元计划](../../plans/2026-10-24-team-c-c01-events-plan.md)，在[原任务中心](2026-10-24-team-c-c01-task-center-handoff.md)上补齐公开 SSE 消费，并接到正式 Admin 页。[完整 C00–C08 目标](../../plans/2026-10-24-team-c-goal.md)仍 active，本轮不关闭 C01/C08 或 Gate。
 
 ## 身份与实现
 
 `base_sha = head_sha = 3380a76c89998b42be29b0c25e9f49443d23e15b`，分支 `codex/team-c-c00-versions`。开始前核对上一 118 文件摘要，fetch 后 main 无新提交。消费 public speech OpenAPI `0.1.0.dev0`、A contracts/bindings `0.1.0` 的 Job/JobEvent/错误等生成校验。未改 canonical、生成器、共享锁、后端、数据库、部署配置；没有提交、推送或外部消息。
 
-- [正式 App](../../web/admin/src/App.tsx)通过 [TaskCenterHost](../../web/admin/src/task-center/TaskCenterHost.tsx)仅消费 `location.origin`；初始不请求 API，用户显式读取/连接，取消继续要求目标确认。页面标明真实服务待联调、共享部署和本页恢复限制，生产构建排除开发演练。
+- [正式 App](../../../web/admin/src/App.tsx)通过 [TaskCenterHost](../../../web/admin/src/task-center/TaskCenterHost.tsx)仅消费 `location.origin`；初始不请求 API，用户显式读取/连接，取消继续要求目标确认。页面标明真实服务待联调、共享部署和本页恢复限制，生产构建排除开发演练。
 - 宿主持有会话，StrictMode effect 重放不提前销毁。隐藏/pagehide 停事件并保留水位，返回后显式连接；真正卸载取消自有请求。pagehide 不销毁会话，避免恢复页面后不可用；模拟 visibility 单元测试不证明真实后台节流或 BFCache 资格。
-- [AdminJobClient](../../web/admin/src/task-center/job-client.ts)消费生成事件路由，携带 `Last-Event-ID`、拒绝 redirect/cache，仅接受精确 200 和正确 SSE MIME。生成 parser 校验后核对 job、frame id/type；错误仅向会话提供安全 status/code，不展示服务端 message/正文/URL。建连期限 15 秒，建立响应后清 timer；正常长连接由 owner signal 终止，没有自动重连或 POST 重试。
-- [会话](../../web/admin/src/task-center/task-center-session.ts)一次保留一个选中任务、连接和已确认水位。事件仅使快照失效，串行重读完整 Job 并核对身份后才推进水位；BigInt 比较避免大序号舍入，重复/旧事件忽略，不拼造完整 Job。取消接受、终态和 cleanup_state 分开呈现。
+- [AdminJobClient](../../../web/admin/src/task-center/job-client.ts)消费生成事件路由，携带 `Last-Event-ID`、拒绝 redirect/cache，仅接受精确 200 和正确 SSE MIME。生成 parser 校验后核对 job、frame id/type；错误仅向会话提供安全 status/code，不展示服务端 message/正文/URL。建连期限 15 秒，建立响应后清 timer；正常长连接由 owner signal 终止，没有自动重连或 POST 重试。
+- [会话](../../../web/admin/src/task-center/task-center-session.ts)一次保留一个选中任务、连接和已确认水位。事件仅使快照失效，串行重读完整 Job 并核对身份后才推进水位；BigInt 比较避免大序号舍入，重复/旧事件忽略，不拼造完整 Job。取消接受、终态和 cleanup_state 分开呈现。
 - EOF/中断需显式重连；只有 410 加 `event_history_expired` 清水位并重读。重读失败标为未恢复，旧快照不冒充当前状态，并禁止基于它取消。切换重置水位，同任务重读保留水位并停旧连接；迟到事件/读取及旧 finally 不影响新 owner。
-- 两个入口消费[共享 framing](../../web/shared/src/protocol/sse.ts)，移除原工作台独占实现，原测试导入共享入口。保留严格 UTF-8、CRLF/多行/注释、完整帧终止和 65,536 字符 frame 策略；不把 frame 策略声称为所有传输 chunk 的严格内存总上限。
+- 两个入口消费[共享 framing](../../../web/shared/src/protocol/sse.ts)，移除原工作台独占实现，原测试导入共享入口。保留严格 UTF-8、CRLF/多行/注释、完整帧终止和 65,536 字符 frame 策略；不把 frame 策略声称为所有传输 chunk 的严格内存总上限。
 - 开发页新增水位、历史过期、中断、等待/停止四场景，仅合成内存。事件水位和取消原键仅保留当前页面，刷新会丢失；Admin 持久恢复仍待补齐。
 
 ## 验证事实

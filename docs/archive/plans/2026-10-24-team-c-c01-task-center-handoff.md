@@ -7,22 +7,22 @@ date: 2026-10-24
 
 # C01 Admin 任务中心消费交接
 
-> 历史交接：以下状态和验证保留原时点；当前范围与证据见[交付跟踪矩阵](delivery-tracking.md)。
+> 历史交接：以下状态和验证保留原时点；当前范围与证据见[交付跟踪矩阵](../../plans/delivery-tracking.md)。
 
-交付 C01 首个任务视图与开发 fake 单元；C01 和[团队 C 持续目标](2026-10-24-team-c-goal.md)仍未完成。范围依据[启动卡](2026-10-23-agent-team-startup-briefs.md#4-c-队macbook-工作台与体验)，具体步骤见[本单元计划](2026-10-24-team-c-c01-task-center-plan.md)。
+交付 C01 首个任务视图与开发 fake 单元；C01 和[团队 C 持续目标](../../plans/2026-10-24-team-c-goal.md)仍未完成。范围依据[启动卡](../../plans/2026-10-23-agent-team-startup-briefs.md#4-c-队macbook-工作台与体验)，具体步骤见[本单元计划](../../plans/2026-10-24-team-c-c01-task-center-plan.md)。
 
 ## 交付身份
 
 - 基线/HEAD：`e09abadf87fbc202b25e78b2698bdf9e95764adb`，分支 `codex/team-c-c00-versions`。本轮 fetch 确认 main 暂无新提交；此前 63 个 C 文件逐文件摘要一致后开始实施。
 - 工作区交付，无新增 commit/push、远端 Issue 更新或其他团队消息。补丁与基线/逐文件/补丁摘要位于 `.runtime/team-c/team-c-current.patch` 及 `team-c-current.manifest.json`；新增文件纳入补丁，未跨机集成。
-- 消费 [public speech OpenAPI](../../contracts/speech-openapi.yaml) `0.1.0.dev0`、A 的 contracts 包 `0.1.0` 的生成 `JobList` / `Job` / `JobCancellation` / `ErrorResponse` validator 与 typed client。没有改动契约、生成流水线、共享组件/锁文件或组合根。
+- 消费 [public speech OpenAPI](../../../contracts/speech-openapi.yaml) `0.1.0.dev0`、A 的 contracts 包 `0.1.0` 的生成 `JobList` / `Job` / `JobCancellation` / `ErrorResponse` validator 与 typed client。没有改动契约、生成流水线、共享组件/锁文件或组合根。
 
 ## 已实现行为
 
-- [AdminJobClient](../../web/admin/src/task-center/job-client.ts)：只调用公开列表/详情/取消路由；保留不透明分页游标，校验响应和资源身份，拒绝重复列表身份/不可继续的分页；请求拒绝 redirect，使用本地 15 秒 active-time deadline，POST 失败不自动重试。此时间策略属于 UI 消费端，不修改服务端协议。
-- [TaskCenterSession](../../web/admin/src/task-center/task-center-session.ts)：列表和详情各自 generation/abort，切换后拒绝迟到快照；读取失败保留旧快照并标注过时，卸载中止自有请求。只保留一个未决取消意图，固定原 job/key，切换任务后不能把它当作另一任务的新取消；重读与原键重放为分开的显式动作。
-- [TaskCenter](../../web/admin/src/task-center/TaskCenter.tsx)：列表/分页、详情重读、空/错误状态、目标确认与键盘焦点、原键恢复；取消接受、任务状态和 `cleanup_state` 分开显示，不把接受或终态显示为资源释放。确认绑定当前详情对象，选择其他任务会丢弃旧确认。
-- [开发场景](../../web/admin/src/task-center/dev/TaskCenterDemo.tsx)：正常分页、取消响应丢失、空列表、读取失败、失败任务/隔离资源。明确标注合成数据、共享部署与 contract/planned，不显示假 GPU 指标。显式开发查询 `?dev-scenario=task-center` 才加载，生产构建没有该入口或 fake 代码。
+- [AdminJobClient](../../../web/admin/src/task-center/job-client.ts)：只调用公开列表/详情/取消路由；保留不透明分页游标，校验响应和资源身份，拒绝重复列表身份/不可继续的分页；请求拒绝 redirect，使用本地 15 秒 active-time deadline，POST 失败不自动重试。此时间策略属于 UI 消费端，不修改服务端协议。
+- [TaskCenterSession](../../../web/admin/src/task-center/task-center-session.ts)：列表和详情各自 generation/abort，切换后拒绝迟到快照；读取失败保留旧快照并标注过时，卸载中止自有请求。只保留一个未决取消意图，固定原 job/key，切换任务后不能把它当作另一任务的新取消；重读与原键重放为分开的显式动作。
+- [TaskCenter](../../../web/admin/src/task-center/TaskCenter.tsx)：列表/分页、详情重读、空/错误状态、目标确认与键盘焦点、原键恢复；取消接受、任务状态和 `cleanup_state` 分开显示，不把接受或终态显示为资源释放。确认绑定当前详情对象，选择其他任务会丢弃旧确认。
+- [开发场景](../../../web/admin/src/task-center/dev/TaskCenterDemo.tsx)：正常分页、取消响应丢失、空列表、读取失败、失败任务/隔离资源。明确标注合成数据、共享部署与 contract/planned，不显示假 GPU 指标。显式开发查询 `?dev-scenario=task-center` 才加载，生产构建没有该入口或 fake 代码。
 
 界面沿用现有 Admin 翡翠主题、系统字体和 Token，不引入外部字体、图片或新的依赖。两栏列表/详情在窄屏上下排列。开发 transport 仅使用合成契约样例和内存，不调用原生 fetch、读取用户内容或写入持久数据。
 

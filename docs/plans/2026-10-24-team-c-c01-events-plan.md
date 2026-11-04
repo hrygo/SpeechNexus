@@ -8,7 +8,7 @@
 
 **Tech Stack:** React / TypeScript / openapi-fetch / generated JobEvent parser / Vitest / Chromium。
 
-**Spec:** [C01](2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)、[首轮任务卡](2026-10-23-agent-team-startup-briefs.md#4-c-队macbook-工作台与体验)、[既有交接](2026-10-24-team-c-c01-task-center-handoff.md)、`contracts/speech-openapi.yaml` 的 `streamJobEvents`。
+**Spec:** [C01](2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)、[首轮任务卡](2026-10-23-agent-team-startup-briefs.md#4-c-队macbook-工作台与体验)、[既有交接](../archive/plans/2026-10-24-team-c-c01-task-center-handoff.md)、`contracts/speech-openapi.yaml` 的 `streamJobEvents`。
 
 ## Global Constraints
 

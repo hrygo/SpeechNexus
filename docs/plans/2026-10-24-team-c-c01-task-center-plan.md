@@ -48,4 +48,4 @@ date: 2026-10-24
 
 执行记录保存在本计划自己的 `.runtime/team-c/c01-task-center-progress.md`。本机 executing-plans 的共享 helper 目录缺失，采用手动 ledger、同样的 RED→GREEN/最终独立审查；不因此提交、删除或覆盖其他计划产物。
 
-实施/测试与最终独立审查已完成，证据和未验证范围见[交接](2026-10-24-team-c-c01-task-center-handoff.md)。补丁应用验证以交付 manifest 为准；本计划不关闭 C01 或持续目标。
+实施/测试与最终独立审查已完成，证据和未验证范围见[交接](../archive/plans/2026-10-24-team-c-c01-task-center-handoff.md)。补丁应用验证以交付 manifest 为准；本计划不关闭 C01 或持续目标。

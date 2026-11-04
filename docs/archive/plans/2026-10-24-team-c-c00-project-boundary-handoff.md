@@ -7,20 +7,20 @@ date: 2026-10-24
 
 # SpeechNexus C00 生成项目请求消费交接
 
-> 历史交接：以下状态和验证保留原时点；当前范围与证据见[交付跟踪矩阵](delivery-tracking.md)。
+> 历史交接：以下状态和验证保留原时点；当前范围与证据见[交付跟踪矩阵](../../plans/delivery-tracking.md)。
 
-本单元把 A 已发布的两个生成请求接入工作台版本用例；C00、C08 和[团队 C 目标](2026-10-24-team-c-goal.md)仍未完成。此前版本、数据库和删除证据分别保留在[版本交接](../archive/plans/2026-10-24-team-c-c00-version-handoff.md)、[PostgreSQL 交接](../archive/plans/2026-10-24-team-c-c00-postgres-handoff.md)和[删除交接](2026-10-24-team-c-c00-deletion-handoff.md)。
+本单元把 A 已发布的两个生成请求接入工作台版本用例；C00、C08 和[团队 C 目标](../../plans/2026-10-24-team-c-goal.md)仍未完成。此前版本、数据库和删除证据分别保留在[版本交接](2026-10-24-team-c-c00-version-handoff.md)、[PostgreSQL 交接](2026-10-24-team-c-c00-postgres-handoff.md)和[删除交接](2026-10-24-team-c-c00-deletion-handoff.md)。
 
 ## 身份与契约
 
 - 基线/当前 HEAD：`e09abadf87fbc202b25e78b2698bdf9e95764adb`，分支 `codex/team-c-c00-versions`；C 的交付仍在未提交工作区，没有本单元的提交或远端更新。
-- 消费 [A PR #51](https://github.com/hrygo/SpeechNexus/pull/51)，生成产物提交 `88fdacccc5372b7fdd077441490f40bd1dfc78ba`；[workbench OpenAPI](../../contracts/workbench-openapi.yaml) 的版本为 `0.1.0.dev0`。
-- [bindings manifest](../../contracts/bindings.json) 中 workbench 的运行时入口目前只有 `ProjectCreateRequest` 和 `ProjectPatch`。TypeScript 的全量 OpenAPI 类型不表示 Python/JS 已有全量运行时 validator。
+- 消费 [A PR #51](https://github.com/hrygo/SpeechNexus/pull/51)，生成产物提交 `88fdacccc5372b7fdd077441490f40bd1dfc78ba`；[workbench OpenAPI](../../../contracts/workbench-openapi.yaml) 的版本为 `0.1.0.dev0`。
+- [bindings manifest](../../../contracts/bindings.json) 中 workbench 的运行时入口目前只有 `ProjectCreateRequest` 和 `ProjectPatch`。TypeScript 的全量 OpenAPI 类型不表示 Python/JS 已有全量运行时 validator。
 - 本轮没有改动机器契约、生成器、生成产物、共享锁文件或组合根。新基线依赖通过锁定安装；此前 C 的 60 个交付文件在 fast-forward 前后逐文件校验一致。
 
 ## 实现与验证边界
 
-[ProjectCommandBoundary](../../backend/src/speechnexus_backend/workbench/interfaces/project_commands.py) 先调用 `speechnexus_contracts.workbench.parse`，再映射到已有 `WorkbenchVersions`。不移除未知字段、不补写请求、不把字符串或布尔值当 revision；无效 body 在开启业务事务前被拒绝。
+[ProjectCommandBoundary](../../../backend/src/speechnexus_backend/workbench/interfaces/project_commands.py) 先调用 `speechnexus_contracts.workbench.parse`，再映射到已有 `WorkbenchVersions`。不移除未知字段、不补写请求、不把字符串或布尔值当 revision；无效 body 在开启业务事务前被拒绝。
 
 创建时由组合根显式提供 `default_workspace_id`，合法 body 中的 `workspace_id` 优先。这是本地接线选择，没有硬编码公共默认值，也不证明工作区存在或其删除并发已协调。公开创建入口上线前，A/C 仍需冻结工作区选择规则并接入权威生命周期检查。
 

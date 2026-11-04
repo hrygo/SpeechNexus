@@ -8,7 +8,7 @@
 
 **Tech Stack:** OpenAPI 3.1 / JSON Schema 2020-12 / existing jsonschema+openapi-spec-validator / pytest。
 
-**Spec:** [三团队所有权](2026-10-23-three-team-delivery-plan.md#21-共享资产只设一个维护者)、[C02 文本导出接入清单](2026-10-24-team-c-c02-text-export-handoff.md#a00c02-接入清单)。这不是 C02 全流程完成或正式发布。
+**Spec:** [三团队所有权](2026-10-23-three-team-delivery-plan.md#21-共享资产只设一个维护者)、[C02 文本导出接入清单](../archive/plans/2026-10-24-team-c-c02-text-export-handoff.md#a00c02-接入清单)。这不是 C02 全流程完成或正式发布。
 
 ## 决定与边界
 

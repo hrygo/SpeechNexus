@@ -89,18 +89,18 @@ date: 2026-10-24
 本次证据入口为[独立入口计划](2026-10-24-team-c-runtime-root-plan.md)、[独立入口交接](2026-10-24-team-c-runtime-root-handoff.md)及[真实 Workspace 联验](2026-10-24-team-c-workspaces-live-handoff.md)。独立入口交接中的预审结果属于修复前记录，后续交付须更新，不据此宣布完整 Goal 完成。
 
 [C00 文本字符边界交接](../archive/plans/2026-10-24-team-c-c00-text-handoff.md)补充项目/稿件的内容拒绝与失败重试证据。
-[C02 文件任务跨刷新恢复交接](2026-10-24-team-c-c02-recovery-handoff.md)补充创建/取消原键、事件水位和浏览器刷新证据；生产入口仍待接入，上传阶段恢复见后续交接。
-[C02 文本配音交接](2026-10-24-team-c-c02-tts-handoff.md)补充固定文本素材与声音/参数版本、合成音频试听下载及 TTS 刷新证据。
-[C02 上传阶段刷新恢复交接](2026-10-24-team-c-c02-upload-recovery-handoff.md)补充原上传键、输入身份、素材确认与 Job 原子交接；生产入口和真实服务联调仍待接入。
-[C02 固定版本文本导出交接](2026-10-24-team-c-c02-text-export-handoff.md)补充已保存原文/校对版本的 UTF-8 输出与删除屏障；公开页面和字幕协议仍待接入。
+[C02 文件任务跨刷新恢复交接](../archive/plans/2026-10-24-team-c-c02-recovery-handoff.md)补充创建/取消原键、事件水位和浏览器刷新证据；生产入口仍待接入，上传阶段恢复见后续交接。
+[C02 文本配音交接](../archive/plans/2026-10-24-team-c-c02-tts-handoff.md)补充固定文本素材与声音/参数版本、合成音频试听下载及 TTS 刷新证据。
+[C02 上传阶段刷新恢复交接](../archive/plans/2026-10-24-team-c-c02-upload-recovery-handoff.md)补充原上传键、输入身份、素材确认与 Job 原子交接；生产入口和真实服务联调仍待接入。
+[C02 固定版本文本导出交接](../archive/plans/2026-10-24-team-c-c02-text-export-handoff.md)补充已保存原文/校对版本的 UTF-8 输出与删除屏障；公开页面和字幕协议仍待接入。
 [C02 文本下载契约候选](2026-10-24-team-c-c02-download-contract-handoff.md)提供可执行正负样例和 A/C 冻结输入，状态仍 proposed，未接生产。
-[C01 任务事件与正式入口](2026-10-24-team-c-c01-events-handoff.md)补充同源公开 API 消费、水位/历史过期与生产 bundle 合成 HTTP/SSE；真实部署及跨刷新恢复仍待完成。
+[C01 任务事件与正式入口](../archive/plans/2026-10-24-team-c-c01-events-handoff.md)补充同源公开 API 消费、水位/历史过期与生产 bundle 合成 HTTP/SSE；真实部署及跨刷新恢复仍待完成。
 
-[C01 Admin 同标签页恢复](2026-10-24-team-c-c01-recovery-handoff.md)补充生产入口的原取消键/目标与水位跨刷新恢复、存储故障阻断；真实部署联调仍待完成。
+[C01 Admin 同标签页恢复](../archive/plans/2026-10-24-team-c-c01-recovery-handoff.md)补充生产入口的原取消键/目标与水位跨刷新恢复、存储故障阻断；真实部署联调仍待完成。
 
-[C02 素材 HTTP 原身份恢复](2026-10-24-team-c-c02-asset-reconcile-handoff.md)补充 A 上传 helper、Asset Location、v5/v6 hint 与原素材跨刷新只读核对；正式 Workbench 宿主和真实服务仍待接入。
+[C02 素材 HTTP 原身份恢复](../archive/plans/2026-10-24-team-c-c02-asset-reconcile-handoff.md)补充 A 上传 helper、Asset Location、v5/v6 hint 与原素材跨刷新只读核对；正式 Workbench 宿主和真实服务仍待接入。
 
-[C02 正式文件转写入口](2026-10-24-team-c-c02-host-handoff.md)补充正式生产宿主、原状态恢复/事件/取消及原始 JSON 下载的真实 Chromium 合成 HTTP 证据；模型发现、校对/导出和真实服务联调继续推进；正式配音见下一单元。
+[C02 正式文件转写入口](../archive/plans/2026-10-24-team-c-c02-host-handoff.md)补充正式生产宿主、原状态恢复/事件/取消及原始 JSON 下载的真实 Chromium 合成 HTTP 证据；模型发现、校对/导出和真实服务联调继续推进；正式配音见下一单元。
 
 [C02 正式文本配音入口](2026-10-24-team-c-c02-tts-host-handoff.md)补充正式同源 TTS 宿主、固定声音/参数版本、原文本/hint 刷新恢复、WAV 试听下载与切换释放的真实 Chromium 合成 HTTP 证据；发现/资格和真实服务联调仍未完成。
 
@@ -158,7 +158,7 @@ C00–C08 全部约定范围、生产消费者及必要真实验证均有可追�
 
 每轮交接记录 `base_sha`/`head_sha` 或补丁与校验值、契约版本、修改范围、命令/环境/结果、未验证项、阻塞 owner/解除条件及下一接入动作。依赖缺失时继续独立任务，下游明确保持待联调；不猜测字段、不绕过协议，也不重复无新证据的检查。
 
-[C00 版本单元交接](../archive/plans/2026-10-24-team-c-c00-version-handoff.md) · [C00 生成请求消费交接](2026-10-24-team-c-c00-project-boundary-handoff.md) · [C00 元数据分页交接](../archive/plans/2026-10-24-team-c-c00-listing-handoff.md) · [C00 PostgreSQL 事务交接](../archive/plans/2026-10-24-team-c-c00-postgres-handoff.md) · [C00 删除事务交接](2026-10-24-team-c-c00-deletion-handoff.md) · [C01 Admin 任务中心交接](2026-10-24-team-c-c01-task-center-handoff.md) · [C02 文件任务与 A00 消费交接](2026-10-24-team-c-c02-file-flow-handoff.md) · [C02 原始转写导入交接](2026-10-24-team-c-c02-transcript-import-handoff.md) · [C04 合成播放单元交接](2026-10-24-team-c-c04-media-handoff.md) · [C04 浏览器采集交接](2026-10-24-team-c-c04-capture-handoff.md) · [跟踪矩阵](2026-10-23-implementation-tracking.md)
+[C00 版本单元交接](../archive/plans/2026-10-24-team-c-c00-version-handoff.md) · [C00 生成请求消费交接](../archive/plans/2026-10-24-team-c-c00-project-boundary-handoff.md) · [C00 元数据分页交接](../archive/plans/2026-10-24-team-c-c00-listing-handoff.md) · [C00 PostgreSQL 事务交接](../archive/plans/2026-10-24-team-c-c00-postgres-handoff.md) · [C00 删除事务交接](../archive/plans/2026-10-24-team-c-c00-deletion-handoff.md) · [C01 Admin 任务中心交接](../archive/plans/2026-10-24-team-c-c01-task-center-handoff.md) · [C02 文件任务与 A00 消费交接](../archive/plans/2026-10-24-team-c-c02-file-flow-handoff.md) · [C02 原始转写导入交接](../archive/plans/2026-10-24-team-c-c02-transcript-import-handoff.md) · [C04 合成播放单元交接](../archive/plans/2026-10-24-team-c-c04-media-handoff.md) · [C04 浏览器采集交接](../archive/plans/2026-10-24-team-c-c04-capture-handoff.md) · [跟踪矩阵](2026-10-23-implementation-tracking.md)
 
 当前分段交付：[会议记录与纪要工作台](2026-10-24-team-c-meeting-ui-handoff.md)提供来源绑定、封存与原键恢复的真实浏览器/隔离PG证据；C00–C08及全部真实资格仍按上述退出条件保持进行中。
 

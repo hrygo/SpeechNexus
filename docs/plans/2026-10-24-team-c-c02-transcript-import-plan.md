@@ -46,4 +46,4 @@ date: 2026-10-24
 
 沿用 writing-plans、executing-plans、TDD、async-python-patterns 与 PostgreSQL 技能；缺失共享 helper 继续使用独立手动 ledger `.runtime/team-c/c02-transcript-import-progress.md`，在整个单元结束后只派一次只读审查。
 
-本单元实现及一次独立审查已完成；P2 NUL 修复经来源单测与真实 HTTP/PG RED→GREEN 验证，详情见[交接](2026-10-24-team-c-c02-transcript-import-handoff.md)。完整 C02/C08 和团队目标仍为未完成，最终全套/补丁结果以本轮执行记录为准。
+本单元实现及一次独立审查已完成；P2 NUL 修复经来源单测与真实 HTTP/PG RED→GREEN 验证，详情见[交接](../archive/plans/2026-10-24-team-c-c02-transcript-import-handoff.md)。完整 C02/C08 和团队目标仍为未完成，最终全套/补丁结果以本轮执行记录为准。

@@ -7,11 +7,11 @@ date: 2026-10-24
 
 # SpeechNexus C04 合成播放单元交接
 
-后续采集实现见 [C04 浏览器采集交接](2026-10-24-team-c-c04-capture-handoff.md)，实时配音页面消费播放模块的实现与合成环境验证见[实时 TTS 交接](2026-10-24-team-c-realtime-tts-handoff.md)。以下保留原播放单元的时点证据；这些后续接入不代表真实设备或服务资格已通过。
+后续采集实现见 [C04 浏览器采集交接](2026-10-24-team-c-c04-capture-handoff.md)，实时配音页面消费播放模块的实现与合成环境验证见[实时 TTS 交接](../../plans/2026-10-24-team-c-realtime-tts-handoff.md)。以下保留原播放单元的时点证据；这些后续接入不代表真实设备或服务资格已通过。
 
 ## 身份与验收边界
 
-团队 C / C04；持续范围见[团队 C 目标](2026-10-24-team-c-goal.md)。本轮交付独立播放单元及合成浏览器探针，C04、C08 和 Gate 均保持待完整验收。
+团队 C / C04；持续范围见[团队 C 目标](../../plans/2026-10-24-team-c-goal.md)。本轮交付独立播放单元及合成浏览器探针，C04、C08 和 Gate 均保持待完整验收。
 
 工作基线为 `8333e4ba7c722a36cc70545fd5a0ed2beee38eea`，分支 `codex/team-c-c00-versions`。改动尚未提交，没有承载本单元的 `head_sha`，未 push 或更新远端 Issue。联合联调仍须确认共同 integration SHA。
 
@@ -57,6 +57,6 @@ date: 2026-10-24
 
 - C04 未验证：真实设备/权限/自动播放、采集和重采样、后台节流、持续实时压力、Safari/跨浏览器、fake/public WS 连接和恢复、服务端 credit/gap 映射、服务端停止证据；尚未接 UI 消费者。
 - A00 依赖：公开生成类型、客户端和运行时 validator 的确定版本；C 不手写独立公开语义副本。A/B 联调资格和 GPU 结果由对应 owner 提供。
-- C 可继续独立推进 C01/C02 的开发 fake 业务切片；C00 的生产持久化、删除恢复及真实文件闭环仍按[C00 交接](../archive/plans/2026-10-24-team-c-c00-version-handoff.md)待集成。
+- C 可继续独立推进 C01/C02 的开发 fake 业务切片；C00 的生产持久化、删除恢复及真实文件闭环仍按[C00 交接](2026-10-24-team-c-c00-version-handoff.md)待集成。
 
 本轮 Web 改动未触及 C00 Python 源码；复用其原时点 270 项单元/契约测试证据，不宣称本轮重新执行 Python 或 Linux/PG/MinIO 验证。

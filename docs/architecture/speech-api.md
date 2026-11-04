@@ -194,7 +194,7 @@ TTS 制品携带实际 `format`、`sample_rate_hz`、`channels`、`duration_ms`�
 
 场景预设的目标契约采用同样的不可变 revision / 当前指针分离规则。当前实现仅提供 `POST /v1/nexus/admin/profiles` 根据 `expected_latest_revision` 原子分配只读 draft revision 和固定 revision 读取；发布、激活及公共列表仍属未交付范围，见[Profile 草稿](../components/profile-drafts.md)。目标契约要求 `POST .../revisions/{revision}/publications` 提交对应的 `ProfileValidation`，核对参数域、能力组合、override 范围和 production 资格后才切换当前指针；回滚通过 `.../activations` 选择已发布 revision，退役通过 `.../retirements` 清除当前指针而不自动回退。已固定的 Job / 实时会话继续使用其 revision，管理操作只影响后续选择。
 
-快照按部署、工作空间标识、catalog 与功能策略生成；ETag 包含这些身份、revision 和响应事实，不混用不同部署配置。当前响应使用 `Cache-Control: no-store`；条件请求支持 304，但这不是允许共享缓存的指令。外部入口保护须按实际部署核验，当前公开语音处理器不验证共享服务密钥。读取不触发加载、下载或卸载，不承诺未来槽位。提交可提供 expected_catalog_revision，不匹配为 `409 configuration_changed`；执行前重新检查资源状态、功能策略和容量。首期没有按用户投影或 authorization_revision。
+快照按部署、工作空间标识、catalog 与功能策略生成；ETag 包含这些身份、revision 和响应事实，不混用不同部署配置。当前成功及 304 响应使用 `Cache-Control: no-store`；条件请求支持 304，但不能据此让缓存保存响应。外部入口保护须按实际部署核验，当前公开语音处理器不验证共享服务密钥。读取不触发加载、下载或卸载，不承诺未来槽位。提交可提供 expected_catalog_revision，不匹配为 `409 configuration_changed`；执行前重新检查资源状态、功能策略和容量。首期没有按用户投影或 authorization_revision。
 
 Profile、voice 和 model binding revision 不可变；升级只影响后续新会话与新 Job。运行中的实时会话不热换模型、采样率或音色版本。队列中的固定版本不可用时明确失败或等待恢复；不得静默漂移到新版本。
 

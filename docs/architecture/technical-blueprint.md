@@ -99,7 +99,7 @@ P0 机器契约已按以下文件交付；它们冻结协议形状与样例，�
 
 公共、内部控制和 vendor DTO 分别建模，不能把私有字段通过公共响应泄漏。规范源放在 `contracts/`，公共与内部文件分目录组织；跨文件引用在构建时按所在文件解析，不在运行时访问网络。OpenAI SDK 的 REST 请求 / 响应形状与 Realtime 客户端事件由 `tests/contract/test_p0_public_contracts.py` 使用官方 Python SDK 的 mock transport / 实际序列化路径校验；这只是契约门禁，服务端实现后还须以同一组样例运行 HTTP / WebSocket 集成测试。兼容范围与扩展规则见[OpenAI 兼容与增强边界](openai-compatibility.md)。
 
-Python 契约包使用 datamodel-code-generator 生成 `TypedDict` 静态类型，并通过生成的解析入口和离线 schema 校验运行时数据，再映射为领域命令；静态类型本身不执行校验。TypeScript 的 OpenAPI 类型与客户端使用 openapi-typescript / openapi-fetch；独立事件 schema 生成对应类型，并用 Ajv 的 2020-12 实现校验运行时消息。生成产物不手改，业务层不得依赖生成 DTO 的内部布局；版本和生成入口见[契约包说明](../../packages/contracts/README.md)。
+Python 契约包使用 datamodel-code-generator 生成 `TypedDict` 静态类型，并通过生成的解析入口和离线 schema 校验运行时数据，再映射为领域命令；静态类型本身不执行校验。TypeScript 的 OpenAPI 类型与客户端使用 openapi-typescript / openapi-fetch；独立事件 schema 生成对应类型，并用 Ajv 的 2020-12 实现校验运行时消息。运行时解析入口只覆盖 `contracts/bindings.json` 选择的类型及显式 profile，不等于所有 OpenAPI 路由或 schema 均有解析入口；基础 HTTP 客户端不会自动校验收到的响应；个别封装提供额外校验。生成产物不手改，业务层不得依赖生成 DTO 的内部布局；版本和生成入口见[契约包说明](../../packages/contracts/README.md)。
 
 生成器只处理可表达的结构约束；布尔冒充数字、额外字段、可判别联合、跨字段关系、规范意图、事件序列与状态竞争仍须经过同一组正负样例。Python、TypeScript、fake adapter 和 MCP 运行样例必须一致。契约门禁还要比较 FastAPI 的实际投影、生成产物差异和不兼容变更；只有结构校验通过不能冻结协议。
 

@@ -8,7 +8,7 @@
 
 **Tech Stack:** 现有React、TypeScript、Vitest、AudioWorklet、Playwright及test-only loopback合成REST/WS。
 
-**Spec:** [语音API §2.5](../architecture/speech-api.md#25-tts-文本与音频的两种流)、[事件机器契约](../../contracts/realtime-events.schema.json)、[REST机器契约](../../contracts/speech-openapi.yaml)。C00 #35 / C04 #39 / C08 #43。
+**Spec:** [语音API §2.5](../../architecture/speech-api.md#25-tts-文本与音频的两种流)、[事件机器契约](../../../contracts/realtime-events.schema.json)、[REST机器契约](../../../contracts/speech-openapi.yaml)。C00 #35 / C04 #39 / C08 #43。
 
 ## Global Constraints
 

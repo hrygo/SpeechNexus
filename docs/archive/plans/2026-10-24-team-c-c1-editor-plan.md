@@ -8,7 +8,7 @@
 
 **Tech Stack:** 既有React/TypeScript/Vitest、A createValidatedClient/parse、项目Token；生产bundle的Chromium合成HTTP探针。
 
-**Spec:** `contracts/workbench-openapi.yaml`，`docs/speechnexus-product-architecture.md` §2.2，`docs/architecture/ui-ux-design-framework-and-tokens.md` §3（历史路径；[当前位置](../design/ui-ux-design-framework-and-tokens.md#3-speechnexus-品牌特点与架构边界融合)）；C00 #35/C02 #37/C08 #43及完整Goal。
+**Spec:** `contracts/workbench-openapi.yaml`，`docs/speechnexus-product-architecture.md` §2.2，`docs/architecture/ui-ux-design-framework-and-tokens.md` §3（历史路径；[当前位置](../../design/ui-ux-design-framework-and-tokens.md#3-speechnexus-品牌特点与架构边界融合)）；C00 #35/C02 #37/C08 #43及完整Goal。
 
 ## Global Constraints
 
@@ -57,6 +57,6 @@
 - [x] React/StrictMode集成先RED：正式导航、共享边界、状态/空/错误、项目/稿件创建与分页、历史只读/追加修订、冲突比较、草稿/unknown刷新与明确舍弃。
 - [x] 实施两栏文稿体验及窄屏/键盘/焦点，组件GREEN；不加载fixtures或自动提交，浏览器验证通过。
 - [x] 五项Web门禁及受影响契约检查，生产bundle真实Chromium合成HTTP验证/截图；一次独立终审0/2/0，一轮Important必要TDD修复53项/Web940通过，记录所有裁决。
-- [x] 累计包干净base apply/全部字节/链接/index保护；更新相关issue与任务并回读，完整Goal/Gate保持未完成。证据见[交接](2026-10-24-team-c-c1-editor-handoff.md)及忽略目录的最终manifest。
+- [x] 累计包干净base apply/全部字节/链接/index保护；更新相关issue与任务并回读，完整Goal/Gate保持未完成。证据见[交接](../../plans/2026-10-24-team-c-c1-editor-handoff.md)及忽略目录的最终manifest。
 
 删除页面、公开导出冻结、底座Artifact导入页面及Meeting/Minutes/realtime分别继续实施；此单元不改变完整Goal的退出条件。

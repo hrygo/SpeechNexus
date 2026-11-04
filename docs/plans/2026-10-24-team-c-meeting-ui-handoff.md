@@ -25,7 +25,7 @@
 
 ## 审查与接入
 
-本单元按[实施计划](2026-10-24-team-c-meeting-ui-plan.md)整体作唯一一次fresh终审：Critical0/Important2/Minor2；独立41项测试通过、37文件审查hash匹配。两项Important经一轮TDD修复：先session4+React1+App1失败，后54项针对性与Web1263通过，真实浏览器补quota后跨功能切换保留精确草稿。没有追加复审，修复由主代理检查与回归验证。
+本单元按[实施计划](../archive/plans/2026-10-24-team-c-meeting-ui-plan.md)整体作唯一一次fresh终审：Critical0/Important2/Minor2；独立41项测试通过、37文件审查hash匹配。两项Important经一轮TDD修复：先session4+React1+App1失败，后54项针对性与Web1263通过，真实浏览器补quota后跨功能切换保留精确草稿。没有追加复审，修复由主代理检查与回归验证。
 
 - I1已修：缺失/身份错误/未知新请求后失效旧纪要，界面不把未确认结果展示成当前成功，校对草稿和原键保留。
 - I2已修：首次访问后的会议会话由App保留在隐藏页面中，返回重读配置和当前事实；配额失败时内存输入不因功能切换丢失。没有新轮询，关闭标签页/真实页面刷新仍需已落盘journal。

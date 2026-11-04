@@ -86,7 +86,7 @@ date: 2026-10-24
 13. 继续独立保存/导出与业务恢复，以及音色候选/校验/发布、会议实时接线、助手等剩余切片；按有效契约和可用依赖推进，不能以领域规则或页面完成代替完整业务闭环。
 14. 在 A 协调的共同 SHA、生产迁移/部署及 A/B 确定版本就绪后，完成公开 speech/admin 的真实闭环；分别取得内容网络、真实浏览器/设备、Linux 后端和 GPU 联调证据。每轮交付标明范围、版本、测试、未验证项和依赖 owner。
 
-本次证据入口为[独立入口计划](2026-10-24-team-c-runtime-root-plan.md)、[独立入口交接](2026-10-24-team-c-runtime-root-handoff.md)及[真实 Workspace 联验](2026-10-24-team-c-workspaces-live-handoff.md)。独立入口交接中的预审结果属于修复前记录，后续交付须更新，不据此宣布完整 Goal 完成。
+本次证据入口为[独立入口计划](../archive/plans/2026-10-24-team-c-runtime-root-plan.md)、[独立入口交接](2026-10-24-team-c-runtime-root-handoff.md)及[真实 Workspace 联验](2026-10-24-team-c-workspaces-live-handoff.md)。独立入口交接中的预审结果属于修复前记录，后续交付须更新，不据此宣布完整 Goal 完成。
 
 [C00 文本字符边界交接](../archive/plans/2026-10-24-team-c-c00-text-handoff.md)补充项目/稿件的内容拒绝与失败重试证据。
 [C02 文件任务跨刷新恢复交接](../archive/plans/2026-10-24-team-c-c02-recovery-handoff.md)补充创建/取消原键、事件水位和浏览器刷新证据；生产入口仍待接入，上传阶段恢复见后续交接。

@@ -43,4 +43,4 @@ git diff --check
 
 生成身份历史的存储/检查随显式重做次数增长，后续持久化需保留唯一约束；本轮没有服务准入/容量或全书规模资格。没有以局部测试勾选完整C07父任务、保存/导出或G4。#42状态和内部子任务按本单元实际证据更新，所有C工作包继续open，Goal继续active。
 
-[实施计划](2026-10-24-team-c-c07-render-plan.md) · [团队目标](2026-10-24-team-c-goal.md) · [当前集成](2026-10-24-team-c-2874-integration-handoff.md)
+[实施计划](../archive/plans/2026-10-24-team-c-c07-render-plan.md) · [团队目标](2026-10-24-team-c-goal.md) · [当前集成](2026-10-24-team-c-2874-integration-handoff.md)

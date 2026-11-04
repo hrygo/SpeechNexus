@@ -17,8 +17,8 @@
 计划按基准日期保存，阶段完成状态须有实际交付和验收证据。C 的旧 Goal 与[联审协作方案](2026-10-26-team-c-next-phase-execution-and-collaboration.md)保留原范围与审查处理，已停止自动执行。
 
 - [2026-10-24 团队 C 7cd18879集成](2026-10-24-team-c-7cd-integration-handoff.md)：安全吸收#77/#79/#80/#81，保留237文件并重生成交集，新增Meeting/Minutes与公开realtime解析依赖；Python2735/PG269/Web1150及Chromium合成流程通过，实际handlers/会议与实时业务继续。
-- [2026-10-24 团队 C 项目与稿件版本工作台](2026-10-24-team-c-c1-editor-handoff.md)：正式生成客户端/页面、草稿与原键恢复、历史/冲突校对；53项针对性、Web940及4个Chromium合成上下文，一次终审两项Important已TDD修复，生产装配与完整资格继续。步骤见[实施计划](2026-10-24-team-c-c1-editor-plan.md)。
-- [2026-10-24 团队 C C1列表、状态与删除HTTP](2026-10-24-team-c-c1-management-handoff.md)：3b8052安全集成、完整13项C1操作、作用域游标与版本化删除；Python2414/PG269/Web891，生产装配及完整资格待接入。步骤见[实施计划](2026-10-24-team-c-c1-management-plan.md)。
+- [2026-10-24 团队 C 项目与稿件版本工作台](2026-10-24-team-c-c1-editor-handoff.md)：正式生成客户端/页面、草稿与原键恢复、历史/冲突校对；53项针对性、Web940及4个Chromium合成上下文，一次终审两项Important已TDD修复，生产装配与完整资格继续。步骤见[实施计划](../archive/plans/2026-10-24-team-c-c1-editor-plan.md)。
+- [2026-10-24 团队 C C1列表、状态与删除HTTP](2026-10-24-team-c-c1-management-handoff.md)：3b8052安全集成、完整13项C1操作、作用域游标与版本化删除；Python2414/PG269/Web891，生产装配及完整资格待接入。步骤见[实施计划](../archive/plans/2026-10-24-team-c-c1-management-plan.md)。
 
 - [原整体实施总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)：已迁移的历史 Epic/工作包/Gate 结构，不作为当前派工入口。
 - [2026-10-23 实施跟踪矩阵](2026-10-23-implementation-tracking.md)：历史快照；原规划及 #142/#149 的范围由新矩阵完整承接。[旧编排清单](2026-10-23-implementation-issues.json)保留原时点结构，当前刷新工具不读取此格式。
@@ -65,23 +65,23 @@
 
 - [2026-10-24 团队 C 2874c839 集成核验](2026-10-24-team-c-2874-integration-handoff.md)：保留191文件并吸收#69–#71；原样1659测试、隔离PG探针262、Web530和四条正式Chromium合成流程通过，公开生成入口和真实资格仍待完成。
 
-- [2026-10-24 团队 C C07 固定依赖与局部失效](2026-10-24-team-c-c07-render-handoff.md)：不可变版本指纹、显式生成代次、改文/角色换声局部stale核心；真实持久化/保存副本/独立导出及页面资格待完成。步骤见[实施计划](2026-10-24-team-c-c07-render-plan.md)。
+- [2026-10-24 团队 C C07 固定依赖与局部失效](2026-10-24-team-c-c07-render-handoff.md)：不可变版本指纹、显式生成代次、改文/角色换声局部stale核心；真实持久化/保存副本/独立导出及页面资格待完成。步骤见[实施计划](../archive/plans/2026-10-24-team-c-c07-render-plan.md)。
 
-- [2026-10-24 团队 C C1 JSON消费者与7372778集成](2026-10-24-team-c-c00-c1-handoff.md)：保留198文件、吸收#72–#74，接稿件命令及项目/稿件生成响应，记录1902测试/PG262/Web584/四条浏览器合成证据；HTTP和完整业务资格待完成。步骤见[实施计划](2026-10-24-team-c-c00-c1-plan.md)。
+- [2026-10-24 团队 C C1 JSON消费者与7372778集成](2026-10-24-team-c-c00-c1-handoff.md)：保留198文件、吸收#72–#74，接稿件命令及项目/稿件生成响应，记录1902测试/PG262/Web584/四条浏览器合成证据；HTTP和完整业务资格待完成。步骤见[实施计划](../archive/plans/2026-10-24-team-c-c00-c1-plan.md)。
 
-- [2026-10-24 团队 C C1 HTTP与e0d8992集成](2026-10-24-team-c-c00-http-handoff.md)：保留204旧C文件及双方README，消费生成HTTP入口和补充错误契约，七个项目/稿件操作与一致历史快照；2205测试/PG265（含真实loopback）/Web815，终审默认docs出站问题已TDD修复，生产root/迁移、页面和完整真实资格待完成。步骤见[实施计划](2026-10-24-team-c-c00-http-plan.md)。
+- [2026-10-24 团队 C C1 HTTP与e0d8992集成](2026-10-24-team-c-c00-http-handoff.md)：保留204旧C文件及双方README，消费生成HTTP入口和补充错误契约，七个项目/稿件操作与一致历史快照；2205测试/PG265（含真实loopback）/Web815，终审默认docs出站问题已TDD修复，生产root/迁移、页面和完整真实资格待完成。步骤见[实施计划](../archive/plans/2026-10-24-team-c-c00-http-plan.md)。
 
-- [2026-10-24 团队 C 会议记录与纪要工作台](2026-10-24-team-c-meeting-ui-handoff.md)：批准模板发现/源CAS、正式页面与标签页恢复；生产 Chromium→真实 C HTTP→隔离PG/fake LLM证据，真实模型/设备与生产装配仍待完成。步骤见[实施计划](2026-10-24-team-c-meeting-ui-plan.md)。
+- [2026-10-24 团队 C 会议记录与纪要工作台](2026-10-24-team-c-meeting-ui-handoff.md)：批准模板发现/源CAS、正式页面与标签页恢复；生产 Chromium→真实 C HTTP→隔离PG/fake LLM证据，真实模型/设备与生产装配仍待完成。步骤见[实施计划](../archive/plans/2026-10-24-team-c-meeting-ui-plan.md)。
 
 - [2026-10-24 团队 C 9eea859 依赖集成](2026-10-24-team-c-9ee-integration-handoff.md)：保留266文件，吸收#82/#83/#84；264个文件字节不变、README双语合并，Python3006/Web1268/PG295和C生产bundle真实浏览器回归。专业运行资格仍分别验收。
 - [2026-10-24 团队 C 删除预检、确认与恢复页面](2026-10-24-team-c-deletion-ui-handoff.md)：正式页面、原键恢复和完整范围确认；Web1283、隔离PG296及生产bundle真实HTTP浏览器。saved_asset完整图与A07恢复资格仍待联验。
-- [2026-10-24 团队 C 实时ASR消费与字幕页面](2026-10-24-team-c-realtime-asr-handoff.md)：生成事件语义、有界credit/PCM、原键恢复、最终正文草稿、断线gap及正式页面；生产bundle的合成REST/WS/麦克风验证，生产实时/TTS/双工/真实资格继续。[实施计划](2026-10-24-team-c-realtime-asr-plan.md)。
+- [2026-10-24 团队 C 实时ASR消费与字幕页面](2026-10-24-team-c-realtime-asr-handoff.md)：生成事件语义、有界credit/PCM、原键恢复、最终正文草稿、断线gap及正式页面；生产bundle的合成REST/WS/麦克风验证，生产实时/TTS/双工/真实资格继续。[实施计划](../archive/plans/2026-10-24-team-c-realtime-asr-plan.md)。
 
-- [2026-10-24 团队 C 实时TTS消费与播放](2026-10-24-team-c-realtime-tts-handoff.md)：固定引用、文本冻结/credit、原键恢复、PCM有界Worklet与独立生成/网络/渲染水位；合成真实浏览器证据，生产TTS/双工与真实资格待验。[实施计划](2026-10-24-team-c-realtime-tts-plan.md)。
+- [2026-10-24 团队 C 实时TTS消费与播放](2026-10-24-team-c-realtime-tts-handoff.md)：固定引用、文本冻结/credit、原键恢复、PCM有界Worklet与独立生成/网络/渲染水位；合成真实浏览器证据，生产TTS/双工与真实资格待验。[实施计划](../archive/plans/2026-10-24-team-c-realtime-tts-plan.md)。
 
 - [2026-10-24 团队 C eb299f7 依赖集成](2026-10-24-team-c-eb299-integration-handoff.md)：保留309文件并吸收#85–#88；Python3314/Web1471/隔离PG及业务浏览器296，ASR/TTS合成浏览器回归通过，专业运行资格及完整工作包继续验收。
 
-- [2026-10-24 团队 C 音色设计/克隆创建任务](2026-10-24-team-c-voice-create-handoff.md)：正式输入、已有voice_reference材料确认、持久Job及原键/存储屏障；候选/校验/发布/复用与真实资格继续。[实施计划](2026-10-24-team-c-voice-create-plan.md)。
+- [2026-10-24 团队 C 音色设计/克隆创建任务](2026-10-24-team-c-voice-create-handoff.md)：正式输入、已有voice_reference材料确认、持久Job及原键/存储屏障；候选/校验/发布/复用与真实资格继续。[实施计划](../archive/plans/2026-10-24-team-c-voice-create-plan.md)。
 
 - [2026-10-24 团队 C 工作空间读取与2a46依赖集成](2026-10-24-team-c-workspaces-read-handoff.md)：生成GET列表/详情、分页/历史/迟到隔离、正式Admin与合成浏览器，保留生产资格余项。
 

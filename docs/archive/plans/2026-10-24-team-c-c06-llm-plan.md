@@ -4,7 +4,7 @@
 
 **Goal:** 实现服务中立文本生成端口、默认关闭的固定内网 OpenAI compatible adapter，以及从明确 sealed revision 生成不可信纪要候选的用例。它是完整 C06 的执行边界；持久任务、重试 attempt、公开接口、助手 turn 和真实部署资格继续实施，不能由本单元替代。
 
-**Spec:** [ADR 0003](../decisions/0003-workbench-llm-network-boundary.md)、[技术方案 §9](../architecture/technical-blueprint.md#9-工作台与内网-llm)、[C06 工作包](2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)、现行 workbench MinutesJob / MinutesCreateRequest。
+**Spec:** [ADR 0003](../../decisions/0003-workbench-llm-network-boundary.md)、[技术方案 §9](../../architecture/technical-blueprint.md#9-工作台与内网-llm)、[C06 工作包](../../plans/2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)、现行 workbench MinutesJob / MinutesCreateRequest。
 
 **Base/head:** `a98b2bbfa2576eeee9f5bdf37300605428499d84`；保留既有174文件及其补丁，不写公共生成流水线、契约、锁、部署或 speech 模块。结构索引不存在，coverage 返回 project not found，直接读取相关命名源码；不重建索引。
 
@@ -39,4 +39,4 @@ Interfaces：MinutesGeneration.generate(transcript_id, source_revision, template
 
 ## 本轮验收状态
 
-上述内部端口、adapter 与 sealed 候选已实现并通过111聚焦单元、868后端/契约与211临时PG探针；一次终审两项Important已在一轮TDD修复。完整C06仍需持久任务、公开路由/页面、助手及实际部署资格。全仓当前有一个B/A网关fixture混用固定/实时时钟的已复现失败，未越权改其源文件；提供[两行候选](2026-10-24-team-c-gateway-clock-candidate.patch)及临时组合验证，待B/A集成后全仓门禁才能在权威树上放行。该阻塞不冻结其余C00–C08的独立工作。
+上述内部端口、adapter 与 sealed 候选已实现并通过111聚焦单元、868后端/契约与211临时PG探针；一次终审两项Important已在一轮TDD修复。完整C06仍需持久任务、公开路由/页面、助手及实际部署资格。全仓当前有一个B/A网关fixture混用固定/实时时钟的已复现失败，未越权改其源文件；提供[两行候选](../../plans/2026-10-24-team-c-gateway-clock-candidate.patch)及临时组合验证，待B/A集成后全仓门禁才能在权威树上放行。该阻塞不冻结其余C00–C08的独立工作。

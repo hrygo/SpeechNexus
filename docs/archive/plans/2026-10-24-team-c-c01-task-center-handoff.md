@@ -9,7 +9,7 @@ date: 2026-10-24
 
 > 历史交接：以下状态和验证保留原时点；当前范围与证据见[交付跟踪矩阵](../../plans/delivery-tracking.md)。
 
-交付 C01 首个任务视图与开发 fake 单元；C01 和[团队 C 持续目标](../../plans/2026-10-24-team-c-goal.md)仍未完成。范围依据[启动卡](../../plans/2026-10-23-agent-team-startup-briefs.md#4-c-队macbook-工作台与体验)，具体步骤见[本单元计划](../../plans/2026-10-24-team-c-c01-task-center-plan.md)。
+交付 C01 首个任务视图与开发 fake 单元；C01 和[团队 C 持续目标](../../plans/2026-10-24-team-c-goal.md)仍未完成。范围依据[启动卡](../../plans/2026-10-23-agent-team-startup-briefs.md#4-c-队macbook-工作台与体验)，具体步骤见[本单元计划](2026-10-24-team-c-c01-task-center-plan.md)。
 
 ## 交付身份
 

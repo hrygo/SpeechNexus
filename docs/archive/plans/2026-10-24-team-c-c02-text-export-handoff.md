@@ -8,7 +8,7 @@ date: 2026-10-24
 
 > 本文保留 2026-10-24 的交接与验证事实；下文“当前”、接入条件和目标状态均以当时基线为准，不作为当前派工依据。现行需求与证据入口见[需求矩阵](../../plans/delivery-tracking.md)。
 
-[本单元计划](../../plans/2026-10-24-team-c-c02-text-export-plan.md)接在已保存/校对稿件之后，提供固定 revision 的 UTF-8 文本导出用例。交接时 C02 的公开页面、生成校验器、字幕和完整生产闭环仍未完成，[C00–C08 goal](../../plans/2026-10-24-team-c-goal.md)保持 active。后续固定版本 TXT 下载由客户端从已验证的 revision 快照生成，见[转写导入与文本导出](../../components/transcript-import-and-text-export.md)；这不代表字幕或完整生产闭环已完成。
+[本单元计划](2026-10-24-team-c-c02-text-export-plan.md)接在已保存/校对稿件之后，提供固定 revision 的 UTF-8 文本导出用例。交接时 C02 的公开页面、生成校验器、字幕和完整生产闭环仍未完成，[C00–C08 goal](../../plans/2026-10-24-team-c-goal.md)保持 active。后续固定版本 TXT 下载由客户端从已验证的 revision 快照生成，见[转写导入与文本导出](../../components/transcript-import-and-text-export.md)；这不代表字幕或完整生产闭环已完成。
 
 ## 基线、边界与行为
 

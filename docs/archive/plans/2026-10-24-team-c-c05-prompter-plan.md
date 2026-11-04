@@ -8,7 +8,7 @@
 
 **Tech Stack:** 现有 TypeScript / React / Vitest / Chromium，不加依赖。
 
-**Spec:** [产品 §9.2](../speechnexus-product-architecture.md#92-提词与助手)、[三队 C05](2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)。自动实时接线、服务端持久化、真实设备及完整 C05 验收继续保留。
+**Spec:** [产品 §9.2](../../speechnexus-product-architecture.md#92-提词与助手)、[三队 C05](../../plans/2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)。自动实时接线、服务端持久化、真实设备及完整 C05 验收继续保留。
 
 ## Global Constraints
 

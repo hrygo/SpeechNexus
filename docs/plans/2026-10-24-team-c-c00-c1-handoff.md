@@ -63,4 +63,4 @@ PG探针按[脚本说明](../../scripts/dev-env/workbench-pg-probe.py)显式提�
 
 下一接入：收尾回读A00 #19确认，C1 HTTP的path/query/header/响应状态/错误及显式客户端验证已由[PR #75](https://github.com/hrygo/SpeechNexus/pull/75)交付，合入main `764279238b124a0ca31a07f2e11b428c6585031f`。本单元保持737冻结基线与上述实测范围，下一单元先吸收该具名HTTP制品，注册真实项目/稿件/删除路由并联验；迁移顺序/组合根由A协调。该新制品尚未由本轮C本地验证，不把A的CI当作C消费者通过。List分页游标、删除/status/error完整消费者，Meeting/Minutes与公开realtime生成入口也继续推进。C07固定依赖核心原样保留，持久化、真实保存副本、质量/试听/匿名确认和独立导出仍待交付，不等待C06助手。
 
-[实施计划](2026-10-24-team-c-c00-c1-plan.md) · [团队目标](2026-10-24-team-c-goal.md) · [上一集成](2026-10-24-team-c-2874-integration-handoff.md) · [C07核心交接](2026-10-24-team-c-c07-render-handoff.md)
+[实施计划](../archive/plans/2026-10-24-team-c-c00-c1-plan.md) · [团队目标](2026-10-24-team-c-goal.md) · [上一集成](2026-10-24-team-c-2874-integration-handoff.md) · [C07核心交接](2026-10-24-team-c-c07-render-handoff.md)

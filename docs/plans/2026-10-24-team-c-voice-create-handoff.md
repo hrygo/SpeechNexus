@@ -2,7 +2,7 @@
 
 > 本文保留交接时的状态与验证事实；当前范围和证据见[交付跟踪矩阵](delivery-tracking.md)。
 
-2026-10-24，base_sha=head_sha `eb299f7a6a14868be77adb09c70c0ad19a6a9987`，分支 `codex/team-c-c00-versions`。按[实施计划](2026-10-24-team-c-voice-create-plan.md)新增正式「音色创作」入口，完成C03的设计/克隆分开输入、材料确认和持久任务消费者。C03已进入in-progress；全部C00–C08保持open，完整Goal active，未commit/push或发布。
+2026-10-24，base_sha=head_sha `eb299f7a6a14868be77adb09c70c0ad19a6a9987`，分支 `codex/team-c-c00-versions`。按[实施计划](../archive/plans/2026-10-24-team-c-voice-create-plan.md)新增正式「音色创作」入口，完成C03的设计/克隆分开输入、材料确认和持久任务消费者。C03已进入in-progress；全部C00–C08保持open，完整Goal active，未commit/push或发布。
 
 ## 已实现范围
 

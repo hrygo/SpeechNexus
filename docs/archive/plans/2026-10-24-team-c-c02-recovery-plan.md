@@ -6,7 +6,7 @@
 
 **Architecture:** 在现有 `FileTaskSession` 注入可选的 `FileTaskJournal`，提交 POST 前同步持久化元数据，响应确认后再保存状态。浏览器宿主提供 `sessionStorage`；库不隐式选择存储，不保存音频、文件名、转写、完整 Job 或错误正文。A 的 `parse(JobCreateRequest)` 校验重建的固定 ASR 命令，显式固定素材所属 workspace。
 
-**Spec:** [三团队计划 C02](2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)的刷新恢复/不重复发布要求；当前 [文件流程交接](../archive/plans/2026-10-24-team-c-c02-file-flow-handoff.md)。这是一项生产页面的必要前置，不代表文件上传、校对保存或生产 HTTP 已全部完成。
+**Spec:** [三团队计划 C02](../../plans/2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)的刷新恢复/不重复发布要求；当前 [文件流程交接](2026-10-24-team-c-c02-file-flow-handoff.md)。这是一项生产页面的必要前置，不代表文件上传、校对保存或生产 HTTP 已全部完成。
 
 ## 全局边界与审查重点
 

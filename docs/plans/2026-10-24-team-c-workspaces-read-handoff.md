@@ -2,7 +2,7 @@
 
 > 本文保留交接时的状态与验证事实；当前范围和证据见[交付跟踪矩阵](delivery-tracking.md)。
 
-2026-10-24，base_sha=head_sha `2a46c6e2c7e5ea2f9d29b475bb0524c0b344ef21`，分支 `codex/team-c-c00-versions`。按[实施计划](2026-10-24-team-c-workspaces-read-plan.md)将Admin工作空间列表/详情接入正式入口。全部C00–C08保持open/status:in-progress，完整Goal active；没有commit/push或新跨chat消息。
+2026-10-24，base_sha=head_sha `2a46c6e2c7e5ea2f9d29b475bb0524c0b344ef21`，分支 `codex/team-c-c00-versions`。按[实施计划](../archive/plans/2026-10-24-team-c-workspaces-read-plan.md)将Admin工作空间列表/详情接入正式入口。全部C00–C08保持open/status:in-progress，完整Goal active；没有commit/push或新跨chat消息。
 
 ## 依赖集成与已实现范围
 

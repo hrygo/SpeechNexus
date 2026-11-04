@@ -8,7 +8,7 @@
 
 **Tech Stack:** 现有Python3.14、frozen/slots dataclass、hashlib/json、pytest；不新增依赖。
 
-**Spec:** [产品设计§9.3](../speechnexus-product-architecture.md#93-有声书)、[C07](2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)、[工作台契约](../../contracts/workbench-openapi.yaml) RenderUnit/Generation与SavedAsset约束、[ADR0005](../decisions/0005-complete-execution-and-data-lifecycle-contracts.md)。沿用已授权范围和既定native执行方式，不新增产品决策。
+**Spec:** [产品设计§9.3](../../speechnexus-product-architecture.md#93-有声书)、[C07](../../plans/2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)、[工作台契约](../../../contracts/workbench-openapi.yaml) RenderUnit/Generation与SavedAsset约束、[ADR0005](../../decisions/0005-complete-execution-and-data-lifecycle-contracts.md)。沿用已授权范围和既定native执行方式，不新增产品决策。
 
 ## Global Constraints
 

@@ -8,7 +8,7 @@
 
 **Tech Stack:** 现有React/TypeScript/Vitest/Playwright和同版生成parser，现有Web Token；不改依赖/生成器/公共协议。
 
-**Spec:** [产品设计](../speechnexus-product-architecture.md) §共享部署/工作空间；[三队计划](2026-10-23-three-team-delivery-plan.md) C01/C08；`contracts/admin-openapi.yaml` Workspace/WorkspaceList及listWorkspaces/getWorkspace；A #93只交付生成契约，实际PG/GET装配尚待合入。
+**Spec:** [产品设计](../../speechnexus-product-architecture.md) §共享部署/工作空间；[三队计划](../../plans/2026-10-23-three-team-delivery-plan.md) C01/C08；`contracts/admin-openapi.yaml` Workspace/WorkspaceList及listWorkspaces/getWorkspace；A #93只交付生成契约，实际PG/GET装配尚待合入。
 
 ## Global Constraints
 

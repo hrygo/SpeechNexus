@@ -10,7 +10,7 @@ date: 2026-10-24
 
 ## 范围与基线
 
-依据 [C02/C08](../../plans/2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)，按[本单元计划](../../plans/2026-10-24-team-c-c02-host-plan.md)将既有真实客户端/会话/journal 接入正式 Workbench。当前 base/head 为 `dc14cf8fb0a7250842a8a7697c6884d6d21b2004`；fetch 后 origin/main 无新增变更，起始 140 文件均与旧 manifest 摘要一致。未 commit/push/外部消息；完整 C00–C08 goal 保持 active。
+依据 [C02/C08](../../plans/2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)，按[本单元计划](2026-10-24-team-c-c02-host-plan.md)将既有真实客户端/会话/journal 接入正式 Workbench。当前 base/head 为 `dc14cf8fb0a7250842a8a7697c6884d6d21b2004`；fetch 后 origin/main 无新增变更，起始 140 文件均与旧 manifest 摘要一致。未 commit/push/外部消息；完整 C00–C08 goal 保持 active。
 
 消费 A speech `0.1.0.dev0` / contracts package `0.1.0` 公开生成 helper 和 Asset/Job/Event/Artifact/Error validator，不编辑 canonical、生成流水线或产物、依赖/锁、后端/DB/deploy。本轮不重复授予旧 C00/C01/C04 等资格。独立终审的 P2 修复额外修改既有 `file-task-session.ts` 消费者视图状态，不改机器协议。
 

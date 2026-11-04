@@ -9,7 +9,7 @@ date: 2026-10-24
 
 > 本文保留交接时的状态与验证事实；当前范围和证据见[交付跟踪矩阵](../../plans/delivery-tracking.md)。
 
-本单元新增公开 Artifact 读取适配器和工作台封存原文导入用例，实际 loopback HTTP 与隔离 PostgreSQL 已联通。交接时生产组合根、工作台 HTTP、真实语音服务及浏览器导入流程尚未接入，C02、C08 和[团队目标](../../plans/2026-10-24-team-c-goal.md)继续未完成。后续导入入口和验证范围见[转写导入与文本导出](../../components/transcript-import-and-text-export.md)；本单元设计和边界见[实施单元](../../plans/2026-10-24-team-c-c02-transcript-import-plan.md)。
+本单元新增公开 Artifact 读取适配器和工作台封存原文导入用例，实际 loopback HTTP 与隔离 PostgreSQL 已联通。交接时生产组合根、工作台 HTTP、真实语音服务及浏览器导入流程尚未接入，C02、C08 和[团队目标](../../plans/2026-10-24-team-c-goal.md)继续未完成。后续导入入口和验证范围见[转写导入与文本导出](../../components/transcript-import-and-text-export.md)；本单元设计和边界见[实施单元](2026-10-24-team-c-c02-transcript-import-plan.md)。
 
 ## 基线与所有权
 

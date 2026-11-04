@@ -10,7 +10,7 @@ date: 2026-10-24
 
 ## 范围与基线
 
-落实 [C02/C08](../../plans/2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验) 的原上传恢复，实施见[计划](../../plans/2026-10-24-team-c-c02-asset-reconcile-plan.md)。交接时完整 [C00–C08 goal](../../plans/2026-10-24-team-c-goal.md)继续 active，Workbench 正式入口/真实后端/模型闭环未完成。后续正式宿主的接入及合成环境验证分别见[文件转写](2026-10-24-team-c-c02-host-handoff.md)和[文本配音](../../plans/2026-10-24-team-c-c02-tts-host-handoff.md)交接，不代替真实服务资格验证。
+落实 [C02/C08](../../plans/2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验) 的原上传恢复，实施见[计划](2026-10-24-team-c-c02-asset-reconcile-plan.md)。交接时完整 [C00–C08 goal](../../plans/2026-10-24-team-c-goal.md)继续 active，Workbench 正式入口/真实后端/模型闭环未完成。后续正式宿主的接入及合成环境验证分别见[文件转写](2026-10-24-team-c-c02-host-handoff.md)和[文本配音](../../plans/2026-10-24-team-c-c02-tts-host-handoff.md)交接，不代替真实服务资格验证。
 
 起始 `330d0d70c5d40c03efcb9cb1ed146a97da53d46d`，fetch 后无冲突快进至 `dc14cf8fb0a7250842a8a7697c6884d6d21b2004`（#64 只改契约测试解析与效率资料），既有 135 个 C 文件摘要逐一保持不变。当前 `base_sha` / `head_sha` 均为后者。未 commit/push 或发送外部消息。
 

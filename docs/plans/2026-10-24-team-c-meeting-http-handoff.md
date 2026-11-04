@@ -4,7 +4,7 @@
 
 核验日期：2026-10-24。base_sha=head_sha `7cd1887905dd57e8c647238416b6030049833e38`；无 C commit/push，保留全部既有工作。上一238文件包与SHA见[上一集成交接](2026-10-24-team-c-7cd-integration-handoff.md)及 `.runtime/team-c/team-c-before-meeting-http.*`；当前累计制品见 `.runtime/team-c/team-c-current.manifest.json`，不在本文件嵌入自身包hash。
 
-完整范围继续遵循[团队 C Goal](2026-10-24-team-c-goal.md)，实施按[本单元计划](2026-10-24-team-c-meeting-http-plan.md)。C00–C08全部open，C03 planned、其余in-progress，Goal active，Gate不由C关闭。
+完整范围继续遵循[团队 C Goal](2026-10-24-team-c-goal.md)，实施按[本单元计划](../archive/plans/2026-10-24-team-c-meeting-http-plan.md)。C00–C08全部open，C03 planned、其余in-progress，Goal active，Gate不由C关闭。
 
 ## 已实现的业务边界
 

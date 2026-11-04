@@ -10,7 +10,7 @@ date: 2026-10-24
 
 ## 范围与基线
 
-本单元补齐正式 Admin 任务中心的刷新恢复，继续执行 [C00–C08 goal](../../plans/2026-10-24-team-c-goal.md)，不关闭 C01/C08 或 G0–G5。前置为[事件与入口单元](2026-10-24-team-c-c01-events-handoff.md)，实施见[恢复计划](../../plans/2026-10-24-team-c-c01-recovery-plan.md)。
+本单元补齐正式 Admin 任务中心的刷新恢复，继续执行 [C00–C08 goal](../../plans/2026-10-24-team-c-goal.md)，不关闭 C01/C08 或 G0–G5。前置为[事件与入口单元](2026-10-24-team-c-c01-events-handoff.md)，实施见[恢复计划](2026-10-24-team-c-c01-recovery-plan.md)。
 
 开始基线 `3380a76c89998b42be29b0c25e9f49443d23e15b`；本轮 fetch 后无冲突快进至 `330d0d70c5d40c03efcb9cb1ed146a97da53d46d`（#61 素材 HTTP、#62 网关屏障、#63 claim fencing），既有 128 个 C 文件全部字节一致。当前 `base_sha` / `head_sha` 均为后者；未创建 commit、push 或发送外部消息。
 

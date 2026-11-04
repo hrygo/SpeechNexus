@@ -8,7 +8,7 @@
 
 **Tech Stack:** 现有 React/TypeScript、生成 workbench client/validators、Vitest、生产bundle Chromium、一次性socket-only PostgreSQL。
 
-**Spec:** [删除规范](../architecture/data-deletion.md)、[源契约](../../contracts/shared/deletion.schema.json)、[HTTP契约](../../contracts/workbench-openapi.yaml)、C00 #35 / C08 #43 当前任务。
+**Spec:** [删除规范](../../architecture/data-deletion.md)、[源契约](../../../contracts/shared/deletion.schema.json)、[HTTP契约](../../../contracts/workbench-openapi.yaml)、C00 #35 / C08 #43 当前任务。
 
 ## Global Constraints
 

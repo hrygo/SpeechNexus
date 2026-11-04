@@ -4,7 +4,7 @@
 
 **Goal:** 刷新后仍能核对原任务、按原取消幂等键显式重放，并从已确认事件水位续读；存储不可用不得发出无法恢复的新取消。
 
-**Spec:** [C01/C08](2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)、[既有事件交接](../archive/plans/2026-10-24-team-c-c01-events-handoff.md)、公开 `Job` / `JobCancellation` / `JobEvent` 与 `Idempotency-Key` 契约。UI 不新增服务端接口。
+**Spec:** [C01/C08](../../plans/2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)、[既有事件交接](2026-10-24-team-c-c01-events-handoff.md)、公开 `Job` / `JobCancellation` / `JobEvent` 与 `Idempotency-Key` 契约。UI 不新增服务端接口。
 
 ## 设计与边界
 

@@ -53,4 +53,4 @@ uv run python scripts/dev-env/workbench-pg-probe.py \
 
 八项既有 Minor 继续：cursor 空/过大措辞、外部 owner 预检确认措辞、两会议共享 Transcript 并发回归、Meeting 非法成功响应、失败 GET 后旧 conflict/useLatest、Meeting 真卸载后 GET、ASR send 失败前计数、TTS done 后缓冲未播完的本轮停止按钮。模型/绑定/预算、管理写路径、全部生产装配与资格、物理设备/网络/跨浏览器完整 a11y/Linux/GPU、完整 C00–C08 和 G0–G5 均未据此关闭。
 
-共十项 Minor（八项既有、两项新增）未宣称修复。实施与终审进度见[本单元计划](2026-10-24-team-c-workspaces-live-plan.md)和本机 ledger；累计包与九 issue 逐字回读以最终 manifest / 本机记录为准。
+共十项 Minor（八项既有、两项新增）未宣称修复。实施与终审进度见[本单元计划](../archive/plans/2026-10-24-team-c-workspaces-live-plan.md)和本机 ledger；累计包与九 issue 逐字回读以最终 manifest / 本机记录为准。

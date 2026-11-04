@@ -4,7 +4,7 @@
 
 日期：2026-10-24。base/head：`9eea85987232eaebbcbd6768c46fe0a084a4d177`。未提交、推送或发布。当前补丁与逐文件哈希以本机 `.runtime/team-c/team-c-current.manifest.json` 为准。
 
-正式工作台新增「实时配音」入口，按[实施计划](2026-10-24-team-c-realtime-tts-plan.md)消费既有生成REST与RealtimeEvent。部署profile/model/voice引用无虚构初值，voice可由服务端解析但必须在接受回执固定；同源连接、显式开始一轮、追加/冻结/finish/cancel与drain/abort、原键恢复和独立GET清理事实。ASR消费者与其严格journal继续保留。
+正式工作台新增「实时配音」入口，按[实施计划](../archive/plans/2026-10-24-team-c-realtime-tts-plan.md)消费既有生成REST与RealtimeEvent。部署profile/model/voice引用无虚构初值，voice可由服务端解析但必须在接受回执固定；同源连接、显式开始一轮、追加/冻结/finish/cancel与drain/abort、原键恢复和独立GET清理事实。ASR消费者与其严格journal继续保留。
 
 文本seq连续且一次最多一个未确认append，text_credit保守按UTF-8字节计算。文本冻结后不修改；重复语义事件按规范化SHA-256去重，错epoch/utterance/operation、音频区间/序号缺口和非法PCM拒绝。网络PCM只从receive返回进入有界播放，不进入React快照或journal。Operation成功、收到音频与Worklet实际渲染水位独立显示，物理扬声器延迟不在此证明范围。
 

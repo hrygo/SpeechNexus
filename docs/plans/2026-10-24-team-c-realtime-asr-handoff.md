@@ -6,7 +6,7 @@
 
 ## 实现与边界
 
-按[实施计划](2026-10-24-team-c-realtime-asr-plan.md)消费同版生成 REST/事件解析入口。正式工作台新增实时字幕：填写部署实际发布的 profile/model `{id, revision}`，显式创建、连接、开启麦克风、提交段、排空/中止及查询当前事实。引用初值为空，无虚构模型或 ready。
+按[实施计划](../archive/plans/2026-10-24-team-c-realtime-asr-plan.md)消费同版生成 REST/事件解析入口。正式工作台新增实时字幕：填写部署实际发布的 profile/model `{id, revision}`，显式创建、连接、开启麦克风、提交段、排空/中止及查询当前事实。引用初值为空，无虚构模型或 ready。
 
 `web/workbench/src/realtime/` 分为 ASR reducer、固定同源客户端、闭合恢复 journal、设备/WS controller 与 React 展示。24kHz mono PCM16LE；单帧不超过100ms及协商上限，JSON至多64KiB、输入credit至多2s、网络积压5s（含Base64/JSON）、本地捕获队列至多1s、等待credit至多1s。ACK credit保守扣除确认水位之后已发送的音频；硬边界失败停止输入，不补静音。HTTP为15s总超时、JSON8MiB上界；失败不自动重试。
 

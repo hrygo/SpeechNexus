@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript、React、Vitest、Chromium；base eb299f7。
 
-**Spec:** [三队计划 C03](2026-10-23-three-team-delivery-plan.md)、[产品设计](../speechnexus-product-architecture.md)、`contracts/speech-openapi.yaml` 和 `contracts/voice-resource.schema.json`。
+**Spec:** [三队计划 C03](../../plans/2026-10-23-three-team-delivery-plan.md)、[产品设计](../../speechnexus-product-architecture.md)、`contracts/speech-openapi.yaml` 和 `contracts/voice-resource.schema.json`。
 
 ## Global Constraints
 

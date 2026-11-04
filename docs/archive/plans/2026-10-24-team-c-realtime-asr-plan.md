@@ -8,7 +8,7 @@
 
 **Tech Stack:** 现有React/TypeScript、生成speech client/realtime parsers、AudioWorklet MicrophoneCapture、Vitest、Playwright及test-only loopback HTTP/WS。
 
-**Spec:** [语音API §2](../architecture/speech-api.md#2-实时协议与状态机)、[源事件契约](../../contracts/realtime-events.schema.json)、[REST契约](../../contracts/speech-openapi.yaml)、[十条共享语义序列](../../tests/fixtures/contracts/transcription-sequences.json)，C00 #35 / C04 #39 / C08 #43。
+**Spec:** [语音API §2](../../architecture/speech-api.md#2-实时协议与状态机)、[源事件契约](../../../contracts/realtime-events.schema.json)、[REST契约](../../../contracts/speech-openapi.yaml)、[十条共享语义序列](../../../tests/fixtures/contracts/transcription-sequences.json)，C00 #35 / C04 #39 / C08 #43。
 
 ## Global Constraints
 

@@ -7,7 +7,7 @@ date: 2026-10-24
 
 # C02 原始转写导入实施计划
 
-依据[团队目标](2026-10-24-team-c-goal.md)、[工作台契约](../../contracts/workbench-openapi.yaml)的 speech_artifact 来源及[公开语音契约](../../contracts/speech-openapi.yaml)的 Artifact 元数据/content。基线 `cbf4a8ca1cf808fbc5ff4b125f7ff1e271496995`，本轮 fetch 无新远端提交，保留原有 83 个 C 文件。实时生成 validator 仍缺失，继续不依赖它的真实文件导入前置。
+依据[团队目标](../../plans/2026-10-24-team-c-goal.md)、[工作台契约](../../../contracts/workbench-openapi.yaml)的 speech_artifact 来源及[公开语音契约](../../../contracts/speech-openapi.yaml)的 Artifact 元数据/content。基线 `cbf4a8ca1cf808fbc5ff4b125f7ff1e271496995`，本轮 fetch 无新远端提交，保留原有 83 个 C 文件。实时生成 validator 仍缺失，继续不依赖它的真实文件导入前置。
 
 ## 设计与边界
 
@@ -46,4 +46,4 @@ date: 2026-10-24
 
 沿用 writing-plans、executing-plans、TDD、async-python-patterns 与 PostgreSQL 技能；缺失共享 helper 继续使用独立手动 ledger `.runtime/team-c/c02-transcript-import-progress.md`，在整个单元结束后只派一次只读审查。
 
-本单元实现及一次独立审查已完成；P2 NUL 修复经来源单测与真实 HTTP/PG RED→GREEN 验证，详情见[交接](../archive/plans/2026-10-24-team-c-c02-transcript-import-handoff.md)。完整 C02/C08 和团队目标仍为未完成，最终全套/补丁结果以本轮执行记录为准。
+本单元实现及一次独立审查已完成；P2 NUL 修复经来源单测与真实 HTTP/PG RED→GREEN 验证，详情见[交接](2026-10-24-team-c-c02-transcript-import-handoff.md)。完整 C02/C08 和团队目标仍为未完成，最终全套/补丁结果以本轮执行记录为准。

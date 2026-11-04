@@ -37,4 +37,4 @@
 
 本单元不证明公开 MinutesJob、Meeting 页面、生产迁移、停止对账、独立保存制品、实际内容出站限制或同设备物理预算已完成，也不关闭任何 Gate。
 
-[实施计划](2026-10-24-team-c-c06-tasks-plan.md) · [团队目标](2026-10-24-team-c-goal.md) · [ADR 0003](../decisions/0003-workbench-llm-network-boundary.md)
+[实施计划](../archive/plans/2026-10-24-team-c-c06-tasks-plan.md) · [团队目标](2026-10-24-team-c-goal.md) · [ADR 0003](../decisions/0003-workbench-llm-network-boundary.md)

@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript / React / A 的公开 `createSpeechClient`、`parse` / Vitest / Chromium。
 
-**Spec:** [三团队计划 C02](2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)；`contracts/speech-openapi.yaml` 的 `TtsJobCreate`、`ResourceReference`、`AssetUploadRequest`。上传未知跨刷新仍待后续，不假称完整 C02。
+**Spec:** [三团队计划 C02](../../plans/2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)；`contracts/speech-openapi.yaml` 的 `TtsJobCreate`、`ResourceReference`、`AssetUploadRequest`。上传未知跨刷新仍待后续，不假称完整 C02。
 
 ## 边界与审查重点
 

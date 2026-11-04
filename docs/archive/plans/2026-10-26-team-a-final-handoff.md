@@ -55,7 +55,7 @@ B 在 #220 提供[项目整体交接](https://github.com/hrygo/SpeechNexus/blob/
 | 私有检查命令 | [媒体交接](2026-10-26-a02-media-kernel-handoff.md) | 有界哈希/完整解码，输出输入摘要/长度和源时钟；仅 PCM WAV/显式 raw PCM，WAV RIFF 长度/声明样本与实际解码一致；B 原 FLAC/MP3/Ogg decoder 行为保留，不自动纳入本检查 profile |
 | 私有成功回执 | [canonical schema](../../../contracts/internal/audio-inspection.schema.json) | `audio_inspection` 1.0.0；Python/TS 同源生成，失败/取消/未知无成功事实，不含正文/路径或发布、停止、预算许可 |
 | 窄消费者 | [ProcessAudioAssetInspector](../../../backend/src/speechnexus_backend/speech/infrastructure/audio_asset_inspector.py)、[回执交接](2026-10-26-a02-audio-receipt-handoff.md) | 仅 asr_input PCM WAV；绑定实际摘要/长度、整数/源时钟/时长上限及末次取消。text_input 沿用既有行为，voice_reference 不可用；无效回执保持 unavailable |
-| 组合根与构建 | [检查边界](../../components/audio-asset-inspection.md)、Python Dockerfile/uv workspace | 默认 AssetRuntime **仍为 TextAssetInspector**。Dockerfile 增加共享包 COPY，但未实际构建/安装批准检查镜像；无新增公开 HTTP、迁移/grant、Job/预算或发布写入 |
+| 组合根与构建 | [检查边界](../components/audio-asset-inspection.md)、Python Dockerfile/uv workspace | 默认 AssetRuntime **仍为 TextAssetInspector**。Dockerfile 增加共享包 COPY，但未实际构建/安装批准检查镜像；无新增公开 HTTP、迁移/grant、Job/预算或发布写入 |
 
 B [#219](https://github.com/hrygo/SpeechNexus/pull/219) 于 2026-10-26 16:16:13（Asia/Shanghai）合入 `54daef6`，
 [精确合后 CI](https://github.com/hrygo/SpeechNexus/actions/runs/40291095616) 14 项成功。

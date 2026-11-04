@@ -77,7 +77,7 @@
 | `docs/audits/2026-11-03-controlled-tts-prepare.md` | 历史保留 | 2026-11-03 各窗口验收与清理快照，已区分第六窗口结论和第五窗口历史缺口；各窗口原始事实未逐项重验 |
 | `docs/audits/README.md` | 已核对 | 对照选编记录的标题、摘要和证据边界，明确历史 UI/UX 评级限制与选编范围；未逐项重验原始证据 |
 | `docs/components/README.md` | 已核对 | 核对索引中各目标文件、标题与候选状态；不代表目标正文已审 |
-| `docs/components/audio-asset-inspection.md` | 历史保留 | 2026-10-26 候选与资格记录，保留原时点事实；当前入口的 TextAssetInspector 装配已对照源码，历史证据未重验 |
+| `docs/archive/components/audio-asset-inspection.md` | 历史保留 | 2026-10-26 候选与资格记录，保留原时点事实；当前入口的 TextAssetInspector 装配已对照源码，历史证据未重验 |
 | `docs/components/binding-defaults-producer.md` | 已核对 | 逐节静态对照配置、契约、创建与固定读取、错误处理、权限生命周期及测试定义；修正 binding 操作数、服务端校验器选择及发布 / 激活状态，未运行服务或重跑集成测试 |
 | `docs/components/binding-parameter-defaults.md` | 已核对 | 逐节静态对照快照 schema、共享字段、生产与固定读取、生成消费者和测试定义；最终参数合并仍为独立验收项，未运行服务 |
 | `docs/components/controlled-asr-generation.md` | 已核对 | 对照凭据派生、模板和私有描述、终态停止边界及真实整代次实验；保留 fixture 与未验收限制，未运行模型或控制器 |

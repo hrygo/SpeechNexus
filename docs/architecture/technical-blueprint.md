@@ -37,7 +37,7 @@ MySQL 关键协调验证的边界。原替代步骤见[历史重构计划](../ar
 
 ## 2. 进程、网络与所有权
 
-产品按分布式部署单元设计，当前单节点 Compose 是 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) 的开发预览拓扑（`Node=1, Replica=1`），默认未装配全部部署单元，不能单凭 Compose 声称同构链路已验收。平台与节点边界遵循 [ADR 0011](../decisions/0011-distributed-deployment-and-platform-boundaries.md)，职责、实际启动入口和装配缺口见[部署单元规划](deployment-units.md)。业务、控制和工作台不因推理栈使用 Linux 而继承 GPU 或 Linux 内核依赖；节点执行栈和[私有媒体沙箱](../components/audio-asset-inspection.md)各自保留平台要求，公开音频检查装配仍须验收。
+产品按分布式部署单元设计，当前单节点 Compose 是 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) 的开发预览拓扑（`Node=1, Replica=1`），默认未装配全部部署单元，不能单凭 Compose 声称同构链路已验收。平台与节点边界遵循 [ADR 0011](../decisions/0011-distributed-deployment-and-platform-boundaries.md)，职责、实际启动入口和装配缺口见[部署单元规划](deployment-units.md)。业务、控制和工作台不因推理栈使用 Linux 而继承 GPU 或 Linux 内核依赖；节点执行栈和[私有媒体沙箱](../archive/components/audio-asset-inspection.md)各自保留平台要求，公开音频检查装配仍须验收。
 
 逻辑角色按职责分离，每个进程显式声明节点、角色与唯一实例身份；配置字段和入口按部署单元核对，`process_role` 声明不自动选择服务工厂。backend 与 execution-gateway 独立部署，跨单元内容经网络协议与对象存储传递。本地锁与控制器回执只承担节点范围职责，不替代 PostgreSQL 全局权威。单机验证可按 ADR 0004 折叠 scheduler / job-worker 逻辑角色，但保留独立身份、连接池、租约、claim 与协议边界；`node-controller` 不与业务 API 合并。跨平台、跨主机故障恢复与节点级高可用分别验收；扩容先增加已资格化节点与实例，再验证父物理预算与 owner 路由。
 

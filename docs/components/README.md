@@ -27,7 +27,7 @@
 
 ## 文件语音与媒体
 
-- [音频资产检查边界与历史候选](audio-asset-inspection.md)
+- [音频资产检查边界与历史候选](../archive/components/audio-asset-inspection.md)
 - [CPU VAD：有界切段与会话状态](cpu-vad.md)
 - [文件 ASR 有界媒体输入](file-asr-audio.md)
 - [文件 ASR 原生识别接口](file-asr-recognition.md)

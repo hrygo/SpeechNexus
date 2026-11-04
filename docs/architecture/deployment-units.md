@@ -119,7 +119,7 @@ Windows 等平台保持未验证，支持范围扩展以单元的安装、启动
 
 ## 4. Linux 媒体检查边界
 
-现有 [音频检查沙箱](../components/audio-asset-inspection.md)使用 pidfd、seccomp、bubblewrap、
+现有 [音频检查沙箱](../archive/components/audio-asset-inspection.md)使用 pidfd、seccomp、bubblewrap、
 prlimit 和 `/proc`，属于 Linux 平台实现。当前
 [AssetRuntime](../../backend/src/speechnexus_backend/asset_runtime.py)装配 `TextAssetInspector`，
 公开音频检查尚未启用；不能把沙箱代码位于 backend 包内等同于 API 启动必须使用 Linux。

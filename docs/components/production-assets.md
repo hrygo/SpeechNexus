@@ -18,7 +18,7 @@ content creates a durable `rejected` fact and no object. ASR/voice inputs requir
 a real `AssetInspector`; the default inspector reports unavailable and creates
 neither fake audio facts nor a validation task without a consumer.
 
-The private [audio inspection process boundary](audio-asset-inspection.md) adds
+The private [audio inspection process boundary](../archive/components/audio-asset-inspection.md) adds
 real Linux supervision and resource-limit tests, but is not installed in
 `AssetRuntime`. A shared media artifact/image, complete decode/result validation
 and actual HTTP/PG/MinIO acceptance remain prerequisites for audio `ready`.

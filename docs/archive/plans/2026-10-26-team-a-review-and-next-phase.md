@@ -51,7 +51,7 @@ date: 2026-10-26
   18 端口映射齐备，不等于业务装配完成；InnoDB 仅为共享协调行为的测试对照，产品数据库仍为 PG。
 - #155 的进程监督已合入；后续 `132597e` 组合 CI `40252960041` 全 14 成功。
   中间精确合后 `40252542514` 取消且清理未知独立保留。
-  [音频检查边界](../../components/audio-asset-inspection.md)仍明确没有共享媒体制品、真实 decoder 或公开 ready。
+  [音频检查边界](../components/audio-asset-inspection.md)仍明确没有共享媒体制品、真实 decoder 或公开 ready。
 - #201 已于北京时间 2026-10-26 13:37:26 合入 `064c6b6`。#19/#21/#23 仍称“尚未合并”，属于待同步状态债务；
   PR/主干合并事实优先。合前 `c0155c6` 的 CI `40258176229` 全 14 成功，14 项真实 PG 与双语言 TCP 证据成立。
   精确合后 CI `40275218078` 为 cancelled，清理记录核实未结，不能改称合后全绿；
@@ -164,7 +164,7 @@ Git/运行态/生产权限/硬件与策略操作按适用授权执行，已消�
   [B 阶段 #142](https://github.com/hrygo/SpeechNexus/issues/142)，[C 文件链 #37](https://github.com/hrygo/SpeechNexus/issues/37)。
 - [固定主干](https://github.com/hrygo/SpeechNexus/tree/230031043a76ac6c2d04ee6bb2fe93ca38f991c5)，
   [#201 合并及验证说明](https://github.com/hrygo/SpeechNexus/pull/201)，[#210 真实 TTS 及限制](https://github.com/hrygo/SpeechNexus/pull/210)。
-- [音频检查](../../components/audio-asset-inspection.md)、[默认生产者](../../components/binding-defaults-producer.md)、
+- [音频检查](../components/audio-asset-inspection.md)、[默认生产者](../../components/binding-defaults-producer.md)、
   [Profile 原意图](../../components/profile-lifecycle-intents.md)、[发音固定读取](../../components/pronunciation-read-contract.md)。
 - [协调证据](../../audits/2026-10-25-coordination-port-evidence.md)、
   [C 生成链矩阵](https://github.com/hrygo/SpeechNexus/blob/230031043a76ac6c2d04ee6bb2fe93ca38f991c5/docs/audits/2026-10-26-team-c-render-loop-status.md)、[C 缺口登记](https://github.com/hrygo/SpeechNexus/blob/230031043a76ac6c2d04ee6bb2fe93ca38f991c5/docs/audits/2026-10-26-team-c-remaining-gaps.md)。

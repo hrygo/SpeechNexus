@@ -3,10 +3,10 @@
 This page preserves the 2026-10-26 candidate, experiment and qualification
 record. References below to a PR candidate, pending handoff or CI result describe
 that point in time, not the current merge or deployment state. The current
-[`asset_runtime.py`](../../backend/src/speechnexus_backend/asset_runtime.py) still installs `TextAssetInspector`; the process inspector
+[`asset_runtime.py`](../../../backend/src/speechnexus_backend/asset_runtime.py) still installs `TextAssetInspector`; the process inspector
 exists in the repository but is not thereby enabled in the public Asset runtime.
 Current integration and acceptance status must be checked against the candidate
-and [delivery tracking](../plans/delivery-tracking.md).
+and [delivery tracking](../../plans/delivery-tracking.md).
 
 A02 now supplies the private Linux process supervisor, a separately packaged
 media decoder/inspection command, a generated success-receipt contract and a
@@ -18,7 +18,7 @@ adds a workspace dependency and private schema, with no public HTTP, migration
 or grant change.
 
 The acceptance target is [A02 #21](https://github.com/hrygo/SpeechNexus/issues/21)
-AC1/AC2 and the [file ASR roadmap](../archive/plans/2026-10-25-team-a-realignment.md).
+AC1/AC2 and the [file ASR roadmap](../plans/2026-10-25-team-a-realignment.md).
 Public `ready` still requires approved deployment/composition, public error
 mapping and actual HTTP/PG/MinIO acceptance below. A successful command alone
 is not a media fact.
@@ -28,7 +28,7 @@ is not a media fact.
 The shared implementation lives in `packages/media`; B's original
 `execution-gateway/src/speechnexus_gateway/infrastructure/pyav_audio.py` and
 `domain/media.py` remain compatibility exports. Its behavior follows the
-[bounded media interface](file-asr-audio.md).
+[bounded media interface](../../components/file-asr-audio.md).
 The backend and gateway are independent deployments under `pyproject.toml`'s
 import boundary. The backend must not import gateway modules or run its VAD,
 recognizer, engine client, deployment controller or GPU runtime.
@@ -41,7 +41,7 @@ not a published shared package or acceptance of that decoder in this sandbox.
 
 The A-MEDIA-EXTRACT-01 source candidate includes a separately distributed media
 kernel and a small inspection entrypoint; B acceptance remains pending. It is
-described in the [media kernel handoff](../archive/plans/2026-10-26-a02-media-kernel-handoff.md):
+described in the [media kernel handoff](../plans/2026-10-26-a02-media-kernel-handoff.md):
 `packages/media` relocates these exact native types and codec; the old gateway
 imports re-export the same objects. Its private inspection command currently
 admits PCM WAV and explicitly described raw PCM only. Broader codec support
@@ -57,7 +57,7 @@ before shared integration. AssetRuntime still installs TextAssetInspector.
 
 The same PR candidate adds the canonical private success receipt and
 `ProcessAudioAssetInspector`, described in the
-[receipt handoff](../archive/plans/2026-10-26-a02-audio-receipt-handoff.md). It validates
+[receipt handoff](../plans/2026-10-26-a02-audio-receipt-handoff.md). It validates
 the generated contract, original input digest/length, exact sample clock and
 cancellation before exposing media facts. Default composition remains unchanged;
 this is not HTTP, storage, restart or public-ready acceptance.

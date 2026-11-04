@@ -727,9 +727,9 @@
         "docs/architecture/data-deletion.md"
       ],
       "implementation": "声音工作台与 CustomVoice 不证明真实克隆模式资格。",
-      "integration": "固定样本、参考文本、来源、binding 和材料，工作台与 Base TTS 同版联验。",
+      "integration": "固定样本、来源、binding 和材料；参考文本提供时固定，具体 binding 可要求提供。工作台与 Base TTS 同版联验。",
       "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
-      "gap": "固定样本、参考文本、来源、binding 和材料，工作台与 Base TTS 同版联验。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "固定样本、来源、binding 和材料；参考文本提供时固定，具体 binding 可要求提供。工作台与 Base TTS 同版联验。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/voice-resource.schema.json",

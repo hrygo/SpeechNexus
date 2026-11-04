@@ -141,7 +141,8 @@ def adapter(admission: AdmissionDatabase, *, seed: bool = True) -> PostgresTtsAd
 
 def test_postgres_persists_and_recovers_original(admission_database: AdmissionDatabase) -> None:
     service = adapter(admission_database)
-    request = service.admit(plan())
+    bounded = replace(plan(), max_audio_ms=100, max_source_pcm_bytes=4800, max_payload_bytes=4800)
+    request = service.admit(bounded)
     row = admission_database.runtime.foundation.database.query(
         "SELECT request_document FROM admission_operations WHERE operation_id=%s",
         (request["operation_id"],),
@@ -154,15 +155,19 @@ def test_postgres_persists_and_recovers_original(admission_database: AdmissionDa
     assert "Synthetic text." not in roots[0]["target_document"]
     restarted = adapter(admission_database, seed=False)
     restored_plan, restored_request = restarted.recover("request-test")
-    assert restored_plan == plan()
+    assert restored_plan == bounded
     assert restored_request == request
+    assert restored_request["max_output_audio_ms"] == 100
+    assert restored_plan.max_source_pcm_bytes == restored_plan.max_payload_bytes == 4800
+    with pytest.raises(SpeechUnavailableError):
+        restarted.admit(replace(bounded, max_audio_ms=200))
     db = admission_database.runtime.foundation.database
     db.query(
         "INSERT INTO speech_publication_retirements "
         "(kind,object_id,revision,revision_id,retired_at_us) "
         "VALUES ('voice','voice-test','2','voice-revision-test',2)"
     )
-    assert restarted.admit(plan()) == request
+    assert restarted.admit(bounded) == request
     assert db.query("SELECT count(*) AS n FROM speech_tts_settlement")[0]["n"] == 1
     with pytest.raises(SpeechUnavailableError):
         restarted.admit(replace(plan(), request_id="request-new"))

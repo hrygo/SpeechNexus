@@ -34,7 +34,7 @@ WebSocket 路由及真实实时执行链，SDK 序列化检查不能证明这些
 
 时间戳粒度属于声明的契约范围：在 schema 的请求对象表示中，只要出现 `timestamp_granularities[]`，包括空数组，就要求显式设置 `response_format=verbose_json`；数组内仅允许不重复的 `segment` 和 `word`。实际 multipart 入口以同名字段的重复项读取粒度：没有该字段表示无粒度，空字符串不是空数组，会被拒绝。当前生产文件 ASR 规划器在准入前拒绝非空粒度，不能据此宣称显式 segment/word 请求已可用。具体证据要求见[同步转写](../operations/synchronous-transcription.md)。
 
-未声明的请求字段存在契约与实现差异：公开契约要求不支持的标准参数返回 `422 unsupported_parameter`，当前转写 multipart 与合成 JSON 入口的封闭字段校验则返回 `400 invalid_request`；合成入口对未声明的 `stream_format` 值也返回该 400。两者都拒绝请求；调用方目前不能假定这些情况一定得到契约中的错误码。 另一个实现缺口是同步 TTS 的 `nexus.overrides` 顶层未知键会被忽略，而契约要求拒绝；`tts` 对象内部未知键仍被拒绝。客户端应遵守契约，不能依赖忽略行为。
+未声明的请求字段存在契约与实现差异：公开契约要求不支持的标准参数返回 `422 unsupported_parameter`，当前转写 multipart 与合成 JSON 入口的封闭字段校验则返回 `400 invalid_request`；合成入口对未声明的 `stream_format` 值也返回该 400。两者都拒绝请求；调用方目前不能假定这些情况一定得到契约中的错误码。同步 TTS 现在使用同源生成的 `SpeechRequest` 校验，`nexus.overrides` 顶层与 `tts` 内部未知键均拒绝。
 
 REST `verbose_json.usage` 只使用 `{"type":"duration","seconds":...}`，与官方 SDK 的
 `TranscriptionVerbose` 响应模型一致；契约仅允许非 verbose
@@ -148,7 +148,7 @@ with client.realtime.connect(model="asr-quality") as connection:
 1. **路径命名空间**：增强 REST 位于 `/v1/nexus/`；工作台业务使用 `/v1/workbench/` 或契约声明的 `/v2/workbench/`。标准 `/v1/audio/*`、`/v1/models` 不承担音色创作、Job 或工作台语义。
 2. **字段命名空间**：标准 JSON 请求中的增强字段只能放在可选 `nexus` 对象；multipart 转写的 `nexus` 是 JSON 字符串，并由 `TranscriptionNexusOptions` 冻结内部 schema。标准客户端省略该字段时行为完整。
 3. **事件命名空间**：标准 ASR 事件保持 OpenAI 名称；TTS、假设修订、辅助元数据、credit、gap 和操作终态使用 `nexus.*`。同一配置只有一套状态，`session.update` 与 `nexus.session.update` 映射到同一规范命令。
-4. **严格校验**：契约要求未知字段、未知事件、布尔冒充整数、非法单位和不支持的标准参数返回稳定错误，不做静默降级或别名翻译。当前同步 TTS 对 `nexus.overrides` 顶层未知键的处理仍有缺口，见第 1 节。
+4. **严格校验**：契约要求未知字段、未知事件、布尔冒充整数、非法单位和不支持的标准参数返回稳定错误，不做静默降级或别名翻译。同步 TTS 请求复用生成校验，拒绝 `nexus.overrides` 顶层未知键。
 5. **版本固定**：版本字段依请求类型而异：同步 TTS 的 `nexus` 可指定 profile、voice 和 pronunciation revision，同步转写的 `nexus` 可指定 profile revision；持久 TTS Job 还可用 `model_binding` 指定绑定版本。两个同步入口的 `profile_id` 和 `profile_revision` 必须同时提供或同时省略；转写入口不接受 `voice_revision`、`pronunciation_revision` 或 `model_binding`。具体字段与限制以对应请求 schema 为准，不能假定所有入口都接受这些字段。目标设计在首次接受意图时解析并固定默认值，执行前重新核对能力、策略和容量；Job 已接受不代表资源准入或执行已完成。
 6. **职责分离**：`nexus` 只承载语音底座增强；项目、会议、助手和有声书编排留在工作台命名空间，不反向写入底座表。
 7. **可验证等价**：目标设计要求便捷入口与 `POST /v1/nexus/jobs` 映射到同一规范意图和幂等摘要。当前同步入口拒绝客户端幂等键，不能据此声称等价恢复已交付。新增扩展必须同时提供正例、负例、事件序列和所有消费者的等价测试。

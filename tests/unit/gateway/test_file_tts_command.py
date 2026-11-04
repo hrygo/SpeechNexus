@@ -441,3 +441,46 @@ async def test_audio_over_the_request_ceiling_is_not_published() -> None:
     assert policy.max_audio_ms == 100
     assert policy.max_pcm_bytes == 4800
     assert store.results == []
+
+
+@pytest.mark.parametrize("delivery", ["pcm", "wav", "mp3"])
+@pytest.mark.parametrize("samples", [2400, 2401, 2424, 4800])
+async def test_source_sample_bound_precedes_encoding_and_staging(
+    delivery: str, samples: int
+) -> None:
+    class Source(Synthesizer):
+        async def synthesize(
+            self, request: TtsRequest, policy: TtsPolicy, *, cancelled: Callable[[], bool]
+        ) -> TtsAudio:
+            self.calls.append((request, policy))
+            # One extra sample still has floor(duration_ms) == 100.
+            return TtsAudio(
+                request.request_id,
+                "audio/wav",
+                b"\x00\x00" * samples,
+                policy.sample_rate_hz,
+                1,
+                policy.digest,
+            )
+
+    engine = Source()
+    runner, _, encoder = build(synthesizer=engine)
+    command = command_example(0)
+    command["parameters"]["response_format"] = delivery
+    request = _with_ceiling(tts_request(command=command), 100)
+    store = Store()
+    if samples == 2400:
+        result = await runner.stage_result(request, store=store, cancelled=lambda: False)
+        assert isinstance(result.result, ExecutionAudioStagingResult)
+        assert result.result.audio.source_pcm_samples == 2400
+        assert len(store.results) == 1
+        assert len(encoder.calls) == 1
+    else:
+        with pytest.raises(TtsCallError) as error:
+            await runner.stage_result(request, store=store, cancelled=lambda: False)
+        assert error.value.code is TtsFailure.RESPONSE_INVALID
+        assert store.results == []
+        assert encoder.calls == []
+    assert len(engine.calls) == 1
+    assert engine.calls[0][1].max_audio_ms == 100
+    assert engine.calls[0][1].max_pcm_bytes == 4800

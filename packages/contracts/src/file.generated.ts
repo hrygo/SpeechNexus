@@ -2,6 +2,7 @@
 import type { components } from "./speech.generated";
 export type FileContracts = Pick<
   components["schemas"],
+  | "SpeechRequest"
   | "JobCreateRequest"
   | "Job"
   | "JobList"

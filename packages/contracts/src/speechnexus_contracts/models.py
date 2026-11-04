@@ -5,18 +5,9 @@
 
 from typing import Any, Literal, NotRequired, TypedDict
 
-type JobKind = Literal[
-    "asr", "tts", "voice_design", "voice_clone", "voice_preview", "voice_validation"
-]
+type ExternalSharedCapabilityDomainsSchemaJsonAudioFormat = Literal["mp3", "wav", "pcm"]
 type ExternalSharedIdentifiersSchemaJsonIdentifier = str
 type ExternalSharedIdentifiersSchemaJsonRevision = str
-type ExternalSharedCapabilityDomainsSchemaJsonVadMode = Literal["server_vad", "manual"]
-type ExternalSharedCapabilityDomainsSchemaJsonFinalizationMode = Literal[
-    "full_segment", "streaming_finalize"
-]
-type ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode = Literal[
-    "off", "required", "best_effort"
-]
 
 
 class Planner(TypedDict):
@@ -25,6 +16,23 @@ class Planner(TypedDict):
 
 
 type ExternalSharedCapabilityDomainsSchemaJsonTextCommitMode = Literal["explicit", "sentence"]
+type JobKind = Literal[
+    "asr", "tts", "voice_design", "voice_clone", "voice_preview", "voice_validation"
+]
+
+
+class ExternalSharedReferencesSchemaJsonResourceReference(TypedDict):
+    id: ExternalSharedIdentifiersSchemaJsonIdentifier
+    revision: ExternalSharedIdentifiersSchemaJsonRevision
+
+
+type ExternalSharedCapabilityDomainsSchemaJsonVadMode = Literal["server_vad", "manual"]
+type ExternalSharedCapabilityDomainsSchemaJsonFinalizationMode = Literal[
+    "full_segment", "streaming_finalize"
+]
+type ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode = Literal[
+    "off", "required", "best_effort"
+]
 type ExternalSharedCapabilityDomainsSchemaJsonAudioDeliveryMode = Literal["complete", "chunked"]
 
 
@@ -34,7 +42,6 @@ class JobConstraints(TypedDict):
     require_exact_parameters: NotRequired[bool]
 
 
-type Revision = ExternalSharedIdentifiersSchemaJsonRevision
 type ExternalSharedCapabilityDomainsSchemaJsonTranscriptFormat = Literal[
     "json", "text", "verbose_json", "srt", "vtt"
 ]
@@ -42,9 +49,6 @@ type ExternalSharedCapabilityDomainsSchemaJsonTranscriptFormat = Literal[
 
 class TtsJobInput1(TypedDict):
     text: str
-
-
-type ExternalSharedCapabilityDomainsSchemaJsonAudioFormat = Literal["mp3", "wav", "pcm"]
 
 
 class VoiceDesignInput(TypedDict):
@@ -74,6 +78,9 @@ type ArtifactKind = Literal[
 type ExternalSharedIdentifiersSchemaJsonSha256Digest = str
 type ExternalVoiceResourceSchemaJsonIdentifier = ExternalSharedIdentifiersSchemaJsonIdentifier
 type ExternalVoiceResourceSchemaJsonRevision = ExternalSharedIdentifiersSchemaJsonRevision
+type ExternalVoiceResourceSchemaJsonBindingReference = (
+    ExternalSharedReferencesSchemaJsonResourceReference
+)
 
 
 class ExternalVoiceResourceSchemaJsonCheckResult(TypedDict):
@@ -103,11 +110,6 @@ type ExternalSharedIdentifiersSchemaJsonEventSequence = ExternalSharedIdentifier
 
 class JobQueuedEventData(TypedDict):
     status: Literal["queued"]
-
-
-class JobStartedEventData(TypedDict):
-    status: Literal["running"]
-    execution_revision: Revision
 
 
 class JobProgressEventData(TypedDict):
@@ -337,12 +339,11 @@ class ModelReadiness(TypedDict):
     admission_state: Literal["available", "queueable", "capacity_full", "unavailable"]
 
 
+type AudioFormat = ExternalSharedCapabilityDomainsSchemaJsonAudioFormat
 type Identifier = ExternalSharedIdentifiersSchemaJsonIdentifier
-
-
-class ExternalSharedReferencesSchemaJsonResourceReference(TypedDict):
-    id: ExternalSharedIdentifiersSchemaJsonIdentifier
-    revision: ExternalSharedIdentifiersSchemaJsonRevision
+type Revision = ExternalSharedIdentifiersSchemaJsonRevision
+type TextCommitMode = ExternalSharedCapabilityDomainsSchemaJsonTextCommitMode
+type ResourceReference = ExternalSharedReferencesSchemaJsonResourceReference
 
 
 class TurnDetection(TypedDict):
@@ -392,7 +393,13 @@ class TtsJobInput2(TypedDict):
 
 
 type TtsJobInput = TtsJobInput1 | TtsJobInput2
-type AudioFormat = ExternalSharedCapabilityDomainsSchemaJsonAudioFormat
+
+
+class TtsJobOutput(TypedDict):
+    audio_format: NotRequired[AudioFormat]
+    save_artifacts: NotRequired[Literal[True]]
+
+
 type VoiceDesignJobInput = VoiceDesignInput
 
 
@@ -449,12 +456,36 @@ class VoicePreviewJobResult(TypedDict):
     receipt_id: Identifier
 
 
-type ExternalVoiceResourceSchemaJsonBindingReference = (
-    ExternalSharedReferencesSchemaJsonResourceReference
-)
+class ExternalVoiceResourceSchemaJsonVoiceValidation(TypedDict):
+    resource_type: Literal["voice_validation"]
+    id: ExternalVoiceResourceSchemaJsonIdentifier
+    object: Literal["nexus.voice_validation"]
+    draft_id: ExternalVoiceResourceSchemaJsonIdentifier
+    draft_revision: ExternalVoiceResourceSchemaJsonRevision
+    validation_set_revision: ExternalVoiceResourceSchemaJsonRevision
+    model_binding: ExternalVoiceResourceSchemaJsonBindingReference
+    status: Literal["pending", "running", "passed", "failed"]
+    checks: list[ExternalVoiceResourceSchemaJsonCheckResult]
+    publication_eligible: bool
+    created_at: str
+
+
 type OperationKind = ExternalSharedCapabilityDomainsSchemaJsonOperationKind
 type OperationStatus = ExternalSharedOperationStatesSchemaJsonOperationStatus
+
+
+class Models(TypedDict):
+    asr: NotRequired[ResourceReference]
+    tts: NotRequired[ResourceReference]
+    voice: NotRequired[ResourceReference]
+
+
 type EventSequence = ExternalSharedIdentifiersSchemaJsonEventSequence
+
+
+class JobStartedEventData(TypedDict):
+    status: Literal["running"]
+    execution_revision: Revision
 
 
 class JobFailedEventData(TypedDict):
@@ -571,18 +602,22 @@ class ExternalVoiceResourceSchemaJsonPronunciationRevision(TypedDict):
 type PronunciationRevision = ExternalVoiceResourceSchemaJsonPronunciationRevision
 type SpeechTaskKind = ExternalSharedCapabilityDomainsSchemaJsonSpeechTaskKind
 type ReleaseTier = ExternalSharedCapabilityDomainsSchemaJsonReleaseTier
-type ResourceReference = ExternalSharedReferencesSchemaJsonResourceReference
+
+
+class RestTtsOverrides(TypedDict):
+    language: NotRequired[str]
+    text_commit_mode: NotRequired[TextCommitMode]
+    audio_delivery: NotRequired[Literal["complete"]]
+    seed: NotRequired[int | None]
+    planner: NotRequired[Planner]
+
+
 type AsrOverrides = ExternalSharedSpeechOverridesSchemaJsonAsrOverrides
 type TtsOverrides = ExternalSharedSpeechOverridesSchemaJsonTtsOverrides
 
 
 class AsrJobOutput(TypedDict):
     transcript_format: NotRequired[TranscriptFormat]
-    save_artifacts: NotRequired[Literal[True]]
-
-
-class TtsJobOutput(TypedDict):
-    audio_format: NotRequired[AudioFormat]
     save_artifacts: NotRequired[Literal[True]]
 
 
@@ -599,18 +634,11 @@ class JobArtifact(TypedDict):
     expires_at: NotRequired[str | None]
 
 
-class ExternalVoiceResourceSchemaJsonVoiceValidation(TypedDict):
-    resource_type: Literal["voice_validation"]
-    id: ExternalVoiceResourceSchemaJsonIdentifier
-    object: Literal["nexus.voice_validation"]
-    draft_id: ExternalVoiceResourceSchemaJsonIdentifier
-    draft_revision: ExternalVoiceResourceSchemaJsonRevision
-    validation_set_revision: ExternalVoiceResourceSchemaJsonRevision
-    model_binding: ExternalVoiceResourceSchemaJsonBindingReference
-    status: Literal["pending", "running", "passed", "failed"]
-    checks: list[ExternalVoiceResourceSchemaJsonCheckResult]
-    publication_eligible: bool
-    created_at: str
+class VoiceValidationJobResult(TypedDict):
+    kind: Literal["voice_validation"]
+    validation: ExternalVoiceResourceSchemaJsonVoiceValidation
+    validation_report_artifact_id: Identifier
+    receipt_id: Identifier
 
 
 class OperationReference(TypedDict):
@@ -618,12 +646,6 @@ class OperationReference(TypedDict):
     kind: OperationKind
     status: OperationStatus
     cleanup_state: NotRequired[CleanupState]
-
-
-class Models(TypedDict):
-    asr: NotRequired[ResourceReference]
-    tts: NotRequired[ResourceReference]
-    voice: NotRequired[ResourceReference]
 
 
 class Parameters(TypedDict):
@@ -770,16 +792,22 @@ class ModelNexus(TypedDict):
     readiness: ModelReadiness
 
 
+class SpeechOverrides(TypedDict):
+    tts: NotRequired[RestTtsOverrides]
+
+
 class JobOverrides(TypedDict):
     asr: NotRequired[AsrOverrides]
     tts: NotRequired[TtsOverrides]
 
 
-class VoiceValidationJobResult(TypedDict):
-    kind: Literal["voice_validation"]
-    validation: ExternalVoiceResourceSchemaJsonVoiceValidation
-    validation_report_artifact_id: Identifier
-    receipt_id: Identifier
+type JobResult = (
+    AsrJobResult
+    | TtsJobResult
+    | VoiceDraftJobResult
+    | VoicePreviewJobResult
+    | VoiceValidationJobResult
+)
 
 
 class JobQueuedEvent(TypedDict):
@@ -788,6 +816,13 @@ class JobQueuedEvent(TypedDict):
     job_id: Identifier
     occurred_at: str
     data: JobQueuedEventData
+
+
+class JobSucceededEventData(TypedDict):
+    status: Literal["succeeded"]
+    artifacts: list[JobArtifact]
+    result: JobResult
+    cleanup_state: CleanupState
 
 
 class JobCleanupUpdatedEvent(TypedDict):
@@ -833,6 +868,18 @@ class Model(TypedDict):
     created: int
     owned_by: str
     nexus: NotRequired[ModelNexus]
+
+
+class SpeechNexusOptions(TypedDict):
+    workspace_id: NotRequired[Identifier]
+    client_reference: NotRequired[str]
+    profile_id: NotRequired[Identifier]
+    profile_revision: NotRequired[Revision]
+    voice_revision: NotRequired[Revision]
+    pronunciation_revision: NotRequired[Revision]
+    overrides: NotRequired[SpeechOverrides]
+    deadline_ms: NotRequired[int]
+    max_output_audio_ms: NotRequired[int]
 
 
 class JobCreateBase(TypedDict):
@@ -910,59 +957,6 @@ class VoiceValidationJobCreate(TypedDict):
     input: VoiceValidationJobInput
 
 
-type JobResult = (
-    AsrJobResult
-    | TtsJobResult
-    | VoiceDraftJobResult
-    | VoicePreviewJobResult
-    | VoiceValidationJobResult
-)
-
-
-class JobSucceededEventData(TypedDict):
-    status: Literal["succeeded"]
-    artifacts: list[JobArtifact]
-    result: JobResult
-    cleanup_state: CleanupState
-
-
-class Operation(TypedDict):
-    id: Identifier
-    object: Literal["nexus.operation"]
-    kind: OperationKind
-    status: OperationStatus
-    cleanup_state: CleanupState
-    job_id: NotRequired[Identifier | None]
-    session_id: NotRequired[Identifier | None]
-    execution_revision: Revision
-    receipt: NotRequired[ExecutionReceipt | None]
-    error: NotRequired[JobError | None]
-    created_at: str
-    updated_at: str
-
-
-class ExternalSharedErrorsSchemaJsonErrorResponse(TypedDict):
-    error: ExternalSharedErrorsSchemaJsonErrorBody
-
-
-class ModelList(TypedDict):
-    object: Literal["list"]
-    data: list[Model]
-
-
-class AsrJobCreate(TypedDict):
-    kind: Literal["asr"]
-    workspace_id: NotRequired[Identifier]
-    client_reference: NotRequired[str]
-    model: str
-    profile: NotRequired[ResourceReference]
-    overrides: NotRequired[JobOverrides]
-    constraints: NotRequired[JobConstraints]
-    draft_target: NotRequired[DraftTarget]
-    input: AsrJobInput
-    output: NotRequired[AsrJobOutput]
-
-
 class Job(TypedDict):
     id: Identifier
     object: Literal["nexus.job"]
@@ -999,15 +993,54 @@ class JobSucceededEvent(TypedDict):
     data: JobSucceededEventData
 
 
-type ErrorResponse = ExternalSharedErrorsSchemaJsonErrorResponse
-type JobCreateRequest = (
-    AsrJobCreate
-    | TtsJobCreate
-    | VoiceDesignJobCreate
-    | VoiceCloneJobCreate
-    | VoicePreviewJobCreate
-    | VoiceValidationJobCreate
-)
+class Operation(TypedDict):
+    id: Identifier
+    object: Literal["nexus.operation"]
+    kind: OperationKind
+    status: OperationStatus
+    cleanup_state: CleanupState
+    job_id: NotRequired[Identifier | None]
+    session_id: NotRequired[Identifier | None]
+    execution_revision: Revision
+    receipt: NotRequired[ExecutionReceipt | None]
+    error: NotRequired[JobError | None]
+    created_at: str
+    updated_at: str
+
+
+class ExternalSharedErrorsSchemaJsonErrorResponse(TypedDict):
+    error: ExternalSharedErrorsSchemaJsonErrorBody
+
+
+class ModelList(TypedDict):
+    object: Literal["list"]
+    data: list[Model]
+
+
+class SpeechRequest(TypedDict):
+    model: str
+    input: str
+    voice: str
+    instructions: NotRequired[str]
+    response_format: NotRequired[AudioFormat]
+    speed: NotRequired[float]
+    stream_format: NotRequired[Literal["audio"]]
+    nexus: NotRequired[SpeechNexusOptions]
+
+
+class AsrJobCreate(TypedDict):
+    kind: Literal["asr"]
+    workspace_id: NotRequired[Identifier]
+    client_reference: NotRequired[str]
+    model: str
+    profile: NotRequired[ResourceReference]
+    overrides: NotRequired[JobOverrides]
+    constraints: NotRequired[JobConstraints]
+    draft_target: NotRequired[DraftTarget]
+    input: AsrJobInput
+    output: NotRequired[AsrJobOutput]
+
+
 type JobEvent = (
     JobQueuedEvent
     | JobStartedEvent
@@ -1021,8 +1054,18 @@ type JobEvent = (
     | JobCleanupUpdatedEvent
     | ArtifactPublishedEvent
 )
+type ErrorResponse = ExternalSharedErrorsSchemaJsonErrorResponse
+type JobCreateRequest = (
+    AsrJobCreate
+    | TtsJobCreate
+    | VoiceDesignJobCreate
+    | VoiceCloneJobCreate
+    | VoicePreviewJobCreate
+    | VoiceValidationJobCreate
+)
 type FileContract = (
-    JobCreateRequest
+    SpeechRequest
+    | JobCreateRequest
     | Job
     | JobList
     | JobEvent

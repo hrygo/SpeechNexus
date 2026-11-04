@@ -447,7 +447,12 @@ async def test_factory_http_uses_real_postgres_qualification_and_admission(
                     "reference": {"workspace_id": "workspace-test", "byte_length": len(payload)},
                     "storage_version": "synthetic-version",
                     "media_type": "audio/wav" if audio_format == "wav" else "audio/pcm",
-                    "audio": {"sample_rate_hz": 24000, "channels": 1, "duration_ms": 100},
+                    "audio": {
+                        "sample_rate_hz": 24000,
+                        "channels": 1,
+                        "duration_ms": 100,
+                        "source_pcm_samples": 2400,
+                    },
                 },
             }
 
@@ -500,6 +505,7 @@ async def test_factory_http_uses_real_postgres_qualification_and_admission(
                     "workspace_id": "workspace-test",
                     "voice_revision": "1",
                     "client_reference": "sdk-tts-" + uuid.uuid4().hex,
+                    "max_output_audio_ms": 100,
                     "overrides": {"tts": {"language": "en"}},
                 },
             },
@@ -611,6 +617,14 @@ async def test_factory_http_uses_real_postgres_qualification_and_admission(
         )
         assert gateway.submits == 1
         assert gateway.request is not None
+        assert gateway.request["max_output_audio_ms"] == 100
+        original = db.query(
+            "SELECT request_document::jsonb AS body FROM admission_operations "
+            "WHERE operation_id=%s",
+            (gateway.request["operation_id"],),
+        )[0]["body"]
+        assert original["plan"]["max_audio_ms"] == 100
+        assert original["plan"]["max_source_pcm_bytes"] == 4800
         assert (
             db.query(
                 "SELECT count(*) AS n FROM admission_leases WHERE operation_id=%s",
@@ -632,7 +646,7 @@ async def test_factory_http_uses_real_postgres_qualification_and_admission(
             assert audio.readframes(audio.getnframes()) == pcm
             assert audio.readframes(1) == b""
     assert gateway.request is not None
-    assert gateway.request["max_output_audio_ms"] == 10000
+    assert gateway.request["max_output_audio_ms"] == 100
     assert gateway.request["command"]["parameters"]["response_format"] == audio_format
     assert gateway.request["command"]["parameters"]["language"] == "en"
     stored = db.query(
@@ -640,7 +654,7 @@ async def test_factory_http_uses_real_postgres_qualification_and_admission(
         "WHERE request_document::jsonb->>'kind'='tts_file'"
     )[0]["plan"]
     assert stored["gateway_policy_digest"] == "sha256:" + "1" * 64
-    assert stored["max_audio_ms"] == 10000
+    assert stored["max_audio_ms"] == 100
     assert db.query("SELECT count(*) AS n FROM admission_operations")[0]["n"] == 1
     assert db.query("SELECT count(*) AS n FROM coordination_jobs")[0]["n"] == 1
 

@@ -222,6 +222,8 @@ Job 的取消与重试也是契约目标；当前公开 Job 路由只装配创�
 
 ### 5.2 参数字典
 
+下表描述预设的概念参数及设计约束，不是各传输入口的请求字段清单。字段名称、必填性与范围以对应机器契约为准；声明在契约中也不代表完整解析和执行链已经接线。
+
 | 字段 | 类型 / 初始范围 | 语义与约束 |
 | --- | --- | --- |
 | `asr.language` | `auto` 或支持的语言 ID | 显式语言必须被绑定支持；自动检测可返回 unknown |
@@ -240,8 +242,8 @@ Job 的取消与重试也是契约目标；当前公开 Job 路由只装配创�
 | `tts.language` | 支持的语言或 auto | 与音色和模型的能力域求交 |
 | `tts.text_commit_mode` | `explicit / sentence` | 客户端冻结文本或规划器按安全句界冻结 |
 | `tts.audio_delivery` | `complete / chunked` | 完整结果或音频分块，与文本提交模式独立 |
-| `tts.speed` | number；建议 UI 0.8–1.2 | 允许范围来自具体绑定；不能只改回显而不改输出 |
-| `tts.instructions` | 有界 string 或 null | 仅绑定声明支持时开放；禁止把整段业务 prompt 默认送入声音模型 |
+| `tts.speed` | number；建议 UI 0.8–1.2 | 预设参数域为 0.5–2.0；REST 标准字段的 schema 为 0.25–4.0。实际还受绑定及治理约束；不能只改回显而不改输出 |
+| `tts.instructions` | 有界 string 或 null | 预设参数上限 2000 字符，REST 标准字段上限 4096；仅绑定声明支持时开放，禁止把整段业务 prompt 默认送入声音模型 |
 | `tts.pronunciation_revision` | 资源引用或 null | 固定的发音词典；保留原始文本与声学文本摘要 |
 | `tts.seed` | integer 或 null | 只有后端声明支持时生效；不承诺跨版本相同波形 |
 | `tts.planner.max_chars` | integer；建议 40–400 | 管理员预设中的分段预算，受绑定支持范围限制 |

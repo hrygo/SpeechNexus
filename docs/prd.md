@@ -712,8 +712,8 @@
 
 **验收：**
 
-- 浏览器同源，写入与 WS 校验 Host/Origin；SDK 缺 Origin 依显式入口规则，不用 Origin 冒充身份。
-- 管理页面与 API 同时受部署路由控制；凭据不暴露浏览器、日志或公开 DTO；语音内容不离开部署网络，包括代理和观测链。
+- 浏览器同源，写入与 WS 校验 Host/Origin；SDK 缺 Origin 依显式入口规则，不用 Origin 冒充身份。当前相关中间件只覆盖部分资源入口，不能推断同步语音或未装配的实时 WS 已受统一保护。
+- 管理页面与 API 同时受部署路由控制；凭据不暴露浏览器、日志或公开 DTO；语音内容不离开部署网络，包括代理和观测链。当前公开语音处理器不验证共享服务密钥，依靠代理或网关保护时须单独配置并验证，不能将 `Authorization` 头当作已生效的认证。
 
 设计依据：[deployment-units.md](architecture/deployment-units.md)、[data-deletion.md](architecture/data-deletion.md)。
 

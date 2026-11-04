@@ -1113,28 +1113,30 @@
         "docs/architecture/deployment-units.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "nginx 将 /v1/（含 /v1/workbench/）和 /v2/workbench/ 转至同一 api:8000；Compose workbench 使用 Web 镜像，不是独立工作台 API。",
-      "integration": "已核对静态工厂或配置；运行时与端到端接线未实测。",
-      "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
-      "gap": "已核对静态工厂或配置；运行时与端到端接线未实测。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "implementation": "2026-11-04：PR #410 已合并；Web 入口通过显式配置分别代理 Speech 与 Workbench 上游，校验地址并保留流式、实时升级与受信 TLS。Compose workbench 仍使用 Web 镜像，不是独立工作台 API。",
+      "integration": "#407 的有界代理接入已验收：实际双受控上游覆盖路由、路径/查询、非 2xx、SSE、WebSocket、单上游失败隔离与 TLS；主干文件与受检候选逐字节一致。",
+      "verification": "主干 3dd82415ba728ea5a676b646e4108b9f5d5b29b4 的 18 项 CI 全通过；合后入口安全回归 10 passed，Ruff 通过。#407 原 AC 已关闭；不代表 O-UPSTREAM 完整部署资格。",
+      "gap": "独立 Workbench API 生产装配、官方容器入口/Alpine、动态 DNS 故障恢复、真实业务与目标物理拓扑仍未由本次代理探针证明。",
       "evidence": [
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/deploy/web/nginx.conf",
-          "label": "nginx.conf",
-          "note": "固定基线源码"
+          "url": "https://github.com/hrygo/SpeechNexus/pull/410",
+          "label": "双上游代理交付",
+          "note": "最终 head dc6fa4c6d18e424fc5a58fe13321242979658550；实际合并 f0efea48ec59887c54c1a84ffeeb167f17788eb2"
         },
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/deploy/compose.yaml",
-          "label": "compose.yaml",
-          "note": "固定基线源码"
+          "url": "https://github.com/hrygo/SpeechNexus/issues/407",
+          "label": "有界代理验收与原件索引",
+          "note": "2026-11-04 五项原 AC 完成；受控探针、原件与清理范围见正文"
         },
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/deploy/images/web.Dockerfile",
-          "label": "Web 镜像定义",
-          "note": "构建工作台前端并由 nginx 提供服务，不证明独立工作台 API"
+          "url": "https://github.com/hrygo/SpeechNexus/actions/runs/41801299445",
+          "label": "合并后主干 CI",
+          "note": "3dd82415ba728ea5a676b646e4108b9f5d5b29b4，18 项检查通过，不替代真实部署资格"
         }
       ],
-      "issues": []
+      "issues": [
+        407
+      ]
     },
     {
       "id": "O-MEDIA",
@@ -1165,7 +1167,7 @@
         "docs/architecture/deployment-units.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "双平台原生部署资格本轮未核验；现有汇总不能替代原生行为证据；独立上游尚未由现有 nginx 配置体现；联合资格和用户放行未核验。",
+      "implementation": "双平台原生部署资格本轮未核验；现有汇总不能替代原生行为证据。2026-11-04：#410 已使 nginx 显式区分 Speech 与 Workbench 上游；该代理能力不证明双平台、联合资格或用户放行。",
       "integration": "正式接线状态本轮未核验；已核对静态工厂或配置；运行时与端到端接线未实测。",
       "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
       "gap": "正式接线状态本轮未核验；已核对静态工厂或配置；运行时与端到端接线未实测。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
@@ -1506,23 +1508,30 @@
         "contracts/README.md",
         "docs/architecture/contract-ownership.md"
       ],
-      "implementation": "生成契约包提供 Python wheel / uv 工作区依赖和 TypeScript 工作区客户端示例；契约文档定义 MCP 无状态投影。",
-      "integration": "SDK/MCP 在声明平台的安装、发现、调用和错误恢复仍须统一接收。",
-      "verification": "文档与生成消费者不能证明干净安装、完整恢复流程或许可全量合规。",
-      "gap": "SDK/MCP 在声明平台的安装、发现、调用和错误恢复仍须统一接收。 文档与生成消费者不能证明干净安装、完整恢复流程或许可全量合规。",
+      "implementation": "生成契约包提供 Python wheel / uv 工作区依赖和 TypeScript 工作区客户端；契约文档定义 MCP 无状态投影。2026-11-04 已完成 #408 的固定版本独立安装与合成恢复样例验证。",
+      "integration": "#408 在独立环境验证非 editable wheel、随包 schema、公开 parse 和声明的 TS workspace / Bundler 消费；合成 transport 保留原键/原身份，不自动重试未知写入。原基线与主干 packages/contracts 子树相同。",
+      "verification": "#408 五项有界 AC 已由非作者复核并关闭；原两版正式原件与新增 27 项 manifest 补证均可取得，缺 schema 明确拒绝，合成样例有完整命令与 exit 0。新补证 pnpm 12.15.0，原 QA 12.14.0 分别记录。",
+      "gap": "真实后端的持久恢复、Linux、MCP 安装/发现/调用、许可全量和 #406 新候选仍未验；本次有界安装与合成样例不代表 C-SDK 完整需求验收。",
       "evidence": [
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/packages/contracts/README.md",
-          "label": "生成消费者与安装示例",
-          "note": "说明 Python 和 TypeScript 消费方式，不证明声明平台的完整安装与恢复验收"
+          "url": "https://github.com/hrygo/SpeechNexus/issues/408",
+          "label": "生成消费者独立环境验收",
+          "note": "2026-11-04 五项原 AC 完成；原任务正式原件、最小补证摘要、适用范围与未验项见正文"
         },
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/contracts/README.md",
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3dd82415ba728ea5a676b646e4108b9f5d5b29b4/packages/contracts/README.md",
+          "label": "固定版消费方式",
+          "note": "packages/contracts 子树 0b283701897dff500d35e329d14a3e7154695dc2，与 QA 输入 c05bd6a8a49ac20938696aa897c5778321f958f5 相同"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3dd82415ba728ea5a676b646e4108b9f5d5b29b4/contracts/README.md",
           "label": "契约消费者范围",
-          "note": "声明 MCP 无状态投影"
+          "note": "MCP 无状态投影要求保留，未因 SDK 有界验收而取得 MCP 资格"
         }
       ],
-      "issues": []
+      "issues": [
+        408
+      ]
     },
     {
       "id": "P-PROFILES",

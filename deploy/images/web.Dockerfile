@@ -21,7 +21,9 @@ RUN pnpm --filter "@speechnexus/${APP_NAME}" build \
 
 FROM nginxinc/nginx-unprivileged:1.31-alpine
 
-COPY deploy/web/nginx.conf /etc/nginx/conf.d/default.conf
+ENV NGINX_ENVSUBST_FILTER="^WEB_(SPEECH_UPSTREAM|WORKBENCH_UPSTREAM|SPEECH_HOST|WORKBENCH_HOST|DNS_RESOLVER)$"
+COPY deploy/web/nginx.conf /etc/nginx/templates/default.conf.template
+COPY deploy/web/19-configure-upstreams.envsh /docker-entrypoint.d/19-configure-upstreams.envsh
 COPY --from=build /workspace/web-dist /usr/share/nginx/html
 
 EXPOSE 8080

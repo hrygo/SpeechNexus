@@ -392,7 +392,7 @@ SpeechNexus 的架构原则在 UI/UX 层面必须得到 100% 忠实表达，绝�
 
 1. **依赖与构建规范**：
    - 核心基础样式与设计 Token 统一定义在 `web/shared/src/ui/styles.css`；
-   - AdminUI 与 Workbench 通过统一引入 `@speechnexus/shared` 消费样式与核心组件，**严禁在具体子应用中硬编码散落的十六进制色彩或魔数尺寸**。
+   - AdminUI 与 Workbench 通过统一引入 `@speechnexus/shared` 消费样式与核心组件；设计要求避免在子应用中散落硬编码色彩或无语义尺寸。Token 校验器检查其声明范围内的颜色字面量，但不自动识别所有魔数尺寸；尺寸约束仍需代码审查。
 2. **样式隔离与命名空间**：
    - 设计系统变量统一以 `--nexus-*` 为图元前缀，语义级变量以 `--bg-*`, `--text-*`, `--border-*`, `--accent-*` 组织；
    - 关键功能类采用 BEM 或明确语义类名，杜绝未约束的内联样式。

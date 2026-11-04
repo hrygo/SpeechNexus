@@ -11,7 +11,7 @@ GitHub 保存产品需求、原始验收条件、代码审查和合并事实；D
 
 按[交付 SOP](agent-delivery-sop.md)选择 Codex 会话、subagent 与 Delegra：一项切片一位交付负责人，普通局部工作直接完成；需要持久接续或专用环境时才使用军团任务。技术负责人不增加产品排序权，所有执行共用一条队列和资源额度；本页维护岗位、平台与环境边界。
 
-产品实施围绕同版公开业务链和 AC 交付，当前阶段、链路状态及关键路径以最新明确授权、[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)和当期候选证据为准，不由长期规则固化。2026-10-27 的默认语音装配 503 与 Job 缺消费者记录见 [#254](https://github.com/hrygo/SpeechNexus/issues/254)及[事故记录](paperclip/runtime-incidents.md)；它们是历史发现，不证明当前状态。[闭环整改计划](../archive/plans/2026-10-27-delegra-legion-closed-loop.md)与[旧环境报告](../archive/operations/paperclip/environment-readiness.md)保留原时点事实，已移除的旧项目及任务编号不再承担当前队列、环境配置或门禁入口。
+产品实施围绕同版公开业务链和 AC 交付，当前阶段、链路状态及关键路径以最新明确授权、[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)和当期候选证据为准，不由长期规则固化。2026-10-27 的默认语音装配 503 与 Job 缺消费者记录见 [#254](https://github.com/hrygo/SpeechNexus/issues/254)及[事故记录](../archive/operations/paperclip/runtime-incidents.md)；它们是历史发现，不证明当前状态。[闭环整改计划](../archive/plans/2026-10-27-delegra-legion-closed-loop.md)与[旧环境报告](../archive/operations/paperclip/environment-readiness.md)保留原时点事实，已移除的旧项目及任务编号不再承担当前队列、环境配置或门禁入口。
 
 ## 唯一决策方与执行结构
 
@@ -99,4 +99,4 @@ model / effort 按当前授权和验证结果调整；不得通过改连接、�
 
 ## 运行期规则与已踩的坑
 
-原执行事故、当时命令、失败及后续证伪完整保存在[运行事故与历史排障](paperclip/runtime-incidents.md)，仅在相关排障时读取，不作为常规派工前置。当前派工、预检、等待及安全恢复统一按[交付 SOP](agent-delivery-sop.md)执行；历史“清空会话 / 新建卡恢复”等做法不构成当前操作授权或未知结果重放依据。
+原执行事故、当时命令、失败及后续证伪完整保存在[运行事故与历史排障](../archive/operations/paperclip/runtime-incidents.md)，仅在相关排障时读取，不作为常规派工前置。当前派工、预检、等待及安全恢复统一按[交付 SOP](agent-delivery-sop.md)执行；历史“清空会话 / 新建卡恢复”等做法不构成当前操作授权或未知结果重放依据。

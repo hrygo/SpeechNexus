@@ -154,7 +154,7 @@
 | `docs/operations/paperclip/roles/qa.md` | 已核对 | 全文对照军团工作流和验收证据边界；实际岗位及权限按任务核实 |
 | `docs/operations/paperclip/roles/reviewer.md` | 已核对 | 全文对照军团工作流和独立审查边界；实际部署配置及权限按任务核实 |
 | `docs/operations/paperclip/roles/workbench.md` | 已核对 | 全文对照军团工作流和工作台职责边界；实际部署及权限按任务核实 |
-| `docs/operations/paperclip/runtime-incidents.md` | 历史保留 | 历史故障、处置与后续证伪记录；已限定旧操作不构成当前授权，并指向现行交付 SOP；事故原件未逐项核验 |
+| `docs/archive/operations/paperclip/runtime-incidents.md` | 历史保留 | 历史故障、处置与后续证伪记录；已限定旧操作不构成当前授权，并指向现行交付 SOP；事故原件未逐项核验 |
 | `docs/operations/paperclip.md` | 已核对 | 全文对照交付 SOP、根规则及岗位正文，明确已取消排期的 issue 与整改计划为历史入口，补充三机分工和传输路径的时点；实际平台配置、身份及环境可用性须在执行前核验，本次未连接或修改平台 |
 | `docs/operations/production-coordination-storage.md` | 已核对 | 对照 0002 表与索引、迁移链、列级授权、组合约束及释放守卫；区分基础约束与受控事务职责，未运行数据库测试 |
 | `docs/operations/production-runtime-delivery.md` | 已核对 | 对照配置、租约、unknown 路径、迁移、授权、ACK、Compose 及测试入口；未执行集成测试或验证目标部署 |

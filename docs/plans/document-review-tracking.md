@@ -346,7 +346,7 @@
 | `docs/audits/evidence/2026-11-03-tts-window-5.json` | 历史保留 | 第五窗口的结构化证据；核对 SDK 成功但关联未证明的边界，原始记录未逐项重验 |
 | `docs/audits/evidence/2026-11-03-tts-window-6.json` | 历史保留 | 第六窗口的结构化证据；核对报告引用及固定版本，原始记录未逐项重验 |
 | `docs/operations/release-evidence-verification-output.txt` | 历史保留 | 2026-10-28 固定版本的合成数据验证输出；不代表当前发布资格，原始运行未重做 |
-| `docs/plans/2026-10-23-implementation-issues.json` | 历史保留 | 核对原基线、索引引用及 38 个唯一编号；旧编排不代表当前状态 |
+| `docs/archive/plans/2026-10-23-implementation-issues.json` | 历史保留 | 核对原基线、索引引用及 38 个唯一编号；旧编排不代表当前状态 |
 | `docs/archive/plans/2026-10-24-team-c-c02-download-contract-candidate.yaml` | 历史保留 | 全文阅读，核对计划、交接及候选测试引用；该候选路径未出现在当前工作台 canonical 契约中 |
 | `docs/plans/2026-10-24-team-c-gateway-clock-candidate.patch` | 历史保留 | 核对两行候选内容及原计划、交接引用；仅为固定历史候选，未应用或重跑验证 |
 | `docs/plans/delivery-issues.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |

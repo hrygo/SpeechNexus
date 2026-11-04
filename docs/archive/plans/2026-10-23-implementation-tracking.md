@@ -139,6 +139,6 @@
 python3 scripts/dev-env/refresh-implementation-tracker.py
 ```
 
-仓库编排材料：[整体计划](https://github.com/hrygo/SpeechNexus/blob/main/docs/archive/plans/2026-10-23-three-team-delivery-plan.md)、[首轮指令](https://github.com/hrygo/SpeechNexus/blob/main/docs/archive/plans/2026-10-23-agent-team-startup-briefs.md)、[编排清单](https://github.com/hrygo/SpeechNexus/blob/main/docs/plans/2026-10-23-implementation-issues.json)和[刷新脚本](https://github.com/hrygo/SpeechNexus/blob/main/scripts/dev-env/refresh-implementation-tracker.py)。三队从包含这些材料的同一集成版本启动；远端 issue 正文也提供自包含任务范围。后续刷新产生的总控正文由维护者核对后显式更新。
+仓库编排材料：[整体计划](https://github.com/hrygo/SpeechNexus/blob/main/docs/archive/plans/2026-10-23-three-team-delivery-plan.md)、[首轮指令](https://github.com/hrygo/SpeechNexus/blob/main/docs/archive/plans/2026-10-23-agent-team-startup-briefs.md)、[编排清单](https://github.com/hrygo/SpeechNexus/blob/main/docs/archive/plans/2026-10-23-implementation-issues.json)和[刷新脚本](https://github.com/hrygo/SpeechNexus/blob/main/scripts/dev-env/refresh-implementation-tracker.py)。三队从包含这些材料的同一集成版本启动；远端 issue 正文也提供自包含任务范围。后续刷新产生的总控正文由维护者核对后显式更新。
 
 代码事实基准 `390f121`；实际开发从总指挥指定集成 SHA 开始。创建 issue/原有契约/测试原型不代表新实施完成。

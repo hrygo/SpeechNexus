@@ -319,7 +319,7 @@ A01 在 G0/G1/G2 交接口/文件/runtime 子项，到 G3 才关闭完整包；B
 
 原生阻塞只记录真正可用整包表达的前置：G0 依赖 A00/B00/C00 基础交接，G1–G5 依次依赖上一 Gate，共 8 条。接口/迁移/绑定等部分制品依赖在矩阵中列明；真实服务/执行/页面的相互引用是联合验收集合，不能制造循环。早期 Gate 是否通过以证据为准，不等待前一 Epic 所有子包关闭。
 
-GitHub issue 的状态/唯一 `status:*` 标签与 Gate 检查项是实施事实来源。[编排清单 JSON](../../plans/2026-10-23-implementation-issues.json)记录编号、唯一父项、具名开工制品、联调伙伴及分段证据；[跟踪矩阵](2026-10-23-implementation-tracking.md)是可刷新的状态快照。每轮派工、集成或 Gate 变更后执行：
+GitHub issue 的状态/唯一 `status:*` 标签与 Gate 检查项是实施事实来源。[编排清单 JSON](2026-10-23-implementation-issues.json)记录编号、唯一父项、具名开工制品、联调伙伴及分段证据；[跟踪矩阵](2026-10-23-implementation-tracking.md)是可刷新的状态快照。每轮派工、集成或 Gate 变更后执行：
 
 ```bash
 python3 scripts/dev-env/refresh-implementation-tracker.py

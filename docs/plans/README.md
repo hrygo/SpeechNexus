@@ -21,7 +21,7 @@
 - [2026-10-24 团队 C C1列表、状态与删除HTTP](../archive/plans/2026-10-24-team-c-c1-management-handoff.md)：3b8052安全集成、完整13项C1操作、作用域游标与版本化删除；Python2414/PG269/Web891，生产装配及完整资格待接入。步骤见[实施计划](../archive/plans/2026-10-24-team-c-c1-management-plan.md)。
 
 - [原整体实施总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)：已迁移的历史 Epic/工作包/Gate 结构，不作为当前派工入口。
-- [2026-10-23 实施跟踪矩阵](../archive/plans/2026-10-23-implementation-tracking.md)：历史快照；原规划及 #142/#149 的范围由新矩阵完整承接。[旧编排清单](2026-10-23-implementation-issues.json)保留原时点结构，当前刷新工具不读取此格式。
+- [2026-10-23 实施跟踪矩阵](../archive/plans/2026-10-23-implementation-tracking.md)：历史快照；原规划及 #142/#149 的范围由新矩阵完整承接。[旧编排清单](../archive/plans/2026-10-23-implementation-issues.json)保留原时点结构，当前刷新工具不读取此格式。
 - [2026-10-23 三团队整体实施计划](../archive/plans/2026-10-23-three-team-delivery-plan.md)：三环境责任、25 个工作包及六阶段关口的历史规划；当前执行按新总控和矩阵。
 - [2026-10-23 agent 三队启动指令](../archive/plans/2026-10-23-agent-team-startup-briefs.md)：历史启动与交接模板，保留原时点输入，不作为当前派工依据。
 - [2026-10-23 团队 A 执行目标](../archive/plans/2026-10-23-team-a-goal.md)：A00–A07 的历史目标、KR 和完整范围；已转交新负责人重新安排，不再作为当前排期。

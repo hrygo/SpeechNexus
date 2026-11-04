@@ -37,7 +37,7 @@ SpeechCommand
   constraints: deadline、可接受的降级、版本前提
 ```
 
-`context` 不是客户端可自由声明的安全上下文；服务端从部署配置和存在的工作空间构建它。workspace_id 只选择内容 / 预算分组，client_reference 是业务关联字符串，都不构成身份或访问权。无 workspace_id 时使用部署默认值；目标规则要求拒绝未知分组。当前能力目录只校验 workspace 标识格式，不验证其存在或按其过滤，见 §1.5。所有字段为 `snake_case`，未知字段、布尔冒充数字、单位错误与未知枚举均拒绝。
+`context` 不是客户端可自由声明的安全上下文；服务端从部署配置和存在的工作空间构建它。workspace_id 只选择内容 / 预算分组，client_reference 是业务关联字符串，都不构成身份或访问权。无 workspace_id 时使用部署默认值；目标规则要求拒绝未知分组。当前能力目录只校验 workspace 标识格式，不验证其存在或按其过滤，见 §1.5。契约字段使用 `snake_case`，要求拒绝未知字段、布尔冒充数字、单位错误与未知枚举；当前同步 TTS 对 `nexus.overrides` 顶层未知键仍会忽略，见 §1.3。
 
 ### 1.2 入口清单
 

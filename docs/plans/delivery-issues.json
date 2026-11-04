@@ -1999,7 +1999,7 @@
         "docs/operations/file-tts-binding-handoff.md"
       ],
       "implementation": "已有 binding 草稿、退役和激活路径，以及发布已有 revision 的运维命令；发布 HTTP 端点尚未实现。",
-      "integration": "发布命令记录操作者提供的资格引用；目录与 Job 读取当前 head，普通退役或回滚不改写已固定 Job。",
+      "integration": "发布命令记录操作者提供的资格引用；目录与默认 Job 读取当前 head，新 TTS Job 显式指定的 binding 也须为当前且未退役；普通退役或回滚不改写已固定 Job。",
       "verification": "未取得当前真实部署验收证据。",
       "gap": "证据引用本身不证明报告内容或真实资格；HTTP 草稿定义缺少目录要求的 binding_id，发布后目录读取仍有缺口；完整生产发布、旧会话 drain 和跨版本业务链仍须验收。",
       "evidence": [
@@ -2027,6 +2027,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
           "label": "产品与架构设计",
           "note": "需求基线；不证明现行实现或运行资格。"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/application/public_jobs.py",
+          "label": "Job 绑定解析",
+          "note": "新 TTS Job 显式 binding 须通过当前版本、退役状态与模型匹配检查"
         }
       ],
       "issues": []

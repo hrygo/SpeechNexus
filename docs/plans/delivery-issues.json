@@ -1183,6 +1183,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/meetings/MeetingHost.tsx",
           "label": "MeetingHost.tsx",
           "note": "固定基线的正式入口或装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/workbench/runtime.py",
+          "label": "Workbench 服务工厂",
+          "note": "静态装配不证明实际配置或端到端运行"
         }
       ],
       "issues": []
@@ -1261,6 +1266,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/assistant/AssistantHost.tsx",
           "label": "AssistantHost.tsx",
           "note": "固定基线的正式入口或装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/workbench/runtime.py",
+          "label": "Workbench 服务工厂",
+          "note": "静态装配不证明实际配置或端到端运行"
         }
       ],
       "issues": []

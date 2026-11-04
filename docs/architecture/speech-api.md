@@ -55,7 +55,7 @@ SpeechCommand
 | `GET /v1/nexus/profiles`、`GET /v1/nexus/profiles/{profile_id}/revisions/{revision}` | 列出与读取可用的不可变预设 |
 | `POST /v1/audio/transcriptions` | multipart 文件 ASR；成功返回 JSON / text 等声明格式 |
 | `POST /v1/audio/speech` | JSON 文本 TTS；首期返回完整音频 |
-| `POST /v1/nexus/jobs` | 创建持久化 ASR/TTS 作业；返回 `202`、Job 和 Location |
+| `POST /v1/nexus/jobs` | 契约支持持久化 ASR、TTS 及音色设计、克隆、预览和验证作业；返回 `202`、Job 和 Location，各类型须分别核验实际装配 |
 | `GET /v1/nexus/jobs`、`GET /v1/nexus/jobs/{job_id}` | 游标分页与作业状态；包含执行版本与结果引用 |
 | `POST /v1/nexus/jobs/{job_id}/cancellations` | 幂等请求取消；进行中为 `202`，已终结为 `200` |
 | `POST /v1/nexus/jobs/{job_id}/retries` | 创建关联原任务的新 Job；不复活旧任务或覆盖旧成品 |
@@ -65,7 +65,7 @@ SpeechCommand
 | `POST /v1/nexus/assets`、`GET /v1/nexus/assets/{asset_id}` | 有界流式上传文件与读取元数据；上传结束校验后才为 `ready` |
 | `GET /v1/nexus/assets/{asset_id}/content` | 按部署功能策略下载 ready 输入，支持 Range；不暴露对象存储 key 或服务器路径 |
 | `GET /v1/nexus/artifacts/{artifact_id}`、`GET .../{artifact_id}/content` | 读取已提交产物的元数据 / 内容；内容支持 Range，过期或已删除返回 `410 artifact_unavailable`，staging 不可见 |
-| `POST /v1/nexus/realtime/sessions` | 验证并固定会话配置，返回 `201`、session_id、连接地址和过期时间 |
+| `POST /v1/nexus/realtime/sessions` | 验证并固定会话配置，返回 `201`、会话 `id`、连接地址和过期时间 |
 | `GET /v1/nexus/realtime/sessions/{session_id}` | 查询会话与 operation 终态；输入确认位置 `input_ack_sample` 是可选字段，首期没有人级 owner 授权 |
 | `POST /v1/nexus/realtime/sessions/{session_id}/cancellations` | 从 HTTP 请求关闭会话，便于 WS 不可达时停止执行 |
 | `WS /v1/realtime?session_id={session_id}` | 预创建会话的实时 ASR 子集与 `nexus.*` 扩展；session_id 不是访问凭据 |

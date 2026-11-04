@@ -125,7 +125,7 @@ SpeechNexus 是面向自有部署网络、按分布式架构设计的企业级�
 | `SpeechCommand` / `VoiceCommand` | ASR/TTS 意图与音色设计 / 克隆 / 试听 / 校验意图；共享准入、执行与 receipt 规则 |
 | `Operation` | 执行身份，供 REST、Job 和实时操作关联；不代表用户身份 |
 | `RealtimeSession` | 有界短期实时连接及执行 owner / 资源租约，不承载业务历史 |
-| `Job` / `JobStep` | 持久任务与可恢复步骤；每次重试有新的 attempt |
+| `Job` / `JobStep` | 持久任务与可恢复步骤；作业内自动重试使用新的 attempt，调用方显式重试创建新 Job |
 | `Artifact` / `ExecutionReceipt` | 明确保存的制品与 requested / effective / observed 执行事实 |
 | `ResourcePool` / `AdmissionLease` | 逻辑资源池、容量事实与带 fencing token 的准入租约 |
 

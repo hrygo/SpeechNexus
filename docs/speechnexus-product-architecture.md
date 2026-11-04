@@ -250,7 +250,7 @@ Job 的取消与重试也是契约目标；当前公开 Job 路由只装配创�
 | `tts.planner.max_wait_ms` | integer，100–3000 | sentence 模式等待完整句界的最大时间；到期不强制合成不安全尾部 |
 | `output.transcript_format` | `json / text / verbose_json / srt / vtt` | 后三者仅在具备相应时间边界证据时开放，不伪造时间戳 |
 | `output.audio_format` | `mp3 / wav / pcm` REST 基线 | 标准 REST 默认 mp3；实时 PCM descriptor 独立协商，其他格式经 encoder / 客户端资格验证后发布 |
-| `output.save_artifacts` | boolean | 普通同步 / 实时默认 false，Job 固定 true；受数据策略约束 |
+| `output.save_artifacts` | boolean | 普通同步 / 实时默认 false；ASR/TTS Job 请求可省略，显式提供只能为 true。当前公开 Job 规范化意图时补入 true；制品保存仍受数据策略约束 |
 
 不引入多个含义相似的 alias。ASR 嵌套 VAD 字段在 OpenAI 投影中映射到官方 turn_detection 结构；统一内部命令只保留一种语义。
 

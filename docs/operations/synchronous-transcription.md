@@ -113,8 +113,9 @@ ready 事实以及成功的 prepare intent。当前受支持的运维入口是
 
 ## 一次同步请求的链路
 
-1. 公开路由解析并校验请求；应用层先读取 workspace、binding 和所需 profile 事实，
-   检查 binding 对请求的支持，再检查上传大小。
+1. 公开路由先限制整个 multipart 请求体（包含字段和边界开销），再解析并校验请求。
+   `transcription_max_upload_bytes` 默认 25 MiB，可配置为 1 KiB–64 MiB；文件本身可用的空间小于请求体上限。
+   应用层随后读取 workspace、binding 和所需 profile 事实，检查 binding 对请求的支持，再检查音频字节大小。
 2. `AudioProbe`（生产为进程内 PyAV，无 `ffprobe` 进程）检查媒体后，应用层生成
    `TranscriptionPlan`，包含已发布的 `binding_publication_id` 与处理后的上限。
    采样率和声道来自音频流的 codec 信息；时长优先使用流或容器声明值，缺少声明时才

@@ -104,3 +104,27 @@ def test_sweep_does_not_defer_unvisited_receipts_when_budget_expires() -> None:
     service = AbortRecoveryService(ingress=ingress, ledger=queue, abort=abort)
     assert service.sweep(limit=10, should_stop=lambda: queue.calls >= 1) == 1
     assert queue.calls == 1
+
+
+def test_unknown_claim_commit_does_not_send_or_recover_immediately() -> None:
+    import pytest
+
+    from speechnexus_gateway.domain.submission import SubmissionOutcomeUnknownError
+
+    _, ledger, engine, ingress, _, request = setup_abort()
+    original_claim = ledger.claim_abort
+
+    def claim_then_lose_reply(request: AbortExecutionRequest) -> SubmissionIntent | None:
+        original_claim(request)
+        raise SubmissionOutcomeUnknownError("synthetic lost commit acknowledgement")
+
+    ledger.claim_abort = claim_then_lose_reply  # type: ignore[method-assign]
+    service = ExecutionAbortService(
+        ingress=ingress, ledger=ledger, abort=engine, durable_abort_enabled=True
+    )
+    with pytest.raises(SubmissionOutcomeUnknownError):
+        service.recover_abort(request)
+    assert engine.calls == []
+    ledger.claim_abort = original_claim  # type: ignore[method-assign]
+    service.recover_abort(request)
+    assert engine.calls == []

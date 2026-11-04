@@ -15,7 +15,7 @@ def upgrade() -> None:
     )
     op.execute(
         "CREATE INDEX gateway_abort_recovery_due ON gateway_abort_intents "
-        "(next_check_at_us, submit_intent_id)"
+        "((COALESCE(NULLIF(next_check_at_us,0),received_at_us)), submit_intent_id)"
     )
 
 

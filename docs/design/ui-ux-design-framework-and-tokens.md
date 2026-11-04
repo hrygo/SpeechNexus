@@ -14,7 +14,7 @@ SpeechNexus 是自部署语音服务底座与创作者平台；各部署单元�
 - **AdminUI (`/admin`)**：面向服务与模型维护者，聚焦“**运行事实管理（Precision Fleet Cockpit）**”，提供拓扑观察、模型绑定、资源预算、配额租约、持久任务与全链路诊断。
 - **个人语音工作台 (`/workbench`)**：面向最终业务使用者，聚焦“**声学创作者工坊（Next-Gen Audio Atelier）**”，提供录音转写、长文配音、实时会议、同传字幕、音色设计与有声书多角色编排。
 
-本规范描述统一 UI/UX 设计方向和三层设计 Token（Design Tokens）体系，并参考 VoiceStudio 的工程与交互经验。功能清单、交互草图和下文 CSS 片段是设计目标或示例，不表示对应页面、控制或能力已经实现；实际状态以代码、机器契约及[交付跟踪](../plans/delivery-tracking.md)为准。生效的 Token 值以 `web/shared/src/ui/styles.css`、`web/shared/src/tokens/tokens.json` 和 `web/shared/src/tokens/index.ts` 为准。
+本规范描述统一 UI/UX 设计方向和三层设计 Token（Design Tokens）体系，并参考 VoiceStudio 的工程与交互经验。功能清单、交互草图和下文 CSS 片段是设计目标或示例，不表示对应页面、控制或能力已经实现；实际状态以代码、机器契约及[交付跟踪](../plans/delivery-tracking.md)为准。生效的 Token 值以 `web/shared/src/ui/styles.css`、`web/shared/src/tokens/tokens.json` 和 `web/shared/src/tokens/index.ts` 为准。注册表使用 `$type` / `$value` 保存 CSS 字符串，但不是完整 DTCG 交换格式；校验器不支持 `$ref`、`$extends` 或花括号别名，不能直接当作通用 DTCG 制品导入。
 
 ---
 

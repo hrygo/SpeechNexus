@@ -30,8 +30,10 @@ from speechnexus_backend.speech.domain.publications import (
     PublicationUnavailableError,
 )
 from speechnexus_backend.speech.domain.speech_synthesis import (
+    MAX_AUDIO_MS,
     MAX_SPEECH_INSTRUCTIONS_CHARS,
     MAX_SPEECH_TEXT_CHARS,
+    MIN_AUDIO_MS,
     SpeechAudio,
     SpeechCommand,
     SpeechFormat,
@@ -405,10 +407,13 @@ async def test_deadline_exhaustion_is_a_gateway_timeout() -> None:
 async def test_one_hundred_millisecond_request_cannot_return_two_hundred() -> None:
     chain, synth = service(
         synth=Synthesizer(pcm(duration_ms=200)),
-        limits=SpeechLimits(max_output_audio_ms=100),
+        limits=SpeechLimits(max_output_audio_ms=600_000),
     )
     async with client(chain) as http:
-        response = await http.post("/v1/audio/speech", json={**REQUEST, "response_format": "pcm"})
+        response = await http.post(
+            "/v1/audio/speech",
+            json={**REQUEST, "response_format": "pcm", "nexus": {"max_output_audio_ms": 100}},
+        )
 
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "speech_output_limit_exceeded"
@@ -417,6 +422,7 @@ async def test_one_hundred_millisecond_request_cannot_return_two_hundred() -> No
     assert plan.max_audio_ms == 100
     assert plan.max_source_pcm_bytes == 4800
     assert plan.max_payload_bytes == 4800
+    assert len(synth.plans) == 1
 
 
 def test_request_ceiling_tightens_the_synthesizer_policy() -> None:
@@ -430,6 +436,81 @@ def test_request_ceiling_tightens_the_synthesizer_policy() -> None:
     plan = synth.plans[0]
     assert plan.max_audio_ms == 100
     assert plan.max_payload_bytes == 4800
+
+
+@pytest.mark.parametrize("name", ["pcm", "wav", "mp3"])
+@pytest.mark.parametrize("duration_ms", [100, 200])
+async def test_public_ceiling_applies_to_each_delivery(name: str, duration_ms: int) -> None:
+    audio = (
+        pcm(duration_ms)
+        if name == "pcm"
+        else wav(duration_ms)
+        if name == "wav"
+        else replace(mp3(), duration_ms=duration_ms)
+    )
+    chain, synth = service(synth=Synthesizer(audio))
+    async with client(chain) as http:
+        response = await http.post(
+            "/v1/audio/speech",
+            json={**REQUEST, "response_format": name, "nexus": {"max_output_audio_ms": 100}},
+        )
+    assert response.status_code == (200 if duration_ms == 100 else 503)
+    assert len(synth.plans) == 1
+    assert synth.plans[0].max_audio_ms == 100
+    if duration_ms == 100:
+        assert response.content == audio.payload
+    else:
+        assert response.json()["error"]["code"] == "speech_output_limit_exceeded"
+        assert response.headers["content-type"].startswith("application/json")
+
+
+@pytest.mark.parametrize("name", ["pcm", "wav", "mp3"])
+async def test_public_ceiling_rejects_one_extra_sample_or_encoded_byte(name: str) -> None:
+    audio = pcm(100) if name == "pcm" else wav(100) if name == "wav" else mp3()
+    # Duration metadata alone would accept this. Check the encoded byte bound too.
+    audio = replace(
+        audio,
+        payload=(audio.payload + b"\x00\x00")
+        if name != "mp3"
+        else audio.payload[:4] + bytes(9393 - 4),
+        duration_ms=100,
+    )
+    chain, synth = service(synth=Synthesizer(audio))
+    async with client(chain) as http:
+        response = await http.post(
+            "/v1/audio/speech",
+            json={**REQUEST, "response_format": name, "nexus": {"max_output_audio_ms": 100}},
+        )
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "speech_output_limit_exceeded"
+    assert len(synth.plans) == 1
+
+
+@pytest.mark.parametrize("value", [None, True, "100", 99, 3600001, 100.5, {}, []])
+async def test_invalid_public_ceiling_never_dispatches(value: Any) -> None:
+    chain, synth = service()
+    async with client(chain) as http:
+        response = await http.post(
+            "/v1/audio/speech", json={**REQUEST, "nexus": {"max_output_audio_ms": value}}
+        )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_request"
+    assert response.json()["error"]["param"] == "nexus.max_output_audio_ms"
+    assert synth.plans == []
+
+
+async def test_deployment_ceiling_is_stricter_than_the_public_request() -> None:
+    chain, synth = service(
+        synth=Synthesizer(pcm(200)), limits=SpeechLimits(max_output_audio_ms=100)
+    )
+    async with client(chain) as http:
+        response = await http.post(
+            "/v1/audio/speech",
+            json={**REQUEST, "response_format": "pcm", "nexus": {"max_output_audio_ms": 200}},
+        )
+    assert response.status_code == 503
+    assert synth.plans[0].max_audio_ms == 100
+    assert synth.plans[0].max_source_pcm_bytes == 4800
 
 
 def test_request_ceiling_never_exceeds_the_deployment_ceiling() -> None:
@@ -600,6 +681,8 @@ def test_surface_constants_match_the_frozen_contract() -> None:
         "profile_revision": ["profile_id"],
     }
     assert nexus["properties"]["deadline_ms"]["maximum"] == surface.DEADLINE_MAX_MS
+    assert nexus["properties"]["max_output_audio_ms"]["minimum"] == MIN_AUDIO_MS
+    assert nexus["properties"]["max_output_audio_ms"]["maximum"] == MAX_AUDIO_MS
 
     overrides = schemas["SpeechOverrides"]
     assert set(overrides["properties"]) == surface.OVERRIDE_FIELDS
@@ -653,3 +736,16 @@ async def test_disconnect_records_server_execution_identity(
         await surface._create(Service(), Request(), 65536, 5)  # type: ignore[arg-type]
     assert calls == [(execution[0], "stream_disconnected")]
     assert execution[0] != "client-trace"
+
+
+@pytest.mark.parametrize("value", [100, 100.0, 3_600_000])
+async def test_canonical_integer_ceiling_is_translated_without_relaxing(value: int | float) -> None:
+    chain, synth = service(synth=Synthesizer(pcm(100)))
+    async with client(chain) as http:
+        response = await http.post(
+            "/v1/audio/speech",
+            json={**REQUEST, "response_format": "pcm", "nexus": {"max_output_audio_ms": value}},
+        )
+    assert response.status_code == 200
+    assert synth.plans[0].max_audio_ms == min(int(value), chain.limits.max_output_audio_ms)
+    assert type(synth.plans[0].max_audio_ms) is int

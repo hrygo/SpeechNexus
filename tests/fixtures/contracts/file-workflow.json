@@ -3351,6 +3351,194 @@
           }
         ]
       }
+    },
+    {
+      "id": "speech-ceiling-omitted",
+      "schema": "SpeechRequest",
+      "valid": true,
+      "value": {
+        "model": "tts-quality",
+        "voice": "voice-demo",
+        "input": "Synthetic speech."
+      }
+    },
+    {
+      "id": "speech-ceiling-empty-nexus",
+      "schema": "SpeechRequest",
+      "valid": true,
+      "value": {
+        "model": "tts-quality",
+        "voice": "voice-demo",
+        "input": "Synthetic speech.",
+        "nexus": {}
+      }
+    },
+    {
+      "id": "speech-ceiling-minimum",
+      "schema": "SpeechRequest",
+      "valid": true,
+      "value": {
+        "model": "tts-quality",
+        "voice": "voice-demo",
+        "input": "Synthetic speech.",
+        "nexus": {
+          "max_output_audio_ms": 100
+        }
+      }
+    },
+    {
+      "id": "speech-ceiling-maximum",
+      "schema": "SpeechRequest",
+      "valid": true,
+      "value": {
+        "model": "tts-quality",
+        "voice": "voice-demo",
+        "input": "Synthetic speech.",
+        "nexus": {
+          "max_output_audio_ms": 3600000
+        }
+      }
+    },
+    {
+      "id": "speech-ceiling-below",
+      "schema": "SpeechRequest",
+      "valid": false,
+      "value": {
+        "model": "tts-quality",
+        "voice": "voice-demo",
+        "input": "Synthetic speech.",
+        "nexus": {
+          "max_output_audio_ms": 99
+        }
+      }
+    },
+    {
+      "id": "speech-ceiling-above",
+      "schema": "SpeechRequest",
+      "valid": false,
+      "value": {
+        "model": "tts-quality",
+        "voice": "voice-demo",
+        "input": "Synthetic speech.",
+        "nexus": {
+          "max_output_audio_ms": 3600001
+        }
+      }
+    },
+    {
+      "id": "speech-ceiling-fraction",
+      "schema": "SpeechRequest",
+      "valid": false,
+      "value": {
+        "model": "tts-quality",
+        "voice": "voice-demo",
+        "input": "Synthetic speech.",
+        "nexus": {
+          "max_output_audio_ms": 100.5
+        }
+      }
+    },
+    {
+      "id": "speech-ceiling-boolean",
+      "schema": "SpeechRequest",
+      "valid": false,
+      "value": {
+        "model": "tts-quality",
+        "voice": "voice-demo",
+        "input": "Synthetic speech.",
+        "nexus": {
+          "max_output_audio_ms": true
+        }
+      }
+    },
+    {
+      "id": "speech-ceiling-string",
+      "schema": "SpeechRequest",
+      "valid": false,
+      "value": {
+        "model": "tts-quality",
+        "voice": "voice-demo",
+        "input": "Synthetic speech.",
+        "nexus": {
+          "max_output_audio_ms": "100"
+        }
+      }
+    },
+    {
+      "id": "speech-ceiling-null",
+      "schema": "SpeechRequest",
+      "valid": false,
+      "value": {
+        "model": "tts-quality",
+        "voice": "voice-demo",
+        "input": "Synthetic speech.",
+        "nexus": {
+          "max_output_audio_ms": null
+        }
+      }
+    },
+    {
+      "id": "speech-ceiling-zero",
+      "schema": "SpeechRequest",
+      "valid": false,
+      "value": {
+        "model": "tts-quality",
+        "voice": "voice-demo",
+        "input": "Synthetic speech.",
+        "nexus": {
+          "max_output_audio_ms": 0
+        }
+      }
+    },
+    {
+      "id": "speech-ceiling-negative",
+      "schema": "SpeechRequest",
+      "valid": false,
+      "value": {
+        "model": "tts-quality",
+        "voice": "voice-demo",
+        "input": "Synthetic speech.",
+        "nexus": {
+          "max_output_audio_ms": -100
+        }
+      }
+    },
+    {
+      "id": "speech-ceiling-top-level",
+      "schema": "SpeechRequest",
+      "valid": false,
+      "value": {
+        "model": "tts-quality",
+        "voice": "voice-demo",
+        "input": "Synthetic speech.",
+        "max_output_audio_ms": 100
+      }
+    },
+    {
+      "id": "speech-ceiling-unknown-nexus",
+      "schema": "SpeechRequest",
+      "valid": false,
+      "value": {
+        "model": "tts-quality",
+        "voice": "voice-demo",
+        "input": "Synthetic speech.",
+        "nexus": {
+          "max_audio_ms": 100
+        }
+      }
+    },
+    {
+      "id": "speech-ceiling-integral-number",
+      "schema": "SpeechRequest",
+      "valid": true,
+      "value": {
+        "model": "tts-quality",
+        "voice": "voice-demo",
+        "input": "Synthetic speech.",
+        "nexus": {
+          "max_output_audio_ms": 100.0
+        }
+      }
     }
   ]
 }

@@ -202,10 +202,9 @@ class SpeechSynthesis:
     ) -> SpeechAudio:
         """Resolve, tighten and execute one request; partial audio never escapes.
 
-        ``max_output_audio_ms`` is the request's own ceiling. The frozen
-        ``SpeechRequest`` schema has no field for it yet, so the HTTP boundary
-        passes the deployment ceiling; a later contract field must be folded in
-        here with ``min`` and never replace the deployment ceiling.
+        The public command's ceiling and an optional internal caller ceiling
+        only tighten the deployment policy. The resolved plan freezes the
+        effective limit before admission and dispatch.
         """
         workspace = self._facts.workspace(identifier(command.workspace_id))
         if workspace is None:
@@ -275,12 +274,14 @@ class SpeechSynthesis:
         max_output_audio_ms: int | None,
     ) -> SpeechPlan:
         ceiling = self._limits.max_output_audio_ms
-        if max_output_audio_ms is not None:
-            if type(max_output_audio_ms) is not int or max_output_audio_ms < MIN_AUDIO_MS:
+        for requested in (command.max_output_audio_ms, max_output_audio_ms):
+            if requested is None:
+                continue
+            if type(requested) is not int or not MIN_AUDIO_MS <= requested <= MAX_AUDIO_MS:
                 raise SpeechUnsupportedError(
-                    "The request audio ceiling is below one frame.", param="max_output_audio_ms"
+                    "The request audio ceiling is out of range.", param="nexus.max_output_audio_ms"
                 )
-            ceiling = min(ceiling, max_output_audio_ms)
+            ceiling = min(ceiling, requested)
         instruction_ceiling = min(
             MAX_SPEECH_INSTRUCTIONS_CHARS, self._limits.max_instructions_chars
         )

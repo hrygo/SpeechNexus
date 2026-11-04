@@ -1,9 +1,8 @@
 """Public synchronous speech: strict request parsing, complete audio or a failure.
 
-The frozen ``POST /v1/audio/speech`` body is validated here field by field
-because no generated Python binding covers this operation. The module-level
-constants are asserted against ``contracts/speech-openapi.yaml`` by a unit test,
-so a contract change fails the build instead of drifting silently.
+The generated SpeechRequest validator checks the canonical schema. Field-level
+parsing preserves precise public error parameters and translates into domain
+values; its constants are asserted against the source contract by a unit test.
 """
 
 from __future__ import annotations
@@ -17,6 +16,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Request
+from speechnexus_contracts import parse
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import ClientDisconnect
 from starlette.responses import Response
@@ -39,8 +39,10 @@ from speechnexus_backend.speech.application.speech_synthesis import (
 )
 from speechnexus_backend.speech.domain.publications import PublicationUnavailableError
 from speechnexus_backend.speech.domain.speech_synthesis import (
+    MAX_AUDIO_MS,
     MAX_SPEECH_INSTRUCTIONS_CHARS,
     MAX_SPEECH_TEXT_CHARS,
+    MIN_AUDIO_MS,
     SpeechCommand,
     SpeechFormat,
     identifier,
@@ -86,6 +88,7 @@ NEXUS_FIELDS = frozenset(
         "pronunciation_revision",
         "overrides",
         "deadline_ms",
+        "max_output_audio_ms",
     }
 )
 OVERRIDE_FIELDS = frozenset({"tts"})
@@ -179,12 +182,24 @@ def _revision(payload: dict[str, Any], name: str) -> int | None:
     return int(value)
 
 
-def _integer(payload: dict[str, Any], name: str, minimum: int, maximum: int) -> int | None:
+def _integer(
+    payload: dict[str, Any],
+    name: str,
+    minimum: int,
+    maximum: int,
+    *,
+    prefix: str = "",
+    integral_number: bool = False,
+) -> int | None:
     if name not in payload:
         return None
     value = payload[name]
+    # JSON Schema integers include integral JSON numbers such as 100.0. Translate
+    # that exact value to a domain int without accepting strings or fractions.
+    if integral_number and isinstance(value, float) and value.is_integer():
+        value = int(value)
     if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
-        raise _InvalidRequestError(name)
+        raise _InvalidRequestError(prefix + name)
     return value
 
 
@@ -272,6 +287,14 @@ def _nexus(nexus: dict[str, Any]) -> dict[str, Any]:
         "voice_revision": _revision(nexus, "voice_revision"),
         "pronunciation_revision": _revision(nexus, "pronunciation_revision"),
         "deadline_ms": deadline_ms,
+        "max_output_audio_ms": _integer(
+            nexus,
+            "max_output_audio_ms",
+            MIN_AUDIO_MS,
+            MAX_AUDIO_MS,
+            prefix="nexus.",
+            integral_number=True,
+        ),
         "language": tts.get("language") if tts else None,
         "seed": tts.get("seed") if tts else None,
         "planner_max_chars": tts.get("planner_max_chars") if tts else None,
@@ -328,6 +351,7 @@ async def _create(
             raw.decode("utf-8"), object_pairs_hook=_object, parse_constant=_constant
         )
         command = _command(payload)
+        parse("SpeechRequest", payload)
     except _UnsupportedParameterError as error:
         return speech_error("unsupported_parameter", request_id, param=error.param)
     except _InvalidRequestError as error:

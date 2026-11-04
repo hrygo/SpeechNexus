@@ -79,6 +79,7 @@ class SpeechCommand:
     planner_max_wait_ms: int | None = None
     deadline_ms: int | None = None
     client_reference: str | None = None
+    max_output_audio_ms: int | None = None
 
     def __post_init__(self) -> None:
         if type(self.model) is not str or not 1 <= len(self.model) <= 128:
@@ -146,6 +147,11 @@ class SpeechCommand:
             type(self.client_reference) is not str or len(self.client_reference) > 256
         ):
             raise ValueError("Invalid speech client reference")
+        if self.max_output_audio_ms is not None and (
+            type(self.max_output_audio_ms) is not int
+            or not MIN_AUDIO_MS <= self.max_output_audio_ms <= MAX_AUDIO_MS
+        ):
+            raise ValueError("Invalid speech audio ceiling")
 
 
 @dataclass(frozen=True, slots=True)

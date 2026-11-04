@@ -423,7 +423,13 @@ def _exercise_original_gateway_recovery(
                     "media_type": "audio/wav",
                     "reference": {"workspace_id": request["workspace_id"], "byte_length": len(wav)},
                     "storage_version": "version-test",
-                    "audio": {"sample_rate_hz": 24000, "channels": 1, "duration_ms": 10},
+                    "audio": {
+                        "sample_rate_hz": 24000,
+                        "channels": 1,
+                        "source_pcm_samples": len(pcm) // 2,
+                        "duration_ms": 10,
+                        "source_pcm_digest": "sha256:" + hashlib.sha256(pcm).hexdigest(),
+                    },
                 },
             }
 

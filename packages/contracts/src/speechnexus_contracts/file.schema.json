@@ -3,6 +3,7 @@
   "title": "FileContract",
   "x-nexus-bindings-version": "0.1.0",
   "x-nexus-entrypoints": [
+    "SpeechRequest",
     "JobCreateRequest",
     "Job",
     "JobList",
@@ -20,6 +21,175 @@
     "ModelList"
   ],
   "$defs": {
+    "SpeechRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "input", "voice"],
+      "properties": {
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "input": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "voice": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Published voice ID. OpenAI hosted voice names are not implied."
+        },
+        "instructions": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "response_format": {
+          "$ref": "#/$defs/AudioFormat",
+          "default": "mp3"
+        },
+        "speed": {
+          "type": "number",
+          "minimum": 0.25,
+          "maximum": 4.0,
+          "default": 1.0
+        },
+        "stream_format": {
+          "type": "string",
+          "enum": ["audio"],
+          "default": "audio",
+          "description": "P0 supports only complete audio. `sse` is rejected as unsupported."
+        },
+        "nexus": {
+          "$ref": "#/$defs/SpeechNexusOptions"
+        }
+      }
+    },
+    "AudioFormat": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioFormat"
+    },
+    "External_shared_capability_domains_schema_json_AudioFormat": {
+      "type": "string",
+      "enum": ["mp3", "wav", "pcm"]
+    },
+    "SpeechNexusOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "dependentRequired": {
+        "profile_id": ["profile_revision"],
+        "profile_revision": ["profile_id"]
+      },
+      "properties": {
+        "workspace_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "client_reference": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "profile_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "profile_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "voice_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "pronunciation_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "overrides": {
+          "$ref": "#/$defs/SpeechOverrides"
+        },
+        "deadline_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600000
+        },
+        "max_output_audio_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3600000,
+          "description": "Optional request ceiling in milliseconds, including all source audio.\nOmission retains the deployment limit. The request only tightens\ndeployment and approved binding limits; it never increases them.\nInvalid values return 400 invalid_request before execution dispatch.\nSource samples are bounded by floor(limit * sample_rate_hz / 1000);\nencoded delivery must also fit its payload limit. Exceeding either\nbound fails the complete request; backend limit checks return\n503 speech_output_limit_exceeded and gateway refusals retain their\nexisting failure responses. No partial audio, truncation, publication\nor automatic resynthesis is allowed.\nThe effective ceiling is frozen in the original execution request\nand retained for original-identity recovery.\n"
+        }
+      }
+    },
+    "Identifier": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+    },
+    "External_shared_identifiers_schema_json_Identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$",
+      "minLength": 3,
+      "maxLength": 128,
+      "description": "Opaque stable resource identifier. Prefixes are descriptive, not authorization claims."
+    },
+    "Revision": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+    },
+    "External_shared_identifiers_schema_json_Revision": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,18}$",
+      "maxLength": 19,
+      "description": "Monotonic decimal revision represented as a string."
+    },
+    "SpeechOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tts": {
+          "$ref": "#/$defs/RestTtsOverrides"
+        }
+      }
+    },
+    "RestTtsOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "REST speech always returns one complete audio response. Chunked delivery\nis available only through realtime sessions and durable Jobs. Standard\n`speed`, `instructions`, and `nexus.pronunciation_revision` are the\ncanonical REST fields and cannot be duplicated here.\n",
+      "properties": {
+        "language": {
+          "type": "string",
+          "maxLength": 35
+        },
+        "text_commit_mode": {
+          "$ref": "#/$defs/TextCommitMode"
+        },
+        "audio_delivery": {
+          "const": "complete"
+        },
+        "seed": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "planner": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_chars": {
+              "type": "integer",
+              "minimum": 40,
+              "maximum": 400
+            },
+            "max_wait_ms": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 3000
+            }
+          }
+        }
+      }
+    },
+    "TextCommitMode": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_TextCommitMode"
+    },
+    "External_shared_capability_domains_schema_json_TextCommitMode": {
+      "type": "string",
+      "enum": ["explicit", "sentence"]
+    },
     "JobCreateRequest": {
       "oneOf": [
         {
@@ -101,16 +271,6 @@
       "type": "string",
       "enum": ["asr", "tts", "voice_design", "voice_clone", "voice_preview", "voice_validation"]
     },
-    "Identifier": {
-      "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
-    },
-    "External_shared_identifiers_schema_json_Identifier": {
-      "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$",
-      "minLength": 3,
-      "maxLength": 128,
-      "description": "Opaque stable resource identifier. Prefixes are descriptive, not authorization claims."
-    },
     "ResourceReference": {
       "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
     },
@@ -126,12 +286,6 @@
           "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
         }
       }
-    },
-    "External_shared_identifiers_schema_json_Revision": {
-      "type": "string",
-      "pattern": "^[1-9][0-9]{0,18}$",
-      "maxLength": 19,
-      "description": "Monotonic decimal revision represented as a string."
     },
     "JobOverrides": {
       "type": "object",
@@ -287,10 +441,6 @@
         }
       }
     },
-    "External_shared_capability_domains_schema_json_TextCommitMode": {
-      "type": "string",
-      "enum": ["explicit", "sentence"]
-    },
     "External_shared_capability_domains_schema_json_AudioDeliveryMode": {
       "type": "string",
       "enum": ["complete", "chunked"]
@@ -326,9 +476,6 @@
           "$ref": "#/$defs/Revision"
         }
       }
-    },
-    "Revision": {
-      "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
     },
     "AsrJobInput": {
       "type": "object",
@@ -434,13 +581,6 @@
           "default": true
         }
       }
-    },
-    "AudioFormat": {
-      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioFormat"
-    },
-    "External_shared_capability_domains_schema_json_AudioFormat": {
-      "type": "string",
-      "enum": ["mp3", "wav", "pcm"]
     },
     "VoiceDesignJobCreate": {
       "allOf": [
@@ -3644,6 +3784,9 @@
     }
   },
   "anyOf": [
+    {
+      "$ref": "#/$defs/SpeechRequest"
+    },
     {
       "$ref": "#/$defs/JobCreateRequest"
     },

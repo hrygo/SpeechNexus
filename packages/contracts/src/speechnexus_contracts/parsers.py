@@ -17,8 +17,13 @@ from .models import (
     OperationCancellation,
     PronunciationCreateRequest,
     PronunciationRevision,
+    SpeechRequest,
     Transcription,
 )
+
+
+@overload
+def parse(name: Literal["SpeechRequest"], value: Any) -> SpeechRequest: ...
 
 
 @overload

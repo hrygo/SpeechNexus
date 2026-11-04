@@ -1025,6 +1025,21 @@ export interface components {
       pronunciation_revision?: components["schemas"]["Revision"];
       overrides?: components["schemas"]["SpeechOverrides"];
       deadline_ms?: number;
+      /**
+       * @description Optional request ceiling in milliseconds, including all source audio.
+       *     Omission retains the deployment limit. The request only tightens
+       *     deployment and approved binding limits; it never increases them.
+       *     Invalid values return 400 invalid_request before execution dispatch.
+       *     Source samples are bounded by floor(limit * sample_rate_hz / 1000);
+       *     encoded delivery must also fit its payload limit. Exceeding either
+       *     bound fails the complete request; backend limit checks return
+       *     503 speech_output_limit_exceeded and gateway refusals retain their
+       *     existing failure responses. No partial audio, truncation, publication
+       *     or automatic resynthesis is allowed.
+       *     The effective ceiling is frozen in the original execution request
+       *     and retained for original-identity recovery.
+       */
+      max_output_audio_ms?: number;
     };
     TranscriptionNexusOptions: {
       workspace_id?: components["schemas"]["Identifier"];

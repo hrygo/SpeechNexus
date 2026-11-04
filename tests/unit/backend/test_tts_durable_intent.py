@@ -7,7 +7,10 @@ import pytest
 from speechnexus_contracts.execution_models import SubmitExecutionRequest
 
 from speechnexus_backend.speech.application.admission import AdmissionService
-from speechnexus_backend.speech.application.speech_synthesis import SpeechUnavailableError
+from speechnexus_backend.speech.application.speech_synthesis import (
+    SpeechOutputLimitExceededError,
+    SpeechUnavailableError,
+)
 from speechnexus_backend.speech.application.transcription import AdmittedExecution
 from speechnexus_backend.speech.domain.admission import (
     AdmissionFact,
@@ -111,10 +114,11 @@ class Transactions:
 
 
 def test_restart_recovers_stored_plan_and_rejects_changed_intent() -> None:
+    bounded = replace(plan(), max_audio_ms=100, max_source_pcm_bytes=4800, max_payload_bytes=4800)
     original = {
         "kind": "tts_file",
-        "plan": asdict(plan()),
-        "gateway_request": build_tts_submit(plan(), execution()),
+        "plan": asdict(bounded),
+        "gateway_request": build_tts_submit(bounded, execution()),
     }
     adapter = PostgresTtsAdmission(
         cast(Any, None),
@@ -123,10 +127,12 @@ def test_restart_recovers_stored_plan_and_rejects_changed_intent() -> None:
         cast(Any, None),
     )
     restored, request = adapter.recover("request-test")
-    assert restored == plan()
+    assert restored == bounded
     assert request == original["gateway_request"]
+    assert request["max_output_audio_ms"] == 100
+    assert request["sample_rate_hz"] == 24000
     with pytest.raises(SpeechUnavailableError):
-        adapter.admit(replace(plan(), text="changed"))
+        adapter.admit(replace(bounded, max_audio_ms=200))
 
 
 class Admission:
@@ -195,17 +201,24 @@ class Gateway:
 
 
 def test_lost_submit_reply_recovers_original_without_second_execution() -> None:
+    bounded = replace(plan(), max_audio_ms=100, max_source_pcm_bytes=4800, max_payload_bytes=4800)
+
+    class OriginalAdmission(Admission):
+        def recover(self, request_id: str) -> tuple[SpeechPlan, SubmitExecutionRequest]:
+            return bounded, self.admit(bounded)
+
     gateway = Gateway()
     adapter = GatewaySynthesizer(
-        cast(GatewayExecutionClient, gateway), Admission(), cast(Any, object())
+        cast(GatewayExecutionClient, gateway), OriginalAdmission(), cast(Any, object())
     )
     try:
         with pytest.raises(SpeechUnavailableError):
-            adapter.synthesize(plan())
+            adapter.synthesize(bounded)
         with pytest.raises(SpeechUnavailableError):
             adapter.recover("request-test", timeout_seconds=1)
         assert len(gateway.submissions) == 1
-        assert gateway.submissions[0] == build_tts_submit(plan(), execution())
+        assert gateway.submissions[0] == build_tts_submit(bounded, execution())
+        assert gateway.submissions[0]["max_output_audio_ms"] == 100
     finally:
         adapter.close()
 
@@ -263,11 +276,15 @@ def test_commit_then_lost_admission_reply_reloads_full_frozen_request() -> None:
     adapter = PostgresTtsAdmission(
         Facts(), AdmissionService(store), store, recipe, default_language="en"
     )
-    requested = replace(plan(), language=None)
+    requested = replace(
+        plan(), language=None, max_audio_ms=100, max_source_pcm_bytes=4800, max_payload_bytes=4800
+    )
     request = adapter.admit(requested)
     assert store.body is not None
     assert store.body["gateway_request"] == request
     assert store.body["plan"]["language"] == "en"
+    assert store.body["plan"]["max_audio_ms"] == request["max_output_audio_ms"] == 100
+    assert store.body["plan"]["max_source_pcm_bytes"] == 4800
     assert store.body["voice"] == {
         "id": "voice-test",
         "revision": 2,
@@ -279,6 +296,8 @@ def test_commit_then_lost_admission_reply_reloads_full_frozen_request() -> None:
     )
     assert restored.admit(requested) == request
     assert restored.recover("request-test")[1] == request
+    with pytest.raises(SpeechUnavailableError):
+        restored.admit(replace(requested, max_audio_ms=200))
     assert store.calls == 1
 
 
@@ -450,7 +469,10 @@ def test_new_admission_locks_before_retirement_and_qualification(
 
 
 @pytest.mark.parametrize("wrong_digest", [False, True])
-def test_gateway_reads_complete_audio_for_admitted_identity(wrong_digest: bool) -> None:
+@pytest.mark.parametrize("source_samples", [2400, 2401])
+def test_gateway_reads_complete_audio_for_admitted_identity(
+    wrong_digest: bool, source_samples: int
+) -> None:
     from speechnexus_gateway.interfaces.execution_payloads import (
         derived_stream_id_for,
         submit_request_from_payload,
@@ -498,26 +520,39 @@ def test_gateway_reads_complete_audio_for_admitted_identity(wrong_digest: bool) 
                     "reference": {"workspace_id": "workspace-test", "byte_length": len(payload)},
                     "storage_version": "version-test",
                     "media_type": "audio/pcm",
-                    "audio": {"sample_rate_hz": 24000, "channels": 1, "duration_ms": 100},
+                    "audio": {
+                        "sample_rate_hz": 24000,
+                        "channels": 1,
+                        "duration_ms": 100,
+                        "source_pcm_samples": source_samples,
+                    },
                 },
             }
+
+    reads: list[str] = []
 
     class Results:
         def read(self, reference: Any, storage_version: str) -> bytes:
             assert storage_version == "version-test"
+            reads.append(storage_version)
             return payload
 
     gateway = SuccessGateway()
     adapter = GatewaySynthesizer(cast(GatewayExecutionClient, gateway), Admission(), Results())
+    bounded = replace(plan(), max_audio_ms=100, max_source_pcm_bytes=4800, max_payload_bytes=4800)
     try:
         if wrong_digest:
             with pytest.raises(SpeechUnavailableError):
-                adapter.synthesize(plan())
+                adapter.synthesize(bounded)
+        elif source_samples > 2400:
+            with pytest.raises(SpeechOutputLimitExceededError):
+                adapter.synthesize(bounded)
         else:
-            audio = adapter.synthesize(plan())
+            audio = adapter.synthesize(bounded)
             assert audio.payload == payload
             assert audio.duration_ms == 100
         assert len(gateway.submissions) == 1
+        assert len(reads) == (0 if wrong_digest or source_samples > 2400 else 1)
     finally:
         adapter.close()
 
@@ -699,7 +734,12 @@ def test_expired_original_is_queried_before_recovery_decision(state: str) -> Non
                     "reference": {"workspace_id": "workspace-test", "byte_length": len(payload)},
                     "storage_version": "version-test",
                     "media_type": "audio/pcm",
-                    "audio": {"sample_rate_hz": 24000, "channels": 1, "duration_ms": 100},
+                    "audio": {
+                        "sample_rate_hz": 24000,
+                        "channels": 1,
+                        "duration_ms": 100,
+                        "source_pcm_samples": 2400,
+                    },
                 },
             }
 
@@ -764,7 +804,12 @@ def test_recovery_budget_bounds_original_query_and_result_reads(phase: str) -> N
                     "reference": {"workspace_id": "workspace-test", "byte_length": len(payload)},
                     "storage_version": "version-test",
                     "media_type": "audio/pcm",
-                    "audio": {"sample_rate_hz": 24000, "channels": 1, "duration_ms": 100},
+                    "audio": {
+                        "sample_rate_hz": 24000,
+                        "channels": 1,
+                        "duration_ms": 100,
+                        "source_pcm_samples": 2400,
+                    },
                 },
             }
 

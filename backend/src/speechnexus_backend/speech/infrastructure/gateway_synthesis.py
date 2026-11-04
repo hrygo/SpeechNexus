@@ -16,6 +16,7 @@ from speechnexus_backend.speech.application.speech_synthesis import (
     SpeechDeadlineExceededError,
     SpeechEngineError,
     SpeechOutputInvalidError,
+    SpeechOutputLimitExceededError,
     SpeechUnavailableError,
 )
 from speechnexus_backend.speech.domain.speech_synthesis import SpeechAudio, SpeechPlan
@@ -250,13 +251,14 @@ class GatewaySynthesizer:
             audio = staging["audio"]
             if staging["media_type"] != plan.response_format.media_type:
                 raise SpeechOutputInvalidError("Speech result format differs from the request")
+            if audio["sample_rate_hz"] != plan.sample_rate_hz or audio["channels"] != plan.channels:
+                raise SpeechOutputInvalidError("Speech result clock differs from the request")
             if (
-                audio["sample_rate_hz"] != plan.sample_rate_hz
-                or audio["channels"] != plan.channels
-                or audio["duration_ms"] > plan.max_audio_ms
+                audio["duration_ms"] > plan.max_audio_ms
+                or audio["source_pcm_samples"] * 2 > plan.max_source_pcm_bytes
                 or staging["reference"]["byte_length"] > plan.max_payload_bytes
             ):
-                raise SpeechOutputInvalidError("Speech result exceeds the request bounds")
+                raise SpeechOutputLimitExceededError("Speech result exceeds the request bounds")
             payload = await asyncio.to_thread(
                 self._results.read, staging["reference"], staging["storage_version"]
             )

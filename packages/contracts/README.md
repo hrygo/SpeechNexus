@@ -98,6 +98,17 @@ and JSON Schema, including admin, workbench and internal protocols. Its diff
 shows source changes; it is not a compatibility verdict. The existing OpenAI
 compatibility gate continues to cover only the declared standard subset.
 
+## Synchronous speech ceiling handoff
+
+The root Python / TypeScript `parse("SpeechRequest", value)` and generated
+speech client now expose optional `nexus.max_output_audio_ms` (integer,
+100–3,600,000 ms). Omission preserves standard SDK defaults. Shared examples
+cover omission, exact bounds, invalid types/ranges and extension placement;
+validators never coerce or fill defaults. Deploy the supporting server before
+enabling this field; older strict servers reject it. Do not retry without the
+ceiling. See [synchronous speech](../../docs/components/synchronous-speech.md)
+for complete-result failure and original-identity recovery boundaries.
+
 ## Consumer handoff 0.1.0
 
 Speech source `0.1.0.dev1` adds optional `model_binding` to TTS Job creation.

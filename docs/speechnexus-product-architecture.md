@@ -226,7 +226,7 @@ Job 的取消与重试也是契约目标；当前公开 Job 路由只装配创�
 
 | 字段 | 类型 / 初始范围 | 语义与约束 |
 | --- | --- | --- |
-| `asr.language` | `auto` 或支持的语言 ID | 显式语言必须被绑定支持；自动检测可返回 unknown |
+| `asr.language` | `auto` 或支持的语言 ID | 显式语言必须被绑定支持；自动检测可返回 unknown。标准转写接口通过省略 `language` 请求自动检测，不发送内部字面值 `auto` |
 | `asr.preview_interval_ms` | integer，100–5000 | 预览调度周期；不代表服务保证每周期都有新结果 |
 | `asr.max_segment_ms` | integer，1000–30000 | 有界识别段的预算；必须不小于 preview_interval_ms |
 | `asr.finalization` | `full_segment / streaming_finalize` | 完整段复核或流式结束定稿；两者终稿均不强制保留错误预览 |

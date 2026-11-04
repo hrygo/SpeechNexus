@@ -56,4 +56,4 @@ PostgreSQL 与 MinIO 都是用户级服务，数据、日志和配置位于被 G
 
 ## 5. 后续入口
 
-P0 可从机器契约、负例和 fake 开始，开发环境不要求加载模型。具体操作见[开发与测试环境](../development-environment.md)。每次准备完成后运行 `make dev-status`；失败时应先恢复本地基础设施，再继续依赖数据库或对象存储的工作。
+P0 可从机器契约、负例和 fake 开始，开发环境不要求加载模型。具体操作见[开发与测试环境](../../development-environment.md)。每次准备完成后运行 `make dev-status`；失败时应先恢复本地基础设施，再继续依赖数据库或对象存储的工作。

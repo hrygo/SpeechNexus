@@ -29,11 +29,11 @@
 | `docs/architecture/speechrail-reuse.md` | 已核对 | 全文按复用政策核对固定来源、路径、许可、领域规则和平台边界；补核上游会议字幕设计与 MCP 代理，确认矩阵是设计方向而非实现声明；未将上游设计或历史测试当作本项目验收证据 |
 | `docs/architecture/technical-blueprint.md` | 已核对 | 全文对照语音与内部契约、契约包、资源治理、协调事务、删除设计、部署规划及相关 ADR，结合现有实现和证据区分目标与当前状态；修正执行查询、对象清理、恢复屏障、双库验证、生成类型和流式校验范围；将历史工程交接阶段表迁入归档，保留现行资格测量口径；36 个本地链接及锚点通过检查。未重新核验历史上游网页，未运行真实引擎、集群或恢复验收 |
 | `docs/archive/legacy-postgresql-coordination.md` | 历史保留 | 全文阅读，明确标为旧原型并指向现行架构；无需按当前实现改写，原始证据未逐项复核 |
-| `docs/audits/2026-10-22-development-environment-readiness.md` | 历史保留 | 2026-10-22 环境就绪快照；目录入口已说明不代表当前主机状态，未重新验证当时证据 |
-| `docs/audits/2026-10-22-speechnexus-design-review.md` | 历史保留 | 0.3.0 设计基线的审查与裁决记录；入口按审查记录引用，未重新验证当时证据 |
-| `docs/audits/2026-10-23-architecture-contract-compliance.md` | 历史保留 | 审查快照已注明时点和当前入口；原审查证据未逐项复核 |
-| `docs/audits/2026-10-23-architecture-contract-post-refactor-review.md` | 历史保留 | 固定基线的重构后审查，已注明当前入口；原审查证据未逐项复核 |
-| `docs/audits/2026-10-23-architecture-contract-repair-closure.md` | 历史保留 | 固定基线的修复验收记录，已注明当前入口；原验收证据未逐项复核 |
+| `docs/archive/audits/2026-10-22-development-environment-readiness.md` | 历史保留 | 2026-10-22 环境就绪快照；目录入口已说明不代表当前主机状态，未重新验证当时证据 |
+| `docs/archive/audits/2026-10-22-speechnexus-design-review.md` | 历史保留 | 0.3.0 设计基线的审查与裁决记录；入口按审查记录引用，未重新验证当时证据 |
+| `docs/archive/audits/2026-10-23-architecture-contract-compliance.md` | 历史保留 | 审查快照已注明时点和当前入口；原审查证据未逐项复核 |
+| `docs/archive/audits/2026-10-23-architecture-contract-post-refactor-review.md` | 历史保留 | 固定基线的重构后审查，已注明当前入口；原审查证据未逐项复核 |
+| `docs/archive/audits/2026-10-23-architecture-contract-repair-closure.md` | 历史保留 | 固定基线的修复验收记录，已注明当前入口；原验收证据未逐项复核 |
 | `docs/audits/2026-10-23-ui-ux-design-framework-audit.md` | 历史保留 | 全文阅读，补充绝对化无障碍和门禁评级的证据限制及后续复跑入口；未重跑历史验证 |
 | `docs/audits/2026-10-24-b00-megacube-environment-and-capability-gap.md` | 历史保留 | 全文阅读，固定时点的环境前检与首次 ASR 探针；补充 TTS 在线服务判断的后续纠正，未重跑实验 |
 | `docs/archive/audits/2026-10-24-b01-default-recovery-driver.md` | 历史保留 | 全文阅读，固定集成基线的默认恢复驱动与进程验证；组件入口引用其当时实测，未重跑测试 |

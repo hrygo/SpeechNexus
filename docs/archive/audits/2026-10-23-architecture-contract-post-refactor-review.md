@@ -8,7 +8,7 @@ date: 2026-10-23
 # 集群协调重构后的架构与契约审查
 
 本文保留 2026-10-23 对所列基线的审查结果；文中的“当前”和开放项不作为最新状态。
-当前实现及验收范围见[交付跟踪矩阵](../plans/delivery-tracking.md)。
+当前实现及验收范围见[交付跟踪矩阵](../../plans/delivery-tracking.md)。
 
 本文复核基线 `68b2452`（`refactor: reduce PostgreSQL coordination coupling`）之后的整体架构、
 技术方案、机器契约完整性 / 合理性 / 兼容性，以及 SOLID / DRY 合规性。结论只以本文列出的
@@ -20,7 +20,7 @@ date: 2026-10-23
 架构方向成立且未降级。PostgreSQL 仍是唯一正式产品数据库，跨表业务裁决由受控应用事务承担；
 活动 DDL 为 15 张普通表、318 行，无业务函数、触发器、扩展、部分唯一索引或 GiST 区间约束；
 旧 24 个函数与 45 个触发器的原型只保留在
-[`legacy_postgresql.sql`](../../tests/fixtures/coordination/legacy_postgresql.sql) 中继续跑
+[`legacy_postgresql.sql`](../../../tests/fixtures/coordination/legacy_postgresql.sql) 中继续跑
 53 项 PG 回归；不引入 etcd，Redis 只作可选缓存或唤醒；集群支持与单机同构要求保持原样。
 
 本轮发现并修复了六类真实缺陷，其中两类是权限与门禁漏洞：运行角色可以自行放宽 attempt 配额、
@@ -70,7 +70,7 @@ InnoDB 容器）上运行完整集成矩阵。未运行：远端 CI、`make veri
 生成器与消费者可据此产出类型，不再需要散文约定。
 
 仍未落地的 DRY 承诺：Python / TypeScript 边界类型应从契约生成或严格校验
-（[technical-blueprint.md §3](../architecture/technical-blueprint.md#3-契约与类型生成)、P0-A 工作包），
+（[technical-blueprint.md §3](../../architecture/technical-blueprint.md#3-契约与类型生成)、P0-A 工作包），
 当前只有运营健康 DTO 做了手写模型与契约一致性检查，生成器与生成产物均不存在。
 
 ## 5. 兼容性判断
@@ -132,7 +132,7 @@ execution-control 四份HTTP源的已知结构变更检查。其余JSON/WS、授
    单据，契约与 fixture 保持当前形状；若要改为对 job / interval 返回更弱的 `FactSnapshot`，须走
    显式契约变更并同时改测试。
 2. 内部、工作台与管理面按**原 A00 / 三队计划§7**补可自动比较部分；此前推迟表述不构成已授权
-   的计划变更。当前新增[四份HTTP源结构检查](../validation/http-contract-change-checks.md)，保留
+   的计划变更。当前新增[四份HTTP源结构检查](../../validation/http-contract-change-checks.md)，保留
    版本/变更说明、样例和消费者交接要求。纯JSON、WS顺序/授权及业务语义仍未据此完成，不扩大兼容承诺。
 3. 契约类型生成**已开始接入**（实例 drain 的请求/响应为生成产物），生成器版本随锁文件固定；
    其余面按后续单元逐个接入，不一次性铺开。
@@ -145,4 +145,4 @@ execution-control 四份HTTP源的已知结构变更检查。其余JSON/WS、授
 3. 不用"两个引擎都配了就算过"这一假设替代证据：缺 DSN、跳过或基础设施故障都不算通过。
 4. 不为遗留原型补写新的数据库特有机制（`SKIP LOCKED`、GiST、延迟触发器）以求单库兜底。
 
-[架构文档](../architecture/README.md) · [审查记录](README.md) · [重构计划](../archive/plans/2026-10-23-cluster-coordination-refactor.md)
+[架构文档](../../architecture/README.md) · [审查记录](../../audits/README.md) · [重构计划](../plans/2026-10-23-cluster-coordination-refactor.md)

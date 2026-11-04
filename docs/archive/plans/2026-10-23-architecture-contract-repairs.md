@@ -21,6 +21,6 @@
 | R2 | 容量对账热路径不随已结束历史增长 | 活跃索引与谓词、私有去重队列和 flush 后重新验证通过 |
 
 完整证据、最终门禁和未实现运行行为的边界见
-[修复闭环报告](../../audits/2026-10-23-architecture-contract-repair-closure.md)。
+[修复闭环报告](../audits/2026-10-23-architecture-contract-repair-closure.md)。
 本轮 204 项 Python 测试（含 49 项隔离 PG 测试）、27 份机器契约与 3 项 JS SDK 测试通过。
 未提交、推送或部署；业务路由、真实引擎与性能资格不在本轮实现范围。

@@ -555,7 +555,7 @@ LLM 拥有工作台自己的任务、取消与结果，失败不改写成功转�
 - [部署单元与平台规划](architecture/deployment-units.md)：独立服务、平台要求、节点绑定、当前装配缺口与跨平台/多机验收。
 - [分阶段实施计划](archive/plans/2026-10-22-speechnexus-implementation-plan.md)：历史阶段退出条件、工作包、P0 交接产物与初始预算假设；当前范围见[跟踪矩阵](plans/delivery-tracking.md)。
 - [SpeechRail 复用边界](architecture/speechrail-reuse.md)：可参考的领域规则与测试思想、需独立实现的基础设施、平台专属部分、固定来源及许可证。
-- [设计审查记录](audits/2026-10-22-speechnexus-design-review.md)：问题、修正裁决、核验来源和未验证项。
+- [设计审查记录](archive/audits/2026-10-22-speechnexus-design-review.md)：问题、修正裁决、核验来源和未验证项。
 - [文档索引](README.md)：主设计、配套设计、决策及过程记录。
 
 上游官方文档的核验日期为 2026-10-22，链接就近标注在相应设计中。stable 页面不等于已锁定运行版本；实施必须记录具体发行版、commit 与模型 revision。SpeechRail 的既有运行结果不能作为 SpeechNexus 的 Linux 性能或质量证据。

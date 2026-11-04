@@ -7,7 +7,7 @@ date: 2026-10-22
 
 # SpeechNexus 设计审查
 
-本记录审查 SpeechNexus 0.3.0 文档基线，包括[项目主设计](../speechnexus-product-architecture.md)、[语音接口](../architecture/speech-api.md)、[资源治理](../architecture/runtime-governance.md)、[复用边界](../architecture/speechrail-reuse.md)、[实施计划](../archive/plans/2026-10-22-speechnexus-implementation-plan.md)、ADR 和双语 README。0.3.0 是文档版本，项目尚无产品实现。
+本记录审查 SpeechNexus 0.3.0 文档基线，包括[项目主设计](../../speechnexus-product-architecture.md)、[语音接口](../../architecture/speech-api.md)、[资源治理](../../architecture/runtime-governance.md)、[复用边界](../../architecture/speechrail-reuse.md)、[实施计划](../plans/2026-10-22-speechnexus-implementation-plan.md)、ADR 和双语 README。0.3.0 是文档版本，项目尚无产品实现。
 
 ## 1. 结论与证据范围
 
@@ -52,7 +52,7 @@ F-01 / F-02 由独立初审确认，F-03 在修订后的独立复核中确认；
 - [vLLM Speech to Text](https://docs.vllm.ai/en/stable/serving/online_serving/speech_to_text/)：原生实时输入为 PCM16 / 16 kHz，事件与 commit 顺序不同于公开 OpenAI 子集，需 adapter 转换。
 - [vLLM-Omni Speech API](https://docs.vllm.ai/projects/vllm-omni/en/stable/serving/speech_api/)：文本流入与音频流出分别控制；Base / CustomVoice / VoiceDesign 是不同模型角色，原生音色注册接口不能替代平台的候选 / 发布流程。
 - [vLLM 支持模型](https://docs.vllm.ai/en/stable/models/supported_models/)、[vLLM-Omni 安装说明](https://docs.vllm.ai/projects/vllm-omni/en/stable/getting_started/installation/)：适配能力与版本组合需资格验证，不能以 latest 标签替代锁定发行版。
-- SpeechRail 复用事实见[固定 commit 来源与证据范围](../architecture/speechrail-reuse.md#2-固定来源与证据范围)；历史记忆只作为经验来源，不能替代当前代码或 Linux 实测。
+- SpeechRail 复用事实见[固定 commit 来源与证据范围](../../architecture/speechrail-reuse.md#2-固定来源与证据范围)；历史记忆只作为经验来源，不能替代当前代码或 Linux 实测。
 
 ## 5. 文档正规化与验证
 

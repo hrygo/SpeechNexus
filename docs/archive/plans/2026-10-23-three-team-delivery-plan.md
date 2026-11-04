@@ -25,7 +25,7 @@ date: 2026-10-23
 | 原型缺口     | 4 个端口缺行为原型；已有原型未返回契约要求的完整 `value` 快照  | 对生产实现逐端口验收，不能直接导入 `tests/support`        |
 | 引擎与部署   | 模型路线已选；真实模型、停止证据、混合负载及完整集群资格未完成 | 第一迭代启动可行性验证；后续资格以 binding 和拓扑为单位   |
 
-四个尚缺行为原型的端口是 `create_runtime_intent`、`observe_runtime`、`query_outcome`、`record_execution_observation`，依据[最新架构与契约审查](../../audits/2026-10-23-architecture-contract-post-refactor-review.md)。本次规划核对了 CBM 结构与关键源码覆盖，再直接读取组合根及页面源码；没有重跑历史测试，没有验证真实环境。
+四个尚缺行为原型的端口是 `create_runtime_intent`、`observe_runtime`、`query_outcome`、`record_execution_observation`，依据[最新架构与契约审查](../audits/2026-10-23-architecture-contract-post-refactor-review.md)。本次规划核对了 CBM 结构与关键源码覆盖，再直接读取组合根及页面源码；没有重跑历史测试，没有验证真实环境。
 
 交付保持以下边界：
 

@@ -1529,6 +1529,11 @@
       "gap": "容量文档记录模型和引擎 pin 输入；仓库样例仍为 experimental/incomplete，注册输入不等于权威发布。 单句文件及整代停止不可外推为实时、单请求或声音复用资格。",
       "evidence": [
         {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/operations/capacity-manifest.md",
+          "label": "容量声明与模型 pin",
+          "note": "固定版本记录模型与引擎 pin 及实验样例，不证明已发布或生产资格"
+        },
+        {
           "url": "https://github.com/hrygo/SpeechNexus/pull/317",
           "label": "真实同步转写",
           "note": "固定隔离部署同步 JSON 最小链证据，非持久任务/完整资格"

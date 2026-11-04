@@ -463,7 +463,7 @@
 
 **验收：**
 
-- 设计、克隆、试听和新文本复用分别验证；preview_only 不可发布，明确确认和质量合格后才可发布。
+- 设计、克隆、试听和新文本复用分别验证；preview_only 不可发布，明确确认和质量合格后才可发布。发布资格要求所有 required 检查通过，包含通过的 required `reusable_tts`；生产者还须核对固定测试集的必需项完整、名称唯一及结果证据，不能仅凭 schema 校验认定质量合格。
 - 版本、材料摘要及绑定固定；普通退役禁止新引用，已固定任务在有效依赖租期内完成。
 
 设计依据：[speech-api.md](architecture/speech-api.md)、[data-deletion.md](architecture/data-deletion.md)。

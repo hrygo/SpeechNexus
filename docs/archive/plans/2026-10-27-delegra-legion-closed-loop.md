@@ -11,7 +11,7 @@ date: 2026-10-27
 
 本计划落实已授权的最佳方案与文档整改，记录控制权、配置核验和闭环退出条件，不另建产品 backlog。当前是**基础设施整改阶段**；底座修复、运行配置审定、平台应用、七岗准入、指挥权切换及首轮业务闭环分别验收，不能从文档完成推断后续已通过。
 
-公开代码 / 契约以仓库当前主干为权威，产品范围与 AC 保留在 [#6](https://github.com/hrygo/SpeechNexus/issues/6)及对应 issue；执行与配置事实以当前平台回执为准。旧项目及任务已移除，历史编号仅作交接线索。[旧环境报告](../../operations/paperclip/environment-readiness.md)继续保存原失败和未验事实。
+公开代码 / 契约以仓库当前主干为权威，产品范围与 AC 保留在 [#6](https://github.com/hrygo/SpeechNexus/issues/6)及对应 issue；执行与配置事实以当前平台回执为准。旧项目及任务已移除，历史编号仅作交接线索。[旧环境报告](../operations/paperclip/environment-readiness.md)继续保存原失败和未验事实。
 
 ## 采用的结构与切换
 

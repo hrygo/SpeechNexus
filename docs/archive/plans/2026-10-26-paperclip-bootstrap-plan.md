@@ -11,7 +11,7 @@ date: 2026-10-27
 
 **目标：** 将 [工作流设计](../../operations/paperclip.md) 配置到 DEL 的既有 SpeechNexus 项目，先准备所有岗位必需的环境，之后再按用户要求恢复任务闭环验收。
 
-**当前总开关：** 用户要求暂缓真实任务；七个 agent 保持暂停。当前只做环境准备与检查，不建立业务执行队列。实际环境证据与限制见 [环境验收记录](../../operations/paperclip/environment-readiness.md)。
+**当前总开关：** 用户要求暂缓真实任务；七个 agent 保持暂停。当前只做环境准备与检查，不建立业务执行队列。实际环境证据与限制见 [环境验收记录](../operations/paperclip/environment-readiness.md)。
 
 **实施方式：** 项目经理按步骤执行，使用既有 Paperclip 连接器与官方 CLI。用户已完整授权本轮工作流与 agent 调整。
 设计由独立 reviewer 做 builder check，问题自行收敛；角色正文为版本源，平台执行记录为运行证据。
@@ -21,7 +21,7 @@ date: 2026-10-27
 
 - `docs/operations/paperclip.md`：当前工作流、职责、三机执行、验收与回退约定。
 - `docs/operations/paperclip/roles/*.md`：七个角色的受管 instructions 源。
-- `docs/operations/paperclip/environment-readiness.md`：已测环境、检查边界、能力限制与启用门禁。
+- `docs/archive/operations/paperclip/environment-readiness.md`：已测环境、检查边界、能力限制与启用门禁。
 - 本计划：本轮配置检查点与受检边界。
 - Paperclip bootstrap 任务文档：实际 agent/task ID、配置 revision、部署内路径、探针及完整回读结果。
 - `docs/plans/README.md`、`docs/README.md`：接续入口。

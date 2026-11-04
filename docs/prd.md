@@ -343,7 +343,7 @@
 - preview 与 final 分离，空成功、唯一逻辑终态和正文 revision 符合契约。
 - segment 的正文 `completed/failed` 与整体 `nexus.operation.done` 分开验收；required 辅助失败时整体失败，不改写已经发布的正文。best_effort 辅助使用独立子执行，迟到结果只更新对应正文 revision 的辅助状态，不反转父终态。
 - 旧 owner/epoch 和重复输入不能推进新流；样本/文本水位、credit 与缓冲有硬上界。
-- 断线、停止和恢复明确暴露 gap，未保存 PCM 不宣称无缝恢复。
+- 断线后按目标协议建立新 session / epoch，保留已确认文字并显示输入 gap；不进行未保存 PCM 的透明重放，也不自动重播旧 TTS。旧执行的终态与资源释放仍按原身份协调。
 - 真实 ASR/TTS 流、VAD、网关和真实设备消费者按可对应集成版本验证 owner/epoch、样本/文本水位、credit、背压、恢复与可信停止，所需参与方确认后提交用户放行。
 - ASR 正文 final 从 segment_closed 到 completed/failed 的 P95≤2000ms 为 PRD 候选目标，包含最终复核等待、required 辅助延迟另报；须按 binding、语料与负载冻结后测量，不宣称已达标。
 

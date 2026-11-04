@@ -91,7 +91,7 @@ SpeechCommand
 
 文件转写支持 `file`、`model`、`language`、`prompt`、`response_format` 及快照声明的 `timestamp_granularities[]`。`response_format` 默认 `json`，基线为 `json`、`text`；`verbose_json`、`srt`、`vtt` 仅在具备相应时间边界证据时开放。`timestamp_granularities[]` 只接受已声明支持的 `segment` / `word`，且必须与 `response_format=verbose_json` 同用，不伪造词级时间戳。当前入口对非法或重复粒度以及与其他格式的组合返回 400 `invalid_request`；通过入口校验但当前执行链不支持的粒度返回 422 `unsupported_parameter`。标准 language 省略表示自动检测，内部规范化为 `asr.language=auto`，不要求标准客户端发送字面值 auto。`prompt` 是有界术语提示；不具备提示能力的绑定明确拒绝。增强结果返回实际语言或 unknown，兼容 JSON 保持所声明的字段形状。
 
-上述时间戳参数是契约范围；当前生产文件 ASR 规划器在准入前拒绝所有非空 `timestamp_granularities[]`。具体装配和结果证据要求见[同步转写](../operations/synchronous-transcription.md)。 当前 multipart 入口把单个空的 `response_format` 字段按默认 `json` 处理；机器契约只允许声明的格式枚举，不接受空字符串。客户端应省略该字段或发送有效格式，不应依赖此实现差异。
+上述时间戳参数是契约范围；当前生产文件 ASR 规划器在准入前拒绝所有非空 `timestamp_granularities[]`。具体装配和结果证据要求见[同步转写](../operations/synchronous-transcription.md)。 当前 multipart 入口把单个空的 `response_format` 字段按默认 `json` 处理；机器契约只允许声明的格式枚举，不接受空字符串。客户端应省略该字段或发送有效格式，不应依赖此实现差异。 `language` 的请求 schema 只限制最大长度，当前命令还要求 2–3 位小写语言码及可选子标签；空值或不符合该形状时入口返回 `400 invalid_request`，选定 binding 后，形状有效但不在其支持域时返回 `422 unsupported_parameter`。
 
 非 verbose `Transcription.usage` 可按绑定真实证据使用 duration 或 token；`verbose_json.usage` 固定为 duration，以匹配 OpenAI SDK 的响应模型。不得为了展示 token 数而破坏 `verbose_json` 的可解析性。
 

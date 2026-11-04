@@ -99,6 +99,6 @@ I/O 参考官方固定版本的 `src/silero_vad/utils_vad.py`；新代码独立�
 uv run pytest tests/unit/gateway/test_vad.py tests/unit/gateway/test_silero_onnx.py tests/contract/test_vad_contract.py
 ```
 
-真实 CPU 合成结果、命令与未验证项见 [B06 探针记录](../audits/2026-10-24-b06-cpu-vad-probe.md)。
+真实 CPU 合成结果、命令与未验证项见 [B06 探针记录](../archive/audits/2026-10-24-b06-cpu-vad-probe.md)。
 交接 #31/#39 的是原生 API、固定语义、fake、正负/边界测试与证据；浏览器只消费既有公开协议，
 不直接加载本 adapter，也不获得模型路径或私有 PCM。

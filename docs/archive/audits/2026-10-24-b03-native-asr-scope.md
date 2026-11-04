@@ -5,8 +5,8 @@ date: 2026-10-24
 
 # B01/B03 原生 ASR 请求清理交付边界
 
-对应 #28 / #30，[实施计划](../archive/plans/2026-10-24-b03-native-asr-scope.md)与
-[独立 overlay](../../deploy/engines/vllm-asr-lifecycle/README.md)。
+对应 #28 / #30，[实施计划](../plans/2026-10-24-b03-native-asr-scope.md)与
+[独立 overlay](../../../deploy/engines/vllm-asr-lifecycle/README.md)。
 最初基线 `fcb0670`，实施期间 ff-only 同步 A #131 至 `fd60556`，既有制品完整保留。
 P2 修复期间正常合并 A #133 的主干 `a56a2d5`，保留其默认参数存储、迁移与测试。
 

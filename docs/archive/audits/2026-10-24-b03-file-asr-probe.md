@@ -1,6 +1,6 @@
 ---
 title: "B03 真实文件 ASR 与首次长窗口开销"
-status: in_progress
+status: archived
 version: "0.1.0"
 date: 2026-10-24
 ---
@@ -8,11 +8,11 @@ date: 2026-10-24
 # B03 真实文件 ASR 与首次长窗口开销
 
 本轮在 `3b9789c5a20fab33ccf9db0f324b788beddcf836`（#80）上交付
-[原生文件识别](../components/file-asr-recognition.md)，将已实现的解码/VAD 实际接到
+[原生文件识别](../../components/file-asr-recognition.md)，将已实现的解码/VAD 实际接到
 Qwen3-ASR 0.6B / 1.7B。没有注册公开 ASR、持久 submit dispatch、结果发布或预算返还服务。
 真实调用和本机控制器停止有证据；完整文件业务、质量、取消/abort 与集群资格仍未完成。
-后续真实容器预热门验证见[预热就绪门探针](../archive/audits/2026-10-24-b02-warmup-gate-probe.md)，
-默认网关真实模型实验见[文件 ASR 实验](2026-10-25-b03-default-real-asr-probe.md)；
+后续真实容器预热门验证见[预热就绪门探针](2026-10-24-b02-warmup-gate-probe.md)，
+默认网关真实模型实验见[文件 ASR 实验](../../audits/2026-10-25-b03-default-real-asr-probe.md)；
 下文接线缺口和耗时仍限定于本次受测基线，不代表这些后续实验已覆盖完整业务链。
 
 ## 固定环境与边界
@@ -26,7 +26,7 @@ Qwen3-ASR 0.6B / 1.7B。没有注册公开 ASR、持久 submit dispatch、结果
   镜像内 vLLM 0.28.0 / Python 3.12。bf16、单并发、8192 model length、
   GPU memory utilization 0.05、eager；容器 Memory/MemorySwap 分别 10/12 GiB。
 - 三个 ASR 权重文件的当前 SHA-256 重新匹配
-  [B02 固定摘要](../archive/audits/2026-10-24-b02-real-asr-controller-probe.md)。
+  [B02 固定摘要](2026-10-24-b02-real-asr-controller-probe.md)。
   对这些已停止的 ASR 权重共 6,574,613,216 bytes 建议回收干净页缓存，
   不做全局 drop_caches，不触及 35B 权重或服务。
 - Silero ONNX 沿用固定摘要

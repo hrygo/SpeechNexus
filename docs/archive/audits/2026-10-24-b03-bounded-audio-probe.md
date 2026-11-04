@@ -1,6 +1,6 @@
 ---
 title: "B03 有界媒体与真实录音输入探针"
-status: in_progress
+status: archived
 version: "0.1.0"
 date: 2026-10-24
 ---
@@ -9,7 +9,7 @@ date: 2026-10-24
 
 本轮交付 [B03 #30](https://github.com/hrygo/SpeechNexus/issues/30) 的有界媒体与 ASR/VAD
 原生输入单元；开工基线 `3b8052040111cdd8af3a50aaf5b0e8b3922e1f42`，
-最终 rebase 至 `8c4ea9a`（含 #77/#79）。接口和限制见[文件媒体说明](../components/file-asr-audio.md)。
+最终 rebase 至 `8c4ea9a`（含 #77/#79）。接口和限制见[文件媒体说明](../../components/file-asr-audio.md)。
 没有修改共享机器契约、业务存储或预算权威，没有接入真实 ASR/TTS 外发或公开路由。
 
 ## 环境与标准
@@ -54,7 +54,7 @@ libavfilter 12.1.102、libswscale 10.1.102、libswresample 7.1.102。
 检查索引后改为完整源摘要验证 + 有界临时前缀，重跑上述九例才通过。
 没有将失败或未选中的录音计入通过数。
 
-可重复命令见[独立运行环境](../../deploy/engines/file-asr-audio/README.md)。
+可重复命令见[独立运行环境](../../../deploy/engines/file-asr-audio/README.md)。
 最终报告 `.runtime/probes/b03-audio/report-final.json`、私有清单同目录；
 运行日志 `/tmp/b03-audio-final-probe.log`。这些本机文件不入 Git。
 

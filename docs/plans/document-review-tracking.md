@@ -45,13 +45,13 @@
 | `docs/audits/2026-10-24-b02-stop-recovery-probe.md` | 历史保留 | 全文阅读，固定版本的合成容器停止崩溃与恢复探针；后续变化另有引用，未重跑实验 |
 | `docs/audits/2026-10-24-b02-trusted-node-stop-probe.md` | 历史保留 | 全文阅读，固定基线的节点停止事实与网关消费分层证据；组件文档按实验范围引用，未重跑测试 |
 | `docs/archive/audits/2026-10-24-b02-warmup-gate-probe.md` | 历史保留 | 全文阅读，固定镜像和合成音频的真实 ASR 预热探针；当前组件入口标明单次观测边界，未重跑实验 |
-| `docs/audits/2026-10-24-b03-bounded-audio-probe.md` | 历史保留 | 全文阅读，固定基线的媒体解码和 VAD 实验；入口明确不代表识别质量，未重跑探针 |
-| `docs/audits/2026-10-24-b03-file-asr-probe.md` | 历史保留 | 全文阅读，固定模型和基线的文件识别及长窗口测量；已链接后续实验，未重跑探针 |
-| `docs/audits/2026-10-24-b03-frozen-inputs.md` | 历史保留 | 全文阅读，固定基线的输入接入与 PR 审查记录；当前接口由组件文档承接，未重验当时证据 |
-| `docs/audits/2026-10-24-b03-native-asr-scope.md` | 历史保留 | 全文阅读，固定版本与基线的原生清理探针和审查记录；未重验当时证据 |
+| `docs/archive/audits/2026-10-24-b03-bounded-audio-probe.md` | 历史保留 | 全文阅读，固定基线的媒体解码和 VAD 实验；入口明确不代表识别质量，未重跑探针 |
+| `docs/archive/audits/2026-10-24-b03-file-asr-probe.md` | 历史保留 | 全文阅读，固定模型和基线的文件识别及长窗口测量；已链接后续实验，未重跑探针 |
+| `docs/archive/audits/2026-10-24-b03-frozen-inputs.md` | 历史保留 | 全文阅读，固定基线的输入接入与 PR 审查记录；当前接口由组件文档承接，未重验当时证据 |
+| `docs/archive/audits/2026-10-24-b03-native-asr-scope.md` | 历史保留 | 全文阅读，固定版本与基线的原生清理探针和审查记录；未重验当时证据 |
 | `docs/audits/2026-10-24-b03-tts-adapter-probe.md` | 历史保留 | 全文阅读，固定镜像的 CustomVoice 适配器和 ASR 回环实验；索引限定实验范围，未重跑探针 |
 | `docs/audits/2026-10-24-b03-tts-engine-feasibility.md` | 历史保留 | 全文阅读，固定镜像的引擎可行性与早期误判纠正；记录时点的后续计划不代表当前状态，未重跑实验 |
-| `docs/audits/2026-10-24-b06-cpu-vad-probe.md` | 历史保留 | 全文阅读，固定模型和基线的 CPU 合成探针；组件入口作为历史证据引用，未重跑探针 |
+| `docs/archive/audits/2026-10-24-b06-cpu-vad-probe.md` | 历史保留 | 全文阅读，固定模型和基线的 CPU 合成探针；组件入口作为历史证据引用，未重跑探针 |
 | `docs/audits/2026-10-24-ci-efficiency.md` | 历史保留 | 全文阅读，各轮固定基线的 CI 调研和测量；文首指向现行 CI 规则，未复核历史远端运行 |
 | `docs/audits/2026-10-25-b03-default-real-asr-probe.md` | 历史保留 | 全文阅读，固定候选的默认网关 ASR 隔离实验；入口注明私有结果和未覆盖的公开链，未重跑实验 |
 | `docs/audits/2026-10-25-b03-real-cancel-settlement.md` | 历史保留 | 全文阅读，固定候选的真实取消与整代次结算实验；保留 partial 和单请求证据缺口，未重跑实验 |

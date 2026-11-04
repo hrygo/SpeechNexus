@@ -1,6 +1,6 @@
 ---
 title: "B06 CPU VAD 合成探针"
-status: in_progress
+status: archived
 version: "0.1.0"
 date: 2026-10-24
 ---
@@ -9,7 +9,7 @@ date: 2026-10-24
 
 本轮实现和验证 [B06 #33](https://github.com/hrygo/SpeechNexus/issues/33) 的第一项原生 VAD
 消费单元，基线 `7372778364872a0a2f9a4ae51b191b2804eee3ea`。完整接口见
-[CPU VAD](../components/cpu-vad.md)。模型运行在当前 Linux ARM64 宿主 CPU，没有启动模型容器、
+[CPU VAD](../../components/cpu-vad.md)。模型运行在当前 Linux ARM64 宿主 CPU，没有启动模型容器、
 使用 GPU 或停止受保护 LLM。临时合成音频随探针退出删除，报告不保存正文、音频或模型路径。
 
 这是一套 VAD 局部证据：未调用 ASR，未接公开路由、worker、完整配方准入或 A 的 runtime 循环；
@@ -45,7 +45,7 @@ date: 2026-10-24
 
 最终报告位于忽略目录 `.runtime/probes/b06-vad/report-final.json`，运行输出
 `/tmp/b06-vad-final-probe.log`。可重复命令见
-[独立运行环境](../../deploy/engines/cpu-vad/README.md)；输入仅在本机生成。
+[独立运行环境](../../../deploy/engines/cpu-vad/README.md)；输入仅在本机生成。
 
 ## 自动化与交接边界
 

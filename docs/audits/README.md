@@ -21,12 +21,12 @@
 - [2026-10-24 B02 受限控制器容器生命周期探针](../archive/audits/2026-10-24-b02-controller-container-lifecycle-probe.md)：合成容器上的 prepare / ready / stop 与停止双证据、`Init` 缺口、清理结果与未验证边界。
 - [2026-10-24 B02 控制器 HTTP 外壳与持久意图探针](../archive/audits/2026-10-24-b02-controller-http-shell-probe.md)：真实控制器进程的组件凭据、prepare → ready → stop、daemon 侧加固事实、停机双证据与重启后持久意图。
 - [2026-10-24 B02 有界控制器与真实 ASR 探针](../archive/audits/2026-10-24-b02-real-asr-controller-probe.md)：固定内存上限与 HTTP 就绪、0.6B/1.7B 合成语音/静音/长非语音实测、CUDA 失败与缓存诊断、停止清理及历史 Issue 状态更正。
-- [2026-10-24 B03 有界媒体与真实录音输入探针](2026-10-24-b03-bounded-audio-probe.md)：五种格式、源时钟/尾部、文件 VAD、合成与两段授权录音实测及未验证边界。
-- [2026-10-24 B03 真实文件 ASR 与首次长窗口开销](2026-10-24-b03-file-asr-probe.md)：0.6B/1.7B 文件/VAD/识别、真实 token 截断、首次/立即重复耗时与预热资格要求。
+- [2026-10-24 B03 有界媒体与真实录音输入探针](../archive/audits/2026-10-24-b03-bounded-audio-probe.md)：五种格式、源时钟/尾部、文件 VAD、合成与两段授权录音实测及未验证边界。
+- [2026-10-24 B03 真实文件 ASR 与首次长窗口开销](../archive/audits/2026-10-24-b03-file-asr-probe.md)：0.6B/1.7B 文件/VAD/识别、真实 token 截断、首次/立即重复耗时与预热资格要求。
 - [2026-10-24 B02 真实 ASR 预热就绪门探针](../archive/audits/2026-10-24-b02-warmup-gate-probe.md)：`http_warmup_ok` 在真实 0.6B/1.7B 容器上的 `warming_up → ready` 序列、首轮与立即重复耗时、停止双证据与未验证边界。
 - [2026-10-24 B03 Qwen3-TTS 真实引擎可行性复核](2026-10-24-b03-tts-engine-feasibility.md)：更正此前误判；`--omni` 在线服务、旧 runner 兼容、显存预算、两条真实合成请求与 ASR 回环、未验证边界。
 - [2026-10-24 B03 TTS 适配器真实探针](2026-10-24-b03-tts-adapter-probe.md)：通过已提交适配器合成 1.7B CustomVoice、WAV/MP3 交付、24 kHz→16 kHz 解码与 0.6B ASR 回环，以及停止/清理证据与未验证边界。
-- [2026-10-24 B01/B03 原命令与核验文件输入](2026-10-24-b03-frozen-inputs.md)：原持久请求、固定版本 MinIO、隔离双库与既有文件消费者的输入接入验证及真实执行剩余范围。
+- [2026-10-24 B01/B03 原命令与核验文件输入](../archive/audits/2026-10-24-b03-frozen-inputs.md)：原持久请求、固定版本 MinIO、隔离双库与既有文件消费者的输入接入验证及真实执行剩余范围。
 - [2026-10-25 B03 默认网关的真实文件 ASR 实验](2026-10-25-b03-default-real-asr-probe.md)：固定 cache 修正、真实 1.7B/CPU VAD、隔离 PG/MinIO、合成语音/静音、重放/重启与控制器停止；保留失败及生产准入、预算和公开链缺口。
 - [2026-11-03 受控 TTS 验收与资源收尾](2026-11-03-controlled-tts-prepare.md)：各次受控窗口的结果、失败与清理证据；第六次窗口仅覆盖固定声音的单节点短英文同步最小链。
 

@@ -54,14 +54,14 @@
 | [B02 控制器容器生命周期探针](archive/audits/2026-10-24-b02-controller-container-lifecycle-probe.md) | 历史探针：合成容器的 prepare / ready / stop、停止双证据与清理结果 |
 | [B02 控制器 HTTP 外壳与持久意图探针](archive/audits/2026-10-24-b02-controller-http-shell-probe.md) | 历史探针：控制器进程鉴权、生命周期、停机双证据与重启后的持久意图 |
 | [CPU VAD 原生接口](components/cpu-vad.md) | 会话隔离、有界切段、固定 CPU 模型及文件执行装配；实时链路待验 |
-| [B06 CPU VAD 合成探针](audits/2026-10-24-b06-cpu-vad-probe.md) | 历史探针：合成人声/静音/正弦音、输入分块一致性与模型状态隔离；不代表真实录音资格 |
+| [B06 CPU VAD 合成探针](archive/audits/2026-10-24-b06-cpu-vad-probe.md) | 历史探针：合成人声/静音/正弦音、输入分块一致性与模型状态隔离；不代表真实录音资格 |
 | [文件 ASR 有界媒体输入](components/file-asr-audio.md) | 五种格式解码/重采样、源样本时钟、文件 VAD 组合与接入边界 |
-| [B03 有界媒体与真实录音输入探针](audits/2026-10-24-b03-bounded-audio-probe.md) | 历史探针：合成媒体、两段授权录音及尾部处理实测；不代表识别质量或完整服务 |
+| [B03 有界媒体与真实录音输入探针](archive/audits/2026-10-24-b03-bounded-audio-probe.md) | 历史探针：合成媒体、两段授权录音及尾部处理实测；不代表识别质量或完整服务 |
 | [文件 ASR 原生识别接口](components/file-asr-recognition.md) | 固定内网 ASR、VAD 门禁、SSE 完成/截断判定、源时钟及可配置的持久 worker 装配 |
 | [文件 ASR 固定制品与参数交接](operations/file-asr-binding-handoff.md) | 1.7B/VAD/引擎锁定、离线校验、原命令参数与 A 配置/发布的接入边界 |
 | [文件 TTS 原生合成接口](components/file-tts.md) | 固定内网 synthesis、响应头/RIFF 结构校验、单次外发与有界 PCM/WAV/MP3 交付编码 |
 | [文件 TTS 默认执行装配](operations/file-tts-runtime.md) | 私有配置、受控 generation、原命令 worker、生成区间与音频回执；受控公开同步链已有证据，完整资格待验 |
-| [B03 真实文件 ASR 与首次长窗口开销](audits/2026-10-24-b03-file-asr-probe.md) | 历史探针：0.6B/1.7B、真实录音、无语音零外发、截断负例与重复测量 |
+| [B03 真实文件 ASR 与首次长窗口开销](archive/audits/2026-10-24-b03-file-asr-probe.md) | 历史探针：0.6B/1.7B、真实录音、无语音零外发、截断负例与重复测量 |
 | [B03 TTS 适配器真实探针](audits/2026-10-24-b03-tts-adapter-probe.md) | 历史探针：1.7B CustomVoice 的 WAV/MP3、重采样与 ASR 回环、停止和清理证据 |
 | [设计审查记录](audits/2026-10-22-speechnexus-design-review.md) | 历史审查：发现的问题、修正裁决、来源核验及当时未验证项 |
 | [UI/UX 设计框架终审](audits/2026-10-23-ui-ux-design-framework-audit.md)                             | 历史设计与 CI 审查；报告中的绝对化无障碍和拦截评级超出所列证据 |

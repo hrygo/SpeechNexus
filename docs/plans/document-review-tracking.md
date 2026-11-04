@@ -139,7 +139,7 @@
 | `docs/operations/binding-lifecycle.md` | 已核对 | 对照授权、生命周期事务、幂等重放、并发矩阵与恢复测试；澄清连接中断可能无响应，未运行 PG 或部署 |
 | `docs/operations/builtin-voice-qualification.md` | 已核对 | 对照资格入口、授权、退出分支、制品脚本摘要、probe 音频与终态验证及受控窗口；未运行探针或核验部署权限 |
 | `docs/archive/operations/2026-10-28-capacity-manifest-example.md` | 历史保留 | 原容量样例和任务文件清单按时点归档；未重验原始 GPU 测量 |
-| `docs/operations/capacity-manifest.md` | 已核对 | 对照 schema、校验器、账本、准入错误、样例及文件摘要；澄清 VAD、发布门禁、fixture、查询隔离及样例到期边界，未连接数据库或重跑模型；按当前 PRD 区分绑定发布与用户最终产品放行 |
+| `docs/operations/capacity-manifest.md` | 已核对 | 对照 schema、校验器、账本、准入错误、样例及文件摘要；澄清 VAD、发布门禁、fixture、查询隔离及样例到期边界，未连接数据库或重跑模型；按当前 PRD 区分绑定发布与用户最终产品放行；修正 R11 说明的章节位置 |
 | `docs/operations/compose-minimal.md` | 已核对 | 对照 Compose、迁移、角色授权、探针、注册及停用恢复路径；修正权限、失败边界和探针路径，未执行部署 |
 | `docs/operations/file-asr-binding-handoff.md` | 已核对 | 对照固定制品、绑定定义、离线工具、命令消费及交接测试，补充后续旧入口屏障联验证据及故障注入限制；未重跑实验或测试 |
 | `docs/operations/file-asr-runtime.md` | 已核对 | 对照配置、双 lane 共享限制、对象版本、worker 取消、结果恢复及停止联验；修正集成测试的停止证据描述，未运行测试或部署 |

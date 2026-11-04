@@ -448,7 +448,7 @@ SELECT workspace_id, max_attempts, held_attempts, quarantined_attempts
 FROM speech.workspace_quotas WHERE workspace_id = '<workspace-id>';
 ```
 
-判定：定义 `declared_manifest_id` = 参数/证据 `capacity_manifest_id`；publication `revision_id` = 定义 `revision_id` = 实例 `binding_revision_id`；实例六维 = manifest 三组向量；host `held + quarantined <= allocatable`；池 active/class 匹配；workspace `held + quarantined <= max_attempts`。校验器还要求 host `held >= peak`，其局限见 R11 下方说明；上述 SQL 只列出统一内存维度，不能单凭它核对全部六维。
+判定：定义 `declared_manifest_id` = 参数/证据 `capacity_manifest_id`；publication `revision_id` = 定义 `revision_id` = 实例 `binding_revision_id`；实例六维 = manifest 三组向量；host `held + quarantined <= allocatable`；池 active/class 匹配；workspace `held + quarantined <= max_attempts`。校验器还要求 host `held >= peak`，其局限见上文 R11 及其后说明；上述 SQL 只列出统一内存维度，不能单凭它核对全部六维。
 
 ## 10. 已知缺口与后续卡建议
 

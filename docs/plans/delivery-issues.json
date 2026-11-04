@@ -268,8 +268,8 @@
       ],
       "implementation": "CpuVadSession 为每个会话创建 detector、顺序计数和有界缓冲，单次 PCM 输入最多 250ms；存在相关辅助组件与契约，逐 binding 真实质量资格未证；辅助组件存在，不证明真实质量或 required 资格。",
       "integration": "文件 ASR 命令已接入 CPU VAD；实时入口及完整链路的接线和隔离仍需验收；required 对齐须接完整配方和终态；须验证结果与匹配正文 revision 和完整配方关联。",
-      "verification": "合成分段不代替真实静音/流质量及停止资格；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "文件 ASR 命令已接入 CPU VAD；实时入口及完整链路的接线和隔离仍需验收；required 对齐须接完整配方和终态；须验证结果与匹配正文 revision 和完整配方关联。 合成分段不代替真实静音/流质量及停止资格；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "verification": "合成分段不代替真实静音/流质量及停止资格；组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "文件 ASR 命令已接入 CPU VAD；实时入口及完整链路的接线和隔离仍需验收；required 对齐须接完整配方和终态；须验证结果与匹配正文 revision 和完整配方关联。 合成分段不代替真实静音/流质量及停止资格；组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/pull/317",
@@ -330,8 +330,8 @@
       ],
       "implementation": "已有隔离同步 ASR 最小链；不能证明静音零外发与可信结算。",
       "integration": "仍须在同一集成版本联验公开转写 API、正式 SDK、门控、固定对象和结算。",
-      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "仍须在同一集成版本联验公开转写 API、正式 SDK、门控、固定对象和结算。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "仍须在同一集成版本联验公开转写 API、正式 SDK、门控、固定对象和结算。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/pull/317",
@@ -387,8 +387,8 @@
       ],
       "implementation": "JobDispatcher 定义认领、原身份查询、网关提交与发布端口；取消持久接收另有固定版本合并证据；已有生产事务、角色与端口证据地图；现有 runbook 为只读排查；没有任意将 unknown 改为 succeeded 的产品命令。",
       "integration": "真实执行、停止与输出区间事实到业务恢复/结算仍待接入；部分原生查询 envelope、真实策略和业务消费者待对照；原执行/原代次及可信停止与资源释放由权威事务核实。",
-      "verification": "隔离事务与取消接收证据不等于真实停止或释放资格；历史权限及双库分段测试不代表全端口和真实拓扑资格；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "真实执行、停止与输出区间事实到业务恢复/结算仍待接入；部分原生查询 envelope、真实策略和业务消费者待对照；原执行/原代次及可信停止与资源释放由权威事务核实。 隔离事务与取消接收证据不等于真实停止或释放资格；历史权限及双库分段测试不代表全端口和真实拓扑资格；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "verification": "隔离事务与取消接收证据不等于真实停止或释放资格；历史权限及双库分段测试不代表全端口和真实拓扑资格；组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "真实执行、停止与输出区间事实到业务恢复/结算仍待接入；部分原生查询 envelope、真实策略和业务消费者待对照；原执行/原代次及可信停止与资源释放由权威事务核实。 隔离事务与取消接收证据不等于真实停止或释放资格；历史权限及双库分段测试不代表全端口和真实拓扑资格；组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/pull/335",
@@ -428,8 +428,8 @@
       ],
       "implementation": "取消先持久接收及原身份只读恢复已有交付证据；真实停止与释放仍需验证。",
       "integration": "Job dispatcher 有网关适配器，但生产 planner 未装配，worker 不领取任务；真实 submit/observe/abort 与停止证据仍需生产联验。",
-      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "Job dispatcher 有网关适配器，但生产 planner 未装配，worker 不领取任务；真实 submit/observe/abort 与停止证据仍需生产联验。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "Job dispatcher 有网关适配器，但生产 planner 未装配，worker 不领取任务；真实 submit/observe/abort 与停止证据仍需生产联验。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/speech/application/job_dispatcher.py",
@@ -459,8 +459,8 @@
       ],
       "implementation": "受限模板、预热及代次停止组件存在；持续 ready、故障和多代生产资格仍待验收。",
       "integration": "控制器不共写准入预算，节点可信事实供原事务裁决。",
-      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "控制器不共写准入预算，节点可信事实供原事务裁决。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "控制器不共写准入预算，节点可信事实供原事务裁决。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/node-controller/src/speechnexus_node_controller/application/runtime_control.py",
@@ -485,8 +485,8 @@
       ],
       "implementation": "已有 disable 协调与持久目标；dispatch 标记提交后、实际外发前崩溃时不能保证自动补发取消，真实停止仍待验收。",
       "integration": "网关按原身份查询和请求级 abort，租约由原事务处理。",
-      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "网关按原身份查询和请求级 abort，租约由原事务处理。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "网关按原身份查询和请求级 abort，租约由原事务处理。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/speech/application/binding_disable_coordinator.py",
@@ -511,8 +511,8 @@
       ],
       "implementation": "已有取消先持久接收、只读恢复和防伪释放边界；可信 gate 和受管外发未启用；现有释放防护拒绝调用方伪造零外发；正向静音 seal 与成功结算未实现。",
       "integration": "须由持久权威唯一写者控制实际生产外发，并接入组合根和生成消费者；须从 gate 获取可信事实，固定对象版本并由原执行/租约事务裁决。",
-      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "须由持久权威唯一写者控制实际生产外发，并接入组合根和生成消费者；须从 gate 获取可信事实，固定对象版本并由原执行/租约事务裁决。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "须由持久权威唯一写者控制实际生产外发，并接入组合根和生成消费者；须从 gate 获取可信事实，固定对象版本并由原执行/租约事务裁决。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/internal/zero-dispatch.schema.json",
@@ -537,8 +537,8 @@
       ],
       "implementation": "资产服务有持久删除账本处理；网关已有须可信协调器授权的清理事务，未提供 HTTP 入口。",
       "integration": "真实删除协调器、音频及跨模块依赖仍需贯通。",
-      "verification": "合成删除许可和组件测试不证明真实端到端删除；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "真实删除协调器、音频及跨模块依赖仍需贯通。 合成删除许可和组件测试不证明真实端到端删除；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "verification": "合成删除许可和组件测试不证明真实端到端删除；组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "真实删除协调器、音频及跨模块依赖仍需贯通。 合成删除许可和组件测试不证明真实端到端删除；组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/architecture/production-assets.md",
@@ -563,8 +563,8 @@
       ],
       "implementation": "文件 ASR 命令消费者映射语言、prompt、温度和切段参数，在读取对象前拒绝不支持的能力。",
       "integration": "完整公开链的固定配置、唯一外发、取消和重启仍须同版联验。",
-      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "完整公开链的固定配置、唯一外发、取消和重启仍须同版联验。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "完整公开链的固定配置、唯一外发、取消和重启仍须同版联验。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/execution-gateway/src/speechnexus_gateway/interfaces/file_asr_command.py",
@@ -584,8 +584,8 @@
       ],
       "implementation": "Realtime 契约和工作台会话组件存在，真实服务端路径及完整业务验收未证。",
       "integration": "公开协商和事件须与网关、工作台实际消费者一致。",
-      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "公开协商和事件须与网关、工作台实际消费者一致。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "公开协商和事件须与网关、工作台实际消费者一致。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/realtime-events.schema.json",
@@ -610,8 +610,8 @@
       ],
       "implementation": "客户端及契约组件存在，真实双工准入与流恢复未完成接收；输出区间组件已有权威锁和重放语义；真实流生产者联验未证。",
       "integration": "仍须联验协调准入、网关及工作台的会话、epoch 和文本顺序；内部 WS/PCM、实时服务、VAD 和正式消费者须固定同版。",
-      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "仍须联验协调准入、网关及工作台的会话、epoch 和文本顺序；内部 WS/PCM、实时服务、VAD 和正式消费者须固定同版。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "仍须联验协调准入、网关及工作台的会话、epoch 和文本顺序；内部 WS/PCM、实时服务、VAD 和正式消费者须固定同版。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/realtime-events.schema.json",
@@ -672,8 +672,8 @@
       ],
       "implementation": "CustomVoice 文件执行和声音工作台组件不证明 VoiceDesign/Base 资格。",
       "integration": "设计引擎、固定材料、节点预算和工作台使用同版制品。",
-      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "设计引擎、固定材料、节点预算和工作台使用同版制品。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "设计引擎、固定材料、节点预算和工作台使用同版制品。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/voice-resource.schema.json",
@@ -698,8 +698,8 @@
       ],
       "implementation": "声音工作台与 CustomVoice 不证明真实克隆模式资格。",
       "integration": "固定样本、参考文本、来源、binding 和材料，工作台与 Base TTS 同版联验。",
-      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "固定样本、参考文本、来源、binding 和材料，工作台与 Base TTS 同版联验。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "固定样本、参考文本、来源、binding 和材料，工作台与 Base TTS 同版联验。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/voice-resource.schema.json",
@@ -724,8 +724,8 @@
       ],
       "implementation": "声音资源契约及内置声音发布组件存在，设计/克隆版本端到端资格未证；当前 PostgreSQL 新 TTS 准入与 retire_publication 使用同一 voice 对象事务 advisory lock；准入先查原身份、锁后再查并复核发布资格，提交前再次复核。",
       "integration": "工作台、声音权威与真实 TTS 必须固定同一版本；静态代码显示两条路径锁键一致；正式装配、全部新引用入口和实际竞争语义仍须确认。",
-      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "工作台、声音权威与真实 TTS 必须固定同一版本；静态代码显示两条路径锁键一致；正式装配、全部新引用入口和实际竞争语义仍须确认。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "工作台、声音权威与真实 TTS 必须固定同一版本；静态代码显示两条路径锁键一致；正式装配、全部新引用入口和实际竞争语义仍须确认。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/voice-resource.schema.json",
@@ -1542,8 +1542,8 @@
       ],
       "implementation": "已有 disable 协调与持久目标；dispatch 标记提交后、实际外发前崩溃时不能保证自动补发取消，真实停止仍待验收。",
       "integration": "网关按原身份查询和请求级 abort，租约由原事务处理。",
-      "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "网关按原身份查询和请求级 abort，租约由原事务处理。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "网关按原身份查询和请求级 abort，租约由原事务处理。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/speech/application/binding_disable_coordinator.py",

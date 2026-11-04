@@ -99,7 +99,7 @@ TTS 支持 `model`、`input`、`voice`、`response_format`、`speed`、`instruct
 
 同步 TTS 路由从已发布 binding 与 voice revision 解析，缺席即 `model_not_found` / `voice_not_found`，不回退默认模型或草稿；`response_format`、`speed`、`instructions`、`language`、`seed` 按 binding 支持域收窄。音频时长与源 PCM 上界写入合成策略，超出时整条请求失败，不做截断。冻结的 `SpeechRequest` 尚无 `max_output_audio_ms` 字段，当前上界来自部署策略；契约补齐后必须与该值取较小者。响应状态以机器契约为准：`model_not_found` / `voice_not_found` 使用 404，方法不符使用 405 `speech_method_not_allowed`；`instructions` 超过部署上限时返回 422 `unsupported_parameter`。`X-Request-ID` 是 1–128 字符关联值，不满足部署身份规则时由服务端生成并回显。
 
-截至 2026-11-03，生产工厂可在私有配方、独立结算、网关与对象存储配置完整且存在合格声音时装配同步链；缺失配置或资格时保持不可用。完整原命令、原身份恢复、声音资格与锁后复验见[同步语音合成](../components/synchronous-speech.md)。[第六次受控窗口](../audits/2026-11-03-controlled-tts-prepare.md#第六次独立授权窗口完整公开-sdk-关联通过)取得标准 SDK、真实引擎、固定对象及停止结算的关联证据；它不代表全部模型、负载或多机资格。
+截至 2026-11-03，生产工厂可在私有配方、独立结算、网关与对象存储配置完整且存在合格声音时装配同步链；缺失配置或资格时保持不可用。完整原命令、原身份恢复、声音资格与锁后复验见[同步语音合成](../components/synchronous-speech.md)。[第六次受控窗口](../archive/audits/2026-11-03-controlled-tts-prepare.md#第六次独立授权窗口完整公开-sdk-关联通过)取得标准 SDK、真实引擎、固定对象及停止结算的关联证据；它不代表全部模型、负载或多机资格。
 
 跨 binding/voice 查询使用同一个只读 REPEATABLE READ 快照；快照本身不保护解析后的准入竞争，必须在准入时按声音及 binding 的共同锁和屏障复验。同步 `SpeechRequest` 不增加 Job binding pin。
 

@@ -28,6 +28,6 @@
 - [2026-10-24 B03 TTS 适配器真实探针](../archive/audits/2026-10-24-b03-tts-adapter-probe.md)：通过已提交适配器合成 1.7B CustomVoice、WAV/MP3 交付、24 kHz→16 kHz 解码与 0.6B ASR 回环，以及停止/清理证据与未验证边界。
 - [2026-10-24 B01/B03 原命令与核验文件输入](../archive/audits/2026-10-24-b03-frozen-inputs.md)：原持久请求、固定版本 MinIO、隔离双库与既有文件消费者的输入接入验证及真实执行剩余范围。
 - [2026-10-25 B03 默认网关的真实文件 ASR 实验](../archive/audits/2026-10-25-b03-default-real-asr-probe.md)：固定 cache 修正、真实 1.7B/CPU VAD、隔离 PG/MinIO、合成语音/静音、重放/重启与控制器停止；保留失败及生产准入、预算和公开链缺口。
-- [2026-11-03 受控 TTS 验收与资源收尾](2026-11-03-controlled-tts-prepare.md)：各次受控窗口的结果、失败与清理证据；第六次窗口仅覆盖固定声音的单节点短英文同步最小链。
+- [2026-11-03 受控 TTS 验收与资源收尾](../archive/audits/2026-11-03-controlled-tts-prepare.md)：各次受控窗口的结果、失败与清理证据；第六次窗口仅覆盖固定声音的单节点短英文同步最小链。
 
 [项目主设计](../speechnexus-product-architecture.md) · [文档索引](../README.md)

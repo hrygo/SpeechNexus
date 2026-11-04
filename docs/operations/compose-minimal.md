@@ -15,7 +15,7 @@ date: 2026-10-28
 
 | 能力 | 当前结论 | 依赖 / 原因 |
 | --- | --- | --- |
-| 公开 TTS `POST /v1/audio/speech` | **本 Compose 未装配** | 同步 TTS 工厂已实现，但本配置只预置 gateway 私有 file-TTS 配置引用，未提供 API 配方及结算数据库配置；其他部署的受控实测见[窗口记录](../audits/2026-11-03-controlled-tts-prepare.md) |
+| 公开 TTS `POST /v1/audio/speech` | **本 Compose 未装配** | 同步 TTS 工厂已实现，但本配置只预置 gateway 私有 file-TTS 配置引用，未提供 API 配方及结算数据库配置；其他部署的受控实测见[窗口记录](../archive/audits/2026-11-03-controlled-tts-prepare.md) |
 | 异步 Job 完整执行链 | **未贯通** | 本配置不启动 `job-dispatch-worker`，生产 planner 尚未装配；API 的创建和读取路由需要另配 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL`，示例默认留空。当前范围见 [F-JOB](../prd.md#f-job) 和 [F-ASYNC](../prd.md#f-async) |
 | 公开同步 ASR 成功响应 | **本部署未验证** | 文件 worker 已有成功终态写入；历史部署曾返回 `504 operation_timeout`，见[本机端到端记录](../archive/operations/local-end-to-end.md#112-公开-v1audiotranscriptions已执行504未成功)。不能将那次结果或组件实现推定为当前部署的公开链路验收 |
 | 节点控制器、runtime delivery、asset maintenance | **未装配** | 本配置有意排除这些服务；不能以本 Compose 的探活结果证明完整部署与发布资格 |

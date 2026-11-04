@@ -170,7 +170,7 @@ instance/intent version，以及显式服务端 owner。现有 create/query 组�
 
 ready 的 `VerifiedRuntimeReadiness` 是明确受信 provider 的私有输入，包含绑定、
 instance/generation、fencing、拓扑与资格摘要、evidence_digest、核验/失效时间。
-构造对象或合法摘要本身不证明真实 warmup/资格；受控同步 TTS 的真实准备与资格证据见[窗口记录](../audits/2026-11-03-controlled-tts-prepare.md)，不能推广为所有 provider 或部署的资格。
+构造对象或合法摘要本身不证明真实 warmup/资格；受控同步 TTS 的真实准备与资格证据见[窗口记录](../archive/audits/2026-11-03-controlled-tts-prepare.md)，不能推广为所有 provider 或部署的资格。
 缺少或过期/错绑定的 receipt 时保留 peak，不能由公开请求自称 qualified。
 旧 epoch 或已经隔离的 generation 即使收到真实 ready，也只记录终态并保留隔离，
 不能凭后续成功响应自动恢复接单。实际准入以 A-owned instance/host/lease 权威为准，

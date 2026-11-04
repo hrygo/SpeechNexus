@@ -22,7 +22,7 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
 语音处理侧另有 [CPU VAD](cpu-vad.md)、[有界文件媒体](file-asr-audio.md)和
 [原生文件识别](file-asr-recognition.md)：已实现 VAD 门禁、源样本时钟与真实 vLLM 调用，
 通过固定模型/授权录音探针。文件持久 dispatch 可按私有配置装配，确定性自动测试中的模型使用替身；
-公开实时入口和完整业务链资格仍待验证；受控同步 TTS 的真实公开链证据见[窗口记录](../audits/2026-11-03-controlled-tts-prepare.md)，
+公开实时入口和完整业务链资格仍待验证；受控同步 TTS 的真实公开链证据见[窗口记录](../archive/audits/2026-11-03-controlled-tts-prepare.md)，
 不改变本页的提交与停止证据、预算和屏障语义。
 文件侧另有[原命令消费者](frozen-execution-inputs.md#原命令驱动的文件-asr-消费者)，
 将同源校验后的参数接到核验输入、媒体/VAD和识别；仍须由已持久授权的执行者调用，

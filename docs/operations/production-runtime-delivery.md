@@ -97,4 +97,4 @@ superuser/schema owner 登录被受限有效角色掩盖的情况；最小权限
 
 上述 daemon、批准计划和 readiness 均为合成事实，不加载模型，不证明 GPU、网络资格、
 生产 TLS 或多主机故障资格。投递 ACK 不调用 `observe_runtime`，也不推进 peak→steady 或
-释放基线；观察/预算投影仍需既有窄事务及真实可信证据。节点内观察循环已有实现，受控同步 TTS 的真实 prepare、资格与停止证据见[窗口记录](../audits/2026-11-03-controlled-tts-prepare.md)；完整调度与其他业务消费者仍须分别验收。本单元不关闭整个 Gate。
+释放基线；观察/预算投影仍需既有窄事务及真实可信证据。节点内观察循环已有实现，受控同步 TTS 的真实 prepare、资格与停止证据见[窗口记录](../archive/audits/2026-11-03-controlled-tts-prepare.md)；完整调度与其他业务消费者仍须分别验收。本单元不关闭整个 Gate。

@@ -262,7 +262,7 @@ Gateway 不查询工作台或语音业务表，只在自己的清理事务中重
 
 ## 7. 实例生命周期与详细实施要求
 
-create/query/observe 已具备[独立生产事务端口](../components/production-runtime-intents.md)与真实 PG/InnoDB 的合成事实验证；固定 HTTPS controller 客户端和[独立投递 worker](../operations/production-runtime-delivery.md)也已实现。[受控同步 TTS 窗口](../audits/2026-11-03-controlled-tts-prepare.md)记录了真实 prepare、资格和停止证据；这不代表完整 scheduler、其他引擎或多主机生命周期资格已完成。
+create/query/observe 已具备[独立生产事务端口](../components/production-runtime-intents.md)与真实 PG/InnoDB 的合成事实验证；固定 HTTPS controller 客户端和[独立投递 worker](../operations/production-runtime-delivery.md)也已实现。[受控同步 TTS 窗口](../archive/audits/2026-11-03-controlled-tts-prepare.md)记录了真实 prepare、资格和停止证据；这不代表完整 scheduler、其他引擎或多主机生命周期资格已完成。
 
 - `create_runtime_intent(prepare)`：锁 owner/quota（若需要）/host/head；核对获准模板、
   拓扑、绑定、manifest、config、加载策略；新 generation 必须大于持久 high water。

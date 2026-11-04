@@ -69,7 +69,7 @@ date: 2026-10-26
 | 包 | 入口 | 当前职责 |
 | --- | --- | --- |
 | `speechnexus-backend` | `speechnexus-api` | Workspace、资产、配置和绑定管理，以及可配置的同步语音入口；私有词典草稿不代表公开创建，完整异步 Job 与实时链仍须验收 |
-| `speechnexus-execution-gateway` | `speechnexus-gateway` | 持久提交/停止/未知隔离/执行观察、认证内部 HTTP、输出区间及文件 ASR/TTS 默认工厂；固定版本的同步 TTS 公开链及原租约释放有[受控窗口证据](../audits/2026-11-03-controlled-tts-prepare.md)，完整资格与其他部署仍须分别验收 |
+| `speechnexus-execution-gateway` | `speechnexus-gateway` | 持久提交/停止/未知隔离/执行观察、认证内部 HTTP、输出区间及文件 ASR/TTS 默认工厂；固定版本的同步 TTS 公开链及原租约释放有[受控窗口证据](../archive/audits/2026-11-03-controlled-tts-prepare.md)，完整资格与其他部署仍须分别验收 |
 | `speechnexus-node-controller` | `speechnexus-node-controller` | 受限节点控制器的意图、generation / fencing、drain 与停止证据规则，本地持久意图与容器 daemon adapter，`/healthz`、`/readyz` 与 `internal/runtime-control` 路由；独立镜像源码候选已有，实际部署待验 |
 | `speechnexus-contracts` | 库 | 机器契约和生成 Python/TS 消费者，固定源码与生成清单共同识别预发布版本 |
 | `speechnexus-media` | 库 / 私有检查命令 | 原生媒体类型、decoder 和私有有界检查；不授予公开 ready、Job、发布或停止权限 |

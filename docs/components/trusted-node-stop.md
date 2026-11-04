@@ -59,7 +59,7 @@ config digest。stop token 只与同池该执行 token 比较，不得低于它�
 不会改未知事实来推进队列，计数也不把用量version变化重复算作状态观察。
 默认进程现已通过[受限私有配置](execution-gateway.md#默认进程的自动恢复配置与生命周期)
 自动启动周期扫描，使用原只读执行查询；实际网关进程与TLS/SQLite/PG已验证重启恢复。
-文件 ASR/TTS 的真实引擎 adapter 已有配置装配；后续[受控 TTS 窗口](../audits/2026-11-03-controlled-tts-prepare.md)
+文件 ASR/TTS 的真实引擎 adapter 已有配置装配；后续[受控 TTS 窗口](../archive/audits/2026-11-03-controlled-tts-prepare.md)
 记录了固定版本与实例的真实停止、预算结算。该证据不能外推到其他引擎、部署或故障；
 完整生产部署和物理多主机资格仍需分别验收。
 原生 HTTP/TLS、SQLite/网关 PG 与 A 的双库消费者验证分别报告；fake daemon 和

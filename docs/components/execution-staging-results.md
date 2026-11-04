@@ -131,4 +131,4 @@ PG 确认丢失用例在真实事务提交后注入连接错误，验证只尝�
 须先证明唯一执行资格与确认丢失语义，不以进程内后台任务代替持久接收。
 输入读取器现使用异步 HEAD/GET 与独立总期限，见[核验文件输入](frozen-execution-inputs.md)；不能从结果期限外推输入读取的安全性。
 
-CustomVoice TTS 已装配；[受控同步 TTS 窗口](../audits/2026-11-03-controlled-tts-prepare.md)记录了公开 SDK、停止与预算结算的有限实测。异步发布、C 消费、故障恢复及物理多机仍须按各自范围验收；本单元不关闭 #142、父工作包或 Gate。
+CustomVoice TTS 已装配；[受控同步 TTS 窗口](../archive/audits/2026-11-03-controlled-tts-prepare.md)记录了公开 SDK、停止与预算结算的有限实测。异步发布、C 消费、故障恢复及物理多机仍须按各自范围验收；本单元不关闭 #142、父工作包或 Gate。

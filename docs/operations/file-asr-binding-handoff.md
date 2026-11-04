@@ -160,7 +160,7 @@ turn detection、分段和期限；部署必须显式提供 token/调用/输入/
 | 全局资源与停止 | 仍由原完整准入、实例生命周期和停止/资源释放双证据保证；局部字节上限不授予进程/设备容量 |
 
 本单元没有新增 binding、manifest、资格或发布记录，也没有重跑模型/私人音频。
-后续[停止与预算结算联验](../audits/2026-10-25-b03-real-stop-settlement.md)在注入 owner
+后续[停止与预算结算联验](../archive/audits/2026-10-25-b03-real-stop-settlement.md)在注入 owner
 过期后验证了网关对旧 token 的实际入口屏障，但没有验证真实 scheduler 进程故障。持续 ready、
 可信端点与 instance/generation 对应、长文件与语言质量、混合负载及物理集群仍须分别验证。
 单凭取消、EOF 或请求清理不能证明停止；适配器取得与原

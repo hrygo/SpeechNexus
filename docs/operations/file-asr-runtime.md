@@ -14,9 +14,9 @@ date: 2026-10-25
 这项接线不创建 binding、默认参数、资格、Job、预算或另一份结果账本。
 
 确定性验证使用真实 PostgreSQL、MinIO、PyAV 和回环 HTTP，VAD 与识别输出为替身。
-另已用该默认入口完成[真实 1.7B/CPU VAD 实验](../audits/2026-10-25-b03-default-real-asr-probe.md)，
+另已用该默认入口完成[真实 1.7B/CPU VAD 实验](../archive/audits/2026-10-25-b03-default-real-asr-probe.md)，
 覆盖合成语音/静音、原身份重放/重启及私有结果；关系数据由隔离 fixture 预置。
-后续[停止与预算结算联验](../audits/2026-10-25-b03-real-stop-settlement.md)已连接默认网关恢复驱动和 A 的原结算事务，但就绪凭证与准入使用 fixture；不授予质量、容量、公开 SDK/C 或物理集群资格。
+后续[停止与预算结算联验](../archive/audits/2026-10-25-b03-real-stop-settlement.md)已连接默认网关恢复驱动和 A 的原结算事务，但就绪凭证与准入使用 fixture；不授予质量、容量、公开 SDK/C 或物理集群资格。
 默认 Compose 提供私有配置文件引用、合成示例和镜像内固定 CPU VAD 依赖，但仍不提供
 已批准模型、真实引擎端点、凭据或已注册实例。启动与探活步骤见
 [最小 Compose 部署面](compose-minimal.md)；启动成功不等于执行链或模型资格通过。

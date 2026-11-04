@@ -11,7 +11,7 @@ date: 2026-10-25
 `997bd462bf16b78962f2cd3ddfe3d8bb21a8b8c8` 上，真实 Qwen3-ASR 1.7B 经默认
 `create_app(settings=...)`、持久文件 worker、CPU VAD 和 MinIO 写出了私有结果。
 未注入 factory、识别器、VAD 或数据库 adapter；网关实际通过回环 TCP 提交和查询。
-这补齐了[默认装配](../operations/file-asr-runtime.md)的真实模型实验，
+这补齐了[默认装配](../../operations/file-asr-runtime.md)的真实模型实验，
 不代表 #142 的公开业务链或生产资格已经完成。
 本次未登记停止证据或结算预算；后续[整代次停止与结算联验](2026-10-25-b03-real-stop-settlement.md)
 及[取消安全链验证](2026-10-25-b03-real-cancel-settlement.md)分别记录新增证据及仍未完成的单请求停止资格。

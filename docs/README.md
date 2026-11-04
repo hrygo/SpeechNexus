@@ -62,7 +62,7 @@
 | [文件 TTS 原生合成接口](components/file-tts.md) | 固定内网 synthesis、响应头/RIFF 结构校验、单次外发与有界 PCM/WAV/MP3 交付编码 |
 | [文件 TTS 默认执行装配](operations/file-tts-runtime.md) | 私有配置、受控 generation、原命令 worker、生成区间与音频回执；受控公开同步链已有证据，完整资格待验 |
 | [B03 真实文件 ASR 与首次长窗口开销](archive/audits/2026-10-24-b03-file-asr-probe.md) | 历史探针：0.6B/1.7B、真实录音、无语音零外发、截断负例与重复测量 |
-| [B03 TTS 适配器真实探针](audits/2026-10-24-b03-tts-adapter-probe.md) | 历史探针：1.7B CustomVoice 的 WAV/MP3、重采样与 ASR 回环、停止和清理证据 |
+| [B03 TTS 适配器真实探针](archive/audits/2026-10-24-b03-tts-adapter-probe.md) | 历史探针：1.7B CustomVoice 的 WAV/MP3、重采样与 ASR 回环、停止和清理证据 |
 | [设计审查记录](archive/audits/2026-10-22-speechnexus-design-review.md) | 历史审查：发现的问题、修正裁决、来源核验及当时未验证项 |
 | [UI/UX 设计框架终审](audits/2026-10-23-ui-ux-design-framework-audit.md)                             | 历史设计与 CI 审查；报告中的绝对化无障碍和拦截评级超出所列证据 |
 | [开发与测试环境](development-environment.md)                                                        | Linux 参考开发环境、独立服务、初始化和隔离边界；宿主状态需实测                |

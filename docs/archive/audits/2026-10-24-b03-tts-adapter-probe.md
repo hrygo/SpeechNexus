@@ -7,7 +7,7 @@ date: 2026-10-24
 
 # B03 TTS 适配器真实探针
 
-本记录验证[文件 TTS 原生合成接口](../components/file-tts.md)在真实 1.7B
+本记录验证[文件 TTS 原生合成接口](../../components/file-tts.md)在真实 1.7B
 CustomVoice 权重上的一次闭合：由已提交的 `VllmTtsSynthesizer` 外发、
 `LocalTtsEncoder` 交付，再经已提交的 24 kHz→16 kHz 解码与 0.6B ASR 适配器回环。
 它不证明 Base/VoiceDesign、流式、并发、质量或公开路由已可用。

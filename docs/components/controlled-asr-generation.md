@@ -79,7 +79,7 @@ uv run python scripts/dev-env/provision-controlled-asr.py \
 不一致时沿现有错误边界拒绝，不读取音频、不外发、不新建意图。未绑定目标的老式原生
 endpoint 仅支持独立诊断，不能通过文件命令执行。
 [默认文件工厂](../operations/file-asr-runtime.md)现可按私有部署配置消费该描述。
-[真实实例实验](../audits/2026-10-25-b03-default-real-asr-probe.md)覆盖了受控实例与默认网关，
+[真实实例实验](../archive/audits/2026-10-25-b03-default-real-asr-probe.md)覆盖了受控实例与默认网关，
 但 A 的权威配置选择和公开发布链仍待联验，不能把描述可加载当作真实运行资格。
 
 ## 保证边界与兼容
@@ -115,8 +115,8 @@ endpoint 仅支持独立诊断，不能通过文件命令执行。
 `python3 /probe/probe_native_auth.py` 复核；镜像身份在宿主确认。
 
 默认文件工厂的隔离存储/回环 HTTP 验证见[装配说明](../operations/file-asr-runtime.md)。
-[真实实例实验](../audits/2026-10-25-b03-default-real-asr-probe.md)及后续
-[整代次停止与预算结算联验](../audits/2026-10-25-b03-real-stop-settlement.md)提供了固定版本的
+[真实实例实验](../archive/audits/2026-10-25-b03-default-real-asr-probe.md)及后续
+[整代次停止与预算结算联验](../archive/audits/2026-10-25-b03-real-stop-settlement.md)提供了固定版本的
 真实模型和停止结算证据，但后者使用 fixture 就绪凭证与准入；网络隔离、生产准入、
 单请求停止及公开 SDK/C 下载等仍需分别验证。单机多逻辑消费者与物理集群资格继续分列，
 B00–B07 和 #142 不因这些实验通过而完成。

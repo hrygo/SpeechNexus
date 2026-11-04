@@ -620,7 +620,7 @@ inventory 与观察时间是每次响应的新鲜观测，`barrier.enforced_at` 
 - 节点检查点/TLS来源、合成daemon与真实网关进程已验证原停止事务和A独立释放；
   这些不证明真实引擎故障、跨节点屏障、实际abort或物理GPU停止资格。
 - 提交入口已服务并通过真实 PG 集成测试，截止时间与运行资格校验已落进该事务并用存储时钟
-  验证。文件 ASR/TTS 可按配置接入引擎；[真实 ASR 实验](../audits/2026-10-25-b03-default-real-asr-probe.md)
+  验证。文件 ASR/TTS 可按配置接入引擎；[真实 ASR 实验](../archive/audits/2026-10-25-b03-default-real-asr-probe.md)
   提供固定版本的外发证据。没有引擎 adapter 时入口只会拒绝；这些证据不等于生产执行链路就绪。
 - 提交事务与生产协调实现的参考/fixture 语义存在一处已知差异：身份字段与租约不一致时，
   网关按其 HTTP 边界冻结的映射报 `invalid_execution_request`，fixture oracle 报
@@ -630,7 +630,7 @@ inventory 与观察时间是每次响应的新鲜观测，`barrier.enforced_at` 
   `record_stop` 关闭。仍未覆盖：回执提交与停止提交之间进程退出时，记录保持占用，恢复只按
   整实例终止证据闭合而不是补推成功；整段没有引擎请求的执行没有终态事实，因此不会 `succeeded`；
   A 的预算归还仍是其独立事务。该单元原验证使用脚本化识别与合成媒体；后续
-  [真实 ASR 停止结算联验](../audits/2026-10-25-b03-real-stop-settlement.md)提供了有限实例证据，
+  [真实 ASR 停止结算联验](../archive/audits/2026-10-25-b03-real-stop-settlement.md)提供了有限实例证据，
   其准入使用 fixture，不能代替真实故障、单请求停止或完整公开消费资格。
 
 ## 14. 验证

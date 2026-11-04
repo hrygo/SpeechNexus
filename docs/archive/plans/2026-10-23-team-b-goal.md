@@ -58,7 +58,7 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 
 各 PR 保存对应候选的检查与报告；旧分支测试数量不转挂最新组合。
 此前 `5f72b20` 加载真实 1.7B 和 CPU VAD；
-随后在 `21129b4` 完成[取消后的安全链联验](../../audits/2026-10-25-b03-real-cancel-settlement.md)，
+随后在 `21129b4` 完成[取消后的安全链联验](../audits/2026-10-25-b03-real-cancel-settlement.md)，
 仅使用合成语料：原身份取消/重放保持 unknown、不写结果、不提前退预算，
 整代次双证据后由默认恢复及 A 原事务幂等结算。三轮失败/局部结果及清理保留。
 原生 abort 指标不构成必要回执，单请求停止/释放未证明，最终报告保持 partial；
@@ -68,7 +68,7 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 
 真实模型分段成果继续有效：[ASR 生命周期](../audits/2026-10-24-b02-real-asr-controller-probe.md)、
 [文件 ASR](../audits/2026-10-24-b03-file-asr-probe.md)、
-[CustomVoice TTS](../../audits/2026-10-24-b03-tts-adapter-probe.md)。
+[CustomVoice TTS](../audits/2026-10-24-b03-tts-adapter-probe.md)。
 CustomVoice 确实能合成；Base、VoiceDesign、克隆、实时和 P95 各自待验，不能互相替代。
 
 ## 深度复盘：保留可靠底座，缩短到业务结果的距离
@@ -138,7 +138,7 @@ binding、manifest 或资格。本候选补齐完整草稿注册请求和显式�
 配置缺失保持不可用；结构、目标与上界错误在取得控制权限前拒绝，不生成权威 binding/default 或另一份预算。
 确定性定向 77 项及六组 PG/InnoDB/真实 MinIO 回归 104 项通过、无跳过；
 `997bd46` 的 CI40207417652 全绿，本机完整入口 6,168 项、85.59%，另 17 项浏览器通过。
-随后在同一代码上完成[默认真实 ASR 实验](../../audits/2026-10-25-b03-default-real-asr-probe.md)：
+随后在同一代码上完成[默认真实 ASR 实验](../audits/2026-10-25-b03-default-real-asr-probe.md)：
 真实 1.7B/CPU VAD 经默认网关和隔离 PG/MinIO 写出语音/静音结果，重放/重启保留回执，
 各一个结果版本且成功推理计数不增加；预算不变。固定 cache 后两次预热 132.827 秒，
 控制器停止双事实及清理有证据，35B 保持运行；旧配置失败记录保留。
@@ -176,7 +176,7 @@ binding、manifest 或资格。本候选补齐完整草稿注册请求和显式�
 22 项既有 PG-only adapter 的 InnoDB 参数组合不适用跳过，未计入通过。
 Ruff、mypy、7 条依赖边界及文档检查通过；保留非集成 9 条、集成 1 条警告。
 该修复已随 #163 完成精确版本 PR/合后 CI 与主线集成。默认真实 ASR 实验现已补证；
-随后在 `5f72b20` 完成[真实停止与 A 结算联验](../../audits/2026-10-25-b03-real-stop-settlement.md)：
+随后在 `5f72b20` 完成[真实停止与 A 结算联验](../audits/2026-10-25-b03-real-stop-settlement.md)：
 默认控制器使用真实 Docker/SQLite/TLS，默认网关恢复循环登记一份匹配停止证据；
 A 原事务先保留 base 等待 lease 清理，再分别幂等归还 slot/attempt 与 base。
 首次期限越界的实验失败及清理保留，无模型反例修正后再运行成功；没有放宽校验。
@@ -197,14 +197,14 @@ node/gateway/pool/instance/generation/binding、ASR/TTS 共享持久 worker，�
 CI 通过。公开路由/发布/下载、可信停止与物理集群仍未交付；真实 CustomVoice 见下。
 
 随后在 2026-10-26 用固定 vLLM-Omni 镜像和真实 1.7B CustomVoice 完成
-[默认工厂持久执行探针](../../audits/2026-10-26-b03-default-real-tts-probe.md)：隔离 PG/MinIO
+[默认工厂持久执行探针](../audits/2026-10-26-b03-default-real-tts-probe.md)：隔离 PG/MinIO
 中取得 24 kHz mono WAV、单对象版本、`[0,153600)` 完整生成区间和 4.543 秒提交到回执；
 网关重启后原身份回执保留、重放保持 unknown，预算不变。首次真实请求暴露 BCP-47 `zh`
 与厂商 `Chinese` 的语言边界不兼容，已在适配器修复并补回归。公开路由/发布/下载、A 结算、
 可信停止/释放、Base/VoiceDesign、长文本和物理集群仍未交付。
 
 随后在 main `2300310` 加原生 TTS 预热路径补丁上完成
-[真实取消与整代次停止联验](../../audits/2026-10-26-b03-real-tts-stop-settlement.md)：
+[真实取消与整代次停止联验](../audits/2026-10-26-b03-real-tts-stop-settlement.md)：
 控制器两次代次鉴权预热、缺失/另一代次凭据拒绝，执行中取消/重放零结果且预算不变；
 整代次退出与资源释放双事实经默认网关恢复登记，A 原租约事务首次结算、重复重放。
 195.564 秒就绪、11.839 秒停止，三个受保护服务未变。首轮驱动查询错误及失败保留。

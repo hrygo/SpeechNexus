@@ -11,7 +11,7 @@ date: 2026-10-24
 已实现原生识别端口、HTTP adapter 和顺序文件消费者；
 [持久 worker 的默认装配](../operations/file-asr-runtime.md)可由私有部署配置启用，确定性自动测试中的模型为替身。
 公开文件 ASR 链、真实模型默认运行、调度准入、对象发布、交叠合并及辅助时间戳仍分别验收。
-[原命令与对象核验输入](frozen-execution-inputs.md)已有独立端口及文件消费者；[真实隔离执行](../audits/2026-10-25-b03-default-real-asr-probe.md)不代表完整公开业务链已验收。
+[原命令与对象核验输入](frozen-execution-inputs.md)已有独立端口及文件消费者；[真实隔离执行](../archive/audits/2026-10-25-b03-default-real-asr-probe.md)不代表完整公开业务链已验收。
 不能将原生入口直接注册成绕过租约、提交屏障或完整有效命令的业务路由。
 
 ## 端口和结果

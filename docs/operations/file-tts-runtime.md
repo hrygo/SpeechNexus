@@ -95,13 +95,13 @@ binding、readiness 资格或准入预算。
 
 ## 尚未覆盖
 
-固定版本的真实 CustomVoice 已完成[默认工厂和三格式私有交付实验](../audits/2026-10-26-b03-default-real-tts-probe.md)（旧 v1 配置），
+固定版本的真实 CustomVoice 已完成[默认工厂和三格式私有交付实验](../archive/audits/2026-10-26-b03-default-real-tts-probe.md)（旧 v1 配置），
 其证据不自动覆盖后续代码或模型组合。[2026-11-03 受控窗口](../audits/2026-11-03-controlled-tts-prepare.md)另有标准 SDK、真实声音资格、公开同步合成、停止与结算关联证据；真实语料质量、长文本切分、流式/音色素材、GPU 混合负载和物理多节点仍须独立验收。
 默认 Compose 现提供 file-TTS 私有配置文件引用与合成示例，但不提供已批准模型、真实
 引擎端点、凭据或已注册实例。同步 TTS 装配条件见[同步语音合成](../components/synchronous-speech.md)，装配与探活边界见
 [最小 Compose 部署面](compose-minimal.md)。
 
-[真实取消与整代次停止联验](../audits/2026-10-26-b03-real-tts-stop-settlement.md)
+[真实取消与整代次停止联验](../archive/audits/2026-10-26-b03-real-tts-stop-settlement.md)
 已在隔离 PG/MinIO 中证明取消保持占用、控制器双证据由默认网关登记、A 原租约事务只结算
 一次；该次实验的就绪/准入和 runtime stop 意图生产者仍为 fixture，实例 base 结算与单请求释放未验。后续 2026-11-03 窗口分别记录了实例 base 结算和 SDK 请求原租约释放与重放；单请求释放不能仅由整代次停止推断，证据范围以对应窗口为准。
 

@@ -204,6 +204,9 @@ LLM 与底座的队列、计量和结果分开；共享主机时仍要计入父�
 
 ## 10. 观测、运维与故障协调
 
+本节的跨服务追踪、指标采集和告警描述目标方案；依赖锁中存在 OpenTelemetry API
+不证明采集器、指标或跨服务传播已装配。部署范围与实际证据须分别核验。
+
 采用结构化 JSON 日志与 OpenTelemetry 追踪，跨 API、队列、scheduler、gateway、controller、adapter 传播关联信息；异步重试关联原意图并保留独立 attempt。不得把输入正文、prompt、音频、声音特征、对象私有路径或凭据放入 span / baggage / 异常详情。观测组件只部署在本机或内网。
 
 Prometheus 分别统计队列等待、准入、模型准备 / 热身、引擎排队、执行、首有效预览、首 PCM、abort 确认和回收延迟。容量、实例峰值、实时保留余量、quarantine、outbox lag、GC / 删除待办和连接池等待进入运维视图。指标标签限于有界的能力、执行类别和当前部署绑定；高基数关联 ID 放在无内容日志和 trace。

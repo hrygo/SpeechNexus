@@ -106,7 +106,7 @@ opened 必须回显相同模式、执行身份与 fencing。TTS command.text 和
 恰好选一个；文本流身份必须匹配 open，命令中不能再带未冻结初始文本。
 
 收到 opened 后才能发送 append/commit/finish；三类事件在每个 epoch 共用独立于
-envelope.seq 的 text_seq，从 0 开始连续递增，并使用 Unicode scalar offset。一次只发送一个
+envelope.seq 的 text_seq，从 0 开始连续递增，并使用 Unicode scalar offset；ack 中 `accepted_through_text_seq=-1` 表示尚未接受任何文本事件。该序号与公开 Realtime 的 `nexus.tts.append_text.text_seq` 不同，后者从 1 起，不能直接混用。一次只发送一个
 未确认事件。按相同 text_seq 重发完全相同内容返回原 ack；不同内容冲突，跳号拒绝。
 字符额度是可接受的绝对末端位置，不是叠加赠送；UTF-8 字节与 UTF-16 code unit
 都不能作为字符数，字符额度也不豁免单条消息的字节数上限。旧事件重放返回的原 ack

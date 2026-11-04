@@ -11,17 +11,17 @@ date: 2026-10-26
 
 解除 A02 真实音频检查的共享媒体前置：从既有 B 实现提取独立制品，
 保留网关原消费者和异常身份，在 A 已有受限进程内运行实际 decoder，输出有界媒体事实。
-关联 [A02 #21](https://github.com/hrygo/SpeechNexus/issues/21) 与[团队 A Goal](../archive/plans/2026-10-23-team-a-goal.md)。
+关联 [A02 #21](https://github.com/hrygo/SpeechNexus/issues/21) 与[团队 A Goal](2026-10-23-team-a-goal.md)。
 本单元不启用公开 ready 或完成 A02 AC。
 
 ## 进展总结
 
 提取源固定为 `230031043a76ac6c2d04ee6bb2fe93ca38f991c5`；收尾 PR 已安全吸收
 main `54daef6ae4792b69a0e5e8645b09240ff715082e`，此来源版本及原 blob 不变。
-本文件与实现一并提交评审，尚未合入或由 B 接收；后续安排交新负责人决定，见[最终交接](../archive/plans/2026-10-26-team-a-final-handoff.md)。
+本文件与实现一并提交评审，尚未合入或由 B 接收；后续安排交新负责人决定，见[最终交接](2026-10-26-team-a-final-handoff.md)。
 独立包 `speechnexus-media 0.1.0.dev0` 保持 recipe `pcm-decode-1`。
 原生类型文件逐字节不变，decoder 只改原生类型 import；
-源 blob、原件和制品文件 SHA256 见[源码映射](../../packages/media/source-inventory.json)。
+源 blob、原件和制品文件 SHA256 见[源码映射](../../../packages/media/source-inventory.json)。
 B 原路径兼容导出同一对象，没有第二套 MediaError，也未改 B 的 codec/停止/回执/预算语义。
 
 私有 `speechnexus-inspect-audio` 命令只读固定 `/input/media`，

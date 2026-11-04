@@ -41,7 +41,7 @@ not a published shared package or acceptance of that decoder in this sandbox.
 
 The A-MEDIA-EXTRACT-01 source candidate includes a separately distributed media
 kernel and a small inspection entrypoint; B acceptance remains pending. It is
-described in the [media kernel handoff](../plans/2026-10-26-a02-media-kernel-handoff.md):
+described in the [media kernel handoff](../archive/plans/2026-10-26-a02-media-kernel-handoff.md):
 `packages/media` relocates these exact native types and codec; the old gateway
 imports re-export the same objects. Its private inspection command currently
 admits PCM WAV and explicitly described raw PCM only. Broader codec support
@@ -57,7 +57,7 @@ before shared integration. AssetRuntime still installs TextAssetInspector.
 
 The same PR candidate adds the canonical private success receipt and
 `ProcessAudioAssetInspector`, described in the
-[receipt handoff](../plans/2026-10-26-a02-audio-receipt-handoff.md). It validates
+[receipt handoff](../archive/plans/2026-10-26-a02-audio-receipt-handoff.md). It validates
 the generated contract, original input digest/length, exact sample clock and
 cancellation before exposing media facts. Default composition remains unchanged;
 this is not HTTP, storage, restart or public-ready acceptance.

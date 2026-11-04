@@ -246,7 +246,7 @@ scanner/settlement 专用身份的启动检查要求 PostgreSQL >= 16，并以�
 升级前必须停用、排空并以独立数据库身份栅栏全部旧释放消费者，再迁移/授权和恢复新消费者；
 旧进程不读取新投影，滚动混跑不能声明保护生效，回滚也保持释放暂停。
 该附加拒绝条件不能证明合法静音成功或资源停止。当前正向零外发路径仍关闭，见
-[固定边界与跨方输入](../plans/2026-10-30-zero-dispatch-settlement.md)。
+[固定边界与跨方输入](../archive/plans/2026-10-30-zero-dispatch-settlement.md)。
 
 gateway 先提交执行事实，Scheduler 后核对并释放；两步间崩溃只会多占预算，不能提前释放。
 从未创建 submit 的 lease 可以在锁定 lease 后直接释放，后续 submit 必须拒绝。

@@ -2,7 +2,7 @@
 
 核验日期：2026-10-24（Asia/Shanghai）。本单元推进 C05，不代表完整 C05/C04 或实时语音资格；C00–C08 goal 保持 active。
 
-下述缺口反映本单元时点；后续部署内提词状态接入及其验证见[生产消费者交接](../../plans/2026-10-25-team-c-teleprompter-state-consumer-handoff.md)。该状态不含正文，自动语音跟随与真实设备资格仍须分别核验。
+下述缺口反映本单元时点；后续部署内提词状态接入及其验证见[生产消费者交接](2026-10-25-team-c-teleprompter-state-consumer-handoff.md)。该状态不含正文，自动语音跟随与真实设备资格仍须分别核验。
 
 ## 基线与范围
 

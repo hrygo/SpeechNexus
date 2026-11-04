@@ -7,11 +7,11 @@ date: 2026-10-27
 
 # Paperclip 团队与工作流落地计划
 
-> 历史实施记录，以下状态与授权均为当时快照；现行约定见[交付 SOP](../operations/agent-delivery-sop.md)。
+> 历史实施记录，以下状态与授权均为当时快照；现行约定见[交付 SOP](../../operations/agent-delivery-sop.md)。
 
-**目标：** 将 [工作流设计](../operations/paperclip.md) 配置到 DEL 的既有 SpeechNexus 项目，先准备所有岗位必需的环境，之后再按用户要求恢复任务闭环验收。
+**目标：** 将 [工作流设计](../../operations/paperclip.md) 配置到 DEL 的既有 SpeechNexus 项目，先准备所有岗位必需的环境，之后再按用户要求恢复任务闭环验收。
 
-**当前总开关：** 用户要求暂缓真实任务；七个 agent 保持暂停。当前只做环境准备与检查，不建立业务执行队列。实际环境证据与限制见 [环境验收记录](../operations/paperclip/environment-readiness.md)。
+**当前总开关：** 用户要求暂缓真实任务；七个 agent 保持暂停。当前只做环境准备与检查，不建立业务执行队列。实际环境证据与限制见 [环境验收记录](../../operations/paperclip/environment-readiness.md)。
 
 **实施方式：** 项目经理按步骤执行，使用既有 Paperclip 连接器与官方 CLI。用户已完整授权本轮工作流与 agent 调整。
 设计由独立 reviewer 做 builder check，问题自行收敛；角色正文为版本源，平台执行记录为运行证据。

@@ -25,7 +25,7 @@ date: 2026-10-26
 
 本轮实际交付为共享媒体包、私有音频检查命令、成功回执契约及窄 AssetInspector 消费者，
 已整理进收尾 PR 候选，尚未合入主干；默认 AssetRuntime 仍装配 TextAssetInspector。
-见[媒体交接](../../plans/2026-10-26-a02-media-kernel-handoff.md)与[回执交接](../../plans/2026-10-26-a02-audio-receipt-handoff.md)。
+见[媒体交接](2026-10-26-a02-media-kernel-handoff.md)与[回执交接](2026-10-26-a02-audio-receipt-handoff.md)。
 B #219 已合入 `54daef6ae4792b69a0e5e8645b09240ff715082e`，14 项 CI 成功；
 固定制品与注册输入可供核验，不代表权威 binding、发布、容量或真实公开链通过。
 真实 ASR/TTS 公开链仍为 0/2；故障矩阵未完成，关键不变量的真实链基线未知。

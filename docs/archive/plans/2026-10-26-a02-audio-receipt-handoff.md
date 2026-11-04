@@ -13,18 +13,18 @@ date: 2026-10-26
 同源 Python/TypeScript 消费者与 A 的窄 AssetInspector 实现。
 实现起点为 `230031043a76ac6c2d04ee6bb2fe93ca38f991c5`，收尾 PR 基于
 `54daef6ae4792b69a0e5e8645b09240ff715082e` 提交评审，尚未合入。
-后续实施由新负责人重新安排，当前证据和待决事项见[最终交接](../archive/plans/2026-10-26-team-a-final-handoff.md)。
-关联 [A02 #21](https://github.com/hrygo/SpeechNexus/issues/21)；完整目标见[团队 A Goal](../archive/plans/2026-10-23-team-a-goal.md)。
+后续实施由新负责人重新安排，当前证据和待决事项见[最终交接](2026-10-26-team-a-final-handoff.md)。
+关联 [A02 #21](https://github.com/hrygo/SpeechNexus/issues/21)；完整目标见[团队 A Goal](2026-10-23-team-a-goal.md)。
 
 ## 交付内容
 
-- [私有成功回执](../../contracts/internal/audio-inspection.schema.json) `1.0.0` 固定
+- [私有成功回执](../../../contracts/internal/audio-inspection.schema.json) `1.0.0` 固定
   `schema_version=1`、`recipe_version=pcm-decode-1`、原输入 SHA256/长度及源采样率、声道、样本数、毫秒时长。
   不含路径、PCM、引擎身份、发布许可或停止/释放事实。
 - `audio_inspection` 是显式选择的生成 profile；Python 入口为
   `speechnexus_contracts.audio_inspection.parse`，TypeScript 为 `@speechnexus/contracts/audio-inspection`。
   类型/校验器由原生成流水线产出，共享摘要域复用 canonical source，不新增平行字段定义或 HTTP client。
-- [ProcessAudioAssetInspector](../../backend/src/speechnexus_backend/speech/infrastructure/audio_asset_inspector.py)
+- [ProcessAudioAssetInspector](../../../backend/src/speechnexus_backend/speech/infrastructure/audio_asset_inspector.py)
   消费已完整结束的私有进程输出，独立绑定实际输入长度/摘要，检查整数表示、源时钟/时长关系、
   配置时长限制与最后取消状态，再投影既有 `MediaFacts`。
 - 仅接 `asr_input` 的 PCM WAV 私有检查；`text_input` 沿用原 TextAssetInspector，

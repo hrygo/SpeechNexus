@@ -242,6 +242,9 @@ Profile、voice 和 model binding revision 不可变；升级只影响后续新�
 
 ### 1.7 音色创作与增强协议
 
+本节的设计、克隆、候选验证与发布流程是契约和设计目标；当前生产装配尚未接通
+完整音色创作链。已有预置音色资格或同步 TTS 证据不能替代该链路验收。
+
 标准 `/v1/audio/speech` 使用已发布音色或预置 speaker；instructions 仅控制当前绑定支持的表达方式，不隐式创建、克隆或发布音色。音色创作有自己的 `VoiceCommand`，复用 Admission、Operation、Job、Artifact、ExecutionReceipt 与幂等规则，不要求消费方使用工作台。
 
 | 增强入口 | 规范命令 / 结果 |

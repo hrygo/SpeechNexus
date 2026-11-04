@@ -119,6 +119,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/execution-gateway/src/speechnexus_gateway/interfaces/file_asr_command.py",
           "label": "文件 ASR 命令边界",
           "note": "负责命令与媒体执行边界，本身不证明真实 GPU 停止或公开端到端"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/execution-gateway/src/speechnexus_gateway/application/file_asr_result.py",
+          "label": "文件 ASR 结果收集",
+          "note": "校验分段序列、绑定、策略与源时钟，不推断重叠去重"
         }
       ],
       "issues": []

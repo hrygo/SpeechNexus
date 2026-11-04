@@ -1022,7 +1022,7 @@
 
 **验收：**
 
-- 生产发布绑定引用固定 manifest/qualification 与质量报告；实验性、不完整报告不得当生产资格。
+- 生产发布绑定引用固定 manifest/qualification 与质量报告；实验性、不完整报告不得当生产资格。 当前 HTTP 草稿保存的定义不含 `binding_id`，目录投影要求该字段；通过该路径发布不代表目录可读取，缺口及修复后的正式联验须单独验收。
 - 模型升级为新 binding revision；新请求切换，旧会话 drain 与旧 Job 按固定版本完成或明确取消，回滚不改历史制品。
 
 设计依据：[capacity-manifest.md](operations/capacity-manifest.md)、[file-tts-binding-handoff.md](operations/file-tts-binding-handoff.md)。

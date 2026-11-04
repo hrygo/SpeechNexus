@@ -231,7 +231,7 @@ Job 的取消与重试也是契约目标；当前公开 Job 路由只装配创�
 | `asr.max_segment_ms` | integer，1000–30000 | 有界识别段的预算；必须不小于 preview_interval_ms |
 | `asr.finalization` | `full_segment / streaming_finalize` | 完整段复核或流式结束定稿；两者终稿均不强制保留错误预览 |
 | `asr.final_deadline_ms` | integer，100–10000 | 从段关闭到正文 final 的期限，取服务端允许范围；required 辅助步骤使用独立期限 |
-| `asr.auxiliary_deadline_ms` | integer，100–10000 | 正文定稿后等待 required 辅助步骤的上限；默认 5000，不与正文 final 期限混淆 |
+| `asr.auxiliary_deadline_ms` | integer，100–10000 | 正文定稿后等待 required 辅助步骤的上限；schema 默认注解为 5000，不自动填充值，也不与正文 final 期限混淆 |
 | `asr.rollback_tokens` | integer，0–32 | 适配器支持时的重解码启发式；不支持则拒绝覆盖，不伪造执行 |
 | `asr.turn_detection.mode` | `server_vad / manual` | 自动关闭识别段或由客户端 commit；不能决定助手业务轮次 |
 | `asr.turn_detection.silence_duration_ms` | integer，200–3000 | 仅 server_vad 有效；与场景结束策略共同决定切段 |
@@ -246,7 +246,7 @@ Job 的取消与重试也是契约目标；当前公开 Job 路由只装配创�
 | `tts.instructions` | 有界 string 或 null | 预设参数上限 2000 字符，REST 标准字段上限 4096；仅绑定声明支持时开放，禁止把整段业务 prompt 默认送入声音模型 |
 | `tts.pronunciation_revision` | 资源引用或 null | 固定的发音词典；保留原始文本与声学文本摘要 |
 | `tts.seed` | integer 或 null | 只有后端声明支持时生效；不承诺跨版本相同波形 |
-| `tts.planner.max_chars` | integer；建议 40–400 | 管理员预设中的分段预算，受绑定支持范围限制 |
+| `tts.planner.max_chars` | integer，40–400 | 预设契约中的分段预算，实际还受绑定支持范围限制 |
 | `tts.planner.max_wait_ms` | integer，100–3000 | sentence 模式等待完整句界的最大时间；到期不强制合成不安全尾部 |
 | `output.transcript_format` | `json / text / verbose_json / srt / vtt` | 后三者仅在具备相应时间边界证据时开放，不伪造时间戳 |
 | `output.audio_format` | `mp3 / wav / pcm` REST 基线 | 标准 REST 默认 mp3；实时 PCM descriptor 独立协商，其他格式经 encoder / 客户端资格验证后发布 |

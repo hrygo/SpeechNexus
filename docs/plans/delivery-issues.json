@@ -1381,15 +1381,15 @@
         "contracts/README.md",
         "docs/architecture/contract-ownership.md"
       ],
-      "implementation": "契约说明 MCP 工具语义，最小 Compose 明确列出基础服务与需另装配的后台角色。",
-      "integration": "安装样例、依赖许可和生产运行材料尚待统一接收。",
-      "verification": "现有文档不证明干净安装或许可全量合规。",
-      "gap": "安装样例、依赖许可和生产运行材料尚待统一接收。 现有文档不证明干净安装或许可全量合规。",
+      "implementation": "生成契约包提供 Python wheel / uv 工作区依赖和 TypeScript 工作区客户端示例；契约文档定义 MCP 无状态投影。",
+      "integration": "SDK/MCP 在声明平台的安装、发现、调用和错误恢复仍须统一接收。",
+      "verification": "文档与生成消费者不能证明干净安装、完整恢复流程或许可全量合规。",
+      "gap": "SDK/MCP 在声明平台的安装、发现、调用和错误恢复仍须统一接收。 文档与生成消费者不能证明干净安装、完整恢复流程或许可全量合规。",
       "evidence": [
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/architecture/production-assets.md",
-          "label": "资产与存储",
-          "note": "文本资产和恢复路径的实现说明，不证明完整音频生命周期"
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/packages/contracts/README.md",
+          "label": "生成消费者与安装示例",
+          "note": "说明 Python 和 TypeScript 消费方式，不证明声明平台的完整安装与恢复验收"
         },
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/contracts/README.md",

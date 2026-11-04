@@ -168,7 +168,7 @@ TTS Job 可选 `model_binding={id,revision}` 固定精确版本：新意图要�
 
 已提交 Artifact 与 Job 结果共享同一 receipt；`JobArtifact.artifact_id` 在单个成功结果中唯一，结果引用的主 Artifact 必须存在、kind 匹配且 `receipt_id` 等于结果 receipt。Artifact / JobArtifact / SavedAsset / ExportArtifact 的内容字节数必须大于零，不能用空文件冒充已提交制品。`job.succeeded` 也须满足这些跨数组规则；生产者须在写入事件前校验，当前证据及 schema 覆盖限制见 §1.6。
 
-ASR 结果使用统一 `TranscriptDocument`：`id`、`revision`、`language`、`text`、`sample_rate_hz`、`coordinate_space`、`segments`、`auxiliary_status`。segment 包含 `segment_id`、`sample_span`、`text`、`text_revision`，以及可选 `words`、`speaker_assignments`。统一坐标为 `canonical_audio`、24 kHz，原文件解码 / 重采样映射的 revision 进入 receipt；不能把原文件 48 kHz 下标直接填入 sample_span。`auxiliary_status` 分别声明 alignment / diarization 的 `not_requested | pending | complete | failed | unavailable`。不把 segment 平均时长伪造成 word timestamps；未知说话人为 null / unknown。
+ASR 结果的目标设计使用统一 `TranscriptDocument`：`id`、`revision`、`language`、`text`、`sample_rate_hz`、`coordinate_space`、`segments`、`auxiliary_status`。segment 包含 `segment_id`、`sample_span`、`text`、`text_revision`，以及可选 `words`、`speaker_assignments`。统一坐标为 `canonical_audio`、24 kHz，原文件解码 / 重采样映射的 revision 进入 receipt；不能把原文件 48 kHz 下标直接填入 sample_span。`auxiliary_status` 分别声明 alignment / diarization 的 `not_requested | pending | complete | failed | unavailable`。不把 segment 平均时长伪造成 word timestamps；未知说话人为 null / unknown。当前公开 Job 的 `AsrJobResult` 只固定 `transcript_artifact_id` 和 `receipt_id` 等引用，尚未在该契约中定义上述制品正文结构；消费者不能仅凭 Job schema 假定这些字段已经可用。
 
 TTS 制品携带实际 `format`、`sample_rate_hz`、`channels`、`duration_ms`、摘要与 `ExecutionReceipt`。Receipt 区分 requested / effective / observed 参数；只有实际观察到的事实进入 observed，固定 seed 也不承诺跨引擎 bitwise 一致。
 
@@ -463,7 +463,7 @@ WS 断开即停止接收新操作，取消实时计算并回收 owner，记录�
 
 REST 的完整 input 在请求接受时一次性冻结，`audio_delivery` 只能为 `complete`。此示例请求 PCM；成功返回二进制音频，并以 Content-Type、`X-Audio-Format`、`X-Sample-Rate-Hz` 和 `X-Channels` 描述实际格式。当前同步 HTTP 入口不承诺返回 `X-Operation-ID` 或供客户端查询的 operation receipt；结果未知时不能仅凭传输结束判断执行完整或安全重发，须按[同步语音合成](../components/synchronous-speech.md)协调原身份。持续分块与可恢复完整音频分别属于实时接口和 Job 的目标范围，需按实际装配与验收判断。
 
-同步 ASR 使用 multipart 的 `file`、`model=asr-quality`、`language=zh`、`response_format=json`；`nexus` 部分按 [同步 REST 子集](speech-api.md#13-同步-rest-子集) 传入相同工作空间与预设信息。file 是上传内容，不是服务器文件路径。成功 JSON 至少包含 text；完整原生结果与辅助状态通过 Job 的 TranscriptDocument 获取，不随意改变兼容子集响应形状。
+同步 ASR 使用 multipart 的 `file`、`model=asr-quality`、`language=zh`、`response_format=json`；`nexus` 部分按 [同步 REST 子集](speech-api.md#13-同步-rest-子集) 传入相同工作空间与预设信息。file 是上传内容，不是服务器文件路径。成功 JSON 至少包含 text；持久 Job 的目标是通过转写制品提供更完整的结果，但公开契约目前只固定制品引用，正文结构与辅助结果仍须冻结并交付，不随意改变兼容子集响应形状。
 
 ### 3.2 创建实时 ASR 会话
 

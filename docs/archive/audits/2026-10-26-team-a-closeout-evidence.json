@@ -71,7 +71,7 @@
   "handoff": {
     "document": "docs/archive/plans/2026-10-26-team-a-final-handoff.md",
     "version": "1.1.0",
-    "issue_index": "docs/audits/2026-10-26-team-a-issue-handoff.json",
+    "issue_index": "docs/archive/audits/2026-10-26-team-a-issue-handoff.json",
     "issue_count": 40,
     "open": 40,
     "in_progress": 34,

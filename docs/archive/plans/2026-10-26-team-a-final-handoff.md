@@ -82,7 +82,7 @@ C 本机 v1.1.0 计划的 SHA256 `66fccff9c80f0c8c25395a111a19b97cdce3ef13ac620f
 
 ## 全部 issue 与验收现状
 
-[40 项交接清单](../../audits/2026-10-26-team-a-issue-handoff.json)包含逐项编号、标题、状态、更新时间和公开链接。
+[40 项交接清单](../audits/2026-10-26-team-a-issue-handoff.json)包含逐项编号、标题、状态、更新时间和公开链接。
 清单核验时间为 **2026-10-26 18:13:27 +0800（Asia/Shanghai）**，在他人本轮写入结束后再次读取 GitHub；
 40 项均 open，34 项部分实施、6 项 planned。
 每项只有一个有效 status 标签。依据用户要求，现有正文已整合替换而非追加更新段，合并重复任务和历史摘要，
@@ -147,7 +147,7 @@ C 本机 v1.1.0 计划的 SHA256 `66fccff9c80f0c8c25395a111a19b97cdce3ef13ac620f
 | 构建/树外消费 | 五包wheel/sdist；从wheel实际解码4800样本，合法回执通过/错摘要拒绝；禁止gateway/controller导入并核对均从wheel加载。Compose config和此前Docker COPY最小上下文frozen安装通过，未实际构建部署镜像 |
 | 本版交接文档 | 只改文档与审计索引；运行链接/frontmatter/JSON/清单覆盖及命令语法、diff检查。新增文档head的CI以PR为准，不借旧head结果声称通过 |
 
-命令、日志 SHA 和 wheel 摘要见[机器证据索引](../../audits/2026-10-26-team-a-closeout-evidence.json)。
+命令、日志 SHA 和 wheel 摘要见[机器证据索引](../audits/2026-10-26-team-a-closeout-evidence.json)。
 初次统一契约缺样例/根引用、解析期间取消 RED、缺 Node 依赖均修复并回归；原失败保留。
 旧 #185 ENOSPC/覆盖失败、#173 合后 Web 失败、#155 中间取消/清理未知及 #201 精确合后取消/清理未知
 仍按各 issue/PR 的原版本独立记录，新结果不改写它们。

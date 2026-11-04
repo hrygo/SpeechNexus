@@ -336,8 +336,8 @@
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/render_and_validate.cjs` | 已核对 | 全文核对渲染、标记元素布局、素材与模型目录断言及报告输出；语法检查通过，未重跑浏览器渲染 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/validation.json` | 已核对 | 2026-11-03 报告的三份素材及两组 SVG / PNG 摘要匹配当前文件，与单图报告一致；对照脚本核对检查范围，未重跑渲染 |
 | `docs/audits/2026-10-25-team-c-acceptance-map.json` | 已核对 | 历史验收范围的结构化映射仍是验收检查脚本的默认输入，保留原位；对照原 AC 说明核对 41 项、278 子条件及 not_run 状态。检查须显式提供证据根，本次未复核原始证据或运行完整检查 |
-| `docs/audits/2026-10-26-team-a-closeout-evidence.json` | 历史保留 | 全文阅读并对照最终交接的版本、计数与资格边界；原始日志和制品未复验 |
-| `docs/audits/2026-10-26-team-a-issue-handoff.json` | 历史保留 | 核对快照时间、来源、交接引用及 40 个唯一编号；未重查历史远端状态 |
+| `docs/archive/audits/2026-10-26-team-a-closeout-evidence.json` | 历史保留 | 全文阅读并对照最终交接的版本、计数与资格边界；原始日志和制品未复验 |
+| `docs/archive/audits/2026-10-26-team-a-issue-handoff.json` | 历史保留 | 核对快照时间、来源、交接引用及 40 个唯一编号；未重查历史远端状态 |
 | `docs/audits/2026-10-26-team-c-operation-coverage.json` | 已核对 | 是操作覆盖检查脚本的当前默认输入，不按日期归档；2026-11-04 执行检查为 52 项、42 bound、10 pending、无漂移；文本命中只说明接线，不能证明行为或验收 |
 | `docs/archive/audits/evidence/2026-11-03-tts-prepare.json` | 历史保留 | 首次窗口的结构化证据；核对报告引用及候选版本，原始记录未逐项重验 |
 | `docs/archive/audits/evidence/2026-11-03-tts-window-2.json` | 历史保留 | 第二窗口的结构化证据；核对报告引用、版本及 SDK 闭环未通过标记，原始记录未逐项重验 |

@@ -103,7 +103,7 @@
 
 **验收：**
 
-- 查询、取消、重试、Operation/receipt 与 SSE 的权威状态一致；断线及事件过期后恢复权威状态，幂等与取消语义一致。
+- 查询、取消、重试、Operation/receipt 与 SSE 的权威状态一致；断线时以持久事件序号和 `Last-Event-ID` 从该序号之后续读，事件历史过期返回 `410 event_history_expired` 后读取当前 Job 状态，不伪造历史；幂等与取消语义一致。
 
 设计依据：[speech-api.md](architecture/speech-api.md)、[runtime-governance.md](architecture/runtime-governance.md)。
 

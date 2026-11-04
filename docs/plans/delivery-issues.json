@@ -1735,11 +1735,21 @@
         "docs/architecture/technical-blueprint.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "需求基线；当前实现待核验。",
-      "integration": "实际组合根与消费者待核验。",
+      "implementation": "工作台与管理端页面入口均展示共享部署边界；工作台明确个人体验不等于私有数据，管理端提示没有登录与角色隔离。",
+      "integration": "页面文案是静态源码证据；真实部署、实际功能与完整浏览器支持矩阵仍须逐项核验。",
       "verification": "未取得当前真实部署验收证据。",
-      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "gap": "页面文案不能证明所有界面状态正确，键盘、读屏、缩放和声明浏览器矩阵须按真实业务场景验收。",
       "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/web/workbench/src/App.tsx",
+          "label": "工作台共享边界提示",
+          "note": "固定源码文案，不证明运行与完整辅助功能资格"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/web/admin/src/App.tsx",
+          "label": "管理端共享边界提示",
+          "note": "固定源码文案，不证明入口保护或完整辅助功能资格"
+        },
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
           "label": "产品与架构设计",

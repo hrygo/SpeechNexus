@@ -120,3 +120,11 @@ status: archived
 来源：[原 PR #138](https://github.com/hrygo/SpeechNexus/actions/runs/40155498616)、[新 PR #144 首次运行](https://github.com/hrygo/SpeechNexus/actions/runs/40158818797)。新运行的七个业务作业按范围不适用，最终必需门禁通过。完整路径另由 [PR #143](https://github.com/hrygo/SpeechNexus/pull/143) 的 14 项检查通过验证。
 
 以上是增加 Design Token 前置步骤之前的两次文档改动托管观测；runner 与排队情况不同，不代表当前耗时、长期分位数或业务测试自身提速。`main` 与手动运行继续执行完整验证。
+
+## 浏览器依赖预取的历史观察
+
+不改软件源、APT/网络安全配置、超时预算或六分片/受保护汇总，不引入跨运行缓存或外部服务。真实 runner 确认 HTTP/HTTPS 配置了 `Timeout`、`Pipeline-Depth`、`No-Cache`，并通过限定字段名诊断定位到直接 HTTP `User-Agent-Non-Interactive`。APT 2.8.1 的[原生实现](https://github.com/Debian/apt/blob/2.8.1/methods/http.cc)按既有配置与 systemd unit 语境选择非交互标记；apt-helper 使用同一 acquire HTTP method，不改写配置值、header 或上下文。仅对上述已核实控制及无控制情形开放预取；HTTPS 同名项、代理、自定义 User-Agent、地址族、速率/队列/hash、特定 APT binary、替代配置、未知/嵌套键或不可读取配置仍沿用原安装器。
+
+首版真实 CI 全部观察到 fallback，不能证明预取或提速；精确支持后仍须取得新的真实 runner 执行证据。
+
+此改进针对已记录的官方字体/库归档串行下载耗尽分片预算，需以新组合实际执行测试验收；单次提速不承诺长期耗时，取消、未开始测试与断言失败分别报告。回退该脚本接线即可恢复原官方安装路径，原失败证据保留。

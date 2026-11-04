@@ -457,10 +457,10 @@
         "docs/architecture/runtime-governance.md",
         "docs/architecture/technical-blueprint.md"
       ],
-      "implementation": "受限模板、预热及代次停止组件存在；持续 ready、故障和多代生产资格仍待验收。",
+      "implementation": "受限模板、预热及代次停止组件存在；分段超时不能证明整个预热动作有硬截止，持续 ready、故障和多代生产资格仍待验收。",
       "integration": "控制器不共写准入预算，节点可信事实供原事务裁决。",
       "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
-      "gap": "控制器不共写准入预算，节点可信事实供原事务裁决。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "整体预热截止、持续 ready、故障和多代生产资格仍待验证；节点可信事实须由原事务裁决。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/node-controller/src/speechnexus_node_controller/application/runtime_control.py",
@@ -468,9 +468,9 @@
           "note": "固定产品基线的源码、契约或正式说明"
         },
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/node-controller/src/speechnexus_node_controller/infrastructure/readiness.py",
-          "label": "readiness.py",
-          "note": "固定产品基线的源码、契约或正式说明"
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/node-controller/src/speechnexus_node_controller/infrastructure/docker_runtime.py",
+          "label": "docker_runtime.py",
+          "note": "固定版本包含实例预热与分段超时；不证明整个动作有硬截止。"
         }
       ],
       "issues": []

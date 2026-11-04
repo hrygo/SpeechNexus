@@ -359,6 +359,7 @@
 - owner/epoch、输出水位、credit 和缓冲有界；真实停止、断线、gap 与恢复由正式消费者联验。
 - 按身份、seq、epoch、descriptor 关联控制与 PCM，拒绝旧帧、迟到和越界；credit、背压、缓冲和硬输出上限在真实流生效，不能以文件切片代替。
 - 权威流锁拒绝部分重叠，精确重放不重复计量；真实生产者区间一致，分别记录首生成 PCM、网络接收和播放结束，不直接作为业务计费。
+- 同一会话最多一个活跃 TTS utterance；取消后可立即停止本地播放，但新计算须等待旧租约确认释放。成功终态不证明浏览器已收到全部音频或完成播放；公开 `text_credit` schema 尚未规定单位，正式联验前须明确生产者与消费者的计量单位。
 - 启用的 1.7B full_segment 和 required 辅助纳入完整配方；双工、停止与恢复联验。
 
 设计依据：[speech-api.md](architecture/speech-api.md)、[cpu-vad.md](components/cpu-vad.md)。

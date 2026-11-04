@@ -136,10 +136,10 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/runtime-governance.md"
       ],
-      "implementation": "文件 TTS 命令以请求时长收紧音频和 PCM 上限；单次合成基于固定 binding，无独立默认。",
-      "integration": "公共 Job 与各 binding 的能力上限、长文本处理和发布需按正式路径校验。",
+      "implementation": "文件 TTS 命令按内部执行请求的固定时长收紧音频和 PCM 上限；单次合成基于固定 binding，无独立默认。",
+      "integration": "同步公开 SpeechRequest 尚无请求级 max_output_audio_ms；公共 Job、各 binding 的能力上限、长文本处理和发布需按正式路径校验。",
       "verification": "短输入同步成功不代表长文本或 Base 模型资格。",
-      "gap": "公共 Job 与各 binding 的能力上限、长文本处理和发布需按正式路径校验。 短输入同步成功不代表长文本或 Base 模型资格。",
+      "gap": "同步公开 SpeechRequest 尚无请求级 max_output_audio_ms；公共 Job、各 binding 的能力上限、长文本处理和发布需按正式路径校验。 短输入同步成功不代表长文本或 Base 模型资格。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/pull/333",
@@ -149,7 +149,12 @@
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/execution-gateway/src/speechnexus_gateway/interfaces/file_tts_command.py",
           "label": "合成请求上限",
-          "note": "按请求时长收紧 binding 的音频与 PCM 界限"
+          "note": "按内部执行请求时长收紧 binding 的音频与 PCM 界限"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/contracts/speech-openapi.yaml",
+          "label": "同步语音请求契约",
+          "note": "SpeechRequest 不声明请求级 max_output_audio_ms"
         }
       ],
       "issues": []

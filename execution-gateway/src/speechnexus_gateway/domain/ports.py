@@ -153,6 +153,24 @@ class EngineAbortPort(Protocol):
     ) -> AbortOutcome: ...
 
 
+class AbortRecoveryPort(Protocol):
+    """Explicitly qualified original-identity recovery after an ambiguous abort.
+
+    Implementations must query the original request or guarantee idempotent replay
+    across process restarts; ordinary abort support alone does not confer this capability.
+    """
+
+    def recover_abort(
+        self, intent: SubmissionIntent, *, reason: str, wait_timeout_ms: int
+    ) -> AbortOutcome: ...
+
+
+class AbortRecoveryQueue(Protocol):
+    def take_due_aborts(
+        self, *, gateway_id: str, host_node_id: str, limit: int
+    ) -> list[AbortExecutionRequest]: ...
+
+
 class InstanceTerminationEvidencePort(Protocol):
     """Reports whole-instance termination facts for one uncertain execution.
 

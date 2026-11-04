@@ -261,6 +261,19 @@ pool→submit→abort 锁序提交原始取消，才等待发送锁、消耗唯�
 改变 reason 或 wait_timeout 的重放冲突。合法删除后的既有回执
 可在验证墓碑、终态及已释放租约后只读重放；缺失原文不能作为创建新取消的依据。
 
+启用下述周期恢复配置、文件执行 runtime 和受限 abort 写权限时，恢复驱动也按持久
+`next_check_at_us` 调度本网关未终结的原取消回执。每批有界，逐条处理前将该条检查时间推后；
+失败或重启后仍可接续，调度时间本身不授权外发。恢复时在同一进程所有权及 pool lane
+内重读固定身份、摘要、引擎请求身份和取消参数；未 claim 的回执可取得首次外发资格。
+已有 claim 的结果未知，只能交给显式提供的 `AbortRecoveryPort` 按原身份查询或安全
+幂等重放。默认文件 runtime 不提供该资格，因而继续隔离，不因查询或受理释放预算。
+该安全端口必须由组合根显式注入，不能仅凭 adapter 具有普通 abort 方法推断。
+
+部署升级先应用版本迁移 `0032_abort_recovery_schedule`，再由管理员为 gateway 写角色
+执行当前 `gateway_abort_grants`（仅新增 `next_check_at_us` 的列级 UPDATE）；未配置
+该权限时启动校验关闭持久 abort 能力。独立查询角色仍保持只读。候选同一 node/gateway
+的进程必须共用宿主锁目录，持有原进程锁直到所有在途发送退出；不能以 TTL 代替该前提。
+
 提交路由先用冻结请求校验 command 与 `command_digest` 一致，再按 `create_submit` 落唯一 intent，
 之后才外发一次；重放返回原记录并标记 `idempotent_replay=true`，同一 intent 换命令为
 `submit_intent_conflict`，摘要与正文不符为 `invalid_execution_request`。冻结请求只带输出上限与

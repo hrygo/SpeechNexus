@@ -661,3 +661,69 @@ def test_missing_or_corrupt_original_document_is_never_received(
         live.service().abort(live.abort_request)
     assert receipt_row(foundation) == []
     assert live.ledger.claims == 0 and live.engine.calls == []
+
+
+def test_due_abort_survives_restart_and_recovers_original(live: LiveAbort) -> None:
+    from speechnexus_gateway.application.recover_aborts import AbortRecoveryService
+
+    live.ledger.receive_abort(live.abort_request)
+    recovery = AbortRecoveryService(ingress=live.ingress, ledger=live.ledger, abort=live.service())
+    assert recovery.sweep(limit=1) == 1
+    assert len(live.engine.calls) == 1
+    assert recovery.sweep(limit=1) == 0
+    current = live.ledger.get(INTENT_ID)
+    assert current is not None and current.execution_state is ExecutionState.UNKNOWN_QUARANTINED
+
+
+def test_due_claimed_abort_stays_unknown_without_safe_adapter(live: LiveAbort) -> None:
+    from speechnexus_gateway.application.recover_aborts import AbortRecoveryService
+
+    live.ledger.receive_abort(live.abort_request)
+    assert live.ledger.claim_abort(live.abort_request) is not None
+    recovery = AbortRecoveryService(ingress=live.ingress, ledger=live.ledger, abort=live.service())
+    assert recovery.sweep(limit=1) == 1
+    assert live.engine.calls == []
+    current = live.ledger.get(INTENT_ID)
+    assert current is not None and current.execution_state is ExecutionState.UNKNOWN_QUARANTINED
+
+
+def test_competing_due_scans_advance_one_receipt_once(
+    live: LiveAbort, foundation: Foundation
+) -> None:
+    live.ledger.receive_abort(live.abort_request)
+    db = foundation.database
+    blocker = db.blocker()
+    try:
+        blocker.execute(
+            "SELECT submit_intent_id FROM gateway_abort_intents "
+            "WHERE submit_intent_id=%s FOR UPDATE",
+            (INTENT_ID,),
+        )
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            futures = [
+                workers.submit(
+                    live.ledger.take_due_aborts,
+                    gateway_id="gateway-test",
+                    host_node_id="host-test",
+                    limit=1,
+                )
+                for _ in range(2)
+            ]
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                count = db.query(
+                    "SELECT count(*) AS n FROM pg_stat_activity "
+                    "WHERE usename=%s AND cardinality(pg_blocking_pids(pid)) > 0",
+                    (foundation.gateway_role,),
+                )[0]["n"]
+                if count == 2:
+                    break
+                time.sleep(0.01)
+            else:
+                pytest.fail("two independent queue updates did not wait on the receipt lock")
+            blocker.commit()
+            results = [future.result(timeout=5) for future in futures]
+        assert sorted(len(result) for result in results) == [0, 1]
+        assert next(result[0] for result in results if result) == live.abort_request
+    finally:
+        blocker.close()

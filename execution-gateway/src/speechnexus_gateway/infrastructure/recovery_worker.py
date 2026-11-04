@@ -7,6 +7,7 @@ import math
 from threading import Event, Thread
 from time import monotonic
 
+from speechnexus_gateway.application.recover_aborts import AbortRecoveryService
 from speechnexus_gateway.application.recover_executions import (
     MAX_SWEEP_LIMIT,
     ExecutionRecoveryService,
@@ -41,6 +42,12 @@ class RecoveryWorker:
         self._budget = pass_budget_seconds
         self._stop = Event()
         self._thread = Thread(target=self._run, name="gateway-recovery", daemon=False)
+        self._abort_service: AbortRecoveryService | None = None
+
+    def configure_abort(self, service: AbortRecoveryService) -> None:
+        if self._thread.ident is not None:
+            raise RuntimeError("cannot change a running recovery worker")
+        self._abort_service = service
 
     @property
     def running(self) -> bool:
@@ -67,6 +74,11 @@ class RecoveryWorker:
             def should_stop(deadline: float = deadline) -> bool:
                 return self._stop.is_set() or monotonic() >= deadline
 
+            if self._abort_service is not None:
+                try:
+                    self._abort_service.sweep(limit=self._batch_size, should_stop=should_stop)
+                except Exception:
+                    _LOGGER.warning("abort recovery pass failed; unresolved work remains held")
             try:
                 self._service.sweep(
                     limit=self._batch_size,

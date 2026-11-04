@@ -14,6 +14,8 @@ from datetime import UTC, datetime
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.domain.abort_intent import AbortExecutionRequest as AbortExecutionRequest
 from speechnexus_gateway.domain.ports import (
+    AbortOutcome,
+    AbortRecoveryPort,
     DurableAbortLedger,
     EngineAbortPort,
     ExecutionFactLedger,
@@ -24,6 +26,7 @@ from speechnexus_gateway.domain.submission import (
     InvalidExecutionRequestError,
     RecordStop,
     StaleFencingTokenError,
+    SubmissionIntent,
     SubmissionStoreUnavailableError,
 )
 
@@ -39,12 +42,14 @@ class ExecutionAbortService:
         abort: EngineAbortPort,
         now: Callable[[], datetime] | None = None,
         durable_abort_enabled: bool = False,
+        recovery: AbortRecoveryPort | None = None,
     ) -> None:
         self._ingress = ingress
         self._ledger = ledger
         self._abort = abort
         self._now = now or (lambda: datetime.now(UTC))
         self._durable_abort_enabled = durable_abort_enabled
+        self._recovery = recovery
 
     def abort(self, request: AbortExecutionRequest) -> ExecutionSnapshot | None:
         """Return the recorded state after one bounded abort attempt, or None if unknown here."""
@@ -54,7 +59,13 @@ class ExecutionAbortService:
         """Accept an original abort receipt before claiming one external dispatch."""
         return self._abort_request(request)
 
-    def _abort_request(self, request: AbortExecutionRequest) -> ExecutionSnapshot | None:
+    def recover_abort(self, request: AbortExecutionRequest) -> ExecutionSnapshot | None:
+        """Resume the original receipt; an ambiguous claim requires an explicitly safe adapter."""
+        return self._abort_request(request, recovering=True)
+
+    def _abort_request(
+        self, request: AbortExecutionRequest, *, recovering: bool = False
+    ) -> ExecutionSnapshot | None:
         if not self._durable_abort_enabled or not isinstance(self._ledger, DurableAbortLedger):
             raise SubmissionStoreUnavailableError("durable abort authority is unavailable")
         ledger = self._ledger
@@ -85,6 +96,7 @@ class ExecutionAbortService:
                 current is None
                 or current.identity != identity
                 or current.request_digest != intent.request_digest
+                or current.engine_request_id != intent.engine_request_id
             ):
                 raise InvalidExecutionRequestError("execution identity changed during abort")
             claimed = ledger.claim_abort(request)
@@ -94,18 +106,31 @@ class ExecutionAbortService:
                     current is None
                     or current.identity != identity
                     or current.request_digest != intent.request_digest
+                    or current.engine_request_id != intent.engine_request_id
                 ):
                     raise InvalidExecutionRequestError("execution identity changed during abort")
-                return ExecutionSnapshot(current)
-            if claimed.identity != identity or claimed.request_digest != intent.request_digest:
+                if not recovering or self._recovery is None or current.execution_state.is_terminal:
+                    return ExecutionSnapshot(current)
+                outcome = self._recovery.recover_abort(
+                    current, reason=request.reason, wait_timeout_ms=request.wait_timeout_ms
+                )
+                return self._record_outcome(current, outcome)
+            if (
+                claimed.identity != identity
+                or claimed.request_digest != intent.request_digest
+                or claimed.engine_request_id != intent.engine_request_id
+            ):
                 raise InvalidExecutionRequestError("execution identity changed during abort claim")
             outcome = self._abort.abort(
                 claimed, reason=request.reason, wait_timeout_ms=request.wait_timeout_ms
             )
-            evidence = outcome.evidence
-            if outcome.verified_stop and evidence is not None:
-                if evidence.submit_intent_id != identity.submit_intent_id:
-                    raise InvalidExecutionRequestError("stop evidence belongs to another execution")
-                stopped = self._ledger.record_stop(RecordStop(evidence, ExecutionState.ABORTED))
-                return ExecutionSnapshot(stopped)
-            return ExecutionSnapshot(claimed)
+            return self._record_outcome(claimed, outcome)
+
+    def _record_outcome(self, intent: SubmissionIntent, outcome: AbortOutcome) -> ExecutionSnapshot:
+        evidence = outcome.evidence
+        if outcome.verified_stop and evidence is not None:
+            if evidence.submit_intent_id != intent.identity.submit_intent_id:
+                raise InvalidExecutionRequestError("stop evidence belongs to another execution")
+            stopped = self._ledger.record_stop(RecordStop(evidence, ExecutionState.ABORTED))
+            return ExecutionSnapshot(stopped)
+        return ExecutionSnapshot(intent)

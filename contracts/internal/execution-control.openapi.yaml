@@ -230,7 +230,10 @@ paths:
       summary: Persist and recover an original abort request
       description: |
         The gateway persists the exact request before claiming at most one bounded
-        engine dispatch. Replaying the identical request is safe, including after
+        initial engine dispatch. A claimed dispatch may subsequently be reconciled
+        only by an adapter qualified to query that original request or replay it
+        idempotently across restarts; without that capability it remains unknown.
+        Replaying the identical request is safe, including after
         an unknown response; a different intent for the same submit identity is a
         conflict. A claimed dispatch is uncertain until authoritative stop evidence
         exists and holds capacity in quarantine. A 200 response is the current

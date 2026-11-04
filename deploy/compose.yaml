@@ -317,6 +317,11 @@ services:
       dockerfile: deploy/images/web.Dockerfile
       args:
         APP_NAME: admin
+    environment:
+      WEB_SPEECH_UPSTREAM: ${WEB_SPEECH_UPSTREAM:-}
+      WEB_WORKBENCH_UPSTREAM: ${WEB_WORKBENCH_UPSTREAM:-}
+      WEB_DNS_RESOLVER: ${WEB_DNS_RESOLVER:-}
+      NGINX_ENVSUBST_FILTER: ^WEB_(SPEECH_UPSTREAM|WORKBENCH_UPSTREAM|SPEECH_HOST|WORKBENCH_HOST|DNS_RESOLVER)$
     ports:
       - "127.0.0.1:${SPEECHNEXUS_ADMIN_HOST_PORT:-8080}:8080"
     depends_on:
@@ -336,6 +341,11 @@ services:
       dockerfile: deploy/images/web.Dockerfile
       args:
         APP_NAME: workbench
+    environment:
+      WEB_SPEECH_UPSTREAM: ${WEB_SPEECH_UPSTREAM:-}
+      WEB_WORKBENCH_UPSTREAM: ${WEB_WORKBENCH_UPSTREAM:-}
+      WEB_DNS_RESOLVER: ${WEB_DNS_RESOLVER:-}
+      NGINX_ENVSUBST_FILTER: ^WEB_(SPEECH_UPSTREAM|WORKBENCH_UPSTREAM|SPEECH_HOST|WORKBENCH_HOST|DNS_RESOLVER)$
     ports:
       - "127.0.0.1:${SPEECHNEXUS_WORKBENCH_HOST_PORT:-8081}:8080"
     depends_on:

@@ -42,6 +42,20 @@ The `workbench` container serves only the frontend; it does not start the
 independent Workbench API. Setting `SPEECHNEXUS_PROCESS_ROLE` identifies a
 process; it does not switch the backend command to another service factory.
 
+Both Web images require `WEB_SPEECH_UPSTREAM`, `WEB_WORKBENCH_UPSTREAM` and
+`WEB_DNS_RESOLVER`. Origins must be `http://` or `https://` followed by a DNS
+name or IPv4 address and an explicit port, without a path or credentials. DNS
+resolver is an IPv4 address. Invalid or missing values stop startup; there is no
+Workbench fallback. The example Workbench hostname is deliberately unassembled,
+so its requests fail until an operator configures an actual service. DNS lookup
+occurs on requests so an unavailable Workbench does not prevent Speech startup.
+HTTPS verifies the upstream certificate and hostname against the image system CA
+bundle; install a trusted deployment CA in that bundle when required. Use HTTPS
+for cross-host connections, and separately protect the browser-facing ingress.
+Paths and queries pass through unchanged. This proxy configuration alone does not
+qualify a real service, cross-host TLS, or a physical topology.
+
+
 ## Current capability limits
 
 `/healthz` and `/readyz` are startup/dependency probes, not business acceptance:

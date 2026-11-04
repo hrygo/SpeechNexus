@@ -142,7 +142,7 @@ Linux CPU 媒体组件可与算力组件同机，但要独立核算资源，不�
 | Compose 映射到宿主的 PG、MinIO、API、Gateway 和可选 Web 端口均绑定 `127.0.0.1`；容器间使用默认网络 | 这些绑定限制的是宿主端口监听地址，不构成容器网络出站隔离或生产入口认证；远程访问和部署网络策略须另行配置并验证 |
 | Compose 中 API 访问 Gateway 与 MinIO 的默认地址使用 HTTP | 这是单节点 bootstrap 连接，不能证明跨主机 TLS；分机部署须为各连接配置并验证认证与传输保护 |
 | Compose 的对象存储初始化、API 及网关文件执行配置复用 MinIO 根凭据 | 这是本地 bootstrap 配置，不证明生产对象存储最小权限；生产须分别配置并验证受限身份与授权 |
-| [Web 代理](../../deploy/web/nginx.conf)监听 HTTP `8080`，将 `/v1/`、`/v1/realtime` 和 `/v2/workbench/` 发往 `api:8000` | 此配置不终止 TLS，也未接入独立 Workbench runtime 或实时 owner 路由；部署需另行配置入口保护和各服务上游 |
+| [Web 代理](../../deploy/web/nginx.conf)监听 HTTP `8080`，通过显式配置分别转发 Speech 与 Workbench 路径 | 此配置不终止入口 TLS，也未装配独立 Workbench runtime 或实时 owner 路由；跨主机上游须使用受信 TLS 并另行验证 |
 | [Backend 主入口](../../backend/src/speechnexus_backend/main.py)固定启动 Speech ASGI 工厂 | `process_role` 是身份声明；设置为另一个角色不会自动选择其服务入口 |
 | [Workbench 工厂](../../backend/src/speechnexus_backend/workbench/runtime.py)可单独启动，部分后台循环由其生命周期托管 | Workbench 后台尚无独立 worker 入口；其他职责的专用后台命令见第 1 节，不能据此认定 Workbench 后台已独立交付 |
 | [Python 镜像](../../deploy/images/python.Dockerfile)当前同步所有 workspace 包 | 共享镜像不要求服务同机，但尚未按部署单元收敛运行依赖与检查范围 |

@@ -800,7 +800,7 @@
         "docs/architecture/technical-blueprint.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "Admin App 挂载 ProfileHost 和任务中心；预设宿主提供草稿及固定修订读取，完整资源写入仍待联验；Admin App 挂载 TaskCenterHost；默认以同源 AdminJobClient 和浏览器恢复状态创建会话，显式读取、页面隐藏时停止事件。",
+      "implementation": "Admin App 挂载 ProfileHost 和 TaskCenterHost；预设宿主提供草稿及固定修订读取，完整资源写入仍待联验；任务中心使用同源 AdminJobClient 和浏览器恢复状态，显式读取、页面隐藏时停止事件。",
       "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
       "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
       "gap": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
@@ -831,7 +831,7 @@
         "docs/architecture/technical-blueprint.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "工作台 App 挂载文件任务和稿件宿主；FileTaskHost 使用同源 SpeechFileClient、ASR 模式及转写导入回调；工作台 App 以配音模式挂载 FileTaskHost；宿主默认使用同源 SpeechFileClient 与本地任务恢复。",
+      "implementation": "工作台 App 挂载稿件宿主及 ASR / TTS 两种文件任务；FileTaskHost 默认使用同源 SpeechFileClient 和本地任务恢复，并为 ASR 提供转写导入回调。",
       "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
       "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
       "gap": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",

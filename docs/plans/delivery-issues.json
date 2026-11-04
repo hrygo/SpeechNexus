@@ -1198,19 +1198,9 @@
       "gap": "仓库尚无项目 LICENSE，许可证须由用户决定；安装样例、第三方许可和生产运行材料尚待统一接收；静态配置不证明运行时与端到端接线。 现有文档不证明干净安装或许可全量合规；本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
       "evidence": [
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/architecture/production-assets.md",
-          "label": "资产与存储",
-          "note": "文本资产和恢复路径的实现说明，不证明完整音频生命周期"
-        },
-        {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/deploy/compose.yaml",
           "label": "最小服务编排",
           "note": "只证明固定版本的配置范围，不证明生产部署或恢复资格"
-        },
-        {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/workbench/runtime.py",
-          "label": "runtime.py",
-          "note": "固定基线源码"
         },
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/README.md#许可证与致谢",

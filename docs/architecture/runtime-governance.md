@@ -87,7 +87,7 @@ MySQL/InnoDB 仅用于关键协调路径验证；不采用 etcd，Redis 不承�
 
 `ExecutionControlPort` 的权威实现是每个 engine / stage 的受控 execution gateway，它独占该引擎网络入口与凭据。gateway 将“核验当前 reservation、attempt、policy / 资源 revision 与 token → 写入唯一 submit intent → 放行本次提交”串行化；先将状态记为 submitting 并占住预算，再向引擎发送。已确认外发须记录原 engine request_id 或确定的引擎侧关联证据；初始 submitting 或结果未知时这些字段可能尚未记录，不能据此断言没有外发。submitting 与传输结果未知都仍占用资源，不能当作未开始而免费重试。
 
-数据库 token 不能撤回已经发到不支持 fencing 的引擎请求，也不能单独阻止旧进程在检查后暂停、恢复后迟到发送。因此更换 execution gateway owner 前，必须先由旧 gateway 完成拒绝旧 token 的提交屏障，或确认旧入口进程已退出 / 被隔离；随后协调全部在途与 submitting 请求。若无法逐请求确认，则 drain / 重建受控引擎实例并使其旧连接失效，受影响请求显式失败。只有这个屏障与执行结束证据都成立，才能回收旧容量并启用新 owner。
+数据库 token 不能撤回已经发到不支持 fencing 的引擎请求，也不能单独阻止旧进程在检查后暂停、恢复后迟到发送。因此 owner 接管前，必须封住旧 token 的提交入口，并协调全部在途与 submitting 请求；旧入口进程退出或被隔离本身也不证明引擎计算已停止。未知执行须隔离并保留其预算；在入口屏障和隔离账目均已确认后，新 owner 可使用已证明安全的其他余量，不能回收未知执行占用的容量。取得相应停止及资源释放证据后才能归还该容量；无法逐请求确认时，可通过 drain / 重建受控实例并使旧连接失效取得所需证据，受影响请求显式失败。具体接管条件见[协调事务](coordination-transactions.md#6-owner提交取消与释放时序)。
 
 网关或 worker 心跳失效后，调度器不能仅凭 TTL 到期回收算力：先由 execution gateway 通过 adapter 查询 / abort 对应执行，并拒绝过期 token 的新提交与结果发布。若无法证明旧提交入口已经封锁，或引擎不支持细粒度确认，隔离该 engine / stage 的容量，直到完成上述屏障与在途协调；该池暂不可用也不能重复分配仍被旧计算占用的资源。只在 worker 的库函数里提交前查询 PG 不满足此要求。
 

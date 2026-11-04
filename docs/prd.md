@@ -776,7 +776,6 @@
 
 - 保留session、gap、preview/final与辅助revision对应来源；封存原文不被校对改写，要点关联对应版本并按固定版本导出。
 - 真实采集、匹配正文分人/对齐及并发/故障联合验证；未保存音频不得承诺会后重新识别。
-- 普通会议不依赖LLM。
 - 实际同版路由和正式消费者支持 POST `/v1/workbench/projects/{project_id}/meetings`（createMeeting）及 POST `/v1/workbench/meetings/{meeting_id}/seal`（sealMeeting），分别核对请求、声明的成功/错误响应、持久身份和封存版本。
 - 普通会议不依赖 LLM；会议资料封存/校对及内容生命周期在同版组合中可追溯。
 
@@ -790,8 +789,7 @@
 **验收：**
 
 - 固定稿件revision、有限跟随窗口；低置信暂缓，旧稿或旧epoch不推进；真实声音跟随、键盘与手动接管可验证。
-- 404不假定位置0，CAS冲突不自动重试；普通提词不依赖LLM，手动合成证据不代替真实跟随。
-- 普通提词不依赖 LLM；手动接管和固定稿件版本包含在最终接收范围。
+- 404 不假定位置 0，CAS 冲突不自动重试；普通提词不依赖 LLM，手动合成证据不代替真实跟随。手动接管和固定稿件版本包含在最终接收范围。
 
 设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[workbench-export-integrity.md](components/workbench-export-integrity.md)。
 

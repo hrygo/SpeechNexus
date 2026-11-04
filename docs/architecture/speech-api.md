@@ -226,7 +226,7 @@ Profile、voice 和 model binding revision 不可变；升级只影响后续新�
 | 429 | `quota_exceeded`、`queue_limit_exceeded` | 遵循 Retry-After，受总重试期限约束 |
 | 503 / 504 | `backend_unavailable`、`capacity_unavailable` / `operation_timeout` | 写入或执行结果未知时先协调原意图；`retryable` 为 true 本身不保证重发安全。固定只读查询按对应接口规则可显式重试，不凭读取失败创建新意图 |
 
-契约中的分页列表使用 `data`、`has_more`、`next_cursor`，共用的 `limit` 为 1–100，默认 50；Job 列表按 `(created_at,id)` 排序。OpenAI 兼容的 `/v1/models` 列表使用 `object` 和 `data`，不声明这些分页字段或游标参数。分页游标绑定过滤条件、部署与工作空间，不能跨请求作用域续读；这属于查询一致性，不是权限边界。SSE `id` 是持久化 job_event_seq，支持 `Last-Event-ID`；事件保留期结束后返回 `410 event_history_expired`，客户端读取 Job 当前状态，不伪造历史。
+契约中的分页列表使用 `data`、`has_more`、`next_cursor`，共用的 `limit` 为 1–100，默认 50；Job 列表按 `(created_at,id)` 排序。`JobList` schema 要求 `has_more` 和 `next_cursor` 字段存在，但允许后者为 null，未约束两者的一致性；生产者须保证续页语义，客户端不能只凭结构校验确认可继续读取。OpenAI 兼容的 `/v1/models` 列表使用 `object` 和 `data`，不声明这些分页字段或游标参数。分页游标绑定过滤条件、部署与工作空间，不能跨请求作用域续读；这属于查询一致性，不是权限边界。SSE `id` 是持久化 job_event_seq，支持 `Last-Event-ID`；事件保留期结束后返回 `410 event_history_expired`，客户端读取 Job 当前状态，不伪造历史。
 
 `JobEvent.data` 不是任意 JSON：每个 `job.*` / `artifact.published` 类型都有独立的封闭 data schema，分别约束其声明的字段和状态。目标语义要求 `job.succeeded` 至少携带一个 committed Artifact 和与权威 Job kind 匹配的结构化 `result`；`job.failed` 即使进入 `cleanup_state=quarantined` 也保持失败结果与结构化错误；`job.cancelled` 只允许 `not_required` / `complete`。未知嵌套字段和不匹配的 `type` / `status` 组合按契约错误拒绝，不能借事件扩展绕过稳定字段。工作台的 MinutesJob、AssistantTurn、ExportJob 与 ExportEvent 使用同一原则：失败错误为结构化 `code / message / retryable / param`，非 failed 状态不得携带非空错误对象。
 

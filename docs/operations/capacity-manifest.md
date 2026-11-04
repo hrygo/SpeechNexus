@@ -47,7 +47,7 @@ date: 2026-10-28
 | `pool_id` | 是 | 逻辑能力池；不是主机名 | 平台/容量负责人 | 枚举 `asr-realtime`、`tts-realtime`、`asr-batch`、`tts-batch`、`voice-creation`、`auxiliary`；必须存在于 `resource_pools` 且与 instance 一致 |
 | `service_class` | 是 | 池的服务等级：`realtime` / `interactive` / `batch` | 产品与平台共同确定 | 必须等于 `resource_pools.service_class` 与 instance 所在池 |
 | `management_mode` | 是 | `managed` 需要独占网关入口、完整池记账和 fencing/abort；`external` 不能声明生产实时 SLO | 平台负责人 | Schema 约束：`external` 只能是 `best_effort` 或 `experimental` |
-| `release_tier` | 是 | `experimental` / `best_effort` / `production` | 产品负责人；最终由唯一 SM+PO 放行 | 必须与报告 `release_tier` 相等；`production` 还要求报告 `overall_status=pass` 且有 `expires_at` |
+| `release_tier` | 是 | `experimental` / `best_effort` / `production` | 按授权由产品负责人组织资格接收；最终产品放行由用户决定 | 必须与报告 `release_tier` 相等；`production` 还要求报告 `overall_status=pass` 且有 `expires_at` |
 | `loading_policy` | 是 | `resident` 或 `on_demand`；影响加载峰值、回收冷却与准入 | 平台/引擎负责人 | 与 `engine_instances.loading_policy` 相等；`on_demand` 必须给出 `idle_reclaim_cooldown_ms >= 1000` |
 | `topology_ref` | 是 | 逻辑节点 profile、内存架构、共享父预算和拓扑摘要 | 平台负责人 | 见 §5；必须与报告 `topology`、`host_nodes.topology_digest` 对齐 |
 | `supported_tasks` | 是 | 该 revision 接受的任务，例如 `asr_file` | 产品/定义作者 | 必须是定义 `tasks` 的子集；当前样例只有 `asr_file` |
@@ -216,12 +216,12 @@ live 查询按 binding revision 选取所有 `engine_instances` 行，没有过�
 | --- | --- | --- |
 | 测量/平台执行人 | 在批准的隔离环境运行模型/实例，提供原始命令、输出、环境、资源观测 | 不能把未测值写成实测；不能直接自签发布 |
 | manifest 产出人 | 把测量与 pin 整理成 stage graph、向量、限额、取消能力 | 不能改冻结 schema；不能伪造 host/instance 行 |
-| 非作者证据核验人 | 核对 schema、摘要、跨文档、DB 账本、样本来源 | 不能代替作者改实现；不能代替 SM+PO 放行 |
+| 非作者证据核验人 | 核对 schema、摘要、跨文档、DB 账本、样本来源 | 不能代替作者改实现；不能代替获授权负责人或用户放行 |
 | 高风险审查者 | 对协议、原子事务、恢复、fencing、停止/预算释放等高风险改变做非作者审查与环境验证 | 不能把普通文档审查当作高风险验证 |
-| 唯一 SM+PO | 决定产品目标、优先级、范围、AC，批准发布/投产 Gate | 不能跳过证据直接让占位值进真实路径 |
+| 获授权的产品负责人 | 按授权确定产品目标、优先级、范围、AC 并组织资格接收 | 不能跳过证据直接让占位值进真实路径；最终产品投产由用户明确放行 |
 | 发布操作员 | 用批准的 DSN 和命令发布已存在的 revision，带 manifest/report id 与摘要 | 不能创建/修改 revision；不能把发布成功当成生产资格 |
 
-当前部署中，本证据岗承办格式、样例与核验；最终发布放行仍由唯一 SM+PO 负责。参与候选实施的人不能换角色自签。
+证据岗承办格式、样例与核验；绑定发布按当前授权执行，最终产品放行由用户明确决定。参与候选实施的人不能换角色自签。
 
 ### 6.2 从零产出一份合法 manifest
 
@@ -328,7 +328,7 @@ live 查询按 binding revision 选取所有 `engine_instances` 行，没有过�
 - 证据到期、模型/镜像/拓扑/池/向量/限额/取消能力任一变化、实测发现容量超限或质量退化，都是失效事件；
 - 已发布 publication 是 insert-only，不能原地改写证据；需要新证据时发布新 revision，并保留旧证据作为历史。选择既有版本的回滚是另一项操作，须确认目标 revision 仍可用且其证据适用于目标部署，具体条件见 [binding 生命周期](binding-lifecycle.md)；
 - 旧 manifest/report 和原始输出保留，不覆盖、不重写；失败记录与成功记录分开；
-- 失效期间不得用旧 `experimental` 证据支撑 `production`；是否降级/停流由唯一 SM+PO 按产品 Gate 决定。
+- 失效期间不得用旧 `experimental` 证据支撑 `production`；是否降级/停流按当前授权和产品 Gate 决定。
 
 ## 7. 摘要关系（必须按字节/规范化区分）
 

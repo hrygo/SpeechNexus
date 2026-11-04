@@ -138,7 +138,7 @@
 | `docs/operations/binding-disable-worker.md` | 已核对 | 对照配置范围、角色授权列、URL 策略、处理循环、异常分支及原租约结算入口；未连接部署或执行停用 |
 | `docs/operations/binding-lifecycle.md` | 已核对 | 对照授权、生命周期事务、幂等重放、并发矩阵与恢复测试；澄清连接中断可能无响应，未运行 PG 或部署 |
 | `docs/operations/builtin-voice-qualification.md` | 已核对 | 对照资格入口、授权、退出分支、制品脚本摘要、probe 音频与终态验证及受控窗口；未运行探针或核验部署权限 |
-| `docs/operations/capacity-manifest.md` | 已核对 | 对照 schema、校验器、账本、准入错误、样例及文件摘要；澄清 VAD、发布门禁、fixture、查询隔离及样例到期边界，未连接数据库或重跑模型 |
+| `docs/operations/capacity-manifest.md` | 已核对 | 对照 schema、校验器、账本、准入错误、样例及文件摘要；澄清 VAD、发布门禁、fixture、查询隔离及样例到期边界，未连接数据库或重跑模型；按当前 PRD 区分绑定发布与用户最终产品放行 |
 | `docs/operations/compose-minimal.md` | 已核对 | 对照 Compose、迁移、角色授权、探针、注册及停用恢复路径；修正权限、失败边界和探针路径，未执行部署 |
 | `docs/operations/file-asr-binding-handoff.md` | 已核对 | 对照固定制品、绑定定义、离线工具、命令消费及交接测试，补充后续旧入口屏障联验证据及故障注入限制；未重跑实验或测试 |
 | `docs/operations/file-asr-runtime.md` | 已核对 | 对照配置、双 lane 共享限制、对象版本、worker 取消、结果恢复及停止联验；修正集成测试的停止证据描述，未运行测试或部署 |
@@ -160,7 +160,7 @@
 | `docs/operations/production-runtime-delivery.md` | 已核对 | 对照配置、租约、unknown 路径、迁移、授权、ACK、Compose 及测试入口；未执行集成测试或验证目标部署 |
 | `docs/operations/publish-binding-revision.md` | 已核对 | 对照 CLI 观察、退出分类、发布事务的目标校验、草稿与证据检查、已有事实和原意图重放；未连接数据库或验证部署切换 |
 | `docs/archive/operations/2026-10-28-qualification-report-example.md` | 历史保留 | 原资格报告样例和任务文件清单按时点归档；未重验原始 GPU 测量 |
-| `docs/operations/qualification-report.md` | 已核对 | 对照报告契约、样例状态和摘要、离线校验器及产品只读组件；澄清发布与 fixture 边界并修正内部 VAD 描述，未重跑测量或连接数据库；补明历史样例命令使用数据库快照，不能证明当前发布状态 |
+| `docs/operations/qualification-report.md` | 已核对 | 对照报告契约、样例状态和摘要、离线校验器及产品只读组件；澄清发布与 fixture 边界并修正内部 VAD 描述，未重跑测量或连接数据库；补明历史样例命令使用数据库快照，不能证明当前发布状态；按当前 PRD 区分绑定发布与用户最终产品放行 |
 | `docs/operations/reconciliation-recovery.md` | 已核对 | 对照 unknown 停止规则、abort 恢复入口、租约释放边界及只读查询字段与回执契约；历史快照保留原时点，未连接数据库执行查询 |
 | `docs/operations/register-engine.md` | 已核对 | 对照命令参数、健康探测、注册事务、同代重放、readiness 刷新、投递阻断与验证查询；未连接数据库或注册实例 |
 | `docs/operations/release-preflight.md` | 已核对 | 对照脚本检查入口、配置加载和 C0–C12 判断；修正版本、身份、临时文件、资格场景、Compose 文本匹配及固定快照边界，未执行会访问服务或写入的检查 |

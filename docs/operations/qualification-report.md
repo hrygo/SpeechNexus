@@ -214,7 +214,7 @@ GB10 / Qwen3-ASR-1.7B 的实验记录及原任务文件清单见[历史样例](.
 7. **计算状态**：按 §5 计算 `required_scenarios_passed` 与 `overall_status`；不要手填与 scenarios 矛盾的布尔值。
 8. **写 limitations**：每个 skipped/failed optional、每个未测维度、每个“声明不是实测”的值都要写；experimental 不得空。
 9. **校验**：跑 schema + `verify-release-evidence.py`；`FAIL` 清零；`WARN/NA` 逐条解释。负例至少验证错误 manifest id/占位值会被拒绝。
-10. **评审/发布**：非作者 reviewer 核对语料、阈值、失败模式、摘要；唯一 SM+PO 决定是否发布。发布时带 report id 与原始文件 SHA；发布后保存 publication/evidence 行和命令输出。
+10. **评审/发布**：非作者 reviewer 核对语料、阈值、失败模式、摘要；按当前授权由负责人决定是否执行绑定发布，发布时带 report id 与原始文件 SHA，保存 publication/evidence 行和命令输出。绑定发布不等于产品投产，最终产品放行由用户明确决定。
 
 ### 9.1 模板
 

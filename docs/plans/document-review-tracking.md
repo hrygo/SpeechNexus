@@ -69,7 +69,7 @@
 | `docs/archive/audits/2026-10-26-team-c-closeout-issue-audit.md` | 历史保留 | 全文阅读，指定时间的 issue 状态和交接快照；已提示远端会变化，未复查历史远端数据 |
 | `docs/archive/audits/2026-10-26-team-c-evidence-retention.md` | 历史保留 | 全文阅读，证据丢失事故与当时规则；文首已指向现行 SOP，未复核历史归档 |
 | `docs/archive/audits/2026-10-26-team-c-input-device.md` | 历史保留 | 全文阅读，固定基线的输入选择及虚拟设备验证；未重跑测试或核验物理设备 |
-| `docs/audits/2026-10-26-team-c-operation-coverage.md` | 历史保留 | 全文阅读，固定 head 的工作台操作接线映射；历史交接按当时范围引用，未重跑映射守卫 |
+| `docs/archive/audits/2026-10-26-team-c-operation-coverage.md` | 历史保留 | 全文阅读，固定 head 的工作台操作接线映射；历史交接按当时范围引用，未重跑映射守卫 |
 | `docs/archive/audits/2026-10-26-team-c-realtime-focus.md` | 历史保留 | 全文阅读，固定基线的焦点修复、反例及后续合入记录；未重跑测试或复核远端 CI |
 | `docs/archive/audits/2026-10-26-team-c-realtime-integrity.md` | 历史保留 | 全文阅读，固定基线的实时发送和本地停止修复及合成验证；未重跑测试 |
 | `docs/archive/audits/2026-10-26-team-c-remaining-gaps.md` | 历史保留 | 全文阅读，固定收尾基线的团队 C 缺口及交接条件；由历史交接引用，未将其作为当前进度 |
@@ -338,7 +338,7 @@
 | `docs/audits/2026-10-25-team-c-acceptance-map.json` | 历史保留 | 对照原 AC 说明核对 41 项、278 子条件及 not_run 状态；未复核原始证据 |
 | `docs/audits/2026-10-26-team-a-closeout-evidence.json` | 历史保留 | 全文阅读并对照最终交接的版本、计数与资格边界；原始日志和制品未复验 |
 | `docs/audits/2026-10-26-team-a-issue-handoff.json` | 历史保留 | 核对快照时间、来源、交接引用及 40 个唯一编号；未重查历史远端状态 |
-| `docs/audits/2026-10-26-team-c-operation-coverage.json` | 历史保留 | 对照固定 head 的报告核对 52 项及 42/10 状态；不代表当前操作覆盖 |
+| `docs/audits/2026-10-26-team-c-operation-coverage.json` | 已核对 | 是操作覆盖检查脚本的当前默认输入，不按日期归档；2026-11-04 执行检查为 52 项、42 bound、10 pending、无漂移；文本命中只说明接线，不能证明行为或验收 |
 | `docs/audits/evidence/2026-11-03-tts-prepare.json` | 历史保留 | 首次窗口的结构化证据；核对报告引用及候选版本，原始记录未逐项重验 |
 | `docs/audits/evidence/2026-11-03-tts-window-2.json` | 历史保留 | 第二窗口的结构化证据；核对报告引用、版本及 SDK 闭环未通过标记，原始记录未逐项重验 |
 | `docs/audits/evidence/2026-11-03-tts-window-3.json` | 历史保留 | 第三窗口的结构化证据；核对报告引用、版本及 SDK 503 标记，原始记录未逐项重验 |

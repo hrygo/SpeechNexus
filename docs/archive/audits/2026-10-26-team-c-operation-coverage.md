@@ -1,6 +1,6 @@
 # 团队 C 工作台操作覆盖映射（workbench surface）
 
-核验日期：2026-10-26，Asia/Shanghai。机器映射受检 head：`15173b1aba73a19c1079e72e96d870043394554b`；收尾核对 main `54daef6ae4792b69a0e5e8645b09240ff715082e` 的契约摘要仍为 `e0138dff9de096a5fc8d2c10c5c7ba532df6736a99091d4ef601d144a20438c9`。关联：[阶段 Goal](../archive/plans/2026-10-25-team-c-next-phase-goal-and-acceptance.md)、[映射 JSON](2026-10-26-team-c-operation-coverage.json)。
+核验日期：2026-10-26，Asia/Shanghai。机器映射受检 head：`15173b1aba73a19c1079e72e96d870043394554b`；收尾核对 main `54daef6ae4792b69a0e5e8645b09240ff715082e` 的契约摘要仍为 `e0138dff9de096a5fc8d2c10c5c7ba532df6736a99091d4ef601d144a20438c9`。关联：[阶段 Goal](../plans/2026-10-25-team-c-next-phase-goal-and-acceptance.md)、[映射 JSON](../../audits/2026-10-26-team-c-operation-coverage.json)。
 
 ## 结论
 
@@ -42,4 +42,4 @@ make operation-coverage-check
 
 - 只覆盖 workbench surface；`admin`、`profile`、`profile_lifecycle`、`binding`、`binding_defaults`、`voice_catalogue` 等 surface 仍需同类映射。
 - 消费者识别基于路径/方法文本与客户端方法解析，可能漏掉动态拼接路径或间接调用；不据此宣称“已覆盖”任何行为。
-- 生成 V2、单元轮询和历史 GET/页面已有分段消费者，导出 SSE 仍待；未决持久化/CAS、读取与公平性审查见[最终交接](../archive/plans/2026-10-26-team-c-final-handoff.md)。v1 兼容操作由契约 owner 决定保留/退役，新负责人安排后续实施。
+- 生成 V2、单元轮询和历史 GET/页面已有分段消费者，导出 SSE 仍待；未决持久化/CAS、读取与公平性审查见[最终交接](../plans/2026-10-26-team-c-final-handoff.md)。v1 兼容操作由契约 owner 决定保留/退役，新负责人安排后续实施。

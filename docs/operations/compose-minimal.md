@@ -17,7 +17,7 @@ date: 2026-10-28
 | --- | --- | --- |
 | 公开 TTS `POST /v1/audio/speech` | **本 Compose 未装配** | 同步 TTS 工厂已实现，但本配置只预置 gateway 私有 file-TTS 配置引用，未提供 API 配方及结算数据库配置；其他部署的受控实测见[窗口记录](../audits/2026-11-03-controlled-tts-prepare.md) |
 | 异步 Job 提交、派发与结果 | **不可用** | G5 未解决（[#18](https://github.com/hrygo/SpeechNexus/issues/18)）；本卡有意不启动 `job-dispatch-worker` |
-| 公开同步 ASR 成功响应 | **本部署未验证** | 文件 worker 已有成功终态写入；历史部署曾返回 `504 operation_timeout`，见[本机端到端记录](local-end-to-end.md#112-公开-v1audiotranscriptions已执行504未成功)。不能将那次结果或组件实现推定为当前部署的公开链路验收 |
+| 公开同步 ASR 成功响应 | **本部署未验证** | 文件 worker 已有成功终态写入；历史部署曾返回 `504 operation_timeout`，见[本机端到端记录](../archive/operations/local-end-to-end.md#112-公开-v1audiotranscriptions已执行504未成功)。不能将那次结果或组件实现推定为当前部署的公开链路验收 |
 | 节点控制器、runtime delivery、asset maintenance | **未装配** | 本卡按 G3 降级范围有意排除；不要用本 Compose 宣称 G5 完成 |
 | 真实模型质量、容量、GPU、物理多节点资格 | **未证明** | Compose 启动、健康检查和合成配置都不能替代模型/设备/拓扑验收 |
 

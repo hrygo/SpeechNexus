@@ -180,7 +180,7 @@ TTS 制品携带实际 `format`、`sample_rate_hz`、`channels`、`duration_ms`�
 能力接口对传入的 `workspace_id` 只检查标识格式，不查询其是否存在或按其过滤目录。
 当前代码中，HTTP 草稿保存的 `definition_json` 不含 `binding_id`，目录读取却要求该字段；
 因此该路径创建并发布的 binding 会使目录读取失败并返回 `503 model_catalogue_unavailable`。
-这是对当前写入和读取代码的静态判断，历史实测见[本地记录](../operations/local-end-to-end.md#51-这是主干缺陷不是本-runbook-的配置错误)；尚未在当前版本重跑端到端验证。
+这是对当前写入和读取代码的静态判断，历史实测见[本地记录](../archive/operations/local-end-to-end.md#51-这是主干缺陷不是本-runbook-的配置错误)；尚未在当前版本重跑端到端验证。
 默认目录装配未接入实时 readiness 证据，模型的 `engine_ready`、`quality_qualified` 为
 `false`，`admission_state` 为 `unavailable`，表示这些事实未由该目录建立，不单独证明
 实际引擎故障或资格失效。因此返回快照不证明工作空间存在、可访问或具备准入资格；

@@ -368,7 +368,7 @@ TTS、可替换预览、辅助结果与资源控制使用下表的 SpeechNexus �
 | S→C `nexus.transcription.metadata` | `segment_id`、`text_revision`、`metadata_revision`、alignment / diarization status 与结果 |
 | C→S `nexus.tts.start` | `event_id`、`utterance_id`；可重申会话固定的 voice、`text_commit_mode` 和 `audio_delivery`，值必须一致；音频格式不在此事件中指定，成功后返回 operation_id |
 | S→C `nexus.tts.started` | `utterance_id`、`operation_id`、实际音频 descriptor、text credit |
-| C→S `nexus.tts.append_text` | `event_id`、`utterance_id`、`text_seq`、`text`；仅接受连续序号 |
+| C→S `nexus.tts.append_text` | `event_id`、`utterance_id`、`text_seq`、`text`；序号从 1 开始连续递增，文本须为 1–2000 个 Unicode 码点，消息仍受字节上限约束 |
 | S→C `nexus.tts.text_ack` | 已接受 text_seq 与剩余 `text_credit`；不表示音频已生成 |
 | C→S `nexus.tts.commit_text` | `utterance_id`、`through_text_seq`；冻结指定前缀并允许其进入合成 |
 | C→S `nexus.tts.finish_text` | 提交剩余文本并关闭本 utterance 的输入；不关闭 WS |

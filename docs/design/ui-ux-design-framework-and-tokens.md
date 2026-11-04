@@ -150,6 +150,7 @@ SpeechNexus 的架构原则在 UI/UX 层面必须得到 100% 忠实表达，绝�
   --nexus-color-cobalt-900:   oklch(0.22 0.10 260);
 
   /* 状态警示与多路说话人图元 */
+  --nexus-color-amber-400:    oklch(0.80 0.15 75);
   --nexus-color-amber-500:    oklch(0.70 0.16 75);    /* 契约/告警 */
   --nexus-color-rose-500:     oklch(0.62 0.21 25);    /* 阻断/异常 */
   --nexus-color-violet-500:   oklch(0.64 0.19 300);   /* 说话人 B */
@@ -158,6 +159,9 @@ SpeechNexus 的架构原则在 UI/UX 层面必须得到 100% 忠实表达，绝�
 ```
 
 #### 5.1.2 排版与尺寸图元
+
+注释中的行高是设计参考；以下变量只定义字号，不会自动设置 `line-height`。
+
 ```css
 :root {
   /* 字体族 */

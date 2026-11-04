@@ -74,7 +74,7 @@ SpeechCommand
 
 `GET /v1/models`、`GET /v1/models/{model}` 与 `GET /v1/nexus/capabilities` 三个端点都支持条件请求：`200` 携带基于部署、工作空间、catalog 与功能策略 revision 及响应事实计算的 `ETag`，`If-None-Match` 按 RFC 9110 弱比较命中时返回无 body 的 `304`；`404` / `503` 等错误路径不受影响。
 
-增强资源包括 `/v1/nexus/workspaces`、`/voice-drafts`、`/pronunciation-sets`、`/voice-designs`、`/voice-clones` 和 `/audit-events`。管理资源使用 `/v1/nexus/admin/profiles`、`/v1/nexus/admin/model-bindings`、`/resource-pools`、`/policies`、`/diagnostics` 等明确子资源；隔离租约的运维释放由契约声明 `/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases`，但当前生产未实现该入口，详见[对账恢复](../operations/reconciliation-recovery.md)。不得仅靠重启或删除记录清空隔离预算。首期不提供 users / memberships / roles API；管理路径本身不形成权限隔离。目标契约使用 `publications` 子资源发布预设和音色的不可变 revision；预设编辑建立新的 draft revision，已发布 revision 不原地修改。当前预设发布尚未交付，见 §1.5；音色各发布路径也须分别核验。
+增强资源包括 `/v1/nexus/workspaces`、`/voice-drafts`、`/pronunciation-sets`、`/voice-designs`、`/voice-clones` 和 `/audit-events`。管理资源使用 `/v1/nexus/admin/profiles`、`/v1/nexus/admin/model-bindings`、`/resource-pools`、`/policies`、`/diagnostics` 等明确子资源；隔离租约的运维释放由契约声明 `/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases`，但当前生产未实现该入口，详见[对账恢复](../operations/reconciliation-recovery.md)。不得仅靠重启或删除记录清空隔离预算。统一 `/audit-events` 查询仍是契约目标，当前生产入口尚未装配；绑定生命周期的局部审计事件不代表全量查询已接通。首期不提供 users / memberships / roles API；管理路径本身不形成权限隔离。目标契约使用 `publications` 子资源发布预设和音色的不可变 revision；预设编辑建立新的 draft revision，已发布 revision 不原地修改。当前预设发布尚未交付，见 §1.5；音色各发布路径也须分别核验。
 
 工作台项目、会议、有声书及独立导出任务 / 成品资源置于工作台命名空间；当前契约包含 `/v1/workbench/` 与 `/v2/workbench/`，具体路径以 `contracts/workbench-openapi.yaml` 为准。外部系统直接使用 `/v1/` 与 `/v1/nexus/`，不需要工作台项目或 LLM。P0 为各命名空间分别补齐 OpenAPI，禁止万能管理 RPC。
 

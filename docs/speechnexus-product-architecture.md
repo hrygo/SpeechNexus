@@ -339,7 +339,7 @@ Origin / Host 与网络限制是部署入口控制，不能证明访问者是谁
 
 以上是跨资源裁决和传播的目标要求，不能视作当前所有资源均已具备的 30 秒保障。当前绑定 disable 可登记持久停用意图，并由显式配置的 worker 按 gateway / node 协调停止与租约结算；未知执行仍需证据或对账。Speech 删除路由与跨模块停止协调尚待实现，Workbench 删除与恢复亦有条件和阻断，见[绑定停用 worker](operations/binding-disable-worker.md)与[数据删除边界](architecture/data-deletion.md)。
 
-操作记录包括 anonymous / shared_credential 类型、可选凭据标签、request_id、来源类别、动作、资源、时间、policy_revision 和必要变更摘要。变更摘要只保存唯一 RFC 6901 字段指针与可选原因，不保存 before / after 值、请求体、密钥、原始音频、完整正文或声音特征。不能据此回答“具体哪位员工做了什么”，也不能将执行 owner 当成员身份。
+统一操作记录的目标契约包含 anonymous / shared_credential 类型、可选凭据标签、request_id、动作、资源、时间、policy_revision 和可选变更摘要；当前 schema 未声明来源类别字段。变更摘要只保存唯一 RFC 6901 字段指针与可选原因，不保存 before / after 值、请求体、密钥、原始音频、完整正文或声音特征。绑定生命周期已写入独立审计事件；统一 `/v1/nexus/audit-events` 查询契约尚未在生产入口接线，不能将局部事件当作全量操作审计。不能据此回答“具体哪位员工做了什么”，也不能将执行 owner 当成员身份。
 
 ### 6.5 未来身份体系的独立演进
 

@@ -6,7 +6,7 @@
 矩阵描述目标归属，不证明端口已实现。A01/B00–B06 是历史工作包；当前需求、实现与证据关联见[交付跟踪矩阵](../plans/delivery-tracking.md)和[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)。
 
 冻结 main `7dc276a` 的实际端口、7 类查询、正式消费者及双库证据见
-[2026-10-25 取证快照](../audits/2026-10-25-coordination-port-evidence.md)。
+[2026-10-25 取证快照](../archive/audits/2026-10-25-coordination-port-evidence.md)。
 该报告分别记录 adapter/统一结果/业务装配与剩余验收，不改变此处的机器所有权。
 
 ## 契约生产者与消费者

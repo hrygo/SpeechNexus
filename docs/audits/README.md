@@ -8,16 +8,16 @@
 
 - [2026-10-26 B03 默认文件 TTS 真实探针](../archive/audits/2026-10-26-b03-default-real-tts-probe.md)：默认 `file_tts_v1`、真实 1.7B CustomVoice、隔离 PG/MinIO、语言边界修复、生成区间、重启重放与预算边界。
 
-- [2026-10-25 协调端口与消费者取证](2026-10-25-coordination-port-evidence.md)：冻结 `7dc276a` 的 18 端口、7 查询快照、实际调用方和精确合后双库报告；保留业务装配、原生 envelope 与真实执行的验收缺口。
+- [2026-10-25 协调端口与消费者取证](../archive/audits/2026-10-25-coordination-port-evidence.md)：冻结 `7dc276a` 的 18 端口、7 查询快照、实际调用方和精确合后双库报告；保留业务装配、原生 envelope 与真实执行的验收缺口。
 
 - [2026-10-22 设计审查](../archive/audits/2026-10-22-speechnexus-design-review.md)：方案缺陷、修正、上游核验和未验证边界。
 - [2026-10-22 开发环境就绪审查](../archive/audits/2026-10-22-development-environment-readiness.md)：当时的工具链、独立服务与验证快照，不代表当前主机状态。
 - [2026-10-23 架构与契约合规审查](../archive/audits/2026-10-23-architecture-contract-compliance.md)：上一轮阻断项复核、OpenAI SDK 兼容、契约严格性、SOLID / DRY、容量账目收口与残余风险。
-- [2026-10-23 UI/UX 设计框架与 CI 门禁终审](2026-10-23-ui-ux-design-framework-audit.md)：排版对比度、DTCG Token、品牌资产、响应式及 CI 门禁审查；原报告的绝对化无障碍与拦截评级超出所列证据。
+- [2026-10-23 UI/UX 设计框架与 CI 门禁终审](../archive/audits/2026-10-23-ui-ux-design-framework-audit.md)：排版对比度、DTCG Token、品牌资产、响应式及 CI 门禁审查；原报告的绝对化无障碍与拦截评级超出所列证据。
 
 - [2026-10-23 架构与契约修复闭环](../archive/audits/2026-10-23-architecture-contract-repair-closure.md)：F01–F10、R1/R2 的修复、实际验证和运行资格边界。
 - [2026-10-23 集群协调重构后的架构与契约审查](../archive/audits/2026-10-23-architecture-contract-post-refactor-review.md)：运行角色最小权限、双库门禁、契约结果覆盖与端口原型一致性、SOLID / DRY 与开放项。
-- [2026-10-24 B00 MegaCube 环境与能力缺口前检](2026-10-24-b00-megacube-environment-and-capability-gap.md)：主机与 GPU 事实、授权释放与制品获取（含摘要与许可）、首个真实 ASR 生命周期探针与停止证据、逐能力缺口与 B01 首个单元。
+- [2026-10-24 B00 MegaCube 环境与能力缺口前检](../archive/audits/2026-10-24-b00-megacube-environment-and-capability-gap.md)：主机与 GPU 事实、授权释放与制品获取（含摘要与许可）、首个真实 ASR 生命周期探针与停止证据、逐能力缺口与 B01 首个单元。
 - [2026-10-24 B02 受限控制器容器生命周期探针](../archive/audits/2026-10-24-b02-controller-container-lifecycle-probe.md)：合成容器上的 prepare / ready / stop 与停止双证据、`Init` 缺口、清理结果与未验证边界。
 - [2026-10-24 B02 控制器 HTTP 外壳与持久意图探针](../archive/audits/2026-10-24-b02-controller-http-shell-probe.md)：真实控制器进程的组件凭据、prepare → ready → stop、daemon 侧加固事实、停机双证据与重启后持久意图。
 - [2026-10-24 B02 有界控制器与真实 ASR 探针](../archive/audits/2026-10-24-b02-real-asr-controller-probe.md)：固定内存上限与 HTTP 就绪、0.6B/1.7B 合成语音/静音/长非语音实测、CUDA 失败与缓存诊断、停止清理及历史 Issue 状态更正。

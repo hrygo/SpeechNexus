@@ -36,7 +36,7 @@ B 在 #220 提供[项目整体交接](https://github.com/hrygo/SpeechNexus/blob/
 | 工作包 | 已有交付与证据入口 | 尚缺的完整范围／接收条件 |
 | --- | --- | --- |
 | [A00 #19](https://github.com/hrygo/SpeechNexus/issues/19) | #141 `a7f4d46` JSON/runtime，#169 `7dc276a` 二进制/SSE SDK，#175 字面量门禁、#181 限定 RTE、#193/#201 固定词典 GET；本 PR 补私有检查同源类型 | 公开音频错误/投影、SSE 正式消费、完整跨字段/时序及 REST/WS/MCP 同版语义。C #177 已升下载 dev1，不能沿旧 dev0 约束消费 |
-| [A01 #20](https://github.com/hrygo/SpeechNexus/issues/20) | #171 `d876585` 汇合 18 端口/7 查询/调用方与双库[证据地图](../../audits/2026-10-25-coordination-port-evidence.md)，#173 `78505a8` 修复登录/有效身份 | 权威策略/readiness、生产 Scheduler/Worker、部分 B 查询 envelope/wrapper 对照及全范围联合证据；地图存在不等于端口已完成业务装配 |
+| [A01 #20](https://github.com/hrygo/SpeechNexus/issues/20) | #171 `d876585` 汇合 18 端口/7 查询/调用方与双库[证据地图](../audits/2026-10-25-coordination-port-evidence.md)，#173 `78505a8` 修复登录/有效身份 | 权威策略/readiness、生产 Scheduler/Worker、部分 B 查询 envelope/wrapper 对照及全范围联合证据；地图存在不等于端口已完成业务装配 |
 | [A02 #21](https://github.com/hrygo/SpeechNexus/issues/21) | #139/#172 `dbbffe2` 配置原意图，#185 `7851cfb` 私有词典，#187 `5afb488` 资源身份守卫，#155 `f9dfa7c` 受限进程；本 PR 的媒体/回执见下节 | 公开音频 ready、可信 provider、发布/激活 CAS、最终参数、固定 Artifact/receipt/Operation，以及真实 HTTP/隔离 PG/MinIO 恢复 |
 | [A03 #22](https://github.com/hrygo/SpeechNexus/issues/22) | owner/claim、完整配方准入、Job/outbox、父预算/leases 与 unknown 恢复组件；#171 汇合证据，B #218 有隔离 lease 结算 | 正式调度循环、公平排队、业务 quota/区间计量/结算和可信执行/停止来源；不能把六字段 JobFact 当完整公开 Job |
 | [A04 #23](https://github.com/hrygo/SpeechNexus/issues/23) | Workspace/配置草稿/显式默认 HTTP；#201 `064c6b6` 固定 draft GET、最小 SELECT 与 404/503 区分 | 标准 ASR/TTS、完整 Job/Operation/事件/发布下载、配置创建/list/发布与完整管理/MCP；只读 draft 不等于发布 |

@@ -7,7 +7,7 @@ date: 2026-10-24
 
 # B00 MegaCube 环境与能力缺口前检
 
-本文是团队 B 对 [B00 #27](https://github.com/hrygo/SpeechNexus/issues/27) 的记录，对应[团队 B 目标](../archive/plans/2026-10-23-team-b-goal.md)与[三团队实施方案](../archive/plans/2026-10-23-three-team-delivery-plan.md)的 S0 要求。基线为 `main` 的 `92ba52b`。
+本文是团队 B 对 [B00 #27](https://github.com/hrygo/SpeechNexus/issues/27) 的记录，对应[团队 B 目标](../plans/2026-10-23-team-b-goal.md)与[三团队实施方案](../plans/2026-10-23-three-team-delivery-plan.md)的 S0 要求。基线为 `main` 的 `92ba52b`。
 
 执行范围：只读环境前检；经用户授权的两项资源调整（停止 `qwen3-asr.service`、调低 embedding/reranker 显存比例）；经用户授权的制品下载（ModelScope 与 Hugging Face）；经用户授权的一次真实引擎生命周期探针（Qwen3-ASR 0.6B，合成音频）。用户明确指示保留 `cube-ccba-qwen36-35b-nvfp4`，本次未改动该服务。
 
@@ -67,7 +67,7 @@ GB10 为统一内存架构，`nvidia-smi` 的显存总量列报为 `Not Supporte
 
 使用形态上有一处关键约束：Qwen3-TTS 模型卡写明当前 vLLM-Omni **只支持离线推理**，在线服务尚未提供。因此 B03/B05 的 TTS 路径不能假设存在 OpenAI 兼容服务端点，需按受控离线批处理形态设计适配器，并在上游提供在线服务后再评估。
 
-> 上述判断后来被[真实引擎可行性复核](../archive/audits/2026-10-24-b03-tts-engine-feasibility.md)纠正：受测固定镜像使用 `--omni` 可提供在线服务。这里保留前检时的原判断，不作为当前设计依据。
+> 上述判断后来被[真实引擎可行性复核](2026-10-24-b03-tts-engine-feasibility.md)纠正：受测固定镜像使用 `--omni` 可提供在线服务。这里保留前检时的原判断，不作为当前设计依据。
 
 ## 4. 首个真实引擎生命周期探针（Qwen3-ASR 0.6B）
 
@@ -92,7 +92,7 @@ GB10 为统一内存架构，`nvidia-smi` 的显存总量列报为 `Not Supporte
 
 ## 5. 逐能力缺口矩阵
 
-候选组合见 [ADR 0002](../decisions/0002-speech-models-engines-and-loading.md)。"探针"一列指真实引擎探针，目前只有 ASR 0.6B 生命周期一项已执行。
+候选组合见 [ADR 0002](../../decisions/0002-speech-models-engines-and-loading.md)。"探针"一列指真实引擎探针，目前只有 ASR 0.6B 生命周期一项已执行。
 
 | 能力 | 候选模型 / 引擎 | 本机制品 | 探针 | 当前判定 |
 | --- | --- | --- | --- | --- |
@@ -159,9 +159,9 @@ B01 的首个闭合单元已经实现并通过门禁，PG 落库仍待 A01 的�
 5. 已按保守默认处理，不再等待用户裁决：
    - 许可：模型权重只在本机与部署网络内使用，不分发容器、权重或衍生制品；仓库只记录来源与许可
      名称（`apache-2.0`、MIT、`openmdw-1.1`），需要对外分发或商用前再单独做法务判断。
-   - 语料：使用 [AGENTS.md](../../AGENTS.md) 已登记的 `/home/huangzhonghui/datasets/audio-corpus-20261024/`
+   - 语料：使用 [AGENTS.md](../../../AGENTS.md) 已登记的 `/home/huangzhonghui/datasets/audio-corpus-20261024/`
      与 SpeechRail 测试语料；音频、转写与派生内容不出部署网络。
    - GPU：不停止 `cube-ccba-qwen36-35b-nvfp4`。探针在剩余统一内存内排队串行执行，只把互不
      争用的轻量步骤并行；不为了让探针更快而占用或重启 35B。
 
-[跟踪矩阵](../archive/plans/2026-10-23-implementation-tracking.md) · [团队 B 目标](../archive/plans/2026-10-23-team-b-goal.md) · [三团队实施方案](../archive/plans/2026-10-23-three-team-delivery-plan.md)
+[跟踪矩阵](../plans/2026-10-23-implementation-tracking.md) · [团队 B 目标](../plans/2026-10-23-team-b-goal.md) · [三团队实施方案](../plans/2026-10-23-three-team-delivery-plan.md)

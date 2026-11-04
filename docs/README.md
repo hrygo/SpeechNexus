@@ -50,7 +50,7 @@
 | [集群协调重构计划](archive/plans/2026-10-23-cluster-coordination-refactor.md)                               | 历史 DDL/契约/双库原型交付及当时的生产接入和集群资格计划                         |
 | [架构与契约修复闭环](archive/audits/2026-10-23-architecture-contract-repair-closure.md) | 历史审查：初验与终审的修复映射、验证证据及当时未验证边界 |
 | [集群协调重构后的架构与契约审查](archive/audits/2026-10-23-architecture-contract-post-refactor-review.md) | 历史审查：运行角色、双库门禁、契约结果、端口原型与当时开放项 |
-| [B00 MegaCube 环境与能力缺口前检](audits/2026-10-24-b00-megacube-environment-and-capability-gap.md) | 历史环境快照：GB10 主机、GPU 占用、制品及首次 ASR 生命周期探针 |
+| [B00 MegaCube 环境与能力缺口前检](archive/audits/2026-10-24-b00-megacube-environment-and-capability-gap.md) | 历史环境快照：GB10 主机、GPU 占用、制品及首次 ASR 生命周期探针 |
 | [B02 控制器容器生命周期探针](archive/audits/2026-10-24-b02-controller-container-lifecycle-probe.md) | 历史探针：合成容器的 prepare / ready / stop、停止双证据与清理结果 |
 | [B02 控制器 HTTP 外壳与持久意图探针](archive/audits/2026-10-24-b02-controller-http-shell-probe.md) | 历史探针：控制器进程鉴权、生命周期、停机双证据与重启后的持久意图 |
 | [CPU VAD 原生接口](components/cpu-vad.md) | 会话隔离、有界切段、固定 CPU 模型及文件执行装配；实时链路待验 |
@@ -64,7 +64,7 @@
 | [B03 真实文件 ASR 与首次长窗口开销](archive/audits/2026-10-24-b03-file-asr-probe.md) | 历史探针：0.6B/1.7B、真实录音、无语音零外发、截断负例与重复测量 |
 | [B03 TTS 适配器真实探针](archive/audits/2026-10-24-b03-tts-adapter-probe.md) | 历史探针：1.7B CustomVoice 的 WAV/MP3、重采样与 ASR 回环、停止和清理证据 |
 | [设计审查记录](archive/audits/2026-10-22-speechnexus-design-review.md) | 历史审查：发现的问题、修正裁决、来源核验及当时未验证项 |
-| [UI/UX 设计框架终审](audits/2026-10-23-ui-ux-design-framework-audit.md)                             | 历史设计与 CI 审查；报告中的绝对化无障碍和拦截评级超出所列证据 |
+| [UI/UX 设计框架终审](archive/audits/2026-10-23-ui-ux-design-framework-audit.md)                             | 历史设计与 CI 审查；报告中的绝对化无障碍和拦截评级超出所列证据 |
 | [开发与测试环境](development-environment.md)                                                        | Linux 参考开发环境、独立服务、初始化和隔离边界；宿主状态需实测                |
 | [开发环境就绪审查](archive/audits/2026-10-22-development-environment-readiness.md)                          | 2026-10-22 的环境验证与隔离边界快照，不代表当前主机状态                     |
 | [架构决策](decisions/README.md)                                                                     | 架构决定、理由和影响；区分已接受与拟议状态 |

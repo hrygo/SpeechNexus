@@ -47,7 +47,7 @@ date: 2026-10-26
 - #169 的真实回环 TCP 证明双语言 SDK 增量读取、取消关闭、原游标和 410/截断处理；
   精确合后 `7dc276a` 的 CI `40208749970` 全 14 作业成功，集成 1615 通过、22 个既有
   PG-only 参数跳过另列。这不是 C 的生产 SSE 或真实媒体业务验收。
-- #171 的[协调证据矩阵](../../audits/2026-10-25-coordination-port-evidence.md)已定位正式消费缺口。
+- #171 的[协调证据矩阵](../audits/2026-10-25-coordination-port-evidence.md)已定位正式消费缺口。
   18 端口映射齐备，不等于业务装配完成；InnoDB 仅为共享协调行为的测试对照，产品数据库仍为 PG。
 - #155 的进程监督已合入；后续 `132597e` 组合 CI `40252960041` 全 14 成功。
   中间精确合后 `40252542514` 取消且清理未知独立保留。
@@ -166,7 +166,7 @@ Git/运行态/生产权限/硬件与策略操作按适用授权执行，已消�
   [#201 合并及验证说明](https://github.com/hrygo/SpeechNexus/pull/201)，[#210 真实 TTS 及限制](https://github.com/hrygo/SpeechNexus/pull/210)。
 - [音频检查](../components/audio-asset-inspection.md)、[默认生产者](../../components/binding-defaults-producer.md)、
   [Profile 原意图](../../components/profile-lifecycle-intents.md)、[发音固定读取](../../components/pronunciation-read-contract.md)。
-- [协调证据](../../audits/2026-10-25-coordination-port-evidence.md)、
+- [协调证据](../audits/2026-10-25-coordination-port-evidence.md)、
   [C 生成链矩阵](https://github.com/hrygo/SpeechNexus/blob/230031043a76ac6c2d04ee6bb2fe93ca38f991c5/docs/audits/2026-10-26-team-c-render-loop-status.md)、[C 缺口登记](https://github.com/hrygo/SpeechNexus/blob/230031043a76ac6c2d04ee6bb2fe93ca38f991c5/docs/audits/2026-10-26-team-c-remaining-gaps.md)。
   后两项直接引用固定主干内版本，避免工作区原快照的旧状态。
 

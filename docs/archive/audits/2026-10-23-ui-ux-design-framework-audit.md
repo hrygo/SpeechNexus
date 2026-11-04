@@ -9,9 +9,9 @@ audience: "Web 前端工程师、UI/UX 设计师、平台运维、架构师、�
 # SpeechNexus UI/UX 设计框架、Token 系统与 CI 门禁终审记录
 
 本文为 2026-10-23 的设计审查记录；评级和验证范围针对当时制品，不能直接代表当前
-界面、无障碍表现或 CI 状态。现行设计入口见[设计框架](../design/ui-ux-design-framework-and-tokens.md)。
+界面、无障碍表现或 CI 状态。现行设计入口见[设计框架](../../design/ui-ux-design-framework-and-tokens.md)。
 
-文中“全要素满足 WCAG 2.2 AAA 与 APCA”“100% 阻断”等绝对化评级超出列出的检查证据，不能作为无障碍合规或门禁完整性的证明；后续[可访问性复跑](../archive/audits/2026-10-26-team-c-a11y-rerun.md)也明确限定了页面与辅助技术覆盖范围。
+文中“全要素满足 WCAG 2.2 AAA 与 APCA”“100% 阻断”等绝对化评级超出列出的检查证据，不能作为无障碍合规或门禁完整性的证明；后续[可访问性复跑](2026-10-26-team-c-a11y-rerun.md)也明确限定了页面与辅助技术覆盖范围。
 
 本记录对 SpeechNexus 的 AdminUI (`/admin`) 与个人语音工作台 (`/workbench`) 的 **UI/UX 设计框架**、**设计 Token 系统**、**矢量品牌资产**、**前端工程实现** 以及 **CI 自动化拦截能力** 执行终审。
 
@@ -40,7 +40,7 @@ audience: "Web 前端工程师、UI/UX 设计师、平台运维、架构师、�
 | **DTCG Token 资产** | `web/shared/src/tokens/tokens.json` |  **通过**。严格遵循 W3C DTCG 规范，图元层、语义层、领域层结构完备。 |
 | **TypeScript 类型契约** | `web/shared/src/tokens/index.ts` |  **通过**。`NexusTone` 与 `CapabilityState` 强类型约束，杜绝状态漂移。 |
 | **品牌矢量资产** | `web/shared/src/assets/brand-mark.svg` |  **通过**。声学轨道环 + 脉冲波形 + 拓扑卫星节点，纯矢量无位图依赖。 |
-| **规范文档与总览** | `docs/architecture/ui-ux-design-framework-and-tokens.md`（历史路径；[当前位置](../design/ui-ux-design-framework-and-tokens.md)） |  **通过**。技术规范、色彩值、材质与 CI 规则详尽清晰，已纳入架构目录索引。 |
+| **规范文档与总览** | `docs/architecture/ui-ux-design-framework-and-tokens.md`（历史路径；[当前位置](../../design/ui-ux-design-framework-and-tokens.md)） |  **通过**。技术规范、色彩值、材质与 CI 规则详尽清晰，已纳入架构目录索引。 |
 
 ### 2.2 视觉排版与色彩对比度 (Typography & Contrast)
 

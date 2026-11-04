@@ -12,11 +12,11 @@
 
 ## 事实来源与证据等级
 
-- 唯一所有权源：[机器矩阵](../../contracts/coordination-ownership.json)；请求与结果形状：
-  [协调契约](../../contracts/internal/coordination-transactions.schema.json)。不在本报告复制字段默认值或写权限。
-- A 的生产代码根：[speech](../../backend/src/speechnexus_backend/speech/)；B 的生产代码根：
-  [gateway](../../execution-gateway/src/speechnexus_gateway/)。下表的相对模块名均从对应代码根解析。
-- 正式产品数据库是 PostgreSQL；InnoDB 经 [测试驱动](../../tests/support/gateway_database.py)
+- 唯一所有权源：[机器矩阵](../../../contracts/coordination-ownership.json)；请求与结果形状：
+  [协调契约](../../../contracts/internal/coordination-transactions.schema.json)。不在本报告复制字段默认值或写权限。
+- A 的生产代码根：[speech](../../../backend/src/speechnexus_backend/speech)；B 的生产代码根：
+  [gateway](../../../execution-gateway/src/speechnexus_gateway)。下表的相对模块名均从对应代码根解析。
+- 正式产品数据库是 PostgreSQL；InnoDB 经 [测试驱动](../../../tests/support/gateway_database.py)
   和 `tests/support/` 其他适配层执行同源 SQL/领域规则，不是产品 MySQL adapter。
 - **协议边界**指实际调用 `validate_coordination` 并返回 `TransactionResult` 的接口；
   **持久化**指真实数据库事务；**业务装配**指正式组合根及调用循环。
@@ -24,7 +24,7 @@
 
 ## 18 端口映射
 
-表中测试名称位于 [集成目录](../../tests/integration/)。模块内既有直接 SQL/adapter
+表中测试名称位于 [集成目录](../../../tests/integration)。模块内既有直接 SQL/adapter
 断言，也有协议边界断言；模块通过不代表每个情形都经过统一结果封装。具体数量和限制见后文。
 
 | 端口 / owner | 协议边界 → application | 正式存储入口 | 本版证据与实际消费者边界 |
@@ -59,13 +59,13 @@ rg -n 'TransactionBoundary\(' backend/src
 ```
 
 无匹配时 `rg` 返回 1。此结论限定上述正式类型；不否认已有独立资产、配置或其他服务。
-[runtime_delivery_worker.py](../../backend/src/speechnexus_backend/runtime_delivery_worker.py)
-已有实际 CLI 装配，但 [RuntimeDeliveryService](../../backend/src/speechnexus_backend/speech/application/runtime_delivery.py)
+[runtime_delivery_worker.py](../../../backend/src/speechnexus_backend/runtime_delivery_worker.py)
+已有实际 CLI 装配，但 [RuntimeDeliveryService](../../../backend/src/speechnexus_backend/speech/application/runtime_delivery.py)
 负责私有投递 claim/发送前持久标记/原身份查询/ack；ack 不是 `observe_runtime` 或预算释放的替代入口。
 
-B 的 [app.py](../../execution-gateway/src/speechnexus_gateway/app.py) 已装配屏障、执行查询、drain、
+B 的 [app.py](../../../execution-gateway/src/speechnexus_gateway/app.py) 已装配屏障、执行查询、drain、
 恢复 worker；显式配置文件执行 runtime 时装配 SubmitExecutionService/abort。
-[HTTP 路由](../../execution-gateway/src/speechnexus_gateway/interfaces/http/) 返回各内部 HTTP DTO，
+[HTTP 路由](../../../execution-gateway/src/speechnexus_gateway/interfaces/http) 返回各内部 HTTP DTO，
 不等于使用全部原生 `TransactionResult` wrapper。三个补充服务 Observation/OutputInterval/Redaction
 在冻结生产树中未找到组合根构造；不能将其测试注入算正式 meter/删除协调器消费。
 
@@ -97,7 +97,7 @@ FactSnapshot；不是缺字段后补造公开 Job、屏障全状态或删除许�
 核对 6 分片完整集合：1637 collected、1615 passed、22 skipped，最长分片执行 179.61s。
 
 本次下载各 ZIP 后逐一对比 GitHub artifact SHA256，使用冻结版
-[integration-shards.py](../../scripts/dev-env/integration-shards.py) 再校验 source、完整集合摘要、
+[integration-shards.py](../../../scripts/dev-env/integration-shards.py) 再校验 source、完整集合摘要、
 分片不交叠/无遗漏、实际执行与 outcome；全部通过。该操作只读既有报告，没有重启数据库或重跑实验。
 
 | 分片 | artifact ID | ZIP SHA256 |

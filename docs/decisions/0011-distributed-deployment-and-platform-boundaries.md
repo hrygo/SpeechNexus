@@ -57,7 +57,7 @@ SpeechNexus 已按集群原生架构划分 API、工作台、调度、执行网�
 `accepted` 表示部署与平台设计基线已确认。业务/控制面原生平台兼容、完整跨主机链路、
 真实引擎故障恢复与生产高可用尚须独立实现和验证；本决定不宣称现有 Compose 已完成它们。
 
-历史审查结论和实施归属见[部署单元方案审查](../audits/2026-10-26-deployment-units-review.md)；
+历史审查结论和实施归属见[部署单元方案审查](../archive/audits/2026-10-26-deployment-units-review.md)；
 当时的平台关口 [D1 #229](https://github.com/hrygo/SpeechNexus/issues/229) 与发布关口
 [G5 #18](https://github.com/hrygo/SpeechNexus/issues/18) 保留原时点的跟踪背景。
 当前需求、实施与验收证据以[交付跟踪矩阵](../plans/delivery-tracking.md)为入口。

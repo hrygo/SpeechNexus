@@ -1,14 +1,14 @@
 ---
 title: "部署单元规划审查：松耦合与跨平台"
-status: active
+status: archived
 date: 2026-10-26
 ---
 
 # 部署单元规划审查：松耦合与跨平台
 
 审查目标由用户明确为“松耦合，尽量跨平台”。审查对象为
-[部署单元规划](../architecture/deployment-units.md)及
-[ADR 0011](../decisions/0011-distributed-deployment-and-platform-boundaries.md)，
+[部署单元规划](../../architecture/deployment-units.md)及
+[ADR 0011](../../decisions/0011-distributed-deployment-and-platform-boundaries.md)，
 源码基线为 `96d2e55b3e7da1faac656cfcfcab1c1c49f5eda5`。
 本报告保留 2026-10-26 的审查事实与取证范围；审查时规划 v0.2.0、ADR 修订和本报告
 尚在工作区，未提交或集成。当前维护的拓扑图与扩容说明见部署单元规划 §2。
@@ -28,9 +28,9 @@ date: 2026-10-26
 
 ### R1 · P1：独立 Workbench 服务尚未进入默认部署装配
 
-[Web 代理](../../deploy/web/nginx.conf)把 `/v2/workbench/` 发往 `api:8000`，
-[Compose](../../deploy/compose.yaml)没有 Workbench API；
-[Speech 主入口](../../backend/src/speechnexus_backend/main.py)固定选择 Speech 工厂，
+[Web 代理](../../../deploy/web/nginx.conf)把 `/v2/workbench/` 发往 `api:8000`，
+[Compose](../../../deploy/compose.yaml)没有 Workbench API；
+[Speech 主入口](../../../backend/src/speechnexus_backend/main.py)固定选择 Speech 工厂，
 不会因 `process_role` 改成其他角色就启动 Workbench。
 因此当前默认入口无法证明独立 Workbench 业务已接通，分机部署也无法只靠修改同一 API 地址完成。
 
@@ -39,8 +39,8 @@ date: 2026-10-26
 
 ### R2 · P1：共享运行依赖尚未按部署能力收敛
 
-[Python 镜像](../../deploy/images/python.Dockerfile)安装所有 workspace 包，
-[Backend](../../backend/pyproject.toml)把 `av` 列为基础依赖；
+[Python 镜像](../../../deploy/images/python.Dockerfile)安装所有 workspace 包，
+[Backend](../../../backend/pyproject.toml)把 `av` 列为基础依赖；
 现有包边界不足以表达独立服务的最小安装环境、权限与原生能力。
 这不证明 PyAV 只能运行于 Linux，也不证明共享镜像必须同机；实际风险是无关依赖和节点权限扩散，
 以及缺少干净安装的可验证支持范围。
@@ -51,9 +51,9 @@ Scheduler/Job、实时和工作台业务缺口继续由 #22/#24/#42 实施，不
 
 ### R3 · P1：Linux 安全检查仍缺少跨部署边界的调用设计
 
-[检查进程](../../backend/src/speechnexus_backend/speech/infrastructure/audio_inspection_process.py)
+[检查进程](../../../backend/src/speechnexus_backend/speech/infrastructure/audio_inspection_process.py)
 使用 Linux pidfd 等隔离/监督能力，现有接口为本地流/文件描述符；
-[AssetRuntime](../../backend/src/speechnexus_backend/asset_runtime.py)仍默认使用 `TextAssetInspector`。
+[AssetRuntime](../../../backend/src/speechnexus_backend/asset_runtime.py)仍默认使用 `TextAssetInspector`。
 公开音频启用前，必须决定由哪个受控 Linux 组件提供检查，避免把应用的平台要求拉回 Linux。
 现有文件描述符不能跨主机复用，简单改用普通 PID 又会破坏停止证据。
 
@@ -63,8 +63,8 @@ Scheduler/Job、实时和工作台业务缺口继续由 #22/#24/#42 实施，不
 
 ### R4 · P1：Linux CI 与导入证据不能支撑原生跨平台声明
 
-[当前 CI](../../.github/workflows/ci.yml)使用 Ubuntu runner；
-[mypy 配置](../../pyproject.toml)覆盖全仓与 Linux 专属实现。
+[当前 CI](../../../.github/workflows/ci.yml)使用 Ubuntu runner；
+[mypy 配置](../../../pyproject.toml)覆盖全仓与 Linux 专属实现。
 本会话已有 macOS 模块导入成功和 Linux 类型模式检查的局部结果，两者均不证明 macOS 的
 干净安装、工厂启动、数据库/对象存储行为或媒体能力。不能仅在 macOS 上改用 Linux 类型模式消除报错。
 
@@ -74,7 +74,7 @@ Scheduler/Job、实时和工作台业务缺口继续由 #22/#24/#42 实施，不
 
 ### R5 · P2：逻辑角色与网络服务需要区分
 
-[Workbench runtime](../../backend/src/speechnexus_backend/workbench/runtime.py)内托管多个后台循环；
+[Workbench runtime](../../../backend/src/speechnexus_backend/workbench/runtime.py)内托管多个后台循环；
 原规划分别列出角色，容易被读成必须为每个循环新增服务或立即拆包。
 这会增加端点、部署与故障窗口，而现有持久 claim 能力、权限与扩缩需求才决定是否需要拆分。
 
@@ -84,11 +84,11 @@ CPU 媒体优先复用受控执行。API 与 Scheduler 经 PG/outbox 协作，�
 
 ### R6 · P2：网关不能按无状态 HTTP 代理迁移
 
-[入口所有权](../../execution-gateway/src/speechnexus_gateway/infrastructure/process_ownership.py)
+[入口所有权](../../../execution-gateway/src/speechnexus_gateway/infrastructure/process_ownership.py)
 使用 `fcntl.flock`，同一节点/网关的候选须共享节点私有锁目录；
-[默认文件执行装配](../../execution-gateway/src/speechnexus_gateway/file_asr_runtime.py)核对
+[默认文件执行装配](../../../execution-gateway/src/speechnexus_gateway/file_asr_runtime.py)核对
 `host_node_id` 和 `gateway_id`。
-[Controller](../../node-controller/src/speechnexus_node_controller/app.py)装配本地 daemon 与节点回执存储。
+[Controller](../../../node-controller/src/speechnexus_node_controller/app.py)装配本地 daemon 与节点回执存储。
 这些是当前适配器的真实放置约束，HTTP 可达性不足以证明可以跨主机迁走同一身份。
 
 本轮已在规划与 ADR 中区分协议可移植、节点适配器和当前 Linux 资格。
@@ -123,5 +123,5 @@ G5 在既有前置满足后接收 D1，并核验物理主机分离的公开文�
 - 文档检查通过：14 份相关文档、345 条本地链接、7 份 frontmatter，以及代码围栏、issue 引用和空白；`git diff --check` 通过。
 - 本轮文档验证不替代产品测试。macOS/Linux 原生矩阵、真实分机公开业务、网络分区与 HA 本轮均未执行，门禁保持未放行。
 
-[部署规划](../architecture/deployment-units.md) · [部署入口](../../deploy/README.md) ·
-[验证指南](../agent-verification.md)
+[部署规划](../../architecture/deployment-units.md) · [部署入口](../../../deploy/README.md) ·
+[验证指南](../../agent-verification.md)

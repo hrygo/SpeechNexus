@@ -24,7 +24,7 @@
 执行网关持有提交屏障、执行意图和停止证据；节点控制器管理批准模板与实例生命周期，业务服务通过既定协议协调，不直连引擎。具体实现和未交付边界分别见[执行网关](../components/execution-gateway.md)与[节点控制器](../components/node-controller.md)。
 
 - [部署拓扑图](diagrams/deployment-clusters-v3-4k/README.md)。
-- [设计决定](../decisions/README.md)与[部署单元审查](../audits/2026-10-26-deployment-units-review.md)。
+- [设计决定](../decisions/README.md)与[部署单元审查](../archive/audits/2026-10-26-deployment-units-review.md)。
 - [UI/UX 与设计 Token](../design/ui-ux-design-framework-and-tokens.md)。
 - [旧协调方案](../archive/legacy-postgresql-coordination.md)暂作历史对照；退出条件见 [ADR 0007](../decisions/0007-legacy-coordination-retirement.md)。
 

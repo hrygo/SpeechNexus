@@ -20,4 +20,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    raise RuntimeError("Abort recovery scheduling requires preservation")
+    raise RuntimeError("Abort recovery history requires preservation")

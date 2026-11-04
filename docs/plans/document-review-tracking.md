@@ -19,7 +19,7 @@
 | `docs/architecture/contract-ownership.md` | 已核对 | 逐项对照机器矩阵的 18 端口写入范围和 7 类查询、私有表及授权来源；更新消费者、运行控制装配与用量消费状态，未重跑集成测试 |
 | `docs/architecture/coordination-transactions.md` | 已核对 | 对照事务契约、生产准入与网关锁序、预算、授权及迁移说明；区分同步链路接线与完整调度目标、测试设计与实际运行证据，保留旧规则迁移和回退边界；未运行双库测试、故障或恢复演练 |
 | `docs/architecture/data-deletion.md` | 已核对 | 全文对照删除契约、工作台预检与清理、对象适配器和启动恢复；核对确认与原键重放、依赖快照、未决写入、清理状态与重放上限，明确版本化对象清理、后台任务屏障和跨模块删除 / 复制竞态的缺口；未执行删除或恢复演练 |
-| `docs/architecture/deployment-units.md` | 部分核对 | 核对 Compose 服务与 binding 停用 profile、宿主端口绑定、内部 HTTP 与对象存储凭据、Web 代理路由与 TLS、镜像及依赖、开发脚本平台限制、主要进程入口、Job 派发失败关闭、媒体检查、TTS 结算、网关本地锁、Controller SQLite、文件 ASR 对象版本及工作台后台循环和入口；澄清端口监听不证明出站隔离、导出在途任务恢复缺口及历史 G5 名称与现行发布资格的关系；对照 ADR 0011、入口声明与拓扑示意；31 个本地链接目标存在，其余资格未逐项核实 |
+| `docs/architecture/deployment-units.md` | 已核对 | 全文对照部署决定、Compose、代理、镜像、进程入口与当前物理拓扑需求；区分目标部署和现有装配，澄清出站隔离、后台恢复、对象版本与历史门禁边界；本地链接目标已检查，未实测平台或物理多机资格 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/README.md` | 已核对 | 对照构图与校验脚本、ADR、模型清单和实例契约；补充实时常驻前提并重新渲染、检查两图；图示为目标拓扑，不证明实际部署资格 |
 | `docs/architecture/distributed-coordination-schema.md` | 已核对 | 全文对照草案 DDL、表及复合外键、预算约束、双库授权生成器和测试前置；澄清正文清除、TEXT 映射、运行权限及测试证据边界；仅收集旧 PG 回归，未运行数据库测试或验证生产部署 |
 | `docs/architecture/execution-command.md` | 已核对 | 对照执行命令、内部流与提交契约，以及文件 ASR/TTS 原命令消费者的固定资源、参数和目标检查；核对摘要、版本、文本流顺序与额度、音色和词表来源、输出预算及 codec 结构边界，区分目标语义与当前装配；其他命令与流式消费者仍需各自交付和验收，未运行真实引擎或流式链路 |

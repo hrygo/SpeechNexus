@@ -283,10 +283,10 @@ error envelope declared in `speech-openapi.yaml` and
 supported SDK calls, non-goals, and the extension rules.
 
 `tests/contract/test_p0_public_contracts.py` uses the repository-locked official
-OpenAI Python SDK (`2.54.0`) with a mock transport for REST requests and the
+OpenAI Python SDK (version pinned in [uv.lock](../uv.lock)) with a mock transport for REST requests and the
 SDK's real Realtime connection serialization path for `session.update` /
 `input_audio_buffer.*`. `tests/contract/test_openai_js_sdk.mjs` runs the
-repository-locked OpenAI JavaScript SDK (`7.43.0`) against the same REST subset
+OpenAI JavaScript SDK (version pinned in [pnpm-lock.yaml](../pnpm-lock.yaml)) against the same REST subset
 and verifies multipart, JSON, binary response, and rate-limit error shapes.
 Captured requests, events, and parsed responses must match the declared
 schemas. This is a contract-parity gate, not a live-server integration test.
@@ -322,8 +322,9 @@ configuration and explicitly pinned render bindings use additive `/v2/workbench`
 paths and generated `WorkbenchStatusV2` / `RenderUnitV2` types. V1 render creation
 returns the existing `503 workbench_unavailable` without writing a unit; v2
 requires the caller-selected binding. There is no automatic version fallback or
-binding default. Both generation operations remain contract declarations without
-production routes. See [ADR 0009](../docs/decisions/0009-workbench-explicit-binding-http-version.md)
+binding default. The v2 generation route is registered and requires its service to be configured;
+the v1 generation operation is not registered. Route registration alone does not
+prove successful Speech Job execution. See [ADR 0009](../docs/decisions/0009-workbench-explicit-binding-http-version.md)
 for the operation mapping, consumer migration and rollback boundary.
 
 ## Generated consumer bindings

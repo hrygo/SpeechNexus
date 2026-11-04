@@ -788,6 +788,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/manuscripts/ManuscriptHost.tsx",
           "label": "ManuscriptHost.tsx",
           "note": "固定基线的正式入口或装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/workbench/runtime.py",
+          "label": "工作台版本存储装配",
+          "note": "固定基线的 PostgreSQL 版本单元装配，不证明真实部署验证"
         }
       ],
       "issues": []
@@ -871,6 +876,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/voices/VoiceCreateHost.tsx",
           "label": "VoiceCreateHost.tsx",
           "note": "固定基线的正式入口或装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/workbench/runtime.py",
+          "label": "工作台公开声音目录装配",
+          "note": "固定基线按语音底座配置装配公开声音目录，不证明真实服务验证"
         }
       ],
       "issues": []
@@ -897,6 +907,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/realtime/RealtimeTtsHost.tsx",
           "label": "RealtimeTtsHost.tsx",
           "note": "固定基线的正式入口或装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/realtime/RealtimeHost.tsx",
+          "label": "RealtimeHost.tsx",
+          "note": "固定基线的实时 ASR 宿主与客户端装配"
         }
       ],
       "issues": []

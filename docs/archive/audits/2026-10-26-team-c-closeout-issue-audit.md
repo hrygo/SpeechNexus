@@ -1,6 +1,6 @@
 ---
 title: "团队 C 收尾全量 issue 核对"
-status: active
+status: archived
 version: "1.0.1"
 date: 2026-10-26
 ---
@@ -75,4 +75,4 @@ A/B 已就地整理各项正文，C 本轮复核其进展、依赖和未验收�
 
 ## 证据和接管
 
-原文/元数据、写前/写后快照、并行差异与校验保存于 `/Users/hrygo/.codex/team-c-evidence/20261026T101715Z-final-handoff/`，归档及恢复方法见[最终交接](../archive/plans/2026-10-26-team-c-final-handoff.md)。本记录证明 issue 维护核对完成；产品实现、真实模型、设备及目标拓扑资格仍按原 AC 验收。远端会继续变化，新负责人接管时重新读取目标项。
+原文/元数据、写前/写后快照、并行差异与校验保存于 `/Users/hrygo/.codex/team-c-evidence/20261026T101715Z-final-handoff/`，归档及恢复方法见[最终交接](../plans/2026-10-26-team-c-final-handoff.md)。本记录证明 issue 维护核对完成；产品实现、真实模型、设备及目标拓扑资格仍按原 AC 验收。远端会继续变化，新负责人接管时重新读取目标项。

@@ -2,7 +2,7 @@
 
 下列条目为选编，并非本目录全部记录。审查结论以记录中的时间、范围和证据为限；文档审查不等于实际系统通过验收。
 
-- [2026-10-26 团队 C 收尾 issue 核对](2026-10-26-team-c-closeout-issue-audit.md)：全部 40 个 issue 的进度/状态、正文就地维护及目标/AC/元数据保留结果。
+- [2026-10-26 团队 C 收尾 issue 核对](../archive/audits/2026-10-26-team-c-closeout-issue-audit.md)：全部 40 个 issue 的进度/状态、正文就地维护及目标/AC/元数据保留结果。
 - [2026-10-26 项目完整工作交接](../archive/plans/2026-10-26-project-handoff.md)：当时 A/B/C 集成与待审交付、40 个 issue、决定、风险及接管验证的快照；当前交付状态见[交付跟踪矩阵](../plans/delivery-tracking.md)。
 - [2026-10-26 团队 B 收尾与负责人交接](../archive/plans/2026-10-26-team-b-handoff.md)：B00–B07 完整剩余范围、真实执行/停止证据、C 审查回执、指令长度差异及私有证据/旧工作树归档。
 

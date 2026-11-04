@@ -849,12 +849,10 @@
 
 - 真实底座结果和独立副本按摘要及非空source receipt校验，公开非JSON下载、Range/416与到期状态正确；领域ready不代替实际可导出。
 - worker不调用推理引擎，CPU/内存/磁盘/并发有界并计入预算；固定清单和检查点，staging校验后原子发布，取消/重试/续作不重复发布。
-- 识别缺章/空成品/部分失败；完成质量、试听、匿名确认及固定版本关联。工作台关闭不影响底座，此项独立于助手。
+- 识别缺章/空成品/部分失败；质量检查、试听和匿名确认分别保存独立记录，关联固定内容版本与导出清单，不能用单一综合成功状态或局部可用替代场景验收；独立副本与完整导出保留各自生命周期。工作台关闭不影响底座，此项独立于助手。
 - 保存请求键跨刷新保留，确认后读取失败不得误报未知；真实副本/导出和恢复取证区分合成fixture。
 - 导出事件流消费者须依据冻结契约接入并验证恢复。
 - 正式消费者实际接入 GET `/v1/workbench/saved-assets/{asset_id}/content`（downloadSavedAsset）、GET `/v1/workbench/exports/{export_id}/content`（downloadBookExport）和 GET `/v1/workbench/exports/{export_id}/events`（streamExportEvents）；核对二进制媒体类型、Range/416、事件时序、断线、取消和过期，不以合成 TCP 测试代替真实工作台联验。
-- 质量检查、试听及匿名确认绑定固定版本，独立副本与完整导出保留完整生命周期；不以局部可用替代整个场景验收。
-- 质量检查、试听和匿名确认分别保存独立记录，并关联固定内容版本与导出清单，不能用单一综合成功状态替代。
 
 设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[workbench-export-integrity.md](components/workbench-export-integrity.md)。
 

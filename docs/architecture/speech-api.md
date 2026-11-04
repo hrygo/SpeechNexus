@@ -369,7 +369,7 @@ TTS、可替换预览、辅助结果与资源控制使用下表的 SpeechNexus �
 | C→S `nexus.tts.start` | `event_id`、`utterance_id`；可重申会话固定的 voice、`text_commit_mode` 和 `audio_delivery`，值必须一致；音频格式不在此事件中指定，成功后返回 operation_id |
 | S→C `nexus.tts.started` | `utterance_id`、`operation_id`、实际音频 descriptor、text credit |
 | C→S `nexus.tts.append_text` | `event_id`、`utterance_id`、`text_seq`、`text`；仅接受连续序号 |
-| S→C `nexus.tts.text_ack` | 已接受 text_seq 与仍可发送的字符 credit；不表示音频已生成 |
+| S→C `nexus.tts.text_ack` | 已接受 text_seq 与剩余 `text_credit`；不表示音频已生成 |
 | C→S `nexus.tts.commit_text` | `utterance_id`、`through_text_seq`；冻结指定前缀并允许其进入合成 |
 | C→S `nexus.tts.finish_text` | 提交剩余文本并关闭本 utterance 的输入；不关闭 WS |
 | C→S `nexus.tts.cancel` | `event_id`、`utterance_id`；请求取消对应计算与发送 |
@@ -378,6 +378,8 @@ TTS、可替换预览、辅助结果与资源控制使用下表的 SpeechNexus �
 | S→C `nexus.session.gap` | 输入缺口或新 epoch 的原因；`sample_span` 可省略或为 null，不得以静音假装没有丢音 |
 | C→S `nexus.session.close` | `event_id`、`mode=drain/abort`；停止接收新 operation |
 | S→C `nexus.session.closed` | 会话终态、清理状态及 `operations` 引用；每项含 operation_id、kind、status 和可选 receipt_id，不包含各 operation 的 cleanup_state；schema 不保证列表完整 |
+
+公开事件 schema 只将 `text_credit` 定义为非负整数，未规定计量单位；字符额度是目标语义。当前工作台消费者保守地按 UTF-8 字节扣减并一次只允许一个未确认 append，多字节文本的可发送量因此可能低于字符额度。生产者和消费者须在正式实时链验收前明确并核对单位；内部执行文本流另有字符位置契约，不能直接混用。
 
 事件 schema 在 `nexus.session.update.overrides` 中同时声明 `asr` 和 `tts` 的结构；这只验证字段形状，不能证明活动会话允许更改 TTS 配方。活动会话仍受上文的固定配置与 ASR 白名单限制，服务端须另行执行语义校验；公开 Realtime 路由尚未装配，该限制目前是目标要求。
 

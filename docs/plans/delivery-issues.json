@@ -1817,15 +1817,25 @@
         "docs/architecture/deployment-units.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "需求基线；当前实现待核验。",
-      "integration": "实际组合根与消费者待核验。",
-      "verification": "未取得当前真实部署验收证据。",
-      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "implementation": "节点就绪探针记录超时和异常类型；绑定停用扫描记录重试告警及汇总计数。局部日志不证明全链追踪或完整指标。",
+      "integration": "请求与执行身份贯通、指标采集及日志内容边界仍须逐路径核验。",
+      "verification": "未取得当前真实部署、隐私保护和完整观测验收证据。",
+      "gap": "请求与执行身份贯通、指标采集及日志内容边界仍须逐路径核验。 未取得当前真实部署、隐私保护和完整观测验收证据。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
           "label": "产品与架构设计",
           "note": "需求基线；不证明现行实现或运行资格。"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/node-controller/src/speechnexus_node_controller/application/readiness.py",
+          "label": "节点就绪探针日志",
+          "note": "固定版本记录探针失败和超时，不代表完整追踪或生产资格"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/binding_disable_worker.py",
+          "label": "停用扫描日志",
+          "note": "固定版本记录重试及扫描计数，不证明所有日志的隐私边界"
         }
       ],
       "issues": []

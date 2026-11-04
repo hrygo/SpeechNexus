@@ -139,7 +139,7 @@ M1/M2 是验收里程碑，不是所有工作的串行开工屏障：基线无�
 
 ### T06：查清探针失败并验证实际运行（M1；C）
 
-入口：`scripts/dev-env/workbench-manuscripts-probe.mjs`、`scripts/dev-env/workbench-manuscripts-real-probe.mjs`、`tests/integration/test_probe_inventory.py`、`scripts/dev-env/workbench-pg-probe.py`；[历史诊断](2026-10-25-team-c-orphan-probes-gated-handoff.md)。对应 AC-06。
+入口：`scripts/dev-env/workbench-manuscripts-probe.mjs`、`scripts/dev-env/workbench-manuscripts-real-probe.mjs`、`tests/integration/test_probe_inventory.py`、`scripts/dev-env/workbench-pg-probe.py`；[历史诊断](../archive/plans/2026-10-25-team-c-orphan-probes-gated-handoff.md)。对应 AC-06。
 
 - [x] 围绕最后一个未解释场景采集请求、响应契约、原键重放、pending/busy 与 UI 状态迁移，区分夹具、探针和产品问题；另一场景通过不能排除本场景缺陷。
 - [x] 修复须保留可解释的失败复现和回归；正式退役须有明确授权及等价或更强的覆盖证据。未定位时保持失败与受影响 AC 未完成，记录已排除原因后推进其他独立任务，不无证据重复重试。

@@ -46,4 +46,4 @@ Expected：socket-only 临时 PG 全通过无 skip，退出 stopped=true、独�
 
 ## 单元交付状态
 
-本单元内部持久任务、一次独立终审和两项Important的同轮RED→GREEN修复已完成。最终原样unit/contract仍有独立网关时钟夹具失败，临时组合候选1526 passed；隔离PG262 passed/无skip。完整公开C06及C00–C08目标继续active。累计191文件交付和边界见[本单元交接](../../plans/2026-10-24-team-c-c06-tasks-handoff.md)。
+本单元内部持久任务、一次独立终审和两项Important的同轮RED→GREEN修复已完成。最终原样unit/contract仍有独立网关时钟夹具失败，临时组合候选1526 passed；隔离PG262 passed/无skip。完整公开C06及C00–C08目标继续active。累计191文件交付和边界见[本单元交接](2026-10-24-team-c-c06-tasks-handoff.md)。

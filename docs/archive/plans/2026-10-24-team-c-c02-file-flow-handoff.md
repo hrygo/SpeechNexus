@@ -11,7 +11,7 @@ date: 2026-10-24
 
 ## 基线与范围
 
-团队 C / C00–C02 的首个 A00 客户端消费单元，历史目标见[团队 C 目标](../../plans/2026-10-24-team-c-goal.md)。本轮交付 ASR 文件任务的开发演练和恢复控制，不关闭 C00/C01/C02 或任何 Gate。后续正式宿主接入及验证范围见[文件转写](2026-10-24-team-c-c02-host-handoff.md)和[文本配音](../../plans/2026-10-24-team-c-c02-tts-host-handoff.md)交接。
+团队 C / C00–C02 的首个 A00 客户端消费单元，历史目标见[团队 C 目标](../../plans/2026-10-24-team-c-goal.md)。本轮交付 ASR 文件任务的开发演练和恢复控制，不关闭 C00/C01/C02 或任何 Gate。后续正式宿主接入及验证范围见[文件转写](2026-10-24-team-c-c02-host-handoff.md)和[文本配音](2026-10-24-team-c-c02-tts-host-handoff.md)交接。
 
 核验到 A00 首包已随 PR #46 合入主线，随后 PR #47 优化生成兼容检查及 CI。先检查来件与本地改动无路径冲突，再 fast-forward 到 `b3e0ed340763b827333747d464b68fd7f4981116`。当前分支仍为 `codex/team-c-c00-versions`，C 的改动未提交，没有承载本单元的 `head_sha`；没有 push、远端 Issue 更新或外部消息。本 SHA 是本地消费基线，联合联调仍以 A 指定的共同 SHA 为准。
 

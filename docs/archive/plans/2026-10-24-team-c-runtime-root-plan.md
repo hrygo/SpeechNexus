@@ -33,7 +33,7 @@
 **Files:** 新建 `workbench/runtime_settings.py`、`workbench/infrastructure/runtime_schema.py`；新增对应unit及PG测试。
 **Interfaces:** `WorkbenchSettings`，`bootstrap_sql(schema)`、`runtime_grants_sql(schema,role)`，`SCHEMA_REVISION=1`；既有五份SQL片段保持不变。
 
-> 时点说明：`SCHEMA_REVISION` 后续由[服务端提词持久化](../../plans/2026-10-24-team-c-teleprompter-persistence-handoff.md)升至 2（新增第六份片段），本行保留上一单元时点值。
+> 时点说明：`SCHEMA_REVISION` 后续由[服务端提词持久化](2026-10-24-team-c-teleprompter-persistence-handoff.md)升至 2（新增第六份片段），本行保留上一单元时点值。
 
 - [x] RED/GREEN：配置缺项、保密、限值/保留schema；bootstrap fresh原子/重复拒绝，stamp不可伪写，精确角色grant。
 

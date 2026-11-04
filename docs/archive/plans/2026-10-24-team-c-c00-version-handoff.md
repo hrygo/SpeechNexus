@@ -7,7 +7,7 @@ date: 2026-10-24
 
 # SpeechNexus C00 项目与转写版本单元交接
 
-本页保留首轮领域/应用单元的时点记录。后续生产适配进展与隔离数据库证据见 [C00 PostgreSQL 事务交接](2026-10-24-team-c-c00-postgres-handoff.md)、[删除事务交接](2026-10-24-team-c-c00-deletion-handoff.md)和[生成项目请求消费交接](2026-10-24-team-c-c00-project-boundary-handoff.md)；这些交接时尚未接入公开 HTTP，后续进展见[HTTP 接入交接](../../plans/2026-10-24-team-c-c00-http-handoff.md)。
+本页保留首轮领域/应用单元的时点记录。后续生产适配进展与隔离数据库证据见 [C00 PostgreSQL 事务交接](2026-10-24-team-c-c00-postgres-handoff.md)、[删除事务交接](2026-10-24-team-c-c00-deletion-handoff.md)和[生成项目请求消费交接](2026-10-24-team-c-c00-project-boundary-handoff.md)；这些交接时尚未接入公开 HTTP，后续进展见[HTTP 接入交接](2026-10-24-team-c-c00-http-handoff.md)。
 
 ## 交付身份与范围
 

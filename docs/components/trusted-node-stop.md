@@ -65,4 +65,4 @@ config digest。stop token 只与同池该执行 token 比较，不得低于它�
 原生 HTTP/TLS、SQLite/网关 PG 与 A 的双库消费者验证分别报告；fake daemon 和
 合成资格不代表真实 GPU 停止、真实 ASR/TTS 故障或物理集群资格。集群要求不降级。
 
-分层验证和可复现命令见[本轮实测记录](../audits/2026-10-24-b02-trusted-node-stop-probe.md)。
+分层验证和可复现命令见[本轮实测记录](../archive/audits/2026-10-24-b02-trusted-node-stop-probe.md)。

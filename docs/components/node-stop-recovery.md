@@ -117,9 +117,9 @@ schema 2 的代码；旧快照只包含保存时点的事实，恢复前必须�
   无 exit 的消失、替代 generation、同 generation 替代容器及固定容器被重启。
 - 原生 app/SQLite/TLS 与 PG/InnoDB 验证：只有 exit 时占用不退，重启恢复双证据后由 A 事务归还。
   daemon/资格为合成事实，不证明真实 GPU 已停止或模型资格。
-- [真实 CPU 进程探针](../audits/2026-10-24-b02-stop-recovery-probe.md)使用生产入口、真实 daemon、
+- [真实 CPU 进程探针](../archive/audits/2026-10-24-b02-stop-recovery-probe.md)使用生产入口、真实 daemon、
   SQLite 和 SIGKILL；故障闸只在探针子进程包装原方法，生产没有故障开关。
-- [外部快照来源验证](../audits/2026-10-24-b02-reconcile-proof-source.md)覆盖伪造就绪/停止证明、
+- [外部快照来源验证](../archive/audits/2026-10-24-b02-reconcile-proof-source.md)覆盖伪造就绪/停止证明、
   只读回执及双库占用保持，节点本地恢复仍可产生可信双证据。
 
 上述测试和探针各自只证明其记录的环境、版本和范围；源码中的测试定义不代表当前环境已通过。

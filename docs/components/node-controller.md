@@ -246,7 +246,7 @@ TLS＋PG/InnoDB 回归分别验证自动 ready 无资格不得缩减、自动 ab
 矛盾或多个合格来源503。查询不操作 daemon、不写记录，原本地循环继续负责 stop 恢复。
 网关以固定 TLS 来源消费，完整绑定/代次/同池任期/时间校验后复用原停止事务；
 预算仍由 A 原事务归还。详见[可信停止消费](trusted-node-stop.md)与
-[CPU进程及双库验证](../audits/2026-10-24-b02-trusted-node-stop-probe.md)。
+[CPU进程及双库验证](../archive/audits/2026-10-24-b02-trusted-node-stop-probe.md)。
 网关恢复驱动及其边界见[执行网关](execution-gateway.md)；真实引擎故障与部署资格须单独验收。
 
 ## 6. 当前未实现与交接

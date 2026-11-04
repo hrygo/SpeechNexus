@@ -1,6 +1,6 @@
 ---
 title: "B02/B01 节点可信停止事实到网关的验证"
-status: recorded
+status: archived
 date: 2026-10-24
 ---
 
@@ -96,4 +96,4 @@ ready 实例持续监控、完整 scheduler/lease/预算闭环、GPU 质量/容�
 本单元提供可组合的可信来源；不能宣称默认进程自动恢复或公开语音服务可用。
 集群要求不降低，不采用 etcd，不新增预算权威。B01/B02、Gate 和团队 B Goal 保持开放。
 
-[设计、升级和回退边界](../components/trusted-node-stop.md)
+[设计、升级和回退边界](../../components/trusted-node-stop.md)

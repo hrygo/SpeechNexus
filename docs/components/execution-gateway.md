@@ -369,7 +369,7 @@ OpenAPI 同样取自契约 schema，保留范围、枚举、额外字段限制�
 `GENERATED` 区间追加可以提高 version 而保持 unknown，不据此额外增加 `observed`；
 既有用量投影必须保留，不能在完成停止记录后因重复计数抛错。
 旧版反证、501条前缀单元和双库实际并发证据见
-[恢复扫描公平轮转与互斥计数](../audits/2026-10-24-b01-recovery-progress.md)。
+[恢复扫描公平轮转与互斥计数](../archive/audits/2026-10-24-b01-recovery-progress.md)。
 
 ### 默认进程的自动恢复配置与生命周期
 
@@ -429,7 +429,7 @@ OpenAPI 同样取自契约 schema，保留范围、枚举、额外字段限制�
 readiness失败，不新增运营DTO。循环存活不证明来源可用、实例ready或模型资格，
 来源离线或无停止证据时执行仍保持unknown/占用。默认Compose仍未启用这些控制设置。
 真实默认网关进程SIGKILL/重启、TLS/SQLite节点、半证据/坏凭据及A释放联调见
-[本轮实测](../audits/2026-10-24-b01-default-recovery-driver.md)。
+[本轮实测](../archive/audits/2026-10-24-b01-default-recovery-driver.md)。
 
 一份实例终止事实可能覆盖多条执行，源 `InstanceTerminationEvidence.evidence_id` 标识这次物理
 终止事件；`execution_stop_evidence.evidence_id` 则标识这份事实对某条执行的应用，必须逐执行唯一。

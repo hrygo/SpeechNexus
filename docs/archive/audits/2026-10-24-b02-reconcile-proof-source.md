@@ -1,6 +1,6 @@
 ---
 title: "B02 外部快照与停止证明来源验证"
-status: recorded
+status: archived
 date: 2026-10-24
 ---
 
@@ -13,7 +13,7 @@ date: 2026-10-24
 
 ## 收窄后的行为
 
-[机器契约](../../contracts/internal/runtime-control.openapi.yaml)保留 URL、operationId、
+[机器契约](../../../contracts/internal/runtime-control.openapi.yaml)保留 URL、operationId、
 字段、必填性、schema 和错误信封。端点只比较调用方断言与节点持久记录，返回诊断差异；
 它不写意图或检查点、不调用 runtime、不改变留宿内存和代次替换资格。说明与源摘要由
 现有生成命令更新，没有手改生成产物或新增生成器逻辑。
@@ -21,7 +21,7 @@ date: 2026-10-24
 快照里的双确认、容器 ID、退出码、时间戳均不能形成停止证明。`fencing_token` 只为 wire
 兼容保留，不生成节点级任期高位；各资源池任期不跨池比较。`accepted_at` 取节点处理时间，
 返回的 quarantine 名单不代表已持久隔离。完整事件语义、消费者与升级限制见
-[证据来源设计](../components/node-stop-recovery.md#外部快照与权威证据来源)。
+[证据来源设计](../../components/node-stop-recovery.md#外部快照与权威证据来源)。
 
 ## 反证与回归
 

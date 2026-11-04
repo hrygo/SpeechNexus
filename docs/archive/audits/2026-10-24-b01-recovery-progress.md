@@ -1,6 +1,6 @@
 ---
 title: "B01 恢复扫描公平轮转与互斥计数"
-status: recorded
+status: archived
 date: 2026-10-24
 ---
 
@@ -81,4 +81,4 @@ PR、最终head/基线、CI与合后证据在 #28/#22/#6 的本轮单元回填�
 完整调度/预算、GPU质量容量和物理多主机资格仍待。
 本轮不证明这些能力；B01、其他B包、Gate与原生Goal继续开放。
 
-[原生扫描、身份和停止事务说明](../components/execution-gateway.md#8-未知执行与只读恢复)
+[原生扫描、身份和停止事务说明](../../components/execution-gateway.md#8-未知执行与只读恢复)

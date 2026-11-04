@@ -1,6 +1,6 @@
 ---
 title: "B01 默认网关自动恢复：配置、生命周期与真实进程验证"
-status: active
+status: archived
 date: 2026-10-24
 ---
 

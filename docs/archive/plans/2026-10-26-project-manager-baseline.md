@@ -27,7 +27,7 @@ SpeechNexus 是可信部署网络内的 Linux 语音底座和创作工作台：�
 | A 合后检查 | [main41e29b6 的 CI](https://github.com/hrygo/SpeechNexus/actions/runs/40313468861)首轮分片 2 达到 10 分钟时限，314 项测试通过后作业被取消、汇总失败；浏览器准备约 354 秒。补跑以同一 run 的最新 attempt 为准，首轮失败不改写为成功 |
 | B 的接管修订 | #220 最终 head `4e55041`，合入 `8b1466d`；[精确 PR CI](https://github.com/hrygo/SpeechNexus/actions/runs/40313607678) 2 项适用检查成功、7 项跳过，补请求音频上限风险及原件接收边界 |
 
-三队详细交接继续分别查阅：[A](2026-10-26-team-a-final-handoff.md)、[B](../../audits/2026-10-26-team-b-handoff.md)、[C](2026-10-26-team-c-final-handoff.md)。[原项目交接](../../audits/2026-10-26-project-handoff.md)保留交接时点快照；当时的组合版本和管理入口为本文件及 #6。
+三队详细交接继续分别查阅：[A](2026-10-26-team-a-final-handoff.md)、[B](../../audits/2026-10-26-team-b-handoff.md)、[C](2026-10-26-team-c-final-handoff.md)。[原项目交接](2026-10-26-project-handoff.md)保留交接时点快照；当时的组合版本和管理入口为本文件及 #6。
 
 ## 2. 必须掌握的架构与边界
 

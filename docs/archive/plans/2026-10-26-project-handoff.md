@@ -1,6 +1,6 @@
 ---
 title: "SpeechNexus 项目完整工作交接"
-status: active
+status: archived
 version: "1.2.0"
 date: 2026-10-26
 ---
@@ -8,7 +8,7 @@ date: 2026-10-26
 # SpeechNexus 项目完整工作交接
 
 本文件保留原三队交接时点的完整记录，汇总当时 A/B/C 已集成内容、未完成范围、待审交付、
-现有决定、证据与现场保留方式。当前组合、三份 PR 的接管和后续管理入口见[项目经理基线](../archive/plans/2026-10-26-project-manager-baseline.md)。后续优先级、负责人和实施窗口重新安排；
+现有决定、证据与现场保留方式。当前组合、三份 PR 的接管和后续管理入口见[项目经理基线](2026-10-26-project-manager-baseline.md)。后续优先级、负责人和实施窗口重新安排；
 历史计划中的“下一步”不作为自动开工指令，完整范围和原验收条件继续保留。
 
 交接时，真实文件 ASR 和 CustomVoice 已有内部隔离执行结果，协调事务和工作台已有
@@ -26,8 +26,8 @@ date: 2026-10-26
 | B 收尾 PR | [#220](https://github.com/hrygo/SpeechNexus/pull/220)，本 PR | 文档、完整交接与 issue 核对；等待审阅，不自动合并 |
 | A 收尾 PR | [#221](https://github.com/hrygo/SpeechNexus/pull/221)，head `b7e65f4a119999e720d594200c53dc683bec5526` | 已提交共享媒体包、私有音频检查/回执与窄消费者；尚未合入，B 尚未实际接收 |
 | A 详细交接 | [#221 固定版本交接](https://github.com/hrygo/SpeechNexus/blob/b7e65f4a119999e720d594200c53dc683bec5526/docs/plans/2026-10-26-team-a-final-handoff.md) | 随候选评审，不能当作 main 文件或公开音频 ready |
-| B 详细交接 | [团队 B 交接](2026-10-26-team-b-handoff.md) | B00–B07 剩余范围、真实探针、C 回执、归档与恢复 |
-| C 当前事实 | [有声书实现/证据矩阵](2026-10-26-team-c-render-loop-status.md)、[证据保留事故](2026-10-26-team-c-evidence-retention.md)、#35–#43 | 分段实现和未决审查并存，不能只读成功摘要 |
+| B 详细交接 | [团队 B 交接](../../audits/2026-10-26-team-b-handoff.md) | B00–B07 剩余范围、真实探针、C 回执、归档与恢复 |
+| C 当前事实 | [有声书实现/证据矩阵](../../audits/2026-10-26-team-c-render-loop-status.md)、[证据保留事故](../../audits/2026-10-26-team-c-evidence-retention.md)、#35–#43 | 分段实现和未决审查并存，不能只读成功摘要 |
 | 调度与状态 | [总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)、各 issue 正文 | 远端为当前进度来源，带日期矩阵仅为快照 |
 
 #221 不是 #220 的已合入依赖；审阅 #220 时没有将 #221 的产品改动移入本 PR。
@@ -39,14 +39,14 @@ date: 2026-10-26
 
 | 边界 | 当前决定与权威入口 |
 | --- | --- |
-| 集群与数据库 | 必须支持集群；单节点使用同一持久协议。PostgreSQL 是唯一正式产品数据库，程序承担业务事务与编排，不恢复复杂存储过程业务引擎；InnoDB 仅作关键协调路径对照。[ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md)、[ADR 0006](../decisions/0006-cluster-coordination-and-storage-portability.md) |
-| 协调选择 | 不采用 etcd；Redis 可作可丢失缓存/唤醒，不能成为唯一事实或第二预算权威。旧原型退出按 [ADR 0007](../decisions/0007-legacy-coordination-retirement.md)处理 |
-| 生命周期 | 完整意图先持久化再外发；unknown 沿原身份恢复并继续占用。取消接受、断线、TTL 不代表停止或释放；双证据后由 A 原事务幂等结算。[事务方案](../architecture/coordination-transactions.md) |
-| 模块与权限 | 工作台只用公开语音协议；网关管理执行屏障、引擎凭据与证据，控制器只管理批准模板。业务 API/worker 不持 Docker socket，不共写工作台/底座表。[所有权](../architecture/contract-ownership.md) |
-| 契约与依赖 | Python/TS 边界类型同源生成或校验；领域向内，vendor/数据库/公开 DTO 在边界转换。[契约入口](../../contracts/README.md)、[目录边界](../components/repository-layout.md) |
-| 产品身份 | 首期无登录、用户目录、RBAC、多租户或个人私有空间；两个 Web 入口不是隔离边界。[ADR 0001](../decisions/0001-product-boundaries-and-authentication-scope.md) |
-| 内容网络 | 业务内容不出部署网络；LLM 默认关闭，只用服务端批准的本机/内网服务，不回退公有云。[ADR 0003](../decisions/0003-workbench-llm-network-boundary.md) |
-| 制品与删除 | 私有 staging 后发布固定对象引用；独立保存副本不追删，删除账本重放完成后才能开放恢复内容。[数据删除](../architecture/data-deletion.md) |
+| 集群与数据库 | 必须支持集群；单节点使用同一持久协议。PostgreSQL 是唯一正式产品数据库，程序承担业务事务与编排，不恢复复杂存储过程业务引擎；InnoDB 仅作关键协调路径对照。[ADR 0004](../../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md)、[ADR 0006](../../decisions/0006-cluster-coordination-and-storage-portability.md) |
+| 协调选择 | 不采用 etcd；Redis 可作可丢失缓存/唤醒，不能成为唯一事实或第二预算权威。旧原型退出按 [ADR 0007](../../decisions/0007-legacy-coordination-retirement.md)处理 |
+| 生命周期 | 完整意图先持久化再外发；unknown 沿原身份恢复并继续占用。取消接受、断线、TTL 不代表停止或释放；双证据后由 A 原事务幂等结算。[事务方案](../../architecture/coordination-transactions.md) |
+| 模块与权限 | 工作台只用公开语音协议；网关管理执行屏障、引擎凭据与证据，控制器只管理批准模板。业务 API/worker 不持 Docker socket，不共写工作台/底座表。[所有权](../../architecture/contract-ownership.md) |
+| 契约与依赖 | Python/TS 边界类型同源生成或校验；领域向内，vendor/数据库/公开 DTO 在边界转换。[契约入口](../../../contracts/README.md)、[目录边界](../../components/repository-layout.md) |
+| 产品身份 | 首期无登录、用户目录、RBAC、多租户或个人私有空间；两个 Web 入口不是隔离边界。[ADR 0001](../../decisions/0001-product-boundaries-and-authentication-scope.md) |
+| 内容网络 | 业务内容不出部署网络；LLM 默认关闭，只用服务端批准的本机/内网服务，不回退公有云。[ADR 0003](../../decisions/0003-workbench-llm-network-boundary.md) |
+| 制品与删除 | 私有 staging 后发布固定对象引用；独立保存副本不追删，删除账本重放完成后才能开放恢复内容。[数据删除](../../architecture/data-deletion.md) |
 
 ## 3. 各团队已交付与仍缺的接线
 
@@ -130,7 +130,7 @@ Epic、工作包全范围完成与 Gate 分阶段放行分别判断；原有前�
 | 文件公开链 | B 内部真实执行/注册输入已交，A 权威配置、音频 ready、业务 Job/准入与发布仍缺；同版 SDK/C 消费后再验 G1 | A/B/C，#14/#21/#22/#23/#142 |
 | 共享媒体包 | #221 已固定提交私有成功回执/decoder/窄消费者，默认仍 TextAssetInspector；需评审合入、B 实际兼容接收及生产装配，不能仍称“尚未提交” | A/B，#19/#21 |
 | TTS 参数兼容 | Nexus overrides 2000、标准 speech/内部命令 4096、固定 pipeline 默认声明 500；实际 adapter 校验、2001–4096 准入和 token 总预算未验证，禁止静默截断 | A/B/C，#30/#37/#142 |
-| 请求级音频上限 | #203 未把更紧的请求时长传入执行 policy；管理方合成反例确认请求 100 ms 仍使用 600000 ms / 8 MiB binding policy，并返回 200 ms。#219 未修复，须收紧时长/PCM预算并覆盖拒绝与资源边界；见[B 详细交接](2026-10-26-team-b-handoff.md) | B03，#30/#142；与指令字符上限分别处理 |
+| 请求级音频上限 | #203 未把更紧的请求时长传入执行 policy；管理方合成反例确认请求 100 ms 仍使用 600000 ms / 8 MiB binding policy，并返回 200 ms。#219 未修复，须收紧时长/PCM预算并覆盖拒绝与资源边界；见[B 详细交接](../../audits/2026-10-26-team-b-handoff.md) | B03，#30/#142；与指令字符上限分别处理 |
 | 停止与结算 | 隔离整代次停止成立；单请求释放未获资格，TTS 只结算执行租约、16 GiB base 未结算，不能迁移 ASR base 结论 | A/B，#22/#28/#29/#142 |
 | 有声书外发/恢复 | #197/#198 等已合入；先外发后落库、同键异体/可变快照重放、锁前读与 CAS/source 一致性审查未结，默认结算循环关闭 | C/A 公开边界，#42 |
 | 副本/分页/页面 | 来源错误类型与捕获分类不一致、最老批次饥饿、无持久退避；SQL 全读后切片、仅 useRef 键跨刷新丢失、请求乱序/未知误报及焦点审查未结。#216/#217 仅 fake 参数转发 | C，#42/#43 |
@@ -141,7 +141,7 @@ Epic、工作包全范围完成与 Gate 分阶段放行分别判断；原有前�
 | 目标环境 | 集群是硬要求；物理多机、网络分区、备用算力、备份恢复、长时质量/容量和完整许可运维交接仍未通过 | #18/#26/#34/#43 |
 
 C 对 B 审查意见的回执及未集成本机 v1.1.0 计划见
-[B 交接](2026-10-26-team-b-handoff.md)和
+[B 交接](../../audits/2026-10-26-team-b-handoff.md)和
 [共享审查评论](https://github.com/hrygo/SpeechNexus/issues/142#issuecomment-6411923009)；
 回执不等于问题修复或联合验收。#215 只是缺口登记，不能记为上述问题已经修复；
 项目已有隔离 MinIO 测试能力，不能把全部 C 自有问题归为外部未提供环境。
@@ -152,20 +152,20 @@ B 私有归档的数量、哈希校验和清理是原执行方报告；管理方
 
 | 内容 | 位置或索引 | 使用与保留要求 |
 | --- | --- | --- |
-| 已入库设计/契约 | [文档索引](../README.md)、[技术方案](../architecture/technical-blueprint.md)、[contracts](../../contracts/README.md)、accepted ADR | 设计预期与实测分开；冲突保留并修正，不能放宽门禁 |
-| B 实验与制品 | [B 交接证据表](2026-10-26-team-b-handoff.md)、ASR/TTS 固定注册输入及原报告 | 保留原模型/镜像/候选/fixture/拓扑；多个局部版本不能拼成同版生产资格 |
+| 已入库设计/契约 | [文档索引](../../README.md)、[技术方案](../../architecture/technical-blueprint.md)、[contracts](../../../contracts/README.md)、accepted ADR | 设计预期与实测分开；冲突保留并修正，不能放宽门禁 |
+| B 实验与制品 | [B 交接证据表](../../audits/2026-10-26-team-b-handoff.md)、ASR/TTS 固定注册输入及原报告 | 保留原模型/镜像/候选/fixture/拓扑；多个局部版本不能拼成同版生产资格 |
 | B 私有归档根 | 本机 `.runtime/probes/team-b-closeout/archive-root.txt` 指向仓库外稳定目录 | 仅部署内访问，可能包含私有配置，不上传 Git/CI；换机先核验并移交访问 |
 | 旧 skill 草稿/历史 | 同根 `skills-history.bundle`、`skills-worktree-wip.tar.gz`、`skills-worktree-manifest.json`、`archive-verification.json` | 10 份未提交文件已逐份核验，恢复到新目录；未集成，不替代仓库现有技能 |
 | 私有实验原件 | 同根 `runtime-probes.tar.gz`，原 `.runtime/probes/` 仍保留 | 归档时 5308 文件、512351757 字节，完整读取验证；不删除或写回运行配置 |
 | 全量 issue 核对 | 同根 `all-issue-audit-final-report.json`、`all-issue-audit-report.md`、`all-issue-audit-20261026T175124+0800.tar.gz` 及同名 verification JSON | 40 项快照、前后正文/摘要、并行更新保留和逐项回读；70 个归档文件摘要全部核验 |
-| C 原件缺失说明 | [证据事故](2026-10-26-team-c-evidence-retention.md) | 82 份不可恢复，用新证据重建；不把复跑当原件找回 |
-| 真实语料 | 根 [AGENTS.md](../../AGENTS.md) 的语料索引及主机本地目录 | 原始/派生/标注混合，文件数不等于独立样本；私有语料不入库 |
+| C 原件缺失说明 | [证据事故](../../audits/2026-10-26-team-c-evidence-retention.md) | 82 份不可恢复，用新证据重建；不把复跑当原件找回 |
+| 真实语料 | 根 [AGENTS.md](../../../AGENTS.md) 的语料索引及主机本地目录 | 原始/派生/标注混合，文件数不等于独立样本；私有语料不入库 |
 
 B 清理时未发现遗留 ASR/TTS 实验容器，35B、embedding、reranker 的容器身份和
 启动时间前后相同；未停止或重启它们。旧 B skill 工作树/本地分支已在归档后删除，
 当前交付分支仅用于 #220。这些是收尾时点事实，不保证接管时服务仍健康。
 
-恢复旧 skill 的具体命令与先验校验见 [B 交接](2026-10-26-team-b-handoff.md)。
+恢复旧 skill 的具体命令与先验校验见 [B 交接](../../audits/2026-10-26-team-b-handoff.md)。
 恢复前先核验归档摘要；独立新目录恢复，不覆盖当前源码、数据库、对象区或运行凭据。
 `.venv/`、`node_modules/` 可按锁文件重建，不是唯一业务证据；原件不随 worktree 清理。
 
@@ -174,11 +174,11 @@ B 清理时未发现遗留 ASR/TTS 实验容器，35B、embedding、reranker 的
 1. 读取本文件、#6 和目标 issue，确认远端 main 与 #220/#221 当前状态。
    获取明确集成版本后再判断能力，不从旧计划日期或绿色 CI 推断验收完成。
 2. 取得部署内归档访问并核对 manifest，确认私有证据、语料和受保护服务仍可定位。
-   项目默认隔离端口和工具前置见[开发环境](../development-environment.md)；
+   项目默认隔离端口和工具前置见[开发环境](../../development-environment.md)；
    健康/就绪文档不是当前运行事实。
 3. 由新负责人指定目标切片、owner、版本和环境；先冻结实际变化的生产者/消费者契约，
-   再按现有[项目技能入口](../agent-guide.md)实施，保留上述未完成范围。
-4. 按[验证指南](../agent-verification.md)选择检查。`make verify`、集成目标和部署启动
+   再按现有[项目技能入口](../../agent-guide.md)实施，保留上述未完成范围。
+4. 按[验证指南](../../agent-verification.md)选择检查。`make verify`、集成目标和部署启动
    会管理隔离服务，不作为阅读交接时自动执行的命令；不得连接同机共享实例。
 5. 收集同版真实链及其失败/恢复证据后，再按 issue 原 AC 更新状态；
    Gate 保留前置、三队确认和用户放行。合并后使用仓库现有 issue 同步技能。
@@ -197,7 +197,7 @@ gh issue view 6 --json state,labels,body,url
 ## 8. 本次交付的验收边界
 
 本 PR 修改文档，检查本地链接、命令语法、事实来源、40 项 issue 回读及 diff；
-精确 head 的检查以 PR CI 为准。[CI 规则](../validation/ci-validation.md)
+精确 head 的检查以 PR CI 为准。[CI 规则](../../validation/ci-validation.md)
 允许纯 Markdown 路由仅执行适用检查，业务/数据库/部署不适用不表示重跑通过。
 
 不重新执行历史业务、数据库、模型、质量或物理拓扑实验；历史结果继续绑定原报告。

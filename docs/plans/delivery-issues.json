@@ -1249,6 +1249,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/teleprompter/TeleprompterPanel.tsx",
           "label": "TeleprompterPanel.tsx",
           "note": "固定基线的正式入口或装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/workbench/runtime.py",
+          "label": "提词服务与能力装配",
+          "note": "静态装配仅声明手动阅读，不证明语音跟随"
         }
       ],
       "issues": []
@@ -1342,6 +1347,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/eac21eb563efa65014b07db49ef2f638ec8083e6/web/workbench/src/manuscripts/workbench-client.ts",
           "label": "工作台客户端",
           "note": "生成操作使用的 v2 路径"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/workbench/runtime.py",
+          "label": "书籍与生成服务装配",
+          "note": "静态装配依赖配置，不证明真实底座链路"
         }
       ],
       "issues": []
@@ -1355,9 +1365,9 @@
         "docs/components/workbench-export-integrity.md"
       ],
       "implementation": "工作台 App 挂载 BooksHost；工厂装配导出台账和媒体验证器，默认无 producer 且周期关闭，队列不派发。",
-      "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
+      "integration": "导出事件流尚未在工作台路由和正式页面接线；其他页面与服务按源码静态装配，依赖配置、真实服务链路和运行结果本轮未验证。",
       "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
-      "gap": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "导出事件流尚未在工作台路由和正式页面接线；其他页面与服务按源码静态装配，依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/App.tsx",
@@ -1378,6 +1388,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/b5b3ae685b487970ec0a63abe9411e94b3aa1042/backend/src/speechnexus_backend/workbench/runtime_settings.py",
           "label": "导出配置",
           "note": "导出周期默认值"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/workbench/interfaces/http_exports.py",
+          "label": "导出路由",
+          "note": "固定版本注册创建、查询及取消，未注册导出事件流"
         }
       ],
       "issues": []

@@ -1818,6 +1818,11 @@
       "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
       "evidence": [
         {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/interfaces/http/models.py",
+          "label": "模型目录路由",
+          "note": "声明目录、详情及条件响应；不证明实时就绪或资格来源已接入"
+        },
+        {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
           "label": "产品与架构设计",
           "note": "需求基线；不证明现行实现或运行资格。"

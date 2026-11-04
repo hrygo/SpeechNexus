@@ -110,7 +110,7 @@ TTS 支持 `model`、`input`、`voice`、`response_format`、`speed`、`instruct
 供执行适配器使用；适配器不得重新选择最新绑定或工作空间策略。
 这些字段是已选事实的交接，不认证声音资格，也不替代持久提交、准入锁后复核或恢复记录。
 
-增强参数放在 TTS JSON 的 `nexus` 对象或 ASR multipart 的 `nexus` JSON 字符串中。两者共同接受 `workspace_id`、`client_reference`、`profile_id`、`profile_revision`、`overrides` 和 `deadline_ms`；TTS 另接受 `voice_revision`、`pronunciation_revision`，ASR 的 `overrides` 只能包含 `asr` 策略，不借用 TTS 字段。同步 REST 的标准 `speed`、`instructions` 与 `nexus.pronunciation_revision` 是唯一字段来源，`nexus.overrides.tts` 不重复定义它们。完全省略 nexus 时，使用部署发布的默认工作空间、预设和音色版本解析规则，保证标准客户端能直接调用；nexus 为可选扩展，不能成为兼容路径的必填包装。
+增强参数放在 TTS JSON 的 `nexus` 对象或 ASR multipart 的 `nexus` JSON 字符串中。两者共同接受 `workspace_id`、`client_reference`、`profile_id`、`profile_revision`、`overrides` 和 `deadline_ms`；TTS 另接受 `voice_revision`、`pronunciation_revision`，ASR 的 `overrides` 只能包含 `asr` 策略，不借用 TTS 字段。当前同步转写入口的 `asr` 覆盖仅接收 `max_segment_ms`；其他字段即使已在共享 ASR 覆盖 schema 中声明，也会返回 `422 unsupported_parameter`。同步 REST 的标准 `speed`、`instructions` 与 `nexus.pronunciation_revision` 是唯一字段来源，`nexus.overrides.tts` 不重复定义它们。完全省略 nexus 时，使用部署发布的默认工作空间、预设和音色版本解析规则，保证标准客户端能直接调用；nexus 为可选扩展，不能成为兼容路径的必填包装。
 
 普通同步 ASR/TTS 不自动建立供用户浏览的永久业务内容记录，也不自动保存源文件或音频；执行和恢复所需的私有持久事实按具体链路保留。服务端检查输入与执行上限，不在超时后偷偷转成后台作业。当前 ASR 上传超限返回 `413 payload_too_large`，音频时长超出同步上限返回 `422 async_required`；TTS 请求体或文本超出入口限制返回 `400 invalid_request`，生成结果超出音频上限返回 `503 speech_output_limit_exceeded`。不能把所有限额错误都视为 `async_required`；需要 Job 时由客户端明确发起。已经开始同步执行但超时的请求不保证得到结果，不能盲目新建相同意图；当前同步入口尚不支持客户端幂等键恢复，TTS 的原身份恢复按[内部恢复入口](../components/synchronous-speech.md)处理。
 

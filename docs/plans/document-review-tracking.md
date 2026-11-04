@@ -95,7 +95,7 @@
 | `docs/components/node-stop-recovery.md` | 已核对 | 静态对照检查点、停止恢复、诊断与测试定义；历史探针按原时点保留，未运行服务 |
 | `docs/components/production-admission-storage.md` | 已核对 | 静态对照存储、授权、锁序、恢复及公开 Job 原始意图；未运行服务 |
 | `docs/components/production-admission.md` | 已核对 | 静态对照配额、锁序、原身份恢复及同步 TTS settlement 重放；未运行服务 |
-| `docs/components/production-assets.md` | 已核对 | 静态对照上传、保留、授权、资产与工作区 HTTP 及测试定义；未运行服务 |
+| `docs/components/production-assets.md` | 已核对 | 静态对照上传、保留、授权、资产与工作区 HTTP 及测试定义；未运行服务；对照共享媒体包修正检查镜像与源码状态 |
 | `docs/components/production-jobs.md` | 已核对 | 对照创建、认领、派发、发布、worker 配置和测试入口；说明停止竞态与状态摘要检查限制，未运行集成测试 |
 | `docs/components/production-leases.md` | 已核对 | 静态对照隔离与释放事务、停止事实、0028 视图授权及测试定义；未运行服务 |
 | `docs/components/production-owners.md` | 已核对 | 静态对照锁序、数据库时间、激活条件、恢复与测试定义；未运行服务 |

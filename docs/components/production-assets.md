@@ -20,8 +20,11 @@ neither fake audio facts nor a validation task without a consumer.
 
 The private [audio inspection process boundary](../archive/components/audio-asset-inspection.md) adds
 real Linux supervision and resource-limit tests, but is not installed in
-`AssetRuntime`. A shared media artifact/image, complete decode/result validation
-and actual HTTP/PG/MinIO acceptance remain prerequisites for audio `ready`.
+`AssetRuntime`. The shared `packages/media` source includes a private inspector for PCM WAV and
+explicitly described raw PCM; source availability does not establish an approved
+deployment image or public integration. Target-runtime qualification, public
+error/result mapping and HTTP/PG/MinIO acceptance remain prerequisites for
+audio `ready`.
 
 An optional idempotency key is scoped by the authoritative deployment/schema,
 asset operation and workspace. Its stored SHA-256 identifies the key without

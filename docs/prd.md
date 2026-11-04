@@ -850,8 +850,7 @@
 - 识别缺章/空成品/部分失败；质量检查、试听和匿名确认分别保存独立记录，关联固定内容版本与导出清单，不能用单一综合成功状态或局部可用替代场景验收；独立副本与完整导出保留各自生命周期。工作台关闭不影响底座，此项独立于助手。
 - 保存请求键跨刷新保留，确认后读取失败不得误报未知；真实副本/导出和恢复取证区分合成fixture。
 - 导出创建的 `Idempotency-Key` 为可选；当前事务先比较 `expected_casting_revision` 再查询原键回执，配音版本改变后重放已接受意图也会返回版本冲突。须补齐并验证原身份恢复，结果未知时不得自动换键创建新意图。
-- 导出事件流消费者须依据冻结契约接入并验证恢复。
-- 正式消费者实际接入 GET `/v1/workbench/saved-assets/{asset_id}/content`（downloadSavedAsset）、GET `/v1/workbench/exports/{export_id}/content`（downloadBookExport）和 GET `/v1/workbench/exports/{export_id}/events`（streamExportEvents）；核对二进制媒体类型、Range/416、事件时序、断线、取消和过期，不以合成 TCP 测试代替真实工作台联验。
+- 正式消费者实际接入 GET `/v1/workbench/saved-assets/{asset_id}/content`（downloadSavedAsset）、GET `/v1/workbench/exports/{export_id}/content`（downloadBookExport）和 GET `/v1/workbench/exports/{export_id}/events`（streamExportEvents）；核对二进制媒体类型、Range/416、事件时序、断线恢复、取消和过期，不以合成 TCP 测试代替真实工作台联验。当前下载路由和客户端已有接线；事件流尚未在生产工作台路由和正式页面接入，契约或生成类型不构成流式恢复证据。
 
 设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[workbench-export-integrity.md](components/workbench-export-integrity.md)。
 

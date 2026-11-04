@@ -1361,9 +1361,9 @@
       "gap": "契约不证明生产工具已装配；须核对并接入正式工具入口与消费方。 无真实工具消费与完整语义一致证据。",
       "evidence": [
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/application/effective_configuration.py",
-          "label": "已发布配置投影",
-          "note": "投影已发布事实，不证明工作区解析或执行端绑定完整"
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/app.py",
+          "label": "API 组合根",
+          "note": "列出该版本注册的 HTTP 路由，不证明其他进程中不存在 MCP 入口"
         },
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/contracts/README.md",

@@ -63,7 +63,7 @@
 | `docs/audits/2026-10-26-b03-real-tts-stop-settlement.md` | 历史保留 | 全文阅读，固定基线的真实整代次停止和租约结算实验；保留 fixture 与未结算 base 的限制，未重跑实验 |
 | `docs/audits/2026-10-26-deployment-units-review.md` | 历史保留 | 全文阅读，固定源码基线的部署方案审查；当前规划保留审查入口，未复核历史 issue 与实验 |
 | `docs/archive/plans/2026-10-26-project-handoff.md` | 历史保留 | 2026-10-26 三队交接快照，明确不作为后续自动开工指令；原始证据未逐项复核 |
-| `docs/audits/2026-10-26-team-b-handoff.md` | 历史保留 | 2026-10-26 团队 B 收尾与交接快照，原始证据未逐项复核 |
+| `docs/archive/plans/2026-10-26-team-b-handoff.md` | 历史保留 | 2026-10-26 团队 B 收尾与交接快照，原始证据未逐项复核 |
 | `docs/audits/2026-10-26-team-c-a11y-rerun.md` | 历史保留 | 全文阅读，固定构建的落地页自动可访问性复跑；明确排除读屏及面板状态，未重跑测试 |
 | `docs/audits/2026-10-26-team-c-capture-cleanup.md` | 历史保留 | 全文阅读，固定基线的本地采集清理与合成浏览器验证；未重跑测试 |
 | `docs/audits/2026-10-26-team-c-closeout-issue-audit.md` | 历史保留 | 全文阅读，指定时间的 issue 状态和交接快照；已提示远端会变化，未复查历史远端数据 |

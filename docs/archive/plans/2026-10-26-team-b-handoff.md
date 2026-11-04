@@ -1,6 +1,6 @@
 ---
 title: "团队 B 收尾与负责人交接"
-status: active
+status: archived
 version: "1.2.0"
 date: 2026-10-26
 ---
@@ -11,7 +11,7 @@ date: 2026-10-26
 提交最后一个收尾 PR；后续工作由新负责人重新安排。本记录交接已交付事实与未完成范围，
 不形成新排期，不放行 Gate，也不将 B00–B07 整体目标标为完成。
 
-新负责人先读[项目完整交接](../archive/plans/2026-10-26-project-handoff.md)：其中汇总 A/B/C、
+新负责人先读[项目完整交接](2026-10-26-project-handoff.md)：其中汇总 A/B/C、
 全部 40 个 issue、待审 #220/#221、未决风险、接管步骤与本机归档索引。
 本文件保留团队 B 的详细证据和完整剩余范围。
 
@@ -25,22 +25,22 @@ date: 2026-10-26
   [PR CI](https://github.com/hrygo/SpeechNexus/actions/runs/40289866804) 与
   [精确合后 CI](https://github.com/hrygo/SpeechNexus/actions/runs/40291095616)
   均为 14 项成功。完整 CI 五分钟目标未达到，原 PR Python job 为 8 分 46 秒。
-- 原[团队 B 目标](../archive/plans/2026-10-23-team-b-goal.md)保留完整范围与历史证据；
+- 原[团队 B 目标](2026-10-23-team-b-goal.md)保留完整范围与历史证据；
   原优先级及自动推进安排停止执行，恢复工作前由新负责人重新指定范围、版本和环境。
 - [总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)、
   [阶段任务 #142](https://github.com/hrygo/SpeechNexus/issues/142)及
-  [跟踪矩阵](../archive/plans/2026-10-23-implementation-tracking.md)承接未完成事项。
+  [跟踪矩阵](2026-10-23-implementation-tracking.md)承接未完成事项。
   issue 的 `in-progress` 表示已有部分实施，不表示交接后仍有自动执行任务。
 
 ## 已交付内容及证据边界
 
 | 内容 | 可接收产物与证据 | 尚不能据此宣称 |
 | --- | --- | --- |
-| 文件 ASR | [固定制品及注册输入](../operations/file-asr-binding-handoff.md)、[默认工厂](../operations/file-asr-runtime.md)、[真实隔离实验](2026-10-25-b03-default-real-asr-probe.md)；真实 1.7B/CPU VAD、语音/静音、私有结果、原身份重放与网关重启 | 正式注册发布、生产准入、公开上传到下载完整链 |
-| 文件 CustomVoice | [固定制品及注册输入](../operations/file-tts-binding-handoff.md)、[默认工厂](../operations/file-tts-runtime.md)、[真实三格式实验](2026-10-26-b03-default-real-tts-probe.md)；WAV/MP3/PCM、24 kHz、生成区间及固定结果版本 | Base、VoiceDesign、克隆、实时、长文本或全部参数组合资格 |
-| 持久执行 | #152/#154/#158/#163/#168/#203 已集成；[执行接线](../archive/plans/2026-10-25-b03-durable-file-runner.md)复用原 intent、回执和 worker，组件覆盖确认丢失与双消费者竞争 | 真实引擎/控制器故障及完整公开链已同版验收 |
-| 控制器与停止 | [ASR 停止结算](2026-10-25-b03-real-stop-settlement.md)、[取消安全链](2026-10-25-b03-real-cancel-settlement.md)、[TTS 停止结算](2026-10-26-b03-real-tts-stop-settlement.md)；真实整代次双证据、默认恢复和 A 原事务幂等结算 | 单请求 GPU 释放、持续 ready、真实故障恢复或物理多机资格 |
-| CPU VAD 与区间 | [CPU VAD](../components/cpu-vad.md)、[有界媒体](../components/file-asr-audio.md)、已集成的输出区间组件 | 实时双工、对齐、匿名分人或完整 required 配方资格 |
+| 文件 ASR | [固定制品及注册输入](../../operations/file-asr-binding-handoff.md)、[默认工厂](../../operations/file-asr-runtime.md)、[真实隔离实验](../../audits/2026-10-25-b03-default-real-asr-probe.md)；真实 1.7B/CPU VAD、语音/静音、私有结果、原身份重放与网关重启 | 正式注册发布、生产准入、公开上传到下载完整链 |
+| 文件 CustomVoice | [固定制品及注册输入](../../operations/file-tts-binding-handoff.md)、[默认工厂](../../operations/file-tts-runtime.md)、[真实三格式实验](../../audits/2026-10-26-b03-default-real-tts-probe.md)；WAV/MP3/PCM、24 kHz、生成区间及固定结果版本 | Base、VoiceDesign、克隆、实时、长文本或全部参数组合资格 |
+| 持久执行 | #152/#154/#158/#163/#168/#203 已集成；[执行接线](2026-10-25-b03-durable-file-runner.md)复用原 intent、回执和 worker，组件覆盖确认丢失与双消费者竞争 | 真实引擎/控制器故障及完整公开链已同版验收 |
+| 控制器与停止 | [ASR 停止结算](../../audits/2026-10-25-b03-real-stop-settlement.md)、[取消安全链](../../audits/2026-10-25-b03-real-cancel-settlement.md)、[TTS 停止结算](../../audits/2026-10-26-b03-real-tts-stop-settlement.md)；真实整代次双证据、默认恢复和 A 原事务幂等结算 | 单请求 GPU 释放、持续 ready、真实故障恢复或物理多机资格 |
+| CPU VAD 与区间 | [CPU VAD](../../components/cpu-vad.md)、[有界媒体](../../components/file-asr-audio.md)、已集成的输出区间组件 | 实时双工、对齐、匿名分人或完整 required 配方资格 |
 
 历史实验分别绑定其报告中的候选、镜像、fixture 和拓扑，不能把多个版本的局部成功
 合并成当前主干的完整生产资格。#219 的 187 项制品/命令及 75 项 PG HTTP/双库存储回归，
@@ -77,10 +77,10 @@ B 尚未完成实际网关兼容接收。各方存在可独立推进的事项，
 
 | 入口 | 当前声明上限 | 权威来源 |
 | --- | --- | --- |
-| Nexus TTS overrides | 2000 codepoints | [speech-overrides.schema.json](../../contracts/shared/speech-overrides.schema.json) |
-| 标准 speech 请求 | 4096 codepoints | [speech-openapi.yaml](../../contracts/speech-openapi.yaml) 的 `SpeechRequest.instructions` |
-| 内部执行命令 | 4096 codepoints | [execution-command.schema.json](../../contracts/internal/execution-command.schema.json) 的 TTS 参数 |
-| 固定 Omni pipeline | 默认声明 500；CLI 可声明覆盖 | [runtime pin](../../deploy/engines/file-tts-customvoice/runtime-pin.json) 固定的源码 |
+| Nexus TTS overrides | 2000 codepoints | [speech-overrides.schema.json](../../../contracts/shared/speech-overrides.schema.json) |
+| 标准 speech 请求 | 4096 codepoints | [speech-openapi.yaml](../../../contracts/speech-openapi.yaml) 的 `SpeechRequest.instructions` |
+| 内部执行命令 | 4096 codepoints | [execution-command.schema.json](../../../contracts/internal/execution-command.schema.json) 的 TTS 参数 |
+| 固定 Omni pipeline | 默认声明 500；CLI 可声明覆盖 | [runtime pin](../../../deploy/engines/file-tts-customvoice/runtime-pin.json) 固定的源码 |
 
 既有交接曾将 2000 统称“公共命令上限”，本次按入口纠正。批准模板目标 2000 不代表
 标准入口的 2001–4096 已有合法映射或准入策略；相关兼容语义仍待 A/B 明确，
@@ -127,7 +127,7 @@ C 回执采纳外发前持久身份、原键恢复、Job/有效配置与版本�
 本地 `archive-verification.json` 记录文件数量、长度与摘要。
 `skills-worktree-manifest.json` 保存原分支、基线及每份草稿摘要。
 同根另有全量 issue 核对报告、70 文件核验归档与 verification JSON，
-具体文件名和回读范围见[项目完整交接](../archive/plans/2026-10-26-project-handoff.md)。
+具体文件名和回读范围见[项目完整交接](2026-10-26-project-handoff.md)。
 新负责人获得本机访问后可按以下方式恢复到独立目录；不要覆盖当前工作树：
 
 ```bash

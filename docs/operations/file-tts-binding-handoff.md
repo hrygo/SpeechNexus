@@ -139,7 +139,7 @@ A 负责权威注册、资格校验、发布/激活与默认选择，B 提供固
 [内部执行命令](../../contracts/internal/execution-command.schema.json)。
 截至本轮收尾，只确认 serving 计算/缓存长度配置；是否传到 adapter 的实际校验尚待核实。
 没有变更公共契约或产品实现，也没有完成 2000/4096 边界真实合成与超限拒绝实验。
-该缺口及旧排期停止执行的安排见[负责人交接](../audits/2026-10-26-team-b-handoff.md)。
+该缺口及旧排期停止执行的安排见[负责人交接](../archive/plans/2026-10-26-team-b-handoff.md)。
 
 manifest 仍须覆盖 GPU、CPU 编码、响应与结果缓冲等全部资源。旧实验的 16 GiB cgroup
 上限及 `gpu-memory-utilization=0.06` 不授予隔离或峰值/稳态资格。

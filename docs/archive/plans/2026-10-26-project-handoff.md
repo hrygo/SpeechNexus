@@ -26,7 +26,7 @@ date: 2026-10-26
 | B 收尾 PR | [#220](https://github.com/hrygo/SpeechNexus/pull/220)，本 PR | 文档、完整交接与 issue 核对；等待审阅，不自动合并 |
 | A 收尾 PR | [#221](https://github.com/hrygo/SpeechNexus/pull/221)，head `b7e65f4a119999e720d594200c53dc683bec5526` | 已提交共享媒体包、私有音频检查/回执与窄消费者；尚未合入，B 尚未实际接收 |
 | A 详细交接 | [#221 固定版本交接](https://github.com/hrygo/SpeechNexus/blob/b7e65f4a119999e720d594200c53dc683bec5526/docs/plans/2026-10-26-team-a-final-handoff.md) | 随候选评审，不能当作 main 文件或公开音频 ready |
-| B 详细交接 | [团队 B 交接](../../audits/2026-10-26-team-b-handoff.md) | B00–B07 剩余范围、真实探针、C 回执、归档与恢复 |
+| B 详细交接 | [团队 B 交接](2026-10-26-team-b-handoff.md) | B00–B07 剩余范围、真实探针、C 回执、归档与恢复 |
 | C 当前事实 | [有声书实现/证据矩阵](../../audits/2026-10-26-team-c-render-loop-status.md)、[证据保留事故](../../audits/2026-10-26-team-c-evidence-retention.md)、#35–#43 | 分段实现和未决审查并存，不能只读成功摘要 |
 | 调度与状态 | [总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)、各 issue 正文 | 远端为当前进度来源，带日期矩阵仅为快照 |
 
@@ -130,7 +130,7 @@ Epic、工作包全范围完成与 Gate 分阶段放行分别判断；原有前�
 | 文件公开链 | B 内部真实执行/注册输入已交，A 权威配置、音频 ready、业务 Job/准入与发布仍缺；同版 SDK/C 消费后再验 G1 | A/B/C，#14/#21/#22/#23/#142 |
 | 共享媒体包 | #221 已固定提交私有成功回执/decoder/窄消费者，默认仍 TextAssetInspector；需评审合入、B 实际兼容接收及生产装配，不能仍称“尚未提交” | A/B，#19/#21 |
 | TTS 参数兼容 | Nexus overrides 2000、标准 speech/内部命令 4096、固定 pipeline 默认声明 500；实际 adapter 校验、2001–4096 准入和 token 总预算未验证，禁止静默截断 | A/B/C，#30/#37/#142 |
-| 请求级音频上限 | #203 未把更紧的请求时长传入执行 policy；管理方合成反例确认请求 100 ms 仍使用 600000 ms / 8 MiB binding policy，并返回 200 ms。#219 未修复，须收紧时长/PCM预算并覆盖拒绝与资源边界；见[B 详细交接](../../audits/2026-10-26-team-b-handoff.md) | B03，#30/#142；与指令字符上限分别处理 |
+| 请求级音频上限 | #203 未把更紧的请求时长传入执行 policy；管理方合成反例确认请求 100 ms 仍使用 600000 ms / 8 MiB binding policy，并返回 200 ms。#219 未修复，须收紧时长/PCM预算并覆盖拒绝与资源边界；见[B 详细交接](2026-10-26-team-b-handoff.md) | B03，#30/#142；与指令字符上限分别处理 |
 | 停止与结算 | 隔离整代次停止成立；单请求释放未获资格，TTS 只结算执行租约、16 GiB base 未结算，不能迁移 ASR base 结论 | A/B，#22/#28/#29/#142 |
 | 有声书外发/恢复 | #197/#198 等已合入；先外发后落库、同键异体/可变快照重放、锁前读与 CAS/source 一致性审查未结，默认结算循环关闭 | C/A 公开边界，#42 |
 | 副本/分页/页面 | 来源错误类型与捕获分类不一致、最老批次饥饿、无持久退避；SQL 全读后切片、仅 useRef 键跨刷新丢失、请求乱序/未知误报及焦点审查未结。#216/#217 仅 fake 参数转发 | C，#42/#43 |
@@ -141,7 +141,7 @@ Epic、工作包全范围完成与 Gate 分阶段放行分别判断；原有前�
 | 目标环境 | 集群是硬要求；物理多机、网络分区、备用算力、备份恢复、长时质量/容量和完整许可运维交接仍未通过 | #18/#26/#34/#43 |
 
 C 对 B 审查意见的回执及未集成本机 v1.1.0 计划见
-[B 交接](../../audits/2026-10-26-team-b-handoff.md)和
+[B 交接](2026-10-26-team-b-handoff.md)和
 [共享审查评论](https://github.com/hrygo/SpeechNexus/issues/142#issuecomment-6411923009)；
 回执不等于问题修复或联合验收。#215 只是缺口登记，不能记为上述问题已经修复；
 项目已有隔离 MinIO 测试能力，不能把全部 C 自有问题归为外部未提供环境。
@@ -153,7 +153,7 @@ B 私有归档的数量、哈希校验和清理是原执行方报告；管理方
 | 内容 | 位置或索引 | 使用与保留要求 |
 | --- | --- | --- |
 | 已入库设计/契约 | [文档索引](../../README.md)、[技术方案](../../architecture/technical-blueprint.md)、[contracts](../../../contracts/README.md)、accepted ADR | 设计预期与实测分开；冲突保留并修正，不能放宽门禁 |
-| B 实验与制品 | [B 交接证据表](../../audits/2026-10-26-team-b-handoff.md)、ASR/TTS 固定注册输入及原报告 | 保留原模型/镜像/候选/fixture/拓扑；多个局部版本不能拼成同版生产资格 |
+| B 实验与制品 | [B 交接证据表](2026-10-26-team-b-handoff.md)、ASR/TTS 固定注册输入及原报告 | 保留原模型/镜像/候选/fixture/拓扑；多个局部版本不能拼成同版生产资格 |
 | B 私有归档根 | 本机 `.runtime/probes/team-b-closeout/archive-root.txt` 指向仓库外稳定目录 | 仅部署内访问，可能包含私有配置，不上传 Git/CI；换机先核验并移交访问 |
 | 旧 skill 草稿/历史 | 同根 `skills-history.bundle`、`skills-worktree-wip.tar.gz`、`skills-worktree-manifest.json`、`archive-verification.json` | 10 份未提交文件已逐份核验，恢复到新目录；未集成，不替代仓库现有技能 |
 | 私有实验原件 | 同根 `runtime-probes.tar.gz`，原 `.runtime/probes/` 仍保留 | 归档时 5308 文件、512351757 字节，完整读取验证；不删除或写回运行配置 |
@@ -165,7 +165,7 @@ B 清理时未发现遗留 ASR/TTS 实验容器，35B、embedding、reranker 的
 启动时间前后相同；未停止或重启它们。旧 B skill 工作树/本地分支已在归档后删除，
 当前交付分支仅用于 #220。这些是收尾时点事实，不保证接管时服务仍健康。
 
-恢复旧 skill 的具体命令与先验校验见 [B 交接](../../audits/2026-10-26-team-b-handoff.md)。
+恢复旧 skill 的具体命令与先验校验见 [B 交接](2026-10-26-team-b-handoff.md)。
 恢复前先核验归档摘要；独立新目录恢复，不覆盖当前源码、数据库、对象区或运行凭据。
 `.venv/`、`node_modules/` 可按锁文件重建，不是唯一业务证据；原件不随 worktree 清理。
 

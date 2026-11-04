@@ -27,7 +27,7 @@ SpeechNexus 是可信部署网络内的 Linux 语音底座和创作工作台：�
 | A 合后检查 | [main41e29b6 的 CI](https://github.com/hrygo/SpeechNexus/actions/runs/40313468861)首轮分片 2 达到 10 分钟时限，314 项测试通过后作业被取消、汇总失败；浏览器准备约 354 秒。补跑以同一 run 的最新 attempt 为准，首轮失败不改写为成功 |
 | B 的接管修订 | #220 最终 head `4e55041`，合入 `8b1466d`；[精确 PR CI](https://github.com/hrygo/SpeechNexus/actions/runs/40313607678) 2 项适用检查成功、7 项跳过，补请求音频上限风险及原件接收边界 |
 
-三队详细交接继续分别查阅：[A](2026-10-26-team-a-final-handoff.md)、[B](../../audits/2026-10-26-team-b-handoff.md)、[C](2026-10-26-team-c-final-handoff.md)。[原项目交接](2026-10-26-project-handoff.md)保留交接时点快照；当时的组合版本和管理入口为本文件及 #6。
+三队详细交接继续分别查阅：[A](2026-10-26-team-a-final-handoff.md)、[B](2026-10-26-team-b-handoff.md)、[C](2026-10-26-team-c-final-handoff.md)。[原项目交接](2026-10-26-project-handoff.md)保留交接时点快照；当时的组合版本和管理入口为本文件及 #6。
 
 ## 2. 必须掌握的架构与边界
 
@@ -98,7 +98,7 @@ ADR 0001–0010 继续有效。0001–0007 覆盖产品身份/边界、模型与
 | 来源 | 接管核验状态 | 后续取用 |
 | --- | --- | --- |
 | A 最终原件 | 作者在 `/workspace/.speech-nexus-team-a-evidence/2026-10-26-final-handoff/` 报告归档；经理未取得该环境完整字节 | 固定 PR/公开 CI 可复核；私有 wheel/日志按 manifest 接收后再称核验，环境失效则依固定源码重建 |
-| B 最终原件 | 作者报告稳定根及 manifest/bundle，经理未访问远端 5308 文件/512351757 字节；#220 已明确区分 | 依 [B 恢复指引](../../audits/2026-10-26-team-b-handoff.md)在批准环境校验，不把作者成功报告当接收方复验 |
+| B 最终原件 | 作者报告稳定根及 manifest/bundle，经理未访问远端 5308 文件/512351757 字节；#220 已明确区分 | 依 [B 恢复指引](2026-10-26-team-b-handoff.md)在批准环境校验，不把作者成功报告当接收方复验 |
 | C 最终原件 | `/Users/hrygo/.codex/team-c-evidence/20261026T101715Z-final-handoff/`，19 份文件；经理已逐文件校验 | manifest SHA-256 为 `39fbabcd20b9ad49d98b0199a36f763585b9c5e1247538c67187d8ca6e57acb5`；是本轮新归档，不是失踪 82 原件 |
 | 本次经理集成 | `/Users/hrygo/.codex/project-manager-evidence/20261026T104016Z-integration/`，位于工作树外 | 保存 RIFF 红/绿与两项变异、请求时长复现、issue 前后/不变量、精确 CI/合并回执及清理记录；最终 manifest 以目录内文件为准 |
 | 本机工作树 | PM 工作树保留为后续工作入口；C 收尾树合入并保护原件后可归档 | 旧主目录的目标 diff、贡献模板和未知 `.paperclip` 仍受保护；未合并历史提交先保留 bundle，不强行删除外来 worktree |

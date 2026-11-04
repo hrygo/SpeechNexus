@@ -25,6 +25,8 @@ WebSocket 路由及真实实时执行链，SDK 序列化检查不能证明这些
 
 `response_format=json` 至少返回 `text`。`verbose_json`、`srt`、`vtt` 只在绑定具备真实时间边界证据时开放；缺少证据返回 `422 unsupported_parameter`，不伪造 `segments`、词级时间戳或 `avg_logprob`。`srt` / `vtt` / `text` 使用 `text/plain`；`json` / `verbose_json` 使用 `application/json`。
 
+绑定声明支持不保证每次执行都能提供所需证据：当前结果缺少分段证据时，上述三种格式均无法返回；`verbose_json` 还要求结果提供语言和时长。缺少这些信息时返回 `422 unsupported_parameter`，不会猜测或补造。具体处理阶段和其他失败边界见[同步转写](../operations/synchronous-transcription.md)。
+
 当前目录的 `id` 是已发布 binding ID，`nexus.logical_model` 是另一展示字段；同步请求的
 `model` 使用该 binding ID。默认目录装配不查询实时引擎或质量资格，就绪字段保守返回
 `engine_ready=false`、`quality_qualified=false` 和 `admission_state=unavailable`；这表示未由

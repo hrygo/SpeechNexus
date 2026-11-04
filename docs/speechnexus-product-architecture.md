@@ -434,7 +434,7 @@ LLM 拥有工作台自己的任务、取消与结果，失败不改写成功转�
 
 ## 10. 部署拓扑与故障行为
 
-按 [ADR 0011](decisions/0011-distributed-deployment-and-platform-boundaries.md)确定部署单元与平台边界，具体职责、现有入口、Linux 媒体沙箱及未交付项维护于[部署单元规划](architecture/deployment-units.md)。业务与控制服务不依赖本机 GPU 或 Linux 专属内核能力；当前 Linux 推理与节点执行组件保持独立。macOS / Linux 原生运行、Linux 容器与跨主机运行分别取证，单节点验证不替代分布式交付。
+按 [ADR 0011](decisions/0011-distributed-deployment-and-platform-boundaries.md)确定部署单元与平台边界，具体职责、现有入口、Linux 媒体沙箱及未交付项维护于[部署单元规划](architecture/deployment-units.md)。业务与控制代码以不依赖本机 GPU 或 Linux 专属内核能力为目标；实际入口及媒体处理依赖须分别验证，当前媒体沙箱和推理、节点执行组件仍有 Linux 前置。macOS / Linux 原生运行、Linux 容器与跨主机运行分别取证，单节点验证不替代分布式交付。
 
 ### 10.1 不绑定硬件的三种拓扑
 
@@ -444,7 +444,7 @@ LLM 拥有工作台自己的任务、取消与结果，失败不改写成功转�
 | 企业试点 | API / 网关 / worker 可独立扩容，两个 WebUI 入口可选，数据有备份，推理按池管理 | 可信群体共享使用；每个瓶颈由资格报告确定，不承诺个人隔离 |
 | 企业生产 | 无状态 API 多副本、网关分片 / owner 路由、数据库 / 存储高可用与推理故障冗余 | 需独立确认入口准入边界；首期适用于可信环境或既有网关，不自动获得身份 / 多租户能力 |
 
-使用 Docker / Compose 交付验证拓扑；需要编排时提供 Kubernetes 部署。核心代码只依赖配置和服务端点，不依赖 Kubernetes API，不自动假定同机 GPU 或共享磁盘。底座可以 headless 部署；AdminUI / 工作台为可选服务，关闭工作台不会删除或阻断底座 Job。
+当前仓库提供 Docker / Compose 单节点验证拓扑；需要编排时提供 Kubernetes 部署是后续目标，现有部署目录未提供相应制品。核心代码以依赖配置和服务端点、而非 Kubernetes API 为目标，不自动假定同机 GPU 或共享磁盘。底座可以 headless 部署；AdminUI / 工作台为可选服务，关闭工作台不会删除或阻断底座 Job。
 
 ### 10.2 故障矩阵
 

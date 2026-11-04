@@ -93,7 +93,7 @@ date: 2026-10-24
 [C02 文本配音交接](2026-10-24-team-c-c02-tts-handoff.md)补充固定文本素材与声音/参数版本、合成音频试听下载及 TTS 刷新证据。
 [C02 上传阶段刷新恢复交接](2026-10-24-team-c-c02-upload-recovery-handoff.md)补充原上传键、输入身份、素材确认与 Job 原子交接；生产入口和真实服务联调仍待接入。
 [C02 固定版本文本导出交接](2026-10-24-team-c-c02-text-export-handoff.md)补充已保存原文/校对版本的 UTF-8 输出与删除屏障；公开页面和字幕协议仍待接入。
-[C02 文本下载契约候选](../../plans/2026-10-24-team-c-c02-download-contract-handoff.md)提供可执行正负样例和 A/C 冻结输入，状态仍 proposed，未接生产。
+[C02 文本下载契约候选](2026-10-24-team-c-c02-download-contract-handoff.md)提供可执行正负样例和 A/C 冻结输入，状态仍 proposed，未接生产。
 [C01 任务事件与正式入口](2026-10-24-team-c-c01-events-handoff.md)补充同源公开 API 消费、水位/历史过期与生产 bundle 合成 HTTP/SSE；真实部署及跨刷新恢复仍待完成。
 
 [C01 Admin 同标签页恢复](2026-10-24-team-c-c01-recovery-handoff.md)补充生产入口的原取消键/目标与水位跨刷新恢复、存储故障阻断；真实部署联调仍待完成。

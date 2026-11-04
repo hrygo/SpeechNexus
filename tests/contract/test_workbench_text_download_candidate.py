@@ -26,7 +26,7 @@ from tests.fake.workbench_versions import MemoryVersionUnitOfWork
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "contracts/workbench-openapi.yaml"
-CANDIDATE = ROOT / "docs/plans/2026-10-24-team-c-c02-download-contract-candidate.yaml"
+CANDIDATE = ROOT / "docs/archive/plans/2026-10-24-team-c-c02-download-contract-candidate.yaml"
 PATH = "/v1/workbench/transcripts/{transcript_id}/revisions/{revision}/content"
 
 

@@ -36,7 +36,7 @@
 - [2026-10-24 团队 C C02 文本配音交接](../archive/plans/2026-10-24-team-c-c02-tts-handoff.md)：固定文本素材及声音/参数版本，记录合成音频试听下载与 TTS 刷新证据。
 - [2026-10-24 团队 C C02 上传阶段刷新恢复交接](../archive/plans/2026-10-24-team-c-c02-upload-recovery-handoff.md)：原输入与原上传键恢复、素材确认到 Job 的单记录交接，记录合成 HTTP/浏览器证据。
 - [2026-10-24 团队 C C02 固定版本文本导出交接](../archive/plans/2026-10-24-team-c-c02-text-export-handoff.md)：固定原文/校对 revision 的 UTF-8 输出、事务外编码、删除后拒绝读取及 A00/C02 接入清单。
-- [2026-10-24 团队 C C02 文本下载契约候选](2026-10-24-team-c-c02-download-contract-handoff.md)：显式 revision、完整 UTF-8/空稿、响应头/错误和正负验收；待 A/C 正式冻结。
+- [2026-10-24 团队 C C02 文本下载契约候选](../archive/plans/2026-10-24-team-c-c02-download-contract-handoff.md)：显式 revision、完整 UTF-8/空稿、响应头/错误和正负验收；待 A/C 正式冻结。
 - [2026-10-24 团队 C C01 任务事件与正式入口](../archive/plans/2026-10-24-team-c-c01-events-handoff.md)：同源公开 Job/SSE、已确认水位/历史过期、正式 Admin 宿主及生产 bundle 的合成 HTTP 验证。
 - [2026-10-24 团队 C C01 Admin 同标签页恢复](../archive/plans/2026-10-24-team-c-c01-recovery-handoff.md)：取消原键/目标、水位跨刷新与存储故障阻断，记录生产 bundle 的 Chromium 合成 HTTP 证据。
 

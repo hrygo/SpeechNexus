@@ -104,7 +104,7 @@ SpeechNexus 是面向自有部署网络、按分布式架构设计的企业级�
 
 ### 2.4 Web 采集与播放边界
 
-麦克风、文件和外部系统推流是首批输入来源。浏览器麦克风使用 HTTPS；系统声音、共享窗口或标签页声音受浏览器与操作系统支持限制，需建立客户端资格列表，不能承诺与原生 App 等价的全局采集能力。[MDN 采集说明](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia)、[屏幕音频限制](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getDisplayMedia)
+麦克风、文件和外部系统推流是首批输入来源。浏览器麦克风需要安全上下文及用户授权，部署使用批准的 HTTPS 入口；浏览器通常也将 `localhost` 视为安全上下文，不能将此例外推广为远程 HTTP 部署。系统声音、共享窗口或标签页声音受浏览器与操作系统支持限制，需建立客户端资格列表，不能承诺与原生 App 等价的全局采集能力。[MDN 采集说明](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia)、[屏幕音频限制](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getDisplayMedia)
 
 客户端通过 AudioWorklet 在有界缓冲中转换 PCM，明确申请设备权限；停止、离开或失败时释放设备。播放器维护自己的播放进度、缓冲和 generation，丢弃旧 generation 迟到音频。页面关闭、休眠、后台节流和断网应产生可见状态。设备权限由浏览器与操作系统管理，与应用用户身份认证无关。
 

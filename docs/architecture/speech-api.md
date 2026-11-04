@@ -80,6 +80,10 @@ SpeechCommand
 
 资产只有在完整接收并验证后才是 `ready`，且 `bytes>0`。音频用途（`asr_input` / `voice_reference`）的 ready 资产必须同时提供大于零的 `duration_ms`、实际 `sample_rate_hz` 与 `channels`；`text_input` 不得携带这三项音频元数据。验证失败保留 `rejected` 事实，后续 Job / 音色命令不能把 staging、rejected、expired 或 deleted 资产当作可执行输入。
 
+当前资产服务须配置存储才能启用，默认工厂使用文本检查器；公开音频检查尚未接入，
+不能根据上述目标语义假定音频上传可发布为 `ready`。上传结果未知时按原身份协调，
+不以重发创建新的对象写入；当前范围见[资产发布与恢复](../components/production-assets.md#publication-and-recovery)。
+
 ### 1.3 同步 REST 子集
 
 以下当前入口的参数和限额错误以服务已装配为前提；路由先检查服务是否可用，未装配时返回

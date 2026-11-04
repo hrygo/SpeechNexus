@@ -25,11 +25,11 @@ date: 2026-10-26
   [PR CI](https://github.com/hrygo/SpeechNexus/actions/runs/40289866804) 与
   [精确合后 CI](https://github.com/hrygo/SpeechNexus/actions/runs/40291095616)
   均为 14 项成功。完整 CI 五分钟目标未达到，原 PR Python job 为 8 分 46 秒。
-- 原[团队 B 目标](../plans/2026-10-23-team-b-goal.md)保留完整范围与历史证据；
+- 原[团队 B 目标](../archive/plans/2026-10-23-team-b-goal.md)保留完整范围与历史证据；
   原优先级及自动推进安排停止执行，恢复工作前由新负责人重新指定范围、版本和环境。
 - [总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)、
   [阶段任务 #142](https://github.com/hrygo/SpeechNexus/issues/142)及
-  [跟踪矩阵](../plans/2026-10-23-implementation-tracking.md)承接未完成事项。
+  [跟踪矩阵](../archive/plans/2026-10-23-implementation-tracking.md)承接未完成事项。
   issue 的 `in-progress` 表示已有部分实施，不表示交接后仍有自动执行任务。
 
 ## 已交付内容及证据边界

@@ -17,7 +17,7 @@ date: 2026-10-25
 
 **技术基线：**既有 Python/FastAPI、PostgreSQL、MinIO、TypeScript/React、生成契约客户端与浏览器测试链。具体版本按仓库锁文件，不做无关升级或重构。
 
-**范围依据：**[三团队交付计划](2026-10-23-three-team-delivery-plan.md)、[C00–C08 持续目标](2026-10-24-team-c-goal.md)、[契约索引](../../contracts/README.md)和 [PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)。本文替代上一版 G-C1–G-C5 的推进排序与验收表达，不缩减原工作包或 Gate 的范围。
+**范围依据：**[三团队交付计划](../archive/plans/2026-10-23-three-team-delivery-plan.md)、[C00–C08 持续目标](2026-10-24-team-c-goal.md)、[契约索引](../../contracts/README.md)和 [PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)。本文替代上一版 G-C1–G-C5 的推进排序与验收表达，不缩减原工作包或 Gate 的范围。
 
 ## 一、基线与辩证判断
 

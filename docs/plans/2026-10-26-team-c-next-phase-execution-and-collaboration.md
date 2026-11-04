@@ -11,7 +11,7 @@ date: 2026-10-26
 
 **目标：**在同一集成版本上优先完成真实文件 ASR 与 CustomVoice TTS 的公开业务闭环，同时收口 C 自有的恢复、消费者、导出与体验缺口，逐步完成 C00–C08。
 
-**适用关系：**本文件落实本次项目复盘中的推进顺序和三队协作方式，作为接管人重新规划的参考；任务仍回填[阶段 Goal](2026-10-25-team-c-next-phase-goal-and-acceptance.md)的 T01–T11、AC-01–AC-12 及原 41 条 AC，不增加平行验收体系、不缩减原范围。总体责任沿用[三团队交付计划](2026-10-23-three-team-delivery-plan.md)，整体状态见 [PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)。本文有效不表示任务、原生 Goal 或 Gate 已通过。
+**适用关系：**本文件落实本次项目复盘中的推进顺序和三队协作方式，作为接管人重新规划的参考；任务仍回填[阶段 Goal](2026-10-25-team-c-next-phase-goal-and-acceptance.md)的 T01–T11、AC-01–AC-12 及原 41 条 AC，不增加平行验收体系、不缩减原范围。总体责任沿用[三团队交付计划](../archive/plans/2026-10-23-three-team-delivery-plan.md)，整体状态见 [PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)。本文有效不表示任务、原生 Goal 或 Gate 已通过。
 
 **技术与架构：**沿用 Python/FastAPI、PostgreSQL、MinIO、TypeScript/React、契约生成客户端与既有测试链。C 维护独立工作台领域、持久化及对象区，仅通过公开语音协议消费底座；A 维护平台权威配置与协调，B 维护执行网关、控制器及真实引擎。
 

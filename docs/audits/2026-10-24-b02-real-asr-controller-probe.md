@@ -143,4 +143,4 @@ GPU/统一内存隔离与 A 的真实 warmup/资格、peak→steady、lease 清�
   之前 #71 的协调/区间合成证据不能替代真实 A runtime 联调。
 
 [审查索引](README.md) · [B00](https://github.com/hrygo/SpeechNexus/issues/27) ·
-[B02](https://github.com/hrygo/SpeechNexus/issues/29) · [团队 B 目标](../plans/2026-10-23-team-b-goal.md)
+[B02](https://github.com/hrygo/SpeechNexus/issues/29) · [团队 B 目标](../archive/plans/2026-10-23-team-b-goal.md)

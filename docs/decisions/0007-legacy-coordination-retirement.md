@@ -65,6 +65,6 @@ ADR、简明规则映射及历史审查的原时点事实继续可追溯；无�
 ## 决策时执行状态
 
 本次记录退出决定与条件，尚未完成逐项迁移验收，未停用 CI 或删除旧文件。
-当时的重构范围见[集群协调重构计划](../plans/2026-10-23-cluster-coordination-refactor.md)；
+当时的重构范围见[集群协调重构计划](../archive/plans/2026-10-23-cluster-coordination-refactor.md)；
 当前需求、实施与验收证据见[交付跟踪矩阵](../plans/delivery-tracking.md)。
 本决定替代该计划及活动文档中可被理解为永久保留旧原型的要求，不改变其历史验证事实。

@@ -8,7 +8,7 @@
 
 **Tech Stack:** 现有 psycopg / FastAPI / uvicorn / Playwright，现有生产生成客户端；无依赖或公共协议变更。
 
-**Spec:** [三队计划](../../plans/2026-10-23-three-team-delivery-plan.md) C01/C08；[只读消费者计划](2026-10-24-team-c-workspaces-read-plan.md)；`contracts/admin-openapi.yaml` 的 Workspace 与 GET-only 操作。
+**Spec:** [三队计划](2026-10-23-three-team-delivery-plan.md) C01/C08；[只读消费者计划](2026-10-24-team-c-workspaces-read-plan.md)；`contracts/admin-openapi.yaml` 的 Workspace 与 GET-only 操作。
 
 ## Global Constraints
 

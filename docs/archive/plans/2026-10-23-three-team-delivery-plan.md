@@ -8,7 +8,7 @@ date: 2026-10-23
 # SpeechNexus 三团队整体实施计划
 
 > 历史规划：本页保留制定时的基线、分工和排期，不再作为当前调度或状态依据。
-> 当前范围与证据见 [PRD](../prd.md) 和[需求矩阵](delivery-tracking.md)。
+> 当前范围与证据见 [PRD](../../prd.md) 和[需求矩阵](../../plans/delivery-tracking.md)。
 
 本计划覆盖 SpeechNexus 从当前工程骨架到完整产品交付，SpeechRail 仅作为固定来源的复用参考。代码事实基准为 `390f121`，日期按 Asia/Shanghai 记录。三个实施团队均为用户指挥的 agent 团队，按长期组件责任组织，以贯穿 API、执行、数据和页面的业务闭环验收。启动编码时使用指挥者指定、已包含本计划的集成基线，不能把事实审计 SHA 当作永久开发基线。
 
@@ -25,7 +25,7 @@ date: 2026-10-23
 | 原型缺口     | 4 个端口缺行为原型；已有原型未返回契约要求的完整 `value` 快照  | 对生产实现逐端口验收，不能直接导入 `tests/support`        |
 | 引擎与部署   | 模型路线已选；真实模型、停止证据、混合负载及完整集群资格未完成 | 第一迭代启动可行性验证；后续资格以 binding 和拓扑为单位   |
 
-四个尚缺行为原型的端口是 `create_runtime_intent`、`observe_runtime`、`query_outcome`、`record_execution_observation`，依据[最新架构与契约审查](../audits/2026-10-23-architecture-contract-post-refactor-review.md)。本次规划核对了 CBM 结构与关键源码覆盖，再直接读取组合根及页面源码；没有重跑历史测试，没有验证真实环境。
+四个尚缺行为原型的端口是 `create_runtime_intent`、`observe_runtime`、`query_outcome`、`record_execution_observation`，依据[最新架构与契约审查](../../audits/2026-10-23-architecture-contract-post-refactor-review.md)。本次规划核对了 CBM 结构与关键源码覆盖，再直接读取组合根及页面源码；没有重跑历史测试，没有验证真实环境。
 
 交付保持以下边界：
 
@@ -200,7 +200,7 @@ S1 内先 fake 全链路，再第一条真实文件 ASR，再接 TTS 与基础�
 | G4   | 会议封存/校对、提词手动接管、助手插话取消、版本化有声书局部重做/完整导出；各自删除/恢复；LLM 启用时通过内网内容边界                                                | UI 页面齐全、LLM 只配置内网 URL、仅测整章重新生成                             |
 | G5   | 物理多主机、网络分区/节点丢失、旧入口隔离、目标数据层切换/备份恢复、迁移/回退、长时/质量/容量、浏览器及内容出站、许可/交接资料完整                                 | 单机逻辑集群替代物理资格、CI 绿灯、历史原型测试数或源码覆盖率                 |
 
-最低混合负载的既有首轮要求保持：在指定 binding、语言、语料与 Linux ARM64/GB10 目标拓扑下，ASR 首有效预览 P95 ≤1000ms，TTS 冻结文本接受至首可播放 PCM P95 ≤800ms；必须同时运行至少 1 路实时 ASR 与 1 路实时 TTS，并另测 VoiceDesign 冷加载/回收的影响。客户端网络与播放时间单独报告。其余候选 SLO、CER/WER/DER、TTS 质量及长时持续时间在 S0 冻结具体标准，见[产品验收口径](../speechnexus-product-architecture.md#112-初始服务目标与口径)和[模型决策](../decisions/0002-speech-models-engines-and-loading.md)。
+最低混合负载的既有首轮要求保持：在指定 binding、语言、语料与 Linux ARM64/GB10 目标拓扑下，ASR 首有效预览 P95 ≤1000ms，TTS 冻结文本接受至首可播放 PCM P95 ≤800ms；必须同时运行至少 1 路实时 ASR 与 1 路实时 TTS，并另测 VoiceDesign 冷加载/回收的影响。客户端网络与播放时间单独报告。其余候选 SLO、CER/WER/DER、TTS 质量及长时持续时间在 S0 冻结具体标准，见[产品验收口径](../../speechnexus-product-architecture.md#112-初始服务目标与口径)和[模型决策](../../decisions/0002-speech-models-engines-and-loading.md)。
 
 G3 可以交付已经取得对应资格的语音底座和基础工作台试点，高级应用继续推进。Node=1 或单机多进程证据只支持其实际范围；完整集群支持的交付仍需 G5 的目标物理拓扑证据，不能借试点阶段取消此要求。
 
@@ -242,7 +242,7 @@ G3 可以交付已经取得对应资格的语音底座和基础工作台试点�
 | 入口与内容网络     | S0 定方案，G1 起按部署验证；A+B+C      | Host/Origin/TLS/内部凭据；浏览器、代理、LLM、推理和观测无内容出网；LLM 同设备时计入父预算                             |
 | 物理集群/发布      | S0 预约环境、S3 起演练；A+B，C 联验    | 跨主机分区/节点丢失、实际入口封锁、DB 切换/恢复、高水位不倒退、未知占用不变空闲、迁移失败保持唯一权威                 |
 
-协调修改使用 `make coordination-test`、`make integration-test`，同时提供项目隔离 PG/MySQL 测试 DSN，无跳过；MySQL 证据只覆盖约定协调行为。其他 Python/Web/契约检查按 [AGENTS.md](../../AGENTS.md) 与任务改动范围执行，完整 `make verify` 用于适当集成关口。本文未运行这些实现验证。
+协调修改使用 `make coordination-test`、`make integration-test`，同时提供项目隔离 PG/MySQL 测试 DSN，无跳过；MySQL 证据只覆盖约定协调行为。其他 Python/Web/契约检查按 [AGENTS.md](../../../AGENTS.md) 与任务改动范围执行，完整 `make verify` 用于适当集成关口。本文未运行这些实现验证。
 
 真实引擎、质量、长时、物理故障、备份恢复与 UI 流程单独出证，不以 schema、健康检查或 mock 替代。每份证据记录 commit、协议/软件/模型/镜像版本、拓扑、数据集/浏览器、负载/时长、通过标准、结果及未验证项。首轮表中质量和时长参数未冻结时，对应资格不关闭。
 
@@ -292,7 +292,7 @@ base_sha / head_sha 或补丁校验值 / 实际墙钟与测试耗时
 | 内容清理/恢复或预算证据不完整                                   | A+B+C 各自边界           | 不释放未知预算、不报告删除完成；保持暂停/隔离并收敛事实，再恢复服务                      |
 | 许可或来源不清                                                  | 各制品负责人、B 汇总资格 | 仓库项目 LICENSE 尚待确定；模型/依赖/声音素材分别核对；未解决前不关闭对外发布资格        |
 
-SpeechRail 复用仍锁定[复用文档](../architecture/speechrail-reuse.md)中的 `3f57647a3ee7`，本次 pull 到更新版本不自动改变来源基线。提取保留版权/许可证、来源文件和变更范围，重新验证 SpeechNexus 契约；不移植 MLX/CoreML、私有 IPC、LaunchAgent、单机锁或本地 spool 作为集群实现。
+SpeechRail 复用仍锁定[复用文档](../../architecture/speechrail-reuse.md)中的 `3f57647a3ee7`，本次 pull 到更新版本不自动改变来源基线。提取保留版权/许可证、来源文件和变更范围，重新验证 SpeechNexus 契约；不移植 MLX/CoreML、私有 IPC、LaunchAgent、单机锁或本地 spool 作为集群实现。
 
 ## 11. 发布范围与回退
 
@@ -319,7 +319,7 @@ A01 在 G0/G1/G2 交接口/文件/runtime 子项，到 G3 才关闭完整包；B
 
 原生阻塞只记录真正可用整包表达的前置：G0 依赖 A00/B00/C00 基础交接，G1–G5 依次依赖上一 Gate，共 8 条。接口/迁移/绑定等部分制品依赖在矩阵中列明；真实服务/执行/页面的相互引用是联合验收集合，不能制造循环。早期 Gate 是否通过以证据为准，不等待前一 Epic 所有子包关闭。
 
-GitHub issue 的状态/唯一 `status:*` 标签与 Gate 检查项是实施事实来源。[编排清单 JSON](2026-10-23-implementation-issues.json)记录编号、唯一父项、具名开工制品、联调伙伴及分段证据；[跟踪矩阵](2026-10-23-implementation-tracking.md)是可刷新的状态快照。每轮派工、集成或 Gate 变更后执行：
+GitHub issue 的状态/唯一 `status:*` 标签与 Gate 检查项是实施事实来源。[编排清单 JSON](../../plans/2026-10-23-implementation-issues.json)记录编号、唯一父项、具名开工制品、联调伙伴及分段证据；[跟踪矩阵](2026-10-23-implementation-tracking.md)是可刷新的状态快照。每轮派工、集成或 Gate 变更后执行：
 
 ```bash
 python3 scripts/dev-env/refresh-implementation-tracker.py
@@ -333,4 +333,4 @@ python3 scripts/dev-env/refresh-implementation-tracker.py
 
 首轮直接派 [A00 #19](https://github.com/hrygo/SpeechNexus/issues/19)、[B00 #27](https://github.com/hrygo/SpeechNexus/issues/27)、[C00 #35](https://github.com/hrygo/SpeechNexus/issues/35)。规划材料与跟踪工具随同一 PR 集成，三队使用包含这些文件的集成 SHA 启动；远端 issue 正文提供可独立阅读的任务与验收条件。团队 A 的持续执行目标与首轮退出条件见[团队 A 目标](2026-10-23-team-a-goal.md)，团队 B 的持续执行目标见[团队 B 目标](2026-10-23-team-b-goal.md)。
 
-[计划索引](README.md) · [项目主设计](../speechnexus-product-architecture.md) · [整体技术方案](../architecture/technical-blueprint.md) · [协调事务](../architecture/coordination-transactions.md)
+[计划索引](../../plans/README.md) · [项目主设计](../../speechnexus-product-architecture.md) · [整体技术方案](../../architecture/technical-blueprint.md) · [协调事务](../../architecture/coordination-transactions.md)

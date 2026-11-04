@@ -62,7 +62,7 @@ PostgreSQL 为唯一正式交付数据库，MySQL/InnoDB 用于关键协调行�
 
 ## 实施与验收
 
-[集群协调重构计划](../plans/2026-10-23-cluster-coordination-refactor.md)记录了当时分阶段
+[集群协调重构计划](../archive/plans/2026-10-23-cluster-coordination-refactor.md)记录了当时分阶段
 冻结事务契约、验证隔离原型和替换 PostgreSQL 草案机制的安排。计划记录的精简目标 DDL、
 应用事务方案与双库测试原型已交付；旧 DDL 和测试另存历史 fixture。
 当前生产接线见[生产协调存储](../operations/production-coordination-storage.md)，

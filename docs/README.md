@@ -42,12 +42,12 @@
 | [预设声音资格与发布](operations/builtin-voice-qualification.md) | 独立审批、资格探测、不可变发布、精确准入与撤销；真实资格按具体窗口取证 |
 | [本地最小可运行装配](operations/local-end-to-end.md) | 指定历史基线的迁移、发布与执行记录；当时公开转写返回 504，worker 只登记 staging，120s 用于 API 轮询。后续已补成功终态驱动，原 504 不证明当前部署结果；11.2.2 的人工 `record_stop` 仅是历史测试路径 |
 | [agent 环境准备与验收](operations/paperclip/environment-readiness.md) | 历史三机工具链、隔离服务和 Harness 准备快照；旧配置与启用门禁不代表当前状态 |
-| [三团队整体实施计划](plans/2026-10-23-three-team-delivery-plan.md)                                  | 历史规划：团队分工、任务依赖、原阶段关口、集成节奏与产能估算              |
+| [三团队整体实施计划](archive/plans/2026-10-23-three-team-delivery-plan.md)                                  | 历史规划：团队分工、任务依赖、原阶段关口、集成节奏与产能估算              |
 | [产品需求](prd.md) | 完整范围、十个 MECE 能力域、稳定需求与可观察验收条件 |
 | [需求与交付矩阵](plans/delivery-tracking.md) | 需求、设计、主 Epic、实现/集成/验证、缺口及证据；实施 issue 按需关联 |
 | [结构化关联源](plans/delivery-issues.json) | 矩阵数据源；当前实施 issue 可以为空，GitHub 状态只读刷新 |
-| [分阶段实施计划](plans/2026-10-22-speechnexus-implementation-plan.md)                               | 历史 P0–P5、退出条件、工作包、交接产物与初始预算假设                           |
-| [集群协调重构计划](plans/2026-10-23-cluster-coordination-refactor.md)                               | 历史 DDL/契约/双库原型交付及当时的生产接入和集群资格计划                         |
+| [分阶段实施计划](archive/plans/2026-10-22-speechnexus-implementation-plan.md)                               | 历史 P0–P5、退出条件、工作包、交接产物与初始预算假设                           |
+| [集群协调重构计划](archive/plans/2026-10-23-cluster-coordination-refactor.md)                               | 历史 DDL/契约/双库原型交付及当时的生产接入和集群资格计划                         |
 | [架构与契约修复闭环](audits/2026-10-23-architecture-contract-repair-closure.md) | 历史审查：初验与终审的修复映射、验证证据及当时未验证边界 |
 | [集群协调重构后的架构与契约审查](audits/2026-10-23-architecture-contract-post-refactor-review.md) | 历史审查：运行角色、双库门禁、契约结果、端口原型与当时开放项 |
 | [B00 MegaCube 环境与能力缺口前检](audits/2026-10-24-b00-megacube-environment-and-capability-gap.md) | 历史环境快照：GB10 主机、GPU 占用、制品及首次 ASR 生命周期探针 |

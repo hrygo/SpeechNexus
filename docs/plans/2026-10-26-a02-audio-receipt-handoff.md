@@ -14,7 +14,7 @@ date: 2026-10-26
 实现起点为 `230031043a76ac6c2d04ee6bb2fe93ca38f991c5`，收尾 PR 基于
 `54daef6ae4792b69a0e5e8645b09240ff715082e` 提交评审，尚未合入。
 后续实施由新负责人重新安排，当前证据和待决事项见[最终交接](2026-10-26-team-a-final-handoff.md)。
-关联 [A02 #21](https://github.com/hrygo/SpeechNexus/issues/21)；完整目标见[团队 A Goal](2026-10-23-team-a-goal.md)。
+关联 [A02 #21](https://github.com/hrygo/SpeechNexus/issues/21)；完整目标见[团队 A Goal](../archive/plans/2026-10-23-team-a-goal.md)。
 
 ## 交付内容
 

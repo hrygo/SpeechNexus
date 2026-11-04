@@ -26,7 +26,7 @@ date: 2026-10-25
 
 本次读取当前代码、PR/CI和issue，没有重新执行业务测试、访问GPU或复跑C本机环境。
 下表引用各精确版本的既有证据，适用范围随行列明；完整工作包和阶段要求继续由
-[跟踪矩阵](2026-10-23-implementation-tracking.md)及各issue的AC维护。
+[跟踪矩阵](../archive/plans/2026-10-23-implementation-tracking.md)及各issue的AC维护。
 
 ## 可复核交付矩阵
 

@@ -1,6 +1,6 @@
 # C02 正式文件转写宿主实施计划
 
-已授权 C02/C08，采用 native inline / TDD 和一次独立终审。Spec：[三队 C02/C08](../../plans/2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)、现行 speech-openapi、[素材恢复交接](2026-10-24-team-c-c02-asset-reconcile-handoff.md)。完整 C00–C08 goal 保持 active。
+已授权 C02/C08，采用 native inline / TDD 和一次独立终审。Spec：[三队 C02/C08](2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)、现行 speech-openapi、[素材恢复交接](2026-10-24-team-c-c02-asset-reconcile-handoff.md)。完整 C00–C08 goal 保持 active。
 
 目标：正式 Workbench 消费既有上传、原任务恢复、事件和原始制品下载，实现可重复使用的真实 ASR 页面。正式宿主默认同源、无自动请求，无 fake 数据；真实后端/模型资格仍需联调。
 

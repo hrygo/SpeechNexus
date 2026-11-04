@@ -486,7 +486,7 @@ unimplemented.
 preserves these protocol semantics while moving cross-table coordination rules
 into controlled application transactions. PostgreSQL remains the official
 product target; the MySQL/InnoDB prototype validates key coordination behavior only.
-The [refactoring plan](../docs/plans/2026-10-23-cluster-coordination-refactor.md)
+The [refactoring plan](../docs/archive/plans/2026-10-23-cluster-coordination-refactor.md)
 does not constitute an implemented adapter or a new database support claim.
 
 ### Versioned HTTP structural change checks

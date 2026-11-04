@@ -5,8 +5,8 @@
   "created_date": "2026-10-23",
   "date_timezone": "Asia/Shanghai",
   "tracking_authority": "GitHub issue state/status labels + explicit Gate evidence; local Markdown is generated snapshot",
-  "plan_path": "docs/plans/2026-10-23-three-team-delivery-plan.md",
-  "startup_path": "docs/plans/2026-10-23-agent-team-startup-briefs.md",
+  "plan_path": "docs/archive/plans/2026-10-23-three-team-delivery-plan.md",
+  "startup_path": "docs/archive/plans/2026-10-23-agent-team-startup-briefs.md",
   "entries": [
     {
       "id": "PROGRAM",

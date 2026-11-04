@@ -8,7 +8,7 @@
 
 **Tech Stack:** 现有 Pydantic Settings / FastAPI / psycopg、生成 `workbench_http`/`workbench` 绑定、`PostgresVersionUnitOfWork`。
 
-**Spec:** [三队计划](../../plans/2026-10-23-three-team-delivery-plan.md) C05；[产品设计 §9.2](../../speechnexus-product-architecture.md#92-提词与助手)；[C05 提词跟随交接](2026-10-24-team-c-c05-prompter-handoff.md) 记为待完成的服务端持久化。
+**Spec:** [三队计划](2026-10-23-three-team-delivery-plan.md) C05；[产品设计 §9.2](../../speechnexus-product-architecture.md#92-提词与助手)；[C05 提词跟随交接](2026-10-24-team-c-c05-prompter-handoff.md) 记为待完成的服务端持久化。
 
 ## Global Constraints
 

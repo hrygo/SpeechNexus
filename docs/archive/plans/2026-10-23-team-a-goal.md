@@ -9,23 +9,23 @@ date: 2026-10-26
 
 > **2026-10-26 收尾交接：**用户要求收敛现有工作，并由新负责人重新安排后续工作。
 > 本文原日期窗口、KR 和执行顺序保留为历史目标，不再作为自动续作或排期承诺。
-> 当时的交付、证据与待决事项见[团队 A 最终交接](2026-10-26-team-a-final-handoff.md)；
+> 当时的交付、证据与待决事项见[团队 A 最终交接](../../plans/2026-10-26-team-a-final-handoff.md)；
 > 原工作包与 AC 保持开放，不因交接标为完成。
-> 后续需求与当前证据见[需求矩阵](delivery-tracking.md)，不以本页状态推断当期进展。
+> 后续需求与当前证据见[需求矩阵](../../plans/delivery-tracking.md)，不以本页状态推断当期进展。
 
 ## 总目标与当前基线
 
 持续交付 A00–A07 的平台、协调、数据、公开 API、恢复与发布能力，向 B/C 交付固定版本和验收证据。
 原三队 25 个工作包与 G0–G5 全范围保持，用户按三队联合证据最终放行。
 
-依据[10 月 26 日复盘](2026-10-26-team-a-review-and-next-phase.md)，固定源码为
+依据[10 月 26 日复盘](../../plans/2026-10-26-team-a-review-and-next-phase.md)，固定源码为
 `230031043a76ac6c2d04ee6bb2fe93ca38f991c5`。A 完整验收 0/8，原工作包 0/25，Gate 0/6。
 #141/#169/#155/#201 已合入，不再排为待合并工作；#201 仅读词典 draft，合后 CI 取消与清理核实未结。
 进程监督、草稿、SDK 和私有回执分别按其实际边界使用，不代表真实公开服务已贯通。
 
 本轮实际交付为共享媒体包、私有音频检查命令、成功回执契约及窄 AssetInspector 消费者，
 已整理进收尾 PR 候选，尚未合入主干；默认 AssetRuntime 仍装配 TextAssetInspector。
-见[媒体交接](2026-10-26-a02-media-kernel-handoff.md)与[回执交接](2026-10-26-a02-audio-receipt-handoff.md)。
+见[媒体交接](../../plans/2026-10-26-a02-media-kernel-handoff.md)与[回执交接](../../plans/2026-10-26-a02-audio-receipt-handoff.md)。
 B #219 已合入 `54daef6ae4792b69a0e5e8645b09240ff715082e`，14 项 CI 成功；
 固定制品与注册输入可供核验，不代表权威 binding、发布、容量或真实公开链通过。
 真实 ASR/TTS 公开链仍为 0/2；故障矩阵未完成，关键不变量的真实链基线未知。
@@ -112,4 +112,4 @@ Git、生产权限/DDL/部署、GPU、删除及运行态按适用授权执行；
 长期团队 A 目标仅在 A00–A07 全范围和必要真实资格全部齐备后完成。
 
 [整体计划](2026-10-23-three-team-delivery-plan.md) · [实施跟踪](2026-10-23-implementation-tracking.md) ·
-[总控 #6](https://github.com/hrygo/SpeechNexus/issues/6) · [本轮复盘与故障矩阵](2026-10-26-team-a-review-and-next-phase.md)
+[总控 #6](https://github.com/hrygo/SpeechNexus/issues/6) · [本轮复盘与故障矩阵](../../plans/2026-10-26-team-a-review-and-next-phase.md)

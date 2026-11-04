@@ -93,4 +93,4 @@ MySQL 测试适配器将草案中的 `TEXT` 列映射为 `LONGTEXT`，避免合�
 有效业务不变量迁入新路径并通过相关验收后，移除旧门禁并删除废弃原型文件；
 历史证据通过 Git 追溯，不形成永久 CI 负担。
 
-[资源治理](runtime-governance.md) · [整体技术方案](technical-blueprint.md) · [重构计划](../plans/2026-10-23-cluster-coordination-refactor.md)
+[资源治理](runtime-governance.md) · [整体技术方案](technical-blueprint.md) · [重构计划](../archive/plans/2026-10-23-cluster-coordination-refactor.md)

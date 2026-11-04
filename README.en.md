@@ -152,7 +152,7 @@ When the asset service is explicitly enabled, new assets default to **7 days** o
 - Connect live captions, live speech, and meeting persistence, then expand assistants, teleprompters, and audiobooks.
 - Complete AdminUI business features, resource governance, and real-model quality, recovery, and production deployment acceptance.
 
-See the [delivery tracking matrix (Chinese)](docs/plans/delivery-tracking.md) for current scope and evidence. The [original implementation plan (Chinese)](docs/plans/2026-10-22-speechnexus-implementation-plan.md) retains historical stage and dependency assumptions; the [model selection decision (Chinese)](docs/decisions/0002-speech-models-engines-and-loading.md) describes model and engine validation plans.
+See the [delivery tracking matrix (Chinese)](docs/plans/delivery-tracking.md) for current scope and evidence. The [original implementation plan (Chinese)](docs/archive/plans/2026-10-22-speechnexus-implementation-plan.md) retains historical stage and dependency assumptions; the [model selection decision (Chinese)](docs/decisions/0002-speech-models-engines-and-loading.md) describes model and engine validation plans.
 
 ## Documentation
 

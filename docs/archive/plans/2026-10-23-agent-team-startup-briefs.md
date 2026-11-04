@@ -8,7 +8,7 @@ date: 2026-10-23
 # SpeechNexus agent 三团队首轮派工
 
 > 历史启动材料：以下派工对象、旧总控和任务文本保留 2026-10-23 的安排，
-> 不再作为当前派工依据。当前交付入口见 [PRD](../prd.md) 和[需求矩阵](delivery-tracking.md)。
+> 不再作为当前派工依据。当前交付入口见 [PRD](../../prd.md) 和[需求矩阵](../../plans/delivery-tracking.md)。
 
 配合[整体实施计划](2026-10-23-three-team-delivery-plan.md)使用。用户统一指挥三个 Codex 团队，A 在云环境、B 在 MegaCube、C 在 MacBook。以下是首轮可直接下发的任务文本；本文件没有启动这些任务，也没有建立其他机器连接。
 
@@ -98,4 +98,4 @@ base_sha / head_sha；或补丁文件与校验值：
 
 A 收敛为“本轮集成 SHA、三队结果、关键阻塞、G0 是否满足、下一轮三张卡”。G0 未通过时只补阻塞单元，已经通过的独立部分不重复重做。第一轮交接不是产品发布；G0 之后才接第一条真实文件闭环，后续任务编号沿用主计划，不重编号 C04 媒体或其他父包。
 
-[整体实施计划](2026-10-23-three-team-delivery-plan.md) · [计划索引](README.md)
+[整体实施计划](2026-10-23-three-team-delivery-plan.md) · [计划索引](../../plans/README.md)

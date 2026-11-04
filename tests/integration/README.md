@@ -125,7 +125,7 @@ termination. Pre-commit exceptions and discarded post-commit replies do not
 qualify real process kill, packet loss during commit, or database failover.
 Production use cases, complete peak/steady lifecycle, all quota dimensions,
 physical multi-host/HA, real engines and load remain explicit mandatory work in
-the [refactoring plan](../../docs/plans/2026-10-23-cluster-coordination-refactor.md)
+the [refactoring plan](../../docs/archive/plans/2026-10-23-cluster-coordination-refactor.md)
 and [application handoff](../../docs/architecture/coordination-transactions.md).
 Cluster support is mandatory; the current single-node environment does not
 relax any of those acceptance requirements. MySQL coordination qualification

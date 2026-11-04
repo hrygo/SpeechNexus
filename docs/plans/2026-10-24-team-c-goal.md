@@ -11,7 +11,7 @@ date: 2026-10-24
 
 ## 目标与范围
 
-依据[三团队实施计划](2026-10-23-three-team-delivery-plan.md)、[首轮任务卡](2026-10-23-agent-team-startup-briefs.md#4-c-队macbook-工作台与体验)和[总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)，原目标为完成 C00–C08。范围包括工作台后端和独立 schema/对象区/迁移、AdminUI 和 Workbench、浏览器媒体、音色工作室、会议/提词、内网 LLM/助手、有声书及独立保存/导出、业务删除恢复与应用交付资格。
+依据[三团队实施计划](../archive/plans/2026-10-23-three-team-delivery-plan.md)、[首轮任务卡](../archive/plans/2026-10-23-agent-team-startup-briefs.md#4-c-队macbook-工作台与体验)和[总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)，原目标为完成 C00–C08。范围包括工作台后端和独立 schema/对象区/迁移、AdminUI 和 Workbench、浏览器媒体、音色工作室、会议/提词、内网 LLM/助手、有声书及独立保存/导出、业务删除恢复与应用交付资格。
 
 本文件保留原执行范围，不证明产品能力已实现或 Codex 原生 Goal 已完成。应用目标状态以工具返回为准，工作包和 Gate 状态以具名验收证据为准。
 
@@ -158,7 +158,7 @@ C00–C08 全部约定范围、生产消费者及必要真实验证均有可追�
 
 每轮交接记录 `base_sha`/`head_sha` 或补丁与校验值、契约版本、修改范围、命令/环境/结果、未验证项、阻塞 owner/解除条件及下一接入动作。依赖缺失时继续独立任务，下游明确保持待联调；不猜测字段、不绕过协议，也不重复无新证据的检查。
 
-[C00 版本单元交接](../archive/plans/2026-10-24-team-c-c00-version-handoff.md) · [C00 生成请求消费交接](../archive/plans/2026-10-24-team-c-c00-project-boundary-handoff.md) · [C00 元数据分页交接](../archive/plans/2026-10-24-team-c-c00-listing-handoff.md) · [C00 PostgreSQL 事务交接](../archive/plans/2026-10-24-team-c-c00-postgres-handoff.md) · [C00 删除事务交接](../archive/plans/2026-10-24-team-c-c00-deletion-handoff.md) · [C01 Admin 任务中心交接](../archive/plans/2026-10-24-team-c-c01-task-center-handoff.md) · [C02 文件任务与 A00 消费交接](../archive/plans/2026-10-24-team-c-c02-file-flow-handoff.md) · [C02 原始转写导入交接](../archive/plans/2026-10-24-team-c-c02-transcript-import-handoff.md) · [C04 合成播放单元交接](../archive/plans/2026-10-24-team-c-c04-media-handoff.md) · [C04 浏览器采集交接](../archive/plans/2026-10-24-team-c-c04-capture-handoff.md) · [跟踪矩阵](2026-10-23-implementation-tracking.md)
+[C00 版本单元交接](../archive/plans/2026-10-24-team-c-c00-version-handoff.md) · [C00 生成请求消费交接](../archive/plans/2026-10-24-team-c-c00-project-boundary-handoff.md) · [C00 元数据分页交接](../archive/plans/2026-10-24-team-c-c00-listing-handoff.md) · [C00 PostgreSQL 事务交接](../archive/plans/2026-10-24-team-c-c00-postgres-handoff.md) · [C00 删除事务交接](../archive/plans/2026-10-24-team-c-c00-deletion-handoff.md) · [C01 Admin 任务中心交接](../archive/plans/2026-10-24-team-c-c01-task-center-handoff.md) · [C02 文件任务与 A00 消费交接](../archive/plans/2026-10-24-team-c-c02-file-flow-handoff.md) · [C02 原始转写导入交接](../archive/plans/2026-10-24-team-c-c02-transcript-import-handoff.md) · [C04 合成播放单元交接](../archive/plans/2026-10-24-team-c-c04-media-handoff.md) · [C04 浏览器采集交接](../archive/plans/2026-10-24-team-c-c04-capture-handoff.md) · [跟踪矩阵](../archive/plans/2026-10-23-implementation-tracking.md)
 
 当前分段交付：[会议记录与纪要工作台](../archive/plans/2026-10-24-team-c-meeting-ui-handoff.md)提供来源绑定、封存与原键恢复的真实浏览器/隔离PG证据；C00–C08及全部真实资格仍按上述退出条件保持进行中。
 

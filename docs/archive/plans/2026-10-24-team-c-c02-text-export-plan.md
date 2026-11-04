@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.14 / existing workbench VersionUnitOfWork / hashlib / pytest / isolated PostgreSQL。
 
-**Spec:** [三团队 C02/C08](../../plans/2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)、[产品设计](../../speechnexus-product-architecture.md)、[原文导入后续接入](2026-10-24-team-c-c02-transcript-import-handoff.md#后续接入)。C02 完整公开链路和字幕格式仍未完成，本单元不缩小父目标。
+**Spec:** [三团队 C02/C08](2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)、[产品设计](../../speechnexus-product-architecture.md)、[原文导入后续接入](2026-10-24-team-c-c02-transcript-import-handoff.md#后续接入)。C02 完整公开链路和字幕格式仍未完成，本单元不缩小父目标。
 
 ## 设计决定
 

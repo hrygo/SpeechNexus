@@ -7,9 +7,9 @@ date: 2026-10-22
 
 # SpeechNexus 分阶段实施计划
 
-> 历史计划：本文保留 2026-10-22 的阶段、状态与预算假设，不作为当前排期或实现状态依据。当前交付范围与证据见[跟踪矩阵](delivery-tracking.md)。
+> 历史计划：本文保留 2026-10-22 的阶段、状态与预算假设，不作为当前排期或实现状态依据。当前交付范围与证据见[跟踪矩阵](../../plans/delivery-tracking.md)。
 
-计划基准日期为 2026-10-22，依据[项目主设计](../speechnexus-product-architecture.md)、[语音接口](../architecture/speech-api.md)与[资源治理](../architecture/runtime-governance.md)。P0 的公共、管理与内部机器契约已交付并通过仓库校验；领域实现、fake、服务端路由、真实模型适配、容量与质量资格仍待实施。契约文件不等于运行时能力。
+计划基准日期为 2026-10-22，依据[项目主设计](../../speechnexus-product-architecture.md)、[语音接口](../../architecture/speech-api.md)与[资源治理](../../architecture/runtime-governance.md)。P0 的公共、管理与内部机器契约已交付并通过仓库校验；领域实现、fake、服务端路由、真实模型适配、容量与质量资格仍待实施。契约文件不等于运行时能力。
 
 ## 1. 阶段与退出条件
 
@@ -28,7 +28,7 @@ date: 2026-10-22
 
 截至 2026-10-22，P0 已交付 `contracts/` 下的公共 speech / workbench / admin OpenAPI、Realtime 事件、预设、音色、绑定、实例、容量与资格 schema，以及执行控制和部署控制内部协议；OpenAI Python SDK 的 REST 请求 / 响应形状由 mock transport 覆盖，Realtime 客户端事件由 SDK 实际连接序列化路径覆盖。协调 DDL 已在隔离 PostgreSQL 16 schema 中应用并验证关键正负事务不变量。上述交付不包含业务路由、完整迁移体系、真实 adapter、模型加载、质量阈值或部署资格。
 
-身份与授权列入后续独立候选阶段，触发条件见 [身份体系演进](../speechnexus-product-architecture.md#65-未来身份体系的独立演进)；未确定需求、迁移与投入前，不放入当前关键路径，也不据此声称首期可服务不互信多租户。
+身份与授权列入后续独立候选阶段，触发条件见 [身份体系演进](../../speechnexus-product-architecture.md#65-未来身份体系的独立演进)；未确定需求、迁移与投入前，不放入当前关键路径，也不据此声称首期可服务不互信多租户。
 
 ### 1.1 依赖顺序
 

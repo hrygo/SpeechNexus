@@ -8,7 +8,7 @@
 
 **Tech Stack:** 当前 Python 3.14、psycopg、PostgreSQL 与现有 pytest/fake；不新增依赖。
 
-**Spec:** [三队 C05/C06](../../plans/2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)、[产品 9.1](../../speechnexus-product-architecture.md#91-转写与会议)、现行 workbench MeetingSealRequest / TranscriptRevision。这是完整 C05 的必要基础，不是完整会议交付。
+**Spec:** [三队 C05/C06](2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)、[产品 9.1](../../speechnexus-product-architecture.md#91-转写与会议)、现行 workbench MeetingSealRequest / TranscriptRevision。这是完整 C05 的必要基础，不是完整会议交付。
 
 ## Global Constraints
 

@@ -7,7 +7,7 @@ date: 2026-10-24
 
 # B00 MegaCube 环境与能力缺口前检
 
-本文是团队 B 对 [B00 #27](https://github.com/hrygo/SpeechNexus/issues/27) 的记录，对应[团队 B 目标](../plans/2026-10-23-team-b-goal.md)与[三团队实施方案](../plans/2026-10-23-three-team-delivery-plan.md)的 S0 要求。基线为 `main` 的 `92ba52b`。
+本文是团队 B 对 [B00 #27](https://github.com/hrygo/SpeechNexus/issues/27) 的记录，对应[团队 B 目标](../archive/plans/2026-10-23-team-b-goal.md)与[三团队实施方案](../archive/plans/2026-10-23-three-team-delivery-plan.md)的 S0 要求。基线为 `main` 的 `92ba52b`。
 
 执行范围：只读环境前检；经用户授权的两项资源调整（停止 `qwen3-asr.service`、调低 embedding/reranker 显存比例）；经用户授权的制品下载（ModelScope 与 Hugging Face）；经用户授权的一次真实引擎生命周期探针（Qwen3-ASR 0.6B，合成音频）。用户明确指示保留 `cube-ccba-qwen36-35b-nvfp4`，本次未改动该服务。
 
@@ -164,4 +164,4 @@ B01 的首个闭合单元已经实现并通过门禁，PG 落库仍待 A01 的�
    - GPU：不停止 `cube-ccba-qwen36-35b-nvfp4`。探针在剩余统一内存内排队串行执行，只把互不
      争用的轻量步骤并行；不为了让探针更快而占用或重启 35B。
 
-[跟踪矩阵](../plans/2026-10-23-implementation-tracking.md) · [团队 B 目标](../plans/2026-10-23-team-b-goal.md) · [三团队实施方案](../plans/2026-10-23-three-team-delivery-plan.md)
+[跟踪矩阵](../archive/plans/2026-10-23-implementation-tracking.md) · [团队 B 目标](../archive/plans/2026-10-23-team-b-goal.md) · [三团队实施方案](../archive/plans/2026-10-23-three-team-delivery-plan.md)

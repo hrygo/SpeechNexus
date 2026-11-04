@@ -21,15 +21,15 @@
 - [2026-10-24 团队 C C1列表、状态与删除HTTP](../archive/plans/2026-10-24-team-c-c1-management-handoff.md)：3b8052安全集成、完整13项C1操作、作用域游标与版本化删除；Python2414/PG269/Web891，生产装配及完整资格待接入。步骤见[实施计划](../archive/plans/2026-10-24-team-c-c1-management-plan.md)。
 
 - [原整体实施总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)：已迁移的历史 Epic/工作包/Gate 结构，不作为当前派工入口。
-- [2026-10-23 实施跟踪矩阵](2026-10-23-implementation-tracking.md)：历史快照；原规划及 #142/#149 的范围由新矩阵完整承接。[旧编排清单](2026-10-23-implementation-issues.json)保留原时点结构，当前刷新工具不读取此格式。
-- [2026-10-23 三团队整体实施计划](2026-10-23-three-team-delivery-plan.md)：三环境责任、25 个工作包及六阶段关口的历史规划；当前执行按新总控和矩阵。
-- [2026-10-23 agent 三队启动指令](2026-10-23-agent-team-startup-briefs.md)：历史启动与交接模板，保留原时点输入，不作为当前派工依据。
-- [2026-10-23 团队 A 执行目标](2026-10-23-team-a-goal.md)：A00–A07 的历史目标、KR 和完整范围；已转交新负责人重新安排，不再作为当前排期。
-- [2026-10-23 团队 B 执行目标](2026-10-23-team-b-goal.md)：B00–B07 原目标、范围与 AC，以及环境、停止探针和阻塞条件的历史来源；由新交付承接，不据此续开 Goal 或派工。
+- [2026-10-23 实施跟踪矩阵](../archive/plans/2026-10-23-implementation-tracking.md)：历史快照；原规划及 #142/#149 的范围由新矩阵完整承接。[旧编排清单](2026-10-23-implementation-issues.json)保留原时点结构，当前刷新工具不读取此格式。
+- [2026-10-23 三团队整体实施计划](../archive/plans/2026-10-23-three-team-delivery-plan.md)：三环境责任、25 个工作包及六阶段关口的历史规划；当前执行按新总控和矩阵。
+- [2026-10-23 agent 三队启动指令](../archive/plans/2026-10-23-agent-team-startup-briefs.md)：历史启动与交接模板，保留原时点输入，不作为当前派工依据。
+- [2026-10-23 团队 A 执行目标](../archive/plans/2026-10-23-team-a-goal.md)：A00–A07 的历史目标、KR 和完整范围；已转交新负责人重新安排，不再作为当前排期。
+- [2026-10-23 团队 B 执行目标](../archive/plans/2026-10-23-team-b-goal.md)：B00–B07 原目标、范围与 AC，以及环境、停止探针和阻塞条件的历史来源；由新交付承接，不据此续开 Goal 或派工。
 - [2026-10-24 团队 C 执行目标](2026-10-24-team-c-goal.md)：C00–C08 的历史目标、原接力与完成条件，现已转为 superseded；[C00 版本单元交接](../archive/plans/2026-10-24-team-c-c00-version-handoff.md)、[C00 生成请求消费交接](../archive/plans/2026-10-24-team-c-c00-project-boundary-handoff.md)、[C00 元数据分页交接](../archive/plans/2026-10-24-team-c-c00-listing-handoff.md)、[C00 PostgreSQL 事务交接](../archive/plans/2026-10-24-team-c-c00-postgres-handoff.md)、[C00 删除事务交接](../archive/plans/2026-10-24-team-c-c00-deletion-handoff.md)、[C01 Admin 任务中心交接](../archive/plans/2026-10-24-team-c-c01-task-center-handoff.md)、[C02 文件任务与 A00 消费交接](../archive/plans/2026-10-24-team-c-c02-file-flow-handoff.md)、[C02 原始转写导入交接](../archive/plans/2026-10-24-team-c-c02-transcript-import-handoff.md)、[C04 合成播放交接](../archive/plans/2026-10-24-team-c-c04-media-handoff.md)、[C04 浏览器采集交接](../archive/plans/2026-10-24-team-c-c04-capture-handoff.md)记录本地实现与未验证项。
 - [2026-10-24 原命令与对象输入接入](2026-10-24-b03-frozen-inputs.md)：B01/B03 原持久命令、固定版本 MinIO 和当时文件消费者的历史输入接入边界。
 - [2026-10-25 持久文件执行接线](2026-10-25-b03-durable-file-runner.md)：提交后启动、原身份恢复、私有回执及后台生命周期；不替代真实引擎与公开业务链资格。
-- [2026-10-22 分阶段实施计划](2026-10-22-speechnexus-implementation-plan.md)：P0–P5、工作包、契约产物与初始预算。
+- [2026-10-22 分阶段实施计划](../archive/plans/2026-10-22-speechnexus-implementation-plan.md)：P0–P5、工作包、契约产物与初始预算。
 
 - [2026-10-24 团队 C C00 文本字符边界交接](../archive/plans/2026-10-24-team-c-c00-text-handoff.md)：统一拒绝不可存储字符、保留合法文本，记录失败回滚与同键重试证据。
 - [2026-10-24 团队 C C02 文件任务跨刷新恢复交接](../archive/plans/2026-10-24-team-c-c02-recovery-handoff.md)：记录创建/取消原键、只读恢复、事件水位及 Chromium 刷新证据；生产入口仍待接入，上传阶段恢复见后续交接。
@@ -44,8 +44,8 @@
 
 - [2026-10-24 团队 C C02 正式文件转写入口](../archive/plans/2026-10-24-team-c-c02-host-handoff.md)：真实文件与同源公开 API、跨刷新原状态/事件/取消、原始 JSON 下载及正式 Chromium 页面证据。
 
-- [2026-10-23 架构与契约修复验收](2026-10-23-architecture-contract-repairs.md)：已完成的逐项交付与闭环证据。
-- [2026-10-23 集群协调重构计划](2026-10-23-cluster-coordination-refactor.md)：历史 DDL、事务契约和双库原型交付，以及当时的生产接入与集群资格计划。
+- [2026-10-23 架构与契约修复验收](../archive/plans/2026-10-23-architecture-contract-repairs.md)：已完成的逐项交付与闭环证据。
+- [2026-10-23 集群协调重构计划](../archive/plans/2026-10-23-cluster-coordination-refactor.md)：历史 DDL、事务契约和双库原型交付，以及当时的生产接入与集群资格计划。
 
 [项目主设计](../speechnexus-product-architecture.md) · [文档索引](../README.md)
 

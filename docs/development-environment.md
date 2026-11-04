@@ -6,7 +6,7 @@ date: 2026-10-22
 
 # SpeechNexus 开发与测试环境
 
-本文记录项目 Linux ARM64 参考开发与测试环境及其操作方式，不代表当前会话所在主机或服务的实时状态。执行前核验宿主、工具链、端口和项目隔离边界；当前交付范围见[跟踪矩阵](plans/delivery-tracking.md)，[原实施计划](plans/2026-10-22-speechnexus-implementation-plan.md)保留历史阶段。开发服务不是生产部署，也不构成容量、质量或恢复资格。
+本文记录项目 Linux ARM64 参考开发与测试环境及其操作方式，不代表当前会话所在主机或服务的实时状态。执行前核验宿主、工具链、端口和项目隔离边界；当前交付范围见[跟踪矩阵](plans/delivery-tracking.md)，[原实施计划](archive/plans/2026-10-22-speechnexus-implementation-plan.md)保留历史阶段。开发服务不是生产部署，也不构成容量、质量或恢复资格。
 
 ## 运行组件
 

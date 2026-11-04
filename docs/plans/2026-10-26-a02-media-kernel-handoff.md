@@ -11,7 +11,7 @@ date: 2026-10-26
 
 解除 A02 真实音频检查的共享媒体前置：从既有 B 实现提取独立制品，
 保留网关原消费者和异常身份，在 A 已有受限进程内运行实际 decoder，输出有界媒体事实。
-关联 [A02 #21](https://github.com/hrygo/SpeechNexus/issues/21) 与[团队 A Goal](2026-10-23-team-a-goal.md)。
+关联 [A02 #21](https://github.com/hrygo/SpeechNexus/issues/21) 与[团队 A Goal](../archive/plans/2026-10-23-team-a-goal.md)。
 本单元不启用公开 ready 或完成 A02 AC。
 
 ## 进展总结

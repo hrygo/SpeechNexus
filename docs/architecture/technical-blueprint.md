@@ -13,7 +13,7 @@ date: 2026-10-26
 
 [ADR 0006](../decisions/0006-cluster-coordination-and-storage-portability.md)确定集群能力
 完整保留、跨表规则迁入受控应用事务、不采用 etcd，以及 PostgreSQL 正式交付 /
-MySQL 关键协调验证的边界。原替代步骤见[历史重构计划](../plans/2026-10-23-cluster-coordination-refactor.md)；
+MySQL 关键协调验证的边界。原替代步骤见[历史重构计划](../archive/plans/2026-10-23-cluster-coordination-refactor.md)；
 目标 DDL、[应用事务方案与契约](coordination-transactions.md)及双库测试原型已交付，
 旧 PG 独立兜底测试另存历史 fixture。生产协调已有分段实现与证据地图，完整业务装配和集群故障资格仍待完成；按 ADR 0007 的退出条件判断旧原型，不按目录或测试数量推定验收。
 
@@ -229,7 +229,7 @@ Prometheus 分别统计队列等待、准入、模型准备 / 热身、引擎排
 
 ## 12. 当前实施顺序与退出条件
 
-既有[分阶段计划](../plans/2026-10-22-speechnexus-implementation-plan.md)保留原时点预算；以下是本方案的工程交接顺序，不代表阶段已经完成。
+既有[分阶段计划](../archive/plans/2026-10-22-speechnexus-implementation-plan.md)保留原时点预算；以下是本方案的工程交接顺序，不代表阶段已经完成。
 
 | 顺序 | 交付 | 退出证据 |
 | --- | --- | --- |

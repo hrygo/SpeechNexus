@@ -1,6 +1,6 @@
 # C02 正式文本配音宿主实施计划
 
-Spec：[三队 C02/C08](../../plans/2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)、现行 speech-openapi、[配音消费交接](2026-10-24-team-c-c02-tts-handoff.md)。完整 C00–C08 goal 保持 active。
+Spec：[三队 C02/C08](2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)、现行 speech-openapi、[配音消费交接](2026-10-24-team-c-c02-tts-handoff.md)。完整 C00–C08 goal 保持 active。
 
 在既有正式文件任务宿主中接入文本配音，复用任务恢复、原键重放、取消确认、事件与安全新建。ASR/TTS 使用独立 sessionStorage key；用户输入真实部署模型、声音和参数版本，无默认虚构选项。发现接口的运行时 validator 未发布，手填不代表发现或资格完成。沿用现有 Token 与双栏布局，不新增依赖、服务或机器契约。
 

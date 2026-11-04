@@ -7,17 +7,17 @@ date: 2026-10-23
 # 集群协调重构计划
 
 > 本页保留 2026-10-23 的重构计划及其阶段性交付事实，不是当前实现进度。
-> 后续生产接入见[生产协调存储](../operations/production-coordination-storage.md)，
-> 当前需求与证据见[需求矩阵](delivery-tracking.md)；仍须分别核验目标部署资格。
+> 后续生产接入见[生产协调存储](../../operations/production-coordination-storage.md)，
+> 当前需求与证据见[需求矩阵](../../plans/delivery-tracking.md)；仍须分别核验目标部署资格。
 
 状态：精简 DDL、事务机器契约、详细应用方案、权限工具与真实双库测试原型已交付；
 生产业务接入、完整生命周期和集群故障资格尚未完成。
-依据为 [ADR 0006](../decisions/0006-cluster-coordination-and-storage-portability.md)。
+依据为 [ADR 0006](../../decisions/0006-cluster-coordination-and-storage-portability.md)。
 终审的触发器权限、来源校验修复完整保留在历史 SQL fixture；
 兼容比较器与回归继续保留，未被本次重构覆盖。
 
 本次按“实施重构，程序部分生成详细方案和契约”的授权，修改契约、工具、测试与
-DDL 草案；程序接入顺序和精确事务步骤见[应用事务方案](../architecture/coordination-transactions.md)。
+DDL 草案；程序接入顺序和精确事务步骤见[应用事务方案](../../architecture/coordination-transactions.md)。
 没有新增业务服务、路由、Worker 或引擎实现。
 
 ## 固定边界
@@ -139,7 +139,7 @@ R2/R3 的原型只证明列明路径的事务行为，不证明业务路由或 S
 
 ### 遗留原型退出工作包
 
-依据 [ADR 0007](../decisions/0007-legacy-coordination-retirement.md)，上述保留仅适用于
+依据 [ADR 0007](../../decisions/0007-legacy-coordination-retirement.md)，上述保留仅适用于
 迁移对照期。每次协调事务接入或规则覆盖更新时复核退出条件，满足后在同一变更或
 紧随其后的清理变更中执行，不等待与这些规则无关的全产品或 P5 工作完成。
 
@@ -192,7 +192,7 @@ Ruff/mypy、针对性 pytest 及显式隔离 DSN 的数据库集成测试。
 双库门禁为 `make coordination-test` 与 `make integration-test`，两者都必须同时提供
 `SPEECHNEXUS_TEST_DATABASE_URL` 和 `SPEECHNEXUS_TEST_MYSQL_URL`；缺任一变量直接失败，
 只配置一个时共享事务用例按失败而非跳过处理。初始化与清理按测试独立
-namespace 执行，命令见[集成测试说明](../../tests/integration/README.md)。CI 配置已加入
+namespace 执行，命令见[集成测试说明](../../../tests/integration/README.md)。CI 配置已加入
 隔离 MySQL 8.4.8 service，但本地执行结果不替代尚未运行的远端 CI 结果。
 协调变更须跑两种数据库的相关矩阵，缺 DSN、跳过或基础设施故障均不算通过。
 

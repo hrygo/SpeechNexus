@@ -12,7 +12,7 @@ date: 2026-10-26
 #221 后经接管审查修复 WAV RIFF 尾部完整性，以最终 head `f326f5d` 的 14 项 CI 成功后合入 `41e29b6`。
 下表的候选/验证/现场是原时点事实；[项目经理基线](2026-10-26-project-manager-baseline.md)也是历史快照，现行交付入口见[交付跟踪矩阵](delivery-tracking.md)。不追溯改挂历史证据。
 用户已要求结束旧排期，后续 owner、优先级和窗口由新负责人重新安排。
-[原 Goal](2026-10-23-team-a-goal.md)和[原下一阶段计划](2026-10-26-team-a-review-and-next-phase.md)
+[原 Goal](../archive/plans/2026-10-23-team-a-goal.md)和[原下一阶段计划](2026-10-26-team-a-review-and-next-phase.md)
 已标记 superseded；历史 KR、F01–F12 和原完整范围继续保留，不据交接结算验收。
 
 ## 原交接时点的事实

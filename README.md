@@ -152,7 +152,7 @@ SpeechNexus 的接口设计采用 **OpenAI Audio 兼容子集 + `nexus` 扩展**
 - 接通实时字幕、实时配音和会议保存，再完善助手、提词与有声书。
 - 完成管理端业务、资源治理，以及真实模型质量、恢复和生产部署验收。
 
-当前交付范围与证据见[跟踪矩阵](docs/plans/delivery-tracking.md)；[原实施计划](docs/plans/2026-10-22-speechnexus-implementation-plan.md)保留历史阶段与依赖假设，模型与引擎验证路线见[模型选型说明](docs/decisions/0002-speech-models-engines-and-loading.md)。
+当前交付范围与证据见[跟踪矩阵](docs/plans/delivery-tracking.md)；[原实施计划](docs/archive/plans/2026-10-22-speechnexus-implementation-plan.md)保留历史阶段与依赖假设，模型与引擎验证路线见[模型选型说明](docs/decisions/0002-speech-models-engines-and-loading.md)。
 
 ## 文档
 

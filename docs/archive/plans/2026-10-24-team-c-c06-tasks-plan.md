@@ -4,7 +4,7 @@
 
 **Goal:** 将前一单元的固定源 LLM 能力接入真实工作台持久任务，保存原意图/attempt/用量，支持显式原意图重试、业务取消及最终源版本/删除屏障；实现自己的 owner migration fragment 和真实 PG 验证。依据 [ADR 0005](../../decisions/0005-complete-execution-and-data-lifecycle-contracts.md) 和[删除规范](../../architecture/data-deletion.md#执行证据和查询)保留无正文执行/计量事实。完整 C06 的 Meeting 映射、公开生成 DTO/路由/页面、独立保存制品、助手和实际部署资格继续推进。
 
-**Spec:** [ADR 0003](../../decisions/0003-workbench-llm-network-boundary.md)、[技术方案 §9](../../architecture/technical-blueprint.md#9-工作台与内网-llm)、[C06](../../plans/2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)、现行 workbench MinutesJob；本单元内部类型不冒充公开 DTO。
+**Spec:** [ADR 0003](../../decisions/0003-workbench-llm-network-boundary.md)、[技术方案 §9](../../architecture/technical-blueprint.md#9-工作台与内网-llm)、[C06](2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)、现行 workbench MinutesJob；本单元内部类型不冒充公开 DTO。
 
 ## 设计与约束
 

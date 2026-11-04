@@ -7,7 +7,7 @@ date: 2026-10-22
 
 # SpeechNexus 设计审查
 
-本记录审查 SpeechNexus 0.3.0 文档基线，包括[项目主设计](../speechnexus-product-architecture.md)、[语音接口](../architecture/speech-api.md)、[资源治理](../architecture/runtime-governance.md)、[复用边界](../architecture/speechrail-reuse.md)、[实施计划](../plans/2026-10-22-speechnexus-implementation-plan.md)、ADR 和双语 README。0.3.0 是文档版本，项目尚无产品实现。
+本记录审查 SpeechNexus 0.3.0 文档基线，包括[项目主设计](../speechnexus-product-architecture.md)、[语音接口](../architecture/speech-api.md)、[资源治理](../architecture/runtime-governance.md)、[复用边界](../architecture/speechrail-reuse.md)、[实施计划](../archive/plans/2026-10-22-speechnexus-implementation-plan.md)、ADR 和双语 README。0.3.0 是文档版本，项目尚无产品实现。
 
 ## 1. 结论与证据范围
 

@@ -10,12 +10,12 @@ date: 2026-10-26
 ## 收尾交接（2026-10-26）
 
 用户要求收敛已有工作、清理现场、更新文档与 issue，并提交最后一个收尾 PR，
-后续由新负责人重新安排。[交接记录](../audits/2026-10-26-team-b-handoff.md)
+后续由新负责人重新安排。[交接记录](../../audits/2026-10-26-team-b-handoff.md)
 汇总接管基线、完整剩余范围、C 方审查回执、现场与私有证据归档。
 以下保留原目标和历史推进记录，不再作为自动开工或排期指令。
 原生 Goal 在收尾完成后暂停，以目标工具实际返回为准；B00–B07 未完成，
 issue 原 AC 与集群、预算和内容边界均不变。
-后续需求与当前证据见[需求矩阵](delivery-tracking.md)，不以本页状态推断当期进展。
+后续需求与当前证据见[需求矩阵](../../plans/delivery-tracking.md)，不以本页状态推断当期进展。
 
 交接基线为 main `54daef6`；#219 已集成 CustomVoice 固定制品、许可来源、显式默认和
 完整注册输入，PR CI40289866804、精确合后 CI40291095616 均 14 项成功。
@@ -58,7 +58,7 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 
 各 PR 保存对应候选的检查与报告；旧分支测试数量不转挂最新组合。
 此前 `5f72b20` 加载真实 1.7B 和 CPU VAD；
-随后在 `21129b4` 完成[取消后的安全链联验](../audits/2026-10-25-b03-real-cancel-settlement.md)，
+随后在 `21129b4` 完成[取消后的安全链联验](../../audits/2026-10-25-b03-real-cancel-settlement.md)，
 仅使用合成语料：原身份取消/重放保持 unknown、不写结果、不提前退预算，
 整代次双证据后由默认恢复及 A 原事务幂等结算。三轮失败/局部结果及清理保留。
 原生 abort 指标不构成必要回执，单请求停止/释放未证明，最终报告保持 partial；
@@ -66,9 +66,9 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 #142 仍是 B03 阶段子任务；
 #149 是后续助手交接，不增加原 25 个主工作包的分母。
 
-真实模型分段成果继续有效：[ASR 生命周期](../audits/2026-10-24-b02-real-asr-controller-probe.md)、
-[文件 ASR](../audits/2026-10-24-b03-file-asr-probe.md)、
-[CustomVoice TTS](../audits/2026-10-24-b03-tts-adapter-probe.md)。
+真实模型分段成果继续有效：[ASR 生命周期](../../audits/2026-10-24-b02-real-asr-controller-probe.md)、
+[文件 ASR](../../audits/2026-10-24-b03-file-asr-probe.md)、
+[CustomVoice TTS](../../audits/2026-10-24-b03-tts-adapter-probe.md)。
 CustomVoice 确实能合成；Base、VoiceDesign、克隆、实时和 P95 各自待验，不能互相替代。
 
 ## 深度复盘：保留可靠底座，缩短到业务结果的距离
@@ -95,7 +95,7 @@ CustomVoice TTS；公开上传→持久 Job/原子准入→唯一真实执行→
 标准 SDK/C 下载。ASR 可以不选 Profile，仍必须固定权威 binding、模型/引擎/镜像/许可、
 显式默认、支持参数和输入输出上界；草稿、示例与引擎隐式默认都不能补充缺失事实。
 
-首条 ASR 的[固定制品与参数交接](../operations/file-asr-binding-handoff.md)已提供
+首条 ASR 的[固定制品与参数交接](../../operations/file-asr-binding-handoff.md)已提供
 1.7B/CPU VAD/引擎及独立锁文件的离线核验入口。本机 11 个运行制品共
 4,705,382,857 bytes 核验通过；工具输出复用既有 artifact/engine 契约，不签发
 binding、manifest 或资格。本候选补齐完整草稿注册请求和显式默认，身份及 manifest
@@ -119,7 +119,7 @@ binding、manifest 或资格。本候选补齐完整草稿注册请求和显式�
 ## 已集成的持久执行单元与本轮缺口
 
 [#163](https://github.com/hrygo/SpeechNexus/pull/163) 已随 main `f239e2d` 集成 #161 的预热修复及
-[受控 ASR 原生鉴权与代次检查](../components/controlled-asr-generation.md)。
+[受控 ASR 原生鉴权与代次检查](../../components/controlled-asr-generation.md)。
 控制器为固定目标派生原生 key，检查实际镜像/argv/环境和身份；网关在读取对象前拒绝
 不匹配或未绑定代次的真实 endpoint。固定镜像的无 GPU/无网络中间件检查覆盖缺 key、
 旧 key、新 key 和未鉴权 health；不加载模型，不替代默认真实装配或停止/预算联验。
@@ -129,7 +129,7 @@ binding、manifest 或资格。本候选补齐完整草稿注册请求和显式�
 修前四项双库反例复现失败，修后五组 PG/InnoDB/MinIO 消费者回归 102 项通过、无跳过；
 私有 PG 确认停止。实际生产校验未放宽，精确候选 CI 与评审仍以 PR 当前状态为准。
 
-`codex/b-142-default-asr-runtime` 已实现[配置驱动的默认文件 ASR 工厂](../operations/file-asr-runtime.md)，
+`codex/b-142-default-asr-runtime` 已实现[配置驱动的默认文件 ASR 工厂](../../operations/file-asr-runtime.md)，
 原 `898fbc9` 已 rebase main `7dc276a`；真实实验执行于 `997bd46`，该次 rebase 未改变网关/控制器源码。
 本轮另修首次协程执行前取消泄漏本地容量票据的问题，新代码的确定性验证与该真实实验分别记录。
 `0c54c8a` 的 CI445 和取消修复已通过复审；主干前进后再次 rebase 到 `78505a8`，
@@ -138,7 +138,7 @@ binding、manifest 或资格。本候选补齐完整草稿注册请求和显式�
 配置缺失保持不可用；结构、目标与上界错误在取得控制权限前拒绝，不生成权威 binding/default 或另一份预算。
 确定性定向 77 项及六组 PG/InnoDB/真实 MinIO 回归 104 项通过、无跳过；
 `997bd46` 的 CI40207417652 全绿，本机完整入口 6,168 项、85.59%，另 17 项浏览器通过。
-随后在同一代码上完成[默认真实 ASR 实验](../audits/2026-10-25-b03-default-real-asr-probe.md)：
+随后在同一代码上完成[默认真实 ASR 实验](../../audits/2026-10-25-b03-default-real-asr-probe.md)：
 真实 1.7B/CPU VAD 经默认网关和隔离 PG/MinIO 写出语音/静音结果，重放/重启保留回执，
 各一个结果版本且成功推理计数不增加；预算不变。固定 cache 后两次预热 132.827 秒，
 控制器停止双事实及清理有证据，35B 保持运行；旧配置失败记录保留。
@@ -152,7 +152,7 @@ binding、manifest 或资格。本候选补齐完整草稿注册请求和显式�
 上述取消修复在较早 `0c54c8a` 阶段未再次加载真实模型，旧实验不能转挂该版本；
 随后 `5f72b20` 的真实停止/结算实验范围见下文报告。
 
-[持久文件执行计划](2026-10-25-b03-durable-file-runner.md)只复用原 `create_submit` 的唯一 INSERT。
+[持久文件执行计划](../../plans/2026-10-25-b03-durable-file-runner.md)只复用原 `create_submit` 的唯一 INSERT。
 短 dispatch 仅准备本地接收身份；新接收观察确认提交且退出 ingress 后才启动长处理。
 重放不触发启动；重启先把遗留活动执行隔离为 unknown，保留结果，不把旧记录当重试队列。
 结果确认丢失查原回执，不再识别或 PUT。取消/协程结束不签发 GPU 停止或释放。
@@ -176,7 +176,7 @@ binding、manifest 或资格。本候选补齐完整草稿注册请求和显式�
 22 项既有 PG-only adapter 的 InnoDB 参数组合不适用跳过，未计入通过。
 Ruff、mypy、7 条依赖边界及文档检查通过；保留非集成 9 条、集成 1 条警告。
 该修复已随 #163 完成精确版本 PR/合后 CI 与主线集成。默认真实 ASR 实验现已补证；
-随后在 `5f72b20` 完成[真实停止与 A 结算联验](../audits/2026-10-25-b03-real-stop-settlement.md)：
+随后在 `5f72b20` 完成[真实停止与 A 结算联验](../../audits/2026-10-25-b03-real-stop-settlement.md)：
 默认控制器使用真实 Docker/SQLite/TLS，默认网关恢复循环登记一份匹配停止证据；
 A 原事务先保留 base 等待 lease 清理，再分别幂等归还 slot/attempt 与 base。
 首次期限越界的实验失败及清理保留，无模型反例修正后再运行成功；没有放宽校验。
@@ -185,26 +185,26 @@ A 原事务先保留 base 等待 lease 清理，再分别幂等归还 slot/attem
 下一步将固定配置、私有回执及该停止链接到 A 的生产准入/发布，再与 SDK/C 联验；
 真实故障恢复、持续就绪及目标拓扑资格保留未完成。
 
-原生 worker 完成观察已作为独立组件交付，见[观察单元](2026-10-25-b03-worker-fence.md)；
+原生 worker 完成观察已作为独立组件交付，见[观察单元](../../plans/2026-10-25-b03-worker-fence.md)；
 其 `release_evidence` 恒为 false，request cleanup/unfinished=0/EOF 仍不证明 GPU 资源已释放，
 也不构成网关停止事实或预算归还依据。
 
 [#203](https://github.com/hrygo/SpeechNexus/pull/203) 已合入 `4edc838`：
-[文件 TTS 默认私有装配](../operations/file-tts-runtime.md)接通真实音频身份、受控
+[文件 TTS 默认私有装配](../../operations/file-tts-runtime.md)接通真实音频身份、受控
 node/gateway/pool/instance/generation/binding、ASR/TTS 共享持久 worker，并在登记音频回执前
 写入完整生成区间。原命令消费者不再拒绝真实提交的 24 kHz 时钟和派生输出流；越过冻结上界
 或缺少区间时隔离并保留占用。本机 3857 项单元、Ruff/mypy/7 条边界、32 份契约及 PR 14 项
 CI 通过。公开路由/发布/下载、可信停止与物理集群仍未交付；真实 CustomVoice 见下。
 
 随后在 2026-10-26 用固定 vLLM-Omni 镜像和真实 1.7B CustomVoice 完成
-[默认工厂持久执行探针](../audits/2026-10-26-b03-default-real-tts-probe.md)：隔离 PG/MinIO
+[默认工厂持久执行探针](../../audits/2026-10-26-b03-default-real-tts-probe.md)：隔离 PG/MinIO
 中取得 24 kHz mono WAV、单对象版本、`[0,153600)` 完整生成区间和 4.543 秒提交到回执；
 网关重启后原身份回执保留、重放保持 unknown，预算不变。首次真实请求暴露 BCP-47 `zh`
 与厂商 `Chinese` 的语言边界不兼容，已在适配器修复并补回归。公开路由/发布/下载、A 结算、
 可信停止/释放、Base/VoiceDesign、长文本和物理集群仍未交付。
 
 随后在 main `2300310` 加原生 TTS 预热路径补丁上完成
-[真实取消与整代次停止联验](../audits/2026-10-26-b03-real-tts-stop-settlement.md)：
+[真实取消与整代次停止联验](../../audits/2026-10-26-b03-real-tts-stop-settlement.md)：
 控制器两次代次鉴权预热、缺失/另一代次凭据拒绝，执行中取消/重放零结果且预算不变；
 整代次退出与资源释放双事实经默认网关恢复登记，A 原租约事务首次结算、重复重放。
 195.564 秒就绪、11.839 秒停止，三个受保护服务未变。首轮驱动查询错误及失败保留。
@@ -216,7 +216,7 @@ CI 通过。公开路由/发布/下载、可信停止与物理集群仍未交付
 | B00 #27 | in-progress | #162 ASR 与 #219 CustomVoice 固定制品、许可来源、显式默认和注册输入已集成；权威注册/发布与容量资格仍待 |
 | B01 #28 | in-progress | #168 默认工厂已集成；原版本整代次停止、网关恢复及 A 结算有隔离证据；单请求取消与生产公开链待完成 |
 | B02 #29 | in-progress | ASR 真实预热/停止、入口屏障及 A 租约/base 已隔离联验；#218 TTS 代次鉴权/整代次双证据已集成，合前/精确合后 CI 成功；正式就绪、持续 ready、故障与 peak→steady/drain 资格待完成 |
-| B03 #30 | in-progress | 真实 CustomVoice 三格式、重启重放及取消/整代次停止和 A 租约结算已有隔离证据；[#219 交接](../operations/file-tts-binding-handoff.md)已集成并复用原注册入口；公开链、单请求释放、Base、长文本和完整参数矩阵待完成 |
+| B03 #30 | in-progress | 真实 CustomVoice 三格式、重启重放及取消/整代次停止和 A 租约结算已有隔离证据；[#219 交接](../../operations/file-tts-binding-handoff.md)已集成并复用原注册入口；公开链、单请求释放、Base、长文本和完整参数矩阵待完成 |
 | B04 #31 | in-progress | 区间账本已有；真实双工、PCM/credit、完整配方与计量未完成 |
 | B05 #32 | planned | VoiceDesign/Base、克隆、换文复用、材料恢复与显式发布未实施 |
 | B06 #33 | in-progress | CPU VAD/文件消费者已有；实时、对齐、匿名分人及质量资格待完成 |

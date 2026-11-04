@@ -145,4 +145,4 @@ execution-control 四份HTTP源的已知结构变更检查。其余JSON/WS、授
 3. 不用"两个引擎都配了就算过"这一假设替代证据：缺 DSN、跳过或基础设施故障都不算通过。
 4. 不为遗留原型补写新的数据库特有机制（`SKIP LOCKED`、GiST、延迟触发器）以求单库兜底。
 
-[架构文档](../architecture/README.md) · [审查记录](README.md) · [重构计划](../plans/2026-10-23-cluster-coordination-refactor.md)
+[架构文档](../architecture/README.md) · [审查记录](README.md) · [重构计划](../archive/plans/2026-10-23-cluster-coordination-refactor.md)

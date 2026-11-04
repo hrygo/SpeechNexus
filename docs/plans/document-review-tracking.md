@@ -305,7 +305,7 @@
 | `docs/project-manager-guide.md` | 已核对 | 全文对照根规约、交付 SOP、军团职责及矩阵刷新入口；15 个本地链接目标存在，未核验平台实际部署与权限 |
 | `docs/speechnexus-product-architecture.md` | 部分核对 | 局部对照代码、契约或历史证据；澄清部署单元可共置或分机及 Host / Origin 中间件的路径范围，对照实时、音色与工作台入口、文件 ASR 分段汇总、共享密钥、导出组合根、默认值快照、预设生命周期、绑定停用 / 数据删除、Job 派发及故障矩阵；澄清 Job 显式重试创建新任务及取消 / 重试尚未接线；其余内容待核对 |
 | `docs/validation/README.md` | 已核对 | 全文核对四个索引链接目标；不代表各目标正文已审阅 |
-| `docs/validation/ci-validation.md` | 部分核对 | 对照路由、两进程覆盖率及六分片分配与证据校验、镜像及最终门禁、制品下载、浏览器预取、Design Token、无障碍规则、栅格对比度和真实模型资格入口；澄清差异检查依赖准确基线、文档路径仍执行镜像范围门禁、PG 探针前置条件及制品大小在下载结束后检查的边界，修正分片需求收集脚本路径；2026-11-04 只读核对 main 的三个必需检查及 Actions app 绑定一致；对照制品下载、分片证据脚本及镜像 reusable workflow 核对限制、重试、唯一允许跳过范围、路径范围和双架构门禁；澄清集成工具预检及 Python 覆盖率入口拒绝任何非空 PYTEST_ADDOPTS，限定失败证据上传条件，并说明分片同集检查不能发现所有分片共同遗漏的用例；其余脚本细节待核对，历史性能按原时点保留 |
+| `docs/validation/ci-validation.md` | 部分核对 | 对照路由、两进程覆盖率及六分片分配与证据校验、镜像及最终门禁、制品下载、浏览器预取、Design Token、无障碍规则、栅格对比度和真实模型资格入口；澄清差异检查依赖准确基线、文档路径仍执行镜像范围门禁、PG 探针前置条件及制品大小在下载结束后检查的边界，修正分片需求收集脚本路径；2026-11-04 只读核对 main 的三个必需检查及 Actions app 绑定一致；对照制品下载、分片证据脚本及镜像 reusable workflow 核对限制、重试、唯一允许跳过范围、路径范围和双架构门禁；澄清集成工具预检及 Python 覆盖率入口拒绝任何非空 PYTEST_ADDOPTS，限定失败证据上传条件，并说明分片同集检查不能发现所有分片共同遗漏的用例；其余脚本细节待核对，历史性能和故障记录移至归档并保留原时点 |
 | `docs/validation/coordination-request-change-checks.md` | 已核对 | 全文对照 Make/CI、检查器及共享比较和引用解析内核、请求/结果正反例与 Python/JS fixture；不代表事务语义或部署已验收 |
 | `docs/validation/http-contract-change-checks.md` | 已核对 | 全文对照 CI、脚本、比较与引用解析内核及正反例；澄清源校验、JSON 报告与 Python 解析器的覆盖边界，不代表完整协议兼容 |
 | `docs/validation/realtime-contract-change-checks.md` | 已核对 | 全文对照 CI、Make 目标、检查脚本、绑定配置及正反例测试；结构检查不证明实时行为或生产互通 |
@@ -349,4 +349,5 @@
 | `docs/archive/plans/2026-10-23-implementation-issues.json` | 历史保留 | 核对原基线、索引引用及 38 个唯一编号；旧编排不代表当前状态 |
 | `docs/archive/plans/2026-10-24-team-c-c02-download-contract-candidate.yaml` | 历史保留 | 全文阅读，核对计划、交接及候选测试引用；该候选路径未出现在当前工作台 canonical 契约中 |
 | `docs/archive/plans/2026-10-24-team-c-gateway-clock-candidate.patch` | 历史保留 | 核对两行候选内容及原计划、交接引用；仅为固定历史候选，未应用或重跑验证 |
+| `docs/archive/validation/2026-10-ci-validation-history.md` | 历史保留 | 从现行 CI 规则迁出的历史分析和运行记录，保留原时点事实；当前规则见 validation/ci-validation.md |
 | `docs/plans/delivery-issues.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；79 个不同的固定提交与文件路径组合在本地 Git 对应版本中均存在，C-SDK 已核对并修正证据归属；其他证据内容、PR 链接与语义仍待核对 |

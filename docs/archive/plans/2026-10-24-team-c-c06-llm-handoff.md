@@ -25,7 +25,7 @@
 
 `tests/unit/gateway/test_ingress.py::test_seal_cannot_succeed_while_a_previously_persisted_send_can_still_resume` 将 ledger 固定于 `2026-10-24T00:00:00Z`，但 service/engine 用 wall clock。本轮跨过 UTC 午夜后，全仓与隔离单测稳定失败：observed_at 晚于 ledger 记录时间。这与 C06 源码/日志过滤无关，生产校验不应放宽。
 
-网关与其测试由 B/A 维护，本轮未修改该源文件。提供[时钟对齐候选](../../plans/2026-10-24-team-c-gateway-clock-candidate.patch)，仅为 engine/service 注入同一 NOW，保留全部屏障/超时断言。候选是零上下文补丁，维护者先核对原文件 SHA-256 `d3ae26696ba36b96f92aeab7a45f670e38383a39df6e81c6ab3ffe40bdeb2399`（元数据另见 `.runtime/team-c/c06-gateway-clock-original.json`），再使用 `git apply --unidiff-zero --check` 检查并评审；C 未应用到权威工作区、未发送外部消息。最新183文件预览在临时组合副本中应用该候选后，全仓1504 passed（31.96s），并核对全部待交付 Python 文件 hash、实际 import 来自临时目录；当前网关源 SHA 未变。候选组合副本的验证与输入 hash 见 `.runtime/team-c/c06-python-candidate.json` 和日志；它不等于当前工作区已修复。解除条件：B/A 审核集成时钟修正，再在当前整合基线上运行全库门禁。
+网关与其测试由 B/A 维护，本轮未修改该源文件。提供[时钟对齐候选](2026-10-24-team-c-gateway-clock-candidate.patch)，仅为 engine/service 注入同一 NOW，保留全部屏障/超时断言。候选是零上下文补丁，维护者先核对原文件 SHA-256 `d3ae26696ba36b96f92aeab7a45f670e38383a39df6e81c6ab3ffe40bdeb2399`（元数据另见 `.runtime/team-c/c06-gateway-clock-original.json`），再使用 `git apply --unidiff-zero --check` 检查并评审；C 未应用到权威工作区、未发送外部消息。最新183文件预览在临时组合副本中应用该候选后，全仓1504 passed（31.96s），并核对全部待交付 Python 文件 hash、实际 import 来自临时目录；当前网关源 SHA 未变。候选组合副本的验证与输入 hash 见 `.runtime/team-c/c06-python-candidate.json` 和日志；它不等于当前工作区已修复。解除条件：B/A 审核集成时钟修正，再在当前整合基线上运行全库门禁。
 
 ## 契约与接入
 

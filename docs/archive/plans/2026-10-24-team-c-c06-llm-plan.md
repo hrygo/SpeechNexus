@@ -39,4 +39,4 @@ Interfaces：MinutesGeneration.generate(transcript_id, source_revision, template
 
 ## 本轮验收状态
 
-上述内部端口、adapter 与 sealed 候选已实现并通过111聚焦单元、868后端/契约与211临时PG探针；一次终审两项Important已在一轮TDD修复。完整C06仍需持久任务、公开路由/页面、助手及实际部署资格。全仓当前有一个B/A网关fixture混用固定/实时时钟的已复现失败，未越权改其源文件；提供[两行候选](../../plans/2026-10-24-team-c-gateway-clock-candidate.patch)及临时组合验证，待B/A集成后全仓门禁才能在权威树上放行。该阻塞不冻结其余C00–C08的独立工作。
+上述内部端口、adapter 与 sealed 候选已实现并通过111聚焦单元、868后端/契约与211临时PG探针；一次终审两项Important已在一轮TDD修复。完整C06仍需持久任务、公开路由/页面、助手及实际部署资格。全仓当前有一个B/A网关fixture混用固定/实时时钟的已复现失败，未越权改其源文件；提供[两行候选](2026-10-24-team-c-gateway-clock-candidate.patch)及临时组合验证，待B/A集成后全仓门禁才能在权威树上放行。该阻塞不冻结其余C00–C08的独立工作。

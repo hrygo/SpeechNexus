@@ -923,6 +923,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/deletions/DeletionHost.tsx",
           "label": "DeletionHost.tsx",
           "note": "固定基线的正式入口或装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/workbench/runtime.py",
+          "label": "工作台启动与删除重放",
+          "note": "记录工厂启动顺序，不证明后台统一屏障或恢复演练通过"
         }
       ],
       "issues": []

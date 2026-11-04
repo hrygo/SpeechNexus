@@ -551,7 +551,7 @@ LLM 拥有工作台自己的任务、取消与结果，失败不改写成功转�
 
 当前交付范围、主责、实施关联和验收证据以 [PRD](prd.md)、[交付跟踪](plans/delivery-tracking.md)及总控为准；按实际依赖组织可验收切片，不由设计目标推定交付完成。身份体系不属于首期交付前置。原 P0–P5 分阶段安排保留在下列历史计划中，不作为当前排期。
 
-- [整体技术方案](architecture/technical-blueprint.md)：技术基线、内部控制、事务 / 迁移、执行配方、Web / 内网 LLM、观测和当前工程交接顺序。
+- [整体技术方案](architecture/technical-blueprint.md)：技术基线、内部控制、事务 / 迁移、执行配方、Web / 内网 LLM、观测和资格验证口径。
 - [部署单元与平台规划](architecture/deployment-units.md)：独立服务、平台要求、节点绑定、当前装配缺口与跨平台/多机验收。
 - [分阶段实施计划](archive/plans/2026-10-22-speechnexus-implementation-plan.md)：历史阶段退出条件、工作包、P0 交接产物与初始预算假设；当前范围见[跟踪矩阵](plans/delivery-tracking.md)。
 - [SpeechRail 复用边界](architecture/speechrail-reuse.md)：可参考的领域规则与测试思想、需独立实现的基础设施、平台专属部分、固定来源及许可证。

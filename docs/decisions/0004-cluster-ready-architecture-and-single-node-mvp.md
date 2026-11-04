@@ -6,6 +6,14 @@ date: 2026-10-22
 
 # 0004：集群就绪架构与单机 MVP 同构部署
 
+本 ADR 保留 2026-10-22 的集群同构决定及当时的结构示意；其中
+`scheduler_pool_leases`、`owner_scheduler_id` 及独立 `gateway_control` schema 是旧示意，
+不是当前生产协调表结构。
+后续协调存储决定见 [ADR 0006](0006-cluster-coordination-and-storage-portability.md)，
+当前表与所有权以[协调 Schema](../architecture/distributed-coordination-schema.md)和
+[生产协调存储](../operations/production-coordination-storage.md)为准；池 owner 和 fencing
+事实由 `resource_pools` 记录。不得把本页旧名称当作迁移或运行指令。
+
 ## 背景
 
 SpeechNexus 的首轮交付（MVP）采用单节点 Docker Compose 部署，不承诺节点级高可用或实时会话无缝热迁移；但产品演进需要把无状态 API、实时网关、后台 Worker 以及多类语音推理引擎扩展到多台算力节点以逐步增加容量。
@@ -29,6 +37,11 @@ SpeechNexus 的首轮交付（MVP）采用单节点 Docker Compose 部署，不�
 | **3. 协调与后台执行层** | `scheduler`、`job-worker`、`workbench-export-worker` | `scheduler` 按逻辑资源池持有带 `fencing_token` 的 PostgreSQL 租约（`scheduler_pool_leases`）；Worker 通过 `FOR UPDATE SKIP LOCKED` 并发领取步骤并核验 `attempt` 与 `fencing_token` | 1 个 `scheduler` 持有全部池租约，1 个 `job-worker` 消费任务；每个进程独立管理有界连接池 |
 | **4. 算力执行与节点控制层** | `execution-gateway`、`node-controller`、各类推理引擎容器 | 每个 `execution-gateway` 绑定 `node_id` 与受管引擎入口，串行化 `submit_intent` 屏障；`node-controller` 按 `target_node_id == self.node_id` 认领持久启停意图 | 本机部署 1 个 `execution-gateway`（`gateway-1`）与 1 个本地受限控制器，纳管本机推理容器 |
 | **5. 共享权威数据层** | PostgreSQL、S3 兼容对象存储（MinIO） | 按 `speech`、`gateway_control`、`workbench` 划分表所有权与数据库凭据；对象存储隔离 `staging/` 与已提交 `artifacts/` | 单实例 PostgreSQL 16 与单实例 MinIO 容器，仅切换环境变量 DSN / Endpoint 即可对接外部高可用集群 |
+
+上表是当时的目标示意，不是现有服务清单或高可用迁移步骤。切换 DSN / Endpoint
+不足以证明外部高可用可用：凭据、网络、数据迁移、故障恢复和目标拓扑均须分别配置与验证。
+当前单节点装配及限制见[最小 Compose 部署](../operations/compose-minimal.md)，分布式部署
+边界见 [ADR 0011](0011-distributed-deployment-and-platform-boundaries.md)。
 
 单机 MVP 允许把 `scheduler` 与 `job-worker` 的逻辑角色折叠进 `api` 进程，以减少容器数量；折叠后仍须保留独立进程身份、数据库连接池、scheduler 租约与 worker claim 语义，不能因为同进程就绕过 fencing、outbox 或短事务边界。`node-controller` 继续与业务 API 隔离，仅纳管批准模板；`execution-gateway` 继续独占引擎入口与凭据。集群部署时可把这些逻辑角色拆回独立进程，不改变机器契约。
 

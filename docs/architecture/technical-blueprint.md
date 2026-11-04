@@ -7,13 +7,13 @@ date: 2026-10-26
 
 # SpeechNexus 整体技术方案
 
-本文把[产品主设计](../speechnexus-product-architecture.md)、[语音协议](speech-api.md)、[资源治理](runtime-governance.md)和已接受 ADR 衔接为可实施的工程方案，负责组件协作、技术选型、内部协议、事务和交付顺序。公共语义仍由语音协议及后续机器契约负责；本文不重复定义字段默认值、范围、状态枚举或错误码。
+本文把[产品主设计](../speechnexus-product-architecture.md)、[语音协议](speech-api.md)、[资源治理](runtime-governance.md)和已接受 ADR 衔接为可实施的工程方案，负责组件协作、技术选型、内部协议、事务和交付顺序。公共语义由语音协议及现行机器契约负责；本文不重复定义字段默认值、范围、状态枚举或错误码。
 
-**2026-10-26 核验：当前已有部分生产事务/HTTP、独立工作台、默认关闭的内网 LLM 接线，以及真实文件 ASR/CustomVoice 的隔离执行证据；公开音频 ready→Job/准入→执行→发布→SDK/页面两链仍未同版验收。** 本文规定目标架构与退出条件，不能把下文流程图当作已装配能力；当前实现和风险统一见[项目经理基线](../plans/2026-10-26-project-manager-baseline.md)。首批模型与加载策略沿用 [ADR 0002](../decisions/0002-speech-models-engines-and-loading.md)，业务内容不出网的约束见 [ADR 0003](../decisions/0003-workbench-llm-network-boundary.md)，集群就绪架构与单机 MVP 同构部署见 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md)。
+本文规定目标架构与退出条件，不能把下文流程图当作已装配能力；当前实现、缺口和验收证据见[交付跟踪矩阵](../plans/delivery-tracking.md)，[2026-10-26 项目经理基线](../archive/plans/2026-10-26-project-manager-baseline.md)仅反映当时快照。首批模型与加载策略沿用 [ADR 0002](../decisions/0002-speech-models-engines-and-loading.md)，业务内容不出网的约束见 [ADR 0003](../decisions/0003-workbench-llm-network-boundary.md)，集群就绪架构与单机 MVP 同构部署见 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md)。
 
 [ADR 0006](../decisions/0006-cluster-coordination-and-storage-portability.md)确定集群能力
 完整保留、跨表规则迁入受控应用事务、不采用 etcd，以及 PostgreSQL 正式交付 /
-MySQL 关键协调验证的边界。具体替代步骤见[集群协调重构计划](../plans/2026-10-23-cluster-coordination-refactor.md)；
+MySQL 关键协调验证的边界。原替代步骤见[历史重构计划](../archive/plans/2026-10-23-cluster-coordination-refactor.md)；
 目标 DDL、[应用事务方案与契约](coordination-transactions.md)及双库测试原型已交付，
 旧 PG 独立兜底测试另存历史 fixture。生产协调已有分段实现与证据地图，完整业务装配和集群故障资格仍待完成；按 ADR 0007 的退出条件判断旧原型，不按目录或测试数量推定验收。
 
@@ -37,7 +37,7 @@ MySQL 关键协调验证的边界。具体替代步骤见[集群协调重构计�
 
 ## 2. 进程、网络与所有权
 
-产品按分布式部署单元设计，当前单节点 Compose 是 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) 的同构验证拓扑（`Node=1, Replica=1`）。平台与节点边界遵循 [ADR 0011](../decisions/0011-distributed-deployment-and-platform-boundaries.md)，职责、实际启动入口和装配缺口见[部署单元规划](deployment-units.md)。业务、控制和工作台不因推理栈使用 Linux 而继承 GPU 或 Linux 内核依赖；当前节点执行栈和私有媒体沙箱各自保留平台要求，媒体沙箱的部署适配形态仍待设计。
+产品按分布式部署单元设计，当前单节点 Compose 是 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) 的开发预览拓扑（`Node=1, Replica=1`），默认未装配全部部署单元，不能单凭 Compose 声称同构链路已验收。平台与节点边界遵循 [ADR 0011](../decisions/0011-distributed-deployment-and-platform-boundaries.md)，职责、实际启动入口和装配缺口见[部署单元规划](deployment-units.md)。业务、控制和工作台不因推理栈使用 Linux 而继承 GPU 或 Linux 内核依赖；节点执行栈和[私有媒体沙箱](../archive/components/audio-asset-inspection.md)各自保留平台要求，公开音频检查装配仍须验收。
 
 逻辑角色按职责分离，每个进程显式声明节点、角色与唯一实例身份；配置字段和入口按部署单元核对，`process_role` 声明不自动选择服务工厂。backend 与 execution-gateway 独立部署，跨单元内容经网络协议与对象存储传递。本地锁与控制器回执只承担节点范围职责，不替代 PostgreSQL 全局权威。单机验证可按 ADR 0004 折叠 scheduler / job-worker 逻辑角色，但保留独立身份、连接池、租约、claim 与协议边界；`node-controller` 不与业务 API 合并。跨平台、跨主机故障恢复与节点级高可用分别验收；扩容先增加已资格化节点与实例，再验证父物理预算与 owner 路由。
 
@@ -58,12 +58,16 @@ flowchart LR
     Worker --> PG
     Scheduler --> PG
     Gateway --> PG
-    Controller --> PG
+    Controller --> Local["节点本地回执 / 停止检查点"]
     Workbench --> WP["工作台 schema"]
     API --> Objects["S3 兼容对象存储"]
     Worker --> Objects
     Gateway --> Objects
 ```
+
+控制器通过内部协议向调度侧报告节点事实，不直接写入 PostgreSQL 协调权威；当前本地回执与
+停止检查点保存在 SQLite，不能凭节点本地记录缺失推断执行已停止或预算可释放。具体实现和
+恢复边界见[节点控制器](../components/node-controller.md)及[部署单元规划](deployment-units.md)。
 
 | 所有者 | 写入权威 / 执行动作 | 边界 |
 | --- | --- | --- |
@@ -86,7 +90,7 @@ P0 机器契约已按以下文件交付；它们冻结协议形状与样例，�
 | `speech-openapi.yaml` | API、Web、SDK、MCP；OpenAI Audio / Realtime 声明子集与 `/v1/nexus` 语音、Job、资产、音色和发音资源 |
 | `workbench-openapi.yaml` | 工作台 API / Web；项目、转写、会议、助手、提词、有声书、保存副本与导出 |
 | `admin-openapi.yaml` | AdminUI、调度、部署与发布流程；工作空间、绑定发布、实例、资源池、策略、诊断与审计 |
-| `realtime-events.schema.json` | 实时网关与客户端；标准 ASR 事件子集、`nexus.*` 事件、联合、顺序、重放和终态语义 |
+| `realtime-events.schema.json` | 实时网关与客户端；标准 ASR 子集和 `nexus.*` 事件的联合与字段结构。跨事件顺序、命令去重和终态目标语义见[语音协议](speech-api.md#23-事件字典)，须另行验证；断线不提供透明音频重放 |
 | `scenario-profile.schema.json` / `voice-resource.schema.json` | 管理面、语音用例与 Web；预设 draft / 发布 / 回滚 / 退役、覆盖范围、音色候选 / 校验 / 发布与不可变版本 |
 | `internal/execution-control.openapi.yaml` | scheduler / worker 与 gateway；提交、查询、取消、封锁与 drain |
 | `internal/execution-stream.schema.json` | 实时网关与 gateway；控制信封、音频 descriptor、序号、样本坐标、credit、背压和二进制 PCM framing |
@@ -95,7 +99,7 @@ P0 机器契约已按以下文件交付；它们冻结协议形状与样例，�
 
 公共、内部控制和 vendor DTO 分别建模，不能把私有字段通过公共响应泄漏。规范源放在 `contracts/`，公共与内部文件分目录组织；跨文件引用在构建时按所在文件解析，不在运行时访问网络。OpenAI SDK 的 REST 请求 / 响应形状与 Realtime 客户端事件由 `tests/contract/test_p0_public_contracts.py` 使用官方 Python SDK 的 mock transport / 实际序列化路径校验；这只是契约门禁，服务端实现后还须以同一组样例运行 HTTP / WebSocket 集成测试。兼容范围与扩展规则见[OpenAI 兼容与增强边界](openai-compatibility.md)。
 
-Python 首选 datamodel-code-generator 生成 Pydantic v2 边界 DTO，再映射为领域命令。TypeScript 的 OpenAPI 类型与客户端使用 openapi-typescript / openapi-fetch；独立事件 schema 生成对应类型，并用 Ajv 的 2020-12 实现校验运行时消息。生成产物不手改，业务层不得依赖生成 DTO 的内部布局。
+Python 契约包使用 datamodel-code-generator 生成 `TypedDict` 静态类型，并通过生成的解析入口和离线 schema 校验运行时数据，再映射为领域命令；静态类型本身不执行校验。TypeScript 的 OpenAPI 类型与客户端使用 openapi-typescript / openapi-fetch；独立事件 schema 生成对应类型，并用 Ajv 的 2020-12 实现校验运行时消息。运行时解析入口只覆盖 `contracts/bindings.json` 选择的类型及显式 profile，不等于所有 OpenAPI 路由或 schema 均有解析入口；基础 HTTP 客户端不会自动校验收到的响应；个别封装提供额外校验。生成产物不手改，业务层不得依赖生成 DTO 的内部布局；版本和生成入口见[契约包说明](../../packages/contracts/README.md)。
 
 生成器只处理可表达的结构约束；布尔冒充数字、额外字段、可判别联合、跨字段关系、规范意图、事件序列与状态竞争仍须经过同一组正负样例。Python、TypeScript、fake adapter 和 MCP 运行样例必须一致。契约门禁还要比较 FastAPI 的实际投影、生成产物差异和不兼容变更；只有结构校验通过不能冻结协议。
 
@@ -103,7 +107,7 @@ Python 首选 datamodel-code-generator 生成 Pydantic v2 边界 DTO，再映射
 
 模型绑定描述不可变的模型 / 引擎 / 配方版本及其发布资格；运行实例描述某次进程 / 容器、所属节点、generation、实际配置与运行事实。容量租约再关联具体执行与实例。三者不能用同一生命周期状态代替。
 
-VoiceDesign 空闲卸载只改变实例就绪与可立即执行的事实，不退役绑定或删除 VoiceRevision。重建实例获得新的实例身份与 generation，重做加载和热身检查；配置摘要或部署组合变化时重新匹配资格。能力读取无副作用，分别展示支持、资格、实例就绪、可排队与可立即准入的事实，具体字段和状态在机器契约中冻结。
+VoiceDesign 空闲卸载只改变实例就绪与可立即执行的事实，不退役绑定或删除 VoiceRevision。重建实例使用新的实例代次，可沿用实例 ID；以 `(instance_id, generation)` 区分新旧运行实例，重做加载和热身检查；配置摘要或部署组合变化时重新匹配资格。能力读取无副作用，分别展示支持、资格、实例就绪、可排队与可立即准入的事实，具体字段和状态在机器契约中冻结。
 
 实时准入使用**完整执行配方**：模型表只是清单，不是一次请求只涉及一个模型的保证。父物理预算覆盖同机全部受管实例及部署内其他已知占用；不能把共享物理内存当成主机与设备两份独立容量。
 
@@ -118,6 +122,8 @@ VoiceDesign 空闲卸载只改变实例就绪与可立即执行的事实，不�
 | 描述设计 | VoiceDesign 候选 / 参考 → Base 克隆与换文复用校验 → 显式发布 → 后续 Base 合成 | 全阶段峰值先预留；preview_only 不能发布 |
 | 样本克隆 | 已提交参考材料 → Base → 试听 / 校验 → 显式发布 | 素材、来源、参考正文及兼容绑定版本固定 |
 
+表格描述目标配方，不代表各阶段均已接通。当前文件 ASR 逐 VAD 段识别并按顺序汇总非空正文，未添加交叠上下文或按相同文字猜测去重；交叠合并及其质量仍需单独实现和验收。现有范围见[文件 ASR 识别](../components/file-asr-recognition.md)和[结果汇总](../components/file-asr-results.md)。
+
 启用实时 `full_segment` 预设时，1.7B 复核必须已经可服务，其执行预算和等待期限纳入实时资格；required 辅助依赖同样纳入完整准入。不能先只准入 0.6B，再等待一个无保障的复核 / 辅助槽位。若资源不足，明确不发布或不准入该配方；只有协议允许且调用方明确接受时，才使用另行验证的降级配方。文件任务可复用同一实例的剩余预算，不能在引擎内部排队阻塞实时复核。
 
 VAD 的滞回、去抖和前缀缓冲与识别段策略版本化；预览与正文定稿不等待非正文的重型辅助结果，整体 Operation 仍按 required 规则等待。required 辅助作为父 Operation 的必需步骤，best_effort 使用可独立终结的子执行。取消、drain 与计量覆盖全部阶段，不因正文已经发布而遗留无主计算。
@@ -130,11 +136,11 @@ VAD 的滞回、去抖和前缀缓冲与识别段策略版本化；预览与正�
 
 ## 6. 执行网关与部署控制协议
 
-内部控制使用 HTTP / JSON，Submit 必须携带[规范执行命令](execution-command.md)与 canonical digest；实时数据使用 WebSocket 的 JSON 文本/控制事件与二进制 PCM。流连接绑定固定执行身份；二进制块的 framing、长度、序列与描述符关联由内部机器契约冻结。公开 Realtime 的编码不因此改变。文件与制品通过受控 Asset / Artifact 引用传递；内部命令携带所有者核验后的不可变存储身份、长度和摘要，禁止将用户任意路径、对象 key 或外部 URL 当作该引用。
+内部控制使用 HTTP / JSON，Submit 必须携带[规范执行命令](execution-command.md)与 canonical digest；实时数据使用 WebSocket 的 JSON 文本/控制事件与二进制 PCM。流连接绑定固定执行身份；二进制块的 framing、长度、序列与描述符关联由内部机器契约冻结。帧布局和跨帧规则记录在 schema 的扩展元数据中，普通 JSON Schema 校验不能直接验证二进制内容或跨帧连续性，生产者和消费者须另行验证。公开 Realtime 的编码不因此改变。文件与制品通过受控 Asset / Artifact 引用传递；内部命令携带所有者核验后的对象引用、长度和摘要，禁止将用户任意路径、对象 key 或外部 URL 当作该引用。当前文件 ASR 命令不携带 S3 version ID；适配器每次读取时固定 HEAD 所得版本并核验内容，详见[冻结执行输入](../components/frozen-execution-inputs.md)。
 
-控制流错误使用带 `stream_id / stream_epoch / seq / operation_id` 的 `stream.error` 信封和封闭错误码集合，不能把裸错误对象混入事件 union。传输级错误可要求重试，但只有 `stream.closed` 或其对应的权威操作查询能终结业务 Operation；陈旧 epoch、帧缺口和 credit 超限不得静默修改执行状态。
+控制流错误使用带 `stream_id / stream_epoch / seq / operation_id` 的 `stream.error` 信封和封闭错误码集合，不能把裸错误对象混入事件 union。传输级错误可要求重试，但不能单凭错误或断连认定执行终态；应以 `stream.closed` 或对应的权威执行查询协调该流。业务 Operation 还须汇总其必需阶段与清理事实，内部流关闭本身不证明整体成功；陈旧 epoch、帧缺口和 credit 超限不得静默修改执行状态。
 
-一次执行至少能够追溯规范命令、Operation、attempt、reservation、binding / recipe、实例 generation 与 fencing。重复提交同一意图只关联原执行；意图不一致则拒绝。查询区分未提交、正在协调与已知执行事实，传输失败不等于引擎未执行。控制响应不能凭“已接收取消”生成停止证据。
+一次执行至少能够追溯规范命令、Operation、attempt、reservation、binding / recipe、实例 generation 与 fencing。重复提交同一意图只关联原执行；意图不一致则拒绝。查询应区分已知执行事实与仍在协调的未知结果；当前 gateway / node 未找到原身份不证明请求未外发，也不能据此释放预算或创建新执行。传输失败不等于引擎未执行；控制响应不能凭“已接收取消”生成停止证据。
 
 提交屏障继续由 gateway 拥有：核对当前准入、owner、配置 / 策略与实例 → 持久化唯一 submit intent 并占住预算 → 放行外发 → 关联真实引擎执行。数据库 token、进程内锁或一次检查均不能撤回迟到外发；接管前必须封锁旧入口并协调其提交与在途执行，必要时隔离 / 重建受控实例。详细不变量以[多进程一致性](runtime-governance.md#14-多进程一致性与-fencing)为准。
 
@@ -161,15 +167,22 @@ claim Job / outbox 通过持久认领版本和条件更新确定归属；适配�
 
 Alembic 迁移由唯一部署步骤执行，并发迁移使用数据库互斥。speech、gateway 控制记录和 workbench 分别维护明确表所有权与可兼容的迁移顺序；运行角色无 DDL 权限。迁移以显式 SQL / 经审核操作为准，禁止应用启动自动建表或自动猜测破坏性修改。优先采用先扩展、迁移数据、切换消费者、后收缩的过程，回滚应用前验证旧版本能读取当前 schema。
 
+当前包内 Alembic 链覆盖语音与网关协调存储；Workbench 的 `runtime_schema` 是由 owner
+事务执行的新建 schema 基线，不是现有数据库升级器，也不属于该 Alembic 链。已有
+Workbench 数据库的受控版本迁移仍须单独交付；其运行时只检查 schema revision，不自动建表。
+具体启动和恢复限制见[数据删除与恢复屏障](data-deletion.md#workbench-当前实现与恢复边界)。
+
 对象先写私有 staging，验证内容、摘要与实际长度后原子发布数据库引用；数据库和对象存储不做虚构的跨服务事务。对象写完但事务未提交的内容保持不可见，reconcile / GC 只处理明确作用域的孤儿。下载经公开受控入口校验可用性并支持 Range，存储 key 不成为公共资源标识。
 
-普通删除先列出有效的持久依赖与执行租约并拒绝破坏，包括当前没有任务执行的已发布声音及其重建材料；明确的级联 / 强制删除才进入停止新用、取消依赖和清理流程。清理必须取得执行证据，不能删除仍被有效声音版本引用的材料后继续宣称复用成功。已提交工作台副本按自身生命周期处理，跨模块级联范围必须显式列明。
+普通删除先列出有效的持久依赖与执行租约并拒绝破坏，包括当前没有任务执行的已发布声音及其重建材料；级联删除须经预检并明确确认同一 owner 的范围，再进入停止新用、取消依赖和清理流程。删除契约不提供绕过停止证据的强制标志，也不跨模块追删独立副本；其他模块的阻断依赖须由其 owner 单独处理后重新预检。有关联执行时须协调停止证据；对象清理还须处理引用和未决写入，不能删除仍被有效声音版本引用的材料后继续宣称复用成功。无对象证明且没有写入者时可无需删除对象完成清理，具体条件见[资源治理](runtime-governance.md#23-保存与删除默认值)。
 
 ## 8. Web、实时音频与客户端资格
 
-AdminUI 与 Workbench 继续使用独立 Vite 应用、同源 API 与共用 SDK。`web/shared` 只放稳定组件、生成的公共客户端和无业务所有权的音频工具；不加入项目、会议或音色发布业务。页面按功能加载代码，未配置能力显示真实原因和可执行的下一步。
+AdminUI 与 Workbench 继续使用独立 Vite 应用、同源 API 与共用 SDK。`web/shared` 只放稳定组件和无业务所有权的共享工具，不加入项目、会议或音色发布业务；生成的公共客户端由 [`packages/contracts`](../../packages/contracts/README.md) 提供。页面按功能加载代码，未配置能力显示真实原因和可执行的下一步。
 
-TanStack Query 负责资源、任务、版本与能力缓存，缓存键包含部署 / workspace 与必要 revision。SSE 按持久游标更新查询；历史过期时读取当前事实，不重做命令。发布、取消与配额不做伪成功的乐观更新；编辑提交携带契约要求的版本前提。
+目标方案使用 TanStack Query 管理资源、任务、版本与能力缓存，缓存键包含部署 / workspace 与必要 revision。SSE 按持久游标更新查询；历史过期时读取当前事实，不重做命令。发布、取消与配额不做伪成功的乐观更新；编辑提交携带契约要求的版本前提。
+
+当前两个 Web 应用的依赖尚未包含 TanStack Query；工作台文件任务客户端已有带 `Last-Event-ID` 的事件读取，但这不证明上述统一缓存及所有页面的恢复行为已实现。各消费者的实际接线和验收以代码与交付矩阵为准。
 
 实时会话、ASR 替换预览、TTS utterance 与播放器 generation 使用独立 reducer / 会话服务。AudioWorklet 和有界缓冲管理采样与播放，计算量大的转换移到 worker；不把每个 PCM 块变成 React 渲染。以实际采样时钟处理 credit、样本缺口和播放进度；浏览器停止播放与服务端确认算力停止分别呈现。
 
@@ -178,6 +191,8 @@ TanStack Query 负责资源、任务、版本与能力缓存，缓存键包含�
 ## 9. 工作台与内网 LLM
 
 LLM 集成遵循 ADR 0003：默认关闭，只接受部署批准的本机 / 内网端点。首个 adapter 对接已有内网服务的 OpenAI 兼容文本接口，并锁定实际支持子集；不要求底座部署 LLM，也不硬编码托管模型。模型配置、连接凭据、超时与预算只在服务端管理，普通请求不能提供任意端点。
+
+当前工作台工厂按服务端配置装配文本 adapter：端点、模型和资格引用必须同时提供；未配置时关闭。端点只接受数值回环地址或 RFC 1918 / ULA 私有地址，非回环必须使用 HTTPS，路径固定为 `/v1/chat/completions`；不接受域名、重定向或环境代理。地址校验和资格引用的存在不证明实际服务合格或部署网络已阻止出站；真实服务、网络边界和共享预算仍须验收。
 
 工作台以服务中立 LLM 端口承接助手与纪要；固定稿件 / sealed 转写 revision、模板 revision、实际模型标识及生成参数，记录无正文的执行事实。只提交该任务选择的内容，界面展示处理范围。模板与项目内容分开，生成结果作为不可信候选，不写回声学原文或执行配置。
 
@@ -189,11 +204,19 @@ LLM 与底座的队列、计量和结果分开；共享主机时仍要计入父�
 
 ## 10. 观测、运维与故障协调
 
+本节的跨服务追踪、指标采集和告警描述目标方案；依赖锁中存在 OpenTelemetry API
+不证明采集器、指标或跨服务传播已装配。部署范围与实际证据须分别核验。
+
 采用结构化 JSON 日志与 OpenTelemetry 追踪，跨 API、队列、scheduler、gateway、controller、adapter 传播关联信息；异步重试关联原意图并保留独立 attempt。不得把输入正文、prompt、音频、声音特征、对象私有路径或凭据放入 span / baggage / 异常详情。观测组件只部署在本机或内网。
 
 Prometheus 分别统计队列等待、准入、模型准备 / 热身、引擎排队、执行、首有效预览、首 PCM、abort 确认和回收延迟。容量、实例峰值、实时保留余量、quarantine、outbox lag、GC / 删除待办和连接池等待进入运维视图。指标标签限于有界的能力、执行类别和当前部署绑定；高基数关联 ID 放在无内容日志和 trace。
 
 `healthz` 表示进程存活，`readyz` 表示该进程所需基础设施条件；模型就绪、质量资格和可准入分别发布。VoiceDesign 卸载不应令整个 API 失去 readiness。遥测写入失败只产生有界降级与丢弃统计，任务、租约、用量和停止证据仍以 PostgreSQL 权威记录协调。
+
+当前 Speech API、执行网关和节点控制器的 `/readyz` 汇总各自注入的探针，不是业务全链检查。
+例如 Speech 的 PostgreSQL 探针执行 `SELECT 1`，对象存储探针访问配置的健康 URL；
+节点控制器探针检查容器 daemon 与本地意图存储。检查范围取决于实际装配，不能由
+`200` 推定桶权限、模型资格、真实执行或完整遥测链路已经验证。
 
 告警对应可执行动作：停止新准入、隔离实例、查询 / abort、协调旧 owner、恢复依赖或重跑资格。诊断只读操作不触发模型加载；自动修复不扩大预算、不清除未知执行记录，也不改写已经发布的唯一结果终态。
 
@@ -205,36 +228,27 @@ Prometheus 分别统计队列等待、准入、模型准备 / 热身、引擎排
 
 升级先迁移兼容 schema，再准备新实例、完成资格并切换新请求；旧会话和 Job 使用其固定版本完成或明确取消。回滚还原入口 / 默认指针和可兼容应用，不删除旧音色和制品，不以回滚掩盖未清理计算。
 
-备份协调 PostgreSQL、对象清单、版本依赖与删除账本。恢复进入禁止新业务准入的协调阶段，核对已提交引用、重做删除 / 强制禁用、隔离未知执行并重建实例，再开放服务。缺失对象报告不可用，不由孤儿对象猜测 Job 成功；RPO / RTO 在目标部署实测后冻结。
+备份协调 PostgreSQL、对象清单、版本依赖与删除账本。恢复进入禁止新业务准入的协调阶段，核对已提交引用、重做删除 / 强制禁用、隔离未知执行并重建实例；删除账本重放完成后才重新开放内容查询、引用创建与执行入口。当前 Workbench 的部分后台任务尚未由启动重放统一屏障，恢复时须另行隔离并验证，详见[恢复边界](data-deletion.md#workbench-当前实现与恢复边界)。缺失对象报告不可用，不由孤儿对象猜测 Job 成功；RPO / RTO 在目标部署实测后冻结。
 
-## 12. 当前实施顺序与退出条件
+<a id="12-当前实施顺序与退出条件"></a>
+## 12. 验收口径与交付证据
 
-既有[分阶段计划](../plans/2026-10-22-speechnexus-implementation-plan.md)保留原时点预算；以下是本方案的工程交接顺序，不代表阶段已经完成。
+当前交付范围、顺序和状态以 [PRD](../prd.md)、[交付跟踪矩阵](../plans/delivery-tracking.md)及各 issue 为准。原工程交接阶段表保留在[历史分阶段计划](../archive/plans/2026-10-22-speechnexus-implementation-plan.md#原技术方案工程交接阶段表)；下列测量与资格要求仍适用，不代表已通过验收。
 
-| 顺序 | 交付 | 退出证据 |
-| --- | --- | --- |
-| P0-A | 公共 / 内部契约、身份关联、绑定 / 实例 / 资格分离、正负与时序样例、类型生成 | 多消费者语义一致；不存在靠 prose 或手写 DTO 补出的默认值 |
-| P0-B | 数据迁移与关键事务原型、fake engine / controller | 真实隔离 PG 验并发抢槽、提交 / 取消 / 禁用 / 发布竞争、重复 outbox、迟到 fencing 与区间计量 |
-| P1-A | Asset / Artifact、Job、基础治理与标准文件 ASR / TTS | 无 WebUI 可运行；假引擎和真实版本分别记录验证范围 |
-| P1-B | 实时配方、VAD、0.6B / 1.7B 复核、TTS 流、取消和背压 | 全阶段准入，1 路实时 ASR + 1 路实时 TTS 达到 ADR 0002 的首轮延迟要求 |
-| P1-C | VoiceDesign 按需、Base 复用、实例回收、辅助模型与音色发布 | 完整创作闭环；冷加载与实时共存、停止证据和未知清理均可验证 |
-| P2–P4 | 两个 Web 入口、客户端资格及可选工作台 / 内网 LLM / 有声书 | 公开底座调用、业务版本依赖、播放 / 取消、内容网络边界和独立导出验证 |
-| P5 | 长时、故障注入、容量、恢复、迁移 / 回滚与部署交付 | 只对实际通过的功能 / binding / 拓扑发布资格；缺失和跳过明确列出 |
-
-P1-B 的“首轮延迟达标”必须先冻结同一套测量口径，再附实测分解。场次、并发、绑定 revision、模型 / 引擎版本、主机拓扑、采样率和客户端组合进入资格报告；任一阶段没有测量时不能只用端到端一次结果宣称达标，也不能把跳过项算作通过。
+实时语音的“首轮延迟达标”必须先冻结同一套测量口径，再附实测分解。场次、并发、绑定 revision、模型 / 引擎版本、主机拓扑、采样率和客户端组合进入资格报告；任一阶段没有测量时不能只用端到端一次结果宣称达标，也不能把跳过项算作通过。
 
 | 指标 | 计时起点 | 服务端归因观测点 | 计时终点 | 首轮门槛 |
 | --- | --- | --- | --- | --- |
 | ASR 首个有效预览 | 服务端已接受使最低识别窗完整所需的最后一个 PCM sample | VAD / 段边界、预览请求入队、0.6B 首个有效 hypothesis 生成 | realtime gateway 写出首个有效标准 delta 或 `nexus.transcription.hypothesis` | 同一绑定 / 拓扑下 p95 ≤ 1000 ms |
 | TTS 首个可播放 PCM | 首个可合成文本单元被 commit / finish 接受并冻结 | 准入完成、模型首个 codec 输出、解码与编码完成 | 交付 transport 写出首个完整非空 PCM frame | 同一绑定 / 拓扑下 p95 ≤ 800 ms |
 
-网络接入到客户端接收、浏览器解码 / 播放启动和 1.7B 复核分别记录 p50 / p95，作为独立观测，不用客户端慢速播放掩盖服务端首块超时。每段预算上限在 P1-A 真实 adapter 基线后按实际测量冻结；没有基线时不填写推测数字。样本量与并发组合在资格报告中固定，至少覆盖 1 路实时 ASR 与 1 路实时 TTS 共存的批准负载。
+网络接入到客户端接收、浏览器解码 / 播放启动和 1.7B 复核分别记录 p50 / p95，作为独立观测，不用客户端慢速播放掩盖服务端首块超时。每段预算上限在真实 adapter 基线后按实际测量冻结；没有基线时不填写推测数字。样本量与并发组合在资格报告中固定，至少覆盖 1 路实时 ASR 与 1 路实时 TTS 共存的批准负载。
 
 首个真实 adapter 接入后设置一次契约复审点：核对 `engine_request_id` 关联、commit 顺序、terminal 与 abort 证据、`stop_evidence_kind`、输出 watermark / reset、TTS 首帧与 `stream_format`、以及 duration / token usage 的真实可观测性。复审只允许在上述证据语义与内部协议字段上作有 ADR 的兼容修订；OpenAI 标准路径、字段含义和错误 envelope 不得因此漂移，扩展仍只使用 `nexus` 命名空间。
 
 质量阈值应按首批普通话 / 中英混说与代表性噪声、数字、专名、说话人和音色语料冻结。先建立对照基线再锁阈值，不因暂缺真实测量就编造 CER / WER / DER 或音色相似度指标。默认确定性测试使用 fake、合成或获准公开材料，不使用私人音频。
 
-P0 机器契约与协调 DDL 已交付；业务路由、控制器和真实模型测试已有分段成果，完整迁移体系、公开业务链及目标拓扑资格仍待完成。当前范围以项目经理基线和各 issue 为准，实施时按仓库门禁分别提交实现证据与部署资格。
+机器契约与协调 DDL 已有交付；业务路由、控制器和真实模型测试已有分段成果，完整公开业务链及目标拓扑资格仍待分别验收。当前范围以[交付跟踪矩阵](../plans/delivery-tracking.md)和各 issue 为准，实施时按仓库门禁分别提交实现证据与部署资格。
 
 ## 13. 上游依据与版本锁定
 

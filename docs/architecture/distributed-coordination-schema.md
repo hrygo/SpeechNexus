@@ -16,8 +16,8 @@ SQL 是**新建 namespace 的设计草案和测试输入**，不是已部署业�
 原地升级。它位于产品 Python 包之外，不随应用 wheel 发布。迁移角色执行 DDL；
 运行角色只获最小 DML 权限。
 
-[首个生产 Job/outbox 单元](production-jobs.md)使用包内独立 Alembic 迁移，冻结初始
-事件身份并以最低角色运行；[后续生产存储基线](production-coordination-storage.md)以
+[首个生产 Job/outbox 单元](../components/production-jobs.md)使用包内独立 Alembic 迁移，冻结初始
+事件身份并以最低角色运行；[后续生产存储基线](../operations/production-coordination-storage.md)以
 `0002_coordination` 冻结其余 13 表、基础约束与角色授权。产品不直接加载本文件的草案 SQL；
 具名生产事务和真实运行资格按各单元另行验收。
 
@@ -42,13 +42,14 @@ SQL 是**新建 namespace 的设计草案和测试输入**，不是已部署业�
 | `execution_stop_evidence` | Gateway，只追加 | 已核验的停止与资源释放事实；独立于 Scheduler 的预算释放事务 |
 | `output_stream_heads` | Gateway | 按 operation/attempt/output stream 锁定；同一输出流的不同 stage/submit 共享重叠保护 |
 | `output_sample_intervals` | Gateway，只追加 | PCM 样本区间账本；重叠由锁定流权威行后的应用检查拒绝 |
-| `coordination_jobs` | 所属 Speech 任务模块 | 持久 Job 身份、认领 owner/version/deadline；已有生产原子创建/恢复，完整公开 Job 业务与 claim 仍待实现 |
+| `coordination_jobs` | 所属 Speech 任务模块 | 持久 Job 身份、认领 owner/version/deadline；生产原子创建、恢复及独立 claim 事务已有，完整公开 Job 业务派发仍须验收，见[生产 Job](../components/production-jobs.md) |
 | `coordination_outbox` | 同上 | 与 Job 同事务写入；通知丢失时仍可轮询 |
 
 新增表使配方、停止事实、当前指针和 Job/outbox 的职责显式，目标不是最少表数。
 核心 FK 继续约束 instance/host/pool/gateway、attempt/lease、lease/submit、submit/evidence
 与 Job/outbox 关系；binding/policy/qualification 的完整身份仍需与既有不可变资源存储
-在同一应用事务中核对。TEXT 仅保存已校验的规范文档，不依赖数据库 JSON 查询。
+在同一应用事务中核对。`TEXT` 用于规范请求、停止证据、阶段集合及引擎请求身份；
+文档字段不依赖数据库 JSON 查询，语义校验由应用负责。
 
 ## 预算与历史保护
 
@@ -59,26 +60,31 @@ PCM buffer 和 scratch disk。每维行内 CHECK 使用
 与全部权威事实一致，后台对账不能替代同步更新。带宽、对象大小、时长等其他配额遵循
 既有领域契约，尚未在这份协调 DDL 中具体化。
 
-运行角色无 DELETE、TRUNCATE 或 DDL 权限；不可变身份和预算列不获 UPDATE，追加事实
-不获 UPDATE。配额上限、policy revision、拓扑摘要、隔离阈值和 allocatable 容量只由
+运行角色无 DELETE、TRUNCATE 或 DDL 权限；不可变身份和预算配置列不获 UPDATE，追加事实
+不获 UPDATE。各所有者可更新受控的 held / quarantine 等运行投影；跨所有者的 `version`
+列授予 UPDATE 以支持行锁，不授对方状态列更新。配额上限、policy revision、拓扑摘要、隔离阈值和 allocatable 容量只由
 控制面写入，运行角色不获这些列的 UPDATE，也不能读取其他所有者的规范请求正文
 （只获身份/状态列级 SELECT）。可变运行投影的终态和单调性由应用事务维护，数据库不再独立拒绝所有
-绕过应用的跨表违例。[权限工具](../../scripts/dev-env/coordination-grants.py) 输出双库
-对应授权语句；现有继承/全局权限须另核对，运行角色不能是 owner 或超级用户。
-规范请求正文允许在受控删除事务中单向清除；必须同时写删除 tombstone，不能清除
-协调身份、原摘要、fencing 或停止证据，也不能在执行/资源清理前先删除正文。
+绕过应用的跨表违例。[权限工具](../../scripts/dev-env/coordination-grants.py) 为此草案输出双库
+对应授权语句，不是生产授权入口；生产授权见[协调存储基线](../operations/production-coordination-storage.md#安装与角色)。现有继承/全局权限须另核对，运行角色不能是 owner 或超级用户。
+`submit_intents.request_document` 允许在受控删除事务中单向清除；必须同时写删除
+tombstone，不能清除协调身份、原摘要、fencing 或停止证据，也不能在执行/资源清理前先删除正文。
+这不表示所有规范请求字段都可清除：例如本草案的 `runtime_instance_intents.request_document`
+为非空。网关的正文清理事务需要可信许可，默认协调器和 HTTP 入口尚未接入，详见
+[执行网关](../components/execution-gateway.md#10-redact_execution_command)。
 
 ## 验证与历史证据
 
 [共享行为测试](../../tests/integration/test_coordination_transactions.py) 在 PostgreSQL 和
-隔离 MySQL/InnoDB 上应用同一逻辑 DDL、运行同一期望，验证受控事务行为。
-MySQL 仅将文档 TEXT 列映射为 LONGTEXT，避免合法长命令截断；没有业务规则分叉。
+隔离 MySQL/InnoDB 上应用同一逻辑 DDL、运行同一期望，以验证受控事务行为。
+MySQL 测试适配器将草案中的 `TEXT` 列映射为 `LONGTEXT`，避免合法长命令截断；没有业务规则分叉。
+两库均未配置时相关测试会跳过，仅配置其中一库则配置检查失败；收集或跳过不代表双库验证通过。
 它是测试/工具原型，不代表生产 Scheduler 或数据库完整替代适配器已交付。
 真实多主机、引擎、主备切换和备份恢复保持强制验收要求。
 
 修复后的旧 SQL 完整保存在
 [`legacy_postgresql.sql`](../../tests/fixtures/coordination/legacy_postgresql.sql)，其
-[旧设计](legacy-postgresql-coordination.md)和
+[旧设计](../archive/legacy-postgresql-coordination.md)和
 [53 项 PostgreSQL 回归](../../tests/integration/test_cluster_coordination_schema.py)继续独立运行，
 保留直接 SQL 拦截、触发器来源校验、权限与历史证据；不把旧负例改为跳过或 fake。
 历史规则到新执行位置的逐项映射见应用方案第 8 节。
@@ -87,4 +93,4 @@ MySQL 仅将文档 TEXT 列映射为 LONGTEXT，避免合法长命令截断；�
 有效业务不变量迁入新路径并通过相关验收后，移除旧门禁并删除废弃原型文件；
 历史证据通过 Git 追溯，不形成永久 CI 负担。
 
-[资源治理](runtime-governance.md) · [整体技术方案](technical-blueprint.md) · [重构计划](../plans/2026-10-23-cluster-coordination-refactor.md)
+[资源治理](runtime-governance.md) · [整体技术方案](technical-blueprint.md) · [重构计划](../archive/plans/2026-10-23-cluster-coordination-refactor.md)

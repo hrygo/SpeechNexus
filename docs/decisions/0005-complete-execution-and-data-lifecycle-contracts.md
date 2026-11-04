@@ -7,7 +7,7 @@ date: 2026-10-23
 # ADR 0005：完整执行与删除契约
 
 整体架构审查确认内部命令、同步恢复、receipt、数据删除、容量与证据保护存在缺口。
-当前只有运营接口和 Web 外壳，没有已发布语音业务运行态。本轮按用户授权修复
+2026-10-23 审查时只有运营接口和 Web 外壳，没有已发布语音业务运行态。当时按用户授权修复
 架构、契约、工具、测试和协调 DDL 草案；另仅补齐现有运营 DTO 的声明约束。
 
 决定如下：
@@ -20,8 +20,9 @@ date: 2026-10-23
   JSON。schema 修订标记为 2.0.0；这是 Nexus receipt 的有意收紧，不允许旧生产者
   透传未定义字段。没有线上历史 receipt 迁移；未来若接入既有私有部署，应先离线
   投影并验证，不能回退到任意 JSON。公开 OpenAI 标准字段不改变意义。
-- 同步 409 错误使用 error.nexus.operation_id 恢复原 Operation；
-  response_not_replayable 还必须带原成功 receipt。扩展不覆盖标准 error 字段，
+- 同步请求的 `operation_in_progress` 使用 `error.nexus.operation_id` 查询原 Operation；
+  `response_not_replayable` 还必须带原成功 receipt。其他 409 冲突按各自错误语义处理，
+  不一概要求 operation ID。扩展不覆盖标准 error 字段，
   不因内容不可重放再创建执行。Python 和 JavaScript SDK 都验证该投影。
 - 删除采用每模块自有的预检 plan、版本/摘要 pin、完整范围确认、异步 Deletion
   及独立账本。跨模块独立保存副本不会被源资源删除追赶。停止未确认保留预算；
@@ -57,13 +58,15 @@ schema 固定 `retryable` 与恢复提示的组合，提交未知不能伪装可
 屏障恢复沿用原 gateway/pool/owner/token，可重新确认原屏障，不重新外发引擎请求。
 新增字段和控制码要求旧严格错误消费者同步升级生成绑定；不假定旧校验器能接受。
 公开语音协议与既有执行/停止事实保持原义。配置、故障矩阵与已验证边界见
-[执行网关](../architecture/execution-gateway.md#7-认证-http-控制与运行装配)。
+[执行网关](../components/execution-gateway.md#7-认证-http-控制与运行装配)。
 
 ## 2026-10-23 实施补充：未知外发的恢复
 
 内部 execution-control 升级至 `0.4.0.dev0`。崩溃后的 intent 可能没有外发时间或
 engine request ID，但整实例终止仍可提供可信停止与资源释放事实。为避免永远无法关闭，
-仅允许 unknown → aborted 凭 controller/operator 整实例终止双证据闭合，并保留空外发事实。
+没有外发时间的 unknown 仅允许凭 controller/operator 整实例终止双证据进入 aborted，
+并保留空外发事实。已有外发时间的 unknown 也须按原身份和可信双证据处理；不能将此处
+针对未观测外发的证据种类限制扩大为对所有已派发执行的描述。
 engine ack、executing、succeeded 和有清理的 failed 仍要求真实外发时间；
 证据须可信覆盖原 generation，且不能代替入口屏障或代际凭据保证。
 
@@ -71,4 +74,4 @@ Submit 重放在此分支必须携带 `stop_evidence_kind`；只读查询返回�
 新增 `control_execution_not_found` 固定为 404、retryable=false、recovery=none。
 404 不能证明引擎未执行。旧严格消费者会拒绝新状态组合或新错误码，须同步升级绑定与样例。
 不改变公开语音协议，不回填历史外发时间；B 仍不归还 A 的预算。细节见
-[执行网关恢复](../architecture/execution-gateway.md#8-未知执行与只读恢复)。
+[执行网关恢复](../components/execution-gateway.md#8-未知执行与只读恢复)。

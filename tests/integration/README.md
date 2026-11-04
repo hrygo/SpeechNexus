@@ -43,7 +43,7 @@ atomicity, complete immutable identity conflicts, observed unique-key contention
 minimum column grants and read-only unknown recovery. PG-only transport/migration
 tests additionally terminate a real session or simulate a lost reply after an
 actual commit; the latter is not packet-loss or HA qualification. See the
-[production unit and deployment instructions](../../docs/architecture/production-jobs.md).
+[production unit and deployment instructions](../../docs/components/production-jobs.md).
 
 `test_coordination_foundation.py` verifies the packaged `0002_coordination`
 storage baseline, core foreign keys, bounds and minimum A/B role permissions.
@@ -125,7 +125,7 @@ termination. Pre-commit exceptions and discarded post-commit replies do not
 qualify real process kill, packet loss during commit, or database failover.
 Production use cases, complete peak/steady lifecycle, all quota dimensions,
 physical multi-host/HA, real engines and load remain explicit mandatory work in
-the [refactoring plan](../../docs/plans/2026-10-23-cluster-coordination-refactor.md)
+the [refactoring plan](../../docs/archive/plans/2026-10-23-cluster-coordination-refactor.md)
 and [application handoff](../../docs/architecture/coordination-transactions.md).
 Cluster support is mandatory; the current single-node environment does not
 relax any of those acceptance requirements. MySQL coordination qualification
@@ -144,9 +144,9 @@ export SPEECHNEXUS_TEST_MINIO_SECRET_KEY=synthetic_asset_test_secret
 make integration-test
 ```
 
-The helper provisions an isolated synthetic service only; tests enable versioning on their own buckets. The product never creates a bucket or changes its policy. See [production assets](../../docs/architecture/production-assets.md) for recovery limits, explicit TTL configuration, minimum-role boundaries and the subsequent HTTP/maintenance integration.
+The helper provisions an isolated synthetic service only; tests enable versioning on their own buckets. The product never creates a bucket or changes its policy. See [production assets](../../docs/components/production-assets.md) for recovery limits, explicit TTL configuration, minimum-role boundaries and the subsequent HTTP/maintenance integration.
 
-`test_admission_command_storage.py` covers the `0007_admission_commands` storage foundation in both databases: separate private business/admission records, long bodies, complete tombstones, minimum roles, actual operation-key/row-lock contention and atomic rollback with Job/outbox. PostgreSQL also verifies migration failure rollback and unchanged legacy rows/ACLs. This is storage evidence; complete `admit_recipe`, retry/deletion authorization and actual scheduler consumers remain pending. See [admission storage](../../docs/architecture/production-admission-storage.md).
+`test_admission_command_storage.py` covers the `0007_admission_commands` storage foundation in both databases: separate private business/admission records, long bodies, complete tombstones, minimum roles, actual operation-key/row-lock contention and atomic rollback with Job/outbox. PostgreSQL also verifies migration failure rollback and unchanged legacy rows/ACLs. This is storage evidence; complete `admit_recipe`, retry/deletion authorization and actual scheduler consumers remain pending. See [admission storage](../../docs/components/production-admission-storage.md).
 
 `test_runtime_delivery.py` runs the same private delivery SQL under dedicated
 minimum roles on PG and InnoDB: competing claims, stale holder/version/expiry,
@@ -162,7 +162,7 @@ STOP-before-unseen-PREPARE. These shared cases run on both databases without ski
 PG-only subprocess cases exercise the installed worker, SIGTERM and owner-DSN
 refusal; the worker does not require S3 or call remote STOP on exit. Daemon and
 plans are synthetic; no GPU, deployment TLS, node observation loop or full
-scheduler qualification is implied. See [runtime delivery](../../docs/architecture/production-runtime-delivery.md).
+scheduler qualification is implied. See [runtime delivery](../../docs/operations/production-runtime-delivery.md).
 
 `test_admission_recovery_pressure.py` commits a real admission and loses the
 commit reply, then prevents the recovery query from reading its original facts:
@@ -188,7 +188,7 @@ roles verify original-key replay/conflict, serialized family CAS, immutable read
 post-write rollback, commit-reply loss and native read pressure. PG verifies
 append-only migration 0009 and preservation on failed upgrade/refused downgrade.
 This does not qualify profile publication, HTTP routes, default selection or
-speech engines. See [profile drafts](../../docs/architecture/profile-drafts.md).
+speech engines. See [profile drafts](../../docs/components/profile-drafts.md).
 
 
 公开 profile 草稿 HTTP 的原生 TypeScript 消费回归也属于完整集成集合，不能因缺少

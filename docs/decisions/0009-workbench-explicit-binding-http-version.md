@@ -6,6 +6,8 @@ date: 2026-10-25
 
 # ADR 0009 工作台显式模型绑定与配置发现的 HTTP 版本迁移
 
+本文保留 2026-10-25 的决策与当时的实现边界。之后 `generateRenderUnitV2` 已加入工作台路由实现；路由存在不证明生产装配、真实语音执行或完整验收已通过。当前实现和证据见[交付跟踪](../plans/delivery-tracking.md)。
+
 ## 背景
 
 工作台 v1 的 `WorkbenchStatus`、`RenderUnit` 均为
@@ -30,7 +32,7 @@ date: 2026-10-25
 | `getWorkbenchStatusV2` | `GET /v2/workbench/status` | 使用 `WorkbenchStatusV2`；可发现受约束的 `minutes_profile` |
 | `listRenderUnitsV2`、`createRenderUnitV2` | `/v2/workbench/chapters/{chapter_id}/render-units` | 列表项目、创建结果均为 `RenderUnitV2`；创建显式必填 `model_binding` |
 | `getRenderUnitV2`、`updateRenderUnitV2` | `/v2/workbench/render-units/{unit_id}` | 响应必须包含固定绑定；PATCH 使用 `RenderUnitPatchV2` |
-| `generateRenderUnitV2` | `POST /v2/workbench/render-units/{unit_id}/generations` | 接收回执的嵌套单元使用 `RenderUnitV2`；仍为契约声明，尚无生产路由 |
+| `generateRenderUnitV2` | `POST /v2/workbench/render-units/{unit_id}/generations` | 接收回执的嵌套单元使用 `RenderUnitV2`；路由实现及其验证边界见本文开头 |
 
 `minutes_profile` 的缺省或 null 表示不能从状态发现可用纪要配置；消费者禁用新建，
 不能猜测模板或模型。`llm_enabled=false` 时不得返回已批准配置。

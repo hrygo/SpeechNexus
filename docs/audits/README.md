@@ -1,33 +1,33 @@
 # SpeechNexus 审查记录
 
-- [2026-10-26 团队 C 收尾 issue 核对](2026-10-26-team-c-closeout-issue-audit.md)：全部 40 个 issue 的进度/状态、正文就地维护及目标/AC/元数据保留结果。
+下列条目为选编，并非本目录全部记录。审查结论以记录中的时间、范围和证据为限；文档审查不等于实际系统通过验收。
 
-审查结论以记录中的时间、范围和证据为限；文档审查不等于实际系统通过验收。
+- [2026-10-26 团队 C 收尾 issue 核对](../archive/audits/2026-10-26-team-c-closeout-issue-audit.md)：全部 40 个 issue 的进度/状态、正文就地维护及目标/AC/元数据保留结果。
+- [2026-10-26 项目完整工作交接](../archive/plans/2026-10-26-project-handoff.md)：当时 A/B/C 集成与待审交付、40 个 issue、决定、风险及接管验证的快照；当前交付状态见[交付跟踪矩阵](../plans/delivery-tracking.md)。
+- [2026-10-26 团队 B 收尾与负责人交接](../archive/plans/2026-10-26-team-b-handoff.md)：B00–B07 完整剩余范围、真实执行/停止证据、C 审查回执、指令长度差异及私有证据/旧工作树归档。
 
-- [2026-10-26 项目完整工作交接](2026-10-26-project-handoff.md)：新负责人统一入口，A/B/C 集成与待审交付、全部 40 个 issue、现有决定、风险/待决项、证据恢复及接管验证方式。
-- [2026-10-26 团队 B 收尾与负责人交接](2026-10-26-team-b-handoff.md)：B00–B07 完整剩余范围、真实执行/停止证据、C 审查回执、指令长度差异及私有证据/旧工作树归档。
+- [2026-10-26 B03 默认文件 TTS 真实探针](../archive/audits/2026-10-26-b03-default-real-tts-probe.md)：默认 `file_tts_v1`、真实 1.7B CustomVoice、隔离 PG/MinIO、语言边界修复、生成区间、重启重放与预算边界。
 
-- [2026-10-26 B03 默认文件 TTS 真实探针](2026-10-26-b03-default-real-tts-probe.md)：默认 `file_tts_v1`、真实 1.7B CustomVoice、隔离 PG/MinIO、语言边界修复、生成区间、重启重放与预算边界。
+- [2026-10-25 协调端口与消费者取证](../archive/audits/2026-10-25-coordination-port-evidence.md)：冻结 `7dc276a` 的 18 端口、7 查询快照、实际调用方和精确合后双库报告；保留业务装配、原生 envelope 与真实执行的验收缺口。
 
-- [2026-10-25 协调端口与消费者取证](2026-10-25-coordination-port-evidence.md)：冻结 `7dc276a` 的 18 端口、7 查询快照、实际调用方和精确合后双库报告；保留业务装配、原生 envelope 与真实执行的验收缺口。
+- [2026-10-22 设计审查](../archive/audits/2026-10-22-speechnexus-design-review.md)：方案缺陷、修正、上游核验和未验证边界。
+- [2026-10-22 开发环境就绪审查](../archive/audits/2026-10-22-development-environment-readiness.md)：当时的工具链、独立服务与验证快照，不代表当前主机状态。
+- [2026-10-23 架构与契约合规审查](../archive/audits/2026-10-23-architecture-contract-compliance.md)：上一轮阻断项复核、OpenAI SDK 兼容、契约严格性、SOLID / DRY、容量账目收口与残余风险。
+- [2026-10-23 UI/UX 设计框架与 CI 门禁终审](../archive/audits/2026-10-23-ui-ux-design-framework-audit.md)：排版对比度、DTCG Token、品牌资产、响应式及 CI 门禁审查；原报告的绝对化无障碍与拦截评级超出所列证据。
 
-- [2026-10-22 设计审查](2026-10-22-speechnexus-design-review.md)：方案缺陷、修正、上游核验和未验证边界。
-- [2026-10-22 开发环境就绪审查](2026-10-22-development-environment-readiness.md)：本机工具链、独立服务、验证证据、推理缺口与后续入口。
-- [2026-10-23 架构与契约合规审查](2026-10-23-architecture-contract-compliance.md)：上一轮阻断项复核、OpenAI SDK 兼容、契约严格性、SOLID / DRY、容量账目收口与残余风险。
-- [2026-10-23 UI/UX 设计框架与 CI 门禁终审](2026-10-23-ui-ux-design-framework-audit.md)：多层次排版对比度审查、DTCG Token 资产、矢量品牌、响应式与 CI 拦截能力。
+- [2026-10-23 架构与契约修复闭环](../archive/audits/2026-10-23-architecture-contract-repair-closure.md)：F01–F10、R1/R2 的修复、实际验证和运行资格边界。
+- [2026-10-23 集群协调重构后的架构与契约审查](../archive/audits/2026-10-23-architecture-contract-post-refactor-review.md)：运行角色最小权限、双库门禁、契约结果覆盖与端口原型一致性、SOLID / DRY 与开放项。
+- [2026-10-24 B00 MegaCube 环境与能力缺口前检](../archive/audits/2026-10-24-b00-megacube-environment-and-capability-gap.md)：主机与 GPU 事实、授权释放与制品获取（含摘要与许可）、首个真实 ASR 生命周期探针与停止证据、逐能力缺口与 B01 首个单元。
+- [2026-10-24 B02 受限控制器容器生命周期探针](../archive/audits/2026-10-24-b02-controller-container-lifecycle-probe.md)：合成容器上的 prepare / ready / stop 与停止双证据、`Init` 缺口、清理结果与未验证边界。
+- [2026-10-24 B02 控制器 HTTP 外壳与持久意图探针](../archive/audits/2026-10-24-b02-controller-http-shell-probe.md)：真实控制器进程的组件凭据、prepare → ready → stop、daemon 侧加固事实、停机双证据与重启后持久意图。
+- [2026-10-24 B02 有界控制器与真实 ASR 探针](../archive/audits/2026-10-24-b02-real-asr-controller-probe.md)：固定内存上限与 HTTP 就绪、0.6B/1.7B 合成语音/静音/长非语音实测、CUDA 失败与缓存诊断、停止清理及历史 Issue 状态更正。
+- [2026-10-24 B03 有界媒体与真实录音输入探针](../archive/audits/2026-10-24-b03-bounded-audio-probe.md)：五种格式、源时钟/尾部、文件 VAD、合成与两段授权录音实测及未验证边界。
+- [2026-10-24 B03 真实文件 ASR 与首次长窗口开销](../archive/audits/2026-10-24-b03-file-asr-probe.md)：0.6B/1.7B 文件/VAD/识别、真实 token 截断、首次/立即重复耗时与预热资格要求。
+- [2026-10-24 B02 真实 ASR 预热就绪门探针](../archive/audits/2026-10-24-b02-warmup-gate-probe.md)：`http_warmup_ok` 在真实 0.6B/1.7B 容器上的 `warming_up → ready` 序列、首轮与立即重复耗时、停止双证据与未验证边界。
+- [2026-10-24 B03 Qwen3-TTS 真实引擎可行性复核](../archive/audits/2026-10-24-b03-tts-engine-feasibility.md)：更正此前误判；`--omni` 在线服务、旧 runner 兼容、显存预算、两条真实合成请求与 ASR 回环、未验证边界。
+- [2026-10-24 B03 TTS 适配器真实探针](../archive/audits/2026-10-24-b03-tts-adapter-probe.md)：通过已提交适配器合成 1.7B CustomVoice、WAV/MP3 交付、24 kHz→16 kHz 解码与 0.6B ASR 回环，以及停止/清理证据与未验证边界。
+- [2026-10-24 B01/B03 原命令与核验文件输入](../archive/audits/2026-10-24-b03-frozen-inputs.md)：原持久请求、固定版本 MinIO、隔离双库与既有文件消费者的输入接入验证及真实执行剩余范围。
+- [2026-10-25 B03 默认网关的真实文件 ASR 实验](../archive/audits/2026-10-25-b03-default-real-asr-probe.md)：固定 cache 修正、真实 1.7B/CPU VAD、隔离 PG/MinIO、合成语音/静音、重放/重启与控制器停止；保留失败及生产准入、预算和公开链缺口。
+- [2026-11-03 受控 TTS 验收与资源收尾](../archive/audits/2026-11-03-controlled-tts-prepare.md)：各次受控窗口的结果、失败与清理证据；第六次窗口仅覆盖固定声音的单节点短英文同步最小链。
 
 [项目主设计](../speechnexus-product-architecture.md) · [文档索引](../README.md)
-
-- [2026-10-23 架构与契约修复闭环](2026-10-23-architecture-contract-repair-closure.md)：F01–F10、R1/R2 的修复、实际验证和运行资格边界。
-- [2026-10-23 集群协调重构后的架构与契约审查](2026-10-23-architecture-contract-post-refactor-review.md)：运行角色最小权限、双库门禁、契约结果覆盖与端口原型一致性、SOLID / DRY 与开放项。
-- [2026-10-24 B00 MegaCube 环境与能力缺口前检](2026-10-24-b00-megacube-environment-and-capability-gap.md)：主机与 GPU 事实、授权释放与制品获取（含摘要与许可）、首个真实 ASR 生命周期探针与停止证据、逐能力缺口与 B01 首个单元。
-- [2026-10-24 B02 受限控制器容器生命周期探针](2026-10-24-b02-controller-container-lifecycle-probe.md)：合成容器上的 prepare / ready / stop 与停止双证据、`Init` 缺口、清理结果与未验证边界。
-- [2026-10-24 B02 控制器 HTTP 外壳与持久意图探针](2026-10-24-b02-controller-http-shell-probe.md)：真实控制器进程的组件凭据、prepare → ready → stop、daemon 侧加固事实、停机双证据与重启后持久意图。
-- [2026-10-24 B02 有界控制器与真实 ASR 探针](2026-10-24-b02-real-asr-controller-probe.md)：固定内存上限与 HTTP 就绪、0.6B/1.7B 合成语音/静音/长非语音实测、CUDA 失败与缓存诊断、停止清理及历史 Issue 状态更正。
-- [2026-10-24 B03 有界媒体与真实录音输入探针](2026-10-24-b03-bounded-audio-probe.md)：五种格式、源时钟/尾部、文件 VAD、合成与两段授权录音实测及未验证边界。
-- [2026-10-24 B03 真实文件 ASR 与首次长窗口开销](2026-10-24-b03-file-asr-probe.md)：0.6B/1.7B 文件/VAD/识别、真实 token 截断、首次/立即重复耗时与预热资格要求。
-- [2026-10-24 B02 真实 ASR 预热就绪门探针](2026-10-24-b02-warmup-gate-probe.md)：`http_warmup_ok` 在真实 0.6B/1.7B 容器上的 `warming_up → ready` 序列、首轮与立即重复耗时、停止双证据与未验证边界。
-- [2026-10-24 B03 Qwen3-TTS 真实引擎可行性复核](2026-10-24-b03-tts-engine-feasibility.md)：更正此前误判；`--omni` 在线服务、旧 runner 兼容、显存预算、两条真实合成请求与 ASR 回环、未验证边界。
-- [2026-10-24 B03 TTS 适配器真实探针](2026-10-24-b03-tts-adapter-probe.md)：通过已提交适配器合成 1.7B CustomVoice、WAV/MP3 交付、24 kHz→16 kHz 解码与 0.6B ASR 回环，以及停止/清理证据与未验证边界。
-- [2026-10-24 B01/B03 原命令与核验文件输入](2026-10-24-b03-frozen-inputs.md)：原持久请求、固定版本 MinIO、隔离双库与既有文件消费者的输入接入验证及真实执行剩余范围。
-- [2026-10-25 B03 默认网关的真实文件 ASR 实验](2026-10-25-b03-default-real-asr-probe.md)：固定 cache 修正、真实 1.7B/CPU VAD、隔离 PG/MinIO、合成语音/静音、重放/重启与控制器停止；保留失败及生产准入、预算和公开链缺口。

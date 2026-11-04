@@ -16,8 +16,8 @@ description: "变更或审查 SpeechNexus 机器契约、协议状态/错误及�
 - 生成类型或校验器：[生成契约包](../../../packages/contracts/README.md)。
 - 端口、表或应用归属：[所有权矩阵](../../../docs/architecture/contract-ownership.md)。
 - OpenAI 标准字段、事件或 SDK 行为：[兼容子集](../../../docs/architecture/openai-compatibility.md)。
-- 版本化 HTTP 源：[HTTP 结构变化检查](../../../docs/architecture/http-contract-change-checks.md)，选择对应表面与固定基线；升版本不豁免发现，结构检查不替代语义验收。
-- 协调事务或未知执行语义：同时使用 [speechnexus-coordination-change](../speechnexus-coordination-change/SKILL.md)，不把事务不变量压缩成 schema 形状检查。
+- 版本化 HTTP 源：[HTTP 结构变化检查](../../../docs/validation/http-contract-change-checks.md)，选择对应表面与固定基线；升版本不豁免发现，结构检查不替代语义验收。
+- 改变提交未知、重放或取消恢复语义：按需使用 [故障恢复设计](../speechnexus-recovery-design/SKILL.md)。实际涉及事务端口、锁序、预算或 DDL/权限时再结合 [协调事务变更](../speechnexus-coordination-change/SKILL.md)；已完成的推演和共同检查直接复用。
 
 现有有效契约已经明确的事项直接沿用。只有缺少会改变公共语义、产品范围或持久状态的关键决定时才询问；先完成可以独立核实的内容。
 
@@ -27,7 +27,7 @@ description: "变更或审查 SpeechNexus 机器契约、协议状态/错误及�
 
 1. 在新增业务路由前固定字段的默认值、单位、范围、状态、稳定错误和恢复动作；明确可重试、同身份重放、结果未知与终态/清理状态的区别。
 2. 修改 canonical 源，复用共享域；公共协议、内部协议、领域对象与 vendor DTO 分别转换。检查公开投影不会暴露内部身份、私有端点、凭据或内容。
-3. 为实际改变的状态与错误补正例、负例及必要事件序列，覆盖未知字段、边界值、终态一致性与相关恢复路径。涉及不兼容变化时记录 ADR、版本和消费者升级边界。
+3. 为实际改变的状态与错误补正例、负例及必要事件序列，覆盖未知字段、边界值、终态一致性与相关恢复路径。不兼容变化说明版本和消费者升级边界；形成新的架构或公共协议决定时记录 ADR，沿用已有决定的局部变更引用原依据。
 4. 生成消费者受影响时，先检查生成目标已有 diff，再运行 `make contracts-generate` 并审阅输出；不手改生成产物或增加独立语义副本。同步生产者、实际消费者与有效文档，保留任务外改动。
 
 ## 验证与交付

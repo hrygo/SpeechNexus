@@ -16,7 +16,7 @@ date: 2026-10-28
 3. 一份真实样例如何从测量记录走到可发布证据；
 4. 一个没参与过本项目的人，如何独立产出下一份合法 manifest。
 
-本文只定义和核验证据，不修改冻结契约、不修改产品代码，也不把 `local-test-capacity-1` 一类占位值当作真实容量。样例使用的 `local-test-*` 只允许出现在隔离测试里；发布路径上的校验脚本会直接拒绝它。
+本文只定义和核验证据，不修改冻结契约、不修改产品代码，也不把 `local-test-capacity-1` 一类占位值当作真实容量。样例使用的 `local-test-*` 只允许出现在隔离测试里；独立执行的证据校验脚本会将其判为失败，发布事务本身不执行该脚本，不能依赖发布接口自动拦截占位值。
 
 ## 1. 输入、输出与权威位置
 
@@ -30,10 +30,10 @@ date: 2026-10-28
 | 样例报告 | `deploy/engines/file-asr-audio/evidence/gb10-20261027/qualification-report.json` | 与样例 manifest 配对；当前 `overall_status=incomplete` |
 | 候选定义 | `deploy/engines/file-asr-audio/evidence/gb10-20261027/binding-definition.candidate.json` | 只用于证明“未来 revision 应如何声明”，不是已部署定义，也不是对历史定义的修改 |
 | 原始证据 | `deploy/engines/file-asr-audio/evidence/gb10-20261027/evidence.json` | #243 comment `6453106316` 的结构化转述；逐 scenario 摘要的输入 |
-| 数据库快照 fixture | `tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json` | 只证明查询路径与跨表规则，不是 live DB、不是发布回执 |
+| 数据库快照 fixture | `tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json` | 用于验证快照上的跨表规则；不执行数据库查询，也不是发布回执 |
 | 校验脚本 | `scripts/dev-env/verify-release-evidence.py` | 只读；校验 schema、跨文档、摘要、DB/快照容量账本 |
 
-**当前基线**：仓库 `main` 的完整 base SHA 为 `9d1b9bbdc1041bfb7c33505a4788490c1db5ea45`。样例中的模型、镜像和测量数值来自 #243 的 GPU 岗记录与仓库 artifact pin；本任务没有下载模型、没有连接 GPU、没有重跑测量。
+**样例基线**：编写时仓库 `main` 的 base SHA 为 `9d1b9bbdc1041bfb7c33505a4788490c1db5ea45`，不是当前主线承诺。样例中的模型、镜像和测量数值来自 #243 的 GPU 岗记录与仓库 artifact pin；本任务没有下载模型、没有连接 GPU、没有重跑测量。
 
 ## 2. 顶层字段表
 
@@ -47,13 +47,13 @@ date: 2026-10-28
 | `pool_id` | 是 | 逻辑能力池；不是主机名 | 平台/容量负责人 | 枚举 `asr-realtime`、`tts-realtime`、`asr-batch`、`tts-batch`、`voice-creation`、`auxiliary`；必须存在于 `resource_pools` 且与 instance 一致 |
 | `service_class` | 是 | 池的服务等级：`realtime` / `interactive` / `batch` | 产品与平台共同确定 | 必须等于 `resource_pools.service_class` 与 instance 所在池 |
 | `management_mode` | 是 | `managed` 需要独占网关入口、完整池记账和 fencing/abort；`external` 不能声明生产实时 SLO | 平台负责人 | Schema 约束：`external` 只能是 `best_effort` 或 `experimental` |
-| `release_tier` | 是 | `experimental` / `best_effort` / `production` | 产品负责人；最终由唯一 SM+PO 放行 | 必须与报告 `release_tier` 相等；`production` 还要求报告 `overall_status=pass` 且有 `expires_at` |
+| `release_tier` | 是 | `experimental` / `best_effort` / `production` | 按授权由产品负责人组织资格接收；最终产品放行由用户决定 | 必须与报告 `release_tier` 相等；`production` 还要求报告 `overall_status=pass` 且有 `expires_at` |
 | `loading_policy` | 是 | `resident` 或 `on_demand`；影响加载峰值、回收冷却与准入 | 平台/引擎负责人 | 与 `engine_instances.loading_policy` 相等；`on_demand` 必须给出 `idle_reclaim_cooldown_ms >= 1000` |
 | `topology_ref` | 是 | 逻辑节点 profile、内存架构、共享父预算和拓扑摘要 | 平台负责人 | 见 §5；必须与报告 `topology`、`host_nodes.topology_digest` 对齐 |
 | `supported_tasks` | 是 | 该 revision 接受的任务，例如 `asr_file` | 产品/定义作者 | 必须是定义 `tasks` 的子集；当前样例只有 `asr_file` |
 | `supported_input_formats` | 是 | 接受的输入容器/采样格式 | 产品/引擎负责人 | Schema 枚举；必须与真实引擎能力一致，不能把“计划支持”写成“已支持” |
 | `supported_output_formats` | 是 | 接受的输出格式 | 产品/引擎负责人 | Schema 枚举；若 stage `emits_audio_pcm=true`，必须包含 PCM/WAV 等音频格式 |
-| `stage_graph` | 是 | 完整执行阶段图；每个引擎/模型阶段一条 | 模型/引擎负责人，平台补充资源 | 见 §3；stage id 必须与报告 `software.engine_components` 一一对应 |
+| `stage_graph` | 是 | 与执行配方对应的阶段图；内部工作也须纳入对应阶段的资源证据 | 模型/引擎负责人，平台补充资源 | 见 §3；stage id 必须与报告 `software.engine_components` 一一对应 |
 | `resource_envelope` | 是 | 由 `stage_graph` 聚合出的准入包络 | 证据产出人用脚本生成 | 见 §3；不得手填与 stage 不一致的数 |
 | `rate_and_segment_limits` | 是 | 速率、segment、渲染单元和硬输出配额 | 产品/引擎负责人 | 与定义的 `parameter_domains.asr.max_segment_ms` 一致；引擎是否真的硬限制要单独取证 |
 | `cancellation_and_fencing` | 是 | 取消模式、是否支持 abort/fencing、最坏不可抢占时长、drain 与回收冷却 | 引擎/平台实测负责人 | 必须有实际取消/隔离证据；样例只有 `connection_drop_with_quarantine`，不能声明 abort/fencing |
@@ -78,7 +78,7 @@ date: 2026-10-28
 
 ### 3.2 六个物理维度和三个计量维度
 
-`ResourceVector` 有九个数值键；任务所说的“六维”是前六个物理资源，后三个是带宽/对象存储计量。所有值都是非负整数，单位在键名里固定。
+`ResourceVector` 有九个数值键；任务所说的“六维”是前六个物理资源，后三个是带宽/对象存储计量。所有值都是非负整数；带宽字段的 `bps` 单位尚未在 schema 中明确解释，不能仅凭本文推定字节或比特，填写前须与证据提供方确认并记录单位。
 
 | 键 | 含义 | 谁提供 | 如何核验 |
 | --- | --- | --- | --- |
@@ -88,8 +88,8 @@ date: 2026-10-28
 | `cpu_decode_millicores` | CPU 解码/前后处理毫核 | 平台实测或声明 | 与 host CPU allocatable/held 对账；样例是声明值，不是实测 |
 | `host_pcm_buffer_bytes` | 主机 PCM 缓冲上界 | 引擎/平台实测或声明 | 与 host PCM allocatable/held 对账；样例是声明值 |
 | `scratch_disk_bytes` | 临时盘上界 | 平台/引擎实测或声明 | 与 host scratch allocatable/held 对账；样例声明 0，表示本实验不使用 scratch |
-| `ingress_bandwidth_bps` | 入向带宽上界（字节/秒） | 平台/网关 | 报告/监控核对；当前没有独立 host 账本列 |
-| `egress_bandwidth_bps` | 出向带宽上界（字节/秒） | 平台/网关 | 报告/监控核对；当前没有独立 host 账本列 |
+| `ingress_bandwidth_bps` | 入向带宽上界 | 平台/网关 | 报告/监控核对并确认单位；当前没有独立 host 账本列 |
+| `egress_bandwidth_bps` | 出向带宽上界 | 平台/网关 | 报告/监控核对并确认单位；当前没有独立 host 账本列 |
 | `object_storage_bytes` | 对象存储上界 | 平台/对象存储负责人 | 与资产保留/配额策略核对；当前没有独立 host 账本列 |
 
 `engine_active_slots` 是“每个端到端执行在该 stage 占用多少 slot”的基数，不是资源字节；聚合规则见下。
@@ -104,7 +104,7 @@ date: 2026-10-28
 4. `resource_envelope.realtime_reserved_slots` 必须 `<= max_active_slots`；
 5. 任一 stage 的 `loading_peak_budget` 在同一维度不得低于 `resident_budget`；`per_slot` 是增量，不是峰值替代品。
 
-脚本 `check_envelope` 会重算上述五项；任何一项不一致即 `FAIL`。不要手改 `resource_envelope` 去“修”stage，stage 才是事实源。
+脚本 `check_envelope` 会重算上述第 1–4 项；它不会比较各 stage 的加载峰值与常驻预算，第 5 项须另行逐维核对。不要手改 `resource_envelope` 去“修”stage，stage 才是事实源。
 
 ## 4. 许可、配额、生效期、适用 node/pool
 
@@ -116,7 +116,7 @@ date: 2026-10-28
 | --- | --- | --- | --- |
 | `artifact-pin.json` → `model.license` | 样例为 `Apache-2.0` | 模型 pin 负责人 | 读取 pin；与模型卡/模型仓库声明核对；许可证接受记录属于发布前检查，不在 schema 内 |
 | `artifact-pin.json` → `model.model_card.digest` | 模型卡文件摘要 | 模型 pin 负责人 | 与模型卡原始字节核对 |
-| `artifact-pin.json` → `vad.license` | 样例为 `MIT` | 资产 pin 负责人 | 仅当 VAD 进入 stage graph 时才作为该 stage 的 artifact 证据 |
+| `artifact-pin.json` → `vad.license` | 样例为 `MIT` | 资产 pin 负责人 | VAD 实际使用时核对其许可与制品证据，无论是否为独立 stage |
 | `artifact-pin.json` → `model.files[].artifact.digest` | 每个权重/配置/词表文件摘要 | 模型 pin 负责人 | 与下载/制品存储中的字节核对；本任务未下载模型，不能声称已重算这些字节 |
 
 如果产品要求“许可证审批”成为机器门禁，应新增独立证据字段或发布检查卡；不要把它塞进 manifest 的 `additionalProperties: false` 对象，也不要用注释伪装成字段。
@@ -156,19 +156,19 @@ manifest 本身只有“每个实例/每个 slot 的包络”，没有“池总�
 | 逻辑池 | `pool_id`、`service_class` | `resource_pools.pool_id`、`service_class`、`pool_state` | 必须存在、active、service class 相等 |
 | 逻辑节点 profile | `topology_ref.host_node_profile_id` | 无直接同名列 | 描述硬件类别；不是 `host_node_id`，不能拿它当外键 |
 | 实际主机 | 报告 `topology.host_node_id` | `host_nodes.host_node_id` | instance 的 `host_node_id` 必须指向该行；节点必须 `active` |
-| 拓扑摘要 | `topology_ref.topology_digest` | `host_nodes.topology_digest` | 必须相等；摘要描述 CPU 架构、硬件类别、内存架构、总物理内存 |
+| 拓扑摘要 | `topology_ref.topology_digest` | `host_nodes.topology_digest` | 必须相等；摘要覆盖报告中的主机 ID、CPU 架构、硬件类别、内存架构和总物理内存 |
 | 内存架构 | `topology_ref.memory_architecture` | `host_nodes.memory_architecture` | 必须相等；统一内存必须声明 `requires_shared_parent_budget=true` |
 
-样例的逻辑 profile 是 `gb10-cube-ccba-unified-121g`，实际报告主机是 `cube-ccba`；两者不是同一个标识空间。profile 说明“哪类机器”，`host_node_id` 说明“哪台机器”，`topology_digest` 把两者绑定到同一份硬件描述。
+样例的逻辑 profile 是 `gb10-cube-ccba-unified-121g`，实际报告主机是 `cube-ccba`；两者不是同一个标识空间。profile 说明“哪类机器”，`host_node_id` 说明“哪台机器”。`topology_digest` 不包含 profile ID 或报告中的 `shared_memory`，不能单凭摘要相等证明 profile、共享父预算与实际主机对应；发布前需另行核对。脚本根据 instance 的主机 ID 查询主机行并检查摘要，但不直接比较该 ID 与报告的 `host_node_id`，也应人工核对两者是否一致。
 
 ## 5. 与数据库容量向量的一致性规则
 
-以下规则是发布/准入前的硬核对。脚本实现了 R1–R12；其中 R1–R6 在 fixture 或 live DB 上都能跑，R7–R12 需要对应行存在。
+以下规则是发布/准入前的核对目标。脚本在 fixture 或 live DB 上检查 R1–R12；缺少实例行会失败。默认允许发布前尚无 publication，此时相关检查为 `NA`，应使用 `--require-published` 要求 publication；证据摘要缺失默认仅告警，应使用 `--require-digests` 将其作为失败。不能把默认模式的 `NA/WARN` 当作这些事实已核验。
 
 | 编号 | 规则 | 失败表现 |
 | --- | --- | --- |
 | R1 | `manifest.binding_revision_id` = 报告同名字段 = `speech_binding_revisions.revision_id` = `speech_publications.revision_id` = `speech_binding_publication_evidence.revision_id` = 每个 `engine_instances.binding_revision_id` | `FAIL`，不得发布 |
-| R2 | `manifest.manifest_id` = `binding_definition.execution_recipe.capacity_manifest_id` = evidence `capacity_manifest_id` = 每个 `engine_instances.manifest_id` | 发布 CLI 退出码 `6`；脚本 `FAIL` |
+| R2 | `manifest.manifest_id` = `binding_definition.execution_recipe.capacity_manifest_id` = evidence `capacity_manifest_id` = 每个 `engine_instances.manifest_id` | 脚本检查文件、定义、证据与实例；发布写入路径检查定义声明与传入 ID，不检查实例。声明缺失或不一致对应 CLI 退出码 `6`；原意图重放另见发布指南 |
 | R3 | `report.report_id` = `manifest.qualification.qualification_report_id` = evidence `qualification_report_id` | `FAIL` |
 | R4 | `manifest.release_tier` = 报告 `release_tier` = 定义 `release_tier`（定义有该字段时）；`production` 还要求报告 `pass` | `FAIL`；`external` + `production` 直接被 schema 拒绝 |
 | R5 | 报告 `engine_components` 的 key 集合 = `stage_graph` 的 `stage_id` 集合；每个 `engine_kind` 相等 | `FAIL` |
@@ -178,15 +178,21 @@ manifest 本身只有“每个实例/每个 slot 的包络”，没有“池总�
 | R9 | instance `config_digest` = manifest `qualification.config_bundle_digest` | `FAIL` |
 | R10 | `host_nodes.node_state=active`；`memory_architecture`、`topology_digest` 与 manifest 相等 | `FAIL` |
 | R11 | 对每个物理维度：`held + quarantined <= allocatable`；`held >= instance.peak`（host 已为峰值预留）；`peak <= allocatable`；剩余 slot 的 `per_slot * remaining_slots <= allocatable - held - quarantined` | `FAIL` |
-| R12 | `workspace_quotas.held_attempts + quarantined_attempts <= max_attempts`；`resource_pools.pool_state=active`、`service_class` 相等 | `FAIL` |
+| R12 | `workspace_quotas.held_attempts + quarantined_attempts <= max_attempts`；`resource_pools.pool_state=active`、`service_class` 相等 | 配额超限或池不匹配为 `FAIL`；没有工作区配额行为 `NA` |
 
-脚本对 `resource_pools` 数值配额输出 `NA`（见 §4.2），不是通过；对 `database.source=fixture` 输出 `WARN`，因为 fixture 只证明查询路径，不证明真实发布或真实容量。
+脚本对 `resource_pools` 数值配额输出 `NA`（见 §4.2），不是通过；对 `database.source=fixture` 输出 `WARN`。该警告中的“证明查询路径”措辞过宽：fixture 只用于验证快照上的规则，不证明 live 查询、真实发布或真实容量。
+
+R11 中 `held >= instance.peak` 是该校验器的额外静态断言，不能当作所有运行状态的账本不变量：prepare 成功后实例基础预算可从 peak 收缩到 steady；同时 host `held` 是主机聚合值，覆盖 peak 也不能单独证明某个实例仍持有峰值。应结合 `base_budget_kind`、各实例及租约核对账本；该断言失败也不能单凭数值认定生产账本损坏。
+
+live 查询按 binding revision 选取所有 `engine_instances` 行，没有过滤历史 generation；R8
+对每一行都要求 ready/steady。因此已正常停止的历史代次也会使检查失败，不能仅凭该结果
+认定当前代次不可用。应按实例 head、代次和停止证据核对，不能删除历史记录来消除失败。
 
 ### 谁能超、超了报什么
 
-没有任何角色被授权“超卖”。只能通过新的 manifest/report 和新 revision 扩大声明，并先扩大 `host_nodes.allocatable_*`；不能改旧证据。
+没有任何角色被授权“超卖”。扩大声明须使用新的 manifest/report 和新 revision，并核对实际可用容量及账本余量；现有 `host_nodes.allocatable_*` 不足时，只有确认物理容量与授权后才能调整。不能改旧证据或仅调大账本数字冒充容量。
 
-| 超限点 | 代码行为 | 对外错误 |
+| 超限点 | 代码行为 | 内部错误或校验结果 |
 | --- | --- | --- |
 | 准入按 per-slot 向量预留，`allocatable - held - quarantined` 不足 | `reserve_resources` 抛 `CapacityExceededError`，准入层转换 | `AdmissionRejectedError("capacity_exhausted")` |
 | 实例 slot：`held + quarantined + extra > max_slots`，或非实时请求挤压 `realtime_reserved_slots` | 准入层显式检查 | `AdmissionRejectedError("capacity_exhausted")` |
@@ -198,6 +204,8 @@ manifest 本身只有“每个实例/每个 slot 的包络”，没有“池总�
 | manifest/report/schema/摘要/DB 账本不一致 | 校验脚本 | `RESULT FAIL`，退出码 `1`（只读，不写库） |
 | 池级总量 | 当前无字段、无逻辑 | 不可核验；`capacity.pool_quota=NA`，需要后续卡 |
 
+表中的准入和运行错误是内部层结果，不是统一的公开 HTTP 错误码；各公开入口可将内部原因映射为 `backend_unavailable`，应结合入口实现和受控诊断判断。
+
 注意：代码执行的是**声明向量**，不是物理遥测。声明值可以低于实际峰值而暂时“通过”；这类偏差要靠测量、监控和失效流程发现，不能把“准入通过”当成“物理容量已证明”。
 
 ## 6. 产出、核验、变更与失效
@@ -208,25 +216,25 @@ manifest 本身只有“每个实例/每个 slot 的包络”，没有“池总�
 | --- | --- | --- |
 | 测量/平台执行人 | 在批准的隔离环境运行模型/实例，提供原始命令、输出、环境、资源观测 | 不能把未测值写成实测；不能直接自签发布 |
 | manifest 产出人 | 把测量与 pin 整理成 stage graph、向量、限额、取消能力 | 不能改冻结 schema；不能伪造 host/instance 行 |
-| 非作者证据核验人 | 核对 schema、摘要、跨文档、DB 账本、样本来源 | 不能代替作者改实现；不能代替 SM+PO 放行 |
+| 非作者证据核验人 | 核对 schema、摘要、跨文档、DB 账本、样本来源 | 不能代替作者改实现；不能代替获授权负责人或用户放行 |
 | 高风险审查者 | 对协议、原子事务、恢复、fencing、停止/预算释放等高风险改变做非作者审查与环境验证 | 不能把普通文档审查当作高风险验证 |
-| 唯一 SM+PO | 决定产品目标、优先级、范围、AC，批准发布/投产 Gate | 不能跳过证据直接让占位值进真实路径 |
+| 获授权的产品负责人 | 按授权确定产品目标、优先级、范围、AC 并组织资格接收 | 不能跳过证据直接让占位值进真实路径；最终产品投产由用户明确放行 |
 | 发布操作员 | 用批准的 DSN 和命令发布已存在的 revision，带 manifest/report id 与摘要 | 不能创建/修改 revision；不能把发布成功当成生产资格 |
 
-当前部署中，本证据岗承办格式、样例与核验；最终发布放行仍由唯一 SM+PO 负责。参与候选实施的人不能换角色自签。
+证据岗承办格式、样例与核验；绑定发布按当前授权执行，最终产品放行由用户明确决定。参与候选实施的人不能换角色自签。
 
 ### 6.2 从零产出一份合法 manifest
 
 1. **固定模型与引擎**：更新/确认 `artifact-pin.json` 的 `model`（repository、revision、license、model_card、files）与 engine pin；不要用浮动 tag。
 2. **拿完整 revision id**：从 binding 草稿/发布系统取得不可变的 `binding_revision_id`；manifest 不能先于 revision 编造一个。
-3. **列 stage**：按真实执行路径列全 stage；文件 ASR 当前样例只有 `asr_batch`。若 VAD、对齐、说话人分离实际参与，必须各自成 stage，不能藏在 `parameter_defaults` 里。
+3. **列 stage**：按实际配方列出阶段及其资源；文件 ASR 当前样例只有 `asr_batch`，CPU 解码和 VAD 是消费者内部工作，其资源和制品证据仍须覆盖。若对齐、说话人分离等由独立配方阶段执行，须在定义和 manifest 中一致声明并重新资格，不能仅依赖 `parameter_defaults`。
 4. **填三组向量**：每个 stage 填 `resident`、`loading_peak`、`per_slot`；每个值标注“实测 / 声明上界 / 未知”。未知的 CPU/PCM/scratch/带宽不能写成 0 冒充实测；要么给保守声明并注明，要么阻塞该项。
 5. **聚合**：用脚本或 §3.3 规则生成 `resource_envelope`；不要手填。
 6. **填限额与取消**：`max_segment_audio_ms` 与定义 `parameter_domains.asr.max_segment_ms` 对齐；`hard_output_quota` 只在引擎真的先验限流时为 true；取消/fencing 只在有证据时为 true。
 7. **写资格引用**：填入配对报告的 `report_id`、`qualified_at`、`expires_at`、`config_bundle_digest`、已验证共存 profile。
-8. **静态校验**：跑 JSON Schema 与 `verify-release-evidence.py`（至少 `--database-snapshot` 或 live DB）；先让所有 `FAIL` 清零，`NA/WARN` 逐条解释。
-9. **登记数据库**：新 revision 的 `definition_json` 写入 `execution_recipe.capacity_manifest_id`；`engine_instances` 三组向量/`max_slots`/`config_digest` 与 manifest 一致；`host_nodes` 的 allocatable/held/quarantine 反映真实预算；`resource_pools` active；`workspace_quotas` 有界。
-10. **发布**：用 `speechnexus-publish-binding` 传入 manifest/report id 与两个摘要；保存命令输出、退出码与 publication/evidence 行。发布是 insert-only，旧 revision 不修改。
+8. **先核对文件**：校验 JSON Schema 与文件间的身份、摘要和聚合。`verify-release-evidence.py` 还要求数据库或快照中有匹配实例；实例尚未登记时会失败，fixture 只能帮助检查规则，不能证明目标部署。
+9. **登记并核对目标数据库**：新 revision 的 `definition_json` 写入 `execution_recipe.capacity_manifest_id`；`engine_instances` 三组向量/`max_slots`/`config_digest` 与 manifest 一致；`host_nodes` 的 allocatable/held/quarantine 反映真实预算；`resource_pools` active；`workspace_quotas` 有界。登记后用 live 数据执行校验，检查每项 `FAIL`、`NA` 和 `WARN`；发布前无 publication 可按 §5 识别为 `NA`。
+10. **发布并复核**：用 `speechnexus-publish-binding` 传入 manifest/report id 与两个摘要；保存命令输出、退出码与 publication/evidence 行。发布后以 `--require-published --require-digests` 对目标数据库复核，并逐项处理 `NA/WARN`。发布是 insert-only，旧 revision 不修改。
 
 ### 6.3 模板（把 `<...>` 换成真实值）
 
@@ -296,7 +304,9 @@ manifest 本身只有“每个实例/每个 slot 的包络”，没有“池总�
 }
 ```
 
-模板中的 `0` 只是形状占位，不是合法容量值。真实填写时，未测维度必须明确写“声明上界”并在报告中标注；不能把模板原样提交。
+模板中的 `0` 只是形状占位，不能作为实际容量证据直接提交。schema 允许资源维度为零；
+实际为零时仍需有对应部署或测量依据，不能把未知值填成零。真实填写时，未测维度必须
+明确写“声明上界”并在报告中标注；不能把模板原样提交。
 
 ### 6.4 变更矩阵
 
@@ -316,9 +326,9 @@ manifest 本身只有“每个实例/每个 slot 的包络”，没有“池总�
 ### 6.5 失效与撤回
 
 - 证据到期、模型/镜像/拓扑/池/向量/限额/取消能力任一变化、实测发现容量超限或质量退化，都是失效事件；
-- 已发布 publication 是 insert-only，不能原地改证据或回滚：发布更大的 revision，并在新证据里引用旧证据作为历史；
+- 已发布 publication 是 insert-only，不能原地改写证据；需要新证据时发布新 revision，并保留旧证据作为历史。选择既有版本的回滚是另一项操作，须确认目标 revision 仍可用且其证据适用于目标部署，具体条件见 [binding 生命周期](binding-lifecycle.md)；
 - 旧 manifest/report 和原始输出保留，不覆盖、不重写；失败记录与成功记录分开；
-- 失效期间不得用旧 `experimental` 证据支撑 `production`；是否降级/停流由唯一 SM+PO 按产品 Gate 决定。
+- 失效期间不得用旧 `experimental` 证据支撑 `production`；是否降级/停流按当前授权和产品 Gate 决定。
 
 ## 7. 摘要关系（必须按字节/规范化区分）
 
@@ -335,66 +345,17 @@ manifest 本身只有“每个实例/每个 slot 的包络”，没有“池总�
 
 注意：`config_bundle_digest` 覆盖定义对象，因此定义里新增 `capacity_manifest_id` 会改变它；这是预期的。当前仓库的 `binding-definition.json` 没有该字段，样例使用 `binding-definition.candidate.json` 作为“未来 revision 的定义内容”来计算摘要。真实发布时必须把候选内容作为新 revision 落库，再重算并写入 manifest；不能直接改历史定义，也不能拿候选文件冒充已发布定义。
 
-## 8. 真实样例：GB10 / Qwen3-ASR-1.7B
+## 8. 历史样例
 
-### 8.1 样例身份
-
-| 项 | 值 |
-| --- | --- |
-| `manifest_id` | `capm-file-asr-qwen3-1p7b-gb10-20261027` |
-| `binding_revision_id` | `mbrev-file-asr-qwen3-1p7b-gb10-20261027`（提议值，尚未在真实 DB 注册） |
-| `pool_id` / `service_class` | `asr-batch` / `batch` |
-| `management_mode` / `release_tier` | `external` / `experimental` |
-| `topology_ref.host_node_profile_id` | `gb10-cube-ccba-unified-121g` |
-| `topology_ref.topology_digest` | `sha256:1510168f01f3e4d3bb098b12dfd4ca33ee096239953b3fe8355e6eacb6c71aa4` |
-| stage | `stage-qwen3-asr-1p7b-batch`，`asr_batch`，`vllm`，`max_active_slots=1` |
-| 模型摘要 | `sha256:886652c5efb861de36ba18d46f58e9f9a7fb2d4469023264c992b055dd6ac1ca` |
-| 配置包摘要 | `sha256:86626578d8937c895b27a346a9663dd45215bb9146f282d265f7a0c56de4d52e` |
-| 资格期 | `2026-10-27T20:44:19Z` → `2027-01-25T20:44:19Z` |
-| manifest 文件 SHA-256 | `sha256:269096a91dd4b4c09e6332bf490889c5e060be67510185c911218042e24ae149` |
-| report 文件 SHA-256 | `sha256:e4f3900bd171eb58c9ac91650f64f2e57b556737f3d715893debc8b210c9cd37` |
-| evidence 文件 SHA-256 | `sha256:082bd34a404c811d179c982df5f9fab1e6dc39f9e495a1b824da67708549d634` |
-
-### 8.2 资源数值与来源
-
-| 维度 / 限额 | 值 | 来源等级 | 说明 |
-| --- | --- | --- | --- |
-| `unified_physical_memory_bytes` resident/peak | 12 GiB = 12,884,901,888 B | **声明上界** | #243 的实验 cgroup 上限；不是观测到的峰值。报告限制明确写了“Peak resident memory was not observed” |
-| `device_memory_bytes` / `host_memory_bytes` | 0 / 0 | 声明 | 统一内存架构，统一计入 unified，避免双计 |
-| `cpu_decode_millicores` resident/peak/per-slot | 2000 / 3000 / 500 | **声明上界** | 没有 CPU 毫核实测；不能写成“实测” |
-| `host_pcm_buffer_bytes` resident/peak/per-slot | 2 MiB / 2 MiB / 2 MiB | **声明上界** | 没有 PCM 高水位实测 |
-| `scratch_disk_bytes` | 0 | 声明 | 本实验不使用 scratch；不是“测得为 0” |
-| `ingress_bandwidth_bps` / `egress_bandwidth_bps` per-slot | 1,000,000 / 256,000 | **声明上界** | 没有带宽实测；host 也没有对应账本列 |
-| `max_active_slots` / `realtime_reserved_slots` | 1 / 0 | 声明 | 单实例单 slot；没有并发实测 |
-| `max_segment_audio_ms` | 30000 | 定义/产品 | 与 `binding-definition.json` 的 `parameter_domains.asr.max_segment_ms` 一致 |
-| `max_prefill_tokens_per_sec` / `max_output_tokens_per_sec` | 1952 / 1952 | 声明 | 来自模型上下文/实验配置；不是吞吐实测 |
-| `hard_output_quota` | true | 声明 | 依赖引擎先验限流；本报告没有验证硬配额执行路径 |
-| cancellation | `connection_drop_with_quarantine`，abort/fencing=false，worst_case 10000 ms | **未验证** | 没有 abort/fencing 实测；不能声明 `engine_abort_confirmed` |
-
-### 8.3 实测 / 转述 / 未验证
-
-| 类别 | 内容 |
-| --- | --- |
-| **本任务实际执行** | 读取仓库文件、核对 schema、计算 JSON/文件摘要、运行校验脚本正例与负例。没有 GPU 测量。 |
-| **他人实测、本文转述** | #243 comment `6453106316` 的 FLEURS 25 段、279.5 s 长音频、8 kHz 派生、AISHELL-4 远场、ASCEND 混说、babble/重叠/噪声、模型加载 18.4 s、KV cache 2.34 GiB、11.24x 算术上界。原始主记录 `DEL-103-evidence.md` 未提供。 |
-| **仓库静态声明** | artifact pin 的模型/文件 digest、Apache-2.0/MIT 许可、镜像 digest、运行时候选版本。模型文件未在本任务下载，未重算权重字节。 |
-| **未验证** | 网关 E2E、artifact 持久化、correlation/timeout/retry、取消/abort/隔离/预算释放、并发/P95/持续吞吐、真实街道/餐厅/产品麦克风噪声、方言/口音、真实电话信道、峰值内存、CPU/PCM/scratch/带宽、超过 279.5 s 的上下文行为、生产容量与故障切换。 |
-
-### 8.4 当前样例的诚实结论
-
-- 这是一份**实验级、未完成资格**的证据样例：5 个 required 场景中 2 个通过、3 个 skipped；`overall_status=incomplete`；不能用于 production。
-- 12 GiB 是保守 cgroup 上限，不是实测峰值；CPU/PCM/scratch/带宽是声明上界；`resource_pools` 没有数值配额。
-- 当前仓库 `binding-definition.json` 的 `execution_recipe` **没有** `capacity_manifest_id`，且 `release_tier=production`；与这份 experimental 证据不一致。真实发布前必须新建 revision，把候选定义中的 `capacity_manifest_id` 和 `release_tier` 落库，重算 `config_bundle_digest`，并重新资格。不能直接改历史定义或把 `local-test-capacity-1` 写入真实路径。
+GB10 / Qwen3-ASR-1.7B 的实验记录及原任务文件清单见[历史样例](../archive/operations/2026-10-28-capacity-manifest-example.md)；不能据此证明当前部署资格。
 
 ## 9. 校验脚本
 
 ### 9.1 命令
 
-在隔离 checkout 中，按本任务的工具链映射执行（不要指向共享库）：
+在仓库根目录执行以下 fixture 检查；它不连接共享数据库，也不证明真实发布：
 
 ```bash
-UV_CACHE_DIR="$PWD/.uv-cache" \
-UV_PYTHON=/opt/homebrew/bin/python3.14 \
 uv run --no-project \
   --with 'jsonschema>=4.23,<5' \
   --with 'rfc8785>=0.1.4,<0.2' \
@@ -407,13 +368,14 @@ uv run --no-project \
   --artifact-pin deploy/engines/file-asr-audio/artifact-pin.json \
   --binding-definition deploy/engines/file-asr-audio/evidence/gb10-20261027/binding-definition.candidate.json \
   --database-snapshot tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json \
-  --source-body /path/to/comment-body.md \
   --require-published --require-digests --show-digests
 ```
 
-`--database-url` 与 `--database-snapshot` 二选一；live 模式只读事务（`SET TRANSACTION READ ONLY`），不会写 publication 或证据。`--source-body` 可选；不提供时 `digest.source_body=NA`，只核对记录值。
+`--database-url` 与 `--database-snapshot` 二选一；live 模式只读事务（`SET TRANSACTION READ ONLY`），不会写 publication 或证据。脚本未显式设定可重复读隔离级别；默认 `READ COMMITTED` 下并发变更时，各查询不一定反映同一时点，也不能保证未来准入，须在受控窗口核对。部署若配置了其他隔离级别，应按实际配置判断。live 模式只有传入 `--workspace-id` 才查询对应配额；未指定或未查到行均输出 `capacity.workspace_quota=NA`，不能视为配额通过。`--source-body` 可选；不提供时 `digest.source_body=NA`，只核对记录值。
 
-退出码：`0` 表示无 `FAIL`（可能有 `WARN/NA`）；`1` 表示至少一个 `FAIL` 或输入错误；`2` 表示缺依赖/参数错误。`PASS_WITH_WARNINGS` 不是生产放行；fixture、`NA`、未验证项必须逐条解释。
+校验器按运行时 UTC 时间检查资格期限；上述固定样例在 `2027-01-25T20:44:19Z` 到期后会因过期返回 `FAIL`。这不改变它的历史证据或文件摘要，也不应通过修改样例期限来恢复正例。
+
+退出码：`0` 表示无 `FAIL`（可能有 `WARN/NA`）；`1` 表示至少一个 `FAIL` 或输入错误，live 模式缺少 `psycopg` 也计入此类；`2` 表示参数错误或启动时缺少 `jsonschema`、`referencing`、`rfc8785` 依赖。数据库连接等未捕获异常也可能使进程异常退出，不能只看退出码判断检查是否完整。`PASS_WITH_WARNINGS` 不是生产放行；fixture、`NA`、未验证项必须逐条解释。
 
 ### 9.2 它检查什么
 
@@ -422,7 +384,7 @@ uv run --no-project \
 - 包络聚合；
 - 报告 scenario id 一一对应、required/overall 计算、production gate、limitations；
 - manifest/report/evidence 的 id、tier、topology、时间、stage/engine 组件；
-- `artifact-pin.model` 摘要、`config_bundle_digest`、`topology_digest`、evidence 文件/逐 scenario 摘要、source body 字节；
+- `artifact-pin.model` 摘要、`config_bundle_digest`、`topology_digest`、evidence 文件/逐 scenario 摘要；仅提供 `--source-body` 时才校验 source body 字节；
 - report `evidence_digest` 与 manifest/report 文件 SHA；
 - 传入的 `--binding-definition` 与快照内定义分别检查 `capacity_manifest_id`、可识别的 `release_tier`、stage roles、tasks、max segment；
 - publication/evidence 行的身份与两个文件摘要；
@@ -486,7 +448,7 @@ SELECT workspace_id, max_attempts, held_attempts, quarantined_attempts
 FROM speech.workspace_quotas WHERE workspace_id = '<workspace-id>';
 ```
 
-判定：定义 `declared_manifest_id` = 参数/证据 `capacity_manifest_id`；publication `revision_id` = 定义 `revision_id` = 实例 `binding_revision_id`；实例六维 = manifest 三组向量；host `held >= peak` 且 `held + quarantined <= allocatable`；池 active/class 匹配；workspace `held + quarantined <= max_attempts`。
+判定：定义 `declared_manifest_id` = 参数/证据 `capacity_manifest_id`；publication `revision_id` = 定义 `revision_id` = 实例 `binding_revision_id`；实例六维 = manifest 三组向量；host `held + quarantined <= allocatable`；池 active/class 匹配；workspace `held + quarantined <= max_attempts`。校验器还要求 host `held >= peak`，其局限见上文 R11 及其后说明；上述 SQL 只列出统一内存维度，不能单凭它核对全部六维。
 
 ## 10. 已知缺口与后续卡建议
 
@@ -494,22 +456,7 @@ FROM speech.workspace_quotas WHERE workspace_id = '<workspace-id>';
 2. **当前 `binding-definition.json` 缺 `capacity_manifest_id` 且声明 `production`**：本任务用 `binding-definition.candidate.json` 展示未来 revision 的声明，不修改历史定义。建议由绑定作者新建 revision；发布前重算 `config_bundle_digest`。
 3. **许可不是 schema 字段**：建议在发布检查清单或独立证据表中记录许可证接受；不要在 manifest 中新增自由字段。
 4. **阈值不可机器读**：报告只记录 `status` 与 `notes`，没有 `threshold` 字段；建议后续 schema 演进时增加机器可读阈值，本任务不改变冻结契约。
-5. **stage graph 未表达 VAD/对齐/分离**：如果实际执行路径包含这些阶段，必须新增 stage 并重新资格；不能仅靠 `parameter_defaults`。
-6. **产品发布校验只检查 capacity manifest id**：`publications_postgres.py` 当前不核对 release tier、topology、摘要、host/instance 账本；脚本是补强，不是产品门禁。建议后续卡把关键检查接入发布路径。
+5. **内部工作与辅助阶段的覆盖**：样例未单列 VAD；实际使用时仍须在所属阶段的资源、制品与资格证据中覆盖。独立执行的对齐或分离阶段须在配方与 manifest 中声明并重新资格，不能仅靠 `parameter_defaults`。
+6. **通用 binding 发布事务不验证证据原文件**：事务核对定义中的 capacity manifest ID 并记录证据 ID 与可选摘要，但不读取原文件核对 release tier、topology、摘要或 host/instance 账本。脚本是补充核对，不是产品门禁；内建声音资格入口另有只读 release 校验，见[资格报告](qualification-report.md)。
 7. **带宽/对象存储没有 host 账本列**：manifest 有声明，但主机层无法按列扣减；需要平台监控/后续 schema 演进。
-8. **fixture 不是发布回执**：`tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json` 只证明查询路径；真实发布必须用 live DB 的 publication/evidence 行重新跑 `--database-url`。
-
-## 11. 文件清单（本任务新增/修改）
-
-| 文件 | 作用 |
-| --- | --- |
-| `docs/operations/capacity-manifest.md` | 本文 |
-| `docs/operations/qualification-report.md` | 配套报告定义 |
-| `deploy/engines/file-asr-audio/evidence/gb10-20261027/capacity-manifest.json` | 真实数值样例 |
-| `deploy/engines/file-asr-audio/evidence/gb10-20261027/qualification-report.json` | 配对报告 |
-| `deploy/engines/file-asr-audio/evidence/gb10-20261027/evidence.json` | #243 结构化转述 |
-| `deploy/engines/file-asr-audio/evidence/gb10-20261027/binding-definition.candidate.json` | 未来 revision 的候选定义（非部署） |
-| `deploy/engines/file-asr-audio/evidence/gb10-20261027/README.md` | 样例包说明与摘要 |
-| `tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json` | 查询路径 fixture |
-| `scripts/dev-env/verify-release-evidence.py` | 只读一致性校验 |
-| `docs/operations/release-evidence-verification-output.txt` | 实际运行原始输出 |
+8. **fixture 不是发布回执**：`tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json` 只用于验证快照上的规则；真实发布必须用 live DB 的 publication/evidence 行重新跑 `--database-url`。

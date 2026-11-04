@@ -1,6 +1,6 @@
 # Web 目录规则
 
-继承[根规则](../AGENTS.md)。设计基线见 [UI/UX 与 Token 框架](../docs/architecture/ui-ux-design-framework-and-tokens.md)，workspace 与模块说明见[工程目录](../docs/architecture/repository-layout.md#3-web-工作区)。
+继承[根规则](../AGENTS.md)。设计基线见 [UI/UX 与 Token 框架](../docs/design/ui-ux-design-framework-and-tokens.md)，workspace 与模块说明见[工程目录](../docs/components/repository-layout.md#3-web-工作区)。
 
 - `admin` 与 `workbench` 是独立入口；它们不形成身份或数据隔离。界面不得暗示登录、个人私有空间或未实现的权限边界。
 - `shared/` 只放两个入口以相同语义使用的稳定组件与设计 Token；工作台业务编排留在 `workbench`。

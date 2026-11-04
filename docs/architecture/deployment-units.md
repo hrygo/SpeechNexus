@@ -29,9 +29,11 @@ date: 2026-10-26
 | Workbench API | 项目、稿件、会议、纪要、保存副本；已有 `speechnexus_backend.workbench.runtime:create_app_from_env` 工厂 | 与 Speech API 相同的应用平台目标 | 独立配置和表所有权；只经公开语音协议消费底座，可选 LLM 是批准的内网端点 |
 | Realtime Gateway | 实时连接、会话 owner / epoch 和有界流 | 不因实时接入而要求 GPU 或 Linux 专属 API | 按固定会话 owner 路由；独立进程部署与正式业务装配待补齐 |
 | Scheduler、Job Worker | 完整准入、分池调度、任务 claim、outbox 与恢复 | 与推理运行时解耦，分别验证应用平台 | 以 PG 持久事实协调；独立启动入口及完整业务装配待补齐 |
-| 工作台后台处理 | 纪要、导出、保存副本与删除恢复 | 按实际媒体依赖单独验证，不要求本机运行语音引擎 | 当前部分循环由 Workbench runtime 管理；独立 worker 入口待补齐 |
-| 已有专用后台入口 | `speechnexus-runtime-delivery-worker` 投递运行时意图；`speechnexus-asset-maintain` 维护 Asset；`speechnexus-job-dispatch-worker` 已注册公开 Job 派发入口 | 应用平台按入口分别验证 | 前两者不代表通用 Job Worker；派发入口当前因 planner/结果发布未装配而 fail-closed，仍不代表完整 Job Worker 已交付 |
-| Execution Gateway | 持久提交屏障、执行、取消、观察与停止证据；已有 `speechnexus-gateway` | 协议和编排不要求 CUDA；当前节点适配器随 Linux 算力栈资格验证，其他平台未资格化 | 绑定受管 `node_id` / `gateway_id` 与引擎代次；现有 `fcntl` 入口锁要求同节点候选共享私有锁目录 |
+| 工作台后台处理 | 纪要、导出、保存副本与删除恢复 | 按实际媒体依赖单独验证，不要求本机运行语音引擎 | 当前部分循环由 Workbench runtime 按配置和依赖条件管理；导出循环只认领排队任务，运行中 claim 和结果未知需单独恢复；独立 worker 入口待补齐 |
+| 已有专用后台入口 | `speechnexus-runtime-delivery-worker` 投递运行时意图；`speechnexus-asset-maintain` 维护 Asset；`speechnexus-job-dispatch-worker` 已注册公开 Job 派发入口 | 应用平台按入口分别验证 | 前两者不代表通用 Job Worker；结果发布组件已有，派发入口仍因生产 planner 未装配而 fail-closed，不代表完整 Job Worker 已交付 |
+| Binding 停用协调 worker | `python -m speechnexus_backend.binding_disable_worker` 处理持久停用意图 | 应用平台和网关连接按实际部署验证 | 需要独立扫描与结算身份；默认 Compose 不启动，`binding-disable` profile 按需启用。停用回执不代表清理完成或预算已释放，见[运维说明](../operations/compose-minimal.md#12-按需启用-binding-停用-worker) |
+| 同步 TTS 结算 worker | 跟随持久结算记录，协调停止证据与租约释放；同步 TTS 配置与资格检查通过后，工厂在 API 生命周期内启动循环，也提供 `python -m speechnexus_backend.tts_settlement_worker` 独立入口 | 应用平台和网关连接按实际部署验证 | 结算循环使用独立数据库身份；具体配置、资格和恢复条件见[同步语音合成](../components/synchronous-speech.md) |
+| Execution Gateway | 持久提交屏障、执行、取消、观察与停止证据；已有 `speechnexus-gateway` | 协议和编排不要求 CUDA；当前节点适配器随 Linux 算力栈资格验证，其他平台未资格化 | 绑定受管 `node_id` / `gateway_id` 与引擎代次；现有 `fcntl` 入口锁要求同节点、同网关身份的候选进程共享私有锁目录 |
 | Node Controller | 批准模板的容器生命周期；已有 `speechnexus-node-controller` | 当前 Docker daemon 适配器服务于 Linux 容器节点；控制协议不绑定调用方平台 | 与实际受管 daemon 所在节点绑定；独占受限容器管理权限，不要求业务调用方同机 |
 | 推理引擎、引擎扩展及模型 | 当前选定的 CUDA / vLLM、vLLM-Omni 和固定模型组合 | 当前路线以 Linux 为目标，按硬件、镜像与模型组合资格化 | 独立镜像、依赖锁和 Python 环境；API、工作台不安装或直接调用 GPU runtime |
 | 音频安全检查 | 当前私有 `AudioInspectionProcess` 与媒体检查命令 | 现有沙箱需要 Linux，不需要 GPU | 是 CPU 媒体执行边界；优先复用受控执行组件，独立服务是否必要及跨机协议尚待设计，默认 API 未启用 |
@@ -102,7 +104,9 @@ Windows 等平台保持未验证，支持范围扩展以单元的安装、启动
 - **单一事务权威**：完整配方的配额、节点/实例预算、全部阶段租约及 Job/outbox 仍在同一
   PostgreSQL 事务域内准入。按部署单元拆进程、表所有权或凭据，不拆成跨库双写。
 - **内容传输**：跨单元的持久输入和制品使用固定版本、长度与摘要的对象引用；实时流使用
-  约定的网络协议。不以共享宿主目录或本地文件描述符跨主机传递业务内容。
+  约定的网络协议。不以共享宿主目录或本地文件描述符跨主机传递业务内容。当前文件 ASR
+  命令引用不含 S3 version ID；输入适配器在每次读取时固定 HEAD 所得版本并核验长度和摘要，
+  不能将其视为命令直接固定了对象版本，详见[冻结执行输入](../components/frozen-execution-inputs.md)。
 - **节点本地事实**：Gateway 的本地锁只保护同一节点网关的进程入口；Controller 的 SQLite
   保存本节点操作回执和停止检查点。它们不承担全局准入、预算或业务数据库权威，
   节点故障后不能仅凭本地记录缺失推断已停止或可释放预算。
@@ -115,7 +119,7 @@ Windows 等平台保持未验证，支持范围扩展以单元的安装、启动
 
 ## 4. Linux 媒体检查边界
 
-现有 [音频检查沙箱](audio-asset-inspection.md)使用 pidfd、seccomp、bubblewrap、
+现有 [音频检查沙箱](../archive/components/audio-asset-inspection.md)使用 pidfd、seccomp、bubblewrap、
 prlimit 和 `/proc`，属于 Linux 平台实现。当前
 [AssetRuntime](../../backend/src/speechnexus_backend/asset_runtime.py)装配 `TextAssetInspector`，
 公开音频检查尚未启用；不能把沙箱代码位于 backend 包内等同于 API 启动必须使用 Linux。
@@ -130,18 +134,21 @@ Linux CPU 媒体组件可与算力组件同机，但要独立核算资源，不�
 服务化之前先冻结相应机器契约并完成生产者、消费者和装配验证；本页不预先指定新路由。
 不能通过忽略类型错误、改用普通 PID 或降低现有隔离/停止证据要求来取得跨平台通过。
 
-## 5. 当前装配与证据（2026-10-26）
+## 5. 当前装配与证据
 
 | 已核对事实 | 能证明的范围与缺口 |
 | --- | --- |
-| [当前 Compose](../../deploy/compose.yaml)包含 PG、MinIO、Speech API、Gateway、两个 Web 容器 | 单节点 bootstrap；不含独立 Workbench API、Controller、完整后台角色或真实模型装配 |
-| [Web 代理](../../deploy/web/nginx.conf)将 `/v2/workbench/` 发往 `api:8000` | 默认预览没有接入独立 Workbench runtime；分布式部署需配置各服务上游及实时 owner 路由 |
+| [当前 Compose](../../deploy/compose.yaml)默认包含 PG、MinIO、对象存储初始化、Speech API 和 Gateway；两个 Web 容器及部分运维入口须显式启用 profile | 单节点 bootstrap；不含独立 Workbench API、Controller、完整后台角色或真实模型装配，也未提供同步 TTS API 配方及结算数据库配置，不能据此宣称公开 TTS 可用 |
+| Compose 映射到宿主的 PG、MinIO、API、Gateway 和可选 Web 端口均绑定 `127.0.0.1`；容器间使用默认网络 | 这些绑定限制的是宿主端口监听地址，不构成容器网络出站隔离或生产入口认证；远程访问和部署网络策略须另行配置并验证 |
+| Compose 中 API 访问 Gateway 与 MinIO 的默认地址使用 HTTP | 这是单节点 bootstrap 连接，不能证明跨主机 TLS；分机部署须为各连接配置并验证认证与传输保护 |
+| Compose 的对象存储初始化、API 及网关文件执行配置复用 MinIO 根凭据 | 这是本地 bootstrap 配置，不证明生产对象存储最小权限；生产须分别配置并验证受限身份与授权 |
+| [Web 代理](../../deploy/web/nginx.conf)监听 HTTP `8080`，将 `/v1/`、`/v1/realtime` 和 `/v2/workbench/` 发往 `api:8000` | 此配置不终止 TLS，也未接入独立 Workbench runtime 或实时 owner 路由；部署需另行配置入口保护和各服务上游 |
 | [Backend 主入口](../../backend/src/speechnexus_backend/main.py)固定启动 Speech ASGI 工厂 | `process_role` 是身份声明；设置为另一个角色不会自动选择其服务入口 |
-| [Workbench 工厂](../../backend/src/speechnexus_backend/workbench/runtime.py)及专用后台命令已存在 | 具备分开启动的部分入口；不能据此认定全部后台职责已独立交付 |
+| [Workbench 工厂](../../backend/src/speechnexus_backend/workbench/runtime.py)可单独启动，部分后台循环由其生命周期托管 | Workbench 后台尚无独立 worker 入口；其他职责的专用后台命令见第 1 节，不能据此认定 Workbench 后台已独立交付 |
 | [Python 镜像](../../deploy/images/python.Dockerfile)当前同步所有 workspace 包 | 共享镜像不要求服务同机，但尚未按部署单元收敛运行依赖与检查范围 |
 | [Backend 依赖](../../backend/pyproject.toml)直接包含 `av`，Workbench runtime 内托管部分后台循环 | 媒体原生依赖与 Web 生命周期仍有装配耦合；不证明必须使用 Linux，也不证明已经可以独立扩缩 |
 | [现有 CI](../../.github/workflows/ci.yml)使用 Ubuntu runner | Linux 检查不替代 macOS 原生安装/启动/行为验证；共享镜像和模块导入均不能补足平台资格 |
-| 四个 ASGI 模块在 macOS 上导入成功，未加载 Linux 音频沙箱 | 只证明模块导入；未证明各平台服务启动、数据库操作、媒体能力或完整业务链通过 |
+| 2026-10-26 的检查中四个 ASGI 模块在 macOS 上导入成功，未加载 Linux 音频沙箱 | 只证明当时的模块导入；未证明当前版本在各平台的服务启动、数据库操作、媒体能力或完整业务链通过 |
 | [开发脚本](../../scripts/dev-env/bootstrap.sh)固定 Linux ARM64 / APT / systemd | 当前开发环境约束；不能推广为所有产品部署单元的操作系统要求 |
 
 历史审查与交接文档保留其原时点事实；当前支持声明应同时给出单元、平台、启用能力和证据。
@@ -154,7 +161,8 @@ Linux CPU 媒体组件可与算力组件同机，但要独立核算资源，不�
    不复用 bootstrap owner；迁移与授权使用独立部署步骤。
 2. **接通业务与后台角色**：补齐独立 Workbench 上游、正式 Job/调度入口、实时 owner 路由，
    明确各后台循环是嵌入哪个已声明进程还是独立 worker。关闭可选工作台不影响语音底座，
-   worker 重启按持久队列恢复，不能因同机运行跳过 claim、fencing 或提交屏障。
+   worker 重启恢复须逐类验证持久队列、已有 claim 与结果未知的处理，不能仅凭循环重启认定
+   在途工作已恢复，也不能因同机运行跳过 claim、fencing 或提交屏障。
 3. **封装平台特定执行**：保持引擎环境独立锁定，媒体检查按上一节完成边界设计和资格验证。
    CPU 预处理若拆到另一节点，仍须纳入完整配方的原子准入、资源预算及恢复证据。
 4. **建立分层平台检查**：业务与控制模块在 macOS、Linux 分别检查依赖安装、导入、配置、
@@ -162,7 +170,7 @@ Linux CPU 媒体组件可与算力组件同机，但要独立核算资源，不�
    部署边界维护，不能只在全仓检查中屏蔽错误或把必要测试跳过记为通过。
 5. **联调并验证分机拓扑**：可先把业务/控制服务与算力服务放在不同主机或隔离虚拟机中联调，
    经实际网络完成公开文件 ASR/TTS 链和已启用实时链；记录平台、版本、实例/代次、拓扑、
-   延迟与容量。G5 正式资格须使用物理多主机，备用 GPU 接管另验；单机不同进程、
+   延迟与容量。正式发布资格须按[当前需求](../prd.md#o-physical)验证物理多主机，备用 GPU 接管另验；单机不同进程、
    回环 TLS 或隔离 VM 不替代既有物理要求。
 6. **验证故障和内容边界**：覆盖网络中断、响应丢失、业务 worker/Gateway/Controller 重启、
    DB/对象存储不可用及引擎仍运行的取消未知；核对原身份恢复、无重复发布、无提前退预算，
@@ -172,15 +180,16 @@ Linux CPU 媒体组件可与算力组件同机，但要独立核算资源，不�
 
 ## 7. 实施任务与门禁
 
-2026-10-26 按“松耦合、尽量跨平台”完成[方案审查](../audits/2026-10-26-deployment-units-review.md)。
-以下补充任务已创建；创建与文档修订不代表实现、CI 或运行资格通过。它们不改变原 25 个主工作包的范围和完成分母。
+2026-10-26 按“松耦合、尽量跨平台”完成[方案审查](../archive/audits/2026-10-26-deployment-units-review.md)。
+以下任务和门禁保留当时的跟踪关系，不能作为当前任务状态或完成分母；当前需求、实施和验证关联见
+[交付跟踪矩阵](../plans/delivery-tracking.md)。任务创建与文档修订不代表实现、CI 或运行资格通过。
 
 | 交付 | 跟踪项 | 范围与既有职责 |
 | --- | --- | --- |
 | 服务入口清单、按能力裁剪依赖及制品 | [#225](https://github.com/hrygo/SpeechNexus/issues/225) | 平台制品；不代替 #22/#24 的正式业务循环 |
 | 独立 Workbench API 上游与部署装配 | [#226](https://github.com/hrygo/SpeechNexus/issues/226) | Web/Workbench 装配；真实业务分别按既有 Gate 验收 |
 | Linux 音频检查部署适配决定与契约交接 | [#227](https://github.com/hrygo/SpeechNexus/issues/227) | 先确定最小形态；公开音频 ready 与真实检查仍由 #21/#30 负责 |
-| macOS/Linux 原生 CI 与平台依赖隔离 | [#228](https://github.com/hrygo/SpeechNexus/issues/228) | 实施可失败的检查和必需汇总；当前尚未交付 |
+| macOS/Linux 原生 CI 与平台依赖隔离 | [#228](https://github.com/hrygo/SpeechNexus/issues/228) | 实施可失败的检查和必需汇总；当时尚未交付 |
 | 松耦合与原生平台联合证据 | [Gate D1 #229](https://github.com/hrygo/SpeechNexus/issues/229) | 接收上述制品并核验实际行为，接入 G5，不自动放行 |
 
 | 门禁 | 必需证据 | 放行限制 |
@@ -192,4 +201,4 @@ Linux CPU 媒体组件可与算力组件同机，但要独立核算资源，不�
 既定用户放行要求维护；子任务关闭、测试数量或文档状态不自动关闭 Gate。
 
 [部署入口](../../deploy/README.md) · [整体技术方案](technical-blueprint.md) ·
-[工程目录与依赖](repository-layout.md) · [验证指南](../agent-verification.md)
+[工程目录与依赖](../components/repository-layout.md) · [验证指南](../agent-verification.md)

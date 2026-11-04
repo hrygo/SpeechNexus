@@ -6,6 +6,8 @@ date: 2026-10-24
 
 # ADR 0008 控制器观察前的持久 runtime 意图
 
+本文保留 2026-10-24 的协议决策和当时的交付状态。后续已有 runtime 创建与观察的 PostgreSQL 实现；持久派发及其验证边界见[生产运行意图](../components/production-runtime-intents.md)和[运行交付](../operations/production-runtime-delivery.md)。
+
 ## 背景
 
 ADR 0006 要求在短关系数据库事务内记录意图和预算，再调用外部控制器。
@@ -57,7 +59,8 @@ pre-release；消费以集成 SHA/生成清单锁定，不能只凭 1.0.0 信封
 目标 CHECK/外键、时间、权限和升级回滚由 PG/受控 InnoDB oracle 验证；
 JSON 语义、资源裁决及历史恢复由受控应用事务负责，不把基础约束当作完整生命周期。
 
-create_runtime_intent、observe_runtime、真实派发和联合资格按
-[runtime 实施单元](../plans/2026-10-24-a01-runtime-intent-unit.md)继续推进。
+当时对 create_runtime_intent、observe_runtime、真实派发和联合资格的安排保留在
+[runtime 实施单元](../archive/plans/2026-10-24-a01-runtime-intent-unit.md)；当前实现与验收范围见
+[交付跟踪矩阵](../plans/delivery-tracking.md)及本文开头的组件和运维入口。
 本决定和存储准备不证明 GPU、真实停止、多主机或完整恢复已通过资格，
 也不满足 ADR 0007 旧机制整体退出条件。

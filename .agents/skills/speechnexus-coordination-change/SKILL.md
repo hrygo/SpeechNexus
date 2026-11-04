@@ -1,6 +1,6 @@
 ---
 name: speechnexus-coordination-change
-description: "变更或审查 SpeechNexus 协调事务、锁序、租约/预算、fencing、持久恢复及相关 DDL/权限。"
+description: "变更或审查 SpeechNexus 协调事务端口、锁序、租约/预算、fencing 及相关 DDL/权限；仅客户端恢复或普通查询不触发。"
 ---
 
 # 协调事务与恢复变更
@@ -16,7 +16,7 @@ description: "变更或审查 SpeechNexus 协调事务、锁序、租约/预算�
 按变更补读：
 
 - 保护责任、数据库可移植性、权限或 DDL：[ADR 0006](../../../docs/decisions/0006-cluster-coordination-and-storage-portability.md)、[协调 Schema](../../../docs/architecture/distributed-coordination-schema.md)。
-- 执行命令、删除或停止证据：对应[执行命令](../../../docs/architecture/execution-command.md)、[删除规则](../../../docs/architecture/data-deletion.md)、[执行网关](../../../docs/architecture/execution-gateway.md)。
+- 执行命令、删除或停止证据：对应[执行命令](../../../docs/architecture/execution-command.md)、[删除规则](../../../docs/architecture/data-deletion.md)、[执行网关](../../../docs/components/execution-gateway.md)。
 - 迁移旧原型规则或改变门禁：[ADR 0007](../../../docs/decisions/0007-legacy-coordination-retirement.md)。
 - 机器契约或生成类型改变：同时使用 [speechnexus-contract-change](../speechnexus-contract-change/SKILL.md) 完成消费者交接。
 
@@ -35,8 +35,8 @@ description: "变更或审查 SpeechNexus 协调事务、锁序、租约/预算�
 
 按照受影响不变量选择正常、拒绝、重放冲突、并发锁等待、过期 owner/fencing、回滚和未知结果恢复场景；涉及停止或预算时检查证据到达前后的状态。按风险覆盖，不机械复制无关场景。
 
-实施时，执行前读[集成目录规则](../../../tests/integration/AGENTS.md)与[验证指南](../../../docs/agent-verification.md)。协调事务、DDL 或权限变更运行 `make coordination-test` 和 `make integration-test`；缺双库、MinIO 或宿主条件就报告未验证项，不以单库、跳过或顺序调用替代。实现与验证只在授权的项目隔离服务进行。只读审查核对既有证据和缺口，未要求执行测试时不启动服务或运行迁移。
+实施时，执行前读[集成目录规则](../../../tests/integration/AGENTS.md)与[验证指南](../../../docs/agent-verification.md)，按受影响事务、不变量及 DDL/权限选择定向 PostgreSQL/InnoDB 验证；涉及对象存储时加入对应验证。`make coordination-test` 和 `make integration-test` 是全量入口，按 CI 或当前任务的明确要求执行。缺双库、MinIO 或宿主条件就报告未覆盖项，不以单库、跳过或顺序调用替代原要求。实现与验证只在授权的项目隔离服务进行；只读审查复用既有证据，不因此启动服务或运行迁移。
 
-实施中接入当前事务路径或更新旧规则覆盖时，复核 ADR 0007 退出条件；满足后移除旧必跑门禁、废弃 SQL/测试/设计及专属断言，保留有效不变量的新路径覆盖和 Git 追溯；审查时只报告退出条件与缺口。
+接入当前事务路径或更新旧规则覆盖时，核对 ADR 0007 退出条件，指出可退役对象、替代覆盖和剩余缺口。仅在本次任务明确包含退役且删除授权覆盖时移除旧门禁或文件，保留有效不变量与需要保存的历史设计；普通事务变更不自动启动清理。
 
 交付注明端口/表及迁移范围、身份和锁序变化、实际验证的数据库与拓扑、恢复证据和剩余生产接入。双库同进程测试、合成停止与模拟丢回复不能证明真实多机、引擎停止、网络故障或 HA 资格。

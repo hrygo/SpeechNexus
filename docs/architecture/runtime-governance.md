@@ -7,14 +7,15 @@ date: 2026-10-24
 
 # SpeechNexus 资源治理与持久化设计
 
-本文负责容量准入、调度、取消 / 接管、用量、持久任务与数据生命周期，属于[项目主设计](../speechnexus-product-architecture.md)的配套规范。首期按部署 / 工作空间 / 执行类别治理，不建设用户或租户权限。硬件配置由部署资格确定；以下规则是待实现的不变量，不能代替实际容量、质量与恢复验证。
+本文负责容量准入、调度、取消 / 接管、用量、持久任务与数据生命周期，属于[项目主设计](../speechnexus-product-architecture.md)的配套规范。首期按部署 / 工作空间 / 执行类别治理，不建设用户或租户权限。硬件配置由部署资格确定；以下规则是不变量，部分已有实现，各链路仍须分别验证实际容量、质量与恢复能力。
 
 [ADR 0006](../decisions/0006-cluster-coordination-and-storage-portability.md)已将跨表
 规则的主要执行边界调整为受控应用事务。PostgreSQL 是唯一正式交付数据库，
 MySQL/InnoDB 仅用于关键协调路径验证；不采用 etcd，Redis 不承担协调权威。
 活动 DDL 已精简，规则的程序实现见[受控事务方案与契约](coordination-transactions.md)；
 测试/工具原型在真实 PostgreSQL 与 MySQL 上验证关键路径。生产调度、运行时接入与完整
-集群故障资格仍按[重构计划](../plans/2026-10-23-cluster-coordination-refactor.md)完成。
+集群故障资格的当前范围和证据见[交付跟踪矩阵](../plans/delivery-tracking.md)；
+[重构计划](../archive/plans/2026-10-23-cluster-coordination-refactor.md)保留当时的实施安排。
 
 ## 1. 硬件无关的资源准入与调度
 
@@ -26,11 +27,11 @@ MySQL/InnoDB 仅用于关键协调路径验证；不采用 etcd，Redis 不承�
 
 每个 `ModelBindingRevision` 关联一份 `CapacityManifest`：支持任务与格式、模型 / 引擎 revision、部署拓扑引用、常驻预算、每 active slot 的增量资源上界、最大 active slots、预填充与输出速率限制、最大段预算、取消方式、最坏非抢占执行时间、资格报告与有效期。每个 stage 显式声明 `emits_audio_pcm`；只有该类 stage 才能携带 `max_output_audio_ms`，提交同时必须给出 16k / 24k / 48k 之一的 `sample_rate_hz`，网关按 `floor(max_output_audio_ms * sample_rate_hz / 1000)` 冻结 hard output ceiling。绑定的 `(binding_id, revision)` 由注册表分配不可变且全局唯一的 `revision_id`；容量、资格、实例、租约、submit intent 与 receipt 都引用同一值，不各自推导字符串。
 
-资格报告按 `capacity_manifest_id` 为执行图中的每个 `stage_id` 记录实际的 engine kind、镜像摘要与 runtime 版本；单镜像字段不能代表包含 VAD、ASR 复核或 TTS 多 stage 的完整配方。草稿可以声明目标 `production` tier，但只有发布、退役和紧急禁用状态必须绑定已通过的必要场景与完整 stage 软件身份。`production` 资格至少包含一个 required scenario，并须全部 passed、整体 pass 且设置到期时间；managed 容量必须声明 fencing barrier，engine abort 模式必须声明真实 request abort，production 还必须声明硬输出上限。
+资格报告按 `capacity_manifest_id` 为执行图中的每个 `stage_id` 记录实际的 engine kind、镜像摘要与 runtime 版本；单镜像字段不能代表包含 VAD、ASR 复核或 TTS 多 stage 的完整配方。草稿可以声明目标 `production` tier，其 `publication` 中的容量清单和资格报告标识须为空；`execution_recipe.capacity_manifest_id` 仍是必填的配方引用。机器契约要求所有已发布或已退役版本携带容量清单与资格报告标识；禁用版本在 `production` tier 时也必须携带这些标识。标识存在不代表证据通过，仍须按发布资格要求核验必要场景与完整 stage 软件身份。`production` 资格至少包含一个 required scenario，并须全部 passed、整体 pass 且设置到期时间；managed 容量必须声明 fencing barrier，engine abort 模式必须声明真实 request abort，production 还必须声明硬输出上限。
 
-资格报告的计算口径是封闭的：`test_suite.scenario_ids` 与 `scenarios[].scenario_id` 必须一一对应且无重复（生产者校验）；`required_scenarios_passed` 仅在至少一个 required scenario 存在且全部 passed 时为 true；`overall_status` 在任何 required scenario failed 时为 `fail`，在 required 全部 passed 时为 `pass`，否则为 `incomplete`。optional scenario 是非门禁证据，非 passed 时必须写入 `limitations`，不能据此宣称生产质量。发布流程还必须解析报告引用的 binding 与 capacity manifest：`binding` 的 `id / revision`、`binding_revision_id`、`capacity_manifest_id` 和 `release_tier` 必须一致；`software.engine_components` 必须与 manifest 的每个 `stage_id` 一一对应且 engine kind 相同；报告拓扑的 memory architecture 必须与 manifest `topology_ref` 相同；`qualified_at` 必须早于 `expires_at`。这些跨文档规则由生产者和契约语义测试执行。
+资格报告的计算口径是封闭的：`test_suite.scenario_ids` 与 `scenarios[].scenario_id` 必须一一对应且无重复（生产者校验）；`required_scenarios_passed` 仅在至少一个 required scenario 存在且全部 passed 时为 true；`overall_status` 在任何 required scenario failed 时为 `fail`，在 required 全部 passed 时为 `pass`，否则为 `incomplete`。optional scenario 是非门禁证据，非 passed 时必须写入 `limitations`，不能据此宣称生产质量。发布流程还必须解析报告引用的 binding 与 capacity manifest：`binding` 的 `id / revision`、`binding_revision_id`、`capacity_manifest_id` 和 `release_tier` 必须一致；`software.engine_components` 必须与 manifest 的每个 `stage_id` 一一对应且 engine kind 相同；报告拓扑的 memory architecture 必须与 manifest `topology_ref` 相同；`qualified_at` 必须早于 `expires_at`。这是证据与发布的目标要求；通用 binding 发布首次登记意图时核对所声明的 manifest ID，重放不重复校验，也不自动执行全部跨文档核验。内建声音资格入口已调用只读证据核验组件；其核验范围及独立校验器的边界见[资格报告](../operations/qualification-report.md)，不能把草稿、发布记录或单纯 schema 通过当作完整生产资格。
 
-资源向量至少包含 engine active slots、设备内存、CPU 解码额度、主机 PCM buffer、输入 / 输出带宽和对象存储额度。常驻模型内存在引擎级只计一次，不为每个请求重复收费；请求只申请增量预算。多阶段 TTS 的 Talker、Code2Wav 及 connector 预算作为完整执行图申报。
+容量清单声明 `stage_graph` 与 `resource_envelope` 的聚合关系：资源向量逐阶段求和，单次执行的 active slot 数取阶段最大值，最大并发取阶段最小值。schema 描述这些关系但不能验证跨字段算术；生产者和准入边界须核验，不能仅凭结构校验认定预算正确。资源向量至少包含 engine active slots、设备内存、CPU 解码额度、主机 PCM buffer、输入 / 输出带宽和对象存储额度。常驻模型内存在引擎级只计一次，不为每个请求重复收费；请求只申请增量预算。多阶段 TTS 的 Talker、Code2Wav 及 connector 预算作为完整执行图申报。
 
 完整执行图也覆盖实时 ASR 的定稿依赖。启用 `full_segment` 的配方必须把 1.7B 复核的就绪、保留预算和等待期限纳入实时资格，required 对齐 / 分人亦同；不能仅按 0.6B 预览占用宣称可准入。文件任务即使复用该实例，也只能使用不破坏实时承诺的预算。绑定 revision / 资格、具体实例及 generation、准入租约各自独立记录，空闲卸载不退役绑定。
 
@@ -50,7 +51,9 @@ MySQL/InnoDB 仅用于关键协调路径验证；不采用 etcd，Redis 不承�
   → 资源释放
 ```
 
-配额包括活跃实时会话、在途同步请求、后台并发、排队数量、每日输入音频时长、TTS 字符 / 输出时长、存储与导出速率。请求中的 max_queue_wait_ms 只能收紧管理策略；普通推理参数不能增大这些配额。
+配额包括活跃实时会话、在途同步请求、后台并发、排队数量、每日输入音频时长、TTS 字符 / 输出时长、存储与导出速率。请求中的 `max_queue_wait_ms` 只能收紧管理策略；普通推理参数不能增大这些配额。当前 Job 请求 schema 只限定该字段的数值范围，不能比较部署策略；此约束须由准入和调度实现并验证，结构校验通过不代表已生效。
+
+以下实时 credit、累计额度和双工准入描述目标协议与计量规则；当前生产组合根尚未装配公开 Realtime WebSocket 路由及真实实时执行链，不能据此认为这些实时控制已经端到端生效。当前入口边界见[语音接口](speech-api.md#2-实时协议与状态机)。
 
 实时累计额度与缓冲 credit 分开管理。每次发放音频 / 文本 credit 前，以原子事务在部署、工作空间和执行类别的适用层级预留相应累计输入额度。ASR 在样本验证并 accepted 时将该区间从预留转为累计使用；缓冲消费、预览结束、clear 或取消不退还已接受音频额度。TTS append 被 accepted 时继续保留文本额度，只在首次冻结该文本区间时转累计使用；取消 / 关闭释放尚未冻结的尾部和未使用 credit，冻结部分不退还。ack 后再次发放缓冲 credit 时仍须核对累计账本，不能凭释放内存重复透支。长连接拿不到新额度时停止发 credit，发送 quota_exceeded 与剩余已接受工作的处理方式；不接受超额输入，有限 drain 后关闭。
 
@@ -63,6 +66,8 @@ MySQL/InnoDB 仅用于关键协调路径验证；不采用 etcd，Redis 不承�
 音色设计、克隆与校验复用相同准入流程，使用 voice-creation 或受控 batch 类别；创建声音不能免费绕过 ASR / TTS / 辅助阶段预算。其 manifest 申报完整阶段图，试听作为 TTS 消耗记账。首期不统计个人配额，不用浏览器标签分割预算；全局部署上限始终覆盖所有工作空间。
 
 ### 1.3 调度算法与公平性
+
+本节是调度目标；目前独立 Scheduler 入口与完整业务装配尚未补齐，不能把以下排序、借用和公平性规则当作已验证的运行行为。部署入口与缺口见[部署单元](deployment-units.md#1-部署单元)。
 
 1. 首先按入口、profile 与部署策略选择 `realtime`、`interactive` 或 `batch` 类别，再选兼容的模型绑定与资源池。
 2. realtime 有明确保留容量，interactive 有有限等待预算，batch 使用其自有配额与剩余可用资源。保留比例由部署资格报告设置，不在业务预设中硬编码。
@@ -80,15 +85,15 @@ MySQL/InnoDB 仅用于关键协调路径验证；不采用 etcd，Redis 不承�
 
 管理面 `ResourcePool` 是跨节点聚合投影：`realtime_reserved_slots <= max_active_slots`，`active_slots + quarantine_slots <= max_active_slots`；任何计数都不能把隔离容量当成空闲容量。`status=ready` 必须至少有一个贡献节点和正容量，否则只能是 `degraded` / `unavailable`。聚合计数变化与节点租约账目保持同一事务口径，不能先展示可接单再补扣隔离槽位。受控应用事务必须使 host 与 instance 的 reserved / incremental / quarantine 投影等于实例基础预算与 admission lease 状态推导值；通过同一事务维护租约和预算、核对参与资源的当前状态/版本保证一致性，检查失败整体回滚。历史保护和最小写入权限继续保留，后台对账不能替代同步防超卖；不再强制由 PostgreSQL 延迟约束触发器完成跨表校验。
 
-`ExecutionControlPort` 的权威实现是每个 engine / stage 的受控 execution gateway，它独占该引擎网络入口与凭据。gateway 将“核验当前 reservation、attempt、policy / 资源 revision 与 token → 写入唯一 submit intent → 放行本次提交”串行化；先将状态记为 submitting 并占住预算，再向引擎发送。每个 intent 有可查询的 engine request_id 或确定的引擎侧关联证据；submitting 与传输结果未知都仍占用资源，不能当作未开始而免费重试。
+`ExecutionControlPort` 的权威实现是每个 engine / stage 的受控 execution gateway，它独占该引擎网络入口与凭据。gateway 将“核验当前 reservation、attempt、policy / 资源 revision 与 token → 写入唯一 submit intent → 放行本次提交”串行化；先将状态记为 submitting 并占住预算，再向引擎发送。已确认外发须记录原 engine request_id 或确定的引擎侧关联证据；初始 submitting 或结果未知时这些字段可能尚未记录，不能据此断言没有外发。submitting 与传输结果未知都仍占用资源，不能当作未开始而免费重试。
 
-数据库 token 不能撤回已经发到不支持 fencing 的引擎请求，也不能单独阻止旧进程在检查后暂停、恢复后迟到发送。因此更换 execution gateway owner 前，必须先由旧 gateway 完成拒绝旧 token 的提交屏障，或确认旧入口进程已退出 / 被隔离；随后协调全部在途与 submitting 请求。若无法逐请求确认，则 drain / 重建受控引擎实例并使其旧连接失效，受影响请求显式失败。只有这个屏障与执行结束证据都成立，才能回收旧容量并启用新 owner。
+数据库 token 不能撤回已经发到不支持 fencing 的引擎请求，也不能单独阻止旧进程在检查后暂停、恢复后迟到发送。因此 owner 接管前，必须封住旧 token 的提交入口，并协调全部在途与 submitting 请求；旧入口进程退出或被隔离本身也不证明引擎计算已停止。未知执行须隔离并保留其预算；在入口屏障和隔离账目均已确认后，新 owner 可使用已证明安全的其他余量，不能回收未知执行占用的容量。取得相应停止及资源释放证据后才能归还该容量；无法逐请求确认时，可通过 drain / 重建受控实例并使旧连接失效取得所需证据，受影响请求显式失败。具体接管条件见[协调事务](coordination-transactions.md#6-owner提交取消与释放时序)。
 
 网关或 worker 心跳失效后，调度器不能仅凭 TTL 到期回收算力：先由 execution gateway 通过 adapter 查询 / abort 对应执行，并拒绝过期 token 的新提交与结果发布。若无法证明旧提交入口已经封锁，或引擎不支持细粒度确认，隔离该 engine / stage 的容量，直到完成上述屏障与在途协调；该池暂不可用也不能重复分配仍被旧计算占用的资源。只在 worker 的库函数里提交前查询 PG 不满足此要求。
 
 资源租约状态为 `reserved → executing → stopping → released`，不确定时进入 `quarantined`。Operation 结果状态与资源清理分开：cleanup_state 为 `not_required / pending / complete / quarantined`。只有确认停止才允许 cancelled；取消确认或 drain 期限到期但执行仍未知时，操作以 failed / cancellation_unconfirmed 终结，cleanup_state=quarantined，预算继续被占用且禁止自动重试。后台协调只更新清理事实，不反转唯一结果终态。`quarantined` 不是可重新调度的空闲状态。DB / 调度协调不可用时停止新准入，当前工作只在已有有限策略租期内运行，失效后停止外发并转入停止 / 协调；不能切到未协调的本地计数器继续接单。
 
-隔离账目覆盖统一内存、设备内存、主机内存、CPU 解码、PCM 缓冲和 scratch 磁盘，并与 reserved 计数共同受节点 allocatable 上限约束。隔离量超过 `quarantine_threshold_ratio` 时，节点不得保持 `ready`，同一事务转入 `quarantined` 或 `draining`。退出隔离只能依据执行网关或节点控制器确认旧执行终止且资源释放的证据，或人工独立核验后的 `operator_verified_instance_terminated` 证据；释放事务必须同时扣减隔离账目、关闭 admission lease 并恢复对应槽位。人工释放还必须保存证据摘要、观察时间和原因，观察时间不得晚于实际预算释放时间；重复请求回显原事实，不重新解释证据。阈值以下不会自动恢复接单，仍须通过部署健康检查重新确认节点、入口和容量资格。
+隔离账目覆盖物理内存、CPU 解码、PCM 缓冲和 scratch 磁盘，并与 reserved 计数共同受节点 allocatable 上限约束；统一内存节点计 unified 物理内存，离散内存节点计 device / host 内存，不重复计算同一物理内存。隔离量超过 `quarantine_threshold_ratio` 时，节点不得保持 `ready`，同一事务转入 `quarantined` 或 `draining`。退出隔离只能依据执行网关或节点控制器确认旧执行终止且资源释放的证据，或人工独立核验后的 `operator_verified_instance_terminated` 证据；释放事务必须同时扣减隔离账目、关闭 admission lease 并恢复对应槽位。人工释放还必须保存证据摘要、观察时间和原因，观察时间不得晚于实际预算释放时间；重复请求回显原事实，不重新解释证据。阈值以下不会自动恢复接单，仍须通过部署健康检查重新确认节点、入口和容量资格。
 
 依照 ADR 0006，受控应用事务必须执行以下规则：`submit_intents` 只能在仍可执行的 admission lease 上插入；活动 `submit_intents` 不得附上停止证据；终态执行的状态、稳定错误码与停止证据不可改写；admission lease 只有在附属执行离开活动状态后才能进入 `released` / `quarantined`，`released` 不得遗留未关闭的 `unknown_quarantined`；隔离观察时间与释放证据不可改写；gateway fencing barrier 保持 sealed 且 token 不下降；engine generation 只有在所有 lease 已释放且没有非终态 intent 时才能转为 `stopped`。任一检查失败都必须回滚整个协调事务，不能先释放部分预算再等待后台补偿。数据库提供原子性、基础约束和最小权限，不再承诺独立拦截所有绕过受控入口的直接 SQL 跨表违例；所有正常运行写入必须经过明确事务操作，并接受同一套真实并发与故障测试。
 
@@ -100,6 +105,8 @@ MySQL/InnoDB 仅用于关键协调路径验证；不采用 etcd，Redis 不承�
 
 [ADR 0002](../decisions/0002-speech-models-engines-and-loading.md)规定：已启用实时 ASR、承担实时合成的 CustomVoice / Base 预加载并常驻，VoiceDesign 随音色创作任务按需加载、空闲回收，VAD 在 CPU 常驻且隔离会话状态。实时配方的复核及 required 辅助必须在准入前具备已验证的可服务条件；其余绑定的加载策略由部署资格决定，不能据此默认全部模型常驻或全部按需。
 
+以下自动准备、预算和回收是目标协调流程；已有控制器入口与组件不代表调度、真实模型生命周期及多节点恢复已完成生产装配或资格验证。
+
 平台自动协调实例准备与回收，受限部署侧控制器通过 Compose / 运维基础设施执行批准实例的启停并报告事实。API 与 worker 不持有任意容器管理能力，不在业务进程加载大模型；模型推理入口、凭据、submit fencing、abort 和完成证据仍由 execution gateway 独占。
 
 准备实例前，调度器在共享父物理预算中原子预留完整阶段的加载 / 热身峰值，包括设备与主机内存、临时缓冲和阶段间交接占用。共享物理内存不能被主机预算与设备预算重复当成独立余量。并发准备须共同受父预算约束；稳态预算只有在已取得对应证据后才可替换峰值预留。权重事先准备并锁定，执行请求不下载模型。
@@ -110,7 +117,7 @@ VoiceDesign 无预算时创建任务有界排队，不能挤出实时实例或�
 
 请求增量预算与实例常驻预算分别记账：请求完成仅释放已确认可释放的增量，实例预算在确认进程 / 容器停止且资源释放后才归还。加载失败也须完成清理证据；结果失败不等于资源已回收。实例卸载不删除模型绑定、音色候选、已发布 revision、来源或校验证据，再次启动重新核对 readiness 与资格匹配。
 
-空闲回收期限、队列和准备时限由部署策略及后续机器契约确定，本节不新增数值默认或状态枚举。资格验证须覆盖 VoiceDesign 冷加载 / 回收与实时 1 ASR + 1 TTS 共存时的峰值占用、延迟、停止证据和预算不足行为。
+空闲回收和排队的生效值由部署策略及现行契约确定：[容量清单](../../contracts/capacity-manifest.schema.json)包含 `idle_reclaim_cooldown_ms`，按需加载时要求非空且至少 1000 ms；[公开能力契约](../../contracts/speech-openapi.yaml)包含非负的 `max_queue_wait_ms`。这些结构约束不证明调度或回收已接通，也不替代具体部署的准备时限；本节不新增默认值或状态枚举。资格验证须覆盖 VoiceDesign 冷加载 / 回收与实时 1 ASR + 1 TTS 共存时的峰值占用、延迟、停止证据和预算不足行为。
 
 ## 2. 持久化、任务恢复与数据生命周期
 
@@ -137,6 +144,8 @@ VoiceDesign 无预算时创建任务有界排队，不能挤出实时实例或�
 
 ### 2.2 作业与产物发布
 
+本节描述目标生命周期与发布不变量。当前公开 Job 路由只装配创建和读取；取消、重试及事件流虽然已列入机器契约，尚未由该路由提供。派发生产 planner 也尚未装配，不能据此认为下述完整状态流、故障恢复和端到端发布已交付。
+
 Job 创建与 outbox 记录在同一数据库事务中提交；outbox 可能重复投递，worker 按 JobStep 的唯一执行意图和 attempt fencing 去重。正常状态迁移为：
 
 ```text
@@ -155,24 +164,29 @@ queued / retry_wait → cancelled / expired
 
 系统提供 at-least-once 执行与幂等发布，不声称外部推理天然 exactly-once。仅在未向客户端交付实时输出且操作可安全重试、旧 attempt 已协调结束时自动重试；已产生部分实时音频的请求不后台自动重播。辅助步骤失败不覆盖成功正文，按 required / best_effort 策略决定整个 Job 是否成功。
 
-失败分类包括输入 / 功能策略 / 参数永久错误、可重试后端错误、容量等待、执行超时、取消状态未知。自动重试默认最多 3 次、指数退避并加入 jitter，总自动重试窗口不超过 24 小时；永久错误不重试。quarantined engine 上的未知执行先协调，不直接换副本再跑。
+失败分类包括输入 / 功能策略 / 参数永久错误、可重试后端错误、容量等待、执行超时、取消状态未知。目标策略为自动重试默认最多 3 次、指数退避并加入 jitter，总自动重试窗口不超过 24 小时；永久错误不重试。quarantined engine 上的未知执行先协调，不直接换副本再跑。当前生产 Job planner 尚未装配，上述策略不是已验证的运行默认值；派发器的 `SPEECHNEXUS_JOB_DISPATCH_MAX_ATTEMPTS` 是单独配置的派发限制，不能据此推断业务重试策略已生效。
 
 用量账本区分 reservation、consumption 与未用预留释放。输入计量按稳定 operation 下的 canonical sample 区间 / 原始 Unicode codepoint 区间去重，键不包含 attempt；同一输入的 event 重发、commit 重发和作业内重试只计一次。TTS 字符为 JSON 解码后有效 Unicode scalar values，计用户正文的首次冻结区间，不将 instructions 或发音展开重复计入。输出以只追加的 `output_sample_intervals` 为权威账本，按 `(operation_id, attempt_id, output_stream_id, sample_interval, meter_kind)` 去重；受控应用事务锁定逻辑流后拒绝同一 meter 的重叠区间，运行角色不得改写或删除区间历史，因而失败 / 重试实际重新生成仍计消耗，标量水位不会覆盖先前证据。`samples + sample_rate` 是权威计量，音频毫秒只按 floor 派生用于展示。重试 API 创建的新 Job 是新意图，重新计输入。结果统计与基础设施消耗分别展示；无实际证据时保持待协调及预留，不伪造 0 成本或重复扣减。
 
-输出追加与原区间查询已由[执行网关](execution-gateway.md#11-append_interval-与原区间查询)实现，
+输出追加与原区间查询已由[执行网关](../components/execution-gateway.md#11-append_interval-与原区间查询)实现，
 其双库证据只覆盖合成区间事务。真实输出/诊断采集与业务额度、结算消费仍待联调。
 实际生成消耗按 generated 区间长度求和，不能用 max-end 水位补齐未生成的空隙。
 delivered/played 不减少消耗，但其存在也阻止后续声称从未外发、无需清理。
 
 ### 2.3 保存与删除默认值
 
-下面是初始保留策略，部署维护者可通过管理策略调整；不构成法规符合性声明。延长保存只影响尚未删除的内容，不能恢复从未保存的音频。
+下表是目标保留策略与建议，不表示每项默认值或管理调整入口均已实现，也不构成法规符合性声明。当前 Asset 上传进程默认 TTL 为 7 天，可通过 `SPEECHNEXUS_ASSET_DEFAULT_TTL_SECONDS` 或请求中的 `ttl_seconds` 调整；实际生效期限在原始记录中固定；更改进程默认值不会修改已有 Asset 或其重放身份，详见[资产保留与引用](../components/production-assets.md#retention-and-references)。延长保存只影响尚未删除的内容，不能恢复从未保存的音频。
+
+当前 Asset 的有效期按数据库时钟在原始记录中确定；即使维护器尚未将状态更新为
+`expired`，读取时达到期限也会被拒绝。到期不可读取不等于对象已物理删除：维护器仍需
+处理引用、未决写入和删除账本。存在对象证明时，须确认固定版本已清理；无对象证明且
+没有写入者时可无需删除对象完成清理，写入结果未决则保持阻断。
 
 | 数据 | 默认行为 / 保留建议 |
 | --- | --- |
 | 实时 PCM / TTS 网络音频块 | 只在受限内存缓冲；不永久保存，不进入日志和调试导出 |
-| 普通同步请求与结果 | 不保存原始音频或完整转写；幂等窗口仅保存意图与脱敏 receipt，不保证内容可重放 |
-| 文件转写输入 | 用户上传即明确保存，默认 7 天；创建 Job 时检查与任务期限相容 |
+| 普通同步请求与结果 | 不自动建立供用户浏览的永久内容记录；执行与恢复可能持久保存私有命令、输入或 staging 结果，按具体链路和清理规则处理，不将公开 receipt 当作内容重放保证 |
+| 文件转写输入 | 用户通过受控上传提交保存意图，目标默认 7 天；创建 Job 时检查与任务期限相容。上传可能被拒绝或结果未知，只有完成检查和发布才可视为 ready。当前 Asset 默认 TTL 为 7 天，但公开音频检查尚未接入 |
 | 普通生成音频 | 默认 30 天；显式保存到项目的成品按项目保留策略 |
 | 会话转写 / 项目文本 | 默认仅经用户选择保存；选定工作空间自动保存策略时，开始前明确提示；建议 90 天 |
 | 有声书原稿与成品 | 工作台随项目保存输入和已选择保留的结果副本，独立于底座临时 Artifact TTL；删除工作台内容按项目依赖执行 |
@@ -181,17 +195,21 @@ delivered/played 不减少消耗，但其存在也阻止后续声称从未外发
 | Job 事件与终态元数据 | 建议 30 天；幂等记录至少符合 [错误与幂等](speech-api.md#16-错误分页与幂等)，活动意图不按短 TTL 删除 |
 | 实时终态协调元数据 | 会话终结后 15 分钟；不构成历史音频恢复能力 |
 
-执行中的输入与待发布成品使用有界引用租约，防止 TTL 在任务中途删除依赖；租约不能无限延长过期数据。创建时发现输入有效期不足，应拒绝或按部署策略显式延长引用保留。已发布声音所需的参考 / 特征材料形成随音色生命周期管理的已提交声音资产，不依赖原始上传输入的短期 TTL 或无限续租。
+执行中的输入与待发布成品使用有界引用租约，防止 TTL 在任务中途删除依赖；租约不能无限延长过期数据。创建时发现输入有效期不足，应拒绝或按部署策略显式延长引用保留。已发布声音所需的参考 / 特征材料形成随音色生命周期管理的已提交声音资产，不依赖原始上传输入的短期 TTL 或无限续租。当前 Asset 维护器能检查已有引用，但 Job / 工作台引用写入尚未由该组件交付；不能仅凭引用表存在认定任务输入已受到上述保护。
 
-普通删除先列出有效的持久依赖与执行租约并拒绝破坏，包括当前无任务执行但仍被 VoiceRevision 引用的重建材料。明确级联 / 强制删除或强制禁用才优先于任务，按显式范围取消并协调清理，执行未确认停止前不释放预算或删除仍被使用的材料。
+普通删除先列出有效的持久依赖与执行租约并拒绝破坏，包括当前无任务执行但仍被 VoiceRevision 引用的重建材料。级联删除须经预检和明确范围确认，活动执行按原身份取消并协调清理；删除契约不提供绕过停止证据的强制删除标志。执行未确认停止前不释放预算或删除仍被使用的材料。绑定禁用是独立生命周期操作，不能替代删除确认或停止证据。
 
-底座源 Artifact 删除或到期不自动追删已提交的工作台独立副本；项目删除按工作台自己的依赖和保留策略执行，需要跨模块级联时必须明确列出范围与确认点。
+底座源 Artifact 删除或到期不自动追删已提交的工作台独立副本；项目删除按工作台自己的依赖和保留策略执行。跨模块引用须由各自所有者分别处理并重新预检，不跨模块自动级联。
 
 删除覆盖数据库、对象存储、缓存、搜索投影和旧 staging；备份按明确周期自然淘汰，并保存最小删除账本，恢复后在对外服务前重新应用删除与强制禁用。级联范围须显式列明，不能悄悄破坏其他项目或独立保存副本。内容摘要只在部署 / 工作空间内去重；共享分组不构成保密空间，不输出可用于任意探测内部对象的存储查询接口。
+
+上述覆盖与恢复是目标要求，不代表当前删除闭环已验收。工作台现有对象清理按固定前缀执行有界扫描，未逐版本删除，也不保证完成标记证明前缀已空；底座主动删除与跨模块停止协调仍待实现。具体状态和限制见[数据删除](data-deletion.md#workbench-当前实现与恢复边界)。
 
 ### 2.4 上传与网络边界
 
 文件以有界流上传至私有 staging，检查 magic bytes、MIME、大小、解码后时长和采样参数后转为 ready；解码器运行在无网络、有限 CPU / 内存 / 时间的受限进程。只接受 allowlist 格式，拒绝归档炸弹、未知序列化权重与用户提供的本地路径。首版不提供任意远程 URL 导入、动态下载模型或外部回调 URL。
+
+这是音频输入的目标检查链；当前默认 Asset 工厂使用文本检查器，公开音频检查尚未接入，见[音频资产检查](../archive/components/audio-asset-inspection.md)。不能仅凭上传入口或沙箱组件存在认定音频已经按上述条件检查并 ready。
 
 模型与 tokenizer / codec 文件在部署准备阶段离线准备，核对来源、revision、文件集与摘要后发布绑定。voice 特征采用经过校验的安全格式与已批准生成流程，不允许上传任意 pickle / 代码。声音素材的来源与使用确认作为资源元数据记录；访问与删除遵守当前部署功能策略和依赖裁决，不宣称已有按人授权。
 

@@ -1,0 +1,155 @@
+---
+title: "文件 ASR 默认执行装配"
+status: active
+version: "0.1.1"
+date: 2026-10-25
+---
+
+# 文件 ASR 默认执行装配
+
+网关正式入口 `speechnexus-gateway` / `speechnexus_gateway.app:create_app` 可按私有部署配置装配
+已有文件 worker、原命令消费者、固定代次 vLLM、CPU VAD、PyAV 与 MinIO 输入/结果适配器。
+未提供 ASR 配置时，文件 ASR 不可执行；若同时配置了文件 TTS，网关仍可装配 TTS
+执行路径。两者都未配置且未注入执行工厂时，文件语音执行 worker 不会启用。
+这项接线不创建 binding、默认参数、资格、Job、预算或另一份结果账本。
+
+确定性验证使用真实 PostgreSQL、MinIO、PyAV 和回环 HTTP，VAD 与识别输出为替身。
+另已用该默认入口完成[真实 1.7B/CPU VAD 实验](../archive/audits/2026-10-25-b03-default-real-asr-probe.md)，
+覆盖合成语音/静音、原身份重放/重启及私有结果；关系数据由隔离 fixture 预置。
+后续[停止与预算结算联验](../archive/audits/2026-10-25-b03-real-stop-settlement.md)已连接默认网关恢复驱动和 A 的原结算事务，但就绪凭证与准入使用 fixture；不授予质量、容量、公开 SDK/C 或物理集群资格。
+默认 Compose 提供私有配置文件引用、合成示例和镜像内固定 CPU VAD 依赖，但仍不提供
+已批准模型、真实引擎端点、凭据或已注册实例。启动与探活步骤见
+[最小 Compose 部署面](compose-minimal.md)；启动成功不等于执行链或模型资格通过。
+
+## 启用条件与责任
+
+先按[执行网关](../components/execution-gateway.md)提供组件凭据、显式 node/gateway、宿主锁目录、
+已迁移的数据库与网关运行角色，再成组设置：
+
+| 环境变量 | 内容 |
+| --- | --- |
+| `SPEECHNEXUS_GATEWAY_FILE_ASR_CONFIG_FILE` | 绝对路径，指向下述私有 JSON |
+| `SPEECHNEXUS_GATEWAY_FILE_ASR_OBJECT_ACCESS_KEY` | 部署提供的对象存储访问身份 |
+| `SPEECHNEXUS_GATEWAY_FILE_ASR_OBJECT_SECRET_KEY` | 对应密钥，仅从服务端设置读取 |
+
+三项全部缺失保持未启用；部分提供、缺控制配置或相对配置路径拒绝启动。
+对象凭据不写入 JSON；使用只对批准输入和私有结果范围授权的身份。
+文件执行配置不能与测试注入的工厂或控制/提交/中止服务混用。
+可同时配置原有恢复驱动，两者复用原 ledger、进程入口和关闭顺序。
+同时启用文件 TTS 时，两份配置的 `max_command_bytes`、`max_pending` 和
+`shutdown_seconds` 必须一致，否则拒绝启动。两条路径共用一个文件 worker，
+`max_pending` 是共同的本地待处理上限，不是各自独享的调度或容量预算；
+结果字节上限可分别设置。
+
+ASR 配置位于[配置与装配模块](../../execution-gateway/src/speechnexus_gateway/file_asr_runtime.py)，
+与 TTS 共用 worker 的组合根见[文件语音装配](../../execution-gateway/src/speechnexus_gateway/file_speech_runtime.py)。
+它同时引用 interfaces 和 infrastructure，二者仍不互相导入。
+生产部署另外安装[CPU VAD 固定依赖](../../deploy/engines/cpu-vad/requirements.txt)及
+[媒体运行依赖](../components/file-asr-audio.md)；网关普通导入不加载模型或 vendor runtime。
+文件、模型与服务身份由部署提供，不从公开请求接受路径、URL 或凭据。
+
+## 私有配置格式
+
+此文件描述单个进程的装配，不是公开协议或权威模型注册接口。
+字段与解析行为以组合根及其调用的原生类型为准，所有层级拒绝未知字段、重复键、
+非有限数字及隐式类型转换。配置上限为 65,536 bytes。
+JSON 与自定义 CA 必须是当前运行 UID 所有、无 group/other 权限的非空普通文件，
+不接受最终路径为 symlink、FIFO 或目录；读取不会等待 FIFO。
+CA 上限为 262,144 bytes。
+
+顶层必须显式提供以下全部字段，唯一例外是带缺省值的 `require_correlation_echo`：
+
+| 字段 | 含义 |
+| --- | --- |
+| `protocol` | 固定 `file_asr_v1` |
+| `controlled_endpoint_file` | [受控 ASR 描述](../components/controlled-asr-generation.md)的绝对私有路径；沿用其 `vllm_api_key_v1` 及凭据要求 |
+| `require_correlation_echo` | 可选布尔，缺省 `true`；要求引擎在响应头原值回显 `X-Request-ID`。仅对不回显该头的第三方端点显式设为 `false`，语义和后果见[原生识别接口](../components/file-asr-recognition.md) |
+| `vad_model_file` / `vad_model_sha256` | 已下载普通 ONNX 文件的绝对路径、64 位小写十六进制 SHA-256；允许模型卷软链接，打开后的目标须为普通文件，启动核对实际内容摘要和 CPU 模型接口 |
+| `objects` | 下表的固定对象存储范围 |
+| `vad_tuning` | 完整原生 `VadPolicy` 字段，包含固定策略修订 |
+| `input_limits` | 完整原生 `ExecutionInputLimits` 字段 |
+| `decode_limits` | 完整原生 `AudioDecodeLimits` 字段 |
+| `worker_limits` | 完整原生 `FileExecutionLimits` 字段 |
+| `max_completion_tokens` / `max_call_seconds` | 显式单段 token 与调用秒数上限，由原生 `AsrPolicy` 校验 |
+
+`objects` 的全部字段如下：
+
+| 字段 | 含义 |
+| --- | --- |
+| `endpoint` | 固定私有 IP origin；沿用对象适配器的协议、地址与验证 TLS 规则，不使用 DNS、代理或重定向 |
+| `input_bucket` / `result_bucket` | 已批准的私有输入桶和结果桶；可以相同。输入引用须带可读取的固定对象版本，结果桶须开启版本化；同步转写生产者写入输入时也要求输入桶版本化 |
+| `spool_directory` | 已存在的绝对目录，当前 UID 所有且无 group/other 权限；仅作有界临时缓冲 |
+| `tls_ca_file` | 显式为 `null`，或私有 CA 绝对路径；`null` 使用系统信任，不关闭证书验证 |
+| `result_timeout_seconds` | 结果 PUT 与固定版本读回的累计秒数上限，复用结果适配器原生校验 |
+
+原生对象也必须提供完整字段，即使字段在独立原生 API 中有默认值：
+
+| 配置对象 | 必须显式给出的字段 | 校验来源 |
+| --- | --- | --- |
+| `vad_tuning` | `config_revision`、`threshold`、`end_threshold`、`min_speech_ms`、`prefix_padding_ms`、`silence_duration_ms`、`max_segment_ms` | [VadPolicy](../../execution-gateway/src/speechnexus_gateway/domain/vad.py) |
+| `input_limits` | `max_bytes`、`memory_bytes`、`timeout_seconds` | [ExecutionInputLimits](../../execution-gateway/src/speechnexus_gateway/domain/execution_inputs.py) |
+| `decode_limits` | `max_encoded_bytes`、`max_duration_ms`、`max_frame_samples`、`timeout_seconds` | 共享媒体包的 [AudioDecodeLimits](../../packages/media/src/speechnexus_media/domain.py)；gateway 的 `domain.media` 兼容导出该类型 |
+| `worker_limits` | `max_result_bytes`、`max_command_bytes`、`max_pending`、`shutdown_seconds` | [FileExecutionLimits](../../execution-gateway/src/speechnexus_gateway/domain/file_execution.py) |
+
+字节、毫秒、秒与样本数由字段名明确区分；范围直接复用这些类型，不维护第二份边界规则。
+这些上限控制本地消费，不授予调度配额或模型容量。命令自身仍须携带已解析的参数、
+资源与版本；[原命令消费者](../components/frozen-execution-inputs.md)按既有支持子集校验和转换，
+不支持的能力明确拒绝。
+
+## 激活、执行与关闭
+
+1. `create_app` 有界读取并严格解析配置，冻结原生策略/上限、凭据和 endpoint。
+   endpoint 的 node/gateway 必须匹配进程设置。错误信息不回显路径、凭据或文件正文；
+   配置结构、目标或本地消费上界错误在数据库池、入口 ownership、模型加载和外部请求前拒绝。
+2. lifespan 取得既有控制资源后，构造 PyAV、按摘要固定的 CPU VAD 和既有 worker。
+   模型文件变化、摘要错误、依赖缺失或模型接口不符使启动失败，沿原 lifecycle 关闭控制资源；
+   模型使用非阻塞普通文件读取，不能通过替换成 FIFO 卡住启动。激活后不重新读取可变配置。
+3. worker 复用原 intent：短 dispatch 只准备，接收确认提交并退出 ingress 后才开始长处理。
+   执行目标仍逐次核对完整 node/gateway/pool/instance/generation/binding；
+   真实 ledger 继续核验租约、屏障、资格和版本。私有配置不替代这些权威检查。
+4. 输入固定版本核验后才进入解码/VAD/ASR，结果先写私有 staging、版本化读回，再由原事务登记。
+   结果登记遇到版本冲突时只重新读取原记录；提交结果未知时，仅当原身份、请求摘要、引擎请求
+   身份及 staging 结果全部匹配，才确认已登记，否则保持未知并协调，不重新推理或写对象。
+   重放查询原结果；重启将遗留活动执行隔离，不将旧 intent 当重试队列。
+   本地准备票据统一在任务完成回调清理；协程首次运行前取消也能归还本地槽位。
+   已开始的数据库操作仍须等待结束，不因取消提前腾出槽位；此清理不改变持久占用或签发停止事实。
+5. 关闭先停止并 join 文件工作，再停恢复驱动、关闭数据库池与释放 ownership。
+   重复取消仍等待正在构造/启动的对象返回后清理；迟到活线程没有退出就不报告资源已关闭。
+
+配置启用后，运行中的文件 worker 参加 `/readyz`；它只证明本地执行线程正在服务。
+该探针不检查真实模型的输出质量、远端实例状态、对象桶版本化或完整公开业务链。
+单凭 HTTP/SSE 连接结束、客户端取消或本地线程退出不能证明 GPU 停止或资源释放。
+适配器观察到符合原执行身份的可信引擎终态时，可由成功终态事务记录该执行的停止证据；
+它不证明整个实例已停止，也不直接归还预算。未知执行继续占用，只由 A 凭匹配证据在原
+事务结算预算。
+
+## 固定真实实例的部署提示
+
+上述 GB10 / 固定 vLLM 0.28.0 实验保留单并发、8192 最大长度及 12 GiB
+Memory/MemorySwap，显式使用 `--kv-cache-memory-bytes 1073741824`。
+旧 `--gpu-memory-utilization 0.05` 的自动估算曾只留出约 0.85 GiB cache，
+不足以覆盖约 0.88 GiB 的需求；不能将其历史启动成功当作稳定可加载保证。
+固定 cache 参数优先于按比例估算，仍须测量并核验整体加载峰值。
+这些是该实验模板的参数，不是新公共默认值或跨主机容量承诺。
+
+该镜像关闭统计日志也会关闭本次使用的成功推理计数；需要用它观测重放时，
+实验模板开启汇总统计，继续关闭请求、输出与 access log。
+日志开关或计数可读均不提供准入、停止或资格权威。
+
+## 验证范围
+
+- [配置和默认 lifecycle](../../tests/unit/gateway/test_file_asr_runtime.py)：拒绝缺省/未知字段、
+  重复键、特殊文件、错误目标与上界；验证缺配置行为、默认装配、加载失败及重复取消。
+- [本地 worker 取消](../../tests/unit/gateway/test_file_execution_worker.py)：阻塞事件循环，
+  在首次协程执行前重复 abort；确认零识别/写对象、unknown 保留占用，后续请求可进入唯一槽位。
+  另阻塞数据库登记，验证重复取消不会在 writer 结束前释放本地槽位。
+- [默认入口集成](../../tests/integration/test_gateway_default_file_asr.py)：未注入工厂，
+  使用正式 PG 角色、真实 MinIO/PyAV 与回环原生 HTTP；有语音和无语音分别验证，
+  重放/重启不增加外发或结果版本，预算计数不变；有语音场景登记引擎终态停止证据，
+  无语音场景没有该证据并保持 `unknown_quarantined`。
+- 原 worker 的双库、竞争及真实 commit 确认丢失回归继续保护原事务边界。
+  InnoDB 仅验证协调关键路径；默认生产配置仍使用 PostgreSQL。
+
+测试使用合成媒体和脚本化模型，不加载权重、不下载制品、不使用私人录音。
+执行命令及隔离前置见[验证指南](../agent-verification.md)与[集成测试说明](../../tests/integration/README.md)。
+真实实验与这些确定性测试分别记录，具体版本、失败和未覆盖项见上文实验报告。

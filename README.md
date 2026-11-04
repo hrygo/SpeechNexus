@@ -52,7 +52,7 @@ SpeechNexus 是面向自有部署网络、按分布式架构设计的语音服�
 | **Qwen3-TTS · vLLM-Omni** | CustomVoice 负责预设声音配音，VoiceDesign 根据描述设计声音，Base 负责样本克隆与创作音色复用 |
 | **Silero VAD · ONNX Runtime CPU** | 检测人声并切分音频，为识别准备有效输入 |
 
-以上为已确定的选型路线：ASR、VAD 与 CustomVoice TTS 已有局部实测，完整业务接入与质量、恢复及集群资格仍待验证。首页徽章用于展示选型，不代表默认启动即具备这些能力。模型分工与验证要求见[模型与引擎说明](docs/decisions/0002-speech-models-engines-and-loading.md)，TTS 局部证据见[文件 TTS](docs/architecture/file-tts.md)。
+以上为已确定的选型路线：ASR、VAD 与 CustomVoice TTS 已有局部实测，完整业务接入与质量、恢复及集群资格仍待验证。首页徽章用于展示选型，不代表默认启动即具备这些能力。模型分工与验证要求见[模型与引擎说明](docs/decisions/0002-speech-models-engines-and-loading.md)，TTS 局部证据见[文件 TTS](docs/components/file-tts.md)。
 
 ## 当前可用范围
 
@@ -61,16 +61,16 @@ SpeechNexus 是面向自有部署网络、按分布式架构设计的语音服�
 | 范围 | 当前状态 | 体验前需要了解 |
 | --- | --- | --- |
 | 默认 Compose 启动 | 两个 Web 入口、语音服务及基础依赖健康检查 | 可预览界面；不加载模型，不提供真实语音闭环 |
-| 发音词典固定修订 GET | 显式配置独立只读 PG 身份后，可读取已有草稿修订 | 默认未配置返回 503；创建、发布及 TTS 资格仍待，见[只读入口](docs/architecture/pronunciation-read-contract.md) |
+| 发音词典固定修订 GET | 显式配置独立只读 PG 身份后，可读取已有草稿修订 | 默认未配置返回 503；创建、发布及 TTS 资格仍待，见[只读入口](docs/components/pronunciation-read-contract.md) |
 | 文件转写、配音与任务页面 | 已接入公开 API 消费流程 | 真实语音执行、结果生成与完整部署仍待联调 |
-| 网关文件 ASR 装配 | 私有配置可将既有持久 worker 接到固定代次端点、CPU VAD 与对象存储 | 候选默认入口已验证真实 1.7B/CPU VAD、隔离 PG/MinIO 的合成语音/静音及重放/重启；生产准入、可信预算释放、发布与公开链仍待验收，见[配置说明](docs/architecture/file-asr-runtime.md) |
+| 网关文件 ASR 装配 | 私有配置可将既有持久 worker 接到固定代次端点、CPU VAD 与对象存储 | 候选默认入口已验证真实 1.7B/CPU VAD、隔离 PG/MinIO 的合成语音/静音及重放/重启；生产准入、可信预算释放、发布与公开链仍待验收，见[配置说明](docs/operations/file-asr-runtime.md) |
 | 项目、稿件与会议记录 | 页面及独立工作台服务已有验证 | 需要独立配置和数据库准备，默认 Compose 尚未完整装配 |
 | 场景预设草稿 | Admin 页面支持完整配置创建、固定修订读取、显式确认和原键恢复，已有 HTTP/PG/浏览器验证 | 需要显式配置预设写入服务；发布、激活与退役尚未接入 |
 | 实时字幕、实时配音与音色创建 | 已有页面消费者，使用合成服务验证交互 | 真实服务与模型待接入；创建任务不等于发布可复用音色 |
 | 素材上传与下载 | 显式配置后可用，已验证 UTF-8 文本处理 | 默认未启用对象存储凭据；音频检查待接入 |
 | 真实模型与生产运行 | ASR、VAD、CustomVoice TTS 已有局部探针与模块验证 | 完整识别/合成、质量、容量、恢复与集群运行仍待验收 |
 
-工程实现与验证证据见[架构文档](docs/architecture/README.md)、[实施跟踪](docs/plans/2026-10-23-implementation-tracking.md)和[审查记录](docs/audits/README.md)。
+产品交付从 [PRD](docs/prd.md)、[设计](docs/architecture/README.md)和[需求矩阵](docs/plans/delivery-tracking.md)进入。矩阵关联完整需求、唯一主 Epic、实现/集成/验证、缺口与证据；[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)下十个 MECE Epic 组织范围，具体实施 issue 按需创建并直属唯一 Epic。尚未建卡的需求继续保留在矩阵，实测依据见[审查记录](docs/audits/README.md)。
 
 ## 快速开始
 
@@ -129,7 +129,7 @@ SpeechNexus 的接口设计采用 **OpenAI Audio 兼容子集 + `nexus` 扩展**
 
 相关服务实现并启用后，标准 OpenAI SDK 可将 `base_url` 指向部署的 `/v1`。目前公共语音流程仍在实施，契约和调用示例用于开发对接，不能视为默认部署已支持全部接口。
 
-配置完成的独立工作台可通过公开接口下载已提交副本和已完成导出，支持单段 Range 与完整性校验，页面在校验后交给浏览器保存。配置限制及证据范围见[工作台内容下载](docs/architecture/workbench-content-downloads.md)；完整导出清单、续作和真实模型质量验收仍在推进。
+配置完成的独立工作台可通过公开接口下载已提交副本和已完成导出，支持单段 Range 与完整性校验，页面在校验后交给浏览器保存。配置限制及证据范围见[工作台内容下载](docs/components/workbench-content-downloads.md)；完整导出清单、续作和真实模型质量验收仍在推进。
 
 - [语音接口设计](docs/architecture/speech-api.md)：接口、事件和调用方式。
 - [OpenAI 兼容边界](docs/architecture/openai-compatibility.md)：支持的子集与扩展规则。
@@ -143,7 +143,7 @@ SpeechNexus 的接口设计采用 **OpenAI Audio 兼容子集 + `nexus` 扩展**
 
 产品要求语音模型本地推理，业务音频、转写、书稿、声音参考及派生内容留在部署网络内。助手与纪要的 LLM 集成可选、默认关闭，仅允许部署批准的本机或内网服务，不回退公有云。完整 LLM 集成与出站限制仍待验收，详见[网络边界说明](docs/decisions/0003-workbench-llm-network-boundary.md)。
 
-显式启用素材服务后，新素材默认保留 **7 天**，可通过部署配置或上传时指定保留期；修改默认值不影响已有素材的到期时间。持久存储、备份与清理配置见[素材服务说明](docs/architecture/production-assets.md)。
+显式启用素材服务后，新素材默认保留 **7 天**，可通过部署配置或上传时指定保留期；修改默认值不影响已有素材的到期时间。持久存储、备份与清理配置见[素材服务说明](docs/components/production-assets.md)。
 
 ## 后续方向
 
@@ -152,13 +152,13 @@ SpeechNexus 的接口设计采用 **OpenAI Audio 兼容子集 + `nexus` 扩展**
 - 接通实时字幕、实时配音和会议保存，再完善助手、提词与有声书。
 - 完成管理端业务、资源治理，以及真实模型质量、恢复和生产部署验收。
 
-阶段与依赖见[实施计划](docs/plans/2026-10-22-speechnexus-implementation-plan.md)，模型与引擎验证路线见[模型选型说明](docs/decisions/0002-speech-models-engines-and-loading.md)。
+当前交付范围与证据见[跟踪矩阵](docs/plans/delivery-tracking.md)；[原实施计划](docs/archive/plans/2026-10-22-speechnexus-implementation-plan.md)保留历史阶段与依赖假设，模型与引擎验证路线见[模型选型说明](docs/decisions/0002-speech-models-engines-and-loading.md)。
 
 ## 文档
 
 | 我想了解 | 阅读入口 |
 | --- | --- |
-| 项目进展与接管 | [项目经理基线：三队能力、缺口、证据与协作](docs/plans/2026-10-26-project-manager-baseline.md) |
+| 项目进展与接管 | [项目经理基线：三队能力、缺口、证据与协作](docs/archive/plans/2026-10-26-project-manager-baseline.md) |
 | 产品范围与工作流 | [产品设计](docs/speechnexus-product-architecture.md) |
 | 部署、端口与配置 | [部署说明](deploy/README.md) |
 | 部署单元、分机拓扑与平台要求 | [部署单元与平台规划](docs/architecture/deployment-units.md) |

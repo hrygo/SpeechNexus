@@ -86,7 +86,8 @@ uv run --locked pytest -m integration \
 head 推进后的原结果。故障测试在真实 pool context 提交之后合成丢回执，再以
 原完整请求/key 恢复；其合成故障不证明网络丢包、进程崩溃或 HA。
 
-新增六种跨操作有序组合通过真实 PG/ASGI 检查同键冲突、原结果重放和状态不变。
+新增测试设计了六种跨操作有序组合，使用 PG/ASGI 检查同键冲突、原结果重放和状态不变；
+是否通过以对应固定候选的实际运行记录为准。
 `test_binding_lifecycle_fixture_pg.py` 在真实迁移提交后、建角色前、grant 和 pool
 初始化注入失败，再用独立观察连接查询 schema/role 残留。这里的失败由测试注入，
 不证明真实权限拒绝或连接中断。无数据库的故障注入覆盖另外的名称碰撞、pool open、

@@ -52,7 +52,7 @@ The selected **Qwen3 speech model family** covers recognition, narration, and vo
 | **Qwen3-TTS · vLLM-Omni** | CustomVoice for preset voices, VoiceDesign for voices described in text, and Base for sample cloning and reuse of created voices |
 | **Silero VAD · ONNX Runtime CPU** | Detect and segment speech to prepare useful recognition input |
 
-These are selected integration paths: ASR, VAD, and CustomVoice TTS have partial runtime evidence; complete business integration, quality, recovery, and cluster qualification still need validation. Header badges identify technology choices and do not imply availability at default startup. See the [model and engine decision (Chinese)](docs/decisions/0002-speech-models-engines-and-loading.md) for responsibilities and acceptance requirements, and [file TTS (Chinese)](docs/architecture/file-tts.md) for component evidence.
+These are selected integration paths: ASR, VAD, and CustomVoice TTS have partial runtime evidence; complete business integration, quality, recovery, and cluster qualification still need validation. Header badges identify technology choices and do not imply availability at default startup. See the [model and engine decision (Chinese)](docs/decisions/0002-speech-models-engines-and-loading.md) for responsibilities and acceptance requirements, and [file TTS (Chinese)](docs/components/file-tts.md) for component evidence.
 
 ## Current availability
 
@@ -61,16 +61,16 @@ Repository delivery summary as of **2026-10-26**. Independently verified modules
 | Area | Current state | Before you try it |
 | --- | --- | --- |
 | Default Compose startup | Two Web entry points, speech service, and infrastructure health checks | Interface preview; no model loading or complete speech workflow |
-| Fixed pronunciation revision GET | Explicit independent read-only PG configuration reads existing draft revisions | Unconfigured returns 503; create, publication and TTS qualification remain pending; see [reader configuration](docs/architecture/pronunciation-read-contract.md) |
+| Fixed pronunciation revision GET | Explicit independent read-only PG configuration reads existing draft revisions | Unconfigured returns 503; create, publication and TTS qualification remain pending; see [reader configuration](docs/components/pronunciation-read-contract.md) |
 | File transcription, narration, and task pages | Public API consumer flows connected | Real speech execution, result generation, and complete deployment still need integration |
-| Gateway file-ASR composition | Private configuration connects the durable worker to a fixed-generation endpoint, CPU VAD, and object storage | Candidate default entrypoint verified with real 1.7B/CPU VAD, isolated PG/MinIO, synthetic speech/silence, replay and restart; production admission, trusted budget release, publication and public workflow acceptance remain pending; see [configuration (Chinese)](docs/architecture/file-asr-runtime.md) |
+| Gateway file-ASR composition | Private configuration connects the durable worker to a fixed-generation endpoint, CPU VAD, and object storage | Candidate default entrypoint verified with real 1.7B/CPU VAD, isolated PG/MinIO, synthetic speech/silence, replay and restart; production admission, trusted budget release, publication and public workflow acceptance remain pending; see [configuration (Chinese)](docs/operations/file-asr-runtime.md) |
 | Projects, manuscripts, and meeting records | Pages and an independent workbench service have verification evidence | Separate configuration and database preparation required; not fully assembled in default Compose |
 | Scenario preset drafts | Admin supports complete draft creation, fixed revision reads, explicit confirmation, and original-key recovery, verified through HTTP/PostgreSQL/browser tests | Explicit profile writer configuration required; publication, activation, and retirement are not connected |
 | Live captions, live speech, and voice creation | Page consumers tested with synthetic services | Real services and models pending; creating a task does not publish a reusable voice |
 | Asset upload and download | Available with explicit configuration; UTF-8 text handling verified | Object credentials disabled by default; audio inspection integration pending |
 | Real models and production operation | Partial ASR, VAD, and CustomVoice TTS probes and modules verified | Complete recognition/synthesis, quality, capacity, recovery, and cluster operation still need acceptance |
 
-Implementation details and evidence are linked from the [architecture documents (Chinese)](docs/architecture/README.md), [implementation tracking (Chinese)](docs/plans/2026-10-23-implementation-tracking.md), and [audit records (Chinese)](docs/audits/README.md).
+Start with the [PRD (Chinese)](docs/prd.md), [design (Chinese)](docs/architecture/README.md), and [requirement matrix (Chinese)](docs/plans/delivery-tracking.md). The matrix links all requirements to one primary Epic, implementation, integration, verification, gaps, and evidence. [Program #336](https://github.com/hrygo/SpeechNexus/issues/336) has ten mutually exclusive and collectively exhaustive Epics. Create implementation issues only when needed, each as a native direct child of one Epic; requirements without issues remain visible. See [audit records (Chinese)](docs/audits/README.md) for measured evidence.
 
 ## Quick start
 
@@ -129,7 +129,7 @@ The interface design uses an **OpenAI Audio compatibility subset plus `nexus` ex
 
 Once the relevant services are implemented and enabled, standard OpenAI SDKs can point `base_url` at the deployment's `/v1`. Public speech workflows remain in development; contracts and examples support integration work and do not imply that the default deployment implements every endpoint.
 
-The configured independent workbench provides public downloads of committed copies and completed exports, with single byte ranges and integrity checks. The UI verifies content before handing it to the browser to save. See [workbench content downloads (Chinese)](docs/architecture/workbench-content-downloads.md) for limits and evidence scope. Complete export manifests, continuation, and real model quality acceptance remain in progress.
+The configured independent workbench provides public downloads of committed copies and completed exports, with single byte ranges and integrity checks. The UI verifies content before handing it to the browser to save. See [workbench content downloads (Chinese)](docs/components/workbench-content-downloads.md) for limits and evidence scope. Complete export manifests, continuation, and real model quality acceptance remain in progress.
 
 - [Speech API design (Chinese)](docs/architecture/speech-api.md): endpoints, events, and usage.
 - [OpenAI compatibility boundaries (Chinese)](docs/architecture/openai-compatibility.md): supported subsets and extension rules.
@@ -143,7 +143,7 @@ Business and control services, the workbench, data services, and compute compone
 
 The product requires local speech inference, keeping business audio, transcripts, manuscripts, voice references, and derived content within the deployment network. LLM integration for assistants and minutes is optional, disabled by default, and restricted to deployment-approved local or intranet services, with no public-cloud fallback. Complete LLM integration and egress restrictions still require acceptance; see the [network boundary decision (Chinese)](docs/decisions/0003-workbench-llm-network-boundary.md).
 
-When the asset service is explicitly enabled, new assets default to **7 days** of retention, overridable by deployment configuration or upload settings. Changes to defaults do not affect existing expiry times. See the [asset service guide (Chinese)](docs/architecture/production-assets.md) for storage, backup, and cleanup configuration.
+When the asset service is explicitly enabled, new assets default to **7 days** of retention, overridable by deployment configuration or upload settings. Changes to defaults do not affect existing expiry times. See the [asset service guide (Chinese)](docs/components/production-assets.md) for storage, backup, and cleanup configuration.
 
 ## What's next
 
@@ -152,13 +152,13 @@ When the asset service is explicitly enabled, new assets default to **7 days** o
 - Connect live captions, live speech, and meeting persistence, then expand assistants, teleprompters, and audiobooks.
 - Complete AdminUI business features, resource governance, and real-model quality, recovery, and production deployment acceptance.
 
-See the [implementation plan (Chinese)](docs/plans/2026-10-22-speechnexus-implementation-plan.md) for stages and dependencies, and the [model selection decision (Chinese)](docs/decisions/0002-speech-models-engines-and-loading.md) for model and engine validation plans.
+See the [delivery tracking matrix (Chinese)](docs/plans/delivery-tracking.md) for current scope and evidence. The [original implementation plan (Chinese)](docs/archive/plans/2026-10-22-speechnexus-implementation-plan.md) retains historical stage and dependency assumptions; the [model selection decision (Chinese)](docs/decisions/0002-speech-models-engines-and-loading.md) describes model and engine validation plans.
 
 ## Documentation
 
 | I want to learn about | Start here |
 | --- | --- |
-| Project status and takeover | [Project manager baseline: team capabilities, gaps, evidence, and collaboration (Chinese)](docs/plans/2026-10-26-project-manager-baseline.md) |
+| Project status and takeover | [Project manager baseline: team capabilities, gaps, evidence, and collaboration (Chinese)](docs/archive/plans/2026-10-26-project-manager-baseline.md) |
 | Product scope and workflows | [Product design (Chinese)](docs/speechnexus-product-architecture.md) |
 | Deployment, ports, and configuration | [Deployment guide](deploy/README.md) |
 | Deployment units, host placement, and platform requirements | [Deployment unit and platform plan (Chinese)](docs/architecture/deployment-units.md) |

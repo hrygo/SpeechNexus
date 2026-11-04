@@ -19,7 +19,7 @@ Its JSON `artifact_set` and `engine` reuse the existing ModelBinding contract.
 The result verifies a local snapshot against a trusted pin; it does not register
 or publish a binding, inspect a running image, grant capacity qualification, or
 prove an instance/generation or stop. See the
-[binding and parameter handoff](../../../docs/architecture/file-asr-binding-handoff.md)
+[binding and parameter handoff](../../../docs/operations/file-asr-binding-handoff.md)
 for provenance, supported parameters, limits and remaining integration work.
 
 To emit the existing registry's complete `BindingDefaultsCreateRequest`, add
@@ -77,12 +77,12 @@ local report. Temporary audio is deleted when the process exits normally or rais
 No transcript/annotation is read, no ASR request is sent, and no GPU is used.
 These checks do not establish recognition quality or a production memory budget.
 
-See the [native API and limits](../../../docs/architecture/file-asr-audio.md).
+See the [native API and limits](../../../docs/components/file-asr-audio.md).
 The CPU model's MIT notice is retained in the VAD directory. This directory pins
 runtime packages, not the project's overall model/runtime redistribution decision;
 wheel codec/library configuration and licenses remain part of deployment review.
 
-The [native recognition adapter](../../../docs/architecture/file-asr-recognition.md)
+The [native recognition adapter](../../../docs/components/file-asr-recognition.md)
 uses this same optional environment. The controller probe can exercise it with
 explicitly authorized local recordings:
 

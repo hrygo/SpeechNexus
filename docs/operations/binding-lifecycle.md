@@ -13,17 +13,19 @@ date: 2026-10-28
 
 ## 配置与权限
 
-API 进程需显式配置独立非 owner 角色：
+API 进程需显式配置独立非 owner 角色。通过部署批准的秘密配置向进程提供
+`SPEECHNEXUS_BINDING_LIFECYCLE_DATABASE_URL`；不要把含凭据的 DSN 写入命令参数或终端历史。
+schema 可按部署配置，例如：
 
 ```bash
-export SPEECHNEXUS_BINDING_LIFECYCLE_DATABASE_URL='postgresql://<lifecycle-role>:<secret>@<host>:5432/<db>'
 export SPEECHNEXUS_DATABASE_SCHEMA=speech
 ```
 
 角色使用 `binding_lifecycle_grants`，获得：
 
-- `speech_publications`、`speech_publication_retirements` 与
-  `speech_publication_lifecycle_events` 的 `SELECT, INSERT`；
+- `speech_publications`、`speech_publication_retirements`、
+  `speech_publication_lifecycle_events` 和 `speech_binding_disable_intents` 的
+  `SELECT, INSERT`；
 - `speech_publication_heads` 的 `SELECT, INSERT, DELETE` 及
   `revision, revision_id, updated_at_us` 列级 `UPDATE`；
 - binding revision/evidence 的 `SELECT`；
@@ -34,6 +36,10 @@ export SPEECHNEXUS_DATABASE_SCHEMA=speech
 `503 binding_result_unknown`；不会复用 draft writer 或 owner 身份。
 
 ## 退役
+
+以下地址、binding、revision、原因和 key 均为示例。实际操作前须核对目标与当前状态；
+每个新意图使用新的高熵唯一 `Idempotency-Key`，并保存完整请求以便结果未知时按原意图
+协调。不要跨操作直接复用示例中的固定 key。
 
 ```bash
 curl -sS -X POST \
@@ -46,6 +52,9 @@ curl -sS -X POST \
 `mode: retire` 是正常退役；`mode: disable` 使用同一选择边界，但必须给出
 `reason`，审计状态为 `disabled`。成功响应是更新后的
 `ModelBindingRevision`，其中 `publication.status` 为 `retired` 或 `disabled`。
+`disable` 还在同一事务登记持久停用意图，响应头 `X-Binding-Disable-Cleanup` 为
+`pending_or_unknown`；这不表示在途执行已经停止或容量已经释放。后续处理依赖
+[停用 worker](binding-disable-worker.md)及其停止与释放证据。
 
 退役要求 revision 是当前 head。成功后 head 被删除、墓碑写入、目录版本在同一
 事务推进；下一真实 `GET /v1/models` 不再包含该 binding，ETag 变化。重复退役的
@@ -91,8 +100,9 @@ revision。draft 也不能激活。
 ## 在途 Job 与审计
 
 Job 在准入时把完整有效配置固化到 `speech_job_submissions.effective_configuration_json`。
-退役或回滚只影响后续选择；在途 Job 不重读 head，不因退役取消、改写或失败。
-退役也不会自动停止或释放执行算力。
+普通 `retire` 或回滚只影响后续选择；在途 Job 不重读 head，不因普通退役取消、改写或失败。
+普通退役不会自动停止或释放执行算力。`disable` 另有停用屏障和持久清理流程，不应按普通
+退役推断在途执行会继续；停止与容量释放仍须分别取得证据。
 
 激活、retire 和 disable 共用部署范围的 binding 生命周期 key 命名空间，跨 binding、
 revision、调用方与 credential label；只绑定已提交结果。先前任一操作成功后，换操作、
@@ -108,7 +118,13 @@ binding、revision 或 canonical body 均返回 `idempotency_conflict`。
 `speech_publication_lifecycle_events`，至少包含
 action、binding/revision、result status、请求 ID、actor 类型/标签、发生时间、
 policy revision、intent digest、幂等键摘要与包含 reason 的
-`change_summary_json`。核对命令：
+`change_summary_json`。
+
+当前路由将审计主体记录为 `anonymous`、credential label 记录为 `null`；客户端提供的
+`Authorization` 头不会被视为已认证身份。部署入口的访问限制须单独核实，不能据此审计字段
+推断操作者身份。
+
+核对命令：
 
 ```sql
 SELECT action, binding_id, revision, result_status, occurred_at_us,
@@ -123,8 +139,8 @@ UPDATE/DELETE。
 
 ## 结果未知
 
-超时、连接中断或提交结果未知返回
-`503 binding_result_unknown`，`retryable: false`。客户端不得换 key 或伪造新意图；
+服务端报告提交结果未知时返回 `503 binding_result_unknown`，`retryable: false`；
+客户端超时或连接中断也可能收不到响应，同样不能判断提交结果。客户端不得换 key 或伪造新意图；
 保留原路径、完整 body 和原 `Idempotency-Key` 显式重放同一 POST，以收敛到原结果。
 完整 body 包括原 `expected_current_revision`；不可套用提示值重基 CAS。后一次拒绝
 或当前 head GET 都不能证明先前未知提交的结果。未保留原 key 时不承诺安全自动恢复。
@@ -137,6 +153,4 @@ HTTP ASGI 请求覆盖：退役后 `/v1/models` 为空且 ETag 变化、新 Job 
 在途 Job 的固定配置不变、回滚到 revision 1 后目录恢复、重复/未知/CAS 冲突、
 最小权限启动及审计事件写入。它不证明真实部署网络、真实引擎、容量或生产资格。
 
-当前 voice 仅有 `retireVoiceRevision` 契约声明和 publication retirement 墓碑，
-没有生产 revision 写路径、handler 或 activation 声明；因此本次没有伪造 voice
-生命周期实现。补齐 voice 的持久发布/读取所有者后，可复用同一 head 和审计语义。
+voice 有独立的[内建声音资格与发布路径](builtin-voice-qualification.md)，可在满足资格条件后持久发布固定 revision；不能将它等同于 binding 的管理生命周期。`retireVoiceRevision` 仍是语音契约声明，voice 的退役 / 激活能力与其他声音来源必须分别核对实现和验收，不能从 binding 路由或内建声音发布推断已完成。

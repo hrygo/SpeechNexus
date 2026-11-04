@@ -13,14 +13,12 @@ date: 2026-10-24
 MySQL/InnoDB 是协调路径迁移验证目标。
 
 本次已交付精简 DDL、事务机器契约、权限生成工具，以及两个真实数据库共用的
-测试原型。[首个生产 Job/outbox 事务](production-jobs.md)另行实现创建、完整身份重放、
-只读未知结果恢复和版本化迁移；它不导入测试原型。其余生产领域规则、协调适配器、
-Scheduler、Worker、网关外发和控制器接入仍待编码。物理多主机、真实引擎、故障切换与
-备份恢复资格仍须独立验证。
+测试原型。[首个生产 Job/outbox 事务](../components/production-jobs.md)另行实现创建、完整身份重放、
+只读未知结果恢复和版本化迁移；它不导入测试原型。后续已有[准入事务](../components/production-admission.md)、[runtime 投递 worker](../operations/production-runtime-delivery.md)和[网关提交](../components/execution-gateway.md)等分段实现；各自的装配和验收范围不同，不能视作完整 Scheduler 已交付。物理多主机、故障切换与备份恢复资格仍须独立验证。
 
 ## 1. 实现位置与依赖
 
-| 职责 | 后续程序位置 | 允许依赖与边界 |
+| 职责 | 程序位置 | 允许依赖与边界 |
 | --- | --- | --- |
 | 配方完整性、预算计算、状态转换、证据裁决 | `speech/domain`；执行事实规则在 gateway domain | 框架无关的值对象和纯函数；不导入 SQL、Pydantic、生成 DTO 或 vendor SDK |
 | owner、准入、释放、任务恢复 | `speech/application` | 按用例定义窄事务端口；一次完整准入只能用一个事务会话 |
@@ -68,7 +66,7 @@ schema 根入口同时接受命令与结果；`result.operation` 约束对应结
 该正文清理已由 gateway 原生窄事务实现，要求显式可信删除许可，并在 pool → lease → submit
 行锁下确认执行清理和 A 的 lease release，原子清正文/留 tombstone，不写预算。
 默认没有许可签发器或 HTTP 删除入口，真实删除协调器仍待 A 接入；
-同 Job/摘要的幂等确认与 FactSnapshot 语义见[执行网关](execution-gateway.md#10-redact_execution_command)。
+同 Job/摘要的幂等确认与 FactSnapshot 语义见[执行网关](../components/execution-gateway.md#10-redact_execution_command)。
 
 契约示例与反例位于
 [`transaction-examples.json`](../../tests/fixtures/coordination/transaction-examples.json)，
@@ -91,7 +89,7 @@ schema 验证形状；跨记录身份、时间关系、阶段集合、预算与�
 | `mark_execution_unknown` | gateway adapter/reconciler → execution transaction | 活动执行转 unknown/quarantined，保留全部身份 | 原 submit ID；终态不得降为 unknown |
 | `record_stop` | 经核验的 engine/controller/operator 观察 → gateway transaction | 只追加停止事实，并关闭对应执行 | 原 submit/evidence ID 与完整事实；同 ID 不同事实拒绝 |
 | `record_execution_observation` | gateway adapter → execution transaction | 沿用既有 ExecutionStatus 的完整身份/状态矩阵，记录外发事实或从未外发的失败 | 期望 version 和原 submit；已观察的外发关联不可变，不能反转终态 |
-| `redact_execution_command` | 服务端删除协调器 → gateway cleanup transaction | 关闭执行且 lease 已释放后，清除规范请求正文并同事务留下删除 tombstone | 删除 Job 与证据摘要；相同返回原事实，清理不授予重新执行权限 |
+| `redact_execution_command` | 服务端删除协调器 → gateway cleanup transaction | 关闭执行且 lease 已释放后，清除规范请求正文并同事务留下删除 tombstone | `deletion_job_id` 与证据摘要；相同返回原事实，清理不授予重新执行权限 |
 | `quarantine_lease` | Scheduler reconciler → admission transaction | 已提交 unknown 执行的 held → quarantine 投影 | lease ID，首次观察与原因不改写；总占用不减少 |
 | `release_lease` | Scheduler reconciler → admission transaction | 核验证据，关闭 lease，扣减所属账目；最后 stage 再释放 quota | lease ID/期望 version；已释放返回原事实，不能再扣一次 |
 | `append_interval` | 计量所有者 → interval transaction | 按流串行检查重叠和硬上限，追加区间，推进 generated 水位 | interval ID +完整区间身份；相邻合法，部分重叠拒绝 |
@@ -99,9 +97,9 @@ schema 验证形状；跨记录身份、时间关系、阶段集合、预算与�
 | `observe_runtime` | controller/gateway 观察 → runtime transaction | 核对完整身份、证据、实例/意图版本，再改变基线预算/状态 | 同意图观察；旧 generation 的迟到响应不修改当前 generation |
 | `query_outcome` | 上述调用者 → 所属 repository | 读取有类型的原身份与摘要，不引发执行；目标分支用 `x-nexus-result-kind` 声明对应快照：pool→OwnerSnapshot、attempt→AdmissionSnapshot、job→ClaimSnapshot、submit→ExecutionSnapshot、lease→LeaseSnapshot、interval→FactSnapshot、runtime_intent→RuntimeSnapshot | pool、attempt、job、submit、lease、interval、node/intent 分别有确定查询键 |
 
-后续实现按职责拆为 owner、admission、job、execution、runtime、meter 小端口。
-其中 [quarantine_lease、release_lease 与原租约查询](production-leases.md)已有独立生产实现，
-只按网关权威事实搬移/结算当前 lease；完整配方准入与实际调度接入仍待后续单元。
+实现按职责拆为 owner、admission、job、execution、runtime、meter 小端口；上表列的是事务契约，不表示每个端口均已完成生产装配或端到端验收。
+其中 [quarantine_lease、release_lease 与原租约查询](../components/production-leases.md)已有独立生产实现，
+只按网关权威事实搬移/结算当前 lease；[完整配方准入事务](../components/production-admission.md)已接入同步 TTS 与同步转写，完整调度及其他业务链仍须分别验收。
 同一个 admission 端口负责完整配方；不能拆成多个独立事务 repository 调用，
 再期待异常时逐项补偿。attempt/submit/runtime 等持久幂等身份的摘要不匹配必须报冲突；
 pool/claim 的读取返回当前权威，后续任期已覆盖当前投影时不能据此证明旧事务未提交。
@@ -132,21 +130,23 @@ resource_pools
 
 同表的全部参与键按契约字典序排序；先锁完所有池，再锁全部 host，不能逐 stage
 锁完整链。只读定位可在事务前执行，但锁后必须重核对引用、状态、版本与 owner。
+这是协调资源的共同锁序，不枚举各业务入口额外的前置锁：同步 TTS 在资源锁之前还按
+binding、voice 顺序串行化禁用与退役，详见[同步语音合成](../components/synchronous-speech.md)。
 新增不存在的行先锁其必然存在的父权威行，例如 submit 锁 lease、输出追加锁 submit、
 新 generation 锁 host/head。创建输出流先锁 attempt，追加则锁对应 submit 和
 `(operation_id, attempt_id, output_stream_id)` 的流权威行；不能只按 submit ID 排斥，
 否则不同 stage 可在同一逻辑流重复计量。外键父行的隐式锁也必须纳入此顺序。
 
-`0007_admission_commands` 增加的 [operation/原请求存储](production-admission-storage.md)
+`0007_admission_commands` 增加的 [operation/原请求存储](../components/production-admission-storage.md)
 位于资源父锁之后、attempt 之前；请求记录在 attempt 之后创建并引用两者。
-[独立完整准入事务](production-admission.md)已在同一cursor消费该存储；实际业务进程另行接线。
+[完整准入事务](../components/production-admission.md)已在同一 cursor 消费该存储，并由同步 TTS 与同步转写各自装配；异步 Job planner 等其他业务链仍须接线。
 独立准入在 operation 锁下核对原 workspace/业务摘要与当前 attempt，未知执行不得换身份绕过。
 
 生产 gateway 已实现该输出追加与原区间查询，两个不同 pool/stage 共享输出流的真实行锁等待
 已在 PG/InnoDB 验证。用量取 generated 区间长度之和，max-end 水位不是消耗总量；
 任意已记输出区间都阻止无外发清理结论，诊断 meter 不退生成用量。
 结果沿用 FactSnapshot，不编造区间版本；详细身份/重放/恢复规则见
-[执行网关](execution-gateway.md#11-append_interval-与原区间查询)。
+[执行网关](../components/execution-gateway.md#11-append_interval-与原区间查询)。
 
 等待锁以后，再从数据库取时间判断当前租期。新行的全局唯一键/FK 也可能在 INSERT 时
 等待；竞争事务回滚后 INSERT 会成功，不能仅靠唯一冲突异常识别。创建路径必须在
@@ -157,7 +157,9 @@ Job 认领基线锁定候选行并执行带 claim_version/expiry 的条件更新
 `SKIP LOCKED` 仅是后续可测量的优化。没有 Redis 或通知时扫描持久 outbox/待办行。
 
 只允许对**数据库已确认回滚**的 deadlock/serialization 冲突，回滚整个事务后有界
-重试，最多 3 次，带短抖动且总耗时不越请求 deadline。业务容量不足、版本冲突、
+重试，最多 3 次，带短抖动且总耗时不越请求 deadline。当前 Job、租约、owner、runtime、
+准入和网关提交的 PG adapter 最多执行 3 次事务尝试（含首次），因此最多重试 2 次。
+业务容量不足、版本冲突、
 摘要冲突不是驱动透明重试。连接断开、提交确认丢失或驱动不能证明回滚时，一律
 按未知结果查询。错误分类由 adapter 根据实际 SQLSTATE/错误号实现并测试。
 
@@ -220,7 +222,8 @@ gateway 的私有 staging namespace 由既有协议派生，不能接受客户�
 重复提交比较**完整有效请求**，不只比较 command digest；原结果可查询也不授予再外发权限。
 
 精确停止证据只接受既有四类已验证事实；连接关闭、超时、TTL、心跳失效均不算。
-这里的 `execution_stopped` 只证明该次执行停止及其增量资源归还，不要求共享引擎进程退出。
+这里的 `execution_stopped` 只证明该次执行停止，不要求共享引擎进程退出；停止事实本身
+不直接归还 Scheduler 的增量预算，须由 A 的释放事务核验匹配证据后结算。
 实例基线预算仍须依据独立的 RuntimeStopEvidence 中进程/容器退出与资源释放两项事实归还。
 成功要求 terminal response；失败须稳定错误码；unknown 只能凭停止证据关闭为 aborted。
 从未外发的失败可按既有执行契约进入 `not_required`，但必须同时证明无 request ID、
@@ -228,7 +231,7 @@ gateway 的私有 staging namespace 由既有协议派生，不能接受客户�
 `record_execution_observation` 窄事务实现，PG/InnoDB 共用规则。该端口仅允许 submitting
 确认未外发的失败，不能解除 unknown；成功和有清理的终态仍必须经确切停止事实关闭，
 不能伪造 stop 代替 pre-dispatch 失败。版本、时间与原外发关联的规则见
-[执行网关](execution-gateway.md#9-record_execution_observation)。
+[执行网关](../components/execution-gateway.md#9-record_execution_observation)。
 
 A 的 release 消费者还在原 submit 锁后通过 `0028_execution_release_guards` 的只读
 presence 投影复核该失败分支：接受/派发、staging、样本及任意输出区间都必须为空。
@@ -243,7 +246,7 @@ scanner/settlement 专用身份的启动检查要求 PostgreSQL >= 16，并以�
 升级前必须停用、排空并以独立数据库身份栅栏全部旧释放消费者，再迁移/授权和恢复新消费者；
 旧进程不读取新投影，滚动混跑不能声明保护生效，回滚也保持释放暂停。
 该附加拒绝条件不能证明合法静音成功或资源停止。当前正向零外发路径仍关闭，见
-[固定边界与跨方输入](../plans/2026-10-30-zero-dispatch-settlement.md)。
+[固定边界与跨方输入](../archive/plans/2026-10-30-zero-dispatch-settlement.md)。
 
 gateway 先提交执行事实，Scheduler 后核对并释放；两步间崩溃只会多占预算，不能提前释放。
 从未创建 submit 的 lease 可以在锁定 lease 后直接释放，后续 submit 必须拒绝。
@@ -253,14 +256,13 @@ gateway 先提交执行事实，Scheduler 后核对并释放；两步间崩溃�
 删除协调器先按既有删除契约核验当前删除任务及依赖范围，再向 Gateway 的受信应用
 边界提交绑定 submit 的清理许可；不能让公开客户端自行构造许可或指定任意记录。
 Gateway 不查询工作台或语音业务表，只在自己的清理事务中重核对 lease 已释放、
-执行已终止以及期望 version，清除正文并保存删除 Job/证据/时间。隔离中的执行继续等待
+执行已终止以及期望 version，清除正文并保存 `deletion_job_id`、证据摘要和时间。该字段是内部清理许可关联，不表示公开删除资源是推理 Job。隔离中的执行继续等待
 清理，不能先报内容删除完成；已清理命令不再恢复正文或重新 dispatch，公开恢复语义
-继续遵循 Operation/receipt 与 `response_not_replayable` 契约。许可的实际跨进程投影、
-完整删除流程和备份恢复资格在生产接入时验收，当前原型只用受信合成许可验证此状态边界。
+继续遵循 Operation/receipt 与 `response_not_replayable` 契约。Gateway 正文清理窄事务已有原生实现，测试使用受信合成许可；真实删除协调器和许可签发尚未接入。许可的实际跨进程投影、完整删除流程和备份恢复资格仍须在生产接入时验收。
 
 ## 7. 实例生命周期与详细实施要求
 
-create/query/observe 已具备[独立生产事务端口](production-runtime-intents.md)与真实 PG/InnoDB 的合成事实验证；批准计划/资格提供者、scheduler/controller 客户端和真实生命周期资格仍待接入，不代表生产进程或 GPU/多主机验收完成。
+create/query/observe 已具备[独立生产事务端口](../components/production-runtime-intents.md)与真实 PG/InnoDB 的合成事实验证；固定 HTTPS controller 客户端和[独立投递 worker](../operations/production-runtime-delivery.md)也已实现。[受控同步 TTS 窗口](../archive/audits/2026-11-03-controlled-tts-prepare.md)记录了真实 prepare、资格和停止证据；这不代表完整 scheduler、其他引擎或多主机生命周期资格已完成。
 
 - `create_runtime_intent(prepare)`：锁 owner/quota（若需要）/host/head；核对获准模板、
   拓扑、绑定、manifest、config、加载策略；新 generation 必须大于持久 high water。
@@ -288,7 +290,7 @@ create/query/observe 已具备[独立生产事务端口](production-runtime-inte
 | 状态转换、release/stop/cleanup matrix 触发器 | execution 规则 + admission/runtime 规则；先证据、后释放 | TTL 无效、unknown 隔离、终态反转、submit/release 两种锁序；gateway/Scheduler |
 | pool/lease/gateway token 单调触发器 | owner、barrier、submit 用例锁权威行，条件 version 更新 | 同池争抢、过期不可续、旧 token、takeover/submit；owner/gateway |
 | 活跃 generation partial unique | head.current_generation 与 high_water；普通 PK/FK | 历史 generation 不改写；runtime 生命周期接入后补完整并发验收 |
-| 未解决 action partial unique | 锁 head 的 prepare/stop 当前指针，历史意图保留 | runtime 生产实现与跨库生命周期验收待完成 |
+| 未解决 action partial unique | 锁 head 的 prepare/stop 当前指针，历史意图保留 | runtime 生产事务已实现；跨库生命周期及目标部署资格仍须验收 |
 | admission 与 submit 复合身份 | DB 保留核心复合 FK；应用补齐全部身份及摘要核对 | 配方缺阶段、generation 错误、摘要冲突；Scheduler/gateway |
 | 预算域、floor、溢出、内存架构 | 纯预算函数 + admission 事务；基础 CHECK 保留 | 六维、quota、乘法溢出、同实例多阶段；容量资格由真实 manifest 验收 |
 | GiST 区间排他、watermark 触发器 | 锁 submit/output stream，检查 `[start,end)` 全部重叠并追加 | 重放、相邻/重叠/硬上限、真实锁等待；gateway/计量消费者 |
@@ -320,17 +322,20 @@ create/query/observe 已具备[独立生产事务端口](production-runtime-inte
 
 ## 9. 权限、迁移与回退
 
-[`coordination-grants.py`](../../scripts/dev-env/coordination-grants.py) 只生成 SQL，
-不连接数据库。由迁移角色针对**新建、非 owner、无全局/继承提权**的 speech/gateway
-角色审核安装；PG schema 不授 CREATE，MySQL 不授 CREATE/DROP。运行角色没有
+以下 [`coordination-grants.py`](../../scripts/dev-env/coordination-grants.py) 只生成草案和测试用 SQL，
+不连接数据库，不能作为生产授权入口。生产由迁移角色针对**非 owner、无全局/继承提权**的
+speech/gateway 角色，审阅并安装[包内生产授权函数](../operations/production-coordination-storage.md#安装与角色)
+及各已启用端口所需的授权；PG schema 不授 CREATE。运行角色没有
 DELETE/TRUNCATE；evidence/interval 只有对应所有者的 SELECT/INSERT。
 正文清理列作为受控单向擦除的显式 UPDATE 例外，身份、请求摘要和停止事实不改写；
 读取未清理的正文进行执行恢复前，必须重新核验其规范摘要；已清理正文不可恢复。跨所有权
 仅对 version 授 UPDATE，以支持行锁，不授对方状态更新。不要给运行角色全表 UPDATE。
 配额上限、policy revision、topology digest、隔离阈值和 allocatable 容量配置属于控制面，
 运行角色不获这些列的 UPDATE，因此无法自行放量、改身份或降低隔离阈值；规范请求正文
-只对所属角色可读，非所有者角色只获身份/状态列级 SELECT。MySQL 输出仍绑定
-`'role'@'%'`，安装前须按部署收紧到获准主机或网段。
+只对所属角色可读，非所有者角色只获身份/状态列级 SELECT。仅用于隔离测试的 MySQL 草案输出
+绑定 `'role'@'%'`，运行测试前须按隔离环境收紧到获准主机或网段。
+
+生成草案 SQL 的示例（不连接或修改数据库）：
 
 ```bash
 uv run python scripts/dev-env/coordination-grants.py \
@@ -339,8 +344,8 @@ uv run python scripts/dev-env/coordination-grants.py \
 ```
 
 根目录活动 SQL 只用于新建隔离测试 namespace，不作为旧草案的原地升级。
-生产使用独立包内版本化迁移：已有[Job/outbox 单元](production-jobs.md)及
-[`0002_coordination` 存储基线](production-coordination-storage.md)，不导入原型工具。
+生产使用独立包内版本化迁移：已有[Job/outbox 单元](../components/production-jobs.md)及
+[`0002_coordination` 存储基线](../operations/production-coordination-storage.md)，不导入原型工具。
 涉及既有协调结构/运行态的部署升级，须先关闭新准入、封锁旧入口、完成/隔离在途执行；
 在唯一权威库内备份并核对全部身份、generation/token high water、租约、提交、区间、
 删除账本和证据，构造当前指针、配方集合、投影与摘要后，再启用新入口。
@@ -354,14 +359,14 @@ uv run python scripts/dev-env/coordination-grants.py \
 ## 10. 验证范围与后续交接
 
 真实双库入口见[集成测试说明](../../tests/integration/README.md)。
-当前共享测试验证 owner、完整 ready 配方、attempt quota、六维增量预算、Job/outbox、
+当前共享测试设计覆盖 owner、完整 ready 配方、attempt quota、六维增量预算、Job/outbox、
 提交去重、停止/隔离释放、非 PCM 阶段、长文本规范请求往返、正文受控清理与跨 stage 输出区间；
-使用独立连接和服务器锁等待观测覆盖关键交错。
+使用独立连接和服务器锁等待观测覆盖关键交错；实际通过与否须查看对应版本和环境的测试结果。
 它不启动真实 scheduler/worker/gateway 服务，不实施物理网络分区。
 异常注入覆盖提交前回滚和提交后响应被丢弃；真实进程 kill、提交协议中途断网、
 驱动 deadlock 重试、DB 主备切换和备份恢复仍列为后续强制验收。
 
-生产编码按以下顺序交接，每步必须保持 Node=1 与多节点同构：
+以下保留实施与验收的交接顺序，不表示各步骤均未开始或已经完成；各端口的现状以对应组件及当期证据为准。每步必须保持 Node=1 与多节点同构：
 
 1. 从契约生成/校验边界类型，完成纯预算/状态/证据规则及 fake 用例；
    纳入加载 peak/steady、runtime 指针、pre-dispatch failure、quota 全部维度、

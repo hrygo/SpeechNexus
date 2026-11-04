@@ -121,7 +121,7 @@ product has no login, user directory, RBAC or tenant isolation.
 
 Asset HTTP routes can use the local object credentials, but production must
 replace them with narrowly scoped credentials. The
-[asset configuration and recovery guide](../docs/architecture/production-assets.md)
+[asset configuration and recovery guide](../docs/components/production-assets.md)
 describes paired object keys, pre-created versioned buckets, non-owner runtime
 grants, the 7-day default/explicit TTL policy and Host/Origin guards. The
 `speechnexus-asset-maintain` entry point is not started here and must be
@@ -131,10 +131,10 @@ The public Job dispatcher is registered separately as
 `speechnexus-job-dispatch-worker`. It requires explicit worker identity, a
 non-owner PostgreSQL role, the execution-gateway origin/credential and every
 batch/lease/poll/timeout bound in
-[production jobs](../docs/architecture/production-jobs.md#worker-入口与运行配置del-98).
+[production jobs](../docs/components/production-jobs.md#worker-入口与运行配置del-98).
 It is not part of this minimal surface.
 
-预设草稿 HTTP writer 默认关闭。仅在操作者已应用 `0009_profile_drafts` 并独立配置最小非 owner 角色后，设置 `SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL`；不得复用 Compose bootstrap owner。启动仅验证权限并管理独立连接池，不执行迁移或 grant。原请求/原键重放、固定读取和限额见 [profile drafts](../docs/architecture/profile-drafts.md#http-runtime-and-controlled-writer)。此配置不发布或激活预设。
+预设草稿 HTTP writer 默认关闭。仅在操作者已应用 `0009_profile_drafts` 并独立配置最小非 owner 角色后，设置 `SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL`；不得复用 Compose bootstrap owner。启动仅验证权限并管理独立连接池，不执行迁移或 grant。原请求/原键重放、固定读取和限额见 [profile drafts](../docs/components/profile-drafts.md#http-runtime-and-controlled-writer)。此配置不发布或激活预设。
 
 绑定草稿选择一个显式模式：`SPEECHNEXUS_BINDING_WRITER_DATABASE_URL` 使用旧三表角色；
 `SPEECHNEXUS_BINDING_DEFAULTS_WRITER_DATABASE_URL` 使用预先迁移到 0011 的四表最小角色，
@@ -156,7 +156,7 @@ containers; runtime and business evidence remain separate.
 
 ## Binding disable worker
 
-See [the optional worker runbook](../docs/operations/compose-minimal.md#binding-disable-worker-opt-in)
+See [the optional worker runbook](../docs/operations/compose-minimal.md#12-按需启用-binding-停用-worker)
 for separate scanner and settlement identities, migration, grants and rollout.
 The worker shares the gateway network namespace and calls its loopback address;
 this is a single-host Compose topology, not a multi-node transport design. A

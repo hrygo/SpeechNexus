@@ -85,7 +85,7 @@ Controller 不需要 PostgreSQL、业务对象存储或 Gateway 凭据。
 非 root 身份不自动赋予 socket 权限，挂载为只读也不等于 daemon API 只读。
 不使用 privileged、Docker-in-Docker、宽松 chmod 或默认 docker 组解决权限问题。
 节点证据目录不能与其他 Controller 并发共写，也不能随容器替换丢弃；更换镜像遵循
-[现有停止恢复规则](../../docs/architecture/node-stop-recovery.md)。
+[现有停止恢复规则](../../docs/components/node-stop-recovery.md)。
 网络准入/TLS 与出站限制由部署配置提供，监听所有接口不代表允许公开该内部控制 API。
 
 身份校验位于 [Controller 设置入口](../../node-controller/src/speechnexus_node_controller/settings.py)，

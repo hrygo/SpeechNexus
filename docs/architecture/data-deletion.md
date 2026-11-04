@@ -9,7 +9,7 @@ date: 2026-10-25
 
 本规范定义完整删除契约。Workbench 已实现项目与稿件删除路由、持久账本及启动重放，
 覆盖范围和保守阻断见下文；Speech 删除路由与跨模块停止协调仍待实现。
-执行网关已实现需显式可信许可的[命令正文清理事务](execution-gateway.md#10-redact_execution_command)，
+执行网关已实现需显式可信许可的[命令正文清理事务](../components/execution-gateway.md#10-redact_execution_command)，
 未提供默认许可签发或 HTTP 清理入口，不能据此声明完整删除闭环可用。机器定义为
 [deletion.schema.json](../../contracts/shared/deletion.schema.json)，入口分别是
 Speech `/v1/nexus/deletion-plans`、`/v1/nexus/deletions` 和 Workbench
@@ -24,20 +24,25 @@ Speech `/v1/nexus/deletion-plans`、`/v1/nexus/deletions` 和 Workbench
    资源不存在返回 `404 resource_not_found`。部署/工作空间仍遵循当前入口规则。
 2. 所有者在短事务中读取目标版本与完整依赖快照，建立不可变 plan。依赖按
    `(owner,kind,id,revision,relation)` 排序，不得重复同一关系。
+   这些排序与关系唯一性要求不由 schema 单独保证；生产者须另行验证。
    `plan_digest` 为移除自身 `plan_digest` 字段后对完整 plan 做 RFC 8785 UTF-8
    canonical JSON 的 SHA-256；包括 id、revision、过期时间、eligible 和全部依赖。
    plan 默认有效期 300 秒，服务端返回明确 `expires_at`，客户端不能延长。
 3. 普通删除的持久引用或活动执行均为 `blocks`，`eligible=false`。级联只能包含
    同一 owner 的 `cascade` 依赖；所有活动执行必须进入停止协调。不能自动删除
    其他模块资源。跨模块引用仍阻断，调用方先在对方模块独立处理，再重新预检。
-4. 已保存副本为 `independent_copy / retain`，包括其独立对象、receipt 和版本。
-   Speech Artifact 删除不会追删 Workbench saved asset；删除项目也不删除其曾
-   引用的 Speech Artifact。项目拥有的稿件/会议/有声书可显式列入级联。
+4. 相对于 Speech 来源，已提交的 Workbench 保存副本是独立资源：Speech Artifact
+   删除不会追删该副本，删除项目也不删除其曾引用的 Speech Artifact。删除副本
+   所属项目时，该项目拥有的 saved asset 是 `owned_child / cascade`，须显式确认，
+   不因其独立于 Speech 来源而自动保留；其他项目的副本不因此追删。项目拥有的
+   稿件、会议和有声书也按各自依赖规则处理。
 5. `POST deletions` 携带 `plan_id`、`expected_plan_revision`、`plan_digest`、
    `confirm_targets` 和 `Idempotency-Key`。确认集合必须恰好等于目标加全部
-   cascade 依赖，不能确认 blockers 或独立副本。它是明确级联确认，不提供绕过
-   停止证据的 force 标志。确认缺失、多余、重复或跨 owner 返回
-   `422 deletion_confirmation_mismatch`。
+   cascade 依赖，不能确认 blockers 或标记为 `independent_copy / retain` 的依赖。它是明确级联确认，不提供绕过
+   停止证据的 force 标志。目标契约对确认缺失、多余、重复或跨 owner 返回
+   `422 deletion_confirmation_mismatch`；当前 Workbench HTTP 对重复项、空数组或
+   缺少必填字段先由 schema 校验拒绝并返回 `400 invalid_request`，合法形状但确认集合
+   不匹配才进入应用层检查。
 6. 首次接受时，同事务验证 plan 未过期、目标和所有依赖版本仍一致、依赖集合未
    新增/删除且 eligible；原子写入删除意图、资源 tombstone 和 outbox，关闭新
    引用及新执行入口。写引用/提交执行也必须锁同一资源版本状态；不能先预检再无锁
@@ -55,6 +60,11 @@ succeeded，或进入 blocked/failed。blocked 记录依赖或停止未确认的
 取得新证据后可以继续 running。failed 是清理终态，重试用新意图并保留原记录。
 后台按持久 outbox 和幂等步骤推进，不在数据库事务里进行 HTTP、推理或对象删除。
 
+机器 schema 校验单个 `Deletion` 的字段组合：`queued` / `running` 要求
+`cleanup_state=pending`，`succeeded` 要求 `complete`、非空 result 且无 error，
+`blocked` / `failed` 要求 error 且无 result。它不验证跨次查询的状态迁移，也未将
+`blocked` 与 `quarantined` 绑定；生产者须另行保证上面的状态和停止证据语义。
+
 活动执行先请求 abort/drain，再查询原执行获得停止和资源释放证据。未确认时进入
 `blocked / quarantined`，错误为 `deletion_stop_unconfirmed`；保留原容量账目，
 不得因删除命令、客户端断线、deadline 或 tombstone 而归还预算。已发布声音的
@@ -66,6 +76,9 @@ succeeded，或进入 blocked/failed。blocked 记录依赖或停止未确认的
 声音特征或凭据。临时对象失败可以重试；不把部分清理声明为 succeeded。成功必须
 `cleanup_state=complete`，result 包含确切 deleted 集合、保留副本和 ledger_id；
 结果不得漏掉计划确认的目标或包含未确认资源。
+`DeletionResult` schema 只校验各数组的形状、非空要求和数组内完整对象去重，不能
+比较原 plan、确认集合与结果，也不检查 deleted 与保留副本之间是否重叠；生产者须
+在发布结果前按资源身份和版本执行这些跨记录校验。
 
 删除只移除业务内容与允许删除的配置投影；执行/计量/租约/fencing 的不变量证据
 不在级联范围。`operation_content` 删除正文/制品，不删除执行身份、状态、脱敏
@@ -82,26 +95,61 @@ ledger_id 必须幂等；账本缺失、对象版本不确定或执行状态未�
 
 ## Workbench 当前实现与恢复边界
 
+当前 Workbench 删除预检只接受 `project` 和 `transcript` 作为直接目标；其他合法的
+Workbench 资源类型返回 `422 deletion_resource_unsupported`。项目级级联依赖可包含
+其他资源，但不代表这些资源已提供独立删除入口。
+
+当前 Workbench HTTP 在查询删除幂等回执之前以 `400 invalid_request` 拒绝重复的
+`confirm_targets`；应用层也会拒绝重复项。合法形状的请求才按原键查询回执，并在检查
+plan 是否存在、过期及快照变化之前重放已接受意图。
+
 项目预检在项目行锁内保存私有内容快照，覆盖有声书、章节、渲染单元及其生成记录、
 导出和保存副本的版本与对象身份。公开 plan 仅返回依赖身份，不暴露对象地址或正文。
 确认和行清理分别复核同一快照；普通删除阻断持久依赖，级联要求逐项确认。
-生成历史缺少权威停止证据时保守阻断；取消或历史状态不是停止证据。
+已 tombstone 但仍有外键、尚未清理完的稿件或会议依赖在级联模式下也标为
+`blocks`；须等待原删除清理完成后重新预检，不能重复级联该子资源。
+若其他项目的渲染单元引用该项目的保存副本，预检将该引用列为
+`persistent_reference / blocks`，须先由引用方处理后重新预检。生成历史缺少权威停止证据时保守阻断；取消或历史状态不是停止证据。
 
 保存副本在下载前持久化完整原始意图、资源身份和写入 token；导出在 PUT 前保留
 固定导出与制品身份。所有者必须以 token 条件更新进入 writing 才可 PUT。
 reserved 的显式原键重放可以接替尚未 PUT 的旧所有者，旧 token 不能写入或释放新
-所有者。writing 或 unknown 不按超时、取消或普通重试释放。对象 PUT 结果未知时
+所有者。项目删除预检对所有未 settled 的写入意图保守阻断，包括 reserved；
+writing 或 unknown 不按超时、取消或普通重试释放。对象 PUT 结果未知时
 保留原始意图和对象摘要，项目删除维持不可接受，直到有权威完成或停止证据；当前
 没有把未知 PUT 自动判成功的恢复器。数据库发布响应丢失不产生补偿删除或新导出。
+上述项目锁和写入意图只约束 Workbench 项目删除与本模块写入；复制源 Artifact 时通过公开
+接口读取，不能据此证明 Speech 源删除与复制已具备跨模块原子屏障。Speech 删除入口和跨模块
+协调仍须实现并验证，并发删除 / 复制不能仅由已提交副本独立性推定安全。
 
 导出对象使用项目私有的 `{project_id}/exports/{export_id}/{artifact_id}`；项目
 接受删除后关闭新写入，且不存在未决写入时，才可清理该项目私有前缀。旧格式
 `{book_id}/{export_id}/` 只按预检固定的导出身份逐个清理，不扩大到整个书籍前缀。
-独立项目副本和未确认导出身份保持不变。对象 I/O 不占数据库事务。
+其他项目的独立副本和未确认导出身份保持不变；被确认级联的本项目 saved asset
+及其私有对象按固定快照清理。对象 I/O 不占数据库事务。
 
+当前 MinIO 适配器按上述固定前缀列举并删除可见对象，未逐版本列举或指定版本删除。
+对象阶段完成只证明该实现的前缀清理步骤完成，不能证明版本化存储中的历史版本已物理清除，
+也不能作为上文固定对象版本清理和恢复演练的验收证据。单次前缀清理最多删除 10,000 个对象、
+列举五轮；达到对象上限后若仍列出对象，调用失败，已删除对象不会回滚，剩余工作须重试。
+若第五轮仍删除了对象，实现不会再执行一次空列表确认，因此完成标记也不能单独证明前缀已空。
+
+工作台行清理以计划的确认目标构造 `deleted`，以计划中 `independent_copy / retain`
+依赖构造 `retained_independent_copies`；这说明结果的投影来源，不替代对象清理证据。
 行清理与对象清理各有持久完成标记。公开 succeeded/result 只在两者都完成时
 投影，原始行账本不单独构成公开完成证据；稿件没有项目对象清理阶段时显式记录
-该决定。对象配置丢失或失败不能隐藏尚欠的清理。启动先重放账本，完成后才开放内容。
+该决定。当前 Workbench 查询投影仅提供 `queued / pending` 和完成后的
+`succeeded / complete`，尚未投影上文目标状态机中的 `running`、`blocked` 或 `failed`；
+因此 `queued` 不能证明清理正在运行或没有失败。对象配置丢失或失败不能隐藏尚欠的清理。配置清理数据库身份时，启动先重放
+账本，完成后才开放内容；未配置该身份时删除路由不可用，启动不会执行账本重放，
+不能据此证明已有删除意图已恢复。恢复已有数据的部署必须确保清理身份与所需对象
+存储可用，并完成重放后再对外提供内容。
+当前工厂使用默认重放上限：每页最多 64 项、每次最多处理 1024 项；超过上限或某项
+清理失败会使启动失败，已完成的清理保留，剩余账本须继续处理后才能开放内容。
+运行中的周期扫描失败会记录固定错误并在下一周期重试，不把失败当作清理完成。
+当前 lifespan 在等待重放前已创建符合配置的纪要、导出及渲染结算后台任务；HTTP 服务
+在重放完成前尚未开放，但这些后台任务没有由启动重放统一屏障。不能据此声称上述
+目标中的所有执行入口均在重放之后开放；恢复部署须另行隔离这些后台角色并验证顺序。
 
 这些表由 owner 角色初始化，运行角色不执行 DDL。当前 schema revision 11 是
 新建隔离部署基线；已有数据库仍需 A07 的受控版本迁移，不自动升级。缺少私有内容

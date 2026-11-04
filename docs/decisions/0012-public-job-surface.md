@@ -6,6 +6,8 @@ date: 2026-10-27
 
 # ADR 0012 公开 Job 面与执行装配的所有权
 
+本文的背景和实施顺序记录 2026-10-27 的决策时点，不代表当前路由或装配状态。现有公开 Job 实现与限制见[生产 Job 组件](../components/production-jobs.md)及[交付跟踪](../plans/delivery-tracking.md)；路由存在不等于真实执行链已经验收。
+
 ## 背景
 
 `contracts/speech-openapi.yaml` 已冻结 `/v1/nexus/jobs`、`/v1/nexus/jobs/{job_id}`、
@@ -27,8 +29,9 @@ date: 2026-10-27
 1. **公开读模型独立于协调事实。** 新增 `speech_jobs` 与 `speech_job_events` 保存公开请求的
    固定摘要、生命周期状态、结果引用与事件序号；`coordination_jobs` 继续只保存协调身份。
    两者以 `job_id` 关联，不互写对方字段，不做跨表复制。
-2. **状态只前进，终态不回头。** 公开状态为 `pending → running → succeeded | failed |
-   cancelled | expired`。`succeeded` 必须同时具备已发布 artifact 引用与执行回执标识；
+2. **状态只前进，终态不回头。** `pending` 可转为 `running`、`failed`、`cancelled` 或
+   `expired`；`running` 可转为 `succeeded`、`failed` 或 `cancelled`。
+   `succeeded` 必须同时具备已发布 artifact 引用与执行回执标识；
    失败、取消、过期不得携带 artifact。读取路由只读持久事实，绝不在读路径触发执行。
 3. **提交幂等绑定原身份。** `Idempotency-Key` 与请求摘要共同决定业务键；同键异体返回
    `409`，同键同体返回原 Job 身份。结果未知时按原身份查询，不新建执行、不伪造成功。
@@ -40,10 +43,17 @@ date: 2026-10-27
 6. **门禁不变。** 本决定只确定所有权与装配顺序，不降低任何 issue 的 AC；公开 Job 面可用
    不等于两条链验收通过，真实引擎、停止/释放证据与目标拓扑仍分别取证。
 
+第 4 条描述的是目标事务边界，不是当前公开 Job 实现的完成声明。当前公开提交事务写入
+Job、事件、提交文档、原 operation 及 Job/outbox 身份；生产派发 planner 尚未装配，不能
+据此推断完整配方租约、预算和网关 submit intent 已随该提交原子建立。当前实现及剩余差异
+见[公开 Job 派发器](../components/production-jobs.md#公开-job-派发器del-96-第一步)。
+
 ## 后果
 
 - 新增迁移与适配器只写 `speech_jobs` / `speech_job_events`，协调表 DDL 不变。
-- 工作台的 `submit`/`read_job` 可以直接对接，不需要改消费者契约。
+- 当时预期工作台的 `submit`/`read_job` 可沿公开协议对接。当前适配器尚未在提交中传递
+  固定 `model_binding`，因此不能据此认定固定绑定已端到端接入；具体限制见
+  [Public TTS Job 固定 binding](../components/public-job-model-binding.md)。
 - 读取路径与执行路径解耦：Job 状态由执行观察推进，不由 HTTP 请求推进，恢复语义与
   outbox 重放保持单一权威。
 - 未实现的 realtime、voice-design/clone 等面继续返回明确错误，不因新增路由而被误认为可用。

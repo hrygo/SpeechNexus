@@ -1,0 +1,4 @@
+interface:
+  display_name: "SpeechNexus 下一交付"
+  short_description: "从产品需求、设计与矩阵选择下一切片，按需创建唯一 Epic 下的实施卡"
+  default_prompt: "使用 $speechnexus-next-delivery 核对当前需求与实现，规划下一可验收切片，并按已有授权草拟或创建所需实施 issue。"

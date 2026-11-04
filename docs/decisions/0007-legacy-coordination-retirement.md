@@ -12,7 +12,8 @@ date: 2026-10-23
 主要执行边界迁入受控应用事务。旧 PostgreSQL 函数、触发器与独立 SQL 拦截测试
 暂时保留为规则迁移的对照证据，不是目标产品实现。
 
-当前旧草案没有已部署业务运行态，无需承担旧生产版本的长期兼容维护。
+作出本决定时，旧草案没有已部署业务运行态，无需承担旧生产版本的长期兼容维护；
+后续处理具体部署前仍须核实实际状态。
 持续运行旧原型只能验证旧机制，不能补足新实现的行为或故障恢复证据。
 用户已确认：遗留设计应在适当时机退出和删除，不形成永久 CI 或维护负担。
 
@@ -52,7 +53,7 @@ date: 2026-10-23
 
 清理对象包括 `tests/integration/test_cluster_coordination_schema.py`、
 `tests/fixtures/coordination/legacy_postgresql.sql`、
-`docs/architecture/legacy-postgresql-coordination.md`，以及只服务这些文件的
+`docs/archive/legacy-postgresql-coordination.md`，以及只服务这些文件的
 契约断言、fixture/helper、CI 步骤内容、命令与导航链接。共享测试文件中的当前
 协议检查必须保留，不得整文件误删。
 
@@ -61,8 +62,9 @@ ADR、简明规则映射及历史审查的原时点事实继续可追溯；无�
 本决定针对仓库原型文件，不授权删除运行数据库中的执行、计量、租约、fencing
 或删除账本等证据。
 
-## 当前执行状态
+## 决策时执行状态
 
 本次记录退出决定与条件，尚未完成逐项迁移验收，未停用 CI 或删除旧文件。
-具体复核与清理跟随[集群协调重构计划](../plans/2026-10-23-cluster-coordination-refactor.md)。
+当时的重构范围见[集群协调重构计划](../archive/plans/2026-10-23-cluster-coordination-refactor.md)；
+当前需求、实施与验收证据见[交付跟踪矩阵](../plans/delivery-tracking.md)。
 本决定替代该计划及活动文档中可被理解为永久保留旧原型的要求，不改变其历史验证事实。

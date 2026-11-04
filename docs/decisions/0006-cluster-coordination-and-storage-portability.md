@@ -10,7 +10,7 @@ date: 2026-10-23
 
 现有 PostgreSQL 协调草案使用数据库函数、延迟约束触发器、容量验证队列及
 区间排他约束实现协调规则。这些机制已有隔离 PostgreSQL 验证，但使规则实现
-和数据库绑定，增加后续迁移成本。当前业务运行时尚未实现，适合在落地前调整边界。
+和数据库绑定，增加后续迁移成本。决策时业务运行时尚未实现，适合在落地前调整边界；后续生产接线及验证范围见[交付跟踪](../plans/delivery-tracking.md)。
 
 用户已确认：集群部署支持不可降级，单节点仅为当前环境；项目协调不采用 etcd；
 PostgreSQL 为唯一正式交付数据库，MySQL/InnoDB 用于关键协调行为的迁移验证；
@@ -62,9 +62,11 @@ PostgreSQL 为唯一正式交付数据库，MySQL/InnoDB 用于关键协调行�
 
 ## 实施与验收
 
-按[集群协调重构计划](../plans/2026-10-23-cluster-coordination-refactor.md)分阶段
-冻结事务契约、实现隔离原型并验证，再替换 PostgreSQL 草案机制。
-精简目标 DDL、应用事务方案与双库测试原型已交付；旧 DDL 和测试另存历史 fixture。
+[集群协调重构计划](../archive/plans/2026-10-23-cluster-coordination-refactor.md)记录了当时分阶段
+冻结事务契约、验证隔离原型和替换 PostgreSQL 草案机制的安排。计划记录的精简目标 DDL、
+应用事务方案与双库测试原型已交付；旧 DDL 和测试另存历史 fixture。
+当前生产接线见[生产协调存储](../operations/production-coordination-storage.md)，
+需求与证据见[交付跟踪矩阵](../plans/delivery-tracking.md)。
 这些交付不能被视为生产 Scheduler、完整生命周期或集群故障资格已经实现。
 公开协议兼容、真实数据库并发/故障行为及集群场景共同构成验收，SQL 行数不作为指标。
 

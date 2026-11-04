@@ -76,8 +76,9 @@ inventory、OpenAPI 镜像与 TS 注释一起升级；外部消费者须核对 k
 不能只凭结构兼容检查认定升级完成。不增加 v2 路由或更强的持久化承诺。
 
 DEL-330 指出共享生命周期 key 的说明缺口。DEL-332 补充既有全局作用域与跨操作冲突，
-不改变运行语义、wire 结构或生成 DTO。dev5 仍是未合入、未发布的同一拟议草案版本，
-本轮保留 dev5 并以固定补丁摘要区分候选；重新生成相关消费者注释和镜像后复审。
+不改变运行语义、wire 结构或生成 DTO。当时 dev5 尚未合入或发布，候选以固定补丁摘要
+区分并需重新生成消费者注释和镜像后复审。后续仓库已合入 dev5 契约（`f5e39e8`）；
+合入不自动改变本文的 `proposed` 状态，也不能单凭本仓库提交推断外部发布或验收。
 
 原 #273 AC 正文与历史证据保留；用户对 AC5 的解释作为附加说明，不回写或重勾
 远端 AC。扩展场景见[验证说明](../operations/binding-activation-verification.md)。
@@ -94,4 +95,4 @@ DEL-326 的 P3 意见保留：DEL-325 并发表的“200”是 adapter 成功标
 - 下一接收人为非作者 reviewer；审查覆盖本候选补丁及本拟议记录，通过后再由授权方决定
   ADR 状态、AC4/AC6 和集成安排。操作细节见
   [生命周期指南](../operations/binding-lifecycle.md) 与
-  [实现说明](../architecture/model-binding-drafts.md#selected-head-and-lifecycle-0023)。
+  [实现说明](../components/model-binding-drafts.md#selected-head-and-lifecycle-0023)。

@@ -5,7 +5,7 @@
     "artifact": "Qwen/Qwen3-ASR-0.6B",
     "engine": "vLLM",
     "device": "GPU",
-    "loading": "预加载 / 实时常驻"
+    "loading": "启用实时后预加载常驻"
   },
   {
     "alias": "B",
@@ -29,7 +29,7 @@
     "artifact": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
     "engine": "vLLM-Omni",
     "device": "GPU",
-    "loading": "实时常驻；受控创作预算复用"
+    "loading": "启用实时后常驻；受控创作预算复用"
   },
   {
     "alias": "E",

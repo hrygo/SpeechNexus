@@ -25,9 +25,10 @@
 | 项目统筹、接管、跨团队排期或验收 | [项目经理工作约定](project-manager-guide.md) |
 | Codex / subagent / Delegra 路由、多 Agent 交付或跨会话接续 | [交付 SOP](operations/agent-delivery-sop.md)；简单局部工作无需额外建卡 |
 | 外部反馈、实施任务、Issue/PR 模板与关闭规则 | [贡献与 Issue 指南](../CONTRIBUTING.md) |
+| 下一可验收切片、按需建卡及唯一父 Epic | [按需规划技能](../.agents/skills/speechnexus-next-delivery/SKILL.md)、[PRD](prd.md)、[需求矩阵](plans/delivery-tracking.md) |
 | 文档与工程交接 | [文档索引](README.md)、[整体技术方案](architecture/technical-blueprint.md) |
-| 模块边界与依赖方向 | [工程目录说明](architecture/repository-layout.md) |
-| 公共与内部协议、错误语义、生成类型 | [契约索引](../contracts/README.md)、[生成契约包](../packages/contracts/README.md)、[所有权矩阵](architecture/contract-ownership.md)、[HTTP 结构变化检查](architecture/http-contract-change-checks.md) |
+| 模块边界与依赖方向 | [工程目录说明](components/repository-layout.md) |
+| 公共与内部协议、错误语义、生成类型 | [契约索引](../contracts/README.md)、[生成契约包](../packages/contracts/README.md)、[所有权矩阵](architecture/contract-ownership.md)、[HTTP 结构变化检查](validation/http-contract-change-checks.md) |
 | 产品范围、身份与共享部署 | [ADR 0001](decisions/0001-product-boundaries-and-authentication-scope.md)、[产品设计](speechnexus-product-architecture.md) |
 | 模型选择、绑定与加载 | [ADR 0002](decisions/0002-speech-models-engines-and-loading.md)、[资源治理](architecture/runtime-governance.md) |
 | 工作台 LLM 与内容网络边界 | [ADR 0003](decisions/0003-workbench-llm-network-boundary.md) |
@@ -35,18 +36,18 @@
 | 执行命令、公开回执与删除 | [ADR 0005](decisions/0005-complete-execution-and-data-lifecycle-contracts.md)、[执行命令](architecture/execution-command.md)、[删除生命周期](architecture/data-deletion.md) |
 | 协调事务、锁序、表所有权与恢复 | [应用事务](architecture/coordination-transactions.md)、[协调 Schema](architecture/distributed-coordination-schema.md)、[事务契约](../contracts/internal/coordination-transactions.schema.json) |
 | 遗留协调原型退出 | [ADR 0007](decisions/0007-legacy-coordination-retirement.md) |
-| Web 视觉、Token 与无障碍 | [Web 目录规则](../web/AGENTS.md)、[设计框架](architecture/ui-ux-design-framework-and-tokens.md) |
+| Web 视觉、Token 与无障碍 | [Web 目录规则](../web/AGENTS.md)、[设计框架](design/ui-ux-design-framework-and-tokens.md) |
 | 环境、服务与部署 | [部署单元与平台规划](architecture/deployment-units.md)、[开发环境](development-environment.md)、[部署说明](../deploy/README.md)、[集成测试说明](../tests/integration/README.md) |
-| CI 调度、验证范围与门禁 | [CI 规则](architecture/ci-validation.md)、[工作流](../.github/workflows/ci.yml) |
+| CI 调度、验证范围与门禁 | [CI 规则](validation/ci-validation.md)、[工作流](../.github/workflows/ci.yml) |
 | SpeechRail 规则复用 | [固定来源与边界](architecture/speechrail-reuse.md) |
 
 当前代码与可复现运行结果说明已实现行为；机器契约定义协议预期；`active` 设计与 `accepted` ADR 表示当前设计基线，旧决定按后续 ADR 的替代范围理解。冲突须指出具体差异，不通过放宽校验掩盖。计划、占位目录、历史 fixture 和测试原型不能单独证明生产能力已交付。
 
 ## 执行约定
 
-- 外部反馈保留问题、复现与讨论；实施任务采用 `目标`、`进展总结`、`任务清单`、`验收标准（AC）` 四部分，简写即可。日常开发以一个 PR 完整解决一个小 issue 为默认，合入主干且 AC 满足后直接关闭；Epic、Gate、矩阵与 `status:*` 仅用于实际采用这些约定的跟踪项。具体入口与生命周期见[贡献指南](../CONTRIBUTING.md)。
-- 每项任务按交付目标选择主技能；涉及其他边界时补充相应技能，共同材料与检查直接复用。
-- 项目技能由本仓库 `.agents/skills/` 提供，按请求与描述匹配加载；支持文件按当前分支需要读取。显式调用不扩大授权。
+- Issue 内容、模板和合并收尾统一见[贡献指南](../CONTRIBUTING.md)。外部反馈保留原报告，实施任务写清背景与目标、范围、验收条件及必要依赖；当前执行状态使用 GitHub 字段，不要求重复进展摘要。
+- 仅在任务匹配技能描述时加载主技能，涉及其他边界再补充；共同材料与检查复用，普通维护直接按指南执行。
+- 项目保留按需规划、契约、协调事务、跨层交付和故障恢复五个技能，由 `.agents/skills/` 提供；支持文件按当前任务需要读取。显式调用不扩大授权。
 - 验证范围由实际改动决定，命令入口见[验证指南](agent-verification.md)；`Makefile`、`package.json`、CI 和有效测试说明规定执行条件。纯文档修改只做文档检查。
 
 ## 任务示例
@@ -61,11 +62,12 @@
 | 修改协调事务、锁序、租约释放或预算落地 | `speechnexus-coordination-change`；核对事务原子性、停止证据、锁序和双库范围 |
 | 客户端丢回执后，方案需要新增原命令查询接口并修改持久事务 | recovery 主导恢复决定，contract 处理新接口及消费者，coordination 处理事务；共同材料和检查复用，不串行重跑三套完整流程 |
 | 调整 Web 间距 | `web/AGENTS.md` 与 Web 检查；不启动数据库 |
-| 整理某个 issue 正文 | `speechnexus-issue-maintenance`；保留反馈结构，实施任务用四部分，不擅改状态和标签 |
-| 一个 PR 完成小 issue 全部范围与 AC，并合入主干 | `sync-issues-after-merge`；直接关闭，既有标签体系适用时维护 `status:done`，没有相关层级就只处理这一项 |
+| 选择下一可验收切片并按需建卡 | `speechnexus-next-delivery`；从 PRD/设计/矩阵查缺口，去重并核验唯一原生主 Epic |
+| 整理某个 issue 正文 | [贡献指南](../CONTRIBUTING.md)和对应模板；保留反馈结构，不擅改状态和标签 |
+| 一个 PR 完成小 issue 全部范围与 AC，并合入主干 | [合并后收尾](../CONTRIBUTING.md#合并后收尾)；按授权关闭并维护现有状态标签，只处理受影响项 |
 | 小 issue 已正确自动关闭，正文、勾选和标签均准确 | 核对后结束；不重开、不重复写入、不刷新无关矩阵 |
 | 查看某 PR 是否已满足 AC | 只读核对证据；不因读取技能而写远端 |
-| 合并获准 PR 并完成收尾 | `sync-issues-after-merge`；核实主干合并、逐项判断 AC、写后回读 |
+| 合并获准 PR 并完成收尾 | [合并后收尾](../CONTRIBUTING.md#合并后收尾)及[工作区收尾](operations/agent-delivery-sop.md#工作区生命周期与收尾) |
 | 仅有 PostgreSQL 测试通过 | 报告单库覆盖；不声明双库协调或真实集群验收通过 |
 | 在 macOS 请求完整验证 | 先核验脚本宿主条件；缺 Linux/systemd 条件时报告受限项 |
 

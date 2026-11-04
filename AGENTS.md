@@ -2,6 +2,8 @@
 
 适用于整个仓库；目标目录的 `AGENTS.md` 补充局部规则。遵循系统、开发者与当前用户指令，已有授权持续有效。本文件规定稳定边界和任务入口；职责、排期与进度以当前授权任务及相关 issue 为准。
 
+交付主入口为 [PRD](docs/prd.md)、相关设计和[需求矩阵](docs/plans/delivery-tracking.md)。[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)下固定十个 MECE Epic（#337–346）；新项目 issue 按需创建，原生直属唯一 Epic，不预铺 backlog。矩阵的[关联源](docs/plans/delivery-issues.json)记录稳定需求、设计、主责、实现/集成/验证事实、证据及可为空的实施 issue；GitHub 维护当前任务与状态。用 `python3 scripts/dev-env/refresh-implementation-tracker.py` 只读合并 GitHub 状态并刷新矩阵；历史按需查询，不作为开工前置。
+
 ## 执行与授权
 
 - 查询、解释、审查保持只读；要求实施或修复时完成范围内修改、必要验证和交付。常规实现自行决定；缺少影响产品范围、公共协议、持久数据或运行边界的关键决定时再询问，说明影响和选项，同时继续独立工作。
@@ -45,13 +47,14 @@
 | 跨契约、生产服务与正式消费者的业务切片实施、集成交接或验收 | [speechnexus-deliver-slice](.agents/skills/speechnexus-deliver-slice/SKILL.md)；普通局部修改不触发 |
 | 设计、审查或改变提交未知、幂等重放、取消释放、发布/删除竞态的恢复语义，以及相关故障验证 | [speechnexus-recovery-design](.agents/skills/speechnexus-recovery-design/SKILL.md)；具体协调事务变更再按对应行处理 |
 | 新增路由，变更或审查机器契约、协议状态/错误、生成消费者 | [speechnexus-contract-change](.agents/skills/speechnexus-contract-change/SKILL.md)、[契约目录规则](contracts/AGENTS.md) |
-| 变更或审查协调事务、锁序、租约/预算、fencing、持久恢复、相关 DDL/权限 | [speechnexus-coordination-change](.agents/skills/speechnexus-coordination-change/SKILL.md) |
-| 起草、创建或整理 issue | [贡献与 Issue 指南](CONTRIBUTING.md)、[speechnexus-issue-maintenance](.agents/skills/speechnexus-issue-maintenance/SKILL.md) |
-| 已授权 PR 合并主干后的收尾，或补做 issue 同步 | [sync-issues-after-merge](.agents/skills/sync-issues-after-merge/SKILL.md)；核实合并事实，按证据维护正文、任务/AC、状态及适用的既有标签 |
+| 变更或审查协调事务端口及其持久恢复、锁序、租约/预算、fencing、相关 DDL/权限 | [speechnexus-coordination-change](.agents/skills/speechnexus-coordination-change/SKILL.md) |
+| 规划下一切片并按需创建实施 issue | [按需规划下一交付](.agents/skills/speechnexus-next-delivery/SKILL.md) |
+| 起草、创建或整理 issue | [贡献与 Issue 指南](CONTRIBUTING.md)、[仓库模板](.github/ISSUE_TEMPLATE/)；普通维护直接执行，不额外加载技能 |
+| 已授权 PR 合并主干后的收尾，或补做 issue 同步 | [合并后收尾](CONTRIBUTING.md#合并后收尾)、[工作区收尾](docs/operations/agent-delivery-sop.md#工作区生命周期与收尾)；核实集成与 AC，只维护受影响项 |
 | Web 实现或审查 | [web/AGENTS.md](web/AGENTS.md) |
 | 集成测试实现或执行 | [tests/integration/AGENTS.md](tests/integration/AGENTS.md) |
 | 实施、构建、验证或检查失败排查 | [验证指南](docs/agent-verification.md)；按改动选择检查，纯文档只做文档验证 |
-| CI 调度、验证范围与门禁 | [CI 规则](docs/architecture/ci-validation.md)、[工作流](.github/workflows/ci.yml) |
+| CI 调度、验证范围与门禁 | [CI 规则](docs/validation/ci-validation.md)、[工作流](.github/workflows/ci.yml) |
 
 ## 进度、验证与交付
 

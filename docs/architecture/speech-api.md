@@ -57,8 +57,8 @@ SpeechCommand
 | `POST /v1/audio/speech` | JSON 文本 TTS；首期返回完整音频 |
 | `POST /v1/nexus/jobs` | 契约支持持久化 ASR、TTS 及音色设计、克隆、预览和验证作业；返回 `202`、Job 和 Location，各类型须分别核验实际装配 |
 | `GET /v1/nexus/jobs`、`GET /v1/nexus/jobs/{job_id}` | 游标分页与作业状态；包含执行版本与结果引用 |
-| `POST /v1/nexus/jobs/{job_id}/cancellations` | 幂等请求取消；进行中为 `202`，已终结为 `200` |
-| `POST /v1/nexus/jobs/{job_id}/retries` | 创建关联原任务的新 Job；不复活旧任务或覆盖旧成品 |
+| `POST /v1/nexus/jobs/{job_id}/cancellations` | 幂等请求取消；等待停止证据时返回 `202` 和 `Retry-After`，已终结返回 `200`；接受请求不等于资源已释放，须查看 `cleanup_state` |
+| `POST /v1/nexus/jobs/{job_id}/retries` | 从终态任务意图创建新 Job；旧执行尚未得到可核验的停止证据时返回 `409 execution_cleanup_pending`，不复活旧任务或覆盖旧成品 |
 | `GET /v1/nexus/jobs/{job_id}/events` | SSE 持久任务事件，支持事件游标续读 |
 | `GET /v1/nexus/operations/{operation_id}` | 协调执行状态、cleanup_state 与 receipt；不重放未保存内容 |
 | `POST /v1/nexus/operations/{operation_id}/cancellations` | 取消指定实时 / 同步操作；Job 内操作转为所属 Job 的取消命令，避免留下无结果的 required 步骤；进行中 `202`，已终结 `200` |

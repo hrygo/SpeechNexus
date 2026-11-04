@@ -1001,7 +1001,7 @@
         "docs/architecture/deployment-units.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "资产 namespace 检查、迁移与删除账本组件已有实现。",
+      "implementation": "资产 namespace 检查与迁移已有实现，到期清理使用版本固定的保留账本；工作台有条件重放已接受的删除，后台角色尚无统一启动屏障。",
       "integration": "旧 writer 隔离、历史记录采用、生产备份回退和目标拓扑联验待完成。",
       "verification": "历史清理未知和失败须先核实当前事实，不以旧记录断言现有残留。",
       "gap": "旧 writer 隔离、历史记录采用、生产备份回退和目标拓扑联验待完成。 历史清理未知和失败须先核实当前事实，不以旧记录断言现有残留。",
@@ -1015,6 +1015,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/operations/reconciliation-recovery.md",
           "label": "只读对账",
           "note": "对账说明不等于已取得真实停止与资源释放证据"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/workbench/runtime.py",
+          "label": "工作台删除重放",
+          "note": "配置清理身份后重放；部分后台任务在重放前启动"
         }
       ],
       "issues": []

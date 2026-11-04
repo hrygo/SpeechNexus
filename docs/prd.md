@@ -833,8 +833,7 @@
 - render_unit固定稿件/章节/角色/voice/词典/model/profile/规划版本和UTF-8指纹；CAS与持久有界历史关联，改文只影响目标单元、换声只影响同角色。
 - 外发前持久化原意图，并在一致性边界核对固定 revision；同键异体冲突，重放返回原回执，未知按原身份恢复，旧/错 unit、Job、代次或指纹拒绝。当前生成路径先提交底座 Job，再记录工作台生成事实，尚未满足此前置要求。
 - 生成历史分页及恢复扫描保持有界，待处理项不得因固定的最老批次长期饥饿；可恢复失败有持久退避，区分来源不可用与永久失效。页面拒绝过期异步结果；以隔离 PG、可控 producer 故障及并发验证。
-- 焦点失败须用延迟响应和重复/真实浏览器验证，已主动移焦不抢回，不删除断言；保持360px和键盘可用。
-- 固定声音修订的读取正确区分不存在和服务不可用，失败不得展示陈旧记录；验证键盘及 360px 窄屏。
+- 固定声音修订读取区分不存在和服务不可用，失败不得展示陈旧记录；延迟响应后不抢回使用者已主动移走的焦点。以重复及真实浏览器交互验证，并覆盖键盘与 360px 窄屏。
 - 实际同版路由和正式消费者支持 POST `/v2/workbench/render-units/{unit_id}/generations`（`generateRenderUnitV2`），核对请求、202 和契约声明的错误、固定版本及原键语义。v1 的 `generateRenderUnit` 仍在公开契约中，但当前路由和页面未接入；须决定并交付其支持或退役，不能用 v2 接线冒充 v1 已覆盖。
 
 设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[workbench-export-integrity.md](components/workbench-export-integrity.md)。

@@ -799,9 +799,9 @@
         "docs/architecture/data-deletion.md"
       ],
       "implementation": "发音资源已有私有不可变草稿及可选固定 revision 读取；公开创建、列表和发布仍待交付。",
-      "integration": "公开生命周期及语音消费者对固定发音版本的接线仍须核验。",
+      "integration": "公开 Job 创建对发音 revision 仅检查记录存在，未核验发布或退役；完整生命周期与语音执行消费者接线仍须交付和验收。",
       "verification": "草稿及读取组件证据不代表发音资源发布、激活或回滚已验收。",
-      "gap": "公开生命周期及语音消费者对固定发音版本的接线仍须核验。 草稿及读取组件证据不代表发音资源发布、激活或回滚已验收。",
+      "gap": "公开 Job 创建对发音 revision 仅检查记录存在，未核验发布或退役；完整生命周期与语音执行消费者接线仍须交付和验收。 草稿及读取组件证据不代表发音资源发布、激活或回滚已验收。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/c8cda316e79c74539be10083ba3d4ffc27bd8fce/docs/components/pronunciation-drafts.md",
@@ -812,6 +812,16 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/c8cda316e79c74539be10083ba3d4ffc27bd8fce/docs/components/pronunciation-read-contract.md",
           "label": "固定版本读取",
           "note": "可选只读入口及其证据边界"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/application/public_jobs.py",
+          "label": "Job 发音引用处理",
+          "note": "创建时调用存在性检查并固定引用，不证明发布资格"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/infrastructure/public_jobs_postgres.py",
+          "label": "发音修订存在性查询",
+          "note": "仅按 ID 和 revision 查询修订表，不读取发布或退役状态"
         }
       ],
       "issues": []

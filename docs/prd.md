@@ -450,7 +450,7 @@
 **验收：**
 
 - 词典草稿、已发布 revision 与默认指针分离；创建、列表及固定 revision 读取按公开契约可用，历史版本不可被覆盖。
-- 消费任务固定发音 revision；发布/退役和默认切换遵守版本前提，不改变已固定任务。
+- 消费任务固定已发布、可用的发音 revision；发布/退役和默认切换遵守版本前提，不改变已固定任务。当前公开 Job 创建只检查修订记录是否存在，尚未核验发布或退役状态，不能把该检查当作发布资格。
 - 发音资源发布先校验资格；expected_current_revision 在发音资源当前 head 锁及同一事务内比较，不用 MAX 聚合代替 CAS；并发激活仅一个成功，退役发音资源不进入默认解析。
 
 设计依据：[speech-api.md](architecture/speech-api.md)、[data-deletion.md](architecture/data-deletion.md)。

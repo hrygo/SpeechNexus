@@ -1,6 +1,6 @@
 # 工作台导出发布前完整性检查
 
-工作台的 `ExportWorker` 组装已保存音频，不调用推理引擎。组合根仍要求显式注入 `ExportProducer`、配置对象区并启用周期驱动；默认没有 producer，队列保持未领取。本页描述发布前检查的实现边界，不代表 C07 全范围交付。
+工作台的 `ExportWorker` 组装已保存音频，不调用推理引擎。组合根仍要求显式注入 `ExportProducer`、配置对象区并启用周期驱动；默认没有 producer，队列保持未领取。本页描述发布前检查的实现边界，不代表有声书独立副本及导出已完整交付。
 
 ## 发布顺序与失败事实
 
@@ -39,4 +39,4 @@
 
 媒体单元测试使用可解码的合成音频，覆盖 MIME/格式错配、截断、CRC/路径/ZIP64、缺成员、展开/时长/数量限制及取消清理。worker 测试另覆盖未完成进度、错身份回执、晚回调、校验与取消交错，以及完成/失败提交回执丢失。隔离 PostgreSQL/MinIO 与 runtime 测试验证持久进度、发布前零写入意图/零对象及实际组合根配置；只有执行通过后才能作为对应证据。
 
-公开二进制下载与正式 Web 消费见[内容下载](workbench-content-downloads.md)，其验证范围单独记录。完整不可变单元/版本/source receipt 清单、检查点与崩溃续作、正式 saved-audio producer、SSE 消费、预算治理及真实质量/试听/匿名确认仍需交付。真实 Job/Artifact 制品与模型、物理设备、目标拓扑的联合验收不能由这些合成测试代替。完整要求保留于 [C07](https://github.com/hrygo/SpeechNexus/issues/42)。
+公开二进制下载与正式 Web 消费见[内容下载](workbench-content-downloads.md)，其验证范围单独记录。完整不可变单元/版本/source receipt 清单、检查点与崩溃续作、正式 saved-audio producer、SSE 消费、预算治理及真实质量/试听/匿名确认仍需交付。真实 Job/Artifact 制品与模型、物理设备、目标拓扑的联合验收不能由这些合成测试代替。当前要求见 [W-BOOK-EXPORT](../prd.md#w-book-export) 和 [W-BOOK-UNIT](../prd.md#w-book-unit)；原 [C07 #42](https://github.com/hrygo/SpeechNexus/issues/42) 已取消排期，仅供历史追溯，不代表需求完成。

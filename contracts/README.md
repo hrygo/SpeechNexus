@@ -341,8 +341,8 @@ The explicit workbench JSON profile now includes projects, transcripts,
 status/errors and the four shared deletion entrypoints. `schema_refs` in the
 binding manifest selects external definitions without copying their wire
 contracts. An opt-in `workbench-http` profile adds derived path/query/header,
-per-status response/error validation and a client for seventeen selected
-paths, including Meeting/create/seal, Minutes/create and `generateRenderUnit`.
+per-status response/error validation and a client for selected v1/v2 operations,
+including Meeting/create/seal, Minutes/create and both render-generation versions.
 The latter also exposes `RenderUnitGenerationRequest` and
 `RenderUnitGenerationAccepted` through the Python/TypeScript runtime profile.
 It preserves string revisions and the submitted key, and validates the declared

@@ -671,8 +671,9 @@ Workbench status/configuration discovery and bound rendering use the generated
 `RenderUnitPatchV2` and `RenderUnitListV2` entrypoints with `/v2/workbench` HTTP
 paths. V1 keeps its strict original schemas; the production boundary refuses v1
 render creation with `503 workbench_unavailable` and performs no write.
-`generateRenderUnit` / `generateRenderUnitV2` are validated contract declarations,
-not registered production operations. See [ADR 0009](../../docs/decisions/0009-workbench-explicit-binding-http-version.md).
+`generateRenderUnit` is not registered; `generateRenderUnitV2` has a production
+route that requires the render service. Contract validation and route registration
+do not prove that a Speech Job executes successfully. See [ADR 0009](../../docs/decisions/0009-workbench-explicit-binding-http-version.md).
 
 ### Pronunciation draft inputs and immutable revisions
 

@@ -334,6 +334,11 @@
       "gap": "仍须在同一集成版本联验公开转写 API、正式 SDK、门控、固定对象和结算。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
       "evidence": [
         {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/317",
+          "label": "真实同步转写",
+          "note": "隔离同步最小链不证明静音零外发和可信结算"
+        },
+        {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/internal/zero-dispatch.schema.json",
           "label": "zero-dispatch.schema.json",
           "note": "固定产品基线的源码、契约或正式说明"

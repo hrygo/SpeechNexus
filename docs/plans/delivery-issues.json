@@ -1540,9 +1540,9 @@
         "docs/operations/file-tts-binding-handoff.md"
       ],
       "implementation": "仓库已有容量/资格 schema、操作说明和 experimental/incomplete 样例，样例不构成生产资格。",
-      "integration": "实验样例尚未证明生产资格；真实测量和部署观测待补。",
+      "integration": "实验样例尚未证明生产资格；发布事务不执行独立证据校验，真实测量、校验与部署观测待补。",
       "verification": "同步单点样例不代替完整容量、长时与目标拓扑。",
-      "gap": "实验样例尚未证明生产资格；真实测量和部署观测待补。 同步单点样例不代替完整容量、长时与目标拓扑。",
+      "gap": "实验样例尚未证明生产资格；发布事务不执行独立证据校验，真实测量、校验与部署观测待补。 同步单点样例不代替完整容量、长时与目标拓扑。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/pull/317",
@@ -1553,6 +1553,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/pull/333",
           "label": "真实同步合成",
           "note": "固定隔离部署标准 SDK 与真实音频关联，不代替全部声音或物理资格"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/deploy/engines/file-asr-audio/evidence/gb10-20261027/qualification-report.json",
+          "label": "实验资格报告样例",
+          "note": "固定样例为 experimental 且 incomplete，不构成生产资格"
         }
       ],
       "issues": []

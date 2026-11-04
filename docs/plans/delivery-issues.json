@@ -1846,14 +1846,19 @@
         "docs/architecture/contract-ownership.md"
       ],
       "implementation": "机器契约、Python/TS 生成消费者、文件下载及 SSE 校验已有分段实现；机器清单不证明业务路由或全部消费已接通。",
-      "integration": "工作台 HTTP 类型与传输消费者已有分段证据，正式消费者和完整事件语义按当前版本接收。",
+      "integration": "工作台 HTTP 类型与下载消费者已有分段接线；导出事件流尚未在生产工作台路由和正式页面接入，完整事件语义仍须联验。",
       "verification": "未取得当前真实部署验收证据。",
-      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "gap": "导出事件流接线、断线恢复及其余契约的实际消费者和目标部署验证仍须逐项完成。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
           "label": "产品与架构设计",
           "note": "需求基线；不证明现行实现或运行资格。"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/packages/contracts/README.md",
+          "label": "生成消费者及流校验",
+          "note": "固定版本的生成包说明和 SSE 校验入口，不证明生产路由接线。"
         }
       ],
       "issues": []

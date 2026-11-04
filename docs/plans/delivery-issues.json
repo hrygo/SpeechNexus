@@ -497,6 +497,16 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/decisions/0013-binding-lifecycle-admin-http.md",
           "label": "0013-binding-lifecycle-admin-http.md",
           "note": "固定产品基线的源码、契约或正式说明"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/execution-gateway/src/speechnexus_gateway/application/abort_execution.py",
+          "label": "网关取消调用顺序",
+          "note": "先接收和取得派发资格，再调用外部 abort；重复认领不重新外发。"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/execution-gateway/src/speechnexus_gateway/infrastructure/abort_intent_sql.py",
+          "label": "取消派发标记",
+          "note": "持久 dispatch 标记阻止重复认领，并保留未知状态；不证明引擎停止。"
         }
       ],
       "issues": []
@@ -1554,6 +1564,16 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/decisions/0013-binding-lifecycle-admin-http.md",
           "label": "0013-binding-lifecycle-admin-http.md",
           "note": "固定产品基线的源码、契约或正式说明"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/execution-gateway/src/speechnexus_gateway/application/abort_execution.py",
+          "label": "网关取消调用顺序",
+          "note": "先接收和取得派发资格，再调用外部 abort；重复认领不重新外发。"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/execution-gateway/src/speechnexus_gateway/infrastructure/abort_intent_sql.py",
+          "label": "取消派发标记",
+          "note": "持久 dispatch 标记阻止重复认领，并保留未知状态；不证明引擎停止。"
         }
       ],
       "issues": []

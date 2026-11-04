@@ -140,7 +140,7 @@ VAD 的滞回、去抖和前缀缓冲与识别段策略版本化；预览与正�
 
 控制流错误使用带 `stream_id / stream_epoch / seq / operation_id` 的 `stream.error` 信封和封闭错误码集合，不能把裸错误对象混入事件 union。传输级错误可要求重试，但不能单凭错误或断连认定执行终态；应以 `stream.closed` 或对应的权威执行查询协调该流。业务 Operation 还须汇总其必需阶段与清理事实，内部流关闭本身不证明整体成功；陈旧 epoch、帧缺口和 credit 超限不得静默修改执行状态。
 
-一次执行至少能够追溯规范命令、Operation、attempt、reservation、binding / recipe、实例 generation 与 fencing。重复提交同一意图只关联原执行；意图不一致则拒绝。查询区分未提交、正在协调与已知执行事实，传输失败不等于引擎未执行。控制响应不能凭“已接收取消”生成停止证据。
+一次执行至少能够追溯规范命令、Operation、attempt、reservation、binding / recipe、实例 generation 与 fencing。重复提交同一意图只关联原执行；意图不一致则拒绝。查询应区分已知执行事实与仍在协调的未知结果；当前 gateway / node 未找到原身份不证明请求未外发，也不能据此释放预算或创建新执行。传输失败不等于引擎未执行；控制响应不能凭“已接收取消”生成停止证据。
 
 提交屏障继续由 gateway 拥有：核对当前准入、owner、配置 / 策略与实例 → 持久化唯一 submit intent 并占住预算 → 放行外发 → 关联真实引擎执行。数据库 token、进程内锁或一次检查均不能撤回迟到外发；接管前必须封锁旧入口并协调其提交与在途执行，必要时隔离 / 重建受控实例。详细不变量以[多进程一致性](runtime-governance.md#14-多进程一致性与-fencing)为准。
 
@@ -178,7 +178,7 @@ Workbench 数据库的受控版本迁移仍须单独交付；其运行时只检�
 
 ## 8. Web、实时音频与客户端资格
 
-AdminUI 与 Workbench 继续使用独立 Vite 应用、同源 API 与共用 SDK。`web/shared` 只放稳定组件、生成的公共客户端和无业务所有权的音频工具；不加入项目、会议或音色发布业务。页面按功能加载代码，未配置能力显示真实原因和可执行的下一步。
+AdminUI 与 Workbench 继续使用独立 Vite 应用、同源 API 与共用 SDK。`web/shared` 只放稳定组件和无业务所有权的共享工具，不加入项目、会议或音色发布业务；生成的公共客户端由 [`packages/contracts`](../../packages/contracts/README.md) 提供。页面按功能加载代码，未配置能力显示真实原因和可执行的下一步。
 
 目标方案使用 TanStack Query 管理资源、任务、版本与能力缓存，缓存键包含部署 / workspace 与必要 revision。SSE 按持久游标更新查询；历史过期时读取当前事实，不重做命令。发布、取消与配额不做伪成功的乐观更新；编辑提交携带契约要求的版本前提。
 

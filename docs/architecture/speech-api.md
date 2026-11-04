@@ -477,7 +477,7 @@ REST 的完整 input 在请求接受时一次性冻结，`audio_delivery` 只能
 }
 ```
 
-该 body 发往 `POST /v1/nexus/realtime/sessions`。ASR-only 时 models 只能包含 asr；TTS-only 只包含 tts；双工同时包含两者。包含 TTS 时，目标语义要求固定 `voice={id,revision}`，并固定 tts 策略和输出 descriptor；创建请求 schema 允许省略 `voice`，但未提供显式选择默认声音的字段，也不保证服务能解析出默认声音，实际解析与资格须由服务验证。 start 中重复的值必须与会话一致，换声创建新会话。双工原子预留两者的容量承诺。创建响应返回 session_id、expires_at、connection_url 与 effective_configuration；按 [实时会话建立](speech-api.md#21-创建入口检查与连接) 连接且收到 ready 后才发送 PCM。
+该 body 发往 `POST /v1/nexus/realtime/sessions`。ASR-only 时 models 只能包含 asr；TTS-only 只包含 tts；双工同时包含两者。包含 TTS 时，目标语义要求固定 `voice={id,revision}`，并固定 tts 策略和输出 descriptor；创建请求 schema 允许省略 `voice`，但未提供显式选择默认声音的字段，也不保证服务能解析出默认声音，实际解析与资格须由服务验证。start 中重复的值必须与会话一致，换声创建新会话。双工原子预留两者的容量承诺。创建响应以 `id` 返回会话标识，并包含 `expires_at`、`connection_url` 与 `effective_configuration`；按 [实时会话建立](speech-api.md#21-创建入口检查与连接) 连接且收到 ready 后才发送 PCM。
 
 输入 PCM 按固定格式通过 input_audio_buffer.append 发送，sample clock 从该 epoch 的 0 开始连续累计。官方子集事件未提供 sample offset 时由服务按已接受的字节数推导；服务拒绝错格式和不完整样本，不靠客户端墙钟推断缺失数据。支持自动重试的 SpeechNexus SDK 必须发送稳定 event_id；不带 event_id 的兼容调用允许执行，但不支持重复 append 的安全重发。
 

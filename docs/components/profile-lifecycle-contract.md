@@ -84,8 +84,10 @@ Actual trusted report resolution, publication/activation CAS and persistent orig
 outcomes need their own narrow ports, storage, migration/role review and real
 isolated database concurrency/fault evidence. Runtime registration, public published
 registry, complete parameter resolution and real qualification follow separately.
-No production grant, DDL, deployment, publication or pointer switch occurs here;
-A00/A02 and cross-team Gates remain open.
+No production grant, DDL, deployment, publication or pointer switch occurs here.
+Current lifecycle requirements and acceptance are tracked in
+[P-PROFILES](../prd.md#p-profiles) and [P-POLICY](../prd.md#p-policy); the A00/A02
+work-package names in this document identify historical ownership, not current status.
 
 ## P1a: private intent and read-only evidence boundary
 

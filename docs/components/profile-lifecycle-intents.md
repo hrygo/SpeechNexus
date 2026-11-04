@@ -115,6 +115,7 @@ original terminal result, not infer it from this journal or a fixed revision GET
 The provider's concrete fact ownership and lock ordering must be agreed before
 adding those tables or accepting a success path.
 
-P3's real HTTP registration/published reads, P4's final parameter merge, historical
-Job pinning, actual qualification and cross-team Gate remain separate unfinished
-work. A02 is not closed by P2a; #155 and its consumed experiment remain untouched.
+Real HTTP registration/published reads, final parameter merge, historical Job
+pinning and actual qualification remain separate unfinished work. Current acceptance
+requirements are tracked in [P-PROFILES](../prd.md#p-profiles) and
+[P-POLICY](../prd.md#p-policy); P2a and A02 are historical work-package labels.

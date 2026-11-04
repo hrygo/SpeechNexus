@@ -216,6 +216,7 @@ of rollback. Neither ingress refusal nor transport cancellation settles any earl
 original-key request. Responses carry shared error envelopes and request IDs;
 success/error responses are `Cache-Control: no-store`. No response invents a
 Location, Operation or original-key lookup endpoint. Publication, activation,
-default-pointer changes, real validation/qualification and the complete A02 package
-remain separate work. The test definitions above describe their intended coverage;
+default-pointer changes and real validation/qualification remain separate work;
+current requirements are tracked in [P-PROFILES](../prd.md#p-profiles) and
+[P-POLICY](../prd.md#p-policy). The test definitions above describe their intended coverage;
 they do not establish a passing run in the current environment.

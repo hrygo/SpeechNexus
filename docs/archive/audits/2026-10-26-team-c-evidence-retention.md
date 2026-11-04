@@ -1,8 +1,8 @@
 # 团队 C 证据保留事故与稳定证据根规则
 
-核验日期：2026-10-26，Asia/Shanghai。关联：[阶段 Goal 与验收标准](../archive/plans/2026-10-25-team-c-next-phase-goal-and-acceptance.md)、[T02 映射](2026-10-25-team-c-acceptance-map.json)、[集成验证报告](../archive/audits/2026-10-25-team-c-next-phase-integration.md)。
+核验日期：2026-10-26，Asia/Shanghai。关联：[阶段 Goal 与验收标准](../plans/2026-10-25-team-c-next-phase-goal-and-acceptance.md)、[T02 映射](../../audits/2026-10-25-team-c-acceptance-map.json)、[集成验证报告](2026-10-25-team-c-next-phase-integration.md)。
 
-本文保留事故及当时的团队 C 规则；下文的本机路径是历史示例，不是当前任务统一的证据位置。现行工作区和证据保留要求见[交付 SOP](../operations/agent-delivery-sop.md#工作区生命周期与收尾)。
+本文保留事故及当时的团队 C 规则；下文的本机路径是历史示例，不是当前任务统一的证据位置。现行工作区和证据保留要求见[交付 SOP](../../operations/agent-delivery-sop.md#工作区生命周期与收尾)。
 
 ## 结论
 

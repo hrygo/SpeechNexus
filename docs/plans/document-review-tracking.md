@@ -67,7 +67,7 @@
 | `docs/audits/2026-10-26-team-c-a11y-rerun.md` | 历史保留 | 全文阅读，固定构建的落地页自动可访问性复跑；明确排除读屏及面板状态，未重跑测试 |
 | `docs/audits/2026-10-26-team-c-capture-cleanup.md` | 历史保留 | 全文阅读，固定基线的本地采集清理与合成浏览器验证；未重跑测试 |
 | `docs/archive/audits/2026-10-26-team-c-closeout-issue-audit.md` | 历史保留 | 全文阅读，指定时间的 issue 状态和交接快照；已提示远端会变化，未复查历史远端数据 |
-| `docs/audits/2026-10-26-team-c-evidence-retention.md` | 历史保留 | 全文阅读，证据丢失事故与当时规则；文首已指向现行 SOP，未复核历史归档 |
+| `docs/archive/audits/2026-10-26-team-c-evidence-retention.md` | 历史保留 | 全文阅读，证据丢失事故与当时规则；文首已指向现行 SOP，未复核历史归档 |
 | `docs/audits/2026-10-26-team-c-input-device.md` | 历史保留 | 全文阅读，固定基线的输入选择及虚拟设备验证；未重跑测试或核验物理设备 |
 | `docs/audits/2026-10-26-team-c-operation-coverage.md` | 历史保留 | 全文阅读，固定 head 的工作台操作接线映射；历史交接按当时范围引用，未重跑映射守卫 |
 | `docs/audits/2026-10-26-team-c-realtime-focus.md` | 历史保留 | 全文阅读，固定基线的焦点修复、反例及后续合入记录；未重跑测试或复核远端 CI |

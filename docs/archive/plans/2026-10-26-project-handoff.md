@@ -27,7 +27,7 @@ date: 2026-10-26
 | A 收尾 PR | [#221](https://github.com/hrygo/SpeechNexus/pull/221)，head `b7e65f4a119999e720d594200c53dc683bec5526` | 已提交共享媒体包、私有音频检查/回执与窄消费者；尚未合入，B 尚未实际接收 |
 | A 详细交接 | [#221 固定版本交接](https://github.com/hrygo/SpeechNexus/blob/b7e65f4a119999e720d594200c53dc683bec5526/docs/plans/2026-10-26-team-a-final-handoff.md) | 随候选评审，不能当作 main 文件或公开音频 ready |
 | B 详细交接 | [团队 B 交接](2026-10-26-team-b-handoff.md) | B00–B07 剩余范围、真实探针、C 回执、归档与恢复 |
-| C 当前事实 | [有声书实现/证据矩阵](../audits/2026-10-26-team-c-render-loop-status.md)、[证据保留事故](../../audits/2026-10-26-team-c-evidence-retention.md)、#35–#43 | 分段实现和未决审查并存，不能只读成功摘要 |
+| C 当前事实 | [有声书实现/证据矩阵](../audits/2026-10-26-team-c-render-loop-status.md)、[证据保留事故](../audits/2026-10-26-team-c-evidence-retention.md)、#35–#43 | 分段实现和未决审查并存，不能只读成功摘要 |
 | 调度与状态 | [总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)、各 issue 正文 | 远端为当前进度来源，带日期矩阵仅为快照 |
 
 #221 不是 #220 的已合入依赖；审阅 #220 时没有将 #221 的产品改动移入本 PR。
@@ -158,7 +158,7 @@ B 私有归档的数量、哈希校验和清理是原执行方报告；管理方
 | 旧 skill 草稿/历史 | 同根 `skills-history.bundle`、`skills-worktree-wip.tar.gz`、`skills-worktree-manifest.json`、`archive-verification.json` | 10 份未提交文件已逐份核验，恢复到新目录；未集成，不替代仓库现有技能 |
 | 私有实验原件 | 同根 `runtime-probes.tar.gz`，原 `.runtime/probes/` 仍保留 | 归档时 5308 文件、512351757 字节，完整读取验证；不删除或写回运行配置 |
 | 全量 issue 核对 | 同根 `all-issue-audit-final-report.json`、`all-issue-audit-report.md`、`all-issue-audit-20261026T175124+0800.tar.gz` 及同名 verification JSON | 40 项快照、前后正文/摘要、并行更新保留和逐项回读；70 个归档文件摘要全部核验 |
-| C 原件缺失说明 | [证据事故](../../audits/2026-10-26-team-c-evidence-retention.md) | 82 份不可恢复，用新证据重建；不把复跑当原件找回 |
+| C 原件缺失说明 | [证据事故](../audits/2026-10-26-team-c-evidence-retention.md) | 82 份不可恢复，用新证据重建；不把复跑当原件找回 |
 | 真实语料 | 根 [AGENTS.md](../../../AGENTS.md) 的语料索引及主机本地目录 | 原始/派生/标注混合，文件数不等于独立样本；私有语料不入库 |
 
 B 清理时未发现遗留 ASR/TTS 实验容器，35B、embedding、reranker 的容器身份和

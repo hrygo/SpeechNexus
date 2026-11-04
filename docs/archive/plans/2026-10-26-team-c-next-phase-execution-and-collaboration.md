@@ -24,7 +24,7 @@ date: 2026-10-26
 - B 的 ASR #162、CustomVoice #219 已是主干固定注册输入；真实执行和 #218 整代停止/原执行租约结算有原版本局部证据，fixture 资格/准入/停止意图、单请求释放及未结 TTS base 保留。
 - C 的操作[映射](../../audits/2026-10-26-team-c-operation-coverage.json)和[报告](../../audits/2026-10-26-team-c-operation-coverage.md)统一为 52 项：42 `bound`、10 `consumer_pending`，仅为 workbench 接线审计。
 - 生成派发、结算、副本与历史已有实现；持久化/重放/CAS、分类/公平、SQL 读取和页面隔离审查未结，结算循环默认关闭，见[矩阵](../audits/2026-10-26-team-c-render-loop-status.md)。
-- 278 子条件仍 `not_run`，82 份原件丢失，影响 214 条引用；须在稳定根重建，见[事故记录](../../audits/2026-10-26-team-c-evidence-retention.md)。
+- 278 子条件仍 `not_run`，82 份原件丢失，影响 214 条引用；须在稳定根重建，见[事故记录](../audits/2026-10-26-team-c-evidence-retention.md)。
 - [#220](https://github.com/hrygo/SpeechNexus/pull/220) 提供项目统一交接但尚未合并；全部 40 issue 状态及本次变更见[核对记录](../audits/2026-10-26-team-c-closeout-issue-audit.md)。
 
 以下两条工作线是原方案建议，是否采用及并行安排由新负责人决定：

@@ -88,7 +88,7 @@ date: 2026-10-24
 
 本次证据入口为[独立入口计划](2026-10-24-team-c-runtime-root-plan.md)、[独立入口交接](2026-10-24-team-c-runtime-root-handoff.md)及[真实 Workspace 联验](2026-10-24-team-c-workspaces-live-handoff.md)。独立入口交接中的预审结果属于修复前记录，后续交付须更新，不据此宣布完整 Goal 完成。
 
-[C00 文本字符边界交接](2026-10-24-team-c-c00-text-handoff.md)补充项目/稿件的内容拒绝与失败重试证据。
+[C00 文本字符边界交接](../archive/plans/2026-10-24-team-c-c00-text-handoff.md)补充项目/稿件的内容拒绝与失败重试证据。
 [C02 文件任务跨刷新恢复交接](2026-10-24-team-c-c02-recovery-handoff.md)补充创建/取消原键、事件水位和浏览器刷新证据；生产入口仍待接入，上传阶段恢复见后续交接。
 [C02 文本配音交接](2026-10-24-team-c-c02-tts-handoff.md)补充固定文本素材与声音/参数版本、合成音频试听下载及 TTS 刷新证据。
 [C02 上传阶段刷新恢复交接](2026-10-24-team-c-c02-upload-recovery-handoff.md)补充原上传键、输入身份、素材确认与 Job 原子交接；生产入口和真实服务联调仍待接入。

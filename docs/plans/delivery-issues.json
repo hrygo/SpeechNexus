@@ -364,7 +364,7 @@
         "docs/architecture/runtime-governance.md",
         "docs/architecture/technical-blueprint.md"
       ],
-      "implementation": "PG 准入事务接入原身份恢复与 binding 屏障；不能由该事务推断公平调度或所有业务 quota 已接线。",
+      "implementation": "PG 准入事务支持原身份恢复；binding 停用屏障对 TTS 自动启用，其他调用须显式启用，同步 TTS 与转写装配均已启用。不能由该事务推断公平调度或所有业务 quota 已接线。",
       "integration": "真实策略、批准计划、业务 Worker 和全部 quota 结算尚未完整接线。",
       "verification": "隔离事务证据不能代替多调度者的真实业务闭环。",
       "gap": "真实策略、批准计划、业务 Worker 和全部 quota 结算尚未完整接线。 隔离事务证据不能代替多调度者的真实业务闭环。",
@@ -377,7 +377,17 @@
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/infrastructure/admission_postgres.py",
           "label": "准入事务",
-          "note": "事务含原身份读取及绑定屏障"
+          "note": "原身份读取及条件启用的绑定停用屏障"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech_runtime.py",
+          "label": "同步 TTS 准入装配",
+          "note": "显式启用 binding 停用屏障"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/transcription_runtime.py",
+          "label": "同步转写准入装配",
+          "note": "显式启用 binding 停用屏障"
         }
       ],
       "issues": []

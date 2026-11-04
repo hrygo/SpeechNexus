@@ -1106,7 +1106,7 @@
         "docs/architecture/deployment-units.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "控制器和网关已有隔离实例及部分故障组件。",
+      "implementation": "节点控制器工厂装配受限模板、Docker runtime 与本地意图存储；网关包含执行恢复组件，具体接线受配置约束。",
       "integration": "最小 Compose 明确是同步单机引导服务，未包含控制器和异步 worker，不能作为物理集群装配证明。",
       "verification": "单 GPU 的逻辑节点不能替代物理多机资格。",
       "gap": "最小 Compose 明确是同步单机引导服务，未包含控制器和异步 worker，不能作为物理集群装配证明。 单 GPU 的逻辑节点不能替代物理多机资格。",
@@ -1120,6 +1120,16 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/deploy/compose.yaml",
           "label": "最小服务编排",
           "note": "基础仅含 PostgreSQL、MinIO、初始化、API、网关"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/node-controller/src/speechnexus_node_controller/app.py",
+          "label": "节点控制器装配",
+          "note": "固定版本的控制器组合根，不证明物理节点或引擎资格"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/execution-gateway/src/speechnexus_gateway/app.py",
+          "label": "网关装配",
+          "note": "固定版本的网关组合根，恢复路径受配置约束"
         }
       ],
       "issues": []

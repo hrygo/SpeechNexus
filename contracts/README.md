@@ -228,9 +228,11 @@ must reuse the same canonical commands, idempotency summaries, and revision
 pins; no separate MCP-only protocol semantics are introduced here.
 
 The public speech, realtime, workbench, scenario profile, voice resource, and
-internal binding / instance / qualification contracts are now present. Their
-business routes and runtime behavior are **not** implemented yet. A contract
-file proves a frozen protocol shape, not a running capability.
+internal binding / instance / qualification contracts are present. Some HTTP
+routes and consumers are implemented; other routes and complete execution paths
+remain pending. A contract file proves a frozen protocol shape, not a running
+capability. See the [delivery matrix](../docs/plans/delivery-tracking.md) for
+implementation and evidence boundaries.
 
 Durable Job / export SSE events use a strict payload variant per event type.
 Unknown event data, mismatched type/status combinations, and unstructured

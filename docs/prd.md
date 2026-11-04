@@ -883,7 +883,7 @@
 
 **验收：**
 
-- MCP 与 REST/WS 同命令参数域、默认值、错误、幂等和取消，MCP 无独立默认值、不持有模型或 WS 会话、不绕过准入。
+- MCP 与 REST/WS 同命令参数域、默认值、错误、幂等和取消，MCP 无独立默认值、不持有模型或 WS 会话、不绕过准入。 当前契约定义了无状态投影；已核对的语音 API 组合根未注册 MCP 工具入口，正式工具及消费者尚需接入和验收。
 
 设计依据：[README.md](../contracts/README.md)、[contract-ownership.md](architecture/contract-ownership.md)。
 

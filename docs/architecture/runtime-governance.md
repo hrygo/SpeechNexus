@@ -93,7 +93,7 @@ MySQL/InnoDB 仅用于关键协调路径验证；不采用 etcd，Redis 不承�
 
 资源租约状态为 `reserved → executing → stopping → released`，不确定时进入 `quarantined`。Operation 结果状态与资源清理分开：cleanup_state 为 `not_required / pending / complete / quarantined`。只有确认停止才允许 cancelled；取消确认或 drain 期限到期但执行仍未知时，操作以 failed / cancellation_unconfirmed 终结，cleanup_state=quarantined，预算继续被占用且禁止自动重试。后台协调只更新清理事实，不反转唯一结果终态。`quarantined` 不是可重新调度的空闲状态。DB / 调度协调不可用时停止新准入，当前工作只在已有有限策略租期内运行，失效后停止外发并转入停止 / 协调；不能切到未协调的本地计数器继续接单。
 
-隔离账目覆盖统一内存、设备内存、主机内存、CPU 解码、PCM 缓冲和 scratch 磁盘，并与 reserved 计数共同受节点 allocatable 上限约束。隔离量超过 `quarantine_threshold_ratio` 时，节点不得保持 `ready`，同一事务转入 `quarantined` 或 `draining`。退出隔离只能依据执行网关或节点控制器确认旧执行终止且资源释放的证据，或人工独立核验后的 `operator_verified_instance_terminated` 证据；释放事务必须同时扣减隔离账目、关闭 admission lease 并恢复对应槽位。人工释放还必须保存证据摘要、观察时间和原因，观察时间不得晚于实际预算释放时间；重复请求回显原事实，不重新解释证据。阈值以下不会自动恢复接单，仍须通过部署健康检查重新确认节点、入口和容量资格。
+隔离账目覆盖物理内存、CPU 解码、PCM 缓冲和 scratch 磁盘，并与 reserved 计数共同受节点 allocatable 上限约束；统一内存节点计 unified 物理内存，离散内存节点计 device / host 内存，不重复计算同一物理内存。隔离量超过 `quarantine_threshold_ratio` 时，节点不得保持 `ready`，同一事务转入 `quarantined` 或 `draining`。退出隔离只能依据执行网关或节点控制器确认旧执行终止且资源释放的证据，或人工独立核验后的 `operator_verified_instance_terminated` 证据；释放事务必须同时扣减隔离账目、关闭 admission lease 并恢复对应槽位。人工释放还必须保存证据摘要、观察时间和原因，观察时间不得晚于实际预算释放时间；重复请求回显原事实，不重新解释证据。阈值以下不会自动恢复接单，仍须通过部署健康检查重新确认节点、入口和容量资格。
 
 依照 ADR 0006，受控应用事务必须执行以下规则：`submit_intents` 只能在仍可执行的 admission lease 上插入；活动 `submit_intents` 不得附上停止证据；终态执行的状态、稳定错误码与停止证据不可改写；admission lease 只有在附属执行离开活动状态后才能进入 `released` / `quarantined`，`released` 不得遗留未关闭的 `unknown_quarantined`；隔离观察时间与释放证据不可改写；gateway fencing barrier 保持 sealed 且 token 不下降；engine generation 只有在所有 lease 已释放且没有非终态 intent 时才能转为 `stopped`。任一检查失败都必须回滚整个协调事务，不能先释放部分预算再等待后台补偿。数据库提供原子性、基础约束和最小权限，不再承诺独立拦截所有绕过受控入口的直接 SQL 跨表违例；所有正常运行写入必须经过明确事务操作，并接受同一套真实并发与故障测试。
 

@@ -1897,10 +1897,10 @@
         "docs/operations/capacity-manifest.md",
         "docs/operations/file-tts-binding-handoff.md"
       ],
-      "implementation": "目录及条件请求路由已有实现，Job 读取 workspace 和 binding 时仍须核对分组语义；readiness 缺事实采用保守结果。",
+      "implementation": "目录及条件请求路由已有实现；能力快照仅校验 workspace 标识格式，不验证存在性或按其过滤目录，缺少 readiness 事实时保守投影。",
       "integration": "目录读身份需要显式配置并校验只读权限；实际引擎与质量测量来源仍需接入。",
       "verification": "未取得当前真实部署验收证据。",
-      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "gap": "须补齐 workspace 存在性及目录分组语义、实时 readiness 和资格事实来源，并在目标部署验证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/interfaces/http/models.py",
@@ -1911,6 +1911,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
           "label": "产品与架构设计",
           "note": "需求基线；不证明现行实现或运行资格。"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/speech/application/capability_snapshot.py",
+          "label": "能力快照投影",
+          "note": "固定版本复制已发布投影并记录 workspace 标识，不按 workspace 过滤。"
         }
       ],
       "issues": []

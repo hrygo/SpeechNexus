@@ -372,7 +372,7 @@
 **验收：**
 
 - 同时运行 1 路实时 ASR 与 1 路实时 TTS，并独立测 VoiceDesign 冷加载、热身、执行、回收的影响。
-- ASR 满足最低识别窗且对应音频进入服务后，至首个有效预览的 P95≤1000ms；TTS 冻结文本获接受至首可播放 PCM 的 P95≤800ms；网络及播放耗时另报。
+- ASR 从服务端接受构成最低识别窗的最后一个 PCM 样本，到实时网关写出首个有效预览，P95≤1000ms；TTS 从首个可合成文本单元被 commit/finish 接受并冻结，到交付 transport 写出首个完整非空 PCM 帧，P95≤800ms。网络接收及播放耗时另报。
 
 设计依据：[speech-api.md](architecture/speech-api.md)、[cpu-vad.md](components/cpu-vad.md)、[模型与加载策略](decisions/0002-speech-models-engines-and-loading.md)。
 

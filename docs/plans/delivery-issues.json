@@ -409,6 +409,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/infrastructure/admission_postgres.py",
           "label": "准入事务",
           "note": "事务含原身份读取及绑定屏障"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/speech/application/job_dispatcher.py",
+          "label": "Job 派发与原身份查询",
+          "note": "派发器端口和恢复逻辑，不证明生产链路完整接通"
         }
       ],
       "issues": []
@@ -435,6 +440,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/pull/335",
           "label": "取消接收与恢复",
           "note": "取消持久接收与原身份恢复不证明真实停止或资源释放"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/job_dispatch_runtime.py",
+          "label": "派发运行时装配",
+          "note": "配置网关适配器；生产 planner 缺失时启动失败，不认领 Job"
         }
       ],
       "issues": []

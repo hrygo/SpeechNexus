@@ -339,7 +339,7 @@ created → admitting → active → draining → closed
    └───────────────→ failed / expired
 ```
 
-用户关闭时默认 drain 已接受的段与 TTS，`mode=abort` 则取消全部 operation；超过 drain deadline 进入失败清理。session terminal 记录保存 15 分钟供调用方协调，实时 PCM 与音频块不因此保留。
+用户关闭时的目标策略是 drain 已接受的段与 TTS；客户端发送 `nexus.session.close` 时必须显式提供 `mode=drain` 或 `mode=abort`，后者取消全部 operation。超过 drain deadline 进入失败清理。session terminal 记录保存 15 分钟供调用方协调，实时 PCM 与音频块不因此保留。
 
 会话 REST 投影必须让生命周期与清理事实同时可判定：`created` / `admitting` 返回非空 `connection_url`、`cleanup_state=not_required`、无终态 operation、`closed_at=null`；`active` / `draining` 仍返回连接地址但 `cleanup_state=pending`。`closed` / `failed` / `expired` 的 `connection_url` 为 null 且 `closed_at` 非空；`expired` 固定 `cleanup_state=not_required` 且没有终态 operation。`failed` 必须带结构化 `error`，其余状态 `error=null`；失败前后资源清理仍分别使用 not_required / pending / complete / quarantined，不由会话状态替代。终态 operation 的 `succeeded` 必须引用 receipt；`cancelled` 仍只允许 not_required / complete。`terminal_operations` 中的 operation_id 必须唯一，且每条引用必须解析为同一 session_id 的 Operation；kind、status、cleanup_state 与成功 receipt id 必须和 Operation 投影完全一致。生产者不能在会话中嵌入其他会话或仅存在于事件中的临时 Operation。会话 schema 只校验引用结构及部分状态组合，无法核验 ID 唯一性和跨资源归属 / 投影一致性；契约测试的辅助检查不证明生产者已实现这些验证。
 
@@ -377,7 +377,7 @@ TTS、可替换预览、辅助结果与资源控制使用下表的 SpeechNexus �
 | S→C `nexus.operation.done` | `operation_id`、`kind`、`status=succeeded/cancelled/failed`、独立 `cleanup_state`；成功须有非 null receipt，失败须有非 null error 或 reason。成功和取消的清理状态只允许 `not_required` / `complete`；停止未知时使用 `failed` + `quarantined`。唯一逻辑终态 |
 | S→C `nexus.session.gap` | 输入缺口或新 epoch 的原因；`sample_span` 可省略或为 null，不得以静音假装没有丢音 |
 | C→S `nexus.session.close` | `event_id`、`mode=drain/abort`；停止接收新 operation |
-| S→C `nexus.session.closed` | 会话终态、清理状态及 `operations` 引用；引用的状态可为成功、失败或取消，schema 不保证列表完整 |
+| S→C `nexus.session.closed` | 会话终态、清理状态及 `operations` 引用；每项含 operation_id、kind、status 和可选 receipt_id，不包含各 operation 的 cleanup_state；schema 不保证列表完整 |
 
 事件 schema 在 `nexus.session.update.overrides` 中同时声明 `asr` 和 `tts` 的结构；这只验证字段形状，不能证明活动会话允许更改 TTS 配方。活动会话仍受上文的固定配置与 ASR 白名单限制，服务端须另行执行语义校验；公开 Realtime 路由尚未装配，该限制目前是目标要求。
 

@@ -136,10 +136,10 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/runtime-governance.md"
       ],
-      "implementation": "文件 TTS 命令按内部执行请求的固定时长收紧音频和 PCM 上限；单次合成基于固定 binding，无独立默认。",
-      "integration": "同步公开 SpeechRequest 尚无请求级 max_output_audio_ms；公共 Job、各 binding 的能力上限、长文本处理和发布需按正式路径校验。",
-      "verification": "短输入同步成功不代表长文本或 Base 模型资格。",
-      "gap": "同步公开 SpeechRequest 尚无请求级 max_output_audio_ms；公共 Job、各 binding 的能力上限、长文本处理和发布需按正式路径校验。 短输入同步成功不代表长文本或 Base 模型资格。",
+      "implementation": "同步语音请求支持 nexus.max_output_audio_ms（100–3600000ms），有效上限贯穿生成校验、HTTP、固定执行计划、完整持久请求及网关；保留源样本、PCM及编码制品边界。",
+      "integration": "PR #413 已合入主干 7182911f81811c25e0dab546f54fdc80303d9c34，公开请求级上限接通生产提交装配；公共 Job、各 binding 的完整能力上限、长文本处理和发布仍按正式路径校验。",
+      "verification": "2026-11-04 增量核验：固定候选的定向边界、SDK、隔离 PostgreSQL 和适用 CI 已通过，非作者 Sol 及增量复核无阻断；主干与受检候选整树一致。真实引擎验收按用户要求暂缓，#406 保持开放；短输入同步成功不代表长文本或 Base 模型资格。",
+      "gap": "请求级上限真实引擎证据暂缓；公共 Job、各 binding 的完整能力上限、长文本处理和发布仍待完整验收。短输入同步成功不代表长文本或 Base 模型资格。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/pull/333",
@@ -152,12 +152,19 @@
           "note": "按内部执行请求时长收紧 binding 的音频与 PCM 界限"
         },
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/contracts/speech-openapi.yaml",
+          "url": "https://github.com/hrygo/SpeechNexus/blob/7182911f81811c25e0dab546f54fdc80303d9c34/contracts/speech-openapi.yaml",
           "label": "同步语音请求契约",
-          "note": "SpeechRequest 不声明请求级 max_output_audio_ms"
+          "note": "SpeechRequest 通过 nexus 声明可选请求级时长上限，省略保持标准 SDK 默认行为"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/413",
+          "label": "公开请求级时长上限",
+          "note": "已合入主干；确定性、SDK、隔离持久与CI证据见PR，真实引擎验收暂缓，#406开放"
         }
       ],
-      "issues": []
+      "issues": [
+        406
+      ]
     },
     {
       "id": "F-CLIENT",
@@ -451,7 +458,9 @@
           "note": "派发器端口和恢复逻辑，不证明生产链路完整接通"
         }
       ],
-      "issues": []
+      "issues": [
+        409
+      ]
     },
     {
       "id": "X-GATEWAY",
@@ -549,7 +558,9 @@
           "note": "提交和请求级取消依赖执行适配器配置；接收取消不证明引擎停止"
         }
       ],
-      "issues": []
+      "issues": [
+        409
+      ]
     },
     {
       "id": "X-ZERO",

@@ -265,7 +265,7 @@ GB10 / Qwen3-ASR-1.7B 的实验记录及原任务文件清单见[历史样例](.
 
 ## 10. 校验命令与输出
 
-完整命令、依赖和 SQL 对照见 [capacity-manifest.md](capacity-manifest.md) §9。报告相关的最小运行：
+完整命令、依赖和 SQL 对照见 [capacity-manifest.md](capacity-manifest.md) §9。下面命令仅演示历史 GB10 样例与合成数据库快照的离线一致性检查，`--require-published` 校验的是快照中的事实，不查询实际数据库；样例有效期和当前时间会影响结果，不能作为当前发布或生产资格证据：
 
 ```bash
 uv run --no-project \

@@ -910,7 +910,7 @@
 
 - REST/WS/MCP 同一命令的参数域、默认、错误、幂等和取消语义一致；Python/TS 同源生成、运行时正负例及重生成无漂移。
 - 不维护手工并行语义副本；domain 不依赖生成 DTO；不扩大 OpenAI 兼容承诺；公开文档明确标准 Audio/Realtime 子集和 nexus 扩展。
-- 机器清单 `contracts/workbench-openapi.yaml` 中 createMeeting、sealMeeting、createMeetingMinutes、generateRenderUnit、downloadSavedAsset、downloadBookExport 和 streamExportEvents 的生成客户端校验请求、声明的响应、错误与媒体类型；真实业务路由及消费由各业务需求负责。
+- 对 `contracts/workbench-openapi.yaml` 的 createMeeting、sealMeeting、createMeetingMinutes、generateRenderUnit、downloadSavedAsset、downloadBookExport 和 streamExportEvents，验证同源 HTTP 边界对请求、声明的响应、错误与媒体类型的校验；真实业务路由及消费由各业务需求负责。当前基础类型化客户端不自动校验响应，`workbench-http` 另提供显式校验入口和受校验客户端，使用方须选择并正确接入。
 - Python 与 TypeScript 实际消费者对严格类型、额外字段、联合类型、跨字段约束和错误状态使用同组正负例并作一致判定。
 
 设计依据：[README.md](../contracts/README.md)、[contract-ownership.md](architecture/contract-ownership.md)。

@@ -245,7 +245,7 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/runtime-governance.md"
       ],
-      "implementation": "资产服务有持久删除账本处理；网关已有须可信协调器授权的清理事务，未提供 HTTP 入口。",
+      "implementation": "资产服务有到期保留清理账本；Speech 用户请求删除路由尚未实现。网关命令清理须可信协调器授权，未提供默认许可或 HTTP 入口。",
       "integration": "真实删除协调器、音频及跨模块依赖仍需贯通。",
       "verification": "合成删除许可和组件测试不证明真实端到端删除。",
       "gap": "真实删除协调器、音频及跨模块依赖仍需贯通。 合成删除许可和组件测试不证明真实端到端删除。",
@@ -550,7 +550,7 @@
         "docs/architecture/runtime-governance.md",
         "docs/architecture/technical-blueprint.md"
       ],
-      "implementation": "资产服务有持久删除账本处理；网关已有须可信协调器授权的清理事务，未提供 HTTP 入口。",
+      "implementation": "资产服务有到期保留清理账本；Speech 用户请求删除路由尚未实现。网关命令清理须可信协调器授权，未提供默认许可或 HTTP 入口。",
       "integration": "真实删除协调器、音频及跨模块依赖仍需贯通。",
       "verification": "合成删除许可和组件测试不证明真实端到端删除；组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
       "gap": "真实删除协调器、音频及跨模块依赖仍需贯通。 合成删除许可和组件测试不证明真实端到端删除；组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",

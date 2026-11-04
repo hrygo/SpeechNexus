@@ -533,7 +533,7 @@
 - 设计与克隆材料分别确认，材料变更需重新确认，两种真实模式分别取得资格。
 - 候选、再生成、试听、换文复用和失败可观察；preview_only不可发布，复用资格通过且明确确认后方可发布不可变VoiceRevision并由真实TTS使用。
 - 退役/禁用/删除及竞争与共享部署文案一致；真实来源、版本和资格不能以目录、草稿或合成页面代替。
-- 单修订读取核对 voice_id/revision，展示完整退役或禁用原因；真实成功路径和两种生命周期分支分别验证。
+- 单修订读取核对 `voice_id` / `revision`，按契约展示状态及退役时间；禁用时展示 `disabled_reason`。当前退役状态未提供原因字段，如需展示退役原因须先补齐契约；真实成功路径和两种生命周期分支分别验证。
 
 设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[data-deletion.md](architecture/data-deletion.md)。
 

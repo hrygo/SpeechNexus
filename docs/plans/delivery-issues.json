@@ -1178,9 +1178,9 @@
         "docs/architecture/data-deletion.md"
       ],
       "implementation": "最小 Compose 明确列出基础服务与需另装配的后台角色；浏览器全矩阵及目标物理部署资格未核验。",
-      "integration": "安装样例、依赖许可和生产运行材料尚待统一接收；已核对静态工厂或配置；运行时与端到端接线未实测。",
+      "integration": "仓库尚无项目 LICENSE，许可证须由用户决定；安装样例、第三方许可和生产运行材料尚待统一接收；静态配置不证明运行时与端到端接线。",
       "verification": "现有文档不证明干净安装或许可全量合规；本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
-      "gap": "安装样例、依赖许可和生产运行材料尚待统一接收；已核对静态工厂或配置；运行时与端到端接线未实测。 现有文档不证明干净安装或许可全量合规；本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "仓库尚无项目 LICENSE，许可证须由用户决定；安装样例、第三方许可和生产运行材料尚待统一接收；静态配置不证明运行时与端到端接线。 现有文档不证明干净安装或许可全量合规；本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/architecture/production-assets.md",
@@ -1196,6 +1196,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/workbench/runtime.py",
           "label": "runtime.py",
           "note": "固定基线源码"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/README.md#许可证与致谢",
+          "label": "仓库许可证状态",
+          "note": "固定基线未提供项目 LICENSE，第三方许可分别核对"
         }
       ],
       "issues": []

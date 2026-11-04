@@ -1,8 +1,8 @@
 # 团队 C 下一阶段：共同基线集成与验收证据
 
-> 本文是 2026-10-25–26 的历史验收记录；文中的“当前”、未完成项与任务状态均以该时点为准。现行需求和证据入口见[需求矩阵](../plans/delivery-tracking.md)。
+> 本文是 2026-10-25–26 的历史验收记录；文中的“当前”、未完成项与任务状态均以该时点为准。现行需求和证据入口见[需求矩阵](../../plans/delivery-tracking.md)。
 
-核验日期：2026-10-25–26，Asia/Shanghai。依据：[阶段 Goal 与验收标准](../archive/plans/2026-10-25-team-c-next-phase-goal-and-acceptance.md)，version 0.2.0。
+核验日期：2026-10-25–26，Asia/Shanghai。依据：[阶段 Goal 与验收标准](../plans/2026-10-25-team-c-next-phase-goal-and-acceptance.md)，version 0.2.0。
 
 结论：PR #153 已完成共同基线集成，原6项HTTP兼容性发现已有显式版本/消费者方案并通过合前门禁。**M1仍未通过，M2/M3未验收**；Profile草稿消费者[PR #165](https://github.com/hrygo/SpeechNexus/pull/165)已于2026-10-25 22:13:48合入main `639b703`，14项合前CI全部成功；验收映射继续保留在原工作树。C02有效TTS修订和ASR导入/固定TXT消费者分别由#167/#170后续集成；仍为局部交付。下半部17:02的失败与修复记录保留为历史事实，不再作为当前HTTP阻塞。
 
@@ -23,9 +23,9 @@
 
 独立交付：Profile草稿切片基于main `2fe90fed`，PR #165 head `52ee02d`。正式Admin页面消费既有Profile写入/固定读取，先持久完整意图再发送，未知仅原键恢复，不以固定GET或入口拒绝消除未知；只提供草稿，未交付发布/激活/退役。独立审查发现回执预算、可选字段注入和刷新丢拒绝原因三项P2，新增5项反例先失败后修复并复审；另保护请求/响应独立上界。最终Admin151项、52项可访问性和真实A HTTP/最小角色/隔离PG18.6/Chromium验证通过，测试PG确认停止。合前CI [40200592906](https://github.com/hrygo/SpeechNexus/actions/runs/40200592906)对应head `52ee02d`，14项全部成功；2026-10-25 22:13:48合入main `639b703`，CI测试提交 `3e42b6f`与实际合并提交均为tree `1e5607da5ada0d81e67b5b770118246982b153f5`，不称合后CI。#36仅同步草稿进展、全部AC保持未验收。旧基线映射的源码引用与证据身份未自动改挂新提交，仍须逐项复核。
 
-[可追踪映射](2026-10-25-team-c-acceptance-map.json)保存原41条AC及278个稳定语义子条件；历史38项按原摘要迁入后，已逐项补充和复核其余条件。最后26项覆盖C00事件/开发演练与C07结果/副本/导出/恢复/独立验收，当前全部278项都有候选映射、未审计数为0，所有子条件仍为not_run。候选映射不是完成证明，T02的实际角色、行为断言与充分证据仍待补。未把新head写到旧证据上，也未自动更新失效源码摘要。
+[可追踪映射](../../audits/2026-10-25-team-c-acceptance-map.json)保存原41条AC及278个稳定语义子条件；历史38项按原摘要迁入后，已逐项补充和复核其余条件。最后26项覆盖C00事件/开发演练与C07结果/副本/导出/恢复/独立验收，当前全部278项都有候选映射、未审计数为0，所有子条件仍为not_run。候选映射不是完成证明，T02的实际角色、行为断言与充分证据仍待补。未把新head写到旧证据上，也未自动更新失效源码摘要。
 
-[守卫](../../scripts/dev-env/check-acceptance-map.py)和反例覆盖范围/条件删除、缺消费者/测试、失效锚点、证据篡改、具名依赖缺解除条件、错误资格维度、旧head、失败/跳过/未知冒充通过及报告覆盖输入。独立审查发现旧证据可重挂已改源码、双份材料同步缩减范围、无效输入下报告覆盖证据三个P2；新增10个反例先失败，再通过独立原范围pin、运行源码清单校验、完整输入保护及hardlink识别修复。守卫41项及相关回归合计49项通过，均为本次未提交守卫的本地测试，未纳入PR #153合前CI。
+[守卫](../../../scripts/dev-env/check-acceptance-map.py)和反例覆盖范围/条件删除、缺消费者/测试、失效锚点、证据篡改、具名依赖缺解除条件、错误资格维度、旧head、失败/跳过/未知冒充通过及报告覆盖输入。独立审查发现旧证据可重挂已改源码、双份材料同步缩减范围、无效输入下报告覆盖证据三个P2；新增10个反例先失败，再通过独立原范围pin、运行源码清单校验、完整输入保护及hardlink识别修复。守卫41项及相关回归合计49项通过，均为本次未提交守卫的本地测试，未纳入PR #153合前CI。
 
 源码复核单元直接读取6个变更文件的指定函数/断言，确认其字节与已测试的main `70ab43d`一致；22个子条件的41处引用已逐项复核后更新，旧摘要和理由保存在mapping_reviews。新增v2显式绑定、未支持参数零副作用拒绝与真实HTTP/PG CAS的行为测试映射，但未新增验收通过声明。当前图谱无此项目索引，结论限定直接读取的路径，不声称全局调用图完备。
 
@@ -203,14 +203,14 @@ T08真实ASR仍需A02/A04提供音频Asset ready、公开持久Job/Artifact/回�
 
 ## 实际修复与反例
 
-1. **书籍页 Token**：[books.css](../../web/workbench/src/books/books.css) 使用未声明的 `--danger`，设计 Token 门禁拒绝。恢复提示改用共享主题已有的 `--warning`；lint 与受影响工作台构建通过，没有新增兼容别名。
-2. **手工建稿探针**：[workbench-manuscripts-probe.mjs](../../scripts/dev-env/workbench-manuscripts-probe.mjs) 将 `getTranscript` 的 sealed 原稿样例用于手工创建；正式客户端要求 draft，正确拒收后保留 pending。修复只调整探针创建样例及对应流程，保留产品校验和已有原键恢复场景。修复前探针因核对按钮无法启用而失败；修复后 Chromium 实跑通过，4 个上下文、7 次写请求，draft/null、原键恢复、冲突及历史断言成立。
-3. **实际调用守卫**：`tests/integration/probe_execution.py` 与 [promoted 探针测试](../../tests/integration/test_workbench_orphan_probes.py) 记录真实启动的脚本、命令和退出码；当前覆盖 15 个补入门禁的探针。15 个实际运行记录均对应正确脚本且退出码为 0，pytest 场景断言全部通过。单独的 mutation 保留脚本引用及伪造结果、删除实际调用，测试体虽然通过，teardown 仍以 `must launch exactly one subprocess, got 0` 报错，整体退出 1，符合反例预期。
+1. **书籍页 Token**：[books.css](../../../web/workbench/src/books/books.css) 使用未声明的 `--danger`，设计 Token 门禁拒绝。恢复提示改用共享主题已有的 `--warning`；lint 与受影响工作台构建通过，没有新增兼容别名。
+2. **手工建稿探针**：[workbench-manuscripts-probe.mjs](../../../scripts/dev-env/workbench-manuscripts-probe.mjs) 将 `getTranscript` 的 sealed 原稿样例用于手工创建；正式客户端要求 draft，正确拒收后保留 pending。修复只调整探针创建样例及对应流程，保留产品校验和已有原键恢复场景。修复前探针因核对按钮无法启用而失败；修复后 Chromium 实跑通过，4 个上下文、7 次写请求，draft/null、原键恢复、冲突及历史断言成立。
+3. **实际调用守卫**：`tests/integration/probe_execution.py` 与 [promoted 探针测试](../../../tests/integration/test_workbench_orphan_probes.py) 记录真实启动的脚本、命令和退出码；当前覆盖 15 个补入门禁的探针。15 个实际运行记录均对应正确脚本且退出码为 0，pytest 场景断言全部通过。单独的 mutation 保留脚本引用及伪造结果、删除实际调用，测试体虽然通过，teardown 仍以 `must launch exactly one subprocess, got 0` 报错，整体退出 1，符合反例预期。
 
 
-4. **导出失败结算**：[export_worker.py](../../backend/src/speechnexus_backend/workbench/application/export_worker.py) 原先在对象写入之后才构造并校验 `ExportArtifact`，且发布异常不在单任务失败处理范围。空字节/非法元信息会外抛，写入失败还会中断整批已 claim 的任务。4 个单元失败用例复现后，将域元信息校验移到对象写入前，并把发布阶段纳入该任务的稳定错误结算；数据库完成操作仍保留在异常补偿之外，防止提交回执未知时把成功改写成失败。
-5. **导出诊断内容边界**：[runtime.py](../../backend/src/speechnexus_backend/workbench/runtime.py) 的 export loop 原来用 exception 日志输出异常正文及 traceback。合成内容回归确实失败后，改为固定诊断消息；循环继续下一 pass，取消仍传播。只覆盖这一日志入口，不能推断所有观测均合格。
-6. **预设草稿消费者**：[ProfileHost](../../web/admin/src/profiles/ProfileHost.tsx) 已挂入正式 Admin，消费已有草稿创建/固定修订读取协议。完整配置需显式填写、核对、确认；发送前记录原请求与原键，未知结果只能原键恢复，固定读取不能结算写入。保留精确十进制 CAS、拒绝静默重基、旧响应隔离与存储失败关闭写入。没有接入发布、激活、退役或宣称运行资格。Admin 19 个测试文件共 145 项通过（含新增 27 项）；全仓 Web 类型检查、lint、格式检查和 Admin 构建通过。构建仍有大于 500 kB 的 chunk 提示，未为此扩大修改。该切片只有合成客户端/会话/DOM 证据，尚无实际浏览器、真实服务持久化或目标部署资格，不勾选 C01 AC。
+4. **导出失败结算**：[export_worker.py](../../../backend/src/speechnexus_backend/workbench/application/export_worker.py) 原先在对象写入之后才构造并校验 `ExportArtifact`，且发布异常不在单任务失败处理范围。空字节/非法元信息会外抛，写入失败还会中断整批已 claim 的任务。4 个单元失败用例复现后，将域元信息校验移到对象写入前，并把发布阶段纳入该任务的稳定错误结算；数据库完成操作仍保留在异常补偿之外，防止提交回执未知时把成功改写成失败。
+5. **导出诊断内容边界**：[runtime.py](../../../backend/src/speechnexus_backend/workbench/runtime.py) 的 export loop 原来用 exception 日志输出异常正文及 traceback。合成内容回归确实失败后，改为固定诊断消息；循环继续下一 pass，取消仍传播。只覆盖这一日志入口，不能推断所有观测均合格。
+6. **预设草稿消费者**：[ProfileHost](../../../web/admin/src/profiles/ProfileHost.tsx) 已挂入正式 Admin，消费已有草稿创建/固定修订读取协议。完整配置需显式填写、核对、确认；发送前记录原请求与原键，未知结果只能原键恢复，固定读取不能结算写入。保留精确十进制 CAS、拒绝静默重基、旧响应隔离与存储失败关闭写入。没有接入发布、激活、退役或宣称运行资格。Admin 19 个测试文件共 145 项通过（含新增 27 项）；全仓 Web 类型检查、lint、格式检查和 Admin 构建通过。构建仍有大于 500 kB 的 chunk 提示，未为此扩大修改。该切片只有合成客户端/会话/DOM 证据，尚无实际浏览器、真实服务持久化或目标部署资格，不勾选 C01 AC。
 
 运行记录只证明子进程成功结束，必须与场景断言共同使用；守卫不替代业务断言，也尚未覆盖其余必跑探针。上述浏览器场景使用合成 HTTP/媒体，不属于真实引擎或物理设备资格。
 
@@ -255,8 +255,8 @@ T08真实ASR仍需A02/A04提供音频Asset ready、公开持久Job/Artifact/回�
 
 | 已确认的 C 自有缺口 | 当前实现与边界 | 下一制品 |
 | --- | --- | --- |
-| C01 管理写入与真实预算 | 正式 [Admin 装配](../../web/admin/src/App.tsx)已挂预设草稿消费者，具备合成测试证据，实际浏览器/真实服务待验证；[WorkspaceClient](../../web/admin/src/workspaces/workspace-client.ts)只允许 GET，诊断明确预算/租约/计量未接入 | 补草稿联调；逐项消费 Binding 等已交付制品，预算来源另行核对；发布/激活/退役须按具名生产协议接入 |
-| C03 候选/试听/校验/发布 | [VoiceCreateHost](../../web/workbench/src/voices/VoiceCreateHost.tsx)明确只接创作任务；工作台声音应用服务是只读已发布目录 | 接收 A06/B05 的具名候选/试听/复用/发布协议并实现 C 正式消费者，真实设计与克隆资格分别取得 |
-| C07 角色/生成/历史与完整导出 | [BookRenderPlan](../../backend/src/speechnexus_backend/workbench/domain/book_render_plan.py)有领域局部失效测试；生产存储固定 narrator，公开 render-unit 路由只有列表/创建/读取/修改，不含生成；当前运行时仅接收可选 producer 注入 | 完成正式角色/生成/历史消费者；补真实 producer、固定清单/检查点、预算及恢复，保留本次空字节/单次写失败修复的有限证明范围 |
+| C01 管理写入与真实预算 | 正式 [Admin 装配](../../../web/admin/src/App.tsx)已挂预设草稿消费者，具备合成测试证据，实际浏览器/真实服务待验证；[WorkspaceClient](../../../web/admin/src/workspaces/workspace-client.ts)只允许 GET，诊断明确预算/租约/计量未接入 | 补草稿联调；逐项消费 Binding 等已交付制品，预算来源另行核对；发布/激活/退役须按具名生产协议接入 |
+| C03 候选/试听/校验/发布 | [VoiceCreateHost](../../../web/workbench/src/voices/VoiceCreateHost.tsx)明确只接创作任务；工作台声音应用服务是只读已发布目录 | 接收 A06/B05 的具名候选/试听/复用/发布协议并实现 C 正式消费者，真实设计与克隆资格分别取得 |
+| C07 角色/生成/历史与完整导出 | [BookRenderPlan](../../../backend/src/speechnexus_backend/workbench/domain/book_render_plan.py)有领域局部失效测试；生产存储固定 narrator，公开 render-unit 路由只有列表/创建/读取/修改，不含生成；当前运行时仅接收可选 producer 注入 | 完成正式角色/生成/历史消费者；补真实 producer、固定清单/检查点、预算及恢复，保留本次空字节/单次写失败修复的有限证明范围 |
 
 下一步继续 T02 剩余子条件映射并交付缺映射/失效证据/资格误用门禁，依据上表逐个补 C 自有消费者；同时把 6 项兼容性发现形成具体版本与消费者升级制品，把实际调用守卫扩展到全部必跑探针。A/B 依赖按 T07 具名接收；原 41 条 AC、M1/M2/M3 与 AC-01–AC-12 保持完整，未经实测不升级状态。没有 commit/push/PR 合并或发布，C 不关闭 G0–G5。

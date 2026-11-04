@@ -94,7 +94,7 @@ A/B 的某个制品就绪即可接入，不等待其整包关闭；单项依赖�
 
 ### C-N01：基线、映射与证据收敛
 
-对应 T01/T02/T04/T06；C 主责，A 协助集成基线。入口为[阶段 Goal](2026-10-25-team-c-next-phase-goal-and-acceptance.md)、[原 AC 矩阵](../../audits/2026-10-25-team-c-original-ac-matrix.md)、[验收映射](../../audits/2026-10-25-team-c-acceptance-map.json)和[操作映射](../../audits/2026-10-26-team-c-operation-coverage.json)。
+对应 T01/T02/T04/T06；C 主责，A 协助集成基线。入口为[阶段 Goal](2026-10-25-team-c-next-phase-goal-and-acceptance.md)、[原 AC 矩阵](../audits/2026-10-25-team-c-original-ac-matrix.md)、[验收映射](../../audits/2026-10-25-team-c-acceptance-map.json)和[操作映射](../../audits/2026-10-26-team-c-operation-coverage.json)。
 
 - [ ] 核对工作区与目标 diff，保留既存未提交改动；固定共同 SHA 和本单元 head，区分历史快照与当前摘要。
 - [ ] 按当前契约核准操作集合和 10 项待处置操作；同步过时摘要，不用操作计数推导完成率。

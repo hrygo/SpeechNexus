@@ -1,7 +1,7 @@
 {
   "version": "0.3.0",
   "plan_version": "0.2.0",
-  "source_document": "docs/audits/2026-10-25-team-c-original-ac-matrix.md",
+  "source_document": "docs/archive/audits/2026-10-25-team-c-original-ac-matrix.md",
   "head_sha": "70ab43ddf187b8928cd6864f5470541a077b5e89",
   "integration_base_sha": "58bc51b3e592eadfcc11fdac948bb2d2b6ad4ff4",
   "source_snapshot_captured_at": "2026-10-25T15:55:46+08:00",

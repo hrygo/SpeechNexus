@@ -79,7 +79,7 @@ date: 2026-10-26
 
 | 对象 | 当前事实与移交办法 |
 | --- | --- |
-| 原验收映射 | [41 条原 AC 矩阵](../../audits/2026-10-25-team-c-original-ac-matrix.md)、[278 子条件机器映射](../../audits/2026-10-25-team-c-acceptance-map.json)均保留；全部仍 not_run，旧实现分类不是当前完成率 |
+| 原验收映射 | [41 条原 AC 矩阵](../audits/2026-10-25-team-c-original-ac-matrix.md)、[278 子条件机器映射](../../audits/2026-10-25-team-c-acceptance-map.json)均保留；全部仍 not_run，旧实现分类不是当前完成率 |
 | 证据事故 | [#189 清理丢失 82 份原件](../../audits/2026-10-26-team-c-evidence-retention.md)，影响 214 个条件引用。不可由摘要补勾；稳定根重建属于新证据，不能称原件找回 |
 | 当前操作映射 | [JSON](../../audits/2026-10-26-team-c-operation-coverage.json)与[报告](../../audits/2026-10-26-team-c-operation-coverage.md)：52 项、42 bound、10 consumer_pending；仅 workbench 接线审计，SSE/兼容退役/其他 surface/语义仍待 |
 | 本轮稳定归档 | `/Users/hrygo/.codex/team-c-evidence/20261026T101715Z-final-handoff/`；保存旧工作区 3 份文档原件、原目标 diff、worktree/status、40 issue 前后原文/元数据、4 项写入回读、清理记录、检查结果与 manifest。只含本任务材料，不纳入 Git |

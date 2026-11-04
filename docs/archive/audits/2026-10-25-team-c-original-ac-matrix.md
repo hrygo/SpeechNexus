@@ -1,10 +1,10 @@
 # 团队 C 原 41 条 AC：语义子条件矩阵
 
-> 本文及配套映射保留 2026-10-25 的历史审阅状态；文中的“当前”和未验项不代表现行进度。现行需求和证据入口见[需求矩阵](../plans/delivery-tracking.md)。
+> 本文及配套映射保留 2026-10-25 的历史审阅状态；文中的“当前”和未验项不代表现行进度。现行需求和证据入口见[需求矩阵](../../plans/delivery-tracking.md)。
 
-核对日期：2026-10-25。依据：[下一阶段 Goal](../archive/plans/2026-10-25-team-c-next-phase-goal-and-acceptance.md)，version 0.2.0。当前实现与验证结论见[集成报告](2026-10-25-team-c-next-phase-integration.md)。
+核对日期：2026-10-25。依据：[下一阶段 Goal](../plans/2026-10-25-team-c-next-phase-goal-and-acceptance.md)，version 0.2.0。当前实现与验证结论见[集成报告](2026-10-25-team-c-next-phase-integration.md)。
 
-本矩阵保留 41 条原 AC 的完整原文，形成 278 个带稳定标识的语义子条件草案。原文是范围依据，子条件不能缩减原文含义；拆解仍需人工覆盖复核。[可追踪映射](2026-10-25-team-c-acceptance-map.json)保存逐条件状态、责任人、源码/消费者/测试锚点、摘要与证据维度。原始 issue 快照及115个无损初拆子句仍保留在忽略目录 `.runtime/team-c/next-phase/2026-10-25T155546+0800/ac-matrix.json`。
+本矩阵保留 41 条原 AC 的完整原文，形成 278 个带稳定标识的语义子条件草案。原文是范围依据，子条件不能缩减原文含义；拆解仍需人工覆盖复核。[可追踪映射](../../audits/2026-10-25-team-c-acceptance-map.json)保存逐条件状态、责任人、源码/消费者/测试锚点、摘要与证据维度。原始 issue 快照及115个无损初拆子句仍保留在忽略目录 `.runtime/team-c/next-phase/2026-10-25T155546+0800/ac-matrix.json`。
 
 **所有 AC 和语义子条件均未判定通过。** 全部278项已有候选映射，未审计数为0；候选映射内已发现的缺实现、缺正式消费者及缺行为断言继续明确留空，T02尚未完成。旧源码/证据摘要不自动刷新，不升级证明等级。原issue已在PR #153合并后仅更新进展总结，全部AC及勾选保持不变。
 
@@ -38,7 +38,7 @@ C08新增42项、复核原有日志1项，全43项已有状态与边界。删除
 
 ## 映射与资格守卫
 
-[检查器](../../scripts/dev-env/check-acceptance-map.py)独立冻结原41条AC全文及278个稳定子条件，逐项核对映射文件、源码摘要/锚点和证据标识；不能同时删改本文件与映射来缩小范围。证据维度分别声明，合成浏览器不会因“更高等级”推定真实模型、物理设备或目标拓扑。声明通过还需明确资格维度、完整head、对应运行的源码清单及其摘要、通过证据和语义复核记录；源码清单须覆盖本条件引用的源码/消费者/测试并匹配当前字节，不能仅更新映射摘要后复用旧运行。声明的metadata/source_manifest也须存在且摘要一致。失败、跳过、未知或旧head不能结算当前条件。
+[检查器](../../../scripts/dev-env/check-acceptance-map.py)独立冻结原41条AC全文及278个稳定子条件，逐项核对映射文件、源码摘要/锚点和证据标识；不能同时删改本文件与映射来缩小范围。证据维度分别声明，合成浏览器不会因“更高等级”推定真实模型、物理设备或目标拓扑。声明通过还需明确资格维度、完整head、对应运行的源码清单及其摘要、通过证据和语义复核记录；源码清单须覆盖本条件引用的源码/消费者/测试并匹配当前字节，不能仅更新映射摘要后复用旧运行。声明的metadata/source_manifest也须存在且摘要一致。失败、跳过、未知或旧head不能结算当前条件。
 
 校验器只审计，不修改输入、不勾选AC、不放行Gate。报告不得覆盖矩阵、源范围、映射源码或证据，即使输入部分无效、路径使用symlink/hardlink别名也一样。原范围pin变更须独立复核并保留完整AC语义，不能用于掩盖缺项。
 
@@ -62,12 +62,12 @@ uv run python scripts/dev-env/check-acceptance-map.py \
 
 | 子条件 | 当前实现/正式消费者及断言 | 未满足的范围 |
 | --- | --- | --- |
-| C00/AC1/S01、S02、S04 | [ProfileClient](../../web/admin/src/profiles/profile-client.ts) 消费同源生成请求/响应校验；[客户端测试](../../web/admin/src/profiles/profile-client.test.ts) 比较完整请求、大十进制及错身份/修订/定义响应；[正式装配](../../web/admin/src/App.tsx)挂入草稿页面 | 只覆盖草稿请求/响应和不注入默认值，未审计整个计划操作集合；不涉及事件覆盖 |
-| C01/AC2/S01 | [草稿页面](../../web/admin/src/profiles/ProfileHost.tsx)显式选择新系列/null 或已知分配修订；[DOM 测试](../../web/admin/src/profiles/ProfileHost.test.tsx)断言 CAS 冲突保留定义、不自动重基 | 真实服务并发 CAS、其他管理写入及发布/激活 CAS 尚未联验 |
-| C01/AC2/S02 | [ProfileSession.prepare/confirm](../../web/admin/src/profiles/profile-session.ts)分开准备和发送；DOM 断言核对不外发、确认才提交并聚焦确认按钮 | 实际浏览器操作、真实服务记录及其余管理写入待验证 |
-| C01/AC2/S06 | [ProfileJournal](../../web/admin/src/profiles/profile-journal.ts)保留完整原意图；[会话测试](../../web/admin/src/profiles/profile-session.test.ts)断言未知/读取/原键重放及稳定冲突，[存储测试](../../web/admin/src/profiles/profile-journal.test.ts)断言原键和大修订持久于假存储 | 实际刷新/sessionStorage 与生产原结果恢复未验证；固定 GET 不能结算写入 |
-| C01/AC2/S07 | 正式草稿页面与 Admin 外壳说明无身份隔离；[外壳测试](../../web/admin/src/App.test.tsx)和 DOM 测试保护相应文案 | 不证明入口网关限制或其他页面/部署边界已经全部核验 |
-| C01/AC2/S03–S05 | [生命周期设计](../components/profile-lifecycle-contract.md)明确未来契约与私有准备边界，当前产品只注册草稿创建/固定读取；页面明确生命周期未接入 | A02 仍需交付可信资格生产者、发布/激活事务及持久原结果、当前指针和正式路由；退役需冻结行为并交付生产路径。C 取得具名制品后接入并联验；阻塞这些子条件，不阻塞草稿独立联调 |
+| C00/AC1/S01、S02、S04 | [ProfileClient](../../../web/admin/src/profiles/profile-client.ts) 消费同源生成请求/响应校验；[客户端测试](../../../web/admin/src/profiles/profile-client.test.ts) 比较完整请求、大十进制及错身份/修订/定义响应；[正式装配](../../../web/admin/src/App.tsx)挂入草稿页面 | 只覆盖草稿请求/响应和不注入默认值，未审计整个计划操作集合；不涉及事件覆盖 |
+| C01/AC2/S01 | [草稿页面](../../../web/admin/src/profiles/ProfileHost.tsx)显式选择新系列/null 或已知分配修订；[DOM 测试](../../../web/admin/src/profiles/ProfileHost.test.tsx)断言 CAS 冲突保留定义、不自动重基 | 真实服务并发 CAS、其他管理写入及发布/激活 CAS 尚未联验 |
+| C01/AC2/S02 | [ProfileSession.prepare/confirm](../../../web/admin/src/profiles/profile-session.ts)分开准备和发送；DOM 断言核对不外发、确认才提交并聚焦确认按钮 | 实际浏览器操作、真实服务记录及其余管理写入待验证 |
+| C01/AC2/S06 | [ProfileJournal](../../../web/admin/src/profiles/profile-journal.ts)保留完整原意图；[会话测试](../../../web/admin/src/profiles/profile-session.test.ts)断言未知/读取/原键重放及稳定冲突，[存储测试](../../../web/admin/src/profiles/profile-journal.test.ts)断言原键和大修订持久于假存储 | 实际刷新/sessionStorage 与生产原结果恢复未验证；固定 GET 不能结算写入 |
+| C01/AC2/S07 | 正式草稿页面与 Admin 外壳说明无身份隔离；[外壳测试](../../../web/admin/src/App.test.tsx)和 DOM 测试保护相应文案 | 不证明入口网关限制或其他页面/部署边界已经全部核验 |
+| C01/AC2/S03–S05 | [生命周期设计](../../components/profile-lifecycle-contract.md)明确未来契约与私有准备边界，当前产品只注册草稿创建/固定读取；页面明确生命周期未接入 | A02 仍需交付可信资格生产者、发布/激活事务及持久原结果、当前指针和正式路由；退役需冻结行为并交付生产路径。C 取得具名制品后接入并联验；阻塞这些子条件，不阻塞草稿独立联调 |
 
 上述 10 个子条件更新了源码/消费者/测试或依赖边界，所有验收状态仍为 `not_run`。源码及证据哈希存于同一忽略证据目录；没有用局部草稿测试结算任何完整原 AC。
 

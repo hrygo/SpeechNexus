@@ -13,8 +13,9 @@ the gateway to have no submit intent.
 """
 
 from speechnexus_backend.speech.infrastructure.gateway_query_grants import (
-    CANCELLATION_FENCE_READ_COLUMNS,
+    CANCELLATION_FENCE_GATEWAY_COLUMNS,
     CANCELLATION_FENCE_TABLE,
+    CANCELLATION_FENCE_WORKER_COLUMNS,
 )
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 
@@ -80,11 +81,11 @@ def cancellation_not_submitted_grants(schema: str, role: str) -> tuple[str, ...]
 
 
 def cancellation_reconciliation_grants(schema: str, role: str) -> tuple[str, ...]:
-    """Worker: read the fence/projection, own the ledger, read the observation."""
+    """Worker: read the complete fence projection, ledger, and observation."""
     schema, role = checked_sql_name(schema), checked_sql_name(role)
     return (
         f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
-        f"GRANT SELECT ({', '.join(CANCELLATION_FENCE_READ_COLUMNS)}) "
+        f"GRANT SELECT ({', '.join(CANCELLATION_FENCE_WORKER_COLUMNS)}) "
         f'ON "{schema}".{TABLE} TO "{role}"',
         f'GRANT SELECT, INSERT ON "{schema}".{RECONCILIATION_TABLE} TO "{role}"',
         f"GRANT UPDATE (attempts, next_check_at_us, last_outcome, settled_at_us, updated_at_us) "
@@ -94,11 +95,11 @@ def cancellation_reconciliation_grants(schema: str, role: str) -> tuple[str, ...
 
 
 def gateway_cancellation_fence_grants(schema: str, role: str) -> tuple[str, ...]:
-    """The gateway only needs the same fence columns as the query reader."""
+    """The gateway only needs the existence key, not acceptance metadata."""
     schema, role = checked_sql_name(schema), checked_sql_name(role)
     return (
         f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
-        f"GRANT SELECT ({', '.join(CANCELLATION_FENCE_READ_COLUMNS)}) "
+        f"GRANT SELECT ({', '.join(CANCELLATION_FENCE_GATEWAY_COLUMNS)}) "
         f'ON "{schema}".{TABLE} TO "{role}"',
     )
 

@@ -305,15 +305,35 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
     # Artifact metadata (0020). Reads go through their own connection; the
     # table stays outside the shared coordination surface.
     artifact_tables = {"speech_artifacts"} if db.dialect == "postgresql" else set()
+    # Public-Job cancellation facts and their private projection/ledger (0034/0035).
+    cancellation_tables = (
+        {
+            "speech_job_cancellations",
+            "speech_job_cancellation_fences",
+            "speech_job_cancellation_not_submitted",
+            "speech_job_cancellation_reconciliations",
+        }
+        if db.dialect == "postgresql"
+        else set()
+    )
     assert binding_tables <= {row["name"] for row in rows}
     assert profile_tables <= {row["name"] for row in rows}
     assert publication_tables <= {row["name"] for row in rows}
     assert artifact_tables <= {row["name"] for row in rows}
-    assert {row["name"] for row in rows} - {
-        "alembic_version",
-        "execution_release_guards",
-    } - asset_tables - profile_tables - binding_tables - publication_tables - artifact_tables == (
-        set(SPEECH_UPDATES) | set(GATEWAY_UPDATES)
+    assert cancellation_tables <= {row["name"] for row in rows}
+    assert (
+        {row["name"] for row in rows}
+        - {
+            "alembic_version",
+            "execution_release_guards",
+        }
+        - asset_tables
+        - profile_tables
+        - binding_tables
+        - publication_tables
+        - artifact_tables
+        - cancellation_tables
+        == (set(SPEECH_UPDATES) | set(GATEWAY_UPDATES))
     )
     if db.dialect == "postgresql":
         # New configuration and publication tables are outside shared coordination grants.

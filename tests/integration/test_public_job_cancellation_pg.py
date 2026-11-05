@@ -29,6 +29,7 @@ from speechnexus_backend.speech.application.public_jobs import (
 )
 from speechnexus_backend.speech.domain.job_dispatch import (
     DispatchLimits,
+    DispatchRequestUnavailableError,
     ExecutionSubmission,
     submit_intent_identity,
 )
@@ -402,6 +403,11 @@ class _Planner:
         )
 
 
+class _FailingPlanner(_Planner):
+    async def plan(self, job: Any, submit_intent_id: str) -> ExecutionSubmission:
+        raise DispatchRequestUnavailableError
+
+
 class _NoopPublisher:
     async def publish(self, *args: Any, **kwargs: Any) -> Any:
         raise AssertionError("a refused submit must never publish")
@@ -433,23 +439,47 @@ class _CancelAfterMarkRunning(PostgresDispatchStateStore):
         return running
 
 
-async def test_cancellation_after_mark_running_before_submit_converges(
-    jobs_db: JobSandbox, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("exit_mode", ("after_mark_running", "planner_failure", "should_stop"))
+async def test_cancellation_before_submit_converges(
+    jobs_db: JobSandbox, monkeypatch: pytest.MonkeyPatch, exit_mode: str
 ) -> None:
     job_id = await _create_pending(jobs_db, key="synthetic-before-submit-create")
-    state = _CancelAfterMarkRunning(jobs_db.pool, jobs_db.jobs)
+    state = (
+        PostgresDispatchStateStore(jobs_db.pool)
+        if exit_mode == "should_stop"
+        else _CancelAfterMarkRunning(jobs_db.pool, jobs_db.jobs)
+    )
     dispatcher = JobDispatcher(
         PostgresDispatchQueue(jobs_db.pool),
         state,
-        _Planner(),
+        _FailingPlanner() if exit_mode == "planner_failure" else _Planner(),
         _NoGatewayCalls(),
         _NoopPublisher(),
         limits=DispatchLimits(poll_seconds=0.01, job_timeout_seconds=600, lease_ms=30_000),
     )
+    stop_calls = 0
 
-    batch = await dispatcher.run_once("worker-a")
+    def should_stop() -> bool:
+        nonlocal stop_calls
+        stop_calls += 1
+        if stop_calls == 1:
+            return False
+        jobs_db.jobs.cancel(
+            job_id,
+            request_id="req-cancel-at-stop",
+            idempotency_key=None,
+        )
+        return True
 
-    assert batch.claimed == 1 and batch.lease_lost == 1
+    batch = await dispatcher.run_once(
+        "worker-a", should_stop=should_stop if exit_mode == "should_stop" else None
+    )
+
+    assert batch.claimed == 1
+    if exit_mode == "should_stop":
+        assert batch.deferred == 1
+    else:
+        assert batch.lease_lost == 1
     assert jobs_db.query("SELECT state FROM speech_jobs WHERE job_id = %s", (job_id,)) == [
         {"state": "cancelling"}
     ]

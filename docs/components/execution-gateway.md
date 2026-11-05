@@ -95,7 +95,7 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
 
 公开 Job 的取消受理先在同一事务写 `speech_job_cancellations` receipt 与
 `speech_job_cancellation_fences` 投影，再返回受理结果。receipt 是唯一受理事实，围栏只
-投影 `job_id`/`request_id`/受理时间供 gateway 读取；两者都不是停止证据，也不释放预算。网关在 `create_submit` 内、身份
+投影 `job_id`/`request_id`/受理时间，但 gateway 提交只读 `job_id` 判断存在性；两者都不是停止证据，也不释放预算。网关在 `create_submit` 内、身份
 校验通过之后、任何创建执行的写入之前读取围栏：
 
 1. 先取同一 job 的互斥事务级 advisory lock，键由
@@ -116,7 +116,7 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
    当作“没有执行”，单独 404 不结算。
 
 gateway 写角色在 `coordination_runtime_grants` 之外还须安装
-`gateway_cancellation_fence_grants` 以获得围栏列 `SELECT`；独立执行读取器使用同一函数。API Job writer 通过
+`gateway_cancellation_fence_grants` 以获得围栏 `job_id` 列 `SELECT`（提交只判断存在性）；独立执行读取器使用同一函数。API Job writer 通过
 `public_job_grants` 获得围栏 `SELECT/INSERT`，worker 使用
 `cancellation_reconciliation_grants` 获得围栏列 `SELECT`、reconciliation 账本受限读写和
 not-submitted `SELECT`；`job_dispatch_grants` 只授予派发器 not-submitted `INSERT`。

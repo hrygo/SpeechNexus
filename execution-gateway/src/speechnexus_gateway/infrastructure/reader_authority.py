@@ -79,7 +79,7 @@ _READ_COLUMNS: dict[str, frozenset[str]] = {
         ]
     ),
     "speech_publication_installation": frozenset(["singleton", "installation_id"]),
-    "speech_job_cancellation_fences": frozenset(["job_id", "accepted_at_us", "request_id"]),
+    "speech_job_cancellation_fences": frozenset(["job_id"]),
 }
 
 

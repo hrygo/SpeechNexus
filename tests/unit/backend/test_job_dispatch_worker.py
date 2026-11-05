@@ -33,6 +33,7 @@ from speechnexus_backend.speech.domain.job_dispatch import (
     DispatchJob,
     DispatchLimits,
     DispatchRejectedError,
+    DispatchRequestUnavailableError,
     ExecutionSubmission,
     GatewayReply,
     PublishedResult,
@@ -321,12 +322,17 @@ class Gate:
 
 
 def _dispatcher(
-    world: LeaseWorld, gateway: Gateway, publisher: Publisher, *, sleep: Any = None
+    world: LeaseWorld,
+    gateway: Gateway,
+    publisher: Publisher,
+    *,
+    sleep: Any = None,
+    planner: Any = None,
 ) -> JobDispatcher:
     return JobDispatcher(
         world,
         world,
-        Planner(),
+        planner or Planner(),
         gateway,
         publisher,
         limits=DispatchLimits(poll_seconds=0.01, job_timeout_seconds=600, lease_ms=30_000),
@@ -375,6 +381,52 @@ class CancellationAtGatewaySubmit(Gateway):
             status_version=self.world.job.status_version + 1,
         )
         raise DispatchRejectedError("gateway_barrier_fenced")
+
+
+class StopAfterPlan(LeaseWorld):
+    """A graceful stop observed after mark_running/plan but before submit."""
+
+    calls = 0
+
+    def stop(self) -> bool:
+        self.calls += 1
+        if self.calls == 1:
+            return False
+        self.job = replace(self.job, state="cancelling", status_version=self.job.status_version + 1)
+        return True
+
+
+async def test_graceful_stop_after_plan_records_not_submitted_observation() -> None:
+    world = StopAfterPlan(_job())
+    gateway = Gateway(["executing"])
+    batch = await _dispatcher(world, gateway, Publisher()).run_once(
+        "worker-a", should_stop=world.stop
+    )
+
+    assert batch.claimed == 1 and batch.deferred == 1
+    assert gateway.queries == 0
+    assert world.job.state == "cancelling"
+    assert world.finish_calls == []
+    assert world.not_submitted == [(world.job.job_id, "worker-a")]
+
+
+class UnavailablePlanner(Planner):
+    async def plan(self, job: DispatchJob, submit_intent_id: str) -> ExecutionSubmission:
+        raise DispatchRequestUnavailableError
+
+
+async def test_pre_submit_failure_with_cancellation_records_not_submitted_observation() -> None:
+    world = CancelledDuringDispatch(_job())
+    gateway = Gateway(["executing"])
+    batch = await _dispatcher(world, gateway, Publisher(), planner=UnavailablePlanner()).run_once(
+        "worker-a"
+    )
+
+    assert batch.claimed == 1 and batch.lease_lost == 1
+    assert gateway.queries == 0
+    assert world.job.state == "cancelling"
+    assert world.finish_calls == [("worker-a", "failed")]
+    assert world.not_submitted == [(world.job.job_id, "worker-a")]
 
 
 async def test_gateway_barrier_fenced_keeps_cancelling_without_failure() -> None:
@@ -474,6 +526,26 @@ async def test_graceful_stop_defers_then_lease_expiry_lets_another_worker_finish
     assert batch_b.lease_reclaimed == 1 and batch_b.succeeded == 1
     assert publisher.calls == [_job().job_id]
     assert world.finish_calls == [("worker-b", "succeeded")]
+
+
+class CancelledAtClaim(LeaseWorld):
+    """Cancellation commits after claim_due but before the batch dispatches it."""
+
+    async def claim_due(self, worker_id: str, lease_ms: int, limit: int) -> list[ClaimedJob]:
+        claims = await super().claim_due(worker_id, lease_ms, limit)
+        self.job = replace(self.job, state="cancelling", status_version=self.job.status_version + 1)
+        return claims
+
+
+async def test_batch_stop_records_not_submitted_for_deferred_cancelling_claim() -> None:
+    world = CancelledAtClaim(_job())
+    batch = await _dispatcher(world, Gateway(["executing"]), Publisher()).run_once(
+        "worker-a", should_stop=lambda: True
+    )
+
+    assert batch.claimed == 1 and batch.deferred == 1
+    assert world.job.state == "cancelling"
+    assert world.not_submitted == [(world.job.job_id, "worker-a")]
 
 
 async def test_two_entry_workers_claim_and_publish_once() -> None:

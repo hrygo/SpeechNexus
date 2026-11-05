@@ -159,8 +159,8 @@ request ID，不覆盖他人事实。
 授予围栏 SELECT/INSERT；`job_dispatch_grants` 只授予派发器对 not-submitted 表的 INSERT；
 worker 角色使用 `public_job_grants` 与 `cancellation_reconciliation_grants`（围栏列 SELECT、
 对账账本 SELECT/INSERT/列级 UPDATE、not-submitted SELECT）；gateway 写角色在
-`coordination_runtime_grants` 之外还须安装 `gateway_cancellation_fence_grants` 以获得围栏列
-SELECT，独立执行读取器使用同一函数。
+`coordination_runtime_grants` 之外还须安装 `gateway_cancellation_fence_grants` 以获得围栏
+`job_id` 列 SELECT（提交只判断存在性），独立执行读取器使用同一函数。
 
 接线已经落地：
 

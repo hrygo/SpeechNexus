@@ -79,11 +79,13 @@ statements = [
 
 API Job writer 只对 `speech_job_cancellation_fences` 持有 SELECT/INSERT；派发器只对
 `speech_job_cancellation_not_submitted` 持有 INSERT，不能写围栏或对账账本；worker 对
-围栏只持有 `job_id`、`accepted_at_us`、`request_id` 列 SELECT，对
+围栏上 worker 持有 `job_id`、`accepted_at_us`、`request_id` 三列 SELECT，gateway 只持有
+`job_id` 列 SELECT，对
 `speech_job_cancellation_reconciliations` 持有 SELECT/INSERT 与
 `attempts`、`next_check_at_us`、`last_outcome`、`settled_at_us`、`updated_at_us` 的列级 UPDATE，
 对 not-submitted 表持有 SELECT；gateway 写角色在 `coordination_runtime_grants` 之外还须安装
-`gateway_cancellation_fence_grants` 获得围栏列 SELECT，独立执行读取器使用同一函数。围栏投影与账本由迁移
+`gateway_cancellation_fence_grants`，只获得围栏 `job_id` 列 SELECT（提交只需存在性），独立
+执行读取器使用同一函数。围栏投影与账本由迁移
 `0035_job_cancellation_fences` 创建，没有 DELETE/TRUNCATE/DDL 授权。受理事务把围栏写入
 放在最后，取得围栏互斥锁后不再等待
 `admission_leases`/`runtime_instance*` 等网关权威行锁；网关则先按既有顺序锁权威行，

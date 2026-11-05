@@ -427,7 +427,7 @@
         "docs/architecture/runtime-governance.md",
         "docs/architecture/technical-blueprint.md"
       ],
-      "implementation": "JobDispatcher 定义认领、原身份查询、网关提交与发布端口；取消持久接收另有固定版本合并证据；已有生产事务、角色与端口证据地图；现有 runbook 为只读排查；没有任意将 unknown 改为 succeeded 的产品命令。",
+      "implementation": "JobDispatcher 定义认领、原身份查询、网关提交与发布端口；取消回执的持久接收与持久到期恢复调度已合入（PR #414）；已有生产事务、角色与端口证据地图；现有 runbook 为只读排查；没有任意将 unknown 改为 succeeded 的产品命令。",
       "integration": "真实执行、停止与输出区间事实到业务恢复/结算仍待接入；部分原生查询 envelope、真实策略和业务消费者待对照；原执行/原代次及可信停止与资源释放由权威事务核实。",
       "verification": "隔离事务与取消接收证据不等于真实停止或释放资格；历史权限及双库分段测试不代表全端口和真实拓扑资格；组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
       "gap": "真实执行、停止与输出区间事实到业务恢复/结算仍待接入；部分原生查询 envelope、真实策略和业务消费者待对照；原执行/原代次及可信停止与资源释放由权威事务核实。 隔离事务与取消接收证据不等于真实停止或释放资格；历史权限及双库分段测试不代表全端口和真实拓扑资格；组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
@@ -456,6 +456,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/speech/application/job_dispatcher.py",
           "label": "Job 派发与原身份查询",
           "note": "派发器端口和恢复逻辑，不证明生产链路完整接通"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/414",
+          "label": "取消回执恢复调度",
+          "note": "隔离 PG 与进程退出窗口；真实引擎、物理拓扑未验"
         }
       ],
       "issues": [
@@ -517,7 +522,9 @@
           "note": "固定版本包含实例预热与分段超时；不证明整个动作有硬截止。"
         }
       ],
-      "issues": []
+      "issues": [
+        416
+      ]
     },
     {
       "id": "X-BINDING-STOP",
@@ -527,10 +534,10 @@
         "docs/architecture/runtime-governance.md",
         "docs/architecture/technical-blueprint.md"
       ],
-      "implementation": "已有 disable 协调与持久目标；dispatch 标记提交后、实际外发前崩溃时不能保证自动补发取消，真实停止仍待验收。",
-      "integration": "网关可按原身份查询并在配置执行适配器后接收请求级 abort；取消接收不证明引擎停止，租约由原事务处理。",
+      "implementation": "已有 disable 协调与持久目标；取消回执的首次派发、已 claim 后崩溃的原身份恢复调度已合入（PR #414），无安全原身份能力时继续 unknown/quarantine；真实停止与资源释放仍待验收。",
+      "integration": "网关可按原身份查询并在配置执行适配器后接收请求级 abort；恢复 worker 已接持久到期调度与受限 writer 权限。取消接收不证明引擎停止，租约由原事务处理；真实引擎与物理拓扑未验。",
       "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
-      "gap": "网关可按原身份查询并在配置执行适配器后接收请求级 abort；取消接收不证明引擎停止，租约由原事务处理。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "取消接收不证明引擎停止；真实引擎停止/释放双证据、MySQL 协调全量与物理拓扑未验。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/speech/application/binding_disable_coordinator.py",
@@ -556,6 +563,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/execution-gateway/src/speechnexus_gateway/app.py",
           "label": "网关执行适配器装配",
           "note": "提交和请求级取消依赖执行适配器配置；接收取消不证明引擎停止"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/414",
+          "label": "取消回执原身份恢复",
+          "note": "持久到期调度与恢复 worker 合入；真实引擎与物理拓扑未验"
         }
       ],
       "issues": [
@@ -1563,7 +1575,9 @@
           "note": "固定 revision 草稿的实现范围及未交付生命周期"
         }
       ],
-      "issues": []
+      "issues": [
+        415
+      ]
     },
     {
       "id": "M-BINDING",

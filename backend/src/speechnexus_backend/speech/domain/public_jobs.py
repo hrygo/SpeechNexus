@@ -270,10 +270,7 @@ class JobCancellationReceipt:
             raise ValueError("Invalid cancellation idempotency digest")
         if type(self.accepted) is not bool:
             raise ValueError("Invalid cancellation acceptance")
-        if (
-            type(self.requested_at_us) is not int
-            or not 0 <= self.requested_at_us <= _TIMESTAMP
-        ):
+        if type(self.requested_at_us) is not int or not 0 <= self.requested_at_us <= _TIMESTAMP:
             raise ValueError("Invalid cancellation timestamp")
 
 

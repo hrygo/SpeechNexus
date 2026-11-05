@@ -37,12 +37,6 @@ from tests.integration.test_production_jobs import database as database
 from tests.support.gateway_database import MySQLSubmissionLedger
 from tests.unit.gateway.test_file_asr import Recognizer
 
-from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
-    JOB_CANCELLATION_FENCE_DDL,
-    gateway_cancellation_fence_grants,
-    job_cancellation_fence_grants,
-)
-from speechnexus_backend.speech.infrastructure.public_job_schema import PUBLIC_JOB_DDL
 from speechnexus_gateway.application.execution_inputs import FileExecutionInputs
 from speechnexus_gateway.domain.asr_results import PreparedAsrResult
 from speechnexus_gateway.domain.execution_results import ExecutionStagingResult
@@ -69,35 +63,6 @@ from speechnexus_gateway.infrastructure.submit_sql import save_staging_result
 from speechnexus_gateway.interfaces.file_asr_command import CommandFileAsr
 
 pytestmark = pytest.mark.integration
-
-
-@pytest.fixture
-def gateway_fence_schema(foundation: Foundation) -> None:
-    """Install the 0035 fence DDL in historical schemas that predate it.
-
-    Gateway submit reads the fence transactionally and must not fail open when it
-    is missing. This harness therefore mirrors the table and its column grants in
-    the 0012 downgrade fixture that exercises execution-result durability.
-    """
-    db = foundation.database
-    if db.dialect != "postgresql":
-        return
-    if db.query("SELECT to_regclass('speech_job_cancellation_fences') AS name")[0]["name"]:
-        return
-    # Revision 0012 predates public Jobs (0016) and the cancellation fence (0035).
-    # The current gateway submit transaction reads the fence, so this historical
-    # harness installs the public-Job prerequisite and the fence projection it
-    # depends on; it does not bypass the read or synthesize a terminal result.
-    db.admin.execute(f'SET search_path TO "{db.schema}", pg_catalog')
-    for statement in PUBLIC_JOB_DDL:
-        db.query(statement)
-    for statement in JOB_CANCELLATION_FENCE_DDL:
-        db.query(statement)
-    for statement in (
-        *job_cancellation_fence_grants(db.schema, foundation.speech_role),
-        *gateway_cancellation_fence_grants(db.schema, foundation.gateway_role),
-    ):
-        db.query(statement)
 
 
 def start(f: Foundation, ledger: Ledger) -> tuple[Any, SubmissionIntent]:
@@ -417,7 +382,6 @@ def test_additive_migration_preserves_legacy_rows_and_refuses_result_history_los
 def test_downgrade_waits_for_in_flight_result_and_preserves_committed_receipt(
     foundation: Foundation,
     recovery_ledger: Ledger,
-    gateway_fence_schema: None,
 ) -> None:
     _, current = start(foundation, recovery_ledger)
     db = foundation.database

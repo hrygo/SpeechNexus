@@ -27,6 +27,7 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.pool import NullPool
 from tests.integration.test_production_jobs import REQUEST, JobDatabase
 from tests.integration.test_production_jobs import database as database
+from tests.support.cancellation_fence_schema import ensure_cancellation_fence_schema
 from tests.support.job_database import MySQLJobTransactions
 from tests.support.migrations import HEAD
 
@@ -184,6 +185,8 @@ def foundation(database: JobDatabase) -> Iterator[Foundation]:
             else:
                 db.query(f"CREATE USER '{role}'@'%' IDENTIFIED BY 'synthetic_foundation_test'")
             created_roles.append(role)
+        if db.dialect == "postgresql":
+            ensure_cancellation_fence_schema(db.query, schema=db.schema, roles=(roles[0],))
         grants = coordination_runtime_grants(db.schema, speech_role=roles[0], gateway_role=roles[1])
         if (
             db.dialect == "postgresql"

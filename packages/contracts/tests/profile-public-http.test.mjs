@@ -35,16 +35,10 @@ test("v2 list validates nullable current revision and rejects private/draft fiel
     { publication_status: "draft" },
   ]) {
     assert.throws(() =>
-      validator.validateResponse(
-        "listPublishedProfiles",
-        200,
-        list([{ ...summary, ...change }]),
-      ),
+      validator.validateResponse("listPublishedProfiles", 200, list([{ ...summary, ...change }])),
     );
   }
-  assert.throws(() =>
-    validator.validateResponse("listPublishedProfiles", 200, list([summary])),
-  );
+  assert.throws(() => validator.validateResponse("listPublishedProfiles", 200, list([summary])));
   assert.equal(
     validator.validateResponse("listPublishedProfiles", 200, list([])).body.data.length,
     0,
@@ -56,12 +50,7 @@ test("public requests validate bounds, unknown fields and full decimal fixed ide
     for (const limit of ["1", "50", "100"]) {
       validator.validateRequest(operation, { query: { limit } });
     }
-    for (const query of [
-      { limit: "0" },
-      { limit: "101" },
-      { limit: "bad" },
-      { unknown: "yes" },
-    ]) {
+    for (const query of [{ limit: "0" }, { limit: "101" }, { limit: "bad" }, { unknown: "yes" }]) {
       assert.throws(() => validator.validateRequest(operation, { query }));
     }
   }
@@ -80,10 +69,9 @@ test("generated public client validates the response with one explicit transport
   const calls = [];
   const client = createValidatedClient("http://profile.synthetic", 262144, async (request) => {
     calls.push(request.url);
-    return new Response(
-      JSON.stringify(list([{ ...summary, current_revision: null }]).body),
-      { headers: { "Content-Type": "application/json" } },
-    );
+    return new Response(JSON.stringify(list([{ ...summary, current_revision: null }]).body), {
+      headers: { "Content-Type": "application/json" },
+    });
   });
   const result = await client.GET("/v2/nexus/profiles", { params: { query: { limit: 1 } } });
   assert.equal(result.data.data[0].current_revision, null);

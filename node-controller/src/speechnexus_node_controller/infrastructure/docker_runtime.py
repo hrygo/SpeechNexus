@@ -114,6 +114,14 @@ class DockerRuntimeSettings:
     name_prefix: str = "speechnexus-instance"
 
 
+@dataclass(slots=True)
+class _WarmupProgress:
+    """One warmup action: a single wall-clock deadline and its successes."""
+
+    deadline: float
+    completed: int = 0
+
+
 class DockerNodeRuntime:
     """A ``NodeRuntimePort`` that prepares and stops approved engine containers."""
 
@@ -130,7 +138,7 @@ class DockerNodeRuntime:
         self._node_id = node_id
         self._stop_checkpoints = stop_checkpoints
         self._settings = settings or DockerRuntimeSettings()
-        self._warmup_attempts: dict[tuple[str, int], int] = {}
+        self._warmup_progress: dict[tuple[str, int], _WarmupProgress] = {}
         self._engine_credentials = engine_credentials
 
     @_runtime_action("prepare")
@@ -232,7 +240,7 @@ class DockerNodeRuntime:
             return self._stop_conflict(request, template)
         if not self._remove_and_confirm(existing.container_id):
             return self._inspect_or_absent(request, template, existing.container_id)
-        self._warmup_attempts.pop((existing.container_id, request.instance_generation), None)
+        self._warmup_progress.pop((existing.container_id, request.instance_generation), None)
         return self._released_observation(checkpoint, template, exited=existing)
 
     def _released_observation(
@@ -475,7 +483,7 @@ class DockerNodeRuntime:
         state: ContainerState,
     ) -> InstanceObservation:
         if not self._engine_auth_matches(request, template, state):
-            self._warmup_attempts.pop((state.container_id, request.instance_generation), None)
+            self._warmup_progress.pop((state.container_id, request.instance_generation), None)
             return InstanceObservation(
                 instance_id=request.instance_id,
                 instance_generation=request.instance_generation,
@@ -571,34 +579,55 @@ class DockerNodeRuntime:
         template: ApprovedRuntimeTemplate,
         state: ContainerState,
     ) -> ObservedInstanceState:
-        """Stay at peak until every declared warmup request has completed."""
+        """Spend one bounded warmup action and never exceed its single deadline.
+
+        ``warmup.timeout_seconds`` bounds the whole action, anchored at the first
+        prepare observation for this container generation. Address selection,
+        every attempt and every response read share the remaining budget, so
+        ``attempts`` cannot multiply the wall-clock bound. Once it is spent the
+        action stays non-ready and sends nothing more; repeated prepares reuse
+        the recorded progress instead of starting a fresh budget.
+        """
         port = template.readiness.port
         warmup = template.readiness.warmup
         if port is None or warmup is None:
             return ObservedInstanceState.LOADING
-        address = self._warmup_address(self._literal_addresses(state), port)
-        if address is None:
-            return ObservedInstanceState.LOADING
         key = (state.container_id, request.instance_generation)
-        completed = self._warmup_attempts.get(key, 0)
-        if completed >= warmup.attempts:
+        progress = self._warmup_progress.get(key)
+        if progress is not None and progress.completed >= warmup.attempts:
             return ObservedInstanceState.READY
         if request.action is not RuntimeActionKind.PREPARE:
-            # A stop or drain observation never spends model time on warmup.
+            # A stop or drain observation never starts or spends the action budget.
             return ObservedInstanceState.WARMING_UP
+        if progress is None:
+            progress = _WarmupProgress(deadline=time.monotonic() + warmup.timeout_seconds)
+            self._warmup_progress[key] = progress
+        now = time.monotonic()
+        if now >= progress.deadline:
+            return ObservedInstanceState.WARMING_UP
+        address = self._warmup_address(
+            self._literal_addresses(state),
+            port,
+            deadline=min(progress.deadline, now + self._settings.readiness_timeout_seconds),
+        )
+        if address is None:
+            return (
+                ObservedInstanceState.WARMING_UP
+                if time.monotonic() >= progress.deadline
+                else ObservedInstanceState.LOADING
+            )
         body = self._warmup_body(warmup)
         if body is not None and self._run_warmup(
             address,
             port,
             warmup,
             body,
-            attempt=completed + 1,
+            attempt=progress.completed + 1,
             headers=self._engine_auth_headers(request, template),
+            deadline=progress.deadline,
         ):
-            completed += 1
-            self._warmup_attempts[key] = completed
-        if completed >= warmup.attempts:
-            self._warmup_attempts[key] = completed
+            progress.completed += 1
+        if progress.completed >= warmup.attempts:
             return ObservedInstanceState.READY
         return ObservedInstanceState.WARMING_UP
 
@@ -659,9 +688,10 @@ class DockerNodeRuntime:
                 continue
         return tuple(literals)
 
-    def _warmup_address(self, addresses: tuple[str, ...], port: int) -> str | None:
-        """Select before POST; an uncertain warmup is never retried at another IP."""
-        deadline = time.monotonic() + self._settings.readiness_timeout_seconds
+    def _warmup_address(
+        self, addresses: tuple[str, ...], port: int, *, deadline: float
+    ) -> str | None:
+        """Select before POST within the caller's budget; never retry at another IP."""
         for address in addresses:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -698,13 +728,15 @@ class DockerNodeRuntime:
         body: bytes,
         *,
         attempt: int,
+        deadline: float,
         headers: dict[str, str] | None = None,
     ) -> bool:
-        """Send one fixed request and require a complete 200 response within budget."""
+        """Send one fixed request and require a complete 200 response before the deadline."""
         literal = ip_address(address)
         host = f"[{literal}]" if literal.version == 6 else str(literal)
         started = time.monotonic()
-        deadline = started + warmup.timeout_seconds
+        if deadline <= started:
+            return False
 
         async def request() -> int | None:
             remaining = deadline - time.monotonic()

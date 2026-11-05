@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from tests.fake.controller import build_request, build_template
+from tests.fake.controller import SAMPLE_INSTANCE_ID, build_request, build_template
 from tests.unit.controller.test_docker_runtime import (
     _engine,
     _runtime,
@@ -20,7 +20,7 @@ from tests.unit.controller.test_docker_runtime import (
     _warmup_rule,
 )
 
-from speechnexus_node_controller.domain.intents import ObservedInstanceState
+from speechnexus_node_controller.domain.intents import ObservedInstanceState, RuntimeActionKind
 from speechnexus_node_controller.infrastructure import docker_runtime
 
 
@@ -381,3 +381,136 @@ def test_budget_spent_during_daemon_work_sends_no_probe_and_no_post(
         assert repeated.observed_instance_state is ObservedInstanceState.WARMING_UP
         assert not attempted and not requests
         assert len(engine.created) == 1
+
+
+def test_replacement_container_inherits_the_original_action_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    elapsed = 0.0
+    attempted: list[float] = []
+
+    def probe(address: tuple[str, int], *, timeout: float) -> AbstractContextManager[None]:
+        attempted.append(timeout)
+        raise OSError("synthetic unreachable container")
+
+    with responding("ok") as (server, requests, _):
+        body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
+        rule = _warmup_rule(server, body, digest, attempts=4)
+        assert rule.warmup is not None
+        rule = replace(rule, warmup=replace(rule.warmup, timeout_seconds=0.4))
+        template = build_template(readiness=rule)
+        engine = _engine(addresses=("127.0.0.1",))
+        runtime = _runtime(engine, readiness_timeout_seconds=0.2)
+        monkeypatch.setattr(docker_runtime, "time", SimpleNamespace(monotonic=lambda: elapsed))
+        monkeypatch.setattr(socket, "create_connection", probe)
+
+        first = runtime.prepare(build_request(), template)
+
+        assert first.observed_instance_state is ObservedInstanceState.LOADING
+        assert attempted == [pytest.approx(0.2)]
+        original = engine.created[0].container_id
+        assert runtime._warmup_deadlines[(SAMPLE_INSTANCE_ID, 1)] == pytest.approx(0.4)
+
+        # The original container vanishes after the one action deadline has passed.
+        elapsed = 0.5
+        del engine.containers[original]
+
+        repeated = runtime.prepare(build_request(), template)
+
+        # A replacement container may exist, but it inherits the spent deadline.
+        assert repeated.observed_instance_state is ObservedInstanceState.WARMING_UP
+        assert len(engine.created) == 2
+        assert attempted == [pytest.approx(0.2)]
+        assert not requests
+        assert _only_progress(runtime).completed == 0
+        assert _only_progress(runtime).deadline == pytest.approx(0.4)
+        assert runtime._warmup_deadlines[(SAMPLE_INSTANCE_ID, 1)] == pytest.approx(0.4)
+
+
+def test_confirmed_stop_lets_the_same_generation_start_a_new_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    elapsed = 0.0
+    attempted: list[float] = []
+    healthy = False
+
+    def probe(address: tuple[str, int], *, timeout: float) -> AbstractContextManager[None]:
+        attempted.append(timeout)
+        if healthy:
+            return nullcontext()
+        raise OSError("synthetic unreachable container")
+
+    with responding("ok") as (server, requests, _):
+        body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
+        rule = _warmup_rule(server, body, digest, attempts=1)
+        assert rule.warmup is not None
+        rule = replace(rule, warmup=replace(rule.warmup, timeout_seconds=0.4))
+        template = build_template(readiness=rule)
+        engine = _engine(addresses=("127.0.0.1",))
+        runtime = _runtime(engine, readiness_timeout_seconds=0.2)
+        monkeypatch.setattr(docker_runtime, "time", SimpleNamespace(monotonic=lambda: elapsed))
+        monkeypatch.setattr(socket, "create_connection", probe)
+
+        first = runtime.prepare(build_request(), template)
+
+        assert first.observed_instance_state is ObservedInstanceState.LOADING
+        assert runtime._warmup_deadlines[(SAMPLE_INSTANCE_ID, 1)] == pytest.approx(0.4)
+
+        stopped = runtime.stop(build_request(action=RuntimeActionKind.STOP), template)
+
+        assert stopped.observed_instance_state is ObservedInstanceState.STOPPED
+        assert stopped.stop_evidence is not None
+        assert (SAMPLE_INSTANCE_ID, 1) not in runtime._warmup_deadlines
+        assert engine.containers == {}
+
+        # After a confirmed release the next same-generation action is new.
+        healthy = True
+        elapsed = 5.0
+        repeated = runtime.prepare(build_request(), template)
+
+        assert repeated.observed_instance_state is ObservedInstanceState.READY
+        assert len(engine.created) == 2
+        assert attempted == [pytest.approx(0.2), pytest.approx(0.2)]
+        assert len(requests) == 1
+
+
+def test_generation_change_starts_a_new_action_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    elapsed = 0.0
+    attempted: list[float] = []
+    healthy = False
+
+    def probe(address: tuple[str, int], *, timeout: float) -> AbstractContextManager[None]:
+        attempted.append(timeout)
+        if healthy:
+            return nullcontext()
+        raise OSError("synthetic unreachable container")
+
+    with responding("ok") as (server, requests, _):
+        body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
+        rule = _warmup_rule(server, body, digest, attempts=1)
+        assert rule.warmup is not None
+        rule = replace(rule, warmup=replace(rule.warmup, timeout_seconds=0.4))
+        template = build_template(readiness=rule)
+        engine = _engine(addresses=("127.0.0.1",))
+        runtime = _runtime(engine, readiness_timeout_seconds=0.2)
+        monkeypatch.setattr(docker_runtime, "time", SimpleNamespace(monotonic=lambda: elapsed))
+        monkeypatch.setattr(socket, "create_connection", probe)
+
+        first = runtime.prepare(build_request(), template)
+
+        assert first.observed_instance_state is ObservedInstanceState.LOADING
+        assert runtime._warmup_deadlines[(SAMPLE_INSTANCE_ID, 1)] == pytest.approx(0.4)
+
+        healthy = True
+        elapsed = 5.0
+        repeated = runtime.prepare(build_request(instance_generation=2), template)
+
+        assert repeated.observed_instance_state is ObservedInstanceState.READY
+        assert len(engine.created) == 2
+        assert attempted == [pytest.approx(0.2), pytest.approx(0.2)]
+        assert len(requests) == 1
+        assert (SAMPLE_INSTANCE_ID, 1) not in runtime._warmup_deadlines
+        # Readiness ends the action, so its anchor is dropped as well.
+        assert (SAMPLE_INSTANCE_ID, 2) not in runtime._warmup_deadlines

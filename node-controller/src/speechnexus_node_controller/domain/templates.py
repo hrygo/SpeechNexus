@@ -59,8 +59,10 @@ class WarmupRequest:
     image verification or container creation, start and inspection. Address
     selection, every attempt, and response reading share it, so the declared
     attempt count cannot multiply the bound. A spent budget keeps the instance
-    non-ready without sending more probes or requests, and a repeated prepare
-    never restarts the budget.
+    non-ready without sending more probes or requests. The budget belongs to
+    the instance generation, so repeated prepares and container replacement
+    never restart it; only readiness, a confirmed stop/release or a new
+    generation starts a new action.
     """
 
     path: str

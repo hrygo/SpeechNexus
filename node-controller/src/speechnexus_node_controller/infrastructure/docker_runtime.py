@@ -116,8 +116,10 @@ class DockerRuntimeSettings:
 
 @dataclass(slots=True)
 class _WarmupProgress:
-    """One warmup action: a single wall-clock deadline and its successes."""
+    """One container's share of a warmup action: deadline and its successes."""
 
+    instance_id: str
+    instance_generation: int
     deadline: float
     completed: int = 0
 
@@ -139,7 +141,7 @@ class DockerNodeRuntime:
         self._stop_checkpoints = stop_checkpoints
         self._settings = settings or DockerRuntimeSettings()
         self._warmup_progress: dict[tuple[str, int], _WarmupProgress] = {}
-        self._prepare_deadlines: dict[tuple[str, int], float] = {}
+        self._warmup_deadlines: dict[tuple[str, int], float] = {}
         self._engine_credentials = engine_credentials
 
     @_runtime_action("prepare")
@@ -243,7 +245,6 @@ class DockerNodeRuntime:
         if not self._remove_and_confirm(existing.container_id):
             return self._inspect_or_absent(request, template, existing.container_id)
         self._warmup_progress.pop((existing.container_id, request.instance_generation), None)
-        self._prepare_deadlines.pop((request.instance_id, request.instance_generation), None)
         return self._released_observation(checkpoint, template, exited=existing)
 
     def _released_observation(
@@ -258,6 +259,9 @@ class DockerNodeRuntime:
             is not None
         ):
             return self._stop_conflict(checkpoint.request, template)
+        self._warmup_deadlines.pop(
+            (checkpoint.request.instance_id, checkpoint.request.instance_generation), None
+        )
         if checkpoint.released_at is None:
             checkpoint = self._stop_checkpoints.save_stop_checkpoint(
                 replace(checkpoint, released_at=datetime.now(UTC))
@@ -588,9 +592,11 @@ class DockerNodeRuntime:
         first prepare for this instance begins, before image verification or any
         create/start/inspect call. Address selection, every attempt and every
         response read share the remaining budget, so ``attempts`` cannot multiply
-        the wall-clock bound. Once it is spent the action stays non-ready and
-        sends nothing more; repeated prepares reuse the recorded progress instead
-        of starting a fresh budget.
+        the wall-clock bound. The anchor is kept for the whole
+        ``(instance_id, instance_generation)`` action and survives container
+        replacement, so a replacement container inherits the original deadline
+        instead of restarting it. The action ends at readiness, a confirmed
+        stop/release or a generation change.
         """
         port = template.readiness.port
         warmup = template.readiness.warmup
@@ -599,20 +605,29 @@ class DockerNodeRuntime:
         key = (state.container_id, request.instance_generation)
         anchor_key = (request.instance_id, request.instance_generation)
         progress = self._warmup_progress.get(key)
-        if progress is not None:
-            # The provisional anchor now belongs to this container's progress.
-            self._prepare_deadlines.pop(anchor_key, None)
         if progress is not None and progress.completed >= warmup.attempts:
+            self._warmup_deadlines.pop(anchor_key, None)
             return ObservedInstanceState.READY
         if request.action is not RuntimeActionKind.PREPARE:
             # A stop or drain observation never starts or spends the action budget.
             return ObservedInstanceState.WARMING_UP
         if progress is None:
-            deadline = self._prepare_deadlines.pop(anchor_key, None)
+            deadline = self._warmup_deadlines.get(anchor_key)
+            for stale in [
+                stale
+                for stale, previous in self._warmup_progress.items()
+                if stale != key
+                and previous.instance_id == request.instance_id
+                and previous.instance_generation == request.instance_generation
+            ]:
+                # A container that vanished cannot continue its old successes.
+                self._warmup_progress.pop(stale, None)
             progress = _WarmupProgress(
+                instance_id=request.instance_id,
+                instance_generation=request.instance_generation,
                 deadline=(
                     deadline if deadline is not None else time.monotonic() + warmup.timeout_seconds
-                )
+                ),
             )
             self._warmup_progress[key] = progress
         now = time.monotonic()
@@ -641,18 +656,21 @@ class DockerNodeRuntime:
         ):
             progress.completed += 1
         if progress.completed >= warmup.attempts:
+            self._warmup_deadlines.pop(anchor_key, None)
             return ObservedInstanceState.READY
         return ObservedInstanceState.WARMING_UP
 
     def _anchor_warmup_budget(
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
     ) -> None:
-        """Start the single warmup budget before any daemon work for this preparation.
+        """Start the single warmup budget before any daemon work for this action.
 
         Image verification, container creation, start and the running-state
-        inspection are all part of the same action. The anchor is provisional
-        until the container is known; ``_warmup_state`` binds it to that
-        container generation and drops the provisional entry.
+        inspection are all part of the same action. The deadline belongs to the
+        ``(instance_id, instance_generation)`` action, not to one container, so
+        replacement containers keep spending the same budget. It is dropped only
+        when the action becomes ready, a stop/release is confirmed, or the
+        generation changes.
         """
         warmup = template.readiness.warmup
         if (
@@ -661,10 +679,14 @@ class DockerNodeRuntime:
             or warmup is None
         ):
             return
-        self._prepare_deadlines.setdefault(
-            (request.instance_id, request.instance_generation),
-            time.monotonic() + warmup.timeout_seconds,
-        )
+        action = (request.instance_id, request.instance_generation)
+        for other in [
+            other
+            for other in self._warmup_deadlines
+            if other[0] == request.instance_id and other[1] != request.instance_generation
+        ]:
+            self._warmup_deadlines.pop(other, None)
+        self._warmup_deadlines.setdefault(action, time.monotonic() + warmup.timeout_seconds)
 
     def _engine_environment(
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate

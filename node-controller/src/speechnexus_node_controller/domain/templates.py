@@ -53,6 +53,16 @@ class WarmupRequest:
     same request, with a hash-verified body, has completed for every declared
     attempt. The controller never interprets the response body; judging the
     result belongs to the engine adapter that owns the protocol.
+
+    ``timeout_seconds`` is the single wall-clock budget for the whole warmup
+    action, anchored when the first prepare for the instance begins, before
+    image verification or container creation, start and inspection. Address
+    selection, every attempt, and response reading share it, so the declared
+    attempt count cannot multiply the bound. A spent budget keeps the instance
+    non-ready without sending more probes or requests. The budget belongs to
+    the instance generation, so repeated prepares and container replacement
+    never restart it; only readiness, a confirmed stop/release or a new
+    generation starts a new action.
     """
 
     path: str

@@ -657,12 +657,18 @@ def test_binding_and_profile_use_distinct_minimum_roles_and_lifetimes(
     from tests.support.profile_examples import profile_request
 
     from speechnexus_backend.speech.infrastructure.profile_draft_schema import profile_draft_grants
+    from speechnexus_backend.speech.infrastructure.profile_publication_schema import (
+        profile_publication_grants,
+    )
 
     db = http_db.db
     role = http_db.role.replace("sn_binding_", "sn_binding_peer_profile_")
     db.query(f"CREATE ROLE \"{role}\" LOGIN PASSWORD 'synthetic_peer_profile'")
     try:
-        for grant in profile_draft_grants(db.schema, role):
+        for grant in (
+            *profile_draft_grants(db.schema, role),
+            *profile_publication_grants(db.schema, role),
+        ):
             db.query(grant)
         settings = Settings(
             **{

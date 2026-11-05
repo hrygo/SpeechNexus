@@ -50,3 +50,17 @@ test("public requests validate bounds, unknown fields and full decimal fixed ide
     }),
   );
 });
+
+test("generated public client validates the response with one explicit transport request", async () => {
+  const { createValidatedClient } = await import("../src/profile_public-http.ts");
+  const calls = [];
+  const client = createValidatedClient("http://profile.synthetic", 262144, async (request) => {
+    calls.push(request.url);
+    return new Response(JSON.stringify(list([summary]).body), {
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+  const result = await client.GET("/v1/nexus/profiles", { params: { query: { limit: 1 } } });
+  assert.equal(result.data.data[0].current_revision, null);
+  assert.deepEqual(calls, ["http://profile.synthetic/v1/nexus/profiles?limit=1"]);
+});

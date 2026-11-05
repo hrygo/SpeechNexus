@@ -52,7 +52,7 @@ SpeechCommand
 | --- | --- |
 | `GET /v1/models` | 部署已发布的 binding 列表；`id` 是 binding ID，`nexus.logical_model` 是展示的逻辑模型名，不暴露私有模型路径 |
 | `GET /v1/nexus/capabilities` | 按部署策略、工作空间标识和已发布绑定生成能力快照；当前工作空间不参与目录过滤，详见 §1.5 |
-| `GET /v1/nexus/profiles`、`GET /v1/nexus/profiles/{profile_id}/revisions/{revision}` | 列出与读取可用的不可变预设 |
+| `GET /v1/nexus/profiles`、`GET /v2/nexus/profiles`、`GET /v1/nexus/profiles/{profile_id}/revisions/{revision}` | 列出与读取可用的不可变预设；v2 额外返回可空的默认指针 `current_revision`，v1 形状不变 |
 | `POST /v1/audio/transcriptions` | multipart 文件 ASR；成功返回 JSON / text 等声明格式 |
 | `POST /v1/audio/speech` | JSON 文本 TTS；首期返回完整音频 |
 | `POST /v1/nexus/jobs` | 契约支持持久化 ASR、TTS 及音色设计、克隆、预览和验证作业；返回 `202`、Job 和 Location，各类型须分别核验实际装配 |

@@ -150,6 +150,11 @@ export interface paths {
      *     to publish. The server must resolve trusted evidence for this fixed
      *     profile revision and recheck its current applicability; a schema-valid
      *     report or caller-supplied digest alone cannot establish qualification.
+     *     An unregistered or unreadable trusted source returns the existing 503
+     *     profile_result_unknown and does not advance publication or the pointer.
+     *     Trusted explicit ineligibility returns 422 profile_not_eligible; a missing
+     *     target returns 404 profile_not_found. An already published target returns
+     *     409 profile_already_published. Known rejections are stable original-key results.
      *
      *     An unreadable original result or uncertain commit returns 503
      *     `profile_result_unknown`, with `retryable: false`. This does not prove
@@ -211,7 +216,9 @@ export interface paths {
      *     These refusals do not settle an earlier original-key result or permit
      *     a different key or an automatic mutation. Lifecycle/CAS conflicts retain
      *     the existing 409 response; activation never changes revision contents
-     *     or treats a draft/retired/disabled revision as published.
+     *     or treats a draft/retired/disabled revision as published. Such a target
+     *     returns 409 profile_not_published; a missing target returns 404
+     *     profile_not_found. Known rejections are stable original-key results.
      */
     post: operations["activatePublishedProfileRevision"];
     delete?: never;

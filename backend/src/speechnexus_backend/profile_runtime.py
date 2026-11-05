@@ -12,7 +12,7 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import (
     SpeechPool,
     speech_pool,
 )
-from speechnexus_backend.speech.infrastructure.profile_drafts_postgres import PostgresProfileDrafts
+from speechnexus_backend.speech.infrastructure.profile_publications_postgres import PostgresProfiles
 
 
 class _PoolDiagnostics(logging.Filter):
@@ -33,7 +33,7 @@ class ProfileRuntime:
             raise ValueError("Configure an explicit API profile writer identity")
         self._settings = settings
         self._pool: SpeechPool | None = None
-        self.provider: PostgresProfileDrafts | None = None
+        self.provider: PostgresProfiles | None = None
         # Only this object's connection-pool lifetime is protected here. Profile
         # allocation/idempotency are coordinated by the existing PG transactions.
         self._lifetime = threading.Lock()
@@ -60,7 +60,7 @@ class ProfileRuntime:
                 self._pool = pool
                 pool.open()
                 self._verify_principal(pool)
-                self.provider = PostgresProfileDrafts(
+                self.provider = PostgresProfiles(
                     pool,
                     timeout_seconds=self._settings.profile_transaction_timeout_seconds,
                 )
@@ -110,7 +110,8 @@ class ProfileRuntime:
             "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
             "WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m','f') "
             "AND c.relname NOT IN ('speech_profile_families','speech_profile_revisions',"
-            "'speech_profile_commands') AND ("
+            "'speech_profile_commands','speech_profile_publications','speech_profile_lifecycle_intents',"
+            "'speech_profile_lifecycle_results') AND ("
             "pg_catalog.has_table_privilege(%s::name,c.oid,"
             "'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') "
             "OR pg_catalog.has_any_column_privilege(%s::name,c.oid,"
@@ -123,6 +124,9 @@ class ProfileRuntime:
             "speech_profile_families",
             "speech_profile_revisions",
             "speech_profile_commands",
+            "speech_profile_publications",
+            "speech_profile_lifecycle_intents",
+            "speech_profile_lifecycle_results",
         ):
             name = f'"{schema}".{table}'
             row = connection.execute(
@@ -135,11 +139,15 @@ class ProfileRuntime:
             ).fetchone()
             if row is None or not row["permitted"]:
                 raise ValueError("Profile writer privileges do not match the port")
+            # SELECT ... FOR UPDATE needs UPDATE on at least one column. key_digest is
+            # the serializing key; the immutability trigger rejects actual intent updates.
             mutable = (
-                {"latest_revision"}
+                {"latest_revision", "current_revision"}
                 if table == "speech_profile_families"
                 else {"command_state", "revision", "error_code"}
                 if table == "speech_profile_commands"
+                else {"key_digest"}
+                if table == "speech_profile_lifecycle_intents"
                 else set()
             )
             columns = connection.execute(

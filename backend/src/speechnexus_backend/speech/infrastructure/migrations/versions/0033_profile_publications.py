@@ -1,0 +1,22 @@
+"""Atomic profile publication/current heads and immutable original results."""
+
+from alembic import op
+
+from speechnexus_backend.speech.infrastructure.profile_publication_schema import (
+    PROFILE_INTENT_IMMUTABILITY_DDL,
+    PROFILE_PUBLICATION_DDL,
+)
+
+revision = "0033_profile_publications"
+down_revision = "0032_abort_recovery_schedule"
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    for statement in (*PROFILE_PUBLICATION_DDL, *PROFILE_INTENT_IMMUTABILITY_DDL):
+        op.execute(statement)
+
+
+def downgrade() -> None:
+    raise RuntimeError("Profile publication history requires preservation and forward recovery")

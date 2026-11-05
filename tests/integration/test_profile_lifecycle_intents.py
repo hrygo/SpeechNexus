@@ -214,7 +214,16 @@ def test_corrupt_history_is_unknown_without_repair_or_provider_calls(
 ) -> None:
     command = prepared()
     assert journal.port.record(command).outcome == "recorded"
-    journal.profiles.db.query(f"UPDATE {TABLE} SET {column}=%s", (value,))
+    db = journal.profiles.db
+    if db.dialect == "postgresql":
+        quoted = f'"{db.schema}".{TABLE}'
+        db.query(f"ALTER TABLE {quoted} DISABLE TRIGGER USER")
+        try:
+            db.query(f"UPDATE {TABLE} SET {column}=%s", (value,))
+        finally:
+            db.query(f"ALTER TABLE {quoted} ENABLE TRIGGER USER")
+    else:
+        db.query(f"UPDATE {TABLE} SET {column}=%s", (value,))
     before = journal.rows()
     assert journal.port.recover(command).outcome == "unknown"
     assert journal.port.record(command).outcome == "unknown"

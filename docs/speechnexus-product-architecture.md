@@ -294,9 +294,9 @@ effective_max_segment_ms = min(
 
 Profile revision 包含 schema_version、required_capabilities、parameters、override_allowlist、override_ranges、SLO 引用与验证记录。发布前执行 schema、能力组合、负样本与质量对照检查；可发布为 experimental 或 production。`override_ranges` 只能约束 allowlist 内的路径，显式范围必须满足 `minimum <= maximum`，allowlist 项没有范围时仅受基础参数 schema 和绑定域约束；同一 capability 只能出现一次，约束不能为空或反向；ASR 的 `max_segment_ms` 不得小于 `preview_interval_ms`。生产预设只绑定具备对应质量资格的模型 / 音色。回滚只是将默认指针切回旧 revision，不修改已固定的作业。
 
-管理面把预设编辑建模为不可变 revision：创建 draft 时以 `expected_latest_revision` 防止并发覆盖；发布时提交目标 revision、当前指针 CAS 与验证证据，原子切换默认指针；回滚通过激活既有 published revision 完成；退役 / 禁用不删除历史。公共 `/v1/nexus/profiles` 只列出当前发布 revision，draft 只能从管理面读取。这样既保留 AdminUI 的草稿、校验、发布、退役流程，也不把管理写能力塞进 OpenAI 标准字段或普通推理请求。
+管理面把预设编辑建模为不可变 revision：创建 draft 时以 `expected_latest_revision` 防止并发覆盖；发布时提交目标 revision、当前指针 CAS 与验证证据，原子切换默认指针；回滚通过激活既有 published revision 完成；退役 / 禁用不删除历史。公共 `/v1/nexus/profiles` 与 `/v2/nexus/profiles` 只列出当前发布 revision，draft 只能从管理面读取；v2 额外返回可空的默认指针，v1 形状不变。这样既保留 AdminUI 的草稿、校验、发布、退役流程，也不把管理写能力塞进 OpenAI 标准字段或普通推理请求。
 
-这些生命周期规则是契约与设计目标。当前产品装配支持显式配置的草稿创建和固定版本读取；发布、激活、退役及公共已发布预设列表尚未形成生产链路。已有的私有发布 / 激活意图日志只记录原始意图，不执行发布或切换指针，见[预设生命周期契约](components/profile-lifecycle-contract.md)与[意图日志](components/profile-lifecycle-intents.md)。
+这些生命周期规则是契约与设计目标。当前产品装配在显式配置时注册了草稿创建、固定版本读取、发布、激活及公共已发布预设列表路由；默认生产资格验证器仍不可用，发布按 503 `profile_result_unknown` 失败关闭。退役 / 禁用尚无公开写路由，生产验证、默认解析与资格注册仍待后续切片。发布 / 激活的私有意图与原始结果记录见[预设生命周期契约](components/profile-lifecycle-contract.md)与[意图日志](components/profile-lifecycle-intents.md)。
 
 ## 6. 首期访问边界与身份体系演进
 

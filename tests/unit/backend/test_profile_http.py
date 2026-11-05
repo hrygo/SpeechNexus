@@ -32,6 +32,7 @@ def provider() -> Mock:
 
     port.create.side_effect = create
     port.get.return_value = None
+    port.get_publication.return_value = None
     return port
 
 
@@ -174,7 +175,12 @@ async def test_only_source_profile_paths_are_exposed_with_namespaced_schemas() -
     async with client(provider()) as http:
         document = (await http.get("/openapi.json")).json()
     paths = {p: v for p, v in document["paths"].items() if p.startswith(PATH)}
-    assert set(paths) == {PATH, PATH + "/{profile_id}/revisions/{revision}"}
+    assert set(paths) == {
+        PATH,
+        PATH + "/{profile_id}/revisions/{revision}",
+        PATH + "/{profile_id}/revisions/{revision}/publications",
+        PATH + "/{profile_id}/revisions/{revision}/activations",
+    }
     assert set(paths[PATH]) == {"post"}
     assert set(paths[PATH + "/{profile_id}/revisions/{revision}"]) == {"get"}
     assert "ProfileDraft_ProfileDraftRevision" in document["components"]["schemas"]

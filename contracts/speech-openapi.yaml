@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus public speech API
-  version: 0.1.0.dev1
+  version: 0.1.0.dev2
   description: |
     SpeechNexus public speech protocol.
 
@@ -291,6 +291,10 @@ paths:
       tags: [profiles]
       operationId: listProfiles
       summary: List published scenario profiles
+      description: |
+        Lists published revisions in stable profile ID / decimal revision order.
+        Drafts are excluded. workspace_id is compatibility context, not isolation.
+        A cursor identifies the last returned profile/revision; pages are live reads.
       parameters:
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
@@ -306,8 +310,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProfileList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/ProfileReadMethodNotAllowed"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
   /v1/nexus/profiles/{profile_id}/revisions/{revision}:
@@ -318,6 +328,7 @@ paths:
       description: |
         Public readers may fetch published, retired, or disabled revisions.
         Draft revisions are visible only through the administration API.
+        An existing draft returns 409 profile_not_published; absence returns 404.
       parameters:
         - $ref: "#/components/parameters/ProfileIdPath"
         - $ref: "#/components/parameters/RevisionPath"
@@ -332,10 +343,55 @@ paths:
             application/json:
               schema:
                 $ref: "./scenario-profile.schema.json"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/ProfileReadMethodNotAllowed"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v2/nexus/profiles:
+    get:
+      tags: [profiles]
+      operationId: listPublishedProfiles
+      summary: List published scenario profiles with the active family revision
+      description: |
+        v2 public surface. It reports the same published revisions as v1 and adds
+        the nullable family default pointer; the v1 ProfileSummary and ProfileList
+        shapes remain unchanged. Drafts are excluded. Revisions are ordered by
+        profile ID and decimal revision, and a cursor identifies the last returned
+        item. Pages are live reads, not a cross-page snapshot. workspace_id is
+        compatibility context, not isolation.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/WorkspaceIdQuery"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Published profile revisions with the nullable family default.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublishedProfileList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/ProfileReadMethodNotAllowed"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
   /v1/nexus/voices:
@@ -1964,6 +2020,18 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
+    ProfileReadMethodNotAllowed:
+      description: The public profile path accepts GET only.
+      headers:
+        Allow:
+          required: true
+          schema:
+            type: string
+            const: GET
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
     PronunciationReadMethodNotAllowed:
       description: This fixed pronunciation-revision path accepts GET only.
       headers:
@@ -2606,6 +2674,54 @@ components:
           $ref: "#/components/schemas/Identifier"
         revision:
           $ref: "#/components/schemas/Revision"
+        display_name:
+          type: string
+        kind:
+          type: string
+          enum: [asr, tts, duplex]
+        release_tier:
+          $ref: "#/components/schemas/ProfileReleaseTier"
+        execution_classes:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/ServiceClass"
+    PublishedProfileList:
+      type: object
+      additionalProperties: false
+      required: [object, data, has_more, next_cursor]
+      properties:
+        object:
+          const: nexus.list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublishedProfileSummary"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: [string, "null"]
+    PublishedProfileSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - revision
+        - current_revision
+        - display_name
+        - kind
+        - release_tier
+        - execution_classes
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        revision:
+          $ref: "#/components/schemas/Revision"
+        current_revision:
+          description: Active published family revision; null when no default is active.
+          oneOf:
+            - $ref: "#/components/schemas/Revision"
+            - type: "null"
         display_name:
           type: string
         kind:

@@ -40,9 +40,11 @@ from speechnexus_backend.speech.domain.speech_synthesis import (
     SpeechPlan,
     identifier,
 )
+from speechnexus_backend.speech.infrastructure.tts_submit import build_tts_submit
 from speechnexus_backend.speech.interfaces.http import speech as surface
 from speechnexus_backend.speech.interfaces.http import speech_errors
 from tests.unit.backend.test_health import _settings
+from tests.unit.backend.test_tts_durable_intent import execution
 
 BINDING = Publication("binding", "tts-quality", 2, "binding-rev-2", 1_000)
 VOICE = Publication("voice", "voice-vivian", 4, "voice-rev-4", 1_000)
@@ -486,7 +488,7 @@ async def test_public_ceiling_rejects_one_extra_sample_or_encoded_byte(name: str
     assert len(synth.plans) == 1
 
 
-@pytest.mark.parametrize("value", [None, True, "100", 99, 3600001, 100.5, {}, []])
+@pytest.mark.parametrize("value", [None, True, "100", 99, 0, -100, 3600001, 100.5, {}, []])
 async def test_invalid_public_ceiling_never_dispatches(value: Any) -> None:
     chain, synth = service()
     async with client(chain) as http:
@@ -511,6 +513,39 @@ async def test_deployment_ceiling_is_stricter_than_the_public_request() -> None:
     assert response.status_code == 503
     assert synth.plans[0].max_audio_ms == 100
     assert synth.plans[0].max_source_pcm_bytes == 4800
+
+
+async def test_request_above_the_deployment_ceiling_is_frozen_at_the_deployment_value() -> None:
+    """A looser request can never persist its own value over the deployment cap."""
+
+    chain, synth = service(
+        synth=Synthesizer(pcm(100)), limits=SpeechLimits(max_output_audio_ms=100)
+    )
+    async with client(chain) as http:
+        response = await http.post(
+            "/v1/audio/speech",
+            json={
+                **REQUEST,
+                "response_format": "pcm",
+                "nexus": {
+                    "max_output_audio_ms": 200,
+                    "overrides": {"tts": {"language": "en"}},
+                },
+            },
+        )
+    assert response.status_code == 200
+    plan = synth.plans[0]
+    assert plan.max_audio_ms == 100
+    request = build_tts_submit(
+        plan,
+        replace(
+            execution(),
+            workspace_id=plan.workspace_id,
+            binding_revision_id=plan.binding_revision_id,
+        ),
+    )
+    assert request["max_output_audio_ms"] == plan.max_audio_ms == 100
+    assert request["sample_rate_hz"] == plan.sample_rate_hz == 24000
 
 
 def test_request_ceiling_never_exceeds_the_deployment_ceiling() -> None:

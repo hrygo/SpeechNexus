@@ -105,7 +105,7 @@ def profile_error(
             lifecycle_response
             if operation in ("publishProfileRevision", "activatePublishedProfileRevision")
             else public_response
-            if operation in ("listProfiles", "getProfileRevision")
+            if operation in ("listProfiles", "listPublishedProfiles", "getProfileRevision")
             else validate_response
         )
         validate(operation, status, {"body": body, "headers": headers})

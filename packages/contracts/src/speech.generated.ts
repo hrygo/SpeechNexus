@@ -124,7 +124,6 @@ export interface paths {
     /**
      * List published scenario profiles
      * @description Lists published revisions in stable profile ID / decimal revision order.
-     *     current_revision is the family default pointer, or null when none is active.
      *     Drafts are excluded. workspace_id is compatibility context, not isolation.
      *     A cursor identifies the last returned profile/revision; pages are live reads.
      */
@@ -151,6 +150,31 @@ export interface paths {
      *     An existing draft returns 409 profile_not_published; absence returns 404.
      */
     get: operations["getProfileRevision"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v2/nexus/profiles": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List published scenario profiles with the active family revision
+     * @description v2 public surface. It reports the same published revisions as v1 and adds
+     *     the nullable family default pointer; the v1 ProfileSummary and ProfileList
+     *     shapes remain unchanged. Drafts are excluded. Revisions are ordered by
+     *     profile ID and decimal revision, and a cursor identifies the last returned
+     *     item. Pages are live reads, not a cross-page snapshot. workspace_id is
+     *     compatibility context, not isolation.
+     */
+    get: operations["listPublishedProfiles"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1138,8 +1162,24 @@ export interface components {
     ProfileSummary: {
       id: components["schemas"]["Identifier"];
       revision: components["schemas"]["Revision"];
+      display_name: string;
+      /** @enum {string} */
+      kind: "asr" | "tts" | "duplex";
+      release_tier: components["schemas"]["ProfileReleaseTier"];
+      execution_classes: components["schemas"]["ServiceClass"][];
+    };
+    PublishedProfileList: {
+      /** @constant */
+      object: "nexus.list";
+      data: components["schemas"]["PublishedProfileSummary"][];
+      has_more: boolean;
+      next_cursor: string | null;
+    };
+    PublishedProfileSummary: {
+      id: components["schemas"]["Identifier"];
+      revision: components["schemas"]["Revision"];
       /** @description Active published family revision; null when no default is active. */
-      current_revision?: components["schemas"]["Revision"] | null;
+      current_revision: components["schemas"]["Revision"] | null;
       display_name: string;
       /** @enum {string} */
       kind: "asr" | "tts" | "duplex";
@@ -3772,6 +3812,38 @@ export interface operations {
       404: components["responses"]["NotFound"];
       405: components["responses"]["ProfileReadMethodNotAllowed"];
       409: components["responses"]["Conflict"];
+      503: components["responses"]["ServiceUnavailable"];
+    };
+  };
+  listPublishedProfiles: {
+    parameters: {
+      query?: {
+        cursor?: components["parameters"]["Cursor"];
+        limit?: components["parameters"]["Limit"];
+        workspace_id?: components["parameters"]["WorkspaceIdQuery"];
+      };
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Published profile revisions with the nullable family default. */
+      200: {
+        headers: {
+          "X-Request-ID"?: components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PublishedProfileList"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      405: components["responses"]["ProfileReadMethodNotAllowed"];
       503: components["responses"]["ServiceUnavailable"];
     };
   };

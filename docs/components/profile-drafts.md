@@ -254,17 +254,20 @@ A schema-valid caller report never establishes authority. Real qualification
 provider registration and MQE remain P-POLICY / M-QUALIFY work.
 
 The actual API profile composition now registers the canonical publication and
-activation POSTs plus `GET /v1/nexus/profiles` and fixed public revision GET.
-All new paths use the existing Host/Origin policy, bounded mutation receive
-buffers, no-store responses, strict source envelopes and generated validators.
-The public list returns published revisions with nullable `current_revision`;
-its optional field preserves existing ProfileSummary consumers. It uses stable
-family ID then decimal revision ordering, `limit` 1–100 (default 50), and an opaque
-last-returned identity cursor. Pages are live reads, not a cross-page snapshot.
-`workspace_id` remains compatibility context and creates no identity isolation.
-Draft-only public fixed reads return 409 `profile_not_published`; missing reads
-return 404; unavailable metadata remains 503. Neither a fixed GET nor a later
-ingress refusal settles an earlier original-key mutation.
+activation POSTs plus `GET /v1/nexus/profiles`, `GET /v2/nexus/profiles` and the
+fixed public revision GET. All new paths use the existing Host/Origin policy,
+bounded mutation receive buffers, no-store responses, strict source envelopes and
+generated validators. v1 keeps its original closed `ProfileSummary`/`ProfileList`
+shape; v2 adds the required nullable `current_revision` in
+`PublishedProfileSummary` and leaves v1 and the capabilities snapshot unchanged.
+Both lists return published revisions in stable family ID then decimal revision
+order, `limit` 1–100 (default 50), and an opaque last-returned identity cursor.
+Pages are live reads, not a cross-page snapshot. `workspace_id` remains
+compatibility context and creates no identity isolation. A missing family default
+is null; no pointer is synthesized. Draft-only public fixed reads return 409
+`profile_not_published`; missing reads return 404; unavailable metadata remains
+503. Neither a fixed GET nor a later ingress refusal settles an earlier
+original-key mutation.
 
 Provisioning now combines `profile_draft_grants` with
 `profile_publication_grants`. The writer can insert immutable publication,
@@ -277,9 +280,9 @@ it is an explicit speech-owner read role, not a Workbench table-writing API.
 
 Consumers are generated through `contracts/bindings.json`: existing
 `profile_lifecycle_http` / `@speechnexus/contracts/profile-lifecycle-http` handles
-mutations; new `profile_public_http` / `@speechnexus/contracts/profile-public-http`
-provides public request/response validation and a single-request TS client.
-The complete `speech.generated.ts` also gains the optional nullable pointer.
+mutations; `profile_public_http` / `@speechnexus/contracts/profile-public-http`
+provides public v1/v2 request/response validation and a single-request TS client.
+The complete `speech.generated.ts` exposes the v2 summary and keeps v1 unchanged.
 No effective-configuration resolver, Job field or Web consumer is added here.
 
 `tests/integration/test_profile_publications.py` is the isolated PG entry for

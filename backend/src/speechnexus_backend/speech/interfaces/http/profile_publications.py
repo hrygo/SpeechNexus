@@ -19,6 +19,7 @@ from starlette.responses import JSONResponse, Response
 
 from speechnexus_backend.speech.application.profile_drafts import ProfileDrafts
 from speechnexus_backend.speech.application.profile_publications import ProfilePublications
+from speechnexus_backend.speech.domain.profile_publications import PublishedProfile
 from speechnexus_backend.speech.interfaces.http.profile_errors import profile_error
 from speechnexus_backend.speech.interfaces.profile_lifecycle import (
     prepare_profile_activation,
@@ -27,11 +28,13 @@ from speechnexus_backend.speech.interfaces.profile_lifecycle import (
 from speechnexus_backend.speech.interfaces.profile_publications import publication_to_wire
 
 PUBLIC_PATH = "/v1/nexus/profiles"
+PUBLIC_V2_PATH = "/v2/nexus/profiles"
 FIXED_PATH = PUBLIC_PATH + "/{profile_id}/revisions/{revision}"
 ADMIN_REVISION = "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}"
 PUBLISH = "publishProfileRevision"
 ACTIVATE = "activatePublishedProfileRevision"
 LIST = "listProfiles"
+PUBLISHED_LIST = "listPublishedProfiles"
 PUBLIC_READ = "getProfileRevision"
 
 
@@ -54,6 +57,19 @@ def _encode_cursor(identity: str, revision: str) -> str:
     )
 
 
+def _summary(
+    publication: PublishedProfile, current: str | None, *, include_current: bool
+) -> dict[str, Any]:
+    value = publication_to_wire(publication)
+    item = {"id": value["profile_id"], "revision": value["revision"]}
+    if include_current:
+        item["current_revision"] = current
+    item.update(
+        {key: value[key] for key in ("display_name", "kind", "release_tier", "execution_classes")}
+    )
+    return item
+
+
 def _execute(
     provider: ProfilePublications, operation: str, envelope: dict[str, Any], request_id: str
 ) -> Response:
@@ -74,7 +90,7 @@ def _execute(
                 envelope["body"],
                 envelope["headers"].get("idempotency-key"),
             )
-        elif operation == LIST:
+        elif operation in (LIST, PUBLISHED_LIST):
             query = envelope["query"]
             limit = int(query.get("limit", "50"))
             after = _decode_cursor(query["cursor"]) if "cursor" in query else None
@@ -118,20 +134,10 @@ def _execute(
             public_response(operation, 200, {"body": wire})
         else:
             page, more = provider.list_publications(limit=limit, after=after)
-            data = []
-            for publication, current in page:
-                value = publication_to_wire(publication)
-                data.append(
-                    {
-                        "id": value["profile_id"],
-                        "revision": value["revision"],
-                        "current_revision": current,
-                        **{
-                            key: value[key]
-                            for key in ("display_name", "kind", "release_tier", "execution_classes")
-                        },
-                    }
-                )
+            data = [
+                _summary(publication, current, include_current=operation == PUBLISHED_LIST)
+                for publication, current in page
+            ]
             wire = {
                 "object": "nexus.list",
                 "data": data,
@@ -215,6 +221,7 @@ def create_profile_publications_router(
 
     for path, operation, method in (
         (PUBLIC_PATH, LIST, "GET"),
+        (PUBLIC_V2_PATH, PUBLISHED_LIST, "GET"),
         (FIXED_PATH, PUBLIC_READ, "GET"),
         (ADMIN_REVISION + "/publications", PUBLISH, "POST"),
         (ADMIN_REVISION + "/activations", ACTIVATE, "POST"),

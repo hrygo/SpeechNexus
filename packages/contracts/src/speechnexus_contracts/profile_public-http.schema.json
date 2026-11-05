@@ -29,6 +29,11 @@
           "headers": {},
           "json": true
         },
+        "401": {
+          "schema": "HttpResponse_listProfiles_401",
+          "headers": {},
+          "json": true
+        },
         "403": {
           "schema": "HttpResponse_listProfiles_403",
           "headers": {},
@@ -39,11 +44,6 @@
           "headers": {
             "allow": "string"
           },
-          "json": true
-        },
-        "401": {
-          "schema": "HttpResponse_listProfiles_401",
-          "headers": {},
           "json": true
         },
         "503": {
@@ -82,8 +82,18 @@
           "headers": {},
           "json": true
         },
+        "401": {
+          "schema": "HttpResponse_getProfileRevision_401",
+          "headers": {},
+          "json": true
+        },
         "403": {
           "schema": "HttpResponse_getProfileRevision_403",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_getProfileRevision_404",
           "headers": {},
           "json": true
         },
@@ -92,16 +102,6 @@
           "headers": {
             "allow": "string"
           },
-          "json": true
-        },
-        "401": {
-          "schema": "HttpResponse_getProfileRevision_401",
-          "headers": {},
-          "json": true
-        },
-        "404": {
-          "schema": "HttpResponse_getProfileRevision_404",
-          "headers": {},
           "json": true
         },
         "409": {
@@ -117,25 +117,86 @@
           "json": true
         }
       }
+    },
+    "listPublishedProfiles": {
+      "path": "/v2/nexus/profiles",
+      "method": "get",
+      "request": "HttpRequest_listPublishedProfiles",
+      "parameters": {
+        "path": {},
+        "query": {
+          "cursor": "string",
+          "limit": "integer",
+          "workspace_id": "string"
+        },
+        "headers": {
+          "x-request-id": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_listPublishedProfiles_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_listPublishedProfiles_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_listPublishedProfiles_401",
+          "headers": {},
+          "json": true
+        },
+        "403": {
+          "schema": "HttpResponse_listPublishedProfiles_403",
+          "headers": {},
+          "json": true
+        },
+        "405": {
+          "schema": "HttpResponse_listPublishedProfiles_405",
+          "headers": {
+            "allow": "string"
+          },
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_listPublishedProfiles_503",
+          "headers": {
+            "retry-after": "integer"
+          },
+          "json": true
+        }
+      }
     }
   },
   "x-nexus-entrypoints": [
     "HttpRequest_listProfiles",
     "HttpResponse_listProfiles_200",
     "HttpResponse_listProfiles_400",
+    "HttpResponse_listProfiles_401",
     "HttpResponse_listProfiles_403",
     "HttpResponse_listProfiles_405",
-    "HttpResponse_listProfiles_401",
     "HttpResponse_listProfiles_503",
     "HttpRequest_getProfileRevision",
     "HttpResponse_getProfileRevision_200",
     "HttpResponse_getProfileRevision_400",
-    "HttpResponse_getProfileRevision_403",
-    "HttpResponse_getProfileRevision_405",
     "HttpResponse_getProfileRevision_401",
+    "HttpResponse_getProfileRevision_403",
     "HttpResponse_getProfileRevision_404",
+    "HttpResponse_getProfileRevision_405",
     "HttpResponse_getProfileRevision_409",
-    "HttpResponse_getProfileRevision_503"
+    "HttpResponse_getProfileRevision_503",
+    "HttpRequest_listPublishedProfiles",
+    "HttpResponse_listPublishedProfiles_200",
+    "HttpResponse_listPublishedProfiles_400",
+    "HttpResponse_listPublishedProfiles_401",
+    "HttpResponse_listPublishedProfiles_403",
+    "HttpResponse_listPublishedProfiles_405",
+    "HttpResponse_listPublishedProfiles_503"
   ],
   "$defs": {
     "Identifier": {
@@ -180,17 +241,6 @@
         },
         "revision": {
           "$ref": "#/$defs/Revision"
-        },
-        "current_revision": {
-          "description": "Active published family revision; null when no default is active.",
-          "oneOf": [
-            {
-              "$ref": "#/$defs/Revision"
-            },
-            {
-              "type": "null"
-            }
-          ]
         },
         "display_name": {
           "type": "string"
@@ -2173,6 +2223,77 @@
         }
       ]
     },
+    "PublishedProfileList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object", "data", "has_more", "next_cursor"],
+      "properties": {
+        "object": {
+          "const": "nexus.list"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PublishedProfileSummary"
+          }
+        },
+        "has_more": {
+          "type": "boolean"
+        },
+        "next_cursor": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "PublishedProfileSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "revision",
+        "current_revision",
+        "display_name",
+        "kind",
+        "release_tier",
+        "execution_classes"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "current_revision": {
+          "description": "Active published family revision; null when no default is active.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["asr", "tts", "duplex"]
+        },
+        "release_tier": {
+          "$ref": "#/$defs/ProfileReleaseTier"
+        },
+        "execution_classes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/ServiceClass"
+          }
+        }
+      }
+    },
     "HttpRequest_listProfiles": {
       "type": "object",
       "additionalProperties": false,
@@ -2255,6 +2376,22 @@
       },
       "required": ["body"]
     },
+    "HttpResponse_listProfiles_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
     "HttpResponse_listProfiles_403": {
       "type": "object",
       "additionalProperties": false,
@@ -2291,22 +2428,6 @@
         }
       },
       "required": ["headers", "body"]
-    },
-    "HttpResponse_listProfiles_401": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "headers": {
-          "type": "object",
-          "properties": {},
-          "required": [],
-          "additionalProperties": true
-        },
-        "body": {
-          "$ref": "#/$defs/ErrorResponse"
-        }
-      },
-      "required": ["body"]
     },
     "HttpResponse_listProfiles_503": {
       "type": "object",
@@ -2403,7 +2524,39 @@
       },
       "required": ["body"]
     },
+    "HttpResponse_getProfileRevision_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
     "HttpResponse_getProfileRevision_403": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getProfileRevision_404": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -2440,38 +2593,6 @@
       },
       "required": ["headers", "body"]
     },
-    "HttpResponse_getProfileRevision_401": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "headers": {
-          "type": "object",
-          "properties": {},
-          "required": [],
-          "additionalProperties": true
-        },
-        "body": {
-          "$ref": "#/$defs/ErrorResponse"
-        }
-      },
-      "required": ["body"]
-    },
-    "HttpResponse_getProfileRevision_404": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "headers": {
-          "type": "object",
-          "properties": {},
-          "required": [],
-          "additionalProperties": true
-        },
-        "body": {
-          "$ref": "#/$defs/ErrorResponse"
-        }
-      },
-      "required": ["body"]
-    },
     "HttpResponse_getProfileRevision_409": {
       "type": "object",
       "additionalProperties": false,
@@ -2489,6 +2610,162 @@
       "required": ["body"]
     },
     "HttpResponse_getProfileRevision_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_listPublishedProfiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {
+            "cursor": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            },
+            "workspace_id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      },
+      "required": []
+    },
+    "HttpResponse_listPublishedProfiles_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/PublishedProfileList"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listPublishedProfiles_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listPublishedProfiles_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listPublishedProfiles_403": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listPublishedProfiles_405": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "string",
+              "const": "GET"
+            }
+          },
+          "required": ["allow"],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpResponse_listPublishedProfiles_503": {
       "type": "object",
       "additionalProperties": false,
       "properties": {

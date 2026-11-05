@@ -25,6 +25,7 @@ LIFECYCLE = {
 }
 PUBLIC = {
     "/v1/nexus/profiles": "listProfiles",
+    "/v2/nexus/profiles": "listPublishedProfiles",
     "/v1/nexus/profiles/{profile_id}/revisions/{revision}": "getProfileRevision",
 }
 
@@ -75,8 +76,17 @@ class ProfileIngress(DraftIngress):
             read_operations=("listProfiles",),
             **kwargs,
         )
-        super().__init__(
+        public_v2 = DraftIngress(
             public,
+            prefix="/v2/nexus/profiles",
+            target=public_target,
+            error=ingress_error,
+            create_operation=CREATE,
+            read_operation="listPublishedProfiles",
+            **kwargs,
+        )
+        super().__init__(
+            public_v2,
             prefix=PREFIX,
             target=target,
             error=ingress_error,

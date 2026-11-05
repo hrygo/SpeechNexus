@@ -411,9 +411,10 @@
       "typescript_source": "speech",
       "paths": [
         "/v1/nexus/profiles",
-        "/v1/nexus/profiles/{profile_id}/revisions/{revision}"
+        "/v1/nexus/profiles/{profile_id}/revisions/{revision}",
+        "/v2/nexus/profiles"
       ],
-      "operations": ["listProfiles", "getProfileRevision"]
+      "operations": ["listProfiles", "getProfileRevision", "listPublishedProfiles"]
     },
     "profile_lifecycle": {
       "source": "admin-openapi.yaml",

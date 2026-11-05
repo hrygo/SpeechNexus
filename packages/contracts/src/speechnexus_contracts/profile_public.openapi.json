@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SpeechNexus public speech API",
-    "version": "0.1.0.dev1",
+    "version": "0.1.0.dev2",
     "description": "SpeechNexus public speech protocol.\n\nThe OpenAI-compatible subset is limited to the paths, fields, formats, and\nevents explicitly declared here. A standard OpenAI SDK can use this API by\nsetting base_url to <deployment>/v1 and supplying any api_key value unless\nthe deployment enables a shared service key. SpeechNexus enhancements live\nunder /v1/nexus and the optional `nexus` request field; a standard request\nnever needs an enhancement wrapper. Unsupported standard parameters are\nrejected with 422 `unsupported_parameter`, never silently ignored.\n\nRealtime has two connection modes at GET /v1/realtime: a pre-created\nnexus session (`session_id`) and a compatibility transcription session\nopened with `model`. Both accept the declared standard transcription\nevent subset. TTS, previews, metadata, and operation coordination remain\nnexus.* events and are available only in a nexus-created session.\n"
   },
   "security": [
@@ -17,7 +17,7 @@
         "tags": ["profiles"],
         "operationId": "listProfiles",
         "summary": "List published scenario profiles",
-        "description": "Lists published revisions in stable profile ID / decimal revision order.\ncurrent_revision is the family default pointer, or null when none is active.\nDrafts are excluded. workspace_id is compatibility context, not isolation.\nA cursor identifies the last returned profile/revision; pages are live reads.\n",
+        "description": "Lists published revisions in stable profile ID / decimal revision order.\nDrafts are excluded. workspace_id is compatibility context, not isolation.\nA cursor identifies the last returned profile/revision; pages are live reads.\n",
         "parameters": [
           {
             "$ref": "#/components/parameters/Cursor"
@@ -51,14 +51,14 @@
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
           "403": {
             "$ref": "#/components/responses/Forbidden"
           },
           "405": {
             "$ref": "#/components/responses/ProfileReadMethodNotAllowed"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
           },
           "503": {
             "$ref": "#/components/responses/ServiceUnavailable"
@@ -102,20 +102,74 @@
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "405": {
+            "$ref": "#/components/responses/ProfileReadMethodNotAllowed"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/v2/nexus/profiles": {
+      "get": {
+        "tags": ["profiles"],
+        "operationId": "listPublishedProfiles",
+        "summary": "List published scenario profiles with the active family revision",
+        "description": "v2 public surface. It reports the same published revisions as v1 and adds\nthe nullable family default pointer; the v1 ProfileSummary and ProfileList\nshapes remain unchanged. Drafts are excluded. Revisions are ordered by\nprofile ID and decimal revision, and a cursor identifies the last returned\nitem. Pages are live reads, not a cross-page snapshot. workspace_id is\ncompatibility context, not isolation.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/WorkspaceIdQuery"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Published profile revisions with the nullable family default.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedProfileList"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
           "403": {
             "$ref": "#/components/responses/Forbidden"
           },
           "405": {
             "$ref": "#/components/responses/ProfileReadMethodNotAllowed"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
           },
           "503": {
             "$ref": "#/components/responses/ServiceUnavailable"
@@ -225,17 +279,6 @@
           },
           "revision": {
             "$ref": "#/components/schemas/Revision"
-          },
-          "current_revision": {
-            "description": "Active published family revision; null when no default is active.",
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Revision"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "display_name": {
             "type": "string"
@@ -2217,6 +2260,77 @@
             "required": ["enum"]
           }
         ]
+      },
+      "PublishedProfileList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["object", "data", "has_more", "next_cursor"],
+        "properties": {
+          "object": {
+            "const": "nexus.list"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublishedProfileSummary"
+            }
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "PublishedProfileSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "revision",
+          "current_revision",
+          "display_name",
+          "kind",
+          "release_tier",
+          "execution_classes"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "revision": {
+            "$ref": "#/components/schemas/Revision"
+          },
+          "current_revision": {
+            "description": "Active published family revision; null when no default is active.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Revision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["asr", "tts", "duplex"]
+          },
+          "release_tier": {
+            "$ref": "#/components/schemas/ProfileReleaseTier"
+          },
+          "execution_classes": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/ServiceClass"
+            }
+          }
+        }
       }
     },
     "headers": {
@@ -2237,6 +2351,16 @@
     "responses": {
       "BadRequest": {
         "description": "Malformed request, invalid JSON, invalid audio, or unknown field.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Shared service credential required or invalid.",
         "content": {
           "application/json": {
             "schema": {
@@ -2266,16 +2390,6 @@
             }
           }
         },
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/ErrorResponse"
-            }
-          }
-        }
-      },
-      "Unauthorized": {
-        "description": "Shared service credential required or invalid.",
         "content": {
           "application/json": {
             "schema": {

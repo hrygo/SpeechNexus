@@ -229,19 +229,6 @@
       }
     },
     {
-      "id": "cancel-cancelling-not-pending",
-      "schema": "JobCancellation",
-      "valid": false,
-      "value": {
-        "job_id": "job-demo",
-        "accepted": true,
-        "status": "cancelling",
-        "cleanup_state": "complete",
-        "cancellation_requested_at": "2026-10-23T00:00:00Z",
-        "operations": []
-      }
-    },
-    {
       "id": "operation",
       "schema": "Operation",
       "valid": true,

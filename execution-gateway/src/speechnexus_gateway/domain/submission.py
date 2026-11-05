@@ -143,6 +143,7 @@ class ExecutionErrorCode(StrEnum):
     POLICY_OR_RESOURCE_DISABLED = "policy_or_resource_disabled"
     ENGINE_TRANSPORT_UNKNOWN = "engine_transport_unknown"
     CANCELLATION_UNCONFIRMED = "cancellation_unconfirmed"
+    CANCEL_REQUESTED = "cancel_requested"
     EXECUTION_CLEANUP_PENDING = "execution_cleanup_pending"
     INVALID_EXECUTION_REQUEST = "invalid_execution_request"
     COMPONENT_CREDENTIAL_INVALID = "component_credential_invalid"
@@ -195,6 +196,12 @@ class SubmitIntentConflictError(ExecutionRejectedError):
 
 class CancellationUnconfirmedError(ExecutionRejectedError):
     error_code = ExecutionErrorCode.CANCELLATION_UNCONFIRMED
+
+
+class CancelRequestedError(ExecutionRejectedError):
+    """A durable cancellation fence forbids creating a runnable execution."""
+
+    error_code = ExecutionErrorCode.CANCEL_REQUESTED
 
 
 class ExecutionCleanupPendingError(ExecutionRejectedError):
@@ -611,6 +618,32 @@ class SubmissionIntent:
 
     def __post_init__(self) -> None:
         self.validate()
+
+    @property
+    def refused_by_cancellation(self) -> bool:
+        """True only for the terminal fact that no execution was ever created."""
+        return (
+            self.execution_state is ExecutionState.FAILED
+            and self.cleanup_state is CleanupState.NOT_REQUIRED
+            and self.error_code is ExecutionErrorCode.CANCEL_REQUESTED
+            and self.dispatched_at is None
+            and self.engine_request_id is None
+            and self.stop_evidence_kind is StopEvidenceKind.NONE
+            and self.version == 1
+        )
+
+    def refuse_for_cancellation(self, *, at: datetime) -> SubmissionIntent:
+        """Build the durable terminal fact for a submit the fence refused."""
+        return SubmissionIntent(
+            identity=self.identity,
+            recorded_at=at,
+            updated_at=at,
+            request_digest=self.request_digest,
+            output_stream_id=self.output_stream_id,
+            execution_state=ExecutionState.FAILED,
+            cleanup_state=CleanupState.NOT_REQUIRED,
+            error_code=ExecutionErrorCode.CANCEL_REQUESTED,
+        )
 
     def validate_new(self) -> None:
         """create_submit never imports an already observed or cleaned-up execution."""

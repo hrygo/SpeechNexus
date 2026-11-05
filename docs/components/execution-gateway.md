@@ -91,6 +91,31 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
    `idempotency_conflict`（`query_original`），绝不把旧记录当作本次创建成功返回，调用方必须
    查询原身份；重放始终不再外发。
 
+### 取消围栏与创建裁决
+
+公开 Job 的取消受理先在同一事务写 `speech_job_cancellations` receipt 与
+`speech_job_cancellation_fences` 投影，再返回受理结果。receipt 是唯一受理事实，围栏只
+投影 `job_id`/`request_id`/受理时间供 gateway 读取；两者都不是停止证据，也不释放预算。网关在 `create_submit` 内、身份
+校验通过之后、任何创建执行的写入之前读取围栏：
+
+1. 先取同一 job 的互斥事务级 advisory lock，键由
+   `speechnexus_contracts.cancellation_fence.job_cancellation_fence_lock_key` 冻结；backend
+   受理事务必须取同一键的同一把锁。这样受理与提交只能有一方先提交。
+2. 围栏存在时，不写 `output_stream_heads`，只写一行终态 intent：
+   `execution_state=failed`、`cleanup_state=not_required`、`error_code=cancel_requested`、
+   `stop_evidence_kind=none`、无 engine 请求与外发时间。该行是可查询的“没有执行”事实，
+   不是伪造的停止证据。
+3. 调用方得到 `cancel_requested`（HTTP 409），重复提交读到同一终态 intent 并继续返回
+   `cancel_requested`，绝不触发引擎派发。
+4. 围栏不存在时按原流程创建。若执行已经创建、随后才受理取消，网关不改写 intent 状态，
+   由既有 abort / stop-evidence 路径推进；只有验证到 `aborted`、`cleanup_state=complete`
+   且停在允许证据内，或确认上述“没有执行”事实，才允许 Job 进入 `cancelled`。
+
+gateway 角色只对围栏投影持有 `SELECT`；API Job writer 通过 `public_job_grants`、worker
+通过 `job_dispatch_grants` 获得围栏 `SELECT/INSERT` 和 reconciliation 账本的受限列
+UPDATE。围栏投影与 reconciliation 表由迁移 `0035_job_cancellation_fences` 创建
+（`down_revision=0034_public_job_cancellations`），回滚在仍有围栏或账本行时拒绝删除。
+
 `get` 用 `submit_intents ⋈ admission_leases ⋈ admission_attempts` 重建完整身份，行数不等于 1、
 枚举或上限无法重新解释时按 `reconciliation_required` 报告，不猜测。`save` 是带版本条件的写入：
 只有 `WHERE submit_intent_id = … AND version = 读取值` 命中一行才成功，否则

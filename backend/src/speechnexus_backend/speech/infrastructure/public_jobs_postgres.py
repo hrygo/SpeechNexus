@@ -39,6 +39,9 @@ from speechnexus_backend.speech.infrastructure.catalog_revision_schema import (
     RETIREMENT_TABLE,
     STATE_TABLE,
 )
+from speechnexus_backend.speech.infrastructure.job_cancellation_fence import (
+    write_cancellation_fence,
+)
 from speechnexus_backend.speech.infrastructure.postgres_pool import (
     SpeechConnection,
     SpeechPool,
@@ -248,6 +251,16 @@ class PostgresPublicJobs:
             raise PublicJobUnavailableError
         return _job(rows[0])
 
+    def cancellation_receipt(self, job_id: str) -> JobCancellationReceipt | None:
+        """Read the accepted receipt used by the reconciliation stop adapter."""
+        rows = self._read(
+            "SELECT " + _CANCELLATION_COLUMNS + " FROM speech_job_cancellations WHERE job_id = %s",
+            (identifier(job_id),),
+        )
+        if len(rows) > 1:
+            raise PublicJobUnavailableError
+        return _cancellation(rows[0]) if rows else None
+
     def find_by_key(
         self, workspace_id: str, key_digest: str, request_digest: str
     ) -> JobCreateResult | None:
@@ -414,6 +427,15 @@ class PostgresPublicJobs:
                 )
                 updated = _select_job(connection, job.job_id)
                 inserted = _cancellation_by_job(connection, job.job_id)
+                if accepted:
+                    # Last lock-taking write of acceptance: submit takes the same
+                    # advisory lock before it can create an execution.
+                    write_cancellation_fence(
+                        connection,
+                        job_id=job.job_id,
+                        request_id=request_id,
+                        accepted_at_us=requested_at_us,
+                    )
             if updated is None or inserted is None:
                 return JobCancellationResult("unknown")
             current = _job(updated)

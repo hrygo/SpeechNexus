@@ -64,6 +64,9 @@ def job_dispatch_grants(schema: str, role: str) -> tuple[str, ...]:
     from speechnexus_backend.speech.infrastructure.artifact_schema import (
         artifact_publisher_grants,
     )
+    from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
+        job_cancellation_grants,
+    )
 
     schema, role = checked_sql_name(schema), checked_sql_name(role)
     return (
@@ -71,4 +74,5 @@ def job_dispatch_grants(schema: str, role: str) -> tuple[str, ...]:
         f"initial_attempt_id, current_attempt_id, recorded_at_us) "
         f'ON "{schema}".admission_operations TO "{role}"',
         *artifact_publisher_grants(schema, role),
+        *job_cancellation_grants(schema, role),
     )

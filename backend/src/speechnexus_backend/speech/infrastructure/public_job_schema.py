@@ -5,6 +5,9 @@ request summary, lifecycle state and result reference. ``succeeded`` cannot exis
 without a published artifact reference, and no other state may carry one.
 """
 
+from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
+    job_cancellation_fence_grants,
+)
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 from speechnexus_backend.speech.infrastructure.public_job_cancellation_schema import (
     public_job_cancellation_grants,
@@ -71,4 +74,5 @@ def public_job_grants(schema: str, role: str) -> tuple[str, ...]:
         f"ON {prefix}{JOBS} TO {target}",
         f"GRANT SELECT, INSERT ON {prefix}{EVENTS} TO {target}",
         *public_job_cancellation_grants(schema, role),
+        *job_cancellation_fence_grants(schema, role),
     )

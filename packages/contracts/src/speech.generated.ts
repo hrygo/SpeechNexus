@@ -394,6 +394,11 @@ export interface paths {
      *     same Idempotency-Key replays the original acceptance and current Job state;
      *     reusing that key for another Job is 409 `idempotency_conflict`. Unknown
      *     Jobs and Jobs outside the caller's workspace are 404.
+     *
+     *     If acceptance commits before the gateway creates an execution, the gateway
+     *     refuses the submit with `cancel_requested` and no runnable execution exists.
+     *     The Job closes 200 `cancelled` only from that no-execution fact or from
+     *     verified stop evidence; a missing execution is never treated as a stop.
      */
     post: operations["cancelJob"];
     delete?: never;

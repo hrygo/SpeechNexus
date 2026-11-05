@@ -173,6 +173,11 @@ class JobDispatcher:
         except DispatchRequestUnavailableError:
             return await self._fail(claim, job, "job_request_unavailable")
         except DispatchRejectedError as error:
+            if error.error_code == "cancel_requested":
+                # Acceptance committed before the gateway created an execution.
+                # Keep cancelling; the reconciliation worker closes it from the
+                # gateway's durable no-execution fact.
+                return DispatchResult(job.job_id, "skipped", "cancel_requested")
             return await self._fail(claim, job, error.error_code)
         except DispatchConflictError:
             return DispatchResult(job.job_id, "claim_lost", "claim_lost")
@@ -215,6 +220,8 @@ class JobDispatcher:
                 submitted = reply.outcome == "status"
                 continue
             if reply.outcome == "rejected":
+                if reply.error_code == "cancel_requested":
+                    return DispatchResult(job.job_id, "skipped", "cancel_requested")
                 return await self._fail(claim, job, reply.error_code or "execution_rejected")
             status = reply.status
             if status is None:

@@ -236,6 +236,7 @@ export interface components {
       | "lease_not_active"
       | "policy_or_resource_disabled"
       | "engine_transport_unknown"
+      | "cancel_requested"
       | "cancellation_unconfirmed"
       | "execution_cleanup_pending"
       | "invalid_execution_request"
@@ -1029,8 +1030,12 @@ export interface operations {
       401: components["responses"]["Unauthorized"];
       /**
        * @description Fencing token stale, gateway barrier fenced, instance generation
-       *     mismatch, conflicting submit intent, or the fixed binding revision
-       *     is disabled (`policy_or_resource_disabled`).
+       *     mismatch, conflicting submit intent, the fixed binding revision is
+       *     disabled (`policy_or_resource_disabled`), or a durable public Job
+       *     cancellation fence forbids creating an execution
+       *     (`cancel_requested`). A `cancel_requested` response means no engine
+       *     request was dispatched; query the original identity for the durable
+       *     terminal fact.
        */
       409: {
         headers: {

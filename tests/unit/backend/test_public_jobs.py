@@ -30,6 +30,7 @@ from speechnexus_backend.speech.domain.public_jobs import (
     PublicJobNotFoundError,
     PublicJobUnavailableError,
     check_transition,
+    cleanup_state,
 )
 from speechnexus_backend.speech.domain.publications import Publication
 from speechnexus_backend.speech.interfaces.http.jobs import public_job
@@ -273,6 +274,15 @@ def test_wire_document_satisfies_the_frozen_job_contract() -> None:
     assert wire["request_id"] == "req-create"
     assert wire["progress"] == {"unit": "text_codepoints", "completed": 0, "total": 15}
     assert wire["artifacts"] == [] and wire["result"] is None
+
+
+def test_cancelling_cleanup_projection_is_always_pending() -> None:
+    service, _, _ = _service()
+    job = service.submit(
+        parse("JobCreateRequest", _body()), request_id="req-create", idempotency_key=None
+    )
+
+    assert cleanup_state(replace(job, state="cancelling")) == "pending"
 
 
 def test_read_unknown_job_is_absent_not_invented() -> None:

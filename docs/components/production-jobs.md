@@ -86,7 +86,7 @@ unknown/query_original；读取失败不证明原创建被拒绝，也不授予�
 `admission_operations` 原命令和 `coordination_jobs`/`coordination_outbox` 身份；
 不使用摘要或当前默认值重建请求。
 
-授权分两段安装：`job_runtime_grants` 覆盖从 `0001_jobs` 起就存在的表，可在历史版本沙箱上直接应用；派发器额外需要的 `admission_operations` INSERT 与 `speech_artifacts` 的 SELECT/INSERT 由 `job_dispatch_grants` 一并给出，**必须在升级到 head 之后**再执行——前者要到 `0007_admission_commands`、后者要到 `0020_artifacts` 才存在，提前应用会让授权失败或掩盖升级顺序问题。Artifact 写入只授予显式列 INSERT 与读取既有行的 SELECT，不授予 UPDATE/DELETE 或 DDL。
+授权分两段安装：`job_runtime_grants` 覆盖从 `0001_jobs` 起就存在的表，可在历史版本沙箱上直接应用；派发器额外需要的 `admission_operations` INSERT、`speech_artifacts` 的 SELECT/INSERT，以及围栏/对账表的受限授权由 `job_dispatch_grants` 一并给出，**必须在升级到 head 之后**再执行——前者要到 `0007_admission_commands`、后者要到 `0020_artifacts` 才存在，提前应用会让授权失败或掩盖升级顺序问题。Artifact 写入只授予显式列 INSERT 与读取既有行的 SELECT，不授予 UPDATE/DELETE 或 DDL。
 
 派发器按 `FOR UPDATE OF c SKIP LOCKED` 批量领取到期的协调行，写入 owner、
 `claim_version` 和租约；进程崩溃后租约到期可重新领取。一次公开 Job 对应一个由
@@ -114,10 +114,79 @@ Job ID 确定性派生的 `submit_intent_id`，领取者先查询原身份，只
 `job_request_unavailable` 或 `execution_result_invalid` 失败分支；这与外发后无法解释
 网关响应保持 unknown 的分支不同，也不能作为执行停止或预算释放证据。
 
+## 取消受理、提交裁决与对账
+
+取消受理与执行提交之间没有跨服务事务，因此用一张只读围栏投影裁决。
+`speech_job_cancellations` 仍是唯一的受理事实；`speech_job_cancellation_fences` 是
+它的同事务投影，只含 `job_id`、`request_id` 和受理时间，避免 gateway 角色读取
+operation/attempt/摘要列。投影与 receipt 在同一 `PostgresPublicJobs.cancel` 事务写入，
+迁移 `0035` 会为既有 accepted receipt 回填。围栏本身不是停止证据，也不释放租约或预算。
+`write_cancellation_fence` 取
+`job_cancellation_fence_lock_key(job_id)` 的互斥事务级 advisory lock 后
+`INSERT … ON CONFLICT DO NOTHING` 并回读，先提交者胜出，重放返回原受理时间与
+request ID，不覆盖他人事实。
+
+网关在创建任何执行之前读同一主键：围栏存在时只写
+`failed / not_required / cancel_requested` 的终态 `submit_intents`，不写输出流头、
+不派发引擎，并以可区分的 `cancel_requested` 拒绝。围栏不存在时按原流程创建；
+执行创建后才受理的取消不改写 intent，继续由 abort/stop-evidence 路径推进。
+
+`speech_job_cancellation_reconciliations` 是 backend 私有重试账本：每个围栏一行，
+记录 `attempts`、`next_check_at_us`、`last_outcome` 和 `settled_at_us`。worker 以短事务
+`INSERT … ON CONFLICT DO UPDATE … WHERE next_check_at_us <= now` 领取到期行，
+因此同一行不会被两个 worker 同时领取；处理在事务外进行，结果再按 job 条件写回。
+退避从 1 秒起翻倍并封顶，`max_attempts` 用尽后写 `exhausted`，不再无限重试；
+进程重启从账本恢复，已 `settled` 的行不再领取。`CancellationReconciliationWorker` 按有界 interval 驱动 `run_once`；默认只领取受理
+超过 5 秒的围栏，避免与受理侧的即时停止重复竞争。未注入 `on_error` 时存储异常向上
+抛出，注入后记录并继续下一轮，便于组合根显式决定告警与退出策略。
+
+只有两类事实允许推进 `cancelled`：网关回报上述“没有执行”终态，或既有停止路径
+验证到 `aborted`、`cleanup_state=complete` 且证据在 `engine_abort_ack`、
+`engine_terminal_response`、`instance_terminated_by_controller`、
+`operator_verified_instance_terminated` 白名单内。执行仍活跃、已 `succeeded`、
+404、传输失败或证据不全都不结算，分别有界重试或进入终止未确认；404 从不是停止证据。
+
+迁移 `0035_job_cancellation_fences` 的 `down_revision` 是
+`0034_public_job_cancellations`，形成单一 head；down 在 reconcile 账本或围栏仍有行时
+拒绝删除，要求先保留或导出证据。`public_job_grants` 为 API Job writer 一并授予围栏/账本
+权限，`job_dispatch_grants` 为 worker 角色授予同一组受限权限；gateway 角色只通过
+`gateway_cancellation_fence_grants` 获得围栏 SELECT。
+
+接线已经落地：
+
+1. `PostgresPublicJobs.cancel` 在写入 `cancelling`、事件和 receipt 后，于同一事务调用
+   `write_cancellation_fence`；它是该事务最后一个会等待锁的写入，之后不再取
+   `admission_leases`/`runtime_instance*` 行锁。
+2. `job_cancellation_runtime.py` 把 `PublicJobs`、PG 对账账本、
+   `GatewayCancellationConfirmer` 和 `CancellationReconciliationWorker` 装配在一起；
+   `settle_cancelled` 走 `PublicJobs` 的 `status_version` 条件更新，活跃执行通过
+   `JobCancellationService` + `GatewayJobCancellationStopper` 注入一次有界停止尝试。
+3. 派发器收到 `DispatchRejectedError` 或 rejected reply 的 `cancel_requested` 时返回
+   `skipped`，不调用 `_fail`，保持 `cancelling`；由对账 worker 以网关“没有执行”事实
+   结算为 `cancelled`。
+
 当前边界完成派发器、真实 PG 领取/终态存储、唯一网关客户端（派发器经适配器接入）、
 worker 入口/进程角色及 `create_app` 之外的组合根。生产 `SubmitExecutionRequest` planner 仍未装配（结果发布已实现，见下节）；`build_dispatch_dependencies` 因 planner 未装配显式抛错，进程以
 退出码 2 结束且不领取租约，不会用 fake 或空实现硬跑。`GET /v1/nexus/artifacts/{id}` 的读路径已可用，但需 planner 装配后才会由 Job 路径产生制品。因此本步不能宣称公开异步链已在部署中闭环，也不能代替
 真实网关、真实引擎或对象存储的发布资格。
+
+### 取消对账 worker 与开关
+
+`job_cancellation_worker.py` 是独立进程入口，默认关闭：
+`SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED=false` 时只打印关闭状态，
+不创建连接池、不读取网关；设置为 `true` 时才要求数据库 URL/schema、网关 URL 和
+credential 齐全。间隔、批量、最大尝试、最小受理年龄、租约和事务超时分别由
+`SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_{INTERVAL_SECONDS,BATCH_SIZE,MAX_ATTEMPTS,MIN_AGE_SECONDS,LEASE_SECONDS,TRANSACTION_TIMEOUT_SECONDS}`
+控制，均有上界。`--once` 只跑一轮，便于部署探针；常驻模式由 SIGINT/SIGTERM 停止。
+
+```bash
+SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED=true SPEECHNEXUS_DATABASE_URL=postgresql:///speech SPEECHNEXUS_DATABASE_SCHEMA=speech SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL=http://gateway:8010 SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL=... python -m speechnexus_backend.job_cancellation_worker
+```
+
+worker 与派发器共享同一条 gateway 契约和停止服务；它不会创建新 execution，也不会把
+404、传输失败或未验证的 abort 当作停止。worker 角色需要 `public_job_grants`（读取
+Job、cancellation receipt 并条件更新 `state/status_version`）与 `job_dispatch_grants`
+（围栏/账本读写）；两者都必须在升级到 `0035` 之后应用，否则启动探针或结算会失败。
 
 ### 结果发布语义（DEL-100）
 

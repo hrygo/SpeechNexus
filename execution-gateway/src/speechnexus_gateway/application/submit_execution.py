@@ -23,6 +23,7 @@ from speechnexus_gateway.domain.ports import (
     SubmissionLedger,
 )
 from speechnexus_gateway.domain.submission import (
+    CancelRequestedError,
     DispatchResult,
     EngineObservedState,
     ExecutionErrorCode,
@@ -81,6 +82,10 @@ class SubmitExecutionService:
                 raise SubmitIntentConflictError(
                     "submit intent already exists with another effective request"
                 )
+            if existing.refused_by_cancellation:
+                raise CancelRequestedError(
+                    "a durable cancellation fence forbids creating this execution"
+                )
             # query owns the conditional save when a delayed executing fact arrives.
             return SubmissionOutcome(
                 intent=self.query(identity.submit_intent_id) or existing, idempotent_replay=True
@@ -92,6 +97,10 @@ class SubmitExecutionService:
             if existing is not None:
                 if existing.request_digest != request.request_digest:
                     raise SubmitIntentConflictError("submit intent has another effective request")
+                if existing.refused_by_cancellation:
+                    raise CancelRequestedError(
+                        "a durable cancellation fence forbids creating this execution"
+                    )
                 return SubmissionOutcome(intent=existing, idempotent_replay=True)
             try:
                 outcome = self._submit_new(request)
@@ -135,6 +144,11 @@ class SubmitExecutionService:
         )
         existing = self._ledger.add(intent, request_document=request.request_document)
         if existing is not None:
+            if existing.refused_by_cancellation:
+                # The fence fact is durable; no dispatch and no output stream exist.
+                raise CancelRequestedError(
+                    "a durable cancellation fence forbids creating this execution"
+                )
             return SubmissionOutcome(intent=existing, idempotent_replay=True)
         outcome = self._dispatch.dispatch(intent)
         if outcome.result is DispatchResult.ACKNOWLEDGED:

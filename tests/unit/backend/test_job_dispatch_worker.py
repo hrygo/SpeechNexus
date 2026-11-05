@@ -32,6 +32,7 @@ from speechnexus_backend.speech.domain.job_dispatch import (
     DispatchConflictError,
     DispatchJob,
     DispatchLimits,
+    DispatchRejectedError,
     ExecutionSubmission,
     GatewayReply,
     PublishedResult,
@@ -348,6 +349,36 @@ async def test_accepted_cancellation_before_submit_never_starts_an_execution() -
     assert batch.claimed == 1 and batch.lease_lost == 1
     assert gateway.queries == 0
     assert publisher.calls == []
+    assert world.job.state == "cancelling"
+    assert world.finish_calls == []
+
+
+class CancellationAtGatewaySubmit(Gateway):
+    """Acceptance commits at the gateway submit after the local reload guard."""
+
+    def __init__(self, world: LeaseWorld) -> None:
+        super().__init__([])
+        self.world = world
+
+    async def query(self, submit_intent_id: str) -> GatewayReply:
+        return GatewayReply("not_found")
+
+    async def submit(self, submission: ExecutionSubmission) -> GatewayReply:
+        self.world.job = replace(
+            self.world.job,
+            state="cancelling",
+            status_version=self.world.job.status_version + 1,
+        )
+        raise DispatchRejectedError("cancel_requested")
+
+
+async def test_gateway_cancel_requested_keeps_cancelling_without_failure() -> None:
+    world = LeaseWorld(_job())
+    batch = await _dispatcher(world, CancellationAtGatewaySubmit(world), Publisher()).run_once(
+        "worker-a"
+    )
+
+    assert batch.claimed == 1 and batch.skipped == 1 and batch.failed == 0
     assert world.job.state == "cancelling"
     assert world.finish_calls == []
 

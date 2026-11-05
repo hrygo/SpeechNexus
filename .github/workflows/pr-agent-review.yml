@@ -41,6 +41,7 @@ jobs:
           OPENAI__KEY: ${{ secrets.OPENCODE_API_KEY }}
           GITHUB__USER_TOKEN: ${{ github.token }}
           GITHUB__DEPLOYMENT_TYPE: user
+          GITHUB__AGENT_LOGIN: github-actions[bot]
           OPENAI__API_BASE: https://opencode.ai/inference/go/openai/v1
           CONFIG__MODEL: openai/glm-5.3-flash
           CONFIG__FALLBACK_MODELS: '[]'
@@ -52,6 +53,9 @@ jobs:
           CONFIG__ENABLE_PER_DIRECTORY_SETTINGS: 'false'
           CONFIG__REPO_CONTEXT_FILES: '[]'
           CONFIG__PROPAGATE_TOOL_ERRORS: 'true'
+          CONFIG__RESTRICTED_MODE: 'true'
+          CONFIG__NUM_RETRIES: '0'
+          CONFIG__RETRY_SAME_MODEL_ON_TIMEOUT: 'false'
           CONFIG__PUBLISH_OUTPUT_PROGRESS: 'false'
           PR_REVIEWER__REQUIRE_TICKET_ANALYSIS_REVIEW: 'false'
           PR_REVIEWER__ENABLE_REVIEW_LABELS_SECURITY: 'false'
@@ -65,14 +69,15 @@ jobs:
           set -euo pipefail
           [[ "$REPOSITORY_ID" =~ ^[0-9]+$ && "$PR_NUMBER" =~ ^[0-9]+$ ]]
           export LITELLM__EXTRA_HEADERS
-          LITELLM__EXTRA_HEADERS=$(printf '{"User-Agent":"pr-agent/0.49.0","x-opencode-session":"pr-agent-%s-pr-%s"}' "$REPOSITORY_ID" "$PR_NUMBER")
+          LITELLM__EXTRA_HEADERS=$(printf '@str {"User-Agent":"pr-agent/0.49.0","x-opencode-session":"pr-agent-%s-pr-%s"}' "$REPOSITORY_ID" "$PR_NUMBER")
           docker run --rm \
-            -e OPENAI__KEY -e GITHUB__USER_TOKEN -e GITHUB__DEPLOYMENT_TYPE \
+            -e OPENAI__KEY -e GITHUB__USER_TOKEN -e GITHUB__DEPLOYMENT_TYPE -e GITHUB__AGENT_LOGIN \
             -e OPENAI__API_BASE -e CONFIG__MODEL -e CONFIG__FALLBACK_MODELS \
             -e CONFIG__MODEL_WEAK -e CONFIG__MODEL_REASONING -e CONFIG__CUSTOM_MODEL_MAX_TOKENS \
             -e CONFIG__USE_REPO_SETTINGS_FILE -e CONFIG__USE_GLOBAL_SETTINGS_FILE \
             -e CONFIG__ENABLE_PER_DIRECTORY_SETTINGS -e CONFIG__REPO_CONTEXT_FILES \
             -e CONFIG__PROPAGATE_TOOL_ERRORS -e CONFIG__PUBLISH_OUTPUT_PROGRESS \
+            -e CONFIG__RESTRICTED_MODE -e CONFIG__NUM_RETRIES -e CONFIG__RETRY_SAME_MODEL_ON_TIMEOUT \
             -e PR_REVIEWER__REQUIRE_TICKET_ANALYSIS_REVIEW \
             -e PR_REVIEWER__ENABLE_REVIEW_LABELS_SECURITY -e PR_REVIEWER__ENABLE_REVIEW_LABELS_EFFORT \
             -e PR_REVIEWER__PERSISTENT_FINDING_STATE -e PR_REVIEWER__MAX_PREVIOUS_FINDINGS_CHARS \

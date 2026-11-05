@@ -39,6 +39,9 @@ class PRAgentReviewWorkflowTests(unittest.TestCase):
             "CONFIG__ENABLE_PER_DIRECTORY_SETTINGS: 'false'",
             "CONFIG__REPO_CONTEXT_FILES: '[]'",
             "CONFIG__PROPAGATE_TOOL_ERRORS: 'true'",
+            "CONFIG__RESTRICTED_MODE: 'true'",
+            "CONFIG__NUM_RETRIES: '0'",
+            "CONFIG__RETRY_SAME_MODEL_ON_TIMEOUT: 'false'",
             "PR_REVIEWER__REQUIRE_TICKET_ANALYSIS_REVIEW: 'false'",
             "PR_REVIEWER__ENABLE_REVIEW_LABELS_SECURITY: 'false'",
             "PR_REVIEWER__ENABLE_REVIEW_LABELS_EFFORT: 'false'",
@@ -57,7 +60,7 @@ class PRAgentReviewWorkflowTests(unittest.TestCase):
         self.assertIn("if: steps.key.outputs.configured == 'true'", WORKFLOW)
         self.assertIn("skipped: OPENCODE_API_KEY is not configured", WORKFLOW)
         self.assertIn('[[ "$REPOSITORY_ID" =~ ^[0-9]+$ && "$PR_NUMBER" =~ ^[0-9]+$ ]]', WORKFLOW)
-        self.assertIn('"User-Agent":"pr-agent/0.49.0"', WORKFLOW)
+        self.assertIn('@str {"User-Agent":"pr-agent/0.49.0"', WORKFLOW)
         self.assertIn('"x-opencode-session":"pr-agent-%s-pr-%s"', WORKFLOW)
         self.assertIn('"$REPOSITORY_ID" "$PR_NUMBER"', WORKFLOW)
         self.assertEqual(len(re.findall(r"secrets\.OPENCODE_API_KEY", WORKFLOW)), 2)

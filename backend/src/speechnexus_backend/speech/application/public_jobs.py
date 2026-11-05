@@ -16,6 +16,8 @@ from speechnexus_backend.speech.application.effective_configuration import (
     effective_configuration,
 )
 from speechnexus_backend.speech.domain.public_jobs import (
+    JobCancellationReceipt,
+    JobCancellationResult,
     JobCreateResult,
     JobKind,
     JobState,
@@ -85,6 +87,19 @@ class JobOutcomeUnknownError(RuntimeError):
 
 class JobRejectedError(RuntimeError):
     pass
+
+
+class JobCleanupPendingError(RuntimeError):
+    """A terminal Job still holds resources; cancellation cannot claim it is clean."""
+
+
+@dataclass(frozen=True, slots=True)
+class CancellationView:
+    """One durably accepted cancellation and its authoritative current Job."""
+
+    job: PublicJob
+    receipt: JobCancellationReceipt
+    accepted_now: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,6 +180,21 @@ class PublicJobStore(Protocol):
     def create(self, job: NewPublicJob) -> JobCreateResult: ...
 
     def get(self, job_id: str) -> PublicJob | None: ...
+
+    def cancel(
+        self,
+        job_id: str,
+        *,
+        workspace_id: str | None,
+        request_id: str,
+        key_digest: str | None,
+        request_digest: str,
+        now_us: int,
+    ) -> JobCancellationResult: ...
+
+    def settle_cancelled(
+        self, job_id: str, *, expected_version: int, now_us: int
+    ) -> PublicJob | None: ...
 
     def advance(
         self,
@@ -369,6 +399,61 @@ class PublicJobs:
             raise PublicJobNotFoundError
         return job
 
+    def cancel(
+        self,
+        job_id: str,
+        *,
+        request_id: str,
+        idempotency_key: str | None,
+        workspace_id: str | None = None,
+    ) -> CancellationView:
+        """Persist one cancellation intent; never stop an execution or release capacity."""
+        identifier(job_id)
+        if workspace_id is not None:
+            identifier(workspace_id)
+        key_digest = None if idempotency_key is None else idempotency_digest(idempotency_key)
+        request_digest = canonical_digest({"operation": "cancel_job", "job_id": job_id})
+        result = self._store.cancel(
+            job_id,
+            workspace_id=workspace_id,
+            request_id=request_id,
+            key_digest=key_digest,
+            request_digest=request_digest,
+            now_us=self._now_us(),
+        )
+        if result.outcome == "not_found":
+            raise PublicJobNotFoundError
+        if result.outcome == "conflict":
+            raise IdempotencyConflictError
+        if result.outcome == "cleanup_pending":
+            raise JobCleanupPendingError
+        if result.outcome == "unknown":
+            raise JobOutcomeUnknownError
+        if result.job is None or result.receipt is None:
+            raise JobOutcomeUnknownError
+        if (
+            result.job.job_id != job_id
+            or result.receipt.job_id != job_id
+            or (workspace_id is not None and result.job.workspace_id != workspace_id)
+        ):
+            raise JobOutcomeUnknownError
+        return CancellationView(result.job, result.receipt, result.outcome == "accepted")
+
+    def settle_cancelled(self, job_id: str, *, expected_version: int) -> PublicJob:
+        """Close the accepted cancellation only after a verified external stop."""
+        identifier(job_id)
+        current = self._store.settle_cancelled(
+            job_id, expected_version=expected_version, now_us=self._now_us()
+        )
+        if current is None:
+            current = self._store.get(job_id)
+            if current is None:
+                raise PublicJobUnavailableError
+            if current.state == "cancelled":
+                return current
+            raise IdempotencyConflictError
+        return current
+
     def advance(
         self,
         job_id: str,
@@ -483,8 +568,10 @@ def _canonical_intent(payload: Mapping[str, Any], kind: JobKind) -> dict[str, An
 
 __all__ = [
     "AssetNotReadyError",
+    "CancellationView",
     "DisabledWorkspaceError",
     "IdempotencyConflictError",
+    "JobCleanupPendingError",
     "JobFacts",
     "JobOutcomeUnknownError",
     "JobRejectedError",

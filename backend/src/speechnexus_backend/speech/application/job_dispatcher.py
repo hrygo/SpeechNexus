@@ -129,7 +129,7 @@ class JobDispatcher:
             if job.state == "running":
                 return DispatchResult(job.job_id, "unknown", "dispatch_attempts_exhausted")
             return await self._fail(claim, job, "dispatch_attempts_exhausted")
-        if job.state in ("succeeded", "failed"):
+        if job.state in ("cancelling", "succeeded", "failed", "cancelled", "expired"):
             return DispatchResult(job.job_id, "skipped")
         gateway_phase = False
         try:
@@ -153,6 +153,12 @@ class JobDispatcher:
             if renewed is None:
                 return DispatchResult(job.job_id, "claim_lost", "claim_lost")
             claim = renewed
+            # A cancellation accepted after mark_running must not submit a new
+            # execution. The guard is checked again inside the gateway submit
+            # path by the cancellation confirmer; this closes the local window.
+            current = await self._states.reload(job.job_id)
+            if current.state != "running":
+                return DispatchResult(job.job_id, "claim_lost", "cancellation_pending")
             gateway_phase = True
             reply = await self._gateway.query(submission.submit_intent_id)
             if reply.outcome == "not_found":
@@ -254,6 +260,11 @@ class JobDispatcher:
         if renewed is None:
             return DispatchResult(job.job_id, "claim_lost", "claim_lost")
         claim = renewed
+        # An accepted cancellation forbids publishing a new artifact. The
+        # terminal status guard still runs in the finish transaction.
+        current = await self._states.reload(job.job_id)
+        if current.state != "running":
+            return DispatchResult(job.job_id, "claim_lost", "cancellation_pending")
         published = await self._results.publish(job, submission, receipt.document)
         renewed = await self._states.renew(claim, self._limits.lease_ms)
         if renewed is None:

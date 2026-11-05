@@ -17,6 +17,9 @@ from speechnexus_backend.speech.application.public_jobs import (
     require_pinned_binding,
 )
 from speechnexus_backend.speech.domain.public_jobs import (
+    TERMINAL_STATES,
+    JobCancellationReceipt,
+    JobCancellationResult,
     JobCreateResult,
     JobState,
     JobSubmission,
@@ -318,6 +321,146 @@ class PostgresPublicJobs:
                 return JobCreateResult("rejected", error_code="job_unavailable")
         return JobCreateResult("unknown", error_code="outcome_unknown")
 
+    def cancel(
+        self,
+        job_id: str,
+        *,
+        workspace_id: str | None,
+        request_id: str,
+        key_digest: str | None,
+        request_digest: str,
+        now_us: int,
+    ) -> JobCancellationResult:
+        """Accept one cancellation durably; stop evidence and release stay elsewhere."""
+        del now_us  # authoritative time comes from the database clock in this transaction
+        identifier(job_id)
+        if workspace_id is not None:
+            identifier(workspace_id)
+        deadline = time.monotonic() + self._timeout
+        try:
+            with self._transaction(deadline) as connection:
+                job_row = _lock_cancel_target(connection, job_id, workspace_id)
+                if job_row is None:
+                    return JobCancellationResult("not_found")
+                job = _job(job_row)
+                operation_id, attempt_id = job_row.get("operation_id"), job_row.get("attempt_id")
+                if operation_id is None or attempt_id is None:
+                    return JobCancellationResult("unknown")
+                if key_digest is not None:
+                    _lock_cancellation_key(connection, job.workspace_id, key_digest)
+                    key_row = _cancellation_by_key(connection, job.workspace_id, key_digest)
+                    if key_row is not None and (
+                        key_row["job_id"] != job.job_id
+                        or key_row["request_digest"] != request_digest
+                    ):
+                        return JobCancellationResult("conflict")
+                # A terminal failure whose execution never confirmed stop holds
+                # capacity and must not be reported as a clean cancellation.
+                if job.state == "failed" and job.error_code == "cancellation_unconfirmed":
+                    return JobCancellationResult("cleanup_pending")
+                receipt_row = _cancellation_by_job(connection, job.job_id)
+                if receipt_row is not None:
+                    return JobCancellationResult(
+                        "replayed" if _job_is_terminal(job) is False else "terminal",
+                        job,
+                        _cancellation(receipt_row),
+                    )
+                accepted = job.state in ("pending", "running", "cancelling")
+                target = {"pending": "cancelled", "running": "cancelling"}.get(job.state)
+                changed = None
+                if target is not None:
+                    changed = connection.execute(
+                        "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) "
+                        "* 1000000 AS BIGINT) AS now_us) "
+                        "UPDATE speech_jobs AS j SET state = %s, "
+                        "status_version = j.status_version + 1, updated_at_us = clock.now_us "
+                        "FROM clock WHERE j.job_id = %s AND j.status_version = %s AND j.state = %s "
+                        "RETURNING clock.now_us AS now_us",
+                        (target, job.job_id, job.status_version, job.state),
+                    ).fetchone()
+                    if changed is None:
+                        raise PublicJobConflictError("Public Job cancellation lost its guard")
+                    connection.execute(
+                        "INSERT INTO speech_job_events "
+                        "(job_id, event_seq, state, occurred_at_us) VALUES (%s, %s, %s, %s)",
+                        (job.job_id, job.status_version, target, int(changed["now_us"])),
+                    )
+                if changed is not None:
+                    requested_at_us = int(changed["now_us"])
+                else:
+                    now_row = connection.execute(
+                        "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) "
+                        "* 1000000 AS BIGINT) AS now_us"
+                    ).fetchone()
+                    if now_row is None:
+                        raise PublicJobUnavailableError
+                    requested_at_us = int(now_row["now_us"])
+                connection.execute(
+                    "INSERT INTO speech_job_cancellations "
+                    "(job_id, workspace_id, operation_id, attempt_id, request_id, "
+                    "request_digest, idempotency_key_digest, accepted, requested_at_us) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    (
+                        job.job_id,
+                        job.workspace_id,
+                        operation_id,
+                        attempt_id,
+                        request_id,
+                        request_digest,
+                        key_digest,
+                        accepted,
+                        requested_at_us,
+                    ),
+                )
+                updated = _select_job(connection, job.job_id)
+                inserted = _cancellation_by_job(connection, job.job_id)
+            if updated is None or inserted is None:
+                return JobCancellationResult("unknown")
+            current = _job(updated)
+            return JobCancellationResult(
+                "accepted" if accepted else "terminal",
+                current,
+                _cancellation(inserted),
+            )
+        except PublicJobConflictError, PublicJobUnavailableError:
+            raise
+        except psycopg.errors.QueryCanceled, psycopg.OperationalError, psycopg.InterfaceError:
+            return JobCancellationResult("unknown")
+        except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
+            return JobCancellationResult("unknown")
+
+    def settle_cancelled(
+        self, job_id: str, *, expected_version: int, now_us: int
+    ) -> PublicJob | None:
+        """Close cancelling -> cancelled only after an external verified stop."""
+        del now_us
+        identifier(job_id)
+        if type(expected_version) is not int or expected_version < 1:
+            raise ValueError("Invalid public Job status version")
+        deadline = time.monotonic() + self._timeout
+        try:
+            with self._transaction(deadline) as connection:
+                changed = connection.execute(
+                    "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) "
+                    "* 1000000 AS BIGINT) AS now_us) "
+                    "UPDATE speech_jobs AS j SET state = 'cancelled', "
+                    "status_version = j.status_version + 1, updated_at_us = clock.now_us "
+                    "FROM clock WHERE j.job_id = %s AND j.state = 'cancelling' "
+                    "AND j.status_version = %s RETURNING clock.now_us AS now_us",
+                    (job_id, expected_version),
+                ).fetchone()
+                if changed is None:
+                    return None
+                connection.execute(
+                    "INSERT INTO speech_job_events "
+                    "(job_id, event_seq, state, occurred_at_us) VALUES (%s, %s, 'cancelled', %s)",
+                    (job_id, expected_version, int(changed["now_us"])),
+                )
+                updated = _select_job(connection, job_id)
+            return None if updated is None else _job(updated)
+        except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
+            raise PublicJobUnavailableError from None
+
     def advance(
         self,
         current: PublicJob,
@@ -397,6 +540,87 @@ class PostgresPublicJobs:
             if committing:
                 raise PublicJobUnavailableError from None
             raise
+
+
+_CANCELLATION_COLUMNS = (
+    "job_id, workspace_id, operation_id, attempt_id, request_id, request_digest, "
+    "idempotency_key_digest, accepted, requested_at_us"
+)
+
+
+def _lock_cancel_target(
+    connection: _Executor, job_id: str, workspace_id: str | None
+) -> dict[str, Any] | None:
+    query = (
+        "SELECT " + _JOB_COLUMNS + ", c.operation_id, c.attempt_id "
+        "FROM speech_jobs AS j "
+        "LEFT JOIN speech_job_submissions AS s ON s.job_id = j.job_id "
+        "LEFT JOIN coordination_jobs AS c ON c.job_id = j.job_id "
+        "WHERE j.job_id = %s"
+    )
+    parameters: tuple[object, ...] = (job_id,)
+    if workspace_id is not None:
+        query += " AND j.workspace_id = %s"
+        parameters += (workspace_id,)
+    query += " FOR UPDATE OF j"
+    rows = connection.execute(query, parameters).fetchall()
+    if len(rows) > 1:
+        raise PublicJobUnavailableError
+    return rows[0] if rows else None
+
+
+def _lock_cancellation_key(connection: _Executor, workspace_id: str, key_digest: str) -> None:
+    # Cancellation keys are scoped by workspace and never share the create
+    # namespace. Acquire this lock before any receipt row write.
+    connection.execute(
+        "SELECT pg_advisory_xact_lock(hashtextextended("
+        "'speechnexus:public-job-cancel-key:' || current_schema() || ':' || %s, 0))",
+        (json.dumps([workspace_id, key_digest], separators=(",", ":")),),
+    )
+
+
+def _cancellation_by_key(
+    connection: _Executor, workspace_id: str, key_digest: str
+) -> dict[str, Any] | None:
+    rows = connection.execute(
+        "SELECT " + _CANCELLATION_COLUMNS + " FROM speech_job_cancellations "
+        "WHERE workspace_id = %s AND idempotency_key_digest = %s",
+        (workspace_id, key_digest),
+    ).fetchall()
+    if len(rows) > 1:
+        raise PublicJobUnavailableError
+    return rows[0] if rows else None
+
+
+def _cancellation_by_job(connection: _Executor, job_id: str) -> dict[str, Any] | None:
+    rows = connection.execute(
+        "SELECT " + _CANCELLATION_COLUMNS + " FROM speech_job_cancellations WHERE job_id = %s",
+        (job_id,),
+    ).fetchall()
+    if len(rows) > 1:
+        raise PublicJobUnavailableError
+    return rows[0] if rows else None
+
+
+def _cancellation(row: dict[str, Any]) -> JobCancellationReceipt:
+    try:
+        return JobCancellationReceipt(
+            job_id=row["job_id"],
+            workspace_id=row["workspace_id"],
+            operation_id=row["operation_id"],
+            attempt_id=row["attempt_id"],
+            request_id=row["request_id"],
+            request_digest=row["request_digest"],
+            idempotency_key_digest=row["idempotency_key_digest"],
+            accepted=row["accepted"],
+            requested_at_us=int(row["requested_at_us"]),
+        )
+    except KeyError, TypeError, ValueError:
+        raise PublicJobUnavailableError from None
+
+
+def _job_is_terminal(job: PublicJob) -> bool:
+    return job.state in TERMINAL_STATES
 
 
 def _binding_is_still_selected(

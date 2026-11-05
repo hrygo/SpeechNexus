@@ -27,8 +27,14 @@ REQUIRED_SELECT = (
     "speech_jobs",
     "speech_job_events",
     "speech_job_submissions",
+    "speech_job_cancellations",
 )
-REQUIRED_INSERT = ("speech_jobs", "speech_job_events", "speech_job_submissions")
+REQUIRED_INSERT = (
+    "speech_jobs",
+    "speech_job_events",
+    "speech_job_submissions",
+    "speech_job_cancellations",
+)
 REQUIRED_INSERT_COLUMNS = {
     "admission_operations": (
         "operation_id",

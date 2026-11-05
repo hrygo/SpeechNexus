@@ -14,6 +14,11 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
         "invalid_request_error",
         "The key identifies another Job intent.",
     ),
+    "execution_cleanup_pending": (
+        409,
+        "invalid_request_error",
+        "The original execution is not confirmed stopped.",
+    ),
     "unsupported_parameter": (422, "invalid_request_error", "The Job request is not supported."),
     "job_kind_not_supported": (
         422,

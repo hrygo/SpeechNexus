@@ -17,13 +17,17 @@ import rfc8785
 
 from speechnexus_backend.speech.domain.publications import Publication
 
-JobState = Literal["pending", "running", "succeeded", "failed", "cancelled", "expired"]
+JobState = Literal[
+    "pending", "running", "cancelling", "succeeded", "failed", "cancelled", "expired"
+]
 JobKind = Literal["asr", "tts"]
 ProgressUnit = Literal["audio_ms", "text_codepoints", "items"]
+CleanupState = Literal["not_required", "pending", "complete", "quarantined"]
 
 JOB_STATES: tuple[JobState, ...] = (
     "pending",
     "running",
+    "cancelling",
     "succeeded",
     "failed",
     "cancelled",
@@ -31,13 +35,15 @@ JOB_STATES: tuple[JobState, ...] = (
 )
 TERMINAL_STATES = frozenset({"succeeded", "failed", "cancelled", "expired"})
 _ALLOWED_TRANSITIONS: dict[JobState, frozenset[JobState]] = {
-    "pending": frozenset({"running", "failed", "cancelled", "expired"}),
-    "running": frozenset({"succeeded", "failed", "cancelled"}),
+    "pending": frozenset({"running", "cancelling", "failed", "cancelled", "expired"}),
+    "running": frozenset({"succeeded", "failed", "cancelling", "cancelled"}),
+    "cancelling": frozenset({"cancelled", "failed"}),
     "succeeded": frozenset(),
     "failed": frozenset(),
     "cancelled": frozenset(),
     "expired": frozenset(),
 }
+_CANCELLATION_UNCONFIRMED = "cancellation_unconfirmed"
 _IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]\Z")
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _TIMESTAMP = 253_402_300_799_999_999
@@ -222,6 +228,64 @@ def check_transition(
             raise PublicJobConflictError("Stored result is not JSON") from None
         if not isinstance(decoded, dict):
             raise PublicJobConflictError("Stored result must be an object")
+
+
+def cleanup_state(job: PublicJob) -> CleanupState:
+    """Report resource cleanup separately from the single result state."""
+    if job.state == "cancelling":
+        return "pending"
+    if job.state == "cancelled" or job.state == "succeeded":
+        return "complete"
+    if job.state == "failed" and job.error_code == _CANCELLATION_UNCONFIRMED:
+        return "quarantined"
+    return "not_required"
+
+
+@dataclass(frozen=True, slots=True)
+class JobCancellationReceipt:
+    """The durable acceptance of one public Job cancellation."""
+
+    job_id: str
+    workspace_id: str
+    operation_id: str
+    attempt_id: str
+    request_id: str
+    request_digest: str
+    idempotency_key_digest: str | None
+    accepted: bool
+    requested_at_us: int
+
+    def __post_init__(self) -> None:
+        identifier(self.job_id)
+        identifier(self.workspace_id)
+        identifier(self.operation_id)
+        identifier(self.attempt_id)
+        if not isinstance(self.request_id, str) or not 1 <= len(self.request_id) <= 128:
+            raise ValueError("Invalid cancellation request id")
+        if not _DIGEST.fullmatch(self.request_digest):
+            raise ValueError("Invalid cancellation request digest")
+        if self.idempotency_key_digest is not None and not _DIGEST.fullmatch(
+            self.idempotency_key_digest
+        ):
+            raise ValueError("Invalid cancellation idempotency digest")
+        if type(self.accepted) is not bool:
+            raise ValueError("Invalid cancellation acceptance")
+        if (
+            type(self.requested_at_us) is not int
+            or not 0 <= self.requested_at_us <= _TIMESTAMP
+        ):
+            raise ValueError("Invalid cancellation timestamp")
+
+
+@dataclass(frozen=True, slots=True)
+class JobCancellationResult:
+    """One durable cancellation read/write outcome, never stop evidence."""
+
+    outcome: Literal[
+        "accepted", "replayed", "terminal", "cleanup_pending", "conflict", "not_found", "unknown"
+    ]
+    job: PublicJob | None = None
+    receipt: JobCancellationReceipt | None = None
 
 
 @dataclass(frozen=True, slots=True)

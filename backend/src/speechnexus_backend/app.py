@@ -35,6 +35,7 @@ from speechnexus_backend.speech.application.binding_publication import (
     BindingPublicationFacts,
 )
 from speechnexus_backend.speech.application.capability_snapshot import CapabilityPolicy
+from speechnexus_backend.speech.application.job_cancellation import JobCancellationService
 from speechnexus_backend.speech.application.profile_drafts import ProfileDrafts
 from speechnexus_backend.speech.application.pronunciation_drafts import PronunciationReader
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
@@ -45,6 +46,9 @@ from speechnexus_backend.speech.application.readiness import (
 from speechnexus_backend.speech.application.speech_synthesis import SpeechSynthesis
 from speechnexus_backend.speech.application.transcription import Transcription
 from speechnexus_backend.speech.application.workspaces import WorkspaceService
+from speechnexus_backend.speech.infrastructure.gateway_job_cancellation import (
+    GatewayJobCancellationStopper,
+)
 from speechnexus_backend.speech.infrastructure.readiness import (
     ObjectStorageReadinessProbe,
     PostgresReadinessProbe,
@@ -154,6 +158,7 @@ def create_app(
     pronunciations: PronunciationReader | None = None,
     catalogue: ModelCatalogue | None = None,
     jobs: PublicJobs | None = None,
+    job_confirmation: JobCancellationService | None = None,
     speech: SpeechSynthesis | None = None,
     transcriptions: Transcription | None = None,
 ) -> FastAPI:
@@ -247,6 +252,20 @@ def create_app(
         if jobs is not None:
             return jobs
         return job_runtime.jobs if job_runtime is not None else None
+
+    def get_job_confirmation() -> JobCancellationService | None:
+        if job_confirmation is not None:
+            return job_confirmation
+        jobs_service = get_jobs()
+        if (
+            jobs_service is None
+            or resolved_settings.execution_gateway_base_url is None
+            or resolved_settings.execution_gateway_component_credential is None
+        ):
+            return None
+        return JobCancellationService(
+            jobs_service, GatewayJobCancellationStopper(resolved_settings)
+        )
 
     binding_runtime = (
         BindingRuntime(resolved_settings)
@@ -395,6 +414,7 @@ def create_app(
     app.include_router(
         create_job_router(
             get_jobs,
+            get_confirmation=get_job_confirmation,
             max_bytes=resolved_settings.job_receive_max_bytes,
             receive_timeout_seconds=resolved_settings.job_receive_timeout_seconds,
         )

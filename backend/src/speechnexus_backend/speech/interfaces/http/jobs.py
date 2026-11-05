@@ -14,10 +14,13 @@ from starlette.concurrency import run_in_threadpool
 from starlette.requests import ClientDisconnect
 from starlette.responses import Response
 
+from speechnexus_backend.speech.application.job_cancellation import JobCancellationService
 from speechnexus_backend.speech.application.public_jobs import (
     AssetNotReadyError,
+    CancellationView,
     DisabledWorkspaceError,
     IdempotencyConflictError,
+    JobCleanupPendingError,
     JobOutcomeUnknownError,
     JobRejectedError,
     ModelBindingError,
@@ -30,9 +33,11 @@ from speechnexus_backend.speech.application.public_jobs import (
     VoiceNotPublishedError,
 )
 from speechnexus_backend.speech.domain.public_jobs import (
+    TERMINAL_STATES,
     PublicJob,
     PublicJobNotFoundError,
     PublicJobUnavailableError,
+    cleanup_state,
     identifier,
 )
 from speechnexus_backend.speech.interfaces.http.job_errors import job_error
@@ -41,18 +46,11 @@ PREFIX = "/v1/nexus/jobs"
 _STATUS = {
     "pending": "queued",
     "running": "running",
+    "cancelling": "cancelling",
     "succeeded": "succeeded",
     "failed": "failed",
     "cancelled": "cancelled",
     "expired": "expired",
-}
-_CLEANUP = {
-    "pending": "not_required",
-    "running": "not_required",
-    "succeeded": "complete",
-    "failed": "not_required",
-    "cancelled": "complete",
-    "expired": "not_required",
 }
 
 
@@ -87,7 +85,7 @@ def public_job(job: PublicJob) -> dict[str, Any]:
         "object": "nexus.job",
         "kind": job.kind,
         "status": _STATUS[job.state],
-        "cleanup_state": _CLEANUP[job.state],
+        "cleanup_state": cleanup_state(job),
         "request_id": job.submission.request_id,
         "workspace_id": job.workspace_id,
         "client_reference": job.submission.client_reference,
@@ -113,6 +111,19 @@ def public_job(job: PublicJob) -> dict[str, Any]:
             "param": None,
         }
     return dict(parse("Job", body))
+
+
+def public_cancellation(view: CancellationView) -> dict[str, Any]:
+    job, receipt = view.job, view.receipt
+    body: dict[str, Any] = {
+        "job_id": job.job_id,
+        "accepted": receipt.accepted,
+        "status": _STATUS[job.state],
+        "cleanup_state": cleanup_state(job),
+        "cancellation_requested_at": _stamp(receipt.requested_at_us),
+        "operations": [],
+    }
+    return dict(parse("JobCancellation", body))
 
 
 async def _receive(request: Request, max_bytes: int, receive_timeout: float) -> bytes:
@@ -234,9 +245,42 @@ def _read(service: PublicJobs, job_id: str, request_id: str) -> Response:
         return job_error("job_unavailable", request_id)
 
 
+def _cancellation_response(view: CancellationView) -> Response:
+    wire = public_cancellation(view)
+    terminal = view.job.state in TERMINAL_STATES
+    headers = {"Cache-Control": "no-store"}
+    if not terminal:
+        headers["Retry-After"] = "1"
+    return Response(
+        json.dumps(wire, sort_keys=False, separators=(",", ":"), ensure_ascii=False),
+        status_code=200 if terminal else 202,
+        media_type="application/json",
+        headers=headers,
+    )
+
+
+def _cancel(
+    service: PublicJobs, job_id: str, request_id: str, idempotency_key: str | None
+) -> CancellationView | Response:
+    try:
+        identifier(job_id)
+        return service.cancel(job_id, request_id=request_id, idempotency_key=idempotency_key)
+    except JobCleanupPendingError:
+        return job_error("execution_cleanup_pending", request_id)
+    except IdempotencyConflictError:
+        return job_error("idempotency_conflict", request_id)
+    except JobOutcomeUnknownError:
+        return job_error("job_outcome_unknown", request_id)
+    except PublicJobNotFoundError, ValueError:
+        return job_error("job_not_found", request_id)
+    except PublicJobUnavailableError, ContractValidationError:
+        return job_error("job_unavailable", request_id)
+
+
 def create_job_router(
     get_service: Callable[[], PublicJobs | None],
     *,
+    get_confirmation: Callable[[], JobCancellationService | None] | None = None,
     max_bytes: int = 262144,
     receive_timeout_seconds: float = 5,
 ) -> APIRouter:
@@ -260,5 +304,33 @@ def create_job_router(
         if service is None:
             return job_error("job_unavailable", request_id)
         return await run_in_threadpool(_read, service, job_id, request_id)
+
+    @router.post(PREFIX + "/{job_id}/cancellations", operation_id="cancelJob")
+    async def cancel_job(request: Request, job_id: str) -> Response:
+        service = get_service()
+        request_id = str(request.state.request_id)
+        if service is None:
+            return job_error("job_unavailable", request_id)
+        try:
+            key = _idempotency_key(request)
+        except ValueError:
+            return job_error("invalid_job_request", request_id)
+        outcome = await run_in_threadpool(_cancel, service, job_id, request_id, key)
+        if isinstance(outcome, Response):
+            return outcome
+        confirmation = get_confirmation() if get_confirmation is not None else None
+        if confirmation is not None and outcome.job.state == "cancelling":
+            try:
+                confirmed = await confirmation.confirm(outcome.job, outcome.receipt)
+            except (
+                IdempotencyConflictError,
+                JobOutcomeUnknownError,
+                PublicJobUnavailableError,
+                ContractValidationError,
+            ):
+                confirmed = outcome.job
+            if confirmed.job_id == outcome.job.job_id:
+                outcome = CancellationView(confirmed, outcome.receipt, outcome.accepted_now)
+        return _cancellation_response(outcome)
 
     return router

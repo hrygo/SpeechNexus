@@ -575,6 +575,7 @@ def test_public_specs_validate_and_declare_openai_compatible_paths() -> None:
         "/v1/nexus/capabilities",
         "/v1/nexus/jobs",
         "/v1/nexus/jobs/{job_id}",
+        "/v1/nexus/jobs/{job_id}/cancellations",
         "/v1/nexus/jobs/{job_id}/events",
         "/v1/nexus/assets",
         "/v1/nexus/artifacts/{artifact_id}",

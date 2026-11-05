@@ -1,0 +1,302 @@
+"""Public Job cancellation on isolated PostgreSQL; no skip counts as evidence."""
+
+from __future__ import annotations
+
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+from tests.integration.test_public_jobs_http import PREFIX, JobSandbox
+from tests.integration.test_public_jobs_http import jobs_db as jobs_db
+
+from speechnexus_backend.app import create_app
+from speechnexus_backend.speech.application.job_cancellation import JobCancellationService
+from speechnexus_backend.speech.application.public_jobs import (
+    IdempotencyConflictError,
+    JobCleanupPendingError,
+)
+from speechnexus_backend.speech.domain.public_jobs import PublicJobNotFoundError
+
+pytestmark = pytest.mark.integration
+CANCEL = PREFIX + "/{job_id}/cancellations"
+KEY = "synthetic-cancel-key-1"
+
+
+def _app(db: JobSandbox, confirmation: Any = None) -> Any:
+    from tests.integration.test_public_jobs_http import _settings_for
+
+    return create_app(settings=_settings_for(db), jobs=db.jobs, job_confirmation=confirmation)
+
+
+class Stopper:
+    def __init__(self, state: str) -> None:
+        self.state = state
+        self.calls = 0
+
+    async def stop(self, job: Any, receipt: Any) -> Any:
+        from speechnexus_backend.speech.application.job_cancellation import StopObservation
+
+        self.calls += 1
+        return StopObservation(self.state)
+
+
+async def _create_running(db: JobSandbox, *, key: str, workspace_id: str | None = None) -> str:
+    app = _app(db)
+    body: dict[str, Any] = {
+        "kind": "tts",
+        "model": "tts-quality",
+        "input": {"text": "synthetic cancel job"},
+        "voice": {"id": "voice-vivian", "revision": "2"},
+    }
+    if workspace_id is not None:
+        body["workspace_id"] = workspace_id
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post(PREFIX, json=body, headers={"Idempotency-Key": key})
+        assert created.status_code == 202, created.text
+    job_id = created.json()["id"]
+    db.jobs.advance(job_id, "running")
+    return job_id
+
+
+async def test_cancel_accepts_once_replays_and_rejects_key_reuse(jobs_db: JobSandbox) -> None:
+    job_id = await _create_running(jobs_db, key="synthetic-cancel-create-1")
+    app = _app(jobs_db)
+    url = CANCEL.format(job_id=job_id)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        first = await client.post(url, headers={"Idempotency-Key": KEY})
+        assert first.status_code == 202, first.text
+        assert first.headers["Retry-After"] == "1"
+        receipt = first.json()
+        assert receipt == {
+            "job_id": job_id,
+            "accepted": True,
+            "status": "cancelling",
+            "cleanup_state": "pending",
+            "cancellation_requested_at": receipt["cancellation_requested_at"],
+            "operations": [],
+        }
+        assert jobs_db.query("SELECT state FROM speech_jobs WHERE job_id = %s", (job_id,)) == [
+            {"state": "cancelling"}
+        ]
+        assert jobs_db.query(
+            "SELECT state FROM speech_job_events WHERE job_id = %s ORDER BY event_seq",
+            (job_id,),
+        ) == [{"state": "pending"}, {"state": "cancelling"}]
+        assert jobs_db.count("speech_job_cancellations") == 1
+
+        replay = await client.post(url, headers={"Idempotency-Key": KEY})
+        assert replay.status_code == 202, replay.text
+        assert replay.json() == receipt
+        other_key = await client.post(url, headers={"Idempotency-Key": "synthetic-cancel-key-2"})
+        assert other_key.status_code == 202, other_key.text
+        assert other_key.json() == receipt
+        assert jobs_db.count("speech_job_cancellations") == 1
+
+        job = await client.get(PREFIX + "/" + job_id)
+        assert job.status_code == 200, job.text
+        assert job.json()["status"] == "cancelling"
+        assert job.json()["cleanup_state"] == "pending"
+
+    other = await _create_running(jobs_db, key="synthetic-cancel-create-2")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        conflict = await client.post(CANCEL.format(job_id=other), headers={"Idempotency-Key": KEY})
+        assert conflict.status_code == 409, conflict.text
+        assert conflict.json()["error"]["code"] == "idempotency_conflict"
+    assert jobs_db.query("SELECT state FROM speech_jobs WHERE job_id = %s", (other,)) == [
+        {"state": "running"}
+    ]
+
+
+def test_concurrent_cancel_persists_one_receipt(jobs_db: JobSandbox) -> None:
+    job_id = asyncio.run(_create_running(jobs_db, key="synthetic-cancel-create-3"))
+
+    def invoke(key: str) -> Any:
+        return jobs_db.jobs.cancel(job_id, request_id="req-" + key, idempotency_key=key)
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        outcomes = list(workers.map(invoke, ("synthetic-concurrent-a", "synthetic-concurrent-b")))
+    assert {outcome.accepted_now for outcome in outcomes} == {True, False}
+    assert len({outcome.receipt.requested_at_us for outcome in outcomes}) == 1
+    assert {outcome.job.state for outcome in outcomes} == {"cancelling"}
+    assert jobs_db.count("speech_job_cancellations") == 1
+    assert jobs_db.query(
+        "SELECT count(*) AS n FROM speech_job_events WHERE job_id = %s AND state = 'cancelling'",
+        (job_id,),
+    ) == [{"n": 1}]
+
+
+async def test_terminal_job_returns_its_receipt_without_reviving(jobs_db: JobSandbox) -> None:
+    job_id = await _create_running(jobs_db, key="synthetic-cancel-create-4")
+    jobs_db.jobs.advance(
+        job_id,
+        "succeeded",
+        result_json='{"kind":"tts","audio_artifact_id":"artifact-synthetic","receipt_id":"receipt-synthetic"}',
+    )
+    app = _app(jobs_db)
+    url = CANCEL.format(job_id=job_id)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        terminal = await client.post(url, headers={"Idempotency-Key": "synthetic-terminal-key"})
+        assert terminal.status_code == 200, terminal.text
+        assert terminal.json()["accepted"] is False
+        assert terminal.json()["status"] == "succeeded"
+        assert terminal.json()["cleanup_state"] == "complete"
+        replay = await client.post(url, headers={"Idempotency-Key": "synthetic-terminal-key"})
+        assert replay.status_code == 200, replay.text
+        assert replay.json() == terminal.json()
+    assert jobs_db.query("SELECT state FROM speech_jobs WHERE job_id = %s", (job_id,)) == [
+        {"state": "succeeded"}
+    ]
+    assert jobs_db.count("speech_job_cancellations") == 1
+
+
+async def test_cleanup_pending_terminal_is_not_reported_cancelled(jobs_db: JobSandbox) -> None:
+    job_id = await _create_running(jobs_db, key="synthetic-cancel-create-5")
+    jobs_db.jobs.advance(job_id, "failed", error_code="cancellation_unconfirmed")
+    app = _app(jobs_db)
+    url = CANCEL.format(job_id=job_id)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        rejected = await client.post(url, headers={"Idempotency-Key": "synthetic-cleanup-key"})
+        assert rejected.status_code == 409, rejected.text
+        assert rejected.json()["error"]["code"] == "execution_cleanup_pending"
+    row = jobs_db.query(
+        "SELECT state, error_code, status_version FROM speech_jobs WHERE job_id = %s", (job_id,)
+    )[0]
+    assert row == {
+        "state": "failed",
+        "error_code": "cancellation_unconfirmed",
+        "status_version": 3,
+    }
+    assert jobs_db.count("speech_job_cancellations") == 0
+
+
+async def test_pending_job_can_be_cancelled_without_an_execution(jobs_db: JobSandbox) -> None:
+    app = _app(jobs_db)
+    body = {
+        "kind": "tts",
+        "model": "tts-quality",
+        "input": {"text": "synthetic pending cancel"},
+        "voice": {"id": "voice-vivian", "revision": "2"},
+    }
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post(
+            PREFIX, json=body, headers={"Idempotency-Key": "synthetic-pending-create"}
+        )
+        job_id = created.json()["id"]
+        cancelled = await client.post(
+            CANCEL.format(job_id=job_id), headers={"Idempotency-Key": "synthetic-pending-key"}
+        )
+        assert cancelled.status_code == 200, cancelled.text
+        assert cancelled.json()["status"] == "cancelled"
+        assert cancelled.json()["cleanup_state"] == "complete"
+        assert cancelled.json()["accepted"] is True
+        replay = await client.post(
+            CANCEL.format(job_id=job_id), headers={"Idempotency-Key": "synthetic-pending-key"}
+        )
+        assert replay.status_code == 200, replay.text
+        assert replay.json() == cancelled.json()
+    assert jobs_db.count("speech_job_cancellations") == 1
+
+
+async def test_verified_stop_settles_cancelled(jobs_db: JobSandbox) -> None:
+    job_id = await _create_running(jobs_db, key="synthetic-cancel-create-6")
+    stopper = Stopper("stopped")
+    app = _app(jobs_db, JobCancellationService(jobs_db.jobs, stopper))
+    url = CANCEL.format(job_id=job_id)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        cancelled = await client.post(url, headers={"Idempotency-Key": "synthetic-stopped-key"})
+        assert cancelled.status_code == 200, cancelled.text
+        assert cancelled.json()["status"] == "cancelled"
+        assert cancelled.json()["cleanup_state"] == "complete"
+        assert cancelled.json()["accepted"] is True
+        again = await client.post(url, headers={"Idempotency-Key": "synthetic-stopped-key"})
+        assert again.status_code == 200, again.text
+        assert again.json() == cancelled.json()
+        job = await client.get(PREFIX + "/" + job_id)
+        assert job.json()["status"] == "cancelled"
+    assert stopper.calls == 1
+    assert jobs_db.query(
+        "SELECT state, status_version FROM speech_jobs WHERE job_id = %s", (job_id,)
+    ) == [{"state": "cancelled", "status_version": 4}]
+    assert jobs_db.query(
+        "SELECT state FROM speech_job_events WHERE job_id = %s ORDER BY event_seq", (job_id,)
+    ) == [{"state": "pending"}, {"state": "cancelling"}, {"state": "cancelled"}]
+    assert jobs_db.count("speech_job_cancellations") == 1
+
+
+async def test_unconfirmed_or_missing_execution_stays_cleanup_pending(
+    jobs_db: JobSandbox,
+) -> None:
+    for index, state in enumerate(("unconfirmed", "not_found", "failed")):
+        job_id = await _create_running(jobs_db, key=f"synthetic-cancel-unconfirmed-{index}")
+        app = _app(jobs_db, JobCancellationService(jobs_db.jobs, Stopper(state)))
+        url = CANCEL.format(job_id=job_id)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            pending = await client.post(
+                url, headers={"Idempotency-Key": f"synthetic-unconfirmed-key-{index}"}
+            )
+            assert pending.status_code == 202, pending.text
+            assert pending.json()["status"] == "cancelling"
+            assert pending.json()["cleanup_state"] == "pending"
+            assert pending.json()["accepted"] is True
+        assert jobs_db.query("SELECT state FROM speech_jobs WHERE job_id = %s", (job_id,)) == [
+            {"state": "cancelling"}
+        ]
+
+
+async def test_workspace_scope_rejects_foreign_job_and_isolates_keys(
+    jobs_db: JobSandbox,
+) -> None:
+    jobs_db.admin.execute(
+        "INSERT INTO speech_workspaces "
+        "(workspace_id, display_name, workspace_state, created_at_us) "
+        "VALUES ('workspace-other', 'Synthetic other', 'active', 1)"
+    )
+    first = await _create_running(jobs_db, key="synthetic-workspace-create-1")
+    second = await _create_running(
+        jobs_db, key="synthetic-workspace-create-2", workspace_id="workspace-other"
+    )
+    with pytest.raises(PublicJobNotFoundError):
+        jobs_db.jobs.cancel(
+            first,
+            workspace_id="workspace-other",
+            request_id="req-foreign",
+            idempotency_key="synthetic-foreign-key",
+        )
+    accepted = jobs_db.jobs.cancel(
+        first, request_id="req-first", idempotency_key="synthetic-shared-key"
+    )
+    other = jobs_db.jobs.cancel(
+        second, request_id="req-second", idempotency_key="synthetic-shared-key"
+    )
+    assert accepted.job.job_id == first
+    assert other.job.job_id == second
+    assert accepted.receipt.job_id != other.receipt.job_id
+    assert jobs_db.count("speech_job_cancellations") == 2
+
+
+async def test_unknown_and_foreign_job_are_not_found(jobs_db: JobSandbox) -> None:
+    app = _app(jobs_db)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        missing = await client.post(
+            CANCEL.format(job_id="job-00000000000000000000000000000000"),
+            headers={"Idempotency-Key": "synthetic-missing-key"},
+        )
+        assert missing.status_code == 404, missing.text
+        assert missing.json()["error"]["code"] == "job_not_found"
+        invalid = await client.post(
+            CANCEL.format(job_id="NOT_VALID"), headers={"Idempotency-Key": "synthetic-invalid-key"}
+        )
+        assert invalid.status_code == 404, invalid.text
+        bad_key = await client.post(
+            CANCEL.format(job_id="job-00000000000000000000000000000000"),
+            headers={"Idempotency-Key": "short"},
+        )
+        assert bad_key.status_code == 400, bad_key.text
+
+
+def test_cleanup_pending_error_is_typed(jobs_db: JobSandbox) -> None:
+    # The application-level guard is the same one the route maps to 409.
+    assert issubclass(JobCleanupPendingError, RuntimeError)
+    assert issubclass(IdempotencyConflictError, RuntimeError)

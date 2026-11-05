@@ -10,7 +10,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-DispatchState = Literal["pending", "running", "succeeded", "failed"]
+DispatchState = Literal[
+    "pending", "running", "cancelling", "succeeded", "failed", "cancelled", "expired"
+]
 GatewayOutcome = Literal["status", "not_found", "unknown", "rejected"]
 ExecutionState = Literal[
     "submitting", "executing", "stopping", "succeeded", "failed", "aborted", "unknown_quarantined"
@@ -164,7 +166,15 @@ class DispatchJob:
         identifier(self.workspace_id)
         if self.kind not in ("asr", "tts"):
             raise ValueError("Invalid dispatch Job kind")
-        if self.state not in ("pending", "running", "succeeded", "failed"):
+        if self.state not in (
+            "pending",
+            "running",
+            "cancelling",
+            "succeeded",
+            "failed",
+            "cancelled",
+            "expired",
+        ):
             raise ValueError("Invalid dispatch Job state")
         if type(self.status_version) is not int or self.status_version < 1:
             raise ValueError("Invalid dispatch status version")

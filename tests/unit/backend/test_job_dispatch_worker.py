@@ -330,6 +330,28 @@ def _dispatcher(
     )
 
 
+class CancelledDuringDispatch(LeaseWorld):
+    """A cancellation lands after mark_running but before the gateway submit."""
+
+    async def mark_running(self, job: DispatchJob) -> DispatchJob:
+        running = await super().mark_running(job)
+        self.job = replace(running, state="cancelling", status_version=running.status_version + 1)
+        return running
+
+
+async def test_accepted_cancellation_before_submit_never_starts_an_execution() -> None:
+    world = CancelledDuringDispatch(_job())
+    gateway = Gateway(["executing"])
+    publisher = Publisher()
+    batch = await _dispatcher(world, gateway, publisher).run_once("worker-a")
+
+    assert batch.claimed == 1 and batch.lease_lost == 1
+    assert gateway.queries == 0
+    assert publisher.calls == []
+    assert world.job.state == "cancelling"
+    assert world.finish_calls == []
+
+
 async def test_stale_worker_never_finishes_or_publishes_after_takeover() -> None:
     world = LeaseWorld(_job())
     gateway = Gateway(["executing", "succeeded", "succeeded"])

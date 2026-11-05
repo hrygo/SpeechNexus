@@ -215,6 +215,7 @@ def test_backend_exposes_valid_operational_openapi() -> None:
         "/v1/nexus/artifacts/{artifact_id}/content",
         "/v1/nexus/jobs",
         "/v1/nexus/jobs/{job_id}",
+        "/v1/nexus/jobs/{job_id}/cancellations",
         "/v1/audio/speech",
         "/v1/audio/transcriptions",
     }

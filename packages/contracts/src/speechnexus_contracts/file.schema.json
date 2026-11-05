@@ -2461,7 +2461,8 @@
           "$ref": "#/$defs/Identifier"
         },
         "accepted": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "True when this Job has a durably accepted cancellation intent. False\nfor a read-only terminal receipt where no cancellation was accepted.\nA previously accepted value never becomes false on replay.\n"
         },
         "status": {
           "$ref": "#/$defs/JobStatus"
@@ -2471,7 +2472,8 @@
         },
         "cancellation_requested_at": {
           "type": "string",
-          "format": "date-time"
+          "format": "date-time",
+          "description": "First durable acceptance time for this Job. Every replay preserves it;\nit is not stop time, engine time or resource release time.\n"
         },
         "operations": {
           "type": "array",
@@ -2481,6 +2483,40 @@
         }
       },
       "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "cancelling"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "const": "pending"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "succeeded"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "const": "complete"
+              }
+            }
+          }
+        },
         {
           "if": {
             "properties": {

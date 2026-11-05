@@ -33,6 +33,7 @@ from speechnexus_gateway.domain.recovery import (
     TerminalStopEvidenceUnavailableError,
 )
 from speechnexus_gateway.domain.submission import (
+    AbortAcknowledgement,
     DispatchResult,
     EngineObservedState,
     ExecutionCleanupPendingError,
@@ -413,13 +414,27 @@ class FileExecutionWorker[StoreT]:
             )
 
     def abort(self, intent: SubmissionIntent, *, reason: str, wait_timeout_ms: int) -> AbortOutcome:
+        """Cancel the one local run of this identity; repeating it has no second effect."""
         with self._lock:
             ticket = self._preparations.get(intent.identity.submit_intent_id)
-            if ticket is not None and ticket.engine_request_id == intent.engine_request_id:
+            if ticket is None or ticket.engine_request_id != intent.engine_request_id:
+                # This process owns no run of the identity: another generation sent it, or
+                # it already left. Nothing observed here proves the engine stopped.
+                return AbortOutcome(self._now(), engine_request_id=intent.engine_request_id)
+            task = ticket.task
+            finished = task is not None and task.done()
+            if not finished:
                 ticket.cancelled.set()
                 if self._loop is not None:
                     self._loop.call_soon_threadsafe(self._cancel, ticket)
-        return AbortOutcome(self._now(), engine_request_id=intent.engine_request_id)
+        acknowledgement = (
+            AbortAcknowledgement.ALREADY_TERMINAL if finished else AbortAcknowledgement.ABORTED
+        )
+        return AbortOutcome(
+            self._now(),
+            engine_request_id=intent.engine_request_id,
+            acknowledgement=acknowledgement,
+        )
 
     @staticmethod
     def _cancel(ticket: _Preparation) -> None:

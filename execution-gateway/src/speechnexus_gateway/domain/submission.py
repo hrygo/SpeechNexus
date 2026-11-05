@@ -133,6 +133,24 @@ class StopEvidenceKind(StrEnum):
     UNCONFIRMED_TIMEOUT = "unconfirmed_timeout"
 
 
+class AbortAcknowledgement(StrEnum):
+    """What the engine answered about one already-issued abort identity.
+
+    Only a decided answer ends the dispatch attempts of an original receipt: the
+    request identity was delivered and the engine either aborted it or reported it
+    already ended. `unknown` means the gateway learned nothing and must retry the
+    original identity after its bounded lease expires; it is never stop evidence.
+    """
+
+    UNKNOWN = "unknown"
+    ABORTED = "aborted"
+    ALREADY_TERMINAL = "already_terminal"
+
+    @property
+    def decided(self) -> bool:
+        return self is not AbortAcknowledgement.UNKNOWN
+
+
 class ExecutionErrorCode(StrEnum):
     STALE_FENCING_TOKEN = "stale_fencing_token"
     GATEWAY_BARRIER_FENCED = "gateway_barrier_fenced"

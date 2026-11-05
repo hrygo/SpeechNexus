@@ -17,7 +17,11 @@ from typing import Any, TypeVar, cast
 import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
-from speechnexus_gateway.domain.abort_intent import AbortExecutionRequest
+from speechnexus_gateway.domain.abort_intent import (
+    AbortDispatchClaim,
+    AbortDispatchResult,
+    AbortExecutionRequest,
+)
 from speechnexus_gateway.domain.command_redaction import (
     AuthorizedCommandRedaction,
     CommandRedactionResult,
@@ -41,7 +45,12 @@ from speechnexus_gateway.domain.submission import (
     SubmissionStoreUnavailableError,
     SubmitRequest,
 )
-from speechnexus_gateway.infrastructure.abort_intent_sql import claim_abort, receive_abort
+from speechnexus_gateway.infrastructure.abort_intent_sql import (
+    claim_abort,
+    receive_abort,
+    record_abort_dispatch,
+    reject_abort,
+)
 from speechnexus_gateway.infrastructure.abort_recovery_sql import take_due_aborts
 from speechnexus_gateway.infrastructure.barrier_sql import (
     read_barrier,
@@ -208,11 +217,34 @@ class PostgresSubmissionLedger:
             ),
         )
 
-    def claim_abort(self, request: AbortExecutionRequest) -> SubmissionIntent | None:
+    def claim_abort(
+        self, request: AbortExecutionRequest, *, attempt_id: str, lease_ms: int
+    ) -> AbortDispatchClaim | None:
         return self._run(
             read_only=False,
             work=lambda cursor: claim_abort(
-                cursor, request, clock=cast(_DeadlineCursor, cursor).clock
+                cursor,
+                request,
+                attempt_id=attempt_id,
+                lease_ms=lease_ms,
+                clock=cast(_DeadlineCursor, cursor).clock,
+            ),
+        )
+
+    def record_abort_dispatch(self, result: AbortDispatchResult) -> bool:
+        return self._run(
+            read_only=False,
+            work=lambda cursor: record_abort_dispatch(cursor, result),
+        )
+
+    def reject_abort(self, request: AbortExecutionRequest, *, attempt_id: str) -> bool:
+        return self._run(
+            read_only=False,
+            work=lambda cursor: reject_abort(
+                cursor,
+                request,
+                attempt_id=attempt_id,
+                clock=cast(_DeadlineCursor, cursor).clock,
             ),
         )
 

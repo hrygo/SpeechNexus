@@ -13,6 +13,7 @@ from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from threading import Event
 from typing import Any, Literal, cast
@@ -46,7 +47,7 @@ from speechnexus_gateway.application.barrier_control import GatewayBarrierServic
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.application.query_execution import ExecutionQueryService
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
-from speechnexus_gateway.domain.abort_intent import AbortExecutionRequest
+from speechnexus_gateway.domain.abort_intent import AbortDispatchClaim, AbortExecutionRequest
 from speechnexus_gateway.domain.canonical import JsonValue, canonical_json, command_digest
 from speechnexus_gateway.domain.command_redaction import (
     AuthorizedCommandRedaction,
@@ -55,6 +56,7 @@ from speechnexus_gateway.domain.command_redaction import (
 from speechnexus_gateway.domain.ports import AbortOutcome
 from speechnexus_gateway.domain.recovery import ExecutionObservationConflictError
 from speechnexus_gateway.domain.submission import (
+    AbortAcknowledgement,
     ExecutionState,
     RecordStop,
     StopEvidenceKind,
@@ -89,9 +91,11 @@ class ObservableLedger(PostgresSubmissionLedger):
         super().receive_abort(request)
         self.received.set()
 
-    def claim_abort(self, request: AbortExecutionRequest) -> SubmissionIntent | None:
+    def claim_abort(
+        self, request: AbortExecutionRequest, *, attempt_id: str, lease_ms: int
+    ) -> AbortDispatchClaim | None:
         self.claims += 1
-        return super().claim_abort(request)
+        return super().claim_abort(request, attempt_id=attempt_id, lease_ms=lease_ms)
 
 
 @dataclass
@@ -188,6 +192,30 @@ def receipt_row(foundation: Foundation) -> list[dict[str, Any]]:
         "wait_timeout_ms, received_at_us, dispatched_at_us "
         "FROM gateway_abort_intents WHERE submit_intent_id=%s",
         (INTENT_ID,),
+    )
+
+
+def dispatch_row(foundation: Foundation) -> dict[str, Any]:
+    return foundation.database.query(
+        "SELECT dispatch_attempt_id, dispatch_started_at_us, dispatch_deadline_at_us, "
+        "dispatch_outcome, dispatch_outcome_at_us, dispatch_attempts "
+        "FROM gateway_abort_intents WHERE submit_intent_id=%s",
+        (INTENT_ID,),
+    )[0]
+
+
+def original_abort_request(
+    foundation: Foundation, request: AbortExecutionRequest
+) -> AbortExecutionRequest:
+    row = foundation.database.query(
+        "SELECT instance_id, instance_generation FROM gateway_abort_intents "
+        "WHERE submit_intent_id=%s",
+        (request.submit_intent_id,),
+    )[0]
+    return replace(
+        request,
+        instance_id=row["instance_id"],
+        instance_generation=row["instance_generation"],
     )
 
 
@@ -675,14 +703,21 @@ def test_due_abort_survives_restart_and_recovers_original(live: LiveAbort) -> No
     assert current is not None and current.execution_state is ExecutionState.UNKNOWN_QUARANTINED
 
 
-def test_due_claimed_abort_stays_unknown_without_safe_adapter(live: LiveAbort) -> None:
+def test_due_claimed_abort_waits_for_its_lease_before_any_resend(live: LiveAbort) -> None:
     from speechnexus_gateway.application.recover_aborts import AbortRecoveryService
 
     live.ledger.receive_abort(live.abort_request)
-    assert live.ledger.claim_abort(live.abort_request) is not None
+    assert (
+        live.ledger.claim_abort(live.abort_request, attempt_id="abort-held", lease_ms=100)
+        is not None
+    )
     recovery = AbortRecoveryService(ingress=live.ingress, ledger=live.ledger, abort=live.service())
-    assert recovery.sweep(limit=1) == 1
+    # A live lease takes the receipt out of the due queue: no second sender exists.
+    assert recovery.sweep(limit=1) == 0
     assert live.engine.calls == []
+    time.sleep(0.2)
+    assert recovery.sweep(limit=1) == 1
+    assert len(live.engine.calls) == 1
     current = live.ledger.get(INTENT_ID)
     assert current is not None and current.execution_state is ExecutionState.UNKNOWN_QUARANTINED
 
@@ -724,7 +759,9 @@ def test_competing_due_scans_advance_one_receipt_once(
             blocker.commit()
             results = [future.result(timeout=5) for future in futures]
         assert sorted(len(result) for result in results) == [0, 1]
-        assert next(result[0] for result in results if result) == live.abort_request
+        assert next(result[0] for result in results if result) == original_abort_request(
+            foundation, live.abort_request
+        )
     finally:
         blocker.close()
 
@@ -769,13 +806,17 @@ def test_due_order_does_not_starve_old_retry_behind_new_receipt(
     candidates = live.ledger.take_due_aborts(
         gateway_id="gateway-test", host_node_id="host-test", limit=1
     )
-    assert candidates == [live.abort_request]
+    assert candidates == [original_abort_request(foundation, live.abort_request)]
 
 
-@pytest.mark.parametrize("crash_window", ["after_claim", "after_accept"])
-def test_process_exit_preserves_original_abort_for_safe_recovery(
+@pytest.mark.parametrize(
+    "crash_window",
+    ["after_receive", "after_claim", "after_accept", "after_outcome_lost"],
+)
+def test_process_exit_keeps_the_original_abort_retryable(
     live: LiveAbort, foundation: Foundation, tmp_path: Path, crash_window: str
 ) -> None:
+    """Every crash window leaves the original receipt retryable and sends the same identity."""
     import os
     import subprocess
     import sys
@@ -785,29 +826,48 @@ def test_process_exit_preserves_original_abort_for_safe_recovery(
     # The fixture's process must relinquish the actual lifetime lock before a
     # separate gateway process can own the same node and gateway identity.
     live.ingress._ownership.close()  # type: ignore[attr-defined]
-    marker = tmp_path / "synthetic-engine-accepted"
+    accept_log = tmp_path / "synthetic-engine-accepted"
     script = """
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 from psycopg.conninfo import make_conninfo
 from speechnexus_gateway.application.abort_execution import ExecutionAbortService
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.domain.abort_intent import AbortExecutionRequest
+from speechnexus_gateway.domain.ports import AbortOutcome
+from speechnexus_gateway.domain.submission import AbortAcknowledgement
 from speechnexus_gateway.infrastructure.postgres_pool import gateway_pool
 from speechnexus_gateway.infrastructure.process_ownership import ProcessIngressOwnership
 from speechnexus_gateway.infrastructure.submit_postgres import PostgresSubmissionLedger
 
+WINDOW = os.environ['SN_CRASH_WINDOW']
+
 class CrashLedger(PostgresSubmissionLedger):
-    def claim_abort(self, request):
-        result = super().claim_abort(request)
-        if os.environ['SN_CRASH_WINDOW'] == 'after_claim':
+    def receive_abort(self, request):
+        super().receive_abort(request)
+        if WINDOW == 'after_receive':
+            os._exit(70)
+
+    def claim_abort(self, request, *, attempt_id, lease_ms):
+        claim = super().claim_abort(request, attempt_id=attempt_id, lease_ms=lease_ms)
+        if WINDOW == 'after_claim':
             os._exit(71)
-        return result
+        return claim
+
+    def record_abort_dispatch(self, result):
+        if WINDOW == 'after_outcome_lost':
+            os._exit(73)
+        return super().record_abort_dispatch(result)
 
 class CrashEngine:
     def abort(self, intent, *, reason, wait_timeout_ms):
         Path(os.environ['SN_MARKER']).write_text(intent.identity.submit_intent_id)
-        os._exit(72)
+        if WINDOW == 'after_accept':
+            os._exit(72)
+        return AbortOutcome(observed_at=datetime.now(UTC),
+                            engine_request_id=intent.engine_request_id,
+                            acknowledgement=AbortAcknowledgement.ABORTED)
 
 conninfo = make_conninfo(os.environ['SN_DB'], user=os.environ['SN_ROLE'],
                          password='synthetic_foundation_test')
@@ -826,52 +886,143 @@ service.abort(AbortExecutionRequest('intent-a', 'operation-test', 'attempt-alt',
         SN_ROLE=foundation.gateway_role,
         SN_SCHEMA=foundation.database.schema,
         SN_LOCK=str(tmp_path),
-        SN_MARKER=str(marker),
+        SN_MARKER=str(accept_log),
         SN_CRASH_WINDOW=crash_window,
     )
     result = subprocess.run(
         [sys.executable, "-c", script], env=env, capture_output=True, timeout=15
     )
-    assert result.returncode == (71 if crash_window == "after_claim" else 72), (
-        result.stderr.decode()
+    expected_code = {
+        "after_receive": 70,
+        "after_claim": 71,
+        "after_accept": 72,
+        "after_outcome_lost": 73,
+    }[crash_window]
+    assert result.returncode == expected_code, result.stderr.decode()
+    engine_ran = crash_window in ("after_accept", "after_outcome_lost")
+    assert accept_log.exists() is engine_ran
+    if not engine_ran:
+        assert dispatch_row(foundation)["dispatch_attempt_id"] is not None or crash_window == (
+            "after_receive"
+        )
+    # Simulate the bounded lease expiring; the retry itself is decided from durable
+    # facts, not from the memory of the process that crashed.
+    foundation.database.query(
+        "UPDATE gateway_abort_intents SET dispatch_deadline_at_us=dispatch_started_at_us + 1 "
+        "WHERE submit_intent_id=%s AND dispatch_attempt_id IS NOT NULL",
+        (INTENT_ID,),
     )
-    assert marker.exists() is (crash_window == "after_accept")
 
-    class SafeRecovery:
+    class IdempotentAbort:
+        """The same original identity is accepted at most once, however often it is sent."""
+
         def __init__(self) -> None:
-            self.calls = 0
+            self.intents: list[SubmissionIntent] = []
 
-        def recover_abort(
+        def abort(
             self, intent: SubmissionIntent, *, reason: str, wait_timeout_ms: int
         ) -> AbortOutcome:
             assert intent.identity == live.request.identity
             assert intent.request_digest == live.request.request_digest
             assert intent.engine_request_id is not None
             assert (reason, wait_timeout_ms) == ("client_cancelled", 1000)
-            self.calls += 1
-            # This synthetic durable adapter either finds the original acceptance
-            # or idempotently creates it under the same immutable identity.
-            if marker.exists():
-                assert marker.read_text() == intent.identity.submit_intent_id
-            else:
-                marker.write_text(intent.identity.submit_intent_id)
-            return AbortOutcome(observed_at=datetime.now(UTC))
-
-    from datetime import UTC, datetime
+            self.intents.append(intent)
+            accepted = accept_log.read_text().splitlines() if accept_log.exists() else []
+            if intent.identity.submit_intent_id not in accepted:
+                accept_log.write_text(
+                    "\n".join([*accepted, intent.identity.submit_intent_id]) + "\n"
+                )
+            return AbortOutcome(
+                observed_at=datetime.now(UTC),
+                engine_request_id=intent.engine_request_id,
+                acknowledgement=AbortAcknowledgement.ABORTED,
+            )
 
     owner = ProcessIngressOwnership(tmp_path, node_id="host-test", gateway_id="gateway-test")
-    safe = SafeRecovery()
+    engine = IdempotentAbort()
     try:
         service = ExecutionAbortService(
             ingress=GatewayIngress(owner),
             ledger=live.ledger,
-            abort=live.engine,
+            abort=engine,
             durable_abort_enabled=True,
-            recovery=safe,
         )
-        service.recover_abort(live.abort_request)
-        assert safe.calls == 1 and marker.read_text() == INTENT_ID
+        service.recover_abort(original_abort_request(foundation, live.abort_request))
+        assert len(engine.intents) == 1
+        assert accept_log.read_text().splitlines() == [INTENT_ID]
+        row = dispatch_row(foundation)
+        assert row["dispatch_outcome"] == "acknowledged"
+        assert row["dispatch_attempt_id"] != "abort-unknown"
+        assert row["dispatch_attempts"] == (1 if crash_window == "after_receive" else 2)
         current = live.ledger.get(INTENT_ID)
-        assert current is not None and current.execution_state is ExecutionState.UNKNOWN_QUARANTINED
+        assert current is not None
+        assert current.execution_state is ExecutionState.UNKNOWN_QUARANTINED
+        executions = foundation.database.query(
+            "SELECT count(*) AS n FROM submit_intents WHERE submit_intent_id=%s", (INTENT_ID,)
+        )[0]["n"]
+        assert executions == 1
     finally:
         owner.close()
+
+
+def test_repeated_dispatch_records_the_verified_stop_once(
+    foundation: Foundation, live: LiveAbort
+) -> None:
+    """A decided abort ends the receipt: the same stop evidence is never recorded twice."""
+    evidence = evidence_for(foundation, submit_intent_id=INTENT_ID)
+    live.engine.script_outcome(
+        AbortOutcome(
+            observed_at=datetime.now(UTC),
+            evidence=evidence,
+            acknowledgement=AbortAcknowledgement.ABORTED,
+        )
+    )
+    first = live.service().abort(live.abort_request)
+    assert first is not None and first.intent.execution_state is ExecutionState.ABORTED
+    row = dispatch_row(foundation)
+    assert row["dispatch_outcome"] == "acknowledged"
+    assert (
+        foundation.database.query(
+            "SELECT count(*) AS n FROM execution_stop_evidence WHERE submit_intent_id=%s",
+            (INTENT_ID,),
+        )[0]["n"]
+        == 1
+    )
+    # A later caller holding the same original receipt has no dispatch authority.
+    second = live.service().abort(live.abort_request)
+    assert second is not None and second.intent.execution_state is ExecutionState.ABORTED
+    assert len(live.engine.calls) == 1
+    assert (
+        foundation.database.query(
+            "SELECT count(*) AS n FROM execution_stop_evidence WHERE submit_intent_id=%s",
+            (INTENT_ID,),
+        )[0]["n"]
+        == 1
+    )
+    assert (
+        foundation.database.query(
+            "SELECT count(*) AS n FROM submit_intents WHERE submit_intent_id=%s", (INTENT_ID,)
+        )[0]["n"]
+        == 1
+    )
+
+
+def test_recovery_refuses_a_receipt_recorded_against_another_generation(
+    foundation: Foundation, live: LiveAbort
+) -> None:
+    """A receipt whose origin no longer matches the authority is never sent again."""
+    live.ledger.receive_abort(live.abort_request)
+    foundation.database.query(
+        "UPDATE gateway_abort_intents SET instance_generation=instance_generation + 1 "
+        "WHERE submit_intent_id=%s",
+        (INTENT_ID,),
+    )
+    drifted = original_abort_request(foundation, live.abort_request)
+    result = live.service().recover_abort(drifted)
+    assert result is not None and result.intent.execution_state is ExecutionState.EXECUTING
+    assert live.engine.calls == []
+    row = dispatch_row(foundation)
+    assert row["dispatch_outcome"] == "rejected_fenced" and row["dispatch_attempts"] == 1
+    # The refusal is durable: no later attempt can resend this receipt.
+    live.service().recover_abort(drifted)
+    assert live.engine.calls == []

@@ -11,7 +11,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 
-from speechnexus_gateway.domain.abort_intent import AbortExecutionRequest
+from speechnexus_gateway.domain.abort_intent import (
+    AbortDispatchClaim,
+    AbortDispatchResult,
+    AbortExecutionRequest,
+)
 from speechnexus_gateway.domain.command_redaction import (
     AuthorizedCommandRedaction,
     CommandRedactionResult,
@@ -27,6 +31,7 @@ from speechnexus_gateway.domain.recovery import (
     MarkExecutionUnknown,
 )
 from speechnexus_gateway.domain.submission import (
+    AbortAcknowledgement,
     DispatchResult,
     EngineObservedState,
     ExecutionErrorCode,
@@ -62,13 +67,25 @@ class AbortOutcome:
 
     ``evidence`` carries the two release confirmations only when the adapter itself
     observed them. An unconfirmed attempt reports no evidence: the execution keeps
-    holding capacity instead of being reported as stopped.
+    holding capacity instead of being reported as stopped. ``acknowledgement`` is the
+    adapter's own answer about the original identity: a decided answer ends the
+    retries, ``UNKNOWN`` keeps the original intent due for another bounded attempt.
     """
 
     observed_at: datetime
     evidence: VerifiedStopEvidence | None = None
     error_code: ExecutionErrorCode | None = None
     engine_request_id: str | None = None
+    acknowledgement: AbortAcknowledgement = AbortAcknowledgement.UNKNOWN
+
+    def __post_init__(self) -> None:
+        if self.acknowledgement is AbortAcknowledgement.UNKNOWN and self.evidence is not None:
+            raise ValueError("an undecided abort answer cannot carry stop evidence")
+        if (
+            self.acknowledgement is AbortAcknowledgement.ALREADY_TERMINAL
+            and self.engine_request_id is None
+        ):
+            raise ValueError("an already-terminal answer requires the original request identity")
 
     @property
     def verified_stop(self) -> bool:
@@ -143,24 +160,16 @@ class EngineObservationPort(Protocol):
 class EngineAbortPort(Protocol):
     """Requests engine abort for one issued identity within the caller's bounded wait.
 
-    An implementation must not synthesize stop evidence, not treat its own transport
+    Repeating the call for the same issued identity is idempotent: it must not create
+    a second resource effect and must answer with a decidable acknowledgement
+    (``ABORTED`` or ``ALREADY_TERMINAL``) when the engine knows the identity, so a
+    crash before the local record is retried instead of being guessed. An
+    implementation must not synthesize stop evidence, not treat its own transport
     timeout, disconnect or a "not found" answer as release, and not exceed the wait it
     was given. Unconfirmed work stays quarantined and keeps holding capacity.
     """
 
     def abort(
-        self, intent: SubmissionIntent, *, reason: str, wait_timeout_ms: int
-    ) -> AbortOutcome: ...
-
-
-class AbortRecoveryPort(Protocol):
-    """Explicitly qualified original-identity recovery after an ambiguous abort.
-
-    Implementations must query the original request or guarantee idempotent replay
-    across process restarts; ordinary abort support alone does not confer this capability.
-    """
-
-    def recover_abort(
         self, intent: SubmissionIntent, *, reason: str, wait_timeout_ms: int
     ) -> AbortOutcome: ...
 
@@ -241,11 +250,24 @@ class ExecutionFactLedger(SubmissionLedger, ExecutionRecoveryLedger, Protocol):
 
 @runtime_checkable
 class DurableAbortLedger(Protocol):
-    """Optional durable abort capability, distinct from ordinary execution facts."""
+    """Optional durable abort capability, distinct from ordinary execution facts.
+
+    ``claim_abort` grants at most one bounded lease per receipt: a second caller inside
+    a live lease gets no authority, and the same caller may claim again only after the
+    recorded deadline. ``record_abort_dispatch` writes the outcome of the attempt that
+    produced it; ``reject_abort` records a refusal to resend when the authoritative
+    execution no longer matches the receipt.
+    """
 
     def receive_abort(self, request: AbortExecutionRequest) -> None: ...
 
-    def claim_abort(self, request: AbortExecutionRequest) -> SubmissionIntent | None: ...
+    def claim_abort(
+        self, request: AbortExecutionRequest, *, attempt_id: str, lease_ms: int
+    ) -> AbortDispatchClaim | None: ...
+
+    def record_abort_dispatch(self, result: AbortDispatchResult) -> bool: ...
+
+    def reject_abort(self, request: AbortExecutionRequest, *, attempt_id: str) -> bool: ...
 
 
 class ExecutionQueryPort(Protocol):

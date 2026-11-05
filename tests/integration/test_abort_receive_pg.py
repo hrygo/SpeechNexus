@@ -661,3 +661,217 @@ def test_missing_or_corrupt_original_document_is_never_received(
         live.service().abort(live.abort_request)
     assert receipt_row(foundation) == []
     assert live.ledger.claims == 0 and live.engine.calls == []
+
+
+def test_due_abort_survives_restart_and_recovers_original(live: LiveAbort) -> None:
+    from speechnexus_gateway.application.recover_aborts import AbortRecoveryService
+
+    live.ledger.receive_abort(live.abort_request)
+    recovery = AbortRecoveryService(ingress=live.ingress, ledger=live.ledger, abort=live.service())
+    assert recovery.sweep(limit=1) == 1
+    assert len(live.engine.calls) == 1
+    assert recovery.sweep(limit=1) == 0
+    current = live.ledger.get(INTENT_ID)
+    assert current is not None and current.execution_state is ExecutionState.UNKNOWN_QUARANTINED
+
+
+def test_due_claimed_abort_stays_unknown_without_safe_adapter(live: LiveAbort) -> None:
+    from speechnexus_gateway.application.recover_aborts import AbortRecoveryService
+
+    live.ledger.receive_abort(live.abort_request)
+    assert live.ledger.claim_abort(live.abort_request) is not None
+    recovery = AbortRecoveryService(ingress=live.ingress, ledger=live.ledger, abort=live.service())
+    assert recovery.sweep(limit=1) == 1
+    assert live.engine.calls == []
+    current = live.ledger.get(INTENT_ID)
+    assert current is not None and current.execution_state is ExecutionState.UNKNOWN_QUARANTINED
+
+
+def test_competing_due_scans_advance_one_receipt_once(
+    live: LiveAbort, foundation: Foundation
+) -> None:
+    live.ledger.receive_abort(live.abort_request)
+    db = foundation.database
+    blocker = db.blocker()
+    try:
+        blocker.execute(
+            "SELECT submit_intent_id FROM gateway_abort_intents "
+            "WHERE submit_intent_id=%s FOR UPDATE",
+            (INTENT_ID,),
+        )
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            futures = [
+                workers.submit(
+                    live.ledger.take_due_aborts,
+                    gateway_id="gateway-test",
+                    host_node_id="host-test",
+                    limit=1,
+                )
+                for _ in range(2)
+            ]
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                count = db.query(
+                    "SELECT count(*) AS n FROM pg_stat_activity "
+                    "WHERE usename=%s AND cardinality(pg_blocking_pids(pid)) > 0",
+                    (foundation.gateway_role,),
+                )[0]["n"]
+                if count == 2:
+                    break
+                time.sleep(0.01)
+            else:
+                pytest.fail("two independent queue updates did not wait on the receipt lock")
+            blocker.commit()
+            results = [future.result(timeout=5) for future in futures]
+        assert sorted(len(result) for result in results) == [0, 1]
+        assert next(result[0] for result in results if result) == live.abort_request
+    finally:
+        blocker.close()
+
+
+def test_due_order_does_not_starve_old_retry_behind_new_receipt(
+    live: LiveAbort, foundation: Foundation
+) -> None:
+    live.ledger.receive_abort(live.abort_request)
+    other_identity = replace(
+        live.request.identity,
+        submit_intent_id="intent-z",
+        lease_id="lease-alt-stage-alt",
+        stage_id="stage-alt",
+        fencing_token=2,
+    )
+    other_request = SubmitRequest(
+        other_identity, live.request.command, live.request.output_stream_id
+    )
+    sender = ScriptedEngine()
+    SubmitExecutionService(
+        ledger=live.ledger, ingress=live.ingress, dispatch=sender, observation=sender
+    ).submit(other_request)
+    other_abort = AbortExecutionRequest(
+        "intent-z",
+        other_identity.operation_id,
+        other_identity.attempt_id,
+        other_identity.fencing_token,
+        "client_cancelled",
+        1000,
+    )
+    live.ledger.receive_abort(other_abort)
+    db = foundation.database
+    now_us = int(time.time() * 1_000_000)
+    db.query(
+        "UPDATE gateway_abort_intents SET next_check_at_us=%s WHERE submit_intent_id=%s",
+        (now_us - 10_000_000, INTENT_ID),
+    )
+    db.query(
+        "UPDATE gateway_abort_intents SET received_at_us=%s WHERE submit_intent_id=%s",
+        (now_us - 1_000_000, "intent-z"),
+    )
+    candidates = live.ledger.take_due_aborts(
+        gateway_id="gateway-test", host_node_id="host-test", limit=1
+    )
+    assert candidates == [live.abort_request]
+
+
+@pytest.mark.parametrize("crash_window", ["after_claim", "after_accept"])
+def test_process_exit_preserves_original_abort_for_safe_recovery(
+    live: LiveAbort, foundation: Foundation, tmp_path: Path, crash_window: str
+) -> None:
+    import os
+    import subprocess
+    import sys
+
+    from speechnexus_gateway.domain.ports import AbortOutcome
+
+    # The fixture's process must relinquish the actual lifetime lock before a
+    # separate gateway process can own the same node and gateway identity.
+    live.ingress._ownership.close()  # type: ignore[attr-defined]
+    marker = tmp_path / "synthetic-engine-accepted"
+    script = """
+import os
+from pathlib import Path
+from psycopg.conninfo import make_conninfo
+from speechnexus_gateway.application.abort_execution import ExecutionAbortService
+from speechnexus_gateway.application.ingress import GatewayIngress
+from speechnexus_gateway.domain.abort_intent import AbortExecutionRequest
+from speechnexus_gateway.infrastructure.postgres_pool import gateway_pool
+from speechnexus_gateway.infrastructure.process_ownership import ProcessIngressOwnership
+from speechnexus_gateway.infrastructure.submit_postgres import PostgresSubmissionLedger
+
+class CrashLedger(PostgresSubmissionLedger):
+    def claim_abort(self, request):
+        result = super().claim_abort(request)
+        if os.environ['SN_CRASH_WINDOW'] == 'after_claim':
+            os._exit(71)
+        return result
+
+class CrashEngine:
+    def abort(self, intent, *, reason, wait_timeout_ms):
+        Path(os.environ['SN_MARKER']).write_text(intent.identity.submit_intent_id)
+        os._exit(72)
+
+conninfo = make_conninfo(os.environ['SN_DB'], user=os.environ['SN_ROLE'],
+                         password='synthetic_foundation_test')
+pool = gateway_pool(conninfo, schema=os.environ['SN_SCHEMA'])
+pool.open()
+owner = ProcessIngressOwnership(Path(os.environ['SN_LOCK']), node_id='host-test',
+                                gateway_id='gateway-test')
+service = ExecutionAbortService(ingress=GatewayIngress(owner), ledger=CrashLedger(pool),
+                                abort=CrashEngine(), durable_abort_enabled=True)
+service.abort(AbortExecutionRequest('intent-a', 'operation-test', 'attempt-alt', 1,
+                                    'client_cancelled', 1000))
+"""
+    env = os.environ.copy()
+    env.update(
+        SN_DB=foundation.database.url,
+        SN_ROLE=foundation.gateway_role,
+        SN_SCHEMA=foundation.database.schema,
+        SN_LOCK=str(tmp_path),
+        SN_MARKER=str(marker),
+        SN_CRASH_WINDOW=crash_window,
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script], env=env, capture_output=True, timeout=15
+    )
+    assert result.returncode == (71 if crash_window == "after_claim" else 72), (
+        result.stderr.decode()
+    )
+    assert marker.exists() is (crash_window == "after_accept")
+
+    class SafeRecovery:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def recover_abort(
+            self, intent: SubmissionIntent, *, reason: str, wait_timeout_ms: int
+        ) -> AbortOutcome:
+            assert intent.identity == live.request.identity
+            assert intent.request_digest == live.request.request_digest
+            assert intent.engine_request_id is not None
+            assert (reason, wait_timeout_ms) == ("client_cancelled", 1000)
+            self.calls += 1
+            # This synthetic durable adapter either finds the original acceptance
+            # or idempotently creates it under the same immutable identity.
+            if marker.exists():
+                assert marker.read_text() == intent.identity.submit_intent_id
+            else:
+                marker.write_text(intent.identity.submit_intent_id)
+            return AbortOutcome(observed_at=datetime.now(UTC))
+
+    from datetime import UTC, datetime
+
+    owner = ProcessIngressOwnership(tmp_path, node_id="host-test", gateway_id="gateway-test")
+    safe = SafeRecovery()
+    try:
+        service = ExecutionAbortService(
+            ingress=GatewayIngress(owner),
+            ledger=live.ledger,
+            abort=live.engine,
+            durable_abort_enabled=True,
+            recovery=safe,
+        )
+        service.recover_abort(live.abort_request)
+        assert safe.calls == 1 and marker.read_text() == INTENT_ID
+        current = live.ledger.get(INTENT_ID)
+        assert current is not None and current.execution_state is ExecutionState.UNKNOWN_QUARANTINED
+    finally:
+        owner.close()

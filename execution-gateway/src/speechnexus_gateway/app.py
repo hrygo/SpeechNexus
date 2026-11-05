@@ -20,10 +20,12 @@ from speechnexus_gateway.application.readiness import (
     ReadinessProbe,
     ReadinessService,
 )
+from speechnexus_gateway.application.recover_aborts import AbortRecoveryService
 from speechnexus_gateway.application.recover_executions import ExecutionRecoveryService
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
 from speechnexus_gateway.application.tts_configuration_evidence import TtsConfigurationEvidence
 from speechnexus_gateway.domain.file_execution import FileExecutionLedger, FileExecutionRuntime
+from speechnexus_gateway.domain.ports import AbortRecoveryPort
 from speechnexus_gateway.file_speech_runtime import load_file_speech_configuration
 from speechnexus_gateway.infrastructure.abort_authority import verify_abort_authority
 from speechnexus_gateway.infrastructure.execution_reader import (
@@ -250,6 +252,7 @@ def create_app(
     instance_drain: InstanceDrainService | None = None,
     submit_execution: SubmitExecutionService | None = None,
     abort_execution: ExecutionAbortService | None = None,
+    abort_recovery: AbortRecoveryPort | None = None,
     file_execution_factory: Callable[[GatewayIngress, FileExecutionLedger], FileExecutionRuntime]
     | None = None,
 ) -> FastAPI:
@@ -262,6 +265,8 @@ def create_app(
         raise ValueError("inject both engine submit and abort services, or neither")
     if submit_execution is not None and not resolved_settings.execution_control_enabled:
         raise ValueError("injected execution control still requires explicit control configuration")
+    if abort_recovery is not None and file_execution_factory is None:
+        raise ValueError("qualified abort recovery requires an explicit file execution factory")
     if instance_drain is not None and not resolved_settings.execution_control_enabled:
         raise ValueError("injected execution control still requires explicit control configuration")
     if barrier_control is not None and resolved_settings.recovery_config_file is not None:
@@ -336,7 +341,14 @@ def create_app(
                     ledger=ledger,
                     abort=runtime,
                     durable_abort_enabled=ledger.durable_abort_enabled,
+                    recovery=abort_recovery,
                 )
+                if worker is not None and ledger.durable_abort_enabled:
+                    worker.configure_abort(
+                        AbortRecoveryService(
+                            ingress=ingress, ledger=ledger, abort=app.state.abort_execution
+                        )
+                    )
             if worker is not None:
                 worker.start()
             yield

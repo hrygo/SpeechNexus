@@ -1,7 +1,7 @@
 """Serialize local engine sends with fencing, without holding database transactions."""
 
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field
 from threading import Lock
 
@@ -56,6 +56,10 @@ class GatewayIngress:
     def check_ownership(self) -> None:
         with self._ownership.hold():
             pass
+
+    def recovery_hold(self) -> AbstractContextManager[None]:
+        """Keep process ownership during a bounded durable recovery pass."""
+        return self._ownership.hold()
 
     def enforced_minimum(self, pool_id: str) -> int:
         """The lowest token this process currently rejects for one pool, without sending.

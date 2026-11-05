@@ -1570,15 +1570,20 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/technical-blueprint.md"
       ],
-      "implementation": "预设草稿分配及固定 revision 读取已有实现；发布、激活和公共列表尚未交付。",
-      "integration": "完整有效配置解析和业务消费者接线仍须按当前契约核验。",
+      "implementation": "发布/激活已原子化：单事务写入不可变发布记录（含校验摘要与权威摘要）、切换家族指针并保存原始结果；公共按 revision 读取与 v1 列表保持原形状，新增 v2 已发布列表（可空 current_revision，PR #419）；迁移 0033_profile_publications 链在 0032 之后；intent 表由 BEFORE UPDATE 触发器保证不可变。发布需受信校验报告源，未注册时 fail-closed。",
+      "integration": "公共读取与管理端激活已接 HTTP；真实引擎按已发布指针执行、部署拓扑与受信报告源的端到端发布路径未验。",
       "verification": "草稿组件证据不代表预设发布、激活或回滚已验收。",
-      "gap": "完整有效配置解析和业务消费者接线仍须按当前契约核验。 草稿组件证据不代表预设发布、激活或回滚已验收。",
+      "gap": "真实 TTS 使用已发布指针、受信校验报告源生产接入、部署与多节点未验；同目标重复激活回执为非阻塞 P2。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/da144a531e3b2edebc9a2409dcade4f9c232ff17/docs/components/profile-drafts.md",
           "label": "预设草稿及边界",
           "note": "固定 revision 草稿的实现范围及未交付生命周期"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/419",
+          "label": "Profile 发布/激活 CAS 与 v2 列表",
+          "note": "隔离 PG 集成 8 passed；真实引擎与部署未验"
         }
       ],
       "issues": [

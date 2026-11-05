@@ -235,6 +235,9 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
             "speech_profile_revisions",
             "speech_profile_commands",
             "speech_profile_lifecycle_intents",
+            # 0033: atomic profile publication/current heads and original results.
+            "speech_profile_publications",
+            "speech_profile_lifecycle_results",
             "speech_pronunciation_families",
             "speech_pronunciation_revisions",
             "speech_pronunciation_commands",

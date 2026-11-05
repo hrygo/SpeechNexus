@@ -5,11 +5,28 @@ request summary, lifecycle state and result reference. ``succeeded`` cannot exis
 without a published artifact reference, and no other state may carry one.
 """
 
+from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
+    job_cancellation_fence_grants,
+)
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
+from speechnexus_backend.speech.infrastructure.public_job_cancellation_schema import (
+    public_job_cancellation_grants,
+)
+from speechnexus_backend.speech.infrastructure.public_job_submission_schema import (
+    SUBMISSIONS,
+)
 
 JOBS = "speech_jobs"
 EVENTS = "speech_job_events"
-STATES = ("pending", "running", "succeeded", "failed", "cancelled", "expired")
+STATES = (
+    "pending",
+    "running",
+    "cancelling",
+    "succeeded",
+    "failed",
+    "cancelled",
+    "expired",
+)
 
 PUBLIC_JOB_DDL = (
     f"""CREATE TABLE {JOBS} (
@@ -20,7 +37,8 @@ PUBLIC_JOB_DDL = (
         request_digest VARCHAR(71) COLLATE "C" NOT NULL,
         idempotency_key_digest VARCHAR(71) COLLATE "C",
         state VARCHAR(16) COLLATE "C" NOT NULL DEFAULT 'pending'
-            CHECK (state IN ('pending', 'running', 'succeeded', 'failed', 'cancelled', 'expired')),
+            CHECK (state IN ('pending', 'running', 'cancelling', 'succeeded',
+                             'failed', 'cancelled', 'expired')),
         status_version BIGINT NOT NULL DEFAULT 1 CHECK (status_version >= 1),
         result_json TEXT
             CHECK (result_json IS NULL OR OCTET_LENGTH(result_json) BETWEEN 2 AND 8192),
@@ -38,7 +56,8 @@ PUBLIC_JOB_DDL = (
             REFERENCES {JOBS} (job_id) ON DELETE RESTRICT,
         event_seq BIGINT NOT NULL CHECK (event_seq >= 0),
         state VARCHAR(16) COLLATE "C" NOT NULL
-            CHECK (state IN ('pending', 'running', 'succeeded', 'failed', 'cancelled', 'expired')),
+            CHECK (state IN ('pending', 'running', 'cancelling', 'succeeded',
+                             'failed', 'cancelled', 'expired')),
         occurred_at_us BIGINT NOT NULL
             CHECK (occurred_at_us BETWEEN 0 AND 253402300799999999),
         PRIMARY KEY (job_id, event_seq)
@@ -57,4 +76,7 @@ def public_job_grants(schema: str, role: str) -> tuple[str, ...]:
         f"GRANT UPDATE (state, status_version, result_json, error_code, updated_at_us) "
         f"ON {prefix}{JOBS} TO {target}",
         f"GRANT SELECT, INSERT ON {prefix}{EVENTS} TO {target}",
+        f"GRANT SELECT ON {prefix}{SUBMISSIONS} TO {target}",
+        *public_job_cancellation_grants(schema, role),
+        *job_cancellation_fence_grants(schema, role),
     )

@@ -378,9 +378,33 @@ export interface paths {
     put?: never;
     /**
      * Request idempotent job cancellation
-     * @description Returns 202 while the cancellation is being confirmed and 200 when the
-     *     job is already terminal. A cancellation request is not stop evidence;
-     *     `cleanup_state` reports the actual resource state.
+     * @description Durably accepts one cancellation intent for the Job and binds the original
+     *     operation/attempt identity. It never submits a new execution, changes
+     *     budgets or meters, or deletes execution/fencing evidence.
+     *
+     *     An accepted cancellation on a Job that may have an execution returns 202
+     *     with `status: cancelling` and `cleanup_state: pending`; it is not stop
+     *     evidence. A pending Job with no execution closes directly as 200
+     *     `cancelled`, while a Job whose execution may exist closes only after
+     *     reconciliation proves there is no runnable execution or records verified
+     *     stop evidence. A repeated request then returns 200 with
+     *     the same durable `cancellation_requested_at` and the authoritative terminal
+     *     status. A Job that was already terminal when first requested returns 200
+     *     with that status and `accepted: false`; it is never revived or rewritten.
+     *
+     *     A terminal Job whose execution has not confirmed stop reports 409
+     *     `execution_cleanup_pending`; it is neither cancelled nor released. The
+     *     same Idempotency-Key replays the original acceptance and current Job state;
+     *     reusing that key for another Job is 409 `idempotency_conflict`. Unknown
+     *     Jobs and Jobs outside the caller's workspace are 404.
+     *
+     *     If acceptance commits before the gateway creates an execution, the gateway
+     *     refuses the submit with `gateway_barrier_fenced` and no runnable execution
+     *     exists. If a dispatcher observed the accepted cancellation before submitting,
+     *     that observation is persisted. The Job closes 200 `cancelled` from such a
+     *     no-execution fact (including a gateway 404 only together with the persisted
+     *     dispatcher observation) or from verified stop evidence; a missing execution
+     *     alone is never treated as a stop.
      */
     post: operations["cancelJob"];
     delete?: never;
@@ -1930,10 +1954,21 @@ export interface components {
     };
     JobCancellation: {
       job_id: components["schemas"]["Identifier"];
+      /**
+       * @description True when this Job has a durably accepted cancellation intent. False
+       *     when the request found the Job already terminal: a durable terminal
+       *     receipt is still recorded for this idempotency key, but no cancellation
+       *     is accepted and no state is written. A previously accepted value never
+       *     becomes false on replay.
+       */
       accepted: boolean;
       status: components["schemas"]["JobStatus"];
       cleanup_state: components["schemas"]["CleanupState"];
-      /** Format: date-time */
+      /**
+       * Format: date-time
+       * @description First durable acceptance time for this Job. Every replay preserves it;
+       *     it is not stop time, engine time or resource release time.
+       */
       cancellation_requested_at: string;
       operations: components["schemas"]["OperationReference"][];
     } & unknown;
@@ -3344,6 +3379,20 @@ export interface components {
       };
     };
     /**
+     * @description `execution_cleanup_pending`: the Job is terminal but its original execution
+     *     has not confirmed stop, so it is not reported as cancelled and no capacity
+     *     is released. `idempotency_conflict`: the same key identifies another Job
+     *     cancellation intent.
+     */
+    JobCancellationConflict: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /**
      * @description Configuration changed, idempotency conflict, operation in progress, or cleanup pending.
      *     operation_in_progress requires error.nexus.operation_id for querying the original
      *     execution. response_not_replayable additionally requires error.nexus.receipt and
@@ -4163,7 +4212,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Job already terminal. */
+      /** @description Job already terminal; the terminal receipt is recorded. */
       200: {
         headers: {
           "X-Request-ID"?: components["headers"]["XRequestId"];
@@ -4173,7 +4222,7 @@ export interface operations {
           "application/json": components["schemas"]["JobCancellation"];
         };
       };
-      /** @description Cancellation accepted and awaiting stop evidence. */
+      /** @description Cancellation accepted; reconciliation decides terminal status. */
       202: {
         headers: {
           "Retry-After"?: components["headers"]["RetryAfter"];
@@ -4186,7 +4235,7 @@ export interface operations {
       };
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
-      409: components["responses"]["Conflict"];
+      409: components["responses"]["JobCancellationConflict"];
       503: components["responses"]["ServiceUnavailable"];
     };
   };
@@ -4311,7 +4360,7 @@ export interface operations {
           "application/json": components["schemas"]["OperationCancellation"];
         };
       };
-      /** @description Cancellation accepted and awaiting stop evidence. */
+      /** @description Cancellation accepted; reconciliation decides terminal status. */
       202: {
         headers: {
           "Retry-After"?: components["headers"]["RetryAfter"];

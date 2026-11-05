@@ -6,7 +6,7 @@ import asyncio
 import hashlib
 import time
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
 from speechnexus_backend.speech.domain.job_dispatch import (
@@ -43,6 +43,8 @@ class DispatchStateStore(Protocol):
 
     async def renew(self, claim: ClaimedJob, lease_ms: int) -> ClaimedJob | None: ...
 
+    async def record_cancellation_not_submitted(self, job_id: str, *, observer: str) -> None: ...
+
     async def finish(
         self,
         claim: ClaimedJob,
@@ -69,6 +71,14 @@ class ResultPublisher(Protocol):
     async def publish(
         self, job: DispatchJob, submission: ExecutionSubmission, receipt: Mapping[str, Any]
     ) -> PublishedResult: ...
+
+
+@dataclass(slots=True)
+class _DispatchPhase:
+    """Mutable markers for gateway protocol handling and an actual submit."""
+
+    gateway: bool = False
+    submitted: bool = False
 
 
 class JobDispatcher:
@@ -113,6 +123,9 @@ class JobDispatcher:
         for index, claim in enumerate(claims):
             if should_stop is not None and should_stop():
                 for deferred in claims[index:]:
+                    # The claim precedes a graceful stop; an accepted cancellation
+                    # in that window is still a dispatch that must not submit.
+                    await self._record_not_submitted_if_cancelling(deferred, deferred.job.job_id)
                     batch = batch.count(
                         DispatchResult(deferred.job.job_id, "deferred", "worker_stopping")
                     )
@@ -125,13 +138,28 @@ class JobDispatcher:
         self, claim: ClaimedJob, should_stop: Callable[[], bool] | None
     ) -> DispatchResult:
         job = claim.job
+        phase = _DispatchPhase()
+        try:
+            return await self._dispatch_claimed(claim, should_stop, phase)
+        finally:
+            # Every exit before an actual submit is a dispatch that did not submit.
+            # Observation is idempotent and covers all current/future early returns.
+            if not phase.submitted:
+                await self._record_not_submitted_if_cancelling(claim, job.job_id)
+
+    async def _dispatch_claimed(
+        self,
+        claim: ClaimedJob,
+        should_stop: Callable[[], bool] | None,
+        phase: _DispatchPhase,
+    ) -> DispatchResult:
+        job = claim.job
         if claim.claim_version > self._limits.max_attempts:
             if job.state == "running":
                 return DispatchResult(job.job_id, "unknown", "dispatch_attempts_exhausted")
             return await self._fail(claim, job, "dispatch_attempts_exhausted")
-        if job.state in ("succeeded", "failed"):
+        if job.state in ("cancelling", "succeeded", "failed", "cancelled", "expired"):
             return DispatchResult(job.job_id, "skipped")
-        gateway_phase = False
         try:
             if not job.request_document:
                 raise DispatchRequestUnavailableError
@@ -153,7 +181,13 @@ class JobDispatcher:
             if renewed is None:
                 return DispatchResult(job.job_id, "claim_lost", "claim_lost")
             claim = renewed
-            gateway_phase = True
+            # A cancellation accepted after mark_running must not submit a new
+            # execution. The guard is checked again inside the gateway submit
+            # path by the cancellation confirmer; this closes the local window.
+            current = await self._states.reload(job.job_id)
+            if current.state != "running":
+                return DispatchResult(job.job_id, "claim_lost", "cancellation_pending")
+            phase.gateway = True
             reply = await self._gateway.query(submission.submit_intent_id)
             if reply.outcome == "not_found":
                 renewed = await self._states.renew(claim, self._limits.lease_ms)
@@ -163,20 +197,46 @@ class JobDispatcher:
                 if self._expired(job):
                     return await self._fail(claim, job, "job_timeout")
                 reply = await self._gateway.submit(submission)
-            return await self._follow(claim, job, submission, reply, should_stop)
+                phase.submitted = True
+            return await self._follow(claim, job, submission, reply, should_stop, phase)
         except DispatchRequestUnavailableError:
             return await self._fail(claim, job, "job_request_unavailable")
         except DispatchRejectedError as error:
+            if error.error_code == "gateway_barrier_fenced" and await self._cancelling(job):
+                # The gateway's barrier refused this submit and the Job is already
+                # cancelling: no execution exists. Keep cancelling and let the
+                # reconciliation worker close it from the durable no-execution fact.
+                return DispatchResult(job.job_id, "skipped", "gateway_barrier_fenced")
             return await self._fail(claim, job, error.error_code)
         except DispatchConflictError:
             return DispatchResult(job.job_id, "claim_lost", "claim_lost")
         except DispatchProtocolError:
-            if gateway_phase:
+            if phase.gateway:
                 # An unreadable or mismatched gateway reply never proves failure.
                 return DispatchResult(job.job_id, "unknown", "outcome_unknown")
             return await self._fail(claim, job, "execution_result_invalid")
         except DispatchUnavailableError:
             return DispatchResult(job.job_id, "unknown", "outcome_unknown")
+
+    async def _cancelling(self, job: DispatchJob) -> bool:
+        """Reload because acceptance can commit between the local guard and submit."""
+        if job.state == "cancelling":
+            return True
+        current = await self._states.reload(job.job_id)
+        return current.state == "cancelling"
+
+    async def _record_not_submitted_if_cancelling(self, claim: ClaimedJob, job_id: str) -> None:
+        try:
+            current = await self._states.reload(job_id)
+            if current.state == "cancelling":
+                await self._states.record_cancellation_not_submitted(
+                    job_id, observer=claim.worker_id
+                )
+        except DispatchUnavailableError:
+            # The dispatch result is already decided. A storage outage must not
+            # turn a bounded unknown/claim-lost result into an uncaught worker
+            # failure; without the observation reconciliation cannot settle.
+            return
 
     async def _follow(
         self,
@@ -185,6 +245,7 @@ class JobDispatcher:
         submission: ExecutionSubmission,
         reply: GatewayReply,
         should_stop: Callable[[], bool] | None,
+        phase: _DispatchPhase,
     ) -> DispatchResult:
         submitted = reply.outcome == "status"
         while True:
@@ -206,9 +267,12 @@ class JobDispatcher:
                 if submitted:
                     return DispatchResult(job.job_id, "unknown", "execution_not_found")
                 reply = await self._gateway.submit(submission)
+                phase.submitted = True
                 submitted = reply.outcome == "status"
                 continue
             if reply.outcome == "rejected":
+                if reply.error_code == "gateway_barrier_fenced" and await self._cancelling(job):
+                    return DispatchResult(job.job_id, "skipped", "gateway_barrier_fenced")
                 return await self._fail(claim, job, reply.error_code or "execution_rejected")
             status = reply.status
             if status is None:
@@ -254,6 +318,11 @@ class JobDispatcher:
         if renewed is None:
             return DispatchResult(job.job_id, "claim_lost", "claim_lost")
         claim = renewed
+        # An accepted cancellation forbids publishing a new artifact. The
+        # terminal status guard still runs in the finish transaction.
+        current = await self._states.reload(job.job_id)
+        if current.state != "running":
+            return DispatchResult(job.job_id, "claim_lost", "cancellation_pending")
         published = await self._results.publish(job, submission, receipt.document)
         renewed = await self._states.renew(claim, self._limits.lease_ms)
         if renewed is None:

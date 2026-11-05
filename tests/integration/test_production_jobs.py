@@ -25,6 +25,7 @@ from psycopg_pool import ConnectionPool
 from pymysql.cursors import DictCursor
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
+from tests.support.cancellation_fence_schema import ensure_cancellation_fence_schema
 from tests.support.job_database import MySQLJobTransactions
 from tests.support.migrations import HEAD
 
@@ -135,6 +136,14 @@ def database(request: pytest.FixtureRequest) -> Iterator[JobDatabase]:
         admin: Any = psycopg.connect(url, row_factory=dict_row, autocommit=True)
         admin.execute(f'SET search_path TO "{schema}", pg_catalog')
         admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD 'synthetic_job_test'")
+
+        def admin_query(statement: str) -> list[Any]:
+            cursor = admin.execute(statement)
+            return cast(list[Any], cursor.fetchall()) if cursor.description else []
+
+        # Historical revisions predate the Public Job and cancellation schemas.
+        # Current gateway submit still reads the fence, so align the harness.
+        ensure_cancellation_fence_schema(admin_query, schema=schema, roles=(role,))
         # Base grants come from 0001; the dispatcher set only applies once the
         # admission command tables exist, so it is applied after a full upgrade.
         grants = job_runtime_grants(schema, role)

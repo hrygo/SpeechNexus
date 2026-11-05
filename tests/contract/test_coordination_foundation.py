@@ -15,6 +15,10 @@ from speechnexus_backend.speech.infrastructure.coordination_grants import (
     coordination_runtime_grants,
 )
 from speechnexus_backend.speech.infrastructure.coordination_schema import COORDINATION_DDL
+from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
+    cancellation_reconciliation_grants,
+    gateway_cancellation_fence_grants,
+)
 from speechnexus_backend.speech.infrastructure.job_schema import JOB_DDL
 from speechnexus_backend.speech.infrastructure.runtime_delivery_schema import RUNTIME_DELIVERY_DDL
 
@@ -30,6 +34,22 @@ def test_production_storage_and_dml_owners_match_the_authoritative_matrix() -> N
     assert tables == set(owners)
     assert set(SPEECH_UPDATES) == {table for table, owner in owners.items() if owner == "A"}
     assert set(GATEWAY_UPDATES) == {table for table, owner in owners.items() if owner == "B"}
+
+
+def test_cancellation_fence_gateway_and_worker_column_grants_stay_separate() -> None:
+    gateway = gateway_cancellation_fence_grants("speech", "gateway_runtime")
+    worker = cancellation_reconciliation_grants("speech", "worker_runtime")
+
+    assert (
+        'GRANT SELECT (job_id) ON "speech".speech_job_cancellation_fences TO "gateway_runtime"'
+        in gateway
+    )
+    assert not any("accepted_at_us" in grant or "request_id" in grant for grant in gateway)
+    assert any(
+        "GRANT SELECT (job_id, accepted_at_us, request_id) "
+        'ON "speech".speech_job_cancellation_fences TO "worker_runtime"' in grant
+        for grant in worker
+    )
 
 
 def test_runtime_role_generation_rejects_merged_owners_and_untrusted_sql_names() -> None:

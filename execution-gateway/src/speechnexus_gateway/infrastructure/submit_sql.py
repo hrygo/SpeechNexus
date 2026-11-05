@@ -334,8 +334,15 @@ def create_submit_in_transaction(
     *,
     clock: Callable[[], datetime],
     enforce_binding_barrier: bool = False,
+    cancellation_fence: Callable[[SubmitCursor, SubmissionIdentity], bool] | None = None,
 ) -> SubmissionIntent | None:
-    """Create once, or recover an exact original after waiting for the binding lock."""
+    """Create once, or record that a cancellation fence forbids creation.
+
+    ``cancellation_fence`` must take the same transaction-scoped advisory lock and read the fence
+    through ``cursor``. It is called in this transaction after the submit identity
+    is verified and before any execution-creating insert. A ``True`` answer writes
+    only the terminal ``failed / not_required / gateway_barrier_fenced`` fact.
+    """
     intent.validate_new()
     identity = intent.identity
     if enforce_binding_barrier:
@@ -353,6 +360,14 @@ def create_submit_in_transaction(
         facts,
         sealed_min_fencing_token=_read_sealed_min_fencing_token(cursor, identity),
     )
+    if cancellation_fence is not None and cancellation_fence(cursor, identity):
+        refused = intent.refuse_for_cancellation(at=clock())
+        values = submit_intent_values(refused, request_document)
+        if tuple(values) != SUBMIT_INTENT_INSERT_COLUMNS:
+            raise RuntimeError("submit intent insert columns drifted from the statement")
+        # No output stream head: no execution or audio stream was created.
+        cursor.execute(_INSERT_INTENT, tuple(values.values()))
+        return refused
     verify_submit_eligibility(identity, facts, now=clock())
     values = submit_intent_values(intent, request_document)
     if tuple(values) != SUBMIT_INTENT_INSERT_COLUMNS:

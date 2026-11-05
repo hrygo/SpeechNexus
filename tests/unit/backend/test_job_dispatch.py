@@ -69,6 +69,7 @@ class States:
     def __init__(self, job: DispatchJob) -> None:
         self.jobs = {job.job_id: job}
         self.events: list[tuple[str, int, str]] = []
+        self.not_submitted: list[tuple[str, str]] = []
 
     async def reload(self, job_id: str) -> DispatchJob:
         return self.jobs[job_id]
@@ -86,6 +87,9 @@ class States:
 
     async def renew(self, claim: ClaimedJob, lease_ms: int) -> ClaimedJob:
         return replace(claim, lease_expires_at_us=claim.lease_expires_at_us + lease_ms * 1000)
+
+    async def record_cancellation_not_submitted(self, job_id: str, *, observer: str) -> None:
+        self.not_submitted.append((job_id, observer))
 
     async def finish(
         self,

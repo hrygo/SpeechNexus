@@ -27,6 +27,7 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.pool import NullPool
 from tests.integration.test_production_jobs import REQUEST, JobDatabase
 from tests.integration.test_production_jobs import database as database
+from tests.support.cancellation_fence_schema import ensure_cancellation_fence_schema
 from tests.support.job_database import MySQLJobTransactions
 from tests.support.migrations import HEAD
 
@@ -44,6 +45,9 @@ from speechnexus_backend.speech.infrastructure.execution_release_schema import (
     release_guard_grants,
 )
 from speechnexus_backend.speech.infrastructure.execution_result_schema import EXECUTION_RESULT_DDL
+from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
+    gateway_cancellation_fence_grants,
+)
 from speechnexus_backend.speech.infrastructure.job_schema import job_runtime_grants
 from speechnexus_backend.speech.infrastructure.jobs_sql import JobCursor, create_in_transaction
 from speechnexus_backend.speech.infrastructure.runtime_delivery_schema import RUNTIME_DELIVERY_DDL
@@ -181,7 +185,14 @@ def foundation(database: JobDatabase) -> Iterator[Foundation]:
             else:
                 db.query(f"CREATE USER '{role}'@'%' IDENTIFIED BY 'synthetic_foundation_test'")
             created_roles.append(role)
+        if db.dialect == "postgresql":
+            ensure_cancellation_fence_schema(db.query, schema=db.schema, roles=(roles[0],))
         grants = coordination_runtime_grants(db.schema, speech_role=roles[0], gateway_role=roles[1])
+        if (
+            db.dialect == "postgresql"
+            and db.query("SELECT to_regclass('speech_job_cancellation_fences') AS name")[0]["name"]
+        ):
+            grants = (*grants, *gateway_cancellation_fence_grants(db.schema, roles[1]))
         if db.dialect == "postgresql" and db.query("SELECT version_num FROM alembic_version") == [
             {"version_num": "0012_execution_results"}
         ]:
@@ -297,15 +308,35 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
     # Artifact metadata (0020). Reads go through their own connection; the
     # table stays outside the shared coordination surface.
     artifact_tables = {"speech_artifacts"} if db.dialect == "postgresql" else set()
+    # Public-Job cancellation facts and their private projection/ledger (0034/0035).
+    cancellation_tables = (
+        {
+            "speech_job_cancellations",
+            "speech_job_cancellation_fences",
+            "speech_job_cancellation_not_submitted",
+            "speech_job_cancellation_reconciliations",
+        }
+        if db.dialect == "postgresql"
+        else set()
+    )
     assert binding_tables <= {row["name"] for row in rows}
     assert profile_tables <= {row["name"] for row in rows}
     assert publication_tables <= {row["name"] for row in rows}
     assert artifact_tables <= {row["name"] for row in rows}
-    assert {row["name"] for row in rows} - {
-        "alembic_version",
-        "execution_release_guards",
-    } - asset_tables - profile_tables - binding_tables - publication_tables - artifact_tables == (
-        set(SPEECH_UPDATES) | set(GATEWAY_UPDATES)
+    assert cancellation_tables <= {row["name"] for row in rows}
+    assert (
+        {row["name"] for row in rows}
+        - {
+            "alembic_version",
+            "execution_release_guards",
+        }
+        - asset_tables
+        - profile_tables
+        - binding_tables
+        - publication_tables
+        - artifact_tables
+        - cancellation_tables
+        == (set(SPEECH_UPDATES) | set(GATEWAY_UPDATES))
     )
     if db.dialect == "postgresql":
         # New configuration and publication tables are outside shared coordination grants.

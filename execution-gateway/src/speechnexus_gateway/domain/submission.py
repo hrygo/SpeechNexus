@@ -612,6 +612,38 @@ class SubmissionIntent:
     def __post_init__(self) -> None:
         self.validate()
 
+    @property
+    def refused_before_execution(self) -> bool:
+        """True only for the terminal barrier fact that no execution was created.
+
+        ``gateway_barrier_fenced`` is also the code used for a durable public Job
+        cancellation fence. This terminal shape is written only by
+        :meth:`refuse_for_cancellation`; generic ingress barrier rejections raise
+        before an intent exists.
+        """
+        return (
+            self.execution_state is ExecutionState.FAILED
+            and self.cleanup_state is CleanupState.NOT_REQUIRED
+            and self.error_code is ExecutionErrorCode.GATEWAY_BARRIER_FENCED
+            and self.dispatched_at is None
+            and self.engine_request_id is None
+            and self.stop_evidence_kind is StopEvidenceKind.NONE
+            and self.version == 1
+        )
+
+    def refuse_for_cancellation(self, *, at: datetime) -> SubmissionIntent:
+        """Build the durable terminal fact for a submit the fence refused."""
+        return SubmissionIntent(
+            identity=self.identity,
+            recorded_at=at,
+            updated_at=at,
+            request_digest=self.request_digest,
+            output_stream_id=self.output_stream_id,
+            execution_state=ExecutionState.FAILED,
+            cleanup_state=CleanupState.NOT_REQUIRED,
+            error_code=ExecutionErrorCode.GATEWAY_BARRIER_FENCED,
+        )
+
     def validate_new(self) -> None:
         """create_submit never imports an already observed or cleaned-up execution."""
         if (

@@ -326,6 +326,47 @@ class GatewayExecutionClient:
         payload = await self._send("POST", path, body=body, idempotent=False)
         return self._target_status(payload, target)
 
+    async def abort_intent(
+        self,
+        submit_intent_id: str,
+        *,
+        operation_id: str,
+        attempt_id: str,
+        fencing_token: int,
+        reason: str,
+        wait_timeout_ms: int,
+    ) -> ExecutionStatusResponse:
+        """Persist and recover one public-Job abort against its original identity."""
+        submit_intent_id = _identifier(submit_intent_id)
+        try:
+            request = parse(
+                "AbortExecutionRequest",
+                {
+                    "operation_id": operation_id,
+                    "attempt_id": attempt_id,
+                    "fencing_token": fencing_token,
+                    "reason": reason,
+                    "wait_timeout_ms": wait_timeout_ms,
+                },
+            )
+        except ValueError:
+            raise ValueError("Invalid abort request") from None
+        body = json.dumps(request, separators=(",", ":"), allow_nan=False).encode("utf-8")
+        path = _EXECUTION_PATH + quote(submit_intent_id, safe="") + "/abort-intents"
+        payload = await self._send("POST", path, body=body, idempotent=False)
+        try:
+            response = parse("ExecutionStatusResponse", payload)
+        except ValueError:
+            raise self._invalid_response() from None
+        if (
+            payload.get("submit_intent_id") != submit_intent_id
+            or payload.get("operation_id") != operation_id
+            or payload.get("attempt_id") != attempt_id
+            or payload.get("fencing_token") != fencing_token
+        ):
+            raise self._invalid_response()
+        return response
+
     async def query_disable_target(self, target: DisableExecutionTarget) -> ExecutionStatusResponse:
         """Recover only the authoritative original execution, with full identity checks."""
         path = _EXECUTION_PATH + quote(_identifier(target.submit_intent_id), safe="")

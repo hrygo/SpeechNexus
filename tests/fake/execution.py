@@ -186,7 +186,7 @@ class InMemorySubmissionLedger:
             key=lambda intent: intent.identity.submit_intent_id,
         )[:limit]
 
-    def add(self, intent: SubmissionIntent, *, request_document: str) -> None:
+    def add(self, intent: SubmissionIntent, *, request_document: str) -> SubmissionIntent | None:
         intent.validate_new()
         barrier = self._barriers.get((intent.identity.gateway_id, intent.identity.pool_id))
         if barrier is not None and intent.identity.fencing_token < barrier.min_fencing_token:
@@ -209,6 +209,7 @@ class InMemorySubmissionLedger:
         self._intents[key] = copy.deepcopy(intent)
         self._request_documents[key] = request_document
         self._lease_states.setdefault(intent.identity.lease_id, LeaseState.RESERVED)
+        return None
 
     def record_execution_observation(self, request: RecordExecutionObservation) -> SubmissionIntent:
         key = request.observation.identity.submit_intent_id

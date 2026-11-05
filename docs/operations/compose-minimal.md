@@ -351,6 +351,9 @@ from speechnexus_backend.speech.infrastructure.coordination_grants import (
 from speechnexus_backend.speech.infrastructure.gateway_query_grants import (
     gateway_query_grants, gateway_query_target_grants,
 )
+from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
+    gateway_cancellation_fence_grants,
+)
 from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema import (
     gateway_abort_grants, gateway_binding_barrier_grants,
 )
@@ -419,6 +422,8 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     for statement in asset_runtime_grants(schema, "sn_api"):
         conn.execute(statement)
     for statement in gateway_query_grants(schema, "sn_gateway_query"):
+        conn.execute(statement)
+    for statement in gateway_cancellation_fence_grants(schema, "sn_gateway"):
         conn.execute(statement)
     for statement in gateway_query_target_grants(schema, "sn_gateway"):
         conn.execute(statement)

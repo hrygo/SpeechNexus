@@ -216,6 +216,19 @@
       }
     },
     {
+      "id": "cancel-job-terminal",
+      "schema": "JobCancellation",
+      "valid": true,
+      "value": {
+        "job_id": "job-demo",
+        "accepted": false,
+        "status": "succeeded",
+        "cleanup_state": "complete",
+        "cancellation_requested_at": "2026-10-23T00:00:00Z",
+        "operations": []
+      }
+    },
+    {
       "id": "operation",
       "schema": "Operation",
       "valid": true,

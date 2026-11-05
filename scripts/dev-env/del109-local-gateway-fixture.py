@@ -33,6 +33,9 @@ sys.path.insert(0, str(REPO))
 from speechnexus_backend.speech.infrastructure.coordination_grants import (  # noqa: E402
     coordination_runtime_grants,
 )
+from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (  # noqa: E402
+    gateway_cancellation_fence_grants,
+)
 from speechnexus_gateway.domain.canonical import command_digest  # noqa: E402
 from speechnexus_gateway.domain.submission import SubmissionIdentity, SubmitRequest  # noqa: E402
 
@@ -125,6 +128,8 @@ def main() -> int:
         for statement in coordination_runtime_grants(
             "speech", speech_role="sn_api", gateway_role="sn_gateway"
         ):
+            conn.execute(statement)
+        for statement in gateway_cancellation_fence_grants("speech", "sn_gateway"):
             conn.execute(statement)
 
         now_us = int(time.time() * 1_000_000)

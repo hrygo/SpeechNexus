@@ -2461,7 +2461,8 @@
           "$ref": "#/$defs/Identifier"
         },
         "accepted": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "True when this Job has a durably accepted cancellation intent. False\nwhen the request found the Job already terminal: a durable terminal\nreceipt is still recorded for this idempotency key, but no cancellation\nis accepted and no state is written. A previously accepted value never\nbecomes false on replay.\n"
         },
         "status": {
           "$ref": "#/$defs/JobStatus"
@@ -2471,7 +2472,8 @@
         },
         "cancellation_requested_at": {
           "type": "string",
-          "format": "date-time"
+          "format": "date-time",
+          "description": "First durable acceptance time for this Job. Every replay preserves it;\nit is not stop time, engine time or resource release time.\n"
         },
         "operations": {
           "type": "array",

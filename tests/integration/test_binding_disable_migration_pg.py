@@ -16,6 +16,7 @@ from sqlalchemy.pool import NullPool
 from tests.integration.test_coordination_foundation import Foundation
 from tests.integration.test_coordination_foundation import foundation as foundation
 from tests.integration.test_production_jobs import database as database
+from tests.support.cancellation_fence_schema import ensure_cancellation_fence_schema
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
@@ -42,6 +43,12 @@ def migration_sandbox() -> Iterator[tuple[Config, psycopg.Connection[tuple[objec
             config.attributes["connection"] = connection
             command.upgrade(config, "0024_binding_publish_intents")
         admin.execute(f'SET search_path TO "{schema}", pg_catalog')
+
+        def query(statement: str) -> list[tuple[object, ...]]:
+            cursor = admin.execute(statement)
+            return list(cursor.fetchall()) if cursor.description else []
+
+        ensure_cancellation_fence_schema(query, schema=schema)
         yield config, admin
     finally:
         admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')

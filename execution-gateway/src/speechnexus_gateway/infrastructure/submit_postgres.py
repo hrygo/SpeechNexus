@@ -47,6 +47,9 @@ from speechnexus_gateway.infrastructure.barrier_sql import (
     read_barrier,
     seal_barrier_in_transaction,
 )
+from speechnexus_gateway.infrastructure.cancellation_fence_sql import (
+    cancellation_fence_present,
+)
 from speechnexus_gateway.infrastructure.command_redaction_sql import (
     redact_execution_command_in_transaction,
 )
@@ -236,6 +239,9 @@ class PostgresSubmissionLedger:
                 request_document,
                 clock=cast(_DeadlineCursor, cursor).clock,
                 enforce_binding_barrier=self._enforce_binding_barrier,
+                cancellation_fence=lambda cursor, identity: cancellation_fence_present(
+                    cursor, identity.operation_id
+                ),
             ),
         )
 

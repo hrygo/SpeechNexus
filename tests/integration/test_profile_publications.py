@@ -15,6 +15,7 @@ import psycopg
 import pytest
 from alembic import command as migration
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
 from sqlalchemy import create_engine
@@ -42,6 +43,13 @@ from speechnexus_backend.speech.interfaces.profile_lifecycle import (
 )
 
 pytestmark = pytest.mark.integration
+
+
+def migration_head(config: Config) -> str:
+    """Return the single current head so a new migration never breaks this assertion."""
+    head = ScriptDirectory.from_config(config).get_current_head()
+    assert head is not None
+    return head
 
 
 class SyntheticVerifier:
@@ -455,7 +463,7 @@ def test_repeat_upgrade_and_refused_downgrade_preserve_history(sandbox: Sandbox)
             migration.downgrade(config, "0031_tts_settlement")
         assert s.snapshot() == before
         assert s.admin.execute("SELECT version_num FROM alembic_version").fetchone() == {
-            "version_num": "0033_profile_publications"
+            "version_num": migration_head(config)
         }
     finally:
         engine.dispose()

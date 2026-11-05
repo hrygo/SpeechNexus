@@ -506,10 +506,10 @@
         "docs/architecture/runtime-governance.md",
         "docs/architecture/technical-blueprint.md"
       ],
-      "implementation": "受限模板、预热及代次停止组件存在；分段超时不能证明整个预热动作有硬截止，持续 ready、故障和多代生产资格仍待验收。",
-      "integration": "控制器不共写准入预算，节点可信事实供原事务裁决。",
+      "implementation": "实现已具备：实例 PREPARE 首点锚定的单一 wall-clock 预热截止覆盖镜像检查/创建/启动/inspect、地址选择、全部 attempts 与响应读取，耗尽后保持 warming_up 且零探测零 POST；同代次容器重建继承原截止，动作 READY 或已确认停止/释放或代次变化才清理（PR #418）。控制器重启后截止的持久恢复仍待实现（#420）。",
+      "integration": "采样/热/稳态仍以固定环境的时序证据为准；真实 Docker/GPU/编排、drain/停止链路、多节点拓扑与模板批准语义未验。services/compose 的 readiness 策略不等于预热资格；node-controller QA（RND）切片仍需 90s 首帧证据。",
       "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
-      "gap": "整体预热截止、持续 ready、故障和多代生产资格仍待验证；节点可信事实须由原事务裁决。",
+      "gap": "控制器重启后预热截止丢失（#420）；真实 Docker/GPU/编排与真实引擎预热资格、drain/停止、多节点拓扑、模板批准语义未验。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/node-controller/src/speechnexus_node_controller/application/runtime_control.py",
@@ -520,10 +520,16 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/node-controller/src/speechnexus_node_controller/infrastructure/docker_runtime.py",
           "label": "docker_runtime.py",
           "note": "固定版本包含实例预热与分段超时；不证明整个动作有硬截止。"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/418",
+          "label": "预热动作单一截止",
+          "note": "首点锚定、容器重建继承、零外发；真实环境未验"
         }
       ],
       "issues": [
-        416
+        416,
+        420
       ]
     },
     {

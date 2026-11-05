@@ -47,7 +47,9 @@ class PRAgentReviewWorkflowTests(unittest.TestCase):
             'PR_REVIEWER__ENABLE_REVIEW_LABELS_EFFORT: "false"',
         ):
             self.assertIn(setting, WORKFLOW)
-        self.assertIn("CONFIG__MODEL: openai/glm-5.3-flash", WORKFLOW)
+        self.assertIn("CONFIG__MODEL: openai/muse-spark-1.3-contributor", WORKFLOW)
+        self.assertIn("CONFIG__MODEL_WEAK: openai/muse-spark-1.3-contributor", WORKFLOW)
+        self.assertIn("CONFIG__MODEL_REASONING: openai/muse-spark-1.3-contributor", WORKFLOW)
         self.assertIn("OPENAI__API_BASE: https://opencode.ai/inference/go/openai/v1", WORKFLOW)
         self.assertIn('--pr_url "$PR_URL" review', WORKFLOW)
         self.assertEqual(WORKFLOW.count("docker run"), 1)

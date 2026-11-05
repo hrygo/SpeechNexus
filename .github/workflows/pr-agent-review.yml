@@ -43,10 +43,10 @@ jobs:
           GITHUB__DEPLOYMENT_TYPE: user
           GITHUB__AGENT_LOGIN: github-actions[bot]
           OPENAI__API_BASE: https://opencode.ai/inference/go/openai/v1
-          CONFIG__MODEL: openai/glm-5.3-flash
+          CONFIG__MODEL: openai/muse-spark-1.3-contributor
           CONFIG__FALLBACK_MODELS: "[]"
-          CONFIG__MODEL_WEAK: openai/glm-5.3-flash
-          CONFIG__MODEL_REASONING: openai/glm-5.3-flash
+          CONFIG__MODEL_WEAK: openai/muse-spark-1.3-contributor
+          CONFIG__MODEL_REASONING: openai/muse-spark-1.3-contributor
           CONFIG__CUSTOM_MODEL_MAX_TOKENS: "32000"
           CONFIG__USE_REPO_SETTINGS_FILE: "false"
           CONFIG__USE_GLOBAL_SETTINGS_FILE: "false"

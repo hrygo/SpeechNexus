@@ -33,18 +33,18 @@ class PRAgentReviewWorkflowTests(unittest.TestCase):
 
     def test_explicit_configuration_and_review_only(self):
         for setting in (
-            "CONFIG__FALLBACK_MODELS: '[]'",
-            "CONFIG__USE_REPO_SETTINGS_FILE: 'false'",
-            "CONFIG__USE_GLOBAL_SETTINGS_FILE: 'false'",
-            "CONFIG__ENABLE_PER_DIRECTORY_SETTINGS: 'false'",
-            "CONFIG__REPO_CONTEXT_FILES: '[]'",
-            "CONFIG__PROPAGATE_TOOL_ERRORS: 'true'",
-            "CONFIG__RESTRICTED_MODE: 'true'",
-            "CONFIG__NUM_RETRIES: '0'",
-            "CONFIG__RETRY_SAME_MODEL_ON_TIMEOUT: 'false'",
-            "PR_REVIEWER__REQUIRE_TICKET_ANALYSIS_REVIEW: 'false'",
-            "PR_REVIEWER__ENABLE_REVIEW_LABELS_SECURITY: 'false'",
-            "PR_REVIEWER__ENABLE_REVIEW_LABELS_EFFORT: 'false'",
+            'CONFIG__FALLBACK_MODELS: "[]"',
+            'CONFIG__USE_REPO_SETTINGS_FILE: "false"',
+            'CONFIG__USE_GLOBAL_SETTINGS_FILE: "false"',
+            'CONFIG__ENABLE_PER_DIRECTORY_SETTINGS: "false"',
+            'CONFIG__REPO_CONTEXT_FILES: "[]"',
+            'CONFIG__PROPAGATE_TOOL_ERRORS: "true"',
+            'CONFIG__RESTRICTED_MODE: "true"',
+            'CONFIG__NUM_RETRIES: "0"',
+            'CONFIG__RETRY_SAME_MODEL_ON_TIMEOUT: "false"',
+            'PR_REVIEWER__REQUIRE_TICKET_ANALYSIS_REVIEW: "false"',
+            'PR_REVIEWER__ENABLE_REVIEW_LABELS_SECURITY: "false"',
+            'PR_REVIEWER__ENABLE_REVIEW_LABELS_EFFORT: "false"',
         ):
             self.assertIn(setting, WORKFLOW)
         self.assertIn("CONFIG__MODEL: openai/glm-5.3-flash", WORKFLOW)

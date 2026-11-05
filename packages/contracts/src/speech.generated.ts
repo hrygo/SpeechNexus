@@ -121,7 +121,13 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List published scenario profiles */
+    /**
+     * List published scenario profiles
+     * @description Lists published revisions in stable profile ID / decimal revision order.
+     *     current_revision is the family default pointer, or null when none is active.
+     *     Drafts are excluded. workspace_id is compatibility context, not isolation.
+     *     A cursor identifies the last returned profile/revision; pages are live reads.
+     */
     get: operations["listProfiles"];
     put?: never;
     post?: never;
@@ -142,6 +148,7 @@ export interface paths {
      * Get one immutable scenario profile revision
      * @description Public readers may fetch published, retired, or disabled revisions.
      *     Draft revisions are visible only through the administration API.
+     *     An existing draft returns 409 profile_not_published; absence returns 404.
      */
     get: operations["getProfileRevision"];
     put?: never;
@@ -1131,6 +1138,8 @@ export interface components {
     ProfileSummary: {
       id: components["schemas"]["Identifier"];
       revision: components["schemas"]["Revision"];
+      /** @description Active published family revision; null when no default is active. */
+      current_revision?: components["schemas"]["Revision"] | null;
       display_name: string;
       /** @enum {string} */
       kind: "asr" | "tts" | "duplex";
@@ -3364,6 +3373,16 @@ export interface components {
         "application/json": components["schemas"]["ErrorResponse"];
       };
     };
+    /** @description The public profile path accepts GET only. */
+    ProfileReadMethodNotAllowed: {
+      headers: {
+        Allow: "GET";
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
     /** @description This fixed pronunciation-revision path accepts GET only. */
     PronunciationReadMethodNotAllowed: {
       headers: {
@@ -3716,7 +3735,10 @@ export interface operations {
           "application/json": components["schemas"]["ProfileList"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      405: components["responses"]["ProfileReadMethodNotAllowed"];
       503: components["responses"]["ServiceUnavailable"];
     };
   };
@@ -3744,8 +3766,12 @@ export interface operations {
           "application/json": components["schemas"]["scenario-profile.schema"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["ProfileReadMethodNotAllowed"];
+      409: components["responses"]["Conflict"];
       503: components["responses"]["ServiceUnavailable"];
     };
   };

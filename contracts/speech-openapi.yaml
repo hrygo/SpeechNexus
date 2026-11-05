@@ -291,6 +291,11 @@ paths:
       tags: [profiles]
       operationId: listProfiles
       summary: List published scenario profiles
+      description: |
+        Lists published revisions in stable profile ID / decimal revision order.
+        current_revision is the family default pointer, or null when none is active.
+        Drafts are excluded. workspace_id is compatibility context, not isolation.
+        A cursor identifies the last returned profile/revision; pages are live reads.
       parameters:
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
@@ -306,6 +311,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProfileList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/ProfileReadMethodNotAllowed"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "503":
@@ -318,6 +329,7 @@ paths:
       description: |
         Public readers may fetch published, retired, or disabled revisions.
         Draft revisions are visible only through the administration API.
+        An existing draft returns 409 profile_not_published; absence returns 404.
       parameters:
         - $ref: "#/components/parameters/ProfileIdPath"
         - $ref: "#/components/parameters/RevisionPath"
@@ -332,10 +344,18 @@ paths:
             application/json:
               schema:
                 $ref: "./scenario-profile.schema.json"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/ProfileReadMethodNotAllowed"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
   /v1/nexus/voices:
@@ -1964,6 +1984,18 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
+    ProfileReadMethodNotAllowed:
+      description: The public profile path accepts GET only.
+      headers:
+        Allow:
+          required: true
+          schema:
+            type: string
+            const: GET
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
     PronunciationReadMethodNotAllowed:
       description: This fixed pronunciation-revision path accepts GET only.
       headers:
@@ -2606,6 +2638,11 @@ components:
           $ref: "#/components/schemas/Identifier"
         revision:
           $ref: "#/components/schemas/Revision"
+        current_revision:
+          description: Active published family revision; null when no default is active.
+          oneOf:
+            - $ref: "#/components/schemas/Revision"
+            - type: "null"
         display_name:
           type: string
         kind:

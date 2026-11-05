@@ -405,6 +405,15 @@
       ],
       "operations": ["createProfileRevision", "getProfileRevisionForAdministration"]
     },
+    "profile_public": {
+      "source": "speech-openapi.yaml",
+      "validate": true,
+      "paths": [
+        "/v1/nexus/profiles",
+        "/v1/nexus/profiles/{profile_id}/revisions/{revision}"
+      ],
+      "operations": ["listProfiles", "getProfileRevision"]
+    },
     "profile_lifecycle": {
       "source": "admin-openapi.yaml",
       "validate": true,

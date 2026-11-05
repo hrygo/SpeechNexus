@@ -19,22 +19,69 @@ READ_PATTERN = re.compile(
 )
 
 
+LIFECYCLE = {
+    READ_PATH + "/publications": "publishProfileRevision",
+    READ_PATH + "/activations": "activatePublishedProfileRevision",
+}
+PUBLIC = {
+    "/v1/nexus/profiles": "listProfiles",
+    "/v1/nexus/profiles/{profile_id}/revisions/{revision}": "getProfileRevision",
+}
+
+
+def _matches(template: str, path: str) -> bool:
+    return (
+        re.fullmatch(
+            re.escape(template)
+            .replace(r"\{profile_id\}", r"[^/]+")
+            .replace(r"\{revision\}", r"[^/]+"),
+            path,
+        )
+        is not None
+    )
+
+
+def public_target(path: str) -> tuple[str, str] | None:
+    return next(
+        ((operation, "GET") for template, operation in PUBLIC.items() if _matches(template, path)),
+        None,
+    )
+
+
 def target(path: str) -> tuple[str, str] | None:
     if path == CREATE_PATH:
         return CREATE, "POST"
     if READ_PATTERN.fullmatch(path):
         return READ, "GET"
-    return None
+    return next(
+        (
+            (operation, "POST")
+            for template, operation in LIFECYCLE.items()
+            if _matches(template, path)
+        ),
+        None,
+    )
 
 
 class ProfileIngress(DraftIngress):
     def __init__(self, app: ASGIApp, /, **kwargs: Any) -> None:
-        super().__init__(
+        public = DraftIngress(
             app,
+            prefix="/v1/nexus/profiles",
+            target=public_target,
+            error=ingress_error,
+            create_operation=CREATE,
+            read_operation="getProfileRevision",
+            read_operations=("listProfiles",),
+            **kwargs,
+        )
+        super().__init__(
+            public,
             prefix=PREFIX,
             target=target,
             error=ingress_error,
             create_operation=CREATE,
             read_operation=READ,
+            write_operations=("publishProfileRevision", "activatePublishedProfileRevision"),
             **kwargs,
         )

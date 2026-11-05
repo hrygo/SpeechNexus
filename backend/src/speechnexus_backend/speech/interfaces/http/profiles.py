@@ -95,6 +95,11 @@ def _read(provider: ProfileDrafts, envelope: dict[str, Any], request_id: str) ->
 
 def create_profile_router(get_provider: Callable[[], ProfileDrafts | None]) -> APIRouter:
     router = APIRouter(tags=["profiles"])
+    from speechnexus_backend.speech.interfaces.http.profile_publications import (
+        create_profile_publications_router,
+    )
+
+    router.include_router(create_profile_publications_router(get_provider))
 
     async def handle(request: Request, *, create: bool) -> Response:
         operation, request_id = (CREATE if create else READ), str(request.state.request_id)

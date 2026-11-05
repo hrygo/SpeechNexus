@@ -1,8 +1,9 @@
 # Immutable profile drafts
 
 This A02 unit implements the configuration port and explicitly configured draft
-POST / fixed-revision GET routes. Publication, activation, public profile listing,
-default selection, qualification and historical Job changes remain separate work.
+POST / fixed-revision GET routes. The #415 increment below adds publication /
+activation CAS and public published reads. Effective configuration resolution,
+production qualification and historical Job changes remain separate work.
 C consumes the public contracts; it does not write
 these speech-owned tables. A published profile requires separate real validation
 and lifecycle work.
@@ -220,3 +221,72 @@ default-pointer changes and real validation/qualification remain separate work;
 current requirements are tracked in [P-PROFILES](../prd.md#p-profiles) and
 [P-POLICY](../prd.md#p-policy). The test definitions above describe their intended coverage;
 they do not establish a passing run in the current environment.
+
+
+## Publication / activation CAS (#415)
+
+Migration `0032_profile_publications` follows `0031_tts_settlement` and preserves
+all draft and Job history. It adds `speech_profile_publications`, immutable
+`speech_profile_lifecycle_results`, and nullable `current_revision` on the family.
+The pointer references an existing publication. The immutable original intent
+continues to live in `speech_profile_lifecycle_intents` from migration 0013.
+No migration or grants run during application startup. Downgrade refuses to erase
+publication history; quiesce writers and use reviewed forward recovery.
+
+`PostgresProfiles.mutate` persists/reuses the full original intent, locks its key,
+and reads its stored result before acquiring the family row lock or checking new
+CAS/qualification. It then locks the existing family allocation row, compares the
+exact `expected_current_revision`, and atomically writes publication, current
+pointer and original result. No MAX allocation, Job update, outbox, engine call,
+object write or network request occurs. Activation selects an existing published
+revision; drafts, retired and disabled targets cannot be activated. The trusted
+verifier must be a bounded local read-only source applicable under this lock.
+
+The default production verifier is deliberately unavailable. Per the PO's
+`defer_success` decision, an unregistered/unreadable trusted validation source
+returns the existing 503 `profile_result_unknown`, rolls back new intent/facts,
+and never advances the pointer. This is not a confirmed failure or permission to
+change keys. A trusted explicit ineligibility is a durable 422
+`profile_not_eligible`; CAS conflicts remain durable 409 `configuration_changed`.
+An existing publication is 409 `profile_already_published`; an unactivatable
+revision is 409 `profile_not_published`, and a missing target is 404.
+A schema-valid caller report never establishes authority. Real qualification
+provider registration and MQE remain P-POLICY / M-QUALIFY work.
+
+The actual API profile composition now registers the canonical publication and
+activation POSTs plus `GET /v1/nexus/profiles` and fixed public revision GET.
+All new paths use the existing Host/Origin policy, bounded mutation receive
+buffers, no-store responses, strict source envelopes and generated validators.
+The public list returns published revisions with nullable `current_revision`;
+its optional field preserves existing ProfileSummary consumers. It uses stable
+family ID then decimal revision ordering, `limit` 1–100 (default 50), and an opaque
+last-returned identity cursor. Pages are live reads, not a cross-page snapshot.
+`workspace_id` remains compatibility context and creates no identity isolation.
+Draft-only public fixed reads return 409 `profile_not_published`; missing reads
+return 404; unavailable metadata remains 503. Neither a fixed GET nor a later
+ingress refusal settles an earlier original-key mutation.
+
+Provisioning now combines `profile_draft_grants` with
+`profile_publication_grants`. The writer can insert immutable publication,
+intent and result facts and update only family allocation/current pointers and
+existing draft result columns. It cannot update publication/evidence/history,
+DELETE, TRUNCATE, perform DDL or access Job tables. Startup checks both login and
+effective identities against this combined minimum. The separate
+`profile_publication_reader_grants` excludes all command/intent/result tables;
+it is an explicit speech-owner read role, not a Workbench table-writing API.
+
+Consumers are generated through `contracts/bindings.json`: existing
+`profile_lifecycle_http` / `@speechnexus/contracts/profile-lifecycle-http` handles
+mutations; new `profile_public_http` / `@speechnexus/contracts/profile-public-http`
+provides public request/response validation and a single-request TS client.
+The complete `speech.generated.ts` also gains the optional nullable pointer.
+No effective-configuration resolver, Job field or Web consumer is added here.
+
+`tests/integration/test_profile_publications.py` is the isolated PG entry for
+migration, restricted roles, original-result recovery and observed competing
+family-lock waits. Its successful verifier is explicitly a **test double**.
+`tests/unit/test_profile_publications.py` executes the same product SQL on an
+in-memory SQLite oracle with lock syntax removed, and the HTTP tests drive the
+actual application/router against it. These synthetic checks do not establish
+PG locking, deployment, real quality, or production publication qualification.
+The task/PR receipt records actual checks and target-environment gaps.

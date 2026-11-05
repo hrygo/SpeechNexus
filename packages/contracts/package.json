@@ -28,7 +28,8 @@
     "./binding-defaults": "./src/binding_defaults.ts",
     "./binding-defaults-producer": "./src/binding_defaults_producer.ts",
     "./binding-defaults-http": "./src/binding_defaults-http.ts",
-    "./zero-dispatch": "./src/zero_dispatch.ts"
+    "./zero-dispatch": "./src/zero_dispatch.ts",
+    "./profile-public-http": "./src/profile_public-http.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

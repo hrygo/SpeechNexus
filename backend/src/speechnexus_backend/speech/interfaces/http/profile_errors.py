@@ -4,11 +4,28 @@ from typing import Any
 
 from speechnexus_contracts.admin import parse
 from speechnexus_contracts.profile_http import validate_response
+from speechnexus_contracts.profile_lifecycle_http import validate_response as lifecycle_response
+from speechnexus_contracts.profile_public_http import validate_response as public_response
 from starlette.responses import JSONResponse
 
 CREATE = "createProfileRevision"
 READ = "getProfileRevisionForAdministration"
 ERRORS = {
+    "profile_not_published": (
+        409,
+        "invalid_request_error",
+        "The profile revision is not published.",
+    ),
+    "profile_already_published": (
+        409,
+        "invalid_request_error",
+        "The profile revision is already published.",
+    ),
+    "profile_not_eligible": (
+        422,
+        "invalid_request_error",
+        "The profile revision is not eligible for publication.",
+    ),
     "invalid_profile_request": (400, "invalid_request_error", "Invalid profile request."),
     "invalid_profile_definition": (422, "invalid_request_error", "Invalid profile definition."),
     "profile_host_rejected": (403, "permission_error", "The profile Host is not allowed."),
@@ -84,7 +101,14 @@ def profile_error(
         )
     )
     if operation is not None:
-        validate_response(operation, status, {"body": body, "headers": headers})
+        validate = (
+            lifecycle_response
+            if operation in ("publishProfileRevision", "activatePublishedProfileRevision")
+            else public_response
+            if operation in ("listProfiles", "getProfileRevision")
+            else validate_response
+        )
+        validate(operation, status, {"body": body, "headers": headers})
     return JSONResponse(body, status_code=status, headers=headers)
 
 

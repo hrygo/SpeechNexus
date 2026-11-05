@@ -292,3 +292,92 @@ def test_exhausted_action_budget_stops_address_probing_and_warmup(
         assert repeated.observed_instance_state is ObservedInstanceState.WARMING_UP
         assert attempted == ["127.0.0.1", "127.0.0.2"]
         assert not requests
+
+
+def test_container_start_spends_the_one_warmup_budget_anchored_before_daemon_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    elapsed = 0.0
+    attempted: list[float] = []
+
+    def probe(address: tuple[str, int], *, timeout: float) -> AbstractContextManager[None]:
+        attempted.append(timeout)
+        raise OSError("synthetic unreachable container")
+
+    with responding("ok") as (server, requests, _):
+        body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
+        rule = _warmup_rule(server, body, digest, attempts=1)
+        assert rule.warmup is not None
+        rule = replace(rule, warmup=replace(rule.warmup, timeout_seconds=0.4))
+        template = build_template(readiness=rule)
+        engine = _engine(addresses=("127.0.0.1",))
+        start = engine.start_container
+
+        def slow_start(container_id: str) -> None:
+            nonlocal elapsed
+            elapsed += 0.3
+            start(container_id)
+
+        monkeypatch.setattr(engine, "start_container", slow_start)
+        monkeypatch.setattr(docker_runtime, "time", SimpleNamespace(monotonic=lambda: elapsed))
+        monkeypatch.setattr(socket, "create_connection", probe)
+        runtime = _runtime(engine, readiness_timeout_seconds=5)
+
+        first = runtime.prepare(build_request(), template)
+
+        # The deadline started before start_container, so only 0.1 s remains.
+        assert first.observed_instance_state is ObservedInstanceState.LOADING
+        assert attempted == [pytest.approx(0.1)]
+        assert not requests and _only_progress(runtime).completed == 0
+
+        repeated = runtime.prepare(build_request(), template)
+        assert repeated.observed_instance_state is ObservedInstanceState.LOADING
+        # A repeated prepare reuses the anchor instead of granting a fresh 0.4 s.
+        assert attempted == [pytest.approx(0.1), pytest.approx(0.1)]
+        assert not requests
+
+
+@pytest.mark.parametrize(
+    "slow_phase", ["inspect_image", "create_container", "start_container", "inspect_container"]
+)
+def test_budget_spent_during_daemon_work_sends_no_probe_and_no_post(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, slow_phase: str
+) -> None:
+    elapsed = 0.0
+    attempted: list[float] = []
+
+    def probe(address: tuple[str, int], *, timeout: float) -> AbstractContextManager[None]:
+        attempted.append(timeout)
+        return nullcontext()
+
+    with responding("ok") as (server, requests, _):
+        body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
+        rule = _warmup_rule(server, body, digest, attempts=1)
+        assert rule.warmup is not None
+        rule = replace(rule, warmup=replace(rule.warmup, timeout_seconds=0.4))
+        template = build_template(readiness=rule)
+        engine = _engine(addresses=("127.0.0.1",))
+        original = getattr(engine, slow_phase)
+
+        def exhausted(*args: Any, **kwargs: Any) -> Any:
+            nonlocal elapsed
+            elapsed += 0.5
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(engine, slow_phase, exhausted)
+        monkeypatch.setattr(docker_runtime, "time", SimpleNamespace(monotonic=lambda: elapsed))
+        monkeypatch.setattr(socket, "create_connection", probe)
+        runtime = _runtime(engine)
+
+        first = runtime.prepare(build_request(), template)
+
+        assert first.observed_instance_state is ObservedInstanceState.WARMING_UP
+        assert not attempted and not requests
+        assert _only_progress(runtime).completed == 0
+        assert first.observed_peak_memory is not None
+        assert first.stop_evidence is None
+
+        repeated = runtime.prepare(build_request(), template)
+        assert repeated.observed_instance_state is ObservedInstanceState.WARMING_UP
+        assert not attempted and not requests
+        assert len(engine.created) == 1

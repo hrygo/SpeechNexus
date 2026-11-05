@@ -139,6 +139,7 @@ class DockerNodeRuntime:
         self._stop_checkpoints = stop_checkpoints
         self._settings = settings or DockerRuntimeSettings()
         self._warmup_progress: dict[tuple[str, int], _WarmupProgress] = {}
+        self._prepare_deadlines: dict[tuple[str, int], float] = {}
         self._engine_credentials = engine_credentials
 
     @_runtime_action("prepare")
@@ -146,6 +147,7 @@ class DockerNodeRuntime:
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
     ) -> InstanceObservation:
         """Reuse a matching container or create exactly one for this generation."""
+        self._anchor_warmup_budget(request, template)
         environment = self._engine_environment(request, template)
         self._require_approved_image(template)
         existing = self._find(request.instance_id, request.instance_generation)
@@ -241,6 +243,7 @@ class DockerNodeRuntime:
         if not self._remove_and_confirm(existing.container_id):
             return self._inspect_or_absent(request, template, existing.container_id)
         self._warmup_progress.pop((existing.container_id, request.instance_generation), None)
+        self._prepare_deadlines.pop((request.instance_id, request.instance_generation), None)
         return self._released_observation(checkpoint, template, exited=existing)
 
     def _released_observation(
@@ -581,26 +584,36 @@ class DockerNodeRuntime:
     ) -> ObservedInstanceState:
         """Spend one bounded warmup action and never exceed its single deadline.
 
-        ``warmup.timeout_seconds`` bounds the whole action, anchored at the first
-        prepare observation for this container generation. Address selection,
-        every attempt and every response read share the remaining budget, so
-        ``attempts`` cannot multiply the wall-clock bound. Once it is spent the
-        action stays non-ready and sends nothing more; repeated prepares reuse
-        the recorded progress instead of starting a fresh budget.
+        ``warmup.timeout_seconds`` bounds the whole action, anchored when the
+        first prepare for this instance begins, before image verification or any
+        create/start/inspect call. Address selection, every attempt and every
+        response read share the remaining budget, so ``attempts`` cannot multiply
+        the wall-clock bound. Once it is spent the action stays non-ready and
+        sends nothing more; repeated prepares reuse the recorded progress instead
+        of starting a fresh budget.
         """
         port = template.readiness.port
         warmup = template.readiness.warmup
         if port is None or warmup is None:
             return ObservedInstanceState.LOADING
         key = (state.container_id, request.instance_generation)
+        anchor_key = (request.instance_id, request.instance_generation)
         progress = self._warmup_progress.get(key)
+        if progress is not None:
+            # The provisional anchor now belongs to this container's progress.
+            self._prepare_deadlines.pop(anchor_key, None)
         if progress is not None and progress.completed >= warmup.attempts:
             return ObservedInstanceState.READY
         if request.action is not RuntimeActionKind.PREPARE:
             # A stop or drain observation never starts or spends the action budget.
             return ObservedInstanceState.WARMING_UP
         if progress is None:
-            progress = _WarmupProgress(deadline=time.monotonic() + warmup.timeout_seconds)
+            deadline = self._prepare_deadlines.pop(anchor_key, None)
+            progress = _WarmupProgress(
+                deadline=(
+                    deadline if deadline is not None else time.monotonic() + warmup.timeout_seconds
+                )
+            )
             self._warmup_progress[key] = progress
         now = time.monotonic()
         if now >= progress.deadline:
@@ -630,6 +643,28 @@ class DockerNodeRuntime:
         if progress.completed >= warmup.attempts:
             return ObservedInstanceState.READY
         return ObservedInstanceState.WARMING_UP
+
+    def _anchor_warmup_budget(
+        self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+    ) -> None:
+        """Start the single warmup budget before any daemon work for this preparation.
+
+        Image verification, container creation, start and the running-state
+        inspection are all part of the same action. The anchor is provisional
+        until the container is known; ``_warmup_state`` binds it to that
+        container generation and drops the provisional entry.
+        """
+        warmup = template.readiness.warmup
+        if (
+            request.action is not RuntimeActionKind.PREPARE
+            or template.readiness.kind is not ReadinessKind.HTTP_WARMUP_OK
+            or warmup is None
+        ):
+            return
+        self._prepare_deadlines.setdefault(
+            (request.instance_id, request.instance_generation),
+            time.monotonic() + warmup.timeout_seconds,
+        )
 
     def _engine_environment(
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate

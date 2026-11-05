@@ -55,11 +55,12 @@ class WarmupRequest:
     result belongs to the engine adapter that owns the protocol.
 
     ``timeout_seconds`` is the single wall-clock budget for the whole warmup
-    action, anchored at the first prepare observation of the running instance.
-    Address selection, every attempt, and response reading share it, so the
-    declared attempt count cannot multiply the bound. A spent budget keeps the
-    instance ``warming_up`` without sending more probes or requests, and a
-    repeated prepare never restarts the budget.
+    action, anchored when the first prepare for the instance begins, before
+    image verification or container creation, start and inspection. Address
+    selection, every attempt, and response reading share it, so the declared
+    attempt count cannot multiply the bound. A spent budget keeps the instance
+    non-ready without sending more probes or requests, and a repeated prepare
+    never restarts the budget.
     """
 
     path: str

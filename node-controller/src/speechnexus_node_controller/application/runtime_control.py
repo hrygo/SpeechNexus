@@ -250,7 +250,7 @@ class NodeRuntimeControlService:
         observation = (
             self._runtime.recover_stop(intent.request, template)
             if intent.action is RuntimeActionKind.STOP
-            else self._runtime.inspect(intent.request, template)
+            else self._runtime.inspect(intent.request, template, resumed=intent.version > 1)
         )
         if observation is None:
             return None

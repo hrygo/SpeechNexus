@@ -31,6 +31,7 @@ from speechnexus_node_controller.domain.intents import (
     ObservedInstanceState,
     RuntimeActionKind,
     RuntimeControllerUnavailableError,
+    RuntimeInstanceIntent,
     RuntimeInstanceIntentRequest,
     RuntimeIntentErrorCode,
     RuntimeIntentState,
@@ -314,6 +315,20 @@ def test_unavailable_node_runtime_keeps_the_intent_unresolved() -> None:
     assert runtime.prepared == []
 
 
+def test_only_a_later_intent_version_is_inspected_as_resumed() -> None:
+    request = build_request()
+    store = InMemoryIntentStore()
+    store.add(RuntimeInstanceIntent(request, FIXED_NOW, FIXED_NOW))
+    runtime = ScriptedNodeRuntime()
+    runtime.observe_as(request, ObservedInstanceState.LOADING)
+    service, _, _ = _service(runtime=runtime, store=store)
+
+    service.reconcile_instance(SAMPLE_INSTANCE_ID, 1)
+    service.reconcile_instance(SAMPLE_INSTANCE_ID, 1)
+
+    assert runtime.resumed_inspections == [False, True]
+
+
 def test_reconcile_instance_adopts_a_later_ready_observation() -> None:
     service, runtime, _ = _service()
     service.submit_intent(build_request())
@@ -330,8 +345,10 @@ def test_observation_for_another_generation_is_quarantined() -> None:
             self,
             request: RuntimeInstanceIntentRequest,
             template: ApprovedRuntimeTemplate,
+            *,
+            resumed: bool = False,
         ) -> InstanceObservation | None:
-            observation = super().inspect(request, template)
+            observation = super().inspect(request, template, resumed=resumed)
             if observation is None:
                 return None
             return replace(observation, instance_generation=request.instance_generation + 1)

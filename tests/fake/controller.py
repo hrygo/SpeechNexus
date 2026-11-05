@@ -71,7 +71,7 @@ def build_request(**overrides: object) -> RuntimeInstanceIntentRequest:
         "action": RuntimeActionKind.PREPARE,
         "fencing_token": 1,
         "reserved_memory": build_reservation(),
-        "deadline_at": datetime(2026, 10, 24, 10, 0, tzinfo=UTC),
+        "deadline_at": datetime(2099, 1, 1, tzinfo=UTC),
     }
     fields.update(overrides)
     return RuntimeInstanceIntentRequest(**fields)  # type: ignore[arg-type]
@@ -193,6 +193,7 @@ class ScriptedNodeRuntime:
         self.prepared: list[RuntimeInstanceIntentRequest] = []
         self.stopped: list[RuntimeInstanceIntentRequest] = []
         self.inspections: list[tuple[str, int]] = []
+        self.resumed_inspections: list[bool] = []
         self._observations: dict[tuple[str, int], InstanceObservation] = {}
 
     def prepare(
@@ -228,11 +229,16 @@ class ScriptedNodeRuntime:
         return observation
 
     def inspect(
-        self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+        self,
+        request: RuntimeInstanceIntentRequest,
+        template: ApprovedRuntimeTemplate,
+        *,
+        resumed: bool = False,
     ) -> InstanceObservation | None:
         del template
         key = (request.instance_id, request.instance_generation)
         self.inspections.append(key)
+        self.resumed_inspections.append(resumed)
         return self._observations.get(key)
 
     def recover_stop(

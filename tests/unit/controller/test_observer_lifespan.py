@@ -80,11 +80,15 @@ class BlockingInspection(ScriptedNodeRuntime):
         self.entered, self.release = Event(), Event()
 
     def inspect(
-        self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+        self,
+        request: RuntimeInstanceIntentRequest,
+        template: ApprovedRuntimeTemplate,
+        *,
+        resumed: bool = False,
     ) -> InstanceObservation | None:
         self.entered.set()
         assert self.release.wait(3)
-        return super().inspect(request, template)
+        return super().inspect(request, template, resumed=resumed)
 
 
 async def test_shutdown_finishes_active_inspection_before_closing_the_store(

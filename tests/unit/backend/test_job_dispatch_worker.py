@@ -369,10 +369,10 @@ class CancellationAtGatewaySubmit(Gateway):
             state="cancelling",
             status_version=self.world.job.status_version + 1,
         )
-        raise DispatchRejectedError("cancel_requested")
+        raise DispatchRejectedError("gateway_barrier_fenced")
 
 
-async def test_gateway_cancel_requested_keeps_cancelling_without_failure() -> None:
+async def test_gateway_barrier_fenced_keeps_cancelling_without_failure() -> None:
     world = LeaseWorld(_job())
     batch = await _dispatcher(world, CancellationAtGatewaySubmit(world), Publisher()).run_once(
         "worker-a"
@@ -381,6 +381,30 @@ async def test_gateway_cancel_requested_keeps_cancelling_without_failure() -> No
     assert batch.claimed == 1 and batch.skipped == 1 and batch.failed == 0
     assert world.job.state == "cancelling"
     assert world.finish_calls == []
+
+
+class BarrierFencedAtGatewaySubmit(Gateway):
+    """A barrier refusal that is not preceded by an accepted cancellation."""
+
+    def __init__(self) -> None:
+        super().__init__([])
+
+    async def query(self, submit_intent_id: str) -> GatewayReply:
+        return GatewayReply("not_found")
+
+    async def submit(self, submission: ExecutionSubmission) -> GatewayReply:
+        raise DispatchRejectedError("gateway_barrier_fenced")
+
+
+async def test_gateway_barrier_fenced_without_cancelling_still_fails_job() -> None:
+    world = LeaseWorld(_job())
+    batch = await _dispatcher(world, BarrierFencedAtGatewaySubmit(), Publisher()).run_once(
+        "worker-a"
+    )
+
+    assert batch.claimed == 1 and batch.failed == 1 and batch.skipped == 0
+    assert world.job.state == "failed"
+    assert world.finish_calls == [("worker-a", "failed")]
 
 
 async def test_stale_worker_never_finishes_or_publishes_after_takeover() -> None:

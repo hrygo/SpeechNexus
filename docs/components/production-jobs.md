@@ -127,8 +127,9 @@ operation/attempt/摘要列。投影与 receipt 在同一 `PostgresPublicJobs.ca
 request ID，不覆盖他人事实。
 
 网关在创建任何执行之前读同一主键：围栏存在时只写
-`failed / not_required / cancel_requested` 的终态 `submit_intents`，不写输出流头、
-不派发引擎，并以可区分的 `cancel_requested` 拒绝。围栏不存在时按原流程创建；
+`failed / not_required / gateway_barrier_fenced` 的终态 `submit_intents`，不写输出流头、
+不派发引擎，并以既有的 `gateway_barrier_fenced` 拒绝；该错误码与普通屏障拒绝共用，
+但只有取消围栏路径同时落下无外发终态 intent。围栏不存在时按原流程创建；
 执行创建后才受理的取消不改写 intent，继续由 abort/stop-evidence 路径推进。
 
 `speech_job_cancellation_reconciliations` 是 backend 私有重试账本：每个围栏一行，
@@ -161,9 +162,9 @@ request ID，不覆盖他人事实。
    `GatewayCancellationConfirmer` 和 `CancellationReconciliationWorker` 装配在一起；
    `settle_cancelled` 走 `PublicJobs` 的 `status_version` 条件更新，活跃执行通过
    `JobCancellationService` + `GatewayJobCancellationStopper` 注入一次有界停止尝试。
-3. 派发器收到 `DispatchRejectedError` 或 rejected reply 的 `cancel_requested` 时返回
-   `skipped`，不调用 `_fail`，保持 `cancelling`；由对账 worker 以网关“没有执行”事实
-   结算为 `cancelled`。
+3. 派发器收到 `gateway_barrier_fenced` 且 Job 已是 `cancelling` 时返回 `skipped`，不调用
+   `_fail`；由对账 worker 以网关“没有执行”事实结算为 `cancelled`。Job 未取消时同一错误
+   码仍按普通终态失败处理。
 
 当前边界完成派发器、真实 PG 领取/终态存储、唯一网关客户端（派发器经适配器接入）、
 worker 入口/进程角色及 `create_app` 之外的组合根。生产 `SubmitExecutionRequest` planner 仍未装配（结果发布已实现，见下节）；`build_dispatch_dependencies` 因 planner 未装配显式抛错，进程以

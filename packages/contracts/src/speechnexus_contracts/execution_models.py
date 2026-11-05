@@ -117,7 +117,6 @@ type ExecutionErrorCode = Literal[
     "lease_not_active",
     "policy_or_resource_disabled",
     "engine_transport_unknown",
-    "cancel_requested",
     "cancellation_unconfirmed",
     "execution_cleanup_pending",
     "invalid_execution_request",

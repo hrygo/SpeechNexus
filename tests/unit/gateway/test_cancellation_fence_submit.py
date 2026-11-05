@@ -9,9 +9,9 @@ import pytest
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
 from speechnexus_gateway.domain.canonical import JsonValue, command_digest
 from speechnexus_gateway.domain.submission import (
-    CancelRequestedError,
     ExecutionErrorCode,
     ExecutionState,
+    GatewayBarrierFencedError,
     SubmissionIdentity,
     SubmissionIntent,
     SubmitRequest,
@@ -75,16 +75,16 @@ def test_fence_refusal_is_terminal_and_never_dispatches() -> None:
     engine = ScriptedEngine(now=lambda: NOW)
     request = SubmitRequest(identity=identity(), command=COMMAND, output_stream_id="tts-main")
 
-    with pytest.raises(CancelRequestedError) as raised:
+    with pytest.raises(GatewayBarrierFencedError) as raised:
         service(ledger, engine).submit(request)
 
-    assert raised.value.error_code is ExecutionErrorCode.CANCEL_REQUESTED
+    assert raised.value.error_code is ExecutionErrorCode.GATEWAY_BARRIER_FENCED
     assert engine.dispatch_count == 0
     stored = ledger.get("intent-fence-1")
     assert stored is not None
-    assert stored.refused_by_cancellation
+    assert stored.refused_before_execution
     assert stored.execution_state is ExecutionState.FAILED
-    assert stored.error_code is ExecutionErrorCode.CANCEL_REQUESTED
+    assert stored.error_code is ExecutionErrorCode.GATEWAY_BARRIER_FENCED
     assert stored.dispatched_at is None
     assert stored.engine_request_id is None
 
@@ -96,7 +96,7 @@ def test_repeated_submit_returns_the_same_distinguishable_refusal() -> None:
     instance = service(ledger, engine)
 
     for _ in range(2):
-        with pytest.raises(CancelRequestedError):
+        with pytest.raises(GatewayBarrierFencedError):
             instance.submit(request)
 
     assert engine.dispatch_count == 0

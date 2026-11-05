@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus internal execution control API
-  version: 0.4.0.dev2
+  version: 0.4.0.dev1
   description: |
     Authoritative internal ExecutionControlPort protocol between the scheduler /
     workers / realtime gateway and the execution-gateway. Every engine submission,
@@ -63,12 +63,8 @@ paths:
         "409":
           description: |
             Fencing token stale, gateway barrier fenced, instance generation
-            mismatch, conflicting submit intent, the fixed binding revision is
-            disabled (`policy_or_resource_disabled`), or a durable public Job
-            cancellation fence forbids creating an execution
-            (`cancel_requested`). A `cancel_requested` response means no engine
-            request was dispatched; query the original identity for the durable
-            terminal fact.
+            mismatch, conflicting submit intent, or the fixed binding revision
+            is disabled (`policy_or_resource_disabled`).
           headers:
             X-Request-ID:
               $ref: "#/components/headers/XRequestId"
@@ -533,7 +529,6 @@ components:
         - lease_not_active
         - policy_or_resource_disabled
         - engine_transport_unknown
-        - cancel_requested
         - cancellation_unconfirmed
         - execution_cleanup_pending
         - invalid_execution_request

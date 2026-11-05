@@ -303,7 +303,7 @@ def document(**overrides: Any) -> dict[str, Any]:
         "operation_id": "job-fence-1",
         "execution_state": "failed",
         "cleanup_state": "not_required",
-        "error_code": "cancel_requested",
+        "error_code": "gateway_barrier_fenced",
         "stop_evidence_kind": "none",
         "dispatched_at": None,
         "engine_request_id": None,

@@ -30,9 +30,10 @@ class ExecutionGatewayAdapter:
     Transport and response decoding live only in ``GatewayExecutionClient``. This
     adapter translates its five failure classes into dispatcher semantics: unavailable
     transport/server outcomes stay unknown, malformed responses are protocol errors,
-    and explicit semantic rejections remain terminal for the dispatcher, except
-    ``cancel_requested``, which proves no execution was created and leaves the
-    accepted cancellation to reconciliation.
+    and explicit semantic rejections remain terminal for the dispatcher. The
+    dispatcher separately interprets ``gateway_barrier_fenced`` together with a
+    cancelling Job: that combination proves no execution was created and leaves
+    the accepted cancellation to reconciliation.
     """
 
     def __init__(self, client: GatewayExecutionClient) -> None:

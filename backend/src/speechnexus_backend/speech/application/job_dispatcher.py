@@ -173,11 +173,11 @@ class JobDispatcher:
         except DispatchRequestUnavailableError:
             return await self._fail(claim, job, "job_request_unavailable")
         except DispatchRejectedError as error:
-            if error.error_code == "cancel_requested":
-                # Acceptance committed before the gateway created an execution.
-                # Keep cancelling; the reconciliation worker closes it from the
-                # gateway's durable no-execution fact.
-                return DispatchResult(job.job_id, "skipped", "cancel_requested")
+            if error.error_code == "gateway_barrier_fenced" and await self._cancelling(job):
+                # The gateway's barrier refused this submit and the Job is already
+                # cancelling: no execution exists. Keep cancelling and let the
+                # reconciliation worker close it from the durable no-execution fact.
+                return DispatchResult(job.job_id, "skipped", "gateway_barrier_fenced")
             return await self._fail(claim, job, error.error_code)
         except DispatchConflictError:
             return DispatchResult(job.job_id, "claim_lost", "claim_lost")
@@ -188,6 +188,13 @@ class JobDispatcher:
             return await self._fail(claim, job, "execution_result_invalid")
         except DispatchUnavailableError:
             return DispatchResult(job.job_id, "unknown", "outcome_unknown")
+
+    async def _cancelling(self, job: DispatchJob) -> bool:
+        """Reload because acceptance can commit between the local guard and submit."""
+        if job.state == "cancelling":
+            return True
+        current = await self._states.reload(job.job_id)
+        return current.state == "cancelling"
 
     async def _follow(
         self,
@@ -220,8 +227,8 @@ class JobDispatcher:
                 submitted = reply.outcome == "status"
                 continue
             if reply.outcome == "rejected":
-                if reply.error_code == "cancel_requested":
-                    return DispatchResult(job.job_id, "skipped", "cancel_requested")
+                if reply.error_code == "gateway_barrier_fenced" and await self._cancelling(job):
+                    return DispatchResult(job.job_id, "skipped", "gateway_barrier_fenced")
                 return await self._fail(claim, job, reply.error_code or "execution_rejected")
             status = reply.status
             if status is None:

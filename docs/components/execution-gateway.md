@@ -102,11 +102,12 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
    `speechnexus_contracts.cancellation_fence.job_cancellation_fence_lock_key` 冻结；backend
    受理事务必须取同一键的同一把锁。这样受理与提交只能有一方先提交。
 2. 围栏存在时，不写 `output_stream_heads`，只写一行终态 intent：
-   `execution_state=failed`、`cleanup_state=not_required`、`error_code=cancel_requested`、
-   `stop_evidence_kind=none`、无 engine 请求与外发时间。该行是可查询的“没有执行”事实，
-   不是伪造的停止证据。
-3. 调用方得到 `cancel_requested`（HTTP 409），重复提交读到同一终态 intent 并继续返回
-   `cancel_requested`，绝不触发引擎派发。
+   `execution_state=failed`、`cleanup_state=not_required`、
+   `error_code=gateway_barrier_fenced`、`stop_evidence_kind=none`、无 engine 请求与外发
+   时间。该行是可查询的“没有执行”事实，不是伪造的停止证据。
+3. 调用方得到既有的 `gateway_barrier_fenced`（HTTP 409）；该错误码也与普通屏障拒绝共用，
+   但只有本路径同时落下上述无外发终态 intent。重复提交读到同一终态 intent 并继续返回
+   `gateway_barrier_fenced`，绝不触发引擎派发。
 4. 围栏不存在时按原流程创建。若执行已经创建、随后才受理取消，网关不改写 intent 状态，
    由既有 abort / stop-evidence 路径推进；只有验证到 `aborted`、`cleanup_state=complete`
    且停在允许证据内，或确认上述“没有执行”事实，才允许 Job 进入 `cancelled`。

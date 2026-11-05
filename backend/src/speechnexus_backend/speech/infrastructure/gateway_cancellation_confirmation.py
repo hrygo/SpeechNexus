@@ -60,7 +60,7 @@ def not_started(document: Mapping[str, Any]) -> bool:
     """True only for the gateway's durable no-execution fact."""
     return (
         document.get("execution_state") == "failed"
-        and document.get("error_code") == "cancel_requested"
+        and document.get("error_code") == "gateway_barrier_fenced"
         and document.get("cleanup_state") == "not_required"
         and document.get("stop_evidence_kind") == "none"
         and document.get("dispatched_at") is None

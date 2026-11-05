@@ -341,7 +341,7 @@ def create_submit_in_transaction(
     ``cancellation_fence`` must take the same transaction-scoped advisory lock and read the fence
     through ``cursor``. It is called in this transaction after the submit identity
     is verified and before any execution-creating insert. A ``True`` answer writes
-    only the terminal ``failed / not_required / cancel_requested`` fact.
+    only the terminal ``failed / not_required / gateway_barrier_fenced`` fact.
     """
     intent.validate_new()
     identity = intent.identity

@@ -396,7 +396,7 @@ export interface paths {
      *     Jobs and Jobs outside the caller's workspace are 404.
      *
      *     If acceptance commits before the gateway creates an execution, the gateway
-     *     refuses the submit with `cancel_requested` and no runnable execution exists.
+     *     refuses the submit with `gateway_barrier_fenced` and no runnable execution exists.
      *     The Job closes 200 `cancelled` only from that no-execution fact or from
      *     verified stop evidence; a missing execution is never treated as a stop.
      */

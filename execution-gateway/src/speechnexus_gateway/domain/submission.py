@@ -143,7 +143,6 @@ class ExecutionErrorCode(StrEnum):
     POLICY_OR_RESOURCE_DISABLED = "policy_or_resource_disabled"
     ENGINE_TRANSPORT_UNKNOWN = "engine_transport_unknown"
     CANCELLATION_UNCONFIRMED = "cancellation_unconfirmed"
-    CANCEL_REQUESTED = "cancel_requested"
     EXECUTION_CLEANUP_PENDING = "execution_cleanup_pending"
     INVALID_EXECUTION_REQUEST = "invalid_execution_request"
     COMPONENT_CREDENTIAL_INVALID = "component_credential_invalid"
@@ -196,12 +195,6 @@ class SubmitIntentConflictError(ExecutionRejectedError):
 
 class CancellationUnconfirmedError(ExecutionRejectedError):
     error_code = ExecutionErrorCode.CANCELLATION_UNCONFIRMED
-
-
-class CancelRequestedError(ExecutionRejectedError):
-    """A durable cancellation fence forbids creating a runnable execution."""
-
-    error_code = ExecutionErrorCode.CANCEL_REQUESTED
 
 
 class ExecutionCleanupPendingError(ExecutionRejectedError):
@@ -620,12 +613,18 @@ class SubmissionIntent:
         self.validate()
 
     @property
-    def refused_by_cancellation(self) -> bool:
-        """True only for the terminal fact that no execution was ever created."""
+    def refused_before_execution(self) -> bool:
+        """True only for the terminal barrier fact that no execution was created.
+
+        ``gateway_barrier_fenced`` is also the code used for a durable public Job
+        cancellation fence. This terminal shape is written only by
+        :meth:`refuse_for_cancellation`; generic ingress barrier rejections raise
+        before an intent exists.
+        """
         return (
             self.execution_state is ExecutionState.FAILED
             and self.cleanup_state is CleanupState.NOT_REQUIRED
-            and self.error_code is ExecutionErrorCode.CANCEL_REQUESTED
+            and self.error_code is ExecutionErrorCode.GATEWAY_BARRIER_FENCED
             and self.dispatched_at is None
             and self.engine_request_id is None
             and self.stop_evidence_kind is StopEvidenceKind.NONE
@@ -642,7 +641,7 @@ class SubmissionIntent:
             output_stream_id=self.output_stream_id,
             execution_state=ExecutionState.FAILED,
             cleanup_state=CleanupState.NOT_REQUIRED,
-            error_code=ExecutionErrorCode.CANCEL_REQUESTED,
+            error_code=ExecutionErrorCode.GATEWAY_BARRIER_FENCED,
         )
 
     def validate_new(self) -> None:

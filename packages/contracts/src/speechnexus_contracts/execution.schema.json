@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "ExecutionContracts",
-  "x-nexus-bindings-version": "0.4.0.dev2",
+  "x-nexus-bindings-version": "0.4.0.dev1",
   "x-nexus-entrypoints": [
     "SubmitExecutionRequest",
     "SubmitExecutionResponse",
@@ -1828,7 +1828,6 @@
         "lease_not_active",
         "policy_or_resource_disabled",
         "engine_transport_unknown",
-        "cancel_requested",
         "cancellation_unconfirmed",
         "execution_cleanup_pending",
         "invalid_execution_request",

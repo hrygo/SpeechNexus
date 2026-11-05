@@ -23,11 +23,11 @@ from speechnexus_gateway.domain.ports import (
     SubmissionLedger,
 )
 from speechnexus_gateway.domain.submission import (
-    CancelRequestedError,
     DispatchResult,
     EngineObservedState,
     ExecutionErrorCode,
     ExecutionState,
+    GatewayBarrierFencedError,
     InvalidExecutionRequestError,
     RecordStop,
     SubmissionIntent,
@@ -82,8 +82,8 @@ class SubmitExecutionService:
                 raise SubmitIntentConflictError(
                     "submit intent already exists with another effective request"
                 )
-            if existing.refused_by_cancellation:
-                raise CancelRequestedError(
+            if existing.refused_before_execution:
+                raise GatewayBarrierFencedError(
                     "a durable cancellation fence forbids creating this execution"
                 )
             # query owns the conditional save when a delayed executing fact arrives.
@@ -97,8 +97,8 @@ class SubmitExecutionService:
             if existing is not None:
                 if existing.request_digest != request.request_digest:
                     raise SubmitIntentConflictError("submit intent has another effective request")
-                if existing.refused_by_cancellation:
-                    raise CancelRequestedError(
+                if existing.refused_before_execution:
+                    raise GatewayBarrierFencedError(
                         "a durable cancellation fence forbids creating this execution"
                     )
                 return SubmissionOutcome(intent=existing, idempotent_replay=True)
@@ -144,9 +144,9 @@ class SubmitExecutionService:
         )
         existing = self._ledger.add(intent, request_document=request.request_document)
         if existing is not None:
-            if existing.refused_by_cancellation:
+            if existing.refused_before_execution:
                 # The fence fact is durable; no dispatch and no output stream exist.
-                raise CancelRequestedError(
+                raise GatewayBarrierFencedError(
                     "a durable cancellation fence forbids creating this execution"
                 )
             return SubmissionOutcome(intent=existing, idempotent_replay=True)

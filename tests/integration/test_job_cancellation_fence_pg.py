@@ -255,17 +255,17 @@ def test_fence_committed_before_submit_refuses_creation(fence_db: FenceSandbox) 
     refused = ledger.add(intent, request_document=submit_request(intent.identity).request_document)
 
     assert refused is not None
-    assert refused.refused_by_cancellation
-    assert refused.error_code is ExecutionErrorCode.CANCEL_REQUESTED
+    assert refused.refused_before_execution
+    assert refused.error_code is ExecutionErrorCode.GATEWAY_BARRIER_FENCED
     assert refused.dispatched_at is None and refused.engine_request_id is None
     stored = ledger.get(intent.identity.submit_intent_id)
-    assert stored is not None and stored.refused_by_cancellation
+    assert stored is not None and stored.refused_before_execution
     assert fence_db.query(
         "SELECT state, error_code FROM speech_jobs WHERE job_id = 'operation-test'"
     ) == [{"state": "running", "error_code": None}]
     assert fence_db.query(
         "SELECT count(*) AS n FROM submit_intents WHERE operation_id = 'operation-test' "
-        "AND execution_state = 'failed' AND error_code = 'cancel_requested'"
+        "AND execution_state = 'failed' AND error_code = 'gateway_barrier_fenced'"
     ) == [{"n": 1}]
     assert accepted.request_id == "request-fence-1"
 
@@ -439,7 +439,7 @@ def test_acceptance_lock_waits_for_submit_and_then_refuses(fence_db: FenceSandbo
         holder.close()
 
     refused = outcome["result"]
-    assert refused is not None and refused.refused_by_cancellation
+    assert refused is not None and refused.refused_before_execution
     assert accepted.job_id == "job-lock-1"
     assert fence_db.query(
         "SELECT count(*) AS n FROM submit_intents WHERE operation_id = 'job-lock-1' "

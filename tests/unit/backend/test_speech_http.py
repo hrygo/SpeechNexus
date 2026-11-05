@@ -515,8 +515,12 @@ async def test_deployment_ceiling_is_stricter_than_the_public_request() -> None:
     assert synth.plans[0].max_source_pcm_bytes == 4800
 
 
-async def test_request_above_the_deployment_ceiling_is_frozen_at_the_deployment_value() -> None:
-    """A looser request can never persist its own value over the deployment cap."""
+async def test_request_above_the_deployment_ceiling_is_narrowed_before_the_builder() -> None:
+    """The resolved plan takes the stricter value and the builder maps that plan.
+
+    This does not read a persisted document; the factory PostgreSQL test covers
+    the stored ``gateway_request`` field.
+    """
 
     chain, synth = service(
         synth=Synthesizer(pcm(100)), limits=SpeechLimits(max_output_audio_ms=100)

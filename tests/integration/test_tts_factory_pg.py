@@ -362,6 +362,11 @@ def settlement_database_url(admission_database: AdmissionDatabase) -> Iterator[s
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("deployment_ms", "request_ms"),
+    [(10000, 100), (100, 200)],
+    ids=["deployment-looser", "request-looser"],
+)
 @pytest.mark.parametrize("audio_format", ["pcm", "wav"])
 @pytest.mark.parametrize("transport", ["asgi", "sdk"])
 async def test_factory_http_uses_real_postgres_qualification_and_admission(
@@ -371,6 +376,8 @@ async def test_factory_http_uses_real_postgres_qualification_and_admission(
     settlement_database_url: str,
     audio_format: str,
     transport: str,
+    deployment_ms: int,
+    request_ms: int,
 ) -> None:
     _voice(admission_database, audio_format=audio_format)
     db = admission_database.runtime.foundation.database
@@ -388,7 +395,7 @@ async def test_factory_http_uses_real_postgres_qualification_and_admission(
             "database_schema": db.schema,
             "speech_recipe_file": path,
             "speech_default_language": "en",
-            "speech_max_output_audio_ms": 10000,
+            "speech_max_output_audio_ms": deployment_ms,
             "speech_settlement_database_url": SecretStr(settlement_database_url),
             "execution_gateway_base_url": "http://127.0.0.1:9",
             "execution_gateway_component_credential": SecretStr("synthetic-gateway-token"),
@@ -505,7 +512,7 @@ async def test_factory_http_uses_real_postgres_qualification_and_admission(
                     "workspace_id": "workspace-test",
                     "voice_revision": "1",
                     "client_reference": "sdk-tts-" + uuid.uuid4().hex,
-                    "max_output_audio_ms": 100,
+                    "max_output_audio_ms": request_ms,
                     "overrides": {"tts": {"language": "en"}},
                 },
             },
@@ -624,6 +631,10 @@ async def test_factory_http_uses_real_postgres_qualification_and_admission(
             (gateway.request["operation_id"],),
         )[0]["body"]
         assert original["plan"]["max_audio_ms"] == 100
+        assert original["gateway_request"]["max_output_audio_ms"] == 100
+        assert (
+            original["gateway_request"]["max_output_audio_ms"] == original["plan"]["max_audio_ms"]
+        )
         assert original["plan"]["max_source_pcm_bytes"] == 4800
         assert (
             db.query(
@@ -650,11 +661,13 @@ async def test_factory_http_uses_real_postgres_qualification_and_admission(
     assert gateway.request["command"]["parameters"]["response_format"] == audio_format
     assert gateway.request["command"]["parameters"]["language"] == "en"
     stored = db.query(
-        "SELECT request_document::jsonb->'plan' AS plan FROM admission_operations "
+        "SELECT request_document::jsonb AS body FROM admission_operations "
         "WHERE request_document::jsonb->>'kind'='tts_file'"
-    )[0]["plan"]
-    assert stored["gateway_policy_digest"] == "sha256:" + "1" * 64
-    assert stored["max_audio_ms"] == 100
+    )[0]["body"]
+    assert stored["gateway_request"]["max_output_audio_ms"] == 100
+    assert stored["gateway_request"]["max_output_audio_ms"] == stored["plan"]["max_audio_ms"]
+    assert stored["plan"]["max_audio_ms"] == 100
+    assert stored["plan"]["gateway_policy_digest"] == "sha256:" + "1" * 64
     assert db.query("SELECT count(*) AS n FROM admission_operations")[0]["n"] == 1
     assert db.query("SELECT count(*) AS n FROM coordination_jobs")[0]["n"] == 1
 

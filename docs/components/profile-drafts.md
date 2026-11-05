@@ -275,7 +275,9 @@ intent and result facts and update only family allocation/current pointers and
 existing draft result columns. PostgreSQL also requires UPDATE on at least one
 column for `SELECT ... FOR UPDATE`; the writer therefore holds
 `UPDATE (key_digest)` on the intent journal solely to take the serializing row
-lock, and the port never updates that column. The writer cannot update
+lock. Migration 0033 installs a `BEFORE UPDATE` trigger that rejects any actual
+intent modification, so the grant cannot rewrite a key or immutable history;
+`SELECT ... FOR UPDATE` does not fire that trigger. The writer cannot update
 publication/evidence/history, DELETE, TRUNCATE, perform DDL or access Job tables.
 Startup checks both login and effective identities against this combined minimum.
 The separate

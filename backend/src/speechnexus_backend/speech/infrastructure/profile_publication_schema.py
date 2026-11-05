@@ -38,6 +38,22 @@ PROFILE_PUBLICATION_DDL = (
 )
 
 
+PROFILE_INTENT_IMMUTABILITY_DDL = (
+    """CREATE FUNCTION speech_profile_lifecycle_intents_immutable()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            RAISE EXCEPTION 'Speech profile lifecycle intents are append-only'
+                USING ERRCODE = 'integrity_constraint_violation';
+        END;
+        $$""",
+    """CREATE TRIGGER speech_profile_lifecycle_intents_immutable
+        BEFORE UPDATE ON speech_profile_lifecycle_intents
+        FOR EACH ROW EXECUTE FUNCTION speech_profile_lifecycle_intents_immutable()""",
+)
+
+
 def profile_publication_grants(schema: str, role: str) -> tuple[str, ...]:
     schema, role = checked_sql_name(schema), checked_sql_name(role)
     return (
@@ -51,7 +67,7 @@ def profile_publication_grants(schema: str, role: str) -> tuple[str, ...]:
         ),
         f'GRANT UPDATE (current_revision) ON "{schema}".speech_profile_families TO "{role}"',
         # SELECT ... FOR UPDATE needs UPDATE on at least one column. The intent key is
-        # never mutated; this grant only admits the serializing row lock.
+        # never mutated; PROFILE_INTENT_IMMUTABILITY_DDL rejects any actual UPDATE.
         f'GRANT UPDATE (key_digest) ON "{schema}".speech_profile_lifecycle_intents TO "{role}"',
     )
 

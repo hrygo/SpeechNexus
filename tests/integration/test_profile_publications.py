@@ -261,6 +261,50 @@ def test_draft_retired_disabled_and_missing_cannot_be_activated(sandbox: Sandbox
     assert s.port.mutate(s.activate("1", "1", "disabled-key")).error_code == "profile_not_published"
 
 
+def test_intent_update_is_rejected_while_row_lock_and_normal_mutations_work(
+    sandbox: Sandbox,
+) -> None:
+    s = sandbox
+    legacy = s.publish(key="legacy-intent-key")
+    s.admin.execute(
+        "INSERT INTO speech_profile_lifecycle_intents "
+        "(key_digest,operation,profile_id,revision,intent_json,request_digest,recorded_at_us) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+        (
+            legacy.key_digest,
+            legacy.operation,
+            legacy.profile_id,
+            legacy.revision,
+            legacy.intent.decode("utf-8"),
+            legacy.request_digest,
+            1_000_000,
+        ),
+    )
+    with (
+        pytest.raises(psycopg.errors.IntegrityError, match="append-only"),
+        s.pool.connection() as connection,
+    ):
+        connection.execute(
+            "UPDATE speech_profile_lifecycle_intents SET key_digest=%s WHERE key_digest=%s",
+            ("sha256:" + "0" * 64, legacy.key_digest),
+        )
+    assert s.admin.execute(
+        "SELECT key_digest FROM speech_profile_lifecycle_intents WHERE key_digest=%s",
+        (legacy.key_digest,),
+    ).fetchall() == [{"key_digest": legacy.key_digest}]
+    assert s.port.recover_lifecycle(legacy).outcome == "unknown"
+    with s.pool.connection() as connection:
+        locked = connection.execute(
+            "SELECT key_digest FROM speech_profile_lifecycle_intents "
+            "WHERE key_digest=%s FOR UPDATE",
+            (legacy.key_digest,),
+        ).fetchone()
+    assert locked == {"key_digest": legacy.key_digest}
+    s.draft()
+    assert s.port.mutate(s.publish()).outcome == "completed"
+    assert s.port.mutate(s.activate("1", "1", "normal-activation")).outcome == "completed"
+
+
 def test_writer_and_reader_privileges_and_real_runtime_fail_closed(sandbox: Sandbox) -> None:
     from fastapi.testclient import TestClient
     from tests.unit.backend.test_health import _settings

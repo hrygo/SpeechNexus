@@ -3,6 +3,7 @@
 from alembic import op
 
 from speechnexus_backend.speech.infrastructure.profile_publication_schema import (
+    PROFILE_INTENT_IMMUTABILITY_DDL,
     PROFILE_PUBLICATION_DDL,
 )
 
@@ -13,7 +14,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    for statement in PROFILE_PUBLICATION_DDL:
+    for statement in (*PROFILE_PUBLICATION_DDL, *PROFILE_INTENT_IMMUTABILITY_DDL):
         op.execute(statement)
 
 

@@ -140,7 +140,7 @@ class ProfileRuntime:
             if row is None or not row["permitted"]:
                 raise ValueError("Profile writer privileges do not match the port")
             # SELECT ... FOR UPDATE needs UPDATE on at least one column. key_digest is
-            # the serializing key; the port never updates intent rows.
+            # the serializing key; the immutability trigger rejects actual intent updates.
             mutable = (
                 {"latest_revision", "current_revision"}
                 if table == "speech_profile_families"

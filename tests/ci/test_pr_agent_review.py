@@ -9,7 +9,7 @@ WORKFLOW = (ROOT / ".github/workflows/pr-agent-review.yml").read_text()
 
 
 class PRAgentReviewWorkflowTests(unittest.TestCase):
-    def test_trigger_and_trust_boundary(self):
+    def test_trigger_and_trust_boundary(self) -> None:
         trigger = WORKFLOW.split("\npermissions:", 1)[0]
         self.assertIn("  pull_request:\n", trigger)
         self.assertIn("types: [opened, reopened, ready_for_review, synchronize]", trigger)
@@ -31,7 +31,7 @@ class PRAgentReviewWorkflowTests(unittest.TestCase):
         self.assertIn("      contents: read\n      pull-requests: write", WORKFLOW)
         self.assertNotIn("issues: write", WORKFLOW)
 
-    def test_explicit_configuration_and_review_only(self):
+    def test_explicit_configuration_and_review_only(self) -> None:
         for setting in (
             'CONFIG__FALLBACK_MODELS: "[]"',
             'CONFIG__USE_REPO_SETTINGS_FILE: "false"',
@@ -55,7 +55,7 @@ class PRAgentReviewWorkflowTests(unittest.TestCase):
         self.assertNotIn(" -v ", WORKFLOW)
         self.assertNotIn("--volume", WORKFLOW)
 
-    def test_missing_key_and_session_isolation(self):
+    def test_missing_key_and_session_isolation(self) -> None:
         self.assertIn('if [[ -z "$OPENAI_KEY" ]]', WORKFLOW)
         self.assertIn("if: steps.key.outputs.configured == 'true'", WORKFLOW)
         self.assertIn("skipped: OPENCODE_API_KEY is not configured", WORKFLOW)

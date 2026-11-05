@@ -37,6 +37,7 @@ def test_actual_http_lists_reads_publishes_activates_and_replays(sandbox: Sandbo
         assert response.status_code == 200, response.text
         assert response.json()["publication"]["status"] == "published"
         assert http.get(fixed).json() == response.json()
+        assert http.get(admin).json() == response.json()
         assert (
             http.post(admin + "/publications", json=body, headers=headers).json() == response.json()
         )
@@ -67,3 +68,44 @@ def test_unconfigured_new_paths_fail_closed_and_enforce_ingress() -> None:
         response = http.post(path, json={})
         assert response.status_code == 503 and response.json()["error"]["retryable"] is False
         assert http.get(path).headers["Allow"] == "POST"
+
+
+def test_public_pages_and_historical_original_result_survive_default_changes(
+    sandbox: Sandbox,
+) -> None:
+    s = sandbox
+    s.draft()
+    s.port.mutate(s.publish())
+    for n in range(2, 12):
+        revision = str(n)
+        s.draft(revision)
+        assert (
+            s.port.mutate(s.publish(revision, str(n - 1), "publish-key-" + revision)).outcome
+            == "completed"
+        )
+    app = create_app(
+        settings=_settings().model_copy(update={"asset_allowed_hosts": ("testserver",)}),
+        profiles=s.port,
+    )
+    with TestClient(app) as http:
+        revisions: list[str] = []
+        path = PUBLIC + "?limit=3"
+        while True:
+            response = http.get(path)
+            assert response.status_code == 200, response.text
+            data = response.json()
+            revisions.extend(p["revision"] for p in data["data"])
+            assert all(p["current_revision"] == "11" for p in data["data"])
+            if not data["has_more"]:
+                assert data["next_cursor"] is None
+                break
+            path = PUBLIC + "?limit=3&cursor=" + data["next_cursor"]
+        assert revisions == [str(n) for n in range(1, 12)]
+        for query in (
+            "limit=0",
+            "limit=101",
+            "limit=1&limit=2",
+            "cursor=W10",
+            "cursor=WyJib2d1cyIsImxhdGVzdCJd",
+        ):
+            assert http.get(PUBLIC + "?" + query).status_code == 400

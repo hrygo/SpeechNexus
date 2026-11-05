@@ -408,6 +408,7 @@
     "profile_public": {
       "source": "speech-openapi.yaml",
       "validate": true,
+      "typescript_source": "speech",
       "paths": [
         "/v1/nexus/profiles",
         "/v1/nexus/profiles/{profile_id}/revisions/{revision}"

@@ -259,3 +259,149 @@ def test_draft_retired_disabled_and_missing_cannot_be_activated(sandbox: Sandbox
         "disabled_reason='synthetic' WHERE revision='1'"
     )
     assert s.port.mutate(s.activate("1", "1", "disabled-key")).error_code == "profile_not_published"
+
+
+def test_writer_and_reader_privileges_and_real_runtime_fail_closed(sandbox: Sandbox) -> None:
+    from fastapi.testclient import TestClient
+    from tests.unit.backend.test_health import _settings
+
+    from speechnexus_backend.app import create_app
+    from speechnexus_backend.settings import Settings
+    from speechnexus_backend.speech.infrastructure.profile_publication_schema import (
+        profile_publication_reader_grants,
+    )
+
+    s = sandbox
+    s.draft()
+    s.port.mutate(s.publish())
+    for statement in (
+        "UPDATE speech_profile_publications SET authority_digest='changed'",
+        "DELETE FROM speech_profile_publications",
+        "UPDATE speech_profile_lifecycle_results SET error_code='changed'",
+        "DELETE FROM speech_profile_lifecycle_intents",
+        "TRUNCATE speech_profile_publications",
+        "CREATE TABLE profile_forbidden (id integer)",
+        "SELECT * FROM coordination_jobs",
+    ):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege), s.pool.connection() as connection:
+            connection.execute(statement)
+    reader = s.role + "_read"
+    s.admin.execute(f"CREATE ROLE \"{reader}\" LOGIN PASSWORD 'synthetic_profile_test'")
+    try:
+        for grant in profile_publication_reader_grants(s.schema, reader):
+            s.admin.execute(grant)
+        with psycopg.connect(
+            make_conninfo(s.url, user=reader, password="synthetic_profile_test"), autocommit=True
+        ) as connection:
+            connection.execute(f'SET search_path TO "{s.schema}",pg_catalog')
+            assert connection.execute(
+                "SELECT count(*) FROM speech_profile_publications"
+            ).fetchone() == (1,)
+            for statement in (
+                "SELECT * FROM speech_profile_lifecycle_intents",
+                "SELECT * FROM speech_profile_lifecycle_results",
+                "UPDATE speech_profile_families SET current_revision=NULL",
+            ):
+                with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                    connection.execute(statement)
+    finally:
+        s.admin.execute(f'DROP OWNED BY "{reader}"')
+        s.admin.execute(f'DROP ROLE "{reader}"')
+    settings = Settings(
+        **{
+            **_settings().model_dump(),
+            "database_schema": s.schema,
+            "profile_writer_database_url": make_conninfo(
+                s.url, user=s.role, password="synthetic_profile_test"
+            ),
+            "asset_allowed_hosts": ("testserver",),
+        }
+    )
+    s.draft("2")
+    before = s.snapshot()
+    app = create_app(settings=settings)
+    with TestClient(app) as http:
+        from speechnexus_backend.speech.application.profile_documents import decode_document
+
+        command = s.publish("2", "1", "unregistered-runtime-key")
+        response = http.post(
+            f"/v1/nexus/admin/profiles/{command.profile_id}/revisions/2/publications",
+            json=decode_document(command.intent)["body"],
+            headers={"Idempotency-Key": "unregistered-runtime-key"},
+        )
+        assert (
+            response.status_code == 503
+            and response.json()["error"]["code"] == "profile_result_unknown"
+        )
+        listing = http.get("/v1/nexus/profiles")
+        assert listing.status_code == 200
+        assert [(p["revision"], p["current_revision"]) for p in listing.json()["data"]] == [
+            ("1", "1")
+        ]
+    assert s.snapshot() == before
+
+
+def test_actual_committed_reply_loss_then_original_recovery_is_read_only(sandbox: Sandbox) -> None:
+    from typing import cast
+
+    from psycopg_pool import ConnectionPool
+    from tests.integration.test_production_jobs import FaultConnection
+
+    s = sandbox
+    s.draft()
+    command = s.publish()
+
+    def configure(connection: FaultConnection) -> None:
+        connection.execute(f'SET search_path TO "{s.schema}",pg_catalog')
+        connection.commit()
+
+    with ConnectionPool[FaultConnection](
+        make_conninfo(s.url, user=s.role, password="synthetic_profile_test"),
+        connection_class=FaultConnection,
+        kwargs={"row_factory": dict_row},
+        configure=configure,
+        min_size=1,
+        max_size=1,
+        timeout=3,
+    ) as pool:
+        with pool.connection() as connection:
+            armed = connection
+        armed.fault = "after"
+        result = PostgresProfiles(cast(SpeechPool, pool), verifier=s.verifier).mutate(command)
+    assert result.outcome == "unknown"
+    before = s.snapshot()
+    assert len(before["speech_profile_publications"]) == 1
+    recovered = s.port.recover_lifecycle(command)
+    assert recovered.outcome == "replayed"
+    assert s.port.mutate(command).publication == recovered.publication
+    assert s.snapshot() == before
+
+
+def test_failed_and_repeat_migration_preserves_history(sandbox: Sandbox) -> None:
+    s = sandbox
+    s.draft()
+    s.port.mutate(s.publish())
+    before = s.snapshot()
+    config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+    config.attributes["schema"] = s.schema
+    engine = create_engine(
+        s.url.replace("postgresql://", "postgresql+psycopg://", 1),
+        poolclass=NullPool,
+        hide_parameters=True,
+    )
+    try:
+        with engine.connect() as connection:
+            config.attributes["connection"] = connection
+            migration.upgrade(config, "head")
+        with (
+            pytest.raises(RuntimeError, match="history requires preservation"),
+            engine.connect() as connection,
+        ):
+            config.attributes["connection"] = connection
+            migration.downgrade(config, "0031_tts_settlement")
+        assert s.snapshot() == before
+        assert s.admin.execute("SELECT version_num FROM alembic_version").fetchone() == {
+            "version_num": "0032_profile_publications"
+        }
+    finally:
+        engine.dispose()

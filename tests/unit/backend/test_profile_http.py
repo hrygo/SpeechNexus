@@ -32,6 +32,7 @@ def provider() -> Mock:
 
     port.create.side_effect = create
     port.get.return_value = None
+    port.get_publication.return_value = None
     return port
 
 

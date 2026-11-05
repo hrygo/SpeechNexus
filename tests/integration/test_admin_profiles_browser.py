@@ -36,6 +36,9 @@ from tests.unit.backend.test_health import _settings
 from speechnexus_backend.app import create_app
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.infrastructure.profile_draft_schema import profile_draft_grants
+from speechnexus_backend.speech.infrastructure.profile_publication_schema import (
+    profile_publication_grants,
+)
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
@@ -154,7 +157,10 @@ async def test_admin_profiles_real_http_pg_browser() -> None:
             front_sock, origin = bind()
             api_sock, api_origin = bind()
             sockets.extend([front_sock, api_sock])
-            for grant in profile_draft_grants(schema, role):
+            for grant in (
+                *profile_draft_grants(schema, role),
+                *profile_publication_grants(schema, role),
+            ):
                 await owner.execute(grant)
             settings = Settings(
                 **{

@@ -2,7 +2,7 @@
 import openapiFetch from "openapi-fetch";
 import { createHttpValidator } from "./http-runtime.mjs";
 import bundle from "./speechnexus_contracts/profile_public-http.schema.json" with { type: "json" };
-import type { paths } from "./profile_public.generated";
+import type { paths } from "./speech.generated";
 export { ContractValidationError } from "./errors.mjs";
 export type HttpOperation = "listProfiles" | "getProfileRevision";
 type HttpPaths = {

@@ -112,3 +112,46 @@ def test_list_contains_only_published_revisions_and_current_pointer(sandbox: San
     page, more = s.port.list_publications(limit=2)
     assert len(page) == 1 and page[0][0].draft.revision == "1" and page[0][1] == "1"
     assert more is False
+
+
+def test_unregistered_source_rolls_back_new_intent_and_pointer(sandbox: Sandbox) -> None:
+    from speechnexus_backend.speech.application.profile_lifecycle import (
+        UnavailableProfilePublicationVerifier,
+    )
+
+    s = sandbox
+    s.draft()
+    before = s.snapshot()
+    # The synthetic transaction rolls back; the product boundary preserves unknown.
+    s.port._verifier = UnavailableProfilePublicationVerifier()
+    assert s.port.mutate(s.publish()).outcome == "unknown"
+    assert s.snapshot() == before
+
+
+def test_result_replay_preserves_original_snapshot_after_retirement(sandbox: Sandbox) -> None:
+    s = sandbox
+    s.draft()
+    first = s.port.mutate(s.publish())
+    s.admin.execute(
+        "UPDATE speech_profile_publications SET status='retired',retired_at_us=published_at_us"
+    )
+    before = s.snapshot()
+    replay = s.port.mutate(s.publish())
+    assert replay.outcome == "replayed" and replay.publication == first.publication
+    assert replay.publication is not None and replay.publication.status == "published"
+    assert s.port.list_publications() == ([], False)
+    assert s.snapshot() == before
+
+
+def test_failed_result_write_rolls_back_publication_and_head(sandbox: Sandbox) -> None:
+    s = sandbox
+    s.draft()
+    before = s.snapshot()
+    s.admin.execute(
+        "CREATE TRIGGER reject_synthetic_result BEFORE INSERT ON "
+        "speech_profile_lifecycle_results BEGIN "
+        "SELECT RAISE(ABORT,'synthetic failure'); END"
+    )
+    with pytest.raises(sqlite3.IntegrityError, match="synthetic failure"):
+        s.port.mutate(s.publish())
+    assert s.snapshot() == before

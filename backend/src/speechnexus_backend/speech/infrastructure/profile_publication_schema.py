@@ -17,7 +17,8 @@ PROFILE_PUBLICATION_DDL = (
         FOREIGN KEY (profile_id,revision)
             REFERENCES speech_profile_revisions (profile_id,revision),
         CHECK ((status='published' AND retired_at_us IS NULL AND disabled_reason IS NULL)
-            OR (status='retired' AND retired_at_us >= published_at_us AND disabled_reason IS NULL)
+            OR (status='retired' AND retired_at_us IS NOT NULL
+                AND retired_at_us >= published_at_us AND disabled_reason IS NULL)
             OR (status='disabled' AND disabled_reason IS NOT NULL))
     )""",
     'ALTER TABLE speech_profile_families ADD COLUMN current_revision VARCHAR(19) COLLATE "C"',

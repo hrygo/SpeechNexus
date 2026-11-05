@@ -16,12 +16,14 @@ from starlette.responses import JSONResponse, Response
 
 from speechnexus_backend.speech.application.profile_drafts import ProfileDrafts
 from speechnexus_backend.speech.domain.profile_drafts import ProfileUnavailableError
+from speechnexus_backend.speech.domain.profile_publications import PublishedProfile
 from speechnexus_backend.speech.interfaces.http.profile_errors import CREATE, READ, profile_error
 from speechnexus_backend.speech.interfaces.http.profile_ingress import CREATE_PATH, READ_PATH
 from speechnexus_backend.speech.interfaces.profile_drafts import (
     draft_to_wire,
     prepare_profile_draft,
 )
+from speechnexus_backend.speech.interfaces.profile_publications import publication_to_wire
 
 
 def _object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -81,6 +83,19 @@ def _read(provider: ProfileDrafts, envelope: dict[str, Any], request_id: str) ->
         return profile_error("invalid_profile_request", request_id, operation=READ)
     try:
         identity, revision = envelope["path"]["profile_id"], envelope["path"]["revision"]
+        publication_reader = getattr(provider, "get_publication", None)
+        publication = (
+            publication_reader(identity, revision) if publication_reader is not None else None
+        )
+        if publication is not None:
+            if not isinstance(publication, PublishedProfile) or (
+                publication.draft.profile_id,
+                publication.draft.revision,
+            ) != (identity, revision):
+                raise ProfileUnavailableError
+            wire = publication_to_wire(publication)
+            validate_response(READ, 200, {"body": wire})
+            return JSONResponse(wire, headers={"Cache-Control": "no-store"})
         draft = provider.get(identity, revision)
         if draft is None:
             return profile_error("profile_not_found", request_id, operation=READ)

@@ -32,6 +32,9 @@ from speechnexus_backend.profile_runtime import ProfileRuntime
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.profile_draft_schema import profile_draft_grants
+from speechnexus_backend.speech.infrastructure.profile_publication_schema import (
+    profile_publication_grants,
+)
 from speechnexus_backend.speech.interfaces.http.profile_ingress import CREATE_PATH as PATH
 
 pytestmark = [
@@ -75,7 +78,10 @@ def http_db(database: JobDatabase) -> Iterator[HTTPDatabase]:
     role = database.role.replace("sn_jobs_role_", "sn_profile_")
     database.query(f"CREATE ROLE \"{role}\" LOGIN PASSWORD 'synthetic_profile_http'")
     try:
-        for grant in profile_draft_grants(database.schema, role):
+        for grant in (
+            *profile_draft_grants(database.schema, role),
+            *profile_publication_grants(database.schema, role),
+        ):
             database.query(grant)
         settings = Settings(
             **{

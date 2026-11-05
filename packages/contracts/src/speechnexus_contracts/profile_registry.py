@@ -27,9 +27,9 @@ HTTP_PROFILES = frozenset(
         "runtime",
         "workbench",
         "profile",
+        "profile_public",
         "profile_lifecycle",
         "binding",
         "binding_defaults",
-        "profile_public",
     )
 )

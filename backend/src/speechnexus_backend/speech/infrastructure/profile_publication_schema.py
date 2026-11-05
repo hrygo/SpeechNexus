@@ -50,6 +50,9 @@ def profile_publication_grants(schema: str, role: str) -> tuple[str, ...]:
             )
         ),
         f'GRANT UPDATE (current_revision) ON "{schema}".speech_profile_families TO "{role}"',
+        # SELECT ... FOR UPDATE needs UPDATE on at least one column. The intent key is
+        # never mutated; this grant only admits the serializing row lock.
+        f'GRANT UPDATE (key_digest) ON "{schema}".speech_profile_lifecycle_intents TO "{role}"',
     )
 
 

@@ -335,9 +335,19 @@ def test_writer_and_reader_privileges_and_real_runtime_fail_closed(sandbox: Sand
         )
         listing = http.get("/v1/nexus/profiles")
         assert listing.status_code == 200
-        assert [(p["revision"], p["current_revision"]) for p in listing.json()["data"]] == [
+        assert [p["revision"] for p in listing.json()["data"]] == ["1"]
+        assert all("current_revision" not in p for p in listing.json()["data"])
+        published = http.get("/v2/nexus/profiles")
+        assert published.status_code == 200
+        assert [(p["revision"], p["current_revision"]) for p in published.json()["data"]] == [
             ("1", "1")
         ]
+        s.admin.execute("UPDATE speech_profile_families SET current_revision=NULL")
+        unset = http.get("/v2/nexus/profiles")
+        assert [(p["revision"], p["current_revision"]) for p in unset.json()["data"]] == [
+            ("1", None)
+        ]
+        s.admin.execute("UPDATE speech_profile_families SET current_revision='1'")
     assert s.snapshot() == before
 
 

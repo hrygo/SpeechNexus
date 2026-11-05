@@ -139,11 +139,15 @@ class ProfileRuntime:
             ).fetchone()
             if row is None or not row["permitted"]:
                 raise ValueError("Profile writer privileges do not match the port")
+            # SELECT ... FOR UPDATE needs UPDATE on at least one column. key_digest is
+            # the serializing key; the port never updates intent rows.
             mutable = (
                 {"latest_revision", "current_revision"}
                 if table == "speech_profile_families"
                 else {"command_state", "revision", "error_code"}
                 if table == "speech_profile_commands"
+                else {"key_digest"}
+                if table == "speech_profile_lifecycle_intents"
                 else set()
             )
             columns = connection.execute(

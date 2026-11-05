@@ -272,9 +272,13 @@ original-key mutation.
 Provisioning now combines `profile_draft_grants` with
 `profile_publication_grants`. The writer can insert immutable publication,
 intent and result facts and update only family allocation/current pointers and
-existing draft result columns. It cannot update publication/evidence/history,
-DELETE, TRUNCATE, perform DDL or access Job tables. Startup checks both login and
-effective identities against this combined minimum. The separate
+existing draft result columns. PostgreSQL also requires UPDATE on at least one
+column for `SELECT ... FOR UPDATE`; the writer therefore holds
+`UPDATE (key_digest)` on the intent journal solely to take the serializing row
+lock, and the port never updates that column. The writer cannot update
+publication/evidence/history, DELETE, TRUNCATE, perform DDL or access Job tables.
+Startup checks both login and effective identities against this combined minimum.
+The separate
 `profile_publication_reader_grants` excludes all command/intent/result tables;
 it is an explicit speech-owner read role, not a Workbench table-writing API.
 

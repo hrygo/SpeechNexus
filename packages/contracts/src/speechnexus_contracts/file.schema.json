@@ -2487,40 +2487,6 @@
           "if": {
             "properties": {
               "status": {
-                "const": "cancelling"
-              }
-            },
-            "required": ["status"]
-          },
-          "then": {
-            "properties": {
-              "cleanup_state": {
-                "const": "pending"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "status": {
-                "const": "succeeded"
-              }
-            },
-            "required": ["status"]
-          },
-          "then": {
-            "properties": {
-              "cleanup_state": {
-                "const": "complete"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "status": {
                 "const": "cancelled"
               }
             },

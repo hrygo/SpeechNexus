@@ -1958,7 +1958,7 @@ export interface components {
        */
       cancellation_requested_at: string;
       operations: components["schemas"]["OperationReference"][];
-    } & (unknown & unknown & unknown);
+    } & unknown;
     /** @enum {string} */
     OperationKind: "asr" | "tts" | "voice_preview" | "voice_validation";
     /** @enum {string} */

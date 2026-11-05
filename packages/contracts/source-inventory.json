@@ -32,7 +32,7 @@
     "version": null
   },
   "internal/execution-control.openapi.yaml": {
-    "sha256": "89d46161da54da50251568c4b67618861031912ab9b926c49e3fa3c03af4f91a",
+    "sha256": "fd33dabc47e6d0d7b1860feb94a0f04301fb04cf875e873f3337af077c1d19b2",
     "version": "0.4.0.dev1"
   },
   "internal/execution-stream.schema.json": {

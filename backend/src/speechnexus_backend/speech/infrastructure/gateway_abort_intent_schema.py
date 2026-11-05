@@ -21,7 +21,8 @@ def gateway_abort_grants(schema: str, role: str) -> tuple[str, ...]:
     return (
         f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
         f'GRANT SELECT, INSERT ON "{schema}".{ABORT_INTENT_TABLE} TO "{role}"',
-        f'GRANT UPDATE (dispatched_at_us) ON "{schema}".{ABORT_INTENT_TABLE} TO "{role}"',
+        f"GRANT UPDATE (dispatched_at_us, next_check_at_us) "
+        f'ON "{schema}".{ABORT_INTENT_TABLE} TO "{role}"',
     )
 
 

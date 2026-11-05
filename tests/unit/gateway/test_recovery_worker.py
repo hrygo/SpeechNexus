@@ -289,3 +289,121 @@ async def test_readiness_refuses_a_missing_or_dead_configured_worker(
         )
     with pytest.raises(RuntimeError, match="recovery is not running"):
         await _ControlReadinessProbe(app).check()
+
+
+def test_abort_budget_exhaustion_cannot_starve_execution_recovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from collections.abc import Callable
+    from typing import cast
+
+    from speechnexus_gateway.application.recover_aborts import AbortRecoveryService
+
+    ledger = SpyLedger()
+    quarantined(ledger, identity=identity_for(submit_intent_id="intent-a"))
+    source = ScriptedTerminations()
+    source.script("intent-a", termination_evidence())
+    ticks = [0.0]
+    visited = Event()
+    original = source.termination_evidence
+
+    def evidence(intent: SubmissionIntent) -> InstanceTerminationEvidence | None:
+        visited.set()
+        return original(intent)
+
+    source.termination_evidence = evidence  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        "speechnexus_gateway.infrastructure.recovery_worker.monotonic", lambda: ticks[0]
+    )
+
+    class ExhaustAbort:
+        def sweep(self, *, limit: int, should_stop: Callable[[], bool]) -> int:
+            if not should_stop():
+                ticks[0] += 2
+            return 1
+
+    worker = RecoveryWorker(
+        service_for(ledger, source), interval_seconds=0.01, batch_size=1, pass_budget_seconds=1
+    )
+    worker.configure_abort(cast(AbortRecoveryService, ExhaustAbort()))
+    worker.start()
+    try:
+        assert visited.wait(0.5), "abort repeatedly exhausted every execution recovery pass"
+    finally:
+        worker.close()
+    assert ledger.get("intent-a").execution_state is ExecutionState.ABORTED
+
+
+async def test_lifespan_connects_abort_recovery_to_runtime_and_worker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime
+
+    from speechnexus_gateway.domain.abort_intent import AbortExecutionRequest
+    from speechnexus_gateway.domain.ports import AbortOutcome
+    from tests.unit.gateway.test_abort_receive_order import setup_abort
+
+    _, ledger, _, ingress, _, request = setup_abort()
+    ledger.durable_abort_enabled = True
+    ledger.receive_abort(request)
+    called = Event()
+    taken = False
+
+    def take_due_aborts(
+        *, gateway_id: str, host_node_id: str, limit: int
+    ) -> list[AbortExecutionRequest]:
+        nonlocal taken
+        if taken:
+            return []
+        taken = True
+        return [request]
+
+    monkeypatch.setattr(ledger, "take_due_aborts", take_due_aborts, raising=False)
+    query = ExecutionQueryService(ingress=ingress, ledger=ledger)
+    worker = RecoveryWorker(
+        ExecutionRecoveryService(
+            ingress=ingress, ledger=ledger, submissions=query, terminations=ScriptedTerminations()
+        ),
+        interval_seconds=0.01,
+        batch_size=1,
+        pass_budget_seconds=1,
+    )
+
+    class Runtime:
+        max_command_bytes = 16384
+        running = True
+
+        def open(self) -> None:
+            pass
+
+        def close(self) -> None:
+            self.running = False
+
+        def abort(
+            self, intent: SubmissionIntent, *, reason: str, wait_timeout_ms: int
+        ) -> AbortOutcome:
+            assert intent.identity.submit_intent_id == request.submit_intent_id
+            assert (reason, wait_timeout_ms) == (request.reason, request.wait_timeout_ms)
+            called.set()
+            return AbortOutcome(datetime.now(UTC))
+
+    monkeypatch.setattr(
+        "speechnexus_gateway.app._build_control",
+        lambda _: (
+            GatewayBarrierService(ingress=ingress, ledger=ledger),
+            query,
+            InstanceDrainService(ingress=ingress, ledger=ledger),
+            SimpleNamespace(close=lambda: None),
+            SimpleNamespace(close=lambda: None),
+            worker,
+            ingress,
+            ledger,
+        ),
+    )
+    app = create_app(
+        settings=configured(tmp_path, tmp_path / "unused.json"),
+        file_execution_factory=lambda *_: Runtime(),  # type: ignore[arg-type]
+    )
+    async with app.router.lifespan_context(app):
+        assert await asyncio.to_thread(called.wait, 2)
+    assert not worker.running

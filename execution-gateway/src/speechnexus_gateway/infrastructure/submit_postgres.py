@@ -42,6 +42,7 @@ from speechnexus_gateway.domain.submission import (
     SubmitRequest,
 )
 from speechnexus_gateway.infrastructure.abort_intent_sql import claim_abort, receive_abort
+from speechnexus_gateway.infrastructure.abort_recovery_sql import take_due_aborts
 from speechnexus_gateway.infrastructure.barrier_sql import (
     read_barrier,
     seal_barrier_in_transaction,
@@ -209,6 +210,20 @@ class PostgresSubmissionLedger:
             read_only=False,
             work=lambda cursor: claim_abort(
                 cursor, request, clock=cast(_DeadlineCursor, cursor).clock
+            ),
+        )
+
+    def take_due_aborts(
+        self, *, gateway_id: str, host_node_id: str, limit: int
+    ) -> list[AbortExecutionRequest]:
+        return self._run(
+            read_only=False,
+            work=lambda cursor: take_due_aborts(
+                cursor,
+                gateway_id=gateway_id,
+                host_node_id=host_node_id,
+                limit=limit,
+                clock=cast(_DeadlineCursor, cursor).clock,
             ),
         )
 

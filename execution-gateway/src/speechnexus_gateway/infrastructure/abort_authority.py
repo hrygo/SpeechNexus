@@ -42,7 +42,10 @@ def verify_abort_authority(pool: GatewayPool, schema: str) -> bool:
                     "AND a.attnum>0 AND NOT a.attisdropped",
                     (role, schema),
                 ).fetchall()
-                if {row["attname"] for row in columns if row["updatable"]} != {"dispatched_at_us"}:
+                if {row["attname"] for row in columns if row["updatable"]} != {
+                    "dispatched_at_us",
+                    "next_check_at_us",
+                }:
                     return False
             return True
     except Exception:

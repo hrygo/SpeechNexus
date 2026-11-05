@@ -102,7 +102,9 @@ unknown/停止协议保留占用，PUT 或读回失败不重试或删除未知�
 非空 `voice_revision_id`、匹配的 node/gateway/pool/instance/generation target，以及
 `text` 非空且 `text_stream` 为空。原请求还必须带有非空 `output_stream_id`、
 `max_output_audio_ms` 和等于 binding 的 24 kHz `sample_rate_hz`；这三个事实用于生成区间
-和硬输出上界，缺失或越界不会进入合成。它只接受
+和硬输出上界，缺失或越界不会进入合成。公开同步请求的 `nexus.max_output_audio_ms` 在合成
+计划中与部署上限取较小者，该有效值写入 `SubmitExecutionRequest.max_output_audio_ms`，
+网关据此生成硬输出上界，不读取请求原值或当前默认值。它只接受
 `text_commit_mode=explicit`、`audio_delivery=complete`、无 pronunciation revision、
 `voice_kind=builtin` 且无 voice material/词表/发音资源，并要求文本长度不超过命令声明的
 `planner.max_chars`：本单元只做单段完整交付，长文本切分属于后续单元，不会被静默截断。

@@ -12,6 +12,9 @@ from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_nam
 from speechnexus_backend.speech.infrastructure.public_job_cancellation_schema import (
     public_job_cancellation_grants,
 )
+from speechnexus_backend.speech.infrastructure.public_job_submission_schema import (
+    SUBMISSIONS,
+)
 
 JOBS = "speech_jobs"
 EVENTS = "speech_job_events"
@@ -73,6 +76,7 @@ def public_job_grants(schema: str, role: str) -> tuple[str, ...]:
         f"GRANT UPDATE (state, status_version, result_json, error_code, updated_at_us) "
         f"ON {prefix}{JOBS} TO {target}",
         f"GRANT SELECT, INSERT ON {prefix}{EVENTS} TO {target}",
+        f"GRANT SELECT ON {prefix}{SUBMISSIONS} TO {target}",
         *public_job_cancellation_grants(schema, role),
         *job_cancellation_fence_grants(schema, role),
     )

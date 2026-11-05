@@ -39,7 +39,7 @@ from speechnexus_backend.speech.infrastructure.coordination_grants import (
     coordination_runtime_grants,
 )
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence import (
-    PostgresJobCancellationFence,
+    CancellationFence,
     write_cancellation_fence,
 )
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
@@ -246,9 +246,32 @@ def submission_intent(intent: SubmissionIdentity) -> SubmissionIntent:
     )
 
 
+def _accept(
+    db: FenceSandbox,
+    job_id: str,
+    *,
+    request_id: str,
+    accepted_at_us: int | None = None,
+) -> CancellationFence:
+    """Test-only acceptance: write the fence in one explicit transaction."""
+    with db.speech.connection() as connection:
+        if accepted_at_us is None:
+            row = connection.execute(
+                "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS now_us"
+            ).fetchone()
+            assert row is not None
+            accepted_at_us = int(row["now_us"])
+        with connection.cursor() as cursor:
+            return write_cancellation_fence(
+                cursor,
+                job_id=job_id,
+                request_id=request_id,
+                accepted_at_us=accepted_at_us,
+            )
+
+
 def test_fence_committed_before_submit_refuses_creation(fence_db: FenceSandbox) -> None:
-    fence = PostgresJobCancellationFence(fence_db.speech)
-    accepted = fence.accept("operation-test", request_id="request-fence-1")
+    accepted = _accept(fence_db, "operation-test", request_id="request-fence-1")
     ledger = PostgresSubmissionLedger(fence_db.gateway)
     intent = submission_intent(identity("lease-alt-stage-main", "attempt-alt", "operation-test"))
 
@@ -271,10 +294,9 @@ def test_fence_committed_before_submit_refuses_creation(fence_db: FenceSandbox) 
 
 
 def test_fence_accept_is_first_wins_and_replayable(fence_db: FenceSandbox) -> None:
-    fence = PostgresJobCancellationFence(fence_db.speech)
-    first = fence.accept("operation-test", request_id="request-first")
-    same = fence.accept("operation-test", request_id="request-first")
-    other = fence.accept("operation-test", request_id="request-other")
+    first = _accept(fence_db, "operation-test", request_id="request-first")
+    same = _accept(fence_db, "operation-test", request_id="request-first")
+    other = _accept(fence_db, "operation-test", request_id="request-other")
 
     assert (same.accepted_at_us, same.request_id) == (first.accepted_at_us, first.request_id)
     assert (other.accepted_at_us, other.request_id) == (first.accepted_at_us, first.request_id)
@@ -285,9 +307,7 @@ def test_fence_accept_is_first_wins_and_replayable(fence_db: FenceSandbox) -> No
 
 def test_store_exhaustion_prevents_further_claims(fence_db: FenceSandbox) -> None:
     fence_db.seed_job("job-reconcile-3")
-    accepted = PostgresJobCancellationFence(fence_db.speech).accept(
-        "job-reconcile-3", request_id="request-reconcile-3"
-    )
+    accepted = _accept(fence_db, "job-reconcile-3", request_id="request-reconcile-3")
     store = PostgresCancellationReconciliationStore(fence_db.speech)
     now = accepted.accepted_at_us + 1
     assert (
@@ -324,8 +344,7 @@ def test_execution_created_before_acceptance_is_not_rewritten(fence_db: FenceSan
     before = ledger.get(intent.identity.submit_intent_id)
     assert before is not None and before.execution_state.value == "submitting"
 
-    fence = PostgresJobCancellationFence(fence_db.speech)
-    accepted = fence.accept("operation-test", request_id="request-fence-2")
+    accepted = _accept(fence_db, "operation-test", request_id="request-fence-2")
 
     after = ledger.get(intent.identity.submit_intent_id)
     assert after == before
@@ -449,8 +468,11 @@ def test_acceptance_lock_waits_for_submit_and_then_refuses(fence_db: FenceSandbo
 
 def test_migration_down_refuses_to_drop_nonempty_fences(fence_db: FenceSandbox) -> None:
     fence_db.seed_job("job-migration-1")
-    PostgresJobCancellationFence(fence_db.speech).accept(
-        "job-migration-1", request_id="request-migration-1"
+    accepted = _accept(fence_db, "job-migration-1", request_id="request-migration-1")
+    fence_db.query(
+        "INSERT INTO speech_job_cancellation_not_submitted "
+        "(job_id, observed_at_us, observer) VALUES (%s, %s, 'worker-a')",
+        ("job-migration-1", accepted.accepted_at_us),
     )
 
     def downgrade() -> None:
@@ -467,6 +489,9 @@ def test_migration_down_refuses_to_drop_nonempty_fences(fence_db: FenceSandbox) 
         finally:
             engine.dispose()
 
+    with pytest.raises(RuntimeError, match="not-submitted"):
+        downgrade()
+    fence_db.query("DELETE FROM speech_job_cancellation_not_submitted")
     with pytest.raises(RuntimeError, match="preservation"):
         downgrade()
     assert fence_db.query("SELECT count(*) AS n FROM speech_job_cancellation_fences") == [{"n": 1}]
@@ -484,9 +509,7 @@ def test_migration_down_refuses_to_drop_nonempty_fences(fence_db: FenceSandbox) 
 
 def test_reconciliation_store_lease_retry_settle_and_restart(fence_db: FenceSandbox) -> None:
     fence_db.seed_job("job-reconcile-1")
-    accepted = PostgresJobCancellationFence(fence_db.speech).accept(
-        "job-reconcile-1", request_id="request-reconcile-1"
-    )
+    accepted = _accept(fence_db, "job-reconcile-1", request_id="request-reconcile-1")
     store = PostgresCancellationReconciliationStore(fence_db.speech)
     now = accepted.accepted_at_us + 1
 
@@ -537,16 +560,14 @@ class _SettledAfterRestart:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def confirm(self, job_id: str) -> Confirmation:
+    async def confirm(self, job_id: str, *, not_submitted: bool = False) -> Confirmation:
         self.calls += 1
         return Confirmation("settled" if self.calls >= 2 else "pending")
 
 
 def test_worker_restart_converges_and_does_not_repeat_settlement(fence_db: FenceSandbox) -> None:
     fence_db.seed_job("job-reconcile-2")
-    accepted = PostgresJobCancellationFence(fence_db.speech).accept(
-        "job-reconcile-2", request_id="request-reconcile-2"
-    )
+    accepted = _accept(fence_db, "job-reconcile-2", request_id="request-reconcile-2")
     store = PostgresCancellationReconciliationStore(fence_db.speech)
     now = accepted.accepted_at_us + 1
     confirmer = _SettledAfterRestart()

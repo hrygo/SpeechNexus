@@ -12,6 +12,7 @@ from speechnexus_backend.speech.application.job_cancellation_reconciliation impo
     ReconciliationOutcome,
 )
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
+    NOT_SUBMITTED_TABLE,
     RECONCILIATION_TABLE,
     TABLE,
 )
@@ -34,9 +35,10 @@ class _Cursor(Protocol):
 
 _CLAIM = f"""
 WITH due AS (
-    SELECT f.job_id
+    SELECT f.job_id, n.observed_at_us AS not_submitted_at_us
     FROM {TABLE} AS f
     LEFT JOIN {RECONCILIATION_TABLE} AS r ON r.job_id = f.job_id
+    LEFT JOIN {NOT_SUBMITTED_TABLE} AS n ON n.job_id = f.job_id
     WHERE f.accepted_at_us <= %(accepted_before_us)s
       AND (
         r.job_id IS NULL
@@ -61,9 +63,11 @@ WITH due AS (
       AND {RECONCILIATION_TABLE}.next_check_at_us <= %(now_us)s
     RETURNING job_id, attempts, next_check_at_us
 )
-SELECT c.job_id, c.attempts, c.next_check_at_us, f.accepted_at_us
+SELECT c.job_id, c.attempts, c.next_check_at_us, f.accepted_at_us,
+       n.observed_at_us AS not_submitted_at_us
 FROM claimed AS c
 JOIN {TABLE} AS f ON f.job_id = c.job_id
+LEFT JOIN {NOT_SUBMITTED_TABLE} AS n ON n.job_id = c.job_id
 ORDER BY f.accepted_at_us, c.job_id
 """
 
@@ -143,6 +147,11 @@ class PostgresCancellationReconciliationStore:
                     accepted_at_us=int(row["accepted_at_us"]),
                     attempts=int(row["attempts"]),
                     next_check_at_us=int(row["next_check_at_us"]),
+                    not_submitted_at_us=(
+                        None
+                        if row["not_submitted_at_us"] is None
+                        else int(row["not_submitted_at_us"])
+                    ),
                 )
                 for row in rows
             ]

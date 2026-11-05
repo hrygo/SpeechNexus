@@ -111,11 +111,18 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
 4. 围栏不存在时按原流程创建。若执行已经创建、随后才受理取消，网关不改写 intent 状态，
    由既有 abort / stop-evidence 路径推进；只有验证到 `aborted`、`cleanup_state=complete`
    且停在允许证据内，或确认上述“没有执行”事实，才允许 Job 进入 `cancelled`。
+   如果受理发生在派发器 `mark_running` 之后、submit 之前，派发器持久记录
+   not-submitted 观察；对账只有在该观察存在且本网关对固定 intent 返回 404 时，才把它
+   当作“没有执行”，单独 404 不结算。
 
-gateway 角色只对围栏投影持有 `SELECT`；API Job writer 通过 `public_job_grants`、worker
-通过 `job_dispatch_grants` 获得围栏 `SELECT/INSERT` 和 reconciliation 账本的受限列
-UPDATE。围栏投影与 reconciliation 表由迁移 `0035_job_cancellation_fences` 创建
-（`down_revision=0034_public_job_cancellations`），回滚在仍有围栏或账本行时拒绝删除。
+gateway 写角色在 `coordination_runtime_grants` 之外还须安装
+`gateway_cancellation_fence_grants` 以获得围栏列 `SELECT`；独立执行读取器使用同一函数。API Job writer 通过
+`public_job_grants` 获得围栏 `SELECT/INSERT`，worker 使用
+`cancellation_reconciliation_grants` 获得围栏列 `SELECT`、reconciliation 账本受限读写和
+not-submitted `SELECT`；`job_dispatch_grants` 只授予派发器 not-submitted `INSERT`。
+围栏、not-submitted 和 reconciliation 表由迁移 `0035_job_cancellation_fences` 创建
+（`down_revision=0034_public_job_cancellations`），回滚在仍有围栏、not-submitted 观察或
+账本行时拒绝删除。
 
 `get` 用 `submit_intents ⋈ admission_leases ⋈ admission_attempts` 重建完整身份，行数不等于 1、
 枚举或上限无法重新解释时按 `reconciliation_required` 报告，不猜测。`save` 是带版本条件的写入：

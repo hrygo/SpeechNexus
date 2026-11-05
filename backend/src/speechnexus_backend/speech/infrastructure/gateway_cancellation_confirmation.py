@@ -1,11 +1,12 @@
 """Translate one gateway execution document into cancellation reconciliation.
 
-The no-execution branch is the important new fact: a submit refused by the
-durable fence leaves a terminal failed intent with cleanup not_required and no
-dispatch. That proves there is nothing to stop, so the accepted cancellation can
-settle only after this observation. An aborted execution still requires complete
-cleanup and one of the contract's verified stop evidence kinds. A missing
-execution is never treated as a stop.
+The no-execution branch is the important fact: a submit refused by the durable
+fence leaves a terminal failed intent with cleanup not_required and no dispatch.
+A dispatcher that observed the accepted cancellation before submitting also
+records a not-submitted observation; together with a gateway 404 for the stable
+intent, that proves there is nothing to stop. Neither fact alone settles. An
+aborted execution still requires complete cleanup and one of the contract's
+verified stop evidence kinds. A missing execution is never treated as a stop.
 
 The active-execution branch delegates at most one bounded stop attempt to an
 injected callable. The acceptance path owns the immediate stop; this worker is
@@ -60,7 +61,6 @@ def not_started(document: Mapping[str, Any]) -> bool:
     """True only for the gateway's durable no-execution fact."""
     return (
         document.get("execution_state") == "failed"
-        and document.get("error_code") == "gateway_barrier_fenced"
         and document.get("cleanup_state") == "not_required"
         and document.get("stop_evidence_kind") == "none"
         and document.get("dispatched_at") is None
@@ -88,7 +88,7 @@ class GatewayCancellationConfirmer:
         self._settings, self._settlement = settings, settlement
         self._stop_attempt = stop_attempt
 
-    async def confirm(self, job_id: str) -> Confirmation:
+    async def confirm(self, job_id: str, *, not_submitted: bool = False) -> Confirmation:
         submit_intent_id = submit_intent_identity(job_id)
         try:
             async with GatewayExecutionClient.from_settings(self._settings) as client:
@@ -96,9 +96,11 @@ class GatewayCancellationConfirmer:
                     document = await client.query_document(submit_intent_id)
                 except GatewayRejectedError as error:
                     if error.status_code == 404:
-                        # The dispatcher may not have attempted submit yet. A
-                        # missing intent is not no-execution evidence; retry.
-                        return Confirmation("pending")
+                        # A 404 alone is not no-execution evidence: the dispatcher
+                        # may not have attempted submit yet. It becomes sufficient
+                        # only with the dispatcher's persisted observation that it
+                        # saw the accepted cancellation before submitting.
+                        return self._settle(job_id) if not_submitted else Confirmation("pending")
                     return Confirmation("unavailable")
                 except GatewayConnectionError, GatewayTimeoutError, GatewayServerError:
                     return Confirmation("unavailable")

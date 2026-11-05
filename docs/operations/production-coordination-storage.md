@@ -57,8 +57,11 @@ statements = coordination_runtime_grants(
 此函数只生成 SQL，不创建身份、不连接数据库、不自动授予权限。现有 Job 创建者
 `job_runtime_grants` 保持原先更窄的权限。迁移不会自动扩大任何旧角色权限。
 
-取消围栏投影另由两个独立声明安装；API Job writer 的 `public_job_grants` 已包含
-围栏写入授权，worker 的 `job_dispatch_grants` 另包含围栏与对账账本授权：
+取消围栏投影另由独立声明安装；API Job writer 的 `public_job_grants` 已包含
+围栏写入授权，派发器的 `job_dispatch_grants` 只包含 not-submitted 观察的 INSERT，
+worker 使用 `cancellation_reconciliation_grants` 获得围栏列 SELECT、对账账本
+读写与 not-submitted SELECT。若受理 writer 不整体安装 `public_job_grants`，可单独
+使用 `job_cancellation_fence_grants`：
 
 ```python
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
@@ -68,16 +71,19 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema imp
 )
 
 statements = [
-    *job_cancellation_fence_grants("speech", "speech_runtime"),
-    *cancellation_reconciliation_grants("speech", "speech_runtime"),
+    *job_cancellation_fence_grants("speech", "job_writer"),
+    *cancellation_reconciliation_grants("speech", "cancellation_worker"),
     *gateway_cancellation_fence_grants("speech", "gateway_runtime"),
 ]
 ```
 
-API Job writer 只对 `speech_job_cancellation_fences` 持有 SELECT/INSERT；worker 另对
+API Job writer 只对 `speech_job_cancellation_fences` 持有 SELECT/INSERT；派发器只对
+`speech_job_cancellation_not_submitted` 持有 INSERT，不能写围栏或对账账本；worker 对
+围栏只持有 `job_id`、`accepted_at_us`、`request_id` 列 SELECT，对
 `speech_job_cancellation_reconciliations` 持有 SELECT/INSERT 与
-`attempts`、`next_check_at_us`、`last_outcome`、`settled_at_us`、`updated_at_us` 的列级 UPDATE；
-gateway 角色对围栏投影只有 SELECT。围栏投影与账本由迁移
+`attempts`、`next_check_at_us`、`last_outcome`、`settled_at_us`、`updated_at_us` 的列级 UPDATE，
+对 not-submitted 表持有 SELECT；gateway 写角色在 `coordination_runtime_grants` 之外还须安装
+`gateway_cancellation_fence_grants` 获得围栏列 SELECT，独立执行读取器使用同一函数。围栏投影与账本由迁移
 `0035_job_cancellation_fences` 创建，没有 DELETE/TRUNCATE/DDL 授权。受理事务把围栏写入
 放在最后，取得围栏互斥锁后不再等待
 `admission_leases`/`runtime_instance*` 等网关权威行锁；网关则先按既有顺序锁权威行，

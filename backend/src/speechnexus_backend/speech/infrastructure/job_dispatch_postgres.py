@@ -18,6 +18,9 @@ from speechnexus_backend.speech.domain.job_dispatch import (
     DispatchUnavailableError,
     identifier,
 )
+from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
+    NOT_SUBMITTED_TABLE,
+)
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 
 _JOB_SELECT = (
@@ -125,6 +128,11 @@ class PostgresDispatchStateStore:
             raise ValueError("Dispatch renewal bounds are invalid")
         return await asyncio.to_thread(self._renew, claim, lease_ms)
 
+    async def record_cancellation_not_submitted(self, job_id: str, *, observer: str) -> None:
+        identifier(job_id)
+        identifier(observer)
+        return await asyncio.to_thread(self._record_cancellation_not_submitted, job_id, observer)
+
     async def finish(
         self,
         claim: ClaimedJob,
@@ -203,6 +211,27 @@ class PostgresDispatchStateStore:
         if not rows:
             return None
         return replace(claim, lease_expires_at_us=int(rows[0]["claim_expires_at_us"]))
+
+    def _record_cancellation_not_submitted(self, job_id: str, observer: str) -> None:
+        query = (
+            "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 "
+            "AS BIGINT) AS now_us) "
+            f"INSERT INTO {NOT_SUBMITTED_TABLE} (job_id, observed_at_us, observer) "
+            "SELECT j.job_id, clock.now_us, %s FROM speech_jobs AS j CROSS JOIN clock "
+            "WHERE j.job_id = %s AND j.state = 'cancelling' "
+            "ON CONFLICT (job_id) DO NOTHING"
+        )
+        try:
+            with self._pool.connection(timeout=self._timeout) as connection:
+                connection.execute(
+                    "SELECT set_config('statement_timeout', %s, true)",
+                    (str(max(1, int(self._timeout * 1000))),),
+                )
+                connection.execute(query, (observer, job_id))
+        except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
+            raise DispatchUnavailableError(
+                "Cancellation not-submitted observation is unavailable"
+            ) from None
 
     def _finish(
         self,

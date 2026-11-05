@@ -22,20 +22,30 @@ from speechnexus_backend.speech.application.job_cancellation import JobCancellat
 from speechnexus_backend.speech.application.job_cancellation_reconciliation import (
     JobCancellationReconciler,
 )
+from speechnexus_backend.speech.application.job_dispatcher import JobDispatcher
 from speechnexus_backend.speech.application.public_jobs import (
     IdempotencyConflictError,
     JobCleanupPendingError,
 )
-from speechnexus_backend.speech.domain.job_dispatch import submit_intent_identity
+from speechnexus_backend.speech.domain.job_dispatch import (
+    DispatchLimits,
+    ExecutionSubmission,
+    submit_intent_identity,
+)
 from speechnexus_backend.speech.domain.public_jobs import PublicJobNotFoundError
 from speechnexus_backend.speech.infrastructure.gateway_cancellation_confirmation import (
     GatewayCancellationConfirmer,
 )
 from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
     GatewayExecutionClient,
+    GatewayRejectedError,
 )
 from speechnexus_backend.speech.infrastructure.job_cancellation_reconciliation_postgres import (
     PostgresCancellationReconciliationStore,
+)
+from speechnexus_backend.speech.infrastructure.job_dispatch_postgres import (
+    PostgresDispatchQueue,
+    PostgresDispatchStateStore,
 )
 
 pytestmark = pytest.mark.integration
@@ -61,7 +71,7 @@ class Stopper:
         return StopObservation(cast(Any, self.state))
 
 
-async def _create_running(db: JobSandbox, *, key: str, workspace_id: str | None = None) -> str:
+async def _create_pending(db: JobSandbox, *, key: str, workspace_id: str | None = None) -> str:
     app = _app(db)
     body: dict[str, Any] = {
         "kind": "tts",
@@ -74,7 +84,11 @@ async def _create_running(db: JobSandbox, *, key: str, workspace_id: str | None 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         created = await client.post(PREFIX, json=body, headers={"Idempotency-Key": key})
         assert created.status_code == 202, created.text
-    job_id = cast(str, created.json()["id"])
+    return cast(str, created.json()["id"])
+
+
+async def _create_running(db: JobSandbox, *, key: str, workspace_id: str | None = None) -> str:
+    job_id = await _create_pending(db, key=key, workspace_id=workspace_id)
     db.jobs.advance(job_id, "running")
     return job_id
 
@@ -225,6 +239,14 @@ async def test_pending_job_can_be_cancelled_without_an_execution(jobs_db: JobSan
         assert replay.status_code == 200, replay.text
         assert replay.json() == cancelled.json()
     assert jobs_db.count("speech_job_cancellations") == 1
+    assert jobs_db.query(
+        "SELECT f.job_id, f.accepted_at_us = c.requested_at_us AS same, "
+        "f.request_id = c.request_id AS request_same "
+        "FROM speech_job_cancellation_fences AS f "
+        "JOIN speech_job_cancellations AS c ON c.job_id = f.job_id "
+        "WHERE f.job_id = %s",
+        (job_id,),
+    ) == [{"job_id": job_id, "same": True, "request_same": True}]
 
 
 async def test_verified_stop_settles_cancelled(jobs_db: JobSandbox) -> None:
@@ -350,6 +372,135 @@ async def test_accepted_cancellation_reconciles_from_no_execution_and_restart_co
     assert jobs_db.query("SELECT state FROM speech_jobs WHERE job_id = %s", (job_id,)) == [
         {"state": "cancelled"}
     ]
+
+
+class _Planner:
+    async def plan(self, job: Any, submit_intent_id: str) -> ExecutionSubmission:
+        return ExecutionSubmission(
+            submit_intent_id,
+            {
+                "submit_intent_id": submit_intent_id,
+                "lease_id": "lease-synthetic",
+                "operation_id": job.job_id,
+                "attempt_id": job.job_id + "-a1",
+                "stage_id": "stage-synthetic",
+                "workspace_id": job.workspace_id,
+                "pool_id": "tts-batch",
+                "host_node_id": "node-synthetic",
+                "gateway_id": "gateway-synthetic",
+                "instance_id": "instance-synthetic",
+                "instance_generation": 1,
+                "binding_revision_id": "binding-rev-2",
+                "policy_revision_id": "policy-rev-1",
+                "voice_revision_id": "voice-rev-4",
+                "fencing_token": 1,
+                "command_digest": "sha256:" + "a" * 64,
+                "deadline_at": "2030-01-01T00:00:00Z",
+                "max_output_audio_ms": 2000,
+                "sample_rate_hz": 24000,
+            },
+        )
+
+
+class _NoopPublisher:
+    async def publish(self, *args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("a refused submit must never publish")
+
+
+class _NoGatewayCalls:
+    async def query(self, submit_intent_id: str) -> Any:
+        raise AssertionError("cancellation before submit must not query the gateway")
+
+    async def submit(self, submission: Any) -> Any:
+        raise AssertionError("cancellation before submit must not submit")
+
+    async def result_receipt(self, submit_intent_id: str, *, audio: bool) -> Any:
+        raise AssertionError("cancellation before submit must not publish")
+
+
+class _CancelAfterMarkRunning(PostgresDispatchStateStore):
+    def __init__(self, pool: Any, jobs: Any) -> None:
+        super().__init__(pool)
+        self._jobs = jobs
+
+    async def mark_running(self, job: Any) -> Any:
+        running = await super().mark_running(job)
+        self._jobs.cancel(
+            job.job_id,
+            request_id="req-cancel-before-submit",
+            idempotency_key=None,
+        )
+        return running
+
+
+async def test_cancellation_after_mark_running_before_submit_converges(
+    jobs_db: JobSandbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job_id = await _create_pending(jobs_db, key="synthetic-before-submit-create")
+    state = _CancelAfterMarkRunning(jobs_db.pool, jobs_db.jobs)
+    dispatcher = JobDispatcher(
+        PostgresDispatchQueue(jobs_db.pool),
+        state,
+        _Planner(),
+        _NoGatewayCalls(),
+        _NoopPublisher(),
+        limits=DispatchLimits(poll_seconds=0.01, job_timeout_seconds=600, lease_ms=30_000),
+    )
+
+    batch = await dispatcher.run_once("worker-a")
+
+    assert batch.claimed == 1 and batch.lease_lost == 1
+    assert jobs_db.query("SELECT state FROM speech_jobs WHERE job_id = %s", (job_id,)) == [
+        {"state": "cancelling"}
+    ]
+    assert jobs_db.count("speech_job_cancellation_not_submitted") == 1
+    await state.record_cancellation_not_submitted(job_id, observer="worker-b")
+    assert jobs_db.query(
+        "SELECT observer FROM speech_job_cancellation_not_submitted WHERE job_id = %s",
+        (job_id,),
+    ) == [{"observer": "worker-a"}]
+
+    class MissingClient:
+        async def __aenter__(self) -> MissingClient:
+            return self
+
+        async def __aexit__(self, *exc_info: object) -> None:
+            return None
+
+        async def query_document(self, submit_intent_id: str) -> dict[str, Any]:
+            raise GatewayRejectedError("missing", request_may_have_run=False, status_code=404)
+
+    monkeypatch.setattr(
+        GatewayExecutionClient,
+        "from_settings",
+        classmethod(lambda cls, settings: MissingClient()),
+    )
+
+    class Settlement:
+        def settle_cancelled(self, target: str) -> bool:
+            current = jobs_db.jobs.get(target)
+            if current.state == "cancelled":
+                return True
+            if current.state != "cancelling":
+                return False
+            return (
+                jobs_db.jobs.settle_cancelled(target, expected_version=current.status_version).state
+                == "cancelled"
+            )
+
+    reconciler = JobCancellationReconciler(
+        store=PostgresCancellationReconciliationStore(jobs_db.pool),
+        confirmer=GatewayCancellationConfirmer(cast(Any, object()), Settlement()),
+        min_age_seconds=0,
+        max_attempts=3,
+    )
+    result = await reconciler.run_once(now_us=time.time_ns() // 1_000 + 1_000_000)
+
+    assert result.claimed == 1 and result.settled == 1
+    assert jobs_db.query("SELECT state FROM speech_jobs WHERE job_id = %s", (job_id,)) == [
+        {"state": "cancelled"}
+    ]
+    assert jobs_db.count("speech_job_cancellation_fences") == 1
 
 
 async def test_composed_runtime_settles_and_restart_converges(

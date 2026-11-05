@@ -2,6 +2,9 @@
 
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 
+CANCELLATION_FENCE_TABLE = "speech_job_cancellation_fences"
+CANCELLATION_FENCE_READ_COLUMNS = ("job_id", "accepted_at_us", "request_id")
+
 # Columns used by read_submit_intent, read_original_request, and the abort receipt
 # and tombstone reads. In particular, no writer or unrelated content table is granted.
 _READ_COLUMNS: dict[str, tuple[str, ...]] = {
@@ -72,6 +75,7 @@ _READ_COLUMNS: dict[str, tuple[str, ...]] = {
         "dispatched_at_us",
     ),
     "speech_publication_installation": ("singleton", "installation_id"),
+    CANCELLATION_FENCE_TABLE: CANCELLATION_FENCE_READ_COLUMNS,
 }
 
 

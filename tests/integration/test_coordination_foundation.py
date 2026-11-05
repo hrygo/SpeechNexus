@@ -44,6 +44,9 @@ from speechnexus_backend.speech.infrastructure.execution_release_schema import (
     release_guard_grants,
 )
 from speechnexus_backend.speech.infrastructure.execution_result_schema import EXECUTION_RESULT_DDL
+from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
+    gateway_cancellation_fence_grants,
+)
 from speechnexus_backend.speech.infrastructure.job_schema import job_runtime_grants
 from speechnexus_backend.speech.infrastructure.jobs_sql import JobCursor, create_in_transaction
 from speechnexus_backend.speech.infrastructure.runtime_delivery_schema import RUNTIME_DELIVERY_DDL
@@ -182,6 +185,11 @@ def foundation(database: JobDatabase) -> Iterator[Foundation]:
                 db.query(f"CREATE USER '{role}'@'%' IDENTIFIED BY 'synthetic_foundation_test'")
             created_roles.append(role)
         grants = coordination_runtime_grants(db.schema, speech_role=roles[0], gateway_role=roles[1])
+        if (
+            db.dialect == "postgresql"
+            and db.query("SELECT to_regclass('speech_job_cancellation_fences') AS name")[0]["name"]
+        ):
+            grants = (*grants, *gateway_cancellation_fence_grants(db.schema, roles[1]))
         if db.dialect == "postgresql" and db.query("SELECT version_num FROM alembic_version") == [
             {"version_num": "0012_execution_results"}
         ]:

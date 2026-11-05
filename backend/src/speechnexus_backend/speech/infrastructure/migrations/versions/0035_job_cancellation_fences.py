@@ -15,6 +15,7 @@ from sqlalchemy import text
 
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
     JOB_CANCELLATION_FENCE_DDL,
+    NOT_SUBMITTED_TABLE,
     RECONCILIATION_TABLE,
     TABLE,
 )
@@ -43,11 +44,17 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     connection = op.get_bind()
-    # Freeze both sides; a concurrent acceptance must not appear after the check.
-    op.execute(f"LOCK TABLE {TABLE}, {RECONCILIATION_TABLE} IN ACCESS EXCLUSIVE MODE")
+    # Freeze all three sides; a concurrent acceptance must not appear after the check.
+    op.execute(
+        f"LOCK TABLE {TABLE}, {NOT_SUBMITTED_TABLE}, {RECONCILIATION_TABLE} "
+        "IN ACCESS EXCLUSIVE MODE"
+    )
     if connection.execute(text(f"SELECT count(*) FROM {RECONCILIATION_TABLE}")).scalar_one():
         raise RuntimeError("Cancellation reconciliation history requires preservation")
+    if connection.execute(text(f"SELECT count(*) FROM {NOT_SUBMITTED_TABLE}")).scalar_one():
+        raise RuntimeError("Cancellation not-submitted observations require preservation")
     if connection.execute(text(f"SELECT count(*) FROM {TABLE}")).scalar_one():
         raise RuntimeError("Cancellation fences require preservation")
+    op.execute(f"DROP TABLE {NOT_SUBMITTED_TABLE}")
     op.execute(f"DROP TABLE {RECONCILIATION_TABLE}")
     op.execute(f"DROP TABLE {TABLE}")

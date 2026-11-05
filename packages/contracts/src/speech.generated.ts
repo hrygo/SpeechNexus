@@ -382,10 +382,13 @@ export interface paths {
      *     operation/attempt identity. It never submits a new execution, changes
      *     budgets or meters, or deletes execution/fencing evidence.
      *
-     *     An accepted cancellation returns 202 with `status: cancelling` and
-     *     `cleanup_state: pending`. It is not stop evidence. Only a verified stop
-     *     moves the Job to `cancelled`; a repeated request then returns 200 with the
-     *     same durable `cancellation_requested_at` and the authoritative terminal
+     *     An accepted cancellation on a Job that may have an execution returns 202
+     *     with `status: cancelling` and `cleanup_state: pending`; it is not stop
+     *     evidence. A pending Job with no execution closes directly as 200
+     *     `cancelled`, while a Job whose execution may exist closes only after
+     *     reconciliation proves there is no runnable execution or records verified
+     *     stop evidence. A repeated request then returns 200 with
+     *     the same durable `cancellation_requested_at` and the authoritative terminal
      *     status. A Job that was already terminal when first requested returns 200
      *     with that status and `accepted: false`; it is never revived or rewritten.
      *
@@ -396,9 +399,12 @@ export interface paths {
      *     Jobs and Jobs outside the caller's workspace are 404.
      *
      *     If acceptance commits before the gateway creates an execution, the gateway
-     *     refuses the submit with `gateway_barrier_fenced` and no runnable execution exists.
-     *     The Job closes 200 `cancelled` only from that no-execution fact or from
-     *     verified stop evidence; a missing execution is never treated as a stop.
+     *     refuses the submit with `gateway_barrier_fenced` and no runnable execution
+     *     exists. If a dispatcher observed the accepted cancellation before submitting,
+     *     that observation is persisted. The Job closes 200 `cancelled` from such a
+     *     no-execution fact (including a gateway 404 only together with the persisted
+     *     dispatcher observation) or from verified stop evidence; a missing execution
+     *     alone is never treated as a stop.
      */
     post: operations["cancelJob"];
     delete?: never;
@@ -1950,8 +1956,10 @@ export interface components {
       job_id: components["schemas"]["Identifier"];
       /**
        * @description True when this Job has a durably accepted cancellation intent. False
-       *     for a read-only terminal receipt where no cancellation was accepted.
-       *     A previously accepted value never becomes false on replay.
+       *     when the request found the Job already terminal: a durable terminal
+       *     receipt is still recorded for this idempotency key, but no cancellation
+       *     is accepted and no state is written. A previously accepted value never
+       *     becomes false on replay.
        */
       accepted: boolean;
       status: components["schemas"]["JobStatus"];
@@ -4204,7 +4212,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Job already terminal. */
+      /** @description Job already terminal; the terminal receipt is recorded. */
       200: {
         headers: {
           "X-Request-ID"?: components["headers"]["XRequestId"];
@@ -4214,7 +4222,7 @@ export interface operations {
           "application/json": components["schemas"]["JobCancellation"];
         };
       };
-      /** @description Cancellation accepted and awaiting stop evidence. */
+      /** @description Cancellation accepted; reconciliation decides terminal status. */
       202: {
         headers: {
           "Retry-After"?: components["headers"]["RetryAfter"];
@@ -4352,7 +4360,7 @@ export interface operations {
           "application/json": components["schemas"]["OperationCancellation"];
         };
       };
-      /** @description Cancellation accepted and awaiting stop evidence. */
+      /** @description Cancellation accepted; reconciliation decides terminal status. */
       202: {
         headers: {
           "Retry-After"?: components["headers"]["RetryAfter"];

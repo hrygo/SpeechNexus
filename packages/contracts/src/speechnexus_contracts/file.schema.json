@@ -2462,7 +2462,7 @@
         },
         "accepted": {
           "type": "boolean",
-          "description": "True when this Job has a durably accepted cancellation intent. False\nfor a read-only terminal receipt where no cancellation was accepted.\nA previously accepted value never becomes false on replay.\n"
+          "description": "True when this Job has a durably accepted cancellation intent. False\nwhen the request found the Job already terminal: a durable terminal\nreceipt is still recorded for this idempotency key, but no cancellation\nis accepted and no state is written. A previously accepted value never\nbecomes false on replay.\n"
         },
         "status": {
           "$ref": "#/$defs/JobStatus"

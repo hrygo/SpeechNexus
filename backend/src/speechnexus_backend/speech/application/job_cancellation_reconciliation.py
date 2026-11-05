@@ -34,6 +34,7 @@ class CancellationCandidate:
     accepted_at_us: int
     attempts: int
     next_check_at_us: int
+    not_submitted_at_us: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,7 +62,7 @@ class Confirmation:
 
 
 class CancellationConfirmer(Protocol):
-    async def confirm(self, job_id: str) -> Confirmation: ...
+    async def confirm(self, job_id: str, *, not_submitted: bool = False) -> Confirmation: ...
 
 
 class CancellationReconciliationStore(Protocol):
@@ -161,7 +162,10 @@ class JobCancellationReconciler:
                         exhausted += 1
                         continue
                     try:
-                        confirmation = await self._confirmer.confirm(candidate.job_id)
+                        confirmation = await self._confirmer.confirm(
+                            candidate.job_id,
+                            not_submitted=candidate.not_submitted_at_us is not None,
+                        )
                     except Exception:
                         confirmation = Confirmation("unavailable")
                     if confirmation.outcome == "settled":

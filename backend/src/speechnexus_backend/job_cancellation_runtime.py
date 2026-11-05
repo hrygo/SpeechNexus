@@ -44,10 +44,14 @@ from speechnexus_backend.speech.infrastructure.gateway_cancellation_confirmation
 from speechnexus_backend.speech.infrastructure.gateway_job_cancellation import (
     GatewayJobCancellationStopper,
 )
+from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
+    NOT_SUBMITTED_TABLE,
+)
 from speechnexus_backend.speech.infrastructure.job_cancellation_reconciliation_postgres import (
     PostgresCancellationReconciliationStore,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool, speech_pool
+from speechnexus_backend.speech.infrastructure.public_job_submission_schema import SUBMISSIONS
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import (
     PostgresPublicJobs,
 )
@@ -254,9 +258,11 @@ class JobCancellationRuntime:
             with pool.connection(timeout=settings.transaction_timeout_seconds) as connection:
                 for table in (
                     "speech_jobs",
+                    SUBMISSIONS,
                     "speech_job_cancellations",
                     "speech_job_cancellation_fences",
                     "speech_job_cancellation_reconciliations",
+                    NOT_SUBMITTED_TABLE,
                 ):
                     connection.execute(f"SELECT 1 FROM {table} LIMIT 0")
             adapter = PostgresPublicJobs(pool, timeout_seconds=settings.transaction_timeout_seconds)

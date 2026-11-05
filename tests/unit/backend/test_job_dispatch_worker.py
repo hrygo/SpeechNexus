@@ -207,6 +207,7 @@ class LeaseWorld:
         self.claim_version = 0
         self.expires_at_us = 0
         self.finish_calls: list[tuple[str, str]] = []
+        self.not_submitted: list[tuple[str, str]] = []
 
     def now(self) -> int:
         return self.clock[0]
@@ -223,6 +224,9 @@ class LeaseWorld:
 
     async def reload(self, job_id: str) -> DispatchJob:
         return self.job
+
+    async def record_cancellation_not_submitted(self, job_id: str, *, observer: str) -> None:
+        self.not_submitted.append((job_id, observer))
 
     async def mark_running(self, job: DispatchJob) -> DispatchJob:
         if self.job.state == "running":
@@ -351,6 +355,7 @@ async def test_accepted_cancellation_before_submit_never_starts_an_execution() -
     assert publisher.calls == []
     assert world.job.state == "cancelling"
     assert world.finish_calls == []
+    assert world.not_submitted == [(world.job.job_id, "worker-a")]
 
 
 class CancellationAtGatewaySubmit(Gateway):

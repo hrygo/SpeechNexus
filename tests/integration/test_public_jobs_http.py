@@ -26,6 +26,9 @@ from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.domain.public_jobs import PublicJobConflictError
 from speechnexus_backend.speech.domain.publications import Publication
+from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
+    cancellation_reconciliation_grants,
+)
 from speechnexus_backend.speech.infrastructure.job_schema import (
     job_dispatch_grants,
     job_runtime_grants,
@@ -128,7 +131,12 @@ def jobs_db() -> Iterator[JobSandbox]:
             # needs the production Job-writer privileges as well.
             *job_runtime_grants(schema, role),
             *job_dispatch_grants(schema, role),
+            *cancellation_reconciliation_grants(schema, role),
             *public_job_submission_grants(schema, role),
+            f'GRANT SELECT ON "{schema}".admission_operations, "{schema}".coordination_jobs '
+            f'TO "{role}"',
+            f"GRANT UPDATE (claim_owner_id, claim_expires_at_us, claim_version, job_state) "
+            f'ON "{schema}".coordination_jobs TO "{role}"',
             f"GRANT SELECT ON speech_workspaces, speech_publications, "
             f"speech_publication_heads, speech_catalog_state, speech_publication_retirements, "
             f"speech_binding_revisions, speech_assets, speech_pronunciation_revisions "

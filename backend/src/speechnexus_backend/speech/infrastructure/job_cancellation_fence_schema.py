@@ -6,13 +6,21 @@ operation/attempt/digest columns so the gateway role needs only job_id,
 request_id and acceptance time. It is not stop evidence and never releases
 capacity. The gateway reads it before creating an execution; acceptance writes
 both rows in one transaction. The reconciliation row is backend-private retry
-bookkeeping for replaying stop confirmation after a restart.
+bookkeeping for replaying stop confirmation after a restart. The not-submitted
+row records that a dispatcher observed the accepted cancellation before it
+submitted anything; it is not proof by itself, so reconciliation still requires
+the gateway to have no submit intent.
 """
 
+from speechnexus_backend.speech.infrastructure.gateway_query_grants import (
+    CANCELLATION_FENCE_READ_COLUMNS,
+    CANCELLATION_FENCE_TABLE,
+)
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 
-TABLE = "speech_job_cancellation_fences"
+TABLE = CANCELLATION_FENCE_TABLE
 RECONCILIATION_TABLE = "speech_job_cancellation_reconciliations"
+NOT_SUBMITTED_TABLE = "speech_job_cancellation_not_submitted"
 
 JOB_CANCELLATION_FENCE_DDL = (
     f"""CREATE TABLE {TABLE} (
@@ -22,6 +30,14 @@ JOB_CANCELLATION_FENCE_DDL = (
             CHECK (accepted_at_us BETWEEN 0 AND 253402300799999999),
         request_id VARCHAR(128) COLLATE "C" NOT NULL
             CHECK (length(request_id) BETWEEN 1 AND 128)
+    )""",
+    f"""CREATE TABLE {NOT_SUBMITTED_TABLE} (
+        job_id VARCHAR(128) COLLATE "C" PRIMARY KEY
+            REFERENCES {TABLE} (job_id) ON DELETE RESTRICT,
+        observed_at_us BIGINT NOT NULL
+            CHECK (observed_at_us BETWEEN 0 AND 253402300799999999),
+        observer VARCHAR(128) COLLATE "C" NOT NULL
+            CHECK (length(observer) BETWEEN 1 AND 128)
     )""",
     f"""CREATE TABLE {RECONCILIATION_TABLE} (
         job_id VARCHAR(128) COLLATE "C" PRIMARY KEY
@@ -54,41 +70,46 @@ def job_cancellation_fence_grants(schema: str, role: str) -> tuple[str, ...]:
     )
 
 
-def cancellation_reconciliation_grants(schema: str, role: str) -> tuple[str, ...]:
-    """Worker: own the reconciliation ledger, with no DELETE and no DDL."""
+def cancellation_not_submitted_grants(schema: str, role: str) -> tuple[str, ...]:
+    """Dispatcher: only append the observed no-submit fact; never settle."""
     schema, role = checked_sql_name(schema), checked_sql_name(role)
     return (
         f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
-        f'GRANT SELECT, INSERT ON "{schema}".{RECONCILIATION_TABLE} TO "{role}"',
-        f"GRANT UPDATE (attempts, next_check_at_us, last_outcome, settled_at_us, updated_at_us) "
-        f'ON "{schema}".{RECONCILIATION_TABLE} TO "{role}"',
+        f'GRANT INSERT ON "{schema}".{NOT_SUBMITTED_TABLE} TO "{role}"',
     )
 
 
-def job_cancellation_grants(schema: str, role: str) -> tuple[str, ...]:
-    """Worker bundle: projection plus its reconciliation ledger."""
+def cancellation_reconciliation_grants(schema: str, role: str) -> tuple[str, ...]:
+    """Worker: read the fence/projection, own the ledger, read the observation."""
     schema, role = checked_sql_name(schema), checked_sql_name(role)
     return (
-        *job_cancellation_fence_grants(schema, role),
-        *cancellation_reconciliation_grants(schema, role),
+        f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
+        f"GRANT SELECT ({', '.join(CANCELLATION_FENCE_READ_COLUMNS)}) "
+        f'ON "{schema}".{TABLE} TO "{role}"',
+        f'GRANT SELECT, INSERT ON "{schema}".{RECONCILIATION_TABLE} TO "{role}"',
+        f"GRANT UPDATE (attempts, next_check_at_us, last_outcome, settled_at_us, updated_at_us) "
+        f'ON "{schema}".{RECONCILIATION_TABLE} TO "{role}"',
+        f'GRANT SELECT ON "{schema}".{NOT_SUBMITTED_TABLE} TO "{role}"',
     )
 
 
 def gateway_cancellation_fence_grants(schema: str, role: str) -> tuple[str, ...]:
-    """The gateway only needs to read the fence that forbids a new execution."""
+    """The gateway only needs the same fence columns as the query reader."""
     schema, role = checked_sql_name(schema), checked_sql_name(role)
     return (
         f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
-        f'GRANT SELECT ON "{schema}".{TABLE} TO "{role}"',
+        f"GRANT SELECT ({', '.join(CANCELLATION_FENCE_READ_COLUMNS)}) "
+        f'ON "{schema}".{TABLE} TO "{role}"',
     )
 
 
 __all__ = [
     "JOB_CANCELLATION_FENCE_DDL",
+    "NOT_SUBMITTED_TABLE",
     "RECONCILIATION_TABLE",
     "TABLE",
+    "cancellation_not_submitted_grants",
     "cancellation_reconciliation_grants",
     "gateway_cancellation_fence_grants",
     "job_cancellation_fence_grants",
-    "job_cancellation_grants",
 ]

@@ -89,7 +89,7 @@ class SequenceConfirmer:
         self.outcomes = list(outcomes)
         self.calls: list[str] = []
 
-    async def confirm(self, job_id: str) -> Confirmation:
+    async def confirm(self, job_id: str, *, not_submitted: bool = False) -> Confirmation:
         self.calls.append(job_id)
         outcome = self.outcomes.pop(0) if self.outcomes else "pending"
         return Confirmation(cast(Any, outcome))
@@ -203,7 +203,7 @@ def test_terminal_unconfirmed_is_exhausted_without_settlement() -> None:
 
 def test_confirmer_failure_is_retried_as_unavailable() -> None:
     class Broken:
-        async def confirm(self, job_id: str) -> Confirmation:
+        async def confirm(self, job_id: str, *, not_submitted: bool = False) -> Confirmation:
             raise RuntimeError("transport")
 
     store = FakeStore([row()])
@@ -303,7 +303,6 @@ def document(**overrides: Any) -> dict[str, Any]:
         "operation_id": "job-fence-1",
         "execution_state": "failed",
         "cleanup_state": "not_required",
-        "error_code": "gateway_barrier_fenced",
         "stop_evidence_kind": "none",
         "dispatched_at": None,
         "engine_request_id": None,
@@ -416,6 +415,70 @@ def test_missing_intent_is_not_stop_evidence(monkeypatch: pytest.MonkeyPatch) ->
 
     assert result.outcome == "pending"
     assert settlement.calls == []
+
+
+def test_missing_intent_with_not_submitted_observation_settles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
+        GatewayRejectedError,
+    )
+
+    settlement = FakeSettlement()
+    confirmer = confirmer_for(
+        monkeypatch,
+        GatewayRejectedError("missing", request_may_have_run=False, status_code=404),
+        settlement,
+    )
+
+    result = asyncio.run(confirmer.confirm("job-fence-1", not_submitted=True))
+
+    assert result.outcome == "settled"
+    assert settlement.calls == ["job-fence-1"]
+
+
+def test_real_gateway_projection_keeps_no_execution_predicate() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from speechnexus_gateway.domain.canonical import JsonValue, command_digest
+    from speechnexus_gateway.domain.recovery import (
+        execution_identity_fields,
+        execution_state_fields,
+    )
+    from speechnexus_gateway.domain.submission import SubmissionIdentity, SubmissionIntent
+
+    now = datetime(2026, 10, 24, tzinfo=UTC)
+    command: dict[str, JsonValue] = {"task": "tts.synthesize", "input": {"text": "synthetic"}}
+    identity = SubmissionIdentity(
+        submit_intent_id=submit_intent_identity("job-fence-1"),
+        lease_id="lease-1",
+        operation_id="job-fence-1",
+        attempt_id="attempt-1",
+        stage_id="stage-1",
+        workspace_id="workspace-1",
+        pool_id="tts-batch",
+        host_node_id="node-1",
+        gateway_id="gateway-1",
+        instance_id="instance-1",
+        instance_generation=1,
+        binding_revision_id="binding-rev-1",
+        policy_revision_id="policy-rev-1",
+        voice_revision_id=None,
+        fencing_token=1,
+        command_digest=command_digest(command),
+        deadline_at=now + timedelta(minutes=5),
+        max_output_audio_ms=None,
+        sample_rate_hz=None,
+    )
+    refused = SubmissionIntent(
+        identity=identity,
+        recorded_at=now,
+        updated_at=now,
+        request_digest=command_digest({"execution_request": command}),
+    ).refuse_for_cancellation(at=now)
+    projection = execution_identity_fields(refused) | execution_state_fields(refused)
+
+    assert not_started(projection)
 
 
 def test_completed_execution_is_terminal_unconfirmed(monkeypatch: pytest.MonkeyPatch) -> None:

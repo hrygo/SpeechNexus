@@ -6,10 +6,10 @@ projection must happen in the same transaction that inserts the receipt, after
 that transaction has established the Job's current state. These functions never
 change a Job state, stop an execution or release capacity.
 
-The standalone store here exists for composition and for the bounded
-reconciliation worker. A production acceptance path should call
-write_cancellation_fence with its own connection so the fence, the Job
-transition and the cancellation receipt commit together.
+Acceptance calls write_cancellation_fence with its own cursor so the fence, the
+Job transition and the cancellation receipt commit together. This module
+deliberately exposes no standalone commit wrapper: a fence outside that
+transaction would block submit without a receipt or a reconciliation schedule.
 """
 
 from __future__ import annotations
@@ -17,12 +17,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 from speechnexus_contracts.cancellation_fence import job_cancellation_fence_lock_key
 
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import TABLE
-from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 
 _MAX_TIMESTAMP_US = 253_402_300_799_999_999
 
@@ -122,70 +119,9 @@ def write_cancellation_fence(
     return fence
 
 
-class PostgresJobCancellationFence:
-    """Fence half of acceptance and a bounded read for reconciliation."""
-
-    def __init__(self, pool: SpeechPool, *, timeout_seconds: float = 3) -> None:
-        if type(timeout_seconds) not in (int, float) or not 0 < timeout_seconds <= 30:
-            raise ValueError("Cancellation fences require bounded deadlines")
-        self._pool, self._timeout = pool, timeout_seconds
-
-    def accept(
-        self, job_id: str, *, request_id: str, accepted_at_us: int | None = None
-    ) -> CancellationFence:
-        """Commit one fence in its own transaction.
-
-        A production acceptance path must call write_cancellation_fence inside
-        the transaction that changes the Job instead of this wrapper.
-        """
-        _check(job_id, request_id, 0 if accepted_at_us is None else accepted_at_us)
-        try:
-            with self._pool.connection(timeout=self._timeout) as connection:
-                connection.execute(
-                    "SELECT set_config('statement_timeout', %s, true)",
-                    (str(max(1, int(self._timeout * 1000))),),
-                )
-                if accepted_at_us is None:
-                    row = connection.execute(
-                        "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) "
-                        "AS now_us"
-                    ).fetchone()
-                    if row is None:
-                        raise CancellationFenceUnavailableError("Database clock is unavailable")
-                    accepted_at_us = int(row["now_us"])
-                with connection.cursor() as cursor:
-                    return write_cancellation_fence(
-                        cursor,
-                        job_id=job_id,
-                        request_id=request_id,
-                        accepted_at_us=accepted_at_us,
-                    )
-        except CancellationFenceUnavailableError:
-            raise
-        except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
-            raise CancellationFenceUnavailableError(
-                "Cancellation fence storage is unavailable"
-            ) from None
-
-    def read(self, job_id: str) -> CancellationFence | None:
-        _check(job_id, "read", 0)
-        try:
-            with self._pool.connection(timeout=self._timeout) as connection:
-                connection.execute("SET TRANSACTION READ ONLY")
-                with connection.cursor() as cursor:
-                    return read_cancellation_fence(cursor, job_id)
-        except CancellationFenceUnavailableError:
-            raise
-        except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
-            raise CancellationFenceUnavailableError(
-                "Cancellation fence storage is unavailable"
-            ) from None
-
-
 __all__ = [
     "CancellationFence",
     "CancellationFenceUnavailableError",
-    "PostgresJobCancellationFence",
     "lock_cancellation_fence",
     "read_cancellation_fence",
     "write_cancellation_fence",

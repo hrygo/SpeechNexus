@@ -86,7 +86,7 @@ unknown/query_original；读取失败不证明原创建被拒绝，也不授予�
 `admission_operations` 原命令和 `coordination_jobs`/`coordination_outbox` 身份；
 不使用摘要或当前默认值重建请求。
 
-授权分两段安装：`job_runtime_grants` 覆盖从 `0001_jobs` 起就存在的表，可在历史版本沙箱上直接应用；派发器额外需要的 `admission_operations` INSERT、`speech_artifacts` 的 SELECT/INSERT，以及围栏/对账表的受限授权由 `job_dispatch_grants` 一并给出，**必须在升级到 head 之后**再执行——前者要到 `0007_admission_commands`、后者要到 `0020_artifacts` 才存在，提前应用会让授权失败或掩盖升级顺序问题。Artifact 写入只授予显式列 INSERT 与读取既有行的 SELECT，不授予 UPDATE/DELETE 或 DDL。
+授权分两段安装：`job_runtime_grants` 覆盖从 `0001_jobs` 起就存在的表，可在历史版本沙箱上直接应用；派发器额外需要的 `admission_operations` INSERT、`speech_artifacts` 的 SELECT/INSERT，以及 cancellation not-submitted 表的 INSERT 由 `job_dispatch_grants` 一并给出，**必须在升级到 head 之后**再执行——前者要到 `0007_admission_commands`、后者要到 `0020_artifacts` 才存在，提前应用会让授权失败或掩盖升级顺序问题。Artifact 写入只授予显式列 INSERT 与读取既有行的 SELECT，不授予 UPDATE/DELETE 或 DDL。
 
 派发器按 `FOR UPDATE OF c SKIP LOCKED` 批量领取到期的协调行，写入 owner、
 `claim_version` 和租约；进程崩溃后租约到期可重新领取。一次公开 Job 对应一个由
@@ -132,6 +132,11 @@ request ID，不覆盖他人事实。
 但只有取消围栏路径同时落下无外发终态 intent。围栏不存在时按原流程创建；
 执行创建后才受理的取消不改写 intent，继续由 abort/stop-evidence 路径推进。
 
+派发器在已领取 Job 后观察到受理时不得再提交；它在
+`speech_job_cancellation_not_submitted` 幂等写入 "已观察受理但未提交" 的持久事实。
+该行只证明派发器没有越过提交点，不能单独结算；对账仍要查询固定 submit intent。
+只有该行存在且网关对该 intent 返回 404 时，二者才共同构成 "没有执行" 证据。
+
 `speech_job_cancellation_reconciliations` 是 backend 私有重试账本：每个围栏一行，
 记录 `attempts`、`next_check_at_us`、`last_outcome` 和 `settled_at_us`。worker 以短事务
 `INSERT … ON CONFLICT DO UPDATE … WHERE next_check_at_us <= now` 领取到期行，
@@ -145,13 +150,17 @@ request ID，不覆盖他人事实。
 验证到 `aborted`、`cleanup_state=complete` 且证据在 `engine_abort_ack`、
 `engine_terminal_response`、`instance_terminated_by_controller`、
 `operator_verified_instance_terminated` 白名单内。执行仍活跃、已 `succeeded`、
-404、传输失败或证据不全都不结算，分别有界重试或进入终止未确认；404 从不是停止证据。
+传输失败或证据不全都不结算，分别有界重试或进入终止未确认。单独的 404 从不是
+停止证据；只有与派发器的 not-submitted 观察同时存在时，404 才被当作无执行事实。
 
 迁移 `0035_job_cancellation_fences` 的 `down_revision` 是
-`0034_public_job_cancellations`，形成单一 head；down 在 reconcile 账本或围栏仍有行时
-拒绝删除，要求先保留或导出证据。`public_job_grants` 为 API Job writer 一并授予围栏/账本
-权限，`job_dispatch_grants` 为 worker 角色授予同一组受限权限；gateway 角色只通过
-`gateway_cancellation_fence_grants` 获得围栏 SELECT。
+`0034_public_job_cancellations`，形成单一 head；down 在 reconcile 账本、not-submitted
+观察或围栏仍有行时拒绝删除，要求先保留或导出证据。`public_job_grants` 为 API Job writer
+授予围栏 SELECT/INSERT；`job_dispatch_grants` 只授予派发器对 not-submitted 表的 INSERT；
+worker 角色使用 `public_job_grants` 与 `cancellation_reconciliation_grants`（围栏列 SELECT、
+对账账本 SELECT/INSERT/列级 UPDATE、not-submitted SELECT）；gateway 写角色在
+`coordination_runtime_grants` 之外还须安装 `gateway_cancellation_fence_grants` 以获得围栏列
+SELECT，独立执行读取器使用同一函数。
 
 接线已经落地：
 
@@ -162,9 +171,10 @@ request ID，不覆盖他人事实。
    `GatewayCancellationConfirmer` 和 `CancellationReconciliationWorker` 装配在一起；
    `settle_cancelled` 走 `PublicJobs` 的 `status_version` 条件更新，活跃执行通过
    `JobCancellationService` + `GatewayJobCancellationStopper` 注入一次有界停止尝试。
-3. 派发器收到 `gateway_barrier_fenced` 且 Job 已是 `cancelling` 时返回 `skipped`，不调用
-   `_fail`；由对账 worker 以网关“没有执行”事实结算为 `cancelled`。Job 未取消时同一错误
-   码仍按普通终态失败处理。
+3. 派发器在提交点前观察到 Job 已是 `cancelling` 时写入 not-submitted 观察并返回
+   `claim_lost`；收到 `gateway_barrier_fenced` 且 Job 仍是 `cancelling` 时返回 `skipped`，
+   不调用 `_fail`。两种情况都由对账 worker 以网关“没有执行”事实结算为 `cancelled`。
+   Job 未取消时同一错误码仍按普通终态失败处理。
 
 当前边界完成派发器、真实 PG 领取/终态存储、唯一网关客户端（派发器经适配器接入）、
 worker 入口/进程角色及 `create_app` 之外的组合根。生产 `SubmitExecutionRequest` planner 仍未装配（结果发布已实现，见下节）；`build_dispatch_dependencies` 因 planner 未装配显式抛错，进程以
@@ -185,9 +195,12 @@ SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED=true SPEECHNEXUS_DATABASE_UR
 ```
 
 worker 与派发器共享同一条 gateway 契约和停止服务；它不会创建新 execution，也不会把
-404、传输失败或未验证的 abort 当作停止。worker 角色需要 `public_job_grants`（读取
-Job、cancellation receipt 并条件更新 `state/status_version`）与 `job_dispatch_grants`
-（围栏/账本读写）；两者都必须在升级到 `0035` 之后应用，否则启动探针或结算会失败。
+单独的 404、传输失败或未验证的 abort 当作停止。worker 角色需要 `public_job_grants`
+（读取 Job/submission、cancellation receipt 并条件更新 `state/status_version`）与
+`cancellation_reconciliation_grants`（围栏列 SELECT、账本读写、not-submitted SELECT）；
+两者都必须在升级到 `0035` 之后应用。启动探针同时检查 `speech_jobs`、
+`speech_job_submissions`、`speech_job_cancellations`、围栏、对账账本和 not-submitted 表，
+任一缺失即拒绝启动。
 
 ### 结果发布语义（DEL-100）
 

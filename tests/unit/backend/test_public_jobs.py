@@ -127,6 +127,12 @@ class Store:
     def get(self, job_id: str) -> PublicJob | None:
         return self.jobs.get(job_id)
 
+    def cancel(self, *args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("this fake does not implement cancellation")
+
+    def settle_cancelled(self, *args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("this fake does not implement cancellation")
+
     def advance(
         self,
         current: PublicJob,

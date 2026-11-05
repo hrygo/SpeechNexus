@@ -43,6 +43,8 @@ class DispatchStateStore(Protocol):
 
     async def renew(self, claim: ClaimedJob, lease_ms: int) -> ClaimedJob | None: ...
 
+    async def record_cancellation_not_submitted(self, job_id: str, *, observer: str) -> None: ...
+
     async def finish(
         self,
         claim: ClaimedJob,
@@ -130,6 +132,10 @@ class JobDispatcher:
                 return DispatchResult(job.job_id, "unknown", "dispatch_attempts_exhausted")
             return await self._fail(claim, job, "dispatch_attempts_exhausted")
         if job.state in ("cancelling", "succeeded", "failed", "cancelled", "expired"):
+            if job.state == "cancelling":
+                await self._states.record_cancellation_not_submitted(
+                    job.job_id, observer=claim.worker_id
+                )
             return DispatchResult(job.job_id, "skipped")
         gateway_phase = False
         try:
@@ -151,6 +157,7 @@ class JobDispatcher:
                 return DispatchResult(job.job_id, "deferred", "worker_stopping")
             renewed = await self._states.renew(claim, self._limits.lease_ms)
             if renewed is None:
+                await self._record_not_submitted_if_cancelling(claim, job.job_id)
                 return DispatchResult(job.job_id, "claim_lost", "claim_lost")
             claim = renewed
             # A cancellation accepted after mark_running must not submit a new
@@ -158,6 +165,10 @@ class JobDispatcher:
             # path by the cancellation confirmer; this closes the local window.
             current = await self._states.reload(job.job_id)
             if current.state != "running":
+                if current.state == "cancelling":
+                    await self._states.record_cancellation_not_submitted(
+                        job.job_id, observer=claim.worker_id
+                    )
                 return DispatchResult(job.job_id, "claim_lost", "cancellation_pending")
             gateway_phase = True
             reply = await self._gateway.query(submission.submit_intent_id)
@@ -180,6 +191,7 @@ class JobDispatcher:
                 return DispatchResult(job.job_id, "skipped", "gateway_barrier_fenced")
             return await self._fail(claim, job, error.error_code)
         except DispatchConflictError:
+            await self._record_not_submitted_if_cancelling(claim, job.job_id)
             return DispatchResult(job.job_id, "claim_lost", "claim_lost")
         except DispatchProtocolError:
             if gateway_phase:
@@ -195,6 +207,11 @@ class JobDispatcher:
             return True
         current = await self._states.reload(job.job_id)
         return current.state == "cancelling"
+
+    async def _record_not_submitted_if_cancelling(self, claim: ClaimedJob, job_id: str) -> None:
+        current = await self._states.reload(job_id)
+        if current.state == "cancelling":
+            await self._states.record_cancellation_not_submitted(job_id, observer=claim.worker_id)
 
     async def _follow(
         self,

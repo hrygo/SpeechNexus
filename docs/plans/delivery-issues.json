@@ -205,33 +205,41 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/runtime-governance.md"
       ],
-      "implementation": "API 已装配 Job router；该 router 当前只注册创建与读取。",
-      "integration": "取消、重试及 SSE 路由尚未在该 Job router 注册；创建事务重新核验绑定，但未重查事务前读取的工作空间和资产状态。",
-      "verification": "组件或单路连接证据不能证明事件过期后的恢复。",
-      "gap": "取消、重试及 SSE 路由尚未在该 Job router 注册；创建事务重新核验绑定，但未重查事务前读取的工作空间和资产状态。 组件或单路连接证据不能证明事件过期后的恢复。",
+      "implementation": "API 已装配 Job router，注册创建、读取与取消（POST /v1/nexus/jobs/{job_id}/cancellations）；取消受理在同一事务写受理回执与围栏投影，执行网关在创建执行的同一事务读取围栏并以既有 gateway_barrier_fenced 落终态，不派发、不写输出流。",
+      "integration": "派发器在任何提交前退出统一写 not-submitted 观察，对账 worker 仅在\"该观察 + 网关 404\"或\"aborted + cleanup complete + 白名单停止证据\"时结算为 cancelled；重试与 SSE 路由仍未注册，对账 worker 默认关闭，生产 planner 未装配。",
+      "verification": "隔离 PG 上取消与围栏 24 passed（含受理先于提交、真实锁等待、重启收敛、三类提交前退出收敛）；历史 schema 消费者 100 passed；契约检查与 3373 项契约测试通过。未做真实引擎停止证据注入。",
+      "gap": "重试与 SSE 路由未注册；生产 planner 与对账 worker 未在生产装配中启用；真实引擎/网关故障注入与物理拓扑验收未完成。",
       "evidence": [
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/job_dispatch_runtime.py",
-          "label": "异步派发装配",
-          "note": "生产 planner 未装配，入口 fail-closed"
+          "url": "https://github.com/hrygo/SpeechNexus/blob/0b8e85a5/backend/src/speechnexus_backend/speech/infrastructure/job_cancellation_fence_schema.py",
+          "label": "取消围栏与对账账本 DDL",
+          "note": "围栏仅 job_id/request_id/accepted_at_us；对账账本独立"
         },
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/interfaces/http/jobs.py",
-          "label": "公开任务路由",
-          "note": "此路由注册创建和读取"
+          "url": "https://github.com/hrygo/SpeechNexus/blob/0b8e85a5/backend/src/speechnexus_backend/speech/infrastructure/public_jobs_postgres.py",
+          "label": "取消受理事务",
+          "note": "回执与围栏同事务写入；pending 直接 cancelled，已有执行进入 cancelling"
         },
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/application/public_jobs.py",
-          "label": "公开任务资源检查",
-          "note": "提交前读取工作空间和资产状态"
+          "url": "https://github.com/hrygo/SpeechNexus/blob/0b8e85a5/execution-gateway/src/speechnexus_gateway/infrastructure/submit_sql.py",
+          "label": "网关提交侧裁决",
+          "note": "同一 advisory lock 下读围栏，拒绝则落终态且不派发"
         },
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/infrastructure/public_jobs_postgres.py",
-          "label": "公开任务创建事务",
-          "note": "事务内重新核验绑定选择；不重查工作空间或资产状态"
+          "url": "https://github.com/hrygo/SpeechNexus/blob/0b8e85a5/backend/src/speechnexus_backend/speech/application/job_cancellation_reconciliation.py",
+          "label": "取消对账 worker",
+          "note": "有限证据白名单；单独 404 不结算"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/0b8e85a5/backend/src/speechnexus_backend/speech/application/job_dispatcher.py",
+          "label": "提交前取消观察",
+          "note": "统一退出收口写 not-submitted，不把屏障拒绝写成 failed"
         }
       ],
-      "issues": []
+      "issues": [
+        422,
+        425
+      ]
     },
     {
       "id": "F-ARTIFACT",

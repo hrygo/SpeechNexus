@@ -6,8 +6,8 @@ from speechnexus_backend.speech.infrastructure.profile_publication_schema import
     PROFILE_PUBLICATION_DDL,
 )
 
-revision = "0032_profile_publications"
-down_revision = "0031_tts_settlement"
+revision = "0033_profile_publications"
+down_revision = "0032_abort_recovery_schedule"
 branch_labels = None
 depends_on = None
 

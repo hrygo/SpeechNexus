@@ -377,7 +377,7 @@ def test_actual_committed_reply_loss_then_original_recovery_is_read_only(sandbox
     assert s.snapshot() == before
 
 
-def test_failed_and_repeat_migration_preserves_history(sandbox: Sandbox) -> None:
+def test_repeat_upgrade_and_refused_downgrade_preserve_history(sandbox: Sandbox) -> None:
     s = sandbox
     s.draft()
     s.port.mutate(s.publish())
@@ -401,7 +401,7 @@ def test_failed_and_repeat_migration_preserves_history(sandbox: Sandbox) -> None
             migration.downgrade(config, "0031_tts_settlement")
         assert s.snapshot() == before
         assert s.admin.execute("SELECT version_num FROM alembic_version").fetchone() == {
-            "version_num": "0032_profile_publications"
+            "version_num": "0033_profile_publications"
         }
     finally:
         engine.dispose()

@@ -225,7 +225,7 @@ they do not establish a passing run in the current environment.
 
 ## Publication / activation CAS (#415)
 
-Migration `0032_profile_publications` follows `0031_tts_settlement` and preserves
+Migration `0033_profile_publications` follows `0032_abort_recovery_schedule` and preserves
 all draft and Job history. It adds `speech_profile_publications`, immutable
 `speech_profile_lifecycle_results`, and nullable `current_revision` on the family.
 The pointer references an existing publication. The immutable original intent

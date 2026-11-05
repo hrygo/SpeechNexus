@@ -86,11 +86,15 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
   完整可信仍由拥有该协议的引擎适配器判定；HTTP 健康本身仍不是业务 warmup 或模型资格。
   尝试计数按容器与 generation 保存在 adapter 内存中；单次预热动作只有一个 wall-clock
   截止，按 instance 与 generation 锚定在首次 PREPARE 起点（镜像检查、容器创建/启动与
-  inspect 之前），地址选择、全部 attempts 与响应读取共享剩余预算，`attempts` 不再乘大
-  总时长。同一代次内旧容器消失后重建的容器继承原截止，不重新起算；只有达到 ready、确认
-  停止/释放或代次变化才结束该动作并丢弃锚点。预算耗尽后保持非 ready，不再发起地址探测或
-  预热 POST；重复 prepare 不重置截止。控制器重启后会重新预热已运行的实例，这是安全但更贵
-  的行为，不冒充已有证据。
+  inspect 之前），取模板 `timeout_seconds` 与意图 `deadline_at` 的较早者，地址选择、全部
+  attempts 与响应读取共享剩余预算，`attempts` 不再乘大总时长；`deadline_at` 已过时预算
+  视为已耗尽。同一代次内旧容器消失后重建的容器继承原截止，不重新起算；只有达到 ready、
+  确认停止/释放或代次变化才结束该动作并丢弃锚点。预算耗尽后保持非 ready，不再发起地址
+  探测或预热 POST；重复 prepare 不重置截止。控制器重启后按持久意图 `version` 判定恢复：
+  `version > 1` 的未决动作只有同一进程内仍持有该 `(instance_id, generation)` 的锚点或
+  进度时才按剩余预算继续；没有锚点则 fail-closed，保持 `warming_up`，不新建截止、不发起
+  地址探测或预热 POST。重启后提交的新意图（`version == 1`）重新获得一份模板预算，不继承
+  重启前的窗口。
 - 一次预热观察先从 daemon 返回的 IP 中选定一个端口可达地址，地址选择的 TCP 探测共用
   `READINESS_TIMEOUT_SECONDS` 且不超过整次动作剩余预算；随后最多向该地址发送一次预热
   POST。普通 TCP 或 HTTP 健康探测则逐地址使用各自的配置超时，不承诺整个地址列表共用该
@@ -229,7 +233,8 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
 预算或执行权威；重启从起点继续。prepare 不重放动作；stop 恢复已经持久接受的原停止流程。
 
 每项在检查前重新读取，跳过其他节点、已终结的意图或撤销模板；复用 `reconcile_instance`
-同一份观察折叠与版本守卫：prepare 调用 inspect，stop 调用 `recover_stop`。
+同一份观察折叠与版本守卫：prepare 调用 inspect，stop 调用 `recover_stop`。重启恢复的
+prepare 以持久 `version > 1` 标记 resumed，观察循环本身不重新授予预热预算。
 单条运行时失败或陈旧写入保留原持久事实并继续后续项。
 完整批次读取失败留待下一轮，日志只记录固定分类和数量，不记录异常正文、路径或凭据。
 同一进程的生命周期变更串行；多节点由各自控制器维护，不引入新的全局协调权威。

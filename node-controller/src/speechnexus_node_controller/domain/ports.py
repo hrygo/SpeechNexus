@@ -56,8 +56,14 @@ class NodeRuntimePort(Protocol):
     ) -> InstanceObservation: ...
 
     def inspect(
-        self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
-    ) -> InstanceObservation | None: ...
+        self,
+        request: RuntimeInstanceIntentRequest,
+        template: ApprovedRuntimeTemplate,
+        *,
+        resumed: bool = False,
+    ) -> InstanceObservation | None:
+        """Read-only observation; ``resumed`` marks an intent re-observed after a restart."""
+        ...
 
     def recover_stop(
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate

@@ -5,6 +5,7 @@ import time
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Event, Thread
@@ -12,7 +13,14 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from tests.fake.controller import SAMPLE_INSTANCE_ID, build_request, build_template
+from tests.fake.controller import (
+    FIXED_NOW,
+    SAMPLE_INSTANCE_ID,
+    SAMPLE_NODE_ID,
+    InMemoryIntentStore,
+    build_request,
+    build_template,
+)
 from tests.unit.controller.test_docker_runtime import (
     _engine,
     _runtime,
@@ -20,7 +28,16 @@ from tests.unit.controller.test_docker_runtime import (
     _warmup_rule,
 )
 
-from speechnexus_node_controller.domain.intents import ObservedInstanceState, RuntimeActionKind
+from speechnexus_node_controller.application.runtime_control import NodeRuntimeControlService
+from speechnexus_node_controller.domain.intents import (
+    MemoryHold,
+    ObservedInstanceState,
+    RuntimeActionKind,
+)
+from speechnexus_node_controller.domain.templates import (
+    ApprovedTemplateRegistry,
+    WarmupRequest,
+)
 from speechnexus_node_controller.infrastructure import docker_runtime
 
 
@@ -514,3 +531,229 @@ def test_generation_change_starts_a_new_action_budget(
         assert (SAMPLE_INSTANCE_ID, 1) not in runtime._warmup_deadlines
         # Readiness ends the action, so its anchor is dropped as well.
         assert (SAMPLE_INSTANCE_ID, 2) not in runtime._warmup_deadlines
+
+
+def test_a_restarted_adapter_reports_warming_up_without_probing_or_posting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    probed: list[str] = []
+
+    def probe(address: tuple[str, int], *, timeout: float) -> AbstractContextManager[None]:
+        probed.append(address[0])
+        return nullcontext()
+
+    with responding("ok") as (server, requests, _):
+        body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
+        rule = _warmup_rule(server, body, digest, attempts=2)
+        template = build_template(readiness=rule)
+        engine = _engine(addresses=("127.0.0.1",))
+        first = _runtime(engine)
+        elapsed = 0.0
+        monkeypatch.setattr(docker_runtime, "time", SimpleNamespace(monotonic=lambda: elapsed))
+        monkeypatch.setattr(socket, "create_connection", probe)
+
+        prepared = first.prepare(build_request(), template)
+        assert prepared.observed_instance_state is ObservedInstanceState.WARMING_UP
+        assert len(requests) == 1 and probed
+
+        # Restart: a new adapter has no in-memory anchor for the persisted intent.
+        probed.clear()
+        restarted = _runtime(engine)
+        observed = restarted.inspect(build_request(), template, resumed=True)
+
+        assert observed is not None
+        assert observed.observed_instance_state is ObservedInstanceState.WARMING_UP
+        assert observed.observed_peak_memory is not None
+        assert not probed and len(requests) == 1
+        assert restarted._warmup_progress == {} and restarted._warmup_deadlines == {}
+
+        # Repeated observations of the same resumed intent stay closed as well.
+        again = restarted.inspect(build_request(), template, resumed=True)
+        assert again is not None
+        assert again.observed_instance_state is ObservedInstanceState.WARMING_UP
+        assert not probed and len(requests) == 1
+        assert restarted._warmup_progress == {} and restarted._warmup_deadlines == {}
+
+
+def test_an_intent_resumed_in_the_same_process_spends_the_remaining_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    elapsed = 0.0
+    deadlines: list[float] = []
+
+    with responding("ok") as (server, requests, _):
+        body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
+        rule = _warmup_rule(server, body, digest, attempts=2)
+        assert rule.warmup is not None
+        rule = replace(rule, warmup=replace(rule.warmup, timeout_seconds=0.4))
+        template = build_template(readiness=rule)
+        runtime = _runtime(_engine(addresses=("127.0.0.1",)))
+        monkeypatch.setattr(docker_runtime, "time", SimpleNamespace(monotonic=lambda: elapsed))
+        send = runtime._run_warmup
+
+        def observed(address: str, *args: Any, **kwargs: Any) -> bool:
+            deadlines.append(kwargs["deadline"])
+            return send(address, *args, **kwargs)
+
+        monkeypatch.setattr(runtime, "_run_warmup", observed)
+
+        prepared = runtime.prepare(build_request(), template)
+        assert prepared.observed_instance_state is ObservedInstanceState.WARMING_UP
+        assert deadlines == [pytest.approx(0.4)]
+
+        elapsed = 0.3
+        resumed = runtime.inspect(build_request(), template, resumed=True)
+
+        assert resumed is not None
+        assert resumed.observed_instance_state is ObservedInstanceState.READY
+        assert len(requests) == 2
+        # The in-memory anchor keeps the original 0.4 s deadline instead of
+        # restarting a fresh window when the later version is observed.
+        assert deadlines == [pytest.approx(0.4), pytest.approx(0.4)]
+
+
+def test_a_new_intent_after_a_restart_anchors_its_own_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    elapsed = 0.0
+
+    with responding("ok") as (server, requests, _):
+        body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
+        rule = _warmup_rule(server, body, digest, attempts=2)
+        assert rule.warmup is not None
+        rule = replace(rule, warmup=replace(rule.warmup, timeout_seconds=0.4))
+        template = build_template(readiness=rule)
+        runtime = _runtime(_engine(addresses=("127.0.0.1",)))
+        monkeypatch.setattr(docker_runtime, "time", SimpleNamespace(monotonic=lambda: elapsed))
+
+        first = runtime.prepare(build_request(), template)
+
+        assert first.observed_instance_state is ObservedInstanceState.WARMING_UP
+        assert runtime._warmup_deadlines[(SAMPLE_INSTANCE_ID, 1)] == pytest.approx(0.4)
+        assert len(requests) == 1
+
+        # A version-1 intent is new work, so the restarted adapter grants it a
+        # budget and it can still reach readiness.
+        ready = runtime.inspect(build_request(), template)
+
+        assert ready is not None
+        assert ready.observed_instance_state is ObservedInstanceState.READY
+        assert len(requests) == 2
+        assert (SAMPLE_INSTANCE_ID, 1) not in runtime._warmup_deadlines
+
+
+def test_a_passed_intent_deadline_is_non_ready_with_zero_outbound(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    probed: list[str] = []
+
+    def probe(address: tuple[str, int], *, timeout: float) -> AbstractContextManager[None]:
+        probed.append(address[0])
+        return nullcontext()
+
+    with responding("ok") as (server, requests, _):
+        body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
+        rule = _warmup_rule(server, body, digest, attempts=1)
+        template = build_template(readiness=rule)
+        engine = _engine(addresses=("127.0.0.1",))
+        runtime = _runtime(engine)
+        monkeypatch.setattr(socket, "create_connection", probe)
+        expired = build_request(deadline_at=datetime.now(UTC) - timedelta(seconds=1))
+
+        prepared = runtime.prepare(expired, template)
+
+        assert prepared.observed_instance_state is ObservedInstanceState.WARMING_UP
+        assert not probed and not requests
+
+        # A new (version-1) intent after a restart still spends no outbound work.
+        fresh = _runtime(engine)
+        new_intent = fresh.inspect(expired, template)
+
+        assert new_intent is not None
+        assert new_intent.observed_instance_state is ObservedInstanceState.WARMING_UP
+        assert not probed and not requests
+
+        # Restarting a resumed intent does not launder the expired deadline either.
+        restarted = _runtime(engine)
+        resumed = restarted.inspect(expired, template, resumed=True)
+
+        assert resumed is not None
+        assert resumed.observed_instance_state is ObservedInstanceState.WARMING_UP
+        assert not probed and not requests
+
+
+def test_warmup_budget_is_capped_by_the_intent_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(docker_runtime, "time", SimpleNamespace(monotonic=lambda: 100.0))
+    request = build_request(deadline_at=datetime.now(UTC) + timedelta(seconds=1))
+    warmup = WarmupRequest(
+        path="/synthetic-warmup",
+        content_type="application/octet-stream",
+        body_path="/synthetic/body",
+        body_sha256="sha256:" + "0" * 64,
+        attempts=1,
+        timeout_seconds=60,
+        max_response_bytes=1024,
+    )
+
+    deadline = _runtime(_engine())._warmup_budget_deadline(request, warmup)
+
+    assert 100.0 < deadline <= 101.5
+
+
+def _control_service(
+    template: Any, store: InMemoryIntentStore, runtime: Any
+) -> NodeRuntimeControlService:
+    return NodeRuntimeControlService(
+        node_id=SAMPLE_NODE_ID,
+        templates=ApprovedTemplateRegistry((template,)),
+        store=store,
+        runtime=runtime,
+        now=lambda: FIXED_NOW,
+    )
+
+
+def test_a_restarted_controller_keeps_an_unresolved_warmup_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    probed: list[str] = []
+
+    def probe(address: tuple[str, int], *, timeout: float) -> AbstractContextManager[None]:
+        probed.append(address[0])
+        return nullcontext()
+
+    with responding("ok") as (server, requests, _):
+        body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
+        rule = _warmup_rule(server, body, digest, attempts=2)
+        template = build_template(readiness=rule)
+        engine = _engine(addresses=("127.0.0.1",))
+        monkeypatch.setattr(socket, "create_connection", probe)
+        store = InMemoryIntentStore()
+        request = build_request()
+
+        first = _control_service(template, store, _runtime(engine))
+        submitted = first.submit_intent(request).intent
+        assert submitted.observed_instance_state is ObservedInstanceState.WARMING_UP
+        assert submitted.version == 2
+        assert len(requests) == 1 and probed
+
+        # Restart: the durable intent survives, the adapter's anchors do not.
+        probed.clear()
+        restarted_runtime = _runtime(engine)
+        restarted = _control_service(template, store, restarted_runtime)
+        outcomes = restarted.reconcile_instance(SAMPLE_INSTANCE_ID, 1)
+
+        assert len(outcomes) == 1
+        folded = outcomes[0].intent
+        assert folded.observed_instance_state is ObservedInstanceState.WARMING_UP
+        assert folded.memory_hold is MemoryHold.PEAK
+        assert folded.version == 3
+        assert not probed and len(requests) == 1
+        assert restarted_runtime._warmup_progress == {}
+        assert restarted_runtime._warmup_deadlines == {}
+
+        restarted.reconcile_instance(SAMPLE_INSTANCE_ID, 1)
+        assert not probed and len(requests) == 1
+        assert restarted_runtime._warmup_progress == {}
+        assert restarted_runtime._warmup_deadlines == {}

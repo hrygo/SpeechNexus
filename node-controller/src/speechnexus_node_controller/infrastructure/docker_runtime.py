@@ -310,9 +310,18 @@ class DockerNodeRuntime:
 
     @_runtime_action("inspect")
     def inspect(
-        self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+        self,
+        request: RuntimeInstanceIntentRequest,
+        template: ApprovedRuntimeTemplate,
+        *,
+        resumed: bool = False,
     ) -> InstanceObservation | None:
-        """Read-only observation; it never fabricates stop evidence."""
+        """Read-only observation; it never fabricates stop evidence.
+
+        ``resumed`` marks an intent the controller only re-observed after a
+        restart. A resumed warmup action without an in-memory anchor is
+        reported as ``warming_up`` instead of receiving a fresh budget.
+        """
         state = self._find(request.instance_id, request.instance_generation)
         if state is None:
             return self._absent_observation(request, template)
@@ -328,7 +337,7 @@ class DockerNodeRuntime:
                 observed_instance_state=ObservedInstanceState.QUARANTINED,
                 quarantine_reason="container labels do not match the recorded intent",
             )
-        return self._observation(request, template, state)
+        return self._observation(request, template, state, resumed=resumed)
 
     def _require_approved_image(self, template: ApprovedRuntimeTemplate) -> None:
         identity = self._api.inspect_image(template.image_reference)
@@ -488,6 +497,8 @@ class DockerNodeRuntime:
         request: RuntimeInstanceIntentRequest,
         template: ApprovedRuntimeTemplate,
         state: ContainerState,
+        *,
+        resumed: bool = False,
     ) -> InstanceObservation:
         if not self._engine_auth_matches(request, template, state):
             self._warmup_progress.pop((state.container_id, request.instance_generation), None)
@@ -514,7 +525,7 @@ class DockerNodeRuntime:
                 observed_peak_memory=self._observed_memory(request, state),
                 quarantine_reason="container resource/network configuration is not approved",
             )
-        observed_state = self._observed_state(request, template, state)
+        observed_state = self._observed_state(request, template, state, resumed=resumed)
         native_evidence = None
         if (
             observed_state is ObservedInstanceState.READY
@@ -561,12 +572,14 @@ class DockerNodeRuntime:
         request: RuntimeInstanceIntentRequest,
         template: ApprovedRuntimeTemplate,
         state: ContainerState,
+        *,
+        resumed: bool = False,
     ) -> ObservedInstanceState:
         if state.status == "created":
             return ObservedInstanceState.PREPARING
         if state.status == "running":
             if template.readiness.kind is ReadinessKind.HTTP_WARMUP_OK:
-                return self._warmup_state(request, template, state)
+                return self._warmup_state(request, template, state, resumed=resumed)
             return (
                 ObservedInstanceState.READY
                 if self._is_ready(template, state)
@@ -585,18 +598,28 @@ class DockerNodeRuntime:
         request: RuntimeInstanceIntentRequest,
         template: ApprovedRuntimeTemplate,
         state: ContainerState,
+        *,
+        resumed: bool = False,
     ) -> ObservedInstanceState:
         """Spend one bounded warmup action and never exceed its single deadline.
 
         ``warmup.timeout_seconds`` bounds the whole action, anchored when the
         first prepare for this instance begins, before image verification or any
-        create/start/inspect call. Address selection, every attempt and every
-        response read share the remaining budget, so ``attempts`` cannot multiply
-        the wall-clock bound. The anchor is kept for the whole
+        create/start/inspect call, and never later than the intent's
+        ``deadline_at``. Address selection, every attempt and every response read
+        share the remaining budget, so ``attempts`` cannot multiply the
+        wall-clock bound. The anchor is kept for the whole
         ``(instance_id, instance_generation)`` action and survives container
         replacement, so a replacement container inherits the original deadline
         instead of restarting it. The action ends at readiness, a confirmed
         stop/release or a generation change.
+
+        A ``resumed`` intent is one the controller persisted and only re-observed.
+        After a restart it has no in-memory anchor: without one it keeps
+        reporting ``warming_up`` without creating a deadline, probing or posting,
+        so a restart cannot grant a second window for the same action. When this
+        process still holds the action's anchor or progress, it spends only the
+        remaining budget.
         """
         port = template.readiness.port
         warmup = template.readiness.warmup
@@ -611,8 +634,11 @@ class DockerNodeRuntime:
         if request.action is not RuntimeActionKind.PREPARE:
             # A stop or drain observation never starts or spends the action budget.
             return ObservedInstanceState.WARMING_UP
+        if resumed and progress is None and anchor_key not in self._warmup_deadlines:
+            # Only the durable intent survived the restart: this process never
+            # started the action, so it has no remaining budget to spend.
+            return ObservedInstanceState.WARMING_UP
         if progress is None:
-            deadline = self._warmup_deadlines.get(anchor_key)
             for stale in [
                 stale
                 for stale, previous in self._warmup_progress.items()
@@ -622,12 +648,14 @@ class DockerNodeRuntime:
             ]:
                 # A container that vanished cannot continue its old successes.
                 self._warmup_progress.pop(stale, None)
+            deadline = self._warmup_deadlines.get(anchor_key)
+            if deadline is None:
+                deadline = self._warmup_budget_deadline(request, warmup)
+                self._warmup_deadlines[anchor_key] = deadline
             progress = _WarmupProgress(
                 instance_id=request.instance_id,
                 instance_generation=request.instance_generation,
-                deadline=(
-                    deadline if deadline is not None else time.monotonic() + warmup.timeout_seconds
-                ),
+                deadline=deadline,
             )
             self._warmup_progress[key] = progress
         now = time.monotonic()
@@ -686,7 +714,20 @@ class DockerNodeRuntime:
             if other[0] == request.instance_id and other[1] != request.instance_generation
         ]:
             self._warmup_deadlines.pop(other, None)
-        self._warmup_deadlines.setdefault(action, time.monotonic() + warmup.timeout_seconds)
+        self._warmup_deadlines.setdefault(action, self._warmup_budget_deadline(request, warmup))
+
+    @staticmethod
+    def _warmup_budget_deadline(
+        request: RuntimeInstanceIntentRequest, warmup: WarmupRequest
+    ) -> float:
+        """One action's deadline: the template budget capped by ``deadline_at``.
+
+        A deadline that already passed yields an exhausted budget, so the next
+        observation stays non-ready without probing or posting.
+        """
+        started = time.monotonic()
+        remaining = (request.deadline_at - datetime.now(UTC)).total_seconds()
+        return started + min(warmup.timeout_seconds, remaining)
 
     def _engine_environment(
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate

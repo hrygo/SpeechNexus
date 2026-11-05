@@ -132,11 +132,15 @@ def test_foreign_or_withdrawn_work_is_not_inspected(foreign_node: bool, approved
 
 class UnavailableInspection(ScriptedNodeRuntime):
     def inspect(
-        self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+        self,
+        request: RuntimeInstanceIntentRequest,
+        template: ApprovedRuntimeTemplate,
+        *,
+        resumed: bool = False,
     ) -> InstanceObservation | None:
         if request.instance_id == "instance-bad":
             raise RuntimeControllerUnavailableError("SYNTHETIC_PRIVATE_DETAIL")
-        return super().inspect(request, template)
+        return super().inspect(request, template, resumed=resumed)
 
 
 def test_an_unavailable_instance_does_not_block_the_rest_of_the_page() -> None:
@@ -232,8 +236,13 @@ def test_a_concurrent_sqlite_writer_cannot_be_overwritten_by_an_old_observation(
 
     class RacingInspection(ScriptedNodeRuntime):
         def inspect(
-            self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+            self,
+            request: RuntimeInstanceIntentRequest,
+            template: ApprovedRuntimeTemplate,
+            *,
+            resumed: bool = False,
         ) -> InstanceObservation | None:
+            del resumed
             current = second.get(request.intent_id)
             assert current is not None
             version = current.version

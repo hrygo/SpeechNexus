@@ -356,7 +356,6 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
             "speech_binding_publish_intents",
             "speech_binding_disable_targets",
             "speech_binding_disable_abort_intents",
-            "gateway_abort_intents",
             # Independent builtin voice trust records are not shared runtime data.
             "speech_builtin_voice_source_approvals",
             "speech_builtin_voice_source_revocations",
@@ -375,6 +374,9 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
     # Artifact metadata (0020). Reads go through their own connection; the
     # table stays outside the shared coordination surface.
     artifact_tables = {"speech_artifacts"} if db.dialect == "postgresql" else set()
+    # The gateway abort receipt (0036) is private gateway evidence with its own grants;
+    # neither engine grants it as part of the shared coordination surface.
+    abort_tables = {"gateway_abort_intents"}
     # Public-Job cancellation facts and their private projection/ledger (0034/0035).
     cancellation_tables = (
         {
@@ -390,6 +392,7 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
     assert profile_tables <= {row["name"] for row in rows}
     assert publication_tables <= {row["name"] for row in rows}
     assert artifact_tables <= {row["name"] for row in rows}
+    assert abort_tables <= {row["name"] for row in rows}
     assert cancellation_tables <= {row["name"] for row in rows}
     assert (
         {row["name"] for row in rows}
@@ -402,13 +405,14 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         - binding_tables
         - publication_tables
         - artifact_tables
+        - abort_tables
         - cancellation_tables
         == (set(SPEECH_UPDATES) | set(GATEWAY_UPDATES))
     )
     if db.dialect == "postgresql":
         # New configuration and publication tables are outside shared coordination grants.
         for owner in ("speech", "gateway"):
-            for table in profile_tables | binding_tables | publication_tables:
+            for table in profile_tables | binding_tables | publication_tables | abort_tables:
                 with (
                     pytest.raises(psycopg.errors.InsufficientPrivilege),
                     foundation.connection(owner) as connection,

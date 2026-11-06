@@ -1,7 +1,8 @@
 .PHONY: install dev-bootstrap dev-up dev-down dev-status dev-check api-dev gateway-dev web-dev \
 	browser-install browser-smoke media-smoke contracts-check contracts-compat contracts-http-changes contracts-speech-changes contracts-coordination-requests contracts-coordination-results contracts-realtime-changes contracts-sdk-test contracts-generate contracts-drift \
 	service-smoke stack-config mysql-service acceptance-map-check operation-coverage-check \
-	format lint typecheck test integration-test workbench-llm-qualification coordination-test python-build build verify
+	format lint typecheck test integration-test workbench-llm-qualification coordination-test \
+	abort-ledger-mysql python-build build verify
 
 install:
 	uv sync --locked --all-packages --all-groups
@@ -156,6 +157,12 @@ coordination-test:
 		tests/integration/test_runtime_observations.py \
 		tests/integration/test_runtime_creation_final_clock.py \
 		tests/integration/test_coordination_foundation.py -q
+
+# Cancel/abort InnoDB oracle on the project-managed MySQL 8.4.8. The script
+# starts that container, derives the DSN, and selects only the mysql parameters;
+# the full dual-database gate needs both real DSNs and no -k filter.
+abort-ledger-mysql:
+	./scripts/dev-env/mysql-oracle.sh tests/integration/test_gateway_abort_ledger.py
 
 python-build:
 	uv build --all-packages --out-dir dist/python

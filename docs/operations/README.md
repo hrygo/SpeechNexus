@@ -17,6 +17,7 @@
 - [对账与恢复](reconciliation-recovery.md) · [上线前检查](release-preflight.md) · [发布就绪历史快照](../archive/operations/release-readiness.md)。
 - [绑定发布](publish-binding-revision.md) · [绑定生命周期](binding-lifecycle.md) · [停用 worker](binding-disable-worker.md)。
 - [绑定发布证据回填](backfill-binding-publication-evidence.md) · [激活幂等与同版验证记录](binding-activation-verification.md)。
+- [取消/中止 oracle 的本地双库验证](local-dual-database.md)。
 - [Agent 交付 SOP](agent-delivery-sop.md) · [Paperclip 工作流](paperclip.md)。
 
 [文档索引](../README.md)

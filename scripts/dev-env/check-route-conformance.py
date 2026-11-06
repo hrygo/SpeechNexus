@@ -1261,10 +1261,57 @@ def merge_environments(
     return merged
 
 
+_SEGMENT_PARAMETER = re.compile(r"\{[A-Za-z_][A-Za-z0-9_]*\}")
+
+
 def require_plain_path_template(path: str) -> None:
-    """Fail closed instead of treating a Starlette converter as a string segment."""
+    """Fail closed when the simplified matcher cannot read this path faithfully.
+
+    methods_for_path only treats a whole segment such as {id} as a parameter. A
+    converter or an embedded parameter (/widgets/item-{id}) would be compared as
+    literal text, so the probe could pick a method that the real route already
+    registers and call the endpoint instead of observing 405.
+    """
     if re.search(r"\{[^/{}]*:[^/{}]*\}", path):
         raise ValueError(f"unsupported Starlette path converter in route conformance: {path}")
+    for segment in path.split("/"):
+        if ("{" in segment or "}" in segment) and not _SEGMENT_PARAMETER.fullmatch(segment):
+            raise ValueError(f"unsupported non-segment path parameter in route conformance: {path}")
+
+
+def _join_path(parent: str, child: str) -> str:
+    if not parent:
+        return child
+    if not child:
+        return parent
+    return parent.rstrip("/") + "/" + child.lstrip("/")
+
+
+def require_plain_mount_routes(mount_path: str, routes: Iterable[Any]) -> None:
+    """Reject parameters below a Mount; flatten_routes does not descend into it."""
+    for route in routes:
+        original = getattr(route, "original_router", None)
+        if original is not None:
+            context = getattr(route, "include_context", None)
+            nested_prefix = getattr(context, "prefix", "") or ""
+            if nested_prefix:
+                raise ValueError(
+                    f"unsupported include_router prefix in route conformance: {nested_prefix}"
+                )
+            require_plain_mount_routes(mount_path, original.routes)
+            continue
+        path = getattr(route, "path", None)
+        if not isinstance(path, str):
+            continue
+        full_path = _join_path(mount_path, path)
+        if "{" in path or "}" in path:
+            raise ValueError(
+                "unsupported parameterized or converter route inside Mount in "
+                f"route conformance: {full_path}"
+            )
+        nested = getattr(route, "routes", None)
+        if isinstance(nested, (list, tuple)):
+            require_plain_mount_routes(full_path, nested)
 
 
 def flatten_routes(routes: Iterable[Any]) -> Iterator[Any]:
@@ -1282,6 +1329,9 @@ def flatten_routes(routes: Iterable[Any]) -> Iterator[Any]:
             path = getattr(route, "path", None)
             if isinstance(path, str):
                 require_plain_path_template(path)
+                nested = getattr(route, "routes", None)
+                if isinstance(nested, (list, tuple)):
+                    require_plain_mount_routes(path, nested)
             yield route
 
 

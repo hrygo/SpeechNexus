@@ -653,6 +653,39 @@ def test_converter_is_rejected_before_simplified_probe(template: str) -> None:
         asyncio.run(module.probe_method_not_allowed_envelopes(app, (operation,)))
 
 
+@pytest.mark.parametrize("template", ["/a{x}b", "/widgets/item-{id}"])
+def test_non_segment_parameter_is_rejected_before_simplified_probe(template: str) -> None:
+    module = load()
+    app = FastAPI()
+    app.add_api_route(template, lambda: {}, methods=["GET"])
+    operation = module.ContractOperation("nonSegment", "GET", template, frozenset({405}))
+    with pytest.raises(ValueError, match=r"unsupported non-segment path parameter") as error:
+        asyncio.run(module.probe_method_not_allowed_envelopes(app, (operation,)))
+    assert template in str(error.value)
+    # The contract side must fail too instead of rendering the embedded placeholder.
+    with pytest.raises(ValueError, match=r"unsupported non-segment path parameter") as error:
+        module.fill_path_parameters(template)
+    assert template in str(error.value)
+
+
+@pytest.mark.parametrize("child", ["/{id:int}", "/{id}"])
+def test_mount_parameterized_child_is_rejected_before_simplified_probe(child: str) -> None:
+    module = load()
+    sub = FastAPI()
+    sub.add_api_route(child, lambda: {}, methods=["GET"])
+    app = FastAPI()
+    app.mount("/widgets", sub)
+    template = "/widgets" + child
+    operation = module.ContractOperation("mounted", "GET", template, frozenset({405}))
+    with pytest.raises(ValueError, match=r"inside Mount") as error:
+        asyncio.run(module.probe_method_not_allowed_envelopes(app, (operation,)))
+    assert template in str(error.value)
+    # Discovery must fail too; a Mount is not flattened into matchable routes.
+    with pytest.raises(ValueError, match=r"inside Mount") as error:
+        tuple(module.flatten_routes(app.routes))
+    assert template in str(error.value)
+
+
 @pytest.mark.parametrize("prefix", ["/api", "/widgets"])
 def test_include_prefix_is_rejected_before_simplified_probe(prefix: str) -> None:
     module = load()

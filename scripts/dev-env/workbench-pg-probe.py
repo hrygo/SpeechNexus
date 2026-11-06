@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,6 +23,26 @@ from urllib.parse import quote
 from psycopg.conninfo import make_conninfo
 
 ROOT = Path(__file__).resolve().parents[2]
+
+# The probe's inner pytest ceiling is derived from the job budget that contains
+# it. GitHub kills the entire job at its timeout-minutes and runs no later step,
+# so a fixed inner ceiling that is much smaller than the job leaves no failing
+# case and no log, and one that is too close to the job never gets to report.
+# The integration partitions run under 20 minutes and the Python coverage job
+# under 10 minutes in .github/workflows/ci.yml; keep these pairs in sync.
+INTEGRATION_JOB_TIMEOUT_SECONDS = 20 * 60
+COVERAGE_JOB_TIMEOUT_SECONDS = 10 * 60
+# Setup before the probe starts (container init, checkout, dependency install,
+# MinIO) and the probe's own stop-and-report tail share the same job budget.
+# Reserve two minutes so the inner deadline fires first: the 2026-11-06
+# Integration 3 run spent 78 s in setup before the probe step began.
+INTEGRATION_JOB_RESERVE_SECONDS = 120
+INTEGRATION_SHARD_PYTEST_TIMEOUT_SECONDS = (
+    INTEGRATION_JOB_TIMEOUT_SECONDS - INTEGRATION_JOB_RESERVE_SECONDS
+)
+FULL_COVERAGE_PYTEST_TIMEOUT_SECONDS = COVERAGE_JOB_TIMEOUT_SECONDS
+DEFAULT_PYTEST_TIMEOUT_SECONDS = 180
+PYTEST_LOG_TAIL_LINES = 50
 
 
 NON_INTEGRATION_TEST_PATHS = (
@@ -342,6 +363,88 @@ def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return args
 
 
+def pytest_timeout_seconds(*, full_coverage: bool, integration_shard: int | None) -> int:
+    """Derive the inner ceiling from the outer job budget it runs inside."""
+    if integration_shard is not None:
+        return INTEGRATION_SHARD_PYTEST_TIMEOUT_SECONDS
+    if full_coverage:
+        return FULL_COVERAGE_PYTEST_TIMEOUT_SECONDS
+    return DEFAULT_PYTEST_TIMEOUT_SECONDS
+
+
+def captured_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    return value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value
+
+
+def display_path(path: Path) -> str:
+    return str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path)
+
+
+def print_log_tail(log_path: Path, *, limit: int = PYTEST_LOG_TAIL_LINES) -> None:
+    try:
+        lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError as error:
+        print(
+            f"pytest log unavailable ({type(error).__name__}): {display_path(log_path)}",
+            file=sys.stderr,
+        )
+        return
+    tail = lines[-limit:]
+    print(f"--- pytest.log tail ({len(tail)} of {len(lines)} lines) ---", file=sys.stderr)
+    for line in tail:
+        print(line, file=sys.stderr)
+    print("--- end of pytest.log tail ---", file=sys.stderr)
+
+
+def run_test_command(
+    command: Sequence[str],
+    *,
+    env: Mapping[str, str],
+    log_path: Path,
+    timeout_seconds: int,
+) -> subprocess.CompletedProcess[str]:
+    """Run pytest-shaped work and keep its output on disk, including on timeout."""
+    # pytest and the shard runner share this process tree. Unbuffered output means
+    # a killed child still leaves the last started case on disk instead of an
+    # unflushed block.
+    child_env = {**env, "PYTHONUNBUFFERED": "1"}
+    started = time.monotonic()
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=ROOT,
+            env=child_env,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        # subprocess.run raises before the log is written; persist the partial
+        # output first so the tail below and the retained evidence both exist.
+        output = captured_text(error.stdout) + captured_text(error.stderr)
+        log_path.write_text(output, encoding="utf-8")
+        elapsed = time.monotonic() - started
+        print(
+            f"probe subprocess timed out after {elapsed:.1f} s "
+            f"(limit {timeout_seconds} s); pytest log: {display_path(log_path)}",
+            file=sys.stderr,
+        )
+        if output:
+            print_log_tail(log_path)
+        else:
+            print(
+                "pytest.log is empty: no output was captured before the timeout",
+                file=sys.stderr,
+            )
+        raise
+    log_path.write_text(completed.stdout + completed.stderr, encoding="utf-8")
+    print(completed.stdout + completed.stderr, end="")
+    return completed
+
+
 def main() -> int:
     args = parse_arguments()
     parser = argument_parser()
@@ -498,22 +601,24 @@ def main() -> int:
                 else "scoped-c"
             )
             result["coverage_log"] = str((cluster / "coverage.json").relative_to(ROOT))
-        tests = subprocess.run(
-            command,
-            cwd=ROOT,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=600 if args.full_coverage or args.integration_shard is not None else 180,
-            check=False,
+        pytest_log = cluster / "pytest.log"
+        test_timeout = pytest_timeout_seconds(
+            full_coverage=args.full_coverage, integration_shard=args.integration_shard
         )
-        (cluster / "pytest.log").write_text(tests.stdout + tests.stderr)
-        print(tests.stdout + tests.stderr, end="")
+        result["pytest_timeout_seconds"] = test_timeout
+        tests = run_test_command(
+            command, env=env, log_path=pytest_log, timeout_seconds=test_timeout
+        )
         result["tests_passed"] = tests.returncode == 0
-        result["pytest_log"] = str((cluster / "pytest.log").relative_to(ROOT))
+        result["pytest_log"] = str(pytest_log.relative_to(ROOT))
         code = tests.returncode
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
         # All child inputs are this probe's own synthetic identities, never a shared DSN.
+        if isinstance(error, subprocess.TimeoutExpired) and (cluster / "pytest.log").exists():
+            # run_test_command already printed the elapsed time and tail; retain
+            # the same facts in the lifecycle report. A PG command timeout never
+            # creates this log, so its absence is not claimed as pytest evidence.
+            result["pytest_log"] = str((cluster / "pytest.log").relative_to(ROOT))
         print(f"probe subprocess failed: {type(error).__name__}", file=sys.stderr)
         result["failure"] = type(error).__name__
     except (OSError, KeyboardInterrupt) as error:

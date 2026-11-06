@@ -167,9 +167,17 @@ ASGI ingress 状态码、框架 404/500、FastAPI 参数校验产生的 422、�
 
 探针注入只启用 ingress 的资产与 workspace 服务替身；任何业务方法调用立即失败，不连接服务。
 未配置服务的部署仍可能在路由匹配前返回 503，这不属于探针通过的证据。
-当前匹配器只支持普通 `{parameter}` 段；检测到 Starlette converter（如 `{id:int}`、`{rest:path}`）
-或懒加载 `include_router` 的非空 prefix 时，门禁在发送请求前显式报错（退出码 2），不按简化模型探测，
-也不修改注册路由。已展平为完整路径的普通路由可直接检查。
+当前匹配器只支持普通 `{parameter}` 段；检测到 Starlette converter（如 `{id:int}`、`{rest:path}`）、
+懒加载 `include_router` 的非空 prefix，或任何不是「无子路由 StaticFiles」的 `Mount`（含裸 ASGI 应用，
+它的 `.routes` 为空却接受前缀下所有路径）时，门禁在发送请求前显式报错（退出码 2），不按简化模型探测，
+也不修改注册路由。`Mount` 先于子路由匹配且接受任意方法，`methods_for_path` 不下降进去，探针会选中
+子路由已注册的方法并真正调用其 endpoint；因此门禁只放行无子路由的 `StaticFiles`，其它挂载一律拒绝，
+`Host` 同样拒绝。探测窗口内另有 dispatch 计数守护：普通 Starlette `Route.handle`（方法被接受后才计入，
+405 不计）、`Mount.handle`（未建模的挂载应用）与每个可达 FastAPI ASGI handler（直接路由与懒加载 include，
+覆盖直接调用 `dependant.call` 的生成器 endpoint）均被计数，必须为 0；一旦有请求到达 handler，门禁在接收
+探测结果前以 `endpoint was invoked during probe` 失败（退出码 2）。安装由所有活动 guard 共享，最后一个
+退出时才恢复。
+已展平为完整路径的普通路由可直接检查。
 
 已知未实现操作与已知未声明状态码保留在脚本内的显式基线中，逐条带原因；实现或契约变更后必须同步删除条目，
 否则 `stale_*` 检查失败。未实现操作另有行为要求：门禁解析中央占位表与占位错误映射，要求基线、占位条目、

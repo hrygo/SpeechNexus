@@ -348,7 +348,11 @@ jobs:
     needs: [changes]
     if: ${{ needs.changes.outputs.mode == 'full' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # Baseline: the four database partitions need 7-9.5 min of job wall clock
+    # against the old 10 min ceiling, so a transient runner stall cancelled the
+    # job and the evidence gate reported shards=cancelled. The budget is headroom
+    # for the same work, not a different selection or a weaker assertion.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       max-parallel: 6
@@ -384,6 +388,10 @@ jobs:
           --health-retries 20
 
     steps:
+      - name: Record partition wall-clock start
+        # Observation only; the value feeds the timing summary after the run.
+        run: echo "SHARD_STARTED_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -461,6 +469,47 @@ jobs:
             --shard-report "$RUNNER_TEMP/integration-shard-${{ matrix.shard }}.json" \
             --output "$RUNNER_TEMP/workbench-pg-shard-${{ matrix.shard }}.json"
 
+      - name: Publish integration partition timing
+        # Observation only: the summary never decides the job result, which stays
+        # bound to the partition run above. A job cancelled at its timeout does
+        # not run this step, so a missing summary is itself a timeout signal.
+        if: ${{ always() }}
+        env:
+          SHARD_INDEX: ${{ matrix.shard }}
+        run: |
+          python3 - "$RUNNER_TEMP/integration-shard-${SHARD_INDEX}.json" "$SHARD_INDEX" <<'PY'
+          import json
+          import os
+          import sys
+          import time
+          from pathlib import Path
+
+          report, index = Path(sys.argv[1]), sys.argv[2]
+          entry = {"Job wall clock": "unavailable", "pytest execution": "unavailable"}
+          started = os.environ.get("SHARD_STARTED_EPOCH", "")
+          if started.isdigit():
+              entry["Job wall clock"] = f"{time.time() - int(started):.0f} s"
+          try:
+              data = json.loads(report.read_text(encoding="utf-8"))
+              entry["pytest execution"] = f"{float(data['elapsed_seconds']):.1f} s"
+              entry["Selected cases"] = str(len(data["selected"]))
+          except (OSError, KeyError, TypeError, ValueError):
+              pass
+          lines = [f"### Integration partition {index}", "", "| metric | value |", "| --- | --- |"]
+          lines.extend(f"| {name} | {value} |" for name, value in entry.items())
+          lines.extend(
+              [
+                  "",
+                  "Budget: 20 min job timeout. A shard consistently above 15 min is",
+                  "split or repartitioned, not given a larger timeout",
+                  "(docs/validation/ci-validation.md).",
+                  "",
+              ]
+          )
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as output:
+              output.write("\n".join(lines))
+          PY
+
       - name: Preserve integration partition evidence
         if: ${{ always() }}
         # Official v7.0.2; reports contain only test identities and results.
@@ -516,6 +565,53 @@ jobs:
           python3 scripts/dev-env/integration-shards.py check \
             --count 6 --head "$(git rev-parse HEAD)" \
             --reports-dir "$RUNNER_TEMP/integration-shards"
+
+      - name: Publish per-shard timing comparison
+        # Observation only: reads the evidence downloaded above and never gates.
+        if: ${{ always() }}
+        run: |
+          python3 - "$RUNNER_TEMP/integration-shards" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          evidence = Path(sys.argv[1])
+          lines = ["### Integration shard timing", ""]
+          rows = []
+          paths = sorted(evidence.glob("integration-shard-*.json")) if evidence.is_dir() else []
+          for path in paths:
+              try:
+                  data = json.loads(path.read_text(encoding="utf-8"))
+                  rows.append(
+                      (
+                          int(data["shard_index"]),
+                          float(data["elapsed_seconds"]),
+                          len(data["selected"]),
+                      )
+                  )
+              except (OSError, KeyError, TypeError, ValueError):
+                  continue
+          if rows:
+              slowest = max(row[1] for row in rows)
+              lines.extend(["| shard | pytest execution | selected cases |", "| --- | --- | --- |"])
+              for index, seconds, cases in sorted(rows):
+                  marker = " (slowest)" if seconds == slowest else ""
+                  lines.append(f"| {index} | {seconds:.1f} s{marker} | {cases} |")
+          else:
+              lines.append("Shard timing unavailable: downloaded evidence is absent.")
+          lines.extend(
+              [
+                  "",
+                  "Pair this with each shard job's wall clock. A shard consistently above",
+                  "15 min is split, not given a larger timeout",
+                  "(docs/validation/ci-validation.md).",
+                  "",
+              ]
+          )
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as output:
+              output.write("\n".join(lines))
+          PY
 
   # Require both Python execution and independent static/contract checks.
   python_checks_gate:

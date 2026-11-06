@@ -234,6 +234,40 @@ worker 与派发器共享同一条 gateway 契约和停止服务；它不会创�
 状态而不是原地重试。因此 API Job writer 角色需要 `speech_artifacts` 的 SELECT，
 `job_runtime` 启动探针也把它列入必需表。
 
+### 心跳、背压与断线语义
+
+空闲流按固定间隔发送 SSE 注释帧 `: keepalive`。它是注释而不是事件：不带 `id` 或
+`data`，不写事件表，不改变线路 `id` 和事件顺序。间隔由
+`SPEECHNEXUS_JOB_EVENT_HEARTBEAT_SECONDS` 配置，默认 15 秒，取值 `(0, 60]` 秒；
+只有距上次心跳达到间隔时才插入，事件帧照常优先发送，心跳不会出现在某个事件帧内部。
+等待按剩余期限计算：轮询间隔与心跳间隔不整除时（例如 0.5 秒轮询、0.51 秒心跳），心跳在
+约 0.51 秒而不是下一个完整轮询周期后发出，读取耗时不会把间隔拖后整整一个轮询周期。
+
+流是分页拉取式的：每次从事件表读取至多 `_EVENT_BATCH`（100）条已提交事件，本页帧全部
+写出后才读取下一页。因此单连接在进程内至多持有一页投影帧（≤100 帧）加一帧在途；页大小
+固定，单帧大小由 Job 快照与事件类型决定，其上界由创建请求体上限（`max_bytes` 默认
+256 KiB）推出，最坏约 25 MiB，典型远小于此。uvicorn 传输层另有 64 KiB 写缓冲高水位。
+慢客户端不会造成无界缓冲：若一帧在 `SPEECHNEXUS_JOB_EVENT_SEND_TIMEOUT_SECONDS`（默认
+10 秒，取值 `(0, 60]` 秒）内无法写出，连接被判为慢客户端，服务端关闭事件源并中止套接字
+（不等待写缓冲排空，否则不读的客户端会让连接一直占着文件描述符；uvicorn 下由应用外层
+中间件捕获该请求的传输并在超时后中止，没有该能力的服务器退化为普通关闭），同时记录一条结构化
+WARNING `job_event_stream_backpressure`，字段只有 `event`、`reason=slow_client`、
+`send_timeout_seconds` 与 `connection_reset`（是否走了中止而非普通关闭），不含 Job、请求
+或客户端身份。被丢弃的未发送帧不影响持久化事实：
+客户端以最后收到的 `id` 续读即可补齐。关闭连接不改变任何事件行或 Job 状态，也不表示任务
+终止。
+
+代理与负载均衡：心跳默认 15 秒，代理的空闲读超时必须显著大于该值，建议
+`proxy_read_timeout` 不低于 60 秒（至少为心跳间隔的两倍）；调小心跳时同步调整。
+`text/event-stream` 必须关闭响应缓冲（如 nginx `proxy_buffering off`，或由代理注入
+`X-Accel-Buffering: no`），否则事件会被攒批，心跳也会失去作用。代理层的读超时只会
+表现为流被断开，恢复规则见下。
+
+断线语义：流关闭（终态、慢客户端或网络中断）都不表示任务结束。客户端以最后收到的
+`id` 作为 `Last-Event-ID` 重连，服务端严格从其后回放，因此不重复、不跳过。终态事件
+已消费后再重连得到空流并立即关闭，客户端应改读
+`GET /v1/nexus/jobs/{job_id}` 确认当前状态。心跳注释没有 `id`，不能作为续读游标。
+
 ### 结果发布语义（DEL-100）
 
 发布以 `job_id + kind` 确定性派生 `artifact_id`，以 `job_id` 确定性派生 `receipt_id`，
@@ -330,6 +364,9 @@ Job/outbox SELECT 和创建所需列的 INSERT；没有 UPDATE、DELETE、持久
 uv run pytest tests/unit/test_production_jobs.py -q
 uv run pytest tests/unit/test_production_claims.py -q
 uv run pytest tests/unit/backend/test_result_publication.py -q
+uv run pytest tests/unit/backend/test_public_job_event_stream.py -q
+# 配置隔离 PG DSN 后，真实 uvicorn + httpx 连接覆盖分页、心跳、断线与续读：
+uv run pytest tests/integration/test_public_job_retry_sse_pg.py tests/integration/test_public_job_event_stream_tcp.py -q
 # 配置隔离 PG DSN 与 MinIO endpoint/keys 后：
 uv run pytest tests/integration/test_result_publication_real_storage.py -q
 # 先配置指向项目隔离实例的两个测试 DSN；integration-test 还需要隔离 MinIO endpoint 和测试密钥。

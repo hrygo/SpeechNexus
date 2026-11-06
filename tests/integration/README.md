@@ -101,7 +101,9 @@ container's `mysql` account after initialisation. It is not a user systemd unit:
 this host's user manager has no docker socket access, so docker's
 `unless-stopped` restart policy restores it with the daemon instead. The root
 password is a synthetic local-test credential in `.runtime/config/mysql.env`;
-it never names a shared or production server.
+it never names a shared or production server. InnoDB-only cancel/abort runs,
+the DSN and the recurring MySQL failure modes are documented in
+[local dual-database verification](../../docs/operations/local-dual-database.md).
 
 The measured local environment is Linux ARM64, PostgreSQL 16.15 / psycopg 3.3.6,
 and MySQL 8.4.8 / PyMySQL 1.2.3, with Read Committed and UTC. Driver versions are

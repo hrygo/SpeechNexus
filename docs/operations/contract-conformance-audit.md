@@ -461,5 +461,7 @@ endpoint 源码无法定位则相反：它使检查直接失败，不把空状�
 | 8 | `backend/src/speechnexus_backend/app.py:475-485` | `/v1/nexus/jobs/*` 的 404 改写为 `job_not_found`，未注册的 `retryJob`/`streamJobEvents` 因此返回 404 | `backend/src/speechnexus_backend/app.py::create_app.asset_http_error`（`JOB_PREFIX` 分支） | **部分过期**："未注册 → 404"已过期，`#432` 已注册两条路由，404 现在表示任务不存在；"404 改写为 `job_not_found`"仍成立，未注册子路径继续被改写（§7.1 R4-R6） |
 
 计数说明：issue 记为 `jobs.py` 6 条；实际为 `http/jobs.py` 5 条 + 同结论引用的 `http/job_errors.py:9` 1 条，
-加上 `app.py` 2 条，共 8 条。另发现 §3/§4/§6 注中的契约行号引用在 `0.1.0.dev6` 下已整体漂移，
+加上 `app.py` 2 条，共 8 条。另有 `backend/src/speechnexus_backend/workbench/infrastructure/public_speech_render_jobs.py:69,91`
+（`listJobs` 消费者）在 HEAD 未漂移，已随 §6 一并改为 `PublicSpeechRenderJobs.submit`/`read_job` 符号锚点，不计入上述 8 条。
+另发现 §3/§4/§6 注中的契约行号引用在 `0.1.0.dev6` 下已整体漂移，
 本次一并改为 operationId/路径锚点（这些引用不在 §11 的 8 条之列）。

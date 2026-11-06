@@ -44,7 +44,7 @@ def test_repository_has_no_unbaselined_deviation() -> None:
     }
     assert contract_ids - registered_ids == set(module.KNOWN_UNIMPLEMENTED_OPERATIONS)
     assert report.known_unimplemented == tuple(sorted(module.KNOWN_UNIMPLEMENTED_OPERATIONS))
-    assert len(module.KNOWN_UNDECLARED_STATUSES) == 14
+    assert len(module.KNOWN_UNDECLARED_STATUSES) == 16
 
 
 def test_removed_registration_is_reported() -> None:
@@ -120,6 +120,11 @@ def test_golden_observed_statuses_pin_indirect_and_dynamic_branches() -> None:
     assert rows["downloadArtifactContent"].route.statuses == frozenset(
         {200, 206, 304, 404, 405, 416, 503}
     )
+    # #441 wraps _open_stream in functools.partial; #443 routes voice reads
+    # through a module-level _error whose name collides with binding_lifecycle.
+    assert rows["streamJobEvents"].route.statuses == frozenset({200, 400, 404, 405, 503})
+    assert rows["listVoices"].route.statuses == frozenset({200, 400, 405, 503})
+    assert rows["getVoiceRevision"].route.statuses == frozenset({200, 400, 404, 405, 503})
 
 
 def test_unresolved_endpoint_is_a_finding() -> None:

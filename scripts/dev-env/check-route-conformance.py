@@ -52,13 +52,10 @@ FRAMEWORK_PATHS = frozenset({"/openapi.json", "/docs", "/docs/oauth2-redirect", 
 
 # Contract operations that have no production route yet. Every entry needs a
 # reason: a new omission must fail instead of silently joining the baseline.
-# #432/#436 implemented retryJob and streamJobEvents after the original audit,
-# so the audit's 25 operations are 23 here; a stale entry now fails the check.
+# #432/#436 implemented retryJob and streamJobEvents, and #442/#443 implemented
+# listVoices and getVoiceRevision after the original audit, so the audit's 25
+# operations are 21 here; a stale entry now fails the check.
 KNOWN_UNIMPLEMENTED_OPERATIONS: dict[str, str] = {
-    # Voice catalogue reads are consumed by
-    # workbench/infrastructure/public_voice_catalogue.py but have no route yet.
-    "listVoices": "voice catalogue read route is not implemented",
-    "getVoiceRevision": "fixed voice revision read route is not implemented",
     "retireVoiceRevision": "voice revision retirement route is not implemented",
     # Collection-level pronunciation routes are intercepted by
     # PronunciationIngress and rewritten to 400 invalid_request.
@@ -106,6 +103,9 @@ KNOWN_UNDECLARED_STATUSES: dict[str, frozenset[int]] = {
     "listModels": frozenset({FRAMEWORK_METHOD_NOT_ALLOWED}),
     "retrieveModel": frozenset({FRAMEWORK_METHOD_NOT_ALLOWED}),
     "getCapabilities": frozenset({FRAMEWORK_METHOD_NOT_ALLOWED}),
+    # #442/#443: the voice catalogue GETs are registered but omit 405.
+    "listVoices": frozenset({FRAMEWORK_METHOD_NOT_ALLOWED}),
+    "getVoiceRevision": frozenset({FRAMEWORK_METHOD_NOT_ALLOWED}),
     "createJob": frozenset({FRAMEWORK_METHOD_NOT_ALLOWED}),
     "getJob": frozenset({FRAMEWORK_METHOD_NOT_ALLOWED}),
     "retryJob": frozenset({FRAMEWORK_METHOD_NOT_ALLOWED}),
@@ -394,6 +394,11 @@ def extract_error_mapping(module: ModuleInfo) -> tuple[str, dict[str, int]] | No
     return None
 
 
+def factory_key(module_name: str, qualname: str) -> str:
+    """Scope factories by module; several modules define their own _error."""
+    return f"{module_name}:{qualname}"
+
+
 def collect_factories(modules: Mapping[str, ModuleInfo]) -> dict[str, dict[str, int]]:
     factories: dict[str, dict[str, int]] = {}
     for module in modules.values():
@@ -405,7 +410,7 @@ def collect_factories(modules: Mapping[str, ModuleInfo]) -> dict[str, dict[str, 
             if not name.endswith("_error"):
                 continue
             if _uses_mapping(scope.node, mapping_name):
-                factories[scope.qualname] = mapping
+                factories[factory_key(module.name, scope.qualname)] = mapping
     return factories
 
 
@@ -435,7 +440,7 @@ def resolve_factory(
 ) -> Mapping[str, int] | None:
     local = resolve_function(scope, name)
     if local is not None:
-        return factories.get(local.qualname)
+        return factories.get(factory_key(local.module.name, local.qualname))
     imported = scope.module.imports.get(name)
     if imported is None:
         return None
@@ -446,7 +451,7 @@ def resolve_factory(
     target_scope = target.module_functions.get(attribute)
     if target_scope is None:
         return None
-    return factories.get(target_scope.qualname)
+    return factories.get(factory_key(target.name, target_scope.qualname))
 
 
 def call_name(function: ast.expr) -> str | None:
@@ -456,6 +461,7 @@ def call_name(function: ast.expr) -> str | None:
         function.attr in RESPONSE_CLASSES
         or function.attr == "HTTPException"
         or function.attr == "run_in_threadpool"
+        or function.attr == "partial"
     ):
         return function.attr
     return None
@@ -474,6 +480,9 @@ class Analyzer:
         self._factories = factories
         self._operation = operation
         self._undetermined: dict[tuple[str, str, tuple[int, ...]], Undetermined] = {}
+        self._partials: dict[
+            tuple[str, str], tuple[FunctionScope, tuple[ast.expr, ...], tuple[ast.keyword, ...]]
+        ] = {}
 
     def function(
         self,
@@ -538,12 +547,14 @@ class Analyzer:
         for statement in statements:
             if isinstance(statement, ast.Assign):
                 self._assign(statement.targets, statement.value, environment, narrowings)
+                self._remember_partial(statement.targets, statement.value, scope)
                 self._scan_expression(
                     statement.value, scope, environment, narrowings, result, stack, depth
                 )
             elif isinstance(statement, ast.AnnAssign):
                 if statement.value is not None:
                     self._assign([statement.target], statement.value, environment, narrowings)
+                    self._remember_partial([statement.target], statement.value, scope)
                     self._scan_expression(
                         statement.value, scope, environment, narrowings, result, stack, depth
                     )
@@ -688,6 +699,33 @@ class Analyzer:
                             child, scope, environment, narrowings, result, stack, depth
                         )
 
+    def _remember_partial(
+        self,
+        targets: Sequence[ast.expr],
+        value_expression: ast.expr,
+        scope: FunctionScope,
+    ) -> None:
+        for target in targets:
+            if isinstance(target, ast.Name):
+                self._partials.pop((scope.qualname, target.id), None)
+        if not isinstance(value_expression, ast.Call):
+            return
+        if call_name(value_expression.func) != "partial" or not value_expression.args:
+            return
+        function = value_expression.args[0]
+        if not isinstance(function, ast.Name):
+            return
+        local = resolve_function(scope, function.id)
+        if local is None:
+            return
+        for target in targets:
+            if isinstance(target, ast.Name):
+                self._partials[(scope.qualname, target.id)] = (
+                    local,
+                    tuple(value_expression.args[1:]),
+                    tuple(value_expression.keywords),
+                )
+
     def _assign(
         self,
         targets: Sequence[ast.expr],
@@ -824,7 +862,20 @@ class Analyzer:
     ) -> None:
         if not call.args or not isinstance(call.args[0], ast.Name):
             return
-        local = resolve_function(scope, call.args[0].id)
+        name = call.args[0].id
+        partial = self._partials.get((scope.qualname, name))
+        if partial is not None:
+            target, partial_args, partial_keywords = partial
+            bindings = self._bind_arguments(
+                target,
+                (*partial_args, *call.args[1:]),
+                (*partial_keywords, *call.keywords),
+                environment,
+                narrowings,
+            )
+            result.merge(self.function(target, bindings, stack, depth + 1))
+            return
+        local = resolve_function(scope, name)
         if local is None:
             return
         bindings = self._bind_arguments(
@@ -855,11 +906,27 @@ class Analyzer:
     ) -> dict[str, ValueSet]:
         parameters = [argument.arg for argument in local.node.args.args]
         bindings: dict[str, ValueSet] = {}
-        for parameter, argument in zip(parameters, arguments, strict=False):
-            bindings[parameter] = self._evaluate(argument, environment, narrowings)
+        for parameter_name, argument in zip(parameters, arguments, strict=False):
+            bindings[parameter_name] = self._evaluate(argument, environment, narrowings)
         for keyword in keywords:
             if keyword.arg is not None:
                 bindings[keyword.arg] = self._evaluate(keyword.value, environment, narrowings)
+        defaults = local.node.args.defaults
+        if defaults:
+            for parameter, default in zip(
+                local.node.args.args[-len(defaults) :], defaults, strict=False
+            ):
+                if parameter.arg not in bindings:
+                    value = literal_set(default)
+                    if value is not None:
+                        bindings[parameter.arg] = value
+        for parameter, keyword_default in zip(
+            local.node.args.kwonlyargs, local.node.args.kw_defaults, strict=False
+        ):
+            if keyword_default is not None and parameter.arg not in bindings:
+                value = literal_set(keyword_default)
+                if value is not None:
+                    bindings[parameter.arg] = value
         return bindings
 
     def _status_keyword(

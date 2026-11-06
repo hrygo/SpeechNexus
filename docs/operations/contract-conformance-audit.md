@@ -4,8 +4,9 @@
 基线：`origin/main` `62ae4805`，分支 `codex/contract-conformance-audit`。
 审计时间：2026-11-06（Asia/Shanghai）。审计为只读：不改产品代码、不改契约。
 
-> 当前可重复门禁见 §10。`#432` 合并后 `retryJob`、`streamJobEvents` 已实现，契约已到 `0.1.0.dev5`，
-> 因此 §6 的 25 条未实现操作在当前实现上收敛为 23 条。
+> 当前可重复门禁见 §10。`#432` 实现了 `retryJob`、`streamJobEvents`，`#442/#443` 实现了
+> `listVoices`、`getVoiceRevision`；契约已到 `0.1.0.dev6`，因此 §6 的 25 条未实现操作在当前实现上
+> 收敛为 21 条。
 
 ## 1. 结论摘要
 
@@ -271,6 +272,7 @@ GET/POST 在匹配失败时返回 `400 pronunciation_invalid_request`，运行�
 公开源 `0.1.0.dev6` 新增两条 GET 的 `400 voice_invalid_request` 及不可重试头/错误约束，
 生成 Python/TypeScript 校验器与共享正负例同步；成功 DTO、字段与枚举未扩展。
 具体候选与原始实测输出保存在 PR/DEL-494 交付记录。
+
 ## 10. 可重复检查与 CI 门禁
 
 一次性审计已固化为离线检查脚本 [check-route-conformance.py](../../scripts/dev-env/check-route-conformance.py)，
@@ -286,11 +288,12 @@ GET/POST 在匹配失败时返回 `400 pronunciation_invalid_request`，运行�
    不混入语音面失败。
 3. 逐条已注册路由静态提取状态码：`JSONResponse`/`Response`/`StreamingResponse`、
    `HTTPException`（含 `status_code=` 与 `HTTPException(418, ...)` 位置参数）、同模块 helper
-   （含 `run_in_threadpool(helper, ...)` 间接调用）与 `*_errors.py` 的错误码映射；
+   （含 `run_in_threadpool(helper, ...)` 直接调用与 `functools.partial` 绑定）与 `*_errors.py`
+   的错误码映射；
    框架对错误方法产生的 405 单独计入。无法静态求值的 `status_code` 或运行时错误码列入
    「UNDETERMINED」，只报告可能值，不猜造、不作为门禁失败。
-4. 显式基线：`KNOWN_UNIMPLEMENTED_OPERATIONS` 固定当前 23 条未实现操作并逐条写明原因；
-   `KNOWN_UNDECLARED_STATUSES` 固定当前 14 个操作的已知未声明状态，其中非 405 项为
+4. 显式基线：`KNOWN_UNIMPLEMENTED_OPERATIONS` 固定当前 21 条未实现操作并逐条写明原因；
+   `KNOWN_UNDECLARED_STATUSES` 固定当前 16 个操作的已知未声明状态，其中非 405 项为
    `createTranscription` 404、`cancelJob` 400、`getArtifact` 304/503、
    `downloadArtifactContent` 304/416/503，其余为缺失的 405 声明。
 5. 新增契约未注册操作、已注册未声明路由、未声明状态码、operationId 形状变化、endpoint 源码

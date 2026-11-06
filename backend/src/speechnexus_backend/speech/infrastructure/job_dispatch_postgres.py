@@ -167,6 +167,15 @@ class PostgresDispatchStateStore:
         return _job(rows[0])
 
     def _mark_running(self, job: DispatchJob) -> DispatchJob:
+        """Append the started event at the next stored sequence.
+
+        The row lock taken by the `changed` UPDATE serialises this append with
+        every other event writer for the Job, so the sequence is derived from
+        the stored events instead of being assumed equal to `status_version`.
+        That equality only held because a pending Job carried exactly one
+        event; deriving `MAX(event_seq) + 1` keeps the started fact insertable
+        once a pending Job records more than one.
+        """
         query = (
             "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 "
             "AS BIGINT) AS now_us), changed AS (UPDATE speech_jobs AS j "
@@ -175,8 +184,9 @@ class PostgresDispatchStateStore:
             "WHERE j.job_id = %s AND j.status_version = %s AND j.state = 'pending' "
             "RETURNING j.job_id, j.status_version, clock.now_us AS now_us"
             ") INSERT INTO speech_job_events (job_id, event_seq, state, occurred_at_us) "
-            "SELECT changed.job_id, %s, 'running', changed.now_us FROM changed "
-            "RETURNING job_id"
+            "SELECT changed.job_id, (SELECT COALESCE(MAX(event_seq), -1) + 1 "
+            "FROM speech_job_events WHERE job_id = changed.job_id), 'running', "
+            "changed.now_us FROM changed RETURNING job_id"
         )
         try:
             with self._pool.connection(timeout=self._timeout) as connection:
@@ -184,9 +194,7 @@ class PostgresDispatchStateStore:
                     "SELECT set_config('statement_timeout', %s, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
-                rows = connection.execute(
-                    query, (job.job_id, job.status_version, job.status_version)
-                ).fetchall()
+                rows = connection.execute(query, (job.job_id, job.status_version)).fetchall()
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
             raise DispatchUnavailableError("Dispatch transition failed") from None
         if rows:

@@ -1,4 +1,15 @@
-"""Store observed public Job progress as ordered facts in the event stream."""
+"""Store observed public Job progress as ordered facts in the event stream.
+
+The ``kind`` column is added with ``DEFAULT 'lifecycle'``: every event row
+committed before this revision is a lifecycle transition, so the backfill marks
+it as such and leaves the progress columns NULL.
+
+``downgrade`` refuses once any progress fact exists, because the older shape
+cannot represent an observed progress fact. Progress facts are execution
+evidence and are never deleted, so the first recorded fact makes an in-place
+rollback to 0038 permanent: recovery means rolling forward or restoring a
+backup taken before this revision, never dropping the progress columns.
+"""
 
 from alembic import op
 from sqlalchemy import text

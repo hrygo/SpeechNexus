@@ -274,9 +274,7 @@ def test_exhausted_real_pool_does_not_invent_absence(jobs_db: JobSandbox) -> Non
         jobs_db.pool.connection(),
         pytest.raises(PublicJobUnavailableError),
     ):
-        driver.find_by_key(
-            "workspace-default", "sha256:" + "a" * 64, "sha256:" + "b" * 64, None
-        )
+        driver.find_by_key("workspace-default", "sha256:" + "a" * 64, "sha256:" + "b" * 64, None)
     _counts(jobs_db, 0)
 
 
@@ -336,9 +334,7 @@ def test_fact_rejection_reconciles_in_flight_original(jobs_db: JobSandbox, outco
             request_digest: str,
             retry_of_job_id: str | None,
         ) -> Any:
-            result = super().find_by_key(
-                workspace_id, key_digest, request_digest, retry_of_job_id
-            )
+            result = super().find_by_key(workspace_id, key_digest, request_digest, retry_of_job_id)
             if self.first:
                 self.first = False
                 assert result is None

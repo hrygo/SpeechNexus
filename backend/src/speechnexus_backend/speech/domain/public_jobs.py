@@ -377,8 +377,7 @@ class JobArtifactFact:
             raise ValueError("Invalid Artifact digest")
         identifier(self.receipt_id)
         if self.expires_at_us is not None and (
-            type(self.expires_at_us) is not int
-            or not 0 < self.expires_at_us <= _TIMESTAMP
+            type(self.expires_at_us) is not int or not 0 < self.expires_at_us <= _TIMESTAMP
         ):
             raise ValueError("Invalid Artifact expiry")
 

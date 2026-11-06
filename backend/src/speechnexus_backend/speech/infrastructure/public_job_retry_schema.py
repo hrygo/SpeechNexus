@@ -19,8 +19,8 @@ PUBLIC_JOB_RETRY_DDL = (
 # The 0016/0034 guard never mentions the retry column because it did not exist
 # then. This replacement keeps every original check and additionally freezes the
 # replacement lineage after insert.
-PUBLIC_JOB_RETRY_GUARD_REPLACE = (
-    """CREATE OR REPLACE FUNCTION speech_jobs_status_guard() RETURNS trigger
+PUBLIC_JOB_RETRY_GUARD_REPLACE = """CREATE OR REPLACE FUNCTION speech_jobs_status_guard()
+   RETURNS trigger
    LANGUAGE plpgsql AS $$
    BEGIN
      IF NEW.job_id <> OLD.job_id
@@ -49,4 +49,3 @@ PUBLIC_JOB_RETRY_GUARD_REPLACE = (
      RETURN NEW;
    END
    $$"""
-)

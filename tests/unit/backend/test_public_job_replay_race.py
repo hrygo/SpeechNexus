@@ -44,9 +44,7 @@ class InterleavedStore(Store):
         request_digest: str,
         retry_of_job_id: str | None,
     ) -> Any:
-        result = super().find_by_key(
-            workspace_id, key_digest, request_digest, retry_of_job_id
-        )
+        result = super().find_by_key(workspace_id, key_digest, request_digest, retry_of_job_id)
         callback = self.after_empty
         if result is None and callback is not None:
             self.after_empty = None

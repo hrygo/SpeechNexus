@@ -71,24 +71,52 @@ class Scripted(Store):
     def __init__(self, pages: list[tuple[PublicJob, list[JobEventFact]]]) -> None:
         super().__init__()
         self.pages = pages
-        self.reads = 0
+        self.polls = 0
+        self.intent: JobIntent | None = JobIntent(
+            request_digest=DIGEST, document=json.dumps(INTENT)
+        )
+
+    def _index(self) -> int:
+        return min(max(self.polls - 1, 0), len(self.pages) - 1)
+
+    def get(self, job_id: str) -> PublicJob | None:
+        # The stream reads the page first, then the snapshot that projects it.
+        return self.pages[self._index()][0]
+
+    def intent_document(self, job_id: str) -> JobIntent | None:
+        return self.intent
+
+    def events(self, job_id: str, *, after_seq: int, limit: int) -> tuple[JobEventFact, ...]:
+        index = min(self.polls, len(self.pages) - 1)
+        self.polls += 1
+        return tuple(event for event in self.pages[index][1] if event.event_seq > after_seq)
+
+
+class Lagging(Store):
+    """A committed page that the snapshot only catches up with on the re-read."""
+
+    def __init__(self, *, lag: int | None) -> None:
+        super().__init__()
+        self.polls = 0
+        self.gets = 0
+        self.lag = lag
         self.intent: JobIntent | None = JobIntent(
             request_digest=DIGEST, document=json.dumps(INTENT)
         )
 
     def get(self, job_id: str) -> PublicJob | None:
-        index = min(self.reads, len(self.pages) - 1)
-        self.reads += 1
-        return self.pages[index][0]
+        self.gets += 1
+        stale = self.lag is None or self.gets <= self.lag
+        return _job("running") if stale else _job("failed", error_code="engine_failure")
 
     def intent_document(self, job_id: str) -> JobIntent | None:
         return self.intent
 
-    def events(
-        self, job_id: str, *, after_seq: int, limit: int
-    ) -> tuple[JobEventFact, ...]:
-        index = min(self.reads - 1, len(self.pages) - 1)
-        return tuple(event for event in self.pages[index][1] if event.event_seq > after_seq)
+    def events(self, job_id: str, *, after_seq: int, limit: int) -> tuple[JobEventFact, ...]:
+        self.polls += 1
+        if after_seq >= 2:
+            return ()
+        return (JobEventFact(2, "failed", NOW + 2),)
 
 
 class RetryStore(Store):
@@ -202,9 +230,7 @@ def test_retry_reads_the_frozen_intent_and_links_the_replacement() -> None:
         parse("JobCreateRequest", _body()), request_id="req-parent", idempotency_key="parent-key-01"
     )
     service.advance(parent.job_id, "failed", error_code="engine_failure")
-    child = service.retry(
-        parent.job_id, request_id="req-retry-1", idempotency_key="retry-key-0001"
-    )
+    child = service.retry(parent.job_id, request_id="req-retry-1", idempotency_key="retry-key-0001")
     assert child.job_id != parent.job_id
     assert child.retry_of_job_id == parent.job_id
     assert child.state == "pending"
@@ -240,3 +266,15 @@ def test_retry_requires_a_frozen_replaceable_state_and_a_readable_intent() -> No
     assert retryable(_job("cancelled"))
     assert not retryable(_job("failed", error_code="cancellation_unconfirmed"))
     assert not retryable(_job("succeeded", result_json=json.dumps({"kind": "tts"})))
+
+
+async def test_terminal_page_ahead_of_the_snapshot_waits_for_the_re_read() -> None:
+    """A committed row must not abort a response that already started."""
+    events = await _drain(PublicJobs(Facts(), Lagging(lag=1)), _job("running").job_id)
+    assert [event["id"] for event in events] == ["3"]
+    assert events[0]["type"] == "job.failed"
+    assert events[0]["data"]["status"] == "failed"
+
+
+async def test_permanently_lagging_snapshot_ends_the_stream_without_a_frame() -> None:
+    assert await _drain(PublicJobs(Facts(), Lagging(lag=None)), _job("running").job_id) == []

@@ -259,9 +259,7 @@ class PostgresPublicJobs:
         except ValueError, TypeError, KeyError:
             raise PublicJobUnavailableError from None
 
-    def events(
-        self, job_id: str, *, after_seq: int, limit: int
-    ) -> tuple[JobEventFact, ...]:
+    def events(self, job_id: str, *, after_seq: int, limit: int) -> tuple[JobEventFact, ...]:
         """Read one ordered page of persisted events strictly after a sequence."""
         rows = self._read(
             "SELECT event_seq, state, occurred_at_us FROM speech_job_events "
@@ -303,9 +301,7 @@ class PostgresPublicJobs:
                 bytes=int(row["bytes"]),
                 sha256=row["sha256"],
                 receipt_id=row["receipt_id"],
-                expires_at_us=(
-                    None if row["expires_at_us"] is None else int(row["expires_at_us"])
-                ),
+                expires_at_us=(None if row["expires_at_us"] is None else int(row["expires_at_us"])),
             )
         except ValueError, TypeError, KeyError:
             raise PublicJobUnavailableError from None
@@ -889,10 +885,7 @@ def _replay_digest(
     row: dict[str, Any], request_digest: str, retry_of_job_id: str | None
 ) -> JobCreateResult:
     """One key identifies one intent and one operation; lineage is part of it."""
-    if (
-        row.get("request_digest") != request_digest
-        or row.get("retry_of_job_id") != retry_of_job_id
-    ):
+    if row.get("request_digest") != request_digest or row.get("retry_of_job_id") != retry_of_job_id:
         return JobCreateResult("conflict", error_code="idempotency_conflict")
     return JobCreateResult("replayed", _job(row))
 

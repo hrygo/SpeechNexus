@@ -66,6 +66,9 @@ _STATUS = {
 # one. The wire id is therefore the persistent sequence plus one, and resuming
 # translates it back before the strictly-greater read.
 _EVENT_ID = re.compile(r"[1-9][0-9]{0,18}\Z")
+# The wire id is the persisted sequence plus one, so the largest resumable id is
+# one past the largest sequence the store accepts.
+_EVENT_CURSOR_MAX = 9_223_372_036_854_775_807
 _EVENT_BATCH = 100
 _EVENT_POLL_SECONDS = 0.5
 _EVENT_HEARTBEAT_SECONDS = 15.0
@@ -105,9 +108,7 @@ def _artifact(artifact: JobArtifactFact) -> dict[str, Any]:
     }
 
 
-def public_job(
-    job: PublicJob, artifacts: Sequence[JobArtifactFact] = ()
-) -> dict[str, Any]:
+def public_job(job: PublicJob, artifacts: Sequence[JobArtifactFact] = ()) -> dict[str, Any]:
     configuration = json.loads(job.submission.effective_configuration_json)
     if not isinstance(configuration, dict):
         raise ContractValidationError("Invalid effective configuration")
@@ -167,10 +168,13 @@ def public_event(
     if event.state == "pending":
         kind, data = "job.queued", {"status": "queued"}
     elif event.state == "running":
-        kind, data = "job.started", {
-            "status": "running",
-            "execution_revision": str(job.submission.execution_revision),
-        }
+        kind, data = (
+            "job.started",
+            {
+                "status": "running",
+                "execution_revision": str(job.submission.execution_revision),
+            },
+        )
     elif event.state == "cancelling":
         kind, data = "job.cancelling", {"status": "cancelling"}
     elif event.state == "succeeded":
@@ -178,35 +182,47 @@ def public_event(
             # A succeeded event must carry the committed Artifact and result;
             # without them the persisted facts cannot prove success.
             raise PublicJobUnavailableError
-        kind, data = "job.succeeded", {
-            "status": "succeeded",
-            "artifacts": [_artifact(artifact) for artifact in artifacts],
-            "result": json.loads(job.result_json),
-            "cleanup_state": cleanup_state(job),
-        }
+        kind, data = (
+            "job.succeeded",
+            {
+                "status": "succeeded",
+                "artifacts": [_artifact(artifact) for artifact in artifacts],
+                "result": json.loads(job.result_json),
+                "cleanup_state": cleanup_state(job),
+            },
+        )
     elif event.state == "failed":
         if job.error_code is None:
             raise PublicJobUnavailableError
-        kind, data = "job.failed", {
-            "status": "failed",
-            "error": {
-                "code": job.error_code,
-                "message": "The Job failed.",
-                "retryable": False,
-                "param": None,
+        kind, data = (
+            "job.failed",
+            {
+                "status": "failed",
+                "error": {
+                    "code": job.error_code,
+                    "message": "The Job failed.",
+                    "retryable": False,
+                    "param": None,
+                },
+                "cleanup_state": cleanup_state(job),
             },
-            "cleanup_state": cleanup_state(job),
-        }
+        )
     elif event.state == "cancelled":
-        kind, data = "job.cancelled", {
-            "status": "cancelled",
-            "cleanup_state": cleanup_state(job),
-        }
+        kind, data = (
+            "job.cancelled",
+            {
+                "status": "cancelled",
+                "cleanup_state": cleanup_state(job),
+            },
+        )
     else:
-        kind, data = "job.expired", {
-            "status": "expired",
-            "cleanup_state": cleanup_state(job),
-        }
+        kind, data = (
+            "job.expired",
+            {
+                "status": "expired",
+                "cleanup_state": cleanup_state(job),
+            },
+        )
     body: dict[str, Any] = {
         "id": str(event.event_seq + 1),
         "type": kind,
@@ -274,7 +290,12 @@ def _last_event_id(request: Request) -> int:
     raw = values[0].strip()
     if not _EVENT_ID.fullmatch(raw):
         raise ValueError("Invalid Last-Event-ID")
-    return int(raw) - 1
+    value = int(raw)
+    if value > _EVENT_CURSOR_MAX:
+        # A syntactically valid but unreachable cursor would otherwise open an
+        # empty stream that closes before any future event can arrive.
+        raise ValueError("Last-Event-ID out of range")
+    return value - 1
 
 
 async def _create(
@@ -433,9 +454,7 @@ def _retry(
         return job_error("job_unavailable", request_id)
 
 
-def _open_stream(
-    service: PublicJobs, job_id: str, request_id: str, after_seq: int
-) -> Response:
+def _open_stream(service: PublicJobs, job_id: str, request_id: str, after_seq: int) -> Response:
     """Validate existence before the response so 404 is a real status, not an empty stream."""
     try:
         identifier(job_id)
@@ -451,24 +470,41 @@ def _open_stream(
     )
 
 
-async def _event_stream(
+async def _read_page(
     service: PublicJobs, job_id: str, after_seq: int
-) -> AsyncIterator[bytes]:
+) -> tuple[PublicJob, tuple[tuple[int, bytes], ...]]:
+    """Read the persisted page first, then the snapshot that projects it.
+
+    Reading events before the snapshot keeps the projection at least as new as
+    the rows it must explain, and projecting inside the caller's guard means a
+    committed terminal row can never abort a response that already started.
+    """
+    page = await run_in_threadpool(service.events, job_id, after_seq=after_seq, limit=_EVENT_BATCH)
+    job = await run_in_threadpool(service.get, job_id)
+    artifacts = await run_in_threadpool(service.artifacts, job)
+    return job, tuple(
+        (event.event_seq, _frame(public_event(event, job, artifacts))) for event in page
+    )
+
+
+async def _event_stream(service: PublicJobs, job_id: str, after_seq: int) -> AsyncIterator[bytes]:
     cursor, beat = after_seq, asyncio.get_running_loop().time()
     while True:
         try:
-            job = await run_in_threadpool(service.get, job_id)
-            page = await run_in_threadpool(
-                service.events, job_id, after_seq=cursor, limit=_EVENT_BATCH
-            )
-            artifacts = await run_in_threadpool(service.artifacts, job)
-        except (PublicJobNotFoundError, PublicJobUnavailableError, ValueError):
-            # Without proven facts the stream ends instead of inventing an event.
-            return
-        for event in page:
-            yield _frame(public_event(event, job, artifacts))
-            cursor = event.event_seq
-        if job.state in TERMINAL_STATES and not page:
+            job, frames = await _read_page(service, job_id, cursor)
+        except PublicJobNotFoundError, PublicJobUnavailableError, ValueError:
+            # A committed row can outrun the snapshot that must explain it, and a
+            # vanished or unreadable Job has no provable frame. Re-read once, then
+            # end the stream instead of emitting a partial or invented event.
+            await asyncio.sleep(_EVENT_POLL_SECONDS)
+            try:
+                job, frames = await _read_page(service, job_id, cursor)
+            except PublicJobNotFoundError, PublicJobUnavailableError, ValueError:
+                return
+        for event_seq, frame in frames:
+            yield frame
+            cursor = event_seq
+        if job.state in TERMINAL_STATES and not frames:
             return
         now = asyncio.get_running_loop().time()
         if now - beat >= _EVENT_HEARTBEAT_SECONDS:

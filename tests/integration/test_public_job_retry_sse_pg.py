@@ -114,9 +114,7 @@ async def test_retry_creates_a_linked_replacement_without_touching_the_parent(
         assert after["state"] == "failed" and after["status_version"] == 3
 
         # The replacement re-sends the byte-identical canonical intent.
-        documents = jobs_db.query(
-            "SELECT operation_id, request_document FROM admission_operations"
-        )
+        documents = jobs_db.query("SELECT operation_id, request_document FROM admission_operations")
         assert len(documents) == 2
         assert len({row["request_document"] for row in documents}) == 1
         assert any(row["operation_id"] == child["id"] for row in documents)
@@ -225,18 +223,14 @@ async def test_event_stream_is_ordered_resumable_and_terminal_once(jobs_db: JobS
         assert terminal[0]["data"]["error"]["code"] == "engine_failure"
         assert terminal[0]["data"]["cleanup_state"] == "not_required"
 
-        resume = await client.get(
-            EVENTS.format(job_id=job_id), headers={"Last-Event-ID": "2"}
-        )
+        resume = await client.get(EVENTS.format(job_id=job_id), headers={"Last-Event-ID": "2"})
         assert resume.status_code == 200, resume.text
         resumed = _frames(resume.text)
         assert [event["id"] for event in resumed] == ["3"]
         assert [event["type"] for event in resumed] == ["job.failed"]
 
         # The terminal fact was already delivered; a reconnect must not repeat it.
-        settled = await client.get(
-            EVENTS.format(job_id=job_id), headers={"Last-Event-ID": "3"}
-        )
+        settled = await client.get(EVENTS.format(job_id=job_id), headers={"Last-Event-ID": "3"})
         assert settled.status_code == 200, settled.text
         assert _frames(settled.text) == []
 
@@ -330,21 +324,22 @@ async def test_replacement_lineage_is_immutable_in_postgres(jobs_db: JobSandbox)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         parent = await _create(client)
         _fail(jobs_db, parent["id"])
-        child = (
-            await client.post(RETRY.format(job_id=parent["id"]))
-        ).json()
-        with pytest.raises(psycopg.errors.CheckViolation):
-            jobs_db.admin.execute(
-                "UPDATE speech_jobs SET retry_of_job_id = NULL, "
-                "status_version = status_version + 1 WHERE job_id = %s",
-                (child["id"],),
-            )
-        with pytest.raises(psycopg.errors.CheckViolation):
-            jobs_db.admin.execute(
-                "UPDATE speech_jobs SET retry_of_job_id = job_id, "
-                "status_version = status_version + 1 WHERE job_id = %s",
-                (child["id"],),
-            )
+        child = (await client.post(RETRY.format(job_id=parent["id"]))).json()
+        other = await _create(client)
+        _fail(jobs_db, other["id"])
+        # Clearing the lineage and repointing it at another real Job are both
+        # valid against the self-reference CHECK, so only the guard can refuse
+        # them. The guard's own message proves which constraint rejected the row.
+        for value in (None, other["id"]):
+            with pytest.raises(psycopg.errors.CheckViolation) as refused:
+                jobs_db.admin.execute(
+                    "UPDATE speech_jobs SET retry_of_job_id = %s, "
+                    "status_version = status_version + 1 WHERE job_id = %s",
+                    (value, child["id"]),
+                )
+            assert "identity is immutable" in str(refused.value)
+        assert jobs_db.count("speech_jobs") == 3
+
 
 async def test_declared_400_and_503_statuses_are_what_the_api_returns(
     jobs_db: JobSandbox,

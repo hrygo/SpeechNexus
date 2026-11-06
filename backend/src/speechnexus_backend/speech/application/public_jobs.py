@@ -201,9 +201,7 @@ class PublicJobStore(Protocol):
         """The immutable canonical intent of an accepted Job, or None when redacted."""
         ...
 
-    def events(
-        self, job_id: str, *, after_seq: int, limit: int
-    ) -> tuple[JobEventFact, ...]: ...
+    def events(self, job_id: str, *, after_seq: int, limit: int) -> tuple[JobEventFact, ...]: ...
 
     def artifact(self, workspace_id: str, artifact_id: str) -> JobArtifactFact | None: ...
 
@@ -513,9 +511,7 @@ class PublicJobs:
                     return _retransmission_result(original, job_id)
             raise
 
-    def events(
-        self, job_id: str, *, after_seq: int, limit: int
-    ) -> tuple[JobEventFact, ...]:
+    def events(self, job_id: str, *, after_seq: int, limit: int) -> tuple[JobEventFact, ...]:
         """Read persisted lifecycle events strictly after one sequence."""
         identifier(job_id)
         if type(after_seq) is not int or not -1 <= after_seq <= 9_223_372_036_854_775_806:

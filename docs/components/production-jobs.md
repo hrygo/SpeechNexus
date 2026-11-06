@@ -229,8 +229,10 @@ worker 与派发器共享同一条 gateway 契约和停止服务；它不会创�
 `410 event_history_expired`；当前实现没有事件保留或过期策略，因此永不返回该状态，客户端仍须
 按契约在收到 `410` 时改读当前 Job 状态。
 成功 Job 的终态事件与 `Job` 投影都要求结果引用的 `speech_artifacts` ready 行存在且
-`receipt_id`、类型匹配；缺失时返回 `503 job_unavailable`，不伪造成功。因此 API Job
-writer 角色需要 `speech_artifacts` 的 SELECT，`job_runtime` 启动探针也把它列入必需表。
+`receipt_id`、类型匹配；缺失时返回 `503 job_unavailable`，不伪造成功。该错误声明
+`retryable: false`：Artifact 可能已过期或删除，重复读取不会改变结论，客户端应改读当前 Job
+状态而不是原地重试。因此 API Job writer 角色需要 `speech_artifacts` 的 SELECT，
+`job_runtime` 启动探针也把它列入必需表。
 
 ### 结果发布语义（DEL-100）
 

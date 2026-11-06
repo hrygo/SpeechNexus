@@ -13,6 +13,8 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any, Protocol, cast
 
+import psycopg
+import pymysql
 import pytest
 from tests.fake.execution import ScriptedEngine, fake_ingress
 from tests.fake.execution_command import command_example
@@ -51,6 +53,8 @@ from speechnexus_gateway.infrastructure.submit_postgres import PostgresSubmissio
 pytestmark = pytest.mark.integration
 INTENT_ID = "intent-a"
 LEASE = "lease-alt-stage-main"
+#: MySQL ER_CHECK_CONSTRAINT_VIOLATED; PostgreSQL raises psycopg's CheckViolation.
+_MYSQL_CHECK_VIOLATION = 3819
 
 
 class AbortLedgerOracle(DurableAbortLedger, AbortRecoveryQueue, SubmissionLedger, Protocol):
@@ -306,3 +310,51 @@ def test_a_receipt_that_no_longer_names_the_authority_is_a_conflict(
     row = receipt(foundation)
     assert row["dispatch_outcome"] is None and row["dispatch_attempts"] == 0
     assert row["dispatch_attempt_id"] is None
+
+
+def constraint_violated(
+    foundation: Foundation, statement: str, parameters: tuple[Any, ...]
+) -> None:
+    """Prove the database rejects a receipt fact, not merely that it parsed the DDL."""
+    try:
+        foundation.database.query(statement, parameters)
+    except psycopg.errors.CheckViolation:
+        return
+    except pymysql.err.OperationalError as error:
+        # ER_CHECK_CONSTRAINT_VIOLATED; a parse, privilege or lock error is not this.
+        assert error.args and error.args[0] == _MYSQL_CHECK_VIOLATION, error
+        return
+    pytest.fail("the database accepted a receipt fact its constraints forbid")
+
+
+def test_the_receipt_rejects_a_broken_attempt_and_a_dispatch_before_receipt(
+    foundation: Foundation, abort_ledger: AbortLedgerOracle
+) -> None:
+    """Both engines enforce the DDL invariants instead of only accepting the table."""
+    received_abort(foundation, abort_ledger)
+    before = receipt(foundation)
+    # First dispatch is still pending, so the cross-column check compares against 0.
+    assert before["dispatched_at_us"] is None
+    # The durable vocabulary has no fenced refusal: the column takes three values.
+    constraint_violated(
+        foundation,
+        "UPDATE gateway_abort_intents SET dispatch_attempt_id='abort-invalid', "
+        "dispatch_started_at_us=1, dispatch_deadline_at_us=2, "
+        "dispatch_outcome='rejected_fenced', dispatch_outcome_at_us=1 "
+        "WHERE submit_intent_id=%s",
+        (INTENT_ID,),
+    )
+    # An outcome without its attempt is not a half-written attempt group.
+    constraint_violated(
+        foundation,
+        "UPDATE gateway_abort_intents SET dispatch_outcome='acknowledged', "
+        "dispatch_outcome_at_us=1 WHERE submit_intent_id=%s",
+        (INTENT_ID,),
+    )
+    # The cross-column invariant MySQL can only hold as a named table constraint.
+    constraint_violated(
+        foundation,
+        "UPDATE gateway_abort_intents SET dispatched_at_us=0 WHERE submit_intent_id=%s",
+        (INTENT_ID,),
+    )
+    assert receipt(foundation) == before

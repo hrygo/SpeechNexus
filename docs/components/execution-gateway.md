@@ -770,7 +770,9 @@ PostgreSQL 走 `PostgresSubmissionLedger` 与非 owner gateway 角色；InnoDB �
 `tests/support/gateway_database.py` 的 `MySQLSubmissionLedger`（测试用 DB-API 装配，不是产品适配器）。
 `tests/integration/test_coordination_foundation.py` 的 MySQL 分支创建 `gateway_abort_intents`
 （0036 的尝试列与 `next_check_at_us`），并按 InnoDB 没有列级授权的现状对该表整体授权；
-PostgreSQL 仍按 `gateway_abort_grants` 的精确列集授权。
+PostgreSQL 仍按 `gateway_abort_grants` 的精确列集授权。InnoDB 也不接受列级 CHECK 引用其他列
+（错误 3813），因此 `dispatched_at_us >= received_at_us` 在该分支改为具名表级约束
+`gateway_abort_dispatched_after_received_check`，语义不变；其余内联 CHECK 都只看本列。
 
 需要 MySQL 的用例就是这一个共享模块。HTTP 与迁移层用例
 （`test_gateway_submit_http.py`、`test_gateway_drain_http.py`、`test_binding_disable_gateway_http_pg.py`、

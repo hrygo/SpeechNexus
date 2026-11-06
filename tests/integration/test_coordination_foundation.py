@@ -161,6 +161,43 @@ def seed(database: JobDatabase) -> None:
     )
 
 
+#: The one cross-column CHECK inside ``ABORT_INTENT_DDL``. MySQL only accepts such an
+#: invariant as a named table constraint (a column-level one fails with error 3813),
+#: so the InnoDB fixture moves it instead of weakening it.
+_MYSQL_ABORT_INLINE_CHECK = "dispatched_at_us BIGINT CHECK (dispatched_at_us >= received_at_us)"
+_MYSQL_ABORT_INLINE_COLUMN = "dispatched_at_us BIGINT"
+#: The inline CHECKs of the product DDL; the last one names two columns, which is why
+#: the InnoDB fixture cannot take the CREATE statement as written.
+_MYSQL_INLINE_CHECKS = (
+    "CHECK (fencing_token > 0)",
+    "CHECK (wait_timeout_ms BETWEEN 100 AND 60000)",
+    "CHECK (received_at_us > 0)",
+    "CHECK (dispatched_at_us >= received_at_us)",
+)
+_MYSQL_ABORT_DISPATCHED_AFTER_RECEIVED = (
+    f"ALTER TABLE {ABORT_INTENT_TABLE} ADD CONSTRAINT "
+    "gateway_abort_dispatched_after_received_check "
+    "CHECK (dispatched_at_us IS NULL OR dispatched_at_us >= received_at_us)"
+)
+
+
+def _mysql_abort_intent_ddl() -> str:
+    """The receipt table as InnoDB accepts it: no column-level cross-column CHECK."""
+    if _MYSQL_ABORT_INLINE_CHECK not in ABORT_INTENT_DDL:
+        raise RuntimeError(
+            "gateway_abort_intents DDL changed: recheck which CHECK MySQL can accept inline"
+        )
+    inline = tuple(re.findall(r"CHECK \([^)]*\)", ABORT_INTENT_DDL))
+    if inline != _MYSQL_INLINE_CHECKS:
+        raise RuntimeError(
+            "the inline CHECK set of gateway_abort_intents changed; MySQL rejects one that "
+            f"names another column (error 3813), so re-check them: {inline}"
+        )
+    return ABORT_INTENT_DDL.replace(_MYSQL_ABORT_INLINE_CHECK, _MYSQL_ABORT_INLINE_COLUMN).replace(
+        'COLLATE "C"', "COLLATE utf8mb4_0900_bin"
+    )
+
+
 @pytest.fixture
 def foundation(database: JobDatabase) -> Iterator[Foundation]:
     db = database
@@ -177,10 +214,6 @@ def foundation(database: JobDatabase) -> Iterator[Foundation]:
             *RUNTIME_DELIVERY_DDL,
             *EXECUTION_RESULT_DDL,
             RELEASE_GUARD_DDL,
-            ABORT_INTENT_DDL,
-            *ABORT_DISPATCH_COLUMNS_DDL,
-            *ABORT_DISPATCH_CONSTRAINTS_DDL,
-            f"ALTER TABLE {ABORT_INTENT_TABLE} ADD COLUMN next_check_at_us BIGINT",
         ):
             ddl = ddl.replace('COLLATE "C"', "COLLATE utf8mb4_0900_bin")
             ddl = ddl.replace(
@@ -188,6 +221,14 @@ def foundation(database: JobDatabase) -> Iterator[Foundation]:
                 "MODIFY COLUMN job_id VARCHAR(128) COLLATE utf8mb4_0900_bin NULL",
             )
             db.query(re.sub(r"\bTEXT\b", "LONGTEXT", ddl))
+        # MySQL rejects a column-level CHECK that names another column (error 3813), so
+        # the receipt table is created without that inline invariant and the same
+        # meaning is added back as a named table constraint.
+        db.query(_mysql_abort_intent_ddl())
+        for ddl in (*ABORT_DISPATCH_COLUMNS_DDL, *ABORT_DISPATCH_CONSTRAINTS_DDL):
+            db.query(ddl.replace('COLLATE "C"', "COLLATE utf8mb4_0900_bin"))
+        db.query(f"ALTER TABLE {ABORT_INTENT_TABLE} ADD COLUMN next_check_at_us BIGINT")
+        db.query(_MYSQL_ABORT_DISPATCHED_AFTER_RECEIVED)
         # 0036 makes the recorded origin mandatory; InnoDB mirrors it without ALTER ... SET.
         db.query(
             f"ALTER TABLE {ABORT_INTENT_TABLE} MODIFY COLUMN instance_id "

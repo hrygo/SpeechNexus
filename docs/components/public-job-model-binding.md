@@ -44,7 +44,7 @@ head 清空时两个 pin 都拒绝；不回退到最大已发布版本，也不�
 | 422 unsupported_parameter | schema 拒绝非法引用或非 TTS pin |
 | 409 idempotency_conflict | 同 workspace/key 的规范意图不同，包括变更或移除 pin |
 | 503 job_outcome_unknown | 原结果未能确认；保存原请求/key，查询或原身份恢复 |
-| 503 job_unavailable | 事实或存储不可用；不证明此前提交不存在 |
+| 503 job_unavailable | 事实或存储不可用；不证明此前提交不存在；`retryable: false` |
 
 ## 同键保护与锁序
 

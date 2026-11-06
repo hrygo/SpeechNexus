@@ -19,6 +19,16 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
         "invalid_request_error",
         "The original execution is not confirmed stopped.",
     ),
+    "job_retry_not_allowed": (
+        409,
+        "invalid_request_error",
+        "The Job state does not allow a retry.",
+    ),
+    "job_retry_unavailable": (
+        409,
+        "invalid_request_error",
+        "The original Job intent is no longer available.",
+    ),
     "unsupported_parameter": (422, "invalid_request_error", "The Job request is not supported."),
     "job_kind_not_supported": (
         422,
@@ -78,7 +88,10 @@ def job_error(code: str, request_id: str, *, headers: dict[str, str] | None = No
     if code not in _ERRORS:
         code = "job_unavailable"
     status, kind, message = _ERRORS[code]
-    retryable = code in ("job_outcome_unknown", "job_unavailable")
+    # Only an unknown execution outcome promises that retrying can succeed. An
+    # unavailable read may be a permanently expired or deleted result, so clients
+    # reconcile the original identity instead of retrying it blindly.
+    retryable = code == "job_outcome_unknown"
     return JSONResponse(
         status_code=status,
         headers={"Cache-Control": "no-store", **(headers or {})},

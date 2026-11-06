@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus public speech API
-  version: 0.1.0.dev4
+  version: 0.1.0.dev5
   description: |
     SpeechNexus public speech protocol.
 
@@ -812,7 +812,9 @@ paths:
       description: |
         Retry creates a new Job with a new attempt history; it never revives the
         old job. While the old execution is not verifiably stopped, returns 409
-        `execution_cleanup_pending`.
+        `execution_cleanup_pending`. A malformed `Idempotency-Key` is rejected
+        with 400 `invalid_job_request`; an unverifiable outcome or an unavailable
+        backend returns 503 without creating a second execution.
       parameters:
         - $ref: "#/components/parameters/JobIdPath"
         - $ref: "#/components/parameters/XRequestId"
@@ -827,6 +829,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Job"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -835,16 +839,22 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/nexus/jobs/{job_id}/events:
     get:
       tags: [jobs]
       operationId: streamJobEvents
       summary: Stream durable job events with SSE
       description: |
-        SSE `id` is the persistent job_event_seq. `Last-Event-ID` resumes after
-        that sequence. Expired event history returns 410
-        `event_history_expired`; clients then read current job state. Event data
-        is a JobEvent JSON object.
+        SSE `id` is the persistent job event sequence plus one, matching the
+        one-based EventSequence value; `Last-Event-ID` resumes strictly after it.
+        A malformed `Last-Event-ID` is rejected with 400 `invalid_job_request`,
+        and an unavailable backend returns 503. 410 `event_history_expired` is
+        returned only when the persisted event history for the job has expired;
+        the current implementation has no history-expiry policy and therefore
+        never returns it, so clients must still be prepared to read current job
+        state on 410. Event data is a JobEvent JSON object.
       parameters:
         - $ref: "#/components/parameters/JobIdPath"
         - name: Last-Event-ID
@@ -870,12 +880,16 @@ paths:
                 type: string
               x-sse-event-schema:
                 $ref: "#/components/schemas/JobEvent"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "410":
           $ref: "#/components/responses/Gone"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/nexus/operations/{operation_id}:
     get:
       tags: [operations]
@@ -3750,7 +3764,7 @@ components:
       properties:
         id:
           $ref: "#/components/schemas/EventSequence"
-          description: Persistent job_event_seq used as the SSE id.
+          description: Persistent job event sequence plus one, used as the SSE id.
         type:
           type: string
           enum:

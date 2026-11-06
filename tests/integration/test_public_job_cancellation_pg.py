@@ -117,7 +117,7 @@ async def test_cancel_accepts_once_replays_and_rejects_key_reuse(jobs_db: JobSan
         assert jobs_db.query(
             "SELECT state FROM speech_job_events WHERE job_id = %s ORDER BY event_seq",
             (job_id,),
-        ) == [{"state": "pending"}, {"state": "cancelling"}]
+        ) == [{"state": "pending"}, {"state": "running"}, {"state": "cancelling"}]
         assert jobs_db.count("speech_job_cancellations") == 1
         assert jobs_db.query(
             "SELECT f.job_id, f.accepted_at_us = c.requested_at_us AS same, "
@@ -272,7 +272,12 @@ async def test_verified_stop_settles_cancelled(jobs_db: JobSandbox) -> None:
     ) == [{"state": "cancelled", "status_version": 4}]
     assert jobs_db.query(
         "SELECT state FROM speech_job_events WHERE job_id = %s ORDER BY event_seq", (job_id,)
-    ) == [{"state": "pending"}, {"state": "cancelling"}, {"state": "cancelled"}]
+    ) == [
+        {"state": "pending"},
+        {"state": "running"},
+        {"state": "cancelling"},
+        {"state": "cancelled"},
+    ]
     assert jobs_db.count("speech_job_cancellations") == 1
 
 

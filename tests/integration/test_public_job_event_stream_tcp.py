@@ -13,12 +13,11 @@ import itertools
 import json
 import logging
 import socket
-import statistics
 import threading
 import time
 from collections.abc import AsyncIterator, Iterator
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from typing import Any, cast
 
 import httpx
@@ -59,13 +58,9 @@ def _app(
 
 
 @contextmanager
-def _serve(app: Any, *, send_buffer: int | None = None) -> Iterator[int]:
+def _serve(app: Any) -> Iterator[int]:
     """Serve one app on an ephemeral loopback port and stop it afterwards."""
     sock = socket.socket()
-    if send_buffer is not None:
-        # Accepted sockets inherit the listener buffer, which keeps the stall
-        # test independent of host autotuning.
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, send_buffer)
     sock.bind(("127.0.0.1", 0))
     sock.listen(16)
     port = int(sock.getsockname()[1])
@@ -294,8 +289,9 @@ async def test_heartbeat_cadence_does_not_drift_a_poll_interval(
                         if await anext(lines) == ": keepalive":
                             beats.append(time.monotonic())
     gaps = [later - earlier for earlier, later in itertools.pairwise(beats)]
-    # Sleeping a full minimum interval overshot every beat to about 1.0 s.
-    assert statistics.median(gaps) < 0.8, gaps
+    # Sleeping a whole minimum interval overshot every beat to about 1.0 s; a
+    # maximum gap keeps a single regression from hiding behind the median.
+    assert max(gaps) < 0.85, gaps
 
 
 async def test_heartbeat_then_disconnect_resumes_after_the_last_event(
@@ -392,6 +388,29 @@ async def test_client_disconnect_stops_the_server_side_stream(
             assert observed.reads >= 1
 
 
+class _TinySendBuffer:
+    """Pin the accepted socket send buffer so a stall is reached in a few pages.
+
+    Listener inheritance is not portable (macOS keeps its autotuned buffer),
+    but ``SO_SNDBUF`` on the connected socket is honoured by both Linux and
+    macOS. The test asserts the value actually shrank instead of trusting it.
+    """
+
+    def __init__(self, app: Any, *, size: int = 8192) -> None:
+        self._app = app
+        self._size = size
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] == "http":
+            cycle = getattr(receive, "__self__", None)
+            transport = getattr(cycle, "transport", None)
+            sock = transport.get_extra_info("socket") if transport is not None else None
+            if sock is not None:
+                with suppress(OSError):
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, self._size)
+        await self._app(scope, receive, send)
+
+
 class _TransportSpy:
     """Serve the app while exposing the transport of each uvicorn request."""
 
@@ -446,6 +465,16 @@ def _socket_fileno(sock: Any) -> Any:
         return f"{type(error).__name__}: {error}"
 
 
+def _send_buffer(transport: Any) -> int:
+    sock = transport.get_extra_info("socket") if transport is not None else None
+    if sock is None:
+        return -1
+    try:
+        return int(sock.getsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF))
+    except Exception:  # diagnostics only
+        return -1
+
+
 def _socket_released(transport: Any) -> bool:
     if transport is None:
         return False
@@ -467,12 +496,7 @@ def _transport_state(transport: Any) -> str:
     if transport is None:
         return "transport=None"
     sock = transport.get_extra_info("socket")
-    sndbuf: Any = None
-    if sock is not None:
-        try:
-            sndbuf = sock.getsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF)
-        except Exception as error:  # diagnostics only
-            sndbuf = f"{type(error).__name__}: {error}"
+    sndbuf = _send_buffer(transport)
     return (
         f"transport={type(transport).__module__}.{type(transport).__name__} "
         f"closing={transport.is_closing()} sndbuf={sndbuf} socket={sock!r} "
@@ -502,18 +526,22 @@ async def test_a_client_that_never_reads_loses_its_socket(
     logger = logging.getLogger("speechnexus_backend.speech.interfaces.http.jobs")
     logger.addHandler(handler)
     try:
-        with _serve(spy, send_buffer=8192) as port:
+        with _serve(_TinySendBuffer(spy)) as port:
             async with _client(port) as client:
                 job = await _create(client)
                 job_id = job["id"]
-            # Enough history to fill any loopback write buffer while the client
-            # refuses to drain it.
-            _seed_paged_history(jobs_db, job_id, count=120000)
+            # About 760 KB of frames, far beyond the few-KiB send buffer pinned
+            # by _TinySendBuffer, so the stall arrives after a handful of pages.
+            _seed_paged_history(jobs_db, job_id, count=4000)
             known = len(spy.transports)
             raw = _raw_event_request(port, job_id)
             try:
                 transport = await _spy_transport(spy, after=known, limit=10)
                 assert transport is not None, "uvicorn request transport was not reachable"
+                assert _send_buffer(transport) < 1 << 18, (
+                    "the send buffer was not pinned, so the stall is untestable here; "
+                    + _transport_state(transport)
+                )
                 warning = await _backpressure_record(handler, limit=20)
                 assert warning is not None, (
                     "the write timeout never fired for a client that does not read; "

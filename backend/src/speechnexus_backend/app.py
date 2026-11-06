@@ -74,7 +74,10 @@ from speechnexus_backend.speech.interfaces.http.health import create_health_rout
 from speechnexus_backend.speech.interfaces.http.job_errors import job_error
 from speechnexus_backend.speech.interfaces.http.jobs import PREFIX as JOB_PREFIX
 from speechnexus_backend.speech.interfaces.http.jobs import create_job_router
-from speechnexus_backend.speech.interfaces.http.middleware import RequestIdMiddleware
+from speechnexus_backend.speech.interfaces.http.middleware import (
+    RequestIdMiddleware,
+    require_request_abort_capture,
+)
 from speechnexus_backend.speech.interfaces.http.models import ModelCatalogue, create_model_router
 from speechnexus_backend.speech.interfaces.http.profile_contract import profile_http_contract
 from speechnexus_backend.speech.interfaces.http.profile_ingress import ProfileIngress
@@ -420,6 +423,7 @@ def create_app(
         allowed_origins=resolved_settings.asset_allowed_origins,
     )
     app.add_middleware(RequestIdMiddleware)
+    require_request_abort_capture(app)
     app.include_router(create_asset_router(lambda: asset_service))
     app.include_router(create_artifact_router(get_artifacts))
     app.include_router(create_model_router(get_catalogue, capability_policy))

@@ -18,6 +18,7 @@ from typing import Any, cast
 
 import pytest
 from speechnexus_contracts import parse
+from starlette.applications import Starlette
 from starlette.types import Message
 
 from speechnexus_backend.speech.application.public_jobs import (
@@ -42,6 +43,7 @@ from speechnexus_backend.speech.interfaces.http import jobs as http
 from speechnexus_backend.speech.interfaces.http.middleware import (
     REQUEST_ABORT_KEY,
     RequestIdMiddleware,
+    require_request_abort_capture,
 )
 from tests.unit.backend.test_public_jobs import NOW, Facts, Store, _body
 
@@ -538,6 +540,143 @@ async def test_a_stalled_write_resets_the_connection(
     record = cast(Any, caplog.records[-1])
     assert record.getMessage() == "job_event_stream_backpressure"
     assert record.connection_reset is True
+
+
+async def test_the_terminal_frame_is_bounded_too(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The last empty body blocks on the same buffer as a data frame."""
+    aborted: list[bool] = []
+    sent: list[Message] = []
+
+    async def send(message: Message) -> None:
+        sent.append(message)
+        body = cast(dict[str, Any], message)
+        if message["type"] == "http.response.body" and not body.get("more_body", False):
+            # Only the terminal frame stalls: a guard that covers data frames
+            # alone leaves this call waiting on a peer that never drains.
+            await asyncio.Event().wait()
+
+    async def frames() -> AsyncIterator[bytes]:
+        yield b"data: one\n\n"
+
+    response = http._EventStreamResponse(
+        frames(),
+        media_type="text/event-stream",
+        headers={},
+        send_timeout_seconds=0.01,
+        abort_connection=lambda: aborted.append(True),
+    )
+    with caplog.at_level(logging.WARNING, logger="speechnexus_backend.speech.interfaces.http.jobs"):
+        await asyncio.wait_for(response.stream_response(send), 5)
+    # The one data frame drains, then the terminal frame stalls and is cut off.
+    assert [message["type"] for message in sent] == [
+        "http.response.start",
+        "http.response.body",
+        "http.response.body",
+    ]
+    assert not cast(dict[str, Any], sent[-1]).get("more_body", False)
+    assert aborted == [True]
+    record = cast(Any, caplog.records[-1])
+    assert record.getMessage() == "job_event_stream_backpressure"
+    assert record.connection_reset is True
+
+
+async def test_an_abort_failure_is_reported_as_the_graceful_fallback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def abort() -> None:
+        raise RuntimeError("transport already gone")
+
+    async def send(message: Message) -> None:
+        body = cast(dict[str, Any], message)
+        if message["type"] == "http.response.body" and body.get("more_body", False):
+            await asyncio.Event().wait()
+
+    async def frames() -> AsyncIterator[bytes]:
+        yield b"data: one\n\n"
+        yield b"data: two\n\n"
+
+    response = http._EventStreamResponse(
+        frames(),
+        media_type="text/event-stream",
+        headers={},
+        send_timeout_seconds=0.01,
+        abort_connection=abort,
+    )
+    with caplog.at_level(logging.WARNING, logger="speechnexus_backend.speech.interfaces.http.jobs"):
+        await asyncio.wait_for(response.stream_response(send), 5)
+    # Nothing was reset, so uvicorn keeps owning the close and the record says so.
+    record = cast(Any, caplog.records[-1])
+    assert record.getMessage() == "job_event_stream_backpressure"
+    assert record.connection_reset is False
+
+
+class _BreakingSource:
+    """An event source whose close fails after the first frame."""
+
+    def __init__(self) -> None:
+        self._sent = False
+
+    def __aiter__(self) -> _BreakingSource:
+        return self
+
+    async def __anext__(self) -> bytes:
+        if self._sent:
+            raise StopAsyncIteration
+        self._sent = True
+        return b"data: one\n\n"
+
+    async def aclose(self) -> None:
+        raise RuntimeError("source close failed")
+
+
+async def test_a_failing_source_still_resets_the_connection(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    aborted: list[bool] = []
+
+    async def send(message: Message) -> None:
+        body = cast(dict[str, Any], message)
+        if message["type"] == "http.response.body" and body.get("more_body", False):
+            await asyncio.Event().wait()
+
+    response = http._EventStreamResponse(
+        _BreakingSource(),
+        media_type="text/event-stream",
+        headers={},
+        send_timeout_seconds=0.01,
+        abort_connection=lambda: aborted.append(True),
+    )
+    with caplog.at_level(logging.WARNING, logger="speechnexus_backend.speech.interfaces.http.jobs"):
+        await asyncio.wait_for(response.stream_response(send), 5)
+    # The close failed, yet the socket is still cut and the timeout is reported.
+    assert aborted == [True]
+    record = cast(Any, caplog.records[-1])
+    assert record.getMessage() == "job_event_stream_backpressure"
+    assert record.connection_reset is True
+
+
+class _ReceiveWrapper:
+    """An ingress middleware that wraps receive, losing the bound server cycle."""
+
+    def __init__(self, app: Any) -> None:
+        self._app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        async def wrapped() -> Message:
+            return cast(Message, await receive())
+
+        await self._app(scope, wrapped, send)
+
+
+def test_assembly_rejects_a_middleware_outside_the_abort_capture() -> None:
+    app = Starlette()
+    app.add_middleware(RequestIdMiddleware)
+    require_request_abort_capture(app)
+    app.add_middleware(_ReceiveWrapper)
+    with pytest.raises(RuntimeError, match="RequestIdMiddleware must stay the outermost"):
+        require_request_abort_capture(app)
 
 
 def test_stream_timing_configuration_is_bounded() -> None:

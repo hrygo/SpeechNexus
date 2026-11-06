@@ -14,7 +14,7 @@ import logging
 import re
 from collections.abc import AsyncIterator, Callable, Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from typing import Any
 
 from fastapi import APIRouter, Request
 from speechnexus_contracts import ContractValidationError, parse
@@ -124,10 +124,9 @@ class _EventStreamResponse(StreamingResponse):
 
     async def stream_response(self, send: Send) -> None:
         async def guarded(message: Message) -> None:
-            body = cast(dict[str, Any], message)
-            if message["type"] != "http.response.body" or not body.get("more_body", False):
-                await send(message)
-                return
+            # Every send is bounded, including the terminal empty body: with a
+            # peer that stopped reading, the last frame blocks on the same write
+            # buffer as a data frame.
             try:
                 async with asyncio.timeout(self._send_timeout_seconds):
                     await send(message)
@@ -137,20 +136,37 @@ class _EventStreamResponse(StreamingResponse):
         try:
             await super().stream_response(guarded)
         except _StreamStalledError:
+            await self._stop_stalled_stream()
+
+    async def _stop_stalled_stream(self) -> None:
+        """Close the source, reset the connection and report what actually ran."""
+        try:
+            close = getattr(self.body_iterator, "aclose", None)
+            if close is not None:
+                await close()
+        except Exception:
+            # A failing source must not skip the reset or the warning below.
+            pass
+        finally:
+            reset = False
+            if self._abort_connection is not None:
+                try:
+                    self._abort_connection()
+                except Exception:
+                    # The socket stays open and uvicorn falls back to its own
+                    # close, so the record must not claim a reset.
+                    pass
+                else:
+                    reset = True
             _LOGGER.warning(
                 "job_event_stream_backpressure",
                 extra={
                     "event": "job_event_stream_backpressure",
                     "reason": "slow_client",
                     "send_timeout_seconds": self._send_timeout_seconds,
-                    "connection_reset": self._abort_connection is not None,
+                    "connection_reset": reset,
                 },
             )
-            close = getattr(self.body_iterator, "aclose", None)
-            if close is not None:
-                await close()
-            if self._abort_connection is not None:
-                self._abort_connection()
 
 
 def _object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:

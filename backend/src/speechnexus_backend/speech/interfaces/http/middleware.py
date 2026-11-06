@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 from uuid import uuid4
 
 from starlette.datastructures import Headers, MutableHeaders
@@ -14,6 +15,25 @@ _REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 # reading. ASGI has no abort call, so the outermost middleware captures the
 # server transport while it still owns it.
 REQUEST_ABORT_KEY = "speechnexus.request_abort"
+
+
+def require_request_abort_capture(app: Any) -> None:
+    """Fail assembly when a middleware wraps receive outside the capture point.
+
+    Starlette wraps ``send`` before any user middleware runs but hands
+    ``receive`` through untouched, so the hook can only be captured by the
+    outermost user middleware. A later ingress middleware that wraps
+    ``receive`` would silently degrade every stalled stream to a graceful
+    close, so the invariant is checked while the app is assembled.
+    """
+    stack = getattr(app, "user_middleware", ())
+    outermost = stack[0].cls if stack else None
+    if outermost is not RequestIdMiddleware:
+        name = getattr(outermost, "__name__", outermost)
+        raise RuntimeError(
+            "RequestIdMiddleware must stay the outermost middleware so the "
+            f"stalled-stream abort hook can capture the transport, found {name}"
+        )
 
 
 class RequestIdMiddleware:

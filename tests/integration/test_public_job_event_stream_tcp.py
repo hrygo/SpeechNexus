@@ -13,7 +13,6 @@ import itertools
 import json
 import logging
 import socket
-import statistics
 import threading
 import time
 from collections.abc import AsyncIterator, Iterator
@@ -59,13 +58,9 @@ def _app(
 
 
 @contextmanager
-def _serve(app: Any, *, send_buffer: int | None = None) -> Iterator[int]:
+def _serve(app: Any) -> Iterator[int]:
     """Serve one app on an ephemeral loopback port and stop it afterwards."""
     sock = socket.socket()
-    if send_buffer is not None:
-        # Accepted sockets inherit the listener buffer, which keeps the stall
-        # test independent of host autotuning.
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, send_buffer)
     sock.bind(("127.0.0.1", 0))
     sock.listen(16)
     port = int(sock.getsockname()[1])
@@ -294,8 +289,9 @@ async def test_heartbeat_cadence_does_not_drift_a_poll_interval(
                         if await anext(lines) == ": keepalive":
                             beats.append(time.monotonic())
     gaps = [later - earlier for earlier, later in itertools.pairwise(beats)]
-    # Sleeping a full minimum interval overshot every beat to about 1.0 s.
-    assert statistics.median(gaps) < 0.8, gaps
+    # Sleeping a whole minimum interval overshot every beat to about 1.0 s; a
+    # maximum gap keeps a single regression from hiding behind the median.
+    assert max(gaps) < 0.85, gaps
 
 
 async def test_heartbeat_then_disconnect_resumes_after_the_last_event(
@@ -502,12 +498,14 @@ async def test_a_client_that_never_reads_loses_its_socket(
     logger = logging.getLogger("speechnexus_backend.speech.interfaces.http.jobs")
     logger.addHandler(handler)
     try:
-        with _serve(spy, send_buffer=8192) as port:
+        with _serve(spy) as port:
             async with _client(port) as client:
                 job = await _create(client)
                 job_id = job["id"]
-            # Enough history to fill any loopback write buffer while the client
-            # refuses to drain it.
+            # Determinism comes from this history, not from socket options:
+            # 120000 frames of about 190 B are about 22 MB, well past the 4 MB
+            # default Linux send buffer (macOS autotunes to roughly 150 KB), so
+            # the server blocks even on a host that ignores socket tuning.
             _seed_paged_history(jobs_db, job_id, count=120000)
             known = len(spy.transports)
             raw = _raw_event_request(port, job_id)

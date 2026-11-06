@@ -1,17 +1,20 @@
 ---
 title: SpeechNexus 军团工作流与职责
-status: active
+status: archived
 version: "2.1.0"
 date: 2026-11-02
+archived: 2026-11-07
 ---
 
 # SpeechNexus 军团工作流与职责
 
+> 归档于 2026-11-07：军团岗位与平台队列模型已退役，现行规则见[交付 SOP](../../../operations/agent-delivery-sop.md)与[多 Agent 协作](../../../operations/agent-collaboration.md)。Paperclip 现仅作为 Linux GPU 委托执行通道保留。以下内容保留 2026-11-02 时点事实。
+
 GitHub 保存产品需求、原始验收条件、代码审查和合并事实；Delegra / Paperclip 保存执行切片、依赖、工作区、产物和接收回执。产品进展以同版公开业务链和 AC 证据判断，任务数量、绿色 CI 和健康检查各自只证明覆盖范围。
 
-按[交付 SOP](agent-delivery-sop.md)选择 Codex 会话、subagent 与 Delegra：一项切片一位交付负责人，普通局部工作直接完成；需要持久接续或专用环境时才使用军团任务。技术负责人不增加产品排序权，所有执行共用一条队列和资源额度；本页维护岗位、平台与环境边界。
+按[交付 SOP](../../../operations/agent-delivery-sop.md)选择 Codex 会话、subagent 与 Delegra：一项切片一位交付负责人，普通局部工作直接完成；需要持久接续或专用环境时才使用军团任务。技术负责人不增加产品排序权，所有执行共用一条队列和资源额度；本页维护岗位、平台与环境边界。
 
-产品实施围绕同版公开业务链和 AC 交付，当前阶段、链路状态及关键路径以最新明确授权、[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)和当期候选证据为准，不由长期规则固化。2026-10-27 的默认语音装配 503 与 Job 缺消费者记录见 [#254](https://github.com/hrygo/SpeechNexus/issues/254)及[事故记录](../archive/operations/paperclip/runtime-incidents.md)；它们是历史发现，不证明当前状态。[闭环整改计划](../archive/plans/2026-10-27-delegra-legion-closed-loop.md)与[旧环境报告](../archive/operations/paperclip/environment-readiness.md)保留原时点事实，已移除的旧项目及任务编号不再承担当前队列、环境配置或门禁入口。
+产品实施围绕同版公开业务链和 AC 交付，当前阶段、链路状态及关键路径以最新明确授权、[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)和当期候选证据为准，不由长期规则固化。2026-10-27 的默认语音装配 503 与 Job 缺消费者记录见 [#254](https://github.com/hrygo/SpeechNexus/issues/254)及[事故记录](runtime-incidents.md)；它们是历史发现，不证明当前状态。[闭环整改计划](../../plans/2026-10-27-delegra-legion-closed-loop.md)与[旧环境报告](environment-readiness.md)保留原时点事实，已移除的旧项目及任务编号不再承担当前队列、环境配置或门禁入口。
 
 ## 唯一决策方与执行结构
 
@@ -19,7 +22,7 @@ GitHub 保存产品需求、原始验收条件、代码审查和合并事实；D
 
 原产品总控会话转为按需独立架构 / 风险审查与备用接管，不保留第二产品队列；接管必须有新的明确安排。同一时刻只有一个 SM+PO。实际会话、平台对象、权限和环境入口由私有部署记录映射，公开源不使用“主聊天”或历史“经理”来猜测身份。此次基础设施整改的授权不自动扩成产品实施或投产放行。
 
-文件语音范围以[产品需求](../prd.md#epic-337--文件语音与底座内容任务)及[需求跟踪矩阵](../plans/delivery-tracking.md)为准。[合成限额 #398](https://github.com/hrygo/SpeechNexus/issues/398)和 [SDK 闭环 #351](https://github.com/hrygo/SpeechNexus/issues/351)已取消排期，仅供追溯；关闭不表示功能完成。只按当期明确切片、输入和运行额度推进；产品记录更新不恢复隔离任务或整体调度，投产放行仍由用户决定。
+文件语音范围以[产品需求](../../../prd.md#epic-337--文件语音与底座内容任务)及[需求跟踪矩阵](../../../plans/delivery-tracking.md)为准。[合成限额 #398](https://github.com/hrygo/SpeechNexus/issues/398)和 [SDK 闭环 #351](https://github.com/hrygo/SpeechNexus/issues/351)已取消排期，仅供追溯；关闭不表示功能完成。只按当期明确切片、输入和运行额度推进；产品记录更新不恢复隔离任务或整体调度，投产放行仍由用户决定。
 
 | 成员 | 主要职责 | 使用方式 |
 | --- | --- | --- |
@@ -37,7 +40,7 @@ GitHub 保存产品需求、原始验收条件、代码审查和合并事实；D
 
 ## 一条执行队列与独立接收
 
-GitHub [总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)及交付 issue 直接说明当前范围、事实与 AC；[本地矩阵](../plans/delivery-tracking.md)只读汇总状态、缺口、依赖及证据。原执行描述用于查证或原身份恢复，不承担新的产品派工。唯一 SM+PO 在当前项目维护一条执行队列，只接入已批准目标的当期切片，不镜像创建全部长期工作包，不额外维护产品 backlog。计划和报告解释版本、依赖及证据，不成为第二份排序权威。
+GitHub [总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)及交付 issue 直接说明当前范围、事实与 AC；[本地矩阵](../../../plans/delivery-tracking.md)只读汇总状态、缺口、依赖及证据。原执行描述用于查证或原身份恢复，不承担新的产品派工。唯一 SM+PO 在当前项目维护一条执行队列，只接入已批准目标的当期切片，不镜像创建全部长期工作包，不额外维护产品 backlog。计划和报告解释版本、依赖及证据，不成为第二份排序权威。
 
 任务就绪前写清：
 
@@ -75,7 +78,7 @@ GitHub [总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)及交付 i
 
 保留关闭 timer、事件派工、单岗并发 1 及已有预算 / 价格准入保护；同时最多两个无写冲突开发切片，并受真实主机窗口约束。审查与文档也计入资源，队列约定不是 OS 硬锁。岗位恢复和任务启动由获准操作者按明确阶段执行，文档更新不自动解除暂停。
 
-模型 ID、Harness、连接、实际思考级别及有效环境须逐岗核验，不能用 Harness 名称或模型后缀推断资格。Codex、Claude 和 OpenCode 的配置字段不能混用；[整改计划](../archive/plans/2026-10-27-delegra-legion-closed-loop.md)中的岗位矩阵仅供追溯，当前值以实际配置及回读为准。任务分配、agent / skill 创建权限也须独立检查，模型连接成功不证明这些权限适当或工具链可用。
+模型 ID、Harness、连接、实际思考级别及有效环境须逐岗核验，不能用 Harness 名称或模型后缀推断资格。Codex、Claude 和 OpenCode 的配置字段不能混用；[整改计划](../../plans/2026-10-27-delegra-legion-closed-loop.md)中的岗位矩阵仅供追溯，当前值以实际配置及回读为准。任务分配、agent / skill 创建权限也须独立检查，模型连接成功不证明这些权限适当或工具链可用。
 
 组织 skill 保存项目领域规则和可移植工作流；Harness 自带的系统技能由对应 Harness 管理，不成批复制进组织目录。确需跨 Harness 复用时，先核来源、版本、工具依赖和授权边界。平台原生运行控制由适配器提供；Native 控制面、Legacy 操作说明和 board 管理入口须分别匹配实际身份，工程岗不因载入管理技能取得管理权。
 
@@ -91,7 +94,7 @@ model / effort 按当前授权和验证结果调整；不得通过改连接、�
 
 ## 角色源、部署映射与回退
 
-各岗 runtime 入口由聚焦岗位正文与[最小共用边界](paperclip/roles/common.md)组成，只保留职责、执行边界、交付与收尾；不内联完整管理手册。公司编排 skill 使用同一职责模型。模型、Harness、环境、平台身份与当期准入以宿主配置和当前任务为准；私有部署映射与历史回执留在仓库外部署记录，不拼入岗位入口，也不扩大授权。公司级机动岗独立维护通用入口，不绑定 SpeechNexus 产品职责。
+各岗 runtime 入口由聚焦岗位正文与[最小共用边界](../../../operations/roles/common.md)组成，只保留职责、执行边界、交付与收尾；不内联完整管理手册。公司编排 skill 使用同一职责模型。模型、Harness、环境、平台身份与当期准入以宿主配置和当前任务为准；私有部署映射与历史回执留在仓库外部署记录，不拼入岗位入口，也不扩大授权。公司级机动岗独立维护通用入口，不绑定 SpeechNexus 产品职责。
 
 部署记录保存源提交 / 文件 hash、必要私有输入的 revision / hash、组装规则及输出 hash；这些维护信息不写入 runtime 正文。角色正文使用 `baseRevision` / hash，skill 使用 `expectedVersion` 实施受支持的 CAS；普通配置、model 和项目字段不支持 CAS，须串行写、保存写前值并回读验证，不声称原子更新。写前重读，发现并行变化时先核实意图，不覆盖未知修改。每岗正文应包含其必要共同边界，不依赖一次运行再去加载全部管理资料。私有身份、平台 UUID、机器私有路径和内部入口不写入公开源。
 
@@ -99,4 +102,4 @@ model / effort 按当前授权和验证结果调整；不得通过改连接、�
 
 ## 运行期规则与已踩的坑
 
-原执行事故、当时命令、失败及后续证伪完整保存在[运行事故与历史排障](../archive/operations/paperclip/runtime-incidents.md)，仅在相关排障时读取，不作为常规派工前置。当前派工、预检、等待及安全恢复统一按[交付 SOP](agent-delivery-sop.md)执行；历史“清空会话 / 新建卡恢复”等做法不构成当前操作授权或未知结果重放依据。
+原执行事故、当时命令、失败及后续证伪完整保存在[运行事故与历史排障](runtime-incidents.md)，仅在相关排障时读取，不作为常规派工前置。当前派工、预检、等待及安全恢复统一按[交付 SOP](../../../operations/agent-delivery-sop.md)执行；历史“清空会话 / 新建卡恢复”等做法不构成当前操作授权或未知结果重放依据。

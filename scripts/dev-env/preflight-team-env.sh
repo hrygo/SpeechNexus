@@ -56,7 +56,7 @@ else
   for wake in $stranded; do
     info "$wake → resolve with: update agent_wakeup_requests set status='skipped', reason='issue_cancelled_superseded', updated_at=now() where id='$wake'"
   done
-  info "see docs/operations/paperclip.md; deleting child rows does not help"
+  info "see docs/po-sm-operating-playbook.md (GPU channel section); deleting child rows does not help"
 fi
 
 echo

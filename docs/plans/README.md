@@ -6,6 +6,7 @@
 
 以下带日期材料保留各自时点，仅在查证相关决定或证据时读取，不承担当前排期或派工。
 
+- [2026-11-04 Delegra 交付工作流设计](../archive/plans/2026-11-04-delegra-delivery-workflow-design.md)：历史平台化交付方案、试跑与阻塞记录；平台队列依赖已退役，现行规则见[交付 SOP](../operations/agent-delivery-sop.md)与[多 Agent 协作](../operations/agent-collaboration.md)。
 - [2026-11-04 文档审阅清单](../archive/audits/2026-11-04-document-review-tracking.md)：本轮文档用途、核对依据与验证范围的历史记录。
 - [2026-10-26 团队 A 最终交接](../archive/plans/2026-10-26-team-a-final-handoff.md)：A00–A07、媒体/回执及原件/资源交接；原候选与验证保留时点，后续集成修复见项目经理基线。
 - [2026-10-26 团队 A 进展复盘与原下一阶段计划](../archive/plans/2026-10-26-team-a-review-and-next-phase.md)：历史基线、KR 与故障矩阵，已由收尾交接取代当前派工。

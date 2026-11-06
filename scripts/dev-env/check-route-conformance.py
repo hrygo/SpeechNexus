@@ -1582,11 +1582,12 @@ def evaluate(
         envelope_probed = False
         envelope_error: str | None = None
         if FRAMEWORK_METHOD_NOT_ALLOWED in operation.declared_statuses:
-            if method_not_allowed_envelopes is None:
-                # Synthetic evaluations may not run the probe. Leave the row
-                # explicitly unprobed so reporting cannot call it verified.
-                pass
-            elif operation.operation_id not in method_not_allowed_envelopes:
+            if (
+                method_not_allowed_envelopes is None
+                or operation.operation_id not in method_not_allowed_envelopes
+            ):
+                # An absent probe is itself a failure: a gate that cannot show
+                # the envelope must not conclude OK.
                 envelope_error = "the 405 response envelope was not probed"
             else:
                 envelope_probed = True

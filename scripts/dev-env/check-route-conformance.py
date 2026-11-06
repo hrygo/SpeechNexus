@@ -485,10 +485,13 @@ def resolve_factory(
     name: str,
     modules: Mapping[str, ModuleInfo],
     factories: Mapping[str, Mapping[str, int]],
-) -> Mapping[str, int] | None:
+) -> tuple[str, Mapping[str, int]] | None:
+    """Resolve a factory call to its scoped key and the code -> status map."""
     local = resolve_function(scope, name)
     if local is not None:
-        return factories.get(factory_key(local.module.name, local.qualname))
+        key = factory_key(local.module.name, local.qualname)
+        mapping = factories.get(key)
+        return None if mapping is None else (key, mapping)
     imported = scope.module.imports.get(name)
     if imported is None:
         return None
@@ -499,7 +502,9 @@ def resolve_factory(
     target_scope = target.module_functions.get(attribute)
     if target_scope is None:
         return None
-    return factories.get(factory_key(target.name, target_scope.qualname))
+    key = factory_key(target.name, target_scope.qualname)
+    mapping = factories.get(key)
+    return None if mapping is None else (key, mapping)
 
 
 def call_name(function: ast.expr) -> str | None:
@@ -890,9 +895,10 @@ class Analyzer:
                 status = {200}
             result.statuses.update(status)
             return
-        factory = resolve_factory(scope, name, self._modules, self._factories)
-        if factory is not None:
-            self._handle_error_factory(call, factory, environment, narrowings, result, scope)
+        resolved_factory = resolve_factory(scope, name, self._modules, self._factories)
+        if resolved_factory is not None:
+            owner, factory = resolved_factory
+            self._handle_error_factory(call, owner, factory, environment, narrowings, result, scope)
             return
         local = resolve_function(scope, name)
         if local is not None:
@@ -1010,6 +1016,7 @@ class Analyzer:
     def _handle_error_factory(
         self,
         call: ast.Call,
+        owner: str,
         factory: Mapping[str, int],
         environment: dict[str, ValueSet],
         narrowings: Mapping[str, ValueSet],
@@ -1027,9 +1034,10 @@ class Analyzer:
             return
         values = self._evaluate(call.args[0], environment, narrowings)
         if values is None:
-            if len(factory) == 1:
-                # A single-entry factory can only ever return that one status,
-                # whatever it was handed: every successful return uses it.
+            if len(factory) == 1 and owner.startswith(UNIMPLEMENTED_ERROR_MODULE + ":"):
+                # The placeholder factory is single-entry by design, so the only
+                # status it can return is its one entry. Other factories keep
+                # failing loudly on an unresolvable code.
                 result.statuses.add(next(iter(factory.values())))
                 return
             self._record(

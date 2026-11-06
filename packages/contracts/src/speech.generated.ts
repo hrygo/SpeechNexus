@@ -3308,7 +3308,11 @@ export interface components {
       };
       content?: never;
     };
-    /** @description The registered path does not accept this HTTP method. */
+    /**
+     * @description The registered path does not accept this HTTP method. `Allow` lists every
+     *     method registered on that path template, including placeholder methods.
+     *     The Job paths keep their own `job_method_not_allowed` code.
+     */
     MethodNotAllowed: {
       headers: {
         Allow: string;
@@ -3512,6 +3516,39 @@ export interface components {
       };
       content: {
         "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /**
+     * @description The contract declares this operation and this deployment does not
+     *     implement it. `operation_not_implemented` is the only code a placeholder
+     *     returns: it is not `backend_unavailable` (a real outage, retryable), not
+     *     a `*_not_found` code (a confirmed missing resource) and not
+     *     `invalid_request_error`. Repeating the same request cannot succeed until
+     *     the operation ships.
+     *
+     *     The five operations that already declared `ServiceUnavailable` before this
+     *     component existed keep that declaration: it accepts the same body, and
+     *     replacing it would drop the compatible `Retry-After` header from the
+     *     versioned surface. Everything else that answers this error points here.
+     */
+    OperationNotImplemented: {
+      headers: {
+        "Cache-Control": "no-store";
+        "X-Should-Retry": "false";
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"] & {
+          error?: {
+            /** @constant */
+            code?: "operation_not_implemented";
+            /** @constant */
+            type?: "service_unavailable_error";
+            /** @constant */
+            retryable?: false;
+            nexus?: never;
+          };
+        };
       };
     };
     /** @description The configured Host/Origin policy rejected this fixed read. */
@@ -4063,8 +4100,10 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
+      503: components["responses"]["OperationNotImplemented"];
     };
   };
   listPronunciationSets: {
@@ -4092,6 +4131,7 @@ export interface operations {
         };
       };
       401: components["responses"]["Unauthorized"];
+      405: components["responses"]["MethodNotAllowed"];
       503: components["responses"]["ServiceUnavailable"];
     };
   };
@@ -4127,9 +4167,11 @@ export interface operations {
       };
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
+      405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];
+      503: components["responses"]["OperationNotImplemented"];
     };
   };
   getPronunciationRevision: {
@@ -4194,6 +4236,7 @@ export interface operations {
       };
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
+      405: components["responses"]["MethodNotAllowed"];
       503: components["responses"]["ServiceUnavailable"];
     };
   };
@@ -4411,6 +4454,7 @@ export interface operations {
       };
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       503: components["responses"]["ServiceUnavailable"];
     };
   };
@@ -4455,7 +4499,9 @@ export interface operations {
       };
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
+      503: components["responses"]["OperationNotImplemented"];
     };
   };
   uploadAsset: {
@@ -4700,6 +4746,7 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       403: components["responses"]["Forbidden"];
+      405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];
@@ -4731,7 +4778,9 @@ export interface operations {
       };
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       410: components["responses"]["Gone"];
+      503: components["responses"]["OperationNotImplemented"];
     };
   };
   cancelRealtimeSession: {
@@ -4779,7 +4828,9 @@ export interface operations {
       };
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
+      503: components["responses"]["OperationNotImplemented"];
     };
   };
   connectRealtime: {
@@ -4814,6 +4865,7 @@ export interface operations {
       401: components["responses"]["Unauthorized"];
       403: components["responses"]["Forbidden"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
       503: components["responses"]["ServiceUnavailable"];
     };
@@ -4850,9 +4902,11 @@ export interface operations {
       };
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
+      405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];
+      503: components["responses"]["OperationNotImplemented"];
     };
   };
   createVoiceClone: {
@@ -4887,9 +4941,11 @@ export interface operations {
       };
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
+      405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];
+      503: components["responses"]["OperationNotImplemented"];
     };
   };
   getVoiceDraft: {
@@ -4917,6 +4973,8 @@ export interface operations {
       };
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
+      503: components["responses"]["OperationNotImplemented"];
     };
   };
   updateVoiceDraftMetadata: {
@@ -4954,8 +5012,10 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
+      503: components["responses"]["OperationNotImplemented"];
     };
   };
   generateVoiceDraftRevision: {
@@ -4993,8 +5053,10 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
+      503: components["responses"]["OperationNotImplemented"];
     };
   };
   createVoicePreview: {
@@ -5032,8 +5094,10 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
+      503: components["responses"]["OperationNotImplemented"];
     };
   };
   validateVoiceDraftRevision: {
@@ -5071,8 +5135,10 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
+      503: components["responses"]["OperationNotImplemented"];
     };
   };
   publishVoiceDraftRevision: {
@@ -5120,8 +5186,10 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
+      503: components["responses"]["OperationNotImplemented"];
     };
   };
   speechCreateDeletionPlan: {
@@ -5157,6 +5225,7 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      405: components["responses"]["MethodNotAllowed"];
       /** @description Dependency, revision, plan expiry or idempotency conflict. */
       409: {
         headers: {
@@ -5175,6 +5244,7 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      503: components["responses"]["OperationNotImplemented"];
     };
   };
   speechCreateDeletion: {
@@ -5210,6 +5280,7 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      405: components["responses"]["MethodNotAllowed"];
       /** @description Dependency, revision, plan expiry or idempotency conflict. */
       409: {
         headers: {
@@ -5228,6 +5299,7 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      503: components["responses"]["OperationNotImplemented"];
     };
   };
   speechGetDeletion: {
@@ -5259,6 +5331,7 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      405: components["responses"]["MethodNotAllowed"];
       /** @description Dependency, revision, plan expiry or idempotency conflict. */
       409: {
         headers: {
@@ -5277,6 +5350,7 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      503: components["responses"]["OperationNotImplemented"];
     };
   };
 }

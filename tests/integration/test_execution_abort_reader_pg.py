@@ -203,11 +203,15 @@ def writer_target(reader_database: ReaderDatabase) -> Iterator[GatewayPool]:
 
 
 def _insert_receipt(db: ReaderDatabase) -> None:
+    # The receipt records the original instance generation, as the gateway does.
     db.sql(
         "INSERT INTO gateway_abort_intents "
         "(submit_intent_id,operation_id,attempt_id,fencing_token,reason,wait_timeout_ms,"
-        "received_at_us) "
-        "VALUES ('submit-test','operation-test','attempt-test',1,'client_cancelled',1000,%s)",
+        "received_at_us,instance_id,instance_generation) "
+        "SELECT 'submit-test','operation-test','attempt-test',1,'client_cancelled',1000,%s,"
+        "l.instance_id,l.instance_generation FROM submit_intents AS s "
+        "JOIN admission_leases AS l ON l.lease_id=s.lease_id "
+        "WHERE s.submit_intent_id='submit-test'",
         (to_unix_micros(datetime.now(UTC)),),
     )
 

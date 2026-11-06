@@ -11,10 +11,12 @@ retries with the original identity instead of a claim nobody can ever release.
 
 from __future__ import annotations
 
+import logging
 from uuid import uuid4
 
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.domain.abort_intent import (
+    MAX_ABORT_DISPATCH_ATTEMPTS,
     AbortDispatchOutcome,
     AbortDispatchResult,
     abort_dispatch_lease_ms,
@@ -39,9 +41,20 @@ from speechnexus_gateway.domain.submission import (
     SubmissionStoreUnavailableError,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def _new_attempt_id() -> str:
     return "abort-" + uuid4().hex
+
+
+def _outcome_for(*, decided: bool, attempts: int) -> AbortDispatchOutcome:
+    """Decided answers end the receipt; spent attempts give it up instead of looping."""
+    if decided:
+        return AbortDispatchOutcome.ACKNOWLEDGED
+    if attempts >= MAX_ABORT_DISPATCH_ATTEMPTS:
+        return AbortDispatchOutcome.EXHAUSTED
+    return AbortDispatchOutcome.UNCONFIRMED
 
 
 def _origin_error(request: AbortExecutionRequest, identity: SubmissionIdentity) -> Exception | None:
@@ -144,17 +157,23 @@ class ExecutionAbortService:
                 claimed, reason=request.reason, wait_timeout_ms=request.wait_timeout_ms
             )
             snapshot = self._record_outcome(claimed, outcome)
+            dispatch_outcome = _outcome_for(
+                decided=outcome.acknowledgement.decided, attempts=claim.attempts
+            )
+            if dispatch_outcome is AbortDispatchOutcome.EXHAUSTED:
+                # Visible evidence for operators: the receipt keeps the bounded
+                # attempt count and the execution keeps holding its capacity.
+                logger.warning(
+                    "abort attempts exhausted without a decidable engine answer: %s",
+                    request.submit_intent_id,
+                )
             # The stop fact is committed first. A crash between the two leaves the
             # attempt undecided, and the retry replays the same evidence identity.
             ledger.record_abort_dispatch(
                 AbortDispatchResult(
                     submit_intent_id=request.submit_intent_id,
                     attempt_id=claim.attempt_id,
-                    outcome=(
-                        AbortDispatchOutcome.ACKNOWLEDGED
-                        if outcome.acknowledgement.decided
-                        else AbortDispatchOutcome.UNCONFIRMED
-                    ),
+                    outcome=dispatch_outcome,
                     observed_at=outcome.observed_at,
                 )
             )

@@ -26,6 +26,19 @@ ABORT_REASONS = frozenset(
 ABORT_DISPATCH_GRACE_MS = 1_000
 #: Longest lease any single attempt may hold; the contract wait is at most 60 s.
 MAX_ABORT_DISPATCH_LEASE_MS = 65_000
+#: Bounded retries for an attempt that learned nothing. Eight attempts with the
+#: backoff below span about an hour, after which the receipt is given up.
+MAX_ABORT_DISPATCH_ATTEMPTS = 8
+#: First retry delay; each undecided attempt doubles it up to the cap.
+ABORT_RETRY_BASE_MS = 30_000
+ABORT_RETRY_MAX_MS = 1_800_000
+
+
+def abort_retry_delay_ms(attempts: int) -> int:
+    """Delay before the next attempt after the given number of undecided attempts."""
+    if type(attempts) is not int or attempts < 1:
+        raise ValueError("a retry delay requires at least one recorded attempt")
+    return int(min(ABORT_RETRY_BASE_MS * 2 ** (attempts - 1), ABORT_RETRY_MAX_MS))
 
 
 def abort_dispatch_lease_ms(wait_timeout_ms: int) -> int:
@@ -85,12 +98,15 @@ class AbortDispatchClaim:
     attempt_id: str
     started_at: datetime
     deadline_at: datetime
+    attempts: int
 
     def __post_init__(self) -> None:
         if not 1 <= len(self.attempt_id) <= 128:
             raise ValueError("an abort attempt requires a bounded identity")
         if self.deadline_at <= self.started_at:
             raise ValueError("an abort dispatch lease must end after it starts")
+        if type(self.attempts) is not int or not 1 <= self.attempts <= MAX_ABORT_DISPATCH_ATTEMPTS:
+            raise ValueError("an abort attempt must stay inside the bounded attempts")
 
 
 class AbortDispatchOutcome(StrEnum):
@@ -102,6 +118,8 @@ class AbortDispatchOutcome(StrEnum):
     UNCONFIRMED = "unconfirmed"
     #: The authoritative execution no longer matches the receipt; never resend.
     REJECTED_FENCED = "rejected_fenced"
+    #: The bounded attempts are spent; the original intent stops being retried.
+    EXHAUSTED = "exhausted"
 
     @property
     def decided(self) -> bool:

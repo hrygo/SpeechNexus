@@ -296,15 +296,27 @@ pool→submit→abort 锁序提交原始取消，再等待发送锁、取得一�
 `gateway_abort_intents` 保存每条原取消的首次接收和最近一次外发尝试：`dispatched_at_us`
 固定首次尝试时间，`dispatch_attempt_id`、`dispatch_started_at_us`、
 `dispatch_deadline_at_us`、`dispatch_outcome`（`acknowledged` / `unconfirmed` /
-`rejected_fenced`）、`dispatch_outcome_at_us` 与 `dispatch_attempts` 记录这次尝试的
-租约和结果，回执同时固化原执行的 `instance_id` 与 `instance_generation`。外发租约长度为
-`wait_timeout + 1000ms`，上限 65 s；同一回执在租约内只允许一个持有者，两个网关实例不会
-同时外发。租约到期、尝试未记录结果或进程在任意窗口退出后，后续轮次按持久事实重新取得
-租约并只重发原身份，不新建执行。
+`rejected_fenced` / `exhausted`）、`dispatch_outcome_at_us` 与 `dispatch_attempts` 记录
+这次尝试的租约和结果，回执同时固化原执行的 `instance_id` 与 `instance_generation`。
+外发租约长度为 `wait_timeout + 1000ms`，上限 65 s；同一回执在租约内只允许一个持有者，
+两个网关实例不会同时外发。租约到期、尝试未记录结果或进程在任意窗口退出后，后续轮次按
+持久事实重新取得租约并只重发原身份，不新建执行。
+
+未裁决的尝试按指数退避重试：第 n 次未确认后 `next_check_at_us = 观察时间 +
+min(30s × 2^(n-1), 30min)`，不再按租约节奏紧循环；最多尝试 8 次（约 1 小时）。用尽后
+写 `dispatch_outcome=exhausted` 并停止重试，执行继续隔离并占用预算，回执、尝试次数与
+观察时间保留为可见证据。`exhausted` 是终态：不重发、不伪造停止，交由原 `record_stop`
+证据路径或人工核验收敛。
 
 engine adapter 对同一身份的外发必须幂等：重复调用不产生第二次资源效果，并给出可裁决的
 acknowledgement（已中止 / 已终结）；无法确认时返回 unknown，绝不作为停止证据。
 `record_stop` 先于外发结果落库，两者之间退出只会让本次尝试保持未决，重试重放同一证据身份。
+
+组合根注入的 abort adapter 必须能对“已不在本进程内存、但引擎仍记得”的原身份作答，
+这是恢复可用性的资格前提；只能取消本进程任务的 adapter 不满足该前提。默认文件 runtime
+只对本进程任务返回 `aborted` / `already_terminal`，进程重启后对旧身份恒返回 unknown，
+因此它的恢复终态是“未确认、退避重试至 `exhausted`、保留可见证据并继续隔离”，
+不是“已停止”。
 
 启用下述周期恢复配置、文件执行 runtime 和受限 abort 写权限时，恢复驱动也按持久
 `next_check_at_us` 与尝试租约调度本网关未终结的原取消回执：已裁决结果、已终结执行、
@@ -318,7 +330,9 @@ acknowledgement（已中止 / 已终结）；无法确认时返回 unknown，绝
 部署升级先应用版本迁移 `0036_abort_dispatch_attempts`，再由管理员为 gateway 写角色
 执行当前 `gateway_abort_grants`（新增尝试列与 `next_check_at_us` 的列级 UPDATE）；
 未配置该权限时启动校验关闭持久 abort 能力。独立查询角色仍保持只读，公开回执仍只暴露
-`received` / `claimed` 两个既有状态。候选同一 node/gateway 的进程必须共用宿主锁目录，
+`received` / `claimed` 两个既有状态；只读角色另可读取 `dispatch_outcome` 与
+`dispatch_attempts`，便于运维查看拒发原因与重试次数，它们不进入公开回执。候选同一
+node/gateway 的进程必须共用宿主锁目录，
 持有原进程锁直到所有在途发送退出；不能以 TTL 代替该前提。
 
 提交路由先用冻结请求校验 command 与 `command_digest` 一致，再按 `create_submit` 落唯一 intent，

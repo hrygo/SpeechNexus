@@ -62,7 +62,7 @@ ABORT_DISPATCH_CONSTRAINTS_DDL = (
     "AND dispatch_deadline_at_us IS NOT NULL "
     "AND dispatch_deadline_at_us > dispatch_started_at_us "
     "AND ((dispatch_outcome IS NULL AND dispatch_outcome_at_us IS NULL) "
-    "OR (dispatch_outcome IN ('acknowledged','unconfirmed','rejected_fenced') "
+    "OR (dispatch_outcome IN ('acknowledged','unconfirmed','rejected_fenced','exhausted') "
     "AND dispatch_outcome_at_us IS NOT NULL))))",
     f"ALTER TABLE {ABORT_INTENT_TABLE} "
     "ADD CONSTRAINT gateway_abort_dispatch_attempts_check "

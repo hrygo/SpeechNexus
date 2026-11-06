@@ -12,6 +12,9 @@ from datetime import datetime
 from typing import Any
 
 from speechnexus_gateway.domain.abort_intent import (
+    ABORT_RETRY_BASE_MS,
+    ABORT_RETRY_MAX_MS,
+    MAX_ABORT_DISPATCH_ATTEMPTS,
     MAX_ABORT_DISPATCH_LEASE_MS,
     AbortDispatchClaim,
     AbortDispatchOutcome,
@@ -51,6 +54,7 @@ _RECEIPT_COLUMNS = (
 _DECIDED_OUTCOMES = (
     AbortDispatchOutcome.ACKNOWLEDGED.value,
     AbortDispatchOutcome.REJECTED_FENCED.value,
+    AbortDispatchOutcome.EXHAUSTED.value,
 )
 
 
@@ -143,13 +147,18 @@ def _start_attempt(
     started_at_us: int,
     deadline_at_us: int,
     outcome: AbortDispatchOutcome | None,
+    count: bool = True,
 ) -> None:
-    """Write one attempt lease, or its terminal refusal, in the caller transaction."""
+    """Write one attempt lease, or its terminal refusal, in the caller transaction.
+
+    Only an attempt that may reach the engine increments the counter; a refusal or
+    the exhausted terminal write records its decision without inflating attempts.
+    """
     cursor.execute(
         "UPDATE gateway_abort_intents SET dispatched_at_us=COALESCE(dispatched_at_us,%s), "
         "dispatch_attempt_id=%s, dispatch_started_at_us=%s, dispatch_deadline_at_us=%s, "
         "dispatch_outcome=%s, dispatch_outcome_at_us=%s, "
-        "dispatch_attempts=dispatch_attempts+1 WHERE submit_intent_id=%s",
+        "dispatch_attempts=dispatch_attempts+%s WHERE submit_intent_id=%s",
         (
             started_at_us,
             attempt_id,
@@ -157,6 +166,7 @@ def _start_attempt(
             deadline_at_us,
             None if outcome is None else outcome.value,
             None if outcome is None else started_at_us,
+            1 if count else 0,
             request.submit_intent_id,
         ),
     )
@@ -196,11 +206,26 @@ def claim_abort(
             started_at_us=now_us,
             deadline_at_us=deadline_us,
             outcome=AbortDispatchOutcome.REJECTED_FENCED,
+            count=False,
         )
         return None
     current_deadline = receipt["dispatch_deadline_at_us"]
     if current_deadline is not None and current_deadline > now_us:
         # Another attempt holds a live lease; two gateways never send the same abort.
+        return None
+    attempts = receipt["dispatch_attempts"]
+    if attempts >= MAX_ABORT_DISPATCH_ATTEMPTS:
+        # The bounded attempts are spent, and no outcome was recorded for the last
+        # one (a crash inside it). Give the receipt up instead of retrying forever.
+        _start_attempt(
+            cursor,
+            request,
+            attempt_id=attempt_id,
+            started_at_us=now_us,
+            deadline_at_us=deadline_us,
+            outcome=AbortDispatchOutcome.EXHAUSTED,
+            count=False,
+        )
         return None
     _start_attempt(
         cursor,
@@ -225,6 +250,7 @@ def claim_abort(
         attempt_id=attempt_id,
         started_at=now,
         deadline_at=from_unix_micros(deadline_us),
+        attempts=attempts + 1,
     )
 
 
@@ -233,10 +259,13 @@ def record_abort_dispatch(cursor: SubmitCursor, result: AbortDispatchResult) -> 
     if result.outcome is AbortDispatchOutcome.REJECTED_FENCED:
         raise ValueError("a fenced refusal is recorded when the claim is refused")
     observed_us = to_unix_micros(result.observed_at)
+    # An undecided attempt is retried with exponential backoff, not on the lease
+    # cadence: a crash must not turn the receipt into a permanent tight retry loop.
     cursor.execute(
         "UPDATE gateway_abort_intents SET dispatch_outcome=%s, dispatch_outcome_at_us=%s, "
-        "next_check_at_us=CASE WHEN %s=%s THEN "
-        "COALESCE(dispatch_deadline_at_us,%s) ELSE next_check_at_us END "
+        "next_check_at_us=CASE WHEN %s=%s THEN %s + LEAST("
+        "%s * POWER(2, GREATEST(dispatch_attempts - 1, 0)), %s)::BIGINT "
+        "ELSE next_check_at_us END "
         "WHERE submit_intent_id=%s AND dispatch_attempt_id=%s AND dispatch_outcome IS NULL",
         (
             result.outcome.value,
@@ -244,6 +273,8 @@ def record_abort_dispatch(cursor: SubmitCursor, result: AbortDispatchResult) -> 
             result.outcome.value,
             AbortDispatchOutcome.UNCONFIRMED.value,
             observed_us,
+            ABORT_RETRY_BASE_MS * 1_000,
+            ABORT_RETRY_MAX_MS * 1_000,
             result.submit_intent_id,
             result.attempt_id,
         ),
@@ -278,5 +309,6 @@ def reject_abort(
         started_at_us=now_us,
         deadline_at_us=now_us + lease_ms * 1_000,
         outcome=AbortDispatchOutcome.REJECTED_FENCED,
+        count=False,
     )
     return True

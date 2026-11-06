@@ -8,6 +8,7 @@ from typing import Any
 from speechnexus_gateway.application.abort_execution import ExecutionAbortService
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.domain.abort_intent import (
+    MAX_ABORT_DISPATCH_ATTEMPTS,
     AbortDispatchClaim,
     AbortDispatchOutcome,
     AbortExecutionRequest,
@@ -214,3 +215,39 @@ def test_unknown_claim_commit_keeps_the_attempt_and_retries_after_the_lease() ->
     clock.advance(milliseconds=abort_dispatch_lease_ms(request.wait_timeout_ms) + 1)
     service.recover_abort(request)
     assert len(engine.calls) == 1
+
+
+def test_undecided_attempts_stop_at_the_bounded_cap() -> None:
+    clock = Clock()
+    _, ledger, _, ingress, _, request = setup_abort(now=clock)
+    ledger.receive_abort(request)
+    engine = RecordingAbort(now=clock)
+    service = service_for(ledger, ingress, engine)
+    for attempt in range(1, MAX_ABORT_DISPATCH_ATTEMPTS + 1):
+        service.recover_abort(request)
+        state = ledger.abort_dispatch_state(request.submit_intent_id)
+        assert state is not None and state["attempts"] == attempt
+        clock.advance(milliseconds=abort_dispatch_lease_ms(request.wait_timeout_ms) + 1)
+    assert len(engine.calls) == MAX_ABORT_DISPATCH_ATTEMPTS
+    state = ledger.abort_dispatch_state(request.submit_intent_id)
+    assert state is not None and state["outcome"] == AbortDispatchOutcome.EXHAUSTED.value
+    clock.advance(hours=1)
+    service.recover_abort(request)
+    assert len(engine.calls) == MAX_ABORT_DISPATCH_ATTEMPTS
+
+
+def test_a_crashed_final_attempt_is_given_up_instead_of_retried() -> None:
+    clock = Clock()
+    _, ledger, _, ingress, _, request = setup_abort(now=clock)
+    ledger.receive_abort(request)
+    for _ in range(MAX_ABORT_DISPATCH_ATTEMPTS):
+        claim = ledger.claim_abort(request, attempt_id="abort-lost", lease_ms=2000)
+        assert claim is not None
+        clock.advance(milliseconds=2001)
+    spent = ledger.abort_dispatch_state(request.submit_intent_id)
+    assert spent is not None and spent["attempts"] == MAX_ABORT_DISPATCH_ATTEMPTS
+    engine = RecordingAbort(now=clock)
+    service_for(ledger, ingress, engine).recover_abort(request)
+    assert engine.calls == []
+    state = ledger.abort_dispatch_state(request.submit_intent_id)
+    assert state is not None and state["outcome"] == AbortDispatchOutcome.EXHAUSTED.value

@@ -14,6 +14,7 @@ from typing import Any
 
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.domain.abort_intent import (
+    MAX_ABORT_DISPATCH_ATTEMPTS,
     AbortDispatchClaim,
     AbortDispatchOutcome,
     AbortDispatchResult,
@@ -191,11 +192,13 @@ class InMemorySubmissionLedger:
             ) != (request.operation_id, request.attempt_id, request.fencing_token):
                 raise ExecutionObservationConflictError("abort identity has another intent")
             attempt = self._abort_attempts.get(request.submit_intent_id)
+            attempts = 0 if attempt is None else attempt["attempts"]
             now = self._now()
             now_us = int(now.timestamp() * 1_000_000)
             if attempt is not None and attempt["outcome"] in (
                 AbortDispatchOutcome.ACKNOWLEDGED.value,
                 AbortDispatchOutcome.REJECTED_FENCED.value,
+                AbortDispatchOutcome.EXHAUSTED.value,
             ):
                 return None
             if current.execution_state.is_terminal:
@@ -213,16 +216,27 @@ class InMemorySubmissionLedger:
                     "started_us": now_us,
                     "deadline_us": now_us + lease_ms * 1_000,
                     "outcome": AbortDispatchOutcome.REJECTED_FENCED.value,
+                    "attempts": attempts,
                 }
                 return None
             if attempt is not None and attempt["deadline_us"] > now_us:
                 return None
             deadline_us = now_us + lease_ms * 1_000
+            if attempts >= MAX_ABORT_DISPATCH_ATTEMPTS:
+                self._abort_attempts[request.submit_intent_id] = {
+                    "attempt_id": attempt_id,
+                    "started_us": now_us,
+                    "deadline_us": deadline_us,
+                    "outcome": AbortDispatchOutcome.EXHAUSTED.value,
+                    "attempts": attempts,
+                }
+                return None
             self._abort_attempts[request.submit_intent_id] = {
                 "attempt_id": attempt_id,
                 "started_us": now_us,
                 "deadline_us": deadline_us,
                 "outcome": None,
+                "attempts": attempts + 1,
             }
             if current.execution_state is ExecutionState.UNKNOWN_QUARANTINED:
                 claimed = current
@@ -239,6 +253,7 @@ class InMemorySubmissionLedger:
                 attempt_id=attempt_id,
                 started_at=now,
                 deadline_at=datetime.fromtimestamp(deadline_us / 1_000_000, UTC),
+                attempts=attempts + 1,
             )
 
     def record_abort_dispatch(self, result: AbortDispatchResult) -> bool:
@@ -282,6 +297,7 @@ class InMemorySubmissionLedger:
                 "started_us": now_us,
                 "deadline_us": now_us + 1_000,
                 "outcome": AbortDispatchOutcome.REJECTED_FENCED.value,
+                "attempts": 0 if attempt is None else attempt["attempts"],
             }
             return True
 

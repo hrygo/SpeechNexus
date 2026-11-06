@@ -198,7 +198,7 @@ def receipt_row(foundation: Foundation) -> list[dict[str, Any]]:
 def dispatch_row(foundation: Foundation) -> dict[str, Any]:
     return foundation.database.query(
         "SELECT dispatch_attempt_id, dispatch_started_at_us, dispatch_deadline_at_us, "
-        "dispatch_outcome, dispatch_outcome_at_us, dispatch_attempts "
+        "dispatch_outcome, dispatch_outcome_at_us, dispatch_attempts, next_check_at_us "
         "FROM gateway_abort_intents WHERE submit_intent_id=%s",
         (INTENT_ID,),
     )[0]
@@ -811,12 +811,17 @@ def test_due_order_does_not_starve_old_retry_behind_new_receipt(
 
 @pytest.mark.parametrize(
     "crash_window",
-    ["after_receive", "after_claim", "after_accept", "after_outcome_lost"],
+    ["after_receive", "after_claim", "after_adapter_accept", "after_outcome_lost"],
 )
 def test_process_exit_keeps_the_original_abort_retryable(
     live: LiveAbort, foundation: Foundation, tmp_path: Path, crash_window: str
 ) -> None:
-    """Every crash window leaves the original receipt retryable and sends the same identity."""
+    """Every crash window leaves the original receipt retryable and sends the same identity.
+
+    `after_adapter_accept` exits inside the engine call, and `after_outcome_lost`
+    exits inside the outcome write. Both leave "engine accepted, no local outcome";
+    they differ only in which side of the adapter boundary the process died.
+    """
     import os
     import subprocess
     import sys
@@ -863,7 +868,7 @@ class CrashLedger(PostgresSubmissionLedger):
 class CrashEngine:
     def abort(self, intent, *, reason, wait_timeout_ms):
         Path(os.environ['SN_MARKER']).write_text(intent.identity.submit_intent_id)
-        if WINDOW == 'after_accept':
+        if WINDOW == 'after_adapter_accept':
             os._exit(72)
         return AbortOutcome(observed_at=datetime.now(UTC),
                             engine_request_id=intent.engine_request_id,
@@ -895,11 +900,11 @@ service.abort(AbortExecutionRequest('intent-a', 'operation-test', 'attempt-alt',
     expected_code = {
         "after_receive": 70,
         "after_claim": 71,
-        "after_accept": 72,
+        "after_adapter_accept": 72,
         "after_outcome_lost": 73,
     }[crash_window]
     assert result.returncode == expected_code, result.stderr.decode()
-    engine_ran = crash_window in ("after_accept", "after_outcome_lost")
+    engine_ran = crash_window in ("after_adapter_accept", "after_outcome_lost")
     assert accept_log.exists() is engine_ran
     if not engine_ran:
         assert dispatch_row(foundation)["dispatch_attempt_id"] is not None or crash_window == (
@@ -1022,7 +1027,82 @@ def test_recovery_refuses_a_receipt_recorded_against_another_generation(
     assert result is not None and result.intent.execution_state is ExecutionState.EXECUTING
     assert live.engine.calls == []
     row = dispatch_row(foundation)
-    assert row["dispatch_outcome"] == "rejected_fenced" and row["dispatch_attempts"] == 1
+    assert row["dispatch_outcome"] == "rejected_fenced" and row["dispatch_attempts"] == 0
     # The refusal is durable: no later attempt can resend this receipt.
     live.service().recover_abort(drifted)
     assert live.engine.calls == []
+
+
+def test_lost_outcome_acknowledgement_does_not_resend_once_recorded(
+    live: LiveAbort, foundation: Foundation, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The outcome committed but the caller never learned it: the fact is authoritative."""
+    stored = live.ledger.get(INTENT_ID)
+    assert stored is not None
+    live.engine.script_outcome(
+        AbortOutcome(
+            observed_at=datetime.now(UTC),
+            engine_request_id=stored.engine_request_id,
+            acknowledgement=AbortAcknowledgement.ABORTED,
+        )
+    )
+    original = live.ledger.record_abort_dispatch
+
+    def committed_then_lost(result: Any) -> bool:
+        assert original(result)
+        raise SubmissionOutcomeUnknownError("synthetic lost outcome acknowledgement")
+
+    monkeypatch.setattr(live.ledger, "record_abort_dispatch", committed_then_lost)
+    with pytest.raises(SubmissionOutcomeUnknownError):
+        live.service().abort(live.abort_request)
+    assert dispatch_row(foundation)["dispatch_outcome"] == "acknowledged"
+    monkeypatch.setattr(live.ledger, "record_abort_dispatch", original)
+    live.service().recover_abort(original_abort_request(foundation, live.abort_request))
+    assert len(live.engine.calls) == 1
+
+
+def _expire_abort_attempt(foundation: Foundation) -> None:
+    """Make the recorded lease and its backoff due without waiting real time."""
+    foundation.database.query(
+        "UPDATE gateway_abort_intents SET dispatch_deadline_at_us=dispatch_started_at_us + 1, "
+        "next_check_at_us=0 WHERE submit_intent_id=%s",
+        (INTENT_ID,),
+    )
+
+
+def test_undecided_attempts_back_off_and_stop_at_the_bounded_cap(
+    live: LiveAbort, foundation: Foundation
+) -> None:
+    """Retries grow their delay and end in a terminal outcome instead of looping forever."""
+    from speechnexus_gateway.application.recover_aborts import AbortRecoveryService
+    from speechnexus_gateway.domain.abort_intent import MAX_ABORT_DISPATCH_ATTEMPTS
+
+    live.ledger.receive_abort(live.abort_request)
+    service = AbortRecoveryService(ingress=live.ingress, ledger=live.ledger, abort=live.service())
+    delays: list[int] = []
+    for attempt in range(1, MAX_ABORT_DISPATCH_ATTEMPTS + 1):
+        assert service.sweep(limit=1) == 1
+        assert len(live.engine.calls) == attempt
+        row = dispatch_row(foundation)
+        assert row["dispatch_attempts"] == attempt
+        if attempt < MAX_ABORT_DISPATCH_ATTEMPTS:
+            assert row["dispatch_outcome"] == "unconfirmed"
+            delays.append(row["next_check_at_us"] - row["dispatch_outcome_at_us"])
+        else:
+            assert row["dispatch_outcome"] == "exhausted"
+        _expire_abort_attempt(foundation)
+    assert delays[0] == 30_000_000 and delays[1] == 60_000_000
+    assert delays == sorted(delays) and max(delays) <= 1_800_000_000
+    assert service.sweep(limit=1) == 0
+    assert len(live.engine.calls) == MAX_ABORT_DISPATCH_ATTEMPTS
+    # A crash inside the final attempt leaves no outcome; the next sweep gives up too.
+    foundation.database.query(
+        "UPDATE gateway_abort_intents SET dispatch_outcome=NULL, dispatch_outcome_at_us=NULL "
+        "WHERE submit_intent_id=%s",
+        (INTENT_ID,),
+    )
+    _expire_abort_attempt(foundation)
+    assert service.sweep(limit=1) == 1
+    assert len(live.engine.calls) == MAX_ABORT_DISPATCH_ATTEMPTS
+    assert dispatch_row(foundation)["dispatch_outcome"] == "exhausted"
+    assert service.sweep(limit=1) == 0

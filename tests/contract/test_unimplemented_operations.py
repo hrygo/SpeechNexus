@@ -196,10 +196,13 @@ def concrete(path: str) -> str:
 
 
 def test_contract_and_placeholder_table_agree() -> None:
-    assert len(CASES) == 20
+    assert len(CASES) == 19
     assert {operation for operation, _, _ in CASES} == set(UNIMPLEMENTED_OPERATIONS)
     declared = {operation for operation, _, _ in declared_operations()}
-    assert len(declared) == 16
+    # retireVoiceRevision now answers its own 503 (ServiceUnavailable) after the
+    # retirement route shipped, so only the remaining placeholders carry the
+    # dedicated component.
+    assert len(declared) == 15
     # Every remaining operation points at the dedicated placeholder component;
     # the four with an older 503 declaration keep it rather than lose a header.
     assert declared == set(UNIMPLEMENTED_OPERATIONS) - PREDECLARED_SERVICE_UNAVAILABLE

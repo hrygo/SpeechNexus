@@ -24,9 +24,12 @@
 > 当前可重复门禁见 §10。§3–§8 保留 `62ae4805` 的审计基线事实；复核基线的差异以【复核 3951718e】标注，
 > 汇总见 §3.1（新增 4 个已实现操作）、§6.1（当前 21 条未实现操作）与 §11（8 条漂移引用逐条复核）。
 
-【#471 更新】`listJobs` 已由真实实现接替占位（§3.2）；当前注册 **42**、已实现 **22**、占位 **20**（§6.1）。
+【#471 更新】`listJobs` 已由真实实现接替占位（§3.2）；【#490 更新】`retireVoiceRevision` 的 `retire`
+已由真实实现接替占位，`disable` 明确返回 422（§3.3）。当前注册 **42**、已实现 **23**、占位 **19**（§6.1）。
 J1 已修复；历史表保留原时点响应。保留 #466 的契约测试和 #473 的 `0.1.0.dev8` 契约，
-`listJobs` 的 405 已声明，`known_status_gaps` 保持 **0**；本次不改机器契约或生成物。
+`listJobs` 的 405 已声明，`known_status_gaps` 保持 **0**。
+#490 只把 `retireVoiceRevision` 的 503 从 `OperationNotImplemented` 换成 `ServiceUnavailable`（去占位；
+不新增状态码或必填头），其余占位操作的声明未变。
 
 ## 1. 结论摘要
 
@@ -151,6 +154,27 @@ J1 已修复；历史表保留原时点响应。保留 #466 的契约测试和 #
 分页、默认 workspace、游标作用域及迁移见 [生产 Job 文档](../components/production-jobs.md#公开-job-列表)。
 定向 HTTP/应用层用例见 `tests/unit/backend/test_public_job_list.py`；
 隔离持久与 EXPLAIN 用例见 `tests/integration/test_public_job_list_pg.py`。
+
+### 3.3 #490 新增 retireVoiceRevision（retire）
+
+`POST /v1/nexus/voices/{voice_id}/revisions/{revision}/retirements` 已注册到
+`backend/src/speechnexus_backend/speech/interfaces/http/voices.py::create_voice_router.retire`，
+经 `PostgresVoiceRetirements` 写入既有 `speech_publication_retirements`（`mode`/`reason` 列由
+`0023_publication_lifecycle` 提供，无需新迁移），再由 `PostgresVoiceCatalogue.get_revision` 读回
+生成契约校验的 `VoiceRevision`（`status=retired`、`retired_at` 生效，精确修订仍可读）。
+重复提交相同 `mode`/`reason` 是已存墓碑的重放（200），改名或改因则是 409；
+退役非当前选中的修订为 409；未知 voice/revision 为 404。
+`retire` 成功后新引用被拒（公开列表过滤 `retired_at_us IS NULL`），已持有依赖租约的在飞任务不被本操作中断。
+
+`disable` 当前返回 422 `voice_disable_unsupported`，不落库：本部署没有
+「durable voice-disable intent + 按 `voice_revision_id` 捕获在飞 target 的协调路径」，
+而既有 binding-disable 协调器只接受 `kind='binding'` 的事件与 `binding_revision_id` 捕获。
+在缺少该路径时不假装取消成功，也不另造第二套取消机制；该缺口是后续切片的输入。
+
+该操作的 503 由 `OperationNotImplemented` 改为 `ServiceUnavailable`：路由实现后，503 表示
+「部署未配置生命周期 writer，或存储不可用」，可重试，**不再**是 `operation_not_implemented`。
+定向 HTTP 用例见 `tests/unit/backend/test_voice_retirement_http.py`，
+隔离 PG 用例见 `tests/integration/test_voice_retirement_pg.py`。
 
 ## 4. 未声明返回：逐条证据
 
@@ -302,15 +326,14 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
 `backend/src/speechnexus_backend/workbench/infrastructure/public_speech_render_jobs.py::PublicSpeechRenderJobs.read_job` 调用 `GET /v1/nexus/jobs/{job_id}`（后者已实现）。
 `docs/archive/plans/2026-10-24-team-c-goal.md:78` 也记录了"音色运行时尚未实现这些路由"这一已知缺口。
 
-### 6.1 当前未实现操作（20 条）
+### 6.1 当前未实现操作（19 条）
 
-从 #473 的 21 条占位操作移除 #471 已实现的 `listJobs`。编号沿用 §6；
-以下 20 条当前均返回 `503 operation_not_implemented`（§6.2），历史响应保留在 §6/§7.1。
-`retryJob`/`streamJobEvents`/`listVoices`/`getVoiceRevision`/`listJobs` 已移出本表。
+从 #473 的 21 条占位操作移除 #471 已实现的 `listJobs` 与 #490 已实现的 `retireVoiceRevision`（`retire`）。编号沿用 §6；
+以下 19 条当前均返回 `503 operation_not_implemented`（§6.2），历史响应保留在 §6/§7.1。
+`retryJob`/`streamJobEvents`/`listVoices`/`getVoiceRevision`/`listJobs`/`retireVoiceRevision` 已移出本表。
 
 | # | 操作 | 路由 | 运行时响应 |
 | --- | --- | --- | --- |
-| 20 | retireVoiceRevision | POST /v1/nexus/voices/{voice_id}/revisions/{revision}/retirements | **503 operation_not_implemented** |
 | 21 | listPronunciationSets | GET /v1/nexus/pronunciation-sets | **503 operation_not_implemented** |
 | 22 | createPronunciationRevision | POST /v1/nexus/pronunciation-sets | **503 operation_not_implemented** |
 | 26 | getOperation | GET /v1/nexus/operations/{operation_id} | **503 operation_not_implemented** |
@@ -335,7 +358,8 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
 `934855c3` 上复核 §6.1 时确认：21 条操作仍无生产实现，但响应分三类（18 条框架 404 裸 `detail`、`listJobs` 的 405、
 两条集合级读音路由的 400），消费者无法与「资源不存在 / 方法不支持 / 参数错误」区分。契约版本 `0.1.0.dev8` 起，
 21 条全部由中央占位路由注册并返回同一种可辨识错误。
-【#471】其中 `listJobs` 已交给真实实现；其余 20 条继续返回占位错误，见 §3.2/§6.1。
+【#471】其中 `listJobs` 已交给真实实现；【#490】`retireVoiceRevision` 也已交给真实实现（`disable`
+以 422 明确未支持）；其余 19 条继续返回占位错误，见 §3.2/§3.3/§6.1。
 
 实测方法：`create_app(settings=...)` 组装真实应用（无服务注入、不启动 lifespan），逐条发请求并记录状态码、
 错误码、`retryable` 与 `X-Request-ID`；下表为 #473 前后同口径实测。
@@ -566,7 +590,7 @@ Python/TypeScript 绑定与打包 HTTP 投影由源重新生成；严格消费�
    的错误码映射；
    框架对错误方法产生的 405 单独计入。无法静态求值的 `status_code` 或运行时错误码列入
    「UNDETERMINED」，只报告可能值，不猜造、不作为门禁失败。
-4. 显式基线：`KNOWN_UNIMPLEMENTED_OPERATIONS` 固定当前 20 条未实现操作并逐条写明原因；
+4. 显式基线：`KNOWN_UNIMPLEMENTED_OPERATIONS` 固定当前 19 条未实现操作并逐条写明原因；
    `KNOWN_UNDECLARED_STATUSES` 经 #462 收缩为空（原 16 个操作 / 23 个状态对），
    任何新增未声明状态都必须修复，不能加入旧基线。
    【#473】未实现基线不再以「未注册」为证据：门禁解析

@@ -38,6 +38,10 @@ from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema impo
     EVENT_TABLE,
     HEAD_TABLE,
 )
+from speechnexus_backend.speech.infrastructure.publications_postgres import PostgresPublications
+from speechnexus_backend.speech.infrastructure.voice_retirements_postgres import (
+    PostgresVoiceRetirements,
+)
 
 
 class _PoolDiagnostics(logging.Filter):
@@ -380,6 +384,7 @@ class BindingLifecycleRuntime:
         self._writer_url = settings.binding_lifecycle_database_url
         self._pool: SpeechPool | None = None
         self.provider: PostgresBindingLifecycle | None = None
+        self.voice_retirements: PostgresVoiceRetirements | None = None
         self._lifetime = threading.Lock()
         self._diagnostics: _PoolDiagnostics | None = None
 
@@ -404,6 +409,11 @@ class BindingLifecycleRuntime:
                 self._verify_principal(pool)
                 self.provider = PostgresBindingLifecycle(
                     pool, timeout_seconds=self._settings.binding_transaction_timeout_seconds
+                )
+                self.voice_retirements = PostgresVoiceRetirements(
+                    PostgresPublications(
+                        pool, timeout_seconds=self._settings.binding_transaction_timeout_seconds
+                    )
                 )
             except BaseException as error:
                 try:
@@ -505,6 +515,7 @@ class BindingLifecycleRuntime:
     def close(self) -> None:
         with self._lifetime:
             self.provider = None
+            self.voice_retirements = None
             try:
                 if self._pool is not None:
                     self._pool.close()

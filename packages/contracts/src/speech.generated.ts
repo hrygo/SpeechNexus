@@ -4103,7 +4103,7 @@ export interface operations {
       405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
-      503: components["responses"]["OperationNotImplemented"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   listPronunciationSets: {

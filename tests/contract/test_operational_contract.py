@@ -211,6 +211,7 @@ def test_backend_exposes_valid_operational_openapi() -> None:
         "/v1/nexus/capabilities",
         "/v1/nexus/voices",
         "/v1/nexus/voices/{voice_id}/revisions/{revision}",
+        "/v1/nexus/voices/{voice_id}/revisions/{revision}/retirements",
         "/v1/models",
         "/v1/models/{model}",
         "/v1/nexus/artifacts/{artifact_id}",

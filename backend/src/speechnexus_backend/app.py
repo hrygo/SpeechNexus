@@ -46,6 +46,7 @@ from speechnexus_backend.speech.application.readiness import (
 from speechnexus_backend.speech.application.speech_synthesis import SpeechSynthesis
 from speechnexus_backend.speech.application.transcription import Transcription
 from speechnexus_backend.speech.application.voice_catalogue import VoiceCatalogue
+from speechnexus_backend.speech.application.voice_retirements import VoiceRetirements
 from speechnexus_backend.speech.application.workspaces import WorkspaceService
 from speechnexus_backend.speech.infrastructure.gateway_job_cancellation import (
     GatewayJobCancellationStopper,
@@ -105,6 +106,7 @@ from speechnexus_backend.speech.interfaces.http.unimplemented import (
 from speechnexus_backend.speech.interfaces.http.voices import (
     create_voice_router,
     voice_http_contract,
+    voice_retirement_http_contract,
 )
 from speechnexus_backend.speech.interfaces.http.workspace_contract import workspace_http_contract
 from speechnexus_backend.speech.interfaces.http.workspaces import (
@@ -133,6 +135,7 @@ class _SpeechAPI(FastAPI):
                 profile_http_contract(),
                 pronunciation_http_contract(),
                 voice_http_contract(),
+                voice_retirement_http_contract(),
                 binding_http_contract(producer=self._binding_defaults_enabled),
             ):
                 surface = copy.deepcopy(contract)
@@ -177,6 +180,7 @@ def create_app(
     pronunciations: PronunciationReader | None = None,
     catalogue: ModelCatalogue | None = None,
     voices: VoiceCatalogue | None = None,
+    voice_retirements: VoiceRetirements | None = None,
     jobs: PublicJobs | None = None,
     job_confirmation: JobCancellationService | None = None,
     speech: SpeechSynthesis | None = None,
@@ -339,6 +343,15 @@ def create_app(
             return binding_lifecycle
         return binding_lifecycle_runtime.provider if binding_lifecycle_runtime is not None else None
 
+    def get_voice_retirements() -> VoiceRetirements | None:
+        if voice_retirements is not None:
+            return voice_retirements
+        return (
+            binding_lifecycle_runtime.voice_retirements
+            if binding_lifecycle_runtime is not None
+            else None
+        )
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with AsyncExitStack() as resources:
@@ -436,7 +449,7 @@ def create_app(
     app.include_router(create_asset_router(lambda: asset_service))
     app.include_router(create_artifact_router(get_artifacts))
     app.include_router(create_model_router(get_catalogue, capability_policy))
-    app.include_router(create_voice_router(get_voices))
+    app.include_router(create_voice_router(get_voices, get_voice_retirements))
     app.include_router(
         create_job_router(
             get_jobs,

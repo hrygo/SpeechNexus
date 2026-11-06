@@ -519,7 +519,7 @@ paths:
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
         "503":
-          $ref: "#/components/responses/OperationNotImplemented"
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/nexus/pronunciation-sets:
     get:
       tags: [voices]

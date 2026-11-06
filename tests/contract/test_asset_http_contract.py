@@ -57,6 +57,7 @@ def test_packaged_http_surface_is_closed_and_matches_real_operations() -> None:
         "/v1/nexus/capabilities",
         "/v1/nexus/voices",
         "/v1/nexus/voices/{voice_id}/revisions/{revision}",
+        "/v1/nexus/voices/{voice_id}/revisions/{revision}/retirements",
         "/v1/models",
         "/v1/models/{model}",
         "/v1/nexus/jobs",

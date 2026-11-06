@@ -38,6 +38,7 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.publications_sql import (
     append_publication,
     find_publication,
+    find_retirement,
     list_publications,
     retire_publication,
 )
@@ -379,6 +380,28 @@ class PostgresPublications:
         return self._run(
             lambda cursor: find_publication(cursor, kind, object_id, revision), read_only=True
         )
+
+    def retirement(
+        self, kind: PublicationKind, object_id: str, revision: int
+    ) -> dict[str, Any] | None:
+        """Return the stored tombstone, including its mode and reason."""
+        return self._run(
+            lambda cursor: find_retirement(cursor, kind, object_id, revision), read_only=True
+        )
+
+    def clock_us(self) -> int:
+        """Read the database clock so a tombstone never invents a local time."""
+
+        def operation(cursor: _Cursor) -> int:
+            cursor.execute(
+                "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp())*1000000 AS BIGINT) AS t"
+            )
+            rows = cursor.fetchall()
+            if len(rows) != 1:
+                raise PublicationUnavailableError
+            return int(rows[0]["t"])
+
+        return self._run(operation, read_only=True)
 
     def list_kind(self, kind: PublicationKind) -> list[Publication]:
         return self._run(lambda cursor: list_publications(cursor, kind), read_only=True)

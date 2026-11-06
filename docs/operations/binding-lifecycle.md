@@ -153,4 +153,4 @@ HTTP ASGI 请求覆盖：退役后 `/v1/models` 为空且 ETag 变化、新 Job 
 在途 Job 的固定配置不变、回滚到 revision 1 后目录恢复、重复/未知/CAS 冲突、
 最小权限启动及审计事件写入。它不证明真实部署网络、真实引擎、容量或生产资格。
 
-voice 有独立的[内建声音资格与发布路径](builtin-voice-qualification.md)，可在满足资格条件后持久发布固定 revision；不能将它等同于 binding 的管理生命周期。`retireVoiceRevision` 仍是语音契约声明，voice 的退役 / 激活能力与其他声音来源必须分别核对实现和验收，不能从 binding 路由或内建声音发布推断已完成。
+voice 有独立的[内建声音资格与发布路径](builtin-voice-qualification.md)，可在满足资格条件后持久发布固定 revision；不能将它等同于 binding 的管理生命周期。`retireVoiceRevision` 已实现 `retire`：它复用本页的 publication writer 写入 `speech_publication_retirements`，写作与读取证据见[契约一致性审计 §3.3](contract-conformance-audit.md#33-490-新增-retirevoicerevisionretire)。`disable` 仍返回 422 `voice_disable_unsupported`，因为不存在按 `voice_revision_id` 捕获在飞 target 的协调路径；不能从 binding disable 或内建声音发布推断 voice disable 已完成。

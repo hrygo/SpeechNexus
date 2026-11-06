@@ -1,33 +1,61 @@
 # 公开语音面契约一致性审计
 
-审计对象：`contracts/speech-openapi.yaml` `0.1.0.dev4` 与 `backend/src/speechnexus_backend/speech/interfaces/http/` 的 FastAPI 实现。
-基线：`origin/main` `62ae4805`，分支 `codex/contract-conformance-audit`。
+审计对象：`contracts/speech-openapi.yaml`（审计基线版本 `0.1.0.dev4`）与
+`backend/src/speechnexus_backend/speech/interfaces/http/` 的 FastAPI 实现。
+审计基线：`origin/main` `62ae4805`，分支 `codex/contract-conformance-audit`。
 审计时间：2026-11-06（Asia/Shanghai）。审计为只读：不改产品代码、不改契约。
 
-> 当前可重复门禁见 §10。`#432` 实现了 `retryJob`、`streamJobEvents`，`#442/#443` 实现了
-> `listVoices`、`getVoiceRevision`；契约已到 `0.1.0.dev6`，因此 §6 的 25 条未实现操作在当前实现上
-> 收敛为 21 条。
+**引用与结论复核**：2026-11-06 18:00（Asia/Shanghai），基线 `3951718e`（`codex/slice-469`，与当日 `origin/main` 同 commit）。
+复核范围：`jobs.py` / `job_errors.py` / `app.py` 的 8 条漂移引用及其结论（§11）、受后续实现影响的计数与结论（§1、§3.1、§6.1、§9），
+以及全部契约行号引用（改为操作/路径锚点）。
+
+引用约定：
+
+- 会随实现演进的引用写「仓库根相对路径::符号」，符号不随行号漂移；本次复核涉及的 jobs/app 引用已全部改为符号，
+  其余行号引用在复核基线仍指向所述代码，保留用于精确取证。
+- 契约引用写 `contracts/speech-openapi.yaml` 的 `::<operationId>` 或 `::<路径>`，不写行号。
+- 契约版本以**本文件所在 commit** 的 `contracts/speech-openapi.yaml` 为准。复核基线时为 `0.1.0.dev6`
+  （#466 尚未合入；合入后版本随文件变化，本文不预写未来版本）。
+
+> 当前可重复门禁见 §10。§3–§8 保留 `62ae4805` 的审计基线事实；复核基线的差异以【复核 3951718e】标注，
+> 汇总见 §3.1（新增 4 个已实现操作）、§6.1（当前 21 条未实现操作）与 §11（8 条漂移引用逐条复核）。
 
 ## 1. 结论摘要
 
-- 契约声明 39 条路径、**42 个操作**；后端注册 **17 个**，**25 个未注册**。
-- 已实现的 17 个操作中，**4 个会返回契约未声明的状态码**：
+审计基线 `62ae4805`：契约声明 39 条路径、**42 个操作**；后端注册 **17 个**，**25 个未注册**。
+【复核 3951718e】`#432`（`retryJob`、`streamJobEvents`）与 `#442/#443`（`listVoices`、`getVoiceRevision`）已合入，
+后端注册 **21 个**、未注册 **21 个**；契约仍为 39 条路径、42 个操作、`0.1.0.dev6`。
+§3/§6 的表格保留基线的 17/25 划分，新增的 4 个操作在 §3.1 单独核算。
+
+- 已实现的 17 个基线操作中，**4 个会返回契约未声明的状态码**：
   `getArtifact` 的 304/503、`downloadArtifactContent` 的 304/416/503、`cancelJob` 的 400、`createTranscription` 的 404。
+  【复核 3951718e】仍成立；上述四处的 handler 与 `*_errors.py` 映射未变（见 §4）。
 - **25 个未注册操作**中，20 个返回框架默认 `404 {"detail":"Not Found"}`（错误体不符合 `ErrorResponse` 契约），
   `listJobs` 返回 `405 job_method_not_allowed`，`retryJob`/`streamJobEvents` 返回 `404 job_not_found`，
   `listPronunciationSets`/`createPronunciationRevision` 返回 `400 pronunciation_invalid_request`。
+  【复核 3951718e】该段是基线事实：`retryJob`/`streamJobEvents` 已注册，不再返回"路由不存在"的 `job_not_found`。
+  当前 21 个未注册操作中，18 个返回默认 404，`listJobs` 返回 405，两条集合级读音路由返回 400（§6.1）。
 - **401 在全表都是"声明未使用"**：公开语音处理器没有实现共享服务密钥校验（`docs/architecture/openai-compatibility.md:91`），
   源码中不存在任何 401 产生路径。
+  【复核 3951718e】仍成立：`backend/src/speechnexus_backend/speech/interfaces/http/artifacts.py::create_artifact_router`
+  的两处 401 仍只是 OpenAPI 响应声明；新增的 4 个操作同样只声明 401、不产生 401。
 - `createSpeech`/`createTranscription`/`createJob` 声明的 403、409、429 无产生路径；`listModels`、`retrieveModel`、
   `getCapabilities`、`getJob`、`cancelJob`、资产与制品读写均未声明 405，但框架会返回 405。
+  【复核 3951718e】仍成立；`createJob` 的 409 可经 `idempotency_conflict` 产生，§5.2 只把 403/429 列为无路径。
+  405 缺口另见 §3.1/§5.3。
 
 严重度最高的两条是消费者可直接触发的事故面：
 
-1. `GET /v1/nexus/voices`（`listVoices`）与 `GET /v1/nexus/voices/{voice_id}/revisions/{revision}` 未注册，
-   而工作台生产消费者 `backend/src/speechnexus_backend/workbench/infrastructure/public_voice_catalogue.py:31`
-   以 `_VOICES_PATH` 调用这两个路径（列表 `:163`、固定 revision `:181`）；404 被映射为 `VoiceCatalogueUnavailableError`（同文件 `:106-109`），工作台音色目录因此固定不可用。
+1. **【基线】** `GET /v1/nexus/voices`（`listVoices`）与 `GET /v1/nexus/voices/{voice_id}/revisions/{revision}`
+   未注册，而工作台生产消费者 `backend/src/speechnexus_backend/workbench/infrastructure/public_voice_catalogue.py::_VOICES_PATH`
+   以该常量调用这两个路径（列表 `PublicVoiceCatalogue.list_summaries`、固定 revision `PublicVoiceCatalogue.get_revision`）；
+   `PublicVoiceCatalogue._body` 把 404 映射为 `VoiceCatalogueUnavailableError`，工作台音色目录因此固定不可用。
+   **【复核 3951718e】已过期**：`#442/#443` 已注册两条 GET；未配置目录返回可重试
+   `503 voice_catalogue_unavailable`（运行时实测），非法请求返回 400，正常读取返回 200。
+   工作台消费者仍以同一路径消费，但不再得到 404；处置见 §9.1。
 2. `GET /v1/nexus/jobs`（`listJobs`）与 `POST /v1/nexus/jobs` 共用同一路径；未注册的 GET 得到 `405 job_method_not_allowed`，
    而契约给 `listJobs` 声明的是 200/400/401/503，消费者无法据状态码区分"未实现"与"方法不支持"。
+   【复核 3951718e】仍成立（运行时实测 405 `job_method_not_allowed`）。
 
 ## 2. 方法与证据边界
 
@@ -45,6 +73,11 @@
    `PYTHONPATH` 指向本工作树 `backend/src`、`packages/contracts/src`、`packages/media/src`；
    已确认 `speechnexus_backend` 与 `speechnexus_contracts` 均从工作树导入。
    本工作树无 `node_modules`，Node 消费者检查无法运行（见 §8）。
+6. **复核基线方法（3951718e）**：用 `scripts/dev-env/check-route-conformance.py` 对账当前路由与契约
+   （42 个操作、`known_unimplemented` 21 条、`known_status_gaps` 16 个操作，退出码 0）；
+   用 `create_app(...)` + `httpx.ASGITransport` 重跑关键探测（§7.1）；运行
+   `tests/unit/backend/test_public_job_http_surface.py`、`test_public_job_event_stream.py`、
+   `test_speech_voice_catalogue_http.py`、`test_workbench_public_voice_catalogue.py`（120 项通过）。
 
 **不在覆盖范围**：真实引擎执行与 200 音频/转写内容、对象存储真实读写、部署层反向代理/鉴权/限流、
 多实例并发下的 408/413/429 竞争窗口、WebSocket 升级（101）。
@@ -52,7 +85,7 @@
 ## 3. 已实现操作：声明 vs 可达
 
 "静态可达"由 handler 分支、错误映射表、中间件与全局处理器合并得出；"(+405)"表示框架对错误方法返回 405，
-多数路径契约并未声明该状态（见 §5.3）。
+多数路径契约并未声明该状态（见 §5.3）。本表是 `62ae4805` 的 17 个基线操作；复核基线新增的 4 个操作见 §3.1。
 
 | # | 操作 | 路由 | 契约声明 | 实现证据 | 静态可达 | 未声明返回 | 声明未使用 | 结论 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -65,19 +98,35 @@
 | 7 | getProfileRevision | GET /v1/nexus/profiles/{profile_id}/revisions/{revision} | 200,400,401,403,404,405,409,503 | `backend/src/speechnexus_backend/speech/interfaces/http/profile_publications.py:225` | 200,400,403,404,405,409,503 | — | 401 | 一致 |
 | 8 | listPublishedProfiles | GET /v2/nexus/profiles | 200,400,401,403,405,503 | `backend/src/speechnexus_backend/speech/interfaces/http/profile_publications.py:224` | 200,400,403,405,503 | — | 401 | 一致 |
 | 9 | getPronunciationRevision | GET /v1/nexus/pronunciation-sets/{pronunciation_id}/revisions/{revision} | 200,400,401,403,404,405,429,503 | `pronunciations.py:116` | 200,400,403,404,405,429,503 | — | 401 | 一致（隔离 PG 实测 200/404/429/503） |
-| 10 | createJob | POST /v1/nexus/jobs | 202,400,401,403,409,422,429,503 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:293-298` | 202,400,409,422,503 | — | 401,403,429 | 一致 |
-| 11 | getJob | GET /v1/nexus/jobs/{job_id} | 200,401,404,503 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:300-306` | 200,404,503 | — | 401 | 一致 |
-| 12 | cancelJob | POST /v1/nexus/jobs/{job_id}/cancellations | 200,202,401,404,409,503 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:308-334` | 200,202,400,404,409,503 | **400** | 401 | 未声明返回 |
+| 10 | createJob | POST /v1/nexus/jobs | 202,400,401,403,409,422,429,503 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py::create_job_router.create_job`、`_create` | 202,400,409,422,503 | — | 401,403,429 | 一致 |
+| 11 | getJob | GET /v1/nexus/jobs/{job_id} | 200,401,404,503 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py::create_job_router.get_job`、`_read` | 200,404,503 | — | 401 | 一致 |
+| 12 | cancelJob | POST /v1/nexus/jobs/{job_id}/cancellations | 200,202,401,404,409,503 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py::create_job_router.cancel_job`、`_cancel` | 200,202,400,404,409,503 | **400** | 401 | 未声明返回 |
 | 13 | uploadAsset | POST /v1/nexus/assets | 201,400,401,403,404,408,409,410,413,422,429,503 | `backend/src/speechnexus_backend/speech/interfaces/http/assets.py:56-142` | 201,400,403,404,408,409,410,413,422,429,503 | — | 401 | 一致（404 仅有间接路径） |
 | 14 | getAsset | GET /v1/nexus/assets/{asset_id} | 200,401,403,404,410,503 | `backend/src/speechnexus_backend/speech/interfaces/http/assets.py:144-158` | 200,403,404,410,503 | — | 401 | 一致 |
 | 15 | downloadAssetContent | GET /v1/nexus/assets/{asset_id}/content | 200,206,401,403,404,410,416,503 | `backend/src/speechnexus_backend/speech/interfaces/http/assets.py:160-215` | 200,206,403,404,410,416,503 | — | 401 | 一致 |
 | 16 | getArtifact | GET /v1/nexus/artifacts/{artifact_id} | 200,401,404,410 | `backend/src/speechnexus_backend/speech/interfaces/http/artifacts.py:88-114` | 200,304,404,410,503 | **304,503** | 401 | 未声明返回 |
 | 17 | downloadArtifactContent | GET /v1/nexus/artifacts/{artifact_id}/content | 200,206,401,404,410 | `backend/src/speechnexus_backend/speech/interfaces/http/artifacts.py:116-189` | 200,206,304,404,410,416,503 | **304,416,503** | 401 | 未声明返回 |
 
-契约行号：路径分别始于 `contracts/speech-openapi.yaml:38`(models)、`:75`(model)、`:117`(transcriptions)、
-`:181`(speech)、`:252`(capabilities)、`:289`/`:323`/`:360`(profiles)、`:553`(pronunciation read)、
-`:604`(jobs POST)、`:682`(jobs GET)、`:717`(job)、`:741`(cancellations)、`:942`(assets)、`:1003`/`:1031`(asset)、
-`:1079`/`:1103`(artifact)。
+契约锚点：以下均指 `contracts/speech-openapi.yaml` 中对应 operationId 的定义 —— `listModels`、`retrieveModel`、
+`createTranscription`、`createSpeech`、`getCapabilities`、`listProfiles`/`getProfileRevision`/`listPublishedProfiles`、
+`getPronunciationRevision`、`createJob`、`getJob`、`cancelJob`、`uploadAsset`、`getAsset`/`downloadAssetContent`、
+`getArtifact`/`downloadArtifactContent`。
+
+### 3.1 复核基线新增的已实现操作（4 条）
+
+`#432` 与 `#442/#443` 合入后新增注册的 4 个操作。契约声明取自本文件所在 commit 的
+`contracts/speech-openapi.yaml`（`0.1.0.dev6`）；可达性由 handler 分支、错误映射与运行时探测（§7.1）合并得出。
+405 仍按 §5.3 单列。
+
+| # | 操作 | 路由 | 契约声明 | 实现锚点 | 静态可达 | 未声明返回 | 声明未使用 | 结论 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 18 | retryJob | POST /v1/nexus/jobs/{job_id}/retries | 202,400,401,404,409,422,503 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py::create_job_router.retry_job`、`_retry` | 202,400,404,409,422,503 | 405 | 401 | 一致（405 见 §5.3） |
+| 19 | streamJobEvents | GET /v1/nexus/jobs/{job_id}/events | 200,400,401,404,410,503 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py::create_job_router.stream_job_events`、`_open_stream`、`_event_stream` | 200,400,404,503 | 405 | 401,410 | 声明未使用 410；405 见 §5.3 |
+| 20 | listVoices | GET /v1/nexus/voices | 200,400,401,503 | `backend/src/speechnexus_backend/speech/interfaces/http/voices.py::create_voice_router.list_voices`、`backend/src/speechnexus_backend/speech/interfaces/http/voices.py::create_voice_router.read` | 200,400,503 | 405 | 401 | 一致（405 见 §5.3） |
+| 21 | getVoiceRevision | GET /v1/nexus/voices/{voice_id}/revisions/{revision} | 200,400,401,404,503 | `backend/src/speechnexus_backend/speech/interfaces/http/voices.py::create_voice_router.get_revision`、`backend/src/speechnexus_backend/speech/interfaces/http/voices.py::create_voice_router.read` | 200,400,404,503 | 405 | 401 | 一致（405 见 §5.3） |
+
+`streamJobEvents` 的 `410`（`event_history_expired`）在实现中没有产生路径：
+`_open_stream` 只在任务不存在或不可读时返回 404/503，成功分支是 200 事件流；实现中没有 410 分支。这是本次复核新发现的一处"声明未使用"。
 
 ## 4. 未声明返回：逐条证据
 
@@ -85,26 +134,28 @@
 
 - 映射：`transcriptions.py:465-466` 将 `TranscriptionModelNotFoundError` 映射为 `model_not_found`；`transcription_errors.py:33` 给出 404。
 - 产生路径：`application/transcription.py:281` 在模型未发布时抛出该异常。
-- 契约：`contracts/speech-openapi.yaml:118` 起该操作只声明 200/400/401/403/409/413/422/429/503/504。
+- 契约：`contracts/speech-openapi.yaml::createTranscription` 只声明 200/400/401/403/409/413/422/429/503/504。
 - 运行时：P10 返回 `404 {"code":"model_not_found"}`（§7）。
 
 ### 4.2 cancelJob → 400（契约只声明 200/202/401/404/409/503）
 
-- `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:316-317`：`Idempotency-Key` 不合法时返回 `job_error("invalid_job_request")`；
-  `job_errors.py:9` 定义为 400。
-- 运行时：P9，`Idempotency-Key: short` → `400 invalid_job_request`。
+- `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py::create_job_router.cancel_job` 与 `_idempotency_key`：
+  `Idempotency-Key` 不合法时返回 `job_error("invalid_job_request")`；`backend/src/speechnexus_backend/speech/interfaces/http/job_errors.py::_ERRORS`（`invalid_job_request`） 定义为 400。
+  【复核 3951718e】成立：键校验先于服务调用，非法键仍返回 400。
+- 运行时：P9，`Idempotency-Key: short` → `400 invalid_job_request`；复核基线复现见 §7.1 R3。
 - 同族问题：`createJob` 的同类错误合法（契约声明了 400），但取消路径漏声明，消费者按 200/202/404/409 分支处理会落入未知状态。
 
 ### 4.3 getArtifact → 304（契约未声明 304）
 
 - `backend/src/speechnexus_backend/speech/interfaces/http/artifacts.py:112-113`：`If-None-Match` 命中时返回 `Response(status_code=304)`。
 - 运行时：A2，先取 200 的 `ETag` 再回送 `If-None-Match`，实测 304 且无响应体。
-- 对照：`listModels`/`retrieveModel`/`getCapabilities` 明确声明 304（`speech-openapi.yaml:38`/`:75`/`:252`），制品两条 GET 未声明，
-  说明是遗漏而非统一约定。
+- 对照：`listModels`/`retrieveModel`/`getCapabilities` 明确声明 304（`contracts/speech-openapi.yaml` 对应操作），
+  制品两条 GET 未声明，说明是遗漏而非统一约定。
 
 ### 4.4 getArtifact / downloadArtifactContent → 503（契约未声明 503）
 
-- `backend/src/speechnexus_backend/speech/interfaces/http/artifacts.py:103-104,132-133`：服务未装配时返回 `artifact_service_unavailable`；`artifact_errors.py:16,21` 均为 503。
+- `backend/src/speechnexus_backend/speech/interfaces/http/artifacts.py:103-104,132-133`：服务未装配时返回 `artifact_service_unavailable`；
+  `artifact_errors.py:16,21` 均为 503。
 - 运行时：P2/P2b（未配置制品服务）实测 503。
 - 契约对这两条操作只声明 200/206/401/404/410，没有任何 5xx。
 
@@ -113,15 +164,18 @@
 - `backend/src/speechnexus_backend/speech/interfaces/http/artifacts.py:146-156`：`artifact_range_not_satisfiable` 补 `Content-Range: bytes */<size>` 后返回 416；
   `artifact_errors.py:11` 定义为 416。
 - 运行时：A3（`Range: bytes=0-1` + stub 抛该错误）实测 416。
-- 对照：`downloadAssetContent` 声明了 416（`speech-openapi.yaml:1031`），制品内容路径漏声明。
+- 对照：`downloadAssetContent` 声明了 416（`contracts/speech-openapi.yaml::downloadAssetContent`），制品内容路径漏声明。
 
 ## 5. 声明未使用与框架层偏差
 
 ### 5.1 401：全表未使用
 
-公开语音处理器不校验共享服务密钥，源码中没有 401 的响应分支：唯一的 401 出现是 `backend/src/speechnexus_backend/speech/interfaces/http/artifacts.py:95,124` 的 OpenAPI 响应声明与工作台客户端的响应分类（`workbench/infrastructure/public_speech_render_jobs.py:83`），
+公开语音处理器不校验共享服务密钥，源码中没有 401 的响应分支：唯一的 401 出现是
+`backend/src/speechnexus_backend/speech/interfaces/http/artifacts.py:95,124` 的 OpenAPI 响应声明与工作台客户端的响应分类
+（`workbench/infrastructure/public_speech_render_jobs.py:83`），
 `docs/architecture/openai-compatibility.md:91` 已明确"当前公开语音处理器没有实现该密钥的验证"。
-17 条已实现操作全部声明 401，但均不可达；消费者不能把 401 当作访问保护已生效的证据。
+17 条基线已实现操作全部声明 401，但均不可达；消费者不能把 401 当作访问保护已生效的证据。
+【复核 3951718e】仍成立；新增的 4 个操作同样只声明 401（§3.1）。
 
 ### 5.2 403 / 409 / 429：仅部分路径可达
 
@@ -129,43 +183,55 @@
 | --- | --- | --- | --- |
 | createSpeech | 403,409,429 | 否 | `speech.py:340-443` 无对应分支，`/v1/audio/speech` 无入口中间件 |
 | createTranscription | 403,409,429 | 否 | `transcriptions.py:442-501` 无对应分支 |
-| createJob | 403,429 | 否 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:171-228` 无 host/origin 检查、无限流 |
+| createJob | 403,429 | 否 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py::_create` 无 host/origin 检查、无限流 |
 | listProfiles / getProfileRevision / listPublishedProfiles / getPronunciationRevision | 403（+429 仅读音） | 是 | `profile_ingress.py:67-97`、`draft_ingress.py:64-67`、`pronunciations.py:146-149,167-169` |
 | uploadAsset | 403,429（另 408,413） | 是 | `asset_ingress.py:52-73,98-99` |
 
+【复核 3951718e】结论未变：`_create` 仍无 403/429 分支；`createJob` 的 409 仅由 `idempotency_conflict` 产生，
+不属于本表列出的"无产生路径"项。
+
 ### 5.3 405：多数路径未声明
 
-405 由框架对错误方法产生，经 `backend/src/speechnexus_backend/app.py:436-497` 的全局处理器改写为稳定错误体（assets/artifacts/workspaces/jobs/speech 五个前缀），
-其余前缀保留 FastAPI 默认 `{"detail":"..."}`。
+405 由框架对错误方法产生，经 `backend/src/speechnexus_backend/app.py::create_app.asset_http_error` 的全局处理器改写为稳定错误体
+（assets/artifacts/workspaces/jobs/speech 五个前缀），其余前缀保留 FastAPI 默认 `{"detail":"..."}`。
 
 - 已声明 405：`createSpeech`、三个 profiles 操作、`getPronunciationRevision`。
 - 未声明但可产生 405：`listModels`、`retrieveModel`、`getCapabilities`、`createTranscription`、
   `createJob`、`getJob`、`cancelJob`、`uploadAsset`、`getAsset`、`downloadAssetContent`、`getArtifact`、
-  `downloadArtifactContent`。
+  `downloadArtifactContent`、`retryJob`、`streamJobEvents`、`listVoices`、`getVoiceRevision`。
 - 错误体不一致：`/v1/audio/transcriptions`、`/v1/models`、`/v1/nexus/capabilities` 等无前缀处理器的路径返回
   `{"detail":"Method Not Allowed"}`（运行时 P4），不含 `error.code/request_id`，不符合 `ErrorResponse`。
+- 【复核 3951718e】五前缀与错误体结论未变；新增的 4 个操作同样只产生未声明的 405（§3.1）。
 
 ### 5.4 全局 404 语义被前缀处理器改写
 
-`backend/src/speechnexus_backend/app.py:475-485` 把 `/v1/nexus/jobs/*` 下的任意 404 改写为 `job_not_found`。因此未注册的
-`retryJob`（`speech-openapi.yaml:808`）与 `streamJobEvents`（`:839`）返回 `404 job_not_found` 而不是"路由不存在"，运行时 J2/J3 已复现。
-`/v1/nexus/pronunciation-sets` 前缀被 `PronunciationIngress` 接管（`pronunciations.py:136-159`），未注册的集合级
-GET/POST 在匹配失败时返回 `400 pronunciation_invalid_request`，运行时实测见 §7 的 U4/U5。
+`backend/src/speechnexus_backend/app.py::create_app.asset_http_error` 的 `JOB_PREFIX` 分支把 `/v1/nexus/jobs/*` 下的任意 404
+改写为 `job_not_found`。因此未注册子路径（如 `/v1/nexus/jobs/{job_id}/unknown-subpath`）返回 `404 job_not_found`
+而不是"路由不存在"（复核基线实测 §7.1 R6）。
 
-## 6. 未实现操作（25 条）
+【复核 3951718e】**部分过期**：`retryJob`（`contracts/speech-openapi.yaml::retryJob`）与 `streamJobEvents`
+（`contracts/speech-openapi.yaml::streamJobEvents`）已由 `#432` 注册，其 `404 job_not_found` 现在表示任务不存在，不再是"路由不存在"；
+改写本身仍作用于未注册子路径。
 
-契约声明但后端未注册。运行时列给出当前真实响应（同一应用、无服务依赖）。
+`/v1/nexus/pronunciation-sets` 前缀被 `PronunciationIngress` 接管（`backend/src/speechnexus_backend/speech/interfaces/http/pronunciations.py::PronunciationIngress.__call__`），
+未注册的集合级 GET/POST 在匹配失败时返回 `400 pronunciation_invalid_request`，复核基线实测见 §7.1 R9。
+
+## 6. 未实现操作（25 条，审计基线）
+
+审计基线 `62ae4805` 下契约声明但后端未注册的操作。运行时列是基线实测（同一应用、无服务依赖）。
+【复核 3951718e】`listVoices`/`getVoiceRevision`/`retryJob`/`streamJobEvents` 已实现并移出本表（§3.1），
+当前剩余 21 条见 §6.1。本表保留基线编号、基线契约声明与基线响应；已实现行在响应列标注，当前声明见 §3.1。
 
 | # | 操作 | 路由 | 契约声明 | 运行时响应 |
 | --- | --- | --- | --- | --- |
-| 18 | listVoices | GET /v1/nexus/voices | 200,401,503 | 404 默认 `{"detail":"Not Found"}` |
-| 19 | getVoiceRevision | GET /v1/nexus/voices/{voice_id}/revisions/{revision} | 200,401,404,503 | 404 默认 |
+| 18 | listVoices | GET /v1/nexus/voices | 200,401,503 | **【已实现】** 见 §3.1 |
+| 19 | getVoiceRevision | GET /v1/nexus/voices/{voice_id}/revisions/{revision} | 200,401,404,503 | **【已实现】** 见 §3.1 |
 | 20 | retireVoiceRevision | POST /v1/nexus/voices/{voice_id}/revisions/{revision}/retirements | 200,400,401,404,409,422 | 404 默认 |
 | 21 | listPronunciationSets | GET /v1/nexus/pronunciation-sets | 200,401,503 | **400 pronunciation_invalid_request** |
 | 22 | createPronunciationRevision | POST /v1/nexus/pronunciation-sets | 201,400,401,409,422,429 | **400 pronunciation_invalid_request** |
 | 23 | listJobs | GET /v1/nexus/jobs | 200,400,401,503 | **405 job_method_not_allowed** |
-| 24 | retryJob | POST /v1/nexus/jobs/{job_id}/retries | 202,401,404,409,422 | 404 job_not_found |
-| 25 | streamJobEvents | GET /v1/nexus/jobs/{job_id}/events | 200,401,404,410 | 404 job_not_found（非 text/event-stream） |
+| 24 | retryJob | POST /v1/nexus/jobs/{job_id}/retries | 202,401,404,409,422 | **【已实现】** 见 §3.1 |
+| 25 | streamJobEvents | GET /v1/nexus/jobs/{job_id}/events | 200,401,404,410 | **【已实现】** 见 §3.1 |
 | 26 | getOperation | GET /v1/nexus/operations/{operation_id} | 200,401,404,503 | 404 默认 |
 | 27 | cancelOperation | POST /v1/nexus/operations/{operation_id}/cancellations | 200,202,401,404,409 | 404 默认 |
 | 28 | createRealtimeSession | POST /v1/nexus/realtime/sessions | 201,400,401,403,409,422,429,503 | 404 默认 |
@@ -184,22 +250,55 @@ GET/POST 在匹配失败时返回 `400 pronunciation_invalid_request`，运行�
 | 41 | speechCreateDeletion | POST /v1/nexus/deletions | 202,404,409,422 | 404 默认 |
 | 42 | speechGetDeletion | GET /v1/nexus/deletions/{deletion_id} | 200,404,409,422 | 404 默认 |
 
-契约行号：`:397`(voices)、`:427`/`:452`(voice revision/retirement)、`:492`/`:515`(pronunciation sets)、
-`:682`(jobs list)、`:808`(retries)、`:839`(events)、`:879`/`:903`(operations)、`:1145`-`:1259`(realtime)、
-`:1320`-`:1561`(voice creation)、`:1610`-`:1704`(deletions)。
+契约锚点（`contracts/speech-openapi.yaml`）：`listVoices`、`getVoiceRevision`/`retireVoiceRevision`、
+`listPronunciationSets`/`createPronunciationRevision`、`listJobs`、`retryJob`、`streamJobEvents`、
+`getOperation`/`cancelOperation`、`createRealtimeSession`/`getRealtimeSession`/`cancelRealtimeSession`/`connectRealtime`、
+`createVoiceDesign` 至 `publishVoiceDraftRevision`（9 条）、`speechCreateDeletionPlan`/`speechCreateDeletion`/`speechGetDeletion`。
 
-这些缺失不是"契约先行、消费者未接入"：`public_voice_catalogue.py:31` 已在生产装配路径上调用 `/v1/nexus/voices`，
-`public_speech_render_jobs.py:69,91` 调用 `/v1/nexus/jobs` 与 `GET /v1/nexus/jobs/{job_id}`（后者已实现）。
+这些缺失不是"契约先行、消费者未接入"：`backend/src/speechnexus_backend/workbench/infrastructure/public_voice_catalogue.py::_VOICES_PATH`
+是生产消费者的路径常量，`PublicVoiceCatalogue.list_summaries`/`get_revision` 据此调用 `/v1/nexus/voices`；
+`backend/src/speechnexus_backend/workbench/infrastructure/public_speech_render_jobs.py::PublicSpeechRenderJobs.submit` 调用 `POST /v1/nexus/jobs`，
+`backend/src/speechnexus_backend/workbench/infrastructure/public_speech_render_jobs.py::PublicSpeechRenderJobs.read_job` 调用 `GET /v1/nexus/jobs/{job_id}`（后者已实现）。
 `docs/archive/plans/2026-10-24-team-c-goal.md:78` 也记录了"音色运行时尚未实现这些路由"这一已知缺口。
 
-## 7. 运行时证据
+### 6.1 复核基线：当前未实现操作（21 条）
+
+`3951718e` 下契约声明但后端未注册的操作。编号沿用 §6；运行时响应由同一 `create_app(settings=...)` 应用实测
+（§7.1），契约声明沿用 §6 表中对应行。`retryJob`/`streamJobEvents`/`listVoices`/`getVoiceRevision` 已移出本表。
+
+| # | 操作 | 路由 | 运行时响应 |
+| --- | --- | --- | --- |
+| 20 | retireVoiceRevision | POST /v1/nexus/voices/{voice_id}/revisions/{revision}/retirements | 404 默认 |
+| 21 | listPronunciationSets | GET /v1/nexus/pronunciation-sets | **400 pronunciation_invalid_request** |
+| 22 | createPronunciationRevision | POST /v1/nexus/pronunciation-sets | **400 pronunciation_invalid_request** |
+| 23 | listJobs | GET /v1/nexus/jobs | **405 job_method_not_allowed** |
+| 26 | getOperation | GET /v1/nexus/operations/{operation_id} | 404 默认 |
+| 27 | cancelOperation | POST /v1/nexus/operations/{operation_id}/cancellations | 404 默认 |
+| 28 | createRealtimeSession | POST /v1/nexus/realtime/sessions | 404 默认 |
+| 29 | getRealtimeSession | GET /v1/nexus/realtime/sessions/{session_id} | 404 默认 |
+| 30 | cancelRealtimeSession | POST /v1/nexus/realtime/sessions/{session_id}/cancellations | 404 默认 |
+| 31 | connectRealtime | GET /v1/realtime | 404 默认（无 WebSocket 路由） |
+| 32 | createVoiceDesign | POST /v1/nexus/voice-designs | 404 默认 |
+| 33 | createVoiceClone | POST /v1/nexus/voice-clones | 404 默认 |
+| 34 | getVoiceDraft | GET /v1/nexus/voice-drafts/{draft_id} | 404 默认 |
+| 35 | updateVoiceDraftMetadata | PATCH /v1/nexus/voice-drafts/{draft_id} | 404 默认 |
+| 36 | generateVoiceDraftRevision | POST /v1/nexus/voice-drafts/{draft_id}/generations | 404 默认 |
+| 37 | createVoicePreview | POST /v1/nexus/voice-drafts/{draft_id}/previews | 404 默认 |
+| 38 | validateVoiceDraftRevision | POST /v1/nexus/voice-drafts/{draft_id}/validations | 404 默认 |
+| 39 | publishVoiceDraftRevision | POST /v1/nexus/voice-drafts/{draft_id}/publications | 404 默认 |
+| 40 | speechCreateDeletionPlan | POST /v1/nexus/deletion-plans | 404 默认 |
+| 41 | speechCreateDeletion | POST /v1/nexus/deletions | 404 默认 |
+| 42 | speechGetDeletion | GET /v1/nexus/deletions/{deletion_id} | 404 默认 |
+
+## 7. 运行时证据（审计基线 62ae4805）
 
 装配：`create_app(settings=...)`，只注入必要依赖；`Host: localhost` 以通过入口的 Host 校验。
 探测脚本位于工作树外的 `/tmp/sn-audit-probe/`，不进入仓库。
+本表是 `62ae4805` 的基线实测；其中 P1、J2、J3、U1 涉及后续已实现或已变更的路由，复核基线结果见 §7.1 与 §3.1/§6.1。
 
 | 编号 | 请求 | 实测 | 说明 |
 | --- | --- | --- | --- |
-| P1 | GET /v1/nexus/voices | 404 `{"detail":"Not Found"}` | 未注册；错误体不符合契约 |
+| P1 | GET /v1/nexus/voices | 404 `{"detail":"Not Found"}` | 未注册；错误体不符合契约（复核基线已变为 503，见 §7.1 R7） |
 | P2 | GET /v1/nexus/artifacts/artifact-demo | 503 `artifact_service_unavailable` | 契约未声明 503 |
 | P2b | GET /v1/nexus/artifacts/artifact-demo/content | 503 `artifact_service_unavailable` | 同上 |
 | P3 | PUT /v1/nexus/jobs | 405 `job_method_not_allowed` | createJob 未声明 405 |
@@ -215,11 +314,11 @@ GET/POST 在匹配失败时返回 `400 pronunciation_invalid_request`，运行�
 | A3 | GET /v1/nexus/artifacts/artifact-demo/content，`Range: bytes=0-1` | 416 `artifact_range_not_satisfiable` | **契约未声明 416** |
 | A4 | GET /v1/nexus/artifacts/missing-one | 404 `artifact_not_found` | 契约声明 404 |
 | J1 | GET /v1/nexus/jobs | 405 `job_method_not_allowed` | **listJobs 未实现**，与 POST 同路径 |
-| J2 | POST /v1/nexus/jobs/job-demo/retries | 404 `job_not_found` | 未实现；错误码误导为"任务不存在" |
-| J3 | GET /v1/nexus/jobs/job-demo/events | 404 `job_not_found` | 未实现；SSE 消费者拿到 JSON |
+| J2 | POST /v1/nexus/jobs/job-demo/retries | 404 `job_not_found` | 未实现；错误码误导为"任务不存在"（复核基线已注册，见 §7.1 R4） |
+| J3 | GET /v1/nexus/jobs/job-demo/events | 404 `job_not_found` | 未实现；SSE 消费者拿到 JSON（复核基线已注册，见 §7.1 R5） |
 | R1 | GET /v1/nexus/realtime/sessions/s-1 | 404 `{"detail":"Not Found"}` | 未注册 |
 | V1 | POST /v1/nexus/voice-drafts/d-1/previews | 404 `{"detail":"Not Found"}` | 未注册 |
-| U1 | GET /v1/nexus/voices/voice-1/revisions/2 | 404 默认 | 未注册 |
+| U1 | GET /v1/nexus/voices/voice-1/revisions/2 | 404 默认 | 未注册（复核基线已变为 503/200，见 §3.1） |
 | U2 | POST .../retirements | 404 默认 | 未注册 |
 | U3 | GET /v1/nexus/operations/op-1 | 404 默认 | 未注册 |
 | U4 | GET /v1/nexus/pronunciation-sets | **400 pronunciation_invalid_request** | 未注册集合级路由被入口中间件改写 |
@@ -229,6 +328,23 @@ GET/POST 在匹配失败时返回 `400 pronunciation_invalid_request`，运行�
 隔离 PG 正向对照：`SPEECHNEXUS_TEST_DATABASE_URL=postgresql:///sn_profile_it` 下
 `tests/integration/test_pronunciation_http.py` 13 项通过（`-k "not generated_consumers"`），
 覆盖该路由的 200/404/429/503；说明"已声明且已实现"的路由确实按契约工作。
+
+### 7.1 复核基线重跑的关键探测（3951718e）
+
+装配与 §7 相同：`create_app(settings=Settings(...))` + `httpx.ASGITransport`，`Host: localhost`。
+需要命中"任务不存在"分支时注入最小 stub 服务（`retry`/`get`/`events` 抛 `PublicJobNotFoundError`）。
+
+| 编号 | 请求 | 实测 | 用途 |
+| --- | --- | --- | --- |
+| R1 | GET /v1/nexus/jobs | 405 `job_method_not_allowed` | `listJobs` 仍未注册（§1 第 2 条成立） |
+| R2 | PUT /v1/nexus/jobs | 405 `job_method_not_allowed` | `createJob` 的未声明 405 仍存在 |
+| R3 | POST /v1/nexus/jobs/job-demo/cancellations，`Idempotency-Key: short` | 400 `invalid_job_request` | `cancelJob` 未声明 400 仍成立（§4.2） |
+| R4 | POST /v1/nexus/jobs/job-demo/retries（stub 抛 not found） | 404 `job_not_found` | 路由已注册；404 仅在任务不存在时返回 |
+| R5 | GET /v1/nexus/jobs/job-demo/events（stub 抛 not found） | 404 `job_not_found` | 同上；不再是"路由不存在" |
+| R6 | GET /v1/nexus/jobs/job-demo/unknown-subpath | 404 `job_not_found` | 全局 404 改写仍作用于未注册子路径（§5.4） |
+| R7 | GET /v1/nexus/voices | 503 `voice_catalogue_unavailable`（retryable） | 已注册；§1 第 1 条已过期 |
+| R8 | GET /v1/nexus/voices/voice-demo-1/revisions/2 | 503 `voice_catalogue_unavailable` | 同上 |
+| R9 | GET /v1/nexus/pronunciation-sets（`Host: localhost`） | 400 `pronunciation_invalid_request` | §5.4 的集合级改写仍成立 |
 
 ## 8. 未验证项
 
@@ -245,6 +361,7 @@ GET/POST 在匹配失败时返回 `400 pronunciation_invalid_request`，运行�
 ## 9. 处置优先级
 
 1. **P0**：为 `listVoices`/`getVoiceRevision` 补实现，或从契约与工作台消费者中撤下；当前工作台音色目录必然 503。
+   【复核 3951718e】**已完成**：`#442/#443` 补齐两条 GET；未配置目录为可重试 503，正常读取 200（§9.1）。
 2. **P0**：让未实现路由返回可辨识的稳定错误（而非默认 404 detail、405、400 或 `job_not_found`），
    避免消费者把"未实现"误判为"参数错误/资源不存在"。
 3. **P1**：补齐 `getArtifact`/`downloadArtifactContent` 的 304、416、503 声明；补齐 `cancelJob` 的 400、
@@ -254,6 +371,9 @@ GET/POST 在匹配失败时返回 `400 pronunciation_invalid_request`，运行�
 5. **P2**：决定 401 的处置：实现共享服务密钥校验，或从公开契约移除 401 并把"无鉴权"写进部署前置条件。
 6. **P2**：清理 `createSpeech`/`createTranscription` 的 403/409/429 与 `createJob` 的 403/429 声明（无产生路径），
    或补上对应入口能力。
+
+【复核 3951718e】§9 的第 1 项已完成；第 2–6 项仍成立，且第 4 项的 405 缺口新增
+`retryJob`/`streamJobEvents`/`listVoices`/`getVoiceRevision`（§3.1）。
 
 ### 9.1 #442 音色目录公开 GET 处置
 
@@ -307,6 +427,9 @@ uv run python scripts/dev-env/check-route-conformance.py --json
 uv run pytest tests/unit/test_route_conformance.py tests/contract/test_ci_workflow.py -q --no-cov
 ```
 
+复核基线 `3951718e` 执行结果：`findings: []`、`known_unimplemented` 21 条、
+`known_status_gaps` 16 个操作，退出码 0。
+
 CI 将 `make contracts-route-conformance` 作为 `python_contracts` 作业
 （`Python: lint, types and contract compatibility`）的一步，在 Ruff/mypy 前、无 `CONTRACT_BASE_REF` 条件下执行；
 `full`、`web`、`no-db` 三种范围都会运行。详见 [CI 验证范围](../validation/ci-validation.md)。
@@ -320,3 +443,25 @@ CI 将 `make contracts-route-conformance` 作为 `python_contracts` 作业
 对象存储的 200 内容不在静态集合内；这些路径仍由集成/验收测试覆盖。
 「声明但未静态观察到」只输出、不判失败，因为静态缺失不等于运行时不可达。
 endpoint 源码无法定位则相反：它使检查直接失败，不把空状态集当成通过。
+
+## 11. 引用与结论复核记录（3951718e）
+
+对 8 条漂移引用逐条重新定位并复核结论。原引用是 `62ae4805` 的行号；新锚点是当前 HEAD 的符号，
+不随行号漂移。结论按"成立 / 部分过期 / 已过期"判定，过期项不删改原文，只在 §1/§5.4/§6/§9 就近标注。
+
+| # | 原引用（62ae4805） | 结论（基线） | 当前锚点（3951718e） | 复核结论 |
+| --- | --- | --- | --- | --- |
+| 1 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:293-298` | `createJob` 与契约一致 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py::create_job_router.create_job`（`_create`） | **成立**：202/400/409/422/503 可达，401/403/429 仅声明；405 仍按 §5.3 单列 |
+| 2 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:300-306` | `getJob` 一致 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py::create_job_router.get_job`（`_read`） | **成立**：200/404/503 可达 |
+| 3 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:308-334` | `cancelJob` 返回契约未声明的 400 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py::create_job_router.cancel_job`（`_cancel`） | **成立**：400 未声明且可达（§7.1 R3） |
+| 4 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:316-317` | 非法 `Idempotency-Key` → `invalid_job_request`（400） | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py::_idempotency_key`、`backend/src/speechnexus_backend/speech/interfaces/http/jobs.py::create_job_router.cancel_job` | **成立**：键校验先于服务调用，仍返回 400 |
+| 5 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:171-228` | `createJob` 无 403/429 产生路径 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py::_create` | **成立**：`_create` 无 Host/Origin 拒绝与限流分支 |
+| 6 | `backend/src/speechnexus_backend/speech/interfaces/http/job_errors.py:9` | `invalid_job_request` 定义为 400 | `backend/src/speechnexus_backend/speech/interfaces/http/job_errors.py::_ERRORS`（`invalid_job_request`） | **成立**：映射未变 |
+| 7 | `backend/src/speechnexus_backend/app.py:436-497` | 全局处理器把五前缀的 404/405 改写为稳定错误体 | `backend/src/speechnexus_backend/app.py::create_app.asset_http_error` | **成立**：五前缀与 404/405 分支仍在；行号已移至 454-515 |
+| 8 | `backend/src/speechnexus_backend/app.py:475-485` | `/v1/nexus/jobs/*` 的 404 改写为 `job_not_found`，未注册的 `retryJob`/`streamJobEvents` 因此返回 404 | `backend/src/speechnexus_backend/app.py::create_app.asset_http_error`（`JOB_PREFIX` 分支） | **部分过期**："未注册 → 404"已过期，`#432` 已注册两条路由，404 现在表示任务不存在；"404 改写为 `job_not_found`"仍成立，未注册子路径继续被改写（§7.1 R4-R6） |
+
+计数说明：issue 记为 `jobs.py` 6 条；实际为 `http/jobs.py` 5 条 + 同结论引用的 `http/job_errors.py:9` 1 条，
+加上 `app.py` 2 条，共 8 条。另有 `backend/src/speechnexus_backend/workbench/infrastructure/public_speech_render_jobs.py:69,91`
+（`listJobs` 消费者）在 HEAD 未漂移，已随 §6 一并改为 `PublicSpeechRenderJobs.submit`/`read_job` 符号锚点，不计入上述 8 条。
+另发现 §3/§4/§6 注中的契约行号引用在 `0.1.0.dev6` 下已整体漂移，
+本次一并改为 operationId/路径锚点（这些引用不在 §11 的 8 条之列）。

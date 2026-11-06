@@ -310,6 +310,9 @@ jobs:
           CONTRACT_BASE_REF: origin/${{ github.base_ref }}
         run: make contracts-speech-changes
 
+      - name: Check speech route conformance against the current contract
+        run: make contracts-route-conformance
+
       - name: Check known structural changes to coordination request entrypoints
         if: github.event_name == 'pull_request'
         env:

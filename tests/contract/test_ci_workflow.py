@@ -187,6 +187,16 @@ def test_original_python_status_requires_both_complete_lanes(checks: str, contra
     assert (result.returncode == 0) is (checks == contracts == "success")
 
 
+def test_route_conformance_gate_runs_before_python_static_checks() -> None:
+    steps = _WORKFLOW["jobs"]["python_contracts"]["steps"]
+    gate = next(step for step in steps if step.get("run") == "make contracts-route-conformance")
+    assert "if" not in gate and "continue-on-error" not in gate
+    static_checks = {"uv run ruff check .", "uv run mypy", "uv run lint-imports"}
+    static_indices = [index for index, step in enumerate(steps) if step.get("run") in static_checks]
+    assert static_checks <= {step.get("run") for step in steps}
+    assert steps.index(gate) < min(static_indices)
+
+
 def test_full_coverage_and_every_contract_check_run_independently_on_the_same_source() -> None:
     jobs = _WORKFLOW["jobs"]
     execution, contracts = jobs["python_checks"], jobs["python_contracts"]
@@ -215,6 +225,7 @@ def test_full_coverage_and_every_contract_check_run_independently_on_the_same_so
         'uv run python scripts/dev-env/check-openai-contract-compat.py --base "$CONTRACT_BASE_REF"',
         "make contracts-http-changes",
         "make contracts-speech-changes",
+        "make contracts-route-conformance",
         "make contracts-coordination-requests",
         "make contracts-coordination-results",
         "make contracts-realtime-changes",

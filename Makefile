@@ -1,5 +1,5 @@
 .PHONY: install dev-bootstrap dev-up dev-down dev-status dev-check api-dev gateway-dev web-dev \
-	browser-install browser-smoke media-smoke contracts-check contracts-compat contracts-http-changes contracts-speech-changes contracts-coordination-requests contracts-coordination-results contracts-realtime-changes contracts-sdk-test contracts-generate contracts-drift \
+	browser-install browser-smoke media-smoke contracts-check contracts-compat contracts-http-changes contracts-speech-changes contracts-route-conformance contracts-coordination-requests contracts-coordination-results contracts-realtime-changes contracts-sdk-test contracts-generate contracts-drift \
 	service-smoke stack-config mysql-service acceptance-map-check operation-coverage-check \
 	format lint typecheck test integration-test workbench-llm-qualification coordination-test \
 	abort-ledger-mysql python-build build verify
@@ -79,6 +79,11 @@ contracts-speech-changes:
 	@test -n "$$CONTRACT_BASE_REF" || \
 		{ echo "CONTRACT_BASE_REF is required" >&2; exit 2; }
 	uv run python scripts/dev-env/check-http-contract-changes.py --base "$$CONTRACT_BASE_REF" --surface speech
+
+# Offline gate: current app registrations and statically reachable statuses vs
+# the current speech contract. No CONTRACT_BASE_REF, database or network.
+contracts-route-conformance:
+	uv run python scripts/dev-env/check-route-conformance.py
 
 contracts-coordination-requests:
 	@test -n "$$CONTRACT_BASE_REF" || \

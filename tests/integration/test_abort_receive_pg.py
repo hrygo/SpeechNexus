@@ -1062,9 +1062,11 @@ def test_lost_outcome_acknowledgement_does_not_resend_once_recorded(
 
 
 def _database_now_us(foundation: Foundation) -> int:
-    return foundation.database.query(
-        "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS now_us"
-    )[0]["now_us"]
+    return int(
+        foundation.database.query(
+            "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS now_us"
+        )[0]["now_us"]
+    )
 
 
 def _expire_abort_attempt(foundation: Foundation) -> None:
@@ -1122,10 +1124,12 @@ def test_undecided_attempts_back_off_and_stop_at_the_bounded_cap(
 
 
 def _stop_evidence_rows(foundation: Foundation) -> int:
-    return foundation.database.query(
-        "SELECT count(*) AS n FROM execution_stop_evidence WHERE submit_intent_id=%s",
-        (INTENT_ID,),
-    )[0]["n"]
+    return int(
+        foundation.database.query(
+            "SELECT count(*) AS n FROM execution_stop_evidence WHERE submit_intent_id=%s",
+            (INTENT_ID,),
+        )[0]["n"]
+    )
 
 
 def test_recorded_stop_evidence_survives_a_lost_dispatch_outcome(

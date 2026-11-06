@@ -5,7 +5,8 @@
 | 文档                                                                                                | 职责                                                                            |
 | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | [项目经理工作约定](project-manager-guide.md) | 接管入口、排期协作、集成验收、进度维护与证据清理的长期规则 |
-| [Codex / subagent / Delegra 交付 SOP](operations/agent-delivery-sop.md) | 单一队列、执行路由、最小上下文、同版验证、等待与故障恢复 |
+| [多 Agent 交付 SOP](operations/agent-delivery-sop.md) | 会话 / subagent / GPU 委托的单一队列、执行路由、最小上下文、同版验证、等待与故障恢复 |
+| [多 Agent 协作与角色边界](operations/agent-collaboration.md) | 决策与执行结构、角色职责与派工简报、执行环境、权限与证据边界 |
 | [项目经理接管基线](archive/plans/2026-10-26-project-manager-baseline.md) | 接管时点的组合、能力/缺口、决策队列、三队交接与证据接收快照 |
 | [Agent 工作指南](agent-guide.md) | 根/目录规则、项目技能、任务入口与交付边界 |
 | [历史协调方案](archive/legacy-postgresql-coordination.md) | 历史架构资料；暂作对照保留，退出条件见 ADR 0007 |
@@ -38,7 +39,7 @@
 | [契约与事务所有权](architecture/contract-ownership.md)                                              | 18 端口/表归属、快照恢复映射与首批生成契约包交接                                |
 | [UI/UX 设计框架与设计 Token 系统](design/ui-ux-design-framework-and-tokens.md) | 设计方向、双入口品牌、VoiceStudio 经验与三层 Token；研究为 2026 年资料，生效 Token 及实现状态以源码为准 |
 | [SpeechRail 复用边界](architecture/speechrail-reuse.md)                                             | 固定来源、可提取规则、需重写的基础设施和许可证                                  |
-| [Paperclip 工作流与团队](operations/paperclip.md) | 当前项目经理与 A/B/C、QA、审查、证据岗位的协作、工作区、预算及交付约定 |
+| [Delegra 交付工作流设计（历史）](archive/plans/2026-11-04-delegra-delivery-workflow-design.md) | 2026-11-04 的平台化交付方案、试跑与阻塞记录；平台队列依赖已退役，现行规则见交付 SOP 与协作角色 |
 | [预设声音资格与发布](operations/builtin-voice-qualification.md) | 独立审批、资格探测、不可变发布、精确准入与撤销；真实资格按具体窗口取证 |
 | [本地最小可运行装配](archive/operations/local-end-to-end.md) | 指定历史基线的迁移、发布与执行记录；当时公开转写返回 504，worker 只登记 staging，120s 用于 API 轮询。后续已补成功终态驱动，原 504 不证明当前部署结果；11.2.2 的人工 `record_stop` 仅是历史测试路径 |
 | [agent 环境准备与验收](archive/operations/paperclip/environment-readiness.md) | 历史三机工具链、隔离服务和 Harness 准备快照；旧配置与启用门禁不代表当前状态 |

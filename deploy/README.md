@@ -61,10 +61,10 @@ qualify a real service, cross-host TLS, or a physical topology.
 `/healthz` and `/readyz` are startup/dependency probes, not business acceptance:
 
 - public synchronous ASR is still blocked by the missing production terminal-state
-  writer tracked as **DEL-109**; a live request can return `504 operation_timeout`
-  even when the gateway staged a result;
-- public TTS remains blocked by **DEL-122**; this Compose only prepares the
-  gateway's private file-TTS references;
+  writer; a live request can return `504 operation_timeout` even when the gateway
+  staged a result;
+- public TTS remains blocked by the missing public dispatch path; this Compose only
+  prepares the gateway's private file-TTS references;
 - asynchronous Job submission/dispatch remains blocked by G5 / issue #18;
 - real model quality, CUDA capacity, physical multi-node recovery, content-network
   isolation and final Gate approval require separate evidence.

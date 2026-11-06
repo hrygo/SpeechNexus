@@ -23,7 +23,7 @@
 | --- | --- |
 | 当前能力、启动入口 | [README.md](../README.md)、[README.en.md](../README.en.md) |
 | 项目统筹、接管、跨团队排期或验收 | [项目经理工作约定](project-manager-guide.md) |
-| Codex / subagent / Delegra 路由、多 Agent 交付或跨会话接续 | [交付 SOP](operations/agent-delivery-sop.md)；简单局部工作无需额外建卡 |
+| 当前会话 / subagent / GPU 委托的路由、角色边界与多 Agent 交付 | [交付 SOP](operations/agent-delivery-sop.md)、[多 Agent 协作](operations/agent-collaboration.md)；简单局部工作无需额外建卡 |
 | 外部反馈、实施任务、Issue/PR 模板与关闭规则 | [贡献与 Issue 指南](../CONTRIBUTING.md) |
 | 下一可验收切片、按需建卡及唯一父 Epic | [按需规划技能](../.agents/skills/speechnexus-next-delivery/SKILL.md)、[PRD](prd.md)、[需求矩阵](plans/delivery-tracking.md) |
 | 文档与工程交接 | [文档索引](README.md)、[整体技术方案](architecture/technical-blueprint.md) |

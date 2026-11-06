@@ -261,9 +261,12 @@ def record_abort_dispatch(cursor: SubmitCursor, result: AbortDispatchResult) -> 
     observed_us = to_unix_micros(result.observed_at)
     # An undecided attempt is retried with exponential backoff, not on the lease
     # cadence: a crash must not turn the receipt into a permanent tight retry loop.
+    # The delay starts at this transaction's database time; the adapter observation
+    # is only an audit fact and never a scheduling base.
     cursor.execute(
         "UPDATE gateway_abort_intents SET dispatch_outcome=%s, dispatch_outcome_at_us=%s, "
-        "next_check_at_us=CASE WHEN %s=%s THEN %s + LEAST("
+        "next_check_at_us=CASE WHEN %s=%s THEN "
+        "CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) + LEAST("
         "%s * POWER(2, GREATEST(dispatch_attempts - 1, 0)), %s)::BIGINT "
         "ELSE next_check_at_us END "
         "WHERE submit_intent_id=%s AND dispatch_attempt_id=%s AND dispatch_outcome IS NULL",
@@ -272,7 +275,6 @@ def record_abort_dispatch(cursor: SubmitCursor, result: AbortDispatchResult) -> 
             observed_us,
             result.outcome.value,
             AbortDispatchOutcome.UNCONFIRMED.value,
-            observed_us,
             ABORT_RETRY_BASE_MS * 1_000,
             ABORT_RETRY_MAX_MS * 1_000,
             result.submit_intent_id,

@@ -328,8 +328,11 @@ acknowledgement（已中止 / 已终结）；无法确认时返回 unknown，绝
 另一类的后续轮次。
 
 部署升级先应用版本迁移 `0036_abort_dispatch_attempts`，再由管理员为 gateway 写角色
-执行当前 `gateway_abort_grants`（新增尝试列与 `next_check_at_us` 的列级 UPDATE）；
-未配置该权限时启动校验关闭持久 abort 能力。独立查询角色仍保持只读，公开回执仍只暴露
+执行当前 `gateway_abort_grants`（新增尝试列与 `next_check_at_us` 的列级 UPDATE），
+并对只读查询角色重跑 `gateway_query_grants`。两者都是幂等的追加式授权，可重复执行。
+查询角色的授权集合按精确列集校验：不重跑 `gateway_query_grants` 时启动校验以
+`invalid execution query reader authority` 硬失败，控制面不启动；写角色缺少尝试列时
+持久 abort 能力以 fail-soft 方式关闭，启动继续但不再接收新取消。独立查询角色仍保持只读，公开回执仍只暴露
 `received` / `claimed` 两个既有状态；只读角色另可读取 `dispatch_outcome` 与
 `dispatch_attempts`，便于运维查看拒发原因与重试次数，它们不进入公开回执。候选同一
 node/gateway 的进程必须共用宿主锁目录，

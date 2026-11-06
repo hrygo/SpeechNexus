@@ -13,7 +13,7 @@ from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Event
 from typing import Any, Literal, cast
@@ -1061,6 +1061,12 @@ def test_lost_outcome_acknowledgement_does_not_resend_once_recorded(
     assert len(live.engine.calls) == 1
 
 
+def _database_now_us(foundation: Foundation) -> int:
+    return foundation.database.query(
+        "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS now_us"
+    )[0]["now_us"]
+
+
 def _expire_abort_attempt(foundation: Foundation) -> None:
     """Make the recorded lease and its backoff due without waiting real time."""
     foundation.database.query(
@@ -1078,6 +1084,10 @@ def test_undecided_attempts_back_off_and_stop_at_the_bounded_cap(
     from speechnexus_gateway.domain.abort_intent import MAX_ABORT_DISPATCH_ATTEMPTS
 
     live.ledger.receive_abort(live.abort_request)
+    # The adapter observation is an audit fact only: even an hour-old answer must
+    # schedule the retry from the database clock, not from the reported instant.
+    skewed = datetime.now(UTC) - timedelta(hours=1)
+    live.engine.script_outcome(AbortOutcome(observed_at=skewed))
     service = AbortRecoveryService(ingress=live.ingress, ledger=live.ledger, abort=live.service())
     delays: list[int] = []
     for attempt in range(1, MAX_ABORT_DISPATCH_ATTEMPTS + 1):
@@ -1087,11 +1097,14 @@ def test_undecided_attempts_back_off_and_stop_at_the_bounded_cap(
         assert row["dispatch_attempts"] == attempt
         if attempt < MAX_ABORT_DISPATCH_ATTEMPTS:
             assert row["dispatch_outcome"] == "unconfirmed"
-            delays.append(row["next_check_at_us"] - row["dispatch_outcome_at_us"])
+            delays.append(row["next_check_at_us"] - _database_now_us(foundation))
+            if attempt == 1:
+                assert row["dispatch_outcome_at_us"] <= _database_now_us(foundation) - 3_500_000_000
         else:
             assert row["dispatch_outcome"] == "exhausted"
         _expire_abort_attempt(foundation)
-    assert delays[0] == 30_000_000 and delays[1] == 60_000_000
+    assert 29_000_000 <= delays[0] <= 30_000_000
+    assert 58_000_000 <= delays[1] <= 60_000_000
     assert delays == sorted(delays) and max(delays) <= 1_800_000_000
     assert service.sweep(limit=1) == 0
     assert len(live.engine.calls) == MAX_ABORT_DISPATCH_ATTEMPTS
@@ -1106,3 +1119,43 @@ def test_undecided_attempts_back_off_and_stop_at_the_bounded_cap(
     assert len(live.engine.calls) == MAX_ABORT_DISPATCH_ATTEMPTS
     assert dispatch_row(foundation)["dispatch_outcome"] == "exhausted"
     assert service.sweep(limit=1) == 0
+
+
+def _stop_evidence_rows(foundation: Foundation) -> int:
+    return foundation.database.query(
+        "SELECT count(*) AS n FROM execution_stop_evidence WHERE submit_intent_id=%s",
+        (INTENT_ID,),
+    )[0]["n"]
+
+
+def test_recorded_stop_evidence_survives_a_lost_dispatch_outcome(
+    live: LiveAbort, foundation: Foundation, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stop fact commits before the outcome; recovery reads it and sends nothing."""
+    live.engine.script_outcome(
+        AbortOutcome(
+            observed_at=datetime.now(UTC),
+            evidence=evidence_for(foundation, submit_intent_id=INTENT_ID),
+            acknowledgement=AbortAcknowledgement.ABORTED,
+        )
+    )
+    original = live.ledger.record_abort_dispatch
+
+    def lost_before_writing(result: Any) -> bool:
+        raise SubmissionOutcomeUnknownError("synthetic lost dispatch outcome")
+
+    monkeypatch.setattr(live.ledger, "record_abort_dispatch", lost_before_writing)
+    with pytest.raises(SubmissionOutcomeUnknownError):
+        live.service().abort(live.abort_request)
+    assert len(live.engine.calls) == 1
+    stopped = live.ledger.get(INTENT_ID)
+    assert stopped is not None and stopped.execution_state is ExecutionState.ABORTED
+    assert _stop_evidence_rows(foundation) == 1
+    pending = dispatch_row(foundation)
+    assert pending["dispatch_outcome"] is None and pending["dispatch_attempts"] == 1
+    monkeypatch.setattr(live.ledger, "record_abort_dispatch", original)
+    recovered = live.service().recover_abort(original_abort_request(foundation, live.abort_request))
+    assert recovered is not None and recovered.intent.execution_state is ExecutionState.ABORTED
+    assert len(live.engine.calls) == 1
+    assert _stop_evidence_rows(foundation) == 1
+    assert dispatch_row(foundation)["dispatch_outcome"] is None

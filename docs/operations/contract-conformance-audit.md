@@ -576,11 +576,21 @@ Python/TypeScript 绑定与打包 HTTP 投影由源重新生成；严格消费�
    选出，要求返回包含 `code/type/message/param/request_id/retryable` 的公开错误信封且不携带裸 `detail`，
    非空 `Allow` 与 `code`、`retryable=False`，并回显请求的 `request_id`；
    缺失即 `method_not_allowed_envelope_missing`。
-   直接调用 `evaluate()` 时，`method_not_allowed_envelopes` 为 `None` 或缺少某个操作，同样为该操作
-   产生该 finding；`format_report()` 的对应行打印 `405-envelope=FAILED`，不输出 OK 尾巴，
-   CLI 若取得该报告则退出码为 1。正常 CLI 先经过 `build_report()`，其 `require_envelope_coverage()`
-   对 `None`、空映射或缺 key 抛出 `RuntimeError`：CLI 以退出码 2 在 stderr 输出诊断，stdout 无报告，
-   不会生成 FAILED 行。单测分别覆盖两层，并断言探测集合等于声明 405 的集合。
+
+   **`evaluate()` / 报告层**：直接调用 `evaluate()`，若 `method_not_allowed_envelopes` 为 `None`
+   或缺少某个操作的 key，会为缺少证据的操作产生 `method_not_allowed_envelope_missing` finding。
+   将返回的报告交给 `format_report()`，对应行打印 `405-envelope=FAILED`，不输出 OK 尾巴。
+   `evaluate()` 本身只返回报告，不决定进程退出码。
+
+   **CI / CLI 入口层**：CI 的 `make contracts-route-conformance` 调用脚本入口，先执行 `build_report()`。
+   探针返回 `None`、空映射或缺 key 时，`require_envelope_coverage()` 在调用 `evaluate()` 前抛出
+   `RuntimeError`；脚本退出码为 **2**，stderr 输出 `route conformance check could not run:`，
+   诊断包含 `refusing to report declared 405s as verified`。stdout 为空，不打印文本或 JSON 报告，
+   因而 CI 日志中没有 `405-envelope=FAILED` 行或 OK 尾巴，门禁步骤失败。
+
+   单测分别覆盖两层，并断言探测集合等于声明 405 的集合；partial mapping 用例只去掉 `getJob` 的 key，
+   直接调用 `evaluate()`，确认 finding 精确且仅指向 `getJob`。
+
    `app.py` 不再维护「哪些路径有信封」的硬编码清单：
    到达路由方法拒绝分支的 405 会统一为信封，包含 `/docs`、`/healthz`；未注册路径仍返回 404。
    但未配置资产或 workspace 服务时 ingress 先返回 503（如 `workspace_service_unavailable`），不会到达 405 分支。

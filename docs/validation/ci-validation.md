@@ -106,7 +106,7 @@ uv run pytest tests/ci tests/contract/test_ci_workflow.py tests/unit/test_integr
 `(method, path, operationId)` 与当前 `contracts/speech-openapi.yaml` 对账，并静态提取每条已注册路由的响应状态码。
 新增未注册的契约操作、已注册但契约未声明的路由、未声明的可达状态码、operationId 路由形状不一致，
 以及过期的显式基线都会以非零退出码失败。无法静态判定的表达式只输出 `UNDETERMINED`，不猜造、不判失败；
-ASGI ingress 状态码、框架 404/500 与真实执行内容不在静态集合内。
+ASGI ingress 状态码、框架 404/500、FastAPI 参数校验产生的 422、跨模块 helper 返回的响应与真实执行内容不在静态集合内；endpoint 源码无法定位则直接失败。
 
 已知未实现操作与已知未声明状态码保留在脚本内的显式基线中，逐条带原因；实现或契约变更后必须同步删除条目，
 否则 `stale_*` 检查失败。基线与审计结论的对应关系见

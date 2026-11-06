@@ -83,6 +83,7 @@ def test_static_extraction_reads_literal_and_error_map(tmp_path: Path) -> None:
     path = tmp_path / "handlers.py"
     path.write_text(
         """
+from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
 
 _ERRORS = {"bad": (418, "invalid_request_error", "bad")}
@@ -96,6 +97,8 @@ def synthetic_error(code: str, request_id: str) -> JSONResponse:
 def handler(request):
     if request.headers.get("x") == "mapped":
         return synthetic_error("bad", "r")
+    if request.headers.get("x") == "positional":
+        raise HTTPException(417, "teapot")
     return JSONResponse({}, status_code=419)
 """,
         encoding="utf-8",
@@ -104,7 +107,59 @@ def handler(request):
     factories = module.collect_factories({"synthetic": info})
     analyzer = module.Analyzer({"synthetic": info}, factories, "syntheticOp")
     result = analyzer.function(info.scopes["handler"], {})
-    assert {418, 419} <= result.statuses
+    assert {417, 418, 419} <= result.statuses
+
+
+def test_golden_observed_statuses_pin_indirect_and_dynamic_branches() -> None:
+    module = load()
+    report = module.build_report(ROOT)
+    rows = {row.operation.operation_id: row for row in report.rows}
+    assert rows["getJob"].route is not None
+    assert rows["getJob"].route.statuses == frozenset({200, 404, 405, 503})
+    assert rows["downloadArtifactContent"].route is not None
+    assert rows["downloadArtifactContent"].route.statuses == frozenset(
+        {200, 206, 304, 404, 405, 416, 503}
+    )
+
+
+def test_unresolved_endpoint_is_a_finding() -> None:
+    module = load()
+    base = module.build_report(ROOT)
+    existing = next(route for route in base.registered if route.operation_id == "getJob")
+    broken = dataclasses.replace(
+        existing,
+        statuses=frozenset({405}),
+        undetermined=(),
+        extraction_error="endpoint moved outside the indexed source tree",
+    )
+    report = compare(
+        module,
+        tuple(broken if route is existing else route for route in base.registered),
+    )
+    assert any(
+        finding.kind == "status_extraction_failed" and finding.operation_id == "getJob"
+        for finding in report.findings
+    )
+
+
+def test_stale_status_baseline_is_rejected() -> None:
+    module = load()
+    base = module.build_report(ROOT)
+    baseline = dict(module.KNOWN_UNDECLARED_STATUSES)
+    baseline["getJob"] = frozenset({405, 418})
+    report = module.evaluate(
+        base.contract_operations,
+        base.registered,
+        other_contract_ids=base.other_contract_ids,
+        baseline_unimplemented=module.KNOWN_UNIMPLEMENTED_OPERATIONS,
+        baseline_statuses=baseline,
+    )
+    assert any(
+        finding.kind == "stale_status_baseline"
+        and finding.operation_id == "getJob"
+        and "418" in finding.detail
+        for finding in report.findings
+    )
 
 
 def test_registered_operation_in_unimplemented_baseline_is_rejected() -> None:

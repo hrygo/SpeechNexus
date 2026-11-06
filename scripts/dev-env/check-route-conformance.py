@@ -9,7 +9,8 @@ exceptions, local helpers and the *_errors.py code-to-status maps.
 
 It never starts the lifespan, opens a database connection, contacts object
 storage or calls an engine. Expressions that cannot be resolved statically are
-reported as undetermined rather than guessed.
+reported as undetermined rather than guessed; a registered endpoint that cannot
+be located in the indexed source tree is a finding, never a silent pass.
 """
 
 from __future__ import annotations
@@ -141,6 +142,7 @@ class RegisteredRoute:
     operation_id: str | None
     statuses: frozenset[int]
     undetermined: tuple[Undetermined, ...] = ()
+    extraction_error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -299,7 +301,7 @@ def parse_module(path: Path, name: str, root: Path) -> ModuleInfo:
 def load_modules(root: Path) -> dict[str, ModuleInfo]:
     modules: dict[str, ModuleInfo] = {}
     source_root = root / "backend/src"
-    for path in sorted((root / HTTP_MODULE_ROOT).glob("*.py")):
+    for path in sorted((root / HTTP_MODULE_ROOT).rglob("*.py")):
         relative = path.relative_to(source_root).with_suffix("")
         name = ".".join(relative.parts)
         modules[name] = parse_module(path, name, root)
@@ -781,9 +783,20 @@ class Analyzer:
             self._handle_indirect(call, scope, environment, narrowings, result, stack, depth)
             return
         if name == "HTTPException":
-            result.statuses.update(
-                self._status_keyword(call, environment, narrowings, result, scope)
-            )
+            status = self._status_keyword(call, environment, narrowings, result, scope)
+            if not status and call.args:
+                # Starlette's first positional argument is status_code:
+                # HTTPException(418, "teapot").
+                values = self._evaluate(call.args[0], environment, narrowings)
+                if values is None:
+                    self._record(
+                        scope.module.relative_path,
+                        call.lineno,
+                        "HTTPException 位置参数无法静态求值，未猜造状态码",
+                    )
+                else:
+                    status = {value for value in values if type(value) is int}
+            result.statuses.update(status)
             return
         if name in RESPONSE_CLASSES or name.endswith("Response"):
             status = self._status_keyword(call, environment, narrowings, result, scope)
@@ -1175,7 +1188,9 @@ def discover_app_routes(
         if operation_id is not None and not isinstance(operation_id, str):
             operation_id = None
         endpoint = getattr(route, "endpoint", None)
-        statuses, undetermined = analyze_endpoint(endpoint, operation_id, modules, factories)
+        statuses, undetermined, extraction_error = analyze_endpoint(
+            endpoint, operation_id, modules, factories
+        )
         for method in sorted(method.upper() for method in methods):
             if method not in HTTP_METHODS:
                 continue
@@ -1186,6 +1201,7 @@ def discover_app_routes(
                     operation_id=operation_id,
                     statuses=frozenset(statuses) | {FRAMEWORK_METHOD_NOT_ALLOWED},
                     undetermined=tuple(undetermined),
+                    extraction_error=extraction_error,
                 )
             )
     return tuple(
@@ -1205,12 +1221,11 @@ def analyze_endpoint(
     operation_id: str | None,
     modules: Mapping[str, ModuleInfo],
     factories: Mapping[str, Mapping[str, int]],
-) -> tuple[set[int], list[Undetermined]]:
+) -> tuple[set[int], list[Undetermined], str | None]:
     operation = operation_id or "<no-operation-id>"
     if endpoint is None:
-        return set(), [
-            Undetermined(operation, "app.routes", "endpoint 为空，无法静态提取状态码", ())
-        ]
+        detail = "endpoint 为空，无法静态提取状态码"
+        return set(), [Undetermined(operation, "app.routes", detail, ())], detail
     module_name = getattr(endpoint, "__module__", None)
     qualname = getattr(endpoint, "__qualname__", None)
     module = modules.get(module_name) if isinstance(module_name, str) else None
@@ -1219,9 +1234,8 @@ def analyze_endpoint(
     )
     if module is None or scope is None:
         location = f"{module_name or '?'}.{qualname or '?'}"
-        return set(), [
-            Undetermined(operation, location, "无法在源码索引中定位 endpoint，状态码未判定", ())
-        ]
+        detail = f"无法在源码索引中定位 endpoint（{location}），状态码未判定"
+        return set(), [Undetermined(operation, location, detail, ())], detail
     bindings: dict[str, ValueSet] = {}
     if operation_id is not None:
         # Some factories create one handler per operation and close over the
@@ -1235,7 +1249,7 @@ def analyze_endpoint(
                 break
             current = current.parent
     analysis = Analyzer(modules, factories, operation).function(scope, bindings)
-    return analysis.statuses, analysis.undetermined
+    return analysis.statuses, analysis.undetermined, None
 
 
 def evaluate(
@@ -1265,6 +1279,17 @@ def evaluate(
             )
         else:
             by_route[candidate.operation_id] = candidate
+    for candidate in registered:
+        if candidate.extraction_error is not None:
+            findings.append(
+                Finding(
+                    "status_extraction_failed",
+                    f"{candidate.method} {candidate.path} "
+                    f"({candidate.operation_id or 'no-operation-id'}): "
+                    f"{candidate.extraction_error}",
+                    candidate.operation_id,
+                )
+            )
     rows: list[OperationRow] = []
     for operation in contract_operations:
         route = by_route.get(operation.operation_id)
@@ -1467,6 +1492,8 @@ def format_report(report: Report) -> str:
             f"known-baseline={format_statuses(row.known_undeclared)} "
             f"declared-not-observed={format_statuses(row.declared_not_observed)}"
         )
+        if row.route.extraction_error is not None:
+            lines.append(f"  status-extraction=FAILED ({row.route.extraction_error})")
     extras = [route for route in report.registered if route.operation_id not in contract_ids]
     if extras:
         lines.append("")
@@ -1512,6 +1539,7 @@ def report_payload(report: Report) -> dict[str, Any]:
                 "path": route.path,
                 "operationId": route.operation_id,
                 "statuses": sorted(route.statuses),
+                "extraction_error": route.extraction_error,
                 "undetermined": [
                     {
                         "location": item.location,

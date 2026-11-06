@@ -284,16 +284,17 @@ GET/POST 在匹配失败时返回 `400 pronunciation_invalid_request`，运行�
 2. 与 `contracts/speech-openapi.yaml` 对账：契约声明但未注册的 operationId、已注册但契约未声明的路由、
    operationId 对应的 method/path 形状。其他契约已声明的管理面路由单独标记为 `other-contract`，
    不混入语音面失败。
-3. 逐条已注册路由静态提取状态码：`JSONResponse`/`Response`/`StreamingResponse`、`HTTPException`、
-   同模块 helper（含 `run_in_threadpool(helper, ...)` 间接调用）与 `*_errors.py` 的错误码映射；
+3. 逐条已注册路由静态提取状态码：`JSONResponse`/`Response`/`StreamingResponse`、
+   `HTTPException`（含 `status_code=` 与 `HTTPException(418, ...)` 位置参数）、同模块 helper
+   （含 `run_in_threadpool(helper, ...)` 间接调用）与 `*_errors.py` 的错误码映射；
    框架对错误方法产生的 405 单独计入。无法静态求值的 `status_code` 或运行时错误码列入
    「UNDETERMINED」，只报告可能值，不猜造、不作为门禁失败。
 4. 显式基线：`KNOWN_UNIMPLEMENTED_OPERATIONS` 固定当前 23 条未实现操作并逐条写明原因；
    `KNOWN_UNDECLARED_STATUSES` 固定当前 14 个操作的已知未声明状态，其中非 405 项为
    `createTranscription` 404、`cancelJob` 400、`getArtifact` 304/503、
    `downloadArtifactContent` 304/416/503，其余为缺失的 405 声明。
-5. 新增契约未注册操作、已注册未声明路由、未声明状态码、operationId 形状变化，或基线过期
-   （操作已实现、状态已声明/不再可达）都会使命令以退出码 1 失败。
+5. 新增契约未注册操作、已注册未声明路由、未声明状态码、operationId 形状变化、endpoint 源码
+   无法定位，或基线过期（操作已实现、状态已声明/不再可达）都会使命令以退出码 1 失败。
 
 用法与自测：
 
@@ -312,5 +313,7 @@ CI 将 `make contracts-route-conformance` 作为 `python_contracts` 作业
 新增偏离不得直接加入基线，应先修复或按审计补充理由与跟踪项。
 
 边界：ASGI ingress（`AssetIngress`、`ProfileIngress`、`PronunciationIngress` 等）产生的状态码、
-框架 404/500、真实引擎与对象存储的 200 内容不在静态集合内；这些路径仍由集成/验收测试覆盖。
+框架 404/500、FastAPI 请求参数类型校验自动产生的 422、跨模块 helper 返回的响应、真实引擎与
+对象存储的 200 内容不在静态集合内；这些路径仍由集成/验收测试覆盖。
 「声明但未静态观察到」只输出、不判失败，因为静态缺失不等于运行时不可达。
+endpoint 源码无法定位则相反：它使检查直接失败，不把空状态集当成通过。

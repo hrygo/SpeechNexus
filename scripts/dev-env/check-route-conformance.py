@@ -7,6 +7,11 @@ operationIds with contracts/speech-openapi.yaml. Response statuses are
 derived statically from the handler source: response constructors, HTTP
 exceptions, local helpers and the *_errors.py code-to-status maps.
 
+A declared 405 is not trusted on the strength of the route existing: the
+checker also sends a request with a method the path does not register and
+requires the public error envelope, so a route added without envelope
+handling fails instead of passing on the status alone.
+
 It never starts the lifespan, opens a database connection, contacts object
 storage or calls an engine. Expressions that cannot be resolved statically are
 reported as undetermined rather than guessed; a registered endpoint that cannot
@@ -17,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import asyncio
 import json
 import os
 import re
@@ -49,6 +55,15 @@ RESPONSE_CLASSES = frozenset(
 )
 FRAMEWORK_METHOD_NOT_ALLOWED = 405
 FRAMEWORK_PATHS = frozenset({"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"})
+
+# A 405 probe must use a method the path does not register. PUT/PATCH/DELETE
+# keep the request body empty and are not auto-added by Starlette (only HEAD
+# follows GET); TRACE is the last resort for a path that registers everything
+# else. The request ID is fixed so the envelope's correlation field is provable.
+PROBE_REQUEST_ID = "route-conformance-405-probe"
+PROBE_METHODS = ("PUT", "PATCH", "DELETE", "POST", "GET", "TRACE")
+PROBE_PATH_PARAMETER = "probe"
+ENVELOPE_KEYS = frozenset({"code", "type", "message", "param", "request_id", "retryable"})
 
 # Contract operations this deployment deliberately does not implement. Each is
 # registered once by the central placeholder router, answers 503
@@ -150,6 +165,7 @@ class OperationRow:
     known_undeclared: tuple[int, ...] = ()
     declared_not_observed: tuple[int, ...] = ()
     unimplemented: bool = False
+    envelope_error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1252,7 +1268,7 @@ def flatten_routes(routes: Iterable[Any], prefix: str = "") -> Iterator[Any]:
             yield route
 
 
-def load_app(root: Path = ROOT) -> Any:
+def load_app(root: Path = ROOT, *, assets: Any = None) -> Any:
     _ensure_source_path(root)
     from speechnexus_backend.app import create_app
     from speechnexus_backend.settings import Settings
@@ -1266,7 +1282,22 @@ def load_app(root: Path = ROOT) -> Any:
             object_storage_healthcheck_url="http://127.0.0.1:1/health",
             object_storage_bucket="speechnexus-conformance",
         )
-    return create_app(settings=settings)
+    return create_app(settings=settings, assets=assets)
+
+
+def probe_app(root: Path = ROOT) -> Any:
+    """Load the application with an inert asset service for the 405 probe.
+
+    AssetIngress answers 503 when no asset service is configured, before the
+    router can reject a wrong method. The probe never reaches an asset
+    endpoint, so an inert double enables the middleware without opening an
+    object-storage connection.
+    """
+    from unittest.mock import Mock
+
+    from speechnexus_backend.speech.application.assets import AssetService
+
+    return load_app(root, assets=Mock(spec=AssetService))
 
 
 def _ensure_source_path(root: Path) -> None:
@@ -1291,8 +1322,10 @@ def discover_app_routes(
     root: Path,
     modules: Mapping[str, ModuleInfo],
     factories: Mapping[str, Mapping[str, int]],
+    *,
+    app: Any = None,
 ) -> tuple[RegisteredRoute, ...]:
-    app = load_app(root)
+    app = load_app(root) if app is None else app
     registered: list[RegisteredRoute] = []
     seen: set[int] = set()
     for route in flatten_routes(app.routes):
@@ -1336,6 +1369,80 @@ def discover_app_routes(
             ),
         )
     )
+
+
+def fill_path_parameters(path: str) -> str:
+    """Render a contract path template into a concrete path for the probe."""
+    return re.sub(r"\{[^/{}]+\}", PROBE_PATH_PARAMETER, path)
+
+
+def envelope_problem(response: Any, request_id: str) -> str | None:
+    """Explain why a 405 reply is not the public envelope, or return None."""
+    if response.status_code != FRAMEWORK_METHOD_NOT_ALLOWED:
+        return f"the probe request answered {response.status_code} instead of 405"
+    try:
+        body = response.json()
+    except ValueError:
+        return "the 405 body is not JSON"
+    if not isinstance(body, Mapping):
+        return "the 405 body is not a JSON object"
+    error = body.get("error")
+    if not isinstance(error, Mapping):
+        return "the 405 body is not the public error envelope"
+    missing = sorted(ENVELOPE_KEYS - set(error))
+    if missing:
+        return f"the 405 error envelope is missing {', '.join(missing)}"
+    if error.get("request_id") != request_id:
+        return "the 405 error envelope does not echo the request id"
+    if not isinstance(error.get("code"), str) or not error["code"]:
+        return "the 405 error envelope has no code"
+    if error.get("retryable") is not False:
+        return "the 405 error envelope must be non-retryable"
+    if "detail" in body:
+        return "the 405 body also carries a framework detail field"
+    return None
+
+
+async def probe_method_not_allowed_envelopes(
+    app: Any, operations: Sequence[ContractOperation]
+) -> dict[str, str | None]:
+    """Request a wrong method for each declared-405 operation; require the envelope.
+
+    The probe sees what a consumer sees: the full middleware stack, the
+    router 405, and the application exception handler. The method is one the
+    path does not register, chosen with the placeholder router matcher
+    (methods_for_path, #473), so the probe adds no second path-matching rule.
+    """
+    import httpx
+
+    from speechnexus_backend.speech.interfaces.http.unimplemented import methods_for_path
+
+    results: dict[str, str | None] = {}
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost"
+    ) as client:
+        for operation in operations:
+            if FRAMEWORK_METHOD_NOT_ALLOWED not in operation.declared_statuses:
+                continue
+            path = fill_path_parameters(operation.path)
+            registered = methods_for_path(app.router.routes, path)
+            method = next(
+                (candidate for candidate in PROBE_METHODS if candidate not in registered),
+                None,
+            )
+            if method is None:
+                results[operation.operation_id] = (
+                    "every probe method is registered on the path, so 405 was not exercised"
+                )
+                continue
+            response = await client.request(
+                method, path, headers={"X-Request-ID": PROBE_REQUEST_ID}
+            )
+            problem = envelope_problem(response, PROBE_REQUEST_ID)
+            results[operation.operation_id] = (
+                None if problem is None else f"{method} {path}: {problem}"
+            )
+    return results
 
 
 def analyze_endpoint(
@@ -1382,6 +1489,7 @@ def evaluate(
     baseline_unimplemented: Mapping[str, str] | None = None,
     baseline_statuses: Mapping[str, frozenset[int]] | None = None,
     unimplemented: UnimplementedSurface | None = None,
+    method_not_allowed_envelopes: Mapping[str, str | None] | None = None,
 ) -> Report:
     unimplemented_baseline = baseline_unimplemented or {}
     status_baseline = baseline_statuses or {}
@@ -1464,6 +1572,23 @@ def evaluate(
                     operation.operation_id,
                 )
             )
+        envelope_error: str | None = None
+        if (
+            FRAMEWORK_METHOD_NOT_ALLOWED in operation.declared_statuses
+            and method_not_allowed_envelopes is not None
+        ):
+            if operation.operation_id not in method_not_allowed_envelopes:
+                envelope_error = "the 405 response envelope was not probed"
+            else:
+                envelope_error = method_not_allowed_envelopes[operation.operation_id]
+            if envelope_error is not None:
+                findings.append(
+                    Finding(
+                        "method_not_allowed_envelope_missing",
+                        f"{operation.operation_id} declares 405 but {envelope_error}",
+                        operation.operation_id,
+                    )
+                )
         rows.append(
             OperationRow(
                 operation=operation,
@@ -1472,6 +1597,7 @@ def evaluate(
                 known_undeclared=tuple(sorted(known & undeclared)),
                 declared_not_observed=tuple(sorted(declared_not_observed)),
                 unimplemented=is_placeholder,
+                envelope_error=envelope_error,
             )
         )
     if unimplemented is not None and dict(placeholder.error_map) != {
@@ -1627,7 +1753,18 @@ def build_report(root: Path = ROOT) -> Report:
     other_contract_ids = load_other_operation_ids(root)
     modules = load_modules(root)
     factories = collect_factories(modules)
-    registered = discover_app_routes(root, modules, factories)
+    app = probe_app(root)
+    registered = discover_app_routes(root, modules, factories, app=app)
+    envelopes = asyncio.run(
+        probe_method_not_allowed_envelopes(
+            app,
+            tuple(
+                operation
+                for operation in contract_operations
+                if FRAMEWORK_METHOD_NOT_ALLOWED in operation.declared_statuses
+            ),
+        )
+    )
     report = evaluate(
         contract_operations,
         registered,
@@ -1635,6 +1772,7 @@ def build_report(root: Path = ROOT) -> Report:
         baseline_unimplemented=KNOWN_UNIMPLEMENTED_OPERATIONS,
         baseline_statuses=KNOWN_UNDECLARED_STATUSES,
         unimplemented=load_unimplemented_surface(root),
+        method_not_allowed_envelopes=envelopes,
     )
     return replace(report, contract_version=contract_version)
 
@@ -1681,6 +1819,10 @@ def format_report(report: Report) -> str:
         )
         if row.route.extraction_error is not None:
             lines.append(f"  status-extraction=FAILED ({row.route.extraction_error})")
+        if row.envelope_error is not None:
+            lines.append(f"  405-envelope=FAILED ({row.envelope_error})")
+        elif FRAMEWORK_METHOD_NOT_ALLOWED in operation.declared_statuses:
+            lines.append("  405-envelope=verified")
     extras = [route for route in report.registered if route.operation_id not in contract_ids]
     if extras:
         lines.append("")
@@ -1749,6 +1891,7 @@ def report_payload(report: Report) -> dict[str, Any]:
                 "known_undeclared": list(row.known_undeclared),
                 "declared_not_observed": list(row.declared_not_observed),
                 "unimplemented": row.unimplemented,
+                "envelope_error": row.envelope_error,
             }
             for row in report.rows
         ],

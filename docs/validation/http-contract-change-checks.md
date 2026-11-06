@@ -90,23 +90,31 @@ status `503`. The replacement must still:
 - be an inline response object rather than a `$ref` to a shared component,
   because a shared 503 could carry guarantees declared for another operation;
 - declare a required `Cache-Control` header;
-- declare a required `X-Should-Retry` header whose schema is `const: "true"`:
+- declare a required `X-Should-Retry` header whose schema allows only `"true"`:
   the value, not just the name, is the retry signal, and `false` still means
-  "do not retry";
+  "do not retry". An equivalent `enum: ["true"]` is accepted;
 - keep an `application/json` body composed with `allOf` that references
   `#/components/schemas/ErrorResponse`; and
 - declare no `operation_not_implemented` in the body's `error.code` `enum` or
   `const`: a replacement that keeps that literal still says the operation is
   permanently unimplemented.
 
-A replacement that loses any guarantee is reported as
-`placeholder 503 replacement requires ...`. An unchanged placeholder
-reference stays valid: the exception judges the replacement, so operations that
-have not shipped keep their declaration. All other responses keep the unchanged
-directional rules, including the existing `const` and composition comparisons: a
-503 that was not exactly the placeholder reference (including a placeholder
-`$ref` with siblings) is compared normally. A version bump remains no waiver.
-The positive and negative cases live in
+The `error.code` check resolves repository `$ref`s, so a shared component
+cannot hide the literal at the `allOf` branch, at `error`, or at
+`error.properties.code`. An external or broken reference makes the body
+unjudgeable and is rejected instead of assumed safe; `anyOf`/`oneOf`
+alternatives are likewise refused because a union cannot be read as one conjunct.
+
+Each violated rule is reported separately as `placeholder 503 replacement ...
+<rule>`. An unchanged placeholder reference stays valid only while the shared
+`OperationNotImplemented` component still declares a required
+`Cache-Control`, a required `X-Should-Retry` limited to `"false"`, and the
+`allOf`/`ErrorResponse` body; weakening that component is reported as
+`placeholder 503 response ...` for every operation that still points at it.
+All other responses keep the unchanged directional rules, including the existing
+`const` and composition comparisons: a 503 that was not exactly the placeholder
+reference (including a placeholder `$ref` with siblings) is compared normally. A
+version bump remains no waiver. The positive and negative cases live in
 `tests/contract/test_http_contract_changes.py`.
 
 ## What remains outside this unit

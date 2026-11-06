@@ -134,65 +134,209 @@ def _exact_placeholder_503(
     )
 
 
-def _declared_error_codes(schema: object, codes: set[str], depth: int = 0) -> None:
-    """Collect the `error.code` literals a replacement body declares.
+def _resolve_schema_ref(
+    ref: str, side: _SchemaSide
+) -> tuple[Mapping[str, Any], _SchemaSide] | None:
+    """Resolve one schema reference to its target and the document containing it."""
+    if "://" in ref:
+        return None
+    if ref.startswith("#"):
+        target_path = side.path
+        target_git_ref = side.git_ref
+        target_document: Mapping[str, Any] | None = side.document
+        fragment = ref[1:]
+    else:
+        path_part, _, fragment = ref.partition("#")
+        target_path = posixpath.normpath(posixpath.join(posixpath.dirname(side.path), path_part))
+        target_git_ref = side.git_ref
+        if not target_path.startswith("contracts/"):
+            return None
+        cache_key = (target_path, target_git_ref)
+        if side.documents is not None and cache_key in side.documents:
+            target_document = side.documents[cache_key]
+        else:
+            target_document = _load_schema_document(target_path, target_git_ref)
+            if side.documents is not None:
+                side.documents[cache_key] = target_document
+        if target_document is None:
+            return None
+        fragment = fragment if not fragment or fragment.startswith("/") else f"/{fragment}"
+    if target_document is None:
+        return None
+    target = _mapping(_resolve_local_pointer(target_document, fragment))
+    if target is None:
+        return None
+    return target, _SchemaSide(
+        target_document, target_path, target_git_ref, side.documents, side.standard_only
+    )
 
-    A body that still enumerates `operation_not_implemented` claims the operation
-    is permanently unimplemented however retryable its headers are. The walk is
-    depth-bounded so recursive YAML anchors or malformed nesting cannot run away.
+
+def _instance_level_schemas(
+    schema: object,
+    side: _SchemaSide,
+    seen: frozenset[tuple[str, str]] = frozenset(),
+    depth: int = 0,
+) -> list[tuple[Mapping[str, Any], _SchemaSide]] | None:
+    """Schemas constraining the same instance level, each with its own document.
+
+    `$ref` and `allOf` are followed because both conjoin at one instance level.
+    `anyOf`/`oneOf` alternatives are refused: a union is not one conjunct, and
+    modelling it as one could hide a branch that still allows the placeholder
+    code. None means the constraints cannot be determined here.
     """
     if depth > 16:
-        return
+        return None
     mapping = _mapping(schema)
     if mapping is None:
-        for item in _sequence(schema) or []:
-            _declared_error_codes(item, codes, depth + 1)
-        return
-    properties = _mapping(mapping.get("properties")) or {}
-    error = _mapping(properties.get("error")) or {}
-    code = _mapping((_mapping(error.get("properties")) or {}).get("code")) or {}
-    for value in _sequence(code.get("enum")) or []:
-        if isinstance(value, str):
-            codes.add(value)
-    if isinstance(code.get("const"), str):
-        codes.add(cast(str, code["const"]))
-    for value in mapping.values():
-        _declared_error_codes(value, codes, depth + 1)
+        return [] if isinstance(schema, bool) else None
+    ref = mapping.get("$ref")
+    if isinstance(ref, str):
+        identity = (side.path, ref)
+        if identity in seen:
+            return None
+        resolved = _resolve_schema_ref(ref, side)
+        if resolved is None:
+            return None
+        target, target_side = resolved
+        parts = _instance_level_schemas(target, target_side, seen | {identity}, depth + 1)
+        if parts is None:
+            return None
+        siblings = {key: value for key, value in mapping.items() if key != "$ref"}
+        if not siblings:
+            return parts
+        sibling_parts = _instance_level_schemas(siblings, side, seen, depth + 1)
+        if sibling_parts is None:
+            return None
+        return parts + sibling_parts
+    if "anyOf" in mapping or "oneOf" in mapping:
+        return None
+    parts = [(mapping, side)]
+    variants = mapping.get("allOf")
+    if variants is not None:
+        items = _sequence(variants)
+        if items is None:
+            return None
+        for variant in items:
+            resolved = _instance_level_schemas(variant, side, seen, depth + 1)
+            if resolved is None:
+                return None
+            parts.extend(resolved)
+    return parts
 
 
-def _keeps_retryable_503_shape(response: Mapping[str, Any] | None) -> bool:
-    """An inline 503 body that no longer claims the operation is unimplemented.
+def _declared_error_codes(schema: object, side: _SchemaSide) -> set[str] | None:
+    """Declared `error.code` literals, or None when they cannot be determined.
 
-    Presence is not a promise: required `X-Should-Retry` still says "do not
-    retry" while its value is `false`, and an `error.code` of
-    `operation_not_implemented` still says "permanently unimplemented". A shared
-    component reference is rejected because it could carry guarantees declared
-    for another operation.
+    References are resolved inside the contract so a shared component cannot hide
+    `operation_not_implemented`; an external or broken reference makes the body
+    unjudgeable, and the caller rejects that instead of assuming it is safe.
     """
-    if response is None or "$ref" in response:
+    levels = _instance_level_schemas(schema, side)
+    if levels is None:
+        return None
+    codes: set[str] = set()
+    for level, level_side in levels:
+        error = (_mapping(level.get("properties")) or {}).get("error")
+        if error is None:
+            continue
+        error_levels = _instance_level_schemas(error, level_side)
+        if error_levels is None:
+            return None
+        for error_level, error_side in error_levels:
+            code = (_mapping(error_level.get("properties")) or {}).get("code")
+            if code is None:
+                continue
+            code_levels = _instance_level_schemas(code, error_side)
+            if code_levels is None:
+                return None
+            for code_level, _ in code_levels:
+                values = _sequence(code_level.get("enum"))
+                if values is not None:
+                    if not all(isinstance(value, str) for value in values):
+                        return None
+                    codes.update(values)
+                if "const" in code_level:
+                    const = code_level["const"]
+                    if not isinstance(const, str):
+                        return None
+                    codes.add(const)
+    return codes
+
+
+def _declares_literal_only(schema: object, expected: str) -> bool:
+    """True when every value a header schema allows is exactly `expected`."""
+    mapping = _mapping(schema) or {}
+    if "const" in mapping and mapping["const"] != expected:
         return False
+    values = _sequence(mapping.get("enum"))
+    if values is not None and not all(value == expected for value in values):
+        return False
+    return mapping.get("const") == expected or bool(values)
+
+
+def _placeholder_503_problems(
+    response: Mapping[str, Any] | None,
+    document: Mapping[str, Any],
+    side: _SchemaSide,
+    *,
+    expected_retry: str,
+    replacement: bool,
+) -> list[str]:
+    """One message per structural rule a placeholder 503 response violates.
+
+    The placeholder says "permanently not implemented" through the header value
+    and the error code, not only through the header names. A replacement has to
+    invert both and stay inline; an unchanged placeholder must still declare the
+    shared component's original shape instead of silently weakening it.
+    """
+    subject = "placeholder 503 replacement" if replacement else "placeholder 503 response"
+    if response is None:
+        return [f"{subject} is missing"]
+    ref = response.get("$ref")
+    if isinstance(ref, str):
+        if replacement:
+            return [f"{subject} must be an inline response, not a $ref"]
+        definition = (
+            _mapping(_resolve_local_pointer(document, ref[1:])) if ref.startswith("#") else None
+        )
+        if definition is None:
+            return [f"{subject} reference cannot be resolved"]
+    else:
+        definition = response
+    problems: list[str] = []
     headers = {
         str(name).lower(): value
-        for name, value in (_mapping(response.get("headers")) or {}).items()
+        for name, value in (_mapping(definition.get("headers")) or {}).items()
     }
-    cache_control = _mapping(headers.get("cache-control")) or {}
-    if cache_control.get("required") is not True:
-        return False
+    if (_mapping(headers.get("cache-control")) or {}).get("required") is not True:
+        problems.append(f"{subject} requires a required Cache-Control header")
     retry = _mapping(headers.get("x-should-retry")) or {}
-    retry_schema = _mapping(retry.get("schema")) or {}
-    if retry.get("required") is not True or retry_schema.get("const") != "true":
-        return False
-    content = _mapping(response.get("content")) or {}
+    if retry.get("required") is not True or not _declares_literal_only(
+        retry.get("schema"), expected_retry
+    ):
+        problems.append(
+            f'{subject} requires a required X-Should-Retry header declaring "{expected_retry}"'
+        )
+    content = _mapping(definition.get("content")) or {}
     media = _mapping(content.get("application/json")) or {}
     schema = _mapping(media.get("schema")) or {}
     variants = _sequence(schema.get("allOf")) or []
     if len(variants) < 2 or not any(
         (_mapping(variant) or {}).get("$ref") == _ERROR_RESPONSE_REF for variant in variants
     ):
-        return False
-    codes: set[str] = set()
-    _declared_error_codes(schema, codes)
-    return _PLACEHOLDER_ERROR_CODE not in codes
+        problems.append(
+            f"{subject} requires an application/json body composed with allOf that references "
+            f"{_ERROR_RESPONSE_REF}"
+        )
+    if replacement:
+        codes = _declared_error_codes(schema, side)
+        if codes is None:
+            problems.append(f"{subject} error.code cannot be determined from external references")
+        elif _PLACEHOLDER_ERROR_CODE in codes:
+            problems.append(
+                f"{subject} must not declare {_PLACEHOLDER_ERROR_CODE} in its error.code"
+            )
+    return problems
 
 
 def _dereference_schema_children(
@@ -1196,22 +1340,19 @@ def _compare_openapi(
                     continue
                 if _exact_placeholder_503(base, path_name, method, status):
                     # The baseline declared "permanently not implemented". An
-                    # unchanged placeholder stays valid; any replacement must be an
-                    # inline, retryable 503 whose header and body values keep that
-                    # retry signal instead of the original permanent-absence claim.
-                    if not _exact_placeholder_503(
-                        current, path_name, method, status
-                    ) and not _keeps_retryable_503_shape(
-                        _raw_response(current, path_name, method, status)
+                    # unchanged placeholder must still declare the shared
+                    # component's original shape; a replacement must invert that
+                    # permanent-absence claim in the header value and the error
+                    # code, and may not borrow another operation's response.
+                    unchanged = _exact_placeholder_503(current, path_name, method, status)
+                    for problem in _placeholder_503_problems(
+                        _raw_response(current, path_name, method, status),
+                        current,
+                        current_side,
+                        expected_retry="false" if unchanged else "true",
+                        replacement=not unchanged,
                     ):
-                        _issue(
-                            issues,
-                            response_pointer,
-                            "placeholder 503 replacement requires an inline response (no $ref), "
-                            'required Cache-Control and X-Should-Retry: "true" headers, an '
-                            "allOf body containing ErrorResponse, and an error.code that does "
-                            "not include operation_not_implemented",
-                        )
+                        _issue(issues, response_pointer, problem)
                     continue
                 base_headers = {
                     name.lower(): value

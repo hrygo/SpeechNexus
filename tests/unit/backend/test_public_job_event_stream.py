@@ -615,8 +615,9 @@ async def test_an_abort_failure_is_reported_as_the_graceful_fallback(
 class _BreakingSource:
     """An event source whose close fails after the first frame."""
 
-    def __init__(self) -> None:
+    def __init__(self, error: Exception) -> None:
         self._sent = False
+        self._error = error
 
     def __aiter__(self) -> _BreakingSource:
         return self
@@ -628,11 +629,21 @@ class _BreakingSource:
         return b"data: one\n\n"
 
     async def aclose(self) -> None:
-        raise RuntimeError("source close failed")
+        raise self._error
 
 
+@pytest.mark.parametrize(
+    "close_error",
+    [
+        RuntimeError("source close failed"),
+        # A source may hit its own TimeoutError; that is a failed close, not
+        # evidence that the close bound expired.
+        TimeoutError("source gave up"),
+    ],
+)
 async def test_a_failing_source_still_resets_the_connection(
     caplog: pytest.LogCaptureFixture,
+    close_error: Exception,
 ) -> None:
     aborted: list[bool] = []
 
@@ -642,7 +653,7 @@ async def test_a_failing_source_still_resets_the_connection(
             await asyncio.Event().wait()
 
     response = http._EventStreamResponse(
-        _BreakingSource(),
+        _BreakingSource(close_error),
         media_type="text/event-stream",
         headers={},
         send_timeout_seconds=0.01,
@@ -654,6 +665,65 @@ async def test_a_failing_source_still_resets_the_connection(
     assert aborted == [True]
     record = cast(Any, caplog.records[-1])
     assert record.getMessage() == "job_event_stream_backpressure"
+    # A close that fails is not a close that timed out; the record tells them apart.
+    assert record.close_timed_out is False
+    assert record.connection_reset is True
+
+
+class _HangingCloseSource:
+    """An event source whose close never returns."""
+
+    def __init__(self) -> None:
+        self._sent = False
+        self.close_started = False
+
+    def __aiter__(self) -> _HangingCloseSource:
+        return self
+
+    async def __anext__(self) -> bytes:
+        if self._sent:
+            raise StopAsyncIteration
+        self._sent = True
+        return b"data: one\n\n"
+
+    async def aclose(self) -> None:
+        self.close_started = True
+        await asyncio.Event().wait()
+
+
+async def test_a_hanging_source_close_cannot_postpone_the_reset(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The close is bounded, so a source that never closes still gets reset.
+
+    Without the close bound this wait never returns: the abort hook and the
+    warning sit behind an unbounded await, and the outer timeout cancels the
+    task before either runs.
+    """
+    aborted: list[bool] = []
+    source = _HangingCloseSource()
+
+    async def send(message: Message) -> None:
+        body = cast(dict[str, Any], message)
+        if message["type"] == "http.response.body" and body.get("more_body", False):
+            await asyncio.Event().wait()
+
+    response = http._EventStreamResponse(
+        source,
+        media_type="text/event-stream",
+        headers={},
+        send_timeout_seconds=0.01,
+        close_timeout_seconds=0.05,
+        abort_connection=lambda: aborted.append(True),
+    )
+    with caplog.at_level(logging.WARNING, logger="speechnexus_backend.speech.interfaces.http.jobs"):
+        await asyncio.wait_for(response.stream_response(send), 2)
+    # The source accepted the close and stalled; the connection is cut anyway.
+    assert source.close_started
+    assert aborted == [True]
+    record = cast(Any, caplog.records[-1])
+    assert record.getMessage() == "job_event_stream_backpressure"
+    assert record.close_timed_out is True
     assert record.connection_reset is True
 
 

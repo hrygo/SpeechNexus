@@ -79,6 +79,11 @@ _EVENT_POLL_SECONDS = 0.5
 # interval is bounded by configuration; it never consumes an event id.
 _EVENT_HEARTBEAT_SECONDS = 15.0
 _EVENT_SEND_TIMEOUT_SECONDS = 10.0
+# Closing the source is server-side cleanup, not a client write, so it carries
+# its own bound: a source whose close never returns must not postpone the reset
+# and the warning. It is deliberately not derived from the operator-tuned send
+# budget, which may be a fraction of a second.
+_EVENT_CLOSE_TIMEOUT_SECONDS = 5.0
 _KEEPALIVE = b": keepalive\n\n"
 
 _LOGGER = logging.getLogger(__name__)
@@ -104,10 +109,11 @@ class _EventStreamResponse(StreamingResponse):
     frame of the current page was accepted by the server transport, so a
     connection holds at most one page of projected frames (_EVENT_BATCH) plus the
     frame in flight. When a write cannot complete within the configured timeout
-    the client is not draining, so the source is closed and, when the middleware
-    captured one, the server's abort hook resets the socket instead of blocking
-    the request task forever. The disconnect is logged with counts and timings
-    only; the client resumes from its last committed id.
+    the client is not draining, so the source is closed within its own bound
+    and, when the middleware captured one, the server's abort hook resets the
+    socket instead of blocking the request task forever. The disconnect is
+    logged with counts and timings only; the client resumes from its last
+    committed id.
     """
 
     def __init__(
@@ -115,11 +121,13 @@ class _EventStreamResponse(StreamingResponse):
         content: AsyncIterator[bytes],
         *,
         send_timeout_seconds: float,
+        close_timeout_seconds: float = _EVENT_CLOSE_TIMEOUT_SECONDS,
         abort_connection: Callable[[], None] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(content, **kwargs)
         self._send_timeout_seconds = send_timeout_seconds
+        self._close_timeout_seconds = close_timeout_seconds
         self._abort_connection = abort_connection
 
     async def stream_response(self, send: Send) -> None:
@@ -140,10 +148,22 @@ class _EventStreamResponse(StreamingResponse):
 
     async def _stop_stalled_stream(self) -> None:
         """Close the source, reset the connection and report what actually ran."""
+        close_timed_out = False
         try:
             close = getattr(self.body_iterator, "aclose", None)
             if close is not None:
-                await close()
+                deadline = asyncio.timeout(self._close_timeout_seconds)
+                try:
+                    async with deadline:
+                        await close()
+                except TimeoutError:
+                    # Only this deadline makes the close "timed out"; a source
+                    # that raises TimeoutError on its own merely failed to close.
+                    if not deadline.expired():
+                        raise
+                    # The wait is cut, not the obligation: the reset below still
+                    # runs and the record states that the close did not finish.
+                    close_timed_out = True
         except Exception:
             # A failing source must not skip the reset or the warning below.
             pass
@@ -164,6 +184,7 @@ class _EventStreamResponse(StreamingResponse):
                     "event": "job_event_stream_backpressure",
                     "reason": "slow_client",
                     "send_timeout_seconds": self._send_timeout_seconds,
+                    "close_timed_out": close_timed_out,
                     "connection_reset": reset,
                 },
             )

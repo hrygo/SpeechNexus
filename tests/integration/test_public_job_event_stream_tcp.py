@@ -24,6 +24,8 @@ from typing import Any, cast
 import httpx
 import pytest
 import uvicorn
+from starlette.applications import Starlette
+from starlette.middleware import Middleware
 from tests.integration.test_public_jobs_http import PREFIX, JobSandbox, _settings_for
 from tests.integration.test_public_jobs_http import jobs_db as jobs_db
 from tests.unit.backend.test_health import _settings
@@ -78,6 +80,68 @@ async def test_create_app_accepts_a_pass_through_outside_capture() -> None:
     app = create_app(settings=_settings())
     app.add_middleware(_PassThrough)
     require_request_abort_capture(app)
+
+
+def test_abort_probe_has_request_metadata_and_a_registered_event_path() -> None:
+    app = create_app(settings=_settings())
+    router = app.router
+
+    class ScopeReader(_PassThrough):
+        async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+            assert scope["client"] == ("127.0.0.1", 12345)
+            assert scope["server"] == ("127.0.0.1", 80)
+            assert scope["app"] is app
+            assert scope["path"] == app.url_path_for(
+                "stream_job_events", job_id="00000000-0000-0000-0000-000000000000"
+            )
+            await super().__call__(scope, receive, send)
+
+    app.add_middleware(ScopeReader)
+    require_request_abort_capture(app)
+    assert app.router is router
+    assert app.middleware_stack is None
+
+
+def test_abort_probe_rejects_receive_wrapping_for_requests_with_a_client() -> None:
+    class ClientAwareReceiveWrapper(_ReceiveWrapper):
+        async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+            if scope.get("client") is not None:
+                await super().__call__(scope, receive, send)
+            else:
+                await self._app(scope, receive, send)
+
+    app = create_app(settings=_settings())
+    app.add_middleware(ClientAwareReceiveWrapper)
+    with pytest.raises(RuntimeError, match="abort hook"):
+        require_request_abort_capture(app)
+
+
+def test_abort_probe_rejects_framework_receive_wrapping() -> None:
+    # Starlette inserts this receive wrapper outside all user middleware.
+    app = Starlette(middleware=[Middleware(RequestIdMiddleware)], max_body_size=1024)
+    with pytest.raises(RuntimeError, match="abort hook"):
+        require_request_abort_capture(app)
+    assert app.middleware_stack is None
+
+
+@pytest.mark.parametrize("stage", ["construction", "request"])
+def test_abort_probe_errors_are_distinct_from_lost_capture(stage: str) -> None:
+    class BrokenMiddleware(_PassThrough):
+        def __init__(self, app: Any) -> None:
+            if stage == "construction":
+                raise ValueError("invalid probe middleware")
+            super().__init__(app)
+
+        async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+            raise KeyError("missing probe field")
+
+    app = create_app(settings=_settings())
+    app.add_middleware(BrokenMiddleware)
+    error_type = ValueError if stage == "construction" else KeyError
+    with pytest.raises(RuntimeError, match=f"probe failed: {error_type.__name__}:") as error:
+        require_request_abort_capture(app)
+    assert isinstance(error.value.__cause__, error_type)
+    assert "abort hook" not in str(error.value)
 
 
 def test_create_app_accepts_a_request_id_subclass(monkeypatch: pytest.MonkeyPatch) -> None:

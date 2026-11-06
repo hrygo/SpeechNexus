@@ -150,9 +150,16 @@ class PronunciationIngress:
         if (
             len(path) > 512
             or len(scope.get("query_string", b"")) > 4096
-            or not _PATTERN.fullmatch(path)
+            or not (path == PREFIX or _PATTERN.fullmatch(path))
         ):
             await refuse("invalid_request")
+            return
+        if path == PREFIX:
+            # Collection list/create are declared but unimplemented: the
+            # centrally registered placeholder answers the stable 503. Reading
+            # capacity and the fixed-revision shape do not apply to it, and a
+            # body is never read.
+            await self._app(scope, receive, send)
             return
         if scope["method"] != "GET":
             await refuse("method_not_allowed")

@@ -39,7 +39,7 @@
     {
       "operation": "createJob",
       "path": "/v1/nexus/jobs",
-      "allow": "POST",
+      "allow": "GET, POST",
       "code": "job_method_not_allowed"
     },
     {

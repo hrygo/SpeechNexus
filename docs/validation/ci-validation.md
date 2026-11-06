@@ -145,7 +145,9 @@ uv run pytest tests/ci tests/contract/test_ci_workflow.py tests/unit/test_integr
 ASGI ingress 状态码、框架 404/500、FastAPI 参数校验产生的 422、跨模块 helper 返回的响应与真实执行内容不在静态集合内；endpoint 源码无法定位则直接失败。
 
 已知未实现操作与已知未声明状态码保留在脚本内的显式基线中，逐条带原因；实现或契约变更后必须同步删除条目，
-否则 `stale_*` 检查失败。基线与审计结论的对应关系见
+否则 `stale_*` 检查失败。未实现操作另有行为要求：门禁解析中央占位表与占位错误映射，要求基线、占位条目、
+注册模块与静态可观察状态（`{405, 503}`）一致，占位错误映射恰好为 `{operation_not_implemented: 503}`，
+因此「注册了路由」不再等于「已实现」。基线与审计结论的对应关系见
 [公开语音面契约一致性审计](../operations/contract-conformance-audit.md#10-可重复检查与-ci-门禁)。
 
 本机验证：

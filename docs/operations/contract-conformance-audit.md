@@ -5,6 +5,10 @@
 审计基线：`origin/main` `62ae4805`，分支 `codex/contract-conformance-audit`。
 审计时间：2026-11-06（Asia/Shanghai）。审计为只读：不改产品代码、不改契约。
 
+**未实现操作处置**：2026-11-06，基线 `934855c3`（`codex/slice-473`，#473）。21 条未实现操作改由中央占位路由注册并返回
+`503 operation_not_implemented`；门禁的未实现基线从「未注册」改为「已注册且只返回占位错误」。历史实测见 §6.1，
+当前实测、表达选择与理由见 §6.2，处置见 §9 第 2 项，门禁见 §10。
+
 **引用与结论复核**：2026-11-06 18:00（Asia/Shanghai），基线 `3951718e`（`codex/slice-469`，与当日 `origin/main` 同 commit）。
 复核范围：`jobs.py` / `job_errors.py` / `app.py` 的 8 条漂移引用及其结论（§11）、受后续实现影响的计数与结论（§1、§3.1、§6.1、§9），
 以及全部契约行号引用（改为操作/路径锚点）。
@@ -35,6 +39,7 @@
   `listPronunciationSets`/`createPronunciationRevision` 返回 `400 pronunciation_invalid_request`。
   【复核 3951718e】该段是基线事实：`retryJob`/`streamJobEvents` 已注册，不再返回"路由不存在"的 `job_not_found`。
   当前 21 个未注册操作中，18 个返回默认 404，`listJobs` 返回 405，两条集合级读音路由返回 400（§6.1）。
+  【#473】已过期：21 条全部注册为占位路由并返回 `503 operation_not_implemented`，实测与理由见 §6.2。
 - **401 在全表都是"声明未使用"**：公开语音处理器没有实现共享服务密钥校验（`docs/architecture/openai-compatibility.md:91`），
   源码中不存在任何 401 产生路径。
   【复核 3951718e】仍成立：`backend/src/speechnexus_backend/speech/interfaces/http/artifacts.py::create_artifact_router`
@@ -56,6 +61,8 @@
 2. `GET /v1/nexus/jobs`（`listJobs`）与 `POST /v1/nexus/jobs` 共用同一路径；未注册的 GET 得到 `405 job_method_not_allowed`，
    而契约给 `listJobs` 声明的是 200/400/401/503，消费者无法据状态码区分"未实现"与"方法不支持"。
    【复核 3951718e】仍成立（运行时实测 405 `job_method_not_allowed`）。
+   【#473】已处置：`listJobs` 现注册为占位 GET，返回 503 `operation_not_implemented`；同一路径的 405 仍为
+   `method_not_allowed`，`Allow` 合并列出 `GET, POST`（§6.2）。
 
 ## 2. 方法与证据边界
 
@@ -307,6 +314,77 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
 | 41 | speechCreateDeletion | POST /v1/nexus/deletions | 404 默认 |
 | 42 | speechGetDeletion | GET /v1/nexus/deletions/{deletion_id} | 404 默认 |
 
+### 6.2 #473：未实现操作的稳定错误（当前实测）
+
+`934855c3` 上复核 §6.1 时确认：21 条操作仍无生产实现，但响应分三类（18 条框架 404 裸 `detail`、`listJobs` 的 405、
+两条集合级读音路由的 400），消费者无法与「资源不存在 / 方法不支持 / 参数错误」区分。契约版本 `0.1.0.dev8` 起，
+21 条全部由中央占位路由注册并返回同一种可辨识错误。
+
+实测方法：`create_app(settings=...)` 组装真实应用（无服务注入、不启动 lifespan），逐条发请求并记录状态码、
+错误码、`retryable` 与 `X-Request-ID`；下表为 #473 前后同口径实测。
+
+| # | 操作 | 路由 | #473 前 | #473 后 |
+| --- | --- | --- | --- | --- |
+| 20 | retireVoiceRevision | POST /v1/nexus/voices/{voice_id}/revisions/{revision}/retirements | 404 框架默认 | **503 `operation_not_implemented`** |
+| 21 | listPronunciationSets | GET /v1/nexus/pronunciation-sets | **400 `pronunciation_invalid_request`** | **503 `operation_not_implemented`** |
+| 22 | createPronunciationRevision | POST /v1/nexus/pronunciation-sets | **400 `pronunciation_invalid_request`** | **503 `operation_not_implemented`** |
+| 23 | listJobs | GET /v1/nexus/jobs | **405 `job_method_not_allowed`** | **503 `operation_not_implemented`** |
+| 26 | getOperation | GET /v1/nexus/operations/{operation_id} | 404 框架默认 | **503 `operation_not_implemented`** |
+| 27 | cancelOperation | POST /v1/nexus/operations/{operation_id}/cancellations | 404 框架默认 | **503 `operation_not_implemented`** |
+| 28 | createRealtimeSession | POST /v1/nexus/realtime/sessions | 404 框架默认 | **503 `operation_not_implemented`** |
+| 29 | getRealtimeSession | GET /v1/nexus/realtime/sessions/{session_id} | 404 框架默认 | **503 `operation_not_implemented`** |
+| 30 | cancelRealtimeSession | POST /v1/nexus/realtime/sessions/{session_id}/cancellations | 404 框架默认 | **503 `operation_not_implemented`** |
+| 31 | connectRealtime | GET /v1/realtime | 404 框架默认 | **503 `operation_not_implemented`**（仅 HTTP 请求；WebSocket 升级仍被框架拒绝，见下） |
+| 32 | createVoiceDesign | POST /v1/nexus/voice-designs | 404 框架默认 | **503 `operation_not_implemented`** |
+| 33 | createVoiceClone | POST /v1/nexus/voice-clones | 404 框架默认 | **503 `operation_not_implemented`** |
+| 34 | getVoiceDraft | GET /v1/nexus/voice-drafts/{draft_id} | 404 框架默认 | **503 `operation_not_implemented`** |
+| 35 | updateVoiceDraftMetadata | PATCH /v1/nexus/voice-drafts/{draft_id} | 404 框架默认 | **503 `operation_not_implemented`** |
+| 36 | generateVoiceDraftRevision | POST /v1/nexus/voice-drafts/{draft_id}/generations | 404 框架默认 | **503 `operation_not_implemented`** |
+| 37 | createVoicePreview | POST /v1/nexus/voice-drafts/{draft_id}/previews | 404 框架默认 | **503 `operation_not_implemented`** |
+| 38 | validateVoiceDraftRevision | POST /v1/nexus/voice-drafts/{draft_id}/validations | 404 框架默认 | **503 `operation_not_implemented`** |
+| 39 | publishVoiceDraftRevision | POST /v1/nexus/voice-drafts/{draft_id}/publications | 404 框架默认 | **503 `operation_not_implemented`** |
+| 40 | speechCreateDeletionPlan | POST /v1/nexus/deletion-plans | 404 框架默认 | **503 `operation_not_implemented`** |
+| 41 | speechCreateDeletion | POST /v1/nexus/deletions | 404 框架默认 | **503 `operation_not_implemented`** |
+| 42 | speechGetDeletion | GET /v1/nexus/deletions/{deletion_id} | 404 框架默认 | **503 `operation_not_implemented`** |
+
+统一响应的共同约束（`contracts/speech-openapi.yaml::OperationNotImplemented`）：状态 503、`error.type` 为
+`service_unavailable_error`、`error.code` 恒为 `operation_not_implemented`、`error.retryable` 恒为 `false`、
+`Cache-Control: no-store`、`X-Should-Retry: false`，且响应头与包封共享同一个 `request_id`。
+21 条中的 16 条在契约里指向该组件；其余 5 条（`listPronunciationSets`、`listJobs`、`getOperation`、
+`createRealtimeSession`、`connectRealtime`）沿用原有的 `ServiceUnavailable` 声明——它接受同一响应体，
+替换会从版本化面移除 `Retry-After` 头，被结构门禁判为破坏性变更（见下）。
+
+**表达选择：A（统一 503 + 专用错误码）。** 理由与另外两个方案的实测差异：
+
+- **不新增 `ErrorType` 枚举值。** `contracts/shared/errors.schema.json::ErrorType` 是语音、realtime、admin、workbench
+  四个公开面共用的单一来源，501 需要新增 `not_implemented_error`（方案 B），会同时改共享 schema、四个面的生成校验器
+  与全部消费者；503 复用既有 `service_unavailable_error`，只新增一个状态声明。
+- **「未实现」不得与真实故障共用错误码。** 占位路由的错误映射
+  （`backend/src/speechnexus_backend/speech/interfaces/http/unimplemented_errors.py::_ERRORS`）只有
+  `operation_not_implemented` 一项，门禁静态校验它必须恰好等于 `{operation_not_implemented: 503}`。
+  真实故障继续用 `backend_unavailable`、`artifact_service_unavailable` 等自己的码，`retryable` 为 `true`；
+  这与方案 C（保留 404/405/400 仅换错误码）不同：C 的状态码本身仍会把「未实现」读成「资源不存在 / 方法不支持」，
+  且 404 与真实 `*_not_found` 无法靠状态码区分。
+- **契约代价已量化。** 21 条原本只声明成功与业务错误的操作，实际会返回 405（同路径其它方法）与 503（未实现）；
+  本次为每条补 `405`（复用既有 `MethodNotAllowed`，21 处），并为原本没有 503 的 16 条补 `503`
+  （新组件 `OperationNotImplemented`），共 37 个新增声明；另有 5 条原本就声明了 503，保留原 `ServiceUnavailable`
+  声明不动——同一响应体满足它，替换则属于移除 `Retry-After` 的破坏性变更，`contracts-speech-changes` 与
+  `check-openai-contract-compat.py` 都不放行。这与 #462 对已实现操作补 405 的做法一致，`KNOWN_UNDECLARED_STATUSES` 仍为空，
+  未放宽任何既有检查。ADR 0012 第 5 条「未实现的操作返回 `503`/`501` 与既有错误包封」本就是本处置的依据。
+
+实现与门禁：
+
+- 注册面：`backend/src/speechnexus_backend/speech/interfaces/http/unimplemented.py::UNIMPLEMENTED_OPERATIONS`
+  是唯一的占位表，`create_unimplemented_router()` 逐条注册；`include_in_schema=False`，服务端 OpenAPI 不把这些操作
+  宣传为可用（ADR 0012 第 5 条「不以占位响应通过契约检查」）。
+- 405 语义：同一路径上的 405 仍是 `method_not_allowed`（不是 `operation_not_implemented`）；`Allow` 头合并该路径上
+  全部已注册方法（例如 `/v1/nexus/jobs` 为 `GET, POST`，而不是框架默认只列第一条匹配路由）。
+- 读音集合级路径：`PronunciationIngress` 原先在路由前把集合级请求改写为 400；现改为在完成 Host/Origin 校验后放行到
+  占位路由，容量与固定 revision 形状校验仍只作用于 item 路径。Host/Origin 被拒绝时仍返回
+  `403 pronunciation_host_rejected`（入口边界，与是否有实现无关）。
+- `connectRealtime`：HTTP GET 返回上述 503；契约声明的 101 属 WebSocket 升级，框架对未注册的 WS 路由直接拒绝握手，
+  无法承载 HTTP 错误包封。该限制不变，也不把 WS 升级记为已实现。
+
 ## 7. 运行时证据（审计基线 62ae4805）
 
 装配：`create_app(settings=...)`，只注入必要依赖；`Host: localhost` 以通过入口的 Host 校验。
@@ -381,6 +459,8 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
    【复核 3951718e】**已完成**：`#442/#443` 补齐两条 GET；未配置目录为可重试 503，正常读取 200（§9.1）。
 2. **P0**：让未实现路由返回可辨识的稳定错误（而非默认 404 detail、405、400 或 `job_not_found`），
    避免消费者把"未实现"误判为"参数错误/资源不存在"。
+   **【#473 已完成】**：21 条统一返回 `503 operation_not_implemented`（`retryable: false`），与
+   `backend_unavailable`、`*_not_found`、`method_not_allowed` 均可区分；实测与理由见 §6.2。
 3. **P1**：补齐 `getArtifact`/`downloadArtifactContent` 的 304、416、503 声明；补齐 `cancelJob` 的 400、
    `createTranscription` 的 404。
 4. **P1**：为 `/v1/audio/transcriptions`、`/v1/models`、`/v1/nexus/capabilities` 等路径补 405 声明与统一错误体，
@@ -391,6 +471,7 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
 
 【复核 3951718e】§9 的第 1 项已完成；第 2–6 项仍成立，且第 4 项的 405 缺口新增
 `retryJob`/`streamJobEvents`/`listVoices`/`getVoiceRevision`（§3.1）。
+【#473】第 2 项已完成；第 3–6 项仍成立。
 
 ### 9.1 #442 音色目录公开 GET 处置
 
@@ -416,7 +497,8 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
 **16 个操作 / 23 个状态对**（16 个 405 加 7 个其他状态）；任务描述中的
 21 个状态对是较早计数。`0.1.0.dev7` 补齐这 23 对，
 `KNOWN_UNDECLARED_STATUSES` 收缩为空，即 **0 个操作 / 0 个状态对**。
-21 条未实现操作的基线和「已声明但未静态观察到」的独立报告保留，未因本次声明视为实现。
+21 条未实现操作的基线和「已声明但未静态观察到」的独立报告保留，未因本次声明视为实现
+（#473 起该基线改为「已注册且只返回占位错误」，见 §6.2/§10）。
 401/403 等入口/访问语义未在本次改变。
 
 所有新增错误响应复用 `ErrorResponse`，不新增枚举值。304 是无正文的条件响应，
@@ -450,8 +532,16 @@ Python/TypeScript 绑定与打包 HTTP 投影由源重新生成；严格消费�
 4. 显式基线：`KNOWN_UNIMPLEMENTED_OPERATIONS` 固定当前 21 条未实现操作并逐条写明原因；
    `KNOWN_UNDECLARED_STATUSES` 经 #462 收缩为空（原 16 个操作 / 23 个状态对），
    任何新增未声明状态都必须修复，不能加入旧基线。
+   【#473】未实现基线不再以「未注册」为证据：门禁解析
+   `unimplemented.py::UNIMPLEMENTED_OPERATIONS` 与 `unimplemented_errors.py::_ERRORS`，要求
+   **(a)** 基线集合与占位表逐条相等（`unimplemented_table_unknown` / `stale_unimplemented_baseline`），
+   **(b)** 每条基线的路由存在且由其占位模块注册（`declared_not_registered` /
+   `unimplemented_placeholder_drift`），
+   **(c)** 该路由可静态观察到的状态恰好是 `{405, 503}`（多一个 200 或换成别的错误码都会失败），
+   **(d)** 占位错误映射恰好是 `{operation_not_implemented: 503}`（`unimplemented_error_map_drift`）。
+   因此占位响应不会「通过」契约检查：实现该操作时必须同时删除占位条目与基线条目，否则门禁失败。
 5. 新增契约未注册操作、已注册未声明路由、未声明状态码、operationId 形状变化、endpoint 源码
-   无法定位，或基线过期（操作已实现、状态已声明/不再可达）都会使命令以退出码 1 失败。
+   无法定位，或基线过期（操作已实现、状态已声明/不再可达、占位形状/归属/错误码漂移）都会使命令以退出码 1 失败。
 
 用法与自测：
 
@@ -463,13 +553,18 @@ uv run pytest tests/unit/test_route_conformance.py tests/contract/test_ci_workfl
 
 复核基线 `3951718e` 执行结果：`findings: []`、`known_unimplemented` 21 条、
 `known_status_gaps` 16 个操作，退出码 0。
+【#473】`934855c3` + #473 执行结果：`findings: []`、声明 42 个操作 / 注册 42 个、
+`known_unimplemented` 21 条（全部 `observed=405,503`）、`known_status_gaps` 0，退出码 0。
 
 CI 将 `make contracts-route-conformance` 作为 `python_contracts` 作业
 （`Python: lint, types and contract compatibility`）的一步，在 Ruff/mypy 前、无 `CONTRACT_BASE_REF` 条件下执行；
 `full`、`web`、`no-db` 三种范围都会运行。详见 [CI 验证范围](../validation/ci-validation.md)。
 
-维护规则：实现基线中的操作后必须同步删除条目，否则 `stale_unimplemented_baseline` 失败；
+维护规则：实现基线中的操作后必须同时删除 `KNOWN_UNIMPLEMENTED_OPERATIONS` 条目与该操作在
+`UNIMPLEMENTED_OPERATIONS` 中的占位，否则 `stale_unimplemented_baseline` / `unimplemented_table_unknown` 失败；
 契约补充状态码后必须删除对应 `KNOWN_UNDECLARED_STATUSES` 条目，否则 `stale_status_baseline` 失败。
+占位路由的形状、归属模块或错误码发生变化时 `unimplemented_placeholder_drift` /
+`unimplemented_error_map_drift` 失败，不能靠改基线绕过。
 新增偏离不得直接加入基线，应先修复或按审计补充理由与跟踪项。
 
 边界：ASGI ingress（`AssetIngress`、`ProfileIngress`、`PronunciationIngress` 等）产生的状态码、

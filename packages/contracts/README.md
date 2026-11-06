@@ -643,6 +643,16 @@ unchanged. Consumers correct invalid requests before sending them again.
 Shared positive/negative examples live in
 `tests/fixtures/contracts/voice-catalogue-http.json`.
 
+Speech source `0.1.0.dev8` declares, for the 21 operations this deployment does
+not implement, the framework 405 on the now-registered path and the placeholder
+503 that answers them (`OperationNotImplemented`: `operation_not_implemented`,
+`service_unavailable_error`, `retryable: false`, `Cache-Control: no-store`,
+`X-Should-Retry: false`). The placeholder error is distinct from
+`backend_unavailable` and from every `*_not_found` code. Those routes are not
+projected into the served OpenAPI document, so clients discover them from this
+source rather than from a runtime that cannot perform them. Upgrade generated
+clients with the producer; no success DTO or error-type enum changes.
+
 Speech source `0.1.0.dev7` additionally declares the previously reachable
 transcription 404, cancellation 400, artifact 304/416/503 and missing framework
 405 replies. Error responses reuse the public envelope; new 405 declarations

@@ -42,10 +42,28 @@ def test_repository_has_no_unbaselined_deviation() -> None:
     registered_ids = {
         route.operation_id for route in report.registered if route.operation_id in contract_ids
     }
-    assert contract_ids - registered_ids == set(module.KNOWN_UNIMPLEMENTED_OPERATIONS)
+    # #473 registers a placeholder for every declared operation, so "declared but
+    # unregistered" is now empty; the unimplemented set is proven by route shape.
+    assert contract_ids - registered_ids == set()
     assert report.known_unimplemented == tuple(sorted(module.KNOWN_UNIMPLEMENTED_OPERATIONS))
     assert module.KNOWN_UNDECLARED_STATUSES == {}
     assert report.known_status_gaps == ()
+
+
+def test_every_unimplemented_operation_answers_only_the_placeholder_error() -> None:
+    module = load()
+    report = module.build_report(ROOT)
+    rows = {row.operation.operation_id: row for row in report.rows}
+    placeholders = {operation_id for operation_id, _, _ in report.unimplemented}
+    assert placeholders == set(module.KNOWN_UNIMPLEMENTED_OPERATIONS)
+    for operation_id in sorted(placeholders):
+        row = rows[operation_id]
+        assert row.unimplemented is True
+        assert row.route is not None, operation_id
+        # 405 is the framework's wrong-method reply on the same registered path;
+        # 503 is the only status the handler itself can return.
+        assert row.route.statuses == frozenset({405, 503}), operation_id
+        assert row.route.module == module.UNIMPLEMENTED_ROUTE_MODULE, operation_id
 
 
 def test_removed_registration_is_reported() -> None:
@@ -182,5 +200,115 @@ def test_registered_operation_in_unimplemented_baseline_is_rejected() -> None:
     )
     assert any(
         finding.kind == "stale_unimplemented_baseline" and finding.operation_id == "getJob"
+        for finding in report.findings
+    )
+
+
+def test_placeholder_with_an_extra_status_is_rejected() -> None:
+    module = load()
+    base = module.build_report(ROOT)
+    injected = tuple(
+        dataclasses.replace(route, statuses=route.statuses | {200})
+        if route.operation_id == "getVoiceDraft"
+        else route
+        for route in base.registered
+    )
+    report = module.evaluate(
+        base.contract_operations,
+        injected,
+        other_contract_ids=base.other_contract_ids,
+        baseline_unimplemented=module.KNOWN_UNIMPLEMENTED_OPERATIONS,
+        baseline_statuses=module.KNOWN_UNDECLARED_STATUSES,
+        unimplemented=module.load_unimplemented_surface(ROOT),
+    )
+    assert any(
+        finding.kind == "unimplemented_placeholder_drift"
+        and finding.operation_id == "getVoiceDraft"
+        and "200" in finding.detail
+        for finding in report.findings
+    )
+
+
+def test_placeholder_served_by_another_module_is_rejected() -> None:
+    module = load()
+    base = module.build_report(ROOT)
+    injected = tuple(
+        dataclasses.replace(route, module="speechnexus_backend.speech.interfaces.http.jobs")
+        if route.operation_id == "getVoiceDraft"
+        else route
+        for route in base.registered
+    )
+    report = module.evaluate(
+        base.contract_operations,
+        injected,
+        other_contract_ids=base.other_contract_ids,
+        baseline_unimplemented=module.KNOWN_UNIMPLEMENTED_OPERATIONS,
+        baseline_statuses=module.KNOWN_UNDECLARED_STATUSES,
+        unimplemented=module.load_unimplemented_surface(ROOT),
+    )
+    assert any(
+        finding.kind == "unimplemented_placeholder_drift"
+        and finding.operation_id == "getVoiceDraft"
+        for finding in report.findings
+    )
+
+
+def test_placeholder_table_entry_outside_the_baseline_is_rejected() -> None:
+    module = load()
+    base = module.build_report(ROOT)
+    surface = module.load_unimplemented_surface(ROOT)
+    extended = dataclasses.replace(
+        surface,
+        operations={**surface.operations, "getJob": ("GET", "/v1/nexus/jobs/{job_id}")},
+    )
+    report = module.evaluate(
+        base.contract_operations,
+        base.registered,
+        other_contract_ids=base.other_contract_ids,
+        baseline_unimplemented=module.KNOWN_UNIMPLEMENTED_OPERATIONS,
+        baseline_statuses=module.KNOWN_UNDECLARED_STATUSES,
+        unimplemented=extended,
+    )
+    assert any(
+        finding.kind == "unimplemented_table_unknown" and finding.operation_id == "getJob"
+        for finding in report.findings
+    )
+
+
+def test_placeholder_error_map_must_stay_single_entry() -> None:
+    module = load()
+    base = module.build_report(ROOT)
+    surface = module.load_unimplemented_surface(ROOT)
+    widened = dataclasses.replace(
+        surface,
+        error_map={**surface.error_map, "backend_unavailable": 503},
+    )
+    report = module.evaluate(
+        base.contract_operations,
+        base.registered,
+        other_contract_ids=base.other_contract_ids,
+        baseline_unimplemented=module.KNOWN_UNIMPLEMENTED_OPERATIONS,
+        baseline_statuses=module.KNOWN_UNDECLARED_STATUSES,
+        unimplemented=widened,
+    )
+    assert any(finding.kind == "unimplemented_error_map_drift" for finding in report.findings)
+
+
+def test_missing_placeholder_route_is_reported() -> None:
+    module = load()
+    base = module.build_report(ROOT)
+    remaining = tuple(route for route in base.registered if route.operation_id != "getVoiceDraft")
+    report = module.evaluate(
+        base.contract_operations,
+        remaining,
+        other_contract_ids=base.other_contract_ids,
+        baseline_unimplemented=module.KNOWN_UNIMPLEMENTED_OPERATIONS,
+        baseline_statuses=module.KNOWN_UNDECLARED_STATUSES,
+        unimplemented=module.load_unimplemented_surface(ROOT),
+    )
+    assert any(
+        finding.kind == "declared_not_registered"
+        and finding.operation_id == "getVoiceDraft"
+        and "placeholder" in finding.detail
         for finding in report.findings
     )

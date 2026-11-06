@@ -95,6 +95,11 @@ from speechnexus_backend.speech.interfaces.http.speech_errors import speech_erro
 from speechnexus_backend.speech.interfaces.http.transcriptions import (
     create_transcription_router,
 )
+from speechnexus_backend.speech.interfaces.http.unimplemented import (
+    UNIMPLEMENTED_OPERATIONS,
+    create_unimplemented_router,
+    is_unimplemented_path,
+)
 from speechnexus_backend.speech.interfaces.http.voices import (
     create_voice_router,
     voice_http_contract,
@@ -453,10 +458,36 @@ def create_app(
         )
     )
     app.include_router(create_binding_lifecycle_router(get_binding_lifecycle))
+    # Declared operations without an owning feature answer one stable 503
+    # instead of a framework 404 that reads like "unknown resource".
+    app.include_router(create_unimplemented_router())
+
+    def allowed_methods(path: str, reported: str | None) -> dict[str, str]:
+        """Merge the framework's Allow with the placeholder methods on this path.
+
+        One path can carry an implemented method and an unimplemented one (for
+        example POST createJob and GET listJobs), and the framework's own 405
+        header only names the first matching route's methods.
+        """
+        methods = {item.strip() for item in (reported or "").split(",") if item.strip()}
+        methods.update(
+            method for method, declared in UNIMPLEMENTED_OPERATIONS.values() if declared == path
+        )
+        return {"Allow": ", ".join(sorted(methods))} if methods else {}
 
     @app.exception_handler(HTTPException)
     async def asset_http_error(request: Request, error: HTTPException) -> Response:
         path = request.scope["path"].removeprefix(request.scope.get("root_path", ""))
+        if error.status_code == 405 and is_unimplemented_path(path):
+            reported = (
+                error.headers["Allow"] if error.headers and "Allow" in error.headers else None
+            )
+            headers = allowed_methods(path, reported)
+            if path == JOB_PREFIX or path.startswith(JOB_PREFIX + "/"):
+                return job_error(
+                    "job_method_not_allowed", request.state.request_id, headers=headers
+                )
+            return method_not_allowed_error(request.state.request_id, headers)
         if (
             path.startswith("/v1/nexus/assets/") or path == "/v1/nexus/assets"
         ) and error.status_code in (404, 405):

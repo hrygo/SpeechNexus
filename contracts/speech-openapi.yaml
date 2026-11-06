@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus public speech API
-  version: 0.1.0.dev7
+  version: 0.1.0.dev8
   description: |
     SpeechNexus public speech protocol.
 
@@ -512,10 +512,14 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "503":
+          $ref: "#/components/responses/OperationNotImplemented"
   /v1/nexus/pronunciation-sets:
     get:
       tags: [voices]
@@ -537,6 +541,8 @@ paths:
                 $ref: "#/components/schemas/PronunciationList"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
     post:
@@ -571,12 +577,16 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
         "429":
           $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/OperationNotImplemented"
   /v1/nexus/pronunciation-sets/{pronunciation_id}/revisions/{revision}:
     get:
       tags: [voices]
@@ -741,6 +751,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
   /v1/nexus/jobs/{job_id}:
@@ -951,6 +963,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
   /v1/nexus/operations/{operation_id}/cancellations:
@@ -990,8 +1004,12 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/OperationNotImplemented"
   /v1/nexus/assets:
     post:
       tags: [assets]
@@ -1265,6 +1283,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
@@ -1295,8 +1315,12 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "410":
           $ref: "#/components/responses/Gone"
+        "503":
+          $ref: "#/components/responses/OperationNotImplemented"
   /v1/nexus/realtime/sessions/{session_id}/cancellations:
     post:
       tags: [realtime]
@@ -1337,8 +1361,12 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/OperationNotImplemented"
   /v1/realtime:
     get:
       tags: [realtime]
@@ -1396,6 +1424,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "409":
           $ref: "#/components/responses/Conflict"
         "503":
@@ -1428,12 +1458,16 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
         "429":
           $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/OperationNotImplemented"
   /v1/nexus/voice-clones:
     post:
       tags: [voice-creation]
@@ -1462,12 +1496,16 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
         "429":
           $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/OperationNotImplemented"
   /v1/nexus/voice-drafts/{draft_id}:
     get:
       tags: [voice-creation]
@@ -1494,6 +1532,10 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "503":
+          $ref: "#/components/responses/OperationNotImplemented"
     patch:
       tags: [voice-creation]
       operationId: updateVoiceDraftMetadata
@@ -1528,10 +1570,14 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "503":
+          $ref: "#/components/responses/OperationNotImplemented"
   /v1/nexus/voice-drafts/{draft_id}/generations:
     post:
       tags: [voice-creation]
@@ -1567,10 +1613,14 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "503":
+          $ref: "#/components/responses/OperationNotImplemented"
   /v1/nexus/voice-drafts/{draft_id}/previews:
     post:
       tags: [voice-creation]
@@ -1602,10 +1652,14 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "503":
+          $ref: "#/components/responses/OperationNotImplemented"
   /v1/nexus/voice-drafts/{draft_id}/validations:
     post:
       tags: [voice-creation]
@@ -1637,10 +1691,14 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "503":
+          $ref: "#/components/responses/OperationNotImplemented"
   /v1/nexus/voice-drafts/{draft_id}/publications:
     post:
       tags: [voice-creation]
@@ -1686,10 +1744,14 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "503":
+          $ref: "#/components/responses/OperationNotImplemented"
   /v1/nexus/deletion-plans:
     post:
       operationId: speechCreateDeletionPlan
@@ -1725,6 +1787,8 @@ paths:
             application/json:
               schema:
                 $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "409":
           description: Dependency, revision, plan expiry or idempotency conflict.
           content:
@@ -1737,6 +1801,8 @@ paths:
             application/json:
               schema:
                 $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/OperationNotImplemented"
   /v1/nexus/deletions:
     post:
       operationId: speechCreateDeletion
@@ -1772,6 +1838,8 @@ paths:
             application/json:
               schema:
                 $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "409":
           description: Dependency, revision, plan expiry or idempotency conflict.
           content:
@@ -1784,6 +1852,8 @@ paths:
             application/json:
               schema:
                 $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/OperationNotImplemented"
   /v1/nexus/deletions/{deletion_id}:
     get:
       operationId: speechGetDeletion
@@ -1811,6 +1881,8 @@ paths:
             application/json:
               schema:
                 $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "409":
           description: Dependency, revision, plan expiry or idempotency conflict.
           content:
@@ -1823,6 +1895,8 @@ paths:
             application/json:
               schema:
                 $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/OperationNotImplemented"
 components:
   securitySchemes:
     SharedServiceKey:
@@ -2188,6 +2262,45 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
+    OperationNotImplemented:
+      description: |
+        The contract declares this operation and this deployment does not
+        implement it. `operation_not_implemented` is the only code a placeholder
+        returns: it is not `backend_unavailable` (a real outage, retryable), not
+        a `*_not_found` code (a confirmed missing resource) and not
+        `invalid_request_error`. Repeating the same request cannot succeed until
+        the operation ships.
+
+        The five operations that already declared `ServiceUnavailable` before this
+        component existed keep that declaration: it accepts the same body, and
+        replacing it would drop the compatible `Retry-After` header from the
+        versioned surface. Everything else that answers this error points here.
+      headers:
+        Cache-Control:
+          required: true
+          schema:
+            type: string
+            const: no-store
+        X-Should-Retry:
+          required: true
+          schema:
+            type: string
+            const: "false"
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/ErrorResponse"
+              - properties:
+                  error:
+                    properties:
+                      code:
+                        const: operation_not_implemented
+                      type:
+                        const: service_unavailable_error
+                      retryable:
+                        const: false
+                      nexus: false
     PronunciationReadForbidden:
       description: The configured Host/Origin policy rejected this fixed read.
       content:

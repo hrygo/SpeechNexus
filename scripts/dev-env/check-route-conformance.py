@@ -50,11 +50,16 @@ RESPONSE_CLASSES = frozenset(
 FRAMEWORK_METHOD_NOT_ALLOWED = 405
 FRAMEWORK_PATHS = frozenset({"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"})
 
-# Contract operations that have no production route yet. Every entry needs a
-# reason: a new omission must fail instead of silently joining the baseline.
+# Contract operations this deployment deliberately does not implement. Each is
+# registered once by the central placeholder router, answers 503
+# operation_not_implemented, and stays listed here until the owning feature
+# ships. A new omission must fail instead of silently joining the baseline.
 # #432/#436 implemented retryJob and streamJobEvents, and #442/#443 implemented
 # listVoices and getVoiceRevision after the original audit, so the audit's 25
-# operations are 21 here; a stale entry now fails the check.
+# operations are 21 here; a stale entry now fails the check. #473 replaced the
+# framework 404/405/400 replies with the placeholder, so "registered" is no
+# longer evidence of implementation: the baseline is checked against the
+# placeholder table and the single-entry unimplemented error map instead.
 KNOWN_UNIMPLEMENTED_OPERATIONS: dict[str, str] = {
     "retireVoiceRevision": "voice revision retirement route is not implemented",
     # Collection-level pronunciation routes are intercepted by
@@ -90,6 +95,14 @@ KNOWN_UNIMPLEMENTED_OPERATIONS: dict[str, str] = {
 # Keep the baseline empty: a newly reachable undeclared status must fail.
 KNOWN_UNDECLARED_STATUSES: dict[str, frozenset[int]] = {}
 
+# The single placeholder surface. Its table, its module and its one-entry error
+# map are verified against the baseline below, so a placeholder cannot drift
+# into a second code or an extra status unnoticed.
+UNIMPLEMENTED_ROUTE_MODULE = "speechnexus_backend.speech.interfaces.http.unimplemented"
+UNIMPLEMENTED_ERROR_MODULE = "speechnexus_backend.speech.interfaces.http.unimplemented_errors"
+UNIMPLEMENTED_OPERATION_CODE = "operation_not_implemented"
+UNIMPLEMENTED_OPERATION_STATUS = 503
+
 
 type LiteralValue = str | int | bool
 type ValueSet = frozenset[LiteralValue] | None
@@ -119,6 +132,7 @@ class RegisteredRoute:
     statuses: frozenset[int]
     undetermined: tuple[Undetermined, ...] = ()
     extraction_error: str | None = None
+    module: str | None = None
 
 
 @dataclass(frozen=True)
@@ -135,6 +149,15 @@ class OperationRow:
     undeclared: tuple[int, ...] = ()
     known_undeclared: tuple[int, ...] = ()
     declared_not_observed: tuple[int, ...] = ()
+    unimplemented: bool = False
+
+
+@dataclass(frozen=True)
+class UnimplementedSurface:
+    """Central placeholder table plus the one-entry error map it answers with."""
+
+    operations: Mapping[str, tuple[str, str]] = field(default_factory=dict)
+    error_map: Mapping[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -149,6 +172,7 @@ class Report:
     known_unimplemented: tuple[str, ...]
     known_status_gaps: tuple[tuple[str, tuple[int, ...]], ...]
     undetermined: tuple[Undetermined, ...]
+    unimplemented: tuple[tuple[str, str, str], ...] = ()
 
 
 @dataclass
@@ -282,6 +306,54 @@ def load_modules(root: Path) -> dict[str, ModuleInfo]:
         name = ".".join(relative.parts)
         modules[name] = parse_module(path, name, root)
     return modules
+
+
+def load_unimplemented_surface(root: Path) -> UnimplementedSurface:
+    """Read the central placeholder table and its error map from source.
+
+    The table is parsed, not imported, so the check keeps reading the same
+    working tree it reports on and cannot be satisfied by a runtime override.
+    """
+    directory = root / HTTP_MODULE_ROOT
+    table_path = directory / "unimplemented.py"
+    tree = ast.parse(table_path.read_text(encoding="utf-8"), filename=str(table_path))
+    operations: dict[str, tuple[str, str]] = {}
+    for statement in tree.body:
+        target: ast.expr | None = None
+        value: ast.expr | None = None
+        if isinstance(statement, ast.AnnAssign):
+            target, value = statement.target, statement.value
+        elif isinstance(statement, ast.Assign) and len(statement.targets) == 1:
+            target, value = statement.targets[0], statement.value
+        if not isinstance(target, ast.Name) or target.id != "UNIMPLEMENTED_OPERATIONS":
+            continue
+        if not isinstance(value, ast.Dict):
+            raise ValueError("UNIMPLEMENTED_OPERATIONS is not a literal table")
+        for key, entry in zip(value.keys, value.values, strict=False):
+            if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
+                raise ValueError("UNIMPLEMENTED_OPERATIONS has a non-literal operationId")
+            if not isinstance(entry, (ast.Tuple, ast.List)) or len(entry.elts) != 2:
+                raise ValueError(
+                    f"UNIMPLEMENTED_OPERATIONS[{key.value!r}] is not a (method, path) pair"
+                )
+            method, path = (literal_set(element) for element in entry.elts)
+            if not isinstance(method, frozenset) or len(method) != 1:
+                raise ValueError(f"UNIMPLEMENTED_OPERATIONS[{key.value!r}] has no literal method")
+            if not isinstance(path, frozenset) or len(path) != 1:
+                raise ValueError(f"UNIMPLEMENTED_OPERATIONS[{key.value!r}] has no literal path")
+            raw_method, raw_path = next(iter(method)), next(iter(path))
+            if not isinstance(raw_method, str) or not isinstance(raw_path, str):
+                raise ValueError(f"UNIMPLEMENTED_OPERATIONS[{key.value!r}] is not text")
+            operations[key.value] = (raw_method.upper(), raw_path)
+        break
+    else:
+        raise ValueError("UNIMPLEMENTED_OPERATIONS is missing from the placeholder module")
+    error_module = parse_module(
+        directory / "unimplemented_errors.py", UNIMPLEMENTED_ERROR_MODULE, root
+    )
+    extracted = extract_error_mapping(error_module)
+    error_map = dict(extracted[1]) if extracted is not None else {}
+    return UnimplementedSurface(operations=operations, error_map=error_map)
 
 
 def _collect_scopes(
@@ -1234,6 +1306,7 @@ def discover_app_routes(
         statuses, undetermined, extraction_error = analyze_endpoint(
             endpoint, operation_id, modules, factories
         )
+        module_name = getattr(endpoint, "__module__", None)
         for method in sorted(method.upper() for method in methods):
             if method not in HTTP_METHODS:
                 continue
@@ -1245,6 +1318,7 @@ def discover_app_routes(
                     statuses=frozenset(statuses) | {FRAMEWORK_METHOD_NOT_ALLOWED},
                     undetermined=tuple(undetermined),
                     extraction_error=extraction_error,
+                    module=module_name if isinstance(module_name, str) else None,
                 )
             )
     return tuple(
@@ -1302,9 +1376,11 @@ def evaluate(
     other_contract_ids: frozenset[str],
     baseline_unimplemented: Mapping[str, str] | None = None,
     baseline_statuses: Mapping[str, frozenset[int]] | None = None,
+    unimplemented: UnimplementedSurface | None = None,
 ) -> Report:
     unimplemented_baseline = baseline_unimplemented or {}
     status_baseline = baseline_statuses or {}
+    placeholder = unimplemented or UnimplementedSurface()
     by_identifier = {operation.operation_id: operation for operation in contract_operations}
     by_route: dict[str, RegisteredRoute] = {}
     findings: list[Finding] = []
@@ -1336,19 +1412,18 @@ def evaluate(
     rows: list[OperationRow] = []
     for operation in contract_operations:
         route = by_route.get(operation.operation_id)
+        is_placeholder = operation.operation_id in placeholder.operations
         if route is None:
-            if operation.operation_id in unimplemented_baseline:
-                rows.append(OperationRow(operation, None))
-                continue
             findings.append(
                 Finding(
                     "declared_not_registered",
                     f"{operation.method} {operation.path} declares {operation.operation_id} "
-                    "but no route is registered",
+                    "but no route is registered"
+                    + (" (its central placeholder route is missing)" if is_placeholder else ""),
                     operation.operation_id,
                 )
             )
-            rows.append(OperationRow(operation, None))
+            rows.append(OperationRow(operation, None, unimplemented=is_placeholder))
             continue
         if route.method != operation.method or normalize_path(route.path) != normalize_path(
             operation.path
@@ -1391,6 +1466,18 @@ def evaluate(
                 undeclared=tuple(sorted(undeclared)),
                 known_undeclared=tuple(sorted(known & undeclared)),
                 declared_not_observed=tuple(sorted(declared_not_observed)),
+                unimplemented=is_placeholder,
+            )
+        )
+    if unimplemented is not None and dict(placeholder.error_map) != {
+        UNIMPLEMENTED_OPERATION_CODE: UNIMPLEMENTED_OPERATION_STATUS
+    }:
+        findings.append(
+            Finding(
+                "unimplemented_error_map_drift",
+                "the placeholder error map must contain only "
+                f"{UNIMPLEMENTED_OPERATION_CODE!r} -> {UNIMPLEMENTED_OPERATION_STATUS}; "
+                f"found {sorted(placeholder.error_map.items())}",
             )
         )
     for operation_id in sorted(unimplemented_baseline):
@@ -1402,15 +1489,58 @@ def evaluate(
                     operation_id,
                 )
             )
-        elif operation_id in by_route:
+            continue
+        declared = placeholder.operations.get(operation_id)
+        if declared is None:
             findings.append(
                 Finding(
                     "stale_unimplemented_baseline",
-                    f"{operation_id} is registered now; "
-                    "remove it from KNOWN_UNIMPLEMENTED_OPERATIONS",
+                    f"{operation_id} is listed as unimplemented but the central placeholder "
+                    "table does not declare it; remove it from "
+                    "KNOWN_UNIMPLEMENTED_OPERATIONS",
                     operation_id,
                 )
             )
+            continue
+        route = by_route.get(operation_id)
+        if route is None:
+            # The row loop already reports the missing route.
+            continue
+        method, path = declared
+        observed = frozenset(route.statuses - {FRAMEWORK_METHOD_NOT_ALLOWED})
+        expected = frozenset({UNIMPLEMENTED_OPERATION_STATUS})
+        problems: list[str] = []
+        if route.module != UNIMPLEMENTED_ROUTE_MODULE:
+            problems.append(
+                f"is registered by {route.module or 'an unknown module'} instead of "
+                f"{UNIMPLEMENTED_ROUTE_MODULE}"
+            )
+        if route.method != method or normalize_path(route.path) != normalize_path(path):
+            problems.append(
+                f"is registered as {route.method} {route.path} instead of {method} {path}"
+            )
+        if observed != expected:
+            problems.append(
+                f"observes {format_statuses(observed)} instead of only "
+                f"{UNIMPLEMENTED_OPERATION_STATUS}"
+            )
+        if problems:
+            findings.append(
+                Finding(
+                    "unimplemented_placeholder_drift",
+                    f"{operation_id} " + "; ".join(problems),
+                    operation_id,
+                )
+            )
+    for operation_id in sorted(set(placeholder.operations) - set(unimplemented_baseline)):
+        findings.append(
+            Finding(
+                "unimplemented_table_unknown",
+                f"the central placeholder table declares {operation_id}, which "
+                "KNOWN_UNIMPLEMENTED_OPERATIONS does not list",
+                operation_id,
+            )
+        )
     for operation_id, statuses in sorted(status_baseline.items()):
         if operation_id not in by_identifier:
             findings.append(
@@ -1478,6 +1608,12 @@ def evaluate(
                 key=lambda item: (item.operation, item.location, item.detail),
             )
         ),
+        unimplemented=tuple(
+            sorted(
+                (operation_id, method, path)
+                for operation_id, (method, path) in placeholder.operations.items()
+            )
+        ),
     )
 
 
@@ -1493,6 +1629,7 @@ def build_report(root: Path = ROOT) -> Report:
         other_contract_ids=other_contract_ids,
         baseline_unimplemented=KNOWN_UNIMPLEMENTED_OPERATIONS,
         baseline_statuses=KNOWN_UNDECLARED_STATUSES,
+        unimplemented=load_unimplemented_surface(root),
     )
     return replace(report, contract_version=contract_version)
 
@@ -1517,11 +1654,7 @@ def format_report(report: Report) -> str:
         operation = row.operation
         lines.append(f"{operation.operation_id:28} {operation.method:6} {operation.path}")
         if row.route is None:
-            note = (
-                "known-baseline"
-                if operation.operation_id in report.known_unimplemented
-                else "NOT REGISTERED"
-            )
+            note = "UNIMPLEMENTED placeholder missing" if row.unimplemented else "NOT REGISTERED"
             lines.append(
                 f"  declared={format_statuses(operation.declared_statuses)} observed=- [{note}]"
             )
@@ -1529,6 +1662,12 @@ def format_report(report: Report) -> str:
         lines.append(
             f"  declared={format_statuses(operation.declared_statuses)} "
             f"observed={format_statuses(row.route.statuses)}"
+            + (
+                f" [unimplemented -> {UNIMPLEMENTED_OPERATION_STATUS} "
+                f"{UNIMPLEMENTED_OPERATION_CODE}]"
+                if row.unimplemented
+                else ""
+            )
         )
         lines.append(
             f"  undeclared={format_statuses(row.undeclared)} "
@@ -1604,10 +1743,15 @@ def report_payload(report: Report) -> dict[str, Any]:
                 "undeclared": list(row.undeclared),
                 "known_undeclared": list(row.known_undeclared),
                 "declared_not_observed": list(row.declared_not_observed),
+                "unimplemented": row.unimplemented,
             }
             for row in report.rows
         ],
         "known_unimplemented": list(report.known_unimplemented),
+        "unimplemented_placeholders": [
+            {"operationId": operation_id, "method": method, "path": path}
+            for operation_id, method, path in report.unimplemented
+        ],
         "known_status_gaps": [
             {"operationId": operation_id, "statuses": list(statuses)}
             for operation_id, statuses in report.known_status_gaps

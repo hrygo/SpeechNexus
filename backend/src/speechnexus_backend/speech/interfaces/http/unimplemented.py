@@ -13,6 +13,29 @@ Every unimplemented operation is therefore registered here once and answers 503
 drift, so implementing an operation cannot leave a silent placeholder behind.
 Routes stay out of the served OpenAPI document: a deployment must not advertise
 an operation it cannot perform.
+
+The ownership guard compares the resource Starlette actually serves, not the
+literal template spelling. Starlette's ``redirect_slashes`` answers a
+slash-suffixed path with a 307 to the path stripped of *every* trailing slash
+and re-matches, so ``/v1/nexus/voice-drafts/{draft_id}/`` and the placeholder
+without the slash own the same requests. The comparison therefore folds both
+parameter spelling (name and converter) and that trailing-slash alias, while the
+message still reports the template the placeholder table declares.
+
+The guard only sees the assembled route table, so it covers rewrites the
+application itself performs. Measured against the pinned framework, the
+following are *not* aliases of a registered template and stay distinct:
+
+* repeated slashes inside a path and a leading ``//``: no route matches and no
+  redirect is issued (404);
+* percent-encoded separators: ASGI servers decode before routing, so
+  ``abc%2Fdef`` becomes an extra path segment (404), while ``%20`` decodes to a
+  character the parameter already matches;
+* path case: matching is case-sensitive (``/VOICE-DRAFTS/abc`` is 404);
+* ``.`` and ``..`` segments: the application does not resolve them (404), but
+  HTTP clients and reverse proxies may normalise them before the request
+  arrives; such an ingress rewrite happens before ASGI routing and is outside
+  what an in-process route guard can observe.
 """
 
 from __future__ import annotations
@@ -96,15 +119,22 @@ _TEMPLATE_PARAMETER = re.compile(r"\{[^/{}]*\}")
 
 
 def normalize_template(template: str) -> str:
-    """Compare template shape, not the spelling of its parameters.
+    """Compare the resource Starlette serves, not the literal template spelling.
 
     `/v1/nexus/voice-drafts/{draft_id}`, `.../{voice_draft_id}` and
     `.../{draft_id:int}` fill the same request paths, so a real route using any
     of them competes with the placeholder for the same requests even though the
-    literal templates differ. Owners are therefore compared on the normalized
-    shape; the message keeps the template the placeholder table declares.
+    literal spellings differ.
+
+    Trailing slashes name the same resource too: Starlette's
+    `redirect_slashes` answers `.../{draft_id}/` (and `...//`) with a 307 to
+    `.../{draft_id}` before re-matching, and strips *every* trailing slash.
+    Folding them catches a feature router mounted only at the slash-suffixed
+    spelling. Owners are therefore compared on this normalized shape; the
+    message keeps the template the placeholder table declares.
     """
-    return _TEMPLATE_PARAMETER.sub("{}", template)
+    shape = _TEMPLATE_PARAMETER.sub("{}", template)
+    return shape.rstrip("/") or "/"
 
 
 def is_unimplemented_path(path: str) -> bool:
@@ -147,8 +177,8 @@ def assert_placeholder_ownership(routes: Iterable[Any]) -> None:
 
     Registration order decides which route wins, so a feature router included
     after the placeholders would answer 503 for an operation that ships. The
-    comparison uses the normalized template, so renaming a parameter or adding
-    a converter cannot hide the conflict.
+    comparison uses the normalized template, so renaming a parameter, adding a
+    converter or appending trailing slashes cannot hide the conflict.
     """
     owners: dict[tuple[str, str], list[str]] = {}
     for route in iter_routes(routes):

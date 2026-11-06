@@ -368,6 +368,92 @@ def test_a_renamed_or_converted_parameter_still_collides(template: str) -> None:
     assert listed == "GET /v1/nexus/voice-drafts/{draft_id}"
 
 
+@pytest.mark.parametrize(
+    "template",
+    [
+        "/v1/nexus/voice-drafts/{draft_id}/",
+        "/v1/nexus/voice-drafts/{draft_id}//",
+        "/v1/nexus/voice-drafts/{draft_id:int}/",
+    ],
+)
+def test_a_trailing_slash_alias_still_collides(template: str) -> None:
+    """A slash-suffixed spelling names the same resource as the placeholder.
+
+    Starlette's `redirect_slashes` answers `.../{draft_id}/` with a 307 to
+    `.../{draft_id}`, so a feature router mounted at the slash-suffixed
+    template would be reachable through the redirect while the placeholder keeps
+    answering the canonical spelling. Dropping the trailing-slash fold makes
+    every case below pass with no collision reported.
+    """
+    api = FastAPI()
+    api.include_router(create_unimplemented_router())
+
+    async def shadowed(**params: str) -> dict[str, str]:
+        return params
+
+    api.add_api_route(template, shadowed, methods=["GET"], include_in_schema=False)
+
+    with pytest.raises(RuntimeError) as raised:
+        assert_placeholder_ownership(api.routes)
+    listed = raised.value.args[0].split("include the placeholder router last: ", 1)[1]
+    # The report keeps the template the placeholder table declares.
+    assert listed == "GET /v1/nexus/voice-drafts/{draft_id}"
+
+
+async def test_a_trailing_slash_route_is_shadowed_at_runtime() -> None:
+    """Both spellings name one resource, but only the slash form reaches the feature.
+
+    The guard must reject the assembly: the placeholder keeps the canonical
+    spelling at 503 while the real route serves the slash-suffixed one.
+    """
+    app = create_app(settings=_settings())
+
+    @app.get("/v1/nexus/voice-drafts/{draft_id}/", include_in_schema=False)
+    async def real(draft_id: str) -> dict[str, str]:
+        return {"draft_id": draft_id}
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://localhost",
+        follow_redirects=True,
+    ) as http:
+        canonical = await http.get("/v1/nexus/voice-drafts/synthetic-id")
+        aliased = await http.get("/v1/nexus/voice-drafts/synthetic-id/")
+    assert canonical.status_code == 503
+    assert canonical.json()["error"]["code"] == OPERATION_NOT_IMPLEMENTED
+    assert aliased.status_code == 200
+    assert aliased.json() == {"draft_id": "synthetic-id"}
+    with pytest.raises(RuntimeError):
+        assert_placeholder_ownership(app.router.routes)
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        # Measured 404 on the pinned framework: no redirect, no shared resource.
+        "/v1/nexus/voice-drafts//{draft_id}",
+        "/v1/nexus/VOICE-DRAFTS/{draft_id}",
+        "/v1/nexus/voice-drafts/{draft_id}/.",
+    ],
+)
+def test_paths_the_framework_does_not_alias_are_not_folded(template: str) -> None:
+    """Only real aliases are folded; over-normalising would hide distinct routes.
+
+    Repeated internal slashes, case and dot segments are not rewritten by the
+    application (all measured 404), so treating them as the placeholder would
+    report a collision that does not exist. Normalisation that collapses or
+    lowercases them turns this test red.
+    """
+    api = FastAPI()
+    api.include_router(create_unimplemented_router())
+
+    async def distinct(**params: str) -> dict[str, str]:
+        return params
+
+    api.add_api_route(template, distinct, methods=["GET"], include_in_schema=False)
+    assert_placeholder_ownership(api.routes)
+
+
 def test_served_openapi_does_not_advertise_placeholders() -> None:
     paths = create_app(settings=_settings()).openapi()["paths"]
     for path in (

@@ -132,7 +132,9 @@ class _ObservedJobs(PostgresPublicJobs):
         return super()._read(query, parameters, submission_key=submission_key)
 
 
-async def test_actual_listing_query_uses_composite_index(jobs_db: JobSandbox) -> None:
+async def test_actual_listing_query_uses_composite_index(
+    jobs_db: JobSandbox, capsys: pytest.CaptureFixture[str]
+) -> None:
     async with AsyncClient(
         transport=ASGITransport(app=_app(jobs_db)), base_url="http://test"
     ) as client:
@@ -164,7 +166,19 @@ async def test_actual_listing_query_uses_composite_index(jobs_db: JobSandbox) ->
             nodes.extend(node.get("Plans", []))
             if "Index Name" in node:
                 indexes.add(node["Index Name"])
-        print("listJobs EXPLAIN " + json.dumps(result, sort_keys=True))
+        # Keep successful plans in normal CI logs too; all inputs are synthetic.
+        with capsys.disabled():
+            print(
+                "listJobs EXPLAIN "
+                + json.dumps(
+                    {
+                        "query": adapter.query,
+                        "parameters": adapter.parameters,
+                        "plan": result,
+                    },
+                    sort_keys=True,
+                )
+            )
         assert "speech_jobs_workspace_created_id" in indexes
 
 

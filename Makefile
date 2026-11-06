@@ -158,9 +158,10 @@ coordination-test:
 		tests/integration/test_runtime_creation_final_clock.py \
 		tests/integration/test_coordination_foundation.py -q
 
-# Cancel/abort InnoDB oracle on the project-managed MySQL 8.4.8. The script
-# starts that container, derives the DSN, and selects only the mysql parameters;
-# the full dual-database gate needs both real DSNs and no -k filter.
+# Cancel/abort InnoDB oracle (test_gateway_abort_ledger.py, introduced by PR
+# #435 and already merged) on the project-managed MySQL 8.4.8. The script starts
+# that container, derives the DSN, and selects only the mysql parameters; the
+# full dual-database gate needs both real DSNs and no -k filter.
 abort-ledger-mysql:
 	./scripts/dev-env/mysql-oracle.sh tests/integration/test_gateway_abort_ledger.py
 

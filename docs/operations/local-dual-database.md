@@ -13,8 +13,8 @@ date: 2026-11-06
 
 ## 1. 范围与证据边界
 
-- 运行 `tests/integration/test_gateway_abort_ledger.py` 的 `mysql` 参数：真实 MySQL 8.4.8 +
-  InnoDB，与 PostgreSQL 侧共用同一组取消/中止场景断言。
+- 运行 `tests/integration/test_gateway_abort_ledger.py`（随 PR #435 引入，已合并）的 `mysql` 参数：
+  真实 MySQL 8.4.8 + InnoDB，与 PostgreSQL 侧共用同一组取消/中止场景断言。
 - 只证明 MySQL/InnoDB 侧行为，不证明 PostgreSQL 侧、真实引擎停止或资源释放、HA 与产品 MySQL
   支持。单库通过不能报为双库验收。
 - `-k mysql` 不连接 PostgreSQL；共享双库 fixture 仍要求两个 DSN 同时存在，脚本因此会在未设置
@@ -54,12 +54,15 @@ CI 的 `integration_shards` 作业使用 `mysql:8.4.8`（3306，`root/speechnexu
 docker run --rm --name speechnexus-test-pg \
   -e POSTGRES_USER=speechnexus -e POSTGRES_PASSWORD=speechnexus_test \
   -e POSTGRES_DB=speechnexus_test \
-  -p 127.0.0.1:55432:5432 postgres:16.15
+  -p 127.0.0.1:55436:5432 postgres:16.15
 ```
 
 另开终端确认就绪：`docker exec speechnexus-test-pg pg_isready -U speechnexus -d speechnexus_test`。
-DSN 为 `postgresql://speechnexus:speechnexus_test@127.0.0.1:55432/speechnexus_test`。容器停止即删除
-数据，只服务本轮门禁，不是开发或生产服务；CI 使用同版本的 `postgres:16.15-alpine`。
+DSN 为 `postgresql://speechnexus:speechnexus_test@127.0.0.1:55436/speechnexus_test`。项目隔离 PG
+固定使用 `127.0.0.1:55432`，这里刻意改用 `55436`，避免误连或覆盖项目实例。若 `55436` 或容器名
+已被占用，先用 `lsof -nP -iTCP:55436 -sTCP:LISTEN` 与 `docker ps` 核实归属；只停止确认属于本验证的
+`speechnexus-test-pg`，或换一个空闲回环端口并同步替换 DSN。不要停止或复用项目 `55432` 实例。
+容器停止即删除数据，只服务本轮门禁，不是开发或生产服务；CI 使用同版本的 `postgres:16.15-alpine`。
 
 ## 4. 启动 MySQL
 
@@ -100,7 +103,8 @@ make abort-ledger-mysql
 1. `scripts/dev-env/mysql-service.sh` 启动（或复用）受管 MySQL；
 2. 未设置 `SPEECHNEXUS_TEST_MYSQL_URL` 时，从 `.runtime/config/mysql.env` 推导 DSN；
 3. 未设置 `SPEECHNEXUS_TEST_DATABASE_URL` 时，注入不可达的 PostgreSQL 占位 DSN；
-4. `uv run pytest tests/integration/test_gateway_abort_ledger.py -k mysql -q`。
+4. `uv run pytest tests/integration/test_gateway_abort_ledger.py -k mysql -q`（该 oracle 随 PR #435
+   引入，已合并）。
 
 可覆盖的变量：
 
@@ -110,9 +114,9 @@ make abort-ledger-mysql
 | `SPEECHNEXUS_TEST_DATABASE_URL` | 提供真实隔离 PG DSN；`-k mysql` 仍只选 MySQL 参数 |
 | `SPEECHNEXUS_MYSQL_ROOT_PASSWORD` | 仅在首次创建容器时生效的合成根口令 |
 
-取消/中止 oracle 模块由对应切片提供。当前检出没有
-`tests/integration/test_gateway_abort_ledger.py` 时，目标以退出码 2 和明确提示失败，不跳过、不静默
-通过；此时可先用已存在的 InnoDB oracle 验证本机链路：
+取消/中止 oracle 模块（`tests/integration/test_gateway_abort_ledger.py`）随 PR #435 引入（已合并）。
+当前检出没有该模块时，目标以退出码 2 和明确提示失败，不跳过、不静默通过；此时可先用已存在的
+InnoDB oracle 验证本机链路：
 
 ```bash
 ./scripts/dev-env/mysql-oracle.sh tests/integration/test_gateway_stop_evidence.py
@@ -120,7 +124,7 @@ make abort-ledger-mysql
 
 ## 6. 完整双库门禁
 
-两个 DSN 都指向真实隔离实例、不加 `-k` 过滤，才是双库：
+两个 DSN 都指向真实隔离实例、不加 `-k` 过滤，才是双库（oracle 随 PR #435 引入，已合并）：
 
 ```bash
 SPEECHNEXUS_TEST_DATABASE_URL=postgresql://... \
@@ -138,7 +142,7 @@ make coordination-test
 - 测试管理员（本机 root）只用于建库、建角色和执行 DDL。每个用例创建独立 database
   （`sn_jobs_<suffix>` 等）与 `*_speech` / `*_gateway` 角色，结束删除。
 - 产品运行角色不用于 DDL。回执与停止相关授权由 fixture 从产品授权文本
-  （`gateway_abort_grants` 等）应用到测试库；MySQL 8 支持列级
+  （`gateway_abort_grants` 等，随 PR #435 引入，已合并）应用到测试库；MySQL 8 支持列级
   `GRANT UPDATE (col, ...) ON db.table TO 'role'@'%'`，不要为省事改成整表授权。
 - 手工排查可以用 root 连接，但 root 口令与 DSN 只用于隔离测试，不进入产品配置、日志或报告。
 
@@ -149,7 +153,7 @@ make coordination-test
 | 建表报 MySQL 3813 | MySQL 8 拒绝列级 CHECK 引用其他列 | 把跨列约束改为具名表级 `CONSTRAINT ... CHECK (...)`；产品 DDL 的内联 CHECK 集合有守卫，改动时同步 |
 | 写入报 MySQL 3819（`ER_CHECK_CONSTRAINT_VIOLATED`） | 数据违反 CHECK | 约束已生效；检查构造的非法行，不放宽约束来通过 |
 | PG 通过、MySQL 读取结果判为损坏 | `IS NOT NULL` 一类表达式在 PG 返回 boolean、在 MySQL 返回 0/1；`is True` / `is not False` 把 1 判成损坏 | 用 `CASE` 让两侧返回整数，或让读取端同时接受 bool 与 0/1；不要只改断言掩盖差异 |
-| 精确表集合断言失败 | MySQL 侧多出或缺少表，新表没有进入共享期望/排除集合 | 把新表加入共享集合（如 `abort_tables`），保留 `==` 断言；`alembic_version` 只存在于 PG |
+| 精确表集合断言失败 | MySQL 侧多出或缺少表，新表没有进入共享期望/排除集合 | 把新表加入共享集合（如 `abort_tables`，随 PR #435 引入，已合并），保留 `==` 断言；`alembic_version` 只存在于 PG |
 | 授权失败 1142 / 1143 | 表或列权限不足 | 核对产品授权文本与 fixture；PG 对应 `InsufficientPrivilege`。列级 UPDATE 授权要与 PG 列集一致 |
 | 连接被拒绝或超时 | 容器未就绪、端口被占或守护进程未启动 | `docker info`、`docker ps -a --filter name=speechnexus-coordination-mysql`、`lsof -nP -iTCP:55434 -sTCP:LISTEN`、`docker logs` |
 | 拉取镜像失败或摘要不符 | 网络、镜像源或本地缓存的镜像异常 | 核对镜像摘要 `sha256:2952e3be…`；不要改用浮动标签替代 |
@@ -161,9 +165,11 @@ make coordination-test
 
 ```bash
 docker logs --tail 100 speechnexus-coordination-mysql
-docker exec speechnexus-coordination-mysql mysqladmin ping -h127.0.0.1 -uroot -p"$PW"
+docker exec -it speechnexus-coordination-mysql mysqladmin ping -h127.0.0.1 -uroot -p
 docker exec -it speechnexus-coordination-mysql mysql -h127.0.0.1 -uroot -p
 ```
+
+`-p` 后不跟口令值，由客户端在终端交互读取；root 口令因此不进入 argv、日志或 shell history。
 
 进入客户端后按需核对：
 

@@ -110,14 +110,18 @@ class AbortDispatchClaim:
 
 
 class AbortDispatchOutcome(StrEnum):
-    """The durable disposition of one external abort attempt."""
+    """The durable disposition of one external abort attempt.
+
+    The execution identity a receipt names is written once at admission and never
+    rewritten, so there is no "the receipt no longer matches the authority" outcome:
+    a mismatch is a programming or data-corruption conflict that fails loudly instead
+    of becoming a durable state nobody can legitimately produce.
+    """
 
     #: The engine gave a decidable answer for the original request identity.
     ACKNOWLEDGED = "acknowledged"
     #: The attempt ended without learning anything; the original intent is retried.
     UNCONFIRMED = "unconfirmed"
-    #: The authoritative execution no longer matches the receipt; never resend.
-    REJECTED_FENCED = "rejected_fenced"
     #: The bounded attempts are spent; the original intent stops being retried.
     EXHAUSTED = "exhausted"
 
@@ -126,14 +130,38 @@ class AbortDispatchOutcome(StrEnum):
         return self is not AbortDispatchOutcome.UNCONFIRMED
 
 
+class AbortClaimRefusal(StrEnum):
+    """Why a caller received no external authority for one receipt.
+
+    Every value but EXHAUSTED writes nothing: the caller may simply not send. A spent
+    receipt is given up here when the last attempt died before recording an outcome,
+    and that give-up is the one refusal that is also a durable fact.
+    """
+
+    #: Another attempt holds a live lease; two senders never act on one receipt.
+    LEASE_HELD = "lease_held"
+    #: The receipt already names a decidable outcome.
+    DECIDED = "decided"
+    #: The execution itself is terminal, so no abort is owed.
+    TERMINAL = "terminal"
+    #: This claim wrote the terminal give-up fact and no later attempt may send.
+    EXHAUSTED = "exhausted"
+
+
 @dataclass(frozen=True, slots=True)
 class AbortDispatchResult:
-    """What one attempt established, written only for the attempt that produced it."""
+    """What one attempt established, written only for the attempt that produced it.
+
+    ``retry_delay_ms`` is the bounded backoff an undecided attempt schedules for its
+    successor. It is a pure rule (see ``abort_retry_delay_ms``) so every adapter
+    applies the same delay and only the database clock decides when it starts.
+    """
 
     submit_intent_id: str
     attempt_id: str
     outcome: AbortDispatchOutcome
     observed_at: datetime
+    retry_delay_ms: int | None = None
 
     def __post_init__(self) -> None:
         if not 1 <= len(self.submit_intent_id) <= 128:
@@ -142,3 +170,10 @@ class AbortDispatchResult:
             raise ValueError("an abort dispatch result requires an attempt identity")
         if not isinstance(self.outcome, AbortDispatchOutcome):
             raise ValueError("an abort dispatch result requires a known outcome")
+        if self.outcome is AbortDispatchOutcome.UNCONFIRMED:
+            if type(self.retry_delay_ms) is not int or not (
+                ABORT_RETRY_BASE_MS <= self.retry_delay_ms <= ABORT_RETRY_MAX_MS
+            ):
+                raise ValueError("an undecided attempt requires a bounded retry delay")
+        elif self.retry_delay_ms is not None:
+            raise ValueError("a decided attempt schedules no retry")

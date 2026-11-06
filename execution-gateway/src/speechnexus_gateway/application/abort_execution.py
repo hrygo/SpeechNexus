@@ -14,12 +14,15 @@ from __future__ import annotations
 import logging
 from uuid import uuid4
 
+from speechnexus_gateway.application.dispatch_metrics import DispatchOutcomeCounters
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.domain.abort_intent import (
     MAX_ABORT_DISPATCH_ATTEMPTS,
+    AbortClaimRefusal,
     AbortDispatchOutcome,
     AbortDispatchResult,
     abort_dispatch_lease_ms,
+    abort_retry_delay_ms,
 )
 from speechnexus_gateway.domain.abort_intent import (
     AbortExecutionRequest as AbortExecutionRequest,
@@ -91,7 +94,14 @@ def _changed(
 
 
 class ExecutionAbortService:
-    """Owns abort facts; the Scheduler still owns budget and capacity release."""
+    """Owns abort facts; the Scheduler still owns budget and capacity release.
+
+    Every entry point performs the same bounded attempt - receive, claim one lease,
+    call the adapter at most once, record what it learned - so a replay, a fresh HTTP
+    request and a recovery sweep all resume the original receipt instead of creating a
+    second execution. The process-local counters aggregate the outcomes for operators;
+    the durable receipt remains the authoritative fact.
+    """
 
     def __init__(
         self,
@@ -100,11 +110,17 @@ class ExecutionAbortService:
         ledger: ExecutionFactLedger,
         abort: EngineAbortPort,
         durable_abort_enabled: bool = False,
+        counters: DispatchOutcomeCounters | None = None,
     ) -> None:
         self._ingress = ingress
         self._ledger = ledger
         self._abort = abort
         self._durable_abort_enabled = durable_abort_enabled
+        self._counters = DispatchOutcomeCounters() if counters is None else counters
+
+    @property
+    def dispatch_outcome_counts(self) -> DispatchOutcomeCounters:
+        return self._counters
 
     def abort(self, request: AbortExecutionRequest) -> ExecutionSnapshot | None:
         """Return the recorded state after one bounded abort attempt, or None if unknown here."""
@@ -115,12 +131,10 @@ class ExecutionAbortService:
         return self._abort_request(request)
 
     def recover_abort(self, request: AbortExecutionRequest) -> ExecutionSnapshot | None:
-        """Resume the original receipt; a stale authority is refused with durable evidence."""
-        return self._abort_request(request, recovering=True)
+        """Resume the original receipt recorded for this execution."""
+        return self._abort_request(request)
 
-    def _abort_request(
-        self, request: AbortExecutionRequest, *, recovering: bool = False
-    ) -> ExecutionSnapshot | None:
+    def _abort_request(self, request: AbortExecutionRequest) -> ExecutionSnapshot | None:
         ledger = self._durable_ledger()
         self._ingress.check_ownership()
         intent = self._ledger.get(request.submit_intent_id)
@@ -133,9 +147,9 @@ class ExecutionAbortService:
         identity = intent.identity
         drift = _origin_error(request, identity)
         if drift is not None:
-            if not recovering:
-                raise drift
-            return self._refuse_stale_origin(request, intent)
+            # The recorded identity is immutable: a disagreement is corruption, not a
+            # state to persist. Fail loudly and send nothing against another origin.
+            raise drift
         # Receive in its own committed transaction before waiting for a local sender.
         # Any rollback or unknown commit result must propagate without a claim or send.
         ledger.receive_abort(request)
@@ -146,9 +160,13 @@ class ExecutionAbortService:
                 attempt_id=_new_attempt_id(),
                 lease_ms=abort_dispatch_lease_ms(request.wait_timeout_ms),
             )
-            if claim is None:
-                # A live attempt lease, a decided answer or a terminal execution:
-                # this caller has no external authority and sends nothing.
+            if isinstance(claim, AbortClaimRefusal):
+                if claim is AbortClaimRefusal.EXHAUSTED:
+                    # A crash inside the final attempt left no outcome to record:
+                    # this claim wrote the give-up, so it is the one counted refusal.
+                    self._counters.record(AbortDispatchOutcome.EXHAUSTED)
+                # Live lease, decided answer or terminal execution: this caller has no
+                # external authority and sends nothing.
                 return ExecutionSnapshot(
                     self._require_unchanged(self._ledger.get(request.submit_intent_id), intent)
                 )
@@ -160,6 +178,7 @@ class ExecutionAbortService:
             dispatch_outcome = _outcome_for(
                 decided=outcome.acknowledgement.decided, attempts=claim.attempts
             )
+            self._counters.record(dispatch_outcome)
             if dispatch_outcome is AbortDispatchOutcome.EXHAUSTED:
                 # Visible evidence for operators: the receipt keeps the bounded
                 # attempt count and the execution keeps holding its capacity.
@@ -175,19 +194,12 @@ class ExecutionAbortService:
                     attempt_id=claim.attempt_id,
                     outcome=dispatch_outcome,
                     observed_at=outcome.observed_at,
+                    retry_delay_ms=(
+                        None if dispatch_outcome.decided else abort_retry_delay_ms(claim.attempts)
+                    ),
                 )
             )
             return snapshot
-
-    def _refuse_stale_origin(
-        self, request: AbortExecutionRequest, intent: SubmissionIntent
-    ) -> ExecutionSnapshot | None:
-        """Keep the receipt, refuse the send and leave a durable refusal behind."""
-        identity = intent.identity
-        with self._ingress.abort_dispatch(identity):
-            current = self._require_unchanged(self._ledger.get(request.submit_intent_id), intent)
-            self._durable_ledger().reject_abort(request, attempt_id=_new_attempt_id())
-            return ExecutionSnapshot(current)
 
     def _durable_ledger(self) -> DurableAbortLedger:
         ledger = self._ledger

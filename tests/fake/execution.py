@@ -15,6 +15,7 @@ from typing import Any
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.domain.abort_intent import (
     MAX_ABORT_DISPATCH_ATTEMPTS,
+    AbortClaimRefusal,
     AbortDispatchClaim,
     AbortDispatchOutcome,
     AbortDispatchResult,
@@ -179,7 +180,7 @@ class InMemorySubmissionLedger:
 
     def claim_abort(
         self, request: AbortExecutionRequest, *, attempt_id: str, lease_ms: int
-    ) -> AbortDispatchClaim | None:
+    ) -> AbortDispatchClaim | AbortClaimRefusal:
         with self._abort_lock:
             current = self.get(request.submit_intent_id)
             if current is None or self._abort_receipts.get(request.submit_intent_id) is None:
@@ -195,14 +196,6 @@ class InMemorySubmissionLedger:
             attempts = 0 if attempt is None else attempt["attempts"]
             now = self._now()
             now_us = int(now.timestamp() * 1_000_000)
-            if attempt is not None and attempt["outcome"] in (
-                AbortDispatchOutcome.ACKNOWLEDGED.value,
-                AbortDispatchOutcome.REJECTED_FENCED.value,
-                AbortDispatchOutcome.EXHAUSTED.value,
-            ):
-                return None
-            if current.execution_state.is_terminal:
-                return None
             if self._abort_origins.get(request.submit_intent_id) != (
                 current.identity.instance_id,
                 current.identity.instance_generation,
@@ -211,16 +204,20 @@ class InMemorySubmissionLedger:
                 current.identity.attempt_id,
                 current.identity.fencing_token,
             ):
-                self._abort_attempts[request.submit_intent_id] = {
-                    "attempt_id": attempt_id,
-                    "started_us": now_us,
-                    "deadline_us": now_us + lease_ms * 1_000,
-                    "outcome": AbortDispatchOutcome.REJECTED_FENCED.value,
-                    "attempts": attempts,
-                }
-                return None
+                # Identity is written once at admission: a disagreement is corruption,
+                # so it is checked before any decided or terminal short circuit.
+                raise ExecutionObservationConflictError(
+                    "abort receipt no longer names the authoritative execution"
+                )
+            if attempt is not None and attempt["outcome"] in (
+                AbortDispatchOutcome.ACKNOWLEDGED.value,
+                AbortDispatchOutcome.EXHAUSTED.value,
+            ):
+                return AbortClaimRefusal.DECIDED
+            if current.execution_state.is_terminal:
+                return AbortClaimRefusal.TERMINAL
             if attempt is not None and attempt["deadline_us"] > now_us:
-                return None
+                return AbortClaimRefusal.LEASE_HELD
             deadline_us = now_us + lease_ms * 1_000
             if attempts >= MAX_ABORT_DISPATCH_ATTEMPTS:
                 self._abort_attempts[request.submit_intent_id] = {
@@ -230,7 +227,7 @@ class InMemorySubmissionLedger:
                     "outcome": AbortDispatchOutcome.EXHAUSTED.value,
                     "attempts": attempts,
                 }
-                return None
+                return AbortClaimRefusal.EXHAUSTED
             self._abort_attempts[request.submit_intent_id] = {
                 "attempt_id": attempt_id,
                 "started_us": now_us,
@@ -267,38 +264,6 @@ class InMemorySubmissionLedger:
                 return False
             attempt["outcome"] = result.outcome.value
             self._abort_attempts[result.submit_intent_id]["outcome"] = result.outcome.value
-            return True
-
-    def reject_abort(self, request: AbortExecutionRequest, *, attempt_id: str) -> bool:
-        with self._abort_lock:
-            current = self.get(request.submit_intent_id)
-            receipt = self._abort_receipts.get(request.submit_intent_id)
-            if current is None or receipt is None:
-                raise ExecutionObservationConflictError("abort receipt is absent")
-            attempt = self._abort_attempts.get(request.submit_intent_id)
-            if attempt is not None and attempt["outcome"] in (
-                AbortDispatchOutcome.ACKNOWLEDGED.value,
-                AbortDispatchOutcome.REJECTED_FENCED.value,
-            ):
-                return False
-            if self._abort_origins.get(request.submit_intent_id) == (
-                current.identity.instance_id,
-                current.identity.instance_generation,
-            ) and (receipt.operation_id, receipt.attempt_id, receipt.fencing_token) == (
-                current.identity.operation_id,
-                current.identity.attempt_id,
-                current.identity.fencing_token,
-            ):
-                return False
-            now = self._now()
-            now_us = int(now.timestamp() * 1_000_000)
-            self._abort_attempts[request.submit_intent_id] = {
-                "attempt_id": attempt_id,
-                "started_us": now_us,
-                "deadline_us": now_us + 1_000,
-                "outcome": AbortDispatchOutcome.REJECTED_FENCED.value,
-                "attempts": 0 if attempt is None else attempt["attempts"],
-            }
             return True
 
     def abort_dispatch_state(self, submit_intent_id: str) -> dict[str, Any] | None:

@@ -47,7 +47,11 @@ from speechnexus_gateway.application.barrier_control import GatewayBarrierServic
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.application.query_execution import ExecutionQueryService
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
-from speechnexus_gateway.domain.abort_intent import AbortDispatchClaim, AbortExecutionRequest
+from speechnexus_gateway.domain.abort_intent import (
+    AbortClaimRefusal,
+    AbortDispatchClaim,
+    AbortExecutionRequest,
+)
 from speechnexus_gateway.domain.canonical import JsonValue, canonical_json, command_digest
 from speechnexus_gateway.domain.command_redaction import (
     AuthorizedCommandRedaction,
@@ -93,7 +97,7 @@ class ObservableLedger(PostgresSubmissionLedger):
 
     def claim_abort(
         self, request: AbortExecutionRequest, *, attempt_id: str, lease_ms: int
-    ) -> AbortDispatchClaim | None:
+    ) -> AbortDispatchClaim | AbortClaimRefusal:
         self.claims += 1
         return super().claim_abort(request, attempt_id=attempt_id, lease_ms=lease_ms)
 
@@ -707,10 +711,8 @@ def test_due_claimed_abort_waits_for_its_lease_before_any_resend(live: LiveAbort
     from speechnexus_gateway.application.recover_aborts import AbortRecoveryService
 
     live.ledger.receive_abort(live.abort_request)
-    assert (
-        live.ledger.claim_abort(live.abort_request, attempt_id="abort-held", lease_ms=100)
-        is not None
-    )
+    held = live.ledger.claim_abort(live.abort_request, attempt_id="abort-held", lease_ms=100)
+    assert isinstance(held, AbortDispatchClaim)
     recovery = AbortRecoveryService(ingress=live.ingress, ledger=live.ledger, abort=live.service())
     # A live lease takes the receipt out of the due queue: no second sender exists.
     assert recovery.sweep(limit=1) == 0
@@ -1012,24 +1014,23 @@ def test_repeated_dispatch_records_the_verified_stop_once(
     )
 
 
-def test_recovery_refuses_a_receipt_recorded_against_another_generation(
+def test_dispatch_outcome_columns_reject_an_unknown_value(
     foundation: Foundation, live: LiveAbort
 ) -> None:
-    """A receipt whose origin no longer matches the authority is never sent again."""
+    """The receipt has no durable "fenced" state: identity cannot change after admission.
+
+    A disagreement between the receipt and the authoritative execution is a conflict
+    (collected by the service before any send), so the durable vocabulary carries only
+    the outcomes an adapter can legitimately produce.
+    """
     live.ledger.receive_abort(live.abort_request)
-    foundation.database.query(
-        "UPDATE gateway_abort_intents SET instance_generation=instance_generation + 1 "
-        "WHERE submit_intent_id=%s",
-        (INTENT_ID,),
-    )
-    drifted = original_abort_request(foundation, live.abort_request)
-    result = live.service().recover_abort(drifted)
-    assert result is not None and result.intent.execution_state is ExecutionState.EXECUTING
-    assert live.engine.calls == []
-    row = dispatch_row(foundation)
-    assert row["dispatch_outcome"] == "rejected_fenced" and row["dispatch_attempts"] == 0
-    # The refusal is durable: no later attempt can resend this receipt.
-    live.service().recover_abort(drifted)
+    with pytest.raises(psycopg.errors.CheckViolation):
+        foundation.database.query(
+            "UPDATE gateway_abort_intents SET dispatch_outcome='rejected_fenced', "
+            "dispatch_attempt_id='abort-invalid', dispatch_started_at_us=1, "
+            "dispatch_deadline_at_us=2, dispatch_outcome_at_us=1 WHERE submit_intent_id=%s",
+            (INTENT_ID,),
+        )
     assert live.engine.calls == []
 
 

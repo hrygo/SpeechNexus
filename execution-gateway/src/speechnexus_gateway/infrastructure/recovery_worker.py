@@ -7,6 +7,7 @@ import math
 from threading import Event, Thread
 from time import monotonic
 
+from speechnexus_gateway.application.dispatch_metrics import DispatchOutcomeCounters
 from speechnexus_gateway.application.recover_aborts import AbortRecoveryService
 from speechnexus_gateway.application.recover_executions import (
     MAX_SWEEP_LIMIT,
@@ -98,6 +99,28 @@ class RecoveryWorker:
             else:
                 recover_executions()
                 recover_abort()
+            self._log_dispatch_outcomes()
             abort_first = not abort_first
             if self._stop.wait(self._interval):
                 break
+
+    def _log_dispatch_outcomes(self) -> None:
+        if self._abort_service is not None:
+            log_dispatch_outcome_change(self._abort_service.dispatch_outcome_counts)
+
+
+def log_dispatch_outcome_change(counters: DispatchOutcomeCounters) -> None:
+    """Emit the bounded outcome counts only when they moved since the last call.
+
+    This is the gateway's metrics outlet: one line per pass with the outcome names as
+    labels, never an execution, attempt or engine identity. The durable
+    ``dispatch_outcome``/``dispatch_attempts`` columns stay the authoritative facts,
+    and the gateway serves no scrape endpoint.
+    """
+    counts = counters.take_change()
+    if counts is None:
+        return
+    _LOGGER.info(
+        "abort dispatch outcomes since the last pass: %s",
+        " ".join(f"{name}={count}" for name, count in counts.items()),
+    )

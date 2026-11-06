@@ -45,6 +45,12 @@ from speechnexus_backend.speech.infrastructure.execution_release_schema import (
     release_guard_grants,
 )
 from speechnexus_backend.speech.infrastructure.execution_result_schema import EXECUTION_RESULT_DDL
+from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema import (
+    ABORT_DISPATCH_COLUMNS_DDL,
+    ABORT_DISPATCH_CONSTRAINTS_DDL,
+    ABORT_INTENT_DDL,
+    ABORT_INTENT_TABLE,
+)
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
     gateway_cancellation_fence_grants,
 )
@@ -171,6 +177,10 @@ def foundation(database: JobDatabase) -> Iterator[Foundation]:
             *RUNTIME_DELIVERY_DDL,
             *EXECUTION_RESULT_DDL,
             RELEASE_GUARD_DDL,
+            ABORT_INTENT_DDL,
+            *ABORT_DISPATCH_COLUMNS_DDL,
+            *ABORT_DISPATCH_CONSTRAINTS_DDL,
+            f"ALTER TABLE {ABORT_INTENT_TABLE} ADD COLUMN next_check_at_us BIGINT",
         ):
             ddl = ddl.replace('COLLATE "C"', "COLLATE utf8mb4_0900_bin")
             ddl = ddl.replace(
@@ -178,6 +188,14 @@ def foundation(database: JobDatabase) -> Iterator[Foundation]:
                 "MODIFY COLUMN job_id VARCHAR(128) COLLATE utf8mb4_0900_bin NULL",
             )
             db.query(re.sub(r"\bTEXT\b", "LONGTEXT", ddl))
+        # 0036 makes the recorded origin mandatory; InnoDB mirrors it without ALTER ... SET.
+        db.query(
+            f"ALTER TABLE {ABORT_INTENT_TABLE} MODIFY COLUMN instance_id "
+            "VARCHAR(128) COLLATE utf8mb4_0900_bin NOT NULL"
+        )
+        db.query(
+            f"ALTER TABLE {ABORT_INTENT_TABLE} MODIFY COLUMN instance_generation BIGINT NOT NULL"
+        )
     try:
         for role in roles:
             if db.dialect == "postgresql":
@@ -188,6 +206,14 @@ def foundation(database: JobDatabase) -> Iterator[Foundation]:
         if db.dialect == "postgresql":
             ensure_cancellation_fence_schema(db.query, schema=db.schema, roles=(roles[0],))
         grants = coordination_runtime_grants(db.schema, speech_role=roles[0], gateway_role=roles[1])
+        if db.dialect == "mysql":
+            # InnoDB has no column-level grants, so the oracle grants the receipt table
+            # wholesale; PostgreSQL keeps the exact column set from gateway_abort_grants.
+            grants = (
+                *grants,
+                f"GRANT SELECT, INSERT, UPDATE ON `{db.schema}`.`{ABORT_INTENT_TABLE}` "
+                f"TO '{roles[1]}'@'%'",
+            )
         if (
             db.dialect == "postgresql"
             and db.query("SELECT to_regclass('speech_job_cancellation_fences') AS name")[0]["name"]

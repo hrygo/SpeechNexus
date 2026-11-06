@@ -1245,6 +1245,120 @@
           }
         }
       }
+    },
+    {
+      "id": "listVoices-method-not-allowed",
+      "kind": "response",
+      "operation": "listVoices",
+      "status": 405,
+      "valid": true,
+      "value": {
+        "headers": {
+          "Allow": "GET"
+        },
+        "body": {
+          "error": {
+            "code": "method_not_allowed",
+            "type": "invalid_request_error",
+            "message": "The path does not accept this HTTP method.",
+            "param": null,
+            "request_id": "status-example",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "listVoices-method-not-allowed-missing-allow",
+      "kind": "response",
+      "operation": "listVoices",
+      "status": 405,
+      "valid": false,
+      "value": {
+        "headers": {},
+        "body": {
+          "error": {
+            "code": "method_not_allowed",
+            "type": "invalid_request_error",
+            "message": "The path does not accept this HTTP method.",
+            "param": null,
+            "request_id": "status-example",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "listVoices-method-not-allowed-bare-detail",
+      "kind": "response",
+      "operation": "listVoices",
+      "status": 405,
+      "valid": false,
+      "value": {
+        "headers": {
+          "Allow": "GET"
+        },
+        "body": {
+          "detail": "Method Not Allowed"
+        }
+      }
+    },
+    {
+      "id": "getVoiceRevision-method-not-allowed",
+      "kind": "response",
+      "operation": "getVoiceRevision",
+      "status": 405,
+      "valid": true,
+      "value": {
+        "headers": {
+          "Allow": "GET"
+        },
+        "body": {
+          "error": {
+            "code": "method_not_allowed",
+            "type": "invalid_request_error",
+            "message": "The path does not accept this HTTP method.",
+            "param": null,
+            "request_id": "status-example",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "getVoiceRevision-method-not-allowed-missing-allow",
+      "kind": "response",
+      "operation": "getVoiceRevision",
+      "status": 405,
+      "valid": false,
+      "value": {
+        "headers": {},
+        "body": {
+          "error": {
+            "code": "method_not_allowed",
+            "type": "invalid_request_error",
+            "message": "The path does not accept this HTTP method.",
+            "param": null,
+            "request_id": "status-example",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "getVoiceRevision-method-not-allowed-bare-detail",
+      "kind": "response",
+      "operation": "getVoiceRevision",
+      "status": 405,
+      "valid": false,
+      "value": {
+        "headers": {
+          "Allow": "GET"
+        },
+        "body": {
+          "detail": "Method Not Allowed"
+        }
+      }
     }
   ]
 }

@@ -643,6 +643,20 @@ unchanged. Consumers correct invalid requests before sending them again.
 Shared positive/negative examples live in
 `tests/fixtures/contracts/voice-catalogue-http.json`.
 
+Speech source `0.1.0.dev7` additionally declares the previously reachable
+transcription 404, cancellation 400, artifact 304/416/503 and missing framework
+405 replies. Error responses reuse the public envelope; new 405 declarations
+require `Allow`. Models, capabilities, transcriptions and voice catalogue paths
+now wrap their framework 405 in that envelope with `method_not_allowed`.
+Artifact 304 responses explicitly have no content and retain ETag; clients must
+not parse them as JSON errors. Upgrade generated clients/strict HTTP validators
+together with the producer. No error-type enum, success DTO or recovery semantic
+changes. Actual synthetic HTTP examples are pinned in
+`tests/fixtures/contracts/speech-http-statuses.json`.
+The generated `artifacts.openapi.json` surface selects only the two implemented
+artifact GETs. The backend merges its namespaced source projection into runtime
+OpenAPI, so the declared schemas/statuses cannot drift into a handwritten copy.
+
 The running workbench adapter consumes this validator before mapping the C
 projection and checks exact requested voice/revision identity separately.
 Workbench source `0.1.0.dev2` adds `getVoiceRevisionV2` / `VoiceRevisionV2` for

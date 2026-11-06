@@ -54,6 +54,7 @@ from speechnexus_backend.speech.infrastructure.readiness import (
     ObjectStorageReadinessProbe,
     PostgresReadinessProbe,
 )
+from speechnexus_backend.speech.interfaces.http.artifact_contract import artifact_http_contract
 from speechnexus_backend.speech.interfaces.http.artifact_errors import artifact_error
 from speechnexus_backend.speech.interfaces.http.artifacts import (
     PREFIX as ARTIFACT_PREFIX,
@@ -74,6 +75,7 @@ from speechnexus_backend.speech.interfaces.http.health import create_health_rout
 from speechnexus_backend.speech.interfaces.http.job_errors import job_error
 from speechnexus_backend.speech.interfaces.http.jobs import PREFIX as JOB_PREFIX
 from speechnexus_backend.speech.interfaces.http.jobs import create_job_router
+from speechnexus_backend.speech.interfaces.http.method_errors import method_not_allowed_error
 from speechnexus_backend.speech.interfaces.http.middleware import (
     RequestIdMiddleware,
     require_request_abort_capture,
@@ -119,6 +121,7 @@ class _SpeechAPI(FastAPI):
             # Namespaced admin components coexist with the original asset ones.
             for contract in (
                 asset_http_contract(),
+                artifact_http_contract(),
                 workspace_http_contract(),
                 profile_http_contract(),
                 pronunciation_http_contract(),
@@ -512,6 +515,22 @@ def create_app(
                 request.state.request_id,
                 headers=headers,
             )
+        if error.status_code == 405 and (
+            path
+            in (
+                "/v1/models",
+                "/v1/audio/transcriptions",
+                "/v1/nexus/capabilities",
+                "/v1/nexus/voices",
+            )
+            or path.startswith(("/v1/models/", "/v1/nexus/voices/"))
+        ):
+            headers = (
+                {"Allow": error.headers["Allow"]}
+                if error.headers and "Allow" in error.headers
+                else {}
+            )
+            return method_not_allowed_error(request.state.request_id, headers)
         return await http_exception_handler(request, error)
 
     app.include_router(

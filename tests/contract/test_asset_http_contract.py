@@ -12,6 +12,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 from openapi_spec_validator import validate
 
 from speechnexus_backend.app import create_app
+from speechnexus_backend.speech.interfaces.http.artifact_contract import artifact_http_contract
 from speechnexus_backend.speech.interfaces.http.asset_contract import (
     asset_http_contract,
     public_asset,
@@ -30,6 +31,7 @@ ARTIFACT_PATHS = {
 def test_packaged_http_surface_is_closed_and_matches_real_operations() -> None:
     document = asset_http_contract()
     validate(document)
+    validate(artifact_http_contract())
     assert set(document["paths"]) == PATHS
     manifest = json.loads((ROOT / "contracts/bindings.json").read_text())
     assert set(manifest["http_surfaces"]["assets"]["paths"]) == PATHS
@@ -71,6 +73,7 @@ def test_packaged_http_surface_is_closed_and_matches_real_operations() -> None:
             assert operation["operationId"] == source["paths"][path][method]["operationId"]
             assert set(operation["responses"]) == set(source["paths"][path][method]["responses"])
     for path in ARTIFACT_PATHS:
+        assert actual["paths"][path] == artifact_http_contract()["paths"][path]
         for method, operation in source["paths"][path].items():
             actual_operation = actual["paths"][path][method]
             assert actual_operation["operationId"] == operation["operationId"]
@@ -90,6 +93,7 @@ def test_packaged_http_surface_is_closed_and_matches_real_operations() -> None:
 
     walk(document)
     assert files("speechnexus_contracts").joinpath("assets.openapi.json").is_file()
+    assert files("speechnexus_contracts").joinpath("artifacts.openapi.json").is_file()
 
 
 def test_openapi_keeps_conditional_ready_and_private_field_rejections() -> None:

@@ -38,6 +38,13 @@
           "headers": {},
           "json": true
         },
+        "405": {
+          "schema": "HttpResponse_listVoices_405",
+          "headers": {
+            "allow": "string"
+          },
+          "json": true
+        },
         "503": {
           "schema": "HttpResponse_listVoices_503",
           "headers": {
@@ -87,6 +94,13 @@
           "headers": {},
           "json": true
         },
+        "405": {
+          "schema": "HttpResponse_getVoiceRevision_405",
+          "headers": {
+            "allow": "string"
+          },
+          "json": true
+        },
         "503": {
           "schema": "HttpResponse_getVoiceRevision_503",
           "headers": {
@@ -102,12 +116,14 @@
     "HttpResponse_listVoices_200",
     "HttpResponse_listVoices_400",
     "HttpResponse_listVoices_401",
+    "HttpResponse_listVoices_405",
     "HttpResponse_listVoices_503",
     "HttpRequest_getVoiceRevision",
     "HttpResponse_getVoiceRevision_200",
     "HttpResponse_getVoiceRevision_400",
     "HttpResponse_getVoiceRevision_401",
     "HttpResponse_getVoiceRevision_404",
+    "HttpResponse_getVoiceRevision_405",
     "HttpResponse_getVoiceRevision_503"
   ],
   "$defs": {
@@ -1178,6 +1194,26 @@
       },
       "required": ["body"]
     },
+    "HttpResponse_listVoices_405": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "string"
+            }
+          },
+          "required": ["allow"],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["headers", "body"]
+    },
     "HttpResponse_listVoices_503": {
       "type": "object",
       "additionalProperties": false,
@@ -1335,6 +1371,26 @@
         }
       },
       "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevision_405": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "string"
+            }
+          },
+          "required": ["allow"],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["headers", "body"]
     },
     "HttpResponse_getVoiceRevision_503": {
       "type": "object",

@@ -22,34 +22,6 @@ from speechnexus_backend.speech.interfaces.http.artifact_errors import artifact_
 
 PREFIX = "/v1/nexus/artifacts"
 _CACHE_HEADERS = {"Cache-Control": "no-store"}
-_ARTIFACT_ID_PARAMETER = {
-    "name": "artifact_id",
-    "in": "path",
-    "required": True,
-    "schema": {
-        "type": "string",
-        "pattern": "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$",
-        "minLength": 3,
-        "maxLength": 128,
-        "description": (
-            "Opaque stable resource identifier. Prefixes are descriptive, not authorization claims."
-        ),
-    },
-}
-_REQUEST_ID_PARAMETER = {
-    "name": "X-Request-ID",
-    "in": "header",
-    "required": False,
-    "schema": {"type": "string", "minLength": 1, "maxLength": 128},
-}
-_RANGE_PARAMETER = {
-    "name": "Range",
-    "in": "header",
-    "required": False,
-    "schema": {"type": "string", "pattern": "^bytes=[0-9]*-[0-9]*$"},
-}
-_METADATA_PARAMETERS = [_ARTIFACT_ID_PARAMETER, _REQUEST_ID_PARAMETER]
-_CONTENT_PARAMETERS = [_ARTIFACT_ID_PARAMETER, _RANGE_PARAMETER, _REQUEST_ID_PARAMETER]
 
 
 def _request_id(request: Request) -> str:
@@ -89,13 +61,6 @@ def create_artifact_router(get_service: Callable[[], ArtifactService | None]) ->
         PREFIX + "/{artifact_id}",
         operation_id="getArtifact",
         summary="Get committed artifact metadata",
-        openapi_extra={"parameters": _METADATA_PARAMETERS},
-        responses={
-            200: {"description": "Artifact metadata."},
-            401: {"description": "Shared service credential required or invalid."},
-            404: {"description": "Resource not found or not visible to the requested workspace."},
-            410: {"description": "Content or event history has expired and is unavailable."},
-        },
     )
     async def get_artifact(request: Request) -> Response:
         request_id = _request_id(request)
@@ -117,14 +82,6 @@ def create_artifact_router(get_service: Callable[[], ArtifactService | None]) ->
         PREFIX + "/{artifact_id}/content",
         operation_id="downloadArtifactContent",
         summary="Download committed artifact content",
-        openapi_extra={"parameters": _CONTENT_PARAMETERS},
-        responses={
-            200: {"description": "Full content."},
-            206: {"description": "Partial content."},
-            401: {"description": "Shared service credential required or invalid."},
-            404: {"description": "Resource not found or not visible to the requested workspace."},
-            410: {"description": "Content or event history has expired and is unavailable."},
-        },
     )
     async def download_artifact_content(request: Request) -> Response:
         request_id = _request_id(request)

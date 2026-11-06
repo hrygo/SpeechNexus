@@ -115,7 +115,7 @@
 ### 3.1 复核基线新增的已实现操作（4 条）
 
 `#432` 与 `#442/#443` 合入后新增注册的 4 个操作。契约声明取自本文件所在 commit 的
-`contracts/speech-openapi.yaml`（`0.1.0.dev6`）；可达性由 handler 分支、错误映射与运行时探测（§7.1）合并得出。
+`contracts/speech-openapi.yaml`（复核基线 `0.1.0.dev6`）；可达性由 handler 分支、错误映射与运行时探测（§7.1）合并得出。
 405 仍按 §5.3 单列。
 
 | # | 操作 | 路由 | 契约声明 | 实现锚点 | 静态可达 | 未声明返回 | 声明未使用 | 结论 |
@@ -132,12 +132,16 @@
 
 ### 4.1 createTranscription → 404（契约未声明 404）
 
+已收敛：#462 / speech `0.1.0.dev7` 补充 `404 NotFound`，复用公共错误 envelope；下列为原审计证据。
+
 - 映射：`transcriptions.py:465-466` 将 `TranscriptionModelNotFoundError` 映射为 `model_not_found`；`transcription_errors.py:33` 给出 404。
 - 产生路径：`application/transcription.py:281` 在模型未发布时抛出该异常。
 - 契约：`contracts/speech-openapi.yaml::createTranscription` 只声明 200/400/401/403/409/413/422/429/503/504。
 - 运行时：P10 返回 `404 {"code":"model_not_found"}`（§7）。
 
 ### 4.2 cancelJob → 400（契约只声明 200/202/401/404/409/503）
+
+已收敛：#462 / speech `0.1.0.dev7` 补充 `400 BadRequest`；下列为原审计证据。
 
 - `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py::create_job_router.cancel_job` 与 `_idempotency_key`：
   `Idempotency-Key` 不合法时返回 `job_error("invalid_job_request")`；`backend/src/speechnexus_backend/speech/interfaces/http/job_errors.py::_ERRORS`（`invalid_job_request`） 定义为 400。
@@ -147,6 +151,9 @@
 
 ### 4.3 getArtifact → 304（契约未声明 304）
 
+已收敛：#462 / speech `0.1.0.dev7` 为两条制品 GET 声明 304、ETag 和条件请求参数。
+304 按实际 HTTP 语义显式使用 `content: {}`，没有错误正文；下列为原审计证据。
+
 - `backend/src/speechnexus_backend/speech/interfaces/http/artifacts.py:112-113`：`If-None-Match` 命中时返回 `Response(status_code=304)`。
 - 运行时：A2，先取 200 的 `ETag` 再回送 `If-None-Match`，实测 304 且无响应体。
 - 对照：`listModels`/`retrieveModel`/`getCapabilities` 明确声明 304（`contracts/speech-openapi.yaml` 对应操作），
@@ -154,12 +161,17 @@
 
 ### 4.4 getArtifact / downloadArtifactContent → 503（契约未声明 503）
 
+已收敛：#462 / speech `0.1.0.dev7` 为两条 GET 补充 `503 ServiceUnavailable`；下列为原审计证据。
+
 - `backend/src/speechnexus_backend/speech/interfaces/http/artifacts.py:103-104,132-133`：服务未装配时返回 `artifact_service_unavailable`；
   `artifact_errors.py:16,21` 均为 503。
 - 运行时：P2/P2b（未配置制品服务）实测 503。
 - 契约对这两条操作只声明 200/206/401/404/410，没有任何 5xx。
 
 ### 4.5 downloadArtifactContent → 416（契约未声明 416）
+
+已收敛：#462 / speech `0.1.0.dev7` 补充 416，复用既有 byte-range 错误 schema 和
+`Content-Range: bytes */<size>`；下列为原审计证据。
 
 - `backend/src/speechnexus_backend/speech/interfaces/http/artifacts.py:146-156`：`artifact_range_not_satisfiable` 补 `Content-Range: bytes */<size>` 后返回 416；
   `artifact_errors.py:11` 定义为 416。
@@ -191,6 +203,11 @@
 不属于本表列出的"无产生路径"项。
 
 ### 5.3 405：多数路径未声明
+
+已收敛：#462 / speech `0.1.0.dev7` 补齐当前全部 16 个已注册操作缺失的 405。
+models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一为
+`method_not_allowed` 公共错误 envelope，保留 `Allow`；已有资源错误码保持原行为。
+下列为原审计基线，不代表当前返回格式。
 
 405 由框架对错误方法产生，经 `backend/src/speechnexus_backend/app.py::create_app.asset_http_error` 的全局处理器改写为稳定错误体
 （assets/artifacts/workspaces/jobs/speech 五个前缀），其余前缀保留 FastAPI 默认 `{"detail":"..."}`。
@@ -393,6 +410,24 @@
 生成 Python/TypeScript 校验器与共享正负例同步；成功 DTO、字段与枚举未扩展。
 具体候选与原始实测输出保存在 PR/DEL-494 交付记录。
 
+### 9.2 #462 已实现返回状态的契约收敛
+
+在固定基线 `3f48b0195023282bde030deb79ecf5858f161c9d`，门禁实际记录
+**16 个操作 / 23 个状态对**（16 个 405 加 7 个其他状态）；任务描述中的
+21 个状态对是较早计数。`0.1.0.dev7` 补齐这 23 对，
+`KNOWN_UNDECLARED_STATUSES` 收缩为空，即 **0 个操作 / 0 个状态对**。
+21 条未实现操作的基线和「已声明但未静态观察到」的独立报告保留，未因本次声明视为实现。
+401/403 等入口/访问语义未在本次改变。
+
+所有新增错误响应复用 `ErrorResponse`，不新增枚举值。304 是无正文的条件响应，
+其空 content 与 ETag 头明确声明，不能给实际空体伪造错误 schema。
+Python/TypeScript 绑定与打包 HTTP 投影由源重新生成；严格消费者需同步更新。
+合成正负例在 `tests/fixtures/contracts/speech-http-statuses.json` 和
+`voice-catalogue-http.json`，实际 ASGI 响应验证在
+`tests/contract/test_speech_http_statuses.py`，覆盖 405 envelope/Allow/request ID、
+404/400、304 空体/ETag、416 和 503，以及裸 detail/缺字段反例。
+这些检查不证明真实引擎、对象存储或生产访问保护已经验收。
+
 ## 10. 可重复检查与 CI 门禁
 
 一次性审计已固化为离线检查脚本 [check-route-conformance.py](../../scripts/dev-env/check-route-conformance.py)，
@@ -413,9 +448,8 @@
    框架对错误方法产生的 405 单独计入。无法静态求值的 `status_code` 或运行时错误码列入
    「UNDETERMINED」，只报告可能值，不猜造、不作为门禁失败。
 4. 显式基线：`KNOWN_UNIMPLEMENTED_OPERATIONS` 固定当前 21 条未实现操作并逐条写明原因；
-   `KNOWN_UNDECLARED_STATUSES` 固定当前 16 个操作的已知未声明状态，其中非 405 项为
-   `createTranscription` 404、`cancelJob` 400、`getArtifact` 304/503、
-   `downloadArtifactContent` 304/416/503，其余为缺失的 405 声明。
+   `KNOWN_UNDECLARED_STATUSES` 经 #462 收缩为空（原 16 个操作 / 23 个状态对），
+   任何新增未声明状态都必须修复，不能加入旧基线。
 5. 新增契约未注册操作、已注册未声明路由、未声明状态码、operationId 形状变化、endpoint 源码
    无法定位，或基线过期（操作已实现、状态已声明/不再可达）都会使命令以退出码 1 失败。
 

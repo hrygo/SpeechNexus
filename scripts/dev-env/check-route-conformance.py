@@ -1261,21 +1261,31 @@ def merge_environments(
     return merged
 
 
-def flatten_routes(routes: Iterable[Any], prefix: str = "") -> Iterator[Any]:
+def require_plain_path_template(path: str) -> None:
+    """Fail closed instead of treating a Starlette converter as a string segment."""
+    if re.search(r"\{[^/{}]*:[^/{}]*\}", path):
+        raise ValueError(f"unsupported Starlette path converter in route conformance: {path}")
+
+
+def flatten_routes(routes: Iterable[Any]) -> Iterator[Any]:
     for route in routes:
         original = getattr(route, "original_router", None)
         if original is not None:
             context = getattr(route, "include_context", None)
             nested_prefix = getattr(context, "prefix", "") or ""
-            yield from flatten_routes(original.routes, prefix + nested_prefix)
+            if nested_prefix:
+                raise ValueError(
+                    f"unsupported include_router prefix in route conformance: {nested_prefix}"
+                )
+            yield from flatten_routes(original.routes)
         else:
             path = getattr(route, "path", None)
-            if isinstance(path, str) and prefix and not path.startswith(prefix):
-                route.path = prefix.rstrip("/") + "/" + path.lstrip("/")
+            if isinstance(path, str):
+                require_plain_path_template(path)
             yield route
 
 
-def load_app(root: Path = ROOT, *, assets: Any = None) -> Any:
+def load_app(root: Path = ROOT, *, assets: Any = None, workspaces: Any = None) -> Any:
     _ensure_source_path(root)
     from speechnexus_backend.app import create_app
     from speechnexus_backend.settings import Settings
@@ -1289,22 +1299,24 @@ def load_app(root: Path = ROOT, *, assets: Any = None) -> Any:
             object_storage_healthcheck_url="http://127.0.0.1:1/health",
             object_storage_bucket="speechnexus-conformance",
         )
-    return create_app(settings=settings, assets=assets)
+    return create_app(settings=settings, assets=assets, workspaces=workspaces)
+
+
+class ProbeService:
+    """Enable ingress; fail immediately if method selection reaches business code."""
+
+    def __getattr__(self, name: str) -> Any:
+        raise AssertionError(f"the 405 probe must not call a service: {name}")
 
 
 def probe_app(root: Path = ROOT) -> Any:
-    """Load the application with an inert asset service for the 405 probe.
+    """Enable service-gated ingress without storage or database dependencies.
 
-    AssetIngress answers 503 when no asset service is configured, before the
-    router can reject a wrong method. The probe never reaches an asset
-    endpoint, so an inert double enables the middleware without opening an
-    object-storage connection.
+    AssetIngress and WorkspaceIngress answer 503 when their service is absent,
+    before method rejection. Other ingress checks methods before service
+    availability. These doubles only enable ingress; business calls fail fast.
     """
-    from unittest.mock import Mock
-
-    from speechnexus_backend.speech.application.assets import AssetService
-
-    return load_app(root, assets=Mock(spec=AssetService))
+    return load_app(root, assets=ProbeService(), workspaces=ProbeService())
 
 
 def _ensure_source_path(root: Path) -> None:
@@ -1380,6 +1392,7 @@ def discover_app_routes(
 
 def fill_path_parameters(path: str) -> str:
     """Render a contract path template into a concrete path for the probe."""
+    require_plain_path_template(path)
     return re.sub(r"\{[^/{}]+\}", PROBE_PATH_PARAMETER, path)
 
 
@@ -1387,6 +1400,8 @@ def envelope_problem(response: Any, request_id: str) -> str | None:
     """Explain why a 405 reply is not the public envelope, or return None."""
     if response.status_code != FRAMEWORK_METHOD_NOT_ALLOWED:
         return f"the probe request answered {response.status_code} instead of 405"
+    if not response.headers.get("Allow", "").strip():
+        return "the 405 response is missing a non-empty Allow header"
     try:
         body = response.json()
     except ValueError:
@@ -1424,6 +1439,10 @@ async def probe_method_not_allowed_envelopes(
 
     from speechnexus_backend.speech.interfaces.http.unimplemented import methods_for_path
 
+    # methods_for_path uses plain segment matching and cannot interpret lazy
+    # include prefixes or converters. Validate the entire table before issuing
+    # any request, including routes outside the contract's current operations.
+    tuple(flatten_routes(app.router.routes))
     results: dict[str, str | None] = {}
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://localhost"

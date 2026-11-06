@@ -573,13 +573,15 @@ Python/TypeScript 绑定与打包 HTTP 投影由源重新生成；严格消费�
    占位 handler 传入的是常量而非字面量，门禁按「单条目工厂只可能返回该条目状态」静态判定，因此不依赖调用点的字符串。
    因此占位响应不会「通过」契约检查：实现该操作时必须同时删除占位条目与基线条目，否则门禁失败。
 5. 每条声明 405 的操作在进程内发起一次 ASGI 请求，方法由 `methods_for_path` 从该路径未注册的方法中
-   选出，要求返回包含 `code/type/message/param/request_id/retryable` 的公开错误信封且不携带裸 `detail`；
-   缺失即 `method_not_allowed_envelope_missing`；`method_not_allowed_envelopes` 为 `None` 或缺少对应操作同样产生该
-   finding（对应行 `405-envelope=FAILED`），门禁退出码非 0。`build_report` 仍拒绝为空或覆盖不全的探测结果
-   （`RuntimeError`），单测同时断言探测集合等于声明 405 的集合，未探测不会被当成 verified。
-   `app.py` 不再维护「哪些路径有信封」的硬编码清单：
-   405 信封对所有注册路由生效，未注册路径仍返回 404，资源面专用错误码（jobs/assets/artifacts/workspace/speech）
-   仍由各自分支先选中。
+   选出，要求返回包含 `code/type/message/param/request_id/retryable` 的公开错误信封且不携带裸 `detail`，
+   非空 `Allow` 与 `code`、`retryable=False`，并回显请求的 `request_id`；
+   缺失即 `method_not_allowed_envelope_missing`。`app.py` 不再维护「哪些路径有信封」的硬编码清单：
+   到达路由方法拒绝分支的 405 会统一为信封，包含 `/docs`、`/healthz`；未注册路径仍返回 404。
+   但未配置资产或 workspace 服务时 ingress 先返回 503（如 `workspace_service_unavailable`），不会到达 405 分支。
+   资源面专用错误码（jobs/assets/artifacts/workspace/speech）仍由各自分支先选中。
+   探针以只启用 ingress 的资产和 workspace 服务替身验证 405；任何业务方法调用立即失败。
+   当前仅支持普通路径参数；Starlette converter（`{id:int}`、`{rest:path}`）或懒加载 `include_router`
+   的非空 prefix 在发送请求前显式报错（退出码 2），不静默按简化路径匹配，也不改写路由。
 6. 新增契约未注册操作、已注册未声明路由、未声明状态码、operationId 形状变化、405 响应信封缺失、
    endpoint 源码无法定位，或基线过期（操作已实现、状态已声明/不再可达、占位形状/归属/错误码漂移）
    都会使命令以退出码 1 失败。
@@ -615,11 +617,11 @@ CI 将 `make contracts-route-conformance` 作为 `python_contracts` 作业
 `unimplemented_error_map_drift` 失败，不能靠改基线绕过。
 新增偏离不得直接加入基线，应先修复或按审计补充理由与跟踪项。
 
-边界：ASGI ingress（`AssetIngress`、`ProfileIngress`、`PronunciationIngress` 等）产生的状态码、
-框架 404/500、FastAPI 请求参数类型校验自动产生的 422、跨模块 helper 返回的响应、真实引擎与
-对象存储的 200 内容不在静态集合内；这些路径仍由集成/验收测试覆盖。405 探测注入惰性资产服务
-以绕过未配置对象存储时的资产 ingress 503，不读取存储、不触发 endpoint；它验证的仍是真实中间件栈与
-全局异常处理器的输出。
+边界：ASGI ingress（`AssetIngress`、`ProfileIngress`、`PronunciationIngress` 等）产生的状态码不在
+静态集合内，但声明 405 的操作已通过进程内 ASGI 请求实测相关方法拒绝分支的状态码、信封和 `Allow`。
+其他 ingress 状态码、框架 404/500、FastAPI 请求参数类型校验自动产生的 422、跨模块 helper 返回的
+响应、真实引擎与对象存储的 200 内容仍需集成/验收测试覆盖。405 探测不读取存储、不调用业务服务；
+它验证真实中间件栈与全局异常处理器的输出，不证明未配置部署可用，也不证明所有 ingress 状态可达。
 「声明但未静态观察到」只输出、不判失败，因为静态缺失不等于运行时不可达。
 endpoint 源码无法定位则相反：它使检查直接失败，不把空状态集当成通过。
 

@@ -548,22 +548,19 @@ def create_app(
                 request.state.request_id,
                 headers=headers,
             )
-        if error.status_code == 405 and (
-            path
-            in (
-                "/v1/models",
-                "/v1/audio/transcriptions",
-                "/v1/nexus/capabilities",
-                "/v1/nexus/voices",
+        if error.status_code == 405:
+            # Every registered route answers a wrong method with the public
+            # envelope. The branches above choose a narrower code for their
+            # surface; anything else - including a route added later - falls
+            # back here instead of FastAPI's bare {"detail": ...}. Unregistered
+            # paths never reach this handler: they answer 404, so the widened
+            # fallback cannot advertise methods for an unknown resource.
+            reported = (
+                error.headers["Allow"] if error.headers and "Allow" in error.headers else None
             )
-            or path.startswith(("/v1/models/", "/v1/nexus/voices/"))
-        ):
-            headers = (
-                {"Allow": error.headers["Allow"]}
-                if error.headers and "Allow" in error.headers
-                else {}
+            return method_not_allowed_error(
+                request.state.request_id, allowed_methods(path, reported)
             )
-            return method_not_allowed_error(request.state.request_id, headers)
         return await http_exception_handler(request, error)
 
     app.include_router(

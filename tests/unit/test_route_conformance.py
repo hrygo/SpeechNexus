@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import importlib.util
 import sys
 from pathlib import Path
 from typing import Any
+
+import httpx
+import pytest
+from fastapi import FastAPI
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location(
@@ -49,6 +54,22 @@ def test_repository_has_no_unbaselined_deviation() -> None:
     assert len(module.KNOWN_UNIMPLEMENTED_OPERATIONS) == 20
     assert module.KNOWN_UNDECLARED_STATUSES == {}
     assert report.known_status_gaps == ()
+    # Every operation declares 405; each one is probed for the public envelope,
+    # not accepted merely because a route exists. The probed set must equal the
+    # declared set: silently dropping the probe results may not leave the
+    # declared rows looking verified.
+    declared_405 = {
+        operation.operation_id
+        for operation in report.contract_operations
+        if 405 in operation.declared_statuses
+    }
+    probed = {
+        row.operation.operation_id
+        for row in report.rows
+        if row.route is not None and row.envelope_probed
+    }
+    assert probed == declared_405
+    assert all(row.envelope_error is None for row in report.rows)
 
 
 def test_every_unimplemented_operation_answers_only_the_placeholder_error() -> None:
@@ -362,3 +383,113 @@ def test_missing_placeholder_route_is_reported() -> None:
         and "placeholder" in finding.detail
         for finding in report.findings
     )
+
+
+def test_declared_405_without_an_envelope_fails_the_gate() -> None:
+    # A route can exist and still answer the framework's bare 405 body. The
+    # gate must reject it instead of treating the registered route as proof.
+    module = load()
+    app = FastAPI()
+
+    @app.get("/v1/nexus/widgets", operation_id="listWidgets")
+    def list_widgets() -> dict[str, bool]:
+        return {"ok": True}
+
+    operation = module.ContractOperation(
+        "listWidgets", "GET", "/v1/nexus/widgets", frozenset({200, 405})
+    )
+
+    async def execute() -> tuple[httpx.Response, dict[str, str | None]]:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://localhost"
+        ) as http:
+            reply = await http.put("/v1/nexus/widgets")
+        envelopes = await module.probe_method_not_allowed_envelopes(app, (operation,))
+        return reply, envelopes
+
+    reply, envelopes = asyncio.run(execute())
+    assert reply.status_code == 405
+    assert reply.json() == {"detail": "Method Not Allowed"}
+    assert envelopes["listWidgets"] is not None
+
+    route = module.RegisteredRoute(
+        method="GET",
+        path="/v1/nexus/widgets",
+        operation_id="listWidgets",
+        statuses=frozenset({200, 405}),
+    )
+    report = module.evaluate(
+        (operation,),
+        (route,),
+        other_contract_ids=frozenset(),
+        baseline_unimplemented={},
+        baseline_statuses={},
+        unimplemented=module.UnimplementedSurface(),
+        method_not_allowed_envelopes=envelopes,
+    )
+    assert any(
+        finding.kind == "method_not_allowed_envelope_missing"
+        and finding.operation_id == "listWidgets"
+        and "not the public error envelope" in finding.detail
+        for finding in report.findings
+    )
+
+
+def test_a_new_route_gets_the_envelope_without_an_app_allowlist() -> None:
+    # The falsifiable case from the issue: a route added after the fact must
+    # answer the framework 405 through the public envelope, with no path tuple
+    # in app.py deciding which paths are covered.
+    from speechnexus_backend.app import create_app
+    from tests.unit.backend.test_health import _settings
+
+    def widgets() -> dict[str, list[object]]:
+        return {"items": []}
+
+    async def execute() -> tuple[httpx.Response, str]:
+        app = create_app(settings=_settings())
+        app.add_api_route("/v1/nexus/widgets", widgets, methods=["GET"])
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://localhost"
+        ) as http:
+            response = await http.put("/v1/nexus/widgets")
+        return response, response.json()["error"]["code"]
+
+    response, code = asyncio.run(execute())
+    assert response.status_code == 405
+    assert code == "method_not_allowed"
+    assert response.headers["allow"] == "GET"
+
+
+def test_unprobed_405_is_not_reported_as_verified() -> None:
+    # Without probe results the report must say so, not reuse the default
+    # "None means verified" reading.
+    module = load()
+    base = module.build_report(ROOT)
+    report = module.evaluate(
+        base.contract_operations,
+        base.registered,
+        other_contract_ids=base.other_contract_ids,
+        baseline_unimplemented=module.KNOWN_UNIMPLEMENTED_OPERATIONS,
+        baseline_statuses=module.KNOWN_UNDECLARED_STATUSES,
+        unimplemented=module.load_unimplemented_surface(ROOT),
+        method_not_allowed_envelopes=None,
+    )
+    assert all(not row.envelope_probed for row in report.rows)
+    text = module.format_report(report)
+    assert "405-envelope=not probed" in text
+    assert "405-envelope=verified" not in text
+
+
+def test_dropping_the_probe_results_fails_the_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Injecting an empty probe is the reviewer's falsification: build_report
+    # must fail instead of evaluating with no envelope evidence.
+    module = load()
+
+    async def empty_probe(_app: Any, _operations: Any) -> dict[str, str | None]:
+        return {}
+
+    monkeypatch.setattr(module, "probe_method_not_allowed_envelopes", empty_probe)
+    with pytest.raises(RuntimeError, match="405 envelope probe returned no result"):
+        module.build_report(ROOT)

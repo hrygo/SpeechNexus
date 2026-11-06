@@ -140,9 +140,15 @@ uv run pytest tests/ci tests/contract/test_ci_workflow.py tests/unit/test_integr
 
 检查用合成 `Settings` 装配 `create_app()`（不启动 lifespan、不连库、不联网），把实际注册的
 `(method, path, operationId)` 与当前 `contracts/speech-openapi.yaml` 对账，并静态提取每条已注册路由的响应状态码。
-新增未注册的契约操作、已注册但契约未声明的路由、未声明的可达状态码、operationId 路由形状不一致，
-以及过期的显式基线都会以非零退出码失败。无法静态判定的表达式只输出 `UNDETERMINED`，不猜造、不判失败；
+新增未注册的契约操作、已注册但契约未声明的路由、未声明的可达状态码、operationId 路由形状不一致、
+405 响应缺少公开错误信封，以及过期的显式基线都会以非零退出码失败。无法静态判定的表达式只输出 `UNDETERMINED`，不猜造、不判失败；
 ASGI ingress 状态码、框架 404/500、FastAPI 参数校验产生的 422、跨模块 helper 返回的响应与真实执行内容不在静态集合内；endpoint 源码无法定位则直接失败。
+
+每条声明 405 的操作还会在该路径上发起一个进程内 ASGI 请求，方法由 #473 的 `methods_for_path` 从该路径未注册的
+方法中选出，要求返回包含 `code/type/message/param/request_id/retryable` 的公开错误信封，而不是框架裸
+`{"detail": "Method Not Allowed"}`。因此「路由已注册」不再等于「405 已统一为信封」，新增路由或专用处理器漏掉信封会直接失败。
+探测结果缺失会报告 `405-envelope=not probed`；`build_report` 对为空或覆盖不全的探测结果直接以 `RuntimeError` 失败，
+单测还断言探测集合与声明 405 的操作集合相等，未探测不会被当作 verified。
 
 已知未实现操作与已知未声明状态码保留在脚本内的显式基线中，逐条带原因；实现或契约变更后必须同步删除条目，
 否则 `stale_*` 检查失败。未实现操作另有行为要求：门禁解析中央占位表与占位错误映射，要求基线、占位条目、

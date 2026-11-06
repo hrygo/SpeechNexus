@@ -1791,11 +1791,12 @@ def declared_method_not_allowed_operations(
 
 def require_envelope_coverage(
     operations: Sequence[ContractOperation],
-    envelopes: Mapping[str, str | None],
+    envelopes: Mapping[str, str | None] | None,
 ) -> None:
     """Refuse to report a declared 405 as verified when it was never probed."""
     expected = {operation.operation_id for operation in operations}
-    missing = sorted(expected - set(envelopes))
+    received = set() if envelopes is None else set(envelopes)
+    missing = sorted(expected - received)
     if missing:
         raise RuntimeError(
             "the 405 envelope probe returned no result for "
@@ -1871,8 +1872,6 @@ def format_report(report: Report) -> str:
         if FRAMEWORK_METHOD_NOT_ALLOWED in operation.declared_statuses:
             if row.envelope_error is not None:
                 lines.append(f"  405-envelope=FAILED ({row.envelope_error})")
-            elif not row.envelope_probed:
-                lines.append("  405-envelope=not probed")
             else:
                 lines.append("  405-envelope=verified")
     extras = [route for route in report.registered if route.operation_id not in contract_ids]

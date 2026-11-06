@@ -150,6 +150,13 @@ ASGI ingress 状态码、框架 404/500、FastAPI 参数校验产生的 422、�
 `request_id` 回显探针发送的 `X-Request-ID`，且响应体不携带顶层 `detail`。
 因此「路由已注册」不再等于「405 已统一为信封」，新增路由或专用处理器漏掉这些要求会直接失败。
 
+缺少探测证据时按两层处理：直接调用 `evaluate()`，若 `method_not_allowed_envelopes` 为 `None`
+或缺少某个操作，会为该操作产生 `method_not_allowed_envelope_missing`；`format_report()` 的对应行
+打印 `405-envelope=FAILED`，不输出 OK 尾巴，CLI 若取得该报告则退出码为 1。
+正常 CLI 先经过 `build_report()`：其 `require_envelope_coverage()` 对 `None`、空映射或缺 key
+抛出 `RuntimeError`，CLI 以退出码 2 在 stderr 输出诊断，stdout 无报告；不会生成 FAILED 行。
+单测同时验证这两条失败路径，并断言探测集合等于声明 405 的集合。
+
 探针注入只启用 ingress 的资产与 workspace 服务替身；任何业务方法调用立即失败，不连接服务。
 未配置服务的部署仍可能在路由匹配前返回 503，这不属于探针通过的证据。
 当前匹配器只支持普通 `{parameter}` 段；检测到 Starlette converter（如 `{id:int}`、`{rest:path}`）

@@ -575,7 +575,13 @@ Python/TypeScript 绑定与打包 HTTP 投影由源重新生成；严格消费�
 5. 每条声明 405 的操作在进程内发起一次 ASGI 请求，方法由 `methods_for_path` 从该路径未注册的方法中
    选出，要求返回包含 `code/type/message/param/request_id/retryable` 的公开错误信封且不携带裸 `detail`，
    非空 `Allow` 与 `code`、`retryable=False`，并回显请求的 `request_id`；
-   缺失即 `method_not_allowed_envelope_missing`。`app.py` 不再维护「哪些路径有信封」的硬编码清单：
+   缺失即 `method_not_allowed_envelope_missing`。
+   直接调用 `evaluate()` 时，`method_not_allowed_envelopes` 为 `None` 或缺少某个操作，同样为该操作
+   产生该 finding；`format_report()` 的对应行打印 `405-envelope=FAILED`，不输出 OK 尾巴，
+   CLI 若取得该报告则退出码为 1。正常 CLI 先经过 `build_report()`，其 `require_envelope_coverage()`
+   对 `None`、空映射或缺 key 抛出 `RuntimeError`：CLI 以退出码 2 在 stderr 输出诊断，stdout 无报告，
+   不会生成 FAILED 行。单测分别覆盖两层，并断言探测集合等于声明 405 的集合。
+   `app.py` 不再维护「哪些路径有信封」的硬编码清单：
    到达路由方法拒绝分支的 405 会统一为信封，包含 `/docs`、`/healthz`；未注册路径仍返回 404。
    但未配置资产或 workspace 服务时 ingress 先返回 503（如 `workspace_service_unavailable`），不会到达 405 分支。
    资源面专用错误码（jobs/assets/artifacts/workspace/speech）仍由各自分支先选中。

@@ -71,12 +71,12 @@ ENVELOPE_KEYS = frozenset({"code", "type", "message", "param", "request_id", "re
 # ships. A new omission must fail instead of silently joining the baseline.
 # #432/#436 implemented retryJob and streamJobEvents, and #442/#443 implemented
 # listVoices and getVoiceRevision after the original audit, so the audit's 25
-# operations became 21, then #471 implemented listJobs: 20 remain. #473 replaced the
+# operations became 21, then #471 implemented listJobs and #490 implemented
+# retireVoiceRevision's retire path: 19 remain. #473 replaced the
 # framework 404/405/400 replies with the placeholder, so "registered" is no
 # longer evidence of implementation: the baseline is checked against the
 # placeholder table and the single-entry unimplemented error map instead.
 KNOWN_UNIMPLEMENTED_OPERATIONS: dict[str, str] = {
-    "retireVoiceRevision": "voice revision retirement route is not implemented",
     # Collection-level pronunciation routes are intercepted by
     # PronunciationIngress and rewritten to 400 invalid_request.
     "listPronunciationSets": "pronunciation collection read route is not implemented",

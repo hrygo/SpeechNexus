@@ -75,6 +75,30 @@ existing defaults. The new regressions include all four path namespaces,
 plain/exclusive Nexus changes, frozen external references, a branch moving during
 comparison, version bumps that cannot hide changes, and invalid/unprovable inputs.
 
+### Replacing the central placeholder 503
+
+`#473` declares every unimplemented operation with the shared
+`OperationNotImplemented` response. Its required `Cache-Control: no-store` and
+`X-Should-Retry: false` headers describe "permanently unimplemented"; they are
+not a runtime guarantee for an operation that ships. The directional comparison
+would otherwise reject every promotion.
+
+One structural exception is limited to a raw baseline response that is exactly
+`$ref: "#/components/responses/OperationNotImplemented"` with no sibling keys, at
+status `503`. The replacement must still:
+
+- declare required `Cache-Control` and `X-Should-Retry` headers; and
+- keep an `application/json` body composed with `allOf` that references
+  `#/components/schemas/ErrorResponse`.
+
+A replacement that loses either guarantee is reported as
+`placeholder 503 replacement requires ...`. All other responses keep the
+unchanged directional rules, including the existing `const` and composition
+comparisons: a 503 that was not exactly the placeholder reference (including a
+placeholder `$ref` with siblings) is compared normally. A version bump remains
+no waiver. The positive and negative cases live in
+`tests/contract/test_http_contract_changes.py`.
+
 ## What remains outside this unit
 
 This is an intentionally partial structural detector. Not every JSON Schema

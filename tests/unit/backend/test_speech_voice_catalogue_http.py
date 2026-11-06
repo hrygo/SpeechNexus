@@ -29,13 +29,15 @@ async def test_unconfigured_voice_catalogue_is_retryable(path: str, operation: s
     validate_response(operation, 503, {"body": response.json(), "headers": dict(response.headers)})
 
 
-def test_runtime_openapi_projects_only_the_two_voice_reads() -> None:
+def test_runtime_openapi_projects_the_reads_and_the_retirement_command() -> None:
     paths = create_app(settings=_settings()).openapi()["paths"]
     assert paths["/v1/nexus/voices"]["get"]["operationId"] == "listVoices"
     fixed = paths["/v1/nexus/voices/{voice_id}/revisions/{revision}"]
     assert set(fixed) == {"get"}
     assert fixed["get"]["operationId"] == "getVoiceRevision"
-    assert "/v1/nexus/voices/{voice_id}/revisions/{revision}/retirements" not in paths
+    retired = paths["/v1/nexus/voices/{voice_id}/revisions/{revision}/retirements"]
+    assert set(retired) == {"post"}
+    assert retired["post"]["operationId"] == "retireVoiceRevision"
 
 
 class UnreadableCatalogue:

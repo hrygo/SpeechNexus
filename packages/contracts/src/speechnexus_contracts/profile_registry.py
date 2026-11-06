@@ -23,6 +23,7 @@ HTTP_PROFILES = frozenset(
     (
         "pronunciation_read",
         "voice_catalogue",
+        "voice_retirement",
         "admin",
         "runtime",
         "workbench",

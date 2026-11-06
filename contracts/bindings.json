@@ -318,6 +318,15 @@
       ],
       "operations": ["listVoices", "getVoiceRevision"]
     },
+    "voice_retirement": {
+      "source": "speech-openapi.yaml",
+      "validate": true,
+      "typescript_source": "speech",
+      "paths": [
+        "/v1/nexus/voices/{voice_id}/revisions/{revision}/retirements"
+      ],
+      "operations": ["retireVoiceRevision"]
+    },
     "admin": {
       "source": "admin-openapi.yaml",
       "validate": true,

@@ -51,7 +51,7 @@ def test_repository_has_no_unbaselined_deviation() -> None:
     # unregistered" is now empty; the unimplemented set is proven by route shape.
     assert contract_ids - registered_ids == set()
     assert report.known_unimplemented == tuple(sorted(module.KNOWN_UNIMPLEMENTED_OPERATIONS))
-    assert len(module.KNOWN_UNIMPLEMENTED_OPERATIONS) == 20
+    assert len(module.KNOWN_UNIMPLEMENTED_OPERATIONS) == 19
     assert module.KNOWN_UNDECLARED_STATUSES == {}
     assert report.known_status_gaps == ()
     # Every operation declares 405; each one is probed for the public envelope,

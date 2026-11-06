@@ -34,6 +34,11 @@ _OPENAI_PATHS = {
     "/v1/audio/speech",
     "/v1/realtime",
 }
+# The central placeholder is a process marker, not a runtime guarantee. When an
+# operation leaves the unimplemented set, its 503 must be allowed to stop saying
+# "permanently not implemented"; the replacement still has to be a retryable 503.
+_PLACEHOLDER_503_REF = "#/components/responses/OperationNotImplemented"
+_ERROR_RESPONSE_REF = "#/components/schemas/ErrorResponse"
 _OPENAI_REALTIME_DEFS = {
     "SessionUpdate",
     "InputAudioBufferAppend",
@@ -101,6 +106,63 @@ def _resolve_local_pointer(document: Mapping[str, Any], pointer: str) -> object 
         else:
             return None
     return current
+
+
+def _raw_response(
+    document: Mapping[str, Any], path_name: str, method: str, status: str
+) -> Mapping[str, Any] | None:
+    paths = _mapping(document.get("paths")) or {}
+    path_item = _mapping(paths.get(path_name)) or {}
+    operation = _mapping(path_item.get(method)) or {}
+    responses = _mapping(operation.get("responses")) or {}
+    return _mapping(responses.get(status))
+
+
+def _exact_placeholder_503(
+    document: Mapping[str, Any], path_name: str, method: str, status: str
+) -> bool:
+    if status != "503":
+        return False
+    response = _raw_response(document, path_name, method, status)
+    return (
+        response is not None
+        and set(response) == {"$ref"}
+        and response.get("$ref") == _PLACEHOLDER_503_REF
+    )
+
+
+def _response_definition(
+    document: Mapping[str, Any], response: Mapping[str, Any] | None
+) -> Mapping[str, Any] | None:
+    if response is None:
+        return None
+    ref = response.get("$ref")
+    if isinstance(ref, str) and ref.startswith("#/"):
+        return _mapping(_resolve_local_pointer(document, ref[1:]))
+    return response
+
+
+def _keeps_retryable_503_shape(
+    document: Mapping[str, Any], response: Mapping[str, Any] | None
+) -> bool:
+    definition = _response_definition(document, response)
+    if definition is None:
+        return False
+    headers = {
+        str(name).lower(): value
+        for name, value in (_mapping(definition.get("headers")) or {}).items()
+    }
+    for name in ("cache-control", "x-should-retry"):
+        header = _mapping(headers.get(name)) or {}
+        if header.get("required") is not True:
+            return False
+    content = _mapping(definition.get("content")) or {}
+    media = _mapping(content.get("application/json")) or {}
+    schema = _mapping(media.get("schema")) or {}
+    variants = _sequence(schema.get("allOf")) or []
+    return len(variants) >= 2 and any(
+        (_mapping(variant) or {}).get("$ref") == _ERROR_RESPONSE_REF for variant in variants
+    )
 
 
 def _dereference_schema_children(
@@ -1101,6 +1163,20 @@ def _compare_openapi(
                 response_pointer = f"{operation_pointer}/responses/{status}"
                 if current_response is None:
                     _issue(issues, response_pointer, "response status removed")
+                    continue
+                if _exact_placeholder_503(base, path_name, method, status):
+                    # The baseline declared "permanently not implemented"; the
+                    # replacement must still be a retryable 503 envelope, but its
+                    # code/retryable values are allowed to change.
+                    if not _keeps_retryable_503_shape(
+                        current, _raw_response(current, path_name, method, status)
+                    ):
+                        _issue(
+                            issues,
+                            response_pointer,
+                            "placeholder 503 replacement requires required Cache-Control and "
+                            "X-Should-Retry headers and an allOf body containing ErrorResponse",
+                        )
                     continue
                 base_headers = {
                     name.lower(): value

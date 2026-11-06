@@ -36,6 +36,11 @@ following are *not* aliases of a registered template and stay distinct:
   HTTP clients and reverse proxies may normalise them before the request
   arrives; such an ingress rewrite happens before ASGI routing and is outside
   what an in-process route guard can observe.
+
+Ownership is method-specific: normalization folds only a method+template pair
+that the placeholder table owns. For example, the voice-draft placeholders own
+GET and PATCH, but not DELETE; a real DELETE route at the slash-suffixed
+template may coexist, even though the same slash is an alias for GET/PATCH.
 """
 
 from __future__ import annotations
@@ -132,9 +137,12 @@ def normalize_template(template: str) -> str:
     Folding them catches a feature router mounted only at the slash-suffixed
     spelling. Owners are therefore compared on this normalized shape; the
     message keeps the template the placeholder table declares.
+
+    A template made only of slashes is kept intact: Starlette does not redirect
+    ``//`` to ``/``, so stripping every slash would conflate distinct paths.
     """
     shape = _TEMPLATE_PARAMETER.sub("{}", template)
-    return shape.rstrip("/") or "/"
+    return shape.rstrip("/") or shape
 
 
 def is_unimplemented_path(path: str) -> bool:
@@ -173,12 +181,14 @@ def methods_for_path(routes: Iterable[Any], path: str) -> frozenset[str]:
 
 
 def assert_placeholder_ownership(routes: Iterable[Any]) -> None:
-    """Fail fast when a real route shares a placeholder's method and template.
+    """Fail when a real route shares a placeholder-owned method and template.
 
     Registration order decides which route wins, so a feature router included
     after the placeholders would answer 503 for an operation that ships. The
     comparison uses the normalized template, so renaming a parameter, adding a
-    converter or appending trailing slashes cannot hide the conflict.
+    converter or appending trailing slashes cannot hide the conflict. It only
+    checks method+template pairs declared by the placeholder table; another
+    method at the same template remains available for a real route.
     """
     owners: dict[tuple[str, str], list[str]] = {}
     for route in iter_routes(routes):
@@ -196,8 +206,8 @@ def assert_placeholder_ownership(routes: Iterable[Any]) -> None:
     ]
     if collisions:
         raise RuntimeError(
-            "placeholder routes must be the only owner of their method and template; "
-            "include the placeholder router last: " + ", ".join(collisions)
+            "real routes must not share a method+template with a placeholder; "
+            "placeholders must be the only owner: " + ", ".join(collisions)
         )
 
 

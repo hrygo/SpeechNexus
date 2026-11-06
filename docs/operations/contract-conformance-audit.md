@@ -404,11 +404,17 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
   后者的契约组件把 `Allow` 固定为 `GET`，而集合级同时接受 `GET` 与 `POST`，不能共用该组件。
 - 归属守卫与路径别名：`assert_placeholder_ownership` 按 Starlette 实际服务的资源比较模板，除参数名/converter 外
   还吸收 `redirect_slashes` 的尾斜杠别名——`/v1/nexus/voice-drafts/{draft_id}/`、`.../{draft_id}//` 与占位表声明的
-  无斜杠模板视为同一 owner，报错仍显示占位表原 template。原始 ASGI scope 实测（`starlette==1.9.0`）：尾斜杠请求
-  307 到无斜杠路径，若真实路由只注册在带斜杠模板上，则无斜杠请求仍被占位遮蔽（503）、带斜杠请求才到真实实现。
+  无斜杠模板视为同一 owner，报错仍显示占位表原 template。该归一化只检查占位表拥有的 method+template：语音草稿占位
+  只拥有 GET/PATCH，因此 `DELETE /v1/nexus/voice-drafts/abc` 实测 405 `Allow: GET, PATCH`，而额外注册真实
+  `DELETE /v1/nexus/voice-drafts/{draft_id}/` 后，`DELETE /abc/` 实测 200；DELETE 不因 GET/PATCH 的别名规则被守卫占用。
+  原始 ASGI scope 实测（`starlette==1.9.0`）：GET 尾斜杠请求 307 到无斜杠路径，若真实路由只注册在带斜杠模板上，
+  无斜杠请求仍被占位遮蔽（503）、带斜杠请求才到真实实现。
   重复内部斜杠、前导 `//`、`%2F`、大小写差异均为 404；`%20` 在解码后由参数匹配；`.`/`..` 段应用不解析（404），
-  但 HTTP 客户端/反向代理可能先行归一化。后几类不构成同一注册模板，或发生在 ASGI 路由之前，进程内守卫无法观察，
-  因此不强行归一；部署若在入口做大小写、重复斜杠或点段归一化，需自行确认不会让真实路由落在占位之后。
+  这些实测状态由原始 ASGI scope 回归断言固定，避免 HTTP 客户端预先归一化点段。根路径也单独固定：`GET /` 为 200、
+  `GET //` 为 404，`normalize_template("/")` 与 `normalize_template("//")` 保持不同；Starlette 不把根路径重定向到
+  双斜杠路径，也不应把后者折叠为根路径。
+  这些路径不构成同一注册模板，或发生在 ASGI 路由之前，进程内守卫无法观察；部署若在入口做大小写、重复斜杠或点段
+  归一化，需自行确认不会让真实路由落在占位之后。
 - 读音集合级路径：`PronunciationIngress` 原先在路由前把集合级请求改写为 400；现改为在完成 Host/Origin 校验后放行到
   占位路由，容量与固定 revision 形状校验仍只作用于 item 路径。Host/Origin 被拒绝时仍返回
   `403 pronunciation_host_rejected`（入口边界，与是否有实现无关）。

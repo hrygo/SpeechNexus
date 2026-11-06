@@ -29,6 +29,7 @@ from speechnexus_backend.speech.domain.public_jobs import (
     JobCreateResult,
     JobEventFact,
     JobIntent,
+    JobProgressFact,
     JobState,
     JobSubmission,
     NewPublicJob,
@@ -54,7 +55,13 @@ def _job(
     submission = JobSubmission(
         request_id="req-event-1",
         client_reference="synthetic-event",
-        effective_configuration_json=json.dumps({"models": {"tts": {"id": "m", "revision": "1"}}}),
+        effective_configuration_json=json.dumps(
+            {
+                "models": {"tts": {"id": "tts-model", "revision": "1"}},
+                "policy_revision": "1",
+                "catalog_revision": "1",
+            }
+        ),
         execution_revision=1,
         progress_unit="text_codepoints",
         progress_total=21,
@@ -191,17 +198,44 @@ async def test_stream_tails_persisted_pages_and_closes_on_the_terminal_fact() ->
                     JobEventFact(1, "running", NOW + 1),
                 ],
             ),
-            (failed, [JobEventFact(2, "failed", NOW + 2)]),
+            (
+                failed,
+                [
+                    JobEventFact(
+                        2,
+                        "running",
+                        NOW + 2,
+                        kind="progress",
+                        progress=JobProgressFact("audio_ms", 1_200, None),
+                    ),
+                    JobEventFact(3, "failed", NOW + 3),
+                ],
+            ),
             (failed, []),
         ]
     )
     service = PublicJobs(Facts(), store, now_us=lambda: NOW)
     events = await _drain(service, failed.job_id)
-    assert [event["id"] for event in events] == ["1", "2", "3"]
-    assert [event["type"] for event in events] == ["job.queued", "job.started", "job.failed"]
-    assert [event["data"]["status"] for event in events] == ["queued", "running", "failed"]
+    assert [event["id"] for event in events] == ["1", "2", "3", "4"]
+    assert [event["type"] for event in events] == [
+        "job.queued",
+        "job.started",
+        "job.progress",
+        "job.failed",
+    ]
+    assert [event["data"]["status"] for event in events] == [
+        "queued",
+        "running",
+        "running",
+        "failed",
+    ]
+    assert events[2]["data"]["progress"] == {
+        "unit": "audio_ms",
+        "completed": 1_200,
+        "total": None,
+    }
     # Resuming after the terminal fact re-emits nothing and closes immediately.
-    assert await _drain(service, failed.job_id, 2) == []
+    assert await _drain(service, failed.job_id, 3) == []
 
 
 def test_event_projection_never_invents_progress_or_duplicates_a_terminal_state() -> None:
@@ -232,6 +266,27 @@ def test_event_projection_never_invents_progress_or_duplicates_a_terminal_state(
             JobEventFact(1, "succeeded", NOW),
             _job("succeeded", result_json=json.dumps({"kind": "tts"})),
         )
+
+
+def test_job_projection_reports_the_committed_progress_fact() -> None:
+    running = _job("running")
+    submission = replace(running.submission, progress_unit="audio_ms", progress_total=None)
+    progressed = replace(
+        running,
+        submission=submission,
+        progress=JobProgressFact("audio_ms", 2_500, None),
+    )
+    assert http.public_job(progressed)["progress"] == {
+        "unit": "audio_ms",
+        "completed": 2_500,
+        "total": None,
+    }
+    # No fact keeps the declared unit and a zero completed value.
+    assert http.public_job(replace(running, submission=submission))["progress"] == {
+        "unit": "audio_ms",
+        "completed": 0,
+        "total": None,
+    }
 
 
 def test_retry_reads_the_frozen_intent_and_links_the_replacement() -> None:

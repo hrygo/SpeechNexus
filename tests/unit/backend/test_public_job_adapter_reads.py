@@ -44,7 +44,7 @@ class ReadPool(Pool):
             raise self.fail_with
         if "LEFT JOIN admission_operations" in query:
             return Rows(self.intent)
-        if "FROM speech_job_events" in query:
+        if query.startswith("SELECT event_seq, state, occurred_at_us"):
             return Rows(self.event_rows)
         if "FROM speech_artifacts" in query:
             return Rows(self.artifact_rows)
@@ -96,8 +96,24 @@ def test_events_reads_strictly_after_the_cursor_with_a_bounded_page() -> None:
     request = _request()
     pool = ReadPool(request)
     pool.event_rows = [
-        {"event_seq": 2, "state": "failed", "occurred_at_us": 3},
-        {"event_seq": 3, "state": "cancelled", "occurred_at_us": 4},
+        {
+            "event_seq": 2,
+            "state": "failed",
+            "occurred_at_us": 3,
+            "kind": "lifecycle",
+            "progress_unit": None,
+            "progress_completed": None,
+            "progress_total": None,
+        },
+        {
+            "event_seq": 3,
+            "state": "cancelled",
+            "occurred_at_us": 4,
+            "kind": "lifecycle",
+            "progress_unit": None,
+            "progress_completed": None,
+            "progress_total": None,
+        },
     ]
     events = _driver(pool).events(request.job_id, after_seq=1, limit=100)
     assert [event.event_seq for event in events] == [2, 3]
@@ -105,7 +121,17 @@ def test_events_reads_strictly_after_the_cursor_with_a_bounded_page() -> None:
     assert "event_seq > %s" in query and "ORDER BY event_seq ASC LIMIT %s" in query
     assert parameters == (request.job_id, 1, 100)
 
-    pool.event_rows = [{"event_seq": 1, "state": "paused", "occurred_at_us": 2}]
+    pool.event_rows = [
+        {
+            "event_seq": 1,
+            "state": "paused",
+            "occurred_at_us": 2,
+            "kind": "lifecycle",
+            "progress_unit": None,
+            "progress_completed": None,
+            "progress_total": None,
+        }
+    ]
     with pytest.raises(PublicJobUnavailableError):
         _driver(pool).events(request.job_id, after_seq=0, limit=100)
 
@@ -165,7 +191,7 @@ def test_advance_commits_the_transition_and_its_event_together() -> None:
         for query, parameters in pool.calls
         if query.startswith("INSERT INTO speech_job_events")
     )
-    assert parameters == (current.job_id, current.status_version, "failed", NOW + 5)
+    assert parameters == (current.job_id, "failed", NOW + 5, current.job_id)
 
     pool.successful_update = 0
     before = len(pool.calls)

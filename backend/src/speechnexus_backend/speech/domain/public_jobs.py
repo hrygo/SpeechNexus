@@ -132,6 +132,24 @@ class JobSubmission:
 
 
 @dataclass(frozen=True, slots=True)
+class JobProgressFact:
+    """The latest committed progress fact; ordered by the event sequence."""
+
+    unit: ProgressUnit
+    completed: int
+    total: int | None
+
+    def __post_init__(self) -> None:
+        if self.unit not in ("audio_ms", "text_codepoints", "items"):
+            raise ValueError("Invalid public Job progress unit")
+        counter(self.completed)
+        if self.total is not None:
+            counter(self.total)
+            if self.completed > self.total:
+                raise ValueError("Public Job progress exceeds its total")
+
+
+@dataclass(frozen=True, slots=True)
 class PublicJob:
     job_id: str
     workspace_id: str
@@ -145,6 +163,9 @@ class PublicJob:
     updated_at_us: int
     submission: JobSubmission
     retry_of_job_id: str | None = None
+    # None means no progress fact has been committed; a Job projection must then
+    # report the declared unit and zero completed rather than invent a value.
+    progress: JobProgressFact | None = None
 
     def __post_init__(self) -> None:
         identifier(self.job_id)
@@ -171,6 +192,8 @@ class PublicJob:
             identifier(self.retry_of_job_id)
             if self.retry_of_job_id == self.job_id:
                 raise ValueError("A public Job cannot retry itself")
+        if self.progress is not None and self.progress.unit != self.submission.progress_unit:
+            raise ValueError("Public Job progress disagrees with its declared unit")
 
 
 @dataclass(frozen=True, slots=True)
@@ -339,11 +362,18 @@ class JobIntent:
 
 @dataclass(frozen=True, slots=True)
 class JobEventFact:
-    """One persisted lifecycle event; ordering and identity come from its sequence."""
+    """One persisted event; ordering and identity come from its sequence.
+
+    A progress row carries the observed unit and value. It is never a lifecycle
+    transition, so it cannot exist for a terminal state and its value must
+    strictly advance the previous progress fact of the same Job.
+    """
 
     event_seq: int
     state: JobState
     occurred_at_us: int
+    kind: Literal["lifecycle", "progress"] = "lifecycle"
+    progress: JobProgressFact | None = None
 
     def __post_init__(self) -> None:
         counter(self.event_seq)
@@ -351,6 +381,14 @@ class JobEventFact:
             raise ValueError("Invalid public Job event state")
         if type(self.occurred_at_us) is not int or not 0 <= self.occurred_at_us <= _TIMESTAMP:
             raise ValueError("Invalid public Job event time")
+        if self.kind == "lifecycle":
+            if self.progress is not None:
+                raise ValueError("A lifecycle event carries no progress fact")
+            return
+        if self.kind != "progress":
+            raise ValueError("Invalid public Job event kind")
+        if self.state != "running" or self.progress is None:
+            raise ValueError("A progress event requires a running progress fact")
 
 
 @dataclass(frozen=True, slots=True)

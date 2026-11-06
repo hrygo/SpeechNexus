@@ -318,7 +318,7 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 ```
 
 上述容器名、用户和数据库名对应默认配置；若部署值不同，先核对实际名称再查询。
-仓库当前迁移链的 head 为 `0038_voice_catalogue_reader`；实际部署必须以所用发布制品中的唯一
+仓库当前迁移链的 head 为 `0039_public_job_progress`；实际部署必须以所用发布制品中的唯一
 head 为准，查询结果须与之相符。不要把旧版 `0027_gateway_abort_intents` 当作当前 head，
 也不要跳过检查或手工修改版本表。
 

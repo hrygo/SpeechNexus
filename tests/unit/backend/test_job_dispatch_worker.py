@@ -209,6 +209,7 @@ class LeaseWorld:
         self.expires_at_us = 0
         self.finish_calls: list[tuple[str, str]] = []
         self.not_submitted: list[tuple[str, str]] = []
+        self.progress: list[tuple[str, str, int, int | None]] = []
 
     def now(self) -> int:
         return self.clock[0]
@@ -228,6 +229,14 @@ class LeaseWorld:
 
     async def record_cancellation_not_submitted(self, job_id: str, *, observer: str) -> None:
         self.not_submitted.append((job_id, observer))
+
+    async def record_progress(
+        self, claim: ClaimedJob, *, unit: str, completed: int, total: int | None
+    ) -> bool:
+        if any(item[2] >= completed for item in self.progress):
+            return False
+        self.progress.append((claim.job.job_id, unit, completed, total))
+        return True
 
     async def mark_running(self, job: DispatchJob) -> DispatchJob:
         if self.job.state == "running":

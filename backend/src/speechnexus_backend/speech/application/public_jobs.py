@@ -403,8 +403,11 @@ class PublicJobs:
                 configuration, sort_keys=True, separators=(",", ":"), ensure_ascii=False
             ),
             execution_revision=1,
-            progress_unit="text_codepoints" if typed_kind == "tts" else "audio_ms",
-            progress_total=_text_length(payload),
+            # The only observed progress fact is generated audio; the durable
+            # gateway watermark is milliseconds of produced audio. Text length is
+            # a request size, not a completion denominator, so no total is frozen.
+            progress_unit="audio_ms",
+            progress_total=None,
             submitted_at_us=self._now_us(),
         )
         job_id = "job-" + uuid.uuid4().hex
@@ -512,7 +515,7 @@ class PublicJobs:
             raise
 
     def events(self, job_id: str, *, after_seq: int, limit: int) -> tuple[JobEventFact, ...]:
-        """Read persisted lifecycle events strictly after one sequence."""
+        """Read persisted event rows strictly after one sequence."""
         identifier(job_id)
         if type(after_seq) is not int or not -1 <= after_seq <= 9_223_372_036_854_775_806:
             raise ValueError("Invalid public Job event cursor")
@@ -677,14 +680,6 @@ class PublicJobs:
         expected = "asr_input" if kind == "asr" else "text_input"
         if asset is None or asset != ("ready", expected):
             raise AssetNotReadyError
-
-
-def _text_length(payload: Mapping[str, Any]) -> int | None:
-    request_input = payload.get("input")
-    if not isinstance(request_input, dict):
-        return None
-    text = request_input.get("text")
-    return len(text) if isinstance(text, str) else None
 
 
 def _retransmission_result(result: JobCreateResult, parent_job_id: str) -> PublicJob:

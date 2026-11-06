@@ -77,6 +77,26 @@ class DispatchRequestUnavailableError(RuntimeError):
     """The original canonical request is absent or has been redacted."""
 
 
+def generated_audio_ms(status: Mapping[str, Any]) -> int | None:
+    """Derive produced audio milliseconds from the durable output watermark.
+
+    The gateway reports generated_pcm_samples from its interval ledger, and the
+    contract defines the millisecond value as
+    floor(generated_pcm_samples * 1000 / sample_rate_hz). A missing or malformed
+    watermark yields no fact; this function never estimates one.
+    """
+    watermark = status.get("output_watermark")
+    if not isinstance(watermark, Mapping):
+        return None
+    samples = watermark.get("generated_pcm_samples")
+    rate = watermark.get("sample_rate_hz")
+    if type(samples) is not int or type(rate) is not int:
+        return None
+    if samples < 0 or rate not in (16000, 24000, 48000):
+        return None
+    return samples * 1000 // rate
+
+
 def identifier(value: str) -> str:
     if not isinstance(value, str) or not _IDENTIFIER.fullmatch(value):
         raise ValueError("Invalid dispatch identity")

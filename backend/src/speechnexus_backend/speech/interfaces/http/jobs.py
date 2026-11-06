@@ -1,8 +1,8 @@
 """Public Job submit, read, retry and the durable event stream.
 
 Every response is projected from committed public facts. The event stream replays
-the persisted lifecycle rows in sequence: it never synthesizes a progress event
-and never reports a terminal state twice.
+the persisted lifecycle and progress rows in sequence: it never synthesizes a
+progress event and never reports a terminal state twice.
 """
 
 from __future__ import annotations
@@ -199,9 +199,11 @@ def public_job(job: PublicJob, artifacts: Sequence[JobArtifactFact] = ()) -> dic
         "profile": configuration.get("profile"),
         "execution_revision": str(job.submission.execution_revision),
         "progress": {
-            "unit": job.submission.progress_unit,
-            "completed": 0,
-            "total": job.submission.progress_total,
+            "unit": (job.submission.progress_unit if job.progress is None else job.progress.unit),
+            "completed": 0 if job.progress is None else job.progress.completed,
+            "total": (
+                job.submission.progress_total if job.progress is None else job.progress.total
+            ),
         },
         "artifacts": [_artifact(artifact) for artifact in artifacts],
         "result": None if job.result_json is None else json.loads(job.result_json),
@@ -238,9 +240,24 @@ def public_event(
     job: PublicJob,
     artifacts: Sequence[JobArtifactFact] = (),
 ) -> dict[str, Any]:
-    """One committed lifecycle row projected as its declared event variant."""
+    """One committed event row projected as its declared event variant."""
     data: dict[str, Any]
-    if event.state == "pending":
+    if event.kind == "progress":
+        progress = event.progress
+        if progress is None:
+            raise PublicJobUnavailableError
+        kind, data = (
+            "job.progress",
+            {
+                "status": "running",
+                "progress": {
+                    "unit": progress.unit,
+                    "completed": progress.completed,
+                    "total": progress.total,
+                },
+            },
+        )
+    elif event.state == "pending":
         kind, data = "job.queued", {"status": "queued"}
     elif event.state == "running":
         kind, data = (

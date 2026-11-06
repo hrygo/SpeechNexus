@@ -24,6 +24,7 @@ from speechnexus_backend.speech.domain.public_jobs import (
     JobCreateResult,
     JobEventFact,
     JobIntent,
+    JobProgressFact,
     JobState,
     JobSubmission,
     NewPublicJob,
@@ -50,12 +51,18 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import (
     SpeechPool,
 )
 
+_LATEST_PROGRESS = (
+    "(SELECT e.progress_{column} FROM speech_job_events AS e "
+    "WHERE e.job_id = j.job_id AND e.kind = 'progress' "
+    "ORDER BY e.event_seq DESC LIMIT 1) AS latest_progress_{column}"
+)
 _JOB_COLUMNS = (
     "j.job_id, j.workspace_id, j.kind, j.model_id, j.request_digest, j.state, "
     "j.status_version, "
     "j.result_json, j.error_code, j.created_at_us, j.updated_at_us, j.retry_of_job_id, "
     "s.request_id, s.client_reference, s.effective_configuration_json, "
-    "s.execution_revision, s.progress_unit, s.progress_total, s.submitted_at_us"
+    "s.execution_revision, s.progress_unit, s.progress_total, s.submitted_at_us, "
+    + ", ".join(_LATEST_PROGRESS.format(column=column) for column in ("unit", "completed", "total"))
 )
 _PINNED_BINDING_QUERY = (
     "SELECT p.kind, p.object_id, p.revision, p.revision_id, p.published_at_us, "
@@ -262,7 +269,8 @@ class PostgresPublicJobs:
     def events(self, job_id: str, *, after_seq: int, limit: int) -> tuple[JobEventFact, ...]:
         """Read one ordered page of persisted events strictly after a sequence."""
         rows = self._read(
-            "SELECT event_seq, state, occurred_at_us FROM speech_job_events "
+            "SELECT event_seq, state, occurred_at_us, kind, progress_unit, "
+            "progress_completed, progress_total FROM speech_job_events "
             "WHERE job_id = %s AND event_seq > %s ORDER BY event_seq ASC LIMIT %s",
             (identifier(job_id), after_seq, limit),
         )
@@ -272,6 +280,8 @@ class PostgresPublicJobs:
                     event_seq=int(row["event_seq"]),
                     state=row["state"],
                     occurred_at_us=int(row["occurred_at_us"]),
+                    kind=row["kind"],
+                    progress=_progress(row),
                 )
                 for row in rows
             )
@@ -467,8 +477,10 @@ class PostgresPublicJobs:
                         raise PublicJobConflictError("Public Job cancellation lost its guard")
                     connection.execute(
                         "INSERT INTO speech_job_events "
-                        "(job_id, event_seq, state, occurred_at_us) VALUES (%s, %s, %s, %s)",
-                        (job.job_id, job.status_version, target, int(changed["now_us"])),
+                        "(job_id, event_seq, state, occurred_at_us) "
+                        "SELECT %s, COALESCE(MAX(event_seq), -1) + 1, %s, %s "
+                        "FROM speech_job_events WHERE job_id = %s",
+                        (job.job_id, target, int(changed["now_us"]), job.job_id),
                     )
                 if changed is not None:
                     requested_at_us = int(changed["now_us"])
@@ -547,8 +559,10 @@ class PostgresPublicJobs:
                     return None
                 connection.execute(
                     "INSERT INTO speech_job_events "
-                    "(job_id, event_seq, state, occurred_at_us) VALUES (%s, %s, 'cancelled', %s)",
-                    (job_id, expected_version, int(changed["now_us"])),
+                    "(job_id, event_seq, state, occurred_at_us) "
+                    "SELECT %s, COALESCE(MAX(event_seq), -1) + 1, 'cancelled', %s "
+                    "FROM speech_job_events WHERE job_id = %s",
+                    (job_id, int(changed["now_us"]), job_id),
                 )
                 updated = _select_job(connection, job_id)
             return None if updated is None else _job(updated)
@@ -587,8 +601,10 @@ class PostgresPublicJobs:
                 # reader never observes a state without its ordered event.
                 connection.execute(
                     "INSERT INTO speech_job_events "
-                    "(job_id, event_seq, state, occurred_at_us) VALUES (%s, %s, %s, %s)",
-                    (current.job_id, current.status_version, target, now_us),
+                    "(job_id, event_seq, state, occurred_at_us) "
+                    "SELECT %s, COALESCE(MAX(event_seq), -1) + 1, %s, %s "
+                    "FROM speech_job_events WHERE job_id = %s",
+                    (current.job_id, target, now_us, current.job_id),
                 )
                 row = _select_job(connection, current.job_id)
             return _job(row)
@@ -822,6 +838,19 @@ def _validate_pinned_create(connection: _Executor, job: NewPublicJob) -> None:
         raise PublicJobUnavailableError
 
 
+def _progress(row: dict[str, Any]) -> JobProgressFact | None:
+    """The committed progress value in one row, or None for a lifecycle row."""
+    if row["kind"] == "lifecycle":
+        return None
+    if row["progress_unit"] is None or row["progress_completed"] is None:
+        raise ValueError("Progress row is missing its fact")
+    return JobProgressFact(
+        unit=row["progress_unit"],
+        completed=int(row["progress_completed"]),
+        total=None if row["progress_total"] is None else int(row["progress_total"]),
+    )
+
+
 def _job(row: dict[str, Any] | None) -> PublicJob:
     if row is None or row.get("request_id") is None:
         raise PublicJobUnavailableError
@@ -848,6 +877,19 @@ def _job(row: dict[str, Any] | None) -> PublicJob:
             updated_at_us=int(row["updated_at_us"]),
             submission=submission,
             retry_of_job_id=row.get("retry_of_job_id"),
+            progress=(
+                None
+                if row.get("latest_progress_unit") is None
+                else JobProgressFact(
+                    unit=row["latest_progress_unit"],
+                    completed=int(row["latest_progress_completed"]),
+                    total=(
+                        None
+                        if row.get("latest_progress_total") is None
+                        else int(row["latest_progress_total"])
+                    ),
+                )
+            ),
         )
     except ValueError, TypeError, KeyError:
         raise PublicJobUnavailableError from None

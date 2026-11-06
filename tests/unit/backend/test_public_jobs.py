@@ -296,7 +296,7 @@ def test_wire_document_satisfies_the_frozen_job_contract() -> None:
     assert parse("Job", wire)["status"] == "queued"
     assert wire["cleanup_state"] == "not_required"
     assert wire["request_id"] == "req-create"
-    assert wire["progress"] == {"unit": "text_codepoints", "completed": 0, "total": 15}
+    assert wire["progress"] == {"unit": "audio_ms", "completed": 0, "total": None}
     assert wire["artifacts"] == [] and wire["result"] is None
 
 

@@ -351,7 +351,7 @@ acknowledgement（已中止 / 已终结）；无法确认时返回 unknown，绝
 并按退避把该回执重新入队，因此损坏不会静默变成终态，也不会阻塞其他回执。按代次拒绝已外发
 请求仍需尚不存在的引擎侧执行协议，网关当前不提供该保证。
 
-部署升级先应用版本迁移到当前 head（`0038_voice_catalogue_reader`），再由管理员为 gateway 写角色
+部署升级先应用版本迁移到当前 head（`0039_public_job_progress`），再由管理员为 gateway 写角色
 执行当前 `gateway_abort_grants`（新增尝试列与 `next_check_at_us` 的列级 UPDATE），
 并对只读查询角色重跑 `gateway_query_grants`。两者都是幂等的追加式授权，可重复执行。
 查询角色的授权集合按精确列集校验：不重跑 `gateway_query_grants` 时启动校验以

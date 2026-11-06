@@ -94,6 +94,24 @@ def test_all_requirements_remain_visible_without_implementation_issues(
     assert "最新主题标题" in tracker.render(manifest, issues, "离线快照", prd)
 
 
+def test_issue_cannot_be_owned_by_two_requirements_in_same_epic(
+    tracker: ModuleType, current: Any
+) -> None:
+    manifest, _, _ = current
+    manifest["requirements"][0]["issues"] = [500]
+    same_epic_requirement = copy.deepcopy(manifest["requirements"][0])
+    same_epic_requirement["id"] = "REQ-337-A"
+    same_epic_requirement["prd"] = "docs/prd.md#req-337-a"
+    same_epic_requirement["issues"] = [500]
+    manifest["requirements"].append(same_epic_requirement)
+
+    with pytest.raises(
+        ValueError,
+        match=r"Implementation issue #500 .*REQ-337, REQ-337-A",
+    ):
+        tracker.validate_manifest(manifest)
+
+
 @pytest.mark.parametrize(
     "mutation",
     [

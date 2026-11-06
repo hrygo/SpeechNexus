@@ -105,12 +105,15 @@ def validate_manifest(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
     _unique([r["id"] for r in requirements], "requirement")
     if {r["epic"] for r in requirements} != EPICS:
         raise ValueError("Every epic must have requirements")
-    owners: dict[int, int] = {}
+    owners: dict[int, str] = {}
     for req in requirements:
         for number in req["issues"]:
-            if number in owners and owners[number] != req["epic"]:
-                raise ValueError("Implementation issue has conflicting epic ownership")
-            owners[number] = req["epic"]
+            if number in owners:
+                raise ValueError(
+                    f"Implementation issue #{number} is registered by multiple requirements: "
+                    f"{owners[number]}, {req['id']}"
+                )
+            owners[number] = req["id"]
     return {r["id"]: r for r in requirements}
 
 

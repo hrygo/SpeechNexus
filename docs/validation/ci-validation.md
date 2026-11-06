@@ -96,6 +96,29 @@ uv run pytest tests/ci tests/contract/test_ci_workflow.py tests/unit/test_integr
 
 需要完整复核时可在 Actions 手动运行 CI；本机完整检查仍按 [AGENTS.md](../../AGENTS.md) 的宿主和隔离服务前置条件执行。
 
+## 公开语音路由一致性门禁
+
+`python_contracts` 作业（`Python: lint, types and contract compatibility`）在契约兼容步骤之后、Ruff/mypy 之前执行
+`make contracts-route-conformance`，对应 [check-route-conformance.py](../../scripts/dev-env/check-route-conformance.py)。
+该步骤无 `if`、无 `continue-on-error`、不设置 `CONTRACT_BASE_REF`，在 `full`、`web`、`no-db` 三种路由范围都运行。
+
+检查用合成 `Settings` 装配 `create_app()`（不启动 lifespan、不连库、不联网），把实际注册的
+`(method, path, operationId)` 与当前 `contracts/speech-openapi.yaml` 对账，并静态提取每条已注册路由的响应状态码。
+新增未注册的契约操作、已注册但契约未声明的路由、未声明的可达状态码、operationId 路由形状不一致，
+以及过期的显式基线都会以非零退出码失败。无法静态判定的表达式只输出 `UNDETERMINED`，不猜造、不判失败；
+ASGI ingress 状态码、框架 404/500 与真实执行内容不在静态集合内。
+
+已知未实现操作与已知未声明状态码保留在脚本内的显式基线中，逐条带原因；实现或契约变更后必须同步删除条目，
+否则 `stale_*` 检查失败。基线与审计结论的对应关系见
+[公开语音面契约一致性审计](../operations/contract-conformance-audit.md#10-可重复检查与-ci-门禁)。
+
+本机验证：
+
+```sh
+make contracts-route-conformance
+uv run pytest tests/unit/test_route_conformance.py tests/contract/test_ci_workflow.py -q --no-cov
+```
+
 ## Design Token 门禁
 
 `changes` 作业用 `.nvmrc` 固定的 Node 执行独立回归与全 Web 静态扫描，不安装 pnpm 依赖；适用于所有路由，失败会阻断最终必需检查。Web 作业的 `pnpm lint` 继续执行相同校验器。

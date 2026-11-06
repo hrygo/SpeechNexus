@@ -39,6 +39,7 @@ from speechnexus_backend.workbench.interfaces.http_voices import create_voice_ro
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
+PASSWORD = "synthetic_voice_catalogue_test"
 DOCUMENT = next(
     example["value"]["body"]
     for example in json.loads(
@@ -130,13 +131,13 @@ def catalogue_db() -> Iterator[CatalogueDB]:
             config.attributes["connection"] = connection
             command.upgrade(config, "head")
         owner.execute(f'SET search_path TO "{schema}", pg_catalog')
-        owner.execute(f'CREATE ROLE "{role}" LOGIN')
+        owner.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")
         for grant in (
             *model_catalog_reader_grants(schema, role),
             *voice_catalogue_reader_grants(schema, role),
         ):
             owner.execute(grant)
-        yield CatalogueDB(owner, schema, role, make_conninfo(url, user=role))
+        yield CatalogueDB(owner, schema, role, make_conninfo(url, user=role, password=PASSWORD))
     finally:
         owner.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
         owner.execute(f'DROP ROLE IF EXISTS "{role}"')
@@ -243,7 +244,24 @@ async def test_retirement_hides_head_and_preserves_fixed_history(
         validate_response("getVoiceRevision", 200, {"body": fixed.json()})
 
 
+def test_reader_login_has_password_even_with_trusted_local_auth(catalogue_db: CatalogueDB) -> None:
+    # Local trust authentication must not hide an unusable CI reader identity.
+    row = catalogue_db.owner.execute(
+        "SELECT rolcanlogin AND rolpassword IS NOT NULL AS password_login "
+        "FROM pg_catalog.pg_authid WHERE rolname=%s",
+        (catalogue_db.role,),
+    ).fetchone()
+    assert row is not None and row["password_login"]
+
+
 def test_private_qualification_grant_is_rejected_at_startup(catalogue_db: CatalogueDB) -> None:
+    # Prove this identity can open before attributing rejection to its extra grant.
+    runtime = ModelCatalogRuntime(catalogue_db.settings())
+    try:
+        runtime.open()
+        assert runtime.voices is not None
+    finally:
+        runtime.close()
     catalogue_db.owner.execute(
         f'GRANT SELECT ON speech_builtin_voice_qualifications TO "{catalogue_db.role}"'
     )

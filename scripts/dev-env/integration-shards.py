@@ -21,7 +21,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 ROOT = Path(__file__).resolve().parents[2]
 FIELDS = frozenset(
@@ -39,6 +39,9 @@ FIELDS = frozenset(
         "elapsed_seconds",
     }
 )
+# The directory may also hold live progress or other sidecars; only the exact
+# report names are evidence.
+REPORT_NAME_PATTERN = re.compile(r"integration-shard-\d+\.json")
 
 
 # Explicit external-tool prerequisites; these cases still belong to the complete
@@ -175,6 +178,19 @@ def _nodeids(value: Any) -> list[str]:
     return value
 
 
+class ClassMean(NamedTuple):
+    cases: float
+    seconds: float
+
+
+@dataclass(frozen=True)
+class ShardEvidence:
+    index: int
+    cases: int
+    elapsed_seconds: float
+    web: bool
+
+
 @dataclass(frozen=True)
 class Evidence:
     source_head: str
@@ -182,6 +198,7 @@ class Evidence:
     passed: int
     skipped: tuple[str, ...]
     longest_seconds: float
+    shards: tuple[ShardEvidence, ...]
 
 
 def verify_reports(paths: Sequence[Path], *, source_head: str, count: int) -> Evidence:
@@ -192,6 +209,7 @@ def verify_reports(paths: Sequence[Path], *, source_head: str, count: int) -> Ev
     collection: list[str] | None = None
     observed: set[str] = set()
     skipped: list[str] = []
+    shards: list[ShardEvidence] = []
     passed = 0
     longest = 0.0
     for path in paths:
@@ -236,6 +254,8 @@ def verify_reports(paths: Sequence[Path], *, source_head: str, count: int) -> Ev
         ):
             raise ValueError("Shard duration must be bounded")
         longest = max(longest, seconds)
+        web = any(requires_browser(nodeid) or nodeid in NODE_CONTRACT_TESTS for nodeid in selected)
+        shards.append(ShardEvidence(index, len(selected), float(seconds), web))
         outcomes = data["outcomes"]
         if not isinstance(outcomes, dict) or set(outcomes) != set(selected):
             raise ValueError("Shard did not record every selected test result")
@@ -258,7 +278,57 @@ def verify_reports(paths: Sequence[Path], *, source_head: str, count: int) -> Ev
             raise ValueError("An entirely skipped or unexecuted shard cannot pass")
     if collection is None or observed != set(collection) or indices != set(range(count)):
         raise ValueError("Integration partition omitted part of the complete collection")
-    return Evidence(source_head, len(collection), passed, tuple(sorted(skipped)), longest)
+    return Evidence(
+        source_head,
+        len(collection),
+        passed,
+        tuple(sorted(skipped)),
+        longest,
+        tuple(sorted(shards, key=lambda shard: shard.index)),
+    )
+
+
+def write_progress(
+    path: Path,
+    *,
+    source_head: str,
+    index: int,
+    count: int,
+    selected: int,
+    completed: int,
+    passed: int,
+    failed: int,
+    skipped: int,
+    last_started: str | None,
+    last_completed: str | None,
+    started: float,
+) -> None:
+    """Publish the live shard position for the probe's timeout diagnostics.
+
+    This file only explains a timeout; an unwritable path must never change the
+    gate, so every failure here is ignored.
+    """
+    data = {
+        "version": 1,
+        "source_head": source_head,
+        "shard_index": index,
+        "shard_count": count,
+        "selected": selected,
+        "completed": completed,
+        "passed": passed,
+        "failed": failed,
+        "skipped": skipped,
+        "last_started": last_started,
+        "last_completed": last_completed,
+        "elapsed_seconds": round(time.monotonic() - started, 3),
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(path.name + ".tmp")
+        temporary.write_text(json.dumps(data, sort_keys=True) + "\n", encoding="utf-8")
+        temporary.replace(path)
+    except OSError:
+        pass
 
 
 def run_shard(args: argparse.Namespace) -> int:
@@ -282,6 +352,30 @@ def run_shard(args: argparse.Namespace) -> int:
             self.full: list[str] = []
             self.selected: list[str] = []
             self.outcomes: dict[str, str] = {}
+            self.completed = 0
+            self.passed = 0
+            self.failed = 0
+            self.skipped = 0
+            self.last_started: str | None = None
+            self.last_completed: str | None = None
+
+        def _publish(self) -> None:
+            if args.progress is None:
+                return
+            write_progress(
+                args.progress,
+                source_head=source_head,
+                index=args.index,
+                count=args.count,
+                selected=len(self.selected),
+                completed=self.completed,
+                passed=self.passed,
+                failed=self.failed,
+                skipped=self.skipped,
+                last_started=self.last_started,
+                last_completed=self.last_completed,
+                started=started,
+            )
 
         def pytest_configure(self, config: pytest.Config) -> None:
             if (
@@ -306,10 +400,17 @@ def run_shard(args: argparse.Namespace) -> int:
             deselected = [item for item in items if item.nodeid not in allowed]
             items[:] = [item for item in items if item.nodeid in allowed]
             config.hook.pytest_deselected(items=deselected)
+            self._publish()
 
         def pytest_collection_finish(self, session: pytest.Session) -> None:
             if sorted(item.nodeid for item in session.items) != self.selected:
                 raise pytest.UsageError("A later plugin changed the selected integration partition")
+
+        def pytest_runtest_logstart(
+            self, nodeid: str, location: tuple[str, int | None, str]
+        ) -> None:
+            self.last_started = nodeid
+            self._publish()
 
         def pytest_runtest_logreport(self, report: pytest.TestReport) -> None:
             nodeid = report.nodeid
@@ -323,9 +424,21 @@ def run_shard(args: argparse.Namespace) -> int:
                 self.outcomes[nodeid] = "skipped"
             elif report.when == "call" and self.outcomes.get(nodeid) != "failed":
                 self.outcomes[nodeid] = "passed"
+            if report.when == "teardown":
+                self.completed += 1
+                outcome = self.outcomes.get(nodeid)
+                if outcome == "failed":
+                    self.failed += 1
+                elif outcome == "skipped":
+                    self.skipped += 1
+                else:
+                    self.passed += 1
+                self.last_completed = nodeid
+                self._publish()
 
         @pytest.hookimpl(trylast=True)
         def pytest_sessionfinish(self, session: pytest.Session, exitstatus: int) -> None:
+            elapsed = time.monotonic() - started
             data = {
                 "version": 1,
                 "source_head": source_head,
@@ -337,15 +450,82 @@ def run_shard(args: argparse.Namespace) -> int:
                 "outcomes": self.outcomes,
                 "exit_code": int(exitstatus),
                 "executed": not args.collect_only,
-                "elapsed_seconds": round(time.monotonic() - started, 6),
+                "elapsed_seconds": round(elapsed, 6),
             }
             args.report.parent.mkdir(parents=True, exist_ok=True)
             args.report.write_text(json.dumps(data, sort_keys=True) + "\n", encoding="utf-8")
+            self._publish()
+            print(
+                f"Integration shard {args.index}/{args.count}: "
+                f"{len(self.selected)} selected cases, {elapsed:.1f} s"
+            )
 
     options = ["-m", "integration", "tests/integration", "-q", "--durations=20"]
     if args.collect_only:
         options.append("--collect-only")
     return int(pytest.main(options, plugins=[ShardPlugin()]))
+
+
+def resource_class_means(evidence: Evidence) -> dict[bool, ClassMean]:
+    """Mean case count and duration inside each resource class."""
+    groups: dict[bool, list[ShardEvidence]] = {}
+    for shard in evidence.shards:
+        groups.setdefault(shard.web, []).append(shard)
+    return {
+        web: ClassMean(
+            sum(shard.cases for shard in group) / len(group),
+            sum(shard.elapsed_seconds for shard in group) / len(group),
+        )
+        for web, group in groups.items()
+    }
+
+
+def shard_distribution(evidence: Evidence, count: int) -> tuple[list[str], list[str]]:
+    """Report each shard's case count and duration; imbalance is a warning, not a gate.
+
+    The partition intentionally gives the four DB lanes far more cases than the two
+    Web/Chromium lanes, so comparing every shard with one global mean would warn on
+    every run. Compare inside the same resource class instead; a class with one lane
+    has no imbalance to report.
+    """
+    del count  # The class mean is derived from the reports, not from a uniform split.
+    means = resource_class_means(evidence)
+    class_sizes = {
+        web: sum(1 for candidate in evidence.shards if candidate.web == web) for web in means
+    }
+    rows: list[str] = []
+    warnings: list[str] = []
+    for shard in evidence.shards:
+        mean = means[shard.web]
+        case_ratio = shard.cases / mean.cases if mean.cases else 0.0
+        time_ratio = shard.elapsed_seconds / mean.seconds if mean.seconds else 0.0
+        label = "Web" if shard.web else "DB"
+        rows.append(
+            f"  shard {shard.index} ({label}): {shard.cases} cases, "
+            f"{shard.elapsed_seconds:.1f} s ({case_ratio:.2f}x the {mean.cases:.1f}-case "
+            f"{label} mean; {time_ratio:.2f}x the {mean.seconds:.1f}-s mean)"
+        )
+        if class_sizes[shard.web] > 1 and shard.cases > mean.cases * 1.5:
+            warnings.append(
+                f"warning: integration shard {shard.index} ({label}) has {shard.cases} cases "
+                f"({case_ratio:.2f}x the {mean.cases:.1f}-case {label} mean); split or "
+                "repartition it instead of raising the timeout "
+                "(docs/validation/ci-validation.md)"
+            )
+        if shard.elapsed_seconds > 900:
+            warnings.append(
+                f"warning: integration shard {shard.index} ({label}) took "
+                f"{shard.elapsed_seconds:.1f} s, above the 15-minute warning line; split or "
+                "repartition it instead of raising the timeout "
+                "(docs/validation/ci-validation.md)"
+            )
+        elif class_sizes[shard.web] > 1 and shard.elapsed_seconds > mean.seconds * 1.5:
+            warnings.append(
+                f"warning: integration shard {shard.index} ({label}) took "
+                f"{shard.elapsed_seconds:.1f} s ({time_ratio:.2f}x the {mean.seconds:.1f}-s "
+                f"{label} mean); inspect the slow shard and split or repartition it"
+            )
+    return rows, warnings
 
 
 def main() -> int:
@@ -358,6 +538,11 @@ def main() -> int:
     run.add_argument("--index", type=int, required=True)
     run.add_argument("--count", type=int, required=True)
     run.add_argument("--report", type=Path, required=True)
+    run.add_argument(
+        "--progress",
+        type=Path,
+        help="live position for timeout diagnostics; never part of the gate",
+    )
     run.add_argument("--collect-only", action="store_true")
     check = commands.add_parser("check", help="Require complete, disjoint, successful evidence")
     check.add_argument("--count", type=int, required=True)
@@ -376,7 +561,11 @@ def main() -> int:
         if args.command == "run":
             return run_shard(args)
         evidence = verify_reports(
-            sorted(args.reports_dir.glob("integration-shard-*.json")),
+            sorted(
+                path
+                for path in args.reports_dir.glob("integration-shard-*.json")
+                if REPORT_NAME_PATTERN.fullmatch(path.name)
+            ),
             source_head=args.head,
             count=args.count,
         )
@@ -389,9 +578,19 @@ def main() -> int:
         f"source {evidence.source_head}. Longest shard execution {evidence.longest_seconds:.2f}s."
     )
     print(summary)
+    rows, warnings = shard_distribution(evidence, args.count)
+    print("Per-shard execution:")
+    for row in rows:
+        print(row)
+    for warning in warnings:
+        print(warning, file=sys.stderr)
     if destination := os.environ.get("GITHUB_STEP_SUMMARY"):
         with Path(destination).open("a", encoding="utf-8") as output:
             output.write(summary + "\n\n")
+            # The six per-shard job summaries already publish wall clock, pytest
+            # execution and selected cases; do not duplicate that table here.
+            if warnings:
+                output.write("\n".join(warnings) + "\n\n")
             for nodeid in evidence.skipped:
                 output.write(f"- Skipped, not qualified: `{nodeid}`\n")
     return 0

@@ -249,6 +249,73 @@ def test_checker_needs_no_site_packages_and_parses_on_runner_python(tmp_path: Pa
     assert "25 collected, 24 passed, 1 existing PG-only" in result.stdout
 
 
+def test_shard_distribution_compares_inside_resource_class_and_warns_on_slow_shard() -> None:
+    shards = (
+        GATE.ShardEvidence(0, 550, 462.0, False),
+        GATE.ShardEvidence(1, 560, 1000.0, False),
+        GATE.ShardEvidence(2, 570, 500.0, False),
+        GATE.ShardEvidence(3, 580, 488.0, False),
+        GATE.ShardEvidence(4, 28, 200.0, True),
+        GATE.ShardEvidence(5, 22, 200.0, True),
+    )
+    evidence = GATE.Evidence(HEAD, 2310, 2310, (), 1000.0, shards)
+    rows, warnings = GATE.shard_distribution(evidence, 6)
+    assert any("shard 1 (DB): 560 cases" in row for row in rows)
+    assert not any("has 560 cases" in warning for warning in warnings)
+    assert any(
+        "shard 1 (DB)" in warning and "15-minute warning line" in warning for warning in warnings
+    )
+
+
+def test_check_ignores_progress_sidecars_beside_reports(tmp_path: Path) -> None:
+    reports(tmp_path)
+    (tmp_path / "progress-integration-shard-0.json").write_text("{}")
+    (tmp_path / "integration-shard-0.progress.json").write_text("{}")
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "check",
+            "--count",
+            "2",
+            "--head",
+            HEAD,
+            "--reports-dir",
+            str(tmp_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "25 collected, 24 passed, 1 existing PG-only" in result.stdout
+
+
+def test_check_warns_but_passes_when_a_shard_exceeds_fifteen_minutes(tmp_path: Path) -> None:
+    paths = reports(tmp_path)
+    data = json.loads(paths[0].read_text())
+    data["elapsed_seconds"] = 1000
+    paths[0].write_text(json.dumps(data))
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "check",
+            "--count",
+            "2",
+            "--head",
+            HEAD,
+            "--reports-dir",
+            str(tmp_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "15-minute warning line" in result.stderr
+
+
 def temp_project(directory: Path) -> tuple[Path, Path, dict[str, str]]:
     root = directory / "project"
     target = root / "scripts/dev-env/integration-shards.py"

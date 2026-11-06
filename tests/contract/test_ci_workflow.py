@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,12 @@ import yaml
 
 _ROOT = Path(__file__).resolve().parents[2]
 _WORKFLOW: dict[str, Any] = yaml.safe_load((_ROOT / ".github/workflows/ci.yml").read_text())
+_PROBE_SPEC = importlib.util.spec_from_file_location(
+    "workbench_pg_probe_budget", _ROOT / "scripts/dev-env/workbench-pg-probe.py"
+)
+assert _PROBE_SPEC is not None and _PROBE_SPEC.loader is not None
+_PROBE = importlib.util.module_from_spec(_PROBE_SPEC)
+_PROBE_SPEC.loader.exec_module(_PROBE)
 _GATE = _WORKFLOW["jobs"]["python"]
 _STATES = ("success", "failure", "skipped", "cancelled", "")
 _EXPECTED = {
@@ -79,10 +86,20 @@ def test_browser_preparation_keeps_partition_selection_and_original_budgets() ->
     assert install["if"] == "steps.integration_tools.outputs.browser == 'true'"
     assert install["run"] == "python3 scripts/dev-env/prepare-ci-browser.py"
     assert "continue-on-error" not in install
-    # #452: only the shard budget grew; the Web lane keeps its own budget.
-    assert shards["timeout-minutes"] == 20
+    # #452 and #502: only the shard budget grew; the Web lane keeps its own budget.
+    assert shards["timeout-minutes"] == 30
     assert jobs["web"]["timeout-minutes"] == 10
     assert shards["strategy"]["matrix"]["shard"] == [0, 1, 2, 3, 4, 5]
+
+
+def test_integration_shard_budget_matches_the_workflow_job_timeout() -> None:
+    shards = _WORKFLOW["jobs"]["integration_shards"]
+    assert shards["timeout-minutes"] * 60 == _PROBE.INTEGRATION_JOB_TIMEOUT_SECONDS
+    assert (
+        _PROBE.INTEGRATION_SHARD_PYTEST_TIMEOUT_SECONDS
+        == _PROBE.INTEGRATION_JOB_TIMEOUT_SECONDS - _PROBE.INTEGRATION_JOB_RESERVE_SECONDS
+    )
+    assert _PROBE.INTEGRATION_JOB_RESERVE_SECONDS < _PROBE.INTEGRATION_JOB_TIMEOUT_SECONDS
 
 
 def test_integration_evidence_uses_bounded_same_run_cli_with_read_only_access() -> None:

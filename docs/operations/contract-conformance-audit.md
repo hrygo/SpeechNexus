@@ -28,8 +28,10 @@
 已由真实实现接替占位，`disable` 明确返回 422（§3.3）。当前注册 **42**、已实现 **23**、占位 **19**（§6.1）。
 J1 已修复；历史表保留原时点响应。保留 #466 的契约测试和 #473 的 `0.1.0.dev8` 契约，
 `listJobs` 的 405 已声明，`known_status_gaps` 保持 **0**。
-#490 只把 `retireVoiceRevision` 的 503 从 `OperationNotImplemented` 换成 `ServiceUnavailable`（去占位；
-不新增状态码或必填头），其余占位操作的声明未变。
+#490 把 `retireVoiceRevision` 的 503 从 `OperationNotImplemented` 去占位为内联响应：保留 required 的
+`Cache-Control` / `X-Should-Retry` 与含 `ErrorResponse` 的 `allOf`，把可重试语义写进 body；不新增状态码，
+其余占位操作的声明未变。门禁对「基线恰好引用占位组件」的 503 有窄例外，见
+[HTTP 兼容检查规则](../validation/http-contract-change-checks.md#replacing-the-central-placeholder-503)。
 
 ## 1. 结论摘要
 
@@ -171,8 +173,11 @@ J1 已修复；历史表保留原时点响应。保留 #466 的契约测试和 #
 而既有 binding-disable 协调器只接受 `kind='binding'` 的事件与 `binding_revision_id` 捕获。
 在缺少该路径时不假装取消成功，也不另造第二套取消机制；该缺口是后续切片的输入。
 
-该操作的 503 由 `OperationNotImplemented` 改为 `ServiceUnavailable`：路由实现后，503 表示
-「部署未配置生命周期 writer，或存储不可用」，可重试，**不再**是 `operation_not_implemented`。
+该操作的 503 由 `OperationNotImplemented` 去占位为内联响应（`contracts/speech-openapi.yaml::retireVoiceRevision`）：
+仍要求 `Cache-Control` / `X-Should-Retry`，body 保留 `ErrorResponse` 的 `allOf`，`retryable` 固定为 true，
+code 覆盖 `voice_catalogue_unavailable` / `voice_retirement_unavailable`；503 表示部署未配置生命周期 writer
+或存储不可用，可重试，**不再**是 `operation_not_implemented`。替换占位 503 的窄门禁例外见
+[HTTP 兼容检查规则](../validation/http-contract-change-checks.md#replacing-the-central-placeholder-503)。
 定向 HTTP 用例见 `tests/unit/backend/test_voice_retirement_http.py`，
 隔离 PG 用例见 `tests/integration/test_voice_retirement_pg.py`。
 

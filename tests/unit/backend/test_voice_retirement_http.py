@@ -157,7 +157,13 @@ async def test_store_failures_keep_distinct_statuses(
     assert response.json()["error"]["code"] == code
     assert response.json()["error"]["retryable"] is (status == 503)
     assert response.headers["cache-control"] == "no-store"
-    validate_response("retireVoiceRevision", status, {"body": response.json()})
+    envelope: dict[str, Any] = {"body": response.json()}
+    if status == 503:
+        envelope["headers"] = {
+            "Cache-Control": response.headers["cache-control"],
+            "X-Should-Retry": response.headers["x-should-retry"],
+        }
+    validate_response("retireVoiceRevision", status, envelope)
 
 
 @pytest.mark.parametrize(

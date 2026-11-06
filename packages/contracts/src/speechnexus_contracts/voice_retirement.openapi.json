@@ -77,7 +77,55 @@
             "$ref": "#/components/responses/UnprocessableEntity"
           },
           "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
+            "description": "The deployment has no lifecycle writer or publication storage is unavailable. The operation is implemented; this 503 is a retryable outage, not a permanently unimplemented operation.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "X-Should-Retry": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "true"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "code": {
+                              "enum": [
+                                "voice_catalogue_unavailable",
+                                "voice_retirement_unavailable"
+                              ]
+                            },
+                            "type": {
+                              "const": "service_unavailable_error"
+                            },
+                            "retryable": {
+                              "const": true
+                            },
+                            "nexus": false
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -1033,13 +1081,6 @@
         "schema": {
           "type": "string"
         }
-      },
-      "RetryAfter": {
-        "description": "Seconds to wait before retrying a capacity or cancellation coordination request.",
-        "schema": {
-          "type": "integer",
-          "minimum": 0
-        }
       }
     },
     "responses": {
@@ -1103,21 +1144,6 @@
       },
       "UnprocessableEntity": {
         "description": "Unsupported parameter, incompatible profile, or async_required.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/ErrorResponse"
-            }
-          }
-        }
-      },
-      "ServiceUnavailable": {
-        "description": "Backend or capacity unavailable; retry only when `retryable` is true.",
-        "headers": {
-          "Retry-After": {
-            "$ref": "#/components/headers/RetryAfter"
-          }
-        },
         "content": {
           "application/json": {
             "schema": {

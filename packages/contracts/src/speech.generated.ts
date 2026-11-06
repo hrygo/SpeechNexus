@@ -4103,7 +4103,27 @@ export interface operations {
       405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
-      503: components["responses"]["ServiceUnavailable"];
+      /** @description The deployment has no lifecycle writer or publication storage is unavailable. The operation is implemented; this 503 is a retryable outage, not a permanently unimplemented operation. */
+      503: {
+        headers: {
+          "Cache-Control": "no-store";
+          "X-Should-Retry": "true";
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"] & {
+            error?: {
+              /** @enum {unknown} */
+              code?: "voice_catalogue_unavailable" | "voice_retirement_unavailable";
+              /** @constant */
+              type?: "service_unavailable_error";
+              /** @constant */
+              retryable?: true;
+              nexus?: never;
+            };
+          };
+        };
+      };
     };
   };
   listPronunciationSets: {

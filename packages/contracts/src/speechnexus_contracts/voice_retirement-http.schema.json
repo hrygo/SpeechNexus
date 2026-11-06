@@ -59,7 +59,8 @@
         "503": {
           "schema": "HttpResponse_retireVoiceRevision_503",
           "headers": {
-            "retry-after": "integer"
+            "cache-control": "string",
+            "x-should-retry": "string"
           },
           "json": true
         }
@@ -1153,19 +1154,45 @@
         "headers": {
           "type": "object",
           "properties": {
-            "retry-after": {
-              "type": "integer",
-              "minimum": 0
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "true"
             }
           },
-          "required": [],
+          "required": ["cache-control", "x-should-retry"],
           "additionalProperties": true
         },
         "body": {
-          "$ref": "#/$defs/ErrorResponse"
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "enum": ["voice_catalogue_unavailable", "voice_retirement_unavailable"]
+                    },
+                    "type": {
+                      "const": "service_unavailable_error"
+                    },
+                    "retryable": {
+                      "const": true
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
         }
       },
-      "required": ["body"]
+      "required": ["headers", "body"]
     }
   }
 }

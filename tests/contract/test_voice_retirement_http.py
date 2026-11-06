@@ -104,6 +104,7 @@ def test_disable_rejection_is_the_shared_error_envelope() -> None:
 def test_unavailable_is_retryable_and_no_longer_pins_the_placeholder() -> None:
     body = _example("getVoiceRevision-invalid-request")["body"]
     body["error"]["code"] = "voice_retirement_unavailable"
+    body["error"]["type"] = "service_unavailable_error"
     body["error"]["retryable"] = True
     envelope = {
         "body": body,

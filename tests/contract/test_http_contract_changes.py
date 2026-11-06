@@ -68,6 +68,170 @@ def document(path: str, request: Any = None, response: Any = None) -> dict[str, 
     }
 
 
+PLACEHOLDER_503 = "#/components/responses/OperationNotImplemented"
+ERROR_RESPONSE = "#/components/schemas/ErrorResponse"
+
+
+def placeholder_response() -> dict[str, Any]:
+    return {
+        "description": (
+            "The contract declares this operation and this deployment does not implement it."
+        ),
+        "headers": {
+            "Cache-Control": {
+                "required": True,
+                "schema": {"type": "string", "const": "no-store"},
+            },
+            "X-Should-Retry": {
+                "required": True,
+                "schema": {"type": "string", "const": "false"},
+            },
+        },
+        "content": {
+            "application/json": {
+                "schema": {
+                    "allOf": [
+                        {"$ref": ERROR_RESPONSE},
+                        {
+                            "properties": {
+                                "error": {
+                                    "properties": {
+                                        "code": {"const": "operation_not_implemented"},
+                                        "type": {"const": "service_unavailable_error"},
+                                        "retryable": {"const": False},
+                                        "nexus": False,
+                                    }
+                                }
+                            }
+                        },
+                    ]
+                }
+            }
+        },
+    }
+
+
+def retryable_response() -> dict[str, Any]:
+    return {
+        "description": (
+            "The deployment cannot reach publication storage; retry when retryable is true."
+        ),
+        "headers": {
+            "Cache-Control": {
+                "required": True,
+                "schema": {"type": "string", "const": "no-store"},
+            },
+            "X-Should-Retry": {
+                "required": True,
+                "schema": {"type": "string", "const": "true"},
+            },
+        },
+        "content": {
+            "application/json": {
+                "schema": {
+                    "allOf": [
+                        {"$ref": ERROR_RESPONSE},
+                        {
+                            "properties": {
+                                "error": {
+                                    "properties": {
+                                        "code": {
+                                            "enum": [
+                                                "operation_not_implemented",
+                                                "voice_retirement_unavailable",
+                                            ]
+                                        },
+                                        "retryable": {"enum": [False, True]},
+                                    }
+                                }
+                            }
+                        },
+                    ]
+                }
+            }
+        },
+    }
+
+
+def service_document(response: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "openapi": "3.1.0",
+        "info": {"title": "Synthetic", "version": "0.1.0.dev0"},
+        "paths": {
+            "/v1/audio/speech": {
+                "post": {
+                    "operationId": "syntheticCreate",
+                    "responses": {"503": response},
+                }
+            }
+        },
+        "components": {
+            "responses": {"OperationNotImplemented": placeholder_response()},
+            "schemas": {
+                "ErrorResponse": {
+                    "type": "object",
+                    "properties": {"error": {"type": "object"}},
+                }
+            },
+        },
+    }
+
+
+def test_placeholder_503_may_become_a_retryable_replacement() -> None:
+    base = service_document({"$ref": PLACEHOLDER_503})
+    current = service_document(retryable_response())
+    assert (
+        kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False) == []
+    )
+
+
+@pytest.mark.parametrize("missing", ["Cache-Control", "X-Should-Retry"])
+def test_placeholder_503_replacement_keeps_both_required_headers(missing: str) -> None:
+    base = service_document({"$ref": PLACEHOLDER_503})
+    replacement = retryable_response()
+    del replacement["headers"][missing]
+    findings = kernel()._compare_openapi(
+        base, service_document(replacement), "speech-openapi.yaml", standard_only=False
+    )
+    assert findings and any("placeholder 503 replacement" in issue for issue in findings)
+
+
+def test_placeholder_503_replacement_still_needs_the_error_response_composition() -> None:
+    base = service_document({"$ref": PLACEHOLDER_503})
+    replacement = retryable_response()
+    replacement["content"]["application/json"]["schema"] = {"$ref": ERROR_RESPONSE}
+    findings = kernel()._compare_openapi(
+        base, service_document(replacement), "speech-openapi.yaml", standard_only=False
+    )
+    assert findings and any("placeholder 503 replacement" in issue for issue in findings)
+
+
+def test_non_placeholder_503_still_rejects_removed_headers() -> None:
+    base = service_document(retryable_response())
+    current = service_document(
+        {
+            "description": "Bare replacement",
+            "content": {"application/json": {"schema": {"$ref": ERROR_RESPONSE}}},
+        }
+    )
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert any("response header removed: cache-control" in issue for issue in findings)
+    assert any("response header removed: x-should-retry" in issue for issue in findings)
+    assert not any("placeholder 503 replacement" in issue for issue in findings)
+
+
+def test_placeholder_ref_with_siblings_is_not_exempt() -> None:
+    base = service_document({"$ref": PLACEHOLDER_503, "description": "Annotated placeholder"})
+    current = service_document(
+        {
+            "description": "Bare replacement",
+            "content": {"application/json": {"schema": {"$ref": ERROR_RESPONSE}}},
+        }
+    )
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert any("response header removed: cache-control" in issue for issue in findings)
+
+
 @pytest.mark.parametrize("source,path", SOURCES)
 def test_full_http_mode_rejects_removed_nonstandard_path(source: str, path: str) -> None:
     base = document(path)

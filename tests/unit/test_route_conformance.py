@@ -11,7 +11,7 @@ from typing import Any
 
 import httpx
 import pytest
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location(
@@ -505,3 +505,213 @@ def test_dropping_the_probe_results_fails_the_gate(
     monkeypatch.setattr(module, "probe_method_not_allowed_envelopes", empty_probe)
     with pytest.raises(RuntimeError, match="405 envelope probe returned no result"):
         module.build_report(ROOT)
+
+
+def test_partial_405_probe_mapping_fails_only_the_missing_operation() -> None:
+    module = load()
+    base = module.build_report(ROOT)
+    envelopes = {
+        row.operation.operation_id: row.envelope_error
+        for row in base.rows
+        if row.envelope_probed and row.operation.operation_id != "getJob"
+    }
+    report = module.evaluate(
+        base.contract_operations,
+        base.registered,
+        other_contract_ids=base.other_contract_ids,
+        baseline_unimplemented=module.KNOWN_UNIMPLEMENTED_OPERATIONS,
+        baseline_statuses=module.KNOWN_UNDECLARED_STATUSES,
+        unimplemented=module.load_unimplemented_surface(ROOT),
+        method_not_allowed_envelopes=envelopes,
+    )
+    assert [(finding.kind, finding.operation_id) for finding in report.findings] == [
+        ("method_not_allowed_envelope_missing", "getJob")
+    ]
+    missing = next(row for row in report.rows if row.operation.operation_id == "getJob")
+    assert missing.envelope_probed is False
+    assert missing.envelope_error == "the 405 response envelope was not probed"
+    text = module.format_report(report)
+    assert text.count("405-envelope=FAILED") == 1
+    assert text.count("405-envelope=verified") == len(envelopes)
+    assert "OK: every registered speech route" not in text
+
+
+@pytest.mark.parametrize("evidence", ["none", "empty", "partial"])
+def test_incomplete_probe_fails_cli_before_reporting(
+    evidence: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    module = load()
+
+    async def incomplete_probe(_app: Any, operations: Any) -> Any:
+        if evidence == "none":
+            return None
+        if evidence == "empty":
+            return {}
+        return {
+            operation.operation_id: None
+            for operation in operations
+            if operation.operation_id != "getJob"
+        }
+
+    monkeypatch.setattr(module, "probe_method_not_allowed_envelopes", incomplete_probe)
+    assert module.main([]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "405 envelope probe returned no result for " in captured.err
+    assert "getJob" in captured.err
+    assert "TypeError" not in captured.err
+
+
+@pytest.mark.parametrize("evidence", ["none", "partial"])
+def test_lost_evaluate_evidence_fails_cli_with_failed_rows(
+    evidence: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    module = load()
+    real_evaluate = module.evaluate
+
+    def miswired_evaluate(*args: Any, **kwargs: Any) -> Any:
+        # Coverage receives the complete probe. Lose evidence only at the
+        # evaluate call to prove its independent fallback controls the CLI.
+        if evidence == "none":
+            kwargs["method_not_allowed_envelopes"] = None
+        else:
+            kwargs["method_not_allowed_envelopes"] = {
+                key: value
+                for key, value in kwargs["method_not_allowed_envelopes"].items()
+                if key != "getJob"
+            }
+        return real_evaluate(*args, **kwargs)
+
+    monkeypatch.setattr(module, "evaluate", miswired_evaluate)
+    assert module.main([]) == 1
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert captured.out.count("405-envelope=FAILED") == (42 if evidence == "none" else 1)
+    assert "getJob declares 405 but the 405 response envelope was not probed" in captured.out
+    assert "405-envelope=not probed" not in captured.out
+    assert "OK: every registered speech route" not in captured.out
+
+
+@pytest.mark.parametrize("path", ["/v1/nexus/assets", "/v1/nexus/workspaces"])
+def test_probe_enables_service_gated_prefixes_without_calling_services(path: str) -> None:
+    module = load()
+    operation = module.ContractOperation("serviceGated", "GET", path, frozenset({405}))
+
+    async def execute() -> dict[str, str | None]:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=module.load_app()), base_url="http://localhost"
+        ) as client:
+            unavailable = await client.put(path)
+        assert unavailable.status_code == 503
+        assert unavailable.json()["error"]["code"].endswith("service_unavailable")
+        result: dict[str, str | None] = await module.probe_method_not_allowed_envelopes(
+            module.probe_app(), (operation,)
+        )
+        return result
+
+    replies = asyncio.run(execute())
+    assert replies == {"serviceGated": None}
+
+
+def test_probe_service_refuses_business_calls() -> None:
+    module = load()
+    with pytest.raises(AssertionError, match="must not call a service"):
+        module.ProbeService().list()
+
+
+@pytest.mark.parametrize("allow", [None, "", "   "])
+def test_complete_405_envelope_without_allow_is_rejected(allow: str | None) -> None:
+    module = load()
+    response = httpx.Response(
+        405,
+        headers={} if allow is None else {"Allow": allow},
+        json={
+            "error": {
+                "code": "method_not_allowed",
+                "type": "invalid_request_error",
+                "message": "Method not allowed",
+                "param": None,
+                "request_id": module.PROBE_REQUEST_ID,
+                "retryable": False,
+            }
+        },
+    )
+    assert "Allow" in (module.envelope_problem(response, module.PROBE_REQUEST_ID) or "")
+
+
+@pytest.mark.parametrize("template", ["/widgets/{id:int}", "/widgets/{rest:path}"])
+def test_converter_is_rejected_before_simplified_probe(template: str) -> None:
+    module = load()
+    app = FastAPI()
+    app.add_api_route(template, lambda: {}, methods=["GET"])
+    operation = module.ContractOperation("converted", "GET", template, frozenset({405}))
+    with pytest.raises(ValueError, match=r"unsupported.*converter"):
+        module.fill_path_parameters(template)
+    # A plain contract template can still point at a converter in the real app.
+    operation = dataclasses.replace(operation, path="/widgets/{id}")
+    with pytest.raises(ValueError, match=r"unsupported.*converter"):
+        asyncio.run(module.probe_method_not_allowed_envelopes(app, (operation,)))
+
+
+@pytest.mark.parametrize("prefix", ["/api", "/widgets"])
+def test_include_prefix_is_rejected_before_simplified_probe(prefix: str) -> None:
+    module = load()
+    router = APIRouter()
+    router.add_api_route("/widgets", lambda: {}, methods=["PUT"])
+    app = FastAPI()
+    app.include_router(router, prefix=prefix)
+    operation = module.ContractOperation("prefixed", "PUT", prefix + "/widgets", frozenset({405}))
+    with pytest.raises(ValueError, match=r"unsupported.*include_router prefix"):
+        asyncio.run(module.probe_method_not_allowed_envelopes(app, (operation,)))
+    # Discovery must fail too, and must never mutate the original router paths.
+    with pytest.raises(ValueError, match=r"unsupported.*include_router prefix"):
+        tuple(module.flatten_routes(app.router.routes))
+    assert router.routes[0].path == "/widgets"  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize("path", ["/docs", "/healthz"])
+def test_framework_and_health_405_are_enveloped(path: str) -> None:
+    module = load()
+    operation = module.ContractOperation("operational", "GET", path, frozenset({405}))
+    assert asyncio.run(
+        module.probe_method_not_allowed_envelopes(module.probe_app(), (operation,))
+    ) == {"operational": None}
+
+
+def test_gate_docs_describe_observed_and_conditional_405() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    audit = (ROOT / "docs/operations/contract-conformance-audit.md").read_text(encoding="utf-8")
+    section = audit.split("## 10.", 1)[1].split("## 11.", 1)[0]
+    assert "in-process ASGI" in makefile
+    assert "405 信封对所有注册路由生效" not in section
+    for requirement in ("/docs", "/healthz", "workspace_service_unavailable", "503", "405", "ASGI"):
+        assert requirement in section
+    assert "这些路径仍由集成/验收测试覆盖" not in section
+
+
+def test_ci_docs_list_every_405_envelope_condition() -> None:
+    document = (ROOT / "docs/validation/ci-validation.md").read_text(encoding="utf-8")
+    section = document.split("## 公开语音路由一致性门禁", 1)[1].split("## Design Token", 1)[0]
+    for requirement in ("Allow", "retryable=False", "request_id", "回显", "不携带", "detail"):
+        assert requirement in section
+
+
+@pytest.mark.parametrize("defect", ["retryable", "request_id", "detail"])
+def test_405_envelope_rejects_retryable_correlation_and_detail(defect: str) -> None:
+    module = load()
+    body: dict[str, Any] = {
+        "error": {
+            "code": "method_not_allowed",
+            "type": "invalid_request_error",
+            "message": "Method not allowed",
+            "param": None,
+            "request_id": module.PROBE_REQUEST_ID,
+            "retryable": False,
+        }
+    }
+    if defect == "detail":
+        body["detail"] = "Method Not Allowed"
+    else:
+        body["error"][defect] = True if defect == "retryable" else "wrong-request-id"
+    response = httpx.Response(405, headers={"Allow": "GET"}, json=body)
+    assert module.envelope_problem(response, module.PROBE_REQUEST_ID) is not None

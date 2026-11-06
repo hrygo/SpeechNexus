@@ -146,10 +146,30 @@ ASGI ingress 状态码、框架 404/500、FastAPI 参数校验产生的 422、�
 
 每条声明 405 的操作还会在该路径上发起一个进程内 ASGI 请求，方法由 #473 的 `methods_for_path` 从该路径未注册的
 方法中选出，要求返回包含 `code/type/message/param/request_id/retryable` 的公开错误信封，而不是框架裸
-`{"detail": "Method Not Allowed"}`。因此「路由已注册」不再等于「405 已统一为信封」，新增路由或专用处理器漏掉信封会直接失败。
-探测结果为 `None` 或缺少某个操作时同样产生 `method_not_allowed_envelope_missing`，对应行打印
-`405-envelope=FAILED` 且门禁退出码非 0；`build_report` 对为空或覆盖不全的探测结果直接以 `RuntimeError` 失败，
-单测还断言探测集合与声明 405 的操作集合相等，未探测不会被当作 verified。
+`{"detail": "Method Not Allowed"}`。还要求非空 `Allow` 响应头、非空字符串 `code`、`retryable=False`、
+`request_id` 回显探针发送的 `X-Request-ID`，且响应体不携带顶层 `detail`。
+因此「路由已注册」不再等于「405 已统一为信封」，新增路由或专用处理器漏掉这些要求会直接失败。
+
+缺少探测证据时，两层的可观察结果不同：
+
+- **`evaluate()` / 报告层**：直接调用 `evaluate()`，若 `method_not_allowed_envelopes` 为 `None`
+  或缺少某个操作的 key，会为缺少证据的操作产生 `method_not_allowed_envelope_missing` finding。
+  将返回的报告交给 `format_report()`，对应行打印 `405-envelope=FAILED`，不输出 OK 尾巴。
+  `evaluate()` 本身只返回报告，不决定进程退出码。
+- **CI / CLI 入口层**：CI 的 `make contracts-route-conformance` 调用脚本入口，先执行 `build_report()`。
+  探针返回 `None`、空映射或缺 key 时，`require_envelope_coverage()` 在调用 `evaluate()` 前抛出
+  `RuntimeError`；脚本退出码为 **2**，stderr 输出 `route conformance check could not run:`，
+  诊断包含 `refusing to report declared 405s as verified`。stdout 为空，不打印文本或 JSON 报告，
+  因而 CI 日志中没有 `405-envelope=FAILED` 行或 OK 尾巴，门禁步骤失败。
+
+单测分别覆盖两层，并断言探测集合等于声明 405 的集合；partial mapping 用例只去掉 `getJob` 的 key，
+直接调用 `evaluate()`，确认 finding 精确且仅指向 `getJob`。
+
+探针注入只启用 ingress 的资产与 workspace 服务替身；任何业务方法调用立即失败，不连接服务。
+未配置服务的部署仍可能在路由匹配前返回 503，这不属于探针通过的证据。
+当前匹配器只支持普通 `{parameter}` 段；检测到 Starlette converter（如 `{id:int}`、`{rest:path}`）
+或懒加载 `include_router` 的非空 prefix 时，门禁在发送请求前显式报错（退出码 2），不按简化模型探测，
+也不修改注册路由。已展平为完整路径的普通路由可直接检查。
 
 已知未实现操作与已知未声明状态码保留在脚本内的显式基线中，逐条带原因；实现或契约变更后必须同步删除条目，
 否则 `stale_*` 检查失败。未实现操作另有行为要求：门禁解析中央占位表与占位错误映射，要求基线、占位条目、

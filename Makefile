@@ -80,8 +80,8 @@ contracts-speech-changes:
 		{ echo "CONTRACT_BASE_REF is required" >&2; exit 2; }
 	uv run python scripts/dev-env/check-http-contract-changes.py --base "$$CONTRACT_BASE_REF" --surface speech
 
-# Offline gate: current app registrations and statically reachable statuses vs
-# the current speech contract. No CONTRACT_BASE_REF, database or network.
+# Offline gate: current registrations, static statuses and in-process ASGI 405
+# probes vs the current speech contract. No CONTRACT_BASE_REF, database or network.
 contracts-route-conformance:
 	uv run python scripts/dev-env/check-route-conformance.py
 

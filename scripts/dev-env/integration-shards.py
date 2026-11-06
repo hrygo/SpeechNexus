@@ -21,7 +21,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 ROOT = Path(__file__).resolve().parents[2]
 FIELDS = frozenset(
@@ -39,6 +39,9 @@ FIELDS = frozenset(
         "elapsed_seconds",
     }
 )
+# The directory may also hold live progress or other sidecars; only the exact
+# report names are evidence.
+REPORT_NAME_PATTERN = re.compile(r"integration-shard-\d+\.json")
 
 
 # Explicit external-tool prerequisites; these cases still belong to the complete
@@ -175,11 +178,17 @@ def _nodeids(value: Any) -> list[str]:
     return value
 
 
+class ClassMean(NamedTuple):
+    cases: float
+    seconds: float
+
+
 @dataclass(frozen=True)
 class ShardEvidence:
     index: int
     cases: int
     elapsed_seconds: float
+    web: bool
 
 
 @dataclass(frozen=True)
@@ -245,7 +254,8 @@ def verify_reports(paths: Sequence[Path], *, source_head: str, count: int) -> Ev
         ):
             raise ValueError("Shard duration must be bounded")
         longest = max(longest, seconds)
-        shards.append(ShardEvidence(index, len(selected), float(seconds)))
+        web = any(requires_browser(nodeid) or nodeid in NODE_CONTRACT_TESTS for nodeid in selected)
+        shards.append(ShardEvidence(index, len(selected), float(seconds), web))
         outcomes = data["outcomes"]
         if not isinstance(outcomes, dict) or set(outcomes) != set(selected):
             raise ValueError("Shard did not record every selected test result")
@@ -286,6 +296,9 @@ def write_progress(
     count: int,
     selected: int,
     completed: int,
+    passed: int,
+    failed: int,
+    skipped: int,
     last_started: str | None,
     last_completed: str | None,
     started: float,
@@ -302,6 +315,9 @@ def write_progress(
         "shard_count": count,
         "selected": selected,
         "completed": completed,
+        "passed": passed,
+        "failed": failed,
+        "skipped": skipped,
         "last_started": last_started,
         "last_completed": last_completed,
         "elapsed_seconds": round(time.monotonic() - started, 3),
@@ -337,6 +353,9 @@ def run_shard(args: argparse.Namespace) -> int:
             self.selected: list[str] = []
             self.outcomes: dict[str, str] = {}
             self.completed = 0
+            self.passed = 0
+            self.failed = 0
+            self.skipped = 0
             self.last_started: str | None = None
             self.last_completed: str | None = None
 
@@ -350,6 +369,9 @@ def run_shard(args: argparse.Namespace) -> int:
                 count=args.count,
                 selected=len(self.selected),
                 completed=self.completed,
+                passed=self.passed,
+                failed=self.failed,
+                skipped=self.skipped,
                 last_started=self.last_started,
                 last_completed=self.last_completed,
                 started=started,
@@ -404,6 +426,13 @@ def run_shard(args: argparse.Namespace) -> int:
                 self.outcomes[nodeid] = "passed"
             if report.when == "teardown":
                 self.completed += 1
+                outcome = self.outcomes.get(nodeid)
+                if outcome == "failed":
+                    self.failed += 1
+                elif outcome == "skipped":
+                    self.skipped += 1
+                else:
+                    self.passed += 1
                 self.last_completed = nodeid
                 self._publish()
 
@@ -437,22 +466,64 @@ def run_shard(args: argparse.Namespace) -> int:
     return int(pytest.main(options, plugins=[ShardPlugin()]))
 
 
+def resource_class_means(evidence: Evidence) -> dict[bool, ClassMean]:
+    """Mean case count and duration inside each resource class."""
+    groups: dict[bool, list[ShardEvidence]] = {}
+    for shard in evidence.shards:
+        groups.setdefault(shard.web, []).append(shard)
+    return {
+        web: ClassMean(
+            sum(shard.cases for shard in group) / len(group),
+            sum(shard.elapsed_seconds for shard in group) / len(group),
+        )
+        for web, group in groups.items()
+    }
+
+
 def shard_distribution(evidence: Evidence, count: int) -> tuple[list[str], list[str]]:
-    """Report each shard's case count and duration; imbalance is a warning, not a gate."""
-    mean = evidence.collected / count
+    """Report each shard's case count and duration; imbalance is a warning, not a gate.
+
+    The partition intentionally gives the four DB lanes far more cases than the two
+    Web/Chromium lanes, so comparing every shard with one global mean would warn on
+    every run. Compare inside the same resource class instead; a class with one lane
+    has no imbalance to report.
+    """
+    del count  # The class mean is derived from the reports, not from a uniform split.
+    means = resource_class_means(evidence)
+    class_sizes = {
+        web: sum(1 for candidate in evidence.shards if candidate.web == web) for web in means
+    }
     rows: list[str] = []
     warnings: list[str] = []
     for shard in evidence.shards:
-        ratio = shard.cases / mean if mean else 0.0
+        mean = means[shard.web]
+        case_ratio = shard.cases / mean.cases if mean.cases else 0.0
+        time_ratio = shard.elapsed_seconds / mean.seconds if mean.seconds else 0.0
+        label = "Web" if shard.web else "DB"
         rows.append(
-            f"  shard {shard.index}: {shard.cases} cases, "
-            f"{shard.elapsed_seconds:.1f} s ({ratio:.2f}x the {mean:.1f}-case mean)"
+            f"  shard {shard.index} ({label}): {shard.cases} cases, "
+            f"{shard.elapsed_seconds:.1f} s ({case_ratio:.2f}x the {mean.cases:.1f}-case "
+            f"{label} mean; {time_ratio:.2f}x the {mean.seconds:.1f}-s mean)"
         )
-        if shard.cases > mean * 1.5:
+        if class_sizes[shard.web] > 1 and shard.cases > mean.cases * 1.5:
             warnings.append(
-                f"warning: integration shard {shard.index} has {shard.cases} cases "
-                f"({ratio:.2f}x the {mean:.1f}-case mean); split or repartition it "
-                "instead of raising the timeout (docs/validation/ci-validation.md)"
+                f"warning: integration shard {shard.index} ({label}) has {shard.cases} cases "
+                f"({case_ratio:.2f}x the {mean.cases:.1f}-case {label} mean); split or "
+                "repartition it instead of raising the timeout "
+                "(docs/validation/ci-validation.md)"
+            )
+        if shard.elapsed_seconds > 900:
+            warnings.append(
+                f"warning: integration shard {shard.index} ({label}) took "
+                f"{shard.elapsed_seconds:.1f} s, above the 15-minute warning line; split or "
+                "repartition it instead of raising the timeout "
+                "(docs/validation/ci-validation.md)"
+            )
+        elif class_sizes[shard.web] > 1 and shard.elapsed_seconds > mean.seconds * 1.5:
+            warnings.append(
+                f"warning: integration shard {shard.index} ({label}) took "
+                f"{shard.elapsed_seconds:.1f} s ({time_ratio:.2f}x the {mean.seconds:.1f}-s "
+                f"{label} mean); inspect the slow shard and split or repartition it"
             )
     return rows, warnings
 
@@ -490,7 +561,11 @@ def main() -> int:
         if args.command == "run":
             return run_shard(args)
         evidence = verify_reports(
-            sorted(args.reports_dir.glob("integration-shard-*.json")),
+            sorted(
+                path
+                for path in args.reports_dir.glob("integration-shard-*.json")
+                if REPORT_NAME_PATTERN.fullmatch(path.name)
+            ),
             source_head=args.head,
             count=args.count,
         )
@@ -512,17 +587,10 @@ def main() -> int:
     if destination := os.environ.get("GITHUB_STEP_SUMMARY"):
         with Path(destination).open("a", encoding="utf-8") as output:
             output.write(summary + "\n\n")
-            output.write("| shard | cases | seconds | vs mean |\n| --- | --- | --- | --- |\n")
-            mean = evidence.collected / args.count
-            for shard in evidence.shards:
-                ratio = shard.cases / mean if mean else 0.0
-                output.write(
-                    f"| {shard.index} | {shard.cases} | {shard.elapsed_seconds:.1f} | "
-                    f"{ratio:.2f}x |\n"
-                )
+            # The six per-shard job summaries already publish wall clock, pytest
+            # execution and selected cases; do not duplicate that table here.
             if warnings:
-                output.write("\n" + "\n".join(warnings) + "\n")
-            output.write("\n")
+                output.write("\n".join(warnings) + "\n\n")
             for nodeid in evidence.skipped:
                 output.write(f"- Skipped, not qualified: `{nodeid}`\n")
     return 0

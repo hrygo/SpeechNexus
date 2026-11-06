@@ -37,13 +37,17 @@ COVERAGE_JOB_TIMEOUT_SECONDS = 10 * 60
 # Setup before the probe starts (container init, checkout, dependency install,
 # MinIO, and on Web lanes pnpm plus Chromium) and the probe's own stop-and-report
 # tail share the same job budget. Reserve five minutes so the inner deadline
-# always fires first: the 2026-11-06 Integration 2 run (42251268385) spent 98 s
-# in setup before the probe step began, and the old two-minute reserve left only
-# 19 s before the runner would have killed the job.
+# always fires first: the 2026-11-06 Integration 2 attempt 1 (42251268385) spent
+# 98 s in setup before the probe step began; the old two-minute reserve left only
+# about 9 s from the inner deadline to job completion (19 s to the runner's hard
+# cap).
 INTEGRATION_JOB_RESERVE_SECONDS = 300
 INTEGRATION_SHARD_PYTEST_TIMEOUT_SECONDS = (
     INTEGRATION_JOB_TIMEOUT_SECONDS - INTEGRATION_JOB_RESERVE_SECONDS
 )
+# Pre-existing: the full-coverage probe shares the whole Python job budget, so it
+# has no reserve and the runner can cancel before the probe reports. #502 leaves
+# this mode unchanged; the timeout output calls out the missing reserve.
 FULL_COVERAGE_PYTEST_TIMEOUT_SECONDS = COVERAGE_JOB_TIMEOUT_SECONDS
 DEFAULT_PYTEST_TIMEOUT_SECONDS = 180
 PYTEST_LOG_TAIL_LINES = 50
@@ -209,8 +213,8 @@ def build_integration_shard_command(
 
 
 def shard_progress_path(report: Path) -> Path:
-    """Keep the live position beside the final report without changing its shape."""
-    return report.with_name(f"{report.stem}.progress.json")
+    """Keep the live position beside the report without matching its evidence glob."""
+    return report.with_name(f"progress-{report.stem}.json")
 
 
 def private_pg_environment(
@@ -430,8 +434,25 @@ def print_log_tail(log_path: Path, *, limit: int = PYTEST_LOG_TAIL_LINES) -> Non
 class ShardProgress(NamedTuple):
     selected: int
     completed: int
+    passed: int
+    failed: int
+    skipped: int
     last_started: str | None
     last_completed: str | None
+    elapsed_seconds: float | None
+
+
+class PytestProgress(NamedTuple):
+    percent: int | None
+    markers: int
+    failures: int
+
+
+def optional_count(data: Mapping[str, object], key: str) -> int | None:
+    value = data.get(key)
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return None
 
 
 def read_shard_progress(path: Path | None) -> ShardProgress | None:
@@ -444,30 +465,45 @@ def read_shard_progress(path: Path | None) -> ShardProgress | None:
         return None
     if not isinstance(data, dict):
         return None
-    selected = data.get("selected")
-    completed = data.get("completed")
-    if not isinstance(selected, int) or not isinstance(completed, int):
+    selected = optional_count(data, "selected")
+    completed = optional_count(data, "completed")
+    if selected is None or completed is None:
         return None
-    if selected < 0 or completed < 0:
-        return None
+    completed = min(completed, selected)
+    failed = optional_count(data, "failed") or 0
+    skipped = optional_count(data, "skipped") or 0
+    passed = optional_count(data, "passed")
+    if passed is None:
+        # Older progress files have no outcome split; do not invent failures.
+        passed = max(completed - failed - skipped, 0)
+    elapsed = data.get("elapsed_seconds")
     last_started = data.get("last_started")
     last_completed = data.get("last_completed")
     return ShardProgress(
         selected=selected,
-        completed=min(completed, selected),
+        completed=completed,
+        passed=min(passed, completed),
+        failed=min(failed, completed),
+        skipped=min(skipped, completed),
         last_started=last_started if isinstance(last_started, str) else None,
         last_completed=last_completed if isinstance(last_completed, str) else None,
+        elapsed_seconds=(
+            float(elapsed)
+            if isinstance(elapsed, (int, float)) and not isinstance(elapsed, bool)
+            else None
+        ),
     )
 
 
-def parse_pytest_progress(text: str) -> tuple[int | None, int]:
-    """Return the last completion percentage and the progress markers before it.
+def parse_pytest_progress(text: str) -> PytestProgress:
+    """Return the last completion percentage, markers and failure/error markers.
 
     A killed process usually leaves its final progress line without a newline or
     percentage, so a line made only of markers still counts.
     """
     percent: int | None = None
-    completed = 0
+    markers = 0
+    failures = 0
     for line in text.splitlines():
         match = PYTEST_PROGRESS_PATTERN.search(line)
         if match is not None:
@@ -477,8 +513,9 @@ def parse_pytest_progress(text: str) -> tuple[int | None, int]:
             prefix = line
         else:
             continue
-        completed += sum(1 for character in prefix if character in PYTEST_PROGRESS_MARKERS)
-    return percent, completed
+        markers += sum(1 for character in prefix if character in PYTEST_PROGRESS_MARKERS)
+        failures += sum(1 for character in prefix if character in "FE")
+    return PytestProgress(percent, markers, failures)
 
 
 def collect_timeout_diagnostics(
@@ -494,7 +531,7 @@ def collect_timeout_diagnostics(
         log_text = log_path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         log_text = ""
-    percent, markers = parse_pytest_progress(log_text)
+    parsed = parse_pytest_progress(log_text)
     progress = read_shard_progress(progress_path)
     matches = PYTEST_TEST_ID_PATTERN.findall(log_text)
     last_test = matches[-1] if matches else None
@@ -503,41 +540,50 @@ def collect_timeout_diagnostics(
         "limit_seconds": limit,
         "job_limit_seconds": job_limit,
         "reserve_seconds": None if job_limit is None else job_limit - limit,
-        "log_percent": percent,
-        "log_completed_markers": markers,
+        "log_percent": parsed.percent,
+        "log_completed_markers": parsed.markers,
+        "failure_markers": parsed.failures,
+        "phase": "execution" if progress is not None or parsed.markers else "collection",
     }
     if progress is not None:
         facts.update(
             {
                 "selected_cases": progress.selected,
                 "completed_cases": progress.completed,
+                "passed_cases": progress.passed,
+                "failed_cases": progress.failed,
+                "skipped_cases": progress.skipped,
                 "remaining_cases": progress.selected - progress.completed,
                 "last_started_test": progress.last_started or last_test,
                 "last_completed_test": progress.last_completed,
+                "progress_elapsed_seconds": progress.elapsed_seconds,
             }
         )
         if progress.selected:
             facts["percent"] = round(progress.completed * 100 / progress.selected)
-    elif markers:
+    elif parsed.markers:
         facts.update(
             {
-                "completed_cases": markers,
+                "completed_cases": parsed.markers,
                 "last_started_test": last_test,
                 "last_completed_test": None,
             }
         )
-        if percent is not None:
-            estimated_total = round(markers * 100 / percent)
+        if parsed.percent:
+            estimated_total = round(parsed.markers * 100 / parsed.percent)
             facts.update(
                 {
-                    "percent": percent,
+                    "percent": parsed.percent,
                     "estimated_total_cases": estimated_total,
-                    "remaining_cases": max(estimated_total - markers, 0),
+                    "remaining_cases": max(estimated_total - parsed.markers, 0),
                 }
             )
     else:
         facts["last_started_test"] = last_test
         facts["last_completed_test"] = None
+    facts["failure_evidence"] = bool(facts.get("failed_cases") or parsed.failures)
+    completed = progress.completed if progress is not None else 0
+    facts["progress_advanced"] = bool(completed > 0 or parsed.markers > 0)
     return facts
 
 
@@ -546,22 +592,31 @@ def print_timeout_diagnostics(facts: Mapping[str, object]) -> None:
     percent = facts.get("percent")
     completed = facts.get("completed_cases")
     selected = facts.get("selected_cases")
+    passed = facts.get("passed_cases")
+    failed = facts.get("failed_cases")
+    skipped = facts.get("skipped_cases")
+    failures = facts.get("failure_markers")
     if isinstance(selected, int) and isinstance(completed, int):
+        breakdown = ""
+        if isinstance(passed, int) and isinstance(failed, int) and isinstance(skipped, int):
+            breakdown = f" ({passed} passed, {failed} failed, {skipped} skipped)"
         print(
             f"pytest progress: {percent if isinstance(percent, int) else 'unknown'}% — "
-            f"completed {completed} of {selected} selected cases; "
+            f"completed {completed} of {selected} selected cases{breakdown}; "
             f"{facts['remaining_cases']} not completed",
             file=sys.stderr,
         )
     elif isinstance(percent, int) and isinstance(completed, int):
         print(
-            f"pytest progress: {percent}% — about {completed} cases completed (estimated from "
-            "the progress line; no exact total was published before the timeout)",
+            f"pytest progress: {percent}% — about {completed} cases completed "
+            f"({failures if isinstance(failures, int) else 0} failure/error markers; "
+            "estimated from the progress line, no exact total)",
             file=sys.stderr,
         )
     elif isinstance(completed, int) and completed:
         print(
-            f"pytest progress: about {completed} cases completed before the timeout; "
+            f"pytest progress: about {completed} cases completed "
+            f"({failures if isinstance(failures, int) else 0} failure/error markers); "
             "no completion percentage was published",
             file=sys.stderr,
         )
@@ -571,6 +626,16 @@ def print_timeout_diagnostics(facts: Mapping[str, object]) -> None:
             "collection was still running",
             file=sys.stderr,
         )
+    phase = facts.get("phase")
+    progress_elapsed = facts.get("progress_elapsed_seconds")
+    if isinstance(progress_elapsed, (int, float)) and not isinstance(progress_elapsed, bool):
+        print(
+            f"phase: {phase}; progress file last updated {progress_elapsed:.1f} s after "
+            "the shard runner started",
+            file=sys.stderr,
+        )
+    else:
+        print(f"phase: {phase}", file=sys.stderr)
     started = facts.get("last_started_test")
     finished = facts.get("last_completed_test")
     print(
@@ -585,24 +650,46 @@ def print_timeout_diagnostics(facts: Mapping[str, object]) -> None:
     reserve = facts.get("reserve_seconds")
     limit = facts.get("limit_seconds")
     if isinstance(job_limit, int) and isinstance(reserve, int) and isinstance(limit, int):
-        share = reserve * 100 // job_limit if job_limit else 0
-        print(
-            f"timeout budget: probe limit {limit} s inside job limit {job_limit} s; "
-            f"{reserve} s ({share}%) beyond the probe ceiling for setup, dependency "
-            "install and the stop/report tail",
-            file=sys.stderr,
-        )
+        if reserve <= 0:
+            print(
+                f"timeout budget: probe limit {limit} s equals the job limit; no reserve, "
+                "so the runner may cancel before the probe reports (pre-existing for "
+                "--full-coverage)",
+                file=sys.stderr,
+            )
+        else:
+            share = reserve * 100 // job_limit if job_limit else 0
+            print(
+                f"timeout budget: probe limit {limit} s inside job limit {job_limit} s; "
+                f"{reserve} s ({share}%) beyond the probe ceiling for setup, dependency "
+                "install and the stop/report tail",
+                file=sys.stderr,
+            )
     else:
         print(
             f"timeout budget: probe limit {limit} s (no outer job budget for this mode)",
             file=sys.stderr,
         )
-    print(
-        "suggested action: the suite was still advancing and recorded no failure; "
-        "confirm the shard legitimately grew and raise the budget, otherwise split the "
-        "shard instead of raising it (docs/validation/ci-validation.md)",
-        file=sys.stderr,
-    )
+    if facts.get("failure_evidence"):
+        print(
+            "suggested action: failure/error markers were recorded before the timeout; "
+            "inspect pytest.log and fix the failure instead of changing the budget",
+            file=sys.stderr,
+        )
+    elif facts.get("progress_advanced"):
+        print(
+            "suggested action: the suite was still advancing and recorded no failure marker; "
+            "confirm the shard legitimately grew and raise the budget, otherwise split the "
+            "shard instead of raising it (docs/validation/ci-validation.md)",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            "suggested action: no test completed and no progress line was written; "
+            "collection may still be running or the suite may be stuck; inspect pytest.log "
+            "before changing the budget",
+            file=sys.stderr,
+        )
 
 
 def run_test_command(

@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import fnmatch
 import importlib.util
+import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -355,3 +360,126 @@ def test_full_coverage_speech_dsn_targets_only_its_private_socket(tmp_path: Path
     assert sqlalchemy_url.query == {"host": str(socket), "port": "55439"}
     assert env["SPEECHNEXUS_TEST_MYSQL_URL"] == "mysql://external/test"
     assert "PGHOSTADDR" not in env
+
+
+def write_progress(path: Path, **fields: object) -> Path:
+    data = {
+        "version": 1,
+        "selected": 32,
+        "completed": 16,
+        "passed": 14,
+        "failed": 2,
+        "skipped": 0,
+        "last_started": "tests/integration/test_demo.py::test_demo_case[110]",
+        "last_completed": "tests/integration/test_demo.py::test_demo_case[87]",
+        "elapsed_seconds": 4.6,
+        **fields,
+    }
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return path
+
+
+def test_injected_timeout_reports_progress_names_limit_and_budget(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    report = tmp_path / "integration-shard-0.json"
+    progress = write_progress(
+        DRIVER.shard_progress_path(report),
+        passed=16,
+        failed=0,
+        skipped=0,
+        last_started="tests/integration/test_demo.py::test_demo_case[110]",
+        last_completed="tests/integration/test_demo.py::test_demo_case[87]",
+    )
+    result: dict[str, object] = {}
+    with pytest.raises(subprocess.TimeoutExpired):
+        DRIVER.run_test_command(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            env=dict(os.environ),
+            log_path=tmp_path / "pytest.log",
+            timeout_seconds=1,
+            progress_path=progress,
+            job_timeout_seconds=1800,
+            result=result,
+        )
+    err = capsys.readouterr().err
+    assert "completed 16 of 32 selected cases" in err
+    assert "16 passed, 0 failed, 0 skipped" in err
+    assert "last started test: tests/integration/test_demo.py::test_demo_case[110]" in err
+    assert "last completed test: tests/integration/test_demo.py::test_demo_case[87]" in err
+    assert "probe limit 1 s inside job limit 1800 s" in err
+    assert "suggested action: the suite was still advancing" in err
+    facts = result["pytest_timeout"]
+    assert isinstance(facts, dict)
+    assert facts["completed_cases"] == 16
+    assert facts["failure_evidence"] is False
+    assert facts["phase"] == "execution"
+
+
+def test_zero_percent_progress_line_does_not_divide_by_zero(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    log = tmp_path / "pytest.log"
+    log.write_text(".... [ 0%]\n", encoding="utf-8")
+    facts = DRIVER.collect_timeout_diagnostics(
+        log_path=log,
+        progress_path=None,
+        elapsed=5.0,
+        limit=5,
+        job_limit=1800,
+    )
+    assert facts["completed_cases"] == 4
+    assert "percent" not in facts
+    DRIVER.print_timeout_diagnostics(facts)
+    err = capsys.readouterr().err
+    assert "about 4 cases completed" in err
+    assert "suggested action:" in err
+
+
+def test_failure_markers_do_not_claim_the_suite_was_healthy(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    progress = write_progress(
+        tmp_path / "progress-integration-shard-0.json",
+        completed=4,
+        passed=2,
+        failed=2,
+        skipped=0,
+        selected=10,
+    )
+    facts = DRIVER.collect_timeout_diagnostics(
+        log_path=tmp_path / "missing-pytest.log",
+        progress_path=progress,
+        elapsed=5.0,
+        limit=5,
+        job_limit=1800,
+    )
+    assert facts["failed_cases"] == 2
+    assert facts["failure_evidence"] is True
+    DRIVER.print_timeout_diagnostics(facts)
+    err = capsys.readouterr().err
+    assert "2 passed, 2 failed, 0 skipped" in err
+    assert "failure/error markers were recorded" in err
+    assert "still advancing" not in err
+
+
+def test_live_progress_name_is_not_a_shard_report() -> None:
+    name = DRIVER.shard_progress_path(Path("integration-shard-0.json")).name
+    assert name.startswith("progress-")
+    assert not fnmatch.fnmatch(name, "integration-shard-*.json")
+
+
+def test_full_coverage_timeout_calls_out_the_missing_reserve(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    facts = DRIVER.collect_timeout_diagnostics(
+        log_path=tmp_path / "missing-pytest.log",
+        progress_path=None,
+        elapsed=600.0,
+        limit=600,
+        job_limit=600,
+    )
+    DRIVER.print_timeout_diagnostics(facts)
+    err = capsys.readouterr().err
+    assert "no reserve" in err
+    assert "0 s (0%)" not in err

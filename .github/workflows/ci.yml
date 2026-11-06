@@ -352,11 +352,13 @@ jobs:
     if: ${{ needs.changes.outputs.mode == 'full' }}
     runs-on: ubuntu-24.04
     # Baseline: the four database partitions need 7-9.5 min of job wall clock.
-    # PR #498's Integration 2 was still at 84% when the probe's old 18 min inner
-    # ceiling fired, and the 20 min job left only 19 s for its stop/report tail.
-    # The probe now derives a 25 min ceiling from this 30 min budget with a
-    # five-minute setup/cleanup reserve (docs/validation/ci-validation.md). This
-    # is headroom for the same work, not a different selection or weaker assertion.
+    # PR #498's Integration 2 attempt 1 stalled at 84% and hit the old 18 min
+    # inner ceiling; the same commit passed on retry in 760 s. The old 20 min job
+    # left only ~9 s from the inner deadline to job completion. The probe now
+    # derives a 25 min ceiling from this 30 min budget with a five-minute
+    # setup/cleanup reserve (docs/validation/ci-validation.md). This is headroom
+    # for the slow tail and the same work, not a different selection or weaker
+    # assertion.
     timeout-minutes: 30
     strategy:
       fail-fast: false

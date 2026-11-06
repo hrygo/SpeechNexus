@@ -44,7 +44,8 @@ def test_repository_has_no_unbaselined_deviation() -> None:
     }
     assert contract_ids - registered_ids == set(module.KNOWN_UNIMPLEMENTED_OPERATIONS)
     assert report.known_unimplemented == tuple(sorted(module.KNOWN_UNIMPLEMENTED_OPERATIONS))
-    assert len(module.KNOWN_UNDECLARED_STATUSES) == 16
+    assert module.KNOWN_UNDECLARED_STATUSES == {}
+    assert report.known_status_gaps == ()
 
 
 def test_removed_registration_is_reported() -> None:

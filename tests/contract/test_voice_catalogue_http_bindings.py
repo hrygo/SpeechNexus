@@ -16,7 +16,7 @@ from speechnexus_contracts.voice_catalogue_http import contract, validate_reques
 from speechnexus_contracts.workbench_http import validate_response as validate_workbench_response
 
 from tests.contract.test_binding_entrypoints import generator
-from tests.support.contracts import document, retrieve, validator
+from tests.support.contracts import document, retrieve
 
 ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES = json.loads((ROOT / "tests/fixtures/contracts/voice-catalogue-http.json").read_text())[
@@ -44,27 +44,29 @@ def test_only_two_read_operations_are_selected_without_publication_authority() -
 
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda example: example["id"])
 def test_shared_examples_match_source_and_generated_validator(example: dict[str, Any]) -> None:
-    source_validator = (
-        validator("voice-resource.schema.json", "VoiceRevision")
-        if example["operation"] == "getVoiceRevision"
-        else Draft202012Validator(
-            {"components": SOURCE["components"], **SOURCE["components"]["schemas"]["VoiceList"]},
-            registry=cast(Any, Registry)(retrieve=retrieve),
-            format_checker=FormatChecker(),
-        )
+    operation = next(
+        item["get"]
+        for item in SOURCE["paths"].values()
+        if item.get("get", {}).get("operationId") == example["operation"]
     )
-    if example["status"] == 400:
-        source_validator = Draft202012Validator(
-            {
-                "components": SOURCE["components"],
-                **SOURCE["components"]["responses"]["VoiceCatalogueBadRequest"]["content"][
-                    "application/json"
-                ]["schema"],
-            },
-            registry=cast(Any, Registry)(retrieve=retrieve),
-            format_checker=FormatChecker(),
-        )
-    assert source_validator.is_valid(example["value"]["body"]) is example["valid"]
+    response = operation["responses"][str(example["status"])]
+    while "$ref" in response:
+        response = SOURCE["components"]["responses"][response["$ref"].rsplit("/", 1)[1]]
+    source_validator = Draft202012Validator(
+        {"components": SOURCE["components"], **response["content"]["application/json"]["schema"]},
+        registry=cast(Any, Registry)(retrieve=retrieve),
+        format_checker=FormatChecker(),
+    )
+    source_valid = source_validator.is_valid(example["value"]["body"])
+    headers = {name.lower(): value for name, value in example["value"].get("headers", {}).items()}
+    for name, header in response.get("headers", {}).items():
+        if header.get("required") and name.lower() not in headers:
+            source_valid = False
+        if name.lower() in headers and "schema" in header:
+            source_valid = source_valid and source_validator.evolve(
+                schema=header["schema"]
+            ).is_valid(headers[name.lower()])
+    assert source_valid is example["valid"]
     value = copy.deepcopy(example["value"])
     if example["valid"]:
         assert validate_response(example["operation"], example["status"], value) is value

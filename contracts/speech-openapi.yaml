@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus public speech API
-  version: 0.1.0.dev6
+  version: 0.1.0.dev7
   description: |
     SpeechNexus public speech protocol.
 
@@ -70,6 +70,8 @@ paths:
           description: The supplied ETag still matches the current catalogue.
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
   /v1/models/{model}:
@@ -112,6 +114,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
   /v1/audio/transcriptions:
@@ -166,6 +170,10 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "409":
           $ref: "#/components/responses/Conflict"
         "413":
@@ -284,6 +292,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
   /v1/nexus/profiles:
@@ -428,6 +438,8 @@ paths:
           $ref: "#/components/responses/VoiceCatalogueBadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
   /v1/nexus/voices/{voice_id}/revisions/{revision}:
@@ -460,6 +472,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
   /v1/nexus/voices/{voice_id}/revisions/{revision}/retirements:
@@ -684,6 +698,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
@@ -749,6 +765,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
   /v1/nexus/jobs/{job_id}/cancellations:
@@ -809,10 +827,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/JobCancellation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "409":
           $ref: "#/components/responses/JobCancellationConflict"
         "503":
@@ -848,6 +870,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
@@ -899,6 +923,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "410":
           $ref: "#/components/responses/Gone"
         "503":
@@ -1013,6 +1039,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "408":
           $ref: "#/components/responses/AssetReceiveTimeout"
         "409":
@@ -1051,6 +1079,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "410":
           $ref: "#/components/responses/Gone"
         "503":
@@ -1097,6 +1127,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "410":
           $ref: "#/components/responses/Gone"
         "416":
@@ -1109,30 +1141,41 @@ paths:
       operationId: getArtifact
       summary: Get committed artifact metadata
       parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
         - $ref: "#/components/parameters/ArtifactIdPath"
         - $ref: "#/components/parameters/XRequestId"
       responses:
         "200":
           description: Artifact metadata.
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Request-ID:
               $ref: "#/components/headers/XRequestId"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Artifact"
+        "304":
+          $ref: "#/components/responses/ArtifactNotModified"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "410":
           $ref: "#/components/responses/Gone"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
   /v1/nexus/artifacts/{artifact_id}/content:
     get:
       tags: [artifacts]
       operationId: downloadArtifactContent
       summary: Download committed artifact content
       parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
         - $ref: "#/components/parameters/ArtifactIdPath"
         - $ref: "#/components/parameters/Range"
         - $ref: "#/components/parameters/XRequestId"
@@ -1140,6 +1183,8 @@ paths:
         "200":
           description: Full content.
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             Accept-Ranges:
               $ref: "#/components/headers/AcceptRanges"
             Content-Length:
@@ -1154,6 +1199,8 @@ paths:
         "206":
           description: Partial content.
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             Content-Range:
               $ref: "#/components/headers/ContentRange"
             X-Request-ID:
@@ -1163,12 +1210,21 @@ paths:
               schema:
                 type: string
                 format: binary
+        "304":
+          $ref: "#/components/responses/ArtifactNotModified"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "410":
           $ref: "#/components/responses/Gone"
+        "416":
+          $ref: "#/components/responses/AssetRangeNotSatisfiable"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
   /v1/nexus/realtime/sessions:
     post:
       tags: [realtime]
@@ -1778,6 +1834,13 @@ components:
         header value is accepted for SDK compatibility and is not interpreted as
         a user.
   parameters:
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      required: false
+      description: Return 304 without a body when the artifact validator matches.
+      schema:
+        type: string
     XRequestId:
       name: X-Request-ID
       in: header
@@ -1916,7 +1979,7 @@ components:
         minimum: 1
         maximum: 2
     ETag:
-      description: Opaque validator derived from deployment, workspace, catalog, and policy revisions.
+      description: Opaque validator for the selected public representation.
       schema:
         type: string
     RetryAfter:
@@ -1937,6 +2000,25 @@ components:
         type: string
         pattern: "^bytes [0-9]+-[0-9]+/[0-9]+$"
   responses:
+    ArtifactNotModified:
+      description: The supplied ETag matches the artifact; the response has no body.
+      headers:
+        ETag:
+          $ref: "#/components/headers/ETag"
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestId"
+      content: {}
+    MethodNotAllowed:
+      description: The registered path does not accept this HTTP method.
+      headers:
+        Allow:
+          required: true
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
     VoiceCatalogueBadRequest:
       description: |
         Malformed path values, unknown query fields, invalid query values or

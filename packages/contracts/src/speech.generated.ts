@@ -3299,6 +3299,25 @@ export interface components {
     } & (unknown & unknown & unknown);
   };
   responses: {
+    /** @description The supplied ETag matches the artifact; the response has no body. */
+    ArtifactNotModified: {
+      headers: {
+        ETag?: components["headers"]["ETag"];
+        "X-Request-ID"?: components["headers"]["XRequestId"];
+        [name: string]: unknown;
+      };
+      content?: never;
+    };
+    /** @description The registered path does not accept this HTTP method. */
+    MethodNotAllowed: {
+      headers: {
+        Allow: string;
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
     /**
      * @description Malformed path values, unknown query fields, invalid query values or
      *     duplicate query parameters. Correct the request; unchanged retries
@@ -3581,6 +3600,8 @@ export interface components {
     };
   };
   parameters: {
+    /** @description Return 304 without a body when the artifact validator matches. */
+    IfNoneMatch: string;
     XRequestId: string;
     /**
      * @description Optional idempotency key. The scope is (deployment_id, workspace_id,
@@ -3617,7 +3638,7 @@ export interface components {
     XSampleRateHz: number;
     /** @description Actual output channel count. */
     XChannels: number;
-    /** @description Opaque validator derived from deployment, workspace, catalog, and policy revisions. */
+    /** @description Opaque validator for the selected public representation. */
     ETag: string;
     /** @description Seconds to wait before retrying a capacity or cancellation coordination request. */
     RetryAfter: number;
@@ -3664,6 +3685,7 @@ export interface operations {
         content?: never;
       };
       401: components["responses"]["Unauthorized"];
+      405: components["responses"]["MethodNotAllowed"];
       503: components["responses"]["ServiceUnavailable"];
     };
   };
@@ -3705,6 +3727,7 @@ export interface operations {
       };
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       503: components["responses"]["ServiceUnavailable"];
     };
   };
@@ -3747,6 +3770,8 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
       413: components["responses"]["PayloadTooLarge"];
       422: components["responses"]["UnprocessableEntity"];
@@ -3838,6 +3863,7 @@ export interface operations {
       };
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       503: components["responses"]["ServiceUnavailable"];
     };
   };
@@ -3966,6 +3992,7 @@ export interface operations {
       };
       400: components["responses"]["VoiceCatalogueBadRequest"];
       401: components["responses"]["Unauthorized"];
+      405: components["responses"]["MethodNotAllowed"];
       503: components["responses"]["ServiceUnavailable"];
     };
   };
@@ -3996,6 +4023,7 @@ export interface operations {
       400: components["responses"]["VoiceCatalogueBadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       503: components["responses"]["ServiceUnavailable"];
     };
   };
@@ -4204,6 +4232,7 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       403: components["responses"]["Forbidden"];
+      405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];
@@ -4235,6 +4264,7 @@ export interface operations {
       };
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       503: components["responses"]["ServiceUnavailable"];
     };
   };
@@ -4277,8 +4307,10 @@ export interface operations {
           "application/json": components["schemas"]["JobCancellation"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["JobCancellationConflict"];
       503: components["responses"]["ServiceUnavailable"];
     };
@@ -4314,6 +4346,7 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
       503: components["responses"]["ServiceUnavailable"];
@@ -4348,6 +4381,7 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       410: components["responses"]["Gone"];
       503: components["responses"]["ServiceUnavailable"];
     };
@@ -4460,6 +4494,7 @@ export interface operations {
       401: components["responses"]["Unauthorized"];
       403: components["responses"]["Forbidden"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       408: components["responses"]["AssetReceiveTimeout"];
       409: components["responses"]["AssetUploadConflict"];
       410: components["responses"]["Gone"];
@@ -4495,6 +4530,7 @@ export interface operations {
       401: components["responses"]["Unauthorized"];
       403: components["responses"]["Forbidden"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       410: components["responses"]["Gone"];
       503: components["responses"]["ServiceUnavailable"];
     };
@@ -4539,6 +4575,7 @@ export interface operations {
       401: components["responses"]["Unauthorized"];
       403: components["responses"]["Forbidden"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       410: components["responses"]["Gone"];
       416: components["responses"]["AssetRangeNotSatisfiable"];
       503: components["responses"]["ServiceUnavailable"];
@@ -4548,6 +4585,8 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
+        /** @description Return 304 without a body when the artifact validator matches. */
+        "If-None-Match"?: components["parameters"]["IfNoneMatch"];
         "X-Request-ID"?: components["parameters"]["XRequestId"];
       };
       path: {
@@ -4560,6 +4599,7 @@ export interface operations {
       /** @description Artifact metadata. */
       200: {
         headers: {
+          ETag?: components["headers"]["ETag"];
           "X-Request-ID"?: components["headers"]["XRequestId"];
           [name: string]: unknown;
         };
@@ -4567,15 +4607,20 @@ export interface operations {
           "application/json": components["schemas"]["Artifact"];
         };
       };
+      304: components["responses"]["ArtifactNotModified"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       410: components["responses"]["Gone"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   downloadArtifactContent: {
     parameters: {
       query?: never;
       header?: {
+        /** @description Return 304 without a body when the artifact validator matches. */
+        "If-None-Match"?: components["parameters"]["IfNoneMatch"];
         Range?: components["parameters"]["Range"];
         "X-Request-ID"?: components["parameters"]["XRequestId"];
       };
@@ -4589,6 +4634,7 @@ export interface operations {
       /** @description Full content. */
       200: {
         headers: {
+          ETag?: components["headers"]["ETag"];
           "Accept-Ranges"?: components["headers"]["AcceptRanges"];
           "Content-Length"?: components["headers"]["ContentLength"];
           "X-Request-ID"?: components["headers"]["XRequestId"];
@@ -4601,6 +4647,7 @@ export interface operations {
       /** @description Partial content. */
       206: {
         headers: {
+          ETag?: components["headers"]["ETag"];
           "Content-Range"?: components["headers"]["ContentRange"];
           "X-Request-ID"?: components["headers"]["XRequestId"];
           [name: string]: unknown;
@@ -4609,9 +4656,13 @@ export interface operations {
           "application/octet-stream": string;
         };
       };
+      304: components["responses"]["ArtifactNotModified"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["MethodNotAllowed"];
       410: components["responses"]["Gone"];
+      416: components["responses"]["AssetRangeNotSatisfiable"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   createRealtimeSession: {

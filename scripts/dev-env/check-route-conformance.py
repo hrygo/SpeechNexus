@@ -86,34 +86,10 @@ KNOWN_UNIMPLEMENTED_OPERATIONS: dict[str, str] = {
     "speechGetDeletion": "speech deletion read route is not implemented",
 }
 
-# Reachable statuses that the current contract does not declare. These are the
-# audit's known gaps, not a permission to add more. Each entry is pruned by the
-# check when the contract or handler changes, so it cannot mask a later removal.
-KNOWN_UNDECLARED_STATUSES: dict[str, frozenset[int]] = {
-    # Audit section 4.1: TranscriptionModelNotFoundError maps to model_not_found.
-    "createTranscription": frozenset({404, FRAMEWORK_METHOD_NOT_ALLOWED}),
-    # Audit section 4.2: an invalid Idempotency-Key returns invalid_job_request.
-    "cancelJob": frozenset({400, FRAMEWORK_METHOD_NOT_ALLOWED}),
-    # Audit sections 4.3-4.4: If-None-Match and an absent artifact service.
-    "getArtifact": frozenset({304, 503, FRAMEWORK_METHOD_NOT_ALLOWED}),
-    # Audit sections 4.3-4.5: 304, 416 and an absent artifact service.
-    "downloadArtifactContent": frozenset({304, 416, 503, FRAMEWORK_METHOD_NOT_ALLOWED}),
-    # Audit section 5.3: Starlette answers 405 on every path but only the
-    # operations below omit it from their declared responses.
-    "listModels": frozenset({FRAMEWORK_METHOD_NOT_ALLOWED}),
-    "retrieveModel": frozenset({FRAMEWORK_METHOD_NOT_ALLOWED}),
-    "getCapabilities": frozenset({FRAMEWORK_METHOD_NOT_ALLOWED}),
-    # #442/#443: the voice catalogue GETs are registered but omit 405.
-    "listVoices": frozenset({FRAMEWORK_METHOD_NOT_ALLOWED}),
-    "getVoiceRevision": frozenset({FRAMEWORK_METHOD_NOT_ALLOWED}),
-    "createJob": frozenset({FRAMEWORK_METHOD_NOT_ALLOWED}),
-    "getJob": frozenset({FRAMEWORK_METHOD_NOT_ALLOWED}),
-    "retryJob": frozenset({FRAMEWORK_METHOD_NOT_ALLOWED}),
-    "streamJobEvents": frozenset({FRAMEWORK_METHOD_NOT_ALLOWED}),
-    "uploadAsset": frozenset({FRAMEWORK_METHOD_NOT_ALLOWED}),
-    "getAsset": frozenset({FRAMEWORK_METHOD_NOT_ALLOWED}),
-    "downloadAssetContent": frozenset({FRAMEWORK_METHOD_NOT_ALLOWED}),
-}
+# #462 declared every observed status, including framework 405 replies.
+# Keep the baseline empty: a newly reachable undeclared status must fail.
+KNOWN_UNDECLARED_STATUSES: dict[str, frozenset[int]] = {}
+
 
 type LiteralValue = str | int | bool
 type ValueSet = frozenset[LiteralValue] | None

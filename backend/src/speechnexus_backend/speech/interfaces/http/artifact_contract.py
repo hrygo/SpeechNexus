@@ -2,13 +2,26 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from functools import lru_cache
+from importlib.resources import files
+from typing import Any, cast
 
 from speechnexus_contracts import parse
 from speechnexus_contracts.models import Artifact
 
 from speechnexus_backend.speech.domain.artifacts import ArtifactRecord
+from speechnexus_backend.speech.interfaces.http.contract_projection import namespaced_contract
+
+
+@lru_cache
+def artifact_http_contract() -> dict[str, Any]:
+    source = cast(
+        dict[str, Any],
+        json.loads(files("speechnexus_contracts").joinpath("artifacts.openapi.json").read_text()),
+    )
+    return namespaced_contract(source, "Artifact_")
 
 
 def _timestamp(microseconds: int) -> str:

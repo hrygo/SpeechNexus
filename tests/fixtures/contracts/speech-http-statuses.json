@@ -1,0 +1,118 @@
+{
+  "method_not_allowed": [
+    {
+      "operation": "listModels",
+      "path": "/v1/models",
+      "allow": "GET",
+      "code": "method_not_allowed"
+    },
+    {
+      "operation": "retrieveModel",
+      "path": "/v1/models/model-demo",
+      "allow": "GET",
+      "code": "method_not_allowed"
+    },
+    {
+      "operation": "createTranscription",
+      "path": "/v1/audio/transcriptions",
+      "allow": "POST",
+      "code": "method_not_allowed"
+    },
+    {
+      "operation": "getCapabilities",
+      "path": "/v1/nexus/capabilities",
+      "allow": "GET",
+      "code": "method_not_allowed"
+    },
+    {
+      "operation": "listVoices",
+      "path": "/v1/nexus/voices",
+      "allow": "GET",
+      "code": "method_not_allowed"
+    },
+    {
+      "operation": "getVoiceRevision",
+      "path": "/v1/nexus/voices/voice-demo/revisions/1",
+      "allow": "GET",
+      "code": "method_not_allowed"
+    },
+    {
+      "operation": "createJob",
+      "path": "/v1/nexus/jobs",
+      "allow": "POST",
+      "code": "job_method_not_allowed"
+    },
+    {
+      "operation": "getJob",
+      "path": "/v1/nexus/jobs/job-demo",
+      "allow": "GET",
+      "code": "job_method_not_allowed"
+    },
+    {
+      "operation": "cancelJob",
+      "path": "/v1/nexus/jobs/job-demo/cancellations",
+      "allow": "POST",
+      "code": "job_method_not_allowed"
+    },
+    {
+      "operation": "retryJob",
+      "path": "/v1/nexus/jobs/job-demo/retries",
+      "allow": "POST",
+      "code": "job_method_not_allowed"
+    },
+    {
+      "operation": "streamJobEvents",
+      "path": "/v1/nexus/jobs/job-demo/events",
+      "allow": "GET",
+      "code": "job_method_not_allowed"
+    },
+    {
+      "operation": "uploadAsset",
+      "path": "/v1/nexus/assets",
+      "allow": "POST",
+      "code": "asset_method_not_allowed"
+    },
+    {
+      "operation": "getAsset",
+      "path": "/v1/nexus/assets/asset-demo",
+      "allow": "GET",
+      "code": "asset_method_not_allowed"
+    },
+    {
+      "operation": "downloadAssetContent",
+      "path": "/v1/nexus/assets/asset-demo/content",
+      "allow": "GET",
+      "code": "asset_method_not_allowed"
+    },
+    {
+      "operation": "getArtifact",
+      "path": "/v1/nexus/artifacts/artifact-demo",
+      "allow": "GET",
+      "code": "artifact_method_not_allowed"
+    },
+    {
+      "operation": "downloadArtifactContent",
+      "path": "/v1/nexus/artifacts/artifact-demo/content",
+      "allow": "GET",
+      "code": "artifact_method_not_allowed"
+    }
+  ],
+  "errors": [
+    {
+      "operation": "createTranscription",
+      "path": "/v1/audio/transcriptions",
+      "status": 404,
+      "code": "model_not_found"
+    },
+    {
+      "operation": "cancelJob",
+      "path": "/v1/nexus/jobs/job-demo/cancellations",
+      "status": 400,
+      "code": "invalid_job_request"
+    }
+  ],
+  "artifacts": [
+    { "operation": "getArtifact", "path": "/v1/nexus/artifacts/{artifact_id}" },
+    { "operation": "downloadArtifactContent", "path": "/v1/nexus/artifacts/{artifact_id}/content" }
+  ]
+}

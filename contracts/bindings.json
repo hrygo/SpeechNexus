@@ -348,6 +348,13 @@
         "/v1/nexus/assets/{asset_id}/content"
       ]
     },
+    "artifacts": {
+      "source": "speech-openapi.yaml",
+      "paths": [
+        "/v1/nexus/artifacts/{artifact_id}",
+        "/v1/nexus/artifacts/{artifact_id}/content"
+      ]
+    },
     "workbench": {
       "source": "workbench-openapi.yaml",
       "validate": true,

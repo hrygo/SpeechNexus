@@ -567,8 +567,9 @@ Python/TypeScript 绑定与打包 HTTP 投影由源重新生成；严格消费�
    因此占位响应不会「通过」契约检查：实现该操作时必须同时删除占位条目与基线条目，否则门禁失败。
 5. 每条声明 405 的操作在进程内发起一次 ASGI 请求，方法由 `methods_for_path` 从该路径未注册的方法中
    选出，要求返回包含 `code/type/message/param/request_id/retryable` 的公开错误信封且不携带裸 `detail`；
-   缺失即 `method_not_allowed_envelope_missing`；探测结果缺失时报告 `405-envelope=not probed`，`build_report`
-   拒绝覆盖不全或为空的结果（`RuntimeError`），单测同时断言探测集合等于声明 405 的集合，未探测不会被当成 verified。
+   缺失即 `method_not_allowed_envelope_missing`；`method_not_allowed_envelopes` 为 `None` 或缺少对应操作同样产生该
+   finding（对应行 `405-envelope=FAILED`），门禁退出码非 0。`build_report` 仍拒绝为空或覆盖不全的探测结果
+   （`RuntimeError`），单测同时断言探测集合等于声明 405 的集合，未探测不会被当成 verified。
    `app.py` 不再维护「哪些路径有信封」的硬编码清单：
    405 信封对所有注册路由生效，未注册路径仍返回 404，资源面专用错误码（jobs/assets/artifacts/workspace/speech）
    仍由各自分支先选中。

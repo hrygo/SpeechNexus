@@ -460,9 +460,9 @@ def test_a_new_route_gets_the_envelope_without_an_app_allowlist() -> None:
     assert response.headers["allow"] == "GET"
 
 
-def test_unprobed_405_is_not_reported_as_verified() -> None:
-    # Without probe results the report must say so, not reuse the default
-    # "None means verified" reading.
+def test_unprobed_405_is_a_gate_failure_not_a_pass() -> None:
+    # A missing probe mapping may not evaluate to OK: every declared 405 must
+    # carry a finding, the report must say FAILED, and no OK tail may print.
     module = load()
     base = module.build_report(ROOT)
     report = module.evaluate(
@@ -475,9 +475,21 @@ def test_unprobed_405_is_not_reported_as_verified() -> None:
         method_not_allowed_envelopes=None,
     )
     assert all(not row.envelope_probed for row in report.rows)
+    assert all(
+        row.envelope_error == "the 405 response envelope was not probed"
+        for row in report.rows
+        if row.route is not None
+    )
+    assert any(
+        finding.kind == "method_not_allowed_envelope_missing"
+        and finding.operation_id == "getJob"
+        and "405 response envelope was not probed" in finding.detail
+        for finding in report.findings
+    )
     text = module.format_report(report)
-    assert "405-envelope=not probed" in text
+    assert "405-envelope=FAILED" in text
     assert "405-envelope=verified" not in text
+    assert "OK: every registered speech route" not in text
 
 
 def test_dropping_the_probe_results_fails_the_gate(

@@ -385,6 +385,13 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
   `Allow: GET, PATCH`（`getVoiceDraft` 与 `updateVoiceDraftMetadata` 都是占位），`DELETE /v1/nexus/jobs` 返回
   `Allow: GET, POST`。读音集合级路径用通用 `method_not_allowed`，item 级路径用 `pronunciation_method_not_allowed`：
   后者的契约组件把 `Allow` 固定为 `GET`，而集合级同时接受 `GET` 与 `POST`，不能共用该组件。
+- 归属守卫与路径别名：`assert_placeholder_ownership` 按 Starlette 实际服务的资源比较模板，除参数名/converter 外
+  还吸收 `redirect_slashes` 的尾斜杠别名——`/v1/nexus/voice-drafts/{draft_id}/`、`.../{draft_id}//` 与占位表声明的
+  无斜杠模板视为同一 owner，报错仍显示占位表原 template。原始 ASGI scope 实测（`starlette==1.9.0`）：尾斜杠请求
+  307 到无斜杠路径，若真实路由只注册在带斜杠模板上，则无斜杠请求仍被占位遮蔽（503）、带斜杠请求才到真实实现。
+  重复内部斜杠、前导 `//`、`%2F`、大小写差异均为 404；`%20` 在解码后由参数匹配；`.`/`..` 段应用不解析（404），
+  但 HTTP 客户端/反向代理可能先行归一化。后几类不构成同一注册模板，或发生在 ASGI 路由之前，进程内守卫无法观察，
+  因此不强行归一；部署若在入口做大小写、重复斜杠或点段归一化，需自行确认不会让真实路由落在占位之后。
 - 读音集合级路径：`PronunciationIngress` 原先在路由前把集合级请求改写为 400；现改为在完成 Host/Origin 校验后放行到
   占位路由，容量与固定 revision 形状校验仍只作用于 item 路径。Host/Origin 被拒绝时仍返回
   `403 pronunciation_host_rejected`（入口边界，与是否有实现无关）。

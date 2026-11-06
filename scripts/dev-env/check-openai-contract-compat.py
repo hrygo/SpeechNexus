@@ -217,10 +217,10 @@ def _instance_level_schemas(
         if items is None:
             return None
         for variant in items:
-            resolved = _instance_level_schemas(variant, side, seen, depth + 1)
-            if resolved is None:
+            variant_parts = _instance_level_schemas(variant, side, seen, depth + 1)
+            if variant_parts is None:
                 return None
-            parts.extend(resolved)
+            parts.extend(variant_parts)
     return parts
 
 

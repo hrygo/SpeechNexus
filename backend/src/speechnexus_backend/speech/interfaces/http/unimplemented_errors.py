@@ -23,9 +23,12 @@ _ERRORS: dict[str, tuple[int, str, str, bool]] = {
     ),
 }
 
-# Derived, so the exported code cannot drift from the table the conformance
-# gate parses statically.
-OPERATION_NOT_IMPLEMENTED = next(iter(_ERRORS))
+# Kept a literal so the conformance gate can resolve the status statically when
+# the handler passes this name instead of an inline string. The check below makes
+# a rename of the map key fail at import time rather than as a 500 per request.
+OPERATION_NOT_IMPLEMENTED = "operation_not_implemented"
+if OPERATION_NOT_IMPLEMENTED not in _ERRORS:  # pragma: no cover - import guard
+    raise RuntimeError("the unimplemented error map lost its only code")
 
 
 def operation_not_implemented_error(code: str, request_id: str) -> JSONResponse:

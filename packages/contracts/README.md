@@ -645,9 +645,13 @@ Shared positive/negative examples live in
 
 Speech source `0.1.0.dev8` declares, for the 21 operations this deployment does
 not implement, the framework 405 on the now-registered path and the placeholder
-503 that answers them (`OperationNotImplemented`: `operation_not_implemented`,
-`service_unavailable_error`, `retryable: false`, `Cache-Control: no-store`,
-`X-Should-Retry: false`). The placeholder error is distinct from
+503 that answers them (`operation_not_implemented`, `service_unavailable_error`,
+`retryable: false`, `Cache-Control: no-store`, `X-Should-Retry: false`).
+Sixteen of them point at the new `OperationNotImplemented` component; the five
+that already declared `ServiceUnavailable` (`listPronunciationSets`, `listJobs`,
+`getOperation`, `createRealtimeSession`, `connectRealtime`) keep that
+declaration, because replacing it would drop the compatible `Retry-After`
+header from the versioned surface. The placeholder error is distinct from
 `backend_unavailable` and from every `*_not_found` code. Those routes are not
 projected into the served OpenAPI document, so clients discover them from this
 source rather than from a runtime that cannot perform them. Upgrade generated

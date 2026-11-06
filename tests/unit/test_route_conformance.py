@@ -186,7 +186,10 @@ def test_stale_status_baseline_is_rejected() -> None:
     )
 
 
-def test_registered_operation_in_unimplemented_baseline_is_rejected() -> None:
+def test_registered_operation_cannot_join_the_unimplemented_baseline() -> None:
+    # `getJob` has a real route and no placeholder, so the baseline itself is
+    # what is wrong: the check must reject it through the table, not through
+    # "it stopped being unregistered".
     module = load()
     base = module.build_report(ROOT)
     baseline = dict(module.KNOWN_UNIMPLEMENTED_OPERATIONS)
@@ -197,9 +200,16 @@ def test_registered_operation_in_unimplemented_baseline_is_rejected() -> None:
         other_contract_ids=base.other_contract_ids,
         baseline_unimplemented=baseline,
         baseline_statuses=module.KNOWN_UNDECLARED_STATUSES,
+        unimplemented=module.load_unimplemented_surface(ROOT),
     )
     assert any(
-        finding.kind == "stale_unimplemented_baseline" and finding.operation_id == "getJob"
+        finding.kind == "stale_unimplemented_baseline"
+        and finding.operation_id == "getJob"
+        and "placeholder table does not declare it" in finding.detail
+        for finding in report.findings
+    )
+    assert not any(
+        finding.kind == "unimplemented_table_unknown" and finding.operation_id == "getJob"
         for finding in report.findings
     )
 

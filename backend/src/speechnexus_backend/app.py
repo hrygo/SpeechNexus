@@ -96,9 +96,10 @@ from speechnexus_backend.speech.interfaces.http.transcriptions import (
     create_transcription_router,
 )
 from speechnexus_backend.speech.interfaces.http.unimplemented import (
-    UNIMPLEMENTED_OPERATIONS,
+    assert_placeholder_ownership,
     create_unimplemented_router,
     is_unimplemented_path,
+    methods_for_path,
 )
 from speechnexus_backend.speech.interfaces.http.voices import (
     create_voice_router,
@@ -461,18 +462,20 @@ def create_app(
     # Declared operations without an owning feature answer one stable 503
     # instead of a framework 404 that reads like "unknown resource".
     app.include_router(create_unimplemented_router())
+    # Ordering is load-bearing: a feature router included after the placeholders
+    # would be shadowed by them and answer 503 for an operation that ships.
+    assert_placeholder_ownership(app.router.routes)
 
     def allowed_methods(path: str, reported: str | None) -> dict[str, str]:
-        """Merge the framework's Allow with the placeholder methods on this path.
+        """Merge the framework's Allow with every method registered on this path.
 
         One path can carry an implemented method and an unimplemented one (for
-        example POST createJob and GET listJobs), and the framework's own 405
-        header only names the first matching route's methods.
+        example POST createJob and GET listJobs), and Starlette's 405 header
+        only names the first partially matching route. RFC 9110 wants all of
+        them, so the registered methods for the same template are merged in.
         """
         methods = {item.strip() for item in (reported or "").split(",") if item.strip()}
-        methods.update(
-            method for method, declared in UNIMPLEMENTED_OPERATIONS.values() if declared == path
-        )
+        methods.update(methods_for_path(app.router.routes, path))
         return {"Allow": ", ".join(sorted(methods))} if methods else {}
 
     @app.exception_handler(HTTPException)

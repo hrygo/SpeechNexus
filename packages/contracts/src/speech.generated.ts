@@ -3308,7 +3308,11 @@ export interface components {
       };
       content?: never;
     };
-    /** @description The registered path does not accept this HTTP method. */
+    /**
+     * @description The registered path does not accept this HTTP method. `Allow` lists every
+     *     method registered on that path template, including placeholder methods.
+     *     The Job paths keep their own `job_method_not_allowed` code.
+     */
     MethodNotAllowed: {
       headers: {
         Allow: string;

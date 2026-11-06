@@ -9,12 +9,16 @@ confirmed missing resource and a wrong method.
 
 from __future__ import annotations
 
+import ast
+import json
+from pathlib import Path
 from typing import Any, cast
 
 import httpx
 import pytest
 
 from speechnexus_backend.app import create_app
+from speechnexus_backend.speech.interfaces.http.job_errors import job_error
 from speechnexus_backend.speech.interfaces.http.unimplemented import UNIMPLEMENTED_OPERATIONS
 from speechnexus_backend.speech.interfaces.http.unimplemented_errors import (
     OPERATION_NOT_IMPLEMENTED,
@@ -24,6 +28,9 @@ from tests.support.contracts import validator
 from tests.unit.backend.test_artifact_http import service
 from tests.unit.backend.test_health import _settings
 
+HTTP_ROOT = (
+    Path(__file__).resolve().parents[2] / "backend/src/speechnexus_backend/speech/interfaces/http"
+)
 SOURCE = validator("speech-openapi.yaml")
 DOCUMENT = cast(dict[str, Any], SOURCE.schema)
 PLACEHOLDER_RESPONSE = "#/components/responses/OperationNotImplemented"
@@ -57,6 +64,31 @@ def declared_operations() -> list[tuple[str, str, str]]:
             if reference == PLACEHOLDER_RESPONSE:
                 found.append((specification["operationId"], method.upper(), path))
     return sorted(found)
+
+
+def error_maps() -> dict[Path, set[str]]:
+    """Error codes declared by each `*_errors.py` map, read as literals."""
+    maps: dict[Path, set[str]] = {}
+    for path in sorted(HTTP_ROOT.glob("*_errors.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        codes: set[str] = set()
+        for node in tree.body:
+            if isinstance(node, ast.AnnAssign):
+                targets: list[ast.expr] = [node.target]
+            elif isinstance(node, ast.Assign):
+                targets = list(node.targets)
+            else:
+                continue
+            if not any(isinstance(t, ast.Name) and t.id == "_ERRORS" for t in targets):
+                continue
+            if isinstance(node.value, ast.Dict):
+                codes.update(
+                    key.value
+                    for key in node.value.keys
+                    if isinstance(key, ast.Constant) and isinstance(key.value, str)
+                )
+        maps[path] = codes
+    return maps
 
 
 def concrete(path: str) -> str:
@@ -115,15 +147,31 @@ async def test_unimplemented_error_is_not_a_real_failure() -> None:
         unimplemented = await http.get(
             "/v1/nexus/voice-drafts/synthetic-id", headers={"X-Request-ID": REQUEST_ID}
         )
-        # A real outage keeps its own code: same status and type, different code
-        # and a retryable flag that actually means "try again".
         unavailable = await http.get("/v1/nexus/artifacts/synthetic-id")
     assert unimplemented.status_code == unavailable.status_code == 503
     assert unimplemented.json()["error"]["type"] == unavailable.json()["error"]["type"]
+    # The code is the only reliable discriminator: status and type are shared,
+    # and a real outage can also be non-retryable (see the next test).
     assert unimplemented.json()["error"]["code"] == OPERATION_NOT_IMPLEMENTED
     assert unavailable.json()["error"]["code"] != OPERATION_NOT_IMPLEMENTED
-    assert unimplemented.json()["error"]["retryable"] is False
-    assert unavailable.json()["error"]["retryable"] is True
+
+
+def test_status_type_and_retryable_cannot_identify_the_placeholder() -> None:
+    # `job_unavailable` is 503 + service_unavailable_error + retryable=false, so
+    # only `error.code` separates a real failure from "not implemented".
+    body = json.loads(bytes(job_error("job_unavailable", REQUEST_ID).body))
+    assert body["error"]["type"] == "service_unavailable_error"
+    assert body["error"]["retryable"] is False
+    assert body["error"]["code"] != OPERATION_NOT_IMPLEMENTED
+
+
+def test_no_other_error_map_reuses_the_placeholder_code() -> None:
+    owners = {
+        module.stem
+        for module, entries in error_maps().items()
+        if OPERATION_NOT_IMPLEMENTED in entries
+    }
+    assert owners == {"unimplemented_errors"}
 
 
 async def test_unimplemented_error_is_not_a_missing_resource_or_bad_method() -> None:
@@ -146,17 +194,46 @@ async def test_unimplemented_error_is_not_a_missing_resource_or_bad_method() -> 
     assert "error" not in unregistered.json()
 
 
-async def test_placeholder_methods_are_listed_together_with_implemented_ones() -> None:
+@pytest.mark.parametrize(
+    ("path", "allow", "code"),
+    [
+        # GET listJobs is a placeholder while POST createJob is implemented: the
+        # header must merge both, not repeat whichever route matched first.
+        ("/v1/nexus/jobs", "GET, POST", "job_method_not_allowed"),
+        # Both methods live on a parameterised template, so a literal path
+        # comparison used to report only the first of them.
+        ("/v1/nexus/voice-drafts/synthetic-id", "GET, PATCH", "method_not_allowed"),
+        ("/v1/nexus/pronunciation-sets", "GET, POST", "method_not_allowed"),
+        ("/v1/nexus/voices/voice-demo/revisions/1/retirements", "POST", "method_not_allowed"),
+    ],
+)
+async def test_allow_header_lists_every_registered_method(path: str, allow: str, code: str) -> None:
     app = create_app(settings=_settings())
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://localhost"
     ) as http:
-        # GET listJobs is a placeholder while POST createJob is implemented.
-        response = await http.delete("/v1/nexus/jobs")
+        response = await http.delete(path)
     assert response.status_code == 405
-    assert response.headers["allow"] == "GET, POST"
+    assert response.headers["allow"] == allow
     # The Job prefix keeps its own 405 code; only the Allow list grows.
-    assert response.json()["error"]["code"] == "job_method_not_allowed"
+    assert response.json()["error"]["code"] == code
+
+
+def test_a_real_route_cannot_share_a_placeholder_method() -> None:
+    from fastapi import FastAPI
+
+    from speechnexus_backend.speech.interfaces.http.unimplemented import (
+        assert_placeholder_ownership,
+    )
+
+    api = FastAPI()
+
+    @api.get("/v1/nexus/voice-drafts/{draft_id}", include_in_schema=False)
+    async def shadowed(draft_id: str) -> dict[str, str]:
+        return {"draft_id": draft_id}
+
+    with pytest.raises(RuntimeError, match="GET /v1/nexus/voice-drafts"):
+        assert_placeholder_ownership(api.routes)
 
 
 def test_served_openapi_does_not_advertise_placeholders() -> None:

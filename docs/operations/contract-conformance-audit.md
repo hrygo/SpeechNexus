@@ -62,7 +62,7 @@
    而契约给 `listJobs` 声明的是 200/400/401/503，消费者无法据状态码区分"未实现"与"方法不支持"。
    【复核 3951718e】仍成立（运行时实测 405 `job_method_not_allowed`）。
    【#473】已处置：`listJobs` 现注册为占位 GET，返回 503 `operation_not_implemented`；同一路径的 405 仍为
-   `method_not_allowed`，`Allow` 合并列出 `GET, POST`（§6.2）。
+   Job 面既有的 `job_method_not_allowed`，`Allow` 合并列出 `GET, POST`（§6.2）。
 
 ## 2. 方法与证据边界
 
@@ -362,7 +362,9 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
 - **「未实现」不得与真实故障共用错误码。** 占位路由的错误映射
   （`backend/src/speechnexus_backend/speech/interfaces/http/unimplemented_errors.py::_ERRORS`）只有
   `operation_not_implemented` 一项，门禁静态校验它必须恰好等于 `{operation_not_implemented: 503}`。
-  真实故障继续用 `backend_unavailable`、`artifact_service_unavailable` 等自己的码，`retryable` 为 `true`；
+  真实故障继续用 `backend_unavailable`、`artifact_service_unavailable`、`job_unavailable` 等自己的码，
+  因此**只有 `error.code` 能区分**：`job_unavailable` 同为 503 + `service_unavailable_error` 且 `retryable` 也是 `false`，
+  状态码、类型与 `retryable` 三者都不足以识别「未实现」；
   这与方案 C（保留 404/405/400 仅换错误码）不同：C 的状态码本身仍会把「未实现」读成「资源不存在 / 方法不支持」，
   且 404 与真实 `*_not_found` 无法靠状态码区分。
 - **契约代价已量化。** 21 条原本只声明成功与业务错误的操作，实际会返回 405（同路径其它方法）与 503（未实现）；
@@ -377,8 +379,12 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
 - 注册面：`backend/src/speechnexus_backend/speech/interfaces/http/unimplemented.py::UNIMPLEMENTED_OPERATIONS`
   是唯一的占位表，`create_unimplemented_router()` 逐条注册；`include_in_schema=False`，服务端 OpenAPI 不把这些操作
   宣传为可用（ADR 0012 第 5 条「不以占位响应通过契约检查」）。
-- 405 语义：同一路径上的 405 仍是 `method_not_allowed`（不是 `operation_not_implemented`）；`Allow` 头合并该路径上
-  全部已注册方法（例如 `/v1/nexus/jobs` 为 `GET, POST`，而不是框架默认只列第一条匹配路由）。
+- 405 语义：同一路径上的 405 仍是方法不允许（不是 `operation_not_implemented`），错误码沿用各面既有的
+  `method_not_allowed` / `job_method_not_allowed`；`Allow` 头合并**同一模板**上全部已注册方法，而不是框架默认
+  只列第一条部分匹配路由。参数化路径同样合并：`DELETE /v1/nexus/voice-drafts/{draft_id}` 返回
+  `Allow: GET, PATCH`（`getVoiceDraft` 与 `updateVoiceDraftMetadata` 都是占位），`DELETE /v1/nexus/jobs` 返回
+  `Allow: GET, POST`。读音集合级路径用通用 `method_not_allowed`，item 级路径用 `pronunciation_method_not_allowed`：
+  后者的契约组件把 `Allow` 固定为 `GET`，而集合级同时接受 `GET` 与 `POST`，不能共用该组件。
 - 读音集合级路径：`PronunciationIngress` 原先在路由前把集合级请求改写为 400；现改为在完成 Host/Origin 校验后放行到
   占位路由，容量与固定 revision 形状校验仍只作用于 item 路径。Host/Origin 被拒绝时仍返回
   `403 pronunciation_host_rejected`（入口边界，与是否有实现无关）。
@@ -538,7 +544,8 @@ Python/TypeScript 绑定与打包 HTTP 投影由源重新生成；严格消费�
    **(b)** 每条基线的路由存在且由其占位模块注册（`declared_not_registered` /
    `unimplemented_placeholder_drift`），
    **(c)** 该路由可静态观察到的状态恰好是 `{405, 503}`（多一个 200 或换成别的错误码都会失败），
-   **(d)** 占位错误映射恰好是 `{operation_not_implemented: 503}`（`unimplemented_error_map_drift`）。
+   **(d)** 占位错误映射恰好是 `{operation_not_implemented: 503}`（`unimplemented_error_map_drift`）；
+   占位 handler 传入的是常量而非字面量，门禁按「单条目工厂只可能返回该条目状态」静态判定，因此不依赖调用点的字符串。
    因此占位响应不会「通过」契约检查：实现该操作时必须同时删除占位条目与基线条目，否则门禁失败。
 5. 新增契约未注册操作、已注册未声明路由、未声明状态码、operationId 形状变化、endpoint 源码
    无法定位，或基线过期（操作已实现、状态已声明/不再可达、占位形状/归属/错误码漂移）都会使命令以退出码 1 失败。

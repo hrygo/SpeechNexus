@@ -1027,6 +1027,11 @@ class Analyzer:
             return
         values = self._evaluate(call.args[0], environment, narrowings)
         if values is None:
+            if len(factory) == 1:
+                # A single-entry factory can only ever return that one status,
+                # whatever it was handed: every successful return uses it.
+                result.statuses.add(next(iter(factory.values())))
+                return
             self._record(
                 scope.module.relative_path,
                 call.lineno,

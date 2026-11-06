@@ -1069,7 +1069,7 @@
         }
       },
       "MethodNotAllowed": {
-        "description": "The registered path does not accept this HTTP method.",
+        "description": "The registered path does not accept this HTTP method. `Allow` lists every\nmethod registered on that path template, including placeholder methods.\nThe Job paths keep their own `job_method_not_allowed` code.\n",
         "headers": {
           "Allow": {
             "required": true,

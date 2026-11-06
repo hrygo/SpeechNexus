@@ -15,7 +15,11 @@ import pytest
 from speechnexus_gateway.application.abort_execution import ExecutionAbortService
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
-from speechnexus_gateway.domain.abort_intent import AbortDispatchClaim, AbortExecutionRequest
+from speechnexus_gateway.domain.abort_intent import (
+    AbortClaimRefusal,
+    AbortDispatchClaim,
+    AbortExecutionRequest,
+)
 from speechnexus_gateway.domain.canonical import JsonValue, canonical_json, command_digest
 from speechnexus_gateway.domain.ports import AbortOutcome, ExecutionFactLedger
 from speechnexus_gateway.domain.recovery import (
@@ -68,7 +72,7 @@ class ObservableLedger(InMemorySubmissionLedger):
 
     def claim_abort(
         self, request: AbortExecutionRequest, *, attempt_id: str, lease_ms: int
-    ) -> AbortDispatchClaim | None:
+    ) -> AbortDispatchClaim | AbortClaimRefusal:
         self.claims += 1
         return super().claim_abort(request, attempt_id=attempt_id, lease_ms=lease_ms)
 
@@ -237,9 +241,9 @@ def test_a_claim_that_no_longer_matches_the_original_never_reaches_the_engine(
 
     def changed_claim(
         abort_request: AbortExecutionRequest, *, attempt_id: str, lease_ms: int
-    ) -> AbortDispatchClaim | None:
+    ) -> AbortDispatchClaim | AbortClaimRefusal:
         claimed = original_claim(abort_request, attempt_id=attempt_id, lease_ms=lease_ms)
-        assert claimed is not None
+        assert isinstance(claimed, AbortDispatchClaim)
         if change == "identity":
             identity = replace(claimed.intent.identity, instance_generation=2)
             return replace(claimed, intent=replace(claimed.intent, identity=identity))

@@ -31,7 +31,7 @@ from tests.integration.test_coordination_foundation import Foundation
 from tests.integration.test_coordination_foundation import foundation as foundation
 from tests.integration.test_gateway_stop_evidence import counters, evidence_for, new_pool
 from tests.integration.test_gateway_submit_ledger import identity_for, seed_second_attempt
-from tests.integration.test_production_jobs import database as database
+from tests.integration.test_tts_durable_pg import database as database
 
 from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema import (
     gateway_abort_grants,
@@ -61,8 +61,8 @@ from speechnexus_gateway.settings import Settings
 
 pytestmark = [
     pytest.mark.integration,
-    # The submit/abort ledger adapter is PostgreSQL; InnoDB keeps the shared schema oracle.
-    pytest.mark.parametrize("database", ["postgresql"], indirect=True),
+    # The submit/abort ledger adapter is PostgreSQL, so these HTTP cases need only the
+    # isolated PG fixture. InnoDB runs the shared statements in test_gateway_abort_ledger.py.
 ]
 
 ROOT = Path(__file__).resolve().parents[2]

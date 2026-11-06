@@ -6,6 +6,12 @@ from typing import TypeVar, cast
 
 import pymysql
 
+from speechnexus_gateway.domain.abort_intent import (
+    AbortClaimRefusal,
+    AbortDispatchClaim,
+    AbortDispatchResult,
+    AbortExecutionRequest,
+)
 from speechnexus_gateway.domain.command_redaction import (
     AuthorizedCommandRedaction,
     CommandRedactionResult,
@@ -25,6 +31,12 @@ from speechnexus_gateway.domain.submission import (
     SubmissionStoreError,
     SubmitRequest,
 )
+from speechnexus_gateway.infrastructure.abort_intent_sql import (
+    claim_abort,
+    receive_abort,
+    record_abort_dispatch,
+)
+from speechnexus_gateway.infrastructure.abort_recovery_sql import take_due_aborts
 from speechnexus_gateway.infrastructure.barrier_sql import (
     read_barrier,
     seal_barrier_in_transaction,
@@ -207,5 +219,39 @@ class MySQLSubmissionLedger:
         return self._run(
             lambda cursor: redact_execution_command_in_transaction(
                 cursor, permit, clock=lambda: self._clock(cursor)
+            )
+        )
+
+    def receive_abort(self, request: AbortExecutionRequest) -> None:
+        self._run(lambda cursor: receive_abort(cursor, request, clock=lambda: self._clock(cursor)))
+
+    def claim_abort(
+        self, request: AbortExecutionRequest, *, attempt_id: str, lease_ms: int
+    ) -> AbortDispatchClaim | AbortClaimRefusal:
+        return self._run(
+            lambda cursor: claim_abort(
+                cursor,
+                request,
+                attempt_id=attempt_id,
+                lease_ms=lease_ms,
+                clock=lambda: self._clock(cursor),
+            )
+        )
+
+    def record_abort_dispatch(self, result: AbortDispatchResult) -> bool:
+        return self._run(
+            lambda cursor: record_abort_dispatch(cursor, result, clock=lambda: self._clock(cursor))
+        )
+
+    def take_due_aborts(
+        self, *, gateway_id: str, host_node_id: str, limit: int
+    ) -> list[AbortExecutionRequest]:
+        return self._run(
+            lambda cursor: take_due_aborts(
+                cursor,
+                gateway_id=gateway_id,
+                host_node_id=host_node_id,
+                limit=limit,
+                clock=lambda: self._clock(cursor),
             )
         )

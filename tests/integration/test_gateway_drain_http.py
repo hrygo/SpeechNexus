@@ -34,7 +34,7 @@ from tests.integration.test_gateway_submit_http import (
     seed_original_foundation_request,
 )
 from tests.integration.test_gateway_submit_ledger import DIGEST, identity_for, seed_second_attempt
-from tests.integration.test_production_jobs import database as database
+from tests.integration.test_tts_durable_pg import database as database
 
 from speechnexus_gateway.app import create_app
 from speechnexus_gateway.application.abort_execution import ExecutionAbortService
@@ -54,8 +54,8 @@ from speechnexus_gateway.settings import Settings
 
 pytestmark = [
     pytest.mark.integration,
-    # The drain reads the PostgreSQL ledger adapter; InnoDB keeps the shared schema oracle.
-    pytest.mark.parametrize("database", ["postgresql"], indirect=True),
+    # The drain reads the PostgreSQL ledger adapter, so it needs only the isolated PG
+    # fixture; InnoDB runs the shared receipt statements in test_gateway_abort_ledger.py.
 ]
 
 INSTANCE = "instance-test"

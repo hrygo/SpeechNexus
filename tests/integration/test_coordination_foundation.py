@@ -45,6 +45,13 @@ from speechnexus_backend.speech.infrastructure.execution_release_schema import (
     release_guard_grants,
 )
 from speechnexus_backend.speech.infrastructure.execution_result_schema import EXECUTION_RESULT_DDL
+from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema import (
+    ABORT_DISPATCH_COLUMNS_DDL,
+    ABORT_DISPATCH_CONSTRAINTS_DDL,
+    ABORT_INTENT_DDL,
+    ABORT_INTENT_TABLE,
+    gateway_abort_grants,
+)
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
     gateway_cancellation_fence_grants,
 )
@@ -155,6 +162,51 @@ def seed(database: JobDatabase) -> None:
     )
 
 
+#: The one cross-column CHECK inside ``ABORT_INTENT_DDL``. MySQL only accepts such an
+#: invariant as a named table constraint (a column-level one fails with error 3813),
+#: so the InnoDB fixture moves it instead of weakening it.
+_MYSQL_ABORT_INLINE_CHECK = "dispatched_at_us BIGINT CHECK (dispatched_at_us >= received_at_us)"
+_MYSQL_ABORT_INLINE_COLUMN = "dispatched_at_us BIGINT"
+#: The inline CHECKs of the product DDL; the last one names two columns, which is why
+#: the InnoDB fixture cannot take the CREATE statement as written.
+_MYSQL_INLINE_CHECKS = (
+    "CHECK (fencing_token > 0)",
+    "CHECK (wait_timeout_ms BETWEEN 100 AND 60000)",
+    "CHECK (received_at_us > 0)",
+    "CHECK (dispatched_at_us >= received_at_us)",
+)
+_MYSQL_ABORT_DISPATCHED_AFTER_RECEIVED = (
+    f"ALTER TABLE {ABORT_INTENT_TABLE} ADD CONSTRAINT "
+    "gateway_abort_dispatched_after_received_check "
+    "CHECK (dispatched_at_us IS NULL OR dispatched_at_us >= received_at_us)"
+)
+
+
+def _abort_update_columns() -> str:
+    """The attempt columns the gateway may update, taken from the product grants."""
+    for statement in gateway_abort_grants("schema", "role"):
+        if statement.startswith("GRANT UPDATE ("):
+            return statement.split("(", 1)[1].split(")", 1)[0]
+    raise RuntimeError("gateway_abort_grants no longer grants a column-level UPDATE")
+
+
+def _mysql_abort_intent_ddl() -> str:
+    """The receipt table as InnoDB accepts it: no column-level cross-column CHECK."""
+    if _MYSQL_ABORT_INLINE_CHECK not in ABORT_INTENT_DDL:
+        raise RuntimeError(
+            "gateway_abort_intents DDL changed: recheck which CHECK MySQL can accept inline"
+        )
+    inline = tuple(re.findall(r"CHECK \([^)]*\)", ABORT_INTENT_DDL))
+    if inline != _MYSQL_INLINE_CHECKS:
+        raise RuntimeError(
+            "the inline CHECK set of gateway_abort_intents changed; MySQL rejects one that "
+            f"names another column (error 3813), so re-check them: {inline}"
+        )
+    return ABORT_INTENT_DDL.replace(_MYSQL_ABORT_INLINE_CHECK, _MYSQL_ABORT_INLINE_COLUMN).replace(
+        'COLLATE "C"', "COLLATE utf8mb4_0900_bin"
+    )
+
+
 @pytest.fixture
 def foundation(database: JobDatabase) -> Iterator[Foundation]:
     db = database
@@ -178,6 +230,22 @@ def foundation(database: JobDatabase) -> Iterator[Foundation]:
                 "MODIFY COLUMN job_id VARCHAR(128) COLLATE utf8mb4_0900_bin NULL",
             )
             db.query(re.sub(r"\bTEXT\b", "LONGTEXT", ddl))
+        # MySQL rejects a column-level CHECK that names another column (error 3813), so
+        # the receipt table is created without that inline invariant and the same
+        # meaning is added back as a named table constraint.
+        db.query(_mysql_abort_intent_ddl())
+        for ddl in (*ABORT_DISPATCH_COLUMNS_DDL, *ABORT_DISPATCH_CONSTRAINTS_DDL):
+            db.query(ddl.replace('COLLATE "C"', "COLLATE utf8mb4_0900_bin"))
+        db.query(f"ALTER TABLE {ABORT_INTENT_TABLE} ADD COLUMN next_check_at_us BIGINT")
+        db.query(_MYSQL_ABORT_DISPATCHED_AFTER_RECEIVED)
+        # 0036 makes the recorded origin mandatory; InnoDB mirrors it without ALTER ... SET.
+        db.query(
+            f"ALTER TABLE {ABORT_INTENT_TABLE} MODIFY COLUMN instance_id "
+            "VARCHAR(128) COLLATE utf8mb4_0900_bin NOT NULL"
+        )
+        db.query(
+            f"ALTER TABLE {ABORT_INTENT_TABLE} MODIFY COLUMN instance_generation BIGINT NOT NULL"
+        )
     try:
         for role in roles:
             if db.dialect == "postgresql":
@@ -188,6 +256,16 @@ def foundation(database: JobDatabase) -> Iterator[Foundation]:
         if db.dialect == "postgresql":
             ensure_cancellation_fence_schema(db.query, schema=db.schema, roles=(roles[0],))
         grants = coordination_runtime_grants(db.schema, speech_role=roles[0], gateway_role=roles[1])
+        if db.dialect == "mysql":
+            # InnoDB mirrors gateway_abort_grants: reads and inserts table-wide, UPDATE
+            # only the attempt columns, so a gateway rewrite of the recorded identity
+            # fails here exactly as it does on PostgreSQL.
+            grants = (
+                *grants,
+                f"GRANT SELECT, INSERT ON `{db.schema}`.`{ABORT_INTENT_TABLE}` TO '{roles[1]}'@'%'",
+                f"GRANT UPDATE ({_abort_update_columns()}) "
+                f"ON `{db.schema}`.`{ABORT_INTENT_TABLE}` TO '{roles[1]}'@'%'",
+            )
         if (
             db.dialect == "postgresql"
             and db.query("SELECT to_regclass('speech_job_cancellation_fences') AS name")[0]["name"]
@@ -289,7 +367,6 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
             "speech_binding_publish_intents",
             "speech_binding_disable_targets",
             "speech_binding_disable_abort_intents",
-            "gateway_abort_intents",
             # Independent builtin voice trust records are not shared runtime data.
             "speech_builtin_voice_source_approvals",
             "speech_builtin_voice_source_revocations",
@@ -308,6 +385,9 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
     # Artifact metadata (0020). Reads go through their own connection; the
     # table stays outside the shared coordination surface.
     artifact_tables = {"speech_artifacts"} if db.dialect == "postgresql" else set()
+    # The gateway abort receipt (0036) is private gateway evidence with its own grants;
+    # neither engine grants it as part of the shared coordination surface.
+    abort_tables = {"gateway_abort_intents"}
     # Public-Job cancellation facts and their private projection/ledger (0034/0035).
     cancellation_tables = (
         {
@@ -323,6 +403,7 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
     assert profile_tables <= {row["name"] for row in rows}
     assert publication_tables <= {row["name"] for row in rows}
     assert artifact_tables <= {row["name"] for row in rows}
+    assert abort_tables <= {row["name"] for row in rows}
     assert cancellation_tables <= {row["name"] for row in rows}
     assert (
         {row["name"] for row in rows}
@@ -335,13 +416,14 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         - binding_tables
         - publication_tables
         - artifact_tables
+        - abort_tables
         - cancellation_tables
         == (set(SPEECH_UPDATES) | set(GATEWAY_UPDATES))
     )
     if db.dialect == "postgresql":
         # New configuration and publication tables are outside shared coordination grants.
         for owner in ("speech", "gateway"):
-            for table in profile_tables | binding_tables | publication_tables:
+            for table in profile_tables | binding_tables | publication_tables | abort_tables:
                 with (
                     pytest.raises(psycopg.errors.InsufficientPrivilege),
                     foundation.connection(owner) as connection,

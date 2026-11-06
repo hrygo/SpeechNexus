@@ -11,7 +11,9 @@ from speechnexus_gateway.application.command_dispatch import OriginalCommandDisp
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
 from speechnexus_gateway.domain.ports import DispatchOutcome
 from speechnexus_gateway.domain.submission import (
+    CleanupState,
     DispatchResult,
+    ExecutionErrorCode,
     ExecutionState,
     InvalidExecutionRequestError,
     StaleSubmissionVersionError,
@@ -20,6 +22,8 @@ from speechnexus_gateway.domain.submission import (
     SubmitRequest,
 )
 from speechnexus_gateway.infrastructure import original_command_sql as sql
+from speechnexus_gateway.infrastructure import original_command_state as state_sql
+from speechnexus_gateway.infrastructure.submit_sql import to_unix_micros
 from tests.fake.execution import InMemorySubmissionLedger, ScriptedEngine, fake_ingress
 from tests.fake.execution_command import original_request
 
@@ -235,3 +239,69 @@ def test_engine_adapter_failure_after_handoff_is_unknown() -> None:
     bridge = OriginalCommandDispatch(commands=source, engine=engine, max_document_bytes=16384)
     assert bridge.dispatch(intent_for(request)).result is DispatchResult.RESPONSE_LOST
     assert engine.calls == [request]
+
+
+class StateCursor:
+    """One row of the document-state query; InnoDB returns 0/1, PostgreSQL a boolean."""
+
+    rowcount = 0
+
+    def __init__(self, present: object, *, lease_state: str = "active") -> None:
+        self.row: dict[str, Any] = {
+            "lease_state": lease_state,
+            "document_present": present,
+            "command_redacted_at_us": None,
+            "command_deletion_job_id": None,
+            "command_deletion_evidence_digest": None,
+        }
+        self.calls: list[tuple[str, tuple[object, ...]]] = []
+
+    def execute(self, query: str, parameters: tuple[object, ...] = ()) -> object:
+        self.calls.append((query, parameters))
+        return None
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        return [self.row]
+
+
+@pytest.mark.parametrize("present", [True, 1])
+def test_document_state_accepts_the_presence_flag_of_either_dialect(
+    monkeypatch: pytest.MonkeyPatch, present: object
+) -> None:
+    """A comparison expression is a boolean on PostgreSQL and 0/1 on InnoDB."""
+    request = original_request()
+    cursor = StateCursor(present)
+    monkeypatch.setattr(state_sql, "read_original_request", lambda *args, **kwargs: request)
+    assert state_sql.read_original_document_state(cursor, intent_for(request)) == "verified"
+    query, parameters = cursor.calls[0]
+    # One portable statement: InnoDB cannot return a boolean expression as a bool.
+    assert "CASE WHEN s.request_document IS NULL THEN 0 ELSE 1 END" in query
+    assert parameters == (request.identity.submit_intent_id,)
+
+
+@pytest.mark.parametrize("present", [False, 0])
+def test_document_state_reads_a_tombstone_with_the_presence_flag_of_either_dialect(
+    present: object,
+) -> None:
+    request = original_request()
+    cursor = StateCursor(present, lease_state="released")
+    cursor.row.update(
+        command_redacted_at_us=to_unix_micros(NOW),
+        command_deletion_job_id="delete-input",
+        command_deletion_evidence_digest="sha256:" + "b" * 64,
+    )
+    intent = replace(
+        intent_for(request),
+        execution_state=ExecutionState.FAILED,
+        cleanup_state=CleanupState.NOT_REQUIRED,
+        error_code=ExecutionErrorCode.INVALID_EXECUTION_REQUEST,
+        updated_at=NOW,
+    )
+    assert state_sql.read_original_document_state(cursor, intent) == "redacted"
+
+
+@pytest.mark.parametrize("present", [None, 2, "1", 0.0])
+def test_document_state_rejects_an_unreadable_presence_flag(present: object) -> None:
+    request = original_request()
+    with pytest.raises(SubmissionStoreError, match="cannot be verified"):
+        state_sql.read_original_document_state(StateCursor(present), intent_for(request))

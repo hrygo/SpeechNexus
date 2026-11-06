@@ -12,6 +12,7 @@ from fastapi import FastAPI
 
 from speechnexus_gateway.app import _ControlReadinessProbe, create_app
 from speechnexus_gateway.application.barrier_control import GatewayBarrierService
+from speechnexus_gateway.application.dispatch_metrics import DispatchOutcomeCounters
 from speechnexus_gateway.application.instance_drain import InstanceDrainService
 from speechnexus_gateway.application.query_execution import ExecutionQueryService
 from speechnexus_gateway.application.recover_executions import ExecutionRecoveryService
@@ -317,6 +318,8 @@ def test_abort_budget_exhaustion_cannot_starve_execution_recovery(
     )
 
     class ExhaustAbort:
+        dispatch_outcome_counts = DispatchOutcomeCounters()
+
         def sweep(self, *, limit: int, should_stop: Callable[[], bool]) -> int:
             if not should_stop():
                 ticks[0] += 2

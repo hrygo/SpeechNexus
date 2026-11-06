@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 from speechnexus_gateway.domain.abort_intent import (
+    AbortClaimRefusal,
     AbortDispatchClaim,
     AbortDispatchResult,
     AbortExecutionRequest,
@@ -252,22 +253,21 @@ class ExecutionFactLedger(SubmissionLedger, ExecutionRecoveryLedger, Protocol):
 class DurableAbortLedger(Protocol):
     """Optional durable abort capability, distinct from ordinary execution facts.
 
-    ``claim_abort` grants at most one bounded lease per receipt: a second caller inside
-    a live lease gets no authority, and the same caller may claim again only after the
-    recorded deadline. ``record_abort_dispatch` writes the outcome of the attempt that
-    produced it; ``reject_abort` records a refusal to resend when the authoritative
-    execution no longer matches the receipt.
+    ``claim_abort`` grants at most one bounded lease per receipt and answers why when it
+    grants none: a second caller inside a live lease gets no authority, the same caller
+    may claim again only after the recorded deadline, and a spent receipt is given up
+    once. ``record_abort_dispatch`` writes the outcome of the attempt that produced it.
+    A receipt that no longer names the authoritative execution is a conflict, not a
+    grant and not a durable outcome.
     """
 
     def receive_abort(self, request: AbortExecutionRequest) -> None: ...
 
     def claim_abort(
         self, request: AbortExecutionRequest, *, attempt_id: str, lease_ms: int
-    ) -> AbortDispatchClaim | None: ...
+    ) -> AbortDispatchClaim | AbortClaimRefusal: ...
 
     def record_abort_dispatch(self, result: AbortDispatchResult) -> bool: ...
-
-    def reject_abort(self, request: AbortExecutionRequest, *, attempt_id: str) -> bool: ...
 
 
 class ExecutionQueryPort(Protocol):

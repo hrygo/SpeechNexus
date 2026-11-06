@@ -296,17 +296,25 @@ pool→submit→abort 锁序提交原始取消，再等待发送锁、取得一�
 `gateway_abort_intents` 保存每条原取消的首次接收和最近一次外发尝试：`dispatched_at_us`
 固定首次尝试时间，`dispatch_attempt_id`、`dispatch_started_at_us`、
 `dispatch_deadline_at_us`、`dispatch_outcome`（`acknowledged` / `unconfirmed` /
-`rejected_fenced` / `exhausted`）、`dispatch_outcome_at_us` 与 `dispatch_attempts` 记录
+`exhausted`）、`dispatch_outcome_at_us` 与 `dispatch_attempts` 记录
 这次尝试的租约和结果，回执同时固化原执行的 `instance_id` 与 `instance_generation`。
 外发租约长度为 `wait_timeout + 1000ms`，上限 65 s；同一回执在租约内只允许一个持有者，
 两个网关实例不会同时外发。租约到期、尝试未记录结果或进程在任意窗口退出后，后续轮次按
 持久事实重新取得租约并只重发原身份，不新建执行。
 
-未裁决的尝试按指数退避重试：第 n 次未确认后 `next_check_at_us = 观察时间 +
+未裁决的尝试按指数退避重试：第 n 次未确认后 `next_check_at_us = 事务数据库时钟 +
 min(30s × 2^(n-1), 30min)`，不再按租约节奏紧循环；最多尝试 8 次（约 1 小时）。用尽后
 写 `dispatch_outcome=exhausted` 并停止重试，执行继续隔离并占用预算，回执、尝试次数与
 观察时间保留为可见证据。`exhausted` 是终态：不重发、不伪造停止，交由原 `record_stop`
 证据路径或人工核验收敛。
+
+外发结果的计数从两个既有出口导出，网关不新增抓取端点（服务面仍只有冻结的 `/healthz` 与
+`/readyz`）。一是进程内按 outcome 聚合的计数，随恢复轮次在数值变化时输出一行结构化日志
+（`abort dispatch outcomes since the last pass: acknowledged=… unconfirmed=… exhausted=…`，
+标签只有有界的 outcome 名，不含执行、尝试或引擎身份）；二是只读查询角色可读的
+`dispatch_outcome` 与 `dispatch_attempts` 持久列，按 outcome 分组即为权威计数。进程重启只重置
+前者，持久列不重置；两者都不是 Prometheus / OpenTelemetry exporter，部署侧采集沿用日志与
+数据库导出，不把本页当作指标端点已装配的证据。
 
 engine adapter 对同一身份的外发必须幂等：重复调用不产生第二次资源效果，并给出可裁决的
 acknowledgement（已中止 / 已终结）；无法确认时返回 unknown，绝不作为停止证据。
@@ -320,12 +328,28 @@ acknowledgement（已中止 / 已终结）；无法确认时返回 unknown，绝
 
 启用下述周期恢复配置、文件执行 runtime 和受限 abort 写权限时，恢复驱动也按持久
 `next_check_at_us` 与尝试租约调度本网关未终结的原取消回执：已裁决结果、已终结执行、
-有效租约内的尝试和已拒绝的漂移都不再入队。每批有界，逐条处理前将该条检查时间推后；
+有效租约内的尝试和终态用尽都不再入队。每批有界，逐条处理前将该条检查时间推后；
 失败或重启后仍可接续，调度时间本身不授权外发。恢复时在同一进程所有权及 pool lane
-内重读固定身份、摘要、引擎请求身份、取消参数和记录时的实例代次；漂移回执记录
-`rejected_fenced` 并保留证据，绝不盲目重发。取消恢复与停止证据恢复逐轮交替优先，
+内重读固定身份、摘要、引擎请求身份、取消参数和记录时的实例代次；任何不符都按冲突失败
+并且不外发，见下节“回执身份不可变”。取消恢复与停止证据恢复逐轮交替优先，
 单轮共用原有时间预算；在途有界调用结束后才停止，任一类用尽本轮预算也不会永久挤占
 另一类的后续轮次。
+
+### 回执身份不可变：没有 fenced 拒发状态
+
+原执行的实例身份只存在于 `admission_leases.instance_id` 与 `instance_generation`：由后端准入在
+同一事务里写入一次（`admission_sql.py` 的租约 INSERT 是唯一写入者），此后被更新的只有
+`lease_state`、`cleanup_state`、隔离观察与预算归还列。`submit_intents` 只持有一个 `lease_id`
+引用，不存这两列；网关读取 intent 时经租约取回身份，取消回执在接收事务里把这组值复制到自己
+的行。因此“回执与权威执行不再匹配”在生产中不可达。把这种不一致做成持久 outcome 只会留下
+一个只能靠直接改库产生的状态，并让运维误以为系统存在身份重绑路径。
+
+持久取值只有 `acknowledged` / `unconfirmed` / `exhausted`，没有“拒发”这一类。真出现不一致时
+按数据损坏处理：`claim_abort` 报 `ExecutionObservationConflictError`；领取前的身份校验分别报
+`StaleFencingTokenError` 或 `InvalidExecutionRequestError`。三种情况都不外发，也不写
+`dispatch_outcome`，回执和运行时事实保持可核验。恢复扫描逐条捕获这类失败、只记一条警告，
+并按退避把该回执重新入队，因此损坏不会静默变成终态，也不会阻塞其他回执。按代次拒绝已外发
+请求仍需尚不存在的引擎侧执行协议，网关当前不提供该保证。
 
 部署升级先应用版本迁移 `0036_abort_dispatch_attempts`，再由管理员为 gateway 写角色
 执行当前 `gateway_abort_grants`（新增尝试列与 `next_check_at_us` 的列级 UPDATE），
@@ -334,7 +358,7 @@ acknowledgement（已中止 / 已终结）；无法确认时返回 unknown，绝
 `invalid execution query reader authority` 硬失败，控制面不启动；写角色缺少尝试列时
 持久 abort 能力以 fail-soft 方式关闭，启动继续但不再接收新取消。独立查询角色仍保持只读，公开回执仍只暴露
 `received` / `claimed` 两个既有状态；只读角色另可读取 `dispatch_outcome` 与
-`dispatch_attempts`，便于运维查看拒发原因与重试次数，它们不进入公开回执。候选同一
+`dispatch_attempts`，便于运维查看末次结果与重试次数，它们不进入公开回执。候选同一
 node/gateway 的进程必须共用宿主锁目录，
 持有原进程锁直到所有在途发送退出；不能以 TTL 代替该前提。
 
@@ -694,6 +718,11 @@ inventory 与观察时间是每次响应的新鲜观测，`barrier.enforced_at` 
   最小 Compose 已配置组件凭据和宿主锁目录；它不因此证明跨节点 fencing、真实停止或故障接管资格。
 - PostgreSQL 已验证并发停止、真实 pool 行锁等待与回滚；InnoDB 使用相同 SQL/领域规则的
   测试 adapter 验证迁移意图，不形成产品 MySQL 支持。数据库连接配置、时钟与异常分类仍在 adapter 内。
+  取消回执的双库 oracle 见第 14 节：PostgreSQL 已实测，InnoDB 侧因本机没有可用的 MySQL 实例
+  **未实测**，MySQL 分支的 DDL 与授权同样未执行过。
+- 外发结果计数没有 Prometheus / OpenTelemetry exporter，只有结构化日志与持久列两个出口；
+  进程内计数随重启清零，跨重启的权威计数需要读 `gateway_abort_intents`。要接入抓取端点，
+  必须先解冻服务面路径集合。
 - 节点检查点/TLS来源、合成daemon与真实网关进程已验证原停止事务和A独立释放；
   这些不证明真实引擎故障、跨节点屏障、实际abort或物理GPU停止资格。
 - 提交入口已服务并通过真实 PG 集成测试，截止时间与运行资格校验已落进该事务并用存储时钟
@@ -727,10 +756,44 @@ SPEECHNEXUS_TEST_DATABASE_URL=… SPEECHNEXUS_TEST_MYSQL_URL=… \
     tests/integration/test_gateway_command_redaction.py \
     tests/integration/test_gateway_output_intervals.py \
     tests/integration/test_gateway_barrier_http.py tests/integration/test_gateway_drain_http.py \
+    tests/integration/test_gateway_abort_ledger.py \
     tests/integration/test_gateway_file_worker.py \
     tests/integration/test_gateway_default_file_asr.py -q
 uv run pytest -m "not integration" -q
 uv run ruff format --check . && uv run ruff check . && uv run mypy && uv run lint-imports
+```
+
+### 取消 / 中止路径的双库覆盖
+
+`test_gateway_abort_ledger.py` 是这条链路的共享 oracle，用同一组产品 SQL 与领域规则在两个引擎上运行，
+共九个场景：接收与精确重放、origin 固化、单租约互斥、未裁决退避以数据库时钟为起点、已裁决终态、
+尝试用尽后的 `exhausted`、due 队列推进并返回记录时的 origin、回执与权威不一致按冲突失败、
+约束真的拒绝坏写入（词表外 outcome、缺尝试组的 outcome、早于接收的派发时间）、以及 gateway 角色
+不能改写回执记录的身份。PostgreSQL 走 `PostgresSubmissionLedger` 与非 owner gateway 角色；InnoDB 走
+`tests/support/gateway_database.py` 的 `MySQLSubmissionLedger`（测试用 DB-API 装配，不是产品适配器）。
+`tests/integration/test_coordination_foundation.py` 的 MySQL 分支创建 `gateway_abort_intents`
+（0036 的尝试列与 `next_check_at_us`），并按 `gateway_abort_grants` 的同一列集授权：读与插入整表、
+UPDATE 只给尝试列（列清单从产品授权文本里取，两侧不会各写一份）。InnoDB 不接受列级 CHECK 引用
+其他列（错误 3813），因此 `dispatched_at_us >= received_at_us` 在该分支改为具名表级约束
+`gateway_abort_dispatched_after_received_check`，语义不变；其余内联 CHECK 都只看本列。
+
+需要 MySQL 的用例就是这一个共享模块。HTTP 与迁移层用例
+（`test_gateway_submit_http.py`、`test_gateway_drain_http.py`、`test_binding_disable_gateway_http_pg.py`、
+`test_abort_receive_pg.py`、`test_execution_abort_reader_pg.py`、`test_binding_disable_migration_pg.py`）
+只跑 PostgreSQL：它们的装配面是 `PostgresSubmissionLedger`、psycopg 连接和 alembic 迁移链，
+InnoDB 既没有产品适配器也没有迁移链。这些文件里的 `parametrize("database", ["postgresql"])` 是适配器事实，
+不再兼作“InnoDB 无需覆盖”的假设；共享行为由上面的 oracle 承担。
+
+当前证据边界：本机隔离 PostgreSQL 上该 oracle 与取消用例全部通过；本机没有可达的 InnoDB 实例
+（127.0.0.1:55434 无服务），MySQL 侧为**未实测**。两个 DSN 都配置时 `make integration-test` 会运行
+该 oracle；单库结果不能报为双库验收。该模块用严格的双 DSN fixture：只配 PG 时两个参数都会失败，
+要只跑 PostgreSQL 的一半，需把 `SPEECHNEXUS_TEST_MYSQL_URL` 显式设成任意值（不可达亦可）并用
+`-k "not mysql"` 限定：
+
+```sh
+SPEECHNEXUS_TEST_DATABASE_URL=postgresql:///sn_profile_it \
+  SPEECHNEXUS_TEST_MYSQL_URL=mysql://root:unused@127.0.0.1:1/ \
+  uv run pytest tests/integration/test_gateway_abort_ledger.py -k "not mysql" -q
 ```
 
 `test_gateway_submit_ledger.py` 在真实 PostgreSQL 上、以非 owner 的 gateway 角色运行：创建后

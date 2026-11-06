@@ -9,6 +9,7 @@ from speechnexus_gateway.application.abort_execution import ExecutionAbortServic
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.domain.abort_intent import (
     MAX_ABORT_DISPATCH_ATTEMPTS,
+    AbortClaimRefusal,
     AbortDispatchClaim,
     AbortDispatchOutcome,
     AbortExecutionRequest,
@@ -122,7 +123,12 @@ def test_terminal_execution_is_never_redispatched() -> None:
     assert engine.calls == []
 
 
-def test_stale_authority_is_refused_with_a_durable_outcome() -> None:
+def test_recovery_refuses_a_drifted_authority_without_writing_an_outcome() -> None:
+    """Identity is immutable: a disagreement is corruption, never a durable refusal."""
+    import pytest
+
+    from speechnexus_gateway.domain.submission import StaleFencingTokenError
+
     clock = Clock()
     _, ledger, _, ingress, _, request = setup_abort(now=clock)
     ledger.receive_abort(request)
@@ -133,12 +139,14 @@ def test_stale_authority_is_refused_with_a_durable_outcome() -> None:
     )
     engine = RecordingAbort(now=clock)
     restarted = service_for(ledger, ingress, engine)
-    restarted.recover_abort(request)
+    with pytest.raises(StaleFencingTokenError):
+        restarted.recover_abort(request)
     assert engine.calls == []
     state = ledger.abort_dispatch_state(request.submit_intent_id)
-    assert state is not None and state["outcome"] == AbortDispatchOutcome.REJECTED_FENCED.value
+    assert state is None
     clock.advance(minutes=5)
-    restarted.recover_abort(request)
+    with pytest.raises(StaleFencingTokenError):
+        restarted.recover_abort(request)
     assert engine.calls == []
 
 
@@ -198,7 +206,7 @@ def test_unknown_claim_commit_keeps_the_attempt_and_retries_after_the_lease() ->
 
     def claim_then_lose_reply(
         abort_request: AbortExecutionRequest, *, attempt_id: str, lease_ms: int
-    ) -> AbortDispatchClaim | None:
+    ) -> AbortDispatchClaim | AbortClaimRefusal:
         original_claim(abort_request, attempt_id=attempt_id, lease_ms=lease_ms)
         raise SubmissionOutcomeUnknownError("synthetic lost commit acknowledgement")
 
@@ -242,7 +250,7 @@ def test_a_crashed_final_attempt_is_given_up_instead_of_retried() -> None:
     ledger.receive_abort(request)
     for _ in range(MAX_ABORT_DISPATCH_ATTEMPTS):
         claim = ledger.claim_abort(request, attempt_id="abort-lost", lease_ms=2000)
-        assert claim is not None
+        assert isinstance(claim, AbortDispatchClaim)
         clock.advance(milliseconds=2001)
     spent = ledger.abort_dispatch_state(request.submit_intent_id)
     assert spent is not None and spent["attempts"] == MAX_ABORT_DISPATCH_ATTEMPTS

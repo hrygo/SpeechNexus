@@ -17,7 +17,7 @@ from tests.integration.test_gateway_submit_http import (
 )
 from tests.integration.test_gateway_submit_http import gateway as gateway
 from tests.integration.test_gateway_submit_ledger import identity_for
-from tests.integration.test_production_jobs import database as database
+from tests.integration.test_tts_durable_pg import database as database
 
 from speechnexus_backend.speech.domain.binding_disable_intent import DisableExecutionTarget
 from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema import (
@@ -26,13 +26,14 @@ from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema impor
 from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
     GatewayExecutionClient,
 )
-from speechnexus_gateway.domain.abort_intent import AbortExecutionRequest
+from speechnexus_gateway.domain.abort_intent import AbortDispatchClaim, AbortExecutionRequest
 from speechnexus_gateway.domain.canonical import command_digest
 from speechnexus_gateway.infrastructure.abort_authority import verify_abort_authority
 
 pytestmark = [
     pytest.mark.integration,
-    pytest.mark.parametrize("database", ["postgresql"], indirect=True),
+    # These HTTP cases drive the PostgreSQL ledger adapter; InnoDB runs the shared receipt
+    # statements in test_gateway_abort_ledger.py.
 ]
 
 
@@ -118,7 +119,7 @@ def test_gateway_recovers_original_abort_after_commit_boundary(
     gateway.ledger.receive_abort(request)
     if crash_after == "claim":
         claim = gateway.ledger.claim_abort(request, attempt_id="abort-held", lease_ms=2000)
-        assert claim is not None
+        assert isinstance(claim, AbortDispatchClaim)
     path = "/internal/v1/executions/intent-http/abort-intents"
     payload = abort_body(reason="resource_force_disabled")
     response = post(gateway.app, path, payload)

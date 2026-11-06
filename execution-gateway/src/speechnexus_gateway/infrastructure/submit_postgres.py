@@ -18,6 +18,7 @@ import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
 from speechnexus_gateway.domain.abort_intent import (
+    AbortClaimRefusal,
     AbortDispatchClaim,
     AbortDispatchResult,
     AbortExecutionRequest,
@@ -49,7 +50,6 @@ from speechnexus_gateway.infrastructure.abort_intent_sql import (
     claim_abort,
     receive_abort,
     record_abort_dispatch,
-    reject_abort,
 )
 from speechnexus_gateway.infrastructure.abort_recovery_sql import take_due_aborts
 from speechnexus_gateway.infrastructure.barrier_sql import (
@@ -219,7 +219,7 @@ class PostgresSubmissionLedger:
 
     def claim_abort(
         self, request: AbortExecutionRequest, *, attempt_id: str, lease_ms: int
-    ) -> AbortDispatchClaim | None:
+    ) -> AbortDispatchClaim | AbortClaimRefusal:
         return self._run(
             read_only=False,
             work=lambda cursor: claim_abort(
@@ -234,17 +234,8 @@ class PostgresSubmissionLedger:
     def record_abort_dispatch(self, result: AbortDispatchResult) -> bool:
         return self._run(
             read_only=False,
-            work=lambda cursor: record_abort_dispatch(cursor, result),
-        )
-
-    def reject_abort(self, request: AbortExecutionRequest, *, attempt_id: str) -> bool:
-        return self._run(
-            read_only=False,
-            work=lambda cursor: reject_abort(
-                cursor,
-                request,
-                attempt_id=attempt_id,
-                clock=cast(_DeadlineCursor, cursor).clock,
+            work=lambda cursor: record_abort_dispatch(
+                cursor, result, clock=cast(_DeadlineCursor, cursor).clock
             ),
         )
 

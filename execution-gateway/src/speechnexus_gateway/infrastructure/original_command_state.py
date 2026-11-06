@@ -17,6 +17,15 @@ from speechnexus_gateway.infrastructure.original_command_sql import read_origina
 from speechnexus_gateway.infrastructure.submit_sql import SubmitCursor, from_unix_micros
 
 
+def _document_present(value: object) -> bool:
+    """Read the presence flag portably: PostgreSQL yields a boolean, InnoDB 0/1."""
+    if isinstance(value, bool):
+        return value
+    if type(value) is int and value in (0, 1):
+        return value == 1
+    raise ValueError("invalid command presence flag")
+
+
 def _redacted_at(value: object) -> datetime:
     if type(value) is not int or not 0 < value <= 2**53 - 1:
         raise ValueError("invalid persisted instant")
@@ -29,7 +38,8 @@ def read_original_document_state(
     """Read a verified bounded document or legal tombstone, never dispatch authority."""
     try:
         cursor.execute(
-            "SELECT l.lease_state, s.request_document IS NOT NULL AS document_present, "
+            "SELECT l.lease_state, "
+            "CASE WHEN s.request_document IS NULL THEN 0 ELSE 1 END AS document_present, "
             "s.command_redacted_at_us, s.command_deletion_job_id, "
             "s.command_deletion_evidence_digest "
             "FROM submit_intents AS s JOIN admission_leases AS l ON l.lease_id=s.lease_id "
@@ -45,12 +55,12 @@ def read_original_document_state(
             row["command_deletion_job_id"],
             row["command_deletion_evidence_digest"],
         )
-        if row["document_present"] is True:
+        if _document_present(row["document_present"]):
             if any(value is not None for value in tombstone):
                 raise ValueError("command and deletion tombstone coexist")
             read_original_request(cursor, intent, max_document_bytes=MAX_ORIGINAL_COMMAND_BYTES)
             return "verified"
-        if row["document_present"] is not False or any(value is None for value in tombstone):
+        if any(value is None for value in tombstone):
             raise ValueError("command and deletion tombstone disagree")
         redacted_at = _redacted_at(tombstone[0])
         CommandDeletionTombstone(tombstone[1], tombstone[2], redacted_at)

@@ -4,6 +4,7 @@ import logging
 from collections.abc import Callable
 
 from speechnexus_gateway.application.abort_execution import ExecutionAbortService
+from speechnexus_gateway.application.dispatch_metrics import DispatchOutcomeCounters
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.application.recover_executions import MAX_SWEEP_LIMIT
 from speechnexus_gateway.domain.ports import AbortRecoveryQueue
@@ -18,6 +19,11 @@ class AbortRecoveryService:
         self._ingress = ingress
         self._ledger = ledger
         self._abort = abort
+
+    @property
+    def dispatch_outcome_counts(self) -> DispatchOutcomeCounters:
+        """The counters of the one abort service this sweep drives."""
+        return self._abort.dispatch_outcome_counts
 
     def sweep(self, *, limit: int, should_stop: Callable[[], bool] = lambda: False) -> int:
         if type(limit) is not int or not 1 <= limit <= MAX_SWEEP_LIMIT:

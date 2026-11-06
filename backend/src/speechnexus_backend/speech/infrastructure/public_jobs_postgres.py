@@ -329,6 +329,40 @@ class PostgresPublicJobs:
             raise PublicJobUnavailableError
         return _job(rows[0])
 
+    def list_jobs(
+        self,
+        *,
+        workspace_id: str,
+        state: str | None,
+        kind: str | None,
+        after: tuple[int, str] | None,
+        limit: int,
+    ) -> tuple[PublicJob, ...]:
+        # Fetch one lookahead row, never OFFSET or an unbounded in-memory sort.
+        if type(limit) is not int or not 1 <= limit <= 101:
+            raise ValueError("Invalid Job read bound")
+        predicates = ["j.workspace_id = %s"]
+        parameters: list[object] = [identifier(workspace_id)]
+        if state is not None:
+            predicates.append("j.state = %s")
+            parameters.append(state)
+        if kind is not None:
+            predicates.append("j.kind = %s")
+            parameters.append(kind)
+        if after is not None:
+            predicates.append("(j.created_at_us, j.job_id) > (%s, %s)")
+            parameters.extend(after)
+        parameters.append(limit)
+        rows = self._read(
+            "SELECT " + _JOB_COLUMNS + " FROM speech_jobs AS j "
+            "LEFT JOIN speech_job_submissions AS s ON s.job_id = j.job_id "
+            "WHERE "
+            + " AND ".join(predicates)
+            + " ORDER BY j.created_at_us ASC, j.job_id ASC LIMIT %s",
+            tuple(parameters),
+        )
+        return tuple(_job(row) for row in rows)
+
     def cancellation_receipt(self, job_id: str) -> JobCancellationReceipt | None:
         """Read the accepted receipt used by the reconciliation stop adapter."""
         rows = self._read(

@@ -20,6 +20,32 @@ MySQL 测试 adapter 仅复用显式 SQL 与领域裁决验证 InnoDB 行为。
 
 这里的 Job 是协调元数据，不是完整公开 Job 的业务命令/结果存储。后续单元已有公共路由、准入事务、派发器和结果发布组件；公开异步 Job 的生产 planner 仍未装配，见下文。不得把协调事务或单次同步合成证据解释为完整文件转写/异步合成闭环。
 
+## 公开 Job 列表
+
+`GET /v1/nexus/jobs`（`listJobs`）读取已提交的公开事实，按 `(created_at, id)` 升序。
+省略 `workspace_id` 与 `createJob` 一样选择 `workspace-default`；显式值只过滤该 workspace，
+合法但没有记录的 workspace 返回空列表，不将该过滤器用作身份或权限边界。
+`status`/`kind` 按生成契约枚举校验，`queued` 对应内部 `pending`。
+契约有效但当前生产者不产生的 `retry_wait` / voice 系列 kind 返回空列表。
+`limit` 默认 50、有效范围 1–100；0、负数、超限或非整数字面量返回
+400 `invalid_job_request`，不截断或静默忽略。
+
+`next_cursor` 是版本化、确定性编码的最后一行 `(created_at_us, job_id)` 和过滤摘要。
+它绑定 workspace/status/kind；继续分页须保持过滤条件，可调整 limit。
+服务使用严格大于最后一行的 keyset 谓词并多读一行判断 `has_more`，末页游标为 null。
+数据不变时同游标同页；页面是实时读取，跨页不承诺数据库快照隔离。
+合法空页仍为 200；未装配或存储不可用为 503 `job_unavailable`。
+每行复用 `getJob` 的生成契约校验与已提交制品投影。
+
+新增迁移 `0040_public_job_listing` 接在 `0039_public_job_progress` 后，增加
+`speech_jobs_workspace_created_id (workspace_id, created_at_us, job_id)`，旧迁移不变。
+升级只建索引、降级只删该索引，不改历史 Job、授权、协调写事务或恢复语义。
+隔离 PG 验证使用 `tests/integration/test_public_job_list_pg.py`：
+仅读取 `SPEECHNEXUS_TEST_DATABASE_URL`，缺失即失败；随机 schema 在 finally 清理。
+`uv run pytest tests/integration/test_public_job_list_pg.py -q -s` 会打印实际适配器 SQL 的
+首屏/续页 `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)`，不关闭 seqscan。
+未执行该用例时不能宣称索引已被目标环境计划采用。
+
 ## 原子性、身份与恢复
 
 `job_id`、`(operation_id, attempt_id)` 和初始事件身份由唯一约束保护。

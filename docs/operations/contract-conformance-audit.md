@@ -24,6 +24,10 @@
 > 当前可重复门禁见 §10。§3–§8 保留 `62ae4805` 的审计基线事实；复核基线的差异以【复核 3951718e】标注，
 > 汇总见 §3.1（新增 4 个已实现操作）、§6.1（当前 21 条未实现操作）与 §11（8 条漂移引用逐条复核）。
 
+【#471 更新】`listJobs` 已注册（§3.2）；当前注册 **22**、未实现 **20**（§6.1）。
+J1 的 GET 405 问题已修复；历史表保留原时点响应。错误 HTTP 方法的 405 缺口仍显式记录，
+`known_status_gaps` 因新增注册操作由 16 变为 17；本次不修改冻结契约。
+
 ## 1. 结论摘要
 
 审计基线 `62ae4805`：契约声明 39 条路径、**42 个操作**；后端注册 **17 个**，**25 个未注册**。
@@ -135,6 +139,17 @@
 `streamJobEvents` 的 `410`（`event_history_expired`）在实现中没有产生路径：
 `_open_stream` 只在任务不存在或不可读时返回 404/503，成功分支是 200 事件流；实现中没有 410 分支。这是本次复核新发现的一处"声明未使用"。
 
+### 3.2 #471 新增 listJobs
+
+`GET /v1/nexus/jobs` 已注册到 `jobs.py::create_job_router.list_jobs` / `_list`，
+经 `PublicJobs.list_jobs` 和 `PostgresPublicJobs.list_jobs` 读取持久事实。
+200 返回生成契约校验的 `JobList`；非法枚举、limit、workspace 标识或游标返回
+400 `invalid_job_request`；未装配或存储不可读为 503 `job_unavailable`。
+401 的未实现边界沿用原审计；错误方法仍由框架返回 405。
+分页、默认 workspace、游标作用域及迁移见 [生产 Job 文档](../components/production-jobs.md#公开-job-列表)。
+定向 HTTP/应用层用例见 `tests/unit/backend/test_public_job_list.py`；
+隔离持久与 EXPLAIN 用例见 `tests/integration/test_public_job_list_pg.py`。
+
 ## 4. 未声明返回：逐条证据
 
 ### 4.1 createTranscription → 404（契约未声明 404）
@@ -244,7 +259,7 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
 
 审计基线 `62ae4805` 下契约声明但后端未注册的操作。运行时列是基线实测（同一应用、无服务依赖）。
 【复核 3951718e】`listVoices`/`getVoiceRevision`/`retryJob`/`streamJobEvents` 已实现并移出本表（§3.1），
-当前剩余 21 条见 §6.1。本表保留基线编号、基线契约声明与基线响应；已实现行在响应列标注，当前声明见 §3.1。
+当前剩余 20 条见 §6.1。本表保留基线编号、基线契约声明与基线响应；已实现行在响应列标注，当前声明见 §3.1/§3.2。
 
 | # | 操作 | 路由 | 契约声明 | 运行时响应 |
 | --- | --- | --- | --- | --- |
@@ -253,7 +268,7 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
 | 20 | retireVoiceRevision | POST /v1/nexus/voices/{voice_id}/revisions/{revision}/retirements | 200,400,401,404,409,422 | 404 默认 |
 | 21 | listPronunciationSets | GET /v1/nexus/pronunciation-sets | 200,401,503 | **400 pronunciation_invalid_request** |
 | 22 | createPronunciationRevision | POST /v1/nexus/pronunciation-sets | 201,400,401,409,422,429 | **400 pronunciation_invalid_request** |
-| 23 | listJobs | GET /v1/nexus/jobs | 200,400,401,503 | **405 job_method_not_allowed** |
+| 23 | listJobs | GET /v1/nexus/jobs | 200,400,401,503 | 基线 **405 job_method_not_allowed**；#471 已实现，见 §3.2 |
 | 24 | retryJob | POST /v1/nexus/jobs/{job_id}/retries | 202,401,404,409,422 | **【已实现】** 见 §3.1 |
 | 25 | streamJobEvents | GET /v1/nexus/jobs/{job_id}/events | 200,401,404,410 | **【已实现】** 见 §3.1 |
 | 26 | getOperation | GET /v1/nexus/operations/{operation_id} | 200,401,404,503 | 404 默认 |
@@ -285,17 +300,17 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
 `backend/src/speechnexus_backend/workbench/infrastructure/public_speech_render_jobs.py::PublicSpeechRenderJobs.read_job` 调用 `GET /v1/nexus/jobs/{job_id}`（后者已实现）。
 `docs/archive/plans/2026-10-24-team-c-goal.md:78` 也记录了"音色运行时尚未实现这些路由"这一已知缺口。
 
-### 6.1 复核基线：当前未实现操作（21 条）
+### 6.1 当前未实现操作（20 条）
 
-`3951718e` 下契约声明但后端未注册的操作。编号沿用 §6；运行时响应由同一 `create_app(settings=...)` 应用实测
-（§7.1），契约声明沿用 §6 表中对应行。`retryJob`/`streamJobEvents`/`listVoices`/`getVoiceRevision` 已移出本表。
+在 `3951718e` 的 21 条未注册操作上移除 #471 已实现的 `listJobs`。编号沿用 §6；
+其余路由与历史响应不变（§7.1），契约声明沿用 §6 表中对应行。
+`retryJob`/`streamJobEvents`/`listVoices`/`getVoiceRevision`/`listJobs` 已移出本表。
 
 | # | 操作 | 路由 | 运行时响应 |
 | --- | --- | --- | --- |
 | 20 | retireVoiceRevision | POST /v1/nexus/voices/{voice_id}/revisions/{revision}/retirements | 404 默认 |
 | 21 | listPronunciationSets | GET /v1/nexus/pronunciation-sets | **400 pronunciation_invalid_request** |
 | 22 | createPronunciationRevision | POST /v1/nexus/pronunciation-sets | **400 pronunciation_invalid_request** |
-| 23 | listJobs | GET /v1/nexus/jobs | **405 job_method_not_allowed** |
 | 26 | getOperation | GET /v1/nexus/operations/{operation_id} | 404 默认 |
 | 27 | cancelOperation | POST /v1/nexus/operations/{operation_id}/cancellations | 404 默认 |
 | 28 | createRealtimeSession | POST /v1/nexus/realtime/sessions | 404 默认 |
@@ -414,7 +429,7 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
 | A2 | 同上 + `If-None-Match` | 304，空体 | **契约未声明 304** |
 | A3 | GET /v1/nexus/artifacts/artifact-demo/content，`Range: bytes=0-1` | 416 `artifact_range_not_satisfiable` | **契约未声明 416** |
 | A4 | GET /v1/nexus/artifacts/missing-one | 404 `artifact_not_found` | 契约声明 404 |
-| J1 | GET /v1/nexus/jobs | 405 `job_method_not_allowed` | **listJobs 未实现**，与 POST 同路径 |
+| J1 | GET /v1/nexus/jobs | 基线 405 `job_method_not_allowed` | #471 已实现：当前 200/400/503，见 §3.2；该行保留基线事实 |
 | J2 | POST /v1/nexus/jobs/job-demo/retries | 404 `job_not_found` | 未实现；错误码误导为"任务不存在"（复核基线已注册，见 §7.1 R4） |
 | J3 | GET /v1/nexus/jobs/job-demo/events | 404 `job_not_found` | 未实现；SSE 消费者拿到 JSON（复核基线已注册，见 §7.1 R5） |
 | R1 | GET /v1/nexus/realtime/sessions/s-1 | 404 `{"detail":"Not Found"}` | 未注册 |
@@ -467,6 +482,7 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
    避免消费者把"未实现"误判为"参数错误/资源不存在"。
    **【#473 已完成】**：21 条统一返回 `503 operation_not_implemented`（`retryable: false`），与
    `backend_unavailable`、`*_not_found`、`method_not_allowed` 均可区分；实测与理由见 §6.2。
+   【#471】`listJobs` 已实现，J1 从此项移除；其余未实现路由仍见 §6.1。
 3. **P1**：补齐 `getArtifact`/`downloadArtifactContent` 的 304、416、503 声明；补齐 `cancelJob` 的 400、
    `createTranscription` 的 404。
 4. **P1**：为 `/v1/audio/transcriptions`、`/v1/models`、`/v1/nexus/capabilities` 等路径补 405 声明与统一错误体，
@@ -535,7 +551,7 @@ Python/TypeScript 绑定与打包 HTTP 投影由源重新生成；严格消费�
    的错误码映射；
    框架对错误方法产生的 405 单独计入。无法静态求值的 `status_code` 或运行时错误码列入
    「UNDETERMINED」，只报告可能值，不猜造、不作为门禁失败。
-4. 显式基线：`KNOWN_UNIMPLEMENTED_OPERATIONS` 固定当前 21 条未实现操作并逐条写明原因；
+4. 显式基线：`KNOWN_UNIMPLEMENTED_OPERATIONS` 固定当前 20 条未实现操作并逐条写明原因；
    `KNOWN_UNDECLARED_STATUSES` 经 #462 收缩为空（原 16 个操作 / 23 个状态对），
    任何新增未声明状态都必须修复，不能加入旧基线。
    【#473】未实现基线不再以「未注册」为证据：门禁解析
@@ -562,6 +578,10 @@ uv run pytest tests/unit/test_route_conformance.py tests/contract/test_ci_workfl
 `known_status_gaps` 16 个操作，退出码 0。
 【#473】`934855c3` + #473 执行结果：`findings: []`、声明 42 个操作 / 注册 42 个、
 `known_unimplemented` 21 条（全部 `observed=405,503`）、`known_status_gaps` 0，退出码 0。
+
+#471 候选执行结果：`findings: []`、`known_unimplemented` 20 条、
+`known_status_gaps` 17 个操作，退出码 0，无 stale 条目。新增的状态基线仅为
+已注册 `listJobs` 继承的框架错误方法 405，GET 的成功/参数/存储分支为 200/400/503。
 
 CI 将 `make contracts-route-conformance` 作为 `python_contracts` 作业
 （`Python: lint, types and contract compatibility`）的一步，在 Ruff/mypy 前、无 `CONTRACT_BASE_REF` 条件下执行；

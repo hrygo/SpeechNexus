@@ -56,7 +56,7 @@ FRAMEWORK_PATHS = frozenset({"/openapi.json", "/docs", "/docs/oauth2-redirect", 
 # ships. A new omission must fail instead of silently joining the baseline.
 # #432/#436 implemented retryJob and streamJobEvents, and #442/#443 implemented
 # listVoices and getVoiceRevision after the original audit, so the audit's 25
-# operations are 21 here; a stale entry now fails the check. #473 replaced the
+# operations became 21, then #471 implemented listJobs: 20 remain. #473 replaced the
 # framework 404/405/400 replies with the placeholder, so "registered" is no
 # longer evidence of implementation: the baseline is checked against the
 # placeholder table and the single-entry unimplemented error map instead.
@@ -66,8 +66,6 @@ KNOWN_UNIMPLEMENTED_OPERATIONS: dict[str, str] = {
     # PronunciationIngress and rewritten to 400 invalid_request.
     "listPronunciationSets": "pronunciation collection read route is not implemented",
     "createPronunciationRevision": "pronunciation collection write route is not implemented",
-    # GET shares /v1/nexus/jobs with createJob and currently receives 405.
-    "listJobs": "public Job list route is not implemented",
     # Operation coordination is declared but has no producer.
     "getOperation": "operation read route is not implemented",
     "cancelOperation": "operation cancellation route is not implemented",

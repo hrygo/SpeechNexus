@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import re
 import uuid
@@ -39,6 +41,37 @@ from speechnexus_backend.speech.domain.publications import Publication, Publicat
 
 DEFAULT_WORKSPACE = "workspace-default"
 _REQUIRED_TASK: dict[JobKind, str] = {"asr": "asr_file", "tts": "tts_file"}
+
+
+def _encode_list_cursor(created_at_us: int, job_id: str, scope: str) -> str:
+    document = json.dumps([1, created_at_us, job_id, scope], separators=(",", ":"))
+    return base64.urlsafe_b64encode(document.encode("ascii")).decode("ascii").rstrip("=")
+
+
+def _list_cursor(cursor: str, scope: str) -> tuple[int, str]:
+    try:
+        if not 1 <= len(cursor) <= 512:
+            raise ValueError
+        data = json.loads(
+            base64.b64decode(cursor + "=" * (-len(cursor) % 4), altchars=b"-_", validate=True)
+        )
+        if (
+            not isinstance(data, list)
+            or len(data) != 4
+            or type(data[0]) is not int
+            or data[0] != 1
+            or type(data[1]) is not int
+            or not 0 <= data[1] <= 253402300799999999
+            or not isinstance(data[2], str)
+            or data[3] != scope
+        ):
+            raise ValueError
+        identifier(data[2])
+        if _encode_list_cursor(data[1], data[2], scope) != cursor:
+            raise ValueError
+        return data[1], data[2]
+    except ValueError, TypeError, binascii.Error, UnicodeError, RecursionError:
+        raise ValueError("Invalid Job list cursor") from None
 
 
 class UnsupportedJobKindError(ValueError):
@@ -196,6 +229,18 @@ class PublicJobStore(Protocol):
     def create(self, job: NewPublicJob) -> JobCreateResult: ...
 
     def get(self, job_id: str) -> PublicJob | None: ...
+
+    def list_jobs(
+        self,
+        *,
+        workspace_id: str,
+        state: str | None,
+        kind: str | None,
+        after: tuple[int, str] | None,
+        limit: int,
+    ) -> tuple[PublicJob, ...]:
+        """Read strictly after (created_at_us, job_id), in ascending key order."""
+        ...
 
     def intent_document(self, job_id: str) -> JobIntent | None:
         """The immutable canonical intent of an accepted Job, or None when redacted."""
@@ -439,6 +484,31 @@ class PublicJobs:
         if job is None or job.job_id != job_id:
             raise PublicJobNotFoundError
         return job
+
+    def list_jobs(
+        self,
+        *,
+        workspace_id: str = DEFAULT_WORKSPACE,
+        state: str | None = None,
+        kind: str | None = None,
+        cursor: str | None = None,
+        limit: int = 50,
+    ) -> tuple[tuple[PublicJob, ...], str | None]:
+        """Live keyset pages; the cursor freezes the ordering key and filter scope."""
+        identifier(workspace_id)
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("Invalid Job page size")
+        scope = canonical_digest([workspace_id, state, kind])
+        after = None if cursor is None else _list_cursor(cursor, scope)
+        rows = self._store.list_jobs(
+            workspace_id=workspace_id, state=state, kind=kind, after=after, limit=limit + 1
+        )
+        page = rows[:limit]
+        next_cursor = None
+        if len(rows) > limit:
+            last = page[-1]
+            next_cursor = _encode_list_cursor(last.created_at_us, last.job_id, scope)
+        return page, next_cursor
 
     def retry(
         self,

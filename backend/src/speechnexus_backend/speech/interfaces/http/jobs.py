@@ -124,9 +124,7 @@ def public_job(job: PublicJob, artifacts: Sequence[JobArtifactFact] = ()) -> dic
         "profile": configuration.get("profile"),
         "execution_revision": str(job.submission.execution_revision),
         "progress": {
-            "unit": (
-                job.submission.progress_unit if job.progress is None else job.progress.unit
-            ),
+            "unit": (job.submission.progress_unit if job.progress is None else job.progress.unit),
             "completed": 0 if job.progress is None else job.progress.completed,
             "total": (
                 job.submission.progress_total if job.progress is None else job.progress.total
@@ -173,14 +171,17 @@ def public_event(
         progress = event.progress
         if progress is None:
             raise PublicJobUnavailableError
-        kind, data = "job.progress", {
-            "status": "running",
-            "progress": {
-                "unit": progress.unit,
-                "completed": progress.completed,
-                "total": progress.total,
+        kind, data = (
+            "job.progress",
+            {
+                "status": "running",
+                "progress": {
+                    "unit": progress.unit,
+                    "completed": progress.completed,
+                    "total": progress.total,
+                },
             },
-        }
+        )
     elif event.state == "pending":
         kind, data = "job.queued", {"status": "queued"}
     elif event.state == "running":

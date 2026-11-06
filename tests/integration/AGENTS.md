@@ -48,9 +48,8 @@ if not url:
     pytest.fail("Configure an isolated PostgreSQL DSN; skip is not migration evidence")
 
 schema = "sn_retry_mig_" + uuid.uuid4().hex[:12]
-engine = create_engine(
-    url.replace("postgresql://", "postgresql+psycopg://", 1), poolclass=NullPool
-)
+engine_url = url.replace("postgresql://", "postgresql+psycopg://", 1)
+engine = create_engine(engine_url, poolclass=NullPool)
 admin = psycopg.connect(url, autocommit=True)
 try:
     admin.execute(f'CREATE SCHEMA "{schema}"')
@@ -68,9 +67,8 @@ PR #445 修正前的 `test_public_job_progress_migration_pg.py` 使用了被修�
 ```python
 URL = "postgresql:///sn_profile_it"
 
-engine = create_engine(
-    URL.replace("postgresql://", "postgresql+psycopg://", 1), poolclass=NullPool
-)
+engine_url = URL.replace("postgresql://", "postgresql+psycopg://", 1)
+engine = create_engine(engine_url, poolclass=NullPool)
 admin = psycopg.connect(URL, autocommit=True)
 ```
 

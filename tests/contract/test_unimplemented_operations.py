@@ -27,6 +27,7 @@ from speechnexus_backend.speech.interfaces.http.unimplemented import (
     UNIMPLEMENTED_OPERATIONS,
     assert_placeholder_ownership,
     create_unimplemented_router,
+    normalize_template,
 )
 from speechnexus_backend.speech.interfaces.http.unimplemented_errors import (
     OPERATION_NOT_IMPLEMENTED,
@@ -57,6 +58,46 @@ PREDECLARED_SERVICE_UNAVAILABLE = frozenset(
 CASES = sorted(
     (operation, method, path) for operation, (method, path) in UNIMPLEMENTED_OPERATIONS.items()
 )
+
+
+async def _raw_asgi_status(app: Any, path: str, *, raw_path: bytes | None = None) -> int:
+    """Call the app with an exact ASGI path, bypassing HTTP-client path cleanup."""
+    response_status: int | None = None
+    request_sent = False
+
+    async def receive() -> dict[str, Any]:
+        nonlocal request_sent
+        if request_sent:
+            return {"type": "http.disconnect"}
+        request_sent = True
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message: dict[str, Any]) -> None:
+        nonlocal response_status
+        if message["type"] == "http.response.start":
+            response_status = message["status"]
+
+    await app(
+        {
+            "type": "http",
+            "asgi": {"version": "3.0", "spec_version": "2.3"},
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": path,
+            "raw_path": raw_path if raw_path is not None else path.encode(),
+            "query_string": b"",
+            "root_path": "",
+            "headers": [(b"host", b"localhost")],
+            "client": ("127.0.0.1", 12345),
+            "server": ("localhost", 80),
+            "state": {},
+        },
+        receive,
+        send,
+    )
+    assert response_status is not None
+    return response_status
 
 
 def declared_operations() -> list[tuple[str, str, str]]:
@@ -329,17 +370,21 @@ def test_the_placeholder_router_alone_owns_its_routes() -> None:
 
 def test_a_real_route_cannot_share_a_placeholder_method() -> None:
     api = FastAPI()
-    api.include_router(create_unimplemented_router())
 
     @api.get("/v1/nexus/voice-drafts/{draft_id}", include_in_schema=False)
     async def shadowed(draft_id: str) -> dict[str, str]:
         return {"draft_id": draft_id}
 
+    # Adding the placeholder router last does not resolve duplicate ownership.
+    api.include_router(create_unimplemented_router())
     with pytest.raises(RuntimeError) as raised:
         assert_placeholder_ownership(api.routes)
     # Exactly the duplicated template is reported; the other twenty placeholders
     # must not be swept in, or the assertion would pass on a wholesale failure.
-    listed = raised.value.args[0].split("include the placeholder router last: ", 1)[1]
+    message = raised.value.args[0]
+    assert "real routes must not share a method+template with a placeholder" in message
+    assert "placeholders must be the only owner" in message
+    listed = message.split("placeholders must be the only owner: ", 1)[1]
     assert listed == "GET /v1/nexus/voice-drafts/{draft_id}"
 
 
@@ -362,7 +407,7 @@ def test_a_renamed_or_converted_parameter_still_collides(template: str) -> None:
 
     with pytest.raises(RuntimeError) as raised:
         assert_placeholder_ownership(api.routes)
-    listed = raised.value.args[0].split("include the placeholder router last: ", 1)[1]
+    listed = raised.value.args[0].split("placeholders must be the only owner: ", 1)[1]
     # The message keeps the template the placeholder table declares, not the
     # competing spelling, so the report names the operation that must move.
     assert listed == "GET /v1/nexus/voice-drafts/{draft_id}"
@@ -395,7 +440,7 @@ def test_a_trailing_slash_alias_still_collides(template: str) -> None:
 
     with pytest.raises(RuntimeError) as raised:
         assert_placeholder_ownership(api.routes)
-    listed = raised.value.args[0].split("include the placeholder router last: ", 1)[1]
+    listed = raised.value.args[0].split("placeholders must be the only owner: ", 1)[1]
     # The report keeps the template the placeholder table declares.
     assert listed == "GET /v1/nexus/voice-drafts/{draft_id}"
 
@@ -428,30 +473,99 @@ async def test_a_trailing_slash_route_is_shadowed_at_runtime() -> None:
 
 
 @pytest.mark.parametrize(
-    "template",
+    ("template", "scope_path", "raw_path"),
     [
-        # Measured 404 on the pinned framework: no redirect, no shared resource.
-        "/v1/nexus/voice-drafts//{draft_id}",
-        "/v1/nexus/VOICE-DRAFTS/{draft_id}",
-        "/v1/nexus/voice-drafts/{draft_id}/.",
+        # A different route spelling must remain distinct, and the exact raw
+        # ASGI request must stay a framework 404 against placeholders alone.
+        (
+            "/v1/nexus/voice-drafts//{draft_id}",
+            "/v1/nexus/voice-drafts//synthetic-id",
+            b"/v1/nexus/voice-drafts//synthetic-id",
+        ),
+        (
+            "/v1/nexus/VOICE-DRAFTS/{draft_id}",
+            "/v1/nexus/VOICE-DRAFTS/synthetic-id",
+            b"/v1/nexus/VOICE-DRAFTS/synthetic-id",
+        ),
+        (
+            "/v1/nexus/voice-drafts/{draft_id}/.",
+            "/v1/nexus/voice-drafts/synthetic-id/.",
+            b"/v1/nexus/voice-drafts/synthetic-id/.",
+        ),
+        (
+            "//v1/nexus/voice-drafts/{draft_id}",
+            "//v1/nexus/voice-drafts/synthetic-id",
+            b"//v1/nexus/voice-drafts/synthetic-id",
+        ),
+        # ASGI servers decode %2F before routing, exposing an extra segment.
+        (
+            "/v1/nexus/voice-drafts/{draft_id}/{child_id}",
+            "/v1/nexus/voice-drafts/synthetic-id/child",
+            b"/v1/nexus/voice-drafts/synthetic-id%2Fchild",
+        ),
     ],
 )
-def test_paths_the_framework_does_not_alias_are_not_folded(template: str) -> None:
-    """Only real aliases are folded; over-normalising would hide distinct routes.
+async def test_paths_the_framework_does_not_alias_are_not_folded(
+    template: str, scope_path: str, raw_path: bytes
+) -> None:
+    """Distinct paths stay 404 against placeholders and don't trip the guard.
 
-    Repeated internal slashes, case and dot segments are not rewritten by the
-    application (all measured 404), so treating them as the placeholder would
-    report a collision that does not exist. Normalisation that collapses or
-    lowercases them turns this test red.
+    Exact ASGI scopes avoid HTTP-client normalization of dot segments and
+    leading slashes. These assertions pin the observed 404 for each boundary;
+    treating one of these templates as a placeholder alias must fail below.
     """
-    api = FastAPI()
-    api.include_router(create_unimplemented_router())
+    placeholder_app = FastAPI()
+    placeholder_app.include_router(create_unimplemented_router())
+    assert await _raw_asgi_status(placeholder_app, scope_path, raw_path=raw_path) == 404
+
+    candidate_app = FastAPI()
+    candidate_app.include_router(create_unimplemented_router())
 
     async def distinct(**params: str) -> dict[str, str]:
         return params
 
-    api.add_api_route(template, distinct, methods=["GET"], include_in_schema=False)
-    assert_placeholder_ownership(api.routes)
+    candidate_app.add_api_route(template, distinct, methods=["GET"], include_in_schema=False)
+    assert_placeholder_ownership(candidate_app.routes)
+
+
+async def test_slash_only_templates_keep_root_and_double_slash_distinct() -> None:
+    assert normalize_template("/") == "/"
+    assert normalize_template("//") == "//"
+
+    app = FastAPI()
+
+    @app.get("/")
+    async def root() -> dict[str, bool]:
+        return {"root": True}
+
+    assert await _raw_asgi_status(app, "/") == 200
+    assert await _raw_asgi_status(app, "//") == 404
+
+
+async def test_a_non_placeholder_method_can_own_the_slash_suffixed_route() -> None:
+    app = create_app(settings=_settings())
+
+    async def delete_draft(draft_id: str) -> dict[str, str]:
+        return {"deleted": draft_id}
+
+    app.add_api_route(
+        "/v1/nexus/voice-drafts/{draft_id}/",
+        delete_draft,
+        methods=["DELETE"],
+        include_in_schema=False,
+    )
+    assert_placeholder_ownership(app.router.routes)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost"
+    ) as http:
+        canonical = await http.delete("/v1/nexus/voice-drafts/synthetic-id")
+        slash_suffixed = await http.delete("/v1/nexus/voice-drafts/synthetic-id/")
+
+    assert canonical.status_code == 405
+    assert canonical.headers["allow"] == "GET, PATCH"
+    assert slash_suffixed.status_code == 200
+    assert slash_suffixed.json() == {"deleted": "synthetic-id"}
 
 
 def test_served_openapi_does_not_advertise_placeholders() -> None:

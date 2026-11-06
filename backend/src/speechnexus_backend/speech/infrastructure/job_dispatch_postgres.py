@@ -133,6 +133,17 @@ class PostgresDispatchStateStore:
         identifier(observer)
         return await asyncio.to_thread(self._record_cancellation_not_submitted, job_id, observer)
 
+    async def record_progress(
+        self, claim: ClaimedJob, *, unit: str, completed: int, total: int | None
+    ) -> bool:
+        if unit not in ("audio_ms", "text_codepoints", "items"):
+            raise ValueError("Progress unit is invalid")
+        if type(completed) is not int or completed < 0:
+            raise ValueError("Progress value is invalid")
+        if total is not None and (type(total) is not int or total < completed):
+            raise ValueError("Progress total is invalid")
+        return await asyncio.to_thread(self._record_progress, claim, unit, completed, total)
+
     async def finish(
         self,
         claim: ClaimedJob,
@@ -212,6 +223,72 @@ class PostgresDispatchStateStore:
             return None
         return replace(claim, lease_expires_at_us=int(rows[0]["claim_expires_at_us"]))
 
+    def _record_progress(
+        self, claim: ClaimedJob, unit: str, completed: int, total: int | None
+    ) -> bool:
+        """Append one strictly advancing progress fact while this claim owns the Job.
+
+        The row is committed only for a running public Job whose declared unit
+        matches the fact. The job row lock serialises this append with terminal
+        transitions; the event guard rejects a terminal Job, a non-advancing
+        value or an out-of-order sequence even if a writer bypasses this check.
+        """
+        job = claim.job
+        query = (
+            "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) "
+            "* 1000000 AS BIGINT) AS now_us) "
+            "SELECT c.job_id FROM coordination_jobs AS c CROSS JOIN clock "
+            "WHERE c.job_id = %s AND c.claim_owner_id = %s AND c.claim_version = %s "
+            "AND c.job_state = 'pending' AND c.claim_expires_at_us > clock.now_us "
+            "FOR UPDATE OF c"
+        )
+        try:
+            with (
+                self._pool.connection(timeout=self._timeout) as connection,
+                connection.transaction(),
+            ):
+                connection.execute(
+                    "SELECT set_config('statement_timeout', %s, true)",
+                    (str(max(1, int(self._timeout * 1000))),),
+                )
+                owned = connection.execute(
+                    query, (job.job_id, claim.worker_id, claim.claim_version)
+                ).fetchone()
+                if owned is None:
+                    return False
+                current = connection.execute(
+                    "SELECT j.state, s.progress_unit FROM speech_jobs AS j "
+                    "JOIN speech_job_submissions AS s ON s.job_id = j.job_id "
+                    "WHERE j.job_id = %s FOR UPDATE OF j",
+                    (job.job_id,),
+                ).fetchone()
+                if (
+                    current is None
+                    or current["state"] != "running"
+                    or current["progress_unit"] != unit
+                ):
+                    return False
+                latest = connection.execute(
+                    "SELECT COALESCE(MAX(event_seq), -1) AS seq, "
+                    "COALESCE(MAX(progress_completed) FILTER "
+                    "(WHERE kind = 'progress'), -1) AS completed "
+                    "FROM speech_job_events WHERE job_id = %s",
+                    (job.job_id,),
+                ).fetchone()
+                if latest is None or completed <= int(latest["completed"]):
+                    return False
+                connection.execute(
+                    "INSERT INTO speech_job_events "
+                    "(job_id, event_seq, state, occurred_at_us, kind, progress_unit, "
+                    "progress_completed, progress_total) VALUES (%s, %s, 'running', "
+                    "CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT), "
+                    "'progress', %s, %s, %s)",
+                    (job.job_id, int(latest["seq"]) + 1, unit, completed, total),
+                )
+            return True
+        except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
+            raise DispatchUnavailableError("Dispatch progress storage failed") from None
+
     def _record_cancellation_not_submitted(self, job_id: str, observer: str) -> None:
         query = (
             "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 "
@@ -287,9 +364,10 @@ class PostgresDispatchStateStore:
                     raise _TerminalGuardLostError
                 evented = connection.execute(
                     "INSERT INTO speech_job_events "
-                    "(job_id, event_seq, state, occurred_at_us) VALUES (%s, %s, %s, %s) "
-                    "RETURNING job_id",
-                    (job.job_id, job.status_version, target, int(changed["now_us"])),
+                    "(job_id, event_seq, state, occurred_at_us) "
+                    "SELECT %s, COALESCE(MAX(event_seq), -1) + 1, %s, %s "
+                    "FROM speech_job_events WHERE job_id = %s RETURNING job_id",
+                    (job.job_id, target, int(changed["now_us"]), job.job_id),
                 ).fetchone()
                 if evented is None:
                     raise _TerminalGuardLostError

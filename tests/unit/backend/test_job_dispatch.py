@@ -25,6 +25,7 @@ from speechnexus_backend.speech.domain.job_dispatch import (
     DispatchUnavailableError,
     ExecutionSubmission,
     PublishedResult,
+    generated_audio_ms,
     submit_intent_identity,
 )
 from speechnexus_backend.speech.infrastructure.execution_gateway_adapter import (
@@ -70,6 +71,7 @@ class States:
         self.jobs = {job.job_id: job}
         self.events: list[tuple[str, int, str]] = []
         self.not_submitted: list[tuple[str, str]] = []
+        self.progress: list[tuple[str, str, int, int | None]] = []
 
     async def reload(self, job_id: str) -> DispatchJob:
         return self.jobs[job_id]
@@ -90,6 +92,14 @@ class States:
 
     async def record_cancellation_not_submitted(self, job_id: str, *, observer: str) -> None:
         self.not_submitted.append((job_id, observer))
+
+    async def record_progress(
+        self, claim: ClaimedJob, *, unit: str, completed: int, total: int | None
+    ) -> bool:
+        if any(item[2] >= completed for item in self.progress):
+            return False
+        self.progress.append((claim.job.job_id, unit, completed, total))
+        return True
 
     async def finish(
         self,
@@ -169,6 +179,7 @@ class GatewayState:
         first_submit_unknown: bool = False,
         submit_status: int = 200,
         response_submit_id: str | None = None,
+        generated_samples: list[int] | None = None,
     ) -> None:
         self.terminal = terminal
         self.error_code = error_code
@@ -176,8 +187,10 @@ class GatewayState:
         self.first_submit_unknown = first_submit_unknown
         self.submit_status = submit_status
         self.response_submit_id = response_submit_id
+        self.generated_samples = generated_samples
         self.submit_calls = 0
         self.query_calls = 0
+        self.status_reads = 0
         self.last_body: dict[str, Any] | None = None
 
     def status(self, state: str) -> dict[str, Any]:
@@ -190,6 +203,17 @@ class GatewayState:
         }
         if self.error_code is not None:
             document["error_code"] = self.error_code
+        if self.generated_samples is not None:
+            samples = self.generated_samples[
+                min(self.status_reads, len(self.generated_samples) - 1)
+            ]
+            document["output_watermark"] = {
+                "output_stream_id": "stream-synthetic",
+                "generated_pcm_samples": samples,
+                "sample_rate_hz": 48_000,
+                "hard_output_ceiling_samples": 480_000,
+            }
+        self.status_reads += 1
         return document
 
     def handler(self, request: httpx.Request) -> httpx.Response:
@@ -334,6 +358,52 @@ async def test_claimed_job_runs_to_success_and_keeps_a_reference_only() -> None:
         (job.job_id, 2, "succeeded"),
     ]
     assert publisher.calls and publisher.calls[0][0] == job.job_id
+
+
+async def test_generated_audio_watermark_is_recorded_as_monotonic_progress() -> None:
+    job = _job()
+    states = States(job)
+    gateway = GatewayState(queries_before_terminal=2, generated_samples=[0, 48_000, 96_000])
+    dispatcher = _dispatcher(
+        Queue([[ClaimedJob(job, "worker-synthetic", 1, NOW + 30_000_000)]]),
+        states,
+        gateway,
+        Publisher(),
+    )
+
+    batch = await dispatcher.run_once("worker-synthetic")
+
+    assert batch.succeeded == 1
+    # 48000 and 96000 samples at 48 kHz are 1000 ms and 2000 ms; the repeated
+    # terminal watermark is not written again.
+    assert states.progress == [
+        (job.job_id, "audio_ms", 1_000, None),
+        (job.job_id, "audio_ms", 2_000, None),
+    ]
+
+
+def test_generated_audio_ms_requires_a_complete_watermark() -> None:
+    assert generated_audio_ms({"output_watermark": None}) is None
+    assert generated_audio_ms({}) is None
+    assert generated_audio_ms({"output_watermark": {"generated_pcm_samples": 1}}) is None
+    assert (
+        generated_audio_ms(
+            {"output_watermark": {"generated_pcm_samples": -1, "sample_rate_hz": 48_000}}
+        )
+        is None
+    )
+    assert (
+        generated_audio_ms(
+            {"output_watermark": {"generated_pcm_samples": 1, "sample_rate_hz": 44_100}}
+        )
+        is None
+    )
+    assert (
+        generated_audio_ms(
+            {"output_watermark": {"generated_pcm_samples": 48_001, "sample_rate_hz": 48_000}}
+        )
+        == 1_000
+    )
 
 
 async def test_reclaim_after_a_crash_queries_the_original_identity_once() -> None:

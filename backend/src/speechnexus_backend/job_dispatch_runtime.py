@@ -359,7 +359,8 @@ class JobDispatchRuntime:
                     raise ValueError("Dispatch requires a non-owner role without DDL")
             for statement in (
                 "SELECT job_id FROM speech_jobs LIMIT 0",
-                "SELECT job_id, event_seq, state, occurred_at_us FROM speech_job_events LIMIT 0",
+                "SELECT job_id, event_seq, state, occurred_at_us, kind, progress_unit, "
+                "progress_completed, progress_total FROM speech_job_events LIMIT 0",
                 "SELECT job_id FROM coordination_jobs LIMIT 0",
                 "SELECT operation_id, request_document FROM admission_operations LIMIT 0",
                 "SELECT artifact_id FROM speech_artifacts LIMIT 0",

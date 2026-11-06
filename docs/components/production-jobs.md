@@ -216,18 +216,45 @@ worker 与派发器共享同一条 gateway 契约和停止服务；它不会创�
 不等于自身、索引 `speech_jobs_retry_of`，替换后的状态守卫禁止改写该列。公开 `Job`
 形状不变（契约对象附加属性关闭），血缘只在持久层可查。同一幂等键重放返回原新 Job，
 不产生第二次业务执行；同一键换父任务、或与创建入口的同一键交叉使用返回
-`409 idempotency_conflict`。迁移 `0037_public_job_retries`（后接 `0038_voice_catalogue_reader`）的 down 在存在
-重试血缘行时拒绝删除列，并先恢复 `0034` 的状态守卫。
+`409 idempotency_conflict`。迁移 `0037_public_job_retries`（后接
+`0038_voice_catalogue_reader`、`0039_public_job_progress`）依次叠加；`0037` down 在存在
+重试血缘行时拒绝删除列，并先恢复 `0034` 的状态守卫；`0039` down 在存在进度事实时拒绝
+删除进度列。
 
 `GET /v1/nexus/jobs/{job_id}/events` 只读地回放持久事件：按
 `speech_job_events.event_seq` 升序，线路 `id` 为 `event_seq + 1`（契约
 `EventSequence` 从 1 起），`data` 为契约 `JobEvent`。无 `Last-Event-ID` 时从最早事件读起；
 续读以 `Last-Event-ID - 1` 为游标，非法值返回 `400 invalid_job_request`，未知 Job 返回
 `404 job_not_found`。事件行与对应状态变更在同一事务提交，因此终态事件只出现一次；
-读到终态且当前页为空后流关闭，已消费的终态不会重放。进度没有持久事实，流不发送
-`job.progress`，`Job` 投影中的 `progress.completed` 仍为 0。契约只为历史过期声明
+读到终态且当前页为空后流关闭，已消费的终态不会重放。契约只为历史过期声明
 `410 event_history_expired`；当前实现没有事件保留或过期策略，因此永不返回该状态，客户端仍须
 按契约在收到 `410` 时改读当前 Job 状态。
+
+### 进度语义
+
+进度是持久的观测事实，不是按配置推算的百分比。唯一事实来源是执行网关返回的
+`ExecutionStatusResponse.output_watermark.generated_pcm_samples`：它取自网关持久的
+output interval 账本，只随实际生成音频单调前进；契约规定毫秒数为
+`floor(generated_pcm_samples * 1000 / sample_rate_hz)`。派发器只在 TTS Job 上、且该
+毫秒值严格大于本次已上报值时，向 `speech_job_events` 追加一行
+`kind='progress'`、`state='running'`、`progress_unit='audio_ms'` 的事实；同值重复轮询、
+乱序回退或 Job 已离开 `running` 都不写。当前 file execution 在登记结果时一次性追加完整
+generated 区间，因此这条路径通常只产生一条终态前的进度事实；执行侧若以增量区间推进
+watermark，则每次前进都会产生一条新事实。ASR 在终态前没有已转写段数或其他可持久化
+进度事实，因此只产生生命周期事件，不发送 `job.progress`，也不估算进度。
+
+`Job` 的 `progress` 取该 Job 最新一条进度事实；尚无事实时使用准入时冻结的单位
+`audio_ms` 和 `completed=0`。本次迁移前已受理的 Job 保留其已冻结的进度单位；若该单位
+不是 `audio_ms`，写入路径不会用另一单位的事实覆盖它，因此该 Job 不产生进度事件。
+`total` 为空：请求文本长度是输入规模而非完成总量，网关只给出生成上限而非期望时长，
+二者都不能充当事实分母。事件行仍以 Job 内连续的
+`event_seq` 排序，SSE 线路 `id` 继续是 `event_seq + 1`，重启后按同一游标重放而不重算或
+重发同值。数据库守卫拒绝终态 Job 的进度行、重复或回退值以及不连续序号；终态事件之后的
+进度行无法写入。迁移 `0039_public_job_progress` 为事件表增加 `kind`、`progress_unit`、
+`progress_completed`、`progress_total` 与部分索引，不新建第二套状态机。进度行不改写
+`speech_jobs` 的状态、`status_version` 或 `updated_at`；Job 的 `updated_at` 仍是最近一次
+生命周期变更的时间。派发器启动探针在选择事件列时包含这些进度列，未应用迁移时拒绝启动。
+
 成功 Job 的终态事件与 `Job` 投影都要求结果引用的 `speech_artifacts` ready 行存在且
 `receipt_id`、类型匹配；缺失时返回 `503 job_unavailable`，不伪造成功。该错误声明
 `retryable: false`：Artifact 可能已过期或删除，重复读取不会改变结论，客户端应改读当前 Job

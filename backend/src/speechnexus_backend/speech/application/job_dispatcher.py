@@ -26,6 +26,7 @@ from speechnexus_backend.speech.domain.job_dispatch import (
     PublishedResult,
     ResultReceipt,
     gateway_failure_code,
+    generated_audio_ms,
     identifier,
     submit_intent_identity,
     terminal_result,
@@ -44,6 +45,10 @@ class DispatchStateStore(Protocol):
     async def renew(self, claim: ClaimedJob, lease_ms: int) -> ClaimedJob | None: ...
 
     async def record_cancellation_not_submitted(self, job_id: str, *, observer: str) -> None: ...
+
+    async def record_progress(
+        self, claim: ClaimedJob, *, unit: str, completed: int, total: int | None
+    ) -> bool: ...
 
     async def finish(
         self,
@@ -248,6 +253,7 @@ class JobDispatcher:
         phase: _DispatchPhase,
     ) -> DispatchResult:
         submitted = reply.outcome == "status"
+        reported_ms = 0
         while True:
             if should_stop is not None and should_stop():
                 # Keep the lease until expiry so the next worker can recover the
@@ -284,6 +290,22 @@ class JobDispatcher:
             if expected_digest is not None and observed_digest not in (None, expected_digest):
                 raise DispatchProtocolError("Gateway status has another command digest")
             state = status["execution_state"]
+            if job.kind == "tts":
+                observed_ms = generated_audio_ms(status)
+                if observed_ms is not None and observed_ms > reported_ms:
+                    try:
+                        await self._states.record_progress(
+                            claim, unit="audio_ms", completed=observed_ms, total=None
+                        )
+                    except DispatchUnavailableError:
+                        # Progress is an observation, not an execution outcome. A
+                        # storage hiccup must not turn a healthy execution into
+                        # unknown; the next poll retries the same durable watermark.
+                        pass
+                    else:
+                        # A false result still means the stored fact is not behind
+                        # this observation; do not re-ask for the same value.
+                        reported_ms = observed_ms
             if state == "succeeded":
                 return await self._complete(claim, job, submission, should_stop)
             if state in ("failed", "aborted"):

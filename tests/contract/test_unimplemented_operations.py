@@ -16,10 +16,15 @@ from typing import Any, cast
 
 import httpx
 import pytest
+from fastapi import FastAPI
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.interfaces.http.job_errors import job_error
-from speechnexus_backend.speech.interfaces.http.unimplemented import UNIMPLEMENTED_OPERATIONS
+from speechnexus_backend.speech.interfaces.http.unimplemented import (
+    UNIMPLEMENTED_OPERATIONS,
+    assert_placeholder_ownership,
+    create_unimplemented_router,
+)
 from speechnexus_backend.speech.interfaces.http.unimplemented_errors import (
     OPERATION_NOT_IMPLEMENTED,
 )
@@ -28,9 +33,7 @@ from tests.support.contracts import validator
 from tests.unit.backend.test_artifact_http import service
 from tests.unit.backend.test_health import _settings
 
-HTTP_ROOT = (
-    Path(__file__).resolve().parents[2] / "backend/src/speechnexus_backend/speech/interfaces/http"
-)
+BACKEND_ROOT = Path(__file__).resolve().parents[2] / "backend/src/speechnexus_backend"
 SOURCE = validator("speech-openapi.yaml")
 DOCUMENT = cast(dict[str, Any], SOURCE.schema)
 PLACEHOLDER_RESPONSE = "#/components/responses/OperationNotImplemented"
@@ -66,28 +69,70 @@ def declared_operations() -> list[tuple[str, str, str]]:
     return sorted(found)
 
 
-def error_maps() -> dict[Path, set[str]]:
-    """Error codes declared by each `*_errors.py` map, read as literals."""
-    maps: dict[Path, set[str]] = {}
-    for path in sorted(HTTP_ROOT.glob("*_errors.py")):
+def _code_keys(node: ast.Dict, constants: dict[str, str]) -> set[str]:
+    codes: set[str] = set()
+    for key in node.keys:
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            codes.add(key.value)
+        elif isinstance(key, ast.Name) and key.id in constants:
+            codes.add(constants[key.id])
+    return codes
+
+
+def _is_error_map(node: ast.Dict) -> bool:
+    """A mapping of code -> (status, public type, message[, retryable])."""
+    if not node.values:
+        return False
+    for value in node.values:
+        if not isinstance(value, ast.Tuple) or len(value.elts) < 3:
+            return False
+        status, kind = value.elts[0], value.elts[1]
+        if not (isinstance(status, ast.Constant) and type(status.value) is int):
+            return False
+        if not (isinstance(kind, ast.Constant) and isinstance(kind.value, str)):
+            return False
+    return True
+
+
+def error_maps() -> dict[str, set[str]]:
+    """Every module-level error map in the backend, keyed by module name.
+
+    The map name is not enough on its own: `binding_errors` and
+    `profile_errors` call theirs `ERRORS`, and `pronunciations`,
+    `binding_lifecycle` and `workspaces` keep unannotated `_ERRORS`. The shape
+    of the values decides, so a renamed or new map is still scanned.
+    """
+    maps: dict[str, set[str]] = {}
+    for path in sorted(BACKEND_ROOT.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        codes: set[str] = set()
-        for node in tree.body:
-            if isinstance(node, ast.AnnAssign):
-                targets: list[ast.expr] = [node.target]
-            elif isinstance(node, ast.Assign):
-                targets = list(node.targets)
+        constants: dict[str, str] = {}
+        for statement in tree.body:
+            if not isinstance(statement, ast.Assign) or len(statement.targets) != 1:
+                continue
+            target = statement.targets[0]
+            value = statement.value
+            if (
+                isinstance(target, ast.Name)
+                and isinstance(value, ast.Constant)
+                and isinstance(value.value, str)
+            ):
+                constants[target.id] = value.value
+        for statement in tree.body:
+            if isinstance(statement, ast.AnnAssign):
+                targets: list[ast.expr] = [statement.target]
+            elif isinstance(statement, ast.Assign):
+                targets = list(statement.targets)
             else:
                 continue
-            if not any(isinstance(t, ast.Name) and t.id == "_ERRORS" for t in targets):
+            named = [item.id for item in targets if isinstance(item, ast.Name)]
+            mapping_node = statement.value
+            if not named or not isinstance(mapping_node, ast.Dict):
                 continue
-            if isinstance(node.value, ast.Dict):
-                codes.update(
-                    key.value
-                    for key in node.value.keys
-                    if isinstance(key, ast.Constant) and isinstance(key.value, str)
-                )
-        maps[path] = codes
+            if named[0] not in {"_ERRORS", "ERRORS"} and not _is_error_map(mapping_node):
+                continue
+            codes = _code_keys(mapping_node, constants)
+            if codes:
+                maps[path.stem] = codes
     return maps
 
 
@@ -166,11 +211,11 @@ def test_status_type_and_retryable_cannot_identify_the_placeholder() -> None:
 
 
 def test_no_other_error_map_reuses_the_placeholder_code() -> None:
-    owners = {
-        module.stem
-        for module, entries in error_maps().items()
-        if OPERATION_NOT_IMPLEMENTED in entries
-    }
+    maps = error_maps()
+    # The scan must really cover the maps that name theirs differently, or a
+    # narrow glob could pass this test by looking in the wrong place.
+    assert {"binding_errors", "profile_errors", "job_errors", "unimplemented_errors"} <= set(maps)
+    owners = {module for module, entries in maps.items() if OPERATION_NOT_IMPLEMENTED in entries}
     assert owners == {"unimplemented_errors"}
 
 
@@ -219,21 +264,26 @@ async def test_allow_header_lists_every_registered_method(path: str, allow: str,
     assert response.json()["error"]["code"] == code
 
 
-def test_a_real_route_cannot_share_a_placeholder_method() -> None:
-    from fastapi import FastAPI
-
-    from speechnexus_backend.speech.interfaces.http.unimplemented import (
-        assert_placeholder_ownership,
-    )
-
+def test_the_placeholder_router_alone_owns_its_routes() -> None:
     api = FastAPI()
+    api.include_router(create_unimplemented_router())
+    assert_placeholder_ownership(api.routes)
+
+
+def test_a_real_route_cannot_share_a_placeholder_method() -> None:
+    api = FastAPI()
+    api.include_router(create_unimplemented_router())
 
     @api.get("/v1/nexus/voice-drafts/{draft_id}", include_in_schema=False)
     async def shadowed(draft_id: str) -> dict[str, str]:
         return {"draft_id": draft_id}
 
-    with pytest.raises(RuntimeError, match="GET /v1/nexus/voice-drafts"):
+    with pytest.raises(RuntimeError) as raised:
         assert_placeholder_ownership(api.routes)
+    # Exactly the duplicated template is reported; the other twenty placeholders
+    # must not be swept in, or the assertion would pass on a wholesale failure.
+    listed = raised.value.args[0].split("include the placeholder router last: ", 1)[1]
+    assert listed == "GET /v1/nexus/voice-drafts/{draft_id}"
 
 
 def test_served_openapi_does_not_advertise_placeholders() -> None:

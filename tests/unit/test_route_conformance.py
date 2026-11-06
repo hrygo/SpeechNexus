@@ -129,6 +129,45 @@ def handler(request):
     assert {417, 418, 419} <= result.statuses
 
 
+def test_single_entry_factory_outside_the_placeholder_reports_undetermined(
+    tmp_path: Path,
+) -> None:
+    """Only the placeholder factory may answer an unevaluable code from one entry.
+
+    A single-entry map is not a static answer when the code comes from a
+    runtime value: the gate must report the uncertainty and list the candidate
+    statuses instead of silently assuming the only entry.
+    """
+    module = load()
+    path = tmp_path / "synthetic_errors.py"
+    path.write_text(
+        """
+from starlette.responses import JSONResponse
+
+_SYNTHETIC_ERRORS = {"only_code": (409, "conflict_error", "only")}
+
+
+def _error(code: str, request_id: str) -> JSONResponse:
+    status, kind, message = _SYNTHETIC_ERRORS[code]
+    return JSONResponse({"code": code}, status_code=status)
+
+
+def handler(request, runtime_code):
+    return _error(runtime_code, "request-id")
+""",
+        encoding="utf-8",
+    )
+    info = module.parse_module(path, "synthetic_errors", tmp_path)
+    factories = module.collect_factories({"synthetic_errors": info})
+    analyzer = module.Analyzer({"synthetic_errors": info}, factories, "syntheticOp")
+    result = analyzer.function(info.scopes["handler"], {})
+    assert result.statuses == set()
+    assert [item.detail for item in result.undetermined] == [
+        "错误码来自运行时表达式（如 error.code），未静态求值"
+    ]
+    assert result.undetermined[0].possible_statuses == (409,)
+
+
 def test_golden_observed_statuses_pin_indirect_and_dynamic_branches() -> None:
     module = load()
     report = module.build_report(ROOT)

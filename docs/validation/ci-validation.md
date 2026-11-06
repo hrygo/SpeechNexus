@@ -128,6 +128,10 @@ uv run pytest tests/ci tests/contract/test_ci_workflow.py tests/unit/test_integr
 
 需要完整复核时可在 Actions 手动运行 CI；本机完整检查仍按 [AGENTS.md](../../AGENTS.md) 的宿主和隔离服务前置条件执行。
 
+## 文档引用检查（非门禁）
+
+[check-doc-refs.py](../../scripts/dev-env/check-doc-refs.py) 是本地报告工具，检查 `docs/` 内 `路径:行号` 引用是否存在、越界或同名文件歧义；发现问题时打印 `RESULT FAIL` 并以退出码 1 结束。当前 CI 工作流未调用该脚本，它不属于必需检查、作业门禁或路由范围，失败不阻止合并。需要时手工运行 `python3 scripts/dev-env/check-doc-refs.py`；`--show` 会同时打印被引用行原文，便于核对内容是否与文档描述一致。
+
 ## 公开语音路由一致性门禁
 
 `python_contracts` 作业（`Python: lint, types and contract compatibility`）在契约兼容步骤之后、Ruff/mypy 之前执行

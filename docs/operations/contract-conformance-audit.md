@@ -56,23 +56,23 @@
 
 | # | 操作 | 路由 | 契约声明 | 实现证据 | 静态可达 | 未声明返回 | 声明未使用 | 结论 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | listModels | GET /v1/models | 200,304,401,503 | `models.py:41-61` | 200,304,503 | — | 401 | 一致 |
-| 2 | retrieveModel | GET /v1/models/{model} | 200,304,401,404,503 | `models.py:63-86` | 200,304,404,503 | — | 401 | 一致 |
+| 1 | listModels | GET /v1/models | 200,304,401,503 | `backend/src/speechnexus_backend/speech/interfaces/http/models.py:41-61` | 200,304,503 | — | 401 | 一致 |
+| 2 | retrieveModel | GET /v1/models/{model} | 200,304,401,404,503 | `backend/src/speechnexus_backend/speech/interfaces/http/models.py:63-86` | 200,304,404,503 | — | 401 | 一致 |
 | 3 | createTranscription | POST /v1/audio/transcriptions | 200,400,401,403,409,413,422,429,503,504 | `transcriptions.py:516-522` | 200,400,404,413,422,503,504 | **404** | 401,403,409,429 | 未声明返回 |
 | 4 | createSpeech | POST /v1/audio/speech | 200,400,401,403,404,405,409,422,429,503,504 | `speech.py:458-464` | 200,400,404,422,503,504 | — | 401,403,409,429 | 一致 |
-| 5 | getCapabilities | GET /v1/nexus/capabilities | 200,304,401,404,503 | `models.py:88-120` | 200,304,404,503 | — | 401 | 一致 |
-| 6 | listProfiles | GET /v1/nexus/profiles | 200,400,401,403,405,503 | `profile_publications.py:222-229` | 200,400,403,405,503 | — | 401 | 一致 |
-| 7 | getProfileRevision | GET /v1/nexus/profiles/{profile_id}/revisions/{revision} | 200,400,401,403,404,405,409,503 | `profile_publications.py:225` | 200,400,403,404,405,409,503 | — | 401 | 一致 |
-| 8 | listPublishedProfiles | GET /v2/nexus/profiles | 200,400,401,403,405,503 | `profile_publications.py:224` | 200,400,403,405,503 | — | 401 | 一致 |
+| 5 | getCapabilities | GET /v1/nexus/capabilities | 200,304,401,404,503 | `backend/src/speechnexus_backend/speech/interfaces/http/models.py:88-120` | 200,304,404,503 | — | 401 | 一致 |
+| 6 | listProfiles | GET /v1/nexus/profiles | 200,400,401,403,405,503 | `backend/src/speechnexus_backend/speech/interfaces/http/profile_publications.py:222-229` | 200,400,403,405,503 | — | 401 | 一致 |
+| 7 | getProfileRevision | GET /v1/nexus/profiles/{profile_id}/revisions/{revision} | 200,400,401,403,404,405,409,503 | `backend/src/speechnexus_backend/speech/interfaces/http/profile_publications.py:225` | 200,400,403,404,405,409,503 | — | 401 | 一致 |
+| 8 | listPublishedProfiles | GET /v2/nexus/profiles | 200,400,401,403,405,503 | `backend/src/speechnexus_backend/speech/interfaces/http/profile_publications.py:224` | 200,400,403,405,503 | — | 401 | 一致 |
 | 9 | getPronunciationRevision | GET /v1/nexus/pronunciation-sets/{pronunciation_id}/revisions/{revision} | 200,400,401,403,404,405,429,503 | `pronunciations.py:116` | 200,400,403,404,405,429,503 | — | 401 | 一致（隔离 PG 实测 200/404/429/503） |
-| 10 | createJob | POST /v1/nexus/jobs | 202,400,401,403,409,422,429,503 | `jobs.py:293-298` | 202,400,409,422,503 | — | 401,403,429 | 一致 |
-| 11 | getJob | GET /v1/nexus/jobs/{job_id} | 200,401,404,503 | `jobs.py:300-306` | 200,404,503 | — | 401 | 一致 |
-| 12 | cancelJob | POST /v1/nexus/jobs/{job_id}/cancellations | 200,202,401,404,409,503 | `jobs.py:308-334` | 200,202,400,404,409,503 | **400** | 401 | 未声明返回 |
-| 13 | uploadAsset | POST /v1/nexus/assets | 201,400,401,403,404,408,409,410,413,422,429,503 | `assets.py:56-142` | 201,400,403,404,408,409,410,413,422,429,503 | — | 401 | 一致（404 仅有间接路径） |
-| 14 | getAsset | GET /v1/nexus/assets/{asset_id} | 200,401,403,404,410,503 | `assets.py:144-158` | 200,403,404,410,503 | — | 401 | 一致 |
-| 15 | downloadAssetContent | GET /v1/nexus/assets/{asset_id}/content | 200,206,401,403,404,410,416,503 | `assets.py:160-215` | 200,206,403,404,410,416,503 | — | 401 | 一致 |
-| 16 | getArtifact | GET /v1/nexus/artifacts/{artifact_id} | 200,401,404,410 | `artifacts.py:88-114` | 200,304,404,410,503 | **304,503** | 401 | 未声明返回 |
-| 17 | downloadArtifactContent | GET /v1/nexus/artifacts/{artifact_id}/content | 200,206,401,404,410 | `artifacts.py:116-189` | 200,206,304,404,410,416,503 | **304,416,503** | 401 | 未声明返回 |
+| 10 | createJob | POST /v1/nexus/jobs | 202,400,401,403,409,422,429,503 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:293-298` | 202,400,409,422,503 | — | 401,403,429 | 一致 |
+| 11 | getJob | GET /v1/nexus/jobs/{job_id} | 200,401,404,503 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:300-306` | 200,404,503 | — | 401 | 一致 |
+| 12 | cancelJob | POST /v1/nexus/jobs/{job_id}/cancellations | 200,202,401,404,409,503 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:308-334` | 200,202,400,404,409,503 | **400** | 401 | 未声明返回 |
+| 13 | uploadAsset | POST /v1/nexus/assets | 201,400,401,403,404,408,409,410,413,422,429,503 | `backend/src/speechnexus_backend/speech/interfaces/http/assets.py:56-142` | 201,400,403,404,408,409,410,413,422,429,503 | — | 401 | 一致（404 仅有间接路径） |
+| 14 | getAsset | GET /v1/nexus/assets/{asset_id} | 200,401,403,404,410,503 | `backend/src/speechnexus_backend/speech/interfaces/http/assets.py:144-158` | 200,403,404,410,503 | — | 401 | 一致 |
+| 15 | downloadAssetContent | GET /v1/nexus/assets/{asset_id}/content | 200,206,401,403,404,410,416,503 | `backend/src/speechnexus_backend/speech/interfaces/http/assets.py:160-215` | 200,206,403,404,410,416,503 | — | 401 | 一致 |
+| 16 | getArtifact | GET /v1/nexus/artifacts/{artifact_id} | 200,401,404,410 | `backend/src/speechnexus_backend/speech/interfaces/http/artifacts.py:88-114` | 200,304,404,410,503 | **304,503** | 401 | 未声明返回 |
+| 17 | downloadArtifactContent | GET /v1/nexus/artifacts/{artifact_id}/content | 200,206,401,404,410 | `backend/src/speechnexus_backend/speech/interfaces/http/artifacts.py:116-189` | 200,206,304,404,410,416,503 | **304,416,503** | 401 | 未声明返回 |
 
 契约行号：路径分别始于 `contracts/speech-openapi.yaml:38`(models)、`:75`(model)、`:117`(transcriptions)、
 `:181`(speech)、`:252`(capabilities)、`:289`/`:323`/`:360`(profiles)、`:553`(pronunciation read)、
@@ -90,27 +90,27 @@
 
 ### 4.2 cancelJob → 400（契约只声明 200/202/401/404/409/503）
 
-- `jobs.py:316-317`：`Idempotency-Key` 不合法时返回 `job_error("invalid_job_request")`；
+- `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:316-317`：`Idempotency-Key` 不合法时返回 `job_error("invalid_job_request")`；
   `job_errors.py:9` 定义为 400。
 - 运行时：P9，`Idempotency-Key: short` → `400 invalid_job_request`。
 - 同族问题：`createJob` 的同类错误合法（契约声明了 400），但取消路径漏声明，消费者按 200/202/404/409 分支处理会落入未知状态。
 
 ### 4.3 getArtifact → 304（契约未声明 304）
 
-- `artifacts.py:112-113`：`If-None-Match` 命中时返回 `Response(status_code=304)`。
+- `backend/src/speechnexus_backend/speech/interfaces/http/artifacts.py:112-113`：`If-None-Match` 命中时返回 `Response(status_code=304)`。
 - 运行时：A2，先取 200 的 `ETag` 再回送 `If-None-Match`，实测 304 且无响应体。
 - 对照：`listModels`/`retrieveModel`/`getCapabilities` 明确声明 304（`speech-openapi.yaml:38`/`:75`/`:252`），制品两条 GET 未声明，
   说明是遗漏而非统一约定。
 
 ### 4.4 getArtifact / downloadArtifactContent → 503（契约未声明 503）
 
-- `artifacts.py:103-104`、`:132-133`：服务未装配时返回 `artifact_service_unavailable`；`artifact_errors.py:16,21` 均为 503。
+- `backend/src/speechnexus_backend/speech/interfaces/http/artifacts.py:103-104,132-133`：服务未装配时返回 `artifact_service_unavailable`；`artifact_errors.py:16,21` 均为 503。
 - 运行时：P2/P2b（未配置制品服务）实测 503。
 - 契约对这两条操作只声明 200/206/401/404/410，没有任何 5xx。
 
 ### 4.5 downloadArtifactContent → 416（契约未声明 416）
 
-- `artifacts.py:146-156`：`artifact_range_not_satisfiable` 补 `Content-Range: bytes */<size>` 后返回 416；
+- `backend/src/speechnexus_backend/speech/interfaces/http/artifacts.py:146-156`：`artifact_range_not_satisfiable` 补 `Content-Range: bytes */<size>` 后返回 416；
   `artifact_errors.py:11` 定义为 416。
 - 运行时：A3（`Range: bytes=0-1` + stub 抛该错误）实测 416。
 - 对照：`downloadAssetContent` 声明了 416（`speech-openapi.yaml:1031`），制品内容路径漏声明。
@@ -119,7 +119,7 @@
 
 ### 5.1 401：全表未使用
 
-公开语音处理器不校验共享服务密钥，源码中没有 401 的响应分支：唯一的 401 出现是 `artifacts.py:95,124` 的 OpenAPI 响应声明与工作台客户端的响应分类（`workbench/infrastructure/public_speech_render_jobs.py:83`），
+公开语音处理器不校验共享服务密钥，源码中没有 401 的响应分支：唯一的 401 出现是 `backend/src/speechnexus_backend/speech/interfaces/http/artifacts.py:95,124` 的 OpenAPI 响应声明与工作台客户端的响应分类（`workbench/infrastructure/public_speech_render_jobs.py:83`），
 `docs/architecture/openai-compatibility.md:91` 已明确"当前公开语音处理器没有实现该密钥的验证"。
 17 条已实现操作全部声明 401，但均不可达；消费者不能把 401 当作访问保护已生效的证据。
 
@@ -129,13 +129,13 @@
 | --- | --- | --- | --- |
 | createSpeech | 403,409,429 | 否 | `speech.py:340-443` 无对应分支，`/v1/audio/speech` 无入口中间件 |
 | createTranscription | 403,409,429 | 否 | `transcriptions.py:442-501` 无对应分支 |
-| createJob | 403,429 | 否 | `jobs.py:171-228` 无 host/origin 检查、无限流 |
+| createJob | 403,429 | 否 | `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:171-228` 无 host/origin 检查、无限流 |
 | listProfiles / getProfileRevision / listPublishedProfiles / getPronunciationRevision | 403（+429 仅读音） | 是 | `profile_ingress.py:67-97`、`draft_ingress.py:64-67`、`pronunciations.py:146-149,167-169` |
 | uploadAsset | 403,429（另 408,413） | 是 | `asset_ingress.py:52-73,98-99` |
 
 ### 5.3 405：多数路径未声明
 
-405 由框架对错误方法产生，经 `app.py:436-497` 的全局处理器改写为稳定错误体（assets/artifacts/workspaces/jobs/speech 五个前缀），
+405 由框架对错误方法产生，经 `backend/src/speechnexus_backend/app.py:436-497` 的全局处理器改写为稳定错误体（assets/artifacts/workspaces/jobs/speech 五个前缀），
 其余前缀保留 FastAPI 默认 `{"detail":"..."}`。
 
 - 已声明 405：`createSpeech`、三个 profiles 操作、`getPronunciationRevision`。
@@ -147,7 +147,7 @@
 
 ### 5.4 全局 404 语义被前缀处理器改写
 
-`app.py:475-485` 把 `/v1/nexus/jobs/*` 下的任意 404 改写为 `job_not_found`。因此未注册的
+`backend/src/speechnexus_backend/app.py:475-485` 把 `/v1/nexus/jobs/*` 下的任意 404 改写为 `job_not_found`。因此未注册的
 `retryJob`（`speech-openapi.yaml:808`）与 `streamJobEvents`（`:839`）返回 `404 job_not_found` 而不是"路由不存在"，运行时 J2/J3 已复现。
 `/v1/nexus/pronunciation-sets` 前缀被 `PronunciationIngress` 接管（`pronunciations.py:136-159`），未注册的集合级
 GET/POST 在匹配失败时返回 `400 pronunciation_invalid_request`，运行时实测见 §7 的 U4/U5。

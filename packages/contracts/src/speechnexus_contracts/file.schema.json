@@ -2048,7 +2048,7 @@
       "properties": {
         "id": {
           "$ref": "#/$defs/EventSequence",
-          "description": "Persistent job_event_seq used as the SSE id."
+          "description": "Persistent job event sequence plus one, used as the SSE id."
         },
         "type": {
           "type": "string",

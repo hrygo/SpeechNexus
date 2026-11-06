@@ -225,8 +225,9 @@ worker 与派发器共享同一条 gateway 契约和停止服务；它不会创�
 续读以 `Last-Event-ID - 1` 为游标，非法值返回 `400 invalid_job_request`，未知 Job 返回
 `404 job_not_found`。事件行与对应状态变更在同一事务提交，因此终态事件只出现一次；
 读到终态且当前页为空后流关闭，已消费的终态不会重放。进度没有持久事实，流不发送
-`job.progress`，`Job` 投影中的 `progress.completed` 仍为 0。实现不声明
-`410 event_history_expired`：当前没有事件保留或过期机制，虚构该返回会掩盖保留策略缺失。
+`job.progress`，`Job` 投影中的 `progress.completed` 仍为 0。契约只为历史过期声明
+`410 event_history_expired`；当前实现没有事件保留或过期策略，因此永不返回该状态，客户端仍须
+按契约在收到 `410` 时改读当前 Job 状态。
 成功 Job 的终态事件与 `Job` 投影都要求结果引用的 `speech_artifacts` ready 行存在且
 `receipt_id`、类型匹配；缺失时返回 `503 job_unavailable`，不伪造成功。因此 API Job
 writer 角色需要 `speech_artifacts` 的 SELECT，`job_runtime` 启动探针也把它列入必需表。

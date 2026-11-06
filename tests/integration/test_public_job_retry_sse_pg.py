@@ -345,3 +345,38 @@ async def test_replacement_lineage_is_immutable_in_postgres(jobs_db: JobSandbox)
                 "status_version = status_version + 1 WHERE job_id = %s",
                 (child["id"],),
             )
+
+async def test_declared_400_and_503_statuses_are_what_the_api_returns(
+    jobs_db: JobSandbox,
+) -> None:
+    app = _app(jobs_db)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        parent = await _create(client)
+        _fail(jobs_db, parent["id"])
+        for key in ("short", "x" * 129):
+            rejected = await client.post(
+                RETRY.format(job_id=parent["id"]), headers={"Idempotency-Key": key}
+            )
+            assert rejected.status_code == 400, (key, rejected.text)
+            assert rejected.json()["error"]["code"] == "invalid_job_request"
+        assert jobs_db.count("speech_jobs") == 1
+
+        malformed = await client.get(
+            EVENTS.format(job_id=parent["id"]), headers={"Last-Event-ID": "01"}
+        )
+        assert malformed.status_code == 400, malformed.text
+        assert malformed.json()["error"]["code"] == "invalid_job_request"
+
+    # Without a configured Job store both routes report the declared 503.
+    from tests.unit.backend.test_health import _settings
+
+    unavailable_app = create_app(settings=_settings())
+    async with AsyncClient(
+        transport=ASGITransport(app=unavailable_app), base_url="http://test"
+    ) as client:
+        retry_unavailable = await client.post(RETRY.format(job_id=parent["id"]))
+        assert retry_unavailable.status_code == 503, retry_unavailable.text
+        assert retry_unavailable.json()["error"]["code"] == "job_unavailable"
+        events_unavailable = await client.get(EVENTS.format(job_id=parent["id"]))
+        assert events_unavailable.status_code == 503, events_unavailable.text
+        assert events_unavailable.json()["error"]["code"] == "job_unavailable"

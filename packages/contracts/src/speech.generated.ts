@@ -426,7 +426,9 @@ export interface paths {
      * Create a new job from a terminal job intent
      * @description Retry creates a new Job with a new attempt history; it never revives the
      *     old job. While the old execution is not verifiably stopped, returns 409
-     *     `execution_cleanup_pending`.
+     *     `execution_cleanup_pending`. A malformed `Idempotency-Key` is rejected
+     *     with 400 `invalid_job_request`; an unverifiable outcome or an unavailable
+     *     backend returns 503 without creating a second execution.
      */
     post: operations["retryJob"];
     delete?: never;
@@ -444,10 +446,14 @@ export interface paths {
     };
     /**
      * Stream durable job events with SSE
-     * @description SSE `id` is the persistent job_event_seq. `Last-Event-ID` resumes after
-     *     that sequence. Expired event history returns 410
-     *     `event_history_expired`; clients then read current job state. Event data
-     *     is a JobEvent JSON object.
+     * @description SSE `id` is the persistent job event sequence plus one, matching the
+     *     one-based EventSequence value; `Last-Event-ID` resumes strictly after it.
+     *     A malformed `Last-Event-ID` is rejected with 400 `invalid_job_request`,
+     *     and an unavailable backend returns 503. 410 `event_history_expired` is
+     *     returned only when the persisted event history for the job has expired;
+     *     the current implementation has no history-expiry policy and therefore
+     *     never returns it, so clients must still be prepared to read current job
+     *     state on 410. Event data is a JobEvent JSON object.
      */
     get: operations["streamJobEvents"];
     put?: never;
@@ -1751,7 +1757,7 @@ export interface components {
       | components["schemas"]["JobCleanupUpdatedEvent"]
       | components["schemas"]["ArtifactPublishedEvent"];
     JobEventEnvelope: {
-      /** @description Persistent job_event_seq used as the SSE id. */
+      /** @description Persistent job event sequence plus one, used as the SSE id. */
       id: components["schemas"]["Revision"];
       /** @enum {string} */
       type:
@@ -4267,10 +4273,12 @@ export interface operations {
           "application/json": components["schemas"]["Job"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   streamJobEvents: {
@@ -4299,9 +4307,11 @@ export interface operations {
           "text/event-stream": string;
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
       410: components["responses"]["Gone"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   getOperation: {

@@ -14,10 +14,44 @@ from speechnexus_contracts import parse
 from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.domain.public_jobs import PublicJob, PublicJobUnavailableError
+from speechnexus_backend.speech.interfaces.http.unimplemented import (
+    assert_placeholder_ownership,
+    iter_routes,
+)
+from tests.contract.test_speech_http_statuses import assert_error_contract
 from tests.unit.backend.test_health import _settings
 from tests.unit.backend.test_public_jobs import NOW, Facts, Store, _body
 
 PREFIX = "/v1/nexus/jobs"
+
+
+def test_listing_has_one_real_owner_with_placeholders_included_last() -> None:
+    app = create_app(settings=_settings())
+    assert_placeholder_ownership(app.router.routes)
+    owners = [
+        route
+        for route in iter_routes(app.router.routes)
+        if getattr(route, "path", None) == PREFIX and "GET" in (route.methods or ())
+    ]
+    assert len(owners) == 1
+    assert owners[0].operation_id == "listJobs"
+    assert owners[0].endpoint.__module__.endswith(".http.jobs")
+    assert "get" in app.openapi()["paths"][PREFIX]
+
+
+@pytest.mark.parametrize("method", ["DELETE", "PUT", "PATCH", "OPTIONS"])
+async def test_wrong_listing_method_keeps_declared_405_and_all_supported_methods(
+    method: str,
+) -> None:
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app(settings=_settings())), base_url="http://test"
+    ) as client:
+        response = await client.request(method, PREFIX, headers={"X-Request-ID": "list-method"})
+    assert response.status_code == 405
+    assert response.headers["allow"] == "GET, POST"
+    assert response.json()["error"]["code"] == "job_method_not_allowed"
+    assert response.json()["error"]["request_id"] == "list-method"
+    assert_error_contract("listJobs", response)
 
 
 class ListStore(Store):

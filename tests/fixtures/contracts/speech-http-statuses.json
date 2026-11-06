@@ -37,6 +37,12 @@
       "code": "method_not_allowed"
     },
     {
+      "operation": "listJobs",
+      "path": "/v1/nexus/jobs",
+      "allow": "GET, POST",
+      "code": "job_method_not_allowed"
+    },
+    {
       "operation": "createJob",
       "path": "/v1/nexus/jobs",
       "allow": "GET, POST",

@@ -38,7 +38,6 @@ UNIMPLEMENTED_OPERATIONS: dict[str, tuple[str, str]] = {
     ),
     "listPronunciationSets": ("GET", "/v1/nexus/pronunciation-sets"),
     "createPronunciationRevision": ("POST", "/v1/nexus/pronunciation-sets"),
-    "listJobs": ("GET", "/v1/nexus/jobs"),
     "getOperation": ("GET", "/v1/nexus/operations/{operation_id}"),
     "cancelOperation": ("POST", "/v1/nexus/operations/{operation_id}/cancellations"),
     "createRealtimeSession": ("POST", "/v1/nexus/realtime/sessions"),

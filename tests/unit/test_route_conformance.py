@@ -9,9 +9,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import fastapi
 import httpx
 import pytest
 from fastapi import APIRouter, FastAPI
+from starlette.responses import JSONResponse
+from starlette.routing import Route
+from starlette.staticfiles import StaticFiles
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location(
@@ -668,22 +672,133 @@ def test_non_segment_parameter_is_rejected_before_simplified_probe(template: str
     assert template in str(error.value)
 
 
-@pytest.mark.parametrize("child", ["/{id:int}", "/{id}"])
-def test_mount_parameterized_child_is_rejected_before_simplified_probe(child: str) -> None:
+@pytest.mark.parametrize("mount", ["/widgets", "/widgets/{id}"])
+@pytest.mark.parametrize("child", ["/items", "/{id:int}", "/{id}"])
+def test_mount_children_fail_closed_before_any_probe(mount: str, child: str) -> None:
+    # The verified gap: a mounted sub-application owns routes that
+    # methods_for_path cannot see, so the probe would pick a method the child
+    # already serves and run that endpoint. The gate must refuse the whole
+    # application before it sends a request - including the parameterized mount
+    # prefix and a plain static child, which the earlier parameter-only check
+    # accepted.
     module = load()
+    invoked: list[str] = []
     sub = FastAPI()
-    sub.add_api_route(child, lambda: {}, methods=["GET"])
+    sub.add_api_route(child, lambda: invoked.append(child), methods=["PUT"])
     app = FastAPI()
-    app.mount("/widgets", sub)
-    template = "/widgets" + child
+    app.mount(mount, sub)
+    template = mount + child
     operation = module.ContractOperation("mounted", "GET", template, frozenset({405}))
-    with pytest.raises(ValueError, match=r"inside Mount") as error:
+    with pytest.raises(ValueError, match=r"unsupported Mount") as error:
         asyncio.run(module.probe_method_not_allowed_envelopes(app, (operation,)))
-    assert template in str(error.value)
+    assert mount in str(error.value)
     # Discovery must fail too; a Mount is not flattened into matchable routes.
-    with pytest.raises(ValueError, match=r"inside Mount") as error:
+    with pytest.raises(ValueError, match=r"unsupported Mount") as error:
         tuple(module.flatten_routes(app.routes))
-    assert template in str(error.value)
+    assert mount in str(error.value)
+    assert invoked == []
+
+
+def test_mount_without_child_routes_stays_supported(tmp_path: Path) -> None:
+    # StaticFiles and comparable ASGI mounts own no route, so they cannot hide
+    # a child endpoint from the matcher and must not be rejected.
+    module = load()
+    app = FastAPI()
+    app.mount("/static", StaticFiles(directory=tmp_path))
+    flattened = list(module.flatten_routes(app.routes))
+    assert [getattr(route, "path", None) for route in flattened][-1] == "/static"
+    assert app.routes[-1].routes == []  # type: ignore[attr-defined]
+    operation = module.ContractOperation("widgets", "GET", "/v1/nexus/widgets", frozenset({405}))
+    replies = asyncio.run(module.probe_method_not_allowed_envelopes(app, (operation,)))
+    # The probe still runs; the empty mount neither blocks nor dispatches.
+    assert set(replies) == {"widgets"}
+
+
+def test_the_repository_probe_dispatches_into_no_endpoint() -> None:
+    # The normal corpus must keep the dispatch count at zero: every probe
+    # request is answered by the framework's method rejection, not by a handler.
+    module = load()
+    app = module.probe_app()
+    _, contract_operations = module.load_contract(ROOT)
+    operations = module.declared_method_not_allowed_operations(contract_operations)
+    guard = module.DispatchGuard()
+    runner = fastapi.routing.run_endpoint_function
+
+    envelopes = asyncio.run(
+        module.probe_method_not_allowed_envelopes(app, operations, dispatch_guard=guard)
+    )
+
+    assert guard.count == 0
+    assert guard.calls == []
+    assert set(envelopes) == {operation.operation_id for operation in operations}
+    assert all(value is None for value in envelopes.values())
+    # Both hooks are scoped to the probe window and restored afterwards.
+    assert fastapi.routing.run_endpoint_function is runner
+
+
+def test_a_probe_that_reaches_an_endpoint_fails_the_gate(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A raw Starlette route with an ASGI endpoint and no methods declaration
+    # registers no method that methods_for_path can see, yet Starlette matches it
+    # for every method. The probe would run it; the dispatch guard must fail the
+    # gate with an explicit reason instead.
+    from speechnexus_backend.speech.interfaces.http.unimplemented import methods_for_path
+
+    module = load()
+    invoked: list[str] = []
+
+    class AnyMethodEndpoint:
+        async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+            invoked.append(str(scope["path"]))
+            await JSONResponse({"called": True})(scope, receive, send)
+
+    app = FastAPI()
+    # getJob declares 405, so the probe asks for that concrete path with a
+    # method the matcher reports as unregistered.
+    app.router.routes.append(Route("/v1/nexus/jobs/{job_id}", AnyMethodEndpoint()))
+    probe_path = "/v1/nexus/jobs/" + module.PROBE_PATH_PARAMETER
+    assert methods_for_path(app.router.routes, probe_path) == frozenset()
+    monkeypatch.setattr(module, "probe_app", lambda _root=ROOT: app)
+
+    assert module.main([]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "endpoint was invoked during probe" in captured.err
+    assert invoked == [probe_path]
+
+
+def test_dispatch_guard_counts_a_mount_child_the_matcher_cannot_see() -> None:
+    # The reported shape: a parameterized mount prefix hides the child route
+    # from the matcher, so a wrong-method probe would run the child endpoint.
+    # Fail-closed keeps the gate from ever probing it; the guard proves the same
+    # request would still be caught if such a route were ever modelled.
+    module = load()
+    invoked: list[str] = []
+
+    def mounted_endpoint() -> None:
+        invoked.append("items")
+
+    sub = FastAPI()
+    sub.add_api_route("/items", mounted_endpoint, methods=["PUT"])
+    app = FastAPI()
+    app.mount("/widgets/{id}", sub)
+    guard = module.DispatchGuard()
+
+    async def execute() -> None:
+        with guard.installed():
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://localhost"
+            ) as client:
+                assert (await client.put("/widgets/probe/items")).status_code == 200
+        guard.require_no_dispatch()
+
+    with pytest.raises(RuntimeError, match="endpoint was invoked during probe") as error:
+        asyncio.run(execute())
+
+    # The child is a FastAPI route, so the recorded dispatch names the endpoint.
+    assert "mounted_endpoint" in str(error.value)
+    assert invoked == ["items"]
 
 
 @pytest.mark.parametrize("prefix", ["/api", "/widgets"])

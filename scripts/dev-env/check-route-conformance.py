@@ -12,6 +12,12 @@ checker also sends a request with a method the path does not register and
 requires the public error envelope, so a route added without envelope
 handling fails instead of passing on the status alone.
 
+The probe must never run business code. Shapes the simplified matcher cannot
+model faithfully fail closed before a request is sent (Starlette converters,
+non-whole-segment parameters, lazy include prefixes and mounted sub-applications
+that own routes), and a dispatch guard counts endpoint invocations while the
+probe runs: any call fails the gate instead of leaving a side effect behind.
+
 It never starts the lifespan, opens a database connection, contacts object
 storage or calls an engine. Expressions that cannot be resolved statically are
 reported as undetermined rather than guessed; a registered endpoint that cannot
@@ -1287,31 +1293,39 @@ def _join_path(parent: str, child: str) -> str:
     return parent.rstrip("/") + "/" + child.lstrip("/")
 
 
-def require_plain_mount_routes(mount_path: str, routes: Iterable[Any]) -> None:
-    """Reject parameters below a Mount; flatten_routes does not descend into it."""
-    for route in routes:
-        original = getattr(route, "original_router", None)
-        if original is not None:
-            context = getattr(route, "include_context", None)
-            nested_prefix = getattr(context, "prefix", "") or ""
-            if nested_prefix:
-                raise ValueError(
-                    f"unsupported include_router prefix in route conformance: {nested_prefix}"
-                )
-            require_plain_mount_routes(mount_path, original.routes)
-            continue
-        path = getattr(route, "path", None)
-        if not isinstance(path, str):
-            continue
-        full_path = _join_path(mount_path, path)
-        if "{" in path or "}" in path:
-            raise ValueError(
-                "unsupported parameterized or converter route inside Mount in "
-                f"route conformance: {full_path}"
-            )
-        nested = getattr(route, "routes", None)
-        if isinstance(nested, (list, tuple)):
-            require_plain_mount_routes(full_path, nested)
+def _sub_application_prefix(route: Any) -> str:
+    """Name a Mount or Host by the prefix it strips before matching children."""
+    path = getattr(route, "path", None)
+    if isinstance(path, str):
+        return path
+    host = getattr(route, "host", None)
+    return host if isinstance(host, str) else ""
+
+
+def require_supported_mount(prefix: str, routes: Sequence[Any]) -> None:
+    """Fail closed on a mounted sub-application that owns routes.
+
+    A Mount matches before its children and accepts any method, while
+    methods_for_path reads only the routes registered on the application
+    router and never descends into a mount. A child that serves the method the
+    simplified matcher did not see is therefore reached by the probe: the
+    request runs the child endpoint instead of producing the 405 the probe asks
+    for. Joining the mount prefix onto the child path does not fix it either,
+    because the prefix is matched first and may itself hold parameters
+    (/widgets/{id}), so the child template is not a full request template.
+
+    The gate refuses the whole application rather than send requests it cannot
+    explain. A mount whose .routes is empty - StaticFiles and comparable ASGI
+    apps - owns no route and stays supported.
+    """
+    if not routes:
+        return
+    raise ValueError(
+        "unsupported Mount in route conformance: "
+        f"{prefix or '/'} mounts {len(routes)} child route(s); the 405 probe "
+        "cannot model routes below a Mount and would dispatch into them instead "
+        "of observing the framework reply"
+    )
 
 
 def flatten_routes(routes: Iterable[Any]) -> Iterator[Any]:
@@ -1325,14 +1339,14 @@ def flatten_routes(routes: Iterable[Any]) -> Iterator[Any]:
                     f"unsupported include_router prefix in route conformance: {nested_prefix}"
                 )
             yield from flatten_routes(original.routes)
-        else:
-            path = getattr(route, "path", None)
-            if isinstance(path, str):
-                require_plain_path_template(path)
-                nested = getattr(route, "routes", None)
-                if isinstance(nested, (list, tuple)):
-                    require_plain_mount_routes(path, nested)
-            yield route
+            continue
+        nested = getattr(route, "routes", None)
+        if isinstance(nested, (list, tuple)) and nested:
+            require_supported_mount(_sub_application_prefix(route), nested)
+        path = getattr(route, "path", None)
+        if isinstance(path, str):
+            require_plain_path_template(path)
+        yield route
 
 
 def load_app(root: Path = ROOT, *, assets: Any = None, workspaces: Any = None) -> Any:
@@ -1367,6 +1381,103 @@ def probe_app(root: Path = ROOT) -> Any:
     availability. These doubles only enable ingress; business calls fail fast.
     """
     return load_app(root, assets=ProbeService(), workspaces=ProbeService())
+
+
+@dataclass
+class DispatchGuard:
+    """Count endpoint invocations while the 405 probe runs; the count must be 0.
+
+    methods_for_path selects the probe method from the routes it can read on
+    the application router. A handler it cannot read - a mounted child, a raw
+    Starlette route that declares no methods, or one FastAPI re-creates for a
+    lazy include - can still be dispatched, and the probe would then run
+    business code instead of observing the framework 405. Two hooks count it:
+
+    * every FastAPI endpoint call runs through run_endpoint_function,
+      including the handlers a lazy include_router builds;
+    * a plain Starlette route dispatches through Route.handle, which answers
+      the 405 before reaching the ASGI handler, so counting there observes
+      only accepted methods.
+
+    Both hooks are process-global for the probe window and restored
+    afterwards; the gate runs one probe at a time. The count is asserted back
+    to zero before any probe result is accepted.
+    """
+
+    calls: list[str] = field(default_factory=list)
+    _runner: Any = field(default=None, repr=False)
+    _route_handle: Any = field(default=None, repr=False)
+
+    @contextmanager
+    def installed(self) -> Iterator[DispatchGuard]:
+        self._install()
+        try:
+            yield self
+        finally:
+            self._restore()
+
+    @property
+    def count(self) -> int:
+        return len(self.calls)
+
+    def record(self, call: str) -> None:
+        self.calls.append(call)
+
+    def require_no_dispatch(self) -> None:
+        if not self.calls:
+            return
+        unique = list(dict.fromkeys(self.calls))
+        raise RuntimeError(
+            "endpoint was invoked during probe "
+            f"({len(self.calls)} dispatch(es)): "
+            + "; ".join(unique)
+            + "; the 405 probe must observe the framework reply instead of "
+            "running endpoint code"
+        )
+
+    def _install(self) -> None:
+        import fastapi.routing
+        import starlette.routing
+
+        original_runner = fastapi.routing.run_endpoint_function
+        original_handle = starlette.routing.Route.handle
+        guard = self
+
+        async def counting_runner(*args: Any, **kwargs: Any) -> Any:
+            endpoint = getattr(kwargs.get("dependant"), "call", None)
+            module = getattr(endpoint, "__module__", None)
+            name = getattr(endpoint, "__qualname__", None) or repr(endpoint)
+            guard.record(f"endpoint {module + '.' if module else ''}{name}")
+            return await original_runner(*args, **kwargs)
+
+        async def counting_route_handle(route: Any, scope: Any, receive: Any, send: Any) -> None:
+            method = str(scope.get("method", ""))
+            if (
+                scope.get("type") == "http"
+                # A FastAPI route also passes through here on super().handle();
+                # the endpoint hook already counts it, so skip it to keep one
+                # invocation counted once.
+                and not hasattr(route, "dependant")
+                and (not route.methods or method in route.methods)
+            ):
+                guard.record(f"{method} {scope.get('path', '?')} (route {route.path})")
+            await original_handle(route, scope, receive, send)
+
+        fastapi.routing.run_endpoint_function = counting_runner
+        starlette.routing.Route.handle = counting_route_handle  # type: ignore[method-assign, assignment]
+        self._runner = original_runner
+        self._route_handle = original_handle
+
+    def _restore(self) -> None:
+        import fastapi.routing
+        import starlette.routing
+
+        if self._runner is not None:
+            fastapi.routing.run_endpoint_function = self._runner
+            self._runner = None
+        if self._route_handle is not None:
+            starlette.routing.Route.handle = self._route_handle  # type: ignore[method-assign]
+            self._route_handle = None
 
 
 def _ensure_source_path(root: Path) -> None:
@@ -1476,7 +1587,10 @@ def envelope_problem(response: Any, request_id: str) -> str | None:
 
 
 async def probe_method_not_allowed_envelopes(
-    app: Any, operations: Sequence[ContractOperation]
+    app: Any,
+    operations: Sequence[ContractOperation],
+    *,
+    dispatch_guard: DispatchGuard | None = None,
 ) -> dict[str, str | None]:
     """Request a wrong method for each declared-405 operation; require the envelope.
 
@@ -1484,6 +1598,10 @@ async def probe_method_not_allowed_envelopes(
     router 405, and the application exception handler. The method is one the
     path does not register, chosen with the placeholder router matcher
     (methods_for_path, #473), so the probe adds no second path-matching rule.
+
+    A dispatch guard wraps the probe window: an endpoint call is a gate failure,
+    because a probe exists to observe the framework reply, never to run business
+    code. The guard is injectable so a test can read its count.
     """
     import httpx
 
@@ -1493,31 +1611,34 @@ async def probe_method_not_allowed_envelopes(
     # include prefixes or converters. Validate the entire table before issuing
     # any request, including routes outside the contract's current operations.
     tuple(flatten_routes(app.router.routes))
+    guard = DispatchGuard() if dispatch_guard is None else dispatch_guard
     results: dict[str, str | None] = {}
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://localhost"
-    ) as client:
-        for operation in operations:
-            if FRAMEWORK_METHOD_NOT_ALLOWED not in operation.declared_statuses:
-                continue
-            path = fill_path_parameters(operation.path)
-            registered = methods_for_path(app.router.routes, path)
-            method = next(
-                (candidate for candidate in PROBE_METHODS if candidate not in registered),
-                None,
-            )
-            if method is None:
-                results[operation.operation_id] = (
-                    "every probe method is registered on the path, so 405 was not exercised"
+    with guard.installed():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://localhost"
+        ) as client:
+            for operation in operations:
+                if FRAMEWORK_METHOD_NOT_ALLOWED not in operation.declared_statuses:
+                    continue
+                path = fill_path_parameters(operation.path)
+                registered = methods_for_path(app.router.routes, path)
+                method = next(
+                    (candidate for candidate in PROBE_METHODS if candidate not in registered),
+                    None,
                 )
-                continue
-            response = await client.request(
-                method, path, headers={"X-Request-ID": PROBE_REQUEST_ID}
-            )
-            problem = envelope_problem(response, PROBE_REQUEST_ID)
-            results[operation.operation_id] = (
-                None if problem is None else f"{method} {path}: {problem}"
-            )
+                if method is None:
+                    results[operation.operation_id] = (
+                        "every probe method is registered on the path, so 405 was not exercised"
+                    )
+                    continue
+                response = await client.request(
+                    method, path, headers={"X-Request-ID": PROBE_REQUEST_ID}
+                )
+                problem = envelope_problem(response, PROBE_REQUEST_ID)
+                results[operation.operation_id] = (
+                    None if problem is None else f"{method} {path}: {problem}"
+                )
+        guard.require_no_dispatch()
     return results
 
 

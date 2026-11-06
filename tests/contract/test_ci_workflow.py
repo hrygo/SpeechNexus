@@ -79,8 +79,8 @@ def test_browser_preparation_keeps_partition_selection_and_original_budgets() ->
     assert install["if"] == "steps.integration_tools.outputs.browser == 'true'"
     assert install["run"] == "python3 scripts/dev-env/prepare-ci-browser.py"
     assert "continue-on-error" not in install
-    # #452: only the shard budget grew; the Web lane keeps its own budget.
-    assert shards["timeout-minutes"] == 20
+    # #452 and #502: only the shard budget grew; the Web lane keeps its own budget.
+    assert shards["timeout-minutes"] == 30
     assert jobs["web"]["timeout-minutes"] == 10
     assert shards["strategy"]["matrix"]["shard"] == [0, 1, 2, 3, 4, 5]
 

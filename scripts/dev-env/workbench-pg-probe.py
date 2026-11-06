@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -18,6 +19,7 @@ import time
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import NamedTuple
 from urllib.parse import quote
 
 from psycopg.conninfo import make_conninfo
@@ -28,21 +30,29 @@ ROOT = Path(__file__).resolve().parents[2]
 # it. GitHub kills the entire job at its timeout-minutes and runs no later step,
 # so a fixed inner ceiling that is much smaller than the job leaves no failing
 # case and no log, and one that is too close to the job never gets to report.
-# The integration partitions run under 20 minutes and the Python coverage job
+# The integration partitions run under 30 minutes and the Python coverage job
 # under 10 minutes in .github/workflows/ci.yml; keep these pairs in sync.
-INTEGRATION_JOB_TIMEOUT_SECONDS = 20 * 60
+INTEGRATION_JOB_TIMEOUT_SECONDS = 30 * 60
 COVERAGE_JOB_TIMEOUT_SECONDS = 10 * 60
 # Setup before the probe starts (container init, checkout, dependency install,
-# MinIO) and the probe's own stop-and-report tail share the same job budget.
-# Reserve two minutes so the inner deadline fires first: the 2026-11-06
-# Integration 3 run spent 78 s in setup before the probe step began.
-INTEGRATION_JOB_RESERVE_SECONDS = 120
+# MinIO, and on Web lanes pnpm plus Chromium) and the probe's own stop-and-report
+# tail share the same job budget. Reserve five minutes so the inner deadline
+# always fires first: the 2026-11-06 Integration 2 run (42251268385) spent 98 s
+# in setup before the probe step began, and the old two-minute reserve left only
+# 19 s before the runner would have killed the job.
+INTEGRATION_JOB_RESERVE_SECONDS = 300
 INTEGRATION_SHARD_PYTEST_TIMEOUT_SECONDS = (
     INTEGRATION_JOB_TIMEOUT_SECONDS - INTEGRATION_JOB_RESERVE_SECONDS
 )
 FULL_COVERAGE_PYTEST_TIMEOUT_SECONDS = COVERAGE_JOB_TIMEOUT_SECONDS
 DEFAULT_PYTEST_TIMEOUT_SECONDS = 180
 PYTEST_LOG_TAIL_LINES = 50
+# pytest -q prints one progress line per terminal row: markers followed by the
+# completion percentage. These parse a timed-out log when no live progress file
+# exists; the shard runner's progress file remains the exact source.
+PYTEST_PROGRESS_PATTERN = re.compile(r"\[\s*(\d+)%\]")
+PYTEST_PROGRESS_MARKERS = frozenset(".sxFEX")
+PYTEST_TEST_ID_PATTERN = re.compile(r"^(tests/\S+::\S+)", re.MULTILINE)
 
 
 NON_INTEGRATION_TEST_PATHS = (
@@ -174,13 +184,15 @@ def build_pytest_command(
     return command
 
 
-def build_integration_shard_command(*, index: int, count: int, report: Path) -> list[str]:
+def build_integration_shard_command(
+    *, index: int, count: int, report: Path, progress: Path | None = None
+) -> list[str]:
     """Delegate inventory, partitioning and same-head evidence to the canonical runner."""
     if type(count) is not int or not 1 <= count <= 16:
         raise ValueError("shard count must be within 1..16")
     if type(index) is not int or not 0 <= index < count:
         raise ValueError("shard index is outside the partition")
-    return [
+    command = [
         sys.executable,
         "scripts/dev-env/integration-shards.py",
         "run",
@@ -191,6 +203,14 @@ def build_integration_shard_command(*, index: int, count: int, report: Path) -> 
         "--report",
         str(report),
     ]
+    if progress is not None:
+        command.extend(["--progress", str(progress)])
+    return command
+
+
+def shard_progress_path(report: Path) -> Path:
+    """Keep the live position beside the final report without changing its shape."""
+    return report.with_name(f"{report.stem}.progress.json")
 
 
 def private_pg_environment(
@@ -372,6 +392,15 @@ def pytest_timeout_seconds(*, full_coverage: bool, integration_shard: int | None
     return DEFAULT_PYTEST_TIMEOUT_SECONDS
 
 
+def pytest_job_timeout_seconds(*, full_coverage: bool, integration_shard: int | None) -> int | None:
+    """Return the outer job budget when this mode runs inside a bounded CI job."""
+    if integration_shard is not None:
+        return INTEGRATION_JOB_TIMEOUT_SECONDS
+    if full_coverage:
+        return COVERAGE_JOB_TIMEOUT_SECONDS
+    return None
+
+
 def captured_text(value: str | bytes | None) -> str:
     if value is None:
         return ""
@@ -398,12 +427,193 @@ def print_log_tail(log_path: Path, *, limit: int = PYTEST_LOG_TAIL_LINES) -> Non
     print("--- end of pytest.log tail ---", file=sys.stderr)
 
 
+class ShardProgress(NamedTuple):
+    selected: int
+    completed: int
+    last_started: str | None
+    last_completed: str | None
+
+
+def read_shard_progress(path: Path | None) -> ShardProgress | None:
+    """Read the shard runner's live position; an absent or partial file is not an error."""
+    if path is None:
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except OSError, ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    selected = data.get("selected")
+    completed = data.get("completed")
+    if not isinstance(selected, int) or not isinstance(completed, int):
+        return None
+    if selected < 0 or completed < 0:
+        return None
+    last_started = data.get("last_started")
+    last_completed = data.get("last_completed")
+    return ShardProgress(
+        selected=selected,
+        completed=min(completed, selected),
+        last_started=last_started if isinstance(last_started, str) else None,
+        last_completed=last_completed if isinstance(last_completed, str) else None,
+    )
+
+
+def parse_pytest_progress(text: str) -> tuple[int | None, int]:
+    """Return the last completion percentage and the progress markers before it.
+
+    A killed process usually leaves its final progress line without a newline or
+    percentage, so a line made only of markers still counts.
+    """
+    percent: int | None = None
+    completed = 0
+    for line in text.splitlines():
+        match = PYTEST_PROGRESS_PATTERN.search(line)
+        if match is not None:
+            prefix = line[: match.start()]
+            percent = int(match.group(1))
+        elif line and set(line) <= PYTEST_PROGRESS_MARKERS:
+            prefix = line
+        else:
+            continue
+        completed += sum(1 for character in prefix if character in PYTEST_PROGRESS_MARKERS)
+    return percent, completed
+
+
+def collect_timeout_diagnostics(
+    *,
+    log_path: Path,
+    progress_path: Path | None,
+    elapsed: float,
+    limit: int,
+    job_limit: int | None,
+) -> dict[str, object]:
+    """Describe how far the suite got before the ceiling fired, without guessing."""
+    try:
+        log_text = log_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        log_text = ""
+    percent, markers = parse_pytest_progress(log_text)
+    progress = read_shard_progress(progress_path)
+    matches = PYTEST_TEST_ID_PATTERN.findall(log_text)
+    last_test = matches[-1] if matches else None
+    facts: dict[str, object] = {
+        "elapsed_seconds": round(elapsed, 1),
+        "limit_seconds": limit,
+        "job_limit_seconds": job_limit,
+        "reserve_seconds": None if job_limit is None else job_limit - limit,
+        "log_percent": percent,
+        "log_completed_markers": markers,
+    }
+    if progress is not None:
+        facts.update(
+            {
+                "selected_cases": progress.selected,
+                "completed_cases": progress.completed,
+                "remaining_cases": progress.selected - progress.completed,
+                "last_started_test": progress.last_started or last_test,
+                "last_completed_test": progress.last_completed,
+            }
+        )
+        if progress.selected:
+            facts["percent"] = round(progress.completed * 100 / progress.selected)
+    elif markers:
+        facts.update(
+            {
+                "completed_cases": markers,
+                "last_started_test": last_test,
+                "last_completed_test": None,
+            }
+        )
+        if percent is not None:
+            estimated_total = round(markers * 100 / percent)
+            facts.update(
+                {
+                    "percent": percent,
+                    "estimated_total_cases": estimated_total,
+                    "remaining_cases": max(estimated_total - markers, 0),
+                }
+            )
+    else:
+        facts["last_started_test"] = last_test
+        facts["last_completed_test"] = None
+    return facts
+
+
+def print_timeout_diagnostics(facts: Mapping[str, object]) -> None:
+    """Print the timeout facts a reader needs to tell progress from a stuck suite."""
+    percent = facts.get("percent")
+    completed = facts.get("completed_cases")
+    selected = facts.get("selected_cases")
+    if isinstance(selected, int) and isinstance(completed, int):
+        print(
+            f"pytest progress: {percent if isinstance(percent, int) else 'unknown'}% — "
+            f"completed {completed} of {selected} selected cases; "
+            f"{facts['remaining_cases']} not completed",
+            file=sys.stderr,
+        )
+    elif isinstance(percent, int) and isinstance(completed, int):
+        print(
+            f"pytest progress: {percent}% — about {completed} cases completed (estimated from "
+            "the progress line; no exact total was published before the timeout)",
+            file=sys.stderr,
+        )
+    elif isinstance(completed, int) and completed:
+        print(
+            f"pytest progress: about {completed} cases completed before the timeout; "
+            "no completion percentage was published",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            "pytest progress: no case finished and no progress line was written; "
+            "collection was still running",
+            file=sys.stderr,
+        )
+    started = facts.get("last_started_test")
+    finished = facts.get("last_completed_test")
+    print(
+        f"last started test: {started if isinstance(started, str) else 'unknown'}",
+        file=sys.stderr,
+    )
+    print(
+        f"last completed test: {finished if isinstance(finished, str) else 'unknown'}",
+        file=sys.stderr,
+    )
+    job_limit = facts.get("job_limit_seconds")
+    reserve = facts.get("reserve_seconds")
+    limit = facts.get("limit_seconds")
+    if isinstance(job_limit, int) and isinstance(reserve, int) and isinstance(limit, int):
+        share = reserve * 100 // job_limit if job_limit else 0
+        print(
+            f"timeout budget: probe limit {limit} s inside job limit {job_limit} s; "
+            f"{reserve} s ({share}%) beyond the probe ceiling for setup, dependency "
+            "install and the stop/report tail",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            f"timeout budget: probe limit {limit} s (no outer job budget for this mode)",
+            file=sys.stderr,
+        )
+    print(
+        "suggested action: the suite was still advancing and recorded no failure; "
+        "confirm the shard legitimately grew and raise the budget, otherwise split the "
+        "shard instead of raising it (docs/validation/ci-validation.md)",
+        file=sys.stderr,
+    )
+
+
 def run_test_command(
     command: Sequence[str],
     *,
     env: Mapping[str, str],
     log_path: Path,
     timeout_seconds: int,
+    progress_path: Path | None = None,
+    job_timeout_seconds: int | None = None,
+    result: dict[str, object] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run pytest-shaped work and keep its output on disk, including on timeout."""
     # pytest and the shard runner share this process tree. Unbuffered output means
@@ -427,11 +637,21 @@ def run_test_command(
         output = captured_text(error.stdout) + captured_text(error.stderr)
         log_path.write_text(output, encoding="utf-8")
         elapsed = time.monotonic() - started
+        facts = collect_timeout_diagnostics(
+            log_path=log_path,
+            progress_path=progress_path,
+            elapsed=elapsed,
+            limit=timeout_seconds,
+            job_limit=job_timeout_seconds,
+        )
+        if result is not None:
+            result["pytest_timeout"] = facts
         print(
             f"probe subprocess timed out after {elapsed:.1f} s "
             f"(limit {timeout_seconds} s); pytest log: {display_path(log_path)}",
             file=sys.stderr,
         )
+        print_timeout_diagnostics(facts)
         if output:
             print_log_tail(log_path)
         else:
@@ -519,15 +739,19 @@ def main() -> int:
         start_confirmed = True
         env = private_pg_environment(os.environ, sockets=sockets, full_coverage=args.full_coverage)
         run([str(pg_bin / "createdb"), "speechnexus_workbench_test"], env=env)
+        progress_path: Path | None = None
         if args.integration_shard is not None:
+            shard_report = args.shard_report.resolve()
+            progress_path = shard_progress_path(shard_report)
             command = build_integration_shard_command(
                 index=args.integration_shard,
                 count=args.shard_count,
-                report=args.shard_report.resolve(),
+                report=shard_report,
+                progress=progress_path,
             )
             result["integration_shard"] = args.integration_shard
             result["shard_count"] = args.shard_count
-            result["shard_report"] = str(args.shard_report.resolve())
+            result["shard_report"] = str(shard_report)
         else:
             command = build_pytest_command(
                 coverage=args.coverage,
@@ -605,9 +829,19 @@ def main() -> int:
         test_timeout = pytest_timeout_seconds(
             full_coverage=args.full_coverage, integration_shard=args.integration_shard
         )
+        job_timeout = pytest_job_timeout_seconds(
+            full_coverage=args.full_coverage, integration_shard=args.integration_shard
+        )
         result["pytest_timeout_seconds"] = test_timeout
+        result["pytest_job_timeout_seconds"] = job_timeout
         tests = run_test_command(
-            command, env=env, log_path=pytest_log, timeout_seconds=test_timeout
+            command,
+            env=env,
+            log_path=pytest_log,
+            timeout_seconds=test_timeout,
+            progress_path=progress_path,
+            job_timeout_seconds=job_timeout,
+            result=result,
         )
         result["tests_passed"] = tests.returncode == 0
         result["pytest_log"] = str(pytest_log.relative_to(ROOT))

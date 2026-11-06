@@ -351,11 +351,13 @@ jobs:
     needs: [changes]
     if: ${{ needs.changes.outputs.mode == 'full' }}
     runs-on: ubuntu-24.04
-    # Baseline: the four database partitions need 7-9.5 min of job wall clock
-    # against the old 10 min ceiling, so a transient runner stall cancelled the
-    # job and the evidence gate reported shards=cancelled. The budget is headroom
-    # for the same work, not a different selection or a weaker assertion.
-    timeout-minutes: 20
+    # Baseline: the four database partitions need 7-9.5 min of job wall clock.
+    # PR #498's Integration 2 was still at 84% when the probe's old 18 min inner
+    # ceiling fired, and the 20 min job left only 19 s for its stop/report tail.
+    # The probe now derives a 25 min ceiling from this 30 min budget with a
+    # five-minute setup/cleanup reserve (docs/validation/ci-validation.md). This
+    # is headroom for the same work, not a different selection or weaker assertion.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       max-parallel: 6
@@ -503,9 +505,9 @@ jobs:
           lines.extend(
               [
                   "",
-                  "Budget: 20 min job timeout. A shard consistently above 15 min is",
-                  "split or repartitioned, not given a larger timeout",
-                  "(docs/validation/ci-validation.md).",
+                  "Budget: 30 min job timeout with a 25 min inner probe ceiling.",
+                  "A shard consistently above 15 min is split or repartitioned,",
+                  "not given a larger timeout (docs/validation/ci-validation.md).",
                   "",
               ]
           )

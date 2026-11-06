@@ -8,17 +8,20 @@ and never reports a terminal state twice.
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
+import logging
 import re
 from collections.abc import AsyncIterator, Callable, Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, Request
 from speechnexus_contracts import ContractValidationError, parse
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import ClientDisconnect
 from starlette.responses import Response, StreamingResponse
+from starlette.types import Message, Send
 
 from speechnexus_backend.speech.application.job_cancellation import JobCancellationService
 from speechnexus_backend.speech.application.public_jobs import (
@@ -51,6 +54,7 @@ from speechnexus_backend.speech.domain.public_jobs import (
     identifier,
 )
 from speechnexus_backend.speech.interfaces.http.job_errors import job_error
+from speechnexus_backend.speech.interfaces.http.middleware import REQUEST_ABORT_KEY
 
 PREFIX = "/v1/nexus/jobs"
 _STATUS = {
@@ -71,11 +75,82 @@ _EVENT_ID = re.compile(r"[1-9][0-9]{0,18}\Z")
 _EVENT_CURSOR_MAX = 9_223_372_036_854_775_807
 _EVENT_BATCH = 100
 _EVENT_POLL_SECONDS = 0.5
+# A comment line keeps idle proxies and clients from timing the stream out. The
+# interval is bounded by configuration; it never consumes an event id.
 _EVENT_HEARTBEAT_SECONDS = 15.0
+_EVENT_SEND_TIMEOUT_SECONDS = 10.0
+_KEEPALIVE = b": keepalive\n\n"
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class _TooLargeError(ValueError):
     pass
+
+
+class _StreamStalledError(Exception):
+    """The client stopped draining the response body."""
+
+
+def _pause_seconds(now: float, beat: float, heartbeat: float, poll: float) -> float:
+    """Seconds until the earlier of the next poll and the next due heartbeat."""
+    return max(0.0, min(beat + heartbeat, now + poll) - now)
+
+
+class _EventStreamResponse(StreamingResponse):
+    """Event stream with a bounded per-frame write and a slow-client cutoff.
+
+    Frames are pulled one page at a time: the next page is only read after every
+    frame of the current page was accepted by the server transport, so a
+    connection holds at most one page of projected frames (_EVENT_BATCH) plus the
+    frame in flight. When a write cannot complete within the configured timeout
+    the client is not draining, so the source is closed and, when the middleware
+    captured one, the server's abort hook resets the socket instead of blocking
+    the request task forever. The disconnect is logged with counts and timings
+    only; the client resumes from its last committed id.
+    """
+
+    def __init__(
+        self,
+        content: AsyncIterator[bytes],
+        *,
+        send_timeout_seconds: float,
+        abort_connection: Callable[[], None] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(content, **kwargs)
+        self._send_timeout_seconds = send_timeout_seconds
+        self._abort_connection = abort_connection
+
+    async def stream_response(self, send: Send) -> None:
+        async def guarded(message: Message) -> None:
+            body = cast(dict[str, Any], message)
+            if message["type"] != "http.response.body" or not body.get("more_body", False):
+                await send(message)
+                return
+            try:
+                async with asyncio.timeout(self._send_timeout_seconds):
+                    await send(message)
+            except TimeoutError:
+                raise _StreamStalledError from None
+
+        try:
+            await super().stream_response(guarded)
+        except _StreamStalledError:
+            _LOGGER.warning(
+                "job_event_stream_backpressure",
+                extra={
+                    "event": "job_event_stream_backpressure",
+                    "reason": "slow_client",
+                    "send_timeout_seconds": self._send_timeout_seconds,
+                    "connection_reset": self._abort_connection is not None,
+                },
+            )
+            close = getattr(self.body_iterator, "aclose", None)
+            if close is not None:
+                await close()
+            if self._abort_connection is not None:
+                self._abort_connection()
 
 
 def _object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -454,7 +529,16 @@ def _retry(
         return job_error("job_unavailable", request_id)
 
 
-def _open_stream(service: PublicJobs, job_id: str, request_id: str, after_seq: int) -> Response:
+def _open_stream(
+    service: PublicJobs,
+    job_id: str,
+    request_id: str,
+    after_seq: int,
+    *,
+    heartbeat_seconds: float,
+    send_timeout_seconds: float,
+    abort_connection: Callable[[], None] | None = None,
+) -> Response:
     """Validate existence before the response so 404 is a real status, not an empty stream."""
     try:
         identifier(job_id)
@@ -463,10 +547,12 @@ def _open_stream(service: PublicJobs, job_id: str, request_id: str, after_seq: i
         return job_error("job_not_found", request_id)
     except PublicJobUnavailableError, ContractValidationError:
         return job_error("job_unavailable", request_id)
-    return StreamingResponse(
-        _event_stream(service, job_id, after_seq),
+    return _EventStreamResponse(
+        _event_stream(service, job_id, after_seq, heartbeat_seconds=heartbeat_seconds),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Request-ID": request_id},
+        send_timeout_seconds=send_timeout_seconds,
+        abort_connection=abort_connection,
     )
 
 
@@ -487,8 +573,18 @@ async def _read_page(
     )
 
 
-async def _event_stream(service: PublicJobs, job_id: str, after_seq: int) -> AsyncIterator[bytes]:
-    cursor, beat = after_seq, asyncio.get_running_loop().time()
+async def _event_stream(
+    service: PublicJobs,
+    job_id: str,
+    after_seq: int,
+    *,
+    heartbeat_seconds: float | None = None,
+    poll_seconds: float | None = None,
+) -> AsyncIterator[bytes]:
+    heartbeat = _EVENT_HEARTBEAT_SECONDS if heartbeat_seconds is None else heartbeat_seconds
+    poll = _EVENT_POLL_SECONDS if poll_seconds is None else poll_seconds
+    loop = asyncio.get_running_loop()
+    cursor, beat = after_seq, loop.time()
     while True:
         try:
             job, frames = await _read_page(service, job_id, cursor)
@@ -496,7 +592,7 @@ async def _event_stream(service: PublicJobs, job_id: str, after_seq: int) -> Asy
             # A committed row can outrun the snapshot that must explain it, and a
             # vanished or unreadable Job has no provable frame. Re-read once, then
             # end the stream instead of emitting a partial or invented event.
-            await asyncio.sleep(_EVENT_POLL_SECONDS)
+            await asyncio.sleep(poll)
             try:
                 job, frames = await _read_page(service, job_id, cursor)
             except PublicJobNotFoundError, PublicJobUnavailableError, ValueError:
@@ -506,11 +602,14 @@ async def _event_stream(service: PublicJobs, job_id: str, after_seq: int) -> Asy
             cursor = event_seq
         if job.state in TERMINAL_STATES and not frames:
             return
-        now = asyncio.get_running_loop().time()
-        if now - beat >= _EVENT_HEARTBEAT_SECONDS:
+        now = loop.time()
+        if now - beat >= heartbeat:
             beat = now
-            yield b": keepalive\n\n"
-        await asyncio.sleep(_EVENT_POLL_SECONDS)
+            yield _KEEPALIVE
+            now = loop.time()
+        # Sleep to the nearer deadline measured after the work already done, so a
+        # slow read cannot push the beat a whole poll interval past its cadence.
+        await asyncio.sleep(_pause_seconds(now, beat, heartbeat, poll))
 
 
 def create_job_router(
@@ -519,11 +618,17 @@ def create_job_router(
     get_confirmation: Callable[[], JobCancellationService | None] | None = None,
     max_bytes: int = 262144,
     receive_timeout_seconds: float = 5,
+    event_heartbeat_seconds: float | None = None,
+    event_send_timeout_seconds: float | None = None,
 ) -> APIRouter:
     if not 1 <= max_bytes <= 1048576:
         raise ValueError("Public Job body limit must be bounded")
     if not 0 < receive_timeout_seconds <= 30:
         raise ValueError("Public Job receive timeout must be bounded")
+    if event_heartbeat_seconds is not None and not 0 < event_heartbeat_seconds <= 60:
+        raise ValueError("Public Job event heartbeat must be bounded")
+    if event_send_timeout_seconds is not None and not 0 < event_send_timeout_seconds <= 60:
+        raise ValueError("Public Job event send timeout must be bounded")
     router = APIRouter(tags=["jobs"])
 
     @router.post(PREFIX, operation_id="createJob")
@@ -591,6 +696,26 @@ def create_job_router(
             after_seq = _last_event_id(request)
         except ValueError:
             return job_error("invalid_job_request", request_id)
-        return await run_in_threadpool(_open_stream, service, job_id, request_id, after_seq)
+        # Unset overrides follow the module defaults so an operator or a test can
+        # tune the cadence without rebuilding the router.
+        heartbeat = (
+            _EVENT_HEARTBEAT_SECONDS if event_heartbeat_seconds is None else event_heartbeat_seconds
+        )
+        send_timeout = (
+            _EVENT_SEND_TIMEOUT_SECONDS
+            if event_send_timeout_seconds is None
+            else event_send_timeout_seconds
+        )
+        open_stream = functools.partial(
+            _open_stream,
+            service,
+            job_id,
+            request_id,
+            after_seq,
+            heartbeat_seconds=heartbeat,
+            send_timeout_seconds=send_timeout,
+            abort_connection=request.scope.get(REQUEST_ABORT_KEY),
+        )
+        return await run_in_threadpool(open_stream)
 
     return router

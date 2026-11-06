@@ -95,6 +95,8 @@ class Settings(BaseSettings):
     job_receive_max_bytes: int = Field(default=262144, ge=1, le=1048576)
     job_receive_timeout_seconds: float = Field(default=5, gt=0, le=30)
     job_transaction_timeout_seconds: float = Field(default=3, gt=0, le=30)
+    job_event_heartbeat_seconds: float = Field(default=15, gt=0, le=60)
+    job_event_send_timeout_seconds: float = Field(default=10, gt=0, le=60)
 
     execution_gateway_base_url: AnyHttpUrl | None = None
     execution_gateway_component_credential: SecretStr | None = Field(default=None, min_length=1)

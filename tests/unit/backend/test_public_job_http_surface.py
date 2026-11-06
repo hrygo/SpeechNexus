@@ -272,13 +272,18 @@ async def test_stream_emits_its_heartbeat_without_inventing_an_event(
 
     def get_then_finish(job_id: str) -> PublicJob:
         reads["count"] += 1
-        fake.job = failed if reads["count"] > 2 else job
+        # The stream also reads the snapshot once to validate the response, so
+        # the terminal fact must be delayed far enough to observe an idle beat.
+        fake.job = failed if reads["count"] > 4 else job
         return original_get(job_id)
 
     monkeypatch.setattr(fake, "get", get_then_finish)
-    monkeypatch.setattr(http, "_EVENT_HEARTBEAT_SECONDS", 0.0)
-    monkeypatch.setattr(http, "_EVENT_POLL_SECONDS", 0.0)
-    async with _client(_app(fake)) as client:
+    # The heartbeat interval is process configuration now, so the cadence is
+    # injected through Settings instead of the module default.
+    settings = _settings().model_copy(update={"job_event_heartbeat_seconds": 0.005})
+    monkeypatch.setattr(http, "_EVENT_POLL_SECONDS", 0.01)
+    app = create_app(settings=settings, jobs=cast(Any, fake))
+    async with _client(app) as client:
         response = await client.get(EVENTS.format(job_id=job.job_id))
     assert response.status_code == 200, response.text
     assert ": keepalive" in response.text

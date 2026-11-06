@@ -1,18 +1,24 @@
 """Public Job event projection, the live tail loop and the retry boundary.
 
 httpx's ASGI transport buffers a whole response, so it cannot observe a stream
-that is still growing. The loop is therefore exercised directly against a
-scripted service whose facts change between polls.
+that is still growing. The in-process loop is therefore exercised directly
+against a scripted service whose facts change between polls; the real socket
+behaviour (heartbeat cadence, paging over one connection, mid-stream disconnect)
+is covered by tests/integration/test_public_job_event_stream_tcp.py.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
+from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import replace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from speechnexus_contracts import parse
+from starlette.types import Message
 
 from speechnexus_backend.speech.application.public_jobs import (
     JobRetryNotAllowedError,
@@ -32,6 +38,10 @@ from speechnexus_backend.speech.domain.public_jobs import (
     retryable,
 )
 from speechnexus_backend.speech.interfaces.http import jobs as http
+from speechnexus_backend.speech.interfaces.http.middleware import (
+    REQUEST_ABORT_KEY,
+    RequestIdMiddleware,
+)
 from tests.unit.backend.test_public_jobs import NOW, Facts, Store, _body
 
 INTENT = {"kind": "tts", "model": "tts-quality"}
@@ -148,8 +158,9 @@ class RetryStore(Store):
 
 
 async def _drain(service: Any, job_id: str, after_seq: int = -1) -> list[dict[str, Any]]:
-    http._EVENT_POLL_SECONDS = 0
-    chunks = [chunk async for chunk in http._event_stream(service, job_id, after_seq)]
+    chunks = [
+        chunk async for chunk in http._event_stream(service, job_id, after_seq, poll_seconds=0)
+    ]
     body = b"".join(chunks).decode()
     events: list[dict[str, Any]] = []
     for block in body.split("\n\n"):
@@ -278,3 +289,207 @@ async def test_terminal_page_ahead_of_the_snapshot_waits_for_the_re_read() -> No
 
 async def test_permanently_lagging_snapshot_ends_the_stream_without_a_frame() -> None:
     assert await _drain(PublicJobs(Facts(), Lagging(lag=None)), _job("running").job_id) == []
+
+
+class Gapped(Store):
+    """Emit one page, stay idle for several polls, then append one event."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.job = _job("running")
+        self.calls = 0
+
+    def get(self, job_id: str) -> PublicJob | None:
+        return self.job
+
+    def events(self, job_id: str, *, after_seq: int, limit: int) -> tuple[JobEventFact, ...]:
+        self.calls += 1
+        page = [JobEventFact(0, "pending", NOW), JobEventFact(1, "running", NOW + 1)]
+        if self.calls >= 4:
+            page.append(JobEventFact(2, "running", NOW + 2))
+        return tuple(event for event in page if event.event_seq > after_seq)
+
+
+async def test_keepalive_comments_interleave_without_touching_event_ids() -> None:
+    store = Gapped()
+    service = PublicJobs(Facts(), store, now_us=lambda: NOW)
+    stream = cast(
+        AsyncGenerator[bytes],
+        http._event_stream(
+            service, store.job.job_id, -1, heartbeat_seconds=0.01, poll_seconds=0.01
+        ),
+    )
+    identifiers: list[str] = []
+    keepalives: list[bytes] = []
+    try:
+        async with asyncio.timeout(10):
+            while len(identifiers) < 3 or not keepalives:
+                chunk = await anext(stream)
+                if chunk == http._KEEPALIVE:
+                    keepalives.append(chunk)
+                    continue
+                identifiers.append(chunk.decode().split("id: ", 1)[1].split("\n", 1)[0])
+    finally:
+        await stream.aclose()
+    # The idle comment is never an event: the persisted sequence stays 1, 2, 3.
+    assert identifiers == ["1", "2", "3"]
+    assert keepalives
+    assert all(b"id:" not in chunk and b"data:" not in chunk for chunk in keepalives)
+
+
+async def test_a_client_that_cannot_drain_is_disconnected_and_logged(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    release = asyncio.Event()
+    sent: list[Message] = []
+    closed = False
+
+    async def send(message: Message) -> None:
+        sent.append(message)
+        body = cast(dict[str, Any], message)
+        if message["type"] == "http.response.body" and body.get("more_body", False):
+            await release.wait()
+
+    async def frames() -> AsyncIterator[bytes]:
+        nonlocal closed
+        try:
+            yield b"data: one\n\n"
+            yield b"data: two\n\n"
+        finally:
+            closed = True
+
+    response = http._EventStreamResponse(
+        frames(),
+        media_type="text/event-stream",
+        headers={},
+        send_timeout_seconds=0.01,
+    )
+    with caplog.at_level(logging.WARNING, logger="speechnexus_backend.speech.interfaces.http.jobs"):
+        await asyncio.wait_for(response.stream_response(send), 5)
+    assert closed, "a stalled frame must close the event source instead of buffering"
+    # The first frame was accepted, the second could not be flushed, and no
+    # further frame was generated for a client that is not reading.
+    assert [message["type"] for message in sent] == [
+        "http.response.start",
+        "http.response.body",
+    ]
+    records = [
+        record
+        for record in caplog.records
+        if record.getMessage() == "job_event_stream_backpressure"
+    ]
+    assert len(records) == 1
+    record = cast(Any, records[0])
+    assert record.reason == "slow_client"
+    assert record.send_timeout_seconds == 0.01
+    # No abort hook was supplied here, so the cutoff is the fallback close.
+    assert record.connection_reset is False
+    # Operational evidence stays identity-free: no job, request or client field.
+    assert {"job_id", "request_id", "job", "request", "client"} & set(record.__dict__) == set()
+
+
+@pytest.mark.parametrize(
+    ("now", "beat", "expected"),
+    [
+        (0.0, 0.0, 0.5),  # nothing consumed yet: the poll boundary is nearer
+        (0.3, 0.0, 0.21),  # a slow read leaves only the heartbeat remainder
+        (0.51, 0.0, 0.0),  # the heartbeat deadline already passed
+        (5.0, 5.0, 0.5),  # a beat that just fired waits for the poll instead
+    ],
+)
+def test_pause_targets_the_earlier_deadline(now: float, beat: float, expected: float) -> None:
+    assert http._pause_seconds(now, beat, heartbeat=0.51, poll=0.5) == pytest.approx(expected)
+
+
+class _Cycle:
+    """A stand-in for a server request cycle that owns a transport."""
+
+    def __init__(self) -> None:
+        self.transport = _Transport()
+        self.disconnected = False
+
+    async def receive(self) -> Message:
+        return {"type": "http.disconnect"}
+
+
+class _Transport:
+    def __init__(self) -> None:
+        self.aborted = False
+
+    def abort(self) -> None:
+        self.aborted = True
+
+
+async def test_the_request_scope_carries_a_stalled_connection_abort_hook() -> None:
+    cycle = _Cycle()
+    invoked: list[bool] = []
+
+    async def inner(scope: Any, receive: Any, send: Any) -> None:
+        hook = scope.get(REQUEST_ABORT_KEY)
+        assert hook is not None
+        hook()
+        invoked.append(True)
+
+    async def send(message: Message) -> None:
+        raise AssertionError(message)
+
+    app = RequestIdMiddleware(inner)
+    await app({"type": "http", "headers": [], "state": {}}, cycle.receive, send)
+    assert invoked == [True]
+    # Without an abort the stalled socket would wait for a peer that never reads.
+    assert cycle.transport.aborted
+    assert cycle.disconnected
+
+
+async def test_a_server_without_a_request_cycle_gets_no_abort_hook() -> None:
+    async def receive() -> Message:
+        return {"type": "http.disconnect"}
+
+    async def inner(scope: Any, receive: Any, send: Any) -> None:
+        assert REQUEST_ABORT_KEY not in scope
+
+    async def send(message: Message) -> None:
+        raise AssertionError(message)
+
+    await RequestIdMiddleware(inner)({"type": "http", "headers": [], "state": {}}, receive, send)
+
+
+async def test_a_stalled_write_resets_the_connection(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    aborted: list[bool] = []
+
+    async def send(message: Message) -> None:
+        body = cast(dict[str, Any], message)
+        if message["type"] == "http.response.body" and body.get("more_body", False):
+            await asyncio.Event().wait()
+
+    async def frames() -> AsyncIterator[bytes]:
+        yield b"data: one\n\n"
+        yield b"data: two\n\n"
+
+    response = http._EventStreamResponse(
+        frames(),
+        media_type="text/event-stream",
+        headers={},
+        send_timeout_seconds=0.01,
+        abort_connection=lambda: aborted.append(True),
+    )
+    with caplog.at_level(logging.WARNING, logger="speechnexus_backend.speech.interfaces.http.jobs"):
+        await asyncio.wait_for(response.stream_response(send), 5)
+    # A graceful close would wait for the blocked buffer to drain, which never
+    # happens for a peer that stopped reading, so the connection is reset.
+    assert aborted == [True]
+    record = cast(Any, caplog.records[-1])
+    assert record.getMessage() == "job_event_stream_backpressure"
+    assert record.connection_reset is True
+
+
+def test_stream_timing_configuration_is_bounded() -> None:
+    for heartbeat, send_timeout in ((0, 10), (61, 10), (15, 0), (15, 61)):
+        with pytest.raises(ValueError):
+            http.create_job_router(
+                lambda: None,
+                event_heartbeat_seconds=heartbeat,
+                event_send_timeout_seconds=send_timeout,
+            )

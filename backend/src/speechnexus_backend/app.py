@@ -417,6 +417,8 @@ def create_app(
             get_confirmation=get_job_confirmation,
             max_bytes=resolved_settings.job_receive_max_bytes,
             receive_timeout_seconds=resolved_settings.job_receive_timeout_seconds,
+            event_heartbeat_seconds=resolved_settings.job_event_heartbeat_seconds,
+            event_send_timeout_seconds=resolved_settings.job_event_send_timeout_seconds,
         )
     )
     app.include_router(create_speech_router(lambda: speech))

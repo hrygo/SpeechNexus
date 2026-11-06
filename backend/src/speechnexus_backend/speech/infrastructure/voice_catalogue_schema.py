@@ -12,7 +12,7 @@ SELECT p.object_id AS voice_id, p.revision, p.revision_id, p.published_at_us,
                  AND h.revision=p.revision AND h.revision_id=p.revision_id) AS selected,
        r.mode AS retirement_mode, r.reason AS retirement_reason, r.retired_at_us
 FROM speech_publications p
-JOIN speech_builtin_voice_qualifications q
+LEFT JOIN speech_builtin_voice_qualifications q
   ON q.voice_id=p.object_id AND q.revision=p.revision AND q.revision_id=p.revision_id
 LEFT JOIN speech_publication_retirements r
   ON r.kind=p.kind AND r.object_id=p.object_id

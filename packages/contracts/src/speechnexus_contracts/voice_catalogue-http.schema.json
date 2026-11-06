@@ -25,6 +25,14 @@
           },
           "json": true
         },
+        "400": {
+          "schema": "HttpResponse_listVoices_400",
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
+          "json": true
+        },
         "401": {
           "schema": "HttpResponse_listVoices_401",
           "headers": {},
@@ -61,6 +69,14 @@
           },
           "json": true
         },
+        "400": {
+          "schema": "HttpResponse_getVoiceRevision_400",
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
+          "json": true
+        },
         "401": {
           "schema": "HttpResponse_getVoiceRevision_401",
           "headers": {},
@@ -84,10 +100,12 @@
   "x-nexus-entrypoints": [
     "HttpRequest_listVoices",
     "HttpResponse_listVoices_200",
+    "HttpResponse_listVoices_400",
     "HttpResponse_listVoices_401",
     "HttpResponse_listVoices_503",
     "HttpRequest_getVoiceRevision",
     "HttpResponse_getVoiceRevision_200",
+    "HttpResponse_getVoiceRevision_400",
     "HttpResponse_getVoiceRevision_401",
     "HttpResponse_getVoiceRevision_404",
     "HttpResponse_getVoiceRevision_503"
@@ -1097,6 +1115,53 @@
       },
       "required": ["body"]
     },
+    "HttpResponse_listVoices_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "false"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
+          "additionalProperties": true
+        },
+        "body": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "voice_invalid_request"
+                    },
+                    "type": {
+                      "const": "invalid_request_error"
+                    },
+                    "retryable": {
+                      "const": false
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "required": ["headers", "body"]
+    },
     "HttpResponse_listVoices_401": {
       "type": "object",
       "additionalProperties": false,
@@ -1191,6 +1256,53 @@
         }
       },
       "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevision_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "false"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
+          "additionalProperties": true
+        },
+        "body": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "voice_invalid_request"
+                    },
+                    "type": {
+                      "const": "invalid_request_error"
+                    },
+                    "retryable": {
+                      "const": false
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "required": ["headers", "body"]
     },
     "HttpResponse_getVoiceRevision_401": {
       "type": "object",

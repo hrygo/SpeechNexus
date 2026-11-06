@@ -65,3 +65,19 @@ test("catalogue client validates native reads once and refuses publication befor
   assert.deepEqual(result.data, reply);
   assert.equal(calls, 1);
 });
+
+
+test("catalogue client accepts a declared non-retryable 400 without retrying", async () => {
+  const reply = examples.find((example) => example.id === "getVoiceRevision-invalid-request").value;
+  let calls = 0;
+  const client = createValidatedClient("https://deployment.invalid", 32768, async () => {
+    calls++;
+    return Response.json(reply.body, { status: 400, headers: reply.headers });
+  });
+  const result = await client.GET("/v1/nexus/voices/{voice_id}/revisions/{revision}", {
+    params: { path: { voice_id: "voice-demo-1", revision: "2" } },
+  });
+  assert.equal(result.response.status, 400);
+  assert.deepEqual(result.error, reply.body);
+  assert.equal(calls, 1);
+});

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus public speech API
-  version: 0.1.0.dev5
+  version: 0.1.0.dev6
   description: |
     SpeechNexus public speech protocol.
 
@@ -399,6 +399,10 @@ paths:
       tags: [voices]
       operationId: listVoices
       summary: List published voices visible to the deployment
+      description: |
+        Invalid, unknown or duplicate query parameters return a non-retryable
+        400 voice_invalid_request before reading the catalogue, even when the
+        catalogue is unavailable. Correct the request before sending it again.
       parameters:
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
@@ -420,6 +424,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VoiceList"
+        "400":
+          $ref: "#/components/responses/VoiceCatalogueBadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "503":
@@ -429,6 +435,11 @@ paths:
       tags: [voices]
       operationId: getVoiceRevision
       summary: Get one immutable published voice revision
+      description: |
+        Invalid path values or any query parameter return a non-retryable
+        400 voice_invalid_request before reading the catalogue. A published fact
+        whose exact qualification document is missing or inconsistent is
+        unavailable (retryable 503), never a confirmed missing revision (404).
       parameters:
         - $ref: "#/components/parameters/VoiceIdPath"
         - $ref: "#/components/parameters/RevisionPath"
@@ -443,6 +454,8 @@ paths:
             application/json:
               schema:
                 $ref: "./voice-resource.schema.json#/$defs/VoiceRevision"
+        "400":
+          $ref: "#/components/responses/VoiceCatalogueBadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -1924,6 +1937,37 @@ components:
         type: string
         pattern: "^bytes [0-9]+-[0-9]+/[0-9]+$"
   responses:
+    VoiceCatalogueBadRequest:
+      description: |
+        Malformed path values, unknown query fields, invalid query values or
+        duplicate query parameters. Correct the request; unchanged retries
+        cannot resolve this error. No catalogue read or execution is performed.
+      headers:
+        Cache-Control:
+          required: true
+          schema:
+            type: string
+            const: no-store
+        X-Should-Retry:
+          required: true
+          schema:
+            type: string
+            const: "false"
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/ErrorResponse"
+              - properties:
+                  error:
+                    properties:
+                      code:
+                        const: voice_invalid_request
+                      type:
+                        const: invalid_request_error
+                      retryable:
+                        const: false
+                      nexus: false
     AssetReceiveTimeout:
       description: The bounded upload receive deadline expired before reservation.
       content:

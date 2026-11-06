@@ -190,7 +190,12 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List published voices visible to the deployment */
+    /**
+     * List published voices visible to the deployment
+     * @description Invalid, unknown or duplicate query parameters return a non-retryable
+     *     400 voice_invalid_request before reading the catalogue, even when the
+     *     catalogue is unavailable. Correct the request before sending it again.
+     */
     get: operations["listVoices"];
     put?: never;
     post?: never;
@@ -207,7 +212,13 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get one immutable published voice revision */
+    /**
+     * Get one immutable published voice revision
+     * @description Invalid path values or any query parameter return a non-retryable
+     *     400 voice_invalid_request before reading the catalogue. A published fact
+     *     whose exact qualification document is missing or inconsistent is
+     *     unavailable (retryable 503), never a confirmed missing revision (404).
+     */
     get: operations["getVoiceRevision"];
     put?: never;
     post?: never;
@@ -3288,6 +3299,31 @@ export interface components {
     } & (unknown & unknown & unknown);
   };
   responses: {
+    /**
+     * @description Malformed path values, unknown query fields, invalid query values or
+     *     duplicate query parameters. Correct the request; unchanged retries
+     *     cannot resolve this error. No catalogue read or execution is performed.
+     */
+    VoiceCatalogueBadRequest: {
+      headers: {
+        "Cache-Control": "no-store";
+        "X-Should-Retry": "false";
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"] & {
+          error?: {
+            /** @constant */
+            code?: "voice_invalid_request";
+            /** @constant */
+            type?: "invalid_request_error";
+            /** @constant */
+            retryable?: false;
+            nexus?: never;
+          };
+        };
+      };
+    };
     /** @description The bounded upload receive deadline expired before reservation. */
     AssetReceiveTimeout: {
       headers: {
@@ -3928,6 +3964,7 @@ export interface operations {
           "application/json": components["schemas"]["VoiceList"];
         };
       };
+      400: components["responses"]["VoiceCatalogueBadRequest"];
       401: components["responses"]["Unauthorized"];
       503: components["responses"]["ServiceUnavailable"];
     };
@@ -3956,6 +3993,7 @@ export interface operations {
           "application/json": components["schemas"]["VoiceRevision"];
         };
       };
+      400: components["responses"]["VoiceCatalogueBadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
       503: components["responses"]["ServiceUnavailable"];

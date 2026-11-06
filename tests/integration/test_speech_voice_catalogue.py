@@ -64,7 +64,13 @@ class CatalogueDB:
             }
         )
 
-    def publish(self, voice: str = "voice-demo-1", revision: str = "2") -> dict[str, Any]:
+    def publish(
+        self,
+        voice: str = "voice-demo-1",
+        revision: str = "2",
+        *,
+        publication_revision_id: str | None = None,
+    ) -> dict[str, Any]:
         doc: dict[str, Any] = deepcopy(DOCUMENT)
         doc.update(voice_id=voice, revision=revision)
         doc["source"] = {
@@ -100,13 +106,13 @@ class CatalogueDB:
         )
         self.owner.execute(
             "INSERT INTO speech_publications VALUES ('voice',%s,%s,%s,%s)",
-            (voice, revision, identity, timestamp),
+            (voice, revision, publication_revision_id or identity, timestamp),
         )
         self.owner.execute(
             "INSERT INTO speech_publication_heads VALUES ('voice',%s,%s,%s,%s) "
             "ON CONFLICT (kind,object_id) DO UPDATE SET revision=EXCLUDED.revision, "
             "revision_id=EXCLUDED.revision_id,updated_at_us=EXCLUDED.updated_at_us",
-            (voice, revision, identity, timestamp),
+            (voice, revision, publication_revision_id or identity, timestamp),
         )
         return doc
 
@@ -341,3 +347,53 @@ async def test_existing_model_only_reader_keeps_voices_unavailable(
         assert response.status_code == 503 and response.json()["error"]["retryable"]
         models = await client.get("/v1/models")
         assert models.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "fault", ["missing", "revision-id-mismatch", "document-identity-mismatch", "json-null"]
+)
+async def test_publication_without_exact_qualification_is_unavailable(
+    catalogue_db: CatalogueDB, fault: str
+) -> None:
+    catalogue_db.publish()
+    broken_doc = catalogue_db.publish(
+        "voice-broken",
+        publication_revision_id="wrong-revision-id" if fault == "revision-id-mismatch" else None,
+    )
+    if fault == "missing":
+        catalogue_db.owner.execute(
+            "DELETE FROM speech_builtin_voice_qualifications WHERE voice_id='voice-broken'"
+        )
+    elif fault in {"document-identity-mismatch", "json-null"}:
+        broken_doc["voice_id"] = "voice-other"
+        catalogue_db.owner.execute(
+            "UPDATE speech_builtin_voice_qualifications SET document=%s::jsonb "
+            "WHERE voice_id='voice-broken'",
+            (json.dumps(None if fault == "json-null" else broken_doc),),
+        )
+    api = create_app(settings=catalogue_db.settings())
+    async with (
+        api.router.lifespan_context(api),
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=api), base_url="http://speech.test"
+        ) as client,
+    ):
+        # A healthy publication keeps the catalogue configured; the broken fact
+        # must not disappear behind pagination or a language filter.
+        healthy = await client.get("/v1/nexus/voices/voice-demo-1/revisions/2")
+        assert healthy.status_code == 200
+        for path, operation in (
+            ("/v1/nexus/voices", "listVoices"),
+            ("/v1/nexus/voices?language=fr-FR&limit=1&cursor=voice-demo-1", "listVoices"),
+            ("/v1/nexus/voices/voice-broken/revisions/2", "getVoiceRevision"),
+        ):
+            response = await client.get(path)
+            assert response.status_code == 503, response.text
+            assert response.json()["error"]["code"] == "voice_catalogue_unavailable"
+            assert response.json()["error"]["retryable"] is True
+            assert response.headers["x-should-retry"] == "true"
+            validate_response(
+                operation, 503, {"body": response.json(), "headers": dict(response.headers)}
+            )
+        missing = await client.get("/v1/nexus/voices/voice-unknown/revisions/2")
+        assert missing.status_code == 404

@@ -14,6 +14,8 @@ from speechnexus_backend.speech.infrastructure.voice_catalogue_schema import VOI
 
 
 def _document(row: dict[str, Any]) -> dict[str, Any]:
+    if row["document"] is None:
+        raise PublicationUnavailableError
     body: dict[str, Any] = deepcopy(row["document"])
     validate_response("getVoiceRevision", 200, {"body": body})
     if (body["voice_id"], body["revision"], body["status"]) != (
@@ -53,6 +55,16 @@ class PostgresVoiceCatalogue:
     ) -> dict[str, Any]:
         def read(db: PublicationCursor) -> dict[str, Any]:
             _require_publications(db)
+            # Check publication integrity before filters or pagination can hide
+            # a selected fact whose exact qualification is unavailable.
+            db.execute(
+                f"SELECT 1 FROM {VOICE_READER_VIEW} WHERE selected "
+                "AND retired_at_us IS NULL AND (document IS NULL "
+                "OR document->>'voice_id' IS DISTINCT FROM voice_id "
+                "OR document->>'revision' IS DISTINCT FROM revision) LIMIT 1"
+            )
+            if db.fetchall():
+                raise PublicationUnavailableError
             db.execute(
                 f"SELECT * FROM {VOICE_READER_VIEW} WHERE selected AND retired_at_us IS NULL "
                 "AND (%s::text IS NULL OR document->'capabilities'->'languages' ? %s) "

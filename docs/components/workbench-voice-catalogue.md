@@ -16,9 +16,11 @@
 OpenAPI 也投影同一闭包。生产装配复用 `ModelCatalogRuntime` 的有界只读连接池与
 `SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL`，不新增目录状态或工作台写者。
 
-迁移 `0037_voice_catalogue_reader` 新增 security-barrier 视图
+迁移 `0038_voice_catalogue_reader` 接续 main 的 `0037_public_job_retries`，新增 security-barrier 视图
 `speech_published_voice_revisions`，按 `voice_id/revision/revision_id` 关联既有
-`speech_publications` 与 `speech_builtin_voice_qualifications.document`。视图不暴露
+`speech_publications` 与 `speech_builtin_voice_qualifications.document`，使用左连接保留发布事实。
+缺少精确资格文档（含 revision_id 不匹配）、JSON null 或正文身份错误不能成为资源不存在；
+列表在语言过滤/分页前检查当前 head 的文档身份与缺口，固定版本读取按发布身份返回可重试 503。视图不暴露
 来源审批、资格原件、native speaker 映射、私有命令或发布意图；不新增表，不修改发布历史。
 当前可读数据来自已有内建音色发布路径；设计与克隆没有持久发布文档生产者，仍待实现。
 
@@ -33,11 +35,15 @@ OpenAPI 也投影同一闭包。生产装配复用 `ModelCatalogRuntime` 的有�
 部署级目录语义，不建立身份或数据隔离。翻页期间目录仍可变化；固定版本读取不跟随 head，
 保留历史，并依据已有 retirement 账本投影 `retired/disabled` 状态。
 
-未配置、无任何已发布公开文档、权限或数据库不可用、公开文档损坏时返回
+未配置、无发布事实、权限或数据库不可用、公开文档损坏时返回
 `503 voice_catalogue_unavailable`，`retryable=true`、`X-Should-Retry: true`。
 已有发布目录内的未知 ID/版本返回 `404 voice_not_found` 且不可重试。
-语言过滤或游标之后无匹配项返回 200 空页。两条原契约没有 400/422，非法查询也以声明内
-503 拒绝，不扩充响应状态。所有响应均 `Cache-Control: no-store`。
+目录完整时，语言过滤或游标之后无匹配项返回 200 空页。
+公开源 `0.1.0.dev6` 为两条 GET 新增 `400 voice_invalid_request`：非法路径、未知字段、
+无效查询值与重复参数均在读取目录前拒绝（含目录未配置时），`retryable=false`、
+`X-Should-Retry: false`；调用者先修正请求，不自动重试。所有响应均 `Cache-Control: no-store`。
+200 DTO、字段与枚举保持原义。严格的旧 HTTP 校验器不认识新增 400，须与服务端一同升级
+生成包；正式工作台消费者保持已有非 200 → 目录不可用的处理且不重试，正常请求无变化。
 公开目录证明发布事实，不把来源或资格的当前有效性推断为可执行性；新执行仍由准入核验。
 
 ## v2 与消费者升级
@@ -50,7 +56,7 @@ v2 保留既有工作台字段投影，并支持与底座一致的最长 2000 �
 
 展示固定 binding 不等于渲染请求已传递该 pin：当前工作台公开 Job 适配器仍未发送 `model_binding`，具体边界见 [Public TTS Job 固定 binding](public-job-model-binding.md)。
 
-既有 v1 路由和 `VoiceRevision.disabled_reason.maxLength=128` 保持冻结。原因超出 v1 投影时返回已有的 `503 voice_catalogue_unavailable`，不截断，不返回违反旧校验器的 200。128 字符以内，两版返回相同投影。新增路由不要求旧消费者升级；使用新 Web 前须先部署支持 v2 的 C 服务，前端不静默回退 v1。此源版本是制品标识，不是运行时版本协商。底座公开源、本次未改动的既有请求/响应定义均保持原义。
+既有 v1 路由和 `VoiceRevision.disabled_reason.maxLength=128` 保持冻结。原因超出 v1 投影时返回已有的 `503 voice_catalogue_unavailable`，不截断，不返回违反旧校验器的 200。128 字符以内，两版返回相同投影。新增路由不要求旧消费者升级；使用新 Web 前须先部署支持 v2 的 C 服务，前端不静默回退 v1。此源版本是制品标识，不是运行时版本协商。底座公开源 0.1.0.dev6 的新增 400 见上节；既有成功请求/响应定义保持原义。
 
 ## 失败和资源边界
 
@@ -65,8 +71,8 @@ v2 保留既有工作台字段投影，并支持与底座一致的最长 2000 �
 - `tests/fixtures/contracts/voice-catalogue-http.json`：Python/TypeScript 共用公开源正负例，独立源校验与生成校验比较；包含三种状态、完整来源、2000/2001 字符、旧扁平形状、未知字段与非法能力。
 - `tests/unit/backend/test_workbench_public_voice_catalogue.py`：查询转发、固定身份、期限、取消关闭、重复键、正文上限与公开错误映射；移除身份检查应使错身份用例失败。
 - `tests/unit/backend/test_workbench_voices_http.py`：v1/v2 的 128、129、2000 字符投影边界。
-- `tests/unit/backend/test_speech_voice_catalogue_http.py`：底座路由注册、同源 OpenAPI、未配置可重试 503。
-- `tests/integration/test_speech_voice_catalogue.py`：隔离 PG、实际底座 lifespan 与只读角色，覆盖发布版本、分页/语言、404、空目录/缺授权/损坏文档 503、退役历史、未发布数据隔离及工作台未改动消费者的 200；使用合成发布记录，不证明真实资格操作。
+- `tests/unit/backend/test_speech_voice_catalogue_http.py`：底座路由注册、同源 OpenAPI、未配置可重试 503、请求错误 400 且不访问目录。
+- `tests/integration/test_speech_voice_catalogue.py`：隔离 PG、实际底座 lifespan 与只读角色，覆盖发布版本、分页/语言、404、空目录/缺授权/损坏或缺失文档/资格身份不匹配 503、退役历史、未发布数据隔离及工作台未改动消费者的 200；使用合成发布记录，不证明真实资格操作。
 - `tests/integration/test_workbench_runtime_voice_catalogue.py`：实际 C lifespan、最小角色 PostgreSQL、真实回环 HTTP 源与正式路由，验证正常状态及错身份/非法来源拒绝。
 - `tests/integration/test_workbench_real_runtime_voice_catalogue_browser.py`：实际生产 bundle 和上述 C 装配，键盘触发读取，完整 2000 字符与退役时间展示，错身份错误及旧记录清除；浏览器禁止出站。
 

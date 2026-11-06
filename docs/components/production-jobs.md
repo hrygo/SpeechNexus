@@ -216,7 +216,7 @@ worker 与派发器共享同一条 gateway 契约和停止服务；它不会创�
 不等于自身、索引 `speech_jobs_retry_of`，替换后的状态守卫禁止改写该列。公开 `Job`
 形状不变（契约对象附加属性关闭），血缘只在持久层可查。同一幂等键重放返回原新 Job，
 不产生第二次业务执行；同一键换父任务、或与创建入口的同一键交叉使用返回
-`409 idempotency_conflict`。迁移 `0037_public_job_retries` 是当前 head，down 在存在
+`409 idempotency_conflict`。迁移 `0037_public_job_retries`（后接 `0038_voice_catalogue_reader`）的 down 在存在
 重试血缘行时拒绝删除列，并先恢复 `0034` 的状态守卫。
 
 `GET /v1/nexus/jobs/{job_id}/events` 只读地回放持久事件：按

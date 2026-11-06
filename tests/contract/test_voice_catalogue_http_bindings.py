@@ -53,6 +53,17 @@ def test_shared_examples_match_source_and_generated_validator(example: dict[str,
             format_checker=FormatChecker(),
         )
     )
+    if example["status"] == 400:
+        source_validator = Draft202012Validator(
+            {
+                "components": SOURCE["components"],
+                **SOURCE["components"]["responses"]["VoiceCatalogueBadRequest"]["content"][
+                    "application/json"
+                ]["schema"],
+            },
+            registry=cast(Any, Registry)(retrieve=retrieve),
+            format_checker=FormatChecker(),
+        )
     assert source_validator.is_valid(example["value"]["body"]) is example["valid"]
     value = copy.deepcopy(example["value"])
     if example["valid"]:
@@ -110,3 +121,14 @@ def test_workbench_v2_preserves_long_reasons_while_v1_stays_frozen() -> None:
 def test_writes_are_outside_the_read_surface(operation: str) -> None:
     with pytest.raises(ValueError, match="Unknown HTTP operation"):
         validate_request(operation, {})
+
+
+@pytest.mark.parametrize("operation", ["listVoices", "getVoiceRevision"])
+@pytest.mark.parametrize("header", ["Cache-Control", "X-Should-Retry"])
+def test_invalid_request_requires_non_retry_headers(operation: str, header: str) -> None:
+    value = copy.deepcopy(
+        next(item["value"] for item in EXAMPLES if item["id"] == operation + "-invalid-request")
+    )
+    del value["headers"][header]
+    with pytest.raises(ContractValidationError):
+        validate_response(operation, 400, value)

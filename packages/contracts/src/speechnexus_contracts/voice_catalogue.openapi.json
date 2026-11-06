@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SpeechNexus public speech API",
-    "version": "0.1.0.dev5",
+    "version": "0.1.0.dev6",
     "description": "SpeechNexus public speech protocol.\n\nThe OpenAI-compatible subset is limited to the paths, fields, formats, and\nevents explicitly declared here. A standard OpenAI SDK can use this API by\nsetting base_url to <deployment>/v1 and supplying any api_key value unless\nthe deployment enables a shared service key. SpeechNexus enhancements live\nunder /v1/nexus and the optional `nexus` request field; a standard request\nnever needs an enhancement wrapper. Unsupported standard parameters are\nrejected with 422 `unsupported_parameter`, never silently ignored.\n\nRealtime has two connection modes at GET /v1/realtime: a pre-created\nnexus session (`session_id`) and a compatibility transcription session\nopened with `model`. Both accept the declared standard transcription\nevent subset. TTS, previews, metadata, and operation coordination remain\nnexus.* events and are available only in a nexus-created session.\n"
   },
   "security": [
@@ -17,6 +17,7 @@
         "tags": ["voices"],
         "operationId": "listVoices",
         "summary": "List published voices visible to the deployment",
+        "description": "Invalid, unknown or duplicate query parameters return a non-retryable\n400 voice_invalid_request before reading the catalogue, even when the\ncatalogue is unavailable. Correct the request before sending it again.\n",
         "parameters": [
           {
             "$ref": "#/components/parameters/Cursor"
@@ -56,6 +57,9 @@
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/VoiceCatalogueBadRequest"
+          },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
@@ -70,6 +74,7 @@
         "tags": ["voices"],
         "operationId": "getVoiceRevision",
         "summary": "Get one immutable published voice revision",
+        "description": "Invalid path values or any query parameter return a non-retryable\n400 voice_invalid_request before reading the catalogue. A published fact\nwhose exact qualification document is missing or inconsistent is\nunavailable (retryable 503), never a confirmed missing revision (404).\n",
         "parameters": [
           {
             "$ref": "#/components/parameters/VoiceIdPath"
@@ -96,6 +101,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "$ref": "#/components/responses/VoiceCatalogueBadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -1120,6 +1128,54 @@
       }
     },
     "responses": {
+      "VoiceCatalogueBadRequest": {
+        "description": "Malformed path values, unknown query fields, invalid query values or\nduplicate query parameters. Correct the request; unchanged retries\ncannot resolve this error. No catalogue read or execution is performed.\n",
+        "headers": {
+          "Cache-Control": {
+            "required": true,
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            }
+          },
+          "X-Should-Retry": {
+            "required": true,
+            "schema": {
+              "type": "string",
+              "const": "false"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "const": "voice_invalid_request"
+                        },
+                        "type": {
+                          "const": "invalid_request_error"
+                        },
+                        "retryable": {
+                          "const": false
+                        },
+                        "nexus": false
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
       "Unauthorized": {
         "description": "Shared service credential required or invalid.",
         "content": {

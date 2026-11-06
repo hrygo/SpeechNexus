@@ -1069,6 +1069,182 @@
           "private_endpoint": "synthetic-private-field"
         }
       }
+    },
+    {
+      "id": "listVoices-invalid-request",
+      "operation": "listVoices",
+      "status": 400,
+      "valid": true,
+      "value": {
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "false"
+        },
+        "body": {
+          "error": {
+            "code": "voice_invalid_request",
+            "type": "invalid_request_error",
+            "message": "The voice request is invalid.",
+            "param": null,
+            "request_id": "req-voices-invalid",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "listVoices-invalid-request-wrong-retryable",
+      "operation": "listVoices",
+      "status": 400,
+      "valid": false,
+      "value": {
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "false"
+        },
+        "body": {
+          "error": {
+            "code": "voice_invalid_request",
+            "type": "invalid_request_error",
+            "message": "The voice request is invalid.",
+            "param": null,
+            "request_id": "req-voices-invalid",
+            "retryable": true
+          }
+        }
+      }
+    },
+    {
+      "id": "listVoices-invalid-request-wrong-code",
+      "operation": "listVoices",
+      "status": 400,
+      "valid": false,
+      "value": {
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "false"
+        },
+        "body": {
+          "error": {
+            "code": "voice_catalogue_unavailable",
+            "type": "invalid_request_error",
+            "message": "The voice request is invalid.",
+            "param": null,
+            "request_id": "req-voices-invalid",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "listVoices-invalid-request-wrong-type",
+      "operation": "listVoices",
+      "status": 400,
+      "valid": false,
+      "value": {
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "false"
+        },
+        "body": {
+          "error": {
+            "code": "voice_invalid_request",
+            "type": "service_unavailable_error",
+            "message": "The voice request is invalid.",
+            "param": null,
+            "request_id": "req-voices-invalid",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "getVoiceRevision-invalid-request",
+      "operation": "getVoiceRevision",
+      "status": 400,
+      "valid": true,
+      "value": {
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "false"
+        },
+        "body": {
+          "error": {
+            "code": "voice_invalid_request",
+            "type": "invalid_request_error",
+            "message": "The voice request is invalid.",
+            "param": null,
+            "request_id": "req-voices-invalid",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "getVoiceRevision-invalid-request-wrong-retryable",
+      "operation": "getVoiceRevision",
+      "status": 400,
+      "valid": false,
+      "value": {
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "false"
+        },
+        "body": {
+          "error": {
+            "code": "voice_invalid_request",
+            "type": "invalid_request_error",
+            "message": "The voice request is invalid.",
+            "param": null,
+            "request_id": "req-voices-invalid",
+            "retryable": true
+          }
+        }
+      }
+    },
+    {
+      "id": "getVoiceRevision-invalid-request-wrong-code",
+      "operation": "getVoiceRevision",
+      "status": 400,
+      "valid": false,
+      "value": {
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "false"
+        },
+        "body": {
+          "error": {
+            "code": "voice_catalogue_unavailable",
+            "type": "invalid_request_error",
+            "message": "The voice request is invalid.",
+            "param": null,
+            "request_id": "req-voices-invalid",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "getVoiceRevision-invalid-request-wrong-type",
+      "operation": "getVoiceRevision",
+      "status": 400,
+      "valid": false,
+      "value": {
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "false"
+        },
+        "body": {
+          "error": {
+            "code": "voice_invalid_request",
+            "type": "service_unavailable_error",
+            "message": "The voice request is invalid.",
+            "param": null,
+            "request_id": "req-voices-invalid",
+            "retryable": false
+          }
+        }
+      }
     }
   ]
 }

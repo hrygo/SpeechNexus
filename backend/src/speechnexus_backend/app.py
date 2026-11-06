@@ -45,6 +45,7 @@ from speechnexus_backend.speech.application.readiness import (
 )
 from speechnexus_backend.speech.application.speech_synthesis import SpeechSynthesis
 from speechnexus_backend.speech.application.transcription import Transcription
+from speechnexus_backend.speech.application.voice_catalogue import VoiceCatalogue
 from speechnexus_backend.speech.application.workspaces import WorkspaceService
 from speechnexus_backend.speech.infrastructure.gateway_job_cancellation import (
     GatewayJobCancellationStopper,
@@ -89,6 +90,10 @@ from speechnexus_backend.speech.interfaces.http.speech_errors import speech_erro
 from speechnexus_backend.speech.interfaces.http.transcriptions import (
     create_transcription_router,
 )
+from speechnexus_backend.speech.interfaces.http.voices import (
+    create_voice_router,
+    voice_http_contract,
+)
 from speechnexus_backend.speech.interfaces.http.workspace_contract import workspace_http_contract
 from speechnexus_backend.speech.interfaces.http.workspaces import (
     PREFIX as WORKSPACE_PREFIX,
@@ -114,6 +119,7 @@ class _SpeechAPI(FastAPI):
                 workspace_http_contract(),
                 profile_http_contract(),
                 pronunciation_http_contract(),
+                voice_http_contract(),
                 binding_http_contract(producer=self._binding_defaults_enabled),
             ):
                 surface = copy.deepcopy(contract)
@@ -157,6 +163,7 @@ def create_app(
     binding_lifecycle: BindingLifecycle | None = None,
     pronunciations: PronunciationReader | None = None,
     catalogue: ModelCatalogue | None = None,
+    voices: VoiceCatalogue | None = None,
     jobs: PublicJobs | None = None,
     job_confirmation: JobCancellationService | None = None,
     speech: SpeechSynthesis | None = None,
@@ -227,6 +234,11 @@ def create_app(
         if catalogue is not None:
             return catalogue
         return catalogue_runtime.catalogue if catalogue_runtime is not None else None
+
+    def get_voices() -> VoiceCatalogue | None:
+        if voices is not None:
+            return voices
+        return catalogue_runtime.voices if catalogue_runtime is not None else None
 
     capability_policy = CapabilityPolicy(
         deployment_id=(
@@ -411,6 +423,7 @@ def create_app(
     app.include_router(create_asset_router(lambda: asset_service))
     app.include_router(create_artifact_router(get_artifacts))
     app.include_router(create_model_router(get_catalogue, capability_policy))
+    app.include_router(create_voice_router(get_voices))
     app.include_router(
         create_job_router(
             get_jobs,

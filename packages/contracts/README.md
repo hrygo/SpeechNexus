@@ -635,7 +635,12 @@ The opt-in `voice-catalogue-http` entrypoint selects only `listVoices` and
 `speechnexus_contracts.voice_catalogue_http`; TypeScript imports
 `@speechnexus/contracts/voice-catalogue-http`. Both validate complete public
 revisions, including nested capabilities and lifecycle provenance; neither grants
-publication or retirement methods. Shared positive/negative examples live in
+publication or retirement methods. Speech source `0.1.0.dev6` adds declared
+non-retryable `400 voice_invalid_request` for both GETs, with required
+`Cache-Control: no-store` and `X-Should-Retry: false`. Upgrade strict HTTP
+validators with the producer; success DTOs and request parameter shapes are
+unchanged. Consumers correct invalid requests before sending them again.
+Shared positive/negative examples live in
 `tests/fixtures/contracts/voice-catalogue-http.json`.
 
 The running workbench adapter consumes this validator before mapping the C

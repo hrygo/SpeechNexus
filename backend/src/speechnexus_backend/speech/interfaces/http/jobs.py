@@ -80,9 +80,11 @@ _EVENT_POLL_SECONDS = 0.5
 _EVENT_HEARTBEAT_SECONDS = 15.0
 _EVENT_SEND_TIMEOUT_SECONDS = 10.0
 # Closing the source is server-side cleanup, not a client write, so it carries
-# its own bound: a source whose close never returns must not postpone the reset
-# and the warning. It is deliberately not derived from the operator-tuned send
-# budget, which may be a fraction of a second.
+# its own bound: a source whose close hangs must not postpone the reset and the
+# warning. It is deliberately not derived from the operator-tuned send budget,
+# which may be a fraction of a second. The bound relies on the source honouring
+# cancellation: asyncio.timeout cancels once, so a close that swallows
+# CancelledError and keeps waiting is not interruptible from here.
 _EVENT_CLOSE_TIMEOUT_SECONDS = 5.0
 _KEEPALIVE = b": keepalive\n\n"
 
@@ -125,6 +127,8 @@ class _EventStreamResponse(StreamingResponse):
         abort_connection: Callable[[], None] | None = None,
         **kwargs: Any,
     ) -> None:
+        if not 0 < close_timeout_seconds <= 60:
+            raise ValueError("Public Job event close timeout must be bounded")
         super().__init__(content, **kwargs)
         self._send_timeout_seconds = send_timeout_seconds
         self._close_timeout_seconds = close_timeout_seconds
@@ -156,14 +160,12 @@ class _EventStreamResponse(StreamingResponse):
                 try:
                     async with deadline:
                         await close()
-                except TimeoutError:
-                    # Only this deadline makes the close "timed out"; a source
-                    # that raises TimeoutError on its own merely failed to close.
-                    if not deadline.expired():
-                        raise
-                    # The wait is cut, not the obligation: the reset below still
-                    # runs and the record states that the close did not finish.
-                    close_timed_out = True
+                finally:
+                    # Expiry is the fact, not the exception type: a source that
+                    # fails, or returns, while its close is being cancelled still
+                    # ends a close that this deadline cut. The wait is cut, not
+                    # the obligation; the reset below still runs.
+                    close_timed_out = deadline.expired()
         except Exception:
             # A failing source must not skip the reset or the warning below.
             pass

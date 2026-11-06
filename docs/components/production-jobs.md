@@ -285,10 +285,12 @@ watermark，则每次前进都会产生一条新事实。ASR 在终态前没有�
 套接字（不等待写缓冲排空，否则不读的客户端会让连接一直占着文件描述符；uvicorn 下由应用
 外层中间件捕获该请求的传输并在超时后中止，没有该能力的服务器退化为普通关闭）。源关闭
 自身受 5 秒独立上限约束：超时只停止等待，随后的中止与告警照常执行，不会被挂起的源
-无限期推迟。该捕获要求 `RequestIdMiddleware` 保持用户中间件中最外层：装配时若不成立
-（例如后来新增了包装 `receive` 的 ingress 中间件），应用创建即报错，不会静默失去中止
-能力。同时记录一条结构化 WARNING `job_event_stream_backpressure`，字段只有 `event`、
-`reason=slow_client`、`send_timeout_seconds`、`close_timed_out`（源关闭是否因超过该上限
+无限期推迟（前提是源遵守取消语义：`asyncio.timeout` 只取消一次，吞掉取消后继续等待的源
+仍会让请求任务停在关闭步骤）。该捕获要求 `RequestIdMiddleware` 保持用户中间件中最外层：
+装配时若不成立（例如后来新增了包装 `receive` 的 ingress 中间件），应用创建即报错，不会
+静默失去中止能力。同时记录一条结构化 WARNING `job_event_stream_backpressure`，字段只有
+`event`、`reason=slow_client`、`send_timeout_seconds`、`close_timed_out`（源关闭是否
+因超过该上限
 被放弃：`true` 表示关闭未在限期内返回，连接仍会中止）与 `connection_reset`（本次是否
 真的中止了连接：只有 `abort()` 成功才为 `true`，未装配 hook 或中止抛错时为 `false`，
 此时套接字交给服务器的优雅关闭），不含 Job、请求或客户端身份。超时覆盖该流的每一次

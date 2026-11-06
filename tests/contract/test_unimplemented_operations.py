@@ -17,6 +17,9 @@ from typing import Any, cast
 import httpx
 import pytest
 from fastapi import FastAPI
+from starlette.requests import Request
+from starlette.responses import Response
+from starlette.routing import Route as StarletteRoute
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.interfaces.http.job_errors import job_error
@@ -94,16 +97,21 @@ def _is_error_map(node: ast.Dict) -> bool:
     return True
 
 
-def error_maps() -> dict[str, set[str]]:
-    """Every module-level error map in the backend, keyed by module name.
+def error_maps(root: Path = BACKEND_ROOT) -> dict[str, set[str]]:
+    """Every module-level error map below `root`, keyed by module path.
 
     The map name is not enough on its own: `binding_errors` and
     `profile_errors` call theirs `ERRORS`, and `pronunciations`,
     `binding_lifecycle` and `workspaces` keep unannotated `_ERRORS`. The shape
     of the values decides, so a renamed or new map is still scanned.
+
+    The key is the repository-relative module path, not `path.stem`: the
+    backend already ships several same-named modules (`workspaces`, `jobs`,
+    `binding_lifecycle`), and a stem key would silently let a second map
+    overwrite the first, which the set assertions below cannot notice.
     """
     maps: dict[str, set[str]] = {}
-    for path in sorted(BACKEND_ROOT.rglob("*.py")):
+    for path in sorted(root.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         constants: dict[str, str] = {}
         for statement in tree.body:
@@ -117,6 +125,7 @@ def error_maps() -> dict[str, set[str]]:
                 and isinstance(value.value, str)
             ):
                 constants[target.id] = value.value
+        key = path.relative_to(root).with_suffix("").as_posix()
         for statement in tree.body:
             if isinstance(statement, ast.AnnAssign):
                 targets: list[ast.expr] = [statement.target]
@@ -132,7 +141,9 @@ def error_maps() -> dict[str, set[str]]:
                 continue
             codes = _code_keys(mapping_node, constants)
             if codes:
-                maps[path.stem] = codes
+                # Union rather than replace: a module may declare `ERRORS` and
+                # a narrower `_ERRORS`, and both still own their codes.
+                maps.setdefault(key, set()).update(codes)
     return maps
 
 
@@ -214,9 +225,30 @@ def test_no_other_error_map_reuses_the_placeholder_code() -> None:
     maps = error_maps()
     # The scan must really cover the maps that name theirs differently, or a
     # narrow glob could pass this test by looking in the wrong place.
-    assert {"binding_errors", "profile_errors", "job_errors", "unimplemented_errors"} <= set(maps)
+    assert {"binding_errors", "profile_errors", "job_errors", "unimplemented_errors"} <= {
+        Path(key).name for key in maps
+    }
     owners = {module for module, entries in maps.items() if OPERATION_NOT_IMPLEMENTED in entries}
-    assert owners == {"unimplemented_errors"}
+    assert owners == {"speech/interfaces/http/unimplemented_errors"}
+
+
+def test_same_stem_error_maps_are_all_collected(tmp_path: Path) -> None:
+    """Two same-named modules must both be scanned instead of collapsing into one key."""
+    for package, code in (("alpha", "alpha_code"), ("beta", "beta_code")):
+        directory = tmp_path / package
+        directory.mkdir()
+        (directory / "workspace_errors.py").write_text(
+            f'WORKSPACE_ERRORS = {{"{code}": (409, "conflict_error", "{code}")}}\n',
+            encoding="utf-8",
+        )
+
+    maps = error_maps(tmp_path)
+
+    # The fixture is adversarial only because both modules share one stem: a
+    # stem key would have kept one of them and silently dropped the other.
+    assert {Path(name).stem for name in maps} == {"workspace_errors"}
+    assert maps["alpha/workspace_errors"] == {"alpha_code"}
+    assert maps["beta/workspace_errors"] == {"beta_code"}
 
 
 async def test_unimplemented_error_is_not_a_missing_resource_or_bad_method() -> None:
@@ -264,6 +296,32 @@ async def test_allow_header_lists_every_registered_method(path: str, allow: str,
     assert response.json()["error"]["code"] == code
 
 
+async def test_allow_header_drops_implicit_methods_from_the_framework() -> None:
+    """HEAD/OPTIONS reported by the framework must never reach the merged Allow.
+
+    FastAPI's APIRoute does not add HEAD to a GET route, so the placeholder
+    surface alone cannot exercise this filter. A raw Starlette route does add
+    HEAD, and a route may declare OPTIONS explicitly, so both are injected at
+    the front of the router table where the framework's 405 reads its Allow.
+    """
+    app = create_app(settings=_settings())
+
+    async def injected(request: Request) -> Response:
+        raise AssertionError("the injected route must never dispatch")
+
+    app.router.routes.insert(
+        0,
+        StarletteRoute("/v1/nexus/voice-drafts/{draft_id}", injected, methods=["GET", "OPTIONS"]),
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost"
+    ) as http:
+        response = await http.delete("/v1/nexus/voice-drafts/synthetic-id")
+    assert response.status_code == 405
+    allow = {method.strip() for method in response.headers["allow"].split(",")}
+    assert allow == {"GET", "PATCH"}
+
+
 def test_the_placeholder_router_alone_owns_its_routes() -> None:
     api = FastAPI()
     api.include_router(create_unimplemented_router())
@@ -283,6 +341,31 @@ def test_a_real_route_cannot_share_a_placeholder_method() -> None:
     # Exactly the duplicated template is reported; the other twenty placeholders
     # must not be swept in, or the assertion would pass on a wholesale failure.
     listed = raised.value.args[0].split("include the placeholder router last: ", 1)[1]
+    assert listed == "GET /v1/nexus/voice-drafts/{draft_id}"
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        "/v1/nexus/voice-drafts/{voice_draft_id}",
+        "/v1/nexus/voice-drafts/{draft_id:int}",
+    ],
+)
+def test_a_renamed_or_converted_parameter_still_collides(template: str) -> None:
+    """The guard compares normalized templates, so respelling a parameter cannot hide a conflict."""
+    api = FastAPI()
+    api.include_router(create_unimplemented_router())
+
+    async def shadowed(**params: str) -> dict[str, str]:
+        return params
+
+    api.add_api_route(template, shadowed, methods=["GET"], include_in_schema=False)
+
+    with pytest.raises(RuntimeError) as raised:
+        assert_placeholder_ownership(api.routes)
+    listed = raised.value.args[0].split("include the placeholder router last: ", 1)[1]
+    # The message keeps the template the placeholder table declares, not the
+    # competing spelling, so the report names the operation that must move.
     assert listed == "GET /v1/nexus/voice-drafts/{draft_id}"
 
 

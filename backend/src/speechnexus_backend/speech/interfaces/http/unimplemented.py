@@ -84,11 +84,28 @@ _PATH_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
     _path_pattern(path) for path in sorted({path for _, path in UNIMPLEMENTED_OPERATIONS.values()})
 )
 
-# Neither source is trusted to agree on implicit methods: the pinned Starlette
-# does not add HEAD to a GET route, another may, and the framework's own `Allow`
-# never advertises HEAD or OPTIONS anyway. Both are dropped from the merged
-# header so it stays deterministic across router versions.
+# Neither source is trusted to agree on implicit methods: Starlette's plain
+# `Route(methods=["GET"])` adds HEAD on its own while FastAPI's `APIRoute` does
+# not, and a raw Starlette route may also declare OPTIONS explicitly. Both are
+# dropped from the merged header so it stays deterministic across router
+# versions.
 IMPLICIT_METHODS = frozenset({"HEAD", "OPTIONS"})
+
+# A template parameter, including its optional converter: {draft_id},
+# {draft_id:int}, {artifact_path:path}.
+_TEMPLATE_PARAMETER = re.compile(r"\{[^/{}]*\}")
+
+
+def normalize_template(template: str) -> str:
+    """Compare template shape, not the spelling of its parameters.
+
+    `/v1/nexus/voice-drafts/{draft_id}`, `.../{voice_draft_id}` and
+    `.../{draft_id:int}` fill the same request paths, so a real route using any
+    of them competes with the placeholder for the same requests even though the
+    literal templates differ. Owners are therefore compared on the normalized
+    shape; the message keeps the template the placeholder table declares.
+    """
+    return _TEMPLATE_PARAMETER.sub("{}", template)
 
 
 def is_unimplemented_path(path: str) -> bool:
@@ -130,7 +147,9 @@ def assert_placeholder_ownership(routes: Iterable[Any]) -> None:
     """Fail fast when a real route shares a placeholder's method and template.
 
     Registration order decides which route wins, so a feature router included
-    after the placeholders would answer 503 for an operation that ships.
+    after the placeholders would answer 503 for an operation that ships. The
+    comparison uses the normalized template, so renaming a parameter or adding
+    a converter cannot hide the conflict.
     """
     owners: dict[tuple[str, str], list[str]] = {}
     for route in iter_routes(routes):
@@ -138,12 +157,13 @@ def assert_placeholder_ownership(routes: Iterable[Any]) -> None:
         if not isinstance(template, str):
             continue
         module = getattr(getattr(route, "endpoint", None), "__module__", "") or ""
+        shape = normalize_template(template)
         for method in getattr(route, "methods", None) or ():
-            owners.setdefault((method, template), []).append(module)
+            owners.setdefault((method, shape), []).append(module)
     collisions = [
         f"{method} {path}"
         for method, path in sorted(UNIMPLEMENTED_OPERATIONS.values())
-        if owners.get((method, path), []) != [__name__]
+        if owners.get((method, normalize_template(path)), []) != [__name__]
     ]
     if collisions:
         raise RuntimeError(
@@ -184,4 +204,5 @@ __all__ = [
     "create_unimplemented_router",
     "is_unimplemented_path",
     "methods_for_path",
+    "normalize_template",
 ]

@@ -10,6 +10,36 @@
 
 读取固定修订时，正文的 `voice_id` 和 `revision` 必须逐项匹配请求。schema 合法不能代替身份匹配。published 没有退役时间；retired 和 disabled 保留底座的退役时间，disabled 还保留原因，不推导或改写状态。
 
+## 底座公开路由与部署
+
+`create_app()` 已注册上述两个 GET，operationId 与生成的只读表面一致，运行时
+OpenAPI 也投影同一闭包。生产装配复用 `ModelCatalogRuntime` 的有界只读连接池与
+`SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL`，不新增目录状态或工作台写者。
+
+迁移 `0037_voice_catalogue_reader` 新增 security-barrier 视图
+`speech_published_voice_revisions`，按 `voice_id/revision/revision_id` 关联既有
+`speech_publications` 与 `speech_builtin_voice_qualifications.document`。视图不暴露
+来源审批、资格原件、native speaker 映射、私有命令或发布意图；不新增表，不修改发布历史。
+当前可读数据来自已有内建音色发布路径；设计与克隆没有持久发布文档生产者，仍待实现。
+
+部署管理员在已有 `model_catalog_reader_grants(schema, role)` 基础上应用
+`voice_catalogue_reader_grants(schema, role)`（位于
+`speech/infrastructure/voice_catalogue_schema.py`），只追加该视图的 SELECT。
+启动审计继续拒绝私有资格表、审批表和任何写权限。旧模型目录角色可以保持原授权，
+此时模型读取不受影响，音色读取为 503；应用不会自行迁移或授予权限。
+
+列表读取当前 head，排除退役版本，按 voice ID 升序分页：`limit` 默认 50、范围 1–100，
+`cursor` 为上一页最后一项的 ID；`language` 精确过滤已声明语言。`workspace_id` 沿用
+部署级目录语义，不建立身份或数据隔离。翻页期间目录仍可变化；固定版本读取不跟随 head，
+保留历史，并依据已有 retirement 账本投影 `retired/disabled` 状态。
+
+未配置、无任何已发布公开文档、权限或数据库不可用、公开文档损坏时返回
+`503 voice_catalogue_unavailable`，`retryable=true`、`X-Should-Retry: true`。
+已有发布目录内的未知 ID/版本返回 `404 voice_not_found` 且不可重试。
+语言过滤或游标之后无匹配项返回 200 空页。两条原契约没有 400/422，非法查询也以声明内
+503 拒绝，不扩充响应状态。所有响应均 `Cache-Control: no-store`。
+公开目录证明发布事实，不把来源或资格的当前有效性推断为可执行性；新执行仍由准入核验。
+
 ## v2 与消费者升级
 
 工作台源版本为 `0.1.0.dev2`，新增：
@@ -35,6 +65,8 @@ v2 保留既有工作台字段投影，并支持与底座一致的最长 2000 �
 - `tests/fixtures/contracts/voice-catalogue-http.json`：Python/TypeScript 共用公开源正负例，独立源校验与生成校验比较；包含三种状态、完整来源、2000/2001 字符、旧扁平形状、未知字段与非法能力。
 - `tests/unit/backend/test_workbench_public_voice_catalogue.py`：查询转发、固定身份、期限、取消关闭、重复键、正文上限与公开错误映射；移除身份检查应使错身份用例失败。
 - `tests/unit/backend/test_workbench_voices_http.py`：v1/v2 的 128、129、2000 字符投影边界。
+- `tests/unit/backend/test_speech_voice_catalogue_http.py`：底座路由注册、同源 OpenAPI、未配置可重试 503。
+- `tests/integration/test_speech_voice_catalogue.py`：隔离 PG、实际底座 lifespan 与只读角色，覆盖发布版本、分页/语言、404、空目录/缺授权/损坏文档 503、退役历史、未发布数据隔离及工作台未改动消费者的 200；使用合成发布记录，不证明真实资格操作。
 - `tests/integration/test_workbench_runtime_voice_catalogue.py`：实际 C lifespan、最小角色 PostgreSQL、真实回环 HTTP 源与正式路由，验证正常状态及错身份/非法来源拒绝。
 - `tests/integration/test_workbench_real_runtime_voice_catalogue_browser.py`：实际生产 bundle 和上述 C 装配，键盘触发读取，完整 2000 字符与退役时间展示，错身份错误及旧记录清除；浏览器禁止出站。
 

@@ -58,6 +58,11 @@ These are selected integration paths: ASR, VAD, and CustomVoice TTS have partial
 
 Repository delivery summary as of **2026-10-26**. Independently verified modules do not imply complete availability in the default deployment.
 
+Update: the public voice list and fixed revision GETs now read existing PostgreSQL publication
+documents. Enable the migration and read-only view grant before use; an unconfigured or empty
+catalogue returns a retryable 503. The workbench consumes the same public protocol.
+See [deployment and verification limits (Chinese)](docs/components/workbench-voice-catalogue.md#底座公开路由与部署).
+
 | Area | Current state | Before you try it |
 | --- | --- | --- |
 | Default Compose startup | Two Web entry points, speech service, and infrastructure health checks | Interface preview; no model loading or complete speech workflow |

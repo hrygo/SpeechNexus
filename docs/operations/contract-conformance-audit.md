@@ -250,3 +250,20 @@ GET/POST 在匹配失败时返回 `400 pronunciation_invalid_request`，运行�
 5. **P2**：决定 401 的处置：实现共享服务密钥校验，或从公开契约移除 401 并把"无鉴权"写进部署前置条件。
 6. **P2**：清理 `createSpeech`/`createTranscription` 的 403/409/429 与 `createJob` 的 403/429 声明（无产生路径），
    或补上对应入口能力。
+
+
+### 9.1 #442 音色目录公开 GET 处置
+
+以上计数与探测保留审计基线事实。[#442](https://github.com/hrygo/SpeechNexus/issues/442)
+在 PR #443 补齐下列两条 GET；本节只更新音色目录处置，不重写其余路由的历史结论。
+
+| 操作 | 实现与覆盖 |
+| --- | --- |
+| `listVoices` | 已注册；当前已发布 head 的摘要、分页与语言过滤；未配置/无发布/文档异常为可重试 503 |
+| `getVoiceRevision` | 已注册；固定发布版本 200、目录内未知 ID/版本 404；未配置/文档异常为可重试 503；保留退役历史 |
+
+读取既有发布事实和资格文档，迁移 `0037_voice_catalogue_reader` 仅新增公开只读视图，
+不建第二套目录状态。部署与权限见[音色目录组件](../components/workbench-voice-catalogue.md#底座公开路由与部署)。
+`tests/integration/test_speech_voice_catalogue.py` 经实际底座 lifespan、最小 PG 角色与工作台
+原消费者验证；合成发布记录不证明真实音色资格、Linux/CUDA、物理多机或生产部署已验收。
+具体候选与原始实测输出保存在 PR/DEL-494 交付记录。

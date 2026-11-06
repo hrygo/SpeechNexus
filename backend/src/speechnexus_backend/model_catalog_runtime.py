@@ -27,6 +27,10 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import (
     speech_pool,
 )
 from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import HEAD_TABLE
+from speechnexus_backend.speech.infrastructure.voice_catalogue_postgres import (
+    PostgresVoiceCatalogue,
+)
+from speechnexus_backend.speech.infrastructure.voice_catalogue_schema import VOICE_READER_VIEW
 
 READABLE = frozenset(
     {
@@ -58,6 +62,7 @@ class ModelCatalogRuntime:
         self._settings = settings
         self._pool: SpeechPool | None = None
         self.catalogue: PostgresModelCatalog | None = None
+        self.voices: PostgresVoiceCatalogue | None = None
         self._lifetime = threading.Lock()
         self._diagnostics: _PoolDiagnostics | None = None
 
@@ -85,6 +90,9 @@ class ModelCatalogRuntime:
                     connection.execute("SET LOCAL statement_timeout='3s'")
                     self._verify_read_only(connection)
                 self.catalogue = PostgresModelCatalog(
+                    pool, timeout_seconds=self._settings.model_catalog_read_timeout_seconds
+                )
+                self.voices = PostgresVoiceCatalogue(
                     pool, timeout_seconds=self._settings.model_catalog_read_timeout_seconds
                 )
             except BaseException as error:
@@ -185,7 +193,7 @@ class ModelCatalogRuntime:
             if row["can_write"] or row["can_write_column"]:
                 raise ValueError("Model catalogue reader must not write any table")
             if (row["can_select"] or row["can_select_column"]) and (
-                row["schema_name"] != schema or row["relname"] not in READABLE
+                row["schema_name"] != schema or row["relname"] not in READABLE | {VOICE_READER_VIEW}
             ):
                 raise ValueError("Model catalogue reader reads beyond its published surface")
         missing = READABLE - {
@@ -221,6 +229,7 @@ class ModelCatalogRuntime:
     def close(self) -> None:
         with self._lifetime:
             self.catalogue = None
+            self.voices = None
             if self._pool is not None:
                 self._pool.close()
                 self._pool = None

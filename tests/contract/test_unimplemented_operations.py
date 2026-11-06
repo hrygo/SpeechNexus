@@ -41,14 +41,13 @@ SOURCE = validator("speech-openapi.yaml")
 DOCUMENT = cast(dict[str, Any], SOURCE.schema)
 PLACEHOLDER_RESPONSE = "#/components/responses/OperationNotImplemented"
 REQUEST_ID = "unimplemented-473"
-# These five operations already declared `ServiceUnavailable` before #473.
+# These remaining placeholders already declared `ServiceUnavailable` before #473.
 # Replacing that declaration would drop the compatible `Retry-After` header
 # from the versioned surface, which both structural gates reject as breaking,
 # so they keep it: that schema accepts the same placeholder body.
 PREDECLARED_SERVICE_UNAVAILABLE = frozenset(
     {
         "listPronunciationSets",
-        "listJobs",
         "getOperation",
         "createRealtimeSession",
         "connectRealtime",
@@ -156,12 +155,12 @@ def concrete(path: str) -> str:
 
 
 def test_contract_and_placeholder_table_agree() -> None:
-    assert len(CASES) == 21
+    assert len(CASES) == 20
     assert {operation for operation, _, _ in CASES} == set(UNIMPLEMENTED_OPERATIONS)
     declared = {operation for operation, _, _ in declared_operations()}
     assert len(declared) == 16
     # Every remaining operation points at the dedicated placeholder component;
-    # the five with an older 503 declaration keep it rather than lose a header.
+    # the four with an older 503 declaration keep it rather than lose a header.
     assert declared == set(UNIMPLEMENTED_OPERATIONS) - PREDECLARED_SERVICE_UNAVAILABLE
 
 
@@ -274,8 +273,8 @@ async def test_unimplemented_error_is_not_a_missing_resource_or_bad_method() -> 
 @pytest.mark.parametrize(
     ("path", "allow", "code"),
     [
-        # GET listJobs is a placeholder while POST createJob is implemented: the
-        # header must merge both, not repeat whichever route matched first.
+        # Both listJobs and createJob are implemented: the header must still
+        # merge both, not repeat whichever route matched first.
         ("/v1/nexus/jobs", "GET, POST", "job_method_not_allowed"),
         # Both methods live on a parameterised template, so a literal path
         # comparison used to report only the first of them.

@@ -14,10 +14,11 @@ import logging
 import re
 from collections.abc import AsyncIterator, Callable, Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, get_args, get_type_hints
 
 from fastapi import APIRouter, Request
 from speechnexus_contracts import ContractValidationError, parse
+from speechnexus_contracts.models import Job
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import ClientDisconnect
 from starlette.responses import Response, StreamingResponse
@@ -25,6 +26,7 @@ from starlette.types import Message, Send
 
 from speechnexus_backend.speech.application.job_cancellation import JobCancellationService
 from speechnexus_backend.speech.application.public_jobs import (
+    DEFAULT_WORKSPACE,
     AssetNotReadyError,
     CancellationView,
     DisabledWorkspaceError,
@@ -66,6 +68,10 @@ _STATUS = {
     "cancelled": "cancelled",
     "expired": "expired",
 }
+# Read the generated Literal aliases; do not maintain a second enum definition.
+_JOB_TYPES = get_type_hints(Job)
+_LIST_STATUSES = frozenset(get_args(_JOB_TYPES["status"].__value__))
+_LIST_KINDS = frozenset(get_args(_JOB_TYPES["kind"].__value__))
 # Persistent event sequences start at zero; the public EventSequence starts at
 # one. The wire id is therefore the persistent sequence plus one, and resuming
 # translates it back before the strictly-greater read.
@@ -489,6 +495,55 @@ async def _create(
         return job_error("invalid_job_request", request_id)
 
 
+def _list(service: PublicJobs | None, request: Request, request_id: str) -> Response:
+    try:
+        query = request.query_params
+        if any(len(query.getlist(name)) != 1 for name in query):
+            raise ValueError("Duplicate Job list parameter")
+        status, kind = query.get("status"), query.get("kind")
+        if (status is not None and status not in _LIST_STATUSES) or (
+            kind is not None and kind not in _LIST_KINDS
+        ):
+            raise ValueError("Invalid Job filter")
+        raw_limit = query.get("limit", "50")
+        if not re.fullmatch(r"[1-9][0-9]{0,2}", raw_limit) or int(raw_limit) > 100:
+            raise ValueError("Invalid Job limit")
+        workspace_id = query.get("workspace_id", DEFAULT_WORKSPACE)
+        identifier(workspace_id)
+        if service is None:
+            return job_error("job_unavailable", request_id)
+        state = "pending" if status == "queued" else status
+        page, next_cursor = service.list_jobs(
+            workspace_id=workspace_id,
+            state=state,
+            kind=kind,
+            cursor=query.get("cursor"),
+            limit=int(raw_limit),
+        )
+    except ValueError:
+        return job_error("invalid_job_request", request_id)
+    except PublicJobUnavailableError:
+        return job_error("job_unavailable", request_id)
+    try:
+        wire = parse(
+            "JobList",
+            {
+                "object": "nexus.list",
+                "data": [public_job(job, service.artifacts(job)) for job in page],
+                "has_more": next_cursor is not None,
+                "next_cursor": next_cursor,
+            },
+        )
+        return Response(
+            json.dumps(wire, separators=(",", ":"), ensure_ascii=False),
+            status_code=200,
+            media_type="application/json",
+            headers={"Cache-Control": "no-store"},
+        )
+    except PublicJobUnavailableError, ValueError:
+        return job_error("job_unavailable", request_id)
+
+
 def _read(service: PublicJobs, job_id: str, request_id: str) -> Response:
     try:
         identifier(job_id)
@@ -693,6 +748,10 @@ def create_job_router(
         if service is None:
             return job_error("job_unavailable", str(request.state.request_id))
         return await _create(service, request, max_bytes, receive_timeout_seconds)
+
+    @router.get(PREFIX, operation_id="listJobs")
+    async def list_jobs(request: Request) -> Response:
+        return await run_in_threadpool(_list, get_service(), request, str(request.state.request_id))
 
     @router.get(PREFIX + "/{job_id}", operation_id="getJob")
     async def get_job(request: Request, job_id: str) -> Response:

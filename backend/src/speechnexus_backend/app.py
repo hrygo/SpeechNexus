@@ -467,9 +467,9 @@ def create_app(
     def allowed_methods(path: str, reported: str | None) -> dict[str, str]:
         """Merge the framework's Allow with every method registered on this path.
 
-        One path can carry an implemented method and an unimplemented one (for
-        example POST createJob and GET listJobs), and Starlette's 405 header
-        only names the first partially matching route. RFC 9110 wants all of
+        One path can carry several implemented or placeholder methods, and
+        Starlette's 405 header only names the first partially matching route.
+        RFC 9110 wants all of
         them, so the registered methods for the same template are merged in.
         """
         methods = {item.strip().upper() for item in (reported or "").split(",") if item.strip()}
@@ -532,11 +532,10 @@ def create_app(
             405,
         ):
             code = "job_not_found" if error.status_code == 404 else "job_method_not_allowed"
-            headers = (
-                {"Allow": error.headers["Allow"]}
-                if error.headers and "Allow" in error.headers
-                else {}
+            reported = (
+                error.headers["Allow"] if error.headers and "Allow" in error.headers else None
             )
+            headers = allowed_methods(path, reported) if error.status_code == 405 else {}
             return job_error(code, request.state.request_id, headers=headers)
         if path == SPEECH_PREFIX and error.status_code in (404, 405):
             headers = (

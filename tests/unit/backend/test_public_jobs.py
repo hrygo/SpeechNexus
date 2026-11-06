@@ -131,6 +131,17 @@ class Store:
     def get(self, job_id: str) -> PublicJob | None:
         return self.jobs.get(job_id)
 
+    def list_jobs(
+        self,
+        *,
+        workspace_id: str,
+        state: str | None,
+        kind: str | None,
+        after: tuple[int, str] | None,
+        limit: int,
+    ) -> tuple[PublicJob, ...]:
+        raise AssertionError("this fake does not implement listing")
+
     def intent_document(self, job_id: str) -> Any:
         raise AssertionError("this fake does not implement retries")
 

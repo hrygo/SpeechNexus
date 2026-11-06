@@ -72,6 +72,38 @@ def _driver(pool: ReadPool) -> PostgresPublicJobs:
     return PostgresPublicJobs(cast(SpeechPool, pool))
 
 
+def test_list_jobs_reads_a_bounded_page_in_a_read_only_transaction() -> None:
+    class ListingPool(ReadPool):
+        def execute(self, query: str, parameters: tuple[object, ...] = ()) -> Rows:
+            if "WHERE j.workspace_id = %s" in query:
+                self.calls.append((query, parameters))
+                return Rows([self.job_row])
+            return super().execute(query, parameters)
+
+    pool = ListingPool(_request())
+    rows = _driver(pool).list_jobs(
+        workspace_id="workspace-default",
+        state="pending",
+        kind="tts",
+        after=(NOW - 1, "job-0"),
+        limit=3,
+    )
+    assert [job.job_id for job in rows] == [pool.request.job_id]
+    assert any(query == "SET TRANSACTION READ ONLY" for query, _ in pool.calls)
+    query, parameters = next(call for call in pool.calls if "WHERE j.workspace_id = %s" in call[0])
+    assert "(j.created_at_us, j.job_id) > (%s, %s)" in query
+    assert "ORDER BY j.created_at_us ASC, j.job_id ASC LIMIT %s" in query
+    assert parameters == ("workspace-default", "pending", "tts", NOW - 1, "job-0", 3)
+    with pytest.raises(ValueError):
+        _driver(pool).list_jobs(
+            workspace_id="workspace-default",
+            state=None,
+            kind=None,
+            after=None,
+            limit=102,
+        )
+
+
 def test_intent_document_returns_the_redacted_and_intact_cases() -> None:
     request = _request()
     pool = ReadPool(request)

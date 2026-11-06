@@ -37,8 +37,16 @@ class InterleavedStore(Store):
 
     after_empty: Callable[[], None] | None = None
 
-    def find_by_key(self, workspace_id: str, key_digest: str, request_digest: str) -> Any:
-        result = super().find_by_key(workspace_id, key_digest, request_digest)
+    def find_by_key(
+        self,
+        workspace_id: str,
+        key_digest: str,
+        request_digest: str,
+        retry_of_job_id: str | None,
+    ) -> Any:
+        result = super().find_by_key(
+            workspace_id, key_digest, request_digest, retry_of_job_id
+        )
         callback = self.after_empty
         if result is None and callback is not None:
             self.after_empty = None

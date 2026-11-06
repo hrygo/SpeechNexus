@@ -28,6 +28,7 @@ REQUIRED_SELECT = (
     "speech_job_events",
     "speech_job_submissions",
     "speech_job_cancellations",
+    "speech_artifacts",
 )
 REQUIRED_INSERT = (
     "speech_jobs",

@@ -34,6 +34,17 @@ JOB_STATES: tuple[JobState, ...] = (
     "expired",
 )
 TERMINAL_STATES = frozenset({"succeeded", "failed", "cancelled", "expired"})
+# A retry only replaces an execution that is already frozen. These states never
+# transition again, so an observed retryable state cannot change underneath the
+# replacement.
+RETRYABLE_STATES = frozenset({"failed", "cancelled", "expired"})
+ARTIFACT_KINDS = (
+    "transcript",
+    "audio",
+    "preview",
+    "validation_report",
+    "export_manifest",
+)
 _ALLOWED_TRANSITIONS: dict[JobState, frozenset[JobState]] = {
     "pending": frozenset({"running", "cancelling", "failed", "cancelled", "expired"}),
     "running": frozenset({"succeeded", "failed", "cancelling", "cancelled"}),
@@ -133,6 +144,7 @@ class PublicJob:
     created_at_us: int
     updated_at_us: int
     submission: JobSubmission
+    retry_of_job_id: str | None = None
 
     def __post_init__(self) -> None:
         identifier(self.job_id)
@@ -155,6 +167,10 @@ class PublicJob:
             raise ValueError("Only a succeeded Job carries a result")
         if (self.state == "failed") != (self.error_code is not None):
             raise ValueError("Only a failed Job carries an error code")
+        if self.retry_of_job_id is not None:
+            identifier(self.retry_of_job_id)
+            if self.retry_of_job_id == self.job_id:
+                raise ValueError("A public Job cannot retry itself")
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,6 +185,9 @@ class NewPublicJob:
     idempotency_key_digest: str | None
     submission: JobSubmission
     expected_binding: Publication | None = None
+    # Only a retry replacement names its frozen parent; every other Job is its
+    # own origin.
+    retry_of_job_id: str | None = None
 
     def __post_init__(self) -> None:
         identifier(self.job_id)
@@ -177,6 +196,10 @@ class NewPublicJob:
             raise ValueError("Invalid public Job kind")
         if not isinstance(self.model_id, str) or not 1 <= len(self.model_id) <= 128:
             raise ValueError("Invalid public Job model")
+        if self.retry_of_job_id is not None:
+            identifier(self.retry_of_job_id)
+            if self.retry_of_job_id == self.job_id:
+                raise ValueError("A public Job cannot retry itself")
         for digest in (
             self.request_digest,
             self.initial_event_digest,
@@ -290,3 +313,76 @@ class JobCreateResult:
     outcome: Literal["created", "replayed", "conflict", "unknown", "rejected"]
     job: PublicJob | None = None
     error_code: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class JobIntent:
+    """The immutable canonical intent kept beside one accepted public Job."""
+
+    request_digest: str
+    document: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.request_digest, str) or not _DIGEST.fullmatch(self.request_digest):
+            raise ValueError("Invalid public Job request digest")
+        if not isinstance(self.document, str) or not (
+            2 <= len(self.document.encode("utf-8")) <= 262144
+        ):
+            raise ValueError("Invalid public Job intent document")
+        try:
+            decoded = json.loads(self.document)
+        except ValueError, TypeError:
+            raise ValueError("Invalid public Job intent document") from None
+        if not isinstance(decoded, dict) or canonical_digest(decoded) != self.request_digest:
+            raise ValueError("Public Job intent disagrees with its digest")
+
+
+@dataclass(frozen=True, slots=True)
+class JobEventFact:
+    """One persisted lifecycle event; ordering and identity come from its sequence."""
+
+    event_seq: int
+    state: JobState
+    occurred_at_us: int
+
+    def __post_init__(self) -> None:
+        counter(self.event_seq)
+        if self.state not in JOB_STATES:
+            raise ValueError("Invalid public Job event state")
+        if type(self.occurred_at_us) is not int or not 0 <= self.occurred_at_us <= _TIMESTAMP:
+            raise ValueError("Invalid public Job event time")
+
+
+@dataclass(frozen=True, slots=True)
+class JobArtifactFact:
+    """One committed Artifact row referenced by a succeeded Job result."""
+
+    artifact_id: str
+    kind: str
+    media_type: str
+    bytes: int
+    sha256: str
+    receipt_id: str
+    expires_at_us: int | None = None
+
+    def __post_init__(self) -> None:
+        identifier(self.artifact_id)
+        if self.kind not in ARTIFACT_KINDS:
+            raise ValueError("Invalid Artifact kind")
+        if not isinstance(self.media_type, str) or not 1 <= len(self.media_type) <= 128:
+            raise ValueError("Invalid Artifact media type")
+        if type(self.bytes) is not int or self.bytes < 1:
+            raise ValueError("Invalid Artifact size")
+        if not isinstance(self.sha256, str) or not _DIGEST.fullmatch(self.sha256):
+            raise ValueError("Invalid Artifact digest")
+        identifier(self.receipt_id)
+        if self.expires_at_us is not None and (
+            type(self.expires_at_us) is not int
+            or not 0 < self.expires_at_us <= _TIMESTAMP
+        ):
+            raise ValueError("Invalid Artifact expiry")
+
+
+def retryable(job: PublicJob) -> bool:
+    """Only a frozen terminal Job may be replaced; a quarantined failure stays held."""
+    return job.state in RETRYABLE_STATES and job.error_code != _CANCELLATION_UNCONFIRMED

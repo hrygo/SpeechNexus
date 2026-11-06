@@ -58,6 +58,8 @@ def test_packaged_http_surface_is_closed_and_matches_real_operations() -> None:
         "/v1/nexus/jobs",
         "/v1/nexus/jobs/{job_id}",
         "/v1/nexus/jobs/{job_id}/cancellations",
+        "/v1/nexus/jobs/{job_id}/retries",
+        "/v1/nexus/jobs/{job_id}/events",
         "/v1/audio/speech",
         "/v1/audio/transcriptions",
     }

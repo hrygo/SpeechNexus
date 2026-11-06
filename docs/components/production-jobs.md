@@ -156,7 +156,7 @@ request ID，不覆盖他人事实。
 迁移 `0035_job_cancellation_fences` 的 `down_revision` 是
 `0034_public_job_cancellations`，形成单一 head；down 在 reconcile 账本、not-submitted
 观察或围栏仍有行时拒绝删除，要求先保留或导出证据。`public_job_grants` 为 API Job writer
-授予围栏 SELECT/INSERT；`job_dispatch_grants` 只授予派发器对 not-submitted 表的 INSERT；
+授予围栏 SELECT/INSERT 与 `speech_artifacts` 的 SELECT；`job_dispatch_grants` 只授予派发器对 not-submitted 表的 INSERT；
 worker 角色使用 `public_job_grants` 与 `cancellation_reconciliation_grants`（围栏列 SELECT、
 对账账本 SELECT/INSERT/列级 UPDATE、not-submitted SELECT）；gateway 写角色在
 `coordination_runtime_grants` 之外还须安装 `gateway_cancellation_fence_grants` 以获得围栏
@@ -201,6 +201,35 @@ worker 与派发器共享同一条 gateway 契约和停止服务；它不会创�
 两者都必须在升级到 `0035` 之后应用。启动探针同时检查 `speech_jobs`、
 `speech_job_submissions`、`speech_job_cancellations`、围栏、对账账本和 not-submitted 表，
 任一缺失即拒绝启动。
+
+## 重试与事件流
+
+`POST /v1/nexus/jobs/{job_id}/retries` 以新 Job 承接终态任务，不复活旧任务。可重试状态
+为 `failed`（排除 `cancellation_unconfirmed`）、`cancelled` 与 `expired`；其余状态返回
+`409 job_retry_not_allowed`，`cancellation_unconfirmed` 返回 `409 execution_cleanup_pending`。
+新 Job 复制父任务已提交的规范请求文档与摘要（顶层字段，不包一层），重新解析模型绑定、
+功能策略与目录等系统默认值，并把实际使用的配方写入自身 `effective_configuration`；
+父任务行不被更新，其终态事实与状态守卫保持原样。请求意图已被内容删除时返回
+`409 job_retry_unavailable`，不用当前默认值重建。
+
+血缘落在 `speech_jobs.retry_of_job_id`：自引用外键、`ON DELETE RESTRICT`、`CHECK`
+不等于自身、索引 `speech_jobs_retry_of`，替换后的状态守卫禁止改写该列。公开 `Job`
+形状不变（契约对象附加属性关闭），血缘只在持久层可查。同一幂等键重放返回原新 Job，
+不产生第二次业务执行；同一键换父任务、或与创建入口的同一键交叉使用返回
+`409 idempotency_conflict`。迁移 `0037_public_job_retries` 是当前 head，down 在存在
+重试血缘行时拒绝删除列，并先恢复 `0034` 的状态守卫。
+
+`GET /v1/nexus/jobs/{job_id}/events` 只读地回放持久事件：按
+`speech_job_events.event_seq` 升序，线路 `id` 为 `event_seq + 1`（契约
+`EventSequence` 从 1 起），`data` 为契约 `JobEvent`。无 `Last-Event-ID` 时从最早事件读起；
+续读以 `Last-Event-ID - 1` 为游标，非法值返回 `400 invalid_job_request`，未知 Job 返回
+`404 job_not_found`。事件行与对应状态变更在同一事务提交，因此终态事件只出现一次；
+读到终态且当前页为空后流关闭，已消费的终态不会重放。进度没有持久事实，流不发送
+`job.progress`，`Job` 投影中的 `progress.completed` 仍为 0。实现不声明
+`410 event_history_expired`：当前没有事件保留或过期机制，虚构该返回会掩盖保留策略缺失。
+成功 Job 的终态事件与 `Job` 投影都要求结果引用的 `speech_artifacts` ready 行存在且
+`receipt_id`、类型匹配；缺失时返回 `503 job_unavailable`，不伪造成功。因此 API Job
+writer 角色需要 `speech_artifacts` 的 SELECT，`job_runtime` 启动探针也把它列入必需表。
 
 ### 结果发布语义（DEL-100）
 

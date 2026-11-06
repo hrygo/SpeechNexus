@@ -19,6 +19,16 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
         "invalid_request_error",
         "The original execution is not confirmed stopped.",
     ),
+    "job_retry_not_allowed": (
+        409,
+        "invalid_request_error",
+        "The Job state does not allow a retry.",
+    ),
+    "job_retry_unavailable": (
+        409,
+        "invalid_request_error",
+        "The original Job intent is no longer available.",
+    ),
     "unsupported_parameter": (422, "invalid_request_error", "The Job request is not supported."),
     "job_kind_not_supported": (
         422,

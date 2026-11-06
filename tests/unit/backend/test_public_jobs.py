@@ -84,7 +84,11 @@ class Store:
         self.requests: list[NewPublicJob] = []
 
     def find_by_key(
-        self, workspace_id: str, key_digest: str, request_digest: str
+        self,
+        workspace_id: str,
+        key_digest: str,
+        request_digest: str,
+        retry_of_job_id: str | None,
     ) -> JobCreateResult | None:
         original = self.keys.get(key_digest)
         if original is None:
@@ -93,7 +97,7 @@ class Store:
         job = self.jobs[job_id]
         if job.workspace_id != workspace_id:
             return None
-        if digest != request_digest:
+        if digest != request_digest or job.retry_of_job_id != retry_of_job_id:
             return JobCreateResult("conflict", error_code="idempotency_conflict")
         return JobCreateResult("replayed", job)
 
@@ -126,6 +130,15 @@ class Store:
 
     def get(self, job_id: str) -> PublicJob | None:
         return self.jobs.get(job_id)
+
+    def intent_document(self, job_id: str) -> Any:
+        raise AssertionError("this fake does not implement retries")
+
+    def events(self, job_id: str, *, after_seq: int, limit: int) -> Any:
+        raise AssertionError("this fake does not implement events")
+
+    def artifact(self, workspace_id: str, artifact_id: str) -> Any:
+        return None
 
     def cancel(self, *args: Any, **kwargs: Any) -> Any:
         raise AssertionError("this fake does not implement cancellation")
@@ -201,7 +214,12 @@ def test_same_key_same_intent_replays_and_a_changed_intent_conflicts() -> None:
 def test_key_lookup_failure_never_creates_a_new_job(monkeypatch: pytest.MonkeyPatch) -> None:
     service, _, store = _service()
 
-    def unavailable(workspace_id: str, key_digest: str, request_digest: str) -> None:
+    def unavailable(
+        workspace_id: str,
+        key_digest: str,
+        request_digest: str,
+        retry_of_job_id: str | None,
+    ) -> None:
         raise PublicJobUnavailableError("synthetic failure")
 
     monkeypatch.setattr(store, "find_by_key", unavailable)

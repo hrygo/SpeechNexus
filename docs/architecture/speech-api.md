@@ -45,8 +45,9 @@ SpeechCommand
 的装配范围见[同步转写](../operations/synchronous-transcription.md)和[同步语音合成](../components/synchronous-speech.md)；
 异步与实时链须分别核对实际部署和验收证据。
 
-当前公开 Job 路由仅装配创建和按 ID 读取；列表、取消、重试与事件流仍是下表的
-契约目标。即使创建返回 `202`，生产派发 planner 尚未装配，也不能据此推断任务已执行。
+当前公开 Job 路由已装配创建、按 ID 读取、取消、重试与事件流；列表仍是下表的契约目标。
+创建、取消与重试返回 `202` 只表示请求已持久化，执行由独立派发 worker 领取协调行；
+不能据此推断任务已开始或完成。
 
 | 接口 | 用途与返回 |
 | --- | --- |
@@ -58,8 +59,8 @@ SpeechCommand
 | `POST /v1/nexus/jobs` | 契约支持持久化 ASR、TTS 及音色设计、克隆、预览和验证作业；返回 `202`、Job 和 Location，各类型须分别核验实际装配 |
 | `GET /v1/nexus/jobs`、`GET /v1/nexus/jobs/{job_id}` | 游标分页与作业状态；包含执行版本与结果引用 |
 | `POST /v1/nexus/jobs/{job_id}/cancellations` | 幂等请求取消；等待停止证据时返回 `202` 和 `Retry-After`，已终结返回 `200`；接受请求不等于资源已释放，须查看 `cleanup_state` |
-| `POST /v1/nexus/jobs/{job_id}/retries` | 从终态任务意图创建新 Job；旧执行尚未得到可核验的停止证据时返回 `409 execution_cleanup_pending`，不复活旧任务或覆盖旧成品 |
-| `GET /v1/nexus/jobs/{job_id}/events` | SSE 持久任务事件，支持事件游标续读 |
+| `POST /v1/nexus/jobs/{job_id}/retries` | 从终态任务意图创建新 Job；仅 `failed`（排除 `cancellation_unconfirmed`）、`cancelled`、`expired` 可重试，其余状态返回 `409 job_retry_not_allowed`；旧执行尚未得到可核验的停止证据时返回 `409 execution_cleanup_pending`，不复活旧任务或覆盖旧成品 |
+| `GET /v1/nexus/jobs/{job_id}/events` | SSE 持久任务事件；线路 `id` 为持久 `event_seq + 1`，`Last-Event-ID` 续读，终态事件只出现一次并在其后关闭流 |
 | `GET /v1/nexus/operations/{operation_id}` | 协调执行状态、cleanup_state 与 receipt；不重放未保存内容 |
 | `POST /v1/nexus/operations/{operation_id}/cancellations` | 取消指定实时 / 同步操作；Job 内操作转为所属 Job 的取消命令，避免留下无结果的 required 步骤；进行中 `202`，已终结 `200` |
 | `POST /v1/nexus/assets`、`GET /v1/nexus/assets/{asset_id}` | 有界流式上传文件与读取元数据；上传结束校验后才为 `ready` |

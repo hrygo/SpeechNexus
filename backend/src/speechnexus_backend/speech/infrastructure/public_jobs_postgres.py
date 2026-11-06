@@ -18,9 +18,12 @@ from speechnexus_backend.speech.application.public_jobs import (
 )
 from speechnexus_backend.speech.domain.public_jobs import (
     TERMINAL_STATES,
+    JobArtifactFact,
     JobCancellationReceipt,
     JobCancellationResult,
     JobCreateResult,
+    JobEventFact,
+    JobIntent,
     JobState,
     JobSubmission,
     NewPublicJob,
@@ -50,7 +53,7 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import (
 _JOB_COLUMNS = (
     "j.job_id, j.workspace_id, j.kind, j.model_id, j.request_digest, j.state, "
     "j.status_version, "
-    "j.result_json, j.error_code, j.created_at_us, j.updated_at_us, "
+    "j.result_json, j.error_code, j.created_at_us, j.updated_at_us, j.retry_of_job_id, "
     "s.request_id, s.client_reference, s.effective_configuration_json, "
     "s.execution_revision, s.progress_unit, s.progress_total, s.submitted_at_us"
 )
@@ -238,6 +241,75 @@ class PostgresPublicJobs:
             raise PublicJobUnavailableError
         return int(rows[0]["total"])
 
+    def intent_document(self, job_id: str) -> JobIntent | None:
+        """Read the private canonical intent; None means it was redacted, never invented."""
+        rows = self._read(
+            "SELECT j.request_digest, a.request_document FROM speech_jobs AS j "
+            "LEFT JOIN admission_operations AS a ON a.operation_id = j.job_id "
+            "WHERE j.job_id = %s",
+            (identifier(job_id),),
+        )
+        if len(rows) != 1:
+            raise PublicJobUnavailableError
+        document = rows[0]["request_document"]
+        if document is None:
+            return None
+        try:
+            return JobIntent(request_digest=rows[0]["request_digest"], document=document)
+        except ValueError, TypeError, KeyError:
+            raise PublicJobUnavailableError from None
+
+    def events(
+        self, job_id: str, *, after_seq: int, limit: int
+    ) -> tuple[JobEventFact, ...]:
+        """Read one ordered page of persisted events strictly after a sequence."""
+        rows = self._read(
+            "SELECT event_seq, state, occurred_at_us FROM speech_job_events "
+            "WHERE job_id = %s AND event_seq > %s ORDER BY event_seq ASC LIMIT %s",
+            (identifier(job_id), after_seq, limit),
+        )
+        try:
+            return tuple(
+                JobEventFact(
+                    event_seq=int(row["event_seq"]),
+                    state=row["state"],
+                    occurred_at_us=int(row["occurred_at_us"]),
+                )
+                for row in rows
+            )
+        except ValueError, TypeError, KeyError:
+            raise PublicJobUnavailableError from None
+
+    def artifact(self, workspace_id: str, artifact_id: str) -> JobArtifactFact | None:
+        """Read one committed Artifact row; absence is explicit."""
+        rows = self._read(
+            "SELECT artifact_id, artifact_kind, artifact_state, media_type, bytes, "
+            "sha256, receipt_id, expires_at_us FROM speech_artifacts "
+            "WHERE workspace_id = %s AND artifact_id = %s",
+            (identifier(workspace_id), identifier(artifact_id)),
+        )
+        if not rows:
+            return None
+        if len(rows) != 1:
+            raise PublicJobUnavailableError
+        row = rows[0]
+        if row["artifact_state"] != "ready" or row["receipt_id"] is None:
+            return None
+        try:
+            return JobArtifactFact(
+                artifact_id=row["artifact_id"],
+                kind=row["artifact_kind"],
+                media_type=row["media_type"],
+                bytes=int(row["bytes"]),
+                sha256=row["sha256"],
+                receipt_id=row["receipt_id"],
+                expires_at_us=(
+                    None if row["expires_at_us"] is None else int(row["expires_at_us"])
+                ),
+            )
+        except ValueError, TypeError, KeyError:
+            raise PublicJobUnavailableError from None
+
     def get(self, job_id: str) -> PublicJob | None:
         rows = self._read(
             "SELECT " + _JOB_COLUMNS + " FROM speech_jobs AS j "
@@ -262,7 +334,11 @@ class PostgresPublicJobs:
         return _cancellation(rows[0]) if rows else None
 
     def find_by_key(
-        self, workspace_id: str, key_digest: str, request_digest: str
+        self,
+        workspace_id: str,
+        key_digest: str,
+        request_digest: str,
+        retry_of_job_id: str | None,
     ) -> JobCreateResult | None:
         identifier(workspace_id)
         rows = self._read(
@@ -276,7 +352,7 @@ class PostgresPublicJobs:
             return None
         if len(rows) != 1:
             raise PublicJobUnavailableError
-        return _replay_digest(rows[0], request_digest)
+        return _replay_digest(rows[0], request_digest, retry_of_job_id)
 
     def create(self, job: NewPublicJob) -> JobCreateResult:
         deadline = time.monotonic() + self._timeout
@@ -511,6 +587,13 @@ class PostgresPublicJobs:
                 ).rowcount
                 if changed != 1:
                     raise PublicJobConflictError("Public Job version changed")
+                # The transition and its persisted event commit together, so a
+                # reader never observes a state without its ordered event.
+                connection.execute(
+                    "INSERT INTO speech_job_events "
+                    "(job_id, event_seq, state, occurred_at_us) VALUES (%s, %s, %s, %s)",
+                    (current.job_id, current.status_version, target, now_us),
+                )
                 row = _select_job(connection, current.job_id)
             return _job(row)
         except PublicJobConflictError, PublicJobUnavailableError:
@@ -768,6 +851,7 @@ def _job(row: dict[str, Any] | None) -> PublicJob:
             created_at_us=int(row["created_at_us"]),
             updated_at_us=int(row["updated_at_us"]),
             submission=submission,
+            retry_of_job_id=row.get("retry_of_job_id"),
         )
     except ValueError, TypeError, KeyError:
         raise PublicJobUnavailableError from None
@@ -798,11 +882,17 @@ def _existing_by_key(connection: _Executor, job: NewPublicJob) -> dict[str, Any]
 
 
 def _replay_or_conflict(row: dict[str, Any], job: NewPublicJob) -> JobCreateResult:
-    return _replay_digest(row, job.request_digest)
+    return _replay_digest(row, job.request_digest, job.retry_of_job_id)
 
 
-def _replay_digest(row: dict[str, Any], request_digest: str) -> JobCreateResult:
-    if row.get("request_digest") != request_digest:
+def _replay_digest(
+    row: dict[str, Any], request_digest: str, retry_of_job_id: str | None
+) -> JobCreateResult:
+    """One key identifies one intent and one operation; lineage is part of it."""
+    if (
+        row.get("request_digest") != request_digest
+        or row.get("retry_of_job_id") != retry_of_job_id
+    ):
         return JobCreateResult("conflict", error_code="idempotency_conflict")
     return JobCreateResult("replayed", _job(row))
 
@@ -813,8 +903,9 @@ def _insert(connection: _Executor, job: NewPublicJob) -> None:
     connection.execute(
         "INSERT INTO speech_jobs "
         "(job_id, workspace_id, kind, model_id, request_digest, idempotency_key_digest, "
-        "state, status_version, result_json, error_code, created_at_us, updated_at_us) "
-        "VALUES (%s, %s, %s, %s, %s, %s, 'pending', 1, NULL, NULL, %s, %s)",
+        "retry_of_job_id, state, status_version, result_json, error_code, "
+        "created_at_us, updated_at_us) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending', 1, NULL, NULL, %s, %s)",
         (
             job.job_id,
             job.workspace_id,
@@ -822,6 +913,7 @@ def _insert(connection: _Executor, job: NewPublicJob) -> None:
             job.model_id,
             job.request_digest,
             job.idempotency_key_digest,
+            job.retry_of_job_id,
             submission.submitted_at_us,
             submission.submitted_at_us,
         ),

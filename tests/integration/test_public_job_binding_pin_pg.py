@@ -256,7 +256,10 @@ def test_actual_commit_reply_loss_recovers_original_key(jobs_db: JobSandbox) -> 
     _counts(jobs_db, 1)
     _head(jobs_db, None)
     recovered = driver.find_by_key(
-        request.workspace_id, cast(str, request.idempotency_key_digest), request.request_digest
+        request.workspace_id,
+        cast(str, request.idempotency_key_digest),
+        request.request_digest,
+        request.retry_of_job_id,
     )
     assert recovered is not None and recovered.job is not None
     assert recovered.outcome == "replayed" and recovered.job.job_id == request.job_id
@@ -271,7 +274,9 @@ def test_exhausted_real_pool_does_not_invent_absence(jobs_db: JobSandbox) -> Non
         jobs_db.pool.connection(),
         pytest.raises(PublicJobUnavailableError),
     ):
-        driver.find_by_key("workspace-default", "sha256:" + "a" * 64, "sha256:" + "b" * 64)
+        driver.find_by_key(
+            "workspace-default", "sha256:" + "a" * 64, "sha256:" + "b" * 64, None
+        )
     _counts(jobs_db, 0)
 
 
@@ -324,8 +329,16 @@ def test_fact_rejection_reconciles_in_flight_original(jobs_db: JobSandbox, outco
     class PausedLookup(PostgresPublicJobs):
         first = True
 
-        def find_by_key(self, workspace_id: str, key_digest: str, request_digest: str) -> Any:
-            result = super().find_by_key(workspace_id, key_digest, request_digest)
+        def find_by_key(
+            self,
+            workspace_id: str,
+            key_digest: str,
+            request_digest: str,
+            retry_of_job_id: str | None,
+        ) -> Any:
+            result = super().find_by_key(
+                workspace_id, key_digest, request_digest, retry_of_job_id
+            )
             if self.first:
                 self.first = False
                 assert result is None

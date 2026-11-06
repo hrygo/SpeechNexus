@@ -92,8 +92,16 @@ class PauseFirstReplay(PostgresPublicJobs):
         self.first_empty, self.resume = Event(), Event()
         self.first = True
 
-    def find_by_key(self, workspace_id: str, key_digest: str, request_digest: str) -> Any:
-        result = super().find_by_key(workspace_id, key_digest, request_digest)
+    def find_by_key(
+        self,
+        workspace_id: str,
+        key_digest: str,
+        request_digest: str,
+        retry_of_job_id: str | None,
+    ) -> Any:
+        result = super().find_by_key(
+            workspace_id, key_digest, request_digest, retry_of_job_id
+        )
         if self.first:
             self.first = False
             assert result is None
@@ -176,6 +184,7 @@ def test_replay_lock_failure_cannot_report_absence_or_write(error: type[psycopg.
             pool.request.workspace_id,
             cast(str, pool.request.idempotency_key_digest),
             pool.request.request_digest,
+            pool.request.retry_of_job_id,
         )
     assert pool.rollbacks == 1
     assert not any(query.startswith("INSERT") for query, _ in pool.calls)
@@ -215,6 +224,7 @@ def test_deadline_exhausted_after_key_wait_never_reads_absence_or_inserts(
                 pool.request.workspace_id,
                 cast(str, pool.request.idempotency_key_digest),
                 pool.request.request_digest,
+                pool.request.retry_of_job_id,
             )
     assert not any(
         "j.idempotency_key_digest" in query or query.startswith("INSERT") for query, _ in pool.calls

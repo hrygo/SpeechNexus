@@ -16,9 +16,12 @@ from speechnexus_backend.speech.application.effective_configuration import (
     effective_configuration,
 )
 from speechnexus_backend.speech.domain.public_jobs import (
+    JobArtifactFact,
     JobCancellationReceipt,
     JobCancellationResult,
     JobCreateResult,
+    JobEventFact,
+    JobIntent,
     JobKind,
     JobState,
     JobSubmission,
@@ -30,6 +33,7 @@ from speechnexus_backend.speech.domain.public_jobs import (
     check_transition,
     idempotency_digest,
     identifier,
+    retryable,
 )
 from speechnexus_backend.speech.domain.publications import Publication, PublicationKind
 
@@ -91,6 +95,14 @@ class JobRejectedError(RuntimeError):
 
 class JobCleanupPendingError(RuntimeError):
     """A terminal Job still holds resources; cancellation cannot claim it is clean."""
+
+
+class JobRetryNotAllowedError(RuntimeError):
+    """The Job state cannot be replaced by a retry."""
+
+
+class JobRetryUnavailableError(RuntimeError):
+    """The original canonical intent is no longer available to re-send."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,7 +184,11 @@ class JobFacts(Protocol):
 
 class PublicJobStore(Protocol):
     def find_by_key(
-        self, workspace_id: str, key_digest: str, request_digest: str
+        self,
+        workspace_id: str,
+        key_digest: str,
+        request_digest: str,
+        retry_of_job_id: str | None,
     ) -> JobCreateResult | None:
         """Serialize with keyed create; settle an in-flight writer before absence."""
         ...
@@ -180,6 +196,16 @@ class PublicJobStore(Protocol):
     def create(self, job: NewPublicJob) -> JobCreateResult: ...
 
     def get(self, job_id: str) -> PublicJob | None: ...
+
+    def intent_document(self, job_id: str) -> JobIntent | None:
+        """The immutable canonical intent of an accepted Job, or None when redacted."""
+        ...
+
+    def events(
+        self, job_id: str, *, after_seq: int, limit: int
+    ) -> tuple[JobEventFact, ...]: ...
+
+    def artifact(self, workspace_id: str, artifact_id: str) -> JobArtifactFact | None: ...
 
     def cancel(
         self,
@@ -239,7 +265,9 @@ class PublicJobs:
         request_digest = canonical_digest(intent)
         key_digest = None if idempotency_key is None else idempotency_digest(idempotency_key)
         if key_digest is not None:
-            original = self._find_original(workspace_id, key_digest, request_digest)
+            original = self._find_original(
+                workspace_id, key_digest, request_digest, retry_of_job_id=None
+            )
             if original is not None:
                 return _submission_result(original)
         try:
@@ -251,6 +279,7 @@ class PublicJobs:
                 request_digest=request_digest,
                 key_digest=key_digest,
                 request_id=request_id,
+                retry_of_job_id=None,
             )
         except (
             UnknownWorkspaceError,
@@ -266,16 +295,25 @@ class PublicJobs:
             # changed facts, settle the same-key writer and recover its result.
             # If coordination fails, propagate unavailable rather than a 422.
             if key_digest is not None:
-                original = self._find_original(workspace_id, key_digest, request_digest)
+                original = self._find_original(
+                    workspace_id, key_digest, request_digest, retry_of_job_id=None
+                )
                 if original is not None:
                     return _submission_result(original)
             raise
 
     def _find_original(
-        self, workspace_id: str, key_digest: str, request_digest: str
+        self,
+        workspace_id: str,
+        key_digest: str,
+        request_digest: str,
+        *,
+        retry_of_job_id: str | None,
     ) -> JobCreateResult | None:
         try:
-            original = self._store.find_by_key(workspace_id, key_digest, request_digest)
+            original = self._store.find_by_key(
+                workspace_id, key_digest, request_digest, retry_of_job_id
+            )
         except PublicJobUnavailableError:
             raise JobOutcomeUnknownError from None
         if original is not None and (
@@ -295,6 +333,7 @@ class PublicJobs:
         request_digest: str,
         key_digest: str | None,
         request_id: str,
+        retry_of_job_id: str | None,
     ) -> PublicJob:
         workspace = self._facts.workspace(workspace_id)
         if workspace is None:
@@ -388,6 +427,7 @@ class PublicJobs:
             idempotency_key_digest=key_digest,
             submission=submission,
             expected_binding=binding.publication if pin is not None else None,
+            retry_of_job_id=retry_of_job_id,
         )
         result = self._store.create(request)
         return _submission_result(result)
@@ -398,6 +438,126 @@ class PublicJobs:
         if job is None or job.job_id != job_id:
             raise PublicJobNotFoundError
         return job
+
+    def retry(
+        self,
+        job_id: str,
+        *,
+        request_id: str,
+        idempotency_key: str | None,
+    ) -> PublicJob:
+        """Resend the frozen canonical intent as a new Job that names its parent.
+
+        The parent stays terminal: nothing here updates its state, result or
+        history. A retry request can only be observed after the parent froze, so
+        the state read below cannot be overtaken by a later transition.
+        """
+        identifier(job_id)
+        parent = self.get(job_id)
+        if parent.state == "failed" and parent.error_code == "cancellation_unconfirmed":
+            raise JobCleanupPendingError
+        if not retryable(parent):
+            raise JobRetryNotAllowedError
+        intent = self._store.intent_document(job_id)
+        if intent is None:
+            # Content deletion removed the parameters; a replacement cannot be
+            # rebuilt from mutable defaults or from memory.
+            raise JobRetryUnavailableError
+        try:
+            payload = json.loads(intent.document)
+        except ValueError, TypeError, RecursionError:
+            raise PublicJobUnavailableError from None
+        if not isinstance(payload, dict) or canonical_digest(payload) != intent.request_digest:
+            raise PublicJobUnavailableError
+        if payload.get("kind") != parent.kind or payload.get("model") != parent.model_id:
+            raise PublicJobUnavailableError
+        key_digest = None if idempotency_key is None else idempotency_digest(idempotency_key)
+        if key_digest is not None:
+            original = self._find_original(
+                parent.workspace_id,
+                key_digest,
+                intent.request_digest,
+                retry_of_job_id=job_id,
+            )
+            if original is not None:
+                return _retransmission_result(original, job_id)
+        try:
+            return self._submit_new(
+                payload,
+                typed_kind=parent.kind,
+                workspace_id=parent.workspace_id,
+                intent=payload,
+                request_digest=intent.request_digest,
+                key_digest=key_digest,
+                request_id=request_id,
+                retry_of_job_id=parent.job_id,
+            )
+        except (
+            UnknownWorkspaceError,
+            DisabledWorkspaceError,
+            ModelNotPublishedError,
+            ModelBindingError,
+            VoiceNotPublishedError,
+            ProfileNotPublishedError,
+            PronunciationNotFoundError,
+            AssetNotReadyError,
+        ):
+            if key_digest is not None:
+                original = self._find_original(
+                    parent.workspace_id,
+                    key_digest,
+                    intent.request_digest,
+                    retry_of_job_id=job_id,
+                )
+                if original is not None:
+                    return _retransmission_result(original, job_id)
+            raise
+
+    def events(
+        self, job_id: str, *, after_seq: int, limit: int
+    ) -> tuple[JobEventFact, ...]:
+        """Read persisted lifecycle events strictly after one sequence."""
+        identifier(job_id)
+        if type(after_seq) is not int or not -1 <= after_seq <= 9_223_372_036_854_775_806:
+            raise ValueError("Invalid public Job event cursor")
+        if type(limit) is not int or not 1 <= limit <= 500:
+            raise ValueError("Invalid public Job event page")
+        return self._store.events(job_id, after_seq=after_seq, limit=limit)
+
+    def artifacts(self, job: PublicJob) -> tuple[JobArtifactFact, ...]:
+        """Resolve the committed Artifact a succeeded result references, or nothing."""
+        if job.state != "succeeded":
+            return ()
+        if job.result_json is None:
+            raise PublicJobUnavailableError
+        try:
+            result = json.loads(job.result_json)
+        except ValueError, TypeError, RecursionError:
+            raise PublicJobUnavailableError from None
+        if not isinstance(result, dict) or result.get("kind") != job.kind:
+            raise PublicJobUnavailableError
+        name, kind = (
+            ("transcript_artifact_id", "transcript")
+            if job.kind == "asr"
+            else ("audio_artifact_id", "audio")
+        )
+        artifact_id, receipt_id = result.get(name), result.get("receipt_id")
+        if not isinstance(artifact_id, str) or not isinstance(receipt_id, str):
+            raise PublicJobUnavailableError
+        try:
+            identifier(artifact_id)
+            identifier(receipt_id)
+        except ValueError:
+            raise PublicJobUnavailableError from None
+        fact = self._store.artifact(job.workspace_id, artifact_id)
+        if (
+            fact is None
+            or fact.artifact_id != artifact_id
+            or fact.kind != kind
+            or fact.receipt_id != receipt_id
+        ):
+            raise PublicJobUnavailableError
+        return (fact,)
 
     def cancel(
         self,
@@ -531,6 +691,14 @@ def _text_length(payload: Mapping[str, Any]) -> int | None:
     return len(text) if isinstance(text, str) else None
 
 
+def _retransmission_result(result: JobCreateResult, parent_job_id: str) -> PublicJob:
+    """A repeated retry key replays only the replacement it created for this parent."""
+    job = _submission_result(result)
+    if job.retry_of_job_id != parent_job_id:
+        raise IdempotencyConflictError
+    return job
+
+
 def _submission_result(result: JobCreateResult) -> PublicJob:
     if result.outcome == "conflict":
         raise IdempotencyConflictError
@@ -575,6 +743,8 @@ __all__ = [
     "JobFacts",
     "JobOutcomeUnknownError",
     "JobRejectedError",
+    "JobRetryNotAllowedError",
+    "JobRetryUnavailableError",
     "ModelBindingError",
     "ModelNotPublishedError",
     "ProfileNotPublishedError",

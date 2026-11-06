@@ -79,6 +79,10 @@ from speechnexus_gateway.settings import Settings
 pytestmark = pytest.mark.integration
 PASSWORD = "synthetic_foundation_test"
 INTENT_ID = "intent-a"
+#: A held dispatch lease must outlive any scheduler jitter between the claim and the
+#: assertions that observe it. Lease expiry is proved by rewriting the recorded bounds,
+#: never by waiting for a short wall-clock window.
+HELD_LEASE_MS = 60_000
 
 
 class ObservableLedger(PostgresSubmissionLedger):
@@ -206,6 +210,30 @@ def dispatch_row(foundation: Foundation) -> dict[str, Any]:
         "FROM gateway_abort_intents WHERE submit_intent_id=%s",
         (INTENT_ID,),
     )[0]
+
+
+def expire_abort_dispatch_lease(foundation: Foundation) -> None:
+    """Move the recorded attempt lease into the past instead of waiting for it.
+
+    Both bounds move together, so the stored ``deadline > start`` invariant still
+    holds, and the deadline lands one second before the database clock the next due
+    scan reads. Expiry is therefore a written fact, not a scheduling guess.
+    """
+    foundation.database.query(
+        "UPDATE gateway_abort_intents AS a SET "
+        "dispatch_started_at_us = clock.us - 61000000, "
+        "dispatch_deadline_at_us = clock.us - 1000000 "
+        "FROM (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) "
+        "AS us) AS clock WHERE a.submit_intent_id=%s",
+        (INTENT_ID,),
+    )
+    still_live = foundation.database.query(
+        "SELECT count(*) AS n FROM gateway_abort_intents WHERE submit_intent_id=%s "
+        "AND dispatch_deadline_at_us > "
+        "CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT)",
+        (INTENT_ID,),
+    )[0]["n"]
+    assert still_live == 0, "the test must move the recorded lease into the past"
 
 
 def original_abort_request(
@@ -707,18 +735,46 @@ def test_due_abort_survives_restart_and_recovers_original(live: LiveAbort) -> No
     assert current is not None and current.execution_state is ExecutionState.UNKNOWN_QUARANTINED
 
 
-def test_due_claimed_abort_waits_for_its_lease_before_any_resend(live: LiveAbort) -> None:
+def test_live_abort_lease_keeps_every_second_sender_out(
+    live: LiveAbort, foundation: Foundation
+) -> None:
     from speechnexus_gateway.application.recover_aborts import AbortRecoveryService
 
     live.ledger.receive_abort(live.abort_request)
-    held = live.ledger.claim_abort(live.abort_request, attempt_id="abort-held", lease_ms=100)
+    held = live.ledger.claim_abort(
+        live.abort_request, attempt_id="abort-held", lease_ms=HELD_LEASE_MS
+    )
     assert isinstance(held, AbortDispatchClaim)
+    # A competing caller cannot take the receipt while that attempt's lease is live.
+    contender = live.ledger.claim_abort(
+        live.abort_request, attempt_id="abort-contender", lease_ms=HELD_LEASE_MS
+    )
+    assert contender is AbortClaimRefusal.LEASE_HELD
     recovery = AbortRecoveryService(ingress=live.ingress, ledger=live.ledger, abort=live.service())
-    # A live lease takes the receipt out of the due queue: no second sender exists.
+    # The due queue excludes a live lease: no second sender exists.
     assert recovery.sweep(limit=1) == 0
+    assert dispatch_row(foundation)["dispatch_attempt_id"] == "abort-held"
     assert live.engine.calls == []
-    time.sleep(0.2)
+
+
+def test_expired_abort_lease_becomes_due_for_exactly_one_resend(
+    live: LiveAbort, foundation: Foundation
+) -> None:
+    from speechnexus_gateway.application.recover_aborts import AbortRecoveryService
+
+    live.ledger.receive_abort(live.abort_request)
+    held = live.ledger.claim_abort(
+        live.abort_request, attempt_id="abort-held", lease_ms=HELD_LEASE_MS
+    )
+    assert isinstance(held, AbortDispatchClaim)
+    expire_abort_dispatch_lease(foundation)
+    recovery = AbortRecoveryService(ingress=live.ingress, ledger=live.ledger, abort=live.service())
     assert recovery.sweep(limit=1) == 1
+    assert len(live.engine.calls) == 1
+    row = dispatch_row(foundation)
+    assert row["dispatch_attempt_id"] != "abort-held"
+    assert row["dispatch_attempts"] == 2
+    assert recovery.sweep(limit=1) == 0
     assert len(live.engine.calls) == 1
     current = live.ledger.get(INTENT_ID)
     assert current is not None and current.execution_state is ExecutionState.UNKNOWN_QUARANTINED

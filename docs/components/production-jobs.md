@@ -219,7 +219,9 @@ worker 与派发器共享同一条 gateway 契约和停止服务；它不会创�
 `409 idempotency_conflict`。迁移 `0037_public_job_retries`（后接
 `0038_voice_catalogue_reader`、`0039_public_job_progress`）依次叠加；`0037` down 在存在
 重试血缘行时拒绝删除列，并先恢复 `0034` 的状态守卫；`0039` down 在存在进度事实时拒绝
-删除进度列。
+删除进度列。该拒绝把 0039 的可回滚窗口限定在首个进度事实提交之前：进度事实是执行证据，
+不删除也不重算，所以生产流量一旦写下过一条进度行，回退到 0038 就只能走回滚前备份恢复
+或向前修复，不能原地 downgrade。
 
 `GET /v1/nexus/jobs/{job_id}/events` 只读地回放持久事件：按
 `speech_job_events.event_seq` 升序，线路 `id` 为 `event_seq + 1`（契约
@@ -251,7 +253,9 @@ watermark，则每次前进都会产生一条新事实。ASR 在终态前没有�
 `event_seq` 排序，SSE 线路 `id` 继续是 `event_seq + 1`，重启后按同一游标重放而不重算或
 重发同值。数据库守卫拒绝终态 Job 的进度行、重复或回退值以及不连续序号；终态事件之后的
 进度行无法写入。迁移 `0039_public_job_progress` 为事件表增加 `kind`、`progress_unit`、
-`progress_completed`、`progress_total` 与部分索引，不新建第二套状态机。进度行不改写
+`progress_completed`、`progress_total` 与部分索引，不新建第二套状态机。`kind` 以
+`DEFAULT 'lifecycle'` 加入：升级时既有事件行一律回填为 `lifecycle`，进度列保持 NULL，
+`event_seq` 不变；只有升级后新追加的进度行写 `kind='progress'`。进度行不改写
 `speech_jobs` 的状态、`status_version` 或 `updated_at`；Job 的 `updated_at` 仍是最近一次
 生命周期变更的时间。派发器启动探针在选择事件列时包含这些进度列，未应用迁移时拒绝启动。
 

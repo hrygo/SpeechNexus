@@ -603,16 +603,19 @@ Python/TypeScript 绑定与打包 HTTP 投影由源重新生成；严格消费�
    资源面专用错误码（jobs/assets/artifacts/workspace/speech）仍由各自分支先选中。
    探针以只启用 ingress 的资产和 workspace 服务替身验证 405；任何业务方法调用立即失败。
    当前仅支持普通路径参数；Starlette converter（`{id:int}`、`{rest:path}`）、懒加载 `include_router`
-   的非空 prefix，以及拥有子路由的 `Mount`（含 `/widgets/{id}` 这类带参数的挂载前缀）在发送请求前
-   显式报错（退出码 2），不静默按简化路径匹配，也不改写路由。`Mount` 先于子路由匹配且接受任意方法，
-   `methods_for_path` 不会下降进去，探针会选中子路由已注册的方法并真正调用其 endpoint；因此整份应用
-   直接失败，而不是只检查子路由是否含参数。`.routes` 为空的挂载（StaticFiles 等 ASGI 应用）不拥有
-   子路由，不受影响。
-   探针期间另有 dispatch 计数守护：`DispatchGuard` 在探测窗口内替换 `run_endpoint_function`
-   （每个 FastAPI endpoint 的调用点）与普通 Starlette `Route.handle`（方法被接受后才计入，405 不计），
-   计数必须为 0；一旦 endpoint 被调用，门禁在接收探测结果前抛出 `RuntimeError`，退出码 2 且 stderr
-   明确写出 `endpoint was invoked during probe` 与被调用的 endpoint 或 `method path (route
-   template)`，不把副作用留到门禁结束后。
+   的非空 prefix，以及任何不是「无子路由 StaticFiles」的 `Mount`（含 `/widgets/{id}` 这类带参数的
+   挂载前缀、FastAPI/Starlette 子应用和没有 `.routes` 的裸 ASGI 应用）在发送请求前显式报错（退出码 2），
+   错误信息点名被拒形态，不静默按简化路径匹配，也不改写路由。`Mount` 先于子路由匹配且接受任意方法，
+   `methods_for_path` 不会下降进去，探针会选中子路由已注册的方法并真正调用其 endpoint；`Mount.routes`
+   又是 `getattr(base, "routes", [])`，裸 ASGI 应用没有该属性却接受前缀下所有路径，空列表不能证明安全，
+   因此只放行无子路由的 `StaticFiles`。`Host` 同样无法建模，一并拒绝。
+   探针期间另有 dispatch 计数守护：`DispatchGuard` 在探测窗口内统计普通 Starlette `Route.handle`
+   （方法被接受后才计入，405 不计）、`Mount.handle`（未建模的挂载应用）与每个可达 FastAPI ASGI handler
+   （直接路由的 `route.app` 与懒加载 include 的 effective context app；生成器 endpoint 直接调用
+   `dependant.call`、不经过 `run_endpoint_function`，包装 ASGI handler 才能覆盖），计数必须为 0；
+   一旦有请求到达 handler，门禁在接收探测结果前抛出 `RuntimeError`，退出码 2 且 stderr 明确写出
+   `endpoint was invoked during probe` 与被派发的 `method path (route template)` 或挂载，不把副作用
+   留到门禁结束后。安装由所有活动 guard 共享，最后一个退出时才恢复，重入或交错使用不会留下 hook。
 6. 新增契约未注册操作、已注册未声明路由、未声明状态码、operationId 形状变化、405 响应信封缺失、
    endpoint 源码无法定位，或基线过期（操作已实现、状态已声明/不再可达、占位形状/归属/错误码漂移）
    都会使命令以退出码 1 失败。

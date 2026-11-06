@@ -12,9 +12,10 @@ from typing import Any
 import fastapi
 import httpx
 import pytest
+import starlette.routing
 from fastapi import APIRouter, FastAPI
 from starlette.responses import JSONResponse
-from starlette.routing import Route
+from starlette.routing import Host, Route
 from starlette.staticfiles import StaticFiles
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -699,9 +700,10 @@ def test_mount_children_fail_closed_before_any_probe(mount: str, child: str) -> 
     assert invoked == []
 
 
-def test_mount_without_child_routes_stays_supported(tmp_path: Path) -> None:
-    # StaticFiles and comparable ASGI mounts own no route, so they cannot hide
-    # a child endpoint from the matcher and must not be rejected.
+def test_static_files_mount_stays_supported(tmp_path: Path) -> None:
+    # StaticFiles is the one mounted shape the gate can reason about: it serves
+    # no route below the prefix and answers only GET/HEAD, so the probe cannot
+    # reach business code through it.
     module = load()
     app = FastAPI()
     app.mount("/static", StaticFiles(directory=tmp_path))
@@ -722,7 +724,17 @@ def test_the_repository_probe_dispatches_into_no_endpoint() -> None:
     _, contract_operations = module.load_contract(ROOT)
     operations = module.declared_method_not_allowed_operations(contract_operations)
     guard = module.DispatchGuard()
-    runner = fastapi.routing.run_endpoint_function
+    route_handle = starlette.routing.Route.handle
+    mount_handle = starlette.routing.Mount.handle
+    contexts = [
+        context
+        for route in app.router.routes
+        if getattr(route, "original_router", None) is not None
+        for context in route.effective_route_contexts()
+        if context.starlette_route is None
+    ]
+    handlers = [context.app for context in contexts]
+    assert handlers
 
     envelopes = asyncio.run(
         module.probe_method_not_allowed_envelopes(app, operations, dispatch_guard=guard)
@@ -732,8 +744,11 @@ def test_the_repository_probe_dispatches_into_no_endpoint() -> None:
     assert guard.calls == []
     assert set(envelopes) == {operation.operation_id for operation in operations}
     assert all(value is None for value in envelopes.values())
-    # Both hooks are scoped to the probe window and restored afterwards.
-    assert fastapi.routing.run_endpoint_function is runner
+    # Every hook is scoped to the probe window and restored afterwards.
+    assert starlette.routing.Route.handle is route_handle
+    assert starlette.routing.Mount.handle is mount_handle
+    for context, handler in zip(contexts, handlers, strict=True):
+        assert context.app is handler
 
 
 def test_a_probe_that_reaches_an_endpoint_fails_the_gate(
@@ -786,7 +801,7 @@ def test_dispatch_guard_counts_a_mount_child_the_matcher_cannot_see() -> None:
     guard = module.DispatchGuard()
 
     async def execute() -> None:
-        with guard.installed():
+        with guard.installed(app.routes):
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app), base_url="http://localhost"
             ) as client:
@@ -796,9 +811,225 @@ def test_dispatch_guard_counts_a_mount_child_the_matcher_cannot_see() -> None:
     with pytest.raises(RuntimeError, match="endpoint was invoked during probe") as error:
         asyncio.run(execute())
 
-    # The child is a FastAPI route, so the recorded dispatch names the endpoint.
-    assert "mounted_endpoint" in str(error.value)
+    # The child handler is wrapped, so the dispatch names the request and route.
+    assert "PUT /widgets/probe/items" in str(error.value)
+    assert "route /items" in str(error.value)
     assert invoked == ["items"]
+
+
+@pytest.mark.parametrize("mount", ["/raw", "/raw/{id}"])
+def test_bare_asgi_mount_fails_closed_before_any_probe(mount: str) -> None:
+    # Mount.routes is getattr(base, "routes", []), so a bare ASGI application
+    # has an empty child list while still accepting every path below the
+    # prefix. An empty list is not evidence of safety: the gate must refuse the
+    # shape by name and send nothing.
+    module = load()
+    invoked: list[str] = []
+
+    async def raw_app(scope: Any, receive: Any, send: Any) -> None:
+        invoked.append(str(scope["path"]))
+        await JSONResponse({"raw": True})(scope, receive, send)
+
+    app = FastAPI()
+    app.mount(mount, raw_app)
+    operation = module.ContractOperation("rawOp", "GET", "/raw/items", frozenset({405}))
+    with pytest.raises(ValueError, match=r"unsupported Mount") as error:
+        asyncio.run(module.probe_method_not_allowed_envelopes(app, (operation,)))
+    assert mount in str(error.value)
+    assert "raw_app" in str(error.value)
+    assert "0 child route(s)" in str(error.value)
+    with pytest.raises(ValueError, match=r"unsupported Mount"):
+        tuple(module.flatten_routes(app.routes))
+    assert invoked == []
+
+
+def test_dispatch_guard_counts_a_bare_asgi_mount() -> None:
+    # Fail-closed keeps this shape from ever being probed; if an allowlist ever
+    # admits a mounted application, the mount itself must record the dispatch so
+    # the count still fails the gate.
+    module = load()
+    invoked: list[str] = []
+
+    async def raw_app(scope: Any, receive: Any, send: Any) -> None:
+        invoked.append(str(scope["path"]))
+        await JSONResponse({"raw": True})(scope, receive, send)
+
+    app = FastAPI()
+    app.mount("/raw", raw_app)
+    guard = module.DispatchGuard()
+
+    async def execute() -> None:
+        with guard.installed(app.routes):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://localhost"
+            ) as client:
+                assert (await client.put("/raw/items")).status_code == 200
+        guard.require_no_dispatch()
+
+    with pytest.raises(RuntimeError, match="endpoint was invoked during probe") as error:
+        asyncio.run(execute())
+    assert "PUT /raw/items" in str(error.value)
+    assert "mount /raw" in str(error.value)
+    assert invoked == ["/raw/items"]
+
+
+def test_host_routing_is_rejected_before_any_probe() -> None:
+    module = load()
+    app = FastAPI()
+    app.router.routes.append(Host("example.com", FastAPI()))
+    with pytest.raises(ValueError, match=r"unsupported Host") as error:
+        tuple(module.flatten_routes(app.routes))
+    assert "example.com" in str(error.value)
+
+
+def test_a_generator_endpoint_is_counted_and_fails_the_gate(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A generator endpoint is invoked directly through dependant.call, not
+    # through run_endpoint_function, and APIRoute bypasses the Route.handle
+    # hook. Wrapping the ASGI handler must still see the dispatch.
+    from speechnexus_backend.speech.interfaces.http.unimplemented import methods_for_path
+
+    module = load()
+    ran: list[str] = []
+
+    async def stream_items() -> Any:
+        ran.append("generator")
+        yield {"chunk": 1}
+
+    app = FastAPI()
+    route = fastapi.routing.APIRoute("/v1/nexus/jobs/{job_id}", stream_items, methods=["GET"])
+    app.router.routes.append(route)
+    # Invisible to the simplified matcher, matched by Starlette for every method.
+    route.methods = None
+    probe_path = "/v1/nexus/jobs/" + module.PROBE_PATH_PARAMETER
+    assert methods_for_path(app.router.routes, probe_path) == frozenset()
+    monkeypatch.setattr(module, "probe_app", lambda _root=ROOT: app)
+
+    assert module.main([]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "endpoint was invoked during probe" in captured.err
+    assert ran == ["generator"]
+
+
+def test_dispatch_guard_counts_an_included_generator_endpoint() -> None:
+    module = load()
+    ran: list[str] = []
+
+    async def stream_items() -> Any:
+        ran.append("generator")
+        yield {"chunk": 1}
+
+    router = APIRouter()
+    router.add_api_route("/gen", stream_items, methods=["GET"])
+    app = FastAPI()
+    app.include_router(router)
+    guard = module.DispatchGuard()
+
+    async def execute() -> None:
+        with guard.installed(app.router.routes):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://localhost"
+            ) as client:
+                assert (await client.get("/gen")).status_code == 200
+        guard.require_no_dispatch()
+
+    with pytest.raises(RuntimeError, match="endpoint was invoked during probe") as error:
+        asyncio.run(execute())
+    assert "GET /gen" in str(error.value)
+    assert ran == ["generator"]
+
+
+def test_unenumerable_lazy_include_fails_closed_before_any_request(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A lazy include whose effective contexts cannot be enumerated would leave
+    # the dispatch guard blind, so it must fail closed - and the failed window
+    # must roll back without leaking hooks or an active guard.
+    module = load()
+    executed: list[str] = []
+
+    router = APIRouter()
+
+    @router.get("/v1/nexus/jobs/{job_id}")
+    async def job(job_id: str) -> dict[str, str]:
+        executed.append(job_id)
+        return {"job_id": job_id}
+
+    app = FastAPI()
+    app.include_router(router)
+    included = app.router.routes[-1]
+    assert getattr(included, "original_router", None) is not None
+    monkeypatch.setattr(type(included), "effective_route_contexts", None, raising=False)
+    route_handle = starlette.routing.Route.handle
+    mount_handle = starlette.routing.Mount.handle
+
+    guard = module.DispatchGuard()
+    with (
+        pytest.raises(RuntimeError, match="cannot enumerate the effective routes"),
+        guard.installed(app.router.routes),
+    ):
+        pass
+    assert guard.count == 0
+    assert module._active_guards == []
+    assert module._installed_hooks is None
+    assert starlette.routing.Route.handle is route_handle
+    assert starlette.routing.Mount.handle is mount_handle
+
+    requests: list[str] = []
+    original_request = httpx.AsyncClient.request
+
+    async def counting_request(self: Any, method: str, url: Any, **kwargs: Any) -> Any:
+        requests.append(f"{method} {url}")
+        return await original_request(self, method, url, **kwargs)
+
+    monkeypatch.setattr(httpx.AsyncClient, "request", counting_request)
+    monkeypatch.setattr(module, "probe_app", lambda _root=ROOT: app)
+
+    assert module.main([]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "cannot enumerate the effective routes" in captured.err
+    assert requests == []
+    assert executed == []
+    assert module._active_guards == []
+    assert starlette.routing.Route.handle is route_handle
+
+
+def test_dispatch_hooks_restore_after_reentrant_and_interleaved_use() -> None:
+    module = load()
+    app = FastAPI()
+    app.add_api_route("/items", lambda: {}, methods=["GET"])
+    route = app.router.routes[-1]
+    assert isinstance(route, fastapi.routing.APIRoute)
+    original_app = route.app
+    route_handle = starlette.routing.Route.handle
+    mount_handle = starlette.routing.Mount.handle
+
+    guard = module.DispatchGuard()
+    with guard.installed(app.router.routes), guard.installed(app.router.routes):
+        assert starlette.routing.Route.handle is not route_handle
+        assert route.app is not original_app
+    assert starlette.routing.Route.handle is route_handle
+    assert starlette.routing.Mount.handle is mount_handle
+    assert route.app is original_app
+    assert module._installed_hooks is None
+    assert module._active_guards == []
+
+    # Exit out of order: hooks stay until the last active guard leaves.
+    first = module.DispatchGuard()
+    second = module.DispatchGuard()
+    first_window = first.installed(app.router.routes)
+    second_window = second.installed(app.router.routes)
+    first_window.__enter__()
+    second_window.__enter__()
+    first_window.__exit__(None, None, None)
+    assert starlette.routing.Route.handle is not route_handle
+    second_window.__exit__(None, None, None)
+    assert starlette.routing.Route.handle is route_handle
+    assert route.app is original_app
+    assert module._installed_hooks is None
 
 
 @pytest.mark.parametrize("prefix", ["/api", "/widgets"])

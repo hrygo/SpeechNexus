@@ -1,0 +1,86 @@
+name: PR-Agent review
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
+
+permissions: {}
+
+jobs:
+  review:
+    # Only trusted, same-repository PRs. Never execute or check out PR code.
+    if: >-
+      ${{ vars.PR_AGENT_REVIEW_ENABLED == 'true' &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          github.event.pull_request.draft == false &&
+          github.event.pull_request.user.type != 'Bot' &&
+          (github.event.pull_request.author_association == 'OWNER' ||
+           github.event.pull_request.author_association == 'MEMBER' ||
+           github.event.pull_request.author_association == 'COLLABORATOR') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Check review key
+        id: key
+        env:
+          OPENAI_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        run: |
+          if [[ -z "$OPENAI_KEY" ]]; then
+            echo 'configured=false' >> "$GITHUB_OUTPUT"
+            echo 'PR-Agent review skipped: OPENCODE_API_KEY is not configured.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'configured=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Review PR
+        if: steps.key.outputs.configured == 'true'
+        env:
+          OPENAI__KEY: ${{ secrets.OPENCODE_API_KEY }}
+          GITHUB__USER_TOKEN: ${{ github.token }}
+          GITHUB__DEPLOYMENT_TYPE: user
+          GITHUB__AGENT_LOGIN: github-actions[bot]
+          OPENAI__API_BASE: https://opencode.ai/inference/go/openai/v1
+          CONFIG__MODEL: openai/muse-spark-1.3-contributor
+          CONFIG__FALLBACK_MODELS: "[]"
+          CONFIG__MODEL_WEAK: openai/muse-spark-1.3-contributor
+          CONFIG__MODEL_REASONING: openai/muse-spark-1.3-contributor
+          CONFIG__CUSTOM_MODEL_MAX_TOKENS: "32000"
+          CONFIG__USE_REPO_SETTINGS_FILE: "false"
+          CONFIG__USE_GLOBAL_SETTINGS_FILE: "false"
+          CONFIG__ENABLE_PER_DIRECTORY_SETTINGS: "false"
+          CONFIG__REPO_CONTEXT_FILES: "[]"
+          CONFIG__PROPAGATE_TOOL_ERRORS: "true"
+          CONFIG__RESTRICTED_MODE: "true"
+          CONFIG__NUM_RETRIES: "0"
+          CONFIG__RETRY_SAME_MODEL_ON_TIMEOUT: "false"
+          CONFIG__PUBLISH_OUTPUT_PROGRESS: "false"
+          PR_REVIEWER__REQUIRE_TICKET_ANALYSIS_REVIEW: "false"
+          PR_REVIEWER__ENABLE_REVIEW_LABELS_SECURITY: "false"
+          PR_REVIEWER__ENABLE_REVIEW_LABELS_EFFORT: "false"
+          PR_REVIEWER__PERSISTENT_FINDING_STATE: "false"
+          PR_REVIEWER__MAX_PREVIOUS_FINDINGS_CHARS: "0"
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          REPOSITORY_ID: ${{ github.repository_id }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          [[ "$REPOSITORY_ID" =~ ^[0-9]+$ && "$PR_NUMBER" =~ ^[0-9]+$ ]]
+          export LITELLM__EXTRA_HEADERS
+          LITELLM__EXTRA_HEADERS=$(printf '@str {"User-Agent":"pr-agent/0.49.0","x-opencode-session":"pr-agent-%s-pr-%s"}' "$REPOSITORY_ID" "$PR_NUMBER")
+          docker run --rm \
+            -e OPENAI__KEY -e GITHUB__USER_TOKEN -e GITHUB__DEPLOYMENT_TYPE -e GITHUB__AGENT_LOGIN \
+            -e OPENAI__API_BASE -e CONFIG__MODEL -e CONFIG__FALLBACK_MODELS \
+            -e CONFIG__MODEL_WEAK -e CONFIG__MODEL_REASONING -e CONFIG__CUSTOM_MODEL_MAX_TOKENS \
+            -e CONFIG__USE_REPO_SETTINGS_FILE -e CONFIG__USE_GLOBAL_SETTINGS_FILE \
+            -e CONFIG__ENABLE_PER_DIRECTORY_SETTINGS -e CONFIG__REPO_CONTEXT_FILES \
+            -e CONFIG__PROPAGATE_TOOL_ERRORS -e CONFIG__PUBLISH_OUTPUT_PROGRESS \
+            -e CONFIG__RESTRICTED_MODE -e CONFIG__NUM_RETRIES -e CONFIG__RETRY_SAME_MODEL_ON_TIMEOUT \
+            -e PR_REVIEWER__REQUIRE_TICKET_ANALYSIS_REVIEW \
+            -e PR_REVIEWER__ENABLE_REVIEW_LABELS_SECURITY -e PR_REVIEWER__ENABLE_REVIEW_LABELS_EFFORT \
+            -e PR_REVIEWER__PERSISTENT_FINDING_STATE -e PR_REVIEWER__MAX_PREVIOUS_FINDINGS_CHARS \
+            -e LITELLM__EXTRA_HEADERS \
+            pragent/pr-agent@sha256:10a8893d5e081be1a5ae825843d9fc14f8e8d59d8a4f61d67c1775415156079f \
+            --pr_url "$PR_URL" review

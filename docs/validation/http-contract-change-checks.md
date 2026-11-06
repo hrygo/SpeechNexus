@@ -87,16 +87,26 @@ One structural exception is limited to a raw baseline response that is exactly
 `$ref: "#/components/responses/OperationNotImplemented"` with no sibling keys, at
 status `503`. The replacement must still:
 
-- declare required `Cache-Control` and `X-Should-Retry` headers; and
+- be an inline response object rather than a `$ref` to a shared component,
+  because a shared 503 could carry guarantees declared for another operation;
+- declare a required `Cache-Control` header;
+- declare a required `X-Should-Retry` header whose schema is `const: "true"`:
+  the value, not just the name, is the retry signal, and `false` still means
+  "do not retry";
 - keep an `application/json` body composed with `allOf` that references
-  `#/components/schemas/ErrorResponse`.
+  `#/components/schemas/ErrorResponse`; and
+- declare no `operation_not_implemented` in the body's `error.code` `enum` or
+  `const`: a replacement that keeps that literal still says the operation is
+  permanently unimplemented.
 
-A replacement that loses either guarantee is reported as
-`placeholder 503 replacement requires ...`. All other responses keep the
-unchanged directional rules, including the existing `const` and composition
-comparisons: a 503 that was not exactly the placeholder reference (including a
-placeholder `$ref` with siblings) is compared normally. A version bump remains
-no waiver. The positive and negative cases live in
+A replacement that loses any guarantee is reported as
+`placeholder 503 replacement requires ...`. An unchanged placeholder
+reference stays valid: the exception judges the replacement, so operations that
+have not shipped keep their declaration. All other responses keep the unchanged
+directional rules, including the existing `const` and composition comparisons: a
+503 that was not exactly the placeholder reference (including a placeholder
+`$ref` with siblings) is compared normally. A version bump remains no waiver.
+The positive and negative cases live in
 `tests/contract/test_http_contract_changes.py`.
 
 ## What remains outside this unit

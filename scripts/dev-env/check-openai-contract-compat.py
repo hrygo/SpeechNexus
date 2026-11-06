@@ -36,8 +36,11 @@ _OPENAI_PATHS = {
 }
 # The central placeholder is a process marker, not a runtime guarantee. When an
 # operation leaves the unimplemented set, its 503 must be allowed to stop saying
-# "permanently not implemented"; the replacement still has to be a retryable 503.
+# "permanently not implemented"; the replacement still has to be a retryable 503
+# whose header and body values keep that signal, and inline enough that it cannot
+# borrow another operation's guarantees.
 _PLACEHOLDER_503_REF = "#/components/responses/OperationNotImplemented"
+_PLACEHOLDER_ERROR_CODE = "operation_not_implemented"
 _ERROR_RESPONSE_REF = "#/components/schemas/ErrorResponse"
 _OPENAI_REALTIME_DEFS = {
     "SessionUpdate",
@@ -131,38 +134,65 @@ def _exact_placeholder_503(
     )
 
 
-def _response_definition(
-    document: Mapping[str, Any], response: Mapping[str, Any] | None
-) -> Mapping[str, Any] | None:
-    if response is None:
-        return None
-    ref = response.get("$ref")
-    if isinstance(ref, str) and ref.startswith("#/"):
-        return _mapping(_resolve_local_pointer(document, ref[1:]))
-    return response
+def _declared_error_codes(schema: object, codes: set[str], depth: int = 0) -> None:
+    """Collect the `error.code` literals a replacement body declares.
+
+    A body that still enumerates `operation_not_implemented` claims the operation
+    is permanently unimplemented however retryable its headers are. The walk is
+    depth-bounded so recursive YAML anchors or malformed nesting cannot run away.
+    """
+    if depth > 16:
+        return
+    mapping = _mapping(schema)
+    if mapping is None:
+        for item in _sequence(schema) or []:
+            _declared_error_codes(item, codes, depth + 1)
+        return
+    properties = _mapping(mapping.get("properties")) or {}
+    error = _mapping(properties.get("error")) or {}
+    code = _mapping((_mapping(error.get("properties")) or {}).get("code")) or {}
+    for value in _sequence(code.get("enum")) or []:
+        if isinstance(value, str):
+            codes.add(value)
+    if isinstance(code.get("const"), str):
+        codes.add(cast(str, code["const"]))
+    for value in mapping.values():
+        _declared_error_codes(value, codes, depth + 1)
 
 
-def _keeps_retryable_503_shape(
-    document: Mapping[str, Any], response: Mapping[str, Any] | None
-) -> bool:
-    definition = _response_definition(document, response)
-    if definition is None:
+def _keeps_retryable_503_shape(response: Mapping[str, Any] | None) -> bool:
+    """An inline 503 body that no longer claims the operation is unimplemented.
+
+    Presence is not a promise: required `X-Should-Retry` still says "do not
+    retry" while its value is `false`, and an `error.code` of
+    `operation_not_implemented` still says "permanently unimplemented". A shared
+    component reference is rejected because it could carry guarantees declared
+    for another operation.
+    """
+    if response is None or "$ref" in response:
         return False
     headers = {
         str(name).lower(): value
-        for name, value in (_mapping(definition.get("headers")) or {}).items()
+        for name, value in (_mapping(response.get("headers")) or {}).items()
     }
-    for name in ("cache-control", "x-should-retry"):
-        header = _mapping(headers.get(name)) or {}
-        if header.get("required") is not True:
-            return False
-    content = _mapping(definition.get("content")) or {}
+    cache_control = _mapping(headers.get("cache-control")) or {}
+    if cache_control.get("required") is not True:
+        return False
+    retry = _mapping(headers.get("x-should-retry")) or {}
+    retry_schema = _mapping(retry.get("schema")) or {}
+    if retry.get("required") is not True or retry_schema.get("const") != "true":
+        return False
+    content = _mapping(response.get("content")) or {}
     media = _mapping(content.get("application/json")) or {}
     schema = _mapping(media.get("schema")) or {}
     variants = _sequence(schema.get("allOf")) or []
-    return len(variants) >= 2 and any(
+    if len(variants) < 2 or not any(
         (_mapping(variant) or {}).get("$ref") == _ERROR_RESPONSE_REF for variant in variants
-    )
+    ):
+        return False
+    codes: set[str] = set()
+    _declared_error_codes(schema, codes)
+    return _PLACEHOLDER_ERROR_CODE not in codes
 
 
 def _dereference_schema_children(
@@ -1165,17 +1195,22 @@ def _compare_openapi(
                     _issue(issues, response_pointer, "response status removed")
                     continue
                 if _exact_placeholder_503(base, path_name, method, status):
-                    # The baseline declared "permanently not implemented"; the
-                    # replacement must still be a retryable 503 envelope, but its
-                    # code/retryable values are allowed to change.
-                    if not _keeps_retryable_503_shape(
-                        current, _raw_response(current, path_name, method, status)
+                    # The baseline declared "permanently not implemented". An
+                    # unchanged placeholder stays valid; any replacement must be an
+                    # inline, retryable 503 whose header and body values keep that
+                    # retry signal instead of the original permanent-absence claim.
+                    if not _exact_placeholder_503(
+                        current, path_name, method, status
+                    ) and not _keeps_retryable_503_shape(
+                        _raw_response(current, path_name, method, status)
                     ):
                         _issue(
                             issues,
                             response_pointer,
-                            "placeholder 503 replacement requires required Cache-Control and "
-                            "X-Should-Retry headers and an allOf body containing ErrorResponse",
+                            "placeholder 503 replacement requires an inline response (no $ref), "
+                            'required Cache-Control and X-Should-Retry: "true" headers, an '
+                            "allOf body containing ErrorResponse, and an error.code that does "
+                            "not include operation_not_implemented",
                         )
                     continue
                 base_headers = {

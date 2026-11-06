@@ -66,7 +66,6 @@ test("catalogue client validates native reads once and refuses publication befor
   assert.equal(calls, 1);
 });
 
-
 test("catalogue client accepts a declared non-retryable 400 without retrying", async () => {
   const reply = examples.find((example) => example.id === "getVoiceRevision-invalid-request").value;
   let calls = 0;

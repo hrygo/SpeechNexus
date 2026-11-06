@@ -11,6 +11,7 @@ value is rejected by the guard rather than stored as a second fact.
 
 EVENTS = "speech_job_events"
 JOBS = "speech_jobs"
+SUBMISSIONS = "speech_job_submissions"
 PROGRESS_INDEX = "speech_job_events_progress_latest"
 PROGRESS_GUARD = "speech_job_events_progress_guard"
 
@@ -50,6 +51,12 @@ PUBLIC_JOB_PROGRESS_DDL = (
           SELECT state INTO job_state FROM {JOBS} WHERE job_id = NEW.job_id;
           IF job_state IS DISTINCT FROM 'running' THEN
             RAISE EXCEPTION 'progress requires a running public Job'
+              USING ERRCODE = '23514';
+          END IF;
+          IF NEW.progress_unit IS DISTINCT FROM (
+            SELECT progress_unit FROM {SUBMISSIONS} WHERE job_id = NEW.job_id
+          ) THEN
+            RAISE EXCEPTION 'progress unit must match the frozen submission'
               USING ERRCODE = '23514';
           END IF;
           SELECT MAX(event_seq) INTO latest_seq FROM {EVENTS}

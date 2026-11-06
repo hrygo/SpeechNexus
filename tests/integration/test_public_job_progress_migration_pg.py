@@ -75,6 +75,13 @@ def test_progress_migration_round_trip_and_guarded_facts() -> None:
                 ("sha256:" + "e" * 64,),
             )
             columns.execute(
+                "INSERT INTO speech_job_submissions "
+                "(job_id, request_id, client_reference, effective_configuration_json, "
+                "execution_revision, progress_unit, progress_total, submitted_at_us) "
+                "VALUES ('job-progress-migrate', 'req-progress-migrate', "
+                "'synthetic-progress', '{}', 1, 'audio_ms', NULL, 1)"
+            )
+            columns.execute(
                 "INSERT INTO speech_job_events "
                 "(job_id, event_seq, state, occurred_at_us) "
                 "VALUES ('job-progress-migrate', 0, 'pending', 1)"
@@ -85,24 +92,47 @@ def test_progress_migration_round_trip_and_guarded_facts() -> None:
                 "progress_completed) VALUES "
                 "('job-progress-migrate', 1, 'running', 2, 'progress', 'audio_ms', 10)"
             )
-            with pytest.raises(psycopg.errors.CheckViolation):
+            with pytest.raises(psycopg.errors.CheckViolation) as shape_failure:
                 columns.execute(
                     "INSERT INTO speech_job_events "
                     "(job_id, event_seq, state, occurred_at_us, kind, progress_unit) VALUES "
                     "('job-progress-migrate', 2, 'running', 3, 'progress', 'audio_ms')"
                 )
-            with pytest.raises(psycopg.errors.CheckViolation):
+            assert (
+                shape_failure.value.diag.constraint_name == "speech_job_events_progress_shape_check"
+            )
+            with pytest.raises(psycopg.errors.CheckViolation) as duplicate_failure:
                 columns.execute(
                     "INSERT INTO speech_job_events "
                     "(job_id, event_seq, state, occurred_at_us, kind, progress_unit, "
                     "progress_completed) VALUES "
                     "('job-progress-migrate', 2, 'running', 3, 'progress', 'audio_ms', 10)"
                 )
+            assert "must strictly advance" in str(duplicate_failure.value)
+            with pytest.raises(psycopg.errors.CheckViolation) as unit_failure:
+                columns.execute(
+                    "INSERT INTO speech_job_events "
+                    "(job_id, event_seq, state, occurred_at_us, kind, progress_unit, "
+                    "progress_completed) VALUES "
+                    "('job-progress-migrate', 2, 'running', 3, 'progress', 'items', 20)"
+                )
+            assert "frozen submission" in str(unit_failure.value)
+            with pytest.raises(psycopg.errors.CheckViolation) as sequence_failure:
+                columns.execute(
+                    "INSERT INTO speech_job_events "
+                    "(job_id, event_seq, state, occurred_at_us, kind, progress_unit, "
+                    "progress_completed) VALUES "
+                    "('job-progress-migrate', 3, 'running', 4, 'progress', 'audio_ms', 30)"
+                )
+            assert "sequence must follow" in str(sequence_failure.value)
             # The older shape cannot represent a committed progress fact.
             with pytest.raises(RuntimeError) as failure:
                 command.downgrade(config, "0038_voice_catalogue_reader")
             assert "progress facts" in str(failure.value)
             columns.execute("DELETE FROM speech_job_events WHERE job_id = 'job-progress-migrate'")
+            columns.execute(
+                "DELETE FROM speech_job_submissions WHERE job_id = 'job-progress-migrate'"
+            )
             columns.execute("DELETE FROM speech_jobs WHERE job_id = 'job-progress-migrate'")
             command.downgrade(config, "0038_voice_catalogue_reader")
             command.upgrade(config, "head")

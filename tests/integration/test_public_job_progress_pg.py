@@ -65,6 +65,16 @@ def _frames(body: str) -> list[dict[str, Any]]:
     return frames
 
 
+def _next_event_seq(db: JobSandbox, job_id: str) -> int:
+    rows = db.query(
+        "SELECT COALESCE(MAX(event_seq), -1) + 1 AS next_seq "
+        "FROM speech_job_events WHERE job_id = %s",
+        (job_id,),
+    )
+    assert len(rows) == 1
+    return int(rows[0]["next_seq"])
+
+
 async def _running_claim(
     db: JobSandbox,
 ) -> tuple[PostgresDispatchStateStore, ClaimedJob]:
@@ -118,6 +128,19 @@ async def test_progress_is_persisted_only_when_the_observed_value_advances(
             claim, unit="text_codepoints", completed=750, total=None
         )
 
+        # A skipped sequence is rejected by the guard, not silently renumbered.
+        next_seq = _next_event_seq(jobs_db, job_id)
+        with pytest.raises(psycopg.errors.CheckViolation) as skip_failure:
+            jobs_db.admin.execute(
+                "INSERT INTO speech_job_events "
+                "(job_id, event_seq, state, occurred_at_us, kind, progress_unit, "
+                "progress_completed) VALUES (%s, %s, 'running', 10, 'progress', "
+                "'audio_ms', 1_000)",
+                (job_id, next_seq + 1),
+            )
+        assert "sequence must follow" in str(skip_failure.value)
+        assert _next_event_seq(jobs_db, job_id) == next_seq
+
         # The stream replays only after the Job is terminal: an open SSE
         # response cannot be buffered by the ASGI test transport.
         await states.finish(claim, "failed", result_json=None, error_code="engine_failure")
@@ -169,13 +192,13 @@ async def test_terminal_job_stops_progress_and_a_restart_keeps_the_last_value(
             claim, "failed", result_json=None, error_code="engine_failure"
         )
         assert terminal.state == "failed"
-        before = jobs_db.count("speech_job_events")
+        before = _next_event_seq(jobs_db, job_id)
 
         # The public Job is terminal, so no later watermark can become progress.
         assert not await states.record_progress(claim, unit="audio_ms", completed=2_000, total=None)
-        assert jobs_db.count("speech_job_events") == before
+        assert _next_event_seq(jobs_db, job_id) == before
 
-        with pytest.raises(psycopg.errors.CheckViolation):
+        with pytest.raises(psycopg.errors.CheckViolation) as terminal_failure:
             jobs_db.admin.execute(
                 "INSERT INTO speech_job_events "
                 "(job_id, event_seq, state, occurred_at_us, kind, progress_unit, "
@@ -183,6 +206,7 @@ async def test_terminal_job_stops_progress_and_a_restart_keeps_the_last_value(
                 "'audio_ms', %s)",
                 (job_id, before, 2_000),
             )
+        assert "running public Job" in str(terminal_failure.value)
 
         adapter = PostgresPublicJobs(jobs_db.pool)
         restarted = PublicJobs(adapter, adapter)

@@ -45,6 +45,7 @@ from speechnexus_gateway.application.query_execution import ExecutionQueryServic
 from speechnexus_gateway.application.readiness import ReadinessService
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
 from speechnexus_gateway.domain.ports import AbortOutcome
+from speechnexus_gateway.domain.submission import AbortAcknowledgement
 from speechnexus_gateway.infrastructure.abort_authority import verify_abort_authority
 from speechnexus_gateway.infrastructure.postgres_pool import GatewayPool
 from speechnexus_gateway.infrastructure.process_ownership import ProcessIngressOwnership
@@ -120,7 +121,11 @@ def started_verified_stop(foundation: Foundation, submit_intent_id: str) -> Abor
         evidence_id=f"evidence-{submit_intent_id}",
         submit_intent_id=submit_intent_id,
     )
-    return AbortOutcome(observed_at=datetime.now(UTC), evidence=evidence)
+    return AbortOutcome(
+        observed_at=datetime.now(UTC),
+        evidence=evidence,
+        acknowledgement=AbortAcknowledgement.ABORTED,
+    )
 
 
 @contextmanager

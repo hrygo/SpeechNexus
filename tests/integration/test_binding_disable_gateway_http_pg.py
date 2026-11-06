@@ -117,7 +117,8 @@ def test_gateway_recovers_original_abort_after_commit_boundary(
     )
     gateway.ledger.receive_abort(request)
     if crash_after == "claim":
-        assert gateway.ledger.claim_abort(request) is not None
+        claim = gateway.ledger.claim_abort(request, attempt_id="abort-held", lease_ms=2000)
+        assert claim is not None
     path = "/internal/v1/executions/intent-http/abort-intents"
     payload = abort_body(reason="resource_force_disabled")
     response = post(gateway.app, path, payload)

@@ -288,26 +288,55 @@ fork 后不能使用或关闭父进程 lease。退出时等待仍在使用 lease
 `POST /internal/v1/instances/{instance_id}/drain`（`drainEngineInstance`）。
 
 `/abort` 与版本化 `/abort-intents` 共用持久取消接收：先校验完整原执行并以短事务按
-pool→submit→abort 锁序提交原始取消，才等待发送锁、消耗唯一 claim 和调用 adapter。
-接收回滚或提交结果未知时不 claim、不外发；超时后查询原身份。精确原意图重放保留
-首次数据库接收时间；尚未 claim 时重放仍可取得唯一外发资格，已有 claim 时不再外发。
-改变 reason 或 wait_timeout 的重放冲突。合法删除后的既有回执
+pool→submit→abort 锁序提交原始取消，再等待发送锁、取得一次有界外发租约并调用 adapter。
+接收回滚或提交结果未知时不 claim、不外发；超时后查询原身份。精确原意图重放保留首次
+数据库接收时间；改变 reason 或 wait_timeout 的重放冲突。合法删除后的既有回执
 可在验证墓碑、终态及已释放租约后只读重放；缺失原文不能作为创建新取消的依据。
 
-启用下述周期恢复配置、文件执行 runtime 和受限 abort 写权限时，恢复驱动也按持久
-`next_check_at_us` 调度本网关未终结的原取消回执。每批有界，逐条处理前将该条检查时间推后；
-失败或重启后仍可接续，调度时间本身不授权外发。恢复时在同一进程所有权及 pool lane
-内重读固定身份、摘要、引擎请求身份和取消参数；未 claim 的回执可取得首次外发资格。
-取消恢复与停止证据恢复逐轮交替优先，单轮共用原有时间预算；在途有界调用结束后才停止，
-任一类用尽本轮预算也不会永久挤占另一类的后续轮次。
-已有 claim 的结果未知，只能交给显式提供的 `AbortRecoveryPort` 按原身份查询或安全
-幂等重放。默认文件 runtime 不提供该资格，因而继续隔离，不因查询或受理释放预算。
-该安全端口必须由组合根显式注入，不能仅凭 adapter 具有普通 abort 方法推断。
+`gateway_abort_intents` 保存每条原取消的首次接收和最近一次外发尝试：`dispatched_at_us`
+固定首次尝试时间，`dispatch_attempt_id`、`dispatch_started_at_us`、
+`dispatch_deadline_at_us`、`dispatch_outcome`（`acknowledged` / `unconfirmed` /
+`rejected_fenced` / `exhausted`）、`dispatch_outcome_at_us` 与 `dispatch_attempts` 记录
+这次尝试的租约和结果，回执同时固化原执行的 `instance_id` 与 `instance_generation`。
+外发租约长度为 `wait_timeout + 1000ms`，上限 65 s；同一回执在租约内只允许一个持有者，
+两个网关实例不会同时外发。租约到期、尝试未记录结果或进程在任意窗口退出后，后续轮次按
+持久事实重新取得租约并只重发原身份，不新建执行。
 
-部署升级先应用版本迁移 `0032_abort_recovery_schedule`，再由管理员为 gateway 写角色
-执行当前 `gateway_abort_grants`（仅新增 `next_check_at_us` 的列级 UPDATE）；未配置
-该权限时启动校验关闭持久 abort 能力。独立查询角色仍保持只读。候选同一 node/gateway
-的进程必须共用宿主锁目录，持有原进程锁直到所有在途发送退出；不能以 TTL 代替该前提。
+未裁决的尝试按指数退避重试：第 n 次未确认后 `next_check_at_us = 观察时间 +
+min(30s × 2^(n-1), 30min)`，不再按租约节奏紧循环；最多尝试 8 次（约 1 小时）。用尽后
+写 `dispatch_outcome=exhausted` 并停止重试，执行继续隔离并占用预算，回执、尝试次数与
+观察时间保留为可见证据。`exhausted` 是终态：不重发、不伪造停止，交由原 `record_stop`
+证据路径或人工核验收敛。
+
+engine adapter 对同一身份的外发必须幂等：重复调用不产生第二次资源效果，并给出可裁决的
+acknowledgement（已中止 / 已终结）；无法确认时返回 unknown，绝不作为停止证据。
+`record_stop` 先于外发结果落库，两者之间退出只会让本次尝试保持未决，重试重放同一证据身份。
+
+组合根注入的 abort adapter 必须能对“已不在本进程内存、但引擎仍记得”的原身份作答，
+这是恢复可用性的资格前提；只能取消本进程任务的 adapter 不满足该前提。默认文件 runtime
+只对本进程任务返回 `aborted` / `already_terminal`，进程重启后对旧身份恒返回 unknown，
+因此它的恢复终态是“未确认、退避重试至 `exhausted`、保留可见证据并继续隔离”，
+不是“已停止”。
+
+启用下述周期恢复配置、文件执行 runtime 和受限 abort 写权限时，恢复驱动也按持久
+`next_check_at_us` 与尝试租约调度本网关未终结的原取消回执：已裁决结果、已终结执行、
+有效租约内的尝试和已拒绝的漂移都不再入队。每批有界，逐条处理前将该条检查时间推后；
+失败或重启后仍可接续，调度时间本身不授权外发。恢复时在同一进程所有权及 pool lane
+内重读固定身份、摘要、引擎请求身份、取消参数和记录时的实例代次；漂移回执记录
+`rejected_fenced` 并保留证据，绝不盲目重发。取消恢复与停止证据恢复逐轮交替优先，
+单轮共用原有时间预算；在途有界调用结束后才停止，任一类用尽本轮预算也不会永久挤占
+另一类的后续轮次。
+
+部署升级先应用版本迁移 `0036_abort_dispatch_attempts`，再由管理员为 gateway 写角色
+执行当前 `gateway_abort_grants`（新增尝试列与 `next_check_at_us` 的列级 UPDATE），
+并对只读查询角色重跑 `gateway_query_grants`。两者都是幂等的追加式授权，可重复执行。
+查询角色的授权集合按精确列集校验：不重跑 `gateway_query_grants` 时启动校验以
+`invalid execution query reader authority` 硬失败，控制面不启动；写角色缺少尝试列时
+持久 abort 能力以 fail-soft 方式关闭，启动继续但不再接收新取消。独立查询角色仍保持只读，公开回执仍只暴露
+`received` / `claimed` 两个既有状态；只读角色另可读取 `dispatch_outcome` 与
+`dispatch_attempts`，便于运维查看拒发原因与重试次数，它们不进入公开回执。候选同一
+node/gateway 的进程必须共用宿主锁目录，
+持有原进程锁直到所有在途发送退出；不能以 TTL 代替该前提。
 
 提交路由先用冻结请求校验 command 与 `command_digest` 一致，再按 `create_submit` 落唯一 intent，
 之后才外发一次；重放返回原记录并标记 `idempotent_replay=true`，同一 intent 换命令为

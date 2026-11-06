@@ -45,6 +45,12 @@ def verify_abort_authority(pool: GatewayPool, schema: str) -> bool:
                 if {row["attname"] for row in columns if row["updatable"]} != {
                     "dispatched_at_us",
                     "next_check_at_us",
+                    "dispatch_attempt_id",
+                    "dispatch_started_at_us",
+                    "dispatch_deadline_at_us",
+                    "dispatch_outcome",
+                    "dispatch_outcome_at_us",
+                    "dispatch_attempts",
                 }:
                     return False
             return True

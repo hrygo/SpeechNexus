@@ -10,9 +10,16 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from threading import Lock
+from typing import Any
 
 from speechnexus_gateway.application.ingress import GatewayIngress
-from speechnexus_gateway.domain.abort_intent import AbortExecutionRequest
+from speechnexus_gateway.domain.abort_intent import (
+    MAX_ABORT_DISPATCH_ATTEMPTS,
+    AbortDispatchClaim,
+    AbortDispatchOutcome,
+    AbortDispatchResult,
+    AbortExecutionRequest,
+)
 from speechnexus_gateway.domain.canonical import command_digest
 from speechnexus_gateway.domain.command_redaction import (
     AuthorizedCommandRedaction,
@@ -65,7 +72,8 @@ class InMemorySubmissionLedger:
         self._instances: dict[tuple[str, int], InstanceIdentity] = {}
         self._now = now or (lambda: datetime.now(UTC))
         self._abort_receipts: dict[str, AbortExecutionRequest] = {}
-        self._abort_claimed: set[str] = set()
+        self._abort_attempts: dict[str, dict[str, Any]] = {}
+        self._abort_origins: dict[str, tuple[str, int]] = {}
         self._abort_lock = Lock()
         self.durable_abort_enabled = False
 
@@ -146,28 +154,156 @@ class InMemorySubmissionLedger:
             ) != (request.operation_id, request.attempt_id, request.fencing_token):
                 raise InvalidExecutionRequestError("unknown abort identity")
             original = self._abort_receipts.get(request.submit_intent_id)
-            if original is not None and original != request:
+            if original is not None and (
+                original.submit_intent_id,
+                original.operation_id,
+                original.attempt_id,
+                original.fencing_token,
+                original.reason,
+                original.wait_timeout_ms,
+            ) != (
+                request.submit_intent_id,
+                request.operation_id,
+                request.attempt_id,
+                request.fencing_token,
+                request.reason,
+                request.wait_timeout_ms,
+            ):
                 raise ExecutionObservationConflictError("abort identity has another intent")
-            self._abort_receipts[request.submit_intent_id] = request
+            if original is None:
+                self._abort_receipts[request.submit_intent_id] = request
+                self._abort_origins[request.submit_intent_id] = (
+                    current.identity.instance_id,
+                    current.identity.instance_generation,
+                )
 
-    def claim_abort(self, request: AbortExecutionRequest) -> SubmissionIntent | None:
+    def claim_abort(
+        self, request: AbortExecutionRequest, *, attempt_id: str, lease_ms: int
+    ) -> AbortDispatchClaim | None:
         with self._abort_lock:
             current = self.get(request.submit_intent_id)
-            if current is None or self._abort_receipts.get(request.submit_intent_id) != request:
+            if current is None or self._abort_receipts.get(request.submit_intent_id) is None:
                 raise ExecutionObservationConflictError("abort receipt is absent")
+            receipt = self._abort_receipts[request.submit_intent_id]
             if (
-                request.submit_intent_id in self._abort_claimed
-                or current.execution_state.is_terminal
+                receipt.operation_id,
+                receipt.attempt_id,
+                receipt.fencing_token,
+            ) != (request.operation_id, request.attempt_id, request.fencing_token):
+                raise ExecutionObservationConflictError("abort identity has another intent")
+            attempt = self._abort_attempts.get(request.submit_intent_id)
+            attempts = 0 if attempt is None else attempt["attempts"]
+            now = self._now()
+            now_us = int(now.timestamp() * 1_000_000)
+            if attempt is not None and attempt["outcome"] in (
+                AbortDispatchOutcome.ACKNOWLEDGED.value,
+                AbortDispatchOutcome.REJECTED_FENCED.value,
+                AbortDispatchOutcome.EXHAUSTED.value,
             ):
                 return None
-            self._abort_claimed.add(request.submit_intent_id)
+            if current.execution_state.is_terminal:
+                return None
+            if self._abort_origins.get(request.submit_intent_id) != (
+                current.identity.instance_id,
+                current.identity.instance_generation,
+            ) or (receipt.operation_id, receipt.attempt_id, receipt.fencing_token) != (
+                current.identity.operation_id,
+                current.identity.attempt_id,
+                current.identity.fencing_token,
+            ):
+                self._abort_attempts[request.submit_intent_id] = {
+                    "attempt_id": attempt_id,
+                    "started_us": now_us,
+                    "deadline_us": now_us + lease_ms * 1_000,
+                    "outcome": AbortDispatchOutcome.REJECTED_FENCED.value,
+                    "attempts": attempts,
+                }
+                return None
+            if attempt is not None and attempt["deadline_us"] > now_us:
+                return None
+            deadline_us = now_us + lease_ms * 1_000
+            if attempts >= MAX_ABORT_DISPATCH_ATTEMPTS:
+                self._abort_attempts[request.submit_intent_id] = {
+                    "attempt_id": attempt_id,
+                    "started_us": now_us,
+                    "deadline_us": deadline_us,
+                    "outcome": AbortDispatchOutcome.EXHAUSTED.value,
+                    "attempts": attempts,
+                }
+                return None
+            self._abort_attempts[request.submit_intent_id] = {
+                "attempt_id": attempt_id,
+                "started_us": now_us,
+                "deadline_us": deadline_us,
+                "outcome": None,
+                "attempts": attempts + 1,
+            }
             if current.execution_state is ExecutionState.UNKNOWN_QUARANTINED:
-                return current
-            return self.mark_execution_unknown(
-                MarkExecutionUnknown.for_intent(
-                    current, reason_code=ExecutionErrorCode.CANCELLATION_UNCONFIRMED, at=self._now()
+                claimed = current
+            else:
+                claimed = self.mark_execution_unknown(
+                    MarkExecutionUnknown.for_intent(
+                        current,
+                        reason_code=ExecutionErrorCode.CANCELLATION_UNCONFIRMED,
+                        at=now,
+                    )
                 )
+            return AbortDispatchClaim(
+                intent=claimed,
+                attempt_id=attempt_id,
+                started_at=now,
+                deadline_at=datetime.fromtimestamp(deadline_us / 1_000_000, UTC),
+                attempts=attempts + 1,
             )
+
+    def record_abort_dispatch(self, result: AbortDispatchResult) -> bool:
+        with self._abort_lock:
+            attempt = self._abort_attempts.get(result.submit_intent_id)
+            if (
+                attempt is None
+                or attempt["attempt_id"] != result.attempt_id
+                or attempt["outcome"] is not None
+            ):
+                return False
+            attempt["outcome"] = result.outcome.value
+            self._abort_attempts[result.submit_intent_id]["outcome"] = result.outcome.value
+            return True
+
+    def reject_abort(self, request: AbortExecutionRequest, *, attempt_id: str) -> bool:
+        with self._abort_lock:
+            current = self.get(request.submit_intent_id)
+            receipt = self._abort_receipts.get(request.submit_intent_id)
+            if current is None or receipt is None:
+                raise ExecutionObservationConflictError("abort receipt is absent")
+            attempt = self._abort_attempts.get(request.submit_intent_id)
+            if attempt is not None and attempt["outcome"] in (
+                AbortDispatchOutcome.ACKNOWLEDGED.value,
+                AbortDispatchOutcome.REJECTED_FENCED.value,
+            ):
+                return False
+            if self._abort_origins.get(request.submit_intent_id) == (
+                current.identity.instance_id,
+                current.identity.instance_generation,
+            ) and (receipt.operation_id, receipt.attempt_id, receipt.fencing_token) == (
+                current.identity.operation_id,
+                current.identity.attempt_id,
+                current.identity.fencing_token,
+            ):
+                return False
+            now = self._now()
+            now_us = int(now.timestamp() * 1_000_000)
+            self._abort_attempts[request.submit_intent_id] = {
+                "attempt_id": attempt_id,
+                "started_us": now_us,
+                "deadline_us": now_us + 1_000,
+                "outcome": AbortDispatchOutcome.REJECTED_FENCED.value,
+                "attempts": 0 if attempt is None else attempt["attempts"],
+            }
+            return True
+
+    def abort_dispatch_state(self, submit_intent_id: str) -> dict[str, Any] | None:
+        attempt = self._abort_attempts.get(submit_intent_id)
+        return None if attempt is None else dict(attempt)
 
     def list_unfinished(
         self, *, gateway_id: str, host_node_id: str, limit: int

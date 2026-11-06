@@ -25,6 +25,7 @@ from speechnexus_gateway.domain.canonical import JsonValue, command_digest
 from speechnexus_gateway.domain.ports import AbortOutcome, DispatchOutcome
 from speechnexus_gateway.domain.recovery import observed_at_microseconds
 from speechnexus_gateway.domain.submission import (
+    AbortAcknowledgement,
     CleanupState,
     DispatchResult,
     ExecutionState,
@@ -151,7 +152,6 @@ class Harness:
                 ingress=self.ingress,
                 ledger=self.ledger,
                 abort=self.abort,
-                now=lambda: NOW,
                 durable_abort_enabled=durable_abort_enabled,
             )
         self.app = create_app(
@@ -274,7 +274,7 @@ async def test_without_durable_abort_authority_http_fails_closed(tmp_path: Path,
 
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "control_store_unavailable"
-    assert harness.abort.calls == [] and not harness.ledger._abort_claimed
+    assert harness.abort.calls == [] and not harness.ledger._abort_attempts
     assert not harness.ledger._abort_receipts
     stored = harness.ledger.get("intent-1")
     assert stored is not None and stored.execution_state is ExecutionState.EXECUTING
@@ -304,7 +304,7 @@ async def test_receive_failure_http_never_claims_or_sends(
         "control_outcome_unknown" if outcome == "unknown" else "control_store_unavailable"
     )
     assert error["recovery"] == ("query_original" if outcome == "unknown" else "retry_transaction")
-    assert harness.abort.calls == [] and not harness.ledger._abort_claimed
+    assert harness.abort.calls == [] and not harness.ledger._abort_attempts
     assert ("intent-1" in harness.ledger._abort_receipts) == (outcome == "unknown")
     stored = harness.ledger.get("intent-1")
     assert stored is not None and stored.execution_state is ExecutionState.EXECUTING
@@ -361,7 +361,13 @@ async def test_a_pcm_stage_names_one_stable_stream_for_the_whole_attempt(tmp_pat
 async def test_verified_engine_abort_evidence_closes_the_execution(tmp_path: Path) -> None:
     harness = Harness(tmp_path)
     assert (await post(harness.app, SUBMIT_PATH, submit_body())).status_code == 200
-    harness.abort.script_outcome(AbortOutcome(observed_at=NOW, evidence=evidence_for()))
+    harness.abort.script_outcome(
+        AbortOutcome(
+            observed_at=NOW,
+            evidence=evidence_for(),
+            acknowledgement=AbortAcknowledgement.ABORTED,
+        )
+    )
 
     response = await post(harness.app, ABORT_PATH.format(submit_intent_id="intent-1"), abort_body())
 

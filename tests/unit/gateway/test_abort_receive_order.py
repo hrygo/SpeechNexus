@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from datetime import datetime
 from threading import Event
 from typing import Any, cast
 
@@ -13,7 +15,7 @@ import pytest
 from speechnexus_gateway.application.abort_execution import ExecutionAbortService
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
-from speechnexus_gateway.domain.abort_intent import AbortExecutionRequest
+from speechnexus_gateway.domain.abort_intent import AbortDispatchClaim, AbortExecutionRequest
 from speechnexus_gateway.domain.canonical import JsonValue, canonical_json, command_digest
 from speechnexus_gateway.domain.ports import AbortOutcome, ExecutionFactLedger
 from speechnexus_gateway.domain.recovery import (
@@ -49,8 +51,8 @@ from tests.unit.gateway.test_submit_ledger_sql import stored_row
 class ObservableLedger(InMemorySubmissionLedger):
     """A separately readable receipt store with controllable commit acknowledgement."""
 
-    def __init__(self) -> None:
-        super().__init__(now=lambda: NOW)
+    def __init__(self, now: Callable[[], datetime] = lambda: NOW) -> None:
+        super().__init__(now=now)
         self.received = Event()
         self.failure: str | None = None
         self.claims = 0
@@ -64,16 +66,20 @@ class ObservableLedger(InMemorySubmissionLedger):
             # The receipt exists, but the caller has not received a commit acknowledgement.
             raise SubmissionOutcomeUnknownError("synthetic lost acknowledgement")
 
-    def claim_abort(self, request: AbortExecutionRequest) -> SubmissionIntent | None:
+    def claim_abort(
+        self, request: AbortExecutionRequest, *, attempt_id: str, lease_ms: int
+    ) -> AbortDispatchClaim | None:
         self.claims += 1
-        return super().claim_abort(request)
+        return super().claim_abort(request, attempt_id=attempt_id, lease_ms=lease_ms)
 
     def receipt(self, submit_intent_id: str) -> AbortExecutionRequest | None:
         with self._abort_lock:
             return self._abort_receipts.get(submit_intent_id)
 
 
-def setup_abort() -> tuple[
+def setup_abort(
+    now: Callable[[], datetime] = lambda: NOW,
+) -> tuple[
     ExecutionAbortService,
     ObservableLedger,
     ScriptedAbort,
@@ -82,16 +88,16 @@ def setup_abort() -> tuple[
     AbortExecutionRequest,
 ]:
     ingress = fake_ingress(timeout_seconds=4)
-    ledger = ObservableLedger()
+    ledger = ObservableLedger(now=now)
     engine = ScriptedEngine(now=lambda: NOW)
     request = original_request()
     request = replace(
         request, identity=replace(request.identity, host_node_id="node-1", gateway_id="gateway-1")
     )
     SubmitExecutionService(
-        ledger=ledger, ingress=ingress, dispatch=engine, observation=engine, now=lambda: NOW
+        ledger=ledger, ingress=ingress, dispatch=engine, observation=engine, now=now
     ).submit(request)
-    abort = ScriptedAbort(now=lambda: NOW)
+    abort = ScriptedAbort(now=now)
     service = ExecutionAbortService(
         ingress=ingress, ledger=ledger, abort=abort, durable_abort_enabled=True
     )
@@ -229,12 +235,15 @@ def test_a_claim_that_no_longer_matches_the_original_never_reaches_the_engine(
     service, ledger, engine, _, _, request = setup_abort()
     original_claim = ledger.claim_abort
 
-    def changed_claim(abort_request: AbortExecutionRequest) -> SubmissionIntent | None:
-        claimed = original_claim(abort_request)
+    def changed_claim(
+        abort_request: AbortExecutionRequest, *, attempt_id: str, lease_ms: int
+    ) -> AbortDispatchClaim | None:
+        claimed = original_claim(abort_request, attempt_id=attempt_id, lease_ms=lease_ms)
         assert claimed is not None
         if change == "identity":
-            return replace(claimed, identity=replace(claimed.identity, instance_generation=2))
-        return replace(claimed, request_digest="sha256:" + "0" * 64)
+            identity = replace(claimed.intent.identity, instance_generation=2)
+            return replace(claimed, intent=replace(claimed.intent, identity=identity))
+        return replace(claimed, intent=replace(claimed.intent, request_digest="sha256:" + "0" * 64))
 
     monkeypatch.setattr(ledger, "claim_abort", changed_claim)
     with pytest.raises(InvalidExecutionRequestError):
@@ -403,8 +412,18 @@ class AbortSqlCursor:
                 "reason",
                 "wait_timeout_ms",
                 "received_at_us",
+                "instance_id",
+                "instance_generation",
             )
-            self.receipt = dict(zip(names, parameters, strict=True)) | {"dispatched_at_us": None}
+            self.receipt = dict(zip(names, parameters, strict=True)) | {
+                "dispatched_at_us": None,
+                "dispatch_attempt_id": None,
+                "dispatch_started_at_us": None,
+                "dispatch_deadline_at_us": None,
+                "dispatch_outcome": None,
+                "dispatch_outcome_at_us": None,
+                "dispatch_attempts": 0,
+            }
             self.rows = []
         else:
             raise AssertionError(f"unexpected SQL: {query}")

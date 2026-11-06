@@ -29,6 +29,7 @@ from speechnexus_gateway.domain.instance_drain import InstanceIdentity
 from speechnexus_gateway.domain.ports import AbortOutcome, DispatchOutcome
 from speechnexus_gateway.domain.recovery import observed_at_microseconds
 from speechnexus_gateway.domain.submission import (
+    AbortAcknowledgement,
     DispatchResult,
     ExecutionErrorCode,
     ExecutionState,
@@ -153,7 +154,6 @@ class Harness:
             ingress=self.ingress,
             ledger=self.ledger,
             abort=self.abort,
-            now=lambda: NOW,
             durable_abort_enabled=durable_abort_enabled,
         )
         services: dict[str, Any] = {
@@ -313,13 +313,13 @@ def test_drain_cannot_replace_wait_when_an_accepted_abort_has_not_dispatched(
         blocked = call(harness.app, DRAIN_PATH, drain_body(max_drain_wait_ms=1000))
     assert blocked.status_code == 503
     assert harness.ledger._abort_receipts["intent-1"].wait_timeout_ms == 1000
-    assert not harness.ledger._abort_claimed and harness.abort.calls == []
+    assert not harness.ledger._abort_attempts and harness.abort.calls == []
 
     changed = call(harness.app, DRAIN_PATH, drain_body(max_drain_wait_ms=2000))
 
     assert changed.status_code == 409
     assert changed.json()["error"]["code"] == "control_state_conflict"
-    assert not harness.ledger._abort_claimed and harness.abort.calls == []
+    assert not harness.ledger._abort_attempts and harness.abort.calls == []
     stored = harness.ledger.get("intent-1")
     assert stored is not None and stored.execution_state is ExecutionState.EXECUTING
     assert stored.execution_state.holds_capacity
@@ -360,7 +360,13 @@ def test_a_token_the_ingress_already_rejects_is_a_conflict(tmp_path: Path) -> No
 def test_a_verified_stop_drains_the_generation(tmp_path: Path) -> None:
     harness = Harness(tmp_path, abort_adapter=True, monotonic=Ticking(0.0))
     assert call(harness.app, SUBMIT_PATH, submit_body()).status_code == 200
-    harness.abort.script_outcome(AbortOutcome(observed_at=NOW, evidence=evidence_for("intent-1")))
+    harness.abort.script_outcome(
+        AbortOutcome(
+            observed_at=NOW,
+            evidence=evidence_for("intent-1"),
+            acknowledgement=AbortAcknowledgement.ABORTED,
+        )
+    )
 
     response = call(harness.app, DRAIN_PATH, drain_body())
 

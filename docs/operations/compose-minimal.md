@@ -318,7 +318,7 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 ```
 
 上述容器名、用户和数据库名对应默认配置；若部署值不同，先核对实际名称再查询。
-仓库当前迁移链的 head 为 `0031_tts_settlement`；实际部署必须以所用发布制品中的唯一
+仓库当前迁移链的 head 为 `0036_abort_dispatch_attempts`；实际部署必须以所用发布制品中的唯一
 head 为准，查询结果须与之相符。不要把旧版 `0027_gateway_abort_intents` 当作当前 head，
 也不要跳过检查或手工修改版本表。
 
@@ -453,6 +453,40 @@ PY
 若这里报 `role cannot be dropped because objects depend on it`、owner membership 或 schema
 CREATE 权限，停止启动服务；不要用超级用户连接绕过检查。API 启动时还会再次核验
 `sn_api` 不是数据库/表 owner，也不是可继承的 owner 成员。
+
+### 已有部署的授权升级
+
+上面的脚本只适用于新建、独占的数据库；已有部署不重跑它的撤权与建角色部分。应用新迁移
+后，用同一个迁移 owner 连接对既有角色重放对应的授权函数即可，`GRANT` 是追加式操作，
+重复执行不改变既有权限：
+
+```bash
+uv run python - <<'PY'
+import os
+
+import psycopg
+from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema import (
+    gateway_abort_grants,
+)
+from speechnexus_backend.speech.infrastructure.gateway_query_grants import (
+    gateway_query_grants,
+)
+
+schema = "speech"
+with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
+    for statement in gateway_abort_grants(schema, "sn_gateway"):
+        conn.execute(statement)
+    for statement in gateway_query_grants(schema, "sn_gateway_query"):
+        conn.execute(statement)
+print("gateway write and query grants refreshed")
+PY
+```
+
+两份授权须同时重放。查询角色的列集由网关按精确集合校验，漏掉 `gateway_query_grants`
+时控制面以 `invalid execution query reader authority` 拒绝启动；漏掉
+`gateway_abort_grants` 新增的尝试列时启动继续，但持久取消接收能力被关闭
+（fail-soft），网关不再接收新的取消。升级顺序：先迁移，再重放两份授权，最后启动
+服务；启动日志出现上述拒绝时停止服务并核对授权，不带病运行。
 
 Gateway query 身份仅取得六张执行恢复关系及安装身份表的必要列读取权，不得写产品或持久对象。
 原生 `pg_settings` 的默认会话参数 UPDATE 与 SET/set_config 属于会话能力，不作为

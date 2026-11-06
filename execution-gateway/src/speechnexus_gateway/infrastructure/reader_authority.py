@@ -76,6 +76,8 @@ _READ_COLUMNS: dict[str, frozenset[str]] = {
             "wait_timeout_ms",
             "received_at_us",
             "dispatched_at_us",
+            "dispatch_outcome",
+            "dispatch_attempts",
         ]
     ),
     "speech_publication_installation": frozenset(["singleton", "installation_id"]),

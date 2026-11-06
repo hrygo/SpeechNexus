@@ -47,6 +47,7 @@ from speechnexus_gateway.application.submit_execution import SubmitExecutionServ
 from speechnexus_gateway.domain.canonical import JsonValue, command_digest
 from speechnexus_gateway.domain.ports import AbortOutcome
 from speechnexus_gateway.domain.submission import (
+    AbortAcknowledgement,
     SubmissionIdentity,
     SubmitRequest,
     derived_output_stream_id,
@@ -374,7 +375,13 @@ def test_verified_abort_evidence_closes_the_execution_without_releasing_budgets(
     assert gateway.submit(identity, contract_command()).status_code == 200
     before = counters(foundation)
     evidence = evidence_for(foundation, submit_intent_id="intent-http")
-    gateway.abort.script_outcome(AbortOutcome(observed_at=datetime.now(UTC), evidence=evidence))
+    gateway.abort.script_outcome(
+        AbortOutcome(
+            observed_at=datetime.now(UTC),
+            evidence=evidence,
+            acknowledgement=AbortAcknowledgement.ABORTED,
+        )
+    )
 
     first = gateway.abort_intent("intent-http")
     original_receipt = abort_receipts(foundation)

@@ -423,7 +423,6 @@ def create_app(
         allowed_origins=resolved_settings.asset_allowed_origins,
     )
     app.add_middleware(RequestIdMiddleware)
-    require_request_abort_capture(app)
     app.include_router(create_asset_router(lambda: asset_service))
     app.include_router(create_artifact_router(get_artifacts))
     app.include_router(create_model_router(get_catalogue, capability_policy))
@@ -533,4 +532,5 @@ def create_app(
     app.state.artifact_runtime = artifact_runtime
     app.state.speech = speech
     app.state.transcriptions = transcriptions
+    require_request_abort_capture(app)
     return app

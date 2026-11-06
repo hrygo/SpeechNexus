@@ -17,7 +17,8 @@ import threading
 import time
 from collections.abc import AsyncIterator, Iterator
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
+from types import SimpleNamespace
 from typing import Any, cast
 
 import httpx
@@ -25,11 +26,17 @@ import pytest
 import uvicorn
 from tests.integration.test_public_jobs_http import PREFIX, JobSandbox, _settings_for
 from tests.integration.test_public_jobs_http import jobs_db as jobs_db
+from tests.unit.backend.test_health import _settings
 
+from speechnexus_backend import app as backend_app
 from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.domain.public_jobs import JobEventFact
 from speechnexus_backend.speech.interfaces.http.jobs import _EVENT_BATCH
+from speechnexus_backend.speech.interfaces.http.middleware import (
+    RequestIdMiddleware,
+    require_request_abort_capture,
+)
 
 pytestmark = pytest.mark.integration
 EVENTS = PREFIX + "/{job_id}/events"
@@ -39,6 +46,89 @@ SEND_TIMEOUT_SECONDS = 5.0
 # One initial event plus this many persisted rows always crosses one page.
 EXTRA_EVENTS = _EVENT_BATCH + 49
 TOTAL_EVENTS = EXTRA_EVENTS + 1
+SEND_BUFFER_BYTES = 8192
+
+
+class _PassThrough:
+    def __init__(self, app: Any) -> None:
+        self._app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        await asyncio.sleep(0)
+        await self._app(scope, receive, send)
+
+
+class _ReceiveWrapper(_PassThrough):
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        async def wrapped() -> Any:
+            return await receive()
+
+        await self._app(scope, wrapped, send)
+
+
+def test_create_app_keeps_request_abort_capture_outermost() -> None:
+    app = create_app(settings=_settings())
+    assert cast(object, app.user_middleware[0].cls) is RequestIdMiddleware
+    require_request_abort_capture(app)
+    assert app.middleware_stack is None
+
+
+async def test_create_app_accepts_a_pass_through_outside_capture() -> None:
+    # Assembly also works when its synchronous factory is called from an event loop.
+    app = create_app(settings=_settings())
+    app.add_middleware(_PassThrough)
+    require_request_abort_capture(app)
+
+
+def test_create_app_accepts_a_request_id_subclass(monkeypatch: pytest.MonkeyPatch) -> None:
+    class RequestIdSubclass(RequestIdMiddleware):
+        pass
+
+    monkeypatch.setattr(backend_app, "RequestIdMiddleware", RequestIdSubclass)
+    app = create_app(settings=_settings())
+    assert cast(object, app.user_middleware[0].cls) is RequestIdSubclass
+
+
+def test_create_app_rejects_a_subclass_that_loses_receive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class BrokenCapture(RequestIdMiddleware):
+        async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+            async def wrapped() -> Any:
+                return await receive()
+
+            await super().__call__(scope, wrapped, send)
+
+    monkeypatch.setattr(backend_app, "RequestIdMiddleware", BrokenCapture)
+    with pytest.raises(RuntimeError, match="abort hook"):
+        create_app(settings=_settings())
+
+
+def test_create_app_accepts_receive_wrapping_inside_capture() -> None:
+    app = create_app(settings=_settings())
+    app.add_middleware(_ReceiveWrapper)
+    app.add_middleware(RequestIdMiddleware)
+    require_request_abort_capture(app)
+
+
+@pytest.mark.parametrize("middleware", [_PassThrough, _ReceiveWrapper])
+def test_create_app_checks_middleware_added_during_router_assembly(
+    monkeypatch: pytest.MonkeyPatch, middleware: type[_PassThrough]
+) -> None:
+    include_router = backend_app._SpeechAPI.include_router
+
+    def include_with_middleware(self: Any, *args: Any, **kwargs: Any) -> None:
+        include_router(self, *args, **kwargs)
+        if not any(layer.cls is middleware for layer in self.user_middleware):
+            self.add_middleware(middleware)
+
+    monkeypatch.setattr(backend_app._SpeechAPI, "include_router", include_with_middleware)
+    if middleware is _ReceiveWrapper:
+        with pytest.raises(RuntimeError, match="abort hook"):
+            create_app(settings=_settings())
+    else:
+        app = create_app(settings=_settings())
+        assert cast(object, app.user_middleware[0].cls) is middleware
 
 
 def _app(
@@ -396,7 +486,7 @@ class _TinySendBuffer:
     macOS. The test asserts the value actually shrank instead of trusting it.
     """
 
-    def __init__(self, app: Any, *, size: int = 8192) -> None:
+    def __init__(self, app: Any, *, size: int = SEND_BUFFER_BYTES) -> None:
         self._app = app
         self._size = size
 
@@ -405,10 +495,51 @@ class _TinySendBuffer:
             cycle = getattr(receive, "__self__", None)
             transport = getattr(cycle, "transport", None)
             sock = transport.get_extra_info("socket") if transport is not None else None
-            if sock is not None:
-                with suppress(OSError):
-                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, self._size)
+            assert sock is not None, "cannot pin send buffer; " + _transport_state(transport)
+            try:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, self._size)
+            except OSError as error:
+                raise AssertionError(
+                    f"could not pin send buffer to {self._size}: {error}; "
+                    + _transport_state(transport)
+                ) from error
+            # Linux reports twice the requested value; macOS reports the value itself.
+            assert 0 < _send_buffer(transport) <= 2 * self._size, (
+                f"send buffer did not honor requested={self._size}; " + _transport_state(transport)
+            )
         await self._app(scope, receive, send)
+
+
+@pytest.mark.parametrize("set_error", [False, True], ids=["ignored", "oserror"])
+async def test_send_buffer_pin_failure_reports_transport_state(set_error: bool) -> None:
+    class Socket:
+        def setsockopt(self, level: int, option: int, size: int) -> None:
+            if set_error:
+                raise OSError("synthetic setsockopt failure")
+
+        def getsockopt(self, level: int, option: int) -> int:
+            # macOS's default satisfies the old <256 KiB assertion.
+            return 132792
+
+        def fileno(self) -> int:
+            return 42
+
+    transport = SimpleNamespace(get_extra_info=lambda key: Socket(), is_closing=lambda: False)
+
+    class Cycle:
+        transport: Any
+
+        async def receive(self) -> Any:
+            return {"type": "http.disconnect"}
+
+    cycle = Cycle()
+    cycle.transport = transport
+
+    async def downstream(scope: Any, receive: Any, send: Any) -> None:
+        pytest.fail("a failed send-buffer pin must stop the stall fixture")
+
+    with pytest.raises(AssertionError, match=r"send buffer.*sndbuf=132792.*fileno=42"):
+        await _TinySendBuffer(downstream)({"type": "http"}, cycle.receive, None)
 
 
 class _TransportSpy:
@@ -538,8 +669,8 @@ async def test_a_client_that_never_reads_loses_its_socket(
             try:
                 transport = await _spy_transport(spy, after=known, limit=10)
                 assert transport is not None, "uvicorn request transport was not reachable"
-                assert _send_buffer(transport) < 1 << 18, (
-                    "the send buffer was not pinned, so the stall is untestable here; "
+                assert 0 < _send_buffer(transport) <= 2 * SEND_BUFFER_BYTES, (
+                    f"the send buffer was not pinned to requested={SEND_BUFFER_BYTES}; "
                     + _transport_state(transport)
                 )
                 warning = await _backpressure_record(handler, limit=20)

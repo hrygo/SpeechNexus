@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
@@ -18,22 +21,65 @@ REQUEST_ABORT_KEY = "speechnexus.request_abort"
 
 
 def require_request_abort_capture(app: Any) -> None:
-    """Fail assembly when a middleware wraps receive outside the capture point.
+    """Probe abort capture through the final user middleware stack.
 
-    Starlette wraps ``send`` before any user middleware runs but hands
-    ``receive`` through untouched, so the hook can only be captured by the
-    outermost user middleware. A later ingress middleware that wraps
-    ``receive`` would silently degrade every stalled stream to a graceful
-    close, so the invariant is checked while the app is assembled.
+    A synthetic event-stream request terminates before the router, without
+    touching services or the live middleware stack. Transparent outer layers
+    and capture subclasses are safe; losing the server cycle before capture
+    must fail assembly. Starlette's built-in outer layers preserve receive.
     """
-    stack = getattr(app, "user_middleware", ())
-    outermost = stack[0].cls if stack else None
-    if outermost is not RequestIdMiddleware:
-        name = getattr(outermost, "__name__", outermost)
+    aborted: list[bool] = []
+
+    class ProbeCycle:
+        transport = SimpleNamespace(abort=lambda: aborted.append(True))
+        disconnected = False
+
+        async def receive(self) -> Message:
+            return {"type": "http.disconnect"}
+
+    cycle = ProbeCycle()
+    scope: Scope = {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.4"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": "/v1/nexus/jobs/00000000-0000-0000-0000-000000000000/events",
+        "root_path": "",
+        "query_string": b"",
+        "headers": [(b"accept", b"text/event-stream")],
+        "state": {},
+    }
+
+    async def endpoint(scope: Scope, receive: Receive, send: Send) -> None:
+        abort = scope.get(REQUEST_ABORT_KEY)
+        if callable(abort):
+            abort()
+
+    async def send(message: Message) -> None:
+        pass
+
+    async def probe() -> None:
+        chain: ASGIApp = endpoint
+        for layer in reversed(getattr(app, "user_middleware", ())):
+            chain = layer.cls(chain, *layer.args, **layer.kwargs)
+        await asyncio.wait_for(chain(scope, cycle.receive, send), timeout=1)
+
+    def run_probe() -> None:
+        asyncio.run(probe())
+
+    try:
+        # create_app is synchronous but can also be called from an active loop.
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            executor.submit(run_probe).result()
+        if not aborted or not cycle.disconnected:
+            raise RuntimeError("the synthetic server transport was not aborted")
+    except Exception as error:
         raise RuntimeError(
-            "RequestIdMiddleware must stay the outermost middleware so the "
-            f"stalled-stream abort hook can capture the transport, found {name}"
-        )
+            "RequestIdMiddleware must stay the outermost receive capture so the "
+            "stalled-stream abort hook can capture the transport; "
+            f"middleware probe failed: {error}"
+        ) from error
 
 
 class RequestIdMiddleware:

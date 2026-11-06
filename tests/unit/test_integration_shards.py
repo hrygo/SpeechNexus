@@ -85,8 +85,12 @@ def test_resource_partitions_keep_tools_together_and_execute_the_complete_union(
         selected = GATE.partition(full, index, count)
         assert selected == GATE.partition(list(reversed(full)), index, count)
         assert selected  # This fixture has enough cases to exercise every lane.
-        if count > 1:
-            assert set(selected) <= set(ordinary if index < count - web_count else web)
+        if count > 1 and index < count - web_count:
+            # A DB-only lane never installs the Web/Chromium tooling.
+            assert not set(selected).intersection(web)
+        elif count > 1:
+            # Web lanes keep every Web case and may also take ordinary DB work.
+            assert set(selected).intersection(web)
         observed.extend(selected)
     assert sorted(observed) == full
     assert len(observed) == len(set(observed))
@@ -94,6 +98,69 @@ def test_resource_partitions_keep_tools_together_and_execute_the_complete_union(
         needs = [GATE.tool_requirements(full, index, count) for index in range(count)]
         assert [index for index, tools in enumerate(needs) if tools["browser"]] == [4, 5]
         assert [index for index, tools in enumerate(needs) if tools["node_contracts"]] == [4, 5]
+
+
+def test_mixed_partition_fills_web_lanes_with_db_cases_and_balances_estimated_cost() -> None:
+    ordinary = [f"tests/integration/test_demo.py::test_{index}" for index in range(2229)]
+    web = [f"tests/integration/test_example_browser.py::test_{index}" for index in range(50)]
+    full = sorted(ordinary + web)
+    cases: list[int] = []
+    costs: list[int] = []
+    web_total = 0
+    for index in range(6):
+        selected = GATE.partition(full, index, 6)
+        web_selected = set(selected).intersection(web)
+        web_total += len(web_selected)
+        if index < 4:
+            assert not web_selected
+        else:
+            assert len(web_selected) == 25
+        cases.append(len(selected))
+        costs.append(len(selected) - len(web_selected) + GATE.WEB_CASE_WEIGHT * len(web_selected))
+    assert web_total == len(web)
+    # Estimated execution cost is the balancing target: each Web lane owns 25
+    # five-cost cases, so it receives fewer ordinary cases than a DB-only lane.
+    assert max(costs) <= min(costs) * 1.01
+    assert cases[4] == cases[5] == min(cases)
+    assert min(cases) < cases[0]
+    global_mean = sum(cases) / len(cases)
+    assert all(0.75 <= count / global_mean <= 1.25 for count in cases)
+
+
+@pytest.mark.parametrize(("cases", "warns"), [(545, False), (546, True)])
+def test_imbalance_warning_line_is_1_25x(cases: int, warns: bool) -> None:
+    shards = (
+        GATE.ShardEvidence(0, cases, 100.0, False),
+        GATE.ShardEvidence(1, 400, 100.0, False),
+        GATE.ShardEvidence(2, 400, 100.0, False),
+        GATE.ShardEvidence(3, 400, 100.0, False),
+        GATE.ShardEvidence(4, 25, 100.0, True),
+        GATE.ShardEvidence(5, 25, 100.0, True),
+    )
+    evidence = GATE.Evidence(HEAD, 2000, 2000, (), 100.0, shards)
+    _, warnings = GATE.shard_distribution(evidence, 6)
+    assert any("above the 1.25x warning line" in warning for warning in warnings) == warns
+
+
+def test_deliberately_skewed_partition_warns_and_names_the_shard() -> None:
+    shards = (
+        GATE.ShardEvidence(0, 1260, 500.0, False),
+        GATE.ShardEvidence(1, 40, 40.0, False),
+        GATE.ShardEvidence(2, 40, 40.0, False),
+        GATE.ShardEvidence(3, 40, 40.0, False),
+        GATE.ShardEvidence(4, 10, 40.0, True),
+        GATE.ShardEvidence(5, 10, 40.0, True),
+    )
+    evidence = GATE.Evidence(HEAD, 1400, 1400, (), 500.0, shards)
+    rows, warnings = GATE.shard_distribution(evidence, 6)
+    print(chr(10).join(rows))
+    print(chr(10).join(warnings))
+    assert "shard 0 (DB): 1260 cases" in rows[0]
+    assert any(
+        "shard 0 (DB)" in warning and "above the 1.25x warning line" in warning
+        for warning in warnings
+    )
+    assert sum("shard 0 (DB)" in warning for warning in warnings) >= 2
 
 
 @pytest.mark.parametrize("web_only", [False, True])
@@ -442,7 +509,11 @@ def test_resource_partition_runner_records_the_complete_synthetic_execution(tmp_
         )
         assert result.returncode == 0, result.stdout + result.stderr
         data = json.loads(report.read_text())
-        assert all(GATE.requires_browser(nodeid) == (index >= 4) for nodeid in data["selected"])
+        web_selected = [nodeid for nodeid in data["selected"] if GATE.requires_browser(nodeid)]
+        if index < 4:
+            assert web_selected == []
+        else:
+            assert web_selected
         paths.append(report)
     head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
     evidence = GATE.verify_reports(paths, source_head=head, count=6)

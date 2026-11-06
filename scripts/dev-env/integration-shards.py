@@ -43,6 +43,21 @@ FIELDS = frozenset(
 # report names are evidence.
 REPORT_NAME_PATTERN = re.compile(r"integration-shard-\d+\.json")
 
+# One Web/Chromium or Node-contract case costs several ordinary DB cases: the
+# browser cases drive the production bundles and the Node consumers build the
+# client bundle. The value is the measured per-case ratio between the two
+# resource classes in complete 2026-11-06 runs (3.4x-6.4x; class means
+# 4.6x-5.5x); five is the centre.
+# It only distributes ordinary cases between lanes and never changes a case's
+# resource class.
+WEB_CASE_WEIGHT = 5
+
+# Imbalance is a warning, not a gate. The requirement after the 2026-11
+# repartition is 1.25x inside a resource class; a shard above it needs a
+# repartition, not a larger timeout.
+IMBALANCE_WARNING_RATIO = 1.25
+FIFTEEN_MINUTE_WARNING_SECONDS = 900
+
 
 # Explicit external-tool prerequisites; these cases still belong to the complete
 # collection and are never omitted when a tool is absent. Use the same partition
@@ -90,6 +105,44 @@ def requires_browser(nodeid: str) -> bool:
     return module.endswith("_browser.py") or module in BROWSER_PROBE_MODULES
 
 
+def _hash_bucket(nodeid: str, count: int) -> int:
+    return int.from_bytes(hashlib.sha256(nodeid.encode()).digest(), "big") % count
+
+
+def _lane_quotas(*, ordinary: int, web_cases: Sequence[int], count: int) -> list[int]:
+    """Choose how many ordinary cases each lane receives.
+
+    Web cases stay on the Web-capable lanes, but each one is already worth
+    WEB_CASE_WEIGHT ordinary cases, so those lanes receive proportionally fewer
+    ordinary cases. Quotas are whole nodeids and sum exactly to ordinary;
+    largest remainder keeps totals exact and breaks ties by lane index.
+    """
+    web_lanes = len(web_cases)
+    target = (ordinary + WEB_CASE_WEIGHT * sum(web_cases)) / count
+    desired = [
+        (
+            target
+            if lane < count - web_lanes
+            else max(0.0, target - WEB_CASE_WEIGHT * web_cases[lane - (count - web_lanes)])
+        )
+        for lane in range(count)
+    ]
+    total = sum(desired)
+    if total <= 0:
+        # The Web cases alone exhaust every target; spread ordinary cases evenly.
+        desired = [1.0] * count
+        total = float(count)
+    scaled = [value * ordinary / total for value in desired]
+    quotas = [math.floor(value) for value in scaled]
+    remainder = ordinary - sum(quotas)
+    order = sorted(
+        range(count), key=lambda lane: (scaled[lane] - quotas[lane], -lane), reverse=True
+    )
+    for lane in order[:remainder]:
+        quotas[lane] += 1
+    return quotas
+
+
 def partition(nodeids: Sequence[str], index: int, count: int) -> list[str]:
     check_count(count)
     if type(index) is not int or not 0 <= index < count:
@@ -98,22 +151,40 @@ def partition(nodeids: Sequence[str], index: int, count: int) -> list[str]:
         nodeid for nodeid in nodeids if requires_browser(nodeid) or nodeid in NODE_CONTRACT_TESTS
     }
     if count > 1 and web and len(web) < len(nodeids):
-        # Keep six isolated DB lanes, but prepare Web/Chromium in only two.
-        # A single resource class still uses every lane. Requirements, execution
-        # and evidence verification all derive this split from the full inventory.
-        ordinary_count = count - max(1, count // 3)
-        if index < ordinary_count:
-            nodeids = [nodeid for nodeid in nodeids if nodeid not in web]
-            count = ordinary_count
-        else:
-            nodeids = sorted(web)
-            index -= ordinary_count
-            count -= ordinary_count
-    return sorted(
-        nodeid
-        for nodeid in nodeids
-        if int.from_bytes(hashlib.sha256(nodeid.encode()).digest(), "big") % count == index
-    )
+        # Keep four DB-only lanes and the two Web-capable lanes, but do not leave
+        # the Web lanes with only the small Web class: they also execute ordinary
+        # DB cases. Requirement, execution and evidence verification all derive
+        # this assignment from the complete inventory, so every shard computes
+        # the same one without shared state.
+        web_lane_count = max(1, count // 3)
+        ordinary = sorted(nodeid for nodeid in nodeids if nodeid not in web)
+        web_lanes: list[list[str]] = [[] for _ in range(web_lane_count)]
+        # Round-robin a hash-ordered list: Web cases are few and uneven in cost,
+        # so exact counts per Web lane matter more than a hash-modulo split.
+        web_order = sorted(
+            web, key=lambda nodeid: (hashlib.sha256(nodeid.encode()).digest(), nodeid)
+        )
+        for position, nodeid in enumerate(web_order):
+            web_lanes[position % web_lane_count].append(nodeid)
+        quotas = _lane_quotas(
+            ordinary=len(ordinary),
+            web_cases=[len(lane) for lane in web_lanes],
+            count=count,
+        )
+        ordinary_order = sorted(
+            ordinary, key=lambda nodeid: (hashlib.sha256(nodeid.encode()).digest(), nodeid)
+        )
+        selected: list[str] = []
+        cursor = 0
+        for lane, quota in enumerate(quotas):
+            lane_cases = ordinary_order[cursor : cursor + quota]
+            cursor += quota
+            if lane >= count - web_lane_count:
+                lane_cases = lane_cases + web_lanes[lane - (count - web_lane_count)]
+            if lane == index:
+                selected = lane_cases
+        return sorted(selected)
+    return sorted(nodeid for nodeid in nodeids if _hash_bucket(nodeid, count) == index)
 
 
 def tool_requirements(nodeids: Sequence[str], index: int, count: int) -> dict[str, bool]:
@@ -483,10 +554,10 @@ def resource_class_means(evidence: Evidence) -> dict[bool, ClassMean]:
 def shard_distribution(evidence: Evidence, count: int) -> tuple[list[str], list[str]]:
     """Report each shard's case count and duration; imbalance is a warning, not a gate.
 
-    The partition intentionally gives the four DB lanes far more cases than the two
-    Web/Chromium lanes, so comparing every shard with one global mean would warn on
-    every run. Compare inside the same resource class instead; a class with one lane
-    has no imbalance to report.
+    The Web lanes also execute ordinary DB cases, but each Web case still costs more,
+    so they hold fewer cases than a DB-only lane. Compare inside the same capability
+    class instead of against one global mean; a class with one lane has no imbalance
+    to report.
     """
     del count  # The class mean is derived from the reports, not from a uniform split.
     means = resource_class_means(evidence)
@@ -505,25 +576,29 @@ def shard_distribution(evidence: Evidence, count: int) -> tuple[list[str], list[
             f"{shard.elapsed_seconds:.1f} s ({case_ratio:.2f}x the {mean.cases:.1f}-case "
             f"{label} mean; {time_ratio:.2f}x the {mean.seconds:.1f}-s mean)"
         )
-        if class_sizes[shard.web] > 1 and shard.cases > mean.cases * 1.5:
+        if class_sizes[shard.web] > 1 and shard.cases > mean.cases * IMBALANCE_WARNING_RATIO:
             warnings.append(
                 f"warning: integration shard {shard.index} ({label}) has {shard.cases} cases "
-                f"({case_ratio:.2f}x the {mean.cases:.1f}-case {label} mean); split or "
-                "repartition it instead of raising the timeout "
-                "(docs/validation/ci-validation.md)"
+                f"({case_ratio:.2f}x the {mean.cases:.1f}-case {label} mean, above the "
+                f"{IMBALANCE_WARNING_RATIO:.2f}x warning line); split or repartition it "
+                "instead of raising the timeout (docs/validation/ci-validation.md)"
             )
-        if shard.elapsed_seconds > 900:
+        if shard.elapsed_seconds > FIFTEEN_MINUTE_WARNING_SECONDS:
             warnings.append(
                 f"warning: integration shard {shard.index} ({label}) took "
                 f"{shard.elapsed_seconds:.1f} s, above the 15-minute warning line; split or "
                 "repartition it instead of raising the timeout "
                 "(docs/validation/ci-validation.md)"
             )
-        elif class_sizes[shard.web] > 1 and shard.elapsed_seconds > mean.seconds * 1.5:
+        elif (
+            class_sizes[shard.web] > 1
+            and shard.elapsed_seconds > mean.seconds * IMBALANCE_WARNING_RATIO
+        ):
             warnings.append(
                 f"warning: integration shard {shard.index} ({label}) took "
                 f"{shard.elapsed_seconds:.1f} s ({time_ratio:.2f}x the {mean.seconds:.1f}-s "
-                f"{label} mean); inspect the slow shard and split or repartition it"
+                f"{label} mean, above the {IMBALANCE_WARNING_RATIO:.2f}x warning line); "
+                "inspect the slow shard and split or repartition it"
             )
     return rows, warnings
 

@@ -165,6 +165,7 @@ class OperationRow:
     known_undeclared: tuple[int, ...] = ()
     declared_not_observed: tuple[int, ...] = ()
     unimplemented: bool = False
+    envelope_probed: bool = False
     envelope_error: str | None = None
 
 
@@ -1572,14 +1573,17 @@ def evaluate(
                     operation.operation_id,
                 )
             )
+        envelope_probed = False
         envelope_error: str | None = None
-        if (
-            FRAMEWORK_METHOD_NOT_ALLOWED in operation.declared_statuses
-            and method_not_allowed_envelopes is not None
-        ):
-            if operation.operation_id not in method_not_allowed_envelopes:
+        if FRAMEWORK_METHOD_NOT_ALLOWED in operation.declared_statuses:
+            if method_not_allowed_envelopes is None:
+                # Synthetic evaluations may not run the probe. Leave the row
+                # explicitly unprobed so reporting cannot call it verified.
+                pass
+            elif operation.operation_id not in method_not_allowed_envelopes:
                 envelope_error = "the 405 response envelope was not probed"
             else:
+                envelope_probed = True
                 envelope_error = method_not_allowed_envelopes[operation.operation_id]
             if envelope_error is not None:
                 findings.append(
@@ -1597,6 +1601,7 @@ def evaluate(
                 known_undeclared=tuple(sorted(known & undeclared)),
                 declared_not_observed=tuple(sorted(declared_not_observed)),
                 unimplemented=is_placeholder,
+                envelope_probed=envelope_probed,
                 envelope_error=envelope_error,
             )
         )
@@ -1748,6 +1753,31 @@ def evaluate(
     )
 
 
+def declared_method_not_allowed_operations(
+    contract_operations: Sequence[ContractOperation],
+) -> tuple[ContractOperation, ...]:
+    return tuple(
+        operation
+        for operation in contract_operations
+        if FRAMEWORK_METHOD_NOT_ALLOWED in operation.declared_statuses
+    )
+
+
+def require_envelope_coverage(
+    operations: Sequence[ContractOperation],
+    envelopes: Mapping[str, str | None],
+) -> None:
+    """Refuse to report a declared 405 as verified when it was never probed."""
+    expected = {operation.operation_id for operation in operations}
+    missing = sorted(expected - set(envelopes))
+    if missing:
+        raise RuntimeError(
+            "the 405 envelope probe returned no result for "
+            + ", ".join(missing)
+            + "; refusing to report declared 405s as verified"
+        )
+
+
 def build_report(root: Path = ROOT) -> Report:
     contract_version, contract_operations = load_contract(root)
     other_contract_ids = load_other_operation_ids(root)
@@ -1755,16 +1785,9 @@ def build_report(root: Path = ROOT) -> Report:
     factories = collect_factories(modules)
     app = probe_app(root)
     registered = discover_app_routes(root, modules, factories, app=app)
-    envelopes = asyncio.run(
-        probe_method_not_allowed_envelopes(
-            app,
-            tuple(
-                operation
-                for operation in contract_operations
-                if FRAMEWORK_METHOD_NOT_ALLOWED in operation.declared_statuses
-            ),
-        )
-    )
+    declared_405 = declared_method_not_allowed_operations(contract_operations)
+    envelopes = asyncio.run(probe_method_not_allowed_envelopes(app, declared_405))
+    require_envelope_coverage(declared_405, envelopes)
     report = evaluate(
         contract_operations,
         registered,
@@ -1819,10 +1842,13 @@ def format_report(report: Report) -> str:
         )
         if row.route.extraction_error is not None:
             lines.append(f"  status-extraction=FAILED ({row.route.extraction_error})")
-        if row.envelope_error is not None:
-            lines.append(f"  405-envelope=FAILED ({row.envelope_error})")
-        elif FRAMEWORK_METHOD_NOT_ALLOWED in operation.declared_statuses:
-            lines.append("  405-envelope=verified")
+        if FRAMEWORK_METHOD_NOT_ALLOWED in operation.declared_statuses:
+            if row.envelope_error is not None:
+                lines.append(f"  405-envelope=FAILED ({row.envelope_error})")
+            elif not row.envelope_probed:
+                lines.append("  405-envelope=not probed")
+            else:
+                lines.append("  405-envelope=verified")
     extras = [route for route in report.registered if route.operation_id not in contract_ids]
     if extras:
         lines.append("")
@@ -1891,6 +1917,7 @@ def report_payload(report: Report) -> dict[str, Any]:
                 "known_undeclared": list(row.known_undeclared),
                 "declared_not_observed": list(row.declared_not_observed),
                 "unimplemented": row.unimplemented,
+                "envelope_probed": row.envelope_probed,
                 "envelope_error": row.envelope_error,
             }
             for row in report.rows

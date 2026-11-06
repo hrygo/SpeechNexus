@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import pytest
 from fastapi import FastAPI
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -53,7 +54,20 @@ def test_repository_has_no_unbaselined_deviation() -> None:
     assert module.KNOWN_UNDECLARED_STATUSES == {}
     assert report.known_status_gaps == ()
     # Every operation declares 405; each one is probed for the public envelope,
-    # not accepted merely because a route exists.
+    # not accepted merely because a route exists. The probed set must equal the
+    # declared set: silently dropping the probe results may not leave the
+    # declared rows looking verified.
+    declared_405 = {
+        operation.operation_id
+        for operation in report.contract_operations
+        if 405 in operation.declared_statuses
+    }
+    probed = {
+        row.operation.operation_id
+        for row in report.rows
+        if row.route is not None and row.envelope_probed
+    }
+    assert probed == declared_405
     assert all(row.envelope_error is None for row in report.rows)
 
 
@@ -404,3 +418,38 @@ def test_a_new_route_gets_the_envelope_without_an_app_allowlist() -> None:
     assert response.status_code == 405
     assert code == "method_not_allowed"
     assert response.headers["allow"] == "GET"
+
+
+def test_unprobed_405_is_not_reported_as_verified() -> None:
+    # Without probe results the report must say so, not reuse the default
+    # "None means verified" reading.
+    module = load()
+    base = module.build_report(ROOT)
+    report = module.evaluate(
+        base.contract_operations,
+        base.registered,
+        other_contract_ids=base.other_contract_ids,
+        baseline_unimplemented=module.KNOWN_UNIMPLEMENTED_OPERATIONS,
+        baseline_statuses=module.KNOWN_UNDECLARED_STATUSES,
+        unimplemented=module.load_unimplemented_surface(ROOT),
+        method_not_allowed_envelopes=None,
+    )
+    assert all(not row.envelope_probed for row in report.rows)
+    text = module.format_report(report)
+    assert "405-envelope=not probed" in text
+    assert "405-envelope=verified" not in text
+
+
+def test_dropping_the_probe_results_fails_the_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Injecting an empty probe is the reviewer's falsification: build_report
+    # must fail instead of evaluating with no envelope evidence.
+    module = load()
+
+    async def empty_probe(_app: Any, _operations: Any) -> dict[str, str | None]:
+        return {}
+
+    monkeypatch.setattr(module, "probe_method_not_allowed_envelopes", empty_probe)
+    with pytest.raises(RuntimeError, match="405 envelope probe returned no result"):
+        module.build_report(ROOT)

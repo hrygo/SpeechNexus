@@ -16,6 +16,7 @@ from speechnexus_backend.speech.application.public_jobs import (
     WorkspaceFact,
     require_pinned_binding,
 )
+from speechnexus_backend.speech.application.voice_drafts import draft_id_for_job
 from speechnexus_backend.speech.domain.public_jobs import (
     TERMINAL_STATES,
     JobArtifactFact,
@@ -780,7 +781,7 @@ def _binding_is_still_selected(
     """Serialize a new Job write with lifecycle selection changes."""
     try:
         configuration = json.loads(configuration_json)
-        reference = configuration["models"][kind]
+        reference = configuration["models"]["voice" if kind.startswith("voice_") else kind]
         if (
             not isinstance(reference, dict)
             or reference.get("id") != model_id
@@ -1008,6 +1009,27 @@ def _insert(connection: _Executor, job: NewPublicJob) -> None:
             submission.submitted_at_us,
         ),
     )
+    if job.kind in ("voice_design", "voice_clone"):
+        intent = json.loads(job.request_document)
+        voice_kind = job.kind.removeprefix("voice_")
+        voice_input = {**intent["input"], "kind": voice_kind}
+        configuration = json.loads(submission.effective_configuration_json)
+        connection.execute(
+            "INSERT INTO speech_voice_drafts "
+            "(draft_id, generation_job_id, kind, status, head_revision, metadata_revision, "
+            "display_name, input_json, binding_json, created_at_us, updated_at_us) "
+            "VALUES (%s,%s,%s,'generating','1',1,%s,%s,%s,%s,%s)",
+            (
+                draft_id_for_job(job.job_id),
+                job.job_id,
+                voice_kind,
+                voice_input.get("display_name", "Voice " + voice_kind),
+                json.dumps(voice_input),
+                json.dumps(configuration["models"]["voice"]),
+                submission.submitted_at_us,
+                submission.submitted_at_us,
+            ),
+        )
     # Private original public intent (including any exact binding selection).
     # This is NOT the complete effective execution command required by DEL-150;
     # it must not be dispatched or supplemented using mutable current defaults.

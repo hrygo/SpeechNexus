@@ -40,7 +40,12 @@ from speechnexus_backend.speech.domain.public_jobs import (
 from speechnexus_backend.speech.domain.publications import Publication, PublicationKind
 
 DEFAULT_WORKSPACE = "workspace-default"
-_REQUIRED_TASK: dict[JobKind, str] = {"asr": "asr_file", "tts": "tts_file"}
+_REQUIRED_TASK: dict[JobKind, str] = {
+    "asr": "asr_file",
+    "tts": "tts_file",
+    "voice_design": "voice_design",
+    "voice_clone": "voice_clone",
+}
 
 
 def _encode_list_cursor(created_at_us: int, job_id: str, scope: str) -> str:
@@ -297,7 +302,7 @@ class PublicJobs:
         idempotency_key: str | None,
     ) -> PublicJob:
         kind = payload.get("kind")
-        if kind not in ("asr", "tts"):
+        if kind not in ("asr", "tts", "voice_design", "voice_clone"):
             raise UnsupportedJobKindError
         typed_kind: JobKind = kind
         workspace_id = payload.get("workspace_id", DEFAULT_WORKSPACE)
@@ -434,7 +439,9 @@ class PublicJobs:
         if catalog_revision < 1:
             raise ModelNotPublishedError
         configuration = effective_configuration(
-            models={typed_kind: binding.publication},
+            models={
+                "voice" if typed_kind.startswith("voice_") else typed_kind: binding.publication
+            },
             policy_revision=workspace.policy_revision,
             catalog_revision=catalog_revision,
             profile=profile_publication,
@@ -448,10 +455,9 @@ class PublicJobs:
                 configuration, sort_keys=True, separators=(",", ":"), ensure_ascii=False
             ),
             execution_revision=1,
-            # The only observed progress fact is generated audio; the durable
-            # gateway watermark is milliseconds of produced audio. Text length is
-            # a request size, not a completion denominator, so no total is frozen.
-            progress_unit="audio_ms",
+            # Voice creation counts produced items. ASR/TTS use the durable
+            # generated-audio watermark, never request text length as progress.
+            progress_unit="items" if typed_kind.startswith("voice_") else "audio_ms",
             progress_total=None,
             submitted_at_us=self._now_us(),
         )
@@ -605,6 +611,31 @@ class PublicJobs:
             raise PublicJobUnavailableError from None
         if not isinstance(result, dict) or result.get("kind") != job.kind:
             raise PublicJobUnavailableError
+        if job.kind in ("voice_design", "voice_clone"):
+            artifact_ids = result.get("preview_artifact_ids")
+            receipt_id = result.get("receipt_id")
+            if (
+                not isinstance(artifact_ids, list)
+                or not artifact_ids
+                or not isinstance(receipt_id, str)
+                or not all(isinstance(item, str) for item in artifact_ids)
+                or len(set(artifact_ids)) != len(artifact_ids)
+            ):
+                raise PublicJobUnavailableError
+            previews = []
+            for artifact_id in artifact_ids:
+                if not isinstance(artifact_id, str):
+                    raise PublicJobUnavailableError
+                fact = self._store.artifact(job.workspace_id, identifier(artifact_id))
+                if (
+                    fact is None
+                    or fact.artifact_id != artifact_id
+                    or fact.kind != "preview"
+                    or fact.receipt_id != receipt_id
+                ):
+                    raise PublicJobUnavailableError
+                previews.append(fact)
+            return tuple(previews)
         name, kind = (
             ("transcript_artifact_id", "transcript")
             if job.kind == "asr"
@@ -737,6 +768,17 @@ class PublicJobs:
         request_input = payload.get("input")
         if not isinstance(request_input, dict):
             raise AssetNotReadyError
+        if kind == "voice_clone":
+            asset_id = request_input.get("reference_audio_asset_id")
+            if (
+                request_input.get("source_use_confirmed") is not True
+                or not isinstance(asset_id, str)
+                or self._facts.asset(workspace_id, asset_id) != ("ready", "voice_reference")
+            ):
+                raise AssetNotReadyError
+            return
+        if kind == "voice_design":
+            return
         asset_id = (
             request_input.get("audio_asset_id")
             if kind == "asr"
@@ -774,17 +816,18 @@ def _canonical_intent(payload: Mapping[str, Any], kind: JobKind) -> dict[str, An
     """Apply only contract defaults so omitted and explicit defaults share one key."""
     intent = deepcopy(dict(payload))
     intent.setdefault("workspace_id", DEFAULT_WORKSPACE)
-    output_defaults = (
-        {"audio_format": "mp3", "save_artifacts": True}
-        if kind == "tts"
-        else {"transcript_format": "json", "save_artifacts": True}
-    )
-    output = intent.get("output")
-    if not isinstance(output, dict):
-        intent["output"] = output_defaults
-    else:
-        for name, value in output_defaults.items():
-            output.setdefault(name, value)
+    if kind in ("asr", "tts"):
+        output_defaults = (
+            {"audio_format": "mp3", "save_artifacts": True}
+            if kind == "tts"
+            else {"transcript_format": "json", "save_artifacts": True}
+        )
+        output = intent.get("output")
+        if not isinstance(output, dict):
+            intent["output"] = output_defaults
+        else:
+            for name, value in output_defaults.items():
+                output.setdefault(name, value)
     constraints = intent.get("constraints")
     constraint_defaults = {"allow_degradation": False, "require_exact_parameters": False}
     if not isinstance(constraints, dict):

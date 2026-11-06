@@ -401,12 +401,20 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         if db.dialect == "postgresql"
         else set()
     )
+    # Voice draft persistence and its metadata CAS ledger (0042). Both are
+    # private Job-writer tables, outside the shared coordination surface.
+    draft_tables = (
+        {"speech_voice_drafts", "speech_voice_metadata_commands"}
+        if db.dialect == "postgresql"
+        else set()
+    )
     assert binding_tables <= {row["name"] for row in rows}
     assert profile_tables <= {row["name"] for row in rows}
     assert publication_tables <= {row["name"] for row in rows}
     assert artifact_tables <= {row["name"] for row in rows}
     assert abort_tables <= {row["name"] for row in rows}
     assert cancellation_tables <= {row["name"] for row in rows}
+    assert draft_tables <= {row["name"] for row in rows}
     assert (
         {row["name"] for row in rows}
         - {
@@ -420,12 +428,16 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         - artifact_tables
         - abort_tables
         - cancellation_tables
+        - draft_tables
         == (set(SPEECH_UPDATES) | set(GATEWAY_UPDATES))
     )
     if db.dialect == "postgresql":
-        # New configuration and publication tables are outside shared coordination grants.
+        # New configuration, publication and voice draft tables are outside
+        # shared coordination grants.
         for owner in ("speech", "gateway"):
-            for table in profile_tables | binding_tables | publication_tables | abort_tables:
+            for table in (
+                profile_tables | binding_tables | publication_tables | abort_tables | draft_tables
+            ):
                 with (
                     pytest.raises(psycopg.errors.InsufficientPrivilege),
                     foundation.connection(owner) as connection,

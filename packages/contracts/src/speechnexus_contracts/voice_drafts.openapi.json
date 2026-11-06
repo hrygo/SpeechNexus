@@ -1,0 +1,3089 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SpeechNexus public speech API",
+    "version": "0.1.0.dev9",
+    "description": "SpeechNexus public speech protocol.\n\nThe OpenAI-compatible subset is limited to the paths, fields, formats, and\nevents explicitly declared here. A standard OpenAI SDK can use this API by\nsetting base_url to <deployment>/v1 and supplying any api_key value unless\nthe deployment enables a shared service key. SpeechNexus enhancements live\nunder /v1/nexus and the optional `nexus` request field; a standard request\nnever needs an enhancement wrapper. Unsupported standard parameters are\nrejected with 422 `unsupported_parameter`, never silently ignored.\n\nRealtime has two connection modes at GET /v1/realtime: a pre-created\nnexus session (`session_id`) and a compatibility transcription session\nopened with `model`. Both accept the declared standard transcription\nevent subset. TTS, previews, metadata, and operation coordination remain\nnexus.* events and are available only in a nexus-created session.\n"
+  },
+  "security": [
+    {
+      "SharedServiceKey": []
+    },
+    {}
+  ],
+  "paths": {
+    "/v1/nexus/voice-designs": {
+      "post": {
+        "tags": ["voice-creation"],
+        "operationId": "createVoiceDesign",
+        "summary": "Create a voice-design draft and generation job",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceDesignCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Draft and generation job accepted.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceCreationAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/VoiceDraftContractViolation"
+          },
+          "503": {
+            "description": "The deployment has no voice draft storage or the stored result is unknown. The operation is implemented; this 503 is a retryable outage, not a permanently unimplemented operation.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "X-Should-Retry": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "true"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "code": {
+                              "enum": ["voice_draft_unavailable", "voice_draft_outcome_unknown"]
+                            },
+                            "type": {
+                              "const": "service_unavailable_error"
+                            },
+                            "retryable": {
+                              "const": true
+                            },
+                            "nexus": false
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/nexus/voice-clones": {
+      "post": {
+        "tags": ["voice-creation"],
+        "operationId": "createVoiceClone",
+        "summary": "Create a voice-clone draft and generation job",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceCloneCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Draft and generation job accepted.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceCreationAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/VoiceDraftContractViolation"
+          },
+          "503": {
+            "description": "The deployment has no voice draft storage or the stored result is unknown. The operation is implemented; this 503 is a retryable outage, not a permanently unimplemented operation.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "X-Should-Retry": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "true"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "code": {
+                              "enum": ["voice_draft_unavailable", "voice_draft_outcome_unknown"]
+                            },
+                            "type": {
+                              "const": "service_unavailable_error"
+                            },
+                            "retryable": {
+                              "const": true
+                            },
+                            "nexus": false
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/nexus/voice-drafts/{draft_id}": {
+      "get": {
+        "tags": ["voice-creation"],
+        "operationId": "getVoiceDraft",
+        "summary": "Get a voice draft and optional revision",
+        "description": "Returns the draft head and its current revision. The optional\ndraft_revision query selects an exact revision: a value that is not the\nstored head is answered with 404 instead of silently returning a\ndifferent revision.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/DraftIdPath"
+          },
+          {
+            "name": "draft_revision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Revision"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Voice draft view.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceDraftView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "500": {
+            "$ref": "#/components/responses/VoiceDraftContractViolation"
+          },
+          "503": {
+            "description": "The deployment has no voice draft storage or the stored result is unknown. The operation is implemented; this 503 is a retryable outage, not a permanently unimplemented operation.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "X-Should-Retry": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "true"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "code": {
+                              "enum": ["voice_draft_unavailable", "voice_draft_outcome_unknown"]
+                            },
+                            "type": {
+                              "const": "service_unavailable_error"
+                            },
+                            "retryable": {
+                              "const": true
+                            },
+                            "nexus": false
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": ["voice-creation"],
+        "operationId": "updateVoiceDraftMetadata",
+        "summary": "Update draft metadata only",
+        "description": "Only display metadata is mutable. Changing the voice description, sample,\nreference text, preview text, or binding requires a new generation\nrevision and returns 422 for PATCH.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/DraftIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceDraftPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated draft metadata.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_voice_resource_schema_json_VoiceDraft"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "500": {
+            "$ref": "#/components/responses/VoiceDraftContractViolation"
+          },
+          "503": {
+            "description": "The deployment has no voice draft storage or the stored result is unknown. The operation is implemented; this 503 is a retryable outage, not a permanently unimplemented operation.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "X-Should-Retry": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "true"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "code": {
+                              "enum": ["voice_draft_unavailable", "voice_draft_outcome_unknown"]
+                            },
+                            "type": {
+                              "const": "service_unavailable_error"
+                            },
+                            "retryable": {
+                              "const": true
+                            },
+                            "nexus": false
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "XRequestId": {
+        "name": "X-Request-ID",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 128
+        },
+        "description": "Optional idempotency key. The scope is (deployment_id, workspace_id,\noperation_family, key). Standard OpenAI clients may omit it.\n"
+      },
+      "DraftIdPath": {
+        "name": "draft_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/Identifier"
+        }
+      }
+    },
+    "schemas": {
+      "VoiceDesignCreateRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["model", "input"],
+        "properties": {
+          "workspace_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "client_reference": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "input": {
+            "$ref": "#/components/schemas/VoiceDesignInput"
+          },
+          "constraints": {
+            "$ref": "#/components/schemas/JobConstraints"
+          }
+        }
+      },
+      "Identifier": {
+        "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+      },
+      "External_shared_identifiers_schema_json_Identifier": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$",
+        "minLength": 3,
+        "maxLength": 128,
+        "description": "Opaque stable resource identifier. Prefixes are descriptive, not authorization claims."
+      },
+      "VoiceDesignInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["description", "preview_text"],
+        "properties": {
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "preview_text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "language": {
+            "type": "string",
+            "maxLength": 35
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "JobConstraints": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "max_queue_wait_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 86400000
+          },
+          "allow_degradation": {
+            "type": "boolean",
+            "default": false
+          },
+          "require_exact_parameters": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "VoiceCreationAccepted": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["object", "draft", "job"],
+        "properties": {
+          "object": {
+            "const": "nexus.voice_creation"
+          },
+          "draft": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_VoiceDraft"
+          },
+          "job": {
+            "$ref": "#/components/schemas/Job"
+          }
+        }
+      },
+      "External_voice_resource_schema_json_VoiceDraft": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "resource_type",
+          "id",
+          "object",
+          "kind",
+          "status",
+          "head_revision",
+          "metadata_revision",
+          "display_name",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "resource_type": {
+            "const": "voice_draft"
+          },
+          "id": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_Identifier"
+          },
+          "object": {
+            "const": "nexus.voice_draft"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_VoiceKind"
+          },
+          "status": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_VoiceDraftStatus"
+          },
+          "head_revision": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_Revision"
+          },
+          "metadata_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "current_voice_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/External_voice_resource_schema_json_Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "External_voice_resource_schema_json_Identifier": {
+        "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+      },
+      "External_voice_resource_schema_json_VoiceKind": {
+        "type": "string",
+        "enum": ["design", "clone"]
+      },
+      "External_voice_resource_schema_json_VoiceDraftStatus": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "generating",
+          "candidate",
+          "validating",
+          "validated",
+          "published",
+          "failed",
+          "preview_only"
+        ]
+      },
+      "External_voice_resource_schema_json_Revision": {
+        "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision"
+      },
+      "External_shared_identifiers_schema_json_Revision": {
+        "type": "string",
+        "pattern": "^[1-9][0-9]{0,18}$",
+        "maxLength": 19,
+        "description": "Monotonic decimal revision represented as a string."
+      },
+      "Job": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "object",
+          "kind",
+          "status",
+          "cleanup_state",
+          "request_id",
+          "workspace_id",
+          "execution_revision",
+          "progress",
+          "artifacts",
+          "result",
+          "operations",
+          "effective_configuration",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "object": {
+            "const": "nexus.job"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/JobKind"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "cleanup_state": {
+            "$ref": "#/components/schemas/CleanupState"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "workspace_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "client_reference": {
+            "type": ["string", "null"],
+            "maxLength": 256
+          },
+          "profile": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ResourceReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "execution_revision": {
+            "$ref": "#/components/schemas/Revision"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/JobProgress"
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JobArtifact"
+            }
+          },
+          "result": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/JobResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OperationReference"
+            }
+          },
+          "effective_configuration": {
+            "$ref": "#/components/schemas/EffectiveConfiguration"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/JobError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "failed"
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "required": ["error"],
+              "properties": {
+                "error": {
+                  "not": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "enum": ["succeeded", "cancelled"]
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "succeeded"
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "required": ["result"],
+              "properties": {
+                "result": {
+                  "not": {
+                    "type": "null"
+                  }
+                },
+                "artifacts": {
+                  "minItems": 1
+                },
+                "cleanup_state": {
+                  "enum": ["not_required", "complete"]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "not": {
+                    "const": "succeeded"
+                  }
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "properties": {
+                "result": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "allOf": [
+                {
+                  "properties": {
+                    "status": {
+                      "const": "succeeded"
+                    }
+                  },
+                  "required": ["status"]
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "asr"
+                    }
+                  },
+                  "required": ["kind"]
+                }
+              ]
+            },
+            "then": {
+              "properties": {
+                "artifacts": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "const": "transcript"
+                      }
+                    },
+                    "required": ["kind"]
+                  }
+                },
+                "result": {
+                  "properties": {
+                    "kind": {
+                      "const": "asr"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "allOf": [
+                {
+                  "properties": {
+                    "status": {
+                      "const": "succeeded"
+                    }
+                  },
+                  "required": ["status"]
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "tts"
+                    }
+                  },
+                  "required": ["kind"]
+                }
+              ]
+            },
+            "then": {
+              "properties": {
+                "artifacts": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "const": "audio"
+                      }
+                    },
+                    "required": ["kind"]
+                  }
+                },
+                "result": {
+                  "properties": {
+                    "kind": {
+                      "const": "tts"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "allOf": [
+                {
+                  "properties": {
+                    "status": {
+                      "const": "succeeded"
+                    }
+                  },
+                  "required": ["status"]
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "voice_design"
+                    }
+                  },
+                  "required": ["kind"]
+                }
+              ]
+            },
+            "then": {
+              "properties": {
+                "artifacts": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "const": "preview"
+                      }
+                    },
+                    "required": ["kind"]
+                  }
+                },
+                "result": {
+                  "properties": {
+                    "kind": {
+                      "const": "voice_design"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "allOf": [
+                {
+                  "properties": {
+                    "status": {
+                      "const": "succeeded"
+                    }
+                  },
+                  "required": ["status"]
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "voice_clone"
+                    }
+                  },
+                  "required": ["kind"]
+                }
+              ]
+            },
+            "then": {
+              "properties": {
+                "artifacts": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "const": "preview"
+                      }
+                    },
+                    "required": ["kind"]
+                  }
+                },
+                "result": {
+                  "properties": {
+                    "kind": {
+                      "const": "voice_clone"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "allOf": [
+                {
+                  "properties": {
+                    "status": {
+                      "const": "succeeded"
+                    }
+                  },
+                  "required": ["status"]
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "voice_preview"
+                    }
+                  },
+                  "required": ["kind"]
+                }
+              ]
+            },
+            "then": {
+              "properties": {
+                "artifacts": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "const": "preview"
+                      }
+                    },
+                    "required": ["kind"]
+                  }
+                },
+                "result": {
+                  "properties": {
+                    "kind": {
+                      "const": "voice_preview"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "allOf": [
+                {
+                  "properties": {
+                    "status": {
+                      "const": "succeeded"
+                    }
+                  },
+                  "required": ["status"]
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "voice_validation"
+                    }
+                  },
+                  "required": ["kind"]
+                }
+              ]
+            },
+            "then": {
+              "properties": {
+                "artifacts": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "const": "validation_report"
+                      }
+                    },
+                    "required": ["kind"]
+                  }
+                },
+                "result": {
+                  "properties": {
+                    "kind": {
+                      "const": "voice_validation"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "cancelled"
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "properties": {
+                "cleanup_state": {
+                  "enum": ["not_required", "complete"]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "expired"
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "properties": {
+                "cleanup_state": {
+                  "const": "not_required"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "JobKind": {
+        "type": "string",
+        "enum": ["asr", "tts", "voice_design", "voice_clone", "voice_preview", "voice_validation"]
+      },
+      "JobStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "running",
+          "retry_wait",
+          "cancelling",
+          "succeeded",
+          "failed",
+          "cancelled",
+          "expired"
+        ]
+      },
+      "CleanupState": {
+        "$ref": "#/components/schemas/External_shared_operation_states_schema_json_CleanupState"
+      },
+      "External_shared_operation_states_schema_json_CleanupState": {
+        "type": "string",
+        "enum": ["not_required", "pending", "complete", "quarantined"]
+      },
+      "ResourceReference": {
+        "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+      },
+      "External_shared_references_schema_json_ResourceReference": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "revision"],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+          },
+          "revision": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision"
+          }
+        }
+      },
+      "Revision": {
+        "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision"
+      },
+      "JobProgress": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["unit", "completed"],
+        "properties": {
+          "unit": {
+            "type": "string",
+            "enum": ["audio_ms", "text_codepoints", "items"]
+          },
+          "completed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total": {
+            "type": ["integer", "null"],
+            "minimum": 0
+          }
+        }
+      },
+      "JobArtifact": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["artifact_id", "kind", "media_type", "bytes", "sha256"],
+        "properties": {
+          "artifact_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ArtifactKind"
+          },
+          "media_type": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "sha256": {
+            "$ref": "#/components/schemas/Sha256Digest"
+          },
+          "receipt_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For an artifact referenced by a succeeded Job result, this must be present and equal the result receipt_id."
+          },
+          "expires_at": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ArtifactKind": {
+        "type": "string",
+        "enum": ["transcript", "audio", "preview", "validation_report", "export_manifest"]
+      },
+      "Sha256Digest": {
+        "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Sha256Digest"
+      },
+      "External_shared_identifiers_schema_json_Sha256Digest": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      },
+      "JobResult": {
+        "description": "Structured successful outcome of a durable Job. `kind` must equal the\nowning Job kind. Artifact identifiers in the result must identify the\ncorresponding entries in `Job.artifacts` with the matching kind and\nresult receipt; the service validates that cross-array identity before\ncommitting `succeeded`.\n",
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/AsrJobResult"
+          },
+          {
+            "$ref": "#/components/schemas/TtsJobResult"
+          },
+          {
+            "$ref": "#/components/schemas/VoiceDraftJobResult"
+          },
+          {
+            "$ref": "#/components/schemas/VoicePreviewJobResult"
+          },
+          {
+            "$ref": "#/components/schemas/VoiceValidationJobResult"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "kind",
+          "mapping": {
+            "asr": "#/components/schemas/AsrJobResult",
+            "tts": "#/components/schemas/TtsJobResult",
+            "voice_design": "#/components/schemas/VoiceDraftJobResult",
+            "voice_clone": "#/components/schemas/VoiceDraftJobResult",
+            "voice_preview": "#/components/schemas/VoicePreviewJobResult",
+            "voice_validation": "#/components/schemas/VoiceValidationJobResult"
+          }
+        }
+      },
+      "AsrJobResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "transcript_artifact_id", "receipt_id"],
+        "properties": {
+          "kind": {
+            "const": "asr"
+          },
+          "transcript_artifact_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "receipt_id": {
+            "$ref": "#/components/schemas/Identifier"
+          }
+        }
+      },
+      "TtsJobResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "audio_artifact_id", "receipt_id"],
+        "properties": {
+          "kind": {
+            "const": "tts"
+          },
+          "audio_artifact_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "receipt_id": {
+            "$ref": "#/components/schemas/Identifier"
+          }
+        }
+      },
+      "VoiceDraftJobResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "voice_draft_id",
+          "draft_revision",
+          "preview_artifact_ids",
+          "receipt_id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["voice_design", "voice_clone"]
+          },
+          "voice_draft_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "draft_revision": {
+            "$ref": "#/components/schemas/Revision"
+          },
+          "preview_artifact_ids": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/Identifier"
+            }
+          },
+          "receipt_id": {
+            "$ref": "#/components/schemas/Identifier"
+          }
+        }
+      },
+      "VoicePreviewJobResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "voice_draft_id",
+          "draft_revision",
+          "preview_artifact_id",
+          "receipt_id"
+        ],
+        "properties": {
+          "kind": {
+            "const": "voice_preview"
+          },
+          "voice_draft_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "draft_revision": {
+            "$ref": "#/components/schemas/Revision"
+          },
+          "preview_artifact_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "receipt_id": {
+            "$ref": "#/components/schemas/Identifier"
+          }
+        }
+      },
+      "VoiceValidationJobResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "validation", "validation_report_artifact_id", "receipt_id"],
+        "properties": {
+          "kind": {
+            "const": "voice_validation"
+          },
+          "validation": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_VoiceValidation"
+          },
+          "validation_report_artifact_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "receipt_id": {
+            "$ref": "#/components/schemas/Identifier"
+          }
+        }
+      },
+      "External_voice_resource_schema_json_VoiceValidation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "resource_type",
+          "id",
+          "object",
+          "draft_id",
+          "draft_revision",
+          "validation_set_revision",
+          "model_binding",
+          "status",
+          "checks",
+          "publication_eligible",
+          "created_at"
+        ],
+        "properties": {
+          "resource_type": {
+            "const": "voice_validation"
+          },
+          "id": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_Identifier"
+          },
+          "object": {
+            "const": "nexus.voice_validation"
+          },
+          "draft_id": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_Identifier"
+          },
+          "draft_revision": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_Revision"
+          },
+          "validation_set_revision": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_Revision"
+          },
+          "model_binding": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_BindingReference"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "running", "passed", "failed"]
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/External_voice_resource_schema_json_CheckResult"
+            }
+          },
+          "publication_eligible": {
+            "type": "boolean",
+            "description": "True only when every required check passed and the candidate has a verified reusable path to later TTS. Preview-only candidates are never publication eligible."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "passed"
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "properties": {
+                "checks": {
+                  "minItems": 1,
+                  "items": {
+                    "properties": {
+                      "status": {
+                        "enum": ["passed", "skipped"]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "failed"
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "properties": {
+                "checks": {
+                  "contains": {
+                    "type": "object",
+                    "required": ["status"],
+                    "properties": {
+                      "status": {
+                        "const": "failed"
+                      }
+                    }
+                  },
+                  "minContains": 1
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "publication_eligible": {
+                  "const": true
+                }
+              },
+              "required": ["publication_eligible"]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "passed"
+                },
+                "checks": {
+                  "contains": {
+                    "type": "object",
+                    "required": ["required"],
+                    "properties": {
+                      "required": {
+                        "const": true
+                      }
+                    }
+                  },
+                  "minContains": 1,
+                  "allOf": [
+                    {
+                      "contains": {
+                        "type": "object",
+                        "required": ["name", "required", "status"],
+                        "properties": {
+                          "name": {
+                            "const": "reusable_tts"
+                          },
+                          "required": {
+                            "const": true
+                          },
+                          "status": {
+                            "const": "passed"
+                          }
+                        }
+                      },
+                      "minContains": 1
+                    }
+                  ],
+                  "items": {
+                    "if": {
+                      "properties": {
+                        "required": {
+                          "const": true
+                        }
+                      },
+                      "required": ["required"]
+                    },
+                    "then": {
+                      "properties": {
+                        "status": {
+                          "const": "passed"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "External_voice_resource_schema_json_BindingReference": {
+        "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+      },
+      "External_voice_resource_schema_json_CheckResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "required", "status"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]{1,63}$"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["passed", "failed", "skipped"]
+          },
+          "required": {
+            "type": "boolean",
+            "description": "A skipped or failed required check makes the candidate publication-ineligible."
+          },
+          "detail": {
+            "type": ["string", "null"],
+            "maxLength": 2000
+          }
+        }
+      },
+      "OperationReference": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operation_id", "kind", "status"],
+        "properties": {
+          "operation_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/OperationKind"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OperationStatus"
+          },
+          "cleanup_state": {
+            "$ref": "#/components/schemas/CleanupState"
+          }
+        }
+      },
+      "OperationKind": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_OperationKind"
+      },
+      "External_shared_capability_domains_schema_json_OperationKind": {
+        "type": "string",
+        "enum": ["asr", "tts", "voice_preview", "voice_validation"]
+      },
+      "OperationStatus": {
+        "$ref": "#/components/schemas/External_shared_operation_states_schema_json_OperationStatus"
+      },
+      "External_shared_operation_states_schema_json_OperationStatus": {
+        "type": "string",
+        "enum": ["accepted", "running", "succeeded", "failed", "cancelled"]
+      },
+      "EffectiveConfiguration": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["models", "policy_revision", "catalog_revision"],
+        "properties": {
+          "profile": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ResourceReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "models": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "asr": {
+                "$ref": "#/components/schemas/ResourceReference"
+              },
+              "tts": {
+                "$ref": "#/components/schemas/ResourceReference"
+              },
+              "voice": {
+                "$ref": "#/components/schemas/ResourceReference"
+              }
+            }
+          },
+          "voice": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ResourceReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pronunciation": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ResourceReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "asr": {
+                "$ref": "#/components/schemas/AsrOverrides"
+              },
+              "tts": {
+                "$ref": "#/components/schemas/TtsOverrides"
+              }
+            }
+          },
+          "policy_revision": {
+            "$ref": "#/components/schemas/Revision"
+          },
+          "catalog_revision": {
+            "$ref": "#/components/schemas/Revision"
+          },
+          "degradation": {
+            "type": "string",
+            "enum": ["none", "resource_tightened", "quality_reduced"],
+            "default": "none"
+          }
+        }
+      },
+      "AsrOverrides": {
+        "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_AsrOverrides"
+      },
+      "External_shared_speech_overrides_schema_json_AsrOverrides": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "language": {
+            "type": "string",
+            "maxLength": 35
+          },
+          "turn_detection": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "mode": {
+                "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_VadMode"
+              },
+              "silence_duration_ms": {
+                "type": "integer",
+                "minimum": 200,
+                "maximum": 3000
+              }
+            }
+          },
+          "finalization": {
+            "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_FinalizationMode"
+          },
+          "preview_interval_ms": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 5000
+          },
+          "max_segment_ms": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 30000
+          },
+          "rollback_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 32
+          },
+          "final_deadline_ms": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 10000
+          },
+          "auxiliary_deadline_ms": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 10000
+          },
+          "alignment": {
+            "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AuxiliaryMode"
+          },
+          "diarization": {
+            "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AuxiliaryMode"
+          },
+          "vocabulary_set_revision": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "External_shared_capability_domains_schema_json_VadMode": {
+        "type": "string",
+        "enum": ["server_vad", "manual"]
+      },
+      "External_shared_capability_domains_schema_json_FinalizationMode": {
+        "type": "string",
+        "enum": ["full_segment", "streaming_finalize"]
+      },
+      "External_shared_capability_domains_schema_json_AuxiliaryMode": {
+        "type": "string",
+        "enum": ["off", "required", "best_effort"]
+      },
+      "TtsOverrides": {
+        "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_TtsOverrides"
+      },
+      "External_shared_speech_overrides_schema_json_TtsOverrides": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "text_commit_mode": {
+            "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_TextCommitMode"
+          },
+          "audio_delivery": {
+            "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AudioDeliveryMode"
+          },
+          "language": {
+            "type": "string",
+            "maxLength": 35
+          },
+          "pronunciation_revision": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "instructions": {
+            "type": ["string", "null"],
+            "maxLength": 2000
+          },
+          "speed": {
+            "type": "number",
+            "minimum": 0.25,
+            "maximum": 4.0
+          },
+          "seed": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "planner": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "max_chars": {
+                "type": "integer",
+                "minimum": 40,
+                "maximum": 400
+              },
+              "max_wait_ms": {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 3000
+              }
+            }
+          }
+        }
+      },
+      "External_shared_capability_domains_schema_json_TextCommitMode": {
+        "type": "string",
+        "enum": ["explicit", "sentence"]
+      },
+      "External_shared_capability_domains_schema_json_AudioDeliveryMode": {
+        "type": "string",
+        "enum": ["complete", "chunked"]
+      },
+      "JobError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message", "retryable"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{2,63}$"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "param": {
+            "type": ["string", "null"],
+            "maxLength": 128
+          }
+        }
+      },
+      "ErrorResponse": {
+        "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorResponse"
+      },
+      "External_shared_errors_schema_json_ErrorResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorBody"
+          }
+        }
+      },
+      "External_shared_errors_schema_json_ErrorBody": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "type", "message", "param", "request_id", "retryable"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{2,63}$",
+            "description": "Stable machine-readable error code."
+          },
+          "type": {
+            "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorType"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "param": {
+            "type": ["string", "null"],
+            "maxLength": 128
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "retry_after_ms": {
+            "type": ["integer", "null"],
+            "minimum": 0
+          },
+          "nexus": {
+            "$ref": "#/components/schemas/External_shared_errors_schema_json_OperationRecovery"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "enum": ["operation_in_progress", "response_not_replayable"]
+                }
+              }
+            },
+            "then": {
+              "required": ["nexus"]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "const": "response_not_replayable"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "nexus": {
+                  "required": ["receipt"]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "External_shared_errors_schema_json_ErrorType": {
+        "type": "string",
+        "enum": [
+          "invalid_request_error",
+          "authentication_error",
+          "permission_error",
+          "not_found_error",
+          "rate_limit_error",
+          "api_error",
+          "service_unavailable_error"
+        ]
+      },
+      "External_shared_errors_schema_json_OperationRecovery": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operation_id"],
+        "properties": {
+          "operation_id": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+          },
+          "receipt": {
+            "$ref": "#/components/schemas/External_shared_receipts_schema_json_ExecutionReceipt"
+          }
+        },
+        "description": "Query GET /v1/nexus/operations/{operation_id}. This identity is the original execution; retrying never creates a second execution."
+      },
+      "External_shared_receipts_schema_json_ExecutionReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["receipt_id", "requested", "effective", "observed", "missing", "unknown"],
+        "properties": {
+          "receipt_id": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+          },
+          "request_id": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "requested": {
+            "$ref": "#/components/schemas/External_shared_receipts_schema_json_PublicExecutionFacts"
+          },
+          "effective": {
+            "$ref": "#/components/schemas/External_shared_receipts_schema_json_PublicExecutionFacts"
+          },
+          "observed": {
+            "$ref": "#/components/schemas/External_shared_receipts_schema_json_PublicExecutionFacts"
+          },
+          "missing": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/External_shared_receipts_schema_json_ReceiptFactPath"
+            }
+          },
+          "unknown": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/External_shared_receipts_schema_json_ReceiptFactPath"
+            }
+          }
+        }
+      },
+      "External_shared_receipts_schema_json_PublicExecutionFacts": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "language": {
+            "$ref": "#/components/schemas/External_shared_language_schema_json_LanguageTag"
+          },
+          "seed": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_seed"
+          },
+          "speed": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_speed"
+          },
+          "sample_rate_hz": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 384000
+          },
+          "response_format": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AudioFormat"
+              },
+              {
+                "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_TranscriptFormat"
+              }
+            ]
+          },
+          "max_segment_ms": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_max_segment_ms"
+          },
+          "model_binding": {
+            "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+          },
+          "voice": {
+            "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+          },
+          "pronunciation": {
+            "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+          },
+          "turn_detection": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_turn_detection"
+          },
+          "finalization": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_finalization"
+          },
+          "preview_interval_ms": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_preview_interval_ms"
+          },
+          "rollback_tokens": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_rollback_tokens"
+          },
+          "final_deadline_ms": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_final_deadline_ms"
+          },
+          "auxiliary_deadline_ms": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_auxiliary_deadline_ms"
+          },
+          "alignment": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_alignment"
+          },
+          "diarization": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_diarization"
+          },
+          "vocabulary_set_revision": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_vocabulary_set_revision"
+          },
+          "text_commit_mode": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_text_commit_mode"
+          },
+          "audio_delivery": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_audio_delivery"
+          },
+          "pronunciation_revision": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_pronunciation_revision"
+          },
+          "planner": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_planner"
+          },
+          "instructions_present": {
+            "type": "boolean"
+          },
+          "prompt_present": {
+            "type": "boolean"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+          },
+          "vocabulary": {
+            "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+          }
+        },
+        "description": "Allowlisted public projection only. Omit content, prompt, instructions, vendor payloads and private runtime identities. Unknown facts go into stable missing/unknown paths, never arbitrary dictionaries."
+      },
+      "External_shared_language_schema_json_LanguageTag": {
+        "type": "string",
+        "pattern": "^(auto|[a-z]{2,3}(-[A-Za-z0-9]{2,8})*)$",
+        "maxLength": 35
+      },
+      "External_shared_speech_overrides_schema_json_seed": {
+        "type": ["integer", "null"],
+        "minimum": 0,
+        "maximum": 2147483647
+      },
+      "External_shared_speech_overrides_schema_json_speed": {
+        "type": "number",
+        "minimum": 0.25,
+        "maximum": 4.0
+      },
+      "External_shared_capability_domains_schema_json_AudioFormat": {
+        "type": "string",
+        "enum": ["mp3", "wav", "pcm"]
+      },
+      "External_shared_capability_domains_schema_json_TranscriptFormat": {
+        "type": "string",
+        "enum": ["json", "text", "verbose_json", "srt", "vtt"]
+      },
+      "External_shared_speech_overrides_schema_json_max_segment_ms": {
+        "type": "integer",
+        "minimum": 1000,
+        "maximum": 30000
+      },
+      "External_shared_speech_overrides_schema_json_turn_detection": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_VadMode"
+          },
+          "silence_duration_ms": {
+            "type": "integer",
+            "minimum": 200,
+            "maximum": 3000
+          }
+        }
+      },
+      "External_shared_speech_overrides_schema_json_finalization": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_FinalizationMode"
+      },
+      "External_shared_speech_overrides_schema_json_preview_interval_ms": {
+        "type": "integer",
+        "minimum": 100,
+        "maximum": 5000
+      },
+      "External_shared_speech_overrides_schema_json_rollback_tokens": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 32
+      },
+      "External_shared_speech_overrides_schema_json_final_deadline_ms": {
+        "type": "integer",
+        "minimum": 100,
+        "maximum": 10000
+      },
+      "External_shared_speech_overrides_schema_json_auxiliary_deadline_ms": {
+        "type": "integer",
+        "minimum": 100,
+        "maximum": 10000
+      },
+      "External_shared_speech_overrides_schema_json_alignment": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AuxiliaryMode"
+      },
+      "External_shared_speech_overrides_schema_json_diarization": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AuxiliaryMode"
+      },
+      "External_shared_speech_overrides_schema_json_vocabulary_set_revision": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "External_shared_speech_overrides_schema_json_text_commit_mode": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_TextCommitMode"
+      },
+      "External_shared_speech_overrides_schema_json_audio_delivery": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AudioDeliveryMode"
+      },
+      "External_shared_speech_overrides_schema_json_pronunciation_revision": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "External_shared_speech_overrides_schema_json_planner": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "max_chars": {
+            "type": "integer",
+            "minimum": 40,
+            "maximum": 400
+          },
+          "max_wait_ms": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 3000
+          }
+        }
+      },
+      "External_shared_receipts_schema_json_ReceiptFactPath": {
+        "type": "string",
+        "enum": [
+          "requested.language",
+          "requested.seed",
+          "requested.speed",
+          "requested.sample_rate_hz",
+          "requested.response_format",
+          "requested.max_segment_ms",
+          "requested.model_binding",
+          "requested.profile",
+          "requested.voice",
+          "requested.pronunciation",
+          "requested.turn_detection",
+          "requested.finalization",
+          "requested.preview_interval_ms",
+          "requested.rollback_tokens",
+          "requested.final_deadline_ms",
+          "requested.auxiliary_deadline_ms",
+          "requested.alignment",
+          "requested.diarization",
+          "requested.vocabulary_set_revision",
+          "requested.text_commit_mode",
+          "requested.audio_delivery",
+          "requested.pronunciation_revision",
+          "requested.planner",
+          "requested.instructions_present",
+          "requested.prompt_present",
+          "requested.policy",
+          "requested.vocabulary",
+          "effective.language",
+          "effective.seed",
+          "effective.speed",
+          "effective.sample_rate_hz",
+          "effective.response_format",
+          "effective.max_segment_ms",
+          "effective.model_binding",
+          "effective.profile",
+          "effective.voice",
+          "effective.pronunciation",
+          "effective.turn_detection",
+          "effective.finalization",
+          "effective.preview_interval_ms",
+          "effective.rollback_tokens",
+          "effective.final_deadline_ms",
+          "effective.auxiliary_deadline_ms",
+          "effective.alignment",
+          "effective.diarization",
+          "effective.vocabulary_set_revision",
+          "effective.text_commit_mode",
+          "effective.audio_delivery",
+          "effective.pronunciation_revision",
+          "effective.planner",
+          "effective.instructions_present",
+          "effective.prompt_present",
+          "effective.policy",
+          "effective.vocabulary",
+          "observed.language",
+          "observed.seed",
+          "observed.speed",
+          "observed.sample_rate_hz",
+          "observed.response_format",
+          "observed.max_segment_ms",
+          "observed.model_binding",
+          "observed.profile",
+          "observed.voice",
+          "observed.pronunciation",
+          "observed.turn_detection",
+          "observed.finalization",
+          "observed.preview_interval_ms",
+          "observed.rollback_tokens",
+          "observed.final_deadline_ms",
+          "observed.auxiliary_deadline_ms",
+          "observed.alignment",
+          "observed.diarization",
+          "observed.vocabulary_set_revision",
+          "observed.text_commit_mode",
+          "observed.audio_delivery",
+          "observed.pronunciation_revision",
+          "observed.planner",
+          "observed.instructions_present",
+          "observed.prompt_present",
+          "observed.policy",
+          "observed.vocabulary",
+          "requested.planner.max_chars",
+          "requested.planner.max_wait_ms",
+          "requested.turn_detection.mode",
+          "requested.turn_detection.silence_duration_ms",
+          "effective.planner.max_chars",
+          "effective.planner.max_wait_ms",
+          "effective.turn_detection.mode",
+          "effective.turn_detection.silence_duration_ms",
+          "observed.planner.max_chars",
+          "observed.planner.max_wait_ms",
+          "observed.turn_detection.mode",
+          "observed.turn_detection.silence_duration_ms"
+        ]
+      },
+      "VoiceCloneCreateRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["model", "input"],
+        "properties": {
+          "workspace_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "client_reference": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "input": {
+            "$ref": "#/components/schemas/VoiceCloneInput"
+          },
+          "constraints": {
+            "$ref": "#/components/schemas/JobConstraints"
+          }
+        }
+      },
+      "VoiceCloneInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reference_audio_asset_id", "source_use_confirmed"],
+        "properties": {
+          "reference_audio_asset_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "reference_text": {
+            "type": ["string", "null"],
+            "maxLength": 10000
+          },
+          "preview_text": {
+            "type": ["string", "null"],
+            "maxLength": 2000
+          },
+          "language": {
+            "type": "string",
+            "maxLength": 35
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "source_use_confirmed": {
+            "type": "boolean",
+            "const": true
+          }
+        }
+      },
+      "VoiceDraftView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["object", "draft", "revision"],
+        "properties": {
+          "object": {
+            "const": "nexus.voice_draft_view"
+          },
+          "draft": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_VoiceDraft"
+          },
+          "revision": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/External_voice_resource_schema_json_VoiceDraftRevision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "External_voice_resource_schema_json_VoiceDraftRevision": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "resource_type",
+          "draft_id",
+          "revision",
+          "object",
+          "kind",
+          "status",
+          "input",
+          "model_binding",
+          "created_at"
+        ],
+        "properties": {
+          "resource_type": {
+            "const": "voice_draft_revision"
+          },
+          "draft_id": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_Identifier"
+          },
+          "revision": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_Revision"
+          },
+          "object": {
+            "const": "nexus.voice_draft_revision"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_VoiceKind"
+          },
+          "status": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_VoiceDraftStatus"
+          },
+          "input": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_VoiceInput"
+          },
+          "model_binding": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_BindingReference"
+          },
+          "generation_job_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/External_voice_resource_schema_json_Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "preview_artifact_ids": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/External_voice_resource_schema_json_Identifier"
+            }
+          },
+          "validation_job_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/External_voice_resource_schema_json_Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "published_voice_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/External_voice_resource_schema_json_Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "published_voice_revision": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/External_voice_resource_schema_json_Revision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "failure": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/External_voice_resource_schema_json_FailureDetail"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "design"
+                }
+              },
+              "required": ["kind"]
+            },
+            "then": {
+              "properties": {
+                "input": {
+                  "properties": {
+                    "kind": {
+                      "const": "design"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "clone"
+                }
+              },
+              "required": ["kind"]
+            },
+            "then": {
+              "properties": {
+                "input": {
+                  "properties": {
+                    "kind": {
+                      "const": "clone"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "failed"
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "required": ["failure"],
+              "properties": {
+                "failure": {
+                  "not": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "not": {
+                    "const": "failed"
+                  }
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "properties": {
+                "failure": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "generating"
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "required": ["generation_job_id"],
+              "properties": {
+                "generation_job_id": {
+                  "not": {
+                    "type": "null"
+                  }
+                },
+                "preview_artifact_ids": {
+                  "maxItems": 0
+                },
+                "validation_job_id": {
+                  "type": "null"
+                },
+                "published_voice_id": {
+                  "type": "null"
+                },
+                "published_voice_revision": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "candidate"
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "required": ["generation_job_id"],
+              "properties": {
+                "generation_job_id": {
+                  "not": {
+                    "type": "null"
+                  }
+                },
+                "preview_artifact_ids": {
+                  "minItems": 1
+                },
+                "validation_job_id": {
+                  "type": "null"
+                },
+                "published_voice_id": {
+                  "type": "null"
+                },
+                "published_voice_revision": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "enum": ["validating", "validated", "published"]
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "required": ["generation_job_id", "validation_job_id"],
+              "properties": {
+                "generation_job_id": {
+                  "not": {
+                    "type": "null"
+                  }
+                },
+                "validation_job_id": {
+                  "not": {
+                    "type": "null"
+                  }
+                },
+                "preview_artifact_ids": {
+                  "minItems": 1
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "not": {
+                    "const": "published"
+                  }
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "properties": {
+                "published_voice_id": {
+                  "type": "null"
+                },
+                "published_voice_revision": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "published"
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "required": ["published_voice_id", "published_voice_revision"],
+              "properties": {
+                "published_voice_id": {
+                  "not": {
+                    "type": "null"
+                  }
+                },
+                "published_voice_revision": {
+                  "not": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "preview_only"
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "required": ["generation_job_id"],
+              "properties": {
+                "generation_job_id": {
+                  "not": {
+                    "type": "null"
+                  }
+                },
+                "preview_artifact_ids": {
+                  "minItems": 1
+                },
+                "validation_job_id": {
+                  "type": "null"
+                },
+                "published_voice_id": {
+                  "type": "null"
+                },
+                "published_voice_revision": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "External_voice_resource_schema_json_VoiceInput": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_DesignInput"
+          },
+          {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_CloneInput"
+          }
+        ]
+      },
+      "External_voice_resource_schema_json_DesignInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "description", "preview_text"],
+        "properties": {
+          "kind": {
+            "const": "design"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "preview_text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "language": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_LanguageTag"
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "External_voice_resource_schema_json_LanguageTag": {
+        "$ref": "#/components/schemas/External_shared_language_schema_json_LanguageTag"
+      },
+      "External_voice_resource_schema_json_CloneInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "reference_audio_asset_id", "source_use_confirmed"],
+        "properties": {
+          "kind": {
+            "const": "clone"
+          },
+          "reference_audio_asset_id": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_Identifier"
+          },
+          "reference_text": {
+            "type": ["string", "null"],
+            "maxLength": 10000
+          },
+          "preview_text": {
+            "type": ["string", "null"],
+            "maxLength": 2000
+          },
+          "language": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_LanguageTag"
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "source_use_confirmed": {
+            "const": true,
+            "description": "Records the caller's explicit use confirmation for this submission. It is not identity verification, independent authorization, or dual review."
+          }
+        }
+      },
+      "External_voice_resource_schema_json_FailureDetail": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{2,63}$"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "retryable": {
+            "type": "boolean"
+          }
+        }
+      },
+      "VoiceDraftPatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["expected_metadata_revision", "display_name"],
+        "properties": {
+          "expected_metadata_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      }
+    },
+    "headers": {
+      "XRequestId": {
+        "description": "Validated client request ID or a server-generated correlation ID.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "RetryAfter": {
+        "description": "Seconds to wait before retrying a capacity or cancellation coordination request.",
+        "schema": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Malformed request, invalid JSON, invalid audio, or unknown field.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Shared service credential required or invalid.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Origin/Host policy rejected the request or the feature is disabled.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "MethodNotAllowed": {
+        "description": "The registered path does not accept this HTTP method. `Allow` lists every\nmethod registered on that path template, including placeholder methods.\nThe Job paths keep their own `job_method_not_allowed` code.\n",
+        "headers": {
+          "Allow": {
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Configuration changed, idempotency conflict, operation in progress, or cleanup pending.\noperation_in_progress requires error.nexus.operation_id for querying the original\nexecution. response_not_replayable additionally requires error.nexus.receipt and\nnever starts another execution. Query GET /v1/nexus/operations/{operation_id}.\n",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "UnprocessableEntity": {
+        "description": "Unsupported parameter, incompatible profile, or async_required.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "Quota or queue limit exceeded; follow Retry-After.",
+        "headers": {
+          "Retry-After": {
+            "$ref": "#/components/headers/RetryAfter"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "VoiceDraftContractViolation": {
+        "description": "The deployment produced a voice draft response that violates this\ncontract. The operation is implemented and the storage is reachable, so\nthis is an implementation defect rather than an outage: it is not\nretryable and repeating the request cannot succeed until it is fixed.\nThe reply still uses the public error envelope.\n",
+        "headers": {
+          "Cache-Control": {
+            "required": true,
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            }
+          },
+          "X-Should-Retry": {
+            "required": true,
+            "schema": {
+              "type": "string",
+              "const": "false"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "const": "voice_draft_contract_violation"
+                        },
+                        "type": {
+                          "const": "api_error"
+                        },
+                        "retryable": {
+                          "const": false
+                        },
+                        "nexus": false
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found or not visible to the requested workspace.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "SharedServiceKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Optional deployment-wide shared credential. It grants access to the\nshared deployment, not a user identity. When disabled, any Authorization\nheader value is accepted for SDK compatibility and is not interpreted as\na user.\n"
+      }
+    }
+  }
+}

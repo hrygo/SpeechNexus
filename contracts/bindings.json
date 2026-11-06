@@ -318,6 +318,22 @@
       ],
       "operations": ["listVoices", "getVoiceRevision"]
     },
+    "voice_drafts": {
+      "source": "speech-openapi.yaml",
+      "validate": true,
+      "typescript_source": "speech",
+      "paths": [
+        "/v1/nexus/voice-designs",
+        "/v1/nexus/voice-clones",
+        "/v1/nexus/voice-drafts/{draft_id}"
+      ],
+      "operations": [
+        "createVoiceDesign",
+        "createVoiceClone",
+        "getVoiceDraft",
+        "updateVoiceDraftMetadata"
+      ]
+    },
     "voice_retirement": {
       "source": "speech-openapi.yaml",
       "validate": true,

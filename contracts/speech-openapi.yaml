@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus public speech API
-  version: 0.1.0.dev8
+  version: 0.1.0.dev9
   description: |
     SpeechNexus public speech protocol.
 
@@ -1489,6 +1489,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "409":
@@ -1497,8 +1499,41 @@ paths:
           $ref: "#/components/responses/UnprocessableEntity"
         "429":
           $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/VoiceDraftContractViolation"
         "503":
-          $ref: "#/components/responses/OperationNotImplemented"
+          description: >-
+            The deployment has no voice draft storage or the stored result is
+            unknown. The operation is implemented; this 503 is a retryable
+            outage, not a permanently unimplemented operation.
+          headers:
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+                const: "no-store"
+            X-Should-Retry:
+              required: true
+              schema:
+                type: string
+                const: "true"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ErrorResponse"
+                  - properties:
+                      error:
+                        properties:
+                          code:
+                            enum:
+                              - voice_draft_unavailable
+                              - voice_draft_outcome_unknown
+                          type:
+                            const: service_unavailable_error
+                          retryable:
+                            const: true
+                          nexus: false
   /v1/nexus/voice-clones:
     post:
       tags: [voice-creation]
@@ -1527,6 +1562,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "409":
@@ -1535,13 +1572,51 @@ paths:
           $ref: "#/components/responses/UnprocessableEntity"
         "429":
           $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/VoiceDraftContractViolation"
         "503":
-          $ref: "#/components/responses/OperationNotImplemented"
+          description: >-
+            The deployment has no voice draft storage or the stored result is
+            unknown. The operation is implemented; this 503 is a retryable
+            outage, not a permanently unimplemented operation.
+          headers:
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+                const: "no-store"
+            X-Should-Retry:
+              required: true
+              schema:
+                type: string
+                const: "true"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ErrorResponse"
+                  - properties:
+                      error:
+                        properties:
+                          code:
+                            enum:
+                              - voice_draft_unavailable
+                              - voice_draft_outcome_unknown
+                          type:
+                            const: service_unavailable_error
+                          retryable:
+                            const: true
+                          nexus: false
   /v1/nexus/voice-drafts/{draft_id}:
     get:
       tags: [voice-creation]
       operationId: getVoiceDraft
       summary: Get a voice draft and optional revision
+      description: |
+        Returns the draft head and its current revision. The optional
+        draft_revision query selects an exact revision: a value that is not the
+        stored head is answered with 404 instead of silently returning a
+        different revision.
       parameters:
         - $ref: "#/components/parameters/DraftIdPath"
         - name: draft_revision
@@ -1559,14 +1634,51 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VoiceDraftView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/VoiceDraftContractViolation"
         "503":
-          $ref: "#/components/responses/OperationNotImplemented"
+          description: >-
+            The deployment has no voice draft storage or the stored result is
+            unknown. The operation is implemented; this 503 is a retryable
+            outage, not a permanently unimplemented operation.
+          headers:
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+                const: "no-store"
+            X-Should-Retry:
+              required: true
+              schema:
+                type: string
+                const: "true"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ErrorResponse"
+                  - properties:
+                      error:
+                        properties:
+                          code:
+                            enum:
+                              - voice_draft_unavailable
+                              - voice_draft_outcome_unknown
+                          type:
+                            const: service_unavailable_error
+                          retryable:
+                            const: true
+                          nexus: false
     patch:
       tags: [voice-creation]
       operationId: updateVoiceDraftMetadata
@@ -1601,14 +1713,49 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/VoiceDraftContractViolation"
         "503":
-          $ref: "#/components/responses/OperationNotImplemented"
+          description: >-
+            The deployment has no voice draft storage or the stored result is
+            unknown. The operation is implemented; this 503 is a retryable
+            outage, not a permanently unimplemented operation.
+          headers:
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+                const: "no-store"
+            X-Should-Retry:
+              required: true
+              schema:
+                type: string
+                const: "true"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ErrorResponse"
+                  - properties:
+                      error:
+                        properties:
+                          code:
+                            enum:
+                              - voice_draft_unavailable
+                              - voice_draft_outcome_unknown
+                          type:
+                            const: service_unavailable_error
+                          retryable:
+                            const: true
+                          nexus: false
   /v1/nexus/voice-drafts/{draft_id}/generations:
     post:
       tags: [voice-creation]
@@ -2332,6 +2479,39 @@ components:
                         const: operation_not_implemented
                       type:
                         const: service_unavailable_error
+                      retryable:
+                        const: false
+                      nexus: false
+    VoiceDraftContractViolation:
+      description: |
+        The deployment produced a voice draft response that violates this
+        contract. The operation is implemented and the storage is reachable, so
+        this is an implementation defect rather than an outage: it is not
+        retryable and repeating the request cannot succeed until it is fixed.
+        The reply still uses the public error envelope.
+      headers:
+        Cache-Control:
+          required: true
+          schema:
+            type: string
+            const: "no-store"
+        X-Should-Retry:
+          required: true
+          schema:
+            type: string
+            const: "false"
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/ErrorResponse"
+              - properties:
+                  error:
+                    properties:
+                      code:
+                        const: voice_draft_contract_violation
+                      type:
+                        const: api_error
                       retryable:
                         const: false
                       nexus: false

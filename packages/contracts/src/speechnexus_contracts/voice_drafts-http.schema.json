@@ -1,0 +1,3819 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "x-nexus-http-operations": {
+    "createVoiceDesign": {
+      "path": "/v1/nexus/voice-designs",
+      "method": "post",
+      "request": "HttpRequest_createVoiceDesign",
+      "parameters": {
+        "path": {},
+        "query": {},
+        "headers": {
+          "x-request-id": "string",
+          "idempotency-key": "string"
+        }
+      },
+      "responses": {
+        "202": {
+          "schema": "HttpResponse_createVoiceDesign_202",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_createVoiceDesign_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_createVoiceDesign_401",
+          "headers": {},
+          "json": true
+        },
+        "403": {
+          "schema": "HttpResponse_createVoiceDesign_403",
+          "headers": {},
+          "json": true
+        },
+        "405": {
+          "schema": "HttpResponse_createVoiceDesign_405",
+          "headers": {
+            "allow": "string"
+          },
+          "json": true
+        },
+        "409": {
+          "schema": "HttpResponse_createVoiceDesign_409",
+          "headers": {},
+          "json": true
+        },
+        "422": {
+          "schema": "HttpResponse_createVoiceDesign_422",
+          "headers": {},
+          "json": true
+        },
+        "429": {
+          "schema": "HttpResponse_createVoiceDesign_429",
+          "headers": {
+            "retry-after": "integer"
+          },
+          "json": true
+        },
+        "500": {
+          "schema": "HttpResponse_createVoiceDesign_500",
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_createVoiceDesign_503",
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
+          "json": true
+        }
+      }
+    },
+    "createVoiceClone": {
+      "path": "/v1/nexus/voice-clones",
+      "method": "post",
+      "request": "HttpRequest_createVoiceClone",
+      "parameters": {
+        "path": {},
+        "query": {},
+        "headers": {
+          "x-request-id": "string",
+          "idempotency-key": "string"
+        }
+      },
+      "responses": {
+        "202": {
+          "schema": "HttpResponse_createVoiceClone_202",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_createVoiceClone_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_createVoiceClone_401",
+          "headers": {},
+          "json": true
+        },
+        "403": {
+          "schema": "HttpResponse_createVoiceClone_403",
+          "headers": {},
+          "json": true
+        },
+        "405": {
+          "schema": "HttpResponse_createVoiceClone_405",
+          "headers": {
+            "allow": "string"
+          },
+          "json": true
+        },
+        "409": {
+          "schema": "HttpResponse_createVoiceClone_409",
+          "headers": {},
+          "json": true
+        },
+        "422": {
+          "schema": "HttpResponse_createVoiceClone_422",
+          "headers": {},
+          "json": true
+        },
+        "429": {
+          "schema": "HttpResponse_createVoiceClone_429",
+          "headers": {
+            "retry-after": "integer"
+          },
+          "json": true
+        },
+        "500": {
+          "schema": "HttpResponse_createVoiceClone_500",
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_createVoiceClone_503",
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
+          "json": true
+        }
+      }
+    },
+    "getVoiceDraft": {
+      "path": "/v1/nexus/voice-drafts/{draft_id}",
+      "method": "get",
+      "request": "HttpRequest_getVoiceDraft",
+      "parameters": {
+        "path": {
+          "draft_id": "string"
+        },
+        "query": {
+          "draft_revision": "string"
+        },
+        "headers": {}
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_getVoiceDraft_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_getVoiceDraft_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_getVoiceDraft_401",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_getVoiceDraft_404",
+          "headers": {},
+          "json": true
+        },
+        "403": {
+          "schema": "HttpResponse_getVoiceDraft_403",
+          "headers": {},
+          "json": true
+        },
+        "405": {
+          "schema": "HttpResponse_getVoiceDraft_405",
+          "headers": {
+            "allow": "string"
+          },
+          "json": true
+        },
+        "500": {
+          "schema": "HttpResponse_getVoiceDraft_500",
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_getVoiceDraft_503",
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
+          "json": true
+        }
+      }
+    },
+    "updateVoiceDraftMetadata": {
+      "path": "/v1/nexus/voice-drafts/{draft_id}",
+      "method": "patch",
+      "request": "HttpRequest_updateVoiceDraftMetadata",
+      "parameters": {
+        "path": {
+          "draft_id": "string"
+        },
+        "query": {},
+        "headers": {
+          "x-request-id": "string",
+          "idempotency-key": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_updateVoiceDraftMetadata_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_updateVoiceDraftMetadata_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_updateVoiceDraftMetadata_401",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_updateVoiceDraftMetadata_404",
+          "headers": {},
+          "json": true
+        },
+        "403": {
+          "schema": "HttpResponse_updateVoiceDraftMetadata_403",
+          "headers": {},
+          "json": true
+        },
+        "405": {
+          "schema": "HttpResponse_updateVoiceDraftMetadata_405",
+          "headers": {
+            "allow": "string"
+          },
+          "json": true
+        },
+        "409": {
+          "schema": "HttpResponse_updateVoiceDraftMetadata_409",
+          "headers": {},
+          "json": true
+        },
+        "422": {
+          "schema": "HttpResponse_updateVoiceDraftMetadata_422",
+          "headers": {},
+          "json": true
+        },
+        "500": {
+          "schema": "HttpResponse_updateVoiceDraftMetadata_500",
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_updateVoiceDraftMetadata_503",
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
+          "json": true
+        }
+      }
+    }
+  },
+  "x-nexus-entrypoints": [
+    "HttpRequest_createVoiceDesign",
+    "HttpResponse_createVoiceDesign_202",
+    "HttpResponse_createVoiceDesign_400",
+    "HttpResponse_createVoiceDesign_401",
+    "HttpResponse_createVoiceDesign_403",
+    "HttpResponse_createVoiceDesign_405",
+    "HttpResponse_createVoiceDesign_409",
+    "HttpResponse_createVoiceDesign_422",
+    "HttpResponse_createVoiceDesign_429",
+    "HttpResponse_createVoiceDesign_500",
+    "HttpResponse_createVoiceDesign_503",
+    "HttpRequest_createVoiceClone",
+    "HttpResponse_createVoiceClone_202",
+    "HttpResponse_createVoiceClone_400",
+    "HttpResponse_createVoiceClone_401",
+    "HttpResponse_createVoiceClone_403",
+    "HttpResponse_createVoiceClone_405",
+    "HttpResponse_createVoiceClone_409",
+    "HttpResponse_createVoiceClone_422",
+    "HttpResponse_createVoiceClone_429",
+    "HttpResponse_createVoiceClone_500",
+    "HttpResponse_createVoiceClone_503",
+    "HttpRequest_getVoiceDraft",
+    "HttpResponse_getVoiceDraft_200",
+    "HttpResponse_getVoiceDraft_400",
+    "HttpResponse_getVoiceDraft_401",
+    "HttpResponse_getVoiceDraft_404",
+    "HttpResponse_getVoiceDraft_403",
+    "HttpResponse_getVoiceDraft_405",
+    "HttpResponse_getVoiceDraft_500",
+    "HttpResponse_getVoiceDraft_503",
+    "HttpRequest_updateVoiceDraftMetadata",
+    "HttpResponse_updateVoiceDraftMetadata_200",
+    "HttpResponse_updateVoiceDraftMetadata_400",
+    "HttpResponse_updateVoiceDraftMetadata_401",
+    "HttpResponse_updateVoiceDraftMetadata_404",
+    "HttpResponse_updateVoiceDraftMetadata_403",
+    "HttpResponse_updateVoiceDraftMetadata_405",
+    "HttpResponse_updateVoiceDraftMetadata_409",
+    "HttpResponse_updateVoiceDraftMetadata_422",
+    "HttpResponse_updateVoiceDraftMetadata_500",
+    "HttpResponse_updateVoiceDraftMetadata_503"
+  ],
+  "$defs": {
+    "VoiceDesignCreateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "input"],
+      "properties": {
+        "workspace_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "client_reference": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "input": {
+          "$ref": "#/$defs/VoiceDesignInput"
+        },
+        "constraints": {
+          "$ref": "#/$defs/JobConstraints"
+        }
+      }
+    },
+    "Identifier": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+    },
+    "External_shared_identifiers_schema_json_Identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$",
+      "minLength": 3,
+      "maxLength": 128,
+      "description": "Opaque stable resource identifier. Prefixes are descriptive, not authorization claims."
+    },
+    "VoiceDesignInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description", "preview_text"],
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "preview_text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "language": {
+          "type": "string",
+          "maxLength": 35
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "JobConstraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_queue_wait_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400000
+        },
+        "allow_degradation": {
+          "type": "boolean",
+          "default": false
+        },
+        "require_exact_parameters": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "VoiceCreationAccepted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object", "draft", "job"],
+      "properties": {
+        "object": {
+          "const": "nexus.voice_creation"
+        },
+        "draft": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_VoiceDraft"
+        },
+        "job": {
+          "$ref": "#/$defs/Job"
+        }
+      }
+    },
+    "External_voice_resource_schema_json_VoiceDraft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_type",
+        "id",
+        "object",
+        "kind",
+        "status",
+        "head_revision",
+        "metadata_revision",
+        "display_name",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "resource_type": {
+          "const": "voice_draft"
+        },
+        "id": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_Identifier"
+        },
+        "object": {
+          "const": "nexus.voice_draft"
+        },
+        "kind": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_VoiceKind"
+        },
+        "status": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_VoiceDraftStatus"
+        },
+        "head_revision": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_Revision"
+        },
+        "metadata_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "current_voice_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_voice_resource_schema_json_Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "External_voice_resource_schema_json_Identifier": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+    },
+    "External_voice_resource_schema_json_VoiceKind": {
+      "type": "string",
+      "enum": ["design", "clone"]
+    },
+    "External_voice_resource_schema_json_VoiceDraftStatus": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "generating",
+        "candidate",
+        "validating",
+        "validated",
+        "published",
+        "failed",
+        "preview_only"
+      ]
+    },
+    "External_voice_resource_schema_json_Revision": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+    },
+    "External_shared_identifiers_schema_json_Revision": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,18}$",
+      "maxLength": 19,
+      "description": "Monotonic decimal revision represented as a string."
+    },
+    "Job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "object",
+        "kind",
+        "status",
+        "cleanup_state",
+        "request_id",
+        "workspace_id",
+        "execution_revision",
+        "progress",
+        "artifacts",
+        "result",
+        "operations",
+        "effective_configuration",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.job"
+        },
+        "kind": {
+          "$ref": "#/$defs/JobKind"
+        },
+        "status": {
+          "$ref": "#/$defs/JobStatus"
+        },
+        "cleanup_state": {
+          "$ref": "#/$defs/CleanupState"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "workspace_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "client_reference": {
+          "type": ["string", "null"],
+          "maxLength": 256
+        },
+        "profile": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "execution_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "progress": {
+          "$ref": "#/$defs/JobProgress"
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JobArtifact"
+          }
+        },
+        "result": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/JobResult"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OperationReference"
+          }
+        },
+        "effective_configuration": {
+          "$ref": "#/$defs/EffectiveConfiguration"
+        },
+        "error": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/JobError"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["error"],
+            "properties": {
+              "error": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": ["succeeded", "cancelled"]
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "succeeded"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["result"],
+            "properties": {
+              "result": {
+                "not": {
+                  "type": "null"
+                }
+              },
+              "artifacts": {
+                "minItems": 1
+              },
+              "cleanup_state": {
+                "enum": ["not_required", "complete"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "not": {
+                  "const": "succeeded"
+                }
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "result": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {
+                "properties": {
+                  "status": {
+                    "const": "succeeded"
+                  }
+                },
+                "required": ["status"]
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "asr"
+                  }
+                },
+                "required": ["kind"]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "artifacts": {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "transcript"
+                    }
+                  },
+                  "required": ["kind"]
+                }
+              },
+              "result": {
+                "properties": {
+                  "kind": {
+                    "const": "asr"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {
+                "properties": {
+                  "status": {
+                    "const": "succeeded"
+                  }
+                },
+                "required": ["status"]
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "tts"
+                  }
+                },
+                "required": ["kind"]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "artifacts": {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "audio"
+                    }
+                  },
+                  "required": ["kind"]
+                }
+              },
+              "result": {
+                "properties": {
+                  "kind": {
+                    "const": "tts"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {
+                "properties": {
+                  "status": {
+                    "const": "succeeded"
+                  }
+                },
+                "required": ["status"]
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "voice_design"
+                  }
+                },
+                "required": ["kind"]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "artifacts": {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "preview"
+                    }
+                  },
+                  "required": ["kind"]
+                }
+              },
+              "result": {
+                "properties": {
+                  "kind": {
+                    "const": "voice_design"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {
+                "properties": {
+                  "status": {
+                    "const": "succeeded"
+                  }
+                },
+                "required": ["status"]
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "voice_clone"
+                  }
+                },
+                "required": ["kind"]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "artifacts": {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "preview"
+                    }
+                  },
+                  "required": ["kind"]
+                }
+              },
+              "result": {
+                "properties": {
+                  "kind": {
+                    "const": "voice_clone"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {
+                "properties": {
+                  "status": {
+                    "const": "succeeded"
+                  }
+                },
+                "required": ["status"]
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "voice_preview"
+                  }
+                },
+                "required": ["kind"]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "artifacts": {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "preview"
+                    }
+                  },
+                  "required": ["kind"]
+                }
+              },
+              "result": {
+                "properties": {
+                  "kind": {
+                    "const": "voice_preview"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {
+                "properties": {
+                  "status": {
+                    "const": "succeeded"
+                  }
+                },
+                "required": ["status"]
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "voice_validation"
+                  }
+                },
+                "required": ["kind"]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "artifacts": {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "validation_report"
+                    }
+                  },
+                  "required": ["kind"]
+                }
+              },
+              "result": {
+                "properties": {
+                  "kind": {
+                    "const": "voice_validation"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "cancelled"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "enum": ["not_required", "complete"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "expired"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "const": "not_required"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "JobKind": {
+      "type": "string",
+      "enum": ["asr", "tts", "voice_design", "voice_clone", "voice_preview", "voice_validation"]
+    },
+    "JobStatus": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "running",
+        "retry_wait",
+        "cancelling",
+        "succeeded",
+        "failed",
+        "cancelled",
+        "expired"
+      ]
+    },
+    "CleanupState": {
+      "$ref": "#/$defs/External_shared_operation_states_schema_json_CleanupState"
+    },
+    "External_shared_operation_states_schema_json_CleanupState": {
+      "type": "string",
+      "enum": ["not_required", "pending", "complete", "quarantined"]
+    },
+    "ResourceReference": {
+      "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+    },
+    "External_shared_references_schema_json_ResourceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        }
+      }
+    },
+    "Revision": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+    },
+    "JobProgress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit", "completed"],
+      "properties": {
+        "unit": {
+          "type": "string",
+          "enum": ["audio_ms", "text_codepoints", "items"]
+        },
+        "completed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        }
+      }
+    },
+    "JobArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "kind", "media_type", "bytes", "sha256"],
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "kind": {
+          "$ref": "#/$defs/ArtifactKind"
+        },
+        "media_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "receipt_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "For an artifact referenced by a succeeded Job result, this must be present and equal the result receipt_id."
+        },
+        "expires_at": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "ArtifactKind": {
+      "type": "string",
+      "enum": ["transcript", "audio", "preview", "validation_report", "export_manifest"]
+    },
+    "Sha256Digest": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+    },
+    "External_shared_identifiers_schema_json_Sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "JobResult": {
+      "description": "Structured successful outcome of a durable Job. `kind` must equal the\nowning Job kind. Artifact identifiers in the result must identify the\ncorresponding entries in `Job.artifacts` with the matching kind and\nresult receipt; the service validates that cross-array identity before\ncommitting `succeeded`.\n",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/AsrJobResult"
+        },
+        {
+          "$ref": "#/$defs/TtsJobResult"
+        },
+        {
+          "$ref": "#/$defs/VoiceDraftJobResult"
+        },
+        {
+          "$ref": "#/$defs/VoicePreviewJobResult"
+        },
+        {
+          "$ref": "#/$defs/VoiceValidationJobResult"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind",
+        "mapping": {
+          "asr": "#/components/schemas/AsrJobResult",
+          "tts": "#/components/schemas/TtsJobResult",
+          "voice_design": "#/components/schemas/VoiceDraftJobResult",
+          "voice_clone": "#/components/schemas/VoiceDraftJobResult",
+          "voice_preview": "#/components/schemas/VoicePreviewJobResult",
+          "voice_validation": "#/components/schemas/VoiceValidationJobResult"
+        }
+      }
+    },
+    "AsrJobResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "transcript_artifact_id", "receipt_id"],
+      "properties": {
+        "kind": {
+          "const": "asr"
+        },
+        "transcript_artifact_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "receipt_id": {
+          "$ref": "#/$defs/Identifier"
+        }
+      }
+    },
+    "TtsJobResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "audio_artifact_id", "receipt_id"],
+      "properties": {
+        "kind": {
+          "const": "tts"
+        },
+        "audio_artifact_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "receipt_id": {
+          "$ref": "#/$defs/Identifier"
+        }
+      }
+    },
+    "VoiceDraftJobResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "voice_draft_id",
+        "draft_revision",
+        "preview_artifact_ids",
+        "receipt_id"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["voice_design", "voice_clone"]
+        },
+        "voice_draft_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "draft_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "preview_artifact_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
+        },
+        "receipt_id": {
+          "$ref": "#/$defs/Identifier"
+        }
+      }
+    },
+    "VoicePreviewJobResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "voice_draft_id", "draft_revision", "preview_artifact_id", "receipt_id"],
+      "properties": {
+        "kind": {
+          "const": "voice_preview"
+        },
+        "voice_draft_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "draft_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "preview_artifact_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "receipt_id": {
+          "$ref": "#/$defs/Identifier"
+        }
+      }
+    },
+    "VoiceValidationJobResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "validation", "validation_report_artifact_id", "receipt_id"],
+      "properties": {
+        "kind": {
+          "const": "voice_validation"
+        },
+        "validation": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_VoiceValidation"
+        },
+        "validation_report_artifact_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "receipt_id": {
+          "$ref": "#/$defs/Identifier"
+        }
+      }
+    },
+    "External_voice_resource_schema_json_VoiceValidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_type",
+        "id",
+        "object",
+        "draft_id",
+        "draft_revision",
+        "validation_set_revision",
+        "model_binding",
+        "status",
+        "checks",
+        "publication_eligible",
+        "created_at"
+      ],
+      "properties": {
+        "resource_type": {
+          "const": "voice_validation"
+        },
+        "id": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_Identifier"
+        },
+        "object": {
+          "const": "nexus.voice_validation"
+        },
+        "draft_id": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_Identifier"
+        },
+        "draft_revision": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_Revision"
+        },
+        "validation_set_revision": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_Revision"
+        },
+        "model_binding": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_BindingReference"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "running", "passed", "failed"]
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/External_voice_resource_schema_json_CheckResult"
+          }
+        },
+        "publication_eligible": {
+          "type": "boolean",
+          "description": "True only when every required check passed and the candidate has a verified reusable path to later TTS. Preview-only candidates are never publication eligible."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "passed"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "checks": {
+                "minItems": 1,
+                "items": {
+                  "properties": {
+                    "status": {
+                      "enum": ["passed", "skipped"]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "checks": {
+                "contains": {
+                  "type": "object",
+                  "required": ["status"],
+                  "properties": {
+                    "status": {
+                      "const": "failed"
+                    }
+                  }
+                },
+                "minContains": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "publication_eligible": {
+                "const": true
+              }
+            },
+            "required": ["publication_eligible"]
+          },
+          "then": {
+            "properties": {
+              "status": {
+                "const": "passed"
+              },
+              "checks": {
+                "contains": {
+                  "type": "object",
+                  "required": ["required"],
+                  "properties": {
+                    "required": {
+                      "const": true
+                    }
+                  }
+                },
+                "minContains": 1,
+                "allOf": [
+                  {
+                    "contains": {
+                      "type": "object",
+                      "required": ["name", "required", "status"],
+                      "properties": {
+                        "name": {
+                          "const": "reusable_tts"
+                        },
+                        "required": {
+                          "const": true
+                        },
+                        "status": {
+                          "const": "passed"
+                        }
+                      }
+                    },
+                    "minContains": 1
+                  }
+                ],
+                "items": {
+                  "if": {
+                    "properties": {
+                      "required": {
+                        "const": true
+                      }
+                    },
+                    "required": ["required"]
+                  },
+                  "then": {
+                    "properties": {
+                      "status": {
+                        "const": "passed"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_voice_resource_schema_json_BindingReference": {
+      "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+    },
+    "External_voice_resource_schema_json_CheckResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "required", "status"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{1,63}$"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["passed", "failed", "skipped"]
+        },
+        "required": {
+          "type": "boolean",
+          "description": "A skipped or failed required check makes the candidate publication-ineligible."
+        },
+        "detail": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        }
+      }
+    },
+    "OperationReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation_id", "kind", "status"],
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "kind": {
+          "$ref": "#/$defs/OperationKind"
+        },
+        "status": {
+          "$ref": "#/$defs/OperationStatus"
+        },
+        "cleanup_state": {
+          "$ref": "#/$defs/CleanupState"
+        }
+      }
+    },
+    "OperationKind": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_OperationKind"
+    },
+    "External_shared_capability_domains_schema_json_OperationKind": {
+      "type": "string",
+      "enum": ["asr", "tts", "voice_preview", "voice_validation"]
+    },
+    "OperationStatus": {
+      "$ref": "#/$defs/External_shared_operation_states_schema_json_OperationStatus"
+    },
+    "External_shared_operation_states_schema_json_OperationStatus": {
+      "type": "string",
+      "enum": ["accepted", "running", "succeeded", "failed", "cancelled"]
+    },
+    "EffectiveConfiguration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["models", "policy_revision", "catalog_revision"],
+      "properties": {
+        "profile": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "models": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "asr": {
+              "$ref": "#/$defs/ResourceReference"
+            },
+            "tts": {
+              "$ref": "#/$defs/ResourceReference"
+            },
+            "voice": {
+              "$ref": "#/$defs/ResourceReference"
+            }
+          }
+        },
+        "voice": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pronunciation": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "asr": {
+              "$ref": "#/$defs/AsrOverrides"
+            },
+            "tts": {
+              "$ref": "#/$defs/TtsOverrides"
+            }
+          }
+        },
+        "policy_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "catalog_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "degradation": {
+          "type": "string",
+          "enum": ["none", "resource_tightened", "quality_reduced"],
+          "default": "none"
+        }
+      }
+    },
+    "AsrOverrides": {
+      "$ref": "#/$defs/External_shared_speech_overrides_schema_json_AsrOverrides"
+    },
+    "External_shared_speech_overrides_schema_json_AsrOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "type": "string",
+          "maxLength": 35
+        },
+        "turn_detection": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "$ref": "#/$defs/External_shared_capability_domains_schema_json_VadMode"
+            },
+            "silence_duration_ms": {
+              "type": "integer",
+              "minimum": 200,
+              "maximum": 3000
+            }
+          }
+        },
+        "finalization": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_FinalizationMode"
+        },
+        "preview_interval_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 5000
+        },
+        "max_segment_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 30000
+        },
+        "rollback_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32
+        },
+        "final_deadline_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 10000
+        },
+        "auxiliary_deadline_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 10000
+        },
+        "alignment": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+        },
+        "diarization": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+        },
+        "vocabulary_set_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "External_shared_capability_domains_schema_json_VadMode": {
+      "type": "string",
+      "enum": ["server_vad", "manual"]
+    },
+    "External_shared_capability_domains_schema_json_FinalizationMode": {
+      "type": "string",
+      "enum": ["full_segment", "streaming_finalize"]
+    },
+    "External_shared_capability_domains_schema_json_AuxiliaryMode": {
+      "type": "string",
+      "enum": ["off", "required", "best_effort"]
+    },
+    "TtsOverrides": {
+      "$ref": "#/$defs/External_shared_speech_overrides_schema_json_TtsOverrides"
+    },
+    "External_shared_speech_overrides_schema_json_TtsOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text_commit_mode": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_TextCommitMode"
+        },
+        "audio_delivery": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioDeliveryMode"
+        },
+        "language": {
+          "type": "string",
+          "maxLength": 35
+        },
+        "pronunciation_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "instructions": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        },
+        "speed": {
+          "type": "number",
+          "minimum": 0.25,
+          "maximum": 4.0
+        },
+        "seed": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "planner": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_chars": {
+              "type": "integer",
+              "minimum": 40,
+              "maximum": 400
+            },
+            "max_wait_ms": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 3000
+            }
+          }
+        }
+      }
+    },
+    "External_shared_capability_domains_schema_json_TextCommitMode": {
+      "type": "string",
+      "enum": ["explicit", "sentence"]
+    },
+    "External_shared_capability_domains_schema_json_AudioDeliveryMode": {
+      "type": "string",
+      "enum": ["complete", "chunked"]
+    },
+    "JobError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{2,63}$"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "param": {
+          "type": ["string", "null"],
+          "maxLength": 128
+        }
+      }
+    },
+    "ErrorResponse": {
+      "$ref": "#/$defs/External_shared_errors_schema_json_ErrorResponse"
+    },
+    "External_shared_errors_schema_json_ErrorResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error"],
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+        }
+      }
+    },
+    "External_shared_errors_schema_json_ErrorBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "type", "message", "param", "request_id", "retryable"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{2,63}$",
+          "description": "Stable machine-readable error code."
+        },
+        "type": {
+          "$ref": "#/$defs/External_shared_errors_schema_json_ErrorType"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "param": {
+          "type": ["string", "null"],
+          "maxLength": 128
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "retry_after_ms": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "nexus": {
+          "$ref": "#/$defs/External_shared_errors_schema_json_OperationRecovery"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "enum": ["operation_in_progress", "response_not_replayable"]
+              }
+            }
+          },
+          "then": {
+            "required": ["nexus"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "response_not_replayable"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "nexus": {
+                "required": ["receipt"]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_shared_errors_schema_json_ErrorType": {
+      "type": "string",
+      "enum": [
+        "invalid_request_error",
+        "authentication_error",
+        "permission_error",
+        "not_found_error",
+        "rate_limit_error",
+        "api_error",
+        "service_unavailable_error"
+      ]
+    },
+    "External_shared_errors_schema_json_OperationRecovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation_id"],
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "receipt": {
+          "$ref": "#/$defs/External_shared_receipts_schema_json_ExecutionReceipt"
+        }
+      },
+      "description": "Query GET /v1/nexus/operations/{operation_id}. This identity is the original execution; retrying never creates a second execution."
+    },
+    "External_shared_receipts_schema_json_ExecutionReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receipt_id", "requested", "effective", "observed", "missing", "unknown"],
+      "properties": {
+        "receipt_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "request_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "requested": {
+          "$ref": "#/$defs/External_shared_receipts_schema_json_PublicExecutionFacts"
+        },
+        "effective": {
+          "$ref": "#/$defs/External_shared_receipts_schema_json_PublicExecutionFacts"
+        },
+        "observed": {
+          "$ref": "#/$defs/External_shared_receipts_schema_json_PublicExecutionFacts"
+        },
+        "missing": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_shared_receipts_schema_json_ReceiptFactPath"
+          }
+        },
+        "unknown": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_shared_receipts_schema_json_ReceiptFactPath"
+          }
+        }
+      }
+    },
+    "External_shared_receipts_schema_json_PublicExecutionFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+        },
+        "seed": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_seed"
+        },
+        "speed": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_speed"
+        },
+        "sample_rate_hz": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 384000
+        },
+        "response_format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioFormat"
+            },
+            {
+              "$ref": "#/$defs/External_shared_capability_domains_schema_json_TranscriptFormat"
+            }
+          ]
+        },
+        "max_segment_ms": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_max_segment_ms"
+        },
+        "model_binding": {
+          "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+        },
+        "profile": {
+          "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+        },
+        "voice": {
+          "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+        },
+        "pronunciation": {
+          "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+        },
+        "turn_detection": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_turn_detection"
+        },
+        "finalization": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_finalization"
+        },
+        "preview_interval_ms": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_preview_interval_ms"
+        },
+        "rollback_tokens": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_rollback_tokens"
+        },
+        "final_deadline_ms": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_final_deadline_ms"
+        },
+        "auxiliary_deadline_ms": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_auxiliary_deadline_ms"
+        },
+        "alignment": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_alignment"
+        },
+        "diarization": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_diarization"
+        },
+        "vocabulary_set_revision": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_vocabulary_set_revision"
+        },
+        "text_commit_mode": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_text_commit_mode"
+        },
+        "audio_delivery": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_audio_delivery"
+        },
+        "pronunciation_revision": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_pronunciation_revision"
+        },
+        "planner": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_planner"
+        },
+        "instructions_present": {
+          "type": "boolean"
+        },
+        "prompt_present": {
+          "type": "boolean"
+        },
+        "policy": {
+          "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+        },
+        "vocabulary": {
+          "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+        }
+      },
+      "description": "Allowlisted public projection only. Omit content, prompt, instructions, vendor payloads and private runtime identities. Unknown facts go into stable missing/unknown paths, never arbitrary dictionaries."
+    },
+    "External_shared_language_schema_json_LanguageTag": {
+      "type": "string",
+      "pattern": "^(auto|[a-z]{2,3}(-[A-Za-z0-9]{2,8})*)$",
+      "maxLength": 35
+    },
+    "External_shared_speech_overrides_schema_json_seed": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "External_shared_speech_overrides_schema_json_speed": {
+      "type": "number",
+      "minimum": 0.25,
+      "maximum": 4.0
+    },
+    "External_shared_capability_domains_schema_json_AudioFormat": {
+      "type": "string",
+      "enum": ["mp3", "wav", "pcm"]
+    },
+    "External_shared_capability_domains_schema_json_TranscriptFormat": {
+      "type": "string",
+      "enum": ["json", "text", "verbose_json", "srt", "vtt"]
+    },
+    "External_shared_speech_overrides_schema_json_max_segment_ms": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 30000
+    },
+    "External_shared_speech_overrides_schema_json_turn_detection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_VadMode"
+        },
+        "silence_duration_ms": {
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 3000
+        }
+      }
+    },
+    "External_shared_speech_overrides_schema_json_finalization": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_FinalizationMode"
+    },
+    "External_shared_speech_overrides_schema_json_preview_interval_ms": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 5000
+    },
+    "External_shared_speech_overrides_schema_json_rollback_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 32
+    },
+    "External_shared_speech_overrides_schema_json_final_deadline_ms": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 10000
+    },
+    "External_shared_speech_overrides_schema_json_auxiliary_deadline_ms": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 10000
+    },
+    "External_shared_speech_overrides_schema_json_alignment": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+    },
+    "External_shared_speech_overrides_schema_json_diarization": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+    },
+    "External_shared_speech_overrides_schema_json_vocabulary_set_revision": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "External_shared_speech_overrides_schema_json_text_commit_mode": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_TextCommitMode"
+    },
+    "External_shared_speech_overrides_schema_json_audio_delivery": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioDeliveryMode"
+    },
+    "External_shared_speech_overrides_schema_json_pronunciation_revision": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "External_shared_speech_overrides_schema_json_planner": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_chars": {
+          "type": "integer",
+          "minimum": 40,
+          "maximum": 400
+        },
+        "max_wait_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3000
+        }
+      }
+    },
+    "External_shared_receipts_schema_json_ReceiptFactPath": {
+      "type": "string",
+      "enum": [
+        "requested.language",
+        "requested.seed",
+        "requested.speed",
+        "requested.sample_rate_hz",
+        "requested.response_format",
+        "requested.max_segment_ms",
+        "requested.model_binding",
+        "requested.profile",
+        "requested.voice",
+        "requested.pronunciation",
+        "requested.turn_detection",
+        "requested.finalization",
+        "requested.preview_interval_ms",
+        "requested.rollback_tokens",
+        "requested.final_deadline_ms",
+        "requested.auxiliary_deadline_ms",
+        "requested.alignment",
+        "requested.diarization",
+        "requested.vocabulary_set_revision",
+        "requested.text_commit_mode",
+        "requested.audio_delivery",
+        "requested.pronunciation_revision",
+        "requested.planner",
+        "requested.instructions_present",
+        "requested.prompt_present",
+        "requested.policy",
+        "requested.vocabulary",
+        "effective.language",
+        "effective.seed",
+        "effective.speed",
+        "effective.sample_rate_hz",
+        "effective.response_format",
+        "effective.max_segment_ms",
+        "effective.model_binding",
+        "effective.profile",
+        "effective.voice",
+        "effective.pronunciation",
+        "effective.turn_detection",
+        "effective.finalization",
+        "effective.preview_interval_ms",
+        "effective.rollback_tokens",
+        "effective.final_deadline_ms",
+        "effective.auxiliary_deadline_ms",
+        "effective.alignment",
+        "effective.diarization",
+        "effective.vocabulary_set_revision",
+        "effective.text_commit_mode",
+        "effective.audio_delivery",
+        "effective.pronunciation_revision",
+        "effective.planner",
+        "effective.instructions_present",
+        "effective.prompt_present",
+        "effective.policy",
+        "effective.vocabulary",
+        "observed.language",
+        "observed.seed",
+        "observed.speed",
+        "observed.sample_rate_hz",
+        "observed.response_format",
+        "observed.max_segment_ms",
+        "observed.model_binding",
+        "observed.profile",
+        "observed.voice",
+        "observed.pronunciation",
+        "observed.turn_detection",
+        "observed.finalization",
+        "observed.preview_interval_ms",
+        "observed.rollback_tokens",
+        "observed.final_deadline_ms",
+        "observed.auxiliary_deadline_ms",
+        "observed.alignment",
+        "observed.diarization",
+        "observed.vocabulary_set_revision",
+        "observed.text_commit_mode",
+        "observed.audio_delivery",
+        "observed.pronunciation_revision",
+        "observed.planner",
+        "observed.instructions_present",
+        "observed.prompt_present",
+        "observed.policy",
+        "observed.vocabulary",
+        "requested.planner.max_chars",
+        "requested.planner.max_wait_ms",
+        "requested.turn_detection.mode",
+        "requested.turn_detection.silence_duration_ms",
+        "effective.planner.max_chars",
+        "effective.planner.max_wait_ms",
+        "effective.turn_detection.mode",
+        "effective.turn_detection.silence_duration_ms",
+        "observed.planner.max_chars",
+        "observed.planner.max_wait_ms",
+        "observed.turn_detection.mode",
+        "observed.turn_detection.silence_duration_ms"
+      ]
+    },
+    "VoiceCloneCreateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "input"],
+      "properties": {
+        "workspace_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "client_reference": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "input": {
+          "$ref": "#/$defs/VoiceCloneInput"
+        },
+        "constraints": {
+          "$ref": "#/$defs/JobConstraints"
+        }
+      }
+    },
+    "VoiceCloneInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reference_audio_asset_id", "source_use_confirmed"],
+      "properties": {
+        "reference_audio_asset_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "reference_text": {
+          "type": ["string", "null"],
+          "maxLength": 10000
+        },
+        "preview_text": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        },
+        "language": {
+          "type": "string",
+          "maxLength": 35
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "source_use_confirmed": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "VoiceDraftView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object", "draft", "revision"],
+      "properties": {
+        "object": {
+          "const": "nexus.voice_draft_view"
+        },
+        "draft": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_VoiceDraft"
+        },
+        "revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_voice_resource_schema_json_VoiceDraftRevision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "External_voice_resource_schema_json_VoiceDraftRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_type",
+        "draft_id",
+        "revision",
+        "object",
+        "kind",
+        "status",
+        "input",
+        "model_binding",
+        "created_at"
+      ],
+      "properties": {
+        "resource_type": {
+          "const": "voice_draft_revision"
+        },
+        "draft_id": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_Identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_Revision"
+        },
+        "object": {
+          "const": "nexus.voice_draft_revision"
+        },
+        "kind": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_VoiceKind"
+        },
+        "status": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_VoiceDraftStatus"
+        },
+        "input": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_VoiceInput"
+        },
+        "model_binding": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_BindingReference"
+        },
+        "generation_job_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_voice_resource_schema_json_Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "preview_artifact_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_voice_resource_schema_json_Identifier"
+          }
+        },
+        "validation_job_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_voice_resource_schema_json_Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "published_voice_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_voice_resource_schema_json_Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "published_voice_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_voice_resource_schema_json_Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failure": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_voice_resource_schema_json_FailureDetail"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "design"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "input": {
+                "properties": {
+                  "kind": {
+                    "const": "design"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "clone"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "input": {
+                "properties": {
+                  "kind": {
+                    "const": "clone"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["failure"],
+            "properties": {
+              "failure": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "not": {
+                  "const": "failed"
+                }
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "failure": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "generating"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["generation_job_id"],
+            "properties": {
+              "generation_job_id": {
+                "not": {
+                  "type": "null"
+                }
+              },
+              "preview_artifact_ids": {
+                "maxItems": 0
+              },
+              "validation_job_id": {
+                "type": "null"
+              },
+              "published_voice_id": {
+                "type": "null"
+              },
+              "published_voice_revision": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "candidate"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["generation_job_id"],
+            "properties": {
+              "generation_job_id": {
+                "not": {
+                  "type": "null"
+                }
+              },
+              "preview_artifact_ids": {
+                "minItems": 1
+              },
+              "validation_job_id": {
+                "type": "null"
+              },
+              "published_voice_id": {
+                "type": "null"
+              },
+              "published_voice_revision": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": ["validating", "validated", "published"]
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["generation_job_id", "validation_job_id"],
+            "properties": {
+              "generation_job_id": {
+                "not": {
+                  "type": "null"
+                }
+              },
+              "validation_job_id": {
+                "not": {
+                  "type": "null"
+                }
+              },
+              "preview_artifact_ids": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "not": {
+                  "const": "published"
+                }
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "published_voice_id": {
+                "type": "null"
+              },
+              "published_voice_revision": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "published"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["published_voice_id", "published_voice_revision"],
+            "properties": {
+              "published_voice_id": {
+                "not": {
+                  "type": "null"
+                }
+              },
+              "published_voice_revision": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "preview_only"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["generation_job_id"],
+            "properties": {
+              "generation_job_id": {
+                "not": {
+                  "type": "null"
+                }
+              },
+              "preview_artifact_ids": {
+                "minItems": 1
+              },
+              "validation_job_id": {
+                "type": "null"
+              },
+              "published_voice_id": {
+                "type": "null"
+              },
+              "published_voice_revision": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_voice_resource_schema_json_VoiceInput": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/External_voice_resource_schema_json_DesignInput"
+        },
+        {
+          "$ref": "#/$defs/External_voice_resource_schema_json_CloneInput"
+        }
+      ]
+    },
+    "External_voice_resource_schema_json_DesignInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "description", "preview_text"],
+      "properties": {
+        "kind": {
+          "const": "design"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "preview_text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "language": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_LanguageTag"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "External_voice_resource_schema_json_LanguageTag": {
+      "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+    },
+    "External_voice_resource_schema_json_CloneInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "reference_audio_asset_id", "source_use_confirmed"],
+      "properties": {
+        "kind": {
+          "const": "clone"
+        },
+        "reference_audio_asset_id": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_Identifier"
+        },
+        "reference_text": {
+          "type": ["string", "null"],
+          "maxLength": 10000
+        },
+        "preview_text": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        },
+        "language": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_LanguageTag"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "source_use_confirmed": {
+          "const": true,
+          "description": "Records the caller's explicit use confirmation for this submission. It is not identity verification, independent authorization, or dual review."
+        }
+      }
+    },
+    "External_voice_resource_schema_json_FailureDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{2,63}$"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "VoiceDraftPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected_metadata_revision", "display_name"],
+      "properties": {
+        "expected_metadata_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "HttpRequest_createVoiceDesign": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "idempotency-key": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/VoiceDesignCreateRequest"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createVoiceDesign_202": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/VoiceCreationAccepted"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createVoiceDesign_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createVoiceDesign_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createVoiceDesign_403": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createVoiceDesign_405": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "string"
+            }
+          },
+          "required": ["allow"],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpResponse_createVoiceDesign_409": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createVoiceDesign_422": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createVoiceDesign_429": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createVoiceDesign_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "false"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
+          "additionalProperties": true
+        },
+        "body": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "voice_draft_contract_violation"
+                    },
+                    "type": {
+                      "const": "api_error"
+                    },
+                    "retryable": {
+                      "const": false
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpResponse_createVoiceDesign_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "true"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
+          "additionalProperties": true
+        },
+        "body": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "enum": ["voice_draft_unavailable", "voice_draft_outcome_unknown"]
+                    },
+                    "type": {
+                      "const": "service_unavailable_error"
+                    },
+                    "retryable": {
+                      "const": true
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpRequest_createVoiceClone": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "idempotency-key": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/VoiceCloneCreateRequest"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createVoiceClone_202": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/VoiceCreationAccepted"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createVoiceClone_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createVoiceClone_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createVoiceClone_403": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createVoiceClone_405": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "string"
+            }
+          },
+          "required": ["allow"],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpResponse_createVoiceClone_409": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createVoiceClone_422": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createVoiceClone_429": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createVoiceClone_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "false"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
+          "additionalProperties": true
+        },
+        "body": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "voice_draft_contract_violation"
+                    },
+                    "type": {
+                      "const": "api_error"
+                    },
+                    "retryable": {
+                      "const": false
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpResponse_createVoiceClone_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "true"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
+          "additionalProperties": true
+        },
+        "body": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "enum": ["voice_draft_unavailable", "voice_draft_outcome_unknown"]
+                    },
+                    "type": {
+                      "const": "service_unavailable_error"
+                    },
+                    "retryable": {
+                      "const": true
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpRequest_getVoiceDraft": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "draft_id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": ["draft_id"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {
+            "draft_revision": {
+              "$ref": "#/$defs/Revision"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        }
+      },
+      "required": ["path"]
+    },
+    "HttpResponse_getVoiceDraft_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/VoiceDraftView"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceDraft_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceDraft_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceDraft_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceDraft_403": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceDraft_405": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "string"
+            }
+          },
+          "required": ["allow"],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpResponse_getVoiceDraft_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "false"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
+          "additionalProperties": true
+        },
+        "body": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "voice_draft_contract_violation"
+                    },
+                    "type": {
+                      "const": "api_error"
+                    },
+                    "retryable": {
+                      "const": false
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpResponse_getVoiceDraft_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "true"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
+          "additionalProperties": true
+        },
+        "body": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "enum": ["voice_draft_unavailable", "voice_draft_outcome_unknown"]
+                    },
+                    "type": {
+                      "const": "service_unavailable_error"
+                    },
+                    "retryable": {
+                      "const": true
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpRequest_updateVoiceDraftMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "draft_id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": ["draft_id"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "idempotency-key": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/VoiceDraftPatch"
+        }
+      },
+      "required": ["path", "body"]
+    },
+    "HttpResponse_updateVoiceDraftMetadata_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_VoiceDraft"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateVoiceDraftMetadata_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateVoiceDraftMetadata_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateVoiceDraftMetadata_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateVoiceDraftMetadata_403": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateVoiceDraftMetadata_405": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "string"
+            }
+          },
+          "required": ["allow"],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpResponse_updateVoiceDraftMetadata_409": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateVoiceDraftMetadata_422": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateVoiceDraftMetadata_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "false"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
+          "additionalProperties": true
+        },
+        "body": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "voice_draft_contract_violation"
+                    },
+                    "type": {
+                      "const": "api_error"
+                    },
+                    "retryable": {
+                      "const": false
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpResponse_updateVoiceDraftMetadata_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "true"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
+          "additionalProperties": true
+        },
+        "body": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "enum": ["voice_draft_unavailable", "voice_draft_outcome_unknown"]
+                    },
+                    "type": {
+                      "const": "service_unavailable_error"
+                    },
+                    "retryable": {
+                      "const": true
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "required": ["headers", "body"]
+    }
+  }
+}

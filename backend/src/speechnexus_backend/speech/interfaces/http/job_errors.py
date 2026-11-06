@@ -33,7 +33,7 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
     "job_kind_not_supported": (
         422,
         "invalid_request_error",
-        "This execution unit accepts ASR and TTS Jobs only.",
+        "This execution unit does not accept this Job kind.",
     ),
     "workspace_not_found": (422, "invalid_request_error", "The workspace was not found."),
     "workspace_disabled": (422, "invalid_request_error", "The workspace is disabled."),

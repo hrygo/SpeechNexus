@@ -1,3 +1,5 @@
+PYTHON ?= uv run python
+
 .PHONY: install dev-bootstrap dev-up dev-down dev-status dev-check api-dev gateway-dev web-dev \
 	browser-install browser-smoke media-smoke contracts-check contracts-compat contracts-http-changes contracts-speech-changes contracts-route-conformance contracts-coordination-requests contracts-coordination-results contracts-realtime-changes contracts-sdk-test contracts-generate contracts-drift \
 	service-smoke stack-config mysql-service acceptance-map-check operation-coverage-check \
@@ -57,13 +59,13 @@ media-smoke:
 	uv run python scripts/dev-env/media-smoke.py
 
 contracts-generate:
-	uv run python scripts/dev-env/generate-contract-bindings.py
+	$(PYTHON) scripts/dev-env/generate-contract-bindings.py
 
 contracts-drift:
-	uv run python scripts/dev-env/generate-contract-bindings.py --check
+	$(PYTHON) scripts/dev-env/generate-contract-bindings.py --check
 
 contracts-check:
-	uv run python scripts/dev-env/validate-contracts.py
+	$(PYTHON) scripts/dev-env/validate-contracts.py
 
 contracts-compat:
 	@test -n "$$CONTRACT_BASE_REF" || \
@@ -83,7 +85,7 @@ contracts-speech-changes:
 # Offline gate: current registrations, static statuses and in-process ASGI 405
 # probes vs the current speech contract. No CONTRACT_BASE_REF, database or network.
 contracts-route-conformance:
-	uv run python scripts/dev-env/check-route-conformance.py
+	$(PYTHON) scripts/dev-env/check-route-conformance.py
 
 contracts-coordination-requests:
 	@test -n "$$CONTRACT_BASE_REF" || \

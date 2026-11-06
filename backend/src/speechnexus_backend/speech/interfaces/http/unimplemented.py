@@ -84,9 +84,11 @@ _PATH_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
     _path_pattern(path) for path in sorted({path for _, path in UNIMPLEMENTED_OPERATIONS.values()})
 )
 
-# Starlette adds HEAD to every GET route. The framework's own `Allow` header never
-# advertises it, so the merged list must not start doing so either.
-_IMPLICIT_METHODS = frozenset({"HEAD", "OPTIONS"})
+# Neither source is trusted to agree on implicit methods: the pinned Starlette
+# does not add HEAD to a GET route, another may, and the framework's own `Allow`
+# never advertises HEAD or OPTIONS anyway. Both are dropped from the merged
+# header so it stays deterministic across router versions.
+IMPLICIT_METHODS = frozenset({"HEAD", "OPTIONS"})
 
 
 def is_unimplemented_path(path: str) -> bool:
@@ -121,7 +123,7 @@ def methods_for_path(routes: Iterable[Any], path: str) -> frozenset[str]:
         if not isinstance(template, str) or not matches_template(template, path):
             continue
         methods.update(getattr(route, "methods", None) or ())
-    return frozenset(methods - _IMPLICIT_METHODS)
+    return frozenset(method for method in methods if method not in IMPLICIT_METHODS)
 
 
 def assert_placeholder_ownership(routes: Iterable[Any]) -> None:
@@ -176,6 +178,7 @@ def create_unimplemented_router() -> APIRouter:
 
 
 __all__ = [
+    "IMPLICIT_METHODS",
     "UNIMPLEMENTED_OPERATIONS",
     "assert_placeholder_ownership",
     "create_unimplemented_router",

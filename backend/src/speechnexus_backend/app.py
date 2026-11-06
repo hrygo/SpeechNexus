@@ -96,6 +96,7 @@ from speechnexus_backend.speech.interfaces.http.transcriptions import (
     create_transcription_router,
 )
 from speechnexus_backend.speech.interfaces.http.unimplemented import (
+    IMPLICIT_METHODS,
     assert_placeholder_ownership,
     create_unimplemented_router,
     is_unimplemented_path,
@@ -462,9 +463,6 @@ def create_app(
     # Declared operations without an owning feature answer one stable 503
     # instead of a framework 404 that reads like "unknown resource".
     app.include_router(create_unimplemented_router())
-    # Ordering is load-bearing: a feature router included after the placeholders
-    # would be shadowed by them and answer 503 for an operation that ships.
-    assert_placeholder_ownership(app.router.routes)
 
     def allowed_methods(path: str, reported: str | None) -> dict[str, str]:
         """Merge the framework's Allow with every method registered on this path.
@@ -474,8 +472,10 @@ def create_app(
         only names the first partially matching route. RFC 9110 wants all of
         them, so the registered methods for the same template are merged in.
         """
-        methods = {item.strip() for item in (reported or "").split(",") if item.strip()}
+        methods = {item.strip().upper() for item in (reported or "").split(",") if item.strip()}
         methods.update(methods_for_path(app.router.routes, path))
+        # Both sources are filtered, so an implicit HEAD can never leak in.
+        methods -= IMPLICIT_METHODS
         return {"Allow": ", ".join(sorted(methods))} if methods else {}
 
     @app.exception_handler(HTTPException)
@@ -586,4 +586,8 @@ def create_app(
     app.state.speech = speech
     app.state.transcriptions = transcriptions
     require_request_abort_capture(app)
+    # Checked last, once every router is mounted: ordering is load-bearing, and
+    # a feature router included after the placeholders would be shadowed by them
+    # and answer 503 for an operation that ships.
+    assert_placeholder_ownership(app.router.routes)
     return app

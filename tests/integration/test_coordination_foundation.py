@@ -50,6 +50,7 @@ from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema impor
     ABORT_DISPATCH_CONSTRAINTS_DDL,
     ABORT_INTENT_DDL,
     ABORT_INTENT_TABLE,
+    gateway_abort_grants,
 )
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
     gateway_cancellation_fence_grants,
@@ -181,6 +182,14 @@ _MYSQL_ABORT_DISPATCHED_AFTER_RECEIVED = (
 )
 
 
+def _abort_update_columns() -> str:
+    """The attempt columns the gateway may update, taken from the product grants."""
+    for statement in gateway_abort_grants("schema", "role"):
+        if statement.startswith("GRANT UPDATE ("):
+            return statement.split("(", 1)[1].split(")", 1)[0]
+    raise RuntimeError("gateway_abort_grants no longer grants a column-level UPDATE")
+
+
 def _mysql_abort_intent_ddl() -> str:
     """The receipt table as InnoDB accepts it: no column-level cross-column CHECK."""
     if _MYSQL_ABORT_INLINE_CHECK not in ABORT_INTENT_DDL:
@@ -248,12 +257,14 @@ def foundation(database: JobDatabase) -> Iterator[Foundation]:
             ensure_cancellation_fence_schema(db.query, schema=db.schema, roles=(roles[0],))
         grants = coordination_runtime_grants(db.schema, speech_role=roles[0], gateway_role=roles[1])
         if db.dialect == "mysql":
-            # InnoDB has no column-level grants, so the oracle grants the receipt table
-            # wholesale; PostgreSQL keeps the exact column set from gateway_abort_grants.
+            # InnoDB mirrors gateway_abort_grants: reads and inserts table-wide, UPDATE
+            # only the attempt columns, so a gateway rewrite of the recorded identity
+            # fails here exactly as it does on PostgreSQL.
             grants = (
                 *grants,
-                f"GRANT SELECT, INSERT, UPDATE ON `{db.schema}`.`{ABORT_INTENT_TABLE}` "
-                f"TO '{roles[1]}'@'%'",
+                f"GRANT SELECT, INSERT ON `{db.schema}`.`{ABORT_INTENT_TABLE}` TO '{roles[1]}'@'%'",
+                f"GRANT UPDATE ({_abort_update_columns()}) "
+                f"ON `{db.schema}`.`{ABORT_INTENT_TABLE}` TO '{roles[1]}'@'%'",
             )
         if (
             db.dialect == "postgresql"

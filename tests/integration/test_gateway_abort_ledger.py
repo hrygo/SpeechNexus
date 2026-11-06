@@ -358,3 +358,26 @@ def test_the_receipt_rejects_a_broken_attempt_and_a_dispatch_before_receipt(
         (INTENT_ID,),
     )
     assert receipt(foundation) == before
+
+
+def test_the_gateway_role_cannot_rewrite_the_recorded_identity(
+    foundation: Foundation, abort_ledger: AbortLedgerOracle
+) -> None:
+    """The receipt copies a lease-owned identity the gateway may only read."""
+    received_abort(foundation, abort_ledger)
+    statement = (
+        "UPDATE gateway_abort_intents SET instance_generation=instance_generation + 1 "
+        "WHERE submit_intent_id=%s"
+    )
+    with (
+        foundation.connection("gateway") as connection,
+        connection.cursor() as cursor,
+        pytest.raises(
+            (psycopg.errors.InsufficientPrivilege, pymysql.err.OperationalError)
+        ) as caught,
+    ):
+        cursor.execute(statement, (INTENT_ID,))
+    error = caught.value
+    if isinstance(error, pymysql.err.OperationalError):
+        # ER_TABLEACCESS_DENIED_ERROR / ER_COLUMNACCESS_DENIED_ERROR.
+        assert error.args[0] in (1142, 1143), error

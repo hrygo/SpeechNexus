@@ -337,10 +337,12 @@ acknowledgement（已中止 / 已终结）；无法确认时返回 unknown，绝
 
 ### 回执身份不可变：没有 fenced 拒发状态
 
-`submit_intents.instance_id` 与 `instance_generation` 只在准入时写入一次：`create_submit` 是
-唯一写入者，gateway 角色的列级 UPDATE 授权不含这两列，仓库内也没有改写它们的 UPDATE 语句。
-取消回执在同一事务里复制这组值，因此“回执与权威执行不再匹配”在生产中不可达。把这种不一致做成
-持久 outcome 只会留下一个只能靠直接改库产生的状态，并让运维误以为系统存在身份重绑路径。
+原执行的实例身份只存在于 `admission_leases.instance_id` 与 `instance_generation`：由后端准入在
+同一事务里写入一次（`admission_sql.py` 的租约 INSERT 是唯一写入者），此后被更新的只有
+`lease_state`、`cleanup_state`、隔离观察与预算归还列。`submit_intents` 只持有一个 `lease_id`
+引用，不存这两列；网关读取 intent 时经租约取回身份，取消回执在接收事务里把这组值复制到自己
+的行。因此“回执与权威执行不再匹配”在生产中不可达。把这种不一致做成持久 outcome 只会留下
+一个只能靠直接改库产生的状态，并让运维误以为系统存在身份重绑路径。
 
 持久取值只有 `acknowledged` / `unconfirmed` / `exhausted`，没有“拒发”这一类。真出现不一致时
 按数据损坏处理：`claim_abort` 报 `ExecutionObservationConflictError`；领取前的身份校验分别报
@@ -763,15 +765,16 @@ uv run ruff format --check . && uv run ruff check . && uv run mypy && uv run lin
 
 ### 取消 / 中止路径的双库覆盖
 
-`test_gateway_abort_ledger.py` 是这条链路的共享 oracle，用同一组产品 SQL 与领域规则在两个引擎上运行：
-接收与精确重放、origin 固化、单租约互斥、未裁决退避以数据库时钟为起点、已裁决终态、
-尝试用尽后的 `exhausted`、due 队列推进并返回记录时的 origin、回执与权威不一致按冲突失败。
-PostgreSQL 走 `PostgresSubmissionLedger` 与非 owner gateway 角色；InnoDB 走
+`test_gateway_abort_ledger.py` 是这条链路的共享 oracle，用同一组产品 SQL 与领域规则在两个引擎上运行，
+共九个场景：接收与精确重放、origin 固化、单租约互斥、未裁决退避以数据库时钟为起点、已裁决终态、
+尝试用尽后的 `exhausted`、due 队列推进并返回记录时的 origin、回执与权威不一致按冲突失败、
+约束真的拒绝坏写入（词表外 outcome、缺尝试组的 outcome、早于接收的派发时间）、以及 gateway 角色
+不能改写回执记录的身份。PostgreSQL 走 `PostgresSubmissionLedger` 与非 owner gateway 角色；InnoDB 走
 `tests/support/gateway_database.py` 的 `MySQLSubmissionLedger`（测试用 DB-API 装配，不是产品适配器）。
 `tests/integration/test_coordination_foundation.py` 的 MySQL 分支创建 `gateway_abort_intents`
-（0036 的尝试列与 `next_check_at_us`），并按 InnoDB 没有列级授权的现状对该表整体授权；
-PostgreSQL 仍按 `gateway_abort_grants` 的精确列集授权。InnoDB 也不接受列级 CHECK 引用其他列
-（错误 3813），因此 `dispatched_at_us >= received_at_us` 在该分支改为具名表级约束
+（0036 的尝试列与 `next_check_at_us`），并按 `gateway_abort_grants` 的同一列集授权：读与插入整表、
+UPDATE 只给尝试列（列清单从产品授权文本里取，两侧不会各写一份）。InnoDB 不接受列级 CHECK 引用
+其他列（错误 3813），因此 `dispatched_at_us >= received_at_us` 在该分支改为具名表级约束
 `gateway_abort_dispatched_after_received_check`，语义不变；其余内联 CHECK 都只看本列。
 
 需要 MySQL 的用例就是这一个共享模块。HTTP 与迁移层用例
@@ -781,9 +784,17 @@ PostgreSQL 仍按 `gateway_abort_grants` 的精确列集授权。InnoDB 也不�
 InnoDB 既没有产品适配器也没有迁移链。这些文件里的 `parametrize("database", ["postgresql"])` 是适配器事实，
 不再兼作“InnoDB 无需覆盖”的假设；共享行为由上面的 oracle 承担。
 
-当前证据边界：本机隔离 PostgreSQL 上该 oracle 与取消用例全部通过；本机没有配置
-`SPEECHNEXUS_TEST_MYSQL_URL`，也没有可达的 InnoDB 实例（127.0.0.1:55434 无服务），
-MySQL 侧为**未实测**。两个 DSN 都配置时 `make integration-test` 会运行该 oracle；单库结果不能报为双库验收。
+当前证据边界：本机隔离 PostgreSQL 上该 oracle 与取消用例全部通过；本机没有可达的 InnoDB 实例
+（127.0.0.1:55434 无服务），MySQL 侧为**未实测**。两个 DSN 都配置时 `make integration-test` 会运行
+该 oracle；单库结果不能报为双库验收。该模块用严格的双 DSN fixture：只配 PG 时两个参数都会失败，
+要只跑 PostgreSQL 的一半，需把 `SPEECHNEXUS_TEST_MYSQL_URL` 显式设成任意值（不可达亦可）并用
+`-k "not mysql"` 限定：
+
+```sh
+SPEECHNEXUS_TEST_DATABASE_URL=postgresql:///sn_profile_it \
+  SPEECHNEXUS_TEST_MYSQL_URL=mysql://root:unused@127.0.0.1:1/ \
+  uv run pytest tests/integration/test_gateway_abort_ledger.py -k "not mysql" -q
+```
 
 `test_gateway_submit_ledger.py` 在真实 PostgreSQL 上、以非 owner 的 gateway 角色运行：创建后
 重放不产生第二行也不再外发；新进程（新池）读回同一 intent；执行观察的版本守卫拒绝陈旧写入；

@@ -38,7 +38,7 @@ Node Controller 镜像验证由 CI 以同提交的 [reusable workflow](../../.gi
 | `changes` | `Scope routing and CI / design-token checks` | 检查路由边界与 Design Token，按准确差异选择范围 |
 | `python_checks` | `Python: tests, coverage and package build` | Python 单元、契约、CI、Workbench PG/Runtime 及选定 Speech PG 测试，合并覆盖率、媒体工具链及 Python 包构建 |
 | `python_contracts` | `Python: lint, types and contract compatibility` | Ruff、mypy、模块边界、生成漂移、协议兼容与 schema 校验 |
-| `integration_shards` | `Integration 0–3: PG/MySQL/MinIO`；`Integration 4–5: Web + PG/MySQL/MinIO` | 六个真实隔离服务分片；混合集合中的浏览器与 Node HTTP 消费者分配到后两片，具体工具需求按各片实际用例计算 |
+| `integration_shards` | `Integration 0–3: PG/MySQL/MinIO`；`Integration 4–5: Web + PG/MySQL/MinIO` | 六个真实隔离服务分片；混合集合中的浏览器与 Node HTTP 消费者只分配到后两片，普通 DB 用例按估算成本分配到全部六片，具体工具需求按各片实际用例计算 |
 | `coordination` | `Gate: six-shard integration evidence` | 验收六片成功及同提交、完整互斥集合、实际执行证据，不在此节点重新执行测试 |
 | `python_checks_gate` | `Gate: Python execution and static checks` | 要求 Python 执行与静态/契约两个作业均成功，不执行测试 |
 | `node_controller_image` | `Node Controller image evidence` | 调用镜像 scope、双架构构建与内部证据门禁，按输入差异决定是否构建 |
@@ -54,9 +54,11 @@ Python 测试作业在临时 GitHub 托管 VM 安装 `bubblewrap`，通过 [CI �
 
 每片保留原完整覆盖源与 branch 配置，只在片内使用 `--cov-fail-under=0` 采集局部数据。父进程必须确认两片执行成功、私有 PG 已停止、同一 SHA/配置、相同完整 collection、精确分配且互斥并集覆盖全集、每个结果实际通过及覆盖数据摘要一致，再显式组合全部分片并按 `pyproject.toml` 原全项目 **80%** 门槛执行 `coverage report`。缺片、失败、跳过、收集限定或仅有局部高覆盖率均不能放行；入口拒绝任何非空 `PYTEST_ADDOPTS`，即使其选项不缩小集合。这里的完整集合以 pytest 收集时各 worker 观察到的结果为准；同一插件或配置在两片共同遗漏用例时，同集与分配校验不能独立发现，仍须审查测试根目录、pytest 配置和插件变更。执行证据校验通过后，复制各片原始覆盖数据并生成组合产物，以 `workbench-pg-full-coverage` 上传；覆盖率不足仍保留这些产物并失败。若覆盖率步骤已运行且失败、作业未取消，工作流尝试上传已生成的日志及分片／生命周期／汇总报告；步骤未运行、作业取消或上传失败时不能保证留存。测试或执行证据校验失败不会生成合格的组合产物。直接使用 `scripts/dev-env/workbench-pg-probe.py` 的 `--full-coverage` 模式仍是单次 pytest 的全项目 80%；`--coverage` 仍是独立的 C 层 90% 检查。两种模式都须安装锁定依赖并提供 `--pg-bin`，运行前置条件见[验证指南](../agent-verification.md)，具体参数可用 `uv run python scripts/dev-env/workbench-pg-probe.py --help` 查看。
 
-集成分片在安装 Python 依赖后，通过 `uv run python scripts/dev-env/integration-shards.py requirements --index 0 --count 6` 等命令实际收集完整 integration nodeid（包括参数化身份），以执行时相同的资源分组与 SHA-256 分片算法输出对应分片的 `node_contracts` 与 `browser` 需求；工作流分别传入各分片的 index。`*_browser.py` 与两个合成浏览器探针模块声明浏览器依赖；回归核对当前所有 Node 浏览器探针消费者均被分类。收集错误或设置了非空 `PYTEST_ADDOPTS` 均会失败，即使该选项本身不缩小选择，也不能输出“无需工具”放行。该步骤只收集，实际执行和六份报告的互斥并集核验仍独立必需。预检记录 pytest 最终收集结果，未单独校验所有插件对收集的影响；汇总比较各片报告的相同全集，也不能独立发现所有分片共同遗漏的用例。须保持受控依赖与 pytest 配置，并审查收集范围的变更。
+集成分片在安装 Python 依赖后，通过 `uv run python scripts/dev-env/integration-shards.py requirements --index 0 --count 6` 等命令实际收集完整 integration nodeid（包括参数化身份），以执行时相同的资源分组与成本加权分片算法输出对应分片的 `node_contracts` 与 `browser` 需求；工作流分别传入各分片的 index。`*_browser.py` 与两个合成浏览器探针模块声明浏览器依赖；回归核对当前所有 Node 浏览器探针消费者均被分类。收集错误或设置了非空 `PYTEST_ADDOPTS` 均会失败，即使该选项本身不缩小选择，也不能输出“无需工具”放行。该步骤只收集，实际执行和六份报告的互斥并集核验仍独立必需。预检记录 pytest 最终收集结果，未单独校验所有插件对收集的影响；汇总比较各片报告的相同全集，也不能独立发现所有分片共同遗漏的用例。须保持受控依赖与 pytest 配置，并审查收集范围的变更。
 
-完整集合同时含普通用例与 Web 工具消费者时，普通用例分到前四片，浏览器及显式 Node 契约消费者分到后两片，各组内继续按 nodeid 的 SHA-256 取模；一类用例单独存在时使用全部分片。通用入口仍接受 1–16 片，混合类别为 Web 工具保留 `max(1, count // 3)` 片；单片执行整个集合。预检、执行和报告检查使用同一个 `partition`，工具需求仍根据实际选中用例计算，不能在工作流里按编号跳过工具或业务测试。该分组依据工具成本，不宣称按用例耗时均衡。
+完整集合同时含普通用例与 Web 工具消费者时，仍保留四条 DB-only 道和 Web 能力道：浏览器与显式 Node 契约用例只落在 Web 能力道，普通 DB 用例按估算成本分配到全部六片。每片的目标是等量估算成本，而不是等量用例数：一个 Web 用案例按 `WEB_CASE_WEIGHT = 5` 折算（2026-11-06 两次完整运行中两类用例的实测单例耗时比为 3.4–6.4 倍，类均值为 4.6–5.5 倍，取 5），Web 能力道因此少收普通用例。分配使用 nodeid 的 SHA-256 排序、最大余数法配额和确定性取整；六片各自从完整收集独立算出同一结果，不依赖共享状态或历史制品。Web 用例在 Web 能力道间按 hash 顺序轮转，使各道用例数最多相差 1。一类用例单独存在时，仍按 nodeid 的 SHA-256 取模使用全部分片。通用入口仍接受 1–16 片，混合类别为 Web 工具保留 `max(1, count // 3)` 片；单片执行整个集合。预检、执行和报告检查使用同一个 `partition`，工具需求仍根据实际选中用例计算，不能在工作流里按编号跳过工具或业务测试。
+
+该分组的目的不是把 Web 用例移入 DB 道，而是让 Web 能力道承担普通 DB 工作，从而使六个分片的实测 pytest 执行时间接近。Web 能力道另需安装 Web 依赖、构建入口并安装 Chromium，这部分固定开销不计入 `elapsed_seconds`；划分只均衡实测执行时间，不试图抵消该开销，也不改变 job 预算。
 
 有 `browser` 需求的分片安装完整锁定 Web 依赖、构建两个实际入口，并安装相同版本 Chromium headless shell 及系统依赖后运行测试；只有 Node 契约消费者的分片保留锁定生产依赖安装；数据库分片不安装浏览器。需求随真实 nodeid 分区计算，不在 workflow 中固定某几个分片号。汇总 `check` 子命令与 `tests/ci` 轻量路由回归继续仅依赖 Python 标准库。
 
@@ -110,11 +112,11 @@ Python 测试作业在临时 GitHub 托管 VM 安装 `bubblewrap`，通过 [CI �
 | --- | --- | --- |
 | 分片作业墙钟时间 | 各分片 job summary 的 `Job wall clock` | 安装、构建、服务启动等作业整体是否变慢 |
 | pytest 执行时间 | 各分片 job summary 的 `pytest execution`，以及制品 `integration-shard-<n>.json` 的 `elapsed_seconds` | 某片的用例集是否独胖 |
-| 分片用例数 | `integration-shards.py check` 输出 | 六片用例数是否均衡；按 DB/Web 资源类内均值比较，某片超过同类均值 1.5 倍时打印 warning，不改变门禁结论 |
-| 分片耗时 | `integration-shards.py check` 输出与 `integration-shard-<n>.json` 的 `elapsed_seconds` | 某片是否超过 15 分钟预警线或同类均值 1.5 倍；只告警，不改变门禁结论 |
+| 分片用例数 | `integration-shards.py check` 输出 | 六片用例数是否均衡；按 DB/Web 资源类内均值比较，某片超过同类均值 1.25 倍时打印 warning，不改变门禁结论 |
+| 分片耗时 | `integration-shards.py check` 输出与 `integration-shard-<n>.json` 的 `elapsed_seconds` | 某片是否超过 15 分钟预警线或同类均值 1.25 倍；只告警，不改变门禁结论 |
 | 六片横向对比 | 各分片 job summary 的 `Job wall clock`、`pytest execution`、`Selected cases` | 六片相对耗时、最慢片与用例数 |
 
-`integration-shards.py check` 逐片打印用例数、`elapsed_seconds`、相对同类均值倍数；每片运行结束时也打印自己的用例数与耗时。用例数超过同类均值 1.5 倍、耗时超过 15 分钟或同类均值 1.5 倍时打印 warning，不失败。各分片 job summary 的指标表由 workflow 的 `Publish integration partition timing` 提供（每片的 Job wall clock、pytest execution、Selected cases）；check 只把 warning 与 skipped 写入汇总 summary，避免两份重复表。
+`integration-shards.py check` 逐片打印用例数、`elapsed_seconds`、相对同类均值倍数；每片运行结束时也打印自己的用例数与耗时。用例数超过同类均值 1.25 倍、耗时超过 15 分钟或同类均值 1.25 倍时打印 warning，不失败。各分片 job summary 的指标表由 workflow 的 `Publish integration partition timing` 提供（每片的 Job wall clock、pytest execution、Selected cases）；check 只把 warning 与 skipped 写入汇总 summary，避免两份重复表。
 
 两个摘要步骤只写 `$GITHUB_STEP_SUMMARY`，不参与任何结论；作业结论仍由分片执行与证据校验决定。被超时取消的作业不会执行 `always()` 步骤，因此超时运行没有分片摘要，只能从未上传的制品与 `cancelled` 结论识别。
 

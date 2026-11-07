@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import replace
 from typing import Any, cast
@@ -58,16 +59,30 @@ MATERIAL = {
     "media_type": "audio/wav",
 }
 CHECKS = [
-    {"name": "intelligibility", "required": True, "status": "passed"},
+    {"name": "new_text_reuse", "required": True, "status": "passed"},
     {"name": "reusable_tts", "required": True, "status": "passed"},
 ]
+PROBE_TEXT = "A validation-only sentence."
+PROBE = {
+    "name": "new_text_reuse",
+    "text": PROBE_TEXT,
+    "text_sha256": "sha256:" + hashlib.sha256(PROBE_TEXT.encode()).hexdigest(),
+    "generation_preview_text_sha256": "sha256:" + "c" * 64,
+    "language": "en",
+    "sample_rate_hz": 24000,
+    "audio_format": "wav",
+    "audio_duration_ms": 500,
+    "output_sha256": "sha256:" + "d" * 64,
+    "output_bytes": 24000,
+    "mode": "complete",
+}
 
 
 def _report(**changes: Any) -> bytes:
     document = {
         "synthesis_path": "reusable_tts",
         "capabilities": CAPABILITIES,
-        "coverage": {"validation_set_revision": "1", "checks": CHECKS},
+        "coverage": {"validation_set_revision": "1", "checks": CHECKS, "probes": [PROBE]},
         "material": MATERIAL,
         **changes,
     }

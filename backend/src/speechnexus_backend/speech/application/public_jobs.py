@@ -10,15 +10,15 @@ import uuid
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
-from functools import lru_cache
-from importlib.resources import files
 from typing import Any, Literal, Protocol, runtime_checkable
 
 import rfc8785
-from jsonschema import Draft202012Validator, FormatChecker
 
 from speechnexus_backend.speech.application.effective_configuration import (
     effective_configuration,
+)
+from speechnexus_backend.speech.application.voice_validation_report import (
+    validate_voice_validation_result,
 )
 from speechnexus_backend.speech.domain.public_jobs import (
     JobArtifactFact,
@@ -45,16 +45,6 @@ from speechnexus_backend.speech.domain.publications import Publication, Publicat
 
 DEFAULT_WORKSPACE = "workspace-default"
 _REVISION = re.compile(r"[1-9][0-9]{0,18}\Z")
-
-
-@lru_cache(maxsize=1)
-def _validation_result_validator() -> Draft202012Validator:
-    """The generated file contract, including its nested VoiceValidation schema."""
-    bundle = json.loads(files("speechnexus_contracts").joinpath("file.schema.json").read_text())
-    return Draft202012Validator(
-        {"$ref": "#/$defs/VoiceValidationJobResult", "$defs": bundle["$defs"]},
-        format_checker=FormatChecker(),
-    )
 
 
 _REQUIRED_TASK: dict[JobKind, str] = {
@@ -550,8 +540,10 @@ def resolve_voice_validation_report(
         raise PublicJobUnavailableError from None
     if not isinstance(result, dict) or result.get("kind") != kind:
         raise PublicJobUnavailableError
-    if not _validation_result_validator().is_valid(result):
-        raise PublicJobUnavailableError
+    try:
+        validate_voice_validation_result(result)
+    except ValueError:
+        raise PublicJobUnavailableError from None
     artifact_id = result.get("validation_report_artifact_id")
     receipt_id = result.get("receipt_id")
     if not isinstance(artifact_id, str) or not isinstance(receipt_id, str):
@@ -1480,6 +1472,7 @@ _ADMISSION_REJECTION_CODES = frozenset(
         "job_text_asset_unsupported",
         "job_admission_contended",
         "voice_not_published",
+        "voice_draft_not_candidate",
         "asset_not_ready",
         "idempotency_conflict",
     }

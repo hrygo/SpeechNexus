@@ -42,7 +42,7 @@ from speechnexus_backend.speech.infrastructure.transcription_submit import deadl
 _DIGEST_PREFIX = "sha256:"
 _CANCELLING_LEASE_STATES = frozenset({"quarantined"})
 _DISPATCHABLE_LEASE_STATES = frozenset({"reserved", "executing"})
-_COMMAND_KINDS = {"asr": "asr", "tts": "tts"}
+_COMMAND_KINDS = {"asr": "asr", "tts": "tts", "voice_validation": "voiceclone"}
 
 
 @dataclass(frozen=True, slots=True)

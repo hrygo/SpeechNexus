@@ -53,6 +53,9 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool, 
 from speechnexus_backend.speech.infrastructure.stored_command_planner import (
     StoredCommandPlanner,
 )
+from speechnexus_backend.speech.infrastructure.voice_validation_run_postgres import (
+    PostgresValidationRunFacts,
+)
 
 
 class DispatchDependenciesUnavailableError(RuntimeError):
@@ -257,6 +260,9 @@ def build_result_publisher(
         PostgresArtifactWriter(pool, timeout_seconds=settings.storage_timeout_seconds),
         artifacts,
         _StagingResultReader(staging),
+        validation=PostgresValidationRunFacts(
+            pool, timeout_seconds=settings.storage_timeout_seconds
+        ),
         close=close,
     )
     try:

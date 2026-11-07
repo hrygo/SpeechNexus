@@ -18,6 +18,7 @@ _READ_TABLES = (
     "speech_publication_retirements",
     "speech_binding_revisions",
     "speech_assets",
+    "speech_artifacts",
     "speech_pronunciation_revisions",
     "speech_jobs",
     "speech_job_events",

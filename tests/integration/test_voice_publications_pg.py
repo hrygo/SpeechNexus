@@ -1,5 +1,6 @@
 """Real migrated PG publication: evidence, immutability, replay and release."""
 
+import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -72,15 +73,31 @@ _CAPABILITIES = {
 }
 
 
+_PROBE_TEXT = "A validation-only sentence."
+_PROBE = {
+    "name": "new_text_reuse",
+    "text": _PROBE_TEXT,
+    "text_sha256": "sha256:" + hashlib.sha256(_PROBE_TEXT.encode()).hexdigest(),
+    "generation_preview_text_sha256": "sha256:" + "c" * 64,
+    "language": "en",
+    "sample_rate_hz": 24000,
+    "audio_format": "wav",
+    "audio_duration_ms": 500,
+    "output_sha256": "sha256:" + "d" * 64,
+    "output_bytes": 24000,
+    "mode": "complete",
+}
+
+
 def _report(*, revision: str = "1", material: dict[str, Any] | None = None) -> bytes:
     checks = [
-        {"name": "intelligibility", "required": True, "status": "passed"},
+        {"name": "new_text_reuse", "required": True, "status": "passed"},
         {"name": "reusable_tts", "required": True, "status": "passed"},
     ]
     document = {
         "synthesis_path": "reusable_tts",
         "capabilities": _CAPABILITIES,
-        "coverage": {"validation_set_revision": "1", "checks": checks},
+        "coverage": {"validation_set_revision": "1", "checks": checks, "probes": [_PROBE]},
         "material": material
         if material is not None
         else {

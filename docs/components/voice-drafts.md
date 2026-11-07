@@ -77,6 +77,24 @@ revision)` 为主键，`generation_job_id` 唯一，输入和 binding 固定保�
 `validation_report` kind 且回执匹配的 Artifact；单读与分页批读共用该规则。失败、取消或
 过期 Job 本身仍按 Job 契约返回 named failure，不伪造校验通过。
 
+clone 校验 Job 走与 ASR/TTS 相同的原子准入：同一事务写配额、实例/阶段租约、attempt、
+Job 与 outbox，`operation_id` 固定为 Job ID；`design` 仍走旧的未准入路径，返回
+`build_public_job_admission` 的 `None`，不因本切片获得半套准入。准入复用该修订已发布的
+binding；提交阶段已校验其 `tasks` 含 `voice_validation`。参考素材必须是同 workspace ready
+的 `voice_reference`，且草稿修订记录必须 `kind=clone`、`source_use_confirmed=true`。
+
+校验执行不新增 wire command：存储的 gateway 请求仍复用既有 `voiceclone` 命令形状，由
+`StoredCommandPlanner` 从 `admission_operations.request_document` 重放。命令的
+`preview_text` 是服务端按 Job ID 派生的 probe 文本，必须与生成阶段的 `preview_text` 不同；
+否则调用只是重放生成文本，不能证明「新文本复用」。`sample_rate_hz` 固定 24 kHz，
+`max_output_audio_ms` 固定 60000，`voice_revision_id` 为 `null`，执行结果必须是 24 kHz
+单声道 16-bit PCM WAV。
+
+校验 Job 的 deadline 由服务端 `VOICE_VALIDATION_TIMEOUT_SECONDS=600` 决定，只作为内部
+测量 Job 的预算，不读取 binding 的 `execution_defaults`，也不改变公开 ASR/TTS 的 600 秒
+上限。binding 因此可以完全没有 `execution_defaults`；若未来需要公开可配置的校验预算，
+应单独走契约评审，而不是借用 ASR/TTS block。
+
 `createVoicePreview` 只预览当前 head 上的候选声音：draft 必须存在且 kind 为
 `design`/`clone`（否则 404/400），`expected_draft_revision` 必须等于 head（否则 409
 `voice_draft_conflict`），关联 generation Job 必须 succeeded 且结果的 receipt 与全部
@@ -201,12 +219,14 @@ CHECK 内。尝试通过 PATCH 改状态、输入或生成结果返回 422，且
 
 草稿的生成 Job 仍写入协调 Job 与 outbox。默认 dispatch lane 仍只领取 ASR/TTS：
 `PostgresDispatchQueue` 的 `kinds` 默认 `DISPATCHABLE_JOB_KINDS`（`("asr", "tts")`）。
-voice lane 是可选消费者，调用方显式传 `kinds=VOICE_GENERATION_JOB_KINDS` 才领取
-`voice_design`/`voice_clone`。kind 过滤在同一条 claim SQL 内完成，不占默认批次上限，
-也不会在行转换时抛 `DispatchProtocolError` 毒化同批 ASR/TTS。生产装配（planner、引擎
-适配器、资源准入与超时结算）归 [#528](https://github.com/hrygo/SpeechNexus/issues/528)
-（原生父 [#340](https://github.com/hrygo/SpeechNexus/issues/340)）；当前没有默认启动的
-voice 消费者。
+voice generation lane 是可选消费者，调用方显式传 `kinds=VOICE_GENERATION_JOB_KINDS` 才
+领取 `voice_design`/`voice_clone`；`voice_validation` 是独立 lane
+`VOICE_VALIDATION_JOB_KINDS`，生产消费者必须同时传 `require_admission=True`，只领取
+已有完整 admission attempt/lease 的校验 Job。kind 过滤在同一条 claim SQL 内完成，不占
+默认批次上限，也不会在行转换时抛 `DispatchProtocolError` 毒化同批 ASR/TTS。生产装配
+（planner、引擎适配器、资源准入与超时结算）归
+[#528](https://github.com/hrygo/SpeechNexus/issues/528)（原生父
+[#340](https://github.com/hrygo/SpeechNexus/issues/340)）；当前没有默认启动的 voice 消费者。
 
 ## 发布与能力证据
 
@@ -237,12 +257,20 @@ asset/bytes/sha256 证明。
 `VoiceValidation` 与 `voice-resource.schema.json` 不增加这些字段，能力只存在于内部账本，
 由目录读取时投影。
 
-上述 report 形状是本切片冻结的内部记录契约：`application/json`，至少包含
-`synthesis_path`、`capabilities`、`coverage`、`material`；`capabilities` 必须满足公开
-`VoiceCapabilities`，`coverage` 记录校验集 revision 与逐项检查。仓库内的验证执行消费者尚未
-产出该文档；在 #512/#529b 侧按此形状提交 report Artifact 之前，发布链只能由测试用合成
-report 验证，不能声称端到端可用。缺失、非 `reusable_tts` 或能力不合法的 report 一律 422，
-记录器不会从音频、绑定或默认值推断能力。
+`voice_validation` 执行现在按该内部记录契约提交 `validation_report` Artifact：
+`application/json`，包含 `synthesis_path=reusable_tts`、`capabilities`、`coverage` 与
+`material`。`capabilities` 只声明本次运行实测到的四种事实：本次语言、`[24000]` 采样率、
+`["wav"]` 格式与 `["complete"]` 模式；不从绑定、音频或默认值推断其他能力。`coverage`
+除校验集 revision 与逐项检查外，还保存本次唯一 probe 的 `text`、`text_sha256`、
+`generation_preview_text_sha256`、`language`、`sample_rate_hz`、`audio_format`、
+`audio_duration_ms`、`output_sha256`、`output_bytes` 与 `mode`，使证据可以按原文和摘要
+重新计算，而不只是保存结论。记录器会重算文本摘要、要求 generation preview 摘要与本次
+probe 不同，并要求 probe 名称对应 Job 已提交的检查项。缺失、非 `reusable_tts`、能力不合法
+或 probe 不可重算的 report 一律 422。
+
+本切片仍不包含自动记录 worker：validation 执行产出 report 后，发布仍必须由部署显式运行
+`speechnexus-record-voice-evidence` 写入能力证据；没有证据行时发布保持 422
+`evidence_missing`，不会因为 report 已存在而自动放行。
 
 `speech_published_voice_revisions` 视图以 `COALESCE(自定义修订文档, 预置资格文档)` 读取，
 `listVoices`/`getVoiceRevision` 因此能返回自定义发布，而不会因单个缺失文档让整页 503；

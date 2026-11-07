@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Protocol
@@ -40,6 +41,23 @@ from speechnexus_backend.speech.domain.voice_capability_evidence import (
 
 _MAX_REPORT_BYTES = 1_048_576
 _CHECK_STATUSES = frozenset({"passed", "failed", "skipped"})
+_PROBE_KEYS = frozenset(
+    {
+        "name",
+        "text",
+        "text_sha256",
+        "generation_preview_text_sha256",
+        "language",
+        "sample_rate_hz",
+        "audio_format",
+        "audio_duration_ms",
+        "output_sha256",
+        "output_bytes",
+        "mode",
+    }
+)
+_LANGUAGE = re.compile(r"^(auto|[a-z]{2,3}(-[A-Za-z0-9]{2,8})*)$")
+_DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 
 
 class VoiceEvidenceNotEligibleError(ValueError):
@@ -221,8 +239,91 @@ def committed_validation(facts: ValidationRunFacts) -> tuple[dict[str, Any], tup
     return validation, checks
 
 
+def _probes(
+    reported: dict[str, Any], checks: tuple[_Check, ...], capabilities: dict[str, Any]
+) -> list[dict[str, Any]]:
+    value = reported.get("probes")
+    if type(value) is not list or not value:
+        raise VoiceEvidenceNotEligibleError("coverage_probes_missing")
+    if len(value) != 1:
+        # This slice measures exactly one language and one probe; a longer list
+        # would claim coverage the run did not produce.
+        raise VoiceEvidenceNotEligibleError("coverage_probes_invalid")
+    entry = value[0]
+    if type(entry) is not dict or set(entry) != _PROBE_KEYS:
+        raise VoiceEvidenceNotEligibleError("coverage_probes_invalid")
+    name = entry["name"]
+    text = entry["text"]
+    language = entry["language"]
+    sample_rate = entry["sample_rate_hz"]
+    duration = entry["audio_duration_ms"]
+    output_bytes = entry["output_bytes"]
+    if name != "new_text_reuse" or not any(check.name == name for check in checks):
+        raise VoiceEvidenceNotEligibleError("coverage_probes_invalid")
+    if not isinstance(text, str) or not 1 <= len(text) <= 2000:
+        raise VoiceEvidenceNotEligibleError("coverage_probes_invalid")
+    if entry["text_sha256"] != _text_digest(text):
+        raise VoiceEvidenceNotEligibleError("coverage_probes_invalid")
+    if (
+        not isinstance(entry["generation_preview_text_sha256"], str)
+        or entry["generation_preview_text_sha256"] == entry["text_sha256"]
+    ):
+        # The whole point of the probe is that it is not the generation text.
+        raise VoiceEvidenceNotEligibleError("coverage_probes_invalid")
+    for field in ("text_sha256", "generation_preview_text_sha256", "output_sha256"):
+        if not isinstance(entry[field], str) or _DIGEST.fullmatch(entry[field]) is None:
+            raise VoiceEvidenceNotEligibleError("coverage_probes_invalid")
+    if not isinstance(language, str) or _LANGUAGE.fullmatch(language) is None:
+        raise VoiceEvidenceNotEligibleError("coverage_probes_invalid")
+    # This lane measures the fixed validation rate; a report claiming another
+    # rate is not evidence this run produced.
+    if sample_rate != 24_000 or type(sample_rate) is not int:
+        raise VoiceEvidenceNotEligibleError("coverage_probes_invalid")
+    if entry["audio_format"] != "wav" or entry["mode"] != "complete":
+        raise VoiceEvidenceNotEligibleError("coverage_probes_invalid")
+    if (
+        type(duration) is not int
+        or duration < 1
+        or type(output_bytes) is not int
+        or output_bytes < 1
+    ):
+        raise VoiceEvidenceNotEligibleError("coverage_probes_invalid")
+    if set(capabilities) != {"languages", "sample_rates_hz", "audio_formats", "modes"}:
+        raise VoiceEvidenceNotEligibleError("coverage_capabilities_mismatch")
+    if (
+        capabilities.get("languages") != [language]
+        or capabilities.get("sample_rates_hz") != [sample_rate]
+        or capabilities.get("audio_formats") != ["wav"]
+        or capabilities.get("modes") != ["complete"]
+    ):
+        # Capabilities must be the probe's measured facts, not a broader claim.
+        raise VoiceEvidenceNotEligibleError("coverage_capabilities_mismatch")
+    return [
+        {
+            "name": name,
+            "text": text,
+            "text_sha256": entry["text_sha256"],
+            "generation_preview_text_sha256": entry["generation_preview_text_sha256"],
+            "language": language,
+            "sample_rate_hz": sample_rate,
+            "audio_format": "wav",
+            "audio_duration_ms": duration,
+            "output_sha256": entry["output_sha256"],
+            "output_bytes": output_bytes,
+            "mode": "complete",
+        }
+    ]
+
+
+def _text_digest(value: str) -> str:
+    return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
 def _coverage(
-    report: dict[str, Any], validation: dict[str, Any], checks: tuple[_Check, ...]
+    report: dict[str, Any],
+    validation: dict[str, Any],
+    checks: tuple[_Check, ...],
+    capabilities: dict[str, Any],
 ) -> dict[str, Any]:
     reported = report.get("coverage")
     if type(reported) is not dict:
@@ -235,6 +336,7 @@ def _coverage(
     ):
         # The report may not claim coverage the Job did not commit.
         raise VoiceEvidenceNotEligibleError("coverage_checks_mismatch")
+    probes = _probes(reported, checks, capabilities)
     return {
         "synthesis_path": REUSABLE_TTS_PATH,
         "validation_set_revision": validation["validation_set_revision"],
@@ -243,6 +345,7 @@ def _coverage(
         ],
         "required_checks": sorted(item.name for item in checks if item.required),
         "reusable_tts": "passed",
+        "probes": probes,
     }
 
 
@@ -296,7 +399,7 @@ def build_evidence(
         raise VoiceEvidenceNotEligibleError("validation_draft_mismatch")
     if validation.get("draft_revision") != facts.draft_revision:
         raise VoiceEvidenceNotEligibleError("validation_revision_mismatch")
-    coverage = _coverage(document, validation, checks)
+    coverage = _coverage(document, validation, checks, capabilities)
     material = _material(document, facts)
     validation_id = require_identifier(validation.get("id"), "validation id")
     evidence_id = evidence_id_for_job(facts.validation_job_id)

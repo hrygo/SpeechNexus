@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import posixpath
 import subprocess
 import sys
@@ -41,22 +42,13 @@ _OPENAI_PATHS = {
 # borrow another operation's guarantees.
 _PLACEHOLDER_503_REF = "#/components/responses/OperationNotImplemented"
 _PLACEHOLDER_ERROR_CODE = "operation_not_implemented"
+_PLACEHOLDER_ERROR_TYPE = "service_unavailable_error"
+_PLACEHOLDER_RETRYABLE = False
 _ERROR_RESPONSE_REF = "#/components/schemas/ErrorResponse"
 # The placeholder response says the capability is unavailable. Keep it out of
-# shared caches: `no-store` is the only acceptable value, so a replacement may not
-# soften "unavailable" into a publicly cacheable response.
+# shared caches: `no-store` is the only acceptable directive, so a replacement may
+# not soften "unavailable" into a publicly cacheable response.
 _NO_STORE_DIRECTIVE = "no-store"
-_PUBLIC_CACHE_DIRECTIVES = frozenset(
-    {
-        "public",
-        "max-age",
-        "s-maxage",
-        "stale-while-revalidate",
-        "stale-if-error",
-        "proxy-revalidate",
-        "immutable",
-    }
-)
 _OPENAI_REALTIME_DEFS = {
     "SessionUpdate",
     "InputAudioBufferAppend",
@@ -278,6 +270,69 @@ def _declared_error_codes(schema: object, side: _SchemaSide) -> set[str] | None:
     return codes
 
 
+def _property_levels(
+    schema: object,
+    side: _SchemaSide,
+    path: tuple[str, ...],
+) -> list[tuple[Mapping[str, Any], _SchemaSide]] | None:
+    """Schemas constraining one nested property, or None when undeterminable.
+
+    Each step follows `$ref`/`allOf` conjuncts at the current instance level, so a
+    shared component's declaration is visited beside the inline one. A level that
+    does not declare the property contributes no constraint.
+    """
+    levels = _instance_level_schemas(schema, side)
+    if levels is None:
+        return None
+    if not path:
+        return levels
+    result: list[tuple[Mapping[str, Any], _SchemaSide]] = []
+    for level, level_side in levels:
+        child = (_mapping(level.get("properties")) or {}).get(path[0])
+        if child is None:
+            continue
+        child_levels = _property_levels(child, level_side, path[1:])
+        if child_levels is None:
+            return None
+        result.extend(child_levels)
+    return result
+
+
+def _declares_exactly(
+    schema: object,
+    side: _SchemaSide,
+    path: tuple[str, ...],
+    expected: object,
+) -> bool:
+    """True when every conjunction restricts the property to exactly `expected`.
+
+    Conjuncts intersect: the shared `ErrorResponse` may admit every error type
+    while the inline body narrows `error.type` to one literal, and that pair is
+    exact. A level without `const`/`enum` does not restrict the value. Matching is
+    type-sensitive so the boolean `false` cannot pass as the number `0`, and a
+    property no conjunct constrains is rejected rather than assumed safe.
+    """
+    levels = _property_levels(schema, side, path)
+    if levels is None:
+        return False
+    allowed: list[object] | None = None
+    for level, _ in levels:
+        constraints: list[list[object]] = []
+        if "const" in level:
+            constraints.append([level["const"]])
+        enum_values = _sequence(level.get("enum"))
+        if enum_values is not None:
+            constraints.append(enum_values)
+        for declared in constraints:
+            if allowed is None:
+                allowed = declared
+            else:
+                allowed = [value for value in allowed if any(value == other for other in declared)]
+    if not allowed:
+        return False
+    return all(type(value) is type(expected) and value == expected for value in allowed)
+
+
 def _declares_literal_only(schema: object, expected: str) -> bool:
     """True when every value a header schema allows is exactly `expected`."""
     mapping = _mapping(schema) or {}
@@ -289,23 +344,31 @@ def _declares_literal_only(schema: object, expected: str) -> bool:
     return mapping.get("const") == expected or bool(values)
 
 
-def _cache_control_directives(value: object) -> set[str] | None:
-    """Directive names in one Cache-Control value; None for a non-string."""
+def _cache_control_is_no_store(value: object) -> bool:
+    """True only when every directive token in one Cache-Control value is no-store.
+
+    `Cache-Control` is a comma-separated directive list, so the check is per
+    token, not a substring search: `x-no-store`, `no-store-please`,
+    `no-store, max-age=0` and `No-Store, public` all name something else (or add
+    a cacheable directive) and are rejected. Tokens are stripped and compared
+    case-insensitively; a non-string value cannot be verified and is rejected.
+    """
     if not isinstance(value, str):
-        return None
-    directives = {directive.split("=", 1)[0].strip().lower() for directive in value.split(",")}
-    directives.discard("")
-    return directives
+        return False
+    tokens = [token.strip().lower() for token in value.split(",")]
+    directives = [token for token in tokens if token]
+    return bool(directives) and all(token == _NO_STORE_DIRECTIVE for token in directives)
 
 
 def _declares_no_store(schema: object, side: _SchemaSide) -> bool:
     """True when every declared Cache-Control value keeps the response uncacheable.
 
     A placeholder 503 reports that a capability is unavailable, so the response
-    must not enter a shared cache. Each declared `const`/`enum` value has to carry
-    `no-store` and no public cache directive; values are read at the same instance
-    level, following `$ref` and `allOf` conjuncts. A schema that declares no value
-    cannot be verified and is rejected rather than assumed safe.
+    must not enter a shared cache. Each declared `const`/`enum` value has to be
+    exactly the `no-store` directive; values are read at the same instance level,
+    following `$ref` and `allOf` conjuncts. A schema that declares no value, or
+    whose reference cannot be resolved, cannot be verified and is rejected rather
+    than assumed safe.
     """
     levels = _instance_level_schemas(schema, side)
     if levels is None:
@@ -320,12 +383,7 @@ def _declares_no_store(schema: object, side: _SchemaSide) -> bool:
             values.extend(enum_values)
         for value in values:
             declared = True
-            directives = _cache_control_directives(value)
-            if (
-                directives is None
-                or _NO_STORE_DIRECTIVE not in directives
-                or directives & _PUBLIC_CACHE_DIRECTIVES
-            ):
+            if not _cache_control_is_no_store(value):
                 return False
     return declared
 
@@ -397,6 +455,16 @@ def _placeholder_503_problems(
             problems.append(
                 f"{subject} must not declare {_PLACEHOLDER_ERROR_CODE} in its error.code"
             )
+    else:
+        for path, expected in (
+            (("error", "code"), _PLACEHOLDER_ERROR_CODE),
+            (("error", "type"), _PLACEHOLDER_ERROR_TYPE),
+            (("error", "retryable"), _PLACEHOLDER_RETRYABLE),
+        ):
+            if not _declares_exactly(schema, side, path, expected):
+                problems.append(
+                    f"{subject} requires {'.'.join(path)} exactly {json.dumps(expected)}"
+                )
     return problems
 
 

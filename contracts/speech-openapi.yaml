@@ -1494,7 +1494,7 @@ paths:
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "409":
-          $ref: "#/components/responses/Conflict"
+          $ref: "#/components/responses/VoiceDraftCreationConflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
         "429":
@@ -1502,10 +1502,17 @@ paths:
         "500":
           $ref: "#/components/responses/VoiceDraftContractViolation"
         "503":
-          description: >-
-            The deployment has no voice draft storage or the stored result is
-            unknown. The operation is implemented; this 503 is a retryable
-            outage, not a permanently unimplemented operation.
+          description: |
+            `voice_draft_unavailable`: storage failed before any definite
+            commit, so retrying the same request is safe. The operation is
+            implemented; this is a retryable outage, not a permanently
+            unimplemented operation.
+
+            `voice_draft_outcome_unknown`: the submission may have committed
+            but its acknowledgement was lost. This code is returned only for a
+            request that carried its original Idempotency-Key; retry with that
+            exact key so the committed draft is replayed instead of creating a
+            second draft and generation Job. Do not retry with a new key.
           headers:
             Cache-Control:
               required: true
@@ -1567,7 +1574,7 @@ paths:
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "409":
-          $ref: "#/components/responses/Conflict"
+          $ref: "#/components/responses/VoiceDraftCreationConflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
         "429":
@@ -1575,10 +1582,17 @@ paths:
         "500":
           $ref: "#/components/responses/VoiceDraftContractViolation"
         "503":
-          description: >-
-            The deployment has no voice draft storage or the stored result is
-            unknown. The operation is implemented; this 503 is a retryable
-            outage, not a permanently unimplemented operation.
+          description: |
+            `voice_draft_unavailable`: storage failed before any definite
+            commit, so retrying the same request is safe. The operation is
+            implemented; this is a retryable outage, not a permanently
+            unimplemented operation.
+
+            `voice_draft_outcome_unknown`: the submission may have committed
+            but its acknowledgement was lost. This code is returned only for a
+            request that carried its original Idempotency-Key; retry with that
+            exact key so the committed draft is replayed instead of creating a
+            second draft and generation Job. Do not retry with a new key.
           headers:
             Cache-Control:
               required: true
@@ -1647,9 +1661,9 @@ paths:
         "500":
           $ref: "#/components/responses/VoiceDraftContractViolation"
         "503":
-          description: >-
+          description: |
             The deployment has no voice draft storage or the stored result is
-            unknown. The operation is implemented; this 503 is a retryable
+            unavailable. The operation is implemented; this 503 is a retryable
             outage, not a permanently unimplemented operation.
           headers:
             Cache-Control:
@@ -1673,7 +1687,6 @@ paths:
                           code:
                             enum:
                               - voice_draft_unavailable
-                              - voice_draft_outcome_unknown
                           type:
                             const: service_unavailable_error
                           retryable:
@@ -1724,9 +1737,9 @@ paths:
         "500":
           $ref: "#/components/responses/VoiceDraftContractViolation"
         "503":
-          description: >-
+          description: |
             The deployment has no voice draft storage or the stored result is
-            unknown. The operation is implemented; this 503 is a retryable
+            unavailable. The operation is implemented; this 503 is a retryable
             outage, not a permanently unimplemented operation.
           headers:
             Cache-Control:
@@ -1750,7 +1763,6 @@ paths:
                           code:
                             enum:
                               - voice_draft_unavailable
-                              - voice_draft_outcome_unknown
                           type:
                             const: service_unavailable_error
                           retryable:
@@ -2479,6 +2491,44 @@ components:
                         const: operation_not_implemented
                       type:
                         const: service_unavailable_error
+                      retryable:
+                        const: false
+                      nexus: false
+    VoiceDraftCreationConflict:
+      description: |
+        `voice_draft_conflict`: the Idempotency-Key identifies another intent,
+        or the metadata revision conflicts.
+
+        `voice_draft_outcome_unknown`: the creation request did not carry an
+        Idempotency-Key and an earlier submission may already have committed.
+        A resubmission is a new intent and can create a second draft and
+        generation Job, so this reply is not retryable: reconcile the original
+        request before deciding to submit again.
+      headers:
+        Cache-Control:
+          required: true
+          schema:
+            type: string
+            const: "no-store"
+        X-Should-Retry:
+          required: true
+          schema:
+            type: string
+            const: "false"
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/ErrorResponse"
+              - properties:
+                  error:
+                    properties:
+                      code:
+                        enum:
+                          - voice_draft_conflict
+                          - voice_draft_outcome_unknown
+                      type:
+                        const: invalid_request_error
                       retryable:
                         const: false
                       nexus: false

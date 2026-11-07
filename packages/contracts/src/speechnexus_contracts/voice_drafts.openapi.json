@@ -64,7 +64,7 @@
             "$ref": "#/components/responses/MethodNotAllowed"
           },
           "409": {
-            "$ref": "#/components/responses/Conflict"
+            "$ref": "#/components/responses/VoiceDraftCreationConflict"
           },
           "422": {
             "$ref": "#/components/responses/UnprocessableEntity"
@@ -76,7 +76,7 @@
             "$ref": "#/components/responses/VoiceDraftContractViolation"
           },
           "503": {
-            "description": "The deployment has no voice draft storage or the stored result is unknown. The operation is implemented; this 503 is a retryable outage, not a permanently unimplemented operation.",
+            "description": "`voice_draft_unavailable`: storage failed before any definite\ncommit, so retrying the same request is safe. The operation is\nimplemented; this is a retryable outage, not a permanently\nunimplemented operation.\n\n`voice_draft_outcome_unknown`: the submission may have committed\nbut its acknowledgement was lost. This code is returned only for a\nrequest that carried its original Idempotency-Key; retry with that\nexact key so the committed draft is replayed instead of creating a\nsecond draft and generation Job. Do not retry with a new key.\n",
             "headers": {
               "Cache-Control": {
                 "required": true,
@@ -178,7 +178,7 @@
             "$ref": "#/components/responses/MethodNotAllowed"
           },
           "409": {
-            "$ref": "#/components/responses/Conflict"
+            "$ref": "#/components/responses/VoiceDraftCreationConflict"
           },
           "422": {
             "$ref": "#/components/responses/UnprocessableEntity"
@@ -190,7 +190,7 @@
             "$ref": "#/components/responses/VoiceDraftContractViolation"
           },
           "503": {
-            "description": "The deployment has no voice draft storage or the stored result is unknown. The operation is implemented; this 503 is a retryable outage, not a permanently unimplemented operation.",
+            "description": "`voice_draft_unavailable`: storage failed before any definite\ncommit, so retrying the same request is safe. The operation is\nimplemented; this is a retryable outage, not a permanently\nunimplemented operation.\n\n`voice_draft_outcome_unknown`: the submission may have committed\nbut its acknowledgement was lost. This code is returned only for a\nrequest that carried its original Idempotency-Key; retry with that\nexact key so the committed draft is replayed instead of creating a\nsecond draft and generation Job. Do not retry with a new key.\n",
             "headers": {
               "Cache-Control": {
                 "required": true,
@@ -294,7 +294,7 @@
             "$ref": "#/components/responses/VoiceDraftContractViolation"
           },
           "503": {
-            "description": "The deployment has no voice draft storage or the stored result is unknown. The operation is implemented; this 503 is a retryable outage, not a permanently unimplemented operation.",
+            "description": "The deployment has no voice draft storage or the stored result is\nunavailable. The operation is implemented; this 503 is a retryable\noutage, not a permanently unimplemented operation.\n",
             "headers": {
               "Cache-Control": {
                 "required": true,
@@ -323,7 +323,7 @@
                         "error": {
                           "properties": {
                             "code": {
-                              "enum": ["voice_draft_unavailable", "voice_draft_outcome_unknown"]
+                              "enum": ["voice_draft_unavailable"]
                             },
                             "type": {
                               "const": "service_unavailable_error"
@@ -410,7 +410,7 @@
             "$ref": "#/components/responses/VoiceDraftContractViolation"
           },
           "503": {
-            "description": "The deployment has no voice draft storage or the stored result is unknown. The operation is implemented; this 503 is a retryable outage, not a permanently unimplemented operation.",
+            "description": "The deployment has no voice draft storage or the stored result is\nunavailable. The operation is implemented; this 503 is a retryable\noutage, not a permanently unimplemented operation.\n",
             "headers": {
               "Cache-Control": {
                 "required": true,
@@ -439,7 +439,7 @@
                         "error": {
                           "properties": {
                             "code": {
-                              "enum": ["voice_draft_unavailable", "voice_draft_outcome_unknown"]
+                              "enum": ["voice_draft_unavailable"]
                             },
                             "type": {
                               "const": "service_unavailable_error"
@@ -2984,12 +2984,50 @@
           }
         }
       },
-      "Conflict": {
-        "description": "Configuration changed, idempotency conflict, operation in progress, or cleanup pending.\noperation_in_progress requires error.nexus.operation_id for querying the original\nexecution. response_not_replayable additionally requires error.nexus.receipt and\nnever starts another execution. Query GET /v1/nexus/operations/{operation_id}.\n",
+      "VoiceDraftCreationConflict": {
+        "description": "`voice_draft_conflict`: the Idempotency-Key identifies another intent,\nor the metadata revision conflicts.\n\n`voice_draft_outcome_unknown`: the creation request did not carry an\nIdempotency-Key and an earlier submission may already have committed.\nA resubmission is a new intent and can create a second draft and\ngeneration Job, so this reply is not retryable: reconcile the original\nrequest before deciding to submit again.\n",
+        "headers": {
+          "Cache-Control": {
+            "required": true,
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            }
+          },
+          "X-Should-Retry": {
+            "required": true,
+            "schema": {
+              "type": "string",
+              "const": "false"
+            }
+          }
+        },
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "#/components/schemas/ErrorResponse"
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "enum": ["voice_draft_conflict", "voice_draft_outcome_unknown"]
+                        },
+                        "type": {
+                          "const": "invalid_request_error"
+                        },
+                        "retryable": {
+                          "const": false
+                        },
+                        "nexus": false
+                      }
+                    }
+                  }
+                }
+              ]
             }
           }
         }
@@ -3069,6 +3107,16 @@
       },
       "NotFound": {
         "description": "Resource not found or not visible to the requested workspace.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Configuration changed, idempotency conflict, operation in progress, or cleanup pending.\noperation_in_progress requires error.nexus.operation_id for querying the original\nexecution. response_not_replayable additionally requires error.nexus.receipt and\nnever starts another execution. Query GET /v1/nexus/operations/{operation_id}.\n",
         "content": {
           "application/json": {
             "schema": {

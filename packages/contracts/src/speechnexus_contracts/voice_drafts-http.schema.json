@@ -45,7 +45,10 @@
         },
         "409": {
           "schema": "HttpResponse_createVoiceDesign_409",
-          "headers": {},
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
           "json": true
         },
         "422": {
@@ -122,7 +125,10 @@
         },
         "409": {
           "schema": "HttpResponse_createVoiceClone_409",
-          "headers": {},
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
           "json": true
         },
         "422": {
@@ -2896,15 +2902,46 @@
       "properties": {
         "headers": {
           "type": "object",
-          "properties": {},
-          "required": [],
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "false"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
           "additionalProperties": true
         },
         "body": {
-          "$ref": "#/$defs/ErrorResponse"
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "enum": ["voice_draft_conflict", "voice_draft_outcome_unknown"]
+                    },
+                    "type": {
+                      "const": "invalid_request_error"
+                    },
+                    "retryable": {
+                      "const": false
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
         }
       },
-      "required": ["body"]
+      "required": ["headers", "body"]
     },
     "HttpResponse_createVoiceDesign_422": {
       "type": "object",
@@ -3170,15 +3207,46 @@
       "properties": {
         "headers": {
           "type": "object",
-          "properties": {},
-          "required": [],
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "false"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
           "additionalProperties": true
         },
         "body": {
-          "$ref": "#/$defs/ErrorResponse"
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "enum": ["voice_draft_conflict", "voice_draft_outcome_unknown"]
+                    },
+                    "type": {
+                      "const": "invalid_request_error"
+                    },
+                    "retryable": {
+                      "const": false
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
         }
       },
-      "required": ["body"]
+      "required": ["headers", "body"]
     },
     "HttpResponse_createVoiceClone_422": {
       "type": "object",
@@ -3524,7 +3592,7 @@
                 "error": {
                   "properties": {
                     "code": {
-                      "enum": ["voice_draft_unavailable", "voice_draft_outcome_unknown"]
+                      "enum": ["voice_draft_unavailable"]
                     },
                     "type": {
                       "const": "service_unavailable_error"
@@ -3797,7 +3865,7 @@
                 "error": {
                   "properties": {
                     "code": {
-                      "enum": ["voice_draft_unavailable", "voice_draft_outcome_unknown"]
+                      "enum": ["voice_draft_unavailable"]
                     },
                     "type": {
                       "const": "service_unavailable_error"

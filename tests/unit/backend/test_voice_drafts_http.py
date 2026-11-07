@@ -10,16 +10,50 @@ from speechnexus_contracts.voice_drafts_http import validate_response
 from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.application.voice_drafts import VoiceDrafts
-from speechnexus_backend.speech.domain.public_jobs import JobState
+from speechnexus_backend.speech.domain.public_jobs import (
+    JobArtifactFact,
+    JobCreateResult,
+    JobState,
+    NewPublicJob,
+)
 from speechnexus_backend.speech.infrastructure.voice_drafts_postgres import _view
 from tests.unit.backend.test_health import _settings
 from tests.unit.backend.test_public_jobs import NOW, Store
 from tests.unit.backend.test_voice_creation_jobs import VoiceFacts
 
 
-class DraftStore:
+class ArtifactStore(Store):
+    """A fake Job store that can also answer committed preview facts."""
+
     def __init__(self) -> None:
-        self.jobs_store = Store()
+        super().__init__()
+        self.artifacts: dict[str, JobArtifactFact] = {}
+        self.not_ready: set[str] = set()
+
+    def artifact(self, workspace_id: str, artifact_id: str) -> JobArtifactFact | None:
+        if artifact_id in self.not_ready:
+            return None
+        return self.artifacts.get(artifact_id)
+
+
+class LostAckStore(ArtifactStore):
+    """Commit the real fake Job, then drop the acknowledgement exactly once."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.lose_next = True
+
+    def create(self, job: NewPublicJob) -> JobCreateResult:
+        result = super().create(job)
+        if self.lose_next and result.outcome == "created":
+            self.lose_next = False
+            return JobCreateResult("unknown", error_code="outcome_unknown")
+        return result
+
+
+class DraftStore:
+    def __init__(self, jobs_store: ArtifactStore | None = None) -> None:
+        self.jobs_store = jobs_store if jobs_store is not None else ArtifactStore()
         self.jobs, self.requests = self.jobs_store.jobs, self.jobs_store.requests
 
     def get(self, draft_id: str, revision: str | None = None) -> dict[str, Any] | None:
@@ -59,6 +93,11 @@ class DraftStore:
 def _service() -> tuple[VoiceDrafts, DraftStore]:
     store = DraftStore()
     return VoiceDrafts(PublicJobs(VoiceFacts(), store.jobs_store), store), store
+
+
+def _provider(store: DraftStore) -> tuple[VoiceDrafts, PublicJobs]:
+    jobs = PublicJobs(VoiceFacts(), store.jobs_store)
+    return VoiceDrafts(jobs, store), jobs
 
 
 @pytest.mark.parametrize("kind", ["design", "clone"])
@@ -249,12 +288,180 @@ async def test_draft_revision_selects_an_exact_revision() -> None:
             },
         )
         path = "/v1/nexus/voice-drafts/" + created.json()["draft"]["id"]
+        omitted = await http.get(path)
         head = await http.get(path, params={"draft_revision": "1"})
-        other = await http.get(path, params={"draft_revision": "9"})
+        missing = await http.get(path, params={"draft_revision": "2"})
+    assert omitted.status_code == 200, omitted.text
+    assert omitted.json()["revision"]["revision"] == "1"
     assert head.status_code == 200, head.text
     assert head.json()["revision"]["revision"] == "1"
-    assert other.status_code == 404
-    assert other.json()["error"]["code"] == "voice_draft_not_found"
+    # rev2 does not exist in this slice; it must be 404, never a relabelled rev1.
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "voice_draft_not_found"
+
+
+def _candidate_result(
+    draft_id: str,
+    *,
+    receipt: str | None = "receipt-candidate",
+    previews: list[str] | None = None,
+) -> str:
+    result: dict[str, Any] = {
+        "kind": "voice_design",
+        "voice_draft_id": draft_id,
+        "draft_revision": "1",
+        "preview_artifact_ids": ["preview-synthetic"] if previews is None else previews,
+    }
+    if receipt is not None:
+        result["receipt_id"] = receipt
+    return json.dumps(result)
+
+
+def _preview(
+    artifact_id: str = "preview-synthetic", *, receipt: str = "receipt-candidate"
+) -> JobArtifactFact:
+    return JobArtifactFact(
+        artifact_id,
+        "preview",
+        "audio/wav",
+        128,
+        "sha256:" + "c" * 64,
+        receipt,
+    )
+
+
+async def test_candidate_requires_a_matching_receipt_and_ready_preview() -> None:
+    store = DraftStore()
+    provider, jobs = _provider(store)
+    app = create_app(settings=_settings(), voice_drafts=provider)
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://localhost") as http:
+        created = await http.post(
+            "/v1/nexus/voice-designs",
+            json={
+                "model": "tts-quality",
+                "input": {"description": "Synthetic voice", "preview_text": "Synthetic preview"},
+            },
+        )
+        assert created.status_code == 202, created.text
+        draft_id, job_id = created.json()["draft"]["id"], created.json()["job"]["id"]
+        jobs.advance(job_id, "running")
+        jobs.advance(
+            job_id,
+            "succeeded",
+            result_json=_candidate_result(draft_id),
+        )
+        store.jobs_store.artifacts["preview-synthetic"] = _preview()
+        read = await http.get("/v1/nexus/voice-drafts/" + draft_id)
+    assert read.status_code == 200, read.text
+    assert read.json()["revision"]["status"] == "candidate"
+    assert read.json()["revision"]["preview_artifact_ids"] == ["preview-synthetic"]
+    validate_response("getVoiceDraft", 200, {"body": read.json()})
+
+
+@pytest.mark.parametrize(
+    ("mode", "result", "artifacts", "not_ready"),
+    [
+        ("missing-receipt", _candidate_result("PLACEHOLDER", receipt=None), [_preview()], set()),
+        ("missing-artifact", _candidate_result("PLACEHOLDER"), [], set()),
+        (
+            "wrong-receipt",
+            _candidate_result("PLACEHOLDER"),
+            [_preview(receipt="receipt-other")],
+            set(),
+        ),
+        (
+            "not-ready",
+            _candidate_result("PLACEHOLDER"),
+            [_preview()],
+            {"preview-synthetic"},
+        ),
+    ],
+)
+async def test_candidate_keeps_only_committed_ready_preview_artifacts(
+    mode: str,
+    result: str,
+    artifacts: list[JobArtifactFact],
+    not_ready: set[str],
+) -> None:
+    store = DraftStore()
+    provider, jobs = _provider(store)
+    app = create_app(settings=_settings(), voice_drafts=provider)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        created = await http.post(
+            "/v1/nexus/voice-designs",
+            json={
+                "model": "tts-quality",
+                "input": {"description": "Synthetic voice", "preview_text": "Synthetic preview"},
+            },
+        )
+        assert created.status_code == 202, created.text
+        draft_id, job_id = created.json()["draft"]["id"], created.json()["job"]["id"]
+        jobs.advance(job_id, "running")
+        jobs.advance(job_id, "succeeded", result_json=result.replace("PLACEHOLDER", draft_id))
+        for fact in artifacts:
+            store.jobs_store.artifacts[fact.artifact_id] = fact
+        store.jobs_store.not_ready = not_ready
+        read = await http.get("/v1/nexus/voice-drafts/" + draft_id)
+    assert read.status_code == 503, (mode, read.text)
+    assert read.json()["error"]["code"] == "voice_draft_unavailable"
+    assert read.json()["error"]["retryable"] is True
+    validate_response("getVoiceDraft", 503, {"body": read.json(), "headers": dict(read.headers)})
+
+
+async def test_lost_create_ack_with_a_key_replays_the_original_draft() -> None:
+    store = DraftStore(LostAckStore())
+    provider, _jobs = _provider(store)
+    app = create_app(settings=_settings(), voice_drafts=provider)
+    body = {
+        "model": "tts-quality",
+        "input": {"description": "Synthetic voice", "preview_text": "Synthetic preview"},
+    }
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://localhost") as http:
+        lost = await http.post(
+            "/v1/nexus/voice-designs", json=body, headers={"Idempotency-Key": "lost-ack-key"}
+        )
+        assert lost.status_code == 503, lost.text
+        assert lost.json()["error"]["code"] == "voice_draft_outcome_unknown"
+        assert lost.json()["error"]["retryable"] is True
+        assert lost.headers["X-Should-Retry"] == "true"
+        validate_response(
+            "createVoiceDesign", 503, {"body": lost.json(), "headers": dict(lost.headers)}
+        )
+        replay = await http.post(
+            "/v1/nexus/voice-designs", json=body, headers={"Idempotency-Key": "lost-ack-key"}
+        )
+        assert replay.status_code == 202, replay.text
+        assert len(store.requests) == 1
+        assert len(store.jobs_store.jobs) == 1
+        different = await http.post(
+            "/v1/nexus/voice-designs", json=body, headers={"Idempotency-Key": "another-key"}
+        )
+        assert different.status_code == 202, different.text
+        assert different.json()["draft"]["id"] != replay.json()["draft"]["id"]
+        assert len(store.requests) == 2
+
+
+async def test_lost_create_ack_without_a_key_is_not_a_retryable_503() -> None:
+    store = DraftStore(LostAckStore())
+    provider, _jobs = _provider(store)
+    app = create_app(settings=_settings(), voice_drafts=provider)
+    body = {
+        "model": "tts-quality",
+        "input": {"description": "Synthetic voice", "preview_text": "Synthetic preview"},
+    }
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        lost = await http.post("/v1/nexus/voice-designs", json=body)
+        assert lost.status_code == 409, lost.text
+        assert lost.json()["error"]["code"] == "voice_draft_outcome_unknown"
+        assert lost.json()["error"]["retryable"] is False
+        assert lost.headers["X-Should-Retry"] == "false"
+        validate_response(
+            "createVoiceDesign", 409, {"body": lost.json(), "headers": dict(lost.headers)}
+        )
+        resubmitted = await http.post("/v1/nexus/voice-designs", json=body)
+        assert resubmitted.status_code == 202, resubmitted.text
+        assert resubmitted.json()["draft"]["id"] != lost.json().get("draft", {}).get("id")
+        assert len(store.requests) == 2
 
 
 async def test_contract_violation_is_a_500_not_a_retryable_503() -> None:

@@ -16,7 +16,11 @@ from speechnexus_backend.speech.application.public_jobs import (
     WorkspaceFact,
     require_pinned_binding,
 )
-from speechnexus_backend.speech.application.voice_drafts import draft_id_for_job
+from speechnexus_backend.speech.application.voice_drafts import (
+    draft_id_for_job,
+    voice_input_document,
+    voice_input_fits,
+)
 from speechnexus_backend.speech.domain.public_jobs import (
     TERMINAL_STATES,
     JobArtifactFact,
@@ -1013,6 +1017,9 @@ def _insert(connection: _Executor, job: NewPublicJob) -> None:
         intent = json.loads(job.request_document)
         voice_kind = job.kind.removeprefix("voice_")
         voice_input = {**intent["input"], "kind": voice_kind}
+        stored_input = voice_input_document(intent["input"], voice_kind)
+        if not voice_input_fits(stored_input):
+            raise ValueError("Stored voice input exceeds the declared bound")
         configuration = json.loads(submission.effective_configuration_json)
         connection.execute(
             "INSERT INTO speech_voice_drafts "
@@ -1024,8 +1031,8 @@ def _insert(connection: _Executor, job: NewPublicJob) -> None:
                 job.job_id,
                 voice_kind,
                 voice_input.get("display_name", "Voice " + voice_kind),
-                json.dumps(voice_input),
-                json.dumps(configuration["models"]["voice"]),
+                stored_input,
+                json.dumps(configuration["models"]["voice"], ensure_ascii=False),
                 submission.submitted_at_us,
                 submission.submitted_at_us,
             ),

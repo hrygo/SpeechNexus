@@ -166,6 +166,6 @@ class PostgresVoiceDrafts:
                 connection.execute(
                     "INSERT INTO speech_voice_metadata_commands "
                     "(draft_id, key_digest, request_digest, result_json) VALUES (%s,%s,%s,%s)",
-                    (draft_id, key, digest, json.dumps(body)),
+                    (draft_id, key, digest, json.dumps(body, ensure_ascii=False)),
                 )
         return body

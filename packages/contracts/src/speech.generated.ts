@@ -3558,6 +3558,36 @@ export interface components {
       };
     };
     /**
+     * @description `voice_draft_conflict`: the Idempotency-Key identifies another intent,
+     *     or the metadata revision conflicts.
+     *
+     *     `voice_draft_outcome_unknown`: the creation request did not carry an
+     *     Idempotency-Key and an earlier submission may already have committed.
+     *     A resubmission is a new intent and can create a second draft and
+     *     generation Job, so this reply is not retryable: reconcile the original
+     *     request before deciding to submit again.
+     */
+    VoiceDraftCreationConflict: {
+      headers: {
+        "Cache-Control": "no-store";
+        "X-Should-Retry": "false";
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"] & {
+          error?: {
+            /** @enum {unknown} */
+            code?: "voice_draft_conflict" | "voice_draft_outcome_unknown";
+            /** @constant */
+            type?: "invalid_request_error";
+            /** @constant */
+            retryable?: false;
+            nexus?: never;
+          };
+        };
+      };
+    };
+    /**
      * @description The deployment produced a voice draft response that violates this
      *     contract. The operation is implemented and the storage is reachable, so
      *     this is an implementation defect rather than an outage: it is not
@@ -4957,11 +4987,22 @@ export interface operations {
       401: components["responses"]["Unauthorized"];
       403: components["responses"]["Forbidden"];
       405: components["responses"]["MethodNotAllowed"];
-      409: components["responses"]["Conflict"];
+      409: components["responses"]["VoiceDraftCreationConflict"];
       422: components["responses"]["UnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];
       500: components["responses"]["VoiceDraftContractViolation"];
-      /** @description The deployment has no voice draft storage or the stored result is unknown. The operation is implemented; this 503 is a retryable outage, not a permanently unimplemented operation. */
+      /**
+       * @description `voice_draft_unavailable`: storage failed before any definite
+       *     commit, so retrying the same request is safe. The operation is
+       *     implemented; this is a retryable outage, not a permanently
+       *     unimplemented operation.
+       *
+       *     `voice_draft_outcome_unknown`: the submission may have committed
+       *     but its acknowledgement was lost. This code is returned only for a
+       *     request that carried its original Idempotency-Key; retry with that
+       *     exact key so the committed draft is replayed instead of creating a
+       *     second draft and generation Job. Do not retry with a new key.
+       */
       503: {
         headers: {
           "Cache-Control": "no-store";
@@ -5018,11 +5059,22 @@ export interface operations {
       401: components["responses"]["Unauthorized"];
       403: components["responses"]["Forbidden"];
       405: components["responses"]["MethodNotAllowed"];
-      409: components["responses"]["Conflict"];
+      409: components["responses"]["VoiceDraftCreationConflict"];
       422: components["responses"]["UnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];
       500: components["responses"]["VoiceDraftContractViolation"];
-      /** @description The deployment has no voice draft storage or the stored result is unknown. The operation is implemented; this 503 is a retryable outage, not a permanently unimplemented operation. */
+      /**
+       * @description `voice_draft_unavailable`: storage failed before any definite
+       *     commit, so retrying the same request is safe. The operation is
+       *     implemented; this is a retryable outage, not a permanently
+       *     unimplemented operation.
+       *
+       *     `voice_draft_outcome_unknown`: the submission may have committed
+       *     but its acknowledgement was lost. This code is returned only for a
+       *     request that carried its original Idempotency-Key; retry with that
+       *     exact key so the committed draft is replayed instead of creating a
+       *     second draft and generation Job. Do not retry with a new key.
+       */
       503: {
         headers: {
           "Cache-Control": "no-store";
@@ -5074,7 +5126,11 @@ export interface operations {
       404: components["responses"]["NotFound"];
       405: components["responses"]["MethodNotAllowed"];
       500: components["responses"]["VoiceDraftContractViolation"];
-      /** @description The deployment has no voice draft storage or the stored result is unknown. The operation is implemented; this 503 is a retryable outage, not a permanently unimplemented operation. */
+      /**
+       * @description The deployment has no voice draft storage or the stored result is
+       *     unavailable. The operation is implemented; this 503 is a retryable
+       *     outage, not a permanently unimplemented operation.
+       */
       503: {
         headers: {
           "Cache-Control": "no-store";
@@ -5085,7 +5141,7 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"] & {
             error?: {
               /** @enum {unknown} */
-              code?: "voice_draft_unavailable" | "voice_draft_outcome_unknown";
+              code?: "voice_draft_unavailable";
               /** @constant */
               type?: "service_unavailable_error";
               /** @constant */
@@ -5137,7 +5193,11 @@ export interface operations {
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
       500: components["responses"]["VoiceDraftContractViolation"];
-      /** @description The deployment has no voice draft storage or the stored result is unknown. The operation is implemented; this 503 is a retryable outage, not a permanently unimplemented operation. */
+      /**
+       * @description The deployment has no voice draft storage or the stored result is
+       *     unavailable. The operation is implemented; this 503 is a retryable
+       *     outage, not a permanently unimplemented operation.
+       */
       503: {
         headers: {
           "Cache-Control": "no-store";
@@ -5148,7 +5208,7 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"] & {
             error?: {
               /** @enum {unknown} */
-              code?: "voice_draft_unavailable" | "voice_draft_outcome_unknown";
+              code?: "voice_draft_unavailable";
               /** @constant */
               type?: "service_unavailable_error";
               /** @constant */

@@ -1,10 +1,10 @@
-"""Atomically attach voice drafts to public generation Jobs; reserve 0041 for #490."""
+"""Atomically attach voice drafts to public generation Jobs."""
 
 from alembic import op
 
 from speechnexus_backend.speech.infrastructure.voice_draft_schema import VOICE_DRAFT_DDL
 
-revision = "0042_voice_drafts"
+revision = "0041_voice_drafts"
 down_revision = "0040_public_job_listing"
 branch_labels = None
 depends_on = None

@@ -26,8 +26,13 @@ from speechnexus_backend.speech.application.voice_drafts import (
     VoiceDraftConflictError,
     VoiceDraftNotFoundError,
     VoiceDrafts,
+    voice_input_document,
+    voice_input_fits,
 )
-from speechnexus_backend.speech.domain.public_jobs import PublicJobUnavailableError
+from speechnexus_backend.speech.domain.public_jobs import (
+    PublicJobNotFoundError,
+    PublicJobUnavailableError,
+)
 from speechnexus_backend.speech.interfaces.http.contract_projection import namespaced_contract
 from speechnexus_backend.speech.interfaces.http.jobs import (
     _constant,
@@ -39,21 +44,83 @@ from speechnexus_backend.speech.interfaces.http.jobs import (
 )
 from speechnexus_backend.speech.interfaces.http.origin_policy import rejected_authority
 
-_ERRORS = {
-    "invalid_request": (400, "invalid_request_error", "Invalid voice draft request."),
-    "authority_rejected": (403, "permission_error", "The voice Host or Origin is not allowed."),
-    "not_found": (404, "not_found_error", "The voice draft was not found."),
-    "conflict": (409, "invalid_request_error", "Voice metadata version or intent conflicts."),
-    "unsupported_parameter": (422, "invalid_request_error", "Only display metadata is mutable."),
-    "input_unavailable": (422, "invalid_request_error", "Published model or ready input required."),
-    "unavailable": (503, "service_unavailable_error", "Voice draft storage is unavailable."),
-    "outcome_unknown": (503, "service_unavailable_error", "Reconcile the original voice request."),
+# (status, public type, message, wire code, retryable). ``retryable`` is a
+# decision, not a function of the status: a definite transient failure may be
+# retried, but a submission whose commit is unknown may only be replayed with
+# its original Idempotency-Key.
+_ERRORS: dict[str, tuple[int, str, str, str, bool]] = {
+    "invalid_request": (
+        400,
+        "invalid_request_error",
+        "Invalid voice draft request.",
+        "invalid_request",
+        False,
+    ),
+    "authority_rejected": (
+        403,
+        "permission_error",
+        "The voice Host or Origin is not allowed.",
+        "authority_rejected",
+        False,
+    ),
+    "not_found": (404, "not_found_error", "The voice draft was not found.", "not_found", False),
+    "conflict": (
+        409,
+        "invalid_request_error",
+        "Voice metadata version or intent conflicts.",
+        "conflict",
+        False,
+    ),
+    # A request without a key that may already have committed cannot be retried
+    # safely: a resubmission is a new intent and may create a second draft and
+    # generation Job. 409 is the same reconcile-the-original class already used
+    # for an unconfirmed cancellation; it is deliberately not a retryable 503.
+    "outcome_unknown_unkeyed": (
+        409,
+        "invalid_request_error",
+        "The original submission may have been accepted; resubmit only to create a new draft.",
+        "outcome_unknown",
+        False,
+    ),
+    "unsupported_parameter": (
+        422,
+        "invalid_request_error",
+        "Only display metadata is mutable.",
+        "unsupported_parameter",
+        False,
+    ),
+    "input_unavailable": (
+        422,
+        "invalid_request_error",
+        "Published model or ready input required.",
+        "input_unavailable",
+        False,
+    ),
+    "unavailable": (
+        503,
+        "service_unavailable_error",
+        "Voice draft storage is unavailable.",
+        "unavailable",
+        True,
+    ),
+    # Only a request that carried its original Idempotency-Key reaches this:
+    # the same-key replay recovers the committed draft instead of creating a
+    # second one, so retrying is safe and bounded.
+    "outcome_unknown": (
+        503,
+        "service_unavailable_error",
+        "Reconcile the original voice request with its Idempotency-Key.",
+        "outcome_unknown",
+        True,
+    ),
     # Our own reply violated the declared contract: an implementation defect,
     # not an outage, so it must not be dressed up as a retryable 503.
     "contract_violation": (
         500,
         "api_error",
         "The voice draft response violated the declared contract.",
+        "contract_violation",
+        False,
     ),
 }
 
@@ -63,17 +130,13 @@ def voice_drafts_http_contract() -> dict[str, Any]:
 
 
 def _error(code: str, request_id: str, operation: str) -> JSONResponse:
-    status, kind, message = _ERRORS[code]
-    # A 503 here means implemented storage or the stored result is unavailable,
-    # not that the operation is missing; it stays retryable like every other
-    # service-unavailable reply on the public surface.
-    retryable = status == 503
+    status, kind, message, wire, retryable = _ERRORS[code]
     headers = {"Cache-Control": "no-store", "X-Should-Retry": str(retryable).lower()}
     body = parse(
         "ErrorResponse",
         {
             "error": {
-                "code": "voice_draft_" + code,
+                "code": "voice_draft_" + wire,
                 "type": kind,
                 "message": message,
                 "param": None,
@@ -113,7 +176,13 @@ def _stored_input_validator(name: str) -> Draft202012Validator:
 
 def _stored_input_rejected(operation: str, payload: dict[str, Any]) -> bool:
     kind, name = _STORED_INPUTS[operation]
-    return not _stored_input_validator(name).is_valid({**payload["input"], "kind": kind})
+    stored = {**payload["input"], "kind": kind}
+    if not _stored_input_validator(name).is_valid(stored):
+        return True
+    # The ingress limit bounds the whole request body, not the revision-sized
+    # input document the database stores. Check the exact bytes that will be
+    # persisted so a valid UTF-8 request cannot roll back with a 65536 CHECK.
+    return not voice_input_fits(voice_input_document(payload["input"], kind))
 
 
 def _execute(
@@ -167,12 +236,20 @@ def _execute(
             return _error("input_unavailable", request_id, operation)
         return _error("unavailable", request_id, operation)
     except JobOutcomeUnknownError:
-        return _error("outcome_unknown", request_id, operation)
+        if operation in ("createVoiceDesign", "createVoiceClone"):
+            # With the original key, a same-key replay returns the committed
+            # draft and no second Job exists. Without one, any resubmission is
+            # a new intent, so the reply must not invite an ordinary retry.
+            if key is None:
+                return _error("outcome_unknown_unkeyed", request_id, operation)
+            return _error("outcome_unknown", request_id, operation)
+        return _error("unavailable", request_id, operation)
     except ContractValidationError:
         # The reply we built violates our own contract. Answering 503 would hide
         # an implementation defect behind a retryable outage.
         return _error("contract_violation", request_id, operation)
     except (
+        PublicJobNotFoundError,
         PublicJobUnavailableError,
         JobRejectedError,
         ValueError,

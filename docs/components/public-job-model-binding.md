@@ -1,8 +1,9 @@
 # Public TTS Job 的固定 binding 前置链
 
-本单元允许调用方固定文件 TTS 的 binding，保存公开原意图与有效配置投影。
-它没有装配生产 planner，没有构造完整执行命令或完成完整配方的原子准入，
-不能据此结算 #235 AC3。Workbench 已有渲染 Job 适配器，但当前
+本单元允许调用方固定文件 TTS/ASR 的 binding，保存公开原意图与有效配置投影，
+并在创建事务内按固定 binding 的 `execution_defaults` 构造完整业务命令、完成配额/
+池/节点/实例/租约的原子准入。voice 生成类仍无执行配方，不进入该准入路径。
+本单元不装配生产 planner，不能据此结算 #235 AC3。Workbench 已有渲染 Job 适配器，但当前
 `PublicSpeechRenderJobs.submit` 未把固定的 `model_binding` 放入公开 Job 请求；
 该消费者的 pin 传递与端到端验收仍须单独完成。
 
@@ -32,7 +33,13 @@ head 清空时两个 pin 都拒绝；不回退到最大已发布版本，也不�
 无 pin 请求仍以 model 为 binding object ID，消费当前未退役的权威 head。
 
 响应 `effective_configuration.models.tts` 等于原 pin；内部 revision_id 不公开。
-原请求保存在现有私有 admission_operations 中，不能把它当作完整有效执行命令。
+原请求保存在 `speech_job_intents` 中；它不是完整执行命令。`asr`/`tts` 的执行参数来自
+该 binding revision 冻结的 `execution_defaults`，缺失任一必需项返回 422
+`job_binding_incomplete`，不使用当前配置或稀疏默认值补齐。`deadline_at_us` 只由
+冻结的 `execution_defaults.timeout_seconds` 计算，`constraints.max_queue_wait_ms`
+仅约束排队，不改变租约期限。`tts` 的 `text_asset_id` 在冻结文本资产材料落地前返回
+422 `job_text_asset_unsupported`。容量不足在 `POST /v1/nexus/jobs` 返回 429
+`job_capacity_exhausted` 与 `Retry-After`，且不写任何 Job 或准入行。
 
 | HTTP / code | 含义 |
 | --- | --- |
@@ -43,6 +50,9 @@ head 清空时两个 pin 都拒绝；不回退到最大已发布版本，也不�
 | 422 model_binding_task_not_supported | 不支持 tts_file |
 | 422 unsupported_parameter | schema 拒绝非法引用或非 TTS pin |
 | 409 idempotency_conflict | 同 workspace/key 的规范意图不同，包括变更或移除 pin |
+| 422 job_binding_incomplete | binding 未冻结完整执行参数，或 runtime plan 与 binding 不一致 |
+| 422 job_text_asset_unsupported | TTS 文本资产输入尚未支持 |
+| 429 job_capacity_exhausted | 配额或容量不足；按 Retry-After 重试，未写任何行 |
 | 503 job_outcome_unknown | 原结果未能确认；保存原请求/key，查询或原身份恢复 |
 | 503 job_unavailable | 事实或存储不可用；不证明此前提交不存在；`retryable: false` |
 
@@ -64,9 +74,10 @@ revision_id、logical_model、任务及原请求/公开配置的一致性。锁�
 无 pin 创建保留 main 的锁后 head 复核；keyless 请求从 binding 锁开始，不承诺同键恢复。
 
 生命周期/发布路径不反取 public Job key；拒绝协调不持 binding 锁或在锁内开 facts 连接。
-资源锁和 [全局协调锁序](../architecture/coordination-transactions.md#4-锁序隔离与数据库适配)
-保持现状，本路径不获取 pool/quota/host/generation，不代表完整准入。
-混跑不遵循新 key 锁的旧写者不具备此保证；将来完整准入必须按其全局锁序在唯一事务中整合。
+asr/tts 创建按 [全局协调锁序](../architecture/coordination-transactions.md#4-锁序隔离与数据库适配)
+在唯一事务中获取 pool/quota/host/generation 并写入操作、attempt、request、lease、
+协调 Job/outbox；voice 生成类仍不获取这些执行资源。混跑不遵循新 key 锁的旧写者
+不具备此保证；其他创建路径必须按同一全局锁序整合，不得在事务外补写。
 
 ## 事务期限与未知提交
 

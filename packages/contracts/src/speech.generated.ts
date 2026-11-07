@@ -364,6 +364,17 @@ export interface paths {
      *     retryable unchanged. Obtain a fresh selection for a new intent only
      *     after resolving any earlier unknown submission.
      *
+     *     For `asr` and `tts`, the admission operation, attempt, request, lease,
+     *     quota and capacity projections, the coordination claim and every public
+     *     Job row commit in one transaction. A capacity shortage returns 429
+     *     `job_capacity_exhausted` with `Retry-After` and writes no row. A binding
+     *     whose frozen `execution_defaults` cannot complete every execution
+     *     parameter returns 422 `job_binding_incomplete`; `tts` input
+     *     `text_asset_id` returns 422 `job_text_asset_unsupported` until the
+     *     frozen text-asset material exists. A custom voice from `voice_clone` or
+     *     `voice_design` stays explicitly unavailable until its execution material
+     *     ships.
+     *
      *     Original-key replay is checked before mutable publication/workspace
      *     facts: the same canonical request returns the stored Job even after
      *     retirement or supersession. A changed pin is another intent and

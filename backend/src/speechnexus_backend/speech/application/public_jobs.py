@@ -189,6 +189,14 @@ class JobRejectedError(RuntimeError):
         super().__init__(code)
 
 
+class JobAdmissionRejectedError(RuntimeError):
+    """A create was refused by the frozen binding, admission or capacity facts."""
+
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__(code)
+
+
 class JobCleanupPendingError(RuntimeError):
     """A terminal Job still holds resources; cancellation cannot claim it is clean."""
 
@@ -1465,6 +1473,26 @@ def _rejection_reason(error_code: str | None) -> JobRejectionReason:
     return "contract"
 
 
+_ADMISSION_REJECTION_CODES = frozenset(
+    {
+        "job_capacity_exhausted",
+        "job_binding_incomplete",
+        "job_text_asset_unsupported",
+        "job_admission_contended",
+        "voice_not_published",
+        "asset_not_ready",
+        "idempotency_conflict",
+    }
+)
+
+
+def _raise_admission_rejection(code: str | None) -> None:
+    if code in _ADMISSION_REJECTION_CODES:
+        if code == "idempotency_conflict":
+            raise IdempotencyConflictError
+        raise JobAdmissionRejectedError(str(code))
+
+
 def _revision_result(result: RevisionCreateResult) -> tuple[PublicJob, str]:
     if result.outcome == "stale":
         raise VoiceDraftStaleRevisionError
@@ -1475,6 +1503,11 @@ def _revision_result(result: RevisionCreateResult) -> tuple[PublicJob, str]:
     if result.outcome == "unknown":
         raise JobOutcomeUnknownError
     if result.outcome == "rejected":
+        if result.error_code == "job_unavailable":
+            # No admission role is configured: this is a retryable deployment
+            # outage, never a contract violation.
+            raise PublicJobUnavailableError
+        _raise_admission_rejection(result.error_code)
         raise JobRejectedError(_rejection_reason(result.error_code))
     if result.job is None or result.revision is None:
         raise JobRejectedError("contract")
@@ -1495,6 +1528,7 @@ def _submission_result(result: JobCreateResult) -> PublicJob:
             raise VoiceDraftNotGeneratableError
         if result.error_code == "not_found":
             raise PublicJobNotFoundError
+        _raise_admission_rejection(result.error_code)
         raise JobRejectedError(_rejection_reason(result.error_code))
     if result.job is None:
         raise JobRejectedError("contract")
@@ -1532,6 +1566,7 @@ __all__ = [
     "CancellationView",
     "DisabledWorkspaceError",
     "IdempotencyConflictError",
+    "JobAdmissionRejectedError",
     "JobCleanupPendingError",
     "JobFacts",
     "JobOutcomeUnknownError",

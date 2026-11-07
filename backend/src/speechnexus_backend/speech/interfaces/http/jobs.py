@@ -31,6 +31,7 @@ from speechnexus_backend.speech.application.public_jobs import (
     CancellationView,
     DisabledWorkspaceError,
     IdempotencyConflictError,
+    JobAdmissionRejectedError,
     JobCleanupPendingError,
     JobOutcomeUnknownError,
     JobRejectedError,
@@ -500,6 +501,8 @@ async def _create(
         return job_error("voice_draft_not_candidate", request_id)
     except VoiceDraftNotGeneratableError:
         return job_error("voice_draft_not_generatable", request_id)
+    except JobAdmissionRejectedError as error:
+        return job_error(error.code, request_id)
     except JobRejectedError, PublicJobUnavailableError:
         return job_error("job_unavailable", request_id)
     except ValueError, TypeError, ContractValidationError:
@@ -657,6 +660,8 @@ def _retry(
         return job_error("voice_draft_not_candidate", request_id)
     except VoiceDraftNotGeneratableError:
         return job_error("voice_draft_not_generatable", request_id)
+    except JobAdmissionRejectedError as error:
+        return job_error(error.code, request_id)
     except JobRejectedError:
         return job_error("job_unavailable", request_id)
     except PublicJobNotFoundError, ValueError:

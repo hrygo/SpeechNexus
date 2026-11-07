@@ -18,14 +18,26 @@
 同步语音与同步转写已有各自的准入适配器，具体装配和限制分别见
 [同步语音](synchronous-speech.md)与[同步转写](../operations/synchronous-transcription.md)；
 这些接入不代表公开异步 Job 的生产 planner 已完成。
-公开 Job 的权威 intent 存在 `speech_job_intents`；A2 完成前，创建事务仍把同一正文写入
-`admission_operations.request_document` 作为过渡副本，读取路径只使用新表。
-A2 之后该列由 `admit_in_transaction` 独占写入完整业务命令，公开意图继续由新表承载。
-当前该列的正文与摘要仍分别等于公开 Job 的原始请求正文和 `CreateJob.request_digest`；
-A2 改为完整业务命令后，该列摘要随命令计算，公开 intent 摘要继续保存在
-`speech_job_intents` 与 `speech_jobs.request_digest`。准入信封的摘要包含本次 authority、
-实例版本、阶段分配和期限，不能替代业务摘要。正文序列化与摘要计算应在事务外完成，
-按 RFC 8785 的规范字节计算；本迁移不会校验 JSON、摘要或命令是否完整。
+公开 Job 的权威 intent 存在 `speech_job_intents`。`asr`/`tts` 创建在同一事务内由
+`admit_in_transaction` 独占写入 `admission_operations.request_document` 的完整业务命令，
+公开意图继续由新表承载；两列摘要因此不同：`speech_jobs.request_digest` 与
+`speech_job_intents.request_digest` 是公开规范意图摘要，`admission_operations.request_digest`
+是私有执行命令摘要。`voice_design`/`voice_clone`/`voice_preview`/`voice_validation`
+尚无执行配方，仍按旧路径写入非派发的公开意图副本。voice 行占用了
+`admission_operations.operation_id = <job_id>` 锚点，但没有 attempt、lease、配额投影或
+`coordination_jobs` 预留；A3 不得再对同一个 operation 调用 `admit_in_transaction`，
+否则会触发 `reconciliation_required` 或 `idempotency_conflict`。voice 执行配方落地时应
+新建 operation 身份或先把旧锚点迁移为正式预留，不得复用该行。
+准入信封的摘要包含本次 authority、实例版本、阶段分配和期限，不能替代业务摘要。
+准入信封的正文序列化与摘要计算在创建事务内完成，按 RFC 8785 的规范字节计算；
+迁移不校验 JSON、摘要或命令是否完整，完整性由公开 Job 创建适配器在提交前验证。
+
+创建顺序固定为：锁 submission key → 按 key 重放/冲突 → 既有 binding/草稿/校验锁 →
+同一连接读取 quota、pool、host、instance、runtime plan、voice、pronunciation、asset →
+`admit_in_transaction` 写 operation/attempt/request/lease 与预算投影及
+`coordination_jobs`/`coordination_outbox` → 写 `speech_jobs`、事件、submission、
+`speech_job_intents` → 读回 Job 后提交。任一步失败整事务回滚，不存在只写预算或
+只写公开 Job 的中间态。
 不得把摘要、当前预设或后来变化的默认值当作原命令。
 
 `admission_requests` 保存的仅是冻结协调请求，含标识、版本、分配和期限，不能塞入

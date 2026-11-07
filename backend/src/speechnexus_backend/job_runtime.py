@@ -17,6 +17,20 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import (
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import PostgresPublicJobs
 from speechnexus_backend.speech.infrastructure.voice_drafts_postgres import PostgresVoiceDrafts
 
+_ADMISSION_RESERVATION_TABLES = ("admission_attempts", "admission_requests", "admission_leases")
+_ADMISSION_REQUIRED_SELECT = (
+    "workspace_quotas",
+    "resource_pools",
+    "host_nodes",
+    "engine_instances",
+    "runtime_instance_heads",
+    "runtime_instance_intents",
+    "admission_operations",
+    "admission_leases",
+    "speech_jobs",
+    "speech_job_intents",
+)
+
 REQUIRED_SELECT = (
     "speech_workspaces",
     "speech_publications",
@@ -49,7 +63,7 @@ REQUIRED_INSERT = (
 # Append-only rows: the writer may insert its own intent and read it back, but a
 # changed or deleted intent must never be indistinguishable from the original.
 IMMUTABLE_TABLES = ("speech_voice_draft_revisions", "speech_job_intents")
-REQUIRED_INSERT_COLUMNS = {
+REQUIRED_INSERT_COLUMNS: dict[str, tuple[str, ...]] = {
     "speech_voice_draft_revisions": (
         "draft_id",
         "revision",
@@ -59,26 +73,8 @@ REQUIRED_INSERT_COLUMNS = {
         "binding_json",
         "created_at_us",
     ),
-    "admission_operations": (
-        "operation_id",
-        "workspace_id",
-        "request_digest",
-        "request_document",
-        "initial_attempt_id",
-        "current_attempt_id",
-        "recorded_at_us",
-    ),
-    "coordination_jobs": (
-        "job_id",
-        "operation_id",
-        "attempt_id",
-        "initial_event_id",
-        "initial_event_digest",
-        "request_digest",
-    ),
-    "coordination_outbox": ("event_id", "job_id", "event_digest"),
 }
-REQUIRED_UPDATE_COLUMNS = {
+REQUIRED_UPDATE_COLUMNS: dict[str, tuple[str, ...]] = {
     "speech_voice_drafts": (
         "display_name",
         "metadata_revision",
@@ -108,6 +104,7 @@ class JobRuntime:
             raise ValueError("Configure an explicit API public Job writer identity")
         self._settings = settings
         self._pool: SpeechPool | None = None
+        self._admission_pool: SpeechPool | None = None
         self.jobs: PublicJobs | None = None
         self.voice_drafts: VoiceDrafts | None = None
         self._lifetime = threading.Lock()
@@ -136,13 +133,28 @@ class JobRuntime:
                 with pool.connection(timeout=3) as connection:
                     connection.execute("SET LOCAL statement_timeout='3s'")
                     _verify_privileges(connection, self._settings.database_schema)
+                admission_pool = self._open_admission_pool()
+                if admission_pool is not None and _database_identity(pool) != _database_identity(
+                    admission_pool
+                ):
+                    raise ValueError(
+                        "Public Job writer and admission roles must share one database"
+                    )
+                self._admission_pool = admission_pool
                 adapter = PostgresPublicJobs(
-                    pool, timeout_seconds=self._settings.job_transaction_timeout_seconds
+                    pool,
+                    admission_pool=admission_pool,
+                    require_admission=True,
+                    timeout_seconds=self._settings.job_transaction_timeout_seconds,
+                    storage_bucket=self._settings.object_storage_bucket,
                 )
                 self.jobs = PublicJobs(adapter, adapter)
                 self.voice_drafts = VoiceDrafts(self.jobs, PostgresVoiceDrafts(pool))
             except BaseException as error:
                 try:
+                    if self._admission_pool is not None:
+                        self._admission_pool.close()
+                        self._admission_pool = None
                     if self._pool is not None:
                         self._pool.close()
                         self._pool = None
@@ -155,16 +167,52 @@ class JobRuntime:
                     "Public Job writer startup rejected; verify migration and writer role"
                 ) from None
 
+    def _open_admission_pool(self) -> SpeechPool | None:
+        secret = self._settings.job_admission_database_url
+        if secret is None:
+            return None
+        name = "speech-job-admission-" + uuid.uuid4().hex
+        pool = speech_pool(
+            secret.get_secret_value(),
+            schema=self._settings.database_schema,
+            max_size=4,
+            name=name,
+        )
+        pool.open()
+        try:
+            with pool.connection(timeout=3) as connection:
+                connection.execute("SET LOCAL statement_timeout='3s'")
+                _verify_admission_privileges(connection, self._settings.database_schema)
+        except BaseException:
+            pool.close()
+            raise
+        return pool
+
     def close(self) -> None:
         with self._lifetime:
             self.jobs = None
             self.voice_drafts = None
+            if self._admission_pool is not None:
+                self._admission_pool.close()
+                self._admission_pool = None
             if self._pool is not None:
                 self._pool.close()
                 self._pool = None
             if self._diagnostics is not None:
                 logging.getLogger("psycopg.pool").removeFilter(self._diagnostics)
                 self._diagnostics = None
+
+
+def _database_identity(pool: SpeechPool) -> tuple[str, str, int]:
+    with pool.connection(timeout=3) as connection:
+        row = connection.execute(
+            "SELECT current_database() AS database, "
+            "COALESCE(host(inet_server_addr()), 'local') AS host, "
+            "COALESCE(inet_server_port(), 0) AS port"
+        ).fetchone()
+    if row is None:
+        raise ValueError("Public Job database identity is unavailable")
+    return str(row["database"]), str(row["host"]), int(row["port"])
 
 
 def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
@@ -206,6 +254,13 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
         row = privileges.get(table)
         if row is not None and row["can_delete"]:
             raise ValueError("Public Job writer must not delete Job history")
+    for table in _ADMISSION_RESERVATION_TABLES:
+        row = connection.execute(
+            "SELECT pg_catalog.has_any_column_privilege(CURRENT_USER, %s, 'INSERT') AS ok",
+            (f"{schema}.{table}",),
+        ).fetchone()
+        if row is None or row["ok"]:
+            raise ValueError("Public Job writer must not insert admission reservations on " + table)
     for table in IMMUTABLE_TABLES:
         attribute_rows = connection.execute(
             "SELECT a.attname AS name FROM pg_catalog.pg_attribute AS a "
@@ -219,3 +274,41 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
             ).fetchone()
             if allowed is not None and allowed["ok"]:
                 raise ValueError(f"Public Job writer must not update {table}.{attribute['name']}")
+
+
+def _verify_admission_privileges(connection: SpeechConnection, schema: str) -> None:
+    """The admission role must read every frozen fact and write every reservation."""
+    for table in _ADMISSION_REQUIRED_SELECT:
+        allowed = connection.execute(
+            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'SELECT') AS ok",
+            (f"{schema}.{table}",),
+        ).fetchone()
+        if allowed is None or not allowed["ok"]:
+            raise ValueError("Public Job admission role lacks SELECT on " + table)
+    for table, column in (
+        ("admission_operations", "request_document"),
+        ("admission_attempts", "operation_id"),
+        ("admission_leases", "lease_id"),
+        ("coordination_jobs", "job_id"),
+        ("speech_jobs", "job_id"),
+        ("speech_job_intents", "request_document"),
+        ("speech_job_submissions", "job_id"),
+        ("speech_job_events", "job_id"),
+    ):
+        allowed = connection.execute(
+            "SELECT pg_catalog.has_column_privilege(CURRENT_USER, %s, %s, 'INSERT') AS ok",
+            (f"{schema}.{table}", column),
+        ).fetchone()
+        if allowed is None or not allowed["ok"]:
+            raise ValueError(f"Public Job admission role lacks INSERT on {table}.{column}")
+    for table, column in (
+        ("workspace_quotas", "held_attempts"),
+        ("host_nodes", "held_unified_physical_memory_bytes"),
+        ("engine_instances", "held_slots"),
+    ):
+        allowed = connection.execute(
+            "SELECT pg_catalog.has_column_privilege(CURRENT_USER, %s, %s, 'UPDATE') AS ok",
+            (f"{schema}.{table}", column),
+        ).fetchone()
+        if allowed is None or not allowed["ok"]:
+            raise ValueError(f"Public Job admission role lacks UPDATE on {table}.{column}")

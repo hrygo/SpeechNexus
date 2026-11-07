@@ -95,7 +95,27 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
         "service_unavailable_error",
         "The original Job outcome is unknown.",
     ),
+    "job_capacity_exhausted": (
+        429,
+        "rate_limit_error",
+        "Job capacity is exhausted; retry after the indicated delay.",
+    ),
+    "job_binding_incomplete": (
+        422,
+        "invalid_request_error",
+        "The model binding does not declare complete execution parameters.",
+    ),
+    "job_text_asset_unsupported": (
+        422,
+        "invalid_request_error",
+        "Text asset input is not supported for TTS Jobs.",
+    ),
     "job_unavailable": (503, "service_unavailable_error", "Job storage is unavailable."),
+    "job_admission_contended": (
+        503,
+        "service_unavailable_error",
+        "Admission state changed concurrently; retry the request.",
+    ),
 }
 
 
@@ -106,10 +126,20 @@ def job_error(code: str, request_id: str, *, headers: dict[str, str] | None = No
     # Only an unknown execution outcome promises that retrying can succeed. An
     # unavailable read may be a permanently expired or deleted result, so clients
     # reconcile the original identity instead of retrying it blindly.
-    retryable = code == "job_outcome_unknown"
+    retryable = code in (
+        "job_outcome_unknown",
+        "job_capacity_exhausted",
+        "job_admission_contended",
+    )
+    response_headers = {"Cache-Control": "no-store", **(headers or {})}
+    if code == "job_capacity_exhausted":
+        # One second is the minimum claim-lease granularity (see
+        # PostgresDispatchQueue: 1_000 <= lease_ms). A capacity refusal is
+        # therefore retried no sooner than the next possible lease release.
+        response_headers.setdefault("Retry-After", "1")
     return JSONResponse(
         status_code=status,
-        headers={"Cache-Control": "no-store", **(headers or {})},
+        headers=response_headers,
         content=parse(
             "ErrorResponse",
             {

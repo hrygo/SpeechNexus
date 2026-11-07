@@ -66,7 +66,14 @@ def test_future_create_fields_reference_the_exact_legacy_domains_and_requirednes
     request = SOURCE["components"]["schemas"]["BindingDefaultsCreateRequest"]
     assert request["required"] == original["required"]
     assert request["additionalProperties"] is False
-    assert set(request["properties"]) == set(original["properties"]) | {"parameter_defaults"}
+    assert set(request["properties"]) == set(original["properties"]) | {
+        "parameter_defaults",
+        "execution_defaults",
+    }
+    assert request["properties"]["execution_defaults"] == {
+        "$ref": (ROOT / "contracts/admin-openapi.yaml").as_uri()
+        + "#/components/schemas/ModelBindingCreateRequest/properties/execution_defaults"
+    }
     prefix = (ROOT / "contracts/admin-openapi.yaml").as_uri()
     for name in original["properties"]:
         assert request["properties"][name] == {

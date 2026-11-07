@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.local/contracts/model-binding-execution-defaults.schema.json",
+  "$ref": "#/$defs/ExecutionDefaults",
+  "$defs": {
+    "ExecutionDefaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "asr": {
+          "$ref": "#/$defs/AsrExecutionDefaults"
+        },
+        "tts": {
+          "$ref": "#/$defs/TtsExecutionDefaults"
+        }
+      }
+    },
+    "AsrExecutionDefaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Complete effective file-ASR parameters for one exact binding revision. Every value is execution authority; omission is not a default.",
+      "required": [
+        "language",
+        "turn_detection",
+        "finalization",
+        "preview_interval_ms",
+        "max_segment_ms",
+        "rollback_tokens",
+        "final_deadline_ms",
+        "auxiliary_deadline_ms",
+        "alignment",
+        "diarization",
+        "vocabulary_set_revision",
+        "temperature",
+        "timeout_seconds"
+      ],
+      "properties": {
+        "language": {
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/AsrLanguage"
+        },
+        "turn_detection": {
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/AsrTurnDetection"
+        },
+        "finalization": {
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/AsrFinalization"
+        },
+        "preview_interval_ms": {
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/AsrPreviewIntervalMs"
+        },
+        "max_segment_ms": {
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/AsrMaxSegmentMs"
+        },
+        "rollback_tokens": {
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/AsrRollbackTokens"
+        },
+        "final_deadline_ms": {
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/AsrFinalDeadlineMs"
+        },
+        "auxiliary_deadline_ms": {
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/AsrAuxiliaryDeadlineMs"
+        },
+        "alignment": {
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/AsrAlignment"
+        },
+        "diarization": {
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/AsrDiarization"
+        },
+        "vocabulary_set_revision": {
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/AsrVocabularySetRevision"
+        },
+        "temperature": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "timeout_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 600
+        }
+      }
+    },
+    "TtsExecutionDefaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Complete effective file-TTS parameters for one exact binding revision. Every value is execution authority; omission is not a default.",
+      "required": [
+        "language",
+        "text_commit_mode",
+        "audio_delivery",
+        "speed",
+        "instructions",
+        "pronunciation_revision",
+        "seed",
+        "planner",
+        "sample_rate_hz",
+        "max_output_audio_ms",
+        "timeout_seconds"
+      ],
+      "properties": {
+        "language": {
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/TtsLanguage"
+        },
+        "text_commit_mode": {
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/TtsTextCommitMode"
+        },
+        "audio_delivery": {
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/TtsAudioDelivery"
+        },
+        "speed": {
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/TtsSpeed"
+        },
+        "instructions": {
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/TtsInstructions"
+        },
+        "pronunciation_revision": {
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/TtsPronunciationRevision"
+        },
+        "seed": {
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/TtsSeed"
+        },
+        "planner": {
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/TtsPlanner"
+        },
+        "sample_rate_hz": {
+          "type": "integer",
+          "minimum": 8000,
+          "maximum": 96000
+        },
+        "max_output_audio_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3600000
+        },
+        "timeout_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 600
+        }
+      }
+    }
+  }
+}

@@ -168,3 +168,30 @@ def test_wire_revision_global_identity_and_time_come_from_the_stored_record() ->
 def test_invalid_original_keys_are_rejected(key: Any) -> None:
     with pytest.raises(ContractValidationError):
         prepare_binding_draft(binding_request(), key)
+
+
+def test_frozen_execution_defaults_are_retained_and_digest_covered() -> None:
+    request = binding_request()
+    request["execution_defaults"] = {
+        "tts": {
+            "language": "en",
+            "text_commit_mode": "explicit",
+            "audio_delivery": "complete",
+            "speed": 1.0,
+            "instructions": None,
+            "pronunciation_revision": None,
+            "seed": 7,
+            "planner": {"max_chars": 400, "max_wait_ms": 1000},
+            "sample_rate_hz": 24_000,
+            "max_output_audio_ms": 120_000,
+            "timeout_seconds": 60,
+        }
+    }
+    first = prepare_binding_draft(request, "execution-defaults-key")
+    assert decode_document(first.definition)["execution_defaults"] == request["execution_defaults"]
+    changed = copy.deepcopy(request)
+    changed["execution_defaults"]["tts"]["timeout_seconds"] = 61
+    assert (
+        prepare_binding_draft(changed, "execution-defaults-key").request_digest
+        != first.request_digest
+    )

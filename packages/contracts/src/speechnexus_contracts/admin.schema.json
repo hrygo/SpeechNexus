@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "AdminContracts",
-  "x-nexus-bindings-version": "0.1.0.dev5",
+  "x-nexus-bindings-version": "0.1.0.dev6",
   "x-nexus-entrypoints": [
     "WorkspaceCreateRequest",
     "WorkspacePatch",
@@ -1123,6 +1123,9 @@
         "parameter_domains": {
           "$ref": "#/$defs/External_model_binding_schema_json_ParameterDomains"
         },
+        "execution_defaults": {
+          "$ref": "#/$defs/External_model_binding_execution_defaults_schema_json_ExecutionDefaults"
+        },
         "release_tier": {
           "$ref": "#/$defs/External_model_binding_schema_json_ReleaseTier"
         }
@@ -1450,6 +1453,165 @@
           }
         }
       }
+    },
+    "External_model_binding_execution_defaults_schema_json_ExecutionDefaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "asr": {
+          "$ref": "#/$defs/External_model_binding_execution_defaults_schema_json_AsrExecutionDefaults"
+        },
+        "tts": {
+          "$ref": "#/$defs/External_model_binding_execution_defaults_schema_json_TtsExecutionDefaults"
+        }
+      }
+    },
+    "External_model_binding_execution_defaults_schema_json_AsrExecutionDefaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Complete effective file-ASR parameters for one exact binding revision. Every value is execution authority; omission is not a default.",
+      "required": [
+        "language",
+        "turn_detection",
+        "finalization",
+        "preview_interval_ms",
+        "max_segment_ms",
+        "rollback_tokens",
+        "final_deadline_ms",
+        "auxiliary_deadline_ms",
+        "alignment",
+        "diarization",
+        "vocabulary_set_revision",
+        "temperature",
+        "timeout_seconds"
+      ],
+      "properties": {
+        "language": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrLanguage"
+        },
+        "turn_detection": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrTurnDetection"
+        },
+        "finalization": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrFinalization"
+        },
+        "preview_interval_ms": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrPreviewIntervalMs"
+        },
+        "max_segment_ms": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrMaxSegmentMs"
+        },
+        "rollback_tokens": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrRollbackTokens"
+        },
+        "final_deadline_ms": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrFinalDeadlineMs"
+        },
+        "auxiliary_deadline_ms": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrAuxiliaryDeadlineMs"
+        },
+        "alignment": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrAlignment"
+        },
+        "diarization": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrDiarization"
+        },
+        "vocabulary_set_revision": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrVocabularySetRevision"
+        },
+        "temperature": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "timeout_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 600
+        }
+      }
+    },
+    "External_shared_profile_parameter_values_schema_json_AsrLanguage": {
+      "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+    },
+    "External_shared_profile_parameter_values_schema_json_AsrVocabularySetRevision": {
+      "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_NullableResourceReference"
+    },
+    "External_shared_profile_parameter_values_schema_json_NullableResourceReference": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "External_model_binding_execution_defaults_schema_json_TtsExecutionDefaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Complete effective file-TTS parameters for one exact binding revision. Every value is execution authority; omission is not a default.",
+      "required": [
+        "language",
+        "text_commit_mode",
+        "audio_delivery",
+        "speed",
+        "instructions",
+        "pronunciation_revision",
+        "seed",
+        "planner",
+        "sample_rate_hz",
+        "max_output_audio_ms",
+        "timeout_seconds"
+      ],
+      "properties": {
+        "language": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsLanguage"
+        },
+        "text_commit_mode": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsTextCommitMode"
+        },
+        "audio_delivery": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsAudioDelivery"
+        },
+        "speed": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsSpeed"
+        },
+        "instructions": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsInstructions"
+        },
+        "pronunciation_revision": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsPronunciationRevision"
+        },
+        "seed": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsSeed"
+        },
+        "planner": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsPlanner"
+        },
+        "sample_rate_hz": {
+          "type": "integer",
+          "minimum": 8000,
+          "maximum": 96000
+        },
+        "max_output_audio_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3600000
+        },
+        "timeout_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 600
+        }
+      }
+    },
+    "External_shared_profile_parameter_values_schema_json_TtsLanguage": {
+      "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+    },
+    "External_shared_profile_parameter_values_schema_json_TtsPronunciationRevision": {
+      "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_NullableResourceReference"
     },
     "External_model_binding_schema_json_ReleaseTier": {
       "$ref": "#/$defs/External_shared_capability_domains_schema_json_ReleaseTier"

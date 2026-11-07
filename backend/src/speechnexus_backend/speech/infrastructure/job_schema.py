@@ -71,6 +71,8 @@ def job_dispatch_grants(schema: str, role: str) -> tuple[str, ...]:
 
     schema, role = checked_sql_name(schema), checked_sql_name(role)
     return (
+        # Legacy voice kinds still record their non-dispatchable public intent
+        # here. TTS/ASR operations are written by the admission role.
         "GRANT INSERT (operation_id, workspace_id, request_digest, request_document, "
         f"initial_attempt_id, current_attempt_id, recorded_at_us) "
         f'ON "{schema}".admission_operations TO "{role}"',

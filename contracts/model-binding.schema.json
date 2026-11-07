@@ -267,7 +267,9 @@
                 "const": "production"
               }
             },
-            "required": ["release_tier"]
+            "required": [
+              "release_tier"
+            ]
           },
           {
             "properties": {
@@ -279,10 +281,14 @@
                     }
                   }
                 },
-                "required": ["status"]
+                "required": [
+                  "status"
+                ]
               }
             },
-            "required": ["publication"]
+            "required": [
+              "publication"
+            ]
           }
         ]
       },
@@ -297,7 +303,11 @@
             ],
             "properties": {
               "status": {
-                "enum": ["published", "retired", "disabled"]
+                "enum": [
+                  "published",
+                  "retired",
+                  "disabled"
+                ]
               },
               "published_at": {
                 "type": "string",

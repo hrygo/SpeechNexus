@@ -68,19 +68,22 @@ class ExternalModelBindingSchemaJsonVoiceParameterDomain(TypedDict):
     validation_set_revisions: NotRequired[list[ExternalModelBindingSchemaJsonRevision]]
 
 
-type ExternalSharedCapabilityDomainsSchemaJsonReleaseTier = Literal[
-    "experimental", "best_effort", "production"
-]
 type ExternalSharedLanguageSchemaJsonLanguageTag = str
-type ExternalSharedProfileParameterValuesSchemaJsonAsrPreviewIntervalMs = int
-type ExternalSharedProfileParameterValuesSchemaJsonAsrMaxSegmentMs = int
+type ExternalSharedCapabilityDomainsSchemaJsonVadMode = Literal["server_vad", "manual"]
 type ExternalSharedProfileParameterValuesSchemaJsonAsrFinalization = (
     ExternalSharedCapabilityDomainsSchemaJsonFinalizationMode
 )
+type ExternalSharedProfileParameterValuesSchemaJsonAsrPreviewIntervalMs = int
+type ExternalSharedProfileParameterValuesSchemaJsonAsrMaxSegmentMs = int
+type ExternalSharedProfileParameterValuesSchemaJsonAsrRollbackTokens = int
 type ExternalSharedProfileParameterValuesSchemaJsonAsrFinalDeadlineMs = int
 type ExternalSharedProfileParameterValuesSchemaJsonAsrAuxiliaryDeadlineMs = int
-type ExternalSharedProfileParameterValuesSchemaJsonAsrRollbackTokens = int
-type ExternalSharedCapabilityDomainsSchemaJsonVadMode = Literal["server_vad", "manual"]
+type ExternalSharedProfileParameterValuesSchemaJsonAsrAlignment = (
+    ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode
+)
+type ExternalSharedProfileParameterValuesSchemaJsonAsrDiarization = (
+    ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode
+)
 
 
 class ExternalSharedReferencesSchemaJsonResourceReference(TypedDict):
@@ -88,12 +91,6 @@ class ExternalSharedReferencesSchemaJsonResourceReference(TypedDict):
     revision: ExternalSharedIdentifiersSchemaJsonRevision
 
 
-type ExternalSharedProfileParameterValuesSchemaJsonAsrAlignment = (
-    ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode
-)
-type ExternalSharedProfileParameterValuesSchemaJsonAsrDiarization = (
-    ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode
-)
 type ExternalSharedProfileParameterValuesSchemaJsonTtsLanguage = (
     ExternalSharedLanguageSchemaJsonLanguageTag
 )
@@ -113,6 +110,9 @@ class ExternalSharedProfileParameterValuesSchemaJsonTtsPlanner(TypedDict):
     max_wait_ms: int
 
 
+type ExternalSharedCapabilityDomainsSchemaJsonReleaseTier = Literal[
+    "experimental", "best_effort", "production"
+]
 type ExternalSharedCapabilityDomainsSchemaJsonTranscriptFormat = Literal[
     "json", "text", "verbose_json", "srt", "vtt"
 ]
@@ -165,9 +165,6 @@ class ExternalModelBindingSchemaJsonTtsParameterDomain(TypedDict):
     supports_seed: NotRequired[bool]
 
 
-type ExternalModelBindingSchemaJsonReleaseTier = (
-    ExternalSharedCapabilityDomainsSchemaJsonReleaseTier
-)
 type ExternalSharedProfileParameterValuesSchemaJsonAsrLanguage = (
     ExternalSharedLanguageSchemaJsonLanguageTag
 )
@@ -184,6 +181,24 @@ type ExternalSharedProfileParameterValuesSchemaJsonNullableResourceReference = (
 type ExternalSharedProfileParameterValuesSchemaJsonTtsPronunciationRevision = (
     ExternalSharedProfileParameterValuesSchemaJsonNullableResourceReference
 )
+type ExternalModelBindingSchemaJsonReleaseTier = (
+    ExternalSharedCapabilityDomainsSchemaJsonReleaseTier
+)
+
+
+class ExternalSharedProfileParameterValuesSchemaJsonTtsParameterFields(TypedDict):
+    language: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonTtsLanguage]
+    text_commit_mode: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonTtsTextCommitMode]
+    audio_delivery: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonTtsAudioDelivery]
+    speed: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonTtsSpeed]
+    instructions: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonTtsInstructions]
+    pronunciation_revision: NotRequired[
+        ExternalSharedProfileParameterValuesSchemaJsonTtsPronunciationRevision
+    ]
+    seed: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonTtsSeed]
+    planner: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonTtsPlanner]
+
+
 type ExternalSharedProfileParameterValuesSchemaJsonOutputTranscriptFormat = (
     ExternalSharedCapabilityDomainsSchemaJsonTranscriptFormat
 )
@@ -214,36 +229,26 @@ class ExternalModelBindingSchemaJsonParameterDomains(TypedDict):
     voice: NotRequired[ExternalModelBindingSchemaJsonVoiceParameterDomain]
 
 
-type ExternalAdminOpenapiYamlReleaseTier = ExternalModelBindingSchemaJsonReleaseTier
 type ExternalSharedProfileParameterValuesSchemaJsonAsrVocabularySetRevision = (
     ExternalSharedProfileParameterValuesSchemaJsonNullableResourceReference
 )
 
 
-class ExternalSharedProfileParameterValuesSchemaJsonTtsParameterFields(TypedDict):
-    language: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonTtsLanguage]
-    text_commit_mode: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonTtsTextCommitMode]
-    audio_delivery: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonTtsAudioDelivery]
-    speed: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonTtsSpeed]
-    instructions: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonTtsInstructions]
-    pronunciation_revision: NotRequired[
-        ExternalSharedProfileParameterValuesSchemaJsonTtsPronunciationRevision
-    ]
-    seed: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonTtsSeed]
-    planner: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonTtsPlanner]
+class ExternalModelBindingExecutionDefaultsSchemaJsonTtsExecutionDefaults(TypedDict):
+    language: ExternalSharedProfileParameterValuesSchemaJsonTtsLanguage
+    text_commit_mode: ExternalSharedProfileParameterValuesSchemaJsonTtsTextCommitMode
+    audio_delivery: ExternalSharedProfileParameterValuesSchemaJsonTtsAudioDelivery
+    speed: ExternalSharedProfileParameterValuesSchemaJsonTtsSpeed
+    instructions: ExternalSharedProfileParameterValuesSchemaJsonTtsInstructions
+    pronunciation_revision: ExternalSharedProfileParameterValuesSchemaJsonTtsPronunciationRevision
+    seed: ExternalSharedProfileParameterValuesSchemaJsonTtsSeed
+    planner: ExternalSharedProfileParameterValuesSchemaJsonTtsPlanner
+    sample_rate_hz: int
+    max_output_audio_ms: int
+    timeout_seconds: float
 
 
-class ExternalSharedProfileParameterValuesSchemaJsonOutputParameterFields(TypedDict):
-    transcript_format: NotRequired[
-        ExternalSharedProfileParameterValuesSchemaJsonOutputTranscriptFormat
-    ]
-    audio_format: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonOutputAudioFormat]
-    save_artifacts: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonOutputSaveArtifacts]
-
-
-type ExternalAdminOpenapiYamlEngine = ExternalModelBindingSchemaJsonEngineDescriptor
-type ExternalAdminOpenapiYamlExecutionRecipe = ExternalModelBindingSchemaJsonExecutionRecipe
-type ExternalAdminOpenapiYamlParameterDomains = ExternalModelBindingSchemaJsonParameterDomains
+type ExternalAdminOpenapiYamlReleaseTier = ExternalModelBindingSchemaJsonReleaseTier
 
 
 class ExternalSharedProfileParameterValuesSchemaJsonAsrParameterFields(TypedDict):
@@ -266,10 +271,49 @@ class ExternalSharedProfileParameterValuesSchemaJsonAsrParameterFields(TypedDict
     diarization: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonAsrDiarization]
 
 
+class ExternalSharedProfileParameterValuesSchemaJsonOutputParameterFields(TypedDict):
+    transcript_format: NotRequired[
+        ExternalSharedProfileParameterValuesSchemaJsonOutputTranscriptFormat
+    ]
+    audio_format: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonOutputAudioFormat]
+    save_artifacts: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonOutputSaveArtifacts]
+
+
+type ExternalAdminOpenapiYamlEngine = ExternalModelBindingSchemaJsonEngineDescriptor
+type ExternalAdminOpenapiYamlExecutionRecipe = ExternalModelBindingSchemaJsonExecutionRecipe
+type ExternalAdminOpenapiYamlParameterDomains = ExternalModelBindingSchemaJsonParameterDomains
+
+
+class ExternalModelBindingExecutionDefaultsSchemaJsonAsrExecutionDefaults(TypedDict):
+    language: ExternalSharedProfileParameterValuesSchemaJsonAsrLanguage
+    turn_detection: ExternalSharedProfileParameterValuesSchemaJsonAsrTurnDetection
+    finalization: ExternalSharedProfileParameterValuesSchemaJsonAsrFinalization
+    preview_interval_ms: ExternalSharedProfileParameterValuesSchemaJsonAsrPreviewIntervalMs
+    max_segment_ms: ExternalSharedProfileParameterValuesSchemaJsonAsrMaxSegmentMs
+    rollback_tokens: ExternalSharedProfileParameterValuesSchemaJsonAsrRollbackTokens
+    final_deadline_ms: ExternalSharedProfileParameterValuesSchemaJsonAsrFinalDeadlineMs
+    auxiliary_deadline_ms: ExternalSharedProfileParameterValuesSchemaJsonAsrAuxiliaryDeadlineMs
+    alignment: ExternalSharedProfileParameterValuesSchemaJsonAsrAlignment
+    diarization: ExternalSharedProfileParameterValuesSchemaJsonAsrDiarization
+    vocabulary_set_revision: ExternalSharedProfileParameterValuesSchemaJsonAsrVocabularySetRevision
+    temperature: float
+    timeout_seconds: float
+
+
 class ExternalBindingParameterDefaultsSchemaJsonBindingDefaultParameters(TypedDict):
     asr: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonAsrParameterFields]
     tts: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonTtsParameterFields]
     output: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonOutputParameterFields]
+
+
+class ExternalModelBindingExecutionDefaultsSchemaJsonExecutionDefaults(TypedDict):
+    asr: NotRequired[ExternalModelBindingExecutionDefaultsSchemaJsonAsrExecutionDefaults]
+    tts: NotRequired[ExternalModelBindingExecutionDefaultsSchemaJsonTtsExecutionDefaults]
+
+
+type ExternalAdminOpenapiYamlExecutionDefaults = (
+    ExternalModelBindingExecutionDefaultsSchemaJsonExecutionDefaults
+)
 
 
 class BindingDefaultsCreateRequest(TypedDict):
@@ -281,6 +325,7 @@ class BindingDefaultsCreateRequest(TypedDict):
     artifact_set: ExternalAdminOpenapiYamlArtifactSet
     execution_recipe: ExternalAdminOpenapiYamlExecutionRecipe
     parameter_domains: ExternalAdminOpenapiYamlParameterDomains
+    execution_defaults: NotRequired[ExternalAdminOpenapiYamlExecutionDefaults]
     release_tier: ExternalAdminOpenapiYamlReleaseTier
     parameter_defaults: NotRequired[
         ExternalBindingParameterDefaultsSchemaJsonBindingDefaultParameters

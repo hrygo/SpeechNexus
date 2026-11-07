@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+import uuid
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -13,6 +14,7 @@ from typing import Any, cast
 
 import psycopg
 import pytest
+from psycopg.conninfo import make_conninfo
 from speechnexus_contracts.validation import validate_coordination
 from tests.fake.admission import ADMISSION, APPROVED, BUSINESS, COMMAND
 from tests.fake.runtime_intents import COMMAND as RUNTIME_COMMAND
@@ -54,7 +56,10 @@ from speechnexus_backend.speech.infrastructure.admission_postgres import (
 from speechnexus_backend.speech.infrastructure.coordination_grants import DIMENSIONS
 from speechnexus_backend.speech.infrastructure.jobs_sql import create_in_transaction
 from speechnexus_backend.speech.infrastructure.leases_postgres import PostgresLeaseTransactions
-from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
+from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool, speech_pool
+from speechnexus_backend.speech.infrastructure.public_job_admission_grants import (
+    public_job_admission_grants,
+)
 from speechnexus_backend.speech.interfaces.admission_transactions import (
     AdmissionTransactionBoundary,
 )
@@ -79,6 +84,8 @@ class AdmissionDatabase:
     runtime: RuntimeDatabase = field(repr=False)
     port: AdmissionTransactions = field(repr=False)
     command: AdmitRecipe = field(repr=False)
+    admission_role: str | None = None
+    admission_pool: SpeechPool | None = None
 
     def snapshot(self) -> dict[str, object]:
         db = self.runtime.foundation.database
@@ -122,7 +129,33 @@ def admission_database(runtime_database: RuntimeDatabase) -> Iterator[AdmissionD
         request=replace(ADMISSION, deadline_at_us=now + 60000000),
         approved_recipe=replace(APPROVED, admission_expires_at_us=now + 60000000),
     )
-    yield AdmissionDatabase(runtime, port, command)
+    admission_role: str | None = None
+    admission_pool: SpeechPool | None = None
+    if db.dialect == "postgresql":
+        admission_role = "synthetic_admission_" + uuid.uuid4().hex[:12]
+        db.query(f"CREATE ROLE \"{admission_role}\" LOGIN PASSWORD 'synthetic_foundation_test'")
+        try:
+            for grant in public_job_admission_grants(db.schema, admission_role):
+                db.query(grant)
+            admission_pool = speech_pool(
+                make_conninfo(
+                    db.url,
+                    user=admission_role,
+                    password="synthetic_foundation_test",
+                ),
+                schema=db.schema,
+                max_size=4,
+                name="synthetic-admission-" + uuid.uuid4().hex,
+            )
+            admission_pool.open()
+            yield AdmissionDatabase(runtime, port, command, admission_role, admission_pool)
+        finally:
+            if admission_pool is not None:
+                admission_pool.close()
+            db.query(f'DROP OWNED BY "{admission_role}"')
+            db.query(f'DROP ROLE IF EXISTS "{admission_role}"')
+    else:
+        yield AdmissionDatabase(runtime, port, command)
 
 
 def test_ready_runtime_to_atomic_recipe_job_and_original_query(

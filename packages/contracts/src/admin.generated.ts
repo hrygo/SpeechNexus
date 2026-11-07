@@ -825,6 +825,7 @@ export interface components {
       artifact_set: components["schemas"]["ArtifactReference"][];
       execution_recipe: components["schemas"]["ExecutionRecipe"];
       parameter_domains: components["schemas"]["ParameterDomains"];
+      execution_defaults?: components["schemas"]["ExecutionDefaults"];
       release_tier: components["schemas"]["ReleaseTier"];
     };
     ModelBindingPublicationRequest: {
@@ -1908,6 +1909,41 @@ export interface components {
       asr?: components["schemas"]["AsrParameterDomain"];
       tts?: components["schemas"]["TtsParameterDomain"];
       voice?: components["schemas"]["VoiceParameterDomain"];
+    };
+    NullableResourceReference: components["schemas"]["ResourceReference"] | null;
+    /** @description Complete effective file-ASR parameters for one exact binding revision. Every value is execution authority; omission is not a default. */
+    AsrExecutionDefaults: {
+      language: components["schemas"]["LanguageTag"];
+      turn_detection: components["schemas"]["AsrTurnDetection"];
+      finalization: components["schemas"]["FinalizationMode"];
+      preview_interval_ms: components["schemas"]["AsrPreviewIntervalMs"];
+      max_segment_ms: components["schemas"]["AsrMaxSegmentMs"];
+      rollback_tokens: components["schemas"]["AsrRollbackTokens"];
+      final_deadline_ms: components["schemas"]["AsrFinalDeadlineMs"];
+      auxiliary_deadline_ms: components["schemas"]["AsrAuxiliaryDeadlineMs"];
+      alignment: components["schemas"]["AuxiliaryMode"];
+      diarization: components["schemas"]["AuxiliaryMode"];
+      vocabulary_set_revision: components["schemas"]["NullableResourceReference"];
+      temperature: number;
+      timeout_seconds: number;
+    };
+    /** @description Complete effective file-TTS parameters for one exact binding revision. Every value is execution authority; omission is not a default. */
+    TtsExecutionDefaults: {
+      language: components["schemas"]["LanguageTag"];
+      text_commit_mode: components["schemas"]["TextCommitMode"];
+      audio_delivery: components["schemas"]["AudioDeliveryMode"];
+      speed: components["schemas"]["TtsSpeed"];
+      instructions: components["schemas"]["TtsInstructions"];
+      pronunciation_revision: components["schemas"]["NullableResourceReference"];
+      seed: components["schemas"]["TtsSeed"];
+      planner: components["schemas"]["TtsPlanner"];
+      sample_rate_hz: number;
+      max_output_audio_ms: number;
+      timeout_seconds: number;
+    };
+    ExecutionDefaults: {
+      asr?: components["schemas"]["AsrExecutionDefaults"];
+      tts?: components["schemas"]["TtsExecutionDefaults"];
     };
     PublicationState: {
       /** @enum {string} */

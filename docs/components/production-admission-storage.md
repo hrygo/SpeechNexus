@@ -23,10 +23,14 @@
 公开意图继续由新表承载；两列摘要因此不同：`speech_jobs.request_digest` 与
 `speech_job_intents.request_digest` 是公开规范意图摘要，`admission_operations.request_digest`
 是私有执行命令摘要。`voice_design`/`voice_clone`/`voice_preview`/`voice_validation`
-尚无执行配方，仍按旧路径写入非派发的公开意图副本。
+尚无执行配方，仍按旧路径写入非派发的公开意图副本。voice 行占用了
+`admission_operations.operation_id = <job_id>` 锚点，但没有 attempt、lease、配额投影或
+`coordination_jobs` 预留；A3 不得再对同一个 operation 调用 `admit_in_transaction`，
+否则会触发 `reconciliation_required` 或 `idempotency_conflict`。voice 执行配方落地时应
+新建 operation 身份或先把旧锚点迁移为正式预留，不得复用该行。
 准入信封的摘要包含本次 authority、实例版本、阶段分配和期限，不能替代业务摘要。
-正文序列化与摘要计算在事务外完成，按 RFC 8785 的规范字节计算；迁移不校验 JSON、
-摘要或命令是否完整，完整性由公开 Job 创建适配器在提交前验证。
+准入信封的正文序列化与摘要计算在创建事务内完成，按 RFC 8785 的规范字节计算；
+迁移不校验 JSON、摘要或命令是否完整，完整性由公开 Job 创建适配器在提交前验证。
 
 创建顺序固定为：锁 submission key → 按 key 重放/冲突 → 既有 binding/草稿/校验锁 →
 同一连接读取 quota、pool、host、instance、runtime plan、voice、pronunciation、asset →

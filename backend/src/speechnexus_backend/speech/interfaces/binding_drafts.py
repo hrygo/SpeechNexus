@@ -49,8 +49,13 @@ def revision_to_wire(
             "qualification_report_id": published.qualification_report_id,
             "disabled_reason": published.disabled_reason,
         }
+    published_definition = decode_document(draft.definition)
+    # execution_defaults is write-only: the public/admin response schema never
+    # exposed it, and the immutable definition (not this wire projection) is
+    # the authority read by public Job admission.
+    published_definition.pop("execution_defaults", None)
     wire = {
-        **decode_document(draft.definition),
+        **published_definition,
         "schema_version": "1.0.0",
         "binding_id": draft.binding_id,
         "revision": draft.revision,

@@ -495,7 +495,7 @@ type ExternalSharedProfileParameterValuesSchemaJsonAsrVocabularySetRevision = (
 )
 
 
-class ExternalModelBindingSchemaJsonTtsExecutionDefaults(TypedDict):
+class ExternalModelBindingExecutionDefaultsSchemaJsonTtsExecutionDefaults(TypedDict):
     language: ExternalSharedProfileParameterValuesSchemaJsonTtsLanguage
     text_commit_mode: ExternalSharedProfileParameterValuesSchemaJsonTtsTextCommitMode
     audio_delivery: ExternalSharedProfileParameterValuesSchemaJsonTtsAudioDelivery
@@ -611,7 +611,7 @@ class ExternalModelBindingSchemaJsonExecutionRecipe(TypedDict):
     requires_complete_reservation: NotRequired[bool]
 
 
-class ExternalModelBindingSchemaJsonAsrExecutionDefaults(TypedDict):
+class ExternalModelBindingExecutionDefaultsSchemaJsonAsrExecutionDefaults(TypedDict):
     language: ExternalSharedProfileParameterValuesSchemaJsonAsrLanguage
     turn_detection: ExternalSharedProfileParameterValuesSchemaJsonAsrTurnDetection
     finalization: ExternalSharedProfileParameterValuesSchemaJsonAsrFinalization
@@ -659,9 +659,9 @@ class ExternalScenarioProfileSchemaJsonProfileDefinition(TypedDict):
     slo_ref: str
 
 
-class ExternalModelBindingSchemaJsonExecutionDefaults(TypedDict):
-    asr: NotRequired[ExternalModelBindingSchemaJsonAsrExecutionDefaults]
-    tts: NotRequired[ExternalModelBindingSchemaJsonTtsExecutionDefaults]
+class ExternalModelBindingExecutionDefaultsSchemaJsonExecutionDefaults(TypedDict):
+    asr: NotRequired[ExternalModelBindingExecutionDefaultsSchemaJsonAsrExecutionDefaults]
+    tts: NotRequired[ExternalModelBindingExecutionDefaultsSchemaJsonTtsExecutionDefaults]
 
 
 class ExternalScenarioProfileSchemaJsonRoot(TypedDict):
@@ -718,7 +718,9 @@ class ModelBindingCreateRequest(TypedDict):
     artifact_set: list[ExternalModelBindingSchemaJsonArtifactReference]
     execution_recipe: ExternalModelBindingSchemaJsonExecutionRecipe
     parameter_domains: ExternalModelBindingSchemaJsonParameterDomains
-    execution_defaults: NotRequired[ExternalModelBindingSchemaJsonExecutionDefaults]
+    execution_defaults: NotRequired[
+        ExternalModelBindingExecutionDefaultsSchemaJsonExecutionDefaults
+    ]
     release_tier: ExternalModelBindingSchemaJsonReleaseTier
 
 

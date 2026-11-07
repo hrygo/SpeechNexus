@@ -1,8 +1,9 @@
 # Public TTS Job 的固定 binding 前置链
 
-本单元允许调用方固定文件 TTS 的 binding，保存公开原意图与有效配置投影。
-它没有装配生产 planner，没有构造完整执行命令或完成完整配方的原子准入，
-不能据此结算 #235 AC3。Workbench 已有渲染 Job 适配器，但当前
+本单元允许调用方固定文件 TTS/ASR 的 binding，保存公开原意图与有效配置投影，
+并在创建事务内按固定 binding 的 `execution_defaults` 构造完整业务命令、完成配额/
+池/节点/实例/租约的原子准入。voice 生成类仍无执行配方，不进入该准入路径。
+本单元不装配生产 planner，不能据此结算 #235 AC3。Workbench 已有渲染 Job 适配器，但当前
 `PublicSpeechRenderJobs.submit` 未把固定的 `model_binding` 放入公开 Job 请求；
 该消费者的 pin 传递与端到端验收仍须单独完成。
 
@@ -73,9 +74,10 @@ revision_id、logical_model、任务及原请求/公开配置的一致性。锁�
 无 pin 创建保留 main 的锁后 head 复核；keyless 请求从 binding 锁开始，不承诺同键恢复。
 
 生命周期/发布路径不反取 public Job key；拒绝协调不持 binding 锁或在锁内开 facts 连接。
-资源锁和 [全局协调锁序](../architecture/coordination-transactions.md#4-锁序隔离与数据库适配)
-保持现状，本路径不获取 pool/quota/host/generation，不代表完整准入。
-混跑不遵循新 key 锁的旧写者不具备此保证；将来完整准入必须按其全局锁序在唯一事务中整合。
+asr/tts 创建按 [全局协调锁序](../architecture/coordination-transactions.md#4-锁序隔离与数据库适配)
+在唯一事务中获取 pool/quota/host/generation 并写入操作、attempt、request、lease、
+协调 Job/outbox；voice 生成类仍不获取这些执行资源。混跑不遵循新 key 锁的旧写者
+不具备此保证；其他创建路径必须按同一全局锁序整合，不得在事务外补写。
 
 ## 事务期限与未知提交
 

@@ -164,6 +164,18 @@ binding 历史、`speech_publications` 与证据表。未配置时 GET 返回
 或 grant。未配置时 `/v1/nexus/jobs` 返回既有错误包封的 `503 job_unavailable`，不会
 伪造 pending Job。
 
+asr/tts 的原子创建还需要独立的 admission 角色：先应用当前迁移，再用
+`public_job_admission_grants(schema, role)` 授予列级读写（无 DELETE），设置
+`SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL`，并确保它与
+`SPEECHNEXUS_JOB_WRITER_DATABASE_URL` 指向同一数据库和服务器；启动会比对
+`current_database()` 与服务器地址，不同则拒绝启动。只配 writer 不配 admission 时，
+创建返回 `503 job_unavailable`，读取/取消仍可用。
+
+升级前必须确认已发布 binding 带有 `execution_defaults`。不要自动回填；先运行只读预检
+`psql "$SPEECHNEXUS_DATABASE_URL" -f scripts/dev-env/check-public-job-execution-defaults.sql`，
+对列出的 binding 重新发布并补齐对应任务的执行默认值；旧 binding 会让 asr/tts 创建
+返回 `422 job_binding_incomplete`。
+
 Release preflight C9 checks only the parsed Compose service set and the presence
 of the gateway's private ASR/TTS configuration keys. It does not start these
 containers; runtime and business evidence remain separate.

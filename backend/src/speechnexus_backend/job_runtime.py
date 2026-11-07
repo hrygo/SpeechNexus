@@ -17,13 +17,7 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import (
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import PostgresPublicJobs
 from speechnexus_backend.speech.infrastructure.voice_drafts_postgres import PostgresVoiceDrafts
 
-_ADMISSION_WRITE_TABLES = (
-    "admission_attempts",
-    "admission_requests",
-    "admission_leases",
-    "coordination_jobs",
-    "coordination_outbox",
-)
+_ADMISSION_RESERVATION_TABLES = ("admission_attempts", "admission_requests", "admission_leases")
 _ADMISSION_REQUIRED_SELECT = (
     "workspace_quotas",
     "resource_pools",
@@ -140,6 +134,12 @@ class JobRuntime:
                     connection.execute("SET LOCAL statement_timeout='3s'")
                     _verify_privileges(connection, self._settings.database_schema)
                 admission_pool = self._open_admission_pool()
+                if admission_pool is not None and _database_identity(pool) != _database_identity(
+                    admission_pool
+                ):
+                    raise ValueError(
+                        "Public Job writer and admission roles must share one database"
+                    )
                 self._admission_pool = admission_pool
                 adapter = PostgresPublicJobs(
                     pool,
@@ -203,6 +203,18 @@ class JobRuntime:
                 self._diagnostics = None
 
 
+def _database_identity(pool: SpeechPool) -> tuple[str, str, int]:
+    with pool.connection(timeout=3) as connection:
+        row = connection.execute(
+            "SELECT current_database() AS database, "
+            "COALESCE(host(inet_server_addr()), 'local') AS host, "
+            "COALESCE(inet_server_port(), 0) AS port"
+        ).fetchone()
+    if row is None:
+        raise ValueError("Public Job database identity is unavailable")
+    return str(row["database"]), str(row["host"]), int(row["port"])
+
+
 def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
     rows = connection.execute(
         "SELECT c.relname AS name, c.relkind AS kind, "
@@ -242,10 +254,13 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
         row = privileges.get(table)
         if row is not None and row["can_delete"]:
             raise ValueError("Public Job writer must not delete Job history")
-    for table in _ADMISSION_WRITE_TABLES:
-        row = privileges.get(table)
-        if row is not None and row["can_insert"]:
-            raise ValueError("Public Job writer must not own admission writes on " + table)
+    for table in _ADMISSION_RESERVATION_TABLES:
+        row = connection.execute(
+            "SELECT pg_catalog.has_any_column_privilege(CURRENT_USER, %s, 'INSERT') AS ok",
+            (f"{schema}.{table}",),
+        ).fetchone()
+        if row is None or row["ok"]:
+            raise ValueError("Public Job writer must not insert admission reservations on " + table)
     for table in IMMUTABLE_TABLES:
         attribute_rows = connection.execute(
             "SELECT a.attname AS name FROM pg_catalog.pg_attribute AS a "

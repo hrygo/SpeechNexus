@@ -13,6 +13,7 @@ from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
 from speechnexus_backend.speech.application.public_jobs import (
     BindingFact,
+    ModelBindingError,
     VoiceDraftRevisionFact,
     WorkspaceFact,
     require_pinned_binding,
@@ -598,7 +599,9 @@ class PostgresPublicJobs:
             except _RetryAdmissionError:
                 if attempt == 0:
                     continue
-                return JobCreateResult("unknown", error_code="outcome_unknown")
+                # The transaction rolled back, so this is a safe transient
+                # refusal rather than an unknown execution outcome.
+                return JobCreateResult("rejected", error_code="job_admission_contended")
             except psycopg.errors.UniqueViolation:
                 if job.idempotency_key_digest is None:
                     return JobCreateResult("rejected", error_code="job_identity_conflict")
@@ -1271,7 +1274,7 @@ def _lock_preview_target(connection: _Executor, job: NewPublicJob) -> str | None
 def _validate_pinned_create(connection: _Executor, job: NewPublicJob) -> None:
     expected = job.expected_binding
     if expected is None:
-        raise PublicJobUnavailableError
+        raise ModelBindingError("model_binding_not_published")
     reference = (expected.object_id, expected.revision)
     intent = json.loads(job.request_document)
     if job.kind == "tts":
@@ -1284,13 +1287,13 @@ def _validate_pinned_create(connection: _Executor, job: NewPublicJob) -> None:
         if not isinstance(request_input, dict) or not isinstance(
             request_input.get("voice_draft_id"), str
         ):
-            raise PublicJobUnavailableError
+            raise ModelBindingError("model_binding_not_current")
         row = connection.execute(
             "SELECT kind FROM speech_voice_drafts WHERE draft_id = %s",
             (request_input["voice_draft_id"],),
         ).fetchone()
         if row is None:
-            raise PublicJobUnavailableError
+            raise ModelBindingError("model_binding_not_current")
         task, model_key = (
             ("voice_design" if row["kind"] == "design" else "voice_clone"),
             "voice",
@@ -1306,7 +1309,7 @@ def _validate_pinned_create(connection: _Executor, job: NewPublicJob) -> None:
         task=task,
     )
     if binding.publication != expected:
-        raise PublicJobUnavailableError
+        raise ModelBindingError("model_binding_not_current")
     configuration = json.loads(job.submission.effective_configuration_json)
     if (
         intent.get("kind") != job.kind
@@ -1314,7 +1317,7 @@ def _validate_pinned_create(connection: _Executor, job: NewPublicJob) -> None:
         or intent.get("model_binding") != expected.reference
         or configuration.get("models", {}).get(model_key) != expected.reference
     ):
-        raise PublicJobUnavailableError
+        raise ModelBindingError("model_binding_mismatch")
 
 
 def _progress(row: dict[str, Any]) -> JobProgressFact | None:

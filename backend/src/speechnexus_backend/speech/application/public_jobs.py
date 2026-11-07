@@ -1478,6 +1478,7 @@ _ADMISSION_REJECTION_CODES = frozenset(
         "job_capacity_exhausted",
         "job_binding_incomplete",
         "job_text_asset_unsupported",
+        "job_admission_contended",
         "voice_not_published",
         "asset_not_ready",
         "idempotency_conflict",
@@ -1502,6 +1503,10 @@ def _revision_result(result: RevisionCreateResult) -> tuple[PublicJob, str]:
     if result.outcome == "unknown":
         raise JobOutcomeUnknownError
     if result.outcome == "rejected":
+        if result.error_code == "job_unavailable":
+            # No admission role is configured: this is a retryable deployment
+            # outage, never a contract violation.
+            raise PublicJobUnavailableError
         _raise_admission_rejection(result.error_code)
         raise JobRejectedError(_rejection_reason(result.error_code))
     if result.job is None or result.revision is None:

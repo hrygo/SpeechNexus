@@ -40,7 +40,7 @@ from speechnexus_backend.speech.infrastructure.runtime_codec import decode_recor
 from speechnexus_backend.speech.infrastructure.transcription_submit import build_asr_submit
 from speechnexus_backend.speech.infrastructure.tts_submit import build_tts_submit_from_parameters
 
-_CAPACITY_CODES = frozenset({"capacity_exhausted", "quota_exceeded", "policy_or_resource_disabled"})
+_CAPACITY_CODES = frozenset({"capacity_exhausted", "quota_exceeded"})
 _ASR_REQUIRED = (
     "language",
     "turn_detection",
@@ -159,8 +159,7 @@ def _quota(cursor: _Cursor, workspace_id: str) -> dict[str, Any]:
 
 
 def _instance(cursor: _Cursor, binding_revision_id: str) -> dict[str, Any]:
-    return _one(
-        cursor,
+    cursor.execute(
         "SELECT e.instance_id, e.instance_generation, e.host_node_id, e.pool_id, "
         "e.gateway_id, e.binding_revision_id, e.manifest_id, "
         "e.version AS instance_version, e.instance_state, "
@@ -175,6 +174,13 @@ def _instance(cursor: _Cursor, binding_revision_id: str) -> dict[str, Any]:
         "ORDER BY e.instance_id, e.instance_generation LIMIT 1",
         (binding_revision_id,),
     )
+    rows = cursor.fetchall()
+    if not rows:
+        # No ready instance is a capacity refusal, not an unavailable store.
+        raise PublicJobAdmissionRejectedError("job_capacity_exhausted")
+    if len(rows) != 1:
+        raise PublicJobAdmissionRejectedError("job_unavailable")
+    return rows[0]
 
 
 def _runtime_plan(cursor: _Cursor, instance: dict[str, Any]) -> ApprovedRuntimePlan:
@@ -417,10 +423,8 @@ def build_public_job_admission(
     if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 600:
         raise PublicJobAdmissionRejectedError("job_binding_incomplete")
     deadline_at_us = now_us + max(1, round(timeout * 1_000_000))
-    identity = AdmissionIdentity(
-        "operation-" + job.job_id.removeprefix("job-"),
-        "attempt-" + job.job_id.removeprefix("job-"),
-    )
+    # A1/A3 join admission_operations.operation_id = speech_jobs.job_id.
+    identity = AdmissionIdentity(job.job_id, "attempt-" + job.job_id.removeprefix("job-"))
     lease_id = "lease-" + job.job_id.removeprefix("job-")
     stage = StageAllocation(
         "stage-" + job.job_id.removeprefix("job-"),
@@ -533,6 +537,9 @@ def build_public_job_admission(
             },
             "gateway_request": gateway,
         }
+        public_pin = intent.get("model_binding")
+        if isinstance(public_pin, dict):
+            business_value["model_binding"] = public_pin
     business = business_command_from_value(business_value, max_command_bytes=max_command_bytes)
     request = AdmissionRequest(
         identity=identity,

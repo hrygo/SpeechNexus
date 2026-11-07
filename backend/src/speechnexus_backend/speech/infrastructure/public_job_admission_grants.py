@@ -81,15 +81,15 @@ _UPDATE_COLUMNS = {
     "workspace_quotas": "held_attempts version",
     "host_nodes": "version " + " ".join("held_" + dimension for dimension in DIMENSIONS),
     "engine_instances": "held_slots version",
+    # PostgreSQL requires UPDATE privilege for SELECT ... FOR UPDATE row locks.
+    # These version columns are never assigned; the grants make the lock legal.
     "resource_pools": "version",
     "runtime_instance_heads": "version",
     "runtime_instance_intents": "version",
     "admission_operations": "version",
     "admission_attempts": "version",
     "admission_leases": "version",
-    "speech_voice_drafts": (
-        "display_name metadata_revision updated_at_us head_revision generation_job_id"
-    ),
+    "speech_voice_drafts": "updated_at_us head_revision generation_job_id",
 }
 
 

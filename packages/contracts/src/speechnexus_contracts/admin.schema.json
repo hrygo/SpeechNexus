@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "AdminContracts",
-  "x-nexus-bindings-version": "0.1.0.dev5",
+  "x-nexus-bindings-version": "0.1.0.dev6",
   "x-nexus-entrypoints": [
     "WorkspaceCreateRequest",
     "WorkspacePatch",
@@ -1124,7 +1124,7 @@
           "$ref": "#/$defs/External_model_binding_schema_json_ParameterDomains"
         },
         "execution_defaults": {
-          "$ref": "#/$defs/External_model_binding_schema_json_ExecutionDefaults"
+          "$ref": "#/$defs/External_model_binding_execution_defaults_schema_json_ExecutionDefaults"
         },
         "release_tier": {
           "$ref": "#/$defs/External_model_binding_schema_json_ReleaseTier"
@@ -1454,20 +1454,20 @@
         }
       }
     },
-    "External_model_binding_schema_json_ExecutionDefaults": {
+    "External_model_binding_execution_defaults_schema_json_ExecutionDefaults": {
       "type": "object",
       "additionalProperties": false,
       "minProperties": 1,
       "properties": {
         "asr": {
-          "$ref": "#/$defs/External_model_binding_schema_json_AsrExecutionDefaults"
+          "$ref": "#/$defs/External_model_binding_execution_defaults_schema_json_AsrExecutionDefaults"
         },
         "tts": {
-          "$ref": "#/$defs/External_model_binding_schema_json_TtsExecutionDefaults"
+          "$ref": "#/$defs/External_model_binding_execution_defaults_schema_json_TtsExecutionDefaults"
         }
       }
     },
-    "External_model_binding_schema_json_AsrExecutionDefaults": {
+    "External_model_binding_execution_defaults_schema_json_AsrExecutionDefaults": {
       "type": "object",
       "additionalProperties": false,
       "description": "Complete effective file-ASR parameters for one exact binding revision. Every value is execution authority; omission is not a default.",
@@ -1548,7 +1548,7 @@
         }
       ]
     },
-    "External_model_binding_schema_json_TtsExecutionDefaults": {
+    "External_model_binding_execution_defaults_schema_json_TtsExecutionDefaults": {
       "type": "object",
       "additionalProperties": false,
       "description": "Complete effective file-TTS parameters for one exact binding revision. Every value is execution authority; omission is not a default.",

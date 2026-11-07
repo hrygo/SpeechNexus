@@ -199,6 +199,8 @@ components:
           $ref: admin-openapi.yaml#/components/schemas/ModelBindingCreateRequest/properties/execution_recipe
         parameter_domains:
           $ref: admin-openapi.yaml#/components/schemas/ModelBindingCreateRequest/properties/parameter_domains
+        execution_defaults:
+          $ref: admin-openapi.yaml#/components/schemas/ModelBindingCreateRequest/properties/execution_defaults
         release_tier:
           $ref: admin-openapi.yaml#/components/schemas/ModelBindingCreateRequest/properties/release_tier
         parameter_defaults:

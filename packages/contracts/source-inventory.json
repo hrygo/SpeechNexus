@@ -1,10 +1,10 @@
 {
   "admin-openapi.yaml": {
-    "sha256": "44997ae3f898e4c7da7aba07d05d00ad87a2edaf5418cb68599b8e7b7b330c3b",
-    "version": "0.1.0.dev5"
+    "sha256": "8336bf1144c5aaba654cd26b2662a18301bf61412d021f3ba6d74ca121a6f825",
+    "version": "0.1.0.dev6"
   },
   "binding-defaults-producer.openapi.yaml": {
-    "sha256": "2c04b7c49db62ea24f5ca768de68574d24fba542bed36b842a1b63e446d5900a",
+    "sha256": "60ec5c3df7910ad40f969994fc3e5167ea1986091f0f889b0294dfd6929f9b0c",
     "version": "0.1.0.dev0"
   },
   "binding-parameter-defaults.schema.json": {
@@ -51,8 +51,12 @@
     "sha256": "54ebea8f46849fbef441dc81528eb852bd7a2fd2618afc870fb176d3f5e50d89",
     "version": "1.0.0"
   },
+  "model-binding-execution-defaults.schema.json": {
+    "sha256": "374bbfbfa03b09b4fb31f9f66bab1c3e55780de8aa0a1bbd608ef19cab8da28b",
+    "version": null
+  },
   "model-binding.schema.json": {
-    "sha256": "8e296da12b70481abe2c813b0bb301070d8bdb10fa0c3efa44cc22ca95d41e65",
+    "sha256": "8dda3130854f2f31b3d01632cf53427e40d354c0bb73ef399ae7e03f93f55034",
     "version": null
   },
   "model-instance.schema.json": {

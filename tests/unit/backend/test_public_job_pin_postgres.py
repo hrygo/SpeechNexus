@@ -178,7 +178,8 @@ def test_replay_discovered_after_lock_beats_retirement_and_has_no_write() -> Non
 def test_stored_revision_identity_changed_fails_closed() -> None:
     pool = Pool(_request())
     pool.binding_rows[0]["revision_id"] = "different-private-revision"
-    assert _driver(pool).create(pool.request).outcome == "unknown"
+    with pytest.raises(ModelBindingError, match="model_binding_not_current"):
+        _driver(pool).create(pool.request)
     assert pool.rollbacks == 1
     assert not any(query.startswith("INSERT") for query, _ in pool.calls)
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import psycopg
@@ -15,7 +16,7 @@ from tests.integration.test_production_admission import admission_database as ad
 from tests.integration.test_production_jobs import database as database
 from tests.integration.test_production_runtime_intents import runtime_database as runtime_database
 
-from speechnexus_backend.job_runtime import _verify_admission_privileges
+from speechnexus_backend.job_runtime import _verify_admission_privileges, _verify_privileges
 from speechnexus_backend.speech.domain.public_jobs import (
     JobSubmission,
     NewPublicJob,
@@ -26,6 +27,7 @@ from speechnexus_backend.speech.domain.publications import Publication
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
     cancellation_reconciliation_grants,
 )
+from speechnexus_backend.speech.infrastructure.job_dispatch_postgres import PostgresDispatchQueue
 from speechnexus_backend.speech.infrastructure.job_schema import (
     job_dispatch_grants,
     job_runtime_grants,
@@ -182,9 +184,10 @@ def _seed(admission: AdmissionDatabase, *, complete: bool = True) -> None:
 def _store(admission: AdmissionDatabase) -> PostgresPublicJobs:
     pool = admission.runtime.pool
     assert pool is not None
+    assert admission.admission_pool is not None
     return PostgresPublicJobs(
         pool,
-        admission_pool=pool,
+        admission_pool=admission.admission_pool,
         require_admission=True,
         timeout_seconds=3,
         storage_bucket="transcription-inputs",
@@ -469,3 +472,161 @@ def test_admission_role_startup_matrix_is_satisfied_without_delete(
     finally:
         db.query(f'DROP OWNED BY "{role}"')
         db.query(f'DROP ROLE IF EXISTS "{role}"')
+
+
+def test_concurrent_same_key_reserves_exactly_once(admission_database: AdmissionDatabase) -> None:
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    before = _counts(db)
+    job = _job(key="concurrent-key")
+
+    def attempt() -> Any:
+        return _store(admission_database).create(job)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: attempt(), range(2)))
+    assert sorted(result.outcome for result in results) == ["created", "replayed"]
+    after = _counts(db)
+    for table in (
+        "speech_jobs",
+        "speech_job_intents",
+        "admission_operations",
+        "admission_attempts",
+        "admission_requests",
+        "admission_leases",
+        "coordination_jobs",
+        "coordination_outbox",
+    ):
+        assert after[table] == before[table] + 1, table
+
+
+def test_a_capacity_refusal_does_not_poison_the_same_key_retry(
+    admission_database: AdmissionDatabase,
+) -> None:
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    before = _counts(db)
+    job = _job(key="retry-after-capacity")
+    db.query("UPDATE workspace_quotas SET held_attempts = max_attempts")
+    refused = _store(admission_database).create(job)
+    assert refused.outcome == "rejected" and refused.error_code == "job_capacity_exhausted"
+    assert _counts(db) == before
+    db.query("UPDATE workspace_quotas SET held_attempts = 0")
+    retried = _store(admission_database).create(job)
+    assert retried.outcome == "created", retried.error_code
+    assert _counts(db)["speech_jobs"] == before["speech_jobs"] + 1
+
+
+class _CommitLost:
+    def __init__(self, inner: Any) -> None:
+        self._inner = inner
+
+    def __enter__(self) -> Any:
+        return self._inner.__enter__()
+
+    def __exit__(self, *exc: object) -> None:
+        self._inner.__exit__(*exc)
+        raise __import__("psycopg").OperationalError("synthetic commit acknowledgement lost")
+
+
+def test_commit_acknowledgement_loss_reports_unknown_without_half_rows(
+    admission_database: AdmissionDatabase,
+) -> None:
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    db = admission_database.runtime.foundation.database
+    before = _counts(db)
+    store = _store(admission_database)
+    real = store._admission_transaction
+    store._admission_transaction = lambda deadline: _CommitLost(real(deadline))  # type: ignore[method-assign,assignment,return-value]
+    result = store.create(_job(key="commit-lost"))
+    assert result.outcome == "unknown" and result.error_code == "outcome_unknown"
+    after = _counts(db)
+    for table in (
+        "speech_jobs",
+        "speech_job_intents",
+        "admission_operations",
+        "admission_leases",
+        "coordination_jobs",
+    ):
+        assert after[table] - before[table] in (0, 1), table
+    jobs = after["speech_jobs"] - before["speech_jobs"]
+    operations = after["admission_operations"] - before["admission_operations"]
+    leases = after["admission_leases"] - before["admission_leases"]
+    assert jobs == operations == leases
+
+
+def test_different_body_under_one_key_is_a_deterministic_conflict(
+    admission_database: AdmissionDatabase,
+) -> None:
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    key = "different-body"
+    first = _store(admission_database).create(_job(key=key, input_value={"text": "first"}))
+    assert first.outcome == "created", first.error_code
+    before = _counts(db)
+    second = _store(admission_database).create(_job(key=key, input_value={"text": "second"}))
+    assert second.outcome == "conflict" and second.error_code == "idempotency_conflict"
+    assert _counts(db) == before
+
+
+def test_no_ready_instance_is_a_capacity_refusal_not_an_unknown_store(
+    admission_database: AdmissionDatabase,
+) -> None:
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    before = _counts(db)
+    db.query("UPDATE engine_instances SET instance_state = 'draining'")
+    result = _store(admission_database).create(_job(key="no-ready-instance"))
+    assert result.outcome == "rejected"
+    assert result.error_code == "job_capacity_exhausted"
+    assert _counts(db) == before
+
+
+async def test_created_job_is_visible_to_the_a3_claim_join(
+    admission_database: AdmissionDatabase,
+) -> None:
+    _seed(admission_database)
+    result = _store(admission_database).create(_job(key="a3-join-key"))
+    assert result.outcome == "created" and result.job is not None
+    db = admission_database.runtime.foundation.database
+    row = db.query(
+        "SELECT a.operation_id, a.request_document, a.request_digest, "
+        "a.initial_attempt_id, a.current_attempt_id, c.attempt_id "
+        "FROM speech_jobs AS j "
+        "LEFT JOIN admission_operations AS a ON a.operation_id = j.job_id "
+        "LEFT JOIN coordination_jobs AS c ON c.job_id = j.job_id "
+        "WHERE j.job_id = %s",
+        (result.job.job_id,),
+    )[0]
+    assert row["operation_id"] == result.job.job_id
+    assert row["request_document"]
+    assert row["attempt_id"] == row["initial_attempt_id"]
+    pool = admission_database.runtime.pool
+    assert pool is not None
+    claims = await PostgresDispatchQueue(pool).claim_due("worker-a3", 1000, 1)
+    assert len(claims) == 1
+    claimed = claims[0].job
+    assert claimed.job_id == result.job.job_id
+    assert claimed.request_document == row["request_document"]
+    assert json.loads(claimed.request_document)["kind"] == "tts_file"
+    assert (
+        db.query(
+            "SELECT count(*) AS n FROM admission_leases WHERE operation_id = %s",
+            (result.job.job_id,),
+        )[0]["n"]
+        == 1
+    )
+
+
+def test_writer_column_level_attempt_insert_is_detected(
+    admission_database: AdmissionDatabase,
+) -> None:
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    role = admission_database.runtime.foundation.speech_role
+    db.query(f'GRANT INSERT (operation_id) ON admission_attempts TO "{role}"')
+    assert admission_database.runtime.pool is not None
+    with admission_database.runtime.pool.connection(timeout=3) as connection:
+        with pytest.raises(ValueError, match="admission reservations"):
+            _verify_privileges(connection, db.schema)

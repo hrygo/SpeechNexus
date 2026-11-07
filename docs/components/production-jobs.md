@@ -119,8 +119,10 @@ unknown/query_original；读取失败不证明原创建被拒绝，也不授予�
 `speech/domain/job_dispatch.py`、`speech/application/job_dispatcher.py` 与
 `speech/infrastructure/job_dispatch_postgres.py` 组成公开 Job 的派发边界。
 公共提交在同一事务写入 `speech_jobs`、事件、提交文档、权威公开 intent
-`speech_job_intents`，以及私有 `admission_operations` 过渡副本和
-`coordination_jobs`/`coordination_outbox` 身份；不使用摘要或当前默认值重建请求。
+`speech_job_intents`，以及通过原子准入产生的权威 `admission_operations`、attempt、
+request、lease 和 `coordination_jobs`/`coordination_outbox`；`request_document` 是本次
+准入写下的完整业务命令，不使用摘要或当前默认值重建请求。voice 生成类仍写非派发
+副本并占用 operation 锚点，见[生产准入存储](production-admission-storage.md)。
 
 授权分两段安装：`job_runtime_grants` 覆盖从 `0001_jobs` 起就存在的表，可在历史版本沙箱上直接应用；派发器额外需要的 `admission_operations` INSERT、`speech_job_intents` 的 SELECT/INSERT、`speech_artifacts` 的 SELECT/INSERT，以及 cancellation not-submitted 表的 INSERT 由 `job_dispatch_grants` 一并给出，**必须在升级到 head 之后**再执行——前者要到 `0007_admission_commands`、intent 表要到 `0046_public_job_intents`、后者要到 `0020_artifacts` 才存在，提前应用会让授权失败或掩盖升级顺序问题。Artifact 写入只授予显式列 INSERT 与读取既有行的 SELECT，不授予 UPDATE/DELETE 或 DDL；intent 表保持 append-only，同样不授予 UPDATE/DELETE。
 

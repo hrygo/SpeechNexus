@@ -229,9 +229,12 @@ class VoiceDrafts:
     ) -> PublicJob:
         """Submit one preview Job fixed to the target revision's binding.
 
-        The head equality, candidate readiness and binding publication checks
-        run after the same-key replay lookup: a replay after the head advanced
-        still returns the originally committed Job instead of a stale conflict.
+        A same-key replay found by the lock-free early lookup returns the
+        original Job even after the head advanced. If that lookup loses a race
+        with a concurrent commit, ``PublicJobs.submit`` retries the key after
+        the head/candidate checks fail; by then a store may have taken and
+        released its locks, so the retry is best-effort rather than lock-free,
+        but a replay still wins over reporting a conflict.
         """
         draft_id = identifier(draft_id)
         expected = payload["expected_draft_revision"]

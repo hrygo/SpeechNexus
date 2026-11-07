@@ -609,9 +609,11 @@ class PublicJobs:
             VoiceDraftStaleRevisionError,
             VoiceDraftNotCandidateError,
         ):
-            # The first lookup can miss a concurrent commit. Before rejecting
-            # changed facts, settle the same-key writer and recover its result.
-            # If coordination fails, propagate unavailable rather than a 422.
+            # The early lookup can miss a concurrent commit, and _submit_new may
+            # already have taken and released the binding/draft row locks before
+            # failing. Before rejecting changed facts, settle the same-key writer
+            # and recover its result. If coordination fails, propagate
+            # unavailable rather than a 422.
             if key_digest is not None:
                 original = self._find_original(
                     workspace_id, key_digest, request_digest, retry_of_job_id=None
@@ -928,11 +930,12 @@ class PublicJobs:
         return fact.binding, logical
 
     def _preview_intent(self, payload: Mapping[str, Any], workspace_id: str) -> dict[str, Any]:
-        """Freeze the derived model and binding before key replay and locking.
+        """Freeze the derived model and binding before the early key replay.
 
         Head equality, candidate readiness and binding publication stay in
-        ``_preview_binding`` so a same-key replay still succeeds after the draft
-        head advances, the preview Artifact expires or the binding is retired.
+        ``_preview_binding``. The early same-key lookup therefore runs before
+        them; only a request that misses that lookup evaluates them, and the
+        fallback lookup in ``submit`` re-checks the key after they fail.
         """
         request_input = payload.get("input")
         if not isinstance(request_input, dict):

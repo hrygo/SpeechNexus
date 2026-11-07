@@ -1498,6 +1498,44 @@ async def test_http_preview_is_fixed_to_the_head_revision(
         assert stale.json()["error"]["code"] == "voice_draft_conflict"
 
 
+async def test_http_preview_of_a_clone_keeps_the_clone_task_and_input(
+    voice_db: JobSandbox,
+) -> None:
+    provider, draft = _candidate_draft(voice_db, "clone")
+    app = create_app(settings=_settings(), jobs=voice_db.jobs, voice_drafts=provider)
+    path = "/v1/nexus/voice-drafts/" + draft["id"] + "/previews"
+    body = _preview_body(text="Clone preview")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        accepted = await http.post(
+            path, json=body, headers={"Idempotency-Key": "clone-preview-key"}
+        )
+        assert accepted.status_code == 202, accepted.text
+        validate_response(
+            "createVoicePreview",
+            202,
+            {"body": accepted.json(), "headers": dict(accepted.headers)},
+        )
+        assert accepted.json()["kind"] == "voice_preview"
+        assert accepted.json()["status"] == "queued"
+    document = json.loads(
+        voice_db.query(
+            "SELECT a.request_document FROM speech_jobs AS j "
+            "JOIN admission_operations AS a ON a.operation_id = j.job_id "
+            "WHERE j.job_id=%s",
+            (accepted.json()["id"],),
+        )[0]["request_document"]
+    )
+    assert document["kind"] == "voice_preview"
+    assert document["input"] == {
+        "voice_draft_id": draft["id"],
+        "draft_revision": "1",
+        "text": "Clone preview",
+    }
+    assert document["model"] == "voice-model"
+    assert document["model_binding"] == {"id": "voice-model", "revision": "1"}
+    assert voice_db.count("speech_jobs") == 2
+
+
 async def test_succeeded_preview_projects_the_singular_artifact(
     voice_db: JobSandbox,
 ) -> None:

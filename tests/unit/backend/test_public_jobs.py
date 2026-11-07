@@ -16,6 +16,7 @@ from speechnexus_backend.speech.application.public_jobs import (
     ModelBindingError,
     ModelNotPublishedError,
     PublicJobs,
+    UnsupportedJobKindError,
     VoiceNotPublishedError,
     WorkspaceFact,
 )
@@ -268,6 +269,21 @@ def test_explicit_contract_defaults_are_the_same_canonical_intent() -> None:
 
     assert replay.job_id == first.job_id
     assert len(store.jobs) == 1
+
+
+def test_an_unsupported_job_kind_is_rejected_before_any_fact_lookup() -> None:
+    service, _, store = _service()
+    # The contract parser rejects unknown kinds at the boundary; the service
+    # still guards its own dispatch so a non-contract caller cannot reach a
+    # handler by name.
+    with pytest.raises(UnsupportedJobKindError):
+        service.submit(
+            {"kind": "voice_narration", "workspace_id": "workspace-default"},
+            request_id="req-create",
+            idempotency_key=None,
+        )
+    assert store.jobs == {}
+    assert store.requests == []
 
 
 def test_unknown_or_unpublished_facts_are_rejected() -> None:

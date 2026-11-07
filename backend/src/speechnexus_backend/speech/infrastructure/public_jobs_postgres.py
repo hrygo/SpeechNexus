@@ -1063,8 +1063,10 @@ def _lock_validation_target(connection: _Executor, job: NewPublicJob) -> str | N
 def _lock_preview_target(connection: _Executor, job: NewPublicJob) -> str | None:
     """Recheck the exact head candidate under the draft row lock before insert.
 
-    Replay is decided before this lock, so a head advance only rejects a request
-    that would create a new preview Job, never a same-key replay.
+    The early replay lookup runs before this lock. A concurrent-commit miss is
+    retried by ``PublicJobs.submit`` only after this transaction fails, i.e.
+    after any lock it took has been released, so a head advance never turns a
+    same-key replay into a stale conflict.
     """
     try:
         intent = json.loads(job.request_document)

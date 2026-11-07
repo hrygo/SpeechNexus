@@ -76,7 +76,7 @@ revision)` 为主键，`generation_job_id` 唯一，输入和 binding 固定保�
 
 `createVoicePreview` 只预览当前 head 上的候选声音：draft 必须存在且 kind 为
 `design`/`clone`（否则 404/400），`expected_draft_revision` 必须等于 head（否则 409
-`voice_draft_stale_revision`），关联 generation Job 必须 succeeded 且结果的 receipt 与全部
+`voice_draft_conflict`），关联 generation Job 必须 succeeded 且结果的 receipt 与全部
 ready preview Artifact 匹配（否则 422 `voice_draft_not_candidate` 或 503
 `voice_draft_unavailable`）。`text` 的长度 1..2000 由请求契约在入站处校验，越界返回 400。
 预览 Job 以 `voice_preview` kind 提交，输入固定为
@@ -92,9 +92,11 @@ ready preview Artifact 匹配（否则 422 `voice_draft_not_candidate` 或 503
 返回 503，不把伪造结果投影成成功。生成结果的复数 `preview_artifact_ids` 规则不变，
 两条 resolver 不共用字段名。
 
-带 `Idempotency-Key` 的预览在进入任何行锁之前先按 key 查原 Job，因此 head 推进后同键重放
-仍返回原 Job，不新增第二个预览 Job。新建路径随后在草稿行锁内重新比较 head 并要求
-generation Job succeeded；锁后重放不再参与该判定。
+带 `Idempotency-Key` 的预览先在无锁早查重中按 key 查原 Job，因此 head 推进后同键重放仍返回
+原 Job，不新增第二个预览 Job。若早查重与并发提交竞争而落空，`PublicJobs.submit` 会在
+`_submit_new` 因 stale/not_candidate 失败后再查一次原键；此时 store 可能已经取过并释放
+binding 与草稿行锁，所以回退不保证在“任何行锁之前”，但重放仍优先于返回冲突。新建路径在
+草稿行锁内重新比较 head 并要求 generation Job succeeded；只有确实要新建时才进入该判定。
 
 通用 `POST /v1/nexus/jobs` 可提交 `voice_validation`，但重试带 `draft_target` 的生成 Job
 会被拒绝，避免把修订追加误当成新草稿生成。

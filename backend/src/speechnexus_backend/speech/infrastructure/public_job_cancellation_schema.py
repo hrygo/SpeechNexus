@@ -6,6 +6,9 @@ capacity release; those remain authoritative Job and execution facts.
 """
 
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
+from speechnexus_backend.speech.infrastructure.job_writer_columns import (
+    JOB_CANCELLATION_INSERT_COLUMNS,
+)
 
 TABLE = "speech_job_cancellations"
 
@@ -33,5 +36,7 @@ def public_job_cancellation_grants(schema: str, role: str) -> tuple[str, ...]:
     schema, role = checked_sql_name(schema), checked_sql_name(role)
     return (
         f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
-        f'GRANT SELECT, INSERT ON "{schema}".{TABLE} TO "{role}"',
+        f'GRANT SELECT ON "{schema}".{TABLE} TO "{role}"',
+        f"GRANT INSERT ({', '.join(JOB_CANCELLATION_INSERT_COLUMNS)}) "
+        f'ON "{schema}".{TABLE} TO "{role}"',
     )

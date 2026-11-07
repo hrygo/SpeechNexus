@@ -175,11 +175,42 @@ binding 历史、`speech_publications` 与证据表。未配置时 GET 返回
 
 Artifact reader、binding writer、binding admin reader、public Job writer 与 workbench
 runtime 的启动校验遵循同一条权限面规则：配置 schema 内声明表之外不得持有任何表级或列级
-权限；可写表拒绝 `DELETE`/`TRUNCATE`/`REFERENCES`/`TRIGGER`，只读表分别判定表级
-`INSERT` 与列级 `INSERT`/`UPDATE`/`REFERENCES`；schema 需要 `USAGE` 且拒绝 `CREATE`。
-列级判定一律使用 `has_column_privilege`/`has_any_column_privilege`，不以表级结果为代理；
-声明列集之外的列级 `INSERT`/`UPDATE` 同样拒绝，新增列不会自动扩权。拒绝信息点名权限类型
-与关系，并给出撤销授权或扩声明表的修复动作。
+权限；可写表拒绝 `DELETE`/`TRUNCATE`/`REFERENCES`/`TRIGGER`，表级 `INSERT` 与列级
+`INSERT`/`UPDATE`/`REFERENCES` 分开判定；schema 需要 `USAGE` 且拒绝 `CREATE`。
+列级判定一律使用 `has_column_privilege`/`has_any_column_privilege`，不以表级结果为代理。
+
+public Job writer 的 15 张可写表只接受列级 `INSERT`：表级 `INSERT` 在任何声明表上都被
+拒绝，列集必须与 `job_writer_columns.py` 中的声明完全一致，少一列、多一列或新增列都不
+会自动扩权。拒绝信息点名权限类型与关系，并给出撤销授权或扩声明表的修复动作。
+
+从旧版本升级时，若 Job writer 角色还持有表级 `INSERT`，必须先撤销再重新授予列级权限，
+否则启动会按预期拒绝。对同一 schema 和角色执行：
+
+```sql
+REVOKE INSERT ON
+  <schema>.coordination_jobs,
+  <schema>.coordination_outbox,
+  <schema>.admission_operations,
+  <schema>.speech_job_intents,
+  <schema>.speech_artifacts,
+  <schema>.speech_job_cancellation_not_submitted,
+  <schema>.speech_jobs,
+  <schema>.speech_job_events,
+  <schema>.speech_job_submissions,
+  <schema>.speech_job_cancellations,
+  <schema>.speech_job_cancellation_fences,
+  <schema>.speech_job_cancellation_reconciliations,
+  <schema>.speech_voice_drafts,
+  <schema>.speech_voice_draft_revisions,
+  <schema>.speech_voice_metadata_commands
+FROM <job-writer-role>;
+
+-- 然后对同一角色重新执行部署所用的 grant 函数集合，例如
+-- job_runtime_grants / job_dispatch_grants / public_job_grants /
+-- public_job_admission_grants / voice_draft_grants /
+-- job_cancellation_fence_grants / cancellation_not_submitted_grants /
+-- cancellation_reconciliation_grants / artifact_publisher_grants。
+```
 独立记录角色使用 `voice_evidence_recorder_grants` 和
 `SPEECHNEXUS_VOICE_EVIDENCE_DATABASE_URL`，通过
 `speechnexus-record-voice-evidence` 显式写入证据，或由

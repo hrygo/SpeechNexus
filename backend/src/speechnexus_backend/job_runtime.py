@@ -10,7 +10,9 @@ from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.application.voice_drafts import VoiceDrafts
 from speechnexus_backend.speech.application.voice_publications import VoicePublications
-from speechnexus_backend.speech.infrastructure.artifact_schema import ARTIFACT_INSERT_COLUMNS
+from speechnexus_backend.speech.infrastructure.job_writer_columns import (
+    JOB_WRITER_INSERT_COLUMNS,
+)
 from speechnexus_backend.speech.infrastructure.postgres_pool import (
     SpeechConnection,
     SpeechPool,
@@ -122,9 +124,6 @@ REQUIRED_UPDATE_COLUMNS: dict[str, tuple[str, ...]] = {
 }
 
 _JOB_SUBJECT = "Public Job writer"
-# The dispatcher appends artifact metadata with a declared column INSERT, so this
-# table is column-writable even though it is read-only at the table level.
-_JOB_COLUMN_WRITABLE = frozenset(("speech_artifacts",))
 # Every relation the combined Job writer may touch. A grant outside this set --
 # table or column -- is refused by name (#561).
 _JOB_DECLARED_TABLES = tuple(
@@ -363,8 +362,7 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
     )
     rows = connection.execute(
         "SELECT c.relname AS name, c.relkind AS kind, "
-        "pg_catalog.has_table_privilege(CURRENT_USER, c.oid, 'SELECT') AS can_select, "
-        "pg_catalog.has_table_privilege(CURRENT_USER, c.oid, 'INSERT') AS can_insert "
+        "pg_catalog.has_table_privilege(CURRENT_USER, c.oid, 'SELECT') AS can_select "
         "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
         "WHERE n.nspname = %s AND c.relkind IN ('r', 'p', 'v', 'm', 'f')",
         (schema,),
@@ -374,10 +372,6 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
         row = privileges.get(table)
         if row is None or not row["can_select"]:
             raise ValueError("Public Job writer lacks SELECT on " + table)
-    for table in REQUIRED_INSERT:
-        row = privileges.get(table)
-        if row is None or not row["can_insert"]:
-            raise ValueError("Public Job writer lacks INSERT on " + table)
     for table, columns in REQUIRED_INSERT_COLUMNS.items():
         for column in columns:
             allowed = connection.execute(
@@ -407,45 +401,57 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
             ("DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"),
             subject=_JOB_SUBJECT,
         )
-    # A table that is read-only at the table level can still be legitimately
-    # column-writable: the dispatcher appends artifact metadata with a column
-    # INSERT, so that table is judged by its declared column surface instead.
-    for table in _JOB_COLUMN_WRITABLE:
+    # INSERT is a per-column authority too: no declared table may carry a
+    # table-level grant, and every writable relation must match its declared
+    # column set exactly (an added column must not silently widen the surface).
+    for table in _JOB_DECLARED_TABLES:
         qualified = f"{schema}.{table}"
         refuse_table_privileges(
             connection,
             None,
             qualified,
             table,
-            ("INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"),
+            ("INSERT",),
             subject=_JOB_SUBJECT,
         )
-        refuse_column_privileges(
-            connection,
-            None,
-            qualified,
-            table,
-            ("UPDATE", "REFERENCES"),
-            subject=_JOB_SUBJECT,
-        )
+        expected_columns = set(JOB_WRITER_INSERT_COLUMNS.get(table, ()))
         column_rows = connection.execute(
             "SELECT column_name, pg_catalog.has_column_privilege(CURRENT_USER, %s, "
             "column_name, 'INSERT') AS insertable FROM information_schema.columns "
             "WHERE table_schema=%s AND table_name=%s",
             (qualified, schema, table),
         ).fetchall()
-        granted = {row["column_name"] for row in column_rows if row["insertable"]}
-        if granted != set(ARTIFACT_INSERT_COLUMNS):
-            raise ValueError(
-                f"{_JOB_SUBJECT} INSERT columns do not match the declared surface on "
-                f"{table}; revoke the extra column grant or restore the declared column"
+        granted_columns = {row["column_name"] for row in column_rows if row["insertable"]}
+        if expected_columns:
+            if granted_columns != expected_columns:
+                raise ValueError(
+                    f"{_JOB_SUBJECT} INSERT columns do not match the declared surface on "
+                    f"{table}; revoke the extra column grant or restore the declared column"
+                )
+        else:
+            refuse_column_privileges(
+                connection,
+                None,
+                qualified,
+                table,
+                ("INSERT",),
+                subject=_JOB_SUBJECT,
             )
+        # REFERENCES is never useful to this writer, not even on one column.
+        refuse_column_privileges(
+            connection,
+            None,
+            qualified,
+            table,
+            ("REFERENCES",),
+            subject=_JOB_SUBJECT,
+        )
     # Read-only tables: table-level INSERT is judged on its own, never inferred
     # from a column grant. Column INSERT/UPDATE/REFERENCES are refused directly.
     read_only_tables = tuple(
         table
         for table in REQUIRED_SELECT
-        if table not in REQUIRED_INSERT and table not in _JOB_COLUMN_WRITABLE
+        if table not in REQUIRED_INSERT and table not in JOB_WRITER_INSERT_COLUMNS
     )
     for table in read_only_tables:
         qualified = f"{schema}.{table}"

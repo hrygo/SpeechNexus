@@ -257,6 +257,22 @@ def test_artifact_reader_startup_rejects_each_single_misgrant(
         _drop_role(jobs_db, role)
 
 
+def test_artifact_reader_schema_create_message_is_complete(jobs_db: JobSandbox) -> None:
+    role = _create_role(jobs_db, "art_msg")
+    try:
+        for statement in artifact_reader_grants(jobs_db.schema, role):
+            jobs_db.admin.execute(statement)
+        jobs_db.admin.execute(f'GRANT CREATE ON SCHEMA "{jobs_db.schema}" TO "{role}"')
+        with _connect(jobs_db, role) as connection, pytest.raises(ValueError) as caught:
+            _verify_read_only(connection, jobs_db.schema)
+        assert str(caught.value) == (
+            f"Artifact reader must not hold CREATE on schema {jobs_db.schema}; "
+            "revoke the schema CREATE grant"
+        )
+    finally:
+        _drop_role(jobs_db, role)
+
+
 def test_artifact_reader_minimum_role_reads_one_artifact(jobs_db: JobSandbox) -> None:
     role = _create_role(jobs_db, "art_ok")
     artifact_id = "artifact-561-" + uuid.uuid4().hex[:8]
@@ -307,6 +323,26 @@ JOB_MISGRANTS = (
         "column-writable-table-insert",
         'GRANT INSERT ON "{schema}".speech_artifacts TO "{role}"',
         "must not hold INSERT on speech_artifacts",
+    ),
+    (
+        "coordination-table-insert",
+        'GRANT INSERT ON "{schema}".coordination_jobs TO "{role}"',
+        "must not hold INSERT on coordination_jobs",
+    ),
+    (
+        "admission-table-insert",
+        'GRANT INSERT ON "{schema}".admission_operations TO "{role}"',
+        "must not hold INSERT on admission_operations",
+    ),
+    (
+        "reconciliation-table-insert",
+        'GRANT INSERT ON "{schema}".speech_job_cancellation_reconciliations TO "{role}"',
+        "must not hold INSERT on speech_job_cancellation_reconciliations",
+    ),
+    (
+        "artifact-missing-insert-column",
+        'REVOKE INSERT (media_type) ON "{schema}".speech_artifacts FROM "{role}"',
+        "INSERT columns do not match the declared surface on speech_artifacts",
     ),
     (
         "column-writable-column-references",
@@ -386,6 +422,71 @@ def test_job_writer_startup_rejects_each_single_misgrant(
     with pytest.raises(ValueError, match="Public Job writer startup rejected"):
         runtime.open()
     assert runtime.jobs is None
+
+
+def test_job_writer_dispatches_and_cancels_a_real_chain(jobs_db: JobSandbox) -> None:
+    runtime = JobRuntime(_job_settings(jobs_db))
+    runtime.open()
+    try:
+        assert runtime.jobs is not None
+    finally:
+        runtime.close()
+    app = create_app(settings=_job_settings(jobs_db), jobs=jobs_db.jobs)
+
+    async def run() -> None:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            created = await client.post(
+                "/v1/nexus/jobs", json=_body(), headers={"Idempotency-Key": "synthetic-561-chain-1"}
+            )
+            assert created.status_code == 202, created.text
+            job_id = created.json()["id"]
+            for table in (
+                "coordination_jobs",
+                "coordination_outbox",
+                "speech_jobs",
+                "speech_job_events",
+                "speech_job_submissions",
+                "speech_job_intents",
+                "admission_operations",
+            ):
+                assert jobs_db.count(table) == 1, table
+            jobs_db.jobs.advance(job_id, "running")
+            succeeded = jobs_db.jobs.advance(
+                job_id,
+                "succeeded",
+                result_json=(
+                    '{"kind":"tts","audio_artifact_id":"artifact-synthetic",'
+                    '"receipt_id":"receipt-synthetic"}'
+                ),
+            )
+            assert succeeded.state == "succeeded"
+
+            running = await client.post(
+                "/v1/nexus/jobs", json=_body(), headers={"Idempotency-Key": "synthetic-561-chain-2"}
+            )
+            assert running.status_code == 202, running.text
+            running_id = running.json()["id"]
+            jobs_db.jobs.advance(running_id, "running")
+            view = jobs_db.jobs.cancel(
+                running_id, request_id="synthetic-cancel-2", idempotency_key=None
+            )
+            assert view.job.state == "cancelling"
+            settled = jobs_db.jobs.settle_cancelled(
+                running_id, expected_version=view.job.status_version
+            )
+            assert settled.state == "cancelled"
+
+            pending = await client.post(
+                "/v1/nexus/jobs", json=_body(), headers={"Idempotency-Key": "synthetic-561-chain-3"}
+            )
+            assert pending.status_code == 202, pending.text
+            pending_id = pending.json()["id"]
+            direct = jobs_db.jobs.cancel(
+                pending_id, request_id="synthetic-cancel-3", idempotency_key=None
+            )
+            assert direct.job.state == "cancelled"
+
+    asyncio.run(run())
 
 
 def test_job_writer_rejects_extra_artifact_insert_column(jobs_db: JobSandbox) -> None:

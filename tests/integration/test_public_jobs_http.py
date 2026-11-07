@@ -465,6 +465,7 @@ def test_voice_draft_revision_grants_are_append_only(jobs_db: JobSandbox) -> Non
     row = jobs_db.query(
         "SELECT pg_catalog.has_table_privilege(%s, %s, 'SELECT') AS can_select, "
         "pg_catalog.has_table_privilege(%s, %s, 'INSERT') AS can_insert, "
+        "pg_catalog.has_any_column_privilege(%s, %s, 'INSERT') AS any_insert, "
         "pg_catalog.has_table_privilege(%s, %s, 'UPDATE') AS can_update, "
         "pg_catalog.has_table_privilege(%s, %s, 'DELETE') AS can_delete, "
         "pg_catalog.has_column_privilege(%s, %s, 'head_revision', 'UPDATE') AS can_head",
@@ -478,11 +479,15 @@ def test_voice_draft_revision_grants_are_append_only(jobs_db: JobSandbox) -> Non
             role,
             revision_table,
             role,
+            revision_table,
+            role,
             draft_table,
         ),
     )[0]
     assert row["can_select"] is True
-    assert row["can_insert"] is True
+    # #561: the writer is granted by column, never by whole table.
+    assert row["can_insert"] is False
+    assert row["any_insert"] is True
     assert row["can_update"] is False
     assert row["can_delete"] is False
     assert row["can_head"] is True

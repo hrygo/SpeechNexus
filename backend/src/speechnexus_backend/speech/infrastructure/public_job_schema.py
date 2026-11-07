@@ -10,6 +10,10 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema imp
     job_cancellation_fence_grants,
 )
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
+from speechnexus_backend.speech.infrastructure.job_writer_columns import (
+    JOB_EVENT_INSERT_COLUMNS,
+    JOB_INSERT_COLUMNS,
+)
 from speechnexus_backend.speech.infrastructure.public_job_cancellation_schema import (
     public_job_cancellation_grants,
 )
@@ -73,10 +77,12 @@ def public_job_grants(schema: str, role: str) -> tuple[str, ...]:
     prefix, target = f'"{schema}".', f'"{role}"'
     return (
         f'GRANT USAGE ON SCHEMA "{schema}" TO {target}',
-        f"GRANT SELECT, INSERT ON {prefix}{JOBS} TO {target}",
+        f"GRANT SELECT ON {prefix}{JOBS} TO {target}",
+        f"GRANT INSERT ({', '.join(JOB_INSERT_COLUMNS)}) ON {prefix}{JOBS} TO {target}",
         f"GRANT UPDATE (state, status_version, result_json, error_code, updated_at_us) "
         f"ON {prefix}{JOBS} TO {target}",
-        f"GRANT SELECT, INSERT ON {prefix}{EVENTS} TO {target}",
+        f"GRANT SELECT ON {prefix}{EVENTS} TO {target}",
+        f"GRANT INSERT ({', '.join(JOB_EVENT_INSERT_COLUMNS)}) ON {prefix}{EVENTS} TO {target}",
         f"GRANT SELECT ON {prefix}{SUBMISSIONS} TO {target}",
         # A succeeded Job projection and its terminal event read the committed
         # result Artifact metadata; object bytes stay behind the artifact routes.

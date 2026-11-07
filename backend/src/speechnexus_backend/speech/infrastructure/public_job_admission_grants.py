@@ -10,6 +10,9 @@ from __future__ import annotations
 
 from speechnexus_backend.speech.infrastructure.coordination_grants import DIMENSIONS
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
+from speechnexus_backend.speech.infrastructure.job_writer_columns import (
+    ADMISSION_OPERATION_INSERT_COLUMNS,
+)
 
 _READ_TABLES = (
     "speech_workspaces",
@@ -101,8 +104,12 @@ def public_job_admission_grants(schema: str, role: str) -> tuple[str, ...]:
     for table in _READ_TABLES:
         grants.append(f'GRANT SELECT ON "{schema}".{table} TO "{role}"')
     for table, columns in _INSERT_COLUMNS.items():
-        listed = ", ".join(columns.split())
-        grants.append(f'GRANT INSERT ({listed}) ON "{schema}".{table} TO "{role}"')
+        declared = (
+            ADMISSION_OPERATION_INSERT_COLUMNS
+            if table == "admission_operations"
+            else tuple(columns.split())
+        )
+        grants.append(f'GRANT INSERT ({", ".join(declared)}) ON "{schema}".{table} TO "{role}"')
     for table, columns in _UPDATE_COLUMNS.items():
         listed = ", ".join(columns.split())
         grants.append(f'GRANT UPDATE ({listed}) ON "{schema}".{table} TO "{role}"')

@@ -1,6 +1,11 @@
 """Persisted metadata, pinned generation input and metadata replay receipts."""
 
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
+from speechnexus_backend.speech.infrastructure.job_writer_columns import (
+    VOICE_DRAFT_INSERT_COLUMNS,
+    VOICE_DRAFT_REVISION_INSERT_COLUMNS,
+    VOICE_METADATA_COMMAND_INSERT_COLUMNS,
+)
 
 VOICE_DRAFT_DDL = (
     """CREATE TABLE speech_voice_drafts (
@@ -55,12 +60,18 @@ VOICE_DRAFT_REVISION_BACKFILL = """INSERT INTO speech_voice_draft_revisions
 def voice_draft_grants(schema: str, role: str) -> tuple[str, ...]:
     schema, role = checked_sql_name(schema), checked_sql_name(role)
     return (
-        f'GRANT SELECT, INSERT ON "{schema}".speech_voice_drafts TO "{role}"',
+        f'GRANT SELECT ON "{schema}".speech_voice_drafts TO "{role}"',
+        f"GRANT INSERT ({', '.join(VOICE_DRAFT_INSERT_COLUMNS)}) "
+        f'ON "{schema}".speech_voice_drafts TO "{role}"',
         f"GRANT UPDATE (display_name, metadata_revision, updated_at_us, "
         f"head_revision, generation_job_id) "
         f'ON "{schema}".speech_voice_drafts TO "{role}"',
-        f'GRANT SELECT, INSERT ON "{schema}".speech_voice_draft_revisions TO "{role}"',
-        f'GRANT SELECT, INSERT ON "{schema}".speech_voice_metadata_commands TO "{role}"',
+        f'GRANT SELECT ON "{schema}".speech_voice_draft_revisions TO "{role}"',
+        f"GRANT INSERT ({', '.join(VOICE_DRAFT_REVISION_INSERT_COLUMNS)}) "
+        f'ON "{schema}".speech_voice_draft_revisions TO "{role}"',
+        f'GRANT SELECT ON "{schema}".speech_voice_metadata_commands TO "{role}"',
+        f"GRANT INSERT ({', '.join(VOICE_METADATA_COMMAND_INSERT_COLUMNS)}) "
+        f'ON "{schema}".speech_voice_metadata_commands TO "{role}"',
     )
 
 

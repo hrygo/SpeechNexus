@@ -279,11 +279,13 @@ asset/bytes/sha256 证明。
 审计，但发布被 422 拒绝。
 
 证据的自动记录由独立 worker 完成。`speechnexus-voice-evidence-worker` 周期扫描
-「state 为 succeeded、result 带 `validation_report_artifact_id`、且没有证据行」的
-`voice_validation` Job，按 Job 引用的 Artifact 行读取对象存储中的同一版报告字节，再走与
-`speechnexus-record-voice-evidence` 相同的记录事务。扫描只依赖持久行，不依赖派发租约或
-进程内集合，因此能补记「报告已提交、账本未写」的中断窗口；同一 Job 重复消费由
-`evidence_id = vce-<job_id>` 与 `UNIQUE(validation_job_id)` 幂等，返回原行而不新增。
+「state 为 succeeded、且没有证据行」的 `voice_validation` Job，按 Job 引用的 Artifact
+行读取对象存储中的同一版报告字节，再走与 `speechnexus-record-voice-evidence` 相同的
+记录事务。扫描只依赖持久行，不依赖派发租约或进程内集合，因此能补记「报告已提交、账本
+未写」的中断窗口；result 损坏的 Job 以 `validation_result_invalid` 拒绝，缺少报告引用或
+回执不符的 Job 以 `validation_report_mismatch` 拒绝，都不会被扫描谓词静默跳过。同一 Job
+重复消费由 `evidence_id = vce-<job_id>` 与 `UNIQUE(validation_job_id)` 幂等，返回原行而
+不新增。
 
 记录前重新校验同一组事实：Job 非 `succeeded`、Artifact 不是 ready 的
 `validation_report`、receipt 不符、对象字节摘要与 Artifact 行不一致、报告未过质量阈值，

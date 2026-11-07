@@ -1,6 +1,23 @@
 """Committed public Artifact registry; object bytes remain private and version pinned."""
 
 ARTIFACTS = "speech_artifacts"
+# The dispatcher may append exactly these columns; startup compares the real
+# grant against this tuple so an added column cannot silently widen the surface.
+ARTIFACT_INSERT_COLUMNS = (
+    "artifact_id",
+    "workspace_id",
+    "artifact_kind",
+    "artifact_state",
+    "media_type",
+    "bytes",
+    "sha256",
+    "receipt_id",
+    "source_operation_id",
+    "object_key",
+    "storage_version_id",
+    "created_at_us",
+    "expires_at_us",
+)
 
 ARTIFACT_DDL = (
     """CREATE TABLE speech_artifacts (
@@ -50,11 +67,7 @@ def artifact_publisher_grants(schema: str, role: str) -> tuple[str, ...]:
     from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 
     schema, role = checked_sql_name(schema), checked_sql_name(role)
-    columns = (
-        "artifact_id, workspace_id, artifact_kind, artifact_state, media_type, bytes, "
-        "sha256, receipt_id, source_operation_id, object_key, storage_version_id, "
-        "created_at_us, expires_at_us"
-    )
+    columns = ", ".join(ARTIFACT_INSERT_COLUMNS)
     return (
         f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
         f'GRANT SELECT ON "{schema}".{ARTIFACTS} TO "{role}"',
@@ -62,4 +75,10 @@ def artifact_publisher_grants(schema: str, role: str) -> tuple[str, ...]:
     )
 
 
-__all__ = ["ARTIFACTS", "ARTIFACT_DDL", "artifact_publisher_grants", "artifact_reader_grants"]
+__all__ = [
+    "ARTIFACTS",
+    "ARTIFACT_DDL",
+    "ARTIFACT_INSERT_COLUMNS",
+    "artifact_publisher_grants",
+    "artifact_reader_grants",
+]

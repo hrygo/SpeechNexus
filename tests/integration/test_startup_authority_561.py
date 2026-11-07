@@ -333,6 +333,41 @@ JOB_MISGRANTS = (
         'GRANT REFERENCES ON "{schema}".speech_workspaces TO "{role}"',
         "must not hold REFERENCES on speech_workspaces",
     ),
+    (
+        "declared-extra-table-delete",
+        'GRANT DELETE ON "{schema}".coordination_jobs TO "{role}"',
+        "must not hold DELETE on coordination_jobs",
+    ),
+    (
+        "writable-table-update",
+        'GRANT UPDATE ON "{schema}".speech_jobs TO "{role}"',
+        "UPDATE columns do not match the declared surface on speech_jobs",
+    ),
+    (
+        "writable-extra-column-update",
+        'GRANT UPDATE (status) ON "{schema}".speech_voice_drafts TO "{role}"',
+        "UPDATE columns do not match the declared surface on speech_voice_drafts",
+    ),
+    (
+        "append-only-table-update",
+        'GRANT UPDATE ON "{schema}".speech_job_events TO "{role}"',
+        "UPDATE columns do not match the declared surface on speech_job_events",
+    ),
+    (
+        "undeclared-table",
+        'GRANT SELECT ON "{schema}".speech_pronunciation_families TO "{role}"',
+        "undeclared table speech_pronunciation_families",
+    ),
+    (
+        "schema-create",
+        'GRANT CREATE ON SCHEMA "{schema}" TO "{role}"',
+        "must not hold CREATE on schema",
+    ),
+    (
+        "missing-schema-usage",
+        'REVOKE USAGE ON SCHEMA "{schema}" FROM "{role}"',
+        "lacks USAGE on schema",
+    ),
 )
 
 
@@ -351,6 +386,22 @@ def test_job_writer_startup_rejects_each_single_misgrant(
     with pytest.raises(ValueError, match="Public Job writer startup rejected"):
         runtime.open()
     assert runtime.jobs is None
+
+
+def test_job_writer_rejects_extra_artifact_insert_column(jobs_db: JobSandbox) -> None:
+    jobs_db.admin.execute(
+        f'ALTER TABLE "{jobs_db.schema}".speech_artifacts ADD COLUMN extra_probe TEXT'
+    )
+    jobs_db.admin.execute(
+        f'GRANT INSERT (extra_probe) ON "{jobs_db.schema}".speech_artifacts TO "{jobs_db.role}"'
+    )
+    with (
+        _connect(jobs_db, jobs_db.role) as connection,
+        pytest.raises(
+            ValueError, match="INSERT columns do not match the declared surface on speech_artifacts"
+        ),
+    ):
+        _verify_privileges(connection, jobs_db.schema)
 
 
 def test_job_writer_minimum_role_starts_and_creates_one_job(jobs_db: JobSandbox) -> None:
@@ -536,7 +587,7 @@ WORKBENCH_MISGRANTS = (
     (
         "table-trigger",
         'GRANT TRIGGER ON "{schema}".projects TO "{role}"',
-        "",
+        "runtime role must not hold TRIGGER on projects",
     ),
     (
         "read-only-table-insert",

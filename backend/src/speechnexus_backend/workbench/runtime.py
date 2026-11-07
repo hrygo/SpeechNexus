@@ -300,7 +300,7 @@ async def check_database(settings: WorkbenchSettings) -> None:
                         has_table_privilege(c.oid,'SELECT') AS readable,
                         has_table_privilege(c.oid,'INSERT') AS insertable,
                         has_any_column_privilege(c.oid,'INSERT') AS any_insert,
-                        has_table_privilege(c.oid,'DELETE,TRUNCATE,TRIGGER') AS destructive
+                        has_table_privilege(c.oid,'DELETE,TRUNCATE') AS destructive
                     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
                     WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m','f')
                     """,
@@ -315,6 +315,7 @@ async def check_database(settings: WorkbenchSettings) -> None:
             # grants stay invisible to every table predicate, so each column
             # decision compares columns directly.
             await _refuse_table_privilege(connection, settings.database_schema, "REFERENCES")
+            await _refuse_table_privilege(connection, settings.database_schema, "TRIGGER")
             read_only = tuple(sorted(_READ_ONLY))
             await _refuse_table_privilege(connection, settings.database_schema, "INSERT", read_only)
             for privilege in ("INSERT", "UPDATE", "REFERENCES"):

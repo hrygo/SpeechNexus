@@ -177,8 +177,9 @@ Artifact reader、binding writer、binding admin reader、public Job writer 与 
 runtime 的启动校验遵循同一条权限面规则：配置 schema 内声明表之外不得持有任何表级或列级
 权限；可写表拒绝 `DELETE`/`TRUNCATE`/`REFERENCES`/`TRIGGER`，只读表分别判定表级
 `INSERT` 与列级 `INSERT`/`UPDATE`/`REFERENCES`；schema 需要 `USAGE` 且拒绝 `CREATE`。
-列级判定一律使用 `has_column_privilege`/`has_any_column_privilege`，不以表级结果为代理。
-拒绝信息点名权限类型与关系，并给出撤销授权或扩声明表的修复动作。
+列级判定一律使用 `has_column_privilege`/`has_any_column_privilege`，不以表级结果为代理；
+声明列集之外的列级 `INSERT`/`UPDATE` 同样拒绝，新增列不会自动扩权。拒绝信息点名权限类型
+与关系，并给出撤销授权或扩声明表的修复动作。
 独立记录角色使用 `voice_evidence_recorder_grants` 和
 `SPEECHNEXUS_VOICE_EVIDENCE_DATABASE_URL`，通过
 `speechnexus-record-voice-evidence` 显式写入证据，或由

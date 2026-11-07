@@ -76,6 +76,19 @@ _ERRORS: dict[str, tuple[int, str, str, str, bool]] = {
         "conflict",
         False,
     ),
+    # ``job_rejected``: the store refused to insert a prepared Job because the
+    # facts it pinned changed before the write (a retired binding, candidate
+    # evidence that stopped resolving, a lost identity race). The transaction
+    # rolled back, so nothing was committed, but replaying the same request
+    # cannot succeed. This is the declared 409 conflict class -- the same
+    # stable ``voice_draft_conflict`` code -- not a retryable storage outage.
+    "rejected": (
+        409,
+        "invalid_request_error",
+        "Voice draft facts changed before the Job could be inserted.",
+        "conflict",
+        False,
+    ),
     # A request without a key that may already have committed cannot be retried
     # safely: a resubmission is a new intent and may create a second draft and
     # generation Job. 409 is the same reconcile-the-original class already used
@@ -340,9 +353,22 @@ def _execute(
         # The reply we built violates our own contract. Answering 503 would hide
         # an implementation defect behind a retryable outage.
         return _error("contract_violation", request_id, operation)
+    except JobRejectedError:
+        # Facts changed between prepare and insert: no write committed, but the
+        # request conflicts with current state instead of describing an outage.
+        # Every operation that submits a Job declares 409; the read/metadata
+        # operations cannot reach this branch and keep their declared 503.
+        if operation in (
+            "createVoiceDesign",
+            "createVoiceClone",
+            "generateVoiceDraftRevision",
+            "createVoicePreview",
+            "validateVoiceDraftRevision",
+        ):
+            return _error("rejected", request_id, operation)
+        return _error("unavailable", request_id, operation)
     except (
         PublicJobUnavailableError,
-        JobRejectedError,
         ValueError,
         KeyError,
         TypeError,

@@ -101,6 +101,21 @@ binding 与草稿行锁，所以回退不保证在“任何行锁之前”，但
 通用 `POST /v1/nexus/jobs` 可提交 `voice_validation`，但重试带 `draft_target` 的生成 Job
 会被拒绝，避免把修订追加误当成新草稿生成。
 
+## 插入窗口拒绝
+
+`job_rejected` 表示 store 在 prepare 完成后、插入事务提交前发现固定的事实已变——固定
+binding 不再是选中版本、候选 preview 证据不再 ready、或草稿身份竞争失败。事务已回滚，
+没有任何 Job、修订、草稿或 outbox 写入提交。voice 的创建、生成、预览与校验四条路径都
+声明了 409，因此该结果统一映射为既有稳定 code `voice_draft_conflict`（`type:
+invalid_request_error`、`retryable: false`、`Cache-Control: no-store`、
+`X-Should-Retry: false`）；重放同一请求不能成功，调用方应按当前事实重新决定。不得映射为
+带 `retryable: true` 的 `voice_draft_unavailable`。
+
+通用 `POST /v1/nexus/jobs` 对同一 store 结果保持 503 `job_unavailable` 且
+`retryable: false`。两条路径的差异来自已声明的响应集合：voice 操作声明了 409 冲突语义，
+通用 Job 面没有对应的“事实已变”冲突 code，因此保留现有的不可重试 503；两者都不承诺
+重试可以成功。
+
 ## 权威状态与恢复
 
 `VoiceDrafts.create` 调用既有 `PublicJobs.submit`。沿用其 workspace 作用域幂等键锁、

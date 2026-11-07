@@ -1775,3 +1775,181 @@ def test_preview_target_is_relocked_before_insert(
     assert result.outcome == "rejected"
     assert result.error_code == "stale"
     assert voice_db.count("speech_jobs") == 3
+
+
+def _assert_conflict_envelope(response: Any, operation: str) -> dict[str, Any]:
+    """A real 409 envelope, not a bare status: stable code and no-retry headers."""
+    assert response.status_code == 409, response.text
+    body = response.json()
+    error = body["error"]
+    assert error["code"] == "voice_draft_conflict"
+    assert error["type"] == "invalid_request_error"
+    assert error["retryable"] is False
+    assert error["param"] is None
+    assert error["request_id"]
+    assert response.headers["Content-Type"] == "application/json"
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["X-Should-Retry"] == "false"
+    # A bare framework status would carry no envelope; ``Allow`` belongs to a
+    # 405, so a 409 must not masquerade as the method-not-allowed reply.
+    assert "Allow" not in response.headers
+    validate_response(
+        operation,
+        409,
+        {"body": body, "headers": dict(response.headers)},
+    )
+    return cast(dict[str, Any], body)
+
+
+def _assert_generic_unavailable_envelope(response: Any) -> None:
+    """The generic Job surface keeps its non-retryable 503 for the same result."""
+    assert response.status_code == 503, response.text
+    body = response.json()
+    error = body["error"]
+    assert error["code"] == "job_unavailable"
+    assert error["type"] == "service_unavailable_error"
+    assert error["retryable"] is False
+    assert response.headers["Cache-Control"] == "no-store"
+    assert "X-Should-Retry" not in response.headers
+    parse_contract("ErrorResponse", body)
+
+
+async def test_create_insert_fact_change_is_a_conflict_not_a_retryable_503(
+    voice_db: JobSandbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = voice_db.jobs._store
+    original = store.create
+
+    def retire_binding(job: NewPublicJob) -> Any:
+        # Prepare already pinned the published revision; the selected head
+        # disappears before the insertion transaction reads it again.
+        voice_db.admin.execute(
+            "DELETE FROM speech_publication_heads "
+            "WHERE kind = 'binding' AND object_id = 'voice-model'"
+        )
+        return original(job)
+
+    monkeypatch.setattr(store, "create", retire_binding)
+    app = create_app(settings=_settings(), jobs=voice_db.jobs, voice_drafts=_provider(voice_db))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        response = await http.post("/v1/nexus/voice-designs", json=_body("design"))
+    _assert_conflict_envelope(response, "createVoiceDesign")
+    # Nothing committed: the draft and its Job both rolled back.
+    assert voice_db.count("speech_jobs") == 0
+    assert voice_db.count("speech_voice_drafts") == 0
+
+
+async def test_generate_insert_fact_change_is_a_conflict_not_a_retryable_503(
+    voice_db: JobSandbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider, draft = _candidate_draft(voice_db)
+    store = voice_db.jobs._store
+    original = store.create_revision
+
+    def retire_binding(job: NewPublicJob, *, draft_id: str, expected_revision: str) -> Any:
+        voice_db.admin.execute(
+            "DELETE FROM speech_publication_heads "
+            "WHERE kind = 'binding' AND object_id = 'voice-model'"
+        )
+        return original(job, draft_id=draft_id, expected_revision=expected_revision)
+
+    monkeypatch.setattr(store, "create_revision", retire_binding)
+    app = create_app(settings=_settings(), jobs=voice_db.jobs, voice_drafts=provider)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        response = await http.post(
+            "/v1/nexus/voice-drafts/" + draft["id"] + "/generations",
+            json=_generation_body(draft),
+        )
+    _assert_conflict_envelope(response, "generateVoiceDraftRevision")
+    assert voice_db.count("speech_jobs") == 1
+    assert voice_db.count("speech_voice_draft_revisions") == 1
+
+
+async def test_validate_insert_fact_change_is_a_conflict_not_a_retryable_503(
+    voice_db: JobSandbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider, draft = _candidate_draft(voice_db)
+    store = voice_db.jobs._store
+    original = store.create
+
+    def expire_candidate(job: NewPublicJob) -> Any:
+        # The preview was ready during prepare; the locked re-read in
+        # _lock_validation_target must reject the now-stale evidence.
+        voice_db.admin.execute(
+            "UPDATE speech_artifacts SET artifact_state = 'expired' "
+            "WHERE artifact_id = 'preview-synthetic'"
+        )
+        return original(job)
+
+    monkeypatch.setattr(store, "create", expire_candidate)
+    app = create_app(settings=_settings(), jobs=voice_db.jobs, voice_drafts=provider)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        response = await http.post(
+            "/v1/nexus/voice-drafts/" + draft["id"] + "/validations",
+            json={"expected_draft_revision": "1", "validation_set_revision": "1"},
+        )
+    _assert_conflict_envelope(response, "validateVoiceDraftRevision")
+    assert voice_db.count("speech_jobs") == 1
+
+
+async def test_preview_insert_rejection_is_a_conflict_not_a_retryable_503(
+    voice_db: JobSandbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider, draft = _candidate_draft(voice_db)
+    store = voice_db.jobs._store
+    original = store.create
+
+    def reject_insert(job: NewPublicJob) -> Any:
+        # A database-level insert rejection yields the same store outcome.
+        voice_db.admin.execute(
+            "ALTER TABLE speech_jobs ADD CONSTRAINT synthetic_preview_rejection "
+            "CHECK (false) NOT VALID"
+        )
+        try:
+            return original(job)
+        finally:
+            voice_db.admin.execute(
+                "ALTER TABLE speech_jobs DROP CONSTRAINT synthetic_preview_rejection"
+            )
+
+    monkeypatch.setattr(store, "create", reject_insert)
+    app = create_app(settings=_settings(), jobs=voice_db.jobs, voice_drafts=provider)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        response = await http.post(
+            "/v1/nexus/voice-drafts/" + draft["id"] + "/previews",
+            json=_preview_body(),
+        )
+    _assert_conflict_envelope(response, "createVoicePreview")
+    assert voice_db.count("speech_jobs") == 1
+
+
+async def test_generic_validation_same_fact_change_stays_unretryable_503(
+    voice_db: JobSandbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider, draft = _candidate_draft(voice_db)
+    store = voice_db.jobs._store
+    original = store.create
+
+    def expire_candidate(job: NewPublicJob) -> Any:
+        voice_db.admin.execute(
+            "UPDATE speech_artifacts SET artifact_state = 'expired' "
+            "WHERE artifact_id = 'preview-synthetic'"
+        )
+        return original(job)
+
+    monkeypatch.setattr(store, "create", expire_candidate)
+    app = create_app(settings=_settings(), jobs=voice_db.jobs, voice_drafts=provider)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        response = await http.post(
+            "/v1/nexus/jobs",
+            json={
+                "kind": "voice_validation",
+                "input": {
+                    "voice_draft_id": draft["id"],
+                    "draft_revision": "1",
+                    "validation_set_revision": "1",
+                },
+            },
+        )
+    _assert_generic_unavailable_envelope(response)
+    assert voice_db.count("speech_jobs") == 1

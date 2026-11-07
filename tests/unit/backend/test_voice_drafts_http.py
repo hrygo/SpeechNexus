@@ -8,7 +8,11 @@ from httpx import ASGITransport, AsyncClient
 from speechnexus_contracts.voice_drafts_http import validate_response
 
 from speechnexus_backend.app import create_app
-from speechnexus_backend.speech.application.public_jobs import JobOutcomeUnknownError, PublicJobs
+from speechnexus_backend.speech.application.public_jobs import (
+    JobOutcomeUnknownError,
+    JobRejectedError,
+    PublicJobs,
+)
 from speechnexus_backend.speech.application.voice_drafts import (
     VoiceDrafts,
     voice_input_document,
@@ -526,6 +530,51 @@ async def test_contract_violation_is_a_500_not_a_retryable_503() -> None:
 class LostRevisionStore(ArtifactStore):
     def create_revision(self, job: NewPublicJob, *, draft_id: str, expected_revision: str) -> Any:
         raise JobOutcomeUnknownError
+
+
+class RejectedRevisionStore(ArtifactStore):
+    def create_revision(self, job: NewPublicJob, *, draft_id: str, expected_revision: str) -> Any:
+        raise JobRejectedError
+
+
+async def test_generate_job_rejected_is_a_conflict_not_a_retryable_503() -> None:
+    """A rollback caused by changed facts is a 409, never a retryable outage."""
+    store = DraftStore(RejectedRevisionStore())
+    provider, _jobs = _provider(store)
+    app = create_app(settings=_settings(), voice_drafts=provider)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        created = await http.post(
+            "/v1/nexus/voice-designs",
+            json={
+                "model": "tts-quality",
+                "input": {"description": "Synthetic voice", "preview_text": "Synthetic preview"},
+            },
+        )
+        assert created.status_code == 202, created.text
+        rejected = await http.post(
+            "/v1/nexus/voice-drafts/" + created.json()["draft"]["id"] + "/generations",
+            json={
+                "expected_draft_revision": "1",
+                "model": "tts-quality",
+                "input": {
+                    "description": "Synthetic next voice",
+                    "preview_text": "Synthetic next preview",
+                },
+            },
+            headers={"Idempotency-Key": "generate-rejected-key"},
+        )
+    assert rejected.status_code == 409, rejected.text
+    body = rejected.json()
+    assert body["error"]["code"] == "voice_draft_conflict"
+    assert body["error"]["type"] == "invalid_request_error"
+    assert body["error"]["retryable"] is False
+    assert rejected.headers["Cache-Control"] == "no-store"
+    assert rejected.headers["X-Should-Retry"] == "false"
+    validate_response(
+        "generateVoiceDraftRevision",
+        409,
+        {"body": body, "headers": dict(rejected.headers)},
+    )
 
 
 async def test_generate_outcome_unknown_is_a_retryable_503() -> None:

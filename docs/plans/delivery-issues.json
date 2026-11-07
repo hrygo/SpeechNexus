@@ -776,10 +776,10 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "CustomVoice 文件执行和声音工作台组件不证明 VoiceDesign/Base 资格；固定修订预览（#495）、设计/克隆生成 Job 执行消费者（#512）与校验目标锁内重验及同键重放（#521）已合入。",
-      "integration": "设计引擎、固定材料、节点预算和工作台使用同版制品；Public Job 生产派发装配与 planner 仍缺失（#528），gateway 设计/克隆 stage、node 模板与 GPU 证据待补（#529）。",
-      "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
-      "gap": "修订生成与校验（#514）、固定修订预览（#495）、设计/克隆生成 Job 执行消费者（#512）与校验目标锁内重验及同键重放（#521）已关闭；剩余缺口：发布与能力一致性（#519）、生产派发装配与 planner（#528）、gateway 设计/克隆 stage 与 node 模板/GPU 证据（#529）、不可达拒绝原因清理及文档与测试缺口（#531）。",
+      "implementation": "CustomVoice 文件执行和声音工作台组件不证明 VoiceDesign/Base 资格；固定修订预览（#495）、设计/克隆生成 Job 执行消费者（#512）、校验目标锁内重验及同键重放（#521）与不可达拒绝原因清理（#531）已合入；提交后回读失败、发布前 kind 校验与契约 500 描述缺口已修正（#534）；公开 Job intent 已迁入独立表并切换读路径（#536，PR #539）。",
+      "integration": "设计引擎、固定材料、节点预算和工作台使用同版制品；Public Job 生产派发装配与 planner 仍缺失（#528）：创建事务内原子准入（#537）与生产 planner、装配及过期结算（#538）待交付；gateway 设计/克隆 stage、node 模板与 GPU 证据待补（#529），内容删除尚未覆盖 speech_job_intents（#540）。",
+      "verification": "组件和隔离证据各有边界；#536 的迁移、写路径与降级守卫有隔离 PG 证据，intent 删除后的 retry 语义仍待 #540 补齐；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "发布与能力一致性（#519）、生产派发装配与 planner（#528，拆为 #537/#538）、gateway 设计/克隆 stage 与 node 模板/GPU 证据（#529）、内容删除覆盖 speech_job_intents（#540）仍开放；完整验收按对应 PRD 的验收条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/voice-resource.schema.json",
@@ -805,6 +805,26 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/a69208e935e245c6ef496baf4600b908b106d889/tests/integration/test_voice_generation_dispatch_pg.py",
           "label": "声音生成任务派发隔离 PG 证据",
           "note": "设计/克隆生成任务独立派发 lane 的隔离 PostgreSQL 证据（#512，PR #530）"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/1abcc3b581c50cf0805a298b99ff5dc249f24ec6/docs/components/voice-drafts.md",
+          "label": "不可达拒绝原因清理与语义同步",
+          "note": "池故障/身份冲突语义与测试缺口修复；PR #533 合并 1abcc3b5（#531）"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3a669494202eebbfe795ac52b3229e7af5df6aae/tests/integration/test_voice_drafts_pg.py",
+          "label": "回读失败与校验顺序隔离 PG 证据",
+          "note": "提交后回读失败不重复创建、kind 校验前移；PR #535 合并 3a669494（#534）"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/9bbc85c9c8b56d37a2a6e3d41ca8544fcfa4729e/docs/components/production-admission-storage.md",
+          "label": "公开 Job intent 独立存储",
+          "note": "0046 建表回填与读路径切换；PR #539 合并 9bbc85c9（#536）"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/9bbc85c9c8b56d37a2a6e3d41ca8544fcfa4729e/tests/integration/test_public_job_intent_migration_pg.py",
+          "label": "公开 Job intent 迁移隔离 PG 证据",
+          "note": "升级回填、双写与降级守卫的隔离 PostgreSQL 证据（#536，PR #539）"
         }
       ],
       "issues": [
@@ -816,7 +836,12 @@
         521,
         528,
         529,
-        531
+        531,
+        534,
+        536,
+        537,
+        538,
+        540
       ]
     },
     {

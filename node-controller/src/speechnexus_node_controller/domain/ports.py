@@ -32,6 +32,10 @@ class IntentStore(Protocol):
 
     def list_for_instance(self, instance_id: str) -> list[RuntimeInstanceIntent]: ...
 
+    def list_instances(self) -> list[str]:
+        """Distinct instance identities recorded on this node, in first-seen order."""
+        ...
+
     def list_unresolved(
         self, *, after_intent_id: str | None, limit: int
     ) -> list[RuntimeInstanceIntent]:

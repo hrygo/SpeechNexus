@@ -177,6 +177,14 @@ class SqliteIntentStore:
                 )
 
     @_checkpoint_errors
+    def list_instances(self) -> list[str]:
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT DISTINCT instance_id FROM runtime_instance_intents ORDER BY instance_id"
+            ).fetchall()
+        return [str(instance_id) for (instance_id,) in rows]
+
+    @_checkpoint_errors
     def list_for_instance(self, instance_id: str) -> list[RuntimeInstanceIntent]:
         with self._lock:
             rows = self._connection.execute(

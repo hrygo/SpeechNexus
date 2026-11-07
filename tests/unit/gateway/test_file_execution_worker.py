@@ -23,7 +23,11 @@ from speechnexus_gateway.domain.asr_results import (
     StagedAsrResult,
 )
 from speechnexus_gateway.domain.execution_results import ExecutionStagingResult
-from speechnexus_gateway.domain.file_execution import FileExecutionLimits, FileStagingOutcome
+from speechnexus_gateway.domain.file_execution import (
+    EngineRequestRejectedError,
+    FileExecutionLimits,
+    FileStagingOutcome,
+)
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.submission import (
     DispatchResult,
@@ -199,6 +203,37 @@ async def test_missing_terminal_fact_keeps_capacity_with_an_explicit_reason() ->
         assert current.error_code is ExecutionErrorCode.EXECUTION_CLEANUP_PENDING
         assert current.execution_state.holds_capacity
         assert not ledger._evidence
+        assert worker.running
+
+
+class RejectingPipeline(Pipeline):
+    async def stage_result(
+        self,
+        request: SubmitRequest,
+        *,
+        store: Results,
+        cancelled: Callable[[], bool],
+    ) -> FileStagingOutcome:
+        self.calls += 1
+        raise EngineRequestRejectedError()
+
+
+async def test_a_proven_engine_rejection_is_recorded_as_non_retryable() -> None:
+    pipeline = RejectingPipeline()
+    with configured(pipeline=pipeline) as (ledger, _, results, worker, submit, _, _):
+        request = original_request()
+        submit.submit(request)
+        await wait_for(
+            lambda: stored(ledger, request).execution_state is ExecutionState.UNKNOWN_QUARANTINED
+        )
+        current = stored(ledger, request)
+        # A refusal proves the engine never generated, but the gateway protocol can
+        # only close a dispatched execution with verified stop evidence. The
+        # non-retryable code is the factual record; capacity release stays with the
+        # Scheduler, which must never read this state as a release claim.
+        assert current.error_code is ExecutionErrorCode.INVALID_EXECUTION_REQUEST
+        assert current.execution_state.holds_capacity
+        assert results.calls == 0
         assert worker.running
 
 

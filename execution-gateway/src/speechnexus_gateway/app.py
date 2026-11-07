@@ -25,7 +25,10 @@ from speechnexus_gateway.application.recover_executions import ExecutionRecovery
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
 from speechnexus_gateway.application.tts_configuration_evidence import TtsConfigurationEvidence
 from speechnexus_gateway.domain.file_execution import FileExecutionLedger, FileExecutionRuntime
-from speechnexus_gateway.file_speech_runtime import load_file_speech_configuration
+from speechnexus_gateway.file_speech_runtime import (
+    FileSpeechConfiguration,
+    load_file_speech_configuration,
+)
 from speechnexus_gateway.infrastructure.abort_authority import verify_abort_authority
 from speechnexus_gateway.infrastructure.execution_reader import (
     PostgresExecutionReader,
@@ -75,7 +78,11 @@ class _ControlReadinessProbe:
         await run_in_threadpool(service.check_ownership)
 
 
-def _build_readiness(settings: Settings, app: FastAPI) -> ReadinessService:
+def _build_readiness(
+    settings: Settings,
+    app: FastAPI,
+    speech_configuration: FileSpeechConfiguration | None = None,
+) -> ReadinessService:
     probes: list[ReadinessProbe] = [
         PostgresReadinessProbe(
             settings.control_database_url.get_secret_value(),
@@ -92,6 +99,13 @@ def _build_readiness(settings: Settings, app: FastAPI) -> ReadinessService:
                 )
             )
         probes.append(_ControlReadinessProbe(app))
+    if speech_configuration is not None and speech_configuration.voice_design is not None:
+        # An HTTP health answer is not readiness: only a completed warmup
+        # synthesis can prove this gateway may accept a design request. The probe
+        # keeps its own budget and answers from the cached verdict.
+        probe = speech_configuration.voice_design.warmup_probe()
+        app.state.voice_design_warmup = probe
+        probes.append(probe)
     return ReadinessService(probes, timeout_seconds=settings.readiness_timeout_seconds)
 
 
@@ -346,8 +360,14 @@ def create_app(
                     )
             if worker is not None:
                 worker.start()
+            warmup_probe = app.state.voice_design_warmup
+            if warmup_probe is not None:
+                warmup_probe.warm()
             yield
         finally:
+            warmup_probe = app.state.voice_design_warmup
+            if warmup_probe is not None:
+                await warmup_probe.aclose()
             app.state.tts_configuration_evidence = None
             try:
                 await _finish_control(worker, pool, ownership, file_execution)
@@ -382,7 +402,8 @@ def create_app(
     app.state.file_execution_required = file_execution_factory is not None
     app.state.file_execution_runtime = None
     app.state.tts_configuration_evidence = None
-    resolved_readiness = readiness or _build_readiness(resolved_settings, app)
+    app.state.voice_design_warmup = None
+    resolved_readiness = readiness or _build_readiness(resolved_settings, app, speech_configuration)
     app.add_middleware(RequestIdMiddleware)
     app.include_router(
         create_health_router(

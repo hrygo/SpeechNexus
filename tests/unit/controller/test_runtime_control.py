@@ -30,6 +30,7 @@ from speechnexus_node_controller.domain.intents import (
     MemoryHold,
     ObservedInstanceState,
     RuntimeActionKind,
+    RuntimeControlErrorCode,
     RuntimeControllerUnavailableError,
     RuntimeInstanceIntent,
     RuntimeInstanceIntentRequest,
@@ -41,6 +42,7 @@ from speechnexus_node_controller.domain.intents import (
     StaleInstanceGenerationError,
     TargetNodeMismatchError,
     UnapprovedRuntimeTemplateError,
+    VariantExclusivityError,
 )
 from speechnexus_node_controller.domain.ports import (
     NodeReconcileSnapshot,
@@ -600,3 +602,113 @@ def test_request_helper_defaults_stay_aligned_with_the_service() -> None:
     request: RuntimeInstanceIntentRequest = build_request()
     assert request.reserved_memory == build_reservation()
     assert request.target_node_id == SAMPLE_NODE_ID
+
+
+def _variant_template(*, template_id: str) -> ApprovedRuntimeTemplate:
+    return build_template(
+        template_id=template_id,
+        pools=frozenset({"tts-batch", "voice-creation"}),
+        variant_slot="tts-variant",
+    )
+
+
+def test_a_second_tts_variant_cannot_be_resident_on_one_node() -> None:
+    customvoice = _variant_template(template_id="template-tts-customvoice")
+    voicedesign = _variant_template(template_id="template-tts-voicedesign")
+    service, runtime, _ = _service(
+        templates=(customvoice, voicedesign), runtime=ScriptedNodeRuntime(ready_on_prepare=True)
+    )
+
+    service.submit_intent(
+        build_request(
+            intent_id="intent-a",
+            instance_id="instance-tts-a",
+            approved_template_id=customvoice.template_id,
+            pool_id="tts-batch",
+        )
+    )
+    with pytest.raises(VariantExclusivityError) as raised:
+        service.submit_intent(
+            build_request(
+                intent_id="intent-b",
+                instance_id="instance-tts-b",
+                approved_template_id=voicedesign.template_id,
+                pool_id="voice-creation",
+                fencing_token=2,
+            )
+        )
+    assert raised.value.error_code is RuntimeControlErrorCode.INTENT_CONFLICT
+    assert [request.instance_id for request in runtime.prepared] == ["instance-tts-a"]
+
+
+def test_a_drained_variant_releases_the_slot_for_the_other_variant() -> None:
+    customvoice = _variant_template(template_id="template-tts-customvoice")
+    voicedesign = _variant_template(template_id="template-tts-voicedesign")
+    service, runtime, _ = _service(
+        templates=(customvoice, voicedesign), runtime=ScriptedNodeRuntime(ready_on_prepare=True)
+    )
+
+    service.submit_intent(
+        build_request(
+            intent_id="intent-a",
+            instance_id="instance-tts-a",
+            approved_template_id=customvoice.template_id,
+            pool_id="tts-batch",
+        )
+    )
+    service.submit_intent(
+        build_request(
+            intent_id="intent-stop-a",
+            instance_id="instance-tts-a",
+            approved_template_id=customvoice.template_id,
+            pool_id="tts-batch",
+            action=RuntimeActionKind.STOP,
+            fencing_token=2,
+        )
+    )
+    replacement = service.submit_intent(
+        build_request(
+            intent_id="intent-b",
+            instance_id="instance-tts-b",
+            approved_template_id=voicedesign.template_id,
+            pool_id="voice-creation",
+            fencing_token=3,
+        )
+    )
+
+    assert replacement.intent.intent_state is RuntimeIntentState.SUCCEEDED
+    assert [request.instance_id for request in runtime.prepared] == [
+        "instance-tts-a",
+        "instance-tts-b",
+    ]
+
+
+def test_another_variant_slot_does_not_block_a_prepare() -> None:
+    first = _variant_template(template_id="template-tts-customvoice")
+    second = build_template(
+        template_id="template-other-engine",
+        pools=frozenset({"tts-batch"}),
+        variant_slot="other-slot",
+    )
+    service, _, _ = _service(
+        templates=(first, second), runtime=ScriptedNodeRuntime(ready_on_prepare=True)
+    )
+
+    service.submit_intent(
+        build_request(
+            intent_id="intent-a",
+            instance_id="instance-tts-a",
+            approved_template_id=first.template_id,
+            pool_id="tts-batch",
+        )
+    )
+    other = service.submit_intent(
+        build_request(
+            intent_id="intent-other",
+            instance_id="instance-other",
+            approved_template_id=second.template_id,
+            pool_id="tts-batch",
+            fencing_token=2,
+        )
+    )
+    assert other.intent.intent_state is RuntimeIntentState.SUCCEEDED

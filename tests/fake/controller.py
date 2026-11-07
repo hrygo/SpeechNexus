@@ -27,6 +27,7 @@ from speechnexus_node_controller.domain.intents import (
 from speechnexus_node_controller.domain.stop_checkpoint import StopCheckpoint
 from speechnexus_node_controller.domain.templates import (
     ApprovedRuntimeTemplate,
+    EngineAuthKind,
     ReadinessKind,
     ReadinessRule,
     ReadOnlyBind,
@@ -91,6 +92,9 @@ def build_template(
     gpu_device_count: int = 0,
     read_only_binds: tuple[ReadOnlyBind, ...] = (),
     network_name: str | None = None,
+    environment: tuple[tuple[str, str], ...] = (),
+    variant_slot: str | None = None,
+    engine_auth: EngineAuthKind = EngineAuthKind.NONE,
 ) -> ApprovedRuntimeTemplate:
     resolved_readiness = (
         readiness if readiness is not None else ReadinessRule(kind=ReadinessKind.PROCESS_RUNNING)
@@ -108,6 +112,9 @@ def build_template(
         gpu_device_count=gpu_device_count,
         read_only_binds=read_only_binds,
         network_name=network_name,
+        environment=environment,
+        variant_slot=variant_slot,
+        engine_auth=engine_auth,
     )
 
 
@@ -133,6 +140,9 @@ class InMemoryIntentStore:
         if stored.version != expected_version:
             raise ValueError(f"runtime intent {intent.intent_id} version conflict")
         self._intents[intent.intent_id] = copy.deepcopy(intent)
+
+    def list_instances(self) -> list[str]:
+        return list(dict.fromkeys(intent.instance_id for intent in self._intents.values()))
 
     def list_for_instance(self, instance_id: str) -> list[RuntimeInstanceIntent]:
         return [

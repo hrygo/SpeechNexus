@@ -38,6 +38,8 @@ class FakeDockerEngine:
 
     images: dict[str, str] = field(default_factory=dict)
     addresses: tuple[str, ...] = ("172.18.0.2",)
+    # Docker reports the image's own ENV in Config.Env; the double mirrors that.
+    image_environment: tuple[str, ...] = ()
     memory_peak_bytes: int | None = 128 * 1024 * 1024
     exit_code: int = 0
     fail_wait: bool = False
@@ -153,8 +155,11 @@ class FakeDockerEngine:
             raise DockerApiError(404, "no such container")
         return container
 
-    @staticmethod
-    def _state(container: FakeContainer) -> ContainerState:
+    def _state(self, container: FakeContainer) -> ContainerState:
+        declared = {item.partition("=")[0] for item in container.environment}
+        merged = [
+            item for item in self.image_environment if item.partition("=")[0] not in declared
+        ] + list(container.environment)
         return ContainerState(
             container_id=container.container_id,
             status=container.status,
@@ -167,6 +172,6 @@ class FakeDockerEngine:
             memory_swap_limit_bytes=container.host_config.get("MemorySwap"),
             network_mode=container.host_config.get("NetworkMode"),
             command=container.command,
-            environment=container.environment,
+            environment=tuple(merged),
             image_id=container.image_id,
         )

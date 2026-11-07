@@ -426,3 +426,38 @@ async def test_native_observation_uses_new_authenticated_route_and_legacy_stays_
     assert "native_runtime_evidence" not in old.json()
     assert new.json()["native_runtime_evidence"]["native_auth_kind"] == "vllm_api_key_v1"
     assert {k: v for k, v in new.json().items() if k != "native_runtime_evidence"} == old.json()
+
+
+async def test_a_second_variant_on_one_node_is_an_http_conflict(settings: Settings) -> None:
+    template = build_template(
+        pools=frozenset({"tts-batch", "voice-creation"}), variant_slot="tts-variant"
+    )
+    service = NodeRuntimeControlService(
+        node_id=_NODE,
+        templates=ApprovedTemplateRegistry((template,)),
+        store=InMemoryIntentStore(),
+        runtime=ScriptedNodeRuntime(ready_on_prepare=True),
+        now=lambda: FIXED_NOW,
+    )
+    first = build_request(
+        intent_id="intent-customvoice",
+        instance_id="instance-customvoice",
+        pool_id="tts-batch",
+    )
+    second = build_request(
+        intent_id="intent-voicedesign",
+        instance_id="instance-voicedesign",
+        pool_id="voice-creation",
+        fencing_token=2,
+    )
+
+    async with _client(settings, service) as client:
+        prepared = await client.post(_INTENTS_PATH, json=request_payload(first), headers=_HEADERS)
+        conflict = await client.post(_INTENTS_PATH, json=request_payload(second), headers=_HEADERS)
+
+    assert prepared.status_code == 200
+    assert conflict.status_code == 409
+    body = conflict.json()["error"]
+    assert body["code"] == "intent_conflict"
+    assert body["retryable"] is False
+    assert "instance-customvoice" in body["message"]

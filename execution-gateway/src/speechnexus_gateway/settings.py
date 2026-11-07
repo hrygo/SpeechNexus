@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     file_tts_config_file: Path | None = Field(default=None, repr=False)
     file_tts_object_access_key: SecretStr | None = Field(default=None, min_length=1, repr=False)
     file_tts_object_secret_key: SecretStr | None = Field(default=None, min_length=1, repr=False)
+    file_voice_design_config_file: Path | None = Field(default=None, repr=False)
+    file_voice_design_object_access_key: SecretStr | None = Field(
+        default=None, min_length=1, repr=False
+    )
+    file_voice_design_object_secret_key: SecretStr | None = Field(
+        default=None, min_length=1, repr=False
+    )
 
     @model_validator(mode="after")
     def validate_control_configuration(self) -> Settings:
@@ -97,6 +104,26 @@ class Settings(BaseSettings):
                 or not self.file_tts_config_file.is_absolute()
             ):
                 raise ValueError("file TTS requires owned control and an absolute configuration")
+        voice_design = (
+            self.file_voice_design_config_file,
+            self.file_voice_design_object_access_key,
+            self.file_voice_design_object_secret_key,
+        )
+        if any(value is not None for value in voice_design):
+            if not all(value is not None for value in voice_design):
+                raise ValueError(
+                    "file VoiceDesign requires a configuration and both object credentials"
+                )
+            if (
+                not self.execution_control_enabled
+                or self.file_voice_design_config_file is None
+                or not self.file_voice_design_config_file.is_absolute()
+            ):
+                raise ValueError(
+                    "file VoiceDesign requires owned control and an absolute configuration"
+                )
+        if self.file_tts_config_file is not None and self.file_voice_design_config_file is not None:
+            raise ValueError("one gateway cannot serve CustomVoice and VoiceDesign together")
         return self
 
     @property

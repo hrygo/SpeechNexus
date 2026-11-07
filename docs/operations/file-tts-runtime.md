@@ -58,7 +58,9 @@ JSON 与自定义 CA 必须是当前运行 UID 所有、无 group/other 权限�
 | `worker_limits` | 完整原生 `FileExecutionLimits` 字段；`max_result_bytes` 同时作为单次交付载荷上限 |
 
 首批装配只接受 `task=CustomVoice`、24,000 Hz、`engine_format=wav|pcm`，交付格式仍由
-命令的 `response_format` 决定。其它采样率、Base、VoiceDesign、流式文本和音色素材不属于
+命令的 `response_format` 决定。`tts_policy.language` 只能是实测有厂商值的 `zh`、`en`、
+`fr`、`de`、`it`、`ja`、`ko`、`pt`、`ru`、`es`（区域子标签按主语言归并，如 `zh-Hans`）；
+其他取值（包括 `auto`）在启动时拒绝，不会作为未知标签下发给引擎。其它采样率、Base、VoiceDesign、流式文本和音色素材不属于
 本单元。`tts_policy` 中即使有原生默认值也必须显式给出全部字段。
 
 升级 v1 时，须从同一权威不可变声音版本取得公开 id/revision、内部 revision id 和原生
@@ -67,6 +69,10 @@ speaker，写入 v2 配置；不能直接复制合成样例作为已发布声音
 `resources.voice.id/revision`、提交身份的 `voice_revision_id` 和配置中的原生 speaker，
 任一不符在对象写入或引擎调用前拒绝。该配置仅收紧执行能力，不证明声音已发布、
 资格报告有效或配置与批准 binding 的权威关联；这些仍由正式发布和准入链负责。
+
+常驻 TTS 模板必须声明 `variant_slot`（同节点上的 CustomVoice 与 VoiceDesign 取同一槽位，
+例如 `tts-variant`）；缺失该字段的模板在加载时即被拒绝，错误信息包含 `template_id`。
+升级控制器前先给既有模板补齐该字段，否则控制器会因模板不受理而启动失败。
 
 受限控制器可使用既有 `engine_auth=vllm_api_key_v1` 模板，通过
 `/v1/audio/speech` 的固定、有界 `http_warmup_ok` 注入并验证代次凭据；

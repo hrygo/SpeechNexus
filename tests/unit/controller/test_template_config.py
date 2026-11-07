@@ -260,3 +260,98 @@ def test_a_warmup_template_that_widens_the_contract_is_refused(
 ) -> None:
     with pytest.raises((ValueError, ValidationError), match=message):
         load_approved_templates(_write(tmp_path, {"templates": [_template(readiness=readiness)]}))
+
+
+def test_a_launch_environment_and_variant_slot_load(tmp_path: Path) -> None:
+    templates = load_approved_templates(
+        _write(
+            tmp_path,
+            {
+                "templates": [
+                    _template(
+                        environment={
+                            "VLLM_USE_V2_MODEL_RUNNER": "0",
+                            "HUMMING_DISABLE_PARALLEL_BUILD": "1",
+                        },
+                        variant_slot="tts-variant",
+                    )
+                ]
+            },
+        )
+    )
+
+    template = templates[0]
+    assert template.environment == (
+        ("VLLM_USE_V2_MODEL_RUNNER", "0"),
+        ("HUMMING_DISABLE_PARALLEL_BUILD", "1"),
+    )
+    assert template.variant_slot == "tts-variant"
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"environment": {"VLLM_API_KEY": "override"}},
+        {"environment": {"VLLM_API_KEY_X": "override"}},
+        {"environment": {"lowercase": "1"}},
+        {"environment": {"NAME": ""}},
+        {"environment": {"NAME": "line\nbreak"}},
+        {"variant_slot": "TTS Variant"},
+        {"variant_slot": ""},
+    ],
+)
+def test_a_template_cannot_widen_its_launch_identity(
+    tmp_path: Path, overrides: dict[str, Any]
+) -> None:
+    with pytest.raises((ValueError, ValidationError)):
+        load_approved_templates(_write(tmp_path, {"templates": [_template(**overrides)]}))
+
+
+def test_the_deployed_voice_design_template_example_loads(tmp_path: Path) -> None:
+    example = (
+        Path(__file__).resolve().parents[3]
+        / "deploy/engines/file-voice-design/template.example.json"
+    )
+    templates = load_approved_templates(
+        _write(tmp_path, {"templates": [json.loads(example.read_text())]})
+    )
+
+    template = templates[0]
+    assert template.variant_slot == "tts-variant"
+    assert template.engine_auth is EngineAuthKind.VLLM_API_KEY_V1
+    assert template.readiness.kind is ReadinessKind.HTTP_WARMUP_OK
+    assert template.environment == (
+        ("VLLM_USE_V2_MODEL_RUNNER", "0"),
+        ("HUMMING_DISABLE_PARALLEL_BUILD", "1"),
+    )
+    assert template.readiness.warmup is not None
+    assert template.readiness.warmup.path == "/v1/audio/speech"
+
+
+@pytest.mark.parametrize("pool", ["tts-batch", "tts-realtime", "voice-creation"])
+def test_a_resident_tts_template_must_declare_its_variant_slot(tmp_path: Path, pool: str) -> None:
+    document = {"templates": [_template(allowed_pool_ids=[pool])]}
+
+    with pytest.raises((ValueError, ValidationError)):
+        load_approved_templates(_write(tmp_path, document))
+
+
+def test_the_deployed_customvoice_and_voice_design_templates_share_one_slot(
+    tmp_path: Path,
+) -> None:
+    root = Path(__file__).resolve().parents[3] / "deploy" / "engines"
+
+    def load(directory: str) -> Any:
+        path = root / directory / "template.example.json"
+        return load_approved_templates(
+            _write(tmp_path, {"templates": [json.loads(path.read_text())]})
+        )[0]
+
+    customvoice = load("file-tts-customvoice")
+    voice_design = load("file-voice-design")
+
+    assert customvoice.variant_slot == voice_design.variant_slot == "tts-variant"
+    assert customvoice.variant_slot is not None
+    assert customvoice.allowed_pool_ids == frozenset({"tts-batch"})
+    assert voice_design.allowed_pool_ids == frozenset({"voice-creation"})
+    assert customvoice.environment == voice_design.environment

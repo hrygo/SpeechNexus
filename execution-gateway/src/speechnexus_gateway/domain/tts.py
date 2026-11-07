@@ -16,6 +16,7 @@ from enum import StrEnum
 from typing import Protocol
 
 from speechnexus_gateway.domain.canonical import command_digest
+from speechnexus_gateway.domain.languages import ENGINE_LANGUAGES
 
 TTS_RECIPE_VERSION = "file-tts-1"
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
@@ -224,6 +225,11 @@ class TtsPolicy:
             or not 0 < self.timeout_seconds <= 600
         ):
             raise ValueError("invalid frozen TTS policy")
+        if (
+            self.language is not None
+            and self.language.split("-", 1)[0].lower() not in ENGINE_LANGUAGES
+        ):
+            raise ValueError("the configured TTS language has no verified engine value")
         try:
             self.instructions.encode("utf-8")
         except UnicodeError:

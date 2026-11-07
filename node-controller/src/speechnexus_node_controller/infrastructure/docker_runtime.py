@@ -150,7 +150,7 @@ class DockerNodeRuntime:
     ) -> InstanceObservation:
         """Reuse a matching container or create exactly one for this generation."""
         self._anchor_warmup_budget(request, template)
-        environment = self._engine_environment(request, template)
+        environment = self._container_environment(request, template)
         self._require_approved_image(template)
         existing = self._find(request.instance_id, request.instance_generation)
         if existing is not None:
@@ -509,7 +509,10 @@ class DockerNodeRuntime:
                 config_digest=request.config_digest,
                 observed_instance_state=ObservedInstanceState.QUARANTINED,
                 observed_peak_memory=self._observed_memory(request, state),
-                quarantine_reason="container native authentication configuration is not approved",
+                quarantine_reason=(
+                    "container identity, environment or native authentication "
+                    "configuration is not approved"
+                ),
             )
         if state.running and (
             state.memory_limit_bytes != template.container_memory_limit_bytes
@@ -729,6 +732,28 @@ class DockerNodeRuntime:
         remaining = (request.deadline_at - datetime.now(UTC)).total_seconds()
         return started + min(warmup.timeout_seconds, remaining)
 
+    def _container_environment(
+        self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+    ) -> tuple[str, ...]:
+        """Template-declared environment first, then the per-generation credential."""
+        declared = tuple(f"{name}={value}" for name, value in template.environment)
+        return declared + self._engine_environment(request, template)
+
+    def _managed_environment(
+        self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+    ) -> dict[str, str]:
+        """The environment entries this controller owns; image ENV is not one of them.
+
+        Raises :class:`UnapprovedRuntimeTemplateError` only when a template asks for
+        native authentication the node cannot supply; callers that must answer a
+        boolean check whether credentials exist first.
+        """
+        managed = {name: f"{name}={value}" for name, value in template.environment}
+        for item in self._engine_environment(request, template):
+            name, _, _ = item.partition("=")
+            managed[name] = item
+        return managed
+
     def _engine_environment(
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
     ) -> tuple[str, ...]:
@@ -754,9 +779,9 @@ class DockerNodeRuntime:
         template: ApprovedRuntimeTemplate,
         state: ContainerState,
     ) -> bool:
-        if template.engine_auth is EngineAuthKind.NONE:
-            return True
-        if self._engine_credentials is None or request.target_node_id != self._node_id:
+        if request.target_node_id != self._node_id:
+            return False
+        if template.engine_auth is not EngineAuthKind.NONE and self._engine_credentials is None:
             return False
         expected_labels = self._labels(request)
         if any(
@@ -765,16 +790,28 @@ class DockerNodeRuntime:
             if name not in {INTENT_ID_LABEL, FENCING_TOKEN_LABEL}
         ):
             return False
-        actual_keys = [
-            item for item in state.environment if item.partition("=")[0] == "VLLM_API_KEY"
-        ]
-        expected = self._engine_environment(request, template)
-        return (
-            state.image_id == template.image_digest
-            and state.command == template.command
-            and len(actual_keys) == 1
-            and secrets.compare_digest(actual_keys[0], expected[0])
-        )
+        # Only the entries the controller manages are part of the launch identity.
+        # Docker reports the image's own ENV (PATH, LANG, ...) in Config.Env as
+        # well, so comparing the whole tuple would quarantine every real container.
+        expected = self._managed_environment(request, template)
+        actual: dict[str, str] = {}
+        occurrences: dict[str, int] = {}
+        for item in state.environment:
+            name, separator, _ = item.partition("=")
+            if separator:
+                actual[name] = item
+                occurrences[name] = occurrences.get(name, 0) + 1
+        for name, value in expected.items():
+            if occurrences.get(name, 0) > 1:
+                return False
+            if name == "VLLM_API_KEY":
+                if not secrets.compare_digest(actual.get(name, ""), value):
+                    return False
+            elif actual.get(name) != value:
+                return False
+        if template.engine_auth is EngineAuthKind.NONE:
+            return True
+        return state.image_id == template.image_digest and state.command == template.command
 
     @staticmethod
     def _literal_addresses(state: ContainerState) -> tuple[str, ...]:

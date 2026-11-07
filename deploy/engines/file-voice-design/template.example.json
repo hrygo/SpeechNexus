@@ -1,0 +1,49 @@
+{
+  "template_id": "template-tts-voicedesign",
+  "image_reference": "vllm/vllm-omni:latest",
+  "image_digest": "sha256:5a12eac1a2dd3540a6ec29e42ef0dd5286c75ee07f68e497cb5f0df6e1311a52",
+  "memory_architecture": "unified_memory",
+  "allowed_pool_ids": ["voice-creation"],
+  "max_peak_memory_bytes": 8589934592,
+  "container_memory_limit_bytes": 8589934592,
+  "gpu_device_count": 1,
+  "command": [
+    "vllm-omni",
+    "serve",
+    "<VOICE_DESIGN_MODEL_ROOT>",
+    "--task-type",
+    "VoiceDesign",
+    "--gpu-memory-utilization",
+    "0.06",
+    "--max-model-len",
+    "1536",
+    "--max-num-seqs",
+    "1",
+    "--enforce-eager"
+  ],
+  "environment": {
+    "VLLM_USE_V2_MODEL_RUNNER": "0",
+    "HUMMING_DISABLE_PARALLEL_BUILD": "1"
+  },
+  "variant_slot": "tts-variant",
+  "engine_auth": "vllm_api_key_v1",
+  "readiness": {
+    "kind": "http_warmup_ok",
+    "port": 8000,
+    "warmup": {
+      "path": "/v1/audio/speech",
+      "content_type": "application/json",
+      "body_path": "/artifacts/voice-design-warmup.json",
+      "body_sha256": "sha256:c47952d125283109b5ffd6d2f1abf3507ab170394a8bf14be24f29d400b2242a",
+      "attempts": 1,
+      "timeout_seconds": 240,
+      "max_response_bytes": 4194304
+    }
+  },
+  "read_only_binds": [
+    {
+      "source": "/srv/speechnexus/voice-design",
+      "target": "/artifacts"
+    }
+  ]
+}

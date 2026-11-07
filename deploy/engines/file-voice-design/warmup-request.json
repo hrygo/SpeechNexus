@@ -1,0 +1,8 @@
+{
+  "model": "voice-design-compose-example",
+  "input": "Ready.",
+  "task_type": "VoiceDesign",
+  "instructions": "a warm neutral synthetic voice",
+  "language": "English",
+  "response_format": "wav"
+}

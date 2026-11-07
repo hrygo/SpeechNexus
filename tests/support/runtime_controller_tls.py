@@ -135,6 +135,13 @@ def controller_server[Runtime: NodeRuntimePort](
                     pools=frozenset({binding.pool_id}),
                     max_peak_memory_bytes=100 * MIB,
                     container_memory_limit_bytes=6 * MIB,
+                    # A resident TTS template must name its exclusive variant
+                    # group; the synthetic binding serves tts-realtime.
+                    variant_slot=(
+                        "tts-variant"
+                        if binding.pool_id in {"tts-batch", "tts-realtime", "voice-creation"}
+                        else None
+                    ),
                 ),
             )
         ),

@@ -10,16 +10,13 @@ import signal
 from collections.abc import Callable
 
 from speechnexus_backend.job_dispatch_runtime import (
+    DispatchDependencies,
     DispatchDependenciesUnavailableError,
     JobDispatchRuntime,
     JobDispatchSettings,
     build_dispatch_dependencies,
 )
-from speechnexus_backend.speech.application.job_dispatcher import (
-    DispatchPlanner,
-    JobDispatcher,
-    ResultPublisher,
-)
+from speechnexus_backend.speech.application.job_dispatcher import JobDispatcher
 from speechnexus_backend.speech.domain.job_dispatch import DispatchBatch
 
 BATCH_LOG_FIELDS = (
@@ -76,8 +73,7 @@ async def run_dispatch_worker(
 
 async def _main(
     settings: JobDispatchSettings,
-    planner: DispatchPlanner,
-    results: ResultPublisher,
+    dependencies: DispatchDependencies,
     *,
     once: bool,
 ) -> None:
@@ -91,7 +87,7 @@ async def _main(
     previous_disabled = pool_logger.disabled
     pool_logger.disabled = True
     try:
-        runtime = JobDispatchRuntime(settings, planner, results)
+        runtime = JobDispatchRuntime(settings, dependencies)
         await runtime.open()
         try:
             assert runtime.dispatcher is not None
@@ -121,8 +117,8 @@ def main() -> None:
     options = parser.parse_args()
     try:
         settings = JobDispatchSettings()
-        planner, results = build_dispatch_dependencies(settings)
-        asyncio.run(_main(settings, planner, results, once=options.once))
+        dependencies = build_dispatch_dependencies(settings)
+        asyncio.run(_main(settings, dependencies, once=options.once))
     except DispatchDependenciesUnavailableError:
         parser.exit(
             2,

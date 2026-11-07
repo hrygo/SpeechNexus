@@ -123,9 +123,72 @@ def test_configuration_rejects_plain_http_gateway_outside_loopback() -> None:
         _settings(gateway_base_url="http://gateway.internal:8010")
 
 
+def test_dispatch_lane_defaults_to_the_asr_and_tts_contract_kinds() -> None:
+    assert _settings().kinds == ("asr", "tts")
+    assert _settings(dispatch_kinds=" asr , tts ".replace(" ", "")).kinds == ("asr", "tts")
+    assert _settings(dispatch_kinds="tts").kinds == ("tts",)
+    for invalid in ("", "asr,asr", "asr,voice_unknown"):
+        with pytest.raises(ValidationError):
+            _settings(dispatch_kinds=invalid)
+
+
 def test_production_dependencies_fail_closed() -> None:
     with pytest.raises(DispatchDependenciesUnavailableError):
         build_dispatch_dependencies(_settings())
+
+
+def test_production_dependencies_assemble_the_real_planner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import speechnexus_backend.job_dispatch_runtime as runtime
+
+    class Pool:
+        opened = False
+        closed = False
+
+        def open(self) -> None:
+            self.opened = True
+
+        def close(self) -> None:
+            self.closed = True
+
+    pool, publisher = Pool(), object()
+    monkeypatch.setattr(runtime, "speech_pool", lambda *a, **k: pool)
+    monkeypatch.setattr(runtime, "build_result_publisher", lambda *a, **k: publisher)
+
+    dependencies = build_dispatch_dependencies(_settings())
+
+    assert pool.opened and not pool.closed
+    assert cast(Any, dependencies.pool) is pool
+    assert dependencies.results is publisher
+    assert type(dependencies.planner).__name__ == "StoredCommandPlanner"
+
+
+def test_production_dependencies_close_the_pool_when_assembly_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import speechnexus_backend.job_dispatch_runtime as runtime
+
+    class Pool:
+        closed = False
+
+        def open(self) -> None:
+            pass
+
+        def close(self) -> None:
+            self.closed = True
+
+    pool = Pool()
+
+    def broken(*args: object, **kwargs: object) -> object:
+        raise RuntimeError("object storage unreachable")
+
+    monkeypatch.setattr(runtime, "speech_pool", lambda *a, **k: pool)
+    monkeypatch.setattr(runtime, "build_result_publisher", broken)
+
+    with pytest.raises(DispatchDependenciesUnavailableError):
+        build_dispatch_dependencies(_settings())
+    assert pool.closed
 
 
 @pytest.mark.parametrize(
@@ -424,17 +487,41 @@ class UnavailablePlanner(Planner):
         raise DispatchRequestUnavailableError
 
 
-async def test_pre_submit_failure_with_cancellation_records_not_submitted_observation() -> None:
+class AbsentGateway(Gateway):
+    """The gateway confirms no execution exists for the stable identity."""
+
+    async def query(self, submit_intent_id: str) -> GatewayReply:
+        self.queries += 1
+        return GatewayReply("not_found")
+
+
+async def test_pre_submit_failure_with_a_possible_execution_stays_unknown() -> None:
+    # A previous claimant may have submitted before this worker read the stored
+    # command. An executing answer forbids a terminal failure and the durable
+    # "not submitted" observation.
     world = CancelledDuringDispatch(_job())
     gateway = Gateway(["executing"])
     batch = await _dispatcher(world, gateway, Publisher(), planner=UnavailablePlanner()).run_once(
         "worker-a"
     )
 
-    assert batch.claimed == 1 and batch.lease_lost == 1
-    assert gateway.queries == 0
+    assert batch.claimed == 1 and batch.unknown == 1
+    assert gateway.queries == 1
     assert world.job.state == "cancelling"
-    assert world.finish_calls == [("worker-a", "failed")]
+    assert world.finish_calls == []
+    assert world.not_submitted == []
+
+
+async def test_pre_submit_failure_with_confirmed_absence_records_not_submitted() -> None:
+    world = CancelledDuringDispatch(_job())
+    gateway = AbsentGateway([])
+    batch = await _dispatcher(world, gateway, Publisher(), planner=UnavailablePlanner()).run_once(
+        "worker-a"
+    )
+
+    assert batch.claimed == 1 and batch.lease_lost == 1
+    assert gateway.queries == 1
+    assert world.job.state == "cancelling"
     assert world.not_submitted == [(world.job.job_id, "worker-a")]
 
 

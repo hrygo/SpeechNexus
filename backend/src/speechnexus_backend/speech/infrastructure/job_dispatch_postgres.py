@@ -10,6 +10,7 @@ from typing import Any, cast
 import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
+from speechnexus_backend.speech.application.leases import LeaseService
 from speechnexus_backend.speech.domain.job_dispatch import (
     DISPATCHABLE_JOB_KIND_UNION,
     DISPATCHABLE_JOB_KINDS,
@@ -21,9 +22,11 @@ from speechnexus_backend.speech.domain.job_dispatch import (
     DispatchUnavailableError,
     identifier,
 )
+from speechnexus_backend.speech.domain.lease_release import ReleaseLease
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
     NOT_SUBMITTED_TABLE,
 )
+from speechnexus_backend.speech.infrastructure.leases_postgres import PostgresLeaseTransactions
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 
 _JOB_SELECT = (
@@ -60,6 +63,12 @@ class PostgresDispatchQueue:
     ``kinds`` names the lane this queue serves. It defaults to the ASR/TTS lane,
     so a worker never claims a voice generation Job whose engine adapter it does
     not own; a voice worker opts in explicitly instead of relying on row order.
+
+    ``require_admission`` turns the production lane on: only a Job whose admission
+    wrote a complete command, an attempt and a lease in the same commit is due.
+    Voice kinds keep an operation anchor without attempt/lease, so they are never
+    claimed here and never re-enter ``admit_in_transaction`` for an existing
+    anchor.
     """
 
     def __init__(
@@ -67,10 +76,13 @@ class PostgresDispatchQueue:
         pool: SpeechPool,
         *,
         kinds: Iterable[str] = DISPATCHABLE_JOB_KINDS,
+        require_admission: bool = False,
         timeout_seconds: float = 3,
     ) -> None:
         if type(timeout_seconds) not in (int, float) or not 0 < timeout_seconds <= 30:
             raise ValueError("Dispatch claims require bounded deadlines")
+        if type(require_admission) is not bool:
+            raise ValueError("Dispatch admission filter must be explicit")
         selected = tuple(kinds)
         if not selected:
             raise ValueError("Dispatch lane requires at least one Job kind")
@@ -80,10 +92,15 @@ class PostgresDispatchQueue:
             raise ValueError("Dispatch lane Job kind is outside the dispatchable union")
         self._pool, self._timeout = pool, timeout_seconds
         self._kinds = selected
+        self._require_admission = require_admission
 
     @property
     def kinds(self) -> tuple[str, ...]:
         return self._kinds
+
+    @property
+    def require_admission(self) -> bool:
+        return self._require_admission
 
     async def claim_due(self, worker_id: str, lease_ms: int, limit: int) -> list[ClaimedJob]:
         identifier(worker_id)
@@ -92,12 +109,29 @@ class PostgresDispatchQueue:
         return await asyncio.to_thread(self._claim, worker_id, lease_ms, limit)
 
     def _claim(self, worker_id: str, lease_ms: int, limit: int) -> list[ClaimedJob]:
+        # The production lane joins the admission rows the create transaction
+        # committed. A legacy voice anchor has no attempt or lease, so it cannot
+        # satisfy these inner joins and is never claimed. Re-admitting it would
+        # collide with the existing anchor, so filtering here is the only safe
+        # option until a voice recipe writes a real reservation.
+        admission = (
+            "JOIN admission_operations AS a ON a.operation_id = c.job_id "
+            "AND a.request_document IS NOT NULL AND CHAR_LENGTH(a.request_document) > 0 "
+            "AND a.request_digest = c.request_digest "
+            "JOIN admission_attempts AS t ON t.operation_id = a.operation_id "
+            "AND t.attempt_id = a.current_attempt_id "
+            "JOIN admission_leases AS l ON l.operation_id = t.operation_id "
+            "AND l.attempt_id = t.attempt_id "
+            if self._require_admission
+            else ""
+        )
         query = (
             "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 "
             "AS BIGINT) AS now_us), due AS ("
             "SELECT c.job_id FROM coordination_jobs AS c "
             "JOIN speech_jobs AS j ON j.job_id = c.job_id CROSS JOIN clock "
-            "WHERE c.job_state = 'pending' AND c.claim_expires_at_us <= clock.now_us "
+            + admission
+            + "WHERE c.job_state = 'pending' AND c.claim_expires_at_us <= clock.now_us "
             "AND j.state IN ('pending', 'running') "
             # A Job outside this queue's lane is filtered inside the claim so it
             # neither consumes the batch limit nor turns into a
@@ -438,4 +472,67 @@ class PostgresDispatchStateStore:
         raise DispatchClaimLostError("Dispatch lease was lost before the terminal transition")
 
 
-__all__ = ["PostgresDispatchQueue", "PostgresDispatchStateStore"]
+class PostgresLeaseSettler:
+    """Return a settled public Job's capacity through the existing lease service.
+
+    The dispatcher owns settlement for asr/tts: a terminal Job that kept its
+    admission lease would hold the attempt and every physical slot forever.
+    Release remains a ``LeaseService`` decision over the original identity; this
+    adapter only resolves the single lease, supplies its current version and
+    replays a conflicting or unknown outcome. A release that cannot prove stop
+    and cleanup returns ``False`` and leaves the lease for reconciliation; it
+    never rewrites the Job's already committed terminal outcome.
+    """
+
+    def __init__(self, pool: SpeechPool, *, timeout_seconds: float = 3) -> None:
+        if type(timeout_seconds) not in (int, float) or not 0 < timeout_seconds <= 30:
+            raise ValueError("Lease settlement requires bounded deadlines")
+        self._pool, self._timeout = pool, timeout_seconds
+        self._leases = LeaseService(
+            PostgresLeaseTransactions(pool, timeout_seconds=timeout_seconds)
+        )
+
+    async def release(self, operation_id: str) -> bool:
+        identifier(operation_id)
+        return await asyncio.to_thread(self._release, operation_id)
+
+    def _lease_id(self, operation_id: str) -> str | None:
+        try:
+            with self._pool.connection(timeout=self._timeout) as connection:
+                connection.execute("SET TRANSACTION READ ONLY")
+                rows = connection.execute(
+                    "SELECT lease_id FROM admission_leases WHERE operation_id = %s "
+                    "ORDER BY lease_id",
+                    (operation_id,),
+                ).fetchall()
+        except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
+            raise DispatchUnavailableError("Lease settlement storage is unavailable") from None
+        if not rows:
+            return None
+        if len(rows) != 1:
+            # Multi-stage admissions are not dispatched by this lane; leave the
+            # whole attempt for reconciliation instead of releasing one stage.
+            return ""
+        return str(rows[0]["lease_id"])
+
+    def _release(self, operation_id: str) -> bool:
+        lease_id = self._lease_id(operation_id)
+        if lease_id is None:
+            return True
+        if not lease_id:
+            return False
+        for _ in range(2):
+            current = self._leases.query(lease_id)
+            if current.fact is None:
+                return False
+            if current.fact.lease_state == "released":
+                return True
+            result = self._leases.release(ReleaseLease(lease_id, current.fact.version))
+            if result.fact is not None and result.fact.lease_state == "released":
+                return True
+            if result.outcome != "unknown":
+                return False
+        return False
+
+
+__all__ = ["PostgresDispatchQueue", "PostgresDispatchStateStore", "PostgresLeaseSettler"]

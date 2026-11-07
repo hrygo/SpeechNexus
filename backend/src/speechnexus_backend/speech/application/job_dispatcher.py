@@ -7,9 +7,11 @@ import hashlib
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
 from speechnexus_backend.speech.domain.job_dispatch import (
+    DISPATCHABLE_JOB_KINDS,
     VOICE_GENERATION_JOB_KINDS,
     ClaimedJob,
     DispatchBatch,
@@ -80,6 +82,17 @@ class ResultPublisher(Protocol):
     ) -> PublishedResult: ...
 
 
+class LeaseSettlement(Protocol):
+    """Return the admission lease of a terminal asr/tts Job.
+
+    Implementations delegate to ``LeaseService.release``; the dispatcher only
+    names the operation it settled. ``True`` means the lease is released or was
+    already released; ``False`` leaves it held for reconciliation.
+    """
+
+    async def release(self, operation_id: str) -> bool: ...
+
+
 @dataclass(slots=True)
 class _DispatchPhase:
     """Mutable markers for gateway protocol handling and an actual submit."""
@@ -111,10 +124,15 @@ class JobDispatcher:
         self._limits = limits or DispatchLimits()
         self._now_us = now_us or (lambda: time.time_ns() // 1_000)
         self._sleep = sleep or asyncio.sleep
+        self._leases: LeaseSettlement | None = None
 
     @property
     def limits(self) -> DispatchLimits:
         return self._limits
+
+    def settle_capacity_through(self, leases: LeaseSettlement) -> None:
+        """Compose the lease service after construction; absence keeps today's behavior."""
+        self._leases = leases
 
     async def run_once(
         self, worker_id: str, *, should_stop: Callable[[], bool] | None = None
@@ -205,6 +223,12 @@ class JobDispatcher:
                 if renewed is None:
                     return DispatchResult(job.job_id, "claim_lost", "claim_lost")
                 claim = renewed
+                if self._submission_expired(submission):
+                    # The gateway answered 404 for the stable identity and the
+                    # frozen deadline has passed, so it can no longer accept this
+                    # submit. That pair is the durable not-submitted fact; only
+                    # then may the Job fail and its capacity return.
+                    return await self._settle_not_submitted(claim, job)
                 if self._expired(job):
                     # Dispatcher-side expiry is not engine evidence: the Job
                     # stays running and reconciliation settles it from durable
@@ -215,7 +239,7 @@ class JobDispatcher:
                 phase.submitted = True
             return await self._follow(claim, job, submission, reply, should_stop, phase)
         except DispatchRequestUnavailableError:
-            return await self._fail(claim, job, "job_request_unavailable")
+            return await self._fail_absent_execution(claim, job, "job_request_unavailable", phase)
         except DispatchRejectedError as error:
             if error.error_code == "gateway_barrier_fenced" and await self._cancelling(job):
                 # The gateway's barrier refused this submit and the Job is already
@@ -229,7 +253,7 @@ class JobDispatcher:
             if phase.gateway:
                 # An unreadable or mismatched gateway reply never proves failure.
                 return DispatchResult(job.job_id, "unknown", "outcome_unknown")
-            return await self._fail(claim, job, "execution_result_invalid")
+            return await self._fail_absent_execution(claim, job, "execution_result_invalid", phase)
         except DispatchUnavailableError:
             return DispatchResult(job.job_id, "unknown", "outcome_unknown")
 
@@ -367,6 +391,55 @@ class JobDispatcher:
     async def _fail(self, claim: ClaimedJob, job: DispatchJob, code: str) -> DispatchResult:
         return await self._finish(claim, job, "failed", result_json=None, error_code=code)
 
+    async def _fail_absent_execution(
+        self, claim: ClaimedJob, job: DispatchJob, code: str, phase: _DispatchPhase
+    ) -> DispatchResult:
+        """Never fail a previously submitted Job without a gateway 404.
+
+        A historical row that was already claimed may have been submitted by a
+        crashed worker. A stored-document disagreement then says nothing about
+        the execution, so the Job stays ``running`` unless the gateway itself
+        confirms there is no execution for the stable ``submit_intent_id``. An
+        unreadable or executing answer may hide a previous submit and must not
+        become a durable "not submitted" fact.
+        """
+        if job.state != "running":
+            # mark_running precedes every external submit, so a pending Job has
+            # never been dispatched and needs no gateway confirmation.
+            return await self._fail(claim, job, code)
+        try:
+            reply = await self._gateway.query(submit_intent_identity(job.job_id))
+        except DispatchUnavailableError, DispatchProtocolError:
+            phase.submitted = True
+            return DispatchResult(job.job_id, "unknown", "outcome_unknown")
+        if reply.outcome != "not_found":
+            phase.submitted = True
+            return DispatchResult(job.job_id, "unknown", "outcome_unknown")
+        return await self._fail(claim, job, code)
+
+    async def _settle_not_submitted(self, claim: ClaimedJob, job: DispatchJob) -> DispatchResult:
+        """Persist the durable not-submitted terminal and then return capacity."""
+        return await self._finish(
+            claim,
+            job,
+            "failed",
+            result_json=None,
+            error_code="execution_deadline_expired",
+        )
+
+    async def _release_capacity(self, job: DispatchJob) -> None:
+        """asr/tts terminal states return the admission lease through LeaseService.
+
+        A release that cannot prove stop and cleanup stays held and is left for
+        reconciliation; it never rewrites the committed public outcome.
+        """
+        if self._leases is None or job.kind not in DISPATCHABLE_JOB_KINDS:
+            return
+        try:
+            await self._leases.release(job.job_id)
+        except Exception:
+            return
+
     async def _finish(
         self,
         claim: ClaimedJob,
@@ -385,6 +458,7 @@ class JobDispatcher:
         except DispatchUnavailableError:
             return DispatchResult(job.job_id, "unknown", "outcome_unknown")
         if current.state == target:
+            await self._release_capacity(job)
             if target == "succeeded":
                 return DispatchResult(job.job_id, "succeeded", error_code)
             return DispatchResult(job.job_id, "failed", error_code)
@@ -398,6 +472,20 @@ class JobDispatcher:
         limit_us = int(self._limits.job_timeout_seconds * 1_000_000)
         return self._now_us() - job.created_at_us >= limit_us
 
+    def _submission_expired(self, submission: ExecutionSubmission) -> bool:
+        """Only the frozen admission deadline, never the dispatcher's own timer."""
+        value = submission.body.get("deadline_at")
+        if not isinstance(value, str):
+            return False
+        try:
+            deadline = datetime.fromisoformat(value)
+        except ValueError:
+            return False
+        if deadline.tzinfo is None or deadline.utcoffset() is None:
+            return False
+        epoch = datetime(1970, 1, 1, tzinfo=UTC)
+        return self._now_us() >= (deadline - epoch) // timedelta(microseconds=1)
+
 
 __all__ = [
     "DispatchPlanner",
@@ -405,5 +493,6 @@ __all__ = [
     "DispatchStateStore",
     "ExecutionGateway",
     "JobDispatcher",
+    "LeaseSettlement",
     "ResultPublisher",
 ]

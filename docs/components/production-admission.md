@@ -4,7 +4,7 @@
 [A03 #22](https://github.com/hrygo/SpeechNexus/issues/22)，消费
 [`0007` 私有命令存储](production-admission-storage.md)。
 `admit_recipe` / `query_outcome(attempt)` 提供完整阶段预留和原身份恢复。
-本事务自身不新增公开路由、执行进程或默认批准 provider。后续[同步 TTS](synchronous-speech.md)和[同步转写](../operations/synchronous-transcription.md)已有各自的业务命令与准入装配；结算与恢复依各自链路实现。公开异步 Job planner、完整调度和其他业务链仍须分别验收。
+本事务自身不新增公开路由、执行进程或默认批准 provider。后续[同步 TTS](synchronous-speech.md)和[同步转写](../operations/synchronous-transcription.md)已有各自的业务命令与准入装配；结算与恢复依各自链路实现。公开异步 Job 的 planner 与派发器已在[生产 Job](production-jobs.md)中装配；真实引擎、完整业务链与部署资格仍须分别验收。
 合成观察和构造 plan/readiness 值不证明真实引擎、最大窗口预热、内容网络或多主机资格。
 
 ## 输入与信任边界

@@ -72,6 +72,9 @@ B 原生 record_execution_observation 写入的 failed/not_required 是另一条
 降级到该状态。A 消费这个持久事实，不读取 B 的私有请求正文，也不另造停止证据。
 从未创建 submit 的 lease 可在 lease 锁下关闭；B 新 submit 必须锁同一 pool/attempt/lease
 并核对未释放状态，因此提交与释放最多一方成功。本边界不证明 B 的真实观察提供者资格。
+公开 asr/tts 派发器在 Job 终态提交后作为释放调用方：成功与失败分别按上述终态/停止证据
+路径归还容量；网关对稳定 `submit_intent_id` 返回 404 且准入冻结期限已过时，先把
+not-submitted 终态写入公共 Job，再走同一 release，期限本身仍不是释放证据。
 
 attempt 锁串行化 A 的准入/隔离/释放。释放前核对冻结 required_stage_ids 与实际全部
 lease 的 stage 集合完全一致、无缺失或重复，再读取其他 lease 的已释放事实；无需倒序

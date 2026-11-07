@@ -18,7 +18,7 @@ MySQL 测试 adapter 仅复用显式 SQL 与领域裁决验证 InnoDB 行为。
 后续 `0002_coordination` 增加其余 13 表的[生产存储与最小权限基线](../operations/production-coordination-storage.md)，
 不改写本单元的 Job/outbox 身份或授权；已有迁移命令升级整个包内链到 head。
 
-这里的 Job 是协调元数据，不是完整公开 Job 的业务命令/结果存储。后续单元已有公共路由、准入事务、派发器和结果发布组件；公开异步 Job 的生产 planner 仍未装配，见下文。不得把协调事务或单次同步合成证据解释为完整文件转写/异步合成闭环。
+这里的 Job 是协调元数据，不是完整公开 Job 的业务命令/结果存储。后续单元已有公共路由、准入事务、派发器、生产 planner 和结果发布组件；真实引擎、GPU 与部署资格仍分别验收。不得把协调事务或单次同步合成证据解释为完整文件转写/异步合成闭环。
 
 ## 公开 Job 列表
 
@@ -131,14 +131,50 @@ request、lease 和 `coordination_jobs`/`coordination_outbox`；`request_documen
 Job ID 确定性派生的 `submit_intent_id`，领取者先查询原身份，只有 `not_found`
 才尝试以同一身份提交；已经观察到执行后再查到 `not_found` 则保持 unknown。原身份去重不单独证明引擎只执行一次：网关接收与崩溃恢复仍须按提交屏障及固定命令取证。`unknown`、不可解析的回执、身份或命令摘要
 不一致都返回 unknown 并保留 `running`，不当作可重试失败。
-当前派发器对状态文档仅在请求的 `command_digest` 和响应值都非 `null` 时比较该摘要；
-响应缺少摘要不会被这一步拒绝。接入生产 planner 前须单独补齐并验收完整响应身份和摘要
-校验，不能把现有检查当作完整的机器契约或原命令一致性证明。
+## 生产 planner、领取过滤与装配
+
+`speech/infrastructure/stored_command_planner.py` 只在只读事务中重放准入已提交的事实：
+`admission_operations.request_document` 是本次准入写下的完整业务命令，
+`admission_requests` 保存 attempt/stage/lease/fencing/deadline 信封，
+`admission_attempts` 与 `admission_leases` 提供绑定、策略和冻结资源。planner 先核对
+命令与信封各自的摘要，再对 `gateway_request` 执行冻结契约的
+`parse("SubmitExecutionRequest", ...)`，逐项核对 operation/attempt/stage/lease/
+workspace/pool/host/gateway/instance/generation/binding/policy/fencing/deadline 与
+准入行一致，并要求租约处于可提交状态。它不读取当前绑定版本、不补默认值、不改变
+`submit_intent_id`；任何不一致都以协议错误停止，不按摘要或新默认值重建请求。
+
+`PostgresDispatchQueue` 以 `require_admission=True` 装配时，只领取同一事务写下了
+完整命令、attempt 和 lease 的 Job。voice 生成 Job 仍有 operation 锚点但无
+attempt/lease，因此不会被该通道领取，也不会对既有锚点再次调用
+`admit_in_transaction`；voice 的独立 lanes 继续按显式 kind 领取。
+`SPEECHNEXUS_JOB_DISPATCH_KINDS` 选择本进程的 kind 列表（默认 `asr,tts`，逗号分隔、
+去重且必须属于可派发并集）。
+
+`build_dispatch_dependencies` 装配真实 planner 与结果发布器并共享一个连接池；
+对象存储 readiness、planner 构造或任何前置失败都包装为
+`DispatchDependenciesUnavailableError`，worker 在领取任何租约之前以退出码 2 结束。
+planner 与发布器均存在时才进入领取与提交。
+
+派发器对已知提交的状态文档仍只在请求的 `command_digest` 和响应值都非 `null` 时比较
+该摘要；响应缺少摘要不会被这一步拒绝，不能把现有检查当作完整的原命令一致性证明。
 
 成功执行读取原回执后写引用型 `result_json`；网关终态失败冻结错误码。公共 Job
 的 `status_version` 由条件 UPDATE 递增，终态与协调行关闭在同一事务。批次、租约、
-轮询、提交超时、任务期限和领取次数均有显式上限。任务期限到达但执行可能仍在运行时
-返回 unknown，不用 `failed` 假装算力已停止；首次查询返回 `not_found` 且任务已过期时也只返回 unknown（内部结果码 `job_timeout`），不写 `job_timeout` 终态或错误码。该查询结果本身不能证明任何先前未知外发不存在；生产 planner 尚未装配，接入前必须核对提交屏障与超时竞争，不能将这一分支视为已验证的停止或释放证据。dispatcher 超时的持久结算与对账归 [#528](https://github.com/hrygo/SpeechNexus/issues/528)，当前没有对应的时间超时对账器。
+轮询、提交超时、任务期限和领取次数均有显式上限。
+
+asr/tts 的终态结算在这一事务之后走现有 `LeaseService.release`：成功需要网关 terminal
+response、cleanup complete 和停止证据；失败沿 `failed/not_required` 或网关终态事实。
+释放被拒绝或结果未知时租约保持占用并留给协调，不回写已提交的公共终态。
+单次失败、超时或断线都不是释放证据。
+
+过期提交使用准入冻结的 `deadline_at`，而不是进程自己估算的 Job 期限：先以稳定
+`submit_intent_id` 查询网关，只有网关明确返回 404 且冻结期限已过，才写持久
+`execution_deadline_expired` 终态并随后释放容量。仅期限到达、网关不可用或结果
+未知时保持 `running` / unknown，不写终态也不释放。该 404 只证明该稳定身份没有
+执行，不能推广为任意先前外发的停止证明。接管后的历史行若发现存储命令与准入
+不符，也只有网关对该身份返回 404 时才可落 `failed`；网关显示执行存在或不可读时
+保持 unknown，并不得写入取消的 not-submitted 事实。dispatcher 超时的持久结算与
+对账归 [#528](https://github.com/hrygo/SpeechNexus/issues/528)。
 
 派发器只通过 `speech/infrastructure/execution_gateway_adapter.py` 的
 `ExecutionGatewayAdapter` 使用执行网关；适配器不持有 HTTP 实现，而是委托唯一
@@ -148,12 +184,13 @@ Job ID 确定性派生的 `submit_intent_id`，领取者先查询原身份，只
 契约校验的 4xx 语义拒绝经 `DispatchRejectedError`（`DispatchProtocolError` 子类）进入
 终态失败，缺少合法错误码的 4xx 仍是 `DispatchProtocolError` / `unknown`。查询或回执
 的 404 仍是 `not_found`，408/429 保持 `unknown`。不得把 `unknown` 映射成 `failed`。
-进入网关阶段之前，若持久请求缺失、摘要不符或 planner 生成不合法提交，代码会走
-`job_request_unavailable` 或 `execution_result_invalid` 失败分支；这与外发后无法解释
-网关响应保持 unknown 的分支不同，也不能作为执行停止或预算释放证据。语音生成 Job
-还会在 `mark_running`、外发与发布之前校验存储请求的 `kind` 和 `draft_target` 是否满足
-冻结契约；缺少匹配 `kind` 的历史行在此以 `execution_result_invalid` 明确失败，不会
-提交执行、发布孤儿 Artifact 或长期停留在 `running`。
+进入网关阶段之前，若持久请求缺失、摘要不符或 planner 生成不合法提交，代码会先走
+`job_request_unavailable` 或 `execution_result_invalid` 分支；对 `running` 的历史 Job
+必须先向网关确认该 `submit_intent_id` 没有执行（404）才能落 `failed`，否则保持
+unknown 且不写 not-submitted 事实。这些错误不能作为执行停止或预算释放证据。语音生成
+Job 还会在 `mark_running`、外发与发布之前校验存储请求的 `kind` 和 `draft_target` 是否
+满足冻结契约；缺少匹配 `kind` 的历史行在确认无执行后失败，不会提交执行、发布孤儿
+Artifact 或长期停留在 `running`。
 
 ## 取消受理、提交裁决与对账
 
@@ -199,7 +236,11 @@ request ID，不覆盖他人事实。
 观察或围栏仍有行时拒绝删除，要求先保留或导出证据。`public_job_grants` 为 API Job writer
 授予围栏 SELECT/INSERT 与 `speech_artifacts` 的 SELECT；`job_dispatch_grants` 的取消围栏部分只授予派发器对 not-submitted 表的 INSERT，其 Job 写入部分另含 `admission_operations` INSERT 与 `speech_job_intents` 的 SELECT/INSERT；
 worker 角色使用 `public_job_grants` 与 `cancellation_reconciliation_grants`（围栏列 SELECT、
-对账账本 SELECT/INSERT/列级 UPDATE、not-submitted SELECT）；gateway 写角色在
+对账账本 SELECT/INSERT/列级 UPDATE、not-submitted SELECT）。派发器的终态结算还需要
+`coordination_runtime_grants` 给出的 `admission_leases`/`admission_attempts`/
+`workspace_quotas`/`host_nodes`/`engine_instances` 读取与版本列 UPDATE、
+`submit_intents` 的受限列 SELECT、`execution_stop_evidence` SELECT 和
+`execution_release_guards` 视图列 SELECT。gateway 写角色在
 `coordination_runtime_grants` 之外还须安装 `gateway_cancellation_fence_grants` 以获得围栏
 `job_id` 列 SELECT（提交只判断存在性），独立执行读取器使用同一函数。
 
@@ -217,10 +258,12 @@ worker 角色使用 `public_job_grants` 与 `cancellation_reconciliation_grants`
    不调用 `_fail`。两种情况都由对账 worker 以网关“没有执行”事实结算为 `cancelled`。
    Job 未取消时同一错误码仍按普通终态失败处理。
 
-当前边界完成派发器、真实 PG 领取/终态存储、唯一网关客户端（派发器经适配器接入）、
-worker 入口/进程角色及 `create_app` 之外的组合根。生产 `SubmitExecutionRequest` planner 仍未装配（结果发布已实现，见下节）；`build_dispatch_dependencies` 因 planner 未装配显式抛错，进程以
-退出码 2 结束且不领取租约，不会用 fake 或空实现硬跑。`GET /v1/nexus/artifacts/{id}` 的读路径已可用，但需 planner 装配后才会由 Job 路径产生制品。因此本步不能宣称公开异步链已在部署中闭环，也不能代替
-真实网关、真实引擎或对象存储的发布资格。
+当前边界完成派发器、真实 PG 领取/终态存储、生产 planner、唯一网关客户端（派发器经
+适配器接入）、worker 入口/进程角色及 `create_app` 之外的组合根。`build_dispatch_dependencies`
+装配真实 planner 与结果发布器；任何前置失败仍在领取前以退出码 2 结束，不会用 fake
+或空实现硬跑。`GET /v1/nexus/artifacts/{id}` 的读路径与 Job 路径的制品引用已由发布器
+写入。该组合仍不能代替真实网关、真实引擎、GPU 或对象存储的发布资格，也不能据此宣称
+部署中的公开异步链已经完成端到端验收。
 
 ### 取消对账 worker 与开关
 
@@ -386,13 +429,14 @@ ASGI send，包括终态的空 body：末帧与数据帧共用同一写缓冲，
 | `SPEECHNEXUS_JOB_DISPATCH_MAX_ATTEMPTS` | 最大领取版本 1–20 |
 | `SPEECHNEXUS_JOB_DISPATCH_INTERVAL_SECONDS` | 空批次后的下一轮等待，有限数 `[0.1, 300]` 秒 |
 | `SPEECHNEXUS_JOB_DISPATCH_STORAGE_TIMEOUT_SECONDS` | 领取、续租、终态事务的上限，有限数 `(0, 30]` 秒 |
+| `SPEECHNEXUS_JOB_DISPATCH_KINDS` | 本进程领取的 kind 列表，默认 `asr,tts`；逗号分隔、去重且属于可派发并集 |
 | `SPEECHNEXUS_OBJECT_STORAGE_ENDPOINT` | 版本化对象存储 origin，不允许路径、凭据或 query |
 | `SPEECHNEXUS_OBJECT_STORAGE_BUCKET` | Artifact 桶；必须启用版本化 |
 | `SPEECHNEXUS_EXECUTION_RESULT_BUCKET` | 网关 staging 回执所在桶；按回执版本读取 |
 | `SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY` / `SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY` | 对象存储凭据，只从部署注入 |
 
-安装 backend wheel 后以该独立入口启动；planner 装配完成后，`--once` 最多做一轮有界领取，
-可用于获准环境的部署冒烟。当前组合根因 planner 缺失而在领取前退出，不能用它验证领取：
+安装 backend wheel 后以该独立入口启动；`--once` 最多做一轮有界领取，可用于获准环境的
+部署冒烟。planner 或对象存储未就绪时，进程在领取前以退出码 2 结束：
 
 ```sh
 export SPEECHNEXUS_PROCESS_ROLE=job-worker

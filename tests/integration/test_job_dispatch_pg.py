@@ -185,7 +185,7 @@ class Planner:
                 "fencing_token": 1,
                 "command_digest": DIGEST,
                 "command": {"schema_version": "1.0.0", "kind": "tts"},
-                "deadline_at": "2026-10-27T00:00:00Z",
+                "deadline_at": "2030-01-01T00:00:00Z",
                 "max_output_audio_ms": 1000,
                 "sample_rate_hz": 24000,
             },

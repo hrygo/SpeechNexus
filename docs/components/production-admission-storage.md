@@ -17,7 +17,7 @@
 完整准入的业务正文由受信业务用例完成源契约校验、默认值解析和不可变资源版本固定后提供。
 同步语音与同步转写已有各自的准入适配器，具体装配和限制分别见
 [同步语音](synchronous-speech.md)与[同步转写](../operations/synchronous-transcription.md)；
-这些接入不代表公开异步 Job 的生产 planner 已完成。
+公开异步 Job 的生产 planner 已按[生产 Job](production-jobs.md)重放这些行；真实引擎与部署资格仍须分别验收。
 公开 Job 的权威 intent 存在 `speech_job_intents`。`asr`/`tts` 创建在同一事务内由
 `admit_in_transaction` 独占写入 `admission_operations.request_document` 的完整业务命令，
 公开意图继续由新表承载；两列摘要因此不同：`speech_jobs.request_digest` 与

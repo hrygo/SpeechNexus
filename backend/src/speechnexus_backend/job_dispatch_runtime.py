@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any, Literal, Self, cast
 from urllib.parse import urlsplit
 
@@ -27,7 +28,12 @@ from speechnexus_backend.speech.application.results import (
     ResultArtifactPublisher,
 )
 from speechnexus_backend.speech.domain.artifacts import ArtifactError
-from speechnexus_backend.speech.domain.job_dispatch import DispatchLimits, identifier
+from speechnexus_backend.speech.domain.job_dispatch import (
+    DISPATCHABLE_JOB_KIND_UNION,
+    DISPATCHABLE_JOB_KINDS,
+    DispatchLimits,
+    identifier,
+)
 from speechnexus_backend.speech.infrastructure.artifacts_minio import MinioArtifactPublisher
 from speechnexus_backend.speech.infrastructure.artifacts_postgres import PostgresArtifactWriter
 from speechnexus_backend.speech.infrastructure.execution_gateway_adapter import (
@@ -41,8 +47,12 @@ from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
 from speechnexus_backend.speech.infrastructure.job_dispatch_postgres import (
     PostgresDispatchQueue,
     PostgresDispatchStateStore,
+    PostgresLeaseSettler,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool, speech_pool
+from speechnexus_backend.speech.infrastructure.stored_command_planner import (
+    StoredCommandPlanner,
+)
 
 
 class DispatchDependenciesUnavailableError(RuntimeError):
@@ -110,6 +120,12 @@ class JobDispatchSettings(BaseSettings):
         le=30,
         allow_inf_nan=False,
     )
+    dispatch_kinds: str = Field(
+        validation_alias="SPEECHNEXUS_JOB_DISPATCH_KINDS",
+        default=",".join(DISPATCHABLE_JOB_KINDS),
+        min_length=1,
+        max_length=256,
+    )
     object_storage_endpoint: AnyHttpUrl = Field(
         validation_alias="SPEECHNEXUS_OBJECT_STORAGE_ENDPOINT", repr=False
     )
@@ -135,6 +151,15 @@ class JobDispatchSettings(BaseSettings):
     @property
     def worker_id(self) -> str:
         return self.node_id + ":" + self.instance_id
+
+    @property
+    def kinds(self) -> tuple[str, ...]:
+        selected = tuple(part.strip() for part in self.dispatch_kinds.split(",") if part.strip())
+        if not selected or len(set(selected)) != len(selected):
+            raise ValueError("Dispatch lane Job kinds must be a non-empty unique list")
+        if any(kind not in DISPATCHABLE_JOB_KIND_UNION for kind in selected):
+            raise ValueError("Dispatch lane Job kind is outside the dispatchable union")
+        return selected
 
     @property
     def limits(self) -> DispatchLimits:
@@ -187,6 +212,7 @@ class JobDispatchSettings(BaseSettings):
             )
         if self.poll_seconds > self.job_timeout_seconds:
             raise ValueError("Dispatch polling cannot exceed the Job timeout")
+        _ = self.kinds
         return self
 
 
@@ -241,18 +267,46 @@ def build_result_publisher(
     return publisher
 
 
-def build_dispatch_dependencies(
-    settings: JobDispatchSettings,
-) -> tuple[DispatchPlanner, ResultPublisher]:
-    """Return the production planner/publisher, or fail closed.
+@dataclass(frozen=True)
+class DispatchDependencies:
+    """The assembled planner, publisher and the one pool they share."""
 
-    Result publication is assembled by ``build_result_publisher``. The
-    production planner remains a separate card; starting a worker without it
-    would claim Jobs and abandon them, so startup is still refused.
+    planner: DispatchPlanner
+    results: ResultPublisher
+    pool: SpeechPool
+
+    def close(self) -> None:
+        try:
+            close = getattr(self.results, "close", None)
+            if callable(close):
+                close()
+        finally:
+            self.pool.close()
+
+
+def build_dispatch_dependencies(settings: JobDispatchSettings) -> DispatchDependencies:
+    """Assemble the production planner and publisher, or refuse to start.
+
+    A worker that claimed Jobs without a real planner or publisher would either
+    abandon them or lose their results. Any broken prerequisite therefore raises
+    ``DispatchDependenciesUnavailableError`` before the worker opens its database
+    role, so no lease is ever claimed.
     """
-
-    del settings
-    raise DispatchDependenciesUnavailableError("Job dispatch planner is not assembled")
+    pool: SpeechPool | None = None
+    try:
+        pool = speech_pool(
+            settings.database_url.get_secret_value(), schema=settings.database_schema
+        )
+        pool.open()
+        planner = StoredCommandPlanner(pool, timeout_seconds=settings.storage_timeout_seconds)
+        results = build_result_publisher(settings, pool)
+    except Exception:
+        if pool is not None:
+            pool.close()
+        raise DispatchDependenciesUnavailableError(
+            "Job dispatch planner and result publisher are unavailable"
+        ) from None
+    return DispatchDependencies(planner, results, pool)
 
 
 class JobDispatchRuntime:
@@ -261,22 +315,19 @@ class JobDispatchRuntime:
     def __init__(
         self,
         settings: JobDispatchSettings,
-        planner: DispatchPlanner,
-        results: ResultPublisher,
+        dependencies: DispatchDependencies,
         *,
         gateway: ExecutionGatewayAdapter | None = None,
     ) -> None:
         if not isinstance(settings, JobDispatchSettings):
             raise ValueError("Dispatch requires explicit settings")
-        if planner is None or results is None:
+        if dependencies is None:
             raise DispatchDependenciesUnavailableError(
                 "Job dispatch planner and result publisher are required"
             )
         self.settings = settings
-        self._planner, self._results = planner, results
-        self._pool: SpeechPool = speech_pool(
-            settings.database_url.get_secret_value(), schema=settings.database_schema
-        )
+        self._dependencies = dependencies
+        self._pool = dependencies.pool
         self._gateway = gateway
         self._owns_gateway = gateway is None
         self._loaded = False
@@ -296,18 +347,27 @@ class JobDispatchRuntime:
                         backoff_seconds=0,
                     )
                 )
-            self.dispatcher = JobDispatcher(
+            dispatcher = JobDispatcher(
                 PostgresDispatchQueue(
-                    self._pool, timeout_seconds=self.settings.storage_timeout_seconds
+                    self._pool,
+                    kinds=self.settings.kinds,
+                    require_admission=True,
+                    timeout_seconds=self.settings.storage_timeout_seconds,
                 ),
                 PostgresDispatchStateStore(
                     self._pool, timeout_seconds=self.settings.storage_timeout_seconds
                 ),
-                self._planner,
+                self._dependencies.planner,
                 self._gateway,
-                self._results,
+                self._dependencies.results,
                 limits=self.settings.limits,
             )
+            dispatcher.settle_capacity_through(
+                PostgresLeaseSettler(
+                    self._pool, timeout_seconds=self.settings.storage_timeout_seconds
+                )
+            )
+            self.dispatcher = dispatcher
             self._loaded = True
             return self
         except BaseException:
@@ -322,7 +382,7 @@ class JobDispatchRuntime:
             self._gateway = None
             self._loaded = False
             self.dispatcher = None
-            await asyncio.to_thread(self._pool.close)
+            await asyncio.to_thread(self._dependencies.close)
 
     def _check_role(self) -> None:
         # Startup owner/DDL guard; deployment still provisions the dedicated DML
@@ -363,12 +423,17 @@ class JobDispatchRuntime:
                 "progress_completed, progress_total FROM speech_job_events LIMIT 0",
                 "SELECT job_id FROM coordination_jobs LIMIT 0",
                 "SELECT operation_id, request_document FROM admission_operations LIMIT 0",
+                "SELECT attempt_id FROM admission_attempts LIMIT 0",
+                "SELECT request_document FROM admission_requests LIMIT 0",
+                "SELECT lease_id, lease_state, cleanup_state, deadline_at_us "
+                "FROM admission_leases LIMIT 0",
                 "SELECT artifact_id FROM speech_artifacts LIMIT 0",
             ):
                 connection.execute(statement)
 
 
 __all__ = [
+    "DispatchDependencies",
     "DispatchDependenciesUnavailableError",
     "JobDispatchRuntime",
     "JobDispatchSettings",

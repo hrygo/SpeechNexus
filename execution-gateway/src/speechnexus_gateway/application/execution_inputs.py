@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -16,6 +17,13 @@ from speechnexus_gateway.domain.execution_inputs import (
 )
 from speechnexus_gateway.domain.media import AudioSourceFormat
 from speechnexus_gateway.domain.submission import SubmitRequest
+
+
+@dataclass(frozen=True, slots=True)
+class VerifiedVoiceCloneInput:
+    request: SubmitRequest = field(repr=False)
+    reference: ExecutionObjectReference = field(repr=False)
+    payload: bytes = field(repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,3 +86,38 @@ class FileExecutionInputs:
             if obj.reference != reference:
                 raise ExecutionInputError("execution_input_identity_mismatch")
             yield VerifiedFileAsrInput(request, source_format, obj)
+
+    async def read_voice_clone(
+        self,
+        request: SubmitRequest,
+        *,
+        limits: ExecutionInputLimits,
+        cancelled: Callable[[], bool],
+    ) -> VerifiedVoiceCloneInput:
+        """Read one bounded clone reference; no inference or execution facts."""
+        try:
+            command = cast(dict[str, Any], request.command)
+            if (
+                command["kind"] != "voiceclone"
+                or command["task_kind"] != "voice_clone"
+                or command["stage_role"] != "voice_clone_base"
+            ):
+                raise ValueError
+            reference = _reference(command["reference_audio"]["storage"])
+            if reference.workspace_id != request.identity.workspace_id:
+                raise ExecutionInputError("execution_input_scope_mismatch")
+            if reference.byte_length > limits.max_bytes:
+                raise ExecutionInputError("execution_input_limit_exceeded")
+        except ExecutionInputError:
+            raise
+        except ValueError, TypeError, KeyError:
+            raise ExecutionInputError("execution_input_invalid") from None
+        async with self._objects.open_verified(
+            reference, limits=limits, cancelled=cancelled
+        ) as obj:
+            if obj.reference != reference:
+                raise ExecutionInputError("execution_input_identity_mismatch")
+            payload = await asyncio.to_thread(obj.stream.read, reference.byte_length + 1)
+            if type(payload) is not bytes or len(payload) != reference.byte_length:
+                raise ExecutionInputError("execution_input_identity_mismatch")
+            return VerifiedVoiceCloneInput(request, reference, payload)

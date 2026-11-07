@@ -54,6 +54,8 @@ from speechnexus_gateway.interfaces.http.middleware import RequestIdMiddleware
 from speechnexus_gateway.interfaces.http.tts_configuration import create_tts_configuration_router
 from speechnexus_gateway.settings import Settings
 
+_WARMUP_STATES = ("voice_design_warmup", "voice_clone_warmup")
+
 
 class _ControlReadinessProbe:
     name = "gateway_ingress"
@@ -106,6 +108,12 @@ def _build_readiness(
         probe = speech_configuration.voice_design.warmup_probe()
         app.state.voice_design_warmup = probe
         probes.append(probe)
+    if speech_configuration is not None and speech_configuration.voice_clone is not None:
+        # The Base clone lane is a resident TTS variant too: the same rule applies,
+        # a cached real synthesis is the only evidence this gateway may serve it.
+        clone_probe = speech_configuration.voice_clone.warmup_probe()
+        app.state.voice_clone_warmup = clone_probe
+        probes.append(clone_probe)
     return ReadinessService(probes, timeout_seconds=settings.readiness_timeout_seconds)
 
 
@@ -360,14 +368,16 @@ def create_app(
                     )
             if worker is not None:
                 worker.start()
-            warmup_probe = app.state.voice_design_warmup
-            if warmup_probe is not None:
-                warmup_probe.warm()
+            for name in _WARMUP_STATES:
+                warmup_probe = getattr(app.state, name)
+                if warmup_probe is not None:
+                    warmup_probe.warm()
             yield
         finally:
-            warmup_probe = app.state.voice_design_warmup
-            if warmup_probe is not None:
-                await warmup_probe.aclose()
+            for name in _WARMUP_STATES:
+                warmup_probe = getattr(app.state, name)
+                if warmup_probe is not None:
+                    await warmup_probe.aclose()
             app.state.tts_configuration_evidence = None
             try:
                 await _finish_control(worker, pool, ownership, file_execution)
@@ -403,6 +413,7 @@ def create_app(
     app.state.file_execution_runtime = None
     app.state.tts_configuration_evidence = None
     app.state.voice_design_warmup = None
+    app.state.voice_clone_warmup = None
     resolved_readiness = readiness or _build_readiness(resolved_settings, app, speech_configuration)
     app.add_middleware(RequestIdMiddleware)
     app.include_router(

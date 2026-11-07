@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -349,9 +350,39 @@ def test_the_deployed_customvoice_and_voice_design_templates_share_one_slot(
 
     customvoice = load("file-tts-customvoice")
     voice_design = load("file-voice-design")
+    voice_clone = load("file-voice-clone")
 
     assert customvoice.variant_slot == voice_design.variant_slot == "tts-variant"
+    assert voice_clone.variant_slot == "tts-variant"
     assert customvoice.variant_slot is not None
     assert customvoice.allowed_pool_ids == frozenset({"tts-batch"})
     assert voice_design.allowed_pool_ids == frozenset({"voice-creation"})
-    assert customvoice.environment == voice_design.environment
+    assert voice_clone.allowed_pool_ids == frozenset({"voice-creation"})
+    assert customvoice.environment == voice_design.environment == voice_clone.environment
+
+
+def test_the_deployed_voice_clone_template_pins_a_real_base_warmup(tmp_path: Path) -> None:
+    directory = Path(__file__).resolve().parents[3] / "deploy" / "engines" / "file-voice-clone"
+    template = load_approved_templates(
+        _write(
+            tmp_path, {"templates": [json.loads((directory / "template.example.json").read_text())]}
+        )
+    )[0]
+
+    assert template.readiness.kind is ReadinessKind.HTTP_WARMUP_OK
+    assert template.readiness.warmup is not None
+    assert template.readiness.warmup.path == "/v1/audio/speech"
+    assert template.command is not None
+    assert "Base" in template.command
+    assert template.command[template.command.index("--gpu-memory-utilization") + 1] == "0.08"
+    assert template.engine_auth is EngineAuthKind.VLLM_API_KEY_V1
+
+    body = (directory / "warmup-request.json").read_bytes()
+    expected = "sha256:" + hashlib.sha256(body).hexdigest()
+    assert template.readiness.warmup.body_sha256 == expected
+    document = json.loads(body)
+    assert document["task_type"] == "Base"
+    assert document["ref_audio"].startswith("data:audio/wav;base64,")
+    assert document["ref_text"] and document["input"]
+    assert "x_vector_only_mode" not in document
+    assert (directory / "warmup-reference.wav").is_file()

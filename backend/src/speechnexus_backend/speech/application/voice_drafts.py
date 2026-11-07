@@ -219,6 +219,46 @@ class VoiceDrafts:
             body["model"] = payload["model"]
         return self._jobs.submit(body, request_id=request_id, idempotency_key=idempotency_key)
 
+    def preview(
+        self,
+        draft_id: str,
+        payload: Mapping[str, Any],
+        *,
+        request_id: str,
+        idempotency_key: str | None,
+    ) -> PublicJob:
+        """Submit one preview Job fixed to the target revision's binding.
+
+        The head equality, candidate readiness and binding publication checks
+        run after the same-key replay lookup: a replay after the head advanced
+        still returns the originally committed Job instead of a stale conflict.
+        """
+        draft_id = identifier(draft_id)
+        expected = payload["expected_draft_revision"]
+        text = payload.get("text")
+        target = self._store.revision_target(draft_id, expected)
+        if target is None:
+            if not self._store.draft_exists(draft_id):
+                raise VoiceDraftNotFoundError
+            raise VoiceInputInvalidError
+        if target["kind"] not in ("design", "clone"):
+            raise VoiceInputInvalidError
+        if not isinstance(text, str) or not 1 <= len(text) <= 2000:
+            raise VoiceInputInvalidError
+        body: dict[str, Any] = {
+            "kind": "voice_preview",
+            "workspace_id": target["workspace_id"],
+            "input": {
+                "voice_draft_id": draft_id,
+                "draft_revision": expected,
+                "text": text,
+            },
+            "model_binding": target["binding"],
+        }
+        if "model" in payload:
+            body["model"] = payload["model"]
+        return self._jobs.submit(body, request_id=request_id, idempotency_key=idempotency_key)
+
     def get(self, draft_id: str, revision: str | None = None) -> dict[str, Any]:
         view = self._store.get(identifier(draft_id), revision)
         if view is None:

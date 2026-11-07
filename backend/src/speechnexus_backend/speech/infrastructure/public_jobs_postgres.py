@@ -494,6 +494,10 @@ class PostgresPublicJobs:
                             rejected = _lock_validation_target(connection, job)
                             if rejected is not None:
                                 return JobCreateResult("rejected", error_code=rejected)
+                        elif job.kind == "voice_preview":
+                            rejected = _lock_preview_target(connection, job)
+                            if rejected is not None:
+                                return JobCreateResult("rejected", error_code=rejected)
                     else:
                         selected = _binding_is_still_selected(
                             connection,
@@ -1056,15 +1060,64 @@ def _lock_validation_target(connection: _Executor, job: NewPublicJob) -> str | N
     return None
 
 
+def _lock_preview_target(connection: _Executor, job: NewPublicJob) -> str | None:
+    """Recheck the exact head candidate under the draft row lock before insert.
+
+    Replay is decided before this lock, so a head advance only rejects a request
+    that would create a new preview Job, never a same-key replay.
+    """
+    try:
+        intent = json.loads(job.request_document)
+        request_input = intent["input"]
+        draft_id, revision = request_input["voice_draft_id"], request_input["draft_revision"]
+    except ValueError, TypeError, KeyError:
+        raise PublicJobUnavailableError from None
+    row = connection.execute(
+        "SELECT d.head_revision, j.state AS generation_state, "
+        "j.workspace_id AS generation_workspace "
+        "FROM speech_voice_drafts AS d "
+        "JOIN speech_voice_draft_revisions AS r "
+        "ON r.draft_id = d.draft_id AND r.revision = %s "
+        "JOIN speech_jobs AS j ON j.job_id = r.generation_job_id "
+        "WHERE d.draft_id = %s FOR UPDATE OF d",
+        (revision, draft_id),
+    ).fetchone()
+    if row is None or row["generation_workspace"] != job.workspace_id:
+        return "not_found"
+    if row["head_revision"] != revision:
+        return "stale"
+    if row["generation_state"] != "succeeded":
+        return "not_candidate"
+    return None
+
+
 def _validate_pinned_create(connection: _Executor, job: NewPublicJob) -> None:
     expected = job.expected_binding
     if expected is None:
         raise PublicJobUnavailableError
     reference = (expected.object_id, expected.revision)
+    intent = json.loads(job.request_document)
     if job.kind == "tts":
         task, model_key = "tts_file", "tts"
     elif job.kind == "voice_validation":
         task, model_key = "voice_validation", "voice"
+    elif job.kind == "voice_preview":
+        # A preview runs on the draft kind's task, still under the pinned binding.
+        request_input = intent.get("input")
+        if not isinstance(request_input, dict) or not isinstance(
+            request_input.get("voice_draft_id"), str
+        ):
+            raise PublicJobUnavailableError
+        row = connection.execute(
+            "SELECT kind FROM speech_voice_drafts WHERE draft_id = %s",
+            (request_input["voice_draft_id"],),
+        ).fetchone()
+        if row is None:
+            raise PublicJobUnavailableError
+        task, model_key = (
+            ("voice_design" if row["kind"] == "design" else "voice_clone"),
+            "voice",
+        )
     else:
         raise PublicJobUnavailableError
     binding = require_pinned_binding(
@@ -1077,7 +1130,6 @@ def _validate_pinned_create(connection: _Executor, job: NewPublicJob) -> None:
     )
     if binding.publication != expected:
         raise PublicJobUnavailableError
-    intent = json.loads(job.request_document)
     configuration = json.loads(job.submission.effective_configuration_json)
     if (
         intent.get("kind") != job.kind

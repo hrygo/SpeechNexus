@@ -24,6 +24,7 @@ from speechnexus_backend.speech.application.public_jobs import (
     PublicJobs,
     VoiceDraftNotCandidateError,
     VoiceDraftStaleRevisionError,
+    VoiceInputInvalidError,
 )
 from speechnexus_backend.speech.application.voice_drafts import (
     VoiceDraftNotFoundError,
@@ -1325,6 +1326,294 @@ def test_validation_target_is_relocked_before_insert(
         idempotency_key=None,
     )
     probe = replace(captured["job"], job_id="job-stale-validation-probe")
+    result = original(probe)
+    assert result.outcome == "rejected"
+    assert result.error_code == "stale"
+    assert voice_db.count("speech_jobs") == 3
+
+
+def _preview_body(revision: str = "1", text: str = "Synthetic preview") -> dict[str, Any]:
+    return {"expected_draft_revision": revision, "text": text}
+
+
+def test_preview_submits_one_fixed_job_and_replays_after_head_advance(
+    voice_db: JobSandbox,
+) -> None:
+    provider, draft = _candidate_draft(voice_db)
+    body = {**_preview_body(), "model": "voice-model"}
+    first = provider.preview(
+        draft["id"], body, request_id="request-preview-1", idempotency_key="preview-key-1"
+    )
+    assert first.kind == "voice_preview"
+    assert first.state == "pending"
+    assert first.model_id == "voice-model"
+    # The preview is a Job only: no revision row and no head move.
+    assert voice_db.count("speech_jobs") == 2
+    assert voice_db.count("speech_voice_draft_revisions") == 1
+    head = voice_db.query(
+        "SELECT head_revision FROM speech_voice_drafts WHERE draft_id=%s", (draft["id"],)
+    )[0]["head_revision"]
+    assert head == "1"
+
+    replay = provider.preview(
+        draft["id"], body, request_id="request-preview-replay", idempotency_key="preview-key-1"
+    )
+    assert replay.job_id == first.job_id
+    assert voice_db.count("speech_jobs") == 2
+
+    # Advance the head, then replay with the original key: the replay is
+    # decided before the draft row lock, so the original Job still comes back.
+    provider.generate(
+        draft["id"],
+        _generation_body(draft),
+        request_id="request-preview-next",
+        idempotency_key="preview-next-key",
+    )
+    replay_after = provider.preview(
+        draft["id"], body, request_id="request-preview-after", idempotency_key="preview-key-1"
+    )
+    assert replay_after.job_id == first.job_id
+    assert voice_db.count("speech_jobs") == 3
+
+    with pytest.raises(VoiceDraftStaleRevisionError):
+        provider.preview(
+            draft["id"],
+            body,
+            request_id="request-preview-stale",
+            idempotency_key=None,
+        )
+    # An existing draft with an unknown revision is an invalid target, not a
+    # missing draft: 404 is reserved for the resource itself.
+    with pytest.raises(VoiceInputInvalidError):
+        provider.preview(
+            draft["id"],
+            _preview_body("9"),
+            request_id="request-preview-revision-missing",
+            idempotency_key=None,
+        )
+    with pytest.raises(VoiceDraftNotFoundError):
+        provider.preview(
+            "draft-missing",
+            body,
+            request_id="request-preview-draft-missing",
+            idempotency_key=None,
+        )
+
+
+def test_preview_requires_a_succeeded_generation_and_ready_preview(
+    voice_db: JobSandbox,
+) -> None:
+    provider = _provider(voice_db)
+    draft, job = provider.create(
+        "voice_design",
+        _body("design"),
+        request_id="request-preview-candidate",
+        idempotency_key=None,
+    )
+    body = _preview_body()
+    with pytest.raises(VoiceDraftNotCandidateError):
+        provider.preview(
+            draft["id"], body, request_id="request-preview-pending", idempotency_key=None
+        )
+    voice_db.jobs.advance(job.job_id, "running")
+    voice_db.jobs.advance(
+        job.job_id, "succeeded", result_json=_candidate_result(draft["id"], "design")
+    )
+    # The succeeded result names an Artifact that is not committed yet.
+    with pytest.raises(PublicJobUnavailableError):
+        provider.preview(
+            draft["id"], body, request_id="request-preview-no-artifact", idempotency_key=None
+        )
+    # A ready preview carrying another receipt is not the committed one.
+    _seed_preview_artifact(voice_db, receipt="receipt-other")
+    with pytest.raises(PublicJobUnavailableError):
+        provider.preview(
+            draft["id"], body, request_id="request-preview-wrong-receipt", idempotency_key=None
+        )
+    voice_db.admin.execute("DELETE FROM speech_artifacts WHERE artifact_id='preview-synthetic'")
+    _seed_preview_artifact(voice_db)
+    accepted = provider.preview(
+        draft["id"], body, request_id="request-preview-ready", idempotency_key=None
+    )
+    assert accepted.kind == "voice_preview"
+    assert voice_db.count("speech_jobs") == 2
+
+
+async def test_http_preview_is_fixed_to_the_head_revision(
+    voice_db: JobSandbox,
+) -> None:
+    provider, draft = _candidate_draft(voice_db)
+    app = create_app(settings=_settings(), jobs=voice_db.jobs, voice_drafts=provider)
+    path = "/v1/nexus/voice-drafts/" + draft["id"] + "/previews"
+    headers = {"Idempotency-Key": "http-preview-key"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        accepted = await http.post(path, json=_preview_body(), headers=headers)
+        assert accepted.status_code == 202, accepted.text
+        validate_response(
+            "createVoicePreview",
+            202,
+            {"body": accepted.json(), "headers": dict(accepted.headers)},
+        )
+        assert accepted.json()["kind"] == "voice_preview"
+        assert accepted.json()["status"] == "queued"
+        assert accepted.json()["result"] is None
+        replay = await http.post(path, json=_preview_body(), headers=headers)
+        assert replay.status_code == 202, replay.text
+        assert replay.json()["id"] == accepted.json()["id"]
+        assert voice_db.count("speech_jobs") == 2
+
+        empty = await http.post(path, json=_preview_body(text=""), headers=headers)
+        assert empty.status_code == 400, empty.text
+        assert empty.json()["error"]["code"] == "voice_draft_invalid_request"
+        assert empty.headers["cache-control"] == "no-store"
+        too_long = await http.post(
+            path, json=_preview_body(text="x" * 2001), headers={"Idempotency-Key": "preview-long"}
+        )
+        assert too_long.status_code == 400, too_long.text
+        mismatch = await http.post(
+            path,
+            json={**_preview_body(), "model": "other-model"},
+            headers={"Idempotency-Key": "preview-mismatch"},
+        )
+        assert mismatch.status_code == 422, mismatch.text
+        assert mismatch.json()["error"]["code"] == "voice_draft_input_unavailable"
+        unknown = await http.post(
+            "/v1/nexus/voice-drafts/draft-missing/previews",
+            json=_preview_body(),
+            headers={"Idempotency-Key": "preview-unknown"},
+        )
+        assert unknown.status_code == 404, unknown.text
+        assert unknown.json()["error"]["code"] == "voice_draft_not_found"
+
+        provider.generate(
+            draft["id"],
+            _generation_body(draft),
+            request_id="request-preview-http-next",
+            idempotency_key="preview-http-next-key",
+        )
+        stale = await http.post(
+            path, json=_preview_body(), headers={"Idempotency-Key": "preview-stale"}
+        )
+        assert stale.status_code == 409, stale.text
+        assert stale.json()["error"]["code"] == "voice_draft_conflict"
+
+
+async def test_succeeded_preview_projects_the_singular_artifact(
+    voice_db: JobSandbox,
+) -> None:
+    provider, draft = _candidate_draft(voice_db)
+    app = create_app(settings=_settings(), jobs=voice_db.jobs, voice_drafts=provider)
+    path = "/v1/nexus/voice-drafts/" + draft["id"] + "/previews"
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        accepted = await http.post(
+            path, json=_preview_body(), headers={"Idempotency-Key": "preview-projection"}
+        )
+        assert accepted.status_code == 202, accepted.text
+    job_id = accepted.json()["id"]
+    _seed_preview_artifact(
+        voice_db,
+        "preview-result",
+        receipt="receipt-preview-result",
+    )
+    voice_db.jobs.advance(job_id, "running")
+    voice_db.jobs.advance(
+        job_id,
+        "succeeded",
+        result_json=json.dumps(
+            {
+                "kind": "voice_preview",
+                "voice_draft_id": draft["id"],
+                "draft_revision": "1",
+                "preview_artifact_id": "preview-result",
+                "receipt_id": "receipt-preview-result",
+            }
+        ),
+    )
+    app = create_app(settings=_settings(), jobs=voice_db.jobs, voice_drafts=provider)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        read = await http.get("/v1/nexus/jobs/" + job_id)
+        assert read.status_code == 200, read.text
+        assert [item["artifact_id"] for item in read.json()["artifacts"]] == ["preview-result"]
+        assert read.json()["result"]["preview_artifact_id"] == "preview-result"
+        listed = await http.get("/v1/nexus/jobs", params={"kind": "voice_preview"})
+        assert listed.status_code == 200, listed.text
+        assert [item["id"] for item in listed.json()["data"]] == [job_id]
+
+
+@pytest.mark.parametrize(
+    ("result_artifact", "seed_state", "seed_receipt", "seed_artifact"),
+    [
+        ("preview-result", "ready", "receipt-preview-result", False),
+        ("preview-result", "expired", "receipt-preview-result", True),
+        ("preview-result", "ready", "receipt-other", True),
+    ],
+)
+async def test_preview_readback_requires_a_matching_ready_artifact(
+    voice_db: JobSandbox,
+    result_artifact: str,
+    seed_state: str,
+    seed_receipt: str,
+    seed_artifact: bool,
+) -> None:
+    provider, draft = _candidate_draft(voice_db)
+    job = provider.preview(
+        draft["id"],
+        _preview_body(),
+        request_id="request-preview-readback",
+        idempotency_key=None,
+    )
+    if seed_artifact:
+        _seed_preview_artifact(voice_db, result_artifact, receipt=seed_receipt, state=seed_state)
+    voice_db.jobs.advance(job.job_id, "running")
+    voice_db.jobs.advance(
+        job.job_id,
+        "succeeded",
+        result_json=json.dumps(
+            {
+                "kind": "voice_preview",
+                "voice_draft_id": draft["id"],
+                "draft_revision": "1",
+                "preview_artifact_id": result_artifact,
+                "receipt_id": "receipt-preview-result",
+            }
+        ),
+    )
+    app = create_app(settings=_settings(), jobs=voice_db.jobs, voice_drafts=provider)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        read = await http.get("/v1/nexus/jobs/" + job.job_id)
+        assert read.status_code == 503, read.text
+        assert read.json()["error"]["code"] == "job_unavailable"
+        listed = await http.get("/v1/nexus/jobs", params={"kind": "voice_preview"})
+        assert listed.status_code == 503, listed.text
+
+
+def test_preview_target_is_relocked_before_insert(
+    voice_db: JobSandbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider, draft = _candidate_draft(voice_db)
+    store = voice_db.jobs._store
+    original = store.create
+    captured: dict[str, NewPublicJob] = {}
+
+    def capture(job: NewPublicJob) -> Any:
+        captured.setdefault("job", job)
+        return original(job)
+
+    monkeypatch.setattr(store, "create", capture)
+    provider.preview(
+        draft["id"],
+        _preview_body(),
+        request_id="request-store-preview-1",
+        idempotency_key=None,
+    )
+    monkeypatch.setattr(store, "create", original)
+    provider.generate(
+        draft["id"],
+        _generation_body(draft),
+        request_id="request-store-preview-next",
+        idempotency_key=None,
+    )
+    probe = replace(captured["job"], job_id="job-stale-preview-probe")
     result = original(probe)
     assert result.outcome == "rejected"
     assert result.error_code == "stale"

@@ -1,7 +1,8 @@
-# 声音草稿创建、修订生成、校验与元数据
+# 声音草稿创建、修订生成、预览、校验与元数据
 
-对应 [#494](https://github.com/hrygo/SpeechNexus/issues/494) 与
-[#514](https://github.com/hrygo/SpeechNexus/issues/514)。公开源为
+对应 [#494](https://github.com/hrygo/SpeechNexus/issues/494)、
+[#514](https://github.com/hrygo/SpeechNexus/issues/514) 与
+[#495](https://github.com/hrygo/SpeechNexus/issues/495)。公开源为
 `contracts/speech-openapi.yaml` 与 `contracts/voice-resource.schema.json`；当前实现：
 
 | 操作 | 成功响应 |
@@ -11,6 +12,7 @@
 | `GET /v1/nexus/voice-drafts/{draft_id}` | 200，`VoiceDraftView` |
 | `PATCH /v1/nexus/voice-drafts/{draft_id}` | 200，`VoiceDraft` |
 | `POST /v1/nexus/voice-drafts/{draft_id}/generations` | 202，`VoiceGenerationAccepted` |
+| `POST /v1/nexus/voice-drafts/{draft_id}/previews` | 202，`Job` |
 | `POST /v1/nexus/voice-drafts/{draft_id}/validations` | 202，`Job` |
 
 创建请求保留现有 `model`、`input`、可选 workspace/client reference/constraints。
@@ -24,17 +26,17 @@ clone 必须明确 `source_use_confirmed: true`，输入素材须是对应 works
 写入口在提交前拒绝超出上限的存储文档，避免先写 Job 再回滚。
 
 Python 消费入口为 `speechnexus_contracts.voice_drafts_http`，TypeScript 为
-`@speechnexus/contracts/voice-drafts-http`。这两个入口选择上述六条方法；预览与发布操作
-仍由后续切片实现。Python HTTP 用例消费生成校验器；前端实际页面接入仍需消费者验证。
+`@speechnexus/contracts/voice-drafts-http`。这两个入口选择上述七条方法；发布操作仍由后续切片实现。Python HTTP 用例消费生成校验器；前端实际页面接入仍需消费者验证。
 
 ## 协议升级
 
-speech source 从 `0.1.0.dev9` 升至 `0.1.0.dev10`。六条由占位变为实现后，503 从
+speech source 当前为 `0.1.0.dev11`（#514 从 `dev9` 升至 `dev10`，#495 升至
+`dev11`）。七条由占位变为实现后，503 从
 `OperationNotImplemented` 换成与 `retireVoiceRevision` 同形的内联声明：`error.code` 为
 `voice_draft_unavailable` / `voice_draft_outcome_unknown`，保留必需的
 `Cache-Control: no-store` 与 `X-Should-Retry: true`，`retryable` 为 `const true`。
 `check-openai-contract-compat.py` 允许基线为占位 503 的 response 整体替换，前提是替换物
-仍是带必需缓存头与 `ErrorResponse` 信封的可重试 503；六条因此通过兼容门禁，不需要放宽
+仍是带必需缓存头与 `ErrorResponse` 信封的可重试 503；七条因此通过兼容门禁，不需要放宽
 基线或修改检查器。
 
 创建入参的 `language` 按请求契约执行：`type: string`、`maxLength: 35`，不按
@@ -42,7 +44,7 @@ speech source 从 `0.1.0.dev9` 升至 `0.1.0.dev10`。六条由占位变为实�
 均可创建。落库与修订回显使用同一规范化：主语言子标签转小写（`EN-US` → `en-US`），
 无法表示为公开 `LanguageTag` 的值回退为 BCP 47 `und`（`english`、`x!`）；原始请求仍保留
 在 Job intent 中。这样请求契约不拒绝调用方，响应也不会违反既有 `LanguageTag`。
-空白字符串和超过 35 字符的输入在提交前 400 且不落库。六条另声明
+空白字符串和超过 35 字符的输入在提交前 400 且不落库。七条另声明
 `500 voice_draft_contract_violation`（`api_error`、`retryable: false`）：自产响应违反契约时
 按实现缺陷返回 500，而不是伪装成可重试 503；错误响应本身也过同一生成校验器。新增声明
 Host/Origin 403，以及草稿读取的无效输入 400。旧消费者应先升级生成包和 503/500 判定，
@@ -71,6 +73,28 @@ revision)` 为主键，`generation_job_id` 唯一，输入和 binding 固定保�
 `validation_report_artifact_id` 与 `receipt_id`，并存在同 workspace、ready、
 `validation_report` kind 且回执匹配的 Artifact；单读与分页批读共用该规则。失败、取消或
 过期 Job 本身仍按 Job 契约返回 named failure，不伪造校验通过。
+
+`createVoicePreview` 只预览当前 head 上的候选声音：draft 必须存在且 kind 为
+`design`/`clone`（否则 404/400），`expected_draft_revision` 必须等于 head（否则 409
+`voice_draft_stale_revision`），关联 generation Job 必须 succeeded 且结果的 receipt 与全部
+ready preview Artifact 匹配（否则 422 `voice_draft_not_candidate` 或 503
+`voice_draft_unavailable`）。`text` 的长度 1..2000 由请求契约在入站处校验，越界返回 400。
+预览 Job 以 `voice_preview` kind 提交，输入固定为
+`{voice_draft_id, draft_revision, text}`，binding 取目标修订已发布绑定的 pinned 引用；
+省略 `model` 时从绑定 `logical_model` 推导，显式不一致返回 422
+`voice_draft_input_unavailable`。
+
+`voice_preview` Job 停在 `pending`，本切片不派发、不产音频；`DISPATCHABLE_JOB_KINDS`
+仍为 `("asr", "tts")`，kind 过滤让预览行不占批次也不毒化同批 ASR/TTS。执行消费者仍是
+[#512](https://github.com/hrygo/SpeechNexus/issues/512)。读取按单数
+`preview_artifact_id` 权威回读：Job 必须 succeeded，Artifact 必须同 workspace、ready、
+`preview` kind 且 receipt 匹配；缺失或非 ready 时 `GET /v1/nexus/jobs/{job_id}` 与列表
+返回 503，不把伪造结果投影成成功。生成结果的复数 `preview_artifact_ids` 规则不变，
+两条 resolver 不共用字段名。
+
+带 `Idempotency-Key` 的预览在进入任何行锁之前先按 key 查原 Job，因此 head 推进后同键重放
+仍返回原 Job，不新增第二个预览 Job。新建路径随后在草稿行锁内重新比较 head 并要求
+generation Job succeeded；锁后重放不再参与该判定。
 
 通用 `POST /v1/nexus/jobs` 可提交 `voice_validation`，但重试带 `draft_target` 的生成 Job
 会被拒绝，避免把修订追加误当成新草稿生成。
@@ -128,7 +152,7 @@ CHECK 内。尝试通过 PATCH 改状态、输入或生成结果返回 422，且
 这一区分同时约束契约和生成包，不通过放宽 503 重试声明来换取占位门禁通过。
 
 公开响应不含引擎句柄、特征向量、音频 base64、对象键或内部模型路径；错误使用固定文案。
-新生成、预览、校验和发布端口仍由后续切片实现。Job/outbox 接受不等于真实模型已执行；
+生成、修订、预览与校验已由本组件提供；发布端口仍由后续切片实现。Job/outbox 接受不等于真实模型已执行；
 现有生产 dispatch planner、真实引擎、资源准入和目标拓扑资格仍须各自验收。
 
 草稿的生成 Job 仍写入协调 Job 与 outbox，但本执行单元只规划 ASR/TTS：`DispatchJob`
@@ -140,11 +164,12 @@ voice 协调行保持 pending，等待后续声音执行切片接入；当前 di
 
 ## 迁移与生产装配
 
-主干最新已合并迁移为 `0042_drop_superseded_job_index`。`0043_voice_draft_revisions`
-直接接在 `0042` 之后，不回写既有迁移；`alembic heads` 只有 0043。迁移增加
+`0043_voice_draft_revisions` 接在 `0042` 之后，增加
 `speech_voice_draft_revisions`，把既有草稿的当前 head 回填为 revision 1，并将 Job kind
-CHECK 扩展到 `voice_validation`。有 validation Job 时 downgrade 的窄 CHECK 会拒绝，
-防止静默丢失历史。
+CHECK 扩展到 `voice_validation`。`0044_voice_preview_jobs` 只把同一 CHECK 再扩展到
+`voice_preview`，不改表、索引或授权；`alembic heads` 只有 0044。两版 downgrade 都先恢复
+窄 CHECK：有 validation 或 preview Job 时数据库拒绝，或迁移显式报出
+`voice_preview` 行数，防止静默丢失历史。
 
 `create_app` 在既有 `JobRuntime` 里用同一 PG pool 装配 `VoiceDrafts` 与
 `PostgresVoiceDrafts`。沿用 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL` 和显式 schema。
@@ -152,7 +177,7 @@ CHECK 扩展到 `voice_validation`。有 validation Job 时 downgrade 的窄 CHE
 提交权限。运行角色对修订表只有 SELECT/INSERT；草稿表仅能 UPDATE display name、metadata revision、
 更新时间、head revision 和 generation Job；不授予 status/input/binding 更新或历史删除。
 启动校验列级权限，并对修订表逐列拒绝 UPDATE，同时拒绝 DELETE；不执行 DDL。
-旧 Job writer 必须同步迁移和授权后升级；未配置 provider 时六条返回真实 503。
+旧 Job writer 必须同步迁移和授权后升级；未配置 provider 时七条返回真实 503。
 
 `voice_validation` 的 target binding revision 必须在 `definition` 中声明
 `logical_model`，且 `tasks` 包含 `voice_validation`；缺失或未发布时提交返回 422
@@ -171,11 +196,16 @@ CHECK 扩展到 `voice_validation`。有 validation Job 时 downgrade 的窄 CHE
 泛化 Job 的 binding 注入与 404/409/422、损坏校验结果读取为 503，以及正式 lifespan 权限
 装配。`test_voice_draft_revisions_migration_pg.py` 单独验证 0043 回填、同一 schema 内 kind
 CHECK 过滤，以及有 validation Job 时 downgrade 拒绝且保留 0043。
+`test_voice_draft_previews_migration_pg.py` 验证 0044 只扩 kind、upgrade/downgrade/upgrade
+往返，以及存在 preview Job 时 downgrade 明确报错且保留 0044。预览用例覆盖同键重放跨 head
+推进、stale/unknown draft/unknown revision、候选与 receipt/ready 门槛、HTTP 400/404/409/422
+形状，以及 succeeded 预览 Job 在 GET 与列表上的单数 Artifact 投影。
 缺 `SPEECHNEXUS_TEST_DATABASE_URL` 时 pytest.fail；不能把缺配置当作通过。
 
 本轮在隔离 PostgreSQL 上实际执行了草稿、混合派发与 HTTP 用例；这是单库实测，不等于
 双库或目标部署验收。真实生成、Linux/CUDA、双库和正式页面接入仍未据此验收。路由门禁
-未实现基线由 **15 降至 13**（本切片移除两条），契约中指向占位组件的 503 由 11 降至 9。
+未实现基线由 **13 降至 12**（本切片移除 `createVoicePreview`），契约中指向占位组件的 503 由
+9 降至 8。
 历史审计保留原时点记录，当前结果以门禁输出为准。
 
 验证入口：
@@ -185,4 +215,5 @@ make contracts-route-conformance
 make contracts-check contracts-drift
 uv run pytest tests/unit/backend/test_voice_creation_jobs.py tests/unit/backend/test_voice_drafts_http.py
 SPEECHNEXUS_TEST_DATABASE_URL=... uv run pytest tests/integration/test_voice_drafts_pg.py
+SPEECHNEXUS_TEST_DATABASE_URL=... uv run pytest tests/integration/test_voice_draft_previews_migration_pg.py
 ```

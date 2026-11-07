@@ -16,7 +16,6 @@ from speechnexus_backend.speech.application.public_jobs import (
     ModelBindingError,
     ModelNotPublishedError,
     PublicJobs,
-    UnsupportedJobKindError,
     VoiceNotPublishedError,
     WorkspaceFact,
 )
@@ -273,7 +272,8 @@ def test_explicit_contract_defaults_are_the_same_canonical_intent() -> None:
 
 def test_unknown_or_unpublished_facts_are_rejected() -> None:
     service, facts, _ = _service()
-    with pytest.raises(UnsupportedJobKindError):
+    # A preview Job is a supported kind now, but its target revision must exist.
+    with pytest.raises(PublicJobNotFoundError):
         service.submit(
             parse(
                 "JobCreateRequest",

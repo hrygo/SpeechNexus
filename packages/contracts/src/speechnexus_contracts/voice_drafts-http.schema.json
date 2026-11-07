@@ -381,6 +381,83 @@
         }
       }
     },
+    "createVoicePreview": {
+      "path": "/v1/nexus/voice-drafts/{draft_id}/previews",
+      "method": "post",
+      "request": "HttpRequest_createVoicePreview",
+      "parameters": {
+        "path": {
+          "draft_id": "string"
+        },
+        "query": {},
+        "headers": {
+          "x-request-id": "string",
+          "idempotency-key": "string"
+        }
+      },
+      "responses": {
+        "202": {
+          "schema": "HttpResponse_createVoicePreview_202",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_createVoicePreview_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_createVoicePreview_401",
+          "headers": {},
+          "json": true
+        },
+        "403": {
+          "schema": "HttpResponse_createVoicePreview_403",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_createVoicePreview_404",
+          "headers": {},
+          "json": true
+        },
+        "405": {
+          "schema": "HttpResponse_createVoicePreview_405",
+          "headers": {
+            "allow": "string"
+          },
+          "json": true
+        },
+        "409": {
+          "schema": "HttpResponse_createVoicePreview_409",
+          "headers": {},
+          "json": true
+        },
+        "422": {
+          "schema": "HttpResponse_createVoicePreview_422",
+          "headers": {},
+          "json": true
+        },
+        "500": {
+          "schema": "HttpResponse_createVoicePreview_500",
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_createVoicePreview_503",
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
+          "json": true
+        }
+      }
+    },
     "validateVoiceDraftRevision": {
       "path": "/v1/nexus/voice-drafts/{draft_id}/validations",
       "method": "post",
@@ -513,6 +590,17 @@
     "HttpResponse_generateVoiceDraftRevision_422",
     "HttpResponse_generateVoiceDraftRevision_500",
     "HttpResponse_generateVoiceDraftRevision_503",
+    "HttpRequest_createVoicePreview",
+    "HttpResponse_createVoicePreview_202",
+    "HttpResponse_createVoicePreview_400",
+    "HttpResponse_createVoicePreview_401",
+    "HttpResponse_createVoicePreview_403",
+    "HttpResponse_createVoicePreview_404",
+    "HttpResponse_createVoicePreview_405",
+    "HttpResponse_createVoicePreview_409",
+    "HttpResponse_createVoicePreview_422",
+    "HttpResponse_createVoicePreview_500",
+    "HttpResponse_createVoicePreview_503",
     "HttpRequest_validateVoiceDraftRevision",
     "HttpResponse_validateVoiceDraftRevision_202",
     "HttpResponse_validateVoiceDraftRevision_400",
@@ -2992,6 +3080,25 @@
         }
       }
     },
+    "VoicePreviewRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected_draft_revision", "text"],
+      "properties": {
+        "expected_draft_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 128
+        }
+      }
+    },
     "VoiceValidationRequest": {
       "type": "object",
       "additionalProperties": false,
@@ -4350,6 +4457,279 @@
       "required": ["headers", "body"]
     },
     "HttpResponse_generateVoiceDraftRevision_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "true"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
+          "additionalProperties": true
+        },
+        "body": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "enum": ["voice_draft_unavailable", "voice_draft_outcome_unknown"]
+                    },
+                    "type": {
+                      "const": "service_unavailable_error"
+                    },
+                    "retryable": {
+                      "const": true
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpRequest_createVoicePreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "draft_id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": ["draft_id"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "idempotency-key": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/VoicePreviewRequest"
+        }
+      },
+      "required": ["path", "body"]
+    },
+    "HttpResponse_createVoicePreview_202": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/Job"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createVoicePreview_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createVoicePreview_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createVoicePreview_403": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createVoicePreview_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createVoicePreview_405": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "string"
+            }
+          },
+          "required": ["allow"],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpResponse_createVoicePreview_409": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createVoicePreview_422": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createVoicePreview_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "false"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
+          "additionalProperties": true
+        },
+        "body": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "voice_draft_contract_violation"
+                    },
+                    "type": {
+                      "const": "api_error"
+                    },
+                    "retryable": {
+                      "const": false
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpResponse_createVoicePreview_503": {
       "type": "object",
       "additionalProperties": false,
       "properties": {

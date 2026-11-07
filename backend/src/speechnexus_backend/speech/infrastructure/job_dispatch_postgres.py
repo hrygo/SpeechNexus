@@ -479,9 +479,10 @@ class PostgresDispatchStateStore:
 
 
 class PostgresLeaseSettler:
-    """Return a settled public Job's capacity through the existing lease service.
+    """Return a settled or cancelled public Job's capacity through the lease service.
 
-    The dispatcher owns settlement for asr/tts: a terminal Job that kept its
+    The dispatcher owns terminal settlement for asr/tts and cancellation
+    reconciliation owns it after a verified stop: either way, a Job that kept its
     admission lease would hold the attempt and every physical slot forever.
     Release remains a ``LeaseService`` decision over the original identity; this
     adapter only resolves the single lease, supplies its current version and
@@ -500,7 +501,12 @@ class PostgresLeaseSettler:
 
     async def release(self, operation_id: str) -> bool:
         identifier(operation_id)
-        return await asyncio.to_thread(self._release, operation_id)
+        return await asyncio.to_thread(self.release_sync, operation_id)
+
+    def release_sync(self, operation_id: str) -> bool:
+        """Blocking form for callers that already run their own storage step."""
+        identifier(operation_id)
+        return self._release(operation_id)
 
     def _lease_id(self, operation_id: str) -> str | None:
         try:

@@ -34,6 +34,9 @@ from speechnexus_backend.speech.domain.job_dispatch import (
     submit_intent_identity,
 )
 from speechnexus_backend.speech.domain.public_jobs import PublicJobNotFoundError
+from speechnexus_backend.speech.infrastructure.coordination_grants import (
+    coordination_runtime_grants,
+)
 from speechnexus_backend.speech.infrastructure.gateway_cancellation_confirmation import (
     GatewayCancellationConfirmer,
 )
@@ -503,7 +506,12 @@ async def test_cancellation_before_submit_converges(
             return None
 
         async def query_document(self, submit_intent_id: str) -> dict[str, Any]:
-            raise GatewayRejectedError("missing", request_may_have_run=False, status_code=404)
+            raise GatewayRejectedError(
+                "missing",
+                request_may_have_run=False,
+                status_code=404,
+                gateway_code="control_execution_not_found",
+            )
 
     monkeypatch.setattr(
         GatewayExecutionClient,
@@ -578,6 +586,16 @@ async def test_composed_runtime_settles_and_restart_converges(
         "from_settings",
         classmethod(lambda cls, settings: Client()),
     )
+    # The runtime settles and then returns capacity through the same lease
+    # service the dispatcher uses; production grants that to the shared runtime
+    # role. Apply only that role's half of the coordination set.
+    for grant in coordination_runtime_grants(
+        jobs_db.schema,
+        speech_role=jobs_db.role,
+        gateway_role=jobs_db.role + "_unused",
+    ):
+        if f'"{jobs_db.role}"' in grant:
+            jobs_db.admin.execute(grant)
     settings = JobCancellationSettings(
         enabled=True,
         database_url=make_conninfo(jobs_db.url, user=jobs_db.role, password=PASSWORD),

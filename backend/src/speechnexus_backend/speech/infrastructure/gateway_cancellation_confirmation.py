@@ -32,6 +32,7 @@ from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
     GatewayTimeoutError,
 )
 
+_NOT_FOUND = "control_execution_not_found"
 _ACTIVE = frozenset({"submitting", "executing", "stopping"})
 _STOP_EVIDENCE = frozenset(
     {
@@ -95,11 +96,12 @@ class GatewayCancellationConfirmer:
                 try:
                     document = await client.query_document(submit_intent_id)
                 except GatewayRejectedError as error:
-                    if error.status_code == 404:
-                        # A 404 alone is not no-execution evidence: the dispatcher
-                        # may not have attempted submit yet. It becomes sufficient
-                        # only with the dispatcher's persisted observation that it
-                        # saw the accepted cancellation before submitting.
+                    if error.status_code == 404 and error.gateway_code == _NOT_FOUND:
+                        # A contract 404 alone is not no-execution evidence: the
+                        # dispatcher may not have attempted submit yet. It becomes
+                        # sufficient only with the dispatcher's persisted
+                        # observation that it saw the accepted cancellation before
+                        # submitting. A bare router/proxy 404 proves nothing.
                         return self._settle(job_id) if not_submitted else Confirmation("pending")
                     return Confirmation("unavailable")
                 except GatewayConnectionError, GatewayTimeoutError, GatewayServerError:

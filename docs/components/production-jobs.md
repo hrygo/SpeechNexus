@@ -180,8 +180,13 @@ warning（stdout 的批次 JSON 字段保持不变）。可用以下只读查询
 ```sql
 SELECT l.lease_id, l.operation_id, j.state
 FROM admission_leases AS l JOIN speech_jobs AS j ON j.job_id = l.operation_id
-WHERE j.state IN ('succeeded','failed') AND l.lease_state <> 'released';
+WHERE j.state IN ('succeeded','failed','cancelled') AND l.lease_state <> 'released';
 ```
+
+取消结算同样归还容量：`settle_cancelled` 提交 `cancelled` 后按原 `lease_id` 走同一
+`LeaseService.release`（幂等）。释放被拒绝、结果未知或存储不可用时，该次结算返回
+未完成，对账账本按退避重试同一个已 `cancelled` 的 Job，直到释放成功或 `max_attempts`
+用尽；期间租约保持 held，上面的查询会列出该行。
 
 冻结期限过后再留 60 秒结算窗口，仍被持有且无 settlement 根时，preflight 拒绝 API
 启动，因此这一窗口最迟在期限后被运营侧发现；在此之前由该查询或日志人工巡检。
@@ -258,18 +263,26 @@ request ID，不覆盖他人事实。
 `engine_terminal_response`、`instance_terminated_by_controller`、
 `operator_verified_instance_terminated` 白名单内。执行仍活跃、已 `succeeded`、
 传输失败或证据不全都不结算，分别有界重试或进入终止未确认。单独的 404 从不是
-停止证据；只有与派发器的 not-submitted 观察同时存在时，404 才被当作无执行事实。
+停止证据；只有与派发器的 not-submitted 观察同时存在时，404 才被当作无执行事实；
+空 body 的 router/proxy 404（不含 `control_execution_not_found`）也不是该事实，
+按不可用重试。
+
+结算提交 `cancelled` 后，组合根以原 `lease_id` 调 `LeaseService.release`（`PostgresLeaseSettler`
+解析唯一租约并重放版本冲突）。释放成功才把本轮记为 `settled`；被拒绝、未知或存储异常
+时返回未完成，账本按退避重试该行（Job 已是 `cancelled` 时重试只做释放），`max_attempts`
+用尽后停止重试并保留 held 租约，由上面的只读查询与 preflight 暴露。取消受理本身仍不
+直接释放容量：只有完成上述无执行或停止证据后，释放才发生。
 
 迁移 `0035_job_cancellation_fences` 的 `down_revision` 是
 `0034_public_job_cancellations`，形成单一 head；down 在 reconcile 账本、not-submitted
 观察或围栏仍有行时拒绝删除，要求先保留或导出证据。`public_job_grants` 为 API Job writer
 授予围栏 SELECT/INSERT 与 `speech_artifacts` 的 SELECT；`job_dispatch_grants` 的取消围栏部分只授予派发器对 not-submitted 表的 INSERT，其 Job 写入部分另含 `admission_operations` INSERT 与 `speech_job_intents` 的 SELECT/INSERT；
 worker 角色使用 `public_job_grants` 与 `cancellation_reconciliation_grants`（围栏列 SELECT、
-对账账本 SELECT/INSERT/列级 UPDATE、not-submitted SELECT）。派发器的终态结算还需要
-`coordination_runtime_grants` 给出的 `admission_leases`/`admission_attempts`/
+对账账本 SELECT/INSERT/列级 UPDATE、not-submitted SELECT）。派发器的终态结算与取消对账
+的释放都需要 `coordination_runtime_grants` 给出的 `admission_leases`/`admission_attempts`/
 `workspace_quotas`/`host_nodes`/`engine_instances` 读取与版本列 UPDATE、
 `submit_intents` 的受限列 SELECT、`execution_stop_evidence` SELECT 和
-`execution_release_guards` 视图列 SELECT。gateway 写角色在
+`execution_release_guards` 视图列 SELECT；两者使用同一 runtime 角色时只安装一次。gateway 写角色在
 `coordination_runtime_grants` 之外还须安装 `gateway_cancellation_fence_grants` 以获得围栏
 `job_id` 列 SELECT（提交只判断存在性），独立执行读取器使用同一函数。
 
@@ -278,10 +291,11 @@ worker 角色使用 `public_job_grants` 与 `cancellation_reconciliation_grants`
 1. `PostgresPublicJobs.cancel` 在写入 `cancelling`、事件和 receipt 后，于同一事务调用
    `write_cancellation_fence`；它是该事务最后一个会等待锁的写入，之后不再取
    `admission_leases`/`runtime_instance*` 行锁。
-2. `job_cancellation_runtime.py` 把 `PublicJobs`、PG 对账账本、
+2. `job_cancellation_runtime.py` 把 `PublicJobs`、PG 对账账本、`PostgresLeaseSettler`、
    `GatewayCancellationConfirmer` 和 `CancellationReconciliationWorker` 装配在一起；
-   `settle_cancelled` 走 `PublicJobs` 的 `status_version` 条件更新，活跃执行通过
-   `JobCancellationService` + `GatewayJobCancellationStopper` 注入一次有界停止尝试。
+   `settle_cancelled` 走 `PublicJobs` 的 `status_version` 条件更新并随后归还租约，活跃
+   执行通过 `JobCancellationService` + `GatewayJobCancellationStopper` 注入一次有界停止
+   尝试。
 3. 派发器在提交点前观察到 Job 已是 `cancelling` 时写入 not-submitted 观察并返回
    `claim_lost`；收到 `gateway_barrier_fenced` 且 Job 仍是 `cancelling` 时返回 `skipped`，
    不调用 `_fail`。两种情况都由对账 worker 以网关“没有执行”事实结算为 `cancelled`。

@@ -31,12 +31,17 @@ from tests.integration.test_public_job_atomic_admission_pg import (
     _store,
 )
 
+from speechnexus_backend.job_cancellation_runtime import _PublicJobsSettlement
 from speechnexus_backend.job_dispatch_runtime import (
     JobDispatchSettings,
     build_dispatch_dependencies,
 )
 from speechnexus_backend.job_dispatch_worker import _main
+from speechnexus_backend.speech.application.job_cancellation_reconciliation import (
+    JobCancellationReconciler,
+)
 from speechnexus_backend.speech.application.job_dispatcher import JobDispatcher
+from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.domain.job_dispatch import (
     DispatchJob,
     DispatchLimits,
@@ -50,8 +55,15 @@ from speechnexus_backend.speech.domain.public_jobs import PublicJob
 from speechnexus_backend.speech.infrastructure.execution_gateway_adapter import (
     ExecutionGatewayAdapter,
 )
+from speechnexus_backend.speech.infrastructure.gateway_cancellation_confirmation import (
+    GatewayCancellationConfirmer,
+)
 from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
     GatewayExecutionClient,
+    GatewayRejectedError,
+)
+from speechnexus_backend.speech.infrastructure.job_cancellation_reconciliation_postgres import (
+    PostgresCancellationReconciliationStore,
 )
 from speechnexus_backend.speech.infrastructure.job_dispatch_postgres import (
     PostgresDispatchQueue,
@@ -662,3 +674,107 @@ async def test_preflight_still_covers_live_public_asr_and_tts(
         require_complete_tts_roots(_pool(admission_database))
     db.query("UPDATE admission_leases SET deadline_at_us=%s", (2**62,))
     require_complete_tts_roots(_pool(admission_database))
+
+
+_UNSETTLED_LEASES = (
+    "SELECT l.lease_id, l.operation_id, j.state "
+    "FROM admission_leases AS l JOIN speech_jobs AS j ON j.job_id = l.operation_id "
+    "WHERE j.state IN ('succeeded','failed','cancelled') AND l.lease_state <> 'released' "
+    "ORDER BY l.lease_id"
+)
+
+
+async def test_cancellation_settlement_returns_the_admission_lease(
+    admission_database: AdmissionDatabase, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A normal cancellation must not leak the attempt and physical slots.
+
+    The admission lease is the only capacity record; a cancelled Job that keeps
+    it would eventually drain the quota and make the API refuse to start once the
+    frozen deadline passed. The documented operator query must also see the
+    cancelled-but-held row while it lasts.
+    """
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    pool = _pool(admission_database)
+    _asset(db)
+    db.query(
+        f'GRANT SELECT ON "{db.schema}".speech_tts_settlement '
+        f'TO "{admission_database.runtime.foundation.speech_role}"'
+    )
+    baseline = _capacity_snapshot(db)
+    store = _store(admission_database)
+    jobs = PublicJobs(store, store)
+    created = _submit(store, db, kind="asr", key="dispatch-cancel-release")
+    assert created.outcome == "created", created.error_code
+    job_id = created.job.job_id
+    lease_id = _lease(db, job_id)["lease_id"]
+    assert _lease(db, job_id)["lease_state"] == "reserved"
+
+    jobs.cancel(job_id, request_id="req-cancel-release", idempotency_key=None)
+    db.query(
+        "INSERT INTO speech_job_cancellation_not_submitted (job_id, observed_at_us, observer) "
+        "VALUES (%s, %s, 'worker-a')",
+        (job_id, _now_us(db)),
+    )
+    past = _now_us(db) - 61_000_000
+    db.query(
+        "UPDATE admission_leases SET deadline_at_us = %s WHERE operation_id = %s", (past, job_id)
+    )
+    # The leak as measured before the fix: settlement alone leaves the lease held,
+    # the documented query hides cancelled rows, and a restart is refused.
+    current = jobs.get(job_id)
+    assert current is not None
+    assert (
+        jobs.settle_cancelled(job_id, expected_version=current.status_version).state == "cancelled"
+    )
+    assert _lease(db, job_id)["lease_state"] == "reserved"
+    assert db.query(_UNSETTLED_LEASES) == [
+        {"lease_id": lease_id, "operation_id": job_id, "state": "cancelled"}
+    ]
+    with pytest.raises(ValueError, match="reconcile first"):
+        require_complete_tts_roots(pool)
+
+    class MissingClient:
+        async def __aenter__(self) -> MissingClient:
+            return self
+
+        async def __aexit__(self, *exc_info: object) -> None:
+            return None
+
+        async def query_document(self, submit_intent_id: str) -> dict[str, Any]:
+            raise GatewayRejectedError(
+                "missing",
+                request_may_have_run=False,
+                status_code=404,
+                gateway_code="control_execution_not_found",
+            )
+
+    monkeypatch.setattr(
+        GatewayExecutionClient,
+        "from_settings",
+        classmethod(lambda cls, settings: MissingClient()),
+    )
+    capacity = PostgresLeaseSettler(pool, timeout_seconds=3)
+    settlement = _PublicJobsSettlement(jobs, capacity.release_sync)
+    reconciler = JobCancellationReconciler(
+        store=PostgresCancellationReconciliationStore(pool),
+        confirmer=GatewayCancellationConfirmer(cast(Any, object()), settlement),
+        min_age_seconds=0,
+        max_attempts=3,
+    )
+    batch = await reconciler.run_once(now_us=_now_us(db) + 1_000_000)
+
+    assert batch.claimed == 1 and batch.settled == 1
+    assert _read(store, job_id).state == "cancelled"
+    assert _lease(db, job_id) == {
+        "lease_id": lease_id,
+        "lease_state": "released",
+        "cleanup_state": "complete",
+    }
+    _assert_capacity_returned(baseline, _capacity_snapshot(db))
+    assert capacity.release_sync(job_id) is True
+    assert _capacity_snapshot(db) == baseline
+    assert db.query(_UNSETTLED_LEASES) == []
+    # A restarted API accepts the long-expired deadline: nothing is held.
+    require_complete_tts_roots(pool)

@@ -682,3 +682,25 @@ def test_design_validation_is_rejected_with_the_candidate_error(
             idempotency_key=None,
         )
     assert error.value.code == "voice_draft_not_candidate"
+
+
+def test_expired_reference_asset_is_a_candidate_refusal_not_a_500(
+    validation_db: ValidationSandbox,
+) -> None:
+    sandbox = validation_db
+    draft, _generation, _preview = _create_generation(sandbox)
+    sandbox.db.query(
+        "UPDATE speech_assets SET asset_state='expired' WHERE asset_id=%s",
+        (REFERENCE_ASSET,),
+    )
+    with pytest.raises(JobAdmissionRejectedError) as error:
+        sandbox.drafts.validate(
+            draft["id"],
+            {
+                "expected_draft_revision": draft["head_revision"],
+                "validation_set_revision": "1",
+            },
+            request_id="request-expired-asset",
+            idempotency_key=None,
+        )
+    assert error.value.code == "asset_not_ready"

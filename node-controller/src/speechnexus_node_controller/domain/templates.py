@@ -28,6 +28,9 @@ _TEMPLATE_ID_PREFIX: Final = "template-"
 MIN_CONTAINER_MEMORY_BYTES: Final = 6 * 1024**2
 _HEALTH_PATH: Final = re.compile(r"/[A-Za-z0-9_.~/-]*")
 _DIGEST: Final = re.compile(r"sha256:[0-9a-f]{64}")
+_ENVIRONMENT_NAME: Final = re.compile(r"[A-Z][A-Z0-9_]{0,63}")
+_VARIANT_SLOT: Final = re.compile(r"[a-z][a-z0-9-]{2,63}")
+_MAX_ENVIRONMENT_VALUE = 1024
 
 
 class ReadinessKind(StrEnum):
@@ -173,6 +176,8 @@ class ApprovedRuntimeTemplate:
     read_only_binds: tuple[ReadOnlyBind, ...] = ()
     network_name: str | None = None
     engine_auth: EngineAuthKind = EngineAuthKind.NONE
+    environment: tuple[tuple[str, str], ...] = ()
+    variant_slot: str | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.template_id, "template_id")
@@ -208,6 +213,32 @@ class ApprovedRuntimeTemplate:
                 raise ValueError("approved argv cannot override native engine authentication")
         if self.gpu_device_count < 0:
             raise ValueError("gpu_device_count must not be negative")
+        if self.environment:
+            names = [name for name, _ in self.environment]
+            if (
+                len(set(names)) != len(names)
+                or any(
+                    type(name) is not str or _ENVIRONMENT_NAME.fullmatch(name) is None
+                    for name in names
+                )
+                or any(
+                    type(value) is not str
+                    or not 1 <= len(value) <= _MAX_ENVIRONMENT_VALUE
+                    or any(not 32 <= ord(char) < 127 for char in value)
+                    for _, value in self.environment
+                )
+                # The per-generation native credential is supplied by the
+                # controller and may never be overridden by a template.
+                or any(name.startswith("VLLM_API_KEY") for name in names)
+            ):
+                raise ValueError(
+                    "template environment must be unique printable name/value pairs "
+                    "without the native credential"
+                )
+        if self.variant_slot is not None and (
+            type(self.variant_slot) is not str or _VARIANT_SLOT.fullmatch(self.variant_slot) is None
+        ):
+            raise ValueError("variant_slot must name an approved exclusive variant group")
         if self.network_name is not None and (
             re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", self.network_name) is None
             or self.network_name in {"host", "none", "default", "bridge"}

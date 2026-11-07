@@ -1,0 +1,15 @@
+{
+  "protocol": "vllm_api_key_v1",
+  "target": {
+    "host_node_id": "node-local-1",
+    "gateway_id": "gateway-1",
+    "pool_id": "voice-creation",
+    "instance_id": "instance-voice-design-1",
+    "instance_generation": 1,
+    "binding_revision_id": "binding-revision-voice-design-compose-example"
+  },
+  "address": "10.0.0.12",
+  "port": 18102,
+  "served_model": "voice-design-compose-example",
+  "bearer_token": "0000000000000000000000000000000000000000000000000000000000000000"
+}

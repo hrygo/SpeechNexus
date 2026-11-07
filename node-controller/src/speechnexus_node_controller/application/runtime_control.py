@@ -36,6 +36,7 @@ from speechnexus_node_controller.domain.intents import (
     StaleInstanceGenerationError,
     TargetNodeMismatchError,
     UnapprovedRuntimeTemplateError,
+    VariantExclusivityError,
     require_identifier,
 )
 from speechnexus_node_controller.domain.ports import (
@@ -292,6 +293,8 @@ class NodeRuntimeControlService:
                 f"template {template.template_id} is not approved for pool {request.pool_id}"
             )
         self._require_reservation_within_template(request, template)
+        if request.action is RuntimeActionKind.PREPARE and template.variant_slot is not None:
+            self._require_exclusive_variant(request, template)
 
         head = self.head(request.instance_id)
         if request.fencing_token < head.last_fencing_token:
@@ -313,6 +316,35 @@ class NodeRuntimeControlService:
                     f"generation {head.current_generation} has not been stopped with evidence"
                 )
         return template
+
+    def _require_exclusive_variant(
+        self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+    ) -> None:
+        """Refuse a second non-drained instance of the same exclusive variant slot.
+
+        The verified engine keeps one TTS variant resident per node: a second one
+        fails at load with a CUDA OOM, and the engine validates a checkpoint for
+        exactly one task. Switching variants is therefore a stop-then-prepare
+        action; a drained instance of the slot releases it for the other variant.
+        """
+        for instance_id in self._store.list_instances():
+            if instance_id == request.instance_id:
+                continue
+            held = self._store.list_for_instance(instance_id)
+            if not any(
+                self._holds_slot(intent.request.approved_template_id, template) for intent in held
+            ):
+                continue
+            if InstanceHead.derive(instance_id, held).is_drained:
+                continue
+            raise VariantExclusivityError(
+                f"variant slot {template.variant_slot} is still held by instance {instance_id}"
+            )
+
+    def _holds_slot(self, template_id: str, template: ApprovedRuntimeTemplate) -> bool:
+        if not self._templates.contains(template_id):
+            return False
+        return self._templates.require(template_id).variant_slot == template.variant_slot
 
     def _unresolved(
         self, instance_id: str, instance_generation: int

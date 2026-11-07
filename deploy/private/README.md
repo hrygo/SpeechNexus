@@ -26,6 +26,13 @@ The mapping restricts execution and does not grant publication or qualification.
 Stop the old worker before activating the replacement snapshot; v1 is rejected.
 See [TTS deployment](../../docs/operations/file-tts-runtime.md).
 
+The VoiceDesign gateway requires `file_voice_design_v1`, a `voice-creation` pool
+target and the `VoiceDesign` engine task; it delivers 24 kHz mono WAV only. A
+gateway serves at most one TTS variant: configuring both `gateway-file-tts.json`
+and `gateway-file-voice-design.json` fails startup, and switching variants is a
+stop-then-activate action. The engine sleep endpoint is not release evidence.
+See [VoiceDesign template](../../engines/file-voice-design/README.md).
+
 | Source example | Required runtime name |
 | --- | --- |
 | `transcription-recipe.example.json` | `transcription-recipe.json` |
@@ -33,3 +40,5 @@ See [TTS deployment](../../docs/operations/file-tts-runtime.md).
 | `gateway-file-asr-endpoint.example.json` | `gateway-file-asr-endpoint.json` |
 | `gateway-file-tts.example.json` | `gateway-file-tts.json` |
 | `gateway-file-tts-endpoint.example.json` | `gateway-file-tts-endpoint.json` |
+| `gateway-file-voice-design.example.json` | `gateway-file-voice-design.json` |
+| `gateway-file-voice-design-endpoint.example.json` | `gateway-file-voice-design-endpoint.json` |

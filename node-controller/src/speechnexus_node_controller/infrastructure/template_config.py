@@ -69,6 +69,8 @@ class _TemplateModel(BaseModel):
     read_only_binds: list[_ReadOnlyBindModel] = Field(default_factory=list)
     network_name: str | None = None
     engine_auth: EngineAuthKind = EngineAuthKind.NONE
+    environment: dict[str, str] | None = None
+    variant_slot: str | None = None
 
 
 class _TemplateFileModel(BaseModel):
@@ -117,4 +119,6 @@ def _to_template(model: _TemplateModel) -> ApprovedRuntimeTemplate:
         ),
         network_name=model.network_name,
         engine_auth=model.engine_auth,
+        environment=tuple((model.environment or {}).items()),
+        variant_slot=model.variant_slot,
     )

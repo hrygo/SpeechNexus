@@ -24,8 +24,13 @@ from speechnexus_gateway.file_tts_runtime import (
     FileTtsConfiguration,
     load_file_tts_configuration,
 )
+from speechnexus_gateway.file_voice_design_runtime import (
+    VoiceDesignConfiguration,
+    load_voice_design_configuration,
+)
 from speechnexus_gateway.infrastructure.file_execution_worker import FileExecutionWorker
 from speechnexus_gateway.interfaces.file_tts_command import CommandFileTts
+from speechnexus_gateway.interfaces.file_voice_design_command import CommandFileVoiceDesign
 from speechnexus_gateway.settings import Settings
 
 
@@ -33,6 +38,7 @@ from speechnexus_gateway.settings import Settings
 class _Stores:
     asr: AsrResultStore | None
     tts: TtsResultStore | None
+    voice_design: TtsResultStore | None
 
 
 def _kind(request: SubmitRequest) -> str:
@@ -40,7 +46,7 @@ def _kind(request: SubmitRequest) -> str:
     if not isinstance(command, dict):
         raise InvalidExecutionRequestError("file command is not an object")
     kind = command.get("kind")
-    if kind not in {"asr", "tts"}:
+    if kind not in {"asr", "tts", "voicedesign"}:
         raise InvalidExecutionRequestError("file command kind is not supported")
     return kind
 
@@ -49,6 +55,7 @@ def _kind(request: SubmitRequest) -> str:
 class _RoutedExecution:
     asr: AsrFileStage | None
     tts: CommandFileTts | None
+    voice_design: CommandFileVoiceDesign | None
 
     def validate_request(self, request: SubmitRequest) -> SubmitRequest:
         kind = _kind(request)
@@ -56,6 +63,8 @@ class _RoutedExecution:
             return self.asr.validate_request(request)
         if kind == "tts" and self.tts is not None:
             return self.tts.validate_request(request)
+        if kind == "voicedesign" and self.voice_design is not None:
+            return self.voice_design.validate_request(request)
         raise InvalidExecutionRequestError("the configured gateway does not serve this file stage")
 
     async def stage_result(
@@ -70,6 +79,14 @@ class _RoutedExecution:
             return await self.asr.stage_result(request, store=store.asr, cancelled=cancelled)
         if kind == "tts" and self.tts is not None and store.tts is not None:
             return await self.tts.stage_result(request, store=store.tts, cancelled=cancelled)
+        if (
+            kind == "voicedesign"
+            and self.voice_design is not None
+            and store.voice_design is not None
+        ):
+            return await self.voice_design.stage_result(
+                request, store=store.voice_design, cancelled=cancelled
+            )
         raise InvalidExecutionRequestError("the configured file result store is unavailable")
 
 
@@ -77,6 +94,7 @@ class _RoutedExecution:
 class FileSpeechConfiguration:
     asr: FileAsrConfiguration | None
     tts: FileTtsConfiguration | None
+    voice_design: VoiceDesignConfiguration | None
     limits: FileExecutionLimits
 
     def build(
@@ -85,10 +103,12 @@ class FileSpeechConfiguration:
         stores = _Stores(
             None if self.asr is None else self.asr.results,
             None if self.tts is None else self.tts.results,
+            None if self.voice_design is None else self.voice_design.results,
         )
         execution = _RoutedExecution(
             None if self.asr is None else self.asr.execution(),
             None if self.tts is None else self.tts.execution(),
+            None if self.voice_design is None else self.voice_design.execution(),
         )
         return FileExecutionWorker(
             ingress=ingress,
@@ -103,17 +123,21 @@ class FileSpeechConfiguration:
 def load_file_speech_configuration(settings: Settings) -> FileSpeechConfiguration | None:
     asr = load_file_asr_configuration(settings)
     tts = load_file_tts_configuration(settings)
-    if asr is None and tts is None:
+    voice_design = load_voice_design_configuration(settings)
+    if asr is None and tts is None and voice_design is None:
         return None
-    limits = asr.worker if asr is not None else tts.worker if tts is not None else None
-    if limits is None:
-        return None
-    if asr is not None and tts is not None:
-        shared = (
-            asr.worker.max_command_bytes == tts.worker.max_command_bytes,
-            asr.worker.max_pending == tts.worker.max_pending,
-            asr.worker.shutdown_seconds == tts.worker.shutdown_seconds,
-        )
-        if not all(shared):
-            raise ValueError("file ASR and TTS must share command, pending and shutdown limits")
-    return FileSpeechConfiguration(asr, tts, limits)
+    # One node keeps one TTS variant resident: both variants together exhaust the
+    # GPU with stage1 CUDA OOM, and the engine validates a checkpoint for exactly
+    # one task. Switching variants is a stop-then-prepare deployment action.
+    if tts is not None and voice_design is not None:
+        raise ValueError("a gateway cannot serve CustomVoice and VoiceDesign at the same time")
+    lanes = [lane for lane in (asr, tts, voice_design) if lane is not None]
+    limits = lanes[0].worker
+    shared = (
+        all(lane.worker.max_command_bytes == limits.max_command_bytes for lane in lanes),
+        all(lane.worker.max_pending == limits.max_pending for lane in lanes),
+        all(lane.worker.shutdown_seconds == limits.shutdown_seconds for lane in lanes),
+    )
+    if not all(shared):
+        raise ValueError("file speech lanes must share command, pending and shutdown limits")
+    return FileSpeechConfiguration(asr, tts, voice_design, limits)

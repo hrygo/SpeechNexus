@@ -150,7 +150,7 @@ class DockerNodeRuntime:
     ) -> InstanceObservation:
         """Reuse a matching container or create exactly one for this generation."""
         self._anchor_warmup_budget(request, template)
-        environment = self._engine_environment(request, template)
+        environment = self._container_environment(request, template)
         self._require_approved_image(template)
         existing = self._find(request.instance_id, request.instance_generation)
         if existing is not None:
@@ -509,7 +509,10 @@ class DockerNodeRuntime:
                 config_digest=request.config_digest,
                 observed_instance_state=ObservedInstanceState.QUARANTINED,
                 observed_peak_memory=self._observed_memory(request, state),
-                quarantine_reason="container native authentication configuration is not approved",
+                quarantine_reason=(
+                    "container identity, environment or native authentication "
+                    "configuration is not approved"
+                ),
             )
         if state.running and (
             state.memory_limit_bytes != template.container_memory_limit_bytes
@@ -729,6 +732,13 @@ class DockerNodeRuntime:
         remaining = (request.deadline_at - datetime.now(UTC)).total_seconds()
         return started + min(warmup.timeout_seconds, remaining)
 
+    def _container_environment(
+        self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+    ) -> tuple[str, ...]:
+        """Template-declared environment first, then the per-generation credential."""
+        declared = tuple(f"{name}={value}" for name, value in template.environment)
+        return declared + self._engine_environment(request, template)
+
     def _engine_environment(
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
     ) -> tuple[str, ...]:
@@ -754,9 +764,7 @@ class DockerNodeRuntime:
         template: ApprovedRuntimeTemplate,
         state: ContainerState,
     ) -> bool:
-        if template.engine_auth is EngineAuthKind.NONE:
-            return True
-        if self._engine_credentials is None or request.target_node_id != self._node_id:
+        if request.target_node_id != self._node_id:
             return False
         expected_labels = self._labels(request)
         if any(
@@ -764,6 +772,15 @@ class DockerNodeRuntime:
             for name, value in expected_labels.items()
             if name not in {INTENT_ID_LABEL, FENCING_TOKEN_LABEL}
         ):
+            return False
+        # A declared environment is part of the approved launch identity: a
+        # container started before the template changed must not be reused with
+        # the old environment.
+        if sorted(state.environment) != sorted(self._container_environment(request, template)):
+            return False
+        if template.engine_auth is EngineAuthKind.NONE:
+            return True
+        if self._engine_credentials is None:
             return False
         actual_keys = [
             item for item in state.environment if item.partition("=")[0] == "VLLM_API_KEY"

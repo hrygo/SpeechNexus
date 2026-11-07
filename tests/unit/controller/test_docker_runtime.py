@@ -28,6 +28,7 @@ from speechnexus_node_controller.domain.intents import (
     UnapprovedRuntimeTemplateError,
 )
 from speechnexus_node_controller.domain.templates import (
+    EngineAuthKind,
     ReadinessKind,
     ReadinessRule,
     ReadOnlyBind,
@@ -43,6 +44,7 @@ from speechnexus_node_controller.infrastructure.docker_runtime import (
     DockerNodeRuntime,
     DockerRuntimeSettings,
 )
+from speechnexus_node_controller.infrastructure.engine_credentials import EngineCredentials
 
 _NODE = "node-local-1"
 
@@ -633,3 +635,50 @@ def test_a_stop_observation_does_not_spend_warmup_time(
     assert observation is not None
     assert observation.observed_instance_state is ObservedInstanceState.WARMING_UP
     assert len(requests) == 1
+
+
+def test_the_template_environment_reaches_the_container_before_the_credential() -> None:
+    engine = _engine()
+    runtime = DockerNodeRuntime(
+        api=engine,
+        node_id=_NODE,
+        stop_checkpoints=InMemoryStopCheckpoints(),
+        engine_credentials=EngineCredentials(root_key="b" * 64),
+    )
+    warmup = WarmupRequest(
+        path="/v1/audio/speech",
+        content_type="application/json",
+        body_path="/srv/artifacts/voice-design-warmup.json",
+        body_sha256="sha256:" + "a" * 64,
+    )
+    template = build_template(
+        engine_auth=EngineAuthKind.VLLM_API_KEY_V1,
+        command=("vllm", "serve"),
+        readiness=ReadinessRule(kind=ReadinessKind.HTTP_WARMUP_OK, port=8000, warmup=warmup),
+        environment=(
+            ("VLLM_USE_V2_MODEL_RUNNER", "0"),
+            ("HUMMING_DISABLE_PARALLEL_BUILD", "1"),
+        ),
+    )
+
+    runtime.prepare(build_request(), template)
+
+    environment = engine.created[0].environment
+    assert environment[:2] == (
+        "VLLM_USE_V2_MODEL_RUNNER=0",
+        "HUMMING_DISABLE_PARALLEL_BUILD=1",
+    )
+    assert environment[2].startswith("VLLM_API_KEY=")
+
+
+def test_a_container_with_another_environment_is_quarantined_not_reused() -> None:
+    engine = _engine()
+    runtime = _runtime(engine)
+    template = build_template(environment=(("VLLM_USE_V2_MODEL_RUNNER", "0"),))
+    runtime.prepare(build_request(), template)
+
+    changed = build_template(environment=(("VLLM_USE_V2_MODEL_RUNNER", "1"),))
+    observation = runtime.inspect(build_request(), changed)
+
+    assert observation is not None
+    assert observation.observed_instance_state is ObservedInstanceState.QUARANTINED

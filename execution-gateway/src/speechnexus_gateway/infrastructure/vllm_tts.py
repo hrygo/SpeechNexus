@@ -6,7 +6,6 @@ import asyncio
 import importlib
 import json
 import re
-import struct
 from collections.abc import Callable
 from dataclasses import dataclass, fields
 from pathlib import Path
@@ -25,22 +24,10 @@ from speechnexus_gateway.infrastructure.private_engine_endpoint import (
     PrivateEngineEndpoint,
     load_controlled_endpoint_descriptor,
 )
+from speechnexus_gateway.infrastructure.vllm_audio import engine_language, wav_pcm
 
 _MEDIA_TYPES = {TtsEngineFormat.WAV: "audio/wav", TtsEngineFormat.PCM: "audio/pcm"}
 _MAX_ENVELOPE_BYTES = 65536
-_MAX_WAV_CHUNKS = 32
-_VLLM_LANGUAGES = {
-    "zh": "Chinese",
-    "en": "English",
-    "fr": "French",
-    "de": "German",
-    "it": "Italian",
-    "ja": "Japanese",
-    "ko": "Korean",
-    "pt": "Portuguese",
-    "ru": "Russian",
-    "es": "Spanish",
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,52 +80,13 @@ def _limit(*, audio_bytes: int | None = None) -> TtsCallError:
 def _wav_pcm(payload: bytes, *, sample_rate_hz: int, max_pcm_bytes: int) -> bytes:
     """Extract mono PCM16LE from a plain RIFF/WAVE body, rejecting anything else."""
 
-    if len(payload) < 44 or payload[:4] != b"RIFF" or payload[8:12] != b"WAVE":
-        raise _invalid(audio_bytes=len(payload))
-    declared = struct.unpack_from("<I", payload, 4)[0]
-    end_limit = declared + 8
-    if end_limit < 44 or end_limit > len(payload):
-        raise _invalid(audio_bytes=len(payload))
-    offset = 12
-    chunks = 0
-    format_seen = False
-    data: bytes | None = None
-    while offset < end_limit:
-        if offset + 8 > end_limit:
-            raise _invalid(audio_bytes=len(payload))
-        chunk_id = payload[offset : offset + 4]
-        size = struct.unpack_from("<I", payload, offset + 4)[0]
-        body = offset + 8
-        end = body + size
-        if end > end_limit:
-            raise _invalid(audio_bytes=len(payload))
-        chunks += 1
-        if chunks > _MAX_WAV_CHUNKS:
-            raise _invalid(audio_bytes=len(payload))
-        if chunk_id == b"fmt ":
-            if format_seen or size < 16:
-                raise _invalid(audio_bytes=len(payload))
-            format_seen = True
-            fields = struct.unpack_from("<HHIIHH", payload, body)
-            if fields != (1, 1, sample_rate_hz, sample_rate_hz * 2, 2, 16):
-                raise _invalid(audio_bytes=len(payload))
-        elif chunk_id == b"data":
-            if data is not None or size == 0 or size % 2:
-                raise _invalid(audio_bytes=len(payload))
-            data = payload[body:end]
-        offset = end + (size & 1)
-    if not format_seen or data is None or offset != end_limit:
-        raise _invalid(audio_bytes=len(payload))
-    if len(data) > max_pcm_bytes:
-        raise _limit(audio_bytes=len(payload))
-    return data
-
-
-def _engine_language(tag: str) -> str:
-    """Translate the public BCP47 language domain to this vendor's fixed values."""
-
-    primary = tag.split("-", 1)[0].lower()
-    return _VLLM_LANGUAGES.get(primary, tag)
+    return wav_pcm(
+        payload,
+        sample_rate_hz=sample_rate_hz,
+        max_pcm_bytes=max_pcm_bytes,
+        on_invalid=lambda _: _invalid(audio_bytes=len(payload)),
+        on_limit=lambda _: _limit(audio_bytes=len(payload)),
+    )
 
 
 def _request_body(request: TtsRequest, policy: TtsPolicy, endpoint: VllmTtsEndpoint) -> bytes:
@@ -154,7 +102,7 @@ def _request_body(request: TtsRequest, policy: TtsPolicy, endpoint: VllmTtsEndpo
     if policy.instructions:
         document["instructions"] = policy.instructions
     if policy.language is not None:
-        document["language"] = _engine_language(policy.language)
+        document["language"] = engine_language(policy.language)
     if policy.seed is not None:
         document["seed"] = policy.seed
     return json.dumps(document, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(

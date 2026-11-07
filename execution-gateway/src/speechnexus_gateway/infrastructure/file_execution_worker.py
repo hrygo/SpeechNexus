@@ -17,6 +17,7 @@ from speechnexus_gateway.domain.execution_results import (
     StagingResult,
 )
 from speechnexus_gateway.domain.file_execution import (
+    EngineRequestRejectedError,
     FileCommandExecution,
     FileExecutionLedger,
     FileExecutionLimits,
@@ -267,6 +268,25 @@ class FileExecutionWorker[StoreT]:
             )
             await self._database(lambda: self._register(intent, outcome.result, ticket.cancelled))
             await self._complete(intent, outcome.terminal)
+        except EngineRequestRejectedError:
+            # A positive client-error refusal is not a timeout and not a retry
+            # signal. It still exits through the unknown path because only the
+            # execution owner may turn a terminal engine answer into release.
+            # The frozen error enum has no dedicated code for an engine-side
+            # refusal, so the recorded reason is the non-retryable
+            # ``invalid_execution_request``; a distinct wire code needs its own
+            # contract change.
+            try:
+                await self._database(
+                    lambda: self._quarantine(
+                        key,
+                        cancelled=False,
+                        reason_code=ExecutionErrorCode.INVALID_EXECUTION_REQUEST,
+                    )
+                )
+            except Exception, asyncio.CancelledError:
+                with self._lock:
+                    self._accepting = False
         except Exception, asyncio.CancelledError:
             try:
                 await self._database(

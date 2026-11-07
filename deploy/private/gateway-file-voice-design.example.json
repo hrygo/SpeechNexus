@@ -1,0 +1,25 @@
+{
+  "protocol": "file_voice_design_v1",
+  "controlled_endpoint_file": "/run/speechnexus-private/gateway-file-voice-design-endpoint.json",
+  "objects": {
+    "endpoint": "http://172.28.0.10:9000",
+    "result_bucket": "speechnexus-results",
+    "tls_ca_file": null,
+    "result_timeout_seconds": 30
+  },
+  "voice_design_policy": {
+    "config_revision": "policy-voice-design-compose-example",
+    "task": "VoiceDesign",
+    "engine_format": "wav",
+    "sample_rate_hz": 24000,
+    "max_pcm_bytes": 2880000,
+    "max_audio_ms": 60000,
+    "timeout_seconds": 300
+  },
+  "worker_limits": {
+    "max_result_bytes": 4194304,
+    "max_command_bytes": 65536,
+    "max_pending": 1,
+    "shutdown_seconds": 10
+  }
+}

@@ -156,6 +156,10 @@ class RuntimeIntentNotFoundError(RuntimeControlRejectedError):
     error_code = RuntimeControlErrorCode.RUNTIME_INTENT_NOT_FOUND
 
 
+class VariantExclusivityError(IntentConflictError):
+    """Another non-drained instance still holds the same exclusive variant slot."""
+
+
 class ComponentCredentialInvalidError(RuntimeControlRejectedError):
     """The per-node component credential is missing or does not match."""
 

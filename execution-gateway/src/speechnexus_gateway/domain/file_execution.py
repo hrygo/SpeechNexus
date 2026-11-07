@@ -27,6 +27,16 @@ from speechnexus_gateway.domain.submission import (
 from speechnexus_gateway.domain.terminal import EngineTerminalResponse
 
 
+class EngineRequestRejectedError(Exception):
+    """The engine terminally answered that it refused this request before generation.
+
+    Only a positive client-error answer may raise this: it certifies that this
+    request was refused, not that a generation which already started stopped.
+    Transport failures, timeouts and server errors never qualify, so recovery
+    keeps them unknown instead of reporting a rejection it cannot prove.
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class FileExecutionLimits:
     """Local consumption bounds, independent of admission or scheduling budgets."""

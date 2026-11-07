@@ -569,3 +569,19 @@ def test_unusable_report_reference_is_a_mismatch(
         outcome = _worker(pool, blobs).consume(job.job_id)
     assert (outcome.outcome, outcome.reason) == ("rejected", "validation_report_mismatch")
     assert _evidence_rows(sandbox) == []
+
+
+@pytest.mark.parametrize("artifact_kind", ["audio", "transcript"])
+def test_non_report_artifact_kind_is_a_mismatch(
+    validation_db: ValidationSandbox, artifact_kind: str
+) -> None:
+    sandbox = validation_db
+    _draft, job, artifact_id, blobs = _run_validation(sandbox)
+    sandbox.db.query(
+        "UPDATE speech_artifacts SET artifact_kind = %s WHERE artifact_id = %s",
+        (artifact_kind, artifact_id),
+    )
+    with _recorder_pool(sandbox) as pool:
+        outcome = _worker(pool, blobs).consume(job.job_id)
+    assert (outcome.outcome, outcome.reason) == ("rejected", "validation_report_mismatch")
+    assert _evidence_rows(sandbox) == []

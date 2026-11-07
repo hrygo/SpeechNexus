@@ -175,8 +175,9 @@ binding 历史、`speech_publications` 与证据表。未配置时 GET 返回
 `speechnexus-voice-evidence-worker` 周期消费已提交的校验报告并在中断后自愈。该 worker
 不在默认 Compose 面内，需要显式提供 recorder DSN、`SPEECHNEXUS_DATABASE_SCHEMA`（无默认
 值，缺失即 exit 2）、报告 Artifact 所在对象存储的读取凭据（只需 GET，不需要写入或删除）
-与轮询参数；启动会按 `voice_evidence_recorder_grants` 的列级形状拒绝更宽的身份，包括
-配置 schema 之外的表权限。退休角色需在
+与轮询参数；recorder DSN 必须与 Job/Artifact 同一可写主库（指向 logical replica 时，
+瞬时不一致可能被 `validation_report_mismatch` 判成永久）。启动会按
+`voice_evidence_recorder_grants` 的列级形状拒绝更宽的身份，包括配置 schema 之外的表权限。退休角色需在
 0047 后重跑 `binding_lifecycle_grants`，否则生命周期启动校验会拒绝旧授权。
 
 发音集合使用三个独立的非 owner 身份。读取身份设置

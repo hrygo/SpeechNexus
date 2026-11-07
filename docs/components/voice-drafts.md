@@ -364,6 +364,12 @@ Job 的重试预算分别由
 `SPEECHNEXUS_VOICE_EVIDENCE_TRANSACTION_TIMEOUT_SECONDS` 与
 `SPEECHNEXUS_VOICE_EVIDENCE_MAX_ATTEMPTS` 配置。
 
+`SPEECHNEXUS_VOICE_EVIDENCE_DATABASE_URL` 必须指向与 Job/Artifact 同一可写主库：worker
+在同一数据库事务里读取 Job/Artifact 并写入证据。若指向 logical replica 或按表拆
+publication 的非契约拓扑，replica 上「result 已可见、Artifact 行尚未回放」的瞬时不一致
+会被 `validation_report_mismatch` 判成永久拒绝。当前启动校验不检查主库身份，主库同源是
+部署契约（后续可加启动断言）。
+
 发布使用**独立的** `SPEECHNEXUS_VOICE_PUBLISHER_DATABASE_URL`，不复用 Job writer。发布角色
 只获得证据/Job/Artifact/素材/绑定/发布/head/草稿/修订的读取，发布、修订、回执与素材引用的
 INSERT，以及 head、目录版本、草稿 `status` 的窄 UPDATE；无可写证据、无 Job/素材写权、无

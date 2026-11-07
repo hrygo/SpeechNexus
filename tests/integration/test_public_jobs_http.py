@@ -48,6 +48,7 @@ VARIABLE = "SPEECHNEXUS_TEST_DATABASE_URL"
 PASSWORD = "synthetic_public_job_test"
 DIGEST = "sha256:" + "a" * 64
 PREFIX = "/v1/nexus/jobs"
+RETRY = PREFIX + "/{job_id}/retries"
 
 
 @dataclass
@@ -212,11 +213,19 @@ async def test_submit_read_replay_and_conflict_against_real_pg(jobs_db: JobSandb
         assert jobs_db.count("speech_job_events") == 1
         assert jobs_db.count("speech_job_submissions") == 1
         assert jobs_db.count("admission_operations") == 1
+        assert jobs_db.count("speech_job_intents") == 1
         assert jobs_db.count("coordination_jobs") == 1
         assert jobs_db.count("coordination_outbox") == 1
         ledger = jobs_db.query("SELECT request_document, request_digest FROM admission_operations")[
             0
         ]
+        intent = jobs_db.query(
+            "SELECT request_digest, request_document FROM speech_job_intents WHERE job_id = %s",
+            (first["id"],),
+        )[0]
+        # The authoritative intent and the legacy dual-write copy agree.
+        assert intent["request_digest"] == ledger["request_digest"]
+        assert intent["request_document"] == ledger["request_document"]
         assert (
             jobs_db.query(
                 "SELECT request_digest FROM speech_jobs WHERE job_id = %s", (first["id"],)
@@ -236,6 +245,7 @@ async def test_submit_read_replay_and_conflict_against_real_pg(jobs_db: JobSandb
         assert jobs_db.count("speech_job_events") == 1
         assert jobs_db.count("speech_job_submissions") == 1
         assert jobs_db.count("admission_operations") == 1
+        assert jobs_db.count("speech_job_intents") == 1
         assert jobs_db.count("coordination_jobs") == 1
         assert jobs_db.count("coordination_outbox") == 1
 
@@ -251,6 +261,88 @@ async def test_submit_read_replay_and_conflict_against_real_pg(jobs_db: JobSandb
         assert missing.json()["error"]["code"] == "job_not_found"
         invalid = await client.get(PREFIX + "/NOT_VALID")
         assert invalid.status_code == 404
+
+
+def _fail_job(db: JobSandbox, job_id: str) -> None:
+    db.jobs.advance(job_id, "running")
+    db.jobs.advance(job_id, "failed", error_code="engine_failure")
+
+
+async def test_retry_reads_the_authoritative_intent_not_the_legacy_copy(
+    jobs_db: JobSandbox,
+) -> None:
+    app = _app(jobs_db)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post(PREFIX, json=_body(), headers={"Idempotency-Key": "intent-a"})
+        assert created.status_code == 202, created.text
+        job_id = created.json()["id"]
+        _fail_job(jobs_db, job_id)
+        # A2 will rewrite the legacy column; the public intent must not be read
+        # back from it. The digest is left intact so only the read source differs.
+        jobs_db.admin.execute(
+            "UPDATE admission_operations SET request_document = %s WHERE operation_id = %s",
+            ('{"kind":"tts","model":"tts-quality","input":{"text":"legacy rewrite"}}', job_id),
+        )
+        retried = await client.post(
+            RETRY.format(job_id=job_id), headers={"Idempotency-Key": "intent-a-child"}
+        )
+        assert retried.status_code == 202, retried.text
+        child = retried.json()
+        intent = jobs_db.query(
+            "SELECT request_document FROM speech_job_intents WHERE job_id = %s", (child["id"],)
+        )[0]
+        document = json.loads(intent["request_document"])
+        assert document["input"] == {"text": "synthetic public job"}
+        assert jobs_db.count("speech_jobs") == 2
+
+
+async def test_tampered_intent_document_is_rejected_instead_of_retried(
+    jobs_db: JobSandbox,
+) -> None:
+    app = _app(jobs_db)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post(PREFIX, json=_body())
+        assert created.status_code == 202, created.text
+        job_id = created.json()["id"]
+        _fail_job(jobs_db, job_id)
+        document = json.loads(
+            jobs_db.query(
+                "SELECT request_document FROM speech_job_intents WHERE job_id = %s", (job_id,)
+            )[0]["request_document"]
+        )
+        # A valid but different business document: only the digest separates it
+        # from the accepted intent, so the unchanged check must refuse it.
+        document["client_reference"] = "tampered-intent"
+        jobs_db.admin.execute(
+            "UPDATE speech_job_intents SET request_document = %s WHERE job_id = %s",
+            (json.dumps(document, sort_keys=True, separators=(",", ":")), job_id),
+        )
+        retried = await client.post(
+            RETRY.format(job_id=job_id), headers={"Idempotency-Key": "tampered-child"}
+        )
+        assert retried.status_code == 503, retried.text
+        assert retried.json()["error"]["code"] == "job_unavailable"
+        assert jobs_db.count("speech_jobs") == 1
+
+
+async def test_missing_intent_row_makes_retry_unavailable(jobs_db: JobSandbox) -> None:
+    app = _app(jobs_db)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post(PREFIX, json=_body())
+        assert created.status_code == 202, created.text
+        job_id = created.json()["id"]
+        _fail_job(jobs_db, job_id)
+        # A missing backfill or a deleted intent leaves no replayable document;
+        # the legacy copy is not a fallback.
+        jobs_db.admin.execute("DELETE FROM speech_job_intents WHERE job_id = %s", (job_id,))
+        read = await client.get(PREFIX + "/" + job_id)
+        assert read.status_code == 200, read.text
+        retried = await client.post(
+            RETRY.format(job_id=job_id), headers={"Idempotency-Key": "missing-child"}
+        )
+        assert retried.status_code == 409, retried.text
+        assert retried.json()["error"]["code"] == "job_retry_unavailable"
+        assert jobs_db.count("speech_jobs") == 1
 
 
 async def test_success_and_failure_invariants_are_enforced_twice(jobs_db: JobSandbox) -> None:

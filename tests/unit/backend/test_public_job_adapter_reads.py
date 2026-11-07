@@ -42,7 +42,7 @@ class ReadPool(Pool):
         self.calls.append((query, parameters))
         if self.fail_with is not None and query.startswith("INSERT INTO speech_job_events"):
             raise self.fail_with
-        if "LEFT JOIN admission_operations" in query:
+        if "LEFT JOIN speech_job_intents" in query:
             return Rows(self.intent)
         if query.startswith("SELECT event_seq, state, occurred_at_us"):
             return Rows(self.event_rows)

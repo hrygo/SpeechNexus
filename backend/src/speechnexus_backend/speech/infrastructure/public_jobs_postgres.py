@@ -263,10 +263,15 @@ class PostgresPublicJobs:
         return int(rows[0]["total"])
 
     def intent_document(self, job_id: str) -> JobIntent | None:
-        """Read the private canonical intent; None means it was redacted, never invented."""
+        """Read the canonical public intent; a missing row is never reconstructed.
+
+        ``speech_job_intents`` is authoritative. The legacy copy in
+        ``admission_operations`` is deliberately not a fallback: A2 owns that
+        column for the complete business command.
+        """
         rows = self._read(
-            "SELECT j.request_digest, a.request_document FROM speech_jobs AS j "
-            "LEFT JOIN admission_operations AS a ON a.operation_id = j.job_id "
+            "SELECT i.request_digest, i.request_document FROM speech_jobs AS j "
+            "LEFT JOIN speech_job_intents AS i ON i.job_id = j.job_id "
             "WHERE j.job_id = %s",
             (identifier(job_id),),
         )
@@ -1367,6 +1372,19 @@ def _insert_job_rows(connection: _Executor, job: NewPublicJob) -> None:
             job.request_document,
             attempt_id,
             attempt_id,
+            max(1, submission.submitted_at_us),
+        ),
+    )
+    # The public intent also has its own authoritative row. No ON CONFLICT:
+    # a second intent for one Job must abort the create, not be ignored.
+    connection.execute(
+        "INSERT INTO speech_job_intents "
+        "(job_id, request_digest, request_document, recorded_at_us) "
+        "VALUES (%s, %s, %s, %s)",
+        (
+            job.job_id,
+            job.request_digest,
+            job.request_document,
             max(1, submission.submitted_at_us),
         ),
     )

@@ -16,7 +16,7 @@
 2. 核对[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)及本次相关 issue，确认当前优先级、负责人、依赖、剩余范围和 AC。
 3. 核对相关 PR、远端目标分支、契约、源码与实际证据，固定本次集成版本和验证范围。
 
-[PRD](prd.md)规定完整产品需求，相关设计规定实现约束，[需求矩阵](plans/delivery-tracking.md)关联需求、唯一主 Epic、实现/集成/验证事实、证据及当前实施 issue；[结构化关联源](plans/delivery-issues.json)是该视图的数据源。总控下十个 Epic 必须 MECE，实施关联可以为空。需要下一项交付时使用[按需规划技能](../.agents/skills/speechnexus-next-delivery/SKILL.md)，只创建准备实施的小卡并核验唯一原生父 Epic，再登记关联。运行 `python3 scripts/dev-env/refresh-implementation-tracker.py` 只读合并 GitHub 状态；远端失败保留旧输出，离线或未知时间不视为实时。需求、设计或证据变化更新源文件，任务进展更新 GitHub，避免维护两份独立状态。
+[PRD](prd.md)规定完整产品需求，相关设计规定实现约束，[需求矩阵](plans/delivery-tracking.md)关联需求、唯一主 Epic、实现/集成/验证事实、证据及当前实施 issue；[结构化关联源](plans/delivery-issues.json)是该视图的数据源。总控下十个 Epic 必须 MECE，实施关联可以为空。需要下一项交付时使用[按需规划技能](../.agents/skills/speechnexus-next-delivery/SKILL.md)，只创建准备实施的小卡并核验唯一原生父 Epic，再登记关联。运行 `python3 scripts/dev-env/refresh-implementation-tracker.py` 只读合并 GitHub 状态；远端失败保留旧输出，离线或未知时间不视为实时。新建实施卡后必须立即挂到唯一原生父 Epic（原生 sub-issue 关系，而非标签），否则矩阵校验以 `has wrong native parent` 拒绝。重生成矩阵时 `--snapshot-at` 必须取快照自身的 `fetched_at`——CI 的矩阵新鲜度检查会用该值重生成并要求零 diff，手写时间戳等于伪造新鲜度，必然红。需求、设计或证据变化更新源文件，任务进展更新 GitHub，避免维护两份独立状态。
 
 基线是有日期的接管快照，会话历史提供检索线索。持续工作只补读相关变化；全面盘点时再覆盖全部跟踪项，不为每个局部任务重复扫描全项目。
 

@@ -169,8 +169,11 @@ binding 历史、`speech_publications` 与证据表。未配置时 GET 返回
 它必须与 Job writer 指向同一数据库和服务器，但不得复用 Job writer 身份。启动会校验其列级
 权限，未配置时发布返回 503。独立记录角色使用 `voice_evidence_recorder_grants` 和
 `SPEECHNEXUS_VOICE_EVIDENCE_DATABASE_URL`，通过
-`speechnexus-record-voice-evidence` 写入证据。退休角色需在 0047 后重跑
-`binding_lifecycle_grants`，否则生命周期启动校验会拒绝旧授权。
+`speechnexus-record-voice-evidence` 显式写入证据，或由
+`speechnexus-voice-evidence-worker` 周期消费已提交的校验报告并在中断后自愈。该 worker
+不在默认 Compose 面内，需要显式提供 recorder DSN、报告 Artifact 所在对象存储的凭据与
+轮询参数；启动会按 `voice_evidence_recorder_grants` 的列级形状拒绝更宽的身份。退休角色需在
+0047 后重跑 `binding_lifecycle_grants`，否则生命周期启动校验会拒绝旧授权。
 
 发音集合使用三个独立的非 owner 身份。读取身份设置
 `SPEECHNEXUS_PRONUNCIATION_READER_DATABASE_URL`，仅授予

@@ -40,6 +40,7 @@ from speechnexus_backend.speech.infrastructure.public_job_submission_schema impo
 )
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import PostgresPublicJobs
 from speechnexus_backend.speech.infrastructure.publications_sql import append_publication
+from speechnexus_backend.speech.infrastructure.voice_draft_schema import voice_draft_grants
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
@@ -126,6 +127,7 @@ def jobs_db() -> Iterator[JobSandbox]:
         for grant in (
             *job_runtime_grants(schema, role),
             *public_job_grants(schema, role),
+            *voice_draft_grants(schema, role),
             # Creating a public Job now also commits the coordination claim and the
             # private original command in the same transaction, so the writer role
             # needs the production Job-writer privileges as well.

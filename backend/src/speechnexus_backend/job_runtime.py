@@ -8,12 +8,14 @@ import uuid
 
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
+from speechnexus_backend.speech.application.voice_drafts import VoiceDrafts
 from speechnexus_backend.speech.infrastructure.postgres_pool import (
     SpeechConnection,
     SpeechPool,
     speech_pool,
 )
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import PostgresPublicJobs
+from speechnexus_backend.speech.infrastructure.voice_drafts_postgres import PostgresVoiceDrafts
 
 REQUIRED_SELECT = (
     "speech_workspaces",
@@ -29,8 +31,12 @@ REQUIRED_SELECT = (
     "speech_job_submissions",
     "speech_job_cancellations",
     "speech_artifacts",
+    "speech_voice_drafts",
+    "speech_voice_metadata_commands",
 )
 REQUIRED_INSERT = (
+    "speech_voice_drafts",
+    "speech_voice_metadata_commands",
     "speech_jobs",
     "speech_job_events",
     "speech_job_submissions",
@@ -57,6 +63,7 @@ REQUIRED_INSERT_COLUMNS = {
     "coordination_outbox": ("event_id", "job_id", "event_digest"),
 }
 REQUIRED_UPDATE_COLUMNS = {
+    "speech_voice_drafts": ("display_name", "metadata_revision", "updated_at_us"),
     "speech_jobs": ("state", "status_version", "result_json", "error_code", "updated_at_us"),
 }
 
@@ -80,6 +87,7 @@ class JobRuntime:
         self._settings = settings
         self._pool: SpeechPool | None = None
         self.jobs: PublicJobs | None = None
+        self.voice_drafts: VoiceDrafts | None = None
         self._lifetime = threading.Lock()
         self._diagnostics: _PoolDiagnostics | None = None
 
@@ -110,6 +118,7 @@ class JobRuntime:
                     pool, timeout_seconds=self._settings.job_transaction_timeout_seconds
                 )
                 self.jobs = PublicJobs(adapter, adapter)
+                self.voice_drafts = VoiceDrafts(self.jobs, PostgresVoiceDrafts(pool))
             except BaseException as error:
                 try:
                     if self._pool is not None:
@@ -127,6 +136,7 @@ class JobRuntime:
     def close(self) -> None:
         with self._lifetime:
             self.jobs = None
+            self.voice_drafts = None
             if self._pool is not None:
                 self._pool.close()
                 self._pool = None

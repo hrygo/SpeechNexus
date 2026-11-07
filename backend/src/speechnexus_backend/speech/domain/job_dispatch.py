@@ -31,6 +31,12 @@ JobOutcome = Literal[
 ]
 
 _IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]\Z")
+
+# This execution unit plans ASR and TTS only. Voice creation Jobs are committed
+# with a draft, but their generation execution belongs to a later slice: the
+# queue must never claim them, or converting a row into DispatchJob would abort
+# an entire mixed batch before any supported Job is dispatched.
+DISPATCHABLE_JOB_KINDS: tuple[str, ...] = ("asr", "tts")
 _ERROR_CODE = re.compile(r"[a-z][a-z0-9_]{1,62}\Z")
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _TIMESTAMP = 253_402_300_799_999_999
@@ -184,7 +190,7 @@ class DispatchJob:
     def __post_init__(self) -> None:
         identifier(self.job_id)
         identifier(self.workspace_id)
-        if self.kind not in ("asr", "tts"):
+        if self.kind not in DISPATCHABLE_JOB_KINDS:
             raise ValueError("Invalid dispatch Job kind")
         if self.state not in (
             "pending",

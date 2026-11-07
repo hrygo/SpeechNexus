@@ -65,6 +65,7 @@ SpeechNexus 是面向自有部署网络、按分布式架构设计的语音服�
 | 范围 | 当前状态 | 体验前需要了解 |
 | --- | --- | --- |
 | 默认 Compose 启动 | 两个 Web 入口、语音服务及基础依赖健康检查 | 可预览界面；不加载模型，不提供真实语音闭环 |
+| 声音草稿四条 | 创建设计/克隆草稿、读取及元数据 CAS 已接入既有 Job 路径 | 需新迁移及 Job writer 授权；隔离 PG、真实生成和页面接入待验证，见[声音草稿](docs/components/voice-drafts.md) |
 | 发音词典固定修订 GET | 显式配置独立只读 PG 身份后，可读取已有草稿修订 | 默认未配置返回 503；创建、发布及 TTS 资格仍待，见[只读入口](docs/components/pronunciation-read-contract.md) |
 | 文件转写、配音与任务页面 | 已接入公开 API 消费流程 | 真实语音执行、结果生成与完整部署仍待联调 |
 | 网关文件 ASR 装配 | 私有配置可将既有持久 worker 接到固定代次端点、CPU VAD 与对象存储 | 候选默认入口已验证真实 1.7B/CPU VAD、隔离 PG/MinIO 的合成语音/静音及重放/重启；生产准入、可信预算释放、发布与公开链仍待验收，见[配置说明](docs/operations/file-asr-runtime.md) |

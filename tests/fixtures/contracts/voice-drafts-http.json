@@ -1,0 +1,85 @@
+{
+  "accepted": {
+    "object": "nexus.voice_creation",
+    "draft": {
+      "resource_type": "voice_draft",
+      "object": "nexus.voice_draft",
+      "id": "draft-job-synthetic-design",
+      "kind": "design",
+      "status": "generating",
+      "head_revision": "1",
+      "metadata_revision": 1,
+      "display_name": "Voice design",
+      "created_at": "2023-11-14T22:13:20+00:00",
+      "updated_at": "2023-11-14T22:13:20+00:00"
+    },
+    "job": {
+      "id": "job-synthetic-design",
+      "object": "nexus.job",
+      "kind": "voice_design",
+      "status": "queued",
+      "cleanup_state": "not_required",
+      "request_id": "request-synthetic-voice",
+      "workspace_id": "workspace-default",
+      "client_reference": null,
+      "profile": null,
+      "execution_revision": "1",
+      "progress": {
+        "unit": "items",
+        "completed": 0,
+        "total": null
+      },
+      "artifacts": [],
+      "result": null,
+      "operations": [],
+      "effective_configuration": {
+        "catalog_revision": "31",
+        "degradation": "none",
+        "models": {
+          "voice": {
+            "id": "tts-quality",
+            "revision": "2"
+          }
+        },
+        "policy_revision": "7"
+      },
+      "created_at": "2023-11-14T22:13:20.000000Z",
+      "updated_at": "2023-11-14T22:13:20.000000Z"
+    }
+  },
+  "view": {
+    "object": "nexus.voice_draft_view",
+    "draft": {
+      "resource_type": "voice_draft",
+      "object": "nexus.voice_draft",
+      "id": "draft-job-synthetic-design",
+      "kind": "design",
+      "status": "generating",
+      "head_revision": "1",
+      "metadata_revision": 1,
+      "display_name": "Voice design",
+      "created_at": "2023-11-14T22:13:20+00:00",
+      "updated_at": "2023-11-14T22:13:20+00:00"
+    },
+    "revision": {
+      "resource_type": "voice_draft_revision",
+      "object": "nexus.voice_draft_revision",
+      "draft_id": "draft-job-synthetic-design",
+      "revision": "1",
+      "kind": "design",
+      "status": "generating",
+      "input": {
+        "description": "Synthetic warm voice",
+        "preview_text": "Synthetic preview",
+        "kind": "design"
+      },
+      "model_binding": {
+        "id": "tts-quality",
+        "revision": "2"
+      },
+      "generation_job_id": "job-synthetic-design",
+      "preview_artifact_ids": [],
+      "created_at": "2023-11-14T22:13:20+00:00"
+    }
+  }
+}

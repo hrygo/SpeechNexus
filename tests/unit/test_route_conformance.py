@@ -56,7 +56,7 @@ def test_repository_has_no_unbaselined_deviation() -> None:
     # unregistered" is now empty; the unimplemented set is proven by route shape.
     assert contract_ids - registered_ids == set()
     assert report.known_unimplemented == tuple(sorted(module.KNOWN_UNIMPLEMENTED_OPERATIONS))
-    assert len(module.KNOWN_UNIMPLEMENTED_OPERATIONS) == 19
+    assert len(module.KNOWN_UNIMPLEMENTED_OPERATIONS) == 15
     assert module.KNOWN_UNDECLARED_STATUSES == {}
     assert report.known_status_gaps == ()
     # Every operation declares 405; each one is probed for the public envelope,
@@ -285,7 +285,7 @@ def test_placeholder_with_an_extra_status_is_rejected() -> None:
     base = module.build_report(ROOT)
     injected = tuple(
         dataclasses.replace(route, statuses=route.statuses | {200})
-        if route.operation_id == "getVoiceDraft"
+        if route.operation_id == "getOperation"
         else route
         for route in base.registered
     )
@@ -299,7 +299,7 @@ def test_placeholder_with_an_extra_status_is_rejected() -> None:
     )
     assert any(
         finding.kind == "unimplemented_placeholder_drift"
-        and finding.operation_id == "getVoiceDraft"
+        and finding.operation_id == "getOperation"
         and "200" in finding.detail
         for finding in report.findings
     )
@@ -310,7 +310,7 @@ def test_placeholder_served_by_another_module_is_rejected() -> None:
     base = module.build_report(ROOT)
     injected = tuple(
         dataclasses.replace(route, module="speechnexus_backend.speech.interfaces.http.jobs")
-        if route.operation_id == "getVoiceDraft"
+        if route.operation_id == "getOperation"
         else route
         for route in base.registered
     )
@@ -323,8 +323,7 @@ def test_placeholder_served_by_another_module_is_rejected() -> None:
         unimplemented=module.load_unimplemented_surface(ROOT),
     )
     assert any(
-        finding.kind == "unimplemented_placeholder_drift"
-        and finding.operation_id == "getVoiceDraft"
+        finding.kind == "unimplemented_placeholder_drift" and finding.operation_id == "getOperation"
         for finding in report.findings
     )
 
@@ -373,7 +372,7 @@ def test_placeholder_error_map_must_stay_single_entry() -> None:
 def test_missing_placeholder_route_is_reported() -> None:
     module = load()
     base = module.build_report(ROOT)
-    remaining = tuple(route for route in base.registered if route.operation_id != "getVoiceDraft")
+    remaining = tuple(route for route in base.registered if route.operation_id != "getOperation")
     report = module.evaluate(
         base.contract_operations,
         remaining,
@@ -384,7 +383,7 @@ def test_missing_placeholder_route_is_reported() -> None:
     )
     assert any(
         finding.kind == "declared_not_registered"
-        and finding.operation_id == "getVoiceDraft"
+        and finding.operation_id == "getOperation"
         and "placeholder" in finding.detail
         for finding in report.findings
     )

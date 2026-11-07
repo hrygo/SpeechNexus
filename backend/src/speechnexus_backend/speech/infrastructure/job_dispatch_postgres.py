@@ -10,6 +10,7 @@ import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
 from speechnexus_backend.speech.domain.job_dispatch import (
+    DISPATCHABLE_JOB_KINDS,
     ClaimedJob,
     DispatchClaimLostError,
     DispatchConflictError,
@@ -73,6 +74,10 @@ class PostgresDispatchQueue:
             "JOIN speech_jobs AS j ON j.job_id = c.job_id CROSS JOIN clock "
             "WHERE c.job_state = 'pending' AND c.claim_expires_at_us <= clock.now_us "
             "AND j.state IN ('pending', 'running') "
+            # A voice creation Job has no execution plan in this unit. Filter it
+            # out inside the claim so it neither consumes the batch limit nor
+            # turns into a DispatchProtocolError that starves ASR/TTS.
+            "AND j.kind = ANY(%s) "
             "ORDER BY j.created_at_us, c.job_id FOR UPDATE OF c SKIP LOCKED LIMIT %s"
             "), updated AS (UPDATE coordination_jobs AS c "
             "SET claim_owner_id = %s, claim_version = c.claim_version + 1, "
@@ -92,7 +97,10 @@ class PostgresDispatchQueue:
                     "SELECT set_config('statement_timeout', %s, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
-                rows = connection.execute(query, (limit, worker_id, lease_ms * 1000)).fetchall()
+                rows = connection.execute(
+                    query,
+                    (list(DISPATCHABLE_JOB_KINDS), limit, worker_id, lease_ms * 1000),
+                ).fetchall()
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
             raise DispatchUnavailableError("Dispatch claim storage is unavailable") from None
         claims: list[ClaimedJob] = []

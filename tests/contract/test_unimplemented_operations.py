@@ -196,13 +196,13 @@ def concrete(path: str) -> str:
 
 
 def test_contract_and_placeholder_table_agree() -> None:
-    assert len(CASES) == 19
+    assert len(CASES) == 15
     assert {operation for operation, _, _ in CASES} == set(UNIMPLEMENTED_OPERATIONS)
     declared = {operation for operation, _, _ in declared_operations()}
-    # retireVoiceRevision now answers its own 503 (ServiceUnavailable) after the
-    # retirement route shipped, so only the remaining placeholders carry the
-    # dedicated component.
-    assert len(declared) == 15
+    # retireVoiceRevision and the four voice-draft operations now answer their
+    # own 503 (ServiceUnavailable) after those routes shipped, so only the
+    # remaining placeholders carry the dedicated component.
+    assert len(declared) == 11
     # Every remaining operation points at the dedicated placeholder component;
     # the four with an older 503 declaration keep it rather than lose a header.
     assert declared == set(UNIMPLEMENTED_OPERATIONS) - PREDECLARED_SERVICE_UNAVAILABLE
@@ -244,7 +244,7 @@ async def test_unimplemented_error_is_not_a_real_failure() -> None:
         transport=httpx.ASGITransport(app=app), base_url="http://localhost"
     ) as http:
         unimplemented = await http.get(
-            "/v1/nexus/voice-drafts/synthetic-id", headers={"X-Request-ID": REQUEST_ID}
+            "/v1/nexus/operations/synthetic-id", headers={"X-Request-ID": REQUEST_ID}
         )
         unavailable = await http.get("/v1/nexus/artifacts/synthetic-id")
     assert unimplemented.status_code == unavailable.status_code == 503
@@ -374,7 +374,7 @@ def test_the_placeholder_router_alone_owns_its_routes() -> None:
 def test_a_real_route_cannot_share_a_placeholder_method() -> None:
     api = FastAPI()
 
-    @api.get("/v1/nexus/voice-drafts/{draft_id}", include_in_schema=False)
+    @api.get("/v1/nexus/operations/{draft_id}", include_in_schema=False)
     async def shadowed(draft_id: str) -> dict[str, str]:
         return {"draft_id": draft_id}
 
@@ -382,20 +382,20 @@ def test_a_real_route_cannot_share_a_placeholder_method() -> None:
     api.include_router(create_unimplemented_router())
     with pytest.raises(RuntimeError) as raised:
         assert_placeholder_ownership(api.routes)
-    # Exactly the duplicated template is reported; the other twenty placeholders
+    # Exactly the duplicated template is reported; the other remaining placeholders
     # must not be swept in, or the assertion would pass on a wholesale failure.
     message = raised.value.args[0]
     assert "real routes must not share a method+template with a placeholder" in message
     assert "placeholders must be the only owner" in message
     listed = message.split("placeholders must be the only owner: ", 1)[1]
-    assert listed == "GET /v1/nexus/voice-drafts/{draft_id}"
+    assert listed == "GET /v1/nexus/operations/{operation_id}"
 
 
 @pytest.mark.parametrize(
     "template",
     [
-        "/v1/nexus/voice-drafts/{voice_draft_id}",
-        "/v1/nexus/voice-drafts/{draft_id:int}",
+        "/v1/nexus/operations/{voice_draft_id}",
+        "/v1/nexus/operations/{draft_id:int}",
     ],
 )
 def test_a_renamed_or_converted_parameter_still_collides(template: str) -> None:
@@ -413,15 +413,15 @@ def test_a_renamed_or_converted_parameter_still_collides(template: str) -> None:
     listed = raised.value.args[0].split("placeholders must be the only owner: ", 1)[1]
     # The message keeps the template the placeholder table declares, not the
     # competing spelling, so the report names the operation that must move.
-    assert listed == "GET /v1/nexus/voice-drafts/{draft_id}"
+    assert listed == "GET /v1/nexus/operations/{operation_id}"
 
 
 @pytest.mark.parametrize(
     "template",
     [
-        "/v1/nexus/voice-drafts/{draft_id}/",
-        "/v1/nexus/voice-drafts/{draft_id}//",
-        "/v1/nexus/voice-drafts/{draft_id:int}/",
+        "/v1/nexus/operations/{draft_id}/",
+        "/v1/nexus/operations/{draft_id}//",
+        "/v1/nexus/operations/{draft_id:int}/",
     ],
 )
 def test_a_trailing_slash_alias_still_collides(template: str) -> None:
@@ -445,7 +445,7 @@ def test_a_trailing_slash_alias_still_collides(template: str) -> None:
         assert_placeholder_ownership(api.routes)
     listed = raised.value.args[0].split("placeholders must be the only owner: ", 1)[1]
     # The report keeps the template the placeholder table declares.
-    assert listed == "GET /v1/nexus/voice-drafts/{draft_id}"
+    assert listed == "GET /v1/nexus/operations/{operation_id}"
 
 
 async def test_a_trailing_slash_route_is_shadowed_at_runtime() -> None:
@@ -456,7 +456,7 @@ async def test_a_trailing_slash_route_is_shadowed_at_runtime() -> None:
     """
     app = create_app(settings=_settings())
 
-    @app.get("/v1/nexus/voice-drafts/{draft_id}/", include_in_schema=False)
+    @app.get("/v1/nexus/operations/{draft_id}/", include_in_schema=False)
     async def real(draft_id: str) -> dict[str, str]:
         return {"draft_id": draft_id}
 
@@ -465,8 +465,8 @@ async def test_a_trailing_slash_route_is_shadowed_at_runtime() -> None:
         base_url="http://localhost",
         follow_redirects=True,
     ) as http:
-        canonical = await http.get("/v1/nexus/voice-drafts/synthetic-id")
-        aliased = await http.get("/v1/nexus/voice-drafts/synthetic-id/")
+        canonical = await http.get("/v1/nexus/operations/synthetic-id")
+        aliased = await http.get("/v1/nexus/operations/synthetic-id/")
     assert canonical.status_code == 503
     assert canonical.json()["error"]["code"] == OPERATION_NOT_IMPLEMENTED
     assert aliased.status_code == 200
@@ -481,9 +481,9 @@ async def test_a_trailing_slash_route_is_shadowed_at_runtime() -> None:
         # A different route spelling must remain distinct, and the exact raw
         # ASGI request must stay a framework 404 against placeholders alone.
         (
-            "/v1/nexus/voice-drafts//{draft_id}",
-            "/v1/nexus/voice-drafts//synthetic-id",
-            b"/v1/nexus/voice-drafts//synthetic-id",
+            "/v1/nexus/operations//{draft_id}",
+            "/v1/nexus/operations//synthetic-id",
+            b"/v1/nexus/operations//synthetic-id",
         ),
         (
             "/v1/nexus/VOICE-DRAFTS/{draft_id}",
@@ -491,20 +491,20 @@ async def test_a_trailing_slash_route_is_shadowed_at_runtime() -> None:
             b"/v1/nexus/VOICE-DRAFTS/synthetic-id",
         ),
         (
-            "/v1/nexus/voice-drafts/{draft_id}/.",
-            "/v1/nexus/voice-drafts/synthetic-id/.",
-            b"/v1/nexus/voice-drafts/synthetic-id/.",
+            "/v1/nexus/operations/{draft_id}/.",
+            "/v1/nexus/operations/synthetic-id/.",
+            b"/v1/nexus/operations/synthetic-id/.",
         ),
         (
-            "//v1/nexus/voice-drafts/{draft_id}",
-            "//v1/nexus/voice-drafts/synthetic-id",
-            b"//v1/nexus/voice-drafts/synthetic-id",
+            "//v1/nexus/operations/{draft_id}",
+            "//v1/nexus/operations/synthetic-id",
+            b"//v1/nexus/operations/synthetic-id",
         ),
         # ASGI servers decode %2F before routing, exposing an extra segment.
         (
-            "/v1/nexus/voice-drafts/{draft_id}/{child_id}",
-            "/v1/nexus/voice-drafts/synthetic-id/child",
-            b"/v1/nexus/voice-drafts/synthetic-id%2Fchild",
+            "/v1/nexus/operations/{draft_id}/{child_id}",
+            "/v1/nexus/operations/synthetic-id/child",
+            b"/v1/nexus/operations/synthetic-id%2Fchild",
         ),
     ],
 )
@@ -574,9 +574,6 @@ async def test_a_non_placeholder_method_can_own_the_slash_suffixed_route() -> No
 def test_served_openapi_does_not_advertise_placeholders() -> None:
     paths = create_app(settings=_settings()).openapi()["paths"]
     for path in (
-        "/v1/nexus/voice-designs",
-        "/v1/nexus/voice-clones",
-        "/v1/nexus/voice-drafts/{draft_id}",
         "/v1/nexus/pronunciation-sets",
         "/v1/realtime",
     ):

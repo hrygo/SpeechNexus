@@ -71,10 +71,6 @@ UNIMPLEMENTED_OPERATIONS: dict[str, tuple[str, str]] = {
         "/v1/nexus/realtime/sessions/{session_id}/cancellations",
     ),
     "connectRealtime": ("GET", "/v1/realtime"),
-    "createVoiceDesign": ("POST", "/v1/nexus/voice-designs"),
-    "createVoiceClone": ("POST", "/v1/nexus/voice-clones"),
-    "getVoiceDraft": ("GET", "/v1/nexus/voice-drafts/{draft_id}"),
-    "updateVoiceDraftMetadata": ("PATCH", "/v1/nexus/voice-drafts/{draft_id}"),
     "generateVoiceDraftRevision": (
         "POST",
         "/v1/nexus/voice-drafts/{draft_id}/generations",

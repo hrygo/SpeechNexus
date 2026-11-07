@@ -66,6 +66,7 @@ See [deployment and verification limits (Chinese)](docs/components/workbench-voi
 | Area | Current state | Before you try it |
 | --- | --- | --- |
 | Default Compose startup | Two Web entry points, speech service, and infrastructure health checks | Interface preview; no model loading or complete speech workflow |
+| Voice draft operations | Design/clone creation, reads and metadata CAS use the existing Job path | New migration and Job writer grants required; isolated PG, real generation and page integration remain unverified; see [voice drafts (Chinese)](docs/components/voice-drafts.md) |
 | Fixed pronunciation revision GET | Explicit independent read-only PG configuration reads existing draft revisions | Unconfigured returns 503; create, publication and TTS qualification remain pending; see [reader configuration](docs/components/pronunciation-read-contract.md) |
 | File transcription, narration, and task pages | Public API consumer flows connected | Real speech execution, result generation, and complete deployment still need integration |
 | Gateway file-ASR composition | Private configuration connects the durable worker to a fixed-generation endpoint, CPU VAD, and object storage | Candidate default entrypoint verified with real 1.7B/CPU VAD, isolated PG/MinIO, synthetic speech/silence, replay and restart; production admission, trusted budget release, publication and public workflow acceptance remain pending; see [configuration (Chinese)](docs/operations/file-asr-runtime.md) |

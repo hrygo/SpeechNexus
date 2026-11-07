@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-07T19:28:24+08:00",
+  "fetched_at": "2026-11-08T00:09:27+08:00",
   "issues": [
     {
       "number": 336,
@@ -922,8 +922,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/528",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "Public Job 的生产派发装配与 planner 缺失",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "enhancement"
@@ -1007,8 +1007,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/537",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "A2：Public Job 创建事务内完成原子准入（asr/tts）",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "enhancement"
@@ -1024,8 +1024,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/538",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "A3：生产派发 planner、装配与过期结算",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "enhancement"

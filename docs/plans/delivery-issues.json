@@ -776,10 +776,10 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "CustomVoice 文件执行和声音工作台组件不证明 VoiceDesign/Base 资格；固定修订预览（#495）、设计/克隆生成 Job 执行消费者（#512）、校验目标锁内重验及同键重放（#521）与不可达拒绝原因清理（#531）已合入；提交后回读失败、发布前 kind 校验与契约 500 描述缺口已修正（#534）；公开 Job intent 已迁入独立表并切换读路径（#536，PR #539）。",
-      "integration": "设计引擎、固定材料、节点预算和工作台使用同版制品；Public Job 生产派发装配与 planner 仍缺失（#528）：创建事务内原子准入（#537）与生产 planner、装配及过期结算（#538）待交付；gateway 设计/克隆 stage、node 模板与 GPU 证据待补（#529），内容删除尚未覆盖 speech_job_intents（#540）。",
-      "verification": "组件和隔离证据各有边界；#536 的迁移、写路径与降级守卫有隔离 PG 证据，intent 删除后的 retry 语义仍待 #540 补齐；完整验收按对应 PRD 的验收条件取证。",
-      "gap": "发布与能力一致性（#519）、生产派发装配与 planner（#528，拆为 #537/#538）、gateway 设计/克隆 stage 与 node 模板/GPU 证据（#529）、内容删除覆盖 speech_job_intents（#540）仍开放；完整验收按对应 PRD 的验收条件取证。",
+      "implementation": "CustomVoice 文件执行和声音工作台组件不证明 VoiceDesign/Base 资格；固定修订预览（#495）、设计/克隆生成 Job 执行消费者（#512）、校验目标锁内重验及同键重放（#521）与不可达拒绝原因清理（#531）已合入；提交后回读失败、发布前 kind 校验与契约 500 描述缺口已修正（#534）；公开 Job intent 已迁入独立表并切换读路径（#536，PR #539）；Public Job 创建事务内完成原子准入（#537，PR #542）已合入，`operation_id` 与派发联接对齐；生产派发 planner、装配与过期结算（#538，PR #544）已合入，worker 从 exit 2 变为真实领取，只领完整命令且已准入的 Job，过期须取得网关契约 404 才结算并释放，取消结算复用 LeaseService 归还容量。",
+      "integration": "设计引擎、固定材料、节点预算和工作台使用同版制品；生产派发装配已可用（#544），gateway 设计 stage 与 node 模板已合入（#543），克隆泳道在 PR #545，真实 GPU 证据仍待补（#529）；内容删除尚未覆盖 speech_job_intents（#540）。",
+      "verification": "组件和隔离证据各有边界；#536 的迁移、写路径与降级守卫有隔离 PG 证据；#537 有真实 PG 的并发单次预留、注入回滚 74 表全等与 429 零写入证据；#544 有真实 PG 的 claim/submit/settle、过期四情形与取消释放回基线证据；真实引擎端到端与 intent 删除后的 retry 语义仍待 #529/#540 补齐；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "发布与能力一致性（#519）在审（PR #546，能力账本无生产者前 fail-closed）、gateway 克隆泳道与真实 GPU 证据（#529）、内容删除覆盖 speech_job_intents（#540）仍开放。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/voice-resource.schema.json",

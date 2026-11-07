@@ -19,6 +19,7 @@ from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.application.voice_clone_readiness import VoiceCloneWarmupProbe
 from speechnexus_gateway.domain.execution_inputs import ExecutionInputLimits
 from speechnexus_gateway.domain.file_execution import FileExecutionLedger, FileExecutionLimits
+from speechnexus_gateway.domain.languages import AUTO_LANGUAGE
 from speechnexus_gateway.domain.tts import TtsEngineFormat
 from speechnexus_gateway.domain.tts_results import TtsResultStore
 from speechnexus_gateway.domain.voice_clone import (
@@ -219,9 +220,12 @@ def load_voice_clone_configuration(settings: Settings) -> VoiceCloneConfiguratio
         ):
             raise ValueError
         warmup = deployment.warmup
+        # The warmup is a real clone synthesis, so it follows the same language
+        # rule as a committed command: ``auto`` is the engine sentinel and is
+        # forwarded as is; an explicit tag must still be in the binding's list.
         if (
-            warmup.language.split("-", 1)[0].lower() not in policy.supported_languages
-            or warmup.language == "auto"
+            warmup.language != AUTO_LANGUAGE
+            and warmup.language.split("-", 1)[0].lower() not in policy.supported_languages
         ):
             raise ValueError
         reference = ReferenceAudio.from_wav(

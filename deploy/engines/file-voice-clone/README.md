@@ -113,6 +113,9 @@
   语言归并，如 `zh-Hans` → `Chinese`；
 - 其余标签（如 `ar`、`nl`）在命令进入引擎前以 `invalid_execution_request` 拒绝。
 
+warmup 与本泳道普通请求使用同一语言规则：`warmup.language` 允许 `auto`（自动判定），也允许
+`supported_languages` 内的显式标签；两种情况都执行一次真实克隆合成作为就绪证据。
+
 ## seed 的语义
 
 实测（MegaCube DEL-522）：同一 `seed` 连续三次合成，输出 WAV 的 SHA256 均不同；文本内容

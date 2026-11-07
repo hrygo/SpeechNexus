@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-07T08:49:33+08:00",
+  "fetched_at": "2026-11-07T09:30:00+08:00",
   "issues": [
     {
       "number": 336,
@@ -735,8 +735,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/494",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "实现声音草稿四条：设计/克隆创建、读取与元数据更新",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "enhancement"
@@ -837,6 +837,23 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/512",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "声音设计/克隆的生成任务缺少执行消费者",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:A"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/340"
+    },
+    {
+      "number": 514,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/514",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "实现声音草稿的修订生成与校验两条操作",
       "state": "open",
       "state_reason": null,
       "labels": [

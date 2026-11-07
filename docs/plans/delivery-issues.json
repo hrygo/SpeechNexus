@@ -774,7 +774,7 @@
       "implementation": "CustomVoice 文件执行和声音工作台组件不证明 VoiceDesign/Base 资格。",
       "integration": "设计引擎、固定材料、节点预算和工作台使用同版制品。",
       "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
-      "gap": "设计引擎、固定材料、节点预算和工作台使用同版制品。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。设计/克隆生成 Job 的执行消费者缺失（#512）。",
+      "gap": "设计引擎、固定材料、节点预算和工作台使用同版制品。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。设计/克隆生成 Job 的执行消费者缺失（#512）；修订生成与校验两条操作（#514）未实现，publication 的 validation_job_id 尚无真实来源。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/voice-resource.schema.json",
@@ -790,7 +790,8 @@
       "issues": [
         494,
         495,
-        512
+        512,
+        514
       ]
     },
     {
@@ -2014,9 +2015,9 @@
         "contracts/README.md",
         "docs/architecture/contract-ownership.md"
       ],
-      "implementation": "机器契约、Python/TS 生成消费者、文件下载及 SSE 校验已有分段实现；机器清单不证明业务路由或全部消费已接通。",
+      "implementation": "机器契约、Python/TS 生成消费者、文件下载及 SSE 校验已有分段实现；占位 503 替换须内联且语义可重试，共享占位组件按常量完整性校验，不再保留未实现声明或借用组件；机器清单不证明业务路由或全部消费已接通。",
       "integration": "工作台 HTTP 类型与下载消费者已有分段接线；导出事件流尚未在生产工作台路由和正式页面接入，完整事件语义仍须联验。",
-      "verification": "未取得当前真实部署验收证据。",
+      "verification": "契约一致性由占位 503 替换门禁覆盖，Cache-Control 按 no-store 指令级匹配；矩阵新鲜度由离线快照重渲染比对把关；真实部署验收证据未取得。",
       "gap": "导出事件流接线、断线恢复及其余契约的实际消费者和目标部署验证仍须逐项完成。",
       "evidence": [
         {

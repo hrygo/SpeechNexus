@@ -119,7 +119,7 @@ gateway 写角色在 `coordination_runtime_grants` 之外还须安装
 `gateway_cancellation_fence_grants` 以获得围栏 `job_id` 列 `SELECT`（提交只判断存在性）；独立执行读取器使用同一函数。API Job writer 通过
 `public_job_grants` 获得围栏 `SELECT/INSERT`，worker 使用
 `cancellation_reconciliation_grants` 获得围栏列 `SELECT`、reconciliation 账本受限读写和
-not-submitted `SELECT`；`job_dispatch_grants` 只授予派发器 not-submitted `INSERT`。
+not-submitted `SELECT`；`job_dispatch_grants` 的取消围栏部分只授予派发器 not-submitted `INSERT`。
 围栏、not-submitted 和 reconciliation 表由迁移 `0035_job_cancellation_fences` 创建
 （`down_revision=0034_public_job_cancellations`），回滚在仍有围栏、not-submitted 观察或
 账本行时拒绝删除。

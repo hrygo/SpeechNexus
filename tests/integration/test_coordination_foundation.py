@@ -413,6 +413,9 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         if db.dialect == "postgresql"
         else set()
     )
+    # The authoritative public Job intent (0046). It is a private Job-writer
+    # table with its own grants, outside the shared coordination surface.
+    intent_tables = {"speech_job_intents"} if db.dialect == "postgresql" else set()
     assert binding_tables <= {row["name"] for row in rows}
     assert profile_tables <= {row["name"] for row in rows}
     assert publication_tables <= {row["name"] for row in rows}
@@ -420,6 +423,7 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
     assert abort_tables <= {row["name"] for row in rows}
     assert cancellation_tables <= {row["name"] for row in rows}
     assert draft_tables <= {row["name"] for row in rows}
+    assert intent_tables <= {row["name"] for row in rows}
     assert (
         {row["name"] for row in rows}
         - {
@@ -434,6 +438,7 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         - abort_tables
         - cancellation_tables
         - draft_tables
+        - intent_tables
         == (set(SPEECH_UPDATES) | set(GATEWAY_UPDATES))
     )
     if db.dialect == "postgresql":
@@ -441,7 +446,12 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         # shared coordination grants.
         for owner in ("speech", "gateway"):
             for table in (
-                profile_tables | binding_tables | publication_tables | abort_tables | draft_tables
+                profile_tables
+                | binding_tables
+                | publication_tables
+                | abort_tables
+                | draft_tables
+                | intent_tables
             ):
                 with (
                     pytest.raises(psycopg.errors.InsufficientPrivilege),

@@ -59,7 +59,9 @@ _DOWNGRADE_GUARD = f"""
         SELECT count(*) INTO unmatched
         FROM {INTENTS} AS i
         LEFT JOIN admission_operations AS a ON a.operation_id = i.job_id
-        WHERE a.request_document IS NULL OR a.request_digest IS DISTINCT FROM i.request_digest;
+        WHERE a.request_document IS NULL
+           OR a.request_digest IS DISTINCT FROM i.request_digest
+           OR a.request_document IS DISTINCT FROM i.request_document;
         IF unmatched > 0 THEN
             RAISE EXCEPTION
                 'refusing to drop {INTENTS}: % intent rows have no matching legacy copy',

@@ -24,7 +24,10 @@ from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
-from speechnexus_backend.speech.domain.public_jobs import PublicJobConflictError
+from speechnexus_backend.speech.domain.public_jobs import (
+    PublicJobConflictError,
+    canonical_digest,
+)
 from speechnexus_backend.speech.domain.publications import Publication
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
     cancellation_reconciliation_grants,
@@ -325,16 +328,53 @@ async def test_tampered_intent_document_is_rejected_instead_of_retried(
         assert jobs_db.count("speech_jobs") == 1
 
 
-async def test_missing_intent_row_makes_retry_unavailable(jobs_db: JobSandbox) -> None:
+async def test_forged_self_consistent_intent_is_refused(jobs_db: JobSandbox) -> None:
     app = _app(jobs_db)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         created = await client.post(PREFIX, json=_body())
         assert created.status_code == 202, created.text
         job_id = created.json()["id"]
         _fail_job(jobs_db, job_id)
-        # A missing backfill or a deleted intent leaves no replayable document;
-        # the legacy copy is not a fallback.
+        document = json.loads(
+            jobs_db.query(
+                "SELECT request_document FROM speech_job_intents WHERE job_id = %s", (job_id,)
+            )[0]["request_document"]
+        )
+        # A self-consistent replacement (document and digest agree) would pass
+        # the domain check but still disagrees with the Job identity. The read
+        # path must cross-check the two digests, not just internal consistency.
+        document["client_reference"] = "forged-intent"
+        forged_document = json.dumps(document, sort_keys=True, separators=(",", ":"))
+        jobs_db.admin.execute(
+            "UPDATE speech_job_intents SET request_digest = %s, request_document = %s "
+            "WHERE job_id = %s",
+            (canonical_digest(document), forged_document, job_id),
+        )
+        retried = await client.post(
+            RETRY.format(job_id=job_id), headers={"Idempotency-Key": "forged-child"}
+        )
+        assert retried.status_code == 503, retried.text
+        assert retried.json()["error"]["code"] == "job_unavailable"
+        assert jobs_db.count("speech_jobs") == 1
+
+
+async def test_missing_intent_row_never_falls_back_to_the_legacy_copy(
+    jobs_db: JobSandbox,
+) -> None:
+    app = _app(jobs_db)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post(PREFIX, json=_body())
+        assert created.status_code == 202, created.text
+        job_id = created.json()["id"]
+        _fail_job(jobs_db, job_id)
+        # A missing backfill or a deleted intent leaves no replayable document.
+        # The legacy copy stays intact and must not become a fallback.
         jobs_db.admin.execute("DELETE FROM speech_job_intents WHERE job_id = %s", (job_id,))
+        legacy = jobs_db.query(
+            "SELECT request_document FROM admission_operations WHERE operation_id = %s",
+            (job_id,),
+        )[0]
+        assert legacy["request_document"] is not None
         read = await client.get(PREFIX + "/" + job_id)
         assert read.status_code == 200, read.text
         retried = await client.post(

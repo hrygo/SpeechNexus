@@ -313,9 +313,10 @@ async def test_retry_refuses_a_redacted_intent(jobs_db: JobSandbox) -> None:
             "command_deletion_evidence_digest = %s WHERE operation_id = %s",
             ("job-deletion-synthetic", RESULT_DIGEST, job_id),
         )
-        # The public intent lives in its own authoritative table, so a content
-        # deletion must remove it as well; the legacy redaction alone is not the
-        # replay source any more.
+        # The public intent lives in its own authoritative table, so A07's
+        # deletion path (#540) must remove both copies in one controlled flow;
+        # the legacy redaction alone never reaches the replay source. This test
+        # pins the required end state after that deletion.
         jobs_db.admin.execute("DELETE FROM speech_job_intents WHERE job_id = %s", (job_id,))
         response = await client.post(RETRY.format(job_id=job_id))
         assert response.status_code == 409, response.text

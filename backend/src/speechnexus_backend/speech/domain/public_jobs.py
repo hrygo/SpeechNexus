@@ -383,6 +383,9 @@ class JobIntent:
             decoded = json.loads(self.document)
         except ValueError, TypeError:
             raise ValueError("Invalid public Job intent document") from None
+        # Defense in depth, not duplication: the application retry path checks
+        # the parsed payload against this digest too. Both layers are required;
+        # neither may be removed as "redundant".
         if not isinstance(decoded, dict) or canonical_digest(decoded) != self.request_digest:
             raise ValueError("Public Job intent disagrees with its digest")
 

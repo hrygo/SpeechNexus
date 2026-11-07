@@ -192,7 +192,7 @@ request ID，不覆盖他人事实。
 迁移 `0035_job_cancellation_fences` 的 `down_revision` 是
 `0034_public_job_cancellations`，形成单一 head；down 在 reconcile 账本、not-submitted
 观察或围栏仍有行时拒绝删除，要求先保留或导出证据。`public_job_grants` 为 API Job writer
-授予围栏 SELECT/INSERT 与 `speech_artifacts` 的 SELECT；`job_dispatch_grants` 只授予派发器对 not-submitted 表的 INSERT；
+授予围栏 SELECT/INSERT 与 `speech_artifacts` 的 SELECT；`job_dispatch_grants` 的取消围栏部分只授予派发器对 not-submitted 表的 INSERT，其 Job 写入部分另含 `admission_operations` INSERT 与 `speech_job_intents` 的 SELECT/INSERT；
 worker 角色使用 `public_job_grants` 与 `cancellation_reconciliation_grants`（围栏列 SELECT、
 对账账本 SELECT/INSERT/列级 UPDATE、not-submitted SELECT）；gateway 写角色在
 `coordination_runtime_grants` 之外还须安装 `gateway_cancellation_fence_grants` 以获得围栏

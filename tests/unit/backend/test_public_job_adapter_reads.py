@@ -104,24 +104,46 @@ def test_list_jobs_reads_a_bounded_page_in_a_read_only_transaction() -> None:
         )
 
 
+def _intent_row(
+    *,
+    digest: str = DIGEST,
+    document: str | None = DOCUMENT,
+    present: bool = True,
+) -> dict[str, Any]:
+    return {
+        "job_request_digest": DIGEST,
+        "request_digest": digest,
+        "request_document": document,
+        "intent_present": present,
+    }
+
+
 def test_intent_document_returns_the_redacted_and_intact_cases() -> None:
     request = _request()
     pool = ReadPool(request)
-    pool.intent = [{"request_digest": DIGEST, "request_document": DOCUMENT}]
+    pool.intent = [_intent_row()]
     intent = _driver(pool).intent_document(request.job_id)
     assert intent is not None
     assert intent.request_digest == DIGEST and intent.document == DOCUMENT
 
-    pool.intent = [{"request_digest": DIGEST, "request_document": None}]
+    pool.intent = [_intent_row(document=None)]
     assert _driver(pool).intent_document(request.job_id) is None
 
-    pool.intent = [{"request_digest": "sha256:" + "a" * 64, "request_document": DOCUMENT}]
+    # A missing authoritative row is unavailable, never a legacy fallback.
+    pool.intent = [_intent_row(digest=DIGEST, document=None, present=False)]
+    assert _driver(pool).intent_document(request.job_id) is None
+
+    # A present intent must agree with the Job identity, not just itself.
+    pool.intent = [_intent_row(digest="sha256:" + "a" * 64)]
     with pytest.raises(PublicJobUnavailableError):
         _driver(pool).intent_document(request.job_id)
 
     pool.intent = []
     with pytest.raises(PublicJobUnavailableError):
         _driver(pool).intent_document(request.job_id)
+
+    query = next(call for call in pool.calls if "LEFT JOIN speech_job_intents" in call[0])[0]
+    assert "admission_operations" not in query, "the legacy copy must not be a fallback"
 
 
 def test_events_reads_strictly_after_the_cursor_with_a_bounded_page() -> None:

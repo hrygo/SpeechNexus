@@ -232,3 +232,29 @@ def test_downgrade_refuses_when_the_digest_disagrees(intent_db: IntentSandbox) -
         )
         == []
     )
+
+
+def test_downgrade_refuses_when_the_legacy_document_disagrees(intent_db: IntentSandbox) -> None:
+    command.upgrade(intent_db.config, HEAD)
+    # Same digest, replaced body: the old shape would lose the authoritative
+    # document, so the digest-only comparison is not enough.
+    intent_db.admin.execute(
+        "UPDATE admission_operations SET request_document = %s WHERE operation_id = 'job-match'",
+        ('{"input":{"text":"replaced"},"kind":"tts","model":"tts-quality"}',),
+    )
+    with pytest.raises(DBAPIError, match="no matching legacy copy"):
+        command.downgrade(intent_db.config, BASE)
+    assert intent_db.count("speech_job_intents") == 1, "a refused downgrade keeps the table"
+    intent_db.admin.execute(
+        "UPDATE admission_operations SET request_document = %s WHERE operation_id = 'job-match'",
+        (DOCUMENT_A,),
+    )
+    command.downgrade(intent_db.config, BASE)
+    assert (
+        intent_db.query(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = %s AND table_name = 'speech_job_intents'",
+            (intent_db.schema,),
+        )
+        == []
+    )

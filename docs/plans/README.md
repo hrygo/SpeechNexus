@@ -1,8 +1,9 @@
 # SpeechNexus 实施计划
 
 当前主入口为 [PRD](../prd.md)、相关设计和[需求矩阵](delivery-tracking.md)；[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)下十个 MECE Epic 维护能力边界。
-[结构化关联源](delivery-issues.json)记录完整需求、设计、主责、实现/集成/验证事实、证据及可为空的实施关联。用 `python3 scripts/dev-env/refresh-implementation-tracker.py` 从 GitHub 只读刷新任务状态；需求和事实变化先更新 PRD 或关联源。具体实施 issue 由[按需规划技能](../../.agents/skills/speechnexus-next-delivery/SKILL.md)在需要时创建，每张直属唯一 Epic，不提前铺 backlog。
-远端刷新失败时保留旧输出，离线不作实时状态。
+[结构化关联源](delivery-issues.json)记录完整需求、设计、主责、实现/集成/验证事实、证据及可为空的实施关联。[GitHub 快照](github-issues-snapshot.json)保存渲染所需的 issue 字段与抓取时刻。刷新矩阵分三步：先抓取快照（`python3 scripts/dev-env/refresh-implementation-tracker.py --refresh-snapshot docs/plans/github-issues-snapshot.json`），再由该快照离线渲染（`--snapshot docs/plans/github-issues-snapshot.json --output docs/plans/delivery-tracking.md`；需要固定表头时加 `--snapshot-at <ISO 时刻>`），最后提交快照、关联源与矩阵。快照输入不变时重跑逐字节一致；CI 用同一离线命令重渲染并比对矩阵，手改矩阵会失败。
+一个实施 issue 只登记一个需求；跨切面工作必须拆卡或只登记在唯一需求下。需求和事实变化先更新 PRD 或关联源。具体实施 issue 由[按需规划技能](../../.agents/skills/speechnexus-next-delivery/SKILL.md)在需要时创建，每张直属唯一 Epic，不提前铺 backlog。
+远端刷新失败时保留旧输出，离线快照不替代实时状态。
 
 以下带日期材料保留各自时点，仅在查证相关决定或证据时读取，不承担当前排期或派工。
 

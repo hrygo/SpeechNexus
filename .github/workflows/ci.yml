@@ -54,6 +54,62 @@ jobs:
             --event="$EVENT_NAME" --base="$BASE_SHA" \
             --output="$GITHUB_OUTPUT" --summary="$GITHUB_STEP_SUMMARY"
 
+  # The committed snapshot is the only render input, so a hand-edited matrix or a
+  # stale snapshot-derived view fails here without querying GitHub. Unrelated
+  # changes skip the regeneration step and cannot be blocked by this gate.
+  delivery_tracking:
+    name: "Docs: delivery matrix freshness"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Detect delivery matrix inputs in this change
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [[ "$EVENT_NAME" != "pull_request" ]]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ ! "$BASE_SHA" =~ ^[0-9a-f]{40}$ || "$BASE_SHA" == "0000000000000000000000000000000000000000" ]]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git fetch --no-tags --depth=1 origin "$BASE_SHA"; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          inputs=(
+            docs/plans/delivery-tracking.md
+            docs/plans/delivery-issues.json
+            docs/plans/github-issues-snapshot.json
+            scripts/dev-env/refresh-implementation-tracker.py
+            scripts/dev-env/delivery_tracker.py
+          )
+          if git diff --name-only "$BASE_SHA" HEAD -- "${inputs[@]}" | grep -q .; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Regenerate the delivery matrix from the committed snapshot
+        if: steps.scope.outputs.relevant == 'true'
+        run: |
+          SNAPSHOT_AT="$(python3 -c \
+            'import json; print(json.load(open("docs/plans/github-issues-snapshot.json", encoding="utf-8"))["fetched_at"])')"
+          python3 scripts/dev-env/refresh-implementation-tracker.py \
+            --snapshot docs/plans/github-issues-snapshot.json \
+            --snapshot-at "$SNAPSHOT_AT" \
+            --output docs/plans/delivery-tracking.md
+          git diff --exit-code -- docs/plans/delivery-tracking.md
+
   python_checks:
     name: "Python: tests, coverage and package build"
     needs: [changes]
@@ -650,7 +706,16 @@ jobs:
   # can make a lane inapplicable; unexpected skipping or failure cannot pass.
   python:
     name: "Gate: required checks for this change"
-    needs: [changes, python_checks_gate, coordination, web, deployment, node_controller_image]
+    needs:
+      [
+        changes,
+        delivery_tracking,
+        python_checks_gate,
+        coordination,
+        web,
+        deployment,
+        node_controller_image,
+      ]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
@@ -659,6 +724,7 @@ jobs:
         env:
           MODE: ${{ needs.changes.outputs.mode }}
           ROUTING_RESULT: ${{ needs.changes.result }}
+          DELIVERY_RESULT: ${{ needs.delivery_tracking.result }}
           CHECKS_RESULT: ${{ needs.python_checks_gate.result }}
           COORDINATION_RESULT: ${{ needs.coordination.result }}
           WEB_RESULT: ${{ needs.web.result }}
@@ -668,6 +734,10 @@ jobs:
         run: |
           if [[ "$ROUTING_RESULT" != success ]]; then
             echo "::error::CI routing=$ROUTING_RESULT"
+            exit 1
+          fi
+          if [[ "$DELIVERY_RESULT" != success ]]; then
+            echo "::error::Delivery matrix freshness=$DELIVERY_RESULT"
             exit 1
           fi
           if [[ "$CONTROLLER_RESULT" != success ]]; then

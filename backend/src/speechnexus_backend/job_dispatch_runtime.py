@@ -347,13 +347,19 @@ class JobDispatchRuntime:
                         backoff_seconds=0,
                     )
                 )
+            queue = PostgresDispatchQueue(
+                self._pool,
+                kinds=self.settings.kinds,
+                require_admission=True,
+                timeout_seconds=self.settings.storage_timeout_seconds,
+            )
+            if queue.require_admission is not True:
+                # The production lane must never fall back to anchor-only claims.
+                raise DispatchDependenciesUnavailableError(
+                    "Job dispatch requires the admission claim filter"
+                )
             dispatcher = JobDispatcher(
-                PostgresDispatchQueue(
-                    self._pool,
-                    kinds=self.settings.kinds,
-                    require_admission=True,
-                    timeout_seconds=self.settings.storage_timeout_seconds,
-                ),
+                queue,
                 PostgresDispatchStateStore(
                     self._pool, timeout_seconds=self.settings.storage_timeout_seconds
                 ),

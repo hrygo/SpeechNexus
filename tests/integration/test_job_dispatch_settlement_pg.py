@@ -15,6 +15,7 @@ from typing import Any, cast
 
 import httpx
 import pytest
+from psycopg.conninfo import make_conninfo
 from pydantic import SecretStr
 from tests.integration.test_coordination_foundation import foundation as foundation
 from tests.integration.test_production_admission import AdmissionDatabase
@@ -30,6 +31,11 @@ from tests.integration.test_public_job_atomic_admission_pg import (
     _store,
 )
 
+from speechnexus_backend.job_dispatch_runtime import (
+    JobDispatchSettings,
+    build_dispatch_dependencies,
+)
+from speechnexus_backend.job_dispatch_worker import _main
 from speechnexus_backend.speech.application.job_dispatcher import JobDispatcher
 from speechnexus_backend.speech.domain.job_dispatch import (
     DispatchJob,
@@ -302,7 +308,15 @@ class _Gateway:
             self.query_calls += 1
             if self.submit_calls == 0:
                 return httpx.Response(
-                    404, json={"error": {"code": "control_execution_not_found", "message": "no"}}
+                    404,
+                    json={
+                        "error": {
+                            "code": "control_execution_not_found",
+                            "message": "no",
+                            "retryable": False,
+                            "recovery": "none",
+                        }
+                    },
                 )
             document: dict[str, Any] = {
                 "submit_intent_id": submit_id,
@@ -428,6 +442,29 @@ async def test_past_deadline_and_gateway_not_found_settle_without_submitting(
     _assert_capacity_returned(baseline, _capacity_snapshot(db))
 
 
+async def test_a_released_lease_is_never_claimed_by_the_admission_lane(
+    admission_database: AdmissionDatabase,
+) -> None:
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    _asset(db)
+    created = _submit(_store(admission_database), db, kind="asr", key="dispatch-asr-released")
+    assert created.outcome == "created", created.error_code
+    job_id = created.job.job_id
+    # No submit exists, so this is the never-dispatched release path.
+    assert await PostgresLeaseSettler(_pool(admission_database)).release(job_id) is True
+    assert _lease(db, job_id)["lease_state"] == "released"
+
+    claims = await PostgresDispatchQueue(
+        _pool(admission_database),
+        kinds=("asr", "tts"),
+        require_admission=True,
+        timeout_seconds=3,
+    ).claim_due("worker-a3", 30_000, 10)
+
+    assert claims == []
+
+
 async def test_voice_anchor_rows_are_never_claimed_by_the_admission_lane(
     admission_database: AdmissionDatabase,
 ) -> None:
@@ -532,6 +569,75 @@ async def test_planner_refuses_a_redacted_command(
         )
 
 
+async def test_worker_main_assembles_the_lane_and_settles_one_round(
+    admission_database: AdmissionDatabase,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import speechnexus_backend.job_dispatch_runtime as runtime_module
+
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    baseline = _capacity_snapshot(db)
+    _asset(db)
+    created = _submit(_store(admission_database), db, kind="asr", key="dispatch-main-asr")
+    assert created.outcome == "created", created.error_code
+    job_id = created.job.job_id
+
+    publisher = _Publisher()
+    monkeypatch.setattr(runtime_module, "build_result_publisher", lambda *a, **k: publisher)
+    foundation = admission_database.runtime.foundation
+    settings = JobDispatchSettings(
+        process_role="job-worker",
+        node_id="node-a",
+        instance_id="worker-a",
+        database_url=SecretStr(
+            make_conninfo(db.url, user=foundation.speech_role, password="synthetic_foundation_test")
+        ),
+        database_schema=db.schema,
+        gateway_base_url="http://127.0.0.1:9999",
+        gateway_credential=SecretStr("synthetic-dispatch-token-0001"),
+        gateway_timeout_seconds=1,
+        batch_size=4,
+        lease_ms=30_000,
+        poll_seconds=0.01,
+        job_timeout_seconds=30,
+        max_attempts=3,
+        interval_seconds=0.1,
+        storage_timeout_seconds=3,
+        dispatch_kinds="asr,tts",
+        object_storage_endpoint="http://127.0.0.1:9000",
+        artifacts_bucket="artifacts-synthetic",
+        execution_result_bucket="results-synthetic",
+        object_storage_access_key=SecretStr("access"),
+        object_storage_secret_key=SecretStr("secret"),
+    )
+    gateway = _Gateway(db)
+    adapter = ExecutionGatewayAdapter(
+        GatewayExecutionClient(
+            base_url="http://127.0.0.1:9999",
+            credential=TOKEN,
+            timeout_seconds=1,
+            max_retries=0,
+            backoff_seconds=0,
+            _transport=httpx.MockTransport(gateway.handler),
+        )
+    )
+    dependencies = build_dispatch_dependencies(settings)
+    try:
+        await _main(settings, dependencies, once=True, gateway=adapter)
+    finally:
+        await adapter.aclose()
+
+    assert publisher.calls == [job_id]
+    assert _read(_store(admission_database), job_id).state == "succeeded"
+    assert _lease(db, job_id)["lease_state"] == "released"
+    _assert_capacity_returned(baseline, _capacity_snapshot(db))
+    document = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert document["event"] == "job_dispatch_batch"
+    assert document["claimed"] == 1 and document["succeeded"] == 1
+
+
 async def test_preflight_still_covers_live_public_asr_and_tts(
     admission_database: AdmissionDatabase,
 ) -> None:
@@ -539,10 +645,18 @@ async def test_preflight_still_covers_live_public_asr_and_tts(
     db = admission_database.runtime.foundation.database
     role = admission_database.runtime.foundation.speech_role
     db.query(f'GRANT SELECT ON "{db.schema}".speech_tts_settlement TO "{role}"')
-    _submit(_store(admission_database), db, kind="tts", key="dispatch-preflight-tts")
+    created = _submit(_store(admission_database), db, kind="tts", key="dispatch-preflight-tts")
+    assert created.outcome == "created", created.error_code
     # A live public TTS lease is owned by the dispatcher and needs no root.
     require_complete_tts_roots(_pool(admission_database))
-    # Once its deadline has passed without a release it is leaked capacity.
+    # A redacted public command keeps no kind to match; the lease identity must
+    # still expose the leaked capacity once the deadline has long passed.
+    db.query(
+        "UPDATE admission_operations SET request_document=NULL, "
+        "command_redacted_at_us=recorded_at_us, command_deletion_job_id=%s, "
+        "command_deletion_evidence_digest=%s WHERE operation_id=%s",
+        ("job-deletion-preflight", DIGEST, created.job.job_id),
+    )
     db.query("UPDATE admission_leases SET deadline_at_us=1")
     with pytest.raises(ValueError, match="reconcile first"):
         require_complete_tts_roots(_pool(admission_database))

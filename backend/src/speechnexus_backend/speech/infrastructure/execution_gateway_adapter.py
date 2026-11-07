@@ -64,7 +64,13 @@ class ExecutionGatewayAdapter:
             document = await self._client.query_document(submit_intent_id)
         except GatewayRejectedError as error:
             if error.status_code == 404:
-                return GatewayReply("not_found")
+                if error.gateway_code == "control_execution_not_found":
+                    return GatewayReply("not_found")
+                # A router or proxy 404 is not evidence that the execution is
+                # absent; never let it settle or release a possible execution.
+                raise DispatchProtocolError(
+                    "Gateway 404 is not a contract not-found answer"
+                ) from None
             if error.status_code in (408, 429):
                 return GatewayReply("unknown", error_code="outcome_unknown")
             raise self._rejected(error) from None

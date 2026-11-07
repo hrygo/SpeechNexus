@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
@@ -82,6 +83,9 @@ class ResultPublisher(Protocol):
     ) -> PublishedResult: ...
 
 
+_LOG = logging.getLogger(__name__)
+
+
 class LeaseSettlement(Protocol):
     """Return the admission lease of a terminal asr/tts Job.
 
@@ -95,10 +99,17 @@ class LeaseSettlement(Protocol):
 
 @dataclass(slots=True)
 class _DispatchPhase:
-    """Mutable markers for gateway protocol handling and an actual submit."""
+    """Mutable markers for gateway protocol handling and an actual submit.
+
+    ``submitted`` only says a send may have happened (or an execution was already
+    observed); ``absent`` records an explicit gateway answer that no execution
+    exists. The cancellation not-submitted fact requires one of: the Job was
+    never marked running, or ``absent`` was proven by the gateway.
+    """
 
     gateway: bool = False
     submitted: bool = False
+    absent: bool = False
 
 
 class JobDispatcher:
@@ -167,9 +178,12 @@ class JobDispatcher:
         try:
             return await self._dispatch_claimed(claim, should_stop, phase)
         finally:
-            # Every exit before an actual submit is a dispatch that did not submit.
-            # Observation is idempotent and covers all current/future early returns.
-            if not phase.submitted:
+            # A not-submitted observation may only be written when this dispatch
+            # provably never sent anything: the Job was never marked running, or
+            # the gateway explicitly answered that the identity has no execution.
+            # An already-observed execution, a lost query or a lost submit answer
+            # must never become durable "not submitted" evidence.
+            if phase.absent or (not phase.submitted and claim.job.state == "pending"):
                 await self._record_not_submitted_if_cancelling(claim, job.job_id)
 
     async def _dispatch_claimed(
@@ -217,8 +231,20 @@ class JobDispatcher:
             if current.state != "running":
                 return DispatchResult(job.job_id, "claim_lost", "cancellation_pending")
             phase.gateway = True
-            reply = await self._gateway.query(submission.submit_intent_id)
+            try:
+                reply = await self._gateway.query(submission.submit_intent_id)
+            except DispatchUnavailableError:
+                # An unreadable query may hide a previous submit. This dispatch
+                # must never become a durable "not submitted" observation.
+                phase.submitted = True
+                raise
+            if reply.outcome != "not_found":
+                # The gateway already reports an execution, or cannot say there
+                # is none. That answer may be the submit of a crashed worker, so
+                # this dispatch is not a pre-submit exit.
+                phase.submitted = True
             if reply.outcome == "not_found":
+                phase.absent = True
                 renewed = await self._states.renew(claim, self._limits.lease_ms)
                 if renewed is None:
                     return DispatchResult(job.job_id, "claim_lost", "claim_lost")
@@ -235,16 +261,19 @@ class JobDispatcher:
                     # execution facts. Only an engine-reported failed/aborted
                     # outcome may become a public failure.
                     return DispatchResult(job.job_id, "unknown", "job_timeout")
-                reply = await self._gateway.submit(submission)
+                # The send may be accepted even if its response is lost.
+                phase.absent = False
                 phase.submitted = True
+                reply = await self._gateway.submit(submission)
             return await self._follow(claim, job, submission, reply, should_stop, phase)
         except DispatchRequestUnavailableError:
             return await self._fail_absent_execution(claim, job, "job_request_unavailable", phase)
         except DispatchRejectedError as error:
             if error.error_code == "gateway_barrier_fenced" and await self._cancelling(job):
                 # The gateway's barrier refused this submit and the Job is already
-                # cancelling: no execution exists. Keep cancelling and let the
-                # reconciliation worker close it from the durable no-execution fact.
+                # cancelling: no execution exists. The finally writes the durable
+                # no-execution fact for reconciliation.
+                phase.absent = True
                 return DispatchResult(job.job_id, "skipped", "gateway_barrier_fenced")
             return await self._fail(claim, job, error.error_code)
         except DispatchConflictError:
@@ -306,12 +335,14 @@ class JobDispatcher:
             if reply.outcome == "not_found":
                 if submitted:
                     return DispatchResult(job.job_id, "unknown", "execution_not_found")
-                reply = await self._gateway.submit(submission)
+                phase.absent = False
                 phase.submitted = True
+                reply = await self._gateway.submit(submission)
                 submitted = reply.outcome == "status"
                 continue
             if reply.outcome == "rejected":
                 if reply.error_code == "gateway_barrier_fenced" and await self._cancelling(job):
+                    phase.absent = True
                     return DispatchResult(job.job_id, "skipped", "gateway_barrier_fenced")
                 return await self._fail(claim, job, reply.error_code or "execution_rejected")
             status = reply.status
@@ -436,9 +467,14 @@ class JobDispatcher:
         if self._leases is None or job.kind not in DISPATCHABLE_JOB_KINDS:
             return
         try:
-            await self._leases.release(job.job_id)
+            released = await self._leases.release(job.job_id)
         except Exception:
+            _LOG.warning("lease release raised", extra={"job_id": job.job_id})
             return
+        if released is not True:
+            # The lease row itself is the durable marker; operators find it via
+            # the terminal Job with a still-held lease and settle by original id.
+            _LOG.warning("lease release deferred to reconciliation", extra={"job_id": job.job_id})
 
     async def _finish(
         self,

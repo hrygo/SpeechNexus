@@ -65,10 +65,14 @@ class PostgresDispatchQueue:
     not own; a voice worker opts in explicitly instead of relying on row order.
 
     ``require_admission`` turns the production lane on: only a Job whose admission
-    wrote a complete command, an attempt and a lease in the same commit is due.
-    Voice kinds keep an operation anchor without attempt/lease, so they are never
-    claimed here and never re-enter ``admit_in_transaction`` for an existing
+    wrote a complete command, an attempt and a usable lease in the same commit is
+    due. Voice kinds keep an operation anchor without attempt/lease, so they are
+    never claimed here and never re-enter ``admit_in_transaction`` for an existing
     anchor.
+
+    The default stays ``False`` because this queue also serves the legacy voice
+    lanes that intentionally claim those anchor rows; the production Job runtime
+    is the only caller that sets it and asserts the filter at startup.
     """
 
     def __init__(
@@ -122,6 +126,8 @@ class PostgresDispatchQueue:
             "AND t.attempt_id = a.current_attempt_id "
             "JOIN admission_leases AS l ON l.operation_id = t.operation_id "
             "AND l.attempt_id = t.attempt_id "
+            "AND l.lease_state IN ('reserved', 'executing') "
+            "AND l.cleanup_state = 'pending' "
             if self._require_admission
             else ""
         )

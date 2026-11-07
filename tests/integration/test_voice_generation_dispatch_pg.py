@@ -240,6 +240,7 @@ class _Gateway:
                             "code": code,
                             "message": "synthetic rejection",
                             "retryable": False,
+                            "recovery": "none",
                         }
                     },
                 )
@@ -257,7 +258,15 @@ class _Gateway:
                         },
                     )
                 return httpx.Response(
-                    404, json={"error": {"code": "control_execution_not_found", "message": "none"}}
+                    404,
+                    json={
+                        "error": {
+                            "code": "control_execution_not_found",
+                            "message": "none",
+                            "retryable": False,
+                            "recovery": "none",
+                        }
+                    },
                 )
             if path == "/internal/v1/executions/" + str(self.submit_id):
                 return httpx.Response(200, json=self._status(self._next_state()))

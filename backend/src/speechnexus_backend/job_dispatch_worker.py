@@ -18,6 +18,9 @@ from speechnexus_backend.job_dispatch_runtime import (
 )
 from speechnexus_backend.speech.application.job_dispatcher import JobDispatcher
 from speechnexus_backend.speech.domain.job_dispatch import DispatchBatch
+from speechnexus_backend.speech.infrastructure.execution_gateway_adapter import (
+    ExecutionGatewayAdapter,
+)
 
 BATCH_LOG_FIELDS = (
     "event",
@@ -76,6 +79,7 @@ async def _main(
     dependencies: DispatchDependencies,
     *,
     once: bool,
+    gateway: ExecutionGatewayAdapter | None = None,
 ) -> None:
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -87,7 +91,7 @@ async def _main(
     previous_disabled = pool_logger.disabled
     pool_logger.disabled = True
     try:
-        runtime = JobDispatchRuntime(settings, dependencies)
+        runtime = JobDispatchRuntime(settings, dependencies, gateway=gateway)
         await runtime.open()
         try:
             assert runtime.dispatcher is not None

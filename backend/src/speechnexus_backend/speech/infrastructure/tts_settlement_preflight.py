@@ -13,8 +13,10 @@ Two kinds of admission exist on the same lease table:
   reconciled.
 
 Public Job operation ids are the public Job ids (``job-…``); synchronous
-admissions use ``operation-…``. The exemption is explicit so a future identity
-change fails closed (startup refused) instead of silently ignoring held capacity.
+admissions use ``operation-…``. The public branch keys on that prefix, not on the
+stored command kind, because a redacted public command has no kind left to match
+and would otherwise hide held capacity. A future identity change fails closed
+(startup refused) instead of silently ignoring held capacity.
 """
 
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
@@ -22,16 +24,8 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 _TTS_KINDS = (
     "o.request_document::jsonb->>'kind' IN ('tts_file','builtin_voice_qualification_probe')"
 )
-_ASR_TTS_KINDS = (
-    "o.request_document::jsonb->>'kind' IN "
-    "('asr_file','tts_file','builtin_voice_qualification_probe')"
-)
 _TTS_COMMANDS = (
     "o.request_document::jsonb#>>'{gateway_request,command,kind}'='tts' "
-    "OR o.request_document::jsonb#>>'{gateway_request,command,task_kind}'='tts_file'"
-)
-_ASR_TTS_COMMANDS = (
-    "o.request_document::jsonb#>>'{gateway_request,command,kind}' IN ('asr','tts') "
     "OR o.request_document::jsonb#>>'{gateway_request,command,task_kind}'='tts_file'"
 )
 # The dispatcher settles a past-deadline Job as soon as its claim is due; allow
@@ -62,10 +56,11 @@ def require_complete_tts_roots(pool: SpeechPool, *, timeout_seconds: float = 3) 
         f"AND o.operation_id NOT LIKE 'job-%' AND {_ROOT_ABSENT}"
         " OR "
         # A live public Job lease needs no root, but once its frozen deadline has
-        # passed an unreleased lease is held capacity that nobody settled. This
-        # also covers public asr, which the TTS-only filter never saw.
+        # passed an unreleased lease is held capacity that nobody settled. The
+        # `job-` prefix is the durable public identity; do not match on the
+        # command kind, which a redacted public row no longer has.
         f"l.deadline_at_us<=clock.now_us - {_PUBLIC_SETTLEMENT_GRACE_US} "
-        f"AND (({_ASR_TTS_KINDS}) OR ({_ASR_TTS_COMMANDS})) "
+        "AND l.operation_id LIKE 'job-%' "
         f"AND {_ROOT_ABSENT}"
         ") LIMIT 1"
     )

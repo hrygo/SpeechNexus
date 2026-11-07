@@ -144,11 +144,16 @@ workspace/pool/host/gateway/instance/generation/binding/policy/fencing/deadline 
 `submit_intent_id`；任何不一致都以协议错误停止，不按摘要或新默认值重建请求。
 
 `PostgresDispatchQueue` 以 `require_admission=True` 装配时，只领取同一事务写下了
-完整命令、attempt 和 lease 的 Job。voice 生成 Job 仍有 operation 锚点但无
+完整命令、attempt 和可用 lease 的 Job；租约必须仍是 `reserved`/`executing` 且
+`cleanup_state='pending'`，已释放的租约不会再被领取。voice 生成 Job 仍有 operation 锚点但无
 attempt/lease，因此不会被该通道领取，也不会对既有锚点再次调用
 `admit_in_transaction`；voice 的独立 lanes 继续按显式 kind 领取。
 `SPEECHNEXUS_JOB_DISPATCH_KINDS` 选择本进程的 kind 列表（默认 `asr,tts`，逗号分隔、
 去重且必须属于可派发并集）。
+
+`PostgresDispatchQueue.require_admission` 的默认值是 `False`，因为这个类也服务
+voice 生成 lanes 与历史调用方，它们需要领取仅含 operation 锚点的行；生产 Job runtime
+是唯一把它设为 `True` 的装配点，并在启动时断言该过滤确实生效，回退即拒绝启动。
 
 `build_dispatch_dependencies` 装配真实 planner 与结果发布器并共享一个连接池；
 对象存储 readiness、planner 构造或任何前置失败都包装为
@@ -166,6 +171,27 @@ asr/tts 的终态结算在这一事务之后走现有 `LeaseService.release`：�
 response、cleanup complete 和停止证据；失败沿 `failed/not_required` 或网关终态事实。
 释放被拒绝或结果未知时租约保持占用并留给协调，不回写已提交的公共终态。
 单次失败、超时或断线都不是释放证据。
+
+终态提交与释放之间存在崩溃/失败窗口，本片不做自动重试。留下的持久事实是租约本身：
+公共 Job 已 `succeeded`/`failed` 而 `admission_leases.lease_state` 仍非 `released`、
+`budget_released_at_us IS NULL`，释放失败时 worker 也向 stderr 输出一条只含 job_id 的
+warning（stdout 的批次 JSON 字段保持不变）。可用以下只读查询发现：
+
+```sql
+SELECT l.lease_id, l.operation_id, j.state
+FROM admission_leases AS l JOIN speech_jobs AS j ON j.job_id = l.operation_id
+WHERE j.state IN ('succeeded','failed') AND l.lease_state <> 'released';
+```
+
+冻结期限过后再留 60 秒结算窗口，仍被持有且无 settlement 根时，preflight 拒绝 API
+启动，因此这一窗口最迟在期限后被运营侧发现；在此之前由该查询或日志人工巡检。
+处理路径是按原 `lease_id` 调用既有 `LeaseService.release`（先 `query_lease` 核对
+原身份），不得新建执行或改写公共终态；自动重试与扫描器归 [#528](https://github.com/hrygo/SpeechNexus/issues/528)。
+
+网关长期不可用时，`max_attempts` 用尽后 Job 会停在 `running`：派发器不会把可能仍在
+执行的 Job 写成 failed，本片也不主动结算这类终止态。其恢复依赖
+[#528](https://github.com/hrygo/SpeechNexus/issues/528) 的时间超时结算与对账，运维侧
+应先按该 issue 的范围处理，不能手工改成 failed 来释放容量。
 
 过期提交使用准入冻结的 `deadline_at`，而不是进程自己估算的 Job 期限：先以稳定
 `submit_intent_id` 查询网关，只有网关明确返回 404 且冻结期限已过，才写持久

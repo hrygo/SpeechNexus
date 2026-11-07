@@ -26,9 +26,18 @@ from speechnexus_backend.speech.domain.job_dispatch import (
 )
 
 MAX_RESULT_BYTES = 64 * 1024 * 1024
+# A voice generation result commits the draft preview the engine synthesized;
+# the public result references it as ``preview_artifact_ids``.
+_VOICE_PREVIEW_MEDIA: dict[str, ArtifactKind] = {
+    "audio/wav": "preview",
+    "audio/pcm": "preview",
+    "audio/mpeg": "preview",
+}
 _RESULT_MEDIA: dict[str, dict[str, ArtifactKind]] = {
     "asr": {"application/json": "transcript"},
     "tts": {"audio/wav": "audio", "audio/pcm": "audio", "audio/mpeg": "audio"},
+    "voice_design": _VOICE_PREVIEW_MEDIA,
+    "voice_clone": _VOICE_PREVIEW_MEDIA,
 }
 _REFERENCE_FIELDS = frozenset(
     {
@@ -140,7 +149,7 @@ class ResultArtifactPublisher:
 
     @staticmethod
     def _published(record: ArtifactRecord, job: DispatchJob) -> PublishedResult:
-        expected_kind = _RESULT_MEDIA[job.kind].get(record.media_type)
+        expected_kind = _media_for(job.kind).get(record.media_type)
         if (
             record.workspace_id != job.workspace_id
             or expected_kind is None
@@ -150,6 +159,14 @@ class ResultArtifactPublisher:
         ):
             raise DispatchProtocolError("Committed Artifact belongs to another result")
         return PublishedResult(record.artifact_id, record.receipt_id)
+
+
+def _media_for(kind: str) -> dict[str, ArtifactKind]:
+    """Return the media map for one dispatchable kind, or fail closed."""
+    media = _RESULT_MEDIA.get(kind)
+    if media is None:
+        raise DispatchProtocolError("Result Job kind has no published media mapping")
+    return media
 
 
 def _result_receipt(
@@ -163,7 +180,7 @@ def _result_receipt(
     media_type = receipt.get("media_type")
     if not isinstance(media_type, str):
         raise DispatchProtocolError("Result receipt has no media type")
-    kind = _RESULT_MEDIA[job.kind].get(media_type)
+    kind = _media_for(job.kind).get(media_type)
     if kind is None:
         raise DispatchProtocolError("Result media type is not allowed for this Job")
     storage_version = receipt.get("storage_version")

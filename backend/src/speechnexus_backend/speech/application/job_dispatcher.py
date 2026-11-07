@@ -200,7 +200,11 @@ class JobDispatcher:
                     return DispatchResult(job.job_id, "claim_lost", "claim_lost")
                 claim = renewed
                 if self._expired(job):
-                    return await self._fail(claim, job, "job_timeout")
+                    # Dispatcher-side expiry is not engine evidence: the Job
+                    # stays running and reconciliation settles it from durable
+                    # execution facts. Only an engine-reported failed/aborted
+                    # outcome may become a public failure.
+                    return DispatchResult(job.job_id, "unknown", "job_timeout")
                 reply = await self._gateway.submit(submission)
                 phase.submitted = True
             return await self._follow(claim, job, submission, reply, should_stop, phase)
@@ -326,7 +330,7 @@ class JobDispatcher:
         should_stop: Callable[[], bool] | None,
     ) -> DispatchResult:
         receipt = await self._gateway.result_receipt(
-            submission.submit_intent_id, audio=job.kind == "tts"
+            submission.submit_intent_id, audio=job.kind in ("tts", "voice_design", "voice_clone")
         )
         if receipt.outcome != "status" or receipt.document is None:
             if receipt.outcome == "unknown":

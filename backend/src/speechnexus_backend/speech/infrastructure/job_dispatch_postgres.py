@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterable
 from dataclasses import replace
 from typing import Any, cast
 
@@ -10,6 +11,7 @@ import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
 from speechnexus_backend.speech.domain.job_dispatch import (
+    DISPATCHABLE_JOB_KIND_UNION,
     DISPATCHABLE_JOB_KINDS,
     ClaimedJob,
     DispatchClaimLostError,
@@ -53,12 +55,35 @@ def _job(row: dict[str, Any]) -> DispatchJob:
 
 
 class PostgresDispatchQueue:
-    """One transaction claims due rows; ``SKIP LOCKED`` prevents double ownership."""
+    """One transaction claims due rows; ``SKIP LOCKED`` prevents double ownership.
 
-    def __init__(self, pool: SpeechPool, *, timeout_seconds: float = 3) -> None:
+    ``kinds`` names the lane this queue serves. It defaults to the ASR/TTS lane,
+    so a worker never claims a voice generation Job whose engine adapter it does
+    not own; a voice worker opts in explicitly instead of relying on row order.
+    """
+
+    def __init__(
+        self,
+        pool: SpeechPool,
+        *,
+        kinds: Iterable[str] = DISPATCHABLE_JOB_KINDS,
+        timeout_seconds: float = 3,
+    ) -> None:
         if type(timeout_seconds) not in (int, float) or not 0 < timeout_seconds <= 30:
             raise ValueError("Dispatch claims require bounded deadlines")
+        selected = tuple(kinds)
+        if not selected:
+            raise ValueError("Dispatch lane requires at least one Job kind")
+        if len(set(selected)) != len(selected):
+            raise ValueError("Dispatch lane Job kinds must be unique")
+        if any(kind not in DISPATCHABLE_JOB_KIND_UNION for kind in selected):
+            raise ValueError("Dispatch lane Job kind is outside the dispatchable union")
         self._pool, self._timeout = pool, timeout_seconds
+        self._kinds = selected
+
+    @property
+    def kinds(self) -> tuple[str, ...]:
+        return self._kinds
 
     async def claim_due(self, worker_id: str, lease_ms: int, limit: int) -> list[ClaimedJob]:
         identifier(worker_id)
@@ -74,9 +99,9 @@ class PostgresDispatchQueue:
             "JOIN speech_jobs AS j ON j.job_id = c.job_id CROSS JOIN clock "
             "WHERE c.job_state = 'pending' AND c.claim_expires_at_us <= clock.now_us "
             "AND j.state IN ('pending', 'running') "
-            # A voice creation Job has no execution plan in this unit. Filter it
-            # out inside the claim so it neither consumes the batch limit nor
-            # turns into a DispatchProtocolError that starves ASR/TTS.
+            # A Job outside this queue's lane is filtered inside the claim so it
+            # neither consumes the batch limit nor turns into a
+            # DispatchProtocolError that starves the kinds this worker owns.
             "AND j.kind = ANY(%s) "
             "ORDER BY j.created_at_us, c.job_id FOR UPDATE OF c SKIP LOCKED LIMIT %s"
             "), updated AS (UPDATE coordination_jobs AS c "
@@ -99,7 +124,7 @@ class PostgresDispatchQueue:
                 )
                 rows = connection.execute(
                     query,
-                    (list(DISPATCHABLE_JOB_KINDS), limit, worker_id, lease_ms * 1000),
+                    (list(self._kinds), limit, worker_id, lease_ms * 1000),
                 ).fetchall()
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
             raise DispatchUnavailableError("Dispatch claim storage is unavailable") from None

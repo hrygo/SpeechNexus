@@ -19,6 +19,7 @@ from speechnexus_backend.speech.domain.public_jobs import (
     PublicJobUnavailableError,
     canonical_digest,
     idempotency_digest,
+    identifier,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechConnection, SpeechPool
 
@@ -167,6 +168,14 @@ class PostgresVoiceDrafts:
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
             # Includes a lost COMMIT reply. Only the original key may be replayed.
             raise PublicJobUnavailableError from None
+
+    def draft_exists(self, draft_id: str) -> bool:
+        with self._transaction() as connection:
+            row = connection.execute(
+                "SELECT 1 AS present FROM speech_voice_drafts WHERE draft_id = %s",
+                (identifier(draft_id),),
+            ).fetchone()
+        return row is not None
 
     def get(self, draft_id: str, revision: str | None = None) -> dict[str, Any] | None:
         with self._transaction() as connection:

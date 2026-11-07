@@ -4,6 +4,7 @@ import json
 import os
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from typing import Any, cast
 
 import pytest
@@ -772,9 +773,7 @@ async def test_cancelled_and_expired_generations_name_their_failure(
     validate_response("getVoiceDraft", 200, {"body": read.json()})
 
 
-def _candidate_draft(
-    db: JobSandbox, kind: str = "design"
-) -> tuple[VoiceDrafts, dict[str, Any]]:
+def _candidate_draft(db: JobSandbox, kind: str = "design") -> tuple[VoiceDrafts, dict[str, Any]]:
     provider = _provider(db)
     draft, job = provider.create(
         "voice_design" if kind == "design" else "voice_clone",
@@ -825,8 +824,11 @@ def test_generate_appends_one_revision_and_replays_after_head_advance(
         first_job.job_id,
         "succeeded",
         result_json=_candidate_result(
-            draft["id"], "design", receipt="receipt-revision-2",
-            previews=["preview-revision-2"], revision="2",
+            draft["id"],
+            "design",
+            receipt="receipt-revision-2",
+            previews=["preview-revision-2"],
+            revision="2",
         ),
     )
     second, _second_job = provider.generate(
@@ -866,6 +868,25 @@ def test_generate_appends_one_revision_and_replays_after_head_advance(
         )
 
 
+def _validation_document(draft_id: str, revision: str = "1") -> dict[str, Any]:
+    return {
+        "resource_type": "voice_validation",
+        "id": "validation-1",
+        "object": "nexus.voice_validation",
+        "draft_id": draft_id,
+        "draft_revision": revision,
+        "validation_set_revision": "1",
+        "model_binding": {"id": "voice-model", "revision": "1"},
+        "status": "passed",
+        "checks": [
+            {"name": "intelligibility", "required": True, "status": "passed"},
+            {"name": "reusable_tts", "required": True, "status": "passed"},
+        ],
+        "publication_eligible": True,
+        "created_at": "2026-10-24T12:00:00Z",
+    }
+
+
 def _seed_validation_report(
     db: JobSandbox, artifact_id: str, receipt: str, *, state: str = "ready"
 ) -> None:
@@ -875,8 +896,13 @@ def _seed_validation_report(
         "sha256, receipt_id, source_operation_id, object_key, storage_version_id, created_at_us) "
         "VALUES (%s, 'workspace-default', 'validation_report', %s, 'application/json', "
         "128, %s, %s, NULL, %s, 'synthetic-version', 10)",
-        (artifact_id, state, "sha256:" + "f" * 64, receipt,
-         "private/artifacts/workspace-default/" + artifact_id),
+        (
+            artifact_id,
+            state,
+            "sha256:" + "f" * 64,
+            receipt,
+            "private/artifacts/workspace-default/" + artifact_id,
+        ),
     )
 
 
@@ -894,7 +920,9 @@ def test_validate_targets_a_candidate_revision_and_replays(
     assert first.kind == "voice_validation"
     assert first.model_id == "voice-model"
     replay = provider.validate(
-        draft["id"], body, request_id="request-validate-replay",
+        draft["id"],
+        body,
+        request_id="request-validate-replay",
         idempotency_key="validate-key-1",
     )
     assert replay.job_id == first.job_id
@@ -903,7 +931,9 @@ def test_validate_targets_a_candidate_revision_and_replays(
     # A pending next head is not a candidate, and a later head makes revision 1
     # stale; both refusals happen before a second Job is written.
     second, _second_job = provider.generate(
-        draft["id"], _generation_body(draft), request_id="request-validate-next",
+        draft["id"],
+        _generation_body(draft),
+        request_id="request-validate-next",
         idempotency_key="validate-next-key",
     )
     with pytest.raises(VoiceDraftStaleRevisionError):
@@ -928,11 +958,14 @@ def test_validate_targets_a_candidate_revision_and_replays(
     voice_db.jobs.advance(
         first.job_id,
         "succeeded",
-        result_json=json.dumps({
-            "kind": "voice_validation",
-            "validation_report_artifact_id": "validation-report-1",
-            "receipt_id": "validation-receipt-1",
-        }),
+        result_json=json.dumps(
+            {
+                "kind": "voice_validation",
+                "validation": _validation_document(draft["id"]),
+                "validation_report_artifact_id": "validation-report-1",
+                "receipt_id": "validation-receipt-1",
+            }
+        ),
     )
     succeeded = voice_db.jobs.get(first.job_id)
     assert succeeded is not None
@@ -991,6 +1024,16 @@ async def test_http_generate_and_validate_expose_revision_contract(
             json=generation,
         )
         assert missing.status_code == 404, missing.text
+        unknown_revision = await http.post(
+            "/v1/nexus/voice-drafts/" + draft["id"] + "/generations",
+            json={**generation, "expected_draft_revision": "9"},
+        )
+        assert unknown_revision.status_code == 409, unknown_revision.text
+        unknown_validation = await http.post(
+            "/v1/nexus/voice-drafts/" + draft["id"] + "/validations",
+            json={"expected_draft_revision": "9", "validation_set_revision": "1"},
+        )
+        assert unknown_validation.status_code == 409, unknown_validation.text
 
         _seed_preview_artifact(
             voice_db, "preview-http-revision-2", receipt="receipt-http-revision-2"
@@ -1064,18 +1107,19 @@ def test_validation_report_readback_requires_matching_ready_artifact(
         request_id="request-validation-negative",
         idempotency_key=None,
     )
-    _seed_validation_report(
-        voice_db, "validation-report-negative", artifact_receipt, state=state
-    )
+    _seed_validation_report(voice_db, "validation-report-negative", artifact_receipt, state=state)
     voice_db.jobs.advance(job.job_id, "running")
     voice_db.jobs.advance(
         job.job_id,
         "succeeded",
-        result_json=json.dumps({
-            "kind": "voice_validation",
-            "validation_report_artifact_id": "validation-report-negative",
-            "receipt_id": "validation-receipt-negative",
-        }),
+        result_json=json.dumps(
+            {
+                "kind": "voice_validation",
+                "validation": _validation_document(draft["id"]),
+                "validation_report_artifact_id": "validation-report-negative",
+                "receipt_id": "validation-receipt-negative",
+            }
+        ),
     )
     succeeded = voice_db.jobs.get(job.job_id)
     assert succeeded is not None
@@ -1093,7 +1137,7 @@ def test_generate_store_replay_survives_a_missed_precheck(
     )
     assert first["revision"]["revision"] == "2"
     # Simulate the application's first lookup missing a concurrent commit. The
-    # adapter must still decide replay before the head CAS, or this becomes stale.
+    # adapter must still decide replay before the draft lock, or this becomes stale.
     monkeypatch.setattr(PublicJobs, "_find_original", lambda *args, **kwargs: None)
     replay, replay_job = provider.generate(
         draft["id"], body, request_id="request-race-2", idempotency_key="generate-race-key"
@@ -1123,3 +1167,165 @@ def test_revision_insert_failure_rolls_back_job_outbox_and_head(
     assert voice_db.count("coordination_outbox") == 1
     read = provider.get(draft["id"])
     assert read["draft"]["head_revision"] == "1"
+
+
+async def test_generic_validation_job_derives_binding_and_maps_refusals(
+    voice_db: JobSandbox,
+) -> None:
+    provider, draft = _candidate_draft(voice_db)
+    app = create_app(settings=_settings(), jobs=voice_db.jobs, voice_drafts=provider)
+    body = {
+        "kind": "voice_validation",
+        "input": {
+            "voice_draft_id": draft["id"],
+            "draft_revision": "1",
+            "validation_set_revision": "1",
+        },
+    }
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        accepted = await http.post(
+            "/v1/nexus/jobs", json=body, headers={"Idempotency-Key": "generic-validation-key"}
+        )
+        assert accepted.status_code == 202, accepted.text
+        parse_contract("Job", accepted.json())
+        assert accepted.json()["kind"] == "voice_validation"
+        assert accepted.json()["effective_configuration"]["models"]["voice"] == {
+            "id": "voice-model",
+            "revision": "1",
+        }
+        replay = await http.post(
+            "/v1/nexus/jobs", json=body, headers={"Idempotency-Key": "generic-validation-key"}
+        )
+        assert replay.status_code == 202, replay.text
+        assert replay.json()["id"] == accepted.json()["id"]
+        assert voice_db.count("speech_jobs") == 2
+
+        missing = await http.post(
+            "/v1/nexus/jobs",
+            json={
+                "kind": "voice_validation",
+                "input": {
+                    "voice_draft_id": draft["id"],
+                    "draft_revision": "9",
+                    "validation_set_revision": "1",
+                },
+            },
+        )
+        assert missing.status_code == 404, missing.text
+        parse_contract("ErrorResponse", missing.json())
+
+        next_revision, _next_job = provider.generate(
+            draft["id"],
+            _generation_body(draft),
+            request_id="request-generic-next",
+            idempotency_key="generic-next-key",
+        )
+        stale = await http.post("/v1/nexus/jobs", json=body)
+        assert stale.status_code == 409, stale.text
+        parse_contract("ErrorResponse", stale.json())
+        pending = await http.post(
+            "/v1/nexus/jobs",
+            json={
+                "kind": "voice_validation",
+                "input": {
+                    "voice_draft_id": draft["id"],
+                    "draft_revision": next_revision["draft"]["head_revision"],
+                    "validation_set_revision": "1",
+                },
+            },
+        )
+        assert pending.status_code == 422, pending.text
+        parse_contract("ErrorResponse", pending.json())
+
+
+async def test_malformed_validation_result_reads_as_unavailable(
+    voice_db: JobSandbox,
+) -> None:
+    provider, draft = _candidate_draft(voice_db)
+    job = provider.validate(
+        draft["id"],
+        {"expected_draft_revision": "1", "validation_set_revision": "1"},
+        request_id="request-malformed-validation",
+        idempotency_key=None,
+    )
+    _seed_validation_report(voice_db, "validation-report-malformed", "validation-receipt-malformed")
+    voice_db.jobs.advance(job.job_id, "running")
+    voice_db.jobs.advance(
+        job.job_id,
+        "succeeded",
+        result_json=json.dumps(
+            {
+                "kind": "voice_validation",
+                "validation_report_artifact_id": "validation-report-malformed",
+                "receipt_id": "validation-receipt-malformed",
+            }
+        ),
+    )
+    succeeded = voice_db.jobs.get(job.job_id)
+    assert succeeded is not None
+    with pytest.raises(PublicJobUnavailableError):
+        voice_db.jobs.artifacts(succeeded)
+    app = create_app(settings=_settings(), jobs=voice_db.jobs, voice_drafts=provider)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        response = await http.get("/v1/nexus/jobs/" + job.job_id)
+        assert response.status_code == 503, response.text
+        parse_contract("ErrorResponse", response.json())
+
+
+def test_stale_revision_store_guard_rejects_a_missed_precheck(
+    voice_db: JobSandbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider, draft = _candidate_draft(voice_db)
+    store = voice_db.jobs._store
+    original = store.create_revision
+    captured: dict[str, NewPublicJob] = {}
+
+    def capture(job: NewPublicJob, **kwargs: Any) -> Any:
+        captured.setdefault("job", job)
+        return original(job, **kwargs)
+
+    monkeypatch.setattr(store, "create_revision", capture)
+    provider.generate(
+        draft["id"],
+        _generation_body(draft),
+        request_id="request-store-cas-1",
+        idempotency_key=None,
+    )
+    monkeypatch.setattr(store, "create_revision", original)
+    probe = replace(captured["job"], job_id="job-stale-revision-probe")
+    result = original(probe, draft_id=draft["id"], expected_revision="1")
+    assert result.outcome == "stale", result
+    assert voice_db.count("speech_voice_draft_revisions") == 2
+
+
+def test_validation_target_is_relocked_before_insert(
+    voice_db: JobSandbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider, draft = _candidate_draft(voice_db)
+    store = voice_db.jobs._store
+    original = store.create
+    captured: dict[str, NewPublicJob] = {}
+
+    def capture(job: NewPublicJob) -> Any:
+        captured.setdefault("job", job)
+        return original(job)
+
+    monkeypatch.setattr(store, "create", capture)
+    provider.validate(
+        draft["id"],
+        {"expected_draft_revision": "1", "validation_set_revision": "1"},
+        request_id="request-store-validation-1",
+        idempotency_key=None,
+    )
+    monkeypatch.setattr(store, "create", original)
+    provider.generate(
+        draft["id"],
+        _generation_body(draft),
+        request_id="request-store-validation-next",
+        idempotency_key=None,
+    )
+    probe = replace(captured["job"], job_id="job-stale-validation-probe")
+    result = original(probe)
+    assert result.outcome == "rejected"
+    assert result.error_code == "stale"
+    assert voice_db.count("speech_jobs") == 3

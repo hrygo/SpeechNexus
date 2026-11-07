@@ -50,16 +50,16 @@ Host/Origin 403，以及草稿读取的无效输入 400。旧消费者应先升�
 
 ## 修订生成与校验
 
-`generateVoiceDraftRevision` 以 `expected_draft_revision` 做 head CAS：同一事务内锁草稿行，
-校验当前 head 后追加下一条 `speech_voice_draft_revisions`，同时写入生成 Job、提交行、
+`generateVoiceDraftRevision` 在草稿行锁内比较 `expected_draft_revision` 与当前 head：
+同一事务内追加下一条 `speech_voice_draft_revisions`，同时写入生成 Job、提交行、
 admission、协调 Job 与 outbox，并把草稿 head 指向新修订。修订行只追加；`(draft_id,
 revision)` 为主键，`generation_job_id` 唯一，输入和 binding 固定保存。草稿已发布、
-`preview_only`、kind 不符或 CAS 失败分别返回 409，缺失草稿返回 404。输入按草稿 kind
+`preview_only`、kind 不符或 head 不一致分别返回 409，缺失草稿返回 404。输入按草稿 kind
 校验，不能把 clone 输入提交到 design 草稿。
 
 带 `Idempotency-Key` 的生成先按 key 查原 Job 与本草稿的修订映射，再进入任何 binding 或
 草稿锁。因此即使 head 已推进，同键重放仍返回原 Job 与原修订，不追加第二条修订。该顺序
-是恢复语义的一部分，不能把重放移到 CAS 之后。
+是恢复语义的一部分，不能把重放移到草稿锁之后。
 
 `validateVoiceDraftRevision` 只接受固定候选修订：目标必须是当前 head，生成 Job 已成功，
 且结果的 `receipt_id` 与 ready preview Artifact 全部匹配；否则 409（stale）或 422
@@ -154,6 +154,12 @@ CHECK 扩展到 `voice_validation`。有 validation Job 时 downgrade 的窄 CHE
 启动校验列级权限，并对修订表逐列拒绝 UPDATE，同时拒绝 DELETE；不执行 DDL。
 旧 Job writer 必须同步迁移和授权后升级；未配置 provider 时六条返回真实 503。
 
+`voice_validation` 的 target binding revision 必须在 `definition` 中声明
+`logical_model`，且 `tasks` 包含 `voice_validation`；缺失或未发布时提交返回 422
+`model_binding_not_published`，任务不支持时返回 422 `model_binding_task_not_supported`。
+`POST /v1/nexus/jobs` 的泛化 validation 入口同样从候选修订注入该 binding，调用方无需自行
+选择 revision；不存在的修订返回 404，陈旧 head 返回 409，非候选返回 422。
+
 ## 验证与接收边界
 
 `tests/unit/backend/test_voice_creation_jobs.py` 与 `test_voice_drafts_http.py` 覆盖 Job 重放、
@@ -161,9 +167,10 @@ CHECK 扩展到 `voice_validation`。有 validation Job 时 downgrade 的窄 CHE
 精确修订查询、修订提交确认丢失的 503 形状，以及创建确认丢失时带键回放与无键 409 的分支。
 `tests/integration/test_voice_drafts_pg.py` 使用调用方隔离 DSN、随机 schema 与 finally DROP，
 覆盖迁移、创建/读取/推进、元数据 CAS/重放、并发同键、Job 回滚、候选阈值、中文/非 BMP
-字节边界、voice+ASR/TTS 混合派发、修订追加/回放/陈旧 head、校验目标与报告读取，以及正式
-lifespan 权限装配。`test_voice_draft_revisions_migration_pg.py` 单独验证 0043 回填与
-downgrade。
+字节边界、voice+ASR/TTS 混合派发、修订追加/回放/陈旧 head、校验目标与报告读取、
+泛化 Job 的 binding 注入与 404/409/422、损坏校验结果读取为 503，以及正式 lifespan 权限
+装配。`test_voice_draft_revisions_migration_pg.py` 单独验证 0043 回填、同一 schema 内 kind
+CHECK 过滤，以及有 validation Job 时 downgrade 拒绝且保留 0043。
 缺 `SPEECHNEXUS_TEST_DATABASE_URL` 时 pytest.fail；不能把缺配置当作通过。
 
 本轮在隔离 PostgreSQL 上实际执行了草稿、混合派发与 HTTP 用例；这是单库实测，不等于

@@ -7,6 +7,7 @@ from typing import Any, Literal, Protocol
 
 from speechnexus_backend.speech.application.public_jobs import (
     PublicJobs,
+    VoiceDraftStaleRevisionError,
     VoiceInputInvalidError,
 )
 from speechnexus_backend.speech.domain.public_jobs import (
@@ -69,6 +70,8 @@ class VoiceDraftNotFoundError(LookupError):
 
 class VoiceDraftStore(Protocol):
     def get(self, draft_id: str, revision: str | None = None) -> dict[str, Any] | None: ...
+
+    def draft_exists(self, draft_id: str) -> bool: ...
 
     def revision_target(self, draft_id: str, revision: str) -> dict[str, Any] | None: ...
 
@@ -157,7 +160,9 @@ class VoiceDrafts:
         expected = payload["expected_draft_revision"]
         target = self._store.revision_target(draft_id, expected)
         if target is None:
-            raise VoiceDraftNotFoundError
+            if not self._store.draft_exists(draft_id):
+                raise VoiceDraftNotFoundError
+            raise VoiceDraftStaleRevisionError
         if target["status"] in ("published", "preview_only"):
             raise VoiceDraftConflictError
         kind = target["kind"]
@@ -195,7 +200,9 @@ class VoiceDrafts:
         expected = payload["expected_draft_revision"]
         target = self._store.revision_target(draft_id, expected)
         if target is None:
-            raise VoiceDraftNotFoundError
+            if not self._store.draft_exists(draft_id):
+                raise VoiceDraftNotFoundError
+            raise VoiceDraftStaleRevisionError
         if target["status"] in ("published", "preview_only"):
             raise VoiceDraftConflictError
         body: dict[str, Any] = {

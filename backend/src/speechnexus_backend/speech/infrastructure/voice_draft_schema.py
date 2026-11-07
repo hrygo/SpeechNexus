@@ -45,13 +45,11 @@ VOICE_DRAFT_REVISION_DDL = (
     )""",
 )
 
-VOICE_DRAFT_REVISION_BACKFILL = (
-    """INSERT INTO speech_voice_draft_revisions
+VOICE_DRAFT_REVISION_BACKFILL = """INSERT INTO speech_voice_draft_revisions
         (draft_id, revision, kind, generation_job_id, input_json, binding_json, created_at_us)
     SELECT draft_id, head_revision, kind, generation_job_id, input_json, binding_json,
            created_at_us
     FROM speech_voice_drafts"""
-)
 
 
 def voice_draft_grants(schema: str, role: str) -> tuple[str, ...]:

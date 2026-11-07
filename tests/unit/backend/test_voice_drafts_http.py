@@ -59,6 +59,9 @@ class DraftStore:
         self.jobs_store = jobs_store if jobs_store is not None else ArtifactStore()
         self.jobs, self.requests = self.jobs_store.jobs, self.jobs_store.requests
 
+    def draft_exists(self, draft_id: str) -> bool:
+        return draft_id.removeprefix("draft-") in self.jobs
+
     def revision(self, draft_id: str, revision: str) -> dict[str, Any] | None:
         view = self.get(draft_id)
         if view is None or revision != view["revision"]["revision"]:
@@ -521,9 +524,7 @@ async def test_contract_violation_is_a_500_not_a_retryable_503() -> None:
 
 
 class LostRevisionStore(ArtifactStore):
-    def create_revision(
-        self, job: NewPublicJob, *, draft_id: str, expected_revision: str
-    ) -> Any:
+    def create_revision(self, job: NewPublicJob, *, draft_id: str, expected_revision: str) -> Any:
         raise JobOutcomeUnknownError
 
 

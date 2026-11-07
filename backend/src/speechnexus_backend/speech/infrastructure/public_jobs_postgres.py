@@ -314,12 +314,10 @@ class PostgresPublicJobs:
             raise PublicJobUnavailableError
         return _artifact(rows[0])
 
-    def voice_draft_revision(
-        self, draft_id: str, revision: str
-    ) -> VoiceDraftRevisionFact | None:
+    def voice_draft_revision(self, draft_id: str, revision: str) -> VoiceDraftRevisionFact | None:
         rows = self._read(
             "SELECT j.workspace_id, r.kind, d.head_revision, r.generation_job_id, "
-            "j.state, j.result_json, r.binding_json "
+            "j.state, j.result_json, j.model_id, r.binding_json "
             "FROM speech_voice_draft_revisions AS r "
             "JOIN speech_voice_drafts AS d ON d.draft_id = r.draft_id "
             "JOIN speech_jobs AS j ON j.job_id = r.generation_job_id "
@@ -351,6 +349,7 @@ class PostgresPublicJobs:
                 generation_job_id=row["generation_job_id"],
                 state=state,
                 result_json=row["result_json"],
+                model_id=row["model_id"],
                 binding=(binding_id, int(binding_revision)),
             )
         except ValueError, TypeError, KeyError:
@@ -491,6 +490,10 @@ class PostgresPublicJobs:
                             if existing is not None:
                                 return _replay_or_conflict(existing, job)
                         _validate_pinned_create(connection, job)
+                        if job.kind == "voice_validation":
+                            rejected = _lock_validation_target(connection, job)
+                            if rejected is not None:
+                                return JobCreateResult("rejected", error_code=rejected)
                     else:
                         selected = _binding_is_still_selected(
                             connection,
@@ -537,14 +540,10 @@ class PostgresPublicJobs:
         try:
             with self._transaction(deadline) as connection:
                 if job.idempotency_key_digest is not None:
-                    _lock_submission_key(
-                        connection, job.workspace_id, job.idempotency_key_digest
-                    )
+                    _lock_submission_key(connection, job.workspace_id, job.idempotency_key_digest)
                     existing = _existing_by_key(connection, job)
                     if existing is not None:
-                        replayed = _replay_digest(
-                            existing, job.request_digest, job.retry_of_job_id
-                        )
+                        replayed = _replay_digest(existing, job.request_digest, job.retry_of_job_id)
                         if replayed.outcome != "replayed" or replayed.job is None:
                             return RevisionCreateResult(
                                 "conflict", error_code="idempotency_conflict"
@@ -553,9 +552,7 @@ class PostgresPublicJobs:
                             connection, draft_id, replayed.job.job_id
                         )
                         if replayed_revision is None:
-                            return RevisionCreateResult(
-                                "unknown", error_code="revision_missing"
-                            )
+                            return RevisionCreateResult("unknown", error_code="revision_missing")
                         return RevisionCreateResult(
                             "replayed", job=replayed.job, revision=replayed_revision
                         )
@@ -580,19 +577,13 @@ class PostgresPublicJobs:
                 if row["kind"] != draft_kind:
                     return RevisionCreateResult("conflict", error_code="draft_kind_mismatch")
                 if row["status"] in ("published", "preview_only"):
-                    return RevisionCreateResult(
-                        "conflict", error_code="draft_not_generatable"
-                    )
+                    return RevisionCreateResult("conflict", error_code="draft_not_generatable")
                 if row["head_revision"] != expected_revision:
                     return RevisionCreateResult("stale")
                 revision = _next_revision(expected_revision)
                 if revision is None:
-                    return RevisionCreateResult(
-                        "rejected", error_code="revision_exhausted"
-                    )
-                _, stored_input, binding_json = _voice_stored_values(
-                    job, draft_kind
-                )
+                    return RevisionCreateResult("rejected", error_code="revision_exhausted")
+                _, stored_input, binding_json = _voice_stored_values(job, draft_kind)
                 _insert_job_rows(connection, job)
                 connection.execute(
                     "INSERT INTO speech_voice_draft_revisions "
@@ -608,16 +599,18 @@ class PostgresPublicJobs:
                         job.submission.submitted_at_us,
                     ),
                 )
+                # The row is held FOR UPDATE and its head was compared above;
+                # repeating head_revision in this predicate is unreachable and
+                # must not be mistaken for an independent CAS guard.
                 updated = connection.execute(
                     "UPDATE speech_voice_drafts SET head_revision = %s, "
                     "generation_job_id = %s, updated_at_us = GREATEST(updated_at_us, %s) "
-                    "WHERE draft_id = %s AND head_revision = %s",
+                    "WHERE draft_id = %s",
                     (
                         revision,
                         job.job_id,
                         job.submission.submitted_at_us,
                         draft_id,
-                        expected_revision,
                     ),
                 ).rowcount
                 if updated != 1:
@@ -1037,6 +1030,32 @@ def _lock_submission_key(connection: _Executor, workspace_id: str, key_digest: s
     )
 
 
+def _lock_validation_target(connection: _Executor, job: NewPublicJob) -> str | None:
+    """Recheck the candidate under the draft row lock before the Job insert.
+
+    ``_prepare_job`` resolves the candidate in an earlier statement. Holding the
+    draft row here prevents a concurrent append from making that decision stale
+    between prepare and insert.
+    """
+    try:
+        intent = json.loads(job.request_document)
+        request_input = intent["input"]
+        draft_id, revision = request_input["voice_draft_id"], request_input["draft_revision"]
+    except ValueError, TypeError, KeyError:
+        raise PublicJobUnavailableError from None
+    row = connection.execute(
+        "SELECT head_revision, status FROM speech_voice_drafts WHERE draft_id = %s FOR UPDATE",
+        (draft_id,),
+    ).fetchone()
+    if row is None:
+        return "not_found"
+    if row["head_revision"] != revision:
+        return "stale"
+    if row["status"] in ("published", "preview_only"):
+        return "draft_not_generatable"
+    return None
+
+
 def _validate_pinned_create(connection: _Executor, job: NewPublicJob) -> None:
     expected = job.expected_binding
     if expected is None:
@@ -1262,9 +1281,7 @@ def _insert_job_rows(connection: _Executor, job: NewPublicJob) -> None:
     )
 
 
-def _voice_stored_values(
-    job: NewPublicJob, voice_kind: str
-) -> tuple[dict[str, Any], str, str]:
+def _voice_stored_values(job: NewPublicJob, voice_kind: str) -> tuple[dict[str, Any], str, str]:
     """Canonical stored input and pinned voice binding for one revision row."""
     try:
         intent = json.loads(job.request_document)
@@ -1298,9 +1315,7 @@ def _next_revision(current: str) -> str | None:
     return str(value)
 
 
-def _revision_for_job(
-    connection: _Executor, draft_id: str, job_id: str
-) -> str | None:
+def _revision_for_job(connection: _Executor, draft_id: str, job_id: str) -> str | None:
     rows = connection.execute(
         "SELECT revision FROM speech_voice_draft_revisions "
         "WHERE draft_id = %s AND generation_job_id = %s",

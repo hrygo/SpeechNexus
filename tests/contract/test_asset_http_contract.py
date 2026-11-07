@@ -58,6 +58,8 @@ def test_packaged_http_surface_is_closed_and_matches_real_operations() -> None:
         "/v1/nexus/voice-designs",
         "/v1/nexus/voice-clones",
         "/v1/nexus/voice-drafts/{draft_id}",
+        "/v1/nexus/voice-drafts/{draft_id}/generations",
+        "/v1/nexus/voice-drafts/{draft_id}/validations",
         "/v1/nexus/voices",
         "/v1/nexus/voices/{voice_id}/revisions/{revision}",
         "/v1/nexus/voices/{voice_id}/revisions/{revision}/retirements",

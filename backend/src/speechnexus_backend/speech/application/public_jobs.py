@@ -10,9 +10,12 @@ import uuid
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
+from functools import lru_cache
+from importlib.resources import files
 from typing import Any, Protocol, runtime_checkable
 
 import rfc8785
+from jsonschema import Draft202012Validator, FormatChecker
 
 from speechnexus_backend.speech.application.effective_configuration import (
     effective_configuration,
@@ -42,6 +45,18 @@ from speechnexus_backend.speech.domain.publications import Publication, Publicat
 
 DEFAULT_WORKSPACE = "workspace-default"
 _REVISION = re.compile(r"[1-9][0-9]{0,18}\Z")
+
+
+@lru_cache(maxsize=1)
+def _validation_result_validator() -> Draft202012Validator:
+    """The generated file contract, including its nested VoiceValidation schema."""
+    bundle = json.loads(files("speechnexus_contracts").joinpath("file.schema.json").read_text())
+    return Draft202012Validator(
+        {"$ref": "#/$defs/VoiceValidationJobResult", "$defs": bundle["$defs"]},
+        format_checker=FormatChecker(),
+    )
+
+
 _REQUIRED_TASK: dict[JobKind, str] = {
     "asr": "asr_file",
     "tts": "tts_file",
@@ -112,6 +127,10 @@ class VoiceDraftStaleRevisionError(RuntimeError):
 
 class VoiceDraftNotCandidateError(RuntimeError):
     """The head revision has no succeeded generation Job to validate."""
+
+
+class VoiceDraftNotGeneratableError(RuntimeError):
+    """The draft lifecycle no longer accepts a generation or validation Job."""
 
 
 class VoiceNotPublishedError(LookupError):
@@ -191,6 +210,7 @@ class VoiceDraftRevisionFact:
     generation_job_id: str
     state: JobState
     result_json: str | None
+    model_id: str
     binding: tuple[str, int]
 
 
@@ -457,6 +477,8 @@ def resolve_voice_validation_report(
         raise PublicJobUnavailableError from None
     if not isinstance(result, dict) or result.get("kind") != kind:
         raise PublicJobUnavailableError
+    if not _validation_result_validator().is_valid(result):
+        raise PublicJobUnavailableError
     artifact_id = result.get("validation_report_artifact_id")
     receipt_id = result.get("receipt_id")
     if not isinstance(artifact_id, str) or not isinstance(receipt_id, str):
@@ -503,6 +525,8 @@ class PublicJobs:
         if not isinstance(workspace_id, str):
             raise UnknownWorkspaceError
         identifier(workspace_id)
+        if typed_kind == "voice_validation":
+            payload = self._validation_intent(payload, workspace_id)
         intent = _canonical_intent(payload, typed_kind)
         request_digest = canonical_digest(intent)
         key_digest = None if idempotency_key is None else idempotency_digest(idempotency_key)
@@ -765,6 +789,39 @@ class PublicJobs:
             expected_binding=binding.publication if pin is not None else None,
             retry_of_job_id=retry_of_job_id,
         )
+
+    def _validation_intent(self, payload: Mapping[str, Any], workspace_id: str) -> dict[str, Any]:
+        """Freeze the derived model and binding before key replay and locking.
+
+        Head/state/preview and binding-publication eligibility stay in
+        ``_validation_binding`` so a same-key replay still succeeds after the
+        draft head advances or the binding is retired.
+        """
+        request_input = payload.get("input")
+        if not isinstance(request_input, dict):
+            raise VoiceInputInvalidError
+        draft_id = request_input.get("voice_draft_id")
+        revision = request_input.get("draft_revision")
+        if not isinstance(draft_id, str) or not isinstance(revision, str):
+            raise VoiceInputInvalidError
+        identifier(draft_id)
+        if _REVISION.fullmatch(revision) is None:
+            raise VoiceInputInvalidError
+        fact = self._facts.voice_draft_revision(draft_id, revision)
+        if fact is None or fact.workspace_id != workspace_id:
+            raise PublicJobNotFoundError
+        explicit = self._binding_reference(payload.get("model_binding"))
+        if explicit is not None and explicit != fact.binding:
+            raise ModelBindingError("model_binding_mismatch")
+        logical = fact.model_id
+        raw_model = payload.get("model")
+        if raw_model is not None and (not isinstance(raw_model, str) or raw_model != logical):
+            raise ModelBindingError("model_binding_mismatch")
+        return {
+            **payload,
+            "model": logical,
+            "model_binding": {"id": fact.binding[0], "revision": str(fact.binding[1])},
+        }
 
     def _validation_binding(
         self, payload: Mapping[str, Any], workspace_id: str
@@ -1225,7 +1282,17 @@ def _submission_result(result: JobCreateResult) -> PublicJob:
         raise IdempotencyConflictError
     if result.outcome == "unknown":
         raise JobOutcomeUnknownError
-    if result.outcome == "rejected" or result.job is None:
+    if result.outcome == "rejected":
+        if result.error_code == "stale":
+            raise VoiceDraftStaleRevisionError
+        if result.error_code == "not_candidate":
+            raise VoiceDraftNotCandidateError
+        if result.error_code == "draft_not_generatable":
+            raise VoiceDraftNotGeneratableError
+        if result.error_code == "not_found":
+            raise PublicJobNotFoundError
+        raise JobRejectedError
+    if result.job is None:
         raise JobRejectedError
     return result.job
 

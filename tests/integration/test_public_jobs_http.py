@@ -324,8 +324,18 @@ def test_voice_draft_revision_grants_are_append_only(jobs_db: JobSandbox) -> Non
         "pg_catalog.has_table_privilege(%s, %s, 'UPDATE') AS can_update, "
         "pg_catalog.has_table_privilege(%s, %s, 'DELETE') AS can_delete, "
         "pg_catalog.has_column_privilege(%s, %s, 'head_revision', 'UPDATE') AS can_head",
-        (role, revision_table, role, revision_table, role, revision_table,
-         role, revision_table, role, draft_table),
+        (
+            role,
+            revision_table,
+            role,
+            revision_table,
+            role,
+            revision_table,
+            role,
+            revision_table,
+            role,
+            draft_table,
+        ),
     )[0]
     assert row["can_select"] is True
     assert row["can_insert"] is True
@@ -335,9 +345,7 @@ def test_voice_draft_revision_grants_are_append_only(jobs_db: JobSandbox) -> Non
     try:
         jobs_db.admin.execute(f'SET ROLE "{role}"')
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
-            jobs_db.admin.execute(
-                f"UPDATE {revision_table} SET revision='2' WHERE false"
-            )
+            jobs_db.admin.execute(f"UPDATE {revision_table} SET revision='2' WHERE false")
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             jobs_db.admin.execute(f"DELETE FROM {revision_table} WHERE false")
     finally:

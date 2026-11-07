@@ -250,9 +250,7 @@ class NewPublicJob:
             or decoded.get("model", self.model_id) != self.model_id
             or (
                 decoded.get("model_binding") != self.expected_binding.reference
-                and not (
-                    self.kind == "voice_validation" and "model_binding" not in decoded
-                )
+                and not (self.kind == "voice_validation" and "model_binding" not in decoded)
             )
         ):
             raise ValueError("Public Job binding disagrees with its original intent")
@@ -347,9 +345,7 @@ class JobCreateResult:
 class RevisionCreateResult:
     """One durable revision-append outcome, never a second revision for one key."""
 
-    outcome: Literal[
-        "created", "replayed", "conflict", "stale", "not_found", "unknown", "rejected"
-    ]
+    outcome: Literal["created", "replayed", "conflict", "stale", "not_found", "unknown", "rejected"]
     job: PublicJob | None = None
     revision: str | None = None
     error_code: str | None = None

@@ -401,10 +401,15 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         if db.dialect == "postgresql"
         else set()
     )
-    # Voice draft persistence and its metadata CAS ledger (0041). Both are
-    # private Job-writer tables, outside the shared coordination surface.
+    # Voice draft persistence, immutable revisions and the metadata CAS ledger
+    # (0041/0043). All are private Job-writer tables, outside the shared
+    # coordination surface.
     draft_tables = (
-        {"speech_voice_drafts", "speech_voice_metadata_commands"}
+        {
+            "speech_voice_drafts",
+            "speech_voice_draft_revisions",
+            "speech_voice_metadata_commands",
+        }
         if db.dialect == "postgresql"
         else set()
     )

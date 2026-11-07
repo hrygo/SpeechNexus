@@ -6,6 +6,7 @@ import os
 
 import pytest
 from alembic import command
+from sqlalchemy.exc import IntegrityError
 from tests.integration.test_public_job_progress_migration_pg import _isolated_schema
 
 pytestmark = pytest.mark.integration
@@ -20,8 +21,12 @@ def _url() -> str:
 
 def _kind_check(query: object) -> str:
     row = query.execute(  # type: ignore[attr-defined]
-        "SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint "
-        "WHERE conname='speech_jobs_kind_check'"
+        "SELECT pg_get_constraintdef(c.oid) AS definition "
+        "FROM pg_constraint AS c "
+        "JOIN pg_class AS t ON t.oid = c.conrelid "
+        "JOIN pg_namespace AS n ON n.oid = t.relnamespace "
+        "WHERE c.conname='speech_jobs_kind_check' "
+        "AND n.nspname = current_schema() AND t.relname = 'speech_jobs'"
     ).fetchone()
     assert row is not None
     return str(row["definition"])
@@ -77,3 +82,24 @@ def test_0043_backfills_revision_one_and_admits_validation() -> None:
         assert dropped is not None
         assert dropped["name"] is None
         assert "voice_validation" not in _kind_check(query)
+
+
+def test_0043_downgrade_refuses_to_drop_revisions_with_validation_history() -> None:
+    with _isolated_schema(_url()) as (config, query):
+        command.upgrade(config, "head")
+        query.execute(
+            "INSERT INTO speech_jobs (job_id, workspace_id, kind, model_id, request_digest, "
+            "state, status_version, created_at_us, updated_at_us) "
+            "VALUES ('job-validation-history', 'workspace-default', 'voice_validation', "
+            "'voice-model', %s, 'pending', 1, 200, 200)",
+            ("sha256:" + "c" * 64,),
+        )
+        with pytest.raises(IntegrityError) as failure:
+            command.downgrade(config, "0042_drop_superseded_job_index")
+        assert "speech_jobs_kind_check" in str(failure.value)
+        retained = query.execute(
+            "SELECT to_regclass('speech_voice_draft_revisions') AS name"
+        ).fetchone()
+        assert retained is not None
+        assert retained["name"] == "speech_voice_draft_revisions"
+        assert "voice_validation" in _kind_check(query)

@@ -131,9 +131,7 @@ class Store:
             self.keys[job.idempotency_key_digest] = (job.request_digest, job.job_id)
         return JobCreateResult("created", public)
 
-    def create_revision(
-        self, job: NewPublicJob, *, draft_id: str, expected_revision: str
-    ) -> Any:
+    def create_revision(self, job: NewPublicJob, *, draft_id: str, expected_revision: str) -> Any:
         raise NotImplementedError
 
     def revision_for_job(self, draft_id: str, job_id: str) -> str | None:

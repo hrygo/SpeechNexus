@@ -17,12 +17,16 @@ def upgrade() -> None:
     for statement in VOICE_DRAFT_REVISION_DDL:
         op.execute(statement)
     op.execute(VOICE_DRAFT_REVISION_BACKFILL)
-    missing = op.get_bind().exec_driver_sql(
-        "SELECT count(*) FROM speech_voice_drafts d "
-        "LEFT JOIN speech_voice_draft_revisions r "
-        "ON r.draft_id=d.draft_id AND r.revision=d.head_revision "
-        "WHERE r.draft_id IS NULL"
-    ).scalar_one()
+    missing = (
+        op.get_bind()
+        .exec_driver_sql(
+            "SELECT count(*) FROM speech_voice_drafts d "
+            "LEFT JOIN speech_voice_draft_revisions r "
+            "ON r.draft_id=d.draft_id AND r.revision=d.head_revision "
+            "WHERE r.draft_id IS NULL"
+        )
+        .scalar_one()
+    )
     if missing:
         raise RuntimeError("voice draft head missing after revision backfill")
     op.execute("ALTER TABLE speech_jobs DROP CONSTRAINT speech_jobs_kind_check")

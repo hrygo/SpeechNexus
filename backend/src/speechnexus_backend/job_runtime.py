@@ -214,6 +214,4 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
                 (f"{schema}.{table}", attribute["name"]),
             ).fetchone()
             if allowed is not None and allowed["ok"]:
-                raise ValueError(
-                    f"Public Job writer must not update {table}.{attribute['name']}"
-                )
+                raise ValueError(f"Public Job writer must not update {table}.{attribute['name']}")

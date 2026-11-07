@@ -193,6 +193,9 @@ class JobDispatcher:
         phase: _DispatchPhase,
     ) -> DispatchResult:
         job = claim.job
+        # Remembered before mark_running rewrites the claim: a claim that started
+        # pending owns the first attempt, so no earlier worker can have submitted.
+        claimed_running = job.state == "running"
         if claim.claim_version > self._limits.max_attempts:
             if job.state == "running":
                 return DispatchResult(job.job_id, "unknown", "dispatch_attempts_exhausted")
@@ -267,7 +270,9 @@ class JobDispatcher:
                 reply = await self._gateway.submit(submission)
             return await self._follow(claim, job, submission, reply, should_stop, phase)
         except DispatchRequestUnavailableError:
-            return await self._fail_absent_execution(claim, job, "job_request_unavailable", phase)
+            return await self._fail_absent_execution(
+                claim, job, "job_request_unavailable", phase, claimed_running=claimed_running
+            )
         except DispatchRejectedError as error:
             if error.error_code == "gateway_barrier_fenced" and await self._cancelling(job):
                 # The gateway's barrier refused this submit and the Job is already
@@ -282,7 +287,9 @@ class JobDispatcher:
             if phase.gateway:
                 # An unreadable or mismatched gateway reply never proves failure.
                 return DispatchResult(job.job_id, "unknown", "outcome_unknown")
-            return await self._fail_absent_execution(claim, job, "execution_result_invalid", phase)
+            return await self._fail_absent_execution(
+                claim, job, "execution_result_invalid", phase, claimed_running=claimed_running
+            )
         except DispatchUnavailableError:
             return DispatchResult(job.job_id, "unknown", "outcome_unknown")
 
@@ -423,7 +430,13 @@ class JobDispatcher:
         return await self._finish(claim, job, "failed", result_json=None, error_code=code)
 
     async def _fail_absent_execution(
-        self, claim: ClaimedJob, job: DispatchJob, code: str, phase: _DispatchPhase
+        self,
+        claim: ClaimedJob,
+        job: DispatchJob,
+        code: str,
+        phase: _DispatchPhase,
+        *,
+        claimed_running: bool,
     ) -> DispatchResult:
         """Never fail a previously submitted Job without a gateway 404.
 
@@ -434,9 +447,10 @@ class JobDispatcher:
         unreadable or executing answer may hide a previous submit and must not
         become a durable "not submitted" fact.
         """
-        if job.state != "running":
-            # mark_running precedes every external submit, so a pending Job has
-            # never been dispatched and needs no gateway confirmation.
+        if not claimed_running:
+            # mark_running precedes every external submit. A claim that started
+            # pending owns the first attempt and cannot have a send from a
+            # crashed worker, so no gateway confirmation is needed here.
             return await self._fail(claim, job, code)
         try:
             reply = await self._gateway.query(submit_intent_identity(job.job_id))
@@ -446,6 +460,9 @@ class JobDispatcher:
         if reply.outcome != "not_found":
             phase.submitted = True
             return DispatchResult(job.job_id, "unknown", "outcome_unknown")
+        # The gateway explicitly confirmed that this identity has no execution;
+        # that answer is durable evidence even when the claim started running.
+        phase.absent = True
         return await self._fail(claim, job, code)
 
     async def _settle_not_submitted(self, claim: ClaimedJob, job: DispatchJob) -> DispatchResult:

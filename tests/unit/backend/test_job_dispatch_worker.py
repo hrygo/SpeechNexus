@@ -510,6 +510,24 @@ async def test_graceful_stop_after_plan_records_not_submitted_observation() -> N
     assert world.not_submitted == [(world.job.job_id, "worker-a")]
 
 
+class CancelledAtFinish(LeaseWorld):
+    """The cancellation lands after the gateway answer, before the terminal write."""
+
+    async def finish(
+        self,
+        claim: ClaimedJob,
+        target: str,
+        *,
+        result_json: str | None,
+        error_code: str | None,
+    ) -> DispatchJob:
+        if self.job.state == "running":
+            self.job = replace(
+                self.job, state="cancelling", status_version=self.job.status_version + 1
+            )
+        return await super().finish(claim, target, result_json=result_json, error_code=error_code)
+
+
 class UnavailablePlanner(Planner):
     async def plan(self, job: DispatchJob, submit_intent_id: str) -> ExecutionSubmission:
         raise DispatchRequestUnavailableError
@@ -527,7 +545,7 @@ async def test_pre_submit_failure_with_a_possible_execution_stays_unknown() -> N
     # A previous claimant may have submitted before this worker read the stored
     # command. An executing answer forbids a terminal failure and the durable
     # "not submitted" observation.
-    world = CancelledDuringDispatch(_job())
+    world = CancelledAtFinish(_job(state="running", version=2))
     gateway = Gateway(["executing"])
     batch = await _dispatcher(world, gateway, Publisher(), planner=UnavailablePlanner()).run_once(
         "worker-a"
@@ -535,13 +553,12 @@ async def test_pre_submit_failure_with_a_possible_execution_stays_unknown() -> N
 
     assert batch.claimed == 1 and batch.unknown == 1
     assert gateway.queries == 1
-    assert world.job.state == "cancelling"
     assert world.finish_calls == []
     assert world.not_submitted == []
 
 
 async def test_pre_submit_failure_with_confirmed_absence_records_not_submitted() -> None:
-    world = CancelledDuringDispatch(_job())
+    world = CancelledAtFinish(_job(state="running", version=2))
     gateway = AbsentGateway([])
     batch = await _dispatcher(world, gateway, Publisher(), planner=UnavailablePlanner()).run_once(
         "worker-a"
@@ -549,6 +566,21 @@ async def test_pre_submit_failure_with_confirmed_absence_records_not_submitted()
 
     assert batch.claimed == 1 and batch.lease_lost == 1
     assert gateway.queries == 1
+    assert world.job.state == "cancelling"
+    assert world.not_submitted == [(world.job.job_id, "worker-a")]
+
+
+async def test_a_pending_claim_that_fails_before_submit_queries_nothing() -> None:
+    # This worker marked the Job running itself and failed before any send; a
+    # cancellation cannot hide an execution, so the gateway is never asked.
+    world = CancelledDuringDispatch(_job())
+    gateway = Gateway(["executing"])
+    batch = await _dispatcher(world, gateway, Publisher(), planner=UnavailablePlanner()).run_once(
+        "worker-a"
+    )
+
+    assert batch.claimed == 1 and batch.lease_lost == 1
+    assert gateway.queries == 0
     assert world.job.state == "cancelling"
     assert world.not_submitted == [(world.job.job_id, "worker-a")]
 

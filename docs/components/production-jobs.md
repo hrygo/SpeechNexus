@@ -236,8 +236,11 @@ request ID，不覆盖他人事实。
 但只有取消围栏路径同时落下无外发终态 intent。围栏不存在时按原流程创建；
 执行创建后才受理的取消不改写 intent，继续由 abort/stop-evidence 路径推进。
 
-派发器在已领取 Job 后观察到受理时不得再提交；它在
-`speech_job_cancellation_not_submitted` 幂等写入 "已观察受理但未提交" 的持久事实。
+派发器在已领取 Job 后观察到受理时不得再提交；它只在能证明本次派发从未越过提交点时
+才于 `speech_job_cancellation_not_submitted` 幂等写入 "已观察受理但未提交" 的持久事实：
+领取时 Job 仍为 `pending`（本进程才把它标成 `running`），或网关对固定 identity 明确
+返回 `control_execution_not_found`，或网关屏障拒绝本次提交。首次查询已经返回执行状态、
+查询不可读、提交应答丢失这三种情况都可能隐藏一次真实提交，一律不得写成 not-submitted。
 该行只证明派发器没有越过提交点，不能单独结算；对账仍要查询固定 submit intent。
 只有该行存在且网关对该 intent 返回 404 时，二者才共同构成 "没有执行" 证据。
 

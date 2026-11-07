@@ -205,7 +205,7 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/runtime-governance.md"
       ],
-      "implementation": "API 已装配 Job router，注册创建、读取、重试、事件流与取消（POST /v1/nexus/jobs/{job_id}/cancellations）；取消受理在同一事务写受理回执与围栏投影，执行网关在创建执行的同一事务读取围栏并以既有 gateway_barrier_fenced 落终态，不派发、不写输出流；公开列表按 (created_at_us, job_id) keyset 游标分页，整页 artifact 以 artifact_id = ANY 一次批读，0042 迁移删除被 keyset 索引前缀覆盖的 speech_jobs_workspace_created。",
+      "implementation": "API 已装配 Job router，注册创建、读取、重试、事件流与取消（POST /v1/nexus/jobs/{job_id}/cancellations）；取消受理在同一事务写受理回执与围栏投影，执行网关在创建执行的同一事务读取围栏并以既有 gateway_barrier_fenced 落终态，不派发、不写输出流；公开列表按 (created_at_us, job_id) keyset 游标分页，整页 artifact 以 artifact_id = ANY 一次批读，0042 迁移删除被 keyset 索引前缀覆盖的 speech_jobs_workspace_created。公共错误面：#473（PR #474/#476/#477）为 9 条未实现操作建立中央占位路由与专用错误码 `operation_not_implemented`（503、`retryable=false`、`X-Should-Retry: false`），并以「未实现不得与真实故障共用错误码」的测试守住可辨识性；该响应组件 `OperationNotImplemented` 属语音公共契约面，与 C-CONTRACT 交叉，主责仍按 F-JOB（消费者是 Job/Operation 面）保留。",
       "integration": "派发器在任何提交前退出统一写 not-submitted 观察，对账 worker 仅在\"该观察 + 网关 404\"或\"aborted + cleanup complete + 白名单停止证据\"时结算为 cancelled；重试与 SSE 事件路由已随 Job router 注册，对账 worker 默认关闭，生产 planner 未装配。",
       "verification": "隔离 PG 上取消与围栏 24 passed（含受理先于提交、真实锁等待、重启收敛、三类提交前退出收敛）；历史 schema 消费者 100 passed；契约检查与 3373 项契约测试通过。公开列表以隔离 PG 上 100 条 succeeded 页断言整页 2 次事务读，并对适配器真实 SQL 断言单次 Index Scan、无 Sort、keyset 谓词进入 Index Cond。未做真实引擎停止证据注入。",
       "gap": "生产 planner 与对账 worker 未在生产装配中启用；真实引擎/网关故障注入与物理拓扑验收未完成；公开列表的查询计划与索引体积未在目标环境验收。",

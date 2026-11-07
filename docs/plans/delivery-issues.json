@@ -205,10 +205,10 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/runtime-governance.md"
       ],
-      "implementation": "API 已装配 Job router，注册创建、读取与取消（POST /v1/nexus/jobs/{job_id}/cancellations）；取消受理在同一事务写受理回执与围栏投影，执行网关在创建执行的同一事务读取围栏并以既有 gateway_barrier_fenced 落终态，不派发、不写输出流。",
-      "integration": "派发器在任何提交前退出统一写 not-submitted 观察，对账 worker 仅在\"该观察 + 网关 404\"或\"aborted + cleanup complete + 白名单停止证据\"时结算为 cancelled；重试与 SSE 路由仍未注册，对账 worker 默认关闭，生产 planner 未装配。",
-      "verification": "隔离 PG 上取消与围栏 24 passed（含受理先于提交、真实锁等待、重启收敛、三类提交前退出收敛）；历史 schema 消费者 100 passed；契约检查与 3373 项契约测试通过。未做真实引擎停止证据注入。",
-      "gap": "重试与 SSE 路由未注册；生产 planner 与对账 worker 未在生产装配中启用；真实引擎/网关故障注入与物理拓扑验收未完成。",
+      "implementation": "API 已装配 Job router，注册创建、读取、重试、事件流与取消（POST /v1/nexus/jobs/{job_id}/cancellations）；取消受理在同一事务写受理回执与围栏投影，执行网关在创建执行的同一事务读取围栏并以既有 gateway_barrier_fenced 落终态，不派发、不写输出流；公开列表按 (created_at_us, job_id) keyset 游标分页，整页 artifact 以 artifact_id = ANY 一次批读，0042 迁移删除被 keyset 索引前缀覆盖的 speech_jobs_workspace_created。",
+      "integration": "派发器在任何提交前退出统一写 not-submitted 观察，对账 worker 仅在\"该观察 + 网关 404\"或\"aborted + cleanup complete + 白名单停止证据\"时结算为 cancelled；重试与 SSE 事件路由已随 Job router 注册，对账 worker 默认关闭，生产 planner 未装配。",
+      "verification": "隔离 PG 上取消与围栏 24 passed（含受理先于提交、真实锁等待、重启收敛、三类提交前退出收敛）；历史 schema 消费者 100 passed；契约检查与 3373 项契约测试通过。公开列表以隔离 PG 上 100 条 succeeded 页断言整页 2 次事务读，并对适配器真实 SQL 断言单次 Index Scan、无 Sort、keyset 谓词进入 Index Cond。未做真实引擎停止证据注入。",
+      "gap": "生产 planner 与对账 worker 未在生产装配中启用；真实引擎/网关故障注入与物理拓扑验收未完成；公开列表的查询计划与索引体积未在目标环境验收。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/0b8e85a5/backend/src/speechnexus_backend/speech/infrastructure/job_cancellation_fence_schema.py",
@@ -234,6 +234,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/0b8e85a5/backend/src/speechnexus_backend/speech/application/job_dispatcher.py",
           "label": "提交前取消观察",
           "note": "统一退出收口写 not-submitted，不把屏障拒绝写成 failed"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/f12baad66db66f05af3f1de0130164168e6271ad/tests/integration/test_public_job_list_pg.py",
+          "label": "列表页 EXPLAIN 与整页批读断言",
+          "note": "单页 2 次事务；单次 Index Scan、无 Sort、keyset 进 Index Cond；0042 删除被索引前缀覆盖的旧索引"
         }
       ],
       "issues": [

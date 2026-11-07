@@ -94,6 +94,63 @@ class MarkExecutionUnknown:
         return updated
 
 
+@dataclass(frozen=True, slots=True)
+class RejectExecutionBeforeEngine:
+    """Release capacity when no engine request could have left this process.
+
+    A file stage can discover, after acceptance but before the HTTP call, that the
+    frozen content is structurally invalid. That is a deterministic refusal, not
+    an unknown transport fact: the allocated request identity was never sent, so
+    the execution closes as failed/not_required without stop evidence. Only the
+    stage that still holds the request locally may construct this.
+    """
+
+    submit_intent_id: str
+    reason_code: ExecutionErrorCode = ExecutionErrorCode.INVALID_EXECUTION_REQUEST
+
+    def __post_init__(self) -> None:
+        if not re.fullmatch(r"[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]", self.submit_intent_id):
+            raise InvalidExecutionRequestError("invalid rejected-execution identity")
+        if self.reason_code is not ExecutionErrorCode.INVALID_EXECUTION_REQUEST:
+            raise InvalidExecutionRequestError(
+                "only a deterministic request refusal may close an unsent execution"
+            )
+
+    def apply(self, intent: SubmissionIntent, *, at: datetime) -> SubmissionIntent:
+        if intent.identity.submit_intent_id != self.submit_intent_id:
+            raise InvalidExecutionRequestError("rejection belongs to another execution")
+        if (
+            intent.execution_state is ExecutionState.FAILED
+            and intent.cleanup_state is CleanupState.NOT_REQUIRED
+        ):
+            if intent.error_code is self.reason_code:
+                return intent
+            raise ExecutionObservationConflictError("execution already failed with another reason")
+        if intent.execution_state.is_terminal:
+            raise ExecutionObservationConflictError("a terminal execution cannot be rejected")
+        if (
+            intent.execution_state is not ExecutionState.EXECUTING
+            or intent.cleanup_state is not CleanupState.PENDING
+        ):
+            raise ExecutionCleanupPendingError(
+                "only an executing cleanup-pending request can be rejected before dispatch"
+            )
+        if (
+            intent.staging_result is not None
+            or intent.generated_pcm_samples != 0
+            or intent.has_staging_output
+            or intent.has_output_intervals
+        ):
+            raise ExecutionCleanupPendingError(
+                "a request with output cannot be rejected before dispatch"
+            )
+        if intent.version >= 2**63 - 1:
+            raise SubmissionStoreError("execution version is exhausted")
+        updated = deepcopy(intent)
+        updated.mark_not_dispatched_failure(self.reason_code, at=max(intent.updated_at, at))
+        return updated
+
+
 def execution_identity_fields(intent: SubmissionIntent) -> dict[str, object]:
     """Identity, deadline and dispatch facts every execution projection shares."""
     identity = intent.identity

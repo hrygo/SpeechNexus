@@ -90,6 +90,31 @@ _UPDATE_INTENT = (
     + ", version = version + 1 WHERE submit_intent_id = %s AND version = %s"
 )
 
+#: A structural refusal proven before the HTTP call may clear the allocated
+#: request identity. The ordinary observation rewrite forbids that on purpose;
+#: this statement is the single controlled exception. The database cannot prove
+#: from these fields alone that no engine call happened: the dispatch fields are
+#: written at admission, and a sent-but-unfinished request is indistinguishable
+#: here. Safety rests on the only caller (``_reject``, entered only for
+#: ``FileCommandInvalidError``) and on ``apply()`` rejecting staged results,
+#: generated samples and output intervals before this update runs.
+REJECT_UNSENT_INTENT = """
+UPDATE submit_intents
+SET execution_state = 'failed', cleanup_state = 'not_required',
+    engine_request_id = NULL, dispatched_at_us = NULL, error_code = %s,
+    terminated_at_us = NULL, updated_at_us = %s, version = version + 1
+WHERE submit_intent_id = %s AND version = %s
+  AND execution_state = 'executing' AND cleanup_state = 'pending'
+  AND generated_pcm_samples = 0
+  AND staging_output_object_key IS NULL
+  AND staging_result_document IS NULL
+  AND terminated_at_us IS NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM execution_stop_evidence AS e
+      WHERE e.submit_intent_id = submit_intents.submit_intent_id
+  )
+"""
+
 _LOCK_POOL = "SELECT pool_id FROM resource_pools WHERE pool_id = %s FOR UPDATE"
 
 _LOCK_ATTEMPT = (

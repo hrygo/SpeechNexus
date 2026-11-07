@@ -19,6 +19,7 @@ from speechnexus_gateway.domain.execution_results import (
 from speechnexus_gateway.domain.file_execution import (
     EngineRequestRejectedError,
     FileCommandExecution,
+    FileCommandInvalidError,
     FileExecutionLedger,
     FileExecutionLimits,
 )
@@ -30,7 +31,9 @@ from speechnexus_gateway.domain.output_intervals import (
 )
 from speechnexus_gateway.domain.ports import AbortOutcome, DispatchOutcome, EngineObservation
 from speechnexus_gateway.domain.recovery import (
+    ExecutionObservationConflictError,
     MarkExecutionUnknown,
+    RejectExecutionBeforeEngine,
     TerminalStopEvidenceUnavailableError,
 )
 from speechnexus_gateway.domain.submission import (
@@ -268,6 +271,15 @@ class FileExecutionWorker[StoreT]:
             )
             await self._database(lambda: self._register(intent, outcome.result, ticket.cancelled))
             await self._complete(intent, outcome.terminal)
+        except FileCommandInvalidError:
+            # The stage proved the frozen content invalid while the request was
+            # still local. No engine request left this process, so capacity is
+            # released with a deterministic code instead of an unknown fact.
+            try:
+                await self._database(lambda: self._reject(key))
+            except Exception, asyncio.CancelledError:
+                with self._lock:
+                    self._accepting = False
         except EngineRequestRejectedError:
             # A positive client-error refusal is not a timeout and not a retry
             # signal. It still exits through the unknown path because only the
@@ -385,6 +397,23 @@ class FileExecutionWorker[StoreT]:
                 current.identity,
             )
         ).intent
+
+    def _reject(self, key: str) -> None:
+        current = self._ledger.get(key)
+        # A stop that raced the structural check owns the terminal fact; never
+        # reverse or overwrite it with an unsent rejection.
+        if current is None or current.execution_state is not ExecutionState.EXECUTING:
+            return
+        try:
+            self._ledger.reject_execution_before_engine(RejectExecutionBeforeEngine(key))
+        except (
+            ExecutionCleanupPendingError,
+            ExecutionObservationConflictError,
+            StaleSubmissionVersionError,
+        ):
+            # A concurrent stop or completion already owns the terminal fact.
+            # Losing that race is a no-op, not a reason to stop accepting work.
+            return
 
     def _quarantine(
         self, key: str, *, cancelled: bool, reason_code: ExecutionErrorCode | None = None

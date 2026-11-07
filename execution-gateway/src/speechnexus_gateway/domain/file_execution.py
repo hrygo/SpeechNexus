@@ -19,12 +19,23 @@ from speechnexus_gateway.domain.ports import (
     OriginalExecutionCommandSource,
     OutputIntervalLedger,
 )
+from speechnexus_gateway.domain.recovery import RejectExecutionBeforeEngine
 from speechnexus_gateway.domain.submission import (
     MAX_ORIGINAL_COMMAND_BYTES,
+    InvalidExecutionRequestError,
     SubmissionIntent,
     SubmitRequest,
 )
 from speechnexus_gateway.domain.terminal import EngineTerminalResponse
+
+
+class FileCommandInvalidError(InvalidExecutionRequestError):
+    """A structural command/content refusal proven before any engine request left.
+
+    It is raised only while the gateway still holds the frozen request locally;
+    the worker may therefore release capacity without stop evidence instead of
+    recording an unknown transport fact for a request no engine ever saw.
+    """
 
 
 class EngineRequestRejectedError(Exception):
@@ -98,6 +109,12 @@ class FileExecutionLedger(
 ):
     def check_file_start(self, intent: SubmissionIntent) -> SubmissionIntent:
         """Recheck current authority; the read itself never grants execution ownership."""
+        ...
+
+    def reject_execution_before_engine(
+        self, request: RejectExecutionBeforeEngine
+    ) -> SubmissionIntent:
+        """Close an executing intent whose request provably never reached the engine."""
         ...
 
     def list_unfinished(

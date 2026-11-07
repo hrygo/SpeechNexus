@@ -55,6 +55,13 @@ class Settings(BaseSettings):
     file_voice_design_object_secret_key: SecretStr | None = Field(
         default=None, min_length=1, repr=False
     )
+    file_voice_clone_config_file: Path | None = Field(default=None, repr=False)
+    file_voice_clone_object_access_key: SecretStr | None = Field(
+        default=None, min_length=1, repr=False
+    )
+    file_voice_clone_object_secret_key: SecretStr | None = Field(
+        default=None, min_length=1, repr=False
+    )
 
     @model_validator(mode="after")
     def validate_control_configuration(self) -> Settings:
@@ -122,8 +129,31 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "file VoiceDesign requires owned control and an absolute configuration"
                 )
-        if self.file_tts_config_file is not None and self.file_voice_design_config_file is not None:
-            raise ValueError("one gateway cannot serve CustomVoice and VoiceDesign together")
+        voice_clone = (
+            self.file_voice_clone_config_file,
+            self.file_voice_clone_object_access_key,
+            self.file_voice_clone_object_secret_key,
+        )
+        if any(value is not None for value in voice_clone):
+            if not all(value is not None for value in voice_clone):
+                raise ValueError(
+                    "file voice clone requires a configuration and both object credentials"
+                )
+            if (
+                not self.execution_control_enabled
+                or self.file_voice_clone_config_file is None
+                or not self.file_voice_clone_config_file.is_absolute()
+            ):
+                raise ValueError(
+                    "file voice clone requires owned control and an absolute configuration"
+                )
+        variants = (
+            self.file_tts_config_file,
+            self.file_voice_design_config_file,
+            self.file_voice_clone_config_file,
+        )
+        if sum(value is not None for value in variants) > 1:
+            raise ValueError("one gateway cannot serve more than one resident TTS variant")
         return self
 
     @property

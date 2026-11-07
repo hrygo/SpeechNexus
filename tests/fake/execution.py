@@ -40,6 +40,7 @@ from speechnexus_gateway.domain.recovery import (
     ExecutionObservationConflictError,
     ExecutionSnapshot,
     MarkExecutionUnknown,
+    RejectExecutionBeforeEngine,
 )
 from speechnexus_gateway.domain.submission import (
     DispatchResult,
@@ -138,6 +139,16 @@ class InMemorySubmissionLedger:
         return candidates[:limit]
 
     def mark_execution_unknown(self, request: MarkExecutionUnknown) -> SubmissionIntent:
+        current = self.get(request.submit_intent_id)
+        if current is None:
+            raise InvalidExecutionRequestError("unknown submit intent")
+        updated = request.apply(current, at=self._now())
+        self._intents[request.submit_intent_id] = copy.deepcopy(updated)
+        return updated
+
+    def reject_execution_before_engine(
+        self, request: RejectExecutionBeforeEngine
+    ) -> SubmissionIntent:
         current = self.get(request.submit_intent_id)
         if current is None:
             raise InvalidExecutionRequestError("unknown submit intent")

@@ -1,0 +1,59 @@
+{
+  "protocol": "file_voice_clone_v1",
+  "controlled_endpoint_file": "/run/speechnexus-private/gateway-file-voice-clone-endpoint.json",
+  "objects": {
+    "endpoint": "http://172.28.0.10:9000",
+    "input_bucket": "speechnexus-inputs",
+    "result_bucket": "speechnexus-results",
+    "spool_directory": "/run/speechnexus-private/spool",
+    "tls_ca_file": null,
+    "result_timeout_seconds": 30
+  },
+  "voice_clone_policy": {
+    "config_revision": "policy-voice-clone-compose-example",
+    "task": "Base",
+    "engine_format": "wav",
+    "sample_rate_hz": 24000,
+    "max_pcm_bytes": 2880000,
+    "max_audio_ms": 60000,
+    "timeout_seconds": 300,
+    "supported_languages": [
+      "zh",
+      "en",
+      "fr",
+      "de",
+      "it",
+      "ja",
+      "ko",
+      "pt",
+      "ru",
+      "es"
+    ],
+    "reference_sample_rates": [16000, 24000],
+    "min_reference_audio_ms": 1000,
+    "max_reference_audio_ms": 60000,
+    "max_reference_audio_bytes": 8388608,
+    "allow_x_vector_only": false
+  },
+  "input_limits": {
+    "max_bytes": 8388608,
+    "memory_bytes": 1048576,
+    "timeout_seconds": 10
+  },
+  "worker_limits": {
+    "max_result_bytes": 4194304,
+    "max_command_bytes": 65536,
+    "max_pending": 1,
+    "shutdown_seconds": 10
+  },
+  "warmup": {
+    "reference_audio_file": "/run/speechnexus-private/voice-clone-warmup-reference.wav",
+    "reference_text": "This is a quiet reference sample for voice cloning.",
+    "preview_text": "Ready.",
+    "language": "en"
+  },
+  "readiness": {
+    "warmup_timeout_seconds": 330,
+    "retry_interval_seconds": 30
+  }
+}

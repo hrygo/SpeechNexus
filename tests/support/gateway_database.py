@@ -23,7 +23,11 @@ from speechnexus_gateway.domain.output_intervals import (
     OutputIntervalRecord,
     OutputIntervalWrite,
 )
-from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
+from speechnexus_gateway.domain.recovery import (
+    ExecutionSnapshot,
+    MarkExecutionUnknown,
+    RejectExecutionBeforeEngine,
+)
 from speechnexus_gateway.domain.submission import (
     RecordStop,
     StopEvidenceConflictError,
@@ -52,7 +56,10 @@ from speechnexus_gateway.infrastructure.output_interval_sql import (
     append_interval_in_transaction,
     read_output_interval,
 )
-from speechnexus_gateway.infrastructure.recovery_sql import mark_execution_unknown_in_transaction
+from speechnexus_gateway.infrastructure.recovery_sql import (
+    mark_execution_unknown_in_transaction,
+    reject_execution_before_engine_in_transaction,
+)
 from speechnexus_gateway.infrastructure.stop_sql import record_stop_in_transaction
 from speechnexus_gateway.infrastructure.submit_sql import (
     SubmitCursor,
@@ -159,6 +166,15 @@ class MySQLSubmissionLedger:
     def mark_execution_unknown(self, request: MarkExecutionUnknown) -> SubmissionIntent:
         return self._run(
             lambda cursor: mark_execution_unknown_in_transaction(
+                cursor, request, clock=lambda: self._clock(cursor)
+            )
+        )
+
+    def reject_execution_before_engine(
+        self, request: RejectExecutionBeforeEngine
+    ) -> SubmissionIntent:
+        return self._run(
+            lambda cursor: reject_execution_before_engine_in_transaction(
                 cursor, request, clock=lambda: self._clock(cursor)
             )
         )

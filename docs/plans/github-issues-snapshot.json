@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-08T03:56:36+08:00",
+  "fetched_at": "2026-11-08T05:25:23+08:00",
   "issues": [
     {
       "number": 336,
@@ -582,8 +582,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/473",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "未实现操作返回可辨识的稳定错误",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "enhancement"
@@ -1094,6 +1094,16 @@
         }
       ],
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/340"
+    },
+    {
+      "number": 561,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/561",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "fix: 其余启动校验仍漏表级 REFERENCES/TRIGGER 与列级权限（#549 同族）",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
     }
   ]
 }

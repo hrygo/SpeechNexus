@@ -58,6 +58,12 @@ def test_invalid_frozen_policies_are_rejected(kwargs: dict[str, Any]) -> None:
         TtsPolicy(**fields)
 
 
+@pytest.mark.parametrize("language", ["ar", "nl", "auto"])
+def test_an_unmapped_tts_language_is_refused_at_configuration(language: str) -> None:
+    with pytest.raises(ValueError):
+        TtsPolicy("config-1", "Vivian", language=language)
+
+
 def test_policy_digest_tracks_every_frozen_field() -> None:
     other = replace(POLICY, instructions="柔和一些", speed=1.25, sample_rate_hz=8000)
     assert POLICY.digest != other.digest

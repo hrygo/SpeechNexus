@@ -66,6 +66,8 @@ class VoiceDesignWarmupProbe:
 
     @property
     def ready(self) -> bool:
+        # The verdict is cached for this process only. A restarted gateway process
+        # (including a restarted engine container) starts a fresh warmup attempt.
         return self._ready
 
     def warm(self) -> None:
@@ -79,7 +81,9 @@ class VoiceDesignWarmupProbe:
         if self.ready:
             return
         self._start_if_due()
-        raise RuntimeError("VoiceDesign warmup has not completed")
+        failure = self._last_failure
+        detail = "no attempt" if failure is None else type(failure).__name__
+        raise RuntimeError(f"VoiceDesign warmup has not completed ({detail})")
 
     async def aclose(self) -> None:
         """Cancel an in-flight attempt; a completed attempt keeps its verdict."""

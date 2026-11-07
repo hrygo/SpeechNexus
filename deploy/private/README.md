@@ -36,6 +36,14 @@ with its own `readiness` budget, so `/readyz` never blocks a health probe; only
 languages with a verified vendor value are forwarded. See
 [VoiceDesign template](../../engines/file-voice-design/README.md).
 
+### 升级顺序（常驻 TTS 变体）
+
+1. 给既有常驻 TTS 模板补 `variant_slot`（CustomVoice 与 VoiceDesign 取同一值，如
+   `tts-variant`）；缺失时控制器在加载模板阶段拒绝，错误信息给出 `template_id`。
+2. 核对 `tts_policy.language` 是否为有实测厂商值的 `zh/en/fr/de/it/ja/ko/pt/ru/es`
+   （区域子标签按主语言归并）；`auto` 或其他取值在启动时拒绝。
+3. 再升级控制器与网关；切换变体仍按「旧实例取得已核验 stop → 新变体 prepare」。
+
 | Source example | Required runtime name |
 | --- | --- |
 | `transcription-recipe.example.json` | `transcription-recipe.json` |

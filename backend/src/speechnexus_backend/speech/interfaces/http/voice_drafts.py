@@ -76,6 +76,20 @@ _ERRORS: dict[str, tuple[int, str, str, str, bool]] = {
         "conflict",
         False,
     ),
+    # ``job_rejected`` with a conflict reason: the store refused to insert a
+    # prepared Job because the facts it pinned changed, an unkeyed submission
+    # collided with an existing identity, or the revision was exhausted. The
+    # transaction rolled back, so nothing was committed, but the request
+    # conflicts with current state and replaying it cannot succeed. This is the
+    # declared 409 conflict class -- the same stable ``voice_draft_conflict``
+    # code -- not a retryable storage outage.
+    "rejected": (
+        409,
+        "invalid_request_error",
+        "Voice draft facts or identity conflict with the current state.",
+        "conflict",
+        False,
+    ),
     # A request without a key that may already have committed cannot be retried
     # safely: a resubmission is a new intent and may create a second draft and
     # generation Job. 409 is the same reconcile-the-original class already used
@@ -131,6 +145,16 @@ _ERRORS: dict[str, tuple[int, str, str, str, bool]] = {
         500,
         "api_error",
         "The voice draft response violated the declared contract.",
+        "contract_violation",
+        False,
+    ),
+    # The store refused the write at the database due to a deterministic
+    # constraint/data error. That is an implementation defect, not a client
+    # conflict and not a retryable storage outage.
+    "rejected_defect": (
+        500,
+        "api_error",
+        "The voice draft write was rejected by a deterministic constraint.",
         "contract_violation",
         False,
     ),
@@ -340,9 +364,31 @@ def _execute(
         # The reply we built violates our own contract. Answering 503 would hide
         # an implementation defect behind a retryable outage.
         return _error("contract_violation", request_id, operation)
+    except JobRejectedError as error:
+        # A refusal carries its reason: only a genuine pre-commit storage outage
+        # is retryable; a deterministic refusal or a missing result payload is an
+        # implementation defect, and a changed fact is a conflict with current
+        # state. Never dress any of them up as a retryable 503.
+        if error.code == "unavailable":
+            return _error("unavailable", request_id, operation)
+        if error.code == "storage_rejected":
+            return _error("rejected_defect", request_id, operation)
+        if error.code == "contract":
+            return _error("contract_violation", request_id, operation)
+        if operation in (
+            "createVoiceDesign",
+            "createVoiceClone",
+            "generateVoiceDraftRevision",
+            "createVoicePreview",
+            "validateVoiceDraftRevision",
+        ):
+            return _error("rejected", request_id, operation)
+        # A read or metadata operation never submits a Job, so a conflict-class
+        # refusal here cannot describe current state: it is an implementation
+        # defect, not the retryable 503 it was previously mislabelled as.
+        return _error("contract_violation", request_id, operation)
     except (
         PublicJobUnavailableError,
-        JobRejectedError,
         ValueError,
         KeyError,
         TypeError,

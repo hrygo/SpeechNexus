@@ -8,7 +8,11 @@ from httpx import ASGITransport, AsyncClient
 from speechnexus_contracts.voice_drafts_http import validate_response
 
 from speechnexus_backend.app import create_app
-from speechnexus_backend.speech.application.public_jobs import JobOutcomeUnknownError, PublicJobs
+from speechnexus_backend.speech.application.public_jobs import (
+    JobOutcomeUnknownError,
+    JobRejectedError,
+    PublicJobs,
+)
 from speechnexus_backend.speech.application.voice_drafts import (
     VoiceDrafts,
     voice_input_document,
@@ -18,6 +22,7 @@ from speechnexus_backend.speech.domain.public_jobs import (
     JobCreateResult,
     JobState,
     NewPublicJob,
+    RevisionCreateResult,
 )
 from speechnexus_backend.speech.infrastructure.voice_drafts_postgres import _view
 from tests.unit.backend.test_health import _settings
@@ -526,6 +531,116 @@ async def test_contract_violation_is_a_500_not_a_retryable_503() -> None:
 class LostRevisionStore(ArtifactStore):
     def create_revision(self, job: NewPublicJob, *, draft_id: str, expected_revision: str) -> Any:
         raise JobOutcomeUnknownError
+
+
+class RejectedRevisionStore(ArtifactStore):
+    def __init__(self, error_code: str | None = "job_rejected") -> None:
+        super().__init__()
+        self.error_code = error_code
+
+    def create_revision(self, job: NewPublicJob, *, draft_id: str, expected_revision: str) -> Any:
+        return RevisionCreateResult("rejected", error_code=self.error_code)
+
+
+class MissingJobStore(ArtifactStore):
+    def create(self, job: NewPublicJob) -> JobCreateResult:
+        # A "created" outcome without a Job cannot describe committed state.
+        return JobCreateResult("created", job=None)
+
+
+class RejectingReadStore(DraftStore):
+    def get(self, draft_id: str, revision: str | None = None) -> dict[str, Any] | None:
+        raise JobRejectedError("facts_changed")
+
+
+@pytest.mark.parametrize(
+    ("error_code", "status", "wire", "kind", "retryable"),
+    [
+        ("job_rejected", 409, "voice_draft_conflict", "invalid_request_error", False),
+        ("job_identity_conflict", 409, "voice_draft_conflict", "invalid_request_error", False),
+        ("revision_exhausted", 409, "voice_draft_conflict", "invalid_request_error", False),
+        ("storage_rejected", 500, "voice_draft_contract_violation", "api_error", False),
+        (None, 500, "voice_draft_contract_violation", "api_error", False),
+        ("job_unavailable", 503, "voice_draft_unavailable", "service_unavailable_error", True),
+    ],
+)
+async def test_generate_rejection_reason_maps_to_its_declared_status(
+    error_code: str | None, status: int, wire: str, kind: str, retryable: bool
+) -> None:
+    """Only a storage outage is retryable; defects and conflicts are not."""
+    store = DraftStore(RejectedRevisionStore(error_code))
+    provider, _jobs = _provider(store)
+    app = create_app(settings=_settings(), voice_drafts=provider)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        created = await http.post(
+            "/v1/nexus/voice-designs",
+            json={
+                "model": "tts-quality",
+                "input": {"description": "Synthetic voice", "preview_text": "Synthetic preview"},
+            },
+        )
+        assert created.status_code == 202, created.text
+        rejected = await http.post(
+            "/v1/nexus/voice-drafts/" + created.json()["draft"]["id"] + "/generations",
+            json={
+                "expected_draft_revision": "1",
+                "model": "tts-quality",
+                "input": {
+                    "description": "Synthetic next voice",
+                    "preview_text": "Synthetic next preview",
+                },
+            },
+            headers={"Idempotency-Key": "generate-rejected-key"},
+        )
+    assert rejected.status_code == status, rejected.text
+    body = rejected.json()
+    assert body["error"]["code"] == wire
+    assert body["error"]["type"] == kind
+    assert body["error"]["retryable"] is retryable
+    assert rejected.headers["Cache-Control"] == "no-store"
+    assert rejected.headers["X-Should-Retry"] == ("true" if retryable else "false")
+    validate_response(
+        "generateVoiceDraftRevision",
+        status,
+        {"body": body, "headers": dict(rejected.headers)},
+    )
+
+
+async def test_created_without_a_job_is_a_500_not_a_conflict() -> None:
+    """A missing result payload is an implementation defect, never a 409."""
+    store = DraftStore(MissingJobStore())
+    provider, _jobs = _provider(store)
+    app = create_app(settings=_settings(), voice_drafts=provider)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        response = await http.post(
+            "/v1/nexus/voice-designs",
+            json={
+                "model": "tts-quality",
+                "input": {"description": "Synthetic voice", "preview_text": "Synthetic preview"},
+            },
+        )
+    assert response.status_code == 500, response.text
+    body = response.json()
+    assert body["error"]["code"] == "voice_draft_contract_violation"
+    assert body["error"]["type"] == "api_error"
+    assert body["error"]["retryable"] is False
+    assert response.headers["X-Should-Retry"] == "false"
+    validate_response("createVoiceDesign", 500, {"body": body, "headers": dict(response.headers)})
+
+
+async def test_conflict_class_rejection_on_read_is_a_500_not_a_retryable_503() -> None:
+    """A read never submits a Job, so this dead branch must not claim retryable."""
+    store = RejectingReadStore()
+    provider = VoiceDrafts(PublicJobs(VoiceFacts(), store.jobs_store), store)
+    app = create_app(settings=_settings(), voice_drafts=provider)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        response = await http.get("/v1/nexus/voice-drafts/draft-anything")
+    assert response.status_code == 500, response.text
+    body = response.json()
+    assert body["error"]["code"] == "voice_draft_contract_violation"
+    assert body["error"]["retryable"] is False
+    assert response.headers["X-Should-Retry"] == "false"
+    validate_response("getVoiceDraft", 500, {"body": body, "headers": dict(response.headers)})
 
 
 async def test_generate_outcome_unknown_is_a_retryable_503() -> None:

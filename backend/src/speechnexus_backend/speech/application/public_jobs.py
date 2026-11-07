@@ -12,7 +12,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from functools import lru_cache
 from importlib.resources import files
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 import rfc8785
 from jsonschema import Draft202012Validator, FormatChecker
@@ -161,8 +161,30 @@ class JobOutcomeUnknownError(RuntimeError):
     pass
 
 
+JobRejectionReason = Literal[
+    "facts_changed",
+    "identity_conflict",
+    "revision_exhausted",
+    "unavailable",
+    "storage_rejected",
+    "contract",
+]
+
+
 class JobRejectedError(RuntimeError):
-    pass
+    """A prepared Job was refused; ``code`` names the class without storage detail.
+
+    ``facts_changed`` and ``revision_exhausted`` are conflicts with current
+    state. ``identity_conflict`` means an unkeyed submission collided with an
+    existing committed identity. ``unavailable`` is a genuine pre-commit
+    storage outage. ``storage_rejected`` and ``contract`` are deterministic
+    defects (a database refusal or a missing result payload), not client
+    conflicts.
+    """
+
+    def __init__(self, code: JobRejectionReason) -> None:
+        self.code = code
+        super().__init__(code)
 
 
 class JobCleanupPendingError(RuntimeError):
@@ -1424,6 +1446,21 @@ def _replayed_revision(
     return result.job, revision
 
 
+def _rejection_reason(error_code: str | None) -> JobRejectionReason:
+    """Classify one store refusal; an unknown code is not a client conflict."""
+    if error_code == "job_rejected":
+        return "facts_changed"
+    if error_code == "revision_exhausted":
+        return "revision_exhausted"
+    if error_code == "job_identity_conflict":
+        return "identity_conflict"
+    if error_code == "job_unavailable":
+        return "unavailable"
+    if error_code == "storage_rejected":
+        return "storage_rejected"
+    return "contract"
+
+
 def _revision_result(result: RevisionCreateResult) -> tuple[PublicJob, str]:
     if result.outcome == "stale":
         raise VoiceDraftStaleRevisionError
@@ -1433,8 +1470,10 @@ def _revision_result(result: RevisionCreateResult) -> tuple[PublicJob, str]:
         raise IdempotencyConflictError
     if result.outcome == "unknown":
         raise JobOutcomeUnknownError
-    if result.outcome == "rejected" or result.job is None or result.revision is None:
-        raise JobRejectedError
+    if result.outcome == "rejected":
+        raise JobRejectedError(_rejection_reason(result.error_code))
+    if result.job is None or result.revision is None:
+        raise JobRejectedError("contract")
     return result.job, result.revision
 
 
@@ -1452,9 +1491,9 @@ def _submission_result(result: JobCreateResult) -> PublicJob:
             raise VoiceDraftNotGeneratableError
         if result.error_code == "not_found":
             raise PublicJobNotFoundError
-        raise JobRejectedError
+        raise JobRejectedError(_rejection_reason(result.error_code))
     if result.job is None:
-        raise JobRejectedError
+        raise JobRejectedError("contract")
     return result.job
 
 

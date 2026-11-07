@@ -278,9 +278,35 @@ asset/bytes/sha256 证明。
 非静音；任一项不满足即 `failed` 且 `publication_eligible=false`，Job 仍可提交报告以便
 审计，但发布被 422 拒绝。
 
-本切片仍不包含自动记录 worker：validation 执行产出 report 后，发布仍必须由部署显式运行
-`speechnexus-record-voice-evidence` 写入能力证据；没有证据行时发布保持 422
-`evidence_missing`，不会因为 report 已存在而自动放行。
+证据的自动记录由独立 worker 完成。`speechnexus-voice-evidence-worker` 周期扫描
+「state 为 succeeded、且没有证据行」的 `voice_validation` Job，按 Job 引用的 Artifact
+行读取对象存储中的同一版报告字节，再走与 `speechnexus-record-voice-evidence` 相同的
+记录事务。扫描只依赖持久行，不依赖派发租约或进程内集合，因此能补记「报告已提交、账本
+未写」的中断窗口；result 损坏的 Job 以 `validation_result_invalid` 拒绝，缺少报告引用或
+回执不符的 Job 以 `validation_report_mismatch` 拒绝，都不会被扫描谓词静默跳过。同一 Job
+重复消费由 `evidence_id = vce-<job_id>` 与 `UNIQUE(validation_job_id)` 幂等，返回原行而
+不新增。
+
+记录前重新校验同一组事实：Job 非 `succeeded`、对象字节摘要与 Artifact 行不一致、报告未过
+质量阈值等，一律拒绝并以稳定的 reason 输出（如 `validation_job_not_succeeded`、
+`report_bytes_mismatch`、`coverage_probes_invalid`），不会静默跳过或写入部分证据。
+
+坏报告引用的两个稳定拒绝码边界固定：result 不能解析为 JSON 对象、`kind` 不是
+`voice_validation`、或 `validation` 不是对象时，报 `validation_result_invalid`；result
+可解析但缺少字符串类型的 `validation_report_artifact_id`/`receipt_id`，或该 id 在
+workspace 内找不到 ready 的 `validation_report`、receipt 与结果不一致时，报
+`validation_report_mismatch`。两者都是确定性拒绝，不得回退为
+`validation_job_not_succeeded`；只有对象读取失败与账本不可用进入有界重试。账本
+不可用与报告对象不可读按 Job 计入有上限的重试预算，达到上限后以
+`evidence_storage_unavailable` / `report_artifact_unavailable` 报告为 `exhausted`。重试
+预算只存在于当前进程：账本或对象存储恢复后，已 exhausted 的 Job 不会在同一进程内自动
+重试，必须重启 worker 或等待下一进程重新扫描；重启后会重新检查并再次报告。确定性拒绝
+在同一进程内只读取一次，扫描用 `(updated_at_us, job_id)` keyset 游标推进并在末尾回绕，
+因此坏报告既不会饿死后面的候选，也不会产生随积压增长的排除参数；游标只前进，回绕前新增
+或重试的 Job 会延后一轮才被看到，持续满批次时回绕可能很晚，但不会丢失，重启会从头发起。
+进程内备注最多保留 4096 条，按最早写入淘汰；淘汰只会让该 Job 下次重新判定，不改变拒绝
+语义。worker 只写证据、不回写 Job，
+因此不存在「Job 回滚但证据已写」或反向状态。显式命令与 worker 共用同一记录实现，两条入口不会各自解析报告或各自判断阈值。
 
 `speech_published_voice_revisions` 视图以 `COALESCE(自定义修订文档, 预置资格文档)` 读取，
 `listVoices`/`getVoiceRevision` 因此能返回自定义发布，而不会因单个缺失文档让整页 503；
@@ -290,7 +316,11 @@ asset/bytes/sha256 证明。
 
 ## 迁移与生产装配
 
-`0043_voice_draft_revisions` 接在 `0042` 之后，增加
+`0048_voice_evidence_scan_index` 在 `0047` 之后增加部分索引
+`speech_jobs_voice_evidence_scan (updated_at_us, job_id) WHERE kind = 'voice_validation' AND
+state = 'succeeded'`，使 worker 的轮询只读取候选区间而不是全表扫描并按序排序；强制
+generic plan 时会退化为索引前缀过滤（实测约 0.9 ms，仍远低于全表扫描的 3 ms 级），默认
+连接配置下不受影响；downgrade 删除该索引。`0043_voice_draft_revisions` 接在 `0042` 之后，增加
 `speech_voice_draft_revisions`，把既有草稿的当前 head 回填为 revision 1，并将 Job kind
 CHECK 扩展到 `voice_validation`。`0044_voice_preview_jobs` 只把同一 CHECK 再扩展到
 `voice_preview`，不改表、索引或授权。`0047_voice_publication_evidence` 接在
@@ -317,6 +347,29 @@ CHECK 扩展到 `voice_validation`。`0044_voice_preview_jobs` 只把同一 CHEC
 `DispatchUnavailableError` 并保持 Job `running`，因此不能把 API 角色的超集授权当作
 worker 证据。
 
+自动记录 worker 使用与显式记录器相同的独立身份
+`SPEECHNEXUS_VOICE_EVIDENCE_DATABASE_URL`（`voice_evidence_recorder_grants`），并读取
+`SPEECHNEXUS_OBJECT_STORAGE_ENDPOINT`、`SPEECHNEXUS_OBJECT_STORAGE_BUCKET` 与
+`SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY`/`SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY` 中的报告
+Artifact 对象；凭据只需读取对象（GET），worker 不写入、不删除对象存储内容。
+`SPEECHNEXUS_DATABASE_SCHEMA` 没有默认值，缺失时进程以 exit 2 拒绝启动。启动在连接池上
+校验该身份不是 owner、不能 SET ROLE、没有 schema CREATE，并逐列比对
+`voice_evidence_recorder_grants` 的形状：证据表只允许 SELECT 与 INSERT，其他事实表只允许
+SELECT；任何表级或列级 `UPDATE`/`REFERENCES`/`INSERT` 越权、证据表
+`DELETE`/`TRUNCATE`/`TRIGGER`，以及配置 schema 之外任何非系统 schema 中的表权限（含
+`public` 与同级 schema）都会拒绝启动。`public` schema 内对 `PUBLIC` 的表授权同样会触发
+拒绝；部署前应清理这类授权，或把扩展对象移到独立 schema。轮询间隔、批量、事务截止与每个
+Job 的重试预算分别由
+`SPEECHNEXUS_VOICE_EVIDENCE_POLL_SECONDS`、`SPEECHNEXUS_VOICE_EVIDENCE_BATCH_SIZE`、
+`SPEECHNEXUS_VOICE_EVIDENCE_TRANSACTION_TIMEOUT_SECONDS` 与
+`SPEECHNEXUS_VOICE_EVIDENCE_MAX_ATTEMPTS` 配置。
+
+`SPEECHNEXUS_VOICE_EVIDENCE_DATABASE_URL` 必须指向与 Job/Artifact 同一可写主库：worker
+在同一数据库事务里读取 Job/Artifact 并写入证据。若指向 logical replica 或按表拆
+publication 的非契约拓扑，replica 上「result 已可见、Artifact 行尚未回放」的瞬时不一致
+会被 `validation_report_mismatch` 判成永久拒绝。当前启动校验不检查主库身份，主库同源是
+部署契约（后续可加启动断言）。
+
 发布使用**独立的** `SPEECHNEXUS_VOICE_PUBLISHER_DATABASE_URL`，不复用 Job writer。发布角色
 只获得证据/Job/Artifact/素材/绑定/发布/head/草稿/修订的读取，发布、修订、回执与素材引用的
 INSERT，以及 head、目录版本、草稿 `status` 的窄 UPDATE；无可写证据、无 Job/素材写权、无
@@ -334,7 +387,9 @@ DELETE/TRUNCATE。退休角色另获素材引用四个谓词列的 SELECT 与 `r
    `binding_lifecycle_grants(schema, lifecycle_role)`（新增素材引用列权限，否则启动校验失败）。
 3. 配置 `SPEECHNEXUS_VOICE_PUBLISHER_DATABASE_URL` 指向 publisher 角色；记录进程配置
    `SPEECHNEXUS_VOICE_EVIDENCE_DATABASE_URL` 指向 recorder 角色。
-4. 记录证据（`--report` 必须是 Artifact 提交的同一份字节，不是重新序列化的 JSON）：
+4. 启动 `speechnexus-voice-evidence-worker` 自动消费已提交报告（`--once` 只跑一个批次），
+   或按需执行下面的显式命令（`--report` 必须是 Artifact 提交的同一份字节，不是重新序列化的
+   JSON）：
 
 ```bash
 SPEECHNEXUS_VOICE_EVIDENCE_DATABASE_URL='postgresql://…' \
@@ -343,8 +398,10 @@ SPEECHNEXUS_VOICE_EVIDENCE_DATABASE_URL='postgresql://…' \
   --measured-by validation-worker
 ```
 
-等价入口是 `python -m speechnexus_backend.record_voice_capability_evidence`。旧 Job writer
-不因迁移自动获得新权限；未配置记录器时不会产生证据，发布会 422 `evidence_missing`。
+等价入口是 `python -m speechnexus_backend.record_voice_capability_evidence`；常驻入口是
+`python -m speechnexus_backend.voice_evidence_worker`。默认 Compose 面不启动该 worker，
+需要部署在本机显式装配 recorder DSN、对象存储凭据与轮询参数；未配置或未启动时不会产生
+自动证据，发布会保持 422 `evidence_missing`。旧 Job writer 不因迁移自动获得新权限。
 
 `voice_validation` 的 target binding revision 必须在 `definition` 中声明
 `logical_model`，且 `tasks` 包含 `voice_validation`；缺失或未发布时提交返回 422
@@ -364,6 +421,15 @@ SPEECHNEXUS_VOICE_EVIDENCE_DATABASE_URL='postgresql://…' \
 `tests/unit/backend/test_voice_creation_jobs.py` 与 `test_voice_drafts_http.py` 覆盖 Job 重放、
 生成校验器、严格输入、Host/Origin、状态修改拒绝、错误区分、candidate 回执/Artifact 反例、
 精确修订查询、修订提交确认丢失的 503 形状，以及创建确认丢失时带键回放与无键 409 的分支。
+`tests/integration/test_voice_evidence_worker_pg.py` 在真实 PG 与 recorder 身份上覆盖
+自动消费、重复消费只保留一行、扫描自愈中断窗口、替换报告字节被拒、1 ms 静音或伪造
+passed 报告被拒、账本写失败的有界重试与恢复、非终态 Job 拒绝、三类坏 result 分别钉住
+`validation_result_invalid`/`validation_report_mismatch` 且不阻断后续 Job、同一
+`updated_at_us` 的 keyset 分页，以及 REFERENCES/TRIGGER/只读表列级 INSERT、证据表
+DELETE/TRUNCATE、schema CREATE、SET ROLE、对象 owner、同级 schema 与 `public` 内
+`PUBLIC` 授权越权一律拒绝启动。`tests/integration/test_voice_evidence_index_migration_pg.py` 验证 0048
+索引的创建、谓词、降级删除与重复 upgrade。`test_voice_evidence_recording.py`
+覆盖按 Job 的重试预算、确定性拒绝只读一次、批量上限与稳定日志码。
 `tests/integration/test_voice_validation_dispatch_pg.py` 在真实 PG 上覆盖 clone 校验的
 准入→派发→报告→公开读取→无证据发布 422、最小 worker 授权角色的同链派发、1 ms 数字静音
 必须 `failed` 且不可发布，以及候选 design 修订确定性 422；`test_voice_validation_dispatch.py`

@@ -9,7 +9,9 @@ name: speechnexus
 #   - node-controller: engine lifecycle is operator/external in this bootstrap;
 #   - runtime-delivery-worker: runtime delivery remains a separate G5 gap;
 #   - job-dispatch-worker: asynchronous Jobs remain blocked by the G5 gap;
-#   - asset-maintain: retention maintenance is not on the synchronous request path.
+#   - asset-maintain: retention maintenance is not on the synchronous request path;
+#   - voice-evidence-worker: automatic evidence recording needs a recorder DSN and
+#     report object storage, which this bootstrap surface does not assemble.
 # Adding any of them here would incorrectly claim those capabilities are assembled.
 # `migrate`, `engine-register`, `binding-disable-worker`, `admin` and `workbench` are opt-in profiles and
 # therefore do not appear in the base service list.

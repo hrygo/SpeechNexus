@@ -57,8 +57,9 @@ gateway
 api
 ```
 
-`deploy/compose.yaml` 顶部的注释明确排除四项：`node-controller`、
-`runtime-delivery-worker`、`job-dispatch-worker`、`asset-maintain`。`migrate` 和
+`deploy/compose.yaml` 顶部的注释明确排除五项：`node-controller`、
+`runtime-delivery-worker`、`job-dispatch-worker`、`asset-maintain`、
+`voice-evidence-worker`（自动记录需要独立的 recorder DSN 与报告对象存储读取凭据）。`migrate` 和
 `engine-register` 分别属于按需启用的 `migration` 和 `engine-registration` profile；
 `binding-disable-worker` 属于 `binding-disable` profile，`admin` / `workbench` 属于
 `web` profile，因此都不属于上面的基础集合。

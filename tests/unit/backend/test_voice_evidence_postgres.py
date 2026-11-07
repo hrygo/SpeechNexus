@@ -101,9 +101,27 @@ class _Cursor:
         return self.results.pop(0)
 
 
+def _artifact() -> dict[str, Any]:
+    return {
+        "artifact_id": "report-1",
+        "artifact_state": "ready",
+        "artifact_kind": "validation_report",
+        "media_type": "application/json",
+        "bytes": len(REPORT),
+        "sha256": "sha256:" + __import__("hashlib").sha256(REPORT).hexdigest(),
+        "receipt_id": "receipt-1",
+        "source_operation_id": "job-1",
+        "object_key": "private/artifacts/workspace-default/report-1",
+        "storage_version_id": "version-report-1",
+        "created_at_us": 1,
+        "expires_at_us": None,
+    }
+
+
 def _results() -> list[list[dict[str, Any]]]:
     return [
         [JOB],
+        [_artifact()],
         [
             {
                 "kind": "clone",
@@ -112,15 +130,6 @@ def _results() -> list[list[dict[str, Any]]]:
             }
         ],
         [{"revision_id": "voice-model-rev-1"}],
-        [
-            {
-                "artifact_state": "ready",
-                "artifact_kind": "validation_report",
-                "bytes": len(REPORT),
-                "sha256": "sha256:" + __import__("hashlib").sha256(REPORT).hexdigest(),
-                "receipt_id": "receipt-1",
-            }
-        ],
         [
             {
                 "asset_id": "asset-1",

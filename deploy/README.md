@@ -24,11 +24,13 @@ set is intentionally limited to:
 - `gateway`: execution gateway with private file-ASR/file-TTS configuration.
 
 The following production units are deliberately **not** part of this file yet:
-`node-controller`, `runtime-delivery-worker`, `job-dispatch-worker` and
-`asset-maintain`. Their absence is a scope statement, not an assertion that
-those capabilities work elsewhere. They are excluded because controller
-lifecycle, runtime delivery, asynchronous Jobs (G5 / issue #18) and retention
-maintenance are not on the synchronous request path or are not assembled.
+`node-controller`, `runtime-delivery-worker`, `job-dispatch-worker`,
+`asset-maintain` and `voice-evidence-worker`. Their absence is a scope
+statement, not an assertion that those capabilities work elsewhere. They are
+excluded because controller lifecycle, runtime delivery, asynchronous Jobs (G5 /
+issue #18), retention maintenance and automatic evidence recording (which needs a
+recorder DSN plus report object storage) are not on the synchronous request path
+or are not assembled here.
 
 Additional profiles are opt-in:
 
@@ -169,8 +171,14 @@ binding 历史、`speech_publications` 与证据表。未配置时 GET 返回
 它必须与 Job writer 指向同一数据库和服务器，但不得复用 Job writer 身份。启动会校验其列级
 权限，未配置时发布返回 503。独立记录角色使用 `voice_evidence_recorder_grants` 和
 `SPEECHNEXUS_VOICE_EVIDENCE_DATABASE_URL`，通过
-`speechnexus-record-voice-evidence` 写入证据。退休角色需在 0047 后重跑
-`binding_lifecycle_grants`，否则生命周期启动校验会拒绝旧授权。
+`speechnexus-record-voice-evidence` 显式写入证据，或由
+`speechnexus-voice-evidence-worker` 周期消费已提交的校验报告并在中断后自愈。该 worker
+不在默认 Compose 面内，需要显式提供 recorder DSN、`SPEECHNEXUS_DATABASE_SCHEMA`（无默认
+值，缺失即 exit 2）、报告 Artifact 所在对象存储的读取凭据（只需 GET，不需要写入或删除）
+与轮询参数；recorder DSN 必须与 Job/Artifact 同一可写主库（指向 logical replica 时，
+瞬时不一致可能被 `validation_report_mismatch` 判成永久）。启动会按
+`voice_evidence_recorder_grants` 的列级形状拒绝更宽的身份，包括配置 schema 之外的表权限。退休角色需在
+0047 后重跑 `binding_lifecycle_grants`，否则生命周期启动校验会拒绝旧授权。
 
 发音集合使用三个独立的非 owner 身份。读取身份设置
 `SPEECHNEXUS_PRONUNCIATION_READER_DATABASE_URL`，仅授予

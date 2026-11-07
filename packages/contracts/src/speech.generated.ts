@@ -388,9 +388,12 @@ export interface paths {
      *     whose frozen `execution_defaults` cannot complete every execution
      *     parameter returns 422 `job_binding_incomplete`; `tts` input
      *     `text_asset_id` returns 422 `job_text_asset_unsupported` until the
-     *     frozen text-asset material exists. A custom voice from `voice_clone` or
-     *     `voice_design` stays explicitly unavailable until its execution material
-     *     ships.
+     *     frozen text-asset material exists. A custom voice from `voice_clone` is
+     *     available for `tts` once its revision is published on the same Base
+     *     binding: admission assembles the published reference material and paired
+     *     transcript as `voice_kind=custom`, and returns 422 `voice_not_published`
+     *     for unpublished, retired or preview-only material. `voice_design` remains
+     *     preview-only and cannot be selected for `tts`.
      *
      *     Original-key replay is checked before mutable publication/workspace
      *     facts: the same canonical request returns the stored Job even after

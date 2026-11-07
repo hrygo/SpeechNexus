@@ -370,6 +370,18 @@ class ExternalModelBindingSchemaJsonVoiceParameterDomain(TypedDict):
     validation_set_revisions: NotRequired[list[ExternalModelBindingSchemaJsonRevision]]
 
 
+type ExternalSharedProfileParameterValuesSchemaJsonAsrLanguage = (
+    ExternalSharedLanguageSchemaJsonLanguageTag
+)
+type ExternalSharedProfileParameterValuesSchemaJsonNullableResourceReference = (
+    ExternalSharedReferencesSchemaJsonResourceReference | None
+)
+type ExternalSharedProfileParameterValuesSchemaJsonTtsLanguage = (
+    ExternalSharedLanguageSchemaJsonLanguageTag
+)
+type ExternalSharedProfileParameterValuesSchemaJsonTtsPronunciationRevision = (
+    ExternalSharedProfileParameterValuesSchemaJsonNullableResourceReference
+)
 type ExternalSharedCapabilityDomainsSchemaJsonReleaseTier = Literal[
     "experimental", "best_effort", "production"
 ]
@@ -478,6 +490,25 @@ class ExternalModelBindingSchemaJsonParameterDomains(TypedDict):
     voice: NotRequired[ExternalModelBindingSchemaJsonVoiceParameterDomain]
 
 
+type ExternalSharedProfileParameterValuesSchemaJsonAsrVocabularySetRevision = (
+    ExternalSharedProfileParameterValuesSchemaJsonNullableResourceReference
+)
+
+
+class ExternalModelBindingSchemaJsonTtsExecutionDefaults(TypedDict):
+    language: ExternalSharedProfileParameterValuesSchemaJsonTtsLanguage
+    text_commit_mode: ExternalSharedProfileParameterValuesSchemaJsonTtsTextCommitMode
+    audio_delivery: ExternalSharedProfileParameterValuesSchemaJsonTtsAudioDelivery
+    speed: ExternalSharedProfileParameterValuesSchemaJsonTtsSpeed
+    instructions: ExternalSharedProfileParameterValuesSchemaJsonTtsInstructions
+    pronunciation_revision: ExternalSharedProfileParameterValuesSchemaJsonTtsPronunciationRevision
+    seed: ExternalSharedProfileParameterValuesSchemaJsonTtsSeed
+    planner: ExternalSharedProfileParameterValuesSchemaJsonTtsPlanner
+    sample_rate_hz: int
+    max_output_audio_ms: int
+    timeout_seconds: float
+
+
 type ExternalModelBindingSchemaJsonReleaseTier = (
     ExternalSharedCapabilityDomainsSchemaJsonReleaseTier
 )
@@ -580,6 +611,22 @@ class ExternalModelBindingSchemaJsonExecutionRecipe(TypedDict):
     requires_complete_reservation: NotRequired[bool]
 
 
+class ExternalModelBindingSchemaJsonAsrExecutionDefaults(TypedDict):
+    language: ExternalSharedProfileParameterValuesSchemaJsonAsrLanguage
+    turn_detection: ExternalSharedProfileParameterValuesSchemaJsonAsrTurnDetection
+    finalization: ExternalSharedProfileParameterValuesSchemaJsonAsrFinalization
+    preview_interval_ms: ExternalSharedProfileParameterValuesSchemaJsonAsrPreviewIntervalMs
+    max_segment_ms: ExternalSharedProfileParameterValuesSchemaJsonAsrMaxSegmentMs
+    rollback_tokens: ExternalSharedProfileParameterValuesSchemaJsonAsrRollbackTokens
+    final_deadline_ms: ExternalSharedProfileParameterValuesSchemaJsonAsrFinalDeadlineMs
+    auxiliary_deadline_ms: ExternalSharedProfileParameterValuesSchemaJsonAsrAuxiliaryDeadlineMs
+    alignment: ExternalSharedProfileParameterValuesSchemaJsonAsrAlignment
+    diarization: ExternalSharedProfileParameterValuesSchemaJsonAsrDiarization
+    vocabulary_set_revision: ExternalSharedProfileParameterValuesSchemaJsonAsrVocabularySetRevision
+    temperature: float
+    timeout_seconds: float
+
+
 class ProfilePublicationRequest(TypedDict):
     expected_revision: Revision
     expected_current_revision: Revision | None
@@ -612,16 +659,9 @@ class ExternalScenarioProfileSchemaJsonProfileDefinition(TypedDict):
     slo_ref: str
 
 
-class ModelBindingCreateRequest(TypedDict):
-    binding_id: Identifier
-    supersedes_revision: NotRequired[Revision]
-    logical_model: str
-    tasks: list[ExternalModelBindingSchemaJsonSpeechTaskKind]
-    engine: ExternalModelBindingSchemaJsonEngineDescriptor
-    artifact_set: list[ExternalModelBindingSchemaJsonArtifactReference]
-    execution_recipe: ExternalModelBindingSchemaJsonExecutionRecipe
-    parameter_domains: ExternalModelBindingSchemaJsonParameterDomains
-    release_tier: ExternalModelBindingSchemaJsonReleaseTier
+class ExternalModelBindingSchemaJsonExecutionDefaults(TypedDict):
+    asr: NotRequired[ExternalModelBindingSchemaJsonAsrExecutionDefaults]
+    tts: NotRequired[ExternalModelBindingSchemaJsonTtsExecutionDefaults]
 
 
 class ExternalScenarioProfileSchemaJsonRoot(TypedDict):
@@ -667,6 +707,19 @@ class ProfileRevisionCreateRequest(TypedDict):
     slo_ref: str
     profile_id: Identifier
     expected_latest_revision: Revision | None
+
+
+class ModelBindingCreateRequest(TypedDict):
+    binding_id: Identifier
+    supersedes_revision: NotRequired[Revision]
+    logical_model: str
+    tasks: list[ExternalModelBindingSchemaJsonSpeechTaskKind]
+    engine: ExternalModelBindingSchemaJsonEngineDescriptor
+    artifact_set: list[ExternalModelBindingSchemaJsonArtifactReference]
+    execution_recipe: ExternalModelBindingSchemaJsonExecutionRecipe
+    parameter_domains: ExternalModelBindingSchemaJsonParameterDomains
+    execution_defaults: NotRequired[ExternalModelBindingSchemaJsonExecutionDefaults]
+    release_tier: ExternalModelBindingSchemaJsonReleaseTier
 
 
 class ProfilePublishedRevision(TypedDict):

@@ -8,7 +8,7 @@ import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import psycopg
 import pytest
@@ -23,7 +23,10 @@ from sqlalchemy.pool import NullPool
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
-from speechnexus_backend.speech.application.public_jobs import PublicJobs
+from speechnexus_backend.speech.application.public_jobs import (
+    JobAdmissionRejectedError,
+    PublicJobs,
+)
 from speechnexus_backend.speech.domain.public_jobs import (
     PublicJobConflictError,
     canonical_digest,
@@ -428,7 +431,7 @@ async def test_success_and_failure_invariants_are_enforced_twice(jobs_db: JobSan
         )
 
 
-async def test_composition_root_opens_verified_writer_and_serves_the_job(
+async def test_composition_root_refuses_create_without_an_admission_role(
     jobs_db: JobSandbox,
 ) -> None:
     app = create_app(settings=_settings_for(jobs_db))
@@ -439,10 +442,13 @@ async def test_composition_root_opens_verified_writer_and_serves_the_job(
         created = await client.post(
             PREFIX, json=_body(), headers={"Idempotency-Key": "synthetic-runtime-01"}
         )
-        assert created.status_code == 202, created.text
-        read = await client.get(PREFIX + "/" + created.json()["id"])
-        assert read.status_code == 200, read.text
-        assert read.json() == created.json()
+        # Reads and cancellation remain available; a create that cannot reserve
+        # atomically is refused instead of falling back to a visible half-Job.
+        assert created.status_code == 503, created.text
+        assert created.json()["error"]["code"] == "job_unavailable"
+        read = await client.get(PREFIX + "/job-" + "a" * 48)
+        assert read.status_code == 404, read.text
+        assert read.json()["error"]["code"] == "job_not_found"
 
 
 def test_voice_draft_revision_grants_are_append_only(jobs_db: JobSandbox) -> None:
@@ -482,3 +488,23 @@ def test_voice_draft_revision_grants_are_append_only(jobs_db: JobSandbox) -> Non
             jobs_db.admin.execute(f"DELETE FROM {revision_table} WHERE false")
     finally:
         jobs_db.admin.execute("RESET ROLE")
+
+
+class _CapacityJobs:
+    def submit(self, command: Any, *, request_id: str, idempotency_key: str | None) -> Any:
+        raise JobAdmissionRejectedError("job_capacity_exhausted")
+
+    def artifacts(self, job: Any) -> tuple[()]:
+        return ()
+
+
+async def test_capacity_refusal_is_429_with_retry_after() -> None:
+    app = create_app(settings=_settings(), jobs=cast(Any, _CapacityJobs()))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            PREFIX, json=_body(), headers={"Idempotency-Key": "synthetic-capacity-01"}
+        )
+    assert response.status_code == 429, response.text
+    assert response.headers["Retry-After"] == "1"
+    error = response.json()["error"]
+    assert error["code"] == "job_capacity_exhausted" and error["retryable"] is True

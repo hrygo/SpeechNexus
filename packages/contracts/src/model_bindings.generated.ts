@@ -26,6 +26,8 @@ export interface components {
       artifact_set: components["schemas"]["ArtifactReference"][];
       execution_recipe: components["schemas"]["ExecutionRecipe"];
       parameter_domains: components["schemas"]["ParameterDomains"];
+      /** @description Complete frozen execution parameters for each task this binding serves. A public Job cannot be created from a binding that omits the block for its kind; values are never inferred from deployment configuration. */
+      execution_defaults?: components["schemas"]["ExecutionDefaults"];
       /** @description Publication claim for this revision. A draft may target production without evidence identifiers; any published, retired, or disabled production revision requires the bound capacity manifest and qualification report. */
       release_tier: components["schemas"]["ReleaseTier"];
       /** @description Mutable lifecycle projection over the immutable binding definition. Drafts cannot carry publication timestamps or evidence identifiers. */
@@ -146,6 +148,78 @@ export interface components {
       preview_only_possible?: boolean;
       reusable_voice_supported: boolean;
       validation_set_revisions?: components["schemas"]["Revision"][];
+    };
+    ExecutionDefaults: {
+      asr?: components["schemas"]["AsrExecutionDefaults"];
+      tts?: components["schemas"]["TtsExecutionDefaults"];
+    };
+    /** @description Complete effective file-ASR parameters for one exact binding revision. Every value is execution authority; omission is not a default. */
+    AsrExecutionDefaults: {
+      language: components["schemas"]["External_shared_profile_parameter_values_schema_json_AsrLanguage"];
+      turn_detection: components["schemas"]["External_shared_profile_parameter_values_schema_json_AsrTurnDetection"];
+      finalization: components["schemas"]["External_shared_profile_parameter_values_schema_json_AsrFinalization"];
+      preview_interval_ms: components["schemas"]["External_shared_profile_parameter_values_schema_json_AsrPreviewIntervalMs"];
+      max_segment_ms: components["schemas"]["External_shared_profile_parameter_values_schema_json_AsrMaxSegmentMs"];
+      rollback_tokens: components["schemas"]["External_shared_profile_parameter_values_schema_json_AsrRollbackTokens"];
+      final_deadline_ms: components["schemas"]["External_shared_profile_parameter_values_schema_json_AsrFinalDeadlineMs"];
+      auxiliary_deadline_ms: components["schemas"]["External_shared_profile_parameter_values_schema_json_AsrAuxiliaryDeadlineMs"];
+      alignment: components["schemas"]["External_shared_profile_parameter_values_schema_json_AsrAlignment"];
+      diarization: components["schemas"]["External_shared_profile_parameter_values_schema_json_AsrDiarization"];
+      vocabulary_set_revision: components["schemas"]["External_shared_profile_parameter_values_schema_json_AsrVocabularySetRevision"];
+      temperature: number;
+      timeout_seconds: number;
+    };
+    External_shared_profile_parameter_values_schema_json_AsrLanguage: components["schemas"]["External_shared_language_schema_json_LanguageTag"];
+    External_shared_language_schema_json_LanguageTag: string;
+    External_shared_profile_parameter_values_schema_json_AsrTurnDetection: {
+      mode: components["schemas"]["External_shared_capability_domains_schema_json_VadMode"];
+      silence_duration_ms: number;
+    };
+    /** @enum {string} */
+    External_shared_capability_domains_schema_json_VadMode: "server_vad" | "manual";
+    External_shared_profile_parameter_values_schema_json_AsrFinalization: components["schemas"]["External_shared_capability_domains_schema_json_FinalizationMode"];
+    External_shared_profile_parameter_values_schema_json_AsrPreviewIntervalMs: number;
+    /** @description Must be greater than or equal to preview_interval_ms and is further bounded by the binding, auxiliary capabilities, and workspace policy at admission. JSON Schema cannot express the cross-field comparison; contract tests and runtime validation enforce it. */
+    External_shared_profile_parameter_values_schema_json_AsrMaxSegmentMs: number;
+    /** @default 5 */
+    External_shared_profile_parameter_values_schema_json_AsrRollbackTokens: number;
+    External_shared_profile_parameter_values_schema_json_AsrFinalDeadlineMs: number;
+    /** @default 5000 */
+    External_shared_profile_parameter_values_schema_json_AsrAuxiliaryDeadlineMs: number;
+    External_shared_profile_parameter_values_schema_json_AsrAlignment: components["schemas"]["External_shared_capability_domains_schema_json_AuxiliaryMode"];
+    External_shared_profile_parameter_values_schema_json_AsrDiarization: components["schemas"]["External_shared_capability_domains_schema_json_AuxiliaryMode"];
+    External_shared_profile_parameter_values_schema_json_AsrVocabularySetRevision: components["schemas"]["External_shared_profile_parameter_values_schema_json_NullableResourceReference"];
+    External_shared_profile_parameter_values_schema_json_NullableResourceReference:
+      components["schemas"]["External_shared_references_schema_json_ResourceReference"] | null;
+    External_shared_references_schema_json_ResourceReference: {
+      id: components["schemas"]["External_shared_identifiers_schema_json_Identifier"];
+      revision: components["schemas"]["External_shared_identifiers_schema_json_Revision"];
+    };
+    /** @description Complete effective file-TTS parameters for one exact binding revision. Every value is execution authority; omission is not a default. */
+    TtsExecutionDefaults: {
+      language: components["schemas"]["External_shared_profile_parameter_values_schema_json_TtsLanguage"];
+      text_commit_mode: components["schemas"]["External_shared_profile_parameter_values_schema_json_TtsTextCommitMode"];
+      audio_delivery: components["schemas"]["External_shared_profile_parameter_values_schema_json_TtsAudioDelivery"];
+      speed: components["schemas"]["External_shared_profile_parameter_values_schema_json_TtsSpeed"];
+      instructions: components["schemas"]["External_shared_profile_parameter_values_schema_json_TtsInstructions"];
+      pronunciation_revision: components["schemas"]["External_shared_profile_parameter_values_schema_json_TtsPronunciationRevision"];
+      seed: components["schemas"]["External_shared_profile_parameter_values_schema_json_TtsSeed"];
+      planner: components["schemas"]["External_shared_profile_parameter_values_schema_json_TtsPlanner"];
+      sample_rate_hz: number;
+      max_output_audio_ms: number;
+      timeout_seconds: number;
+    };
+    External_shared_profile_parameter_values_schema_json_TtsLanguage: components["schemas"]["External_shared_language_schema_json_LanguageTag"];
+    External_shared_profile_parameter_values_schema_json_TtsTextCommitMode: components["schemas"]["External_shared_capability_domains_schema_json_TextCommitMode"];
+    External_shared_profile_parameter_values_schema_json_TtsAudioDelivery: components["schemas"]["External_shared_capability_domains_schema_json_AudioDeliveryMode"];
+    /** @default 1 */
+    External_shared_profile_parameter_values_schema_json_TtsSpeed: number;
+    External_shared_profile_parameter_values_schema_json_TtsInstructions: string | null;
+    External_shared_profile_parameter_values_schema_json_TtsPronunciationRevision: components["schemas"]["External_shared_profile_parameter_values_schema_json_NullableResourceReference"];
+    External_shared_profile_parameter_values_schema_json_TtsSeed: number | null;
+    External_shared_profile_parameter_values_schema_json_TtsPlanner: {
+      max_chars: number;
+      max_wait_ms: number;
     };
     ReleaseTier: components["schemas"]["External_shared_capability_domains_schema_json_ReleaseTier"];
     /** @enum {string} */

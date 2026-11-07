@@ -1,6 +1,6 @@
 {
   "admin-openapi.yaml": {
-    "sha256": "686b18a582ee7b644739dc28daf82566d7d29b1b7494bfb53bd7dfb4b8d6576e",
+    "sha256": "44997ae3f898e4c7da7aba07d05d00ad87a2edaf5418cb68599b8e7b7b330c3b",
     "version": "0.1.0.dev5"
   },
   "binding-defaults-producer.openapi.yaml": {
@@ -52,7 +52,7 @@
     "version": "1.0.0"
   },
   "model-binding.schema.json": {
-    "sha256": "54327d5bd44557357598c3effe660fb6c5295792891485734b5e9fbac3e54a30",
+    "sha256": "8e296da12b70481abe2c813b0bb301070d8bdb10fa0c3efa44cc22ca95d41e65",
     "version": null
   },
   "model-instance.schema.json": {
@@ -128,8 +128,8 @@
     "version": null
   },
   "speech-openapi.yaml": {
-    "sha256": "68df56cb01d7c76c3aa4d1fc4b1a242baca7640b449fdbcb67d5fff7a4ed552d",
-    "version": "0.1.0.dev13"
+    "sha256": "e1930d7c77ab55e8e927d4b1b53237e6afff1e6a39fc8cf0e24b68d8340130c5",
+    "version": "0.1.0.dev14"
   },
   "voice-resource.schema.json": {
     "sha256": "540a0547a796be66b8f7597d4fe6e9f63184b30907237d1a1575a02b211f00c9",

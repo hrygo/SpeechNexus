@@ -65,34 +65,13 @@ class TranscriptionCommandPlanner:
             if plan.response_format in (TranscriptFormat.JSON, TranscriptFormat.TEXT)
             else "json"
         )
-        command: dict[str, Any] = {
-            "schema_version": "1.0.0",
-            "kind": "asr",
-            "task_kind": "asr_file",
-            "stage_role": "asr_batch",
-            "resources": {
-                "voice": None,
-                "voice_material": None,
-                "vocabulary": [],
-                "pronunciation": [],
-                "voice_kind": None,
-                "vocabulary_source": None,
-                "pronunciation_source": None,
-            },
-            "audio": {
-                "storage": {
-                    "asset_or_artifact_id": audio.asset_id,
-                    "workspace_id": audio.workspace_id,
-                    "storage_bucket": audio.bucket,
-                    "object_key": audio.object_key,
-                    "content_sha256": audio.content_sha256,
-                    "byte_length": audio.byte_length,
-                },
-                "media_type": plan.audio_media_type,
-                "sample_rate_hz": _sample_rate(plan),
-                "channels": _channels(plan),
-            },
-            "parameters": {
+        return build_asr_submit(
+            admitted,
+            audio,
+            media_type=plan.audio_media_type,
+            sample_rate_hz=plan.audio_sample_rate_hz,
+            channels=plan.audio_channels,
+            parameters={
                 "language": plan.language,
                 "turn_detection": {
                     "mode": "server_vad",
@@ -112,38 +91,78 @@ class TranscriptionCommandPlanner:
                 "response_format": gateway_format,
                 "timestamp_granularities": [],
             },
-        }
-        request: dict[str, object] = {
-            "submit_intent_id": admitted.submit_intent_id,
-            "lease_id": admitted.lease_id,
-            "operation_id": admitted.operation_id,
-            "attempt_id": admitted.attempt_id,
-            "stage_id": admitted.stage_id,
-            "workspace_id": admitted.workspace_id,
-            "pool_id": admitted.pool_id,
-            "host_node_id": admitted.host_node_id,
-            "gateway_id": admitted.gateway_id,
-            "instance_id": admitted.instance_id,
-            "instance_generation": admitted.instance_generation,
-            "binding_revision_id": admitted.binding_revision_id,
-            "policy_revision_id": admitted.policy_revision_id,
-            "voice_revision_id": None,
-            "fencing_token": admitted.fencing_token,
-            "command_digest": command_digest(command),
-            "command": command,
-            "deadline_at": deadline_text(admitted.deadline_at_us),
-            "max_output_audio_ms": None,
-            "sample_rate_hz": None,
-        }
-        return cast(SubmitExecutionRequest, request)
+        )
 
 
-def _sample_rate(plan: TranscriptionPlan) -> int:
-    return plan.audio_sample_rate_hz
+def build_asr_submit(
+    admitted: AdmittedExecution,
+    audio: StagedAudio,
+    *,
+    media_type: str,
+    sample_rate_hz: int,
+    channels: int,
+    parameters: dict[str, Any],
+) -> SubmitExecutionRequest:
+    """Build one complete ASR command from already-frozen effective parameters."""
+    if media_type not in _GATEWAY_MEDIA_TYPES:
+        raise TranscriptionAudioUnsupportedError
+    command: dict[str, Any] = {
+        "schema_version": "1.0.0",
+        "kind": "asr",
+        "task_kind": "asr_file",
+        "stage_role": "asr_batch",
+        "resources": {
+            "voice": None,
+            "voice_material": None,
+            "vocabulary": [],
+            "pronunciation": [],
+            "voice_kind": None,
+            "vocabulary_source": None,
+            "pronunciation_source": None,
+        },
+        "audio": {
+            "storage": {
+                "asset_or_artifact_id": audio.asset_id,
+                "workspace_id": audio.workspace_id,
+                "storage_bucket": audio.bucket,
+                "object_key": audio.object_key,
+                "content_sha256": audio.content_sha256,
+                "byte_length": audio.byte_length,
+            },
+            "media_type": media_type,
+            "sample_rate_hz": sample_rate_hz,
+            "channels": channels,
+        },
+        "parameters": parameters,
+    }
+    request: dict[str, object] = {
+        "submit_intent_id": admitted.submit_intent_id,
+        "lease_id": admitted.lease_id,
+        "operation_id": admitted.operation_id,
+        "attempt_id": admitted.attempt_id,
+        "stage_id": admitted.stage_id,
+        "workspace_id": admitted.workspace_id,
+        "pool_id": admitted.pool_id,
+        "host_node_id": admitted.host_node_id,
+        "gateway_id": admitted.gateway_id,
+        "instance_id": admitted.instance_id,
+        "instance_generation": admitted.instance_generation,
+        "binding_revision_id": admitted.binding_revision_id,
+        "policy_revision_id": admitted.policy_revision_id,
+        "voice_revision_id": None,
+        "fencing_token": admitted.fencing_token,
+        "command_digest": command_digest(command),
+        "command": command,
+        "deadline_at": deadline_text(admitted.deadline_at_us),
+        "max_output_audio_ms": None,
+        "sample_rate_hz": None,
+    }
+    return cast(SubmitExecutionRequest, request)
 
 
-def _channels(plan: TranscriptionPlan) -> int:
-    return plan.audio_channels
-
-
-__all__ = ["TranscriptionCommandPlanner", "command_digest", "deadline_text"]
+__all__ = [
+    "TranscriptionCommandPlanner",
+    "build_asr_submit",
+    "command_digest",
+    "deadline_text",
+]

@@ -32,7 +32,13 @@ head 清空时两个 pin 都拒绝；不回退到最大已发布版本，也不�
 无 pin 请求仍以 model 为 binding object ID，消费当前未退役的权威 head。
 
 响应 `effective_configuration.models.tts` 等于原 pin；内部 revision_id 不公开。
-原请求保存在现有私有 admission_operations 中，不能把它当作完整有效执行命令。
+原请求保存在 `speech_job_intents` 中；它不是完整执行命令。`asr`/`tts` 的执行参数来自
+该 binding revision 冻结的 `execution_defaults`，缺失任一必需项返回 422
+`job_binding_incomplete`，不使用当前配置或稀疏默认值补齐。`deadline_at_us` 只由
+冻结的 `execution_defaults.timeout_seconds` 计算，`constraints.max_queue_wait_ms`
+仅约束排队，不改变租约期限。`tts` 的 `text_asset_id` 在冻结文本资产材料落地前返回
+422 `job_text_asset_unsupported`。容量不足在 `POST /v1/nexus/jobs` 返回 429
+`job_capacity_exhausted` 与 `Retry-After`，且不写任何 Job 或准入行。
 
 | HTTP / code | 含义 |
 | --- | --- |
@@ -43,6 +49,9 @@ head 清空时两个 pin 都拒绝；不回退到最大已发布版本，也不�
 | 422 model_binding_task_not_supported | 不支持 tts_file |
 | 422 unsupported_parameter | schema 拒绝非法引用或非 TTS pin |
 | 409 idempotency_conflict | 同 workspace/key 的规范意图不同，包括变更或移除 pin |
+| 422 job_binding_incomplete | binding 未冻结完整执行参数，或 runtime plan 与 binding 不一致 |
+| 422 job_text_asset_unsupported | TTS 文本资产输入尚未支持 |
+| 429 job_capacity_exhausted | 配额或容量不足；按 Retry-After 重试，未写任何行 |
 | 503 job_outcome_unknown | 原结果未能确认；保存原请求/key，查询或原身份恢复 |
 | 503 job_unavailable | 事实或存储不可用；不证明此前提交不存在；`retryable: false` |
 

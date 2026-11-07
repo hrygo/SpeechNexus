@@ -28,36 +28,56 @@ def build_tts_submit(plan: SpeechPlan, admitted: AdmittedExecution) -> SubmitExe
         or plan.language is None
     ):
         raise ValueError("Speech plan does not match the execution or planner limit")
+    resources: dict[str, Any] = {
+        "voice": {"id": plan.voice_id, "revision": str(plan.voice_revision)},
+        "voice_material": None,
+        "vocabulary": [],
+        "pronunciation": [],
+        "voice_kind": "builtin",
+        "vocabulary_source": None,
+        "pronunciation_source": None,
+    }
+    parameters: dict[str, Any] = {
+        "text_commit_mode": "explicit",
+        "audio_delivery": "complete",
+        "language": plan.language,
+        "pronunciation_revision": None,
+        "instructions": plan.instructions or None,
+        "speed": plan.speed,
+        "seed": plan.seed,
+        "planner": {
+            "max_chars": plan.planner_max_chars,
+            "max_wait_ms": plan.planner_max_wait_ms,
+        },
+        "response_format": plan.response_format.value,
+    }
+    return build_tts_submit_from_parameters(
+        plan, admitted, resources=resources, parameters=parameters
+    )
+
+
+def build_tts_submit_from_parameters(
+    plan: SpeechPlan,
+    admitted: AdmittedExecution,
+    *,
+    resources: dict[str, Any],
+    parameters: dict[str, Any],
+) -> SubmitExecutionRequest:
+    """Build one complete TTS command from already-frozen resources and parameters."""
+    if (plan.workspace_id, plan.binding_revision_id) != (
+        admitted.workspace_id,
+        admitted.binding_revision_id,
+    ):
+        raise ValueError("Speech plan does not match the execution identity")
     command: dict[str, Any] = {
         "schema_version": "1.0.0",
         "kind": "tts",
         "task_kind": "tts_file",
         "stage_role": "tts_connector",
-        "resources": {
-            "voice": {"id": plan.voice_id, "revision": str(plan.voice_revision)},
-            "voice_material": None,
-            "vocabulary": [],
-            "pronunciation": [],
-            "voice_kind": "builtin",
-            "vocabulary_source": None,
-            "pronunciation_source": None,
-        },
+        "resources": resources,
         "text": plan.text,
         "text_stream": None,
-        "parameters": {
-            "text_commit_mode": "explicit",
-            "audio_delivery": "complete",
-            "language": plan.language,
-            "pronunciation_revision": None,
-            "instructions": plan.instructions or None,
-            "speed": plan.speed,
-            "seed": plan.seed,
-            "planner": {
-                "max_chars": plan.planner_max_chars,
-                "max_wait_ms": plan.planner_max_wait_ms,
-            },
-            "response_format": plan.response_format.value,
-        },
+        "parameters": parameters,
     }
     request: dict[str, Any] = {
         **{key: value for key, value in asdict(admitted).items() if key != "deadline_at_us"},

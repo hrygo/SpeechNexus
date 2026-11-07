@@ -1835,6 +1835,8 @@ components:
           $ref: "./model-binding.schema.json#/$defs/ExecutionRecipe"
         parameter_domains:
           $ref: "./model-binding.schema.json#/$defs/ParameterDomains"
+        execution_defaults:
+          $ref: "./model-binding.schema.json#/$defs/ExecutionDefaults"
         release_tier:
           $ref: "./model-binding.schema.json#/$defs/ReleaseTier"
     ModelBindingPublicationRequest:

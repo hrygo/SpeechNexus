@@ -208,7 +208,7 @@ def test_same_key_wait_recovers_original_before_changed_head(
                 blocker, request.workspace_id, cast(str, request.idempotency_key_digest)
             )
             lock_binding(blocker, "tts-quality")
-            _insert(blocker, request)
+            _insert(blocker, request, admitted=False)
             pending = executor.submit(driver.create, other)
             _wait(jobs_db, blocker.info.backend_pid)
             blocker.execute("DELETE FROM speech_publication_heads WHERE kind='binding'")
@@ -357,7 +357,7 @@ def test_fact_rejection_reconciles_in_flight_original(jobs_db: JobSandbox, outco
                     blocker, request.workspace_id, cast(str, request.idempotency_key_digest)
                 )
                 lock_binding(blocker, "tts-quality")
-                _insert(blocker, request)
+                _insert(blocker, request, admitted=False)
                 # Separate authoritative workspace commit exposes an early rejection.
                 jobs_db.query("UPDATE speech_workspaces SET workspace_state='disabled'")
                 resume.set()

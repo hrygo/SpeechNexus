@@ -24,6 +24,7 @@ from speechnexus_backend.speech.application.voice_drafts import (
     voice_input_fits,
     voice_input_shape,
 )
+from speechnexus_backend.speech.domain.admission import AdmissionRejectedError
 from speechnexus_backend.speech.domain.public_jobs import (
     JOB_STATES,
     TERMINAL_STATES,
@@ -48,6 +49,7 @@ from speechnexus_backend.speech.domain.publications import (
     PublicationKind,
     PublicationUnavailableError,
 )
+from speechnexus_backend.speech.infrastructure.admission_sql import admit_in_transaction
 from speechnexus_backend.speech.infrastructure.binding_disable_barrier import lock_binding
 from speechnexus_backend.speech.infrastructure.catalog_revision_schema import (
     RETIREMENT_TABLE,
@@ -56,9 +58,15 @@ from speechnexus_backend.speech.infrastructure.catalog_revision_schema import (
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence import (
     write_cancellation_fence,
 )
+from speechnexus_backend.speech.infrastructure.leases_postgres import _DeadlineCursor
 from speechnexus_backend.speech.infrastructure.postgres_pool import (
     SpeechConnection,
     SpeechPool,
+)
+from speechnexus_backend.speech.infrastructure.public_job_admission import (
+    PublicJobAdmissionRejectedError,
+    build_public_job_admission,
+    rejection_code,
 )
 
 _LATEST_PROGRESS = (
@@ -155,14 +163,33 @@ class _DeadlineConnection:
         _remaining(self.deadline)
         return _DeadlineRows(rows, self.deadline)
 
+    @contextmanager
+    def admission_cursor(self) -> Iterator[_DeadlineCursor]:
+        with self.raw.cursor() as raw:
+            yield _DeadlineCursor(raw, self.deadline)
+
 
 class PostgresPublicJobs:
     """Implements the narrow Job facts and store ports with explicit deadlines."""
 
-    def __init__(self, pool: SpeechPool, *, timeout_seconds: float = 3) -> None:
+    def __init__(
+        self,
+        pool: SpeechPool,
+        *,
+        admission_pool: SpeechPool | None = None,
+        require_admission: bool = False,
+        timeout_seconds: float = 3,
+        storage_bucket: str = "",
+        max_command_bytes: int = 1048576,
+    ) -> None:
         if type(timeout_seconds) not in (int, float) or not 0 < timeout_seconds <= 30:
             raise ValueError("Public Job transactions require bounded deadlines")
-        self._pool, self._timeout = pool, timeout_seconds
+        if admission_pool is not None and not 1 <= max_command_bytes <= 8 * 1024 * 1024:
+            raise ValueError("Public Job commands require a bounded size")
+        self._pool, self._admission_pool, self._timeout = pool, admission_pool, timeout_seconds
+        self._require_admission = require_admission or admission_pool is not None
+        self._storage_bucket = storage_bucket
+        self._max_command_bytes = max_command_bytes
 
     def now_us(self) -> int:
         return time.time_ns() // 1_000
@@ -483,13 +510,22 @@ class PostgresPublicJobs:
         return str(rows[0]["revision"])
 
     def create(self, job: NewPublicJob) -> JobCreateResult:
+        if self._require_admission and self._admission_pool is None:
+            # Reads and cancellations remain available without the admission
+            # role; a create that cannot reserve must not write a visible Job.
+            return JobCreateResult("rejected", error_code="job_unavailable")
         deadline = time.monotonic() + self._timeout
         for attempt in range(2):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return JobCreateResult("unknown", error_code="outcome_unknown")
             try:
-                with self._transaction(deadline) as connection:
+                transaction = (
+                    self._admission_transaction
+                    if self._admission_pool is not None
+                    else self._transaction
+                )
+                with transaction(deadline) as connection:
                     if job.idempotency_key_digest is not None:
                         _lock_submission_key(
                             connection, job.workspace_id, job.idempotency_key_digest
@@ -499,8 +535,6 @@ class PostgresPublicJobs:
                             return _replay_or_conflict(existing, job)
                     if job.expected_binding is not None:
                         lock_binding(connection, job.expected_binding.object_id)
-                        # Retain the defensive lookup for legacy writers that
-                        # do not yet take the public Job key lock.
                         if job.idempotency_key_digest is not None:
                             existing = _existing_by_key(connection, job)
                             if existing is not None:
@@ -527,9 +561,44 @@ class PostgresPublicJobs:
                                 return _replay_or_conflict(existing, job)
                         if not selected:
                             return JobCreateResult("rejected", error_code="job_rejected")
-                    _insert(connection, job)
+                    admitted = False
+                    if self._admission_pool is not None:
+                        try:
+                            with connection.admission_cursor() as cursor:
+                                admission = build_public_job_admission(
+                                    cursor,
+                                    job,
+                                    now_us=_database_now_us(connection),
+                                    max_command_bytes=self._max_command_bytes,
+                                    storage_bucket=self._storage_bucket,
+                                )
+                                if admission is not None:
+                                    result = admit_in_transaction(
+                                        cursor,
+                                        admission.prepared,
+                                        clock=cursor.clock,
+                                        max_command_bytes=self._max_command_bytes,
+                                    )
+                                    if result.outcome != "committed":
+                                        return JobCreateResult(
+                                            "rejected", error_code="job_unavailable"
+                                        )
+                                    admitted = True
+                        except PublicJobAdmissionRejectedError as error:
+                            raise _AdmissionRefusedError(error.code) from None
+                        except AdmissionRejectedError as error:
+                            if error.code == "version_conflict" and attempt == 0:
+                                raise _RetryAdmissionError from None
+                            raise _AdmissionRefusedError(rejection_code(error.code)) from None
+                    _insert(connection, job, admitted=admitted)
                     row = _select_job(connection, job.job_id)
                 return JobCreateResult("created", _job(row))
+            except _AdmissionRefusedError as error:
+                return JobCreateResult("rejected", error_code=error.code)
+            except _RetryAdmissionError:
+                if attempt == 0:
+                    continue
+                return JobCreateResult("unknown", error_code="outcome_unknown")
             except psycopg.errors.UniqueViolation:
                 if job.idempotency_key_digest is None:
                     return JobCreateResult("rejected", error_code="job_identity_conflict")
@@ -541,10 +610,6 @@ class PostgresPublicJobs:
             except psycopg.errors.QueryCanceled:
                 return JobCreateResult("unknown", error_code="outcome_unknown")
             except psycopg.Error:
-                # A non-operational database refusal (integrity, data, program)
-                # is deterministic. Keep it distinct from changed facts so the
-                # HTTP boundary can report an implementation defect, not a
-                # client conflict or a retryable outage.
                 return JobCreateResult("rejected", error_code="storage_rejected")
         return JobCreateResult("unknown", error_code="outcome_unknown")
 
@@ -556,11 +621,18 @@ class PostgresPublicJobs:
         Replay is decided before the draft row lock: a head advance must never
         turn a same-key replay into a stale conflict.
         """
+        if self._require_admission and self._admission_pool is None:
+            return RevisionCreateResult("rejected", error_code="job_unavailable")
         deadline = time.monotonic() + self._timeout
         selected: dict[str, Any] | None = None
         revision: str | None = None
         try:
-            with self._transaction(deadline) as connection:
+            transaction = (
+                self._admission_transaction
+                if self._admission_pool is not None
+                else self._transaction
+            )
+            with transaction(deadline) as connection:
                 if job.idempotency_key_digest is not None:
                     _lock_submission_key(connection, job.workspace_id, job.idempotency_key_digest)
                     existing = _existing_by_key(connection, job)
@@ -606,7 +678,7 @@ class PostgresPublicJobs:
                 if revision is None:
                     return RevisionCreateResult("rejected", error_code="revision_exhausted")
                 _, stored_input, binding_json = _voice_stored_values(job, draft_kind)
-                _insert_job_rows(connection, job)
+                _insert_job_rows(connection, job, admitted=False)
                 connection.execute(
                     "INSERT INTO speech_voice_draft_revisions "
                     "(draft_id, revision, kind, generation_job_id, input_json, binding_json, "
@@ -883,9 +955,21 @@ class PostgresPublicJobs:
 
     @contextmanager
     def _transaction(self, deadline: float) -> Iterator[_DeadlineConnection]:
+        with self._connection(self._pool, deadline) as connection:
+            yield connection
+
+    @contextmanager
+    def _admission_transaction(self, deadline: float) -> Iterator[_DeadlineConnection]:
+        if self._admission_pool is None:
+            raise PublicJobUnavailableError
+        with self._connection(self._admission_pool, deadline) as connection:
+            yield connection
+
+    @contextmanager
+    def _connection(self, pool: SpeechPool, deadline: float) -> Iterator[_DeadlineConnection]:
         committing = False
         try:
-            with self._pool.connection(timeout=_remaining(deadline)) as raw:
+            with pool.connection(timeout=_remaining(deadline)) as raw:
                 connection = _DeadlineConnection(raw, deadline)
                 _remaining(deadline)
                 yield connection
@@ -896,6 +980,26 @@ class PostgresPublicJobs:
             if committing:
                 raise PublicJobUnavailableError from None
             raise
+
+
+class _AdmissionRefusedError(Exception):
+    """Exit the transaction so no partial reservation can commit."""
+
+    def __init__(self, code: str) -> None:
+        self.code = code
+
+
+class _RetryAdmissionError(Exception):
+    """A version race rolled the whole transaction back; retry it once."""
+
+
+def _database_now_us(connection: _Executor) -> int:
+    row = connection.execute(
+        "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS now_us"
+    ).fetchone()
+    if row is None:
+        raise PublicJobUnavailableError
+    return int(row["now_us"])
 
 
 _CANCELLATION_COLUMNS = (
@@ -1325,7 +1429,7 @@ def _replay_digest(
     return JobCreateResult("replayed", _job(row))
 
 
-def _insert_job_rows(connection: _Executor, job: NewPublicJob) -> None:
+def _insert_job_rows(connection: _Executor, job: NewPublicJob, *, admitted: bool) -> None:
     submission = job.submission
     attempt_id = job.job_id + "-a1"
     connection.execute(
@@ -1367,24 +1471,24 @@ def _insert_job_rows(connection: _Executor, job: NewPublicJob) -> None:
             submission.submitted_at_us,
         ),
     )
-    # Private original public intent (including any exact binding selection).
-    # This is NOT the complete effective execution command required by DEL-150;
-    # it must not be dispatched or supplemented using mutable current defaults.
-    connection.execute(
-        "INSERT INTO admission_operations "
-        "(operation_id, workspace_id, request_digest, request_document, "
-        "initial_attempt_id, current_attempt_id, recorded_at_us) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-        (
-            job.job_id,
-            job.workspace_id,
-            job.request_digest,
-            job.request_document,
-            attempt_id,
-            attempt_id,
-            max(1, submission.submitted_at_us),
-        ),
-    )
+    if not admitted:
+        # Legacy voice path only: its private intent row is not an execution
+        # command and stays non-dispatchable until a voice recipe exists.
+        connection.execute(
+            "INSERT INTO admission_operations "
+            "(operation_id, workspace_id, request_digest, request_document, "
+            "initial_attempt_id, current_attempt_id, recorded_at_us) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (
+                job.job_id,
+                job.workspace_id,
+                job.request_digest,
+                job.request_document,
+                attempt_id,
+                attempt_id,
+                max(1, submission.submitted_at_us),
+            ),
+        )
     # The public intent also has its own authoritative row. No ON CONFLICT:
     # a second intent for one Job must abort the create, not be ignored.
     connection.execute(
@@ -1398,25 +1502,26 @@ def _insert_job_rows(connection: _Executor, job: NewPublicJob) -> None:
             max(1, submission.submitted_at_us),
         ),
     )
-    # Coordination claim/outbox identity is committed with the public Job. The
-    # claim row stays pending until the durable terminal transition.
-    connection.execute(
-        "INSERT INTO coordination_jobs "
-        "(job_id, operation_id, attempt_id, initial_event_id, initial_event_digest, "
-        "request_digest) VALUES (%s, %s, %s, %s, %s, %s)",
-        (
-            job.job_id,
-            job.job_id,
-            attempt_id,
-            job.job_id + "-queued",
-            job.initial_event_digest,
-            job.request_digest,
-        ),
-    )
-    connection.execute(
-        "INSERT INTO coordination_outbox (event_id, job_id, event_digest) VALUES (%s, %s, %s)",
-        (job.job_id + "-queued", job.job_id, job.initial_event_digest),
-    )
+    if not admitted:
+        # Admission owns the coordination claim/outbox for asr/tts. Voice kinds
+        # keep the pre-admission identity until their recipe lands.
+        connection.execute(
+            "INSERT INTO coordination_jobs "
+            "(job_id, operation_id, attempt_id, initial_event_id, initial_event_digest, "
+            "request_digest) VALUES (%s, %s, %s, %s, %s, %s)",
+            (
+                job.job_id,
+                job.job_id,
+                attempt_id,
+                job.job_id + "-queued",
+                job.initial_event_digest,
+                job.request_digest,
+            ),
+        )
+        connection.execute(
+            "INSERT INTO coordination_outbox (event_id, job_id, event_digest) VALUES (%s, %s, %s)",
+            (job.job_id + "-queued", job.job_id, job.initial_event_digest),
+        )
 
 
 def _voice_stored_values(job: NewPublicJob, voice_kind: str) -> tuple[dict[str, Any], str, str]:
@@ -1501,7 +1606,7 @@ def _insert_creation_draft(connection: _Executor, job: NewPublicJob) -> None:
     )
 
 
-def _insert(connection: _Executor, job: NewPublicJob) -> None:
-    _insert_job_rows(connection, job)
+def _insert(connection: _Executor, job: NewPublicJob, *, admitted: bool) -> None:
+    _insert_job_rows(connection, job, admitted=admitted)
     if job.kind in ("voice_design", "voice_clone"):
         _insert_creation_draft(connection, job)

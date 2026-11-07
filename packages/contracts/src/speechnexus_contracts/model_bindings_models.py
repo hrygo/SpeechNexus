@@ -55,6 +55,48 @@ class SpeedRange(TypedDict):
 type ExternalSharedCapabilityDomainsSchemaJsonAudioFormat = Literal["mp3", "wav", "pcm"]
 type ExternalSharedCapabilityDomainsSchemaJsonTextCommitMode = Literal["explicit", "sentence"]
 type ExternalSharedCapabilityDomainsSchemaJsonAudioDeliveryMode = Literal["complete", "chunked"]
+type ExternalSharedLanguageSchemaJsonLanguageTag = str
+type ExternalSharedCapabilityDomainsSchemaJsonVadMode = Literal["server_vad", "manual"]
+type ExternalSharedProfileParameterValuesSchemaJsonAsrFinalization = (
+    ExternalSharedCapabilityDomainsSchemaJsonFinalizationMode
+)
+type ExternalSharedProfileParameterValuesSchemaJsonAsrPreviewIntervalMs = int
+type ExternalSharedProfileParameterValuesSchemaJsonAsrMaxSegmentMs = int
+type ExternalSharedProfileParameterValuesSchemaJsonAsrRollbackTokens = int
+type ExternalSharedProfileParameterValuesSchemaJsonAsrFinalDeadlineMs = int
+type ExternalSharedProfileParameterValuesSchemaJsonAsrAuxiliaryDeadlineMs = int
+type ExternalSharedProfileParameterValuesSchemaJsonAsrAlignment = (
+    ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode
+)
+type ExternalSharedProfileParameterValuesSchemaJsonAsrDiarization = (
+    ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode
+)
+
+
+class ExternalSharedReferencesSchemaJsonResourceReference(TypedDict):
+    id: ExternalSharedIdentifiersSchemaJsonIdentifier
+    revision: ExternalSharedIdentifiersSchemaJsonRevision
+
+
+type ExternalSharedProfileParameterValuesSchemaJsonTtsLanguage = (
+    ExternalSharedLanguageSchemaJsonLanguageTag
+)
+type ExternalSharedProfileParameterValuesSchemaJsonTtsTextCommitMode = (
+    ExternalSharedCapabilityDomainsSchemaJsonTextCommitMode
+)
+type ExternalSharedProfileParameterValuesSchemaJsonTtsAudioDelivery = (
+    ExternalSharedCapabilityDomainsSchemaJsonAudioDeliveryMode
+)
+type ExternalSharedProfileParameterValuesSchemaJsonTtsSpeed = float
+type ExternalSharedProfileParameterValuesSchemaJsonTtsInstructions = str | None
+type ExternalSharedProfileParameterValuesSchemaJsonTtsSeed = int | None
+
+
+class ExternalSharedProfileParameterValuesSchemaJsonTtsPlanner(TypedDict):
+    max_chars: int
+    max_wait_ms: int
+
+
 type ExternalSharedCapabilityDomainsSchemaJsonReleaseTier = Literal[
     "experimental", "best_effort", "production"
 ]
@@ -109,6 +151,22 @@ class VoiceParameterDomain(TypedDict):
     validation_set_revisions: NotRequired[list[Revision]]
 
 
+type ExternalSharedProfileParameterValuesSchemaJsonAsrLanguage = (
+    ExternalSharedLanguageSchemaJsonLanguageTag
+)
+
+
+class ExternalSharedProfileParameterValuesSchemaJsonAsrTurnDetection(TypedDict):
+    mode: ExternalSharedCapabilityDomainsSchemaJsonVadMode
+    silence_duration_ms: int
+
+
+type ExternalSharedProfileParameterValuesSchemaJsonNullableResourceReference = (
+    ExternalSharedReferencesSchemaJsonResourceReference | None
+)
+type ExternalSharedProfileParameterValuesSchemaJsonTtsPronunciationRevision = (
+    ExternalSharedProfileParameterValuesSchemaJsonNullableResourceReference
+)
 type ReleaseTier = ExternalSharedCapabilityDomainsSchemaJsonReleaseTier
 
 
@@ -140,6 +198,46 @@ class ParameterDomains(TypedDict):
     voice: NotRequired[VoiceParameterDomain]
 
 
+type ExternalSharedProfileParameterValuesSchemaJsonAsrVocabularySetRevision = (
+    ExternalSharedProfileParameterValuesSchemaJsonNullableResourceReference
+)
+
+
+class TtsExecutionDefaults(TypedDict):
+    language: ExternalSharedProfileParameterValuesSchemaJsonTtsLanguage
+    text_commit_mode: ExternalSharedProfileParameterValuesSchemaJsonTtsTextCommitMode
+    audio_delivery: ExternalSharedProfileParameterValuesSchemaJsonTtsAudioDelivery
+    speed: ExternalSharedProfileParameterValuesSchemaJsonTtsSpeed
+    instructions: ExternalSharedProfileParameterValuesSchemaJsonTtsInstructions
+    pronunciation_revision: ExternalSharedProfileParameterValuesSchemaJsonTtsPronunciationRevision
+    seed: ExternalSharedProfileParameterValuesSchemaJsonTtsSeed
+    planner: ExternalSharedProfileParameterValuesSchemaJsonTtsPlanner
+    sample_rate_hz: int
+    max_output_audio_ms: int
+    timeout_seconds: float
+
+
+class AsrExecutionDefaults(TypedDict):
+    language: ExternalSharedProfileParameterValuesSchemaJsonAsrLanguage
+    turn_detection: ExternalSharedProfileParameterValuesSchemaJsonAsrTurnDetection
+    finalization: ExternalSharedProfileParameterValuesSchemaJsonAsrFinalization
+    preview_interval_ms: ExternalSharedProfileParameterValuesSchemaJsonAsrPreviewIntervalMs
+    max_segment_ms: ExternalSharedProfileParameterValuesSchemaJsonAsrMaxSegmentMs
+    rollback_tokens: ExternalSharedProfileParameterValuesSchemaJsonAsrRollbackTokens
+    final_deadline_ms: ExternalSharedProfileParameterValuesSchemaJsonAsrFinalDeadlineMs
+    auxiliary_deadline_ms: ExternalSharedProfileParameterValuesSchemaJsonAsrAuxiliaryDeadlineMs
+    alignment: ExternalSharedProfileParameterValuesSchemaJsonAsrAlignment
+    diarization: ExternalSharedProfileParameterValuesSchemaJsonAsrDiarization
+    vocabulary_set_revision: ExternalSharedProfileParameterValuesSchemaJsonAsrVocabularySetRevision
+    temperature: float
+    timeout_seconds: float
+
+
+class ExecutionDefaults(TypedDict):
+    asr: NotRequired[AsrExecutionDefaults]
+    tts: NotRequired[TtsExecutionDefaults]
+
+
 class Root(TypedDict):
     schema_version: Literal["1.0.0"]
     binding_id: Identifier
@@ -152,6 +250,7 @@ class Root(TypedDict):
     artifact_set: list[ArtifactReference]
     execution_recipe: ExecutionRecipe
     parameter_domains: ParameterDomains
+    execution_defaults: NotRequired[ExecutionDefaults]
     release_tier: ReleaseTier
     publication: PublicationState
     supersedes_revision: NotRequired[Revision | None]

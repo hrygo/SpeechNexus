@@ -14,11 +14,14 @@ voice_capability_evidence.build_evidence`, which owns capability validation,
 coverage checks and the mutable-byte digest gate. This module only decides what
 is worth handing over and what a refusal means for an operator:
 
-* a deterministic refusal (job not terminal, report outside the frozen shape,
-  digest or receipt mismatch, silent/truncated probe) is reported once with the
-  recorder's stable reason and is never re-read in this process;
+* a deterministic refusal (job not terminal, malformed result, report outside the
+  frozen shape, digest or receipt mismatch, silent/truncated probe) is reported
+  with the recorder's stable reason and is not re-read in this process;
 * an unavailable ledger or unreadable report may be transient, so it is retried
   on later passes, but a per-Job attempt budget stops an endless loop;
+* the scan advances with a keyset cursor over ``(updated_at_us, job_id)`` and
+  wraps when it reaches the end, so a backlog of permanently refused Jobs neither
+  starves an eligible Job nor grows a per-pass exclusion parameter;
 * evidence writes are bounded transactions owned by the recorder. There is no
   Job write here, so a failed ledger write cannot roll the Job back and a
   recorded row always references an already-terminal Job.
@@ -26,7 +29,6 @@ is worth handing over and what a refusal means for an operator:
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
@@ -43,6 +45,14 @@ from speechnexus_backend.speech.domain.voice_capability_evidence import (
 )
 
 type EvidenceOutcomeKind = Literal["recorded", "existing", "rejected", "retry", "exhausted"]
+
+# One position in the durable ``(updated_at_us, job_id)`` scan order.
+type ScanCursor = tuple[int, str]
+
+# Bounded per-process notes. Eviction only forgets a memo; the next sight of the
+# Job re-derives the refusal from the same immutable rows, or restarts its retry
+# budget, so memory cannot grow with the number of bad reports ever seen.
+_MAX_NOTES = 4_096
 
 REPORT_UNAVAILABLE = "report_artifact_unavailable"
 STORAGE_UNAVAILABLE = "evidence_storage_unavailable"
@@ -98,13 +108,15 @@ class EvidenceRecordingBatch:
 
 
 class PendingEvidenceStore(Protocol):
-    """Durable scan: terminal Jobs with a report and no evidence row.
+    """Durable scan: succeeded validation Jobs with no evidence row.
 
     The query must not consult process memory or a dispatch lease, so a Job that
     lost its worker between the report and the evidence commit is still found.
+    It returns ``(updated_at_us, job_id)`` keys in ascending order, strictly
+    after ``after``, so the caller can page without an exclusion list.
     """
 
-    def pending(self, limit: int, exclude: Sequence[str] = ()) -> list[str]: ...
+    def pending(self, limit: int, after: ScanCursor | None = None) -> list[ScanCursor]: ...
 
 
 class CommittedReportSource(Protocol):
@@ -157,11 +169,11 @@ class CommittedReportArtifacts:
 class VoiceEvidenceAutoRecorder:
     """One bounded pass over the durable evidence backlog.
 
-    Composition owns the timer. The instance keeps two small per-process notes:
-    a deterministic refusal is remembered so the same immutable report is not
-    re-read every pass, and a retryable failure counts against a hard budget.
-    Neither note is needed for coverage: a restarted process simply re-reads the
-    still-unrecorded Jobs from the database.
+    Composition owns the timer. The instance keeps a keyset cursor and a bounded
+    set of per-Job notes: a deterministic refusal is remembered so the same
+    immutable report is not re-read every pass, and a retryable failure counts
+    against a hard budget. Neither note is needed for coverage: a restarted
+    process simply re-reads the still-unrecorded Jobs from the database.
     """
 
     def __init__(
@@ -190,19 +202,19 @@ class VoiceEvidenceAutoRecorder:
         self._attempts: dict[str, int] = {}
         self._refusals: dict[str, str] = {}
         self._last_retry_reason: dict[str, str] = {}
+        self._cursor: ScanCursor | None = None
 
     def run_once(self) -> EvidenceRecordingBatch:
         """Scan once and consume at most ``batch_size`` Jobs.
 
-        Jobs already reported as deterministic refusals or as exhausted stay out
-        of the scan in this process, so a backlog of permanently bad reports
-        cannot starve a later eligible Job. A restart re-examines them once.
+        The durable scan is keyset-paged: each pass reads the next window after
+        the previous window's last key and wraps at the end. A permanently bad
+        report therefore costs one cheap cached refusal per full cycle instead
+        of a growing exclusion list, and it never starves a later Job.
         """
-        settled = tuple(self._refusals) + tuple(
-            job_id for job_id, attempts in self._attempts.items() if attempts >= self._max_attempts
-        )
-        job_ids = self._pending.pending(self._batch_size, settled)
-        outcomes = tuple(self.consume(job_id) for job_id in job_ids)
+        rows = self._pending.pending(self._batch_size, self._cursor)
+        outcomes = tuple(self.consume(job_id) for _updated_at_us, job_id in rows)
+        self._cursor = rows[-1] if len(rows) == self._batch_size else None
         return EvidenceRecordingBatch(
             scanned=len(outcomes),
             recorded=sum(item.outcome == "recorded" for item in outcomes),
@@ -232,10 +244,10 @@ class VoiceEvidenceAutoRecorder:
             _evidence, created = self._recorder.record(validation_job_id, report, self._measured_by)
         except VoiceEvidenceNotEligibleError as error:
             reason = str(error) or "validation_not_eligible"
-            self._refusals[validation_job_id] = reason
+            self._remember(self._refusals, validation_job_id, reason)
             return EvidenceRecordingOutcome(validation_job_id, "rejected", reason)
         except VoiceEvidenceConflictError:
-            self._refusals[validation_job_id] = EVIDENCE_CONFLICT
+            self._remember(self._refusals, validation_job_id, EVIDENCE_CONFLICT)
             return EvidenceRecordingOutcome(validation_job_id, "rejected", EVIDENCE_CONFLICT)
         except VoiceReportUnavailableError:
             return self._retry(validation_job_id, attempts, REPORT_UNAVAILABLE)
@@ -249,8 +261,15 @@ class VoiceEvidenceAutoRecorder:
         self, validation_job_id: str, attempts: int, reason: str
     ) -> EvidenceRecordingOutcome:
         attempts += 1
-        self._attempts[validation_job_id] = attempts
-        self._last_retry_reason[validation_job_id] = reason
+        self._remember(self._attempts, validation_job_id, attempts)
+        self._remember(self._last_retry_reason, validation_job_id, reason)
         if attempts >= self._max_attempts:
             return EvidenceRecordingOutcome(validation_job_id, "exhausted", reason)
         return EvidenceRecordingOutcome(validation_job_id, "retry", reason)
+
+    @staticmethod
+    def _remember[T](mapping: dict[str, T], job_id: str, value: T) -> None:
+        """Record one memo, evicting the oldest so the notes stay bounded."""
+        mapping[job_id] = value
+        if len(mapping) > _MAX_NOTES:
+            del mapping[next(iter(mapping))]

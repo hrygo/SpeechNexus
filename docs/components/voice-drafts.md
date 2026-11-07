@@ -290,10 +290,13 @@ asset/bytes/sha256 证明。
 一律拒绝并以稳定的 reason 输出（如 `validation_job_not_succeeded`、
 `report_bytes_mismatch`、`coverage_probes_invalid`），不会静默跳过或写入部分证据。账本
 不可用与报告对象不可读按 Job 计入有上限的重试预算，达到上限后以
-`evidence_storage_unavailable` / `report_artifact_unavailable` 报告为 `exhausted`；确定性
-拒绝在同一进程内只读取一次，被拒绝或已 exhausted 的 Job 不再占用后续批次，避免坏报告饿死
-后面的候选，进程重启后会重新检查并再次报告。worker 只写证据、不回写 Job，因此不存在
-「Job 回滚但证据已写」或反向状态。显式命令与 worker 共用同一记录实现，两条入口不会各自解析报告或各自判断阈值。
+`evidence_storage_unavailable` / `report_artifact_unavailable` 报告为 `exhausted`。重试
+预算只存在于当前进程：账本或对象存储恢复后，已 exhausted 的 Job 不会在同一进程内自动
+重试，必须重启 worker 或等待下一进程重新扫描；重启后会重新检查并再次报告。确定性拒绝
+在同一进程内只读取一次，扫描用 `(updated_at_us, job_id)` keyset 游标推进并在末尾回绕，
+因此坏报告既不会饿死后面的候选，也不会产生随积压增长的排除参数；进程内备注最多保留
+4096 条，淘汰只会让该 Job 下次重新判定，不改变拒绝语义。worker 只写证据、不回写 Job，
+因此不存在「Job 回滚但证据已写」或反向状态。显式命令与 worker 共用同一记录实现，两条入口不会各自解析报告或各自判断阈值。
 
 `speech_published_voice_revisions` 视图以 `COALESCE(自定义修订文档, 预置资格文档)` 读取，
 `listVoices`/`getVoiceRevision` 因此能返回自定义发布，而不会因单个缺失文档让整页 503；
@@ -303,7 +306,10 @@ asset/bytes/sha256 证明。
 
 ## 迁移与生产装配
 
-`0043_voice_draft_revisions` 接在 `0042` 之后，增加
+`0048_voice_evidence_scan_index` 在 `0047` 之后增加部分索引
+`speech_jobs_voice_evidence_scan (updated_at_us, job_id) WHERE kind = 'voice_validation' AND
+state = 'succeeded'`，使 worker 的轮询只读取候选区间而不是全表扫描并按序排序；
+downgrade 删除该索引。`0043_voice_draft_revisions` 接在 `0042` 之后，增加
 `speech_voice_draft_revisions`，把既有草稿的当前 head 回填为 revision 1，并将 Job kind
 CHECK 扩展到 `voice_validation`。`0044_voice_preview_jobs` 只把同一 CHECK 再扩展到
 `voice_preview`，不改表、索引或授权。`0047_voice_publication_evidence` 接在
@@ -334,11 +340,13 @@ worker 证据。
 `SPEECHNEXUS_VOICE_EVIDENCE_DATABASE_URL`（`voice_evidence_recorder_grants`），并读取
 `SPEECHNEXUS_OBJECT_STORAGE_ENDPOINT`、`SPEECHNEXUS_OBJECT_STORAGE_BUCKET` 与
 `SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY`/`SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY` 中的报告
-Artifact 对象。启动在连接池上校验该身份不是 owner、不能 SET ROLE、没有 schema CREATE，
-并逐列比对 `voice_evidence_recorder_grants` 的形状：证据表只允许 SELECT 与 INSERT，其他
-事实表只允许 SELECT；任何表级或列级 `UPDATE`/`REFERENCES`/`INSERT` 越权、证据表
-`DELETE`/`TRUNCATE`/`TRIGGER`，以及与记录职责无关的表权限都会拒绝启动。轮询间隔、批量、
-事务截止与每个 Job 的重试预算分别由
+Artifact 对象；凭据只需读取对象（GET），worker 不写入、不删除对象存储内容。
+`SPEECHNEXUS_DATABASE_SCHEMA` 没有默认值，缺失时进程以 exit 2 拒绝启动。启动在连接池上
+校验该身份不是 owner、不能 SET ROLE、没有 schema CREATE，并逐列比对
+`voice_evidence_recorder_grants` 的形状：证据表只允许 SELECT 与 INSERT，其他事实表只允许
+SELECT；任何表级或列级 `UPDATE`/`REFERENCES`/`INSERT` 越权、证据表
+`DELETE`/`TRUNCATE`/`TRIGGER`，以及配置 schema 之外任何非系统 schema 中的表权限（含
+`public` 与同级 schema）都会拒绝启动。轮询间隔、批量、事务截止与每个 Job 的重试预算分别由
 `SPEECHNEXUS_VOICE_EVIDENCE_POLL_SECONDS`、`SPEECHNEXUS_VOICE_EVIDENCE_BATCH_SIZE`、
 `SPEECHNEXUS_VOICE_EVIDENCE_TRANSACTION_TIMEOUT_SECONDS` 与
 `SPEECHNEXUS_VOICE_EVIDENCE_MAX_ATTEMPTS` 配置。
@@ -396,8 +404,11 @@ SPEECHNEXUS_VOICE_EVIDENCE_DATABASE_URL='postgresql://…' \
 精确修订查询、修订提交确认丢失的 503 形状，以及创建确认丢失时带键回放与无键 409 的分支。
 `tests/integration/test_voice_evidence_worker_pg.py` 在真实 PG 与 recorder 身份上覆盖
 自动消费、重复消费只保留一行、扫描自愈中断窗口、替换报告字节被拒、1 ms 静音或伪造
-passed 报告被拒、账本写失败的有界重试与恢复、非终态 Job 拒绝、损坏 result 行不阻断扫描，
-以及 REFERENCES/TRIGGER/只读表列级 INSERT 越权一律拒绝启动。`test_voice_evidence_recording.py`
+passed 报告被拒、账本写失败的有界重试与恢复、非终态 Job 拒绝、损坏 result 行以
+`validation_result_invalid` 拒绝且不阻断后续 Job，以及 REFERENCES/TRIGGER/只读表列级
+INSERT、证据表 DELETE/TRUNCATE、schema CREATE、SET ROLE、对象 owner 与同级 schema 越权
+一律拒绝启动。`tests/integration/test_voice_evidence_index_migration_pg.py` 验证 0048
+索引的创建、谓词、降级删除与重复 upgrade。`test_voice_evidence_recording.py`
 覆盖按 Job 的重试预算、确定性拒绝只读一次、批量上限与稳定日志码。
 `tests/integration/test_voice_validation_dispatch_pg.py` 在真实 PG 上覆盖 clone 校验的
 准入→派发→报告→公开读取→无证据发布 422、最小 worker 授权角色的同链派发、1 ms 数字静音

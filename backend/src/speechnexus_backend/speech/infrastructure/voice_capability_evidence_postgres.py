@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from typing import Any
 
 import psycopg
@@ -18,6 +18,7 @@ from speechnexus_backend.speech.application.voice_capability_evidence import (
     VoiceReportUnavailableError,
     build_evidence,
 )
+from speechnexus_backend.speech.application.voice_evidence_recording import ScanCursor
 from speechnexus_backend.speech.domain.artifacts import ArtifactRecord
 from speechnexus_backend.speech.domain.voice_capability_evidence import (
     VoiceCapabilityEvidence,
@@ -132,22 +133,30 @@ class PostgresVoiceEvidenceRecorder:
         ):
             raise VoiceEvidenceUnavailableError from None
 
-    def pending(self, limit: int, exclude: Sequence[str] = ()) -> list[str]:
-        """Scan committed Jobs whose report has no evidence row yet.
+    def pending(self, limit: int, after: ScanCursor | None = None) -> list[ScanCursor]:
+        """Scan succeeded validation Jobs whose evidence row is still missing.
 
-        The scan reads only durable rows: a succeeded Job, a result whose
-        ``validation_report_artifact_id`` is present, and no evidence row. It
-        never trusts a dispatch lease or a process-local set, so a Job whose
-        worker stopped between the report and the ledger commit is still found.
-        ``exclude`` only suppresses Jobs this process already reported, so a
-        permanently refused Job cannot starve the bounded batch.
+        The scan reads only durable rows and never trusts a dispatch lease or a
+        process-local set, so a Job whose worker stopped between the report and
+        the ledger commit is still found. Ordering by ``(updated_at_us, job_id)``
+        with a keyset cursor keeps both the SQL parameters and the caller's
+        bookkeeping constant regardless of how many Jobs are backlogged.
+
+        A Job is a candidate as soon as it is a succeeded ``voice_validation``
+        without evidence; whether it *can* be recorded is decided per Job with a
+        stable refusal reason, so one malformed historical row is reported
+        instead of being silently skipped by the scan predicate.
         """
         if type(limit) is not int or not 1 <= limit <= 128:
             raise ValueError("Invalid evidence scan batch")
-        excluded = list(exclude)
-        if not all(isinstance(item, str) for item in excluded):
-            raise ValueError("Invalid evidence scan exclusions")
-        return self._run(lambda cursor: self._pending(cursor, limit, excluded))
+        if after is not None and (
+            type(after) is not tuple
+            or len(after) != 2
+            or type(after[0]) is not int
+            or not isinstance(after[1], str)
+        ):
+            raise ValueError("Invalid evidence scan cursor")
+        return self._run(lambda cursor: self._pending(cursor, limit, after))
 
     def report(self, validation_job_id: str) -> ArtifactRecord:
         """Resolve the committed report Artifact a succeeded Job references.
@@ -186,24 +195,20 @@ class PostgresVoiceEvidenceRecorder:
         ):
             raise VoiceEvidenceUnavailableError from None
 
-    def _pending(self, cursor: _Cursor, limit: int, exclude: list[str]) -> list[str]:
-        # ``pg_input_is_valid`` and the CASE keep a malformed historical result
-        # from aborting the whole scan; only a well-formed validation result is
-        # a candidate, and an unreadable one is left for explicit diagnosis.
+    def _pending(self, cursor: _Cursor, limit: int, after: ScanCursor | None) -> list[ScanCursor]:
+        # The keyset comparison is tuple-valued so equal ``updated_at_us`` rows
+        # advance by ``job_id`` without skipping or repeating one.
+        after_us, after_id = (None, None) if after is None else after
         cursor.execute(
-            "SELECT j.job_id FROM speech_jobs AS j "
+            "SELECT j.job_id, j.updated_at_us FROM speech_jobs AS j "
             "WHERE j.kind = 'voice_validation' AND j.state = 'succeeded' "
-            "AND CASE WHEN pg_catalog.pg_input_is_valid(j.result_json, 'jsonb') "
-            "THEN (j.result_json::jsonb ->> 'kind') = 'voice_validation' "
-            "AND (j.result_json::jsonb ->> 'validation_report_artifact_id') IS NOT NULL "
-            "ELSE false END "
             "AND NOT EXISTS (SELECT 1 FROM speech_voice_capability_evidence AS e "
             "WHERE e.validation_job_id = j.job_id) "
-            "AND j.job_id <> ALL(%s::varchar[]) "
+            "AND (%s::bigint IS NULL OR (j.updated_at_us, j.job_id) > (%s::bigint, %s::varchar)) "
             "ORDER BY j.updated_at_us, j.job_id LIMIT %s",
-            (exclude, limit),
+            (after_us, after_us, after_id, limit),
         )
-        return [str(row["job_id"]) for row in cursor.fetchall()]
+        return [(int(row["updated_at_us"]), str(row["job_id"])) for row in cursor.fetchall()]
 
     def _report(self, cursor: _Cursor, validation_job_id: str) -> ArtifactRecord:
         job, artifact = self._job_and_artifact(cursor, validation_job_id)
@@ -221,15 +226,15 @@ class PostgresVoiceEvidenceRecorder:
         if len(jobs) != 1:
             raise VoiceReportUnavailableError
         job = jobs[0]
-        result = _json_object(job["result_json"])
-        if (
-            job["kind"] != "voice_validation"
-            or result is None
-            or result.get("kind") != "voice_validation"
-        ):
+        if job["kind"] != "voice_validation" or job["state"] != "succeeded":
             # A non-terminal Job has no committed result at all; this is the
             # stable refusal, not an artifact retry.
             raise VoiceEvidenceNotEligibleError("validation_job_not_succeeded")
+        result = _json_object(job["result_json"])
+        if result is None or result.get("kind") != "voice_validation":
+            # ``succeeded`` guarantees a result string; an unparsable or
+            # non-validation document is corruption, not an unfinished Job.
+            raise VoiceEvidenceNotEligibleError("validation_result_invalid")
         validation = result.get("validation")
         artifact_id = result.get("validation_report_artifact_id")
         receipt_id = result.get("receipt_id")

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
 from threading import Event
 from typing import Literal, cast
 
@@ -25,6 +24,7 @@ from speechnexus_backend.voice_evidence_worker import (
     VoiceEvidenceWorkerSettings,
     _log_batch,
     _verify_columns,
+    _verify_foreign_schema,
     _verify_recorder_worker,
     _verify_restricted_role,
     _WorkerRuntime,
@@ -35,14 +35,14 @@ from speechnexus_backend.voice_evidence_worker import (
 
 class _Pending:
     def __init__(self, jobs: list[str]) -> None:
-        self.jobs = jobs
+        self.jobs = [(index + 1, job) for index, job in enumerate(jobs)]
 
-    def pending(self, limit: int, exclude: Sequence[str] = ()) -> list[str]:
-        return self.jobs[:limit]
+    def pending(self, limit: int, after: tuple[int, str] | None = None) -> list[tuple[int, str]]:
+        return [row for row in self.jobs if after is None or row > after][:limit]
 
 
 class _FailingPending:
-    def pending(self, limit: int, exclude: Sequence[str] = ()) -> list[str]:
+    def pending(self, limit: int, after: tuple[int, str] | None = None) -> list[tuple[int, str]]:
         raise VoiceEvidenceUnavailableError
 
 
@@ -298,6 +298,14 @@ def test_worker_verifies_every_read_table_and_the_evidence_writer() -> None:
     _verify_columns(_connection(_Cursor(rows, None)), "recorder_role", "speech")
 
 
+def test_worker_refuses_privileges_outside_its_schema() -> None:
+    _verify_foreign_schema(_connection(_Cursor([], None)), "recorder_role", "speech")
+    with pytest.raises(ValueError):
+        _verify_foreign_schema(
+            _connection(_Cursor([], {"foreign_privilege": 1})), "recorder_role", "speech"
+        )
+
+
 def test_worker_rejects_owner_identities() -> None:
     connection = _Connection(_Cursor([], {"forbidden": False}))
     _verify_restricted_role(cast(SpeechConnection, connection), "recorder_role", "speech")
@@ -323,6 +331,10 @@ def test_worker_checks_login_and_effective_identity_once_each(
         "speechnexus_backend.voice_evidence_worker._verify_columns",
         lambda connection, role, schema: calls.append(("columns", role)),
     )
+    monkeypatch.setattr(
+        "speechnexus_backend.voice_evidence_worker._verify_foreign_schema",
+        lambda connection, role, schema: calls.append(("foreign", role)),
+    )
     pool = _Pool(
         _Connection(
             _Cursor([], None),
@@ -330,7 +342,11 @@ def test_worker_checks_login_and_effective_identity_once_each(
         )
     )
     _verify_recorder_worker(cast(SpeechPool, pool), "speech")
-    assert calls == [("restricted", "recorder_role"), ("columns", "recorder_role")]
+    assert calls == [
+        ("restricted", "recorder_role"),
+        ("columns", "recorder_role"),
+        ("foreign", "recorder_role"),
+    ]
 
 
 def test_runtime_opens_and_closes_owned_resources(monkeypatch: pytest.MonkeyPatch) -> None:

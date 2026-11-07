@@ -127,6 +127,10 @@ def _run_validation(
     return draft, job, str(result["validation_report_artifact_id"]), blobs
 
 
+def _pending_jobs(rows: list[tuple[int, str]]) -> list[str]:
+    return [job_id for _updated_at_us, job_id in rows]
+
+
 def _evidence_rows(sandbox: ValidationSandbox) -> list[dict[str, Any]]:
     return sandbox.query(
         f"SELECT evidence_id, validation_job_id, draft_id, draft_revision, report_artifact_id, "
@@ -141,7 +145,7 @@ def test_committed_report_is_recorded_once_and_replayed(
     _draft, job, artifact_id, blobs = _run_validation(sandbox)
     with _recorder_pool(sandbox) as pool:
         store = PostgresVoiceEvidenceRecorder(pool, timeout_seconds=3)
-        assert store.pending(16) == [job.job_id]
+        assert _pending_jobs(store.pending(16)) == [job.job_id]
         assert _evidence_rows(sandbox) == []
 
         worker = _worker(pool, blobs)
@@ -242,7 +246,7 @@ def test_unreadable_artifact_is_retried_then_bounded(
     with _recorder_pool(sandbox) as pool:
         worker = _worker(pool, _UnreadableBlobs(), max_attempts=2)
         outcomes = [worker.run_once().outcomes[0] for _ in range(2)]
-        assert worker.run_once().scanned == 0
+        assert worker.run_once().outcomes[0].outcome == "exhausted"
     assert [item.outcome for item in outcomes] == ["retry", "exhausted"]
     assert {item.reason for item in outcomes} == {"report_artifact_unavailable"}
     assert _evidence_rows(sandbox) == []
@@ -305,7 +309,7 @@ def test_ledger_write_failure_is_retried_and_bounded(
         try:
             worker = _worker(pool, blobs, max_attempts=2)
             outcomes = [worker.run_once().outcomes[0] for _ in range(2)]
-            assert worker.run_once().scanned == 0
+            assert worker.run_once().outcomes[0].outcome == "exhausted"
             assert [item.outcome for item in outcomes] == ["retry", "exhausted"]
             assert {item.reason for item in outcomes} == {"evidence_storage_unavailable"}
             assert _evidence_rows(sandbox) == []
@@ -350,33 +354,98 @@ def test_malformed_result_row_does_not_break_the_scan(
     )
     with _recorder_pool(sandbox) as pool:
         store = PostgresVoiceEvidenceRecorder(pool, timeout_seconds=3)
-        # The CASE guard keeps one corrupt historical row from aborting a pass.
-        assert store.pending(16) == [job.job_id]
-        assert _worker(pool, blobs).run_once().recorded == 1
+        # The corrupt row is a candidate, not a silent exclusion: it is refused
+        # with its own stable reason and the later valid Job is still recorded.
+        assert _pending_jobs(store.pending(16)) == [corrupt, job.job_id]
+        batch = _worker(pool, blobs).run_once()
+        assert batch.scanned == 2
+        by_job = {outcome.job_id: outcome for outcome in batch.outcomes}
+        assert (by_job[corrupt].outcome, by_job[corrupt].reason) == (
+            "rejected",
+            "validation_result_invalid",
+        )
+        assert (by_job[job.job_id].outcome, by_job[job.job_id].reason) == ("recorded", None)
+        # Only the unrecordable row remains pending; the valid Job is settled.
+        assert _pending_jobs(store.pending(16)) == [corrupt]
+        direct = _worker(pool, blobs).consume(corrupt)
+        assert (direct.outcome, direct.reason) == ("rejected", "validation_result_invalid")
+
+
+def _worker_role(sandbox: ValidationSandbox) -> str:
+    with sandbox.worker_pool.connection() as connection:
+        row = connection.execute("SELECT CURRENT_USER AS role").fetchone()
+    assert row is not None
+    return str(row["role"])
 
 
 def test_worker_refuses_a_broader_identity(validation_db: ValidationSandbox) -> None:
     sandbox = validation_db
     schema = sandbox.db.schema
-    # The documented recorder role passes.
+    # The documented recorder role passes, including the foreign-schema guard.
     with _recorder_pool(sandbox) as pool:
         _verify_recorder_worker(pool, schema)
     # The dispatch worker role is a superset: it may write Jobs and more.
     with pytest.raises(ValueError):
         _verify_recorder_worker(sandbox.worker_pool, schema)
-    # Each of the #549 gaps must be detected on its own.
-    for statement in (
+
+
+def test_worker_refuses_each_identity_widening(validation_db: ValidationSandbox) -> None:
+    sandbox = validation_db
+    schema = sandbox.db.schema
+    worker_role = _worker_role(sandbox)
+    statements = [
         f'GRANT REFERENCES ON "{{schema}}".{EVIDENCE_TABLE} TO "{{role}}"',
         'GRANT TRIGGER ON "{schema}".speech_jobs TO "{role}"',
         'GRANT INSERT (job_id) ON "{schema}".speech_jobs TO "{role}"',
         f'GRANT UPDATE (measured_by) ON "{{schema}}".{EVIDENCE_TABLE} TO "{{role}}"',
         'GRANT SELECT ON "{schema}".speech_publications TO "{role}"',
-    ):
+        f'GRANT DELETE ON "{{schema}}".{EVIDENCE_TABLE} TO "{{role}}"',
+        f'GRANT TRUNCATE ON "{{schema}}".{EVIDENCE_TABLE} TO "{{role}}"',
+        'GRANT CREATE ON SCHEMA "{schema}" TO "{role}"',
+        f'GRANT "{worker_role}" TO "{{role}}" WITH INHERIT FALSE, SET TRUE',
+    ]
+    for statement in statements:
         with (
             _recorder_pool(sandbox, extra=[statement]) as pool,
             pytest.raises(ValueError),
         ):
             _verify_recorder_worker(pool, schema)
+
+
+def test_worker_refuses_a_table_owned_by_the_recorder(
+    validation_db: ValidationSandbox,
+) -> None:
+    sandbox = validation_db
+    with (
+        _recorder_pool(
+            sandbox,
+            extra=[
+                'CREATE TABLE "{schema}".owned_probe (id integer)',
+                'ALTER TABLE "{schema}".owned_probe OWNER TO "{role}"',
+            ],
+        ) as pool,
+        pytest.raises(ValueError),
+    ):
+        _verify_recorder_worker(pool, sandbox.db.schema)
+
+
+def test_worker_refuses_privileges_in_a_sibling_schema(
+    validation_db: ValidationSandbox,
+) -> None:
+    sandbox = validation_db
+    other = "sn555_other_" + uuid.uuid4().hex[:8]
+    sandbox.db.query(f'CREATE SCHEMA "{other}"')
+    try:
+        sandbox.db.query(f'CREATE TABLE "{other}".probe (id integer)')
+        with (
+            _recorder_pool(
+                sandbox, extra=[f'GRANT SELECT ON "{other}".probe TO "{{role}}"']
+            ) as pool,
+            pytest.raises(ValueError),
+        ):
+            _verify_recorder_worker(pool, sandbox.db.schema)
+    finally:
+        sandbox.db.query(f'DROP SCHEMA "{other}" CASCADE')
 
 
 def test_recorder_identity_reads_the_artifact_row_and_report_object(
@@ -402,10 +471,15 @@ def test_pending_is_bounded_and_ordered(validation_db: ValidationSandbox) -> Non
     _draft, job, _artifact_id, _blobs = _run_validation(sandbox)
     with _recorder_pool(sandbox) as pool:
         store = PostgresVoiceEvidenceRecorder(pool, timeout_seconds=3)
-        assert store.pending(1) == [job.job_id]
-        assert store.pending(16, exclude=[job.job_id]) == []
-        assert store.pending(16, exclude=["job-other"]) == [job.job_id]
+        rows = store.pending(1)
+        assert _pending_jobs(rows) == [job.job_id]
+        assert store.pending(16, after=rows[0]) == []
+        assert _pending_jobs(store.pending(16, after=(0, ""))) == [job.job_id]
         with pytest.raises(ValueError):
             store.pending(0)
         with pytest.raises(ValueError):
             store.pending(129)
+        with pytest.raises(ValueError):
+            store.pending(16, after=(1,))  # type: ignore[arg-type]
+        with pytest.raises(ValueError):
+            store.pending(16, after=("x", 1))  # type: ignore[arg-type]

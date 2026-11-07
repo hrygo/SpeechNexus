@@ -144,6 +144,7 @@ def _verify_recorder_worker(pool: SpeechPool, schema: str) -> None:
         for role in dict.fromkeys((identities["login"], identities["effective"])):
             _verify_restricted_role(connection, role, schema)
             _verify_columns(connection, role, schema)
+            _verify_foreign_schema(connection, role, schema)
 
 
 def _verify_restricted_role(connection: SpeechConnection, role: str, schema: str) -> None:
@@ -200,6 +201,31 @@ def _verify_columns(connection: SpeechConnection, role: str, schema: str) -> Non
         seen.add(table)
     if seen != _RECORDER_TABLES:
         raise ValueError("Voice evidence worker schema is incomplete")
+
+
+def _verify_foreign_schema(connection: SpeechConnection, role: str, schema: str) -> None:
+    """Refuse table rights outside the configured schema.
+
+    The recorder contract owns exactly one schema. A role that can read or write
+    a relation in ``public`` or a sibling schema holds privileges the documented
+    grants do not describe, so the worker fails closed instead of claiming the
+    narrower identity. System schemas are excluded because they carry grants to
+    ``PUBLIC`` that are not a deployment decision.
+    """
+    foreign = connection.execute(
+        "SELECT 1 AS foreign_privilege FROM pg_catalog.pg_class c "
+        "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname <> %s AND n.nspname <> 'information_schema' "
+        "AND left(n.nspname, 3) <> 'pg_' "
+        "AND c.relkind IN ('r','p','v','m','f') "
+        "AND (pg_catalog.has_any_column_privilege(%s::name, c.oid, "
+        "'SELECT,INSERT,UPDATE,REFERENCES') "
+        "OR pg_catalog.has_table_privilege(%s::name, c.oid, 'DELETE,TRUNCATE,TRIGGER')) "
+        "LIMIT 1",
+        (schema, role, role),
+    ).fetchone()
+    if foreign is not None:
+        raise ValueError("Voice evidence worker has privileges outside its schema")
 
 
 class _WorkerRuntime:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import cast
 
 import pytest
@@ -14,11 +13,13 @@ from speechnexus_backend.speech.application.voice_capability_evidence import (
     VoiceReportUnavailableError,
 )
 from speechnexus_backend.speech.application.voice_evidence_recording import (
+    _MAX_NOTES,
     EVIDENCE_CONFLICT,
     REPORT_UNAVAILABLE,
     STORAGE_UNAVAILABLE,
     EvidenceRecordingBatch,
     EvidenceRecordingOutcome,
+    ScanCursor,
     VoiceEvidenceAutoRecorder,
 )
 from speechnexus_backend.speech.domain.voice_capability_evidence import VoiceCapabilityEvidence
@@ -29,12 +30,13 @@ MEASURED_BY = "voice-evidence-recorder-worker/v1"
 
 class _Pending:
     def __init__(self, jobs: list[str]) -> None:
-        self.jobs = jobs
-        self.limits: list[tuple[int, tuple[str, ...]]] = []
+        # Synthetic positions mirror the durable (updated_at_us, job_id) order.
+        self.rows: list[ScanCursor] = [(index + 1, job) for index, job in enumerate(jobs)]
+        self.limits: list[tuple[int, ScanCursor | None]] = []
 
-    def pending(self, limit: int, exclude: Sequence[str] = ()) -> list[str]:
-        self.limits.append((limit, tuple(exclude)))
-        return [job for job in self.jobs if job not in exclude][:limit]
+    def pending(self, limit: int, after: ScanCursor | None = None) -> list[ScanCursor]:
+        self.limits.append((limit, after))
+        return [row for row in self.rows if after is None or row > after][:limit]
 
 
 class _Reports:
@@ -108,7 +110,7 @@ def test_run_once_records_then_reports_the_existing_row() -> None:
         outcomes=(EvidenceRecordingOutcome("job-1", "recorded"),),
     )
     assert recorder.calls == [("job-1", REPORT, MEASURED_BY)]
-    assert pending.limits == [(16, ())]
+    assert pending.limits == [(16, None)]
 
     recorder.created["job-1"] = False
     second = worker.run_once()
@@ -134,8 +136,10 @@ def test_deterministic_refusal_is_reported_once_without_rereading() -> None:
     first = worker.run_once()
     second = worker.run_once()
     assert first.outcomes[0].reason == "coverage_probes_invalid"
-    assert second.scanned == 0
-    assert pending.limits[1] == (16, ("job-1",))
+    # The next cycle re-reports the cached refusal without re-reading the
+    # immutable report; the report is only read once per process.
+    assert second.outcomes[0] == first.outcomes[0]
+    assert pending.limits[1] == (16, None)
     assert reports.reads == ["job-1"]
 
 
@@ -165,8 +169,9 @@ def test_retryable_failures_stop_at_the_attempt_budget(failure: Exception, reaso
     assert [item.outcome for item in outcomes] == ["retry", "retry", "exhausted"]
     assert {item.reason for item in outcomes} == {reason}
     assert reports.reads == ["job-1", "job-1", "job-1"]
-    # An exhausted Job no longer consumes the bounded batch in this process.
-    assert worker.run_once().scanned == 0
+    # The exhausted Job is reported again without another read or attempt.
+    assert worker.run_once().outcomes[0].outcome == "exhausted"
+    assert reports.reads == ["job-1", "job-1", "job-1"]
 
 
 def test_refused_job_does_not_starve_a_later_candidate() -> None:
@@ -181,6 +186,33 @@ def test_refused_job_does_not_starve_a_later_candidate() -> None:
     assert reports.reads == ["bad", "good"]
 
 
+def test_scan_cursor_pages_then_wraps_without_an_exclusion_list() -> None:
+    jobs = ["job-1", "job-2", "job-3"]
+    reports = _Reports(dict.fromkeys(jobs, REPORT))
+    worker, pending = _worker(jobs, reports, _Recorder(), batch_size=2)
+
+    first = worker.run_once()
+    second = worker.run_once()
+    third = worker.run_once()
+    assert [outcome.job_id for outcome in first.outcomes] == ["job-1", "job-2"]
+    assert [outcome.job_id for outcome in second.outcomes] == ["job-3"]
+    # The end of the window is not a growing stateful filter: the next pass
+    # starts from the beginning of the durable order.
+    assert [outcome.job_id for outcome in third.outcomes] == ["job-1", "job-2"]
+    assert pending.limits == [(2, None), (2, (2, "job-2")), (2, None)]
+
+
+def test_refusal_notes_stay_bounded_across_a_large_bad_backlog() -> None:
+    jobs = [f"job-{index}" for index in range(_MAX_NOTES + 256)]
+    reports = _Reports({}, {job: VoiceEvidenceNotEligibleError("bad_report") for job in jobs})
+    worker, _ = _worker(jobs, reports, _Recorder(), batch_size=128)
+
+    while worker.run_once().scanned:
+        pass
+    assert len(reports.reads) == len(jobs)
+    assert len(worker._refusals) <= _MAX_NOTES
+
+
 def test_batch_size_bounds_one_pass() -> None:
     jobs = ["job-1", "job-2", "job-3"]
     reports = _Reports(dict.fromkeys(jobs, REPORT))
@@ -188,7 +220,7 @@ def test_batch_size_bounds_one_pass() -> None:
 
     batch = worker.run_once()
     assert batch.scanned == 2
-    assert pending.limits == [(2, ())]
+    assert pending.limits == [(2, None)]
 
 
 def test_scan_coverage_does_not_depend_on_process_memory() -> None:

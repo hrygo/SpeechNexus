@@ -137,11 +137,12 @@ def retryable_response() -> dict[str, Any]:
                                     "properties": {
                                         "code": {
                                             "enum": [
-                                                "operation_not_implemented",
+                                                "voice_catalogue_unavailable",
                                                 "voice_retirement_unavailable",
                                             ]
                                         },
-                                        "retryable": {"enum": [False, True]},
+                                        "type": {"const": "service_unavailable_error"},
+                                        "retryable": {"const": True},
                                     }
                                 }
                             }
@@ -204,6 +205,204 @@ def test_placeholder_503_replacement_still_needs_the_error_response_composition(
         base, service_document(replacement), "speech-openapi.yaml", standard_only=False
     )
     assert findings and any("placeholder 503 replacement" in issue for issue in findings)
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"type": "string", "const": "public"},
+        {"type": "string", "enum": ["public"]},
+        {"type": "string", "enum": ["no-store", "max-age=600"]},
+        {"type": "string"},
+    ],
+)
+def test_placeholder_503_replacement_requires_a_no_store_cache_control_value(
+    schema: dict[str, Any],
+) -> None:
+    base = service_document({"$ref": PLACEHOLDER_503})
+    replacement = retryable_response()
+    replacement["headers"]["Cache-Control"]["schema"] = schema
+    findings = kernel()._compare_openapi(
+        base, service_document(replacement), "speech-openapi.yaml", standard_only=False
+    )
+    assert findings and any(
+        'placeholder 503 replacement requires a required Cache-Control header declaring "no-store"'
+        in issue
+        for issue in findings
+    )
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"type": "string", "const": "no-store"},
+        {"type": "string", "enum": ["no-store"]},
+    ],
+)
+def test_placeholder_503_replacement_accepts_an_equivalent_no_store_value(
+    schema: dict[str, Any],
+) -> None:
+    base = service_document({"$ref": PLACEHOLDER_503})
+    replacement = retryable_response()
+    replacement["headers"]["Cache-Control"]["schema"] = schema
+    assert (
+        kernel()._compare_openapi(
+            base, service_document(replacement), "speech-openapi.yaml", standard_only=False
+        )
+        == []
+    )
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"type": "string", "const": "public"},
+        {"type": "string", "enum": ["no-store", "max-age=604800"]},
+    ],
+)
+def test_unchanged_placeholder_503_still_checks_the_cache_control_value(
+    schema: dict[str, Any],
+) -> None:
+    base = service_document({"$ref": PLACEHOLDER_503})
+    weakened = placeholder_response()
+    weakened["headers"]["Cache-Control"]["schema"] = schema
+    current = service_document({"$ref": PLACEHOLDER_503})
+    current["components"]["responses"]["OperationNotImplemented"] = weakened
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert findings and any(
+        'placeholder 503 response requires a required Cache-Control header declaring "no-store"'
+        in issue
+        for issue in findings
+    )
+
+
+def test_placeholder_503_replacement_must_signal_retry_through_the_header_value() -> None:
+    base = service_document({"$ref": PLACEHOLDER_503})
+    replacement = retryable_response()
+    replacement["headers"]["X-Should-Retry"]["schema"]["const"] = "false"
+    findings = kernel()._compare_openapi(
+        base, service_document(replacement), "speech-openapi.yaml", standard_only=False
+    )
+    assert findings and any("placeholder 503 replacement" in issue for issue in findings)
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        {"enum": ["voice_retirement_unavailable", "operation_not_implemented"]},
+        {"const": "operation_not_implemented"},
+    ],
+)
+def test_placeholder_503_replacement_must_stop_claiming_no_implementation(
+    code: dict[str, Any],
+) -> None:
+    base = service_document({"$ref": PLACEHOLDER_503})
+    replacement = retryable_response()
+    replacement["content"]["application/json"]["schema"]["allOf"][1]["properties"]["error"][
+        "properties"
+    ]["code"] = code
+    findings = kernel()._compare_openapi(
+        base, service_document(replacement), "speech-openapi.yaml", standard_only=False
+    )
+    assert findings and any("placeholder 503 replacement" in issue for issue in findings)
+
+
+@pytest.mark.parametrize("siblings", [False, True])
+def test_placeholder_503_replacement_must_be_inline(siblings: bool) -> None:
+    base = service_document({"$ref": PLACEHOLDER_503})
+    shared = retryable_response()
+    # A shape-valid shared response belonging to no specific operation must not
+    # stand in for this operation's replacement.
+    response: dict[str, Any] = {"$ref": "#/components/responses/SharedRetryableUnavailable"}
+    if siblings:
+        # Valid inline content beside the reference: with the $ref guard removed
+        # every other rule passes, so this case pins the guard itself.
+        response = {**shared, **response}
+    current = service_document(response)
+    current["components"]["responses"]["SharedRetryableUnavailable"] = shared
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert findings and any("placeholder 503 replacement" in issue for issue in findings)
+
+
+@pytest.mark.parametrize("shape", ["branch", "error", "code"])
+def test_placeholder_503_replacement_resolves_shared_error_codes(shape: str) -> None:
+    base = service_document({"$ref": PLACEHOLDER_503})
+    replacement = retryable_response()
+    body = replacement["content"]["application/json"]["schema"]
+    properties = body["allOf"][1]["properties"]
+    unimplemented = {"const": "operation_not_implemented"}
+    if shape == "branch":
+        body["allOf"][1] = {"$ref": "#/components/schemas/SharedNotImplemented"}
+        component: dict[str, Any] = {
+            "properties": {"error": {"properties": {"code": unimplemented}}}
+        }
+        name = "SharedNotImplemented"
+    elif shape == "error":
+        properties["error"] = {"$ref": "#/components/schemas/SharedError"}
+        component = {"properties": {"code": unimplemented}}
+        name = "SharedError"
+    else:
+        properties["error"]["properties"]["code"] = {"$ref": "#/components/schemas/SharedCode"}
+        component = unimplemented
+        name = "SharedCode"
+    current = service_document(replacement)
+    current["components"]["schemas"][name] = component
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert findings and any("placeholder 503 replacement" in issue for issue in findings)
+
+
+def test_placeholder_503_replacement_rejects_an_unjudgeable_reference() -> None:
+    base = service_document({"$ref": PLACEHOLDER_503})
+    replacement = retryable_response()
+    replacement["content"]["application/json"]["schema"]["allOf"][1]["properties"]["error"][
+        "properties"
+    ]["code"] = {"$ref": "https://example.com/errors.json#/$defs/Code"}
+    findings = kernel()._compare_openapi(
+        base, service_document(replacement), "speech-openapi.yaml", standard_only=True
+    )
+    assert findings and any("cannot be determined" in issue for issue in findings)
+
+
+def test_unchanged_placeholder_503_still_checks_the_shared_component() -> None:
+    base = service_document({"$ref": PLACEHOLDER_503})
+    weakened = placeholder_response()
+    weakened["headers"]["X-Should-Retry"]["required"] = False
+    current = service_document({"$ref": PLACEHOLDER_503})
+    current["components"]["responses"]["OperationNotImplemented"] = weakened
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert findings and any("placeholder 503 response" in issue for issue in findings)
+
+
+def test_unchanged_placeholder_503_still_requires_the_error_response_composition() -> None:
+    base = service_document({"$ref": PLACEHOLDER_503})
+    weakened = placeholder_response()
+    weakened["content"]["application/json"]["schema"] = {"$ref": ERROR_RESPONSE}
+    current = service_document({"$ref": PLACEHOLDER_503})
+    current["components"]["responses"]["OperationNotImplemented"] = weakened
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert findings and any(
+        "placeholder 503 response" in issue and "allOf" in issue for issue in findings
+    )
+
+
+def test_unchanged_placeholder_503_stays_valid() -> None:
+    base = service_document({"$ref": PLACEHOLDER_503})
+    current = service_document({"$ref": PLACEHOLDER_503})
+    assert (
+        kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False) == []
+    )
+
+
+def test_placeholder_503_replacement_accepts_an_equivalent_retry_enum() -> None:
+    base = service_document({"$ref": PLACEHOLDER_503})
+    replacement = retryable_response()
+    replacement["headers"]["X-Should-Retry"]["schema"] = {"type": "string", "enum": ["true"]}
+    assert (
+        kernel()._compare_openapi(
+            base, service_document(replacement), "speech-openapi.yaml", standard_only=False
+        )
+        == []
+    )
 
 
 def test_non_placeholder_503_still_rejects_removed_headers() -> None:

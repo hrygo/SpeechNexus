@@ -47,6 +47,28 @@ waives a finding. Version/upgrade descriptions and consumer acceptance remain
 required. This tool has no skip/waiver switch. Breaking changes need an explicit
 version/migration approach under the existing contract handoff process.
 
+## Frozen internal additive promotions
+
+One exact internal request-shape change is allowed: append the optional
+`reference_text` property to the `TtsEffectiveParameters` object reached by the
+`command` union in `contracts/internal/execution-control.openapi.yaml` (the
+`tts` and `voicevalidation` variants). The allowlist entry is literal: source,
+operation pointer, variant tags, property name, old value `None`, new value
+`string|null`, change kind `append-optional-property`, and the exact property
+schema. The proof rebuilds each baseline variant with only that property and
+requires exact equality with the current variant; every other variant must be
+unchanged. Making the property required, changing its type, adding a different
+property, adding it to another variant or schema, or changing any other branch
+remains a finding. New entries must add matching negative cases and update the
+frozen assertion in `tests/contract/test_internal_additive_promotions.py`.
+
+This proves only that every old valid request remains valid after the optional
+property is appended. It does not prove that an old gateway accepts the new
+field, that any other consumer is compatible, or that a required/type/enum
+change is safe. An old gateway rejects a command containing the new property
+deterministically instead of silently falling back; deployment must upgrade
+gateways before the backend starts emitting it.
+
 ## What the check establishes
 
 The existing directional comparison kernel is reused: reject known request

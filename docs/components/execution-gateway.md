@@ -362,6 +362,11 @@ acknowledgement（已中止 / 已终结）；无法确认时返回 unknown，绝
 node/gateway 的进程必须共用宿主锁目录，
 持有原进程锁直到所有在途发送退出；不能以 TTL 代替该前提。
 
+自定义声音 TTS 的内部命令在 `TtsEffectiveParameters` 追加可选 `reference_text`。该字段是
+前向兼容：旧网关对含未知字段的封闭命令做确定性结构拒绝（`FileCommandInvalidError`），不会
+静默回退 builtin。部署顺序必须先升级 execution gateway，再升级 backend/worker；回退时先停用
+自定义声音 TTS 或回退 backend，不得保留“新 backend + 旧 gateway”的组合。
+
 提交路由先用冻结请求校验 command 与 `command_digest` 一致，再按 `create_submit` 落唯一 intent，
 之后才外发一次；重放返回原记录并标记 `idempotent_replay=true`，同一 intent 换命令为
 `submit_intent_conflict`，摘要与正文不符为 `invalid_execution_request`。冻结请求只带输出上限与

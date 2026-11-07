@@ -207,6 +207,12 @@ asr/tts 的原子创建还需要独立的 admission 角色：先应用当前迁�
 对列出的 binding 重新发布并补齐对应任务的执行默认值；旧 binding 会让 asr/tts 创建
 返回 `422 job_binding_incomplete`。
 
+自定义声音 TTS 的内部命令在 `TtsEffectiveParameters` 追加可选 `reference_text`。该字段是
+前向兼容：升级后的 backend 会发出它，旧网关会在结构校验阶段确定性拒绝
+（`FileCommandInvalidError`），不会静默回退 builtin 或合成错误音频。部署必须先升级所有
+execution gateway，再升级 backend/worker；回退时先停用自定义声音 TTS 入口或回退 backend，
+不得保留“新 backend + 旧 gateway”的组合。
+
 Release preflight C9 checks only the parsed Compose service set and the presence
 of the gateway's private ASR/TTS configuration keys. It does not start these
 containers; runtime and business evidence remain separate.

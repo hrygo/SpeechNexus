@@ -1,0 +1,836 @@
+{
+  "schema_version": 1,
+  "repository": "hrygo/SpeechNexus",
+  "fetched_at": "2026-11-07T08:10:40+08:00",
+  "issues": [
+    {
+      "number": 336,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/336",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "SpeechNexus 产品交付与联合验收",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:program"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": null
+    },
+    {
+      "number": 337,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/337",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "文件语音与底座内容任务",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:epic"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/336"
+    },
+    {
+      "number": 338,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/338",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "执行、算力与停止结算",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:epic"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/336"
+    },
+    {
+      "number": 339,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/339",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "实时语音会话与双工流",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:epic"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/336"
+    },
+    {
+      "number": 340,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/340",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "声音与发音资源",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:epic"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/336"
+    },
+    {
+      "number": 341,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/341",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "管理界面与基础工作台",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:epic"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/336"
+    },
+    {
+      "number": 342,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/342",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "工程、部署与运维",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:epic"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/336"
+    },
+    {
+      "number": 343,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/343",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "复合场景与内网智能助手",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:epic"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/336"
+    },
+    {
+      "number": 344,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/344",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "通用契约、SDK 与 MCP",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:epic"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/336"
+    },
+    {
+      "number": 345,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/345",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "场景预设与有效配置解析",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:epic"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/336"
+    },
+    {
+      "number": 346,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/346",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "模型绑定、资格与目录",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "type:epic"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/336"
+    },
+    {
+      "number": 406,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/406",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "公开同步语音合成遵守请求级音频时长上限",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:A"
+        },
+        {
+          "name": "status:qualification"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
+    },
+    {
+      "number": 407,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/407",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "Web 代理分别路由 Speech 与 Workbench 上游",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:C"
+        },
+        {
+          "name": "status:done"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
+    },
+    {
+      "number": 408,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/408",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "验证生成 SDK 在独立环境中的安装与错误恢复样例",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "status:done"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/344"
+    },
+    {
+      "number": 409,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/409",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "取消派发标记提交后崩溃仍按原身份恢复停止请求",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:B"
+        },
+        {
+          "name": "status:in-progress"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
+    },
+    {
+      "number": 415,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/415",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "预设发布与激活的 CAS 事务及已发布列表",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:A"
+        },
+        {
+          "name": "status:qualification"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/345"
+    },
+    {
+      "number": 416,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/416",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "节点预热动作整体 wall-clock 截止与 non-ready 判定",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:B"
+        },
+        {
+          "name": "status:qualification"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
+    },
+    {
+      "number": 422,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/422",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "F-JOB 公开 Job 取消的持久受理与清理待定",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "type:work-package"
+        },
+        {
+          "name": "team:A"
+        },
+        {
+          "name": "phase:S2"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
+    },
+    {
+      "number": 425,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/425",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "F-JOB 取消与提交的网关侧原子裁决及对账",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "type:work-package"
+        },
+        {
+          "name": "team:A"
+        },
+        {
+          "name": "phase:S2"
+        },
+        {
+          "name": "status:planned"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
+    },
+    {
+      "number": 432,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/432",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "F-JOB 公开任务的重试与 SSE 事件路由",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:B"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
+    },
+    {
+      "number": 433,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/433",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "取消/中止链路的可观测性、双库对齐与 fenced 分支可达性",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:B"
+        },
+        {
+          "name": "status:in-progress"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
+    },
+    {
+      "number": 437,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/437",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "公开 Job 事件流的心跳、背压与真实 ASGI 验证",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:A"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
+    },
+    {
+      "number": 438,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/438",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "公开 Job 的持久进度事实与 job.progress 投影",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:B"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
+    },
+    {
+      "number": 439,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/439",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "取消/中止链路的本地双库验证能力",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:B"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
+    },
+    {
+      "number": 442,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/442",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "补齐音色目录公开路由：工作台音色目录固定 503",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:A"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/340"
+    },
+    {
+      "number": 451,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/451",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "事件流：末帧超时覆盖与中止告警求真",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:A"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
+    },
+    {
+      "number": 455,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/455",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "中止租约用例用 100ms 窗口判定持有，CI 上随机红",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "bug"
+        },
+        {
+          "name": "team:A"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
+    },
+    {
+      "number": 456,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/456",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "事件流中止链路：关闭超时、装配自检语义、缓冲断言",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:A"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
+    },
+    {
+      "number": 459,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/459",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "集成分片探针内部 600 秒上限早于 job 超时，超时无诊断",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "bug"
+        },
+        {
+          "name": "team:C"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/344"
+    },
+    {
+      "number": 462,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/462",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "补齐实现已返回但契约未声明的状态码",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:A"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/340"
+    },
+    {
+      "number": 463,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/463",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "统一事件序号约定并补带数据升级用例",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:A"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
+    },
+    {
+      "number": 471,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/471",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "实现 listJobs：游标分页与过滤",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:A"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
+    },
+    {
+      "number": 473,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/473",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "未实现操作返回可辨识的稳定错误",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:A"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
+    },
+    {
+      "number": 475,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/475",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "门禁校验 405 响应信封，去除硬编码路径事实源",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:B"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/344"
+    },
+    {
+      "number": 478,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/478",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "占位归属归一化比较与错误映射 key 去重",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:B"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/344"
+    },
+    {
+      "number": 481,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/481",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "门禁探测覆盖不到的五种形状：假通过与假失败",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:B"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/344"
+    },
+    {
+      "number": 483,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/483",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "listJobs 后续：EXPLAIN 断言、artifact 批读、冗余索引、文档计数",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:A"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
+    },
+    {
+      "number": 484,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/484",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "实现读音集合：listPronunciationSets 与 createPronunciationRevision",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:A"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/340"
+    },
+    {
+      "number": 488,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/488",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "占位归属守卫的边界：负例未钉住状态码、方法维度、过度归一",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:B"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/344"
+    },
+    {
+      "number": 490,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/490",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "实现 retireVoiceRevision：retire 与 disable 两种退役语义",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:A"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/340"
+    },
+    {
+      "number": 491,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/491",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "矩阵生成器：生成物新鲜度门禁与可复现快照",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:B"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/344"
+    },
+    {
+      "number": 494,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/494",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "实现声音草稿四条：设计/克隆创建、读取与元数据更新",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:A"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/340"
+    },
+    {
+      "number": 495,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/495",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "实现声音草稿后半段：预览作业与发布为不可变 revision",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:A"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/340"
+    },
+    {
+      "number": 499,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/499",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "门禁预检与方法匹配器形状不一致：非整段参数与 Mount",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:B"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/344"
+    },
+    {
+      "number": 500,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/500",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "实现占位操作与契约兼容门禁互斥：503 声明无法既诚实又合规",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:B"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/344"
+    },
+    {
+      "number": 502,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/502",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "集成分片探针超时预算与 job 预算不自洽：1080s 掐断仍在推进的 pytest",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:B"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/344"
+    },
+    {
+      "number": 507,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/507",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "集成分片严重不均：4/5 分片只跑 3.7% 用例，最慢分片为最快 5.9 倍",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:B"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/344"
+    }
+  ]
+}

@@ -84,6 +84,7 @@ class ImageWorkflowTests(unittest.TestCase):
         base = {
             "MODE": "docs",
             "ROUTING_RESULT": "success",
+            "DELIVERY_RESULT": "success",
             "CHECKS_RESULT": "skipped",
             "COORDINATION_RESULT": "skipped",
             "WEB_RESULT": "skipped",
@@ -98,6 +99,22 @@ class ImageWorkflowTests(unittest.TestCase):
                     )
                     valid = result == "success" and required in ("true", "false")
                     self.assertEqual(actual.returncode == 0, valid, actual.stdout + actual.stderr)
+
+    def test_final_gate_requires_delivery_matrix_freshness(self) -> None:
+        base = {
+            "MODE": "docs",
+            "ROUTING_RESULT": "success",
+            "CHECKS_RESULT": "skipped",
+            "COORDINATION_RESULT": "skipped",
+            "WEB_RESULT": "skipped",
+            "DEPLOYMENT_RESULT": "skipped",
+            "CONTROLLER_RESULT": "success",
+            "CONTROLLER_REQUIRED": "false",
+        }
+        for result in ("success", "failure", "cancelled", "skipped", ""):
+            with self.subTest(result=result):
+                actual = execute(FINAL_GATE, {**base, "DELIVERY_RESULT": result})
+                self.assertEqual(actual.returncode == 0, result == "success", actual.stderr)
 
 
 class ScopeTests(unittest.TestCase):

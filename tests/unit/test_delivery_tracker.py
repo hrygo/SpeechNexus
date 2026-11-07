@@ -332,3 +332,214 @@ def test_cli_validation_or_network_failure_preserves_previous_output(
     with pytest.raises(ValueError):
         cli.main()
     assert output.read_text() == "previous"
+
+
+def prepare_cli_tree(root: Path, manifest: dict[str, Any], prd: str) -> tuple[Path, Path]:
+    (root / "docs").mkdir()
+    (root / "docs/prd.md").write_text(prd, encoding="utf-8")
+    (root / "docs/design.md").write_text("# Design\n", encoding="utf-8")
+    registry = root / "registry.json"
+    registry.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    return registry, root / "view.md"
+
+
+def reject_wall_clock() -> str:
+    raise AssertionError("snapshot rendering must not read the wall clock")
+
+
+def test_snapshot_render_is_byte_reproducible_without_a_clock(
+    current: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest, issues, prd = current
+    registry, output = prepare_cli_tree(tmp_path, manifest, prd)
+    snapshot = tmp_path / "snapshot.json"
+    cli = load_module(CLI)
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    monkeypatch.setattr(cli, "current_time", reject_wall_clock)
+    cli.write_snapshot(snapshot, manifest["repository"], issues, "2026-11-07T09:00:00+08:00")
+    rendered = []
+    for _ in range(2):
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                str(CLI),
+                "--manifest",
+                str(registry),
+                "--snapshot",
+                str(snapshot),
+                "--output",
+                str(output),
+            ],
+        )
+        cli.main()
+        rendered.append(output.read_bytes())
+    assert rendered[0] == rendered[1]
+    assert "快照时间：2026-11-07T09:00:00+08:00" in rendered[0].decode("utf-8")
+
+
+def test_refresh_snapshot_then_offline_render_is_stable(
+    current: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest, issues, prd = current
+    registry, live_output = prepare_cli_tree(tmp_path, manifest, prd)
+    snapshot = tmp_path / "github-issues-snapshot.json"
+    offline_output = tmp_path / "offline.md"
+    cli = load_module(CLI)
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    monkeypatch.setattr(cli, "load_issues", lambda *_args, **_kwargs: copy.deepcopy(issues))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            str(CLI),
+            "--manifest",
+            str(registry),
+            "--refresh-snapshot",
+            str(snapshot),
+            "--snapshot-at",
+            "2026-11-07T09:00:00+08:00",
+            "--output",
+            str(live_output),
+        ],
+    )
+    cli.main()
+    live_bytes = live_output.read_bytes()
+
+    def offline_only(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("offline rendering must not read GitHub")
+
+    monkeypatch.setattr(cli, "load_issues", offline_only)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            str(CLI),
+            "--manifest",
+            str(registry),
+            "--snapshot",
+            str(snapshot),
+            "--output",
+            str(offline_output),
+        ],
+    )
+    cli.main()
+    assert live_bytes == offline_output.read_bytes()
+
+    payload = json.loads(snapshot.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == 1
+    assert payload["repository"] == manifest["repository"]
+    assert payload["fetched_at"] == "2026-11-07T09:00:00+08:00"
+    numbers = [record["number"] for record in payload["issues"]]
+    assert numbers == sorted(numbers)
+    assert all(set(record) == set(cli.SNAPSHOT_FIELDS) for record in payload["issues"])
+    assert all("body" not in record for record in payload["issues"])
+
+
+def test_raw_snapshot_without_a_fixed_time_is_rejected(
+    current: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest, issues, prd = current
+    registry, output = prepare_cli_tree(tmp_path, manifest, prd)
+    snapshot = tmp_path / "raw.json"
+    snapshot.write_text(json.dumps(issues), encoding="utf-8")
+    output.write_text("previous", encoding="utf-8")
+    cli = load_module(CLI)
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            str(CLI),
+            "--manifest",
+            str(registry),
+            "--snapshot",
+            str(snapshot),
+            "--output",
+            str(output),
+        ],
+    )
+    with pytest.raises(ValueError, match="--snapshot-at"):
+        cli.main()
+    assert output.read_text(encoding="utf-8") == "previous"
+
+
+@pytest.mark.parametrize(
+    "mutation", ["schema", "repository", "missing_time", "naive_time", "foreign_field"]
+)
+def test_invalid_snapshot_metadata_is_rejected(
+    current: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    manifest, issues, prd = current
+    registry, output = prepare_cli_tree(tmp_path, manifest, prd)
+    snapshot = tmp_path / "snapshot.json"
+    cli = load_module(CLI)
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    cli.write_snapshot(snapshot, manifest["repository"], issues, "2026-11-07T09:00:00+08:00")
+    payload = json.loads(snapshot.read_text(encoding="utf-8"))
+    if mutation == "schema":
+        payload["schema_version"] = 2
+    elif mutation == "repository":
+        payload["repository"] = "other/repo"
+    elif mutation == "missing_time":
+        payload["fetched_at"] = None
+    elif mutation == "naive_time":
+        payload["fetched_at"] = "2026-11-07T09:00:00"
+    else:
+        payload["unexpected"] = True
+    snapshot.write_text(json.dumps(payload), encoding="utf-8")
+    output.write_text("previous", encoding="utf-8")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            str(CLI),
+            "--manifest",
+            str(registry),
+            "--snapshot",
+            str(snapshot),
+            "--output",
+            str(output),
+        ],
+    )
+    with pytest.raises(ValueError):
+        cli.main()
+    assert output.read_text(encoding="utf-8") == "previous"
+
+
+def test_snapshot_at_overrides_the_recorded_time(
+    current: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest, issues, prd = current
+    registry, output = prepare_cli_tree(tmp_path, manifest, prd)
+    snapshot = tmp_path / "snapshot.json"
+    cli = load_module(CLI)
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    cli.write_snapshot(snapshot, manifest["repository"], issues, "2026-11-01T00:00:00+08:00")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            str(CLI),
+            "--manifest",
+            str(registry),
+            "--snapshot",
+            str(snapshot),
+            "--snapshot-at",
+            "2026-11-02T03:04:05+08:00",
+            "--output",
+            str(output),
+        ],
+    )
+    cli.main()
+    assert "快照时间：2026-11-02T03:04:05+08:00" in output.read_text(encoding="utf-8")
+
+
+def test_closed_issue_without_a_reason_is_unknown_and_not_completed(tracker: ModuleType) -> None:
+    state = tracker._state({"state": "closed", "state_reason": None, "labels": []})
+    assert state == "closed / unknown；不计完成"
+    assert "completed" not in state
+    assert "验收见需求证据" not in state

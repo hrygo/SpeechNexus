@@ -26,7 +26,7 @@
 
 【#471 更新】`listJobs` 已由真实实现接替占位（§3.2）；【#490 更新】`retireVoiceRevision` 的 `retire`
 已由真实实现接替占位，`disable` 明确返回 422（§3.3）。已实现与未实现操作的唯一口径是 §10 门禁脚本的
-`KNOWN_UNIMPLEMENTED_OPERATIONS`：计入与移出该基线随实现切片变化，本文件不复述计数，§6.1 只保留时点快照。
+`KNOWN_UNIMPLEMENTED_OPERATIONS`：计入与移出该基线随实现切片变化，本文件不复述计数，§6.1 只指向该基线。
 J1 已修复；历史表保留原时点响应。保留 #466 的契约测试和 #473 的 `0.1.0.dev8` 契约，
 `listJobs` 的 405 已声明，`known_status_gaps` 保持 **0**。
 #490 把 `retireVoiceRevision` 的 503 从 `OperationNotImplemented` 去占位为内联响应：保留 required 的
@@ -332,43 +332,28 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
 `backend/src/speechnexus_backend/workbench/infrastructure/public_speech_render_jobs.py::PublicSpeechRenderJobs.read_job` 调用 `GET /v1/nexus/jobs/{job_id}`（后者已实现）。
 `docs/archive/plans/2026-10-24-team-c-goal.md:78` 也记录了"音色运行时尚未实现这些路由"这一已知缺口。
 
-### 6.1 当前未实现操作
+### 6.1 未实现操作
 
-从 #473 的 21 条占位操作中移出 #471 已实现的 `listJobs` 与 #490 已实现 `retire` 的 `retireVoiceRevision`，编号沿用 §6；
-`retryJob`/`streamJobEvents`/`listVoices`/`getVoiceRevision`/`listJobs`/`retireVoiceRevision` 均已不在本表。
-下表是 #490 之后的时点快照，未实现期间均返回 `503 operation_not_implemented`（§6.2），历史响应保留在 §6/§7.1。
-**当前口径以 §10 门禁脚本 `scripts/dev-env/check-route-conformance.py` 的
-`KNOWN_UNIMPLEMENTED_OPERATIONS` 为准**：实现一个操作时同时删除占位条目与该基线条目（§10 第 4 项），
-本表不承担逐切片计数。
+未实现操作清单只在 §10 门禁脚本
+[check-route-conformance.py](../../scripts/dev-env/check-route-conformance.py) 的
+`KNOWN_UNIMPLEMENTED_OPERATIONS` 中维护：成员、条数与原因以该常量为准，本文不复制。
+占位路由与 `operation_not_implemented` 的语义见 §6.2，集合级读音路由被改写为
+`400 pronunciation_invalid_request` 的例外见 §5.4。
+实现一个操作时同时删除占位条目与该基线条目（§10 第 4 项）。
 
-| # | 操作 | 路由 | 运行时响应 |
-| --- | --- | --- | --- |
-| 21 | listPronunciationSets | GET /v1/nexus/pronunciation-sets | **503 operation_not_implemented** |
-| 22 | createPronunciationRevision | POST /v1/nexus/pronunciation-sets | **503 operation_not_implemented** |
-| 26 | getOperation | GET /v1/nexus/operations/{operation_id} | **503 operation_not_implemented** |
-| 27 | cancelOperation | POST /v1/nexus/operations/{operation_id}/cancellations | **503 operation_not_implemented** |
-| 28 | createRealtimeSession | POST /v1/nexus/realtime/sessions | **503 operation_not_implemented** |
-| 29 | getRealtimeSession | GET /v1/nexus/realtime/sessions/{session_id} | **503 operation_not_implemented** |
-| 30 | cancelRealtimeSession | POST /v1/nexus/realtime/sessions/{session_id}/cancellations | **503 operation_not_implemented** |
-| 31 | connectRealtime | GET /v1/realtime | **503 operation_not_implemented**（HTTP；无 WebSocket 路由） |
-| 32 | createVoiceDesign | POST /v1/nexus/voice-designs | **503 operation_not_implemented** |
-| 33 | createVoiceClone | POST /v1/nexus/voice-clones | **503 operation_not_implemented** |
-| 34 | getVoiceDraft | GET /v1/nexus/voice-drafts/{draft_id} | **503 operation_not_implemented** |
-| 35 | updateVoiceDraftMetadata | PATCH /v1/nexus/voice-drafts/{draft_id} | **503 operation_not_implemented** |
-| 36 | generateVoiceDraftRevision | POST /v1/nexus/voice-drafts/{draft_id}/generations | **503 operation_not_implemented** |
-| 37 | createVoicePreview | POST /v1/nexus/voice-drafts/{draft_id}/previews | **503 operation_not_implemented** |
-| 38 | validateVoiceDraftRevision | POST /v1/nexus/voice-drafts/{draft_id}/validations | **503 operation_not_implemented** |
-| 39 | publishVoiceDraftRevision | POST /v1/nexus/voice-drafts/{draft_id}/publications | **503 operation_not_implemented** |
-| 40 | speechCreateDeletionPlan | POST /v1/nexus/deletion-plans | **503 operation_not_implemented** |
-| 41 | speechCreateDeletion | POST /v1/nexus/deletions | **503 operation_not_implemented** |
-| 42 | speechGetDeletion | GET /v1/nexus/deletions/{deletion_id} | **503 operation_not_implemented** |
+已实现、因此不在该常量中的操作：`listVoices`/`getVoiceRevision`/`retryJob`/`streamJobEvents`（§3.1）、
+`listJobs`（§3.2）、`retireVoiceRevision`（§3.3），以及 #494 的
+`createVoiceDesign`/`createVoiceClone`/`getVoiceDraft`/`updateVoiceDraftMetadata`。
+
 ### 6.2 #473：未实现操作的稳定错误（#473 交付基线实测）
 
 `934855c3` 上复核 §6.1 时确认：21 条操作仍无生产实现，但响应分三类（18 条框架 404 裸 `detail`、`listJobs` 的 405、
 两条集合级读音路由的 400），消费者无法与「资源不存在 / 方法不支持 / 参数错误」区分。契约版本 `0.1.0.dev8` 起，
 21 条全部由中央占位路由注册并返回同一种可辨识错误。
 【#471】其中 `listJobs` 已交给真实实现；【#490】`retireVoiceRevision` 也已交给真实实现（`disable`
-以 422 明确未支持）；其余未实现操作继续返回占位错误，见 §3.2/§3.3/§6.1。
+以 422 明确未支持）；【#494】`createVoiceDesign`/`createVoiceClone`/`getVoiceDraft`/`updateVoiceDraftMetadata`
+同样已由真实实现接替占位，下表 32–35 行保留 #473 基线响应。其余未实现操作继续返回占位错误，
+当前清单以 §6.1 指向的门禁基线为准。
 
 实测方法：`create_app(settings=...)` 组装真实应用（无服务注入、不启动 lifespan），逐条发请求并记录状态码、
 错误码、`retryable` 与 `X-Request-ID`；下表为 #473 前后同口径实测。
@@ -385,10 +370,10 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
 | 29 | getRealtimeSession | GET /v1/nexus/realtime/sessions/{session_id} | 404 框架默认 | **503 `operation_not_implemented`** |
 | 30 | cancelRealtimeSession | POST /v1/nexus/realtime/sessions/{session_id}/cancellations | 404 框架默认 | **503 `operation_not_implemented`** |
 | 31 | connectRealtime | GET /v1/realtime | 404 框架默认 | **503 `operation_not_implemented`**（仅 HTTP 请求；WebSocket 升级仍被框架拒绝，见下） |
-| 32 | createVoiceDesign | POST /v1/nexus/voice-designs | 404 框架默认 | **503 `operation_not_implemented`** |
-| 33 | createVoiceClone | POST /v1/nexus/voice-clones | 404 框架默认 | **503 `operation_not_implemented`** |
-| 34 | getVoiceDraft | GET /v1/nexus/voice-drafts/{draft_id} | 404 框架默认 | **503 `operation_not_implemented`** |
-| 35 | updateVoiceDraftMetadata | PATCH /v1/nexus/voice-drafts/{draft_id} | 404 框架默认 | **503 `operation_not_implemented`** |
+| 32 | createVoiceDesign | POST /v1/nexus/voice-designs | 404 框架默认 | **【#494 已实现】** |
+| 33 | createVoiceClone | POST /v1/nexus/voice-clones | 404 框架默认 | **【#494 已实现】** |
+| 34 | getVoiceDraft | GET /v1/nexus/voice-drafts/{draft_id} | 404 框架默认 | **【#494 已实现】** |
+| 35 | updateVoiceDraftMetadata | PATCH /v1/nexus/voice-drafts/{draft_id} | 404 框架默认 | **【#494 已实现】** |
 | 36 | generateVoiceDraftRevision | POST /v1/nexus/voice-drafts/{draft_id}/generations | 404 框架默认 | **503 `operation_not_implemented`** |
 | 37 | createVoicePreview | POST /v1/nexus/voice-drafts/{draft_id}/previews | 404 框架默认 | **503 `operation_not_implemented`** |
 | 38 | validateVoiceDraftRevision | POST /v1/nexus/voice-drafts/{draft_id}/validations | 404 框架默认 | **503 `operation_not_implemented`** |
@@ -396,6 +381,8 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
 | 40 | speechCreateDeletionPlan | POST /v1/nexus/deletion-plans | 404 框架默认 | **503 `operation_not_implemented`** |
 | 41 | speechCreateDeletion | POST /v1/nexus/deletions | 404 框架默认 | **503 `operation_not_implemented`** |
 | 42 | speechGetDeletion | GET /v1/nexus/deletions/{deletion_id} | 404 框架默认 | **503 `operation_not_implemented`** |
+
+32–35 四条的 #473 基线响应同为占位 `operation_not_implemented`（503），已由 #494 实现，行内不再重复该值。
 
 统一响应的共同约束（`contracts/speech-openapi.yaml::OperationNotImplemented`）：状态 503、`error.type` 为
 `service_unavailable_error`、`error.code` 恒为 `operation_not_implemented`、`error.retryable` 恒为 `false`、
@@ -432,7 +419,7 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
 - 405 语义：同一路径上的 405 仍是方法不允许（不是 `operation_not_implemented`），错误码沿用各面既有的
   `method_not_allowed` / `job_method_not_allowed`；`Allow` 头合并**同一模板**上全部已注册方法，而不是框架默认
   只列第一条部分匹配路由。参数化路径同样合并：`DELETE /v1/nexus/voice-drafts/{draft_id}` 返回
-  `Allow: GET, PATCH`（`getVoiceDraft` 与 `updateVoiceDraftMetadata` 都是占位），`DELETE /v1/nexus/jobs` 返回
+  `Allow: GET, PATCH`（`getVoiceDraft` 与 `updateVoiceDraftMetadata` 同模板），`DELETE /v1/nexus/jobs` 返回
   `Allow: GET, POST`。读音集合级路径用通用 `method_not_allowed`，item 级路径用 `pronunciation_method_not_allowed`：
   后者的契约组件把 `Allow` 固定为 `GET`，而集合级同时接受 `GET` 与 `POST`，不能共用该组件。
 - 归属守卫与路径别名：`assert_placeholder_ownership` 按 Starlette 实际服务的资源比较模板，除参数名/converter 外
@@ -530,7 +517,7 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
    避免消费者把"未实现"误判为"参数错误/资源不存在"。
    **【#473 已完成】**：21 条统一返回 `503 operation_not_implemented`（`retryable: false`），与
    `backend_unavailable`、`*_not_found`、`method_not_allowed` 均可区分；实测与理由见 §6.2。
-   【#471】`listJobs` 已实现，J1 从此项移除；其余未实现路由仍见 §6.1。
+   【#471】`listJobs` 已实现，J1 从此项移除；其余未实现路由以 §6.1 指向的门禁基线为准。
 3. **P1**：补齐 `getArtifact`/`downloadArtifactContent` 的 304、416、503 声明；补齐 `cancelJob` 的 400、
    `createTranscription` 的 404。
 4. **P1**：为 `/v1/audio/transcriptions`、`/v1/models`、`/v1/nexus/capabilities` 等路径补 405 声明与统一错误体，

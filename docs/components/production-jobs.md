@@ -42,8 +42,9 @@ MySQL 测试 adapter 仅复用显式 SQL 与领域裁决验证 InnoDB 行为。
 删除被它覆盖的 `speech_jobs_workspace_created (workspace_id, created_at_us DESC)`：
 旧索引的列是 keyset 索引的前缀，仓库内没有按 `created_at_us DESC` 排序的读路径，
 保留它只会让每次写入多维护一份近重复索引。其余读取 `speech_jobs` 的路径——单 Job、
-幂等键查找、取消锁目标、派发认领、voice draft 关联与事件进度触发器——按主键或
-`(workspace_id, idempotency_key_digest)` 唯一索引访问，不依赖旧索引。
+幂等键查找、取消锁目标、voice draft 关联与事件进度触发器——按主键或
+`(workspace_id, idempotency_key_digest)` 唯一索引访问；派发认领以 `coordination_jobs` 为驱动，
+对 `speech_jobs` 按 state/kind 过滤走顺序扫描（排序在内存完成）。这些路径都不依赖旧索引。
 `0042` 的降级按原定义重建旧索引；两项迁移都只改索引，不改历史 Job、授权、
 协调写事务或恢复语义。
 

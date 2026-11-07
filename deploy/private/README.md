@@ -31,7 +31,10 @@ target and the `VoiceDesign` engine task; it delivers 24 kHz mono WAV only. A
 gateway serves at most one TTS variant: configuring both `gateway-file-tts.json`
 and `gateway-file-voice-design.json` fails startup, and switching variants is a
 stop-then-activate action. The engine sleep endpoint is not release evidence.
-See [VoiceDesign template](../../engines/file-voice-design/README.md).
+Readiness requires one real warmup synthesis, cached and run in the background
+with its own `readiness` budget, so `/readyz` never blocks a health probe; only
+languages with a verified vendor value are forwarded. See
+[VoiceDesign template](../../engines/file-voice-design/README.md).
 
 | Source example | Required runtime name |
 | --- | --- |

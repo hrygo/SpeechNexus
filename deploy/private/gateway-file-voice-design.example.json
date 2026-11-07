@@ -14,12 +14,28 @@
     "sample_rate_hz": 24000,
     "max_pcm_bytes": 2880000,
     "max_audio_ms": 60000,
-    "timeout_seconds": 300
+    "timeout_seconds": 300,
+    "supported_languages": [
+      "zh",
+      "en",
+      "fr",
+      "de",
+      "it",
+      "ja",
+      "ko",
+      "pt",
+      "ru",
+      "es"
+    ]
   },
   "worker_limits": {
     "max_result_bytes": 4194304,
     "max_command_bytes": 65536,
     "max_pending": 1,
     "shutdown_seconds": 10
+  },
+  "readiness": {
+    "warmup_timeout_seconds": 330,
+    "retry_interval_seconds": 30
   }
 }

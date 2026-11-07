@@ -21,6 +21,7 @@ def write_voice_design_configuration(
     port: int = 8002,
     object_endpoint: str = "http://127.0.0.1:9000",
     bucket: str = "synthetic-voice-design-test",
+    readiness: dict[str, Any] | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     directory.mkdir(mode=0o700, exist_ok=True)
     endpoint = directory / "endpoint.json"
@@ -64,6 +65,8 @@ def write_voice_design_configuration(
         },
         "worker_limits": asdict(FileExecutionLimits(1024 * 1024, 16384, 1, 1)),
     }
+    if readiness is not None:
+        document["readiness"] = readiness
     path = directory / "runtime.json"
     path.write_text(json.dumps(document))
     path.chmod(0o600)

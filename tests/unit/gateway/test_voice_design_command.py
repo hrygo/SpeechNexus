@@ -183,6 +183,28 @@ async def test_a_missing_seed_is_preserved_as_absent() -> None:
     assert engine.calls[0][0].seed is None
 
 
+async def test_a_region_tag_with_a_verified_primary_language_is_accepted() -> None:
+    command = command_example(2)
+    command["language"] = "zh-Hans"
+    runner, engine = build()
+    await runner.synthesize(design_request(command=command), cancelled=lambda: False)
+    assert engine.calls[0][0].language == "zh-Hans"
+
+
+@pytest.mark.parametrize("language", ["ar", "nl", "auto"])
+async def test_a_language_without_a_verified_engine_value_is_refused(
+    language: str,
+) -> None:
+    command = command_example(2)
+    command["language"] = language
+    runner, engine = build()
+
+    with pytest.raises(InvalidExecutionRequestError):
+        await runner.synthesize(design_request(command=command), cancelled=lambda: False)
+
+    assert engine.calls == []
+
+
 @pytest.mark.parametrize(
     "mutate",
     [

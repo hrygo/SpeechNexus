@@ -31,6 +31,9 @@ _DIGEST: Final = re.compile(r"sha256:[0-9a-f]{64}")
 _ENVIRONMENT_NAME: Final = re.compile(r"[A-Z][A-Z0-9_]{0,63}")
 _VARIANT_SLOT: Final = re.compile(r"[a-z][a-z0-9-]{2,63}")
 _MAX_ENVIRONMENT_VALUE = 1024
+# Pools whose templates keep a resident TTS engine. The verified engine loads one
+# variant per node, so a template in any of them must declare its exclusive slot.
+_RESIDENT_TTS_POOLS: Final = frozenset({"tts-batch", "tts-realtime", "voice-creation"})
 
 
 class ReadinessKind(StrEnum):
@@ -239,6 +242,8 @@ class ApprovedRuntimeTemplate:
             type(self.variant_slot) is not str or _VARIANT_SLOT.fullmatch(self.variant_slot) is None
         ):
             raise ValueError("variant_slot must name an approved exclusive variant group")
+        if self.allowed_pool_ids & _RESIDENT_TTS_POOLS and self.variant_slot is None:
+            raise ValueError("a resident TTS template must declare its exclusive variant group")
         if self.network_name is not None and (
             re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", self.network_name) is None
             or self.network_name in {"host", "none", "default", "bridge"}

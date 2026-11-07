@@ -103,6 +103,19 @@ def test_the_engine_body_carries_only_the_verified_fields() -> None:
     assert "voice" not in body and "speed" not in body and "sample_rate" not in body
 
 
+async def test_an_absent_seed_is_never_sent_on_the_wire() -> None:
+    requests: list[httpx.Request] = []
+    request = VoiceDesignRequest("intent-voice-design", "温和的女声", "试听文本。", "zh", None)
+
+    await client_for(Chunks(wav_bytes()), requests).synthesize(
+        request, POLICY, cancelled=lambda: False
+    )
+
+    sent = json.loads(requests[0].content)
+    assert "seed" not in sent
+    assert sent["language"] == "Chinese"
+
+
 async def test_a_verified_wav_response_is_normalized_from_one_request() -> None:
     requests: list[httpx.Request] = []
     result = await client_for(Chunks(wav_bytes()), requests).synthesize(
@@ -132,6 +145,18 @@ async def test_a_client_error_is_a_proven_rejection_without_a_retry() -> None:
     assert error.request_may_have_run is False
     assert isinstance(error, EngineRequestRejectedError)
     assert len(requests) == 1
+
+
+@pytest.mark.parametrize("status", [408, 429])
+async def test_a_transient_client_status_is_unknown_and_retryable(status: int) -> None:
+    with pytest.raises(VoiceDesignCallError) as raised:
+        await client_for(None, [], status=status).synthesize(
+            REQUEST, POLICY, cancelled=lambda: False
+        )
+
+    assert raised.value.code is VoiceDesignFailure.TRANSPORT_UNKNOWN
+    assert raised.value.request_may_have_run is True
+    assert not isinstance(raised.value, EngineRequestRejectedError)
 
 
 async def test_a_server_error_stays_unknown_and_is_not_a_rejection() -> None:

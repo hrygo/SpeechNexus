@@ -1,0 +1,7 @@
+{
+  "model": "<SERVED_MODEL>",
+  "input": "SpeechNexus engine warmup.",
+  "task_type": "CustomVoice",
+  "voice": "<NATIVE_SPEAKER_ID>",
+  "response_format": "wav"
+}

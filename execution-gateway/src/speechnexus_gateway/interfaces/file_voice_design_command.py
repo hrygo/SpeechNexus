@@ -154,6 +154,12 @@ class CommandFileVoiceDesign:
             raise _invalid(
                 "VoiceDesign command, capability or configured binding does not match"
             ) from None
+        if frozen.language == "auto" or (
+            frozen.language.split("-", 1)[0].lower() not in self._binding_policy.supported_languages
+        ):
+            raise _invalid(
+                "the requested language has no verified value in the configured VoiceDesign binding"
+            )
         return snapshot, frozen, policy
 
     def _validate_target(self, request: SubmitRequest) -> None:

@@ -7,10 +7,15 @@ import ssl
 from dataclasses import dataclass, fields
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from speechnexus_gateway.application.ingress import GatewayIngress
-from speechnexus_gateway.application.voice_design_readiness import VoiceDesignWarmupProbe
+from speechnexus_gateway.application.voice_design_readiness import (
+    DEFAULT_RETRY_INTERVAL_SECONDS,
+    DEFAULT_WARMUP_TIMEOUT_SECONDS,
+    MAX_WARMUP_TIMEOUT_SECONDS,
+    VoiceDesignWarmupProbe,
+)
 from speechnexus_gateway.domain.file_execution import FileExecutionLedger, FileExecutionLimits
 from speechnexus_gateway.domain.tts import TtsEngineFormat
 from speechnexus_gateway.domain.tts_results import TtsResultStore
@@ -56,12 +61,18 @@ class _Objects(_PrivateConfiguration):
     result_timeout_seconds: float
 
 
+class _Readiness(_PrivateConfiguration):
+    warmup_timeout_seconds: float = DEFAULT_WARMUP_TIMEOUT_SECONDS
+    retry_interval_seconds: float = DEFAULT_RETRY_INTERVAL_SECONDS
+
+
 class _Deployment(_PrivateConfiguration):
     protocol: Literal["file_voice_design_v1"]
     controlled_endpoint_file: str
     objects: _Objects
     voice_design_policy: dict[str, Any]
     worker_limits: dict[str, Any]
+    readiness: _Readiness = Field(default_factory=_Readiness)
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -72,6 +83,8 @@ class VoiceDesignConfiguration:
     results: MinioTtsResults
     policy: VoiceDesignPolicy
     worker: FileExecutionLimits
+    warmup_timeout_seconds: float = DEFAULT_WARMUP_TIMEOUT_SECONDS
+    retry_interval_seconds: float = DEFAULT_RETRY_INTERVAL_SECONDS
 
     def execution(self) -> CommandFileVoiceDesign:
         return CommandFileVoiceDesign(
@@ -82,7 +95,11 @@ class VoiceDesignConfiguration:
         )
 
     def warmup_probe(self) -> VoiceDesignWarmupProbe:
-        return VoiceDesignWarmupProbe(VllmVoiceDesignSynthesizer(self.endpoint))
+        return VoiceDesignWarmupProbe(
+            VllmVoiceDesignSynthesizer(self.endpoint),
+            timeout_seconds=self.warmup_timeout_seconds,
+            retry_interval_seconds=self.retry_interval_seconds,
+        )
 
     def build(
         self, ingress: GatewayIngress, ledger: FileExecutionLedger
@@ -124,6 +141,13 @@ def load_voice_design_configuration(settings: Settings) -> VoiceDesignConfigurat
         values = explicit_fields(
             deployment.voice_design_policy, {item.name for item in fields(VoiceDesignPolicy)}
         )
+        if "supported_languages" in values:
+            languages = values["supported_languages"]
+            if not isinstance(languages, list) or not all(
+                isinstance(tag, str) for tag in languages
+            ):
+                raise ValueError
+            values["supported_languages"] = tuple(languages)
         policy = VoiceDesignPolicy(
             **{
                 **values,
@@ -141,6 +165,11 @@ def load_voice_design_configuration(settings: Settings) -> VoiceDesignConfigurat
             target is None
             or target.host_node_id != settings.node_id
             or target.gateway_id != settings.gateway_id
+        ):
+            raise ValueError
+        if not (
+            1.0 <= deployment.readiness.warmup_timeout_seconds <= MAX_WARMUP_TIMEOUT_SECONDS
+            and 0.0 <= deployment.readiness.retry_interval_seconds <= 600.0
         ):
             raise ValueError
         ca_file = deployment.objects.tls_ca_file
@@ -163,6 +192,13 @@ def load_voice_design_configuration(settings: Settings) -> VoiceDesignConfigurat
             timeout_seconds=deployment.objects.result_timeout_seconds,
             ssl_context=context,
         )
-        return VoiceDesignConfiguration(endpoint, results, policy, worker)
+        return VoiceDesignConfiguration(
+            endpoint,
+            results,
+            policy,
+            worker,
+            deployment.readiness.warmup_timeout_seconds,
+            deployment.readiness.retry_interval_seconds,
+        )
     except Exception:
         raise ValueError("invalid gateway VoiceDesign configuration") from None

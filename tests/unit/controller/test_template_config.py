@@ -326,3 +326,32 @@ def test_the_deployed_voice_design_template_example_loads(tmp_path: Path) -> Non
     )
     assert template.readiness.warmup is not None
     assert template.readiness.warmup.path == "/v1/audio/speech"
+
+
+@pytest.mark.parametrize("pool", ["tts-batch", "tts-realtime", "voice-creation"])
+def test_a_resident_tts_template_must_declare_its_variant_slot(tmp_path: Path, pool: str) -> None:
+    document = {"templates": [_template(allowed_pool_ids=[pool])]}
+
+    with pytest.raises((ValueError, ValidationError)):
+        load_approved_templates(_write(tmp_path, document))
+
+
+def test_the_deployed_customvoice_and_voice_design_templates_share_one_slot(
+    tmp_path: Path,
+) -> None:
+    root = Path(__file__).resolve().parents[3] / "deploy" / "engines"
+
+    def load(directory: str) -> Any:
+        path = root / directory / "template.example.json"
+        return load_approved_templates(
+            _write(tmp_path, {"templates": [json.loads(path.read_text())]})
+        )[0]
+
+    customvoice = load("file-tts-customvoice")
+    voice_design = load("file-voice-design")
+
+    assert customvoice.variant_slot == voice_design.variant_slot == "tts-variant"
+    assert customvoice.variant_slot is not None
+    assert customvoice.allowed_pool_ids == frozenset({"tts-batch"})
+    assert voice_design.allowed_pool_ids == frozenset({"voice-creation"})
+    assert customvoice.environment == voice_design.environment

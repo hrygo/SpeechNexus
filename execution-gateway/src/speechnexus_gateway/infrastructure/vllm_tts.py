@@ -11,6 +11,7 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
 
+from speechnexus_gateway.domain.languages import engine_language
 from speechnexus_gateway.domain.tts import (
     TtsAudio,
     TtsCallError,
@@ -24,7 +25,7 @@ from speechnexus_gateway.infrastructure.private_engine_endpoint import (
     PrivateEngineEndpoint,
     load_controlled_endpoint_descriptor,
 )
-from speechnexus_gateway.infrastructure.vllm_audio import engine_language, wav_pcm
+from speechnexus_gateway.infrastructure.vllm_audio import wav_pcm
 
 _MEDIA_TYPES = {TtsEngineFormat.WAV: "audio/wav", TtsEngineFormat.PCM: "audio/pcm"}
 _MAX_ENVELOPE_BYTES = 65536

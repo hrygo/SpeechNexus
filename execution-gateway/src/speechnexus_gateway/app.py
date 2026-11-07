@@ -101,8 +101,11 @@ def _build_readiness(
         probes.append(_ControlReadinessProbe(app))
     if speech_configuration is not None and speech_configuration.voice_design is not None:
         # An HTTP health answer is not readiness: only a completed warmup
-        # synthesis can prove this gateway may accept a design request.
-        probes.append(speech_configuration.voice_design.warmup_probe())
+        # synthesis can prove this gateway may accept a design request. The probe
+        # keeps its own budget and answers from the cached verdict.
+        probe = speech_configuration.voice_design.warmup_probe()
+        app.state.voice_design_warmup = probe
+        probes.append(probe)
     return ReadinessService(probes, timeout_seconds=settings.readiness_timeout_seconds)
 
 
@@ -357,8 +360,14 @@ def create_app(
                     )
             if worker is not None:
                 worker.start()
+            warmup_probe = app.state.voice_design_warmup
+            if warmup_probe is not None:
+                warmup_probe.warm()
             yield
         finally:
+            warmup_probe = app.state.voice_design_warmup
+            if warmup_probe is not None:
+                await warmup_probe.aclose()
             app.state.tts_configuration_evidence = None
             try:
                 await _finish_control(worker, pool, ownership, file_execution)
@@ -393,6 +402,7 @@ def create_app(
     app.state.file_execution_required = file_execution_factory is not None
     app.state.file_execution_runtime = None
     app.state.tts_configuration_evidence = None
+    app.state.voice_design_warmup = None
     resolved_readiness = readiness or _build_readiness(resolved_settings, app, speech_configuration)
     app.add_middleware(RequestIdMiddleware)
     app.include_router(

@@ -19,6 +19,7 @@ from typing import Protocol
 
 from speechnexus_gateway.domain.canonical import command_digest
 from speechnexus_gateway.domain.file_execution import EngineRequestRejectedError
+from speechnexus_gateway.domain.languages import ENGINE_LANGUAGES
 from speechnexus_gateway.domain.tts import TtsAudio, TtsEngineFormat
 
 VOICE_DESIGN_RECIPE_VERSION = "file-voice-design-1"
@@ -29,7 +30,8 @@ MAX_VOICE_DESIGN_PREVIEW_CHARS = 2000
 MAX_VOICE_DESIGN_PCM_BYTES = 60 * 24000 * 2
 
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
-_LANGUAGE = re.compile(r"[a-z]{2,3}(-[A-Za-z0-9]{2,8}){0,4}")
+_LANGUAGE = re.compile(r"(auto|[a-z]{2,3}(-[A-Za-z0-9]{2,8})*)")
+_MAX_LANGUAGE_CHARS = 35
 _TARGET_IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]")
 
 
@@ -115,6 +117,7 @@ class VoiceDesignPolicy:
     max_pcm_bytes: int = MAX_VOICE_DESIGN_PCM_BYTES
     max_audio_ms: int = 60000
     timeout_seconds: float = 300.0
+    supported_languages: tuple[str, ...] = tuple(ENGINE_LANGUAGES)
 
     def __post_init__(self) -> None:
         if (
@@ -130,6 +133,10 @@ class VoiceDesignPolicy:
             or type(self.timeout_seconds) not in (int, float)
             or not math.isfinite(self.timeout_seconds)
             or not 0 < self.timeout_seconds <= 600
+            or type(self.supported_languages) is not tuple
+            or not self.supported_languages
+            or len(set(self.supported_languages)) != len(self.supported_languages)
+            or any(tag not in ENGINE_LANGUAGES for tag in self.supported_languages)
         ):
             raise ValueError("invalid frozen VoiceDesign policy")
         if self.max_pcm_bytes > -((-self.max_audio_ms * self.sample_rate_hz) // 1000) * 2:
@@ -147,6 +154,7 @@ class VoiceDesignPolicy:
                 "max_pcm_bytes": self.max_pcm_bytes,
                 "max_audio_ms": self.max_audio_ms,
                 "timeout_seconds": self.timeout_seconds,
+                "supported_languages": list(self.supported_languages),
             }
         )
 
@@ -172,6 +180,7 @@ class VoiceDesignRequest:
             or "\x00" in self.preview_text
             or not 1 <= len(self.preview_text) <= MAX_VOICE_DESIGN_PREVIEW_CHARS
             or type(self.language) is not str
+            or len(self.language) > _MAX_LANGUAGE_CHARS
             or _LANGUAGE.fullmatch(self.language) is None
             or (
                 self.seed is not None

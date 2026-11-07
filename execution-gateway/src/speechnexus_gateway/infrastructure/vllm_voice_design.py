@@ -18,6 +18,7 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
 
+from speechnexus_gateway.domain.languages import engine_language
 from speechnexus_gateway.domain.tts import TtsAudio
 from speechnexus_gateway.domain.voice_design import (
     VOICE_DESIGN_SAMPLE_RATE_HZ,
@@ -32,7 +33,7 @@ from speechnexus_gateway.infrastructure.private_engine_endpoint import (
     PrivateEngineEndpoint,
     load_controlled_endpoint_descriptor,
 )
-from speechnexus_gateway.infrastructure.vllm_audio import engine_language, wav_pcm
+from speechnexus_gateway.infrastructure.vllm_audio import wav_pcm
 
 _MEDIA_TYPE = "audio/wav"
 _MAX_ENVELOPE_BYTES = 65536
@@ -153,6 +154,12 @@ class VllmVoiceDesignSynthesizer:
                 "POST", "/v1/audio/speech", headers=self._headers(request_id), content=body
             ) as response,
         ):
+            # A rate limit or an upload timeout is a transient answer: the engine
+            # may read the request again, so neither proves the request died.
+            if response.status_code in {408, 429}:
+                raise VoiceDesignCallError(
+                    VoiceDesignFailure.TRANSPORT_UNKNOWN, request_may_have_run=True
+                )
             if response.is_client_error:
                 raise VoiceDesignRejectedError()
             if response.status_code != 200:

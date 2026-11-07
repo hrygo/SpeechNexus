@@ -56,6 +56,41 @@ def test_a_complete_private_activation_loads_but_grants_nothing(tmp_path: Path) 
     assert type(configuration.execution()).__name__ == "CommandFileVoiceDesign"
 
 
+def test_the_warmup_budget_is_read_from_its_own_configuration_block(
+    tmp_path: Path,
+) -> None:
+    path, _ = write_voice_design_configuration(
+        tmp_path, readiness={"warmup_timeout_seconds": 120, "retry_interval_seconds": 5}
+    )
+    settings = settings_for(
+        tmp_path,
+        file_voice_design_config_file=path,
+        file_voice_design_object_access_key=SecretStr("synthetic-access"),
+        file_voice_design_object_secret_key=SecretStr("synthetic-secret"),
+    )
+
+    configuration = load_voice_design_configuration(settings)
+
+    assert configuration is not None
+    assert configuration.warmup_timeout_seconds == 120
+    assert configuration.retry_interval_seconds == 5
+    probe = configuration.warmup_probe()
+    assert probe is not None
+
+
+def test_an_invalid_warmup_budget_is_refused(tmp_path: Path) -> None:
+    path, _ = write_voice_design_configuration(tmp_path, readiness={"warmup_timeout_seconds": 0.1})
+    settings = settings_for(
+        tmp_path,
+        file_voice_design_config_file=path,
+        file_voice_design_object_access_key=SecretStr("synthetic-access"),
+        file_voice_design_object_secret_key=SecretStr("synthetic-secret"),
+    )
+
+    with pytest.raises(ValueError):
+        load_voice_design_configuration(settings)
+
+
 def test_no_configuration_means_no_voice_design_lane(tmp_path: Path) -> None:
     assert load_voice_design_configuration(settings_for(tmp_path)) is None
 

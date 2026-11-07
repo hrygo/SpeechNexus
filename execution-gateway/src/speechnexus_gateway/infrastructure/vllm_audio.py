@@ -1,8 +1,8 @@
-"""Shared vLLM-Omni speech response facts: bounded WAV PCM and language values.
+"""Shared vLLM-Omni speech response fact: one bounded plain RIFF/WAVE body.
 
-Both native speech adapters normalize exactly one plain RIFF/WAVE body and map
-the public BCP47 language domain to this vendor's fixed values. Keeping the two
-rules here prevents a second, subtly different copy in each adapter.
+Both native speech adapters normalize exactly one WAV response; keeping the rule
+here prevents a second, subtly different copy in each adapter. Language values
+live in :mod:`speechnexus_gateway.domain.languages`.
 """
 
 from __future__ import annotations
@@ -11,27 +11,6 @@ import struct
 from collections.abc import Callable
 
 _MAX_WAV_CHUNKS = 32
-
-# Observed on the verified Qwen3-TTS CustomVoice binding. VoiceDesign reuses the
-# same vendor field; its accepted values still need a real-engine check.
-_VLLM_LANGUAGES = {
-    "zh": "Chinese",
-    "en": "English",
-    "fr": "French",
-    "de": "German",
-    "it": "Italian",
-    "ja": "Japanese",
-    "ko": "Korean",
-    "pt": "Portuguese",
-    "ru": "Russian",
-    "es": "Spanish",
-}
-
-
-def engine_language(tag: str) -> str:
-    """Translate the public BCP47 language domain to this vendor's fixed values."""
-    primary = tag.split("-", 1)[0].lower()
-    return _VLLM_LANGUAGES.get(primary, tag)
 
 
 def wav_pcm(

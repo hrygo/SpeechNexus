@@ -671,11 +671,24 @@ def test_the_template_environment_reaches_the_container_before_the_credential() 
     assert environment[2].startswith("VLLM_API_KEY=")
 
 
-def test_a_container_with_another_environment_is_quarantined_not_reused() -> None:
-    engine = _engine()
+def test_image_environment_does_not_make_a_matching_container_drift() -> None:
+    engine = _engine(image_environment=("PATH=/usr/bin:/bin", "LANG=C.UTF-8", "PG_VERSION=18"))
     runtime = _runtime(engine)
-    template = build_template(environment=(("VLLM_USE_V2_MODEL_RUNNER", "0"),))
-    runtime.prepare(build_request(), template)
+    template = build_template(
+        environment=(("VLLM_USE_V2_MODEL_RUNNER", "0"),),
+    )
+
+    observation = runtime.prepare(build_request(), template)
+
+    assert observation.observed_instance_state is ObservedInstanceState.READY
+
+
+def test_changed_managed_environment_still_quarantines_the_container() -> None:
+    engine = _engine(image_environment=("PATH=/usr/bin:/bin",))
+    runtime = _runtime(engine)
+    runtime.prepare(
+        build_request(), build_template(environment=(("VLLM_USE_V2_MODEL_RUNNER", "0"),))
+    )
 
     changed = build_template(environment=(("VLLM_USE_V2_MODEL_RUNNER", "1"),))
     observation = runtime.inspect(build_request(), changed)

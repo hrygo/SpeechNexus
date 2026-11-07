@@ -739,6 +739,21 @@ class DockerNodeRuntime:
         declared = tuple(f"{name}={value}" for name, value in template.environment)
         return declared + self._engine_environment(request, template)
 
+    def _managed_environment(
+        self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+    ) -> dict[str, str]:
+        """The environment entries this controller owns; image ENV is not one of them.
+
+        Raises :class:`UnapprovedRuntimeTemplateError` only when a template asks for
+        native authentication the node cannot supply; callers that must answer a
+        boolean check whether credentials exist first.
+        """
+        managed = {name: f"{name}={value}" for name, value in template.environment}
+        for item in self._engine_environment(request, template):
+            name, _, _ = item.partition("=")
+            managed[name] = item
+        return managed
+
     def _engine_environment(
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
     ) -> tuple[str, ...]:
@@ -766,6 +781,8 @@ class DockerNodeRuntime:
     ) -> bool:
         if request.target_node_id != self._node_id:
             return False
+        if template.engine_auth is not EngineAuthKind.NONE and self._engine_credentials is None:
+            return False
         expected_labels = self._labels(request)
         if any(
             state.labels.get(name) != value
@@ -773,25 +790,28 @@ class DockerNodeRuntime:
             if name not in {INTENT_ID_LABEL, FENCING_TOKEN_LABEL}
         ):
             return False
-        # A declared environment is part of the approved launch identity: a
-        # container started before the template changed must not be reused with
-        # the old environment.
-        if sorted(state.environment) != sorted(self._container_environment(request, template)):
-            return False
+        # Only the entries the controller manages are part of the launch identity.
+        # Docker reports the image's own ENV (PATH, LANG, ...) in Config.Env as
+        # well, so comparing the whole tuple would quarantine every real container.
+        expected = self._managed_environment(request, template)
+        actual: dict[str, str] = {}
+        occurrences: dict[str, int] = {}
+        for item in state.environment:
+            name, separator, _ = item.partition("=")
+            if separator:
+                actual[name] = item
+                occurrences[name] = occurrences.get(name, 0) + 1
+        for name, value in expected.items():
+            if occurrences.get(name, 0) > 1:
+                return False
+            if name == "VLLM_API_KEY":
+                if not secrets.compare_digest(actual.get(name, ""), value):
+                    return False
+            elif actual.get(name) != value:
+                return False
         if template.engine_auth is EngineAuthKind.NONE:
             return True
-        if self._engine_credentials is None:
-            return False
-        actual_keys = [
-            item for item in state.environment if item.partition("=")[0] == "VLLM_API_KEY"
-        ]
-        expected = self._engine_environment(request, template)
-        return (
-            state.image_id == template.image_digest
-            and state.command == template.command
-            and len(actual_keys) == 1
-            and secrets.compare_digest(actual_keys[0], expected[0])
-        )
+        return state.image_id == template.image_digest and state.command == template.command
 
     @staticmethod
     def _literal_addresses(state: ContainerState) -> tuple[str, ...]:

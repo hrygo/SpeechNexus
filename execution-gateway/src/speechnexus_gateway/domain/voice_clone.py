@@ -36,6 +36,7 @@ MAX_REFERENCE_TEXT_CHARS = 10000
 # prove the text matches what the clip says, so it refuses only a pairing no
 # speaker could produce and keeps semantic correspondence unverified.
 MAX_REFERENCE_TEXT_CHARS_PER_SECOND = 20
+MIN_REFERENCE_TEXT_CHARS_PER_SECOND = 0.5
 REFERENCE_SAMPLE_RATES = (16000, 24000)
 MIN_REFERENCE_AUDIO_MS = 1000
 MAX_REFERENCE_AUDIO_MS = 60000
@@ -223,10 +224,11 @@ def _parse_reference_wav(
 
 
 def reference_text_fits_duration(text: str, audio: ReferenceAudio) -> bool:
-    """A plausibility bound for one paired transcript; never a content check."""
+    """A plausibility band for one paired transcript; never a content check."""
     seconds = audio.duration_ms / 1000
-    limit = max(1, int(seconds * MAX_REFERENCE_TEXT_CHARS_PER_SECOND))
-    return len(text) <= limit
+    upper = max(1, int(seconds * MAX_REFERENCE_TEXT_CHARS_PER_SECOND))
+    lower = max(1, int(seconds * MIN_REFERENCE_TEXT_CHARS_PER_SECOND))
+    return lower <= len(text) <= upper
 
 
 @dataclass(frozen=True, slots=True)
@@ -365,6 +367,7 @@ class VoiceCloneRequest:
                 and (
                     type(self.reference_text) is not str
                     or "\x00" in self.reference_text
+                    or not self.reference_text.strip()
                     or not 1 <= len(self.reference_text) <= MAX_REFERENCE_TEXT_CHARS
                 )
             )

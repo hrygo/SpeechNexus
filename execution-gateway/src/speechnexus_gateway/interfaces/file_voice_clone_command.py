@@ -164,6 +164,7 @@ class CommandFileVoiceClone:
             if reference_text is not None:
                 if (
                     not isinstance(reference_text, str)
+                    or not reference_text.strip()
                     or not 1 <= len(reference_text) <= 10000
                     or "\x00" in reference_text
                 ):

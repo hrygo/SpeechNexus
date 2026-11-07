@@ -353,6 +353,10 @@ def _voice_draft_reference(job: DispatchJob) -> tuple[str, str]:
     append as the successor of ``expected_revision`` and moves the draft head
     onto it, so the success result must name the appended revision rather than
     the revision the request targeted.
+
+    The stored request document must name the same voice kind as the Job row:
+    every writer sets ``kind``, and a disagreement means the command and the
+    authoritative Job identity describe different work.
     """
     try:
         document = json.loads(job.request_document)
@@ -360,6 +364,8 @@ def _voice_draft_reference(job: DispatchJob) -> tuple[str, str]:
         raise DispatchProtocolError("Voice Job request document is not interpretable") from None
     if not isinstance(document, dict):
         raise DispatchProtocolError("Voice Job request document is not an object")
+    if document.get("kind") != job.kind:
+        raise DispatchProtocolError("Voice Job request kind disagrees with the Job kind")
     target = document.get("draft_target")
     if target is None:
         return "draft-" + job.job_id, "1"

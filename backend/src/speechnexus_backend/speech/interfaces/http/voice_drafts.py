@@ -77,12 +77,13 @@ _ERRORS: dict[str, tuple[int, str, str, str, bool]] = {
         False,
     ),
     # ``job_rejected`` with a conflict reason: the store refused to insert a
-    # prepared Job because the facts it pinned changed, an unkeyed submission
-    # collided with an existing identity, or the revision was exhausted. The
-    # transaction rolled back, so nothing was committed, but the request
-    # conflicts with current state and replaying it cannot succeed. This is the
-    # declared 409 conflict class -- the same stable ``voice_draft_conflict``
-    # code -- not a retryable storage outage.
+    # prepared Job because the facts it pinned changed, an extreme UUID
+    # identity collision occurred, or the revision was exhausted. The transaction rolled
+    # back, so nothing was committed, but the request conflicts with current
+    # state and replaying it cannot succeed. This is the declared 409 conflict
+    # class -- the same stable ``voice_draft_conflict`` code -- not a retryable
+    # storage outage. A submission-window connection failure is outcome unknown,
+    # never this class.
     "rejected": (
         409,
         "invalid_request_error",
@@ -369,8 +370,6 @@ def _execute(
         # is retryable; a deterministic refusal or a missing result payload is an
         # implementation defect, and a changed fact is a conflict with current
         # state. Never dress any of them up as a retryable 503.
-        if error.code == "unavailable":
-            return _error("unavailable", request_id, operation)
         if error.code == "storage_rejected":
             return _error("rejected_defect", request_id, operation)
         if error.code == "contract":

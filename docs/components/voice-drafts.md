@@ -85,8 +85,8 @@ ready preview Artifact 匹配（否则 422 `voice_draft_not_candidate` 或 503
 `voice_draft_input_unavailable`。
 
 `voice_preview` Job 停在 `pending`，本切片不派发、不产音频；`DISPATCHABLE_JOB_KINDS`
-仍为 `("asr", "tts")`，kind 过滤让预览行不占批次也不毒化同批 ASR/TTS。执行消费者仍是
-[#512](https://github.com/hrygo/SpeechNexus/issues/512)。读取按单数
+仍为 `("asr", "tts")`，kind 过滤让预览行不占批次也不毒化同批 ASR/TTS。预览执行消费者
+仍待后续切片。读取按单数
 `preview_artifact_id` 权威回读：Job 必须 succeeded，Artifact 必须同 workspace、ready、
 `preview` kind 且 receipt 匹配；缺失或非 ready 时 `GET /v1/nexus/jobs/{job_id}` 与列表
 返回 503，不把伪造结果投影成成功。生成结果的复数 `preview_artifact_ids` 规则不变，
@@ -112,14 +112,22 @@ store 在 prepare 完成后、插入事务提交前可能拒绝已准备的写�
   既有稳定 code `voice_draft_conflict`（`type: invalid_request_error`、
   `retryable: false`、`Cache-Control: no-store`、`X-Should-Retry: false`）。
 - `identity_conflict`（store code `job_identity_conflict`）与 `revision_exhausted`：
-  未带幂等键的提交与已提交身份冲突，或 head 修订号已耗尽。同样没有提交写入，重放同一
-  请求不能成功，按 409 `voice_draft_conflict` 返回；重新发起会获得新身份，不标记可重试。
+  保留 409 映射，但 `identity_conflict` 只在键值 UUID 碰撞等极端构造下出现。
+  无键提交的 `key_digest` 为 NULL、`job_id` 是 uuid4，唯一约束不会因此冲突，所以它不是
+  正常可复现路径；`revision_exhausted` 表示 head 修订号已耗尽。两者同样没有提交写入，
+  重放同一请求不能成功，按 409 `voice_draft_conflict` 返回；重新发起会获得新身份，
+  不标记可重试。
 - `storage_rejected`（确定性数据库拒绝，如 CHECK 违约）与 `contract`（`created` 结果缺少
   Job/修订载荷）：属于确定性实现缺陷，不是客户端冲突，返回 500
   `voice_draft_contract_violation`（`type: api_error`、`retryable: false`、
   `X-Should-Retry: false`）。
-- `unavailable`（连接池关闭/超时等提交前存储故障）：仍返回 503
-  `voice_draft_unavailable` 且 `retryable: true`；这是契约允许的可重试 outage。
+
+提交事务窗口内的连接故障（连接池关闭、获取超时、`TooManyRequests` 等）不是上述拒绝
+原因，也不是 `voice_draft_conflict`：它们与 `psycopg.OperationalError` 同类，store 无法
+证明事务没有提交，因此统一返回 `unknown`。voice 创建与生成再按是否携带原
+`Idempotency-Key` 返回 503 `voice_draft_outcome_unknown`（`retryable: true`）或 409
+`voice_draft_outcome_unknown`（`retryable: false`）。`voice_draft_unavailable` 只用于
+提交前已确定没有写入的 prepare/read 故障。
 
 `getVoiceDraft` 与 `updateVoiceDraftMetadata` 不提交 Job，不会出现上述拒绝；若该异常
 仍到达这两条路径，按实现缺陷返回 500，而不是可重试的 503。
@@ -170,8 +178,9 @@ CHECK 内。尝试通过 PATCH 改状态、输入或生成结果返回 422，且
 
 创建提交的失败按“是否已确定未提交”区分：
 
-- `voice_draft_unavailable`（503，`retryable: true`，`X-Should-Retry: true`）表示存储失败
-  发生在确定未提交的路径，客户端可用原请求原键重试。
+- `voice_draft_unavailable`（503，`retryable: true`，`X-Should-Retry: true`）表示提交前的
+  fact 读取或 prepare 存储失败，此时尚未进入插入事务，可以确定没有写入；客户端可用原请求
+  原键重试。
 - `voice_draft_outcome_unknown`（503，`retryable: true`，`X-Should-Retry: true`）只在请求
   携带原 `Idempotency-Key` 时返回：提交可能已 commit 但确认丢失，客户端用同一键重放会
   回放原草稿与原 Job，不会新建。不同键仍是新意图。
@@ -185,12 +194,14 @@ CHECK 内。尝试通过 PATCH 改状态、输入或生成结果返回 422，且
 生成、修订、预览与校验已由本组件提供；发布端口仍由后续切片实现。Job/outbox 接受不等于真实模型已执行；
 现有生产 dispatch planner、真实引擎、资源准入和目标拓扑资格仍须各自验收。
 
-草稿的生成 Job 仍写入协调 Job 与 outbox，但本执行单元只规划 ASR/TTS：`DispatchJob`
-接受集合和 PG claim 查询共同使用 `DISPATCHABLE_JOB_KINDS`，voice 行在同一条 claim SQL
-内被过滤，不占批次上限，也不会在行转换时抛 `DispatchProtocolError` 毒化同批 ASR/TTS。
-voice 协调行保持 pending，等待后续声音执行切片接入；当前 dispatcher 不消费它。缺失的
-执行消费者由 [#512](https://github.com/hrygo/SpeechNexus/issues/512)（原生父
-[#340](https://github.com/hrygo/SpeechNexus/issues/340)）承接，本 PR 不实现执行器。
+草稿的生成 Job 仍写入协调 Job 与 outbox。默认 dispatch lane 仍只领取 ASR/TTS：
+`PostgresDispatchQueue` 的 `kinds` 默认 `DISPATCHABLE_JOB_KINDS`（`("asr", "tts")`）。
+voice lane 是可选消费者，调用方显式传 `kinds=VOICE_GENERATION_JOB_KINDS` 才领取
+`voice_design`/`voice_clone`。kind 过滤在同一条 claim SQL 内完成，不占默认批次上限，
+也不会在行转换时抛 `DispatchProtocolError` 毒化同批 ASR/TTS。生产装配（planner、引擎
+适配器、资源准入与超时结算）归 [#528](https://github.com/hrygo/SpeechNexus/issues/528)
+（原生父 [#340](https://github.com/hrygo/SpeechNexus/issues/340)）；当前没有默认启动的
+voice 消费者。
 
 ## 迁移与生产装配
 

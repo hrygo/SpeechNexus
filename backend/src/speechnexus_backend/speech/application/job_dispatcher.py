@@ -10,6 +10,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
 from speechnexus_backend.speech.domain.job_dispatch import (
+    VOICE_GENERATION_JOB_KINDS,
     ClaimedJob,
     DispatchBatch,
     DispatchClaimLostError,
@@ -330,7 +331,8 @@ class JobDispatcher:
         should_stop: Callable[[], bool] | None,
     ) -> DispatchResult:
         receipt = await self._gateway.result_receipt(
-            submission.submit_intent_id, audio=job.kind in ("tts", "voice_design", "voice_clone")
+            submission.submit_intent_id,
+            audio=job.kind == "tts" or job.kind in VOICE_GENERATION_JOB_KINDS,
         )
         if receipt.outcome != "status" or receipt.document is None:
             if receipt.outcome == "unknown":

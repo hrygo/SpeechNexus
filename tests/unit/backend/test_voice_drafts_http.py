@@ -553,6 +553,13 @@ class RejectingReadStore(DraftStore):
         raise JobRejectedError("facts_changed")
 
 
+class RejectingUpdateStore(DraftStore):
+    def update_metadata(
+        self, draft_id: str, command: Any, idempotency_key: str | None
+    ) -> dict[str, Any]:
+        raise JobRejectedError("identity_conflict")
+
+
 @pytest.mark.parametrize(
     ("error_code", "status", "wire", "kind", "retryable"),
     [
@@ -561,7 +568,6 @@ class RejectingReadStore(DraftStore):
         ("revision_exhausted", 409, "voice_draft_conflict", "invalid_request_error", False),
         ("storage_rejected", 500, "voice_draft_contract_violation", "api_error", False),
         (None, 500, "voice_draft_contract_violation", "api_error", False),
-        ("job_unavailable", 503, "voice_draft_unavailable", "service_unavailable_error", True),
     ],
 )
 async def test_generate_rejection_reason_maps_to_its_declared_status(
@@ -641,6 +647,35 @@ async def test_conflict_class_rejection_on_read_is_a_500_not_a_retryable_503() -
     assert body["error"]["retryable"] is False
     assert response.headers["X-Should-Retry"] == "false"
     validate_response("getVoiceDraft", 500, {"body": body, "headers": dict(response.headers)})
+
+
+async def test_conflict_class_rejection_on_update_is_a_500_not_a_retryable_503() -> None:
+    """A metadata write never submits a Job, so a conflict-class refusal is a defect."""
+    store = RejectingUpdateStore()
+    provider = VoiceDrafts(PublicJobs(VoiceFacts(), store.jobs_store), store)
+    app = create_app(settings=_settings(), voice_drafts=provider)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        created = await http.post(
+            "/v1/nexus/voice-designs",
+            json={
+                "model": "tts-quality",
+                "input": {"description": "Synthetic voice", "preview_text": "Synthetic preview"},
+            },
+        )
+        assert created.status_code == 202, created.text
+        response = await http.patch(
+            "/v1/nexus/voice-drafts/" + created.json()["draft"]["id"],
+            json={"expected_metadata_revision": 1, "display_name": "Synthetic"},
+        )
+    assert response.status_code == 500, response.text
+    body = response.json()
+    assert body["error"]["code"] == "voice_draft_contract_violation"
+    assert body["error"]["type"] == "api_error"
+    assert body["error"]["retryable"] is False
+    assert response.headers["X-Should-Retry"] == "false"
+    validate_response(
+        "updateVoiceDraftMetadata", 500, {"body": body, "headers": dict(response.headers)}
+    )
 
 
 async def test_generate_outcome_unknown_is_a_retryable_503() -> None:

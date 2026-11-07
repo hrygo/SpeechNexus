@@ -531,8 +531,6 @@ class PostgresPublicJobs:
                 # HTTP boundary can report an implementation defect, not a
                 # client conflict or a retryable outage.
                 return JobCreateResult("rejected", error_code="storage_rejected")
-            except PoolClosed, PoolTimeout, TooManyRequests:
-                return JobCreateResult("rejected", error_code="job_unavailable")
         return JobCreateResult("unknown", error_code="outcome_unknown")
 
     def create_revision(
@@ -641,8 +639,6 @@ class PostgresPublicJobs:
         except psycopg.Error:
             # See create(): a deterministic database refusal is not a conflict.
             return RevisionCreateResult("rejected", error_code="storage_rejected")
-        except PoolClosed, PoolTimeout, TooManyRequests:
-            return RevisionCreateResult("rejected", error_code="job_unavailable")
 
     def cancel(
         self,

@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from speechnexus_backend.speech.application.results import ResultArtifactPublisher
+from speechnexus_backend.speech.application.results import ResultArtifactPublisher, _media_for
 from speechnexus_backend.speech.domain.artifacts import (
     ArtifactError,
     ArtifactObjectWrite,
@@ -180,6 +180,12 @@ async def test_receipt_workspace_must_match_the_job() -> None:
         await publisher.publish(_job(), _submission(), receipt)
 
     assert rows.records == {} and blobs.versions == {}
+
+
+def test_result_kind_without_a_media_mapping_fails_closed() -> None:
+    """A kind the receipt map does not know must never fall through as mutable."""
+    with pytest.raises(DispatchProtocolError, match="no published media mapping"):
+        _media_for("voice_preview")
 
 
 def test_artifact_identity_is_deterministic_and_kind_specific() -> None:

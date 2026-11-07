@@ -129,6 +129,24 @@ class ProfileRuntime:
             "speech_profile_lifecycle_results",
         ):
             name = f'"{schema}".{table}'
+            # A table-level UPDATE grants every column, so the exact column-set
+            # comparison below would reject it only incidentally. Check it
+            # explicitly, and never use has_table_privilege to infer a column
+            # grant: under column-only grants it stays false (#549).
+            broad = connection.execute(
+                "SELECT pg_catalog.has_table_privilege(%s::name,%s,'UPDATE') AS table_update, "
+                "pg_catalog.has_table_privilege(%s::name,%s,'REFERENCES') "
+                "AS table_reference, "
+                "pg_catalog.has_any_column_privilege(%s::name,%s,'REFERENCES') "
+                "AS column_reference",
+                (role, name, role, name, role, name),
+            ).fetchone()
+            if broad is None:
+                raise ValueError("Profile writer privilege metadata is unavailable")
+            if broad["table_update"]:
+                raise ValueError("Profile writer holds table-level UPDATE")
+            if broad["column_reference"] and not broad["table_reference"]:
+                raise ValueError("Profile writer holds column REFERENCES")
             row = connection.execute(
                 "SELECT pg_catalog.has_table_privilege(%s::name,%s,'SELECT') "
                 "AND pg_catalog.has_table_privilege(%s::name,%s,'INSERT') "

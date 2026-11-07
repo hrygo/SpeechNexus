@@ -401,6 +401,17 @@ paths:
         activation; a changed intent under the same key returns 409
         `idempotency_conflict`.
 
+        Activating the revision that is already current is an idempotent no-op:
+        the call returns that same published revision and does not write the
+        family row at all, so the pointer value and the row version are
+        unchanged. Concurrent activations serialize on the profile family head.
+        When their targets differ, only the request whose
+        `expected_current_revision` still matches the locked pointer commits;
+        a request whose expected head was superseded by that transition returns
+        409 `configuration_changed` instead of overwriting the newer pointer.
+        Two concurrent requests for the same current revision are both the
+        documented no-op and leave one pointer value.
+
         An unreadable original result or uncertain commit returns 503
         `profile_result_unknown`, with `retryable: false`; it is not evidence
         that the pointer stayed unchanged. Only a caller retaining the original

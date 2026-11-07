@@ -280,9 +280,26 @@ intent modification, so the grant cannot rewrite a key or immutable history;
 `SELECT ... FOR UPDATE` does not fire that trigger. The writer cannot update
 publication/evidence/history, DELETE, TRUNCATE, perform DDL or access Job tables.
 Startup checks both login and effective identities against this combined minimum.
-The separate
+The check rejects a table-level `UPDATE` explicitly instead of relying on the
+exact column-set comparison to notice it, and it rejects column-level
+`REFERENCES`. Column privileges are always read with `has_column_privilege` /
+`has_any_column_privilege`; `has_table_privilege` is never used to infer a column
+grant, because it stays false under column-only grants and would be a no-op
+(#549). The separate
 `profile_publication_reader_grants` excludes all command/intent/result tables;
 it is an explicit speech-owner read role, not a Workbench table-writing API.
+
+Activating the revision that is already current with a new Idempotency-Key is the
+documented idempotent no-op: it returns that same published revision and skips the
+family write entirely, so the pointer value and the row version are unchanged
+(no same-value `UPDATE`, hence no trigger or derived-column side effect).
+Concurrent activations serialize on the family row.
+When their targets differ, only the first CAS commits and a request whose expected
+head was superseded returns 409 `configuration_changed` instead of overwriting
+the newer pointer. Two concurrent requests for the same current revision both
+observe the no-op, so the pointer has one value and no second qualified
+activation is claimed. This accepted no-op is not production qualification of
+itself; the source contract carries the same wording.
 
 Consumers are generated through `contracts/bindings.json`: existing
 `profile_lifecycle_http` / `@speechnexus/contracts/profile-lifecycle-http` handles
@@ -293,9 +310,15 @@ No effective-configuration resolver, Job field or Web consumer is added here.
 
 `tests/integration/test_profile_publications.py` is the isolated PG entry for
 migration, restricted roles, original-result recovery and observed competing
-family-lock waits. Its successful verifier is explicitly a **test double**.
+family-lock waits. It also observes two same-target activations behind one real
+`FOR UPDATE` family lock, asserts an unchanged row version and replays both
+original keys, and it rejects a role that holds table-level `UPDATE` or
+column-level `REFERENCES` at startup. Its successful verifier is explicitly a
+**test double**.
 `tests/unit/test_profile_publications.py` executes the same product SQL on an
 in-memory SQLite oracle with lock syntax removed, and the HTTP tests drive the
 actual application/router against it. These synthetic checks do not establish
-PG locking, deployment, real quality, or production publication qualification.
-The task/PR receipt records actual checks and target-environment gaps.
+production verifier wiring, deployment topology, real engine use of a published
+pointer, or production publication qualification. The production verifier stays
+deliberately unavailable and fail-closed (503 `profile_result_unknown`), so no
+successful production publication path is claimed here.

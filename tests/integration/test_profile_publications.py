@@ -251,6 +251,75 @@ def test_competing_activations_wait_on_family_and_only_one_cas_wins(sandbox: San
         blocker.close()
 
 
+def test_same_target_concurrent_activation_is_one_documented_noop(sandbox: Sandbox) -> None:
+    """Both requests are the contract's no-op; the family row is not written."""
+    s = sandbox
+    s.draft()
+    s.port.mutate(s.publish())
+    s.draft("2")
+    s.port.mutate(s.publish("2", "1", "publish-second"))
+    assert s.port.mutate(s.activate("1", "2", "back-to-one")).outcome == "completed"
+    before = s.snapshot()
+    xmin_before = s.admin.execute(
+        "SELECT xmin::text AS xmin FROM speech_profile_families"
+    ).fetchone()["xmin"]
+    blocker = psycopg.connect(s.url)
+    try:
+        blocker.execute(f'SET search_path TO "{s.schema}",pg_catalog')
+        blocker.execute("SELECT * FROM speech_profile_families FOR UPDATE").fetchall()
+        commands = [s.activate("1", "1", "same-" + suffix) for suffix in ("alpha", "bravo")]
+        blocked_queries: list[str] = []
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            futures = [workers.submit(s.port.mutate, command) for command in commands]
+            try:
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline:
+                    blocked = s.admin.execute(
+                        "SELECT query FROM pg_stat_activity WHERE usename=%s "
+                        "AND cardinality(pg_blocking_pids(pid))>0",
+                        (s.role,),
+                    ).fetchall()
+                    if len(blocked) == 2:
+                        blocked_queries = [row["query"] or "" for row in blocked]
+                        break
+                    time.sleep(0.01)
+                else:
+                    pytest.fail("Two actual independent PG lock waits were not observed")
+            finally:
+                blocker.rollback()
+            results = [f.result(timeout=5) for f in futures]
+        # The family FOR UPDATE is the only serializing statement here. A
+        # same-value terminal UPDATE would also block, so the text must prove
+        # the row lock came from FOR UPDATE rather than the skipped write.
+        assert len(blocked_queries) == 2
+        assert all(
+            "FOR UPDATE" in query and "speech_profile_families" in query
+            for query in blocked_queries
+        ), blocked_queries
+        assert [r.outcome for r in results] == ["completed", "completed"]
+        assert [r.publication.draft.revision for r in results if r.publication] == ["1", "1"]
+        assert results[0].publication == results[1].publication
+        for command in commands:
+            recovered = s.port.recover_lifecycle(command)
+            assert recovered.outcome == "replayed"
+            assert recovered.publication == results[0].publication
+    finally:
+        blocker.close()
+    after = s.snapshot()
+    # Only the per-key receipts differ; the family row keeps its value and version.
+    assert after["speech_profile_families"] == before["speech_profile_families"]
+    assert after["speech_profile_publications"] == before["speech_profile_publications"]
+    assert (
+        s.admin.execute("SELECT xmin::text AS xmin FROM speech_profile_families").fetchone()["xmin"]
+        == xmin_before
+    )
+    assert all(row["current_revision"] == "1" for row in after["speech_profile_families"])
+    assert (
+        len(after["speech_profile_lifecycle_results"])
+        == len(before["speech_profile_lifecycle_results"]) + 2
+    )
+
+
 def test_draft_retired_disabled_and_missing_cannot_be_activated(sandbox: Sandbox) -> None:
     s = sandbox
     s.draft()
@@ -401,6 +470,159 @@ def test_writer_and_reader_privileges_and_real_runtime_fail_closed(sandbox: Sand
         ]
         s.admin.execute("UPDATE speech_profile_families SET current_revision='1'")
     assert s.snapshot() == before
+
+
+@pytest.mark.parametrize(
+    ("suffix", "statements", "message"),
+    [
+        (
+            "table_update",
+            ['GRANT UPDATE ON "{schema}".speech_profile_lifecycle_results TO "{role}"'],
+            "table-level UPDATE",
+        ),
+        (
+            "column_reference",
+            ['GRANT REFERENCES (profile_id) ON "{schema}".speech_profile_publications TO "{role}"'],
+            "column REFERENCES",
+        ),
+        (
+            "evidence_update",
+            [
+                'GRANT UPDATE (published_at_us) ON "{schema}".speech_profile_publications '
+                'TO "{role}"'
+            ],
+            "cannot be updatable",
+        ),
+        (
+            "foreign_insert",
+            [
+                'CREATE TABLE "{schema}".profile_privilege_probe (probe_id integer)',
+                'GRANT INSERT (probe_id) ON "{schema}".profile_privilege_probe TO "{role}"',
+            ],
+            "other speech table privileges",
+        ),
+    ],
+)
+def test_startup_rejects_writer_privilege_escalation(
+    sandbox: Sandbox, suffix: str, statements: list[str], message: str
+) -> None:
+    """A wider grant must fail startup; table-level UPDATE is checked explicitly."""
+    from tests.unit.backend.test_health import _settings
+
+    from speechnexus_backend.profile_runtime import ProfileRuntime
+    from speechnexus_backend.settings import Settings
+
+    s = sandbox
+    role = f"{s.role}_{suffix}"
+    s.admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD 'synthetic_profile_test'")
+    try:
+        for grant in (
+            *profile_draft_grants(s.schema, role),
+            *profile_publication_grants(s.schema, role),
+        ):
+            s.admin.execute(grant)
+        for statement in statements:
+            s.admin.execute(statement.format(schema=s.schema, role=role))
+        runtime = ProfileRuntime(
+            Settings(
+                **{
+                    **_settings().model_dump(),
+                    "database_schema": s.schema,
+                    "profile_writer_database_url": make_conninfo(
+                        s.url, user=role, password="synthetic_profile_test"
+                    ),
+                }
+            )
+        )
+        with (
+            psycopg.connect(
+                make_conninfo(s.url, user=role, password="synthetic_profile_test"),
+                row_factory=dict_row,
+            ) as connection,
+            pytest.raises(ValueError, match=message),
+        ):
+            runtime._verify_role(connection, role)
+    finally:
+        s.admin.execute(f'DROP OWNED BY "{role}"')
+        s.admin.execute(f'DROP ROLE "{role}"')
+
+
+def test_published_lists_expose_only_the_published_projection(sandbox: Sandbox) -> None:
+    """Public projections never carry a draft body, command identity or replay key."""
+    from fastapi.testclient import TestClient
+    from speechnexus_contracts.profile_public_http import validate_response
+    from tests.unit.backend.test_health import _settings
+
+    from speechnexus_backend.app import create_app
+    from speechnexus_backend.settings import Settings
+
+    s = sandbox
+    s.draft("1")
+    s.draft("2")
+    assert s.port.mutate(s.publish("1", None, "leak-publish")).outcome == "completed"
+    secret_body = {
+        **profile_request(),
+        "profile_id": "secret-draft-only",
+        "display_name": "SECRET DRAFT BODY",
+        "expected_latest_revision": None,
+    }
+    secret = prepare_profile_draft(secret_body, "secret-draft-only-key")
+    created = s.port.create(secret)
+    assert created.outcome == "created" and created.draft is not None
+    settings = Settings(
+        **{
+            **_settings().model_dump(),
+            "database_schema": s.schema,
+            "profile_writer_database_url": make_conninfo(
+                s.url, user=s.role, password="synthetic_profile_test"
+            ),
+            "asset_allowed_hosts": ("testserver",),
+        }
+    )
+    v1_keys = {
+        "id",
+        "revision",
+        "display_name",
+        "kind",
+        "release_tier",
+        "execution_classes",
+    }
+    app = create_app(settings=settings)
+    with TestClient(app) as http:
+        v1 = http.get("/v1/nexus/profiles")
+        v2 = http.get("/v2/nexus/profiles")
+        assert v1.status_code == 200 and v2.status_code == 200
+        # Contract acceptance and the fixed projection are asserted separately:
+        # adding any field is rejected by additionalProperties:false with 503,
+        # and the exact key set below is the projection's own guard.
+        validate_response("listProfiles", 200, {"body": v1.json()})
+        validate_response("listPublishedProfiles", 200, {"body": v2.json()})
+        assert [(item["id"], item["revision"]) for item in v1.json()["data"]] == [
+            ("caption-draft", "1")
+        ]
+        assert [
+            (item["id"], item["revision"], item["current_revision"]) for item in v2.json()["data"]
+        ] == [("caption-draft", "1", "1")]
+        assert {frozenset(item) for item in v1.json()["data"]} == {frozenset(v1_keys)}
+        assert {frozenset(item) for item in v2.json()["data"]} == {
+            frozenset(v1_keys | {"current_revision"})
+        }
+        for response in (v1, v2):
+            for leaked in (
+                "definition",
+                "validation",
+                "authority_digest",
+                "key_digest",
+                "request_digest",
+                "idempotency",
+            ):
+                assert leaked not in response.text, leaked
+        unpublished = http.get("/v1/nexus/profiles/caption-draft/revisions/2")
+        assert unpublished.status_code == 409
+        assert unpublished.json()["error"]["code"] == "profile_not_published"
+        missing = http.get("/v1/nexus/profiles/caption-draft/revisions/99")
+        assert missing.status_code == 404
+        assert missing.json()["error"]["code"] == "profile_not_found"
 
 
 def test_actual_committed_reply_loss_then_original_recovery_is_read_only(sandbox: Sandbox) -> None:

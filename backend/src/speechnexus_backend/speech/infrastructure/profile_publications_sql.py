@@ -182,11 +182,15 @@ def mutate_profile(
         publication = PublishedProfile(draft, validation, now)
     elif publication is None or publication.status != "published":
         return reject("profile_not_published")
-    _update(
-        cursor,
-        "UPDATE speech_profile_families SET current_revision=%s WHERE profile_id=%s",
-        (command.revision, command.profile_id),
-    )
+    # Activating the already-current revision is the documented no-op: skip the
+    # write entirely instead of issuing a same-value UPDATE. A publish cannot
+    # reach here with current == target because that target is already published.
+    if current != command.revision:
+        _update(
+            cursor,
+            "UPDATE speech_profile_families SET current_revision=%s WHERE profile_id=%s",
+            (command.revision, command.profile_id),
+        )
     assert publication is not None
     snapshot = _snapshot(publication)
     cursor.execute(

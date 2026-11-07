@@ -36,6 +36,7 @@ from speechnexus_node_controller.domain.intents import (
     RuntimeActionKind,
     RuntimeControllerUnavailableError,
     RuntimeInstanceIntentRequest,
+    RuntimeIntentErrorCode,
     RuntimeMemoryVector,
     UnapprovedRuntimeTemplateError,
 )
@@ -529,6 +530,11 @@ class DockerNodeRuntime:
                 quarantine_reason="container resource/network configuration is not approved",
             )
         observed_state = self._observed_state(request, template, state, resumed=resumed)
+        warmup_error = (
+            self._warmup_error(request, state)
+            if observed_state is ObservedInstanceState.WARMING_UP
+            else None
+        )
         native_evidence = None
         if (
             observed_state is ObservedInstanceState.READY
@@ -554,8 +560,24 @@ class DockerNodeRuntime:
             config_digest=request.config_digest,
             observed_instance_state=observed_state,
             observed_peak_memory=self._observed_memory(request, state),
+            error_code=warmup_error,
             native_runtime_evidence=native_evidence,
         )
+
+    def _warmup_error(
+        self, request: RuntimeInstanceIntentRequest, state: ContainerState
+    ) -> RuntimeIntentErrorCode | None:
+        """Name an exhausted warmup budget without changing its observation.
+
+        The action stays ``warming_up`` and keeps its peak reservation, so the
+        reason is observable without pretending the instance failed, became
+        ready, or released capacity. A resumed action without an in-memory
+        anchor has no measured deadline and therefore no reason to report.
+        """
+        progress = self._warmup_progress.get((state.container_id, request.instance_generation))
+        if progress is not None and time.monotonic() >= progress.deadline:
+            return RuntimeIntentErrorCode.WARMUP_DEADLINE_EXCEEDED
+        return None
 
     @staticmethod
     def _absent_observation(

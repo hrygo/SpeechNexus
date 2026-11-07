@@ -265,10 +265,15 @@ export interface paths {
      *     page. `limit` is 1-100 and defaults to 50. `has_more` is true only when a
      *     further page exists, and `next_cursor` is then that page's opaque cursor.
      *
-     *     Every returned `status` is `draft`: this deployment only stores immutable
-     *     draft revisions, so a listed head never claims publication, execution or
-     *     TTS qualification. An empty collection is a successful 200 with no
-     *     entries, never a 404.
+     *     `head_revision` is the family's latest immutable revision (the allocation
+     *     head). `status` is computed from the publication ledger for that exact
+     *     revision: `published` only when a `speech_publications` row exists for
+     *     `(id, head_revision)`, otherwise `draft`. A draft appended above a
+     *     published revision therefore lists with the new revision and `draft`; the
+     *     older published revision keeps its own published fact and stays readable
+     *     through the fixed-revision GET. `retired` is reserved for a later
+     *     retirement command and is not produced by this deployment. An empty
+     *     collection is a successful 200 with no entries, never a 404.
      */
     get: operations["listPronunciationSets"];
     put?: never;
@@ -276,22 +281,32 @@ export interface paths {
      * Create an immutable pronunciation-set revision
      * @description Omit `id` to create a new pronunciation set. Supply `id` and
      *     `expected_revision` to append a revision to an existing set. Entries are
-     *     validated and stored as an immutable **draft** revision; an existing
-     *     revision is never modified and this operation never publishes, selects a
-     *     default, executes TTS or qualifies pronunciation.
+     *     validated and stored as one immutable revision; an existing revision is
+     *     never modified and this operation never selects a default, executes TTS or
+     *     qualifies pronunciation.
      *
-     *     `publish` defaults to `false` and describes draft creation only. A
-     *     `publish: true` request is not supported by this operation and returns
-     *     422 `pronunciation_publication_not_supported`; publication has its own
-     *     command. The returned `status` is always `draft`.
+     *     `publish` defaults to `true` and is atomic: the same transaction writes
+     *     the immutable revision, its `speech_publications` row and the selected
+     *     `speech_publication_heads` row. A failure anywhere rolls all of them back,
+     *     so a client can never observe a publication without its revision or a
+     *     published-status revision without a ledger row. `publish: false` writes
+     *     only the revision and leaves it a private draft. The returned `status` is
+     *     `published` for the atomic case and `draft` otherwise.
+     *
+     *     A deployment that has not configured the atomic-publication identity
+     *     answers 422 `pronunciation_publication_not_supported` for a request that
+     *     did not already commit; a keyed replay of a committed publication still
+     *     returns 200. Send `publish: false` for draft-only use there.
      *
      *     With an `Idempotency-Key`, the same canonical intent replays the original
-     *     revision and a different intent returns 409
+     *     revision with 200 and a different intent returns 409
      *     `pronunciation_idempotency_conflict`. Without a key, a submission whose
      *     commit cannot be confirmed returns 409 `pronunciation_outcome_unknown`
      *     because a resubmission would be a new intent. An append whose
      *     `expected_revision` is not the current allocation head returns 409
-     *     `pronunciation_configuration_changed`.
+     *     `pronunciation_configuration_changed`; the compare-and-swap happens under
+     *     the family head lock in the same transaction, never as a MAX aggregate,
+     *     and exactly one concurrent publisher wins.
      */
     post: operations["createPronunciationRevision"];
     delete?: never;
@@ -309,9 +324,11 @@ export interface paths {
     };
     /**
      * Get one immutable pronunciation-set revision
-     * @description Reads the exact requested revision; the returned status does not
-     *     itself grant publication, execution, or pronunciation qualification.
-     *     Only a confirmed missing revision returns 404 pronunciation_not_found.
+     * @description Reads the exact requested revision. `status` is `published` when a
+     *     publication ledger row exists for that exact revision and `draft`
+     *     otherwise; it does not itself grant default selection, execution or
+     *     pronunciation qualification. Only a confirmed missing revision returns
+     *     404 pronunciation_not_found.
      *     Unreadable metadata returns 503 pronunciation_unavailable with
      *     retryable: true, not 404. Both replies are non-cacheable and carry the
      *     matching X-Should-Retry value. Neither fabricates an Operation or
@@ -1313,8 +1330,8 @@ export interface components {
       encoding: "pinyin" | "ipa";
       entries: components["schemas"]["PronunciationEntry"][];
       /**
-       * @description Draft semantics only. Omission and `false` both create an immutable draft revision; `true` is rejected with 422 `pronunciation_publication_not_supported`. This field never publishes a set, selects a default, or qualifies pronunciation.
-       * @default false
+       * @description Atomic publication. `true` (the default) writes the immutable revision, its publication ledger row and the selected head in one transaction; `false` writes only an immutable draft revision. A deployment without the publication identity answers 422 `pronunciation_publication_not_supported` instead of writing. This field never selects a default, executes TTS or qualifies pronunciation.
+       * @default true
        */
       publish?: boolean;
     };
@@ -3809,7 +3826,7 @@ export interface components {
         };
       };
     };
-    /** @description This operation creates immutable drafts only. `publish: true` is a publication command this deployment does not implement; the request did not change any revision and repeating it unchanged will not succeed. */
+    /** @description This deployment has not configured the atomic-publication identity and this request did not match a committed command receipt. No new revision, publication row or head was created. If the same Idempotency-Key already committed a publication, repeating it returns 200 with the original revision instead of this error. Send `publish: false` for a draft, or configure the publication role and repeat the request unchanged. */
     PronunciationPublicationNotSupported: {
       headers: {
         "Cache-Control": "no-store";
@@ -4430,7 +4447,17 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Immutable pronunciation draft revision created or replayed. */
+      /** @description Idempotent replay of the same original intent. */
+      200: {
+        headers: {
+          "X-Request-ID"?: components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PronunciationRevision"];
+        };
+      };
+      /** @description Immutable pronunciation revision created (published when requested). */
       201: {
         headers: {
           "X-Request-ID"?: components["headers"]["XRequestId"];

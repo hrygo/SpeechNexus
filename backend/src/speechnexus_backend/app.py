@@ -26,6 +26,7 @@ from speechnexus_backend.job_runtime import JobRuntime
 from speechnexus_backend.model_catalog_runtime import ModelCatalogRuntime
 from speechnexus_backend.profile_runtime import ProfileRuntime
 from speechnexus_backend.pronunciation_runtime import (
+    PronunciationPublisherRuntime,
     PronunciationRuntime,
     PronunciationWriterRuntime,
 )
@@ -201,6 +202,7 @@ def create_app(
     binding_lifecycle: BindingLifecycle | None = None,
     pronunciations: PronunciationReader | None = None,
     pronunciation_writer: PronunciationWriter | None = None,
+    pronunciation_publisher: PronunciationWriter | None = None,
     catalogue: ModelCatalogue | None = None,
     voices: VoiceCatalogue | None = None,
     voice_drafts: VoiceDrafts | None = None,
@@ -281,12 +283,32 @@ def create_app(
             return cast(PronunciationSets, pronunciations)
         return pronunciation_runtime.provider if pronunciation_runtime is not None else None
 
+    pronunciation_publisher_runtime = (
+        PronunciationPublisherRuntime(resolved_settings)
+        if pronunciation_publisher is None
+        and resolved_settings.pronunciation_publisher_database_url is not None
+        else None
+    )
+
     def get_pronunciation_writer() -> PronunciationWriter | None:
         if pronunciation_writer is not None:
             return pronunciation_writer
+        if pronunciation_writer_runtime is not None:
+            return pronunciation_writer_runtime.provider
+        # The publisher identity can also write drafts; a deployment that only
+        # configures atomic publication still serves explicit draft requests.
         return (
-            pronunciation_writer_runtime.provider
-            if pronunciation_writer_runtime is not None
+            pronunciation_publisher_runtime.provider
+            if pronunciation_publisher_runtime is not None
+            else None
+        )
+
+    def get_pronunciation_publisher() -> PronunciationWriter | None:
+        if pronunciation_publisher is not None:
+            return pronunciation_publisher
+        return (
+            pronunciation_publisher_runtime.provider
+            if pronunciation_publisher_runtime is not None
             else None
         )
 
@@ -427,6 +449,11 @@ def create_app(
             if pronunciation_writer_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, pronunciation_writer_runtime.close)
                 await run_in_threadpool(pronunciation_writer_runtime.open)
+            if pronunciation_publisher_runtime is not None:
+                resources.push_async_callback(
+                    run_in_threadpool, pronunciation_publisher_runtime.close
+                )
+                await run_in_threadpool(pronunciation_publisher_runtime.open)
             if binding_defaults_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, binding_defaults_runtime.close)
                 await run_in_threadpool(binding_defaults_runtime.open)
@@ -545,6 +572,7 @@ def create_app(
         create_pronunciation_sets_router(
             get_pronunciation_sets,
             get_pronunciation_writer,
+            get_pronunciation_publisher,
             max_bytes=resolved_settings.pronunciation_receive_max_bytes,
             receive_timeout_seconds=resolved_settings.pronunciation_receive_timeout_seconds,
         )
@@ -671,6 +699,7 @@ def create_app(
     app.state.profile_runtime = profile_runtime
     app.state.pronunciation_runtime = pronunciation_runtime
     app.state.pronunciation_writer_runtime = pronunciation_writer_runtime
+    app.state.pronunciation_publisher_runtime = pronunciation_publisher_runtime
     app.state.catalogue_runtime = catalogue_runtime
     app.state.binding_runtime = binding_runtime
     app.state.binding_defaults_runtime = binding_defaults_runtime

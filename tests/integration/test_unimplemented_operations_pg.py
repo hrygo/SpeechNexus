@@ -99,11 +99,13 @@ def sandbox() -> Iterator[Sandbox]:
             command.upgrade(config, "head")
         owner.execute(f'SET search_path TO "{schema}", pg_catalog')
         owner.execute(f"CREATE ROLE {role} LOGIN PASSWORD '{PASSWORD}'")
-        # The reader identity sees only the two immutable fact tables; the
-        # runtime rejects any broader grant, so the sandbox is the minimum role.
+        # The reader identity sees only the immutable fact tables and the
+        # publication ledger; the runtime rejects any broader grant, so the
+        # sandbox is the minimum role.
         owner.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"')
         owner.execute(f'GRANT SELECT ON "{schema}".speech_pronunciation_revisions TO "{role}"')
         owner.execute(f'GRANT SELECT ON "{schema}".speech_pronunciation_families TO "{role}"')
+        owner.execute(f'GRANT SELECT ON "{schema}".speech_publications TO "{role}"')
         yield Sandbox(
             owner=owner,
             schema=schema,

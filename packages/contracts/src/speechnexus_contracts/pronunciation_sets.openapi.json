@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SpeechNexus public speech API",
-    "version": "0.1.0.dev15",
+    "version": "0.1.0.dev16",
     "description": "SpeechNexus public speech protocol.\n\nThe OpenAI-compatible subset is limited to the paths, fields, formats, and\nevents explicitly declared here. A standard OpenAI SDK can use this API by\nsetting base_url to <deployment>/v1 and supplying any api_key value unless\nthe deployment enables a shared service key. SpeechNexus enhancements live\nunder /v1/nexus and the optional `nexus` request field; a standard request\nnever needs an enhancement wrapper. Unsupported standard parameters are\nrejected with 422 `unsupported_parameter`, never silently ignored.\n\nRealtime has two connection modes at GET /v1/realtime: a pre-created\nnexus session (`session_id`) and a compatibility transcription session\nopened with `model`. Both accept the declared standard transcription\nevent subset. TTS, previews, metadata, and operation coordination remain\nnexus.* events and are available only in a nexus-created session.\n"
   },
   "security": [
@@ -17,7 +17,7 @@
         "tags": ["voices"],
         "operationId": "listPronunciationSets",
         "summary": "List pronunciation sets",
-        "description": "Lists family heads by ascending opaque `id`. The cursor is the canonical\nunpadded base64 form of the last returned id; a cursor that does not\nre-encode to the same bytes is rejected rather than silently moving the\npage. `limit` is 1-100 and defaults to 50. `has_more` is true only when a\nfurther page exists, and `next_cursor` is then that page's opaque cursor.\n\nEvery returned `status` is `draft`: this deployment only stores immutable\ndraft revisions, so a listed head never claims publication, execution or\nTTS qualification. An empty collection is a successful 200 with no\nentries, never a 404.\n",
+        "description": "Lists family heads by ascending opaque `id`. The cursor is the canonical\nunpadded base64 form of the last returned id; a cursor that does not\nre-encode to the same bytes is rejected rather than silently moving the\npage. `limit` is 1-100 and defaults to 50. `has_more` is true only when a\nfurther page exists, and `next_cursor` is then that page's opaque cursor.\n\n`head_revision` is the family's latest immutable revision (the allocation\nhead). `status` is computed from the publication ledger for that exact\nrevision: `published` only when a `speech_publications` row exists for\n`(id, head_revision)`, otherwise `draft`. A draft appended above a\npublished revision therefore lists with the new revision and `draft`; the\nolder published revision keeps its own published fact and stays readable\nthrough the fixed-revision GET. `retired` is reserved for a later\nretirement command and is not produced by this deployment. An empty\ncollection is a successful 200 with no entries, never a 404.\n",
         "parameters": [
           {
             "$ref": "#/components/parameters/Cursor"
@@ -117,7 +117,7 @@
         "tags": ["voices"],
         "operationId": "createPronunciationRevision",
         "summary": "Create an immutable pronunciation-set revision",
-        "description": "Omit `id` to create a new pronunciation set. Supply `id` and\n`expected_revision` to append a revision to an existing set. Entries are\nvalidated and stored as an immutable **draft** revision; an existing\nrevision is never modified and this operation never publishes, selects a\ndefault, executes TTS or qualifies pronunciation.\n\n`publish` defaults to `false` and describes draft creation only. A\n`publish: true` request is not supported by this operation and returns\n422 `pronunciation_publication_not_supported`; publication has its own\ncommand. The returned `status` is always `draft`.\n\nWith an `Idempotency-Key`, the same canonical intent replays the original\nrevision and a different intent returns 409\n`pronunciation_idempotency_conflict`. Without a key, a submission whose\ncommit cannot be confirmed returns 409 `pronunciation_outcome_unknown`\nbecause a resubmission would be a new intent. An append whose\n`expected_revision` is not the current allocation head returns 409\n`pronunciation_configuration_changed`.\n",
+        "description": "Omit `id` to create a new pronunciation set. Supply `id` and\n`expected_revision` to append a revision to an existing set. Entries are\nvalidated and stored as one immutable revision; an existing revision is\nnever modified and this operation never selects a default, executes TTS or\nqualifies pronunciation.\n\n`publish` defaults to `true` and is atomic: the same transaction writes\nthe immutable revision, its `speech_publications` row and the selected\n`speech_publication_heads` row. A failure anywhere rolls all of them back,\nso a client can never observe a publication without its revision or a\npublished-status revision without a ledger row. `publish: false` writes\nonly the revision and leaves it a private draft. The returned `status` is\n`published` for the atomic case and `draft` otherwise.\n\nA deployment that has not configured the atomic-publication identity\nanswers 422 `pronunciation_publication_not_supported` for a request that\ndid not already commit; a keyed replay of a committed publication still\nreturns 200. Send `publish: false` for draft-only use there.\n\nWith an `Idempotency-Key`, the same canonical intent replays the original\nrevision with 200 and a different intent returns 409\n`pronunciation_idempotency_conflict`. Without a key, a submission whose\ncommit cannot be confirmed returns 409 `pronunciation_outcome_unknown`\nbecause a resubmission would be a new intent. An append whose\n`expected_revision` is not the current allocation head returns 409\n`pronunciation_configuration_changed`; the compare-and-swap happens under\nthe family head lock in the same transaction, never as a MAX aggregate,\nand exactly one concurrent publisher wins.\n",
         "parameters": [
           {
             "$ref": "#/components/parameters/XRequestId"
@@ -138,7 +138,22 @@
         },
         "responses": {
           "201": {
-            "description": "Immutable pronunciation draft revision created or replayed.",
+            "description": "Immutable pronunciation revision created (published when requested).",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_voice_resource_schema_json_PronunciationRevision"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Idempotent replay of the same original intent.",
             "headers": {
               "X-Request-ID": {
                 "$ref": "#/components/headers/XRequestId"
@@ -871,8 +886,8 @@
           },
           "publish": {
             "type": "boolean",
-            "default": false,
-            "description": "Draft semantics only. Omission and `false` both create an immutable draft revision; `true` is rejected with 422 `pronunciation_publication_not_supported`. This field never publishes a set, selects a default, or qualifies pronunciation."
+            "default": true,
+            "description": "Atomic publication. `true` (the default) writes the immutable revision, its publication ledger row and the selected head in one transaction; `false` writes only an immutable draft revision. A deployment without the publication identity answers 422 `pronunciation_publication_not_supported` instead of writing. This field never selects a default, executes TTS or qualifies pronunciation."
           }
         }
       },
@@ -1180,7 +1195,7 @@
         }
       },
       "PronunciationPublicationNotSupported": {
-        "description": "This operation creates immutable drafts only. `publish: true` is a publication command this deployment does not implement; the request did not change any revision and repeating it unchanged will not succeed.",
+        "description": "This deployment has not configured the atomic-publication identity and this request did not match a committed command receipt. No new revision, publication row or head was created. If the same Idempotency-Key already committed a publication, repeating it returns 200 with the original revision instead of this error. Send `publish: false` for a draft, or configure the publication role and repeat the request unchanged.",
         "headers": {
           "Cache-Control": {
             "required": true,

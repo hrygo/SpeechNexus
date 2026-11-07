@@ -1,4 +1,9 @@
-"""Immutable pronunciation drafts; no publication or execution authority."""
+"""Immutable pronunciation revisions and their publication identity.
+
+A revision is written once. ``publish`` selects whether the same transaction also
+appends the publication ledger row and advances the selected head; a revision
+without a publication stays a private draft.
+"""
 
 from __future__ import annotations
 
@@ -26,6 +31,22 @@ def document_digest(raw: bytes) -> str:
     return "sha256:" + hashlib.sha256(raw).hexdigest()
 
 
+def revision_id_for(pronunciation_id: str, revision: str) -> str:
+    """The stable publication identity of one immutable pronunciation revision.
+
+    ``speech_publications`` needs a revision identity that is never generated
+    twice for the same revision. The pronunciation table deliberately has no
+    separate mutable identity column, so the value is derived from the fixed
+    pair; publishing the same revision again computes the same identity.
+    """
+    identifier(pronunciation_id)
+    revision_number(revision)
+    digest = hashlib.sha256(
+        f"pronunciation-revision\0{pronunciation_id}\0{revision}".encode()
+    ).hexdigest()
+    return "prv-" + digest
+
+
 class PronunciationUnavailableError(Exception):
     """Original facts cannot currently be established; never proof of absence."""
 
@@ -34,6 +55,7 @@ class PronunciationUnavailableError(Exception):
 class CreatePronunciationDraft:
     pronunciation_id: str | None
     expected_revision: str | None
+    publish: bool
     key_digest: str
     intent: bytes
     definition: bytes
@@ -41,6 +63,8 @@ class CreatePronunciationDraft:
     def __post_init__(self) -> None:
         if (self.pronunciation_id is None) != (self.expected_revision is None):
             raise ValueError("Append needs the original family and revision")
+        if type(self.publish) is not bool:
+            raise ValueError("Invalid pronunciation publication intent")
         if self.pronunciation_id is not None:
             identifier(self.pronunciation_id)
         if self.expected_revision is not None:
@@ -61,6 +85,7 @@ class PronunciationDraft:
     revision: str
     definition: bytes
     created_at_us: int
+    published: bool = False
 
     def __post_init__(self) -> None:
         identifier(self.pronunciation_id)
@@ -68,16 +93,19 @@ class PronunciationDraft:
         document_digest(self.definition)
         if type(self.created_at_us) is not int or not 0 <= self.created_at_us <= 253402300799999999:
             raise ValueError("Invalid pronunciation observation time")
+        if type(self.published) is not bool:
+            raise ValueError("Invalid pronunciation publication state")
 
 
 @dataclass(frozen=True, slots=True)
 class PronunciationSummary:
-    """One family head with its immutable draft facts; never a publication claim."""
+    """One family head with its immutable facts and that exact revision's state."""
 
     pronunciation_id: str
     head_revision: str
     encoding: PronunciationEncoding
     entry_count: int
+    published: bool
 
     def __post_init__(self) -> None:
         identifier(self.pronunciation_id)
@@ -89,6 +117,8 @@ class PronunciationSummary:
             or not 1 <= self.entry_count <= MAX_PRONUNCIATION_ENTRIES
         ):
             raise ValueError("Invalid pronunciation entry count")
+        if type(self.published) is not bool:
+            raise ValueError("Invalid pronunciation publication state")
 
 
 @dataclass(frozen=True, slots=True)

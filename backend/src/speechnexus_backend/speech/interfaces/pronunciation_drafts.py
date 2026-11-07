@@ -1,4 +1,4 @@
-"""Source-validated private entry; public routes and publication remain separate."""
+"""Source-validated entry: canonical intent, immutable revision, publication state."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from speechnexus_backend.speech.application.pronunciation_documents import (
     decode_document,
     draft_parts,
     encode_document,
+    normalize_publish,
 )
 from speechnexus_backend.speech.domain.pronunciation_drafts import (
     CreatePronunciationDraft,
@@ -22,18 +23,19 @@ from speechnexus_backend.speech.domain.pronunciation_drafts import (
 
 
 def summary_to_wire(summary: PronunciationSummary) -> dict[str, Any]:
-    """One public family head: the immutable draft facts, never a publication.
+    """One public family head and the publication state of that exact revision.
 
-    D2 keeps this slice on immutable drafts, so the declared status is the fixed
-    literal ``draft``; a later publication slice replaces it only by publishing a
-    revision, never by rewriting this projection.
+    ``head_revision`` is the family's latest immutable revision. ``status`` is
+    ``published`` only when that exact revision has a publication ledger row, so
+    a draft appended above a published revision lists as a draft and never
+    borrows the older revision's publication.
     """
     return {
         "id": summary.pronunciation_id,
         "head_revision": summary.head_revision,
         "encoding": summary.encoding,
         "entry_count": summary.entry_count,
-        "status": "draft",
+        "status": "published" if summary.published else "draft",
     }
 
 
@@ -45,7 +47,7 @@ def draft_to_wire(draft: PronunciationDraft) -> dict[str, Any]:
         "id": draft.pronunciation_id,
         "revision": draft.revision,
         "object": "nexus.pronunciation_revision",
-        "status": "draft",
+        "status": "published" if draft.published else "draft",
         "created_at": timestamp.isoformat(timespec="microseconds").replace("+00:00", "Z"),
     }
     parse("PronunciationRevision", wire)
@@ -60,8 +62,10 @@ def prepare_pronunciation_draft(
             not isinstance(idempotency_key, str) or not 8 <= len(idempotency_key) <= 128
         ):
             raise ValueError
-        intent = encode_document(request)
-        pronunciation_id, expected, definition = draft_parts(decode_document(intent))
+        # The canonical intent always carries the declared publication default so
+        # omission and an explicit value name one command, never two digests.
+        intent = encode_document(normalize_publish(request))
+        pronunciation_id, expected, publish, definition = draft_parts(decode_document(intent))
         # Automatic family IDs are allocated only after winning the persistent
         # command key, never included as freshly generated replay intent.
         draft_to_wire(PronunciationDraft(pronunciation_id or "pron-synthetic", "1", definition, 0))
@@ -69,6 +73,7 @@ def prepare_pronunciation_draft(
         return CreatePronunciationDraft(
             pronunciation_id,
             expected,
+            publish,
             document_digest(b"pronunciation-create\0" + key.encode("utf-8")),
             intent,
             definition,

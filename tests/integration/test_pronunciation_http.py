@@ -106,6 +106,8 @@ def read_db() -> Iterator[ReadDatabase]:
         admin.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"')
         admin.execute(f'GRANT SELECT ON "{schema}".speech_pronunciation_revisions TO "{role}"')
         admin.execute(f'GRANT SELECT ON "{schema}".speech_pronunciation_families TO "{role}"')
+        # The fixed revision's status is derived from the publication ledger.
+        admin.execute(f'GRANT SELECT ON "{schema}".speech_publications TO "{role}"')
         # Synthetic fixture creation uses the existing private port as the
         # isolated test administrator, never the product's read-only identity.
         with speech_pool(url, schema=schema) as seed_pool:

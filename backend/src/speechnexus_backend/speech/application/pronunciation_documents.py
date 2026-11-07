@@ -1,4 +1,4 @@
-"""Canonical source-validated draft intents, with no default injection."""
+"""Canonical source-validated intents with the declared publication default."""
 
 from __future__ import annotations
 
@@ -34,20 +34,37 @@ def decode_document(raw: bytes) -> dict[str, Any]:
         raise ValueError("Invalid stored pronunciation document") from None
 
 
-def draft_parts(value: Any) -> tuple[str | None, str | None, bytes]:
+def normalize_publish(value: dict[str, Any]) -> dict[str, Any]:
+    """Return the canonical intent with the contract's publication default applied.
+
+    The source declares ``publish`` default ``true``. The canonical intent always
+    carries an explicit boolean so a keyed replay and an omitted field name the
+    same command instead of producing two different digests.
+    """
+    normalized = dict(value)
+    normalized["publish"] = value.get("publish", True)
+    return normalized
+
+
+def draft_parts(value: Any) -> tuple[str | None, str | None, bool, bytes]:
     parse("PronunciationCreateRequest", value)
-    # This private draft port selects only an explicit existing source branch.
-    # Omission still means the source's published default; do not reinterpret it.
-    if value.get("publish") is not False:
-        raise ValueError("Explicit pronunciation draft intent required")
+    publish = value.get("publish", True)
+    if type(publish) is not bool:
+        raise ValueError("Invalid pronunciation publication intent")
     return (
         value.get("id"),
         value.get("expected_revision"),
+        publish,
         encode_document({"encoding": value["encoding"], "entries": value["entries"]}),
     )
 
 
 def check_command(command: CreatePronunciationDraft) -> None:
     selected = draft_parts(decode_document(command.intent))
-    if selected != (command.pronunciation_id, command.expected_revision, command.definition):
+    if selected != (
+        command.pronunciation_id,
+        command.expected_revision,
+        command.publish,
+        command.definition,
+    ):
         raise ValueError("Inconsistent pronunciation draft command")

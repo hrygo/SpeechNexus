@@ -1,4 +1,13 @@
-"""A-owned immutable pronunciation draft storage and explicit provisioning only."""
+"""A-owned immutable pronunciation storage and explicit provisioning only.
+
+Three identities are provisioned from declarations here, never by startup DDL:
+
+* the read identity selects the two immutable fact tables and the publication
+  ledger it needs to compute ``status``;
+* the draft writer may only append revisions and advance its two pointers;
+* the publication identity may additionally append the publication ledger and
+  advance the narrow head and catalogue-version columns in the same transaction.
+"""
 
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 
@@ -58,4 +67,35 @@ def pronunciation_draft_grants(schema: str, role: str) -> tuple[str, ...]:
         f"GRANT UPDATE (latest_revision) ON {prefix}speech_pronunciation_families TO {target}",
         f"GRANT UPDATE (command_state, pronunciation_id, revision, error_code) "
         f"ON {prefix}speech_pronunciation_commands TO {target}",
+    )
+
+
+def pronunciation_publication_grants(schema: str, role: str) -> tuple[str, ...]:
+    """The atomic-publication identity: revision + ledger + head in one transaction.
+
+    It is a superset of the draft writer only because one transaction must write
+    both facts. It never receives DELETE, table-level UPDATE, REFERENCES or
+    TRIGGER, and the publication ledger stays INSERT-only.
+    """
+    schema, role = checked_sql_name(schema), checked_sql_name(role)
+    prefix, target = f'"{schema}".', f'"{role}"'
+    return (
+        f'GRANT USAGE ON SCHEMA "{schema}" TO {target}',
+        *(
+            f"GRANT SELECT, INSERT ON {prefix}{table} TO {target}"
+            for table in (
+                "speech_pronunciation_families",
+                "speech_pronunciation_revisions",
+                "speech_pronunciation_commands",
+                "speech_publications",
+                "speech_publication_heads",
+            )
+        ),
+        f"GRANT UPDATE (latest_revision) ON {prefix}speech_pronunciation_families TO {target}",
+        f"GRANT UPDATE (command_state, pronunciation_id, revision, error_code) "
+        f"ON {prefix}speech_pronunciation_commands TO {target}",
+        f"GRANT UPDATE (revision, revision_id, updated_at_us) "
+        f"ON {prefix}speech_publication_heads TO {target}",
+        f"GRANT SELECT, UPDATE (revision, generated_at_us) "
+        f"ON {prefix}speech_catalog_state TO {target}",
     )

@@ -172,6 +172,21 @@ binding 历史、`speech_publications` 与证据表。未配置时 GET 返回
 `speechnexus-record-voice-evidence` 写入证据。退休角色需在 0047 后重跑
 `binding_lifecycle_grants`，否则生命周期启动校验会拒绝旧授权。
 
+发音集合使用三个独立的非 owner 身份。读取身份设置
+`SPEECHNEXUS_PRONUNCIATION_READER_DATABASE_URL`，仅授予
+`speech_pronunciation_families`、`speech_pronunciation_revisions` 与
+`speech_publications` 的 SELECT；草稿写入身份设置
+`SPEECHNEXUS_PRONUNCIATION_WRITER_DATABASE_URL`，由
+`pronunciation_draft_grants(schema, role)` 授予草稿最小权限；原子发布身份设置
+`SPEECHNEXUS_PRONUNCIATION_PUBLISHER_DATABASE_URL`，由
+`pronunciation_publication_grants(schema, role)` 授予草稿表、发布账本、选中 head
+和 `speech_catalog_state` 的列级权限。发布身份不得复用带 DELETE 的
+`publication_grants`；启动会校验列级权限并拒绝更宽的角色。未配置发布身份时
+新的 `publish: true` 请求（无已提交回执）返回 422
+`pronunciation_publication_not_supported` 且不写入；已提交发布的重放仍以
+200 从命令回执恢复，`publish: false` 仍可写草稿。只配置发布身份时草稿写入也可
+用，因为其授权是草稿 writer 的超集。
+
 asr/tts 的原子创建还需要独立的 admission 角色：先应用当前迁移，再用
 `public_job_admission_grants(schema, role)` 授予列级读写（无 DELETE），设置
 `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL`，并确保它与

@@ -62,7 +62,7 @@ def test_duplicate_graphemes_and_unicode_material_are_preserved_without_priority
     assert decode_document(command.definition)["entries"] == entries
 
 
-def test_source_published_default_is_still_valid_but_not_selected_by_private_draft_port() -> None:
+def test_source_publish_default_is_selected_and_explicit_draft_is_preserved() -> None:
     for value in (None, True):
         request = pronunciation_request()
         if value is None:
@@ -71,9 +71,13 @@ def test_source_published_default_is_still_valid_but_not_selected_by_private_dra
             request["publish"] = value
         before = copy.deepcopy(request)
         assert parse("PronunciationCreateRequest", request) is request
-        with pytest.raises(ContractValidationError, match=r"^Invalid pronunciation draft intent$"):
-            prepare_pronunciation_draft(request, "original-key")
+        command = prepare_pronunciation_draft(request, "original-key")
+        assert command.publish is True
+        assert decode_document(command.intent)["publish"] is True
         assert request == before
+    draft = prepare_pronunciation_draft(pronunciation_request(publish=False), "original-key")
+    assert draft.publish is False
+    assert decode_document(draft.intent)["publish"] is False
 
 
 def test_append_uses_exact_opaque_revision_and_pinned_family() -> None:
@@ -124,6 +128,8 @@ def test_projection_is_source_valid_draft_only_and_does_not_alias_stored_materia
     wire = draft_to_wire(record)
     assert parse("PronunciationRevision", wire) is wire
     assert wire["status"] == "draft" and wire["created_at"].endswith(".123456Z")
+    published = draft_to_wire(replace(record, published=True))
+    assert published["status"] == "published" and parse("PronunciationRevision", published)
     assert not {"intent", "request_digest", "key_digest"}.intersection(wire)
     wire["entries"][0]["phonemes"] = "changed client copy"
     assert draft_to_wire(record)["entries"][0]["phonemes"] != "changed client copy"

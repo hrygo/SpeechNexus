@@ -25,6 +25,7 @@ from speechnexus_backend.speech.infrastructure.pronunciation_drafts_sql import (
     create_draft,
     list_summaries,
     read_draft,
+    read_published_draft,
     recover_draft,
 )
 
@@ -56,10 +57,20 @@ class _Cursor:
 
 
 class PostgresPronunciationDrafts:
-    def __init__(self, pool: SpeechPool, *, timeout_seconds: float = 3) -> None:
+    def __init__(
+        self,
+        pool: SpeechPool,
+        *,
+        timeout_seconds: float = 3,
+        include_publication: bool = False,
+    ) -> None:
         if type(timeout_seconds) not in (int, float) or not 0 < timeout_seconds <= 30:
             raise ValueError("Pronunciation transactions require bounded deadlines")
+        # The reader identity holds SELECT on the publication ledger and derives
+        # each revision's status from it; the draft and publisher identities do
+        # not need that fact to create or replay their own command.
         self._pool, self._timeout = pool, timeout_seconds
+        self._include_publication = include_publication
 
     def _run[T](self, operation: Callable[[_Cursor], T], *, read_only: bool = False) -> T:
         deadline = time.monotonic() + self._timeout
@@ -103,9 +114,8 @@ class PostgresPronunciationDrafts:
     def get(self, pronunciation_id: str, revision: str) -> PronunciationDraft | None:
         identifier(pronunciation_id)
         revision_number(revision)
-        return self._run(
-            lambda cursor: read_draft(cursor, pronunciation_id, revision), read_only=True
-        )
+        read = read_published_draft if self._include_publication else read_draft
+        return self._run(lambda cursor: read(cursor, pronunciation_id, revision), read_only=True)
 
     def list_sets(self, *, limit: int, after: str | None) -> PronunciationSetPage:
         if type(limit) is not int or not 1 <= limit <= 100:
@@ -121,6 +131,7 @@ class PostgresPronunciationDrafts:
                 row["head_revision"],
                 row["encoding"],
                 row["entry_count"],
+                row["published"],
             )
             for row in rows[:limit]
         )

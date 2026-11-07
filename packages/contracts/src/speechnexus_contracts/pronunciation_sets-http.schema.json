@@ -90,6 +90,13 @@
           },
           "json": true
         },
+        "200": {
+          "schema": "HttpResponse_createPronunciationRevision_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
         "400": {
           "schema": "HttpResponse_createPronunciationRevision_400",
           "headers": {
@@ -171,6 +178,7 @@
     "HttpResponse_listPronunciationSets_503",
     "HttpRequest_createPronunciationRevision",
     "HttpResponse_createPronunciationRevision_201",
+    "HttpResponse_createPronunciationRevision_200",
     "HttpResponse_createPronunciationRevision_400",
     "HttpResponse_createPronunciationRevision_401",
     "HttpResponse_createPronunciationRevision_403",
@@ -764,8 +772,8 @@
         },
         "publish": {
           "type": "boolean",
-          "default": false,
-          "description": "Draft semantics only. Omission and `false` both create an immutable draft revision; `true` is rejected with 422 `pronunciation_publication_not_supported`. This field never publishes a set, selects a default, or qualifies pronunciation."
+          "default": true,
+          "description": "Atomic publication. `true` (the default) writes the immutable revision, its publication ledger row and the selected head in one transaction; `false` writes only an immutable draft revision. A deployment without the publication identity answers 422 `pronunciation_publication_not_supported` instead of writing. This field never selects a default, executes TTS or qualifies pronunciation."
         }
       }
     },
@@ -1177,6 +1185,26 @@
       "required": ["body"]
     },
     "HttpResponse_createPronunciationRevision_201": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_PronunciationRevision"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createPronunciationRevision_200": {
       "type": "object",
       "additionalProperties": false,
       "properties": {

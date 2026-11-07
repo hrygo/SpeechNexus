@@ -1018,20 +1018,45 @@ def _closed_tagged_request_extension(
     return False
 
 
-class _DefaultExemption(NamedTuple):
-    """Request-body defaults are non-load-bearing on a permanent placeholder.
+# Exact request-default promotions. Each entry is keyed by the operation, the
+# request media type and the request property, and requires the named baseline
+# error code plus the exact old -> new value. There is deliberately no wildcard:
+# a declared capability gap on an operation, a different media type or a
+# different property does not let another default change through. New entries
+# must add a matching negative case and update the frozen assertion in
+# tests/contract/test_http_contract_changes.py.
+_DEFAULT_PROMOTIONS: dict[tuple[str, str, str, str], tuple[str, object, object]] = {
+    (
+        "/v1/nexus/pronunciation-sets",
+        "post",
+        "application/json",
+        "/properties/publish",
+    ): ("pronunciation_publication_not_supported", False, True),
+}
 
-    The proof is the frozen baseline itself: an operation whose 503 is exactly
-    the shared placeholder component and whose declared ``error.code`` is the
-    ``operation_not_implemented`` literal. The baseline may also declare 2xx
-    responses, but a deployment that answers this placeholder never serves them:
-    the operation is declared permanently unimplemented and is unreachable, so no
-    consumer can depend on one of its request defaults. An operation that already
-    shipped, or whose 503 is an inline retryable replacement, does not qualify.
+
+class _DefaultExemption(NamedTuple):
+    """Request-body defaults that the frozen baseline declares non-load-bearing.
+
+    Two independent baseline proofs qualify:
+
+    * a permanent placeholder: the 503 is exactly the shared placeholder
+      component and its declared ``error.code`` is the
+      ``operation_not_implemented`` literal. The operation is unreachable, so no
+      consumer can depend on one of its request defaults;
+    * an exact declared capability promotion: ``capability_defaults`` maps one
+      full request property pointer to its expected old and new value, and only
+      when the baseline operation declares the named ``*_not_supported`` code.
+      A different field, a different operation or the reverse direction is still
+      an issue.
+
+    An operation that already shipped with a default and never declared the
+    capability unsupported does not qualify.
     """
 
     notices: list[str]
     permanent_placeholder: bool
+    capability_defaults: Mapping[str, tuple[object, object]]
 
 
 def _baseline_permanent_placeholder(
@@ -1050,6 +1075,94 @@ def _baseline_permanent_placeholder(
     if media is None or "schema" not in media:
         return False
     return _declared_error_codes(media["schema"], side) == {_PLACEHOLDER_ERROR_CODE}
+
+
+def _response_schema(
+    document: Mapping[str, Any],
+    path_name: str,
+    method: str,
+    status: str,
+    side: _SchemaSide,
+) -> Mapping[str, Any] | None:
+    """Resolve one declared response body schema, including a local component ref."""
+    response = _raw_response(document, path_name, method, status)
+    if response is None:
+        return None
+    ref = response.get("$ref")
+    definition = (
+        _mapping(_resolve_local_pointer(document, ref[1:]))
+        if isinstance(ref, str) and ref.startswith("#")
+        else response
+    )
+    if definition is None:
+        return None
+    content = _mapping(definition.get("content"))
+    if content is None:
+        return None
+    media = _mapping(content.get("application/json"))
+    if media is None:
+        return None
+    return _mapping(media.get("schema"))
+
+
+def _declares_error_code(
+    document: Mapping[str, Any],
+    path_name: str,
+    method: str,
+    side: _SchemaSide,
+    expected: str,
+) -> bool:
+    """Whether a declared 4xx response body names one exact ``error.code``."""
+    paths = _mapping(document.get("paths"))
+    if paths is None:
+        return False
+    path_item = _mapping(paths.get(path_name))
+    if path_item is None:
+        return False
+    operation = _mapping(path_item.get(method))
+    if operation is None:
+        return False
+    responses = _mapping(operation.get("responses"))
+    if responses is None:
+        return False
+    for status in responses:
+        if not (isinstance(status, str) and status.startswith("4")):
+            continue
+        schema = _response_schema(document, path_name, method, status, side)
+        if schema is None:
+            continue
+        codes = _declared_error_codes(schema, side)
+        if codes is not None and expected in codes:
+            return True
+    return False
+
+
+def _baseline_default_promotions(
+    document: Mapping[str, Any],
+    path_name: str,
+    method: str,
+    side: _SchemaSide,
+    operation_pointer: str,
+    media_type: str,
+) -> dict[str, tuple[object, object]]:
+    """Exact whitelist entries whose baseline error code is actually declared.
+
+    The code check is not the exemption itself: the pointer, old value and new
+    value must also match in :func:`_compare_schema`. This keeps a declared
+    capability gap from exempting an unrelated default on the same operation.
+    """
+    promotions: dict[str, tuple[object, object]] = {}
+    for (spec_path, spec_method, spec_media, suffix), (
+        code,
+        old,
+        new,
+    ) in _DEFAULT_PROMOTIONS.items():
+        if (spec_path, spec_method) != (path_name, method) or spec_media != media_type:
+            continue
+        if not _declares_error_code(document, path_name, method, side, code):
+            continue
+        promotions[f"{operation_pointer}/requestBody/{media_type}{suffix}"] = (old, new)
+    return promotions
 
 
 def _compare_schema(
@@ -1137,7 +1250,24 @@ def _compare_schema(
             f"to {current_schema.get('default')!r}"
         )
     if default_change is not None:
-        if direction == "request" and exemption is not None and exemption.permanent_placeholder:
+        promotion = None
+        if direction == "request" and exemption is not None:
+            promotion = exemption.capability_defaults.get(pointer)
+        if promotion is not None:
+            assert exemption is not None
+            old_value, new_value = promotion
+            if _same_json_tree(
+                base_schema.get("default"), old_value, numeric_equivalent=True
+            ) and _same_json_tree(
+                current_schema.get("default"), new_value, numeric_equivalent=True
+            ):
+                exemption.notices.append(
+                    f"{pointer}: {default_change}; accepted by the exact declared capability "
+                    "promotion (baseline *_not_supported code, expected old and new values)"
+                )
+            else:
+                _issue(issues, pointer, default_change)
+        elif direction == "request" and exemption is not None and exemption.permanent_placeholder:
             exemption.notices.append(
                 f"{pointer}: {default_change}; accepted because the baseline operation's "
                 f"503 is the permanent {_PLACEHOLDER_ERROR_CODE} placeholder"
@@ -1503,6 +1633,14 @@ def _compare_openapi(
                         request_exemption = _DefaultExemption(
                             collected,
                             _baseline_permanent_placeholder(base, path_name, method, base_side),
+                            _baseline_default_promotions(
+                                base,
+                                path_name,
+                                method,
+                                base_side,
+                                operation_pointer,
+                                media_type,
+                            ),
                         )
                         _compare_schema(
                             (_mapping(base_media) or {}).get("schema", {}),

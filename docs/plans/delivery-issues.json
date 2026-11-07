@@ -776,10 +776,10 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "CustomVoice 文件执行和声音工作台组件不证明 VoiceDesign/Base 资格；固定修订预览（#495）、设计/克隆生成 Job 执行消费者（#512）、校验目标锁内重验及同键重放（#521）与不可达拒绝原因清理（#531）已合入；提交后回读失败、发布前 kind 校验与契约 500 描述缺口已修正（#534）；公开 Job intent 已迁入独立表并切换读路径（#536，PR #539）；Public Job 创建事务内完成原子准入（#537，PR #542）已合入，`operation_id` 与派发联接对齐；生产派发 planner、装配与过期结算（#538，PR #544）已合入，worker 从 exit 2 变为真实领取，只领完整命令且已准入的 Job，过期须取得网关契约 404 才结算并释放，取消结算复用 LeaseService 归还容量。",
-      "integration": "设计引擎、固定材料、节点预算和工作台使用同版制品；生产派发装配已可用（#544），gateway 设计 stage 与 node 模板已合入（#543），克隆泳道在 PR #545，真实 GPU 证据仍待补（#529）；内容删除尚未覆盖 speech_job_intents（#540）。",
-      "verification": "组件和隔离证据各有边界；#536 的迁移、写路径与降级守卫有隔离 PG 证据；#537 有真实 PG 的并发单次预留、注入回滚 74 表全等与 429 零写入证据；#544 有真实 PG 的 claim/submit/settle、过期四情形与取消释放回基线证据；真实引擎端到端与 intent 删除后的 retry 语义仍待 #529/#540 补齐；完整验收按对应 PRD 的验收条件取证。",
-      "gap": "发布与能力一致性（#519）在审（PR #546，能力账本无生产者前 fail-closed）、gateway 克隆泳道与真实 GPU 证据（#529）、内容删除覆盖 speech_job_intents（#540）仍开放。",
+      "implementation": "CustomVoice 文件执行和声音工作台组件不证明 VoiceDesign/Base 资格；固定修订预览（#495）、设计/克隆生成 Job 执行消费者（#512）、校验目标锁内重验及同键重放（#521）与不可达拒绝原因清理（#531）已合入；提交后回读失败、发布前 kind 校验与契约 500 描述缺口已修正（#534）；公开 Job intent 已迁入独立表并切换读路径（#536，PR #539）；Public Job 创建事务内完成原子准入（#537，PR #542）已合入，`operation_id` 与派发联接对齐；生产派发 planner、装配与过期结算（#538，PR #544）已合入；执行网关 VoiceDesign 泳道结构钉定变体与独立预热预算（#543）、Base 克隆泳道严格 WAV 校验与结构拒绝落库（#545）已合入，并按 MegaCube 真实引擎实测把 `auto` 语言、seed 不可逐字节复现与 `ref_text` 错配语义对齐到实现与文档（#550）；`voice_validation` 校验 Job 已可准入可派发（#553，复用既有 `voiceclone` 命令），执行期写出 `validation_report` 且质量项由实测阈值判定；能力账本与发布入口已合入（#546），但账本目前靠显式 recorder 写入，自动入账与扫描自愈在 #555。",
+      "integration": "设计引擎、固定材料、节点预算和工作台使用同版制品；生产派发装配已可用（#544），gateway 各声音泳道已合入（#543/#545/#550），真实 GPU 证据仍待补（#529）；默认部署没有 voice 消费者（`dispatch_kinds` 默认 `asr,tts`），校验 Job 只会入库 `pending` 不产生报告；内容删除尚未覆盖 `speech_job_intents`（#540，依赖尚未存在的公开内容删除路由）。",
+      "verification": "组件和隔离证据各有边界；#536 的迁移、写路径与降级守卫有隔离 PG 证据；#537 有真实 PG 的并发单次预留、注入回滚 74 表全等与 429 零写入证据；#544 有真实 PG 的 claim/submit/settle、过期四情形与取消释放回基线证据；#553 有真实 PG 的校验准入/派发/报告产出与 1 ms 静音拒绝证据，并以按文档最小授权的独立 worker 角色复验；#550 的语言与文档口径以 MegaCube 真实引擎探测为据，但同类事实未在该机复测；真实引擎端到端与 intent 删除后的 retry 语义仍待 #529/#540 补齐；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "声音预览/克隆的真实 GPU 端到端与制品固定（#529）、校验报告到账本的自动入账与自愈（#555）、发布侧在默认部署无消费者前仍 fail-closed、内容删除覆盖 `speech_job_intents`（#540）仍开放。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/voice-resource.schema.json",
@@ -841,7 +841,10 @@
         536,
         537,
         538,
-        540
+        540,
+        549,
+        551,
+        555
       ]
     },
     {
@@ -918,10 +921,10 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "发音资源已有私有不可变草稿及可选固定 revision 读取；公开列表与修订创建已合入（#484，PR #525），发布仍待交付（#520）。",
-      "integration": "公开 Job 创建对发音 revision 仅检查记录存在，未核验发布或退役；完整生命周期与语音执行消费者接线仍须交付和验收。",
-      "verification": "草稿及读取组件证据不代表发音资源发布、激活或回滚已验收。",
-      "gap": "公开 Job 创建对发音 revision 仅检查记录存在，未核验发布或退役；完整生命周期与语音执行消费者接线仍须交付和验收。 草稿及读取组件证据不代表发音资源发布、激活或回滚已验收。",
+      "implementation": "发音资源已有私有不可变草稿及可选固定 revision 读取；公开列表与修订创建已合入（#484，PR #525）；原子发布已合入（#520，PR #552）：`publish` 默认 `true`，revision、发布账本与选中 head 在同一事务内写入，发布身份为独立窄授权角色并在启动期做列级权限校验，`status` 只认精确 head revision 的账本行，并发单赢家、同 key 重放 200。",
+      "integration": "公开 Job 创建对发音 revision 仅检查记录存在，未核验发布或退役；语音执行消费者接线仍须交付和验收；移除 publisher 身份时先以 writer 只读 `recover`，命中已提交回执返回 200、无回执 422。",
+      "verification": "#552 有真实 PG 的原子回滚、过期 head、并发单赢家、权限越权拒绝与泄漏断言证据；草稿及读取组件证据不代表发音资源的执行侧消费与回滚已验收。",
+      "gap": "公开 Job 创建对发音 revision 仅检查记录存在、未核验发布或退役；语音执行消费者接线与回滚语义仍待交付。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/c8cda316e79c74539be10083ba3d4ffc27bd8fce/docs/components/pronunciation-drafts.md",

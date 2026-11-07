@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-08T00:09:27+08:00",
+  "fetched_at": "2026-11-08T03:56:36+08:00",
   "issues": [
     {
       "number": 336,
@@ -888,8 +888,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/520",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "发音集合的原子发布（publish: true）",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "enhancement"
@@ -1049,6 +1049,48 @@
         },
         {
           "name": "team:A"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/340"
+    },
+    {
+      "number": 549,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/549",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "发布角色启动校验漏检 REFERENCES/TRIGGER 与列级 INSERT",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "status:ready"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/340"
+    },
+    {
+      "number": 551,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/551",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "voice_validation 校验 Job 无法准入与派发，能力报告链第一环断裂",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "status:ready"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/340"
+    },
+    {
+      "number": 555,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/555",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "校验报告到能力账本的自动记录与扫描自愈",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "status:ready"
         }
       ],
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/340"

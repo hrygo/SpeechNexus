@@ -412,7 +412,9 @@ def _verify_publication_surface(connection: SpeechConnection, schema: str) -> No
     ).fetchone()
     if stray is not None:
         raise ValueError(
-            f"Voice publisher must not hold privileges on undeclared table {stray['name']}"
+            f"Voice publisher must not hold privileges on undeclared table {stray['name']}; "
+            "add it to _PUBLICATION_REQUIRED_SELECT with only its declared privileges, "
+            "or revoke the stray grant"
         )
 
 

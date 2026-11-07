@@ -642,6 +642,21 @@ MISGRANTED_PUBLISHER_PRIVILEGES = (
         "must not hold privileges on undeclared table speech_workspaces",
     ),
     (
+        "undeclared-table-trigger-only",
+        'GRANT TRIGGER ON "{schema}".speech_workspaces TO "{role}"',
+        "must not hold privileges on undeclared table speech_workspaces",
+    ),
+    (
+        "undeclared-table-delete-only",
+        'GRANT DELETE ON "{schema}".speech_workspaces TO "{role}"',
+        "must not hold privileges on undeclared table speech_workspaces",
+    ),
+    (
+        "undeclared-table-truncate-only",
+        'GRANT TRUNCATE ON "{schema}".speech_workspaces TO "{role}"',
+        "must not hold privileges on undeclared table speech_workspaces",
+    ),
+    (
         "schema-create",
         'GRANT CREATE ON SCHEMA "{schema}" TO "{role}"',
         "must not hold CREATE on schema",
@@ -678,6 +693,32 @@ def test_publisher_startup_rejects_each_misgranted_privilege(
         with pytest.raises(ValueError, match="Public Job writer startup rejected"):
             asyncio.run(open_and_close_for(app))
         assert app.state.job_runtime._publisher_pool is None
+    finally:
+        jobs_db.admin.execute(f'DROP OWNED BY "{role}"')
+        jobs_db.admin.execute(f'DROP ROLE IF EXISTS "{role}"')
+
+
+def test_undeclared_table_rejection_says_how_to_extend_the_whitelist(
+    jobs_db: JobSandbox,
+) -> None:
+    """An operator who legitimately grants a new table must learn the next action."""
+    role = "sn_pub_bad_" + uuid.uuid4().hex[:8]
+    dsn = make_conninfo(jobs_db.url, user=role, password=PASSWORD)
+    jobs_db.admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")
+    try:
+        for statement in voice_publication_grants(jobs_db.schema, role):
+            jobs_db.admin.execute(statement)
+        jobs_db.admin.execute(
+            f'GRANT INSERT ON "{jobs_db.schema}".speech_publication_retirements TO "{role}"'
+        )
+        with (
+            psycopg.connect(dsn, row_factory=dict_row) as connection,
+            pytest.raises(ValueError) as caught,
+        ):
+            _verify_publication_privileges(connection, jobs_db.schema)
+        message = str(caught.value)
+        assert "speech_publication_retirements" in message
+        assert "_PUBLICATION_REQUIRED_SELECT" in message
     finally:
         jobs_db.admin.execute(f'DROP OWNED BY "{role}"')
         jobs_db.admin.execute(f'DROP ROLE IF EXISTS "{role}"')

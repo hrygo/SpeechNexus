@@ -381,14 +381,51 @@ def _refuse_column_privileges(
             raise ValueError(f"Voice publisher must not hold column {privilege} on {table}")
 
 
+def _verify_publication_surface(connection: SpeechConnection, schema: str) -> None:
+    """The publisher's authority is exactly its declared tables (#549).
+
+    A stray table grant, a column grant on a foreign relation or the ability to
+    create schema objects is refused by name. This closes the gap where a table
+    outside the declared set -- the retirement ledger, for one -- could be written
+    while every declared-table assertion still held.
+    """
+    schema_row = connection.execute(
+        "SELECT pg_catalog.has_schema_privilege(CURRENT_USER, %s, 'USAGE') AS usable, "
+        "pg_catalog.has_schema_privilege(CURRENT_USER, %s, 'CREATE') AS creatable",
+        (schema, schema),
+    ).fetchone()
+    if schema_row is None or not schema_row["usable"]:
+        raise ValueError(f"Voice publisher lacks USAGE on schema {schema}")
+    if schema_row["creatable"]:
+        raise ValueError(f"Voice publisher must not hold CREATE on schema {schema}")
+    stray = connection.execute(
+        "SELECT c.relname AS name FROM pg_catalog.pg_class c "
+        "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
+        "WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m','f') "
+        "AND c.relname <> ALL(%s::text[]) AND ("
+        "pg_catalog.has_table_privilege(CURRENT_USER, c.oid, "
+        "'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR "
+        "pg_catalog.has_any_column_privilege(CURRENT_USER, c.oid, "
+        "'SELECT,INSERT,UPDATE,REFERENCES')) "
+        "ORDER BY c.relname LIMIT 1",
+        (schema, list(_PUBLICATION_REQUIRED_SELECT)),
+    ).fetchone()
+    if stray is not None:
+        raise ValueError(
+            f"Voice publisher must not hold privileges on undeclared table {stray['name']}"
+        )
+
+
 def _verify_publication_privileges(connection: SpeechConnection, schema: str) -> None:
     """The publisher may measure nothing and append only its own projection.
 
     The tables it may write still need REFERENCES and TRIGGER refused (#549): both
-    are whole-table grants even when the row itself is appended or narrowed. Column
-    authority is always read through the column helpers -- ``has_table_privilege``
-    stays false under a column-only grant and would turn the check into a no-op.
+    are whole-table grants even when the row itself is appended or narrowed. Table
+    and column authority are judged separately -- ``has_table_privilege`` stays
+    false under a column-only grant, so every column decision uses the column
+    helpers. Relations outside the declared set are refused as well.
     """
+    _verify_publication_surface(connection, schema)
     for table in _PUBLICATION_REQUIRED_SELECT:
         allowed = connection.execute(
             "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'SELECT') AS ok",
@@ -413,7 +450,7 @@ def _verify_publication_privileges(connection: SpeechConnection, schema: str) ->
     for table, columns in _PUBLICATION_UPDATE_COLUMNS.items():
         qualified = f"{schema}.{table}"
         _refuse_table_privileges(
-            connection, qualified, table, ("DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")
+            connection, qualified, table, ("UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")
         )
         if table not in _PUBLICATION_REQUIRED_INSERT:
             _refuse_column_privileges(connection, qualified, table, ("INSERT",))
@@ -429,7 +466,7 @@ def _verify_publication_privileges(connection: SpeechConnection, schema: str) ->
     for table in _PUBLICATION_READ_ONLY:
         qualified = f"{schema}.{table}"
         _refuse_table_privileges(
-            connection, qualified, table, ("DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")
+            connection, qualified, table, ("UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")
         )
         append = connection.execute(
             "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'INSERT') AS ok",

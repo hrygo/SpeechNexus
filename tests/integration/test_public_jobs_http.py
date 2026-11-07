@@ -560,19 +560,19 @@ async def open_and_close_for(app: Any) -> None:
         pass
 
 
-# Each row is an authority the publisher identity must never hold. The privileged
-# table is either a writable projection table (#549 gap 1: REFERENCES/TRIGGER were
-# never checked) or a read-only fact table (#549 gap 2: a column INSERT could forge
-# an evidence row). Every grant is applied to a real PostgreSQL role that otherwise
-# holds exactly the production publisher grants.
+# Each row is an authority the publisher identity must never hold. The grants cover
+# both gaps found in #549 (whole-table REFERENCES/TRIGGER on tables it may write, and
+# a column INSERT able to forge evidence), the read-only/append-only branches that
+# need independent rejection evidence, and the declared-surface scan: an undeclared
+# table such as the retirement ledger, a column grant on it, or CREATE on the schema.
 MISGRANTED_PUBLISHER_PRIVILEGES = (
     (
-        "table-references",
+        "writable-table-references",
         'GRANT REFERENCES ON "{schema}".speech_publication_heads TO "{role}"',
         "must not hold REFERENCES on speech_publication_heads",
     ),
     (
-        "table-trigger",
+        "writable-table-trigger",
         'GRANT TRIGGER ON "{schema}".speech_publication_heads TO "{role}"',
         "must not hold TRIGGER on speech_publication_heads",
     ),
@@ -590,6 +590,61 @@ MISGRANTED_PUBLISHER_PRIVILEGES = (
         "writable-column-references",
         'GRANT REFERENCES (revision) ON "{schema}".speech_catalog_state TO "{role}"',
         "must not hold column REFERENCES on speech_catalog_state",
+    ),
+    (
+        "read-only-table-update",
+        'GRANT UPDATE ON "{schema}".speech_voice_capability_evidence TO "{role}"',
+        "must not hold UPDATE on speech_voice_capability_evidence",
+    ),
+    (
+        "read-only-table-references",
+        'GRANT REFERENCES ON "{schema}".speech_voice_capability_evidence TO "{role}"',
+        "must not hold REFERENCES on speech_voice_capability_evidence",
+    ),
+    (
+        "read-only-table-trigger",
+        'GRANT TRIGGER ON "{schema}".speech_voice_capability_evidence TO "{role}"',
+        "must not hold TRIGGER on speech_voice_capability_evidence",
+    ),
+    (
+        "append-only-table-references",
+        'GRANT REFERENCES ON "{schema}".speech_publications TO "{role}"',
+        "must not hold REFERENCES on speech_publications",
+    ),
+    (
+        "append-only-table-trigger",
+        'GRANT TRIGGER ON "{schema}".speech_publications TO "{role}"',
+        "must not hold TRIGGER on speech_publications",
+    ),
+    (
+        "append-only-column-update",
+        'GRANT UPDATE (revision) ON "{schema}".speech_publications TO "{role}"',
+        "must not hold column UPDATE on speech_publications",
+    ),
+    (
+        "append-only-column-references",
+        'GRANT REFERENCES (revision) ON "{schema}".speech_publications TO "{role}"',
+        "must not hold column REFERENCES on speech_publications",
+    ),
+    (
+        "undeclared-retirements-insert",
+        'GRANT INSERT ON "{schema}".speech_publication_retirements TO "{role}"',
+        "must not hold privileges on undeclared table speech_publication_retirements",
+    ),
+    (
+        "undeclared-workspaces-insert-trigger",
+        'GRANT INSERT, TRIGGER ON "{schema}".speech_workspaces TO "{role}"',
+        "must not hold privileges on undeclared table speech_workspaces",
+    ),
+    (
+        "undeclared-workspaces-column-insert",
+        'GRANT INSERT (workspace_id) ON "{schema}".speech_workspaces TO "{role}"',
+        "must not hold privileges on undeclared table speech_workspaces",
+    ),
+    (
+        "schema-create",
+        'GRANT CREATE ON SCHEMA "{schema}" TO "{role}"',
+        "must not hold CREATE on schema",
     ),
 )
 

@@ -53,7 +53,8 @@ The existing directional comparison kernel is reused: reject known request
 narrowing and response guarantee loss, including removed paths/operations,
 new required parameters, removed request/response media or response statuses,
 required response headers, object fields, supported types/enums/constants,
-defaults (except the narrow permanent-placeholder notice below), formats,
+defaults (except the narrow permanent-placeholder and declared-unsupported
+capability notices below), formats,
 bounds and boolean schemas. Supported conditional/composed
 changes require explicit proof rather than being assumed safe. Unchanged
 repository references are resolved against their own old/current document trees;
@@ -160,6 +161,33 @@ The exemption is deliberately narrower than the placeholder replacement rule:
 Removing the placeholder proof, accepting any 503 as proof, or letting the
 exemption swallow the rest of the schema comparison each turns a positive case
 red in `tests/contract/test_http_contract_changes.py`.
+
+### Request defaults on a declared unsupported capability
+
+An operation that shipped with a stable `4xx` `error.code` ending in
+`_not_supported` has itself declared the capability absent: the baseline says a
+specific request value is rejected because the feature is not implemented. When
+that operation later enables the feature, the request default that selects it
+changes meaning. Such a request-body `default` change is recorded as a `notice`
+instead of an issue, and the notice is written to stderr so `--format json`
+keeps stdout parseable.
+
+The exemption is deliberately narrow:
+
+- the baseline response must declare a literal (or enum member) `error.code`
+  ending in `_not_supported`, resolved through repository `$ref`s. An
+  unjudgeable body never qualifies;
+- it covers only request-body `default` (value or presence). Response defaults,
+  parameters, `type`, `enum`, `const`, `required`, `format`, bounds, composition
+  and response statuses are still compared normally;
+- it is inferred from the baseline response, never from `operationId`, a path or
+  a hardcoded list. A new operation has no baseline and cannot qualify;
+- an operation whose defaults were already load-bearing without that declaration
+  still fails, so ordinary shipped operations are unaffected.
+
+Deleting the `_not_supported` inference, accepting any `4xx` as proof, or letting
+the exemption cover response defaults turns a negative case red in
+`tests/contract/test_http_contract_changes.py`.
 
 ## What remains outside this unit
 

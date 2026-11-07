@@ -137,9 +137,9 @@ ASR `input` 的目标是只接受所选工作空间存在、功能策略允许�
 
 当前公开 Job 创建先读取工作空间是否 active、资产的 workspace、状态与用途，再进入写入事务；事务内重新核验绑定选择，但未在同一事务内重新核验这些工作空间和资产事实，也不能据此证明完整功能策略已生效。资源状态变化与创建竞争时的权威裁决仍须接入并验收。
 
-当前公开 Job 创建路径对 `pronunciation` 只按 ID 和 revision 检查私有发音修订记录是否存在，未核验其发布或退役状态；该检查不能证明词典已发布或具备执行资格。发音资源的发布及消费者接线仍须按 [V-LEXICON](../prd.md#v-lexicon) 完成验收，不能把草稿存在当作发布证据。
+当前公开 Job 创建路径对 `pronunciation` 只按 ID 和 revision 检查私有发音修订记录是否存在，未核验其发布或退役状态；该检查不能证明词典已发布或具备执行资格。发音修订的发布事实现由 `POST /v1/nexus/pronunciation-sets` 原子写入 `speech_publications`，但 Job 准入与 TTS 消费尚未按该事实过滤，仍须按 [V-LEXICON](../prd.md#v-lexicon) 完成接线和验收，不能把草稿存在当作发布证据。
 
-`GET /v1/nexus/pronunciation-sets` 与 `POST /v1/nexus/pronunciation-sets` 由独立的 `pronunciation_sets` 契约面提供：列表按 `id` 键集分页并只投影不可变草稿头（空集合为 200）；创建只写草稿修订，`publish: true` 在落库前返回 422 `pronunciation_publication_not_supported`，响应 `status` 恒为 `draft`。发布命令、默认指针和 TTS 消费仍未实现（#520），这两条路由不构成发布或执行资格证据。
+`GET /v1/nexus/pronunciation-sets` 与 `POST /v1/nexus/pronunciation-sets` 由独立的 `pronunciation_sets` 契约面提供：列表按 `id` 键集分页，`head_revision` 是家族最新不可变修订，`status` 只在该精确修订存在 `speech_publications` 行时为 `published`（空集合为 200）；创建默认 `publish: true`，在同一事务写入不可变修订、发布账本行和选中 head，失败全回滚，`publish: false` 只写私有草稿。未配置发布身份时在落库前返回 422 `pronunciation_publication_not_supported`；相同幂等键重放返回 200，并发双击发布只有一个 CAS 赢家。默认指针选择、TTS 消费和发布状态的准入过滤仍未实现，这两条路由只在成功发布时构成该修订的发布事实，不构成执行资格证据。
 
 TTS Job 可选 `model_binding={id,revision}` 固定精确版本：新意图要求该版本是当前已发布、未退役的权威指针，支持 `tts_file`，且其逻辑模型与 `model` 一致；不满足时明确拒绝，不回退其他版本。省略时当前实现将 `model` 作为 binding 对象 ID，选择其当前未退役发布版本。相同幂等键的原请求先按原身份重放，即使发布指针后来改变；结果未知时保留原键和完整请求协调，不能更换版本重试。Job 已接受不证明已执行；生产派发 planner 尚未装配，见[公开 Job 派发器](../components/production-jobs.md#公开-job-派发器del-96-第一步)。以下是契约形状示例，资源和时间均为示意。
 

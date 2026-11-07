@@ -37,12 +37,14 @@ REQUEST_ID = "pronunciation-sets-484"
 KEY = "synthetic-idempotency-key"
 
 
-def summary(pronunciation_id: str, revision: str = "1", count: int = 2) -> PronunciationSummary:
-    return PronunciationSummary(pronunciation_id, revision, "pinyin", count)
+def summary(
+    pronunciation_id: str, revision: str = "1", count: int = 2, published: bool = False
+) -> PronunciationSummary:
+    return PronunciationSummary(pronunciation_id, revision, "pinyin", count, published)
 
 
 def draft(command: CreatePronunciationDraft) -> PronunciationDraft:
-    return PronunciationDraft("pron-created", "1", command.definition, 1)
+    return PronunciationDraft("pron-created", "1", command.definition, 1, command.publish)
 
 
 class Catalogue:
@@ -90,12 +92,14 @@ def app(
     port: Catalogue | None = None,
     *,
     writer: Catalogue | None = None,
+    publisher: Catalogue | None = None,
     **changes: Any,
 ) -> Any:
     return create_app(
         settings=_settings().model_copy(update={"asset_allowed_hosts": ("test",), **changes}),
         pronunciations=port,
         pronunciation_writer=writer,
+        pronunciation_publisher=publisher,
     )
 
 
@@ -193,23 +197,27 @@ async def test_a_read_body_is_rejected_instead_of_being_ignored() -> None:
         assert port.listed == []
 
 
-async def test_create_omission_records_a_draft_and_publication_is_unsupported() -> None:
-    port, writer = Catalogue(), Catalogue()
+async def test_create_omission_publishes_and_explicit_false_stays_a_draft() -> None:
+    port, writer, publisher = Catalogue(), Catalogue(), Catalogue()
     body = pronunciation_request()
     body.pop("publish")
-    async with client(app(port, writer=writer)) as http:
+    async with client(app(port, writer=writer, publisher=publisher)) as http:
         response = await http.post(PATH, json=body, headers={"Idempotency-Key": KEY})
         check(response, 201)
-        assert response.json()["status"] == "draft"
-        assert json.loads(writer.commands[0].intent)["publish"] is False
+        assert response.json()["status"] == "published"
+        # The draft writer holds no ledger INSERT, so publication must use the
+        # dedicated identity even when the command is the first request.
+        assert writer.commands == []
+        assert json.loads(publisher.commands[0].intent)["publish"] is True
+        assert publisher.commands[0].publish is True
 
-        published = await http.post(
-            PATH, json={**body, "publish": True}, headers={"Idempotency-Key": KEY}
+        draft = await http.post(
+            PATH, json=pronunciation_request(), headers={"Idempotency-Key": KEY + "-draft"}
         )
-        check(published, 422)
-        assert published.json()["error"]["code"] == "pronunciation_publication_not_supported"
-        assert published.headers["x-should-retry"] == "false"
-        assert len(writer.commands) == 1
+        check(draft, 201)
+        assert draft.json()["status"] == "draft"
+        assert writer.commands[-1].publish is False
+        assert len(publisher.commands) == 1
 
         for bad in (
             {**body, "publish": "yes"},
@@ -217,10 +225,44 @@ async def test_create_omission_records_a_draft_and_publication_is_unsupported() 
             {**body, "entries": []},
             {**body, "id": "pron-aaa"},
         ):
-            rejected = await http.post(PATH, json=bad, headers={"Idempotency-Key": KEY})
+            rejected = await http.post(PATH, json=bad, headers={"Idempotency-Key": KEY + "-bad"})
             check(rejected, 400)
             assert rejected.json()["error"]["code"] == "pronunciation_invalid_request"
-        assert len(writer.commands) == 1
+        assert len(publisher.commands) == 1
+
+
+async def test_publication_without_the_publisher_identity_is_the_stable_422() -> None:
+    port, writer = Catalogue(), Catalogue()
+    async with client(app(port, writer=writer)) as http:
+        response = await http.post(
+            PATH, json=pronunciation_request(publish=True), headers={"Idempotency-Key": KEY}
+        )
+        check(response, 422)
+        assert response.json()["error"]["code"] == "pronunciation_publication_not_supported"
+        assert response.headers["x-should-retry"] == "false"
+        assert writer.commands == []
+
+
+async def test_keyed_replay_of_a_publication_is_200_and_not_a_second_revision() -> None:
+    port, publisher = Catalogue(), Catalogue()
+    async with client(app(port, publisher=publisher)) as http:
+        first = await http.post(
+            PATH, json=pronunciation_request(publish=True), headers={"Idempotency-Key": KEY}
+        )
+        check(first, 201)
+        command = publisher.commands[0]
+        publisher.results = [
+            PronunciationDraftResult(
+                "replayed",
+                PronunciationDraft("pron-created", "1", command.definition, 1, command.publish),
+            )
+        ]
+        replay = await http.post(
+            PATH, json=pronunciation_request(publish=True), headers={"Idempotency-Key": KEY}
+        )
+        check(replay, 200)
+        assert replay.json() == first.json()
+        assert len(publisher.commands) == 2
 
 
 async def test_create_maps_store_outcomes_to_retry_safe_failures() -> None:
@@ -430,10 +472,12 @@ def test_writer_settings_are_opt_in_bounded_and_api_only() -> None:
             Settings(**{**settings.model_dump(), **updates})
 
 
-def test_prepare_still_requires_an_explicit_draft_intent() -> None:
+def test_prepare_applies_the_declared_publication_default() -> None:
     body = pronunciation_request()
     body.pop("publish")
+    assert prepare_pronunciation_draft(body, KEY).publish is True
+    assert prepare_pronunciation_draft({**body, "publish": False}, KEY).publish is False
     with pytest.raises(ContractValidationError):
-        prepare_pronunciation_draft(body, KEY)
+        prepare_pronunciation_draft({**body, "publish": "yes"}, KEY)
     assert replace(summary("pron-aaa")).entry_count == 2
     assert base64.urlsafe_b64encode(b"pron-aaa").decode().rstrip("=") == "cHJvbi1hYWE"

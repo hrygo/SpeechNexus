@@ -3587,8 +3587,8 @@
         },
         "publish": {
           "type": "boolean",
-          "default": false,
-          "description": "Draft semantics only. Omission and `false` both create an immutable draft revision; `true` is rejected with 422 `pronunciation_publication_not_supported`. This field never publishes a set, selects a default, or qualifies pronunciation."
+          "default": true,
+          "description": "Atomic publication. `true` (the default) writes the immutable revision, its publication ledger row and the selected head in one transaction; `false` writes only an immutable draft revision. This field never selects a default, executes TTS or qualifies pronunciation."
         }
       }
     },

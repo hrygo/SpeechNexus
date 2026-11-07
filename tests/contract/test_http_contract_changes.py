@@ -1419,3 +1419,90 @@ def test_path_item_reference_preserves_full_cli_response_guarantees(
     monkeypatch.setattr(sys, "argv", ["check", "--base", base, "--format", "json"])
     assert module.main() == 1
     assert json.loads(capsys.readouterr().out)["findings"]
+
+
+def capability_document(*, code: str, request: dict[str, Any]) -> dict[str, Any]:
+    """Synthetic operation whose baseline declares a stable unsupported capability."""
+
+    doc = document("/v1/audio/speech", request=request)
+    doc["components"] = {
+        "responses": {
+            "Unsupported": {
+                "description": "This deployment has not enabled the capability.",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "object",
+                                    "properties": {"code": {"const": code}},
+                                }
+                            },
+                        }
+                    }
+                },
+            }
+        }
+    }
+    doc["paths"]["/v1/audio/speech"]["post"]["responses"]["422"] = {
+        "$ref": "#/components/responses/Unsupported"
+    }
+    return doc
+
+
+def test_unsupported_capability_default_change_is_a_notice(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    base = capability_document(
+        code="synthetic_publication_not_supported", request=publish_request(True)
+    )
+    current = capability_document(
+        code="synthetic_publication_not_supported", request=publish_request(False)
+    )
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    captured = capsys.readouterr()
+    assert findings == []
+    assert "notice:" in captured.err
+    assert "default changed from True to False" in captured.err
+    assert "_not_supported" in captured.err
+
+
+def test_capability_default_notice_requires_the_declared_unsupported_code() -> None:
+    base = capability_document(code="synthetic_invalid_request", request=publish_request(True))
+    current = capability_document(code="synthetic_invalid_request", request=publish_request(False))
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert any("default changed from True to False" in issue for issue in findings)
+
+
+def test_capability_default_notice_does_not_cover_response_defaults() -> None:
+    base = capability_document(
+        code="synthetic_publication_not_supported", request=publish_request(True)
+    )
+    response_schema = {
+        "type": "object",
+        "properties": {"status": {"type": "string", "default": "draft"}},
+    }
+    base["paths"]["/v1/audio/speech"]["post"]["responses"]["201"]["content"]["application/json"][
+        "schema"
+    ] = response_schema
+    current = copy.deepcopy(base)
+    current["paths"]["/v1/audio/speech"]["post"]["responses"]["201"]["content"]["application/json"][
+        "schema"
+    ]["properties"]["status"]["default"] = "published"
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert any("default changed from 'draft' to 'published'" in issue for issue in findings)
+
+
+def test_capability_default_notice_does_not_cover_other_schema_keywords() -> None:
+    base = capability_document(
+        code="synthetic_publication_not_supported", request=publish_request(True)
+    )
+    current = capability_document(
+        code="synthetic_publication_not_supported", request=publish_request(False)
+    )
+    current["paths"]["/v1/audio/speech"]["post"]["requestBody"]["content"]["application/json"][
+        "schema"
+    ]["properties"]["publish"]["type"] = "string"
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert any("type changed" in issue for issue in findings)

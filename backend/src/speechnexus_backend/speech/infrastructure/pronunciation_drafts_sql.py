@@ -1,9 +1,16 @@
-"""Original command first, one family CAS, immutable draft and result atomically."""
+"""Original command first, one family CAS, revision and publication atomically.
+
+``publish: true`` appends ``speech_publications`` and the selected head inside the
+same transaction as the immutable revision. A failure anywhere rolls the whole
+command back: the deployment can never observe a publication without its
+revision, or a published-status revision with no publication ledger row.
+"""
 
 from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Any, Protocol
 
 from speechnexus_backend.speech.application.pronunciation_documents import (
@@ -19,8 +26,11 @@ from speechnexus_backend.speech.domain.pronunciation_drafts import (
     PronunciationDraftResult,
     PronunciationUnavailableError,
     document_digest,
+    revision_id_for,
     revision_number,
 )
+from speechnexus_backend.speech.domain.publications import Publication
+from speechnexus_backend.speech.infrastructure.publications_sql import append_publication
 
 
 class PronunciationCursor(Protocol):
@@ -66,11 +76,34 @@ def read_draft(
     return PronunciationDraft(row["pronunciation_id"], row["revision"], raw, row["created_at_us"])
 
 
+def read_published_draft(
+    cursor: PronunciationCursor, pronunciation_id: str, revision: str
+) -> PronunciationDraft | None:
+    """Read one fixed revision together with its own publication fact.
+
+    Only the read identity holds SELECT on ``speech_publications``; the draft
+    writer does not need it because its command ledger already carries the
+    publication intent for a revision it created or replayed.
+    """
+    draft = read_draft(cursor, pronunciation_id, revision)
+    if draft is None:
+        return None
+    rows = _rows(
+        cursor,
+        "SELECT 1 AS published FROM speech_publications "
+        "WHERE kind='pronunciation' AND object_id=%s AND revision=%s",
+        (pronunciation_id, revision),
+    )
+    if len(rows) > 1:
+        raise PronunciationUnavailableError
+    return replace(draft, published=bool(rows))
+
+
 def _result(
     cursor: PronunciationCursor, command: CreatePronunciationDraft, row: dict[str, Any]
 ) -> PronunciationDraftResult:
     original = row["intent_json"].encode("utf-8")
-    source_id, expected, _ = draft_parts(decode_document(original))
+    source_id, expected, _, _ = draft_parts(decode_document(original))
     if document_digest(original) != row["request_digest"]:
         raise PronunciationUnavailableError
     if original != command.intent:
@@ -98,7 +131,9 @@ def _result(
     )
     if draft is None or draft.definition != command.definition:
         raise PronunciationUnavailableError
-    return PronunciationDraftResult("replayed", draft)
+    # Publication is written in the same transaction as the revision, so the
+    # stored command's publication intent is the revision's publication state.
+    return PronunciationDraftResult("replayed", replace(draft, published=command.publish))
 
 
 def list_summaries(
@@ -118,7 +153,10 @@ def list_summaries(
         cursor,
         "SELECT f.pronunciation_id AS pronunciation_id, "
         "f.latest_revision AS head_revision, r.encoding AS encoding, "
-        "r.entry_count AS entry_count "
+        "r.entry_count AS entry_count, "
+        "EXISTS (SELECT 1 FROM speech_publications p "
+        "WHERE p.kind = 'pronunciation' AND p.object_id = f.pronunciation_id "
+        "AND p.revision = f.latest_revision) AS published "
         "FROM speech_pronunciation_families f "
         "JOIN speech_pronunciation_revisions r "
         "ON r.pronunciation_id = f.pronunciation_id AND r.revision = f.latest_revision "
@@ -237,6 +275,20 @@ def create_draft(
         + suffix,
         (revision, pronunciation_id, *args),
     )
+    if command.publish:
+        # The publication ledger row, the selected head and the catalogue version
+        # (advanced by the insert trigger) commit or roll back with the revision.
+        published_at_us = clock()
+        publication = Publication(
+            kind="pronunciation",
+            object_id=pronunciation_id,
+            revision=number + 1,
+            revision_id=revision_id_for(pronunciation_id, revision),
+            published_at_us=published_at_us,
+        )
+        if not append_publication(cursor, publication):
+            raise PronunciationUnavailableError
+        draft = replace(draft, published=True)
     _update(
         cursor,
         "UPDATE speech_pronunciation_commands SET command_state='created',pronunciation_id=%s,"

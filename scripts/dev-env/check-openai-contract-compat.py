@@ -1019,19 +1019,26 @@ def _closed_tagged_request_extension(
 
 
 class _DefaultExemption(NamedTuple):
-    """Request-body defaults are non-load-bearing on a permanent placeholder.
+    """Request-body defaults that the frozen baseline declares non-load-bearing.
 
-    The proof is the frozen baseline itself: an operation whose 503 is exactly
-    the shared placeholder component and whose declared ``error.code`` is the
-    ``operation_not_implemented`` literal. The baseline may also declare 2xx
-    responses, but a deployment that answers this placeholder never serves them:
-    the operation is declared permanently unimplemented and is unreachable, so no
-    consumer can depend on one of its request defaults. An operation that already
-    shipped, or whose 503 is an inline retryable replacement, does not qualify.
+    Two independent baseline proofs qualify:
+
+    * a permanent placeholder: the 503 is exactly the shared placeholder
+      component and its declared ``error.code`` is the
+      ``operation_not_implemented`` literal. The operation is unreachable, so no
+      consumer can depend on one of its request defaults;
+    * a declared unsupported capability: a declared 4xx response carries a stable
+      ``*_not_supported`` ``error.code``. The baseline itself says the feature the
+      default selects is not implemented; enabling it changes what an omitted
+      field means. This is recorded as a notice, never a silent pass.
+
+    An operation that already shipped with a default and never declared the
+    capability unsupported does not qualify.
     """
 
     notices: list[str]
     permanent_placeholder: bool
+    capability_promotion: bool
 
 
 def _baseline_permanent_placeholder(
@@ -1050,6 +1057,73 @@ def _baseline_permanent_placeholder(
     if media is None or "schema" not in media:
         return False
     return _declared_error_codes(media["schema"], side) == {_PLACEHOLDER_ERROR_CODE}
+
+
+def _response_schema(
+    document: Mapping[str, Any],
+    path_name: str,
+    method: str,
+    status: str,
+    side: _SchemaSide,
+) -> Mapping[str, Any] | None:
+    """Resolve one declared response body schema, including a local component ref."""
+    response = _raw_response(document, path_name, method, status)
+    if response is None:
+        return None
+    ref = response.get("$ref")
+    definition = (
+        _mapping(_resolve_local_pointer(document, ref[1:]))
+        if isinstance(ref, str) and ref.startswith("#")
+        else response
+    )
+    if definition is None:
+        return None
+    content = _mapping(definition.get("content"))
+    if content is None:
+        return None
+    media = _mapping(content.get("application/json"))
+    if media is None:
+        return None
+    return _mapping(media.get("schema"))
+
+
+def _baseline_capability_promotion(
+    document: Mapping[str, Any],
+    path_name: str,
+    method: str,
+    side: _SchemaSide,
+) -> bool:
+    """Whether the baseline declares a 4xx ``*_not_supported`` capability gap.
+
+    The literal is the contract's own statement that the capability is absent.
+    A request default that selects that capability is therefore not load-bearing
+    before the promotion; the change is surfaced as a notice by the caller.
+    """
+    paths = _mapping(document.get("paths"))
+    if paths is None:
+        return False
+    path_item = _mapping(paths.get(path_name))
+    if path_item is None:
+        return False
+    operation = _mapping(path_item.get(method))
+    if operation is None:
+        return False
+    responses = _mapping(operation.get("responses"))
+    if responses is None:
+        return False
+    for status in responses:
+        if not (isinstance(status, str) and status.startswith("4")):
+            continue
+        schema = _response_schema(document, path_name, method, status, side)
+        if schema is None:
+            continue
+        codes = _declared_error_codes(schema, side)
+        if codes is None:
+            # An unjudgeable body must fail closed elsewhere; never infer absence.
+            return False
+        if any(code.endswith("_not_supported") for code in codes):
+            return True
+    return False
 
 
 def _compare_schema(
@@ -1137,11 +1211,20 @@ def _compare_schema(
             f"to {current_schema.get('default')!r}"
         )
     if default_change is not None:
-        if direction == "request" and exemption is not None and exemption.permanent_placeholder:
-            exemption.notices.append(
-                f"{pointer}: {default_change}; accepted because the baseline operation's "
-                f"503 is the permanent {_PLACEHOLDER_ERROR_CODE} placeholder"
-            )
+        if direction == "request" and exemption is not None:
+            if exemption.permanent_placeholder:
+                exemption.notices.append(
+                    f"{pointer}: {default_change}; accepted because the baseline operation's "
+                    f"503 is the permanent {_PLACEHOLDER_ERROR_CODE} placeholder"
+                )
+            elif exemption.capability_promotion:
+                exemption.notices.append(
+                    f"{pointer}: {default_change}; accepted because the baseline operation "
+                    "declared the selected capability as unsupported (*_not_supported) and "
+                    "this change enables it"
+                )
+            else:
+                _issue(issues, pointer, default_change)
         else:
             _issue(issues, pointer, default_change)
 
@@ -1503,6 +1586,7 @@ def _compare_openapi(
                         request_exemption = _DefaultExemption(
                             collected,
                             _baseline_permanent_placeholder(base, path_name, method, base_side),
+                            _baseline_capability_promotion(base, path_name, method, base_side),
                         )
                         _compare_schema(
                             (_mapping(base_media) or {}).get("schema", {}),

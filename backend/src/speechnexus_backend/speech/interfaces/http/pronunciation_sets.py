@@ -1,10 +1,12 @@
-"""Collection-level pronunciation-set listing and immutable draft creation.
+"""Collection-level pronunciation-set listing and atomic revision publication.
 
-D2: this slice creates immutable draft revisions only. ``publish: true`` is an
-explicitly unsupported intent and answers 422; omitting the field or sending
-``false`` records a draft and never claims publication. The collection lives in
-its own generated HTTP surface because ``pronunciations.py`` derives its single
-contract path from ``next(iter(paths))`` and is the fixed-revision read surface.
+``publish`` defaults to ``true``: one transaction writes the immutable revision,
+its ``speech_publications`` row and the selected head, so a failure leaves no
+half-published set. ``publish: false`` creates a private draft. A keyed replay
+returns ``200`` with the original revision instead of allocating a second one.
+The collection lives in its own generated HTTP surface because
+``pronunciations.py`` derives its single contract path from ``next(iter(paths))``
+and is the fixed-revision read surface.
 """
 
 from __future__ import annotations
@@ -102,10 +104,13 @@ _ERRORS: dict[str, tuple[int, str, str, str, bool]] = {
         "outcome_unknown",
         False,
     ),
+    # The pre-existing stable code for "this deployment has not enabled atomic
+    # publication". It is decided before any write, so no revision or ledger row
+    # is created; configuring the publisher identity makes the same request work.
     "publication_not_supported": (
         422,
         "invalid_request_error",
-        "This operation creates immutable drafts; publication has its own command.",
+        "This deployment has not enabled atomic pronunciation publication.",
         "publication_not_supported",
         False,
     ),
@@ -227,26 +232,31 @@ def _result_violation(result: PronunciationDraftResult) -> bool:
 
 
 def _create(
-    writer: PronunciationWriter,
+    writer: PronunciationWriter | None,
+    publisher: PronunciationWriter | None,
     payload: dict[str, Any],
     key: str | None,
     request_id: str,
 ) -> JSONResponse:
     try:
-        if payload.get("publish") is True:
-            return pronunciation_sets_error(
-                "publication_not_supported", request_id, CREATE_OPERATION
-            )
-        # Omission carries the declared draft default: the canonical intent is
-        # always explicit so a keyless replay cannot differ by an injected field.
-        intent = {**payload, "publish": False} if "publish" not in payload else payload
-        command = prepare_pronunciation_draft(intent, key)
+        # ``publish`` defaults to true per the source; prepare canonicalizes the
+        # omitted field so replay never depends on an injected default.
+        command = prepare_pronunciation_draft(payload, key)
     except ContractValidationError:
         return pronunciation_sets_error("invalid_request", request_id, CREATE_OPERATION)
     except Exception:
         return pronunciation_sets_error("contract_violation", request_id, CREATE_OPERATION)
+    # Atomic publication needs the dedicated identity: the draft writer holds no
+    # INSERT on the ledger and must never fake a publication.
+    port = publisher if command.publish else writer
+    if port is None:
+        if command.publish:
+            return pronunciation_sets_error(
+                "publication_not_supported", request_id, CREATE_OPERATION
+            )
+        return pronunciation_sets_error("unavailable", request_id, CREATE_OPERATION)
     try:
-        result = writer.create(command)
+        result = port.create(command)
     except PronunciationUnavailableError:
         # The port declares the storage unavailable (including a history it
         # cannot decode). This is its only declared failure, so it is the only
@@ -259,12 +269,15 @@ def _create(
     if result.outcome in ("created", "replayed"):
         draft = result.draft
         assert draft is not None  # narrowed by _result_violation
+        # 201 means this request created the revision; 200 is the idempotent
+        # replay of the same original intent, published or draft.
+        status = 201 if result.outcome == "created" else 200
         try:
             body = draft_to_wire(draft)
-            validate_response(CREATE_OPERATION, 201, {"body": body})
+            validate_response(CREATE_OPERATION, status, {"body": body})
         except Exception:
             return pronunciation_sets_error("contract_violation", request_id, CREATE_OPERATION)
-        return JSONResponse(body, status_code=201, headers={"Cache-Control": "no-store"})
+        return JSONResponse(body, status_code=status, headers={"Cache-Control": "no-store"})
     if result.outcome == "conflict":
         return pronunciation_sets_error("idempotency_conflict", request_id, CREATE_OPERATION)
     if result.outcome == "rejected":
@@ -278,6 +291,7 @@ def _create(
 def create_pronunciation_sets_router(
     get_reader: Callable[[], PronunciationSets | None],
     get_writer: Callable[[], PronunciationWriter | None],
+    get_publisher: Callable[[], PronunciationWriter | None],
     *,
     max_bytes: int,
     receive_timeout_seconds: float,
@@ -331,9 +345,8 @@ def create_pronunciation_sets_router(
             validate_request(CREATE_OPERATION, {"headers": headers, "body": payload})
         except ContractValidationError, ValueError, TypeError, RecursionError:
             return pronunciation_sets_error("invalid_request", request_id, CREATE_OPERATION)
-        writer = get_writer()
-        if writer is None:
-            return pronunciation_sets_error("unavailable", request_id, CREATE_OPERATION)
-        return await run_in_threadpool(_create, writer, payload, key, request_id)
+        return await run_in_threadpool(
+            _create, get_writer(), get_publisher(), payload, key, request_id
+        )
 
     return router

@@ -468,6 +468,24 @@ async def test_published_clone_is_assembled_and_executes_on_the_base_lane(
     assert len(store.results) == 1
 
 
+def test_a_missing_immutable_revision_does_not_fall_back_to_builtin(
+    admission_database: AdmissionDatabase,
+) -> None:
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    publication = _publication(admission_database)
+    voice_id = publication["voice_id"]
+    db.query(
+        "DELETE FROM speech_voice_revisions WHERE voice_id=%s AND revision=%s",
+        (voice_id, str(publication["voice_revision"])),
+    )
+    before = db.query("SELECT count(*) AS n FROM admission_operations")[0]["n"]
+    result = _store(admission_database).create(_custom_tts_job(voice_id, "1"))
+    assert result.outcome == "rejected"
+    assert result.error_code == "voice_not_published"
+    assert db.query("SELECT count(*) AS n FROM admission_operations")[0]["n"] == before
+
+
 def test_an_unpublished_voice_is_rejected_before_any_command_is_written(
     admission_database: AdmissionDatabase,
 ) -> None:

@@ -42,7 +42,6 @@ def build_tts_submit(plan: SpeechPlan, admitted: AdmittedExecution) -> SubmitExe
         "audio_delivery": "complete",
         "language": plan.language,
         "pronunciation_revision": None,
-        "reference_text": None,
         "instructions": plan.instructions or None,
         "speed": plan.speed,
         "seed": plan.seed,

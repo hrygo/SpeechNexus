@@ -183,7 +183,8 @@ class CommandFileTts:
             parameters = command["parameters"]
             planner = parameters["planner"]
             if (
-                parameters["text_commit_mode"] != "explicit"
+                parameters.get("reference_text") is not None
+                or parameters["text_commit_mode"] != "explicit"
                 or parameters["audio_delivery"] != "complete"
                 or parameters["pronunciation_revision"] is not None
                 or not isinstance(planner, dict)

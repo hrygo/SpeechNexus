@@ -233,3 +233,14 @@ def test_another_coordination_operation_does_not_inherit_the_promotion() -> None
     )
 
     assert issues
+
+
+def test_a_non_target_change_with_both_targets_appended_is_rejected() -> None:
+    base = command_document(tts=parameters(), voicevalidation=parameters())
+    current = command_document(
+        tts=parameters(reference_text=REFERENCE_TEXT),
+        voicevalidation=parameters(reference_text=REFERENCE_TEXT),
+        voiceclone=parameters(reference_text=REFERENCE_TEXT),
+    )
+
+    assert findings(base, current)

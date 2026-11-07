@@ -1,9 +1,15 @@
 """Synthetic faults for the private synchronous TTS execution path."""
 
+import copy
+import json
 from dataclasses import asdict, replace
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from jsonschema import Draft202012Validator
+from referencing import Registry, Resource
+from referencing.jsonschema import DRAFT202012
 from speechnexus_contracts.execution_models import SubmitExecutionRequest
 
 from speechnexus_backend.speech.application.admission import AdmissionService
@@ -832,3 +838,23 @@ def test_recovery_budget_bounds_original_query_and_result_reads(phase: str) -> N
     finally:
         release.set()
         adapter.close()
+
+
+def test_builtin_command_omits_reference_text_and_matches_the_old_shape() -> None:
+    command = cast(dict[str, Any], build_tts_submit(plan(), execution())["command"])
+    assert "reference_text" not in command["parameters"]
+
+    schema = json.loads(
+        (
+            Path(__file__).resolve().parents[3] / "contracts/internal/execution-command.schema.json"
+        ).read_text()
+    )
+    old = copy.deepcopy(schema)
+    old["$defs"]["TtsEffectiveParameters"]["properties"].pop("reference_text")
+    registry = Registry().with_resources(
+        (document["$id"], Resource.from_contents(document, default_specification=DRAFT202012))
+        for path in (Path(__file__).resolve().parents[3] / "contracts").rglob("*.json")
+        for document in (json.loads(path.read_text()),)
+        if "$id" in document
+    )
+    Draft202012Validator(old, registry=registry).validate(command)

@@ -1060,8 +1060,7 @@
           "max_chars": 200,
           "max_wait_ms": 500
         },
-        "response_format": "wav",
-        "reference_text": null
+        "response_format": "wav"
       }
     },
     {
@@ -1193,8 +1192,7 @@
           "max_chars": 200,
           "max_wait_ms": 500
         },
-        "response_format": "wav",
-        "reference_text": null
+        "response_format": "wav"
       },
       "validation_checks": [
         "reusable_tts"

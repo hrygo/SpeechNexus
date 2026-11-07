@@ -392,8 +392,10 @@ export interface paths {
      *     available for `tts` once its revision is published on the same Base
      *     binding: admission assembles the published reference material and paired
      *     transcript as `voice_kind=custom`, and returns 422 `voice_not_published`
-     *     for unpublished, retired or preview-only material. `voice_design` remains
-     *     preview-only and cannot be selected for `tts`.
+     *     for unpublished, retired or preview-only material. The same 422 also
+     *     applies to a missing or retired builtin voice; this replaces the previous
+     *     503 `job_unavailable` for that client-fixable condition. `voice_design`
+     *     remains preview-only and cannot be selected for `tts`.
      *
      *     Original-key replay is checked before mutable publication/workspace
      *     facts: the same canonical request returns the stored Job even after

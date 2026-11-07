@@ -263,6 +263,29 @@ def _custom_voice(
     )
     rows = cursor.fetchall()
     if not rows:
+        # Custom revision identities are minted as ``vrev-*``. A missing one is
+        # fail-closed unless an independent builtin qualification owns the same
+        # publication identity; otherwise a partial restore could synthesize a
+        # clone through the builtin speaker.
+        if voice["revision_id"].startswith("vrev-"):
+            cursor.execute(
+                "SELECT 1 FROM speech_builtin_voice_qualifications "
+                "WHERE voice_id=%s AND revision=%s AND revision_id=%s",
+                (voice["id"], str(voice["revision"]), voice["revision_id"]),
+            )
+            if not cursor.fetchall():
+                raise PublicJobAdmissionRejectedError("voice_not_published")
+            return None
+        # Older synthetic fixtures and operator-authored builtin ids are not
+        # ``vrev-*``. A remaining draft still proves the missing row was custom.
+        prefix = "voice-"
+        draft_id = (
+            "draft-" + voice["id"].removeprefix(prefix) if voice["id"].startswith(prefix) else None
+        )
+        if draft_id is not None:
+            cursor.execute("SELECT 1 FROM speech_voice_drafts WHERE draft_id=%s", (draft_id,))
+            if cursor.fetchall():
+                raise PublicJobAdmissionRejectedError("voice_not_published")
         return None
     if len(rows) != 1:
         raise PublicJobAdmissionRejectedError("job_unavailable")
@@ -465,6 +488,19 @@ def _asr_parameters(block: dict[str, Any], intent: dict[str, Any]) -> dict[str, 
     }
 
 
+def _custom_tts_unsupported(
+    *,
+    instructions: Any,
+    speed: Any,
+    pronunciation: list[dict[str, Any]],
+    pronunciation_source: dict[str, Any] | None,
+) -> bool:
+    """The Base reference-audio lane has no instructions, speed or pronunciation pass."""
+    return (
+        bool(instructions) or speed != 1 or bool(pronunciation) or pronunciation_source is not None
+    )
+
+
 def _tts_parameters(
     block: dict[str, Any],
     intent: dict[str, Any],
@@ -477,7 +513,6 @@ def _tts_parameters(
         "audio_delivery": merged["audio_delivery"],
         "language": merged["language"],
         "pronunciation_revision": pronunciation,
-        "reference_text": None,
         "instructions": merged["instructions"],
         "speed": merged["speed"],
         "seed": merged["seed"],
@@ -679,11 +714,11 @@ def build_public_job_admission(
             # The Base lane has no instructions, speed control or pronunciation
             # pass: refusing them is deterministic instead of silently dropping
             # caller intent the published clone path cannot honour.
-            if (
-                merged["instructions"]
-                or merged["speed"] != 1
-                or pronunciation
-                or pronunciation_source is not None
+            if _custom_tts_unsupported(
+                instructions=merged["instructions"],
+                speed=merged["speed"],
+                pronunciation=pronunciation,
+                pronunciation_source=pronunciation_source,
             ):
                 raise PublicJobAdmissionRejectedError("unsupported_parameter")
             parameters["reference_text"] = custom.reference_text

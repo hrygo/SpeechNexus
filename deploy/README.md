@@ -208,8 +208,10 @@ asr/tts 的原子创建还需要独立的 admission 角色：先应用当前迁�
 返回 `422 job_binding_incomplete`。
 
 自定义声音 TTS 的内部命令在 `TtsEffectiveParameters` 追加可选 `reference_text`。该字段是
-前向兼容：升级后的 backend 会发出它，旧网关会在结构校验阶段确定性拒绝
-（`FileCommandInvalidError`），不会静默回退 builtin 或合成错误音频。部署必须先升级所有
+前向兼容：**只有 custom 命令包含它**，builtin 命令与旧版逐字一致，旧网关仍可处理 builtin。
+未升级的网关对 custom 命令抛基类 `InvalidExecutionRequestError`；worker 只把
+`FileCommandInvalidError` 当作确定性未外发拒绝，因此基类异常走未知路径并落
+`ENGINE_TRANSPORT_UNKNOWN`，不会静默回退 builtin 或合成错误音频。部署必须先升级所有
 execution gateway，再升级 backend/worker；回退时先停用自定义声音 TTS 入口或回退 backend，
 不得保留“新 backend + 旧 gateway”的组合。
 

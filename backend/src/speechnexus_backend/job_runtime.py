@@ -355,8 +355,40 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
                 raise ValueError(f"Public Job writer must not update {table}.{attribute['name']}")
 
 
+def _refuse_table_privileges(
+    connection: SpeechConnection, qualified: str, table: str, privileges: tuple[str, ...]
+) -> None:
+    """A table-level grant covers every row, so name the exact authority it confers."""
+    for privilege in privileges:
+        held = connection.execute(
+            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, %s) AS held",
+            (qualified, privilege),
+        ).fetchone()
+        if held is None or held["held"]:
+            raise ValueError(f"Voice publisher must not hold {privilege} on {table}")
+
+
+def _refuse_column_privileges(
+    connection: SpeechConnection, qualified: str, table: str, privileges: tuple[str, ...]
+) -> None:
+    """Column grants are invisible to ``has_table_privilege``; compare them directly."""
+    for privilege in privileges:
+        held = connection.execute(
+            "SELECT pg_catalog.has_any_column_privilege(CURRENT_USER, %s, %s) AS held",
+            (qualified, privilege),
+        ).fetchone()
+        if held is None or held["held"]:
+            raise ValueError(f"Voice publisher must not hold column {privilege} on {table}")
+
+
 def _verify_publication_privileges(connection: SpeechConnection, schema: str) -> None:
-    """The publisher may measure nothing and append only its own projection."""
+    """The publisher may measure nothing and append only its own projection.
+
+    The tables it may write still need REFERENCES and TRIGGER refused (#549): both
+    are whole-table grants even when the row itself is appended or narrowed. Column
+    authority is always read through the column helpers -- ``has_table_privilege``
+    stays false under a column-only grant and would turn the check into a no-op.
+    """
     for table in _PUBLICATION_REQUIRED_SELECT:
         allowed = connection.execute(
             "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'SELECT') AS ok",
@@ -379,49 +411,47 @@ def _verify_publication_privileges(connection: SpeechConnection, schema: str) ->
         if append is None or append["ok"]:
             raise ValueError(f"Voice publisher can append to {table}")
     for table, columns in _PUBLICATION_UPDATE_COLUMNS.items():
-        destructive = connection.execute(
-            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'DELETE,TRUNCATE') AS ok",
-            (f"{schema}.{table}",),
-        ).fetchone()
-        if destructive is None or destructive["ok"]:
-            raise ValueError(f"Voice publisher must not delete {table}")
+        qualified = f"{schema}.{table}"
+        _refuse_table_privileges(
+            connection, qualified, table, ("DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")
+        )
+        if table not in _PUBLICATION_REQUIRED_INSERT:
+            _refuse_column_privileges(connection, qualified, table, ("INSERT",))
+        _refuse_column_privileges(connection, qualified, table, ("REFERENCES",))
         column_rows = connection.execute(
             "SELECT column_name, pg_catalog.has_column_privilege(CURRENT_USER, %s, "
             "column_name, 'UPDATE') AS updatable FROM information_schema.columns "
             "WHERE table_schema=%s AND table_name=%s",
-            (f"{schema}.{table}", schema, table),
+            (qualified, schema, table),
         ).fetchall()
         if {row["column_name"] for row in column_rows if row["updatable"]} != set(columns):
             raise ValueError(f"Voice publisher UPDATE columns do not match {table}")
-    for table in (*_PUBLICATION_READ_ONLY, *_PUBLICATION_APPEND_ONLY):
-        destructive = connection.execute(
-            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, "
-            "'DELETE,TRUNCATE,REFERENCES,TRIGGER') AS ok",
-            (f"{schema}.{table}",),
-        ).fetchone()
-        if destructive is None or destructive["ok"]:
-            raise ValueError(f"Voice publisher holds destructive privileges on {table}")
-        column_privileges = connection.execute(
-            "SELECT pg_catalog.has_any_column_privilege(CURRENT_USER, %s, "
-            "'UPDATE,REFERENCES') AS ok",
-            (f"{schema}.{table}",),
-        ).fetchone()
-        if column_privileges is None or column_privileges["ok"]:
-            raise ValueError(f"Voice publisher holds column writes on {table}")
     for table in _PUBLICATION_READ_ONLY:
+        qualified = f"{schema}.{table}"
+        _refuse_table_privileges(
+            connection, qualified, table, ("DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")
+        )
         append = connection.execute(
             "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'INSERT') AS ok",
-            (f"{schema}.{table}",),
+            (qualified,),
         ).fetchone()
         if append is None or append["ok"]:
             raise ValueError(f"Voice publisher can append to read-only table {table}")
+        # A column INSERT is enough to forge a measured fact row even though the
+        # table-level INSERT stays false (#549).
+        _refuse_column_privileges(connection, qualified, table, ("INSERT", "UPDATE", "REFERENCES"))
     for table in _PUBLICATION_APPEND_ONLY:
+        qualified = f"{schema}.{table}"
+        _refuse_table_privileges(
+            connection, qualified, table, ("DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")
+        )
         rewrite = connection.execute(
             "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'UPDATE') AS ok",
-            (f"{schema}.{table}",),
+            (qualified,),
         ).fetchone()
         if rewrite is None or rewrite["ok"]:
             raise ValueError(f"Voice publisher can rewrite append-only table {table}")
+        _refuse_column_privileges(connection, qualified, table, ("UPDATE", "REFERENCES"))
 
 
 def _verify_admission_privileges(connection: SpeechConnection, schema: str) -> None:

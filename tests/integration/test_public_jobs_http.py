@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import re
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -23,6 +25,7 @@ from sqlalchemy.pool import NullPool
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
+from speechnexus_backend.job_runtime import _verify_publication_privileges
 from speechnexus_backend.speech.application.public_jobs import (
     JobAdmissionRejectedError,
     PublicJobs,
@@ -555,3 +558,71 @@ def test_lifespan_uses_a_separate_verified_publisher_role(jobs_db: JobSandbox) -
 async def open_and_close_for(app: Any) -> None:
     async with app.router.lifespan_context(app):
         pass
+
+
+# Each row is an authority the publisher identity must never hold. The privileged
+# table is either a writable projection table (#549 gap 1: REFERENCES/TRIGGER were
+# never checked) or a read-only fact table (#549 gap 2: a column INSERT could forge
+# an evidence row). Every grant is applied to a real PostgreSQL role that otherwise
+# holds exactly the production publisher grants.
+MISGRANTED_PUBLISHER_PRIVILEGES = (
+    (
+        "table-references",
+        'GRANT REFERENCES ON "{schema}".speech_publication_heads TO "{role}"',
+        "must not hold REFERENCES on speech_publication_heads",
+    ),
+    (
+        "table-trigger",
+        'GRANT TRIGGER ON "{schema}".speech_publication_heads TO "{role}"',
+        "must not hold TRIGGER on speech_publication_heads",
+    ),
+    (
+        "read-only-column-insert",
+        'GRANT INSERT (evidence_id) ON "{schema}".speech_voice_capability_evidence TO "{role}"',
+        "must not hold column INSERT on speech_voice_capability_evidence",
+    ),
+    (
+        "writable-column-insert",
+        'GRANT INSERT (revision) ON "{schema}".speech_catalog_state TO "{role}"',
+        "must not hold column INSERT on speech_catalog_state",
+    ),
+    (
+        "writable-column-references",
+        'GRANT REFERENCES (revision) ON "{schema}".speech_catalog_state TO "{role}"',
+        "must not hold column REFERENCES on speech_catalog_state",
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("grant", "detail"),
+    [(grant, detail) for _, grant, detail in MISGRANTED_PUBLISHER_PRIVILEGES],
+    ids=[case for case, _, _ in MISGRANTED_PUBLISHER_PRIVILEGES],
+)
+def test_publisher_startup_rejects_each_misgranted_privilege(
+    jobs_db: JobSandbox, grant: str, detail: str
+) -> None:
+    role = "sn_pub_bad_" + uuid.uuid4().hex[:8]
+    dsn = make_conninfo(jobs_db.url, user=role, password=PASSWORD)
+    jobs_db.admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")
+    try:
+        for statement in voice_publication_grants(jobs_db.schema, role):
+            jobs_db.admin.execute(statement)
+        jobs_db.admin.execute(grant.format(schema=jobs_db.schema, role=role))
+        # The startup check itself names the missing authority type and table; the
+        # lifespan deliberately masks the cause, so assert the precise message here.
+        with (
+            psycopg.connect(dsn, row_factory=dict_row) as connection,
+            pytest.raises(ValueError, match=re.escape(detail)),
+        ):
+            _verify_publication_privileges(connection, jobs_db.schema)
+        settings = _settings_for(jobs_db).model_copy(
+            update={"voice_publisher_database_url": SecretStr(dsn)}
+        )
+        app = create_app(settings=settings)
+        with pytest.raises(ValueError, match="Public Job writer startup rejected"):
+            asyncio.run(open_and_close_for(app))
+        assert app.state.job_runtime._publisher_pool is None
+    finally:
+        jobs_db.admin.execute(f'DROP OWNED BY "{role}"')
+        jobs_db.admin.execute(f'DROP ROLE IF EXISTS "{role}"')

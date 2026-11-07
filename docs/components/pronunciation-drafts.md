@@ -45,16 +45,16 @@ collection is a successful `200` with `data: []`.
 `POST` returns 201 for a created or replayed command and 409 for an idempotency
 conflict (`pronunciation_idempotency_conflict`), a stale append
 (`pronunciation_configuration_changed`) or a keyless uncertain outcome
-(`pronunciation_outcome_unknown`). Only the port's declared
-`PronunciationUnavailableError` maps to the retryable 503; a reply or port result
-that violates this contract (for example a `created` outcome without a draft)
-answers 500 `pronunciation_contract_violation` with `X-Should-Retry: false`, so an
-implementation defect is never dressed up as an outage. Only a request carrying its original
-`Idempotency-Key` maps an unknown outcome to the retryable 503, because replaying
-that key recovers the committed revision; a keyless retry is a new intent and is
-deliberately not retryable. Both operations accept the single trailing slash via
-Starlette's 307 redirect and enforce the shared Host/Origin entry boundary before
-the handler runs.
+(`pronunciation_outcome_unknown`). The retryable 503 has exactly three declared
+causes: the port reports or raises `unavailable` (including a stored history it
+cannot decode), a keyed submission has an unknown outcome (replaying that key
+recovers the committed revision), or the route has no writer configured. Every
+deterministic failure — a port result outside the declared closed set, a
+`created` result without a draft, or a reply that fails its own contract — answers
+500 `pronunciation_contract_violation` with `X-Should-Retry: false`, so an
+implementation defect is never dressed up as an outage. Both operations accept the
+single trailing slash via Starlette's 307 redirect and enforce the shared
+Host/Origin entry boundary before the handler runs.
 
 The writer identity is opt-in and API-only: set
 `SPEECHNEXUS_PRONUNCIATION_WRITER_DATABASE_URL`, with

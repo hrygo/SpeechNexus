@@ -292,6 +292,38 @@ async def test_a_deterministic_writer_defect_is_a_500_not_a_retryable_503() -> N
         assert response.headers["x-should-retry"] == "false"
 
 
+async def test_an_out_of_set_port_outcome_is_a_contract_violation() -> None:
+    for headers in ({"Idempotency-Key": KEY}, {}):
+        writer = Catalogue()
+        writer.results = [PronunciationDraftResult("bogus-outcome")]  # type: ignore[arg-type]
+        async with client(app(writer=writer)) as http:
+            response = await http.post(PATH, json=pronunciation_request(), headers=headers)
+            check(response, 500, CREATE_OPERATION)
+            assert response.json()["error"]["code"] == "pronunciation_contract_violation"
+            assert response.headers["x-should-retry"] == "false"
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        PronunciationDraftResult("conflict", error_code="configuration_changed"),
+        PronunciationDraftResult("rejected", error_code="idempotency_conflict"),
+    ],
+)
+async def test_a_mismatched_port_error_code_is_a_contract_violation(
+    result: PronunciationDraftResult,
+) -> None:
+    writer = Catalogue()
+    writer.results = [result]
+    async with client(app(writer=writer)) as http:
+        response = await http.post(
+            PATH, json=pronunciation_request(), headers={"Idempotency-Key": KEY}
+        )
+        check(response, 500, CREATE_OPERATION)
+        assert response.json()["error"]["code"] == "pronunciation_contract_violation"
+        assert response.headers["x-should-retry"] == "false"
+
+
 async def test_list_unavailability_is_retryable_and_never_a_404() -> None:
     port = Catalogue()
     port.error = PronunciationUnavailableError()
@@ -355,6 +387,14 @@ async def test_single_trailing_slash_is_starlettes_normal_redirect() -> None:
         assert response.headers["location"].endswith(PATH)
         followed = await http.get(PATH + "/", follow_redirects=True)
         check(followed, 200, LIST_OPERATION)
+
+
+async def test_revision_trailing_slash_stays_a_400() -> None:
+    port = Catalogue()
+    async with client(app(port)) as http:
+        response = await http.get(f"{PATH}/pron-a/revisions/1/")
+        check(response, 400, LIST_OPERATION)
+        assert response.json()["error"]["code"] == "pronunciation_invalid_request"
 
 
 def test_served_openapi_declares_the_implemented_collection() -> None:

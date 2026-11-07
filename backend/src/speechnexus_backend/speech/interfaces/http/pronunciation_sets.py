@@ -30,6 +30,7 @@ from speechnexus_backend.speech.application.pronunciation_drafts import (
 )
 from speechnexus_backend.speech.domain.assets import identifier
 from speechnexus_backend.speech.domain.pronunciation_drafts import (
+    PronunciationDraftResult,
     PronunciationSetPage,
     PronunciationUnavailableError,
 )
@@ -197,13 +198,32 @@ def _list(
         body = _page_body(reader.list_sets(limit=limit, after=after))
         validate_response(LIST_OPERATION, 200, {"body": body})
     except PronunciationUnavailableError:
-        # The port's only declared failure: storage could not serve the read.
+        # The port declares the read unavailable, including a history it cannot
+        # decode; that declaration, not a connection or timeout detail, is the
+        # 503 criterion.
         return pronunciation_sets_error("unavailable", request_id, LIST_OPERATION)
     except Exception:
         # A corrupt page or an unserializable summary is our defect. Mapping it
         # to a retryable outage would invite retries that can never succeed.
         return pronunciation_sets_error("contract_violation", request_id, LIST_OPERATION)
     return JSONResponse(body, headers={"Cache-Control": "no-store"})
+
+
+# The port's result is a closed set. ``draft`` and ``error_code`` are part of the
+# contract too: a created/replayed result carries a draft and no error, a
+# conflict/rejected result carries the matching error and no draft, and an
+# unknown result carries neither. Anything else is a port bug, not an outage.
+_RESULT_ERRORS = {"conflict": "idempotency_conflict", "rejected": "configuration_changed"}
+
+
+def _result_violation(result: PronunciationDraftResult) -> bool:
+    if result.outcome in ("created", "replayed"):
+        return result.draft is None or result.error_code is not None
+    if result.outcome in _RESULT_ERRORS:
+        return result.draft is not None or result.error_code != _RESULT_ERRORS[result.outcome]
+    if result.outcome == "unknown":
+        return result.draft is not None or result.error_code is not None
+    return True
 
 
 def _create(
@@ -228,15 +248,19 @@ def _create(
     try:
         result = writer.create(command)
     except PronunciationUnavailableError:
+        # The port declares the storage unavailable (including a history it
+        # cannot decode). This is its only declared failure, so it is the only
+        # exception that may become the retryable 503.
         return pronunciation_sets_error("unavailable", request_id, CREATE_OPERATION)
     except Exception:
         return pronunciation_sets_error("contract_violation", request_id, CREATE_OPERATION)
+    if _result_violation(result):
+        return pronunciation_sets_error("contract_violation", request_id, CREATE_OPERATION)
     if result.outcome in ("created", "replayed"):
-        if result.draft is None:
-            # "created" without a draft contradicts the port contract.
-            return pronunciation_sets_error("contract_violation", request_id, CREATE_OPERATION)
+        draft = result.draft
+        assert draft is not None  # narrowed by _result_violation
         try:
-            body = draft_to_wire(result.draft)
+            body = draft_to_wire(draft)
             validate_response(CREATE_OPERATION, 201, {"body": body})
         except Exception:
             return pronunciation_sets_error("contract_violation", request_id, CREATE_OPERATION)
@@ -245,6 +269,7 @@ def _create(
         return pronunciation_sets_error("idempotency_conflict", request_id, CREATE_OPERATION)
     if result.outcome == "rejected":
         return pronunciation_sets_error("configuration_changed", request_id, CREATE_OPERATION)
+    # Only "unknown" remains; _result_violation rejected every other outcome.
     if key is None:
         return pronunciation_sets_error("outcome_unknown", request_id, CREATE_OPERATION)
     return pronunciation_sets_error("unavailable", request_id, CREATE_OPERATION)

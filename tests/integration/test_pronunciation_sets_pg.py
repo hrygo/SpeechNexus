@@ -26,7 +26,15 @@ from psycopg.rows import dict_row
 from pydantic import SecretStr
 from speechnexus_contracts.pronunciation_sets_http import validate_response
 from sqlalchemy import create_engine
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.pool import NullPool
+from tests.integration.test_coordination_foundation import (
+    UpgradeSandbox,
+)
+from tests.integration.test_coordination_foundation import (
+    upgrade_sandbox as upgrade_sandbox,
+)
+from tests.integration.test_production_jobs import database as database
 from tests.support.pronunciation_examples import pronunciation_request
 from tests.unit.backend.test_health import _settings
 
@@ -333,3 +341,34 @@ def test_writer_extra_column_update_is_rejected_at_startup(sandbox: Sandbox) -> 
     ):
         pytest.fail("Writer with a revision UPDATE was accepted")
     assert app.state.pronunciation_writer_runtime.provider is None
+
+
+@pytest.mark.parametrize("database", ["postgresql"], indirect=True)
+def test_0045_names_a_bad_historical_row_and_rolls_back_its_columns(
+    upgrade_sandbox: UpgradeSandbox,
+) -> None:
+    sandbox = upgrade_sandbox
+    sandbox.upgrade("0044_voice_preview_jobs")
+    sandbox.admin.execute(
+        "INSERT INTO speech_pronunciation_families (pronunciation_id) VALUES ('pron-bad')"
+    )
+    sandbox.admin.execute(
+        "INSERT INTO speech_pronunciation_revisions "
+        "(pronunciation_id, revision, definition_json, definition_digest, key_digest, "
+        "request_digest, created_at_us) VALUES ('pron-bad', '1', 'not json', %s, %s, %s, 1)",
+        ("sha256:" + "a" * 64, "sha256:" + "b" * 64, "sha256:" + "c" * 64),
+    )
+    with pytest.raises(ProgrammingError) as failure:
+        sandbox.upgrade("0045_pronunciation_set_summary")
+    message = str(failure.value)
+    assert "refusing to constrain speech_pronunciation_revisions" in message
+    assert "cannot derive encoding/entry_count" in message
+    assert sandbox.version() == "0044_voice_preview_jobs"
+    columns = sandbox.admin.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema = %s AND table_name = 'speech_pronunciation_revisions'",
+        (sandbox.schema,),
+    ).fetchall()
+    names = {row["column_name"] for row in columns}
+    assert "encoding" not in names
+    assert "entry_count" not in names

@@ -152,6 +152,14 @@ def test_unreadable_voice_draft_target_is_a_protocol_error(document: str) -> Non
         terminal_result(job, "preview-synthetic", "receipt-synthetic")
 
 
+def test_voice_request_kind_must_match_the_job_kind() -> None:
+    """The stored command and the authoritative Job row must name one kind."""
+    job = _job("voice_design", _generation_document("voice_clone", "draft-existing", "1"))
+
+    with pytest.raises(DispatchProtocolError, match="kind disagrees"):
+        terminal_result(job, "preview-synthetic", "receipt-synthetic")
+
+
 @dataclass
 class _Cursor:
     def fetchall(self) -> list[dict[str, Any]]:

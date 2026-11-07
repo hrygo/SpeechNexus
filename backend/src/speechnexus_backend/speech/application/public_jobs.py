@@ -165,7 +165,6 @@ JobRejectionReason = Literal[
     "facts_changed",
     "identity_conflict",
     "revision_exhausted",
-    "unavailable",
     "storage_rejected",
     "contract",
 ]
@@ -175,11 +174,14 @@ class JobRejectedError(RuntimeError):
     """A prepared Job was refused; ``code`` names the class without storage detail.
 
     ``facts_changed`` and ``revision_exhausted`` are conflicts with current
-    state. ``identity_conflict`` means an unkeyed submission collided with an
-    existing committed identity. ``unavailable`` is a genuine pre-commit
-    storage outage. ``storage_rejected`` and ``contract`` are deterministic
-    defects (a database refusal or a missing result payload), not client
-    conflicts.
+    state. ``identity_conflict`` is the same 409 class but is not a normal
+    reproducible path: an unkeyed submission stores a NULL key digest and a
+    random uuid4 Job identity, so the unique constraint cannot collide that
+    way; only an extreme UUID Job identity collision can reach it.
+    ``storage_rejected`` and ``contract`` are deterministic defects (a database
+    refusal or a missing result payload), not client conflicts. A connection
+    failure in the submission window is not a refusal at all: it cannot prove
+    the transaction did not commit, so it is reported as outcome unknown.
     """
 
     def __init__(self, code: JobRejectionReason) -> None:
@@ -1454,8 +1456,6 @@ def _rejection_reason(error_code: str | None) -> JobRejectionReason:
         return "revision_exhausted"
     if error_code == "job_identity_conflict":
         return "identity_conflict"
-    if error_code == "job_unavailable":
-        return "unavailable"
     if error_code == "storage_rejected":
         return "storage_rejected"
     return "contract"

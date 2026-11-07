@@ -48,6 +48,9 @@ from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
     NOT_SUBMITTED_TABLE,
 )
+from speechnexus_backend.speech.infrastructure.job_cancellation_reconciliation_postgres import (
+    PostgresCancellationReconciliationStore,
+)
 from speechnexus_backend.speech.infrastructure.job_dispatch_postgres import (
     PostgresDispatchQueue,
     PostgresDispatchStateStore,
@@ -500,15 +503,36 @@ async def test_cancel_before_submit_records_no_execution(
 
     assert batch.lease_lost == 1 and batch.failed == 0
     assert gateway.submit_calls == 0
-    assert _job_row(db, created.job_id)["state"] == "cancelling"
     observed = db.query(
         f"SELECT job_id, observer FROM {NOT_SUBMITTED_TABLE} WHERE job_id=%s",
         (created.job_id,),
     )
     assert observed == [{"job_id": created.job_id, "observer": "worker-voice-cancel"}]
+
+    # Settlement reads the real reconciliation schedule: the durable
+    # no-execution fact is what lets a later pass close cancelling without
+    # pretending an engine stop was observed.
+    reconciliation = PostgresCancellationReconciliationStore(db.pool)
+    now = time.time_ns() // 1_000 + 1_000_000
+    candidates = reconciliation.claim_due(
+        now_us=now, limit=8, lease_until_us=now + 30_000_000, accepted_before_us=now
+    )
+    assert [candidate.job_id for candidate in candidates] == [created.job_id]
+    assert candidates[0].not_submitted_at_us is not None
+    current = db.jobs.get(created.job_id)
+    assert current.state == "cancelling"
+    settled = db.jobs.settle_cancelled(created.job_id, expected_version=current.status_version)
+    assert settled is not None and settled.state == "cancelled"
+    reconciliation.record_settled(created.job_id, now_us=now + 1)
+
+    assert _job_row(db, created.job_id)["state"] == "cancelled"
     read = await _draft_read(db, draft["id"])
     assert read.status_code == 200, read.text
-    assert read.json()["revision"]["status"] == "generating"
+    revision = read.json()["revision"]
+    assert revision["status"] == "failed"
+    assert revision["failure"]["code"] == "voice_generation_cancelled"
+    assert revision["preview_artifact_ids"] == []
+    assert db.query("SELECT count(*) AS n FROM speech_artifacts") == [{"n": 0}]
 
 
 async def test_default_and_voice_lanes_do_not_cross_claim(

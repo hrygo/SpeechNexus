@@ -136,7 +136,7 @@ Job ID 确定性派生的 `submit_intent_id`，领取者先查询原身份，只
 成功执行读取原回执后写引用型 `result_json`；网关终态失败冻结错误码。公共 Job
 的 `status_version` 由条件 UPDATE 递增，终态与协调行关闭在同一事务。批次、租约、
 轮询、提交超时、任务期限和领取次数均有显式上限。任务期限到达但执行可能仍在运行时
-返回 unknown，不用 `failed` 假装算力已停止；当前代码在首次查询返回 `not_found` 且任务已过期时写 `job_timeout`。该查询结果本身不能证明任何先前未知外发不存在；生产 planner 尚未装配，接入前必须核对提交屏障与超时竞争，不能将这一分支视为已验证的停止或释放证据。
+返回 unknown，不用 `failed` 假装算力已停止；首次查询返回 `not_found` 且任务已过期时也只返回 unknown（内部结果码 `job_timeout`），不写 `job_timeout` 终态或错误码。该查询结果本身不能证明任何先前未知外发不存在；生产 planner 尚未装配，接入前必须核对提交屏障与超时竞争，不能将这一分支视为已验证的停止或释放证据。dispatcher 超时的持久结算与对账归 [#528](https://github.com/hrygo/SpeechNexus/issues/528)，当前没有对应的时间超时对账器。
 
 派发器只通过 `speech/infrastructure/execution_gateway_adapter.py` 的
 `ExecutionGatewayAdapter` 使用执行网关；适配器不持有 HTTP 实现，而是委托唯一

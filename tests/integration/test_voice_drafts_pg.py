@@ -1958,6 +1958,84 @@ async def test_deterministic_insert_rejection_is_a_500_contract_violation(
     assert voice_db.count("speech_jobs") == 1
 
 
+async def test_revision_storage_rejection_is_a_500_contract_violation(
+    voice_db: JobSandbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider, draft = _candidate_draft(voice_db)
+    store = voice_db.jobs._store
+    original = store.create_revision
+
+    def reject_revision(job: NewPublicJob, *, draft_id: str, expected_revision: str) -> Any:
+        # A deterministic revision-table refusal is an implementation defect,
+        # not a client conflict or a retryable submission outage.
+        voice_db.admin.execute(
+            "ALTER TABLE speech_voice_draft_revisions "
+            "ADD CONSTRAINT synthetic_revision_rejection CHECK (false) NOT VALID"
+        )
+        try:
+            return original(job, draft_id=draft_id, expected_revision=expected_revision)
+        finally:
+            voice_db.admin.execute(
+                "ALTER TABLE speech_voice_draft_revisions "
+                "DROP CONSTRAINT synthetic_revision_rejection"
+            )
+
+    monkeypatch.setattr(store, "create_revision", reject_revision)
+    app = create_app(settings=_settings(), jobs=voice_db.jobs, voice_drafts=provider)
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://localhost") as http:
+        response = await http.post(
+            "/v1/nexus/voice-drafts/" + draft["id"] + "/generations",
+            json=_generation_body(draft),
+        )
+    _assert_contract_violation_envelope(response, "generateVoiceDraftRevision")
+    assert voice_db.count("speech_jobs") == 1
+    assert voice_db.count("speech_voice_draft_revisions") == 1
+
+
+async def test_pool_exhaustion_in_the_submission_window_is_outcome_unknown(
+    voice_db: JobSandbox,
+) -> None:
+    """A connection failure at insert cannot prove the transaction rolled back."""
+    exhausted = speech_pool(
+        voice_db.url,
+        schema=voice_db.schema,
+        max_size=1,
+        max_waiting=1,
+        name="voice-drafts-pool-exhaustion",
+    )
+    with exhausted:
+        store = PostgresPublicJobs(exhausted, timeout_seconds=0.2)
+        jobs = PublicJobs(voice_db.jobs._facts, store)
+        provider = VoiceDrafts(jobs, PostgresVoiceDrafts(voice_db.pool))
+        app = create_app(settings=_settings(), jobs=jobs, voice_drafts=provider)
+        with exhausted.connection():
+            async with AsyncClient(
+                transport=ASGITransport(app), base_url="http://localhost"
+            ) as http:
+                unkeyed = await http.post("/v1/nexus/voice-designs", json=_body("design"))
+                keyed = await http.post(
+                    "/v1/nexus/voice-designs",
+                    json=_body("design"),
+                    headers={"Idempotency-Key": "pool-exhaustion-key"},
+                )
+    assert unkeyed.status_code == 409, unkeyed.text
+    assert unkeyed.json()["error"]["code"] == "voice_draft_outcome_unknown"
+    assert unkeyed.json()["error"]["retryable"] is False
+    assert unkeyed.headers["X-Should-Retry"] == "false"
+    validate_response(
+        "createVoiceDesign", 409, {"body": unkeyed.json(), "headers": dict(unkeyed.headers)}
+    )
+    assert keyed.status_code == 503, keyed.text
+    assert keyed.json()["error"]["code"] == "voice_draft_outcome_unknown"
+    assert keyed.json()["error"]["retryable"] is True
+    assert keyed.headers["X-Should-Retry"] == "true"
+    validate_response(
+        "createVoiceDesign", 503, {"body": keyed.json(), "headers": dict(keyed.headers)}
+    )
+    assert voice_db.count("speech_jobs") == 0
+    assert voice_db.count("speech_voice_drafts") == 0
+
+
 async def test_generic_validation_same_fact_change_stays_unretryable_503(
     voice_db: JobSandbox, monkeypatch: pytest.MonkeyPatch
 ) -> None:

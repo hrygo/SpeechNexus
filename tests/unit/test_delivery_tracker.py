@@ -536,3 +536,10 @@ def test_snapshot_at_overrides_the_recorded_time(
     )
     cli.main()
     assert "快照时间：2026-11-02T03:04:05+08:00" in output.read_text(encoding="utf-8")
+
+
+def test_closed_issue_without_a_reason_is_unknown_and_not_completed(tracker: ModuleType) -> None:
+    state = tracker._state({"state": "closed", "state_reason": None, "labels": []})
+    assert state == "closed / unknown；不计完成"
+    assert "completed" not in state
+    assert "验收见需求证据" not in state

@@ -49,10 +49,13 @@ the loser receives `409 pronunciation_configuration_changed` and writes nothing.
 
 The route selects the publication identity, not the draft writer, for
 `publish: true`. A deployment with no publication identity answers
-`422 pronunciation_publication_not_supported` before any SQL. The pre-existing
-stable error code is retained; its meaning is now "this deployment has not
-enabled the capability", not "this operation can never implement it". Sending
-`publish: false` remains a draft there.
+`422 pronunciation_publication_not_supported` without writing anything. A keyed
+replay of a publication that already committed is resolved from the writer's
+command receipt and returns `200` with the original revision; only a key with no
+committed receipt gets the 422. The pre-existing stable error code is retained;
+its meaning is now "this deployment has not enabled the capability", not "this
+operation can never implement it". Sending `publish: false` remains a draft
+there.
 
 ## Collection read and revision status
 

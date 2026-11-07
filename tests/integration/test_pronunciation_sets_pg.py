@@ -259,6 +259,7 @@ async def test_empty_list_draft_publish_replay_and_status_semantics(sandbox: San
 
         # Omission selects the declared publication default and writes the
         # revision, the ledger row and the selected head together.
+        catalog_before = db.catalog_revision()
         body = create_body()
         body.pop("publish")
         published = await http.post(PATH, json=body, headers={"Idempotency-Key": KEY + "-publish"})
@@ -270,7 +271,9 @@ async def test_empty_list_draft_publish_replay_and_status_semantics(sandbox: San
         assert [(row["object_id"], row["revision"]) for row in ledger] == [(published_family, "1")]
         assert ledger[0]["revision_id"].startswith("prv-")
         assert db.publication_heads() == [{"object_id": published_family, "revision": "1"}]
-        assert db.catalog_revision() >= 1
+        # The INSERT trigger advances the catalogue exactly once per publication;
+        # a missing trigger leaves the counter behind even though the rows exist.
+        assert db.catalog_revision() == catalog_before + 1
 
         fixed = await http.get(f"{PATH}/{published_family}/revisions/1")
         check_read(fixed, 200)
@@ -289,12 +292,14 @@ async def test_empty_list_draft_publish_replay_and_status_semantics(sandbox: San
             (published_family, "1")
         ]
         assert db.publication_heads() == [{"object_id": published_family, "revision": "1"}]
+        pure_catalog_before = db.catalog_revision()
         pure = await http.post(
             PATH, json=create_body(publish=True), headers={"Idempotency-Key": KEY + "-pure"}
         )
         check(pure, 201, CREATE_OPERATION)
         pure_family = pure.json()["id"]
         assert pure.json()["status"] == "published"
+        assert db.catalog_revision() == pure_catalog_before + 1
 
         older = await http.get(f"{PATH}/{published_family}/revisions/1")
         check_read(older, 200)
@@ -409,6 +414,45 @@ async def test_repeated_publish_of_one_key_is_a_200_replay_with_one_ledger_row(
         assert db.published() == ledger
         assert db.publication_heads() == [{"object_id": family, "revision": "1"}]
         assert db.counts() == (1, 1)
+
+
+async def test_committed_publication_replays_without_the_publisher_identity(
+    sandbox: Sandbox,
+) -> None:
+    db = sandbox
+    body = create_body(publish=True)
+    app = db.app()
+    async with app.router.lifespan_context(app), client(app) as http:
+        created = await http.post(PATH, json=body, headers={"Idempotency-Key": KEY})
+        check(created, 201, CREATE_OPERATION)
+        original = created.json()
+        counts = db.counts()
+        ledger = db.published()
+        heads = db.publication_heads()
+        catalog = db.catalog_revision()
+
+    # Removing the publication identity must not strand an already committed
+    # publication: the writer's command receipt answers the same key with 200
+    # and performs no write at all.
+    without_publisher = db.app(pronunciation_publisher_database_url=None)
+    async with (
+        without_publisher.router.lifespan_context(without_publisher),
+        client(without_publisher) as http,
+    ):
+        replay = await http.post(PATH, json=body, headers={"Idempotency-Key": KEY})
+        check(replay, 200, CREATE_OPERATION)
+        assert replay.json() == original
+        assert db.counts() == counts
+        assert db.published() == ledger
+        assert db.publication_heads() == heads
+        assert db.catalog_revision() == catalog
+
+        fresh = await http.post(
+            PATH, json=create_body(publish=True), headers={"Idempotency-Key": KEY + "-fresh"}
+        )
+        check(fresh, 422, CREATE_OPERATION)
+        assert fresh.json()["error"]["code"] == "pronunciation_publication_not_supported"
+        assert db.counts() == counts and db.published() == ledger
 
 
 async def test_concurrent_double_publish_has_exactly_one_winner(sandbox: Sandbox) -> None:
@@ -613,6 +657,37 @@ def test_publisher_extra_column_update_is_rejected_at_startup(sandbox: Sandbox) 
         TestClient(app),
     ):
         pytest.fail("Publisher with a revision UPDATE was accepted")
+    assert app.state.pronunciation_publisher_runtime.provider is None
+
+
+def test_publisher_column_insert_on_the_catalogue_is_rejected_at_startup(
+    sandbox: Sandbox,
+) -> None:
+    db = sandbox
+    db.admin.execute(
+        f'GRANT INSERT (revision) ON "{db.schema}".speech_catalog_state TO "{db.publisher}"'
+    )
+    app = db.app()
+    with (
+        pytest.raises(ValueError, match="Pronunciation publisher startup rejected"),
+        TestClient(app),
+    ):
+        pytest.fail("Publisher with a catalogue column INSERT was accepted")
+    assert app.state.pronunciation_publisher_runtime.provider is None
+
+
+def test_publisher_column_reference_is_rejected_at_startup(sandbox: Sandbox) -> None:
+    db = sandbox
+    db.admin.execute(
+        f'GRANT REFERENCES (published_at_us) ON "{db.schema}".speech_publications '
+        f'TO "{db.publisher}"'
+    )
+    app = db.app()
+    with (
+        pytest.raises(ValueError, match="Pronunciation publisher startup rejected"),
+        TestClient(app),
+    ):
+        pytest.fail("Publisher with column REFERENCES was accepted")
     assert app.state.pronunciation_publisher_runtime.provider is None
 
 

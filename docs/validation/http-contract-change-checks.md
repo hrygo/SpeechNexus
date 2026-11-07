@@ -53,8 +53,8 @@ The existing directional comparison kernel is reused: reject known request
 narrowing and response guarantee loss, including removed paths/operations,
 new required parameters, removed request/response media or response statuses,
 required response headers, object fields, supported types/enums/constants,
-defaults (except the narrow permanent-placeholder and declared-unsupported
-capability notices below), formats,
+defaults (except the narrow permanent-placeholder and exact capability-promotion
+notices below), formats,
 bounds and boolean schemas. Supported conditional/composed
 changes require explicit proof rather than being assumed safe. Unchanged
 repository references are resolved against their own old/current document trees;
@@ -162,31 +162,30 @@ Removing the placeholder proof, accepting any 503 as proof, or letting the
 exemption swallow the rest of the schema comparison each turns a positive case
 red in `tests/contract/test_http_contract_changes.py`.
 
-### Request defaults on a declared unsupported capability
+### Exact request-default capability promotions
 
-An operation that shipped with a stable `4xx` `error.code` ending in
-`_not_supported` has itself declared the capability absent: the baseline says a
-specific request value is rejected because the feature is not implemented. When
-that operation later enables the feature, the request default that selects it
-changes meaning. Such a request-body `default` change is recorded as a `notice`
-instead of an issue, and the notice is written to stderr so `--format json`
-keeps stdout parseable.
+A baseline operation may have shipped one exact request property whose default
+selected a capability the operation itself declared absent through a stable 4xx
+`error.code`. Enabling that capability changes what the omitted property means,
+so the request-body `default` change must not be treated as a silent regression.
+The kernel keeps a literal whitelist of `(path, method, property)` entries, each
+with the exact baseline code and the exact old and new value. A matching entry
+produces a `notice` on stderr instead of an issue.
 
-The exemption is deliberately narrow:
+The exemption is deliberately narrower than the operation:
 
-- the baseline response must declare a literal (or enum member) `error.code`
-  ending in `_not_supported`, resolved through repository `$ref`s. An
-  unjudgeable body never qualifies;
-- it covers only request-body `default` (value or presence). Response defaults,
-  parameters, `type`, `enum`, `const`, `required`, `format`, bounds, composition
-  and response statuses are still compared normally;
-- it is inferred from the baseline response, never from `operationId`, a path or
-  a hardcoded list. A new operation has no baseline and cannot qualify;
-- an operation whose defaults were already load-bearing without that declaration
-  still fails, so ordinary shipped operations are unaffected.
+- a different property on the same operation is still compared normally, even
+  when the operation declares the code;
+- a different operation, path or method never inherits another operation's
+  entry, even if it declares a similar `*_not_supported` code;
+- the direction is fixed: the reverse default change, a missing default, or any
+  other old/new value is an issue;
+- only request-body `default` is covered. Response defaults, parameters,
+  `type`, `enum`, `const`, `required`, `format`, bounds, composition and
+  response statuses are still compared normally.
 
-Deleting the `_not_supported` inference, accepting any `4xx` as proof, or letting
-the exemption cover response defaults turns a negative case red in
+Deleting the pointer/value check, dropping the exact code proof or accepting the
+reverse direction each turns a negative case red in
 `tests/contract/test_http_contract_changes.py`.
 
 ## What remains outside this unit

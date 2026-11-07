@@ -14,7 +14,7 @@ from __future__ import annotations
 import base64
 import json
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Protocol, cast
 
 from fastapi import APIRouter, Request
 from speechnexus_contracts import ContractValidationError
@@ -32,6 +32,7 @@ from speechnexus_backend.speech.application.pronunciation_drafts import (
 )
 from speechnexus_backend.speech.domain.assets import identifier
 from speechnexus_backend.speech.domain.pronunciation_drafts import (
+    CreatePronunciationDraft,
     PronunciationDraftResult,
     PronunciationSetPage,
     PronunciationUnavailableError,
@@ -48,6 +49,13 @@ from speechnexus_backend.speech.interfaces.pronunciation_drafts import (
     prepare_pronunciation_draft,
     summary_to_wire,
 )
+
+
+class _RecoverableWriter(PronunciationWriter, Protocol):
+    """The private port also resolves an existing command receipt without writing."""
+
+    def recover(self, command: CreatePronunciationDraft) -> PronunciationDraftResult: ...
+
 
 PATH = "/v1/nexus/pronunciation-sets"
 LIST_OPERATION = "listPronunciationSets"
@@ -231,6 +239,17 @@ def _result_violation(result: PronunciationDraftResult) -> bool:
     return True
 
 
+def _draft_response(result: PronunciationDraftResult, status: int, request_id: str) -> JSONResponse:
+    draft = result.draft
+    assert draft is not None  # narrowed by _result_violation
+    try:
+        body = draft_to_wire(draft)
+        validate_response(CREATE_OPERATION, status, {"body": body})
+    except Exception:
+        return pronunciation_sets_error("contract_violation", request_id, CREATE_OPERATION)
+    return JSONResponse(body, status_code=status, headers={"Cache-Control": "no-store"})
+
+
 def _create(
     writer: PronunciationWriter | None,
     publisher: PronunciationWriter | None,
@@ -246,14 +265,25 @@ def _create(
         return pronunciation_sets_error("invalid_request", request_id, CREATE_OPERATION)
     except Exception:
         return pronunciation_sets_error("contract_violation", request_id, CREATE_OPERATION)
+    if command.publish and publisher is None:
+        # A committed publication must remain replayable after the deployment
+        # removes the publisher identity. The writer's command receipt is enough:
+        # recovery is read-only, so a hit returns the original 200 without
+        # writing any revision or ledger row, and a miss stays the stable 422.
+        if writer is not None and key is not None:
+            try:
+                replayed = cast(_RecoverableWriter, writer).recover(command)
+            except PronunciationUnavailableError:
+                return pronunciation_sets_error("unavailable", request_id, CREATE_OPERATION)
+            except Exception:
+                return pronunciation_sets_error("contract_violation", request_id, CREATE_OPERATION)
+            if replayed.outcome == "replayed" and not _result_violation(replayed):
+                return _draft_response(replayed, 200, request_id)
+        return pronunciation_sets_error("publication_not_supported", request_id, CREATE_OPERATION)
     # Atomic publication needs the dedicated identity: the draft writer holds no
     # INSERT on the ledger and must never fake a publication.
     port = publisher if command.publish else writer
     if port is None:
-        if command.publish:
-            return pronunciation_sets_error(
-                "publication_not_supported", request_id, CREATE_OPERATION
-            )
         return pronunciation_sets_error("unavailable", request_id, CREATE_OPERATION)
     try:
         result = port.create(command)
@@ -267,17 +297,10 @@ def _create(
     if _result_violation(result):
         return pronunciation_sets_error("contract_violation", request_id, CREATE_OPERATION)
     if result.outcome in ("created", "replayed"):
-        draft = result.draft
-        assert draft is not None  # narrowed by _result_violation
         # 201 means this request created the revision; 200 is the idempotent
         # replay of the same original intent, published or draft.
         status = 201 if result.outcome == "created" else 200
-        try:
-            body = draft_to_wire(draft)
-            validate_response(CREATE_OPERATION, status, {"body": body})
-        except Exception:
-            return pronunciation_sets_error("contract_violation", request_id, CREATE_OPERATION)
-        return JSONResponse(body, status_code=status, headers={"Cache-Control": "no-store"})
+        return _draft_response(result, status, request_id)
     if result.outcome == "conflict":
         return pronunciation_sets_error("idempotency_conflict", request_id, CREATE_OPERATION)
     if result.outcome == "rejected":

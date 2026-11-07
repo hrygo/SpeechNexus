@@ -649,8 +649,9 @@ paths:
         `published` for the atomic case and `draft` otherwise.
 
         A deployment that has not configured the atomic-publication identity
-        answers 422 `pronunciation_publication_not_supported` before writing
-        anything; send `publish: false` for draft-only use there.
+        answers 422 `pronunciation_publication_not_supported` for a request that
+        did not already commit; a keyed replay of a committed publication still
+        returns 200. Send `publish: false` for draft-only use there.
 
         With an `Idempotency-Key`, the same canonical intent replays the original
         revision with 200 and a different intent returns 409
@@ -3059,11 +3060,12 @@ components:
                       nexus: false
     PronunciationPublicationNotSupported:
       description: >-
-        This deployment has not configured the atomic-publication identity.
-        `publish: true` (including the declared default) was rejected before any
-        write, so no revision or publication row was created. Send
-        `publish: false` for a draft, or configure the publication role and
-        repeat the request unchanged.
+        This deployment has not configured the atomic-publication identity and
+        this request did not match a committed command receipt. No new revision,
+        publication row or head was created. If the same Idempotency-Key already
+        committed a publication, repeating it returns 200 with the original
+        revision instead of this error. Send `publish: false` for a draft, or
+        configure the publication role and repeat the request unchanged.
       headers:
         Cache-Control:
           required: true

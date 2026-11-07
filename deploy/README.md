@@ -182,9 +182,10 @@ binding 历史、`speech_publications` 与证据表。未配置时 GET 返回
 `pronunciation_publication_grants(schema, role)` 授予草稿表、发布账本、选中 head
 和 `speech_catalog_state` 的列级权限。发布身份不得复用带 DELETE 的
 `publication_grants`；启动会校验列级权限并拒绝更宽的角色。未配置发布身份时
-`publish: true` 在写入前返回 422 `pronunciation_publication_not_supported`，
-`publish: false` 仍可写草稿；只配置发布身份时草稿写入也可用，因为其授权是草稿
-writer 的超集。
+新的 `publish: true` 请求（无已提交回执）返回 422
+`pronunciation_publication_not_supported` 且不写入；已提交发布的重放仍以
+200 从命令回执恢复，`publish: false` 仍可写草稿。只配置发布身份时草稿写入也可
+用，因为其授权是草稿 writer 的超集。
 
 asr/tts 的原子创建还需要独立的 admission 角色：先应用当前迁移，再用
 `public_job_admission_grants(schema, role)` 授予列级读写（无 DELETE），设置

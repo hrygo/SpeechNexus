@@ -1,4 +1,4 @@
-"""Collection boundary: one keyset read, one immutable draft create, no publication."""
+"""Collection boundary: one keyset read, one exact-identity draft or publication write."""
 
 from __future__ import annotations
 
@@ -54,7 +54,9 @@ class Catalogue:
         self.pages: list[PronunciationSummary] = []
         self.error: Exception | None = None
         self.results: list[PronunciationDraftResult] = []
+        self.replays: list[PronunciationDraftResult] = []
         self.commands: list[CreatePronunciationDraft] = []
+        self.recovered: list[CreatePronunciationDraft] = []
         self.listed: list[tuple[int, str | None]] = []
 
     def get(self, pronunciation_id: str, revision: str) -> PronunciationDraft | None:
@@ -85,7 +87,10 @@ class Catalogue:
         )
 
     def recover(self, command: CreatePronunciationDraft) -> PronunciationDraftResult:
-        raise AssertionError("collection create never recovers directly")
+        self.recovered.append(command)
+        if self.error is not None:
+            raise self.error
+        return self.replays.pop(0) if self.replays else PronunciationDraftResult("unknown")
 
 
 def app(
@@ -263,6 +268,35 @@ async def test_keyed_replay_of_a_publication_is_200_and_not_a_second_revision() 
         check(replay, 200)
         assert replay.json() == first.json()
         assert len(publisher.commands) == 2
+
+
+async def test_committed_publication_replays_after_the_publisher_identity_is_removed() -> None:
+    port, writer, publisher = Catalogue(), Catalogue(), Catalogue()
+    body = pronunciation_request(publish=True)
+    async with client(app(port, writer=writer, publisher=publisher)) as http:
+        first = await http.post(PATH, json=body, headers={"Idempotency-Key": KEY})
+        check(first, 201)
+    command = publisher.commands[0]
+    writer.replays = [
+        PronunciationDraftResult(
+            "replayed",
+            PronunciationDraft("pron-created", "1", command.definition, 1, True),
+        )
+    ]
+    async with client(app(port, writer=writer)) as http:
+        replay = await http.post(PATH, json=body, headers={"Idempotency-Key": KEY})
+        check(replay, 200)
+        assert replay.json() == first.json()
+        missing = await http.post(
+            PATH,
+            json=pronunciation_request(publish=True),
+            headers={"Idempotency-Key": KEY + "-fresh"},
+        )
+        check(missing, 422)
+        assert missing.json()["error"]["code"] == "pronunciation_publication_not_supported"
+    # Recovery is read-only: the writer never created a second revision.
+    assert writer.commands == []
+    assert len(writer.recovered) == 2
 
 
 async def test_create_maps_store_outcomes_to_retry_safe_failures() -> None:

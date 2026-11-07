@@ -25,11 +25,12 @@ other privilege, including a column-level INSERT on the read-only ledger.
 Provisioning is external: the runtime does not run migrations, create roles or
 grant access.
 The explicit identity needs schema USAGE and SELECT on
-`speech_pronunciation_revisions` and `speech_pronunciation_families`, with no
-other speech-table privileges or column writes. Startup validates both SESSION_USER and CURRENT_USER and rejects
-owners, owner membership (including NOINHERIT), schema CREATE, elevated role
-attributes, missing SELECT and excess table/column privileges before exposing the
-provider. This is a service database identity, not a user/tenant boundary.
+`speech_pronunciation_revisions`, `speech_pronunciation_families` and
+`speech_publications`, with no other speech-table privileges or column writes.
+Startup validates both SESSION_USER and CURRENT_USER and rejects owners, owner
+membership (including NOINHERIT), schema CREATE, elevated role attributes,
+missing SELECT and excess table/column privileges before exposing the provider.
+This is a service database identity, not a user/tenant boundary.
 
 `SPEECHNEXUS_PRONUNCIATION_READ_CONCURRENCY` defaults to 4 (range 1–4);
 `SPEECHNEXUS_PRONUNCIATION_READ_TIMEOUT_SECONDS` defaults to 3 (range >0–30).

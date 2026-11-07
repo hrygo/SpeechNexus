@@ -34,11 +34,12 @@ speech source 从 `0.1.0.dev8` 升至 `0.1.0.dev9`。四条由占位变为实现
 仍是带必需缓存头与 `ErrorResponse` 信封的可重试 503；四条因此通过兼容门禁，不需要放宽
 基线或修改检查器。
 
-创建入参的 wire 契约保持原样：`VoiceDesignInput` / `VoiceCloneInput` 的 `language` 仍是
-`type: string`、`maxLength: 35`。收紧它会同时改动基线里 `generateVoiceDraftRevision` 的
-请求 schema，兼容门禁按请求体变化拒绝，因此约束落在写入口：服务端按修订 schema 的
-`LanguageTag` 校验将要落库的输入，`auto`、`zh-CN` 可以创建，`EN-US`、`english`、`x!`
-直接 400 且不落库，不再先写 Job 再让读取回显违约。四条另声明
+创建入参的 `language` 按请求契约执行：`type: string`、`maxLength: 35`，不按
+`LanguageTag` 正则拒绝大小写或标签形状；`EN-US`、`en-US`、`zh-CN`、`auto`、`english`
+均可创建。落库与修订回显使用同一规范化：主语言子标签转小写（`EN-US` → `en-US`），
+无法表示为公开 `LanguageTag` 的值回退为 BCP 47 `und`（`english`、`x!`）；原始请求仍保留
+在 Job intent 中。这样请求契约不拒绝调用方，响应也不会违反既有 `LanguageTag`。
+空白字符串和超过 35 字符的输入在提交前 400 且不落库。四条另声明
 `500 voice_draft_contract_violation`（`api_error`、`retryable: false`）：自产响应违反契约时
 按实现缺陷返回 500，而不是伪装成可重试 503；错误响应本身也过同一生成校验器。新增声明
 Host/Origin 403，以及草稿读取的无效输入 400。旧消费者应先升级生成包和 503/500 判定，
@@ -65,8 +66,15 @@ Host/Origin 403，以及草稿读取的无效输入 400。旧消费者应先升�
 
 PATCH 只接受 `expected_metadata_revision` 和 `display_name`。PG 草稿行锁内先查原键回执，
 再检查发布状态和 metadata revision CAS，再更新元数据并存回执。CAS 冲突、已发布草稿或
-同键异意图返回 409；原回执重放不受后来版本变化或发布状态影响。尝试通过 PATCH 改状态、
-输入或生成结果返回 422，且不写入。
+同键异意图返回 409；原回执重放不受后来版本变化或发布状态影响。PATCH 的成功响应同样经过
+candidate 的 receipt + ready preview 校验：与 GET 共用 `require_candidate_facts`，未验证
+候选在 GET 与 PATCH 都是 503。尝试通过 PATCH 改状态、输入或生成结果返回 422，且不写入。
+
+`POST /v1/nexus/jobs` 的 `VoiceDesignJobCreate` / `VoiceCloneJobCreate` 同样通过
+`PublicJobs.submit` 接入：202 返回 Job，并在同一事务创建一条草稿；草稿 ID 固定为
+`draft-` + Job ID，可用 `/v1/nexus/voice-drafts/{draft_id}` 读取。它与专用创建入口共享
+幂等键语义：同键同意图回放原 Job 与原草稿，不新增行；专用入口只是额外在 202 中返回
+`draft` 投影。需要草稿投影时优先用专用入口，通用入口适合已经按 Job 编排的调用方。
 
 创建提交的失败按“是否已确定未提交”区分：
 
@@ -88,7 +96,9 @@ PATCH 只接受 `expected_metadata_revision` 和 `display_name`。PG 草稿行�
 草稿的生成 Job 仍写入协调 Job 与 outbox，但本执行单元只规划 ASR/TTS：`DispatchJob`
 接受集合和 PG claim 查询共同使用 `DISPATCHABLE_JOB_KINDS`，voice 行在同一条 claim SQL
 内被过滤，不占批次上限，也不会在行转换时抛 `DispatchProtocolError` 毒化同批 ASR/TTS。
-voice 协调行保持 pending，等待后续声音执行切片接入；当前 dispatcher 不消费它。
+voice 协调行保持 pending，等待后续声音执行切片接入；当前 dispatcher 不消费它。缺失的
+执行消费者由 [#512](https://github.com/hrygo/SpeechNexus/issues/512)（原生父
+[#340](https://github.com/hrygo/SpeechNexus/issues/340)）承接，本 PR 不实现执行器。
 
 ## 迁移与生产装配
 
@@ -120,11 +130,11 @@ voice 协调行保持 pending，等待后续声音执行切片接入；当前 di
 未实现基线由 **19 降至 15**（本切片移除四条），契约中指向占位组件的 503 由 15 降至 11。
 历史审计保留原时点记录，当前结果以门禁输出为准。
 
-避免改变锁文件 registry 的验证入口：
+验证入口：
 
 ```sh
-PATH="$PWD/.venv/bin:$PATH" make PYTHON=python3 contracts-route-conformance
-PATH="$PWD/.venv/bin:$PATH" make PYTHON=python3 contracts-check contracts-drift
-PATH="$PWD/.venv/bin:$PATH" python3 -m pytest tests/unit/backend/test_voice_creation_jobs.py tests/unit/backend/test_voice_drafts_http.py
-PATH="$PWD/.venv/bin:$PATH" python3 -m pytest tests/integration/test_voice_drafts_pg.py
+make contracts-route-conformance
+make contracts-check contracts-drift
+uv run pytest tests/unit/backend/test_voice_creation_jobs.py tests/unit/backend/test_voice_drafts_http.py
+SPEECHNEXUS_TEST_DATABASE_URL=... uv run pytest tests/integration/test_voice_drafts_pg.py
 ```

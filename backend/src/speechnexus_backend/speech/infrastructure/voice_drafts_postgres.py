@@ -161,11 +161,11 @@ class PostgresVoiceDrafts:
             if changed is None:
                 raise PublicJobUnavailableError
             row = {**row, **changed}
-            body: dict[str, Any] = _view(row)["draft"]
+            view = _view(row)
             if key is not None:
                 connection.execute(
                     "INSERT INTO speech_voice_metadata_commands "
                     "(draft_id, key_digest, request_digest, result_json) VALUES (%s,%s,%s,%s)",
-                    (draft_id, key, digest, json.dumps(body, ensure_ascii=False)),
+                    (draft_id, key, digest, json.dumps(view, ensure_ascii=False)),
                 )
-        return body
+        return view

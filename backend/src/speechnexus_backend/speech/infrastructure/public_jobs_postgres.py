@@ -20,6 +20,7 @@ from speechnexus_backend.speech.application.voice_drafts import (
     draft_id_for_job,
     voice_input_document,
     voice_input_fits,
+    voice_input_shape,
 )
 from speechnexus_backend.speech.domain.public_jobs import (
     TERMINAL_STATES,
@@ -1016,7 +1017,7 @@ def _insert(connection: _Executor, job: NewPublicJob) -> None:
     if job.kind in ("voice_design", "voice_clone"):
         intent = json.loads(job.request_document)
         voice_kind = job.kind.removeprefix("voice_")
-        voice_input = {**intent["input"], "kind": voice_kind}
+        voice_input = voice_input_shape(intent["input"], voice_kind)
         stored_input = voice_input_document(intent["input"], voice_kind)
         if not voice_input_fits(stored_input):
             raise ValueError("Stored voice input exceeds the declared bound")

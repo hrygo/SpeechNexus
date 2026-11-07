@@ -119,6 +119,10 @@ class AssetNotReadyError(LookupError):
     pass
 
 
+class VoiceInputInvalidError(ValueError):
+    """The creation input does not satisfy the language field's request contract."""
+
+
 class IdempotencyConflictError(RuntimeError):
     pass
 
@@ -768,6 +772,12 @@ class PublicJobs:
         request_input = payload.get("input")
         if not isinstance(request_input, dict):
             raise AssetNotReadyError
+        if kind in ("voice_design", "voice_clone"):
+            language = request_input.get("language")
+            if language is not None and (
+                not isinstance(language, str) or not language.strip() or len(language) > 35
+            ):
+                raise VoiceInputInvalidError
         if kind == "voice_clone":
             asset_id = request_input.get("reference_audio_asset_id")
             if (
@@ -857,6 +867,7 @@ __all__ = [
     "PublicJobs",
     "UnknownWorkspaceError",
     "UnsupportedJobKindError",
+    "VoiceInputInvalidError",
     "VoiceNotPublishedError",
     "require_pinned_binding",
 ]

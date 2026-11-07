@@ -9,7 +9,10 @@ from speechnexus_contracts.voice_drafts_http import validate_response
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
-from speechnexus_backend.speech.application.voice_drafts import VoiceDrafts
+from speechnexus_backend.speech.application.voice_drafts import (
+    VoiceDrafts,
+    voice_input_document,
+)
 from speechnexus_backend.speech.domain.public_jobs import (
     JobArtifactFact,
     JobCreateResult,
@@ -71,8 +74,8 @@ class DraftStore:
                 "head_revision": "1",
                 "metadata_revision": 1,
                 "display_name": "Voice " + kind,
-                "input_json": json.dumps(
-                    {**json.loads(request.request_document)["input"], "kind": kind}
+                "input_json": voice_input_document(
+                    json.loads(request.request_document)["input"], kind
                 ),
                 "binding_json": '{"id":"tts-quality","revision":"2"}',
                 "created_at_us": NOW,
@@ -235,8 +238,8 @@ async def test_terminal_generation_projects_a_named_failure(state: str) -> None:
     validate_response("getVoiceDraft", 200, {"body": body})
 
 
-@pytest.mark.parametrize("language", ["EN-US", "english", "x!"])
-async def test_invalid_language_is_rejected_before_submission(language: str) -> None:
+@pytest.mark.parametrize("language", ["", "   ", "x" * 36])
+async def test_blank_or_overlong_language_is_rejected_before_submission(language: str) -> None:
     provider, store = _service()
     app = create_app(settings=_settings(), voice_drafts=provider)
     async with AsyncClient(transport=ASGITransport(app), base_url="http://localhost") as http:
@@ -256,8 +259,18 @@ async def test_invalid_language_is_rejected_before_submission(language: str) -> 
     assert not store.requests
 
 
-@pytest.mark.parametrize("language", ["auto", "zh-CN"])
-async def test_declared_language_tags_are_accepted(language: str) -> None:
+@pytest.mark.parametrize(
+    ("language", "expected"),
+    [
+        ("auto", "auto"),
+        ("zh-CN", "zh-CN"),
+        ("EN-US", "en-US"),
+        ("en-US", "en-US"),
+        ("english", "und"),
+        ("x!", "und"),
+    ],
+)
+async def test_language_accepts_any_contract_string(language: str, expected: str) -> None:
     provider, store = _service()
     app = create_app(settings=_settings(), voice_drafts=provider)
     async with AsyncClient(transport=ASGITransport(app), base_url="http://localhost") as http:
@@ -274,6 +287,11 @@ async def test_declared_language_tags_are_accepted(language: str) -> None:
         )
     assert response.status_code == 202, response.text
     assert len(store.requests) == 1
+    draft_id = response.json()["draft"]["id"]
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://localhost") as http:
+        read = await http.get("/v1/nexus/voice-drafts/" + draft_id)
+    assert read.status_code == 200, read.text
+    assert read.json()["revision"]["input"]["language"] == expected
 
 
 async def test_draft_revision_selects_an_exact_revision() -> None:

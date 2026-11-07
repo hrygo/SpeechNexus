@@ -9,6 +9,7 @@ from typing import Any, cast
 import pytest
 from alembic import command
 from httpx import ASGITransport, AsyncClient
+from speechnexus_contracts import parse as parse_contract
 from speechnexus_contracts.voice_drafts_http import validate_response
 from tests.integration.test_public_job_progress_migration_pg import _isolated_schema
 from tests.integration.test_public_jobs_http import JobSandbox, _seed_binding, _settings_for
@@ -380,6 +381,55 @@ async def test_candidate_requires_a_matching_receipt_and_ready_artifact(
     validate_response("getVoiceDraft", 503, {"body": read.json(), "headers": dict(read.headers)})
 
 
+@pytest.mark.parametrize(("seed_artifact", "expected"), [(True, 200), (False, 503)])
+async def test_candidate_validation_is_shared_by_get_and_patch(
+    voice_db: JobSandbox, seed_artifact: bool, expected: int
+) -> None:
+    provider = _provider(voice_db)
+    draft, job = provider.create(
+        "voice_design",
+        _body("design"),
+        request_id="request-candidate-patch",
+        idempotency_key=None,
+    )
+    if seed_artifact:
+        _seed_preview_artifact(voice_db)
+    voice_db.jobs.advance(job.job_id, "running")
+    voice_db.jobs.advance(
+        job.job_id,
+        "succeeded",
+        result_json=_candidate_result(draft["id"], "design"),
+    )
+    app = create_app(settings=_settings(), jobs=voice_db.jobs, voice_drafts=provider)
+    path = "/v1/nexus/voice-drafts/" + draft["id"]
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://localhost") as http:
+        read = await http.get(path)
+        patch = await http.patch(
+            path,
+            json={"expected_metadata_revision": 1, "display_name": "Candidate voice"},
+        )
+    assert read.status_code == patch.status_code == expected, (read.text, patch.text)
+    if expected == 200:
+        assert read.json()["draft"]["status"] == "candidate"
+        assert patch.json()["status"] == "candidate"
+        assert patch.json()["head_revision"] == "1"
+        assert read.json()["revision"]["preview_artifact_ids"] == ["preview-synthetic"]
+        validate_response("getVoiceDraft", 200, {"body": read.json()})
+        validate_response("updateVoiceDraftMetadata", 200, {"body": patch.json()})
+    else:
+        for body in (read.json(), patch.json()):
+            assert body["error"]["code"] == "voice_draft_unavailable"
+            assert body["error"]["retryable"] is True
+        validate_response(
+            "getVoiceDraft", 503, {"body": read.json(), "headers": dict(read.headers)}
+        )
+        validate_response(
+            "updateVoiceDraftMetadata",
+            503,
+            {"body": patch.json(), "headers": dict(patch.headers)},
+        )
+
+
 @pytest.mark.parametrize(
     ("reference_text", "preview_text"),
     [
@@ -530,24 +580,83 @@ async def test_http_lost_create_ack_without_key_is_not_retryable(
 
 
 @pytest.mark.parametrize("kind", ["design", "clone"])
-async def test_creation_rejects_undeclared_language_before_persistence(
-    voice_db: JobSandbox, kind: str
+@pytest.mark.parametrize("language", ["", "   ", "x" * 36])
+async def test_blank_or_overlong_language_is_rejected_before_persistence(
+    voice_db: JobSandbox, kind: str, language: str
 ) -> None:
     db = voice_db
     app = create_app(settings=_settings(), jobs=db.jobs, voice_drafts=_provider(db))
     path = "/v1/nexus/voice-" + ("designs" if kind == "design" else "clones")
+    body = _body(kind)
+    body["input"]["language"] = language
     async with AsyncClient(transport=ASGITransport(app), base_url="http://localhost") as http:
-        for language in ("EN-US", "english", "x!"):
-            body = _body(kind)
-            body["input"]["language"] = language
-            response = await http.post(path, json=body)
-            assert response.status_code == 400, response.text
-            assert response.json()["error"]["code"] == "voice_draft_invalid_request"
-        assert db.count("speech_voice_drafts") == 0
-        assert db.count("speech_jobs") == 0
-        accepted = _body(kind)
-        accepted["input"]["language"] = "zh-CN"
-        assert (await http.post(path, json=accepted)).status_code == 202
+        response = await http.post(path, json=body)
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["code"] == "voice_draft_invalid_request"
+    assert db.count("speech_voice_drafts") == 0
+    assert db.count("speech_jobs") == 0
+
+
+@pytest.mark.parametrize("kind", ["design", "clone"])
+@pytest.mark.parametrize(
+    ("language", "expected"),
+    [
+        ("auto", "auto"),
+        ("zh-CN", "zh-CN"),
+        ("EN-US", "en-US"),
+        ("en-US", "en-US"),
+        ("english", "und"),
+        ("x!", "und"),
+    ],
+)
+async def test_language_accepts_any_contract_string(
+    voice_db: JobSandbox, kind: str, language: str, expected: str
+) -> None:
+    db = voice_db
+    app = create_app(settings=_settings(), jobs=db.jobs, voice_drafts=_provider(db))
+    path = "/v1/nexus/voice-" + ("designs" if kind == "design" else "clones")
+    body = _body(kind)
+    body["input"]["language"] = language
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://localhost") as http:
+        created = await http.post(path, json=body)
+        assert created.status_code == 202, created.text
+        validate_response(
+            "createVoiceDesign" if kind == "design" else "createVoiceClone",
+            202,
+            {"body": created.json(), "headers": dict(created.headers)},
+        )
+        read = await http.get("/v1/nexus/voice-drafts/" + created.json()["draft"]["id"])
+    assert read.status_code == 200, read.text
+    assert read.json()["revision"]["input"]["language"] == expected
+    assert db.count("speech_voice_drafts") == db.count("speech_jobs") == 1
+
+
+@pytest.mark.parametrize("kind", ["voice_design", "voice_clone"])
+async def test_generic_jobs_endpoint_creates_one_draft_and_replays_it(
+    voice_db: JobSandbox, kind: str
+) -> None:
+    db = voice_db
+    app = create_app(settings=_settings(), jobs=db.jobs, voice_drafts=_provider(db))
+    payload = {
+        "kind": kind,
+        "model": "voice-model",
+        "input": _body("design" if kind == "voice_design" else "clone")["input"],
+    }
+    headers = {"Idempotency-Key": "generic-" + kind}
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://localhost") as http:
+        first = await http.post("/v1/nexus/jobs", json=payload, headers=headers)
+        assert first.status_code == 202, first.text
+        parse_contract("Job", first.json())
+        job_id = first.json()["id"]
+        assert db.count("speech_jobs") == 1
+        assert db.count("speech_voice_drafts") == 1
+        draft = await http.get("/v1/nexus/voice-drafts/draft-" + job_id)
+        assert draft.status_code == 200, draft.text
+        assert draft.json()["revision"]["kind"] == kind.removeprefix("voice_")
+        replay = await http.post("/v1/nexus/jobs", json=payload, headers=headers)
+        assert replay.status_code == 202, replay.text
+        assert replay.json()["id"] == job_id
+        assert db.count("speech_jobs") == db.count("speech_voice_drafts") == 1
 
 
 @pytest.mark.parametrize("state", ["cancelled", "expired"])

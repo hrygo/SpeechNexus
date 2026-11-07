@@ -21,6 +21,7 @@ from speechnexus_backend.speech.application.public_jobs import (
     JobRejectedError,
     ModelNotPublishedError,
     UnknownWorkspaceError,
+    VoiceInputInvalidError,
 )
 from speechnexus_backend.speech.application.voice_drafts import (
     VoiceDraftConflictError,
@@ -28,6 +29,7 @@ from speechnexus_backend.speech.application.voice_drafts import (
     VoiceDrafts,
     voice_input_document,
     voice_input_fits,
+    voice_input_shape,
 )
 from speechnexus_backend.speech.domain.public_jobs import (
     PublicJobNotFoundError,
@@ -176,7 +178,12 @@ def _stored_input_validator(name: str) -> Draft202012Validator:
 
 def _stored_input_rejected(operation: str, payload: dict[str, Any]) -> bool:
     kind, name = _STORED_INPUTS[operation]
-    stored = {**payload["input"], "kind": kind}
+    language = payload["input"].get("language")
+    if language is not None and (
+        not isinstance(language, str) or not language.strip() or len(language) > 35
+    ):
+        return True
+    stored = voice_input_shape(payload["input"], kind)
     if not _stored_input_validator(name).is_valid(stored):
         return True
     # The ingress limit bounds the whole request body, not the revision-sized
@@ -218,6 +225,8 @@ def _execute(
             status = 202
         validate_response(operation, status, {"body": body})
         return JSONResponse(body, status_code=status, headers={"Cache-Control": "no-store"})
+    except VoiceInputInvalidError:
+        return _error("invalid_request", request_id, operation)
     except VoiceDraftNotFoundError:
         if operation in ("getVoiceDraft", "updateVoiceDraftMetadata"):
             return _error("not_found", request_id, operation)

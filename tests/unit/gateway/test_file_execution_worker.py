@@ -33,6 +33,7 @@ from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.submission import (
     CleanupState,
     DispatchResult,
+    ExecutionCleanupPendingError,
     ExecutionErrorCode,
     ExecutionState,
     StopEvidenceKind,
@@ -264,6 +265,37 @@ async def test_a_structural_stage_refusal_releases_capacity_without_quarantine()
         assert not current.execution_state.holds_capacity
         assert not ledger._evidence
         assert pipeline.calls == 1 and results.calls == 0
+        assert worker.running
+
+
+class StopWinsLedger(InMemorySubmissionLedger):
+    def __init__(self) -> None:
+        super().__init__()
+        self.rejected = threading.Event()
+
+    def reject_execution_before_engine(self, request: Any) -> SubmissionIntent:
+        self.rejected.set()
+        raise ExecutionCleanupPendingError("synthetic stop won the rejection race")
+
+
+async def test_a_stop_that_wins_the_rejection_race_never_stops_acceptance() -> None:
+    ledger = StopWinsLedger()
+    with configured(ledger=ledger, pipeline=StructurallyInvalidPipeline()) as (
+        _,
+        _pipeline,
+        _,
+        worker,
+        submit,
+        _,
+        _,
+    ):
+        request = original_request()
+        submit.submit(request)
+        await wait_for(lambda: ledger.rejected.is_set())
+        # The rejection lost to a concurrent stop; leaving the execution alone is
+        # correct and must not turn the worker's acceptance gate off.
+        await asyncio.sleep(0.05)
+        assert stored(ledger, request).execution_state is ExecutionState.EXECUTING
         assert worker.running
 
 

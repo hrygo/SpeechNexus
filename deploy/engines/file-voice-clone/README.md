@@ -88,10 +88,13 @@
 证据规则核验后归还预算。408/429/5xx 与超时一律按 `TRANSPORT_UNKNOWN` 且
 `request_may_have_run=true` 保守处理；只有明确的 4xx 才是不重试的 `ENGINE_REJECTED`。
 
-参考音频/配对等内容在**发出引擎请求前**被判为结构无效时，网关记录确定性
-`invalid_execution_request` 的 `failed/not_required`：没有引擎请求离开发送进程，因此不进入
-`unknown_quarantined`、不占用容量。一旦 HTTP 请求已发出，4xx 仍按 `ENGINE_REJECTED` 保持
-容量待执行属主结算，两者不可混同。
+参考音频/配对等内容在**发出引擎请求前**被判为结构无效时，网关用一条专用受控 UPDATE
+记录确定性 `invalid_execution_request` 的 `failed/not_required`。普通的 observation 重写
+禁止清空已分配的请求身份，也不允许 `executing → not_required`，因此该语句单独校验
+`executing/pending`、版本未变、无生成样本/暂存结果/输出区间/停止证据，成功后清空未发送的
+`engine_request_id` 与 `dispatched_at`。没有引擎请求离开发送进程，所以不进入
+`unknown_quarantined`、不占用容量；若 STOPPING 或终态先赢，则放弃该转移、保留既有结果。
+一旦 HTTP 请求已发出，4xx 仍按 `ENGINE_REJECTED` 保持容量待执行属主结算，两者不可混同。
 
 ## 语言
 

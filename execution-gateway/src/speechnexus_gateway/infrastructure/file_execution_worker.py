@@ -31,6 +31,7 @@ from speechnexus_gateway.domain.output_intervals import (
 )
 from speechnexus_gateway.domain.ports import AbortOutcome, DispatchOutcome, EngineObservation
 from speechnexus_gateway.domain.recovery import (
+    ExecutionObservationConflictError,
     MarkExecutionUnknown,
     RejectExecutionBeforeEngine,
     TerminalStopEvidenceUnavailableError,
@@ -403,7 +404,16 @@ class FileExecutionWorker[StoreT]:
         # reverse or overwrite it with an unsent rejection.
         if current is None or current.execution_state is not ExecutionState.EXECUTING:
             return
-        self._ledger.reject_execution_before_engine(RejectExecutionBeforeEngine(key))
+        try:
+            self._ledger.reject_execution_before_engine(RejectExecutionBeforeEngine(key))
+        except (
+            ExecutionCleanupPendingError,
+            ExecutionObservationConflictError,
+            StaleSubmissionVersionError,
+        ):
+            # A concurrent stop or completion already owns the terminal fact.
+            # Losing that race is a no-op, not a reason to stop accepting work.
+            return
 
     def _quarantine(
         self, key: str, *, cancelled: bool, reason_code: ExecutionErrorCode | None = None

@@ -184,6 +184,7 @@ def test_one_millisecond_of_digital_silence_is_failed_and_not_publishable() -> N
     with pytest.raises(VoiceEvidenceNotEligibleError):
         build_evidence(_facts(report), report, measured_by="worker", measured_at_us=1)
 
+
 def test_validation_queue_rejects_the_legacy_anchor_only_lane() -> None:
     with pytest.raises(ValueError, match="requires admission"):
         PostgresDispatchQueue(

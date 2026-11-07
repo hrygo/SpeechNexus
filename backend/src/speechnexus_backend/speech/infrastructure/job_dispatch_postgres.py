@@ -95,9 +95,7 @@ class PostgresDispatchQueue:
             raise ValueError("Dispatch lane Job kinds must be unique")
         if any(kind not in DISPATCHABLE_JOB_KIND_UNION for kind in selected):
             raise ValueError("Dispatch lane Job kind is outside the dispatchable union")
-        if not require_admission and any(
-            kind in VOICE_VALIDATION_JOB_KINDS for kind in selected
-        ):
+        if not require_admission and any(kind in VOICE_VALIDATION_JOB_KINDS for kind in selected):
             # Legacy anchor-only rows have no attempt/lease/command; admitting
             # them would make the worker claim a Job it cannot replay.
             raise ValueError("Voice validation dispatch requires admission")

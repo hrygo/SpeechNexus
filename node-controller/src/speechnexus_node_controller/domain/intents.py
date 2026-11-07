@@ -42,6 +42,7 @@ class RuntimeIntentErrorCode(StrEnum):
     """Stable reason codes the controller records on its own intent facts."""
 
     INSTANCE_PREPARE_FAILED = "instance_prepare_failed"
+    WARMUP_DEADLINE_EXCEEDED = "warmup_deadline_exceeded"
     INSTANCE_DRAIN_INCOMPLETE = "instance_drain_incomplete"
     STOP_EVIDENCE_UNVERIFIED = "stop_evidence_unverified"
     RUNTIME_UNAVAILABLE = "runtime_unavailable"
@@ -311,7 +312,12 @@ class NativeRuntimeEvidence:
 
 @dataclass(frozen=True, slots=True)
 class InstanceObservation:
-    """What the node-local runtime reports for one instance generation."""
+    """What the node-local runtime reports for one instance generation.
+
+    ``error_code`` records a stable reason for a non-ready observation that has
+    stopped making progress, such as an exhausted warmup budget. It never turns
+    the observation into a failure, a ready state, or a released reservation.
+    """
 
     instance_id: str
     instance_generation: int
@@ -321,6 +327,7 @@ class InstanceObservation:
     observed_peak_memory: RuntimeMemoryVector | None = None
     stop_evidence: RuntimeStopEvidence | None = None
     quarantine_reason: str | None = None
+    error_code: RuntimeIntentErrorCode | None = None
     native_runtime_evidence: NativeRuntimeEvidence | None = None
 
 
@@ -430,7 +437,9 @@ class RuntimeInstanceIntent:
         }:
             self.intent_state = RuntimeIntentState.RECONCILING
             self.memory_hold = MemoryHold.PEAK
-            self.error_code = None
+            # An unresolved observation may still report why it cannot progress;
+            # the peak hold and the reconciliation state stay untouched.
+            self.error_code = observation.error_code
         elif state in {ObservedInstanceState.STOPPED, ObservedInstanceState.ABSENT}:
             self.intent_state = RuntimeIntentState.FAILED
             self.memory_hold = MemoryHold.NONE

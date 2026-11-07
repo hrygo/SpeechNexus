@@ -3,7 +3,7 @@
 import socket
 import time
 from collections.abc import Iterator
-from contextlib import AbstractContextManager, contextmanager, nullcontext
+from contextlib import AbstractContextManager, ExitStack, contextmanager, nullcontext
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -33,6 +33,8 @@ from speechnexus_node_controller.domain.intents import (
     MemoryHold,
     ObservedInstanceState,
     RuntimeActionKind,
+    RuntimeIntentErrorCode,
+    RuntimeIntentState,
 )
 from speechnexus_node_controller.domain.templates import (
     ApprovedTemplateRegistry,
@@ -115,6 +117,45 @@ def responding(
         yield server, requests, completed
     finally:
         stopping.set()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+        assert not thread.is_alive()
+
+
+@contextmanager
+def _replied(
+    status: int, *, location: str | None = None
+) -> Iterator[tuple[ThreadingHTTPServer, list[tuple[str, str]]]]:
+    """A loopback endpoint that records every method it actually receives."""
+    requests: list[tuple[str, str]] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            requests.append(("POST", self.path))
+            self._reply()
+
+        def do_GET(self) -> None:
+            requests.append(("GET", self.path))
+            self._reply()
+
+        def _reply(self) -> None:
+            self.send_response(status if self.command == "POST" else 200)
+            if location is not None:
+                self.send_header("Location", location)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, _format: str, *args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+    thread.start()
+    try:
+        yield server, requests
+    finally:
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
@@ -757,3 +798,71 @@ def test_a_restarted_controller_keeps_an_unresolved_warmup_closed(
         assert not probed and len(requests) == 1
         assert restarted_runtime._warmup_progress == {}
         assert restarted_runtime._warmup_deadlines == {}
+
+
+def test_a_redirect_is_not_followed_to_another_reachable_endpoint(tmp_path: Path) -> None:
+    """A 3xx is non-ready even when its Location would answer 200 if followed."""
+    with ExitStack() as stack:
+        target, target_requests = stack.enter_context(_replied(200))
+        primary, primary_requests = stack.enter_context(
+            _replied(302, location=f"http://127.0.0.1:{target.server_port}/")
+        )
+        body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
+        rule = _warmup_rule(primary, body, digest, attempts=1)
+        runtime = _runtime(_engine(addresses=("127.0.0.1",)))
+
+        observation = runtime.prepare(build_request(), build_template(readiness=rule))
+
+        assert observation.observed_instance_state is ObservedInstanceState.WARMING_UP
+        assert observation.error_code is None
+        assert primary_requests == [("POST", "/v1/audio/transcriptions")]
+        # Following the redirect would reach a healthy endpoint and fake readiness.
+        assert not target_requests
+        assert _only_progress(runtime).completed == 0
+
+
+def test_an_exhausted_warmup_reports_a_reason_and_keeps_the_peak_hold(tmp_path: Path) -> None:
+    """The deadline is observable, but it is neither a failure nor a release."""
+    with responding("stall") as (server, requests, _):
+        body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
+        rule = _warmup_rule(server, body, digest, attempts=2)
+        assert rule.warmup is not None
+        rule = replace(rule, warmup=replace(rule.warmup, timeout_seconds=0.3))
+        template = build_template(readiness=rule)
+        store = InMemoryIntentStore()
+        service = _control_service(template, store, _runtime(_engine(addresses=("127.0.0.1",))))
+
+        submitted = service.submit_intent(build_request()).intent
+
+        assert submitted.observed_instance_state is ObservedInstanceState.WARMING_UP
+        assert submitted.intent_state is RuntimeIntentState.RECONCILING
+        assert submitted.memory_hold is MemoryHold.PEAK
+        assert submitted.error_code is RuntimeIntentErrorCode.WARMUP_DEADLINE_EXCEEDED
+        assert len(requests) == 1
+
+        replayed = service.submit_intent(build_request())
+
+        assert replayed.idempotent_replay
+        assert replayed.intent.error_code is RuntimeIntentErrorCode.WARMUP_DEADLINE_EXCEEDED
+        assert len(requests) == 1
+
+        folded = service.reconcile_instance(SAMPLE_INSTANCE_ID, 1)
+
+        assert len(folded) == 1
+        assert folded[0].intent.intent_state is RuntimeIntentState.RECONCILING
+        assert folded[0].intent.memory_hold is MemoryHold.PEAK
+        assert folded[0].intent.error_code is RuntimeIntentErrorCode.WARMUP_DEADLINE_EXCEEDED
+        assert len(requests) == 1
+
+
+def test_a_completed_warmup_reports_no_reason(tmp_path: Path) -> None:
+    with responding("ok") as (server, requests, _):
+        body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
+        rule = _warmup_rule(server, body, digest, attempts=1)
+        runtime = _runtime(_engine(addresses=("127.0.0.1",)))
+
+        observation = runtime.prepare(build_request(), build_template(readiness=rule))
+
+        assert observation.observed_instance_state is ObservedInstanceState.READY
+        assert observation.error_code is None
+        assert len(requests) == 1

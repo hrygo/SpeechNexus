@@ -13,6 +13,7 @@ from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
 from speechnexus_backend.speech.application.public_jobs import (
     BindingFact,
+    VoiceDraftRevisionFact,
     WorkspaceFact,
     require_pinned_binding,
 )
@@ -23,6 +24,7 @@ from speechnexus_backend.speech.application.voice_drafts import (
     voice_input_shape,
 )
 from speechnexus_backend.speech.domain.public_jobs import (
+    JOB_STATES,
     TERMINAL_STATES,
     JobArtifactFact,
     JobCancellationReceipt,
@@ -37,6 +39,7 @@ from speechnexus_backend.speech.domain.public_jobs import (
     PublicJob,
     PublicJobConflictError,
     PublicJobUnavailableError,
+    RevisionCreateResult,
     identifier,
 )
 from speechnexus_backend.speech.domain.publications import (
@@ -311,6 +314,47 @@ class PostgresPublicJobs:
             raise PublicJobUnavailableError
         return _artifact(rows[0])
 
+    def voice_draft_revision(self, draft_id: str, revision: str) -> VoiceDraftRevisionFact | None:
+        rows = self._read(
+            "SELECT j.workspace_id, r.kind, d.head_revision, r.generation_job_id, "
+            "j.state, j.result_json, j.model_id, r.binding_json "
+            "FROM speech_voice_draft_revisions AS r "
+            "JOIN speech_voice_drafts AS d ON d.draft_id = r.draft_id "
+            "JOIN speech_jobs AS j ON j.job_id = r.generation_job_id "
+            "WHERE r.draft_id = %s AND r.revision = %s",
+            (identifier(draft_id), revision),
+        )
+        if not rows:
+            return None
+        if len(rows) != 1:
+            raise PublicJobUnavailableError
+        row = rows[0]
+        try:
+            binding = json.loads(row["binding_json"])
+            if not isinstance(binding, dict) or set(binding) != {"id", "revision"}:
+                raise ValueError
+            binding_id, binding_revision = binding["id"], binding["revision"]
+            if not isinstance(binding_id, str) or not isinstance(binding_revision, str):
+                raise ValueError
+            identifier(binding_id)
+            if not binding_revision.isdigit() or binding_revision.startswith("0"):
+                raise ValueError
+            state = row["state"]
+            if state not in JOB_STATES:
+                raise ValueError
+            return VoiceDraftRevisionFact(
+                workspace_id=row["workspace_id"],
+                kind=row["kind"],
+                head_revision=row["head_revision"],
+                generation_job_id=row["generation_job_id"],
+                state=state,
+                result_json=row["result_json"],
+                model_id=row["model_id"],
+                binding=(binding_id, int(binding_revision)),
+            )
+        except ValueError, TypeError, KeyError:
+            raise PublicJobUnavailableError from None
+
     def artifacts_batch(
         self, workspace_id: str, artifact_ids: Sequence[str]
     ) -> dict[str, JobArtifactFact]:
@@ -410,6 +454,18 @@ class PostgresPublicJobs:
             raise PublicJobUnavailableError
         return _replay_digest(rows[0], request_digest, retry_of_job_id)
 
+    def revision_for_job(self, draft_id: str, job_id: str) -> str | None:
+        rows = self._read(
+            "SELECT revision FROM speech_voice_draft_revisions "
+            "WHERE draft_id = %s AND generation_job_id = %s",
+            (identifier(draft_id), identifier(job_id)),
+        )
+        if not rows:
+            return None
+        if len(rows) != 1:
+            raise PublicJobUnavailableError
+        return str(rows[0]["revision"])
+
     def create(self, job: NewPublicJob) -> JobCreateResult:
         deadline = time.monotonic() + self._timeout
         for attempt in range(2):
@@ -434,6 +490,10 @@ class PostgresPublicJobs:
                             if existing is not None:
                                 return _replay_or_conflict(existing, job)
                         _validate_pinned_create(connection, job)
+                        if job.kind == "voice_validation":
+                            rejected = _lock_validation_target(connection, job)
+                            if rejected is not None:
+                                return JobCreateResult("rejected", error_code=rejected)
                     else:
                         selected = _binding_is_still_selected(
                             connection,
@@ -465,6 +525,114 @@ class PostgresPublicJobs:
             except PoolClosed, PoolTimeout, TooManyRequests:
                 return JobCreateResult("rejected", error_code="job_unavailable")
         return JobCreateResult("unknown", error_code="outcome_unknown")
+
+    def create_revision(
+        self, job: NewPublicJob, *, draft_id: str, expected_revision: str
+    ) -> RevisionCreateResult:
+        """Append one immutable revision and its Job rows in one transaction.
+
+        Replay is decided before the draft row lock: a head advance must never
+        turn a same-key replay into a stale conflict.
+        """
+        deadline = time.monotonic() + self._timeout
+        selected: dict[str, Any] | None = None
+        revision: str | None = None
+        try:
+            with self._transaction(deadline) as connection:
+                if job.idempotency_key_digest is not None:
+                    _lock_submission_key(connection, job.workspace_id, job.idempotency_key_digest)
+                    existing = _existing_by_key(connection, job)
+                    if existing is not None:
+                        replayed = _replay_digest(existing, job.request_digest, job.retry_of_job_id)
+                        if replayed.outcome != "replayed" or replayed.job is None:
+                            return RevisionCreateResult(
+                                "conflict", error_code="idempotency_conflict"
+                            )
+                        replayed_revision = _revision_for_job(
+                            connection, draft_id, replayed.job.job_id
+                        )
+                        if replayed_revision is None:
+                            return RevisionCreateResult("unknown", error_code="revision_missing")
+                        return RevisionCreateResult(
+                            "replayed", job=replayed.job, revision=replayed_revision
+                        )
+                if not _binding_is_still_selected(
+                    connection,
+                    job.kind,
+                    job.model_id,
+                    job.submission.effective_configuration_json,
+                ):
+                    return RevisionCreateResult("rejected", error_code="job_rejected")
+                row = connection.execute(
+                    "SELECT d.head_revision, d.status, d.kind, d.display_name, "
+                    "d.metadata_revision, d.created_at_us, j.workspace_id "
+                    "FROM speech_voice_drafts AS d "
+                    "JOIN speech_jobs AS j ON j.job_id = d.generation_job_id "
+                    "WHERE d.draft_id = %s FOR UPDATE OF d",
+                    (draft_id,),
+                ).fetchone()
+                if row is None or row["workspace_id"] != job.workspace_id:
+                    return RevisionCreateResult("not_found")
+                draft_kind = "design" if job.kind == "voice_design" else "clone"
+                if row["kind"] != draft_kind:
+                    return RevisionCreateResult("conflict", error_code="draft_kind_mismatch")
+                if row["status"] in ("published", "preview_only"):
+                    return RevisionCreateResult("conflict", error_code="draft_not_generatable")
+                if row["head_revision"] != expected_revision:
+                    return RevisionCreateResult("stale")
+                revision = _next_revision(expected_revision)
+                if revision is None:
+                    return RevisionCreateResult("rejected", error_code="revision_exhausted")
+                _, stored_input, binding_json = _voice_stored_values(job, draft_kind)
+                _insert_job_rows(connection, job)
+                connection.execute(
+                    "INSERT INTO speech_voice_draft_revisions "
+                    "(draft_id, revision, kind, generation_job_id, input_json, binding_json, "
+                    "created_at_us) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    (
+                        draft_id,
+                        revision,
+                        draft_kind,
+                        job.job_id,
+                        stored_input,
+                        binding_json,
+                        job.submission.submitted_at_us,
+                    ),
+                )
+                # The row is held FOR UPDATE and its head was compared above;
+                # repeating head_revision in this predicate is unreachable and
+                # must not be mistaken for an independent CAS guard.
+                updated = connection.execute(
+                    "UPDATE speech_voice_drafts SET head_revision = %s, "
+                    "generation_job_id = %s, updated_at_us = GREATEST(updated_at_us, %s) "
+                    "WHERE draft_id = %s",
+                    (
+                        revision,
+                        job.job_id,
+                        job.submission.submitted_at_us,
+                        draft_id,
+                    ),
+                ).rowcount
+                if updated != 1:
+                    raise PublicJobUnavailableError
+                selected = _select_job(connection, job.job_id)
+            if selected is None or revision is None:
+                return RevisionCreateResult("unknown", error_code="outcome_unknown")
+            return RevisionCreateResult("created", job=_job(selected), revision=revision)
+        except psycopg.errors.UniqueViolation:
+            return RevisionCreateResult("unknown", error_code="outcome_unknown")
+        except (
+            PublicJobUnavailableError,
+            psycopg.OperationalError,
+            psycopg.InterfaceError,
+        ):
+            return RevisionCreateResult("unknown", error_code="outcome_unknown")
+        except psycopg.errors.QueryCanceled:
+            return RevisionCreateResult("unknown", error_code="outcome_unknown")
+        except psycopg.Error:
+            return RevisionCreateResult("rejected", error_code="job_rejected")
+        except PoolClosed, PoolTimeout, TooManyRequests:
+            return RevisionCreateResult("rejected", error_code="job_unavailable")
 
     def cancel(
         self,
@@ -862,28 +1030,60 @@ def _lock_submission_key(connection: _Executor, workspace_id: str, key_digest: s
     )
 
 
+def _lock_validation_target(connection: _Executor, job: NewPublicJob) -> str | None:
+    """Recheck the candidate under the draft row lock before the Job insert.
+
+    ``_prepare_job`` resolves the candidate in an earlier statement. Holding the
+    draft row here prevents a concurrent append from making that decision stale
+    between prepare and insert.
+    """
+    try:
+        intent = json.loads(job.request_document)
+        request_input = intent["input"]
+        draft_id, revision = request_input["voice_draft_id"], request_input["draft_revision"]
+    except ValueError, TypeError, KeyError:
+        raise PublicJobUnavailableError from None
+    row = connection.execute(
+        "SELECT head_revision, status FROM speech_voice_drafts WHERE draft_id = %s FOR UPDATE",
+        (draft_id,),
+    ).fetchone()
+    if row is None:
+        return "not_found"
+    if row["head_revision"] != revision:
+        return "stale"
+    if row["status"] in ("published", "preview_only"):
+        return "draft_not_generatable"
+    return None
+
+
 def _validate_pinned_create(connection: _Executor, job: NewPublicJob) -> None:
     expected = job.expected_binding
     if expected is None:
         raise PublicJobUnavailableError
     reference = (expected.object_id, expected.revision)
+    if job.kind == "tts":
+        task, model_key = "tts_file", "tts"
+    elif job.kind == "voice_validation":
+        task, model_key = "voice_validation", "voice"
+    else:
+        raise PublicJobUnavailableError
     binding = require_pinned_binding(
         _pinned_binding(
             connection.execute(_PINNED_BINDING_QUERY, (reference[0], str(reference[1]))).fetchall()
         ),
         reference,
         job.model_id,
+        task=task,
     )
     if binding.publication != expected:
         raise PublicJobUnavailableError
     intent = json.loads(job.request_document)
     configuration = json.loads(job.submission.effective_configuration_json)
     if (
-        job.kind != "tts"
-        or intent.get("kind") != "tts"
-        or intent.get("model") != job.model_id
+        intent.get("kind") != job.kind
+        or intent.get("model", job.model_id) != job.model_id
         or intent.get("model_binding") != expected.reference
-        or configuration.get("models", {}).get("tts") != expected.reference
+        or configuration.get("models", {}).get(model_key) != expected.reference
     ):
         raise PublicJobUnavailableError
 
@@ -1000,7 +1200,7 @@ def _replay_digest(
     return JobCreateResult("replayed", _job(row))
 
 
-def _insert(connection: _Executor, job: NewPublicJob) -> None:
+def _insert_job_rows(connection: _Executor, job: NewPublicJob) -> None:
     submission = job.submission
     attempt_id = job.job_id + "-a1"
     connection.execute(
@@ -1042,30 +1242,6 @@ def _insert(connection: _Executor, job: NewPublicJob) -> None:
             submission.submitted_at_us,
         ),
     )
-    if job.kind in ("voice_design", "voice_clone"):
-        intent = json.loads(job.request_document)
-        voice_kind = job.kind.removeprefix("voice_")
-        voice_input = voice_input_shape(intent["input"], voice_kind)
-        stored_input = voice_input_document(intent["input"], voice_kind)
-        if not voice_input_fits(stored_input):
-            raise ValueError("Stored voice input exceeds the declared bound")
-        configuration = json.loads(submission.effective_configuration_json)
-        connection.execute(
-            "INSERT INTO speech_voice_drafts "
-            "(draft_id, generation_job_id, kind, status, head_revision, metadata_revision, "
-            "display_name, input_json, binding_json, created_at_us, updated_at_us) "
-            "VALUES (%s,%s,%s,'generating','1',1,%s,%s,%s,%s,%s)",
-            (
-                draft_id_for_job(job.job_id),
-                job.job_id,
-                voice_kind,
-                voice_input.get("display_name", "Voice " + voice_kind),
-                stored_input,
-                json.dumps(configuration["models"]["voice"], ensure_ascii=False),
-                submission.submitted_at_us,
-                submission.submitted_at_us,
-            ),
-        )
     # Private original public intent (including any exact binding selection).
     # This is NOT the complete effective execution command required by DEL-150;
     # it must not be dispatched or supplemented using mutable current defaults.
@@ -1103,3 +1279,91 @@ def _insert(connection: _Executor, job: NewPublicJob) -> None:
         "INSERT INTO coordination_outbox (event_id, job_id, event_digest) VALUES (%s, %s, %s)",
         (job.job_id + "-queued", job.job_id, job.initial_event_digest),
     )
+
+
+def _voice_stored_values(job: NewPublicJob, voice_kind: str) -> tuple[dict[str, Any], str, str]:
+    """Canonical stored input and pinned voice binding for one revision row."""
+    try:
+        intent = json.loads(job.request_document)
+        if not isinstance(intent, dict) or not isinstance(intent.get("input"), dict):
+            raise ValueError
+        source = intent["input"]
+        voice_input = voice_input_shape(source, voice_kind)
+        stored_input = voice_input_document(source, voice_kind)
+        if not voice_input_fits(stored_input):
+            raise ValueError
+        configuration = json.loads(job.submission.effective_configuration_json)
+        binding = configuration.get("models", {}).get("voice")
+        if not isinstance(binding, dict) or set(binding) != {"id", "revision"}:
+            raise ValueError
+        return (
+            voice_input,
+            stored_input,
+            json.dumps(binding, ensure_ascii=False),
+        )
+    except ValueError, TypeError, KeyError, RecursionError:
+        raise PublicJobUnavailableError from None
+
+
+def _next_revision(current: str) -> str | None:
+    try:
+        value = int(current) + 1
+    except ValueError:
+        return None
+    if value >= 10**19:
+        return None
+    return str(value)
+
+
+def _revision_for_job(connection: _Executor, draft_id: str, job_id: str) -> str | None:
+    rows = connection.execute(
+        "SELECT revision FROM speech_voice_draft_revisions "
+        "WHERE draft_id = %s AND generation_job_id = %s",
+        (draft_id, job_id),
+    ).fetchall()
+    if not rows:
+        return None
+    if len(rows) != 1:
+        raise PublicJobUnavailableError
+    return str(rows[0]["revision"])
+
+
+def _insert_creation_draft(connection: _Executor, job: NewPublicJob) -> None:
+    submission = job.submission
+    voice_kind = job.kind.removeprefix("voice_")
+    voice_input, stored_input, binding_json = _voice_stored_values(job, voice_kind)
+    connection.execute(
+        "INSERT INTO speech_voice_drafts "
+        "(draft_id, generation_job_id, kind, status, head_revision, metadata_revision, "
+        "display_name, input_json, binding_json, created_at_us, updated_at_us) "
+        "VALUES (%s,%s,%s,'generating','1',1,%s,%s,%s,%s,%s)",
+        (
+            draft_id_for_job(job.job_id),
+            job.job_id,
+            voice_kind,
+            voice_input.get("display_name", "Voice " + voice_kind),
+            stored_input,
+            binding_json,
+            submission.submitted_at_us,
+            submission.submitted_at_us,
+        ),
+    )
+    connection.execute(
+        "INSERT INTO speech_voice_draft_revisions "
+        "(draft_id, revision, kind, generation_job_id, input_json, binding_json, "
+        "created_at_us) VALUES (%s,'1',%s,%s,%s,%s,%s)",
+        (
+            draft_id_for_job(job.job_id),
+            voice_kind,
+            job.job_id,
+            stored_input,
+            binding_json,
+            submission.submitted_at_us,
+        ),
+    )
+
+
+def _insert(connection: _Executor, job: NewPublicJob) -> None:
+    _insert_job_rows(connection, job)
+    if job.kind in ("voice_design", "voice_clone"):
+        _insert_creation_draft(connection, job)

@@ -8,7 +8,7 @@ from httpx import ASGITransport, AsyncClient
 from speechnexus_contracts.voice_drafts_http import validate_response
 
 from speechnexus_backend.app import create_app
-from speechnexus_backend.speech.application.public_jobs import PublicJobs
+from speechnexus_backend.speech.application.public_jobs import JobOutcomeUnknownError, PublicJobs
 from speechnexus_backend.speech.application.voice_drafts import (
     VoiceDrafts,
     voice_input_document,
@@ -58,6 +58,27 @@ class DraftStore:
     def __init__(self, jobs_store: ArtifactStore | None = None) -> None:
         self.jobs_store = jobs_store if jobs_store is not None else ArtifactStore()
         self.jobs, self.requests = self.jobs_store.jobs, self.jobs_store.requests
+
+    def draft_exists(self, draft_id: str) -> bool:
+        return draft_id.removeprefix("draft-") in self.jobs
+
+    def revision(self, draft_id: str, revision: str) -> dict[str, Any] | None:
+        view = self.get(draft_id)
+        if view is None or revision != view["revision"]["revision"]:
+            return None
+        return cast(dict[str, Any], view["revision"])
+
+    def revision_target(self, draft_id: str, revision: str) -> dict[str, Any] | None:
+        view = self.get(draft_id)
+        if view is None or revision != view["revision"]["revision"]:
+            return None
+        return {
+            "kind": view["draft"]["kind"],
+            "status": view["draft"]["status"],
+            "head_revision": view["draft"]["head_revision"],
+            "workspace_id": "workspace-default",
+            "binding": {"id": "tts-quality", "revision": "2"},
+        }
 
     def get(self, draft_id: str, revision: str | None = None) -> dict[str, Any] | None:
         job = self.jobs.get(draft_id.removeprefix("draft-"))
@@ -499,4 +520,48 @@ async def test_contract_violation_is_a_500_not_a_retryable_503() -> None:
     assert response.headers["X-Should-Retry"] == "false"
     validate_response(
         "getVoiceDraft", 500, {"body": response.json(), "headers": dict(response.headers)}
+    )
+
+
+class LostRevisionStore(ArtifactStore):
+    def create_revision(self, job: NewPublicJob, *, draft_id: str, expected_revision: str) -> Any:
+        raise JobOutcomeUnknownError
+
+
+async def test_generate_outcome_unknown_is_a_retryable_503() -> None:
+    store = DraftStore(LostRevisionStore())
+    provider, _jobs = _provider(store)
+    app = create_app(settings=_settings(), voice_drafts=provider)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        created = await http.post(
+            "/v1/nexus/voice-designs",
+            json={
+                "model": "tts-quality",
+                "input": {"description": "Synthetic voice", "preview_text": "Synthetic preview"},
+            },
+        )
+        assert created.status_code == 202, created.text
+        lost = await http.post(
+            "/v1/nexus/voice-drafts/" + created.json()["draft"]["id"] + "/generations",
+            json={
+                "expected_draft_revision": "1",
+                "model": "tts-quality",
+                "input": {
+                    "description": "Synthetic next voice",
+                    "preview_text": "Synthetic next preview",
+                },
+            },
+            headers={"Idempotency-Key": "generate-lost-key"},
+        )
+    assert lost.status_code == 503, lost.text
+    assert lost.json()["error"]["code"] == "voice_draft_outcome_unknown"
+    assert lost.json()["error"]["type"] == "service_unavailable_error"
+    assert lost.json()["error"]["retryable"] is True
+    assert lost.headers["Cache-Control"] == "no-store"
+    assert lost.headers["X-Should-Retry"] == "true"
+    assert "operation_not_implemented" not in lost.text
+    validate_response(
+        "generateVoiceDraftRevision",
+        503,
+        {"body": lost.json(), "headers": dict(lost.headers)},
     )

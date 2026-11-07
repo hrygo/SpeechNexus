@@ -744,13 +744,16 @@ synthetic native TCP tests cover protocol consumption; no public pronunciation
 route or qualification is established. See the [read contract and upgrade
 boundary](../../docs/components/pronunciation-read-contract.md).
 
-### Voice draft creation and metadata
+### Voice draft creation, revisions and metadata
 
 The `voice-drafts-http` export selects `createVoiceDesign`, `createVoiceClone`,
-`getVoiceDraft` and `updateVoiceDraftMetadata` from the canonical speech source.
-Python imports `speechnexus_contracts.voice_drafts_http`; TypeScript imports
+`getVoiceDraft`, `updateVoiceDraftMetadata`, `generateVoiceDraftRevision` and
+`validateVoiceDraftRevision` from the canonical speech source. Python imports
+`speechnexus_contracts.voice_drafts_http`; TypeScript imports
 `@speechnexus/contracts/voice-drafts-http`. Both validate complete request and
 response envelopes. Creation returns the existing durable Job and its draft;
-PATCH accepts only a metadata revision CAS and display name. Runtime OpenAPI
-projects these same four methods. Database and actual consumer qualification
+PATCH accepts only a metadata revision CAS and display name. Generation appends
+one head-CAS revision and returns it with the durable Job; validation submits a
+Job pinned to a fixed candidate revision. Runtime OpenAPI projects these same six
+methods. Database and actual consumer qualification
 limits are recorded in [voice drafts](../../docs/components/voice-drafts.md).

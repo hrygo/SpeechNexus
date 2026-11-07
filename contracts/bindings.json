@@ -325,13 +325,17 @@
       "paths": [
         "/v1/nexus/voice-designs",
         "/v1/nexus/voice-clones",
-        "/v1/nexus/voice-drafts/{draft_id}"
+        "/v1/nexus/voice-drafts/{draft_id}",
+        "/v1/nexus/voice-drafts/{draft_id}/generations",
+        "/v1/nexus/voice-drafts/{draft_id}/validations"
       ],
       "operations": [
         "createVoiceDesign",
         "createVoiceClone",
         "getVoiceDraft",
-        "updateVoiceDraftMetadata"
+        "updateVoiceDraftMetadata",
+        "generateVoiceDraftRevision",
+        "validateVoiceDraftRevision"
       ]
     },
     "voice_retirement": {

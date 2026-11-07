@@ -19,15 +19,23 @@ from speechnexus_backend.speech.domain.public_jobs import (
     PublicJobUnavailableError,
     canonical_digest,
     idempotency_digest,
+    identifier,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechConnection, SpeechPool
 
-_SELECT = (
-    "SELECT d.*, j.state AS job_state, j.result_json, j.error_code, "
+_SELECT_BASE = (
+    "SELECT d.draft_id, d.kind, d.status, d.head_revision, d.metadata_revision, "
+    "d.display_name, d.created_at_us, d.updated_at_us, "
+    "r.revision, r.generation_job_id, r.input_json, r.binding_json, "
+    "r.created_at_us AS revision_created_at_us, "
+    "j.state AS job_state, j.result_json, j.error_code, "
     "j.workspace_id AS job_workspace_id, j.updated_at_us AS job_updated_at_us "
-    "FROM speech_voice_drafts d JOIN speech_jobs j ON j.job_id=d.generation_job_id "
-    "WHERE d.draft_id=%s"
+    "FROM speech_voice_drafts AS d "
+    "JOIN speech_voice_draft_revisions AS r ON r.draft_id = d.draft_id "
+    "JOIN speech_jobs AS j ON j.job_id = r.generation_job_id"
 )
+# The public GET and metadata paths only ever expose the draft head.
+_SELECT = _SELECT_BASE + " WHERE d.draft_id=%s AND r.revision = d.head_revision"
 
 # A terminal Job without a stored error code (cancelled or expired) still owes the
 # public revision a named failure: the contract forbids status=failed without one.
@@ -64,7 +72,7 @@ def _view(row: dict[str, Any]) -> dict[str, Any]:
             result = json.loads(row["result_json"])
             if (
                 result.get("voice_draft_id") != row["draft_id"]
-                or result.get("draft_revision") != row["head_revision"]
+                or result.get("draft_revision") != row.get("revision", row["head_revision"])
                 or result.get("kind") != "voice_" + row["kind"]
             ):
                 raise PublicJobUnavailableError
@@ -91,7 +99,7 @@ def _view(row: dict[str, Any]) -> dict[str, Any]:
             "resource_type": "voice_draft_revision",
             "object": "nexus.voice_draft_revision",
             "draft_id": row["draft_id"],
-            "revision": row["head_revision"],
+            "revision": row.get("revision", row["head_revision"]),
             "kind": row["kind"],
             "status": status,
             "input": json.loads(row["input_json"]),
@@ -99,7 +107,7 @@ def _view(row: dict[str, Any]) -> dict[str, Any]:
             "generation_job_id": row["generation_job_id"],
             "preview_artifact_ids": previews,
             "failure": failure,
-            "created_at": _stamp(row["created_at_us"]),
+            "created_at": _stamp(row.get("revision_created_at_us", row["created_at_us"])),
         },
     }
 
@@ -161,6 +169,14 @@ class PostgresVoiceDrafts:
             # Includes a lost COMMIT reply. Only the original key may be replayed.
             raise PublicJobUnavailableError from None
 
+    def draft_exists(self, draft_id: str) -> bool:
+        with self._transaction() as connection:
+            row = connection.execute(
+                "SELECT 1 AS present FROM speech_voice_drafts WHERE draft_id = %s",
+                (identifier(draft_id),),
+            ).fetchone()
+        return row is not None
+
     def get(self, draft_id: str, revision: str | None = None) -> dict[str, Any] | None:
         with self._transaction() as connection:
             row = connection.execute(_SELECT, (draft_id,)).fetchone()
@@ -168,6 +184,45 @@ class PostgresVoiceDrafts:
             # An exact revision selector never silently falls back to the head.
             return None
         return _view(row)
+
+    def revision(self, draft_id: str, revision: str) -> dict[str, Any] | None:
+        """Read one immutable revision even when a newer head exists."""
+        with self._transaction() as connection:
+            row = connection.execute(
+                _SELECT_BASE + " WHERE d.draft_id=%s AND r.revision=%s",
+                (draft_id, revision),
+            ).fetchone()
+        if row is None:
+            return None
+        return cast(dict[str, Any], _view(row)["revision"])
+
+    def revision_target(self, draft_id: str, revision: str) -> dict[str, Any] | None:
+        """Read the exact revision a generation or validation request targets."""
+        with self._transaction() as connection:
+            row = connection.execute(
+                "SELECT d.kind, d.status, d.head_revision, r.binding_json, "
+                "j.workspace_id "
+                "FROM speech_voice_drafts AS d "
+                "JOIN speech_voice_draft_revisions AS r ON r.draft_id = d.draft_id "
+                "JOIN speech_jobs AS j ON j.job_id = r.generation_job_id "
+                "WHERE d.draft_id=%s AND r.revision=%s",
+                (draft_id, revision),
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            binding = json.loads(row["binding_json"])
+            if not isinstance(binding, dict) or set(binding) != {"id", "revision"}:
+                raise ValueError
+        except ValueError, TypeError, KeyError:
+            raise PublicJobUnavailableError from None
+        return {
+            "kind": row["kind"],
+            "status": row["status"],
+            "head_revision": row["head_revision"],
+            "workspace_id": row["workspace_id"],
+            "binding": binding,
+        }
 
     def update_metadata(
         self, draft_id: str, command: Mapping[str, Any], idempotency_key: str | None

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SpeechNexus public speech API",
-    "version": "0.1.0.dev9",
+    "version": "0.1.0.dev10",
     "description": "SpeechNexus public speech protocol.\n\nThe OpenAI-compatible subset is limited to the paths, fields, formats, and\nevents explicitly declared here. A standard OpenAI SDK can use this API by\nsetting base_url to <deployment>/v1 and supplying any api_key value unless\nthe deployment enables a shared service key. SpeechNexus enhancements live\nunder /v1/nexus and the optional `nexus` request field; a standard request\nnever needs an enhancement wrapper. Unsupported standard parameters are\nrejected with 422 `unsupported_parameter`, never silently ignored.\n\nRealtime has two connection modes at GET /v1/realtime: a pre-created\nnexus session (`session_id`) and a compatibility transcription session\nopened with `model`. Both accept the declared standard transcription\nevent subset. TTS, previews, metadata, and operation coordination remain\nnexus.* events and are available only in a nexus-created session.\n"
   },
   "security": [
@@ -440,6 +440,241 @@
                           "properties": {
                             "code": {
                               "enum": ["voice_draft_unavailable"]
+                            },
+                            "type": {
+                              "const": "service_unavailable_error"
+                            },
+                            "retryable": {
+                              "const": true
+                            },
+                            "nexus": false
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/nexus/voice-drafts/{draft_id}/generations": {
+      "post": {
+        "tags": ["voice-creation"],
+        "operationId": "generateVoiceDraftRevision",
+        "summary": "Create the next draft revision and generation job",
+        "description": "Compares the expected head revision, allocates the next revision, and\ncommits the revision, job, and outbox atomically. Reusing an idempotency\nkey replays the original intent even if the head has advanced.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/DraftIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceGenerationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Next revision and generation job accepted.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceGenerationAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "500": {
+            "$ref": "#/components/responses/VoiceDraftContractViolation"
+          },
+          "503": {
+            "description": "`voice_draft_unavailable`: storage failed before any definite\ncommit, so retrying the same request is safe. The operation is\nimplemented; this is a retryable outage, not a permanently\nunimplemented operation.\n\n`voice_draft_outcome_unknown`: the revision submission may have\ncommitted but its acknowledgement was lost. This code is returned\nonly for a request that carried its original Idempotency-Key; retry\nwith that exact key so the committed revision and Job are replayed\ninstead of appending a second revision. Do not retry with a new key.\n",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "X-Should-Retry": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "true"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "code": {
+                              "enum": ["voice_draft_unavailable", "voice_draft_outcome_unknown"]
+                            },
+                            "type": {
+                              "const": "service_unavailable_error"
+                            },
+                            "retryable": {
+                              "const": true
+                            },
+                            "nexus": false
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/nexus/voice-drafts/{draft_id}/validations": {
+      "post": {
+        "tags": ["voice-creation"],
+        "operationId": "validateVoiceDraftRevision",
+        "summary": "Validate a fixed candidate revision",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/DraftIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceValidationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Validation job accepted.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "500": {
+            "$ref": "#/components/responses/VoiceDraftContractViolation"
+          },
+          "503": {
+            "description": "`voice_draft_unavailable`: storage failed before any definite\ncommit, so retrying the same request is safe. The operation is\nimplemented; this is a retryable outage, not a permanently\nunimplemented operation.\n\n`voice_draft_outcome_unknown`: the validation submission may have\ncommitted but its acknowledgement was lost. This code is returned\nonly for a request that carried its original Idempotency-Key; retry\nwith that exact key so the committed Job is replayed instead of\nsubmitting a second validation. Do not retry with a new key.\n",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "X-Should-Retry": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "true"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "code": {
+                              "enum": ["voice_draft_unavailable", "voice_draft_outcome_unknown"]
                             },
                             "type": {
                               "const": "service_unavailable_error"
@@ -2915,6 +3150,70 @@
           "display_name": {
             "type": "string",
             "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "VoiceGenerationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["expected_draft_revision", "model", "input"],
+        "properties": {
+          "expected_draft_revision": {
+            "$ref": "#/components/schemas/Revision"
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "input": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/VoiceDesignInput"
+              },
+              {
+                "$ref": "#/components/schemas/VoiceCloneInput"
+              }
+            ]
+          },
+          "constraints": {
+            "$ref": "#/components/schemas/JobConstraints"
+          }
+        }
+      },
+      "VoiceGenerationAccepted": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["object", "draft", "revision", "job"],
+        "properties": {
+          "object": {
+            "const": "nexus.voice_generation"
+          },
+          "draft": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_VoiceDraft"
+          },
+          "revision": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_VoiceDraftRevision"
+          },
+          "job": {
+            "$ref": "#/components/schemas/Job"
+          }
+        }
+      },
+      "VoiceValidationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["expected_draft_revision", "validation_set_revision"],
+        "properties": {
+          "expected_draft_revision": {
+            "$ref": "#/components/schemas/Revision"
+          },
+          "validation_set_revision": {
+            "$ref": "#/components/schemas/Revision"
+          },
+          "model": {
+            "type": "string",
             "maxLength": 128
           }
         }

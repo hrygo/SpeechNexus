@@ -1,4 +1,4 @@
-"""Four source-validated voice creation and metadata operations."""
+"""Six source-validated voice creation, metadata and revision operations."""
 
 import json
 from collections.abc import Callable
@@ -19,8 +19,11 @@ from speechnexus_backend.speech.application.public_jobs import (
     IdempotencyConflictError,
     JobOutcomeUnknownError,
     JobRejectedError,
+    ModelBindingError,
     ModelNotPublishedError,
     UnknownWorkspaceError,
+    VoiceDraftNotCandidateError,
+    VoiceDraftStaleRevisionError,
     VoiceInputInvalidError,
 )
 from speechnexus_backend.speech.application.voice_drafts import (
@@ -82,6 +85,13 @@ _ERRORS: dict[str, tuple[int, str, str, str, bool]] = {
         "invalid_request_error",
         "The original submission may have been accepted; resubmit only to create a new draft.",
         "outcome_unknown",
+        False,
+    ),
+    "not_candidate": (
+        422,
+        "invalid_request_error",
+        "The draft revision is not a candidate.",
+        "not_candidate",
         False,
     ),
     "unsupported_parameter": (
@@ -212,6 +222,30 @@ def _execute(
         elif operation == "updateVoiceDraftMetadata":
             body = provider.update_metadata(request.path_params["draft_id"], payload, key)
             status = 200
+        elif operation == "generateVoiceDraftRevision":
+            view, job = provider.generate(
+                request.path_params["draft_id"],
+                payload,
+                request_id=request_id,
+                idempotency_key=key,
+            )
+            body = {
+                "object": "nexus.voice_generation",
+                "draft": view["draft"],
+                "revision": view["revision"],
+                "job": public_job(job),
+            }
+            status = 202
+        elif operation == "validateVoiceDraftRevision":
+            body = public_job(
+                provider.validate(
+                    request.path_params["draft_id"],
+                    payload,
+                    request_id=request_id,
+                    idempotency_key=key,
+                )
+            )
+            status = 202
         else:
             if _stored_input_rejected(operation, payload):
                 return _error("invalid_request", request_id, operation)
@@ -228,24 +262,52 @@ def _execute(
     except VoiceInputInvalidError:
         return _error("invalid_request", request_id, operation)
     except VoiceDraftNotFoundError:
-        if operation in ("getVoiceDraft", "updateVoiceDraftMetadata"):
+        if operation in (
+            "getVoiceDraft",
+            "updateVoiceDraftMetadata",
+            "generateVoiceDraftRevision",
+            "validateVoiceDraftRevision",
+        ):
             return _error("not_found", request_id, operation)
         return _error("outcome_unknown", request_id, operation)
+    except PublicJobNotFoundError:
+        if operation in ("generateVoiceDraftRevision", "validateVoiceDraftRevision"):
+            return _error("not_found", request_id, operation)
+        return _error("unavailable", request_id, operation)
+    except VoiceDraftStaleRevisionError:
+        if operation in ("generateVoiceDraftRevision", "validateVoiceDraftRevision"):
+            return _error("conflict", request_id, operation)
+        return _error("unavailable", request_id, operation)
+    except VoiceDraftNotCandidateError:
+        if operation == "validateVoiceDraftRevision":
+            return _error("not_candidate", request_id, operation)
+        return _error("unavailable", request_id, operation)
     except VoiceDraftConflictError, IdempotencyConflictError:
         if operation != "getVoiceDraft":
             return _error("conflict", request_id, operation)
         return _error("unavailable", request_id, operation)
     except (
         AssetNotReadyError,
+        ModelBindingError,
         ModelNotPublishedError,
         UnknownWorkspaceError,
         DisabledWorkspaceError,
     ):
-        if operation in ("createVoiceDesign", "createVoiceClone"):
+        if operation in (
+            "createVoiceDesign",
+            "createVoiceClone",
+            "generateVoiceDraftRevision",
+            "validateVoiceDraftRevision",
+        ):
             return _error("input_unavailable", request_id, operation)
         return _error("unavailable", request_id, operation)
     except JobOutcomeUnknownError:
-        if operation in ("createVoiceDesign", "createVoiceClone"):
+        if operation in (
+            "createVoiceDesign",
+            "createVoiceClone",
+            "generateVoiceDraftRevision",
+            "validateVoiceDraftRevision",
+        ):
             # With the original key, a same-key replay returns the committed
             # draft and no second Job exists. Without one, any resubmission is
             # a new intent, so the reply must not invite an ordinary retry.
@@ -258,7 +320,6 @@ def _execute(
         # an implementation defect behind a retryable outage.
         return _error("contract_violation", request_id, operation)
     except (
-        PublicJobNotFoundError,
         PublicJobUnavailableError,
         JobRejectedError,
         ValueError,
@@ -332,5 +393,21 @@ def create_voice_drafts_router(
     @router.patch("/v1/nexus/voice-drafts/{draft_id}", operation_id="updateVoiceDraftMetadata")
     async def update_metadata(request: Request) -> JSONResponse:
         return await handle(request, "updateVoiceDraftMetadata")
+
+    @router.post(
+        "/v1/nexus/voice-drafts/{draft_id}/generations",
+        operation_id="generateVoiceDraftRevision",
+        status_code=202,
+    )
+    async def generate_revision(request: Request) -> JSONResponse:
+        return await handle(request, "generateVoiceDraftRevision")
+
+    @router.post(
+        "/v1/nexus/voice-drafts/{draft_id}/validations",
+        operation_id="validateVoiceDraftRevision",
+        status_code=202,
+    )
+    async def validate_revision(request: Request) -> JSONResponse:
+        return await handle(request, "validateVoiceDraftRevision")
 
     return router

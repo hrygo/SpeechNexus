@@ -43,6 +43,9 @@ from speechnexus_backend.speech.application.public_jobs import (
     PublicJobs,
     UnknownWorkspaceError,
     UnsupportedJobKindError,
+    VoiceDraftNotCandidateError,
+    VoiceDraftNotGeneratableError,
+    VoiceDraftStaleRevisionError,
     VoiceNotPublishedError,
 )
 from speechnexus_backend.speech.domain.public_jobs import (
@@ -489,6 +492,14 @@ async def _create(
         return job_error("idempotency_conflict", request_id)
     except JobOutcomeUnknownError:
         return job_error("job_outcome_unknown", request_id)
+    except PublicJobNotFoundError:
+        return job_error("job_not_found", request_id)
+    except VoiceDraftStaleRevisionError:
+        return job_error("voice_draft_stale_revision", request_id)
+    except VoiceDraftNotCandidateError:
+        return job_error("voice_draft_not_candidate", request_id)
+    except VoiceDraftNotGeneratableError:
+        return job_error("voice_draft_not_generatable", request_id)
     except JobRejectedError, PublicJobUnavailableError:
         return job_error("job_unavailable", request_id)
     except ValueError, TypeError, ContractValidationError:
@@ -552,6 +563,12 @@ def _read(service: PublicJobs, job_id: str, request_id: str) -> Response:
     try:
         identifier(job_id)
         job = service.get(job_id)
+    except PublicJobNotFoundError, ValueError:
+        return job_error("job_not_found", request_id)
+    try:
+        # Result projection validates the frozen Job/result document. A
+        # contract-invalid persisted result is unavailable storage, not a
+        # missing Job, so ValueError must not reach the 404 branch above.
         wire = public_job(job, service.artifacts(job))
         return Response(
             json.dumps(wire, sort_keys=False, separators=(",", ":"), ensure_ascii=False),
@@ -559,9 +576,7 @@ def _read(service: PublicJobs, job_id: str, request_id: str) -> Response:
             media_type="application/json",
             headers={"Cache-Control": "no-store"},
         )
-    except PublicJobNotFoundError, ValueError:
-        return job_error("job_not_found", request_id)
-    except PublicJobUnavailableError, ContractValidationError:
+    except PublicJobUnavailableError, ContractValidationError, ValueError:
         return job_error("job_unavailable", request_id)
 
 
@@ -636,6 +651,12 @@ def _retry(
         return job_error("pronunciation_not_found", request_id)
     except AssetNotReadyError:
         return job_error("asset_not_ready", request_id)
+    except VoiceDraftStaleRevisionError:
+        return job_error("voice_draft_stale_revision", request_id)
+    except VoiceDraftNotCandidateError:
+        return job_error("voice_draft_not_candidate", request_id)
+    except VoiceDraftNotGeneratableError:
+        return job_error("voice_draft_not_generatable", request_id)
     except JobRejectedError:
         return job_error("job_unavailable", request_id)
     except PublicJobNotFoundError, ValueError:

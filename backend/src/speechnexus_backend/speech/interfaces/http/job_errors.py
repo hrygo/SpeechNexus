@@ -29,6 +29,16 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
         "invalid_request_error",
         "The original Job intent is no longer available.",
     ),
+    "voice_draft_stale_revision": (
+        409,
+        "invalid_request_error",
+        "The draft revision is no longer current.",
+    ),
+    "voice_draft_not_generatable": (
+        409,
+        "invalid_request_error",
+        "The draft lifecycle no longer accepts this operation.",
+    ),
     "unsupported_parameter": (422, "invalid_request_error", "The Job request is not supported."),
     "job_kind_not_supported": (
         422,
@@ -75,6 +85,11 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
         "The pronunciation revision was not found.",
     ),
     "asset_not_ready": (422, "invalid_request_error", "The input asset is not ready."),
+    "voice_draft_not_candidate": (
+        422,
+        "invalid_request_error",
+        "The draft revision is not a validation candidate.",
+    ),
     "job_outcome_unknown": (
         503,
         "service_unavailable_error",

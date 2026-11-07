@@ -116,6 +116,12 @@ SPEECH_PG_COVERAGE_TESTS = (
     "tests/integration/test_binding_publication_evidence.py",
     "tests/integration/test_binding_lifecycle_pg.py",
     "tests/integration/test_binding_disable_intent_pg.py",
+    # Voice draft revisions are production Job-writer paths; their PG tests
+    # must contribute to the full Python coverage gate, not only to the
+    # separately scheduled integration shards.
+    "tests/integration/test_voice_drafts_pg.py",
+    "tests/integration/test_public_jobs_http.py",
+    "tests/integration/test_voice_draft_revisions_migration_pg.py",
 )
 
 

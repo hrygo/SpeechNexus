@@ -71,15 +71,7 @@ UNIMPLEMENTED_OPERATIONS: dict[str, tuple[str, str]] = {
         "/v1/nexus/realtime/sessions/{session_id}/cancellations",
     ),
     "connectRealtime": ("GET", "/v1/realtime"),
-    "generateVoiceDraftRevision": (
-        "POST",
-        "/v1/nexus/voice-drafts/{draft_id}/generations",
-    ),
     "createVoicePreview": ("POST", "/v1/nexus/voice-drafts/{draft_id}/previews"),
-    "validateVoiceDraftRevision": (
-        "POST",
-        "/v1/nexus/voice-drafts/{draft_id}/validations",
-    ),
     "publishVoiceDraftRevision": (
         "POST",
         "/v1/nexus/voice-drafts/{draft_id}/publications",

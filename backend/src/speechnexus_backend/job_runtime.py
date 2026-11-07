@@ -32,17 +32,29 @@ REQUIRED_SELECT = (
     "speech_job_cancellations",
     "speech_artifacts",
     "speech_voice_drafts",
+    "speech_voice_draft_revisions",
     "speech_voice_metadata_commands",
 )
 REQUIRED_INSERT = (
     "speech_voice_drafts",
+    "speech_voice_draft_revisions",
     "speech_voice_metadata_commands",
     "speech_jobs",
     "speech_job_events",
     "speech_job_submissions",
     "speech_job_cancellations",
 )
+IMMUTABLE_TABLES = ("speech_voice_draft_revisions",)
 REQUIRED_INSERT_COLUMNS = {
+    "speech_voice_draft_revisions": (
+        "draft_id",
+        "revision",
+        "kind",
+        "generation_job_id",
+        "input_json",
+        "binding_json",
+        "created_at_us",
+    ),
     "admission_operations": (
         "operation_id",
         "workspace_id",
@@ -63,7 +75,13 @@ REQUIRED_INSERT_COLUMNS = {
     "coordination_outbox": ("event_id", "job_id", "event_digest"),
 }
 REQUIRED_UPDATE_COLUMNS = {
-    "speech_voice_drafts": ("display_name", "metadata_revision", "updated_at_us"),
+    "speech_voice_drafts": (
+        "display_name",
+        "metadata_revision",
+        "updated_at_us",
+        "head_revision",
+        "generation_job_id",
+    ),
     "speech_jobs": ("state", "status_version", "result_json", "error_code", "updated_at_us"),
 }
 
@@ -184,3 +202,16 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
         row = privileges.get(table)
         if row is not None and row["can_delete"]:
             raise ValueError("Public Job writer must not delete Job history")
+    for table in IMMUTABLE_TABLES:
+        attribute_rows = connection.execute(
+            "SELECT a.attname AS name FROM pg_catalog.pg_attribute AS a "
+            "WHERE a.attrelid = %s::regclass AND a.attnum > 0 AND NOT a.attisdropped",
+            (f"{schema}.{table}",),
+        ).fetchall()
+        for attribute in attribute_rows:
+            allowed = connection.execute(
+                "SELECT pg_catalog.has_column_privilege(CURRENT_USER, %s, %s, 'UPDATE') AS ok",
+                (f"{schema}.{table}", attribute["name"]),
+            ).fetchone()
+            if allowed is not None and allowed["ok"]:
+                raise ValueError(f"Public Job writer must not update {table}.{attribute['name']}")

@@ -30,6 +30,7 @@ from speechnexus_gateway.domain.file_execution import (
     FileCommandInvalidError,
     FileStagingOutcome,
 )
+from speechnexus_gateway.domain.languages import AUTO_LANGUAGE
 from speechnexus_gateway.domain.submission import (
     MAX_ORIGINAL_COMMAND_BYTES,
     SubmitRequest,
@@ -220,8 +221,9 @@ class CommandFileVoiceClone:
             raise _invalid(
                 "voice clone command, reference material or configured binding does not match"
             ) from None
-        if metadata.language == "auto" or (
-            metadata.language.split("-", 1)[0].lower()
+        if (
+            metadata.language != AUTO_LANGUAGE
+            and metadata.language.split("-", 1)[0].lower()
             not in self._binding_policy.supported_languages
         ):
             raise _invalid(

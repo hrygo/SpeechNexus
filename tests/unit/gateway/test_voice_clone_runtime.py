@@ -92,6 +92,23 @@ def test_an_invalid_warmup_budget_is_refused(tmp_path: Path) -> None:
         load_voice_clone_configuration(settings)
 
 
+def test_a_warmup_language_of_auto_is_accepted(tmp_path: Path) -> None:
+    path, document = write_voice_clone_configuration(tmp_path)
+    document["warmup"]["language"] = "auto"
+    path.write_text(json.dumps(document))
+    settings = settings_for(
+        tmp_path,
+        file_voice_clone_config_file=path,
+        file_voice_clone_object_access_key=SecretStr("synthetic-access"),
+        file_voice_clone_object_secret_key=SecretStr("synthetic-secret"),
+    )
+
+    configuration = load_voice_clone_configuration(settings)
+
+    assert configuration is not None
+    assert configuration.warmup_language == "auto"
+
+
 def test_no_configuration_means_no_voice_clone_lane(tmp_path: Path) -> None:
     assert load_voice_clone_configuration(settings_for(tmp_path)) is None
 

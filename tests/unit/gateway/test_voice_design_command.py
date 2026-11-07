@@ -191,7 +191,7 @@ async def test_a_region_tag_with_a_verified_primary_language_is_accepted() -> No
     assert engine.calls[0][0].language == "zh-Hans"
 
 
-@pytest.mark.parametrize("language", ["ar", "nl", "auto"])
+@pytest.mark.parametrize("language", ["ar", "nl"])
 async def test_a_language_without_a_verified_engine_value_is_refused(
     language: str,
 ) -> None:
@@ -203,6 +203,16 @@ async def test_a_language_without_a_verified_engine_value_is_refused(
         await runner.synthesize(design_request(command=command), cancelled=lambda: False)
 
     assert engine.calls == []
+
+
+async def test_the_auto_language_reaches_the_engine_as_auto() -> None:
+    command = command_example(2)
+    command["language"] = "auto"
+    runner, engine = build()
+
+    await runner.synthesize(design_request(command=command), cancelled=lambda: False)
+
+    assert engine.calls[0][0].language == "auto"
 
 
 @pytest.mark.parametrize(

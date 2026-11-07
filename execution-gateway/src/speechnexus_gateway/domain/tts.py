@@ -177,6 +177,10 @@ class TtsPolicy:
     declared values are accepted so a binding can be configured explicitly, but
     an engine response that disagrees with the declaration fails instead of
     being relabelled.
+
+    A fixed ``seed`` only steadies the generated text content. It is not a
+    byte-reproducibility promise: repeated engine runs can return different
+    waveforms for the same seed, so no digest or retry may assume stable bytes.
     """
 
     config_revision: str

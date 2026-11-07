@@ -32,13 +32,23 @@ JobOutcome = Literal[
 
 _IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]\Z")
 
-# This execution unit plans ASR and TTS only. Voice creation Jobs are committed
-# with a draft, but their generation execution belongs to a later slice: the
-# queue must never claim them, or converting a row into DispatchJob would abort
-# an entire mixed batch before any supported Job is dispatched.
+# The default execution lane plans ASR and TTS only. Voice creation and
+# generation Jobs are committed with a draft, but they run in their own lane:
+# the default queue must never claim one, or converting the row into a
+# DispatchJob would abort an entire mixed batch before any supported Job is
+# dispatched. A queue that opts into the voice lane still claims only the kinds
+# its caller named.
 DISPATCHABLE_JOB_KINDS: tuple[str, ...] = ("asr", "tts")
+VOICE_GENERATION_JOB_KINDS: tuple[str, ...] = ("voice_design", "voice_clone")
+# Every kind a DispatchJob may represent, whether or not a queue claims it.
+DISPATCHABLE_JOB_KIND_UNION: tuple[str, ...] = (
+    *DISPATCHABLE_JOB_KINDS,
+    *VOICE_GENERATION_JOB_KINDS,
+)
+DispatchJobKind = Literal["asr", "tts", "voice_design", "voice_clone"]
 _ERROR_CODE = re.compile(r"[a-z][a-z0-9_]{1,62}\Z")
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
+_REVISION = re.compile(r"[1-9][0-9]{0,18}\Z")
 _TIMESTAMP = 253_402_300_799_999_999
 _EXECUTION_STATES = frozenset(
     {
@@ -121,10 +131,10 @@ def submit_intent_identity(job_id: str) -> str:
     return "submit-" + hashlib.sha256(("public-job:" + job_id).encode()).hexdigest()[:48]
 
 
-def result_artifact_identity(job_id: str, kind: Literal["asr", "tts"]) -> str:
+def result_artifact_identity(job_id: str, kind: DispatchJobKind) -> str:
     """One Job and kind publish one stable Artifact identity across replays."""
     identifier(job_id)
-    if kind not in ("asr", "tts"):
+    if kind not in DISPATCHABLE_JOB_KIND_UNION:
         raise ValueError("Invalid result Job kind")
     return (
         "artifact-" + hashlib.sha256(f"public-job-result:{job_id}:{kind}".encode()).hexdigest()[:48]
@@ -180,7 +190,7 @@ class DispatchLimits:
 class DispatchJob:
     job_id: str
     workspace_id: str
-    kind: Literal["asr", "tts"]
+    kind: DispatchJobKind
     state: DispatchState
     status_version: int
     created_at_us: int
@@ -190,7 +200,7 @@ class DispatchJob:
     def __post_init__(self) -> None:
         identifier(self.job_id)
         identifier(self.workspace_id)
-        if self.kind not in DISPATCHABLE_JOB_KINDS:
+        if self.kind not in DISPATCHABLE_JOB_KIND_UNION:
             raise ValueError("Invalid dispatch Job kind")
         if self.state not in (
             "pending",
@@ -334,10 +344,62 @@ class DispatchBatch:
         )
 
 
+def _voice_draft_reference(job: DispatchJob) -> tuple[str, str]:
+    """Return the draft and revision this voice Job's success must name.
+
+    A creation Job owns the draft allocated beside it (``draft-<job>`` at
+    revision 1). A generation Job names the draft it appends in
+    ``draft_target``; ``PostgresPublicJobs.create_revision`` stores that
+    append as the successor of ``expected_revision`` and moves the draft head
+    onto it, so the success result must name the appended revision rather than
+    the revision the request targeted.
+    """
+    try:
+        document = json.loads(job.request_document)
+    except ValueError, TypeError, RecursionError:
+        raise DispatchProtocolError("Voice Job request document is not interpretable") from None
+    if not isinstance(document, dict):
+        raise DispatchProtocolError("Voice Job request document is not an object")
+    target = document.get("draft_target")
+    if target is None:
+        return "draft-" + job.job_id, "1"
+    if (
+        not isinstance(target, dict)
+        or set(target) != {"id", "expected_revision"}
+        or not isinstance(target["id"], str)
+        or not isinstance(target["expected_revision"], str)
+        or _REVISION.fullmatch(target["expected_revision"]) is None
+    ):
+        raise DispatchProtocolError("Voice Job draft target is outside the frozen contract")
+    try:
+        identifier(target["id"])
+    except ValueError:
+        raise DispatchProtocolError(
+            "Voice Job draft target is outside the frozen contract"
+        ) from None
+    appended = int(target["expected_revision"]) + 1
+    if appended >= 10**19:
+        raise DispatchProtocolError("Voice Job draft revision is exhausted")
+    return target["id"], str(appended)
+
+
 def terminal_result(job: DispatchJob, artifact_id: str, receipt_id: str) -> str:
     """A public result carries only a stable artifact and receipt reference."""
     identifier(artifact_id)
     identifier(receipt_id)
+    if job.kind in VOICE_GENERATION_JOB_KINDS:
+        draft_id, revision = _voice_draft_reference(job)
+        return json.dumps(
+            {
+                "kind": job.kind,
+                "voice_draft_id": draft_id,
+                "draft_revision": revision,
+                "preview_artifact_ids": [artifact_id],
+                "receipt_id": receipt_id,
+            },
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
     key = "audio_artifact_id" if job.kind == "tts" else "transcript_artifact_id"
     return json.dumps(
         {"kind": job.kind, key: artifact_id, "receipt_id": receipt_id},
@@ -354,6 +416,9 @@ def gateway_failure_code(status: Mapping[str, Any]) -> str:
 
 
 __all__ = [
+    "DISPATCHABLE_JOB_KINDS",
+    "DISPATCHABLE_JOB_KIND_UNION",
+    "VOICE_GENERATION_JOB_KINDS",
     "ClaimedJob",
     "DispatchBatch",
     "DispatchClaimLostError",

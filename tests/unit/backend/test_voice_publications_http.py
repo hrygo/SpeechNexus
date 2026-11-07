@@ -9,6 +9,7 @@ from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.application.voice_publications import (
     VoicePublicationConflictError,
     VoicePublicationNotEligibleError,
+    VoicePublicationNotFoundError,
     VoicePublicationUnavailableError,
     build_publication_view,
 )
@@ -51,13 +52,20 @@ class FakePublications:
         return PUBLICATION, self.created
 
 
-async def _post(provider: FakePublications, body: dict[str, Any] = BODY) -> Any:
+async def _post(
+    provider: FakePublications,
+    body: dict[str, Any] = BODY,
+    *,
+    headers: dict[str, str] | None = None,
+) -> Any:
     app = create_app(
         settings=_settings(),
         voice_publications=cast(Any, provider),
     )
+    request_headers = {"Idempotency-Key": "publish-key-1"}
+    request_headers.update(headers or {})
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
-        return await http.post(PATH, json=body, headers={"Idempotency-Key": "publish-key-1"})
+        return await http.post(PATH, json=body, headers=request_headers)
 
 
 async def test_publish_created_and_replayed_are_201_and_200() -> None:
@@ -75,6 +83,27 @@ async def test_manual_confirmation_false_is_rejected_before_the_store() -> None:
     assert response.status_code == 400, response.text
     assert response.json()["error"]["code"] == "voice_draft_invalid_request"
     assert provider.calls == []
+
+
+async def test_rejected_authority_is_403() -> None:
+    provider = FakePublications()
+    response = await _post(provider, headers={"Host": "evil.example"})
+    assert response.status_code == 403, response.text
+    assert response.json()["error"]["code"] == "voice_draft_authority_rejected"
+    assert provider.calls == []
+
+
+async def test_unknown_draft_is_404() -> None:
+    response = await _post(FakePublications(error=VoicePublicationNotFoundError()))
+    assert response.status_code == 404, response.text
+    assert response.json()["error"]["code"] == "voice_draft_not_found"
+
+
+async def test_wrong_method_is_405() -> None:
+    app = create_app(settings=_settings(), voice_publications=cast(Any, FakePublications()))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        response = await http.get(PATH)
+    assert response.status_code == 405, response.text
 
 
 @pytest.mark.parametrize(

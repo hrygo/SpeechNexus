@@ -112,7 +112,7 @@ INTENT_DDL = (
 )
 
 # The pre-0047 shape, kept so downgrade restores exactly the view it replaced.
-LEGACY_READER_VIEW_DDL = f"""CREATE VIEW {READER_VIEW}
+LEGACY_READER_VIEW_DDL = f"""CREATE OR REPLACE VIEW {READER_VIEW}
 WITH (security_barrier = true, security_invoker = false) AS
 SELECT p.object_id AS voice_id, p.revision, p.revision_id, p.published_at_us,
        q.document,
@@ -187,7 +187,9 @@ def voice_publication_grants(schema: str, role: str) -> tuple[str, ...]:
         f'"{schema}".speech_voice_draft_revisions TO "{role}"',
         f'GRANT SELECT, INSERT ON "{schema}".speech_publications, '
         f'"{schema}".{REVISION_TABLE}, "{schema}".{INTENT_TABLE} TO "{role}"',
-        f'GRANT SELECT, INSERT, UPDATE ON "{schema}".speech_publication_heads TO "{role}"',
+        f'GRANT SELECT, INSERT ON "{schema}".speech_publication_heads TO "{role}"',
+        f"GRANT UPDATE (revision, revision_id, updated_at_us) "
+        f'ON "{schema}".speech_publication_heads TO "{role}"',
         f'GRANT UPDATE (revision, generated_at_us) ON "{schema}".speech_catalog_state TO "{role}"',
         f'GRANT UPDATE (status) ON "{schema}".speech_voice_drafts TO "{role}"',
         f'GRANT SELECT, INSERT ON "{schema}".speech_asset_references TO "{role}"',

@@ -164,6 +164,14 @@ binding 历史、`speech_publications` 与证据表。未配置时 GET 返回
 或 grant。未配置时 `/v1/nexus/jobs` 返回既有错误包封的 `503 job_unavailable`，不会
 伪造 pending Job。
 
+声音发布还需要独立的 publisher 角色：应用 0047 后由 owner 运行
+`voice_publication_grants(schema, role)`，设置 `SPEECHNEXUS_VOICE_PUBLISHER_DATABASE_URL`；
+它必须与 Job writer 指向同一数据库和服务器，但不得复用 Job writer 身份。启动会校验其列级
+权限，未配置时发布返回 503。独立记录角色使用 `voice_evidence_recorder_grants` 和
+`SPEECHNEXUS_VOICE_EVIDENCE_DATABASE_URL`，通过
+`speechnexus-record-voice-evidence` 写入证据。退休角色需在 0047 后重跑
+`binding_lifecycle_grants`，否则生命周期启动校验会拒绝旧授权。
+
 asr/tts 的原子创建还需要独立的 admission 角色：先应用当前迁移，再用
 `public_job_admission_grants(schema, role)` 授予列级读写（无 DELETE），设置
 `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL`，并确保它与

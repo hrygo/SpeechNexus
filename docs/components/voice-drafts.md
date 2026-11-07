@@ -216,14 +216,14 @@ voice 消费者。
 发布与 `200`。发布不读取或写入对象存储，素材存在性只由 `speech_asset_objects` 的
 asset/bytes/sha256 证明。
 
-发布事务内按固定顺序执行：草稿级 advisory lock → 同键回执 → `SELECT ... FOR UPDATE`
-草稿并比对 head → 输入校验（clone 必须有参考素材和 `source_use_confirmed`）→ 证据重验
+发布事务内按固定顺序执行：草稿级 advisory lock → `SELECT ... FOR UPDATE` 草稿 →
+同键回执 → 比对 head → 输入校验（clone 必须有参考素材和 `source_use_confirmed`）→ 证据重验
 （Job/draft/revision/binding 一致、report Artifact 的 receipt 与 sha256 一致）→ 素材就绪与
 对象证明 → 计算 `voice_id` 与 `MAX(revision)+1` → 追加 `speech_publications` 与选中 head →
 插入 `speech_voice_revisions` 与 `speech_asset_references` → 草稿置 `published` → 写幂等回执。
 任一步失败整笔回滚，不留下半个发布或可继续生成的已发布草稿。
 
-失败语义是稳定的：草稿或证据不存在为 404；head 已被推进或同键异意图为 409
+失败语义是稳定的：草稿不存在为 404；head 已被推进或同键异意图为 409
 `voice_draft_conflict`；证据缺失、指向别的 revision、报告摘要被改写、素材过期或缺失为
 422 `voice_publication_not_eligible`；报告 Artifact 不可读为 503
 `voice_draft_unavailable`（可重试）；响应违反契约是 500 `voice_draft_contract_violation`。
@@ -262,17 +262,42 @@ CHECK 扩展到 `voice_validation`。`0044_voice_preview_jobs` 只把同一 CHEC
 自定义发布，非空时抛出 `RuntimeError` 要求保留，空库才恢复旧视图并删表；重复 upgrade
 是幂等的。
 
-`create_app` 在既有 `JobRuntime` 里用同一 PG pool 装配 `VoiceDrafts` 与
-`PostgresVoiceDrafts`，并装配 `VoicePublications`/`PostgresVoicePublications`。沿用
-`SPEECHNEXUS_JOB_WRITER_DATABASE_URL` 和显式 schema。
+`create_app` 在 `JobRuntime` 里用 Job writer pool 装配 `VoiceDrafts` 与
+`PostgresVoiceDrafts`，另用独立 publisher pool 装配
+`VoicePublications`/`PostgresVoicePublications`；两个 DSN 必须指向同一数据库与服务器，
+且各自通过启动权限校验。
 部署先应用迁移，再由 owner 审核 `voice_draft_grants`、`public_job_grants` 及原 Job
 提交权限。运行角色对修订表只有 SELECT/INSERT；草稿表仅能 UPDATE display name、metadata revision、
 更新时间、head revision 和 generation Job；不授予 status/input/binding 更新或历史删除。
 启动校验列级权限，并对修订表逐列拒绝 UPDATE，同时拒绝 DELETE；不执行 DDL。
-发布角色只获得证据/Job/Artifact/素材/绑定/发布/head/草稿/修订的读取，发布、修订、回执与
-素材引用的 INSERT，以及 head、目录版本、草稿 `status` 的窄 UPDATE；退休角色另获素材
-引用四个谓词列的 SELECT 与 `released_at_us` 的窄 UPDATE，证据没有任何 UPDATE/DELETE。独立记录角色只能 SELECT 事实并 INSERT 证据。
-旧 Job writer 必须同步迁移和授权后升级；未配置 provider 时八条写/读路由返回真实 503。
+发布使用**独立的** `SPEECHNEXUS_VOICE_PUBLISHER_DATABASE_URL`，不复用 Job writer。发布角色
+只获得证据/Job/Artifact/素材/绑定/发布/head/草稿/修订的读取，发布、修订、回执与素材引用的
+INSERT，以及 head、目录版本、草稿 `status` 的窄 UPDATE；无可写证据、无 Job/素材写权、无
+DELETE/TRUNCATE。退休角色另获素材引用四个谓词列的 SELECT 与 `released_at_us` 的窄 UPDATE。
+记录角色只能 SELECT 事实并 INSERT 证据。启动分别校验 writer 与 publisher 的列级权限，任一
+不符即拒绝启动；未配置 publisher DSN 时发布返回 503 `voice_draft_unavailable`，不会静默
+回退到 Job writer。旧 Job writer 与新发布角色都必须在迁移后重新应用各自 grant 才能升级。
+
+部署顺序：
+
+1. 应用 `alembic upgrade head`。
+2. owner 用 `voice_evidence_recorder_grants(schema, recorder_role)` 建独立记录角色，用
+   `voice_publication_grants(schema, publisher_role)` 建独立发布角色；已配置
+   `SPEECHNEXUS_BINDING_LIFECYCLE_DATABASE_URL` 的部署还要重跑
+   `binding_lifecycle_grants(schema, lifecycle_role)`（新增素材引用列权限，否则启动校验失败）。
+3. 配置 `SPEECHNEXUS_VOICE_PUBLISHER_DATABASE_URL` 指向 publisher 角色；记录进程配置
+   `SPEECHNEXUS_VOICE_EVIDENCE_DATABASE_URL` 指向 recorder 角色。
+4. 记录证据（`--report` 必须是 Artifact 提交的同一份字节，不是重新序列化的 JSON）：
+
+```bash
+SPEECHNEXUS_VOICE_EVIDENCE_DATABASE_URL='postgresql://…' \
+  speechnexus-record-voice-evidence --schema speech \
+  --validation-job-id job_voice_validation --report ./validation-report.json \
+  --measured-by validation-worker
+```
+
+等价入口是 `python -m speechnexus_backend.record_voice_capability_evidence`。旧 Job writer
+不因迁移自动获得新权限；未配置记录器时不会产生证据，发布会 422 `evidence_missing`。
 
 `voice_validation` 的 target binding revision 必须在 `definition` 中声明
 `logical_model`，且 `tasks` 包含 `voice_validation`；缺失或未发布时提交返回 422
@@ -283,8 +308,10 @@ CHECK 扩展到 `voice_validation`。`0044_voice_preview_jobs` 只把同一 CHEC
 ## 验证与接收边界
 
 `tests/integration/test_voice_publications_pg.py` 覆盖发布成功与目录回读、同键/无键重放、
-同键异意图、缺失/篡改证据、缺失素材、并发双发布、唯一索引、跨 revision 证据、发布后
-禁止生成与 PATCH、退休释放引用和两角色的证据只追加授权；
+同键异意图、跨 draft 键、缺失/篡改/过期证据、缺失/过期素材、builtin+custom 分页、
+并发双发布、唯一索引、跨 revision 证据、发布后禁止生成与 PATCH、退休释放引用、两角色
+证据只追加授权和真实 publisher 发布；`tests/integration/test_public_jobs_http.py` 覆盖
+独立 publisher DSN 的组合根装配与拒绝复用 Job writer；
 `tests/integration/test_voice_publication_migration_pg.py` 覆盖 0047 upgrade/downgrade 守卫与
 重复 upgrade；`tests/unit/backend/test_voice_publications_http.py` 覆盖 201/200/400/409/422/503。
 `tests/unit/backend/test_voice_creation_jobs.py` 与 `test_voice_drafts_http.py` 覆盖 Job 重放、

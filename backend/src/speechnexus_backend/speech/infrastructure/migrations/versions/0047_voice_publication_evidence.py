@@ -18,7 +18,6 @@ from speechnexus_backend.speech.infrastructure.voice_publication_schema import (
     INTENT_DDL,
     INTENT_TABLE,
     LEGACY_READER_VIEW_DDL,
-    READER_VIEW,
     READER_VIEW_DDL,
     REVISION_DDL,
     REVISION_TABLE,
@@ -46,7 +45,7 @@ def downgrade() -> None:
     measured = connection.execute(text(f"SELECT count(*) FROM {EVIDENCE_TABLE}")).scalar_one()
     if custom or measured:
         raise RuntimeError("Custom voice publications and capability evidence require preservation")
-    op.execute(f"DROP VIEW {READER_VIEW}")
+    # Replace in place so the catalogue reader's SELECT grant survives rollback.
     op.execute(LEGACY_READER_VIEW_DDL)
     op.execute(f"DROP TABLE {INTENT_TABLE}")
     op.execute(f"DROP TABLE {REVISION_TABLE}")

@@ -35,6 +35,33 @@ _ADMISSION_REQUIRED_SELECT = (
     "speech_job_intents",
 )
 
+_PUBLICATION_READ_ONLY = (
+    "speech_voice_capability_evidence",
+    "speech_jobs",
+    "speech_artifacts",
+    "speech_assets",
+    "speech_asset_objects",
+    "speech_binding_revisions",
+    "speech_voice_draft_revisions",
+)
+_PUBLICATION_APPEND_ONLY = (
+    "speech_publications",
+    "speech_voice_revisions",
+    "speech_voice_publication_intents",
+    "speech_asset_references",
+)
+_PUBLICATION_UPDATE_COLUMNS = {
+    "speech_publication_heads": ("revision", "revision_id", "updated_at_us"),
+    "speech_catalog_state": ("revision", "generated_at_us"),
+    "speech_voice_drafts": ("status",),
+}
+_PUBLICATION_REQUIRED_SELECT = (
+    *_PUBLICATION_READ_ONLY,
+    *_PUBLICATION_APPEND_ONLY,
+    *_PUBLICATION_UPDATE_COLUMNS,
+)
+_PUBLICATION_REQUIRED_INSERT = (*_PUBLICATION_APPEND_ONLY, "speech_publication_heads")
+
 REQUIRED_SELECT = (
     "speech_workspaces",
     "speech_publications",
@@ -109,6 +136,7 @@ class JobRuntime:
         self._settings = settings
         self._pool: SpeechPool | None = None
         self._admission_pool: SpeechPool | None = None
+        self._publisher_pool: SpeechPool | None = None
         self.jobs: PublicJobs | None = None
         self.voice_drafts: VoiceDrafts | None = None
         self.voice_publications: VoicePublications | None = None
@@ -146,6 +174,14 @@ class JobRuntime:
                         "Public Job writer and admission roles must share one database"
                     )
                 self._admission_pool = admission_pool
+                publisher_pool = self._open_publisher_pool()
+                if publisher_pool is not None and _database_identity(pool) != _database_identity(
+                    publisher_pool
+                ):
+                    raise ValueError(
+                        "Public Job writer and voice publisher must share one database"
+                    )
+                self._publisher_pool = publisher_pool
                 adapter = PostgresPublicJobs(
                     pool,
                     admission_pool=admission_pool,
@@ -155,13 +191,21 @@ class JobRuntime:
                 )
                 self.jobs = PublicJobs(adapter, adapter)
                 self.voice_drafts = VoiceDrafts(self.jobs, PostgresVoiceDrafts(pool))
-                self.voice_publications = VoicePublications(
-                    PostgresVoicePublications(
-                        pool, timeout_seconds=self._settings.job_transaction_timeout_seconds
+                self.voice_publications = (
+                    VoicePublications(
+                        PostgresVoicePublications(
+                            publisher_pool,
+                            timeout_seconds=self._settings.job_transaction_timeout_seconds,
+                        )
                     )
+                    if publisher_pool is not None
+                    else None
                 )
             except BaseException as error:
                 try:
+                    if self._publisher_pool is not None:
+                        self._publisher_pool.close()
+                        self._publisher_pool = None
                     if self._admission_pool is not None:
                         self._admission_pool.close()
                         self._admission_pool = None
@@ -198,11 +242,35 @@ class JobRuntime:
             raise
         return pool
 
+    def _open_publisher_pool(self) -> SpeechPool | None:
+        secret = self._settings.voice_publisher_database_url
+        if secret is None:
+            return None
+        name = "speech-voice-publisher-" + uuid.uuid4().hex
+        pool = speech_pool(
+            secret.get_secret_value(),
+            schema=self._settings.database_schema,
+            max_size=4,
+            name=name,
+        )
+        pool.open()
+        try:
+            with pool.connection(timeout=3) as connection:
+                connection.execute("SET LOCAL statement_timeout='3s'")
+                _verify_publication_privileges(connection, self._settings.database_schema)
+        except BaseException:
+            pool.close()
+            raise
+        return pool
+
     def close(self) -> None:
         with self._lifetime:
             self.jobs = None
             self.voice_drafts = None
             self.voice_publications = None
+            if self._publisher_pool is not None:
+                self._publisher_pool.close()
+                self._publisher_pool = None
             if self._admission_pool is not None:
                 self._admission_pool.close()
                 self._admission_pool = None
@@ -285,6 +353,75 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
             ).fetchone()
             if allowed is not None and allowed["ok"]:
                 raise ValueError(f"Public Job writer must not update {table}.{attribute['name']}")
+
+
+def _verify_publication_privileges(connection: SpeechConnection, schema: str) -> None:
+    """The publisher may measure nothing and append only its own projection."""
+    for table in _PUBLICATION_REQUIRED_SELECT:
+        allowed = connection.execute(
+            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'SELECT') AS ok",
+            (f"{schema}.{table}",),
+        ).fetchone()
+        if allowed is None or not allowed["ok"]:
+            raise ValueError(f"Voice publisher lacks SELECT on {table}")
+    for table in _PUBLICATION_REQUIRED_INSERT:
+        allowed = connection.execute(
+            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'INSERT') AS ok",
+            (f"{schema}.{table}",),
+        ).fetchone()
+        if allowed is None or not allowed["ok"]:
+            raise ValueError(f"Voice publisher lacks INSERT on {table}")
+    for table in ("speech_voice_drafts", "speech_catalog_state"):
+        append = connection.execute(
+            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'INSERT') AS ok",
+            (f"{schema}.{table}",),
+        ).fetchone()
+        if append is None or append["ok"]:
+            raise ValueError(f"Voice publisher can append to {table}")
+    for table, columns in _PUBLICATION_UPDATE_COLUMNS.items():
+        destructive = connection.execute(
+            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'DELETE,TRUNCATE') AS ok",
+            (f"{schema}.{table}",),
+        ).fetchone()
+        if destructive is None or destructive["ok"]:
+            raise ValueError(f"Voice publisher must not delete {table}")
+        column_rows = connection.execute(
+            "SELECT column_name, pg_catalog.has_column_privilege(CURRENT_USER, %s, "
+            "column_name, 'UPDATE') AS updatable FROM information_schema.columns "
+            "WHERE table_schema=%s AND table_name=%s",
+            (f"{schema}.{table}", schema, table),
+        ).fetchall()
+        if {row["column_name"] for row in column_rows if row["updatable"]} != set(columns):
+            raise ValueError(f"Voice publisher UPDATE columns do not match {table}")
+    for table in (*_PUBLICATION_READ_ONLY, *_PUBLICATION_APPEND_ONLY):
+        destructive = connection.execute(
+            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, "
+            "'DELETE,TRUNCATE,REFERENCES,TRIGGER') AS ok",
+            (f"{schema}.{table}",),
+        ).fetchone()
+        if destructive is None or destructive["ok"]:
+            raise ValueError(f"Voice publisher holds destructive privileges on {table}")
+        column_privileges = connection.execute(
+            "SELECT pg_catalog.has_any_column_privilege(CURRENT_USER, %s, "
+            "'UPDATE,REFERENCES') AS ok",
+            (f"{schema}.{table}",),
+        ).fetchone()
+        if column_privileges is None or column_privileges["ok"]:
+            raise ValueError(f"Voice publisher holds column writes on {table}")
+    for table in _PUBLICATION_READ_ONLY:
+        append = connection.execute(
+            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'INSERT') AS ok",
+            (f"{schema}.{table}",),
+        ).fetchone()
+        if append is None or append["ok"]:
+            raise ValueError(f"Voice publisher can append to read-only table {table}")
+    for table in _PUBLICATION_APPEND_ONLY:
+        rewrite = connection.execute(
+            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'UPDATE') AS ok",
+            (f"{schema}.{table}",),
+        ).fetchone()
+        if rewrite is None or rewrite["ok"]:
+            raise ValueError(f"Voice publisher can rewrite append-only table {table}")
 
 
 def _verify_admission_privileges(connection: SpeechConnection, schema: str) -> None:

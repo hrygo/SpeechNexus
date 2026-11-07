@@ -183,6 +183,12 @@ class PostgresVoicePublications:
             "'speechnexus:voice-publication:' || current_schema() || ':' || %s, 0))",
             (draft_id,),
         )
+        cursor.execute(_SELECT_DRAFT + " FOR UPDATE", (draft_id,))
+        drafts = cursor.fetchall()
+        if len(drafts) != 1:
+            raise VoicePublicationNotFoundError
+        draft = drafts[0]
+
         if key_digest is not None:
             cursor.execute(
                 f"SELECT request_digest, result FROM {INTENT_TABLE} WHERE key_digest=%s",
@@ -193,12 +199,6 @@ class PostgresVoicePublications:
                 if receipts[0]["request_digest"] != request_digest:
                     raise VoicePublicationConflictError("idempotency_conflict")
                 return dict(receipts[0]["result"]), False
-
-        cursor.execute(_SELECT_DRAFT + " FOR UPDATE", (draft_id,))
-        drafts = cursor.fetchall()
-        if len(drafts) != 1:
-            raise VoicePublicationNotFoundError
-        draft = drafts[0]
 
         existing = self._existing_publication(cursor, draft_id, request)
         if existing is not None:
@@ -427,8 +427,9 @@ class PostgresVoicePublications:
         self, cursor: _Cursor, material: VoiceMaterial, workspace_id: str
     ) -> None:
         cursor.execute(
-            "SELECT asset_state, bytes, sha256 FROM speech_assets "
-            "WHERE asset_id=%s AND workspace_id=%s",
+            "SELECT asset_state, bytes, sha256, expires_at_us, "
+            "CAST(EXTRACT(EPOCH FROM clock_timestamp())*1000000 AS BIGINT) AS now_us "
+            "FROM speech_assets WHERE asset_id=%s AND workspace_id=%s",
             (material.asset_id, workspace_id),
         )
         rows = cursor.fetchall()
@@ -439,6 +440,8 @@ class PostgresVoicePublications:
             or rows[0]["sha256"] != material.sha256
         ):
             raise VoicePublicationNotEligibleError("clone_material_unproven")
+        if int(rows[0]["expires_at_us"]) <= int(rows[0]["now_us"]):
+            raise VoicePublicationNotEligibleError("clone_material_expired")
         cursor.execute(
             "SELECT 1 AS proof FROM speech_asset_objects "
             "WHERE asset_id=%s AND bytes=%s AND sha256=%s",

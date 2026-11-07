@@ -2,6 +2,8 @@
 
 import json
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -52,6 +54,14 @@ from speechnexus_backend.speech.infrastructure.voice_retirements_postgres import
 
 pytestmark = pytest.mark.integration
 
+_ROOT = Path(__file__).resolve().parents[2]
+_BUILTIN_DOCUMENT = next(
+    example["value"]["body"]
+    for example in json.loads(
+        (_ROOT / "tests/fixtures/contracts/voice-catalogue-http.json").read_text()
+    )["examples"]
+    if example["id"] == "published"
+)
 _ASSET_SHA = "sha256:" + "b" * 64
 _ASSET_BYTES = 64
 _CAPABILITIES = {
@@ -113,6 +123,45 @@ def _seed_report(db: JobSandbox, artifact_id: str, receipt: str, raw: bytes) -> 
             receipt,
             "private/artifacts/workspace-default/" + artifact_id,
         ),
+    )
+
+
+def _seed_builtin_publication(db: JobSandbox, voice: str = "voice-vivian") -> None:
+    document = json.loads(json.dumps(_BUILTIN_DOCUMENT))
+    document.update(voice_id=voice, revision="2")
+    document["source"] = {
+        "type": "builtin",
+        "draft_id": None,
+        "draft_revision": None,
+        "source_asset_digest": None,
+    }
+    identity = voice + "-2"
+    db.admin.execute(
+        "INSERT INTO speech_builtin_voice_source_approvals "
+        "(source_approval_id,voice_id,source_revision,source_digest,native_speaker_id,expires_at) "
+        "VALUES (%s,%s,'synthetic-source','synthetic-digest','Vivian',CURRENT_TIMESTAMP)",
+        (identity, voice),
+    )
+    db.admin.execute(
+        "INSERT INTO speech_builtin_voice_approvals "
+        "(approval_id,voice_id,revision,revision_id,binding_revision_id,source_approval_id,"
+        "facts,expires_at) VALUES (%s,%s,'2',%s,'binding-rev-1',%s,'{}',CURRENT_TIMESTAMP)",
+        (identity, voice, identity, identity),
+    )
+    db.admin.execute(
+        "INSERT INTO speech_builtin_voice_qualifications VALUES "
+        "(%s,'2',%s,'binding-rev-1',%s,%s::jsonb,'Vivian')",
+        (voice, identity, identity, json.dumps(document)),
+    )
+    stamp = int(datetime.fromisoformat(document["published_at"].replace("Z", "+00:00")).timestamp())
+    stamp_us = stamp * 1_000_000
+    db.admin.execute(
+        "INSERT INTO speech_publications VALUES ('voice',%s,'2',%s,%s)",
+        (voice, identity, stamp_us),
+    )
+    db.admin.execute(
+        "INSERT INTO speech_publication_heads VALUES ('voice',%s,'2',%s,%s)",
+        (voice, identity, stamp_us),
     )
 
 
@@ -227,6 +276,25 @@ def test_publish_writes_one_immutable_revision_and_reads_back(
     assert voice_db.count("speech_voice_publication_intents") == 1
 
 
+def test_builtin_and_custom_publications_paginate_together(voice_db: JobSandbox) -> None:
+    draft, job, raw = _validating_draft(voice_db)
+    PostgresVoiceEvidenceRecorder(voice_db.pool).record(job.job_id, raw, "pytest/recorder")
+    body, _ = _publications(voice_db).publish(
+        draft["id"],
+        _payload(draft, job.job_id),
+        request_id="request-publish-mixed",
+        idempotency_key=None,
+    )
+    _seed_builtin_publication(voice_db)
+    catalogue = PostgresVoiceCatalogue(voice_db.pool)
+    first = catalogue.list_voices(language=None, limit=1, cursor=None)
+    assert len(first["data"]) == 1 and first["has_more"] is True
+    assert first["next_cursor"] == first["data"][0]["id"]
+    second = catalogue.list_voices(language=None, limit=1, cursor=first["next_cursor"])
+    ids = {first["data"][0]["id"], *[item["id"] for item in second["data"]]}
+    assert ids == {"voice-vivian", body["voice_id"]}
+
+
 def test_same_key_different_intent_is_a_conflict(voice_db: JobSandbox) -> None:
     draft, job, raw = _validating_draft(voice_db)
     PostgresVoiceEvidenceRecorder(voice_db.pool).record(job.job_id, raw, "pytest/recorder")
@@ -242,6 +310,35 @@ def test_same_key_different_intent_is_a_conflict(voice_db: JobSandbox) -> None:
             {**_payload(draft, job.job_id), "display_name": "another intent"},
             request_id="request-publish-2",
             idempotency_key="publish-key-1",
+        )
+
+
+def test_key_cannot_replay_across_drafts(voice_db: JobSandbox) -> None:
+    draft, job, raw = _validating_draft(voice_db)
+    PostgresVoiceEvidenceRecorder(voice_db.pool).record(job.job_id, raw, "pytest/recorder")
+    payload = _payload(draft, job.job_id)
+    _publications(voice_db).publish(
+        draft["id"],
+        payload,
+        request_id="request-publish-key-a",
+        idempotency_key="publish-key-cross-draft",
+    )
+    other, _ = _provider(voice_db).create(
+        "voice_clone", _body("clone"), request_id="request-other-draft", idempotency_key=None
+    )
+    with pytest.raises(VoicePublicationConflictError):
+        _publications(voice_db).publish(
+            other["id"],
+            _payload(other, job.job_id),
+            request_id="request-publish-key-b",
+            idempotency_key="publish-key-cross-draft",
+        )
+    with pytest.raises(VoicePublicationNotFoundError):
+        _publications(voice_db).publish(
+            "draft-never-existed",
+            payload,
+            request_id="request-publish-key-missing",
+            idempotency_key="publish-key-cross-draft",
         )
 
 
@@ -306,6 +403,21 @@ def test_missing_or_tampered_evidence_is_rejected(voice_db: JobSandbox) -> None:
             idempotency_key=None,
         )
     assert "report_digest_mismatch" in str(rejected.value)
+
+
+def test_expired_material_is_rejected(voice_db: JobSandbox) -> None:
+    draft, job, raw = _validating_draft(voice_db)
+    PostgresVoiceEvidenceRecorder(voice_db.pool).record(job.job_id, raw, "pytest/recorder")
+    voice_db.admin.execute(
+        "UPDATE speech_assets SET expires_at_us=2 WHERE asset_id='synthetic-reference'"
+    )
+    with pytest.raises(VoicePublicationNotEligibleError):
+        _publications(voice_db).publish(
+            draft["id"],
+            _payload(draft, job.job_id),
+            request_id="request-publish-expired",
+            idempotency_key=None,
+        )
 
 
 def test_missing_material_proof_is_rejected(voice_db: JobSandbox) -> None:

@@ -868,10 +868,12 @@ export interface paths {
     put?: never;
     /**
      * Publish a validated draft revision as an immutable voice revision
-     * @description The first publication creates voice_id; later publications append an
-     *     immutable revision to the same voice_id. A stale head, stale validation,
-     *     or expired qualification returns 409/422. Replaying the same intent
-     *     returns the original publication.
+     * @description The first publication creates voice_id and immutable revision 1. This
+     *     deployment publishes at most one revision per draft; a published draft
+     *     cannot be generated or validated again, so later-revision publication is
+     *     not reachable. A stale head, stale validation, or expired material or
+     *     qualification returns 409/422. Replaying the same intent returns the
+     *     original publication.
      */
     post: operations["publishVoiceDraftRevision"];
     delete?: never;

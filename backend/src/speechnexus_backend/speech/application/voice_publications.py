@@ -238,7 +238,7 @@ class VoicePublications:
     ) -> tuple[dict[str, Any], bool]:
         draft_id = identifier(draft_id)
         request = PublicationRequest.parse(payload)
-        digest = canonical_digest(request.as_intent())
+        digest = canonical_digest({"draft_id": draft_id, **request.as_intent()})
         key = None if idempotency_key is None else idempotency_digest(idempotency_key)
         body, created = self._store.publish(
             draft_id, request, request_digest=digest, key_digest=key

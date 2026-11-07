@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 import pytest
@@ -66,6 +67,33 @@ def _seed_measured_evidence(query: Connection[dict[str, Any]]) -> None:
     )
 
 
+def _seed_custom_publication(query: Connection[dict[str, Any]]) -> None:
+    _seed_measured_evidence(query)
+    query.execute(
+        "INSERT INTO speech_publications (kind,object_id,revision,revision_id,published_at_us) "
+        "VALUES ('voice','voice-custom','1','voice-custom-1',100)"
+    )
+    query.execute(
+        f"INSERT INTO {_REVISIONS} "
+        "(kind, voice_id, revision, revision_id, source_type, document, material, "
+        "evidence_id, draft_id, draft_revision, published_at_us) "
+        "VALUES ('voice','voice-custom','1','voice-custom-1','cloned','{}'::jsonb,NULL,"
+        "'vce-job-evidence-validation','draft-evidence','1',100)"
+    )
+
+
+def test_downgrade_refuses_a_custom_publication() -> None:
+    with _isolated_schema(_url()) as (config, query):
+        command.upgrade(config, "head")
+        _seed_custom_publication(query)
+        with pytest.raises(RuntimeError, match="require preservation"):
+            command.downgrade(config, "0046_public_job_intents")
+        assert (
+            _one(query, "SELECT version_num FROM alembic_version")["version_num"]
+            == "0047_voice_publication_evidence"
+        )
+
+
 def test_upgrade_creates_ledger_view_and_reruns_idempotently() -> None:
     with _isolated_schema(_url()) as (config, query):
         command.upgrade(config, "head")
@@ -99,6 +127,9 @@ def test_downgrade_refuses_to_discard_evidence_then_restores_legacy_view() -> No
         )
         # A schema with no custom publication or measurement may still roll back.
         query.execute(f"DELETE FROM {_EVIDENCE}")
+        reader = "sn_view_" + uuid.uuid4().hex[:10]
+        query.execute(f'CREATE ROLE "{reader}"')
+        query.execute(f'GRANT SELECT ON {_VIEW} TO "{reader}"')
         command.downgrade(config, "0046_public_job_intents")
         assert (
             _one(query, "SELECT version_num FROM alembic_version")["version_num"]
@@ -109,3 +140,13 @@ def test_downgrade_refuses_to_discard_evidence_then_restores_legacy_view() -> No
             "definition"
         ]
         assert "speech_builtin_voice_qualifications" in view and _REVISIONS not in view
+        assert (
+            _one(
+                query,
+                "SELECT pg_catalog.has_table_privilege(%s, %s, 'SELECT') AS ok",
+                (reader, _VIEW),
+            )["ok"]
+            is True
+        )
+        query.execute(f'DROP OWNED BY "{reader}"')
+        query.execute(f'DROP ROLE "{reader}"')

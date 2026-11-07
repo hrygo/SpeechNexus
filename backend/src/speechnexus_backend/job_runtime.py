@@ -9,6 +9,7 @@ import uuid
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.application.voice_drafts import VoiceDrafts
+from speechnexus_backend.speech.application.voice_publications import VoicePublications
 from speechnexus_backend.speech.infrastructure.postgres_pool import (
     SpeechConnection,
     SpeechPool,
@@ -16,6 +17,9 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import (
 )
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import PostgresPublicJobs
 from speechnexus_backend.speech.infrastructure.voice_drafts_postgres import PostgresVoiceDrafts
+from speechnexus_backend.speech.infrastructure.voice_publications_postgres import (
+    PostgresVoicePublications,
+)
 
 _ADMISSION_RESERVATION_TABLES = ("admission_attempts", "admission_requests", "admission_leases")
 _ADMISSION_REQUIRED_SELECT = (
@@ -107,6 +111,7 @@ class JobRuntime:
         self._admission_pool: SpeechPool | None = None
         self.jobs: PublicJobs | None = None
         self.voice_drafts: VoiceDrafts | None = None
+        self.voice_publications: VoicePublications | None = None
         self._lifetime = threading.Lock()
         self._diagnostics: _PoolDiagnostics | None = None
 
@@ -150,6 +155,11 @@ class JobRuntime:
                 )
                 self.jobs = PublicJobs(adapter, adapter)
                 self.voice_drafts = VoiceDrafts(self.jobs, PostgresVoiceDrafts(pool))
+                self.voice_publications = VoicePublications(
+                    PostgresVoicePublications(
+                        pool, timeout_seconds=self._settings.job_transaction_timeout_seconds
+                    )
+                )
             except BaseException as error:
                 try:
                     if self._admission_pool is not None:
@@ -192,6 +202,7 @@ class JobRuntime:
         with self._lifetime:
             self.jobs = None
             self.voice_drafts = None
+            self.voice_publications = None
             if self._admission_pool is not None:
                 self._admission_pool.close()
                 self._admission_pool = None

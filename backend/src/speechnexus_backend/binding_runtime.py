@@ -332,16 +332,22 @@ _LIFECYCLE_INSERT_ONLY = (
     EVENT_TABLE,
     DISABLE_INTENT_TABLE,
 )
+_LIFECYCLE_REFERENCE_TABLE = "speech_asset_references"
 _LIFECYCLE_TABLES = (
     *_LIFECYCLE_READ_ONLY,
     *_LIFECYCLE_INSERT_ONLY,
     HEAD_TABLE,
     STATE_TABLE,
+    _LIFECYCLE_REFERENCE_TABLE,
 )
 _LIFECYCLE_UPDATABLE_COLUMNS = {
     STATE_TABLE: frozenset(("revision", "generated_at_us")),
     HEAD_TABLE: frozenset(("revision", "revision_id", "updated_at_us")),
+    _LIFECYCLE_REFERENCE_TABLE: frozenset(("released_at_us",)),
 }
+_LIFECYCLE_REFERENCE_SELECT = frozenset(
+    ("consumer_kind", "consumer_id", "consumer_revision", "released_at_us")
+)
 
 
 def _table_privilege(connection: SpeechConnection, role: str, table: str, privileges: str) -> bool:
@@ -360,6 +366,18 @@ def _any_column_privilege(
         (role, table, privileges),
     ).fetchone()
     return row is not None and bool(row["permitted"])
+
+
+def _selected_columns(
+    connection: SpeechConnection, role: str, schema: str, table: str, qualified: str
+) -> set[str]:
+    rows = connection.execute(
+        "SELECT column_name, pg_catalog.has_column_privilege(%s::name,%s,column_name,"
+        "'SELECT') AS readable FROM information_schema.columns "
+        "WHERE table_schema=%s AND table_name=%s",
+        (role, qualified, schema, table),
+    ).fetchall()
+    return {row["column_name"] for row in rows if row["readable"]}
 
 
 def _updated_columns(
@@ -496,6 +514,20 @@ class BindingLifecycleRuntime:
                     raise ValueError("Binding lifecycle evidence cannot be rewritten")
                 if _any_column_privilege(connection, role, qualified, "UPDATE,REFERENCES"):
                     raise ValueError("Binding lifecycle evidence cannot carry column writes")
+            elif table == _LIFECYCLE_REFERENCE_TABLE:
+                # Voice retirement releases exactly one soft-delete column; the
+                # lifecycle role cannot read, append or hard-delete references.
+                if _table_privilege(
+                    connection, role, qualified, "SELECT,INSERT,DELETE,TRUNCATE,REFERENCES,TRIGGER"
+                ):
+                    raise ValueError("Binding lifecycle reference privileges are too broad")
+                if not _any_column_privilege(connection, role, qualified, "UPDATE"):
+                    raise ValueError("Binding lifecycle lost the reference release privilege")
+                if (
+                    _selected_columns(connection, role, schema, table, qualified)
+                    != _LIFECYCLE_REFERENCE_SELECT
+                ):
+                    raise ValueError("Binding lifecycle reference reads do not match the port")
             elif table == HEAD_TABLE:
                 if not _table_privilege(connection, role, qualified, "SELECT,INSERT,UPDATE,DELETE"):
                     raise ValueError("Binding lifecycle lost the pointer privilege")

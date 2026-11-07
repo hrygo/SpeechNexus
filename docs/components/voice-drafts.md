@@ -26,18 +26,20 @@ clone 必须明确 `source_use_confirmed: true`，输入素材须是对应 works
 写入口在提交前拒绝超出上限的存储文档，避免先写 Job 再回滚。
 
 Python 消费入口为 `speechnexus_contracts.voice_drafts_http`，TypeScript 为
-`@speechnexus/contracts/voice-drafts-http`。这两个入口选择上述七条方法；发布操作仍由后续切片实现。Python HTTP 用例消费生成校验器；前端实际页面接入仍需消费者验证。
+`@speechnexus/contracts/voice-drafts-http`。这两个入口覆盖八条方法，包括发布。Python HTTP
+用例消费生成校验器；前端实际页面接入仍需消费者验证。
 
 ## 协议升级
 
-speech source 当前为 `0.1.0.dev11`（#514 从 `dev9` 升至 `dev10`，#495 升至
-`dev11`）。七条由占位变为实现后，503 从
+speech source 当前为 `0.1.0.dev15`（#519 从 `dev14` 升至 `dev15`）。七条草稿操作由占位
+变为实现后，503 从
 `OperationNotImplemented` 换成与 `retireVoiceRevision` 同形的内联声明：`error.code` 为
 `voice_draft_unavailable` / `voice_draft_outcome_unknown`，保留必需的
 `Cache-Control: no-store` 与 `X-Should-Retry: true`，`retryable` 为 `const true`。
 `check-openai-contract-compat.py` 允许基线为占位 503 的 response 整体替换，前提是替换物
 仍是带必需缓存头与 `ErrorResponse` 信封的可重试 503；七条因此通过兼容门禁，不需要放宽
-基线或修改检查器。
+基线或修改检查器。发布操作同样把占位 503 换成内联可重试 503，并新增声明
+`403 Forbidden` 与 `500 voice_draft_contract_violation`。
 
 创建入参的 `language` 按请求契约执行：`type: string`、`maxLength: 35`，不按
 `LanguageTag` 正则拒绝大小写或标签形状；`EN-US`、`en-US`、`zh-CN`、`auto`、`english`
@@ -193,7 +195,8 @@ CHECK 内。尝试通过 PATCH 改状态、输入或生成结果返回 422，且
 这一区分同时约束契约和生成包，不通过放宽 503 重试声明来换取占位门禁通过。
 
 公开响应不含引擎句柄、特征向量、音频 base64、对象键或内部模型路径；错误使用固定文案。
-生成、修订、预览与校验已由本组件提供；发布端口仍由后续切片实现。Job/outbox 接受不等于真实模型已执行；
+生成、修订、预览、校验与发布已由本组件提供。发布只接受 `clone` 草稿；`design` 仍是
+`preview_only`，发布返回 422 `voice_publication_not_eligible`。Job/outbox 接受不等于真实模型已执行；
 现有生产 dispatch planner、真实引擎、资源准入和目标拓扑资格仍须各自验收。
 
 草稿的生成 Job 仍写入协调 Job 与 outbox。默认 dispatch lane 仍只领取 ASR/TTS：
@@ -205,22 +208,71 @@ voice lane 是可选消费者，调用方显式传 `kinds=VOICE_GENERATION_JOB_K
 （原生父 [#340](https://github.com/hrygo/SpeechNexus/issues/340)）；当前没有默认启动的
 voice 消费者。
 
+## 发布与能力证据
+
+`POST /v1/nexus/voice-drafts/{draft_id}/publications` 由 `VoicePublications` 与
+`PostgresVoicePublications` 实现。请求固定 `expected_draft_revision`、`validation_job_id`
+和 `manual_confirmation=true`；首次成功写一条不可变发布并返回 `201`，同键重放返回原
+发布与 `200`。发布不读取或写入对象存储，素材存在性只由 `speech_asset_objects` 的
+asset/bytes/sha256 证明。
+
+发布事务内按固定顺序执行：草稿级 advisory lock → 同键回执 → `SELECT ... FOR UPDATE`
+草稿并比对 head → 输入校验（clone 必须有参考素材和 `source_use_confirmed`）→ 证据重验
+（Job/draft/revision/binding 一致、report Artifact 的 receipt 与 sha256 一致）→ 素材就绪与
+对象证明 → 计算 `voice_id` 与 `MAX(revision)+1` → 追加 `speech_publications` 与选中 head →
+插入 `speech_voice_revisions` 与 `speech_asset_references` → 草稿置 `published` → 写幂等回执。
+任一步失败整笔回滚，不留下半个发布或可继续生成的已发布草稿。
+
+失败语义是稳定的：草稿或证据不存在为 404；head 已被推进或同键异意图为 409
+`voice_draft_conflict`；证据缺失、指向别的 revision、报告摘要被改写、素材过期或缺失为
+422 `voice_publication_not_eligible`；报告 Artifact 不可读为 503
+`voice_draft_unavailable`（可重试）；响应违反契约是 500 `voice_draft_contract_violation`。
+`design` 草稿在读取证据之前即被拒绝，不会因缺少证据被误报成 503。
+
+能力账本 `speech_voice_capability_evidence` 只追加。独立执行侧命令
+`record_voice_capability_evidence.py` 读取已成功 validation Job 的已提交 report Artifact
+字节，校验其摘要和长度，解析内部 report 的 `synthesis_path`/`capabilities`/`coverage`/
+`material`，再 INSERT 一行证据；重复同一 Job 且事实相同返回原行，事实不同返回冲突，
+没有 UPDATE/DELETE 授权。修正只能通过新的 validation Job 产生新证据。公开
+`VoiceValidation` 与 `voice-resource.schema.json` 不增加这些字段，能力只存在于内部账本，
+由目录读取时投影。
+
+上述 report 形状是本切片冻结的内部记录契约：`application/json`，至少包含
+`synthesis_path`、`capabilities`、`coverage`、`material`；`capabilities` 必须满足公开
+`VoiceCapabilities`，`coverage` 记录校验集 revision 与逐项检查。仓库内的验证执行消费者尚未
+产出该文档；在 #512/#529b 侧按此形状提交 report Artifact 之前，发布链只能由测试用合成
+report 验证，不能声称端到端可用。缺失、非 `reusable_tts` 或能力不合法的 report 一律 422，
+记录器不会从音频、绑定或默认值推断能力。
+
+`speech_published_voice_revisions` 视图以 `COALESCE(自定义修订文档, 预置资格文档)` 读取，
+`listVoices`/`getVoiceRevision` 因此能返回自定义发布，而不会因单个缺失文档让整页 503；
+选中发布仍无任何可用文档时保持 503。退休发布在同一事务内把对应
+`speech_asset_references.released_at_us` 置为退休时刻，使内容删除不再被已退休 revision
+永久钉住。
+
 ## 迁移与生产装配
 
 `0043_voice_draft_revisions` 接在 `0042` 之后，增加
 `speech_voice_draft_revisions`，把既有草稿的当前 head 回填为 revision 1，并将 Job kind
 CHECK 扩展到 `voice_validation`。`0044_voice_preview_jobs` 只把同一 CHECK 再扩展到
-`voice_preview`，不改表、索引或授权；`alembic heads` 只有 0044。两版 downgrade 都先恢复
-窄 CHECK：有 validation 或 preview Job 时数据库拒绝，或迁移显式报出
-`voice_preview` 行数，防止静默丢失历史。
+`voice_preview`，不改表、索引或授权。`0047_voice_publication_evidence` 接在
+`0046_public_job_intents` 之后，增加证据表、不可变修订表、发布回执表与指向两者的
+`UNIQUE (draft_id, draft_revision)` 索引，并把 `speech_published_voice_revisions` 换成
+`COALESCE` 视图；`alembic heads` 仍只有一个 head。0047 downgrade 在排他锁内检查证据与
+自定义发布，非空时抛出 `RuntimeError` 要求保留，空库才恢复旧视图并删表；重复 upgrade
+是幂等的。
 
 `create_app` 在既有 `JobRuntime` 里用同一 PG pool 装配 `VoiceDrafts` 与
-`PostgresVoiceDrafts`。沿用 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL` 和显式 schema。
+`PostgresVoiceDrafts`，并装配 `VoicePublications`/`PostgresVoicePublications`。沿用
+`SPEECHNEXUS_JOB_WRITER_DATABASE_URL` 和显式 schema。
 部署先应用迁移，再由 owner 审核 `voice_draft_grants`、`public_job_grants` 及原 Job
 提交权限。运行角色对修订表只有 SELECT/INSERT；草稿表仅能 UPDATE display name、metadata revision、
 更新时间、head revision 和 generation Job；不授予 status/input/binding 更新或历史删除。
 启动校验列级权限，并对修订表逐列拒绝 UPDATE，同时拒绝 DELETE；不执行 DDL。
-旧 Job writer 必须同步迁移和授权后升级；未配置 provider 时七条返回真实 503。
+发布角色只获得证据/Job/Artifact/素材/绑定/发布/head/草稿/修订的读取，发布、修订、回执与
+素材引用的 INSERT，以及 head、目录版本、草稿 `status` 的窄 UPDATE；退休角色另获素材
+引用四个谓词列的 SELECT 与 `released_at_us` 的窄 UPDATE，证据没有任何 UPDATE/DELETE。独立记录角色只能 SELECT 事实并 INSERT 证据。
+旧 Job writer 必须同步迁移和授权后升级；未配置 provider 时八条写/读路由返回真实 503。
 
 `voice_validation` 的 target binding revision 必须在 `definition` 中声明
 `logical_model`，且 `tasks` 包含 `voice_validation`；缺失或未发布时提交返回 422
@@ -230,6 +282,11 @@ CHECK 扩展到 `voice_validation`。`0044_voice_preview_jobs` 只把同一 CHEC
 
 ## 验证与接收边界
 
+`tests/integration/test_voice_publications_pg.py` 覆盖发布成功与目录回读、同键/无键重放、
+同键异意图、缺失/篡改证据、缺失素材、并发双发布、唯一索引、跨 revision 证据、发布后
+禁止生成与 PATCH、退休释放引用和两角色的证据只追加授权；
+`tests/integration/test_voice_publication_migration_pg.py` 覆盖 0047 upgrade/downgrade 守卫与
+重复 upgrade；`tests/unit/backend/test_voice_publications_http.py` 覆盖 201/200/400/409/422/503。
 `tests/unit/backend/test_voice_creation_jobs.py` 与 `test_voice_drafts_http.py` 覆盖 Job 重放、
 生成校验器、严格输入、Host/Origin、状态修改拒绝、错误区分、candidate 回执/Artifact 反例、
 精确修订查询、修订提交确认丢失的 503 形状，以及创建确认丢失时带键回放与无键 409 的分支。

@@ -182,6 +182,19 @@ code 覆盖 `voice_catalogue_unavailable` / `voice_retirement_unavailable`；503
 定向 HTTP 用例见 `tests/unit/backend/test_voice_retirement_http.py`，
 隔离 PG 用例见 `tests/integration/test_voice_retirement_pg.py`。
 
+### 3.4 #519 新增 publishVoiceDraftRevision
+
+`POST /v1/nexus/voice-drafts/{draft_id}/publications` 已由独立
+`create_voice_publications_router` 注册，不再是占位 503。契约声明
+200/201/400/401/403/404/405/409/422/500/503，实测观察
+200/201/400/403/404/405/409/422/500/503；401 与其他已实现操作一样只有声明。
+首次发布 201，同键或无键重放 200；head 推进或同键异意图 409
+`voice_draft_conflict`；证据/素材不合格 422 `voice_publication_not_eligible`；报告或存储
+不可用 503 `voice_draft_unavailable`；自产响应违约 500
+`voice_draft_contract_violation`。`design` 草稿在读取证据前即按
+`design_preview_only` 拒绝，不会退化成 503。证据与发布事务语义见
+[声音草稿](components/voice-drafts.md#发布与能力证据)。
+
 ## 4. 未声明返回：逐条证据
 
 ### 4.1 createTranscription → 404（契约未声明 404）
@@ -348,8 +361,8 @@ Starlette 307 到规范路径（复核实测见
 实现一个操作时同时删除占位条目与该基线条目（§10 第 4 项）。
 
 已实现、因此不在该常量中的操作：`listVoices`/`getVoiceRevision`/`retryJob`/`streamJobEvents`（§3.1）、
-`listJobs`（§3.2）、`retireVoiceRevision`（§3.3），以及 #494 的
-`createVoiceDesign`/`createVoiceClone`/`getVoiceDraft`/`updateVoiceDraftMetadata`。
+`listJobs`（§3.2）、`retireVoiceRevision`（§3.3）、`publishVoiceDraftRevision`（§3.4），
+以及 #494 的 `createVoiceDesign`/`createVoiceClone`/`getVoiceDraft`/`updateVoiceDraftMetadata`。
 
 ### 6.2 #473：未实现操作的稳定错误（#473 交付基线实测）
 

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SpeechNexus public speech API",
-    "version": "0.1.0.dev14",
+    "version": "0.1.0.dev15",
     "description": "SpeechNexus public speech protocol.\n\nThe OpenAI-compatible subset is limited to the paths, fields, formats, and\nevents explicitly declared here. A standard OpenAI SDK can use this API by\nsetting base_url to <deployment>/v1 and supplying any api_key value unless\nthe deployment enables a shared service key. SpeechNexus enhancements live\nunder /v1/nexus and the optional `nexus` request field; a standard request\nnever needs an enhancement wrapper. Unsupported standard parameters are\nrejected with 422 `unsupported_parameter`, never silently ignored.\n\nRealtime has two connection modes at GET /v1/realtime: a pre-created\nnexus session (`session_id`) and a compatibility transcription session\nopened with `model`. Both accept the declared standard transcription\nevent subset. TTS, previews, metadata, and operation coordination remain\nnexus.* events and are available only in a nexus-created session.\n"
   },
   "security": [
@@ -800,6 +800,138 @@
                               "const": true
                             },
                             "nexus": false
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/nexus/voice-drafts/{draft_id}/publications": {
+      "post": {
+        "tags": ["voice-creation"],
+        "operationId": "publishVoiceDraftRevision",
+        "summary": "Publish a validated draft revision as an immutable voice revision",
+        "description": "The first publication creates voice_id; later publications append an\nimmutable revision to the same voice_id. A stale head, stale validation,\nor expired qualification returns 409/422. Replaying the same intent\nreturns the original publication.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/DraftIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoicePublicationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Voice revision published.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_voice_resource_schema_json_VoicePublication"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Idempotent replay of the same publication.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_voice_resource_schema_json_VoicePublication"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "500": {
+            "$ref": "#/components/responses/VoiceDraftContractViolation"
+          },
+          "503": {
+            "description": "`voice_draft_unavailable`: the validation report, its evidence, or publication storage is unavailable before any definite commit, so replaying the same request is safe. The operation is implemented; this is a retryable outage, not a permanently unimplemented operation. A recorded eligibility rejection is 422 instead.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "X-Should-Retry": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "true"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "code": {
+                              "enum": ["voice_draft_unavailable"]
+                            },
+                            "type": {
+                              "const": "service_unavailable_error"
+                            },
+                            "retryable": {
+                              "const": true
+                            }
                           }
                         }
                       }
@@ -3351,6 +3483,83 @@
           "model": {
             "type": "string",
             "maxLength": 128
+          }
+        }
+      },
+      "VoicePublicationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["expected_draft_revision", "validation_job_id", "manual_confirmation"],
+        "properties": {
+          "expected_draft_revision": {
+            "$ref": "#/components/schemas/Revision"
+          },
+          "validation_job_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "manual_confirmation": {
+            "type": "boolean",
+            "const": true
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "External_voice_resource_schema_json_VoicePublication": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "resource_type",
+          "id",
+          "object",
+          "draft_id",
+          "draft_revision",
+          "voice_id",
+          "voice_revision",
+          "validation_job_id",
+          "validation_id",
+          "manual_confirmation",
+          "published_at"
+        ],
+        "properties": {
+          "resource_type": {
+            "const": "voice_publication"
+          },
+          "id": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_Identifier"
+          },
+          "object": {
+            "const": "nexus.voice_publication"
+          },
+          "draft_id": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_Identifier"
+          },
+          "draft_revision": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_Revision"
+          },
+          "voice_id": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_Identifier"
+          },
+          "voice_revision": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_Revision"
+          },
+          "validation_job_id": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_Identifier",
+            "description": "Succeeded durable Job that produced validation. Must equal VoiceDraftRevision.validation_job_id and the Job that returned this validation as its structured result."
+          },
+          "validation_id": {
+            "$ref": "#/components/schemas/External_voice_resource_schema_json_Identifier"
+          },
+          "manual_confirmation": {
+            "const": true,
+            "description": "Records explicit content confirmation for this publication. It does not prove a second reviewer or a role-based approval."
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }

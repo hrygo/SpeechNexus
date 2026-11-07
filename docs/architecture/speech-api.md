@@ -262,7 +262,7 @@ Profile、voice 和 model binding revision 不可变；升级只影响后续新�
 | `POST /v1/nexus/voice-drafts/{draft_id}/generations` | expected_draft_revision + 完整声音输入 / model → 原子创建下一 draft_revision 与 voice_design / voice_clone Job；`202` 的 `VoiceGenerationAccepted` 包含 draft、revision 和 job，生成完成后才可试听 / 校验 |
 | `POST /v1/nexus/voice-drafts/{draft_id}/previews` | 对固定候选 revision 进行短文本 TTS，返回 `202` Job；不发布或修改候选 |
 | `POST /v1/nexus/voice-drafts/{draft_id}/validations` | `voice_validation`；固定候选与绑定，返回 `202` Job，完成后取得格式 / 素材 / 兼容性 / 质量检查结果 |
-| `POST /v1/nexus/voice-drafts/{draft_id}/publications` | 固定候选和校验 revision，原子生成可用于 TTS 的不可变 VoiceRevision；首次成功 `201`，幂等重放返回同一发布 |
+| `POST /v1/nexus/voice-drafts/{draft_id}/publications` | 固定候选和校验 revision，原子生成可用于 TTS 的不可变 VoiceRevision；首次成功 `201`，幂等重放返回同一发布。本切片只接受 `clone`；`design` 保持 `preview_only` 并返回 422 |
 
 Job.kind 为 asr / tts / voice_design / voice_clone / voice_preview / voice_validation。音色使用独立 VoiceCommand，不套用 ASR/TTS profile；从模型绑定、音色功能策略和参数域生成执行配方。便捷入口与 `POST /v1/nexus/jobs` 使用相同规范意图、operation_family 和请求摘要去重，换路径不能重复创建。voice_preview 是独立任务类型，内部复用 TTS 计算与计量；兼容 speech 入口只接受已发布 voice。
 

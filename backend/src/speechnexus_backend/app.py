@@ -54,6 +54,7 @@ from speechnexus_backend.speech.application.speech_synthesis import SpeechSynthe
 from speechnexus_backend.speech.application.transcription import Transcription
 from speechnexus_backend.speech.application.voice_catalogue import VoiceCatalogue
 from speechnexus_backend.speech.application.voice_drafts import VoiceDrafts
+from speechnexus_backend.speech.application.voice_publications import VoicePublications
 from speechnexus_backend.speech.application.voice_retirements import VoiceRetirements
 from speechnexus_backend.speech.application.workspaces import WorkspaceService
 from speechnexus_backend.speech.infrastructure.gateway_job_cancellation import (
@@ -118,6 +119,9 @@ from speechnexus_backend.speech.interfaces.http.unimplemented import (
 from speechnexus_backend.speech.interfaces.http.voice_drafts import (
     create_voice_drafts_router,
     voice_drafts_http_contract,
+)
+from speechnexus_backend.speech.interfaces.http.voice_publications import (
+    create_voice_publications_router,
 )
 from speechnexus_backend.speech.interfaces.http.voices import (
     create_voice_router,
@@ -200,6 +204,7 @@ def create_app(
     catalogue: ModelCatalogue | None = None,
     voices: VoiceCatalogue | None = None,
     voice_drafts: VoiceDrafts | None = None,
+    voice_publications: VoicePublications | None = None,
     voice_retirements: VoiceRetirements | None = None,
     jobs: PublicJobs | None = None,
     job_confirmation: JobCancellationService | None = None,
@@ -330,6 +335,11 @@ def create_app(
         if voice_drafts is not None:
             return voice_drafts
         return job_runtime.voice_drafts if job_runtime is not None else None
+
+    def get_voice_publications() -> VoicePublications | None:
+        if voice_publications is not None:
+            return voice_publications
+        return job_runtime.voice_publications if job_runtime is not None else None
 
     def get_job_confirmation() -> JobCancellationService | None:
         if job_confirmation is not None:
@@ -505,6 +515,13 @@ def create_app(
     app.include_router(
         create_voice_drafts_router(
             get_voice_drafts,
+            allowed_hosts=resolved_settings.asset_allowed_hosts,
+            allowed_origins=resolved_settings.asset_allowed_origins,
+        )
+    )
+    app.include_router(
+        create_voice_publications_router(
+            get_voice_publications,
             allowed_hosts=resolved_settings.asset_allowed_hosts,
             allowed_origins=resolved_settings.asset_allowed_origins,
         )

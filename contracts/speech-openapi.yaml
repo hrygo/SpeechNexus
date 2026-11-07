@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus public speech API
-  version: 0.1.0.dev14
+  version: 0.1.0.dev15
   description: |
     SpeechNexus public speech protocol.
 
@@ -2168,6 +2168,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "405":
@@ -2176,8 +2178,41 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/VoiceDraftContractViolation"
         "503":
-          $ref: "#/components/responses/OperationNotImplemented"
+          description: >-
+            `voice_draft_unavailable`: the validation report, its evidence, or
+            publication storage is unavailable before any definite commit, so
+            replaying the same request is safe. The operation is implemented;
+            this is a retryable outage, not a permanently unimplemented
+            operation. A recorded eligibility rejection is 422 instead.
+          headers:
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+                const: "no-store"
+            X-Should-Retry:
+              required: true
+              schema:
+                type: string
+                const: "true"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ErrorResponse"
+                  - properties:
+                      error:
+                        properties:
+                          code:
+                            enum:
+                              - voice_draft_unavailable
+                          type:
+                            const: service_unavailable_error
+                          retryable:
+                            const: true
   /v1/nexus/deletion-plans:
     post:
       operationId: speechCreateDeletionPlan

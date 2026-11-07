@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-07T14:16:01+08:00",
+  "fetched_at": "2026-11-07T19:28:24+08:00",
   "issues": [
     {
       "number": 336,
@@ -956,11 +956,96 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/531",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "清理不可达的拒绝原因并同步文档与测试缺口",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:A"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/340"
+    },
+    {
+      "number": 534,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/534",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "回读失败重复创建、校验顺序产生孤儿制品、500 描述缺口",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "bug"
+        },
+        {
+          "name": "team:A"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/340"
+    },
+    {
+      "number": 536,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/536",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "A1：公开 Job intent 独立存储与读路径切换",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:A"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/340"
+    },
+    {
+      "number": 537,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/537",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "A2：Public Job 创建事务内完成原子准入（asr/tts）",
       "state": "open",
       "state_reason": null,
       "labels": [
         {
           "name": "enhancement"
+        },
+        {
+          "name": "team:A"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/340"
+    },
+    {
+      "number": 538,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/538",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "A3：生产派发 planner、装配与过期结算",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:A"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/340"
+    },
+    {
+      "number": 540,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/540",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "内容删除需覆盖 speech_job_intents",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "bug"
         },
         {
           "name": "team:A"

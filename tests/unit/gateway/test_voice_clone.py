@@ -72,6 +72,16 @@ def test_a_transcript_no_speaker_could_utter_in_that_time_is_refused() -> None:
     with pytest.raises(ValueError):
         VoiceCloneRequest("intent-voice-clone", "Ready.", "en", audio, "x" * 31)
 
+    long_audio = ReferenceAudio.from_wav(reference_wav(duration_ms=20000))
+    assert not reference_text_fits_duration("Hi.", long_audio)
+
+
+def test_a_blank_transcript_is_not_a_transcript() -> None:
+    audio = ReferenceAudio.from_wav(reference_wav())
+    for text in (" ", "\t\n"):
+        with pytest.raises(ValueError):
+            VoiceCloneRequest("intent-voice-clone", "Ready.", "en", audio, text)
+
 
 def test_reference_text_presence_selects_the_mode() -> None:
     audio = ReferenceAudio.from_wav(reference_wav())

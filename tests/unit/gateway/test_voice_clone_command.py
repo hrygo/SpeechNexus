@@ -240,6 +240,15 @@ async def test_a_missing_transcript_is_refused_before_reading_or_dispatch() -> N
     assert engine.calls == []
 
 
+async def test_a_blank_transcript_is_refused_before_reading_or_dispatch() -> None:
+    command = prepared_command(reference_text=" \t")
+    runner, objects, engine = build()
+    with pytest.raises(InvalidExecutionRequestError):
+        runner.validate_request(clone_request(command=command))
+    assert objects.reads == []
+    assert engine.calls == []
+
+
 async def test_x_vector_only_is_used_only_when_the_binding_permits_it() -> None:
     command = prepared_command(reference_text=None)
     runner, _, engine = build(

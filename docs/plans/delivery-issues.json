@@ -776,10 +776,10 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "CustomVoice 文件执行和声音工作台组件不证明 VoiceDesign/Base 资格。",
-      "integration": "设计引擎、固定材料、节点预算和工作台使用同版制品。",
+      "implementation": "CustomVoice 文件执行和声音工作台组件不证明 VoiceDesign/Base 资格；固定修订预览（#495）、设计/克隆生成 Job 执行消费者（#512）与校验目标锁内重验及同键重放（#521）已合入。",
+      "integration": "设计引擎、固定材料、节点预算和工作台使用同版制品；Public Job 生产派发装配与 planner 仍缺失（#528），gateway 设计/克隆 stage、node 模板与 GPU 证据待补（#529）。",
       "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
-      "gap": "修订生成与校验两条操作已实现（#514）；剩余缺口：固定修订预览（#495）、发布与能力一致性（#519）、设计/克隆生成 Job 执行消费者（#512）、校验目标的锁内重验与同键重放补测（#521）。",
+      "gap": "修订生成与校验（#514）、固定修订预览（#495）、设计/克隆生成 Job 执行消费者（#512）与校验目标锁内重验及同键重放（#521）已关闭；剩余缺口：发布与能力一致性（#519）、生产派发装配与 planner（#528）、gateway 设计/克隆 stage 与 node 模板/GPU 证据（#529）、不可达拒绝原因清理及文档与测试缺口（#531）。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/voice-resource.schema.json",
@@ -795,6 +795,16 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/2656235d51b3d7eda69ab8523dc35f96e63fde79/docs/components/voice-drafts.md",
           "label": "声音草稿修订与校验",
           "note": "修订生成与校验的实现范围、幂等及错误边界"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/77d3f640a3f2a839cd044009cd4bbe37ca0832fe/docs/components/voice-drafts.md",
+          "label": "声音草稿固定修订预览",
+          "note": "固定修订预览的实现范围与证据边界（#495，PR #523）"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/a69208e935e245c6ef496baf4600b908b106d889/tests/integration/test_voice_generation_dispatch_pg.py",
+          "label": "声音生成任务派发隔离 PG 证据",
+          "note": "设计/克隆生成任务独立派发 lane 的隔离 PostgreSQL 证据（#512，PR #530）"
         }
       ],
       "issues": [
@@ -803,7 +813,10 @@
         512,
         514,
         519,
-        521
+        521,
+        528,
+        529,
+        531
       ]
     },
     {
@@ -880,7 +893,7 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "发音资源已有私有不可变草稿及可选固定 revision 读取；公开创建、列表和发布仍待交付。",
+      "implementation": "发音资源已有私有不可变草稿及可选固定 revision 读取；公开列表与修订创建已合入（#484，PR #525），发布仍待交付（#520）。",
       "integration": "公开 Job 创建对发音 revision 仅检查记录存在，未核验发布或退役；完整生命周期与语音执行消费者接线仍须交付和验收。",
       "verification": "草稿及读取组件证据不代表发音资源发布、激活或回滚已验收。",
       "gap": "公开 Job 创建对发音 revision 仅检查记录存在，未核验发布或退役；完整生命周期与语音执行消费者接线仍须交付和验收。 草稿及读取组件证据不代表发音资源发布、激活或回滚已验收。",
@@ -904,6 +917,11 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/infrastructure/public_jobs_postgres.py",
           "label": "发音修订存在性查询",
           "note": "仅按 ID 和 revision 查询修订表，不读取发布或退役状态"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/525",
+          "label": "发音集合列表与修订创建",
+          "note": "PR #525 合并 0fc483b2；publish:true 返回 422，发布归 #520"
         }
       ],
       "issues": [

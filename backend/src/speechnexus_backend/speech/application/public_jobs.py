@@ -369,6 +369,7 @@ def _candidate_artifact_ids(job: PublicJob) -> tuple[str, ...]:
     candidates: list[object] = [
         result.get("transcript_artifact_id"),
         result.get("audio_artifact_id"),
+        result.get("preview_artifact_id"),
         result.get("validation_report_artifact_id"),
     ]
     previews = result.get("preview_artifact_ids")
@@ -427,6 +428,46 @@ def resolve_voice_previews(
             artifact=artifact,
         )
         for artifact_id in artifact_ids
+    )
+
+
+def resolve_voice_preview(
+    *,
+    workspace_id: str,
+    kind: str,
+    state: str,
+    result_json: str | None,
+    artifact: Callable[[str, str], JobArtifactFact | None],
+) -> tuple[JobArtifactFact, ...]:
+    """Resolve the single ready preview a succeeded ``voice_preview`` Job names.
+
+    The preview Job result is singular by contract (``preview_artifact_id``),
+    unlike a generation result's ``preview_artifact_ids``. One rule serves the
+    single read and the page batch: the referenced Artifact must be committed,
+    ready, carry the ``preview`` kind and the same receipt.
+    """
+    if state != "succeeded":
+        return ()
+    if kind != "voice_preview" or result_json is None:
+        raise PublicJobUnavailableError
+    try:
+        result = json.loads(result_json)
+    except ValueError, TypeError, RecursionError:
+        raise PublicJobUnavailableError from None
+    if not isinstance(result, dict) or result.get("kind") != kind:
+        raise PublicJobUnavailableError
+    artifact_id = result.get("preview_artifact_id")
+    receipt_id = result.get("receipt_id")
+    if not isinstance(artifact_id, str) or not isinstance(receipt_id, str):
+        raise PublicJobUnavailableError
+    return (
+        _ready_artifact(
+            workspace_id=workspace_id,
+            artifact_id=artifact_id,
+            receipt_id=receipt_id,
+            kind="preview",
+            artifact=artifact,
+        ),
     )
 
 
@@ -518,7 +559,14 @@ class PublicJobs:
         idempotency_key: str | None,
     ) -> PublicJob:
         kind = payload.get("kind")
-        if kind not in ("asr", "tts", "voice_design", "voice_clone", "voice_validation"):
+        if kind not in (
+            "asr",
+            "tts",
+            "voice_design",
+            "voice_clone",
+            "voice_preview",
+            "voice_validation",
+        ):
             raise UnsupportedJobKindError
         typed_kind: JobKind = kind
         workspace_id = payload.get("workspace_id", DEFAULT_WORKSPACE)
@@ -527,6 +575,8 @@ class PublicJobs:
         identifier(workspace_id)
         if typed_kind == "voice_validation":
             payload = self._validation_intent(payload, workspace_id)
+        elif typed_kind == "voice_preview":
+            payload = self._preview_intent(payload, workspace_id)
         intent = _canonical_intent(payload, typed_kind)
         request_digest = canonical_digest(intent)
         key_digest = None if idempotency_key is None else idempotency_digest(idempotency_key)
@@ -559,9 +609,11 @@ class PublicJobs:
             VoiceDraftStaleRevisionError,
             VoiceDraftNotCandidateError,
         ):
-            # The first lookup can miss a concurrent commit. Before rejecting
-            # changed facts, settle the same-key writer and recover its result.
-            # If coordination fails, propagate unavailable rather than a 422.
+            # The early lookup can miss a concurrent commit, and _submit_new may
+            # already have taken and released the binding/draft row locks before
+            # failing. Before rejecting changed facts, settle the same-key writer
+            # and recover its result. If coordination fails, propagate
+            # unavailable rather than a 422.
             if key_digest is not None:
                 original = self._find_original(
                     workspace_id, key_digest, request_digest, retry_of_job_id=None
@@ -683,8 +735,19 @@ class PublicJobs:
         raw_model = payload.get("model")
         model_id: str
         pin: tuple[str, int] | None
+        required_task = _REQUIRED_TASK.get(typed_kind)
         if typed_kind == "voice_validation":
             pin, derived_model = self._validation_binding(payload, workspace_id)
+            if raw_model is None:
+                model_id = derived_model
+            elif isinstance(raw_model, str) and raw_model == derived_model:
+                model_id = raw_model
+            else:
+                raise ModelBindingError("model_binding_mismatch")
+        elif typed_kind == "voice_preview":
+            # The preview's task is the target draft kind, not a fixed kind:
+            # resolve both from the pinned revision before the Job is built.
+            pin, derived_model, required_task = self._preview_binding(payload, workspace_id)
             if raw_model is None:
                 model_id = derived_model
             elif isinstance(raw_model, str) and raw_model == derived_model:
@@ -700,11 +763,13 @@ class PublicJobs:
                 raise ValueError("Invalid model binding")
         binding: BindingFact
         if pin is not None:
+            if required_task is None:
+                raise PublicJobUnavailableError
             binding = require_pinned_binding(
                 self._facts.binding_revision(*pin),
                 pin,
                 model_id,
-                task=_REQUIRED_TASK[typed_kind],
+                task=required_task,
             )
         else:
             latest = self._facts.latest_binding(model_id)
@@ -863,6 +928,84 @@ class PublicJobs:
         if not isinstance(logical, str):
             raise ModelBindingError("model_binding_not_published")
         return fact.binding, logical
+
+    def _preview_intent(self, payload: Mapping[str, Any], workspace_id: str) -> dict[str, Any]:
+        """Freeze the derived model and binding before the early key replay.
+
+        Head equality, candidate readiness and binding publication stay in
+        ``_preview_binding``. The early same-key lookup therefore runs before
+        them; only a request that misses that lookup evaluates them, and the
+        fallback lookup in ``submit`` re-checks the key after they fail.
+        """
+        request_input = payload.get("input")
+        if not isinstance(request_input, dict):
+            raise VoiceInputInvalidError
+        draft_id = request_input.get("voice_draft_id")
+        revision = request_input.get("draft_revision")
+        text = request_input.get("text")
+        if not isinstance(draft_id, str) or not isinstance(revision, str):
+            raise VoiceInputInvalidError
+        identifier(draft_id)
+        if _REVISION.fullmatch(revision) is None:
+            raise VoiceInputInvalidError
+        if not isinstance(text, str) or not 1 <= len(text) <= 2000:
+            raise VoiceInputInvalidError
+        fact = self._facts.voice_draft_revision(draft_id, revision)
+        if fact is None or fact.workspace_id != workspace_id:
+            raise PublicJobNotFoundError
+        explicit = self._binding_reference(payload.get("model_binding"))
+        if explicit is not None and explicit != fact.binding:
+            raise ModelBindingError("model_binding_mismatch")
+        logical = fact.model_id
+        raw_model = payload.get("model")
+        if raw_model is not None and (not isinstance(raw_model, str) or raw_model != logical):
+            raise ModelBindingError("model_binding_mismatch")
+        return {
+            **payload,
+            "model": logical,
+            "model_binding": {"id": fact.binding[0], "revision": str(fact.binding[1])},
+        }
+
+    def _preview_binding(
+        self, payload: Mapping[str, Any], workspace_id: str
+    ) -> tuple[tuple[str, int], str, str]:
+        """Resolve the exact head candidate a preview Job may target."""
+        request_input = payload.get("input")
+        if not isinstance(request_input, dict):
+            raise VoiceInputInvalidError
+        draft_id = request_input.get("voice_draft_id")
+        revision = request_input.get("draft_revision")
+        if not isinstance(draft_id, str) or not isinstance(revision, str):
+            raise VoiceInputInvalidError
+        identifier(draft_id)
+        fact = self._facts.voice_draft_revision(draft_id, revision)
+        if fact is None or fact.workspace_id != workspace_id:
+            raise PublicJobNotFoundError
+        explicit = self._binding_reference(payload.get("model_binding"))
+        if explicit is not None and explicit != fact.binding:
+            raise ModelBindingError("model_binding_mismatch")
+        if fact.kind not in ("design", "clone"):
+            raise VoiceInputInvalidError
+        if fact.head_revision != revision:
+            raise VoiceDraftStaleRevisionError
+        if fact.state != "succeeded":
+            raise VoiceDraftNotCandidateError
+        # A preview synthesizes text for a candidate voice: the generation Job
+        # must already have committed its receipt and every ready preview.
+        resolve_voice_previews(
+            workspace_id=fact.workspace_id,
+            kind="voice_" + fact.kind,
+            state=fact.state,
+            result_json=fact.result_json,
+            artifact=self._store.artifact,
+        )
+        binding = self._facts.binding_revision(*fact.binding)
+        if binding is None:
+            raise ModelBindingError("model_binding_not_published")
+        logical = binding.definition.get("logical_model")
+        if not isinstance(logical, str):
+            raise ModelBindingError("model_binding_not_published")
+        return fact.binding, logical, "voice_" + fact.kind
 
     def _submit_new(
         self,
@@ -1061,6 +1204,14 @@ class PublicJobs:
                 result_json=job.result_json,
                 artifact=artifact,
             )
+        if job.kind == "voice_preview":
+            return resolve_voice_preview(
+                workspace_id=job.workspace_id,
+                kind=job.kind,
+                state=job.state,
+                result_json=job.result_json,
+                artifact=artifact,
+            )
         if job.kind == "voice_validation":
             return resolve_voice_validation_report(
                 workspace_id=job.workspace_id,
@@ -1209,6 +1360,16 @@ class PublicJobs:
             for name in ("draft_revision", "validation_set_revision"):
                 if _REVISION.fullmatch(request_input[name]) is None:
                     raise VoiceInputInvalidError
+            return
+        if kind == "voice_preview":
+            for name in ("voice_draft_id", "draft_revision", "text"):
+                if not isinstance(request_input.get(name), str):
+                    raise VoiceInputInvalidError
+            identifier(request_input["voice_draft_id"])
+            if _REVISION.fullmatch(request_input["draft_revision"]) is None:
+                raise VoiceInputInvalidError
+            if not 1 <= len(request_input["text"]) <= 2000:
+                raise VoiceInputInvalidError
             return
         if kind in ("voice_design", "voice_clone"):
             language = request_input.get("language")

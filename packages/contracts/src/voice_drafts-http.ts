@@ -10,6 +10,7 @@ export type HttpOperation =
   | "getVoiceDraft"
   | "updateVoiceDraftMetadata"
   | "generateVoiceDraftRevision"
+  | "createVoicePreview"
   | "validateVoiceDraftRevision";
 type HttpPaths = {
   "/v1/nexus/voice-designs": Pick<paths["/v1/nexus/voice-designs"], "parameters" | "post">;
@@ -20,6 +21,10 @@ type HttpPaths = {
   >;
   "/v1/nexus/voice-drafts/{draft_id}/generations": Pick<
     paths["/v1/nexus/voice-drafts/{draft_id}/generations"],
+    "parameters" | "post"
+  >;
+  "/v1/nexus/voice-drafts/{draft_id}/previews": Pick<
+    paths["/v1/nexus/voice-drafts/{draft_id}/previews"],
     "parameters" | "post"
   >;
   "/v1/nexus/voice-drafts/{draft_id}/validations": Pick<

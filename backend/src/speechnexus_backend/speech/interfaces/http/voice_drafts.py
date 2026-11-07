@@ -1,4 +1,4 @@
-"""Six source-validated voice creation, metadata and revision operations."""
+"""Seven source-validated voice creation, metadata, revision and preview operations."""
 
 import json
 from collections.abc import Callable
@@ -236,6 +236,16 @@ def _execute(
                 "job": public_job(job),
             }
             status = 202
+        elif operation == "createVoicePreview":
+            body = public_job(
+                provider.preview(
+                    request.path_params["draft_id"],
+                    payload,
+                    request_id=request_id,
+                    idempotency_key=key,
+                )
+            )
+            status = 202
         elif operation == "validateVoiceDraftRevision":
             body = public_job(
                 provider.validate(
@@ -266,20 +276,29 @@ def _execute(
             "getVoiceDraft",
             "updateVoiceDraftMetadata",
             "generateVoiceDraftRevision",
+            "createVoicePreview",
             "validateVoiceDraftRevision",
         ):
             return _error("not_found", request_id, operation)
         return _error("outcome_unknown", request_id, operation)
     except PublicJobNotFoundError:
-        if operation in ("generateVoiceDraftRevision", "validateVoiceDraftRevision"):
+        if operation in (
+            "generateVoiceDraftRevision",
+            "createVoicePreview",
+            "validateVoiceDraftRevision",
+        ):
             return _error("not_found", request_id, operation)
         return _error("unavailable", request_id, operation)
     except VoiceDraftStaleRevisionError:
-        if operation in ("generateVoiceDraftRevision", "validateVoiceDraftRevision"):
+        if operation in (
+            "generateVoiceDraftRevision",
+            "createVoicePreview",
+            "validateVoiceDraftRevision",
+        ):
             return _error("conflict", request_id, operation)
         return _error("unavailable", request_id, operation)
     except VoiceDraftNotCandidateError:
-        if operation == "validateVoiceDraftRevision":
+        if operation in ("createVoicePreview", "validateVoiceDraftRevision"):
             return _error("not_candidate", request_id, operation)
         return _error("unavailable", request_id, operation)
     except VoiceDraftConflictError, IdempotencyConflictError:
@@ -297,6 +316,7 @@ def _execute(
             "createVoiceDesign",
             "createVoiceClone",
             "generateVoiceDraftRevision",
+            "createVoicePreview",
             "validateVoiceDraftRevision",
         ):
             return _error("input_unavailable", request_id, operation)
@@ -306,6 +326,7 @@ def _execute(
             "createVoiceDesign",
             "createVoiceClone",
             "generateVoiceDraftRevision",
+            "createVoicePreview",
             "validateVoiceDraftRevision",
         ):
             # With the original key, a same-key replay returns the committed
@@ -401,6 +422,14 @@ def create_voice_drafts_router(
     )
     async def generate_revision(request: Request) -> JSONResponse:
         return await handle(request, "generateVoiceDraftRevision")
+
+    @router.post(
+        "/v1/nexus/voice-drafts/{draft_id}/previews",
+        operation_id="createVoicePreview",
+        status_code=202,
+    )
+    async def create_preview(request: Request) -> JSONResponse:
+        return await handle(request, "createVoicePreview")
 
     @router.post(
         "/v1/nexus/voice-drafts/{draft_id}/validations",

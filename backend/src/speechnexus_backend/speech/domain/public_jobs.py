@@ -20,7 +20,7 @@ from speechnexus_backend.speech.domain.publications import Publication
 JobState = Literal[
     "pending", "running", "cancelling", "succeeded", "failed", "cancelled", "expired"
 ]
-JobKind = Literal["asr", "tts", "voice_design", "voice_clone", "voice_validation"]
+JobKind = Literal["asr", "tts", "voice_design", "voice_clone", "voice_preview", "voice_validation"]
 ProgressUnit = Literal["audio_ms", "text_codepoints", "items"]
 CleanupState = Literal["not_required", "pending", "complete", "quarantined"]
 
@@ -170,7 +170,14 @@ class PublicJob:
     def __post_init__(self) -> None:
         identifier(self.job_id)
         identifier(self.workspace_id)
-        if self.kind not in ("asr", "tts", "voice_design", "voice_clone", "voice_validation"):
+        if self.kind not in (
+            "asr",
+            "tts",
+            "voice_design",
+            "voice_clone",
+            "voice_preview",
+            "voice_validation",
+        ):
             raise ValueError("Invalid public Job kind")
         if not isinstance(self.model_id, str) or not 1 <= len(self.model_id) <= 128:
             raise ValueError("Invalid public Job model")
@@ -215,7 +222,14 @@ class NewPublicJob:
     def __post_init__(self) -> None:
         identifier(self.job_id)
         identifier(self.workspace_id)
-        if self.kind not in ("asr", "tts", "voice_design", "voice_clone", "voice_validation"):
+        if self.kind not in (
+            "asr",
+            "tts",
+            "voice_design",
+            "voice_clone",
+            "voice_preview",
+            "voice_validation",
+        ):
             raise ValueError("Invalid public Job kind")
         if not isinstance(self.model_id, str) or not 1 <= len(self.model_id) <= 128:
             raise ValueError("Invalid public Job model")
@@ -245,7 +259,7 @@ class NewPublicJob:
         if ("model_binding" in decoded or self.expected_binding is not None) and (
             self.expected_binding is None
             or self.expected_binding.kind != "binding"
-            or self.kind not in ("tts", "voice_validation")
+            or self.kind not in ("tts", "voice_preview", "voice_validation")
             or decoded.get("kind") != self.kind
             or decoded.get("model", self.model_id) != self.model_id
             or (

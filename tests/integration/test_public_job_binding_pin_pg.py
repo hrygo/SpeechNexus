@@ -158,7 +158,8 @@ def test_exact_internal_revision_id_must_match_the_resolved_pin(jobs_db: JobSand
         request,
         expected_binding=replace(request.expected_binding, revision_id="other-internal-revision"),
     )
-    assert driver.create(changed).outcome == "unknown"
+    with pytest.raises(ModelBindingError, match="model_binding_not_current"):
+        driver.create(changed)
     _counts(jobs_db, 0)
 
 

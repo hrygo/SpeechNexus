@@ -627,6 +627,8 @@ def test_writer_column_level_attempt_insert_is_detected(
     role = admission_database.runtime.foundation.speech_role
     db.query(f'GRANT INSERT (operation_id) ON admission_attempts TO "{role}"')
     assert admission_database.runtime.pool is not None
-    with admission_database.runtime.pool.connection(timeout=3) as connection:
-        with pytest.raises(ValueError, match="admission reservations"):
-            _verify_privileges(connection, db.schema)
+    with (
+        admission_database.runtime.pool.connection(timeout=3) as connection,
+        pytest.raises(ValueError, match="admission reservations"),
+    ):
+        _verify_privileges(connection, db.schema)

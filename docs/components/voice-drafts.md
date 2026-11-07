@@ -45,8 +45,9 @@ speech source 当前为 `0.1.0.dev11`（#514 从 `dev9` 升至 `dev10`，#495 �
 无法表示为公开 `LanguageTag` 的值回退为 BCP 47 `und`（`english`、`x!`）；原始请求仍保留
 在 Job intent 中。这样请求契约不拒绝调用方，响应也不会违反既有 `LanguageTag`。
 空白字符串和超过 35 字符的输入在提交前 400 且不落库。七条另声明
-`500 voice_draft_contract_violation`（`api_error`、`retryable: false`）：自产响应违反契约时
-按实现缺陷返回 500，而不是伪装成可重试 503；错误响应本身也过同一生成校验器。新增声明
+`500 voice_draft_contract_violation`（`api_error`、`retryable: false`）：自产响应违反契约，
+或存储以确定性 CHECK/约束拒绝写入时，按实现缺陷返回 500，而不是伪装成可重试 503 或
+客户端冲突；错误响应本身也过同一生成校验器。新增声明
 Host/Origin 403，以及草稿读取的无效输入 400。旧消费者应先升级生成包和 503/500 判定，
 再启用服务。
 
@@ -183,7 +184,8 @@ CHECK 内。尝试通过 PATCH 改状态、输入或生成结果返回 422，且
   原键重试。
 - `voice_draft_outcome_unknown`（503，`retryable: true`，`X-Should-Retry: true`）只在请求
   携带原 `Idempotency-Key` 时返回：提交可能已 commit 但确认丢失，客户端用同一键重放会
-  回放原草稿与原 Job，不会新建。不同键仍是新意图。
+  回放原草稿与原 Job，不会新建。不同键仍是新意图。提交成功后的确认回读（草稿、修订）若
+  遇存储故障同样按本类返回，而不是可重试的 `voice_draft_unavailable`。
 - 无 `Idempotency-Key` 的请求无法安全重放，因此同一未知窗口返回 409
   `voice_draft_outcome_unknown`（`retryable: false`、`X-Should-Retry: false`）：重发会被
   当作新意图，可能再建草稿与生成任务；客户端应先协调原请求，不能把它当普通 503 重试。

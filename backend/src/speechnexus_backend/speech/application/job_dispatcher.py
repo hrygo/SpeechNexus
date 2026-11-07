@@ -31,6 +31,7 @@ from speechnexus_backend.speech.domain.job_dispatch import (
     identifier,
     submit_intent_identity,
     terminal_result,
+    validate_voice_dispatch_request,
 )
 
 
@@ -174,6 +175,10 @@ class JobDispatcher:
             )
             if actual_digest != job.request_digest:
                 raise DispatchProtocolError("Stored request disagrees with its digest")
+            # Resolve a voice Job's result reference before any side effect: a
+            # historical row whose stored command lacks the matching kind must
+            # fail here, not after publishing an orphan Artifact.
+            validate_voice_dispatch_request(job)
             if job.state == "pending":
                 job = await self._states.mark_running(job)
                 claim = replace(claim, job=job)

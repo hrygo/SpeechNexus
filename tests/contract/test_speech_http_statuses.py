@@ -118,3 +118,23 @@ async def test_artifact_conditional_range_and_unavailable_replies(case: dict[str
         unavailable = await http.get(path)
     assert unavailable.status_code == 503
     assert_error_contract(case["operation"], unavailable)
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        "createVoiceDesign",
+        "createVoiceClone",
+        "getVoiceDraft",
+        "updateVoiceDraftMetadata",
+        "generateVoiceDraftRevision",
+        "createVoicePreview",
+        "validateVoiceDraftRevision",
+    ],
+)
+def test_voice_draft_500_covers_response_shape_and_storage_rejection(operation: str) -> None:
+    """The declared 500 also describes deterministic storage refusals."""
+    description = " ".join(response_contract(operation, 500)["description"].split())
+    assert "response-shape violation" in description
+    assert "CHECK or constraint refusal" in description
+    assert "not retryable" in description

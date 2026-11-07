@@ -2,10 +2,11 @@
 
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any, Literal, Protocol
 
 from speechnexus_backend.speech.application.public_jobs import (
+    JobOutcomeUnknownError,
     PublicJobs,
     VoiceDraftStaleRevisionError,
     VoiceInputInvalidError,
@@ -130,6 +131,21 @@ def _revision_input(payload: Mapping[str, Any], kind: str) -> None:
         raise VoiceInputInvalidError
 
 
+def _committed_read[T](read: Callable[[], T]) -> T:
+    """Read facts that the submission transaction already committed.
+
+    The Job, draft and outbox are durable before this read starts. A read that
+    fails afterwards cannot prove nothing was written, so it must never surface
+    as a retryable storage outage: with the original Idempotency-Key a replay
+    returns the committed draft, while a keyless caller is told that resubmitting
+    is a new intent.
+    """
+    try:
+        return read()
+    except PublicJobUnavailableError:
+        raise JobOutcomeUnknownError from None
+
+
 class VoiceDrafts:
     def __init__(self, jobs: PublicJobs, store: VoiceDraftStore) -> None:
         self._jobs, self._store = jobs, store
@@ -145,7 +161,7 @@ class VoiceDrafts:
         job = self._jobs.submit(
             {**payload, "kind": kind}, request_id=request_id, idempotency_key=idempotency_key
         )
-        view = self.get(draft_id_for_job(job.job_id))
+        view = _committed_read(lambda: self.get(draft_id_for_job(job.job_id)))
         return view["draft"], job
 
     def generate(
@@ -181,12 +197,17 @@ class VoiceDrafts:
             request_id=request_id,
             idempotency_key=idempotency_key,
         )
-        revision_view = self._store.revision(draft_id, revision)
+        revision_view = _committed_read(lambda: self._store.revision(draft_id, revision))
         if revision_view is None:
-            raise PublicJobUnavailableError
+            # The revision was committed with the Job; an absent read is an
+            # unconfirmed acknowledgement, not a retryable outage.
+            raise JobOutcomeUnknownError
         # The draft is the current head; a replayed revision may be older than
         # it, and the revision object remains the original immutable one.
-        return {"draft": self.get(draft_id)["draft"], "revision": revision_view}, job
+        return {
+            "draft": _committed_read(lambda: self.get(draft_id))["draft"],
+            "revision": revision_view,
+        }, job
 
     def validate(
         self,

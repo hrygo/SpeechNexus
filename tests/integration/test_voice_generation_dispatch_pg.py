@@ -7,6 +7,7 @@ only replaces the gateway transport and object bytes.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
@@ -369,6 +370,52 @@ async def test_creation_dispatch_publishes_the_draft_preview(
 
     public_job = db.jobs.get(created.job_id)
     assert [fact.kind for fact in db.jobs.artifacts(public_job)] == ["preview"]
+
+
+async def test_history_row_without_a_request_kind_fails_before_publishing(
+    voice_dispatch_db: JobSandbox,
+) -> None:
+    """A pre-``kind`` row fails explicitly instead of leaving an orphan Artifact."""
+    db = voice_dispatch_db
+    draft, created = _voice_draft(db)
+    document = json.dumps(
+        {"input": {"description": "Synthetic voice", "preview_text": "Synthetic preview"}}
+    )
+    digest = "sha256:" + hashlib.sha256(document.encode("utf-8")).hexdigest()
+    db.admin.execute(
+        "UPDATE admission_operations SET request_document=%s, request_digest=%s "
+        "WHERE operation_id=%s",
+        (document, digest, created.job_id),
+    )
+    # A historical writer produced this row before ``kind`` existed; rewrite the
+    # immutable identity fields behind the status guard to reproduce it exactly.
+    db.admin.execute("ALTER TABLE speech_jobs DISABLE TRIGGER speech_jobs_status_guard")
+    try:
+        db.admin.execute(
+            "UPDATE speech_jobs SET request_digest=%s WHERE job_id=%s", (digest, created.job_id)
+        )
+    finally:
+        db.admin.execute("ALTER TABLE speech_jobs ENABLE TRIGGER speech_jobs_status_guard")
+    db.admin.execute(
+        "UPDATE coordination_jobs SET request_digest=%s WHERE job_id=%s",
+        (digest, created.job_id),
+    )
+    artifacts_before = db.count("speech_artifacts")
+
+    gateway = _Gateway()
+    batch = await _dispatcher(db, gateway).run_once("worker-voice-history")
+
+    stored = _job_row(db, created.job_id)
+    # No execution, no publication and no running state: the rejected request
+    # precedes every side effect.
+    assert db.count("speech_artifacts") == artifacts_before
+    assert gateway.submit_calls == 0
+    assert stored["state"] == "failed"
+    assert stored["error_code"] == "execution_result_invalid"
+    assert batch.failed == 1 and batch.unknown == 0 and batch.succeeded == 0
+    read = await _draft_read(db, draft["id"])
+    assert read.status_code == 200, read.text
+    assert read.json()["revision"]["status"] == "failed"
 
 
 async def test_generation_dispatch_names_the_appended_revision(

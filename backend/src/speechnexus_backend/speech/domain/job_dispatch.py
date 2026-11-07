@@ -389,6 +389,20 @@ def _voice_draft_reference(job: DispatchJob) -> tuple[str, str]:
     return target["id"], str(appended)
 
 
+def validate_voice_dispatch_request(job: DispatchJob) -> None:
+    """Reject an unreadable voice request before any dispatch side effect.
+
+    The stored command and the Job row must name one kind, and a generation
+    command's draft target must be inside the frozen contract. The dispatcher
+    calls this before it marks the Job running, submits to the gateway or
+    publishes an Artifact, so a historical row that predates ``kind`` fails the
+    Job explicitly instead of leaving an orphan Artifact and a permanently
+    ``running`` Job. ``terminal_result`` still revalidates its own input.
+    """
+    if job.kind in VOICE_GENERATION_JOB_KINDS:
+        _voice_draft_reference(job)
+
+
 def terminal_result(job: DispatchJob, artifact_id: str, receipt_id: str) -> str:
     """A public result carries only a stable artifact and receipt reference."""
     identifier(artifact_id)
@@ -446,4 +460,5 @@ __all__ = [
     "result_receipt_identity",
     "submit_intent_identity",
     "terminal_result",
+    "validate_voice_dispatch_request",
 ]

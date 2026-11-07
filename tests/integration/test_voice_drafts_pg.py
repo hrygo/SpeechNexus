@@ -291,6 +291,103 @@ def test_lost_create_ack_recovers_original_committed_draft(
     assert voice_db.count("speech_voice_drafts") == voice_db.count("coordination_outbox") == 1
 
 
+def _fail_first_read(
+    monkeypatch: pytest.MonkeyPatch, store: PostgresVoiceDrafts, method: str
+) -> None:
+    """Make one post-commit acknowledgement read fail, then recover."""
+    original = getattr(store, method)
+    failed = False
+
+    def read(*args: Any) -> Any:
+        nonlocal failed
+        if not failed:
+            failed = True
+            raise PublicJobUnavailableError
+        return original(*args)
+
+    monkeypatch.setattr(store, method, read)
+
+
+async def test_post_commit_read_failure_with_a_key_replays_the_original_draft(
+    voice_db: JobSandbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed acknowledgement read after commit is outcome unknown, not 503."""
+    store = PostgresVoiceDrafts(voice_db.pool)
+    _fail_first_read(monkeypatch, store, "get")
+    app = create_app(
+        settings=_settings(), jobs=voice_db.jobs, voice_drafts=VoiceDrafts(voice_db.jobs, store)
+    )
+    headers = {"Idempotency-Key": "post-commit-read-key"}
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://localhost") as http:
+        lost = await http.post("/v1/nexus/voice-designs", json=_body("design"), headers=headers)
+        assert lost.status_code == 503, lost.text
+        assert lost.json()["error"]["code"] == "voice_draft_outcome_unknown"
+        assert lost.json()["error"]["retryable"] is True
+        assert lost.headers["X-Should-Retry"] == "true"
+        validate_response(
+            "createVoiceDesign", 503, {"body": lost.json(), "headers": dict(lost.headers)}
+        )
+        replay = await http.post("/v1/nexus/voice-designs", json=_body("design"), headers=headers)
+    assert replay.status_code == 202, replay.text
+    # The original key replays the committed draft instead of creating a second.
+    assert replay.json()["draft"]["id"] == "draft-" + replay.json()["job"]["id"]
+    assert voice_db.count("speech_jobs") == 1
+    assert voice_db.count("speech_voice_drafts") == 1
+    assert voice_db.count("coordination_outbox") == 1
+
+
+async def test_post_commit_read_failure_without_a_key_is_not_retryable(
+    voice_db: JobSandbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The committed draft is unknown; a keyless caller must not retry blindly."""
+    store = PostgresVoiceDrafts(voice_db.pool)
+    _fail_first_read(monkeypatch, store, "get")
+    app = create_app(
+        settings=_settings(), jobs=voice_db.jobs, voice_drafts=VoiceDrafts(voice_db.jobs, store)
+    )
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://localhost") as http:
+        lost = await http.post("/v1/nexus/voice-designs", json=_body("design"))
+    assert lost.status_code == 409, lost.text
+    assert lost.json()["error"]["code"] == "voice_draft_outcome_unknown"
+    assert lost.json()["error"]["retryable"] is False
+    assert lost.headers["X-Should-Retry"] == "false"
+    validate_response(
+        "createVoiceDesign", 409, {"body": lost.json(), "headers": dict(lost.headers)}
+    )
+    # The submission itself committed exactly one draft and Job; no duplicate.
+    assert voice_db.count("speech_jobs") == 1
+    assert voice_db.count("speech_voice_drafts") == 1
+
+
+async def test_post_commit_generation_read_failure_with_a_key_replays_the_original_job(
+    voice_db: JobSandbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The revision read after commit is outcome unknown, not a retryable 503."""
+    _seed_provider, draft = _candidate_draft(voice_db)
+    store = PostgresVoiceDrafts(voice_db.pool)
+    _fail_first_read(monkeypatch, store, "revision")
+    app = create_app(
+        settings=_settings(), jobs=voice_db.jobs, voice_drafts=VoiceDrafts(voice_db.jobs, store)
+    )
+    headers = {"Idempotency-Key": "post-commit-generation-key"}
+    path = "/v1/nexus/voice-drafts/" + draft["id"] + "/generations"
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://localhost") as http:
+        lost = await http.post(path, json=_generation_body(draft), headers=headers)
+        assert lost.status_code == 503, lost.text
+        assert lost.json()["error"]["code"] == "voice_draft_outcome_unknown"
+        assert lost.json()["error"]["retryable"] is True
+        validate_response(
+            "generateVoiceDraftRevision",
+            503,
+            {"body": lost.json(), "headers": dict(lost.headers)},
+        )
+        replay = await http.post(path, json=_generation_body(draft), headers=headers)
+    assert replay.status_code == 202, replay.text
+    assert replay.json()["revision"]["revision"] == "2"
+    assert voice_db.count("speech_jobs") == 2
+    assert voice_db.count("speech_voice_draft_revisions") == 2
+
+
 def _seed_preview_artifact(
     db: JobSandbox,
     artifact_id: str = "preview-synthetic",

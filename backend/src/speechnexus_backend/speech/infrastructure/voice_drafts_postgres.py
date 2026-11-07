@@ -4,16 +4,18 @@ import json
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
+from speechnexus_backend.speech.application.public_jobs import resolve_voice_previews
 from speechnexus_backend.speech.application.voice_drafts import (
     VoiceDraftConflictError,
     VoiceDraftNotFoundError,
 )
 from speechnexus_backend.speech.domain.public_jobs import (
+    JobArtifactFact,
     PublicJobUnavailableError,
     canonical_digest,
     idempotency_digest,
@@ -22,7 +24,7 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechConnec
 
 _SELECT = (
     "SELECT d.*, j.state AS job_state, j.result_json, j.error_code, "
-    "j.updated_at_us AS job_updated_at_us "
+    "j.workspace_id AS job_workspace_id, j.updated_at_us AS job_updated_at_us "
     "FROM speech_voice_drafts d JOIN speech_jobs j ON j.job_id=d.generation_job_id "
     "WHERE d.draft_id=%s"
 )
@@ -102,6 +104,49 @@ def _view(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _artifact_fact(
+    connection: SpeechConnection, workspace_id: str, artifact_id: str
+) -> JobArtifactFact | None:
+    """Read one ready Artifact inside the caller's transaction."""
+    row = connection.execute(
+        "SELECT artifact_id, artifact_kind, artifact_state, media_type, bytes, sha256, "
+        "receipt_id, expires_at_us FROM speech_artifacts "
+        "WHERE workspace_id=%s AND artifact_id=%s",
+        (workspace_id, artifact_id),
+    ).fetchone()
+    if row is None or row["artifact_state"] != "ready" or row["receipt_id"] is None:
+        return None
+    try:
+        return JobArtifactFact(
+            artifact_id=row["artifact_id"],
+            kind=row["artifact_kind"],
+            media_type=row["media_type"],
+            bytes=int(row["bytes"]),
+            sha256=row["sha256"],
+            receipt_id=row["receipt_id"],
+            expires_at_us=(None if row["expires_at_us"] is None else int(row["expires_at_us"])),
+        )
+    except ValueError, TypeError, KeyError:
+        raise PublicJobUnavailableError from None
+
+
+def _require_candidate(connection: SpeechConnection, row: dict[str, Any]) -> None:
+    """Reject an unverified candidate before the metadata transaction writes."""
+    if _view(row)["revision"]["status"] != "candidate":
+        return
+    previews = resolve_voice_previews(
+        workspace_id=row["job_workspace_id"],
+        kind="voice_" + row["kind"],
+        state=row["job_state"],
+        result_json=row["result_json"],
+        artifact=lambda workspace_id, artifact_id: _artifact_fact(
+            connection, workspace_id, artifact_id
+        ),
+    )
+    if not previews:
+        raise PublicJobUnavailableError
+
+
 class PostgresVoiceDrafts:
     def __init__(self, pool: SpeechPool) -> None:
         self._pool = pool
@@ -144,12 +189,21 @@ class PostgresVoiceDrafts:
                 if original is not None:
                     if original["request_digest"] != digest:
                         raise VoiceDraftConflictError
-                    return dict(json.loads(original["result_json"]))
+                    # Validate the current authority facts before replaying too;
+                    # the receipt never contains the full input.
+                    _require_candidate(connection, row)
+                    recorded: dict[str, Any] = dict(json.loads(original["result_json"]))
+                    if "revision" in recorded and isinstance(recorded.get("draft"), dict):
+                        return cast(dict[str, Any], recorded["draft"])
+                    return recorded
             if (
                 row["status"] == "published"
                 or row["metadata_revision"] != command["expected_metadata_revision"]
             ):
                 raise VoiceDraftConflictError
+            # Candidate facts are checked while the row lock and transaction are
+            # open. A failure rolls back before the UPDATE or receipt insert.
+            _require_candidate(connection, row)
             changed = connection.execute(
                 "UPDATE speech_voice_drafts SET display_name=%s, "
                 "metadata_revision=metadata_revision+1, "
@@ -161,11 +215,14 @@ class PostgresVoiceDrafts:
             if changed is None:
                 raise PublicJobUnavailableError
             row = {**row, **changed}
-            view = _view(row)
+            # Only the response projection is replayed; input_json and binding
+            # stay in the draft row instead of being copied into the 8192-byte
+            # receipt column.
+            draft: dict[str, Any] = _view(row)["draft"]
             if key is not None:
                 connection.execute(
                     "INSERT INTO speech_voice_metadata_commands "
                     "(draft_id, key_digest, request_digest, result_json) VALUES (%s,%s,%s,%s)",
-                    (draft_id, key, digest, json.dumps(view, ensure_ascii=False)),
+                    (draft_id, key, digest, json.dumps(draft, ensure_ascii=False)),
                 )
-        return view
+        return draft

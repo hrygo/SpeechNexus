@@ -402,24 +402,49 @@ async def test_candidate_validation_is_shared_by_get_and_patch(
     )
     app = create_app(settings=_settings(), jobs=voice_db.jobs, voice_drafts=provider)
     path = "/v1/nexus/voice-drafts/" + draft["id"]
+    before = voice_db.query(
+        "SELECT display_name, metadata_revision FROM speech_voice_drafts WHERE draft_id=%s",
+        (draft["id"],),
+    )[0]
+    assert before == {"display_name": "Voice design", "metadata_revision": 1}
+    headers = {"Idempotency-Key": "candidate-patch-key"}
     async with AsyncClient(transport=ASGITransport(app), base_url="http://localhost") as http:
         read = await http.get(path)
         patch = await http.patch(
             path,
             json={"expected_metadata_revision": 1, "display_name": "Candidate voice"},
+            headers=headers,
         )
-    assert read.status_code == patch.status_code == expected, (read.text, patch.text)
+        replay = await http.patch(
+            path,
+            json={"expected_metadata_revision": 1, "display_name": "Candidate voice"},
+            headers=headers,
+        )
+    assert read.status_code == patch.status_code == replay.status_code == expected, (
+        read.text,
+        patch.text,
+        replay.text,
+    )
+    after = voice_db.query(
+        "SELECT display_name, metadata_revision FROM speech_voice_drafts WHERE draft_id=%s",
+        (draft["id"],),
+    )[0]
     if expected == 200:
         assert read.json()["draft"]["status"] == "candidate"
         assert patch.json()["status"] == "candidate"
         assert patch.json()["head_revision"] == "1"
         assert read.json()["revision"]["preview_artifact_ids"] == ["preview-synthetic"]
+        assert after == {"display_name": "Candidate voice", "metadata_revision": 2}
+        assert voice_db.count("speech_voice_metadata_commands") == 1
+        assert replay.json() == patch.json()
         validate_response("getVoiceDraft", 200, {"body": read.json()})
         validate_response("updateVoiceDraftMetadata", 200, {"body": patch.json()})
     else:
-        for body in (read.json(), patch.json()):
+        for body in (read.json(), patch.json(), replay.json()):
             assert body["error"]["code"] == "voice_draft_unavailable"
             assert body["error"]["retryable"] is True
+        assert after == before
+        assert voice_db.count("speech_voice_metadata_commands") == 0
         validate_response(
             "getVoiceDraft", 503, {"body": read.json(), "headers": dict(read.headers)}
         )
@@ -428,6 +453,58 @@ async def test_candidate_validation_is_shared_by_get_and_patch(
             503,
             {"body": patch.json(), "headers": dict(patch.headers)},
         )
+
+
+async def test_keyed_patch_receipt_does_not_copy_large_input(voice_db: JobSandbox) -> None:
+    db = voice_db
+    app = create_app(settings=_settings(), jobs=db.jobs, voice_drafts=_provider(db))
+    body = {
+        "model": "voice-model",
+        "input": {
+            "reference_audio_asset_id": "synthetic-reference",
+            "source_use_confirmed": True,
+            "reference_text": "声" * 10000,
+            "preview_text": "音" * 2000,
+        },
+    }
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://localhost") as http:
+        created = await http.post("/v1/nexus/voice-clones", json=body)
+        assert created.status_code == 202, created.text
+        draft_id = created.json()["draft"]["id"]
+        input_bytes = db.query(
+            "SELECT OCTET_LENGTH(input_json) AS n FROM speech_voice_drafts WHERE draft_id=%s",
+            (draft_id,),
+        )[0]["n"]
+        assert input_bytes > 36_000, input_bytes
+        headers = {"Idempotency-Key": "large-input-patch-key"}
+        patch = await http.patch(
+            "/v1/nexus/voice-drafts/" + draft_id,
+            json={"expected_metadata_revision": 1, "display_name": "Large input voice"},
+            headers=headers,
+        )
+        assert patch.status_code == 200, patch.text
+        validate_response("updateVoiceDraftMetadata", 200, {"body": patch.json()})
+        assert patch.json()["metadata_revision"] == 2
+        receipt = db.query(
+            "SELECT OCTET_LENGTH(result_json) AS n FROM speech_voice_metadata_commands "
+            "WHERE draft_id=%s",
+            (draft_id,),
+        )[0]["n"]
+        assert 2 <= receipt <= 8192, receipt
+        replay = await http.patch(
+            "/v1/nexus/voice-drafts/" + draft_id,
+            json={"expected_metadata_revision": 1, "display_name": "Large input voice"},
+            headers=headers,
+        )
+        assert replay.status_code == 200, replay.text
+        assert replay.json() == patch.json()
+    assert db.count("speech_voice_drafts") == 1
+    assert db.count("speech_voice_metadata_commands") == 1
+    row = db.query(
+        "SELECT display_name, metadata_revision FROM speech_voice_drafts WHERE draft_id=%s",
+        (draft_id,),
+    )[0]
+    assert row == {"display_name": "Large input voice", "metadata_revision": 2}
 
 
 @pytest.mark.parametrize(

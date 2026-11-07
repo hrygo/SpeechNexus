@@ -84,8 +84,9 @@ def draft_id_for_job(job_id: str) -> str:
 def require_candidate_facts(view: dict[str, Any], jobs: PublicJobs) -> None:
     """Reject a candidate that has no committed receipt or ready preview.
 
-    One helper serves both the GET projection and the metadata write reply so a
-    PATCH can never expose a candidate that GET would report as unavailable.
+    The GET projection uses this helper; the metadata transaction applies the
+    same ``resolve_voice_previews`` rule before it writes, so a PATCH cannot
+    expose a candidate that GET would report as unavailable.
     """
     draft_revision = view.get("revision")
     if isinstance(draft_revision, dict) and draft_revision.get("status") == "candidate":
@@ -132,11 +133,10 @@ class VoiceDrafts:
         # HTTP validation is generated; guard the narrow application write port too.
         if set(command) != {"expected_metadata_revision", "display_name"}:
             raise ValueError("Only draft metadata may be updated")
-        view = self._store.update_metadata(identifier(draft_id), command, idempotency_key)
-        # The PATCH reply is a draft projection too; apply the same candidate
-        # invariant before exposing it.
-        require_candidate_facts(view, self._jobs)
-        draft = view.get("draft")
+        draft = self._store.update_metadata(identifier(draft_id), command, idempotency_key)
+        # The store validates candidate facts while its transaction is open and
+        # returns the draft projection; no post-commit rejection can leave a
+        # metadata write behind a 503.
         if not isinstance(draft, dict):
             raise PublicJobUnavailableError
         return draft

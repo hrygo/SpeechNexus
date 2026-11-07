@@ -65,10 +65,17 @@ Host/Origin 403，以及草稿读取的无效输入 400。旧消费者应先升�
 完整状态枚举继续来自原契约；本切片不提供任意状态修改端口。
 
 PATCH 只接受 `expected_metadata_revision` 和 `display_name`。PG 草稿行锁内先查原键回执，
-再检查发布状态和 metadata revision CAS，再更新元数据并存回执。CAS 冲突、已发布草稿或
-同键异意图返回 409；原回执重放不受后来版本变化或发布状态影响。PATCH 的成功响应同样经过
-candidate 的 receipt + ready preview 校验：与 GET 共用 `require_candidate_facts`，未验证
-候选在 GET 与 PATCH 都是 503。尝试通过 PATCH 改状态、输入或生成结果返回 422，且不写入。
+再检查发布状态和 metadata revision CAS，然后**在事务内**用与 GET 共用的
+`resolve_voice_previews` 校验 candidate 的 receipt 与 ready preview；校验失败在 UPDATE
+和回执写入之前抛出并回滚，未验证候选不会留下 display_name、metadata revision 或回执。
+CAS 冲突、已发布草稿或同键异意图返回 409；原回执重放也先按当前权威行校验 candidate，
+再返回记录中的草稿投影，不受后来 metadata 版本影响。回执只保存公开 `VoiceDraft` 投影，
+不复制 `revision.input`/binding；最长 36KB 输入带键 PATCH 仍为 200，回执保持在 8192 字节
+CHECK 内。尝试通过 PATCH 改状态、输入或生成结果返回 422，且不写入。
+
+`speech_voice_metadata_commands` 是唯一 metadata 回执表，`result_json` 只存上述投影；
+`speech_voice_drafts.input_json` 是权威输入本身（DDL 允许 2..65536 字节），不是回执，
+`binding_json` 上限 1024，二者都不复制到回执。创建路径没有第二份整输入回执。
 
 `POST /v1/nexus/jobs` 的 `VoiceDesignJobCreate` / `VoiceCloneJobCreate` 同样通过
 `PublicJobs.submit` 接入：202 返回 Job，并在同一事务创建一条草稿；草稿 ID 固定为

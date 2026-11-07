@@ -285,6 +285,57 @@ class PublicJobStore(Protocol):
     ) -> PublicJob: ...
 
 
+def resolve_voice_previews(
+    *,
+    workspace_id: str,
+    kind: str,
+    state: str,
+    result_json: str | None,
+    artifact: Callable[[str, str], JobArtifactFact | None],
+) -> tuple[JobArtifactFact, ...]:
+    """Resolve the preview facts a succeeded voice result references.
+
+    One rule serves the public GET projection and the metadata transaction, so a
+    candidate cannot be accepted by one path while rejected by the other.
+    """
+    if state != "succeeded":
+        return ()
+    if result_json is None:
+        raise PublicJobUnavailableError
+    try:
+        result = json.loads(result_json)
+    except ValueError, TypeError, RecursionError:
+        raise PublicJobUnavailableError from None
+    if not isinstance(result, dict) or result.get("kind") != kind:
+        raise PublicJobUnavailableError
+    artifact_ids = result.get("preview_artifact_ids")
+    receipt_id = result.get("receipt_id")
+    if (
+        not isinstance(artifact_ids, list)
+        or not artifact_ids
+        or not isinstance(receipt_id, str)
+        or not all(isinstance(item, str) for item in artifact_ids)
+        or len(set(artifact_ids)) != len(artifact_ids)
+    ):
+        raise PublicJobUnavailableError
+    previews = []
+    for artifact_id in artifact_ids:
+        try:
+            identifier(artifact_id)
+        except ValueError:
+            raise PublicJobUnavailableError from None
+        fact = artifact(workspace_id, artifact_id)
+        if (
+            fact is None
+            or fact.artifact_id != artifact_id
+            or fact.kind != "preview"
+            or fact.receipt_id != receipt_id
+        ):
+            raise PublicJobUnavailableError
+        previews.append(fact)
+    return tuple(previews)
+
+
 class PublicJobs:
     """One explicit resolution, one atomic write, then bounded reads."""
 
@@ -616,30 +667,13 @@ class PublicJobs:
         if not isinstance(result, dict) or result.get("kind") != job.kind:
             raise PublicJobUnavailableError
         if job.kind in ("voice_design", "voice_clone"):
-            artifact_ids = result.get("preview_artifact_ids")
-            receipt_id = result.get("receipt_id")
-            if (
-                not isinstance(artifact_ids, list)
-                or not artifact_ids
-                or not isinstance(receipt_id, str)
-                or not all(isinstance(item, str) for item in artifact_ids)
-                or len(set(artifact_ids)) != len(artifact_ids)
-            ):
-                raise PublicJobUnavailableError
-            previews = []
-            for artifact_id in artifact_ids:
-                if not isinstance(artifact_id, str):
-                    raise PublicJobUnavailableError
-                fact = self._store.artifact(job.workspace_id, identifier(artifact_id))
-                if (
-                    fact is None
-                    or fact.artifact_id != artifact_id
-                    or fact.kind != "preview"
-                    or fact.receipt_id != receipt_id
-                ):
-                    raise PublicJobUnavailableError
-                previews.append(fact)
-            return tuple(previews)
+            return resolve_voice_previews(
+                workspace_id=job.workspace_id,
+                kind=job.kind,
+                state=job.state,
+                result_json=job.result_json,
+                artifact=self._store.artifact,
+            )
         name, kind = (
             ("transcript_artifact_id", "transcript")
             if job.kind == "asr"

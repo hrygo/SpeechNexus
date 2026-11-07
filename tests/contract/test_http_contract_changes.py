@@ -1419,3 +1419,169 @@ def test_path_item_reference_preserves_full_cli_response_guarantees(
     monkeypatch.setattr(sys, "argv", ["check", "--base", base, "--format", "json"])
     assert module.main() == 1
     assert json.loads(capsys.readouterr().out)["findings"]
+
+
+PROMOTION_PATH = "/v1/nexus/pronunciation-sets"
+PROMOTION_CODE = "pronunciation_publication_not_supported"
+
+
+def promotion_document(
+    *,
+    code: str,
+    request: dict[str, Any],
+    path: str = PROMOTION_PATH,
+    extra_media_type: str | None = None,
+) -> dict[str, Any]:
+    """Synthetic operation with one declared 4xx capability gap."""
+
+    doc = document(path, request=request)
+    if extra_media_type is not None:
+        content = doc["paths"][path]["post"]["requestBody"]["content"]
+        content[extra_media_type] = copy.deepcopy(content["application/json"])
+    doc["components"] = {
+        "responses": {
+            "Unsupported": {
+                "description": "This deployment has not enabled the capability.",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "object",
+                                    "properties": {"code": {"const": code}},
+                                }
+                            },
+                        }
+                    }
+                },
+            }
+        }
+    }
+    doc["paths"][path]["post"]["responses"]["422"] = {"$ref": "#/components/responses/Unsupported"}
+    return doc
+
+
+def promotion_request(publish_default: Any, encoding_default: Any = "pinyin") -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "publish": {"type": "boolean", "default": publish_default},
+            "encoding": {"type": "string", "default": encoding_default},
+        },
+    }
+
+
+def test_exact_capability_promotion_default_change_is_a_notice(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    base = promotion_document(code=PROMOTION_CODE, request=promotion_request(False))
+    current = promotion_document(code=PROMOTION_CODE, request=promotion_request(True))
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    captured = capsys.readouterr()
+    assert findings == []
+    assert "notice:" in captured.err
+    assert "default changed from False to True" in captured.err
+    assert "exact declared capability promotion" in captured.err
+
+
+def test_capability_promotion_does_not_cover_another_field_on_the_same_operation() -> None:
+    base = promotion_document(code=PROMOTION_CODE, request=promotion_request(False, "pinyin"))
+    current = promotion_document(code=PROMOTION_CODE, request=promotion_request(False, "ipa"))
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert findings
+    assert any("default changed from 'pinyin' to 'ipa'" in issue for issue in findings)
+
+
+def test_capability_promotion_does_not_cover_another_operation() -> None:
+    base = promotion_document(
+        code=PROMOTION_CODE,
+        request=promotion_request(False),
+        path="/v1/audio/speech",
+    )
+    current = promotion_document(
+        code=PROMOTION_CODE,
+        request=promotion_request(True),
+        path="/v1/audio/speech",
+    )
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert findings
+    assert any("default changed from False to True" in issue for issue in findings)
+
+
+def test_capability_promotion_rejects_the_reverse_direction() -> None:
+    base = promotion_document(code=PROMOTION_CODE, request=promotion_request(True))
+    current = promotion_document(code=PROMOTION_CODE, request=promotion_request(False))
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert findings
+    assert any("default changed from True to False" in issue for issue in findings)
+
+
+def test_capability_promotion_requires_the_exact_baseline_code() -> None:
+    base = promotion_document(
+        code="synthetic_publication_not_supported", request=promotion_request(False)
+    )
+    current = promotion_document(
+        code="synthetic_publication_not_supported", request=promotion_request(True)
+    )
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert findings
+    assert any("default changed from False to True" in issue for issue in findings)
+
+
+def test_capability_promotion_does_not_cover_response_defaults() -> None:
+    base = promotion_document(code=PROMOTION_CODE, request=promotion_request(False))
+    response_schema = {
+        "type": "object",
+        "properties": {"status": {"type": "string", "default": "draft"}},
+    }
+    base["paths"][PROMOTION_PATH]["post"]["responses"]["201"]["content"]["application/json"][
+        "schema"
+    ] = response_schema
+    current = copy.deepcopy(base)
+    current["paths"][PROMOTION_PATH]["post"]["responses"]["201"]["content"]["application/json"][
+        "schema"
+    ]["properties"]["status"]["default"] = "published"
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert any("default changed from 'draft' to 'published'" in issue for issue in findings)
+
+
+def test_capability_promotion_does_not_cover_other_schema_keywords() -> None:
+    base = promotion_document(code=PROMOTION_CODE, request=promotion_request(False))
+    current = promotion_document(code=PROMOTION_CODE, request=promotion_request(True))
+    current["paths"][PROMOTION_PATH]["post"]["requestBody"]["content"]["application/json"][
+        "schema"
+    ]["properties"]["publish"]["type"] = "string"
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert any("type changed" in issue for issue in findings)
+
+
+def test_default_promotion_whitelist_is_frozen() -> None:
+    # Adding an exemption must be a deliberate, reviewed change: this exact
+    # mapping and a matching negative case are required together.
+    assert kernel()._DEFAULT_PROMOTIONS == {
+        (
+            PROMOTION_PATH,
+            "post",
+            "application/json",
+            "/properties/publish",
+        ): (PROMOTION_CODE, False, True)
+    }
+
+
+def test_capability_promotion_is_scoped_to_the_declared_media_type() -> None:
+    base = promotion_document(
+        code=PROMOTION_CODE,
+        request=promotion_request(False),
+        extra_media_type="application/x-synthetic",
+    )
+    current = promotion_document(
+        code=PROMOTION_CODE,
+        request=promotion_request(True),
+        extra_media_type="application/x-synthetic",
+    )
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert any(
+        "application/x-synthetic" in issue and "default changed from False to True" in issue
+        for issue in findings
+    )

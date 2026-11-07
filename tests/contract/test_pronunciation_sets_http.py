@@ -1,4 +1,4 @@
-"""The generated collection surface stays a draft-only, retryable-shaped contract."""
+"""The generated collection surface declares atomic publication and retryable shapes."""
 
 from __future__ import annotations
 
@@ -62,6 +62,7 @@ def test_collection_surface_owns_exactly_the_two_operations() -> None:
         "503",
     }
     assert set(operation("post")["responses"]) == {
+        "200",
         "201",
         "400",
         "401",
@@ -117,18 +118,20 @@ def test_error_codes_are_distinct_and_never_hide_the_request_error() -> None:
     assert codes(unsupported["allOf"][1]) == {"pronunciation_publication_not_supported"}
 
 
-def test_publish_is_declared_draft_only() -> None:
+def test_publish_is_declared_atomic_by_default() -> None:
     request = cast(dict[str, Any], BUNDLE["components"]["schemas"]["PronunciationCreateRequest"])
     publish = request["properties"]["publish"]
-    assert publish["default"] is False
-    assert "draft" in publish["description"].lower()
-    assert "422" in publish["description"]
+    assert publish["default"] is True
+    description = publish["description"].lower()
+    assert "atomic" in description and "422" in description
 
 
-def test_generated_validators_accept_the_draft_shape_and_reject_publication() -> None:
+def test_generated_validators_default_to_publication_and_accept_drafts() -> None:
     body = pronunciation_request()
     validate_request(CREATE, {"body": body})
     assert body["publish"] is False
+    defaulted = {key: value for key, value in body.items() if key != "publish"}
+    validate_request(CREATE, {"body": defaulted})
     with pytest.raises(ContractValidationError):
         validate_request(CREATE, {"body": {**body, "publish": "yes"}})
     summary: dict[str, Any] = {
@@ -156,6 +159,7 @@ def test_generated_validators_accept_the_draft_shape_and_reject_publication() ->
         "created_at": "2026-01-01T00:00:00.000000Z",
     }
     validate_response(CREATE, 201, {"body": response_body})
+    validate_response(CREATE, 200, {"body": {**response_body, "status": "published"}})
     with pytest.raises(ContractValidationError):
         validate_response(CREATE, 201, {"body": {**response_body, "id": "Not An Id"}})
     for broken in ({**summary, "entry_count": 0}, {**summary, "encoding": "kana"}):
@@ -175,6 +179,7 @@ def test_source_contract_declares_the_same_statuses() -> None:
         "503",
     }
     assert set(published["post"]["responses"]) == {
+        "200",
         "201",
         "400",
         "401",

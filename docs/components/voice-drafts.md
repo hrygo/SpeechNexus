@@ -103,18 +103,31 @@ binding 与草稿行锁，所以回退不保证在“任何行锁之前”，但
 
 ## 插入窗口拒绝
 
-`job_rejected` 表示 store 在 prepare 完成后、插入事务提交前发现固定的事实已变——固定
-binding 不再是选中版本、候选 preview 证据不再 ready、或草稿身份竞争失败。事务已回滚，
-没有任何 Job、修订、草稿或 outbox 写入提交。voice 的创建、生成、预览与校验四条路径都
-声明了 409，因此该结果统一映射为既有稳定 code `voice_draft_conflict`（`type:
-invalid_request_error`、`retryable: false`、`Cache-Control: no-store`、
-`X-Should-Retry: false`）；重放同一请求不能成功，调用方应按当前事实重新决定。不得映射为
-带 `retryable: true` 的 `voice_draft_unavailable`。
+store 在 prepare 完成后、插入事务提交前可能拒绝已准备的写入。拒绝原因分为三类，HTTP
+边界按原因返回不同状态，不能统一当成「事实已变」或可重试 outage：
+
+- `facts_changed`（store code `job_rejected`）：固定 binding 不再是选中版本，或候选
+  preview 证据不再 ready。事务已回滚，没有任何 Job、修订、草稿或 outbox 写入提交；
+  重放同一请求不能成功。voice 的创建、生成、预览与校验四条路径声明了 409，因此映射为
+  既有稳定 code `voice_draft_conflict`（`type: invalid_request_error`、
+  `retryable: false`、`Cache-Control: no-store`、`X-Should-Retry: false`）。
+- `identity_conflict`（store code `job_identity_conflict`）与 `revision_exhausted`：
+  未带幂等键的提交与已提交身份冲突，或 head 修订号已耗尽。同样没有提交写入，重放同一
+  请求不能成功，按 409 `voice_draft_conflict` 返回；重新发起会获得新身份，不标记可重试。
+- `storage_rejected`（确定性数据库拒绝，如 CHECK 违约）与 `contract`（`created` 结果缺少
+  Job/修订载荷）：属于确定性实现缺陷，不是客户端冲突，返回 500
+  `voice_draft_contract_violation`（`type: api_error`、`retryable: false`、
+  `X-Should-Retry: false`）。
+- `unavailable`（连接池关闭/超时等提交前存储故障）：仍返回 503
+  `voice_draft_unavailable` 且 `retryable: true`；这是契约允许的可重试 outage。
+
+`getVoiceDraft` 与 `updateVoiceDraftMetadata` 不提交 Job，不会出现上述拒绝；若该异常
+仍到达这两条路径，按实现缺陷返回 500，而不是可重试的 503。
 
 通用 `POST /v1/nexus/jobs` 对同一 store 结果保持 503 `job_unavailable` 且
-`retryable: false`。两条路径的差异来自已声明的响应集合：voice 操作声明了 409 冲突语义，
-通用 Job 面没有对应的“事实已变”冲突 code，因此保留现有的不可重试 503；两者都不承诺
-重试可以成功。
+`retryable: false`。两条路径的差异来自已声明的响应集合：voice 操作声明了 409 冲突语义与
+500 契约违约，通用 Job 面没有对应的「事实已变」冲突 code，因此保留现有的不可重试 503；
+两者都不承诺重试可以成功。
 
 ## 权威状态与恢复
 

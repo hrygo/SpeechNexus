@@ -161,7 +161,7 @@ async def test_retry_returns_202_with_the_new_job_and_no_lineage_field() -> None
         (ProfileNotPublishedError(), 422, "profile_not_published"),
         (PronunciationNotFoundError(), 422, "pronunciation_not_found"),
         (AssetNotReadyError(), 422, "asset_not_ready"),
-        (JobRejectedError(), 503, "job_unavailable"),
+        (JobRejectedError("facts_changed"), 503, "job_unavailable"),
         (PublicJobNotFoundError(), 404, "job_not_found"),
         (PublicJobUnavailableError(), 503, "job_unavailable"),
         (ValueError("synthetic"), 404, "job_not_found"),

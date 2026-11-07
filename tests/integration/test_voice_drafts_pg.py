@@ -237,10 +237,13 @@ def test_draft_insert_failure_rolls_back_existing_job_transaction(voice_db: JobS
     voice_db.query(
         "ALTER TABLE speech_voice_drafts ADD CONSTRAINT synthetic_rejection CHECK (false)"
     )
-    with pytest.raises(JobRejectedError):
+    with pytest.raises(JobRejectedError) as rejected:
         _provider(voice_db).create(
             "voice_design", _body("design"), request_id="request-rollback", idempotency_key=None
         )
+    # A deterministic constraint refusal is classified separately from changed
+    # facts so the HTTP boundary can report an implementation defect.
+    assert rejected.value.code == "storage_rejected"
     for table in ("speech_voice_drafts", "speech_jobs", "speech_job_events", "coordination_outbox"):
         assert voice_db.count(table) == 0
 
@@ -1814,8 +1817,39 @@ def _assert_generic_unavailable_envelope(response: Any) -> None:
     parse_contract("ErrorResponse", body)
 
 
+def _assert_contract_violation_envelope(response: Any, operation: str) -> None:
+    """A deterministic refusal is a 500 implementation defect, never a conflict."""
+    assert response.status_code == 500, response.text
+    body = response.json()
+    error = body["error"]
+    assert error["code"] == "voice_draft_contract_violation"
+    assert error["type"] == "api_error"
+    assert error["retryable"] is False
+    assert error["param"] is None
+    assert error["request_id"]
+    assert response.headers["Content-Type"] == "application/json"
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["X-Should-Retry"] == "false"
+    validate_response(
+        operation,
+        500,
+        {"body": body, "headers": dict(response.headers)},
+    )
+
+
+@pytest.mark.parametrize(
+    ("kind", "operation", "path"),
+    [
+        ("design", "createVoiceDesign", "/v1/nexus/voice-designs"),
+        ("clone", "createVoiceClone", "/v1/nexus/voice-clones"),
+    ],
+)
 async def test_create_insert_fact_change_is_a_conflict_not_a_retryable_503(
-    voice_db: JobSandbox, monkeypatch: pytest.MonkeyPatch
+    voice_db: JobSandbox,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+    operation: str,
+    path: str,
 ) -> None:
     store = voice_db.jobs._store
     original = store.create
@@ -1832,8 +1866,8 @@ async def test_create_insert_fact_change_is_a_conflict_not_a_retryable_503(
     monkeypatch.setattr(store, "create", retire_binding)
     app = create_app(settings=_settings(), jobs=voice_db.jobs, voice_drafts=_provider(voice_db))
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
-        response = await http.post("/v1/nexus/voice-designs", json=_body("design"))
-    _assert_conflict_envelope(response, "createVoiceDesign")
+        response = await http.post(path, json=_body(kind))
+    _assert_conflict_envelope(response, operation)
     # Nothing committed: the draft and its Job both rolled back.
     assert voice_db.count("speech_jobs") == 0
     assert voice_db.count("speech_voice_drafts") == 0
@@ -1892,7 +1926,7 @@ async def test_validate_insert_fact_change_is_a_conflict_not_a_retryable_503(
     assert voice_db.count("speech_jobs") == 1
 
 
-async def test_preview_insert_rejection_is_a_conflict_not_a_retryable_503(
+async def test_deterministic_insert_rejection_is_a_500_contract_violation(
     voice_db: JobSandbox, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     provider, draft = _candidate_draft(voice_db)
@@ -1900,7 +1934,8 @@ async def test_preview_insert_rejection_is_a_conflict_not_a_retryable_503(
     original = store.create
 
     def reject_insert(job: NewPublicJob) -> Any:
-        # A database-level insert rejection yields the same store outcome.
+        # A deterministic database refusal (CHECK violation) is an
+        # implementation defect, not a client conflict or a retryable outage.
         voice_db.admin.execute(
             "ALTER TABLE speech_jobs ADD CONSTRAINT synthetic_preview_rejection "
             "CHECK (false) NOT VALID"
@@ -1919,7 +1954,7 @@ async def test_preview_insert_rejection_is_a_conflict_not_a_retryable_503(
             "/v1/nexus/voice-drafts/" + draft["id"] + "/previews",
             json=_preview_body(),
         )
-    _assert_conflict_envelope(response, "createVoicePreview")
+    _assert_contract_violation_envelope(response, "createVoicePreview")
     assert voice_db.count("speech_jobs") == 1
 
 

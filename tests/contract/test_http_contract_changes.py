@@ -178,6 +178,112 @@ def service_document(response: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def request_default_document(
+    *, placeholder: bool | None, request: dict[str, Any]
+) -> dict[str, Any]:
+    """Synthetic speech POST whose only interesting surface is a request default.
+
+    The operation id is deliberately unrelated to the real contract: the
+    exemption must be inferred from the baseline 503, never from an id.
+    """
+
+    doc = document("/v1/audio/speech", request=request)
+    operation = doc["paths"]["/v1/audio/speech"]["post"]
+    if placeholder is True:
+        operation["responses"]["503"] = {"$ref": PLACEHOLDER_503}
+    elif placeholder is False:
+        operation["responses"]["503"] = retryable_response()
+    doc["components"] = {
+        "responses": {"OperationNotImplemented": placeholder_response()},
+        "schemas": {
+            "ErrorResponse": {
+                "type": "object",
+                "properties": {"error": {"type": "object"}},
+            }
+        },
+    }
+    return doc
+
+
+def publish_request(default: Any, **overrides: Any) -> dict[str, Any]:
+    schema: dict[str, Any] = {"type": "boolean", "default": default}
+    schema.update(overrides)
+    return {
+        "type": "object",
+        "properties": {"publish": schema},
+    }
+
+
+def test_permanent_placeholder_request_default_change_is_a_notice(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    base = request_default_document(placeholder=True, request=publish_request(True))
+    current = request_default_document(placeholder=True, request=publish_request(False))
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    captured = capsys.readouterr()
+    assert findings == []
+    assert "notice:" in captured.err
+    assert "default changed from True to False" in captured.err
+    assert "operation_not_implemented" in captured.err
+
+
+def test_placeholder_exemption_does_not_cover_response_defaults() -> None:
+    base = request_default_document(placeholder=True, request=publish_request(True))
+    response_schema = {
+        "type": "object",
+        "properties": {"status": {"type": "string", "default": "draft"}},
+    }
+    base["paths"]["/v1/audio/speech"]["post"]["responses"]["201"]["content"]["application/json"][
+        "schema"
+    ] = response_schema
+    current = copy.deepcopy(base)
+    current["paths"]["/v1/audio/speech"]["post"]["responses"]["201"]["content"]["application/json"][
+        "schema"
+    ]["properties"]["status"]["default"] = "published"
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert any("default changed from 'draft' to 'published'" in issue for issue in findings)
+
+
+def test_implemented_operation_request_default_change_still_fails() -> None:
+    base = request_default_document(placeholder=None, request=publish_request(True))
+    current = request_default_document(placeholder=None, request=publish_request(False))
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert any("default changed from True to False" in issue for issue in findings)
+
+
+def test_replaced_retryable_503_does_not_unlock_the_default_exemption() -> None:
+    base = request_default_document(placeholder=False, request=publish_request(True))
+    current = request_default_document(placeholder=False, request=publish_request(False))
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert any("default changed from True to False" in issue for issue in findings)
+
+
+@pytest.mark.parametrize(
+    ("base_property", "current_property"),
+    [
+        ({"type": "boolean", "default": True}, {"type": "string", "default": False}),
+        (
+            {"type": "boolean", "enum": [True, False], "default": True},
+            {"type": "boolean", "enum": [False], "default": False},
+        ),
+    ],
+)
+def test_placeholder_default_exemption_does_not_cover_other_schema_keywords(
+    base_property: dict[str, Any], current_property: dict[str, Any]
+) -> None:
+    base = request_default_document(
+        placeholder=True,
+        request={"type": "object", "properties": {"publish": base_property}},
+    )
+    current = request_default_document(
+        placeholder=True,
+        request={"type": "object", "properties": {"publish": current_property}},
+    )
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert findings
+    assert not any("default changed" in issue for issue in findings)
+
+
 def test_placeholder_503_may_become_a_retryable_replacement() -> None:
     base = service_document({"$ref": PLACEHOLDER_503})
     current = service_document(retryable_response())

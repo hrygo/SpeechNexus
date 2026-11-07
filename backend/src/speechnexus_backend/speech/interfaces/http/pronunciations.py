@@ -1,4 +1,10 @@
-"""Source-bound fixed reads with bounded capacity retained until the handler ends."""
+"""Fixed-revision reads plus the collection entry boundary.
+
+The ingress owns Host/Origin, path shape and the fixed-read capacity window. The
+collection list/create routes live in ``pronunciation_sets``; the collection path
+(and Starlette's single trailing-slash alias) is passed through to them, so the
+body/query rules stay with the handlers that read the body.
+"""
 
 from __future__ import annotations
 
@@ -150,15 +156,16 @@ class PronunciationIngress:
         if (
             len(path) > 512
             or len(scope.get("query_string", b"")) > 4096
-            or not (path == PREFIX or _PATTERN.fullmatch(path))
+            or not (path == PREFIX or path == PREFIX + "/" or _PATTERN.fullmatch(path))
         ):
             await refuse("invalid_request")
             return
-        if path == PREFIX:
-            # Collection list/create are declared but unimplemented: the
-            # centrally registered placeholder answers the stable 503. Reading
-            # capacity and the fixed-revision shape do not apply to it, and a
-            # body is never read.
+        if path == PREFIX or path == PREFIX + "/":
+            # Collection list/create are implemented by ``pronunciation_sets``.
+            # Their own handlers reject a GET body, bound a create body and
+            # validate the query. The single trailing slash is Starlette's
+            # normal alias: it answers 307 to the canonical path and re-matches
+            # with the method preserved, instead of being rejected here.
             await self._app(scope, receive, send)
             return
         if scope["method"] != "GET":

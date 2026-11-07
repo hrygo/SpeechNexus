@@ -101,6 +101,32 @@ def _result(
     return PronunciationDraftResult("replayed", draft)
 
 
+def list_summaries(
+    cursor: PronunciationCursor, *, limit: int, after: str | None
+) -> list[dict[str, Any]]:
+    """One keyset page over family heads, one extra row proving continuation.
+
+    The head revision is joined rather than dereferenced per row: a summary is
+    only listable when the allocation head points at an immutable revision whose
+    derived encoding and entry count were fixed by migration 0045.
+    """
+    if type(limit) is not int or not 1 <= limit <= 100:
+        raise ValueError("Invalid pronunciation page bound")
+    if after is not None:
+        identifier(after)
+    return _rows(
+        cursor,
+        "SELECT f.pronunciation_id AS pronunciation_id, "
+        "f.latest_revision AS head_revision, r.encoding AS encoding, "
+        "r.entry_count AS entry_count "
+        "FROM speech_pronunciation_families f "
+        "JOIN speech_pronunciation_revisions r "
+        "ON r.pronunciation_id = f.pronunciation_id AND r.revision = f.latest_revision "
+        "WHERE f.pronunciation_id > %s ORDER BY f.pronunciation_id LIMIT %s",
+        (after or "", limit + 1),
+    )
+
+
 def recover_draft(
     cursor: PronunciationCursor, command: CreatePronunciationDraft
 ) -> PronunciationDraftResult:
@@ -182,14 +208,19 @@ def create_draft(
         raise PronunciationUnavailableError
     revision = str(number + 1)
     draft = PronunciationDraft(pronunciation_id, revision, command.definition, clock())
+    document = decode_document(command.definition)
+    # Write the derived summary in the same immutable row: the list never parses
+    # definition_json, and migration 0045 makes these columns NOT NULL.
     cursor.execute(
         "INSERT INTO speech_pronunciation_revisions "
-        "(pronunciation_id,revision,definition_json,definition_digest,"
-        "key_digest,request_digest,created_at_us) "
-        "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+        "(pronunciation_id,revision,encoding,entry_count,definition_json,"
+        "definition_digest,key_digest,request_digest,created_at_us) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
         (
             pronunciation_id,
             revision,
+            document["encoding"],
+            len(document["entries"]),
             command.definition.decode(),
             document_digest(command.definition),
             command.key_digest,

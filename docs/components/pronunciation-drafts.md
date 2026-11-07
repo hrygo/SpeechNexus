@@ -1,9 +1,11 @@
 # Immutable pronunciation drafts
 
-This A02 component creates and reads private, immutable pronunciation draft
-revisions. The private writer does not itself register public routes, publish a
-dictionary, select a default, execute TTS or establish voice/engine qualification.
-Public list/create and the rest of A02/A04 remain separate work.
+This A02 component creates and reads immutable pronunciation draft revisions. The
+private writer and public collection routes do not publish a dictionary, select a
+default, execute TTS or establish voice/engine qualification. The generated
+`pronunciation_sets` surface serves `GET`/`POST /v1/nexus/pronunciation-sets`,
+which owns keyset listing and draft creation; publication, default selection and
+TTS consumption remain separate work (#520).
 
 The [fixed-revision read contract](pronunciation-read-contract.md) now provides
 an opt-in generated GET validator and an independently owned read-only API
@@ -15,14 +17,57 @@ The canonical request is `PronunciationCreateRequest` in
 `contracts/voice-resource.schema.json`. Both runtime entrypoints are generated
 from `contracts/bindings.json`: the revision uses a reference to its actual
 external source, not a copied wire definition. Python `speechnexus_contracts.parse`
-and TypeScript `@speechnexus/contracts` expose the same two names. The existing
-binding/generator versions and canonical sources are unchanged.
+and TypeScript `@speechnexus/contracts` expose the same two names. The collection
+operations are bound by a separate `pronunciation_sets` entry in
+`contracts/bindings.json`; the shared component and canonical-source references
+are unchanged.
 
-The generic parser preserves the source's published default: omitted `publish`
-and explicit `true` remain valid and are not rewritten. The private
-`prepare_pronunciation_draft` port selects only **explicit `publish: false`**.
-Unsupported publication intent is rejected before SQL. This is a private draft
-selection, not a change to the declared public POST semantics.
+The contract declares `publish` with default `false` and draft semantics. The
+public POST materializes an omitted field as `false`, rejects `publish: true`
+with `422 pronunciation_publication_not_supported` before SQL, and always returns
+`status: draft`. The private `prepare_pronunciation_draft` port accepts only an
+**explicit `publish: false`**, so an unsupported publication intent cannot reach
+the immutable writer.
+
+## Collection read and draft create
+
+`list_sets(limit, after)` reads the family head joined to its immutable revision
+and never parses `definition_json` per row. Ordering is ascending opaque id;
+`after=None` selects from the start, and the adapter fetches `limit + 1` rows so
+`has_more` is proven by an extra row rather than an estimate. `next_cursor` is the
+unpadded urlsafe-base64 form of the last returned id. The route rejects a cursor
+whose decoded id does not re-encode to the same bytes, so padding or alphabet
+tampering cannot silently shift the page. `limit` is 1–100 (default 50); duplicate,
+unknown or out-of-range query parameters, a GET body, ambiguous request ids and an
+over-limit create body are `400 pronunciation_invalid_request`. An empty
+collection is a successful `200` with `data: []`.
+
+`POST` returns 201 for a created or replayed command and 409 for an idempotency
+conflict (`pronunciation_idempotency_conflict`), a stale append
+(`pronunciation_configuration_changed`) or a keyless uncertain outcome
+(`pronunciation_outcome_unknown`). The retryable 503 has exactly three declared
+causes: the port reports or raises `unavailable` (including a stored history it
+cannot decode), a keyed submission has an unknown outcome (replaying that key
+recovers the committed revision), or the route has no writer configured. Every
+deterministic failure — a port result outside the declared closed set, a
+`created` result without a draft, or a reply that fails its own contract — answers
+500 `pronunciation_contract_violation` with `X-Should-Retry: false`, so an
+implementation defect is never dressed up as an outage. Both operations accept the
+single trailing slash via Starlette's 307 redirect and enforce the shared
+Host/Origin entry boundary before the handler runs.
+
+The writer identity is opt-in and API-only: set
+`SPEECHNEXUS_PRONUNCIATION_WRITER_DATABASE_URL`, with
+`SPEECHNEXUS_PRONUNCIATION_WRITE_CONCURRENCY` (default 4),
+`SPEECHNEXUS_PRONUNCIATION_TRANSACTION_TIMEOUT_SECONDS` (default 3),
+`SPEECHNEXUS_PRONUNCIATION_RECEIVE_MAX_BYTES` (default 32 MiB) and
+`SPEECHNEXUS_PRONUNCIATION_RECEIVE_TIMEOUT_SECONDS` (default 30). Startup verifies
+SELECT/INSERT on exactly the three A-owned tables, UPDATE on
+`families.latest_revision`, UPDATE on only
+`commands.command_state/pronunciation_id/revision/error_code`, and no table-level
+UPDATE or privilege on any other speech table. The reader identity now needs
+SELECT on both `speech_pronunciation_revisions` and
+`speech_pronunciation_families`; any broader grant is rejected.
 
 ## Fixed intent and original identity
 
@@ -72,7 +117,11 @@ retry in the production adapter.
 
 ## Migration and evidence boundary
 
-Append-only `0014_pronunciation_drafts` follows `0013_profile_lifecycle_intents`.
+Append-only `0014_pronunciation_drafts` follows `0013_profile_lifecycle_intents`,
+and `0045_pronunciation_set_summary` adds the derived `encoding` and `entry_count`
+columns the list reads. `0045` backfills them from `definition_json`, refuses to
+continue when a historical row is not representable, and then requires NOT NULL
+plus the declared bounds; its downgrade drops only those recomputable columns.
 It adds A-owned `speech_pronunciation_families`, `speech_pronunciation_revisions`
 and `speech_pronunciation_commands`, outside the eighteen coordination ports.
 The declared writer grants only SELECT/INSERT, allocation-head UPDATE and

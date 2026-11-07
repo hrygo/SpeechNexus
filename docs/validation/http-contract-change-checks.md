@@ -53,7 +53,8 @@ The existing directional comparison kernel is reused: reject known request
 narrowing and response guarantee loss, including removed paths/operations,
 new required parameters, removed request/response media or response statuses,
 required response headers, object fields, supported types/enums/constants,
-defaults, formats, bounds and boolean schemas. Supported conditional/composed
+defaults (except the narrow permanent-placeholder notice below), formats,
+bounds and boolean schemas. Supported conditional/composed
 changes require explicit proof rather than being assumed safe. Unchanged
 repository references are resolved against their own old/current document trees;
 Nexus fields are included throughout this mode. Boolean reference targets retain
@@ -129,6 +130,36 @@ All other responses keep the unchanged directional rules, including the existing
 reference (including a placeholder `$ref` with siblings) is compared normally. A
 version bump remains no waiver. The positive and negative cases live in
 `tests/contract/test_http_contract_changes.py`.
+
+### Request defaults on a permanent placeholder
+
+An operation whose baseline declares the permanent placeholder is never served by
+this deployment, even when the baseline also lists 2xx responses, so no consumer
+can depend on its request default. When the frozen baseline operation's `503` is exactly
+`$ref: "#/components/responses/OperationNotImplemented"` with no sibling keys,
+and that shared component's declared `error.code` is exactly the literal
+`operation_not_implemented` (resolved through repository `$ref`s), a request-body
+`default` change is recorded as a `notice` instead of an issue. The check stays
+green; the notice is written to stderr, so `--format json` keeps stdout
+parseable.
+
+The exemption is deliberately narrower than the placeholder replacement rule:
+
+- it covers only request-body schema nodes; parameters, response schemas and
+  response headers keep the ordinary default comparison;
+- it covers only `default` (value or presence). `type`, `enum`, `const`,
+  `required`, `format`, bounds, composition and every other keyword are still
+  compared normally, so a placeholder operation that also narrows `publish` to
+  an enum or changes its type is still rejected;
+- it is inferred from the baseline 503, never from `operationId`, a path or a
+  hardcoded list. A new operation has no baseline and cannot qualify;
+- a baseline operation whose 503 was already replaced by an inline retryable
+  shape, or that declares any other 503, does not qualify: it may have shipped,
+  so its request default may already be load-bearing.
+
+Removing the placeholder proof, accepting any 503 as proof, or letting the
+exemption swallow the rest of the schema comparison each turns a positive case
+red in `tests/contract/test_http_contract_changes.py`.
 
 ## What remains outside this unit
 

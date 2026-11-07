@@ -60,8 +60,6 @@ from speechnexus_backend.speech.interfaces.http.unimplemented_errors import (
 
 # operationId -> (method, path). Keep aligned with the source contract.
 UNIMPLEMENTED_OPERATIONS: dict[str, tuple[str, str]] = {
-    "listPronunciationSets": ("GET", "/v1/nexus/pronunciation-sets"),
-    "createPronunciationRevision": ("POST", "/v1/nexus/pronunciation-sets"),
     "getOperation": ("GET", "/v1/nexus/operations/{operation_id}"),
     "cancelOperation": ("POST", "/v1/nexus/operations/{operation_id}/cancellations"),
     "createRealtimeSession": ("POST", "/v1/nexus/realtime/sessions"),

@@ -11,6 +11,10 @@ from speechnexus_backend.speech.domain.assets import identifier
 from speechnexus_backend.speech.domain.configuration import MAX_REVISION as MAX_REVISION
 from speechnexus_backend.speech.domain.configuration import revision_number as revision_number
 
+PronunciationEncoding = Literal["pinyin", "ipa"]
+PRONUNCIATION_ENCODINGS: tuple[PronunciationEncoding, ...] = ("pinyin", "ipa")
+MAX_PRONUNCIATION_ENTRIES = 10000
+
 # The source permits 10,000 entries, each with 64/256 Unicode characters.
 # Even six-byte canonical control escapes plus language/JSON framing fit here.
 MAX_PRONUNCIATION_DOCUMENT_BYTES = 32 * 1024 * 1024
@@ -64,6 +68,39 @@ class PronunciationDraft:
         document_digest(self.definition)
         if type(self.created_at_us) is not int or not 0 <= self.created_at_us <= 253402300799999999:
             raise ValueError("Invalid pronunciation observation time")
+
+
+@dataclass(frozen=True, slots=True)
+class PronunciationSummary:
+    """One family head with its immutable draft facts; never a publication claim."""
+
+    pronunciation_id: str
+    head_revision: str
+    encoding: PronunciationEncoding
+    entry_count: int
+
+    def __post_init__(self) -> None:
+        identifier(self.pronunciation_id)
+        revision_number(self.head_revision)
+        if self.encoding not in PRONUNCIATION_ENCODINGS:
+            raise ValueError("Invalid pronunciation encoding")
+        if (
+            type(self.entry_count) is not int
+            or not 1 <= self.entry_count <= MAX_PRONUNCIATION_ENTRIES
+        ):
+            raise ValueError("Invalid pronunciation entry count")
+
+
+@dataclass(frozen=True, slots=True)
+class PronunciationSetPage:
+    summaries: tuple[PronunciationSummary, ...]
+    has_more: bool
+
+    def __post_init__(self) -> None:
+        if type(self.has_more) is not bool:
+            raise ValueError("Invalid pronunciation page state")
+        if self.has_more and not self.summaries:
+            raise ValueError("A continuation requires at least one summary")
 
 
 @dataclass(frozen=True, slots=True)

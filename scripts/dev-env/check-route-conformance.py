@@ -85,12 +85,9 @@ ENVELOPE_KEYS = frozenset({"code", "type", "message", "param", "request_id", "re
 # placeholder table and the single-entry unimplemented error map instead.
 # #494 implements four voice draft operations: 19 -> 15; #514
 # implements revision generation and validation: 15 -> 13; #495 implements
-# fixed-revision preview: 13 -> 12.
+# fixed-revision preview: 13 -> 12; #484 implements the pronunciation-set
+# collection read and draft creation: 12 -> 10.
 KNOWN_UNIMPLEMENTED_OPERATIONS: dict[str, str] = {
-    # Collection-level pronunciation routes are intercepted by
-    # PronunciationIngress and rewritten to 400 invalid_request.
-    "listPronunciationSets": "pronunciation collection read route is not implemented",
-    "createPronunciationRevision": "pronunciation collection write route is not implemented",
     # Operation coordination is declared but has no producer.
     "getOperation": "operation read route is not implemented",
     "cancelOperation": "operation cancellation route is not implemented",

@@ -1332,6 +1332,125 @@ def test_validation_target_is_relocked_before_insert(
     assert voice_db.count("speech_jobs") == 3
 
 
+@pytest.mark.parametrize(
+    ("changed_fact", "expected_code"),
+    [("preview", "job_rejected"), ("generation_state", "not_candidate")],
+)
+def test_validation_window_recheck_rejects_a_changed_candidate(
+    voice_db: JobSandbox,
+    monkeypatch: pytest.MonkeyPatch,
+    changed_fact: str,
+    expected_code: str,
+) -> None:
+    """A fact changed between prepare and insert must not be admitted.
+
+    The candidate is prepared while every fact is valid, then the committed
+    fact changes before the same prepared request reaches ``create``. Only the
+    locked re-read can see it; without it the insert succeeds with stale
+    evidence.
+    """
+    provider, draft = _candidate_draft(voice_db)
+    store = voice_db.jobs._store
+    original = store.create
+    captured: dict[str, NewPublicJob] = {}
+
+    def capture(job: NewPublicJob) -> Any:
+        captured.setdefault("job", job)
+        return original(job)
+
+    monkeypatch.setattr(store, "create", capture)
+    provider.validate(
+        draft["id"],
+        {"expected_draft_revision": "1", "validation_set_revision": "1"},
+        request_id="request-window-validation",
+        idempotency_key=None,
+    )
+    monkeypatch.setattr(store, "create", original)
+    assert voice_db.count("speech_jobs") == 2
+    if changed_fact == "preview":
+        voice_db.admin.execute(
+            "UPDATE speech_artifacts SET artifact_state = 'expired' "
+            "WHERE artifact_id = 'preview-synthetic'"
+        )
+    else:
+        # ``succeeded`` is terminal, so the state machine forbids this move;
+        # bypass only its guard to simulate the impossible fact change.
+        voice_db.admin.execute("ALTER TABLE speech_jobs DISABLE TRIGGER USER")
+        try:
+            voice_db.admin.execute(
+                "UPDATE speech_jobs SET state = 'failed', error_code = 'synthetic_window', "
+                "result_json = NULL "
+                "WHERE job_id = (SELECT generation_job_id FROM speech_voice_draft_revisions "
+                "WHERE draft_id = %s AND revision = '1')",
+                (draft["id"],),
+            )
+        finally:
+            voice_db.admin.execute("ALTER TABLE speech_jobs ENABLE TRIGGER USER")
+    probe = replace(captured["job"], job_id="job-window-validation-probe")
+    result = original(probe)
+    assert result.outcome == "rejected"
+    assert result.error_code == expected_code
+    assert voice_db.count("speech_jobs") == 2
+    assert voice_db.count("speech_voice_draft_revisions") == 1
+
+
+def test_validate_store_replay_survives_a_missed_precheck(
+    voice_db: JobSandbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider, draft = _candidate_draft(voice_db)
+    store = voice_db.jobs._store
+    original = store.create
+    captured: dict[str, NewPublicJob] = {}
+
+    def capture(job: NewPublicJob) -> Any:
+        captured.setdefault("job", job)
+        return original(job)
+
+    body = {"expected_draft_revision": "1", "validation_set_revision": "1"}
+    monkeypatch.setattr(store, "create", capture)
+    first = provider.validate(
+        draft["id"],
+        body,
+        request_id="request-validation-replay-1",
+        idempotency_key="validation-replay-key",
+    )
+    monkeypatch.setattr(store, "create", original)
+    assert voice_db.count("speech_jobs") == 2
+    assert voice_db.count("speech_voice_draft_revisions") == 1
+
+    # Advance the head: revision 1 is no longer current.
+    provider.generate(
+        draft["id"],
+        _generation_body(draft),
+        request_id="request-validation-replay-next",
+        idempotency_key=None,
+    )
+    assert voice_db.count("speech_jobs") == 3
+    assert voice_db.count("speech_voice_draft_revisions") == 2
+
+    replay = provider.validate(
+        draft["id"],
+        body,
+        request_id="request-validation-replay-2",
+        idempotency_key="validation-replay-key",
+    )
+    assert replay.job_id == first.job_id
+    assert voice_db.count("speech_jobs") == 3
+    assert voice_db.count("speech_voice_draft_revisions") == 2
+
+    # The application's early lookup can miss a concurrent commit. Prepare
+    # rejects the now-stale head before the store is called, so the store-level
+    # replay-before-lock rule is only observable at this boundary: the same
+    # prepared request must replay the original Job instead of a stale refusal
+    # or a second Job.
+    probe = replace(captured["job"], job_id="job-replay-validation-probe")
+    result = original(probe)
+    assert result.outcome == "replayed"
+    assert result.job is not None and result.job.job_id == first.job_id
+    assert voice_db.count("speech_jobs") == 3
+    assert voice_db.count("speech_voice_draft_revisions") == 2
+
+
 def _preview_body(revision: str = "1", text: str = "Synthetic preview") -> dict[str, Any]:
     return {"expected_draft_revision": revision, "text": text}
 

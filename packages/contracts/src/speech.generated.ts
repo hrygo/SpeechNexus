@@ -1330,7 +1330,7 @@ export interface components {
       encoding: "pinyin" | "ipa";
       entries: components["schemas"]["PronunciationEntry"][];
       /**
-       * @description Atomic publication. `true` (the default) writes the immutable revision, its publication ledger row and the selected head in one transaction; `false` writes only an immutable draft revision. This field never selects a default, executes TTS or qualifies pronunciation.
+       * @description Atomic publication. `true` (the default) writes the immutable revision, its publication ledger row and the selected head in one transaction; `false` writes only an immutable draft revision. A deployment without the publication identity answers 422 `pronunciation_publication_not_supported` instead of writing. This field never selects a default, executes TTS or qualifies pronunciation.
        * @default true
        */
       publish?: boolean;

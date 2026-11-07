@@ -377,6 +377,17 @@ Starlette 307 到规范路径（复核实测见
 实测方法：`create_app(settings=...)` 组装真实应用（无服务注入、不启动 lifespan），逐条发请求并记录状态码、
 错误码、`retryable` 与 `X-Request-ID`；下表为 #473 前后同口径实测。
 
+【#473 已交付】PR #474（`7e539980`）合入占位路由与专用错误码，随后的 #476（`176ddb06`）补可证伪的映射扫描守卫、
+#477（`88aabdd5`）补 405 信封与移除路径白名单。当前实测口径：9 条未实现操作全部返回
+`503 operation_not_implemented`（`service_unavailable_error`、`retryable=false`、`X-Should-Retry: false`、
+`Cache-Control: no-store`、回显 `X-Request-ID`）；其中 6 条指向 `OperationNotImplemented` 组件，
+`getOperation`/`createRealtimeSession`/`connectRealtime` 三条沿用 `ServiceUnavailable` 声明。
+**可辨识性只能靠 `error.code`**：已实现但依赖未装配的 `GET /v1/nexus/jobs` 同样返回 503
+`service_unavailable_error`/`retryable=false`（错误码 `job_unavailable`），状态码、类型与重试标记三者完全不足以区分。
+本表 36–39 行的占位值属 #473 基线：#514/#495/#519 已把这些操作交给真实实现（分别为 400
+`voice_draft_invalid_request` 等），不再返回占位错误，行内保留原时点响应。`connectRealtime` 的占位只覆盖普通
+HTTP GET，真实 WebSocket 升级仍由框架拒绝，属已知边界。
+
 | # | 操作 | 路由 | #473 前 | #473 后 |
 | --- | --- | --- | --- | --- |
 | 20 | retireVoiceRevision | POST /v1/nexus/voices/{voice_id}/revisions/{revision}/retirements | 404 框架默认 | **503 `operation_not_implemented`** |
@@ -406,7 +417,7 @@ Starlette 307 到规范路径（复核实测见
 统一响应的共同约束（`contracts/speech-openapi.yaml::OperationNotImplemented`）：状态 503、`error.type` 为
 `service_unavailable_error`、`error.code` 恒为 `operation_not_implemented`、`error.retryable` 恒为 `false`、
 `Cache-Control: no-store`、`X-Should-Retry: false`，且响应头与包封共享同一个 `request_id`。
-21 条中的 16 条在契约里指向该组件；其余 5 条（`listPronunciationSets`、`listJobs`、`getOperation`、
+【计数为 #473 交付时口径；其后多条操作已实现，当前 9 条占位中 6 条指向该组件、3 条沿用 `ServiceUnavailable`，见上】21 条中的 16 条在契约里指向该组件；其余 5 条（`listPronunciationSets`、`listJobs`、`getOperation`、
 `createRealtimeSession`、`connectRealtime`）沿用原有的 `ServiceUnavailable` 声明——它接受同一响应体，
 替换会从版本化面移除 `Retry-After` 头，被结构门禁判为破坏性变更（见下）。
 

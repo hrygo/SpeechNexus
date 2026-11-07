@@ -256,13 +256,40 @@ async def test_create_maps_store_outcomes_to_retry_safe_failures() -> None:
 
         writer.results = [PronunciationDraftResult("created", None)]
         absent = await http.post(PATH, json=body, headers={"Idempotency-Key": KEY})
-        check(absent, 503)
+        check(absent, 500)
+        assert absent.json()["error"]["code"] == "pronunciation_contract_violation"
+        assert absent.headers["x-should-retry"] == "false"
 
         writer.results = []
         writer.error = PronunciationUnavailableError()
         unavailable = await http.post(PATH, json=body, headers={"Idempotency-Key": KEY})
         check(unavailable, 503)
         assert unavailable.json()["error"]["code"] == "pronunciation_unavailable"
+
+
+async def test_a_deterministic_reader_defect_is_a_500_not_a_retryable_503() -> None:
+    port = Catalogue()
+    port.error = RuntimeError("summary projection is broken")
+    async with client(app(port)) as http:
+        response = await http.get(PATH)
+        check(response, 500, LIST_OPERATION)
+        assert response.json()["error"]["code"] == "pronunciation_contract_violation"
+        assert response.json()["error"]["type"] == "api_error"
+        assert response.json()["error"]["retryable"] is False
+        assert response.headers["x-should-retry"] == "false"
+
+
+async def test_a_deterministic_writer_defect_is_a_500_not_a_retryable_503() -> None:
+    writer = Catalogue()
+    writer.error = RuntimeError("command encoding is broken")
+    async with client(app(writer=writer)) as http:
+        response = await http.post(
+            PATH, json=pronunciation_request(), headers={"Idempotency-Key": KEY}
+        )
+        check(response, 500, CREATE_OPERATION)
+        assert response.json()["error"]["code"] == "pronunciation_contract_violation"
+        assert response.json()["error"]["retryable"] is False
+        assert response.headers["x-should-retry"] == "false"
 
 
 async def test_list_unavailability_is_retryable_and_never_a_404() -> None:

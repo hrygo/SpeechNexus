@@ -3813,6 +3813,33 @@ export interface components {
         };
       };
     };
+    /**
+     * @description The deployment produced a pronunciation response that violates this
+     *     contract. Storage is reachable, so this is an implementation defect
+     *     rather than an outage: it is not retryable and repeating the request
+     *     cannot succeed until it is fixed. The reply still uses the public error
+     *     envelope.
+     */
+    PronunciationContractViolation: {
+      headers: {
+        "Cache-Control": "no-store";
+        "X-Should-Retry": "false";
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"] & {
+          error?: {
+            /** @constant */
+            code?: "pronunciation_contract_violation";
+            /** @constant */
+            type?: "api_error";
+            /** @constant */
+            retryable?: false;
+            nexus?: never;
+          };
+        };
+      };
+    };
     /** @description Operation deadline exceeded; coordinate the original intent before retrying. */
     GatewayTimeout: {
       headers: {
@@ -4341,6 +4368,7 @@ export interface operations {
       401: components["responses"]["Unauthorized"];
       403: components["responses"]["PronunciationCollectionForbidden"];
       405: components["responses"]["MethodNotAllowed"];
+      500: components["responses"]["PronunciationContractViolation"];
       /** @description Draft storage is unavailable. A list read carries no body and may be repeated; this is a retryable outage, not a permanently unimplemented operation. */
       503: {
         headers: {
@@ -4402,6 +4430,7 @@ export interface operations {
       409: components["responses"]["PronunciationSetConflict"];
       422: components["responses"]["PronunciationPublicationNotSupported"];
       429: components["responses"]["TooManyRequests"];
+      500: components["responses"]["PronunciationContractViolation"];
       /** @description Draft storage is unavailable. Only a request that carries its original Idempotency-Key may be retried unchanged: replaying that key recovers the committed revision instead of allocating a second one. This is a retryable outage, not a permanently unimplemented operation. */
       503: {
         headers: {

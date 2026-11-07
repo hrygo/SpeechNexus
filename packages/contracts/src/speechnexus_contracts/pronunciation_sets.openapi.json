@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SpeechNexus public speech API",
-    "version": "0.1.0.dev12",
+    "version": "0.1.0.dev13",
     "description": "SpeechNexus public speech protocol.\n\nThe OpenAI-compatible subset is limited to the paths, fields, formats, and\nevents explicitly declared here. A standard OpenAI SDK can use this API by\nsetting base_url to <deployment>/v1 and supplying any api_key value unless\nthe deployment enables a shared service key. SpeechNexus enhancements live\nunder /v1/nexus and the optional `nexus` request field; a standard request\nnever needs an enhancement wrapper. Unsupported standard parameters are\nrejected with 422 `unsupported_parameter`, never silently ignored.\n\nRealtime has two connection modes at GET /v1/realtime: a pre-created\nnexus session (`session_id`) and a compatibility transcription session\nopened with `model`. Both accept the declared standard transcription\nevent subset. TTS, previews, metadata, and operation coordination remain\nnexus.* events and are available only in a nexus-created session.\n"
   },
   "security": [
@@ -56,6 +56,9 @@
           },
           "405": {
             "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "500": {
+            "$ref": "#/components/responses/PronunciationContractViolation"
           },
           "503": {
             "description": "Draft storage is unavailable. A list read carries no body and may be repeated; this is a retryable outage, not a permanently unimplemented operation.",
@@ -169,6 +172,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/PronunciationContractViolation"
           },
           "503": {
             "description": "Draft storage is unavailable. Only a request that carries its original Idempotency-Key may be retried unchanged: replaying that key recovers the committed revision instead of allocating a second one. This is a retryable outage, not a permanently unimplemented operation.",
@@ -1069,6 +1075,54 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "PronunciationContractViolation": {
+        "description": "The deployment produced a pronunciation response that violates this\ncontract. Storage is reachable, so this is an implementation defect\nrather than an outage: it is not retryable and repeating the request\ncannot succeed until it is fixed. The reply still uses the public error\nenvelope.\n",
+        "headers": {
+          "Cache-Control": {
+            "required": true,
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            }
+          },
+          "X-Should-Retry": {
+            "required": true,
+            "schema": {
+              "type": "string",
+              "const": "false"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "const": "pronunciation_contract_violation"
+                        },
+                        "type": {
+                          "const": "api_error"
+                        },
+                        "retryable": {
+                          "const": false
+                        },
+                        "nexus": false
+                      }
+                    }
+                  }
+                }
+              ]
             }
           }
         }

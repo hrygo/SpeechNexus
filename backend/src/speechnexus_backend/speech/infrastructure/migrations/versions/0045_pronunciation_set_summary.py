@@ -27,10 +27,22 @@ _ENTRY_COUNT_CHECK = f"{_TABLE}_entry_count_check"
 def upgrade() -> None:
     op.execute(f"ALTER TABLE {_TABLE} ADD COLUMN encoding VARCHAR(8)")
     op.execute(f"ALTER TABLE {_TABLE} ADD COLUMN entry_count INTEGER")
+    # Name the migration when the backfill itself cannot parse a row: invalid
+    # JSON or a non-array ``entries`` surfaces as ``refusing to constrain``
+    # instead of a bare DataError from the cast or the array-length call.
     op.execute(
-        f"UPDATE {_TABLE} SET "
-        "encoding = definition_json::jsonb ->> 'encoding', "
-        "entry_count = jsonb_array_length(definition_json::jsonb -> 'entries')"
+        f"""
+        DO $$
+        BEGIN
+            UPDATE {_TABLE} SET
+                encoding = definition_json::jsonb ->> 'encoding',
+                entry_count = jsonb_array_length(definition_json::jsonb -> 'entries');
+        EXCEPTION WHEN others THEN
+            RAISE EXCEPTION
+                'refusing to constrain {_TABLE}: cannot derive encoding/entry_count: %',
+                SQLERRM;
+        END $$;
+        """
     )
     # Fail before SET NOT NULL so an unrepresentable historical row names the
     # migration instead of surfacing as a bare constraint violation.

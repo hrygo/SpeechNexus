@@ -1023,10 +1023,11 @@ class _DefaultExemption(NamedTuple):
 
     The proof is the frozen baseline itself: an operation whose 503 is exactly
     the shared placeholder component and whose declared ``error.code`` is the
-    ``operation_not_implemented`` literal. Such an operation never had a success
-    path, so no consumer can depend on one of its request defaults. An operation
-    that already shipped, or whose 503 is an inline retryable replacement, does
-    not qualify.
+    ``operation_not_implemented`` literal. The baseline may also declare 2xx
+    responses, but a deployment that answers this placeholder never serves them:
+    the operation is declared permanently unimplemented and is unreachable, so no
+    consumer can depend on one of its request defaults. An operation that already
+    shipped, or whose 503 is an inline retryable replacement, does not qualify.
     """
 
     notices: list[str]

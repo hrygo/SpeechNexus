@@ -52,7 +52,15 @@ def test_collection_surface_owns_exactly_the_two_operations() -> None:
     assert set(BUNDLE["paths"][PATH]) == {"get", "post"}
     assert operation("get")["operationId"] == LIST
     assert operation("post")["operationId"] == CREATE
-    assert set(operation("get")["responses"]) == {"200", "400", "401", "403", "405", "503"}
+    assert set(operation("get")["responses"]) == {
+        "200",
+        "400",
+        "401",
+        "403",
+        "405",
+        "500",
+        "503",
+    }
     assert set(operation("post")["responses"]) == {
         "201",
         "400",
@@ -62,6 +70,7 @@ def test_collection_surface_owns_exactly_the_two_operations() -> None:
         "409",
         "422",
         "429",
+        "500",
         "503",
     }
 
@@ -156,7 +165,15 @@ def test_generated_validators_accept_the_draft_shape_and_reject_publication() ->
 
 def test_source_contract_declares_the_same_statuses() -> None:
     published = SOURCE["paths"][PATH]
-    assert set(published["get"]["responses"]) == {"200", "400", "401", "403", "405", "503"}
+    assert set(published["get"]["responses"]) == {
+        "200",
+        "400",
+        "401",
+        "403",
+        "405",
+        "500",
+        "503",
+    }
     assert set(published["post"]["responses"]) == {
         "201",
         "400",
@@ -166,5 +183,6 @@ def test_source_contract_declares_the_same_statuses() -> None:
         "409",
         "422",
         "429",
+        "500",
         "503",
     }

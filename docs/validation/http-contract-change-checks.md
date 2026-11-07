@@ -133,8 +133,9 @@ version bump remains no waiver. The positive and negative cases live in
 
 ### Request defaults on a permanent placeholder
 
-An operation that never shipped cannot have a published request default that a
-consumer depends on. When the frozen baseline operation's `503` is exactly
+An operation whose baseline declares the permanent placeholder is never served by
+this deployment, even when the baseline also lists 2xx responses, so no consumer
+can depend on its request default. When the frozen baseline operation's `503` is exactly
 `$ref: "#/components/responses/OperationNotImplemented"` with no sibling keys,
 and that shared component's declared `error.code` is exactly the literal
 `operation_not_implemented` (resolved through repository `$ref`s), a request-body

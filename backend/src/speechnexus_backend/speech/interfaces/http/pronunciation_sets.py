@@ -29,7 +29,10 @@ from speechnexus_backend.speech.application.pronunciation_drafts import (
     PronunciationWriter,
 )
 from speechnexus_backend.speech.domain.assets import identifier
-from speechnexus_backend.speech.domain.pronunciation_drafts import PronunciationSetPage
+from speechnexus_backend.speech.domain.pronunciation_drafts import (
+    PronunciationSetPage,
+    PronunciationUnavailableError,
+)
 from speechnexus_backend.speech.interfaces.http.contract_projection import namespaced_contract
 from speechnexus_backend.speech.interfaces.http.jobs import (
     _constant,
@@ -115,6 +118,16 @@ _ERRORS: dict[str, tuple[int, str, str, str, bool]] = {
         "unavailable",
         True,
     ),
+    # Our own reply or the port's result violated the declared contract: an
+    # implementation defect, not an outage, so it must not be dressed up as a
+    # retryable 503.
+    "contract_violation": (
+        500,
+        "api_error",
+        "The pronunciation response violated the declared contract.",
+        "contract_violation",
+        False,
+    ),
 }
 
 
@@ -183,9 +196,14 @@ def _list(
     try:
         body = _page_body(reader.list_sets(limit=limit, after=after))
         validate_response(LIST_OPERATION, 200, {"body": body})
-        return JSONResponse(body, headers={"Cache-Control": "no-store"})
-    except Exception:
+    except PronunciationUnavailableError:
+        # The port's only declared failure: storage could not serve the read.
         return pronunciation_sets_error("unavailable", request_id, LIST_OPERATION)
+    except Exception:
+        # A corrupt page or an unserializable summary is our defect. Mapping it
+        # to a retryable outage would invite retries that can never succeed.
+        return pronunciation_sets_error("contract_violation", request_id, LIST_OPERATION)
+    return JSONResponse(body, headers={"Cache-Control": "no-store"})
 
 
 def _create(
@@ -205,18 +223,23 @@ def _create(
         command = prepare_pronunciation_draft(intent, key)
     except ContractValidationError:
         return pronunciation_sets_error("invalid_request", request_id, CREATE_OPERATION)
+    except Exception:
+        return pronunciation_sets_error("contract_violation", request_id, CREATE_OPERATION)
     try:
         result = writer.create(command)
-    except Exception:
+    except PronunciationUnavailableError:
         return pronunciation_sets_error("unavailable", request_id, CREATE_OPERATION)
+    except Exception:
+        return pronunciation_sets_error("contract_violation", request_id, CREATE_OPERATION)
     if result.outcome in ("created", "replayed"):
         if result.draft is None:
-            return pronunciation_sets_error("unavailable", request_id, CREATE_OPERATION)
+            # "created" without a draft contradicts the port contract.
+            return pronunciation_sets_error("contract_violation", request_id, CREATE_OPERATION)
         try:
             body = draft_to_wire(result.draft)
             validate_response(CREATE_OPERATION, 201, {"body": body})
         except Exception:
-            return pronunciation_sets_error("unavailable", request_id, CREATE_OPERATION)
+            return pronunciation_sets_error("contract_violation", request_id, CREATE_OPERATION)
         return JSONResponse(body, status_code=201, headers={"Cache-Control": "no-store"})
     if result.outcome == "conflict":
         return pronunciation_sets_error("idempotency_conflict", request_id, CREATE_OPERATION)

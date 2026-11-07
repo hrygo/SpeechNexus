@@ -45,7 +45,11 @@ collection is a successful `200` with `data: []`.
 `POST` returns 201 for a created or replayed command and 409 for an idempotency
 conflict (`pronunciation_idempotency_conflict`), a stale append
 (`pronunciation_configuration_changed`) or a keyless uncertain outcome
-(`pronunciation_outcome_unknown`). Only a request carrying its original
+(`pronunciation_outcome_unknown`). Only the port's declared
+`PronunciationUnavailableError` maps to the retryable 503; a reply or port result
+that violates this contract (for example a `created` outcome without a draft)
+answers 500 `pronunciation_contract_violation` with `X-Should-Retry: false`, so an
+implementation defect is never dressed up as an outage. Only a request carrying its original
 `Idempotency-Key` maps an unknown outcome to the retryable 503, because replaying
 that key recovers the committed revision; a keyless retry is a new intent and is
 deliberately not retryable. Both operations accept the single trailing slash via

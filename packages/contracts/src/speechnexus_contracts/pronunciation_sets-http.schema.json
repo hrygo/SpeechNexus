@@ -51,6 +51,14 @@
           },
           "json": true
         },
+        "500": {
+          "schema": "HttpResponse_listPronunciationSets_500",
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
+          "json": true
+        },
         "503": {
           "schema": "HttpResponse_listPronunciationSets_503",
           "headers": {
@@ -133,6 +141,14 @@
           },
           "json": true
         },
+        "500": {
+          "schema": "HttpResponse_createPronunciationRevision_500",
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
+          "json": true
+        },
         "503": {
           "schema": "HttpResponse_createPronunciationRevision_503",
           "headers": {
@@ -151,6 +167,7 @@
     "HttpResponse_listPronunciationSets_401",
     "HttpResponse_listPronunciationSets_403",
     "HttpResponse_listPronunciationSets_405",
+    "HttpResponse_listPronunciationSets_500",
     "HttpResponse_listPronunciationSets_503",
     "HttpRequest_createPronunciationRevision",
     "HttpResponse_createPronunciationRevision_201",
@@ -161,6 +178,7 @@
     "HttpResponse_createPronunciationRevision_409",
     "HttpResponse_createPronunciationRevision_422",
     "HttpResponse_createPronunciationRevision_429",
+    "HttpResponse_createPronunciationRevision_500",
     "HttpResponse_createPronunciationRevision_503"
   ],
   "$defs": {
@@ -1021,6 +1039,53 @@
       },
       "required": ["headers", "body"]
     },
+    "HttpResponse_listPronunciationSets_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "false"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
+          "additionalProperties": true
+        },
+        "body": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "pronunciation_contract_violation"
+                    },
+                    "type": {
+                      "const": "api_error"
+                    },
+                    "retryable": {
+                      "const": false
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "required": ["headers", "body"]
+    },
     "HttpResponse_listPronunciationSets_503": {
       "type": "object",
       "additionalProperties": false,
@@ -1379,6 +1444,53 @@
         }
       },
       "required": ["body"]
+    },
+    "HttpResponse_createPronunciationRevision_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "false"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
+          "additionalProperties": true
+        },
+        "body": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "pronunciation_contract_violation"
+                    },
+                    "type": {
+                      "const": "api_error"
+                    },
+                    "retryable": {
+                      "const": false
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "required": ["headers", "body"]
     },
     "HttpResponse_createPronunciationRevision_503": {
       "type": "object",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any, Protocol
 
@@ -69,6 +69,10 @@ _JOB_COLUMNS = (
     "s.request_id, s.client_reference, s.effective_configuration_json, "
     "s.execution_revision, s.progress_unit, s.progress_total, s.submitted_at_us, "
     + ", ".join(_LATEST_PROGRESS.format(column=column) for column in ("unit", "completed", "total"))
+)
+_ARTIFACT_COLUMNS = (
+    "artifact_id, artifact_kind, artifact_state, media_type, bytes, "
+    "sha256, receipt_id, expires_at_us"
 )
 _PINNED_BINDING_QUERY = (
     "SELECT p.kind, p.object_id, p.revision, p.revision_id, p.published_at_us, "
@@ -297,8 +301,7 @@ class PostgresPublicJobs:
     def artifact(self, workspace_id: str, artifact_id: str) -> JobArtifactFact | None:
         """Read one committed Artifact row; absence is explicit."""
         rows = self._read(
-            "SELECT artifact_id, artifact_kind, artifact_state, media_type, bytes, "
-            "sha256, receipt_id, expires_at_us FROM speech_artifacts "
+            "SELECT " + _ARTIFACT_COLUMNS + " FROM speech_artifacts "
             "WHERE workspace_id = %s AND artifact_id = %s",
             (identifier(workspace_id), identifier(artifact_id)),
         )
@@ -306,21 +309,28 @@ class PostgresPublicJobs:
             return None
         if len(rows) != 1:
             raise PublicJobUnavailableError
-        row = rows[0]
-        if row["artifact_state"] != "ready" or row["receipt_id"] is None:
-            return None
-        try:
-            return JobArtifactFact(
-                artifact_id=row["artifact_id"],
-                kind=row["artifact_kind"],
-                media_type=row["media_type"],
-                bytes=int(row["bytes"]),
-                sha256=row["sha256"],
-                receipt_id=row["receipt_id"],
-                expires_at_us=(None if row["expires_at_us"] is None else int(row["expires_at_us"])),
-            )
-        except ValueError, TypeError, KeyError:
-            raise PublicJobUnavailableError from None
+        return _artifact(rows[0])
+
+    def artifacts_batch(
+        self, workspace_id: str, artifact_ids: Sequence[str]
+    ) -> dict[str, JobArtifactFact]:
+        """Read every Artifact a page references in one bounded READ ONLY transaction.
+
+        Missing or non-ready rows stay absent from the mapping; the caller's
+        per-Job verification decides whether that absence is fatal.
+        """
+        wanted = sorted({identifier(artifact_id) for artifact_id in artifact_ids})
+        if not wanted:
+            return {}
+        rows = self._read(
+            "SELECT " + _ARTIFACT_COLUMNS + " FROM speech_artifacts "
+            "WHERE workspace_id = %s AND artifact_id = ANY(%s)",
+            (identifier(workspace_id), wanted),
+        )
+        if len(rows) > len(wanted):
+            raise PublicJobUnavailableError
+        facts = (_artifact(row) for row in rows)
+        return {fact.artifact_id: fact for fact in facts if fact is not None}
 
     def get(self, job_id: str) -> PublicJob | None:
         rows = self._read(
@@ -889,6 +899,24 @@ def _progress(row: dict[str, Any]) -> JobProgressFact | None:
         completed=int(row["progress_completed"]),
         total=None if row["progress_total"] is None else int(row["progress_total"]),
     )
+
+
+def _artifact(row: dict[str, Any]) -> JobArtifactFact | None:
+    """A ready Artifact with a committed receipt; anything else has no fact."""
+    if row["artifact_state"] != "ready" or row["receipt_id"] is None:
+        return None
+    try:
+        return JobArtifactFact(
+            artifact_id=row["artifact_id"],
+            kind=row["artifact_kind"],
+            media_type=row["media_type"],
+            bytes=int(row["bytes"]),
+            sha256=row["sha256"],
+            receipt_id=row["receipt_id"],
+            expires_at_us=(None if row["expires_at_us"] is None else int(row["expires_at_us"])),
+        )
+    except ValueError, TypeError, KeyError:
+        raise PublicJobUnavailableError from None
 
 
 def _job(row: dict[str, Any] | None) -> PublicJob:

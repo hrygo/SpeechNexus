@@ -22,10 +22,11 @@
   （#466 尚未合入；合入后版本随文件变化，本文不预写未来版本）。
 
 > 当前可重复门禁见 §10。§3–§8 保留 `62ae4805` 的审计基线事实；复核基线的差异以【复核 3951718e】标注，
-> 汇总见 §3.1（新增 4 个已实现操作）、§6.1（当前 21 条未实现操作）与 §11（8 条漂移引用逐条复核）。
+> 汇总见 §3.1（新增 4 个已实现操作）、§6.1（未实现操作清单）与 §11（8 条漂移引用逐条复核）。
 
 【#471 更新】`listJobs` 已由真实实现接替占位（§3.2）；【#490 更新】`retireVoiceRevision` 的 `retire`
-已由真实实现接替占位，`disable` 明确返回 422（§3.3）。当前注册 **42**、已实现 **23**、占位 **19**（§6.1）。
+已由真实实现接替占位，`disable` 明确返回 422（§3.3）。已实现与未实现操作的唯一口径是 §10 门禁脚本的
+`KNOWN_UNIMPLEMENTED_OPERATIONS`：计入与移出该基线随实现切片变化，本文件不复述计数，§6.1 只保留时点快照。
 J1 已修复；历史表保留原时点响应。保留 #466 的契约测试和 #473 的 `0.1.0.dev8` 契约，
 `listJobs` 的 405 已声明，`known_status_gaps` 保持 **0**。
 #490 把 `retireVoiceRevision` 的 503 从 `OperationNotImplemented` 去占位为内联响应：保留 required 的
@@ -47,7 +48,7 @@ J1 已修复；历史表保留原时点响应。保留 #466 的契约测试和 #
   `listJobs` 返回 `405 job_method_not_allowed`，`retryJob`/`streamJobEvents` 返回 `404 job_not_found`，
   `listPronunciationSets`/`createPronunciationRevision` 返回 `400 pronunciation_invalid_request`。
   【复核 3951718e】该段是基线事实：`retryJob`/`streamJobEvents` 已注册，不再返回"路由不存在"的 `job_not_found`。
-  当前 21 个未注册操作中，18 个返回默认 404，`listJobs` 返回 405，两条集合级读音路由返回 400（§6.1）。
+  复核基线时 21 个未注册操作中，18 个返回默认 404，`listJobs` 返回 405，两条集合级读音路由返回 400（§6.1）。
   【#473】已过期：21 条全部注册为占位路由并返回 `503 operation_not_implemented`，实测与理由见 §6.2。
 - **401 在全表都是"声明未使用"**：公开语音处理器没有实现共享服务密钥校验（`docs/architecture/openai-compatibility.md:91`），
   源码中不存在任何 401 产生路径。
@@ -290,7 +291,7 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
 
 审计基线 `62ae4805` 下契约声明但后端未注册的操作。运行时列是基线实测（同一应用、无服务依赖）。
 【复核 3951718e】`listVoices`/`getVoiceRevision`/`retryJob`/`streamJobEvents` 已实现并移出本表（§3.1），
-当前剩余 20 条见 §6.1。本表保留基线编号、基线契约声明与基线响应；已实现行在响应列标注，当前声明见 §3.1/§3.2。
+其余未实现操作见 §6.1，条数以 §10 门禁基线为准。本表保留基线编号、基线契约声明与基线响应；已实现行在响应列标注，当前声明见 §3.1/§3.2。
 
 | # | 操作 | 路由 | 契约声明 | 运行时响应 |
 | --- | --- | --- | --- | --- |
@@ -331,11 +332,14 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
 `backend/src/speechnexus_backend/workbench/infrastructure/public_speech_render_jobs.py::PublicSpeechRenderJobs.read_job` 调用 `GET /v1/nexus/jobs/{job_id}`（后者已实现）。
 `docs/archive/plans/2026-10-24-team-c-goal.md:78` 也记录了"音色运行时尚未实现这些路由"这一已知缺口。
 
-### 6.1 当前未实现操作（19 条）
+### 6.1 当前未实现操作
 
-从 #473 的 21 条占位操作移除 #471 已实现的 `listJobs` 与 #490 已实现的 `retireVoiceRevision`（`retire`）。编号沿用 §6；
-以下 19 条当前均返回 `503 operation_not_implemented`（§6.2），历史响应保留在 §6/§7.1。
-`retryJob`/`streamJobEvents`/`listVoices`/`getVoiceRevision`/`listJobs`/`retireVoiceRevision` 已移出本表。
+从 #473 的 21 条占位操作中移出 #471 已实现的 `listJobs` 与 #490 已实现 `retire` 的 `retireVoiceRevision`，编号沿用 §6；
+`retryJob`/`streamJobEvents`/`listVoices`/`getVoiceRevision`/`listJobs`/`retireVoiceRevision` 均已不在本表。
+下表是 #490 之后的时点快照，未实现期间均返回 `503 operation_not_implemented`（§6.2），历史响应保留在 §6/§7.1。
+**当前口径以 §10 门禁脚本 `scripts/dev-env/check-route-conformance.py` 的
+`KNOWN_UNIMPLEMENTED_OPERATIONS` 为准**：实现一个操作时同时删除占位条目与该基线条目（§10 第 4 项），
+本表不承担逐切片计数。
 
 | # | 操作 | 路由 | 运行时响应 |
 | --- | --- | --- | --- |
@@ -364,7 +368,7 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
 两条集合级读音路由的 400），消费者无法与「资源不存在 / 方法不支持 / 参数错误」区分。契约版本 `0.1.0.dev8` 起，
 21 条全部由中央占位路由注册并返回同一种可辨识错误。
 【#471】其中 `listJobs` 已交给真实实现；【#490】`retireVoiceRevision` 也已交给真实实现（`disable`
-以 422 明确未支持）；其余 19 条继续返回占位错误，见 §3.2/§3.3/§6.1。
+以 422 明确未支持）；其余未实现操作继续返回占位错误，见 §3.2/§3.3/§6.1。
 
 实测方法：`create_app(settings=...)` 组装真实应用（无服务注入、不启动 lifespan），逐条发请求并记录状态码、
 错误码、`retryable` 与 `X-Request-ID`；下表为 #473 前后同口径实测。
@@ -595,7 +599,7 @@ Python/TypeScript 绑定与打包 HTTP 投影由源重新生成；严格消费�
    的错误码映射；
    框架对错误方法产生的 405 单独计入。无法静态求值的 `status_code` 或运行时错误码列入
    「UNDETERMINED」，只报告可能值，不猜造、不作为门禁失败。
-4. 显式基线：`KNOWN_UNIMPLEMENTED_OPERATIONS` 固定当前 19 条未实现操作并逐条写明原因；
+4. 显式基线：`KNOWN_UNIMPLEMENTED_OPERATIONS` 固定当前未实现操作清单（条数随实现变化，以脚本条目为准）并逐条写明原因；
    `KNOWN_UNDECLARED_STATUSES` 经 #462 收缩为空（原 16 个操作 / 23 个状态对），
    任何新增未声明状态都必须修复，不能加入旧基线。
    【#473】未实现基线不再以「未注册」为证据：门禁解析

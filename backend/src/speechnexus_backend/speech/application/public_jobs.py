@@ -7,10 +7,10 @@ import binascii
 import json
 import re
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 import rfc8785
 
@@ -285,6 +285,47 @@ class PublicJobStore(Protocol):
     ) -> PublicJob: ...
 
 
+@runtime_checkable
+class PublicJobArtifactBatch(Protocol):
+    """Page-level Artifact read: one transaction for every referenced id.
+
+    Kept separate from ``PublicJobStore`` so a store that cannot batch still
+    serves single reads; the production adapter implements both.
+    """
+
+    def artifacts_batch(
+        self, workspace_id: str, artifact_ids: Sequence[str]
+    ) -> Mapping[str, JobArtifactFact]: ...
+
+
+def _candidate_artifact_ids(job: PublicJob) -> tuple[str, ...]:
+    """Ids worth prefetching; the strict rules stay in ``PublicJobs._artifacts``."""
+    if job.state != "succeeded" or job.result_json is None:
+        return ()
+    try:
+        result = json.loads(job.result_json)
+    except ValueError, TypeError, RecursionError:
+        return ()
+    if not isinstance(result, dict):
+        return ()
+    candidates: list[object] = [
+        result.get("transcript_artifact_id"),
+        result.get("audio_artifact_id"),
+    ]
+    previews = result.get("preview_artifact_ids")
+    if isinstance(previews, list):
+        candidates.extend(previews)
+    wanted = []
+    for candidate in candidates:
+        if not isinstance(candidate, str):
+            continue
+        try:
+            wanted.append(identifier(candidate))
+        except ValueError:
+            continue
+    return tuple(wanted)
+
+
 def resolve_voice_previews(
     *,
     workspace_id: str,
@@ -347,6 +388,9 @@ class PublicJobs:
         now_us: Callable[[], int] | None = None,
     ) -> None:
         self._facts, self._store = facts, store
+        self._artifact_batch: PublicJobArtifactBatch | None = (
+            store if isinstance(store, PublicJobArtifactBatch) else None
+        )
         self._now_us = now_us or facts.now_us
 
     def submit(
@@ -656,6 +700,38 @@ class PublicJobs:
 
     def artifacts(self, job: PublicJob) -> tuple[JobArtifactFact, ...]:
         """Resolve the committed Artifact a succeeded result references, or nothing."""
+        return self._artifacts(job, self._store.artifact)
+
+    def artifacts_page(self, jobs: Sequence[PublicJob]) -> tuple[tuple[JobArtifactFact, ...], ...]:
+        """Resolve a whole page with one Artifact read per workspace.
+
+        Each Job is still verified by the same rule as the single read above;
+        the batch only replaces how the referenced rows are fetched.
+        """
+        wanted: dict[str, set[str]] = {}
+        for job in jobs:
+            wanted.setdefault(job.workspace_id, set()).update(_candidate_artifact_ids(job))
+        if self._artifact_batch is None or not wanted:
+            return tuple(self.artifacts(job) for job in jobs)
+        fetched: dict[tuple[str, str], JobArtifactFact] = {}
+        for workspace_id, artifact_ids in wanted.items():
+            for artifact_id, fact in self._artifact_batch.artifacts_batch(
+                workspace_id, sorted(artifact_ids)
+            ).items():
+                fetched[(workspace_id, artifact_id)] = fact
+
+        def lookup(workspace_id: str, artifact_id: str) -> JobArtifactFact | None:
+            # A batch miss is absence, never an invitation to read again.
+            return fetched.get((workspace_id, artifact_id))
+
+        return tuple(self._artifacts(job, lookup) for job in jobs)
+
+    def _artifacts(
+        self,
+        job: PublicJob,
+        artifact: Callable[[str, str], JobArtifactFact | None],
+    ) -> tuple[JobArtifactFact, ...]:
+        """One verification rule for the single and batched reads."""
         if job.state != "succeeded":
             return ()
         if job.result_json is None:
@@ -672,7 +748,7 @@ class PublicJobs:
                 kind=job.kind,
                 state=job.state,
                 result_json=job.result_json,
-                artifact=self._store.artifact,
+                artifact=artifact,
             )
         name, kind = (
             ("transcript_artifact_id", "transcript")
@@ -687,7 +763,7 @@ class PublicJobs:
             identifier(receipt_id)
         except ValueError:
             raise PublicJobUnavailableError from None
-        fact = self._store.artifact(job.workspace_id, artifact_id)
+        fact = artifact(job.workspace_id, artifact_id)
         if (
             fact is None
             or fact.artifact_id != artifact_id

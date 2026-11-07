@@ -525,11 +525,15 @@ def _list(service: PublicJobs | None, request: Request, request_id: str) -> Resp
     except PublicJobUnavailableError:
         return job_error("job_unavailable", request_id)
     try:
+        # One batched Artifact read per page instead of one read per Job.
+        facts = service.artifacts_page(page)
         wire = parse(
             "JobList",
             {
                 "object": "nexus.list",
-                "data": [public_job(job, service.artifacts(job)) for job in page],
+                "data": [
+                    public_job(job, artifacts) for job, artifacts in zip(page, facts, strict=True)
+                ],
                 "has_more": next_cursor is not None,
                 "next_cursor": next_cursor,
             },

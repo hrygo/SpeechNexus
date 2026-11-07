@@ -774,7 +774,7 @@
       "implementation": "CustomVoice 文件执行和声音工作台组件不证明 VoiceDesign/Base 资格。",
       "integration": "设计引擎、固定材料、节点预算和工作台使用同版制品。",
       "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
-      "gap": "设计引擎、固定材料、节点预算和工作台使用同版制品。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "设计引擎、固定材料、节点预算和工作台使用同版制品。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。设计/克隆生成 Job 的执行消费者缺失（#512）。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/voice-resource.schema.json",
@@ -789,7 +789,8 @@
       ],
       "issues": [
         494,
-        495
+        495,
+        512
       ]
     },
     {

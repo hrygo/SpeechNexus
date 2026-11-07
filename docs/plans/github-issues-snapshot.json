@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-07T08:10:40+08:00",
+  "fetched_at": "2026-11-07T08:49:33+08:00",
   "issues": [
     {
       "number": 336,
@@ -718,8 +718,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/491",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "矩阵生成器：生成物新鲜度门禁与可复现快照",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "enhancement"
@@ -786,8 +786,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/500",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "实现占位操作与契约兼容门禁互斥：503 声明无法既诚实又合规",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "enhancement"
@@ -831,6 +831,23 @@
         }
       ],
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/344"
+    },
+    {
+      "number": 512,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/512",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "声音设计/克隆的生成任务缺少执行消费者",
+      "state": "open",
+      "state_reason": null,
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "team:A"
+        }
+      ],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/340"
     }
   ]
 }

@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI, Request
 from fastapi.exception_handlers import http_exception_handler
@@ -25,7 +25,10 @@ from speechnexus_backend.binding_runtime import (
 from speechnexus_backend.job_runtime import JobRuntime
 from speechnexus_backend.model_catalog_runtime import ModelCatalogRuntime
 from speechnexus_backend.profile_runtime import ProfileRuntime
-from speechnexus_backend.pronunciation_runtime import PronunciationRuntime
+from speechnexus_backend.pronunciation_runtime import (
+    PronunciationRuntime,
+    PronunciationWriterRuntime,
+)
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.artifacts import ArtifactService
 from speechnexus_backend.speech.application.assets import AssetService
@@ -37,7 +40,11 @@ from speechnexus_backend.speech.application.binding_publication import (
 from speechnexus_backend.speech.application.capability_snapshot import CapabilityPolicy
 from speechnexus_backend.speech.application.job_cancellation import JobCancellationService
 from speechnexus_backend.speech.application.profile_drafts import ProfileDrafts
-from speechnexus_backend.speech.application.pronunciation_drafts import PronunciationReader
+from speechnexus_backend.speech.application.pronunciation_drafts import (
+    PronunciationReader,
+    PronunciationSets,
+    PronunciationWriter,
+)
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.application.readiness import (
     ReadinessProbe,
@@ -86,6 +93,10 @@ from speechnexus_backend.speech.interfaces.http.models import ModelCatalogue, cr
 from speechnexus_backend.speech.interfaces.http.profile_contract import profile_http_contract
 from speechnexus_backend.speech.interfaces.http.profile_ingress import ProfileIngress
 from speechnexus_backend.speech.interfaces.http.profiles import create_profile_router
+from speechnexus_backend.speech.interfaces.http.pronunciation_sets import (
+    create_pronunciation_sets_router,
+    pronunciation_sets_http_contract,
+)
 from speechnexus_backend.speech.interfaces.http.pronunciations import (
     PronunciationIngress,
     create_pronunciation_router,
@@ -139,6 +150,7 @@ class _SpeechAPI(FastAPI):
                 workspace_http_contract(),
                 profile_http_contract(),
                 pronunciation_http_contract(),
+                pronunciation_sets_http_contract(),
                 voice_http_contract(),
                 voice_drafts_http_contract(),
                 voice_retirement_http_contract(),
@@ -184,6 +196,7 @@ def create_app(
     binding_publication_facts: BindingPublicationFacts | None = None,
     binding_lifecycle: BindingLifecycle | None = None,
     pronunciations: PronunciationReader | None = None,
+    pronunciation_writer: PronunciationWriter | None = None,
     catalogue: ModelCatalogue | None = None,
     voices: VoiceCatalogue | None = None,
     voice_drafts: VoiceDrafts | None = None,
@@ -247,6 +260,30 @@ def create_app(
         if pronunciations is not None:
             return pronunciations
         return pronunciation_runtime.provider if pronunciation_runtime is not None else None
+
+    pronunciation_writer_runtime = (
+        PronunciationWriterRuntime(resolved_settings)
+        if pronunciation_writer is None
+        and resolved_settings.pronunciation_writer_database_url is not None
+        else None
+    )
+
+    def get_pronunciation_sets() -> PronunciationSets | None:
+        if pronunciations is not None:
+            # An explicit test port supplies the collection list too; a fake
+            # that only implements the fixed GET answers 503 instead of being
+            # silently substituted with the production reader.
+            return cast(PronunciationSets, pronunciations)
+        return pronunciation_runtime.provider if pronunciation_runtime is not None else None
+
+    def get_pronunciation_writer() -> PronunciationWriter | None:
+        if pronunciation_writer is not None:
+            return pronunciation_writer
+        return (
+            pronunciation_writer_runtime.provider
+            if pronunciation_writer_runtime is not None
+            else None
+        )
 
     catalogue_runtime = (
         ModelCatalogRuntime(resolved_settings)
@@ -377,6 +414,9 @@ def create_app(
             if pronunciation_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, pronunciation_runtime.close)
                 await run_in_threadpool(pronunciation_runtime.open)
+            if pronunciation_writer_runtime is not None:
+                resources.push_async_callback(run_in_threadpool, pronunciation_writer_runtime.close)
+                await run_in_threadpool(pronunciation_writer_runtime.open)
             if binding_defaults_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, binding_defaults_runtime.close)
                 await run_in_threadpool(binding_defaults_runtime.open)
@@ -484,6 +524,14 @@ def create_app(
     app.include_router(create_workspace_router(lambda: workspace_service))
     app.include_router(create_profile_router(get_profiles))
     app.include_router(create_pronunciation_router(get_pronunciations))
+    app.include_router(
+        create_pronunciation_sets_router(
+            get_pronunciation_sets,
+            get_pronunciation_writer,
+            max_bytes=resolved_settings.pronunciation_receive_max_bytes,
+            receive_timeout_seconds=resolved_settings.pronunciation_receive_timeout_seconds,
+        )
+    )
     app.include_router(
         create_binding_router(
             get_bindings,
@@ -605,6 +653,7 @@ def create_app(
     app.state.settings = resolved_settings
     app.state.profile_runtime = profile_runtime
     app.state.pronunciation_runtime = pronunciation_runtime
+    app.state.pronunciation_writer_runtime = pronunciation_writer_runtime
     app.state.catalogue_runtime = catalogue_runtime
     app.state.binding_runtime = binding_runtime
     app.state.binding_defaults_runtime = binding_defaults_runtime

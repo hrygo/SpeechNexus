@@ -105,6 +105,7 @@ def read_db() -> Iterator[ReadDatabase]:
     try:
         admin.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"')
         admin.execute(f'GRANT SELECT ON "{schema}".speech_pronunciation_revisions TO "{role}"')
+        admin.execute(f'GRANT SELECT ON "{schema}".speech_pronunciation_families TO "{role}"')
         # Synthetic fixture creation uses the existing private port as the
         # isolated test administrator, never the product's read-only identity.
         with speech_pool(url, schema=schema) as seed_pool:
@@ -177,7 +178,8 @@ def test_read_only_role_history_restart_and_absence_do_not_mutate_facts(
         "insert",
         "update_column",
         "other_table",
-        "missing_select",
+        "missing_revision_select",
+        "missing_family_select",
     ],
 )
 def test_nonminimal_login_and_effective_identities_rejected_before_exposure(
@@ -200,8 +202,10 @@ def test_nonminimal_login_and_effective_identities_rejected_before_exposure(
         owner = db.query("SELECT CURRENT_USER AS name")[0]["name"]
         db.query(f'ALTER ROLE "{db.role}" NOINHERIT')
         db.query(f'GRANT "{owner}" TO "{db.role}"')
-    elif privilege == "missing_select":
+    elif privilege == "missing_revision_select":
         db.query(f'REVOKE SELECT ON speech_pronunciation_revisions FROM "{db.role}"')
+    elif privilege == "missing_family_select":
+        db.query(f'REVOKE SELECT ON speech_pronunciation_families FROM "{db.role}"')
     else:
         grant = {
             "insert": "INSERT ON speech_pronunciation_revisions",

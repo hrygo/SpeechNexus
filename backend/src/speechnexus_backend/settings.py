@@ -81,6 +81,13 @@ class Settings(BaseSettings):
     pronunciation_reader_database_url: SecretStr | None = Field(default=None, min_length=1)
     pronunciation_read_concurrency: int = Field(default=4, ge=1, le=4)
     pronunciation_read_timeout_seconds: float = Field(default=3, gt=0, le=30)
+    pronunciation_writer_database_url: SecretStr | None = Field(default=None, min_length=1)
+    pronunciation_write_concurrency: int = Field(default=4, ge=1, le=4)
+    pronunciation_receive_max_bytes: int = Field(
+        default=32 * 1024 * 1024, ge=1024, le=32 * 1024 * 1024
+    )
+    pronunciation_receive_timeout_seconds: float = Field(default=30, gt=0, le=120)
+    pronunciation_transaction_timeout_seconds: float = Field(default=3, gt=0, le=30)
 
     binding_writer_database_url: SecretStr | None = Field(default=None, min_length=1)
     binding_defaults_writer_database_url: SecretStr | None = Field(default=None, min_length=1)
@@ -133,6 +140,7 @@ class Settings(BaseSettings):
         "model_catalog_reader_database_url",
         "artifact_reader_database_url",
         "pronunciation_reader_database_url",
+        "pronunciation_writer_database_url",
         "binding_writer_database_url",
         "binding_defaults_writer_database_url",
         "binding_admin_reader_database_url",

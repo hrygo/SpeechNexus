@@ -176,7 +176,10 @@ def test_served_openapi_has_only_fixed_get_and_preserves_existing_surfaces() -> 
         "429",
         "503",
     }
-    assert "/v1/nexus/pronunciation-sets" not in document["paths"]
+    collection = document["paths"]["/v1/nexus/pronunciation-sets"]
+    assert set(collection) == {"get", "post"}
+    assert collection["get"]["operationId"] == "listPronunciationSets"
+    assert collection["post"]["operationId"] == "createPronunciationRevision"
     assert "/v1/nexus/admin/profiles" in document["paths"]
 
 

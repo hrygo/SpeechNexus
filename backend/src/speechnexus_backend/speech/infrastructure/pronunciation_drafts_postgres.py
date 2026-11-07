@@ -15,12 +15,15 @@ from speechnexus_backend.speech.domain.pronunciation_drafts import (
     CreatePronunciationDraft,
     PronunciationDraft,
     PronunciationDraftResult,
+    PronunciationSetPage,
+    PronunciationSummary,
     PronunciationUnavailableError,
     revision_number,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.pronunciation_drafts_sql import (
     create_draft,
+    list_summaries,
     read_draft,
     recover_draft,
 )
@@ -103,3 +106,22 @@ class PostgresPronunciationDrafts:
         return self._run(
             lambda cursor: read_draft(cursor, pronunciation_id, revision), read_only=True
         )
+
+    def list_sets(self, *, limit: int, after: str | None) -> PronunciationSetPage:
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("Pronunciation pages require an explicit bound")
+        if after is not None:
+            identifier(after)
+        rows = self._run(
+            lambda cursor: list_summaries(cursor, limit=limit, after=after), read_only=True
+        )
+        summaries = tuple(
+            PronunciationSummary(
+                row["pronunciation_id"],
+                row["head_revision"],
+                row["encoding"],
+                row["entry_count"],
+            )
+            for row in rows[:limit]
+        )
+        return PronunciationSetPage(summaries, len(rows) > limit)

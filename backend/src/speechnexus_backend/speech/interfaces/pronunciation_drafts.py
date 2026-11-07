@@ -16,8 +16,25 @@ from speechnexus_backend.speech.application.pronunciation_documents import (
 from speechnexus_backend.speech.domain.pronunciation_drafts import (
     CreatePronunciationDraft,
     PronunciationDraft,
+    PronunciationSummary,
     document_digest,
 )
+
+
+def summary_to_wire(summary: PronunciationSummary) -> dict[str, Any]:
+    """One public family head: the immutable draft facts, never a publication.
+
+    D2 keeps this slice on immutable drafts, so the declared status is the fixed
+    literal ``draft``; a later publication slice replaces it only by publishing a
+    revision, never by rewriting this projection.
+    """
+    return {
+        "id": summary.pronunciation_id,
+        "head_revision": summary.head_revision,
+        "encoding": summary.encoding,
+        "entry_count": summary.entry_count,
+        "status": "draft",
+    }
 
 
 def draft_to_wire(draft: PronunciationDraft) -> dict[str, Any]:

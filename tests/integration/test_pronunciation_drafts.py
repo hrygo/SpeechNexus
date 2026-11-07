@@ -95,6 +95,18 @@ class Pronunciations:
 def pronunciations(database: JobDatabase) -> Pronunciations:
     db = database
     if db.dialect == "postgresql":
+        # Fixtures pinned before 0045 must still accept the current INSERT; on a
+        # head schema these statements are no-ops.
+        db.query(
+            "ALTER TABLE speech_pronunciation_revisions "
+            "ADD COLUMN IF NOT EXISTS encoding VARCHAR(8)"
+        )
+        db.query(
+            "ALTER TABLE speech_pronunciation_revisions "
+            "ADD COLUMN IF NOT EXISTS entry_count INTEGER"
+        )
+        db.query("ALTER TABLE speech_pronunciation_revisions ALTER COLUMN encoding SET NOT NULL")
+        db.query("ALTER TABLE speech_pronunciation_revisions ALTER COLUMN entry_count SET NOT NULL")
         db.query(f'REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA "{db.schema}" FROM "{db.role}"')
         for grant in pronunciation_draft_grants(db.schema, db.role):
             db.query(grant)
@@ -102,6 +114,13 @@ def pronunciations(database: JobDatabase) -> Pronunciations:
         return Pronunciations(db, PostgresPronunciationDrafts(db.pool))
     for ddl in PRONUNCIATION_DRAFT_DDL:
         db.query(ddl.replace('COLLATE "C"', "COLLATE utf8mb4_0900_bin").replace("TEXT", "LONGTEXT"))
+    # The historical DDL predates 0045; the derived summary columns are added by
+    # the migration on PostgreSQL and must exist for the same INSERT here.
+    db.query(
+        f"ALTER TABLE `{db.schema}`.speech_pronunciation_revisions "
+        "ADD COLUMN encoding VARCHAR(8) NOT NULL, "
+        "ADD COLUMN entry_count INTEGER NOT NULL"
+    )
     db.query(f"REVOKE ALL PRIVILEGES, GRANT OPTION FROM '{db.role}'@'%'")
     for table in TABLES:
         db.query(f"GRANT SELECT, INSERT ON `{db.schema}`.{table} TO '{db.role}'@'%'")
@@ -453,10 +472,10 @@ def test_full_revision_range_uses_real_parent_and_never_wraps(
     # it is not claimed as a real history containing 10**19 revisions.
     p.db.query(
         "INSERT INTO speech_pronunciation_revisions "
-        "(pronunciation_id,revision,definition_json,definition_digest,key_digest,"
-        "request_digest,created_at_us) "
-        "SELECT pronunciation_id,'9999999999999999998',definition_json,definition_digest,%s,"
-        "request_digest,created_at_us FROM speech_pronunciation_revisions "
+        "(pronunciation_id,revision,encoding,entry_count,definition_json,definition_digest,"
+        "key_digest,request_digest,created_at_us) "
+        "SELECT pronunciation_id,'9999999999999999998',encoding,entry_count,definition_json,"
+        "definition_digest,%s,request_digest,created_at_us FROM speech_pronunciation_revisions "
         "WHERE pronunciation_id=%s AND revision='1'",
         ("sha256:" + "d" * 64, identity),
     )

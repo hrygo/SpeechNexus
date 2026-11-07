@@ -48,7 +48,6 @@ REQUEST_ID = "unimplemented-473"
 # so they keep it: that schema accepts the same placeholder body.
 PREDECLARED_SERVICE_UNAVAILABLE = frozenset(
     {
-        "listPronunciationSets",
         "getOperation",
         "createRealtimeSession",
         "connectRealtime",
@@ -196,15 +195,16 @@ def concrete(path: str) -> str:
 
 
 def test_contract_and_placeholder_table_agree() -> None:
-    assert len(CASES) == 12
+    assert len(CASES) == 10
     assert {operation for operation, _, _ in CASES} == set(UNIMPLEMENTED_OPERATIONS)
     declared = {operation for operation, _, _ in declared_operations()}
     # retireVoiceRevision and the six voice-draft operations now answer their
-    # own 503 (ServiceUnavailable) after those routes shipped, so only the
-    # remaining placeholders carry the dedicated component.
-    assert len(declared) == 8
+    # own 503 (ServiceUnavailable) after those routes shipped, and #484 replaced
+    # the pronunciation collection pair with real routes, so only the remaining
+    # placeholders carry the dedicated component.
+    assert len(declared) == 7
     # Every remaining operation points at the dedicated placeholder component;
-    # the six with an older 503 declaration keep it rather than lose a header.
+    # the three with an older 503 declaration keep it rather than lose a header.
     assert declared == set(UNIMPLEMENTED_OPERATIONS) - PREDECLARED_SERVICE_UNAVAILABLE
 
 
@@ -573,8 +573,10 @@ async def test_a_non_placeholder_method_can_own_the_slash_suffixed_route() -> No
 
 def test_served_openapi_does_not_advertise_placeholders() -> None:
     paths = create_app(settings=_settings()).openapi()["paths"]
-    for path in (
-        "/v1/nexus/pronunciation-sets",
-        "/v1/realtime",
-    ):
-        assert path not in paths
+    assert "/v1/realtime" not in paths
+    # The implemented collection is advertised; the remaining placeholders are not.
+    assert set(paths["/v1/nexus/pronunciation-sets"]) == {"get", "post"}
+    advertised = {
+        operation["operationId"] for item in paths.values() for operation in item.values()
+    }
+    assert not {operation for operation, _, _ in declared_operations()} & advertised

@@ -10,6 +10,7 @@
     "./voice-catalogue-http": "./src/voice_catalogue-http.ts",
     "./voice-drafts-http": "./src/voice_drafts-http.ts",
     "./pronunciation-read-http": "./src/pronunciation_read-http.ts",
+    "./pronunciation-sets-http": "./src/pronunciation_sets-http.ts",
     "./workbench": "./src/workbench.ts",
     "./execution": "./src/execution.ts",
     "./runtime": "./src/runtime.ts",

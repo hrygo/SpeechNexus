@@ -6,11 +6,12 @@ The opt-in `pronunciation_read` HTTP surface selects only
 `@speechnexus/contracts/pronunciation-read-http`. The generator follows the real
 `voice-resource.schema.json` reference for `PronunciationRevision`.
 
-The API composition now registers this fixed-revision GET using the existing
-private PG draft reader. Without an explicit reader DSN it returns 503; it does
-not borrow the asset, profile or binding writer identity. Publication, default
-selection and TTS consumption remain separate components. The surface does not
-expose POST, list or an invented command-key query.
+The API composition registers this fixed-revision GET using the existing private
+PG draft reader. Without an explicit reader DSN it returns 503; it does not
+borrow the asset, profile or binding writer identity. Publication, default
+selection and TTS consumption remain separate components. This surface does not
+expose POST, list or an invented command-key query; the collection list/create
+live in the separate `pronunciation_sets` surface.
 
 ## Reader deployment and lifetime
 
@@ -18,8 +19,8 @@ Set `SPEECHNEXUS_PRONUNCIATION_READER_DATABASE_URL` only on the API process and
 select the existing speech schema with `SPEECHNEXUS_DATABASE_SCHEMA`. Provisioning
 is external: the runtime does not run migrations, create roles or grant access.
 The explicit identity needs schema USAGE and SELECT on
-`speech_pronunciation_revisions`, with no other speech-table privileges or
-column writes. Startup validates both SESSION_USER and CURRENT_USER and rejects
+`speech_pronunciation_revisions` and `speech_pronunciation_families`, with no
+other speech-table privileges or column writes. Startup validates both SESSION_USER and CURRENT_USER and rejects
 owners, owner membership (including NOINHERIT), schema CREATE, elevated role
 attributes, missing SELECT and excess table/column privileges before exposing the
 provider. This is a service database identity, not a user/tenant boundary.

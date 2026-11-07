@@ -257,15 +257,41 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List pronunciation sets */
+    /**
+     * List pronunciation sets
+     * @description Lists family heads by ascending opaque `id`. The cursor is the canonical
+     *     unpadded base64 form of the last returned id; a cursor that does not
+     *     re-encode to the same bytes is rejected rather than silently moving the
+     *     page. `limit` is 1-100 and defaults to 50. `has_more` is true only when a
+     *     further page exists, and `next_cursor` is then that page's opaque cursor.
+     *
+     *     Every returned `status` is `draft`: this deployment only stores immutable
+     *     draft revisions, so a listed head never claims publication, execution or
+     *     TTS qualification. An empty collection is a successful 200 with no
+     *     entries, never a 404.
+     */
     get: operations["listPronunciationSets"];
     put?: never;
     /**
      * Create an immutable pronunciation-set revision
      * @description Omit `id` to create a new pronunciation set. Supply `id` and
      *     `expected_revision` to append a revision to an existing set. Entries are
-     *     validated and published atomically; an existing revision is never
-     *     modified.
+     *     validated and stored as an immutable **draft** revision; an existing
+     *     revision is never modified and this operation never publishes, selects a
+     *     default, executes TTS or qualifies pronunciation.
+     *
+     *     `publish` defaults to `false` and describes draft creation only. A
+     *     `publish: true` request is not supported by this operation and returns
+     *     422 `pronunciation_publication_not_supported`; publication has its own
+     *     command. The returned `status` is always `draft`.
+     *
+     *     With an `Idempotency-Key`, the same canonical intent replays the original
+     *     revision and a different intent returns 409
+     *     `pronunciation_idempotency_conflict`. Without a key, a submission whose
+     *     commit cannot be confirmed returns 409 `pronunciation_outcome_unknown`
+     *     because a resubmission would be a new intent. An append whose
+     *     `expected_revision` is not the current allocation head returns 409
+     *     `pronunciation_configuration_changed`.
      */
     post: operations["createPronunciationRevision"];
     delete?: never;
@@ -1273,7 +1299,10 @@ export interface components {
       /** @enum {string} */
       encoding: "pinyin" | "ipa";
       entries: components["schemas"]["PronunciationEntry"][];
-      /** @default true */
+      /**
+       * @description Draft semantics only. Omission and `false` both create an immutable draft revision; `true` is rejected with 422 `pronunciation_publication_not_supported`. This field never publishes a set, selects a default, or qualifies pronunciation.
+       * @default false
+       */
       publish?: boolean;
     };
     /** @enum {string} */
@@ -3689,6 +3718,101 @@ export interface components {
         };
       };
     };
+    /** @description Invalid collection framing: an unreadable cursor, an out-of-range or duplicate `limit`, an unknown query parameter, a list body or an invalid create document/header. This is a request error, not a missing resource and not an outage. */
+    PronunciationInvalidRequest: {
+      headers: {
+        "Cache-Control": "no-store";
+        "X-Should-Retry": "false";
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"] & {
+          error?: {
+            /** @constant */
+            code?: "pronunciation_invalid_request";
+            /** @constant */
+            type?: "invalid_request_error";
+            /** @constant */
+            retryable?: false;
+            nexus?: never;
+          };
+        };
+      };
+    };
+    /** @description The configured Host/Origin policy rejected this collection request. */
+    PronunciationCollectionForbidden: {
+      headers: {
+        "Cache-Control": "no-store";
+        "X-Should-Retry": "false";
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"] & {
+          error?: {
+            /** @enum {unknown} */
+            code?: "pronunciation_host_rejected" | "pronunciation_origin_rejected";
+            /** @constant */
+            type?: "permission_error";
+            /** @constant */
+            retryable?: false;
+            nexus?: never;
+          };
+        };
+      };
+    };
+    /**
+     * @description `pronunciation_idempotency_conflict`: the Idempotency-Key identifies
+     *     another intent. `pronunciation_configuration_changed`: an append's
+     *     `expected_revision` is not the current allocation head.
+     *     `pronunciation_outcome_unknown`: a keyless submission may already have
+     *     committed, so resubmitting would create another set; reconcile the
+     *     original attempt before deciding to submit again. None of these is
+     *     retryable unchanged.
+     */
+    PronunciationSetConflict: {
+      headers: {
+        "Cache-Control": "no-store";
+        "X-Should-Retry": "false";
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"] & {
+          error?: {
+            /** @enum {unknown} */
+            code?:
+              | "pronunciation_idempotency_conflict"
+              | "pronunciation_configuration_changed"
+              | "pronunciation_outcome_unknown";
+            /** @constant */
+            type?: "invalid_request_error";
+            /** @constant */
+            retryable?: false;
+            nexus?: never;
+          };
+        };
+      };
+    };
+    /** @description This operation creates immutable drafts only. `publish: true` is a publication command this deployment does not implement; the request did not change any revision and repeating it unchanged will not succeed. */
+    PronunciationPublicationNotSupported: {
+      headers: {
+        "Cache-Control": "no-store";
+        "X-Should-Retry": "false";
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"] & {
+          error?: {
+            /** @constant */
+            code?: "pronunciation_publication_not_supported";
+            /** @constant */
+            type?: "invalid_request_error";
+            /** @constant */
+            retryable?: false;
+            nexus?: never;
+          };
+        };
+      };
+    };
     /** @description Operation deadline exceeded; coordinate the original intent before retrying. */
     GatewayTimeout: {
       headers: {
@@ -4213,9 +4337,32 @@ export interface operations {
           "application/json": components["schemas"]["PronunciationList"];
         };
       };
+      400: components["responses"]["PronunciationInvalidRequest"];
       401: components["responses"]["Unauthorized"];
+      403: components["responses"]["PronunciationCollectionForbidden"];
       405: components["responses"]["MethodNotAllowed"];
-      503: components["responses"]["ServiceUnavailable"];
+      /** @description Draft storage is unavailable. A list read carries no body and may be repeated; this is a retryable outage, not a permanently unimplemented operation. */
+      503: {
+        headers: {
+          "Cache-Control": "no-store";
+          "X-Should-Retry": "true";
+          "Retry-After"?: components["headers"]["RetryAfter"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"] & {
+            error?: {
+              /** @constant */
+              code?: "pronunciation_unavailable";
+              /** @constant */
+              type?: "service_unavailable_error";
+              /** @constant */
+              retryable?: true;
+              nexus?: never;
+            };
+          };
+        };
+      };
     };
   };
   createPronunciationRevision: {
@@ -4238,7 +4385,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Pronunciation revision created. */
+      /** @description Immutable pronunciation draft revision created or replayed. */
       201: {
         headers: {
           "X-Request-ID"?: components["headers"]["XRequestId"];
@@ -4248,13 +4395,34 @@ export interface operations {
           "application/json": components["schemas"]["PronunciationRevision"];
         };
       };
-      400: components["responses"]["BadRequest"];
+      400: components["responses"]["PronunciationInvalidRequest"];
       401: components["responses"]["Unauthorized"];
+      403: components["responses"]["PronunciationCollectionForbidden"];
       405: components["responses"]["MethodNotAllowed"];
-      409: components["responses"]["Conflict"];
-      422: components["responses"]["UnprocessableEntity"];
+      409: components["responses"]["PronunciationSetConflict"];
+      422: components["responses"]["PronunciationPublicationNotSupported"];
       429: components["responses"]["TooManyRequests"];
-      503: components["responses"]["OperationNotImplemented"];
+      /** @description Draft storage is unavailable. Only a request that carries its original Idempotency-Key may be retried unchanged: replaying that key recovers the committed revision instead of allocating a second one. This is a retryable outage, not a permanently unimplemented operation. */
+      503: {
+        headers: {
+          "Cache-Control": "no-store";
+          "X-Should-Retry": "true";
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"] & {
+            error?: {
+              /** @constant */
+              code?: "pronunciation_unavailable";
+              /** @constant */
+              type?: "service_unavailable_error";
+              /** @constant */
+              retryable?: true;
+              nexus?: never;
+            };
+          };
+        };
+      };
     };
   };
   getPronunciationRevision: {

@@ -285,7 +285,9 @@ models、capabilities、transcriptions 和两条 voices GET 的框架 405 统一
 改写本身仍作用于未注册子路径。
 
 `/v1/nexus/pronunciation-sets` 前缀被 `PronunciationIngress` 接管（`backend/src/speechnexus_backend/speech/interfaces/http/pronunciations.py::PronunciationIngress.__call__`），
-未注册的集合级 GET/POST 在匹配失败时返回 `400 pronunciation_invalid_request`，复核基线实测见 §7.1 R9。
+但集合级 GET/POST 自 #484 起由 `pronunciation_sets` 路由真实提供：入口只拒绝越界路径与
+不合法 Host/Origin，单个尾斜杠由 Starlette 307 到规范路径。凡不匹配集合路径或修订路径的
+子路径仍返回 `400 pronunciation_invalid_request`，复核基线实测见 §7.1 R9。
 
 ## 6. 未实现操作（25 条，审计基线）
 

@@ -308,6 +308,13 @@
       ],
       "operations": ["getPronunciationRevision"]
     },
+    "pronunciation_sets": {
+      "source": "speech-openapi.yaml",
+      "validate": true,
+      "typescript_source": "speech",
+      "paths": ["/v1/nexus/pronunciation-sets"],
+      "operations": ["listPronunciationSets", "createPronunciationRevision"]
+    },
     "voice_catalogue": {
       "source": "speech-openapi.yaml",
       "validate": true,

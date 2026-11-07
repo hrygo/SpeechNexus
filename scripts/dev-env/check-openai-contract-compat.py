@@ -1018,6 +1018,39 @@ def _closed_tagged_request_extension(
     return False
 
 
+class _DefaultExemption(NamedTuple):
+    """Request-body defaults are non-load-bearing on a permanent placeholder.
+
+    The proof is the frozen baseline itself: an operation whose 503 is exactly
+    the shared placeholder component and whose declared ``error.code`` is the
+    ``operation_not_implemented`` literal. Such an operation never had a success
+    path, so no consumer can depend on one of its request defaults. An operation
+    that already shipped, or whose 503 is an inline retryable replacement, does
+    not qualify.
+    """
+
+    notices: list[str]
+    permanent_placeholder: bool
+
+
+def _baseline_permanent_placeholder(
+    document: Mapping[str, Any],
+    path_name: str,
+    method: str,
+    side: _SchemaSide,
+) -> bool:
+    if not _exact_placeholder_503(document, path_name, method, "503"):
+        return False
+    component = _mapping(_resolve_local_pointer(document, _PLACEHOLDER_503_REF[1:]))
+    if component is None:
+        return False
+    content = _mapping(component.get("content")) or {}
+    media = _mapping(content.get("application/json"))
+    if media is None or "schema" not in media:
+        return False
+    return _declared_error_codes(media["schema"], side) == {_PLACEHOLDER_ERROR_CODE}
+
+
 def _compare_schema(
     base: object,
     current: object,
@@ -1027,6 +1060,7 @@ def _compare_schema(
     direction: str = "request",
     base_side: _SchemaSide | None = None,
     current_side: _SchemaSide | None = None,
+    exemption: _DefaultExemption | None = None,
 ) -> None:
     standard_only = all(
         side.standard_only for side in (base_side, current_side) if side is not None
@@ -1091,17 +1125,24 @@ def _compare_schema(
     ):
         _issue(issues, pointer, "const value changed")
 
+    default_change: str | None = None
     if ("default" in base_schema) != ("default" in current_schema):
-        _issue(issues, pointer, "default presence changed")
+        default_change = "default presence changed"
     elif "default" in base_schema and not _same_json_tree(
         base_schema.get("default"), current_schema.get("default"), numeric_equivalent=True
     ):
-        _issue(
-            issues,
-            pointer,
+        default_change = (
             f"default changed from {base_schema.get('default')!r} "
-            f"to {current_schema.get('default')!r}",
+            f"to {current_schema.get('default')!r}"
         )
+    if default_change is not None:
+        if direction == "request" and exemption is not None and exemption.permanent_placeholder:
+            exemption.notices.append(
+                f"{pointer}: {default_change}; accepted because the baseline operation's "
+                f"503 is the permanent {_PLACEHOLDER_ERROR_CODE} placeholder"
+            )
+        else:
+            _issue(issues, pointer, default_change)
 
     if base_schema.get("format") != current_schema.get("format"):
         _issue(
@@ -1172,6 +1213,7 @@ def _compare_schema(
                     direction=direction,
                     base_side=base_side,
                     current_side=current_side,
+                    exemption=exemption,
                 )
 
     # A newly named property replaces the previous additionalProperties domain.
@@ -1187,6 +1229,7 @@ def _compare_schema(
             direction=direction,
             base_side=base_side,
             current_side=current_side,
+            exemption=exemption,
         )
 
     for definitions_key in ("$defs", "definitions"):
@@ -1207,6 +1250,7 @@ def _compare_schema(
                     direction=direction,
                     base_side=base_side,
                     current_side=current_side,
+                    exemption=exemption,
                 )
 
     for keyword in (
@@ -1237,6 +1281,7 @@ def _compare_schema(
             direction=direction,
             base_side=base_side,
             current_side=current_side,
+            exemption=exemption,
         )
     old_additional = base_schema.get("additionalProperties", True)
     new_additional = current_schema.get("additionalProperties", True)
@@ -1249,6 +1294,7 @@ def _compare_schema(
             direction=direction,
             base_side=base_side,
             current_side=current_side,
+            exemption=exemption,
         )
     for keyword in ("oneOf", "anyOf", "allOf"):
         base_variants = _sequence(base_schema.get(keyword))
@@ -1302,6 +1348,7 @@ def _compare_schema(
                 direction=direction,
                 base_side=base_side,
                 current_side=current_side,
+                exemption=exemption,
             )
 
 
@@ -1355,8 +1402,10 @@ def _compare_openapi(
     *,
     base_git_ref: str | None = None,
     standard_only: bool = True,
+    notices: list[str] | None = None,
 ) -> list[str]:
     issues: list[str] = []
+    collected = notices if notices is not None else []
     # Each comparison owns fresh document snapshots. A process-global cache could
     # hide edits to a shared schema during a later comparison in the same process.
     base_side = _SchemaSide(base, path, base_git_ref, {}, standard_only)
@@ -1450,6 +1499,10 @@ def _compare_openapi(
                                 f"request media type removed: {media_type}",
                             )
                             continue
+                        request_exemption = _DefaultExemption(
+                            collected,
+                            _baseline_permanent_placeholder(base, path_name, method, base_side),
+                        )
                         _compare_schema(
                             (_mapping(base_media) or {}).get("schema", {}),
                             (_mapping(current_media) or {}).get("schema", {}),
@@ -1457,6 +1510,7 @@ def _compare_openapi(
                             issues,
                             base_side=base_side,
                             current_side=current_side,
+                            exemption=request_exemption,
                         )
 
             base_responses = _mapping(base_operation_mapping.get("responses")) or {}
@@ -1536,6 +1590,9 @@ def _compare_openapi(
                         current_side=current_side,
                     )
 
+    if notices is None:
+        for notice in collected:
+            print(f"notice: {notice}", file=sys.stderr)
     return issues
 
 

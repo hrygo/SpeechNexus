@@ -1115,6 +1115,10 @@ class PublicJobs:
             payload = json.loads(intent.document)
         except ValueError, TypeError, RecursionError:
             raise PublicJobUnavailableError from None
+        # Deliberate second layer behind ``JobIntent``: the stored document was
+        # validated against its digest on read, and the parsed payload is checked
+        # again here before it can become a replacement Job. Both layers are
+        # required; neither may be removed as "redundant".
         if not isinstance(payload, dict) or canonical_digest(payload) != intent.request_digest:
             raise PublicJobUnavailableError
         if payload.get("kind") != parent.kind or (

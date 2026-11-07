@@ -18,9 +18,12 @@
 同步语音与同步转写已有各自的准入适配器，具体装配和限制分别见
 [同步语音](synchronous-speech.md)与[同步转写](../operations/synchronous-transcription.md)；
 这些接入不代表公开异步 Job 的生产 planner 已完成。
-公开 Job 创建也写入此表，但其正文目前只是原始公开业务意图，并非完整有效执行命令；
-不能直接派发，也不能用可变默认值补齐后冒充已冻结的命令。
-其摘要沿用 `CreateJob.request_digest` 的含义；准入信封的摘要包含本次 authority、
+公开 Job 的权威 intent 存在 `speech_job_intents`；A2 完成前，创建事务仍把同一正文写入
+`admission_operations.request_document` 作为过渡副本，读取路径只使用新表。
+A2 之后该列由 `admit_in_transaction` 独占写入完整业务命令，公开意图继续由新表承载。
+当前该列的正文与摘要仍分别等于公开 Job 的原始请求正文和 `CreateJob.request_digest`；
+A2 改为完整业务命令后，该列摘要随命令计算，公开 intent 摘要继续保存在
+`speech_job_intents` 与 `speech_jobs.request_digest`。准入信封的摘要包含本次 authority、
 实例版本、阶段分配和期限，不能替代业务摘要。正文序列化与摘要计算应在事务外完成，
 按 RFC 8785 的规范字节计算；本迁移不会校验 JSON、摘要或命令是否完整。
 不得把摘要、当前预设或后来变化的默认值当作原命令。
@@ -30,6 +33,26 @@
 `AdmissionSnapshot` 及七个 `query_outcome` 目标不变，没有新增公开正文入口或
 Operation/receipt 投影。私有正文不得出现在日志、公开 DTO 或异常中。
 表字段存在不证明原请求已经由实际业务入口生成、持久化或恢复。
+
+## 公开 Job intent 的独立存储
+
+迁移 `0046_public_job_intents` 增加 `speech_job_intents`：`job_id` 外键引用
+`speech_jobs`（`ON DELETE RESTRICT`），`request_digest`、`request_document` 与
+`recorded_at_us` 分别受摘要格式、正文长度（2–262144 字节）和时间范围 CHECK 约束。
+
+- 创建在同一事务写 `speech_jobs`、`speech_job_intents` 与 `admission_operations`；
+  新表插入不使用 `ON CONFLICT DO NOTHING`，冲突即回滚整个创建。
+- 读取只查 `speech_job_intents`；无行返回 `None`（不可重放），有行但摘要与
+  `speech_jobs.request_digest` 不一致时视为存储不可用；两种情况都不以
+  `admission_operations` 副本回退或重建。
+- 派发器的摘要取 `COALESCE(admission_operations.request_digest, speech_jobs.request_digest)`；
+  当前两列摘要相等，因此不改变行为。A2 把 legacy 列改为完整业务命令及其摘要后，
+  守卫使用命令摘要，公开 intent 摘要仍由 `speech_jobs` 与新表保存。
+- writer 角色对新表只有 `SELECT`、`INSERT`；启动校验反向断言该表没有 `UPDATE`/`DELETE`。
+- 回填只接收 `admission_operations.request_digest = speech_jobs.request_digest` 的历史行，
+  摘要不符或正文已清理（NULL）的行跳过并输出 NOTICE，不伪造正文。
+- downgrade 仅当每一条新表行都有摘要与正文都一致的 legacy 副本时删除该表；否则拒绝，
+  避免删掉唯一的公开 intent。
 
 ## 同一事务中的锁与身份
 
@@ -74,7 +97,8 @@ CHECK 拒绝半个 tombstone、空删除任务、早于记录的删除时间和�
 再审阅并安装生产 `coordination_runtime_grants` 的输出。
 新建两表保持为空；历史 attempt、Job、submit、正文和 ACL 不回写、不伪造正文。
 旧记录缺少原命令时，未来读取/派发必须进入协调，不能按新默认值恢复。
-迁移不扩大现有角色权限；破坏性 downgrade 拒绝执行。
+迁移不扩大现有角色权限；`0046_public_job_intents` 只向 Job writer 增加新表的
+`SELECT`/`INSERT`，不授予 `UPDATE`/`DELETE`。破坏性 downgrade 拒绝执行。
 
 B 对两表没有 SELECT、INSERT、UPDATE 或锁 version 的授权，不需要获得业务正文。
 C 继续通过公开协议消费，不共写 speech 表。运行角色不能 DDL、删除协调历史或

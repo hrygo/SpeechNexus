@@ -151,6 +151,19 @@ writing 或 unknown 不按超时、取消或普通重试释放。对象 PUT 结�
 在重放完成前尚未开放，但这些后台任务没有由启动重放统一屏障。不能据此声称上述
 目标中的所有执行入口均在重放之后开放；恢复部署须另行隔离这些后台角色并验证顺序。
 
+### Speech 公开 Job intent
+
+公开 Job 的业务意图以 `speech_job_intents` 为权威存储；A2 前
+`admission_operations.request_document` 是同事务过渡副本，A2 后由准入事务写入完整业务命令。
+内容清理（保留 Job 行）必须同时覆盖两处，并在完成后保持 `intent_document` 不可用、
+retry 返回 `409 job_retry_unavailable`：
+
+- 只清理 legacy 列不会使 retry 不可重放：读取路径不回退到该副本。
+- 只删除新表行会留下完整业务正文副本，违反内容删除范围。
+- 两处清理使用同一预检、固定版本/摘要、持久账本和恢复屏障；不得用摘要或当前默认值重建正文。
+- 当前没有 Speech Job 删除入口，本要求由
+  [#540](https://github.com/hrygo/SpeechNexus/issues/540) 实施并验收。
+
 这些表由 owner 角色初始化，运行角色不执行 DDL。当前 schema revision 11 是
 新建隔离部署基线；已有数据库仍需 A07 的受控版本迁移，不自动升级。缺少私有内容
 快照的旧项目删除计划不得直接放大清理范围，应保持阻断并核对原确认与恢复证据。

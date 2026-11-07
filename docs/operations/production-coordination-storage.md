@@ -58,7 +58,9 @@ statements = coordination_runtime_grants(
 `job_runtime_grants` 保持原先更窄的权限。迁移不会自动扩大任何旧角色权限。
 
 取消围栏投影另由独立声明安装；API Job writer 的 `public_job_grants` 已包含
-围栏写入授权，派发器的 `job_dispatch_grants` 只包含 not-submitted 观察的 INSERT，
+围栏写入授权，派发器的 `job_dispatch_grants` 在取消围栏部分只包含 not-submitted 观察的 INSERT，
+Job 写入部分另含 `admission_operations` 与 `speech_job_intents` 授权（见
+[公开 Job 存储与授权](../components/production-jobs.md)），
 worker 使用 `cancellation_reconciliation_grants` 获得围栏列 SELECT、对账账本
 读写与 not-submitted SELECT。若受理 writer 不整体安装 `public_job_grants`，可单独
 使用 `job_cancellation_fence_grants`：

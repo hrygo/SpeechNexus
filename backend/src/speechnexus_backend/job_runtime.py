@@ -27,6 +27,7 @@ REQUIRED_SELECT = (
     "speech_assets",
     "speech_pronunciation_revisions",
     "speech_jobs",
+    "speech_job_intents",
     "speech_job_events",
     "speech_job_submissions",
     "speech_job_cancellations",
@@ -40,11 +41,14 @@ REQUIRED_INSERT = (
     "speech_voice_draft_revisions",
     "speech_voice_metadata_commands",
     "speech_jobs",
+    "speech_job_intents",
     "speech_job_events",
     "speech_job_submissions",
     "speech_job_cancellations",
 )
-IMMUTABLE_TABLES = ("speech_voice_draft_revisions",)
+# Append-only rows: the writer may insert its own intent and read it back, but a
+# changed or deleted intent must never be indistinguishable from the original.
+IMMUTABLE_TABLES = ("speech_voice_draft_revisions", "speech_job_intents")
 REQUIRED_INSERT_COLUMNS = {
     "speech_voice_draft_revisions": (
         "draft_id",

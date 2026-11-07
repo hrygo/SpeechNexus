@@ -94,6 +94,7 @@ async def test_retry_creates_a_linked_replacement_without_touching_the_parent(
         assert jobs_db.count("speech_jobs") == 2
         assert jobs_db.count("speech_job_submissions") == 2
         assert jobs_db.count("admission_operations") == 2
+        assert jobs_db.count("speech_job_intents") == 2
         assert jobs_db.count("coordination_jobs") == 2
         assert jobs_db.count("coordination_outbox") == 2
 
@@ -125,6 +126,7 @@ async def test_retry_creates_a_linked_replacement_without_touching_the_parent(
         assert replay.status_code == 202, replay.text
         assert replay.json()["id"] == child["id"]
         assert jobs_db.count("speech_jobs") == 2
+        assert jobs_db.count("speech_job_intents") == 2
         assert jobs_db.count("coordination_jobs") == 2
 
         read = await client.get(PREFIX + "/" + child["id"])
@@ -311,6 +313,11 @@ async def test_retry_refuses_a_redacted_intent(jobs_db: JobSandbox) -> None:
             "command_deletion_evidence_digest = %s WHERE operation_id = %s",
             ("job-deletion-synthetic", RESULT_DIGEST, job_id),
         )
+        # The public intent lives in its own authoritative table, so A07's
+        # deletion path (#540) must remove both copies in one controlled flow;
+        # the legacy redaction alone never reaches the replay source. This test
+        # pins the required end state after that deletion.
+        jobs_db.admin.execute("DELETE FROM speech_job_intents WHERE job_id = %s", (job_id,))
         response = await client.post(RETRY.format(job_id=job_id))
         assert response.status_code == 409, response.text
         assert response.json()["error"]["code"] == "job_retry_unavailable"

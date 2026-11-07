@@ -56,9 +56,10 @@ def job_dispatch_grants(schema: str, role: str) -> tuple[str, ...]:
     """Privileges the dispatcher adds on top of the base Job writer.
 
     Kept separate because ``admission_operations`` only exists from migration
-    ``0007_admission_commands`` onwards, while ``job_runtime_grants`` is also
-    applied to historical revisions (the upgrade sandbox starts at
-    ``0001_jobs``). Provisioning applies this set after a full upgrade.
+    ``0007_admission_commands`` and ``speech_job_intents`` only from
+    ``0046_public_job_intents``, while ``job_runtime_grants`` is also applied to
+    historical revisions (the upgrade sandbox starts at ``0001_jobs``).
+    Provisioning applies this set after a full upgrade.
     """
 
     from speechnexus_backend.speech.infrastructure.artifact_schema import (
@@ -73,6 +74,8 @@ def job_dispatch_grants(schema: str, role: str) -> tuple[str, ...]:
         "GRANT INSERT (operation_id, workspace_id, request_digest, request_document, "
         f"initial_attempt_id, current_attempt_id, recorded_at_us) "
         f'ON "{schema}".admission_operations TO "{role}"',
+        # The public intent is authoritative from 0046 on and stays append-only.
+        f'GRANT SELECT, INSERT ON "{schema}".speech_job_intents TO "{role}"',
         *artifact_publisher_grants(schema, role),
         *cancellation_not_submitted_grants(schema, role),
     )

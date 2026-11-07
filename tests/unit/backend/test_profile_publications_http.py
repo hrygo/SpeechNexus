@@ -202,3 +202,26 @@ def test_v2_errors_are_source_declared(sandbox: Sandbox) -> None:
             503,
             {"body": unavailable.json(), "headers": dict(unavailable.headers)},
         )
+
+
+def test_published_summary_projection_has_a_fixed_key_set(sandbox: Sandbox) -> None:
+    """The wire projection is asserted independently of response validation."""
+    from speechnexus_backend.speech.interfaces.http.profile_publications import _summary
+
+    s = sandbox
+    s.draft()
+    result = s.port.mutate(s.publish())
+    assert result.publication is not None
+    v1 = _summary(result.publication, "1", include_current=False)
+    v2 = _summary(result.publication, "1", include_current=True)
+    assert set(v1) == {
+        "id",
+        "revision",
+        "display_name",
+        "kind",
+        "release_tier",
+        "execution_classes",
+    }
+    assert set(v2) == set(v1) | {"current_revision"}
+    assert v1["id"] == result.publication.draft.profile_id
+    assert v1["revision"] == "1"

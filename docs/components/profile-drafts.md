@@ -290,8 +290,10 @@ grant, because it stays false under column-only grants and would be a no-op
 it is an explicit speech-owner read role, not a Workbench table-writing API.
 
 Activating the revision that is already current with a new Idempotency-Key is the
-documented idempotent no-op: it returns that same published revision and applies
-no second pointer transition. Concurrent activations serialize on the family row.
+documented idempotent no-op: it returns that same published revision and skips the
+family write entirely, so the pointer value and the row version are unchanged
+(no same-value `UPDATE`, hence no trigger or derived-column side effect).
+Concurrent activations serialize on the family row.
 When their targets differ, only the first CAS commits and a request whose expected
 head was superseded returns 409 `configuration_changed` instead of overwriting
 the newer pointer. Two concurrent requests for the same current revision both
@@ -309,9 +311,10 @@ No effective-configuration resolver, Job field or Web consumer is added here.
 `tests/integration/test_profile_publications.py` is the isolated PG entry for
 migration, restricted roles, original-result recovery and observed competing
 family-lock waits. It also observes two same-target activations behind one real
-family lock and asserts a single pointer value with the documented no-op, and it
-rejects a role that holds table-level `UPDATE` or column-level `REFERENCES` at
-startup. Its successful verifier is explicitly a **test double**.
+`FOR UPDATE` family lock, asserts an unchanged row version and replays both
+original keys, and it rejects a role that holds table-level `UPDATE` or
+column-level `REFERENCES` at startup. Its successful verifier is explicitly a
+**test double**.
 `tests/unit/test_profile_publications.py` executes the same product SQL on an
 in-memory SQLite oracle with lock syntax removed, and the HTTP tests drive the
 actual application/router against it. These synthetic checks do not establish

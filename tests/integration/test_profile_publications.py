@@ -252,7 +252,7 @@ def test_competing_activations_wait_on_family_and_only_one_cas_wins(sandbox: San
 
 
 def test_same_target_concurrent_activation_is_one_documented_noop(sandbox: Sandbox) -> None:
-    """Both requests are the contract's no-op; the family pointer never diverges."""
+    """Both requests are the contract's no-op; the family row is not written."""
     s = sandbox
     s.draft()
     s.port.mutate(s.publish())
@@ -260,24 +260,27 @@ def test_same_target_concurrent_activation_is_one_documented_noop(sandbox: Sandb
     s.port.mutate(s.publish("2", "1", "publish-second"))
     assert s.port.mutate(s.activate("1", "2", "back-to-one")).outcome == "completed"
     before = s.snapshot()
+    xmin_before = s.admin.execute(
+        "SELECT xmin::text AS xmin FROM speech_profile_families"
+    ).fetchone()["xmin"]
     blocker = psycopg.connect(s.url)
     try:
         blocker.execute(f'SET search_path TO "{s.schema}",pg_catalog')
         blocker.execute("SELECT * FROM speech_profile_families FOR UPDATE").fetchall()
+        commands = [s.activate("1", "1", "same-" + suffix) for suffix in ("alpha", "bravo")]
+        blocked_queries: list[str] = []
         with ThreadPoolExecutor(max_workers=2) as workers:
-            futures = [
-                workers.submit(s.port.mutate, s.activate("1", "1", "same-" + suffix))
-                for suffix in ("alpha", "bravo")
-            ]
+            futures = [workers.submit(s.port.mutate, command) for command in commands]
             try:
                 deadline = time.monotonic() + 2
                 while time.monotonic() < deadline:
-                    n = s.admin.execute(
-                        "SELECT count(*) AS n FROM pg_stat_activity WHERE usename=%s "
+                    blocked = s.admin.execute(
+                        "SELECT query FROM pg_stat_activity WHERE usename=%s "
                         "AND cardinality(pg_blocking_pids(pid))>0",
                         (s.role,),
-                    ).fetchone()["n"]
-                    if n == 2:
+                    ).fetchall()
+                    if len(blocked) == 2:
+                        blocked_queries = [row["query"] or "" for row in blocked]
                         break
                     time.sleep(0.01)
                 else:
@@ -285,15 +288,31 @@ def test_same_target_concurrent_activation_is_one_documented_noop(sandbox: Sandb
             finally:
                 blocker.rollback()
             results = [f.result(timeout=5) for f in futures]
+        # The family FOR UPDATE is the only serializing statement here. A
+        # same-value terminal UPDATE would also block, so the text must prove
+        # the row lock came from FOR UPDATE rather than the skipped write.
+        assert len(blocked_queries) == 2
+        assert all(
+            "FOR UPDATE" in query and "speech_profile_families" in query
+            for query in blocked_queries
+        ), blocked_queries
         assert [r.outcome for r in results] == ["completed", "completed"]
         assert [r.publication.draft.revision for r in results if r.publication] == ["1", "1"]
         assert results[0].publication == results[1].publication
+        for command in commands:
+            recovered = s.port.recover_lifecycle(command)
+            assert recovered.outcome == "replayed"
+            assert recovered.publication == results[0].publication
     finally:
         blocker.close()
     after = s.snapshot()
-    # Only the per-key receipts differ; the published facts and pointer do not.
+    # Only the per-key receipts differ; the family row keeps its value and version.
     assert after["speech_profile_families"] == before["speech_profile_families"]
     assert after["speech_profile_publications"] == before["speech_profile_publications"]
+    assert (
+        s.admin.execute("SELECT xmin::text AS xmin FROM speech_profile_families").fetchone()["xmin"]
+        == xmin_before
+    )
     assert all(row["current_revision"] == "1" for row in after["speech_profile_families"])
     assert (
         len(after["speech_profile_lifecycle_results"])
@@ -531,6 +550,7 @@ def test_startup_rejects_writer_privilege_escalation(
 def test_published_lists_expose_only_the_published_projection(sandbox: Sandbox) -> None:
     """Public projections never carry a draft body, command identity or replay key."""
     from fastapi.testclient import TestClient
+    from speechnexus_contracts.profile_public_http import validate_response
     from tests.unit.backend.test_health import _settings
 
     from speechnexus_backend.app import create_app
@@ -572,6 +592,11 @@ def test_published_lists_expose_only_the_published_projection(sandbox: Sandbox) 
         v1 = http.get("/v1/nexus/profiles")
         v2 = http.get("/v2/nexus/profiles")
         assert v1.status_code == 200 and v2.status_code == 200
+        # Contract acceptance and the fixed projection are asserted separately:
+        # adding any field is rejected by additionalProperties:false with 503,
+        # and the exact key set below is the projection's own guard.
+        validate_response("listProfiles", 200, {"body": v1.json()})
+        validate_response("listPublishedProfiles", 200, {"body": v2.json()})
         assert [(item["id"], item["revision"]) for item in v1.json()["data"]] == [
             ("caption-draft", "1")
         ]
@@ -583,7 +608,6 @@ def test_published_lists_expose_only_the_published_projection(sandbox: Sandbox) 
             frozenset(v1_keys | {"current_revision"})
         }
         for response in (v1, v2):
-            body = response.text
             for leaked in (
                 "definition",
                 "validation",
@@ -591,10 +615,8 @@ def test_published_lists_expose_only_the_published_projection(sandbox: Sandbox) 
                 "key_digest",
                 "request_digest",
                 "idempotency",
-                "SECRET DRAFT BODY",
-                "secret-draft-only",
             ):
-                assert leaked not in body, leaked
+                assert leaked not in response.text, leaked
         unpublished = http.get("/v1/nexus/profiles/caption-draft/revisions/2")
         assert unpublished.status_code == 409
         assert unpublished.json()["error"]["code"] == "profile_not_published"

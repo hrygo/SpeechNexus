@@ -1048,6 +1048,23 @@ _INTERNAL_ADDITIVE_PROMOTIONS: dict[
             ]
         },
     },
+    (
+        "contracts/internal/coordination-transactions.schema.json",
+        "$defs/create_submit/properties/execution_request/properties/command",
+        ("tts", "voicevalidation"),
+        "reference_text",
+        None,
+        ("string", "null"),
+        "append-optional-property",
+    ): {
+        "container_path": ("parameters",),
+        "property_schema": {
+            "oneOf": [
+                {"type": "string", "minLength": 1, "maxLength": 10000},
+                {"type": "null"},
+            ]
+        },
+    },
 }
 
 _INTERNAL_ADDITIVE_NOTICES: list[str] = []

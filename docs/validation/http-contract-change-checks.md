@@ -51,11 +51,14 @@ version/migration approach under the existing contract handoff process.
 
 One exact internal request-shape change is allowed: append the optional
 `reference_text` property to the `TtsEffectiveParameters` object reached by the
-`command` union in `contracts/internal/execution-control.openapi.yaml` (the
-`tts` and `voicevalidation` variants). The allowlist entry is literal: source,
-operation pointer, variant tags, property name, old value `None`, new value
-`string|null`, change kind `append-optional-property`, and the exact property
-schema. The proof rebuilds each baseline variant with only that property and
+`command` union (the `tts` and `voicevalidation` variants). The allowlist has
+two literal entries for the same embedded shape: the HTTP command union in
+`contracts/internal/execution-control.openapi.yaml` and the `create_submit`
+`execution_request.command` union in
+`contracts/internal/coordination-transactions.schema.json`. Each key is exact:
+source, operation pointer, variant tags, property name, old value `None`, new
+value `string|null`, change kind `append-optional-property`, and the exact
+property schema. The proof rebuilds each baseline variant with only that property and
 requires exact equality with the current variant; every other variant must be
 unchanged. Making the property required, changing its type, adding a different
 property, adding it to another variant or schema, or changing any other branch

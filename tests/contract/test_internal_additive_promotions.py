@@ -7,6 +7,8 @@ from typing import Any, cast
 from tests.contract.test_http_contract_changes import document, kernel
 
 SOURCE = "contracts/internal/execution-control.openapi.yaml"
+COORDINATION_SOURCE = "contracts/internal/coordination-transactions.schema.json"
+COORDINATION_POINTER = "$defs/create_submit/properties/execution_request/properties/command"
 PATH = "/internal/v1/executions/submit"
 REFERENCE_TEXT = {
     "oneOf": [
@@ -38,7 +40,7 @@ def parameters(
     }
 
 
-def command_document(
+def command_union(
     *,
     tts: dict[str, Any],
     voicevalidation: dict[str, Any],
@@ -57,11 +59,26 @@ def command_document(
             ("voicevalidation", voicevalidation),
         )
     ]
+    return {"oneOf": variants}
+
+
+def command_document(
+    *,
+    tts: dict[str, Any],
+    voicevalidation: dict[str, Any],
+    voiceclone: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     request = {
         "type": "object",
         "additionalProperties": False,
         "required": ["command"],
-        "properties": {"command": {"oneOf": variants}},
+        "properties": {
+            "command": command_union(
+                tts=tts,
+                voicevalidation=voicevalidation,
+                voiceclone=voiceclone,
+            )
+        },
     }
     return document(PATH, request=request)
 
@@ -79,7 +96,11 @@ def findings(
 
 
 def test_the_allowlist_entry_is_frozen() -> None:
-    assert kernel()._INTERNAL_ADDITIVE_PROMOTIONS == {
+    promotion = {
+        "container_path": ("parameters",),
+        "property_schema": REFERENCE_TEXT,
+    }
+    assert kernel()._INTERNAL_ADDITIVE_PROMOTIONS == {  # noqa: SIM300
         (
             SOURCE,
             "paths//internal/v1/executions/submit/post/requestBody/application/json/"
@@ -89,10 +110,16 @@ def test_the_allowlist_entry_is_frozen() -> None:
             None,
             ("string", "null"),
             "append-optional-property",
-        ): {
-            "container_path": ("parameters",),
-            "property_schema": REFERENCE_TEXT,
-        }
+        ): promotion,
+        (
+            COORDINATION_SOURCE,
+            COORDINATION_POINTER,
+            ("tts", "voicevalidation"),
+            "reference_text",
+            None,
+            ("string", "null"),
+            "append-optional-property",
+        ): promotion,
     }
 
 
@@ -164,3 +191,45 @@ def test_another_property_name_does_not_inherit_the_promotion() -> None:
     )
 
     assert findings(base, current)
+
+
+def test_the_embedded_coordination_command_uses_the_same_promotion() -> None:
+    module = kernel()
+    base = command_union(tts=parameters(), voicevalidation=parameters())
+    current = command_union(
+        tts=parameters(reference_text=REFERENCE_TEXT),
+        voicevalidation=parameters(reference_text=REFERENCE_TEXT),
+    )
+    issues: list[str] = []
+    module._compare_schema(
+        base,
+        current,
+        f"{COORDINATION_SOURCE}:{COORDINATION_POINTER}",
+        issues,
+        direction="request",
+        base_side=module._SchemaSide({}, COORDINATION_SOURCE, None, {}, False),
+        current_side=module._SchemaSide({}, COORDINATION_SOURCE, None, {}, False),
+    )
+
+    assert issues == []
+
+
+def test_another_coordination_operation_does_not_inherit_the_promotion() -> None:
+    module = kernel()
+    base = command_union(tts=parameters(), voicevalidation=parameters())
+    current = command_union(
+        tts=parameters(reference_text=REFERENCE_TEXT),
+        voicevalidation=parameters(reference_text=REFERENCE_TEXT),
+    )
+    issues: list[str] = []
+    module._compare_schema(
+        base,
+        current,
+        f"{COORDINATION_SOURCE}:$defs/create_job/properties/execution_request/properties/command",
+        issues,
+        direction="request",
+        base_side=module._SchemaSide({}, COORDINATION_SOURCE, None, {}, False),
+        current_side=module._SchemaSide({}, COORDINATION_SOURCE, None, {}, False),
+    )
+
+    assert issues

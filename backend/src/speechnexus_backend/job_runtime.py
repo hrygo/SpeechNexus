@@ -406,6 +406,13 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
     # column set exactly (an added column must not silently widen the surface).
     for table in _JOB_DECLARED_TABLES:
         qualified = f"{schema}.{table}"
+        expected_columns = set(JOB_WRITER_INSERT_COLUMNS.get(table, ()))
+        repair = (
+            "revoke the table-level grant, then re-grant INSERT only on the declared "
+            "columns; see deploy/README.md upgrade section"
+            if expected_columns
+            else None
+        )
         refuse_table_privileges(
             connection,
             None,
@@ -413,8 +420,8 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
             table,
             ("INSERT",),
             subject=_JOB_SUBJECT,
+            repair=repair,
         )
-        expected_columns = set(JOB_WRITER_INSERT_COLUMNS.get(table, ()))
         column_rows = connection.execute(
             "SELECT column_name, pg_catalog.has_column_privilege(CURRENT_USER, %s, "
             "column_name, 'INSERT') AS insertable FROM information_schema.columns "
@@ -444,31 +451,6 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
             qualified,
             table,
             ("REFERENCES",),
-            subject=_JOB_SUBJECT,
-        )
-    # Read-only tables: table-level INSERT is judged on its own, never inferred
-    # from a column grant. Column INSERT/UPDATE/REFERENCES are refused directly.
-    read_only_tables = tuple(
-        table
-        for table in REQUIRED_SELECT
-        if table not in REQUIRED_INSERT and table not in JOB_WRITER_INSERT_COLUMNS
-    )
-    for table in read_only_tables:
-        qualified = f"{schema}.{table}"
-        refuse_table_privileges(
-            connection,
-            None,
-            qualified,
-            table,
-            ("INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"),
-            subject=_JOB_SUBJECT,
-        )
-        refuse_column_privileges(
-            connection,
-            None,
-            qualified,
-            table,
-            ("INSERT", "UPDATE", "REFERENCES"),
             subject=_JOB_SUBJECT,
         )
     # UPDATE is a per-column authority too: a table grant would make every column

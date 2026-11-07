@@ -36,17 +36,25 @@ from speechnexus_backend.binding_runtime import BindingAdminReaderRuntime, Bindi
 from speechnexus_backend.job_runtime import JobRuntime, _verify_privileges
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
-from speechnexus_backend.speech.infrastructure.artifact_schema import artifact_reader_grants
+from speechnexus_backend.speech.infrastructure.artifact_schema import (
+    artifact_publisher_grants,
+    artifact_reader_grants,
+)
 from speechnexus_backend.speech.infrastructure.binding_draft_schema import binding_draft_grants
 from speechnexus_backend.speech.infrastructure.binding_publication_evidence_schema import (
     binding_admin_reader_grants,
 )
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
+    cancellation_not_submitted_grants,
     cancellation_reconciliation_grants,
+    job_cancellation_fence_grants,
 )
 from speechnexus_backend.speech.infrastructure.job_schema import (
     job_dispatch_grants,
     job_runtime_grants,
+)
+from speechnexus_backend.speech.infrastructure.job_writer_columns import (
+    JOB_WRITER_INSERT_COLUMNS,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
 from speechnexus_backend.speech.infrastructure.public_job_schema import public_job_grants
@@ -357,7 +365,7 @@ JOB_MISGRANTS = (
     (
         "read-only-column-update",
         'GRANT UPDATE (display_name) ON "{schema}".speech_workspaces TO "{role}"',
-        "must not hold column UPDATE on speech_workspaces",
+        "UPDATE columns do not match the declared surface on speech_workspaces",
     ),
     (
         "read-only-column-references",
@@ -424,7 +432,99 @@ def test_job_writer_startup_rejects_each_single_misgrant(
     assert runtime.jobs is None
 
 
-def test_job_writer_dispatches_and_cancels_a_real_chain(jobs_db: JobSandbox) -> None:
+def _apply_job_writer_grants(jobs_db: JobSandbox, role: str) -> None:
+    for statement in (
+        *job_runtime_grants(jobs_db.schema, role),
+        *job_dispatch_grants(jobs_db.schema, role),
+        *public_job_grants(jobs_db.schema, role),
+        *voice_draft_grants(jobs_db.schema, role),
+        *public_job_submission_grants(jobs_db.schema, role),
+        *job_cancellation_fence_grants(jobs_db.schema, role),
+        *cancellation_not_submitted_grants(jobs_db.schema, role),
+        *cancellation_reconciliation_grants(jobs_db.schema, role),
+        *artifact_publisher_grants(jobs_db.schema, role),
+    ):
+        jobs_db.admin.execute(statement)
+
+
+def _apply_job_writer_baseline(jobs_db: JobSandbox, role: str) -> None:
+    """Grant functions plus the read/UPDATE projection already provisioned for the
+    combined writer; the README migration only replaces the INSERT surface."""
+    _apply_job_writer_grants(jobs_db, role)
+    for statement in (
+        f'GRANT SELECT ON "{jobs_db.schema}".admission_operations, '
+        f'"{jobs_db.schema}".coordination_jobs TO "{role}"',
+        f"GRANT UPDATE (claim_owner_id, claim_expires_at_us, claim_version, job_state) "
+        f'ON "{jobs_db.schema}".coordination_jobs TO "{role}"',
+        f'GRANT SELECT ON "{jobs_db.schema}".speech_workspaces, '
+        f'"{jobs_db.schema}".speech_publications, '
+        f'"{jobs_db.schema}".speech_publication_heads, '
+        f'"{jobs_db.schema}".speech_catalog_state, '
+        f'"{jobs_db.schema}".speech_publication_retirements, '
+        f'"{jobs_db.schema}".speech_binding_revisions, '
+        f'"{jobs_db.schema}".speech_assets, '
+        f'"{jobs_db.schema}".speech_pronunciation_revisions TO "{role}"',
+    ):
+        jobs_db.admin.execute(statement)
+
+
+def test_documented_upgrade_migration_restores_the_job_writer(
+    jobs_db: JobSandbox,
+) -> None:
+    role = _create_role(jobs_db, "job_upgrade")
+    tables = tuple(JOB_WRITER_INSERT_COLUMNS)
+    try:
+        _apply_job_writer_baseline(jobs_db, role)
+        # Rebuild the pre-upgrade shape: table-level INSERT, no column grants.
+        for table in tables:
+            rows = jobs_db.query(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema=%s AND table_name=%s ORDER BY ordinal_position",
+                (jobs_db.schema, table),
+            )
+            columns = ", ".join(f'"{row["column_name"]}"' for row in rows)
+            jobs_db.admin.execute(f'REVOKE INSERT ON "{jobs_db.schema}".{table} FROM "{role}"')
+            jobs_db.admin.execute(
+                f'REVOKE INSERT ({columns}) ON "{jobs_db.schema}".{table} FROM "{role}"'
+            )
+            jobs_db.admin.execute(f'GRANT INSERT ON "{jobs_db.schema}".{table} TO "{role}"')
+        with _connect(jobs_db, role) as connection, pytest.raises(ValueError) as caught:
+            _verify_privileges(connection, jobs_db.schema)
+        assert "must not hold INSERT on" in str(caught.value)
+        assert "re-grant INSERT only on the declared columns" in str(caught.value)
+
+        # The exact steps documented in deploy/README.md: revoke the table grants,
+        # then re-apply the Job-writer grant functions (never the admission role).
+        for table in tables:
+            jobs_db.admin.execute(f'REVOKE INSERT ON "{jobs_db.schema}".{table} FROM "{role}"')
+        _apply_job_writer_grants(jobs_db, role)
+        with _connect(jobs_db, role) as connection:
+            _verify_privileges(connection, jobs_db.schema)
+    finally:
+        _drop_role(jobs_db, role)
+
+
+def test_job_writer_table_insert_message_names_the_regrant(
+    jobs_db: JobSandbox,
+) -> None:
+    role = _create_role(jobs_db, "job_msg")
+    try:
+        _apply_job_writer_baseline(jobs_db, role)
+        jobs_db.admin.execute(f'GRANT INSERT ON "{jobs_db.schema}".coordination_jobs TO "{role}"')
+        with _connect(jobs_db, role) as connection, pytest.raises(ValueError) as caught:
+            _verify_privileges(connection, jobs_db.schema)
+        assert str(caught.value) == (
+            "Public Job writer must not hold INSERT on coordination_jobs; "
+            "revoke the table-level grant, then re-grant INSERT only on the declared "
+            "columns; see deploy/README.md upgrade section"
+        )
+    finally:
+        _drop_role(jobs_db, role)
+
+
+def test_job_writer_writes_and_cancels_a_real_chain(jobs_db: JobSandbox) -> None:
+    """Writer-surface creation/cancel chain; JobDispatcher claim/submit is covered by
+    ``test_job_dispatch_pg.py`` and is not driven here."""
     runtime = JobRuntime(_job_settings(jobs_db))
     runtime.open()
     try:

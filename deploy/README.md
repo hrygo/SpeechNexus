@@ -205,11 +205,19 @@ REVOKE INSERT ON
   <schema>.speech_voice_metadata_commands
 FROM <job-writer-role>;
 
--- 然后对同一角色重新执行部署所用的 grant 函数集合，例如
--- job_runtime_grants / job_dispatch_grants / public_job_grants /
--- public_job_admission_grants / voice_draft_grants /
--- job_cancellation_fence_grants / cancellation_not_submitted_grants /
--- cancellation_reconciliation_grants / artifact_publisher_grants。
+-- 然后对同一 Job writer 角色重跑以下 grant 函数（逐个）：
+-- job_runtime_grants
+-- job_dispatch_grants
+-- public_job_grants
+-- voice_draft_grants
+-- public_job_submission_grants
+-- job_cancellation_fence_grants
+-- cancellation_not_submitted_grants
+-- cancellation_reconciliation_grants
+-- artifact_publisher_grants
+--
+-- public_job_admission_grants 属于独立的 admission 角色，不要应用到 Job writer：
+-- 它只给 speech_job_events 4/8 列，并额外授予 admission_attempts / requests / leases。
 ```
 独立记录角色使用 `voice_evidence_recorder_grants` 和
 `SPEECHNEXUS_VOICE_EVIDENCE_DATABASE_URL`，通过

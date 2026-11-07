@@ -65,6 +65,7 @@ def refuse_table_privileges(
     privileges: tuple[str, ...],
     *,
     subject: str,
+    repair: str | None = None,
 ) -> None:
     """A table grant covers every row, so name the exact authority it confers."""
     clause, prefix = _role_argument(role)
@@ -76,7 +77,7 @@ def refuse_table_privileges(
         if row is None or row["held"]:
             raise ValueError(
                 f"{subject} must not hold {privilege} on {table}; "
-                "revoke that table grant if the role does not need it"
+                + (repair or "revoke that table grant if the role does not need it")
             )
 
 

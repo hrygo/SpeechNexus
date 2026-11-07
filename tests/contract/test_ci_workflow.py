@@ -20,26 +20,31 @@ _PROBE = importlib.util.module_from_spec(_PROBE_SPEC)
 _PROBE_SPEC.loader.exec_module(_PROBE)
 _GATE = _WORKFLOW["jobs"]["python"]
 _STATES = ("success", "failure", "skipped", "cancelled", "")
+_DELIVERY = {"DELIVERY_RESULT": "success"}
 _EXPECTED = {
     "docs": {
+        **_DELIVERY,
         "CHECKS_RESULT": "skipped",
         "COORDINATION_RESULT": "skipped",
         "WEB_RESULT": "skipped",
         "DEPLOYMENT_RESULT": "skipped",
     },
     "web": {
+        **_DELIVERY,
         "CHECKS_RESULT": "success",
         "COORDINATION_RESULT": "skipped",
         "WEB_RESULT": "success",
         "DEPLOYMENT_RESULT": "skipped",
     },
     "full": {
+        **_DELIVERY,
         "CHECKS_RESULT": "success",
         "COORDINATION_RESULT": "success",
         "WEB_RESULT": "success",
         "DEPLOYMENT_RESULT": "success",
     },
     "no-db": {
+        **_DELIVERY,
         "CHECKS_RESULT": "success",
         "COORDINATION_RESULT": "skipped",
         "WEB_RESULT": "success",
@@ -124,10 +129,15 @@ def test_integration_evidence_uses_bounded_same_run_cli_with_read_only_access() 
     assert "if" not in check and "continue-on-error" not in check
 
 
-def _run_gate(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+def _run_gate(
+    env: dict[str, str], *, delivery: str | None = "success"
+) -> subprocess.CompletedProcess[str]:
+    defaults = {"CONTROLLER_RESULT": "success", "CONTROLLER_REQUIRED": "false"}
+    if delivery is not None:
+        defaults["DELIVERY_RESULT"] = delivery
     return subprocess.run(
         ["bash", "-euo", "pipefail", "-c", _GATE["steps"][0]["run"]],
-        env={"CONTROLLER_RESULT": "success", "CONTROLLER_REQUIRED": "false", **env},
+        env={**defaults, **env},
         capture_output=True,
         text=True,
         check=False,
@@ -147,6 +157,7 @@ def test_protected_status_never_passes_missing_evidence(
         "coordination",
         "web",
         "deployment",
+        "delivery_tracking",
         "node_controller_image",
     }
     assert _GATE["if"] == "${{ always() }}"
@@ -154,6 +165,7 @@ def test_protected_status_never_passes_missing_evidence(
     assert step["env"] == {
         "MODE": "${{ needs.changes.outputs.mode }}",
         "ROUTING_RESULT": "${{ needs.changes.result }}",
+        "DELIVERY_RESULT": "${{ needs.delivery_tracking.result }}",
         "CHECKS_RESULT": "${{ needs.python_checks_gate.result }}",
         "COORDINATION_RESULT": "${{ needs.coordination.result }}",
         "WEB_RESULT": "${{ needs.web.result }}",
@@ -175,6 +187,21 @@ def test_final_gate_requires_the_web_and_deployment_results_for_its_scope(
     states = {**_EXPECTED[mode], lane: state}
     result = _run_gate({"MODE": mode, "ROUTING_RESULT": "success", **states})
     assert (result.returncode == 0) is (states == _EXPECTED[mode])
+
+
+@pytest.mark.parametrize("mode", list(_EXPECTED))
+@pytest.mark.parametrize("state", _STATES)
+def test_final_gate_requires_delivery_matrix_evidence(mode: str, state: str) -> None:
+    states = {**_EXPECTED[mode], "DELIVERY_RESULT": state}
+    result = _run_gate({"MODE": mode, "ROUTING_RESULT": "success", **states})
+    assert (result.returncode == 0) is (state == "success")
+
+
+@pytest.mark.parametrize("mode", list(_EXPECTED))
+def test_final_gate_rejects_missing_delivery_matrix_result(mode: str) -> None:
+    states = {key: value for key, value in _EXPECTED[mode].items() if key != "DELIVERY_RESULT"}
+    result = _run_gate({"MODE": mode, "ROUTING_RESULT": "success", **states}, delivery=None)
+    assert result.returncode != 0
 
 
 @pytest.mark.parametrize("mode", [*_EXPECTED, "", "unknown"])

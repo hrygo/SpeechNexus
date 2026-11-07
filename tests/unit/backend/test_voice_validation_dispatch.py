@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import json
+import wave
 from dataclasses import replace
 from typing import Any, cast
 
@@ -18,6 +20,7 @@ from speechnexus_backend.speech.application.voice_validation_report import (
     WaveFacts,
     build_validation_report,
     build_validation_result,
+    measure_wav,
     validate_voice_validation_result,
     validation_outcome,
 )
@@ -191,4 +194,60 @@ def test_validation_queue_rejects_the_legacy_anchor_only_lane() -> None:
             cast(Any, object()),
             kinds=VOICE_VALIDATION_JOB_KINDS,
             require_admission=False,
+        )
+
+
+def _wav(*, frames: int, rate: int = 24_000, channels: int = 1, width: int = 2) -> bytes:
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as audio:
+        audio.setnchannels(channels)
+        audio.setsampwidth(width)
+        audio.setframerate(rate)
+        audio.writeframes(b"\x40\x1f" * frames * channels)
+    return buffer.getvalue()
+
+
+def test_measure_wav_records_pcm_energy_and_duration() -> None:
+    measured = measure_wav(_wav(frames=48_000))
+    assert measured.frames == 48_000
+    assert measured.duration_ms == 2_000
+    assert measured.rms == 8_000
+    assert measured.peak == 8_000
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"",
+        b"not a wav",
+        _wav(frames=1, rate=16_000),
+        _wav(frames=1, channels=2),
+        _wav(frames=1, width=1),
+    ],
+)
+def test_measure_wav_rejects_anything_but_the_frozen_pcm_shape(body: bytes) -> None:
+    with pytest.raises(ValueError):
+        measure_wav(body)
+
+
+@pytest.mark.parametrize(
+    "report",
+    [
+        b"{}",
+        b'{"coverage": {"checks": "not-a-list"}}',
+        b'{"coverage": {"checks": [null]}}',
+    ],
+)
+def test_validation_outcome_rejects_malformed_checks(report: bytes) -> None:
+    with pytest.raises(ValueError, match=r"no readable checks|checks are malformed"):
+        validation_outcome(report)
+
+
+def test_report_rejects_out_of_contract_probe_and_reference_text() -> None:
+    facts = _run_facts()
+    with pytest.raises(ValueError, match="probe text"):
+        build_validation_report(facts, probe_text="", measured=MEASURED)
+    with pytest.raises(ValueError, match="reference text"):
+        build_validation_report(
+            replace(facts, reference_text=""), probe_text=PROBE_TEXT, measured=MEASURED
         )

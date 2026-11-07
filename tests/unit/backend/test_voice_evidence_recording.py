@@ -211,6 +211,11 @@ def test_refusal_notes_stay_bounded_across_a_large_bad_backlog() -> None:
         pass
     assert len(reports.reads) == len(jobs)
     assert len(worker._refusals) <= _MAX_NOTES
+    # FIFO eviction: the oldest keys disappear and the newest stays addressable.
+    assert "job-0" not in worker._refusals
+    assert "job-255" not in worker._refusals
+    assert "job-256" in worker._refusals
+    assert "job-4351" in worker._refusals
 
 
 def test_batch_size_bounds_one_pass() -> None:

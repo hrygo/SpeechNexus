@@ -483,3 +483,89 @@ def test_pending_is_bounded_and_ordered(validation_db: ValidationSandbox) -> Non
             store.pending(16, after=(1,))  # type: ignore[arg-type]
         with pytest.raises(ValueError):
             store.pending(16, after=("x", 1))  # type: ignore[arg-type]
+
+
+def _insert_validation_job(
+    sandbox: ValidationSandbox, job_id: str, result_json: str, updated_at_us: int
+) -> None:
+    sandbox.db.query(
+        "INSERT INTO speech_jobs "
+        "(job_id, workspace_id, kind, model_id, request_digest, state, status_version, "
+        "result_json, created_at_us, updated_at_us) "
+        "VALUES (%s, 'workspace-default', 'voice_validation', 'voice-model', %s, "
+        "'succeeded', 1, %s, %s, %s)",
+        (
+            job_id,
+            "sha256:" + hashlib.sha256(job_id.encode()).hexdigest(),
+            result_json,
+            updated_at_us,
+            updated_at_us,
+        ),
+    )
+
+
+def test_pending_pages_equal_timestamps_by_job_id(validation_db: ValidationSandbox) -> None:
+    sandbox = validation_db
+    for job_id in ("job-c", "job-a", "job-b"):
+        _insert_validation_job(sandbox, job_id, '{"kind":"voice_validation"}', 424_242)
+    with _recorder_pool(sandbox) as pool:
+        store = PostgresVoiceEvidenceRecorder(pool, timeout_seconds=3)
+        first = store.pending(2)
+        assert _pending_jobs(first) == ["job-a", "job-b"]
+        assert {updated_at_us for updated_at_us, _job_id in first} == {424_242}
+        # The second page must advance past job-b inside the same timestamp.
+        second = store.pending(2, after=first[-1])
+        assert _pending_jobs(second) == ["job-c"]
+        assert store.pending(2, after=second[-1]) == []
+
+
+def test_bad_result_shapes_pin_their_stable_reason(validation_db: ValidationSandbox) -> None:
+    sandbox = validation_db
+    cases = [
+        ("not-json", "validation_result_invalid"),
+        ('{"kind":"tts"}', "validation_result_invalid"),
+        ('{"kind":"voice_validation","validation":{}}', "validation_report_mismatch"),
+    ]
+    with _recorder_pool(sandbox) as pool:
+        worker = _worker(pool, _Blobs())
+        for index, (result_json, expected) in enumerate(cases):
+            job_id = f"job-bad-result-{index}"
+            _insert_validation_job(sandbox, job_id, result_json, 500_000 + index)
+            outcome = worker.consume(job_id)
+            assert (outcome.outcome, outcome.reason) == ("rejected", expected)
+            assert outcome.reason != "validation_job_not_succeeded"
+    assert _evidence_rows(sandbox) == []
+
+
+def test_worker_refuses_a_public_grant_in_the_public_schema(
+    validation_db: ValidationSandbox,
+) -> None:
+    sandbox = validation_db
+    table = "sn555_public_probe_" + uuid.uuid4().hex[:8]
+    sandbox.db.query(f'CREATE TABLE public."{table}" (id integer)')
+    try:
+        sandbox.db.query(f'GRANT SELECT ON public."{table}" TO PUBLIC')
+        with _recorder_pool(sandbox) as pool, pytest.raises(ValueError):
+            _verify_recorder_worker(pool, sandbox.db.schema)
+    finally:
+        sandbox.db.query(f'DROP TABLE public."{table}"')
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "UPDATE speech_artifacts SET artifact_state = 'expired' WHERE artifact_id = %s",
+        "UPDATE speech_artifacts SET receipt_id = 'receipt-other' WHERE artifact_id = %s",
+        "DELETE FROM speech_artifacts WHERE artifact_id = %s",
+    ],
+)
+def test_unusable_report_reference_is_a_mismatch(
+    validation_db: ValidationSandbox, statement: str
+) -> None:
+    sandbox = validation_db
+    _draft, job, artifact_id, blobs = _run_validation(sandbox)
+    sandbox.db.query(statement, (artifact_id,))
+    with _recorder_pool(sandbox) as pool:
+        outcome = _worker(pool, blobs).consume(job.job_id)
+    assert (outcome.outcome, outcome.reason) == ("rejected", "validation_report_mismatch")
+    assert _evidence_rows(sandbox) == []

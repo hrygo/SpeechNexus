@@ -250,14 +250,17 @@ class PostgresVoiceEvidenceRecorder:
         )
         artifacts = cursor.fetchall()
         if len(artifacts) != 1:
-            raise VoiceReportUnavailableError
+            # The Job names a report that does not exist for its workspace.
+            raise VoiceEvidenceNotEligibleError("validation_report_mismatch")
         artifact = artifacts[0]
         if (
             artifact["artifact_state"] != "ready"
             or artifact["artifact_kind"] != "validation_report"
             or artifact["receipt_id"] != receipt_id
         ):
-            raise VoiceReportUnavailableError
+            # Durable disagreement, not a transient read: retrying the same row
+            # would digest a report the Job never committed.
+            raise VoiceEvidenceNotEligibleError("validation_report_mismatch")
         return job, artifact
 
     def _record(

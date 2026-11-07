@@ -30,7 +30,7 @@ date: 2026-10-26
 | Realtime Gateway | 实时连接、会话 owner / epoch 和有界流 | 不因实时接入而要求 GPU 或 Linux 专属 API | 按固定会话 owner 路由；独立进程部署与正式业务装配待补齐 |
 | Scheduler、Job Worker | 完整准入、分池调度、任务 claim、outbox 与恢复 | 与推理运行时解耦，分别验证应用平台 | 以 PG 持久事实协调；独立启动入口及完整业务装配待补齐 |
 | 工作台后台处理 | 纪要、导出、保存副本与删除恢复 | 按实际媒体依赖单独验证，不要求本机运行语音引擎 | 当前部分循环由 Workbench runtime 按配置和依赖条件管理；导出循环只认领排队任务，运行中 claim 和结果未知需单独恢复；独立 worker 入口待补齐 |
-| 已有专用后台入口 | `speechnexus-runtime-delivery-worker` 投递运行时意图；`speechnexus-asset-maintain` 维护 Asset；`speechnexus-job-dispatch-worker` 已注册公开 Job 派发入口 | 应用平台按入口分别验证 | 前两者不代表通用 Job Worker；结果发布组件已有，派发入口仍因生产 planner 未装配而 fail-closed，不代表完整 Job Worker 已交付 |
+| 已有专用后台入口 | `speechnexus-runtime-delivery-worker` 投递运行时意图；`speechnexus-asset-maintain` 维护 Asset；`speechnexus-job-dispatch-worker` 已注册公开 Job 派发入口 | 应用平台按入口分别验证 | 前两者不代表通用 Job Worker；派发入口已装配生产 planner 与结果发布器，planner/对象存储未就绪时仍在领取前 fail-closed，不代表真实引擎、GPU 或部署资格已验收 |
 | Binding 停用协调 worker | `python -m speechnexus_backend.binding_disable_worker` 处理持久停用意图 | 应用平台和网关连接按实际部署验证 | 需要独立扫描与结算身份；默认 Compose 不启动，`binding-disable` profile 按需启用。停用回执不代表清理完成或预算已释放，见[运维说明](../operations/compose-minimal.md#12-按需启用-binding-停用-worker) |
 | 同步 TTS 结算 worker | 跟随持久结算记录，协调停止证据与租约释放；同步 TTS 配置与资格检查通过后，工厂在 API 生命周期内启动循环，也提供 `python -m speechnexus_backend.tts_settlement_worker` 独立入口 | 应用平台和网关连接按实际部署验证 | 结算循环使用独立数据库身份；具体配置、资格和恢复条件见[同步语音合成](../components/synchronous-speech.md) |
 | Execution Gateway | 持久提交屏障、执行、取消、观察与停止证据；已有 `speechnexus-gateway` | 协议和编排不要求 CUDA；当前节点适配器随 Linux 算力栈资格验证，其他平台未资格化 | 绑定受管 `node_id` / `gateway_id` 与引擎代次；现有 `fcntl` 入口锁要求同节点、同网关身份的候选进程共享私有锁目录 |

@@ -407,12 +407,19 @@ def test_missing_intent_is_not_stop_evidence(monkeypatch: pytest.MonkeyPatch) ->
     settlement = FakeSettlement()
     confirmer = confirmer_for(
         monkeypatch,
-        GatewayRejectedError("missing", request_may_have_run=False, status_code=404),
+        GatewayRejectedError(
+            "missing",
+            request_may_have_run=False,
+            status_code=404,
+            gateway_code="control_execution_not_found",
+        ),
         settlement,
     )
 
     result = asyncio.run(confirmer.confirm("job-fence-1"))
 
+    # The contract 404 alone proves nothing: the dispatcher may not have tried
+    # to submit yet, so the row stays scheduled.
     assert result.outcome == "pending"
     assert settlement.calls == []
 
@@ -427,7 +434,12 @@ def test_missing_intent_with_not_submitted_observation_settles(
     settlement = FakeSettlement()
     confirmer = confirmer_for(
         monkeypatch,
-        GatewayRejectedError("missing", request_may_have_run=False, status_code=404),
+        GatewayRejectedError(
+            "missing",
+            request_may_have_run=False,
+            status_code=404,
+            gateway_code="control_execution_not_found",
+        ),
         settlement,
     )
 
@@ -435,6 +447,26 @@ def test_missing_intent_with_not_submitted_observation_settles(
 
     assert result.outcome == "settled"
     assert settlement.calls == ["job-fence-1"]
+
+
+def test_a_router_404_is_not_no_execution_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
+    from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
+        GatewayRejectedError,
+    )
+
+    settlement = FakeSettlement()
+    confirmer = confirmer_for(
+        monkeypatch,
+        GatewayRejectedError("missing", request_may_have_run=False, status_code=404),
+        settlement,
+    )
+
+    # A bare proxy 404 is not the gateway's contract answer; settling here would
+    # hand back capacity while the execution may still exist.
+    result = asyncio.run(confirmer.confirm("job-fence-1", not_submitted=True))
+
+    assert result.outcome == "unavailable"
+    assert settlement.calls == []
 
 
 def test_real_gateway_projection_keeps_no_execution_predicate() -> None:

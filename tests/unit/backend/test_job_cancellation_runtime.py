@@ -85,12 +85,48 @@ class _Service:
         return _Job("cancelled")
 
 
-def test_settlement_uses_public_job_version_guard() -> None:
-    jobs = _Jobs([_Job("cancelling")])
-    assert _PublicJobsSettlement(cast(Any, jobs)).settle_cancelled("job-1") is True
+class _Capacity:
+    def __init__(self, *, released: bool = True, fail: bool = False) -> None:
+        self.released, self.fail = released, fail
+        self.calls: list[str] = []
+
+    def __call__(self, job_id: str) -> bool:
+        self.calls.append(job_id)
+        if self.fail:
+            raise RuntimeError("lease storage unavailable")
+        return self.released
+
+
+def test_settlement_uses_public_job_version_guard_and_returns_capacity() -> None:
+    jobs, capacity = _Jobs([_Job("cancelling")]), _Capacity()
+    assert _PublicJobsSettlement(cast(Any, jobs), capacity).settle_cancelled("job-1") is True
     assert jobs.settled == ["job-1"]
+    assert capacity.calls == ["job-1"]
     running = _Jobs([_Job("running")])
-    assert _PublicJobsSettlement(cast(Any, running)).settle_cancelled("job-1") is False
+    assert _PublicJobsSettlement(cast(Any, running), _Capacity()).settle_cancelled("job-1") is False
+
+
+def test_an_already_cancelled_job_still_retries_the_release() -> None:
+    jobs, capacity = _Jobs([_Job("cancelled", 5)]), _Capacity()
+
+    assert _PublicJobsSettlement(cast(Any, jobs), capacity).settle_cancelled("job-1") is True
+    assert jobs.settled == []
+    assert capacity.calls == ["job-1"]
+
+
+def test_a_refused_release_keeps_the_job_scheduled_for_retry() -> None:
+    jobs = _Jobs([_Job("cancelling")])
+    capacity = _Capacity(released=False)
+
+    assert _PublicJobsSettlement(cast(Any, jobs), capacity).settle_cancelled("job-1") is False
+    assert capacity.calls == ["job-1"]
+
+
+def test_an_unavailable_release_is_not_mistaken_for_settlement() -> None:
+    jobs = _Jobs([_Job("cancelling")])
+    capacity = _Capacity(fail=True)
+
+    assert _PublicJobsSettlement(cast(Any, jobs), capacity).settle_cancelled("job-1") is False
 
 
 async def test_stop_adapter_reuses_job_cancellation_service() -> None:

@@ -50,6 +50,7 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema imp
 from speechnexus_backend.speech.infrastructure.job_cancellation_reconciliation_postgres import (
     PostgresCancellationReconciliationStore,
 )
+from speechnexus_backend.speech.infrastructure.job_dispatch_postgres import PostgresLeaseSettler
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool, speech_pool
 from speechnexus_backend.speech.infrastructure.public_job_submission_schema import SUBMISSIONS
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import (
@@ -175,11 +176,24 @@ class JobCancellationSettings(BaseSettings):
         return self
 
 
-class _PublicJobsSettlement(CancellationSettlementPort):
-    """Settle only through the public Job version guard."""
+CapacityRelease = Callable[[str], bool]
 
-    def __init__(self, jobs: PublicJobs) -> None:
-        self._jobs = jobs
+
+class _PublicJobsSettlement(CancellationSettlementPort):
+    """Settle the public Job, then return its admission lease.
+
+    The confirmer only reaches this port after the gateway proved no execution
+    (404 plus the dispatcher's not-submitted observation, or a durable
+    no-dispatch/verified-stop fact), so the existing ``LeaseService`` release is
+    the same settlement the dispatcher uses. Release is idempotent: a Job that is
+    already cancelled retries it here, which is how a refused or unknown release
+    is retried by the next reconciliation pass. A failed release keeps the lease
+    held (the durable marker) and returns False so the ledger schedules a retry
+    instead of dropping the only chance to return capacity.
+    """
+
+    def __init__(self, jobs: PublicJobs, release_capacity: CapacityRelease) -> None:
+        self._jobs, self._release_capacity = jobs, release_capacity
 
     def settle_cancelled(self, job_id: str) -> bool:
         try:
@@ -187,14 +201,29 @@ class _PublicJobsSettlement(CancellationSettlementPort):
         except PublicJobNotFoundError:
             return False
         if job.state == "cancelled":
-            return True
+            return self._release(job_id)
         if job.state != "cancelling":
             return False
         try:
             current = self._jobs.settle_cancelled(job_id, expected_version=job.status_version)
         except IdempotencyConflictError, JobOutcomeUnknownError, PublicJobUnavailableError:
             return False
-        return current.state == "cancelled"
+        return current.state == "cancelled" and self._release(job_id)
+
+    def _release(self, job_id: str) -> bool:
+        # Known window: the port is synchronous, so this blocks the event-loop
+        # thread for up to the lease transaction budget (3s) and
+        # asyncio.timeout cannot interrupt it. Moving the call to a worker
+        # thread is the step to take if cancellation reconciliation ever runs
+        # concurrently. The broad except also folds programming errors into the
+        # ledger retry; that is safer than dropping the held lease, and the
+        # retry is bounded by max_attempts.
+        try:
+            return self._release_capacity(job_id)
+        except Exception:
+            # The cancelled state is committed; the held lease must stay
+            # discoverable and the ledger retries instead of masking the failure.
+            return False
 
 
 class _PublicJobsStop:
@@ -279,9 +308,12 @@ class JobCancellationRuntime:
                 ),
             )
             service = JobCancellationService(jobs, GatewayJobCancellationStopper(gateway))
+            capacity = PostgresLeaseSettler(
+                pool, timeout_seconds=settings.transaction_timeout_seconds
+            )
             confirmer = GatewayCancellationConfirmer(
                 gateway,
-                _PublicJobsSettlement(jobs),
+                _PublicJobsSettlement(jobs, capacity.release_sync),
                 stop_attempt=_PublicJobsStop(jobs, adapter.cancellation_receipt, service),
             )
             self._reconciler = JobCancellationReconciler(

@@ -9,6 +9,7 @@ import os
 import uuid
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -163,6 +164,12 @@ def dispatch_db() -> Iterator[DispatchSandbox]:
         admin.close()
 
 
+def _future_deadline() -> str:
+    # Relative so the fixture cannot drift into the past and silently start
+    # exercising the expiry settlement instead of the happy path.
+    return (datetime.now(UTC) + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 class Planner:
     async def plan(self, job: DispatchJob, submit_id: str) -> ExecutionSubmission:
         return ExecutionSubmission(
@@ -185,7 +192,7 @@ class Planner:
                 "fencing_token": 1,
                 "command_digest": DIGEST,
                 "command": {"schema_version": "1.0.0", "kind": "tts"},
-                "deadline_at": "2026-10-27T00:00:00Z",
+                "deadline_at": _future_deadline(),
                 "max_output_audio_ms": 1000,
                 "sample_rate_hz": 24000,
             },
@@ -225,6 +232,8 @@ class Gateway:
                         "error": {
                             "code": "control_execution_not_found",
                             "message": "missing",
+                            "retryable": False,
+                            "recovery": "none",
                         }
                     },
                 )

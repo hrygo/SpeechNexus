@@ -34,6 +34,7 @@ from speechnexus_backend.speech.domain.job_dispatch import (
     DispatchLimits,
     DispatchRejectedError,
     DispatchRequestUnavailableError,
+    DispatchUnavailableError,
     ExecutionSubmission,
     GatewayReply,
     PublishedResult,
@@ -123,27 +124,76 @@ def test_configuration_rejects_plain_http_gateway_outside_loopback() -> None:
         _settings(gateway_base_url="http://gateway.internal:8010")
 
 
+def test_dispatch_lane_defaults_to_the_asr_and_tts_contract_kinds() -> None:
+    assert _settings().kinds == ("asr", "tts")
+    assert _settings(dispatch_kinds=" asr , tts ".replace(" ", "")).kinds == ("asr", "tts")
+    assert _settings(dispatch_kinds="tts").kinds == ("tts",)
+    for invalid in ("", "asr,asr", "asr,voice_unknown"):
+        with pytest.raises(ValidationError):
+            _settings(dispatch_kinds=invalid)
+
+
 def test_production_dependencies_fail_closed() -> None:
     with pytest.raises(DispatchDependenciesUnavailableError):
         build_dispatch_dependencies(_settings())
 
 
-@pytest.mark.parametrize(
-    "missing",
-    (
-        "SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL",
-        "SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL",
-        "SPEECHNEXUS_OBJECT_STORAGE_BUCKET",
-        "SPEECHNEXUS_EXECUTION_RESULT_BUCKET",
-        "SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY",
-        "SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY",
-    ),
-)
-def test_cli_refuses_missing_gateway_configuration_before_io(
-    monkeypatch: pytest.MonkeyPatch, missing: str
+def test_production_dependencies_assemble_the_real_planner(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    settings = _settings()
-    environment = {
+    import speechnexus_backend.job_dispatch_runtime as runtime
+
+    class Pool:
+        opened = False
+        closed = False
+
+        def open(self) -> None:
+            self.opened = True
+
+        def close(self) -> None:
+            self.closed = True
+
+    pool, publisher = Pool(), object()
+    monkeypatch.setattr(runtime, "speech_pool", lambda *a, **k: pool)
+    monkeypatch.setattr(runtime, "build_result_publisher", lambda *a, **k: publisher)
+
+    dependencies = build_dispatch_dependencies(_settings())
+
+    assert pool.opened and not pool.closed
+    assert cast(Any, dependencies.pool) is pool
+    assert dependencies.results is publisher
+    assert type(dependencies.planner).__name__ == "StoredCommandPlanner"
+
+
+def test_production_dependencies_close_the_pool_when_assembly_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import speechnexus_backend.job_dispatch_runtime as runtime
+
+    class Pool:
+        closed = False
+
+        def open(self) -> None:
+            pass
+
+        def close(self) -> None:
+            self.closed = True
+
+    pool = Pool()
+
+    def broken(*args: object, **kwargs: object) -> object:
+        raise RuntimeError("object storage unreachable")
+
+    monkeypatch.setattr(runtime, "speech_pool", lambda *a, **k: pool)
+    monkeypatch.setattr(runtime, "build_result_publisher", broken)
+
+    with pytest.raises(DispatchDependenciesUnavailableError):
+        build_dispatch_dependencies(_settings())
+    assert pool.closed
+
+
+def _environment(settings: JobDispatchSettings) -> dict[str, str]:
+    return {
         "SPEECHNEXUS_PROCESS_ROLE": settings.process_role,
         "SPEECHNEXUS_NODE_ID": settings.node_id,
         "SPEECHNEXUS_INSTANCE_ID": settings.instance_id,
@@ -171,7 +221,24 @@ def test_cli_refuses_missing_gateway_configuration_before_io(
             settings.object_storage_secret_key.get_secret_value()
         ),
     }
-    for key, value in environment.items():
+
+
+@pytest.mark.parametrize(
+    "missing",
+    (
+        "SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL",
+        "SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL",
+        "SPEECHNEXUS_OBJECT_STORAGE_BUCKET",
+        "SPEECHNEXUS_EXECUTION_RESULT_BUCKET",
+        "SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY",
+        "SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY",
+    ),
+)
+def test_cli_refuses_missing_gateway_configuration_before_io(
+    monkeypatch: pytest.MonkeyPatch, missing: str
+) -> None:
+    settings = _settings()
+    for key, value in _environment(settings).items():
         monkeypatch.setenv(key, value)
     monkeypatch.delenv(missing)
     monkeypatch.setattr(sys, "argv", ["speechnexus-job-dispatch-worker", "--once"])
@@ -180,6 +247,30 @@ def test_cli_refuses_missing_gateway_configuration_before_io(
         main()
 
     assert stopped.value.code == 1
+
+
+def test_cli_exits_2_before_building_the_runtime_when_assembly_fails(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import speechnexus_backend.job_dispatch_worker as worker
+
+    settings = _settings()
+    for key, value in _environment(settings).items():
+        monkeypatch.setenv(key, value)
+    # A closed port makes the object-storage readiness check fail during assembly.
+    monkeypatch.setenv("SPEECHNEXUS_OBJECT_STORAGE_ENDPOINT", "http://127.0.0.1:1")
+    monkeypatch.setattr(sys, "argv", ["speechnexus-job-dispatch-worker", "--once"])
+    built: list[object] = []
+    monkeypatch.setattr(worker, "JobDispatchRuntime", lambda *a, **k: built.append(object()))
+
+    with pytest.raises(SystemExit) as stopped:
+        main()
+
+    assert stopped.value.code == 2
+    assert built == []
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "no lease was claimed" in captured.err
 
 
 def test_batch_log_has_fixed_counter_fields_only() -> None:
@@ -419,12 +510,69 @@ async def test_graceful_stop_after_plan_records_not_submitted_observation() -> N
     assert world.not_submitted == [(world.job.job_id, "worker-a")]
 
 
+class CancelledAtFinish(LeaseWorld):
+    """The cancellation lands after the gateway answer, before the terminal write."""
+
+    async def finish(
+        self,
+        claim: ClaimedJob,
+        target: str,
+        *,
+        result_json: str | None,
+        error_code: str | None,
+    ) -> DispatchJob:
+        if self.job.state == "running":
+            self.job = replace(
+                self.job, state="cancelling", status_version=self.job.status_version + 1
+            )
+        return await super().finish(claim, target, result_json=result_json, error_code=error_code)
+
+
 class UnavailablePlanner(Planner):
     async def plan(self, job: DispatchJob, submit_intent_id: str) -> ExecutionSubmission:
         raise DispatchRequestUnavailableError
 
 
-async def test_pre_submit_failure_with_cancellation_records_not_submitted_observation() -> None:
+class AbsentGateway(Gateway):
+    """The gateway confirms no execution exists for the stable identity."""
+
+    async def query(self, submit_intent_id: str) -> GatewayReply:
+        self.queries += 1
+        return GatewayReply("not_found")
+
+
+async def test_pre_submit_failure_with_a_possible_execution_stays_unknown() -> None:
+    # A previous claimant may have submitted before this worker read the stored
+    # command. An executing answer forbids a terminal failure and the durable
+    # "not submitted" observation.
+    world = CancelledAtFinish(_job(state="running", version=2))
+    gateway = Gateway(["executing"])
+    batch = await _dispatcher(world, gateway, Publisher(), planner=UnavailablePlanner()).run_once(
+        "worker-a"
+    )
+
+    assert batch.claimed == 1 and batch.unknown == 1
+    assert gateway.queries == 1
+    assert world.finish_calls == []
+    assert world.not_submitted == []
+
+
+async def test_pre_submit_failure_with_confirmed_absence_records_not_submitted() -> None:
+    world = CancelledAtFinish(_job(state="running", version=2))
+    gateway = AbsentGateway([])
+    batch = await _dispatcher(world, gateway, Publisher(), planner=UnavailablePlanner()).run_once(
+        "worker-a"
+    )
+
+    assert batch.claimed == 1 and batch.lease_lost == 1
+    assert gateway.queries == 1
+    assert world.job.state == "cancelling"
+    assert world.not_submitted == [(world.job.job_id, "worker-a")]
+
+
+async def test_a_pending_claim_that_fails_before_submit_queries_nothing() -> None:
+    # This worker marked the Job running itself and failed before any send; a
+    # cancellation cannot hide an execution, so the gateway is never asked.
     world = CancelledDuringDispatch(_job())
     gateway = Gateway(["executing"])
     batch = await _dispatcher(world, gateway, Publisher(), planner=UnavailablePlanner()).run_once(
@@ -434,7 +582,6 @@ async def test_pre_submit_failure_with_cancellation_records_not_submitted_observ
     assert batch.claimed == 1 and batch.lease_lost == 1
     assert gateway.queries == 0
     assert world.job.state == "cancelling"
-    assert world.finish_calls == [("worker-a", "failed")]
     assert world.not_submitted == [(world.job.job_id, "worker-a")]
 
 
@@ -447,6 +594,130 @@ async def test_gateway_barrier_fenced_keeps_cancelling_without_failure() -> None
     assert batch.claimed == 1 and batch.skipped == 1 and batch.failed == 0
     assert world.job.state == "cancelling"
     assert world.finish_calls == []
+    # The barrier proves no execution; that fact is what reconciliation settles.
+    assert world.not_submitted == [(world.job.job_id, "worker-a")]
+
+
+class ExecutionObservedThenCancelled(LeaseWorld):
+    """An execution is already visible when the claim is taken away."""
+
+    async def renew(self, claim: ClaimedJob, lease_ms: int) -> ClaimedJob | None:
+        if self.job.state == "cancelling":
+            return None
+        return await super().renew(claim, lease_ms)
+
+
+class ExecutingThenCancelled(Gateway):
+    def __init__(self, world: ExecutionObservedThenCancelled) -> None:
+        super().__init__([])
+        self.world = world
+
+    async def query(self, submit_intent_id: str) -> GatewayReply:
+        self.queries += 1
+        self.world.job = replace(
+            self.world.job,
+            state="cancelling",
+            status_version=self.world.job.status_version + 1,
+        )
+        return GatewayReply(
+            "status", {"submit_intent_id": submit_intent_id, "execution_state": "executing"}
+        )
+
+
+async def test_observed_execution_is_never_recorded_as_not_submitted() -> None:
+    # The gateway already holds an execution for this identity. Losing the claim
+    # (with a cancellation accepted meanwhile) must not forge a "not submitted"
+    # observation, or reconciliation could release capacity of a running job.
+    world = ExecutionObservedThenCancelled(_job(state="running", version=2))
+    batch = await _dispatcher(world, ExecutingThenCancelled(world), Publisher()).run_once(
+        "worker-a"
+    )
+
+    assert batch.claimed == 1 and batch.lease_lost == 1
+    assert world.job.state == "cancelling"
+    assert world.finish_calls == []
+    assert world.not_submitted == []
+
+
+class UnknownSubmitAfterCancel(Gateway):
+    """The submit answer is lost and a cancellation lands meanwhile."""
+
+    def __init__(self, world: LeaseWorld) -> None:
+        super().__init__([])
+        self.world = world
+
+    async def query(self, submit_intent_id: str) -> GatewayReply:
+        return GatewayReply("not_found")
+
+    async def submit(self, submission: ExecutionSubmission) -> GatewayReply:
+        self.world.job = replace(
+            self.world.job,
+            state="cancelling",
+            status_version=self.world.job.status_version + 1,
+        )
+        raise DispatchUnavailableError("synthetic lost submit response")
+
+
+class CancelledBeforeQueryGuard(LeaseWorld):
+    """A running Job's cancellation lands between renew and the reload guard."""
+
+    async def reload(self, job_id: str) -> DispatchJob:
+        self.job = replace(
+            self.job,
+            state="cancelling",
+            status_version=self.job.status_version + 1,
+        )
+        return self.job
+
+
+async def test_cancelled_running_job_before_any_query_records_no_absence() -> None:
+    # The worker never asked the gateway and never sent anything, but the Job was
+    # already marked running by an earlier claim: no absence can be proven here.
+    world = CancelledBeforeQueryGuard(_job(state="running", version=2))
+    gateway = Gateway(["executing"])
+    batch = await _dispatcher(world, gateway, Publisher()).run_once("worker-a")
+
+    assert batch.claimed == 1 and batch.lease_lost == 1
+    assert gateway.queries == 0
+    assert world.job.state == "cancelling"
+    assert world.not_submitted == []
+
+
+class UnavailableQueryThenCancelled(Gateway):
+    def __init__(self, world: LeaseWorld) -> None:
+        super().__init__([])
+        self.world = world
+
+    async def query(self, submit_intent_id: str) -> GatewayReply:
+        self.queries += 1
+        self.world.job = replace(
+            self.world.job,
+            state="cancelling",
+            status_version=self.world.job.status_version + 1,
+        )
+        raise DispatchUnavailableError("synthetic query outage")
+
+
+async def test_unreadable_query_after_cancellation_records_no_absence() -> None:
+    world = LeaseWorld(_job())
+    batch = await _dispatcher(world, UnavailableQueryThenCancelled(world), Publisher()).run_once(
+        "worker-a"
+    )
+
+    assert batch.claimed == 1 and batch.unknown == 1
+    assert world.job.state == "cancelling"
+    assert world.not_submitted == []
+
+
+async def test_lost_submit_response_is_never_recorded_as_not_submitted() -> None:
+    world = LeaseWorld(_job())
+    batch = await _dispatcher(world, UnknownSubmitAfterCancel(world), Publisher()).run_once(
+        "worker-a"
+    )
+
+    assert batch.claimed == 1 and batch.unknown == 1
+    assert world.job.state == "cancelling"
+    assert world.not_submitted == []
 
 
 class BarrierFencedAtGatewaySubmit(Gateway):

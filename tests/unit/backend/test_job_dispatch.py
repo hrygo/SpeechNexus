@@ -256,6 +256,8 @@ class GatewayState:
                         "error": {
                             "code": "control_execution_not_found",
                             "message": "missing",
+                            "retryable": False,
+                            "recovery": "none",
                         }
                     },
                 )
@@ -681,6 +683,37 @@ async def test_a_4xx_semantic_rejection_is_a_protocol_error_not_unknown() -> Non
     assert caught.value.error_code == "submit_intent_conflict"
 
 
+async def test_a_router_404_is_not_a_confirmed_absence() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, text="404 page not found")
+
+    gateway = _gateway(handler)
+
+    with pytest.raises(DispatchProtocolError) as caught:
+        await gateway.query("submit-" + "b" * 32)
+
+    assert not isinstance(caught.value, DispatchRejectedError)
+
+
+async def test_a_contract_404_is_a_confirmed_absence() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            404,
+            json={
+                "error": {
+                    "code": "control_execution_not_found",
+                    "message": "synthetic absence",
+                    "retryable": False,
+                    "recovery": "none",
+                }
+            },
+        )
+
+    reply = await _gateway(handler).query("submit-" + "b" * 32)
+
+    assert reply.outcome == "not_found"
+
+
 async def test_a_4xx_without_a_contract_error_is_a_plain_protocol_error() -> None:
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(409, text="not the frozen error document")
@@ -726,7 +759,17 @@ async def test_adapter_transport_failure_leaves_the_job_unknown() -> None:
 async def test_adapter_4xx_rejection_fails_the_job_instead_of_unknown() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.method == "GET":
-            return httpx.Response(404, json={"error": {"code": "control_execution_not_found"}})
+            return httpx.Response(
+                404,
+                json={
+                    "error": {
+                        "code": "control_execution_not_found",
+                        "message": "missing",
+                        "retryable": False,
+                        "recovery": "none",
+                    }
+                },
+            )
         return httpx.Response(
             409,
             json={

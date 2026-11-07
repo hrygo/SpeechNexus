@@ -29,9 +29,14 @@ export SPEECHNEXUS_DATABASE_SCHEMA=speech
 - `speech_publication_heads` 的 `SELECT, INSERT, DELETE` 及
   `revision, revision_id, updated_at_us` 列级 `UPDATE`；
 - binding revision/evidence 的 `SELECT`；
-- `speech_catalog_state` 的 `SELECT` 及 `revision, generated_at_us` 列级 `UPDATE`。
+- `speech_catalog_state` 的 `SELECT` 及 `revision, generated_at_us` 列级 `UPDATE`；
+- `speech_asset_references` 的 `consumer_kind, consumer_id, consumer_revision,
+  released_at_us` 列级 `SELECT` 及 `released_at_us` 列级 `UPDATE`（voice 退休释放引用，
+  无 INSERT/DELETE）。
 
 启动会拒绝 owner、schema CREATE、序列权限、其它 speech 表权限和更宽的列级写权限。
+`0047_voice_publication_evidence` 增加了素材引用的列权限；升级已有部署后必须由 owner 重跑
+`binding_lifecycle_grants`，否则 `BindingLifecycleRuntime.open()` 会拒绝启动。
 未配置 DSN 时两个生命周期端点 fail closed，返回
 `503 binding_result_unknown`；不会复用 draft writer 或 owner 身份。
 

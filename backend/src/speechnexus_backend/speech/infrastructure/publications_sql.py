@@ -234,6 +234,16 @@ def retire_publication(
             publication.revision_id,
         ),
     )
+    if publication.kind == "voice":
+        # Retiring the voice revision releases its material reference in this
+        # same transaction; content deletion must not stay pinned forever by a
+        # revision that can no longer be selected.
+        cursor.execute(
+            "UPDATE speech_asset_references SET released_at_us = %s "
+            "WHERE consumer_kind = 'voice_revision' AND consumer_id = %s "
+            "AND consumer_revision = %s AND released_at_us IS NULL",
+            (retired_at_us, publication.object_id, str(publication.revision)),
+        )
     return True
 
 

@@ -335,7 +335,8 @@
         "/v1/nexus/voice-drafts/{draft_id}",
         "/v1/nexus/voice-drafts/{draft_id}/generations",
         "/v1/nexus/voice-drafts/{draft_id}/previews",
-        "/v1/nexus/voice-drafts/{draft_id}/validations"
+        "/v1/nexus/voice-drafts/{draft_id}/validations",
+        "/v1/nexus/voice-drafts/{draft_id}/publications"
       ],
       "operations": [
         "createVoiceDesign",
@@ -344,7 +345,8 @@
         "updateVoiceDraftMetadata",
         "generateVoiceDraftRevision",
         "createVoicePreview",
-        "validateVoiceDraftRevision"
+        "validateVoiceDraftRevision",
+        "publishVoiceDraftRevision"
       ]
     },
     "voice_retirement": {

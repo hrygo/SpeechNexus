@@ -32,7 +32,7 @@ pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
 VARIABLE = "SPEECHNEXUS_TEST_DATABASE_URL"
 BASE = "0045_pronunciation_set_summary"
-HEAD = "0046_public_job_intents"
+HEAD = "0047_voice_publication_evidence"
 _INTENT: dict[str, Any] = {
     "input": {"text": "historical intent"},
     "kind": "tts",

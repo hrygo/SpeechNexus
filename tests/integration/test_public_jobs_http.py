@@ -47,6 +47,9 @@ from speechnexus_backend.speech.infrastructure.public_job_submission_schema impo
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import PostgresPublicJobs
 from speechnexus_backend.speech.infrastructure.publications_sql import append_publication
 from speechnexus_backend.speech.infrastructure.voice_draft_schema import voice_draft_grants
+from speechnexus_backend.speech.infrastructure.voice_publication_schema import (
+    voice_publication_grants,
+)
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
@@ -508,3 +511,47 @@ async def test_capacity_refusal_is_429_with_retry_after() -> None:
     assert response.headers["Retry-After"] == "1"
     error = response.json()["error"]
     assert error["code"] == "job_capacity_exhausted" and error["retryable"] is True
+
+
+def test_lifespan_uses_a_separate_verified_publisher_role(jobs_db: JobSandbox) -> None:
+    role = "sn_pub_" + jobs_db.schema[-12:]
+    jobs_db.admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")
+    try:
+        for grant in voice_publication_grants(jobs_db.schema, role):
+            jobs_db.admin.execute(grant)
+        settings = _settings_for(jobs_db).model_copy(
+            update={
+                "voice_publisher_database_url": SecretStr(
+                    make_conninfo(jobs_db.url, user=role, password=PASSWORD)
+                )
+            }
+        )
+        app = create_app(settings=settings)
+        import asyncio
+
+        async def open_and_close() -> None:
+            async with app.router.lifespan_context(app):
+                assert app.state.job_runtime.voice_publications is not None
+
+        asyncio.run(open_and_close())
+
+        # The Job writer role cannot silently serve as the publisher: startup
+        # must reject it rather than let every publication answer 503.
+        bad = _settings_for(jobs_db).model_copy(
+            update={
+                "voice_publisher_database_url": SecretStr(
+                    make_conninfo(jobs_db.url, user=jobs_db.role, password=PASSWORD)
+                )
+            }
+        )
+        bad_app = create_app(settings=bad)
+        with pytest.raises(ValueError):
+            asyncio.run(open_and_close_for(bad_app))
+    finally:
+        jobs_db.admin.execute(f'DROP OWNED BY "{role}"')
+        jobs_db.admin.execute(f'DROP ROLE IF EXISTS "{role}"')
+
+
+async def open_and_close_for(app: Any) -> None:
+    async with app.router.lifespan_context(app):
+        pass

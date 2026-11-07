@@ -115,6 +115,11 @@ def binding_lifecycle_grants(schema: str, role: str) -> tuple[str, ...]:
         f'"{schema}".speech_binding_publication_evidence TO {target}',
         f"GRANT SELECT, UPDATE (revision, generated_at_us) ON "
         f'"{schema}".speech_catalog_state TO {target}',
+        # Voice retirement releases the retired revision's material reference in
+        # the retirement transaction; the lifecycle writer owns that tombstone and
+        # reads only the columns its predicate needs.
+        f"GRANT SELECT (consumer_kind, consumer_id, consumer_revision, released_at_us), "
+        f'UPDATE (released_at_us) ON "{schema}".speech_asset_references TO {target}',
     )
 
 

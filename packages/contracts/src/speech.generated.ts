@@ -868,10 +868,12 @@ export interface paths {
     put?: never;
     /**
      * Publish a validated draft revision as an immutable voice revision
-     * @description The first publication creates voice_id; later publications append an
-     *     immutable revision to the same voice_id. A stale head, stale validation,
-     *     or expired qualification returns 409/422. Replaying the same intent
-     *     returns the original publication.
+     * @description The first publication creates voice_id and immutable revision 1. This
+     *     deployment publishes at most one revision per draft; a published draft
+     *     cannot be generated or validated again, so later-revision publication is
+     *     not reachable. A stale head, stale validation, or expired material or
+     *     qualification returns 409/422. Replaying the same intent returns the
+     *     original publication.
      */
     post: operations["publishVoiceDraftRevision"];
     delete?: never;
@@ -5699,11 +5701,32 @@ export interface operations {
       };
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
       404: components["responses"]["NotFound"];
       405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
-      503: components["responses"]["OperationNotImplemented"];
+      500: components["responses"]["VoiceDraftContractViolation"];
+      /** @description `voice_draft_unavailable`: the validation report, its evidence, or publication storage is unavailable before any definite commit, so replaying the same request is safe. The operation is implemented; this is a retryable outage, not a permanently unimplemented operation. A recorded eligibility rejection is 422 instead. */
+      503: {
+        headers: {
+          "Cache-Control": "no-store";
+          "X-Should-Retry": "true";
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"] & {
+            error?: {
+              /** @enum {unknown} */
+              code?: "voice_draft_unavailable";
+              /** @constant */
+              type?: "service_unavailable_error";
+              /** @constant */
+              retryable?: true;
+            };
+          };
+        };
+      };
     };
   };
   speechCreateDeletionPlan: {

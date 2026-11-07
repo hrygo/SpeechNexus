@@ -374,9 +374,12 @@ publication 的非契约拓扑，replica 上「result 已可见、Artifact 行�
 只获得证据/Job/Artifact/素材/绑定/发布/head/草稿/修订的读取，发布、修订、回执与素材引用的
 INSERT，以及 head、目录版本、草稿 `status` 的窄 UPDATE；无可写证据、无 Job/素材写权、无
 DELETE/TRUNCATE。退休角色另获素材引用四个谓词列的 SELECT 与 `released_at_us` 的窄 UPDATE。
-记录角色只能 SELECT 事实并 INSERT 证据。启动分别校验 writer 与 publisher 的列级权限，任一
-不符即拒绝启动；未配置 publisher DSN 时发布返回 503 `voice_draft_unavailable`，不会静默
-回退到 Job writer。旧 Job writer 与新发布角色都必须在迁移后重新应用各自 grant 才能升级。
+记录角色只能 SELECT 事实并 INSERT 证据。启动按 schema 校验 publisher 的完整权限面：白名单为
+14 张声明表，白名单之外任何表级或列级权限一律拒绝，schema `CREATE` 同样拒绝；表级与列级
+权限分开判定，列级授权不会因表级检查为 false 而漏检。writer 或 publisher 任一不符即拒绝
+启动；新增同类校验时必须同时提交真实角色拒绝用例，并用删除检查后必红证明用例有效。未配置
+publisher DSN 时发布返回 503 `voice_draft_unavailable`，不会静默回退到 Job writer。旧 Job
+writer 与新发布角色都必须在迁移后重新应用各自 grant 才能升级。
 
 部署顺序：
 

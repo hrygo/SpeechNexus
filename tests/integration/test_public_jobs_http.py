@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import re
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -23,6 +25,7 @@ from sqlalchemy.pool import NullPool
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
+from speechnexus_backend.job_runtime import _verify_publication_privileges
 from speechnexus_backend.speech.application.public_jobs import (
     JobAdmissionRejectedError,
     PublicJobs,
@@ -555,3 +558,167 @@ def test_lifespan_uses_a_separate_verified_publisher_role(jobs_db: JobSandbox) -
 async def open_and_close_for(app: Any) -> None:
     async with app.router.lifespan_context(app):
         pass
+
+
+# Each row is an authority the publisher identity must never hold. The grants cover
+# both gaps found in #549 (whole-table REFERENCES/TRIGGER on tables it may write, and
+# a column INSERT able to forge evidence), the read-only/append-only branches that
+# need independent rejection evidence, and the declared-surface scan: an undeclared
+# table such as the retirement ledger, a column grant on it, or CREATE on the schema.
+MISGRANTED_PUBLISHER_PRIVILEGES = (
+    (
+        "writable-table-references",
+        'GRANT REFERENCES ON "{schema}".speech_publication_heads TO "{role}"',
+        "must not hold REFERENCES on speech_publication_heads",
+    ),
+    (
+        "writable-table-trigger",
+        'GRANT TRIGGER ON "{schema}".speech_publication_heads TO "{role}"',
+        "must not hold TRIGGER on speech_publication_heads",
+    ),
+    (
+        "read-only-column-insert",
+        'GRANT INSERT (evidence_id) ON "{schema}".speech_voice_capability_evidence TO "{role}"',
+        "must not hold column INSERT on speech_voice_capability_evidence",
+    ),
+    (
+        "writable-column-insert",
+        'GRANT INSERT (revision) ON "{schema}".speech_catalog_state TO "{role}"',
+        "must not hold column INSERT on speech_catalog_state",
+    ),
+    (
+        "writable-column-references",
+        'GRANT REFERENCES (revision) ON "{schema}".speech_catalog_state TO "{role}"',
+        "must not hold column REFERENCES on speech_catalog_state",
+    ),
+    (
+        "read-only-table-update",
+        'GRANT UPDATE ON "{schema}".speech_voice_capability_evidence TO "{role}"',
+        "must not hold UPDATE on speech_voice_capability_evidence",
+    ),
+    (
+        "read-only-table-references",
+        'GRANT REFERENCES ON "{schema}".speech_voice_capability_evidence TO "{role}"',
+        "must not hold REFERENCES on speech_voice_capability_evidence",
+    ),
+    (
+        "read-only-table-trigger",
+        'GRANT TRIGGER ON "{schema}".speech_voice_capability_evidence TO "{role}"',
+        "must not hold TRIGGER on speech_voice_capability_evidence",
+    ),
+    (
+        "append-only-table-references",
+        'GRANT REFERENCES ON "{schema}".speech_publications TO "{role}"',
+        "must not hold REFERENCES on speech_publications",
+    ),
+    (
+        "append-only-table-trigger",
+        'GRANT TRIGGER ON "{schema}".speech_publications TO "{role}"',
+        "must not hold TRIGGER on speech_publications",
+    ),
+    (
+        "append-only-column-update",
+        'GRANT UPDATE (revision) ON "{schema}".speech_publications TO "{role}"',
+        "must not hold column UPDATE on speech_publications",
+    ),
+    (
+        "append-only-column-references",
+        'GRANT REFERENCES (revision) ON "{schema}".speech_publications TO "{role}"',
+        "must not hold column REFERENCES on speech_publications",
+    ),
+    (
+        "undeclared-retirements-insert",
+        'GRANT INSERT ON "{schema}".speech_publication_retirements TO "{role}"',
+        "must not hold privileges on undeclared table speech_publication_retirements",
+    ),
+    (
+        "undeclared-workspaces-insert-trigger",
+        'GRANT INSERT, TRIGGER ON "{schema}".speech_workspaces TO "{role}"',
+        "must not hold privileges on undeclared table speech_workspaces",
+    ),
+    (
+        "undeclared-workspaces-column-insert",
+        'GRANT INSERT (workspace_id) ON "{schema}".speech_workspaces TO "{role}"',
+        "must not hold privileges on undeclared table speech_workspaces",
+    ),
+    (
+        "undeclared-table-trigger-only",
+        'GRANT TRIGGER ON "{schema}".speech_workspaces TO "{role}"',
+        "must not hold privileges on undeclared table speech_workspaces",
+    ),
+    (
+        "undeclared-table-delete-only",
+        'GRANT DELETE ON "{schema}".speech_workspaces TO "{role}"',
+        "must not hold privileges on undeclared table speech_workspaces",
+    ),
+    (
+        "undeclared-table-truncate-only",
+        'GRANT TRUNCATE ON "{schema}".speech_workspaces TO "{role}"',
+        "must not hold privileges on undeclared table speech_workspaces",
+    ),
+    (
+        "schema-create",
+        'GRANT CREATE ON SCHEMA "{schema}" TO "{role}"',
+        "must not hold CREATE on schema",
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("grant", "detail"),
+    [(grant, detail) for _, grant, detail in MISGRANTED_PUBLISHER_PRIVILEGES],
+    ids=[case for case, _, _ in MISGRANTED_PUBLISHER_PRIVILEGES],
+)
+def test_publisher_startup_rejects_each_misgranted_privilege(
+    jobs_db: JobSandbox, grant: str, detail: str
+) -> None:
+    role = "sn_pub_bad_" + uuid.uuid4().hex[:8]
+    dsn = make_conninfo(jobs_db.url, user=role, password=PASSWORD)
+    jobs_db.admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")
+    try:
+        for statement in voice_publication_grants(jobs_db.schema, role):
+            jobs_db.admin.execute(statement)
+        jobs_db.admin.execute(grant.format(schema=jobs_db.schema, role=role))
+        # The startup check itself names the missing authority type and table; the
+        # lifespan deliberately masks the cause, so assert the precise message here.
+        with (
+            psycopg.connect(dsn, row_factory=dict_row) as connection,
+            pytest.raises(ValueError, match=re.escape(detail)),
+        ):
+            _verify_publication_privileges(connection, jobs_db.schema)
+        settings = _settings_for(jobs_db).model_copy(
+            update={"voice_publisher_database_url": SecretStr(dsn)}
+        )
+        app = create_app(settings=settings)
+        with pytest.raises(ValueError, match="Public Job writer startup rejected"):
+            asyncio.run(open_and_close_for(app))
+        assert app.state.job_runtime._publisher_pool is None
+    finally:
+        jobs_db.admin.execute(f'DROP OWNED BY "{role}"')
+        jobs_db.admin.execute(f'DROP ROLE IF EXISTS "{role}"')
+
+
+def test_undeclared_table_rejection_says_how_to_extend_the_whitelist(
+    jobs_db: JobSandbox,
+) -> None:
+    """An operator who legitimately grants a new table must learn the next action."""
+    role = "sn_pub_bad_" + uuid.uuid4().hex[:8]
+    dsn = make_conninfo(jobs_db.url, user=role, password=PASSWORD)
+    jobs_db.admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")
+    try:
+        for statement in voice_publication_grants(jobs_db.schema, role):
+            jobs_db.admin.execute(statement)
+        jobs_db.admin.execute(
+            f'GRANT INSERT ON "{jobs_db.schema}".speech_publication_retirements TO "{role}"'
+        )
+        with (
+            psycopg.connect(dsn, row_factory=dict_row) as connection,
+            pytest.raises(ValueError) as caught,
+        ):
+            _verify_publication_privileges(connection, jobs_db.schema)
+        message = str(caught.value)
+        assert "speech_publication_retirements" in message
+        assert "_PUBLICATION_REQUIRED_SELECT" in message
+    finally:
+        jobs_db.admin.execute(f'DROP OWNED BY "{role}"')
+        jobs_db.admin.execute(f'DROP ROLE IF EXISTS "{role}"')

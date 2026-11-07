@@ -168,8 +168,11 @@ binding 历史、`speech_publications` 与证据表。未配置时 GET 返回
 
 声音发布还需要独立的 publisher 角色：应用 0047 后由 owner 运行
 `voice_publication_grants(schema, role)`，设置 `SPEECHNEXUS_VOICE_PUBLISHER_DATABASE_URL`；
-它必须与 Job writer 指向同一数据库和服务器，但不得复用 Job writer 身份。启动会校验其列级
-权限，未配置时发布返回 503。独立记录角色使用 `voice_evidence_recorder_grants` 和
+它必须与 Job writer 指向同一数据库和服务器，但不得复用 Job writer 身份。启动按 schema
+校验其完整权限面：只允许 `voice_publication_grants` 声明的 14 张表，白名单之外的表级或
+列级权限与 schema `CREATE` 一律拒绝；表级与列级分开判定，列级授权不会因表级检查为 false
+而漏检。新增同类校验时必须同时补真实角色拒绝用例。启动校验不通过或未配置时发布返回 503。
+独立记录角色使用 `voice_evidence_recorder_grants` 和
 `SPEECHNEXUS_VOICE_EVIDENCE_DATABASE_URL`，通过
 `speechnexus-record-voice-evidence` 显式写入证据，或由
 `speechnexus-voice-evidence-worker` 周期消费已提交的校验报告并在中断后自愈。该 worker

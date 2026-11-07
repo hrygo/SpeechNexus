@@ -1430,10 +1430,14 @@ def promotion_document(
     code: str,
     request: dict[str, Any],
     path: str = PROMOTION_PATH,
+    extra_media_type: str | None = None,
 ) -> dict[str, Any]:
     """Synthetic operation with one declared 4xx capability gap."""
 
     doc = document(path, request=request)
+    if extra_media_type is not None:
+        content = doc["paths"][path]["post"]["requestBody"]["content"]
+        content[extra_media_type] = copy.deepcopy(content["application/json"])
     doc["components"] = {
         "responses": {
             "Unsupported": {
@@ -1550,3 +1554,34 @@ def test_capability_promotion_does_not_cover_other_schema_keywords() -> None:
     ]["properties"]["publish"]["type"] = "string"
     findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
     assert any("type changed" in issue for issue in findings)
+
+
+def test_default_promotion_whitelist_is_frozen() -> None:
+    # Adding an exemption must be a deliberate, reviewed change: this exact
+    # mapping and a matching negative case are required together.
+    assert kernel()._DEFAULT_PROMOTIONS == {
+        (
+            PROMOTION_PATH,
+            "post",
+            "application/json",
+            "/properties/publish",
+        ): (PROMOTION_CODE, False, True)
+    }
+
+
+def test_capability_promotion_is_scoped_to_the_declared_media_type() -> None:
+    base = promotion_document(
+        code=PROMOTION_CODE,
+        request=promotion_request(False),
+        extra_media_type="application/x-synthetic",
+    )
+    current = promotion_document(
+        code=PROMOTION_CODE,
+        request=promotion_request(True),
+        extra_media_type="application/x-synthetic",
+    )
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert any(
+        "application/x-synthetic" in issue and "default changed from False to True" in issue
+        for issue in findings
+    )

@@ -168,8 +168,8 @@ A baseline operation may have shipped one exact request property whose default
 selected a capability the operation itself declared absent through a stable 4xx
 `error.code`. Enabling that capability changes what the omitted property means,
 so the request-body `default` change must not be treated as a silent regression.
-The kernel keeps a literal whitelist of `(path, method, property)` entries, each
-with the exact baseline code and the exact old and new value. A matching entry
+The kernel keeps a literal whitelist of `(path, method, media type, property)`
+entries, each with the exact baseline code and the exact old and new value. A matching entry
 produces a `notice` on stderr instead of an issue.
 
 The exemption is deliberately narrower than the operation:

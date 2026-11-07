@@ -1018,14 +1018,18 @@ def _closed_tagged_request_extension(
     return False
 
 
-# Exact request-default promotions. Each entry is keyed by the operation and the
-# request property, and requires the named baseline error code plus the exact
-# old -> new value. There is deliberately no wildcard: a declared capability gap
-# on an operation does not let an unrelated field's default change through.
-_DEFAULT_PROMOTIONS: dict[tuple[str, str, str], tuple[str, object, object]] = {
+# Exact request-default promotions. Each entry is keyed by the operation, the
+# request media type and the request property, and requires the named baseline
+# error code plus the exact old -> new value. There is deliberately no wildcard:
+# a declared capability gap on an operation, a different media type or a
+# different property does not let another default change through. New entries
+# must add a matching negative case and update the frozen assertion in
+# tests/contract/test_http_contract_changes.py.
+_DEFAULT_PROMOTIONS: dict[tuple[str, str, str, str], tuple[str, object, object]] = {
     (
         "/v1/nexus/pronunciation-sets",
         "post",
+        "application/json",
         "/properties/publish",
     ): ("pronunciation_publication_not_supported", False, True),
 }
@@ -1148,8 +1152,12 @@ def _baseline_default_promotions(
     capability gap from exempting an unrelated default on the same operation.
     """
     promotions: dict[str, tuple[object, object]] = {}
-    for (spec_path, spec_method, suffix), (code, old, new) in _DEFAULT_PROMOTIONS.items():
-        if (spec_path, spec_method) != (path_name, method):
+    for (spec_path, spec_method, spec_media, suffix), (
+        code,
+        old,
+        new,
+    ) in _DEFAULT_PROMOTIONS.items():
+        if (spec_path, spec_method) != (path_name, method) or spec_media != media_type:
             continue
         if not _declares_error_code(document, path_name, method, side, code):
             continue

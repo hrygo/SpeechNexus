@@ -172,6 +172,13 @@ binding 历史、`speech_publications` 与证据表。未配置时 GET 返回
 校验其完整权限面：只允许 `voice_publication_grants` 声明的 14 张表，白名单之外的表级或
 列级权限与 schema `CREATE` 一律拒绝；表级与列级分开判定，列级授权不会因表级检查为 false
 而漏检。新增同类校验时必须同时补真实角色拒绝用例。启动校验不通过或未配置时发布返回 503。
+
+Artifact reader、binding writer、binding admin reader、public Job writer 与 workbench
+runtime 的启动校验遵循同一条权限面规则：配置 schema 内声明表之外不得持有任何表级或列级
+权限；可写表拒绝 `DELETE`/`TRUNCATE`/`REFERENCES`/`TRIGGER`，只读表分别判定表级
+`INSERT` 与列级 `INSERT`/`UPDATE`/`REFERENCES`；schema 需要 `USAGE` 且拒绝 `CREATE`。
+列级判定一律使用 `has_column_privilege`/`has_any_column_privilege`，不以表级结果为代理。
+拒绝信息点名权限类型与关系，并给出撤销授权或扩声明表的修复动作。
 独立记录角色使用 `voice_evidence_recorder_grants` 和
 `SPEECHNEXUS_VOICE_EVIDENCE_DATABASE_URL`，通过
 `speechnexus-record-voice-evidence` 显式写入证据，或由

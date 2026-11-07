@@ -618,5 +618,7 @@ async def test_real_lifespan_refuses_dangerous_or_incomplete_database(
     with pytest.raises(RuntimeStartupError) as caught:
         async with app.router.lifespan_context(app):
             pytest.fail("invalid runtime database accepted")
-    assert str(caught.value) == "Workbench runtime database is unavailable or unsafe."
+    # The prefix stays fixed and the detail names only catalog constants (the
+    # authority and relation); it must never echo the configured schema or DSN.
+    assert str(caught.value).startswith("Workbench runtime database is unavailable or unsafe.")
     assert database.schema not in str(caught.value)

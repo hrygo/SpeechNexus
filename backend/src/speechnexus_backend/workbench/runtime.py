@@ -174,9 +174,79 @@ _RENDER_SETTLE_BATCH = 12
 
 
 class RuntimeStartupError(RuntimeError):
-    def __init__(self) -> None:
+    def __init__(self, detail: str = "") -> None:
         # Driver messages can contain connection strings, object names or SQL.
-        super().__init__("Workbench runtime database is unavailable or unsafe.")
+        # ``detail`` is built only from catalog constants (relation and privilege
+        # names) by the checks below, never from driver text.
+        message = "Workbench runtime database is unavailable or unsafe."
+        super().__init__(message if not detail else f"{message} {detail}")
+
+
+async def _refuse_table_privilege(
+    connection: psycopg.AsyncConnection[dict[str, Any]],
+    schema: str,
+    privilege: str,
+    tables: tuple[str, ...] | None = None,
+) -> None:
+    """Name the first relation that still confers a whole-table authority."""
+    scope = "" if tables is None else " AND c.relname = ANY(%s) "
+    parameters: tuple[Any, ...] = (
+        (schema, privilege)
+        if tables is None
+        else (
+            schema,
+            privilege,
+            list(tables),
+        )
+    )
+    row = await (
+        await connection.execute(
+            "SELECT c.relname AS name FROM pg_catalog.pg_class c "
+            "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
+            "WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m','f') "
+            f"AND pg_catalog.has_table_privilege(c.oid,%s){scope}"
+            "ORDER BY c.relname LIMIT 1",
+            parameters,
+        )
+    ).fetchone()
+    if row is not None:
+        raise RuntimeStartupError(
+            f"runtime role must not hold {privilege} on {row['name']}; revoke that table grant"
+        )
+
+
+async def _refuse_column_privilege(
+    connection: psycopg.AsyncConnection[dict[str, Any]],
+    schema: str,
+    privilege: str,
+    tables: tuple[str, ...] | None = None,
+) -> None:
+    """A column grant leaves the table predicate false; compare it directly."""
+    scope = "" if tables is None else " AND c.relname = ANY(%s) "
+    parameters: tuple[Any, ...] = (
+        (schema, privilege)
+        if tables is None
+        else (
+            schema,
+            privilege,
+            list(tables),
+        )
+    )
+    row = await (
+        await connection.execute(
+            "SELECT c.relname AS name FROM pg_catalog.pg_class c "
+            "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
+            "WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m','f') "
+            f"AND pg_catalog.has_any_column_privilege(c.oid,%s){scope}"
+            "ORDER BY c.relname LIMIT 1",
+            parameters,
+        )
+    ).fetchone()
+    if row is not None:
+        raise RuntimeStartupError(
+            f"runtime role must not hold column {privilege} on {row['name']}; "
+            "revoke that column grant"
+        )
 
 
 async def check_database(settings: WorkbenchSettings) -> None:
@@ -239,6 +309,19 @@ async def check_database(settings: WorkbenchSettings) -> None:
             ).fetchall()
             if {row["name"] for row in rows} != TABLES:
                 raise RuntimeStartupError
+            # REFERENCES is a whole-table authority the runtime never needs, and
+            # table-level INSERT on a read-only table is judged on its own rather
+            # than inferred from ``has_any_column_privilege`` (#561). Column
+            # grants stay invisible to every table predicate, so each column
+            # decision compares columns directly.
+            await _refuse_table_privilege(connection, settings.database_schema, "REFERENCES")
+            read_only = tuple(sorted(_READ_ONLY))
+            await _refuse_table_privilege(connection, settings.database_schema, "INSERT", read_only)
+            for privilege in ("INSERT", "UPDATE", "REFERENCES"):
+                await _refuse_column_privilege(
+                    connection, settings.database_schema, privilege, read_only
+                )
+            await _refuse_column_privilege(connection, settings.database_schema, "REFERENCES")
             for row in rows:
                 name = row["name"]
                 if (

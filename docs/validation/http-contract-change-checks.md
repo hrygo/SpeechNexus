@@ -89,7 +89,12 @@ status `503`. The replacement must still:
 
 - be an inline response object rather than a `$ref` to a shared component,
   because a shared 503 could carry guarantees declared for another operation;
-- declare a required `Cache-Control` header;
+- declare a required `Cache-Control` header whose schema allows only `no-store`:
+  `const: "no-store"`, or an `enum` that contains `no-store` and no publicly
+  cacheable directive such as `public`, `max-age` or `s-maxage`. A placeholder
+  response reports an unavailable capability, so a replacement may not soften it
+  into a publicly cacheable response. A schema that declares no value cannot be
+  verified and is rejected;
 - declare a required `X-Should-Retry` header whose schema allows only `"true"`:
   the value, not just the name, is the retry signal, and `false` still means
   "do not retry". An equivalent `enum: ["true"]` is accepted;
@@ -107,8 +112,8 @@ alternatives are likewise refused because a union cannot be read as one conjunct
 
 Each violated rule is reported separately as `placeholder 503 replacement ...
 <rule>`. An unchanged placeholder reference stays valid only while the shared
-`OperationNotImplemented` component still declares a required
-`Cache-Control`, a required `X-Should-Retry` limited to `"false"`, and the
+`OperationNotImplemented` component still declares a required `Cache-Control`
+limited to `no-store`, a required `X-Should-Retry` limited to `"false"`, and the
 `allOf`/`ErrorResponse` body; weakening that component is reported as
 `placeholder 503 response ...` for every operation that still points at it.
 All other responses keep the unchanged directional rules, including the existing

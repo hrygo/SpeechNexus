@@ -42,6 +42,21 @@ _OPENAI_PATHS = {
 _PLACEHOLDER_503_REF = "#/components/responses/OperationNotImplemented"
 _PLACEHOLDER_ERROR_CODE = "operation_not_implemented"
 _ERROR_RESPONSE_REF = "#/components/schemas/ErrorResponse"
+# The placeholder response says the capability is unavailable. Keep it out of
+# shared caches: `no-store` is the only acceptable value, so a replacement may not
+# soften "unavailable" into a publicly cacheable response.
+_NO_STORE_DIRECTIVE = "no-store"
+_PUBLIC_CACHE_DIRECTIVES = frozenset(
+    {
+        "public",
+        "max-age",
+        "s-maxage",
+        "stale-while-revalidate",
+        "stale-if-error",
+        "proxy-revalidate",
+        "immutable",
+    }
+)
 _OPENAI_REALTIME_DEFS = {
     "SessionUpdate",
     "InputAudioBufferAppend",
@@ -274,6 +289,47 @@ def _declares_literal_only(schema: object, expected: str) -> bool:
     return mapping.get("const") == expected or bool(values)
 
 
+def _cache_control_directives(value: object) -> set[str] | None:
+    """Directive names in one Cache-Control value; None for a non-string."""
+    if not isinstance(value, str):
+        return None
+    directives = {directive.split("=", 1)[0].strip().lower() for directive in value.split(",")}
+    directives.discard("")
+    return directives
+
+
+def _declares_no_store(schema: object, side: _SchemaSide) -> bool:
+    """True when every declared Cache-Control value keeps the response uncacheable.
+
+    A placeholder 503 reports that a capability is unavailable, so the response
+    must not enter a shared cache. Each declared `const`/`enum` value has to carry
+    `no-store` and no public cache directive; values are read at the same instance
+    level, following `$ref` and `allOf` conjuncts. A schema that declares no value
+    cannot be verified and is rejected rather than assumed safe.
+    """
+    levels = _instance_level_schemas(schema, side)
+    if levels is None:
+        return False
+    declared = False
+    for level, _ in levels:
+        values: list[object] = []
+        if "const" in level:
+            values.append(level["const"])
+        enum_values = _sequence(level.get("enum"))
+        if enum_values is not None:
+            values.extend(enum_values)
+        for value in values:
+            declared = True
+            directives = _cache_control_directives(value)
+            if (
+                directives is None
+                or _NO_STORE_DIRECTIVE not in directives
+                or directives & _PUBLIC_CACHE_DIRECTIVES
+            ):
+                return False
+    return declared
+
+
 def _placeholder_503_problems(
     response: Mapping[str, Any] | None,
     document: Mapping[str, Any],
@@ -308,8 +364,13 @@ def _placeholder_503_problems(
         str(name).lower(): value
         for name, value in (_mapping(definition.get("headers")) or {}).items()
     }
-    if (_mapping(headers.get("cache-control")) or {}).get("required") is not True:
-        problems.append(f"{subject} requires a required Cache-Control header")
+    cache_control = _mapping(headers.get("cache-control")) or {}
+    if cache_control.get("required") is not True or not _declares_no_store(
+        cache_control.get("schema"), side
+    ):
+        problems.append(
+            f'{subject} requires a required Cache-Control header declaring "{_NO_STORE_DIRECTIVE}"'
+        )
     retry = _mapping(headers.get("x-should-retry")) or {}
     if retry.get("required") is not True or not _declares_literal_only(
         retry.get("schema"), expected_retry

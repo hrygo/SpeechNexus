@@ -676,10 +676,17 @@ async def test_preflight_still_covers_live_public_asr_and_tts(
     require_complete_tts_roots(_pool(admission_database))
 
 
+# The documented operator query: the same public predicate as the preflight,
+# deliberately without a Job-state whitelist so a cancelling or running Job that
+# still holds expired capacity is visible too.
 _UNSETTLED_LEASES = (
-    "SELECT l.lease_id, l.operation_id, j.state "
-    "FROM admission_leases AS l JOIN speech_jobs AS j ON j.job_id = l.operation_id "
-    "WHERE j.state IN ('succeeded','failed','cancelled') AND l.lease_state <> 'released' "
+    "SELECT l.lease_id, l.operation_id, l.lease_state, l.deadline_at_us "
+    "FROM admission_leases AS l "
+    "CROSS JOIN (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 "
+    "AS BIGINT) AS now_us) AS clock "
+    "WHERE l.lease_state <> 'released' "
+    "AND l.operation_id LIKE 'job-%' "
+    "AND l.deadline_at_us <= clock.now_us - 60000000 "
     "ORDER BY l.lease_id"
 )
 
@@ -711,6 +718,7 @@ async def test_cancellation_settlement_returns_the_admission_lease(
     lease_id = _lease(db, job_id)["lease_id"]
     assert _lease(db, job_id)["lease_state"] == "reserved"
 
+    jobs.advance(job_id, "running")
     jobs.cancel(job_id, request_id="req-cancel-release", idempotency_key=None)
     db.query(
         "INSERT INTO speech_job_cancellation_not_submitted (job_id, observed_at_us, observer) "
@@ -730,7 +738,12 @@ async def test_cancellation_settlement_returns_the_admission_lease(
     )
     assert _lease(db, job_id)["lease_state"] == "reserved"
     assert db.query(_UNSETTLED_LEASES) == [
-        {"lease_id": lease_id, "operation_id": job_id, "state": "cancelled"}
+        {
+            "lease_id": lease_id,
+            "operation_id": job_id,
+            "lease_state": "reserved",
+            "deadline_at_us": past,
+        }
     ]
     with pytest.raises(ValueError, match="reconcile first"):
         require_complete_tts_roots(pool)
@@ -778,3 +791,42 @@ async def test_cancellation_settlement_returns_the_admission_lease(
     assert db.query(_UNSETTLED_LEASES) == []
     # A restarted API accepts the long-expired deadline: nothing is held.
     require_complete_tts_roots(pool)
+
+
+async def test_the_operator_query_finds_a_cancelling_lease_that_blocks_restart(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """The preflight refuses a restart on any expired held public lease.
+
+    A cancelled acceptance that has not yet settled stays in ``cancelling`` with
+    the lease still held, and a pending/running Job can be in the same shape.
+    The documented query must therefore match the preflight predicate instead of
+    listing terminal states, otherwise an operator sees an empty result while the
+    API refuses to start.
+    """
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    _asset(db)
+    db.query(
+        f'GRANT SELECT ON "{db.schema}".speech_tts_settlement '
+        f'TO "{admission_database.runtime.foundation.speech_role}"'
+    )
+    store = _store(admission_database)
+    jobs = PublicJobs(store, store)
+    created = _submit(store, db, kind="asr", key="dispatch-cancel-held")
+    assert created.outcome == "created", created.error_code
+    job_id = created.job.job_id
+    jobs.advance(job_id, "running")
+    jobs.cancel(job_id, request_id="req-cancel-held", idempotency_key=None)
+    past = _now_us(db) - 61_000_000
+    db.query(
+        "UPDATE admission_leases SET deadline_at_us = %s WHERE operation_id = %s", (past, job_id)
+    )
+
+    assert _read(store, job_id).state == "cancelling"
+    assert _lease(db, job_id)["lease_state"] == "reserved"
+    rows = db.query(_UNSETTLED_LEASES)
+    assert [(row["operation_id"], row["lease_state"]) for row in rows] == [(job_id, "reserved")]
+    assert rows[0]["deadline_at_us"] == past
+    with pytest.raises(ValueError, match="reconcile first"):
+        require_complete_tts_roots(_pool(admission_database))

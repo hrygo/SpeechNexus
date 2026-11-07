@@ -211,6 +211,13 @@ class _PublicJobsSettlement(CancellationSettlementPort):
         return current.state == "cancelled" and self._release(job_id)
 
     def _release(self, job_id: str) -> bool:
+        # Known window: the port is synchronous, so this blocks the event-loop
+        # thread for up to the lease transaction budget (3s) and
+        # asyncio.timeout cannot interrupt it. Moving the call to a worker
+        # thread is the step to take if cancellation reconciliation ever runs
+        # concurrently. The broad except also folds programming errors into the
+        # ledger retry; that is safer than dropping the held lease, and the
+        # retry is bounded by max_attempts.
         try:
             return self._release_capacity(job_id)
         except Exception:

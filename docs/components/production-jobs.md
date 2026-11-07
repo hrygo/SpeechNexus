@@ -178,10 +178,19 @@ response、cleanup complete 和停止证据；失败沿 `failed/not_required` �
 warning（stdout 的批次 JSON 字段保持不变）。可用以下只读查询发现：
 
 ```sql
-SELECT l.lease_id, l.operation_id, j.state
-FROM admission_leases AS l JOIN speech_jobs AS j ON j.job_id = l.operation_id
-WHERE j.state IN ('succeeded','failed','cancelled') AND l.lease_state <> 'released';
+SELECT l.lease_id, l.operation_id, l.lease_state, l.deadline_at_us
+FROM admission_leases AS l
+CROSS JOIN (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS now_us)
+    AS clock
+WHERE l.lease_state <> 'released'
+  AND l.operation_id LIKE 'job-%'
+  AND l.deadline_at_us <= clock.now_us - 60000000
+ORDER BY l.lease_id;
 ```
+
+该查询与 preflight 的公开分支同条件，不带状态白名单：`pending`/`running`/`cancelling`
+等任何已过冻结期限、仍被持有的公开租约都会出现；未过期限的活跃 Job 不会误报。
+preflight 另要求无 settlement 根，因此它拒绝启动的那一行必然在这个结果里。
 
 取消结算同样归还容量：`settle_cancelled` 提交 `cancelled` 后按原 `lease_id` 走同一
 `LeaseService.release`（幂等）。释放被拒绝、结果未知或存储不可用时，该次结算返回

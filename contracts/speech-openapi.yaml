@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus public speech API
-  version: 0.1.0.dev9
+  version: 0.1.0.dev10
   description: |
     SpeechNexus public speech protocol.
 
@@ -1801,6 +1801,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "405":
@@ -1809,8 +1811,48 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/VoiceDraftContractViolation"
         "503":
-          $ref: "#/components/responses/OperationNotImplemented"
+          description: |
+            `voice_draft_unavailable`: storage failed before any definite
+            commit, so retrying the same request is safe. The operation is
+            implemented; this is a retryable outage, not a permanently
+            unimplemented operation.
+
+            `voice_draft_outcome_unknown`: the revision submission may have
+            committed but its acknowledgement was lost. This code is returned
+            only for a request that carried its original Idempotency-Key; retry
+            with that exact key so the committed revision and Job are replayed
+            instead of appending a second revision. Do not retry with a new key.
+          headers:
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+                const: "no-store"
+            X-Should-Retry:
+              required: true
+              schema:
+                type: string
+                const: "true"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ErrorResponse"
+                  - properties:
+                      error:
+                        properties:
+                          code:
+                            enum:
+                              - voice_draft_unavailable
+                              - voice_draft_outcome_unknown
+                          type:
+                            const: service_unavailable_error
+                          retryable:
+                            const: true
+                          nexus: false
   /v1/nexus/voice-drafts/{draft_id}/previews:
     post:
       tags: [voice-creation]
@@ -1879,6 +1921,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "405":
@@ -1887,8 +1931,48 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/VoiceDraftContractViolation"
         "503":
-          $ref: "#/components/responses/OperationNotImplemented"
+          description: |
+            `voice_draft_unavailable`: storage failed before any definite
+            commit, so retrying the same request is safe. The operation is
+            implemented; this is a retryable outage, not a permanently
+            unimplemented operation.
+
+            `voice_draft_outcome_unknown`: the validation submission may have
+            committed but its acknowledgement was lost. This code is returned
+            only for a request that carried its original Idempotency-Key; retry
+            with that exact key so the committed Job is replayed instead of
+            submitting a second validation. Do not retry with a new key.
+          headers:
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+                const: "no-store"
+            X-Should-Retry:
+              required: true
+              schema:
+                type: string
+                const: "true"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ErrorResponse"
+                  - properties:
+                      error:
+                        properties:
+                          code:
+                            enum:
+                              - voice_draft_unavailable
+                              - voice_draft_outcome_unknown
+                          type:
+                            const: service_unavailable_error
+                          retryable:
+                            const: true
+                          nexus: false
   /v1/nexus/voice-drafts/{draft_id}/publications:
     post:
       tags: [voice-creation]

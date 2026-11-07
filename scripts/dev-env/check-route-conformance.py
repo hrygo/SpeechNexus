@@ -83,7 +83,8 @@ ENVELOPE_KEYS = frozenset({"code", "type", "message", "param", "request_id", "re
 # framework 404/405/400 replies with the placeholder, so "registered" is no
 # longer evidence of implementation: the baseline is checked against the
 # placeholder table and the single-entry unimplemented error map instead.
-# #494 implements four voice draft operations: 19 -> 15.
+# #494 implements four voice draft operations: 19 -> 15; #514
+# implements revision generation and validation: 15 -> 13.
 KNOWN_UNIMPLEMENTED_OPERATIONS: dict[str, str] = {
     # Collection-level pronunciation routes are intercepted by
     # PronunciationIngress and rewritten to 400 invalid_request.
@@ -98,9 +99,7 @@ KNOWN_UNIMPLEMENTED_OPERATIONS: dict[str, str] = {
     "cancelRealtimeSession": "realtime session cancellation is not implemented",
     "connectRealtime": "the /v1/realtime WebSocket route is not implemented",
     # Additional generation, preview, review and publication remain unimplemented.
-    "generateVoiceDraftRevision": "voice draft generation is not implemented",
     "createVoicePreview": "voice draft preview is not implemented",
-    "validateVoiceDraftRevision": "voice draft validation is not implemented",
     "publishVoiceDraftRevision": "voice draft publication is not implemented",
     # Content deletion is not implemented.
     "speechCreateDeletionPlan": "speech deletion plan route is not implemented",

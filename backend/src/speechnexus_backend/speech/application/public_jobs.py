@@ -31,6 +31,7 @@ from speechnexus_backend.speech.domain.public_jobs import (
     PublicJob,
     PublicJobNotFoundError,
     PublicJobUnavailableError,
+    RevisionCreateResult,
     canonical_digest,
     check_transition,
     idempotency_digest,
@@ -40,11 +41,13 @@ from speechnexus_backend.speech.domain.public_jobs import (
 from speechnexus_backend.speech.domain.publications import Publication, PublicationKind
 
 DEFAULT_WORKSPACE = "workspace-default"
+_REVISION = re.compile(r"[1-9][0-9]{0,18}\Z")
 _REQUIRED_TASK: dict[JobKind, str] = {
     "asr": "asr_file",
     "tts": "tts_file",
     "voice_design": "voice_design",
     "voice_clone": "voice_clone",
+    "voice_validation": "voice_validation",
 }
 
 
@@ -101,6 +104,14 @@ class ModelBindingError(ValueError):
     def __init__(self, code: str) -> None:
         self.code = code
         super().__init__(code)
+
+
+class VoiceDraftStaleRevisionError(RuntimeError):
+    """The requested revision is no longer the draft head."""
+
+
+class VoiceDraftNotCandidateError(RuntimeError):
+    """The head revision has no succeeded generation Job to validate."""
 
 
 class VoiceNotPublishedError(LookupError):
@@ -170,8 +181,25 @@ class BindingFact:
     retired: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class VoiceDraftRevisionFact:
+    """The immutable revision facts a validation Job is allowed to target."""
+
+    workspace_id: str
+    kind: str
+    head_revision: str
+    generation_job_id: str
+    state: JobState
+    result_json: str | None
+    binding: tuple[str, int]
+
+
 def require_pinned_binding(
-    binding: BindingFact | None, reference: tuple[str, int], model: str
+    binding: BindingFact | None,
+    reference: tuple[str, int],
+    model: str,
+    *,
+    task: str = "tts_file",
 ) -> BindingFact:
     """Validate exact published identity; reuse after the catalogue object lock."""
     if binding is None:
@@ -197,7 +225,7 @@ def require_pinned_binding(
         raise ModelBindingError("model_binding_not_current")
     if definition["logical_model"] != model:
         raise ModelBindingError("model_binding_mismatch")
-    if "tts_file" not in definition["tasks"]:
+    if task not in definition["tasks"]:
         raise ModelBindingError("model_binding_task_not_supported")
     return binding
 
@@ -219,6 +247,10 @@ class JobFacts(Protocol):
 
     def asset(self, workspace_id: str, asset_id: str) -> tuple[str, str] | None: ...
 
+    def voice_draft_revision(
+        self, draft_id: str, revision: str
+    ) -> VoiceDraftRevisionFact | None: ...
+
     def catalog_revision(self) -> int: ...
 
     def now_us(self) -> int: ...
@@ -236,6 +268,12 @@ class PublicJobStore(Protocol):
         ...
 
     def create(self, job: NewPublicJob) -> JobCreateResult: ...
+
+    def create_revision(
+        self, job: NewPublicJob, *, draft_id: str, expected_revision: str
+    ) -> RevisionCreateResult: ...
+
+    def revision_for_job(self, draft_id: str, job_id: str) -> str | None: ...
 
     def get(self, job_id: str) -> PublicJob | None: ...
 
@@ -311,6 +349,7 @@ def _candidate_artifact_ids(job: PublicJob) -> tuple[str, ...]:
     candidates: list[object] = [
         result.get("transcript_artifact_id"),
         result.get("audio_artifact_id"),
+        result.get("validation_report_artifact_id"),
     ]
     previews = result.get("preview_artifact_ids")
     if isinstance(previews, list):
@@ -359,22 +398,78 @@ def resolve_voice_previews(
         or len(set(artifact_ids)) != len(artifact_ids)
     ):
         raise PublicJobUnavailableError
-    previews = []
-    for artifact_id in artifact_ids:
-        try:
-            identifier(artifact_id)
-        except ValueError:
-            raise PublicJobUnavailableError from None
-        fact = artifact(workspace_id, artifact_id)
-        if (
-            fact is None
-            or fact.artifact_id != artifact_id
-            or fact.kind != "preview"
-            or fact.receipt_id != receipt_id
-        ):
-            raise PublicJobUnavailableError
-        previews.append(fact)
-    return tuple(previews)
+    return tuple(
+        _ready_artifact(
+            workspace_id=workspace_id,
+            artifact_id=artifact_id,
+            receipt_id=receipt_id,
+            kind="preview",
+            artifact=artifact,
+        )
+        for artifact_id in artifact_ids
+    )
+
+
+def _ready_artifact(
+    *,
+    workspace_id: str,
+    artifact_id: str,
+    receipt_id: str,
+    kind: str,
+    artifact: Callable[[str, str], JobArtifactFact | None],
+) -> JobArtifactFact:
+    """One committed, ready Artifact with the exact declared kind and receipt."""
+    try:
+        identifier(artifact_id)
+    except ValueError:
+        raise PublicJobUnavailableError from None
+    fact = artifact(workspace_id, artifact_id)
+    if (
+        fact is None
+        or fact.artifact_id != artifact_id
+        or fact.kind != kind
+        or fact.receipt_id != receipt_id
+    ):
+        raise PublicJobUnavailableError
+    return fact
+
+
+def resolve_voice_validation_report(
+    *,
+    workspace_id: str,
+    kind: str,
+    state: str,
+    result_json: str | None,
+    artifact: Callable[[str, str], JobArtifactFact | None],
+) -> tuple[JobArtifactFact, ...]:
+    """Resolve the single ready validation report a succeeded result references.
+
+    The result is never trusted on its own: the referenced Artifact row must be
+    committed, ready, carry the validation_report kind and the same receipt.
+    """
+    if state != "succeeded":
+        return ()
+    if kind != "voice_validation" or result_json is None:
+        raise PublicJobUnavailableError
+    try:
+        result = json.loads(result_json)
+    except ValueError, TypeError, RecursionError:
+        raise PublicJobUnavailableError from None
+    if not isinstance(result, dict) or result.get("kind") != kind:
+        raise PublicJobUnavailableError
+    artifact_id = result.get("validation_report_artifact_id")
+    receipt_id = result.get("receipt_id")
+    if not isinstance(artifact_id, str) or not isinstance(receipt_id, str):
+        raise PublicJobUnavailableError
+    return (
+        _ready_artifact(
+            workspace_id=workspace_id,
+            artifact_id=artifact_id,
+            receipt_id=receipt_id,
+            kind="validation_report",
+            artifact=artifact,
+        ),
+    )
 
 
 class PublicJobs:
@@ -401,7 +496,7 @@ class PublicJobs:
         idempotency_key: str | None,
     ) -> PublicJob:
         kind = payload.get("kind")
-        if kind not in ("asr", "tts", "voice_design", "voice_clone"):
+        if kind not in ("asr", "tts", "voice_design", "voice_clone", "voice_validation"):
             raise UnsupportedJobKindError
         typed_kind: JobKind = kind
         workspace_id = payload.get("workspace_id", DEFAULT_WORKSPACE)
@@ -437,6 +532,8 @@ class PublicJobs:
             ProfileNotPublishedError,
             PronunciationNotFoundError,
             AssetNotReadyError,
+            VoiceDraftStaleRevisionError,
+            VoiceDraftNotCandidateError,
         ):
             # The first lookup can miss a concurrent commit. Before rejecting
             # changed facts, settle the same-key writer and recover its result.
@@ -447,6 +544,77 @@ class PublicJobs:
                 )
                 if original is not None:
                     return _submission_result(original)
+            raise
+
+    def submit_revision(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        draft_id: str,
+        expected_revision: str,
+        request_id: str,
+        idempotency_key: str | None,
+    ) -> tuple[PublicJob, str]:
+        """Append one revision to an existing draft; replay precedes every lock."""
+        identifier(draft_id)
+        if _REVISION.fullmatch(expected_revision) is None:
+            raise ValueError("Invalid draft revision")
+        kind = payload.get("kind")
+        if kind not in ("voice_design", "voice_clone"):
+            raise UnsupportedJobKindError
+        typed_kind: JobKind = kind
+        workspace_id = payload.get("workspace_id")
+        if not isinstance(workspace_id, str):
+            raise UnknownWorkspaceError
+        identifier(workspace_id)
+        target = payload.get("draft_target")
+        if (
+            not isinstance(target, dict)
+            or set(target) != {"id", "expected_revision"}
+            or target.get("id") != draft_id
+            or target.get("expected_revision") != expected_revision
+        ):
+            raise ValueError("Draft target disagrees with its revision append")
+        intent = _canonical_intent(payload, typed_kind)
+        request_digest = canonical_digest(intent)
+        key_digest = None if idempotency_key is None else idempotency_digest(idempotency_key)
+        if key_digest is not None:
+            original = self._find_original(
+                workspace_id, key_digest, request_digest, retry_of_job_id=None
+            )
+            if original is not None:
+                return _replayed_revision(original, draft_id, self._store)
+        try:
+            request = self._prepare_job(
+                payload,
+                typed_kind=typed_kind,
+                workspace_id=workspace_id,
+                intent=intent,
+                request_digest=request_digest,
+                key_digest=key_digest,
+                request_id=request_id,
+                retry_of_job_id=None,
+            )
+            result = self._store.create_revision(
+                request, draft_id=draft_id, expected_revision=expected_revision
+            )
+            return _revision_result(result)
+        except (
+            UnknownWorkspaceError,
+            DisabledWorkspaceError,
+            ModelNotPublishedError,
+            ModelBindingError,
+            VoiceNotPublishedError,
+            ProfileNotPublishedError,
+            PronunciationNotFoundError,
+            AssetNotReadyError,
+        ):
+            if key_digest is not None:
+                original = self._find_original(
+                    workspace_id, key_digest, request_digest, retry_of_job_id=None
+                )
+                if original is not None:
+                    return _replayed_revision(original, draft_id, self._store)
             raise
 
     def _find_original(
@@ -470,7 +638,7 @@ class PublicJobs:
             raise JobOutcomeUnknownError
         return original
 
-    def _submit_new(
+    def _prepare_job(
         self,
         payload: Mapping[str, Any],
         *,
@@ -481,22 +649,39 @@ class PublicJobs:
         key_digest: str | None,
         request_id: str,
         retry_of_job_id: str | None,
-    ) -> PublicJob:
+    ) -> NewPublicJob:
         workspace = self._facts.workspace(workspace_id)
         if workspace is None:
             raise UnknownWorkspaceError
         if not workspace.active:
             raise DisabledWorkspaceError
 
-        model_id = payload.get("model")
-        if not isinstance(model_id, str):
-            raise ModelNotPublishedError
-        pin = self._binding_reference(payload.get("model_binding"))
-        if "model_binding" in payload and (pin is None or typed_kind != "tts"):
-            raise ValueError("Invalid model binding")
+        raw_model = payload.get("model")
+        model_id: str
+        pin: tuple[str, int] | None
+        if typed_kind == "voice_validation":
+            pin, derived_model = self._validation_binding(payload, workspace_id)
+            if raw_model is None:
+                model_id = derived_model
+            elif isinstance(raw_model, str) and raw_model == derived_model:
+                model_id = raw_model
+            else:
+                raise ModelBindingError("model_binding_mismatch")
+        else:
+            if not isinstance(raw_model, str):
+                raise ModelNotPublishedError
+            model_id = raw_model
+            pin = self._binding_reference(payload.get("model_binding"))
+            if "model_binding" in payload and (pin is None or typed_kind != "tts"):
+                raise ValueError("Invalid model binding")
         binding: BindingFact
         if pin is not None:
-            binding = require_pinned_binding(self._facts.binding_revision(*pin), pin, model_id)
+            binding = require_pinned_binding(
+                self._facts.binding_revision(*pin),
+                pin,
+                model_id,
+                task=_REQUIRED_TASK[typed_kind],
+            )
         else:
             latest = self._facts.latest_binding(model_id)
             if latest is None:
@@ -561,7 +746,7 @@ class PublicJobs:
             submitted_at_us=self._now_us(),
         )
         job_id = "job-" + uuid.uuid4().hex
-        request = NewPublicJob(
+        return NewPublicJob(
             job_id=job_id,
             workspace_id=workspace_id,
             kind=typed_kind,
@@ -580,8 +765,71 @@ class PublicJobs:
             expected_binding=binding.publication if pin is not None else None,
             retry_of_job_id=retry_of_job_id,
         )
-        result = self._store.create(request)
-        return _submission_result(result)
+
+    def _validation_binding(
+        self, payload: Mapping[str, Any], workspace_id: str
+    ) -> tuple[tuple[str, int], str]:
+        """Resolve the exact candidate revision a validation Job may target."""
+        request_input = payload.get("input")
+        if not isinstance(request_input, dict):
+            raise VoiceInputInvalidError
+        draft_id = request_input.get("voice_draft_id")
+        revision = request_input.get("draft_revision")
+        if not isinstance(draft_id, str) or not isinstance(revision, str):
+            raise VoiceInputInvalidError
+        identifier(draft_id)
+        fact = self._facts.voice_draft_revision(draft_id, revision)
+        if fact is None or fact.workspace_id != workspace_id:
+            raise PublicJobNotFoundError
+        explicit = self._binding_reference(payload.get("model_binding"))
+        if explicit is not None and explicit != fact.binding:
+            raise ModelBindingError("model_binding_mismatch")
+        if fact.head_revision != revision:
+            raise VoiceDraftStaleRevisionError
+        if fact.state != "succeeded":
+            raise VoiceDraftNotCandidateError
+        if fact.kind not in ("design", "clone"):
+            raise PublicJobUnavailableError
+        # A succeeded generation is not enough: the preview receipt and every
+        # ready artifact must agree, or the validation target is not authoritative.
+        resolve_voice_previews(
+            workspace_id=fact.workspace_id,
+            kind="voice_" + fact.kind,
+            state=fact.state,
+            result_json=fact.result_json,
+            artifact=self._store.artifact,
+        )
+        binding = self._facts.binding_revision(*fact.binding)
+        if binding is None:
+            raise ModelBindingError("model_binding_not_published")
+        logical = binding.definition.get("logical_model")
+        if not isinstance(logical, str):
+            raise ModelBindingError("model_binding_not_published")
+        return fact.binding, logical
+
+    def _submit_new(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        typed_kind: JobKind,
+        workspace_id: str,
+        intent: Mapping[str, Any],
+        request_digest: str,
+        key_digest: str | None,
+        request_id: str,
+        retry_of_job_id: str | None,
+    ) -> PublicJob:
+        request = self._prepare_job(
+            payload,
+            typed_kind=typed_kind,
+            workspace_id=workspace_id,
+            intent=intent,
+            request_digest=request_digest,
+            key_digest=key_digest,
+            request_id=request_id,
+            retry_of_job_id=retry_of_job_id,
+        )
+        return _submission_result(self._store.create(request))
 
     def get(self, job_id: str) -> PublicJob:
         identifier(job_id)
@@ -645,8 +893,14 @@ class PublicJobs:
             raise PublicJobUnavailableError from None
         if not isinstance(payload, dict) or canonical_digest(payload) != intent.request_digest:
             raise PublicJobUnavailableError
-        if payload.get("kind") != parent.kind or payload.get("model") != parent.model_id:
+        if payload.get("kind") != parent.kind or (
+            payload.get("model", parent.model_id) != parent.model_id
+        ):
             raise PublicJobUnavailableError
+        if payload.get("draft_target") is not None:
+            # A revision append is not a fresh draft; replay the original key or
+            # start a new generation explicitly.
+            raise JobRetryUnavailableError
         key_digest = None if idempotency_key is None else idempotency_digest(idempotency_key)
         if key_digest is not None:
             original = self._find_original(
@@ -744,6 +998,14 @@ class PublicJobs:
             raise PublicJobUnavailableError
         if job.kind in ("voice_design", "voice_clone"):
             return resolve_voice_previews(
+                workspace_id=job.workspace_id,
+                kind=job.kind,
+                state=job.state,
+                result_json=job.result_json,
+                artifact=artifact,
+            )
+        if job.kind == "voice_validation":
+            return resolve_voice_validation_report(
                 workspace_id=job.workspace_id,
                 kind=job.kind,
                 state=job.state,
@@ -882,6 +1144,15 @@ class PublicJobs:
         request_input = payload.get("input")
         if not isinstance(request_input, dict):
             raise AssetNotReadyError
+        if kind == "voice_validation":
+            for name in ("voice_draft_id", "draft_revision", "validation_set_revision"):
+                if not isinstance(request_input.get(name), str):
+                    raise VoiceInputInvalidError
+            identifier(request_input["voice_draft_id"])
+            for name in ("draft_revision", "validation_set_revision"):
+                if _REVISION.fullmatch(request_input[name]) is None:
+                    raise VoiceInputInvalidError
+            return
         if kind in ("voice_design", "voice_clone"):
             language = request_input.get("language")
             if language is not None and (
@@ -920,6 +1191,33 @@ def _retransmission_result(result: JobCreateResult, parent_job_id: str) -> Publi
     if job.retry_of_job_id != parent_job_id:
         raise IdempotencyConflictError
     return job
+
+
+def _replayed_revision(
+    result: JobCreateResult, draft_id: str, store: PublicJobStore
+) -> tuple[PublicJob, str]:
+    if result.outcome == "conflict":
+        raise IdempotencyConflictError
+    if result.job is None:
+        raise JobOutcomeUnknownError
+    revision = store.revision_for_job(draft_id, result.job.job_id)
+    if revision is None:
+        raise JobOutcomeUnknownError
+    return result.job, revision
+
+
+def _revision_result(result: RevisionCreateResult) -> tuple[PublicJob, str]:
+    if result.outcome == "stale":
+        raise VoiceDraftStaleRevisionError
+    if result.outcome == "not_found":
+        raise PublicJobNotFoundError
+    if result.outcome == "conflict":
+        raise IdempotencyConflictError
+    if result.outcome == "unknown":
+        raise JobOutcomeUnknownError
+    if result.outcome == "rejected" or result.job is None or result.revision is None:
+        raise JobRejectedError
+    return result.job, result.revision
 
 
 def _submission_result(result: JobCreateResult) -> PublicJob:
@@ -977,6 +1275,9 @@ __all__ = [
     "PublicJobs",
     "UnknownWorkspaceError",
     "UnsupportedJobKindError",
+    "VoiceDraftNotCandidateError",
+    "VoiceDraftRevisionFact",
+    "VoiceDraftStaleRevisionError",
     "VoiceInputInvalidError",
     "VoiceNotPublishedError",
     "require_pinned_binding",

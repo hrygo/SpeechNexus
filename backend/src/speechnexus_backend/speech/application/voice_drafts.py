@@ -7,6 +7,7 @@ from typing import Any, Literal, Protocol
 
 from speechnexus_backend.speech.application.public_jobs import (
     PublicJobs,
+    VoiceInputInvalidError,
 )
 from speechnexus_backend.speech.domain.public_jobs import (
     PublicJob,
@@ -69,6 +70,10 @@ class VoiceDraftNotFoundError(LookupError):
 class VoiceDraftStore(Protocol):
     def get(self, draft_id: str, revision: str | None = None) -> dict[str, Any] | None: ...
 
+    def revision_target(self, draft_id: str, revision: str) -> dict[str, Any] | None: ...
+
+    def revision(self, draft_id: str, revision: str) -> dict[str, Any] | None: ...
+
     def update_metadata(
         self,
         draft_id: str,
@@ -98,6 +103,30 @@ def require_candidate_facts(view: dict[str, Any], jobs: PublicJobs) -> None:
         draft_revision["preview_artifact_ids"] = [fact.artifact_id for fact in previews]
 
 
+def _revision_input(payload: Mapping[str, Any], kind: str) -> None:
+    request_input = payload.get("input")
+    if not isinstance(request_input, dict):
+        raise VoiceInputInvalidError
+    if kind == "design":
+        if not isinstance(request_input.get("description"), str) or not isinstance(
+            request_input.get("preview_text"), str
+        ):
+            raise VoiceInputInvalidError
+    else:
+        if (
+            not isinstance(request_input.get("reference_audio_asset_id"), str)
+            or request_input.get("source_use_confirmed") is not True
+        ):
+            raise VoiceInputInvalidError
+    language = request_input.get("language")
+    if language is not None and (
+        not isinstance(language, str) or not language.strip() or len(language) > 35
+    ):
+        raise VoiceInputInvalidError
+    if not voice_input_fits(voice_input_document(request_input, kind)):
+        raise VoiceInputInvalidError
+
+
 class VoiceDrafts:
     def __init__(self, jobs: PublicJobs, store: VoiceDraftStore) -> None:
         self._jobs, self._store = jobs, store
@@ -115,6 +144,73 @@ class VoiceDrafts:
         )
         view = self.get(draft_id_for_job(job.job_id))
         return view["draft"], job
+
+    def generate(
+        self,
+        draft_id: str,
+        payload: Mapping[str, Any],
+        *,
+        request_id: str,
+        idempotency_key: str | None,
+    ) -> tuple[dict[str, Any], PublicJob]:
+        draft_id = identifier(draft_id)
+        expected = payload["expected_draft_revision"]
+        target = self._store.revision_target(draft_id, expected)
+        if target is None:
+            raise VoiceDraftNotFoundError
+        if target["status"] in ("published", "preview_only"):
+            raise VoiceDraftConflictError
+        kind = target["kind"]
+        if kind not in ("design", "clone"):
+            raise PublicJobUnavailableError
+        _revision_input(payload, kind)
+        job, revision = self._jobs.submit_revision(
+            {
+                **payload,
+                "kind": "voice_design" if kind == "design" else "voice_clone",
+                "workspace_id": target["workspace_id"],
+                "draft_target": {"id": draft_id, "expected_revision": expected},
+            },
+            draft_id=draft_id,
+            expected_revision=expected,
+            request_id=request_id,
+            idempotency_key=idempotency_key,
+        )
+        revision_view = self._store.revision(draft_id, revision)
+        if revision_view is None:
+            raise PublicJobUnavailableError
+        # The draft is the current head; a replayed revision may be older than
+        # it, and the revision object remains the original immutable one.
+        return {"draft": self.get(draft_id)["draft"], "revision": revision_view}, job
+
+    def validate(
+        self,
+        draft_id: str,
+        payload: Mapping[str, Any],
+        *,
+        request_id: str,
+        idempotency_key: str | None,
+    ) -> PublicJob:
+        draft_id = identifier(draft_id)
+        expected = payload["expected_draft_revision"]
+        target = self._store.revision_target(draft_id, expected)
+        if target is None:
+            raise VoiceDraftNotFoundError
+        if target["status"] in ("published", "preview_only"):
+            raise VoiceDraftConflictError
+        body: dict[str, Any] = {
+            "kind": "voice_validation",
+            "workspace_id": target["workspace_id"],
+            "input": {
+                "voice_draft_id": draft_id,
+                "draft_revision": expected,
+                "validation_set_revision": payload["validation_set_revision"],
+            },
+            "model_binding": target["binding"],
+        }
+        if "model" in payload:
+            body["model"] = payload["model"]
+        return self._jobs.submit(body, request_id=request_id, idempotency_key=idempotency_key)
 
     def get(self, draft_id: str, revision: str | None = None) -> dict[str, Any]:
         view = self._store.get(identifier(draft_id), revision)

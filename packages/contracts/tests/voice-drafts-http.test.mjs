@@ -42,6 +42,29 @@ test("voice client consumes a created draft and reads its pinned revision", asyn
   assert.equal(calls, 2);
 });
 
+test("voice revision operations validate their fixed head and candidate input", () => {
+  validateRequest("generateVoiceDraftRevision", {
+    path: { draft_id: fixture.view.draft.id },
+    body: {
+      expected_draft_revision: "2",
+      model: "tts-quality",
+      input: { description: "Synthetic next voice", preview_text: "Synthetic next preview" },
+    },
+  });
+  validateRequest("validateVoiceDraftRevision", {
+    path: { draft_id: fixture.view.draft.id },
+    body: { expected_draft_revision: "2", validation_set_revision: "1" },
+  });
+  assert.throws(
+    () =>
+      validateRequest("validateVoiceDraftRevision", {
+        path: { draft_id: fixture.view.draft.id },
+        body: { expected_draft_revision: "0", validation_set_revision: "1" },
+      }),
+    ContractValidationError,
+  );
+});
+
 test("voice metadata and clone validation reject unsupported intent before fetching", () => {
   assert.throws(
     () =>

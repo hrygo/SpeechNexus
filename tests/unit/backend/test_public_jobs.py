@@ -70,6 +70,9 @@ class Facts:
     def asset(self, workspace_id: str, asset_id: str) -> tuple[str, str] | None:
         return None
 
+    def voice_draft_revision(self, draft_id: str, revision: str) -> None:
+        return None
+
     def catalog_revision(self) -> int:
         return 31
 
@@ -127,6 +130,14 @@ class Store:
         if job.idempotency_key_digest is not None:
             self.keys[job.idempotency_key_digest] = (job.request_digest, job.job_id)
         return JobCreateResult("created", public)
+
+    def create_revision(
+        self, job: NewPublicJob, *, draft_id: str, expected_revision: str
+    ) -> Any:
+        raise NotImplementedError
+
+    def revision_for_job(self, draft_id: str, job_id: str) -> str | None:
+        raise NotImplementedError
 
     def get(self, job_id: str) -> PublicJob | None:
         return self.jobs.get(job_id)

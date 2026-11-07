@@ -311,3 +311,34 @@ async def test_composition_root_opens_verified_writer_and_serves_the_job(
         read = await client.get(PREFIX + "/" + created.json()["id"])
         assert read.status_code == 200, read.text
         assert read.json() == created.json()
+
+
+def test_voice_draft_revision_grants_are_append_only(jobs_db: JobSandbox) -> None:
+    role = jobs_db.role
+    assert role
+    revision_table = f"{jobs_db.schema}.speech_voice_draft_revisions"
+    draft_table = f"{jobs_db.schema}.speech_voice_drafts"
+    row = jobs_db.query(
+        "SELECT pg_catalog.has_table_privilege(%s, %s, 'SELECT') AS can_select, "
+        "pg_catalog.has_table_privilege(%s, %s, 'INSERT') AS can_insert, "
+        "pg_catalog.has_table_privilege(%s, %s, 'UPDATE') AS can_update, "
+        "pg_catalog.has_table_privilege(%s, %s, 'DELETE') AS can_delete, "
+        "pg_catalog.has_column_privilege(%s, %s, 'head_revision', 'UPDATE') AS can_head",
+        (role, revision_table, role, revision_table, role, revision_table,
+         role, revision_table, role, draft_table),
+    )[0]
+    assert row["can_select"] is True
+    assert row["can_insert"] is True
+    assert row["can_update"] is False
+    assert row["can_delete"] is False
+    assert row["can_head"] is True
+    try:
+        jobs_db.admin.execute(f'SET ROLE "{role}"')
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            jobs_db.admin.execute(
+                f"UPDATE {revision_table} SET revision='2' WHERE false"
+            )
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            jobs_db.admin.execute(f"DELETE FROM {revision_table} WHERE false")
+    finally:
+        jobs_db.admin.execute("RESET ROLE")

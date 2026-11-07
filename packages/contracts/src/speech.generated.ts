@@ -5501,6 +5501,7 @@ export interface operations {
       405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
+      429: components["responses"]["TooManyRequests"];
       500: components["responses"]["VoiceDraftContractViolation"];
       /**
        * @description `voice_draft_unavailable`: storage failed before any definite
@@ -5575,6 +5576,7 @@ export interface operations {
       405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
+      429: components["responses"]["TooManyRequests"];
       500: components["responses"]["VoiceDraftContractViolation"];
       /**
        * @description `voice_draft_unavailable`: storage failed before any definite
@@ -5649,6 +5651,7 @@ export interface operations {
       405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
+      429: components["responses"]["TooManyRequests"];
       500: components["responses"]["VoiceDraftContractViolation"];
       /**
        * @description `voice_draft_unavailable`: storage failed before any definite

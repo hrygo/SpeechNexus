@@ -7,6 +7,16 @@ import time
 from collections.abc import Callable, Mapping
 from typing import Any, Protocol
 
+from speechnexus_backend.speech.application.voice_validation_report import (
+    MAX_PROBE_TEXT,
+    VALIDATION_OUTPUT_ARTIFACT_KIND,
+    VALIDATION_OUTPUT_MEDIA_TYPE,
+    ValidationRunFacts,
+    build_validation_report,
+    build_validation_result,
+    measure_wav,
+    validation_outcome,
+)
 from speechnexus_backend.speech.domain.artifacts import (
     ArtifactError,
     ArtifactKind,
@@ -67,6 +77,14 @@ class StagingResultObjects(Protocol):
     def read(self, reference: Mapping[str, Any], storage_version: str) -> bytes: ...
 
 
+class ValidationRunFactsReader(Protocol):
+    def read(self, job: DispatchJob) -> ValidationRunFacts: ...
+
+
+class CommittedReportReader(Protocol):
+    def read(self, artifact: ArtifactRecord) -> bytes: ...
+
+
 class ResultArtifactPublisher:
     """Write object bytes first, then one deterministic committed Artifact row."""
 
@@ -76,10 +94,14 @@ class ResultArtifactPublisher:
         blobs: ArtifactBlobs,
         staging: StagingResultObjects,
         *,
+        validation: ValidationRunFactsReader | None = None,
+        report_reader: CommittedReportReader | None = None,
         now_us: Callable[[], int] | None = None,
         close: Callable[[], None] | None = None,
     ) -> None:
         self._rows, self._blobs, self._staging = rows, blobs, staging
+        self._validation = validation
+        self._report_reader = report_reader
         self._now_us = now_us or (lambda: time.time_ns() // 1_000)
         self._close = close
 
@@ -94,10 +116,16 @@ class ResultArtifactPublisher:
     async def publish(
         self, job: DispatchJob, submission: ExecutionSubmission, receipt: Mapping[str, Any]
     ) -> PublishedResult:
-        del submission
-        return await asyncio.to_thread(self._publish, job, receipt)
+        return await asyncio.to_thread(self._publish, job, submission, receipt)
 
-    def _publish(self, job: DispatchJob, receipt: Mapping[str, Any]) -> PublishedResult:
+    def _publish(
+        self,
+        job: DispatchJob,
+        submission: ExecutionSubmission,
+        receipt: Mapping[str, Any],
+    ) -> PublishedResult:
+        if job.kind == "voice_validation":
+            return self._publish_validation(job, submission, receipt)
         artifact_id = result_artifact_identity(job.job_id, job.kind)
         try:
             existing = self._rows.find(artifact_id)
@@ -147,6 +175,84 @@ class ResultArtifactPublisher:
         except ValueError:
             raise DispatchProtocolError("Result receipt is outside the frozen contract") from None
 
+    def _publish_validation(
+        self,
+        job: DispatchJob,
+        submission: ExecutionSubmission,
+        receipt: Mapping[str, Any],
+    ) -> PublishedResult:
+        """Commit the report Artifact and the exact public result in one replay-safe step."""
+        artifact_id = result_artifact_identity(job.job_id, job.kind)
+        try:
+            existing = self._rows.find(artifact_id)
+            if existing is not None:
+                return self._published_validation(existing, job, submission)
+            if self._validation is None:
+                raise DispatchProtocolError("Validation report publication is not configured")
+            facts = self._validation.read(job)
+            preview_text = _validation_probe(submission, facts)
+            reference, storage_version, media_type = _receipt_reference(job, receipt)
+            if media_type != "audio/wav":
+                raise DispatchProtocolError("Validation receipt is not a WAV result")
+            body = self._staging.read(reference, storage_version)
+            sha256 = hash_bytes(body)
+            if len(body) != reference["byte_length"] or sha256 != reference["content_sha256"]:
+                raise DispatchProtocolError("Staging result bytes disagree with their receipt")
+            measured = measure_wav(body)
+            report = build_validation_report(facts, probe_text=preview_text, measured=measured)
+            report_sha = hash_bytes(report)
+            object_key = result_object_key(job.workspace_id, artifact_id)
+            write = ArtifactObjectWrite(
+                artifact_id,
+                job.workspace_id,
+                object_key,
+                VALIDATION_OUTPUT_MEDIA_TYPE,
+                len(report),
+                report_sha,
+                report,
+            )
+            version_id = self._blobs.put_verified(write)
+            created_at_us = self._now_us()
+            if type(created_at_us) is not int or created_at_us < 0:
+                raise DispatchUnavailableError("Result publication clock is unavailable")
+            receipt_id = result_receipt_identity(job.job_id)
+            committed = self._rows.insert_ready(
+                ArtifactRecord(
+                    artifact_id,
+                    job.workspace_id,
+                    VALIDATION_OUTPUT_ARTIFACT_KIND,
+                    "ready",
+                    VALIDATION_OUTPUT_MEDIA_TYPE,
+                    len(report),
+                    report_sha,
+                    receipt_id,
+                    job.job_id,
+                    created_at_us,
+                    None,
+                    object_key,
+                    version_id,
+                )
+            )
+            checks, eligible = validation_outcome(report)
+            return self._published_validation(
+                committed,
+                job,
+                submission,
+                report=report,
+                checks=checks,
+                publication_eligible=eligible,
+            )
+        except ArtifactError as error:
+            if error.code in {"artifact_object_conflict", "artifact_object_integrity_mismatch"}:
+                raise DispatchProtocolError(
+                    "Committed validation Artifact facts disagree"
+                ) from None
+            raise DispatchUnavailableError("Validation report storage is unavailable") from None
+        except ValueError:
+            raise DispatchProtocolError(
+                "Validation report is outside the frozen contract"
+            ) from None
+
     @staticmethod
     def _published(record: ArtifactRecord, job: DispatchJob) -> PublishedResult:
         expected_kind = _media_for(job.kind).get(record.media_type)
@@ -160,6 +266,66 @@ class ResultArtifactPublisher:
             raise DispatchProtocolError("Committed Artifact belongs to another result")
         return PublishedResult(record.artifact_id, record.receipt_id)
 
+    def _published_validation(
+        self,
+        record: ArtifactRecord,
+        job: DispatchJob,
+        submission: ExecutionSubmission,
+        *,
+        report: bytes | None = None,
+        checks: list[dict[str, Any]] | None = None,
+        publication_eligible: bool | None = None,
+    ) -> PublishedResult:
+        if self._validation is None:
+            raise DispatchProtocolError("Validation report publication is not configured")
+        if (
+            record.workspace_id != job.workspace_id
+            or record.kind != VALIDATION_OUTPUT_ARTIFACT_KIND
+            or record.media_type != VALIDATION_OUTPUT_MEDIA_TYPE
+            or record.status != "ready"
+            or record.receipt_id is None
+        ):
+            raise DispatchProtocolError("Committed validation Artifact belongs to another result")
+        facts = self._validation.read(job)
+        _validation_probe(submission, facts)
+        if checks is None or publication_eligible is None:
+            if report is None:
+                if self._report_reader is None:
+                    raise DispatchProtocolError(
+                        "Committed validation report cannot be read on replay"
+                    )
+                report = self._report_reader.read(record)
+                if len(report) != record.bytes or hash_bytes(report) != record.sha256:
+                    raise DispatchProtocolError(
+                        "Committed validation report disagrees with its Artifact row"
+                    )
+            checks, publication_eligible = validation_outcome(report)
+        result_json = build_validation_result(
+            facts,
+            job_id=job.job_id,
+            artifact_id=record.artifact_id,
+            receipt_id=record.receipt_id,
+            created_at_us=record.created_at_us,
+            checks=checks,
+            publication_eligible=publication_eligible,
+        )
+        return PublishedResult(record.artifact_id, record.receipt_id, result_json)
+
+
+def _validation_probe(submission: ExecutionSubmission, facts: ValidationRunFacts) -> str:
+    body = submission.body
+    command = body.get("command") if isinstance(body, Mapping) else None
+    if not isinstance(command, Mapping) or command.get("kind") != "voiceclone":
+        raise DispatchProtocolError("Validation submit is not a clone command")
+    preview_text = command.get("preview_text")
+    if not isinstance(preview_text, str) or not 1 <= len(preview_text) <= MAX_PROBE_TEXT:
+        raise DispatchProtocolError("Validation submit has no probe text")
+    if preview_text == facts.generation_preview_text:
+        # The call would replay the generation text, so it cannot evidence
+        # reusable TTS on new text even if the engine returns audio.
+        raise DispatchProtocolError("Validation probe reuses the generation preview text")
+    return preview_text
+
 
 def _media_for(kind: str) -> dict[str, ArtifactKind]:
     """Return the media map for one dispatchable kind, or fail closed."""
@@ -169,9 +335,9 @@ def _media_for(kind: str) -> dict[str, ArtifactKind]:
     return media
 
 
-def _result_receipt(
+def _receipt_reference(
     job: DispatchJob, receipt: Mapping[str, Any]
-) -> tuple[Mapping[str, Any], str, str, ArtifactKind]:
+) -> tuple[Mapping[str, Any], str, str]:
     if not isinstance(receipt, Mapping):
         raise DispatchProtocolError("Result receipt is not an object")
     reference = receipt.get("reference")
@@ -180,9 +346,6 @@ def _result_receipt(
     media_type = receipt.get("media_type")
     if not isinstance(media_type, str):
         raise DispatchProtocolError("Result receipt has no media type")
-    kind = _media_for(job.kind).get(media_type)
-    if kind is None:
-        raise DispatchProtocolError("Result media type is not allowed for this Job")
     storage_version = receipt.get("storage_version")
     if (
         not isinstance(storage_version, str)
@@ -210,6 +373,16 @@ def _result_receipt(
     byte_length = reference.get("byte_length")
     if type(byte_length) is not int or not 1 <= byte_length <= MAX_RESULT_BYTES:
         raise DispatchProtocolError("Result receipt has an invalid byte length")
+    return reference, storage_version, media_type
+
+
+def _result_receipt(
+    job: DispatchJob, receipt: Mapping[str, Any]
+) -> tuple[Mapping[str, Any], str, str, ArtifactKind]:
+    reference, storage_version, media_type = _receipt_reference(job, receipt)
+    kind = _media_for(job.kind).get(media_type)
+    if kind is None:
+        raise DispatchProtocolError("Result media type is not allowed for this Job")
     return reference, storage_version, media_type, kind
 
 

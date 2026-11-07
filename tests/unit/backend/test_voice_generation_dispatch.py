@@ -84,7 +84,13 @@ def _job(
 def test_default_lane_stays_asr_and_tts_while_the_union_adds_voice() -> None:
     assert DISPATCHABLE_JOB_KINDS == ("asr", "tts")
     assert VOICE_GENERATION_JOB_KINDS == ("voice_design", "voice_clone")
-    assert DISPATCHABLE_JOB_KIND_UNION == ("asr", "tts", "voice_design", "voice_clone")
+    assert DISPATCHABLE_JOB_KIND_UNION == (
+        "asr",
+        "tts",
+        "voice_design",
+        "voice_clone",
+        "voice_validation",
+    )
 
 
 @pytest.mark.parametrize("kind", DISPATCHABLE_JOB_KIND_UNION)
@@ -92,7 +98,7 @@ def test_dispatch_job_accepts_every_union_kind(kind: str) -> None:
     assert _job(kind).kind == kind
 
 
-@pytest.mark.parametrize("kind", ["voice_preview", "voice_validation", "unknown"])
+@pytest.mark.parametrize("kind", ["voice_preview", "unknown"])
 def test_dispatch_job_rejects_a_kind_outside_the_union(kind: str) -> None:
     with pytest.raises(ValueError, match="Invalid dispatch Job kind"):
         _job(kind)
@@ -218,7 +224,6 @@ def test_queue_accepts_an_explicit_voice_lane() -> None:
         ((), "at least one Job kind"),
         (("asr", "asr"), "must be unique"),
         (("voice_preview",), "outside the dispatchable union"),
-        (("asr", "voice_validation"), "outside the dispatchable union"),
     ],
 )
 def test_queue_rejects_an_invalid_lane(kinds: tuple[str, ...], message: str) -> None:
@@ -287,13 +292,21 @@ def _receipt(media_type: str = "audio/wav") -> dict[str, Any]:
     }
 
 
+def _submission() -> ExecutionSubmission:
+    submit_intent_id = "submit-" + "b" * 32
+    return ExecutionSubmission(
+        submit_intent_id,
+        {"submit_intent_id": submit_intent_id, "command_digest": DIGEST},
+    )
+
+
 @pytest.mark.parametrize("kind", VOICE_GENERATION_JOB_KINDS)
 def test_voice_result_publication_commits_one_preview_artifact(kind: str) -> None:
     rows, blobs, staging = _Rows(), _Blobs(), _Staging()
     publisher = ResultArtifactPublisher(rows, blobs, staging, now_us=lambda: NOW)
     job = _job(kind, state="running")
 
-    published = publisher._publish(job, _receipt())
+    published = publisher._publish(job, _submission(), _receipt())
 
     commit = rows.records[published.artifact_id]
     assert commit.kind == "preview"
@@ -308,7 +321,9 @@ def test_voice_publication_rejects_a_non_preview_media_type() -> None:
     publisher = ResultArtifactPublisher(rows, blobs, staging)
 
     with pytest.raises(DispatchProtocolError):
-        publisher._publish(_job(state="running"), _receipt(media_type="application/json"))
+        publisher._publish(
+            _job(state="running"), _submission(), _receipt(media_type="application/json")
+        )
 
     assert rows.records == {} and staging.reads == 0
 

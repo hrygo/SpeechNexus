@@ -287,7 +287,10 @@ request ID，不覆盖他人事实。
 观察或围栏仍有行时拒绝删除，要求先保留或导出证据。`public_job_grants` 为 API Job writer
 授予围栏 SELECT/INSERT 与 `speech_artifacts` 的 SELECT；`job_dispatch_grants` 的取消围栏部分只授予派发器对 not-submitted 表的 INSERT，其 Job 写入部分另含 `admission_operations` INSERT 与 `speech_job_intents` 的 SELECT/INSERT；
 worker 角色使用 `public_job_grants` 与 `cancellation_reconciliation_grants`（围栏列 SELECT、
-对账账本 SELECT/INSERT/列级 UPDATE、not-submitted SELECT）。派发器的终态结算与取消对账
+对账账本 SELECT/INSERT/列级 UPDATE、not-submitted SELECT）。`voice_validation` 的 worker
+还必须安装 `voice_validation_worker_grants(schema, worker_role)`，以获得
+`speech_voice_draft_revisions` 与 `speech_assets` 的只读事实权限；该授权不包含草稿写权或
+发布表权限。派发器的终态结算与取消对账
 的释放都需要 `coordination_runtime_grants` 给出的 `admission_leases`/`admission_attempts`/
 `workspace_quotas`/`host_nodes`/`engine_instances` 读取与版本列 UPDATE、
 `submit_intents` 的受限列 SELECT、`execution_stop_evidence` SELECT 和

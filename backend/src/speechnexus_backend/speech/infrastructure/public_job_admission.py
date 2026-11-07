@@ -12,9 +12,12 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from speechnexus_backend.speech.application.transcription import AdmittedExecution, StagedAudio
+from speechnexus_backend.speech.application.voice_validation_report import (
+    VALIDATION_PROBE_LANGUAGE,
+)
 from speechnexus_backend.speech.domain.admission import (
     AdmissionIdentity,
     AdmissionRequest,
@@ -39,6 +42,11 @@ from speechnexus_backend.speech.infrastructure.catalog_revision_schema import RE
 from speechnexus_backend.speech.infrastructure.runtime_codec import decode_record
 from speechnexus_backend.speech.infrastructure.transcription_submit import build_asr_submit
 from speechnexus_backend.speech.infrastructure.tts_submit import build_tts_submit_from_parameters
+from speechnexus_backend.speech.infrastructure.voice_validation_submit import (
+    VOICE_VALIDATION_TIMEOUT_SECONDS,
+    build_voice_validation_submit,
+    validation_probe_text,
+)
 
 _CAPACITY_CODES = frozenset({"capacity_exhausted", "quota_exceeded"})
 _ASR_REQUIRED = (
@@ -388,18 +396,43 @@ def build_public_job_admission(
     max_command_bytes: int,
     storage_bucket: str,
 ) -> PublicJobAdmission | None:
-    """Return ``None`` for voice kinds, which keep the pre-admission public path."""
-    if job.kind not in ("asr", "tts"):
+    """Return ``None`` for legacy voice kinds, which keep the pre-admission path.
+
+    ``voice_validation`` is admitted for a clone candidate only. A design
+    revision is not a candidate and raises ``voice_draft_not_candidate``; it
+    never returns ``None`` or a half-admitted Job.
+    """
+    if job.kind not in ("asr", "tts", "voice_validation"):
         return None
     intent = _intent(job)
     try:
         configuration = json.loads(job.submission.effective_configuration_json)
-        reference = configuration["models"][job.kind]
+        # Voice generation and validation pin the single ``voice`` model slot;
+        # only ASR/TTS use a slot named after the Job kind.
+        reference = configuration["models"]["voice" if job.kind == "voice_validation" else job.kind]
         model_id, revision = reference["id"], reference["revision"]
     except ValueError, TypeError, KeyError, RecursionError:
         raise PublicJobAdmissionRejectedError("job_unavailable") from None
-    binding_revision_id, _binding_revision, definition = _binding(cursor, model_id, revision)
-    block = _execution_block(definition, job.kind)
+    binding_revision_id, binding_revision, definition = _binding(cursor, model_id, revision)
+    block: dict[str, Any] | None
+    if job.kind == "voice_validation":
+        # No binding execution block exists for voice work and this slice must
+        # not borrow ASR/TTS defaults. The measurement budget is server-owned.
+        timeout = VOICE_VALIDATION_TIMEOUT_SECONDS
+        execution: dict[str, Any] = {
+            "kind": "voice_validation",
+            "timeout_seconds": timeout,
+        }
+    else:
+        block = _execution_block(definition, job.kind)
+        timeout = block["timeout_seconds"]
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not 0 < timeout <= 600
+        ):
+            raise PublicJobAdmissionRejectedError("job_binding_incomplete")
+        execution = block
     quota = _quota(cursor, job.workspace_id)
     instance = _instance(cursor, binding_revision_id)
     plan = _runtime_plan(cursor, instance)
@@ -419,9 +452,6 @@ def build_public_job_admission(
         or int(instance["fencing_token"]) < 1
     ):
         raise PublicJobAdmissionRejectedError("job_capacity_exhausted")
-    timeout = block["timeout_seconds"]
-    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 600:
-        raise PublicJobAdmissionRejectedError("job_binding_incomplete")
     deadline_at_us = now_us + max(1, round(timeout * 1_000_000))
     # A1/A3 join admission_operations.operation_id = speech_jobs.job_id.
     identity = AdmissionIdentity(job.job_id, "attempt-" + job.job_id.removeprefix("job-"))
@@ -441,6 +471,7 @@ def build_public_job_admission(
         instance["pool_id"], instance["owner_id"], int(instance["fencing_token"])
     )
     if job.kind == "asr":
+        assert block is not None
         audio = _audio(cursor, job.workspace_id, intent, storage_bucket)
         parameters = _asr_parameters(block, intent)
         probe = _empty_admission(
@@ -471,7 +502,8 @@ def build_public_job_admission(
             "parameters": parameters,
             "gateway_request": gateway,
         }
-    else:
+    elif job.kind == "tts":
+        assert block is not None
         voice = _voice(cursor, intent)
         pronunciation, pronunciation_source = _pronunciation(cursor, intent, block)
         merged = {**block, **_overrides(intent, "tts")}
@@ -540,6 +572,68 @@ def build_public_job_admission(
         public_pin = intent.get("model_binding")
         if isinstance(public_pin, dict):
             business_value["model_binding"] = public_pin
+    else:
+        draft_id, draft_revision = _validation_target(intent)
+        row = _one(
+            cursor,
+            "SELECT r.kind, r.input_json, r.binding_json, j.workspace_id "
+            "FROM speech_voice_draft_revisions AS r "
+            "JOIN speech_jobs AS j ON j.job_id = r.generation_job_id "
+            "WHERE r.draft_id=%s AND r.revision=%s",
+            (draft_id, draft_revision),
+        )
+        if row["workspace_id"] != job.workspace_id or row["kind"] != "clone":
+            raise PublicJobAdmissionRejectedError("voice_draft_not_candidate")
+        try:
+            draft_input = json.loads(row["input_json"])
+            draft_binding = json.loads(row["binding_json"])
+        except ValueError, TypeError, RecursionError:
+            raise PublicJobAdmissionRejectedError("job_unavailable") from None
+        if (
+            not isinstance(draft_input, dict)
+            or not isinstance(draft_binding, dict)
+            or draft_input.get("source_use_confirmed") is not True
+            or draft_binding.get("id") != model_id
+            or str(draft_binding.get("revision")) != str(binding_revision)
+        ):
+            raise PublicJobAdmissionRejectedError("voice_draft_not_candidate")
+        reference = _voice_reference(cursor, job.workspace_id, draft_input, storage_bucket)
+        reference_text = draft_input.get("reference_text")
+        if reference_text is not None and (
+            not isinstance(reference_text, str) or not 1 <= len(reference_text) <= 10000
+        ):
+            raise PublicJobAdmissionRejectedError("voice_draft_not_candidate")
+        probe = _empty_admission(
+            identity, job, instance, quota, plan, stage, authority, deadline_at_us
+        )
+        gateway = build_voice_validation_submit(
+            _admitted(probe),
+            reference.audio,
+            reference_sample_rate_hz=reference.sample_rate_hz,
+            reference_channels=reference.channels,
+            reference_text=reference_text,
+            language=VALIDATION_PROBE_LANGUAGE,
+            preview_text=validation_probe_text(job.job_id),
+        )
+        command = cast(dict[str, Any], gateway["command"])
+        business_value = {
+            "kind": "voiceclone",
+            "request_id": job.job_id,
+            "workspace_id": job.workspace_id,
+            "model": model_id,
+            "binding_publication_id": binding_revision_id,
+            "validation": {
+                "draft_id": draft_id,
+                "draft_revision": draft_revision,
+                "validation_set_revision": intent["input"]["validation_set_revision"],
+            },
+            "reference_audio": command["reference_audio"],
+            "reference_text": reference_text,
+            "preview_text": command["preview_text"],
+            "language": VALIDATION_PROBE_LANGUAGE,
+            "source_use_confirmed": True,
+            "gateway_request": gateway,
+        }
     business = business_command_from_value(business_value, max_command_bytes=max_command_bytes)
     request = AdmissionRequest(
         identity=identity,
@@ -550,7 +644,7 @@ def build_public_job_admission(
             {
                 "binding_revision_id": binding_revision_id,
                 "manifest_id": plan.binding.manifest_id,
-                "execution": block,
+                "execution": execution,
             }
         ),
         policy_revision_id=quota["policy_revision"],
@@ -589,6 +683,58 @@ def build_public_job_admission(
         AdmitRecipe(request, business, approved), max_command_bytes=max_command_bytes
     )
     return PublicJobAdmission(prepared, lease_id, deadline_at_us)
+
+
+def _validation_target(intent: dict[str, Any]) -> tuple[str, str]:
+    request_input = intent.get("input")
+    if not isinstance(request_input, dict):
+        raise PublicJobAdmissionRejectedError("job_unavailable")
+    draft_id = request_input.get("voice_draft_id")
+    revision = request_input.get("draft_revision")
+    if not isinstance(draft_id, str) or not isinstance(revision, str):
+        raise PublicJobAdmissionRejectedError("job_unavailable")
+    return draft_id, revision
+
+
+def _voice_reference(
+    cursor: _Cursor, workspace_id: str, draft_input: dict[str, Any], bucket: str
+) -> _AudioFacts:
+    asset_id = draft_input.get("reference_audio_asset_id")
+    if not isinstance(asset_id, str):
+        raise PublicJobAdmissionRejectedError("asset_not_ready")
+    cursor.execute(
+        "SELECT asset_state, purpose, object_key, sha256, bytes, media_type, "
+        "sample_rate_hz, channels FROM speech_assets "
+        "WHERE workspace_id=%s AND asset_id=%s",
+        (workspace_id, asset_id),
+    )
+    rows = cursor.fetchall()
+    if len(rows) != 1:
+        # Missing and cross-workspace assets are the same deterministic 422
+        # candidate refusal; they are not a storage outage.
+        raise PublicJobAdmissionRejectedError("asset_not_ready")
+    row = rows[0]
+    if row["asset_state"] != "ready" or row["purpose"] != "voice_reference":
+        raise PublicJobAdmissionRejectedError("asset_not_ready")
+    try:
+        audio = StagedAudio(
+            asset_id,
+            workspace_id,
+            bucket,
+            row["object_key"],
+            row["sha256"],
+            int(row["bytes"]),
+        )
+        media_type = row["media_type"]
+        sample_rate = int(row["sample_rate_hz"])
+        channels = int(row["channels"])
+    except ValueError, TypeError, KeyError:
+        raise PublicJobAdmissionRejectedError("asset_not_ready") from None
+    if media_type != "audio/wav" or sample_rate not in (16_000, 24_000, 48_000):
+        raise PublicJobAdmissionRejectedError("asset_not_ready")
+    if channels < 1 or channels > 8:
+        raise PublicJobAdmissionRejectedError("asset_not_ready")
+    return _AudioFacts(audio, media_type, sample_rate, channels)
 
 
 def _empty_admission(

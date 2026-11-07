@@ -40,12 +40,20 @@ _IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]\Z")
 # its caller named.
 DISPATCHABLE_JOB_KINDS: tuple[str, ...] = ("asr", "tts")
 VOICE_GENERATION_JOB_KINDS: tuple[str, ...] = ("voice_design", "voice_clone")
+# Validation measures a candidate revision in its own lane. It is admitted
+# atomically like ASR/TTS but executes the existing ``voiceclone`` command, so
+# it must not be conflated with the generation lane that produces a preview.
+VOICE_VALIDATION_JOB_KINDS: tuple[str, ...] = ("voice_validation",)
+VOICE_JOB_KINDS: tuple[str, ...] = (
+    *VOICE_GENERATION_JOB_KINDS,
+    *VOICE_VALIDATION_JOB_KINDS,
+)
 # Every kind a DispatchJob may represent, whether or not a queue claims it.
 DISPATCHABLE_JOB_KIND_UNION: tuple[str, ...] = (
     *DISPATCHABLE_JOB_KINDS,
-    *VOICE_GENERATION_JOB_KINDS,
+    *VOICE_JOB_KINDS,
 )
-DispatchJobKind = Literal["asr", "tts", "voice_design", "voice_clone"]
+DispatchJobKind = Literal["asr", "tts", "voice_design", "voice_clone", "voice_validation"]
 _ERROR_CODE = re.compile(r"[a-z][a-z0-9_]{1,62}\Z")
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _REVISION = re.compile(r"[1-9][0-9]{0,18}\Z")
@@ -294,10 +302,18 @@ class ResultReceipt:
 class PublishedResult:
     artifact_id: str
     receipt_id: str
+    # Validation publishes a complete public result alongside its report
+    # Artifact; the dispatcher must use that exact document rather than a
+    # generic terminal shape that could omit the report reference.
+    result_json: str | None = None
 
     def __post_init__(self) -> None:
         identifier(self.artifact_id)
         identifier(self.receipt_id)
+        if self.result_json is not None and (
+            not isinstance(self.result_json, str) or not self.result_json
+        ):
+            raise ValueError("Invalid published result document")
 
 
 @dataclass(frozen=True, slots=True)
@@ -399,8 +415,51 @@ def validate_voice_dispatch_request(job: DispatchJob) -> None:
     Job explicitly instead of leaving an orphan Artifact and a permanently
     ``running`` Job. ``terminal_result`` still revalidates its own input.
     """
-    if job.kind in VOICE_GENERATION_JOB_KINDS:
+    if job.kind == "voice_validation":
+        _validation_reference(job)
+    elif job.kind in VOICE_GENERATION_JOB_KINDS:
         _voice_draft_reference(job)
+
+
+def _validation_reference(job: DispatchJob) -> tuple[str, str]:
+    """Return the candidate revision a validation Job measures.
+
+    The validation intent freezes ``voice_draft_id``/``draft_revision`` in its
+    ``input`` object; it never appends a revision, so it cannot use the
+    generation ``draft_target`` shape.
+    """
+    try:
+        document = json.loads(job.request_document)
+    except ValueError, TypeError, RecursionError:
+        raise DispatchProtocolError(
+            "Validation Job request document is not interpretable"
+        ) from None
+    if not isinstance(document, dict):
+        raise DispatchProtocolError("Validation Job request is not a JSON object")
+    # An admitted Job stores the complete business command, whose ``validation``
+    # block is the frozen candidate target. A legacy or test row may still carry
+    # the public intent, where the same facts live under ``input``.
+    if document.get("kind") == "voice_validation":
+        facts = document.get("input")
+        draft_id = facts.get("voice_draft_id") if isinstance(facts, dict) else None
+        revision = facts.get("draft_revision") if isinstance(facts, dict) else None
+    elif document.get("kind") == "voiceclone":
+        facts = document.get("validation")
+        draft_id = facts.get("draft_id") if isinstance(facts, dict) else None
+        revision = facts.get("draft_revision") if isinstance(facts, dict) else None
+    else:
+        raise DispatchProtocolError("Validation Job request kind disagrees with the Job kind")
+    if (
+        not isinstance(draft_id, str)
+        or not isinstance(revision, str)
+        or _REVISION.fullmatch(revision) is None
+    ):
+        raise DispatchProtocolError("Validation Job draft target is outside the frozen contract")
+    try:
+        identifier(draft_id)
+    except ValueError:
+        raise DispatchProtocolError("Validation Job draft id is not an identifier") from None
+    return draft_id, revision
 
 
 def terminal_result(job: DispatchJob, artifact_id: str, receipt_id: str) -> str:
@@ -439,6 +498,8 @@ __all__ = [
     "DISPATCHABLE_JOB_KINDS",
     "DISPATCHABLE_JOB_KIND_UNION",
     "VOICE_GENERATION_JOB_KINDS",
+    "VOICE_JOB_KINDS",
+    "VOICE_VALIDATION_JOB_KINDS",
     "ClaimedJob",
     "DispatchBatch",
     "DispatchClaimLostError",

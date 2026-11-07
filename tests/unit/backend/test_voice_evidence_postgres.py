@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any, cast
 
@@ -26,6 +27,23 @@ CAPABILITIES = {
     "modes": ["complete"],
 }
 MATERIAL = {"asset_id": "asset-1", "sha256": DIGEST, "bytes": 64, "media_type": "audio/wav"}
+PROBE_TEXT = "A validation-only sentence."
+PROBE = {
+    "name": "new_text_reuse",
+    "text": PROBE_TEXT,
+    "text_sha256": "sha256:" + hashlib.sha256(PROBE_TEXT.encode()).hexdigest(),
+    "generation_preview_text_sha256": "sha256:" + "c" * 64,
+    "language": "en",
+    "sample_rate_hz": 24000,
+    "audio_format": "wav",
+    "audio_duration_ms": 500,
+    "sample_frames": 12000,
+    "output_rms": 2000,
+    "output_peak": 12000,
+    "output_sha256": "sha256:" + "d" * 64,
+    "output_bytes": 24044,
+    "mode": "complete",
+}
 REPORT = json.dumps(
     {
         "synthesis_path": "reusable_tts",
@@ -33,9 +51,10 @@ REPORT = json.dumps(
         "coverage": {
             "validation_set_revision": "1",
             "checks": [
-                {"name": "intelligibility", "required": True, "status": "passed"},
+                {"name": "new_text_reuse", "required": True, "status": "passed"},
                 {"name": "reusable_tts", "required": True, "status": "passed"},
             ],
+            "probes": [PROBE],
         },
         "material": MATERIAL,
     }
@@ -49,7 +68,7 @@ VALIDATION = {
     "publication_eligible": True,
     "created_at": "2026-01-01T00:00:00Z",
     "checks": [
-        {"name": "intelligibility", "required": True, "status": "passed"},
+        {"name": "new_text_reuse", "required": True, "status": "passed"},
         {"name": "reusable_tts", "required": True, "status": "passed"},
     ],
     "model_binding": {"id": "voice-model", "revision": "1"},

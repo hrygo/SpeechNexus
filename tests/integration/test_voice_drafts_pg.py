@@ -980,7 +980,7 @@ def _validation_document(draft_id: str, revision: str = "1") -> dict[str, Any]:
         "model_binding": {"id": "voice-model", "revision": "1"},
         "status": "passed",
         "checks": [
-            {"name": "intelligibility", "required": True, "status": "passed"},
+            {"name": "new_text_reuse", "required": True, "status": "passed"},
             {"name": "reusable_tts", "required": True, "status": "passed"},
         ],
         "publication_eligible": True,

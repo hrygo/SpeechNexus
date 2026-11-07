@@ -363,6 +363,13 @@
           "headers": {},
           "json": true
         },
+        "429": {
+          "schema": "HttpResponse_generateVoiceDraftRevision_429",
+          "headers": {
+            "retry-after": "integer"
+          },
+          "json": true
+        },
         "500": {
           "schema": "HttpResponse_generateVoiceDraftRevision_500",
           "headers": {
@@ -440,6 +447,13 @@
           "headers": {},
           "json": true
         },
+        "429": {
+          "schema": "HttpResponse_createVoicePreview_429",
+          "headers": {
+            "retry-after": "integer"
+          },
+          "json": true
+        },
         "500": {
           "schema": "HttpResponse_createVoicePreview_500",
           "headers": {
@@ -515,6 +529,13 @@
         "422": {
           "schema": "HttpResponse_validateVoiceDraftRevision_422",
           "headers": {},
+          "json": true
+        },
+        "429": {
+          "schema": "HttpResponse_validateVoiceDraftRevision_429",
+          "headers": {
+            "retry-after": "integer"
+          },
           "json": true
         },
         "500": {
@@ -672,6 +693,7 @@
     "HttpResponse_generateVoiceDraftRevision_405",
     "HttpResponse_generateVoiceDraftRevision_409",
     "HttpResponse_generateVoiceDraftRevision_422",
+    "HttpResponse_generateVoiceDraftRevision_429",
     "HttpResponse_generateVoiceDraftRevision_500",
     "HttpResponse_generateVoiceDraftRevision_503",
     "HttpRequest_createVoicePreview",
@@ -683,6 +705,7 @@
     "HttpResponse_createVoicePreview_405",
     "HttpResponse_createVoicePreview_409",
     "HttpResponse_createVoicePreview_422",
+    "HttpResponse_createVoicePreview_429",
     "HttpResponse_createVoicePreview_500",
     "HttpResponse_createVoicePreview_503",
     "HttpRequest_validateVoiceDraftRevision",
@@ -694,6 +717,7 @@
     "HttpResponse_validateVoiceDraftRevision_405",
     "HttpResponse_validateVoiceDraftRevision_409",
     "HttpResponse_validateVoiceDraftRevision_422",
+    "HttpResponse_validateVoiceDraftRevision_429",
     "HttpResponse_validateVoiceDraftRevision_500",
     "HttpResponse_validateVoiceDraftRevision_503",
     "HttpRequest_publishVoiceDraftRevision",
@@ -4582,6 +4606,27 @@
       },
       "required": ["body"]
     },
+    "HttpResponse_generateVoiceDraftRevision_429": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
     "HttpResponse_generateVoiceDraftRevision_500": {
       "type": "object",
       "additionalProperties": false,
@@ -4855,6 +4900,27 @@
       },
       "required": ["body"]
     },
+    "HttpResponse_createVoicePreview_429": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
     "HttpResponse_createVoicePreview_500": {
       "type": "object",
       "additionalProperties": false,
@@ -5119,6 +5185,27 @@
         "headers": {
           "type": "object",
           "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_validateVoiceDraftRevision_429": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
           "required": [],
           "additionalProperties": true
         },

@@ -17,6 +17,7 @@ from speechnexus_backend.speech.application.public_jobs import (
     AssetNotReadyError,
     DisabledWorkspaceError,
     IdempotencyConflictError,
+    JobAdmissionRejectedError,
     JobOutcomeUnknownError,
     JobRejectedError,
     ModelBindingError,
@@ -123,6 +124,15 @@ _ERRORS: dict[str, tuple[int, str, str, str, bool]] = {
         "input_unavailable",
         False,
     ),
+    # Admission capacity is transient: the same request can succeed once a
+    # lease is released. ``Retry-After`` is required by the 429 contract.
+    "capacity": (
+        429,
+        "rate_limit_error",
+        "Job capacity is exhausted; retry after the indicated delay.",
+        "capacity",
+        True,
+    ),
     "unavailable": (
         503,
         "service_unavailable_error",
@@ -169,6 +179,8 @@ def voice_drafts_http_contract() -> dict[str, Any]:
 def _error(code: str, request_id: str, operation: str) -> JSONResponse:
     status, kind, message, wire, retryable = _ERRORS[code]
     headers = {"Cache-Control": "no-store", "X-Should-Retry": str(retryable).lower()}
+    if code == "capacity":
+        headers["Retry-After"] = "1"
     body = parse(
         "ErrorResponse",
         {
@@ -365,6 +377,25 @@ def _execute(
         # The reply we built violates our own contract. Answering 503 would hide
         # an implementation defect behind a retryable outage.
         return _error("contract_violation", request_id, operation)
+    except JobAdmissionRejectedError as error:
+        # Admission refusals are deterministic facts about the candidate or
+        # capacity, not a storage outage. Only Job-submitting operations
+        # declare the 422/429 surface; other operations keep the 503 fallback.
+        if operation in (
+            "createVoiceDesign",
+            "createVoiceClone",
+            "generateVoiceDraftRevision",
+            "createVoicePreview",
+            "validateVoiceDraftRevision",
+        ):
+            if error.code == "job_capacity_exhausted":
+                return _error("capacity", request_id, operation)
+            if error.code == "voice_draft_not_candidate":
+                return _error("not_candidate", request_id, operation)
+            if error.code == "job_admission_contended":
+                return _error("unavailable", request_id, operation)
+            return _error("input_unavailable", request_id, operation)
+        return _error("unavailable", request_id, operation)
     except JobRejectedError as error:
         # A refusal carries its reason: only a genuine pre-commit storage outage
         # is retryable; a deterministic refusal or a missing result payload is an

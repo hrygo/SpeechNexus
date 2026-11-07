@@ -13,7 +13,8 @@ from typing import Any, Protocol
 
 from speechnexus_backend.speech.domain.job_dispatch import (
     DISPATCHABLE_JOB_KINDS,
-    VOICE_GENERATION_JOB_KINDS,
+    VOICE_JOB_KINDS,
+    VOICE_VALIDATION_JOB_KINDS,
     ClaimedJob,
     DispatchBatch,
     DispatchClaimLostError,
@@ -399,7 +400,7 @@ class JobDispatcher:
     ) -> DispatchResult:
         receipt = await self._gateway.result_receipt(
             submission.submit_intent_id,
-            audio=job.kind == "tts" or job.kind in VOICE_GENERATION_JOB_KINDS,
+            audio=job.kind == "tts" or job.kind in VOICE_JOB_KINDS,
         )
         if receipt.outcome != "status" or receipt.document is None:
             if receipt.outcome == "unknown":
@@ -423,7 +424,11 @@ class JobDispatcher:
         if renewed is None:
             return DispatchResult(job.job_id, "claim_lost", "claim_lost")
         claim = renewed
-        result_json = terminal_result(job, published.artifact_id, published.receipt_id)
+        result_json = (
+            published.result_json
+            if published.result_json is not None
+            else terminal_result(job, published.artifact_id, published.receipt_id)
+        )
         return await self._finish(claim, job, "succeeded", result_json=result_json, error_code=None)
 
     async def _fail(self, claim: ClaimedJob, job: DispatchJob, code: str) -> DispatchResult:
@@ -476,12 +481,15 @@ class JobDispatcher:
         )
 
     async def _release_capacity(self, job: DispatchJob) -> None:
-        """asr/tts terminal states return the admission lease through LeaseService.
+        """Admitted asr/tts/validation terminals return the lease through LeaseService.
 
         A release that cannot prove stop and cleanup stays held and is left for
         reconciliation; it never rewrites the committed public outcome.
         """
-        if self._leases is None or job.kind not in DISPATCHABLE_JOB_KINDS:
+        if self._leases is None or job.kind not in (
+            *DISPATCHABLE_JOB_KINDS,
+            *VOICE_VALIDATION_JOB_KINDS,
+        ):
             return
         try:
             released = await self._leases.release(job.job_id)

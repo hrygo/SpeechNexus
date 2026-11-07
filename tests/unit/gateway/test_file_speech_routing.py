@@ -12,7 +12,7 @@ from speechnexus_gateway.domain.submission import (
 from speechnexus_gateway.domain.tts_results import TtsResultStore
 from speechnexus_gateway.file_asr_runtime import AsrFileStage
 from speechnexus_gateway.file_speech_runtime import _RoutedExecution, _Stores
-from speechnexus_gateway.interfaces.file_tts_command import CommandFileTts
+from speechnexus_gateway.interfaces.file_tts_command import CommandFileCustomTts, CommandFileTts
 from speechnexus_gateway.interfaces.file_voice_clone_command import CommandFileVoiceClone
 from speechnexus_gateway.interfaces.file_voice_design_command import CommandFileVoiceDesign
 from tests.fake.execution_command import command_example, original_request
@@ -118,3 +118,66 @@ async def test_a_missing_clone_store_is_refused_before_staging() -> None:
         )
 
     assert clone.staged == 0
+
+
+def _custom_tts_request() -> SubmitRequest:
+    command = command_example(0)
+    command["resources"]["voice_kind"] = "custom"
+    command["resources"]["voice_material"] = {
+        "asset_or_artifact_id": "asset-custom",
+        "workspace_id": "ws-demo",
+        "storage_bucket": "synthetic",
+        "object_key": "synthetic/reference.wav",
+        "content_sha256": "sha256:" + "a" * 64,
+        "byte_length": 100,
+    }
+    command["parameters"]["reference_text"] = "Synthetic reference."
+    return original_request(command)
+
+
+async def test_a_custom_tts_command_reaches_only_the_base_custom_lane() -> None:
+    custom, clone, tts = Lane(), Lane(), Lane()
+    store = cast(TtsResultStore, object())
+    routed = _RoutedExecution(
+        None,
+        cast(CommandFileTts, tts),
+        None,
+        cast(CommandFileVoiceClone, clone),
+        cast(CommandFileCustomTts, custom),
+    )
+    request = _custom_tts_request()
+
+    assert routed.validate_request(request) is request
+    await routed.stage_result(
+        request, store=_Stores(None, None, None, store), cancelled=lambda: False
+    )
+
+    assert (custom.validated, custom.staged) == (1, 1)
+    assert (clone.validated, clone.staged) == (0, 0)
+    assert (tts.validated, tts.staged) == (0, 0)
+
+
+def test_a_builtin_only_gateway_refuses_custom_material() -> None:
+    tts = Lane()
+    routed = _RoutedExecution(None, cast(CommandFileTts, tts), None)
+
+    with pytest.raises(InvalidExecutionRequestError):
+        routed.validate_request(_custom_tts_request())
+
+    assert tts.validated == 0
+
+
+def test_a_base_lane_refuses_a_builtin_tts_command() -> None:
+    custom, clone = Lane(), Lane()
+    routed = _RoutedExecution(
+        None,
+        None,
+        None,
+        cast(CommandFileVoiceClone, clone),
+        cast(CommandFileCustomTts, custom),
+    )
+
+    with pytest.raises(InvalidExecutionRequestError):
+        routed.validate_request(_request(0))
+
+    assert (custom.validated, clone.validated) == (0, 0)

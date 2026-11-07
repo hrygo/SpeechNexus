@@ -39,6 +39,7 @@ from speechnexus_gateway.infrastructure.vllm_voice_clone import (
     VllmVoiceCloneSynthesizer,
     load_controlled_voice_clone_endpoint,
 )
+from speechnexus_gateway.interfaces.file_tts_command import CommandFileCustomTts
 from speechnexus_gateway.interfaces.file_voice_clone_command import CommandFileVoiceClone
 from speechnexus_gateway.private_deployment import (
     absolute_path,
@@ -117,6 +118,17 @@ class VoiceCloneConfiguration:
 
     def execution(self) -> CommandFileVoiceClone:
         return CommandFileVoiceClone(
+            inputs=FileExecutionInputs(self.objects),
+            synthesizer=VllmVoiceCloneSynthesizer(self.endpoint),
+            encoder=LocalTtsEncoder(),
+            binding_policy=self.policy,
+            input_limits=self.inputs,
+            max_payload_bytes=self.worker.max_result_bytes,
+        )
+
+    def custom_tts(self) -> CommandFileCustomTts:
+        """One Base variant also serves published custom voices for file TTS."""
+        return CommandFileCustomTts(
             inputs=FileExecutionInputs(self.objects),
             synthesizer=VllmVoiceCloneSynthesizer(self.endpoint),
             encoder=LocalTtsEncoder(),

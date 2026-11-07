@@ -219,6 +219,7 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
                 or params["text_commit_mode"] != "explicit"
                 or params["language"] != "en"
                 or params["pronunciation_revision"] is not None
+                or params.get("reference_text") is not None
                 or params["instructions"] is not None
                 or params["speed"] != 1
                 or params["seed"] is not None

@@ -780,6 +780,7 @@ export interface components {
       audio_delivery: components["schemas"]["AudioDeliveryMode"];
       language: components["schemas"]["LanguageTag"];
       pronunciation_revision: components["schemas"]["pronunciation_revision"];
+      reference_text?: string | null;
       instructions: string | null;
       speed: components["schemas"]["speed"];
       seed: components["schemas"]["seed"];

@@ -346,6 +346,7 @@ class ExternalInternalExecutionCommandSchemaJsonTtsEffectiveParameters(TypedDict
     audio_delivery: ExternalSharedSpeechOverridesSchemaJsonAudioDelivery
     language: ExternalSharedLanguageSchemaJsonLanguageTag
     pronunciation_revision: ExternalSharedSpeechOverridesSchemaJsonPronunciationRevision
+    reference_text: NotRequired[str | None]
     instructions: str | None
     speed: ExternalSharedSpeechOverridesSchemaJsonSpeed
     seed: ExternalSharedSpeechOverridesSchemaJsonSeed

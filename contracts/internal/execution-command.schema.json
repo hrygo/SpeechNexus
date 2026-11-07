@@ -860,6 +860,18 @@
         "pronunciation_revision": {
           "$ref": "../shared/speech-overrides.schema.json#/$defs/TtsOverrides/properties/pronunciation_revision"
         },
+        "reference_text": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 10000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "instructions": {
           "type": [
             "string",
@@ -1048,7 +1060,8 @@
           "max_chars": 200,
           "max_wait_ms": 500
         },
-        "response_format": "wav"
+        "response_format": "wav",
+        "reference_text": null
       }
     },
     {
@@ -1180,7 +1193,8 @@
           "max_chars": 200,
           "max_wait_ms": 500
         },
-        "response_format": "wav"
+        "response_format": "wav",
+        "reference_text": null
       },
       "validation_checks": [
         "reusable_tts"

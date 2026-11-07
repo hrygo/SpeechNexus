@@ -22,6 +22,7 @@ from speechnexus_gateway.application.voice_design import (
 )
 from speechnexus_gateway.domain.canonical import command_digest
 from speechnexus_gateway.domain.file_execution import FileStagingOutcome
+from speechnexus_gateway.domain.languages import AUTO_LANGUAGE
 from speechnexus_gateway.domain.submission import (
     MAX_ORIGINAL_COMMAND_BYTES,
     InvalidExecutionRequestError,
@@ -154,8 +155,10 @@ class CommandFileVoiceDesign:
             raise _invalid(
                 "VoiceDesign command, capability or configured binding does not match"
             ) from None
-        if frozen.language == "auto" or (
-            frozen.language.split("-", 1)[0].lower() not in self._binding_policy.supported_languages
+        if (
+            frozen.language != AUTO_LANGUAGE
+            and frozen.language.split("-", 1)[0].lower()
+            not in self._binding_policy.supported_languages
         ):
             raise _invalid(
                 "the requested language has no verified value in the configured VoiceDesign binding"

@@ -234,6 +234,15 @@ async def test_every_other_command_kind_is_refused_before_reading_or_dispatch(in
     assert engine.calls == []
 
 
+async def test_the_auto_language_reaches_the_engine_as_auto() -> None:
+    runner, _, engine = build()
+    request = clone_request(command=prepared_command(language="auto"))
+
+    await runner.stage_result(request, store=Store(), cancelled=lambda: False)
+
+    assert engine.calls[0][0].language == "auto"
+
+
 async def test_a_missing_transcript_is_refused_before_reading_or_dispatch() -> None:
     command = prepared_command(reference_text=None)
     runner, objects, engine = build()

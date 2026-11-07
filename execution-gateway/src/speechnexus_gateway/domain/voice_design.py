@@ -161,7 +161,11 @@ class VoiceDesignPolicy:
 
 @dataclass(frozen=True, slots=True)
 class VoiceDesignRequest:
-    """One frozen design request: the voice description plus its preview text."""
+    """One frozen design request: the voice description plus its preview text.
+
+    ``seed`` only steadies the generated text content; the engine may return a
+    different waveform for the same seed, so it promises no byte reproducibility.
+    """
 
     request_id: str
     description: str = field(repr=False)

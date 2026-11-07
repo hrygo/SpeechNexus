@@ -5,6 +5,7 @@ import io
 import json
 import wave
 from collections.abc import AsyncIterator, Callable
+from dataclasses import replace
 from typing import cast
 
 import httpx
@@ -101,6 +102,12 @@ def test_the_engine_body_carries_only_the_verified_fields() -> None:
         "seed": 7,
     }
     assert "voice" not in body and "speed" not in body and "sample_rate" not in body
+
+
+def test_the_auto_language_is_forwarded_verbatim() -> None:
+    body = json.loads(voice_design_body(replace(REQUEST, language="auto"), ENDPOINT))
+
+    assert body["language"] == "auto"
 
 
 async def test_an_absent_seed_is_never_sent_on_the_wire() -> None:

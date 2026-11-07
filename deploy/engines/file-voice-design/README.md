@@ -57,9 +57,54 @@ WAV，因此 `/health` 200 不会让网关报告 ready。
 
 ## 语言
 
-网关只发送实测有对应厂商值的语言（zh/en/fr/de/it/ja/ko/pt/ru/es，大小写与区域子标签按主
-语言归并，如 `zh-Hans` → `Chinese`）。其他取值（包括契约允许的 `auto`）在命令进入引擎前
-以 `invalid_execution_request` 拒绝，不会把未验证的标签透传给引擎。
+实测（MegaCube DEL-522）：`language="auto"` 返回 200 并自动判定；10 个厂商语言名
+（Chinese/English/French/German/Italian/Japanese/Korean/Portuguese/Russian/Spanish）
+均返回 200；直接发送裸 BCP47（`zh`、`zh-Hans`、`en-US`、`ja-JP`）一律 400。
+
+网关因此只发送映射后的引擎取值，从不透传原始标签：
+
+- `auto` 原样发送为 `auto`。它是引擎的自动判定哨兵，不是厂商语言名，也不写入 binding 的
+  `supported_languages`；
+- `zh`/`en`/`fr`/`de`/`it`/`ja`/`ko`/`pt`/`ru`/`es` 映射为对应厂商名，区域子标签按主
+  语言归并，如 `zh-Hans` → `Chinese`；
+- 其余标签（如 `ar`、`nl`）在命令进入引擎前以 `invalid_execution_request` 拒绝。
+
+## seed 的语义
+
+实测（MegaCube DEL-522）：同一 `seed` 连续三次合成，输出 WAV 的 SHA256 均不同；文本内容
+稳定，波形不确定。`seed` 只稳定文本内容，不保证逐字节可复现，不能作为重放、缓存命中或
+幂等重放的依据。请求省略 `seed` 时网关不发送该字段，由引擎自行决定。
+
+## 参考文本错配的运维语义
+
+VoiceDesign 请求体不含 `ref_text`（设计以 `description` + `preview_text` 表达），本泳道
+不产生参考文本配对；该确定性输入错误属于 Base 克隆泳道，详见
+[Base 克隆模板](../file-voice-clone/README.md#参考文本错配的运维语义)。运维侧需知：
+
+- 参考文本与参考音频完全错配时，引擎可能在 6.7–38.5 s 后以 5xx 返回，日志以
+  `192/192 codec tokens` 结束且没有音频；
+- 网关把 5xx 归为 `TRANSPORT_UNKNOWN`（请求可能已执行），无法与瞬态故障区分；
+- 重试同一输入不会成功，必须修正参考文本或改用 x-vector-only，不能按瞬态故障重试。
+
+## 引擎格式与采样率
+
+实测（MegaCube DEL-522）引擎的实际接受面：
+
+| 取值 | 实测结果 |
+| --- | --- |
+| `response_format=wav` | 24 kHz、单声道、16-bit |
+| `response_format=pcm` | 裸 PCM_16，无容器头 |
+| `response_format=mp3` / `flac` | 可用 |
+| `response_format=ogg` | 400 |
+| `sample_rate` | 仅 8000 / 24000 |
+
+网关的 VoiceDesign 泳道固定 `response_format=wav`、24 kHz，不发送 `sample_rate`：
+
+- 策略只接受 WAV，交付层也只产出 WAV。预览制品必须带可校验的采样时钟与声道，裸 `pcm`
+  没有可解析的头，`mp3`/`flac` 在本泳道没有交付需求；
+- 固定 wav 让网关按响应头与 WAV 头双重校验结果，避免把未知编码当作合法音频写入制品；
+- 24 kHz 与实测可用值一致，且是策略、响应头与 WAV 头必须一致的时钟；8000 会降低预览质量
+  且没有需求，因此不开放。
 
 ## 部署前必须补齐
 

@@ -34,7 +34,10 @@ MAX_REFERENCE_TEXT_CHARS = 10000
 # A clone reference is read at ordinary speech tempo. This is a plausibility
 # bound on a paired transcript, not a content comparison: the gateway cannot
 # prove the text matches what the clip says, so it refuses only a pairing no
-# speaker could produce and keeps semantic correspondence unverified.
+# speaker could produce and keeps semantic correspondence unverified. A full
+# mismatch is a deterministic input error on the engine side, but the engine
+# answers it with a 5xx after tens of seconds and no audio; the gateway can only
+# classify that as TRANSPORT_UNKNOWN, so retrying the same input never succeeds.
 MAX_REFERENCE_TEXT_CHARS_PER_SECOND = 25
 REFERENCE_SAMPLE_RATES = (16000, 24000)
 MIN_REFERENCE_AUDIO_MS = 1000

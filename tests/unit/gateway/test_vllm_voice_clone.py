@@ -7,6 +7,7 @@ import json
 import logging
 import wave
 from collections.abc import AsyncIterator, Callable
+from dataclasses import replace
 from typing import cast
 
 import httpx
@@ -115,6 +116,12 @@ def test_the_engine_body_carries_the_verified_base_shape() -> None:
     assert "voice" not in body and "speed" not in body and "sample_rate" not in body
     assert "x_vector_only_mode" not in body
     assert body["ref_audio"].startswith("data:audio/wav;base64,")
+
+
+def test_the_auto_language_is_forwarded_verbatim() -> None:
+    body = json.loads(voice_clone_body(replace(REQUEST, language="auto"), ENDPOINT))
+
+    assert body["language"] == "auto"
 
 
 def test_an_unpaired_reference_is_sent_as_an_explicit_x_vector_request() -> None:

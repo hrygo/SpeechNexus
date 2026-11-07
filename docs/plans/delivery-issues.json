@@ -1198,7 +1198,7 @@
         "docs/architecture/deployment-units.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "基础 Compose 声明 postgres、minio、minio-init、api、gateway；node-controller、runtime-delivery-worker、job-dispatch-worker、asset-maintain 未纳入；binding-disable、migration、engine-registration 和 web 是显式 profile；工作台有独立运行工厂；干净制品、全部必要角色与跨机部署未核验。",
+      "implementation": "基础 Compose 声明 postgres、minio、minio-init、api、gateway；node-controller、runtime-delivery-worker、job-dispatch-worker、asset-maintain 未纳入；binding-disable、migration、engine-registration 和 web 是显式 profile；工作台有独立运行工厂；干净制品、全部必要角色与跨机部署未核验。角色最小授权：#546/#552/#554/#560 已为声音发布、发音发布、profile 写入与 Job writer 建立启动期列级/表级权限校验，并以真实角色反例守住「owner 额外误授」类风险；#560 起发布角色校验扫描 schema 内全部表、白名单外一律拒绝，同类校验仍有 5 处待收口（#561）。",
       "integration": "默认部署中部分必要进程或能力可能未启用，需以当前清单实核；已核对静态工厂或配置；运行时与端到端接线未实测。",
       "verification": "孤立组件测试不证明完整部署或真实单请求停止；本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
       "gap": "默认部署中部分必要进程或能力可能未启用，需以当前清单实核；已核对静态工厂或配置；运行时与端到端接线未实测。 孤立组件测试不证明完整部署或真实单请求停止；本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
@@ -1224,7 +1224,9 @@
           "note": "静态服务与可选 profile 清单"
         }
       ],
-      "issues": []
+      "issues": [
+        561
+      ]
     },
     {
       "id": "O-UPSTREAM",

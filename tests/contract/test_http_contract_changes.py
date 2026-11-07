@@ -213,6 +213,12 @@ def test_placeholder_503_replacement_still_needs_the_error_response_composition(
         {"type": "string", "const": "public"},
         {"type": "string", "enum": ["public"]},
         {"type": "string", "enum": ["no-store", "max-age=600"]},
+        {"type": "string", "const": "x-no-store"},
+        {"type": "string", "enum": ["no-store", "x-no-store"]},
+        {"type": "string", "const": "no-store-please"},
+        {"type": "string", "const": "no-store, max-age=0"},
+        {"type": "string", "const": "No-Store, public"},
+        {"type": "string", "const": 5},
         {"type": "string"},
     ],
 )
@@ -237,9 +243,10 @@ def test_placeholder_503_replacement_requires_a_no_store_cache_control_value(
     [
         {"type": "string", "const": "no-store"},
         {"type": "string", "enum": ["no-store"]},
+        {"type": "string", "const": "No-Store"},
     ],
 )
-def test_placeholder_503_replacement_accepts_an_equivalent_no_store_value(
+def test_placeholder_503_replacement_accepts_a_case_insensitive_no_store_directive(
     schema: dict[str, Any],
 ) -> None:
     base = service_document({"$ref": PLACEHOLDER_503})
@@ -251,6 +258,38 @@ def test_placeholder_503_replacement_accepts_an_equivalent_no_store_value(
         )
         == []
     )
+
+
+@pytest.mark.parametrize(
+    ("schema", "component", "standard_only"),
+    [
+        (
+            {"$ref": "#/components/schemas/NoStoreCacheControl"},
+            {"type": "string", "const": "no-store"},
+            False,
+        ),
+        ({"$ref": "https://example.com/cache-control.json#/$defs/NoStore"}, None, True),
+        ({"$ref": "#/components/schemas/MissingCacheControl"}, None, True),
+    ],
+)
+def test_placeholder_503_cache_control_reference_is_resolved_or_rejected(
+    schema: dict[str, Any],
+    component: dict[str, Any] | None,
+    standard_only: bool,
+) -> None:
+    base = service_document({"$ref": PLACEHOLDER_503})
+    replacement = retryable_response()
+    replacement["headers"]["Cache-Control"]["schema"] = schema
+    current = service_document(replacement)
+    if component is not None:
+        current["components"]["schemas"]["NoStoreCacheControl"] = component
+    findings = kernel()._compare_openapi(
+        base, current, "speech-openapi.yaml", standard_only=standard_only
+    )
+    if component is None:
+        assert findings and any("required Cache-Control header" in issue for issue in findings)
+    else:
+        assert findings == []
 
 
 @pytest.mark.parametrize(
@@ -382,6 +421,75 @@ def test_unchanged_placeholder_503_still_requires_the_error_response_composition
     findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
     assert findings and any(
         "placeholder 503 response" in issue and "allOf" in issue for issue in findings
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "weakened", "rule"),
+    [
+        (
+            "code",
+            {"type": "string"},
+            'error.code exactly "operation_not_implemented"',
+        ),
+        (
+            "code",
+            {"const": "backend_unavailable"},
+            'error.code exactly "operation_not_implemented"',
+        ),
+        (
+            "code",
+            {"enum": ["operation_not_implemented", "backend_unavailable"]},
+            'error.code exactly "operation_not_implemented"',
+        ),
+        (
+            "type",
+            {"type": "string"},
+            'error.type exactly "service_unavailable_error"',
+        ),
+        (
+            "type",
+            {"enum": ["service_unavailable_error", "api_error"]},
+            'error.type exactly "service_unavailable_error"',
+        ),
+        ("retryable", {"type": "boolean"}, "retryable exactly false"),
+        ("retryable", {"const": True}, "retryable exactly false"),
+        ("retryable", {"const": 0}, "retryable exactly false"),
+    ],
+)
+def test_unchanged_placeholder_503_still_checks_every_shared_body_constant(
+    field: str,
+    weakened: dict[str, Any],
+    rule: str,
+) -> None:
+    base = service_document({"$ref": PLACEHOLDER_503})
+    component = placeholder_response()
+    error_properties = component["content"]["application/json"]["schema"]["allOf"][1]["properties"][
+        "error"
+    ]["properties"]
+    error_properties[field] = weakened
+    current = service_document({"$ref": PLACEHOLDER_503})
+    current["components"]["responses"]["OperationNotImplemented"] = component
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert findings and any(
+        "placeholder 503 response" in issue and rule in issue for issue in findings
+    )
+
+
+def test_unchanged_placeholder_503_resolves_shared_body_constants() -> None:
+    base = service_document({"$ref": PLACEHOLDER_503})
+    weakened = placeholder_response()
+    error_properties = weakened["content"]["application/json"]["schema"]["allOf"][1]["properties"][
+        "error"
+    ]["properties"]
+    error_properties["code"] = {"$ref": "#/components/schemas/SharedPlaceholderCode"}
+    current = service_document({"$ref": PLACEHOLDER_503})
+    current["components"]["responses"]["OperationNotImplemented"] = weakened
+    current["components"]["schemas"]["SharedPlaceholderCode"] = {"type": "string"}
+    findings = kernel()._compare_openapi(base, current, "speech-openapi.yaml", standard_only=False)
+    assert findings and any(
+        'placeholder 503 response requires error.code exactly "operation_not_implemented"' in issue
+        for issue in findings
     )
 
 

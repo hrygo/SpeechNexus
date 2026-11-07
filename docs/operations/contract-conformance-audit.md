@@ -688,6 +688,42 @@ CI 将 `make contracts-route-conformance` 作为 `python_contracts` 作业
 「声明但未静态观察到」只输出、不判失败，因为静态缺失不等于运行时不可达。
 endpoint 源码无法定位则相反：它使检查直接失败，不把空状态集当成通过。
 
+### 10.1 实现占位操作时 503 应如何改
+
+占位操作转为真实实现时，把该操作的 503 从
+`$ref: "#/components/responses/OperationNotImplemented"` 改为内联响应，并同时满足：
+
+- `Cache-Control` 保持 required，schema 只允许 `no-store` 指令。该头不能删除：
+  占位响应表示能力当前不可用，响应不得进入共享缓存。
+- `X-Should-Retry` 保持 required，取值由 `"false"` 改为 `"true"`：实现后的 503
+  是容量或依赖不可用、可重试，而不再是「永久未实现」。
+- `error.code` 换成真实的可重试错误码（如 `backend_unavailable`），不再声明
+  `operation_not_implemented`；`error.type` 保留 `service_unavailable_error` 语义，
+  `retryable` 与 `X-Should-Retry` 的取值一致。
+- 响应体继续用 `allOf` 组合 `#/components/schemas/ErrorResponse`，只在内联分支声明
+  该操作的错误码与可重试语义。
+
+门禁拒绝以下形状：
+
+- 继续引用共享组件，包括带 sibling 的 `$ref`：共享 503 可能携带为其他操作声明的
+  保证，无法证明它就是本操作的替换。
+- 缺少任一 required 头，或把 required 改成可选：头名和取值都是版本化响应保证，
+  删除会按响应保证丢失处理。
+- `Cache-Control` 的取值不是 `no-store` 指令：`public`、`max-age`、`x-no-store`、
+  `no-store-please` 以及 `no-store, max-age=0` 这类多指令组合都不接受；非字符串
+  取值、外部或不可解析的 `$ref` 也不能通过。
+- `X-Should-Retry` 不是 `"true"`，包括仍为 `"false"`：永久未实现信号没有反转。
+- 缺少 `allOf` + `ErrorResponse` 组合，或 `error.code` 仍声明
+  `operation_not_implemented`。
+- 仍指向占位组件但削弱其共享定义：`error.code`、`error.type`、`retryable` 必须分别
+  精确为 `operation_not_implemented`、`service_unavailable_error`、`false`；把任一
+  常量改成普通类型或其他字面量都会逐条报告。
+
+不能只删头了事：两个 required 头属于既有响应契约，直接删除会按响应保证丢失被拒绝，
+应先改成实现后的真实语义。规则实现见
+[HTTP 兼容检查规则](../validation/http-contract-change-checks.md#replacing-the-central-placeholder-503)，
+正反用例见 `tests/contract/test_http_contract_changes.py`。
+
 ## 11. 引用与结论复核记录（3951718e）
 
 对 8 条漂移引用逐条重新定位并复核结论。原引用是 `62ae4805` 的行号；新锚点是当前 HEAD 的符号，

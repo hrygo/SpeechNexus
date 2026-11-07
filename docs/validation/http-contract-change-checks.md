@@ -89,12 +89,16 @@ status `503`. The replacement must still:
 
 - be an inline response object rather than a `$ref` to a shared component,
   because a shared 503 could carry guarantees declared for another operation;
-- declare a required `Cache-Control` header whose schema allows only `no-store`:
-  `const: "no-store"`, or an `enum` that contains `no-store` and no publicly
-  cacheable directive such as `public`, `max-age` or `s-maxage`. A placeholder
-  response reports an unavailable capability, so a replacement may not soften it
-  into a publicly cacheable response. A schema that declares no value cannot be
-  verified and is rejected;
+- declare a required `Cache-Control` header whose schema allows only the
+  `no-store` directive. Each `const`/`enum` value is split on commas, stripped
+  and compared case-insensitively, and every non-empty token must be exactly
+  `no-store`; each value in an `enum` list must carry it. `x-no-store`,
+  `no-store-please`, `no-store, max-age=0` and `No-Store, public` name another
+  directive or add a cacheable one and are rejected, as is a non-string value.
+  A placeholder response reports an unavailable capability, so a replacement may
+  not soften it into a publicly cacheable response. The header schema may be a
+  repository `$ref`; an external, broken or value-less schema cannot be verified
+  and is rejected;
 - declare a required `X-Should-Retry` header whose schema allows only `"true"`:
   the value, not just the name, is the retry signal, and `false` still means
   "do not retry". An equivalent `enum: ["true"]` is accepted;
@@ -113,8 +117,12 @@ alternatives are likewise refused because a union cannot be read as one conjunct
 Each violated rule is reported separately as `placeholder 503 replacement ...
 <rule>`. An unchanged placeholder reference stays valid only while the shared
 `OperationNotImplemented` component still declares a required `Cache-Control`
-limited to `no-store`, a required `X-Should-Retry` limited to `"false"`, and the
-`allOf`/`ErrorResponse` body; weakening that component is reported as
+limited to `no-store`, a required `X-Should-Retry` limited to `"false"`, the
+`allOf`/`ErrorResponse` body, and body constants that are exactly
+`error.code: operation_not_implemented`, `error.type:
+service_unavailable_error` and `retryable: false`. Conjuncts intersect, so the
+shared `ErrorResponse` may allow every error type while the inline body narrows
+it to the placeholder type; weakening any of the three constants is reported as
 `placeholder 503 response ...` for every operation that still points at it.
 All other responses keep the unchanged directional rules, including the existing
 `const` and composition comparisons: a 503 that was not exactly the placeholder

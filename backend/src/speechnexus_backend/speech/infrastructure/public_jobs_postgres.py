@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any, Protocol
 
@@ -16,6 +16,7 @@ from speechnexus_backend.speech.application.public_jobs import (
     VoiceDraftRevisionFact,
     WorkspaceFact,
     require_pinned_binding,
+    resolve_voice_previews,
 )
 from speechnexus_backend.speech.application.voice_drafts import (
     draft_id_for_job,
@@ -1034,12 +1035,45 @@ def _lock_submission_key(connection: _Executor, workspace_id: str, key_digest: s
     )
 
 
+def _locked_artifact_reader(
+    connection: _Executor,
+) -> Callable[[str, str], JobArtifactFact | None]:
+    """Read one Artifact through this transaction instead of the request facts."""
+
+    def read(workspace_id: str, artifact_id: str) -> JobArtifactFact | None:
+        row = connection.execute(
+            "SELECT " + _ARTIFACT_COLUMNS + " FROM speech_artifacts "
+            "WHERE workspace_id = %s AND artifact_id = %s",
+            (workspace_id, artifact_id),
+        ).fetchone()
+        return None if row is None else _artifact(row)
+
+    return read
+
+
 def _lock_validation_target(connection: _Executor, job: NewPublicJob) -> str | None:
     """Recheck the candidate under the draft row lock before the Job insert.
 
-    ``_prepare_job`` resolves the candidate in an earlier statement. Holding the
-    draft row here prevents a concurrent append from making that decision stale
-    between prepare and insert.
+    ``_prepare_job`` resolves the candidate in earlier statements. Holding the
+    draft row here prevents a concurrent append from advancing the head, but it
+    does not refresh what those earlier statements already read. The locked
+    statement therefore re-reads every fact this transaction can see: the head,
+    the draft lifecycle status, the generation Job state and result, and every
+    preview Artifact that result references. Preview readiness reuses
+    ``resolve_voice_previews``, the same rule the prepare step and the public
+    projections apply, so a preview that turns non-ready between prepare and
+    insert is rejected instead of being admitted with stale evidence.
+
+    Binding publication is not re-read under this lock on purpose.
+    ``_validate_pinned_create`` already re-reads the pinned revision in this
+    same transaction while holding ``lock_binding`` until commit, and
+    ``create_revision`` takes that binding advisory lock before the draft row
+    lock. Re-reading it here would acquire the binding lock after this row lock
+    and invert the established binding -> draft order.
+
+    The draft row lock does not cover the Artifact row itself, so an expiry
+    committed after this statement is outside its scope. This re-read closes the
+    prepare -> insert gap; it does not make Artifact state immutable.
     """
     try:
         intent = json.loads(job.request_document)
@@ -1048,15 +1082,36 @@ def _lock_validation_target(connection: _Executor, job: NewPublicJob) -> str | N
     except ValueError, TypeError, KeyError:
         raise PublicJobUnavailableError from None
     row = connection.execute(
-        "SELECT head_revision, status FROM speech_voice_drafts WHERE draft_id = %s FOR UPDATE",
-        (draft_id,),
+        "SELECT d.head_revision, d.status, r.kind AS draft_kind, "
+        "j.state AS generation_state, j.result_json AS generation_result, "
+        "j.workspace_id AS generation_workspace "
+        "FROM speech_voice_drafts AS d "
+        "JOIN speech_voice_draft_revisions AS r "
+        "ON r.draft_id = d.draft_id AND r.revision = %s "
+        "JOIN speech_jobs AS j ON j.job_id = r.generation_job_id "
+        "WHERE d.draft_id = %s FOR UPDATE OF d",
+        (revision, draft_id),
     ).fetchone()
-    if row is None:
+    if row is None or row["generation_workspace"] != job.workspace_id:
         return "not_found"
     if row["head_revision"] != revision:
         return "stale"
     if row["status"] in ("published", "preview_only"):
         return "draft_not_generatable"
+    if row["generation_state"] != "succeeded":
+        return "not_candidate"
+    try:
+        resolve_voice_previews(
+            workspace_id=job.workspace_id,
+            kind="voice_" + row["draft_kind"],
+            state=row["generation_state"],
+            result_json=row["generation_result"],
+            artifact=_locked_artifact_reader(connection),
+        )
+    except PublicJobUnavailableError:
+        # A result or Artifact that no longer resolves is not a validation
+        # target. The prepare step reports the same condition as unavailable.
+        return "job_rejected"
     return None
 
 

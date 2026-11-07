@@ -148,7 +148,10 @@ Job ID 确定性派生的 `submit_intent_id`，领取者先查询原身份，只
 的 404 仍是 `not_found`，408/429 保持 `unknown`。不得把 `unknown` 映射成 `failed`。
 进入网关阶段之前，若持久请求缺失、摘要不符或 planner 生成不合法提交，代码会走
 `job_request_unavailable` 或 `execution_result_invalid` 失败分支；这与外发后无法解释
-网关响应保持 unknown 的分支不同，也不能作为执行停止或预算释放证据。
+网关响应保持 unknown 的分支不同，也不能作为执行停止或预算释放证据。语音生成 Job
+还会在 `mark_running`、外发与发布之前校验存储请求的 `kind` 和 `draft_target` 是否满足
+冻结契约；缺少匹配 `kind` 的历史行在此以 `execution_result_invalid` 明确失败，不会
+提交执行、发布孤儿 Artifact 或长期停留在 `running`。
 
 ## 取消受理、提交裁决与对账
 

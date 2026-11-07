@@ -360,6 +360,38 @@ async def test_claimed_job_runs_to_success_and_keeps_a_reference_only() -> None:
     assert publisher.calls and publisher.calls[0][0] == job.job_id
 
 
+async def test_voice_request_without_a_kind_fails_before_any_side_effect() -> None:
+    """A historical voice row must fail before submit or Artifact publication."""
+    document = json.dumps({"input": {"description": "Synthetic", "preview_text": "Synthetic"}})
+    job = DispatchJob(
+        "job-voice-0002",
+        "workspace-default",
+        "voice_design",
+        "pending",
+        1,
+        NOW,
+        "sha256:" + hashlib.sha256(document.encode("utf-8")).hexdigest(),
+        document,
+    )
+    states = States(job)
+    gateway = GatewayState()
+    publisher = Publisher()
+    dispatcher = _dispatcher(
+        Queue([[ClaimedJob(job, "worker-synthetic", 1, NOW + 30_000_000)]]),
+        states,
+        gateway,
+        publisher,
+    )
+
+    batch = await dispatcher.run_once("worker-synthetic")
+
+    assert batch.failed == 1 and batch.unknown == 0 and batch.succeeded == 0
+    assert states.jobs[job.job_id].state == "failed"
+    # No execution was submitted and no result was published.
+    assert gateway.submit_calls == 0 and publisher.calls == []
+    assert states.events == [(job.job_id, 1, "failed")]
+
+
 async def test_generated_audio_watermark_is_recorded_as_monotonic_progress() -> None:
     job = _job()
     states = States(job)

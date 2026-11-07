@@ -2760,10 +2760,14 @@ components:
     VoiceDraftContractViolation:
       description: |
         The deployment produced a voice draft response that violates this
-        contract. The operation is implemented and the storage is reachable, so
-        this is an implementation defect rather than an outage: it is not
-        retryable and repeating the request cannot succeed until it is fixed.
-        The reply still uses the public error envelope.
+        contract, or the storage rejected a voice draft write deterministically
+        (a CHECK or constraint refusal). The operation is implemented and the
+        storage is reachable, so both are implementation defects rather than an
+        outage: they are not retryable and repeating the request cannot succeed
+        until they are fixed. A response-shape violation is not an outage, and
+        a deterministic storage refusal is neither a client conflict nor a
+        transient storage failure. The reply still uses the public error
+        envelope.
       headers:
         Cache-Control:
           required: true

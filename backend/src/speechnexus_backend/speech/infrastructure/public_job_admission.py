@@ -15,6 +15,9 @@ from dataclasses import asdict, dataclass
 from typing import Any, Protocol, cast
 
 from speechnexus_backend.speech.application.transcription import AdmittedExecution, StagedAudio
+from speechnexus_backend.speech.application.voice_validation_report import (
+    VALIDATION_PROBE_LANGUAGE,
+)
 from speechnexus_backend.speech.domain.admission import (
     AdmissionIdentity,
     AdmissionRequest,
@@ -42,7 +45,6 @@ from speechnexus_backend.speech.infrastructure.tts_submit import build_tts_submi
 from speechnexus_backend.speech.infrastructure.voice_validation_submit import (
     VOICE_VALIDATION_TIMEOUT_SECONDS,
     build_voice_validation_submit,
-    validation_language,
     validation_probe_text,
 )
 
@@ -397,8 +399,8 @@ def build_public_job_admission(
     """Return ``None`` for legacy voice kinds, which keep the pre-admission path.
 
     ``voice_validation`` is admitted for a clone candidate only. A design
-    validation still returns ``None``: that lane remains outside this slice and
-    must not gain a partial admission.
+    revision is not a candidate and raises ``voice_draft_not_candidate``; it
+    never returns ``None`` or a half-admitted Job.
     """
     if job.kind not in ("asr", "tts", "voice_validation"):
         return None
@@ -596,10 +598,6 @@ def build_public_job_admission(
         ):
             raise PublicJobAdmissionRejectedError("voice_draft_not_candidate")
         reference = _voice_reference(cursor, job.workspace_id, draft_input, storage_bucket)
-        try:
-            language = validation_language(draft_input.get("language"))
-        except ValueError:
-            raise PublicJobAdmissionRejectedError("voice_draft_not_candidate") from None
         reference_text = draft_input.get("reference_text")
         if reference_text is not None and (
             not isinstance(reference_text, str) or not 1 <= len(reference_text) <= 10000
@@ -614,7 +612,7 @@ def build_public_job_admission(
             reference_sample_rate_hz=reference.sample_rate_hz,
             reference_channels=reference.channels,
             reference_text=reference_text,
-            language=language,
+            language=VALIDATION_PROBE_LANGUAGE,
             preview_text=validation_probe_text(job.job_id),
         )
         command = cast(dict[str, Any], gateway["command"])
@@ -632,7 +630,7 @@ def build_public_job_admission(
             "reference_audio": command["reference_audio"],
             "reference_text": reference_text,
             "preview_text": command["preview_text"],
-            "language": language,
+            "language": VALIDATION_PROBE_LANGUAGE,
             "source_use_confirmed": True,
             "gateway_request": gateway,
         }
@@ -704,13 +702,18 @@ def _voice_reference(
     asset_id = draft_input.get("reference_audio_asset_id")
     if not isinstance(asset_id, str):
         raise PublicJobAdmissionRejectedError("asset_not_ready")
-    row = _one(
-        cursor,
+    cursor.execute(
         "SELECT asset_state, purpose, object_key, sha256, bytes, media_type, "
         "sample_rate_hz, channels FROM speech_assets "
         "WHERE workspace_id=%s AND asset_id=%s",
         (workspace_id, asset_id),
     )
+    rows = cursor.fetchall()
+    if len(rows) != 1:
+        # Missing and cross-workspace assets are the same deterministic 422
+        # candidate refusal; they are not a storage outage.
+        raise PublicJobAdmissionRejectedError("asset_not_ready")
+    row = rows[0]
     if row["asset_state"] != "ready" or row["purpose"] != "voice_reference":
         raise PublicJobAdmissionRejectedError("asset_not_ready")
     try:
@@ -726,7 +729,7 @@ def _voice_reference(
         sample_rate = int(row["sample_rate_hz"])
         channels = int(row["channels"])
     except ValueError, TypeError, KeyError:
-        raise PublicJobAdmissionRejectedError("job_unavailable") from None
+        raise PublicJobAdmissionRejectedError("asset_not_ready") from None
     if media_type != "audio/wav" or sample_rate not in (16_000, 24_000, 48_000):
         raise PublicJobAdmissionRejectedError("asset_not_ready")
     if channels < 1 or channels > 8:

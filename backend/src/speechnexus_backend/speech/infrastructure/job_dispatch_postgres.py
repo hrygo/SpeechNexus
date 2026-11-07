@@ -14,6 +14,7 @@ from speechnexus_backend.speech.application.leases import LeaseService
 from speechnexus_backend.speech.domain.job_dispatch import (
     DISPATCHABLE_JOB_KIND_UNION,
     DISPATCHABLE_JOB_KINDS,
+    VOICE_VALIDATION_JOB_KINDS,
     ClaimedJob,
     DispatchClaimLostError,
     DispatchConflictError,
@@ -71,8 +72,8 @@ class PostgresDispatchQueue:
     anchor.
 
     The default stays ``False`` because this queue also serves the legacy voice
-    lanes that intentionally claim those anchor rows; the production Job runtime
-    is the only caller that sets it and asserts the filter at startup.
+    lanes that intentionally claim those anchor rows. The constructor rejects a
+    validation lane without admission instead of failing only at runtime.
     """
 
     def __init__(
@@ -94,6 +95,12 @@ class PostgresDispatchQueue:
             raise ValueError("Dispatch lane Job kinds must be unique")
         if any(kind not in DISPATCHABLE_JOB_KIND_UNION for kind in selected):
             raise ValueError("Dispatch lane Job kind is outside the dispatchable union")
+        if not require_admission and any(
+            kind in VOICE_VALIDATION_JOB_KINDS for kind in selected
+        ):
+            # Legacy anchor-only rows have no attempt/lease/command; admitting
+            # them would make the worker claim a Job it cannot replay.
+            raise ValueError("Voice validation dispatch requires admission")
         self._pool, self._timeout = pool, timeout_seconds
         self._kinds = selected
         self._require_admission = require_admission

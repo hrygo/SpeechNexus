@@ -15,6 +15,7 @@ from speechnexus_backend.speech.application.voice_validation_report import (
     build_validation_report,
     build_validation_result,
     measure_wav,
+    validation_outcome,
 )
 from speechnexus_backend.speech.domain.artifacts import (
     ArtifactError,
@@ -80,6 +81,10 @@ class ValidationRunFactsReader(Protocol):
     def read(self, job: DispatchJob) -> ValidationRunFacts: ...
 
 
+class CommittedReportReader(Protocol):
+    def read(self, artifact: ArtifactRecord) -> bytes: ...
+
+
 class ResultArtifactPublisher:
     """Write object bytes first, then one deterministic committed Artifact row."""
 
@@ -90,11 +95,13 @@ class ResultArtifactPublisher:
         staging: StagingResultObjects,
         *,
         validation: ValidationRunFactsReader | None = None,
+        report_reader: CommittedReportReader | None = None,
         now_us: Callable[[], int] | None = None,
         close: Callable[[], None] | None = None,
     ) -> None:
         self._rows, self._blobs, self._staging = rows, blobs, staging
         self._validation = validation
+        self._report_reader = report_reader
         self._now_us = now_us or (lambda: time.time_ns() // 1_000)
         self._close = close
 
@@ -226,7 +233,15 @@ class ResultArtifactPublisher:
                     version_id,
                 )
             )
-            return self._published_validation(committed, job, submission)
+            checks, eligible = validation_outcome(report)
+            return self._published_validation(
+                committed,
+                job,
+                submission,
+                report=report,
+                checks=checks,
+                publication_eligible=eligible,
+            )
         except ArtifactError as error:
             if error.code in {"artifact_object_conflict", "artifact_object_integrity_mismatch"}:
                 raise DispatchProtocolError(
@@ -252,7 +267,14 @@ class ResultArtifactPublisher:
         return PublishedResult(record.artifact_id, record.receipt_id)
 
     def _published_validation(
-        self, record: ArtifactRecord, job: DispatchJob, submission: ExecutionSubmission
+        self,
+        record: ArtifactRecord,
+        job: DispatchJob,
+        submission: ExecutionSubmission,
+        *,
+        report: bytes | None = None,
+        checks: list[dict[str, Any]] | None = None,
+        publication_eligible: bool | None = None,
     ) -> PublishedResult:
         if self._validation is None:
             raise DispatchProtocolError("Validation report publication is not configured")
@@ -266,12 +288,26 @@ class ResultArtifactPublisher:
             raise DispatchProtocolError("Committed validation Artifact belongs to another result")
         facts = self._validation.read(job)
         _validation_probe(submission, facts)
+        if checks is None or publication_eligible is None:
+            if report is None:
+                if self._report_reader is None:
+                    raise DispatchProtocolError(
+                        "Committed validation report cannot be read on replay"
+                    )
+                report = self._report_reader.read(record)
+                if len(report) != record.bytes or hash_bytes(report) != record.sha256:
+                    raise DispatchProtocolError(
+                        "Committed validation report disagrees with its Artifact row"
+                    )
+            checks, publication_eligible = validation_outcome(report)
         result_json = build_validation_result(
             facts,
             job_id=job.job_id,
             artifact_id=record.artifact_id,
             receipt_id=record.receipt_id,
             created_at_us=record.created_at_us,
+            checks=checks,
+            publication_eligible=publication_eligible,
         )
         return PublishedResult(record.artifact_id, record.receipt_id, result_json)
 

@@ -12,6 +12,7 @@ import asyncio
 import hashlib
 import io
 import json
+import uuid
 import wave
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
@@ -19,6 +20,7 @@ from typing import Any, cast
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from psycopg.conninfo import make_conninfo
 from tests.integration.test_coordination_foundation import foundation as foundation
 from tests.integration.test_production_admission import AdmissionDatabase
 from tests.integration.test_production_admission import admission_database as admission_database
@@ -34,7 +36,10 @@ from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.application.job_dispatcher import JobDispatcher
-from speechnexus_backend.speech.application.public_jobs import PublicJobs
+from speechnexus_backend.speech.application.public_jobs import (
+    JobAdmissionRejectedError,
+    PublicJobs,
+)
 from speechnexus_backend.speech.application.results import ResultArtifactPublisher
 from speechnexus_backend.speech.application.voice_drafts import VoiceDrafts
 from speechnexus_backend.speech.application.voice_publications import (
@@ -51,11 +56,23 @@ from speechnexus_backend.speech.domain.job_dispatch import (
     result_receipt_identity,
 )
 from speechnexus_backend.speech.infrastructure.artifacts_postgres import PostgresArtifactWriter
+from speechnexus_backend.speech.infrastructure.coordination_grants import (
+    coordination_runtime_grants,
+)
+from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
+    cancellation_reconciliation_grants,
+)
 from speechnexus_backend.speech.infrastructure.job_dispatch_postgres import (
     PostgresDispatchQueue,
     PostgresDispatchStateStore,
     PostgresLeaseSettler,
 )
+from speechnexus_backend.speech.infrastructure.job_schema import (
+    job_dispatch_grants,
+    job_runtime_grants,
+)
+from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
+from speechnexus_backend.speech.infrastructure.public_job_schema import public_job_grants
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import PostgresPublicJobs
 from speechnexus_backend.speech.infrastructure.stored_command_planner import (
     StoredCommandPlanner,
@@ -63,7 +80,10 @@ from speechnexus_backend.speech.infrastructure.stored_command_planner import (
 from speechnexus_backend.speech.infrastructure.voice_capability_evidence_postgres import (
     PostgresVoiceEvidenceRecorder,
 )
-from speechnexus_backend.speech.infrastructure.voice_draft_schema import voice_draft_grants
+from speechnexus_backend.speech.infrastructure.voice_draft_schema import (
+    voice_draft_grants,
+    voice_validation_worker_grants,
+)
 from speechnexus_backend.speech.infrastructure.voice_drafts_postgres import PostgresVoiceDrafts
 from speechnexus_backend.speech.infrastructure.voice_publication_schema import (
     voice_evidence_recorder_grants,
@@ -88,17 +108,18 @@ REFERENCE_BYTES = 48_000
 GENERATION_PREVIEW = "Generation-stage preview sentence."
 
 
-def _wav_body(*, frames: int = 12_000) -> bytes:
+def _wav_body(*, frames: int = 48_000, amplitude: int = 8_000) -> bytes:
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as audio:
         audio.setnchannels(1)
         audio.setsampwidth(2)
         audio.setframerate(24_000)
-        audio.writeframes(b"\x01\x00" * frames)
+        audio.writeframes(amplitude.to_bytes(2, "little", signed=True) * frames)
     return buffer.getvalue()
 
 
 WAV_BODY = _wav_body()
+SILENT_WAV_BODY = _wav_body(frames=24, amplitude=0)
 
 
 @dataclass
@@ -108,6 +129,7 @@ class ValidationSandbox:
     drafts: VoiceDrafts
     publications: VoicePublications
     pool: Any = field(repr=False)
+    worker_pool: Any = field(repr=False)
     db: Any = field(repr=False)
 
     def query(self, statement: str, parameters: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
@@ -129,7 +151,7 @@ def validation_db(admission_database: AdmissionDatabase) -> Iterator[ValidationS
         db.query(grant)
     definition = {
         "logical_model": BINDING,
-        "tasks": ["tts_file", "asr_file", "voice_clone", "voice_validation"],
+        "tasks": ["tts_file", "asr_file", "voice_design", "voice_clone", "voice_validation"],
         "release_tier": "production",
         "execution_recipe": {
             "recipe_revision": "1",
@@ -167,11 +189,38 @@ def validation_db(admission_database: AdmissionDatabase) -> Iterator[ValidationS
     )
     pool = admission.runtime.pool
     assert pool is not None
+    suffix = uuid.uuid4().hex[:10]
+    worker_role = "sn551_worker_" + suffix
+    gateway_role = "sn551_gateway_" + suffix
+    db.query(f"CREATE ROLE \"{worker_role}\" LOGIN PASSWORD 'x'")
+    db.query(f'CREATE ROLE "{gateway_role}" NOLOGIN')
+    for grant in (
+        *job_runtime_grants(schema, worker_role),
+        *job_dispatch_grants(schema, worker_role),
+        *public_job_grants(schema, worker_role),
+        *cancellation_reconciliation_grants(schema, worker_role),
+        *coordination_runtime_grants(schema, speech_role=worker_role, gateway_role=gateway_role),
+        *voice_validation_worker_grants(schema, worker_role),
+    ):
+        db.query(grant)
+    worker_pool = speech_pool(
+        make_conninfo(db.url, user=worker_role, password="x"),
+        schema=schema,
+        max_size=2,
+        name="validation-worker-" + suffix,
+    )
+    worker_pool.open()
     store = _store(admission)
     jobs = PublicJobs(store, store)
     drafts = VoiceDrafts(jobs, PostgresVoiceDrafts(pool))
     publications = VoicePublications(PostgresVoicePublications(pool))
-    yield ValidationSandbox(jobs, store, drafts, publications, pool, db)
+    try:
+        yield ValidationSandbox(jobs, store, drafts, publications, pool, worker_pool, db)
+    finally:
+        worker_pool.close()
+        for role in (worker_role, gateway_role):
+            db.query(f'DROP OWNED BY "{role}"')
+            db.query(f'DROP ROLE IF EXISTS "{role}"')
 
 
 def _create_generation(sandbox: ValidationSandbox) -> tuple[dict[str, Any], Any, str]:
@@ -226,10 +275,13 @@ def _create_generation(sandbox: ValidationSandbox) -> tuple[dict[str, Any], Any,
 
 
 class _Staging:
+    def __init__(self, body: bytes = WAV_BODY) -> None:
+        self._body = body
+
     def read(self, reference: Mapping[str, Any], storage_version: str) -> bytes:
         assert storage_version == "version-staging-validation"
-        assert reference["byte_length"] == len(WAV_BODY)
-        return WAV_BODY
+        assert reference["byte_length"] == len(self._body)
+        return self._body
 
 
 class _Blobs:
@@ -243,9 +295,13 @@ class _Blobs:
         self.bodies[write.artifact_id] = write.body
         return "version-report-1"
 
+    def read(self, artifact: Any) -> bytes:
+        return self.bodies[artifact.artifact_id]
+
 
 class _Gateway:
-    def __init__(self) -> None:
+    def __init__(self, body: bytes = WAV_BODY) -> None:
+        self._body = body
         self.submitted: ExecutionSubmission | None = None
         self.receipt_reads = 0
 
@@ -284,8 +340,8 @@ class _Gateway:
                     "workspace_id": VALIDATION_WORKSPACE,
                     "storage_bucket": "synthetic-results",
                     "object_key": "staging/validation.wav",
-                    "content_sha256": "sha256:" + hashlib.sha256(WAV_BODY).hexdigest(),
-                    "byte_length": len(WAV_BODY),
+                    "content_sha256": "sha256:" + hashlib.sha256(self._body).hexdigest(),
+                    "byte_length": len(self._body),
                 },
                 "storage_version": "version-staging-validation",
                 "media_type": "audio/wav",
@@ -293,14 +349,21 @@ class _Gateway:
         )
 
 
-def _dispatcher(sandbox: ValidationSandbox, gateway: _Gateway) -> tuple[JobDispatcher, _Blobs]:
-    pool = sandbox.pool
+def _dispatcher(
+    sandbox: ValidationSandbox,
+    gateway: _Gateway,
+    *,
+    staging_body: bytes = WAV_BODY,
+    pool: Any | None = None,
+) -> tuple[JobDispatcher, _Blobs]:
+    pool = sandbox.pool if pool is None else pool
     blobs = _Blobs()
     publisher = ResultArtifactPublisher(
         PostgresArtifactWriter(pool),
         blobs,
-        _Staging(),
+        _Staging(staging_body),
         validation=PostgresValidationRunFacts(pool),
+        report_reader=blobs,
     )
     dispatcher = JobDispatcher(
         PostgresDispatchQueue(
@@ -405,7 +468,11 @@ def test_validation_job_is_admitted_dispatched_and_commits_a_report(
     }
     assert report_document["material"]["asset_id"] == REFERENCE_ASSET
     assert probe["output_bytes"] == len(WAV_BODY)
-    assert probe["audio_duration_ms"] == 500
+    assert probe["audio_duration_ms"] == 2_000
+    assert probe["sample_frames"] == 48_000
+    assert probe["output_rms"] == 8_000
+    assert probe["output_peak"] == 8_000
+    assert probe["language"] == "en"
 
     app = create_app(
         settings=_settings(), jobs=sandbox.jobs, voice_publications=sandbox.publications
@@ -478,3 +545,140 @@ def test_validation_job_is_admitted_dispatched_and_commits_a_report(
     )[0]
     assert after_quota["held_attempts"] == before_quota["held_attempts"]
     assert after_host["held"] == before_host["held"]
+
+
+def test_silent_validation_is_failed_and_cannot_be_published(
+    validation_db: ValidationSandbox,
+) -> None:
+    sandbox = validation_db
+    draft, _generation, _preview = _create_generation(sandbox)
+    validation = sandbox.drafts.validate(
+        draft["id"],
+        {"expected_draft_revision": draft["head_revision"], "validation_set_revision": "1"},
+        request_id="request-validation-silent",
+        idempotency_key=None,
+    )
+    gateway = _Gateway(SILENT_WAV_BODY)
+    dispatcher, blobs = _dispatcher(sandbox, gateway, staging_body=SILENT_WAV_BODY)
+    batch = asyncio.run(dispatcher.run_once("worker-validation-silent"))
+    assert batch.succeeded == 1
+
+    job = sandbox.jobs.get(validation.job_id)
+    assert job.state == "succeeded"
+    result = json.loads(job.result_json or "{}")
+    assert result["validation"]["status"] == "failed"
+    assert result["validation"]["publication_eligible"] is False
+    assert {check["status"] for check in result["validation"]["checks"]} == {"failed"}
+    artifact_id = result["validation_report_artifact_id"]
+    report = json.loads(blobs.bodies[artifact_id])
+    assert {check["status"] for check in report["coverage"]["checks"]} == {"failed"}
+    probe = report["coverage"]["probes"][0]
+    assert probe["sample_frames"] == 24
+    assert probe["output_rms"] == 0
+    assert probe["output_peak"] == 0
+
+    app = create_app(
+        settings=_settings(), jobs=sandbox.jobs, voice_publications=sandbox.publications
+    )
+
+    async def _publish() -> Any:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://127.0.0.1"
+        ) as client:
+            return await client.post(
+                f"/v1/nexus/voice-drafts/{draft['id']}/publications",
+                json={
+                    "expected_draft_revision": draft["head_revision"],
+                    "validation_job_id": validation.job_id,
+                    "manual_confirmation": True,
+                    "display_name": "Synthetic clone",
+                },
+            )
+
+    publication = asyncio.run(_publish())
+    assert publication.status_code == 422, publication.text
+    assert publication.json()["error"]["code"] == "voice_publication_not_eligible"
+
+
+def test_validation_dispatch_works_with_the_documented_worker_grants(
+    validation_db: ValidationSandbox,
+) -> None:
+    """The documented worker role, not the API superset, must read the facts."""
+    sandbox = validation_db
+    draft, _generation, _preview = _create_generation(sandbox)
+    validation = sandbox.drafts.validate(
+        draft["id"],
+        {"expected_draft_revision": draft["head_revision"], "validation_set_revision": "1"},
+        request_id="request-validation-worker-role",
+        idempotency_key=None,
+    )
+    gateway = _Gateway()
+    dispatcher, blobs = _dispatcher(sandbox, gateway, pool=sandbox.worker_pool)
+    batch = asyncio.run(dispatcher.run_once("worker-validation-min-role"))
+    assert batch.succeeded == 1
+
+    job = sandbox.jobs.get(validation.job_id)
+    assert job.state == "succeeded"
+    result = json.loads(job.result_json or "{}")
+    assert result["validation"]["status"] == "passed"
+    assert result["validation_report_artifact_id"] in blobs.bodies
+
+
+def test_design_validation_is_rejected_with_the_candidate_error(
+    validation_db: ValidationSandbox,
+) -> None:
+    sandbox = validation_db
+    design, job = sandbox.drafts.create(
+        "voice_design",
+        {
+            "model": BINDING,
+            "input": {
+                "description": "Synthetic design",
+                "preview_text": "Synthetic design preview",
+            },
+        },
+        request_id="request-design",
+        idempotency_key=None,
+    )
+    artifact_id = "artifact-design-preview-" + job.job_id.removeprefix("job-")[:32]
+    receipt_id = result_receipt_identity(job.job_id)
+    sandbox.db.query(
+        "INSERT INTO speech_artifacts "
+        "(artifact_id, workspace_id, artifact_kind, artifact_state, media_type, bytes, sha256, "
+        "receipt_id, source_operation_id, object_key, storage_version_id, created_at_us) "
+        "VALUES (%s, %s, 'preview', 'ready', 'audio/wav', 1000, %s, %s, %s, %s, "
+        "'version-design-preview-1', 10)",
+        (
+            artifact_id,
+            VALIDATION_WORKSPACE,
+            DIGEST,
+            receipt_id,
+            job.job_id,
+            "private/artifacts/" + VALIDATION_WORKSPACE + "/" + artifact_id,
+        ),
+    )
+    sandbox.jobs.advance(job.job_id, "running")
+    sandbox.jobs.advance(
+        job.job_id,
+        "succeeded",
+        result_json=json.dumps(
+            {
+                "kind": "voice_design",
+                "voice_draft_id": design["id"],
+                "draft_revision": design["head_revision"],
+                "preview_artifact_ids": [artifact_id],
+                "receipt_id": receipt_id,
+            }
+        ),
+    )
+    with pytest.raises(JobAdmissionRejectedError) as error:
+        sandbox.drafts.validate(
+            design["id"],
+            {
+                "expected_draft_revision": design["head_revision"],
+                "validation_set_revision": "1",
+            },
+            request_id="request-design-validation",
+            idempotency_key=None,
+        )
+    assert error.value.code == "voice_draft_not_candidate"

@@ -9,6 +9,7 @@ from speechnexus_contracts.voice_drafts_http import validate_response
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.application.public_jobs import (
+    JobAdmissionRejectedError,
     JobOutcomeUnknownError,
     JobRejectedError,
     PublicJobs,
@@ -714,4 +715,72 @@ async def test_generate_outcome_unknown_is_a_retryable_503() -> None:
         "generateVoiceDraftRevision",
         503,
         {"body": lost.json(), "headers": dict(lost.headers)},
+    )
+
+
+class _RejectingValidationJobs:
+    def __init__(self, code: str) -> None:
+        self.code = code
+
+    def submit(self, body: Any, *, request_id: str, idempotency_key: str | None) -> Any:
+        raise JobAdmissionRejectedError(self.code)
+
+
+class _ValidationTargetStore:
+    def revision_target(self, draft_id: str, revision: str) -> dict[str, Any]:
+        return {
+            "kind": "clone",
+            "status": "generating",
+            "head_revision": revision,
+            "workspace_id": "workspace-default",
+            "binding": {"id": "tts-quality", "revision": "2"},
+        }
+
+    def draft_exists(self, draft_id: str) -> bool:
+        return True
+
+
+@pytest.mark.parametrize(
+    ("code", "status", "wire", "kind", "retryable"),
+    [
+        (
+            "voice_draft_not_candidate",
+            422,
+            "voice_draft_not_candidate",
+            "invalid_request_error",
+            False,
+        ),
+        ("asset_not_ready", 422, "voice_draft_input_unavailable", "invalid_request_error", False),
+        (
+            "job_binding_incomplete",
+            422,
+            "voice_draft_input_unavailable",
+            "invalid_request_error",
+            False,
+        ),
+        ("job_capacity_exhausted", 429, "voice_draft_capacity", "rate_limit_error", True),
+    ],
+)
+async def test_validation_admission_refusals_are_declared_not_500(
+    code: str, status: int, wire: str, kind: str, retryable: bool
+) -> None:
+    provider = VoiceDrafts(
+        cast(Any, _RejectingValidationJobs(code)), cast(Any, _ValidationTargetStore())
+    )
+    app = create_app(settings=_settings(), voice_drafts=provider)
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://localhost") as http:
+        response = await http.post(
+            "/v1/nexus/voice-drafts/draft-1/validations",
+            json={"expected_draft_revision": "1", "validation_set_revision": "1"},
+        )
+    assert response.status_code == status, response.text
+    body = response.json()
+    assert body["error"]["code"] == wire
+    assert body["error"]["type"] == kind
+    assert body["error"]["retryable"] is retryable
+    assert response.headers["X-Should-Retry"] == ("true" if retryable else "false")
+    if status == 429:
+        assert response.headers["Retry-After"] == "1"
+    validate_response(
+        "validateVoiceDraftRevision", status, {"body": body, "headers": dict(response.headers)}
     )

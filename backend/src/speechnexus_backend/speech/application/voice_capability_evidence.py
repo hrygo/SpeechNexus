@@ -29,6 +29,15 @@ from typing import Any, Protocol
 from speechnexus_contracts import ContractValidationError
 from speechnexus_contracts.voice_catalogue_http import validate_response
 
+from speechnexus_backend.speech.application.voice_validation_report import (
+    VALIDATION_MAX_FRAMES,
+    VALIDATION_MAX_FRAMES_PER_CHAR,
+    VALIDATION_MIN_FRAMES,
+    VALIDATION_MIN_FRAMES_PER_CHAR,
+    VALIDATION_MIN_PEAK,
+    VALIDATION_MIN_RMS,
+    VALIDATION_PROBE_LANGUAGE,
+)
 from speechnexus_backend.speech.domain.voice_capability_evidence import (
     EVIDENCE_KIND,
     REUSABLE_TTS_PATH,
@@ -51,6 +60,9 @@ _PROBE_KEYS = frozenset(
         "sample_rate_hz",
         "audio_format",
         "audio_duration_ms",
+        "sample_frames",
+        "output_rms",
+        "output_peak",
         "output_sha256",
         "output_bytes",
         "mode",
@@ -257,6 +269,9 @@ def _probes(
     language = entry["language"]
     sample_rate = entry["sample_rate_hz"]
     duration = entry["audio_duration_ms"]
+    frames = entry["sample_frames"]
+    rms = entry["output_rms"]
+    peak = entry["output_peak"]
     output_bytes = entry["output_bytes"]
     if name != "new_text_reuse" or not any(check.name == name for check in checks):
         raise VoiceEvidenceNotEligibleError("coverage_probes_invalid")
@@ -273,7 +288,12 @@ def _probes(
     for field in ("text_sha256", "generation_preview_text_sha256", "output_sha256"):
         if not isinstance(entry[field], str) or _DIGEST.fullmatch(entry[field]) is None:
             raise VoiceEvidenceNotEligibleError("coverage_probes_invalid")
-    if not isinstance(language, str) or _LANGUAGE.fullmatch(language) is None:
+    if (
+        not isinstance(language, str)
+        or _LANGUAGE.fullmatch(language) is None
+        or language != VALIDATION_PROBE_LANGUAGE
+    ):
+        # The fixed probe is English; no other language was measured.
         raise VoiceEvidenceNotEligibleError("coverage_probes_invalid")
     # This lane measures the fixed validation rate; a report claiming another
     # rate is not evidence this run produced.
@@ -284,9 +304,26 @@ def _probes(
     if (
         type(duration) is not int
         or duration < 1
+        or type(frames) is not int
+        or type(rms) is not int
+        or type(peak) is not int
         or type(output_bytes) is not int
         or output_bytes < 1
     ):
+        raise VoiceEvidenceNotEligibleError("coverage_probes_invalid")
+    min_frames = max(VALIDATION_MIN_FRAMES, len(text) * VALIDATION_MIN_FRAMES_PER_CHAR)
+    max_frames = min(VALIDATION_MAX_FRAMES, len(text) * VALIDATION_MAX_FRAMES_PER_CHAR)
+    if (
+        not min_frames <= frames <= max_frames
+        or duration != frames * 1000 // sample_rate
+        or output_bytes < frames * 2
+        or rms < VALIDATION_MIN_RMS
+        or peak < VALIDATION_MIN_PEAK
+        or peak > 32_768
+        or rms > peak
+    ):
+        # Recompute the quality floor from the report's measured values; a
+        # silent, truncated, or implausibly short/long clip is not evidence.
         raise VoiceEvidenceNotEligibleError("coverage_probes_invalid")
     if set(capabilities) != {"languages", "sample_rates_hz", "audio_formats", "modes"}:
         raise VoiceEvidenceNotEligibleError("coverage_capabilities_mismatch")
@@ -308,6 +345,9 @@ def _probes(
             "sample_rate_hz": sample_rate,
             "audio_format": "wav",
             "audio_duration_ms": duration,
+            "sample_frames": frames,
+            "output_rms": rms,
+            "output_peak": peak,
             "output_sha256": entry["output_sha256"],
             "output_bytes": output_bytes,
             "mode": "complete",

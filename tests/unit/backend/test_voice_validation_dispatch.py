@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from typing import Any, cast
 
 import pytest
 
@@ -18,8 +19,13 @@ from speechnexus_backend.speech.application.voice_validation_report import (
     build_validation_report,
     build_validation_result,
     validate_voice_validation_result,
+    validation_outcome,
 )
+from speechnexus_backend.speech.domain.job_dispatch import VOICE_VALIDATION_JOB_KINDS
 from speechnexus_backend.speech.domain.voice_capability_evidence import VoiceMaterial
+from speechnexus_backend.speech.infrastructure.job_dispatch_postgres import (
+    PostgresDispatchQueue,
+)
 from speechnexus_backend.speech.infrastructure.voice_validation_submit import (
     validation_probe_text,
 )
@@ -31,9 +37,22 @@ PROBE_TEXT = validation_probe_text("job-validation-1")
 MEASURED = WaveFacts(
     sample_rate_hz=24_000,
     channels=1,
-    duration_ms=500,
-    bytes=24_000,
+    duration_ms=2_000,
+    bytes=96_044,
     sha256="sha256:" + "d" * 64,
+    frames=48_000,
+    rms=2_000,
+    peak=12_000,
+)
+SILENT_MEASURED = WaveFacts(
+    sample_rate_hz=24_000,
+    channels=1,
+    duration_ms=1,
+    bytes=46,
+    sha256="sha256:" + "e" * 64,
+    frames=24,
+    rms=0,
+    peak=0,
 )
 
 
@@ -47,10 +66,29 @@ def _run_facts(**changes: object) -> ValidationRunFacts:
         "generation_preview_text": GENERATION_PREVIEW,
         "material": MATERIAL,
         "reference_text": None,
-        "language": "en",
     }
     values.update(changes)
     return ValidationRunFacts(**values)  # type: ignore[arg-type]
+
+
+def _result_json(
+    facts: ValidationRunFacts | None = None,
+    *,
+    measured: WaveFacts = MEASURED,
+    artifact_id: str = "report-1",
+) -> str:
+    facts = facts or _run_facts()
+    report = build_validation_report(facts, probe_text=PROBE_TEXT, measured=measured)
+    checks, eligible = validation_outcome(report)
+    return build_validation_result(
+        facts,
+        job_id="job-validation-1",
+        artifact_id=artifact_id,
+        receipt_id="receipt-1",
+        created_at_us=0,
+        checks=checks,
+        publication_eligible=eligible,
+    )
 
 
 def test_probe_text_is_stable_and_distinct_from_the_generation_preview() -> None:
@@ -67,13 +105,7 @@ def test_report_rejects_reusing_the_generation_preview_as_the_probe() -> None:
 
 def test_result_is_closed_and_references_the_report() -> None:
     facts = _run_facts()
-    result_json = build_validation_result(
-        facts,
-        job_id="job-validation-1",
-        artifact_id="report-1",
-        receipt_id="receipt-1",
-        created_at_us=0,
-    )
+    result_json = _result_json(facts)
     result = json.loads(result_json)
     assert set(result) == {
         "kind",
@@ -88,15 +120,7 @@ def test_result_is_closed_and_references_the_report() -> None:
 
 def test_result_without_the_report_artifact_id_is_rejected() -> None:
     facts = _run_facts()
-    result = json.loads(
-        build_validation_result(
-            facts,
-            job_id="job-validation-1",
-            artifact_id="report-1",
-            receipt_id="receipt-1",
-            created_at_us=0,
-        )
-    )
+    result = json.loads(_result_json(facts))
     del result["validation_report_artifact_id"]
     with pytest.raises(ValueError, match="outside the frozen contract"):
         validate_voice_validation_result(result)
@@ -110,15 +134,7 @@ def test_result_without_the_report_artifact_id_is_rejected() -> None:
 
 def test_public_check_detail_is_rejected_by_the_evidence_ledger() -> None:
     report = build_validation_report(_run_facts(), probe_text=PROBE_TEXT, measured=MEASURED)
-    result = json.loads(
-        build_validation_result(
-            _run_facts(),
-            job_id="job-validation-1",
-            artifact_id="report-1",
-            receipt_id="receipt-1",
-            created_at_us=0,
-        )
-    )
+    result = json.loads(_result_json())
     for check in result["validation"]["checks"]:
         check["detail"] = "a public optional field the ledger does not store"
     evidence_facts = _facts(report)
@@ -150,3 +166,28 @@ def test_evidence_rejects_a_capability_claim_the_run_did_not_measure() -> None:
     changed = json.dumps(document, separators=(",", ":")).encode()
     with pytest.raises(VoiceEvidenceNotEligibleError, match="coverage_probes_invalid"):
         build_evidence(_facts(changed), changed, measured_by="worker", measured_at_us=1)
+
+
+def test_one_millisecond_of_digital_silence_is_failed_and_not_publishable() -> None:
+    facts = _run_facts()
+    report = build_validation_report(facts, probe_text=PROBE_TEXT, measured=SILENT_MEASURED)
+    document = json.loads(report)
+    assert {check["status"] for check in document["coverage"]["checks"]} == {"failed"}
+    _checks, eligible = validation_outcome(report)
+    assert eligible is False
+    result = json.loads(_result_json(facts, measured=SILENT_MEASURED))
+    assert result["validation"]["status"] == "failed"
+    assert result["validation"]["publication_eligible"] is False
+    assert {check["status"] for check in result["validation"]["checks"]} == {"failed"}
+    validate_voice_validation_result(result)
+    # The ledger refuses the same failed report even if the caller tries.
+    with pytest.raises(VoiceEvidenceNotEligibleError):
+        build_evidence(_facts(report), report, measured_by="worker", measured_at_us=1)
+
+def test_validation_queue_rejects_the_legacy_anchor_only_lane() -> None:
+    with pytest.raises(ValueError, match="requires admission"):
+        PostgresDispatchQueue(
+            cast(Any, object()),
+            kinds=VOICE_VALIDATION_JOB_KINDS,
+            require_admission=False,
+        )

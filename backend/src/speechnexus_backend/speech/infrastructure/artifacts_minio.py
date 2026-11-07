@@ -20,6 +20,8 @@ from speechnexus_backend.speech.domain.artifacts import (
 from speechnexus_backend.speech.domain.assets import AssetError
 from speechnexus_backend.speech.infrastructure.assets_minio import _FixedOriginHTTP
 
+_MAX_OBJECT_BYTES = 64 * 1024 * 1024
+
 
 class _ObjectReader:
     def __init__(self, response: BaseHTTPResponse) -> None:
@@ -64,6 +66,16 @@ class MinioArtifactObjects:
 
     def close(self) -> None:
         self._http.clear()
+
+    def read(self, artifact: ArtifactRecord) -> bytes:
+        """Read one whole committed version; callers still verify its digest."""
+        if artifact.bytes < 1 or artifact.bytes > _MAX_OBJECT_BYTES:
+            raise ArtifactError("artifact_unavailable")
+        with self.open(artifact, 0, artifact.bytes) as reader:
+            body = reader.read(artifact.bytes)
+        if len(body) != artifact.bytes:
+            raise ArtifactError("artifact_unavailable")
+        return body
 
     @contextmanager
     def open(self, artifact: ArtifactRecord, offset: int, length: int) -> Iterator[_ObjectReader]:

@@ -62,3 +62,18 @@ def voice_draft_grants(schema: str, role: str) -> tuple[str, ...]:
         f'GRANT SELECT, INSERT ON "{schema}".speech_voice_draft_revisions TO "{role}"',
         f'GRANT SELECT, INSERT ON "{schema}".speech_voice_metadata_commands TO "{role}"',
     )
+
+
+def voice_validation_worker_grants(schema: str, role: str) -> tuple[str, ...]:
+    """The validation fact reader's narrow additions to the dispatch worker.
+
+    The worker replays the frozen draft revision and the ready reference Asset;
+    it does not own draft writes and does not need the publication role's
+    catalogue or Artifact-object privileges.
+    """
+    schema, role = checked_sql_name(schema), checked_sql_name(role)
+    return (
+        f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
+        f'GRANT SELECT ON "{schema}".speech_voice_draft_revisions, '
+        f'"{schema}".speech_assets TO "{role}"',
+    )

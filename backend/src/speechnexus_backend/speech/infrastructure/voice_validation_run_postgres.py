@@ -20,9 +20,6 @@ from speechnexus_backend.speech.domain.job_dispatch import (
 )
 from speechnexus_backend.speech.domain.voice_capability_evidence import VoiceMaterial
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
-from speechnexus_backend.speech.infrastructure.voice_validation_submit import (
-    validation_language,
-)
 
 
 class PostgresValidationRunFacts:
@@ -120,7 +117,6 @@ class PostgresValidationRunFacts:
         binding_revision = draft_binding.get("revision")
         if not isinstance(binding_id, str) or not isinstance(binding_revision, str):
             raise DispatchProtocolError("Draft binding reference is outside the contract")
-        language = _language(draft_input.get("language"))
         reference_text = draft_input.get("reference_text")
         if reference_text is not None and (
             not isinstance(reference_text, str)
@@ -141,7 +137,6 @@ class PostgresValidationRunFacts:
                 media_type,
             ),
             reference_text=reference_text,
-            language=language,
         )
 
 
@@ -155,13 +150,6 @@ def _document(value: object, name: str) -> dict[str, Any]:
     if not isinstance(document, dict):
         raise DispatchProtocolError(f"{name} is not an object")
     return document
-
-
-def _language(value: object) -> str:
-    try:
-        return validation_language(value)
-    except ValueError:
-        raise DispatchProtocolError("Draft language is outside the contract") from None
 
 
 __all__ = ["PostgresValidationRunFacts"]

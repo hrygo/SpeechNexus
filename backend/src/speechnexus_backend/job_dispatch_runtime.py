@@ -263,6 +263,7 @@ def build_result_publisher(
         validation=PostgresValidationRunFacts(
             pool, timeout_seconds=settings.storage_timeout_seconds
         ),
+        report_reader=artifacts,
         close=close,
     )
     try:

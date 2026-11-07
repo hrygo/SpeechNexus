@@ -72,8 +72,11 @@ PROBE = {
     "sample_rate_hz": 24000,
     "audio_format": "wav",
     "audio_duration_ms": 500,
+    "sample_frames": 12000,
+    "output_rms": 2000,
+    "output_peak": 12000,
     "output_sha256": "sha256:" + "d" * 64,
-    "output_bytes": 24000,
+    "output_bytes": 24044,
     "mode": "complete",
 }
 

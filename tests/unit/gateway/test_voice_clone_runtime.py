@@ -140,14 +140,14 @@ def test_an_unsupported_configuration_is_refused(mutate: Any, tmp_path: Path) ->
 
 
 def test_a_warmup_transcript_that_cannot_match_its_clip_fails_startup(tmp_path: Path) -> None:
-    path, _ = write_voice_clone_configuration(tmp_path / "config", reference_text="x" * 31)
+    path, _ = write_voice_clone_configuration(tmp_path / "config", reference_text="x" * 40)
     settings = settings_for(
         tmp_path,
         file_voice_clone_config_file=path,
         file_voice_clone_object_access_key=SecretStr("synthetic-access"),
         file_voice_clone_object_secret_key=SecretStr("synthetic-secret"),
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="reference text does not match its clip duration"):
         load_voice_clone_configuration(settings)
 
 

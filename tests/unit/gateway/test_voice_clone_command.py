@@ -21,7 +21,10 @@ from speechnexus_gateway.domain.execution_inputs import (
     VerifiedExecutionObject,
 )
 from speechnexus_gateway.domain.execution_results import ExecutionAudioStagingResult
-from speechnexus_gateway.domain.file_execution import EngineRequestRejectedError
+from speechnexus_gateway.domain.file_execution import (
+    EngineRequestRejectedError,
+    FileCommandInvalidError,
+)
 from speechnexus_gateway.domain.submission import (
     InvalidExecutionRequestError,
     SubmissionIdentity,
@@ -240,6 +243,17 @@ async def test_a_missing_transcript_is_refused_before_reading_or_dispatch() -> N
     assert engine.calls == []
 
 
+async def test_a_natural_pairing_tempo_is_accepted() -> None:
+    payload = reference_wav(duration_ms=2500)
+    command = prepared_command(reference_text="x" * 51)
+    runner, _, engine = build(objects=Objects(payload))
+    await runner.stage_result(
+        clone_request(command=command, payload=payload), store=Store(), cancelled=lambda: False
+    )
+    assert len(engine.calls) == 1
+    assert engine.calls[0][0].reference_text == "x" * 51
+
+
 async def test_a_blank_transcript_is_refused_before_reading_or_dispatch() -> None:
     command = prepared_command(reference_text=" \t")
     runner, objects, engine = build()
@@ -283,7 +297,7 @@ async def test_a_reference_that_is_not_an_approved_wav_is_refused_before_the_eng
     payload = b"not a wave file" * 4
     command = prepared_command()
     runner, objects, engine = build(objects=Objects(payload))
-    with pytest.raises(InvalidExecutionRequestError):
+    with pytest.raises(FileCommandInvalidError):
         await runner.stage_result(
             clone_request(command=command, payload=payload), store=Store(), cancelled=lambda: False
         )
@@ -292,7 +306,7 @@ async def test_a_reference_that_is_not_an_approved_wav_is_refused_before_the_eng
 
 
 async def test_a_transcript_that_cannot_match_the_clip_is_refused_before_the_engine() -> None:
-    command = prepared_command(reference_text="x" * 31)
+    command = prepared_command(reference_text="x" * 40)
     runner, _, engine = build()
     with pytest.raises(InvalidExecutionRequestError):
         await runner.stage_result(

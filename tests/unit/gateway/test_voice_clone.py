@@ -67,13 +67,27 @@ def test_non_wav_trailing_bytes_and_oversize_reference_are_refused() -> None:
 
 def test_a_transcript_no_speaker_could_utter_in_that_time_is_refused() -> None:
     audio = ReferenceAudio.from_wav(reference_wav())
-    assert reference_text_fits_duration("x" * 30, audio)
-    assert not reference_text_fits_duration("x" * 31, audio)
+    assert reference_text_fits_duration("x" * 37, audio)
+    assert not reference_text_fits_duration("x" * 38, audio)
     with pytest.raises(ValueError):
-        VoiceCloneRequest("intent-voice-clone", "Ready.", "en", audio, "x" * 31)
+        VoiceCloneRequest("intent-voice-clone", "Ready.", "en", audio, "x" * 38)
 
-    long_audio = ReferenceAudio.from_wav(reference_wav(duration_ms=20000))
-    assert not reference_text_fits_duration("Hi.", long_audio)
+
+def test_a_short_transcript_with_long_silence_is_still_a_valid_pairing() -> None:
+    # A six-second clip may contain one short phrase and silence; density alone
+    # must never reject a pairing a speaker can actually produce.
+    audio = ReferenceAudio.from_wav(reference_wav(duration_ms=6000))
+    assert reference_text_fits_duration("你好", audio)
+    VoiceCloneRequest("intent-voice-clone", "Ready.", "zh", audio, "你好")
+
+
+def test_the_upper_bound_leaves_room_for_a_normal_recording_tempo() -> None:
+    two_and_a_half_seconds = ReferenceAudio.from_wav(reference_wav(duration_ms=2500))
+    # The committed warmup sentence is 51 characters in 2.84 s (~18 cps); the
+    # same sentence re-recorded at 2.50 s (~20 cps) must still be accepted.
+    assert reference_text_fits_duration("x" * 51, two_and_a_half_seconds)
+    assert reference_text_fits_duration("x" * 62, two_and_a_half_seconds)
+    assert not reference_text_fits_duration("x" * 63, two_and_a_half_seconds)
 
 
 def test_a_blank_transcript_is_not_a_transcript() -> None:

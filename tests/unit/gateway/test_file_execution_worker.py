@@ -25,11 +25,13 @@ from speechnexus_gateway.domain.asr_results import (
 from speechnexus_gateway.domain.execution_results import ExecutionStagingResult
 from speechnexus_gateway.domain.file_execution import (
     EngineRequestRejectedError,
+    FileCommandInvalidError,
     FileExecutionLimits,
     FileStagingOutcome,
 )
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.submission import (
+    CleanupState,
     DispatchResult,
     ExecutionErrorCode,
     ExecutionState,
@@ -234,6 +236,34 @@ async def test_a_proven_engine_rejection_is_recorded_as_non_retryable() -> None:
         assert current.error_code is ExecutionErrorCode.INVALID_EXECUTION_REQUEST
         assert current.execution_state.holds_capacity
         assert results.calls == 0
+        assert worker.running
+
+
+class StructurallyInvalidPipeline(Pipeline):
+    async def stage_result(
+        self,
+        request: SubmitRequest,
+        *,
+        store: Results,
+        cancelled: Callable[[], bool],
+    ) -> FileStagingOutcome:
+        self.calls += 1
+        raise FileCommandInvalidError("synthetic structural refusal")
+
+
+async def test_a_structural_stage_refusal_releases_capacity_without_quarantine() -> None:
+    pipeline = StructurallyInvalidPipeline()
+    with configured(pipeline=pipeline) as (ledger, _, results, worker, submit, _, _):
+        request = original_request()
+        submit.submit(request)
+        await wait_for(lambda: stored(ledger, request).execution_state is ExecutionState.FAILED)
+        current = stored(ledger, request)
+        assert current.error_code is ExecutionErrorCode.INVALID_EXECUTION_REQUEST
+        assert current.cleanup_state is CleanupState.NOT_REQUIRED
+        assert current.dispatched_at is None and current.engine_request_id is None
+        assert not current.execution_state.holds_capacity
+        assert not ledger._evidence
+        assert pipeline.calls == 1 and results.calls == 0
         assert worker.running
 
 

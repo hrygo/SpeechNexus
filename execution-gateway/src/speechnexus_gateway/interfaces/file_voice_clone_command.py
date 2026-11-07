@@ -26,10 +26,12 @@ from speechnexus_gateway.domain.execution_inputs import (
     ExecutionInputLimits,
     ExecutionObjectReference,
 )
-from speechnexus_gateway.domain.file_execution import FileStagingOutcome
+from speechnexus_gateway.domain.file_execution import (
+    FileCommandInvalidError,
+    FileStagingOutcome,
+)
 from speechnexus_gateway.domain.submission import (
     MAX_ORIGINAL_COMMAND_BYTES,
-    InvalidExecutionRequestError,
     SubmitRequest,
 )
 from speechnexus_gateway.domain.terminal import EngineTerminalResponse
@@ -70,8 +72,8 @@ _STORAGE_FIELDS = {
 _REFERENCE_AUDIO_FIELDS = {"storage", "media_type", "sample_rate_hz", "channels"}
 
 
-def _invalid(message: str) -> InvalidExecutionRequestError:
-    return InvalidExecutionRequestError(message)
+def _invalid(message: str) -> FileCommandInvalidError:
+    return FileCommandInvalidError(message)
 
 
 @dataclass(frozen=True, slots=True)

@@ -65,11 +65,12 @@
 - 请求体、data URL、参考文本与音频字节不进入日志、错误信息或公开回执。
 
 `preview_text`：合同允许它为 null；本泳道每次执行都是一次预览合成，因此 null 在命令进入
-引擎前以 `invalid_execution_request` 拒绝，而不是让引擎决定。
+引擎前以 `invalid_execution_request` 拒绝，而不是让引擎决定。这是本泳道的执行约束，合同
+描述与示例未单独标注，列为后续契约修正项。
 
-`ref_text` 与音频的配对：网关只能校验语音时长下的字符密度（默认 0.5–20 字符/秒）与非空，
-**不能证明**文本就是音频内容。实测错配时输出会复述参考文本片段，因此配对正确性是调用方
-的责任，也是本模板未验证项之一。
+`ref_text` 与音频的配对：网关只校验非空与上限（≤25 字符/秒），**没有下界**——参考音频
+允许包含静音，短句配长静音是合法配对；也**不能证明**文本就是音频内容。实测错配时输出会
+复述参考文本片段，因此配对正确性是调用方的责任，也是本模板未验证项之一。
 
 `x_vector_only_mode` 的语义由合同字段推导：`reference_text` 非空即 ICL 模式并发送
 `ref_text`；为空即 x-vector-only 模式并显式发送 `x_vector_only_mode: true`。网关默认
@@ -83,6 +84,11 @@
 `VoiceCloneRejectedError`/`VoiceCloneCallError` 都不构造释放证据，控制器仍按既有 stop
 证据规则核验后归还预算。408/429/5xx 与超时一律按 `TRANSPORT_UNKNOWN` 且
 `request_may_have_run=true` 保守处理；只有明确的 4xx 才是不重试的 `ENGINE_REJECTED`。
+
+参考音频/配对等内容在**发出引擎请求前**被判为结构无效时，网关记录确定性
+`invalid_execution_request` 的 `failed/not_required`：没有引擎请求离开发送进程，因此不进入
+`unknown_quarantined`、不占用容量。一旦 HTTP 请求已发出，4xx 仍按 `ENGINE_REJECTED` 保持
+容量待执行属主结算，两者不可混同。
 
 ## 语言
 

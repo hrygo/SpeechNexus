@@ -27,6 +27,7 @@ from speechnexus_gateway.domain.voice_clone import (
     VoiceClonePolicy,
     VoiceCloneRequest,
     VoiceCloneTask,
+    reference_text_fits_duration,
 )
 from speechnexus_gateway.infrastructure.execution_objects_minio import MinioExecutionInputs
 from speechnexus_gateway.infrastructure.file_execution_worker import FileExecutionWorker
@@ -52,6 +53,10 @@ _MAX_CA_BYTES = 262144
 _MIN_VOICE_CLONE_PAYLOAD_BYTES = 1024
 _MAX_VOICE_CLONE_PAYLOAD_BYTES = 64 * 1024 * 1024
 _WARMUP_CONFIG_REVISION = "voice-clone-warmup"
+
+
+class _WarmupPairingError(ValueError):
+    """The approved warmup transcript cannot belong to the approved clip."""
 
 
 class _PrivateConfiguration(BaseModel):
@@ -230,6 +235,10 @@ def load_voice_clone_configuration(settings: Settings) -> VoiceCloneConfiguratio
         )
         # Prove the approved pairing now, so a bad warmup fails startup instead of
         # silently leaving the lane permanently unready.
+        if not reference_text_fits_duration(warmup.reference_text, reference):
+            raise _WarmupPairingError(
+                "gateway voice clone warmup reference text does not match its clip duration"
+            )
         VoiceCloneRequest(
             _WARMUP_CONFIG_REVISION,
             warmup.preview_text,
@@ -284,5 +293,7 @@ def load_voice_clone_configuration(settings: Settings) -> VoiceCloneConfiguratio
             deployment.readiness.warmup_timeout_seconds,
             deployment.readiness.retry_interval_seconds,
         )
+    except _WarmupPairingError:
+        raise
     except Exception:
         raise ValueError("invalid gateway voice clone configuration") from None

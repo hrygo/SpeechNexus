@@ -35,8 +35,7 @@ MAX_REFERENCE_TEXT_CHARS = 10000
 # bound on a paired transcript, not a content comparison: the gateway cannot
 # prove the text matches what the clip says, so it refuses only a pairing no
 # speaker could produce and keeps semantic correspondence unverified.
-MAX_REFERENCE_TEXT_CHARS_PER_SECOND = 20
-MIN_REFERENCE_TEXT_CHARS_PER_SECOND = 0.5
+MAX_REFERENCE_TEXT_CHARS_PER_SECOND = 25
 REFERENCE_SAMPLE_RATES = (16000, 24000)
 MIN_REFERENCE_AUDIO_MS = 1000
 MAX_REFERENCE_AUDIO_MS = 60000
@@ -224,11 +223,14 @@ def _parse_reference_wav(
 
 
 def reference_text_fits_duration(text: str, audio: ReferenceAudio) -> bool:
-    """A plausibility band for one paired transcript; never a content check."""
+    """Reject only a transcript too long for the clip to contain it.
+
+    Silence is legitimate reference material, so density has no lower bound: a
+    six-second clip may hold a single short phrase. The upper bound is a
+    deliberate over-count guard, not a claim that the words match the audio.
+    """
     seconds = audio.duration_ms / 1000
-    upper = max(1, int(seconds * MAX_REFERENCE_TEXT_CHARS_PER_SECOND))
-    lower = max(1, int(seconds * MIN_REFERENCE_TEXT_CHARS_PER_SECOND))
-    return lower <= len(text) <= upper
+    return len(text) <= max(1, int(seconds * MAX_REFERENCE_TEXT_CHARS_PER_SECOND))
 
 
 @dataclass(frozen=True, slots=True)

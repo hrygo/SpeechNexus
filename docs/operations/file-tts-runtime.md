@@ -70,8 +70,8 @@ speaker，写入 v2 配置；不能直接复制合成样例作为已发布声音
 任一不符在对象写入或引擎调用前拒绝。该配置仅收紧执行能力，不证明声音已发布、
 资格报告有效或配置与批准 binding 的权威关联；这些仍由正式发布和准入链负责。
 
-常驻 TTS 模板必须声明 `variant_slot`（同节点上的 CustomVoice 与 VoiceDesign 取同一槽位，
-例如 `tts-variant`）；缺失该字段的模板在加载时即被拒绝，错误信息包含 `template_id`。
+常驻 TTS 模板必须声明 `variant_slot`（同节点上的 CustomVoice、VoiceDesign 与 Base 取同一
+槽位，例如 `tts-variant`）；缺失该字段的模板在加载时即被拒绝，错误信息包含 `template_id`。
 升级控制器前先给既有模板补齐该字段，否则控制器会因模板不受理而启动失败。
 
 受限控制器可使用既有 `engine_auth=vllm_api_key_v1` 模板，通过

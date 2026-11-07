@@ -105,7 +105,9 @@ class CachedWarmupProbe:
             return
         if task is not None:
             if not task.cancelled():
-                self._last_failure = task.exception()
+                failure = task.exception()
+                if failure is not None:
+                    self._last_failure = failure
             self._task = None
         now = self._clock()
         if (

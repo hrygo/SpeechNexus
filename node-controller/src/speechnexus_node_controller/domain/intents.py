@@ -437,9 +437,15 @@ class RuntimeInstanceIntent:
         }:
             self.intent_state = RuntimeIntentState.RECONCILING
             self.memory_hold = MemoryHold.PEAK
-            # An unresolved observation may still report why it cannot progress;
-            # the peak hold and the reconciliation state stay untouched.
-            self.error_code = observation.error_code
+            # A deadline reason describes the whole action, not one observation:
+            # a restarted adapter has no anchor and observes no reason, so it must
+            # not erase the persisted one. Only a newer reason, or any reason
+            # other than the deadline, may replace it on this path.
+            if (
+                observation.error_code is not None
+                or self.error_code is not RuntimeIntentErrorCode.WARMUP_DEADLINE_EXCEEDED
+            ):
+                self.error_code = observation.error_code
         elif state in {ObservedInstanceState.STOPPED, ObservedInstanceState.ABSENT}:
             self.intent_state = RuntimeIntentState.FAILED
             self.memory_hold = MemoryHold.NONE

@@ -106,7 +106,9 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
   预算耗尽后保持非 ready，重复 prepare 或同代次容器重建都不会重新开始。耗尽的未决 prepare
   意图在 `error_code` 记录 `warmup_deadline_exceeded`，`intent_state` 仍为 `reconciling`、
   `memory_hold` 仍为 `peak`：预算耗尽是一个可观察原因，不是失败终态，也不转 steady 或释放峰值
-  预算；达到 ready、确认停止/释放或代次变化后才清除该原因。调用方超时后查询原持久意图，不能
+  预算。该原因随意图持久化，控制器重启后仍保留（重启后的适配器没有内存锚点，观察不到原因，
+  但不得用它覆盖已记录的原因）；达到 ready 时清除，实例转为 `stopped`/`absent` 时意图落为
+  `failed` / `instance_prepare_failed`，代次变化属于新动作。调用方超时后查询原持久意图，不能
   把超时当作实例失败、已就绪或引擎已经停止。
 - **停止与证据**：先优雅停止、等待退出、删除容器，再 inspect 确认不存在，才写出
   `process_or_container_exited` 与 `resources_released_confirmed` 双确认证据；等待超时、删除

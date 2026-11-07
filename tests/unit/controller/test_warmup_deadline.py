@@ -855,6 +855,38 @@ def test_an_exhausted_warmup_reports_a_reason_and_keeps_the_peak_hold(tmp_path: 
         assert len(requests) == 1
 
 
+def test_a_restart_keeps_the_persisted_deadline_reason(tmp_path: Path) -> None:
+    """A restarted adapter has no anchor, but it must not erase the reason."""
+    with responding("stall") as (server, requests, _):
+        body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
+        rule = _warmup_rule(server, body, digest, attempts=2)
+        assert rule.warmup is not None
+        rule = replace(rule, warmup=replace(rule.warmup, timeout_seconds=0.3))
+        template = build_template(readiness=rule)
+        engine = _engine(addresses=("127.0.0.1",))
+        store = InMemoryIntentStore()
+
+        exhausted = _control_service(template, store, _runtime(engine))
+        submitted = exhausted.submit_intent(build_request()).intent
+        assert submitted.error_code is RuntimeIntentErrorCode.WARMUP_DEADLINE_EXCEEDED
+        assert len(requests) == 1
+
+        # The durable intent survives the restart; the in-memory anchor does not.
+        restarted_runtime = _runtime(engine)
+        restarted = _control_service(template, store, restarted_runtime)
+        outcomes = restarted.reconcile_instance(SAMPLE_INSTANCE_ID, 1)
+
+        assert len(outcomes) == 1
+        folded = outcomes[0].intent
+        assert folded.observed_instance_state is ObservedInstanceState.WARMING_UP
+        assert folded.intent_state is RuntimeIntentState.RECONCILING
+        assert folded.memory_hold is MemoryHold.PEAK
+        assert folded.error_code is RuntimeIntentErrorCode.WARMUP_DEADLINE_EXCEEDED
+        assert len(requests) == 1
+        assert restarted_runtime._warmup_progress == {}
+        assert restarted_runtime._warmup_deadlines == {}
+
+
 def test_a_completed_warmup_reports_no_reason(tmp_path: Path) -> None:
     with responding("ok") as (server, requests, _):
         body, digest = _warmup_body(tmp_path, b"synthetic-warmup")

@@ -37,13 +37,22 @@ MySQL 测试 adapter 仅复用显式 SQL 与领域裁决验证 InnoDB 行为。
 合法空页仍为 200；未装配或存储不可用为 503 `job_unavailable`。
 每行复用 `getJob` 的生成契约校验与已提交制品投影。
 
-新增迁移 `0040_public_job_listing` 接在 `0039_public_job_progress` 后，增加
-`speech_jobs_workspace_created_id (workspace_id, created_at_us, job_id)`，旧迁移不变。
-升级只建索引、降级只删该索引，不改历史 Job、授权、协调写事务或恢复语义。
+列表页依赖 `speech_jobs_workspace_created_id (workspace_id, created_at_us, job_id)`，
+`speech_jobs` 只有这一个 workspace 列表索引。迁移 `0042_drop_superseded_job_index`
+删除被它覆盖的 `speech_jobs_workspace_created (workspace_id, created_at_us DESC)`：
+旧索引的列是 keyset 索引的前缀，仓库内没有按 `created_at_us DESC` 排序的读路径，
+保留它只会让每次写入多维护一份近重复索引。其余读取 `speech_jobs` 的路径——单 Job、
+幂等键查找、取消锁目标、派发认领、voice draft 关联与事件进度触发器——按主键或
+`(workspace_id, idempotency_key_digest)` 唯一索引访问，不依赖旧索引。
+`0042` 的降级按原定义重建旧索引；两项迁移都只改索引，不改历史 Job、授权、
+协调写事务或恢复语义。
+
 隔离 PG 验证使用 `tests/integration/test_public_job_list_pg.py`：
 仅读取 `SPEECHNEXUS_TEST_DATABASE_URL`，缺失即失败；随机 schema 在 finally 清理。
 `uv run pytest tests/integration/test_public_job_list_pg.py -q -s` 会打印实际适配器 SQL 的
-首屏/续页 `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)`，不关闭 seqscan。
+首屏/续页 `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)`，不关闭 seqscan；用例同时断言
+`speech_jobs` 只被一次 `Index Scan` 读取、方向为 `Forward`、计划无 `Sort`，
+续页的 keyset 谓词出现在 `Index Cond`。
 未执行该用例时不能宣称索引已被目标环境计划采用。
 
 ## 原子性、身份与恢复

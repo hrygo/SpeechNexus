@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-07T09:30:00+08:00",
+  "fetched_at": "2026-11-07T10:20:00+08:00",
   "issues": [
     {
       "number": 336,
@@ -650,8 +650,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/483",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "listJobs 后续：EXPLAIN 断言、artifact 批读、冗余索引、文档计数",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "enhancement"

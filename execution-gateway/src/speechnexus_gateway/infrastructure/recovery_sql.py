@@ -54,6 +54,8 @@ def reject_execution_before_engine_in_transaction(
     reason = updated.error_code
     if reason is None:
         raise SubmissionStoreError("an unsent rejection needs a deterministic reason")
+    # ``SET terminated_at_us = NULL`` is defensive: an executing row has no
+    # termination time under the current state matrix.
     cursor.execute(
         REJECT_UNSENT_INTENT,
         (
@@ -63,6 +65,8 @@ def reject_execution_before_engine_in_transaction(
             intent.version,
         ),
     )
+    # Defensive: the intent row is locked and ``apply()`` already read the same
+    # state, so a 0 rowcount is only reachable through a concurrent raw writer.
     if cursor.rowcount != 1:
         current = read_submit_intent(cursor, request.submit_intent_id)
         if (

@@ -92,8 +92,12 @@ _UPDATE_INTENT = (
 
 #: A structural refusal proven before the HTTP call may clear the allocated
 #: request identity. The ordinary observation rewrite forbids that on purpose;
-#: this statement is the single controlled exception, guarded by the state and
-#: result facts that prove no engine call could have happened.
+#: this statement is the single controlled exception. The database cannot prove
+#: from these fields alone that no engine call happened: the dispatch fields are
+#: written at admission, and a sent-but-unfinished request is indistinguishable
+#: here. Safety rests on the only caller (``_reject``, entered only for
+#: ``FileCommandInvalidError``) and on ``apply()`` rejecting staged results,
+#: generated samples and output intervals before this update runs.
 REJECT_UNSENT_INTENT = """
 UPDATE submit_intents
 SET execution_state = 'failed', cleanup_state = 'not_required',

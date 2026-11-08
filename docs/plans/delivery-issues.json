@@ -1669,9 +1669,9 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/technical-blueprint.md"
       ],
-      "implementation": "发布/激活已原子化：单事务写入不可变发布记录（含校验摘要与权威摘要）、切换家族指针并保存原始结果；公共按 revision 读取与 v1 列表保持原形状，新增 v2 已发布列表（可空 current_revision，PR #419）；迁移 0033_profile_publications 链在 0032 之后；intent 表由 BEFORE UPDATE 触发器保证不可变。发布需受信校验报告源，未注册时 fail-closed。",
+      "implementation": "发布/激活已原子化：单事务写入不可变发布记录（含校验摘要与权威摘要）、切换家族指针并保存原始结果；公共按 revision 读取与 v1 列表保持原形状，新增 v2 已发布列表（可空 current_revision，PR #419）；迁移 0033_profile_publications 链在 0032 之后；intent 表由 BEFORE UPDATE 触发器保证不可变。发布需受信校验报告源，未注册时 fail-closed。同键重放返回存储的原始结果；已发布 revision 换新键不构成重放，被拒为 `profile_already_published`。",
       "integration": "公共读取与管理端激活已接 HTTP；真实引擎按已发布指针执行、部署拓扑与受信报告源的端到端发布路径未验。",
-      "verification": "草稿组件证据不代表预设发布、激活或回滚已验收。",
+      "verification": "草稿组件证据不代表预设发布、激活或回滚已验收。2026-11-08 增量核验（#415 / PR #581）：隔离 PostgreSQL 覆盖同一家族 head 的两个真实并发发布后端（断言阻塞语句确为 `speech_profile_families` 的 `FOR UPDATE`）、同一 revision 换新键不可重发、过期 CAS 只落拒绝回执且家族/修订/发布三表快照相等、缺列级或表级授权的写入在写之前被拒（拒绝前后全表快照相等）。边界：隔离 PG 不等于真实部署、真实发布权威或真实引擎。",
       "gap": "真实 TTS 使用已发布指针、受信校验报告源生产接入、部署与多节点未验；同目标重复激活回执为非阻塞 P2。",
       "evidence": [
         {
@@ -1683,6 +1683,16 @@
           "url": "https://github.com/hrygo/SpeechNexus/pull/419",
           "label": "Profile 发布/激活 CAS 与 v2 列表",
           "note": "隔离 PG 集成 8 passed；真实引擎与部署未验"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/581",
+          "label": "415 隔离 PG 资格证据补充",
+          "note": "并发发布、幂等重放、CAS 失败不落库与列级权限拒绝在写之前；真实部署未验"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/9e75767b186cf9b95083c74b97babc83da2cd1de/tests/integration/test_profile_publications_qualification_pg.py",
+          "label": "Profile 发布资格隔离 PG 用例",
+          "note": "两个真实阻塞后端及 FOR UPDATE 断言、三表快照相等、权限拒绝零写入"
         }
       ],
       "issues": [
@@ -2018,9 +2028,9 @@
         "docs/architecture/data-deletion.md"
       ],
       "implementation": "Python 镜像使用冻结的 workspace 依赖与带摘要的 CPU VAD 依赖；当前镜像同步全部 workspace 包。",
-      "integration": "CI 有 Compose 配置检查；按角色裁剪依赖、干净安装及跨平台部署仍需验收。",
-      "verification": "未取得当前真实部署验收证据。",
-      "gap": "模型制品、角色权限、迁移回滚和目标平台须按实际发布制品验证；静态镜像配置不能证明运行资格。",
+      "integration": "CI 有 Compose 配置检查；`tests/integration` 的 PG/双库用例在缺 DSN 时必须失败而非跳过（21 个文件的跳过路径改为 `pytest.fail`，PR #583），并由静态扫描守护固化（`tests/integration/test_pg_dsn_skip_guard.py`，PR #584），门禁不再把未执行记为通过；按角色裁剪依赖、干净安装及跨平台部署仍需验收。",
+      "verification": "未取得当前真实部署验收证据。2026-11-08 增量核验：无 DSN 运行 `tests/integration` 的 skipped 由 2107 降为 291，原被静默跳过的 PG/双库用例转为失败；守护解析 `pytest.skip`、`pytest.xfail`、`pytest.mark.skipif` 及导入别名，沿同文件嵌套函数与跨文件 helper 传播 DSN 来源，`tests/support` 自读 DSN 模块（含 fixture 注入）直接上报，白名单为空；`psql`、引擎 dialect 分支、MinIO 与 Workbench 专用变量按非数据库前置处理。边界：`exec`、插件注入与自定义 marker 不在覆盖内。",
+      "gap": "模型制品、角色权限、迁移回滚和目标平台须按实际发布制品验证；静态镜像配置不能证明运行资格；测试门禁的真实执行不证明真实服务、设备或目标部署资格。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/deploy/images/python.Dockerfile",
@@ -2033,12 +2043,29 @@
           "note": "Compose 配置检查不启动部署服务"
         },
         {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/583",
+          "label": "PG 用例缺 DSN 必须失败",
+          "note": "21 处 PG/双库用例由 skip 改 fail，无 DSN 时不再静默通过"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/584",
+          "label": "PG/双库跳过路径 AST 守护",
+          "note": "无 DSN 跑 tests/integration 的 skipped 由 2107 降为 291；exec/插件注入/自定义 marker 未覆盖"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/672381611e48fe0c57200b861d48660c9dcb58d3/tests/integration/test_pg_dsn_skip_guard.py",
+          "label": "缺 DSN 跳过路径守护用例",
+          "note": "覆盖 skipif/别名/xfail/嵌套 def/跨文件 helper/support 自读 fixture；白名单为空"
+        },
+        {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
           "label": "产品与架构设计",
           "note": "需求基线；不证明现行实现或运行资格。"
         }
       ],
-      "issues": []
+      "issues": [
+        582
+      ]
     },
     {
       "id": "W-LLM",

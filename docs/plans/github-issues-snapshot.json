@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-08T12:14:06+08:00",
+  "fetched_at": "2026-11-08T15:19:42+08:00",
   "issues": [
     {
       "number": 336,
@@ -1122,6 +1122,16 @@
       "title": "参考部署跑通一次异步 Job 的端到端前置",
       "state": "open",
       "state_reason": null,
+      "labels": [],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
+    },
+    {
+      "number": 582,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/582",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "PG 集成用例缺 DSN 时不得 skip：假绿守护",
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [],
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
     }

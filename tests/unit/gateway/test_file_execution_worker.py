@@ -602,8 +602,8 @@ async def test_close_joins_database_registration_before_returning() -> None:
         closing = asyncio.create_task(asyncio.to_thread(worker.close))
         try:
             await asyncio.sleep(0.03)
-            # ``finished`` needs the release below, so it is vacuously false
-            # here; the join is actually proven by ``close`` not completing yet.
+            # ``finished`` needs the release below, so the dropped conjunct was
+            # vacuously true here; the join is proven by ``close`` not completing.
             assert not closing.done()
             ledger.release.set()
             await closing

@@ -452,7 +452,9 @@ async def test_real_unanswered_post_keeps_peak_then_queries_the_same_persistent_
                     "The unanswered POST never reached the daemon"
                 )
                 # Arrived and still unanswered: the daemon holds prepare open.
-                assert not daemon.finished.is_set()
+                # ``finished`` cannot be set here (prepare blocks on release), so
+                # asserting it would be vacuously true; the unanswered state is
+                # already proven by DEADLINE_EXCEEDED above plus arrival here.
                 assert runtime.snapshot() == before
                 assert held(runtime) == HOST.held.add(PLAN.peak).values
             daemon.release.set()

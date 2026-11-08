@@ -251,7 +251,7 @@ export SN_ADMIN_DSN="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.
 停止，不猜测归属。
 
 > 本机验证：对一次性 PostgreSQL 16.15 执行过同一份代码，输出
-> `job roles ready: sn_job_writer sn_job_admission sn_job_dispatch; grants: 208 statements`，
+> `job roles ready: sn_job_writer sn_job_admission sn_job_dispatch; grants: 219 statements`，
 > 退出码 `0`。
 
 ```bash

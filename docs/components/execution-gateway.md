@@ -369,6 +369,16 @@ node/gateway 的进程必须共用宿主锁目录，
 builtin。部署顺序必须先升级 execution gateway，再升级 backend/worker；回退时先停用自定义
 声音 TTS 或回退 backend，不得保留“新 backend + 旧 gateway”的组合。
 
+custom 命令缺少 `voice_material` 或 `reference_text`、参数形状不符时，`CommandFileCustomTts`
+在提交准备期的 `validate_request`（`_resolve`）中抛 `FileCommandInvalidError`；
+`FileExecutionWorker.dispatch` 的 `except Exception` 把它归为 `DispatchResult.NOT_SENT`，
+`mark_not_dispatched_failure` 记录 `ENGINE_TRANSPORT_UNKNOWN`，intent 终态为 `failed` /
+`engine_transport_unknown` / `not_required` 且 `dispatched_at` 为 `None`，不进入执行阶段的
+确定性拒绝分支。通过准备期后，`stage_result` 读取对象才发现参考音频不是合法 WAV 形状、参考
+文本密度与片段时长不匹配或 `VoiceCloneRequest` 拒绝时，worker `_run` 捕获同一异常：执行经
+`RejectExecutionBeforeEngine` 以默认码 `INVALID_EXECUTION_REQUEST` 终结，不记录 unknown，
+也不需要停止证据。
+
 提交路由先用冻结请求校验 command 与 `command_digest` 一致，再按 `create_submit` 落唯一 intent，
 之后才外发一次；重放返回原记录并标记 `idempotent_replay=true`，同一 intent 换命令为
 `submit_intent_conflict`，摘要与正文不符为 `invalid_execution_request`。冻结请求只带输出上限与

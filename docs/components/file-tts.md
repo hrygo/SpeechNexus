@@ -126,8 +126,20 @@ unknown/停止协议保留占用，PUT 或读回失败不重试或删除未知�
 文本、参考文本长度非法、binding 不一致时在读取对象或调用引擎前确定性拒绝，不回退
 builtin speaker。
 `voice_design` 仍是 preview-only，不能进入 TTS。缺失或已退役的声音（含 builtin）统一返回
-422 `voice_not_published`，不再返回 503 `job_unavailable`；自定义 revision 行缺失且没有
-独立 builtin 资格时同样拒绝，不回退 builtin。
+422 `voice_not_published`，不再返回 503 `job_unavailable`。自定义 revision 行缺失时按身份
+分流：`vrev-*` 身份没有同时存在的独立 builtin 资格时返回 422 `voice_not_published`，有则
+继续 builtin 路径；非 `vrev-*` 的旧式身份只在能由 voice id 派生出 `draft-*`、且该 draft 仍
+存在时返回 422 `voice_not_published`；没有派生 draft 时按 builtin 路径继续。
+
+命令层面的缺失与读取后的不可用走不同的终态。custom 命令缺少 `voice_material` 或
+`reference_text`、参数形状不符时，`CommandFileCustomTts.validate_request`（`_resolve`）抛
+`FileCommandInvalidError`；`FileExecutionWorker.dispatch` 的 `except Exception` 把它归为
+`DispatchResult.NOT_SENT`，`mark_not_dispatched_failure` 记录 `ENGINE_TRANSPORT_UNKNOWN`，
+intent 终态为 `failed` / `engine_transport_unknown` / `not_required`，且 `dispatched_at`
+为 `None`。通过提交准备后，`stage_result` 读取对象才发现参考音频不是合法 WAV 形状、参考
+文本密度与片段时长不匹配或 `VoiceCloneRequest` 拒绝时，worker `_run` 捕获同一异常并按确定性
+未外发拒绝处理：执行经 `RejectExecutionBeforeEngine` 以 `INVALID_EXECUTION_REQUEST` 终结，
+不进入 unknown 隔离，也不需要停止证据。
 
 内部命令在 `TtsEffectiveParameters` 追加可选 `reference_text`，这是前向兼容字段：**只有
 custom 命令包含它**，builtin 命令与旧版逐字一致。升级后的 backend 会为 custom 命令发出它；

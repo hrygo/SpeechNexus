@@ -498,7 +498,7 @@
         "docs/architecture/runtime-governance.md",
         "docs/architecture/technical-blueprint.md"
       ],
-      "implementation": "取消先持久接收及原身份只读恢复已有交付证据；真实停止与释放仍需验证。派发期确定性结构拒绝已与传输未知分离（#566 / PR #568）：确定性拒绝落 `invalid_execution_request`（`failed`/`not_required`/`dispatched_at=NULL`/不保留容量/不可重试），未预期本地异常仍 `NOT_SENT`，真实传输失败落 `unknown_quarantined` 并保留容量；覆盖七个文件泳道。残留 #569：该码仍非「未外发」的充分条件（引擎 4xx 与 stage 期结果存储不可用同码却进 `unknown_quarantined`），`engine_transport_unknown` 仍是 4 条本地路径的兜底袋。",
+      "implementation": "取消先持久接收及原身份只读恢复已有交付证据；真实停止与释放仍需验证。派发期确定性结构拒绝已与传输未知分离（#566 / PR #568）：确定性拒绝落 `invalid_execution_request`（`failed`/`not_required`/`dispatched_at=NULL`/不保留容量/不可重试），未预期本地异常仍 `NOT_SENT`，真实传输失败落 `unknown_quarantined` 并保留容量；覆盖七个文件泳道。 终态两桶不变量已落地（#569 / PR #573）：未外发码（`invalid_execution_request`/`lease_not_active`/`policy_or_resource_disabled`/`gateway_barrier_fenced`）对应 `failed`/`not_required`/不占容量；已外发码（`engine_transport_unknown`/`cancellation_unconfirmed`/`execution_cleanup_pending`）对应 `unknown_quarantined`/`quarantined`/占容量；观察写入路径同样受约束，阶段故障类型化为 `FileStageUnavailableError`。残留：legacy 行读路径不改写、需按 state/cleanup/dispatched_at 组合判别；三个码仍聚合多原因。",
       "integration": "Job dispatcher 有网关适配器，但生产 planner 未装配，worker 不领取任务；真实 submit/observe/abort 与停止证据仍需生产联验。",
       "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
       "gap": "Job dispatcher 有网关适配器，但生产 planner 未装配，worker 不领取任务；真实 submit/observe/abort 与停止证据仍需生产联验。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",

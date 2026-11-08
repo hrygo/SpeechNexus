@@ -386,6 +386,17 @@ def _absence_vars(expr: ast.expr, scope: Scope, depth: int = 0) -> set[str]:
     return set()
 
 
+def _comprehension_values(name: ast.Name, root: ast.AST, scope: Scope) -> set[str]:
+    """Resolve a comprehension target to the strings of its iterable."""
+    for node in ast.walk(root):
+        if not isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp)):
+            continue
+        for generator in node.generators:
+            if isinstance(generator.target, ast.Name) and generator.target.id == name.id:
+                return _string_values(generator.iter, scope)
+    return set()
+
+
 def _dotted_name(node: ast.expr) -> str | None:
     if isinstance(node, ast.Name):
         return node.id
@@ -689,7 +700,12 @@ class Analyzer:
         for node in ast.walk(module.tree):
             if isinstance(node, ast.Call):
                 argument = _env_read_argument(node)
-                if argument is not None and DB_VARIABLES & _string_values(argument, module.scope):
+                if argument is None:
+                    continue
+                values = _string_values(argument, module.scope)
+                if not values and isinstance(argument, ast.Name):
+                    values = _comprehension_values(argument, module.tree, module.scope)
+                if DB_VARIABLES & values:
                     return True
             elif isinstance(node, ast.Subscript) and _is_os_environ(node.value):
                 if DB_VARIABLES & _string_values(node.slice, module.scope):
@@ -702,7 +718,12 @@ class Analyzer:
             for node in _walk_local(statement):
                 if isinstance(node, ast.Call):
                     argument = _env_read_argument(node)
-                    if argument is not None and DB_VARIABLES & _string_values(argument, scope):
+                    if argument is None:
+                        continue
+                    values = _string_values(argument, scope)
+                    if not values and isinstance(argument, ast.Name):
+                        values = _comprehension_values(argument, function.node, scope)
+                    if DB_VARIABLES & values:
                         return True
                 elif isinstance(node, ast.Subscript) and _is_os_environ(node.value):
                     if DB_VARIABLES & _string_values(node.slice, scope):
@@ -1165,3 +1186,54 @@ def test_guard_ignores_files_without_database_dsn() -> None:
 
 
 pytestmark = pytest.mark.integration
+
+
+def test_guard_flags_helper_with_derived_dsn() -> None:
+    files = {
+        "tests/integration/test_case.py": _dedent(
+            """
+            import os
+            from tests.support.pg_helper import require_pg
+
+            def test_case() -> None:
+                dsn = os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL")
+                require_pg(dsn.replace("postgresql://", "postgresql+psycopg://"))
+            """
+        ),
+        "tests/support/pg_helper.py": _dedent(
+            """
+            import pytest
+
+            def require_pg(dsn: str) -> None:
+                if not dsn:
+                    pytest.skip("not evidence")
+            """
+        ),
+    }
+    findings = scan_files(files)
+    assert [(finding.path, finding.function) for finding in findings] == [
+        ("tests/support/pg_helper.py", "require_pg")
+    ]
+
+
+def test_guard_flags_configured_dict_guard() -> None:
+    source = _dedent(
+        """
+        import os
+        import pytest
+
+        VARIABLES = (
+            "SPEECHNEXUS_TEST_DATABASE_URL",
+            "SPEECHNEXUS_TEST_MYSQL_URL",
+        )
+        configured = {name: os.environ.get(name) for name in VARIABLES}
+
+        def test_case() -> None:
+            if not all(configured):
+                pytest.skip("one database is missing")
+        """
+    )
+    findings = scan_files({"tests/integration/test_case.py": source})
+    assert [(finding.line, finding.guard_variables) for finding in findings] == [
+        (12, (PG_VARIABLE, MYSQL_VARIABLE))
+    ]

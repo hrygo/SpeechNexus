@@ -22,6 +22,7 @@ from speechnexus_gateway.domain.file_execution import (
     FileCommandInvalidError,
     FileExecutionLedger,
     FileExecutionLimits,
+    FileStageUnavailableError,
 )
 from speechnexus_gateway.domain.observation import ExecutionObservation, RecordExecutionObservation
 from speechnexus_gateway.domain.output_intervals import (
@@ -182,23 +183,8 @@ class FileExecutionWorker[StoreT]:
                 error_code=ExecutionErrorCode.POLICY_OR_RESOURCE_DISABLED,
             )
         try:
-            if frozen.request_document != request.request_document:
-                # The frozen request no longer describes the submitted document.
-                # Nothing was sent, and the request cannot be served as received.
-                return DispatchOutcome(
-                    DispatchResult.REJECTED,
-                    at,
-                    error_code=ExecutionErrorCode.INVALID_EXECUTION_REQUEST,
-                )
-            if at >= request.identity.deadline_at:
-                # The reservation deadline passed before any hand-off, so the lease
-                # is no longer active for this request even though its row still
-                # says so. Fail deterministically instead of keeping capacity.
-                return DispatchOutcome(
-                    DispatchResult.NOT_SENT,
-                    at,
-                    error_code=ExecutionErrorCode.LEASE_NOT_ACTIVE,
-                )
+            document_mismatch = frozen.request_document != request.request_document
+            expired = at >= request.identity.deadline_at
         except Exception:
             # A fault while evaluating the local guards (for example an unusable
             # clock value) is still a local not-sent fact. It is not a request
@@ -207,6 +193,23 @@ class FileExecutionWorker[StoreT]:
                 DispatchResult.NOT_SENT,
                 at,
                 error_code=ExecutionErrorCode.POLICY_OR_RESOURCE_DISABLED,
+            )
+        if document_mismatch:
+            # The frozen request no longer describes the submitted document.
+            # Nothing was sent, and the request cannot be served as received.
+            return DispatchOutcome(
+                DispatchResult.REJECTED,
+                at,
+                error_code=ExecutionErrorCode.INVALID_EXECUTION_REQUEST,
+            )
+        if expired:
+            # The reservation deadline passed before any hand-off, so the lease is
+            # no longer active for this request even though its row still says so.
+            # Fail deterministically instead of keeping capacity.
+            return DispatchOutcome(
+                DispatchResult.NOT_SENT,
+                at,
+                error_code=ExecutionErrorCode.LEASE_NOT_ACTIVE,
             )
         with self._lock:
             if (
@@ -316,12 +319,14 @@ class FileExecutionWorker[StoreT]:
                     store=self._results,
                     cancelled=ticket.cancelled.is_set,
                 )
-            except InvalidExecutionRequestError:
-                # The stage route proved, before any engine call, that it cannot
-                # serve the frozen request (for example an absent result store).
-                # ``FileCommandInvalidError`` is a subclass and takes the same
-                # deterministic path. Nothing left this process, so capacity is
-                # released without stop evidence and without an unknown fact.
+            except FileCommandInvalidError, FileStageUnavailableError:
+                # These two types prove, before any engine call, that the frozen
+                # request cannot be served: a structural command/content refusal or
+                # a stage the deployment does not configure. Nothing left this
+                # process, so capacity is released without stop evidence. A base
+                # ``InvalidExecutionRequestError`` from a lane is deliberately not
+                # caught here: it may be raised after an engine request exists, and
+                # then the execution must stay held until coordination.
                 await self._reject_without_quarantine(key)
                 return
             await self._database(lambda: self._register(intent, outcome.result, ticket.cancelled))

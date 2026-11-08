@@ -38,9 +38,11 @@ from speechnexus_gateway.domain.file_execution import (
 )
 from speechnexus_gateway.domain.ports import DispatchOutcome, EngineObservation
 from speechnexus_gateway.domain.submission import (
+    ExecutionErrorCode,
     ExecutionState,
     SubmissionIntent,
     SubmitRequest,
+    execution_terminal_shape,
 )
 from speechnexus_gateway.file_speech_runtime import _RoutedExecution, _Stores
 from speechnexus_gateway.infrastructure.file_execution_worker import FileExecutionWorker
@@ -83,6 +85,13 @@ class Mismatching(PassThrough):
 class Rejecting(PassThrough):
     async def stage_result(self, *args: Any, **kwargs: Any) -> Any:
         raise EngineRequestRejectedError()
+
+
+class RuntimeFault(PassThrough):
+    """A store/network outage inside the lane; it may follow an engine request."""
+
+    async def stage_result(self, *args: Any, **kwargs: Any) -> Any:
+        raise ConnectionError("synthetic stage runtime outage")
 
 
 class LostEngine:
@@ -151,10 +160,21 @@ def _seed_leases(foundation: Foundation, lease_ids: list[str]) -> None:
         )
 
 
-def _command_request(lease_id: str, submit_intent_id: str) -> SubmitRequest:
+def _command_request(
+    lease_id: str,
+    submit_intent_id: str,
+    *,
+    stage_id: str = "stage-main",
+    fencing_token: int = 1,
+) -> SubmitRequest:
     command = cast(JsonValue, command_example(0))
     identity = replace(
-        identity_for(lease_id, submit_intent_id=submit_intent_id),
+        identity_for(
+            lease_id,
+            submit_intent_id=submit_intent_id,
+            stage_id=stage_id,
+            fencing_token=fencing_token,
+        ),
         command_digest=command_digest(command),
         sample_rate_hz=24000,
         max_output_audio_ms=2000,
@@ -229,7 +249,8 @@ def _bridge(ledger: Ledger, engine: Any) -> OriginalCommandDispatch:
         ("worker-unavailable", "intent-matrix-worker-unavailable"),
         ("command-read-failure", "intent-matrix-command-read-failure"),
         ("command-mismatch", "intent-matrix-command-mismatch"),
-        ("stage-store-unavailable", "intent-matrix-stage-store-unavailable"),
+        ("stage-store-not-configured", "intent-matrix-stage-store-unavailable"),
+        ("stage-runtime-outage", "intent-matrix-stage-runtime-outage"),
         ("engine-rejected", "intent-matrix-engine-rejected"),
         ("lost-response", "intent-matrix-lost-response"),
     ],
@@ -244,12 +265,19 @@ def test_terminal_matrix_snapshot(
     _seed_leases(foundation, [lease_id])
     request = _command_request(lease_id, submit_intent_id)
 
-    if case in {"prep-invalid", "document-mismatch", "deadline", "engine-rejected"}:
+    if case in {
+        "prep-invalid",
+        "document-mismatch",
+        "deadline",
+        "engine-rejected",
+        "stage-runtime-outage",
+    }:
         execution = {
             "prep-invalid": Refusing(),
             "document-mismatch": Mismatching(),
             "deadline": PassThrough(),
             "engine-rejected": Rejecting(),
+            "stage-runtime-outage": RuntimeFault(),
         }[case]
         if case == "deadline":
             # Admit while the deadline is still ahead, then let it expire before
@@ -274,7 +302,7 @@ def test_terminal_matrix_snapshot(
                 committed=worker,
             )
             submit.submit(request)
-            if case == "engine-rejected":
+            if case in {"engine-rejected", "stage-runtime-outage"}:
                 _wait_for(
                     lambda: (
                         _row(foundation, submit_intent_id)["execution_state"]
@@ -310,7 +338,7 @@ def test_terminal_matrix_snapshot(
             ),
         )
         submit.submit(request)
-    elif case == "stage-store-unavailable":
+    elif case == "stage-store-not-configured":
         routed = _RoutedExecution(None, cast(Any, PassThrough()), None)
         worker = _worker(recovery_ledger, routed, results=_Stores(None, None, None))
         try:
@@ -350,7 +378,13 @@ def test_terminal_matrix_snapshot(
         "worker-unavailable": ("failed", "not_required", "policy_or_resource_disabled", None),
         "command-read-failure": ("failed", "not_required", "policy_or_resource_disabled", None),
         "command-mismatch": ("failed", "not_required", "invalid_execution_request", None),
-        "stage-store-unavailable": ("failed", "not_required", "invalid_execution_request", None),
+        "stage-store-not-configured": ("failed", "not_required", "invalid_execution_request", None),
+        "stage-runtime-outage": (
+            "unknown_quarantined",
+            "quarantined",
+            "engine_transport_unknown",
+            "not-null",
+        ),
         "engine-rejected": (
             "unknown_quarantined",
             "quarantined",
@@ -394,3 +428,81 @@ def test_the_unavailable_worker_really_never_dispatches(
     submit.submit(request)
     assert _row(foundation, "intent-worker-check")["error_code"] == ("policy_or_resource_disabled")
     assert worker._preparations == {}
+
+
+def test_legacy_rows_are_classified_by_state_and_dispatch_not_by_code(
+    foundation: Foundation, recovery_ledger: Ledger
+) -> None:
+    """Rows written before the invariant keep their facts; code alone is not enough."""
+    foundation.database.query(
+        "INSERT INTO admission_attempts (operation_id, attempt_id, workspace_id, "
+        "binding_revision_id, manifest_id, recipe_digest, policy_revision_id, service_class, "
+        "request_digest, required_stage_ids) VALUES ('operation-test', 'attempt-alt', "
+        "'workspace-test', 'binding-test', 'manifest-test', %s, 'policy-test', 'realtime', "
+        "%s, %s)",
+        ("sha256:" + "a" * 64, "sha256:" + "a" * 64, '["stage-main","stage-alt"]'),
+    )
+    for lease_id, stage_id, fencing_token in (
+        ("lease-legacy-unsent", "stage-main", 1),
+        ("lease-legacy-held", "stage-alt", 2),
+    ):
+        foundation.database.query(
+            "INSERT INTO admission_leases (lease_id, operation_id, attempt_id, stage_id, "
+            "host_node_id, instance_id, instance_generation, pool_id, gateway_id, fencing_token, "
+            "reserved_slots, deadline_at_us, reserved_unified_physical_memory_bytes) VALUES "
+            "(%s, 'operation-test', 'attempt-alt', %s, 'host-test', 'instance-test', 1, "
+            "'tts-realtime', 'gateway-test', %s, 1, %s, 1)",
+            (lease_id, stage_id, fencing_token, LEASE_DEADLINE_AT_US),
+        )
+    for lease_id, submit_intent_id, stage_id, fencing_token in (
+        ("lease-legacy-unsent", "intent-legacy-unsent", "stage-main", 1),
+        ("lease-legacy-held", "intent-legacy-held", "stage-alt", 2),
+    ):
+        request = _command_request(
+            lease_id, submit_intent_id, stage_id=stage_id, fencing_token=fencing_token
+        )
+        at = datetime.now(UTC)
+        recovery_ledger.add(
+            SubmissionIntent(
+                identity=request.identity,
+                recorded_at=at,
+                updated_at=at,
+                request_digest=request.request_digest,
+                output_stream_id=request.output_stream_id,
+            ),
+            request_document=request.request_document,
+        )
+
+    foundation.database.query(
+        "UPDATE submit_intents SET execution_state = 'failed', cleanup_state = 'not_required', "
+        "error_code = 'engine_transport_unknown', dispatched_at_us = NULL, "
+        "engine_request_id = NULL, version = 2, updated_at_us = recorded_at_us + 1 "
+        "WHERE submit_intent_id = 'intent-legacy-unsent'"
+    )
+    foundation.database.query(
+        "UPDATE submit_intents SET execution_state = 'unknown_quarantined', "
+        "cleanup_state = 'quarantined', error_code = 'invalid_execution_request', "
+        "dispatched_at_us = recorded_at_us + 1, engine_request_id = 'legacy-engine', "
+        "version = 2, updated_at_us = recorded_at_us + 2 "
+        "WHERE submit_intent_id = 'intent-legacy-held'"
+    )
+
+    legacy_unsent = recovery_ledger.get("intent-legacy-unsent")
+    assert legacy_unsent is not None
+    assert legacy_unsent.error_code is ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN
+    assert legacy_unsent.execution_state is ExecutionState.FAILED
+    assert not legacy_unsent.execution_state.holds_capacity
+    assert legacy_unsent.dispatched_at is None
+    # The code's new meaning says "held", but this legacy row is a released local
+    # fallback. This is why readers must use state/dispatch for legacy rows.
+    assert execution_terminal_shape(legacy_unsent.error_code).holds_capacity
+
+    legacy_held = recovery_ledger.get("intent-legacy-held")
+    assert legacy_held is not None
+    assert legacy_held.error_code is ExecutionErrorCode.INVALID_EXECUTION_REQUEST
+    assert legacy_held.execution_state is ExecutionState.UNKNOWN_QUARANTINED
+    assert legacy_held.execution_state.holds_capacity
+    assert legacy_held.dispatched_at is not None
+    # The code's new meaning says "never dispatched", but this legacy row is a
+    # held engine refusal. Do not release it from the code alone.
+    assert not execution_terminal_shape(legacy_held.error_code).holds_capacity

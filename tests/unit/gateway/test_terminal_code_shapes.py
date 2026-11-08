@@ -8,8 +8,14 @@ needs coordination?" from the code alone.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
+from speechnexus_gateway.domain.observation import (
+    ExecutionObservation,
+    RecordExecutionObservation,
+)
 from speechnexus_gateway.domain.ports import DispatchOutcome
 from speechnexus_gateway.domain.recovery import MarkExecutionUnknown
 from speechnexus_gateway.domain.submission import (
@@ -20,6 +26,7 @@ from speechnexus_gateway.domain.submission import (
     ExecutionErrorCode,
     ExecutionState,
     InvalidExecutionRequestError,
+    StopEvidenceKind,
     SubmissionIntent,
     TerminalShape,
     execution_terminal_shape,
@@ -136,3 +143,58 @@ def test_a_deterministic_outcome_with_an_unsent_reason_is_accepted() -> None:
     for code in UNSENT:
         outcome = DispatchOutcome(DispatchResult.NOT_SENT, NOW, error_code=code)
         assert outcome.error_code is code
+
+
+def _failed_observation(
+    current: SubmissionIntent, code: ExecutionErrorCode
+) -> ExecutionObservation:
+    return replace(
+        ExecutionObservation.from_intent(current),
+        execution_state=ExecutionState.FAILED,
+        cleanup_state=CleanupState.NOT_REQUIRED,
+        error_code=code,
+    )
+
+
+def _unknown_observation(
+    current: SubmissionIntent, code: ExecutionErrorCode
+) -> ExecutionObservation:
+    return replace(
+        ExecutionObservation.from_intent(current),
+        execution_state=ExecutionState.UNKNOWN_QUARANTINED,
+        cleanup_state=CleanupState.QUARANTINED,
+        error_code=code,
+        stop_evidence_kind=StopEvidenceKind.UNCONFIRMED_TIMEOUT,
+        dispatched_at=current.updated_at,
+    )
+
+
+def test_a_recorded_observation_cannot_write_a_cross_bucket_terminal() -> None:
+    current = pending_intent()
+    with pytest.raises(InvalidExecutionRequestError, match="deterministic unsent"):
+        RecordExecutionObservation(
+            _failed_observation(current, ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN), 1
+        ).apply(current, at=NOW)
+    with pytest.raises(InvalidExecutionRequestError, match="possibly-dispatched"):
+        RecordExecutionObservation(
+            _unknown_observation(current, ExecutionErrorCode.INVALID_EXECUTION_REQUEST), 1
+        ).apply(current, at=NOW)
+
+
+def test_a_recorded_observation_accepts_each_bucket_on_its_own_shape() -> None:
+    current = pending_intent()
+    failed = RecordExecutionObservation(
+        _failed_observation(current, ExecutionErrorCode.INVALID_EXECUTION_REQUEST), 1
+    ).apply(current, at=NOW)
+    assert failed.execution_state is ExecutionState.FAILED
+    assert failed.cleanup_state is CleanupState.NOT_REQUIRED
+    assert failed.dispatched_at is None
+    assert not failed.execution_state.holds_capacity
+
+    unknown = RecordExecutionObservation(
+        _unknown_observation(current, ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN), 1
+    ).apply(current, at=NOW)
+    assert unknown.execution_state is ExecutionState.UNKNOWN_QUARANTINED
+    assert unknown.cleanup_state is CleanupState.QUARANTINED
+    assert unknown.dispatched_at is not None
+    assert unknown.execution_state.holds_capacity

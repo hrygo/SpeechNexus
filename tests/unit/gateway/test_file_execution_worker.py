@@ -27,6 +27,7 @@ from speechnexus_gateway.domain.file_execution import (
     EngineRequestRejectedError,
     FileCommandInvalidError,
     FileExecutionLimits,
+    FileStageUnavailableError,
     FileStagingOutcome,
 )
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
@@ -36,6 +37,7 @@ from speechnexus_gateway.domain.submission import (
     ExecutionCleanupPendingError,
     ExecutionErrorCode,
     ExecutionState,
+    InvalidExecutionRequestError,
     StopEvidenceKind,
     SubmissionIntent,
     SubmissionOutcomeUnknownError,
@@ -250,6 +252,69 @@ class StructurallyInvalidPipeline(Pipeline):
     ) -> FileStagingOutcome:
         self.calls += 1
         raise FileCommandInvalidError("synthetic structural refusal")
+
+
+class StageFailurePipeline(Pipeline):
+    """A lane that fails after the worker has already acknowledged the hand-off."""
+
+    def __init__(self, error: Exception) -> None:
+        super().__init__()
+        self.error = error
+        self.calls = 0
+        self.lane_entered = False
+
+    async def stage_result(
+        self,
+        request: SubmitRequest,
+        *,
+        store: Results,
+        cancelled: Callable[[], bool],
+    ) -> FileStagingOutcome:
+        self.calls += 1
+        self.lane_entered = True
+        raise self.error
+
+
+async def test_a_missing_configured_stage_is_a_deterministic_unsent_failure() -> None:
+    pipeline = StageFailurePipeline(FileStageUnavailableError("synthetic missing store"))
+    with configured(pipeline=pipeline) as (ledger, _, results, worker, submit, _, _):
+        request = original_request()
+        submit.submit(request)
+        await wait_for(lambda: stored(ledger, request).execution_state is ExecutionState.FAILED)
+        current = stored(ledger, request)
+        assert current.error_code is ExecutionErrorCode.INVALID_EXECUTION_REQUEST
+        assert current.cleanup_state is CleanupState.NOT_REQUIRED
+        assert current.dispatched_at is None and current.engine_request_id is None
+        assert not current.execution_state.holds_capacity
+        assert pipeline.calls == 1 and results.calls == 0
+        assert worker.running
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        InvalidExecutionRequestError("synthetic plain invalid from a lane"),
+        ConnectionError("synthetic stage runtime outage"),
+    ],
+    ids=["plain-invalid", "runtime-outage"],
+)
+async def test_a_stage_fault_that_may_follow_an_engine_call_stays_held(
+    error: Exception,
+) -> None:
+    pipeline = StageFailurePipeline(error)
+    with configured(pipeline=pipeline) as (ledger, _, _, worker, submit, _, _):
+        request = original_request()
+        submit.submit(request)
+        await wait_for(
+            lambda: stored(ledger, request).execution_state is ExecutionState.UNKNOWN_QUARANTINED
+        )
+        current = stored(ledger, request)
+        assert current.error_code is ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN
+        assert current.cleanup_state is CleanupState.QUARANTINED
+        assert current.dispatched_at is not None
+        assert current.execution_state.holds_capacity
+        assert pipeline.calls == 1 and pipeline.lane_entered
+        assert worker.running
 
 
 async def test_a_structural_stage_refusal_releases_capacity_without_quarantine() -> None:

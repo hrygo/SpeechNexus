@@ -176,6 +176,11 @@ is ready: confirm the worker is running without restarts, for example with
 `docker compose --env-file deploy/compose.env -f deploy/compose.yaml ps` and
 `logs job-dispatch-worker`, and fix the DSN/grants before retrying.
 
+The command-by-command path from a blank environment to one submitted Job,
+including the six prerequisites above and a read-only preflight, is
+[the asynchronous Job runbook](../docs/operations/async-job-runbook.md).
+Its self-check is `scripts/dev-env/check-async-job-prereqs.py`.
+
 The service shares the gateway network namespace and calls
 `http://127.0.0.1:8010`, because `JobDispatchSettings` rejects plain HTTP outside
 loopback. That is a single-host Compose property, not a multi-node transport

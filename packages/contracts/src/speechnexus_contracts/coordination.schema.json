@@ -3695,6 +3695,18 @@
         "pronunciation_revision": {
           "$ref": "#/$defs/External_shared_speech_overrides_schema_json_pronunciation_revision"
         },
+        "reference_text": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 10000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "instructions": {
           "type": ["string", "null"],
           "maxLength": 4096

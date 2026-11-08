@@ -712,3 +712,35 @@ def test_another_variant_slot_does_not_block_a_prepare() -> None:
         )
     )
     assert other.intent.intent_state is RuntimeIntentState.SUCCEEDED
+
+
+def test_the_base_clone_variant_excludes_the_customvoice_variant() -> None:
+    """A published custom voice is synthesized by Base, which owns the same slot."""
+
+    clone = _variant_template(template_id="template-tts-voice-clone")
+    customvoice = _variant_template(template_id="template-tts-customvoice")
+    service, runtime, _ = _service(
+        templates=(clone, customvoice), runtime=ScriptedNodeRuntime(ready_on_prepare=True)
+    )
+
+    service.submit_intent(
+        build_request(
+            intent_id="intent-custom",
+            instance_id="instance-custom",
+            approved_template_id=customvoice.template_id,
+            pool_id="tts-batch",
+        )
+    )
+    with pytest.raises(VariantExclusivityError) as raised:
+        service.submit_intent(
+            build_request(
+                intent_id="intent-base",
+                instance_id="instance-base",
+                approved_template_id=clone.template_id,
+                pool_id="voice-creation",
+                fencing_token=2,
+            )
+        )
+
+    assert raised.value.error_code is RuntimeControlErrorCode.INTENT_CONFLICT
+    assert [request.instance_id for request in runtime.prepared] == ["instance-custom"]

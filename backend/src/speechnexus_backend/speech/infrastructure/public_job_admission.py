@@ -33,6 +33,7 @@ from speechnexus_backend.speech.domain.public_jobs import NewPublicJob, canonica
 from speechnexus_backend.speech.domain.runtime_intents import ApprovedRuntimePlan
 from speechnexus_backend.speech.domain.speech_synthesis import SpeechFormat, SpeechPlan
 from speechnexus_backend.speech.domain.transcription import TranscriptFormat
+from speechnexus_backend.speech.domain.voice_capability_evidence import VoiceMaterial
 from speechnexus_backend.speech.infrastructure.admission_codec import (
     PreparedAdmission,
     business_command_from_value,
@@ -213,8 +214,7 @@ def _voice(cursor: _Cursor, intent: dict[str, Any]) -> dict[str, Any]:
         revision = int(revision)
     if not isinstance(voice_id, str) or isinstance(revision, bool) or not isinstance(revision, int):
         raise PublicJobAdmissionRejectedError("voice_not_published")
-    row = _one(
-        cursor,
+    cursor.execute(
         "SELECT revision_id, revision FROM speech_publications "
         "WHERE kind='voice' AND object_id=%s AND revision=%s AND NOT EXISTS ("
         f"SELECT 1 FROM {RETIREMENT_TABLE} AS retired WHERE retired.kind='voice' "
@@ -223,7 +223,148 @@ def _voice(cursor: _Cursor, intent: dict[str, Any]) -> dict[str, Any]:
         "AND retired.revision_id=speech_publications.revision_id)",
         (voice_id, str(revision)),
     )
+    rows = cursor.fetchall()
+    if not rows:
+        raise PublicJobAdmissionRejectedError("voice_not_published")
+    row = rows[0]
     return {"id": voice_id, "revision": int(row["revision"]), "revision_id": row["revision_id"]}
+
+
+_MAX_REFERENCE_TEXT_CHARS = 10_000
+
+
+@dataclass(frozen=True, slots=True)
+class _CustomVoiceFacts:
+    voice_material: dict[str, Any]
+    reference_text: str
+
+
+def _custom_voice(
+    cursor: _Cursor,
+    voice: dict[str, Any],
+    *,
+    workspace_id: str,
+    binding_id: str,
+    binding_revision: str,
+    storage_bucket: str,
+    now_us: int,
+) -> _CustomVoiceFacts | None:
+    """Resolve published clone material for one published voice revision.
+
+    ``None`` means the revision is the existing builtin qualification path.
+    A published ``cloned`` revision must name the same immutable Base binding
+    that produced it; the Base template owns the shared resident TTS variant
+    slot, so a CustomVoice or VoiceDesign binding cannot synthesize it.
+    """
+    cursor.execute(
+        "SELECT source_type, material, draft_id, draft_revision, document "
+        "FROM speech_voice_revisions WHERE voice_id=%s AND revision=%s AND revision_id=%s",
+        (voice["id"], str(voice["revision"]), voice["revision_id"]),
+    )
+    rows = cursor.fetchall()
+    if not rows:
+        # Custom revision identities are minted as ``vrev-*``. A missing one is
+        # fail-closed unless an independent builtin qualification owns the same
+        # publication identity; otherwise a partial restore could synthesize a
+        # clone through the builtin speaker.
+        if voice["revision_id"].startswith("vrev-"):
+            cursor.execute(
+                "SELECT 1 FROM speech_builtin_voice_qualifications "
+                "WHERE voice_id=%s AND revision=%s AND revision_id=%s",
+                (voice["id"], str(voice["revision"]), voice["revision_id"]),
+            )
+            if not cursor.fetchall():
+                raise PublicJobAdmissionRejectedError("voice_not_published")
+            return None
+        # Older synthetic fixtures and operator-authored builtin ids are not
+        # ``vrev-*``. A remaining draft still proves the missing row was custom.
+        prefix = "voice-"
+        draft_id = (
+            "draft-" + voice["id"].removeprefix(prefix) if voice["id"].startswith(prefix) else None
+        )
+        if draft_id is not None:
+            cursor.execute("SELECT 1 FROM speech_voice_drafts WHERE draft_id=%s", (draft_id,))
+            if cursor.fetchall():
+                raise PublicJobAdmissionRejectedError("voice_not_published")
+        return None
+    if len(rows) != 1:
+        raise PublicJobAdmissionRejectedError("job_unavailable")
+    row = rows[0]
+    if row["source_type"] != "cloned":
+        # A design revision is preview-only and must never reach TTS.
+        raise PublicJobAdmissionRejectedError("voice_not_published")
+    try:
+        material = VoiceMaterial.from_value(row["material"])
+        document = row["document"]
+        if not isinstance(document, dict) or document.get("model_binding") != {
+            "id": binding_id,
+            "revision": binding_revision,
+        }:
+            raise PublicJobAdmissionRejectedError("model_binding_task_not_supported")
+        draft_id = row["draft_id"]
+        draft_revision = row["draft_revision"]
+        if not isinstance(draft_id, str) or not isinstance(draft_revision, str):
+            raise ValueError
+    except PublicJobAdmissionRejectedError:
+        raise
+    except ValueError, TypeError, KeyError, RecursionError:
+        raise PublicJobAdmissionRejectedError("job_binding_incomplete") from None
+    if material.media_type != "audio/wav":
+        raise PublicJobAdmissionRejectedError("job_binding_incomplete")
+    cursor.execute(
+        "SELECT asset_state, purpose, object_key, sha256, bytes, expires_at_us "
+        "FROM speech_assets WHERE workspace_id=%s AND asset_id=%s",
+        (workspace_id, material.asset_id),
+    )
+    assets = cursor.fetchall()
+    if len(assets) != 1:
+        raise PublicJobAdmissionRejectedError("voice_not_published")
+    asset = assets[0]
+    try:
+        usable = (
+            asset["asset_state"] == "ready"
+            and asset["purpose"] == "voice_reference"
+            and asset["sha256"] == material.sha256
+            and int(asset["bytes"]) == material.bytes
+            and int(asset["expires_at_us"]) > now_us
+            and isinstance(asset["object_key"], str)
+            and bool(asset["object_key"])
+        )
+    except TypeError, ValueError, KeyError:
+        usable = False
+    if not usable:
+        # The publication ledger names material this workspace can no longer use.
+        raise PublicJobAdmissionRejectedError("voice_not_published")
+    cursor.execute(
+        "SELECT input_json FROM speech_voice_draft_revisions WHERE draft_id=%s AND revision=%s",
+        (draft_id, draft_revision),
+    )
+    drafts = cursor.fetchall()
+    if len(drafts) != 1:
+        raise PublicJobAdmissionRejectedError("job_binding_incomplete")
+    try:
+        draft_input = json.loads(drafts[0]["input_json"])
+    except ValueError, TypeError, RecursionError:
+        raise PublicJobAdmissionRejectedError("job_binding_incomplete") from None
+    reference_text = draft_input.get("reference_text") if isinstance(draft_input, dict) else None
+    if (
+        not isinstance(reference_text, str)
+        or not reference_text.strip()
+        or not 1 <= len(reference_text) <= _MAX_REFERENCE_TEXT_CHARS
+        or "\x00" in reference_text
+    ):
+        raise PublicJobAdmissionRejectedError("job_binding_incomplete")
+    return _CustomVoiceFacts(
+        voice_material={
+            "asset_or_artifact_id": material.asset_id,
+            "workspace_id": workspace_id,
+            "storage_bucket": storage_bucket,
+            "object_key": asset["object_key"],
+            "content_sha256": material.sha256,
+            "byte_length": material.bytes,
+        },
+        reference_text=reference_text,
+    )
 
 
 def _pronunciation(
@@ -345,6 +486,19 @@ def _asr_parameters(block: dict[str, Any], intent: dict[str, Any]) -> dict[str, 
         "response_format": gateway_format,
         "timestamp_granularities": [],
     }
+
+
+def _custom_tts_unsupported(
+    *,
+    instructions: Any,
+    speed: Any,
+    pronunciation: list[dict[str, Any]],
+    pronunciation_source: dict[str, Any] | None,
+) -> bool:
+    """The Base reference-audio lane has no instructions, speed or pronunciation pass."""
+    return (
+        bool(instructions) or speed != 1 or bool(pronunciation) or pronunciation_source is not None
+    )
 
 
 def _tts_parameters(
@@ -543,13 +697,37 @@ def build_public_job_admission(
             max_audio_ms=block["max_output_audio_ms"],
             timeout_seconds=timeout,
         )
+        custom = _custom_voice(
+            cursor,
+            voice,
+            workspace_id=job.workspace_id,
+            binding_id=model_id,
+            binding_revision=str(binding_revision),
+            storage_bucket=storage_bucket,
+            now_us=now_us,
+        )
         parameters = _tts_parameters(block, intent, pronunciation_source)
+        if custom is None:
+            voice_kind, voice_material = "builtin", None
+        else:
+            voice_kind, voice_material = "custom", custom.voice_material
+            # The Base lane has no instructions, speed control or pronunciation
+            # pass: refusing them is deterministic instead of silently dropping
+            # caller intent the published clone path cannot honour.
+            if _custom_tts_unsupported(
+                instructions=merged["instructions"],
+                speed=merged["speed"],
+                pronunciation=pronunciation,
+                pronunciation_source=pronunciation_source,
+            ):
+                raise PublicJobAdmissionRejectedError("unsupported_parameter")
+            parameters["reference_text"] = custom.reference_text
         resources = {
             "voice": {"id": voice["id"], "revision": str(voice["revision"])},
-            "voice_material": None,
+            "voice_material": voice_material,
             "vocabulary": [],
             "pronunciation": pronunciation,
-            "voice_kind": "builtin",
+            "voice_kind": voice_kind,
             "vocabulary_source": None,
             "pronunciation_source": pronunciation_source,
         }

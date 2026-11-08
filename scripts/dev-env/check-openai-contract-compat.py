@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import posixpath
 import subprocess
@@ -1018,6 +1019,164 @@ def _closed_tagged_request_extension(
     return False
 
 
+# Literal allowlist for one internal request-shape change. Each key names the
+# source file, the exact operation/command pointer, the affected command
+# variants, the property, the old value (``None`` means absent) and the only
+# accepted change kind. The value carries the exact property schema. This is
+# deliberately not a schema-family predicate: adding the same property
+# elsewhere, making it required, changing its type or changing another command
+# variant still produces a finding. New entries must add matching negative
+# cases and update the frozen assertion in
+# tests/contract/test_internal_additive_promotions.py.
+_INTERNAL_ADDITIVE_PROMOTIONS: dict[
+    tuple[str, str, tuple[str, ...], str, None, tuple[str, str], str], dict[str, Any]
+] = {
+    (
+        "contracts/internal/execution-control.openapi.yaml",
+        "paths//internal/v1/executions/submit/post/requestBody/application/json/properties/command",
+        ("tts", "voicevalidation"),
+        "reference_text",
+        None,
+        ("string", "null"),
+        "append-optional-property",
+    ): {
+        "container_path": ("parameters",),
+        "property_schema": {
+            "oneOf": [
+                {"type": "string", "minLength": 1, "maxLength": 10000},
+                {"type": "null"},
+            ]
+        },
+    },
+    (
+        "contracts/internal/coordination-transactions.schema.json",
+        "$defs/create_submit/properties/execution_request/properties/command",
+        ("tts", "voicevalidation"),
+        "reference_text",
+        None,
+        ("string", "null"),
+        "append-optional-property",
+    ): {
+        "container_path": ("parameters",),
+        "property_schema": {
+            "oneOf": [
+                {"type": "string", "minLength": 1, "maxLength": 10000},
+                {"type": "null"},
+            ]
+        },
+    },
+}
+
+_INTERNAL_ADDITIVE_NOTICES: list[str] = []
+
+
+def _command_variant_tag(branch: Mapping[str, Any]) -> str | None:
+    properties = _mapping(branch.get("properties"))
+    kind = _mapping((properties or {}).get("kind"))
+    value = kind.get("const") if kind is not None else None
+    return value if isinstance(value, str) else None
+
+
+def _internal_additive_promotion(
+    base: Mapping[str, Any], current: Mapping[str, Any], pointer: str
+) -> str | None:
+    """Prove one exact append-optional-property change, or return ``None``.
+
+    The baseline variant is copied and only the allowlisted optional property is
+    appended; the result must equal the current variant as an exact JSON tree.
+    Every other command variant must be unchanged. This establishes that every
+    old valid request remains valid, but it does not prove that old consumers
+    accept the new field.
+    """
+    base_variants = _sequence(base.get("oneOf"))
+    current_variants = _sequence(current.get("oneOf"))
+    if base_variants is None or current_variants is None:
+        return None
+    if len(base_variants) != len(current_variants):
+        return None
+    if not _same_json_tree(
+        {key: value for key, value in base.items() if key != "oneOf"},
+        {key: value for key, value in current.items() if key != "oneOf"},
+    ):
+        return None
+    by_tag_base: dict[str, Mapping[str, Any]] = {}
+    by_tag_current: dict[str, Mapping[str, Any]] = {}
+    for branch in base_variants:
+        mapping = _mapping(branch)
+        if mapping is None:
+            return None
+        tag = _command_variant_tag(mapping)
+        if tag is None or tag in by_tag_base:
+            return None
+        by_tag_base[tag] = mapping
+    for branch in current_variants:
+        mapping = _mapping(branch)
+        if mapping is None:
+            return None
+        tag = _command_variant_tag(mapping)
+        if tag is None or tag in by_tag_current:
+            return None
+        by_tag_current[tag] = mapping
+    if set(by_tag_base) != set(by_tag_current):
+        return None
+    for key, promotion in _INTERNAL_ADDITIVE_PROMOTIONS.items():
+        source, object_pointer, tags, property_name, old_value, new_value, change = key
+        if pointer != f"{source}:{object_pointer}":
+            continue
+        if (
+            old_value is not None
+            or new_value != ("string", "null")
+            or change != "append-optional-property"
+        ):
+            continue
+        container_path = promotion.get("container_path")
+        property_schema = _mapping(promotion.get("property_schema"))
+        if (
+            not isinstance(container_path, tuple)
+            or not container_path
+            or not all(isinstance(step, str) for step in container_path)
+            or property_schema is None
+        ):
+            continue
+        target_seen = 0
+        for tag, base_branch in by_tag_base.items():
+            current_branch = by_tag_current[tag]
+            if tag not in tags:
+                if not _same_json_tree(base_branch, current_branch):
+                    return None
+                continue
+            target_seen += 1
+            rebuilt = copy.deepcopy(base_branch)
+            node = rebuilt
+            for step in container_path:
+                properties = node.get("properties")
+                if not isinstance(properties, dict) or step not in properties:
+                    return None
+                child = properties[step]
+                if not isinstance(child, dict):
+                    return None
+                node = child
+            properties = node.get("properties")
+            if not isinstance(properties, dict) or property_name in properties:
+                return None
+            required = node.get("required", [])
+            if not isinstance(required, list) or property_name in required:
+                return None
+            properties[property_name] = copy.deepcopy(dict(property_schema))
+            if not _same_json_tree(rebuilt, current_branch):
+                return None
+        if target_seen != len(tags):
+            return None
+        return (
+            f"{pointer}/oneOf: variants {tags!r} append optional {property_name!r} "
+            "(old=None, new=string|null); accepted by the exact frozen internal "
+            "additive promotion. This proves only the append-optional-property "
+            "shape, not consumer compatibility; deploy the gateway before the "
+            "backend that emits it."
+        )
+    return None
+
+
 # Exact request-default promotions. Each entry is keyed by the operation, the
 # request media type and the request property, and requires the named baseline
 # error code plus the exact old -> new value. There is deliberately no wildcard:
@@ -1450,6 +1609,13 @@ def _compare_schema(
             )
             continue
         if keyword == "oneOf":
+            # one exact internal additive promotion is allowed; every other
+            # exclusive-union change keeps the conservative finding below.
+            if direction == "request" and not standard_only:
+                notice = _internal_additive_promotion(base_schema, current_schema, pointer)
+                if notice is not None:
+                    _INTERNAL_ADDITIVE_NOTICES.append(notice)
+                    continue
             # oneOf is not monotone in its branches: widening a request branch
             # can reject old inputs by making two branches match. Require the
             # resolved constraints to stay equal unless compatibility is proven.
@@ -1537,6 +1703,7 @@ def _compare_openapi(
 ) -> list[str]:
     issues: list[str] = []
     collected = notices if notices is not None else []
+    _INTERNAL_ADDITIVE_NOTICES.clear()
     # Each comparison owns fresh document snapshots. A process-global cache could
     # hide edits to a shared schema during a later comparison in the same process.
     base_side = _SchemaSide(base, path, base_git_ref, {}, standard_only)
@@ -1732,6 +1899,10 @@ def _compare_openapi(
     if notices is None:
         for notice in collected:
             print(f"notice: {notice}", file=sys.stderr)
+        for notice in dict.fromkeys(_INTERNAL_ADDITIVE_NOTICES):
+            print(f"notice: {notice}", file=sys.stderr)
+    else:
+        collected.extend(dict.fromkeys(_INTERNAL_ADDITIVE_NOTICES))
     return issues
 
 

@@ -1474,6 +1474,8 @@ _ADMISSION_REJECTION_CODES = frozenset(
         "voice_not_published",
         "voice_draft_not_candidate",
         "asset_not_ready",
+        "unsupported_parameter",
+        "model_binding_task_not_supported",
         "idempotency_conflict",
     }
 )

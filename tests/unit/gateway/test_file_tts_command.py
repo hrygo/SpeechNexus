@@ -260,6 +260,7 @@ def _mutated(path: tuple[str, ...], value: Any) -> dict[str, Any]:
         (("resources", "voice_material"), {"id": "material", "revision": "1"}),
         (("resources", "vocabulary"), [{"id": "vocab", "revision": "1"}]),
         (("parameters", "planner", "max_chars"), 4),
+        (("parameters", "reference_text"), "custom-only"),
     ],
 )
 def test_unsupported_capabilities_are_rejected(path: tuple[str, ...], value: Any) -> None:
@@ -484,3 +485,12 @@ async def test_source_sample_bound_precedes_encoding_and_staging(
     assert len(engine.calls) == 1
     assert engine.calls[0][1].max_audio_ms == 100
     assert engine.calls[0][1].max_pcm_bytes == 4800
+
+
+def test_builtin_accepts_absent_or_null_reference_text() -> None:
+    runner, _, _ = build()
+    runner.validate_request(tts_request())
+
+    command = command_example(0)
+    command["parameters"]["reference_text"] = None
+    runner.validate_request(tts_request(command=command))

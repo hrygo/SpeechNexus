@@ -118,6 +118,25 @@ unknown/停止协议保留占用，PUT 或读回失败不重试或删除未知�
 持久 worker 在登记音频回执前，先通过原区间端口写入完整生成范围 `[0, source_pcm_samples)`；
 覆盖缺口或越过冻结上界时隔离并保留占用。执行身份、准入、计量与对外发布仍由 A 的原事务负责。
 
+### 自定义声音（Base 参考音频）
+
+已发布 `cloned` 声音的 TTS 走 Base 参考音频路径：准入把固定 `voice_material` 与配对
+`reference_text` 写入命令，`CommandFileCustomTts` 复用 clone 的 WAV 形状、文本密度和引擎
+校验，但按 TTS 交付编码与 staging 返回结果。它只在 `voice_kind=custom` 时生效；缺少材料或
+文本、参考文本长度非法、binding 不一致时在读取对象或调用引擎前确定性拒绝，不回退
+builtin speaker。
+`voice_design` 仍是 preview-only，不能进入 TTS。缺失或已退役的声音（含 builtin）统一返回
+422 `voice_not_published`，不再返回 503 `job_unavailable`；自定义 revision 行缺失且没有
+独立 builtin 资格时同样拒绝，不回退 builtin。
+
+内部命令在 `TtsEffectiveParameters` 追加可选 `reference_text`，这是前向兼容字段：**只有
+custom 命令包含它**，builtin 命令与旧版逐字一致。升级后的 backend 会为 custom 命令发出它；
+未升级的网关在结构校验阶段以基类 `InvalidExecutionRequestError` 拒绝，worker 只把
+`FileCommandInvalidError` 当作确定性未外发拒绝，因此该异常会走未知路径并落
+`ENGINE_TRANSPORT_UNKNOWN`，不会静默合成或降级。部署必须先升级 execution gateway，再升级
+backend/worker；回退时先停用自定义声音 TTS 入口或回退 backend，不要保留“新 backend + 旧
+gateway”的组合。
+
 ## 私有 HTTP 和结构校验
 
 adapter 只使用配置的私网地址与端口，`trust_env=False`、不跟随重定向、不自动重试，

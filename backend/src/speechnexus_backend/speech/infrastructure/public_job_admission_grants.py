@@ -29,6 +29,8 @@ _READ_TABLES = (
     "speech_job_intents",
     "speech_voice_drafts",
     "speech_voice_draft_revisions",
+    "speech_voice_revisions",
+    "speech_builtin_voice_qualifications",
     "workspace_quotas",
     "resource_pools",
     "host_nodes",

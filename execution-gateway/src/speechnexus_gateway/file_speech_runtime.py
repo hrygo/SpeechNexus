@@ -33,7 +33,7 @@ from speechnexus_gateway.file_voice_design_runtime import (
     load_voice_design_configuration,
 )
 from speechnexus_gateway.infrastructure.file_execution_worker import FileExecutionWorker
-from speechnexus_gateway.interfaces.file_tts_command import CommandFileTts
+from speechnexus_gateway.interfaces.file_tts_command import CommandFileCustomTts, CommandFileTts
 from speechnexus_gateway.interfaces.file_voice_clone_command import CommandFileVoiceClone
 from speechnexus_gateway.interfaces.file_voice_design_command import CommandFileVoiceDesign
 from speechnexus_gateway.settings import Settings
@@ -57,19 +57,33 @@ def _kind(request: SubmitRequest) -> str:
     return kind
 
 
+def _custom_voice(request: SubmitRequest) -> bool:
+    command = request.command
+    assert isinstance(command, dict)
+    resources = command.get("resources")
+    return isinstance(resources, dict) and resources.get("voice_kind") == "custom"
+
+
 @dataclass(frozen=True, slots=True)
 class _RoutedExecution:
     asr: AsrFileStage | None
     tts: CommandFileTts | None
     voice_design: CommandFileVoiceDesign | None
     voice_clone: CommandFileVoiceClone | None = None
+    custom_tts: CommandFileCustomTts | None = None
 
     def validate_request(self, request: SubmitRequest) -> SubmitRequest:
         kind = _kind(request)
         if kind == "asr" and self.asr is not None:
             return self.asr.validate_request(request)
-        if kind == "tts" and self.tts is not None:
-            return self.tts.validate_request(request)
+        if kind == "tts":
+            if _custom_voice(request):
+                if self.custom_tts is not None:
+                    return self.custom_tts.validate_request(request)
+            elif self.tts is not None:
+                # The builtin lane never accepts custom material; it does not
+                # silently fall back to the configured native speaker.
+                return self.tts.validate_request(request)
         if kind == "voicedesign" and self.voice_design is not None:
             return self.voice_design.validate_request(request)
         if kind == "voiceclone" and self.voice_clone is not None:
@@ -86,8 +100,14 @@ class _RoutedExecution:
         kind = _kind(request)
         if kind == "asr" and self.asr is not None and store.asr is not None:
             return await self.asr.stage_result(request, store=store.asr, cancelled=cancelled)
-        if kind == "tts" and self.tts is not None and store.tts is not None:
-            return await self.tts.stage_result(request, store=store.tts, cancelled=cancelled)
+        if kind == "tts":
+            if _custom_voice(request):
+                if self.custom_tts is not None and store.voice_clone is not None:
+                    return await self.custom_tts.stage_result(
+                        request, store=store.voice_clone, cancelled=cancelled
+                    )
+            elif self.tts is not None and store.tts is not None:
+                return await self.tts.stage_result(request, store=store.tts, cancelled=cancelled)
         if (
             kind == "voicedesign"
             and self.voice_design is not None
@@ -125,6 +145,7 @@ class FileSpeechConfiguration:
             None if self.tts is None else self.tts.execution(),
             None if self.voice_design is None else self.voice_design.execution(),
             None if self.voice_clone is None else self.voice_clone.execution(),
+            None if self.voice_clone is None else self.voice_clone.custom_tts(),
         )
         return FileExecutionWorker(
             ingress=ingress,

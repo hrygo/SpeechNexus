@@ -218,6 +218,10 @@ def _env_names(expr: ScopeValue, scope: Scope, depth: int = 0) -> set[str]:
         argument = _env_read_argument(expr)
         if argument is not None:
             return _string_values(argument, scope, depth + 1)
+        if isinstance(expr.func, ast.Attribute):
+            attribute_names = _env_names(expr.func.value, scope, depth + 1)
+            if attribute_names:
+                return attribute_names
         names: set[str] = set()
         for argument in expr.args:
             names |= _env_names(argument, scope, depth + 1)
@@ -225,7 +229,15 @@ def _env_names(expr: ScopeValue, scope: Scope, depth: int = 0) -> set[str]:
     if isinstance(expr, ast.Subscript):
         if _is_os_environ(expr.value):
             return _string_values(expr.slice, scope, depth + 1)
-        return _string_values(expr.value, scope, depth + 1)
+        if isinstance(expr.value, ast.Dict) and isinstance(expr.slice, ast.Constant):
+            for key, value in zip(expr.value.keys, expr.value.values, strict=False):
+                if (
+                    isinstance(key, ast.Constant)
+                    and key.value == expr.slice.value
+                    and value is not None
+                ):
+                    return _env_names(value, scope, depth + 1)
+        return _env_names(expr.value, scope, depth + 1)
     if isinstance(expr, ast.Name):
         assigned = scope.get(expr.id)
         return _env_names(assigned, scope, depth + 1) if assigned is not None else set()
@@ -251,6 +263,12 @@ def _env_names(expr: ScopeValue, scope: Scope, depth: int = 0) -> set[str]:
         return names
     if isinstance(expr, ast.IfExp):
         return _env_names(expr.body, scope, depth + 1) | _env_names(expr.orelse, scope, depth + 1)
+    if isinstance(expr, ast.JoinedStr):
+        names = set()
+        for value in expr.values:
+            if isinstance(value, ast.FormattedValue):
+                names |= _env_names(value.value, scope, depth + 1)
+        return names
     if isinstance(expr, ast.BoolOp):
         names = set()
         for value in expr.values:
@@ -274,8 +292,22 @@ def _presence_vars(expr: ScopeValue, scope: Scope, depth: int = 0) -> set[str]:
             for argument in expr.args:
                 names |= _presence_vars(argument, scope, depth + 1)
             return names
-    if isinstance(expr, ast.Subscript) and _is_os_environ(expr.value):
-        return _string_values(expr.slice, scope, depth + 1)
+        if isinstance(expr.func, ast.Attribute):
+            names = _presence_vars(expr.func.value, scope, depth + 1)
+            if names:
+                return names
+    if isinstance(expr, ast.Subscript):
+        if _is_os_environ(expr.value):
+            return _string_values(expr.slice, scope, depth + 1)
+        if isinstance(expr.value, ast.Dict) and isinstance(expr.slice, ast.Constant):
+            for key, value in zip(expr.value.keys, expr.value.values, strict=False):
+                if (
+                    isinstance(key, ast.Constant)
+                    and key.value == expr.slice.value
+                    and value is not None
+                ):
+                    return _presence_vars(value, scope, depth + 1)
+        return _presence_vars(expr.value, scope, depth + 1)
     if isinstance(expr, ast.Name):
         assigned = scope.get(expr.id)
         return _presence_vars(assigned, scope, depth + 1) if assigned is not None else set()
@@ -286,6 +318,18 @@ def _presence_vars(expr: ScopeValue, scope: Scope, depth: int = 0) -> set[str]:
         return names
     if isinstance(expr, ast.Starred):
         return _presence_vars(expr.value, scope, depth + 1)
+    if isinstance(expr, ast.Dict):
+        names = set()
+        for value in expr.values:
+            if value is not None:
+                names |= _presence_vars(value, scope, depth + 1)
+        return names
+    if isinstance(expr, ast.JoinedStr):
+        names = set()
+        for value in expr.values:
+            if isinstance(value, ast.FormattedValue):
+                names |= _presence_vars(value.value, scope, depth + 1)
+        return names
     if isinstance(expr, (ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp)):
         names = set()
         for generator in expr.generators:
@@ -364,13 +408,27 @@ def _is_non_dsn_prerequisite(expr: ast.expr, scope: Scope, depth: int = 0) -> bo
             if isinstance(comparator, ast.Constant) and comparator.value in DIALECTS:
                 return True
         for side in (expr.left, *expr.comparators):
-            if isinstance(side, ast.expr) and _dotted_name(side) in NON_DSN_ATTRIBUTES:
+            if isinstance(side, ast.Call) and _dotted_name(side.func) in NON_DSN_CALLS:
+                return True
+            dotted = _dotted_name(side)
+            if dotted is not None and (
+                dotted in NON_DSN_ATTRIBUTES
+                or any(dotted.startswith(f"{attribute}.") for attribute in NON_DSN_ATTRIBUTES)
+            ):
                 return True
         return all(isinstance(item, ast.Constant) for item in (expr.left, *expr.comparators))
     if isinstance(expr, ast.Call):
-        return _dotted_name(expr.func) in NON_DSN_CALLS
+        dotted = _dotted_name(expr.func)
+        return dotted is not None and (
+            dotted in NON_DSN_CALLS
+            or any(dotted.startswith(f"{attribute}.") for attribute in NON_DSN_ATTRIBUTES)
+        )
     if isinstance(expr, ast.Attribute):
-        return _dotted_name(expr) in NON_DSN_ATTRIBUTES
+        dotted = _dotted_name(expr)
+        return dotted is not None and (
+            dotted in NON_DSN_ATTRIBUTES
+            or any(dotted.startswith(f"{attribute}.") for attribute in NON_DSN_ATTRIBUTES)
+        )
     if isinstance(expr, ast.Constant):
         return isinstance(expr.value, bool)
     if isinstance(expr, ast.Name):

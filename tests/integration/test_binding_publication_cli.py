@@ -85,7 +85,7 @@ class Sandbox:
 def sandbox() -> Iterator[Sandbox]:
     base = os.environ.get(VARIABLE)
     if not base:
-        pytest.skip("Configure an isolated PostgreSQL DSN; skip is not evidence")
+        pytest.fail(f"Configure an isolated PostgreSQL DSN in {VARIABLE}; skip is not evidence")
     suffix = uuid.uuid4().hex[:12]
     schema, role = "sn_pubcli_" + suffix, "sn_pubcli_role_" + suffix
     engine = create_engine(

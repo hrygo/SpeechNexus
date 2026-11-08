@@ -70,9 +70,9 @@ SPEECHNEXUS_TEST_MYSQL_URL=mysql://root:speechnexus_test@127.0.0.1:55434/ \
 
 This target fails immediately unless **both** DSNs are set, and
 `make integration-test` additionally requires explicit isolated MinIO endpoint/test keys (see below). The shared transaction suite
-also reports a failure, not a skip, when exactly one engine is configured:
-one engine alone is never dual-database evidence. A normal pytest run with
-neither DSN skips the integration cases; a skip is not qualification evidence.
+reports a failure, not a skip, when either engine is unconfigured: one engine
+alone is never dual-database evidence, and a run with neither DSN fails instead
+of exiting green with only skips. A skip is not qualification evidence.
 Run the historical PG suite alone with
 `uv run pytest -m integration tests/integration/test_cluster_coordination_schema.py -q`
 when no MySQL instance is available. CI provisions disposable PG 16.15 and

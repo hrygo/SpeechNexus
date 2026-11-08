@@ -33,7 +33,10 @@ def test_supported_revocation_recovers_committed_lost_reply(
 ) -> None:
     url = os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL")
     if not url:
-        pytest.skip("An isolated PostgreSQL DSN is required")
+        pytest.fail(
+            "Configure an isolated PostgreSQL DSN in SPEECHNEXUS_TEST_DATABASE_URL; "
+            "skip is not evidence"
+        )
     suffix = uuid.uuid4().hex[:10]
     schema, role = "sn_bvr_" + suffix, "sn_bvr_w_" + suffix
     engine = create_engine(

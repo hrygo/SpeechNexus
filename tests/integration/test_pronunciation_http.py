@@ -85,7 +85,10 @@ class ReadDatabase:
 def read_db() -> Iterator[ReadDatabase]:
     url = os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL")
     if not url:
-        pytest.skip("Configure isolated PostgreSQL; missing environment is not qualification")
+        pytest.fail(
+            "Configure an isolated PostgreSQL DSN in SPEECHNEXUS_TEST_DATABASE_URL; "
+            "missing environment is not qualification"
+        )
     suffix = uuid.uuid4().hex[:12]
     schema, role = "sn_pron_" + suffix, "sn_pron_reader_" + suffix
     engine = create_engine(

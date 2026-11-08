@@ -121,7 +121,10 @@ class CatalogueDB:
 def catalogue_db() -> Iterator[CatalogueDB]:
     url = os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL")
     if not url:
-        pytest.skip("project-isolated PostgreSQL required; skip is not evidence")
+        pytest.fail(
+            "Configure an isolated PostgreSQL DSN in SPEECHNEXUS_TEST_DATABASE_URL; "
+            "skip is not evidence"
+        )
     suffix = uuid.uuid4().hex[:12]
     schema, role = "sn_voices_" + suffix, "sn_voices_reader_" + suffix
     engine = create_engine(

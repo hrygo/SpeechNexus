@@ -101,7 +101,10 @@ def reader_foundation() -> Iterator[ReaderFoundation]:
     """Production schema, normal writers, and a separate read-only login in a fresh DB."""
     root_url = os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL")
     if not root_url:
-        pytest.skip("An explicitly configured isolated PostgreSQL server is required")
+        pytest.fail(
+            "Configure an isolated PostgreSQL DSN in SPEECHNEXUS_TEST_DATABASE_URL; "
+            "skip is not evidence"
+        )
     with isolated_reader_database(root_url) as url:
         schema = "sn_reader_foundation_" + uuid.uuid4().hex[:12]
         role = "sn_reader_login_" + uuid.uuid4().hex[:12]
@@ -197,7 +200,10 @@ def reader_aware_database(request: pytest.FixtureRequest) -> Iterator[JobDatabas
     # to the unmodified dual-database Job fixture and its configuration gate.
     root_url = os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL")
     if not root_url:
-        pytest.skip("An explicitly configured isolated PostgreSQL server is required")
+        pytest.fail(
+            "Configure an isolated PostgreSQL DSN in SPEECHNEXUS_TEST_DATABASE_URL; "
+            "skip is not evidence"
+        )
     if request.param != "postgresql":
         pytest.fail("The production execution reader requires PostgreSQL")
     with (

@@ -19,7 +19,10 @@ pytestmark = pytest.mark.integration
 def test_disable_root_accepts_not_null_but_rejects_extra_unique(extra_unique: bool) -> None:
     url = os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL")
     if not url:
-        pytest.skip("An isolated PostgreSQL DSN is required")
+        pytest.fail(
+            "Configure an isolated PostgreSQL DSN in SPEECHNEXUS_TEST_DATABASE_URL; "
+            "skip is not evidence"
+        )
     schema = "sn_disable_constraints_" + uuid.uuid4().hex[:10]
     root = Path(__file__).resolve().parents[2]
     engine = create_engine(

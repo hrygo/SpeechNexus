@@ -105,17 +105,19 @@ class JobDatabase:
 
 @pytest.fixture(params=["postgresql", "mysql"])
 def database(request: pytest.FixtureRequest) -> Iterator[JobDatabase]:
-    configured = [os.environ.get(variable) for variable in VARIABLES]
-    if any(configured) and not all(configured):
-        pytest.fail("Production Job behavior requires both isolated PG and InnoDB DSNs")
-    if not all(configured):
-        pytest.skip("Configure both isolated database DSNs; skip is not qualification evidence")
+    configured = {variable: os.environ.get(variable) for variable in VARIABLES}
+    missing = [variable for variable, value in configured.items() if not value]
+    if missing:
+        pytest.fail(
+            "Production Job behavior requires both isolated PG and InnoDB DSNs; missing "
+            + ", ".join(missing)
+        )
     param = request.param
     if isinstance(param, tuple):
         dialect, migration_revision = param
     else:
         dialect, migration_revision = param, "head"
-    url = cast(str, configured[0 if dialect == "postgresql" else 1])
+    url = cast(str, configured[dialect])
     suffix = uuid.uuid4().hex[:12]
     schema, role = "sn_jobs_" + suffix, "sn_jobs_role_" + suffix
     pool: JobPool | None = None

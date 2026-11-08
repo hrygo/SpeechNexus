@@ -38,7 +38,10 @@ def test_source_writer_authority_replay_and_narrow_grants(
 ) -> None:
     url = os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL")
     if not url:
-        pytest.skip("An isolated PostgreSQL DSN is required")
+        pytest.fail(
+            "Configure an isolated PostgreSQL DSN in SPEECHNEXUS_TEST_DATABASE_URL; "
+            "skip is not evidence"
+        )
     suffix = uuid.uuid4().hex[:10]
     schema, writer, business = "sn_src_" + suffix, "sn_src_w_" + suffix, "sn_src_b_" + suffix
     qualification_role = "sn_src_q_" + suffix

@@ -1200,7 +1200,7 @@
         "docs/architecture/deployment-units.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "基础 Compose 声明 postgres、minio、minio-init、api、gateway；node-controller、runtime-delivery-worker、job-dispatch-worker、asset-maintain 未纳入；binding-disable、migration、engine-registration 和 web 是显式 profile；工作台有独立运行工厂；干净制品、全部必要角色与跨机部署未核验。角色最小授权：#546/#552/#554/#560 已为声音发布、发音发布、profile 写入与 Job writer 建立启动期列级/表级权限校验，并以真实角色反例守住「owner 额外误授」类风险；#560 起发布角色校验扫描 schema 内全部表、白名单外一律拒绝，同类校验的 5 处剩余缺口已由 #561（PR #564）收口，五处共用 `startup_privileges.py` 与「白名单外一律拒绝」标准；Job writer 的声明表/可写列/只读表面精确到列集，升级迁移有 committed 用例验证可恢复。",
+      "implementation": "基础 Compose 声明 postgres、minio、minio-init、api、gateway；node-controller、runtime-delivery-worker、asset-maintain 未纳入；job-dispatch-worker 以 opt-in `job-dispatch` profile 纳入（#571），minio-init 同步创建并版本化 result 桶、worker 依赖其成功退出，`voice_validation` 泳道授权在 claim 之前探测；binding-disable、migration、engine-registration、web 与 job-dispatch 是显式 profile；工作台有独立运行工厂；干净制品、全部必要角色与跨机部署未核验。角色最小授权：#546/#552/#554/#560 已为声音发布、发音发布、profile 写入与 Job writer 建立启动期列级/表级权限校验，并以真实角色反例守住「owner 额外误授」类风险；#560 起发布角色校验扫描 schema 内全部表、白名单外一律拒绝，同类校验的 5 处剩余缺口已由 #561（PR #564）收口，五处共用 `startup_privileges.py` 与「白名单外一律拒绝」标准；Job writer 的声明表/可写列/只读表面精确到列集，升级迁移有 committed 用例验证可恢复。端到端缺口（#572）：启用 `job-dispatch` profile 后仍需 API 侧 writer/admission DSN、迁移、派发角色与五组 grant、真实引擎注册、匹配的 result 桶与 gateway 生命周期，任一缺失 Job 会静默卡在 pending/running。",
       "integration": "默认部署中部分必要进程或能力可能未启用，需以当前清单实核；已核对静态工厂或配置；运行时与端到端接线未实测。",
       "verification": "孤立组件测试不证明完整部署或真实单请求停止；本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
       "gap": "默认部署中部分必要进程或能力可能未启用，需以当前清单实核；已核对静态工厂或配置；运行时与端到端接线未实测。 孤立组件测试不证明完整部署或真实单请求停止；本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
@@ -1227,7 +1227,8 @@
         }
       ],
       "issues": [
-        561
+        561,
+        572
       ]
     },
     {

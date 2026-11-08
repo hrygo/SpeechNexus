@@ -235,7 +235,9 @@ writer 还有一组**不在 Job 授权函数里**的基线授权：8 张发布/�
 `speech_publication_retirements`、`speech_binding_revisions`、`speech_assets`、
 `speech_pronunciation_revisions`）、`admission_operations` 与 `coordination_jobs` 的 `SELECT`，
 以及 `coordination_jobs` 的 4 个认领列 `UPDATE`。缺任一项，API 的 `JobRuntime.open()` 会以
-`Public Job writer startup rejected` 拒绝启动，而 Job 创建随之返回 `503`。下面的脚本已包含
+`Public Job writer startup rejected` 拒绝启动：容器进入 `Restarting`，`/readyz` 不可达，
+Job 创建得到的是**连接失败而非任何 HTTP 状态码**（实测 `curl(7)`／`http_code=000`），
+不是早期版本所写的 `503`。下面的脚本已包含
 这组基线（共 219 条语句）。
 
 先在当前 shell 载入环境文件，并准备迁移 owner 连接。`SN_ADMIN_DSN` 走获准的秘密渠道，
@@ -345,7 +347,7 @@ if "voice_validation" in kinds:
 
 # API 的 Job writer 还要读 8 张发布/素材表,并读协调表、更新认领列;这些基线授权
 # 不在上面的 Job 授权函数里。缺任一项,`JobRuntime.open()` 会以
-# "Public Job writer startup rejected" 拒绝启动(Job 创建随之为 503)。
+# "Public Job writer startup rejected" 拒绝启动;容器 Restarting,Job 创建是连接失败
 baseline_select = (
     "speech_workspaces",
     "speech_publications",
@@ -624,8 +626,10 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 ## 10. 第 7 步：提交并观察一次 Job
 
 六项前置满足后，`POST /v1/nexus/jobs` 才不再返回 `503`。异步 ASR 还需要一个 `ready`
-的输入 Asset；上传音频需要已安装的真实检查器，未安装时上传停在 `staging`，这不在六项计数
-内，但同样会阻止 Job 创建。
+的输入 Asset；上传音频需要已装配的真实检查器，未装配时上传**直接失败**
+`503 asset_inspection_unavailable`（`x-should-retry: false`），且不会产生 `staging`/`reserved`
+行——`reserve_asset()` 在写入任何记录之前就抛出该错（`speech/domain/assets.py`）。这不在六项
+计数内，但同样阻止 Job 创建。装配缺口见 #589。
 
 上传输入资产（`purpose` 只接受 `asr_input`、`voice_reference`、`text_input`）：
 
@@ -636,7 +640,8 @@ curl -sS -X POST http://127.0.0.1:8000/v1/nexus/assets \
   -F file=@./sample.wav   # 换成已获准的测试音频；不要用真实业务录音
 ```
 
-预期 `201`，响应里的 `status` 为 `ready`（未安装真实检查器时为 `staging`，此时先解决检查器）。
+预期 `201`，响应里的 `status` 为 `ready`。若返回 `503 asset_inspection_unavailable`，说明音频
+检查器未装配（不是配置错），先按 #589 解决装配；此时不会留下 `staging` 记录可供重试。
 
 创建 Job：
 

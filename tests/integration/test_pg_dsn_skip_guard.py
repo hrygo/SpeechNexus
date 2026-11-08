@@ -506,6 +506,15 @@ def _walk_local(node: ast.AST) -> Iterable[ast.AST]:
         yield from _walk_local(child)
 
 
+def _walk_markers(node: ast.AST) -> Iterable[ast.AST]:
+    """Walk module and class bodies for marker calls, stopping at functions."""
+    if isinstance(node, FunctionNode):
+        return
+    yield node
+    for child in ast.iter_child_nodes(node):
+        yield from _walk_markers(child)
+
+
 def _walk_guarded(
     node: ast.AST,
     guards: list[ast.If],
@@ -815,7 +824,7 @@ class Analyzer:
         if not (module.path.startswith("tests/integration/") and module.reads_database):
             return []
         findings: list[SkipFinding] = []
-        for node in _walk_local(module.tree):
+        for node in _walk_markers(module.tree):
             if not isinstance(node, ast.Call):
                 continue
             kind = _marker_kind(node.func, module)

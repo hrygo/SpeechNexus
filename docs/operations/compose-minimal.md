@@ -16,7 +16,7 @@ date: 2026-10-28
 | 能力 | 当前结论 | 依赖 / 原因 |
 | --- | --- | --- |
 | 公开 TTS `POST /v1/audio/speech` | **本 Compose 未装配** | 同步 TTS 工厂已实现，但本配置只预置 gateway 私有 file-TTS 配置引用，未提供 API 配方及结算数据库配置；其他部署的受控实测见[窗口记录](../archive/audits/2026-11-03-controlled-tts-prepare.md) |
-| 异步 Job 完整执行链 | **未贯通** | 本配置不启动 `job-dispatch-worker`；API 的创建和读取路由需要另配 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL`；原子准入还需独立的 `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL` 与同库 admission 角色，未配置时创建返回 503（读取与取消仍可用）。派发入口已装配生产 planner 与结果发布器，但本配置既不启动它，也不提供真实引擎。当前范围见 [F-JOB](../prd.md#f-job) 和 [F-ASYNC](../prd.md#f-async) |
+| 异步 Job 完整执行链 | **未贯通** | 默认 `up` 不启动 `job-dispatch-worker`；`job-dispatch` profile 可按需启动该派发进程，但需要单独的 worker DSN（`SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL`，示例中默认为空，空值在领取租约前 fail-closed）与真实引擎。API 的创建和读取路由需要另配 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL`；原子准入还需独立的 `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL` 与同库 admission 角色，未配置时创建返回 503（读取与取消仍可用）。派发入口已装配生产 planner 与结果发布器，但本配置不提供真实引擎。当前范围见 [F-JOB](../prd.md#f-job) 和 [F-ASYNC](../prd.md#f-async) |
 | 公开同步 ASR 成功响应 | **本部署未验证** | 文件 worker 已有成功终态写入；历史部署曾返回 `504 operation_timeout`，见[本机端到端记录](../archive/operations/local-end-to-end.md#112-公开-v1audiotranscriptions已执行504未成功)。不能将那次结果或组件实现推定为当前部署的公开链路验收 |
 | 节点控制器、runtime delivery、asset maintenance | **未装配** | 本配置有意排除这些服务；不能以本 Compose 的探活结果证明完整部署与发布资格 |
 | 真实模型质量、容量、GPU、物理多节点资格 | **未证明** | Compose 启动、健康检查和合成配置都不能替代模型/设备/拓扑验收 |
@@ -57,12 +57,14 @@ gateway
 api
 ```
 
-`deploy/compose.yaml` 顶部的注释明确排除五项：`node-controller`、
-`runtime-delivery-worker`、`job-dispatch-worker`、`asset-maintain`、
-`voice-evidence-worker`（自动记录需要独立的 recorder DSN 与报告对象存储读取凭据）。`migrate` 和
-`engine-register` 分别属于按需启用的 `migration` 和 `engine-registration` profile；
-`binding-disable-worker` 属于 `binding-disable` profile，`admin` / `workbench` 属于
-`web` profile，因此都不属于上面的基础集合。
+`deploy/compose.yaml` 顶部的注释明确排除四项：`node-controller`、
+`runtime-delivery-worker`、`asset-maintain`、`voice-evidence-worker`（自动记录需要独立的
+recorder DSN 与报告对象存储读取凭据）。`migrate` 和 `engine-register` 分别属于按需启用的
+`migration` 和 `engine-registration` profile；`binding-disable-worker` 属于
+`binding-disable` profile，`job-dispatch-worker` 属于 `job-dispatch` profile，
+`admin` / `workbench` 属于 `web` profile，因此都不属于上面的基础集合。Job 派发
+profile 的变量、默认 `dispatch_kinds` 与启用 `voice_validation` 所需的额外授权见
+[deploy/README.md](../../deploy/README.md#job-dispatcher-job-dispatch-profile)。
 
 默认网络固定使用 `172.28.0.0/24`，MinIO 地址为 `172.28.0.10`；启动前须核对该网段
 不会与宿主机路由或其他容器网络冲突。若需使用其他网段，部署配置中的 Compose 子网、

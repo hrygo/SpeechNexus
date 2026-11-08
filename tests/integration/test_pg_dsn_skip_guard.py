@@ -677,6 +677,13 @@ class Analyzer:
             if target.id in module.top_functions:
                 return module.top_functions[target.id]
             return self._resolve_import(module, target.id)
+        if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name):
+            imported_target = module.imports.get(target.value.id)
+            if imported_target is not None:
+                base, attribute = imported_target
+                path = self._module_path(f"{base}.{attribute}")
+                if path is not None:
+                    return self.symbols.get((path, target.attr))
         dotted = _dotted_name(target)
         if dotted is None:
             return None
@@ -684,9 +691,9 @@ class Analyzer:
         for index in range(len(parts) - 1, 0, -1):
             alias = ".".join(parts[:index])
             attribute = ".".join(parts[index:])
-            imported = module.module_aliases.get(alias)
-            if imported is not None:
-                path = self._module_path(imported)
+            imported_module = module.module_aliases.get(alias)
+            if imported_module is not None:
+                path = self._module_path(imported_module)
                 if path is not None:
                     return self.symbols.get((path, attribute))
         if len(parts) == 2:
@@ -1245,4 +1252,31 @@ def test_guard_flags_configured_dict_guard() -> None:
     findings = scan_files({"tests/integration/test_case.py": source})
     assert [(finding.line, finding.guard_variables) for finding in findings] == [
         (12, (PG_VARIABLE, MYSQL_VARIABLE))
+    ]
+
+
+def test_guard_flags_cross_file_module_import() -> None:
+    files = {
+        "tests/integration/test_case.py": _dedent(
+            """
+            import os
+            from tests.support import pg_helper
+
+            def test_case() -> None:
+                pg_helper.require_pg(os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL"))
+            """
+        ),
+        "tests/support/pg_helper.py": _dedent(
+            """
+            import pytest
+
+            def require_pg(dsn: str | None) -> None:
+                if not dsn:
+                    pytest.skip("not evidence")
+            """
+        ),
+    }
+    findings = scan_files(files)
+    assert [(finding.path, finding.function) for finding in findings] == [
+        ("tests/support/pg_helper.py", "require_pg")
     ]

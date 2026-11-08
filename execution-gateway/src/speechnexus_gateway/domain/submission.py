@@ -167,10 +167,17 @@ class ExecutionErrorCode(StrEnum):
 
 
 class DispatchResult(StrEnum):
-    """What the gateway knows after attempting one engine request."""
+    """What the gateway knows after attempting one engine request.
+
+    ``REJECTED`` is a refusal the gateway proved deterministically while it still
+    held the frozen request: the command cannot be served and no engine request
+    exists. ``NOT_SENT`` stays the conservative fact for a hand-off that did not
+    happen for any other local reason, so it keeps the unknown transport outcome.
+    """
 
     ACKNOWLEDGED = "acknowledged"
     NOT_SENT = "not_sent"
+    REJECTED = "rejected"
     RESPONSE_LOST = "response_lost"
 
 

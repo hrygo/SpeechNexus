@@ -155,6 +155,13 @@ class SubmitExecutionService:
             if outcome.engine_request_id is None:
                 raise ValueError("acknowledged dispatch carries an engine request id")
             intent.mark_dispatched(outcome.engine_request_id, at=outcome.observed_at)
+        elif outcome.result is DispatchResult.REJECTED:
+            # A deterministic pre-send refusal the gateway proved while it still
+            # held the request. It is terminal and never retryable, and it must
+            # stay distinguishable from every transport-unknown fallback.
+            intent.mark_not_dispatched_failure(
+                ExecutionErrorCode.INVALID_EXECUTION_REQUEST, at=outcome.observed_at
+            )
         elif outcome.result is DispatchResult.NOT_SENT:
             intent.mark_not_dispatched_failure(
                 ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN, at=outcome.observed_at

@@ -21,7 +21,7 @@ Make 目标可能启动受管服务。先核对实际宿主、服务、端口与
 
 ### 跳过守护
 
-`test_pg_dsn_skip_guard.py` 静态扫描 `tests/integration` 与 `tests/support`，解析 `pytest.skip`、`pytest.xfail`、`pytest.mark.skipif` 及对应的导入别名，并沿同文件嵌套函数、跨文件共享 helper 的调用参数传播 DSN 来源。缺任一数据库 DSN 的跳过会使守护失败并报告文件、行号与变量；白名单为空。`shutil.which("psql")`、引擎 dialect 分支、MinIO 与 Workbench 专用变量属于非数据库前置，不按数据库缺 DSN 处理。
+`test_pg_dsn_skip_guard.py` 静态扫描 `tests/integration` 与 `tests/support`，解析 `pytest.skip`、`pytest.xfail`、`pytest.mark.skipif` 及对应的导入别名，并沿同文件嵌套函数、跨文件共享 helper 的调用参数传播 DSN 来源。`tests/support` 中自读数据库 DSN 的模块不依赖调用参数传播，其跳过直接上报，fixture 注入也不例外。缺任一数据库 DSN 的跳过会使守护失败并报告文件、行号与变量；白名单为空。`shutil.which("psql")`、引擎 dialect 分支、MinIO 与 Workbench 专用变量属于非数据库前置，不按数据库缺 DSN 处理。
 
 ### 独立 schema 生命周期
 

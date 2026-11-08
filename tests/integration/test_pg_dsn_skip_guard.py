@@ -1,7 +1,8 @@
-"""Guard against PostgreSQL integration cases degrading a missing DSN into a skip.
+"""Guard against database integration cases degrading a missing DSN into a skip.
 
-``tests/integration/AGENTS.md`` requires PostgreSQL cases to fail, not skip, when
-``SPEECHNEXUS_TEST_DATABASE_URL`` is absent. This module scans the integration
+``tests/integration/AGENTS.md`` requires PostgreSQL and dual-database cases to
+fail, not skip, when ``SPEECHNEXUS_TEST_DATABASE_URL`` or
+``SPEECHNEXUS_TEST_MYSQL_URL`` is absent. This module scans the integration
 tests and the shared ``tests/support`` fixtures they call, then reports skip-like
 outcomes (``pytest.skip``, ``pytest.xfail``, ``skipif`` markers) that are
 reachable while a database DSN is missing.
@@ -415,8 +416,8 @@ def _is_non_dsn_prerequisite(expr: ast.expr, scope: Scope, depth: int = 0) -> bo
     if isinstance(expr, ast.BoolOp):
         return all(_is_non_dsn_prerequisite(value, scope, depth + 1) for value in expr.values)
     if isinstance(expr, ast.Compare):
-        for comparator in expr.comparators:
-            if isinstance(comparator, ast.Constant) and comparator.value in DIALECTS:
+        for side in (expr.left, *expr.comparators):
+            if _string_values(side, scope) & DIALECTS:
                 return True
         for side in (expr.left, *expr.comparators):
             if isinstance(side, ast.Call) and _dotted_name(side.func) in NON_DSN_CALLS:
@@ -771,7 +772,9 @@ class Analyzer:
             module.reads_database = any(
                 self._reads_database(function) for function in module.functions
             ) or self._module_scope_reads_database(module)
-            if module.path.startswith("tests/integration/") and module.reads_database:
+            if module.path.startswith(("tests/integration/", "tests/support/")) and (
+                module.reads_database
+            ):
                 for function in module.functions:
                     function.context = True
             for function in module.functions:
@@ -1035,7 +1038,7 @@ def test_no_database_dsn_skip_on_missing_path() -> None:
         for finding in findings
     )
     assert not findings, (
-        "PostgreSQL integration cases must fail instead of skipping when a database "
+        "Database integration cases must fail instead of skipping when a database "
         f"DSN is missing:\n{details}"
     )
 
@@ -1280,3 +1283,41 @@ def test_guard_flags_cross_file_module_import() -> None:
     assert [(finding.path, finding.function) for finding in findings] == [
         ("tests/support/pg_helper.py", "require_pg")
     ]
+
+
+def test_guard_flags_support_fixture_self_read() -> None:
+    source = _dedent(
+        """
+        import os
+        import pytest
+
+        @pytest.fixture
+        def fixture() -> None:
+            dsn = os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL")
+            if not dsn:
+                pytest.skip("not evidence")
+        """
+    )
+    findings = scan_files({"tests/support/fixture.py": source})
+    assert [(finding.path, finding.line, finding.function) for finding in findings] == [
+        ("tests/support/fixture.py", 8, "fixture")
+    ]
+
+
+def test_guard_allows_dialect_constant() -> None:
+    source = _dedent(
+        """
+        import os
+        import pytest
+
+        DIALECT = "postgresql"
+
+        def test_case(dialect: str) -> None:
+            dsn = os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL")
+            if not dsn:
+                pytest.fail("missing PostgreSQL")
+            if dialect != DIALECT:
+                pytest.skip("InnoDB holds this schema")
+        """
+    )
+    assert scan_files({"tests/integration/test_case.py": source}) == []

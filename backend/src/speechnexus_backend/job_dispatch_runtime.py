@@ -316,6 +316,37 @@ def build_dispatch_dependencies(settings: JobDispatchSettings) -> DispatchDepend
     return DispatchDependencies(planner, results, pool)
 
 
+# Startup probes are module-level so the read-only operations preflight can compare
+# its copies against this single declaration instead of drifting (see
+# ``tests/unit/test_async_job_prereqs_check.py``). The statements run unqualified
+# inside the pool's ``search_path``; a preflight running psql must set the same
+# search_path. Order is the startup order.
+DISPATCH_ROLE_GUARD_SQL = (
+    "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(%(role)s::name,%(schema)s,'CREATE') "
+    "OR pg_catalog.pg_has_role(%(role)s::name,d.datdba,'MEMBER') OR EXISTS ("
+    "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
+    "ON n.oid=c.relnamespace WHERE n.nspname=%(schema)s "
+    "AND pg_catalog.pg_has_role(%(role)s::name,c.relowner,'MEMBER')) AS forbidden "
+    "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
+    "WHERE r.rolname=%(role)s AND d.datname=CURRENT_DATABASE()"
+)
+DISPATCH_STARTUP_PROBES: tuple[str, ...] = (
+    "SELECT job_id FROM speech_jobs LIMIT 0",
+    "SELECT job_id, event_seq, state, occurred_at_us, kind, progress_unit, "
+    "progress_completed, progress_total FROM speech_job_events LIMIT 0",
+    "SELECT job_id FROM coordination_jobs LIMIT 0",
+    "SELECT operation_id, request_document FROM admission_operations LIMIT 0",
+    "SELECT attempt_id FROM admission_attempts LIMIT 0",
+    "SELECT request_document FROM admission_requests LIMIT 0",
+    "SELECT lease_id, lease_state, cleanup_state, deadline_at_us FROM admission_leases LIMIT 0",
+    "SELECT artifact_id FROM speech_artifacts LIMIT 0",
+)
+DISPATCH_VOICE_VALIDATION_PROBES: tuple[str, ...] = (
+    "SELECT draft_id, revision FROM speech_voice_draft_revisions LIMIT 0",
+    "SELECT workspace_id, asset_id FROM speech_assets LIMIT 0",
+)
+
+
 class JobDispatchRuntime:
     """Own the worker pool, gateway client and dispatcher lifetime."""
 
@@ -412,50 +443,26 @@ class JobDispatchRuntime:
                 raise ValueError("Dispatch requires a non-owner role without DDL")
             for role in dict.fromkeys((identities["login"], identities["effective"])):
                 row = connection.execute(
-                    "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(%s::name,%s,'CREATE') "
-                    "OR pg_catalog.pg_has_role(%s::name,d.datdba,'MEMBER') OR EXISTS ("
-                    "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
-                    "ON n.oid=c.relnamespace WHERE n.nspname=%s "
-                    "AND pg_catalog.pg_has_role(%s::name,c.relowner,'MEMBER')) AS forbidden "
-                    "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
-                    "WHERE r.rolname=%s AND d.datname=CURRENT_DATABASE()",
-                    (
-                        role,
-                        self.settings.database_schema,
-                        role,
-                        self.settings.database_schema,
-                        role,
-                        role,
-                    ),
+                    DISPATCH_ROLE_GUARD_SQL,
+                    {"role": role, "schema": self.settings.database_schema},
                 ).fetchone()
                 if row is None or row["forbidden"]:
                     raise ValueError("Dispatch requires a non-owner role without DDL")
-            for statement in (
-                "SELECT job_id FROM speech_jobs LIMIT 0",
-                "SELECT job_id, event_seq, state, occurred_at_us, kind, progress_unit, "
-                "progress_completed, progress_total FROM speech_job_events LIMIT 0",
-                "SELECT job_id FROM coordination_jobs LIMIT 0",
-                "SELECT operation_id, request_document FROM admission_operations LIMIT 0",
-                "SELECT attempt_id FROM admission_attempts LIMIT 0",
-                "SELECT request_document FROM admission_requests LIMIT 0",
-                "SELECT lease_id, lease_state, cleanup_state, deadline_at_us "
-                "FROM admission_leases LIMIT 0",
-                "SELECT artifact_id FROM speech_artifacts LIMIT 0",
-            ):
+            for statement in DISPATCH_STARTUP_PROBES:
                 connection.execute(statement)
             # The validation lane reads two facts outside the dispatcher's base
             # grants. Probe them only when this process claims that kind so a
             # missing ``voice_validation_worker_grants`` refuses startup here,
             # before any dispatcher exists and before any lease can be claimed.
             if "voice_validation" in self.settings.kinds:
-                for statement in (
-                    "SELECT draft_id, revision FROM speech_voice_draft_revisions LIMIT 0",
-                    "SELECT workspace_id, asset_id FROM speech_assets LIMIT 0",
-                ):
+                for statement in DISPATCH_VOICE_VALIDATION_PROBES:
                     connection.execute(statement)
 
 
 __all__ = [
+    "DISPATCH_ROLE_GUARD_SQL",
+    "DISPATCH_STARTUP_PROBES",
+    "DISPATCH_VOICE_VALIDATION_PROBES",
     "DispatchDependencies",
     "DispatchDependenciesUnavailableError",
     "JobDispatchRuntime",

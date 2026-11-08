@@ -162,7 +162,7 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | 症状 | 原因 |
 | --- | --- |
 | `POST /v1/nexus/jobs` 返回 `503 job_unavailable` | writer 或 admission DSN 仍为空，或 `api` 未重建 |
-| API 反复重启，日志点名 `authority` / `permission` | 角色权限面与声明不符（见第 5 节，授权未安装或授予了更宽权限） |
+| API 反复重启，日志点名 `authority` / `permission` | 角色权限面与声明不符（见第 6 节，授权未安装或授予了更宽权限） |
 | 只配 writer 就能创建、但返回 5xx | 缺少 admission 同库身份；不要用 writer 顶替 |
 
 命令执行状态：DSN 生成脚本已在本机对 env 副本执行；`up -d api`、日志检查与 `/readyz`
@@ -194,7 +194,10 @@ SPEECHNEXUS_MIGRATION_DATABASE_URL='postgresql://speechnexus:<owner-password>@12
   uv run speechnexus-job-migrate --schema speech
 ```
 
-预期：无 stdout、退出码 `0`。随后 15 张 Job/准入关系应全部存在。下面的查询使用
+预期：无 stdout、退出码 `0`。随后 15 张 Job/准入关系应全部存在。这里的"head"是仓库
+`backend/src/speechnexus_backend/speech/infrastructure/migrations/versions/` 下唯一的
+`alembic heads` 结果；数据库版本低于它时，自检会指出落后并列出缺的 revision，而不是只看
+版本号非空。下面的查询使用
 环境文件里的迁移 DSN，先载入环境（口令来自环境，不进入命令行参数）：
 
 ```bash
@@ -215,7 +218,8 @@ psql "$SPEECHNEXUS_MIGRATION_DATABASE_URL" -Atc \
 | --- | --- |
 | `relation "speech.alembic_version" does not exist` | 迁移未执行，或执行到另一个数据库/schema |
 | 版本号为空 | 迁移中断在版本记录提交前；不要手工写版本表，按[对账恢复](reconciliation-recovery.md)处理 |
-| 版本号低于发布制品 | 镜像或发布制品不匹配；先升级迁移，再启动新版本进程 |
+| 版本号低于发布制品 head | 迁移落后于镜像；自检会列出缺的 revision，先执行迁移再启动新版本进程 |
+| 版本表有多行 | 多个 head 已被应用；先按[对账恢复](reconciliation-recovery.md)收敛再升级 |
 
 ## 6. 第 3 步：前置 3 —— 派发角色与五组 grant
 
@@ -223,6 +227,14 @@ psql "$SPEECHNEXUS_MIGRATION_DATABASE_URL" -Atc \
 `cancellation_reconciliation_grants` 与 `coordination_runtime_grants`。启用
 `voice_validation` 时再加 `voice_validation_worker_grants`（只有两张 `SELECT`），否则 worker
 在领取前拒绝启动。writer 与 admission 也在这里一并安装，三者身份必须互不相同。
+
+writer 还有一组**不在 Job 授权函数里**的基线授权：8 张发布/素材表的 `SELECT`（`speech_workspaces`、
+`speech_publications`、`speech_publication_heads`、`speech_catalog_state`、
+`speech_publication_retirements`、`speech_binding_revisions`、`speech_assets`、
+`speech_pronunciation_revisions`）、`admission_operations` 与 `coordination_jobs` 的 `SELECT`，
+以及 `coordination_jobs` 的 4 个认领列 `UPDATE`。缺任一项，API 的 `JobRuntime.open()` 会以
+`Public Job writer startup rejected` 拒绝启动，而 Job 创建随之返回 `503`。下面的脚本已包含
+这组基线（共 219 条语句）。
 
 先在当前 shell 载入环境文件，并准备迁移 owner 连接。`SN_ADMIN_DSN` 走获准的秘密渠道，
 不要写进命令历史：
@@ -329,6 +341,44 @@ kinds = {
 if "voice_validation" in kinds:
     statements += list(voice_validation_worker_grants(SCHEMA, dispatch))
 
+# API 的 Job writer 还要读 8 张发布/素材表,并读协调表、更新认领列;这些基线授权
+# 不在上面的 Job 授权函数里。缺任一项,`JobRuntime.open()` 会以
+# "Public Job writer startup rejected" 拒绝启动(Job 创建随之为 503)。
+baseline_select = (
+    "speech_workspaces",
+    "speech_publications",
+    "speech_publication_heads",
+    "speech_catalog_state",
+    "speech_publication_retirements",
+    "speech_binding_revisions",
+    "speech_assets",
+    "speech_pronunciation_revisions",
+    "admission_operations",
+    "coordination_jobs",
+)
+for table in baseline_select:
+    statements.append(
+        sql.SQL("GRANT SELECT ON {}.{} TO {}").format(
+            sql.Identifier(SCHEMA), sql.Identifier(table), sql.Identifier(writer)
+        )
+    )
+statements.append(
+    sql.SQL("GRANT UPDATE ({}) ON {}.{} TO {}").format(
+        sql.SQL(", ").join(
+            sql.Identifier(column)
+            for column in (
+                "claim_owner_id",
+                "claim_expires_at_us",
+                "claim_version",
+                "job_state",
+            )
+        ),
+        sql.Identifier(SCHEMA),
+        sql.Identifier("coordination_jobs"),
+        sql.Identifier(writer),
+    )
+)
+
 with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     if conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (gateway_role,)).fetchone() is None:
         raise SystemExit(f"gateway role {gateway_role} is missing; run the baseline roles first")
@@ -386,6 +436,12 @@ printf 'dispatch probes ok\n'
 
 预期输出 `dispatch probes ok`；任一条失败会打印该语句并退出非零，错误信息点名关系
 （例如 `permission denied for table speech_jobs`）。本机已对同一批语句验证通过。
+
+这些探测只覆盖 `SELECT`。派发角色的**写入**列（`speech_jobs` 的 `state`/`status_version`/
+`result_json`/`error_code`/`updated_at_us`，`coordination_jobs` 的 4 个认领列，
+`speech_job_events` 的 8 个事件列，`speech_job_cancellation_not_submitted` 的 3 个列）由自检
+用 `has_column_privilege` 逐列核对；手工核对时可审阅 `job_dispatch_grants` 等函数的
+`GRANT UPDATE (...)` / `GRANT INSERT (...)` 语句。
 
 已部署环境升级后，不要在已有角色上重跑上面的建角色脚本；按
 [deploy/README.md](../../deploy/README.md#job-dispatcher-job-dispatch-profile) 的升级段用
@@ -468,7 +524,9 @@ for line in Path("deploy/compose.env").read_text().splitlines():
         values[key.strip()] = value.strip()
 
 result = values.get("SPEECHNEXUS_EXECUTION_RESULT_BUCKET", "")
-private = Path(values.get("SPEECHNEXUS_PRIVATE_CONFIG_DIR", "deploy/.runtime/private"))
+private = Path(values.get("SPEECHNEXUS_PRIVATE_CONFIG_DIR", ".runtime/private"))
+if not private.is_absolute():
+    private = Path("deploy") / private  # Compose 按 compose.yaml 所在目录解析相对路径
 for name in ("gateway-file-asr.json", "gateway-file-tts.json"):
     configured = json.loads((private / name).read_text())["objects"]["result_bucket"]
     if configured != result:
@@ -557,8 +615,9 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 重建 gateway 后同样重跑上面两条命令；只重建 gateway 不会让 worker 自动换命名空间。
 
 两条启动命令与 `docker inspect` **未在本机验证**（本片不启动完整部署，见第 13 节）。
-自检脚本的第 6 项在合成容器上验证过判定逻辑：能识别"worker 未运行"与"命名空间指向
-另一容器"，也能在网关健康时判 PASS。
+第 6 项的运行时分支**未在真实参考部署上复现**（本片不启动完整拓扑）；它只在一次性的
+合成容器上验证过判定逻辑，不构成部署证据。真实拓扑按上面的 `docker inspect` 与
+`RestartCount` 核对。
 
 ## 10. 第 7 步：提交并观察一次 Job
 
@@ -627,9 +686,15 @@ python3 scripts/dev-env/check-async-job-prereqs.py
 
 判定边界：
 
-- 静态判定读 env、`deploy/compose.yaml` 与私有配置文件形态（存在性、mode、`result_bucket`
-  一致性、`network_mode`/`depends_on` 声明）；
-- 运行时判定只做 `SELECT`、`LIMIT 0` 列权限探测、引擎 `/health` GET 和 `docker inspect` 读取；
+脚本用部署机的 `python3` 运行，兼容 Python 3.9 及以上（不依赖 `uv` 或仓库虚拟环境）。
+
+- 静态判定读 env、`deploy/compose.yaml` 的服务块（键必须在 `environment` 里且非空，注释里的
+  字样不算接线）、私有配置文件形态（存在性、mode、`result_bucket` 一致性、
+  `network_mode`/`depends_on` 声明）；
+- 运行时判定只做 `SELECT`（`has_table_privilege`/`has_column_privilege` 与 `LIMIT 0` 列探测）、
+  引擎 `/health` GET 和 `docker inspect` 读取；
+- 权限项覆盖 writer 的 17 张表 `SELECT`、15 张表的列级 `INSERT`/`UPDATE`（含 `speech_jobs`
+  的 `error_code` 等终止写列），以及派发角色的 8 条启动探测加 20 个写入列；
 - 没有 `psql`、Docker daemon 或数据库从宿主机不可达时，相应运行时证据标 `SKIP` 并说明原因；
 - 对象桶的存在与版本化需要签名凭据，脚本不持有凭据，因此该项恒为 SKIP，靠 `minio-init`
   输出核对；
@@ -674,14 +739,18 @@ FAIL 并点名该键（以下为实测输出节选）：
 | `select version_num from speech.alembic_version` | `0048_voice_evidence_scan_index` |
 | 15 张 Job/准入关系计数 | `15` |
 | 第 4 节的 DSN 生成脚本（作用于 env 副本） | 输出三个角色名，值未打印，mode `0600` |
-| 第 6 节的角色与授权脚本（DSN 派生的角色名与口令） | 输出 `grants: 208 statements`，退出码 `0` |
-| worker 同款列权限探测（8 条）与 owner/DDL 守卫（`f`） | 全部通过 |
+| 第 6 节的角色与授权脚本（DSN 派生的角色名与口令） | 输出 `grants: 219 statements`，退出码 `0` |
+| `JobRuntime.open()`（用第 6 节建出的 writer/admission 角色） | 输出 `OPENED: PublicJobs jobs is not None: True`、`CLOSED` |
+| 撤销 writer 的 8 张表 `SELECT` 后再次 `open()` | 报 `Public Job writer startup rejected`；恢复授权后再次 `OPENED` |
+| worker 同款列权限探测（8 条）、20 个写入列与 owner/DDL 守卫（`f`） | 全部通过 |
+| 同源断言测试（`tests/unit/test_async_job_prereqs_check.py`） | 5 项通过；临时删掉生产的一条探测后第 1 项变红 |
+| `check-async-job-prereqs.py`（Python 3.9.6 / 3.12.14 解析并运行 `--offline`） | 均通过；语法按 3.9 校验 |
 | `check-async-job-prereqs.py` 的全部几种输入 | 见下 |
 | `python3 scripts/dev-env/check-doc-refs.py` | `RESULT PASS`（refs=88，EXTERNAL=1，OK=87） |
 | `ruff format --check .` / `ruff check .` | `1671 files already formatted` / `All checks passed!` |
 | `uv run mypy` | 新增脚本无错误；仓库其余 5 个文件在 macOS 上报 `pidfd_*` 缺失（Linux 限定的既有问题，与本次改动无关） |
 
-自检的四个实测输入：
+自检的实测输入：
 
 | 输入 | 结果 |
 | --- | --- |
@@ -689,6 +758,11 @@ FAIL 并点名该键（以下为实测输出节选）：
 | 同上但 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL` 留空 | 前置 1 FAIL，其余 5 项 PASS，退出码 `1` |
 | 同上但 DSN 指向已迁移并授权的 `127.0.0.1:55492` | 前置 1/2/3 PASS 且带运行时证据；前置 4 FAIL（无 ready 实例），退出码 `1` |
 | 同上但把 `SPEECHNEXUS_EXECUTION_RESULT_BUCKET` 改成别的桶名 | 前置 5 FAIL，点名两份私有配置的 `result_bucket` 不一致 |
+| 同上但撤销 writer 的 8 张表 `SELECT` | 前置 1 FAIL，逐条列出缺的 `SELECT`（旧版脚本在同一输入上 PASS） |
+| 同上但把 `alembic_version` 改回 `0046_public_job_intents` | 前置 2 FAIL，点名落后 head 并列出缺的 `0047`/`0048`（旧版 PASS） |
+| 同上但撤销派发角色的 `UPDATE (error_code)` | 前置 3 FAIL，点名 `speech_jobs.error_code`（旧版 PASS） |
+| api 的两条 DSN 只出现在注释里 | 前置 1 FAIL，说明 `environment` 未接线（旧版 PASS） |
+| `SPEECHNEXUS_PRIVATE_CONFIG_DIR=./.runtime/private` | 前置 4/5 按 `deploy/` 解析到私有配置（旧版判为不存在） |
 
 未在本机验证（附原因）：
 
@@ -699,5 +773,5 @@ FAIL 并点名该键（以下为实测输出节选）：
 | `docker compose ... --profile migration run --rm migrate` | 迁移入口本身已用同一命令对一次性 PG 验证；Compose 侧只验证了解析 |
 | `minio-init` 与 `bucket ready ... versioning enabled` 输出 | 需要运行中的 MinIO 与 bootstrap 凭据 |
 | `engine-register` 与 `"outcome": "registered"` | 没有真实引擎；按项目约定不得用 fake 引擎代替 |
-| `docker compose ... up -d`（`job-dispatch` profile）与 `docker inspect` 网络命名空间 | 没有启动参考部署；第 6 项只用合成容器验证了自检的判定分支 |
+| `docker compose ... up -d`（`job-dispatch` profile）与 `docker inspect` 网络命名空间 | 没有启动参考部署；第 6 项的真实拓扑未复现，判定逻辑只在一次性合成容器上试过 |
 | `POST /v1/nexus/assets`、`POST /v1/nexus/jobs`、`GET /v1/nexus/jobs/{id}` | 需要完整参考部署、真实引擎与 ready 输入资产 |

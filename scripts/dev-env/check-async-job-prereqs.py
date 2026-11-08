@@ -3,8 +3,8 @@
 
 为什么需要它:启用 `job-dispatch` profile 后,`up -d`/`--wait` 仍可能"成功",而 Job
 卡在 `pending`/`running`。缺的往往不是进程,而是 6 项部署前置中的一项:API 的 Job
-writer/admission DSN、迁移、派发角色的五组授权、已注册的 ready 引擎实例、gateway
-的 `result_bucket`,以及 `network_mode: service:gateway` 下的启动顺序。
+writer/admission DSN、迁移到唯一 head、派发角色的读写授权、已注册的 ready 引擎实例、
+gateway 的 `result_bucket`,以及 `network_mode: service:gateway` 下的启动顺序。
 
 本脚本只做判断,不做修复:不改文件、不写数据库、不执行迁移、不重启容器。每项输出
 PASS/FAIL,FAIL 时点名缺的是哪一项;需要 Docker daemon、psql 或对象存储凭据才能判定的
@@ -16,17 +16,23 @@ PASS/FAIL,FAIL 时点名缺的是哪一项;需要 Docker daemon、psql 或对象
   python3 scripts/dev-env/check-async-job-prereqs.py --offline
   python3 scripts/dev-env/check-async-job-prereqs.py --compose-file deploy/compose.yaml
 
-退出码:0 无 FAIL(允许 SKIP);1 至少一项 FAIL;2 参数或路径错误.
+退出码:0 无 FAIL(允许 SKIP);1 至少一项 FAIL(env 文件缺失也是 1);2 参数或
+compose 路径错误.
 
 判定边界:静态检查只读 `deploy/compose.env`、`deploy/compose.yaml` 与私有配置的
-文件形态;运行时检查只做 `SELECT`、`LIMIT 0` 列权限探测、引擎 `/health` GET 和
-`docker inspect` 读取,不插入、不更新、不授权、不建表。授权形状的最终权威仍是进程
-启动校验,不是本脚本。
+文件形态;运行时检查只做 `SELECT`(含 `has_*_privilege` 与 `LIMIT 0` 列探测)、引擎
+`/health` GET 和 `docker inspect` 读取,不插入、不更新、不授权、不建表。脚本验证的是
+"缺少权限"这一类静默失败,不验证"多授予了权限"——后者的权威仍是进程启动校验。
+
+脚本里的探测语句与生产代码同源:常量复制自 `job_dispatch_runtime` 与 `job_runtime`,
+由 `tests/unit/test_async_job_prereqs_check.py` 断言逐字相等,生产改动而脚本未跟随时
+该测试变红。
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import re
@@ -41,9 +47,12 @@ from pathlib import Path
 from typing import Literal
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+VERSIONS_DIR = (
+    REPO_ROOT / "backend/src/speechnexus_backend/speech/infrastructure/migrations/versions"
+)
 
-# `job_dispatch_grants`/`public_job_grants` 的成员由迁移决定;这里只列判定所需的
-# 关系名。顺序不影响结果,缺失项会逐条点名。
+# 迁移必须已建出的 Job/准入关系;缺失时创建或领取必然失败。这些名字都必须是
+# job_runtime 声明的 Job writer 关系(同源测试断言其子集)。
 REQUIRED_JOB_TABLES: tuple[str, ...] = (
     "coordination_jobs",
     "coordination_outbox",
@@ -62,53 +71,278 @@ REQUIRED_JOB_TABLES: tuple[str, ...] = (
     "speech_artifacts",
 )
 
-# 与 job_dispatch_runtime.JobDispatchRuntime._check_role 的启动探测一致:worker 在
-# 领取任何租约前先执行这些语句,因此这里执行同样的语句即可代表"启动能过"。
+# 复制自 job_dispatch_runtime.DISPATCH_STARTUP_PROBES;语句不带 schema 前缀,依赖
+# search_path(psql 由 PGOPTIONS 设置,worker 由连接池设置)。第一项是用于报错的表名。
 DISPATCH_PROBES: tuple[tuple[str, str], ...] = (
-    ("speech_jobs", "SELECT job_id FROM {schema}.speech_jobs LIMIT 0"),
+    ("speech_jobs", "SELECT job_id FROM speech_jobs LIMIT 0"),
     (
         "speech_job_events",
         "SELECT job_id, event_seq, state, occurred_at_us, kind, progress_unit, "
-        "progress_completed, progress_total FROM {schema}.speech_job_events LIMIT 0",
+        "progress_completed, progress_total FROM speech_job_events LIMIT 0",
     ),
-    ("coordination_jobs", "SELECT job_id FROM {schema}.coordination_jobs LIMIT 0"),
+    ("coordination_jobs", "SELECT job_id FROM coordination_jobs LIMIT 0"),
     (
         "admission_operations",
-        "SELECT operation_id, request_document FROM {schema}.admission_operations LIMIT 0",
+        "SELECT operation_id, request_document FROM admission_operations LIMIT 0",
     ),
-    ("admission_attempts", "SELECT attempt_id FROM {schema}.admission_attempts LIMIT 0"),
-    (
-        "admission_requests",
-        "SELECT request_document FROM {schema}.admission_requests LIMIT 0",
-    ),
+    ("admission_attempts", "SELECT attempt_id FROM admission_attempts LIMIT 0"),
+    ("admission_requests", "SELECT request_document FROM admission_requests LIMIT 0"),
     (
         "admission_leases",
-        "SELECT lease_id, lease_state, cleanup_state, deadline_at_us "
-        "FROM {schema}.admission_leases LIMIT 0",
+        "SELECT lease_id, lease_state, cleanup_state, deadline_at_us FROM admission_leases LIMIT 0",
     ),
-    ("speech_artifacts", "SELECT artifact_id FROM {schema}.speech_artifacts LIMIT 0"),
+    ("speech_artifacts", "SELECT artifact_id FROM speech_artifacts LIMIT 0"),
 )
 
+# 复制自 job_dispatch_runtime.DISPATCH_VOICE_VALIDATION_PROBES;只在 kinds 含
+# voice_validation 时探测,与 worker 启动条件一致。
 VOICE_VALIDATION_PROBES: tuple[tuple[str, str], ...] = (
     (
         "speech_voice_draft_revisions",
-        "SELECT draft_id, revision FROM {schema}.speech_voice_draft_revisions LIMIT 0",
+        "SELECT draft_id, revision FROM speech_voice_draft_revisions LIMIT 0",
     ),
-    ("speech_assets", "SELECT workspace_id, asset_id FROM {schema}.speech_assets LIMIT 0"),
+    ("speech_assets", "SELECT workspace_id, asset_id FROM speech_assets LIMIT 0"),
 )
 
-DISPATCHABLE_KINDS = frozenset({"asr", "tts", "voice_design", "voice_clone", "voice_validation"})
-
-# worker 的 owner/DDL 守卫,与启动校验使用同一表达式;结果必须是 `f`。
+# 复制自 job_dispatch_runtime.DISPATCH_ROLE_GUARD_SQL;为真即拒绝启动。
 DISPATCH_ROLE_GUARD = (
-    "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(%(role)s::name, %(schema)s, 'CREATE') "
-    "OR pg_catalog.pg_has_role(%(role)s::name, d.datdba, 'MEMBER') OR EXISTS ("
+    "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(%(role)s::name,%(schema)s,'CREATE') "
+    "OR pg_catalog.pg_has_role(%(role)s::name,d.datdba,'MEMBER') OR EXISTS ("
     "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
-    "ON n.oid = c.relnamespace WHERE n.nspname = %(schema)s "
-    "AND pg_catalog.pg_has_role(%(role)s::name, c.relowner, 'MEMBER')) "
+    "ON n.oid=c.relnamespace WHERE n.nspname=%(schema)s "
+    "AND pg_catalog.pg_has_role(%(role)s::name,c.relowner,'MEMBER')) AS forbidden "
     "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
-    "WHERE r.rolname = %(role)s AND d.datname = CURRENT_DATABASE()"
+    "WHERE r.rolname=%(role)s AND d.datname=CURRENT_DATABASE()"
 )
+
+# worker 在领取租约前只探测 SELECT,写权限靠部署授权;这里补上它实际写入的列,
+# 否则 REVOKE UPDATE (error_code) 之后仍会误报 PASS(终止写会在运行时失败)。
+DISPATCH_WRITE_PROBES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    (
+        "speech_jobs",
+        "UPDATE",
+        ("state", "status_version", "result_json", "error_code", "updated_at_us"),
+    ),
+    (
+        "coordination_jobs",
+        "UPDATE",
+        ("claim_owner_id", "claim_expires_at_us", "claim_version", "job_state"),
+    ),
+    (
+        "speech_job_events",
+        "INSERT",
+        (
+            "job_id",
+            "event_seq",
+            "state",
+            "occurred_at_us",
+            "kind",
+            "progress_unit",
+            "progress_completed",
+            "progress_total",
+        ),
+    ),
+    (
+        "speech_job_cancellation_not_submitted",
+        "INSERT",
+        ("job_id", "observed_at_us", "observer"),
+    ),
+)
+
+# 复制自 job_runtime.REQUIRED_SELECT:API 的 Job writer 启动时要求这些表可读。
+WRITER_REQUIRED_SELECT: tuple[str, ...] = (
+    "speech_workspaces",
+    "speech_publications",
+    "speech_publication_heads",
+    "speech_catalog_state",
+    "speech_publication_retirements",
+    "speech_binding_revisions",
+    "speech_assets",
+    "speech_pronunciation_revisions",
+    "speech_jobs",
+    "speech_job_intents",
+    "speech_job_events",
+    "speech_job_submissions",
+    "speech_job_cancellations",
+    "speech_artifacts",
+    "speech_voice_drafts",
+    "speech_voice_draft_revisions",
+    "speech_voice_metadata_commands",
+)
+
+# 复制自 job_writer_columns.JOB_WRITER_INSERT_COLUMNS:表级 INSERT 会被拒绝,
+# 写者只允许这些列的列级 INSERT。
+WRITER_INSERT_COLUMNS: dict[str, tuple[str, ...]] = {
+    "coordination_jobs": (
+        "job_id",
+        "operation_id",
+        "attempt_id",
+        "initial_event_id",
+        "initial_event_digest",
+        "request_digest",
+    ),
+    "coordination_outbox": (
+        "event_id",
+        "job_id",
+        "event_digest",
+    ),
+    "admission_operations": (
+        "operation_id",
+        "workspace_id",
+        "request_digest",
+        "request_document",
+        "initial_attempt_id",
+        "current_attempt_id",
+        "recorded_at_us",
+    ),
+    "speech_job_intents": (
+        "job_id",
+        "request_digest",
+        "request_document",
+        "recorded_at_us",
+    ),
+    "speech_artifacts": (
+        "artifact_id",
+        "workspace_id",
+        "artifact_kind",
+        "artifact_state",
+        "media_type",
+        "bytes",
+        "sha256",
+        "receipt_id",
+        "source_operation_id",
+        "object_key",
+        "storage_version_id",
+        "created_at_us",
+        "expires_at_us",
+    ),
+    "speech_job_cancellation_not_submitted": (
+        "job_id",
+        "observed_at_us",
+        "observer",
+    ),
+    "speech_jobs": (
+        "job_id",
+        "workspace_id",
+        "kind",
+        "model_id",
+        "request_digest",
+        "idempotency_key_digest",
+        "state",
+        "status_version",
+        "result_json",
+        "error_code",
+        "created_at_us",
+        "updated_at_us",
+        "retry_of_job_id",
+    ),
+    "speech_job_events": (
+        "job_id",
+        "event_seq",
+        "state",
+        "occurred_at_us",
+        "kind",
+        "progress_unit",
+        "progress_completed",
+        "progress_total",
+    ),
+    "speech_job_submissions": (
+        "job_id",
+        "request_id",
+        "client_reference",
+        "effective_configuration_json",
+        "execution_revision",
+        "progress_unit",
+        "progress_total",
+        "submitted_at_us",
+    ),
+    "speech_job_cancellations": (
+        "job_id",
+        "workspace_id",
+        "operation_id",
+        "attempt_id",
+        "request_id",
+        "request_digest",
+        "idempotency_key_digest",
+        "accepted",
+        "requested_at_us",
+    ),
+    "speech_job_cancellation_fences": (
+        "job_id",
+        "accepted_at_us",
+        "request_id",
+    ),
+    "speech_job_cancellation_reconciliations": (
+        "job_id",
+        "attempts",
+        "next_check_at_us",
+        "last_outcome",
+        "settled_at_us",
+        "updated_at_us",
+    ),
+    "speech_voice_drafts": (
+        "draft_id",
+        "generation_job_id",
+        "kind",
+        "status",
+        "head_revision",
+        "metadata_revision",
+        "display_name",
+        "input_json",
+        "binding_json",
+        "created_at_us",
+        "updated_at_us",
+    ),
+    "speech_voice_draft_revisions": (
+        "draft_id",
+        "revision",
+        "kind",
+        "generation_job_id",
+        "input_json",
+        "binding_json",
+        "created_at_us",
+    ),
+    "speech_voice_metadata_commands": (
+        "draft_id",
+        "key_digest",
+        "request_digest",
+        "result_json",
+    ),
+}
+
+# 复制自 job_runtime._JOB_UPDATE_SURFACE:唯一允许的 UPDATE 列面。
+WRITER_UPDATE_COLUMNS: dict[str, tuple[str, ...]] = {
+    "speech_voice_drafts": (
+        "display_name",
+        "metadata_revision",
+        "updated_at_us",
+        "head_revision",
+        "generation_job_id",
+    ),
+    "speech_jobs": (
+        "state",
+        "status_version",
+        "result_json",
+        "error_code",
+        "updated_at_us",
+    ),
+    "coordination_jobs": (
+        "claim_owner_id",
+        "claim_expires_at_us",
+        "claim_version",
+        "job_state",
+    ),
+    "speech_job_cancellation_reconciliations": (
+        "attempts",
+        "next_check_at_us",
+        "last_outcome",
+        "settled_at_us",
+        "updated_at_us",
+    ),
+}
+
+# 复制自 speech.domain.job_dispatch.DispatchJobKind 的取值。
+DISPATCHABLE_KINDS = frozenset({"asr", "tts", "voice_design", "voice_clone", "voice_validation"})
 
 Status = Literal["PASS", "FAIL"]
 
@@ -244,6 +478,8 @@ def psql_select(
     child_env["PGDATABASE"] = dsn.database
     child_env["PGCONNECT_TIMEOUT"] = "5"
     child_env["PGAPPNAME"] = "speechnexus-async-job-prereqs-check"
+    # 探测语句与生产一样不带 schema 前缀,由 search_path 定位。
+    child_env["PGOPTIONS"] = "-c search_path=speech"
     if dsn.password:
         child_env["PGPASSWORD"] = dsn.password
     if dsn.sslmode:
@@ -286,7 +522,7 @@ def probe_database(dsn: Dsn, env: dict[str, str]) -> PsqlResult:
 def read_json(path: Path) -> object | None:
     try:
         document: object = json.loads(path.read_text(encoding="utf-8"))
-    except OSError, ValueError:
+    except (OSError, ValueError):
         return None
     return document
 
@@ -298,12 +534,15 @@ def object_field(document: object, key: str) -> object | None:
     return None
 
 
-def private_dir(env: dict[str, str]) -> Path:
+def private_dir(env: dict[str, str], compose_path: Path) -> Path:
+    """Compose 按 `deploy/compose.yaml` 所在目录解析相对挂载源,这里保持一致。"""
     raw = env.get("SPEECHNEXUS_PRIVATE_CONFIG_DIR", "").strip()
     if not raw:
-        return REPO_ROOT / "deploy/.runtime/private"
+        return compose_path.parent / ".runtime/private"
     path = Path(raw)
-    return path if path.is_absolute() else REPO_ROOT / path
+    if path.is_absolute():
+        return path
+    return (compose_path.parent / path).resolve()
 
 
 def compose_service_block(compose_text: str, service: str) -> str | None:
@@ -329,13 +568,126 @@ def compose_service_block(compose_text: str, service: str) -> str | None:
     return "\n".join(block)
 
 
+def compose_environment(block: str) -> dict[str, str]:
+    """读取服务块 `environment:` 下的键值;注释行与列表形式都按 YAML 语义处理."""
+    values: dict[str, str] = {}
+    lines = block.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip() != "environment:":
+            continue
+        base = len(line) - len(line.lstrip())
+        for inner in lines[index + 1 :]:
+            if not inner.strip():
+                continue
+            indent = len(inner) - len(inner.lstrip())
+            if indent <= base:
+                break
+            text = inner.strip()
+            if text.startswith("#"):
+                continue
+            if text.startswith("- "):
+                key, _separator, value = text[2:].strip().partition("=")
+                values[key.strip()] = value.strip()
+                continue
+            match = re.match(r"^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$", text)
+            if match:
+                values[match.group(1)] = match.group(2).strip()
+        break
+    return values
+
+
+def wired(block: str | None, name: str) -> bool:
+    """键必须出现在该服务的 environment 里且值非空;注释里出现不算."""
+    if block is None:
+        return False
+    return bool(compose_environment(block).get(name, "").strip())
+
+
+def wired_reference(block: str | None, name: str, source: str) -> bool:
+    """该服务的 `name` 必须引用宿主机变量 `source`(如 ${VAR:-})."""
+    if block is None:
+        return False
+    return source in compose_environment(block).get(name, "")
+
+
 def compose_project_name(compose_text: str) -> str:
     match = re.search(r"(?m)^name:\s*([A-Za-z0-9_.-]+)\s*$", compose_text)
     return match.group(1) if match else "speechnexus"
 
 
+def _values_sql(rows: tuple[tuple[str, str], ...]) -> str:
+    return ", ".join(f"('{table}','{column}')" for table, column in rows)
+
+
+def _writer_privilege_sql() -> str:
+    tables = ", ".join(f"'{name}'" for name in WRITER_REQUIRED_SELECT)
+    inserts = _values_sql(
+        tuple(
+            (table, column)
+            for table, columns in WRITER_INSERT_COLUMNS.items()
+            for column in columns
+        )
+    )
+    updates = _values_sql(
+        tuple(
+            (table, column)
+            for table, columns in WRITER_UPDATE_COLUMNS.items()
+            for column in columns
+        )
+    )
+    return (
+        f"SELECT 'missing SELECT on ' || t FROM unnest(ARRAY[{tables}]::text[]) AS t "
+        "WHERE NOT pg_catalog.has_table_privilege(current_user, 'speech.' || t, 'SELECT') "
+        "UNION ALL "
+        f"SELECT 'missing INSERT on ' || v.t || '.' || v.c FROM (VALUES {inserts}) AS v(t, c) "
+        "WHERE NOT pg_catalog.has_column_privilege("
+        "current_user, 'speech.' || v.t, v.c, 'INSERT') "
+        "UNION ALL "
+        f"SELECT 'missing UPDATE on ' || v.t || '.' || v.c FROM (VALUES {updates}) AS v(t, c) "
+        "WHERE NOT pg_catalog.has_column_privilege("
+        "current_user, 'speech.' || v.t, v.c, 'UPDATE') "
+        "ORDER BY 1"
+    )
+
+
+def _dispatch_write_sql() -> str:
+    inserts = _values_sql(
+        tuple(
+            (table, column)
+            for table, privilege, columns in DISPATCH_WRITE_PROBES
+            if privilege == "INSERT"
+            for column in columns
+        )
+    )
+    updates = _values_sql(
+        tuple(
+            (table, column)
+            for table, privilege, columns in DISPATCH_WRITE_PROBES
+            if privilege == "UPDATE"
+            for column in columns
+        )
+    )
+    return (
+        f"SELECT 'missing INSERT on ' || v.t || '.' || v.c FROM (VALUES {inserts}) AS v(t, c) "
+        "WHERE NOT pg_catalog.has_column_privilege("
+        "current_user, 'speech.' || v.t, v.c, 'INSERT') "
+        "UNION ALL "
+        f"SELECT 'missing UPDATE on ' || v.t || '.' || v.c FROM (VALUES {updates}) AS v(t, c) "
+        "WHERE NOT pg_catalog.has_column_privilege("
+        "current_user, 'speech.' || v.t, v.c, 'UPDATE') "
+        "ORDER BY 1"
+    )
+
+
+def _summarize(lines: list[str], limit: int = 6) -> str:
+    head = ";".join(lines[:limit])
+    if len(lines) > limit:
+        return f"{head};…共 {len(lines)} 项"
+    return head
+
+
 def check_api_job_dsns(env: dict[str, str], compose_text: str, offline: bool) -> Prereq:
-    check = Prereq(1, "API 侧 Job writer / admission DSN")
+    check = Prereq(1, "API 侧 Job writer / admission DSN 与 writer 权限")
     parsed: dict[str, Dsn] = {}
     for name in (
         "SPEECHNEXUS_JOB_WRITER_DATABASE_URL",
@@ -364,12 +716,15 @@ def check_api_job_dsns(env: dict[str, str], compose_text: str, offline: bool) ->
             check.fail(
                 "writer 与 admission 不在同一服务器/数据库;启动会比对 current_database 后拒绝"
             )
+    api_block = compose_service_block(compose_text, "api")
+    if api_block is None:
+        check.fail("deploy/compose.yaml 缺少 api 服务")
     for name in (
         "SPEECHNEXUS_JOB_WRITER_DATABASE_URL",
         "SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL",
     ):
-        if name not in compose_text:
-            check.fail(f"deploy/compose.yaml 没有把 {name} 传入 api;env 中的值不会被读取")
+        if not wired(api_block, name):
+            check.fail(f"api 的 environment 没有把 {name} 传入容器;env 中的值不会被读取")
     if offline:
         check.probe("运行时: SKIP — --offline 未执行数据库探测")
         return check
@@ -408,7 +763,95 @@ def check_api_job_dsns(env: dict[str, str], compose_text: str, offline: bool) ->
         check.probe(f"运行时: OK — writer/admission 实测同库 {next(iter(identities.values()))}")
     else:
         check.fail(f"writer/admission 实测不在同一服务器/数据库:{identities}")
+    schema_create = psql_select(
+        writer, env, "SELECT pg_catalog.has_schema_privilege(current_user, 'speech', 'CREATE')"
+    )
+    if not schema_create.ok:
+        check.fail(f"writer 的 schema 权限探测失败:{schema_create.error}")
+        return check
+    if schema_create.stdout.strip() == "t":
+        check.fail("writer 角色持有 speech 的 CREATE;API 启动会按 DDL 权限拒绝")
+    privileges = psql_select(writer, env, _writer_privilege_sql())
+    if not privileges.ok:
+        check.fail(f"writer 的读写权限探测失败:{privileges.error}")
+        return check
+    if privileges.stdout:
+        missing = [line for line in privileges.stdout.splitlines() if line.strip()]
+        check.fail(
+            "writer 缺少启动/写入所需的权限(API 会在启动时拒绝,"
+            "Job 创建返回 503):" + _summarize(missing)
+        )
+        return check
+    check.probe(
+        "运行时: OK — writer/admission 同库、非 owner;"
+        f"{len(WRITER_REQUIRED_SELECT)} 张表可读,INSERT/UPDATE 列权限齐全"
+    )
     return check
+
+
+def migration_graph(
+    versions_dir: Path,
+) -> tuple[dict[str, tuple[str, ...]], set[str]] | None:
+    """解析 Alembic 版本脚本的 revision/down_revision;目录缺失时返回 None."""
+    if not versions_dir.is_dir():
+        return None
+    parents: dict[str, tuple[str, ...]] = {}
+    revisions: set[str] = set()
+    for path in sorted(versions_dir.glob("*.py")):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError):
+            continue
+        values: dict[str, object] = {}
+        for node in tree.body:
+            if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+                continue
+            target = node.targets[0]
+            if not isinstance(target, ast.Name) or target.id not in {"revision", "down_revision"}:
+                continue
+            try:
+                values[target.id] = ast.literal_eval(node.value)
+            except ValueError:
+                continue
+        revision = values.get("revision")
+        if not isinstance(revision, str) or not revision:
+            continue
+        revisions.add(revision)
+        down = values.get("down_revision")
+        if isinstance(down, str):
+            parents[revision] = (down,)
+        elif isinstance(down, tuple):
+            parents[revision] = tuple(item for item in down if isinstance(item, str))
+        else:
+            parents[revision] = ()
+    if not revisions:
+        return None
+    return parents, revisions
+
+
+def migration_heads(versions_dir: Path) -> tuple[set[str], dict[str, tuple[str, ...]]] | None:
+    graph = migration_graph(versions_dir)
+    if graph is None:
+        return None
+    parents, revisions = graph
+    heads = {revision for revision in revisions if revision not in _all_parents(parents)}
+    return heads, parents
+
+
+def _all_parents(parents: dict[str, tuple[str, ...]]) -> set[str]:
+    return {parent for items in parents.values() for parent in items}
+
+
+def _ancestors(revision: str, parents: dict[str, tuple[str, ...]]) -> set[str]:
+    seen: set[str] = set()
+    pending = [revision]
+    while pending:
+        current = pending.pop()
+        for parent in parents.get(current, ()):
+            if parent not in seen:
+                seen.add(parent)
+                pending.append(parent)
+    return seen
 
 
 def check_migration(env: dict[str, str], offline: bool) -> Prereq:
@@ -421,6 +864,19 @@ def check_migration(env: dict[str, str], offline: bool) -> Prereq:
         )
     elif dsn is None:
         check.fail("SPEECHNEXUS_MIGRATION_DATABASE_URL 不是可解析的 postgresql:// 连接串")
+    heads_result = migration_heads(VERSIONS_DIR)
+    if heads_result is None:
+        check.note(f"未找到迁移脚本目录 {VERSIONS_DIR};无法比对 head,只能核对表存在性")
+        heads: set[str] | None = None
+        parents: dict[str, tuple[str, ...]] = {}
+    else:
+        heads, parents = heads_result
+        if len(heads) != 1:
+            check.fail(
+                "迁移脚本存在多个 head:"
+                + ", ".join(sorted(heads))
+                + ";单库只能有一个 head,先合并分支"
+            )
     if offline or dsn is None:
         check.probe("运行时: SKIP — 未执行迁移版本探测")
         return check
@@ -431,13 +887,28 @@ def check_migration(env: dict[str, str], offline: bool) -> Prereq:
     if not probe.ok:
         check.fail(f"迁移身份无法连接:{probe.error}")
         return check
-    version = psql_select(dsn, env, "SELECT version_num FROM speech.alembic_version")
+    version = psql_select(
+        dsn,
+        env,
+        "SELECT string_agg(version_num, ',' ORDER BY version_num) FROM speech.alembic_version",
+    )
     if not version.ok:
         check.fail("speech.alembic_version 不存在或不可读;迁移未执行")
+        return check
+    version_count = psql_select(dsn, env, "SELECT count(*)::text FROM speech.alembic_version")
+    if not version_count.ok:
+        check.fail(f"迁移版本表查询失败:{version_count.error}")
+        return check
+    if version_count.stdout.strip() not in {"", "1"}:
+        check.fail(
+            f"speech.alembic_version 有 {version_count.stdout.strip()} 行;"
+            "多个版本行说明多个 head 已应用,先按对账流程收敛"
+        )
         return check
     if not version.stdout:
         check.fail("speech.alembic_version 没有版本行;迁移未提交")
         return check
+    database_version = version.stdout.strip()
     placeholders = ", ".join(f"'{name}'" for name in REQUIRED_JOB_TABLES)
     existing = psql_select(
         dsn,
@@ -450,17 +921,36 @@ def check_migration(env: dict[str, str], offline: bool) -> Prereq:
         check.fail(f"Job 表存在性查询失败:{existing.error}")
         return check
     present = {name for name in existing.stdout.split(",") if name}
-    missing = [name for name in REQUIRED_JOB_TABLES if name not in present]
-    if missing:
-        check.fail("缺少 Job/准入关系:" + ", ".join(missing))
+    missing_tables = [name for name in REQUIRED_JOB_TABLES if name not in present]
+    if missing_tables:
+        check.fail("缺少 Job/准入关系:" + ", ".join(missing_tables))
         return check
-    check.note(f"迁移版本 {version.stdout}")
-    check.probe(f"运行时: OK — alembic_version={version.stdout},{len(present)} 张关系齐全")
+    if heads is not None and len(heads) == 1:
+        head = next(iter(heads))
+        if database_version != head:
+            known = set(parents) | heads
+            if database_version not in known:
+                check.fail(
+                    f"数据库版本 {database_version} 不是本仓库已知 revision;"
+                    f"发布制品 head 是 {head},迁移与制品不匹配"
+                )
+                return check
+            missing = sorted(
+                (_ancestors(head, parents) | {head})
+                - (_ancestors(database_version, parents) | {database_version})
+            )
+            check.fail(
+                f"数据库停在 {database_version},落后 head {head};"
+                f"缺 {len(missing)} 个 revision:{_summarize(missing)}"
+            )
+            return check
+    check.note(f"迁移版本 {database_version}" + (f"(head {next(iter(heads))})" if heads else ""))
+    check.probe(f"运行时: OK — alembic_version={database_version},{len(present)} 张关系齐全")
     return check
 
 
 def check_dispatch_role(env: dict[str, str], compose_text: str, offline: bool) -> Prereq:
-    check = Prereq(3, "派发角色与五组 grant")
+    check = Prereq(3, "派发角色与五组 grant(读 + 写)")
     raw = env.get("SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL", "").strip()
     dsn = parse_dsn(raw) if raw else None
     if not raw:
@@ -480,9 +970,15 @@ def check_dispatch_role(env: dict[str, str], compose_text: str, offline: bool) -
             other = parse_dsn(env.get(name, ""))
             if other is not None and dsn is not None and other.user == dsn.user:
                 check.fail(f"派发角色与 {name} 复用同一身份;三者必须各自独立")
-        if "SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL" not in compose_text:
+        worker_block = compose_service_block(compose_text, "job-dispatch-worker")
+        if worker_block is None:
+            check.fail("deploy/compose.yaml 缺少 job-dispatch-worker 服务")
+        elif not wired_reference(
+            worker_block, "SPEECHNEXUS_DATABASE_URL", "SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL"
+        ):
             check.fail(
-                "deploy/compose.yaml 没有把 SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL 传给 worker"
+                "job-dispatch-worker 的 SPEECHNEXUS_DATABASE_URL 没有引用 "
+                "SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL;派发角色不会被使用"
             )
     kinds_raw = env.get("SPEECHNEXUS_JOB_DISPATCH_KINDS", "asr,tts").strip() or "asr,tts"
     kinds = [item.strip() for item in kinds_raw.split(",") if item.strip()]
@@ -503,26 +999,51 @@ def check_dispatch_role(env: dict[str, str], compose_text: str, offline: bool) -
     if not probe.ok:
         check.fail(f"派发角色无法连接:{probe.error}")
         return check
-    guard = psql_select(
-        dsn,
-        env,
-        DISPATCH_ROLE_GUARD.replace("%(role)s", f"'{dsn.user}'").replace("%(schema)s", "'speech'"),
-    )
-    if not guard.ok:
-        check.fail(f"角色守卫查询失败:{guard.error}")
+    identities = psql_select(dsn, env, "SELECT SESSION_USER || '|' || CURRENT_USER")
+    if not identities.ok or "|" not in identities.stdout:
+        check.fail(f"派发角色身份探测失败:{identities.error or identities.stdout}")
         return check
-    if guard.stdout.strip() != "f":
-        check.fail("派发角色命中 owner/DDL 守卫(superuser、schema CREATE 或表 owner 成员)")
+    guard_failure = ""
+    for role in dict.fromkeys(part.strip() for part in identities.stdout.split("|")):
+        guard = psql_select(
+            dsn,
+            env,
+            DISPATCH_ROLE_GUARD.replace("%(role)s", f"'{role}'").replace("%(schema)s", "'speech'"),
+        )
+        if not guard.ok:
+            check.fail(f"角色守卫查询失败:{guard.error}")
+            return check
+        if guard.stdout.strip() != "f":
+            guard_failure = role
+    if guard_failure:
+        check.fail(
+            f"派发角色 {guard_failure} 命中 owner/DDL 守卫"
+            "(superuser、schema CREATE 或表 owner 成员)"
+        )
     probes = DISPATCH_PROBES + (VOICE_VALIDATION_PROBES if "voice_validation" in kinds else ())
     rejected: list[str] = []
     for table, statement in probes:
-        outcome = psql_select(dsn, env, statement.format(schema="speech"))
+        outcome = psql_select(dsn, env, statement)
         if not outcome.ok:
             rejected.append(f"{table}({outcome.error})")
     if rejected:
-        check.fail("派发角色的列权限探测失败:" + "; ".join(rejected[:4]))
+        check.fail("派发角色的列权限探测失败:" + ";".join(rejected[:4]))
         return check
-    check.probe(f"运行时: OK — 角色守卫通过,{len(probes)} 条列权限探测全部通过")
+    writes = psql_select(dsn, env, _dispatch_write_sql())
+    if not writes.ok:
+        check.fail(f"派发角色的写权限探测失败:{writes.error}")
+        return check
+    if writes.stdout:
+        missing_writes = [line for line in writes.stdout.splitlines() if line.strip()]
+        check.fail(
+            "派发角色缺少派发/终止写入所需的列权限(worker 会在运行时失败):"
+            + _summarize(missing_writes)
+        )
+        return check
+    check.probe(
+        f"运行时: OK — 角色守卫通过,{len(probes)} 条列权限探测与 "
+        f"{sum(len(cols) for _, _, cols in DISPATCH_WRITE_PROBES)} 条写入列权限全部通过"
+    )
     return check
 
 
@@ -538,7 +1059,7 @@ def engine_health_url(env: dict[str, str]) -> str:
     return raw
 
 
-def check_engine(env: dict[str, str], offline: bool) -> Prereq:
+def check_engine(env: dict[str, str], compose_path: Path, offline: bool) -> Prereq:
     check = Prereq(4, "真实引擎与实例注册")
     raw = env.get("SPEECHNEXUS_ENGINE_HEALTH_URL", "").strip()
     url = engine_health_url(env)
@@ -556,7 +1077,7 @@ def check_engine(env: dict[str, str], offline: bool) -> Prereq:
         check.fail("SPEECHNEXUS_ENGINE_GENERATION 为空")
     elif not generation.isdigit() or int(generation) < 1:
         check.fail("SPEECHNEXUS_ENGINE_GENERATION 必须是正整数")
-    recipe = private_dir(env) / "transcription-recipe.json"
+    recipe = private_dir(env, compose_path) / "transcription-recipe.json"
     if not recipe.is_file():
         check.fail(f"私有配方不存在:{recipe};engine-registration 无法读取")
     else:
@@ -618,7 +1139,7 @@ def check_engine(env: dict[str, str], offline: bool) -> Prereq:
     return check
 
 
-def check_result_bucket(env: dict[str, str], compose_text: str, offline: bool) -> Prereq:
+def check_result_bucket(env: dict[str, str], compose_text: str, compose_path: Path) -> Prereq:
     check = Prereq(5, "gateway result_bucket 存在且被创建/版本化")
     bucket = env.get("SPEECHNEXUS_EXECUTION_RESULT_BUCKET", "").strip()
     if not bucket:
@@ -626,7 +1147,7 @@ def check_result_bucket(env: dict[str, str], compose_text: str, offline: bool) -
     artifact = env.get("SPEECHNEXUS_OBJECT_STORAGE_BUCKET", "").strip()
     if not artifact:
         check.fail("SPEECHNEXUS_OBJECT_STORAGE_BUCKET 为空;结果 Artifact 没有落点")
-    directory = private_dir(env)
+    directory = private_dir(env, compose_path)
     for name in ("gateway-file-asr.json", "gateway-file-tts.json"):
         path = directory / name
         if not path.is_file():
@@ -646,10 +1167,10 @@ def check_result_bucket(env: dict[str, str], compose_text: str, offline: bool) -
     minio_block = compose_service_block(compose_text, "minio-init")
     if minio_block is None:
         check.fail("deploy/compose.yaml 缺少 minio-init;结果桶不会被创建")
-    elif "SPEECHNEXUS_EXECUTION_RESULT_BUCKET" not in minio_block:
+    elif not wired(minio_block, "SPEECHNEXUS_EXECUTION_RESULT_BUCKET"):
         check.fail("minio-init 没有接收 SPEECHNEXUS_EXECUTION_RESULT_BUCKET;该桶不会被创建")
     worker_block = compose_service_block(compose_text, "job-dispatch-worker")
-    if worker_block is not None and "SPEECHNEXUS_EXECUTION_RESULT_BUCKET" not in worker_block:
+    if worker_block is not None and not wired(worker_block, "SPEECHNEXUS_EXECUTION_RESULT_BUCKET"):
         check.fail("job-dispatch-worker 没有接收 SPEECHNEXUS_EXECUTION_RESULT_BUCKET")
     if bucket and artifact and bucket == artifact:
         check.note(f"Artifact 与 staging 共用桶 {bucket}(参考部署取值)")
@@ -681,7 +1202,7 @@ def docker_containers(project: str) -> list[tuple[str, str, str]] | None:
             timeout=15,
             check=False,
         )
-    except subprocess.TimeoutExpired, OSError:
+    except (subprocess.TimeoutExpired, OSError):
         return None
     if done.returncode != 0:
         return None
@@ -705,9 +1226,14 @@ def docker_inspect(container_id: str, template: str) -> str | None:
             timeout=15,
             check=False,
         )
-    except subprocess.TimeoutExpired, OSError:
+    except (subprocess.TimeoutExpired, OSError):
         return None
     return done.stdout.strip() if done.returncode == 0 else None
+
+
+def _effective(block: str) -> str:
+    """去掉整行注释后再做结构匹配,避免注释里的字样被当成接线."""
+    return "\n".join(line for line in block.splitlines() if not line.lstrip().startswith("#"))
 
 
 def check_network_lifecycle(env: dict[str, str], compose_text: str, offline: bool) -> Prereq:
@@ -717,18 +1243,22 @@ def check_network_lifecycle(env: dict[str, str], compose_text: str, offline: boo
         check.fail("deploy/compose.yaml 缺少 job-dispatch-worker 服务")
         check.probe("运行时: SKIP — 服务定义缺失")
         return check
-    if 'network_mode: "service:gateway"' not in worker_block:
+    worker_effective = _effective(worker_block)
+    if not re.search(r'(?m)^\s+network_mode:\s*"?service:gateway"?\s*$', worker_effective):
         check.fail("job-dispatch-worker 没有声明 network_mode: service:gateway")
-    if "depends_on:" not in worker_block or "condition: service_healthy" not in worker_block:
+    if (
+        "depends_on:" not in worker_effective
+        or "condition: service_healthy" not in worker_effective
+    ):
         check.fail("job-dispatch-worker 没有以 gateway healthy 作为依赖条件")
-    if "restart: true" not in worker_block:
+    if "restart: true" not in worker_effective:
         check.fail(
             "job-dispatch-worker 的 gateway 依赖没有 restart: true;重建 gateway 不会连带重建 worker"
         )
     gateway_block = compose_service_block(compose_text, "gateway")
-    if gateway_block is None or "healthcheck:" not in gateway_block:
+    if gateway_block is None or "healthcheck:" not in _effective(gateway_block):
         check.fail("gateway 没有 healthcheck;worker 的 healthy 依赖无从满足")
-    if "healthcheck:" in worker_block:
+    if "healthcheck:" in worker_effective:
         check.note("worker 自带 healthcheck;请确认它真能反映领取状态")
     else:
         check.note("worker 没有 healthcheck:up -d/--wait 成功不代表它已就绪")
@@ -783,13 +1313,15 @@ def check_network_lifecycle(env: dict[str, str], compose_text: str, offline: boo
     return check
 
 
-def build_checks(env: dict[str, str], compose_text: str, offline: bool) -> list[Prereq]:
+def build_checks(
+    env: dict[str, str], compose_text: str, compose_path: Path, offline: bool
+) -> list[Prereq]:
     return [
         check_api_job_dsns(env, compose_text, offline),
         check_migration(env, offline),
         check_dispatch_role(env, compose_text, offline),
-        check_engine(env, offline),
-        check_result_bucket(env, compose_text, offline),
+        check_engine(env, compose_path, offline),
+        check_result_bucket(env, compose_text, compose_path),
         check_network_lifecycle(env, compose_text, offline),
     ]
 
@@ -859,7 +1391,7 @@ def main(argv: list[str] | None = None) -> int:
     except OSError as exc:
         print(f"读取 compose 文件失败:{exc}", file=sys.stderr)
         return 2
-    checks = build_checks(env, compose_text, args.offline)
+    checks = build_checks(env, compose_text, compose_path, args.offline)
     render(checks, env_path, compose_path)
     return 0 if all(check.status == "PASS" for check in checks) else 1
 

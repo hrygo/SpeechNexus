@@ -19,6 +19,10 @@ Make 目标可能启动受管服务。先核对实际宿主、服务、端口与
 
 数据库名、Unix socket 目录、用户、密码和连接参数一律由该 DSN 决定。不得写 `postgresql:///sn_profile_it`、`dbname=sn_profile_it`、固定的 socket 路径或补默认凭据。需要 SQLAlchemy URL 时只从取得的 DSN 派生，例如 `url.replace("postgresql://", "postgresql+psycopg://", 1)`。
 
+### 跳过守护
+
+`test_pg_dsn_skip_guard.py` 静态扫描 `tests/integration` 与 `tests/support`，解析 `pytest.skip`、`pytest.xfail`、`pytest.mark.skipif` 及对应的导入别名，并沿同文件嵌套函数、跨文件共享 helper 的调用参数传播 DSN 来源。缺任一数据库 DSN 的跳过会使守护失败并报告文件、行号与变量；白名单为空。`shutil.which("psql")`、引擎 dialect 分支、MinIO 与 Workbench 专用变量属于非数据库前置，不按数据库缺 DSN 处理。
+
 ### 独立 schema 生命周期
 
 需要独立 schema 的用例必须自行生成唯一名称（例如 `"sn_retry_mig_" + uuid.uuid4().hex[:12]`），不得复用固定 schema 或共享表状态。在 `try` 中创建 schema，在 `finally` 中执行 `DROP SCHEMA IF EXISTS "<schema>" CASCADE`，并在同一清理段关闭连接、释放 engine。创建失败、断言失败和并发分片都必须走这条清理路径。

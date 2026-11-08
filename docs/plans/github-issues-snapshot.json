@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-08T15:19:42+08:00",
+  "fetched_at": "2026-11-08T16:17:25+08:00",
   "issues": [
     {
       "number": 336,
@@ -1134,6 +1134,16 @@
       "state_reason": "completed",
       "labels": [],
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
+    },
+    {
+      "number": 589,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/589",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "公开 Asset 运行时未装配音频检查器，asr_input 上传恒 503 asset_inspection_unavailable",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
     }
   ]
 }

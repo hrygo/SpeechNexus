@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-08T10:08:01+08:00",
+  "fetched_at": "2026-11-08T10:35:00+08:00",
   "issues": [
     {
       "number": 336,
@@ -1072,8 +1072,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/551",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "voice_validation 校验 Job 无法准入与派发，能力报告链第一环断裂",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "status:ready"
@@ -1110,8 +1110,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/569",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "invalid_execution_request 同时表示未外发与已外发未知",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [],
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
     },

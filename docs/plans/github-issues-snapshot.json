@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-08T05:25:23+08:00",
+  "fetched_at": "2026-11-08T08:06:39+08:00",
   "issues": [
     {
       "number": 336,
@@ -1058,8 +1058,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/549",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "发布角色启动校验漏检 REFERENCES/TRIGGER 与列级 INSERT",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "status:ready"
@@ -1086,8 +1086,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/555",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "校验报告到能力账本的自动记录与扫描自愈",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "status:ready"
@@ -1100,8 +1100,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/561",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "fix: 其余启动校验仍漏表级 REFERENCES/TRIGGER 与列级权限（#549 同族）",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [],
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
     }

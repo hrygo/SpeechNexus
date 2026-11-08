@@ -1,6 +1,12 @@
 # syntax=docker/dockerfile:1.18
 # The pinned community Docker Hub tag is unavailable. Use official, verified
 # release packages; keep runtime data and this session's CA outside the image.
+# The release CDN path answers HTTP 504 for these immutable assets, so the
+# package comes from the REST asset endpoint, which serves the identical bytes.
+# Asset ids are per release: 404655648 is minio_20250907161309.0.0_amd64.deb
+# and 404655618 is minio_20250907161309.0.0_arm64.deb of
+# RELEASE.2025-09-07T16-13-09Z. Moving to another tag means re-resolving the
+# asset ids and the digests together.
 FROM python:3.15.0-slim-bookworm AS download
 ARG TARGETARCH
 RUN --mount=type=secret,id=proxy_ca <<'SH'
@@ -13,27 +19,36 @@ import subprocess
 import sys
 import urllib.request
 
-release = "RELEASE.2025-09-07T16-13-09Z"
-digests = {
-    "amd64": "eeda08f699f6592d1b868ac8bda864ae2cacdb5ee1b888663366e8c8ff566249",
-    "arm64": "f9466ed832ac4926c8870b3b8378d77861a87b41529fecae7789b9bc54acd78b",
+assets = {
+    "amd64": {
+        "id": 404655648,
+        "sha256": "eeda08f699f6592d1b868ac8bda864ae2cacdb5ee1b888663366e8c8ff566249",
+    },
+    "arm64": {
+        "id": 404655618,
+        "sha256": "f9466ed832ac4926c8870b3b8378d77861a87b41529fecae7789b9bc54acd78b",
+    },
 }
 arch = sys.argv[1]
-if arch not in digests:
+if arch not in assets:
     raise SystemExit("MinIO package architecture must be amd64 or arm64")
-name = f"minio_20250907161309.0.0_{arch}.deb"
-url = f"https://github.com/minio/minio/releases/download/{release}/{name}"
+asset = assets[arch]
+url = f"https://api.github.com/repos/minio/minio/releases/assets/{asset['id']}"
+# The asset endpoint yields JSON metadata unless octet-stream is requested.
+request = urllib.request.Request(
+    url, headers={"Accept": "application/octet-stream"}
+)
 target = pathlib.Path("/tmp/minio.deb")
 hasher = hashlib.sha256()
 size = 0
-with urllib.request.urlopen(url, timeout=30) as response, target.open("wb") as output:
+with urllib.request.urlopen(request, timeout=30) as response, target.open("wb") as output:
     while chunk := response.read(1024 * 1024):
         size += len(chunk)
         if size > 50 * 1024 * 1024:
             raise SystemExit("MinIO release package exceeds the reviewed size limit")
         hasher.update(chunk)
         output.write(chunk)
-if hasher.hexdigest() != digests[arch]:
+if hasher.hexdigest() != asset["sha256"]:
     raise SystemExit("MinIO release package checksum mismatch")
 subprocess.run(["dpkg-deb", "--extract", str(target), "/opt/minio-release"], check=True)
 PY

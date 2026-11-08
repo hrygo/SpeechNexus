@@ -74,7 +74,10 @@ class ReaderDatabase:
 def reader_database() -> Iterator[ReaderDatabase]:
     root_url = os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL")
     if not root_url:
-        pytest.skip("An explicitly configured isolated PostgreSQL server is required")
+        pytest.fail(
+            "Configure an isolated PostgreSQL DSN in SPEECHNEXUS_TEST_DATABASE_URL; "
+            "skip is not evidence"
+        )
     database_name = "sn_abort_reader_" + uuid.uuid4().hex[:12]
     schema = "sn_reader_" + uuid.uuid4().hex[:12]
     root = psycopg.connect(root_url, autocommit=True)

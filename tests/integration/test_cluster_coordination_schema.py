@@ -32,7 +32,9 @@ class CoordinationDatabase:
 def _database_url() -> str:
     value = os.environ.get(_DATABASE_URL_ENV)
     if not value:
-        pytest.skip(f"set {_DATABASE_URL_ENV} to an isolated PostgreSQL test database")
+        pytest.fail(
+            f"Configure an isolated PostgreSQL DSN in {_DATABASE_URL_ENV}; skip is not evidence"
+        )
     return value
 
 

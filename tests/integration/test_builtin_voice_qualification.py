@@ -36,7 +36,10 @@ pytestmark = pytest.mark.integration
 def pg() -> Iterator[tuple[psycopg.Connection[dict[str, Any]], str, str]]:
     url = os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL")
     if not url:
-        pytest.skip("isolated PostgreSQL required")
+        pytest.fail(
+            "Configure an isolated PostgreSQL DSN in SPEECHNEXUS_TEST_DATABASE_URL; "
+            "skip is not evidence"
+        )
     suffix = uuid.uuid4().hex[:12]
     schema, role = "sn_bv_" + suffix, "sn_bv_r_" + suffix
     engine = create_engine(

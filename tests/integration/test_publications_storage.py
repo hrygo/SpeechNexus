@@ -68,7 +68,7 @@ class Sandbox:
 def sandbox(request: pytest.FixtureRequest) -> Iterator[Sandbox]:
     url = os.environ.get(VARIABLE)
     if not url:
-        pytest.skip("Configure an isolated PostgreSQL DSN; skip is not evidence")
+        pytest.fail(f"Configure an isolated PostgreSQL DSN in {VARIABLE}; skip is not evidence")
     suffix = uuid.uuid4().hex[:12]
     schema, role = "sn_pub_" + suffix, "sn_pub_role_" + suffix
     engine = create_engine(

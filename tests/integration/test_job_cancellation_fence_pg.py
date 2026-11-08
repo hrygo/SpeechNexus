@@ -142,7 +142,9 @@ class _QueryDatabase:
 def fence_db() -> Iterator[FenceSandbox]:
     url = os.environ.get(VARIABLE)
     if not url:
-        pytest.skip("Configure an isolated PostgreSQL DSN; skip is not fence evidence")
+        pytest.fail(
+            f"Configure an isolated PostgreSQL DSN in {VARIABLE}; skip is not fence evidence"
+        )
     suffix = uuid.uuid4().hex[:12]
     schema = "sn_fence_" + suffix
     speech, gateway = schema + "_speech", schema + "_gateway"

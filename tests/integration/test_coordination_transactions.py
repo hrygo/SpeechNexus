@@ -45,12 +45,12 @@ DATABASE_VARIABLES: dict[str, str] = {
 
 @pytest.fixture(scope="module", autouse=True)
 def dual_database_configuration() -> None:
-    """One configured engine alone is a misconfiguration, not a smaller oracle."""
+    """The shared oracle runs only against both configured engines; not a subset."""
     configured = {dialect: os.environ.get(name) for dialect, name in DATABASE_VARIABLES.items()}
-    if any(configured.values()) and not all(configured.values()):
-        missing = ", ".join(
-            DATABASE_VARIABLES[dialect] for dialect, url in configured.items() if not url
-        )
+    missing = ", ".join(
+        DATABASE_VARIABLES[dialect] for dialect, url in configured.items() if not url
+    )
+    if missing:
         pytest.fail(
             "the shared transaction oracle needs both engines configured; missing "
             f"{missing}. Use make integration-test or make coordination-test."
@@ -63,7 +63,7 @@ def database(request: pytest.FixtureRequest) -> Iterator[Database]:
     variable = DATABASE_VARIABLES[dialect]
     url = os.environ.get(variable)
     if not url:
-        pytest.skip(f"set {variable} to a project-isolated database; not a qualification pass")
+        pytest.fail(f"set {variable} to a project-isolated database; not a qualification pass")
     namespace = "sn_coord_" + uuid.uuid4().hex[:12]
     database = Database(dialect, url, namespace)
     if dialect == "postgresql":

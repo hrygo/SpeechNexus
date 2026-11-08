@@ -62,7 +62,10 @@ ROOT = Path(__file__).resolve().parents[2]
 def database() -> Iterator[JobDatabase]:
     url = os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL")
     if not url:
-        pytest.skip("Isolated PostgreSQL URL required")
+        pytest.fail(
+            "Configure an isolated PostgreSQL DSN in SPEECHNEXUS_TEST_DATABASE_URL; "
+            "skip is not evidence"
+        )
     suffix = uuid.uuid4().hex[:12]
     schema, role = "sn_tts_" + suffix, "sn_tts_role_" + suffix
     engine = create_engine(

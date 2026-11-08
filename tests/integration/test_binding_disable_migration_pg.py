@@ -28,7 +28,10 @@ HISTORICAL_HEAD = "0027_gateway_abort_intents"
 def migration_sandbox() -> Iterator[tuple[Config, psycopg.Connection[tuple[object, ...]]]]:
     url = os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL")
     if not url:
-        pytest.skip("Configure the isolated PostgreSQL test database")
+        pytest.fail(
+            "Configure an isolated PostgreSQL DSN in SPEECHNEXUS_TEST_DATABASE_URL; "
+            "skip is not evidence"
+        )
     schema = "sn_disable_migration_" + uuid.uuid4().hex[:12]
     engine = create_engine(
         url.replace("postgresql://", "postgresql+psycopg://", 1),

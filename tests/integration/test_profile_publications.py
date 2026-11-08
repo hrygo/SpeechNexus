@@ -129,7 +129,10 @@ class Sandbox:
 def sandbox() -> Iterator[Sandbox]:
     url = os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL")
     if not url:
-        pytest.skip("Requires explicitly isolated PG; skip is not evidence")
+        pytest.fail(
+            "Configure an isolated PostgreSQL DSN in SPEECHNEXUS_TEST_DATABASE_URL; "
+            "skip is not evidence"
+        )
     suffix = uuid.uuid4().hex[:12]
     schema, role = "sn_profile_" + suffix, "sn_profile_role_" + suffix
     admin = psycopg.connect(url, autocommit=True, row_factory=dict_row)

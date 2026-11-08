@@ -33,7 +33,9 @@ def scalar_int(
 def test_legacy_publication_count_is_seeded_and_retirement_history_blocks_downgrade() -> None:
     url = os.environ.get(VARIABLE)
     if not url:
-        pytest.skip("Configure an isolated PostgreSQL DSN; skip is not migration evidence")
+        pytest.fail(
+            f"Configure an isolated PostgreSQL DSN in {VARIABLE}; skip is not migration evidence"
+        )
     schema = "sn_rev_" + uuid.uuid4().hex[:12]
     engine = create_engine(
         url.replace("postgresql://", "postgresql+psycopg://", 1),

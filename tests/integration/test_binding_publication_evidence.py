@@ -74,7 +74,7 @@ class Sandbox:
 def sandbox(request: pytest.FixtureRequest) -> Iterator[Sandbox]:
     base = os.environ.get(VARIABLE)
     if not base:
-        pytest.skip("Configure an isolated PostgreSQL DSN; skip is not evidence")
+        pytest.fail(f"Configure an isolated PostgreSQL DSN in {VARIABLE}; skip is not evidence")
     suffix = uuid.uuid4().hex[:10]
     schema = "sn_evi_" + suffix
     names = {role: f"sn_evi_{role}_{suffix}" for role in ROLES}

@@ -100,15 +100,15 @@ class Sandbox:
 
 
 def _required_environment() -> tuple[str, str, str, str]:
-    values = [os.environ.get(name) for name in (DATABASE_VARIABLE, *OBJECT_VARIABLES)]
-    if not all(values):
-        pytest.skip("Configure an isolated PostgreSQL DSN and MinIO test endpoint/keys")
-    return (
-        cast(str, values[0]),
-        cast(str, values[1]),
-        cast(str, values[2]),
-        cast(str, values[3]),
-    )
+    database = os.environ.get(DATABASE_VARIABLE)
+    if not database:
+        pytest.fail(
+            f"Configure an isolated PostgreSQL DSN in {DATABASE_VARIABLE}; skip is not evidence"
+        )
+    objects = [os.environ.get(name) for name in OBJECT_VARIABLES]
+    if not all(objects):
+        pytest.skip("Configure an isolated MinIO test endpoint/keys")
+    return (database, cast(str, objects[0]), cast(str, objects[1]), cast(str, objects[2]))
 
 
 def _migrate(url: str, schema: str) -> None:

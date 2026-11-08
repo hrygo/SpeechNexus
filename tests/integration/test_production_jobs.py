@@ -105,8 +105,8 @@ class JobDatabase:
 
 @pytest.fixture(params=["postgresql", "mysql"])
 def database(request: pytest.FixtureRequest) -> Iterator[JobDatabase]:
-    configured = {variable: os.environ.get(variable) for variable in VARIABLES}
-    missing = [variable for variable, value in configured.items() if not value]
+    configured = [os.environ.get(variable) for variable in VARIABLES]
+    missing = [variable for variable, value in zip(VARIABLES, configured, strict=True) if not value]
     if missing:
         pytest.fail(
             "Production Job behavior requires both isolated PG and InnoDB DSNs; missing "
@@ -117,7 +117,7 @@ def database(request: pytest.FixtureRequest) -> Iterator[JobDatabase]:
         dialect, migration_revision = param
     else:
         dialect, migration_revision = param, "head"
-    url = cast(str, configured[dialect])
+    url = cast(str, configured[0 if dialect == "postgresql" else 1])
     suffix = uuid.uuid4().hex[:12]
     schema, role = "sn_jobs_" + suffix, "sn_jobs_role_" + suffix
     pool: JobPool | None = None

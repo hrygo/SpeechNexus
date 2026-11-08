@@ -17,8 +17,6 @@ Make 目标可能启动受管服务。先核对实际宿主、服务、端口与
 
 执行 PostgreSQL 的集成或迁移用例（包括 `*_pg.py` 和包含 Alembic 升级/降级的用例）在当前用例或 fixture 中只读取 `os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL")`。变量缺失时调用 `pytest.fail("Configure an isolated PostgreSQL DSN; skip is not migration evidence")`；不得用 `pytest.skip`、本地默认连接或导入期异常代替，错误信息必须说明调用方需要提供隔离 DSN。
 
-[`test_pg_dsn_skip_guard.py`](test_pg_dsn_skip_guard.py) 静态扫描读取该变量的集成模块与共享 fixture；缺 DSN 路径上的 `pytest.skip` 会使守护用例失败并报告文件与行号。
-
 数据库名、Unix socket 目录、用户、密码和连接参数一律由该 DSN 决定。不得写 `postgresql:///sn_profile_it`、`dbname=sn_profile_it`、固定的 socket 路径或补默认凭据。需要 SQLAlchemy URL 时只从取得的 DSN 派生，例如 `url.replace("postgresql://", "postgresql+psycopg://", 1)`。
 
 ### 独立 schema 生命周期

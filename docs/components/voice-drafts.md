@@ -343,9 +343,10 @@ CHECK 扩展到 `voice_validation`。`0044_voice_preview_jobs` 只把同一 CHEC
 `coordination_runtime_grants(schema, speech_role=worker_role, gateway_role=gateway_role)`
 外，还必须安装 `voice_validation_worker_grants(schema, worker_role)`：它只授予
 `speech_voice_draft_revisions` 与 `speech_assets` 的 SELECT，不授予草稿写权、发布表权或
-对象存储权。缺少该授权时 validation 事实读取得到 `InsufficientPrivilege`，派发会
-`DispatchUnavailableError` 并保持 Job `running`，因此不能把 API 角色的超集授权当作
-worker 证据。
+对象存储权。`job-dispatch-worker` 的 kinds 含 `voice_validation` 时，启动角色校验会先探测
+这两张表，缺授权即 `InsufficientPrivilege` 并拒绝启动，不会领取任何 Job；运行中失去授权
+的进程仍会在派发时得到 `DispatchUnavailableError` 并保持 Job `running`。因此不能把 API
+角色的超集授权当作 worker 证据。
 
 自动记录 worker 使用与显式记录器相同的独立身份
 `SPEECHNEXUS_VOICE_EVIDENCE_DATABASE_URL`（`voice_evidence_recorder_grants`），并读取

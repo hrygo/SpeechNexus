@@ -1,4 +1,9 @@
-"""Create and enable versioning for the two private file-speech buckets."""
+"""Create and enable versioning for the private file-speech and Job buckets.
+
+The Job dispatcher reads gateway staging results from its own bucket, so that
+bucket is versioned here as well; otherwise a non-default staging bucket would
+only fail after the worker claimed a Job.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +25,10 @@ def main() -> None:
     buckets = {
         os.environ["SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET"],
         os.environ["SPEECHNEXUS_OBJECT_STORAGE_BUCKET"],
+        # Optional for older env files: fall back to the Artifact bucket so the
+        # script keeps working when both share one bucket.
+        os.environ.get("SPEECHNEXUS_EXECUTION_RESULT_BUCKET")
+        or os.environ["SPEECHNEXUS_OBJECT_STORAGE_BUCKET"],
     }
     for bucket in sorted(buckets):
         if not client.bucket_exists(bucket):

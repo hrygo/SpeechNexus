@@ -23,14 +23,13 @@ set is intentionally limited to:
 - `api`: public SpeechNexus API;
 - `gateway`: execution gateway with private file-ASR/file-TTS configuration.
 
-The following production units are deliberately **not** part of this file yet:
-`node-controller`, `runtime-delivery-worker`, `job-dispatch-worker`,
-`asset-maintain` and `voice-evidence-worker`. Their absence is a scope
-statement, not an assertion that those capabilities work elsewhere. They are
-excluded because controller lifecycle, runtime delivery, asynchronous Jobs (G5 /
-issue #18), retention maintenance and automatic evidence recording (which needs a
-recorder DSN plus report object storage) are not on the synchronous request path
-or are not assembled here.
+The following production units are deliberately **not** part of this file:
+`node-controller`, `runtime-delivery-worker`, `asset-maintain` and
+`voice-evidence-worker`. Their absence is a scope statement, not an assertion that
+those capabilities work elsewhere. They are excluded because controller lifecycle,
+runtime delivery, retention maintenance and automatic evidence recording (which
+needs a recorder DSN plus report object storage) are not on the synchronous request
+path or are not assembled here.
 
 Additional profiles are opt-in:
 
@@ -39,6 +38,9 @@ Additional profiles are opt-in:
 - `web`: the static Admin and Workbench frontends;
 - `binding-disable`: explicitly starts the disable worker, which is required to
   process persisted disable intents; it is absent from the base topology.
+- `job-dispatch`: explicitly starts the public Job dispatcher
+  `job-dispatch-worker`; it is absent from the base topology and the base `up`
+  never starts it.
 
 The `workbench` container serves only the frontend; it does not start the
 independent Workbench API. Setting `SPEECHNEXUS_PROCESS_ROLE` identifies a
@@ -67,7 +69,9 @@ qualify a real service, cross-host TLS, or a physical topology.
   staged a result;
 - public TTS remains blocked by the missing public dispatch path; this Compose only
   prepares the gateway's private file-TTS references;
-- asynchronous Job submission/dispatch remains blocked by G5 / issue #18;
+- public asynchronous Job execution is not qualified here: the opt-in
+  `job-dispatch` profile only runs the dispatcher, this bootstrap provides no real
+  engine, and submission still needs the Job writer and admission roles below;
 - real model quality, CUDA capacity, physical multi-node recovery, content-network
   isolation and final Gate approval require separate evidence.
 
@@ -90,15 +94,17 @@ address `172.28.0.10`. If `172.28.0.0/24` conflicts with the host, change the
 subnet and both private JSON object endpoints together. The examples and
 private-file rules are in [deploy/private](private/README.md).
 
-`postgres-data` and `minio-data` are named volumes. `minio-init` creates the
-input/result buckets and verifies versioning. It uses the local MinIO root
-identity only; a real deployment must provision separately scoped object
-credentials and reviewed buckets outside this bootstrap.
+`postgres-data` and `minio-data` are named volumes. `minio-init` creates and
+verifies versioning for the transcription input bucket, the Artifact bucket and
+`SPEECHNEXUS_EXECUTION_RESULT_BUCKET` (the gateway staging bucket the dispatcher
+reads back). It uses the local MinIO root identity only; a real deployment must
+provision separately scoped object credentials and reviewed buckets outside this
+bootstrap.
 
 ## Build and dependency boundary
 
 The Python image is the shared composition for API, gateway, bucket init,
-migration and registration. It now includes:
+migration, registration and the Job dispatcher. It now includes:
 
 - the backend migration extra so the opt-in `migrate` profile can run;
 - the hash-pinned CPU VAD requirements from
@@ -144,11 +150,81 @@ grants, the 7-day default/explicit TTL policy and Host/Origin guards. The
 provisioned separately before retention/unknown-original polling is claimed.
 
 The public Job dispatcher is registered separately as
-`speechnexus-job-dispatch-worker`. It requires explicit worker identity, a
-non-owner PostgreSQL role, the execution-gateway origin/credential and every
-batch/lease/poll/timeout bound in
+`speechnexus-job-dispatch-worker` and is assembled by the opt-in `job-dispatch`
+profile (see below). It requires explicit worker identity, a non-owner PostgreSQL
+role, the execution-gateway origin/credential and every batch/lease/poll/timeout
+bound in
 [production jobs](../docs/components/production-jobs.md#worker-入口与运行配置del-98).
 It is not part of this minimal surface.
+
+## Job dispatcher (`job-dispatch` profile)
+
+`job-dispatch-worker` runs the public Job dispatcher entry point
+`speechnexus-job-dispatch-worker`. The base `up` never starts it. Prepare the
+worker DSN and its grants first; only then start the profile:
+
+```bash
+docker compose --env-file deploy/compose.env \
+  -f deploy/compose.yaml --profile job-dispatch up -d
+```
+
+The service has no healthcheck, and a blank DSN makes it exit before claiming any
+lease. With `restart: unless-stopped` that shows up as a restart loop, while
+`docker compose ... up -d` (and `--wait`, which has no probe to wait on) still
+returns success. A successful `up` is therefore not evidence that the dispatcher
+is ready: confirm the worker is running without restarts, for example with
+`docker compose --env-file deploy/compose.env -f deploy/compose.yaml ps` and
+`logs job-dispatch-worker`, and fix the DSN/grants before retrying.
+
+The service shares the gateway network namespace and calls
+`http://127.0.0.1:8010`, because `JobDispatchSettings` rejects plain HTTP outside
+loopback. That is a single-host Compose property, not a multi-node transport
+design. `SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL` defaults to blank and must name a
+non-owner worker role; a blank value fails closed before any lease is claimed.
+[production jobs](../docs/components/production-jobs.md#worker-入口与运行配置del-98)
+lists the complete variable set and its bounds; `compose.yaml` supplies explicit
+reference values for every one, and the worker itself has no in-process default
+for them. `SPEECHNEXUS_OBJECT_STORAGE_BUCKET` (Artifact output) and
+`SPEECHNEXUS_EXECUTION_RESULT_BUCKET` (gateway staging read-back) must be buckets
+`minio-init` created and versioned, and the latter must match the private gateway
+configs' `result_bucket`. The reference environment uses `speechnexus-results` for
+both. Because `minio-init` receives the same variable, a non-default staging
+bucket is created and versioned before the worker starts; if `minio-init` fails,
+`depends_on: service_completed_successfully` keeps the worker from starting at
+all. The local bootstrap still gives the worker the MinIO root identity
+(`MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`), as it does for the API and gateway. That
+is a local convenience, not object-layer least privilege: `read_only`, `cap_drop`
+and `no-new-privileges` constrain the container process only, not S3
+authorization, so production must supply narrowly scoped object credentials.
+
+`SPEECHNEXUS_JOB_DISPATCH_KINDS` selects the kinds this process claims and
+defaults to `asr,tts`. It is comma-separated, de-duplicated and must stay inside
+the dispatchable union (`asr`, `tts`, `voice_design`, `voice_clone`,
+`voice_validation`). `voice_design`/`voice_clone` need the separate voice lanes;
+the default queue never claims them. Enabling `voice_validation` is not only a
+kinds change:
+
+1. install the dispatcher-role grants — `job_runtime_grants`,
+   `job_dispatch_grants` (which already includes the Artifact publisher and the
+   cancellation not-submitted INSERT), `public_job_grants`,
+   `cancellation_reconciliation_grants` and `coordination_runtime_grants`;
+2. additionally install `voice_validation_worker_grants(schema, worker_role)`.
+   Beyond `USAGE` on the schema, it grants only two `SELECT`s — on
+   `speech_voice_draft_revisions` and `speech_assets` — the frozen draft revision
+   and the ready reference Asset the validation reader replays (#553). It grants
+   no draft writes, publication tables or object-storage rights. When
+   `voice_validation` is in `SPEECHNEXUS_JOB_DISPATCH_KINDS`, the worker probes
+   both tables during its startup role check and refuses to start without them;
+3. set `SPEECHNEXUS_JOB_DISPATCH_KINDS=asr,tts,voice_validation` in `compose.env`.
+
+The startup check runs before the dispatcher exists, so a missing grant stops the
+process (non-zero exit, a restart loop under Compose) instead of claiming a Job
+and failing at publication. The same role check rejects superuser, schema
+`CREATE`, database owner and membership in any table owner of the configured
+schema; it does not audit extra DML grants, so a broader role is not rejected and
+minimum privilege remains the deployment's responsibility. Do not treat the API
+role's superset as worker evidence. A running dispatcher is still not a real
+engine, GPU or end-to-end asynchronous acceptance.
 
 预设草稿 HTTP writer 默认关闭。仅在操作者已应用 `0009_profile_drafts` 并独立配置最小非 owner 角色后，设置 `SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL`；不得复用 Compose bootstrap owner。启动仅验证权限并管理独立连接池，不执行迁移或 grant。原请求/原键重放、固定读取和限额见 [profile drafts](../docs/components/profile-drafts.md#http-runtime-and-controlled-writer)。此配置不发布或激活预设。
 

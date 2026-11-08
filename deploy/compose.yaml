@@ -8,13 +8,15 @@ name: speechnexus
 # The following production units are deliberately NOT part of this file yet:
 #   - node-controller: engine lifecycle is operator/external in this bootstrap;
 #   - runtime-delivery-worker: runtime delivery remains a separate G5 gap;
-#   - job-dispatch-worker: asynchronous Jobs remain blocked by the G5 gap;
 #   - asset-maintain: retention maintenance is not on the synchronous request path;
 #   - voice-evidence-worker: automatic evidence recording needs a recorder DSN and
 #     report object storage, which this bootstrap surface does not assemble.
 # Adding any of them here would incorrectly claim those capabilities are assembled.
-# `migrate`, `engine-register`, `binding-disable-worker`, `admin` and `workbench` are opt-in profiles and
-# therefore do not appear in the base service list.
+# `migrate`, `engine-register`, `binding-disable-worker`, `job-dispatch-worker`,
+# `admin` and `workbench` are opt-in profiles and therefore do not appear in the
+# base service list. The `job-dispatch` profile assembles the public Job dispatcher
+# process, but it still requires a real engine behind the execution gateway; it does
+# not by itself make asynchronous Jobs an accepted end-to-end capability.
 
 x-python-build: &python-build
   context: ..
@@ -68,9 +70,12 @@ services:
       retries: 20
     restart: unless-stopped
 
-  # One-shot bootstrap: create and version the private input/result buckets.
-  # It uses the local MinIO identity only; production uses separately scoped
-  # credentials and versioned buckets prepared outside this bootstrap.
+  # One-shot bootstrap: create and version the private input, Artifact and
+  # gateway staging buckets. The dispatcher reads staging results from the same
+  # bucket name it passes here, so a non-default value is versioned before the
+  # worker starts. It uses the local MinIO identity only; production uses
+  # separately scoped credentials and versioned buckets prepared outside this
+  # bootstrap.
   minio-init:
     build: *python-build
     command: ["python", "/opt/speechnexus/init-object-storage.py"]
@@ -80,6 +85,7 @@ services:
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in compose.env}
       SPEECHNEXUS_OBJECT_STORAGE_BUCKET: ${SPEECHNEXUS_OBJECT_STORAGE_BUCKET:-speechnexus-results}
       SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET: ${SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET:-speechnexus-inputs}
+      SPEECHNEXUS_EXECUTION_RESULT_BUCKET: ${SPEECHNEXUS_EXECUTION_RESULT_BUCKET:-speechnexus-results}
     volumes:
       - ./init-object-storage.py:/opt/speechnexus/init-object-storage.py:ro
     depends_on:
@@ -243,6 +249,60 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      gateway:
+        condition: service_healthy
+        restart: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  # Opt-in public Job dispatcher. It shares the gateway network namespace so its
+  # gateway origin can stay on loopback: the worker rejects plain HTTP outside
+  # loopback. Every operating bound has no in-process default, so the values here
+  # are this bootstrap's explicit reference values, not capacity or model
+  # qualification. A blank dispatch DSN or a missing grant fails closed before any
+  # lease is claimed. There is no healthcheck, so that failure surfaces as a
+  # restart loop instead of a ready service; provision the DSN and grants first.
+  job-dispatch-worker:
+    profiles: ["job-dispatch"]
+    build: *python-build
+    command: ["speechnexus-job-dispatch-worker"]
+    user: "${SPEECHNEXUS_RUNTIME_UID:?set SPEECHNEXUS_RUNTIME_UID from id -u}:${SPEECHNEXUS_RUNTIME_GID:?set SPEECHNEXUS_RUNTIME_GID from id -g}"
+    network_mode: "service:gateway"
+    environment:
+      SPEECHNEXUS_PROCESS_ROLE: job-worker
+      SPEECHNEXUS_NODE_ID: ${SPEECHNEXUS_NODE_ID:-node-local-1}
+      SPEECHNEXUS_INSTANCE_ID: ${SPEECHNEXUS_JOB_DISPATCH_INSTANCE_ID:-dispatch-1}
+      SPEECHNEXUS_DATABASE_URL: ${SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL:-}
+      SPEECHNEXUS_DATABASE_SCHEMA: speech
+      SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL: http://127.0.0.1:8010
+      SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL: ${SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL:?set SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL in compose.env}
+      SPEECHNEXUS_EXECUTION_GATEWAY_TIMEOUT_SECONDS: ${SPEECHNEXUS_EXECUTION_GATEWAY_TIMEOUT_SECONDS:-10}
+      SPEECHNEXUS_JOB_DISPATCH_BATCH_SIZE: ${SPEECHNEXUS_JOB_DISPATCH_BATCH_SIZE:-8}
+      SPEECHNEXUS_JOB_DISPATCH_LEASE_MS: ${SPEECHNEXUS_JOB_DISPATCH_LEASE_MS:-30000}
+      SPEECHNEXUS_JOB_DISPATCH_POLL_SECONDS: ${SPEECHNEXUS_JOB_DISPATCH_POLL_SECONDS:-1}
+      SPEECHNEXUS_JOB_DISPATCH_JOB_TIMEOUT_SECONDS: ${SPEECHNEXUS_JOB_DISPATCH_JOB_TIMEOUT_SECONDS:-600}
+      SPEECHNEXUS_JOB_DISPATCH_MAX_ATTEMPTS: ${SPEECHNEXUS_JOB_DISPATCH_MAX_ATTEMPTS:-5}
+      SPEECHNEXUS_JOB_DISPATCH_INTERVAL_SECONDS: ${SPEECHNEXUS_JOB_DISPATCH_INTERVAL_SECONDS:-5}
+      SPEECHNEXUS_JOB_DISPATCH_STORAGE_TIMEOUT_SECONDS: ${SPEECHNEXUS_JOB_DISPATCH_STORAGE_TIMEOUT_SECONDS:-3}
+      SPEECHNEXUS_JOB_DISPATCH_KINDS: ${SPEECHNEXUS_JOB_DISPATCH_KINDS:-asr,tts}
+      SPEECHNEXUS_OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      SPEECHNEXUS_OBJECT_STORAGE_BUCKET: ${SPEECHNEXUS_OBJECT_STORAGE_BUCKET:-speechnexus-results}
+      SPEECHNEXUS_EXECUTION_RESULT_BUCKET: ${SPEECHNEXUS_EXECUTION_RESULT_BUCKET:-speechnexus-results}
+      # Local bootstrap only: the root MinIO identity is broader than object-layer
+      # least privilege. read_only/cap_drop constrain the process, not S3 rights.
+      SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-speechnexus}
+      SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in compose.env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
       gateway:
         condition: service_healthy
         restart: true

@@ -848,3 +848,11 @@ jobs:
             --env-file deploy/compose.env.example \
             -f deploy/compose.yaml \
             config --quiet
+
+      - name: Validate opt-in job-dispatch Compose configuration
+        run: |
+          docker compose \
+            --env-file deploy/compose.env.example \
+            -f deploy/compose.yaml \
+            --profile job-dispatch \
+            config --quiet

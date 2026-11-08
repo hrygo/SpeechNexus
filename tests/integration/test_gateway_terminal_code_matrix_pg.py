@@ -258,14 +258,14 @@ def test_terminal_matrix_snapshot(
             request = replace(
                 request,
                 identity=replace(
-                    request.identity, deadline_at=datetime.now(UTC) + timedelta(seconds=1)
+                    request.identity, deadline_at=datetime.now(UTC) + timedelta(seconds=3)
                 ),
             )
         worker = _worker(recovery_ledger, execution)
         try:
             engine: Any = worker
             if case == "deadline":
-                engine = _DelayedEngine(worker, seconds=1.5)
+                engine = _DelayedEngine(worker, seconds=3.5)
             dispatch = _bridge(recovery_ledger, engine)
             submit = _service(
                 recovery_ledger,

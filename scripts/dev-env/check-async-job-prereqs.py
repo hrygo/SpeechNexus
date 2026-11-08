@@ -16,8 +16,9 @@ PASS/FAIL/PENDING,FAIL 时点名缺的是哪一项;需要 Docker daemon、psql �
   PENDING 依赖部署产物(私有配置、ready 实例)且尚未到该阶段;部署前没有意义,不是错误。
 
 阶段由 `--phase auto|pre|post` 决定,默认 `auto`:Compose 项目容器、`deploy/.runtime`
-或私有配置目录存在即按部署后判定,否则按部署前。只有标为部署后的前置(4、5)会在 pre
-阶段把缺项记为 PENDING;真实配置错误永远 FAIL,不会被阶段降级。
+或私有配置目录下已生成文件,任一出现即按部署后判定,否则按部署前;`mkdir -p` 出来的
+空骨架不算部署。只有标为部署后的前置(4、5)会在 pre 阶段把缺项记为 PENDING;真实
+配置错误永远 FAIL,不会被阶段降级。
 
 用法(仓库根目录):
   python3 scripts/dev-env/check-async-job-prereqs.py
@@ -559,12 +560,21 @@ def probe_database(dsn: Dsn, env: dict[str, str]) -> PsqlResult:
     return psql_select(dsn, env, "SELECT 1")
 
 
-def read_json(path: Path) -> object | None:
+def read_json(path: Path) -> tuple[object | None, str | None]:
+    """读取 JSON;返回 (文档, 错误说明)。
+
+    解析失败与读文件失败都是"配置写了但不对",不是部署产物:调用方据此点名该修文件,
+    而不是与"缺键"共用一句含糊提示。
+    """
     try:
-        document: object = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    return document
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return None, f"无法读取({exc})"
+    try:
+        document: object = json.loads(text)
+    except ValueError as exc:
+        return None, f"不是合法 JSON({exc})"
+    return document, None
 
 
 def object_field(document: object, key: str) -> object | None:
@@ -1185,7 +1195,9 @@ def check_engine(env: dict[str, str], compose_path: Path, offline: bool, phase: 
         return check
     state = rows.stdout.split("|")[-1]
     if state != "ready":
-        check.unresolved(f"实例 {instance} 的 instance_state={state};准入只接受 ready")
+        # 行是刚查出来的活证据:部署已经发生,实例存在却没 ready 是配置/运维错误,
+        # 不是"尚未到该阶段"。只有查不到行(`unresolved` 上面那处)才算 PENDING。
+        check.fail(f"实例 {instance} 的 instance_state={state};准入只接受 ready")
         return check
     check.probe(f"运行时: OK — 实例 {instance} g{generation} 已注册且 ready")
     return check
@@ -1215,11 +1227,17 @@ def check_result_bucket(
                 "部署准备阶段从 deploy/private/*.example.json 复制后,才能核对 result_bucket"
             )
             continue
-        document = read_json(path)
+        document, parse_error = read_json(path)
+        if parse_error is not None:
+            check.fail(f"{name} {parse_error};修正该文件后才能核对 result_bucket")
+            continue
         objects = object_field(document, "objects")
+        if not isinstance(objects, dict):
+            check.fail(f"{name} 缺少 objects 对象;无法核对 result_bucket")
+            continue
         configured = object_field(objects, "result_bucket")
         if not isinstance(configured, str) or not configured.strip():
-            check.fail(f"{name} 的 objects.result_bucket 缺失或不是字符串")
+            check.fail(f"{name} 的 objects.result_bucket 缺失或不是非空字符串")
             continue
         # 桶名不一致是真实配置错误:不随阶段降级,--phase pre 也必须是 FAIL。
         if bucket and configured != bucket:
@@ -1378,6 +1396,25 @@ def check_network_lifecycle(
     return check
 
 
+def _has_generated_file(directory: Path) -> bool:
+    """目录下至少有一个非隐藏文件(任意深度)。
+
+    只建空骨架不算"已部署":`compose-minimal.md` 第 2 节先
+    `mkdir -p deploy/.runtime/{private,gateway-locks,gateway-spool}`,这三个目录让
+    `.runtime` "非空"却没有任何产物;按非空判定会让前置 4/5 的假 FAIL 在刚建目录时复活。
+    生成私有配置、spool 或探针证据后才出现非隐藏文件。
+    """
+    if not directory.is_dir():
+        return False
+    try:
+        for _root, _dirs, files in os.walk(directory):
+            if any(name for name in files if not name.startswith(".")):
+                return True
+    except OSError:
+        return False
+    return False
+
+
 def resolve_phase(
     requested: str,
     env: dict[str, str],
@@ -1388,8 +1425,8 @@ def resolve_phase(
     """决定按部署前还是部署后判定.
 
     `pre`/`post` 是显式覆盖;`auto` 只认客观信号:本项目已有容器、`deploy/.runtime`
-    存在、私有配置目录非空。出现任一信号即按部署后判定——否则"已部署但私有配置缺失"
-    会被误报成 PENDING。
+    或私有配置目录下已生成文件。出现任一信号即按部署后判定——否则"已部署但私有配置缺失"
+    会被误报成 PENDING。空骨架目录不算信号,见 `_has_generated_file`。
     """
     if requested in {"pre", "post"}:
         # mypy 不会把 `str` 收窄成 `Phase`;显式收窄,保证 PhaseDecision 的类型约束。
@@ -1401,18 +1438,14 @@ def resolve_phase(
         if rows:
             signals.append(f"Compose 项目已有 {len(rows)} 个容器")
     runtime_dir = compose_path.parent / ".runtime"
-    if runtime_dir.exists():
-        signals.append(f"{runtime_dir} 已存在")
+    if _has_generated_file(runtime_dir):
+        signals.append(f"{runtime_dir} 下已生成文件")
     directory = private_dir(env, compose_path)
-    try:
-        populated = directory.is_dir() and any(directory.iterdir())
-    except OSError:
-        populated = False
-    if populated:
-        signals.append(f"私有配置目录 {directory} 非空")
+    if _has_generated_file(directory):
+        signals.append(f"私有配置目录 {directory} 下已生成文件")
     if signals:
         return PhaseDecision("post", "auto:" + ";".join(signals))
-    return PhaseDecision("pre", "auto:未发现容器、deploy/.runtime 或私有配置(尚未部署)")
+    return PhaseDecision("pre", "auto:未发现容器,也没有已生成的 .runtime/私有配置(尚未部署)")
 
 
 def build_checks(
@@ -1500,7 +1533,7 @@ def main(argv: list[str] | None = None) -> int:
         "--phase",
         choices=("auto", "pre", "post"),
         default="auto",
-        help="按部署前还是部署后判定(默认 auto:按 .runtime/私有配置/容器是否存在)",
+        help="按部署前还是部署后判定(默认 auto:按 .runtime/私有配置是否已生成文件或容器是否存在)",
     )
     args = parser.parse_args(argv)
     env_path: Path = args.env_file

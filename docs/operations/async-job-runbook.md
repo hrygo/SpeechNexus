@@ -676,16 +676,19 @@ curl -sS http://127.0.0.1:8000/v1/nexus/jobs/<job_id>
 | --- | --- |
 | `PASS` | 该项当前满足；运行时证据不足时附 `SKIP` 说明，不影响静态结论 |
 | `FAIL` | 配置写了但不对：桶名与 gateway 私有配置不一致、DSN 为空、迁移落后 head、权限缺失等，**任何阶段都必须修** |
-| `PENDING` | 只依赖部署产物（私有配置、ready 实例）且尚未到该阶段；部署前不构成错误 |
+| `PENDING` | 只依赖部署产物（私有配置未生成、实例未注册）且尚未到该阶段；部署前不构成错误 |
 
-只有前置 4（私有配方与 ready 实例）和前置 5（私有 gateway 配置）会在部署前把尚未生成的
-产物记 `PENDING`；前置 1/2/3/6 在任何阶段都是 `PASS` 或 `FAIL`，真实配置错误不会被阶段
-降级。
+只有前置 4（私有配方、尚未注册的实例）和前置 5（私有 gateway 配置）会在部署前把尚未
+生成的产物记 `PENDING`；前置 1/2/3/6 在任何阶段都是 `PASS` 或 `FAIL`，真实配置错误不会
+被阶段降级。实例行已存在但 `instance_state` 不是 `ready` 属于部署后的活证据，任何阶段
+都记 `FAIL`；`PENDING` 只表示“查不到该实例行，尚未注册”。
 
 ### 11.1 两次运行：部署前看 PENDING，部署后看真 FAIL
 
 `--phase auto`（默认）按客观信号选阶段：Compose 项目容器、`deploy/.runtime` 或私有配置
-目录任一存在即按部署后判定，否则按部署前。
+目录下已生成非隐藏文件，任一出现即按部署后判定，否则按部署前。`compose-minimal.md`
+第 2 节 `mkdir -p` 出来的三个空目录（`private`/`gateway-locks`/`gateway-spool`）以及
+`.DS_Store` 之类隐藏文件都不算部署产物。
 
 刚检出的仓库还没有 `deploy/.runtime`，先跑一次，确认没有 FAIL、只有预期的 PENDING：
 
@@ -742,6 +745,8 @@ FAIL 与 PENDING 下逐条给出原因，末尾分别汇总编号。
 - 没有 `psql`、Docker daemon 或数据库从宿主机不可达时，相应运行时证据标 `SKIP` 并说明原因；
 - 对象桶的存在与版本化需要签名凭据，脚本不持有凭据，因此该项恒为 SKIP，靠 `minio-init`
   输出核对；
+- 私有 JSON 的坏文件与坏字段分开点名：不是合法 JSON、缺 `objects`、缺
+  `objects.result_bucket` 各有提示，运维能直接判断该修文件还是修字段；
 - 授权形状的最终权威是进程启动校验与 `docker logs`；脚本通过不等价于启动验证通过。
 
 把任一项人为置为不满足（例如清空 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL`）时，对应项会
@@ -764,11 +769,14 @@ FAIL(配置写了但不对,任何阶段都必须修):前置 1
 | 输入 | 结果 |
 | --- | --- |
 | 刚检出（无 `deploy/.runtime`）、`--env-file deploy/compose.env.example`、默认 `auto` | 阶段 `pre`；前置 1/3 因 Job DSN 为空 FAIL，前置 4/5 为 PENDING（私有配方与 gateway 配置尚未生成），前置 2/6 PASS；退出码 `1` |
+| 只执行 `mkdir -p deploy/.runtime/{private,gateway-locks,gateway-spool}`、未生成任何文件，默认 `auto` | 阶段仍为 `pre`（空骨架不是部署产物）；前置 4/5 保持 PENDING；退出码 `1` |
 | 已生成两份 gateway 私有配置但 `result_bucket=speechnexus-results-typo`（与 env 的 `speechnexus-results` 不一致），`--phase pre` | 前置 5 FAIL 并点名两份配置；`--phase pre` 没有把它降级成 PENDING；退出码 `1` |
-| 私有配置与 env 一致并补齐 `transcription-recipe.json`，三条 Job DSN 为指向未启动 `postgres` 的合成占位身份 | 阶段 `post`（`auto` 看到 `deploy/.runtime`）；6/6 PASS、退出码 `0`；运行时项均 SKIP（数据库、引擎、对象存储从本机不可达） |
+| 私有配置与 env 一致并补齐 `transcription-recipe.json`，三条 Job DSN 为指向未启动 `postgres` 的合成占位身份 | 阶段 `post`（`auto` 看到已生成的私有配置）；6/6 PASS、退出码 `0`；运行时项均 SKIP（数据库、引擎、对象存储从本机不可达） |
+| 一次性 PostgreSQL 中写入 `engine_instances.instance_state=draining`（实例行已存在），`--phase pre` | 前置 4 FAIL 并点名 `instance_state=draining`；删除该实例行后同一输入在 `pre` 为 PENDING、`post` 为 FAIL |
 
 阶段语义由 `tests/unit/test_async_job_prereqs_phase.py` 固定：把桶名不一致改成 PENDING、
-把私有配置缺失改回 FAIL、或删掉阶段判定，都会让对应用例变红。
+把私有配置缺失改回 FAIL、把已注册但非 ready 的实例改回 PENDING、删掉阶段判定、让
+`resolve_phase` 恒返回 `pre`、或让 `main()` 忽略 `--phase`，都会让对应用例变红。
 
 ## 12. 失败排查
 

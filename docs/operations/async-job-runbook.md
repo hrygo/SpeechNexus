@@ -253,7 +253,7 @@ export SN_ADMIN_DSN="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.
 停止，不猜测归属。
 
 > 本机验证：对一次性 PostgreSQL 16.15 执行过同一份代码，输出
-> `job roles ready: sn_job_writer sn_job_admission sn_job_dispatch; grants: 208 statements`，
+> `job roles ready: sn_job_writer sn_job_admission sn_job_dispatch; grants: 219 statements`，
 > 退出码 `0`。
 
 ```bash
@@ -815,7 +815,7 @@ FAIL(配置写了但不对,任何阶段都必须修):前置 1
 | `check-async-job-prereqs.py`（Python 3.9.6 / 3.12.14 解析并运行 `--offline`） | 均通过；语法按 3.9 校验 |
 | `check-async-job-prereqs.py` 的全部几种输入 | 见下 |
 | `python3 scripts/dev-env/check-doc-refs.py` | `RESULT PASS`（refs=88，EXTERNAL=1，OK=87） |
-| `ruff format --check .` / `ruff check .` | `1671 files already formatted` / `All checks passed!` |
+| `ruff format --check .` / `ruff check .` | 均通过；文件数随仓库变化，以命令实际输出为准，不引用固定值 |
 | `uv run mypy` | 新增脚本无错误；仓库其余 5 个文件在 macOS 上报 `pidfd_*` 缺失（Linux 限定的既有问题，与本次改动无关） |
 
 自检的实测输入：

@@ -7,17 +7,28 @@ writer/admission DSN、迁移到唯一 head、派发角色的读写授权、已�
 gateway 的 `result_bucket`,以及 `network_mode: service:gateway` 下的启动顺序。
 
 本脚本只做判断,不做修复:不改文件、不写数据库、不执行迁移、不重启容器。每项输出
-PASS/FAIL,FAIL 时点名缺的是哪一项;需要 Docker daemon、psql 或对象存储凭据才能判定的
-部分标 SKIP 并说明原因,因此没有 daemon 时静态部分仍可运行。
+PASS/FAIL/PENDING,FAIL 时点名缺的是哪一项;需要 Docker daemon、psql 或对象存储凭据才能
+判定的部分标 SKIP 并说明原因,因此没有 daemon 时静态部分仍可运行。
+
+三种判定:
+  PASS    该项当前满足。
+  FAIL    配置写了但不对(桶名不一致、DSN 为空、迁移落后、权限缺失等),任何阶段都必须修。
+  PENDING 依赖部署产物(私有配置、ready 实例)且尚未到该阶段;部署前没有意义,不是错误。
+
+阶段由 `--phase auto|pre|post` 决定,默认 `auto`:Compose 项目容器、`deploy/.runtime`
+或私有配置目录下已生成文件,任一出现即按部署后判定,否则按部署前;`mkdir -p` 出来的
+空骨架不算部署。只有标为部署后的前置(4、5)会在 pre 阶段把缺项记为 PENDING;真实
+配置错误永远 FAIL,不会被阶段降级。
 
 用法(仓库根目录):
   python3 scripts/dev-env/check-async-job-prereqs.py
   python3 scripts/dev-env/check-async-job-prereqs.py --env-file deploy/compose.env
   python3 scripts/dev-env/check-async-job-prereqs.py --offline
-  python3 scripts/dev-env/check-async-job-prereqs.py --compose-file deploy/compose.yaml
+  python3 scripts/dev-env/check-async-job-prereqs.py -f deploy/compose.yaml
+  python3 scripts/dev-env/check-async-job-prereqs.py --phase pre|post|auto
 
-退出码:0 无 FAIL(允许 SKIP);1 至少一项 FAIL(env 文件缺失也是 1);2 参数或
-compose 路径错误.
+退出码:0 无 FAIL(允许 SKIP 与 PENDING;只有 PENDING 时摘要明确"尚未到该阶段");1 至少
+一项 FAIL(env 文件缺失也是 1);2 参数或 compose 路径错误.
 
 判定边界:静态检查只读 `deploy/compose.env`、`deploy/compose.yaml` 与私有配置的
 文件形态;运行时检查只做 `SELECT`(含 `has_*_privilege` 与 `LIMIT 0` 列探测)、引擎
@@ -344,7 +355,10 @@ WRITER_UPDATE_COLUMNS: dict[str, tuple[str, ...]] = {
 # 复制自 speech.domain.job_dispatch.DispatchJobKind 的取值。
 DISPATCHABLE_KINDS = frozenset({"asr", "tts", "voice_design", "voice_clone", "voice_validation"})
 
-Status = Literal["PASS", "FAIL"]
+# 本次运行按部署前还是部署后判定;pre 表示私有配置/容器/ready 实例还不存在。
+Phase = Literal["pre", "post"]
+# FAIL 是"配置写了但不对",PENDING 是"部署产物尚未生成"。
+Status = Literal["PASS", "FAIL", "PENDING"]
 
 
 @dataclass(frozen=True)
@@ -369,16 +383,31 @@ class Dsn:
 
 @dataclass
 class Prereq:
-    """一项前置的判定结果:静态失败逐条记录,运行时证据单独说明。"""
+    """一项前置的判定结果:静态失败逐条记录,运行时证据单独说明。
+
+    `required_phase` 是该项依赖的部署产物从哪个阶段起必须存在:标为 `post` 的前置
+    (4、5)在 pre 阶段把缺项记 PENDING;`phase` 是本次运行的阶段。真实配置错误只走
+    `fail()`,不受阶段影响。
+    """
 
     number: int
     title: str
+    required_phase: Phase = "pre"
+    phase: Phase = "pre"
     failures: list[str] = field(default_factory=list)
+    pending: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     runtime: list[str] = field(default_factory=list)
 
     def fail(self, message: str) -> None:
         self.failures.append(message)
+
+    def unresolved(self, message: str) -> None:
+        """部署产物尚未就位:pre 阶段记 PENDING,post 阶段记 FAIL。"""
+        if self.phase == "pre" and self.required_phase == "post":
+            self.pending.append(message)
+        else:
+            self.failures.append(message)
 
     def note(self, message: str) -> None:
         self.notes.append(message)
@@ -388,7 +417,19 @@ class Prereq:
 
     @property
     def status(self) -> Status:
-        return "FAIL" if self.failures else "PASS"
+        if self.failures:
+            return "FAIL"
+        if self.pending:
+            return "PENDING"
+        return "PASS"
+
+
+@dataclass(frozen=True)
+class PhaseDecision:
+    """本次运行采用的阶段与判定依据,用于让输出可解释。"""
+
+    phase: Phase
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -519,12 +560,21 @@ def probe_database(dsn: Dsn, env: dict[str, str]) -> PsqlResult:
     return psql_select(dsn, env, "SELECT 1")
 
 
-def read_json(path: Path) -> object | None:
+def read_json(path: Path) -> tuple[object | None, str | None]:
+    """读取 JSON;返回 (文档, 错误说明)。
+
+    解析失败与读文件失败都是"配置写了但不对",不是部署产物:调用方据此点名该修文件,
+    而不是与"缺键"共用一句含糊提示。
+    """
     try:
-        document: object = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    return document
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return None, f"无法读取({exc})"
+    try:
+        document: object = json.loads(text)
+    except ValueError as exc:
+        return None, f"不是合法 JSON({exc})"
+    return document, None
 
 
 def object_field(document: object, key: str) -> object | None:
@@ -686,8 +736,10 @@ def _summarize(lines: list[str], limit: int = 6) -> str:
     return head
 
 
-def check_api_job_dsns(env: dict[str, str], compose_text: str, offline: bool) -> Prereq:
-    check = Prereq(1, "API 侧 Job writer / admission DSN 与 writer 权限")
+def check_api_job_dsns(
+    env: dict[str, str], compose_text: str, offline: bool, phase: Phase
+) -> Prereq:
+    check = Prereq(1, "API 侧 Job writer / admission DSN 与 writer 权限", phase=phase)
     parsed: dict[str, Dsn] = {}
     for name in (
         "SPEECHNEXUS_JOB_WRITER_DATABASE_URL",
@@ -854,8 +906,8 @@ def _ancestors(revision: str, parents: dict[str, tuple[str, ...]]) -> set[str]:
     return seen
 
 
-def check_migration(env: dict[str, str], offline: bool) -> Prereq:
-    check = Prereq(2, "迁移到唯一 head")
+def check_migration(env: dict[str, str], offline: bool, phase: Phase) -> Prereq:
+    check = Prereq(2, "迁移到唯一 head", phase=phase)
     raw = env.get("SPEECHNEXUS_MIGRATION_DATABASE_URL", "").strip()
     dsn = parse_dsn(raw) if raw else None
     if not raw:
@@ -949,8 +1001,10 @@ def check_migration(env: dict[str, str], offline: bool) -> Prereq:
     return check
 
 
-def check_dispatch_role(env: dict[str, str], compose_text: str, offline: bool) -> Prereq:
-    check = Prereq(3, "派发角色与五组 grant(读 + 写)")
+def check_dispatch_role(
+    env: dict[str, str], compose_text: str, offline: bool, phase: Phase
+) -> Prereq:
+    check = Prereq(3, "派发角色与五组 grant(读 + 写)", phase=phase)
     raw = env.get("SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL", "").strip()
     dsn = parse_dsn(raw) if raw else None
     if not raw:
@@ -1059,8 +1113,13 @@ def engine_health_url(env: dict[str, str]) -> str:
     return raw
 
 
-def check_engine(env: dict[str, str], compose_path: Path, offline: bool) -> Prereq:
-    check = Prereq(4, "真实引擎与实例注册")
+def check_engine(env: dict[str, str], compose_path: Path, offline: bool, phase: Phase) -> Prereq:
+    check = Prereq(
+        4,
+        "真实引擎与实例注册",
+        required_phase="post",
+        phase=phase,
+    )
     raw = env.get("SPEECHNEXUS_ENGINE_HEALTH_URL", "").strip()
     url = engine_health_url(env)
     if not raw:
@@ -1079,7 +1138,10 @@ def check_engine(env: dict[str, str], compose_path: Path, offline: bool) -> Prer
         check.fail("SPEECHNEXUS_ENGINE_GENERATION 必须是正整数")
     recipe = private_dir(env, compose_path) / "transcription-recipe.json"
     if not recipe.is_file():
-        check.fail(f"私有配方不存在:{recipe};engine-registration 无法读取")
+        check.unresolved(
+            f"私有配方尚未生成:{recipe};"
+            "部署准备阶段按 compose-minimal 生成后,engine-registration 才能读取"
+        )
     else:
         check.note(f"私有配方 {recipe}(mode {oct(recipe.stat().st_mode & 0o777)})")
     if offline:
@@ -1126,21 +1188,30 @@ def check_engine(env: dict[str, str], compose_path: Path, offline: bool) -> Prer
         check.fail(f"engine_instances 查询失败:{rows.error}")
         return check
     if not rows.stdout:
-        check.fail(
+        check.unresolved(
             f"实例 {instance} generation {generation} 未注册;"
             "先执行 engine-registration 并取得 outcome=registered"
         )
         return check
     state = rows.stdout.split("|")[-1]
     if state != "ready":
+        # 行是刚查出来的活证据:部署已经发生,实例存在却没 ready 是配置/运维错误,
+        # 不是"尚未到该阶段"。只有查不到行(`unresolved` 上面那处)才算 PENDING。
         check.fail(f"实例 {instance} 的 instance_state={state};准入只接受 ready")
         return check
     check.probe(f"运行时: OK — 实例 {instance} g{generation} 已注册且 ready")
     return check
 
 
-def check_result_bucket(env: dict[str, str], compose_text: str, compose_path: Path) -> Prereq:
-    check = Prereq(5, "gateway result_bucket 存在且被创建/版本化")
+def check_result_bucket(
+    env: dict[str, str], compose_text: str, compose_path: Path, phase: Phase
+) -> Prereq:
+    check = Prereq(
+        5,
+        "gateway result_bucket 存在且被创建/版本化",
+        required_phase="post",
+        phase=phase,
+    )
     bucket = env.get("SPEECHNEXUS_EXECUTION_RESULT_BUCKET", "").strip()
     if not bucket:
         check.fail("SPEECHNEXUS_EXECUTION_RESULT_BUCKET 为空;结果发布在 clamp 之后首次读回失败")
@@ -1151,14 +1222,24 @@ def check_result_bucket(env: dict[str, str], compose_text: str, compose_path: Pa
     for name in ("gateway-file-asr.json", "gateway-file-tts.json"):
         path = directory / name
         if not path.is_file():
-            check.fail(f"私有 gateway 配置不存在:{path};无法核对 result_bucket")
+            check.unresolved(
+                f"私有 gateway 配置尚未生成:{path};"
+                "部署准备阶段从 deploy/private/*.example.json 复制后,才能核对 result_bucket"
+            )
             continue
-        document = read_json(path)
+        document, parse_error = read_json(path)
+        if parse_error is not None:
+            check.fail(f"{name} {parse_error};修正该文件后才能核对 result_bucket")
+            continue
         objects = object_field(document, "objects")
+        if not isinstance(objects, dict):
+            check.fail(f"{name} 缺少 objects 对象;无法核对 result_bucket")
+            continue
         configured = object_field(objects, "result_bucket")
         if not isinstance(configured, str) or not configured.strip():
-            check.fail(f"{name} 的 objects.result_bucket 缺失或不是字符串")
+            check.fail(f"{name} 的 objects.result_bucket 缺失或不是非空字符串")
             continue
+        # 桶名不一致是真实配置错误:不随阶段降级,--phase pre 也必须是 FAIL。
         if bucket and configured != bucket:
             check.fail(
                 f"{name} 的 result_bucket={configured} 与 env 的 {bucket} 不一致;"
@@ -1236,8 +1317,10 @@ def _effective(block: str) -> str:
     return "\n".join(line for line in block.splitlines() if not line.lstrip().startswith("#"))
 
 
-def check_network_lifecycle(env: dict[str, str], compose_text: str, offline: bool) -> Prereq:
-    check = Prereq(6, "gateway 网络命名空间与启动顺序")
+def check_network_lifecycle(
+    env: dict[str, str], compose_text: str, offline: bool, phase: Phase
+) -> Prereq:
+    check = Prereq(6, "gateway 网络命名空间与启动顺序", phase=phase)
     worker_block = compose_service_block(compose_text, "job-dispatch-worker")
     if worker_block is None:
         check.fail("deploy/compose.yaml 缺少 job-dispatch-worker 服务")
@@ -1313,22 +1396,77 @@ def check_network_lifecycle(env: dict[str, str], compose_text: str, offline: boo
     return check
 
 
+def _has_generated_file(directory: Path) -> bool:
+    """目录下至少有一个非隐藏文件(任意深度)。
+
+    只建空骨架不算"已部署":`compose-minimal.md` 第 2 节先
+    `mkdir -p deploy/.runtime/{private,gateway-locks,gateway-spool}`,这三个目录让
+    `.runtime` "非空"却没有任何产物;按非空判定会让前置 4/5 的假 FAIL 在刚建目录时复活。
+    生成私有配置、spool 或探针证据后才出现非隐藏文件。
+    """
+    if not directory.is_dir():
+        return False
+    try:
+        for _root, _dirs, files in os.walk(directory):
+            if any(name for name in files if not name.startswith(".")):
+                return True
+    except OSError:
+        return False
+    return False
+
+
+def resolve_phase(
+    requested: str,
+    env: dict[str, str],
+    compose_path: Path,
+    compose_text: str,
+    offline: bool,
+) -> PhaseDecision:
+    """决定按部署前还是部署后判定.
+
+    `pre`/`post` 是显式覆盖;`auto` 只认客观信号:本项目已有容器、`deploy/.runtime`
+    或私有配置目录下已生成文件。出现任一信号即按部署后判定——否则"已部署但私有配置缺失"
+    会被误报成 PENDING。空骨架目录不算信号,见 `_has_generated_file`。
+    """
+    if requested in {"pre", "post"}:
+        # mypy 不会把 `str` 收窄成 `Phase`;显式收窄,保证 PhaseDecision 的类型约束。
+        explicit: Phase = "pre" if requested == "pre" else "post"
+        return PhaseDecision(explicit, f"--phase {explicit}(显式覆盖)")
+    signals: list[str] = []
+    if not offline:
+        rows = docker_containers(compose_project_name(compose_text))
+        if rows:
+            signals.append(f"Compose 项目已有 {len(rows)} 个容器")
+    runtime_dir = compose_path.parent / ".runtime"
+    if _has_generated_file(runtime_dir):
+        signals.append(f"{runtime_dir} 下已生成文件")
+    directory = private_dir(env, compose_path)
+    if _has_generated_file(directory):
+        signals.append(f"私有配置目录 {directory} 下已生成文件")
+    if signals:
+        return PhaseDecision("post", "auto:" + ";".join(signals))
+    return PhaseDecision("pre", "auto:未发现容器,也没有已生成的 .runtime/私有配置(尚未部署)")
+
+
 def build_checks(
-    env: dict[str, str], compose_text: str, compose_path: Path, offline: bool
+    env: dict[str, str], compose_text: str, compose_path: Path, offline: bool, phase: Phase
 ) -> list[Prereq]:
     return [
-        check_api_job_dsns(env, compose_text, offline),
-        check_migration(env, offline),
-        check_dispatch_role(env, compose_text, offline),
-        check_engine(env, compose_path, offline),
-        check_result_bucket(env, compose_text, compose_path),
-        check_network_lifecycle(env, compose_text, offline),
+        check_api_job_dsns(env, compose_text, offline, phase),
+        check_migration(env, offline, phase),
+        check_dispatch_role(env, compose_text, offline, phase),
+        check_engine(env, compose_path, offline, phase),
+        check_result_bucket(env, compose_text, compose_path, phase),
+        check_network_lifecycle(env, compose_text, offline, phase),
     ]
 
 
-def render(checks: list[Prereq], env_path: Path, compose_path: Path) -> None:
+def render(
+    checks: list[Prereq], env_path: Path, compose_path: Path, decision: PhaseDecision
+) -> None:
     print(f"async-job 前置自检: env={env_path} compose={compose_path}")
     print("只读检查:不改文件、不写数据库、不执行迁移、不重启容器")
+    print(f"阶段: {decision.phase} — {decision.reason}")
     print()
     for check in checks:
         print(f"[{check.status}] 前置 {check.number}  {check.title}")
@@ -1336,17 +1474,36 @@ def render(checks: list[Prereq], env_path: Path, compose_path: Path) -> None:
             print(f"        · {note}")
         for failure in check.failures:
             print(f"        ✗ {failure}")
+        for pending_item in check.pending:
+            print(f"        … {pending_item}")
         for runtime in check.runtime:
             print(f"        {runtime}")
         print()
     passed = sum(1 for check in checks if check.status == "PASS")
-    failed = len(checks) - passed
-    if failed:
-        names = "、".join(f"前置 {check.number}" for check in checks if check.status == "FAIL")
-        print(f"结果: {passed}/{len(checks)} PASS;缺项或配置不满足:{names}")
-        print("修复后重跑本脚本;SKIP 项需在部署网络或持有凭据的环境单独核对。")
-    else:
-        print(f"结果: {passed}/{len(checks)} PASS;6 项前置的静态判定全部满足。")
+    failed_checks = [check for check in checks if check.status == "FAIL"]
+    pending_checks = [check for check in checks if check.status == "PENDING"]
+    print(
+        f"结果: {passed}/{len(checks)} PASS;{len(pending_checks)} PENDING;{len(failed_checks)} FAIL"
+    )
+    if failed_checks:
+        print(
+            "FAIL(配置写了但不对,任何阶段都必须修):"
+            + "、".join(f"前置 {check.number}" for check in failed_checks)
+        )
+    if pending_checks:
+        print(
+            "PENDING(部署后才有意义,尚未到该阶段):"
+            + "、".join(f"前置 {check.number}" for check in pending_checks)
+        )
+    if failed_checks:
+        print("下一步:按上方 ✗ 逐条修复 FAIL——这些项与部署阶段无关;修好后重跑本脚本。")
+    if pending_checks:
+        print(
+            "下一步:完成部署准备(生成私有配置并 up)后重跑,之前 PENDING 的项应变成 PASS;"
+            "已部署仍显示 PENDING 时用 --phase post 强制按部署后判定。"
+        )
+    if not failed_checks and not pending_checks:
+        print("6 项前置的静态判定全部满足。")
         print("SKIP 项仍须按提示在部署网络内核对;通过本脚本不等于异步 Job 已跑通。")
 
 
@@ -1362,14 +1519,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--compose-file",
+        "-f",
         type=Path,
         default=REPO_ROOT / "deploy/compose.yaml",
-        help="Compose 定义(默认 deploy/compose.yaml)",
+        help="Compose 定义(默认 deploy/compose.yaml;短选项 -f 与 docker compose 一致)",
     )
     parser.add_argument(
         "--offline",
         action="store_true",
         help="跳过 psql/HTTP/Docker 探测,只做静态判定",
+    )
+    parser.add_argument(
+        "--phase",
+        choices=("auto", "pre", "post"),
+        default="auto",
+        help="按部署前还是部署后判定(默认 auto:按 .runtime/私有配置是否已生成文件或容器是否存在)",
     )
     args = parser.parse_args(argv)
     env_path: Path = args.env_file
@@ -1391,9 +1555,10 @@ def main(argv: list[str] | None = None) -> int:
     except OSError as exc:
         print(f"读取 compose 文件失败:{exc}", file=sys.stderr)
         return 2
-    checks = build_checks(env, compose_text, compose_path, args.offline)
-    render(checks, env_path, compose_path)
-    return 0 if all(check.status == "PASS" for check in checks) else 1
+    decision = resolve_phase(args.phase, env, compose_path, compose_text, args.offline)
+    checks = build_checks(env, compose_text, compose_path, args.offline, decision.phase)
+    render(checks, env_path, compose_path, decision)
+    return 0 if all(check.status != "FAIL" for check in checks) else 1
 
 
 if __name__ == "__main__":

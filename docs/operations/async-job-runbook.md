@@ -14,7 +14,9 @@ date: 2026-11-08
 
 配套的只读自检是
 [`scripts/dev-env/check-async-job-prereqs.py`](../../scripts/dev-env/check-async-job-prereqs.py)：
-它按本文的六项逐条判定，FAIL 时点名缺哪一项。本手册的每条命令都标注了执行状态；未在本机
+它按本文的六项逐条判定为 `PASS`/`FAIL`/`PENDING`，FAIL 时点名缺哪一项；`PENDING` 表示
+依赖的部署产物（私有配置、ready 实例）尚未生成，是"还没到该阶段"而不是配置错误，判定
+规则见[第 11 节](#11-自检脚本)。本手册的每条命令都标注了执行状态；未在本机
 验证的命令一律注明原因，见[第 13 节](#13-本机验证记录与未验证项)。
 
 本文不改变能力结论：**满足六项前置不等于异步 Job 已验收**。真实模型质量、GPU 容量、物理
@@ -668,21 +670,66 @@ curl -sS http://127.0.0.1:8000/v1/nexus/jobs/<job_id>
 
 只读检查六项前置，不改文件、不写数据库、不执行迁移、不重启容器：
 
+脚本把每一项判成三种状态：
+
+| 状态 | 含义 |
+| --- | --- |
+| `PASS` | 该项当前满足；运行时证据不足时附 `SKIP` 说明，不影响静态结论 |
+| `FAIL` | 配置写了但不对：桶名与 gateway 私有配置不一致、DSN 为空、迁移落后 head、权限缺失等，**任何阶段都必须修** |
+| `PENDING` | 只依赖部署产物（私有配置未生成、实例未注册）且尚未到该阶段；部署前不构成错误 |
+
+只有前置 4（私有配方、尚未注册的实例）和前置 5（私有 gateway 配置）会在部署前把尚未
+生成的产物记 `PENDING`；前置 1/2/3/6 在任何阶段都是 `PASS` 或 `FAIL`，真实配置错误不会
+被阶段降级。实例行已存在但 `instance_state` 不是 `ready` 属于部署后的活证据，任何阶段
+都记 `FAIL`；`PENDING` 只表示“查不到该实例行，尚未注册”。
+
+### 11.1 两次运行：部署前看 PENDING，部署后看真 FAIL
+
+`--phase auto`（默认）按客观信号选阶段：Compose 项目容器、`deploy/.runtime` 或私有配置
+目录下已生成非隐藏文件，任一出现即按部署后判定，否则按部署前。`compose-minimal.md`
+第 2 节 `mkdir -p` 出来的三个空目录（`private`/`gateway-locks`/`gateway-spool`）以及
+`.DS_Store` 之类隐藏文件都不算部署产物。
+
+刚检出的仓库还没有 `deploy/.runtime`，先跑一次，确认没有 FAIL、只有预期的 PENDING：
+
 ```bash
-python3 scripts/dev-env/check-async-job-prereqs.py
+python3 scripts/dev-env/check-async-job-prereqs.py \
+  --env-file deploy/compose.env -f deploy/compose.yaml
 ```
+
+```text
+阶段: pre — auto:未发现容器、deploy/.runtime 或私有配置(尚未部署)
+...
+[PENDING] 前置 4  真实引擎与实例注册
+        … 私有配方尚未生成:…/deploy/.runtime/private/transcription-recipe.json;部署准备阶段按 compose-minimal 生成后,engine-registration 才能读取
+[PENDING] 前置 5  gateway result_bucket 存在且被创建/版本化
+        … 私有 gateway 配置尚未生成:…/deploy/.runtime/private/gateway-file-asr.json;部署准备阶段从 deploy/private/*.example.json 复制后,才能核对 result_bucket
+```
+
+完成第 3–8 节并 `up` 之后再跑一次。此时 `deploy/.runtime` 已存在，`auto` 已按部署后判定；
+部署门禁建议显式 `--phase post`，避免私有配置漏生成时被 `PENDING` 掩盖：
+
+```bash
+python3 scripts/dev-env/check-async-job-prereqs.py \
+  --env-file deploy/compose.env -f deploy/compose.yaml --phase post
+```
+
+预期 `PENDING` 全部变成 `PASS`。部署后仍出现 `PENDING` 或残留 `FAIL`，说明私有配置、
+引擎注册或授权确实没做完：`PENDING` 只表示"还没到该阶段"，不表示"以后会自动满足"。
 
 选项：
 
 | 选项 | 作用 |
 | --- | --- |
 | `--env-file PATH` | 指定环境文件（默认 `deploy/compose.env`） |
-| `--compose-file PATH` | 指定 Compose 定义（默认 `deploy/compose.yaml`） |
+| `--compose-file PATH`、`-f PATH` | 指定 Compose 定义（默认 `deploy/compose.yaml`；`-f` 与 `docker compose` 一致） |
+| `--phase auto\|pre\|post` | 判定阶段；`auto` 按容器、`deploy/.runtime`、私有配置目录判定，`pre`/`post` 为显式覆盖 |
 | `--offline` | 跳过 psql / HTTP / Docker 探测，只做静态判定 |
 
-退出码 `0` 表示 6 项都没有 FAIL（允许 SKIP）；`1` 表示至少一项 FAIL，或 env 文件不存在
-（此时直接打印生成该文件的指引，不输出六项判定）；`2` 表示 compose 文件缺失/不可读或参数
-错误。每项一行 `[PASS]`/`[FAIL]`，FAIL 下逐条给出原因，末尾汇总缺项编号。
+退出码 `0` 表示没有 FAIL（允许 SKIP 与 PENDING，摘要会点名 PENDING 是"尚未到该阶段"）；
+`1` 表示至少一项 FAIL，或 env 文件不存在（此时直接打印生成该文件的指引，不输出六项判定）；
+`2` 表示 compose 文件缺失/不可读或参数错误。每项一行 `[PASS]`/`[FAIL]`/`[PENDING]`，
+FAIL 与 PENDING 下逐条给出原因，末尾分别汇总编号。
 
 判定边界：
 
@@ -698,17 +745,38 @@ python3 scripts/dev-env/check-async-job-prereqs.py
 - 没有 `psql`、Docker daemon 或数据库从宿主机不可达时，相应运行时证据标 `SKIP` 并说明原因；
 - 对象桶的存在与版本化需要签名凭据，脚本不持有凭据，因此该项恒为 SKIP，靠 `minio-init`
   输出核对；
+- 私有 JSON 的坏文件与坏字段分开点名：不是合法 JSON、缺 `objects`、缺
+  `objects.result_bucket` 各有提示，运维能直接判断该修文件还是修字段；
 - 授权形状的最终权威是进程启动校验与 `docker logs`；脚本通过不等价于启动验证通过。
 
 把任一项人为置为不满足（例如清空 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL`）时，对应项会
-FAIL 并点名该键（以下为实测输出节选）：
+FAIL 并点名该键（以下为实测输出节选，阶段为部署后）：
 
 ```text
-[FAIL] 前置 1  API 侧 Job writer / admission DSN
+阶段: post — auto:deploy/.runtime 已存在
+[FAIL] 前置 1  API 侧 Job writer / admission DSN 与 writer 权限
         ✗ SPEECHNEXUS_JOB_WRITER_DATABASE_URL 为空;POST /v1/nexus/jobs 直接返回 503 job_unavailable
 ...
-结果: 5/6 PASS;缺项或配置不满足:前置 1
+结果: 5/6 PASS;0 PENDING;1 FAIL
+FAIL(配置写了但不对,任何阶段都必须修):前置 1
 ```
+
+### 11.2 三态判定的实测输入
+
+在 `/private/tmp/sn-572b`（基于 `decf0104`）、以 `deploy/compose.yaml` 与合成 env 执行，
+2026-11-08：
+
+| 输入 | 结果 |
+| --- | --- |
+| 刚检出（无 `deploy/.runtime`）、`--env-file deploy/compose.env.example`、默认 `auto` | 阶段 `pre`；前置 1/3 因 Job DSN 为空 FAIL，前置 4/5 为 PENDING（私有配方与 gateway 配置尚未生成），前置 2/6 PASS；退出码 `1` |
+| 只执行 `mkdir -p deploy/.runtime/{private,gateway-locks,gateway-spool}`、未生成任何文件，默认 `auto` | 阶段仍为 `pre`（空骨架不是部署产物）；前置 4/5 保持 PENDING；退出码 `1` |
+| 已生成两份 gateway 私有配置但 `result_bucket=speechnexus-results-typo`（与 env 的 `speechnexus-results` 不一致），`--phase pre` | 前置 5 FAIL 并点名两份配置；`--phase pre` 没有把它降级成 PENDING；退出码 `1` |
+| 私有配置与 env 一致并补齐 `transcription-recipe.json`，三条 Job DSN 为指向未启动 `postgres` 的合成占位身份 | 阶段 `post`（`auto` 看到已生成的私有配置）；6/6 PASS、退出码 `0`；运行时项均 SKIP（数据库、引擎、对象存储从本机不可达） |
+| 一次性 PostgreSQL 中写入 `engine_instances.instance_state=draining`（实例行已存在），`--phase pre` | 前置 4 FAIL 并点名 `instance_state=draining`；删除该实例行后同一输入在 `pre` 为 PENDING、`post` 为 FAIL |
+
+阶段语义由 `tests/unit/test_async_job_prereqs_phase.py` 固定：把桶名不一致改成 PENDING、
+把私有配置缺失改回 FAIL、把已注册但非 ready 的实例改回 PENDING、删掉阶段判定、让
+`resolve_phase` 恒返回 `pre`、或让 `main()` 忽略 `--phase`，都会让对应用例变红。
 
 ## 12. 失败排查
 

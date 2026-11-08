@@ -339,7 +339,7 @@ def test_a_never_dispatched_failure_cannot_be_given_any_output_interval(
 ) -> None:
     original = pending(foundation, recovery_ledger)
     original.mark_not_dispatched_failure(
-        ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN, at=original.updated_at
+        ExecutionErrorCode.INVALID_EXECUTION_REQUEST, at=original.updated_at
     )
     closed = recovery_ledger.record_execution_observation(
         RecordExecutionObservation.from_intent(original, expected_version=1)
@@ -366,7 +366,7 @@ def test_diagnostic_intervals_block_a_false_unsent_failure_without_charging_gene
     )
     assert current.version == original.version
     original.mark_not_dispatched_failure(
-        ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN, at=original.updated_at
+        ExecutionErrorCode.INVALID_EXECUTION_REQUEST, at=original.updated_at
     )
     with pytest.raises(ExecutionCleanupPendingError):
         recovery_ledger.record_execution_observation(

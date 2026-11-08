@@ -11,6 +11,8 @@ from datetime import datetime
 from typing import Any
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+from speechnexus_contracts import parse
 from tests.fake.file_voice_clone_configuration import reference_wav
 from tests.integration.test_coordination_foundation import foundation as foundation
 from tests.integration.test_production_admission import AdmissionDatabase
@@ -23,7 +25,10 @@ from tests.integration.test_public_job_atomic_admission_pg import (
     _seed,
     _store,
 )
+from tests.unit.backend.test_health import _settings
 
+from speechnexus_backend.app import create_app
+from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.application.voice_publications import PublicationRequest
 from speechnexus_backend.speech.application.voice_validation_report import (
     ValidationRunFacts,
@@ -78,6 +83,8 @@ REFERENCE_SHA = "sha256:" + hashlib.sha256(REFERENCE_PAYLOAD).hexdigest()
 PCM = b"\x01\x00" * 2400
 PROBE_TEXT = "A validation-only sentence."
 NOW_US = 1_800_000_000_000_000
+PREFIX = "/v1/nexus/jobs"
+PRONUNCIATION = "pron-custom-pg"
 
 
 def _digest(raw: bytes) -> str:
@@ -510,4 +517,83 @@ def test_an_unpublished_voice_is_rejected_before_any_command_is_written(
     result = _store(admission_database).create(_custom_tts_job(voice_id, "1"))
     assert result.outcome == "rejected"
     assert result.error_code == "voice_not_published"
+    assert db.query("SELECT count(*) AS n FROM admission_operations")[0]["n"] == before
+
+
+def _seed_pronunciation(admission: AdmissionDatabase) -> None:
+    """Insert one immutable pronunciation revision the admission cursor can read."""
+    db = admission.runtime.foundation.database
+    definition = json.dumps(
+        {"encoding": "pinyin", "entries": [{"term": "Nexus", "pronunciation": "Nexus"}]}
+    )
+    db.query(
+        "INSERT INTO speech_pronunciation_families (pronunciation_id) VALUES (%s)",
+        (PRONUNCIATION,),
+    )
+    db.query(
+        "INSERT INTO speech_pronunciation_revisions "
+        "(pronunciation_id, revision, definition_json, definition_digest, key_digest, "
+        "request_digest, created_at_us, encoding, entry_count) "
+        "VALUES (%s, '1', %s, %s, %s, %s, %s, 'pinyin', 1)",
+        (
+            PRONUNCIATION,
+            definition,
+            _digest(definition.encode()),
+            "sha256:" + ("1" * 64),
+            "sha256:" + ("3" * 64),
+            NOW_US,
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"overrides": {"tts": {"instructions": "warm"}}},
+        {"overrides": {"tts": {"speed": 1.25}}},
+        {"pronunciation": {"id": PRONUNCIATION, "revision": "1"}},
+        {
+            "pronunciation": {"id": PRONUNCIATION, "revision": "1"},
+            "overrides": {"tts": {"pronunciation_revision": "1"}},
+        },
+    ],
+    ids=["instructions", "speed", "pronunciation", "pronunciation_source"],
+)
+async def test_custom_voice_refuses_base_only_parameters_over_http(
+    admission_database: AdmissionDatabase, change: dict[str, Any]
+) -> None:
+    """The create route returns 422 before any admission row is written."""
+    _seed(admission_database)
+    publication = _publication(admission_database)
+    _seed_pronunciation(admission_database)
+    db = admission_database.runtime.foundation.database
+    before = db.query("SELECT count(*) AS n FROM admission_operations")[0]["n"]
+    store = _store(admission_database)
+    app = create_app(settings=_settings(), jobs=PublicJobs(store, store))
+    body = {
+        "kind": "tts",
+        "workspace_id": WORKSPACE,
+        "model": BINDING,
+        "input": {"text": "Custom narration."},
+        "voice": {
+            "id": publication["voice_id"],
+            "revision": str(publication["voice_revision"]),
+        },
+        **change,
+    }
+    # The 422 must come from policy, not from a request-shape refusal.
+    parse("JobCreateRequest", body)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(PREFIX, json=body)
+
+    assert response.status_code == 422, response.text
+    error = parse("ErrorResponse", response.json())["error"]
+    assert error["code"] == "unsupported_parameter"
+    assert error["type"] == "invalid_request_error"
+    assert error["message"] == "The Job request is not supported."
+    assert error["param"] is None
+    assert error["retryable"] is False
+    assert error["request_id"]
+    assert response.headers["Cache-Control"] == "no-store"
     assert db.query("SELECT count(*) AS n FROM admission_operations")[0]["n"] == before

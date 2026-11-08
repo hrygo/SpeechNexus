@@ -68,9 +68,11 @@ frozen assertion in `tests/contract/test_internal_additive_promotions.py`.
 This proves only that every old valid request remains valid after the optional
 property is appended. It does not prove that an old gateway accepts the new
 field, that any other consumer is compatible, or that a required/type/enum
-change is safe. An old gateway rejects a command containing the new property
-deterministically instead of silently falling back; deployment must upgrade
-gateways before the backend starts emitting it.
+change is safe. Only custom commands carry the new property; builtin commands
+keep the previous shape without that key. An old gateway rejects a custom
+command containing the new property deterministically instead of silently
+falling back, while a builtin command remains valid because it never carries the
+key; deployment must upgrade gateways before the backend starts emitting it.
 
 ## What the check establishes
 

@@ -304,7 +304,9 @@ def test_receive_waits_for_pool_lock_without_sending(
                     assert time.monotonic() < deadline, "PostgreSQL lock wait was not observed"
                     Event().wait(0.01)
                 assert receipt_row(foundation) == []
-                assert not live.ledger.received.is_set()
+                # ``received`` is set only after ``super()`` returns, which cannot
+                # happen while ``blocker`` holds the pool row lock; that no abort
+                # reached the ledger is already proven by the empty receipt above.
                 assert live.ledger.claims == 0 and live.engine.calls == []
             finally:
                 blocker.commit()

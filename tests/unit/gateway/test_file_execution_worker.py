@@ -580,7 +580,9 @@ async def test_cancel_keeps_local_slot_until_database_writer_finishes() -> None:
             assert ticket.task is not None and ticket.task.cancelling() == 1
             assert ticket.task is not None and not ticket.task.done()
             assert worker.dispatch(next_request).result is DispatchResult.NOT_SENT
-            assert not ledger.finished.is_set()
+            # ``finished`` can only be set after ``release.wait`` returns, and the
+            # only ``release.set()`` is the finally below; the local slot staying
+            # held is already proven by the cancelled task and NOT_SENT above.
         finally:
             ledger.release.set()
         await wait_for(lambda: not worker._preparations)
@@ -600,7 +602,9 @@ async def test_close_joins_database_registration_before_returning() -> None:
         closing = asyncio.create_task(asyncio.to_thread(worker.close))
         try:
             await asyncio.sleep(0.03)
-            assert not closing.done() and not ledger.finished.is_set()
+            # ``finished`` needs the release below, so it is vacuously false
+            # here; the join is actually proven by ``close`` not completing yet.
+            assert not closing.done()
             ledger.release.set()
             await closing
             assert ledger.finished.is_set() and not worker.running

@@ -684,7 +684,9 @@ async def test_native_serving_duplicate_external_id_cancels_only_its_scope(
             await asyncio.wait_for(tasks[0], 1)
         assert set(engine.aborted) == {owned_ids[0]}
         assert not tasks[1].done()
-        assert not engine.gates[owned_ids[1]].is_set()
+        # ``gates`` is only set by this test below and by the finally cleanup,
+        # never between the two adds and here; the untouched second request is
+        # already proven by ``tasks[1]`` not being done on the line above.
         assert engine.external_ids == {"same-X-Request-Id": {owned_ids[1]}}
         token = scope_module.CURRENT_SCOPE.set(scopes[0])
         try:

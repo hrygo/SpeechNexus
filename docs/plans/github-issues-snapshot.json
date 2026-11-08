@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-08T09:05:55+08:00",
+  "fetched_at": "2026-11-08T10:08:01+08:00",
   "issues": [
     {
       "number": 336,
@@ -1114,6 +1114,16 @@
       "state_reason": null,
       "labels": [],
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
+    },
+    {
+      "number": 572,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/572",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "参考部署跑通一次异步 Job 的端到端前置",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
     }
   ]
 }

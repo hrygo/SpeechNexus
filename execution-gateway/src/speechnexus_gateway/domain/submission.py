@@ -166,13 +166,65 @@ class ExecutionErrorCode(StrEnum):
     COMPONENT_CREDENTIAL_INVALID = "component_credential_invalid"
 
 
+@dataclass(frozen=True, slots=True)
+class TerminalShape:
+    """What one persisted execution error code proves about dispatch and capacity.
+
+    These are the only facts a consumer needs to decide whether it may retry,
+    release, or must reconcile. One code owns exactly one shape: the gateway
+    never records the same code on terminals with different dispatch or capacity
+    facts.
+    """
+
+    possibly_dispatched: bool
+    holds_capacity: bool
+    needs_coordination: bool
+
+
+#: Codes that may close an execution the gateway proved never left this process.
+UNSENT_EXECUTION_ERROR_CODES: Final = frozenset(
+    {
+        ExecutionErrorCode.GATEWAY_BARRIER_FENCED,
+        ExecutionErrorCode.INVALID_EXECUTION_REQUEST,
+        ExecutionErrorCode.LEASE_NOT_ACTIVE,
+        ExecutionErrorCode.POLICY_OR_RESOURCE_DISABLED,
+    }
+)
+#: Codes that may only describe an execution whose engine request may exist.
+HELD_EXECUTION_ERROR_CODES: Final = frozenset(
+    {
+        ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN,
+        ExecutionErrorCode.CANCELLATION_UNCONFIRMED,
+        ExecutionErrorCode.EXECUTION_CLEANUP_PENDING,
+    }
+)
+
+_UNSENT_TERMINAL = TerminalShape(False, False, False)
+_HELD_TERMINAL = TerminalShape(True, True, True)
+
+
+def execution_terminal_shape(error_code: ExecutionErrorCode) -> TerminalShape:
+    """Return the one terminal shape a persisted execution code proves.
+
+    A rejection-only code never becomes a persisted execution reason, so asking
+    for its terminal shape is a caller error rather than an invitation to guess.
+    """
+    if error_code in UNSENT_EXECUTION_ERROR_CODES:
+        return _UNSENT_TERMINAL
+    if error_code in HELD_EXECUTION_ERROR_CODES:
+        return _HELD_TERMINAL
+    raise ValueError(f"{error_code} is a control rejection, not an execution terminal reason")
+
+
 class DispatchResult(StrEnum):
     """What the gateway knows after attempting one engine request.
 
     ``REJECTED`` is a refusal the gateway proved deterministically while it still
     held the frozen request: the command cannot be served and no engine request
-    exists. ``NOT_SENT`` stays the conservative fact for a hand-off that did not
-    happen for any other local reason, so it keeps the unknown transport outcome.
+    exists. ``NOT_SENT`` is the other deterministic local hand-off failure (for
+    example an unavailable worker or a deadline that already passed); its
+    ``DispatchOutcome`` carries the unsent reason. Neither result may become an
+    unknown transport fact.
     """
 
     ACKNOWLEDGED = "acknowledged"
@@ -787,7 +839,12 @@ class SubmissionIntent:
         self._touch(at)
 
     def mark_dispatch_unknown(self, *, at: datetime) -> None:
-        """Keep capacity: the engine request may exist without a confirmation."""
+        """Keep capacity: the engine request may exist without a confirmation.
+
+        Only this transition (and the generic post-dispatch quarantine) records
+        ``engine_transport_unknown``; the code therefore always means "possibly
+        dispatched, capacity still held, coordinate before retrying".
+        """
         self.execution_state = ExecutionState.UNKNOWN_QUARANTINED
         self.cleanup_state = CleanupState.QUARANTINED
         self.dispatched_at = at
@@ -795,7 +852,17 @@ class SubmissionIntent:
         self._touch(at)
 
     def mark_not_dispatched_failure(self, error_code: ExecutionErrorCode, *, at: datetime) -> None:
-        """Record the ``not_required`` fact, never a stop or Scheduler budget release."""
+        """Record the ``not_required`` fact, never a stop or Scheduler budget release.
+
+        Only an unsent reason may close an execution that never dispatched: a
+        possibly-dispatched reason would claim capacity was released while the
+        request may still exist, which is exactly the ambiguity this matrix
+        removes.
+        """
+        if error_code not in UNSENT_EXECUTION_ERROR_CODES:
+            raise InvalidExecutionRequestError(
+                f"{error_code} cannot close an execution that never dispatched"
+            )
         self.execution_state = ExecutionState.FAILED
         self.cleanup_state = CleanupState.NOT_REQUIRED
         self.dispatched_at = None
@@ -888,9 +955,15 @@ class SubmissionIntent:
             self.stop_evidence_kind = StopEvidenceKind.ENGINE_TERMINAL_RESPONSE
             self.error_code = None
         else:
+            # A status alone does not prove the execution stopped and released its
+            # resources. The query path therefore never adopts a failed status;
+            # this branch needs the adapter's own stable reason instead of silently
+            # borrowing the transport-unknown code.
+            if error_code is None:
+                raise InvalidExecutionRequestError("a failed engine fact needs its stable reason")
             self.execution_state = ExecutionState.FAILED
             self.cleanup_state = CleanupState.COMPLETE
-            self.error_code = error_code or ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN
+            self.error_code = error_code
         self._touch(at)
 
     def _touch(self, at: datetime) -> None:

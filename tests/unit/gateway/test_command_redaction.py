@@ -47,7 +47,7 @@ LATER = NOW + timedelta(seconds=5)
 def closed(ledger: InMemorySubmissionLedger, *, unsent: bool = False) -> SubmissionIntent:
     intent = pending(ledger)
     if unsent:
-        intent.mark_not_dispatched_failure(ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN, at=NOW)
+        intent.mark_not_dispatched_failure(ExecutionErrorCode.INVALID_EXECUTION_REQUEST, at=NOW)
         return ledger.record_execution_observation(
             RecordExecutionObservation.from_intent(intent, expected_version=1)
         )

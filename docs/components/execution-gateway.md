@@ -364,20 +364,71 @@ node/gateway 的进程必须共用宿主锁目录，
 
 自定义声音 TTS 的内部命令在 `TtsEffectiveParameters` 追加可选 `reference_text`。该字段是
 前向兼容：**只有 custom 命令包含它**，builtin 命令保持旧版形状。旧网关对含未知字段的封闭
-命令抛基类 `InvalidExecutionRequestError`；worker 只把 `FileCommandInvalidError` 当作确定性
-未外发拒绝，因此基类异常会走未知路径并落 `ENGINE_TRANSPORT_UNKNOWN`，不会静默回退
-builtin。部署顺序必须先升级 execution gateway，再升级 backend/worker；回退时先停用自定义
-声音 TTS 或回退 backend，不得保留“新 backend + 旧 gateway”的组合。
+命令抛基类 `InvalidExecutionRequestError`；worker 在任何外发之前捕获它，按确定性未外发拒绝
+落 `INVALID_EXECUTION_REQUEST`，不会静默回退 builtin，也不会保留容量。部署顺序必须先升级
+execution gateway，再升级 backend/worker；回退时先停用自定义声音 TTS 或回退 backend，不得
+保留“新 backend + 旧 gateway”的组合。
 
-custom 命令缺少 `voice_material` 或 `reference_text`、参数形状不符时，`CommandFileCustomTts`
-在提交准备期的 `validate_request`（`_resolve`）中抛 `FileCommandInvalidError`；
-`FileExecutionWorker.dispatch` 的 `except Exception` 把它归为 `DispatchResult.NOT_SENT`，
-`mark_not_dispatched_failure` 记录 `ENGINE_TRANSPORT_UNKNOWN`，intent 终态为 `failed` /
-`engine_transport_unknown` / `not_required` 且 `dispatched_at` 为 `None`，不进入执行阶段的
-确定性拒绝分支。通过准备期后，`stage_result` 读取对象才发现参考音频不是合法 WAV 形状、参考
-文本密度与片段时长不匹配或 `VoiceCloneRequest` 拒绝时，worker `_run` 捕获同一异常：执行经
-`RejectExecutionBeforeEngine` 以默认码 `INVALID_EXECUTION_REQUEST` 终结，不记录 unknown，
-也不需要停止证据。
+custom 命令缺少 `voice_material` 或 `reference_text`、参数形状不符，或旧网关不认识新字段时，
+`validate_request` 在准备期抛 `InvalidExecutionRequestError`（`FileCommandInvalidError` 是其
+子类）；`FileExecutionWorker.dispatch` 把它归为 `DispatchResult.REJECTED` 并记录
+`INVALID_EXECUTION_REQUEST`，intent 终态为 `failed` / `invalid_execution_request` /
+`not_required`、`dispatched_at` 为 `None`，不占用容量，也不需要停止证据。通过准备期后，
+`stage_result` 在调用引擎前发现参考音频不是合法 WAV 形状、参考文本密度与片段时长不匹配或
+`VoiceCloneRequest` 拒绝时，worker `_run` 捕获同一异常并调用 `_reject_without_quarantine`：
+该阶段仍持有请求、尚未外发，终态同样是 `failed` / `invalid_execution_request` /
+`not_required`。
+
+### 终码与终态形状
+
+每个由提交或恢复路径自动写入的 execution 终码只对应一种外发/占用形状。消费方只看
+`error_code` 即可判定“是否可能已外发、是否仍占容量、是否需要协调”：
+
+| `error_code` | 典型触发 | `execution_state` | `cleanup_state` | `dispatched_at` | 占用容量 | 需要协调 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `invalid_execution_request` | 调用方结构无效；冻结请求与 intent 不符；准备期或阶段在调用引擎前证明内容无效；结果存储未配置 | `failed` | `not_required` | NULL | 否 | 否 |
+| `lease_not_active` | 本地截止时间已过，worker 未外发 | `failed` | `not_required` | NULL | 否 | 否 |
+| `policy_or_resource_disabled` | worker 未接受或队列已满；本地 guard 评估故障；本地命令文档读取失败 | `failed` | `not_required` | NULL | 否 | 否 |
+| `gateway_barrier_fenced` | 入口屏障拒绝，未外发 | `failed` | `not_required` | NULL | 否 | 否 |
+| `engine_transport_unknown` | 外发后响应丢失；外发后本地异常；阶段运行期存储/网络故障（无法证明引擎前） | `unknown_quarantined` | `quarantined` | 外发时非空；崩溃窗口可为空 | 是 | 是 |
+| `cancellation_unconfirmed` | 中止请求无法确认停止 | `unknown_quarantined` | `quarantined` | 同上 | 是 | 是 |
+| `execution_cleanup_pending` | 引擎明确 4xx 拒绝；成功结果缺少可信停止证据 | `unknown_quarantined` | `quarantined` | 同上 | 是 | 是 |
+
+`engine_transport_unknown` 只属于“可能已外发且结果未知”的桶，不再承接任何本地未外发失败；
+`invalid_execution_request` 只属于“确定未外发且容量已释放”的桶，不再用于已外发后的引擎拒绝。
+domain 层以 `UNSENT_EXECUTION_ERROR_CODES` / `HELD_EXECUTION_ERROR_CODES` 与
+`execution_terminal_shape()` 固定该映射；`mark_not_dispatched_failure`、
+`MarkExecutionUnknown`、`DispatchOutcome` 与 `RecordExecutionObservation.apply` 在写入时拒绝
+跨桶组合。该不变式是**写入时**约束，只对本次变更后的新写入成立；读路径不改写历史行。
+
+历史行可能同时含旧组合。判别时不要只看 `error_code`，按以下顺序：
+
+1. `execution_state` / `cleanup_state` 决定占用：`failed` / `not_required` 表示未外发且不占容量；
+   `unknown_quarantined` / `quarantined` 表示可能已外发且占容量。
+2. `dispatched_at` / `engine_request_id` 决定是否可能已外发；`unknown_quarantined` 的崩溃窗口
+   也可能为空，因此不能把空外发时间当作“一定未外发”。
+3. 只有 `cleanup_state = complete` 或已验证的停止证据表示已停止并释放；`stop_evidence_kind`
+   的识别方法见下。
+
+| 已知旧组合 | 实际分类 | 处理 |
+| --- | --- | --- |
+| `failed/not_required` + `engine_transport_unknown` | 确定性未外发（`dispatched_at=NULL`，不占容量） | 按 state 释放；不要因码名当作 held |
+| `unknown_quarantined/quarantined` + `invalid_execution_request` | 可能已外发（占容量，需协调） | 按 state 协调；不要因码名直接释放 |
+
+`RecordExecutionObservation.apply` 只接受 `failed` + 未外发码（且无外发时间/引擎请求）或
+`unknown_quarantined` + held 码；`failed/complete`、`succeeded`、`aborted` 等带完成清理的终态
+仍只能经 `record_stop` 写入。
+
+`record_stop` 是独立的受信停止证据轴：它可以把一条已外发或外发时间未知的执行闭合为 `failed`
+或 `complete`（含 `aborted` / `complete`），其 `error_code` 由停止事实提供者决定，不受上表
+“未外发/已外发”码表约束。识别 `record_stop` 轴用 `cleanup_state = complete`，**不要**用
+`stop_evidence_kind != none`：`execution_state_fields` 会把所有 `unknown_quarantined` 投影为
+`unconfirmed_timeout`，使每条 held 行都非 `none`。若需进一步确认证据已验证，使用
+`stop_evidence_kind` 的已验证集合（`engine_terminal_response`、`engine_abort_ack`、
+`instance_terminated_by_controller`、`operator_verified_instance_terminated`），排除
+`none` 与 `unconfirmed_timeout`。`tests/unit/gateway/test_submit_http.py` 对未验证 abort 断言
+`unknown_quarantined` / `quarantined` / `unconfirmed_timeout`，正是该投影的契约映射。该例外不
+适用于提交、观察或恢复自动写入的终态。
 
 提交路由先用冻结请求校验 command 与 `command_digest` 一致，再按 `create_submit` 落唯一 intent，
 之后才外发一次；重放返回原记录并标记 `idempotent_replay=true`，同一 intent 换命令为
@@ -755,6 +806,11 @@ inventory 与观察时间是每次响应的新鲜观测，`barrier.enforced_at` 
   A 的预算归还仍是其独立事务。该单元原验证使用脚本化识别与合成媒体；后续
   [真实 ASR 停止结算联验](../archive/audits/2026-10-25-b03-real-stop-settlement.md)提供了有限实例证据，
   其准入使用 fixture，不能代替真实故障、单请求停止或完整公开消费资格。
+- 终码仍承载多个本地原因：`policy_or_resource_disabled` 同时覆盖 worker 关闭/队列满、本地
+  guard 评估故障与命令文档读取失败；`invalid_execution_request` 同时覆盖调用方结构无效、
+  冻结请求不符、阶段未配置与阶段在引擎前证明内容无效；`lease_not_active` 表示本地 deadline
+  已过。消费方目前只能据此判定“是否可能外发/是否占容量/是否需协调”，不能从码区分具体原因。
+  若运维需要细分，应在后续卡新增原因维度或专用码，不在本片扩枚举。
 
 ## 14. 验证
 

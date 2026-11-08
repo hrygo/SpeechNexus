@@ -32,6 +32,7 @@ from speechnexus_gateway.domain.recovery import (
     MarkExecutionUnknown,
 )
 from speechnexus_gateway.domain.submission import (
+    UNSENT_EXECUTION_ERROR_CODES,
     AbortAcknowledgement,
     DispatchResult,
     EngineObservedState,
@@ -45,11 +46,34 @@ from speechnexus_gateway.domain.submission import (
 
 @dataclass(frozen=True, slots=True)
 class DispatchOutcome:
-    """Result of exactly one attempt to hand an intent to the engine."""
+    """Result of exactly one attempt to hand an intent to the engine.
+
+    ``error_code`` is the stable reason a deterministic result proved locally. It
+    is required for ``REJECTED`` and ``NOT_SENT`` and must be an unsent reason;
+    ``RESPONSE_LOST`` leaves it empty because the engine may have handled the
+    request, and ``ACKNOWLEDGED`` names the engine request instead.
+    """
 
     result: DispatchResult
     observed_at: datetime
     engine_request_id: str | None = None
+    error_code: ExecutionErrorCode | None = None
+
+    def __post_init__(self) -> None:
+        if self.result is DispatchResult.ACKNOWLEDGED:
+            if self.engine_request_id is None or self.error_code is not None:
+                raise ValueError("an acknowledged dispatch carries one engine request id")
+            return
+        if self.engine_request_id is not None:
+            raise ValueError("only an acknowledged dispatch names an engine request")
+        if self.result is DispatchResult.RESPONSE_LOST:
+            if self.error_code is not None:
+                raise ValueError("a lost response keeps the unknown transport fact")
+            return
+        if self.error_code is None:
+            raise ValueError("a deterministic dispatch result carries its stable reason")
+        if self.error_code not in UNSENT_EXECUTION_ERROR_CODES:
+            raise ValueError(f"{self.error_code} cannot describe a deterministic hand-off")
 
 
 @dataclass(frozen=True, slots=True)

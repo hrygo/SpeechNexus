@@ -13,6 +13,8 @@ from speechnexus_gateway.domain.execution_results import (
 )
 from speechnexus_gateway.domain.recovery import ExecutionObservationConflictError
 from speechnexus_gateway.domain.submission import (
+    HELD_EXECUTION_ERROR_CODES,
+    UNSENT_EXECUTION_ERROR_CODES,
     CleanupState,
     ExecutionCleanupPendingError,
     ExecutionErrorCode,
@@ -208,6 +210,20 @@ class RecordExecutionObservation:
             observed.error_code is not None
         ):
             raise InvalidExecutionRequestError("active execution does not carry an execution error")
+        if (
+            observed.execution_state is ExecutionState.FAILED
+            and observed.error_code not in UNSENT_EXECUTION_ERROR_CODES
+        ):
+            raise InvalidExecutionRequestError(
+                "a failed observation needs a deterministic unsent reason"
+            )
+        if (
+            observed.execution_state is ExecutionState.UNKNOWN_QUARANTINED
+            and observed.error_code not in HELD_EXECUTION_ERROR_CODES
+        ):
+            raise InvalidExecutionRequestError(
+                "an unknown observation needs a possibly-dispatched reason"
+            )
         if current.version >= 2**63 - 1:
             raise ExecutionCleanupPendingError("execution version is exhausted")
         updated = deepcopy(current)

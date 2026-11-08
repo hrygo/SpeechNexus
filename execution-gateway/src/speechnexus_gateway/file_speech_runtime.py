@@ -9,11 +9,13 @@ from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.domain.asr_results import AsrResultStore
 from speechnexus_gateway.domain.canonical import JsonValue
 from speechnexus_gateway.domain.file_execution import (
+    FileCommandInvalidError,
     FileExecutionLedger,
     FileExecutionLimits,
+    FileStageUnavailableError,
     FileStagingOutcome,
 )
-from speechnexus_gateway.domain.submission import InvalidExecutionRequestError, SubmitRequest
+from speechnexus_gateway.domain.submission import SubmitRequest
 from speechnexus_gateway.domain.tts_results import TtsResultStore
 from speechnexus_gateway.file_asr_runtime import (
     AsrFileStage,
@@ -50,10 +52,10 @@ class _Stores:
 def _kind(request: SubmitRequest) -> str:
     command: JsonValue = request.command
     if not isinstance(command, dict):
-        raise InvalidExecutionRequestError("file command is not an object")
+        raise FileCommandInvalidError("file command is not an object")
     kind = command.get("kind")
     if kind not in {"asr", "tts", "voicedesign", "voiceclone"}:
-        raise InvalidExecutionRequestError("file command kind is not supported")
+        raise FileCommandInvalidError("file command kind is not supported")
     return kind
 
 
@@ -93,7 +95,7 @@ class _RoutedExecution:
         # this boundary owns is the caller-facing invalid-request code. Mapping
         # it to a transport-unknown terminal would be worse, so it stays here
         # until a dedicated execution error code exists.
-        raise InvalidExecutionRequestError("the configured gateway does not serve this file stage")
+        raise FileStageUnavailableError("the configured gateway does not serve this file stage")
 
     async def stage_result(
         self,
@@ -125,7 +127,7 @@ class _RoutedExecution:
             return await self.voice_clone.stage_result(
                 request, store=store.voice_clone, cancelled=cancelled
             )
-        raise InvalidExecutionRequestError("the configured file result store is unavailable")
+        raise FileStageUnavailableError("the configured file result store is unavailable")
 
 
 @dataclass(frozen=True, slots=True)

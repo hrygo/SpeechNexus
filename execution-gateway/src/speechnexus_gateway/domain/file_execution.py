@@ -38,6 +38,15 @@ class FileCommandInvalidError(InvalidExecutionRequestError):
     """
 
 
+class FileStageUnavailableError(InvalidExecutionRequestError):
+    """The configured gateway cannot serve this file stage at all.
+
+    This is a deployment/configuration fact proven before the lane is entered, so
+    the worker may release capacity; it is deliberately distinct from a lane's
+    own error, which might occur after an engine request exists.
+    """
+
+
 class EngineRequestRejectedError(Exception):
     """The engine terminally answered that it refused this request before generation.
 

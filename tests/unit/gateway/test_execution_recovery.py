@@ -175,7 +175,7 @@ def test_generated_output_cannot_be_reinterpreted_as_an_unsent_failure() -> None
             output_stream_id="stream-1",
             execution_state=ExecutionState.FAILED,
             cleanup_state=CleanupState.NOT_REQUIRED,
-            error_code=ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN,
+            error_code=ExecutionErrorCode.INVALID_EXECUTION_REQUEST,
             generated_pcm_samples=12000,
         )
 

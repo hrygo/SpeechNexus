@@ -131,23 +131,22 @@ builtin speaker。
 继续 builtin 路径；非 `vrev-*` 的旧式身份只在能由 voice id 派生出 `draft-*`、且该 draft 仍
 存在时返回 422 `voice_not_published`；没有派生 draft 时按 builtin 路径继续。
 
-命令层面的缺失与读取后的不可用走不同的终态。custom 命令缺少 `voice_material` 或
-`reference_text`、参数形状不符时，`CommandFileCustomTts.validate_request`（`_resolve`）抛
-`FileCommandInvalidError`；`FileExecutionWorker.dispatch` 的 `except Exception` 把它归为
-`DispatchResult.NOT_SENT`，`mark_not_dispatched_failure` 记录 `ENGINE_TRANSPORT_UNKNOWN`，
-intent 终态为 `failed` / `engine_transport_unknown` / `not_required`，且 `dispatched_at`
-为 `None`。通过提交准备后，`stage_result` 读取对象才发现参考音频不是合法 WAV 形状、参考
-文本密度与片段时长不匹配或 `VoiceCloneRequest` 拒绝时，worker `_run` 捕获同一异常并按确定性
-未外发拒绝处理：执行经 `RejectExecutionBeforeEngine` 以 `INVALID_EXECUTION_REQUEST` 终结，
+命令层面的缺失与读取后的不可用都按确定性未外发拒绝处理。custom 命令缺少
+`voice_material` 或 `reference_text`、参数形状不符时，`CommandFileCustomTts.validate_request`
+（`_resolve`）抛 `FileCommandInvalidError`；`FileExecutionWorker.dispatch` 在任何外发之前
+把它归为 `DispatchResult.REJECTED`，记录 `INVALID_EXECUTION_REQUEST`，intent 终态为
+`failed` / `invalid_execution_request` / `not_required`，且 `dispatched_at` 为 `None`。
+通过提交准备后，`stage_result` 在调用引擎前发现参考音频不是合法 WAV 形状、参考文本密度与
+片段时长不匹配或 `VoiceCloneRequest` 拒绝时，worker `_run` 捕获同一异常并按确定性未外发
+拒绝处理：执行经 `RejectExecutionBeforeEngine` 以 `INVALID_EXECUTION_REQUEST` 终结，
 不进入 unknown 隔离，也不需要停止证据。
 
 内部命令在 `TtsEffectiveParameters` 追加可选 `reference_text`，这是前向兼容字段：**只有
 custom 命令包含它**，builtin 命令与旧版逐字一致。升级后的 backend 会为 custom 命令发出它；
-未升级的网关在结构校验阶段以基类 `InvalidExecutionRequestError` 拒绝，worker 只把
-`FileCommandInvalidError` 当作确定性未外发拒绝，因此该异常会走未知路径并落
-`ENGINE_TRANSPORT_UNKNOWN`，不会静默合成或降级。部署必须先升级 execution gateway，再升级
-backend/worker；回退时先停用自定义声音 TTS 入口或回退 backend，不要保留“新 backend + 旧
-gateway”的组合。
+未升级的网关在结构校验阶段以基类 `InvalidExecutionRequestError` 拒绝，worker 在任何外发
+之前捕获它并落 `INVALID_EXECUTION_REQUEST`，不会静默合成或降级，也不保留容量。部署必须先
+升级 execution gateway，再升级 backend/worker；回退时先停用自定义声音 TTS 入口或回退
+backend，不要保留“新 backend + 旧 gateway”的组合。
 
 ## 私有 HTTP 和结构校验
 

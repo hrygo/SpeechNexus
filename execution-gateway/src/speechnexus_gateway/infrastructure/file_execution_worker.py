@@ -22,6 +22,7 @@ from speechnexus_gateway.domain.file_execution import (
     FileCommandInvalidError,
     FileExecutionLedger,
     FileExecutionLimits,
+    FileStageUnavailableError,
 )
 from speechnexus_gateway.domain.observation import ExecutionObservation, RecordExecutionObservation
 from speechnexus_gateway.domain.output_intervals import (
@@ -163,30 +164,53 @@ class FileExecutionWorker[StoreT]:
         at = self._now()
         try:
             frozen = self._execution.validate_request(request)
-            if (
-                frozen.request_document != request.request_document
-                or at >= request.identity.deadline_at
-            ):
-                # An expired or rewritten request was never usable here, but
-                # neither condition is a command-structure refusal. Retain the
-                # previous conservative mapping instead of inventing a new
-                # reason. The guard stays inside the try: a fault while
-                # evaluating it (for example an unusable clock value) is a
-                # local not-sent fact, not evidence that a request reached the
-                # engine.
-                return DispatchOutcome(DispatchResult.NOT_SENT, at)
         except InvalidExecutionRequestError:
             # The stage proved the frozen command unusable while the gateway still
             # held it locally: no engine request existed, so this is a
             # deterministic refusal rather than an unknown transport fact. The
             # exception type is the proof: validation performs no I/O and every
             # supported lane converts its structural parse failures into it.
-            return DispatchOutcome(DispatchResult.REJECTED, at)
+            return DispatchOutcome(
+                DispatchResult.REJECTED, at, error_code=ExecutionErrorCode.INVALID_EXECUTION_REQUEST
+            )
         except Exception:
-            # Not attributable to the command: keep the conservative not-sent
-            # fact so an unexpected local failure is never reported as a clean
-            # structural rejection.
-            return DispatchOutcome(DispatchResult.NOT_SENT, at)
+            # Not attributable to the command: the hand-off did not happen, but the
+            # request itself was not refused either. Keep a deterministic
+            # gateway-side reason so this never becomes an unknown transport fact.
+            return DispatchOutcome(
+                DispatchResult.NOT_SENT,
+                at,
+                error_code=ExecutionErrorCode.POLICY_OR_RESOURCE_DISABLED,
+            )
+        try:
+            document_mismatch = frozen.request_document != request.request_document
+            expired = at >= request.identity.deadline_at
+        except Exception:
+            # A fault while evaluating the local guards (for example an unusable
+            # clock value) is still a local not-sent fact. It is not a request
+            # refusal, so it keeps the gateway-side reason.
+            return DispatchOutcome(
+                DispatchResult.NOT_SENT,
+                at,
+                error_code=ExecutionErrorCode.POLICY_OR_RESOURCE_DISABLED,
+            )
+        if document_mismatch:
+            # The frozen request no longer describes the submitted document.
+            # Nothing was sent, and the request cannot be served as received.
+            return DispatchOutcome(
+                DispatchResult.REJECTED,
+                at,
+                error_code=ExecutionErrorCode.INVALID_EXECUTION_REQUEST,
+            )
+        if expired:
+            # The reservation deadline passed before any hand-off, so the lease is
+            # no longer active for this request even though its row still says so.
+            # Fail deterministically instead of keeping capacity.
+            return DispatchOutcome(
+                DispatchResult.NOT_SENT,
+                at,
+                error_code=ExecutionErrorCode.LEASE_NOT_ACTIVE,
+            )
         with self._lock:
             if (
                 not self._accepting
@@ -195,7 +219,14 @@ class FileExecutionWorker[StoreT]:
                 or len(self._preparations) >= self._max_pending
                 or request.identity.submit_intent_id in self._preparations
             ):
-                return DispatchOutcome(DispatchResult.NOT_SENT, at)
+                # This process cannot take the request: it is closed, at its local
+                # pending bound, or already preparing the same identity. No engine
+                # request exists, so release capacity with the local-resource code.
+                return DispatchOutcome(
+                    DispatchResult.NOT_SENT,
+                    at,
+                    error_code=ExecutionErrorCode.POLICY_OR_RESOURCE_DISABLED,
+                )
             ticket = _Preparation(frozen, self._engine_request_prefix + "-" + uuid.uuid4().hex, at)
             self._preparations[request.identity.submit_intent_id] = ticket
         return DispatchOutcome(DispatchResult.ACKNOWLEDGED, at, ticket.engine_request_id)
@@ -282,36 +313,41 @@ class FileExecutionWorker[StoreT]:
             await self._database(lambda: self._check_start(intent))
             if ticket.cancelled.is_set():
                 raise asyncio.CancelledError
-            outcome = await self._execution.stage_result(
-                ticket.request,
-                store=self._results,
-                cancelled=ticket.cancelled.is_set,
-            )
+            try:
+                outcome = await self._execution.stage_result(
+                    ticket.request,
+                    store=self._results,
+                    cancelled=ticket.cancelled.is_set,
+                )
+            except FileCommandInvalidError, FileStageUnavailableError:
+                # These two types prove, before any engine call, that the frozen
+                # request cannot be served: a structural command/content refusal or
+                # a stage the deployment does not configure. Nothing left this
+                # process, so capacity is released without stop evidence. A base
+                # ``InvalidExecutionRequestError`` from a lane is deliberately not
+                # caught here: it may be raised after an engine request exists, and
+                # then the execution must stay held until coordination.
+                await self._reject_without_quarantine(key)
+                return
             await self._database(lambda: self._register(intent, outcome.result, ticket.cancelled))
             await self._complete(intent, outcome.terminal)
         except FileCommandInvalidError:
             # The stage proved the frozen content invalid while the request was
             # still local. No engine request left this process, so capacity is
             # released with a deterministic code instead of an unknown fact.
-            try:
-                await self._database(lambda: self._reject(key))
-            except Exception, asyncio.CancelledError:
-                with self._lock:
-                    self._accepting = False
+            await self._reject_without_quarantine(key)
         except EngineRequestRejectedError:
             # A positive client-error refusal is not a timeout and not a retry
-            # signal. It still exits through the unknown path because only the
-            # execution owner may turn a terminal engine answer into release.
-            # The frozen error enum has no dedicated code for an engine-side
-            # refusal, so the recorded reason is the non-retryable
-            # ``invalid_execution_request``; a distinct wire code needs its own
-            # contract change.
+            # signal. The request did leave this process, so it stays quarantined
+            # and keeps capacity until a coordinated release. The recorded reason
+            # is the held clean-up shape; the wire enum has no dedicated
+            # engine-refusal code and must not borrow the unsent request code.
             try:
                 await self._database(
                     lambda: self._quarantine(
                         key,
                         cancelled=False,
-                        reason_code=ExecutionErrorCode.INVALID_EXECUTION_REQUEST,
+                        reason_code=ExecutionErrorCode.EXECUTION_CLEANUP_PENDING,
                     )
                 )
             except Exception, asyncio.CancelledError:
@@ -327,6 +363,14 @@ class FileExecutionWorker[StoreT]:
                 # or private command/content is logged or reported as success.
                 with self._lock:
                     self._accepting = False
+
+    async def _reject_without_quarantine(self, key: str) -> None:
+        """Release capacity for a request no engine can have received."""
+        try:
+            await self._database(lambda: self._reject(key))
+        except Exception, asyncio.CancelledError:
+            with self._lock:
+                self._accepting = False
 
     async def _complete(
         self, accepted: SubmissionIntent, terminal: EngineTerminalResponse | None

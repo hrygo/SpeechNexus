@@ -43,6 +43,7 @@ from speechnexus_gateway.domain.submission import (
     ExecutionCleanupPendingError,
     ExecutionErrorCode,
     ExecutionState,
+    InvalidExecutionRequestError,
     StaleSubmissionVersionError,
     SubmissionIntent,
     SubmissionOutcomeUnknownError,
@@ -166,8 +167,25 @@ class FileExecutionWorker[StoreT]:
                 frozen.request_document != request.request_document
                 or at >= request.identity.deadline_at
             ):
-                raise ValueError
+                # An expired or rewritten request was never usable here, but
+                # neither condition is a command-structure refusal. Retain the
+                # previous conservative mapping instead of inventing a new
+                # reason. The guard stays inside the try: a fault while
+                # evaluating it (for example an unusable clock value) is a
+                # local not-sent fact, not evidence that a request reached the
+                # engine.
+                return DispatchOutcome(DispatchResult.NOT_SENT, at)
+        except InvalidExecutionRequestError:
+            # The stage proved the frozen command unusable while the gateway still
+            # held it locally: no engine request existed, so this is a
+            # deterministic refusal rather than an unknown transport fact. The
+            # exception type is the proof: validation performs no I/O and every
+            # supported lane converts its structural parse failures into it.
+            return DispatchOutcome(DispatchResult.REJECTED, at)
         except Exception:
+            # Not attributable to the command: keep the conservative not-sent
+            # fact so an unexpected local failure is never reported as a clean
+            # structural rejection.
             return DispatchOutcome(DispatchResult.NOT_SENT, at)
         with self._lock:
             if (

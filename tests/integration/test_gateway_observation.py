@@ -52,7 +52,7 @@ def observed_request(
             dispatched_at=None if unsent else at,
             engine_request_id=None if unsent else "engine-request-observed",
             observed_at=at,
-            error_code=ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN if unsent else None,
+            error_code=ExecutionErrorCode.INVALID_EXECUTION_REQUEST if unsent else None,
         ),
         intent.version,
     )
@@ -176,7 +176,7 @@ def test_first_write_cannot_import_a_preclaimed_no_cleanup_result(
         original,
         execution_state=ExecutionState.FAILED,
         cleanup_state=CleanupState.NOT_REQUIRED,
-        error_code=ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN,
+        error_code=ExecutionErrorCode.INVALID_EXECUTION_REQUEST,
     )
     with pytest.raises(InvalidExecutionRequestError):
         recovery_ledger.add(

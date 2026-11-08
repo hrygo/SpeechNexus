@@ -155,17 +155,15 @@ class SubmitExecutionService:
             if outcome.engine_request_id is None:
                 raise ValueError("acknowledged dispatch carries an engine request id")
             intent.mark_dispatched(outcome.engine_request_id, at=outcome.observed_at)
-        elif outcome.result is DispatchResult.REJECTED:
+        elif outcome.result in {DispatchResult.REJECTED, DispatchResult.NOT_SENT}:
             # A deterministic pre-send refusal the gateway proved while it still
             # held the request. It is terminal and never retryable, and it must
-            # stay distinguishable from every transport-unknown fallback.
-            intent.mark_not_dispatched_failure(
-                ExecutionErrorCode.INVALID_EXECUTION_REQUEST, at=outcome.observed_at
-            )
-        elif outcome.result is DispatchResult.NOT_SENT:
-            intent.mark_not_dispatched_failure(
-                ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN, at=outcome.observed_at
-            )
+            # stay distinguishable from every transport-unknown fallback. The
+            # outcome classifies why the request never left: caller-invalid,
+            # expired lease, or a disabled local resource.
+            if outcome.error_code is None:
+                raise ValueError("a deterministic dispatch outcome carries its reason code")
+            intent.mark_not_dispatched_failure(outcome.error_code, at=outcome.observed_at)
         else:
             intent.mark_dispatch_unknown(at=outcome.observed_at)
         saved = self._ledger.record_execution_observation(

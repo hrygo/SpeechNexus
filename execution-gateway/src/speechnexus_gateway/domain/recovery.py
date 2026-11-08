@@ -13,6 +13,7 @@ from speechnexus_gateway.domain.execution_results import (
     ExecutionStagingResult,
 )
 from speechnexus_gateway.domain.submission import (
+    HELD_EXECUTION_ERROR_CODES,
     CleanupState,
     ExecutionCleanupPendingError,
     ExecutionErrorCode,
@@ -54,6 +55,12 @@ class MarkExecutionUnknown:
             raise InvalidExecutionRequestError("invalid unknown-execution identity")
         if not isinstance(self.reason_code, ExecutionErrorCode):
             raise InvalidExecutionRequestError("unknown execution needs a stable reason code")
+        if self.reason_code not in HELD_EXECUTION_ERROR_CODES:
+            # A code that proves the request never left cannot describe an
+            # execution whose dispatch outcome is unknown.
+            raise InvalidExecutionRequestError(
+                "an unknown execution needs a possibly-dispatched reason"
+            )
         if type(self.observed_at_us) is not int or not 0 <= self.observed_at_us <= 2**53 - 1:
             raise InvalidExecutionRequestError("unknown observation needs a safe timestamp")
 

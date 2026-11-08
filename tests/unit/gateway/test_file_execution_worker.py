@@ -221,7 +221,7 @@ class RejectingPipeline(Pipeline):
         raise EngineRequestRejectedError()
 
 
-async def test_a_proven_engine_rejection_is_recorded_as_non_retryable() -> None:
+async def test_a_proven_engine_rejection_keeps_a_distinct_held_cleanup_reason() -> None:
     pipeline = RejectingPipeline()
     with configured(pipeline=pipeline) as (ledger, _, results, worker, submit, _, _):
         request = original_request()
@@ -231,10 +231,10 @@ async def test_a_proven_engine_rejection_is_recorded_as_non_retryable() -> None:
         )
         current = stored(ledger, request)
         # A refusal proves the engine never generated, but the gateway protocol can
-        # only close a dispatched execution with verified stop evidence. The
-        # non-retryable code is the factual record; capacity release stays with the
+        # only close a dispatched execution with verified stop evidence. The code
+        # therefore records the held clean-up shape; capacity release stays with the
         # Scheduler, which must never read this state as a release claim.
-        assert current.error_code is ExecutionErrorCode.INVALID_EXECUTION_REQUEST
+        assert current.error_code is ExecutionErrorCode.EXECUTION_CLEANUP_PENDING
         assert current.execution_state.holds_capacity
         assert results.calls == 0
         assert worker.running

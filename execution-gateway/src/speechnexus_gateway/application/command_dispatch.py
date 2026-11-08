@@ -12,6 +12,7 @@ from speechnexus_gateway.domain.ports import (
 from speechnexus_gateway.domain.submission import (
     MAX_ORIGINAL_COMMAND_BYTES,
     DispatchResult,
+    ExecutionErrorCode,
     SubmissionIntent,
 )
 
@@ -43,21 +44,38 @@ class OriginalCommandDispatch:
 
     def dispatch(self, intent: SubmissionIntent) -> DispatchOutcome:
         intent.validate_new()  # An observation/recovery read cannot enter this path.
+        at = self._now()
         try:
             request = self._commands.read_request(intent, max_document_bytes=self._max_bytes)
-            if (
-                request.identity != intent.identity
-                or request.output_stream_id != intent.output_stream_id
-                or request.request_digest != intent.request_digest
-                or command_digest(request.command) != intent.identity.command_digest
-            ):
-                raise ValueError("the original execution request does not match")
         except Exception:
-            # This invocation did not reach the engine. No error/input text is logged.
-            return DispatchOutcome(DispatchResult.NOT_SENT, self._now())
+            # Reading the frozen request failed locally before any engine call. No
+            # engine request can exist, and the reason is a gateway-side resource
+            # problem rather than a caller-invalid command.
+            return DispatchOutcome(
+                DispatchResult.NOT_SENT,
+                at,
+                error_code=ExecutionErrorCode.POLICY_OR_RESOURCE_DISABLED,
+            )
+        try:
+            matches = (
+                request.identity == intent.identity
+                and request.output_stream_id == intent.output_stream_id
+                and request.request_digest == intent.request_digest
+                and command_digest(request.command) == intent.identity.command_digest
+            )
+        except Exception:
+            matches = False
+        if not matches:
+            # The frozen request contradicts the intent, so it cannot be dispatched
+            # as received. Nothing was sent and capacity is released deterministically.
+            return DispatchOutcome(
+                DispatchResult.NOT_SENT,
+                at,
+                error_code=ExecutionErrorCode.INVALID_EXECUTION_REQUEST,
+            )
         try:
             return self._engine.dispatch(request)
         except Exception:
             # An engine may have accepted before its adapter raised. Never turn that
             # failure into a clean rejection, or manufacture completion/stop evidence.
-            return DispatchOutcome(DispatchResult.RESPONSE_LOST, self._now())
+            return DispatchOutcome(DispatchResult.RESPONSE_LOST, at)

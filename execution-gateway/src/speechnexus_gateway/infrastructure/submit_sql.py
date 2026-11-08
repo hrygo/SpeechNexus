@@ -95,8 +95,9 @@ _UPDATE_INTENT = (
 #: this statement is the single controlled exception. The database cannot prove
 #: from these fields alone that no engine call happened: the dispatch fields are
 #: written at admission, and a sent-but-unfinished request is indistinguishable
-#: here. Safety rests on the only caller (``_reject``, entered only for
-#: ``FileCommandInvalidError``) and on ``apply()`` rejecting staged results,
+#: here. Safety rests on the only caller (``_reject``, entered only for a
+#: deterministic pre-engine refusal: a stage-proven structural error or an
+#: unavailable stage result store) and on ``apply()`` rejecting staged results,
 #: generated samples and output intervals before this update runs.
 REJECT_UNSENT_INTENT = """
 UPDATE submit_intents

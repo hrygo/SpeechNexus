@@ -141,7 +141,7 @@ def test_a_verified_unsent_failure_has_no_staging_or_output_and_does_not_create_
         cleanup_state=CleanupState.NOT_REQUIRED,
         engine_request_id=None,
         dispatched_at=None,
-        error_code=ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN,
+        error_code=ExecutionErrorCode.INVALID_EXECUTION_REQUEST,
     )
     closed = RecordExecutionObservation(unsent, 1).apply(INTENT, at=LATER)
     assert closed.cleanup_state is CleanupState.NOT_REQUIRED

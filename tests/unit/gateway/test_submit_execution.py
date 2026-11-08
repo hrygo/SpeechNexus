@@ -190,12 +190,19 @@ def test_quarantined_intent_adopts_engine_fact_without_redispatching() -> None:
 
 def test_failure_before_send_releases_capacity_without_stop_evidence() -> None:
     service, _, engine = build_service()
-    engine.script_outcome(DispatchOutcome(result=DispatchResult.NOT_SENT, observed_at=NOW))
+    engine.script_outcome(
+        DispatchOutcome(
+            result=DispatchResult.NOT_SENT,
+            observed_at=NOW,
+            error_code=ExecutionErrorCode.POLICY_OR_RESOURCE_DISABLED,
+        )
+    )
 
     outcome = service.submit(SubmitRequest(identity=identity_for(COMMAND), command=COMMAND))
 
     assert outcome.intent.execution_state is ExecutionState.FAILED
     assert outcome.intent.cleanup_state is CleanupState.NOT_REQUIRED
+    assert outcome.intent.error_code is ExecutionErrorCode.POLICY_OR_RESOURCE_DISABLED
     assert outcome.intent.dispatched_at is None
     assert outcome.intent.engine_request_id is None
     assert outcome.intent.stop_evidence_kind is StopEvidenceKind.NONE
@@ -257,7 +264,13 @@ def test_stop_evidence_for_unknown_intent_is_invalid() -> None:
 
 def test_stop_evidence_requires_a_dispatched_intent() -> None:
     service, _, engine = build_service()
-    engine.script_outcome(DispatchOutcome(result=DispatchResult.NOT_SENT, observed_at=NOW))
+    engine.script_outcome(
+        DispatchOutcome(
+            result=DispatchResult.NOT_SENT,
+            observed_at=NOW,
+            error_code=ExecutionErrorCode.POLICY_OR_RESOURCE_DISABLED,
+        )
+    )
     service.submit(SubmitRequest(identity=identity_for(COMMAND), command=COMMAND))
 
     with pytest.raises(ExecutionCleanupPendingError):
@@ -330,7 +343,7 @@ def test_failed_intent_requires_error_code_and_no_dispatch_when_not_required() -
         intent_for(
             execution_state=ExecutionState.FAILED,
             cleanup_state=CleanupState.NOT_REQUIRED,
-            error_code=ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN,
+            error_code=ExecutionErrorCode.INVALID_EXECUTION_REQUEST,
             dispatched_at=NOW,
         )
 

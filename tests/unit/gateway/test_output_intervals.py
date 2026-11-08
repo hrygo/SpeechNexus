@@ -305,7 +305,7 @@ def test_late_generated_fact_keeps_a_verified_terminal_execution_closed() -> Non
 def test_output_intervals_cannot_contradict_a_never_dispatched_failure(kind: MeterKind) -> None:
     ledger = InMemorySubmissionLedger(now=lambda: NOW)
     intent = pending(ledger)
-    intent.mark_not_dispatched_failure(ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN, at=NOW)
+    intent.mark_not_dispatched_failure(ExecutionErrorCode.INVALID_EXECUTION_REQUEST, at=NOW)
     closed = ledger.record_execution_observation(
         RecordExecutionObservation.from_intent(intent, expected_version=1)
     )
@@ -324,7 +324,7 @@ def test_diagnostic_facts_alone_prevent_a_false_never_dispatched_failure(kind: M
         current is not None and current.generated_pcm_samples == 0 and current.has_output_intervals
     )
     claimed = replace(original)
-    claimed.mark_not_dispatched_failure(ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN, at=NOW)
+    claimed.mark_not_dispatched_failure(ExecutionErrorCode.INVALID_EXECUTION_REQUEST, at=NOW)
     with pytest.raises(ExecutionCleanupPendingError):
         ledger.record_execution_observation(
             RecordExecutionObservation.from_intent(claimed, expected_version=1)

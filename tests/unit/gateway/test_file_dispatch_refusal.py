@@ -418,8 +418,8 @@ async def test_a_structural_dispatch_refusal_is_a_deterministic_terminal(
         assert worker.running
 
 
-async def test_a_local_dispatch_failure_that_is_not_a_refusal_stays_unknown() -> None:
-    """An unexpected local failure keeps the conservative transport fact."""
+async def test_a_local_dispatch_failure_that_is_not_a_refusal_is_gateway_unavailable() -> None:
+    """An unexpected local failure is a deterministic unsent fact, never a lost response."""
 
     class Broken:
         def validate_request(self, request: SubmitRequest) -> SubmitRequest:
@@ -433,12 +433,13 @@ async def test_a_local_dispatch_failure_that_is_not_a_refusal_stays_unknown() ->
         submit.submit(request)
         stored = ledger.get(request.identity.submit_intent_id)
         assert stored is not None
-        # The fallback guard: reclassifying every dispatch exception as a refusal
-        # turns this assertion red.
-        assert stored.error_code is ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN
+        # The fallback guard: calling every local failure a transport unknown, or a
+        # caller-invalid request, turns this assertion red.
+        assert stored.error_code is ExecutionErrorCode.POLICY_OR_RESOURCE_DISABLED
         assert stored.execution_state is ExecutionState.FAILED
         assert stored.cleanup_state is CleanupState.NOT_REQUIRED
         assert stored.dispatched_at is None
+        assert not stored.execution_state.holds_capacity
         assert worker.running
 
 
@@ -466,10 +467,11 @@ async def test_a_guard_evaluation_failure_stays_a_local_not_sent_fact() -> None:
         stored = ledger.get(request.identity.submit_intent_id)
         assert stored is not None
         # Turning this guard fault into RESPONSE_LOST would keep capacity for an
-        # execution that provably never left the process.
+        # execution that provably never left the process; turning it into a caller
+        # refusal would blame the request for a gateway fault.
         assert stored.execution_state is ExecutionState.FAILED
         assert stored.cleanup_state is CleanupState.NOT_REQUIRED
-        assert stored.error_code is ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN
+        assert stored.error_code is ExecutionErrorCode.POLICY_OR_RESOURCE_DISABLED
         assert stored.dispatched_at is None
         assert not stored.execution_state.holds_capacity
 

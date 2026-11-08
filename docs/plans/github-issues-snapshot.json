@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-08T08:06:39+08:00",
+  "fetched_at": "2026-11-08T09:05:55+08:00",
   "issues": [
     {
       "number": 336,
@@ -1104,6 +1104,16 @@
       "state_reason": "completed",
       "labels": [],
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
+    },
+    {
+      "number": 569,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/569",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "invalid_execution_request 同时表示未外发与已外发未知",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/338"
     }
   ]
 }

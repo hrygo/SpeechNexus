@@ -161,9 +161,7 @@ class _Gateway:
 def _runtime(db: DispatchSandbox, kinds: str, publisher: _Publisher) -> JobDispatchRuntime:
     return JobDispatchRuntime(
         db.settings(kinds),
-        DispatchDependencies(
-            _Planner(), cast(ResultPublisher, publisher), cast(SpeechPool, db.pool())
-        ),
+        DispatchDependencies(_Planner(), cast(ResultPublisher, publisher), db.pool()),
         gateway=cast(ExecutionGatewayAdapter, _Gateway()),
     )
 

@@ -443,6 +443,16 @@ class JobDispatchRuntime:
                 "SELECT artifact_id FROM speech_artifacts LIMIT 0",
             ):
                 connection.execute(statement)
+            # The validation lane reads two facts outside the dispatcher's base
+            # grants. Probe them only when this process claims that kind so a
+            # missing ``voice_validation_worker_grants`` refuses startup here,
+            # before any dispatcher exists and before any lease can be claimed.
+            if "voice_validation" in self.settings.kinds:
+                for statement in (
+                    "SELECT draft_id, revision FROM speech_voice_draft_revisions LIMIT 0",
+                    "SELECT workspace_id, asset_id FROM speech_assets LIMIT 0",
+                ):
+                    connection.execute(statement)
 
 
 __all__ = [

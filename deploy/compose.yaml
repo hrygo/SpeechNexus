@@ -70,9 +70,12 @@ services:
       retries: 20
     restart: unless-stopped
 
-  # One-shot bootstrap: create and version the private input/result buckets.
-  # It uses the local MinIO identity only; production uses separately scoped
-  # credentials and versioned buckets prepared outside this bootstrap.
+  # One-shot bootstrap: create and version the private input, Artifact and
+  # gateway staging buckets. The dispatcher reads staging results from the same
+  # bucket name it passes here, so a non-default value is versioned before the
+  # worker starts. It uses the local MinIO identity only; production uses
+  # separately scoped credentials and versioned buckets prepared outside this
+  # bootstrap.
   minio-init:
     build: *python-build
     command: ["python", "/opt/speechnexus/init-object-storage.py"]
@@ -82,6 +85,7 @@ services:
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in compose.env}
       SPEECHNEXUS_OBJECT_STORAGE_BUCKET: ${SPEECHNEXUS_OBJECT_STORAGE_BUCKET:-speechnexus-results}
       SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET: ${SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET:-speechnexus-inputs}
+      SPEECHNEXUS_EXECUTION_RESULT_BUCKET: ${SPEECHNEXUS_EXECUTION_RESULT_BUCKET:-speechnexus-results}
     volumes:
       - ./init-object-storage.py:/opt/speechnexus/init-object-storage.py:ro
     depends_on:
@@ -261,7 +265,9 @@ services:
   # gateway origin can stay on loopback: the worker rejects plain HTTP outside
   # loopback. Every operating bound has no in-process default, so the values here
   # are this bootstrap's explicit reference values, not capacity or model
-  # qualification. A blank dispatch DSN fails closed before any lease is claimed.
+  # qualification. A blank dispatch DSN or a missing grant fails closed before any
+  # lease is claimed. There is no healthcheck, so that failure surfaces as a
+  # restart loop instead of a ready service; provision the DSN and grants first.
   job-dispatch-worker:
     profiles: ["job-dispatch"]
     build: *python-build
@@ -288,6 +294,8 @@ services:
       SPEECHNEXUS_OBJECT_STORAGE_ENDPOINT: http://minio:9000
       SPEECHNEXUS_OBJECT_STORAGE_BUCKET: ${SPEECHNEXUS_OBJECT_STORAGE_BUCKET:-speechnexus-results}
       SPEECHNEXUS_EXECUTION_RESULT_BUCKET: ${SPEECHNEXUS_EXECUTION_RESULT_BUCKET:-speechnexus-results}
+      # Local bootstrap only: the root MinIO identity is broader than object-layer
+      # least privilege. read_only/cap_drop constrain the process, not S3 rights.
       SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-speechnexus}
       SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in compose.env}
     depends_on:

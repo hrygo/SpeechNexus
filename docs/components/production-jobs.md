@@ -491,7 +491,9 @@ ASGI send，包括终态的空 body：末帧与数据帧共用同一写缓冲，
 | `SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY` / `SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY` | 对象存储凭据，只从部署注入 |
 
 安装 backend wheel 后以该独立入口启动；`--once` 最多做一轮有界领取，可用于获准环境的
-部署冒烟。planner 或对象存储未就绪时，进程在领取前以退出码 2 结束：
+部署冒烟。planner 或对象存储未就绪时，进程在领取前以退出码 2 结束。kinds 含
+`voice_validation` 时，启动角色校验还会探测 `speech_voice_draft_revisions` 与
+`speech_assets`；缺 `voice_validation_worker_grants` 时同样在领取前拒绝启动。
 
 ```sh
 export SPEECHNEXUS_PROCESS_ROLE=job-worker

@@ -141,6 +141,66 @@ async def test_open_assembles_an_admission_filtered_dispatcher() -> None:
     )
 
 
+class _DeniedConnection(_Connection):
+    def execute(self, statement: str, parameters: object = None) -> _Result:
+        if "speech_voice_draft_revisions" in statement:
+            raise RuntimeError("permission denied for table speech_voice_draft_revisions")
+        return super().execute(statement, parameters)
+
+
+class _DeniedPool(_Pool):
+    def connection(self, *, timeout: float) -> _Connection:
+        return _DeniedConnection(self.statements)
+
+
+async def test_default_lane_does_not_probe_the_validation_fact_tables() -> None:
+    pool, publisher = _Pool(), _Publisher()
+    runtime = JobDispatchRuntime(
+        _settings(),
+        _dependencies(pool, publisher),
+        gateway=cast(ExecutionGatewayAdapter, _Gateway()),
+    )
+
+    await runtime.open()
+
+    assert runtime.dispatcher is not None
+    assert not any("speech_voice_draft_revisions" in sql for sql in pool.statements)
+    assert not any("speech_assets" in sql for sql in pool.statements)
+
+
+async def test_voice_validation_lane_probes_the_validation_fact_tables() -> None:
+    pool, publisher = _Pool(), _Publisher()
+    runtime = JobDispatchRuntime(
+        _settings().model_copy(update={"dispatch_kinds": "asr,tts,voice_validation"}),
+        _dependencies(pool, publisher),
+        gateway=cast(ExecutionGatewayAdapter, _Gateway()),
+    )
+
+    await runtime.open()
+
+    assert runtime.dispatcher is not None
+    assert (
+        "SELECT draft_id, revision FROM speech_voice_draft_revisions LIMIT 0"
+        in pool.statements
+    )
+    assert "SELECT workspace_id, asset_id FROM speech_assets LIMIT 0" in pool.statements
+
+
+async def test_missing_validation_fact_grants_refuse_startup_before_dispatch() -> None:
+    pool, publisher = _DeniedPool(), _Publisher()
+    runtime = JobDispatchRuntime(
+        _settings().model_copy(update={"dispatch_kinds": "voice_validation"}),
+        _dependencies(pool, publisher),
+        gateway=cast(ExecutionGatewayAdapter, _Gateway()),
+    )
+
+    with pytest.raises(RuntimeError, match="speech_voice_draft_revisions"):
+        await runtime.open()
+
+    assert runtime.dispatcher is None
+    assert publisher.closed == 1
+
+
 async def test_close_releases_the_injected_gateway_and_the_shared_dependencies() -> None:
     pool, publisher, gateway = _Pool(), _Publisher(), _Gateway()
     runtime = JobDispatchRuntime(

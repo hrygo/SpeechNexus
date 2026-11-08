@@ -94,10 +94,12 @@ address `172.28.0.10`. If `172.28.0.0/24` conflicts with the host, change the
 subnet and both private JSON object endpoints together. The examples and
 private-file rules are in [deploy/private](private/README.md).
 
-`postgres-data` and `minio-data` are named volumes. `minio-init` creates the
-input/result buckets and verifies versioning. It uses the local MinIO root
-identity only; a real deployment must provision separately scoped object
-credentials and reviewed buckets outside this bootstrap.
+`postgres-data` and `minio-data` are named volumes. `minio-init` creates and
+verifies versioning for the transcription input bucket, the Artifact bucket and
+`SPEECHNEXUS_EXECUTION_RESULT_BUCKET` (the gateway staging bucket the dispatcher
+reads back). It uses the local MinIO root identity only; a real deployment must
+provision separately scoped object credentials and reviewed buckets outside this
+bootstrap.
 
 ## Build and dependency boundary
 
@@ -158,11 +160,21 @@ It is not part of this minimal surface.
 ## Job dispatcher (`job-dispatch` profile)
 
 `job-dispatch-worker` runs the public Job dispatcher entry point
-`speechnexus-job-dispatch-worker`. The base `up` never starts it:
+`speechnexus-job-dispatch-worker`. The base `up` never starts it. Prepare the
+worker DSN and its grants first; only then start the profile:
 
 ```bash
-docker compose --env-file deploy/compose.env --profile job-dispatch up -d
+docker compose --env-file deploy/compose.env \
+  -f deploy/compose.yaml --profile job-dispatch up -d
 ```
+
+The service has no healthcheck, and a blank DSN makes it exit before claiming any
+lease. With `restart: unless-stopped` that shows up as a restart loop, while
+`docker compose ... up -d` (and `--wait`, which has no probe to wait on) still
+returns success. A successful `up` is therefore not evidence that the dispatcher
+is ready: confirm the worker is running without restarts, for example with
+`docker compose --env-file deploy/compose.env -f deploy/compose.yaml ps` and
+`logs job-dispatch-worker`, and fix the DSN/grants before retrying.
 
 The service shares the gateway network namespace and calls
 `http://127.0.0.1:8010`, because `JobDispatchSettings` rejects plain HTTP outside
@@ -176,7 +188,14 @@ for them. `SPEECHNEXUS_OBJECT_STORAGE_BUCKET` (Artifact output) and
 `SPEECHNEXUS_EXECUTION_RESULT_BUCKET` (gateway staging read-back) must be buckets
 `minio-init` created and versioned, and the latter must match the private gateway
 configs' `result_bucket`. The reference environment uses `speechnexus-results` for
-both.
+both. Because `minio-init` receives the same variable, a non-default staging
+bucket is created and versioned before the worker starts; if `minio-init` fails,
+`depends_on: service_completed_successfully` keeps the worker from starting at
+all. The local bootstrap still gives the worker the MinIO root identity
+(`MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`), as it does for the API and gateway. That
+is a local convenience, not object-layer least privilege: `read_only`, `cap_drop`
+and `no-new-privileges` constrain the container process only, not S3
+authorization, so production must supply narrowly scoped object credentials.
 
 `SPEECHNEXUS_JOB_DISPATCH_KINDS` selects the kinds this process claims and
 defaults to `asr,tts`. It is comma-separated, de-duplicated and must stay inside
@@ -193,14 +212,19 @@ kinds change:
    Beyond `USAGE` on the schema, it grants only two `SELECT`s — on
    `speech_voice_draft_revisions` and `speech_assets` — the frozen draft revision
    and the ready reference Asset the validation reader replays (#553). It grants
-   no draft writes, publication tables or object-storage rights;
+   no draft writes, publication tables or object-storage rights. When
+   `voice_validation` is in `SPEECHNEXUS_JOB_DISPATCH_KINDS`, the worker probes
+   both tables during its startup role check and refuses to start without them;
 3. set `SPEECHNEXUS_JOB_DISPATCH_KINDS=asr,tts,voice_validation` in `compose.env`.
 
-Without the extra grant the validation fact read fails with
-`InsufficientPrivilege`; the dispatcher raises `DispatchUnavailableError` and
-leaves the Job `running`. It does not fall back to anchor-only claims, skip the
-Job, or reuse the API role's superset privileges as evidence. A running dispatcher
-is still not a real engine, GPU or end-to-end asynchronous acceptance.
+The startup check runs before the dispatcher exists, so a missing grant stops the
+process (non-zero exit, a restart loop under Compose) instead of claiming a Job
+and failing at publication. The same role check rejects superuser, schema
+`CREATE`, database owner and membership in any table owner of the configured
+schema; it does not audit extra DML grants, so a broader role is not rejected and
+minimum privilege remains the deployment's responsibility. Do not treat the API
+role's superset as worker evidence. A running dispatcher is still not a real
+engine, GPU or end-to-end asynchronous acceptance.
 
 预设草稿 HTTP writer 默认关闭。仅在操作者已应用 `0009_profile_drafts` 并独立配置最小非 owner 角色后，设置 `SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL`；不得复用 Compose bootstrap owner。启动仅验证权限并管理独立连接池，不执行迁移或 grant。原请求/原键重放、固定读取和限额见 [profile drafts](../docs/components/profile-drafts.md#http-runtime-and-controlled-writer)。此配置不发布或激活预设。
 

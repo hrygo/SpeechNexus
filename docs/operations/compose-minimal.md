@@ -16,7 +16,7 @@ date: 2026-10-28
 | 能力 | 当前结论 | 依赖 / 原因 |
 | --- | --- | --- |
 | 公开 TTS `POST /v1/audio/speech` | **本 Compose 未装配** | 同步 TTS 工厂已实现，但本配置只预置 gateway 私有 file-TTS 配置引用，未提供 API 配方及结算数据库配置；其他部署的受控实测见[窗口记录](../archive/audits/2026-11-03-controlled-tts-prepare.md) |
-| 异步 Job 完整执行链 | **未贯通** | 默认 `up` 不启动 `job-dispatch-worker`；`job-dispatch` profile 可按需启动该派发进程，但需要单独的 worker DSN（`SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL`，示例中默认为空，空值在领取租约前 fail-closed）与真实引擎。API 的创建和读取路由需要另配 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL`；原子准入还需独立的 `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL` 与同库 admission 角色，未配置时创建返回 503（读取与取消仍可用）。派发入口已装配生产 planner 与结果发布器，但本配置不提供真实引擎。当前范围见 [F-JOB](../prd.md#f-job) 和 [F-ASYNC](../prd.md#f-async) |
+| 异步 Job 完整执行链 | **未贯通** | 默认 `up` 不启动 `job-dispatch-worker`；`job-dispatch` profile 可按需启动该派发进程，但需要单独的 worker DSN（`SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL`，示例中默认为空，空值在领取租约前 fail-closed）与真实引擎。启用 `voice_validation` 还需 `voice_validation_worker_grants`，缺少时启动角色校验即拒绝，不会领取 Job。API 的创建和读取路由需要另配 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL`；原子准入还需独立的 `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL` 与同库 admission 角色，未配置时创建返回 503（读取与取消仍可用）。派发入口已装配生产 planner 与结果发布器，但本配置不提供真实引擎。当前范围见 [F-JOB](../prd.md#f-job) 和 [F-ASYNC](../prd.md#f-async) |
 | 公开同步 ASR 成功响应 | **本部署未验证** | 文件 worker 已有成功终态写入；历史部署曾返回 `504 operation_timeout`，见[本机端到端记录](../archive/operations/local-end-to-end.md#112-公开-v1audiotranscriptions已执行504未成功)。不能将那次结果或组件实现推定为当前部署的公开链路验收 |
 | 节点控制器、runtime delivery、asset maintenance | **未装配** | 本配置有意排除这些服务；不能以本 Compose 的探活结果证明完整部署与发布资格 |
 | 真实模型质量、容量、GPU、物理多节点资格 | **未证明** | Compose 启动、健康检查和合成配置都不能替代模型/设备/拓扑验收 |
@@ -154,6 +154,8 @@ PY
   实例须与 recipe 的 `stage.instance_id` 和 ASR endpoint 一致，代次须与 ASR endpoint 一致；
 - `SPEECHNEXUS_OBJECT_STORAGE_BUCKET` / `SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET`：两份
   私有 JSON 的桶名必须同步。
+- `SPEECHNEXUS_EXECUTION_RESULT_BUCKET`：gateway 私有 JSON 的 `result_bucket` 与
+  `job-dispatch` profile 的 staging 读取桶；`minio-init` 会一并创建并启用版本化。
 
 生成脚本使用示例的 `POSTGRES_USER=speechnexus` 和 `POSTGRES_DB=speechnexus` 写入
 各数据库连接地址。若在启动前更改数据库名，须同步更新 API、gateway、gateway 查询、
@@ -287,7 +289,8 @@ recipe 时另要求当前运行 UID 拥有的普通文件，且拒绝最终路�
   run --rm minio-init
 ```
 
-预期 `minio-init` 成功退出，并对每个不同桶名输出一行；默认两个桶名不同，输出如下：
+预期 `minio-init` 成功退出，并对每个不同桶名输出一行；默认输入桶与 Artifact/staging 桶名不同
+（Artifact 桶与 `SPEECHNEXUS_EXECUTION_RESULT_BUCKET` 默认同为 `speechnexus-results`），输出如下：
 
 ```text
 bucket ready: speechnexus-inputs (versioning enabled)

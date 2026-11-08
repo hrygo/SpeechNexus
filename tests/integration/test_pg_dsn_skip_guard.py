@@ -17,6 +17,10 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.integration
+
 PG_VARIABLE = "SPEECHNEXUS_TEST_DATABASE_URL"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCAN_ROOTS = (

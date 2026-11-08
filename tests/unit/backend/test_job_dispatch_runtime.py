@@ -179,10 +179,7 @@ async def test_voice_validation_lane_probes_the_validation_fact_tables() -> None
     await runtime.open()
 
     assert runtime.dispatcher is not None
-    assert (
-        "SELECT draft_id, revision FROM speech_voice_draft_revisions LIMIT 0"
-        in pool.statements
-    )
+    assert "SELECT draft_id, revision FROM speech_voice_draft_revisions LIMIT 0" in pool.statements
     assert "SELECT workspace_id, asset_id FROM speech_assets LIMIT 0" in pool.statements
 
 

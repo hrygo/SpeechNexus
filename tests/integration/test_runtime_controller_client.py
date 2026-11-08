@@ -44,6 +44,12 @@ from speechnexus_node_controller.infrastructure.sqlite_intent_store import Sqlit
 
 pytestmark = pytest.mark.integration
 
+# An impatient client budget can expire while its POST is still on its way to
+# the daemon, so the timer says nothing about whether the request arrived. Only
+# the daemon's own arrival signal orders the two sides; this bound is far above
+# any observed arrival and still turns a request that never arrived red.
+ARRIVAL_TIMEOUT_SECONDS = 5
+
 
 @pytest.fixture
 def tls_runtime(runtime_database: RuntimeDatabase) -> RuntimeDatabase:
@@ -437,7 +443,16 @@ async def test_real_unanswered_post_keeps_peak_then_queries_the_same_persistent_
                 with pytest.raises(ControllerCallError) as failure:
                     await impatient.submit(REQUEST)
                 assert failure.value.request_may_have_run
-                assert daemon.entered.is_set()
+                assert failure.value.failure == ControllerFailure.DEADLINE_EXCEEDED
+                # The 0.1 s client budget only proves A stopped waiting; it does
+                # not prove the POST reached the daemon, because it can expire
+                # first. Synchronize on the daemon side and require the request
+                # to arrive before treating its silence as unresolved work.
+                assert await asyncio.to_thread(daemon.entered.wait, ARRIVAL_TIMEOUT_SECONDS), (
+                    "The unanswered POST never reached the daemon"
+                )
+                # Arrived and still unanswered: the daemon holds prepare open.
+                assert not daemon.finished.is_set()
                 assert runtime.snapshot() == before
                 assert held(runtime) == HOST.held.add(PLAN.peak).values
             daemon.release.set()

@@ -6,6 +6,9 @@ from later publications, so they are written once in this companion table.
 """
 
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
+from speechnexus_backend.speech.infrastructure.job_writer_columns import (
+    JOB_SUBMISSION_INSERT_COLUMNS,
+)
 
 SUBMISSIONS = "speech_job_submissions"
 
@@ -74,5 +77,7 @@ def public_job_submission_grants(schema: str, role: str) -> tuple[str, ...]:
     schema, role = checked_sql_name(schema), checked_sql_name(role)
     return (
         f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
-        f'GRANT SELECT, INSERT ON "{schema}".{SUBMISSIONS} TO "{role}"',
+        f'GRANT SELECT ON "{schema}".{SUBMISSIONS} TO "{role}"',
+        f"GRANT INSERT ({', '.join(JOB_SUBMISSION_INSERT_COLUMNS)}) "
+        f'ON "{schema}".{SUBMISSIONS} TO "{role}"',
     )

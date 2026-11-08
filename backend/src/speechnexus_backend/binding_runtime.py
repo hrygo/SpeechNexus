@@ -42,6 +42,12 @@ from speechnexus_backend.speech.infrastructure.publications_postgres import Post
 from speechnexus_backend.speech.infrastructure.voice_retirements_postgres import (
     PostgresVoiceRetirements,
 )
+from speechnexus_backend.startup_privileges import (
+    refuse_column_privileges,
+    refuse_foreign_relation_privileges,
+    refuse_table_privileges,
+    require_schema_usage,
+)
 
 
 class _PoolDiagnostics(logging.Filter):
@@ -134,6 +140,7 @@ class _BindingRuntime[T]:
 
     def _verify_role(self, connection: SpeechConnection, role: str) -> None:
         schema = self._settings.database_schema
+        subject = "Binding writer"
         row = connection.execute(
             "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(%s::name,%s,'CREATE') "
             "OR pg_catalog.pg_has_role(%s::name,d.datdba,'MEMBER') OR EXISTS ("
@@ -145,41 +152,64 @@ class _BindingRuntime[T]:
             (role, schema, role, schema, role, role),
         ).fetchone()
         if row is None or row["forbidden"]:
-            raise ValueError("Binding writer requires a non-owner runtime identity")
-        extra = connection.execute(
-            "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c "
-            "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
-            "WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m','f') "
-            "AND c.relname NOT IN (" + ",".join("%s" for _ in self._tables) + ") AND ("
-            "pg_catalog.has_table_privilege(%s::name,c.oid,"
-            "'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') "
-            "OR pg_catalog.has_any_column_privilege(%s::name,c.oid,"
-            "'SELECT,INSERT,UPDATE,REFERENCES'))) AS forbidden",
-            (schema, *self._tables, role, role),
-        ).fetchone()
-        if extra is None or extra["forbidden"]:
-            raise ValueError("Binding writer cannot hold other speech table privileges")
+            raise ValueError(
+                "Binding writer requires a non-owner runtime identity; use a role that owns "
+                "no speech table and holds no schema CREATE grant"
+            )
+        require_schema_usage(connection, role, schema, subject=subject)
+        refuse_foreign_relation_privileges(
+            connection,
+            role,
+            schema,
+            self._tables,
+            subject=subject,
+            declared_hint="the binding writer table set",
+        )
         for table in self._tables:
-            name = f'"{schema}".{table}'
-            row = connection.execute(
-                "SELECT pg_catalog.has_table_privilege(%s::name,%s,'SELECT') "
-                "AND pg_catalog.has_table_privilege(%s::name,%s,'INSERT') "
-                "AND NOT pg_catalog.has_table_privilege(%s::name,%s,'DELETE') "
-                "AND NOT pg_catalog.has_table_privilege(%s::name,%s,'TRUNCATE,REFERENCES,TRIGGER') "
-                "AS permitted",
-                (role, name, role, name, role, name, role, name),
+            qualified = f"{schema}.{table}"
+            readable = connection.execute(
+                "SELECT pg_catalog.has_table_privilege(%s::name,%s,'SELECT') AS held",
+                (role, qualified),
             ).fetchone()
-            if row is None or not row["permitted"]:
-                raise ValueError("Binding writer privileges do not match the port")
+            if readable is None or not readable["held"]:
+                raise ValueError(
+                    f"{subject} lacks SELECT on {table}; grant SELECT on that table "
+                    "or correct the configured schema"
+                )
+            writable = connection.execute(
+                "SELECT pg_catalog.has_table_privilege(%s::name,%s,'INSERT') AS held",
+                (role, qualified),
+            ).fetchone()
+            if writable is None or not writable["held"]:
+                raise ValueError(
+                    f"{subject} lacks INSERT on {table}; grant INSERT on that table "
+                    "or correct the configured schema"
+                )
+            refuse_table_privileges(
+                connection,
+                role,
+                qualified,
+                table,
+                ("DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"),
+                subject=subject,
+            )
+            # A column REFERENCES grant is invisible to the table-level check and
+            # still lets the role pin rows as a foreign-key target (#561).
+            refuse_column_privileges(
+                connection, role, qualified, table, ("REFERENCES",), subject=subject
+            )
             mutable = {"latest_revision"} if table == "speech_binding_families" else set()
             columns = connection.execute(
                 "SELECT column_name, pg_catalog.has_column_privilege(%s::name,%s,column_name,"
                 "'UPDATE') AS updatable FROM information_schema.columns "
                 "WHERE table_schema=%s AND table_name=%s",
-                (role, name, schema, table),
+                (role, qualified, schema, table),
             ).fetchall()
             if not columns or {c["column_name"] for c in columns if c["updatable"]} != mutable:
-                raise ValueError("Binding immutable history cannot be updatable")
+                raise ValueError(
+                    f"{subject} UPDATE columns do not match the port on {table}; "
+                    "revoke the extra column UPDATE grant"
+                )
 
     def close(self) -> None:
         with self._lifetime:
@@ -274,6 +304,7 @@ class BindingAdminReaderRuntime:
 
     def _verify_role(self, connection: SpeechConnection, role: str) -> None:
         schema = self._settings.database_schema
+        subject = "Binding admin reader"
         row = connection.execute(
             "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(%s::name,%s,'CREATE') "
             "OR pg_catalog.pg_has_role(%s::name,d.datdba,'MEMBER') OR EXISTS ("
@@ -285,30 +316,48 @@ class BindingAdminReaderRuntime:
             (role, schema, role, schema, role, role),
         ).fetchone()
         if row is None or row["forbidden"]:
-            raise ValueError("Binding admin reader requires a non-owner runtime identity")
-        extra = connection.execute(
-            "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c "
-            "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
-            "WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m','f') "
-            "AND c.relname NOT IN (" + ",".join("%s" for _ in _ADMIN_READER_TABLES) + ") AND ("
-            "pg_catalog.has_table_privilege(%s::name,c.oid,"
-            "'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') "
-            "OR pg_catalog.has_any_column_privilege(%s::name,c.oid,"
-            "'SELECT,INSERT,UPDATE,REFERENCES'))) AS forbidden",
-            (schema, *_ADMIN_READER_TABLES, role, role),
-        ).fetchone()
-        if extra is None or extra["forbidden"]:
-            raise ValueError("Binding admin reader cannot hold other speech table privileges")
+            raise ValueError(
+                "Binding admin reader requires a non-owner runtime identity; use a role that "
+                "owns no speech table and holds no schema CREATE grant"
+            )
+        require_schema_usage(connection, role, schema, subject=subject)
+        refuse_foreign_relation_privileges(
+            connection,
+            role,
+            schema,
+            _ADMIN_READER_TABLES,
+            subject=subject,
+            declared_hint="the binding admin reader table set",
+        )
         for table in _ADMIN_READER_TABLES:
-            name = f'"{schema}".{table}'
-            row = connection.execute(
-                "SELECT pg_catalog.has_table_privilege(%s::name,%s,'SELECT') "
-                "AND NOT pg_catalog.has_table_privilege(%s::name,%s,"
-                "'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') AS permitted",
-                (role, name, role, name),
+            qualified = f"{schema}.{table}"
+            readable = connection.execute(
+                "SELECT pg_catalog.has_table_privilege(%s::name,%s,'SELECT') AS held",
+                (role, qualified),
             ).fetchone()
-            if row is None or not row["permitted"]:
-                raise ValueError("Binding admin reader privileges do not match the port")
+            if readable is None or not readable["held"]:
+                raise ValueError(
+                    f"{subject} lacks SELECT on {table}; grant SELECT on that table "
+                    "or correct the configured schema"
+                )
+            refuse_table_privileges(
+                connection,
+                role,
+                qualified,
+                table,
+                ("INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"),
+                subject=subject,
+            )
+            # A column grant leaves ``has_table_privilege`` false; a read-only
+            # projection must refuse column INSERT/UPDATE/REFERENCES by name (#561).
+            refuse_column_privileges(
+                connection,
+                role,
+                qualified,
+                table,
+                ("INSERT", "UPDATE", "REFERENCES"),
+                subject=subject,
+            )
 
     def close(self) -> None:
         with self._lifetime:

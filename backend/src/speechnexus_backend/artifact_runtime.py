@@ -9,6 +9,14 @@ from speechnexus_backend.speech.application.artifacts import ArtifactService
 from speechnexus_backend.speech.infrastructure.artifacts_minio import MinioArtifactObjects
 from speechnexus_backend.speech.infrastructure.artifacts_postgres import PostgresArtifactMetadata
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechConnection, speech_pool
+from speechnexus_backend.startup_privileges import (
+    current_role,
+    refuse_column_privileges,
+    refuse_foreign_relation_privileges,
+    refuse_schema_create,
+    refuse_table_privileges,
+    require_schema_usage,
+)
 
 
 class ArtifactRuntime:
@@ -64,22 +72,57 @@ class ArtifactRuntime:
         self._pool.close()
 
 
+_DECLARED_TABLES = ("speech_artifacts", "speech_workspaces")
+_SUBJECT = "Artifact reader"
+
+
 def _verify_read_only(connection: SpeechConnection, schema: str) -> None:
-    for table in ("speech_artifacts", "speech_workspaces"):
+    """The reader may select two tables and hold nothing else (#561).
+
+    Table and column authority are judged separately: a column grant leaves
+    ``has_table_privilege`` false, so each column decision uses the column
+    helpers. REFERENCES and TRIGGER are whole-table grants a read-only reader
+    never needs, and any grant outside the declared set -- table or column --
+    is refused by name.
+    """
+    role = current_role(connection)
+    require_schema_usage(connection, role, schema, subject=_SUBJECT)
+    refuse_schema_create(connection, role, schema, subject=_SUBJECT)
+    refuse_foreign_relation_privileges(
+        connection,
+        role,
+        schema,
+        _DECLARED_TABLES,
+        subject=_SUBJECT,
+        declared_hint="_DECLARED_TABLES",
+    )
+    for table in _DECLARED_TABLES:
+        qualified = f"{schema}.{table}"
         row = connection.execute(
-            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'SELECT') AS can_select, "
-            "pg_catalog.has_table_privilege(CURRENT_USER, %s, 'INSERT,UPDATE,DELETE,TRUNCATE') "
-            "AS can_mutate",
-            (f"{schema}.{table}", f"{schema}.{table}"),
+            "SELECT pg_catalog.has_table_privilege(CURRENT_USER, %s, 'SELECT') AS held",
+            (qualified,),
         ).fetchone()
-        if row is None or not row["can_select"] or row["can_mutate"]:
-            raise ValueError("Artifact reader must be read-only")
-    row = connection.execute(
-        "SELECT pg_catalog.has_schema_privilege(CURRENT_USER, %s, 'CREATE') AS can_create",
-        (schema,),
-    ).fetchone()
-    if row is None or row["can_create"]:
-        raise ValueError("Artifact reader must not create schema objects")
+        if row is None or not row["held"]:
+            raise ValueError(
+                f"{_SUBJECT} lacks SELECT on {table}; grant SELECT on that table "
+                "or correct the configured schema"
+            )
+        refuse_table_privileges(
+            connection,
+            role,
+            qualified,
+            table,
+            ("INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"),
+            subject=_SUBJECT,
+        )
+        refuse_column_privileges(
+            connection,
+            role,
+            qualified,
+            table,
+            ("INSERT", "UPDATE", "REFERENCES"),
+            subject=_SUBJECT,
+        )
 
 
 __all__ = ["ArtifactRuntime"]

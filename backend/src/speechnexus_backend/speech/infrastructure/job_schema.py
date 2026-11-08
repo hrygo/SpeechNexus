@@ -4,6 +4,13 @@ from __future__ import annotations
 
 import re
 
+from speechnexus_backend.speech.infrastructure.job_writer_columns import (
+    ADMISSION_OPERATION_INSERT_COLUMNS,
+    COORDINATION_JOB_INSERT_COLUMNS,
+    COORDINATION_OUTBOX_INSERT_COLUMNS,
+    JOB_INTENT_INSERT_COLUMNS,
+)
+
 JOB_DDL: tuple[str, ...] = (
     """CREATE TABLE coordination_jobs (
         job_id VARCHAR(128) COLLATE "C" PRIMARY KEY,
@@ -45,9 +52,9 @@ def job_runtime_grants(schema: str, role: str) -> tuple[str, ...]:
         f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
         f'GRANT SELECT ON "{schema}".coordination_jobs TO "{role}"',
         f'GRANT SELECT ON "{schema}".coordination_outbox TO "{role}"',
-        "GRANT INSERT (job_id, operation_id, attempt_id, initial_event_id, "
-        f'initial_event_digest, request_digest) ON "{schema}".coordination_jobs TO "{role}"',
-        "GRANT INSERT (event_id, job_id, event_digest) "
+        f"GRANT INSERT ({', '.join(COORDINATION_JOB_INSERT_COLUMNS)}) "
+        f'ON "{schema}".coordination_jobs TO "{role}"',
+        f"GRANT INSERT ({', '.join(COORDINATION_OUTBOX_INSERT_COLUMNS)}) "
         f'ON "{schema}".coordination_outbox TO "{role}"',
     )
 
@@ -73,11 +80,12 @@ def job_dispatch_grants(schema: str, role: str) -> tuple[str, ...]:
     return (
         # Legacy voice kinds still record their non-dispatchable public intent
         # here. TTS/ASR operations are written by the admission role.
-        "GRANT INSERT (operation_id, workspace_id, request_digest, request_document, "
-        f"initial_attempt_id, current_attempt_id, recorded_at_us) "
+        f"GRANT INSERT ({', '.join(ADMISSION_OPERATION_INSERT_COLUMNS)}) "
         f'ON "{schema}".admission_operations TO "{role}"',
         # The public intent is authoritative from 0046 on and stays append-only.
-        f'GRANT SELECT, INSERT ON "{schema}".speech_job_intents TO "{role}"',
+        f'GRANT SELECT ON "{schema}".speech_job_intents TO "{role}"',
+        f"GRANT INSERT ({', '.join(JOB_INTENT_INSERT_COLUMNS)}) "
+        f'ON "{schema}".speech_job_intents TO "{role}"',
         *artifact_publisher_grants(schema, role),
         *cancellation_not_submitted_grants(schema, role),
     )

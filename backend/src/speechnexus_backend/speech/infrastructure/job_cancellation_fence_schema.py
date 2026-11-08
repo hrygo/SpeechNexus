@@ -18,6 +18,11 @@ from speechnexus_backend.speech.infrastructure.gateway_query_grants import (
     CANCELLATION_FENCE_WORKER_COLUMNS,
 )
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
+from speechnexus_backend.speech.infrastructure.job_writer_columns import (
+    CANCELLATION_FENCE_INSERT_COLUMNS,
+    CANCELLATION_NOT_SUBMITTED_INSERT_COLUMNS,
+    CANCELLATION_RECONCILIATION_INSERT_COLUMNS,
+)
 
 TABLE = CANCELLATION_FENCE_TABLE
 RECONCILIATION_TABLE = "speech_job_cancellation_reconciliations"
@@ -67,7 +72,9 @@ def job_cancellation_fence_grants(schema: str, role: str) -> tuple[str, ...]:
     schema, role = checked_sql_name(schema), checked_sql_name(role)
     return (
         f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
-        f'GRANT SELECT, INSERT ON "{schema}".{TABLE} TO "{role}"',
+        f'GRANT SELECT ON "{schema}".{TABLE} TO "{role}"',
+        f"GRANT INSERT ({', '.join(CANCELLATION_FENCE_INSERT_COLUMNS)}) "
+        f'ON "{schema}".{TABLE} TO "{role}"',
     )
 
 
@@ -76,7 +83,8 @@ def cancellation_not_submitted_grants(schema: str, role: str) -> tuple[str, ...]
     schema, role = checked_sql_name(schema), checked_sql_name(role)
     return (
         f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
-        f'GRANT INSERT ON "{schema}".{NOT_SUBMITTED_TABLE} TO "{role}"',
+        f"GRANT INSERT ({', '.join(CANCELLATION_NOT_SUBMITTED_INSERT_COLUMNS)}) "
+        f'ON "{schema}".{NOT_SUBMITTED_TABLE} TO "{role}"',
     )
 
 
@@ -87,7 +95,9 @@ def cancellation_reconciliation_grants(schema: str, role: str) -> tuple[str, ...
         f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
         f"GRANT SELECT ({', '.join(CANCELLATION_FENCE_WORKER_COLUMNS)}) "
         f'ON "{schema}".{TABLE} TO "{role}"',
-        f'GRANT SELECT, INSERT ON "{schema}".{RECONCILIATION_TABLE} TO "{role}"',
+        f'GRANT SELECT ON "{schema}".{RECONCILIATION_TABLE} TO "{role}"',
+        f"GRANT INSERT ({', '.join(CANCELLATION_RECONCILIATION_INSERT_COLUMNS)}) "
+        f'ON "{schema}".{RECONCILIATION_TABLE} TO "{role}"',
         f"GRANT UPDATE (attempts, next_check_at_us, last_outcome, settled_at_us, updated_at_us) "
         f'ON "{schema}".{RECONCILIATION_TABLE} TO "{role}"',
         f'GRANT SELECT ON "{schema}".{NOT_SUBMITTED_TABLE} TO "{role}"',

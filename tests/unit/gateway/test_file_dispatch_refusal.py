@@ -140,11 +140,8 @@ def _request(
     )
 
 
-def asr_case() -> tuple[SubmitRequest, _RoutedExecution, type[Exception]]:
-    """The alignment parameter belongs to the ASR lane and only ``off`` is served."""
-    command = command_example(1)
-    command["parameters"]["alignment"] = "on"
-    lane = CommandFileAsr(
+def _asr_lane() -> CommandFileAsr:
+    return CommandFileAsr(
         inputs=_inputs(),
         decoder=cast(Any, object()),  # never reached: validation performs no I/O
         vad_model=ScriptedVadModel(fallback=0.9),
@@ -155,6 +152,23 @@ def asr_case() -> tuple[SubmitRequest, _RoutedExecution, type[Exception]]:
         input_limits=_limits(),
         decode_limits=AudioDecodeLimits(),
     )
+
+
+def _builtin_tts_lane() -> CommandFileTts:
+    return CommandFileTts(
+        synthesizer=cast(Any, _Target("binding-tts")),
+        encoder=LocalTtsEncoder(),
+        binding_policy=TtsPolicy("policy-tts", "Vivian"),
+        builtin_voice_binding=BuiltinVoiceBinding("voice-demo", "1", "voice-rev-1", "Vivian"),
+        max_payload_bytes=1 << 20,
+    )
+
+
+def asr_case() -> tuple[SubmitRequest, _RoutedExecution, type[Exception]]:
+    """The ASR lane only serves the json/text response formats after contract parse."""
+    command = command_example(1)
+    command["parameters"]["response_format"] = "srt"
+    lane = _asr_lane()
     request = _request(
         command,
         submit_intent_id="intent-asr",
@@ -170,16 +184,10 @@ def asr_case() -> tuple[SubmitRequest, _RoutedExecution, type[Exception]]:
 
 
 def tts_case() -> tuple[SubmitRequest, _RoutedExecution, type[Exception]]:
-    """The builtin lane refuses a command without text before any engine call."""
+    """The builtin lane refuses clone reference text; it never reads a reference."""
     command = command_example(0)
-    command["text"] = ""
-    lane = CommandFileTts(
-        synthesizer=cast(Any, _Target("binding-tts")),
-        encoder=LocalTtsEncoder(),
-        binding_policy=TtsPolicy("policy-tts", "Vivian"),
-        builtin_voice_binding=BuiltinVoiceBinding("voice-demo", "1", "voice-rev-1", "Vivian"),
-        max_payload_bytes=1 << 20,
-    )
+    command["parameters"]["reference_text"] = "synthetic reference transcript"
+    lane = _builtin_tts_lane()
     request = _request(
         command,
         submit_intent_id="intent-tts",
@@ -189,6 +197,47 @@ def tts_case() -> tuple[SubmitRequest, _RoutedExecution, type[Exception]]:
         sample_rate_hz=24000,
         max_output_audio_ms=60000,
         output_stream_id="stream-tts",
+    )
+    return request, _RoutedExecution(None, lane, None), InvalidExecutionRequestError
+
+
+def asr_contract_gate_case() -> tuple[SubmitRequest, _RoutedExecution, type[Exception]]:
+    """Rejected by the shared request schema, before any lane-specific code runs.
+
+    ``parameters.alignment`` is contract-constrained to ``off``, so this case
+    proves the dispatch mapping for the parse gate rather than an ASR branch.
+    """
+    command = command_example(1)
+    command["parameters"]["alignment"] = "on"
+    lane = _asr_lane()
+    request = _request(
+        command,
+        submit_intent_id="intent-asr-gate",
+        binding="binding-input",
+        policy="policy-input",
+        voice=None,
+    )
+    return (
+        request,
+        _RoutedExecution(AsrFileStage(lane, 1024), None, None),
+        InvalidExecutionRequestError,
+    )
+
+
+def tts_contract_gate_case() -> tuple[SubmitRequest, _RoutedExecution, type[Exception]]:
+    """An empty text is rejected by the shared request schema, not by the lane."""
+    command = command_example(0)
+    command["text"] = ""
+    lane = _builtin_tts_lane()
+    request = _request(
+        command,
+        submit_intent_id="intent-tts-gate",
+        binding="binding-tts",
+        policy="policy-tts",
+        voice="voice-rev-1",
+        sample_rate_hz=24000,
+        max_output_audio_ms=60000,
+        output_stream_id="stream-tts-gate",
     )
     return request, _RoutedExecution(None, lane, None), InvalidExecutionRequestError
 
@@ -271,7 +320,11 @@ def voice_design_case() -> tuple[SubmitRequest, _RoutedExecution, type[Exception
 
 
 def alignment_case() -> tuple[SubmitRequest, _RoutedExecution, type[Exception]]:
-    """No configured file lane serves the alignment kind: a deterministic refusal."""
+    """No configured file lane serves the alignment kind.
+
+    A deployment/routing mismatch is still reported as a deterministic refusal;
+    the known semantic deviation is documented at the raise site.
+    """
     request = _request(
         command_example(5),
         submit_intent_id="intent-alignment",
@@ -283,7 +336,10 @@ def alignment_case() -> tuple[SubmitRequest, _RoutedExecution, type[Exception]]:
 
 
 def voice_validation_case() -> tuple[SubmitRequest, _RoutedExecution, type[Exception]]:
-    """No configured file lane serves the voice-validation kind either."""
+    """No configured file lane serves the voice-validation kind either.
+
+    Same documented deployment-mismatch deviation as the alignment kind.
+    """
     request = _request(
         command_example(4),
         submit_intent_id="intent-voicevalidation",
@@ -295,8 +351,10 @@ def voice_validation_case() -> tuple[SubmitRequest, _RoutedExecution, type[Excep
 
 
 CASES = [
-    pytest.param(asr_case, id="asr-alignment-parameter"),
-    pytest.param(tts_case, id="tts-builtin-missing-text"),
+    pytest.param(asr_case, id="asr-unsupported-response-format"),
+    pytest.param(tts_case, id="tts-builtin-reference-text"),
+    pytest.param(asr_contract_gate_case, id="asr-contract-gate-alignment"),
+    pytest.param(tts_contract_gate_case, id="tts-contract-gate-empty-text"),
     pytest.param(custom_tts_case, id="tts-custom-missing-transcript"),
     pytest.param(voice_clone_case, id="voiceclone-missing-preview"),
     pytest.param(voice_design_case, id="voicedesign-named-voice"),
@@ -307,7 +365,7 @@ CASES = [
 
 @contextmanager
 def configured(
-    routed: Any,
+    routed: Any, *, now: Callable[[], datetime] | None = None
 ) -> Iterator[
     tuple[InMemorySubmissionLedger, FileExecutionWorker[_Stores], SubmitExecutionService]
 ]:
@@ -320,6 +378,7 @@ def configured(
         results=_Stores(None, None, None),
         limits=FileExecutionLimits(1024, 16384, 2, 10),
         engine_request_prefix="file-command",
+        now=now if now is not None else lambda: datetime.now(UTC),
     )
     worker.open()
     submit = SubmitExecutionService(
@@ -381,6 +440,38 @@ async def test_a_local_dispatch_failure_that_is_not_a_refusal_stays_unknown() ->
         assert stored.cleanup_state is CleanupState.NOT_REQUIRED
         assert stored.dispatched_at is None
         assert worker.running
+
+
+class _ExplodingSnapshot:
+    """A frozen request whose document read faults: the guard itself raises."""
+
+    @property
+    def request_document(self) -> str:
+        raise RuntimeError("synthetic guard evaluation fault")
+
+
+class _GuardFaultExecution:
+    def validate_request(self, request: SubmitRequest) -> SubmitRequest:
+        return cast(SubmitRequest, _ExplodingSnapshot())
+
+    async def stage_result(self, *args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("a not-sent dispatch never stages")
+
+
+async def test_a_guard_evaluation_failure_stays_a_local_not_sent_fact() -> None:
+    """A fault while evaluating the local guards never becomes a lost response."""
+    request, _, _ = asr_case()
+    with configured(_GuardFaultExecution()) as (ledger, _worker, submit):
+        submit.submit(request)
+        stored = ledger.get(request.identity.submit_intent_id)
+        assert stored is not None
+        # Turning this guard fault into RESPONSE_LOST would keep capacity for an
+        # execution that provably never left the process.
+        assert stored.execution_state is ExecutionState.FAILED
+        assert stored.cleanup_state is CleanupState.NOT_REQUIRED
+        assert stored.error_code is ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN
+        assert stored.dispatched_at is None
+        assert not stored.execution_state.holds_capacity
 
 
 def test_a_lost_engine_response_stays_transport_unknown_and_holds_capacity() -> None:

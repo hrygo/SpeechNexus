@@ -163,6 +163,18 @@ class FileExecutionWorker[StoreT]:
         at = self._now()
         try:
             frozen = self._execution.validate_request(request)
+            if (
+                frozen.request_document != request.request_document
+                or at >= request.identity.deadline_at
+            ):
+                # An expired or rewritten request was never usable here, but
+                # neither condition is a command-structure refusal. Retain the
+                # previous conservative mapping instead of inventing a new
+                # reason. The guard stays inside the try: a fault while
+                # evaluating it (for example an unusable clock value) is a
+                # local not-sent fact, not evidence that a request reached the
+                # engine.
+                return DispatchOutcome(DispatchResult.NOT_SENT, at)
         except InvalidExecutionRequestError:
             # The stage proved the frozen command unusable while the gateway still
             # held it locally: no engine request existed, so this is a
@@ -174,14 +186,6 @@ class FileExecutionWorker[StoreT]:
             # Not attributable to the command: keep the conservative not-sent
             # fact so an unexpected local failure is never reported as a clean
             # structural rejection.
-            return DispatchOutcome(DispatchResult.NOT_SENT, at)
-        if (
-            frozen.request_document != request.request_document
-            or at >= request.identity.deadline_at
-        ):
-            # An expired or rewritten request was never usable here, but neither
-            # condition is a command-structure refusal. Retain the previous
-            # conservative mapping instead of inventing a new reason.
             return DispatchOutcome(DispatchResult.NOT_SENT, at)
         with self._lock:
             if (

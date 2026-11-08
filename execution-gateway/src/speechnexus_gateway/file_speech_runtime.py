@@ -88,6 +88,11 @@ class _RoutedExecution:
             return self.voice_design.validate_request(request)
         if kind == "voiceclone" and self.voice_clone is not None:
             return self.voice_clone.validate_request(request)
+        # Known semantic deviation: an unconfigured stage is a deployment or
+        # routing mismatch (an operator fact), but the only deterministic code
+        # this boundary owns is the caller-facing invalid-request code. Mapping
+        # it to a transport-unknown terminal would be worse, so it stays here
+        # until a dedicated execution error code exists.
         raise InvalidExecutionRequestError("the configured gateway does not serve this file stage")
 
     async def stage_result(

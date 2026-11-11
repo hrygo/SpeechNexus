@@ -24,6 +24,30 @@ SOURCE = document(ROOT / "contracts/admin-openapi.yaml")
 EXAMPLES = json.loads((ROOT / "tests/fixtures/contracts/profile-http.json").read_text())["examples"]
 CONFIG = json.loads((ROOT / "contracts/bindings.json").read_text())["http_surfaces"]["profile"]
 POST, GET = "createProfileRevision", "getProfileRevisionForAdministration"
+HTTP_METHODS = frozenset({"get", "post", "put", "patch", "delete", "head", "options", "trace"})
+# Existing contract-first admin declarations outside the generated service
+# surface. Keeping them explicit makes any new unbound path or method fail
+# instead of silently widening the gap between the contract and its consumers.
+KNOWN_UNSERVED_ADMIN_OPERATIONS = frozenset(
+    {
+        ("/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases", "post"),
+        ("/v1/nexus/admin/capacity-manifests/{manifest_id}", "get"),
+        ("/v1/nexus/admin/diagnostics", "get"),
+        ("/v1/nexus/admin/model-bindings", "get"),
+        ("/v1/nexus/admin/model-bindings/{binding_id}/publications", "post"),
+        ("/v1/nexus/admin/model-instances", "get"),
+        ("/v1/nexus/admin/model-instances/{instance_id}/generations/{generation}", "get"),
+        ("/v1/nexus/admin/policies", "get"),
+        ("/v1/nexus/admin/policies/{policy_id}", "get"),
+        ("/v1/nexus/admin/policies/{policy_id}", "patch"),
+        ("/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/retirements", "post"),
+        ("/v1/nexus/admin/qualification-reports/{report_id}", "get"),
+        ("/v1/nexus/admin/resource-pools", "get"),
+        ("/v1/nexus/audit-events", "get"),
+        ("/v1/nexus/workspaces", "post"),
+        ("/v1/nexus/workspaces/{workspace_id}", "patch"),
+    }
+)
 
 
 def resolve(node: dict[str, Any]) -> dict[str, Any]:
@@ -103,6 +127,49 @@ def source_accepts(example: dict[str, Any]) -> bool:
     return all(set(groups[key]) <= declared[key] for key in ("path", "query"))
 
 
+def admin_service_config() -> dict[str, Any]:
+    manifest = json.loads((ROOT / "contracts/bindings.json").read_text())
+    surfaces = [
+        config
+        for config in manifest["http_surfaces"].values()
+        if config.get("source") == "admin-openapi.yaml"
+    ]
+    return {
+        "source": "admin-openapi.yaml",
+        "paths": sorted({path for config in surfaces for path in config["paths"]}),
+        "operations": sorted(
+            {operation for config in surfaces for operation in config.get("operations", [])}
+        ),
+    }
+
+
+def test_admin_contract_path_methods_match_generated_service_surface() -> None:
+    config = admin_service_config()
+    served = generator().bundle_http_surface(config)
+    assert set(served["paths"]) == set(config["paths"])
+    declared = {
+        (path, method)
+        for path, item in SOURCE["paths"].items()
+        for method, operation in item.items()
+        if method in HTTP_METHODS and isinstance(operation, dict)
+    }
+    served_pairs = {
+        (path, method)
+        for path, item in served["paths"].items()
+        for method in item
+        if method in HTTP_METHODS
+    }
+    expected = served_pairs | KNOWN_UNSERVED_ADMIN_OPERATIONS
+    assert declared == expected, (
+        "admin contract path/method set and generated service surface diverged: "
+        f"{declared ^ expected}; update the binding or the explicit known-unserved inventory"
+    )
+    assert not (served_pairs & KNOWN_UNSERVED_ADMIN_OPERATIONS), (
+        "operations implemented in a generated surface must leave the known-unserved inventory: "
+        f"{served_pairs & KNOWN_UNSERVED_ADMIN_OPERATIONS}"
+    )
+
+
 def sample(identity: str) -> dict[str, Any]:
     return copy.deepcopy(next(e for e in EXAMPLES if e["id"] == identity))
 
@@ -131,7 +198,7 @@ def test_profile_surface_does_not_advertise_other_admin_methods_or_change_worksp
     actual = contract()
     assert actual == generator().bundle_http_surface(CONFIG)
     validate(actual)
-    assert actual["info"]["version"] == "0.1.0.dev6"
+    assert actual["info"]["version"] == "0.1.0.dev7"
     assert set(actual["paths"]) == set(CONFIG["paths"])
     assert set(actual["paths"]["/v1/nexus/admin/profiles"]) == {"post"}
     assert set(actual["paths"]["/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}"]) == {
@@ -139,7 +206,7 @@ def test_profile_surface_does_not_advertise_other_admin_methods_or_change_worksp
     }
     assert all(set(item) == {"get"} for item in workspace_contract()["paths"].values())
     assert "/v1/nexus/admin/profiles" not in workspace_contract()["paths"]
-    for unknown in ("publishProfileRevision", "listProfileFamilies", "queryProfileCommand"):
+    for unknown in ("publishProfileRevision", "retireProfileRevision", "queryProfileCommand"):
         with pytest.raises(ValueError, match="Unknown HTTP operation"):
             validate_request(unknown, {})
     actual["paths"].clear()

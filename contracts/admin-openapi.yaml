@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus administration API
-  version: 0.1.0.dev6
+  version: 0.1.0.dev7
   description: |
     Deployment-scoped administration and observation API. These routes do not
     establish a user identity, role, or tenant boundary. A deployment may expose
@@ -155,34 +155,6 @@ paths:
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
   /v1/nexus/admin/profiles:
-    get:
-      tags: [profiles]
-      operationId: listProfileFamilies
-      summary: List scenario-profile families and their immutable revisions
-      parameters:
-        - $ref: "#/components/parameters/Cursor"
-        - $ref: "#/components/parameters/Limit"
-        - name: status
-          in: query
-          required: false
-          schema:
-            type: string
-            enum: [draft, published, retired, disabled]
-        - $ref: "#/components/parameters/XRequestId"
-      responses:
-        "200":
-          description: Profile families. Filtering by status applies to latest_revision.
-          headers:
-            X-Request-ID:
-              $ref: "#/components/headers/XRequestId"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProfileFamilyList"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "503":
-          $ref: "#/components/responses/ServiceUnavailable"
     post:
       tags: [profiles]
       operationId: createProfileRevision
@@ -1614,48 +1586,6 @@ components:
                 param:
                   type: "null"
                 nexus: false
-    ProfileFamilySummary:
-      type: object
-      additionalProperties: false
-      required:
-        - profile_id
-        - latest_revision
-        - current_revision
-        - kind
-        - release_tier
-        - publication_status
-      properties:
-        profile_id:
-          $ref: "#/components/schemas/Identifier"
-        latest_revision:
-          $ref: "#/components/schemas/Revision"
-        current_revision:
-          oneOf:
-            - $ref: "#/components/schemas/Revision"
-            - type: "null"
-        kind:
-          type: string
-          enum: [asr, tts, duplex]
-        release_tier:
-          $ref: "#/components/schemas/ReleaseTier"
-        publication_status:
-          type: string
-          enum: [draft, published, retired, disabled]
-    ProfileFamilyList:
-      type: object
-      additionalProperties: false
-      required: [object, data, has_more, next_cursor]
-      properties:
-        object:
-          const: nexus.list
-        data:
-          type: array
-          items:
-            $ref: "#/components/schemas/ProfileFamilySummary"
-        has_more:
-          type: boolean
-        next_cursor:
-          type: [string, "null"]
     ProfilePublicationRequest:
       type: object
       additionalProperties: false

@@ -121,8 +121,9 @@ Windows 等平台保持未验证，支持范围扩展以单元的安装、启动
 
 现有 [音频检查沙箱](../archive/components/audio-asset-inspection.md)使用 pidfd、seccomp、bubblewrap、
 prlimit 和 `/proc`，属于 Linux 平台实现。当前
-[AssetRuntime](../../backend/src/speechnexus_backend/asset_runtime.py)装配 `TextAssetInspector`，
-公开音频检查尚未启用；不能把沙箱代码位于 backend 包内等同于 API 启动必须使用 Linux。
+[AssetRuntime](../../backend/src/speechnexus_backend/asset_runtime.py)默认装配 `TextAssetInspector`，
+仅在显式 `SPEECHNEXUS_ASSET_INSPECTOR=audio` 且选择器与宿主 `bwrap`/`prlimit` 齐备时装配进程检查器；
+公开音频路径仍待宿主沙箱批准，尚未启用。不能把沙箱代码位于 backend 包内等同于 API 启动必须使用 Linux。
 
 为了保持业务服务的平台边界，应将 Linux 检查能力封装在明确的执行组件中。
 先比较复用受控 Linux 检查 worker 与独立媒体服务，选择满足隔离和恢复要求的最小部署形态；

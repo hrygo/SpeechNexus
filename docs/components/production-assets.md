@@ -19,10 +19,18 @@ a real `AssetInspector`; the default inspector reports unavailable and creates
 neither fake audio facts nor a validation task without a consumer.
 
 The private [audio inspection process boundary](../archive/components/audio-asset-inspection.md) adds
-real Linux supervision and resource-limit tests, but is not installed in
-`AssetRuntime`. The shared `packages/media` source includes a private inspector for PCM WAV and
-explicitly described raw PCM; source availability does not establish an approved
-deployment image or public integration. Target-runtime qualification, public
+real Linux supervision and resource-limit tests. `AssetRuntime` selects either
+inspector from `SPEECHNEXUS_ASSET_INSPECTOR`: the default `text` keeps
+`asr_input`/`voice_reference` unavailable with `asset_inspection_unavailable`,
+while `audio` assembles the process inspector and requires
+`SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT`,
+`SPEECHNEXUS_AUDIO_INSPECTION_COMMAND`,
+`SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON` and installed `bwrap`/`prlimit`.
+A missing, unusable or host-absent prerequisite fails api startup naming that
+variable; it never falls back to text. The shared `packages/media` source
+includes a private inspector for PCM WAV and explicitly described raw PCM;
+configuring it does not establish an approved deployment image or public
+integration. Host sandbox approval, target-runtime qualification, public
 error/result mapping and HTTP/PG/MinIO acceptance remain prerequisites for
 audio `ready`.
 
@@ -153,6 +161,20 @@ one binary part and four bounded metadata fields; duplicate or unapproved fields
 and client paths/keys/URLs are rejected. Private buffers close on errors and
 receive disconnects. Filename and client Content-Type do not determine storage
 identity or validated MIME facts.
+
+`SPEECHNEXUS_ASSET_INSPECTOR` accepts `text` (default) or `audio`. The audio
+kind validates its selectors and the host tool paths during composition, before
+any pool or S3 client is created, and takes explicit limits:
+`SPEECHNEXUS_AUDIO_INSPECTION_MAX_DURATION_MS` (default 120000),
+`SPEECHNEXUS_AUDIO_INSPECTION_MAX_INPUT_BYTES` (25 MiB),
+`SPEECHNEXUS_AUDIO_INSPECTION_MEMORY_BYTES` (256 MiB),
+`SPEECHNEXUS_AUDIO_INSPECTION_CPU_SECONDS` (5),
+`SPEECHNEXUS_AUDIO_INSPECTION_WALL_SECONDS` (10),
+`SPEECHNEXUS_AUDIO_INSPECTION_OUTPUT_BYTES` and
+`SPEECHNEXUS_AUDIO_INSPECTION_MAX_RECEIPT_BYTES` (4096). Blank values forwarded
+by Compose mean unconfigured; the tool paths default to `/usr/bin/bwrap` and
+`/usr/bin/prlimit`. These settings install no image, host package or sandbox
+policy.
 
 Asset endpoints accept only configured `asset_allowed_hosts` (default
 `localhost`, `127.0.0.1`, `::1`). Requests carrying Origin require an exact

@@ -56,6 +56,21 @@ class Settings(BaseSettings):
     asset_maintenance_batch_size: int = Field(default=10, ge=1, le=100)
     asset_allowed_hosts: tuple[str, ...] = ("localhost", "127.0.0.1", "::1")
     asset_allowed_origins: tuple[str, ...] = ()
+    # The default text inspector keeps asr_input/voice_reference unavailable; the
+    # audio kind requires the three selectors below and never falls back to text.
+    asset_inspector: Literal["text", "audio"] = "text"
+    audio_inspection_runtime_root: Path | None = None
+    audio_inspection_command: str = ""
+    audio_inspection_launcher_python: str = ""
+    audio_inspection_bubblewrap: Path | None = None
+    audio_inspection_prlimit: Path | None = None
+    audio_inspection_max_duration_ms: int = Field(default=120_000, ge=1, le=86_400_000)
+    audio_inspection_max_input_bytes: int = Field(default=25 * 1024 * 1024, ge=1, le=1024**3)
+    audio_inspection_memory_bytes: int = Field(default=256 * 1024**2, ge=64 * 1024**2, le=1024**3)
+    audio_inspection_cpu_seconds: int = Field(default=5, ge=1, le=30)
+    audio_inspection_wall_seconds: float = Field(default=10, gt=0, le=60)
+    audio_inspection_output_bytes: int = Field(default=4096, ge=1, le=65536)
+    audio_inspection_max_receipt_bytes: int = Field(default=4096, ge=1, le=65536)
     profile_writer_database_url: SecretStr | None = Field(default=None, min_length=1)
     profile_receive_max_bytes: int = Field(default=262144, ge=1, le=1048576)
     profile_receive_concurrency: int = Field(default=4, ge=1, le=4)
@@ -158,12 +173,20 @@ class Settings(BaseSettings):
         "speech_recipe_file",
         "speech_settlement_database_url",
         "speech_default_language",
+        "audio_inspection_runtime_root",
+        "audio_inspection_bubblewrap",
+        "audio_inspection_prlimit",
         mode="before",
     )
     @classmethod
     def empty_profile_writer_is_disabled(cls, value: Any) -> Any:
         raw = value.get_secret_value() if isinstance(value, SecretStr) else value
         return None if isinstance(raw, str) and not raw.strip() else value
+
+    @field_validator("asset_inspector", mode="before")
+    @classmethod
+    def empty_asset_inspector_is_text(cls, value: Any) -> Any:
+        return "text" if isinstance(value, str) and not value.strip() else value
 
     @model_validator(mode="after")
     def asset_credentials_are_paired(self) -> Self:

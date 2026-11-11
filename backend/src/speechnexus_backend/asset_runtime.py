@@ -2,20 +2,135 @@
 
 from __future__ import annotations
 
+import shlex
+from pathlib import Path, PurePosixPath
+
 from speechnexus_backend.settings import Settings
-from speechnexus_backend.speech.application.assets import AssetService, TextAssetInspector
+from speechnexus_backend.speech.application.assets import (
+    AssetInspector,
+    AssetService,
+    TextAssetInspector,
+)
 from speechnexus_backend.speech.application.workspaces import WorkspaceService
 from speechnexus_backend.speech.domain.assets import AssetError, AssetPolicy
 from speechnexus_backend.speech.infrastructure.assets_minio import MinioAssetObjects
 from speechnexus_backend.speech.infrastructure.assets_postgres import PostgresAssetMetadata
+from speechnexus_backend.speech.infrastructure.audio_asset_inspector import (
+    ProcessAudioAssetInspector,
+)
+from speechnexus_backend.speech.infrastructure.audio_inspection_process import (
+    AudioInspectionProcess,
+    InspectionProcessLimits,
+)
 from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
 from speechnexus_backend.speech.infrastructure.workspaces_postgres import PostgresWorkspaceReads
+
+DEFAULT_BUBBLEWRAP = Path("/usr/bin/bwrap")
+DEFAULT_PRLIMIT = Path("/usr/bin/prlimit")
+
+
+def _inspection_root(settings: Settings) -> Path:
+    variable = "SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT"
+    root = settings.audio_inspection_runtime_root
+    if root is None:
+        raise ValueError(f"{variable} is required when SPEECHNEXUS_ASSET_INSPECTOR=audio")
+    resolved = root.resolve()
+    # The supervisor rejects "/" as an image; fail before Popen with the setting's name.
+    if not root.is_absolute() or resolved == Path("/") or not resolved.is_dir():
+        raise ValueError(f"{variable} must name a private inspection image directory: {root}")
+    return resolved
+
+
+def _inspection_command(settings: Settings) -> tuple[str, ...]:
+    variable = "SPEECHNEXUS_AUDIO_INSPECTION_COMMAND"
+    raw = settings.audio_inspection_command
+    if not raw.strip():
+        raise ValueError(f"{variable} is required when SPEECHNEXUS_ASSET_INSPECTOR=audio")
+    try:
+        command = tuple(shlex.split(raw))
+    except ValueError:
+        raise ValueError(f"{variable} is not a valid shell command") from None
+    if not command:
+        raise ValueError(f"{variable} is not a valid shell command")
+    executable = PurePosixPath(command[0])
+    if (
+        not executable.is_absolute()
+        or ".." in executable.parts
+        or any("\0" in argument or len(argument) > 8192 for argument in command)
+    ):
+        raise ValueError(f"{variable} must start with an absolute image executable")
+    return command
+
+
+def _inspection_launcher(settings: Settings) -> str:
+    variable = "SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON"
+    interpreter = PurePosixPath(settings.audio_inspection_launcher_python)
+    if not interpreter.is_absolute() or ".." in interpreter.parts or "\0" in str(interpreter):
+        raise ValueError(f"{variable} must be an absolute interpreter path inside the image")
+    return settings.audio_inspection_launcher_python
+
+
+def _inspection_tool(variable: str, configured: Path | None, default: Path) -> Path:
+    path = configured if configured is not None else default
+    if not path.is_file():
+        raise ValueError(f"{variable} does not name an installed executable: {path}")
+    return path
+
+
+def _build_audio_inspector(settings: Settings) -> ProcessAudioAssetInspector:
+    root = _inspection_root(settings)
+    command = _inspection_command(settings)
+    launcher = _inspection_launcher(settings)
+    bubblewrap = _inspection_tool(
+        "SPEECHNEXUS_AUDIO_INSPECTION_BUBBLEWRAP",
+        settings.audio_inspection_bubblewrap,
+        DEFAULT_BUBBLEWRAP,
+    )
+    prlimit = _inspection_tool(
+        "SPEECHNEXUS_AUDIO_INSPECTION_PRLIMIT",
+        settings.audio_inspection_prlimit,
+        DEFAULT_PRLIMIT,
+    )
+    process = AudioInspectionProcess(
+        root,
+        command,
+        InspectionProcessLimits(
+            input_bytes=settings.audio_inspection_max_input_bytes,
+            memory_bytes=settings.audio_inspection_memory_bytes,
+            cpu_seconds=settings.audio_inspection_cpu_seconds,
+            wall_seconds=settings.audio_inspection_wall_seconds,
+            output_bytes=settings.audio_inspection_output_bytes,
+        ),
+        launcher_python=launcher,
+        bubblewrap=bubblewrap,
+        prlimit=prlimit,
+    )
+    return ProcessAudioAssetInspector(
+        process,
+        max_duration_ms=settings.audio_inspection_max_duration_ms,
+        max_receipt_bytes=settings.audio_inspection_max_receipt_bytes,
+    )
+
+
+def build_asset_inspector(settings: Settings) -> AssetInspector:
+    """Select the configured inspector; audio misconfiguration never becomes text.
+
+    Every audio prerequisite is validated here, at composition time, so a
+    deployment either starts with the configured inspector or fails naming the
+    setting that is missing, unusable or absent from the host.
+    """
+    if settings.asset_inspector == "audio":
+        return _build_audio_inspector(settings)
+    return TextAssetInspector()
 
 
 class AssetRuntime:
     def __init__(self, settings: Settings) -> None:
         if settings.object_storage_access_key is None or settings.object_storage_secret_key is None:
             raise ValueError("Explicit object-storage credentials are required")
+        # Resolve the inspector before creating owned transports: a rejected
+        # audio configuration fails startup without opening a pool or S3 client.
+        self.inspector: AssetInspector = build_asset_inspector(settings)
         self._schema = settings.database_schema
         self._pool = speech_pool(settings.database_url.get_secret_value(), schema=self._schema)
         self.workspaces = WorkspaceService(PostgresWorkspaceReads(self._pool))
@@ -31,7 +146,7 @@ class AssetRuntime:
         self.service = AssetService(
             self._metadata,
             self._objects,
-            TextAssetInspector(),
+            self.inspector,
             AssetPolicy(settings.asset_default_ttl_seconds, settings.asset_max_bytes),
         )
 

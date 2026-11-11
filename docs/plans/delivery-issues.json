@@ -74,25 +74,15 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/runtime-governance.md"
       ],
-      "implementation": "音频检查组件仅接收 PCM WAV 和显式描述的原始 PCM；默认资源工厂仍使用文本检查器：`backend/src/speechnexus_backend/asset_runtime.py:34` 硬编码 `TextAssetInspector()`。`ProcessAudioAssetInspector`（`backend/src/speechnexus_backend/speech/infrastructure/audio_asset_inspector.py:43`）与 `AudioInspectionProcess`（`backend/src/speechnexus_backend/speech/infrastructure/audio_inspection_process.py:133`）在 `backend/src`、`packages` 中只有定义、无调用方，settings 也没有选择开关。",
-      "integration": "音频检查器与正式资产工厂、错误映射和网关消费者的闭环未接通（#589）。MegaCube 参考部署（head `245578e7`）实测：`POST /v1/nexus/assets`（`purpose=asr_input`）稳定 `503 asset_inspection_unavailable`，无 `staging`/`reserved` 行、`speech_jobs=0`，失败发生在 claim 之前。",
-      "verification": "已有隔离组件证据；公开 HTTP/PG/MinIO 全链与生产环境未获确认。参考部署的 `asr_input` 上传在 claim 前即被拒，仅证明当前装配拒绝该用途，不证明资产检查的公开闭环。",
-      "gap": "公开 `asr_input` 上传在实测部署上恒 503 且不产生 `staging`/`reserved` 行，音频检查装配缺口见 #589。runbook 两处与实测不符：撤权后表现为 api 启动失败、无 HTTP 响应（`Public Job writer startup rejected`），而非「Job 创建返回 503」；`staging` 行实际不产生。",
+      "implementation": "音频检查组件仅接收 PCM WAV 和显式描述的原始 PCM。`SPEECHNEXUS_ASSET_INSPECTOR`（`text`|`audio`，默认 `text`）选择检查器；`audio` 由 `build_asset_inspector()`（`backend/src/speechnexus_backend/asset_runtime.py:115`）在创建连接池与对象存储客户端之前装配 `ProcessAudioAssetInspector`，并新增 12 个 `SPEECHNEXUS_AUDIO_INSPECTION_*` 键（与选择器合计 13 个新 env 键）。`audio` 缺项、路径不可用或宿主缺 `bwrap`/`prlimit` 时启动失败并点名变量，不回退文本检查。`AssetRuntime.close()` 只关闭对象存储客户端与 PG 连接池，未关闭检查器持有的 `AudioInspectionProcess`（#599）。",
+      "integration": "默认 `text` 下公开 `asr_input` 上传仍 `503 asset_inspection_unavailable`，默认部署行为未变（隔离 PG+MinIO 实测 `speech_assets` 0→0）。`audio` 部署的正向 `asr_input → 201 ready` 与 Job 创建未取得证据；`voice_reference` 在 `audio` 下仍 `available=False`（#592）。",
+      "verification": "2026-11-11 增量核验：隔离 PG+MinIO 下默认 `text` 的 `asr_input` 上传仍 `503 asset_inspection_unavailable`、`speech_assets` 0→0；`audio` 缺运行根目录时启动失败并点名 `SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT`；反例（改为静默降级）触发新增装配用例 14 failed。未验证：正向 `asr_input → 201 ready` 与创建 Job 尚无可复现证据（宿主沙箱批准已下，`DEL-524` 在 MegaCube 执行中）；`audio` 真实进程路径未在 Linux 实跑。",
+      "gap": "默认装配仍无法创建音频类 Job；`asr_input` 正向闭环未验证。`audio` 部署的关停与 `open()` 失败清理漏关检查器监督器（#599）。",
       "evidence": [
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/asset_runtime.py",
-          "label": "默认资源装配",
-          "note": "默认使用文本检查器，不代表公开音频 ready"
-        },
-        {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/architecture/production-assets.md",
-          "label": "资产与存储",
-          "note": "文本资产和恢复路径的实现说明，不证明完整音频生命周期"
-        },
-        {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3140cb5bd6fe8f7fe4d5420ebc02afa4849668de/docs/components/audio-asset-inspection.md",
-          "label": "音频检查边界",
-          "note": "候选检查器格式和公开装配限制"
+          "url": "https://github.com/hrygo/SpeechNexus/pull/598",
+          "label": "资产检查装配",
+          "note": "合并 6544a934；默认 text 不变，audio 前置缺失即启动失败并点名变量"
         },
         {
           "url": "https://github.com/hrygo/SpeechNexus/issues/589",
@@ -100,18 +90,29 @@
           "note": "MegaCube 参考部署实测 503 asset_inspection_unavailable；无 staging/reserved 行、speech_jobs=0，失败在 claim 之前"
         },
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/245578e7/backend/src/speechnexus_backend/asset_runtime.py#L34",
-          "label": "默认资源工厂硬编码文本检查器",
-          "note": "音频检查器无装配选择，settings 无开关"
+          "url": "https://github.com/hrygo/SpeechNexus/issues/599",
+          "label": "关停漏清理",
+          "note": "AssetRuntime.close() 与 open() 失败路径未关闭 AudioInspectionProcess"
         },
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/245578e7/backend/src/speechnexus_backend/speech/infrastructure/audio_asset_inspector.py#L43",
-          "label": "音频检查器定义",
-          "note": "backend/src、packages 内无调用方；`reserve_asset()` 在检查不可用时拒绝（backend/src/speechnexus_backend/speech/domain/assets.py:257）"
+          "url": "https://github.com/hrygo/SpeechNexus/blob/6544a934/backend/src/speechnexus_backend/asset_runtime.py#L115",
+          "label": "组合根选择器",
+          "note": "按 SPEECHNEXUS_ASSET_INSPECTOR 装配，audio 在创建 pool/S3 前完成前置校验"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/6544a934/backend/src/speechnexus_backend/speech/infrastructure/audio_asset_inspector.py#L72",
+          "label": "音频检查分派",
+          "note": "仅 asr_input 进入音频检查，其余 purpose 直接 available=False"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/6544a934/docs/components/production-assets.md",
+          "label": "资产与存储",
+          "note": "装配、选择器与限额说明；不证明公开 asr_input 闭环"
         }
       ],
       "issues": [
-        589
+        589,
+        599
       ]
     },
     {
@@ -1925,10 +1926,10 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "声音契约要求克隆输入引用参考音频并显式确认使用；preview_only 状态不得携带已发布声音版本。",
-      "integration": "契约不证明材料、绑定及发布的生产接线；来源确认也不等于身份或独立授权。",
-      "verification": "未取得当前真实部署验收证据。",
-      "gap": "设计、克隆、复用、退役和发布的真实执行及跨版本依赖仍须验收。",
+      "implementation": "声音契约要求克隆输入引用参考音频并显式确认使用；preview_only 状态不得携带已发布声音版本。`voice_reference` 不走音频检查，也不回退文本检查：`audio_asset_inspector.py:72-76` 对非 `asr_input` 直接返回 `Inspection(available=False)`，该行为由 `tests/unit/backend/test_audio_asset_inspector.py:191` 显式锁定。",
+      "integration": "契约不证明材料、绑定及发布的生产接线；来源确认也不等于身份或独立授权。装配 `audio` 后 `voice_reference` 上传会因 `reserve_asset()` 抛 `asset_inspection_unavailable` 硬失败，声音克隆参考音频无法进入 `ready`，#519/#529 的真实部署端到端因此阻断于 #592。",
+      "verification": "未取得当前真实部署验收证据。2026-11-11 增量核验：`voice_reference → available=False` 由单元用例锁定（`tests/unit/backend/test_audio_asset_inspector.py:191`）；未在部署上实测 `voice_reference` 上传。",
+      "gap": "`voice_reference` 是否纳入音频检查待产品口径决定（#592），当前属能力缺口而非缺陷已修；装配后调用方收到通用 `asset_inspection_unavailable`，未点名该 purpose 不支持。设计、克隆、复用、退役和发布的真实执行及跨版本依赖仍须验收。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/contracts/voice-resource.schema.json",
@@ -1939,9 +1940,26 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
           "label": "产品与架构设计",
           "note": "需求基线；不证明现行实现或运行资格。"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/6544a934/backend/src/speechnexus_backend/speech/infrastructure/audio_asset_inspector.py#L72",
+          "label": "purpose 分派",
+          "note": "voice_reference 落入 available=False 分支，不回退文本检查"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/6544a934/tests/unit/backend/test_audio_asset_inspector.py#L191",
+          "label": "行为锁定用例",
+          "note": "显式断言 voice_reference 保持不可用"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/592",
+          "label": "待产品口径",
+          "note": "是否纳入音频检查待定；#519/#529 的真实部署端到端阻断于此；未在部署实测"
         }
       ],
-      "issues": []
+      "issues": [
+        592
+      ]
     },
     {
       "id": "U-SHARED",
@@ -2044,10 +2062,10 @@
         "docs/architecture/deployment-units.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "Python 镜像使用冻结的 workspace 依赖与带摘要的 CPU VAD 依赖；当前镜像同步全部 workspace 包。",
+      "implementation": "Python 镜像使用冻结的 workspace 依赖与带摘要的 CPU VAD 依赖；当前镜像同步全部 workspace 包。`scripts/dev-env/minio-test-service.sh` 以 `${build_args[@]+\"${build_args[@]}\"}` 展开空 `build_args`，兼容 macOS bash 3.2 + `set -u`（CI 的 bash 5 不受影响，#596）。测试中 4 处结构上恒真的 `Event.is_set()` 断言已删除，2 处有效守护保留（#593）。",
       "integration": "CI 有 Compose 配置检查；`tests/integration` 的 PG/双库用例在缺 DSN 时必须失败而非跳过（21 个文件的跳过路径改为 `pytest.fail`，PR #583），并由静态扫描守护固化（`tests/integration/test_pg_dsn_skip_guard.py`，PR #584），门禁不再把未执行记为通过；按角色裁剪依赖、干净安装及跨平台部署仍需验收。",
-      "verification": "未取得当前真实部署验收证据。2026-11-08 增量核验：无 DSN 运行 `tests/integration` 的 skipped 由 2107 降为 291，原被静默跳过的 PG/双库用例转为失败；守护解析 `pytest.skip`、`pytest.xfail`、`pytest.mark.skipif` 及导入别名，沿同文件嵌套函数与跨文件 helper 传播 DSN 来源，`tests/support` 自读 DSN 模块（含 fixture 注入）直接上报，白名单为空；`psql`、引擎 dialect 分支、MinIO 与 Workbench 专用变量按非数据库前置处理。边界：`exec`、插件注入与自定义 marker 不在覆盖内。",
-      "gap": "模型制品、角色权限、迁移回滚和目标平台须按实际发布制品验证；静态镜像配置不能证明运行资格；测试门禁的真实执行不证明真实服务、设备或目标部署资格。",
+      "verification": "未取得当前真实部署验收证据。2026-11-08 增量核验：无 DSN 运行 `tests/integration` 的 skipped 由 2107 降为 291，原被静默跳过的 PG/双库用例转为失败；守护解析 `pytest.skip`、`pytest.xfail`、`pytest.mark.skipif` 及导入别名，沿同文件嵌套函数与跨文件 helper 传播 DSN 来源，`tests/support` 自读 DSN 模块（含 fixture 注入）直接上报，白名单为空；`psql`、引擎 dialect 分支、MinIO 与 Workbench 专用变量按非数据库前置处理。边界：`exec`、插件注入与自定义 marker 不在覆盖内。2026-11-11 增量核验：#596 在 macOS bash 3.2.57 + `set -u` 下复现 `build_args[@]: unbound variable`，修复后空数组路径输出 `ok isolated MinIO ready`、有参数分支仍传入 `--secret`；未在 bash 4/5 或 Linux CI 重跑。#593 按 Event 的 set 点逐条判定：恒真 4 处删除、有效守护 2 处保留。",
+      "gap": "模型制品、角色权限、迁移回滚和目标平台须按实际发布制品验证；静态镜像配置不能证明运行资格；测试门禁的真实执行不证明真实服务、设备或目标部署资格。`minio-test-service.sh` 的兼容性仅在 macOS bash 3.2.57 实测，bash 4/5 与 Linux 未重跑。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/deploy/images/python.Dockerfile",
@@ -2078,10 +2096,27 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
           "label": "产品与架构设计",
           "note": "需求基线；不证明现行实现或运行资格。"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/597",
+          "label": "bash 3.2 空数组展开修复",
+          "note": "合并 bb542076；修改前复现 unbound variable，修改后空数组路径通过、有参数分支仍传 --secret"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/6544a934/scripts/dev-env/minio-test-service.sh#L43",
+          "label": "MinIO 测试脚本",
+          "note": "build_args 使用替代值展开，兼容 bash 3.2 的 set -u"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/pull/594",
+          "label": "恒真 Event 断言清理",
+          "note": "合并 eb958923；删除 4 处恒真断言，保留 2 处有效守护"
         }
       ],
       "issues": [
-        582
+        582,
+        593,
+        596
       ]
     },
     {

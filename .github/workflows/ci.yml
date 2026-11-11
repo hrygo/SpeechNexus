@@ -178,6 +178,8 @@ jobs:
           test -x /usr/lib/postgresql/16/bin/initdb
 
       - name: Start isolated versioned object storage for coverage
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: ./scripts/dev-env/minio-test-service.sh
 
       - name: Run Python unit, contract, CI and Workbench PG tests with combined coverage
@@ -514,6 +516,8 @@ jobs:
         run: python3 scripts/dev-env/prepare-ci-browser.py
 
       - name: Start isolated versioned object storage
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: ./scripts/dev-env/minio-test-service.sh
 
       - name: Run a complete integration partition with PG, InnoDB and MinIO

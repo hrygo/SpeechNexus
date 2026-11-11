@@ -32,6 +32,12 @@ if [[ -n "${SPEECHNEXUS_BUILD_CA_FILE:-}" ]]; then
   test -f "$SPEECHNEXUS_BUILD_CA_FILE"
   build_args+=(--secret "id=proxy_ca,src=$SPEECHNEXUS_BUILD_CA_FILE")
 fi
+# The recipe falls back to the rate-limited GitHub asset endpoint when the
+# release CDN fails; an authenticated request raises that quota. Local runs
+# rarely set GITHUB_TOKEN and keep the unauthenticated fallback.
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+  build_args+=(--secret "id=github_token,env=GITHUB_TOKEN")
+fi
 # Reuse the reviewed recipe's image. Some Docker/BuildKit exporters assign a
 # new image config ID even to cached builds; rebuilding on every ensure would
 # make a healthy test container appear stale. Changes require explicit review.

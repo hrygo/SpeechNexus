@@ -228,6 +228,9 @@ def test_configured_selectors_and_limits_reach_the_supervisor(
         def __init__(self, root: Path, command: tuple[str, ...], limits: Any, **kwargs: Any):
             captured.append((root, command, limits, kwargs))
 
+        def close(self) -> bool:
+            return True
+
     class _Inspector:
         def __init__(self, process: Any, *, max_duration_ms: int, max_receipt_bytes: int = 4096):
             self.process = process

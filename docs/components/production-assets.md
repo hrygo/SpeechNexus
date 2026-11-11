@@ -27,7 +27,17 @@ while `audio` assembles the process inspector and requires
 `SPEECHNEXUS_AUDIO_INSPECTION_COMMAND`,
 `SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON` and installed `bwrap`/`prlimit`.
 A missing, unusable or host-absent prerequisite fails api startup naming that
-variable; it never falls back to text. The shared `packages/media` source
+variable; it never falls back to text. The reverse mismatch is rejected too:
+with `SPEECHNEXUS_ASSET_INSPECTOR=text`, explicitly setting any audio
+prerequisite (`SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT`,
+`SPEECHNEXUS_AUDIO_INSPECTION_COMMAND`,
+`SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON`,
+`SPEECHNEXUS_AUDIO_INSPECTION_BUBBLEWRAP`,
+`SPEECHNEXUS_AUDIO_INSPECTION_PRLIMIT`) fails startup naming every variable
+that was set, instead of silently keeping the text inspector with `asr_input`
+unavailable. Only values the operator actually supplies count: blank Compose
+forwards mean unconfigured, and limit settings that always carry defaults never
+imply audio intent. The shared `packages/media` source
 includes a private inspector for PCM WAV and explicitly described raw PCM;
 configuring it does not establish an approved deployment image or public
 integration. Host sandbox approval, target-runtime qualification, public

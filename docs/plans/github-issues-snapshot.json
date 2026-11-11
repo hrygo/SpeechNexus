@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-08T16:17:25+08:00",
+  "fetched_at": "2026-11-11T21:14:09+08:00",
   "issues": [
     {
       "number": 336,
@@ -1140,6 +1140,46 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/589",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "公开 Asset 运行时未装配音频检查器，asr_input 上传恒 503 asset_inspection_unavailable",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
+    },
+    {
+      "number": 592,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/592",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "voice_reference 参考音频只走文本检查，音频校验仅覆盖 asr_input",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/340"
+    },
+    {
+      "number": 593,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/593",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "tests 中 4 处恒真 Event 断言：审计结论与删除",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
+    },
+    {
+      "number": 596,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/596",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "minio-test-service.sh 在 bash 3.2 + set -u 下展开空 build_args 报 unbound variable",
+      "state": "closed",
+      "state_reason": "completed",
+      "labels": [],
+      "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/342"
+    },
+    {
+      "number": 599,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/599",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "AssetRuntime 未关闭音频检查器监督器，关停与 open 失败路径漏清理",
       "state": "open",
       "state_reason": null,
       "labels": [],

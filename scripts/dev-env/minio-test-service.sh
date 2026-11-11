@@ -38,7 +38,9 @@ fi
 recipe="$(sha256sum "$repo_root/deploy/images/minio.Dockerfile" | cut -d ' ' -f 1)"
 cached="$(docker image inspect --format '{{index .Config.Labels "com.speechnexus.minio-recipe"}}' "$image" 2>/dev/null || true)"
 if [[ "$cached" != "$recipe" ]]; then
-  docker build "${build_args[@]}" --file "$repo_root/deploy/images/minio.Dockerfile" \
+  # macOS /bin/bash 3.2 rejects "${build_args[@]}" under `set -u` when the array
+  # is empty; the alternate-value form expands to nothing and keeps quoting.
+  docker build ${build_args[@]+"${build_args[@]}"} --file "$repo_root/deploy/images/minio.Dockerfile" \
     --label "com.speechnexus.minio-recipe=$recipe" --tag "$image" "$repo_root"
 fi
 if docker container inspect "$container" >/dev/null 2>&1; then

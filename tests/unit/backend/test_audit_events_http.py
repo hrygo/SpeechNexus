@@ -7,6 +7,7 @@ declares no body, no repeated parameter and only the contract's query fields.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 from typing import Any, cast
@@ -14,6 +15,7 @@ from typing import Any, cast
 import pytest
 from fastapi.testclient import TestClient
 from speechnexus_contracts import ContractValidationError
+from starlette.requests import Request
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.settings import Settings
@@ -25,7 +27,9 @@ from speechnexus_backend.speech.domain.audit_events import (
     AuditEventPosition,
     AuditEventUnavailableError,
 )
+from speechnexus_backend.speech.interfaces.http import audit_events as audit_events_http
 from speechnexus_backend.speech.interfaces.http.audit_events import (
+    audit_error,
     cursor_for,
     cursor_position,
 )
@@ -355,3 +359,104 @@ def test_the_contract_default_is_used_when_no_limit_is_supplied() -> None:
     with client(stub) as http:
         assert http.get(URL).status_code == 200
     assert stub.queries[0].limit == 50
+
+
+def test_an_unknown_error_code_falls_back_to_the_service_unavailable_envelope() -> None:
+    response = audit_error("not_a_declared_code", "request-fallback")
+    assert response.status_code == 503
+    body = json.loads(bytes(response.body))
+    assert body["error"]["code"] == "audit_service_unavailable"
+    assert body["error"]["request_id"] == "request-fallback"
+
+
+def test_a_cursor_document_with_a_non_string_action_is_rejected() -> None:
+    document = {
+        "v": 1,
+        "resource": "audit-event-list",
+        "action": 5,
+        "occurred_at_us": 1_700_000_000_000_001,
+        "event_id": PREFIX + "00000000000000000000000000000001",
+    }
+    encoded = base64.urlsafe_b64encode(
+        json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
+    ).decode()
+    with pytest.raises(ValueError, match="Invalid audit event cursor"):
+        cursor_position(encoded.rstrip("="), None)
+
+
+def test_a_non_integer_contract_default_is_refused_at_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        audit_events_http,
+        "contract",
+        lambda: {"components": {"parameters": {"Limit": {"schema": {"default": "50"}}}}},
+    )
+    with pytest.raises(ValueError, match="limit default must be an integer"):
+        audit_events_http.create_audit_event_router(lambda: None)
+
+
+def _request(query_string: bytes) -> Request:
+    scope = {
+        "type": "http",
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": URL,
+        "raw_path": URL.encode(),
+        "query_string": query_string,
+        "root_path": "",
+        "headers": [(b"host", b"testserver")],
+        "server": ("testserver", 80),
+        "client": ("127.0.0.1", 1),
+        "state": {"request_id": "request-framing"},
+    }
+    return Request(scope)
+
+
+def _endpoint(stub: Stub) -> Any:
+    router = audit_events_http.create_audit_event_router(lambda: cast(Any, stub))
+    return cast(Any, router.routes[0]).endpoint
+
+
+def test_an_oversized_query_string_is_rejected_before_parsing() -> None:
+    endpoint = _endpoint(Stub())
+    request = _request(b"action=" + b"a" * 5000)
+    response = asyncio.run(endpoint(request))
+    assert response.status_code == 400
+    assert json.loads(bytes(response.body))["error"]["code"] == "invalid_audit_request"
+
+
+def test_a_body_bearing_asgi_frame_is_rejected_without_buffering() -> None:
+    async def receive() -> dict[str, Any]:
+        return {"type": "http.request", "body": b'{"limit": 1}', "more_body": False}
+
+    endpoint = _endpoint(Stub())
+    response = asyncio.run(endpoint(Request(_request(b"").scope, receive=receive)))
+    assert response.status_code == 400
+    assert json.loads(bytes(response.body))["error"]["code"] == "invalid_audit_request"
+
+
+def test_a_non_request_asgi_frame_is_rejected() -> None:
+    async def receive() -> dict[str, Any]:
+        return {"type": "http.disconnect"}
+
+    endpoint = _endpoint(Stub())
+    response = asyncio.run(endpoint(Request(_request(b"").scope, receive=receive)))
+    assert response.status_code == 400
+    assert json.loads(bytes(response.body))["error"]["code"] == "invalid_audit_request"
+
+
+def test_the_receive_budget_stops_a_never_ending_body() -> None:
+    frames = 0
+
+    async def receive() -> dict[str, Any]:
+        nonlocal frames
+        frames += 1
+        return {"type": "http.request", "body": b"", "more_body": True}
+
+    endpoint = _endpoint(Stub())
+    response = asyncio.run(endpoint(Request(_request(b"").scope, receive=receive)))
+    assert response.status_code == 400
+    assert frames == 8
+    assert json.loads(bytes(response.body))["error"]["code"] == "invalid_audit_request"

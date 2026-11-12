@@ -199,3 +199,18 @@ def test_reads_returning_a_non_tuple_fail_closed() -> None:
     reads = cast(AuditEventReads, type("Reads", (), {"scan": lambda self, query: []})())
     with pytest.raises(AuditEventUnavailableError):
         AuditEventService(reads).list(AuditEventQuery(1))
+
+
+def test_a_page_requires_an_immutable_tuple_of_audit_events() -> None:
+    with pytest.raises(ValueError, match="Invalid audit event page"):
+        AuditEventPage(cast(tuple[AuditEvent, ...], [event()]), None)
+    with pytest.raises(ValueError, match="Invalid audit event page"):
+        AuditEventPage((cast(AuditEvent, object()),), None)
+
+
+def test_a_service_call_requires_a_validated_query_and_event_tuple() -> None:
+    with pytest.raises(AuditEventUnavailableError):
+        AuditEventService(FakeReads(())).list(cast(AuditEventQuery, object()))
+    leaked = cast(tuple[AuditEvent, ...], ({"event_id": "synthetic"},))
+    with pytest.raises(AuditEventUnavailableError):
+        AuditEventService(FakeReads(leaked)).list(AuditEventQuery(1))

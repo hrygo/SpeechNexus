@@ -26,6 +26,8 @@ export type Contracts = Pick<
   | "AuditEvent"
   | "AuditEventList"
   | "AuditChangeSummary"
+  | "ModelInstanceList"
+  | "ModelRuntimeInstance"
 >;
 const parseValue = createProfileParser(bundle);
 export function parse<K extends keyof Contracts>(name: K, value: unknown): Contracts[K] {

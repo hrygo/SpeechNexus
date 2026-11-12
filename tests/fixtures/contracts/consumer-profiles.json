@@ -12478,6 +12478,137 @@
         ],
         "reason": null
       }
+    },
+    {
+      "id": "admin-ModelRuntimeInstance-valid",
+      "profile": "admin",
+      "schema": "ModelRuntimeInstance",
+      "valid": true,
+      "value": {
+        "schema_version": "1.0.0",
+        "instance_id": "inst-asr-1",
+        "host_node_id": "node-a",
+        "gateway_id": "gateway-1",
+        "binding": {
+          "id": "asr-quality",
+          "revision": "7"
+        },
+        "binding_revision_id": "binding-revision-asr-quality-7",
+        "pool_id": "asr-realtime",
+        "generation": 1,
+        "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "state": "ready",
+        "readiness": {
+          "accepting_new_work": true,
+          "ready_at": "2026-11-12T00:00:00.000001Z"
+        },
+        "observed": {
+          "stopped_at": null
+        },
+        "quarantine_reason": null
+      }
+    },
+    {
+      "id": "admin-ModelRuntimeInstance-execution-level-exit-code",
+      "profile": "admin",
+      "schema": "ModelRuntimeInstance",
+      "valid": false,
+      "value": {
+        "schema_version": "1.0.0",
+        "instance_id": "inst-asr-1",
+        "host_node_id": "node-a",
+        "gateway_id": "gateway-1",
+        "binding": {
+          "id": "asr-quality",
+          "revision": "7"
+        },
+        "binding_revision_id": "binding-revision-asr-quality-7",
+        "pool_id": "asr-realtime",
+        "generation": 1,
+        "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "state": "ready",
+        "readiness": {
+          "accepting_new_work": true,
+          "ready_at": "2026-11-12T00:00:00.000001Z"
+        },
+        "observed": {
+          "stopped_at": null,
+          "exit_code": 0
+        },
+        "quarantine_reason": null
+      }
+    },
+    {
+      "id": "admin-ModelInstanceList-valid",
+      "profile": "admin",
+      "schema": "ModelInstanceList",
+      "valid": true,
+      "value": {
+        "object": "nexus.list",
+        "data": [
+          {
+            "schema_version": "1.0.0",
+            "instance_id": "inst-asr-1",
+            "host_node_id": "node-a",
+            "gateway_id": "gateway-1",
+            "binding": {
+              "id": "asr-quality",
+              "revision": "7"
+            },
+            "binding_revision_id": "binding-revision-asr-quality-7",
+            "pool_id": "asr-realtime",
+            "generation": 1,
+            "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "state": "ready",
+            "readiness": {
+              "accepting_new_work": true,
+              "ready_at": "2026-11-12T00:00:00.000001Z"
+            },
+            "observed": {
+              "stopped_at": null
+            },
+            "quarantine_reason": null
+          }
+        ],
+        "has_more": true,
+        "next_cursor": "eyJ2IjoxfQ"
+      }
+    },
+    {
+      "id": "admin-ModelInstanceList-numeric-cursor",
+      "profile": "admin",
+      "schema": "ModelInstanceList",
+      "valid": false,
+      "value": {
+        "object": "nexus.list",
+        "data": [
+          {
+            "schema_version": "1.0.0",
+            "instance_id": "inst-asr-1",
+            "host_node_id": "node-a",
+            "gateway_id": "gateway-1",
+            "binding": {
+              "id": "asr-quality",
+              "revision": "7"
+            },
+            "binding_revision_id": "binding-revision-asr-quality-7",
+            "pool_id": "asr-realtime",
+            "generation": 1,
+            "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "state": "ready",
+            "readiness": {
+              "accepting_new_work": true,
+              "ready_at": "2026-11-12T00:00:00.000001Z"
+            },
+            "observed": {
+              "stopped_at": null
+            },
+            "quarantine_reason": null
+          }
+        ],
+        "has_more": true,
+        "next_cursor": 7
+      }
     }
   ]
 }

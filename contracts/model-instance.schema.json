@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://speechnexus.internal/contracts/model-instance.schema.json",
   "title": "ModelRuntimeInstance",
-  "description": "Dynamic runtime instance fact for a node-scoped engine process or container. This schema is internal to admin, scheduler, deployment controller, and execution gateway; it is not a public model or voice DTO. A new generation is required after every restart.",
+  "description": "Dynamic runtime instance fact for a node-scoped engine process or container. This schema is internal to admin, scheduler, deployment controller, and execution gateway; it is not a public model or voice DTO. A new generation is required after every restart. Every observed fact is reported only when its producer actually recorded it; a producer that does not record a fact omits the member instead of synthesizing a value. `stop_evidence` is the instance-level physical stop document and never the execution-level lease or submit-intent evidence.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -65,68 +65,44 @@
     },
     "quarantine_reason": {
       "oneOf": [
-        {"type": "string", "minLength": 1, "maxLength": 2000, "pattern": "\\S"},
-        {"type": "null"}
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "pattern": "\\S"
+        },
+        {
+          "type": "null"
+        }
       ]
     }
   },
   "allOf": [
     {
       "if": {
-        "properties": {"state": {"const": "ready"}},
-        "required": ["state"]
+        "properties": {
+          "state": {
+            "const": "ready"
+          }
+        },
+        "required": [
+          "state"
+        ]
       },
       "then": {
         "properties": {
           "readiness": {
-            "required": ["accepting_new_work", "ready_at"],
+            "required": [
+              "accepting_new_work",
+              "ready_at"
+            ],
             "properties": {
-              "accepting_new_work": {"const": true},
-              "ready_at": {"type": "string", "format": "date-time"}
-            }
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {"state": {"not": {"const": "ready"}}},
-        "required": ["state"]
-      },
-      "then": {
-        "properties": {
-          "readiness": {
-            "properties": {"accepting_new_work": {"const": false}}
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {"state": {"const": "draining"}},
-        "required": ["state"]
-      },
-      "then": {
-        "properties": {
-          "readiness": {
-            "properties": {"accepting_new_work": {"const": false}}
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {"state": {"const": "stopped"}},
-        "required": ["state"]
-      },
-      "then": {
-        "required": ["observed"],
-        "properties": {
-          "observed": {
-            "required": ["stopped_at", "stop_evidence"],
-            "properties": {
-              "stop_evidence": {
-                "$ref": "#/$defs/StopEvidence"
+              "accepting_new_work": {
+                "const": true
+              },
+              "ready_at": {
+                "type": "string",
+                "format": "date-time"
               }
             }
           }
@@ -135,24 +111,114 @@
     },
     {
       "if": {
-        "properties": {"state": {"const": "quarantined"}},
-        "required": ["state"]
+        "properties": {
+          "state": {
+            "not": {
+              "const": "ready"
+            }
+          }
+        },
+        "required": [
+          "state"
+        ]
       },
       "then": {
-        "required": ["quarantine_reason"],
         "properties": {
-          "quarantine_reason": {"type": "string", "minLength": 1}
+          "readiness": {
+            "properties": {
+              "accepting_new_work": {
+                "const": false
+              }
+            }
+          }
         }
       }
     },
     {
       "if": {
-        "properties": {"state": {"not": {"const": "quarantined"}}},
-        "required": ["state"]
+        "properties": {
+          "state": {
+            "const": "draining"
+          }
+        },
+        "required": [
+          "state"
+        ]
       },
       "then": {
         "properties": {
-          "quarantine_reason": {"type": "null"}
+          "readiness": {
+            "properties": {
+              "accepting_new_work": {
+                "const": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "stopped"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "observed": {
+            "required": [
+              "stopped_at"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "quarantined"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "required": [
+          "quarantine_reason"
+        ],
+        "properties": {
+          "quarantine_reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "not": {
+              "const": "quarantined"
+            }
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "quarantine_reason": {
+            "type": "null"
+          }
         }
       }
     }
@@ -176,13 +242,21 @@
     "ReadinessFacts": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["accepting_new_work", "loaded_artifact_digests"],
+      "description": "Readiness facts for this generation. `accepting_new_work` is always declared because it follows directly from `state`; the remaining members are present only when the producer observed and recorded them.",
+      "required": [
+        "accepting_new_work"
+      ],
       "properties": {
-        "accepting_new_work": {"type": "boolean"},
+        "accepting_new_work": {
+          "type": "boolean"
+        },
         "loaded_artifact_digests": {
           "type": "array",
           "uniqueItems": true,
-          "items": {"$ref": "#/$defs/Sha256Digest"}
+          "items": {
+            "$ref": "#/$defs/Sha256Digest"
+          },
+          "description": "Digests of the exact artifacts this generation loaded, when the producer records the loaded set. An empty array records that nothing was loaded; an absent member records that the loaded set was not recorded."
         },
         "warmed_capabilities": {
           "type": "array",
@@ -190,72 +264,114 @@
           "items": {
             "type": "string",
             "pattern": "^(asr|tts|voice|audio)\\.[a-z0-9_.-]{2,64}$"
-          }
+          },
+          "description": "Capabilities this generation warmed, when the producer records the warmed set."
         },
         "ready_at": {
           "oneOf": [
-            {"type": "string", "format": "date-time"},
-            {"type": "null"}
-          ]
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Time this generation began accepting new work, when recorded; null means the transition was not recorded."
         }
       }
     },
     "StopEvidence": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "observed_at", "digest"],
+      "description": "Instance-level physical stop evidence: the process or container exited, its reserved resources were released, and the observation was verified. Lease and submit-intent cleanup evidence is execution-level, carries its own kinds, and is not reported here.",
+      "required": [
+        "process_or_container_exited",
+        "resources_released_confirmed",
+        "verified_at"
+      ],
       "properties": {
-        "kind": {
-          "type": "string",
-          "enum": [
-            "process_exit",
-            "container_exit",
-            "engine_abort_confirmed",
-            "controller_stop_confirmed",
-            "operator_verified_instance_terminated"
-          ]
+        "process_or_container_exited": {
+          "const": true
         },
-        "observed_at": {"type": "string", "format": "date-time"},
-        "digest": {"$ref": "#/$defs/Sha256Digest"},
-        "detail": {
-          "type": ["string", "null"],
-          "maxLength": 2000
+        "resources_released_confirmed": {
+          "const": true
+        },
+        "verified_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 255
+        },
+        "runtime_container_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 128
         }
       }
     },
     "ObservedFacts": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["started_at", "last_heartbeat_at"],
+      "description": "Observed timing and termination facts for this generation. Every member is optional: a producer that did not record a fact omits it rather than inventing one.",
       "properties": {
-        "started_at": {"type": "string", "format": "date-time"},
-        "last_heartbeat_at": {"type": "string", "format": "date-time"},
+        "started_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Recorded process or container start time. A producer that only tracks readiness and stop transitions does not record it."
+        },
+        "last_heartbeat_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Recorded most recent heartbeat. A producer without a heartbeat channel does not record it."
+        },
         "stopped_at": {
           "oneOf": [
-            {"type": "string", "format": "date-time"},
-            {"type": "null"}
-          ]
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Time the physical stop was verified, when recorded; null means the instance was not observed stopped."
         },
         "stop_evidence": {
           "oneOf": [
-            {"$ref": "#/$defs/StopEvidence"},
-            {"type": "null"}
-          ]
-        },
-        "exit_code": {
-          "type": ["integer", "null"],
-          "minimum": 0,
-          "maximum": 255
+            {
+              "$ref": "#/$defs/StopEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Instance-level physical stop evidence, when the producer recorded it."
         }
       }
     },
     "ControllerFacts": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["controller_id", "intent_id"],
+      "required": [
+        "controller_id",
+        "intent_id"
+      ],
       "properties": {
-        "controller_id": {"$ref": "#/$defs/Identifier"},
-        "intent_id": {"$ref": "#/$defs/Identifier"},
+        "controller_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "intent_id": {
+          "$ref": "#/$defs/Identifier"
+        },
         "template_id": {
           "type": "string",
           "minLength": 1,
@@ -270,7 +386,10 @@
       "instance_id": "inst-asr-1",
       "host_node_id": "node-gb10-1",
       "gateway_id": "gateway-1",
-      "binding": {"id": "asr-quality", "revision": "7"},
+      "binding": {
+        "id": "asr-quality",
+        "revision": "7"
+      },
       "binding_revision_id": "mbrev-asr-quality-7",
       "pool_id": "asr-realtime",
       "generation": 42,
@@ -278,18 +397,11 @@
       "state": "ready",
       "readiness": {
         "accepting_new_work": true,
-        "loaded_artifact_digests": [
-          "sha256:2222222222222222222222222222222222222222222222222222222222222222"
-        ],
-        "warmed_capabilities": ["asr.streaming_preview", "asr.full_segment_review"],
         "ready_at": "2026-10-22T09:00:10Z"
       },
       "observed": {
-        "started_at": "2026-10-22T09:00:00Z",
-        "last_heartbeat_at": "2026-10-22T09:10:00Z",
         "stopped_at": null,
-        "stop_evidence": null,
-        "exit_code": null
+        "stop_evidence": null
       },
       "controller": {
         "controller_id": "node-controller-1",
@@ -303,7 +415,10 @@
       "instance_id": "inst-tts-2",
       "host_node_id": "node-gb10-1",
       "gateway_id": "gateway-1",
-      "binding": {"id": "tts-interactive", "revision": "5"},
+      "binding": {
+        "id": "tts-interactive",
+        "revision": "5"
+      },
       "binding_revision_id": "mbrev-tts-interactive-5",
       "pool_id": "tts-realtime",
       "generation": 7,
@@ -311,21 +426,17 @@
       "state": "stopped",
       "readiness": {
         "accepting_new_work": false,
-        "loaded_artifact_digests": [],
-        "warmed_capabilities": [],
         "ready_at": "2026-10-22T08:00:00Z"
       },
       "observed": {
-        "started_at": "2026-10-22T07:00:00Z",
-        "last_heartbeat_at": "2026-10-22T10:00:00Z",
         "stopped_at": "2026-10-22T10:00:05Z",
         "stop_evidence": {
-          "kind": "container_exit",
-          "observed_at": "2026-10-22T10:00:05Z",
-          "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
-          "detail": "container exited after verified drain"
-        },
-        "exit_code": 0
+          "process_or_container_exited": true,
+          "resources_released_confirmed": true,
+          "verified_at": "2026-10-22T10:00:05Z",
+          "exit_code": 0,
+          "runtime_container_id": "container-tts-2"
+        }
       },
       "controller": {
         "controller_id": "node-controller-1",

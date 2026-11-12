@@ -11,6 +11,8 @@ export type HttpOperation =
   | "updateWorkspace"
   | "listResourcePools"
   | "listModelBindings"
+  | "listModelInstances"
+  | "getModelInstance"
   | "listAuditEvents";
 type HttpPaths = {
   "/v1/nexus/workspaces": Pick<paths["/v1/nexus/workspaces"], "parameters" | "get" | "post">;
@@ -24,6 +26,14 @@ type HttpPaths = {
   >;
   "/v1/nexus/admin/model-bindings": Pick<
     paths["/v1/nexus/admin/model-bindings"],
+    "parameters" | "get"
+  >;
+  "/v1/nexus/admin/model-instances": Pick<
+    paths["/v1/nexus/admin/model-instances"],
+    "parameters" | "get"
+  >;
+  "/v1/nexus/admin/model-instances/{instance_id}/generations/{generation}": Pick<
+    paths["/v1/nexus/admin/model-instances/{instance_id}/generations/{generation}"],
     "parameters" | "get"
   >;
   "/v1/nexus/audit-events": Pick<paths["/v1/nexus/audit-events"], "parameters" | "get">;

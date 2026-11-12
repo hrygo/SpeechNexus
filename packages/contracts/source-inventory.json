@@ -1,7 +1,7 @@
 {
   "admin-openapi.yaml": {
-    "sha256": "ac7eb70850c2c588efb07c5e570997b7c9f412d645434d4404f08a3841588ba7",
-    "version": "0.1.0.dev8"
+    "sha256": "6a46b959b0c939d953ffc4aa7eafb29b19b3dbe3d288e25f947271cc761027e8",
+    "version": "0.1.0.dev9"
   },
   "binding-defaults-producer.openapi.yaml": {
     "sha256": "60ec5c3df7910ad40f969994fc3e5167ea1986091f0f889b0294dfd6929f9b0c",
@@ -64,7 +64,7 @@
     "version": null
   },
   "model-instance.schema.json": {
-    "sha256": "861086177781049f562135e14aa198d4aed6626a2d349f400bd0cf9505926abf",
+    "sha256": "ddfa97204bb7490ff99d2ed78550df52e68c3d27eedf0a557b3ab9a51f139f29",
     "version": null
   },
   "operations.openapi.yaml": {

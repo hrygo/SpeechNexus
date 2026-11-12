@@ -69,8 +69,13 @@
         "QualificationReportRecord",
         "AuditEvent",
         "AuditEventList",
-        "AuditChangeSummary"
-      ]
+        "AuditChangeSummary",
+        "ModelInstanceList",
+        "ModelRuntimeInstance"
+      ],
+      "schema_refs": {
+        "ModelRuntimeInstance": "model-instance.schema.json#"
+      }
     },
     "workbench": {
       "source": "workbench-openapi.yaml",
@@ -375,6 +380,8 @@
         "/v1/nexus/workspaces/{workspace_id}",
         "/v1/nexus/admin/resource-pools",
         "/v1/nexus/admin/model-bindings",
+        "/v1/nexus/admin/model-instances",
+        "/v1/nexus/admin/model-instances/{instance_id}/generations/{generation}",
         "/v1/nexus/audit-events"
       ],
       "operations": [
@@ -384,6 +391,8 @@
         "updateWorkspace",
         "listResourcePools",
         "listModelBindings",
+        "listModelInstances",
+        "getModelInstance",
         "listAuditEvents"
       ]
     },

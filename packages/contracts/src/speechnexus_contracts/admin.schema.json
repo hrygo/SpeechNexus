@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "AdminContracts",
-  "x-nexus-bindings-version": "0.1.0.dev8",
+  "x-nexus-bindings-version": "0.1.0.dev9",
   "x-nexus-entrypoints": [
     "WorkspaceCreateRequest",
     "WorkspacePatch",
@@ -22,7 +22,9 @@
     "QualificationReportRecord",
     "AuditEvent",
     "AuditEventList",
-    "AuditChangeSummary"
+    "AuditChangeSummary",
+    "ModelInstanceList",
+    "ModelRuntimeInstance"
   ],
   "$defs": {
     "WorkspaceCreateRequest": {
@@ -2450,6 +2452,392 @@
           "type": ["string", "null"]
         }
       }
+    },
+    "ModelInstanceList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object", "data", "has_more", "next_cursor"],
+      "properties": {
+        "object": {
+          "const": "nexus.list"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/External_model_instance_schema_json_Root"
+          }
+        },
+        "has_more": {
+          "type": "boolean"
+        },
+        "next_cursor": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "External_model_instance_schema_json_Root": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "ModelRuntimeInstance",
+      "description": "Dynamic runtime instance fact for a node-scoped engine process or container. This schema is internal to admin, scheduler, deployment controller, and execution gateway; it is not a public model or voice DTO. A new generation is required after every restart. Every observed fact is reported only when its producer actually recorded it; a producer that does not record a fact omits the member instead of synthesizing a value. `stop_evidence` is the instance-level physical stop document and never the execution-level lease or submit-intent evidence.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "instance_id",
+        "host_node_id",
+        "gateway_id",
+        "binding",
+        "binding_revision_id",
+        "pool_id",
+        "generation",
+        "config_digest",
+        "state",
+        "readiness",
+        "observed"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "1.0.0"
+        },
+        "instance_id": {
+          "$ref": "#/$defs/External_model_instance_schema_json_Identifier"
+        },
+        "host_node_id": {
+          "$ref": "#/$defs/External_model_instance_schema_json_Identifier"
+        },
+        "gateway_id": {
+          "$ref": "#/$defs/External_model_instance_schema_json_Identifier"
+        },
+        "binding": {
+          "$ref": "#/$defs/External_model_instance_schema_json_BindingReference"
+        },
+        "binding_revision_id": {
+          "$ref": "#/$defs/External_model_instance_schema_json_Identifier",
+          "description": "Must equal ModelBindingRevision.revision_id for the referenced binding."
+        },
+        "pool_id": {
+          "$ref": "#/$defs/External_model_instance_schema_json_PoolId"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Monotonic per-instance generation allocated by the deployment controller. Stale generations must be fenced."
+        },
+        "config_digest": {
+          "$ref": "#/$defs/External_model_instance_schema_json_Sha256Digest"
+        },
+        "state": {
+          "$ref": "#/$defs/External_model_instance_schema_json_InstanceState"
+        },
+        "readiness": {
+          "$ref": "#/$defs/External_model_instance_schema_json_ReadinessFacts"
+        },
+        "observed": {
+          "$ref": "#/$defs/External_model_instance_schema_json_ObservedFacts"
+        },
+        "controller": {
+          "$ref": "#/$defs/External_model_instance_schema_json_ControllerFacts"
+        },
+        "quarantine_reason": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "pattern": "\\S"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "ready"
+              }
+            },
+            "required": ["state"]
+          },
+          "then": {
+            "properties": {
+              "readiness": {
+                "required": ["accepting_new_work", "ready_at"],
+                "properties": {
+                  "accepting_new_work": {
+                    "const": true
+                  },
+                  "ready_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "not": {
+                  "const": "ready"
+                }
+              }
+            },
+            "required": ["state"]
+          },
+          "then": {
+            "properties": {
+              "readiness": {
+                "properties": {
+                  "accepting_new_work": {
+                    "const": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "draining"
+              }
+            },
+            "required": ["state"]
+          },
+          "then": {
+            "properties": {
+              "readiness": {
+                "properties": {
+                  "accepting_new_work": {
+                    "const": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "stopped"
+              }
+            },
+            "required": ["state"]
+          },
+          "then": {
+            "properties": {
+              "observed": {
+                "required": ["stopped_at"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "quarantined"
+              }
+            },
+            "required": ["state"]
+          },
+          "then": {
+            "required": ["quarantine_reason"],
+            "properties": {
+              "quarantine_reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "not": {
+                  "const": "quarantined"
+                }
+              }
+            },
+            "required": ["state"]
+          },
+          "then": {
+            "properties": {
+              "quarantine_reason": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_model_instance_schema_json_Identifier": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+    },
+    "External_model_instance_schema_json_BindingReference": {
+      "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+    },
+    "External_model_instance_schema_json_PoolId": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_PoolId"
+    },
+    "External_model_instance_schema_json_Sha256Digest": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+    },
+    "External_model_instance_schema_json_InstanceState": {
+      "$ref": "#/$defs/External_shared_runtime_states_schema_json_InstanceState"
+    },
+    "External_shared_runtime_states_schema_json_InstanceState": {
+      "type": "string",
+      "enum": [
+        "preparing",
+        "loading",
+        "warming_up",
+        "ready",
+        "draining",
+        "stopping",
+        "stopped",
+        "failed",
+        "quarantined"
+      ],
+      "description": "Observed lifecycle state. Only `stopped` proves that the process or container and its reserved resources are gone; `failed` and `quarantined` may still retain capacity."
+    },
+    "External_model_instance_schema_json_ReadinessFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Readiness facts for this generation. `accepting_new_work` is always declared because it follows directly from `state`; the remaining members are present only when the producer observed and recorded them.",
+      "required": ["accepting_new_work"],
+      "properties": {
+        "accepting_new_work": {
+          "type": "boolean"
+        },
+        "loaded_artifact_digests": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_model_instance_schema_json_Sha256Digest"
+          },
+          "description": "Digests of the exact artifacts this generation loaded, when the producer records the loaded set. An empty array records that nothing was loaded; an absent member records that the loaded set was not recorded."
+        },
+        "warmed_capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(asr|tts|voice|audio)\\.[a-z0-9_.-]{2,64}$"
+          },
+          "description": "Capabilities this generation warmed, when the producer records the warmed set."
+        },
+        "ready_at": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Time this generation began accepting new work, when recorded; null means the transition was not recorded."
+        }
+      }
+    },
+    "External_model_instance_schema_json_ObservedFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Observed timing and termination facts for this generation. Every member is optional: a producer that did not record a fact omits it rather than inventing one.",
+      "properties": {
+        "started_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Recorded process or container start time. A producer that only tracks readiness and stop transitions does not record it."
+        },
+        "last_heartbeat_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Recorded most recent heartbeat. A producer without a heartbeat channel does not record it."
+        },
+        "stopped_at": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Time the physical stop was verified, when recorded; null means the instance was not observed stopped."
+        },
+        "stop_evidence": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_model_instance_schema_json_StopEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Instance-level physical stop evidence, when the producer recorded it."
+        }
+      }
+    },
+    "External_model_instance_schema_json_StopEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Instance-level physical stop evidence: the process or container exited, its reserved resources were released, and the observation was verified. Lease and submit-intent cleanup evidence is execution-level, carries its own kinds, and is not reported here.",
+      "required": ["process_or_container_exited", "resources_released_confirmed", "verified_at"],
+      "properties": {
+        "process_or_container_exited": {
+          "const": true
+        },
+        "resources_released_confirmed": {
+          "const": true
+        },
+        "verified_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "exit_code": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 255
+        },
+        "runtime_container_id": {
+          "type": ["string", "null"],
+          "maxLength": 128
+        }
+      }
+    },
+    "External_model_instance_schema_json_ControllerFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["controller_id", "intent_id"],
+      "properties": {
+        "controller_id": {
+          "$ref": "#/$defs/External_model_instance_schema_json_Identifier"
+        },
+        "intent_id": {
+          "$ref": "#/$defs/External_model_instance_schema_json_Identifier"
+        },
+        "template_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "ModelRuntimeInstance": {
+      "$ref": "#/$defs/External_model_instance_schema_json_Root"
     }
   },
   "anyOf": [
@@ -2512,6 +2900,12 @@
     },
     {
       "$ref": "#/$defs/AuditChangeSummary"
+    },
+    {
+      "$ref": "#/$defs/ModelInstanceList"
+    },
+    {
+      "$ref": "#/$defs/ModelRuntimeInstance"
     }
   ]
 }

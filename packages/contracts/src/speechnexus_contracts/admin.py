@@ -100,5 +100,13 @@ def parse(name: Literal["AuditEventList"], value: Any) -> models.AuditEventList:
 def parse(name: Literal["AuditChangeSummary"], value: Any) -> models.AuditChangeSummary: ...
 
 
+@overload
+def parse(name: Literal["ModelInstanceList"], value: Any) -> models.ModelInstanceList: ...
+
+
+@overload
+def parse(name: Literal["ModelRuntimeInstance"], value: Any) -> models.ModelRuntimeInstance: ...
+
+
 def parse(name: str, value: Any) -> Any:
     return validate_profile("admin", name, value)

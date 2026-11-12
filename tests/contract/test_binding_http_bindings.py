@@ -145,7 +145,7 @@ def test_binding_surface_selects_only_declared_draft_and_lifecycle_operations() 
     actual = contract()
     assert actual == generator().bundle_http_surface(CONFIG)
     validate(actual)
-    assert actual["info"]["version"] == "0.1.0.dev8"
+    assert actual["info"]["version"] == "0.1.0.dev9"
     assert set(actual["paths"]) == set(CONFIG["paths"])
     assert set(actual["paths"]["/v1/nexus/admin/model-bindings"]) == {"post"}
     assert set(

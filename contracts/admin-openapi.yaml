@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus administration API
-  version: 0.1.0.dev8
+  version: 0.1.0.dev9
   description: |
     Deployment-scoped administration and observation API. These routes do not
     establish a user identity, role, or tenant boundary. A deployment may expose
@@ -494,12 +494,26 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/ProfileCreateMethodNotAllowed"
+        "408":
+          $ref: "#/components/responses/ProfileReceiveTimeout"
         "409":
           $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/ProfileRequestTooLarge"
+        "415":
+          $ref: "#/components/responses/ProfileMediaUnsupported"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/ProfileReceiveFull"
+        "503":
+          $ref: "#/components/responses/ProfileLifecycleUnknown"
   /v1/nexus/admin/model-bindings:
     get:
       tags: [model-bindings]
@@ -885,6 +899,26 @@ paths:
       tags: [model-instances]
       operationId: listModelInstances
       summary: List observed runtime instances
+      description: |
+        Returns recorded instance generations ordered by `instance_id`
+        ascending, then by `generation` ascending. That pair is the instance
+        table's primary key, so the ordering is total: a page boundary is a
+        position in the key frontier, never an offset into an unordered scan.
+        `cursor` resumes strictly after the position it records and is bound to
+        the `host_node_id` and `state` filters that produced it; reusing it
+        under another filter returns 400 `invalid_model_instance_cursor`.
+        `limit` defaults to 50 and must be between 1 and 100. Any other limit, an
+        unknown query parameter, or a filter value outside the declared schema
+        returns 400 `invalid_model_instance_request`. `has_more` is false and
+        `next_cursor` is null on the last page and for an empty collection.
+
+        Each row reports the facts recorded for that generation in the runtime
+        instance store and its binding revision: identity, binding revision,
+        pool, generation, configuration digest, observed state, readiness time,
+        stop time and quarantine reason. Facts that store does not record are
+        omitted instead of synthesized; in particular a row never carries loaded
+        artifact digests, the process start time, a heartbeat time or instance
+        stop evidence.
       parameters:
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
@@ -909,6 +943,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ModelInstanceList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "503":
@@ -982,6 +1018,15 @@ paths:
       tags: [model-instances]
       operationId: getModelInstance
       summary: Get one observed runtime instance
+      description: |
+        Returns one recorded instance generation with the same recorded facts a
+        list row carries. The lookup has two layers, and the two misses share
+        the 404 status but not the code: `error.code` is
+        `model_instance_unknown` when no generation of `instance_id` is
+        recorded, and `model_instance_generation_unknown` when the instance is
+        recorded but the requested `generation` is not. Malformed path values
+        return 400 `invalid_model_instance_request`; an unreadable store returns
+        503 instead of reporting absence.
       parameters:
         - name: instance_id
           in: path
@@ -1000,10 +1045,14 @@ paths:
             application/json:
               schema:
                 $ref: "./model-instance.schema.json"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
-          $ref: "#/components/responses/NotFound"
+          $ref: "#/components/responses/ModelInstanceNotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/nexus/admin/resource-pools:
     get:
       tags: [resource-pools]
@@ -1277,6 +1326,16 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
     NotFound:
       description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ModelInstanceNotFound:
+      description: |
+        No recorded instance generation matches the request. Both misses use
+        404; `error.code` distinguishes them. `model_instance_unknown` means no
+        generation of the instance id is recorded. `model_instance_generation_unknown`
+        means the instance is recorded but the requested generation is not.
       content:
         application/json:
           schema:

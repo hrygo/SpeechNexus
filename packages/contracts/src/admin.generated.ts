@@ -480,7 +480,28 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List observed runtime instances */
+    /**
+     * List observed runtime instances
+     * @description Returns recorded instance generations ordered by `instance_id`
+     *     ascending, then by `generation` ascending. That pair is the instance
+     *     table's primary key, so the ordering is total: a page boundary is a
+     *     position in the key frontier, never an offset into an unordered scan.
+     *     `cursor` resumes strictly after the position it records and is bound to
+     *     the `host_node_id` and `state` filters that produced it; reusing it
+     *     under another filter returns 400 `invalid_model_instance_cursor`.
+     *     `limit` defaults to 50 and must be between 1 and 100. Any other limit, an
+     *     unknown query parameter, or a filter value outside the declared schema
+     *     returns 400 `invalid_model_instance_request`. `has_more` is false and
+     *     `next_cursor` is null on the last page and for an empty collection.
+     *
+     *     Each row reports the facts recorded for that generation in the runtime
+     *     instance store and its binding revision: identity, binding revision,
+     *     pool, generation, configuration digest, observed state, readiness time,
+     *     stop time and quarantine reason. Facts that store does not record are
+     *     omitted instead of synthesized; in particular a row never carries loaded
+     *     artifact digests, the process start time, a heartbeat time or instance
+     *     stop evidence.
+     */
     get: operations["listModelInstances"];
     put?: never;
     post?: never;
@@ -545,7 +566,17 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get one observed runtime instance */
+    /**
+     * Get one observed runtime instance
+     * @description Returns one recorded instance generation with the same recorded facts a
+     *     list row carries. The lookup has two layers, and the two misses share
+     *     the 404 status but not the code: `error.code` is
+     *     `model_instance_unknown` when no generation of `instance_id` is
+     *     recorded, and `model_instance_generation_unknown` when the instance is
+     *     recorded but the requested `generation` is not. Malformed path values
+     *     return 400 `invalid_model_instance_request`; an unreadable store returns
+     *     503 instead of reporting absence.
+     */
     get: operations["getModelInstance"];
     put?: never;
     post?: never;
@@ -2320,33 +2351,43 @@ export interface components {
      */
     PoolId:
       "asr-realtime" | "tts-realtime" | "asr-batch" | "tts-batch" | "voice-creation" | "auxiliary";
+    /** @description Instance-level physical stop evidence: the process or container exited, its reserved resources were released, and the observation was verified. Lease and submit-intent cleanup evidence is execution-level, carries its own kinds, and is not reported here. */
     StopEvidence: {
-      /** @enum {string} */
-      kind:
-        | "process_exit"
-        | "container_exit"
-        | "engine_abort_confirmed"
-        | "controller_stop_confirmed"
-        | "operator_verified_instance_terminated";
+      /** @constant */
+      process_or_container_exited: true;
+      /** @constant */
+      resources_released_confirmed: true;
       /** Format: date-time */
-      observed_at: string;
-      digest: components["schemas"]["Sha256Digest"];
-      detail?: string | null;
+      verified_at: string;
+      exit_code?: number | null;
+      runtime_container_id?: string | null;
     };
+    /** @description Readiness facts for this generation. `accepting_new_work` is always declared because it follows directly from `state`; the remaining members are present only when the producer observed and recorded them. */
     ReadinessFacts: {
       accepting_new_work: boolean;
-      loaded_artifact_digests: components["schemas"]["Sha256Digest"][];
+      /** @description Digests of the exact artifacts this generation loaded, when the producer records the loaded set. An empty array records that nothing was loaded; an absent member records that the loaded set was not recorded. */
+      loaded_artifact_digests?: components["schemas"]["Sha256Digest"][];
+      /** @description Capabilities this generation warmed, when the producer records the warmed set. */
       warmed_capabilities?: string[];
+      /** @description Time this generation began accepting new work, when recorded; null means the transition was not recorded. */
       ready_at?: string | null;
     };
+    /** @description Observed timing and termination facts for this generation. Every member is optional: a producer that did not record a fact omits it rather than inventing one. */
     ObservedFacts: {
-      /** Format: date-time */
-      started_at: string;
-      /** Format: date-time */
-      last_heartbeat_at: string;
+      /**
+       * Format: date-time
+       * @description Recorded process or container start time. A producer that only tracks readiness and stop transitions does not record it.
+       */
+      started_at?: string;
+      /**
+       * Format: date-time
+       * @description Recorded most recent heartbeat. A producer without a heartbeat channel does not record it.
+       */
+      last_heartbeat_at?: string;
+      /** @description Time the physical stop was verified, when recorded; null means the instance was not observed stopped. */
       stopped_at?: string | null;
+      /** @description Instance-level physical stop evidence, when the producer recorded it. */
       stop_evidence?: components["schemas"]["StopEvidence"] | null;
-      exit_code?: number | null;
     };
     ControllerFacts: {
       controller_id: components["schemas"]["Identifier"];
@@ -2355,7 +2396,7 @@ export interface components {
     };
     /**
      * ModelRuntimeInstance
-     * @description Dynamic runtime instance fact for a node-scoped engine process or container. This schema is internal to admin, scheduler, deployment controller, and execution gateway; it is not a public model or voice DTO. A new generation is required after every restart.
+     * @description Dynamic runtime instance fact for a node-scoped engine process or container. This schema is internal to admin, scheduler, deployment controller, and execution gateway; it is not a public model or voice DTO. A new generation is required after every restart. Every observed fact is reported only when its producer actually recorded it; a producer that does not record a fact omits the member instead of synthesizing a value. `stop_evidence` is the instance-level physical stop document and never the execution-level lease or submit-intent evidence.
      * @example {
      *       "schema_version": "1.0.0",
      *       "instance_id": "inst-asr-1",
@@ -2372,21 +2413,11 @@ export interface components {
      *       "state": "ready",
      *       "readiness": {
      *         "accepting_new_work": true,
-     *         "loaded_artifact_digests": [
-     *           "sha256:2222222222222222222222222222222222222222222222222222222222222222"
-     *         ],
-     *         "warmed_capabilities": [
-     *           "asr.streaming_preview",
-     *           "asr.full_segment_review"
-     *         ],
      *         "ready_at": "2026-10-22T09:00:10Z"
      *       },
      *       "observed": {
-     *         "started_at": "2026-10-22T09:00:00Z",
-     *         "last_heartbeat_at": "2026-10-22T09:10:00Z",
      *         "stopped_at": null,
-     *         "stop_evidence": null,
-     *         "exit_code": null
+     *         "stop_evidence": null
      *       },
      *       "controller": {
      *         "controller_id": "node-controller-1",
@@ -2411,21 +2442,17 @@ export interface components {
      *       "state": "stopped",
      *       "readiness": {
      *         "accepting_new_work": false,
-     *         "loaded_artifact_digests": [],
-     *         "warmed_capabilities": [],
      *         "ready_at": "2026-10-22T08:00:00Z"
      *       },
      *       "observed": {
-     *         "started_at": "2026-10-22T07:00:00Z",
-     *         "last_heartbeat_at": "2026-10-22T10:00:00Z",
      *         "stopped_at": "2026-10-22T10:00:05Z",
      *         "stop_evidence": {
-     *           "kind": "container_exit",
-     *           "observed_at": "2026-10-22T10:00:05Z",
-     *           "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
-     *           "detail": "container exited after verified drain"
-     *         },
-     *         "exit_code": 0
+     *           "process_or_container_exited": true,
+     *           "resources_released_confirmed": true,
+     *           "verified_at": "2026-10-22T10:00:05Z",
+     *           "exit_code": 0,
+     *           "runtime_container_id": "container-tts-2"
+     *         }
      *       },
      *       "controller": {
      *         "controller_id": "node-controller-1",
@@ -2459,33 +2486,43 @@ export interface components {
         PoolId: components["schemas"]["PoolId"];
         InstanceState: components["schemas"]["InstanceState"];
         BindingReference: components["schemas"]["ResourceReference"];
+        /** @description Readiness facts for this generation. `accepting_new_work` is always declared because it follows directly from `state`; the remaining members are present only when the producer observed and recorded them. */
         ReadinessFacts: {
           accepting_new_work: boolean;
-          loaded_artifact_digests: components["schemas"]["Sha256Digest"][];
+          /** @description Digests of the exact artifacts this generation loaded, when the producer records the loaded set. An empty array records that nothing was loaded; an absent member records that the loaded set was not recorded. */
+          loaded_artifact_digests?: components["schemas"]["Sha256Digest"][];
+          /** @description Capabilities this generation warmed, when the producer records the warmed set. */
           warmed_capabilities?: string[];
+          /** @description Time this generation began accepting new work, when recorded; null means the transition was not recorded. */
           ready_at?: string | null;
         };
+        /** @description Instance-level physical stop evidence: the process or container exited, its reserved resources were released, and the observation was verified. Lease and submit-intent cleanup evidence is execution-level, carries its own kinds, and is not reported here. */
         StopEvidence: {
-          /** @enum {string} */
-          kind:
-            | "process_exit"
-            | "container_exit"
-            | "engine_abort_confirmed"
-            | "controller_stop_confirmed"
-            | "operator_verified_instance_terminated";
+          /** @constant */
+          process_or_container_exited: true;
+          /** @constant */
+          resources_released_confirmed: true;
           /** Format: date-time */
-          observed_at: string;
-          digest: components["schemas"]["Sha256Digest"];
-          detail?: string | null;
-        };
-        ObservedFacts: {
-          /** Format: date-time */
-          started_at: string;
-          /** Format: date-time */
-          last_heartbeat_at: string;
-          stopped_at?: string | null;
-          stop_evidence?: components["schemas"]["StopEvidence"] | null;
+          verified_at: string;
           exit_code?: number | null;
+          runtime_container_id?: string | null;
+        };
+        /** @description Observed timing and termination facts for this generation. Every member is optional: a producer that did not record a fact omits it rather than inventing one. */
+        ObservedFacts: {
+          /**
+           * Format: date-time
+           * @description Recorded process or container start time. A producer that only tracks readiness and stop transitions does not record it.
+           */
+          started_at?: string;
+          /**
+           * Format: date-time
+           * @description Recorded most recent heartbeat. A producer without a heartbeat channel does not record it.
+           */
+          last_heartbeat_at?: string;
+          /** @description Time the physical stop was verified, when recorded; null means the instance was not observed stopped. */
+          stopped_at?: string | null;
+          /** @description Instance-level physical stop evidence, when the producer recorded it. */
+          stop_evidence?: components["schemas"]["StopEvidence"] | null;
         };
         ControllerFacts: {
           controller_id: components["schemas"]["Identifier"];
@@ -2535,6 +2572,20 @@ export interface components {
     };
     /** @description Resource not found. */
     NotFound: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /**
+     * @description No recorded instance generation matches the request. Both misses use
+     *     404; `error.code` distinguishes them. `model_instance_unknown` means no
+     *     generation of the instance id is recorded. `model_instance_generation_unknown`
+     *     means the instance is recorded but the requested generation is not.
+     */
+    ModelInstanceNotFound: {
       headers: {
         [name: string]: unknown;
       };
@@ -3092,9 +3143,16 @@ export interface operations {
       };
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["ProfileCreateMethodNotAllowed"];
+      408: components["responses"]["ProfileReceiveTimeout"];
       409: components["responses"]["Conflict"];
+      413: components["responses"]["ProfileRequestTooLarge"];
+      415: components["responses"]["ProfileMediaUnsupported"];
       422: components["responses"]["UnprocessableEntity"];
+      429: components["responses"]["ProfileReceiveFull"];
+      503: components["responses"]["ProfileLifecycleUnknown"];
     };
   };
   listModelBindings: {
@@ -3359,6 +3417,7 @@ export interface operations {
           "application/json": components["schemas"]["ModelInstanceList"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       503: components["responses"]["ServiceUnavailable"];
     };
@@ -3441,8 +3500,10 @@ export interface operations {
           "application/json": components["schemas"]["model-instance.schema"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
-      404: components["responses"]["NotFound"];
+      404: components["responses"]["ModelInstanceNotFound"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   listResourcePools: {

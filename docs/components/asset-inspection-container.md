@@ -7,7 +7,7 @@ date: 2026-11-12
 
 # 音频资产检查的独立检查容器
 
-本文规定公开 `POST /v1/nexus/assets` 的 `asr_input` 音频检查如何由一个**独立、无出站网络、非特权**的检查容器完成，以及 Speech API 与它之间的调用协议、输入传递、安全边界、容量语义、生命周期、配置、验收与迁移。API 侧已按本页装配 HTTP 适配器并完成失败投影；检查容器镜像（C2）、[Compose 装配](#44-compose-装配)（C4）与旧进程路径退役（C6）已交付。真实部署验收（C5，§8 A1–A7）尚未完成，因此本页不声明公开音频检查已通过部署验收。旧进程监督器（`audio_asset_inspector.py`、`audio_inspection_process.py` 与固定 launcher `_audio_inspection_launcher.py`）已删除，`audio` 路径只有 HTTP 适配器一种实现。交付状态以[跟踪矩阵](../plans/delivery-tracking.md)为准。
+本文规定公开 `POST /v1/nexus/assets` 的音频检查（`asr_input` 与 `voice_reference` 两种用途）如何由一个**独立、无出站网络、非特权**的检查容器完成，以及 Speech API 与它之间的调用协议、输入传递、安全边界、容量语义、生命周期、配置、验收与迁移。API 侧已按本页装配 HTTP 适配器并完成失败投影；检查容器镜像（C2）、[Compose 装配](#44-compose-装配)（C4）与旧进程路径退役（C6）已交付。真实部署验收（C5，§8 A1–A7）尚未完成，因此本页不声明公开音频检查已通过部署验收。旧进程监督器（`audio_asset_inspector.py`、`audio_inspection_process.py` 与固定 launcher `_audio_inspection_launcher.py`）已删除，`audio` 路径只有 HTTP 适配器一种实现。交付状态以[跟踪矩阵](../plans/delivery-tracking.md)为准。
 
 四条不变量，任一不成立都不得声明可用：
 
@@ -108,7 +108,7 @@ X-Request-Id: <opaque>              # 仅用于日志关联，不含内容
 <n bytes>
 ```
 
-请求体就是原始编码音频，没有 JSON 包装：多一层 base64 会放大约 33% 且无收益。请求不携带文件名、客户端 MIME、workspace、purpose、幂等键或资产身份：检查器不需要这些信息，少给一项就少一处可被记录或误用的内容。所有策略值都是**预算上界**，不是权限：检查器把自己配置的上限作为硬上限，客户端只能收紧。
+请求体就是原始编码音频，没有 JSON 包装：多一层 base64 会放大约 33% 且无收益。请求不携带文件名、客户端 MIME、workspace、purpose、幂等键或资产身份：检查器不需要这些信息，少给一项就少一处可被记录或误用的内容。两种音频用途共用同一配方与容器，`purpose` 只体现为 API 下发的媒体时长上限：`asr_input` 用 ASR 解码预算，`voice_reference` 用独立的参考音频上限。所有策略值都是**预算上界**，不是权限：检查器把自己配置的上限作为硬上限，客户端只能收紧。
 
 ### 2.3 成功响应
 
@@ -127,15 +127,15 @@ X-Request-Id: <opaque>              # 仅用于日志关联，不含内容
 | 415 | `unsupported_media` | 配方不接受该媒体类型 | `AssetError("invalid_asset_audio")` → 公开 `422`，**不落库** |
 | 422 | `invalid_media` | 完整读取后判定不是合格 WAV（截断、RIFF 不一致、块结构异常、非 PCM） | `AssetError("invalid_asset_audio")` → 公开 `422`，**不落库** |
 | 422 | `media_limit_exceeded` | 时长或解码预算被媒体本身超出（期限未到期） | `AssetError("asset_audio_too_long")` → 公开 `422`，**不落库** |
-| 429 | `busy` | 并发槽已满（无排队） | `503`（可重试） |
-| 503 | `unavailable` | 服务未就绪、自检失败、子进程异常 | `503`（可重试） |
-| 504 | `deadline_exceeded` | 墙钟期限到，子进程已被杀死 | `503`（可重试） |
+| 429 | `busy` | 并发槽已满（无排队） | `503 asset_inspection_busy`（可重试） |
+| 503 | `unavailable` | 服务未就绪、自检失败、子进程异常 | `503 asset_inspection_busy`（可重试） |
+| 504 | `deadline_exceeded` | 墙钟期限到，子进程已被杀死 | `503 asset_inspection_busy`（可重试） |
 
 同一个 `media_limit_exceeded` 可能来自字节/时长上限，也可能来自解码器自身的协作式超时。检查器按自己的墙钟是否到期区分：已到期记 `504`，未到期记 `422`。
 
 `413` 与 `415` 的内容归属不同。公开入口已按 `asset_max_bytes + 16 KiB` 先拒绝超长 body，字节数在到达检查器之前就由本进程约束，因此检查器返回 `413` 只可能表示两侧字节上限不一致——那是部署配置问题。媒体类型不经公开入口过滤：调用方的 MP3 或文本会原样送到检查器，`415` 描述的是这份文件本身，重试同一份字节不会成功，因此它与 `invalid_media` 同属内容判决，回公开 `422 invalid_asset_audio`。
 
-无法连接、连接复位、读超时、响应超限、JSON 非法、回执字段不合法，一律 `503`。这些失败**不**产生 `rejected` 行，也**不**被解释成内容非法。
+无法连接、连接复位、连接/读超时、响应超限、JSON 非法、回执字段不合法，一律 `503 asset_inspection_unavailable`（不可重试）。这些失败**不**产生 `rejected` 行，也**不**被解释成内容非法。传输层失败与「检查器明确答复」严格分开：只有检查器自己回的 `busy`/`unavailable`/`deadline_exceeded` 才是可重试的 `asset_inspection_busy`，因为那证明服务活着；连不上或响应中途断开的端点与「根本没配置」不可区分，其最常见原因是配置错误或进程不在，报可重试会把死配置伪装成容量并导致永久重试。
 
 `503` 与 `422` 的区分是设计约束，不是文案偏好：把基础设施故障说成内容非法，会让调用方删除合法素材；把内容非法说成暂时不可用，会让调用方无限重试同一份坏数据。
 
@@ -333,14 +333,15 @@ API 侧：
 | 键 | 保留原因 |
 | --- | --- |
 | `SPEECHNEXUS_ASSET_INSPECTOR` | 选择器语义不变：`text`（默认）| `audio` |
-| `SPEECHNEXUS_AUDIO_INSPECTION_MAX_DURATION_MS` | API 侧判定时长上限，同时作为请求预算下发 |
+| `SPEECHNEXUS_AUDIO_INSPECTION_MAX_DURATION_MS` | `asr_input` 的判定时长上限，同时作为请求预算下发 |
+| `SPEECHNEXUS_AUDIO_INSPECTION_MAX_REFERENCE_DURATION_MS` | `voice_reference` 的判定时长上限，同时作为该用途的请求预算下发；默认 60000，取值 1000..60000，即克隆策略接受的参考音频范围 |
 | `SPEECHNEXUS_AUDIO_INSPECTION_MAX_INPUT_BYTES` | API 侧字节上限，与 `asset_max_bytes` 取小 |
 | `SPEECHNEXUS_AUDIO_INSPECTION_WALL_SECONDS` | 变为下发给检查器的解码预算 |
 | `SPEECHNEXUS_AUDIO_INSPECTION_MAX_RECEIPT_BYTES` | 与 `ASSET_INSPECTION_MAX_RESPONSE_BYTES` 取小 |
 
 ### 7.3 无消费者的旧键（只用于拒绝）
 
-12 个 `SPEECHNEXUS_AUDIO_INSPECTION_*` 键的去向合计为：8 个无消费者、4 个保留。选择器仍只有 `SPEECHNEXUS_ASSET_INSPECTOR`，不新增取值。
+13 个 `SPEECHNEXUS_AUDIO_INSPECTION_*` 键的去向合计为：8 个无消费者、5 个保留。选择器仍只有 `SPEECHNEXUS_ASSET_INSPECTOR`，不新增取值。
 
 `SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT`、`_COMMAND`、`_LAUNCHER_PYTHON`、`_BUBBLEWRAP`、`_PRLIMIT`：镜像挂载点、命令行、解释器与两个宿主工具的路径全部由检查容器镜像与部署固定，API 不再需要知道；旧进程监督器删除后这 5 个字段没有任何消费者。
 
@@ -376,9 +377,11 @@ $COMPOSE exec -T postgres sh -c "$PSQL \"SELECT asset_state, media_type, duratio
 
 预期：状态码 `201`，`/tmp/a1.json` 的 `status=ready`，数据库最后一行为 `ready|audio/wav|…` 且三列非空。
 
-**A2 检查器不可用。** `$COMPOSE --profile asset-inspection stop asset-inspector` 后重复 A1：状态码 `503`、`error.code=asset_inspection_unavailable`、`rows` 与 `SELECT count(*) FROM speech.speech_asset_commands` 均不变、`SELECT count(*) FROM speech.speech_asset_objects` 不变。
+**A2 检查器不可用。** `$COMPOSE --profile asset-inspection stop asset-inspector` 后重复 A1：状态码 `503`、`error.code=asset_inspection_unavailable`、`error.retryable=false`、`X-Should-Retry: false`、`rows` 与 `SELECT count(*) FROM speech.speech_asset_commands` 均不变、`SELECT count(*) FROM speech.speech_asset_objects` 不变。不可达是部署故障而不是容量：把它报成可重试会让调用方对死配置永久重试。同一判定适用于 `SPEECHNEXUS_ASSET_INSPECTION_URL` 指向无监听端口的情形。
 
 **A3 畸形音频。** `head -c 8192 /dev/urandom > /tmp/bad.bin`，用它重复 A1：状态码 `422`、`error.code=invalid_asset_audio`，`rows` 不变，无对象、无 `speech_asset_events` 行。
+
+**A3b 参考音频。** 用同一份合格 WAV 以 `-F purpose=voice_reference` 重复 A1：状态码 `201`、`status=ready`、`purpose=voice_reference` 且 `duration_ms`/`sample_rate_hz`/`channels` 非空，声音克隆据此取得参考材料。再用一段超过 `SPEECHNEXUS_AUDIO_INSPECTION_MAX_REFERENCE_DURATION_MS`（默认 60 s）的合成音频重复：状态码 `422`、`error.code=asset_audio_too_long`、`error.retryable=false`、`X-Should-Retry: false`，`rows` 不变。参考音频与 ASR 输入共用检查器，但时长上限是两个独立键。
 
 **A4 超时。** 临时把 API 的 `SPEECHNEXUS_AUDIO_INSPECTION_WALL_SECONDS` 设为 `0.05` 并重建 api，上传约 2 分钟的 WAV：预期 1 s 内返回 `503`，`rows` 不变；`$COMPOSE exec -T asset-inspector ps -eo pid,stat,comm` 只剩服务进程本身（无解码子进程）。若该机器仍能在 50 ms 内解完（极快），改用更小的 `WALL_SECONDS` 或更长的输入。恢复配置并重建。
 

@@ -86,6 +86,9 @@ def test_digest_is_explicit_lowercase_sha256(value: Any) -> None:
         {"max_bytes": 0},
         {"max_bytes": 1024**3 + 1},
         {"max_text_characters": 1000001},
+        # The reference ceiling spans exactly the 1-60 s the clone policy admits.
+        {"max_reference_duration_ms": 999},
+        {"max_reference_duration_ms": 60001},
     ],
 )
 def test_configured_policy_limits(changes: dict[str, Any]) -> None:

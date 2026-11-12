@@ -79,6 +79,12 @@ class Settings(BaseSettings):
     audio_inspection_bubblewrap: Path | None = None
     audio_inspection_prlimit: Path | None = None
     audio_inspection_max_duration_ms: int = Field(default=120_000, ge=1, le=86_400_000)
+    # A reference clip is a different asset from one ASR utterance, so its media
+    # ceiling is configured separately. The clone policy the gateway enforces
+    # admits 1-60 s of reference audio; this ceiling spans exactly that range, so
+    # an upload can never become a `ready` asset that every clone call refuses.
+    # An operator may narrow it, never widen it.
+    audio_inspection_max_reference_duration_ms: int = Field(default=60_000, ge=1_000, le=60_000)
     audio_inspection_max_input_bytes: int = Field(default=25 * 1024 * 1024, ge=1, le=1024**3)
     audio_inspection_memory_bytes: int = Field(default=256 * 1024**2, ge=64 * 1024**2, le=1024**3)
     audio_inspection_cpu_seconds: int = Field(default=5, ge=1, le=30)

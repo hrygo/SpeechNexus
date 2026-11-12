@@ -323,16 +323,21 @@ def test_the_client_budget_must_outlive_the_decode_budget(
     assert "SPEECHNEXUS_AUDIO_INSPECTION_WALL_SECONDS" in message
 
 
-def test_audio_mode_assembles_the_http_inspector_and_keeps_voice_reference_unavailable() -> None:
-    inspector = cast(HttpAudioAssetInspector, build_asset_inspector(_audio_settings()))
+def test_audio_mode_assembles_the_http_inspector_and_carries_the_reference_ceiling() -> None:
+    runtime = AssetRuntime(_audio_settings(audio_inspection_max_reference_duration_ms=30_000))
     try:
-        assert type(inspector) is HttpAudioAssetInspector
-        assert inspector.inspect("text_input", io.BytesIO(b"plain text"), POLICY).facts is not None
-        assert inspector.inspect("voice_reference", io.BytesIO(BODY), POLICY) == Inspection(
-            available=False
+        assert type(runtime.inspector) is HttpAudioAssetInspector
+        assert (
+            runtime.inspector.inspect("text_input", io.BytesIO(b"plain text"), POLICY).facts
+            is not None
         )
+        # The reference ceiling is its own setting, not the ASR decode budget:
+        # the composition root hands it to the service policy the inspector
+        # revalidates against. Purpose routing itself is asserted in
+        # `test_audio_inspection_http`, which owns a transport for it.
+        assert runtime.service.policy.max_reference_duration_ms == 30_000
     finally:
-        inspector.close()
+        runtime.close()
 
 
 def test_configured_policy_reaches_the_adapter(

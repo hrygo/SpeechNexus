@@ -591,11 +591,13 @@ export interface paths {
      *     original reservation. Audio readiness requires an installed real
      *     inspector. A non-audio body under purpose `asr_input` is
      *     `422 invalid_asset_audio`; a body over the media duration or decode
-     *     budget is `422 asset_audio_too_long`. Neither writes an Asset row,
-     *     object, or event. A configured inspector that is temporarily busy, over
-     *     its deadline, or overloaded is the retryable
-     *     `503 asset_inspection_busy`; a deployment with no usable inspector is the
-     *     non-retryable `503 asset_inspection_unavailable`.
+     *     budget is `422 asset_audio_too_long`; both audio purposes
+     *     (`asr_input`, `voice_reference`) are inspected this way. Neither writes
+     *     an Asset row, object, or event. An inspector that answers that it is
+     *     busy, unavailable or over its deadline is the retryable
+     *     `503 asset_inspection_busy`; a deployment with no usable inspector,
+     *     including an endpoint that cannot be reached, is the non-retryable
+     *     `503 asset_inspection_unavailable`.
      *     An unknown or in-progress upload is queried at Location when that header
      *     is available, or reconciled with the same Idempotency-Key and original
      *     body. `X-Should-Retry` remains `false` to suppress automatic SDK
@@ -3457,17 +3459,23 @@ export interface components {
      *     and are not interchangeable.
      *
      *     `asset_inspection_unavailable` means the deployment has no usable audio
-     *     inspector configured (missing URL/token, incompatible contract, or a
-     *     configuration-level refusal such as a bad bearer token or byte cap).
-     *     Retrying the same request cannot succeed until deployment configuration
-     *     changes, so `retryable` is `false`.
+     *     inspector for this request: a missing URL/token, an incompatible
+     *     contract, a configuration-level refusal such as a bad bearer token or
+     *     byte cap, an endpoint that cannot be reached (connection refused or
+     *     reset, connect or read timeout), or a purpose the assembled inspector
+     *     does not serve. The last case is reported with `param: purpose`, so a
+     *     capability gap is distinguishable from a deployment that cannot inspect
+     *     at all. Retrying the same request cannot succeed until deployment
+     *     configuration changes, so `retryable` is `false`.
      *
-     *     `asset_inspection_busy` means a usable inspector is temporarily unable to
-     *     serve this request: all slots are occupied, decoding exceeded its
-     *     wall-clock deadline, or the inspector is restarting or overloaded.
-     *     Inspection has no side effects, so a new request with the same body may
-     *     succeed later; `retryable` is `true`. This is the only Asset 503 for
-     *     which "retrying the same request may succeed" holds.
+     *     `asset_inspection_busy` means a usable inspector answered that it is
+     *     temporarily unable to serve this request: all slots are occupied,
+     *     decoding exceeded its wall-clock deadline, or it reports itself
+     *     unavailable. Inspection has no side effects, so a new request with the
+     *     same body may succeed later; `retryable` is `true`. This is the only
+     *     Asset 503 for which "retrying the same request may succeed" holds. An
+     *     unreachable endpoint is not this case: it is indistinguishable from a
+     *     missing deployment and is reported above.
      *
      *     `X-Should-Retry` remains `false` for every Asset 503. It suppresses
      *     automatic SDK transport replay of an upload whose body may no longer be

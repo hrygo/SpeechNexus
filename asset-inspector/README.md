@@ -98,36 +98,63 @@ released only after the child has been reaped. If a killed child cannot be
 reaped within one second the service exits so the container runtime destroys
 the PID namespace.
 
-## Build cache and local mirrors
+## Image dependencies
 
-The dependency install runs under a BuildKit cache mount on `/root/.cache/uv`,
-so a rebuild that only touches sources reuses the already-extracted wheels. The
-cache never enters the image, and `UV_LINK_MODE=copy` keeps `/app/.venv`
-self-contained.
+The runtime dependency set is built from the committed lock, in three steps that
+share one BuildKit cache mount on `/root/.cache/uv`:
 
-Measured on one aarch64 host, `uv sync --frozen --package
-speechnexus-asset-inspector --no-dev --no-editable`:
+1. `uv export --frozen --package speechnexus-asset-inspector --no-dev \
+   --no-emit-workspace` writes the package's transitive runtime requirements at
+   the versions and hashes recorded in `uv.lock`.
+2. `uv pip sync --require-hashes` creates `/app/.venv` from that set, so every
+   wheel is checked against the lock before it enters the image.
+3. `uv pip install --no-deps` installs `speechnexus-media` and
+   `speechnexus-asset-inspector` from source, which cannot disturb the verified
+   set because nothing is resolved.
 
-| Build | uv step (log offset) | Total build |
+The cache mount never enters the image, and `UV_LINK_MODE=copy` keeps
+`/app/.venv` self-contained.
+
+Measured on one aarch64 host, `uv pip sync --require-hashes` over nine packages
+including `av` (31.2 MiB) and `numpy` (15.0 MiB):
+
+| | Empty cache mount | Warm cache mount |
 | --- | --- | --- |
-| Cold builder, empty cache mount | `Prepared 11 packages in 2m 12s` | 184.7s |
-| Source-only change, warm cache mount | `Prepared 1 package in 300ms`, no downloads | 7.2s |
-| `--no-cache-filter=builder` | full re-download | 4m 55s |
+| Dependency step | `Prepared 9 packages in 4.96s` | `Installed 9 packages in 62ms`, no download |
+| Whole build | 11.8s | 4.8s |
 
-`--no-cache-filter` does not preserve cache mounts, so it cannot be used to
-measure reuse; invalidate the builder with a real source change instead.
+`--no-cache-filter` does not preserve cache mounts, so it measures a cold cache
+rather than a rebuild; invalidate the builder with a real source change instead.
 
-Two build arguments select local mirrors. Both default to empty, which keeps the
-project's original sources, and neither writes a tracked file.
+### Hash verification
 
-`UV_DEFAULT_INDEX_URL` sets `UV_DEFAULT_INDEX` for the sync step only. With
-`--frozen`, uv keeps `uv.lock` byte-identical (its sha256 is unchanged before and
-after) but resolves package downloads through the configured index: a cold-cache
-run with uv's global configuration disabled downloaded every wheel from
-`files.pythonhosted.org`, and the same run with the mirror set downloaded every
-wheel from that mirror. A build with an unreachable value fails with
-`Failed to fetch: <index>/hatchling/`, which is how the argument's wiring is
-verified without depending on network reachability.
+`--require-hashes` is load-bearing, not decorative. Replacing `numpy`'s hash
+block with a single bogus digest fails the build on an empty cache with
+`Hash mismatch for numpy==2.5.4`; the same requirement set without that flag
+would install whatever the index returned. Two further properties follow from
+the layout: `uv export --frozen` fails if the lock and the working tree
+disagree, and the export excludes workspace packages so no local source path is
+ever resolved from an index.
+
+### Index selection
+
+`UV_DEFAULT_INDEX_URL` selects the package index for the dependency step and
+defaults to empty, which keeps `pypi.org`. With
+`https://pypi.tuna.tsinghua.edu.cn/simple` set on an empty cache, uv fetched
+`av-19.0.2-cp312-abi3-manylinux_2_28_aarch64.whl` and
+`numpy-2.5.4-cp314-cp314-manylinux_2_27_aarch64...whl` with a fresh GET from
+`https://pypi.tuna.tsinghua.edu.cn`, and no request went to
+`files.pythonhosted.org`; with the argument unset the same build fetched them
+from `files.pythonhosted.org`. `uv.lock` is read, never written: its sha256 is
+identical before and after either build.
+
+Download time on this host is dominated by the network, not the mirror: the same
+nine packages took 6.9s from `pypi.org` and 5.0s from the mirror when measured
+minutes apart, while an earlier run against `pypi.org` took 2m 12s during a slow
+window. The argument exists for hosts where the public index is slow or
+unreachable, not because the mirror is inherently faster.
+
+### Debian archive selection
 
 `DEBIAN_MIRROR` rewrites only the main archive `URIs:` line of
 `/etc/apt/sources.list.d/debian.sources`. The `bookworm-security` suite keeps
@@ -139,7 +166,7 @@ unsigned or tampered metadata still fails the build.
 ```sh
 # Local builds only; CI keeps the default sources.
 docker build -f asset-inspector/Dockerfile \
-  --build-arg UV_DEFAULT_INDEX_URL=https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple \
+  --build-arg UV_DEFAULT_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
   --build-arg DEBIAN_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian \
   -t speechnexus-asset-inspector .
 ```

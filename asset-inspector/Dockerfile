@@ -32,11 +32,19 @@ COPY asset-inspector/src asset-inspector/src
 # The uv cache lives in a BuildKit cache mount so a rebuild after a source-only
 # change reuses the already-extracted wheels instead of re-downloading them. It
 # is never part of the image; UV_LINK_MODE=copy keeps the venv self-contained.
+# Runtime dependencies are installed from an exported, hash-pinned requirement
+# set, so every wheel is verified against the lock before it enters the image.
+# The workspace packages are excluded from that set and installed afterwards
+# from source, without letting either step re-resolve the lock.
 RUN --mount=type=secret,id=proxy_ca \
     --mount=type=cache,target=/root/.cache/uv,sharing=locked \
     if [ -f /run/secrets/proxy_ca ]; then export SSL_CERT_FILE=/run/secrets/proxy_ca; fi; \
     if [ -n "$UV_DEFAULT_INDEX_URL" ]; then export UV_DEFAULT_INDEX="$UV_DEFAULT_INDEX_URL"; fi; \
-    uv sync --frozen --package speechnexus-asset-inspector --no-dev --no-editable
+    uv export --frozen --package speechnexus-asset-inspector --no-dev --no-emit-workspace \
+        -o /tmp/requirements.txt \
+    && uv venv --python /usr/local/bin/python3 /app/.venv \
+    && uv pip sync --require-hashes --python /app/.venv/bin/python /tmp/requirements.txt \
+    && uv pip install --python /app/.venv/bin/python --no-deps /app/packages/media /app/asset-inspector
 
 # Fail the build when the decoder or the service surface cannot be imported.
 RUN /app/.venv/bin/python - <<'PY'

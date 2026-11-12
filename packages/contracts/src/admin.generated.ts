@@ -497,7 +497,14 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get an immutable capacity manifest */
+    /**
+     * Get a recorded capacity manifest reference
+     * @description Returns the recorded identity of one immutable capacity manifest: its
+     *     identifier, document digest, recording time, and release-evidence
+     *     locator. The manifest body is not stored or copied here; it remains the
+     *     authoritative document in the release evidence chain and is resolved
+     *     offline by scripts/dev-env/verify-release-evidence.py.
+     */
     get: operations["getCapacityManifest"];
     put?: never;
     post?: never;
@@ -514,7 +521,14 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get a qualification report */
+    /**
+     * Get a recorded qualification report reference
+     * @description Returns the recorded identity of one deployment qualification report:
+     *     its identifier, document digest, recording time, and release-evidence
+     *     locator. The report body is not stored or copied here; it remains the
+     *     authoritative document in the release evidence chain and is resolved
+     *     offline by scripts/dev-env/verify-release-evidence.py.
+     */
     get: operations["getQualificationReport"];
     put?: never;
     post?: never;
@@ -600,45 +614,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/v1/nexus/admin/policies": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List deployment and workspace policies */
-    get: operations["listPolicies"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/nexus/admin/policies/{policy_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get current policy revision */
-    get: operations["getPolicy"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /**
-     * Create a new policy revision
-     * @description The request carries `expected_revision`. A mismatch returns 409
-     *     `configuration_changed`. Governance changes are not inference overrides.
-     */
-    patch: operations["updatePolicy"];
-    trace?: never;
-  };
   "/v1/nexus/admin/diagnostics": {
     parameters: {
       query?: never;
@@ -668,7 +643,14 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List anonymous or shared-credential operation records */
+    /**
+     * List model binding lifecycle audit events
+     * @description Returns the append-only audit events recorded for model binding
+     *     lifecycle changes. The audit table stores only `kind=binding` events;
+     *     profile, workspace, and policy changes currently produce no audit
+     *     events, so this endpoint cannot return them. The `action` filter
+     *     matches one recorded action exactly.
+     */
     get: operations["listAuditEvents"];
     put?: never;
     post?: never;
@@ -903,54 +885,41 @@ export interface components {
       /** @description Sorted lexicographically for stable idempotent responses. Producer validation rejects unsorted or repeated values. */
       released_submit_intent_ids: components["schemas"]["Identifier"][];
     };
-    PolicyQuotas: {
-      max_concurrent_jobs?: number | null;
-      max_realtime_sessions?: number | null;
-      max_queue_wait_ms?: number | null;
-    };
-    PolicyRetention: {
-      asset_ttl_seconds?: number;
-      artifact_ttl_seconds?: number;
-      job_event_ttl_seconds?: number;
-    };
-    PolicyQuotasPatch: components["schemas"]["PolicyQuotas"] & Record<string, never>;
-    PolicyRetentionPatch: components["schemas"]["PolicyRetention"] & Record<string, never>;
-    PolicyFeatures: {
-      workbench_enabled: boolean;
-      llm_enabled: boolean;
-      voice_creation_enabled: boolean;
-    };
-    PolicyFeaturesPatch: {
-      workbench_enabled?: boolean;
-      llm_enabled?: boolean;
-      voice_creation_enabled?: boolean;
-    };
-    Policy: {
+    CapacityManifestRecord: {
       id: components["schemas"]["Identifier"];
-      /** @constant */
-      object: "nexus.policy";
-      revision: components["schemas"]["Revision"];
-      scope: {
-        workspace_id: components["schemas"]["Identifier"] | null;
-      };
-      quotas: components["schemas"]["PolicyQuotas"];
-      retention: components["schemas"]["PolicyRetention"];
-      features: components["schemas"]["PolicyFeatures"];
-      /** Format: date-time */
-      updated_at: string;
+      /** @description SHA-256 of the authoritative capacity manifest document bytes. */
+      digest: components["schemas"]["Sha256Digest"];
+      /**
+       * Format: date-time
+       * @description When the deployment recorded this evidence identity.
+       */
+      recorded_at: string;
+      /**
+       * @description Release-evidence locator of the authoritative document:
+       *     `release-evidence://<engine>/<evidence-bundle>/capacity-manifest.json`.
+       *     It maps to `deploy/engines/<engine>/evidence/<evidence-bundle>/` and
+       *     is resolved offline by scripts/dev-env/verify-release-evidence.py.
+       *     The response never embeds or copies the document body.
+       */
+      source: string;
     };
-    PolicyList: {
-      /** @constant */
-      object: "nexus.list";
-      data: components["schemas"]["Policy"][];
-      has_more: boolean;
-      next_cursor: string | null;
-    };
-    PolicyPatch: {
-      expected_revision: components["schemas"]["Revision"];
-      quotas?: components["schemas"]["PolicyQuotasPatch"];
-      retention?: components["schemas"]["PolicyRetentionPatch"];
-      features?: components["schemas"]["PolicyFeaturesPatch"];
+    QualificationReportRecord: {
+      id: components["schemas"]["Identifier"];
+      /** @description SHA-256 of the authoritative qualification report document bytes. */
+      digest: components["schemas"]["Sha256Digest"];
+      /**
+       * Format: date-time
+       * @description When the deployment recorded this evidence identity.
+       */
+      recorded_at: string;
+      /**
+       * @description Release-evidence locator of the authoritative document:
+       *     `release-evidence://<engine>/<evidence-bundle>/qualification-report.json`.
+       *     It maps to `deploy/engines/<engine>/evidence/<evidence-bundle>/` and
+       *     is resolved offline by scripts/dev-env/verify-release-evidence.py.
+       *     The response never embeds or copies the document body.
+       */
+      source: string;
     };
     Diagnostics: {
       /** @enum {string} */
@@ -2514,730 +2483,6 @@ export interface components {
         };
       };
     } & (unknown & unknown & unknown & unknown & unknown & unknown);
-    /**
-     * @description Unified memory shares one physical host/device pool; discrete memory accounts host RAM and device VRAM separately.
-     * @enum {string}
-     */
-    MemoryArchitecture: "unified_memory" | "discrete_device_memory";
-    ResourceVector: {
-      engine_active_slots: number;
-      device_memory_bytes: number;
-      host_memory_bytes: number;
-      /** @description Total combined physical memory charged against a unified-memory HostNode parent budget to prevent double-counting host and device memory. */
-      unified_physical_memory_bytes: number;
-      cpu_decode_millicores: number;
-      host_pcm_buffer_bytes: number;
-      scratch_disk_bytes: number;
-      ingress_bandwidth_bps: number;
-      egress_bandwidth_bps: number;
-      object_storage_bytes: number;
-    };
-    /** @enum {string} */
-    CancellationMode:
-      "engine_abort_confirmed" | "connection_drop_with_quarantine" | "cooperative_checkpoint_only";
-    /**
-     * @description managed requires exclusive execution-gateway ingress, full pool accounting, and fencing/abort barrier; external cannot claim production realtime SLO.
-     * @enum {string}
-     */
-    ManagementMode: "managed" | "external";
-    /** @enum {string} */
-    LoadingPolicy: "resident" | "on_demand";
-    TopologyReference: {
-      /** @description Logical node topology profile identifier validated during deployment qualification. */
-      host_node_profile_id: components["schemas"]["Identifier"];
-      memory_architecture: components["schemas"]["MemoryArchitecture"];
-      /**
-       * @description All instances mapped to the same host_node_id must share the node's parent physical budget.
-       * @constant
-       */
-      requires_shared_parent_budget: true;
-      topology_digest: components["schemas"]["Sha256Digest"];
-    };
-    /** @enum {string} */
-    MediaFormat:
-      | "pcm_s16le_16k_mono"
-      | "pcm_s16le_24k_mono"
-      | "wav"
-      | "mp3"
-      | "flac"
-      | "ogg_opus"
-      | "m4a_aac"
-      | "webm_opus"
-      | "utf8_text"
-      | "json_segments";
-    StageResourceDeclaration: {
-      stage_id: components["schemas"]["Identifier"];
-      stage_role: components["schemas"]["StageRole"];
-      engine_kind: components["schemas"]["EngineKind"];
-      model_revision_digest: components["schemas"]["Sha256Digest"];
-      /** @description True when this stage's readiness and incremental budget must be reserved atomically at admission time (e.g. 1.7B full_segment review or required alignment). */
-      required_for_admission: boolean;
-      /** @description True exactly for stages that emit PCM samples metered against max_output_audio_ms and the output sample intervals. Upstream token stages and text-only stages are false. */
-      emits_audio_pcm: boolean;
-      /** @description Steady-state model resident budget counted once per running engine instance. */
-      resident_budget: components["schemas"]["ResourceVector"];
-      /** @description Peak memory and buffer footprint during weight load, warmup, and stage handoff. */
-      loading_peak_budget: components["schemas"]["ResourceVector"];
-      /** @description Incremental resource upper bound reserved per active execution slot. */
-      per_slot_incremental_budget: components["schemas"]["ResourceVector"];
-      max_active_slots: number;
-    };
-    /** @description Frozen aggregation of stage_graph: resident_budget, loading_peak_budget and per_slot_incremental_budget are element-wise sums for every resource except engine_active_slots; per-slot engine_active_slots is the maximum stage value because one end-to-end execution occupies one slot in each stage. max_active_slots is the minimum of stage max_active_slots. */
-    ResourceEnvelope: {
-      resident_budget: components["schemas"]["ResourceVector"];
-      loading_peak_budget: components["schemas"]["ResourceVector"];
-      per_slot_incremental_budget: components["schemas"]["ResourceVector"];
-      /** @description Minimum max_active_slots across every declared stage_graph entry; optional stages constrain the binding too because they may execute. */
-      max_active_slots: number;
-      /** @description Realtime reservation within max_active_slots; cannot exceed it. */
-      realtime_reserved_slots: number;
-    };
-    RateAndSegmentLimits: {
-      max_prefill_tokens_per_sec: number;
-      max_output_tokens_per_sec: number;
-      max_segment_audio_ms: number;
-      max_render_unit_codepoints: number;
-      max_output_audio_ms: number;
-      /** @description True only when the engine enforces a deterministic token/codec/sample ceiling prior to generation rather than relying on post-hoc disconnect. */
-      hard_output_quota: boolean;
-    };
-    CancellationAndFencingSpec: {
-      cancellation_mode: components["schemas"]["CancellationMode"];
-      supports_request_abort: boolean;
-      supports_fencing_barrier: boolean;
-      /** @description Measured worst-case non-preemptible execution duration per bounded unit. */
-      worst_case_non_preemptible_ms: number;
-      max_drain_wait_ms: number;
-      idle_reclaim_cooldown_ms: number | null;
-    };
-    QualificationEvidence: {
-      qualification_report_id: components["schemas"]["Identifier"];
-      /** Format: date-time */
-      qualified_at: string;
-      /** Format: date-time */
-      expires_at: string;
-      config_bundle_digest: components["schemas"]["Sha256Digest"];
-      verified_coexistence_profiles: string[];
-    };
-    /**
-     * CapacityManifest
-     * @description Hardware-neutral capacity, execution stage graph, loading peak, cancellation/fencing capability, and deployment qualification manifest bound to an immutable ModelBindingRevision.
-     * @example {
-     *       "schema_version": "1.0.0",
-     *       "manifest_id": "capm-asr-realtime-full-segment-v1",
-     *       "binding_revision_id": "mbrev-asr-realtime-4",
-     *       "pool_id": "asr-realtime",
-     *       "service_class": "realtime",
-     *       "management_mode": "managed",
-     *       "release_tier": "experimental",
-     *       "loading_policy": "resident",
-     *       "topology_ref": {
-     *         "host_node_profile_id": "node-profile-arm64-unified-128g",
-     *         "memory_architecture": "unified_memory",
-     *         "requires_shared_parent_budget": true,
-     *         "topology_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
-     *       },
-     *       "supported_tasks": [
-     *         "vad",
-     *         "asr_realtime",
-     *         "asr_full_segment_review"
-     *       ],
-     *       "supported_input_formats": [
-     *         "pcm_s16le_16k_mono"
-     *       ],
-     *       "supported_output_formats": [
-     *         "utf8_text",
-     *         "json_segments"
-     *       ],
-     *       "stage_graph": [
-     *         {
-     *           "stage_id": "stage-silero-vad",
-     *           "stage_role": "vad",
-     *           "engine_kind": "onnx_runtime",
-     *           "model_revision_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
-     *           "required_for_admission": true,
-     *           "emits_audio_pcm": false,
-     *           "resident_budget": {
-     *             "engine_active_slots": 0,
-     *             "device_memory_bytes": 0,
-     *             "host_memory_bytes": 67108864,
-     *             "unified_physical_memory_bytes": 67108864,
-     *             "cpu_decode_millicores": 250,
-     *             "host_pcm_buffer_bytes": 0,
-     *             "scratch_disk_bytes": 0,
-     *             "ingress_bandwidth_bps": 0,
-     *             "egress_bandwidth_bps": 0,
-     *             "object_storage_bytes": 0
-     *           },
-     *           "loading_peak_budget": {
-     *             "engine_active_slots": 0,
-     *             "device_memory_bytes": 0,
-     *             "host_memory_bytes": 134217728,
-     *             "unified_physical_memory_bytes": 134217728,
-     *             "cpu_decode_millicores": 500,
-     *             "host_pcm_buffer_bytes": 0,
-     *             "scratch_disk_bytes": 0,
-     *             "ingress_bandwidth_bps": 0,
-     *             "egress_bandwidth_bps": 0,
-     *             "object_storage_bytes": 0
-     *           },
-     *           "per_slot_incremental_budget": {
-     *             "engine_active_slots": 1,
-     *             "device_memory_bytes": 0,
-     *             "host_memory_bytes": 4194304,
-     *             "unified_physical_memory_bytes": 4194304,
-     *             "cpu_decode_millicores": 100,
-     *             "host_pcm_buffer_bytes": 2097152,
-     *             "scratch_disk_bytes": 0,
-     *             "ingress_bandwidth_bps": 512000,
-     *             "egress_bandwidth_bps": 64000,
-     *             "object_storage_bytes": 0
-     *           },
-     *           "max_active_slots": 4
-     *         },
-     *         {
-     *           "stage_id": "stage-qwen3-asr-0.6b-preview",
-     *           "stage_role": "asr_preview",
-     *           "engine_kind": "vllm",
-     *           "model_revision_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
-     *           "required_for_admission": true,
-     *           "emits_audio_pcm": false,
-     *           "resident_budget": {
-     *             "engine_active_slots": 0,
-     *             "device_memory_bytes": 3221225472,
-     *             "host_memory_bytes": 536870912,
-     *             "unified_physical_memory_bytes": 3758096384,
-     *             "cpu_decode_millicores": 500,
-     *             "host_pcm_buffer_bytes": 0,
-     *             "scratch_disk_bytes": 0,
-     *             "ingress_bandwidth_bps": 0,
-     *             "egress_bandwidth_bps": 0,
-     *             "object_storage_bytes": 0
-     *           },
-     *           "loading_peak_budget": {
-     *             "engine_active_slots": 0,
-     *             "device_memory_bytes": 4294967296,
-     *             "host_memory_bytes": 1073741824,
-     *             "unified_physical_memory_bytes": 5368709120,
-     *             "cpu_decode_millicores": 1000,
-     *             "host_pcm_buffer_bytes": 0,
-     *             "scratch_disk_bytes": 0,
-     *             "ingress_bandwidth_bps": 0,
-     *             "egress_bandwidth_bps": 0,
-     *             "object_storage_bytes": 0
-     *           },
-     *           "per_slot_incremental_budget": {
-     *             "engine_active_slots": 1,
-     *             "device_memory_bytes": 268435456,
-     *             "host_memory_bytes": 33554432,
-     *             "unified_physical_memory_bytes": 301989888,
-     *             "cpu_decode_millicores": 150,
-     *             "host_pcm_buffer_bytes": 4194304,
-     *             "scratch_disk_bytes": 0,
-     *             "ingress_bandwidth_bps": 512000,
-     *             "egress_bandwidth_bps": 128000,
-     *             "object_storage_bytes": 0
-     *           },
-     *           "max_active_slots": 4
-     *         },
-     *         {
-     *           "stage_id": "stage-qwen3-asr-1.7b-review",
-     *           "stage_role": "asr_review",
-     *           "engine_kind": "vllm",
-     *           "model_revision_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
-     *           "required_for_admission": true,
-     *           "emits_audio_pcm": false,
-     *           "resident_budget": {
-     *             "engine_active_slots": 0,
-     *             "device_memory_bytes": 6442450944,
-     *             "host_memory_bytes": 1073741824,
-     *             "unified_physical_memory_bytes": 7516192768,
-     *             "cpu_decode_millicores": 500,
-     *             "host_pcm_buffer_bytes": 0,
-     *             "scratch_disk_bytes": 0,
-     *             "ingress_bandwidth_bps": 0,
-     *             "egress_bandwidth_bps": 0,
-     *             "object_storage_bytes": 0
-     *           },
-     *           "loading_peak_budget": {
-     *             "engine_active_slots": 0,
-     *             "device_memory_bytes": 8589934592,
-     *             "host_memory_bytes": 1610612736,
-     *             "unified_physical_memory_bytes": 10200547328,
-     *             "cpu_decode_millicores": 1000,
-     *             "host_pcm_buffer_bytes": 0,
-     *             "scratch_disk_bytes": 0,
-     *             "ingress_bandwidth_bps": 0,
-     *             "egress_bandwidth_bps": 0,
-     *             "object_storage_bytes": 0
-     *           },
-     *           "per_slot_incremental_budget": {
-     *             "engine_active_slots": 1,
-     *             "device_memory_bytes": 536870912,
-     *             "host_memory_bytes": 67108864,
-     *             "unified_physical_memory_bytes": 603979776,
-     *             "cpu_decode_millicores": 200,
-     *             "host_pcm_buffer_bytes": 4194304,
-     *             "scratch_disk_bytes": 0,
-     *             "ingress_bandwidth_bps": 512000,
-     *             "egress_bandwidth_bps": 128000,
-     *             "object_storage_bytes": 0
-     *           },
-     *           "max_active_slots": 2
-     *         }
-     *       ],
-     *       "resource_envelope": {
-     *         "resident_budget": {
-     *           "engine_active_slots": 0,
-     *           "device_memory_bytes": 9663676416,
-     *           "host_memory_bytes": 1677721600,
-     *           "unified_physical_memory_bytes": 11341398016,
-     *           "cpu_decode_millicores": 1250,
-     *           "host_pcm_buffer_bytes": 0,
-     *           "scratch_disk_bytes": 0,
-     *           "ingress_bandwidth_bps": 0,
-     *           "egress_bandwidth_bps": 0,
-     *           "object_storage_bytes": 0
-     *         },
-     *         "loading_peak_budget": {
-     *           "engine_active_slots": 0,
-     *           "device_memory_bytes": 12884901888,
-     *           "host_memory_bytes": 2818572288,
-     *           "unified_physical_memory_bytes": 15703474176,
-     *           "cpu_decode_millicores": 2500,
-     *           "host_pcm_buffer_bytes": 0,
-     *           "scratch_disk_bytes": 0,
-     *           "ingress_bandwidth_bps": 0,
-     *           "egress_bandwidth_bps": 0,
-     *           "object_storage_bytes": 0
-     *         },
-     *         "per_slot_incremental_budget": {
-     *           "engine_active_slots": 1,
-     *           "device_memory_bytes": 805306368,
-     *           "host_memory_bytes": 104857600,
-     *           "unified_physical_memory_bytes": 910163968,
-     *           "cpu_decode_millicores": 450,
-     *           "host_pcm_buffer_bytes": 10485760,
-     *           "scratch_disk_bytes": 0,
-     *           "ingress_bandwidth_bps": 1536000,
-     *           "egress_bandwidth_bps": 320000,
-     *           "object_storage_bytes": 0
-     *         },
-     *         "max_active_slots": 2,
-     *         "realtime_reserved_slots": 2
-     *       },
-     *       "rate_and_segment_limits": {
-     *         "max_prefill_tokens_per_sec": 4096,
-     *         "max_output_tokens_per_sec": 512,
-     *         "max_segment_audio_ms": 30000,
-     *         "max_render_unit_codepoints": 2000,
-     *         "max_output_audio_ms": 30000,
-     *         "hard_output_quota": true
-     *       },
-     *       "cancellation_and_fencing": {
-     *         "cancellation_mode": "engine_abort_confirmed",
-     *         "supports_request_abort": true,
-     *         "supports_fencing_barrier": true,
-     *         "worst_case_non_preemptible_ms": 450,
-     *         "max_drain_wait_ms": 5000,
-     *         "idle_reclaim_cooldown_ms": null
-     *       },
-     *       "qualification": {
-     *         "qualification_report_id": "qrep-gb10-realtime-asr-20261022",
-     *         "qualified_at": "2026-10-22T09:00:00Z",
-     *         "expires_at": "2027-04-22T09:00:00Z",
-     *         "config_bundle_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
-     *         "verified_coexistence_profiles": [
-     *           "1_asr_realtime_plus_1_tts_realtime",
-     *           "voice_design_cold_load_under_realtime_load"
-     *         ]
-     *       }
-     *     }
-     */
-    "capacity-manifest.schema": {
-      /**
-       * @description Frozen schema version for P0 capacity manifests.
-       * @constant
-       */
-      schema_version: "1.0.0";
-      /** @description Immutable identifier for this capacity manifest. */
-      manifest_id: components["schemas"]["Identifier"];
-      /** @description Must equal ModelBindingRevision.revision_id for the immutable binding revision governed by this manifest. */
-      binding_revision_id: components["schemas"]["Identifier"];
-      pool_id: components["schemas"]["PoolId"];
-      service_class: components["schemas"]["ServiceClass"];
-      management_mode: components["schemas"]["ManagementMode"];
-      release_tier: components["schemas"]["ReleaseTier"];
-      loading_policy: components["schemas"]["LoadingPolicy"];
-      topology_ref: components["schemas"]["TopologyReference"];
-      supported_tasks: components["schemas"]["SpeechTaskKind"][];
-      supported_input_formats: components["schemas"]["MediaFormat"][];
-      supported_output_formats: components["schemas"]["MediaFormat"][];
-      /** @description Complete multi-stage execution recipe (including ASR 1.7B full_segment review, required alignment/diarization, or TTS Talker + Code2Wav + connector). */
-      stage_graph: components["schemas"]["StageResourceDeclaration"][];
-      /** @description Admission envelope derived from stage_graph. Memory/CPU/PCM/bandwidth/object-storage vectors are summed across stages; engine_active_slots is the per-execution slot cardinality (max stage value); max_active_slots is the minimum stage max_active_slots. */
-      resource_envelope: components["schemas"]["ResourceEnvelope"];
-      rate_and_segment_limits: components["schemas"]["RateAndSegmentLimits"];
-      cancellation_and_fencing: components["schemas"]["CancellationAndFencingSpec"];
-      qualification: components["schemas"]["QualificationEvidence"];
-      $defs: {
-        Identifier: components["schemas"]["Identifier"];
-        Sha256Digest: components["schemas"]["Sha256Digest"];
-        PoolId: components["schemas"]["PoolId"];
-        ServiceClass: components["schemas"]["ServiceClass"];
-        /**
-         * @description managed requires exclusive execution-gateway ingress, full pool accounting, and fencing/abort barrier; external cannot claim production realtime SLO.
-         * @enum {string}
-         */
-        ManagementMode: "managed" | "external";
-        ReleaseTier: components["schemas"]["ReleaseTier"];
-        /** @enum {string} */
-        LoadingPolicy: "resident" | "on_demand";
-        MemoryArchitecture: components["schemas"]["MemoryArchitecture"];
-        SpeechTaskKind: components["schemas"]["SpeechTaskKind"];
-        /** @enum {string} */
-        MediaFormat:
-          | "pcm_s16le_16k_mono"
-          | "pcm_s16le_24k_mono"
-          | "wav"
-          | "mp3"
-          | "flac"
-          | "ogg_opus"
-          | "m4a_aac"
-          | "webm_opus"
-          | "utf8_text"
-          | "json_segments";
-        StageRole: components["schemas"]["StageRole"];
-        EngineKind: components["schemas"]["EngineKind"];
-        /** @enum {string} */
-        CancellationMode:
-          | "engine_abort_confirmed"
-          | "connection_drop_with_quarantine"
-          | "cooperative_checkpoint_only";
-        TopologyReference: {
-          /** @description Logical node topology profile identifier validated during deployment qualification. */
-          host_node_profile_id: components["schemas"]["Identifier"];
-          memory_architecture: components["schemas"]["MemoryArchitecture"];
-          /**
-           * @description All instances mapped to the same host_node_id must share the node's parent physical budget.
-           * @constant
-           */
-          requires_shared_parent_budget: true;
-          topology_digest: components["schemas"]["Sha256Digest"];
-        };
-        ResourceVector: {
-          engine_active_slots: number;
-          device_memory_bytes: number;
-          host_memory_bytes: number;
-          /** @description Total combined physical memory charged against a unified-memory HostNode parent budget to prevent double-counting host and device memory. */
-          unified_physical_memory_bytes: number;
-          cpu_decode_millicores: number;
-          host_pcm_buffer_bytes: number;
-          scratch_disk_bytes: number;
-          ingress_bandwidth_bps: number;
-          egress_bandwidth_bps: number;
-          object_storage_bytes: number;
-        };
-        StageResourceDeclaration: {
-          stage_id: components["schemas"]["Identifier"];
-          stage_role: components["schemas"]["StageRole"];
-          engine_kind: components["schemas"]["EngineKind"];
-          model_revision_digest: components["schemas"]["Sha256Digest"];
-          /** @description True when this stage's readiness and incremental budget must be reserved atomically at admission time (e.g. 1.7B full_segment review or required alignment). */
-          required_for_admission: boolean;
-          /** @description True exactly for stages that emit PCM samples metered against max_output_audio_ms and the output sample intervals. Upstream token stages and text-only stages are false. */
-          emits_audio_pcm: boolean;
-          /** @description Steady-state model resident budget counted once per running engine instance. */
-          resident_budget: components["schemas"]["ResourceVector"];
-          /** @description Peak memory and buffer footprint during weight load, warmup, and stage handoff. */
-          loading_peak_budget: components["schemas"]["ResourceVector"];
-          /** @description Incremental resource upper bound reserved per active execution slot. */
-          per_slot_incremental_budget: components["schemas"]["ResourceVector"];
-          max_active_slots: number;
-        };
-        /** @description Frozen aggregation of stage_graph: resident_budget, loading_peak_budget and per_slot_incremental_budget are element-wise sums for every resource except engine_active_slots; per-slot engine_active_slots is the maximum stage value because one end-to-end execution occupies one slot in each stage. max_active_slots is the minimum of stage max_active_slots. */
-        ResourceEnvelope: {
-          resident_budget: components["schemas"]["ResourceVector"];
-          loading_peak_budget: components["schemas"]["ResourceVector"];
-          per_slot_incremental_budget: components["schemas"]["ResourceVector"];
-          /** @description Minimum max_active_slots across every declared stage_graph entry; optional stages constrain the binding too because they may execute. */
-          max_active_slots: number;
-          /** @description Realtime reservation within max_active_slots; cannot exceed it. */
-          realtime_reserved_slots: number;
-        };
-        RateAndSegmentLimits: {
-          max_prefill_tokens_per_sec: number;
-          max_output_tokens_per_sec: number;
-          max_segment_audio_ms: number;
-          max_render_unit_codepoints: number;
-          max_output_audio_ms: number;
-          /** @description True only when the engine enforces a deterministic token/codec/sample ceiling prior to generation rather than relying on post-hoc disconnect. */
-          hard_output_quota: boolean;
-        };
-        CancellationAndFencingSpec: {
-          cancellation_mode: components["schemas"]["CancellationMode"];
-          supports_request_abort: boolean;
-          supports_fencing_barrier: boolean;
-          /** @description Measured worst-case non-preemptible execution duration per bounded unit. */
-          worst_case_non_preemptible_ms: number;
-          max_drain_wait_ms: number;
-          idle_reclaim_cooldown_ms: number | null;
-        };
-        QualificationEvidence: {
-          qualification_report_id: components["schemas"]["Identifier"];
-          /** Format: date-time */
-          qualified_at: string;
-          /** Format: date-time */
-          expires_at: string;
-          config_bundle_digest: components["schemas"]["Sha256Digest"];
-          verified_coexistence_profiles: string[];
-        };
-      };
-    } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown);
-    EngineComponent: {
-      engine_kind: components["schemas"]["EngineKind"];
-      image_digest: components["schemas"]["Sha256Digest"];
-      runtime_version: string;
-    };
-    Metric: {
-      name: string;
-      value: number;
-      /** @enum {string} */
-      unit: "ms" | "s" | "bytes" | "percent" | "ratio" | "count" | "cpms";
-      percentile?: number | null;
-    };
-    Topology: {
-      host_node_id: components["schemas"]["Identifier"];
-      /** @enum {string} */
-      cpu_arch: "x86_64" | "arm64";
-      hardware_class: string;
-      memory_architecture: components["schemas"]["MemoryArchitecture"];
-      total_physical_memory_bytes: number;
-      device_memory_bytes?: number;
-      shared_memory?: {
-        parent_budget_id?: components["schemas"]["Identifier"];
-        shared_with_roles?: ("speech" | "workbench_llm" | "auxiliary")[];
-      };
-    };
-    SoftwareSet: {
-      application_version: string;
-      contract_version: string;
-      /** @description Exact software identity for every execution stage in the referenced capacity manifest. Publication validation requires one component per stage_id and rejects conflicting or missing evidence. */
-      engine_components: {
-        [key: string]: components["schemas"]["EngineComponent"];
-      };
-    };
-    TestSuite: {
-      revision: components["schemas"]["Revision"];
-      corpus_revision: string;
-      scenario_ids: components["schemas"]["Identifier"][];
-    };
-    ScenarioResult: {
-      scenario_id: components["schemas"]["Identifier"];
-      required: boolean;
-      /** @enum {string} */
-      status: "passed" | "failed" | "skipped";
-      metrics?: components["schemas"]["Metric"][];
-      evidence_digest: components["schemas"]["Sha256Digest"];
-      notes?: string;
-    };
-    /**
-     * DeploymentQualificationReport
-     * @description Evidence that a specific immutable binding, every execution-stage engine image and runtime, model artifact set, topology, and contract revision passed the declared scenarios. A production release tier requires at least one required scenario and every required scenario to pass. Optional scenario results are advisory and do not gate production; a non-passing optional result must be recorded in limitations. Producer validation must resolve the referenced binding and capacity manifest, verify binding and release identities, match every stage component exactly, and require qualified_at to precede expires_at. Scenario identifiers must exactly match test_suite.scenario_ids with no duplicates. JSON Schema enforces the shape while producer validation enforces these cross-document and cross-array rules.
-     * @example {
-     *       "schema_version": "1.0.0",
-     *       "report_id": "qrep-gb10-realtime-asr-20261022",
-     *       "binding": {
-     *         "id": "asr-realtime",
-     *         "revision": "4"
-     *       },
-     *       "binding_revision_id": "mbrev-asr-realtime-4",
-     *       "capacity_manifest_id": "capm-asr-realtime-full-segment-v1",
-     *       "release_tier": "experimental",
-     *       "topology": {
-     *         "host_node_id": "node-gb10-1",
-     *         "cpu_arch": "arm64",
-     *         "hardware_class": "nvidia-gb10-single-node",
-     *         "memory_architecture": "unified_memory",
-     *         "total_physical_memory_bytes": 137438953472,
-     *         "device_memory_bytes": 137438953472,
-     *         "shared_memory": {
-     *           "parent_budget_id": "parent-gb10-1",
-     *           "shared_with_roles": [
-     *             "speech",
-     *             "workbench_llm",
-     *             "auxiliary"
-     *           ]
-     *         }
-     *       },
-     *       "software": {
-     *         "application_version": "0.1.0.dev0",
-     *         "contract_version": "1.0.0",
-     *         "engine_components": {
-     *           "stage-silero-vad": {
-     *             "engine_kind": "onnx_runtime",
-     *             "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-     *             "runtime_version": "onnxruntime-1.23"
-     *           },
-     *           "stage-qwen3-asr-0.6b-preview": {
-     *             "engine_kind": "vllm",
-     *             "image_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
-     *             "runtime_version": "vllm-2026.10"
-     *           },
-     *           "stage-qwen3-asr-1.7b-review": {
-     *             "engine_kind": "vllm",
-     *             "image_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
-     *             "runtime_version": "vllm-2026.10"
-     *           }
-     *         }
-     *       },
-     *       "test_suite": {
-     *         "revision": "1",
-     *         "corpus_revision": "corpus-zh-en-smoke-1",
-     *         "scenario_ids": [
-     *           "asr-realtime-1-session",
-     *           "asr-realtime-plus-tts",
-     *           "asr-cancel-and-abort"
-     *         ]
-     *       },
-     *       "scenarios": [
-     *         {
-     *           "scenario_id": "asr-realtime-1-session",
-     *           "required": true,
-     *           "status": "passed",
-     *           "metrics": [
-     *             {
-     *               "name": "first_preview_latency",
-     *               "value": 820,
-     *               "unit": "ms",
-     *               "percentile": 95
-     *             },
-     *             {
-     *               "name": "final_latency",
-     *               "value": 1450,
-     *               "unit": "ms",
-     *               "percentile": 95
-     *             }
-     *           ],
-     *           "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-     *           "notes": "Synthetic approved corpus only."
-     *         },
-     *         {
-     *           "scenario_id": "asr-realtime-plus-tts",
-     *           "required": true,
-     *           "status": "skipped",
-     *           "metrics": [],
-     *           "evidence_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-     *           "notes": "TTS coexistence not yet measured on this topology."
-     *         },
-     *         {
-     *           "scenario_id": "asr-cancel-and-abort",
-     *           "required": true,
-     *           "status": "skipped",
-     *           "metrics": [],
-     *           "evidence_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-     *           "notes": "Cancellation and quarantine recovery were not exercised in this run."
-     *         }
-     *       ],
-     *       "required_scenarios_passed": false,
-     *       "overall_status": "incomplete",
-     *       "limitations": [
-     *         "TTS coexistence was not measured; this report cannot qualify a mixed realtime deployment.",
-     *         "No production quality threshold has been frozen for the target corpus."
-     *       ],
-     *       "evidence_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-     *       "qualified_at": "2026-10-22T09:00:00Z",
-     *       "expires_at": "2027-04-22T09:00:00Z"
-     *     }
-     */
-    "qualification-report.schema": {
-      /** @constant */
-      schema_version: "1.0.0";
-      report_id: components["schemas"]["Identifier"];
-      binding: components["schemas"]["ResourceReference"];
-      /** @description Must equal ModelBindingRevision.revision_id and the capacity manifest binding_revision_id. */
-      binding_revision_id: components["schemas"]["Identifier"];
-      /** @description Must equal CapacityManifest.manifest_id. The referenced manifest must carry the same binding_revision_id and release_tier as this report. */
-      capacity_manifest_id: components["schemas"]["Identifier"];
-      release_tier: components["schemas"]["ReleaseTier"];
-      topology: components["schemas"]["Topology"];
-      software: components["schemas"]["SoftwareSet"];
-      test_suite: components["schemas"]["TestSuite"];
-      /** @description One result per test_suite.scenario_id. Producer validation rejects missing or duplicate scenario evidence; a skipped result is evidence of non-qualification, not a pass. */
-      scenarios: components["schemas"]["ScenarioResult"][];
-      /** @description Computed over scenarios with required=true: true exactly when at least one required scenario exists and every required scenario has status=passed. Optional results do not change this value. */
-      required_scenarios_passed: boolean;
-      /**
-       * @description Computed over required scenarios only: fail when any required scenario failed; pass when required_scenarios_passed=true; otherwise incomplete. Optional results are advisory.
-       * @enum {string}
-       */
-      overall_status: "pass" | "fail" | "incomplete";
-      /** @description Qualification limitations. A skipped or failed optional scenario requires at least one recorded limitation because a non-passing optional result must not disappear from the release record. */
-      limitations: string[];
-      evidence_digest: components["schemas"]["Sha256Digest"];
-      /**
-       * Format: date-time
-       * @description Must be earlier than expires_at when expires_at is present.
-       */
-      qualified_at: string;
-      expires_at?: string | null;
-      $defs: {
-        Identifier: components["schemas"]["Identifier"];
-        Revision: components["schemas"]["Revision"];
-        Sha256Digest: components["schemas"]["Sha256Digest"];
-        ReleaseTier: components["schemas"]["ReleaseTier"];
-        MemoryArchitecture: components["schemas"]["MemoryArchitecture"];
-        EngineKind: components["schemas"]["EngineKind"];
-        BindingReference: components["schemas"]["ResourceReference"];
-        Topology: {
-          host_node_id: components["schemas"]["Identifier"];
-          /** @enum {string} */
-          cpu_arch: "x86_64" | "arm64";
-          hardware_class: string;
-          memory_architecture: components["schemas"]["MemoryArchitecture"];
-          total_physical_memory_bytes: number;
-          device_memory_bytes?: number;
-          shared_memory?: {
-            parent_budget_id?: components["schemas"]["Identifier"];
-            shared_with_roles?: ("speech" | "workbench_llm" | "auxiliary")[];
-          };
-        };
-        SoftwareSet: {
-          application_version: string;
-          contract_version: string;
-          /** @description Exact software identity for every execution stage in the referenced capacity manifest. Publication validation requires one component per stage_id and rejects conflicting or missing evidence. */
-          engine_components: {
-            [key: string]: components["schemas"]["EngineComponent"];
-          };
-        };
-        EngineComponent: {
-          engine_kind: components["schemas"]["EngineKind"];
-          image_digest: components["schemas"]["Sha256Digest"];
-          runtime_version: string;
-        };
-        TestSuite: {
-          revision: components["schemas"]["Revision"];
-          corpus_revision: string;
-          scenario_ids: components["schemas"]["Identifier"][];
-        };
-        Metric: {
-          name: string;
-          value: number;
-          /** @enum {string} */
-          unit: "ms" | "s" | "bytes" | "percent" | "ratio" | "count" | "cpms";
-          percentile?: number | null;
-        };
-        ScenarioResult: {
-          scenario_id: components["schemas"]["Identifier"];
-          required: boolean;
-          /** @enum {string} */
-          status: "passed" | "failed" | "skipped";
-          metrics?: components["schemas"]["Metric"][];
-          evidence_digest: components["schemas"]["Sha256Digest"];
-          notes?: string;
-        };
-      };
-    } & (unknown & unknown & unknown & unknown & unknown & unknown);
   };
   responses: {
     /** @description Malformed request or unknown field. */
@@ -3285,7 +2530,7 @@ export interface components {
         "application/json": components["schemas"]["ErrorResponse"];
       };
     };
-    /** @description Invalid binding, capacity, qualification, or policy composition. */
+    /** @description Invalid binding, capacity, or qualification composition. */
     UnprocessableEntity: {
       headers: {
         [name: string]: unknown;
@@ -3491,12 +2736,10 @@ export interface components {
     IdempotencyKey: string;
     Cursor: string;
     Limit: number;
-    WorkspaceIdQuery: components["schemas"]["Identifier"];
     WorkspaceIdPath: components["schemas"]["Identifier"];
     BindingIdPath: components["schemas"]["Identifier"];
     ProfileIdPath: components["schemas"]["Identifier"];
     RevisionPath: components["schemas"]["Revision"];
-    PolicyIdPath: components["schemas"]["Identifier"];
     LeaseIdPath: components["schemas"]["Identifier"];
     GenerationPath: number;
     Range: string;
@@ -4105,14 +3348,14 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Capacity manifest. */
+      /** @description Recorded capacity manifest reference. */
       200: {
         headers: {
           "X-Request-ID"?: components["headers"]["XRequestId"];
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["capacity-manifest.schema"];
+          "application/json": components["schemas"]["CapacityManifestRecord"];
         };
       };
       401: components["responses"]["Unauthorized"];
@@ -4132,14 +3375,14 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Qualification report. */
+      /** @description Recorded qualification report reference. */
       200: {
         headers: {
           "X-Request-ID"?: components["headers"]["XRequestId"];
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["qualification-report.schema"];
+          "application/json": components["schemas"]["QualificationReportRecord"];
         };
       };
       401: components["responses"]["Unauthorized"];
@@ -4234,97 +3477,6 @@ export interface operations {
       409: components["responses"]["Conflict"];
     };
   };
-  listPolicies: {
-    parameters: {
-      query?: {
-        cursor?: components["parameters"]["Cursor"];
-        limit?: components["parameters"]["Limit"];
-        workspace_id?: components["parameters"]["WorkspaceIdQuery"];
-      };
-      header?: {
-        "X-Request-ID"?: components["parameters"]["XRequestId"];
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Policies. */
-      200: {
-        headers: {
-          "X-Request-ID"?: components["headers"]["XRequestId"];
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["PolicyList"];
-        };
-      };
-      401: components["responses"]["Unauthorized"];
-      503: components["responses"]["ServiceUnavailable"];
-    };
-  };
-  getPolicy: {
-    parameters: {
-      query?: never;
-      header?: {
-        "X-Request-ID"?: components["parameters"]["XRequestId"];
-      };
-      path: {
-        policy_id: components["parameters"]["PolicyIdPath"];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Policy. */
-      200: {
-        headers: {
-          "X-Request-ID"?: components["headers"]["XRequestId"];
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Policy"];
-        };
-      };
-      401: components["responses"]["Unauthorized"];
-      404: components["responses"]["NotFound"];
-    };
-  };
-  updatePolicy: {
-    parameters: {
-      query?: never;
-      header?: {
-        "X-Request-ID"?: components["parameters"]["XRequestId"];
-        "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
-      };
-      path: {
-        policy_id: components["parameters"]["PolicyIdPath"];
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["PolicyPatch"];
-      };
-    };
-    responses: {
-      /** @description New policy revision. */
-      200: {
-        headers: {
-          "X-Request-ID"?: components["headers"]["XRequestId"];
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Policy"];
-        };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      404: components["responses"]["NotFound"];
-      409: components["responses"]["Conflict"];
-      422: components["responses"]["UnprocessableEntity"];
-    };
-  };
   getDiagnostics: {
     parameters: {
       query?: never;
@@ -4355,7 +3507,6 @@ export interface operations {
       query?: {
         cursor?: components["parameters"]["Cursor"];
         limit?: components["parameters"]["Limit"];
-        workspace_id?: components["parameters"]["WorkspaceIdQuery"];
         action?: string;
       };
       header?: {

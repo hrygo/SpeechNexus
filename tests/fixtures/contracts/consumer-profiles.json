@@ -12203,6 +12203,58 @@
           }
         ]
       }
+    },
+    {
+      "id": "admin-CapacityManifestRecord-valid",
+      "profile": "admin",
+      "schema": "CapacityManifestRecord",
+      "valid": true,
+      "value": {
+        "id": "capm-file-asr-qwen3-1p7b-gb10-20261027",
+        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "recorded_at": "2026-10-27T08:00:00Z",
+        "source": "release-evidence://file-asr-audio/gb10-20261027/capacity-manifest.json"
+      }
+    },
+    {
+      "id": "admin-CapacityManifestRecord-body-copied",
+      "profile": "admin",
+      "schema": "CapacityManifestRecord",
+      "valid": false,
+      "value": {
+        "id": "capm-file-asr-qwen3-1p7b-gb10-20261027",
+        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "recorded_at": "2026-10-27T08:00:00Z",
+        "source": "release-evidence://file-asr-audio/gb10-20261027/capacity-manifest.json",
+        "topology_ref": {
+          "topology_id": "gb10-single-node"
+        }
+      }
+    },
+    {
+      "id": "admin-QualificationReportRecord-valid",
+      "profile": "admin",
+      "schema": "QualificationReportRecord",
+      "valid": true,
+      "value": {
+        "id": "qrep-file-asr-qwen3-1p7b-gb10-20261027",
+        "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "recorded_at": "2026-10-27T08:05:00Z",
+        "source": "release-evidence://file-asr-audio/gb10-20261027/qualification-report.json"
+      }
+    },
+    {
+      "id": "admin-QualificationReportRecord-body-copied",
+      "profile": "admin",
+      "schema": "QualificationReportRecord",
+      "valid": false,
+      "value": {
+        "id": "qrep-file-asr-qwen3-1p7b-gb10-20261027",
+        "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "recorded_at": "2026-10-27T08:05:00Z",
+        "source": "release-evidence://file-asr-audio/gb10-20261027/qualification-report.json",
+        "scenarios": []
+      }
     }
   ]
 }

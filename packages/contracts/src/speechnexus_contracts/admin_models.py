@@ -408,6 +408,7 @@ type ExternalSharedIdentifiersSchemaJsonPoolId = Literal[
     "asr-realtime", "tts-realtime", "asr-batch", "tts-batch", "voice-creation", "auxiliary"
 ]
 type ServiceClass = ExternalSharedCapabilityDomainsSchemaJsonServiceClass
+type Sha256Digest = ExternalSharedIdentifiersSchemaJsonSha256Digest
 type Identifier = ExternalSharedIdentifiersSchemaJsonIdentifier
 type Revision = ExternalSharedIdentifiersSchemaJsonRevision
 
@@ -552,6 +553,20 @@ class ResourcePool(TypedDict):
 class ResourcePoolList(TypedDict):
     object: Literal["nexus.list"]
     data: list[ResourcePool]
+
+
+class CapacityManifestRecord(TypedDict):
+    id: Identifier
+    digest: Sha256Digest
+    recorded_at: str
+    source: str
+
+
+class QualificationReportRecord(TypedDict):
+    id: Identifier
+    digest: Sha256Digest
+    recorded_at: str
+    source: str
 
 
 class WorkspaceCreateRequest(TypedDict):
@@ -797,4 +812,6 @@ type AdminContracts = (
     | ModelBindingActivationRequest
     | ResourcePool
     | ResourcePoolList
+    | CapacityManifestRecord
+    | QualificationReportRecord
 )

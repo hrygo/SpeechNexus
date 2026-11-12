@@ -14,6 +14,16 @@ PATH = "/v1/nexus/admin/profiles"
 POINTER = f"{SOURCE}:paths/{PATH}/get"
 BASE_VERSION = "0.1.0.dev6"
 CURRENT_VERSION = "0.1.0.dev7"
+POLICY_BASE_VERSION = "0.1.0.dev7"
+POLICY_CURRENT_VERSION = "0.1.0.dev8"
+POLICY_GET_REASON = (
+    "No policy table, revision history, or updated_at exists; the operation has "
+    "no consumer and could only be implemented by fabricating state."
+)
+POLICY_PATCH_REASON = (
+    "Policy changes have no table, revision history, or updated_at to persist "
+    "against; PATCH had no consumer and no durable landing place."
+)
 
 
 def module() -> ModuleType:
@@ -76,7 +86,31 @@ def test_the_allowlist_entry_is_frozen() -> None:
                 "Unimplemented legacy declaration; the published profile lists v1/v2 "
                 "already cover the capability."
             ),
-        }
+        },
+        (
+            SOURCE,
+            "/v1/nexus/admin/policies",
+            "get",
+            POLICY_BASE_VERSION,
+            POLICY_CURRENT_VERSION,
+            "operation-removed",
+        ): {"issue": "#605", "reason": POLICY_GET_REASON},
+        (
+            SOURCE,
+            "/v1/nexus/admin/policies/{policy_id}",
+            "get",
+            POLICY_BASE_VERSION,
+            POLICY_CURRENT_VERSION,
+            "operation-removed",
+        ): {"issue": "#605", "reason": POLICY_GET_REASON},
+        (
+            SOURCE,
+            "/v1/nexus/admin/policies/{policy_id}",
+            "patch",
+            POLICY_BASE_VERSION,
+            POLICY_CURRENT_VERSION,
+            "operation-removed",
+        ): {"issue": "#605", "reason": POLICY_PATCH_REASON},
     }
 
 
@@ -90,6 +124,71 @@ def test_the_exact_approved_removal_is_filtered() -> None:
     assert len(approved) == 1
     assert approved[0].startswith(f"{POINTER}: operation removed")
     assert "#603" in approved[0]
+
+
+def policy_document() -> dict[str, Any]:
+    def operation(name: str) -> dict[str, Any]:
+        return {"operationId": name, "responses": {"200": {"description": "Synthetic"}}}
+
+    return {
+        "openapi": "3.1.0",
+        "info": {"title": "Synthetic", "version": POLICY_BASE_VERSION},
+        "paths": {
+            "/v1/nexus/admin/policies": {
+                "get": operation("listPolicies"),
+                "post": operation("createPolicy"),
+            },
+            "/v1/nexus/admin/policies/{policy_id}": {
+                "get": operation("getPolicy"),
+                "patch": operation("updatePolicy"),
+                "put": operation("replacePolicy"),
+            },
+        },
+    }
+
+
+def test_the_three_approved_policy_removals_are_filtered() -> None:
+    base = policy_document()
+    current = copy.deepcopy(base)
+    current["info"]["version"] = POLICY_CURRENT_VERSION
+    del current["paths"]["/v1/nexus/admin/policies"]["get"]
+    del current["paths"]["/v1/nexus/admin/policies/{policy_id}"]["get"]
+    del current["paths"]["/v1/nexus/admin/policies/{policy_id}"]["patch"]
+
+    findings, approved = analyze(base, current)
+
+    assert findings == []
+    assert len(approved) == 3
+    assert all("operation removed" in entry and "#605" in entry for entry in approved)
+
+
+def test_a_whole_path_removal_is_approved_only_when_every_operation_is_registered() -> None:
+    base = policy_document()
+    del base["paths"]["/v1/nexus/admin/policies"]["post"]
+    del base["paths"]["/v1/nexus/admin/policies/{policy_id}"]["put"]
+    current = copy.deepcopy(base)
+    current["info"]["version"] = POLICY_CURRENT_VERSION
+    current["paths"] = {}
+
+    findings, approved = analyze(base, current)
+
+    assert findings == []
+    assert len(approved) == 3
+    assert all("operation removed" in entry and "#605" in entry for entry in approved)
+
+
+def test_a_whole_path_removal_with_an_unregistered_operation_rejects() -> None:
+    base = policy_document()
+    base["paths"]["/v1/nexus/admin/policies"]["post"]["operationId"] = "createPolicyRevision"
+    current = copy.deepcopy(base)
+    current["info"]["version"] = POLICY_CURRENT_VERSION
+    current["paths"] = {}
+
+    findings, approved = analyze(base, current)
+
+    assert approved == []
+    assert f"{SOURCE}:paths//v1/nexus/admin/policies: path removed" in findings
+    assert any("every operation must be individually registered" in finding for finding in findings)
 
 
 def test_an_unregistered_operation_removal_still_rejects() -> None:

@@ -129,7 +129,7 @@ def test_python_transport_preserves_shared_examples(example: dict[str, Any]) -> 
     assert value == example["value"]
 
 
-@pytest.mark.parametrize("operation", ["createWorkspace", "updateWorkspace", "listPolicies"])
+@pytest.mark.parametrize("operation", ["createWorkspace", "updateWorkspace", "getDiagnostics"])
 def test_unselected_operations_are_rejected(operation: str) -> None:
     with pytest.raises(ValueError, match="Unknown HTTP operation"):
         validate_request(operation, {})
@@ -143,7 +143,7 @@ def test_invalid_operation_selectors_fail_closed(operations: Any) -> None:
         generator().bundle_http_surface(CONFIG | {"operations": operations})
 
 
-@pytest.mark.parametrize("operation", ["unknownOperation", "listPolicies"])
+@pytest.mark.parametrize("operation", ["unknownOperation", "getDiagnostics"])
 def test_selection_cannot_escape_reviewed_paths(operation: str) -> None:
     with pytest.raises(ValueError, match="outside the reviewed paths"):
         generator().bundle_http_surface(CONFIG | {"operations": [operation]})

@@ -8,7 +8,7 @@ fake behavior and upgrade impact, followed by consumer verification.
 
 | Source | Version and paths checked on 2026-11-05 | Compared surface |
 | --- | --- | --- |
-| admin-openapi.yaml | 0.1.0.dev5; 22 paths | All declared paths, including request/response Nexus fields |
+| admin-openapi.yaml | 0.1.0.dev8; 20 paths | All declared paths, including request/response Nexus fields |
 | workbench-openapi.yaml | 0.1.0.dev2; 41 paths | All declared paths |
 | internal/runtime-control.openapi.yaml | 0.1.0.dev1; 5 paths | All declared paths |
 | internal/execution-control.openapi.yaml | 0.4.0.dev1; 9 paths | All declared paths |
@@ -44,9 +44,10 @@ network reference loading, runtime API call, permission change or migration.
 
 A source version change is visible in the inventory and never automatically
 waives a finding. Version/upgrade descriptions and consumer acceptance remain
-required. This tool has no general skip/waiver switch; the only exception is the
-exact approved operation removal registry below. Breaking changes need an
-explicit version/migration approach under the existing contract handoff process.
+required. This tool has no general skip/waiver switch; the only exceptions are
+the exact registries for approved operation removals, parameter removals and
+response-schema replacements below. Breaking changes need an explicit
+version/migration approach under the existing contract handoff process.
 
 ## Frozen internal additive promotions
 
@@ -87,12 +88,45 @@ is not a general waiver: every other finding still rejects, and the target
 operation must be present in the baseline and absent from the current source.
 An entry is active only for its exact version pair; any other pair leaves the
 removal unapproved, so a wrong or reverted version cannot silently authorize it.
-At the exact pair, a stale entry, an entry that names a different method, or a
-whole-path removal rejects the comparison. Each approval is printed separately
-in text mode and listed in `approved_removals` in JSON mode.
+At the exact pair, a stale entry or an entry that names a different method
+rejects the comparison. A whole path may disappear only when every operation it
+declared is individually registered for that exact pair; the path-level finding
+is then replaced by one approval per registered operation. A path with any
+unregistered operation still rejects. Each approval is printed separately in
+text mode and listed in `approved_removals` in JSON mode.
 
 New entries must add matching negative cases and update the frozen assertion in
 [`tests/contract/test_approved_http_operation_removals.py`](../../tests/contract/test_approved_http_operation_removals.py).
+
+## Approved parameter removals
+
+A declared parameter may be removed only through the literal
+`_APPROVED_PARAMETER_REMOVALS` registry. Each key is exact: source, path,
+method, baseline version, current version, parameter location and parameter
+name; the value names the approving issue and reason. Only the exact
+`parameter removed: <location> <name>` finding is filtered. The entry is active
+only for its exact version pair and never covers another parameter, operation,
+path or version. A missing finding rejects the entry instead of passing
+silently. Each approval is printed as `approved parameter removal:` and listed
+in `approved_parameter_removals` in JSON mode. New entries must add matching
+negative cases and update the frozen assertion in
+[`tests/contract/test_approved_http_parameter_and_response_changes.py`](../../tests/contract/test_approved_http_parameter_and_response_changes.py).
+
+## Approved response-schema replacements
+
+A response body may be replaced only through the literal
+`_APPROVED_RESPONSE_REPLACEMENTS` registry. Each key is exact: source, path,
+method, response status, baseline version and current version. The value names
+the approving issue and reason plus the exact raw baseline and current schema
+references. The entry is active only for its exact version pair; the response
+must still exist on both sides, the raw schema references must match exactly,
+and every response field except `content` and `description` must be unchanged.
+Only findings under that exact response pointer are filtered. A request-body,
+parameter, header or other-status change still rejects. Each approval is
+printed as `approved response replacement:` and listed in
+`approved_response_replacements` in JSON mode. New entries must add matching
+negative cases and update the frozen assertion in
+[`tests/contract/test_approved_http_parameter_and_response_changes.py`](../../tests/contract/test_approved_http_parameter_and_response_changes.py).
 
 ## What the check establishes
 

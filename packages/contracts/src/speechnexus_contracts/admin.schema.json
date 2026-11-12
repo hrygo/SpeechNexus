@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "AdminContracts",
-  "x-nexus-bindings-version": "0.1.0.dev7",
+  "x-nexus-bindings-version": "0.1.0.dev8",
   "x-nexus-entrypoints": [
     "WorkspaceCreateRequest",
     "WorkspacePatch",
@@ -15,7 +15,9 @@
     "ProfilePublishedRevision",
     "ModelBindingActivationRequest",
     "ResourcePool",
-    "ResourcePoolList"
+    "ResourcePoolList",
+    "CapacityManifestRecord",
+    "QualificationReportRecord"
   ],
   "$defs": {
     "WorkspaceCreateRequest": {
@@ -2200,6 +2202,61 @@
           }
         }
       }
+    },
+    "CapacityManifestRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "digest", "recorded_at", "source"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "digest": {
+          "$ref": "#/$defs/Sha256Digest",
+          "description": "SHA-256 of the authoritative capacity manifest document bytes."
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the deployment recorded this evidence identity."
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^release-evidence://[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9._-]*/capacity-manifest\\.json$",
+          "description": "Release-evidence locator of the authoritative document:\n`release-evidence://<engine>/<evidence-bundle>/capacity-manifest.json`.\nIt maps to `deploy/engines/<engine>/evidence/<evidence-bundle>/` and\nis resolved offline by scripts/dev-env/verify-release-evidence.py.\nThe response never embeds or copies the document body.\n"
+        }
+      }
+    },
+    "Sha256Digest": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+    },
+    "QualificationReportRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "digest", "recorded_at", "source"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "digest": {
+          "$ref": "#/$defs/Sha256Digest",
+          "description": "SHA-256 of the authoritative qualification report document bytes."
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the deployment recorded this evidence identity."
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^release-evidence://[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9._-]*/qualification-report\\.json$",
+          "description": "Release-evidence locator of the authoritative document:\n`release-evidence://<engine>/<evidence-bundle>/qualification-report.json`.\nIt maps to `deploy/engines/<engine>/evidence/<evidence-bundle>/` and\nis resolved offline by scripts/dev-env/verify-release-evidence.py.\nThe response never embeds or copies the document body.\n"
+        }
+      }
     }
   },
   "anyOf": [
@@ -2241,6 +2298,12 @@
     },
     {
       "$ref": "#/$defs/ResourcePoolList"
+    },
+    {
+      "$ref": "#/$defs/CapacityManifestRecord"
+    },
+    {
+      "$ref": "#/$defs/QualificationReportRecord"
     }
   ]
 }

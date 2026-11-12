@@ -37,9 +37,6 @@ KNOWN_UNSERVED_ADMIN_OPERATIONS = frozenset(
         ("/v1/nexus/admin/model-bindings/{binding_id}/publications", "post"),
         ("/v1/nexus/admin/model-instances", "get"),
         ("/v1/nexus/admin/model-instances/{instance_id}/generations/{generation}", "get"),
-        ("/v1/nexus/admin/policies", "get"),
-        ("/v1/nexus/admin/policies/{policy_id}", "get"),
-        ("/v1/nexus/admin/policies/{policy_id}", "patch"),
         ("/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/retirements", "post"),
         ("/v1/nexus/admin/qualification-reports/{report_id}", "get"),
         ("/v1/nexus/audit-events", "get"),
@@ -197,7 +194,7 @@ def test_profile_surface_does_not_advertise_other_admin_methods_or_change_worksp
     actual = contract()
     assert actual == generator().bundle_http_surface(CONFIG)
     validate(actual)
-    assert actual["info"]["version"] == "0.1.0.dev7"
+    assert actual["info"]["version"] == "0.1.0.dev8"
     assert set(actual["paths"]) == set(CONFIG["paths"])
     assert set(actual["paths"]["/v1/nexus/admin/profiles"]) == {"post"}
     assert set(actual["paths"]["/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}"]) == {

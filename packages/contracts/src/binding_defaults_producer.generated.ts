@@ -1075,7 +1075,7 @@ export interface components {
         "application/json": components["schemas"]["ErrorResponse"];
       };
     };
-    /** @description Invalid binding, capacity, qualification, or policy composition. */
+    /** @description Invalid binding, capacity, or qualification composition. */
     UnprocessableEntity: {
       headers: {
         [name: string]: unknown;

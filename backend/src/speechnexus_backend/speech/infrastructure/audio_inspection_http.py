@@ -13,13 +13,26 @@ other either deletes valid content or retries invalid content forever:
 * a permanent content verdict (``invalid_media``, ``unsupported_media``,
   ``media_limit_exceeded``) raises ``AssetError`` with a ``422`` public code
   before any Asset row exists, so no metadata, object or event is written;
-* an infrastructure outcome (``busy``, ``deadline_exceeded``, an unreachable or
-  timing-out inspector) raises ``asset_inspection_busy``, which is the only
-  retryable Asset ``503``;
+* the inspector answering ``busy``, ``unavailable`` or ``deadline_exceeded``
+  raises ``asset_inspection_busy``, the only retryable Asset ``503``: the
+  service is alive and states that it could not serve this request now;
 * a configuration or protocol refusal (``bad_request``, ``unauthorized``,
-  ``encoded_too_large``, an unparsable or invalid receipt) raises
+  ``encoded_too_large``, an unparsable or invalid receipt) and *every transport
+  failure* (connection refused or reset, connect or read timeout) raise
   ``asset_inspection_unavailable``: retrying cannot fix a deployment that cannot
-  speak this protocol.
+  serve this protocol, and an endpoint that cannot be reached is in practice
+  indistinguishable from one that was never configured.
+
+``error.retryable`` and ``X-Should-Retry`` answer different questions and are
+deliberately not kept in sync: ``retryable`` says a *new logical upload* may
+succeed, while ``X-Should-Retry: false`` suppresses automatic SDK replay of the
+same transport request whose body may no longer be available. A retryable
+``busy`` therefore still answers ``X-Should-Retry: false``.
+
+A purpose this adapter does not serve is neither an outage nor a content
+verdict: it raises ``asset_inspection_purpose_unsupported`` so the caller can
+tell "this deployment cannot inspect that purpose" apart from "no audio
+inspector is installed at all", which stays ``asset_inspection_unavailable``.
 
 No response body, header, token or input fragment is ever propagated: the
 failure envelope's ``status`` string is the only private value that is read.
@@ -103,9 +116,12 @@ def _service_unavailable() -> NoReturn:
 
 
 class HttpAudioAssetInspector:
-    """Decode ``asr_input`` audio through the private inspection endpoint.
+    """Decode ``asr_input`` and ``voice_reference`` audio through the endpoint.
 
-    The port is unchanged: one bounded ``BinaryIO``, one policy, one result. This
+    Both audio purposes take the same protocol, container and receipt path; each
+    one carries its own media duration ceiling, because a reference clip and an
+    ASR input are different assets with unrelated admissible ranges. The port is
+    unchanged: one bounded ``BinaryIO``, one policy, one result. This
     implementation owns an HTTP connection pool and no local process, so it
     performs no retry, no fallback to the text inspector, and writes nothing.
     """
@@ -161,8 +177,14 @@ class HttpAudioAssetInspector:
     def inspect(self, purpose: AssetPurpose, body: BinaryIO, policy: AssetPolicy) -> Inspection:
         if purpose == "text_input":
             return self._text.inspect(purpose, body, policy)
-        if purpose != "asr_input":
-            return Inspection(available=False)
+        if purpose not in ("asr_input", "voice_reference"):
+            # A purpose this adapter does not serve is a deployment capability
+            # gap, neither an outage nor a content verdict. It gets its own code
+            # so a caller can tell it apart from an inspector that is not
+            # assembled at all; falling through would decode an unaudited
+            # purpose against the wrong budget.
+            raise AssetError("asset_inspection_purpose_unsupported")
+        budget_ms = self._duration_budget(purpose, policy)
         if self._closed:
             # The runtime is being dismantled. No local work exists to finish and
             # the replacement process will serve a new request.
@@ -175,12 +197,26 @@ class HttpAudioAssetInspector:
         if payload is None or self._cancelled():
             return Inspection(available=False)
         content, digest = payload
-        status_code, raw = self._exchange(content)
+        status_code, raw = self._exchange(content, budget_ms)
         if self._cancelled():
             return Inspection(available=False)
         if status_code != 200:
             raise AssetError(self._failure_code(raw))
-        return self._receipt(raw, digest, len(content))
+        return self._receipt(raw, digest, len(content), budget_ms)
+
+    def _duration_budget(self, purpose: AssetPurpose, policy: AssetPolicy) -> int:
+        """The media ceiling this request is inspected and revalidated against.
+
+        ``max_duration_ms`` is this adapter's ASR decode budget. A reference clip
+        is bounded by the policy instead: it is a different asset whose
+        admissible range (1-60 s, fixed by the clone policy) is unrelated to one
+        utterance of input. The same number travels as the protocol's per-request
+        budget and is revalidated against the receipt, so what the inspector
+        enforced and what this process checks cannot drift apart.
+        """
+        if purpose == "voice_reference":
+            return policy.max_reference_duration_ms
+        return self._max_duration_ms
 
     def close(self) -> bool:
         """Close the pool and refuse new inspections.
@@ -220,7 +256,7 @@ class HttpAudioAssetInspector:
             return None
         return bytes(buffer), digest.hexdigest()
 
-    def _exchange(self, content: bytes) -> tuple[int, bytes]:
+    def _exchange(self, content: bytes, budget_ms: int) -> tuple[int, bytes]:
         request = self._client.build_request(
             "POST",
             self._url,
@@ -231,19 +267,25 @@ class HttpAudioAssetInspector:
                 "Content-Type": "application/octet-stream",
                 "Authorization": "Bearer " + self._token.get_secret_value(),
                 "X-Nexus-Deadline-Ms": str(self._wall_ms),
-                "X-Nexus-Max-Duration-Ms": str(self._max_duration_ms),
+                "X-Nexus-Max-Duration-Ms": str(budget_ms),
             },
         )
         try:
             response = self._client.send(request, stream=True)
         except httpx.HTTPError, OSError:
-            # Unreachable, reset or timed out. One attempt only; the caller issues
-            # a new request. Inspection writes no state, so this is retryable.
-            raise AssetError("asset_inspection_busy") from None
+            # No verdict was obtained: the connection was refused, reset or never
+            # established, or the reply never arrived. None of that is the
+            # inspector saying "busy", and the dominant cause is a wrong endpoint
+            # or a process that is not running, so this is the non-retryable
+            # deployment fault. Reporting it as retryable would disguise a dead
+            # configuration as capacity and invite a permanent retry loop.
+            raise AssetError("asset_inspection_unavailable") from None
         try:
             return response.status_code, self._read_bounded(response)
         except httpx.HTTPError, OSError:
-            raise AssetError("asset_inspection_busy") from None
+            # The status line arrived but the receipt did not. Still no verdict,
+            # and still a transport fault rather than a capacity signal.
+            raise AssetError("asset_inspection_unavailable") from None
         finally:
             response.close()
 
@@ -278,7 +320,7 @@ class HttpAudioAssetInspector:
             return "asset_inspection_unavailable"
         return _STATUS_CODES.get(status, "asset_inspection_unavailable")
 
-    def _receipt(self, raw: bytes, digest: str, encoded_bytes: int) -> Inspection:
+    def _receipt(self, raw: bytes, digest: str, encoded_bytes: int, budget_ms: int) -> Inspection:
         """Revalidate the receipt against locally computed facts.
 
         Nothing self-reported is trusted until it matches the bytes this process
@@ -309,7 +351,7 @@ class HttpAudioAssetInspector:
             or receipt["sha256"] != "sha256:" + digest
             or receipt["encoded_bytes"] != encoded_bytes
             or receipt["media_type"] != RECIPE_MEDIA_TYPE
-            or receipt["duration_ms"] > self._max_duration_ms
+            or receipt["duration_ms"] > budget_ms
             or receipt["duration_ms"]
             != (receipt["source_samples"] * 1000 + receipt["sample_rate_hz"] - 1)
             // receipt["sample_rate_hz"]

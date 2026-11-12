@@ -62,6 +62,22 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
 }
 
 
+# Refusals that keep a frozen public code but must stay diagnosable: the public
+# error vocabulary is a caller-visible interface, so an inspector that serves
+# some purposes and not others reports the same non-retryable `503` family and
+# carries the cause in `param` (the request field that would have to change) and
+# in a fixed message. This is what tells it apart from `asset_inspection_
+# unavailable` with `param: null`, which means no audio inspector is assembled at
+# all. Values are (public code, param, message) and none is derived from input.
+_REFUSALS: dict[str, tuple[str, str, str]] = {
+    "asset_inspection_purpose_unsupported": (
+        "asset_inspection_unavailable",
+        "purpose",
+        "Asset inspection does not support this asset purpose.",
+    ),
+}
+
+
 # Only a temporary inspector capacity or deadline outcome may be retried. Every
 # other Asset error states that repeating the same request cannot succeed, and
 # `X-Should-Retry` stays false for all of them: it suppresses automatic SDK
@@ -81,9 +97,14 @@ def asset_error(
     # Operation ID. An asset-only pending upload must never invent one.
     if code == "operation_in_progress":
         code = "asset_upload_in_progress"
-    if code not in _ERRORS:
-        code = "asset_service_unavailable"
-    status, kind, message = _ERRORS[code]
+    refusal = _REFUSALS.get(code)
+    if refusal is not None:
+        code, param, message = refusal
+        status, kind, _ = _ERRORS[code]
+    else:
+        if code not in _ERRORS:
+            code = "asset_service_unavailable"
+        status, kind, message = _ERRORS[code]
     response_headers = {"Cache-Control": "no-store", "X-Should-Retry": "false", **(headers or {})}
     if code == "asset_ingress_full":
         response_headers["Retry-After"] = "1"

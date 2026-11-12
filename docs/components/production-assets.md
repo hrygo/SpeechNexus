@@ -24,7 +24,13 @@ default `text` keeps `asr_input`/`voice_reference` unavailable with
 `AssetInspector` that speaks the frozen internal protocol
 (`contracts/internal/asset-inspection.openapi.yaml`, see the
 [container design](asset-inspection-container.md)) to the separate,
-outbound-free `asset-inspector` deployment unit. The audio kind requires
+outbound-free `asset-inspector` deployment unit. Both audio purposes use that
+same protocol and container: an ASR input and a clone reference are decoded by
+the same recipe and differ only in the media duration ceiling each one is
+inspected against. A purpose the assembled inspector does not serve is refused
+with the same non-retryable `503 asset_inspection_unavailable`, but with
+`param: purpose` and a message naming the purpose, so a capability gap is not
+mistaken for a deployment that cannot inspect at all. The audio kind requires
 `SPEECHNEXUS_ASSET_INSPECTION_URL` and `SPEECHNEXUS_ASSET_INSPECTION_TOKEN`. A
 missing, unusable or self-contradictory prerequisite fails api startup naming
 that variable; it never falls back to text. The reverse mismatch is rejected
@@ -185,28 +191,47 @@ default), `SPEECHNEXUS_ASSET_INSPECTION_TOKEN` (private bearer, no default),
 `SPEECHNEXUS_ASSET_INSPECTION_MAX_RESPONSE_BYTES` (4096). The URL must be an
 `http(s)` origin without a path, query or embedded credentials; the inspection
 path is fixed by the protocol. API-side policy stays here:
-`SPEECHNEXUS_AUDIO_INSPECTION_MAX_DURATION_MS` (default 120000),
-`SPEECHNEXUS_AUDIO_INSPECTION_MAX_INPUT_BYTES` (25 MiB),
-`SPEECHNEXUS_AUDIO_INSPECTION_WALL_SECONDS` (10, sent as the decode budget) and
-`SPEECHNEXUS_AUDIO_INSPECTION_MAX_RECEIPT_BYTES` (4096). The receipt read bound
-is the smaller of that bound and
+`SPEECHNEXUS_AUDIO_INSPECTION_MAX_DURATION_MS` (default 120000, the ASR decode
+budget), `SPEECHNEXUS_AUDIO_INSPECTION_MAX_REFERENCE_DURATION_MS` (default
+60000, bounds 1000-60000), `SPEECHNEXUS_AUDIO_INSPECTION_MAX_INPUT_BYTES`
+(25 MiB), `SPEECHNEXUS_AUDIO_INSPECTION_WALL_SECONDS` (10, sent as the decode
+budget) and `SPEECHNEXUS_AUDIO_INSPECTION_MAX_RECEIPT_BYTES` (4096). The receipt
+read bound is the smaller of that bound and
 `SPEECHNEXUS_ASSET_INSPECTION_MAX_RESPONSE_BYTES`. `_MEMORY_BYTES`,
 `_CPU_SECONDS` and `_OUTPUT_BYTES` belong to the inspector container
 (`SPEECHNEXUS_INSPECTION_*`) and have no effect here. Blank values forwarded by
 Compose mean unconfigured. These settings install no image, host package or
 sandbox policy.
 
+The two duration ceilings are separate settings because the two assets have
+unrelated admissible ranges. A clone reference is bounded by the gateway's
+frozen clone policy (`min_reference_audio_ms`/`max_reference_audio_ms`, default
+1000-60000 in `deploy/private/gateway-file-voice-clone.example.json`), so the
+reference ceiling spans exactly 1-60 s: an operator may narrow it to bound
+storage, and the upper bound cannot be raised above the range a clone would
+accept. Without that bound an over-long reference would become `ready` and then
+be refused by every clone call. Both ceilings travel as the protocol's
+per-request `X-Nexus-Max-Duration-Ms` budget and are revalidated against the
+receipt, so what the inspector enforced and what the API checked are the same
+number.
+
 A required inspection failure is projected onto the frozen public codes: an
-unparsable or revalidation-failing receipt, a bad bearer and a byte-cap mismatch
-are the non-retryable `503 asset_inspection_unavailable`; a busy inspector, an
-expired decode deadline, an unreachable endpoint or a read timeout are the
-retryable `503 asset_inspection_busy`; `422 invalid_asset_audio` and
+unparsable or revalidation-failing receipt, a bad bearer, a byte-cap mismatch
+and every transport failure (connection refused or reset, connect or read
+timeout) are the non-retryable `503 asset_inspection_unavailable`; an inspector
+that answers `busy`, `unavailable` or `deadline_exceeded` is the retryable
+`503 asset_inspection_busy`; `422 invalid_asset_audio` and
 `422 asset_audio_too_long` are permanent content verdicts. An unsupported media
-type belongs to the content family: the ingress bounds only the byte count, so a
-format this deployment does not accept is the caller's file and retrying it
-cannot succeed. `X-Should-Retry` stays `false` for every Asset
+type also belongs to the content family: the ingress bounds only the byte count,
+so a format this deployment does not accept is the caller's file and retrying it
+cannot succeed. An unreachable
+endpoint is treated as a deployment fault because it is indistinguishable from
+a missing one: reporting it as retryable would turn a dead configuration into a
+permanent retry loop. `X-Should-Retry` stays `false` for every Asset
 503, so an SDK never replays the transport request; only `error.retryable`
-permits a new logical upload.
+permits a new logical upload. The two are deliberately not kept in sync:
+`retryable: true` with `X-Should-Retry: false` states that a *new* request may
+succeed while replaying *this* one may not.
 
 Asset endpoints accept only configured `asset_allowed_hosts` (default
 `localhost`, `127.0.0.1`, `::1`). Requests carrying Origin require an exact

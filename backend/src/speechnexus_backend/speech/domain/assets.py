@@ -14,6 +14,14 @@ type UploadPhase = Literal["reserved", "writing", "settled"]
 MAX_SAFE = 2**53 - 1
 MAX_TTL = 31536000
 MAX_ASSET_BYTES = 4 * 1024 * 1024
+# A clone reference this deployment can actually use. The gateway's frozen
+# clone policy admits 1-60 s of reference audio (`MIN/MAX_REFERENCE_AUDIO_MS` in
+# `speechnexus_gateway.domain.voice_clone`), so a longer `voice_reference`
+# upload could only produce a `ready` asset that every clone call must refuse.
+# The upload ceiling therefore spans exactly the range the consumer accepts, and
+# an operator may narrow it (never widen it) to bound storage.
+MIN_REFERENCE_DURATION_MS = 1000
+MAX_REFERENCE_DURATION_MS = 60000
 IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]\Z")
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 
@@ -45,6 +53,10 @@ class AssetPolicy:
     default_ttl_seconds: int | None
     max_bytes: int = MAX_ASSET_BYTES
     max_text_characters: int = 1000000
+    # Purpose-specific media ceiling. `asr_input` keeps its own decode budget in
+    # the inspector adapter; a reference clip is bounded here because it is a
+    # different asset with a different admissible range.
+    max_reference_duration_ms: int = MAX_REFERENCE_DURATION_MS
 
     def __post_init__(self) -> None:
         if self.default_ttl_seconds is not None:
@@ -53,6 +65,13 @@ class AssetPolicy:
         # multipart uploads also requires durable per-part cleanup identities.
         counter(self.max_bytes, minimum=1, maximum=MAX_ASSET_BYTES)
         counter(self.max_text_characters, minimum=1, maximum=1000000)
+        # A ceiling below the shortest admissible reference would refuse every
+        # clone input; one above the longest would admit clips no clone accepts.
+        counter(
+            self.max_reference_duration_ms,
+            minimum=MIN_REFERENCE_DURATION_MS,
+            maximum=MAX_REFERENCE_DURATION_MS,
+        )
 
 
 @dataclass(frozen=True, slots=True)

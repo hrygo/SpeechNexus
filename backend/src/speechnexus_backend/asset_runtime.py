@@ -240,7 +240,11 @@ class AssetRuntime:
             self._metadata,
             self._objects,
             self.inspector,
-            AssetPolicy(settings.asset_default_ttl_seconds, settings.asset_max_bytes),
+            AssetPolicy(
+                default_ttl_seconds=settings.asset_default_ttl_seconds,
+                max_bytes=settings.asset_max_bytes,
+                max_reference_duration_ms=settings.audio_inspection_max_reference_duration_ms,
+            ),
         )
 
     def open(self) -> None:

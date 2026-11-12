@@ -12255,6 +12255,90 @@
         "source": "release-evidence://file-asr-audio/gb10-20261027/qualification-report.json",
         "scenarios": []
       }
+    },
+    {
+      "id": "admin-ModelBindingSummary-valid",
+      "profile": "admin",
+      "schema": "ModelBindingSummary",
+      "valid": true,
+      "value": {
+        "binding_id": "asr-quality",
+        "latest_revision": "2",
+        "current_revision": "1",
+        "logical_model": "whisper-large-v3",
+        "tasks": [
+          "asr_file"
+        ],
+        "release_tier": "production",
+        "publication_status": "draft"
+      }
+    },
+    {
+      "id": "admin-ModelBindingSummary-internal-field",
+      "profile": "admin",
+      "schema": "ModelBindingSummary",
+      "valid": false,
+      "value": {
+        "binding_id": "asr-quality",
+        "latest_revision": "2",
+        "current_revision": "1",
+        "logical_model": "whisper-large-v3",
+        "tasks": [
+          "asr_file"
+        ],
+        "release_tier": "production",
+        "publication_status": "draft",
+        "revision_id": "binding-asr-quality-2"
+      }
+    },
+    {
+      "id": "admin-ModelBindingList-valid",
+      "profile": "admin",
+      "schema": "ModelBindingList",
+      "valid": true,
+      "value": {
+        "object": "nexus.list",
+        "data": [
+          {
+            "binding_id": "asr-quality",
+            "latest_revision": "2",
+            "current_revision": "1",
+            "logical_model": "whisper-large-v3",
+            "tasks": [
+              "asr_file"
+            ],
+            "release_tier": "production",
+            "publication_status": "draft"
+          }
+        ],
+        "has_more": false,
+        "next_cursor": null
+      }
+    },
+    {
+      "id": "admin-ModelBindingList-internal-revision-identity",
+      "profile": "admin",
+      "schema": "ModelBindingList",
+      "valid": false,
+      "value": {
+        "object": "nexus.list",
+        "data": [
+          {
+            "binding_id": "asr-quality",
+            "latest_revision": "2",
+            "current_revision": "1",
+            "logical_model": "whisper-large-v3",
+            "tasks": [
+              "asr_file"
+            ],
+            "release_tier": "production",
+            "publication_status": "draft",
+            "revision_id": "binding-asr-quality-2"
+          }
+        ],
+        "has_more": false,
+        "next_cursor": null
+      }
     }
   ]
 }

@@ -255,7 +255,11 @@ engine, GPU or end-to-end asynchronous acceptance.
 也不会自动扩旧角色权限。固定 binding GET 另需
 `SPEECHNEXUS_BINDING_ADMIN_READER_DATABASE_URL`：一个只读非 owner 角色，可 SELECT
 binding 历史、`speech_publications` 与证据表。未配置时 GET 返回
-`503 binding_unavailable`，不会把已发布 revision 谎报为 draft。
+`503 binding_unavailable`，不会把已发布 revision 谎报为 draft。绑定列表另需
+`SPEECHNEXUS_BINDING_LIST_READER_DATABASE_URL`：只读非 owner 角色，可 SELECT
+`speech_binding_families`、`speech_binding_revisions`、`speech_publications`、
+`speech_publication_heads` 与 `speech_publication_retirements`；启动逐表校验
+SELECT 且拒绝任何写权限，未配置时列表返回 `503 model_binding_service_unavailable`。
 
 公开 Job 提交与读取默认关闭。应用 `0017_job_submissions` 并为非 owner 角色授予
 `speech_jobs` / `speech_job_events` / `speech_job_submissions` 的最小写入权限及发布事实

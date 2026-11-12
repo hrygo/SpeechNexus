@@ -517,8 +517,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ModelBindingList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/BindingListMethodNotAllowed"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
     post:
@@ -1221,6 +1227,17 @@ components:
   responses:
     BadRequest:
       description: Malformed request or unknown field.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    BindingListMethodNotAllowed:
+      description: The model binding collection accepts GET for the list and POST for drafts.
+      headers:
+        Allow:
+          required: true
+          schema:
+            type: string
       content:
         application/json:
           schema:

@@ -19,7 +19,7 @@ class DraftIngress:
         app: ASGIApp,
         *,
         prefix: str,
-        target: Callable[[str], tuple[str, str] | None],
+        target: Callable[[str, str], tuple[str, str] | None],
         error: Callable[..., Response],
         create_operation: str,
         read_operation: str,
@@ -52,7 +52,7 @@ class DraftIngress:
             await self._app(scope, receive, send)
             return
         request_id = scope["state"]["request_id"]
-        selected = self._target(path)
+        selected = self._target(path, scope["method"])
         operation = selected[0] if selected else None
 
         async def refuse(code: str, *, allow: str | None = None) -> None:

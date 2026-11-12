@@ -61,6 +61,8 @@
         "ProfileActivationRequest",
         "ProfilePublishedRevision",
         "ModelBindingActivationRequest",
+        "ModelBindingSummary",
+        "ModelBindingList",
         "ResourcePool",
         "ResourcePoolList",
         "CapacityManifestRecord",
@@ -368,12 +370,14 @@
       "paths": [
         "/v1/nexus/workspaces",
         "/v1/nexus/workspaces/{workspace_id}",
-        "/v1/nexus/admin/resource-pools"
+        "/v1/nexus/admin/resource-pools",
+        "/v1/nexus/admin/model-bindings"
       ],
       "operations": [
         "listWorkspaces",
         "getWorkspace",
-        "listResourcePools"
+        "listResourcePools",
+        "listModelBindings"
       ]
     },
     "runtime": {

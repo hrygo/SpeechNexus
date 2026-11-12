@@ -4,7 +4,8 @@ import { createHttpValidator } from "./http-runtime.mjs";
 import bundle from "./speechnexus_contracts/admin-http.schema.json" with { type: "json" };
 import type { paths } from "./admin.generated";
 export { ContractValidationError } from "./errors.mjs";
-export type HttpOperation = "listWorkspaces" | "getWorkspace" | "listResourcePools";
+export type HttpOperation =
+  "listWorkspaces" | "getWorkspace" | "listResourcePools" | "listModelBindings";
 type HttpPaths = {
   "/v1/nexus/workspaces": Pick<paths["/v1/nexus/workspaces"], "parameters" | "get">;
   "/v1/nexus/workspaces/{workspace_id}": Pick<
@@ -13,6 +14,10 @@ type HttpPaths = {
   >;
   "/v1/nexus/admin/resource-pools": Pick<
     paths["/v1/nexus/admin/resource-pools"],
+    "parameters" | "get"
+  >;
+  "/v1/nexus/admin/model-bindings": Pick<
+    paths["/v1/nexus/admin/model-bindings"],
     "parameters" | "get"
   >;
 };

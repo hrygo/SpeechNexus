@@ -144,6 +144,65 @@
           }
         }
       }
+    },
+    "/v1/nexus/admin/model-bindings": {
+      "get": {
+        "tags": ["model-bindings"],
+        "operationId": "listModelBindings",
+        "summary": "List model binding families and their current revisions",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["draft", "published", "retired", "disabled"]
+            }
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Model binding families.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelBindingList"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "405": {
+            "$ref": "#/components/responses/BindingListMethodNotAllowed"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -876,6 +935,105 @@
       "External_shared_capability_domains_schema_json_ServiceClass": {
         "type": "string",
         "enum": ["realtime", "interactive", "batch"]
+      },
+      "ModelBindingList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["object", "data", "has_more", "next_cursor"],
+        "properties": {
+          "object": {
+            "const": "nexus.list"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelBindingSummary"
+            }
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "ModelBindingSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "binding_id",
+          "latest_revision",
+          "current_revision",
+          "logical_model",
+          "tasks",
+          "release_tier",
+          "publication_status"
+        ],
+        "properties": {
+          "binding_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "latest_revision": {
+            "$ref": "#/components/schemas/Revision",
+            "description": "Highest immutable revision in this binding family."
+          },
+          "current_revision": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Revision"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Active revision used for new work; null when the family has never been published or its current revision was retired."
+          },
+          "logical_model": {
+            "type": "string"
+          },
+          "tasks": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/External_model_binding_schema_json_SpeechTaskKind"
+            }
+          },
+          "release_tier": {
+            "$ref": "#/components/schemas/ReleaseTier"
+          },
+          "publication_status": {
+            "type": "string",
+            "enum": ["draft", "published", "retired", "disabled"],
+            "description": "Publication status of latest_revision. A newer draft can coexist with a different current_revision."
+          }
+        }
+      },
+      "External_model_binding_schema_json_SpeechTaskKind": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_SpeechTaskKind"
+      },
+      "External_shared_capability_domains_schema_json_SpeechTaskKind": {
+        "type": "string",
+        "enum": [
+          "asr_realtime",
+          "asr_full_segment_review",
+          "asr_file",
+          "tts_realtime",
+          "tts_file",
+          "voice_design",
+          "voice_clone",
+          "voice_validation",
+          "forced_alignment",
+          "speaker_diarization",
+          "vad"
+        ]
+      },
+      "ReleaseTier": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_ReleaseTier"
+      },
+      "External_shared_capability_domains_schema_json_ReleaseTier": {
+        "type": "string",
+        "enum": ["experimental", "best_effort", "production"]
       }
     },
     "responses": {
@@ -921,6 +1079,24 @@
       },
       "NotFound": {
         "description": "Resource not found.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "BindingListMethodNotAllowed": {
+        "description": "The model binding collection accepts GET for the list and POST for drafts.",
+        "headers": {
+          "Allow": {
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
         "content": {
           "application/json": {
             "schema": {

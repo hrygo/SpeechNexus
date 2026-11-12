@@ -452,3 +452,57 @@ port. Binding publication and head selection use the separate lifecycle paths
 described above; merged default-parameter resolution and actual engine/quality
 evidence remain separate acceptance. This port neither publishes nor activates
 revisions and does not rewrite historical Jobs.
+
+## Administrative model binding list
+
+`GET /v1/nexus/admin/model-bindings` lists every binding family without
+selecting a revision. The ordering is ascending by `binding_id`, and that is the
+whole key: `binding_id` is unique by construction, so the order is total and no
+tie can occur — there is no secondary or tie-breaking term over a revision
+number, a status or an insertion time, and `SELECT` never inherits the physical
+row order. A page whose keys are not strictly ascending, or that repeats a key,
+is rejected as unavailable instead of being silently re-sorted. `limit` defaults
+to the contract's 50 and is bounded to 100; `status` filters to `draft`,
+`published`, `retired` or `disabled`. The cursor encodes the last emitted
+`binding_id` and the selected status, and a cursor issued under one filter is
+rejected under another instead of silently skipping rows. A filtered page that
+happens to end at the last matching family, and an empty collection, both return
+`has_more: false` and `next_cursor: null`.
+
+Each row is projected from one family, its immutable latest revision document,
+the publication row for that exact revision, its retirement tombstone and the
+publication head:
+
+| Wire field | Source |
+| --- | --- |
+| `binding_id` | `speech_binding_families.binding_id` |
+| `latest_revision` | `speech_binding_families.latest_revision` |
+| `current_revision` | `speech_publication_heads.revision` for the family, else `null` |
+| `logical_model`, `tasks`, `release_tier` | `speech_binding_revisions.definition_json` |
+| `publication_status` | publication row plus retirement `mode` (see below) |
+
+`publication_status` is `draft` without a publication row for the latest
+revision, `published` with one and no tombstone, `retired` for a `retire`
+tombstone and `disabled` for a `disable` tombstone. A head revision that does not
+match the latest revision is a rollback and reports `draft`; a head that does
+match but has no publication row, a missing revision document, a digest mismatch
+or an unreadable document is treated as unavailable rather than guessed. One
+unreadable family fails the whole page with `503
+model_binding_service_unavailable`, so a broken row is never silently omitted.
+
+The read path is a fourth layer pair (`BindingSummaryReads` in application,
+`PostgresBindingSummaryReads` in infrastructure) behind the same contract-derived
+DTO validation as other admin reads. It uses its own read-only identity
+(`SPEECHNEXUS_BINDING_LIST_READER_DATABASE_URL`); startup verifies schema usage,
+rejects schema `CREATE` and foreign-relation privileges, and requires `SELECT`
+with no write privilege on exactly the five relations above. Without a readable
+surface the route returns `503`; malformed query values, a body, repeated
+parameters or a cursor that does not decode return `400` and never `503`.
+
+The projection compares keys in two places: PostgreSQL's `ORDER BY`/keyset
+predicate and the ascending check in the service. Both agree because
+`binding_id` is restricted to `[a-z0-9._:-]` and the cluster collation is
+byte-ordered (`bootstrap.sh` and the CI cluster use `C.UTF-8`). A deployment on a
+linguistic collation would order punctuation differently from the service's code
+point comparison; such a page is rejected as `503` rather than returned out of
+order. Use a `C`/`C.UTF-8` database for this surface.

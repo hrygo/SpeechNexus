@@ -9,11 +9,12 @@ from unittest.mock import Mock
 import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
+from speechnexus_contracts.admin_http import validate_response as validate_admin_response
 from speechnexus_contracts.binding_http import validate_response
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.domain.binding_drafts import BindingDraft, BindingDraftResult
-from speechnexus_backend.speech.interfaces.http.binding_errors import CREATE, READ
+from speechnexus_backend.speech.interfaces.http.binding_errors import CREATE, LIST, READ
 from speechnexus_backend.speech.interfaces.http.binding_ingress import CREATE_PATH, BindingIngress
 from tests.support.binding_examples import binding_request
 from tests.unit.backend.test_health import _settings
@@ -57,7 +58,11 @@ def client(port: Any = None, **settings: Any) -> AsyncClient:
 def error(response: Any, status: int, operation: str = CREATE) -> dict[str, Any]:
     assert response.status_code == status, response.text
     body = response.json()
-    validate_response(operation, status, {"body": body, "headers": dict(response.headers)})
+    envelope = {"body": body, "headers": dict(response.headers)}
+    if operation == LIST:
+        validate_admin_response(operation, status, envelope)
+    else:
+        validate_response(operation, status, envelope)
     assert body["error"]["request_id"] == response.headers["X-Request-ID"]
     assert response.headers["Cache-Control"] == "no-store"
     return cast(dict[str, Any], body["error"])
@@ -128,7 +133,7 @@ async def test_complete_definition_semantics_and_ambiguous_headers_are_rejected(
     [
         ("POST", PATH, 403, {"Host": "foreign.test"}),
         ("GET", GET, 403, {"Origin": "null"}),
-        ("GET", PATH, 405, {}),
+        ("PUT", PATH, 405, {}),
         ("POST", GET, 405, {}),
         ("POST", PATH + "/", 400, {}),
         ("POST", PATH + "/publish", 400, {}),
@@ -144,10 +149,11 @@ async def test_ingress_refusals_are_source_declared_without_writes(
     port = provider()
     async with client(port) as http:
         response = await http.request(method, path, headers=headers)
-        operation = READ if "/revisions/" in path else CREATE
+        operation = READ if "/revisions/" in path else (CREATE if method == "POST" else LIST)
         error(response, status, operation)
         if status == 405:
-            assert response.headers["Allow"] == ("GET" if operation == READ else "POST")
+            allowed = {READ: "GET", CREATE: "POST", LIST: "GET, POST"}
+            assert response.headers["Allow"] == allowed[operation]
     port.create.assert_not_called()
     port.get.assert_not_called()
 
@@ -188,7 +194,8 @@ async def test_only_source_binding_paths_are_exposed_with_namespaced_schemas() -
     paths = {p: v for p, v in document["paths"].items() if p.startswith(PATH)}
     revision = PATH + "/{binding_id}/revisions/{revision}"
     assert set(paths) == {PATH, revision, revision + "/retirements", revision + "/activations"}
-    assert set(paths[PATH]) == {"post"}
+    # The collection serves the draft create and the administrative list.
+    assert set(paths[PATH]) == {"get", "post"}
     assert set(paths[revision]) == {"get"}
     assert set(paths[revision + "/retirements"]) == {"post"}
     assert set(paths[revision + "/activations"]) == {"post"}

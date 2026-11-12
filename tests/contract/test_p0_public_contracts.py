@@ -2376,13 +2376,18 @@ def test_resource_pool_is_cross_node_and_quarantine_release_requires_evidence() 
     with pytest.raises(ValueError, match="observed after"):
         _assert_quarantine_release_semantics(release_request, release_before_observation)
 
-    unsorted_released_intents = {
+    # One lease carries at most one submit intent: ``submit_intents`` keeps
+    # ``UNIQUE (lease_id)``, so the response array is bounded rather than
+    # promising a multi-intent list the model cannot produce.
+    too_many_released_intents = {
         **release,
-        "released_submit_intent_ids": ["intent-z", "intent-a"],
+        "released_submit_intent_ids": ["intent-a", "intent-z"],
     }
-    release_validator.validate(unsorted_released_intents)
-    with pytest.raises(ValueError, match="not sorted"):
-        _assert_quarantine_release_semantics(release_request, unsorted_released_intents)
+    with pytest.raises(ValidationError):
+        release_validator.validate(too_many_released_intents)
+    no_released_intents = {**release, "released_submit_intent_ids": []}
+    release_validator.validate(no_released_intents)
+    _assert_quarantine_release_semantics(release_request, no_released_intents)
 
 
 def test_execution_stream_examples_and_unknown_field_rejection() -> None:

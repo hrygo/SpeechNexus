@@ -152,6 +152,12 @@ class Settings(BaseSettings):
     binding_receive_timeout_seconds: float = Field(default=5, gt=0, le=30)
     binding_transaction_timeout_seconds: float = Field(default=3, gt=0, le=30)
 
+    quarantine_release_database_url: SecretStr | None = Field(default=None, min_length=1)
+    quarantine_release_concurrency: int = Field(default=2, ge=1, le=4)
+    quarantine_release_receive_max_bytes: int = Field(default=16384, ge=1, le=262144)
+    quarantine_release_receive_timeout_seconds: float = Field(default=5, gt=0, le=30)
+    quarantine_release_transaction_timeout_seconds: float = Field(default=3, gt=0, le=30)
+
     job_writer_database_url: SecretStr | None = Field(default=None, min_length=1)
     job_admission_database_url: SecretStr | None = Field(default=None, min_length=1)
     voice_publisher_database_url: SecretStr | None = Field(default=None, min_length=1)
@@ -207,6 +213,7 @@ class Settings(BaseSettings):
         "binding_defaults_writer_database_url",
         "binding_admin_reader_database_url",
         "binding_lifecycle_database_url",
+        "quarantine_release_database_url",
         "job_writer_database_url",
         "job_admission_database_url",
         "voice_publisher_database_url",

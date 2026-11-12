@@ -16,7 +16,8 @@ export type HttpOperation =
   | "listAuditEvents"
   | "getCapacityManifest"
   | "getQualificationReport"
-  | "getDiagnostics";
+  | "getDiagnostics"
+  | "releaseQuarantinedAdmissionLease";
 type HttpPaths = {
   "/v1/nexus/workspaces": Pick<paths["/v1/nexus/workspaces"], "parameters" | "get" | "post">;
   "/v1/nexus/workspaces/{workspace_id}": Pick<
@@ -49,6 +50,10 @@ type HttpPaths = {
     "parameters" | "get"
   >;
   "/v1/nexus/admin/diagnostics": Pick<paths["/v1/nexus/admin/diagnostics"], "parameters" | "get">;
+  "/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases": Pick<
+    paths["/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases"],
+    "parameters" | "post"
+  >;
 };
 const validator = createHttpValidator(bundle);
 export function validateRequest<T>(operation: HttpOperation, value: T): T {

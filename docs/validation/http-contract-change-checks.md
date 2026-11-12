@@ -8,7 +8,7 @@ fake behavior and upgrade impact, followed by consumer verification.
 
 | Source | Version and paths checked on 2026-11-13 | Compared surface |
 | --- | --- | --- |
-| admin-openapi.yaml | 0.1.0.dev10; 23 paths | All declared paths, including request/response Nexus fields |
+| admin-openapi.yaml | 0.1.0.dev11; 23 paths | All declared paths, including request/response Nexus fields |
 | workbench-openapi.yaml | 0.1.0.dev2; 41 paths | All declared paths |
 | internal/runtime-control.openapi.yaml | 0.1.0.dev1; 5 paths | All declared paths |
 | internal/execution-control.openapi.yaml | 0.4.0.dev1; 9 paths | All declared paths |

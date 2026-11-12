@@ -33,6 +33,7 @@ from speechnexus_backend.pronunciation_runtime import (
     PronunciationRuntime,
     PronunciationWriterRuntime,
 )
+from speechnexus_backend.quarantine_release_runtime import QuarantineReleaseRuntime
 from speechnexus_backend.resource_pool_runtime import ResourcePoolRuntime
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.artifacts import ArtifactService
@@ -58,6 +59,9 @@ from speechnexus_backend.speech.application.pronunciation_drafts import (
     PronunciationWriter,
 )
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
+from speechnexus_backend.speech.application.quarantine_releases import (
+    QuarantineReleaseService,
+)
 from speechnexus_backend.speech.application.readiness import (
     ReadinessProbe,
     ReadinessService,
@@ -124,6 +128,9 @@ from speechnexus_backend.speech.interfaces.http.pronunciations import (
     PronunciationIngress,
     create_pronunciation_router,
     pronunciation_http_contract,
+)
+from speechnexus_backend.speech.interfaces.http.quarantine_releases import (
+    create_quarantine_release_router,
 )
 from speechnexus_backend.speech.interfaces.http.resource_pools import (
     create_resource_pool_router,
@@ -246,6 +253,7 @@ def create_app(
     job_confirmation: JobCancellationService | None = None,
     speech: SpeechSynthesis | None = None,
     transcriptions: Transcription | None = None,
+    quarantine_releases: QuarantineReleaseService | None = None,
 ) -> FastAPI:
     """Create an API instance with explicit dependencies for tests and deployment."""
 
@@ -310,6 +318,20 @@ def create_app(
         if audit_events is not None:
             return audit_events
         return audit_runtime.service if audit_runtime is not None else None
+
+    quarantine_release_runtime = (
+        QuarantineReleaseRuntime(resolved_settings)
+        if quarantine_releases is None
+        and resolved_settings.quarantine_release_database_url is not None
+        else None
+    )
+
+    def get_quarantine_releases() -> QuarantineReleaseService | None:
+        if quarantine_releases is not None:
+            return quarantine_releases
+        return (
+            quarantine_release_runtime.service if quarantine_release_runtime is not None else None
+        )
 
     model_instance_runtime = (
         ModelInstanceRuntime(resolved_settings)
@@ -550,6 +572,9 @@ def create_app(
             if audit_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, audit_runtime.close)
                 await run_in_threadpool(audit_runtime.open)
+            if quarantine_release_runtime is not None:
+                resources.push_async_callback(run_in_threadpool, quarantine_release_runtime.close)
+                await run_in_threadpool(quarantine_release_runtime.open)
             if model_instance_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, model_instance_runtime.close)
                 await run_in_threadpool(model_instance_runtime.open)
@@ -708,6 +733,13 @@ def create_app(
     app.include_router(create_binding_lifecycle_router(get_binding_lifecycle))
     app.include_router(create_binding_evidence_router(get_binding_evidence))
     app.include_router(create_diagnostics_router(resolved_readiness))
+    app.include_router(
+        create_quarantine_release_router(
+            get_quarantine_releases,
+            max_bytes=resolved_settings.quarantine_release_receive_max_bytes,
+            receive_timeout_seconds=resolved_settings.quarantine_release_receive_timeout_seconds,
+        )
+    )
     # Declared operations without an owning feature answer one stable 503
     # instead of a framework 404 that reads like "unknown resource".
     app.include_router(create_unimplemented_router())

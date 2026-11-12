@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SpeechNexus administration API",
-    "version": "0.1.0.dev10",
+    "version": "0.1.0.dev11",
     "description": "Deployment-scoped administration and observation API. These routes do not\nestablish a user identity, role, or tenant boundary. A deployment may expose\nthem on a separate listener or route allowlist, but the API itself must not\npretend that hiding a navigation entry is authorization.\n\nModel binding revisions and runtime instances are separate resources.\nCapacity manifest and qualification report documents stay in the release\nevidence chain; the admin API exposes only the identity facts the\npublication evidence table records: the evidence identifier, the document\ndigest when the publishing path recorded one, and the first recording time.\nIt exposes no release-evidence locator because no column stores one. No\nresponse exposes private artifact paths, engine endpoints, credentials, or\narbitrary container control.\n"
   },
   "security": [
@@ -630,6 +630,67 @@
           }
         }
       }
+    },
+    "/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases": {
+      "post": {
+        "tags": ["quarantine"],
+        "operationId": "releaseQuarantinedAdmissionLease",
+        "summary": "Release an irrecoverably unconfirmed lease after operator verification",
+        "description": "This is the explicit operator recovery path for a quarantined admission\nlease. The deployment uses it only after the execution gateway and node\ncontroller cannot produce machine-readable terminal evidence and an\noperator has independently verified that the old process or container is\ngone. The server must still atomically release the lease, engine slot,\nand host quarantine counters; recording evidence alone never frees\ncapacity. Machine-verifiable gateway/controller evidence is consumed by\nthe background reconciler and does not require this endpoint. Before\nbudget is released, every submit intent belonging to the lease must be\nclosed with complete cleanup evidence; the response lists those intents\nin lexicographic order. Each lease carries at most one submit intent, so\nthe released list holds zero or one identifier. `observed_at` is the operator-observed\ntermination time and must not be later than the server's\n`budget_released_at`.\n\nThe `Idempotency-Key` scope is the deployment and lease. Replaying the\nsame key and canonical evidence returns 200 with the original\n`budget_released_at`, sorted intent list, and `idempotent_replay: true`;\nreusing that key with any different evidence or reason returns 409\n`idempotency_conflict`. A lease already released by a background\nreconciler may be queried idempotently only when the supplied evidence\nmatches the stored release facts; otherwise the endpoint returns 409\n`quarantine_release_conflict`. Evidence and reason are persisted with\nthe release and never rewritten.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/LeaseIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuarantineReleaseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Quarantine released and capacity counters reconciled.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuarantineRelease"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -690,6 +751,14 @@
         "schema": {
           "type": "integer",
           "minimum": 1
+        }
+      },
+      "LeaseIdPath": {
+        "name": "lease_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/Identifier"
         }
       }
     },
@@ -2320,6 +2389,96 @@
                   "type": ["string", "null"]
                 }
               }
+            }
+          }
+        }
+      },
+      "QuarantineReleaseRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["evidence_kind", "evidence_digest", "observed_at", "reason"],
+        "properties": {
+          "evidence_kind": {
+            "type": "string",
+            "const": "operator_verified_instance_terminated"
+          },
+          "evidence_digest": {
+            "$ref": "#/components/schemas/Sha256Digest"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "pattern": "\\S"
+          }
+        }
+      },
+      "QuarantineRelease": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "lease_id",
+          "object",
+          "lease_state",
+          "cleanup_state",
+          "budget_released_at",
+          "evidence_kind",
+          "evidence_digest",
+          "evidence_observed_at",
+          "reason",
+          "idempotent_replay",
+          "released_submit_intent_ids"
+        ],
+        "properties": {
+          "lease_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "object": {
+            "const": "nexus.quarantine_release"
+          },
+          "lease_state": {
+            "type": "string",
+            "const": "released"
+          },
+          "cleanup_state": {
+            "type": "string",
+            "const": "complete"
+          },
+          "budget_released_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "evidence_kind": {
+            "type": "string",
+            "const": "operator_verified_instance_terminated"
+          },
+          "evidence_digest": {
+            "$ref": "#/components/schemas/Sha256Digest"
+          },
+          "evidence_observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "pattern": "\\S"
+          },
+          "idempotent_replay": {
+            "type": "boolean"
+          },
+          "released_submit_intent_ids": {
+            "type": "array",
+            "uniqueItems": true,
+            "maxItems": 1,
+            "description": "Sorted lexicographically for stable idempotent responses. Producer\nvalidation rejects unsorted or repeated values. One lease carries at\nmost one submit intent: the submission identity and its capacity\nreserve are one-to-one, so the array holds zero or one element.\n",
+            "items": {
+              "$ref": "#/components/schemas/Identifier"
             }
           }
         }

@@ -26,6 +26,22 @@ def check_lifecycle_command(command: ProfileLifecycleCommand) -> dict[str, Any]:
     ):
         raise ValueError("Inconsistent profile lifecycle command")
     body = intent["body"]
+    if command.operation == "retire":
+        # `reason` is optional in the shared RetirementRequest, so an omitted key
+        # stays omitted: replay compares the complete original intent, not a
+        # default that the caller never sent.
+        if "mode" not in body or set(body) - {"mode", "reason"}:
+            raise ValueError("Inconsistent profile lifecycle body")
+        mode, reason = body["mode"], body.get("reason")
+        if mode not in ("retire", "disable"):
+            raise ValueError("Invalid profile retirement mode")
+        if reason is not None and (not isinstance(reason, str) or len(reason) > 2000):
+            raise ValueError("Invalid profile retirement reason")
+        if mode == "disable" and (not isinstance(reason, str) or not 1 <= len(reason) <= 2000):
+            # The publication CHECK also requires a 1-2000 character reason, so a
+            # caller that reached this journal was already rejected by the source.
+            raise ValueError("Disabling a profile revision requires its reason")
+        return body
     expected_keys = {"expected_current_revision"}
     if command.operation == "publish":
         expected_keys |= {"expected_revision", "validation"}

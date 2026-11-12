@@ -155,3 +155,137 @@ def test_failed_result_write_rolls_back_publication_and_head(sandbox: Sandbox) -
     with pytest.raises(sqlite3.IntegrityError, match="synthetic failure"):
         s.port.mutate(s.publish())
     assert s.snapshot() == before
+
+
+def test_retirement_clears_the_current_pointer_and_replays_the_original_result(
+    sandbox: Sandbox,
+) -> None:
+    s = sandbox
+    identity = "caption-draft"
+    s.draft()
+    assert s.port.mutate(s.publish()).outcome == "completed"
+    retired = s.port.mutate(s.retirement({"mode": "retire"}, "retire-key"))
+    assert retired.outcome == "completed" and retired.publication is not None
+    publication = retired.publication
+    assert publication.status == "retired"
+    assert publication.retired_at_us is not None
+    assert publication.retired_at_us >= publication.published_at_us
+    assert publication.disabled_reason is None
+    assert (
+        s.admin.execute("SELECT current_revision FROM speech_profile_families").fetchall()[0][
+            "current_revision"
+        ]
+        is None
+    )
+    # The revision leaves new-reference lists but keeps its fixed history read.
+    assert s.port.list_publications(limit=5) == ([], False)
+    fixed = s.port.get_publication(identity, "1")
+    assert fixed is not None and fixed.status == "retired"
+    after = s.snapshot()
+    replay = s.port.mutate(s.retirement({"mode": "retire"}, "retire-key"))
+    assert replay.outcome == "replayed" and replay.publication == publication
+    assert s.snapshot() == after
+    # The same key cannot carry a changed mode or reason.
+    conflict = s.port.mutate(
+        s.retirement({"mode": "disable", "reason": "changed intent"}, "retire-key")
+    )
+    assert conflict.outcome == "conflict" and conflict.error_code == "idempotency_conflict"
+    assert s.snapshot() == after
+    # A new key on a terminal revision is a stable rejection, not a second write.
+    assert (
+        s.port.mutate(s.retirement({"mode": "retire"}, "terminal-key")).error_code
+        == "profile_not_published"
+    )
+    rejected = s.snapshot()
+    assert (
+        s.port.mutate(s.retirement({"mode": "retire"}, "terminal-key")).error_code
+        == "profile_not_published"
+    )
+    assert s.snapshot() == rejected
+
+
+def test_disable_records_its_reason_while_retirement_records_only_the_time(
+    sandbox: Sandbox,
+) -> None:
+    s = sandbox
+    s.draft()
+    assert s.port.mutate(s.publish()).outcome == "completed"
+    disabled = s.port.mutate(
+        s.retirement({"mode": "disable", "reason": "synthetic operator disable"}, "disable-key")
+    )
+    assert disabled.outcome == "completed" and disabled.publication is not None
+    publication = disabled.publication
+    assert publication.status == "disabled"
+    assert publication.disabled_reason == "synthetic operator disable"
+    assert publication.retired_at_us is None
+    row = s.admin.execute(
+        "SELECT status,retired_at_us,disabled_reason FROM speech_profile_publications"
+    ).fetchall()[0]
+    assert row == {
+        "status": "disabled",
+        "retired_at_us": None,
+        "disabled_reason": "synthetic operator disable",
+    }
+    # Both terminal modes remove the revision from new-reference selection.
+    assert s.port.list_publications(limit=5) == ([], False)
+    assert s.port.mutate(s.activate("1", None, "activate-disabled")).error_code == (
+        "profile_not_published"
+    )
+
+
+def test_retiring_a_non_current_revision_preserves_the_current_pointer(sandbox: Sandbox) -> None:
+    s = sandbox
+    s.draft()
+    assert s.port.mutate(s.publish()).outcome == "completed"
+    s.draft("2")
+    assert s.port.mutate(s.publish("2", "1", "publish-second")).outcome == "completed"
+    assert s.port.mutate(s.retirement({"mode": "retire"}, "retire-old")).outcome == "completed"
+    current = s.admin.execute("SELECT current_revision FROM speech_profile_families").fetchall()[0]
+    assert current["current_revision"] == "2"
+    assert [item[0].draft.revision for item in s.port.list_publications(limit=5)[0]] == ["2"]
+    assert s.port.mutate(s.retirement({"mode": "retire"}, "retire-current", "2")).outcome == (
+        "completed"
+    )
+    current = s.admin.execute("SELECT current_revision FROM speech_profile_families").fetchall()[0]
+    assert current["current_revision"] is None
+
+
+def test_retirement_requires_a_published_target(sandbox: Sandbox) -> None:
+    s = sandbox
+    s.draft()
+    assert (
+        s.port.mutate(s.retirement({"mode": "retire"}, "draft-key")).error_code
+        == "profile_not_published"
+    )
+    assert (
+        s.port.mutate(s.retirement({"mode": "disable", "reason": "x"}, "draft-disable")).error_code
+        == "profile_not_published"
+    )
+    assert (
+        s.port.mutate(s.retirement({"mode": "retire"}, "missing-key", "99")).error_code
+        == "profile_not_found"
+    )
+    assert (
+        s.admin.execute("SELECT current_revision FROM speech_profile_families").fetchall()[0][
+            "current_revision"
+        ]
+        is None
+    )
+
+
+@pytest.mark.parametrize("reason", ["", "x" * 2001])
+def test_the_stored_disable_state_requires_a_bounded_reason(sandbox: Sandbox, reason: str) -> None:
+    s = sandbox
+    s.draft()
+    assert s.port.mutate(s.publish()).outcome == "completed"
+    # The command boundary rejects these; the publication CHECK is the last line
+    # of defense for any other writer of the same table.
+    with pytest.raises(sqlite3.IntegrityError):
+        s.admin.execute(
+            "UPDATE speech_profile_publications SET status='disabled',"
+            "retired_at_us=NULL,disabled_reason=%s WHERE revision='1'",
+            (reason,),
+        )
+    assert s.admin.execute("SELECT status FROM speech_profile_publications").fetchall() == [
+        {"status": "published"}
+    ]

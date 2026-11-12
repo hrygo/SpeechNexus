@@ -24,6 +24,7 @@ from speechnexus_backend.speech.interfaces.http.profile_errors import profile_er
 from speechnexus_backend.speech.interfaces.profile_lifecycle import (
     prepare_profile_activation,
     prepare_profile_publication,
+    prepare_profile_retirement,
 )
 from speechnexus_backend.speech.interfaces.profile_publications import publication_to_wire
 
@@ -33,6 +34,7 @@ FIXED_PATH = PUBLIC_PATH + "/{profile_id}/revisions/{revision}"
 ADMIN_REVISION = "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}"
 PUBLISH = "publishProfileRevision"
 ACTIVATE = "activatePublishedProfileRevision"
+RETIRE = "retireProfileRevision"
 LIST = "listProfiles"
 PUBLISHED_LIST = "listPublishedProfiles"
 PUBLIC_READ = "getProfileRevision"
@@ -76,14 +78,16 @@ def _execute(
     def error(code: str) -> JSONResponse:
         return profile_error(code, request_id, operation=operation)
 
-    mutation = operation in (PUBLISH, ACTIVATE)
+    mutation = operation in (PUBLISH, ACTIVATE, RETIRE)
     try:
         (lifecycle_request if mutation else public_request)(operation, envelope)
         if mutation:
             path = envelope["path"]
-            prepare = (
-                prepare_profile_publication if operation == PUBLISH else prepare_profile_activation
-            )
+            prepare = {
+                PUBLISH: prepare_profile_publication,
+                ACTIVATE: prepare_profile_activation,
+                RETIRE: prepare_profile_retirement,
+            }[operation]
             command = prepare(
                 path["profile_id"],
                 path["revision"],
@@ -160,7 +164,7 @@ def create_profile_publications_router(
     def handler(operation: str) -> Callable[[Request], Awaitable[Response]]:
         async def handle(request: Request) -> Response:
             request_id = str(request.state.request_id)
-            mutation = operation in (PUBLISH, ACTIVATE)
+            mutation = operation in (PUBLISH, ACTIVATE, RETIRE)
             provider = get_provider()
             if provider is None:
                 return profile_error(
@@ -225,6 +229,7 @@ def create_profile_publications_router(
         (FIXED_PATH, PUBLIC_READ, "GET"),
         (ADMIN_REVISION + "/publications", PUBLISH, "POST"),
         (ADMIN_REVISION + "/activations", ACTIVATE, "POST"),
+        (ADMIN_REVISION + "/retirements", RETIRE, "POST"),
     ):
         router.add_api_route(path, handler(operation), methods=[method], operation_id=operation)
     return router

@@ -1,8 +1,8 @@
 # Private Profile lifecycle intent journal
 
 This is A-CONFIG-01/P2a in [A02 #21](https://github.com/hrygo/SpeechNexus/issues/21).
-It persists the complete original publish/activate intent prepared by the existing
-[P1a boundary](profile-lifecycle-contract.md). It does not publish, activate, decide
+It persists the complete original publish/activate/retire intent prepared by the existing
+[P1a boundary](profile-lifecycle-contract.md). It does not publish, activate, retire, decide
 eligibility, save a validation observation as authority, or return a public outcome.
 No HTTP route, production verifier or runtime writer is registered.
 
@@ -79,7 +79,7 @@ use the actual packaged migration/PG adapter and the same SQL/domain behavior
 through the existing test-only InnoDB driver. Test receipts are synthetic intents,
 not trusted quality or publication evidence. Named cases cover:
 
-- Original bytes and time across rebuilt adapters, both operations, missing-target
+- Original bytes and time across rebuilt adapters, all three operations, missing-target
   recording without publication effects, and distinct keyless preparations.
 - Same key/different CAS, target, operation or validation claims, plus actual
   unique-key waits for identical/different intentions with both commit and rollback.

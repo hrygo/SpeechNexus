@@ -29,6 +29,7 @@ from speechnexus_backend.speech.domain.profile_lifecycle import (
 from speechnexus_backend.speech.interfaces.profile_lifecycle import (
     prepare_profile_activation,
     prepare_profile_publication,
+    prepare_profile_retirement,
 )
 from tests.support.profile_examples import profile_request
 
@@ -288,3 +289,93 @@ def test_observation_never_publishes_or_freezes_future_eligibility() -> None:
     # is not a commit permission, stored result or independent quality evidence.
     with pytest.raises(ProfileUnavailableError):
         observe_publication_evidence(command, draft, UnavailableProfilePublicationVerifier())
+
+
+def test_retirement_preparation_freezes_its_own_complete_intent() -> None:
+    body = {"mode": "disable", "reason": "synthetic operator disable"}
+    command = prepare_profile_retirement("caption-draft", "1", body, "retirement-key")
+    assert command.operation == "retire"
+    assert check_lifecycle_command(command) == body
+    assert decode_document(command.intent) == {
+        "operation": "retire",
+        "profile_id": "caption-draft",
+        "revision": "1",
+        "body": body,
+    }
+    publication = prepare(key="retirement-key")
+    assert command.request_digest != publication.request_digest
+    assert command.key_digest == publication.key_digest
+    body["reason"] = "changed after preparation"
+    assert check_lifecycle_command(command) == {
+        "mode": "disable",
+        "reason": "synthetic operator disable",
+    }
+
+
+def test_retire_and_disable_are_distinct_intents_under_the_same_key() -> None:
+    retire = prepare_profile_retirement("caption-draft", "1", {"mode": "retire"}, "shared-key")
+    disable = prepare_profile_retirement(
+        "caption-draft", "1", {"mode": "disable", "reason": "synthetic"}, "shared-key"
+    )
+    assert retire.key_digest == disable.key_digest
+    assert retire.request_digest != disable.request_digest
+    assert check_lifecycle_command(retire) == {"mode": "retire"}
+    assert check_lifecycle_command(disable) == {"mode": "disable", "reason": "synthetic"}
+
+
+def test_an_omitted_reason_is_not_silently_normalized_to_null() -> None:
+    omitted = prepare_profile_retirement("caption-draft", "1", {"mode": "retire"}, "reason-key")
+    explicit = prepare_profile_retirement(
+        "caption-draft", "1", {"mode": "retire", "reason": None}, "reason-key"
+    )
+    assert check_lifecycle_command(omitted) == {"mode": "retire"}
+    assert check_lifecycle_command(explicit) == {"mode": "retire", "reason": None}
+    assert omitted.request_digest != explicit.request_digest
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},
+        {"reason": "missing mode"},
+        {"mode": None},
+        {"mode": "remove"},
+        {"mode": "disable"},
+        {"mode": "disable", "reason": None},
+        {"mode": "disable", "reason": ""},
+        {"mode": "disable", "reason": "x" * 2001},
+        {"mode": "retire", "reason": 7},
+        {"mode": "retire", "unknown": True},
+    ],
+)
+def test_retirement_rejects_source_invalid_modes_and_reasons(body: dict[str, Any]) -> None:
+    with pytest.raises(ContractValidationError, match=r"^Invalid profile lifecycle intent$"):
+        prepare_profile_retirement("caption-draft", "1", body, "invalid-retirement-key")
+
+
+def test_source_allows_an_empty_retire_reason_but_disable_requires_one() -> None:
+    command = prepare_profile_retirement(
+        "caption-draft", "1", {"mode": "retire", "reason": ""}, "empty-retire-reason-key"
+    )
+    assert check_lifecycle_command(command) == {"mode": "retire", "reason": ""}
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"reason": "mode was dropped"},
+        {"mode": "retire", "unknown": True},
+        {"mode": "remove"},
+        {"mode": "retire", "reason": 7},
+        {"mode": "retire", "reason": "x" * 2001},
+        {"mode": "disable"},
+    ],
+)
+def test_a_tampered_retirement_intent_is_rejected_before_any_write(body: dict[str, Any]) -> None:
+    command = prepare_profile_retirement("caption-draft", "1", {"mode": "retire"}, "tampered-key")
+    altered = replace(
+        command,
+        intent=encode_document({**decode_document(command.intent), "body": body}),
+    )
+    with pytest.raises(ValueError):
+        check_lifecycle_command(altered)

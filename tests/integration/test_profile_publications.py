@@ -40,6 +40,7 @@ from speechnexus_backend.speech.interfaces.profile_drafts import prepare_profile
 from speechnexus_backend.speech.interfaces.profile_lifecycle import (
     prepare_profile_activation,
     prepare_profile_publication,
+    prepare_profile_retirement,
 )
 
 pytestmark = pytest.mark.integration
@@ -99,6 +100,14 @@ class Sandbox:
         return prepare_profile_activation(
             profile_request()["profile_id"], revision, {"expected_current_revision": expected}, key
         )
+
+    def retirement(
+        self,
+        body: dict[str, Any],
+        key: str = "retirement-key",
+        revision: str = "1",
+    ) -> ProfileLifecycleCommand:
+        return prepare_profile_retirement(profile_request()["profile_id"], revision, body, key)
 
     def draft(self, revision: str = "1") -> None:
         result = self.port.create(
@@ -409,6 +418,21 @@ def test_writer_and_reader_privileges_and_real_runtime_fail_closed(sandbox: Sand
     ):
         with pytest.raises(psycopg.errors.InsufficientPrivilege), s.pool.connection() as connection:
             connection.execute(statement)
+    # The writer owns only the lifecycle columns retirement mutates; published
+    # evidence must stay non-updatable.
+    with s.pool.connection() as connection:
+        updatable = connection.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema=%s AND table_name='speech_profile_publications' "
+            "AND pg_catalog.has_column_privilege("
+            "CURRENT_USER,%s||'.'||table_name,column_name,'UPDATE') ORDER BY column_name",
+            (s.schema, s.schema),
+        ).fetchall()
+    assert updatable == [
+        {"column_name": "disabled_reason"},
+        {"column_name": "retired_at_us"},
+        {"column_name": "status"},
+    ]
     reader = s.role + "_read"
     s.admin.execute(f"CREATE ROLE \"{reader}\" LOGIN PASSWORD 'synthetic_profile_test'")
     try:
@@ -425,6 +449,7 @@ def test_writer_and_reader_privileges_and_real_runtime_fail_closed(sandbox: Sand
                 "SELECT * FROM speech_profile_lifecycle_intents",
                 "SELECT * FROM speech_profile_lifecycle_results",
                 "UPDATE speech_profile_families SET current_revision=NULL",
+                "UPDATE speech_profile_publications SET status='retired'",
             ):
                 with pytest.raises(psycopg.errors.InsufficientPrivilege):
                     connection.execute(statement)
@@ -495,6 +520,11 @@ def test_writer_and_reader_privileges_and_real_runtime_fail_closed(sandbox: Sand
                 'TO "{role}"'
             ],
             "cannot be updatable",
+        ),
+        (
+            "publication_table_update",
+            ['GRANT UPDATE ON "{schema}".speech_profile_publications TO "{role}"'],
+            "table-level UPDATE",
         ),
         (
             "foreign_insert",
@@ -692,3 +722,299 @@ def test_repeat_upgrade_and_refused_downgrade_preserve_history(sandbox: Sandbox)
         }
     finally:
         engine.dispose()
+
+
+def test_retirement_and_disable_are_distinct_durable_terminal_states(sandbox: Sandbox) -> None:
+    s = sandbox
+    s.draft()
+    assert s.port.mutate(s.publish()).outcome == "completed"
+    retired = s.port.mutate(s.retirement({"mode": "retire"}, "retire-pg-key"))
+    assert retired.outcome == "completed" and retired.publication is not None
+    publication = retired.publication
+    assert publication.status == "retired"
+    assert publication.retired_at_us is not None
+    assert publication.retired_at_us >= publication.published_at_us
+    assert publication.disabled_reason is None
+    row = s.admin.execute(
+        "SELECT status,retired_at_us,disabled_reason FROM speech_profile_publications"
+    ).fetchone()
+    assert row == {
+        "status": "retired",
+        "retired_at_us": publication.retired_at_us,
+        "disabled_reason": None,
+    }
+    assert s.admin.execute("SELECT current_revision FROM speech_profile_families").fetchone() == {
+        "current_revision": None
+    }
+    assert s.port.list_publications(limit=5) == ([], False)
+    fixed = s.port.get_publication(publication.draft.profile_id, "1")
+    assert fixed is not None and fixed.status == "retired"
+    after = s.snapshot()
+    replay = s.port.mutate(s.retirement({"mode": "retire"}, "retire-pg-key"))
+    assert replay.outcome == "replayed" and replay.publication == publication
+    assert s.port.recover_lifecycle(
+        s.retirement({"mode": "retire"}, "retire-pg-key")
+    ).publication == (publication)
+    assert s.snapshot() == after
+    conflict = s.port.mutate(
+        s.retirement({"mode": "disable", "reason": "changed intent"}, "retire-pg-key")
+    )
+    assert conflict.outcome == "conflict" and conflict.error_code == "idempotency_conflict"
+    assert s.snapshot() == after
+    assert (
+        s.port.mutate(s.retirement({"mode": "retire"}, "retire-terminal-key")).error_code
+        == "profile_not_published"
+    )
+    # The durable rejection is stable for a repeated key too.
+    rejected = s.snapshot()
+    assert (
+        s.port.mutate(s.retirement({"mode": "retire"}, "retire-terminal-key")).error_code
+        == "profile_not_published"
+    )
+    assert s.snapshot() == rejected
+
+
+def test_disable_records_its_reason_and_retiring_the_current_revision_clears_the_pointer(
+    sandbox: Sandbox,
+) -> None:
+    s = sandbox
+    s.draft()
+    assert s.port.mutate(s.publish()).outcome == "completed"
+    s.draft("2")
+    assert s.port.mutate(s.publish("2", "1", "publish-second")).outcome == "completed"
+    assert s.admin.execute("SELECT current_revision FROM speech_profile_families").fetchone() == {
+        "current_revision": "2"
+    }
+    disabled = s.port.mutate(
+        s.retirement({"mode": "disable", "reason": "synthetic operator disable"}, "disable-2", "2")
+    )
+    assert disabled.outcome == "completed" and disabled.publication is not None
+    assert disabled.publication.status == "disabled"
+    assert disabled.publication.disabled_reason == "synthetic operator disable"
+    assert disabled.publication.retired_at_us is None
+    row = s.admin.execute(
+        "SELECT status,retired_at_us,disabled_reason FROM speech_profile_publications "
+        "WHERE revision='2'"
+    ).fetchone()
+    assert row == {
+        "status": "disabled",
+        "retired_at_us": None,
+        "disabled_reason": "synthetic operator disable",
+    }
+    assert s.admin.execute("SELECT current_revision FROM speech_profile_families").fetchone() == {
+        "current_revision": None
+    }
+    # A non-current revision can also be disabled; the already-cleared pointer is
+    # left untouched rather than being re-derived from another revision.
+    assert s.port.mutate(
+        s.retirement({"mode": "disable", "reason": "historical"}, "disable-1", "1")
+    ).outcome == ("completed")
+    assert s.admin.execute("SELECT current_revision FROM speech_profile_families").fetchone() == {
+        "current_revision": None
+    }
+    assert s.port.list_publications(limit=5) == ([], False)
+    assert s.port.mutate(s.activate("1", None, "activate-disabled")).error_code == (
+        "profile_not_published"
+    )
+
+
+def test_concurrent_same_key_retirement_serializes_on_the_original_intent(
+    sandbox: Sandbox,
+) -> None:
+    s = sandbox
+    s.draft()
+    assert s.port.mutate(s.publish()).outcome == "completed"
+    command = s.retirement({"mode": "retire"}, "same-retirement-key")
+    blocker = psycopg.connect(s.url)
+    try:
+        blocker.execute(f'SET search_path TO "{s.schema}",pg_catalog')
+        blocker.execute("SELECT * FROM speech_profile_families FOR UPDATE").fetchall()
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            futures = [workers.submit(s.port.mutate, command) for _ in range(2)]
+            try:
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline:
+                    n = s.admin.execute(
+                        "SELECT count(*) AS n FROM pg_stat_activity WHERE usename=%s "
+                        "AND cardinality(pg_blocking_pids(pid))>0",
+                        (s.role,),
+                    ).fetchone()["n"]
+                    if n == 2:
+                        break
+                    time.sleep(0.01)
+                else:
+                    pytest.fail("Two actual independent PG lock waits were not observed")
+            finally:
+                blocker.rollback()
+            results = [f.result(timeout=5) for f in futures]
+        assert sorted(result.outcome for result in results) == ["completed", "replayed"]
+        assert all(result.publication is not None for result in results)
+        first = next(result.publication for result in results if result.outcome == "completed")
+        assert all(result.publication == first for result in results)
+        assert s.admin.execute("SELECT status FROM speech_profile_publications").fetchone() == {
+            "status": "retired"
+        }
+        assert s.admin.execute(
+            "SELECT current_revision FROM speech_profile_families"
+        ).fetchone() == {"current_revision": None}
+        assert s.admin.execute(
+            "SELECT count(*) AS n FROM speech_profile_lifecycle_results"
+        ).fetchone() == {"n": 2}
+    finally:
+        blocker.close()
+
+
+def test_concurrent_distinct_key_retirements_only_one_changes_the_facts(sandbox: Sandbox) -> None:
+    s = sandbox
+    s.draft()
+    assert s.port.mutate(s.publish()).outcome == "completed"
+    commands = [
+        s.retirement({"mode": "retire"}, "distinct-retire-" + suffix) for suffix in ("a", "b")
+    ]
+    blocker = psycopg.connect(s.url)
+    try:
+        blocker.execute(f'SET search_path TO "{s.schema}",pg_catalog')
+        blocker.execute("SELECT * FROM speech_profile_families FOR UPDATE").fetchall()
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            futures = [workers.submit(s.port.mutate, command) for command in commands]
+            try:
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline:
+                    n = s.admin.execute(
+                        "SELECT count(*) AS n FROM pg_stat_activity WHERE usename=%s "
+                        "AND cardinality(pg_blocking_pids(pid))>0",
+                        (s.role,),
+                    ).fetchone()["n"]
+                    if n == 2:
+                        break
+                    time.sleep(0.01)
+                else:
+                    pytest.fail("Two actual independent PG lock waits were not observed")
+            finally:
+                blocker.rollback()
+            results = [f.result(timeout=5) for f in futures]
+        assert sorted(result.outcome for result in results) == ["completed", "rejected"]
+        rejected = next(result for result in results if result.outcome == "rejected")
+        assert rejected.error_code == "profile_not_published"
+        assert s.admin.execute("SELECT status FROM speech_profile_publications").fetchone() == {
+            "status": "retired"
+        }
+    finally:
+        blocker.close()
+
+
+def test_real_runtime_serves_retirement_with_minimum_writer_grants(sandbox: Sandbox) -> None:
+    """The composed API answers the contract path with its real writer role."""
+    from fastapi.testclient import TestClient
+    from tests.unit.backend.test_health import _settings
+
+    from speechnexus_backend.app import create_app
+    from speechnexus_backend.settings import Settings
+
+    s = sandbox
+    identity = profile_request()["profile_id"]
+    s.draft()
+    assert s.port.mutate(s.publish()).outcome == "completed"
+    settings = Settings(
+        **{
+            **_settings().model_dump(),
+            "database_schema": s.schema,
+            "profile_writer_database_url": make_conninfo(
+                s.url, user=s.role, password="synthetic_profile_test"
+            ),
+            "asset_allowed_hosts": ("testserver",),
+        }
+    )
+    path = f"/v1/nexus/admin/profiles/{identity}/revisions/1/retirements"
+    with TestClient(create_app(settings=settings)) as http:
+        response = http.post(
+            path, json={"mode": "retire"}, headers={"Idempotency-Key": "runtime-retire-key"}
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["publication"] == {
+            "status": "retired",
+            "published_at": body["publication"]["published_at"],
+            "retired_at": body["publication"]["retired_at"],
+            "disabled_reason": None,
+        }
+        replay = http.post(
+            path, json={"mode": "retire"}, headers={"Idempotency-Key": "runtime-retire-key"}
+        )
+        assert replay.status_code == 200 and replay.json() == body
+        conflict = http.post(
+            path,
+            json={"mode": "disable", "reason": "changed intent"},
+            headers={"Idempotency-Key": "runtime-retire-key"},
+        )
+        assert conflict.status_code == 409
+        assert conflict.json()["error"]["code"] == "idempotency_conflict"
+        missing_reason = http.post(
+            path, json={"mode": "disable"}, headers={"Idempotency-Key": "runtime-disable-key"}
+        )
+        assert missing_reason.status_code == 400
+        assert missing_reason.json()["error"]["code"] == "invalid_profile_request"
+        missing = http.post(
+            f"/v1/nexus/admin/profiles/{identity}/revisions/99/retirements",
+            json={"mode": "retire"},
+            headers={"Idempotency-Key": "runtime-missing-key"},
+        )
+        assert missing.status_code == 404
+        assert missing.json()["error"]["code"] == "profile_not_found"
+        published = http.get("/v2/nexus/profiles")
+        assert published.status_code == 200 and published.json()["data"] == []
+        fixed = http.get(f"/v1/nexus/profiles/{identity}/revisions/1")
+        assert fixed.status_code == 200 and fixed.json()["publication"]["status"] == "retired"
+    assert s.admin.execute("SELECT current_revision FROM speech_profile_families").fetchone() == {
+        "current_revision": None
+    }
+
+
+def _publication_state_check(query: Any) -> str:
+    row = query.execute(
+        "SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint "
+        "WHERE conname='speech_profile_publications_check' "
+        "AND conrelid='speech_profile_publications'::regclass"
+    ).fetchone()
+    assert row is not None
+    return str(row["definition"])
+
+
+def test_profile_retirement_migration_widens_both_stored_checks() -> None:
+    """0050 admits ``retire`` and a bounded disable reason without rewriting rows."""
+    from alembic import command
+    from tests.integration.test_public_job_progress_migration_pg import _isolated_schema, _url
+
+    insert = (
+        "INSERT INTO speech_profile_lifecycle_intents "
+        "(key_digest,operation,profile_id,revision,intent_json,request_digest,recorded_at_us) "
+        "VALUES (%s,%s,'caption-draft','1','{}',%s,1)"
+    )
+    with _isolated_schema(_url()) as (config, query):
+        command.upgrade(config, "0050_profile_retirements")
+        assert "length(" in _publication_state_check(query)
+        query.execute(insert, ("sha256:" + "a" * 64, "retire", "sha256:" + "b" * 64))
+        assert query.execute(
+            "SELECT operation FROM speech_profile_lifecycle_intents"
+        ).fetchall() == [{"operation": "retire"}]
+        with pytest.raises(RuntimeError, match="require preservation"):
+            command.downgrade(config, "0049_workspace_commands")
+        assert query.execute("SELECT version_num FROM alembic_version").fetchone() == {
+            "version_num": "0050_profile_retirements"
+        }
+        query.execute("DELETE FROM speech_profile_lifecycle_intents")
+        command.downgrade(config, "0049_workspace_commands")
+        assert query.execute("SELECT version_num FROM alembic_version").fetchone() == {
+            "version_num": "0049_workspace_commands"
+        }
+        # The previous revision keeps the laxer state CHECK and the narrower
+        # operation CHECK, so a downgrade is a real reversal of both.
+        assert "length(" not in _publication_state_check(query)
+        with pytest.raises(psycopg.errors.CheckViolation):
+            query.execute(insert, ("sha256:" + "c" * 64, "retire", "sha256:" + "d" * 64))
+        command.upgrade(config, "head")
+        assert query.execute("SELECT version_num FROM alembic_version").fetchone() == {
+            "version_num": "0050_profile_retirements"
+        }
+        assert "length(" in _publication_state_check(query)
+        query.execute(insert, ("sha256:" + "c" * 64, "retire", "sha256:" + "d" * 64))

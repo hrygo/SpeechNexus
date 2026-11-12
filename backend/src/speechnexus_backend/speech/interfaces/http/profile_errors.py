@@ -103,7 +103,12 @@ def profile_error(
     if operation is not None:
         validate = (
             lifecycle_response
-            if operation in ("publishProfileRevision", "activatePublishedProfileRevision")
+            if operation
+            in (
+                "publishProfileRevision",
+                "activatePublishedProfileRevision",
+                "retireProfileRevision",
+            )
             else public_response
             if operation in ("listProfiles", "listPublishedProfiles", "getProfileRevision")
             else validate_response

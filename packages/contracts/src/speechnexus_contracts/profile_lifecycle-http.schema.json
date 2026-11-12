@@ -173,6 +173,95 @@
           "json": true
         }
       }
+    },
+    "retireProfileRevision": {
+      "path": "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/retirements",
+      "method": "post",
+      "request": "HttpRequest_retireProfileRevision",
+      "parameters": {
+        "path": {
+          "profile_id": "string",
+          "revision": "string"
+        },
+        "query": {},
+        "headers": {
+          "x-request-id": "string",
+          "idempotency-key": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_retireProfileRevision_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_retireProfileRevision_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_retireProfileRevision_401",
+          "headers": {},
+          "json": true
+        },
+        "403": {
+          "schema": "HttpResponse_retireProfileRevision_403",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_retireProfileRevision_404",
+          "headers": {},
+          "json": true
+        },
+        "405": {
+          "schema": "HttpResponse_retireProfileRevision_405",
+          "headers": {
+            "allow": "string"
+          },
+          "json": true
+        },
+        "408": {
+          "schema": "HttpResponse_retireProfileRevision_408",
+          "headers": {},
+          "json": true
+        },
+        "409": {
+          "schema": "HttpResponse_retireProfileRevision_409",
+          "headers": {},
+          "json": true
+        },
+        "413": {
+          "schema": "HttpResponse_retireProfileRevision_413",
+          "headers": {},
+          "json": true
+        },
+        "415": {
+          "schema": "HttpResponse_retireProfileRevision_415",
+          "headers": {},
+          "json": true
+        },
+        "422": {
+          "schema": "HttpResponse_retireProfileRevision_422",
+          "headers": {},
+          "json": true
+        },
+        "429": {
+          "schema": "HttpResponse_retireProfileRevision_429",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_retireProfileRevision_503",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        }
+      }
     }
   },
   "x-nexus-entrypoints": [
@@ -202,7 +291,21 @@
     "HttpResponse_activatePublishedProfileRevision_413",
     "HttpResponse_activatePublishedProfileRevision_415",
     "HttpResponse_activatePublishedProfileRevision_429",
-    "HttpResponse_activatePublishedProfileRevision_503"
+    "HttpResponse_activatePublishedProfileRevision_503",
+    "HttpRequest_retireProfileRevision",
+    "HttpResponse_retireProfileRevision_200",
+    "HttpResponse_retireProfileRevision_400",
+    "HttpResponse_retireProfileRevision_401",
+    "HttpResponse_retireProfileRevision_403",
+    "HttpResponse_retireProfileRevision_404",
+    "HttpResponse_retireProfileRevision_405",
+    "HttpResponse_retireProfileRevision_408",
+    "HttpResponse_retireProfileRevision_409",
+    "HttpResponse_retireProfileRevision_413",
+    "HttpResponse_retireProfileRevision_415",
+    "HttpResponse_retireProfileRevision_422",
+    "HttpResponse_retireProfileRevision_429",
+    "HttpResponse_retireProfileRevision_503"
   ],
   "$defs": {
     "Identifier": {
@@ -2268,6 +2371,46 @@
         }
       }
     },
+    "ProfileRevisionRetirementRequest": {
+      "$ref": "#/$defs/External_shared_lifecycle_schema_json_RetirementRequest"
+    },
+    "External_shared_lifecycle_schema_json_RetirementRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["retire", "disable"]
+        },
+        "reason": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "disable"
+              }
+            },
+            "required": ["mode"]
+          },
+          "then": {
+            "required": ["reason"],
+            "properties": {
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              }
+            }
+          }
+        }
+      ]
+    },
     "HttpRequest_publishProfileRevision": {
       "type": "object",
       "additionalProperties": false,
@@ -2767,6 +2910,273 @@
       "required": ["body"]
     },
     "HttpResponse_activatePublishedProfileRevision_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ProfileCreationUnknownError"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_retireProfileRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "profile_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "revision": {
+              "$ref": "#/$defs/Revision"
+            }
+          },
+          "required": ["profile_id", "revision"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "idempotency-key": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ProfileRevisionRetirementRequest"
+        }
+      },
+      "required": ["path", "body"]
+    },
+    "HttpResponse_retireProfileRevision_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_Root"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_retireProfileRevision_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_retireProfileRevision_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_retireProfileRevision_403": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_retireProfileRevision_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_retireProfileRevision_405": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "string",
+              "const": "POST"
+            }
+          },
+          "required": ["allow"],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpResponse_retireProfileRevision_408": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_retireProfileRevision_409": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_retireProfileRevision_413": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_retireProfileRevision_415": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_retireProfileRevision_422": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_retireProfileRevision_429": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_retireProfileRevision_503": {
       "type": "object",
       "additionalProperties": false,
       "properties": {

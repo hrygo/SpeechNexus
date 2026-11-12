@@ -253,9 +253,10 @@ revision is 409 `profile_not_published`, and a missing target is 404.
 A schema-valid caller report never establishes authority. Real qualification
 provider registration and MQE remain P-POLICY / M-QUALIFY work.
 
-The actual API profile composition now registers the canonical publication and
-activation POSTs plus `GET /v1/nexus/profiles`, `GET /v2/nexus/profiles` and the
-fixed public revision GET. All new paths use the existing Host/Origin policy,
+The actual API profile composition now registers the canonical publication,
+activation and retirement POSTs plus `GET /v1/nexus/profiles`,
+`GET /v2/nexus/profiles` and the fixed public revision GET. All new paths use the
+existing Host/Origin policy,
 bounded mutation receive buffers, no-store responses, strict source envelopes and
 generated validators. v1 keeps its original closed `ProfileSummary`/`ProfileList`
 shape; v2 adds the required nullable `current_revision` in
@@ -271,14 +272,17 @@ original-key mutation.
 
 Provisioning now combines `profile_draft_grants` with
 `profile_publication_grants`. The writer can insert immutable publication,
-intent and result facts and update only family allocation/current pointers and
-existing draft result columns. PostgreSQL also requires UPDATE on at least one
-column for `SELECT ... FOR UPDATE`; the writer therefore holds
-`UPDATE (key_digest)` on the intent journal solely to take the serializing row
-lock. Migration 0033 installs a `BEFORE UPDATE` trigger that rejects any actual
-intent modification, so the grant cannot rewrite a key or immutable history;
-`SELECT ... FOR UPDATE` does not fire that trigger. The writer cannot update
-publication/evidence/history, DELETE, TRUNCATE, perform DDL or access Job tables.
+intent and result facts, update only the publication lifecycle columns
+(`status`, `retired_at_us`, `disabled_reason`) plus family
+allocation/current pointers and existing draft result columns, and nothing
+else. Published evidence columns stay non-updatable. PostgreSQL also requires
+UPDATE on at least one column for `SELECT ... FOR UPDATE`; the writer therefore
+holds `UPDATE (key_digest)` on the intent journal solely to take the serializing
+row lock. Migration 0033 installs a `BEFORE UPDATE` trigger that rejects any
+actual intent modification, so the grant cannot rewrite a key or immutable
+history; `SELECT ... FOR UPDATE` does not fire that trigger. The writer cannot
+update publication evidence/history, DELETE, TRUNCATE, perform DDL or access Job
+tables.
 Startup checks both login and effective identities against this combined minimum.
 The check rejects a table-level `UPDATE` explicitly instead of relying on the
 exact column-set comparison to notice it, and it rejects column-level
@@ -310,9 +314,10 @@ No effective-configuration resolver, Job field or Web consumer is added here.
 
 `tests/integration/test_profile_publications.py` is the isolated PG entry for
 migration, restricted roles, original-result recovery and observed competing
-family-lock waits. It also observes two same-target activations behind one real
-`FOR UPDATE` family lock, asserts an unchanged row version and replays both
-original keys, and it rejects a role that holds table-level `UPDATE` or
+family-lock waits. It also observes two same-target activations and two same-key
+or distinct-key retirements behind one real `FOR UPDATE` family lock, asserts an
+unchanged row version, replays original keys, verifies that only the lifecycle
+columns are writable, and rejects a role that holds table-level `UPDATE` or
 column-level `REFERENCES` at startup. Its successful verifier is explicitly a
 **test double**.
 `tests/unit/test_profile_publications.py` executes the same product SQL on an
@@ -322,3 +327,39 @@ production verifier wiring, deployment topology, real engine use of a published
 pointer, or production publication qualification. The production verifier stays
 deliberately unavailable and fail-closed (503 `profile_result_unknown`), so no
 successful production publication path is claimed here.
+
+## Retirement and disable (#605)
+
+`POST .../revisions/{revision}/retirements` 承接契约的
+`retireProfileRevision`，请求体是共享的 `RetirementRequest`：必填 `mode`，
+可选 `reason`（最长 2000 字符）。两种模式的持久结果不同：
+
+- `mode=retire` 把发布事实置为 `retired`，写入 `retired_at_us`（不早于
+  `published_at_us`），`disabled_reason` 保持 NULL；`reason` 只进入不可变意图
+  账本，不产生响应字段，也不写发布行。
+- `mode=disable` 把发布事实置为 `disabled`，写入 `disabled_reason`（非空，
+  1–2000 字符），`retired_at_us` 保持 NULL。DDL 的状态 CHECK 与共享契约一致：
+  `disabled` 行的 `disabled_reason` 必须非空且不超过 2000 字符，迁移
+  `0050_profile_retirements` 同时重写该 CHECK 与意图账本的 operation CHECK，
+  不重写任何已存行。
+
+两种模式都只作用于 `status='published'` 的修订；草稿或已处于终态的修订返回
+409 `profile_not_published`，缺失的修订或家族返回 404 `profile_not_found`。
+当目标是家族当前指针时，同一事务把 `current_revision` 清为 NULL；非当前修订
+的终态化不动指针，也不自动回退到更早修订。固定的公开修订 GET 仍返回该修订
+及其 `retired`/`disabled` 发布事实，而 v1/v2 公开列表只选择 `published`
+修订，因此终态化的修订不再出现在新引用列表里。
+
+幂等沿用发布/激活的原始结果账本：相同 `Idempotency-Key` 且意图完全一致时，
+先于任何状态检查返回原始发布事实，即使修订此后已进入终态；相同键但
+`mode`/`reason`/操作不同则返回 409 `idempotency_conflict`，不写任何事实。
+并发同键请求在意图行上串行化，只有一个事务提交退休事实。启动期权限校验要求
+发布表可更新列恰好是 `status`/`retired_at_us`/`disabled_reason`；表级
+`UPDATE`、额外列或列级 `REFERENCES` 都会拒绝启动。
+
+退休与发布/激活共用同一有界 ingress，因此 Host/Origin 拒绝 403、方法拒绝 405
+（`Allow: POST`）、接收超时 408、字节超限 413、媒体类型 415、本地容量 429 以及
+写入端未配置或结果未知的 503 都由入口在解析请求体之前产生；`retirements` 的
+契约声明覆盖该集合，运行期用例分别以真实 `GET` 和未配置 provider 的 `POST`
+校验 `ProfileCreateMethodNotAllowed` 与 `ProfileLifecycleUnknown` 响应体，
+确认这些状态不会被响应校验打成 500。

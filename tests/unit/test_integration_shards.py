@@ -29,13 +29,20 @@ NODEIDS = sorted(
 )
 
 
+def coverage_data(directory: Path, index: int, *, payload: bytes | None = None) -> Path:
+    path = directory / f"coverage-{index}.data"
+    path.write_bytes(payload if payload is not None else f"coverage shard {index}".encode() * 8)
+    return path
+
+
 def reports(directory: Path, nodeids: list[str] = NODEIDS, count: int = 2) -> list[Path]:
     directory.mkdir(exist_ok=True)
     result = []
     for index in range(count):
         selected = GATE.partition(nodeids, index, count)
+        coverage = coverage_data(directory, index)
         data = {
-            "version": 1,
+            "version": 2,
             "source_head": HEAD,
             "shard_index": index,
             "shard_count": count,
@@ -53,6 +60,8 @@ def reports(directory: Path, nodeids: list[str] = NODEIDS, count: int = 2) -> li
             },
             "exit_code": 0,
             "executed": True,
+            "coverage_file": coverage.name,
+            "coverage_digest": hashlib.sha256(coverage.read_bytes()).hexdigest(),
             "elapsed_seconds": 10,
         }
         path = directory / f"integration-shard-{index}.json"
@@ -222,6 +231,10 @@ def test_complete_union_reports_skips_separately_from_passes(tmp_path: Path) -> 
         "bad-duration",
         "unknown-field",
         "unsorted-collection",
+        "missing-coverage-data",
+        "empty-coverage-data",
+        "changed-coverage-data",
+        "wrong-coverage-name",
     ],
 )
 def test_incomplete_or_conflicting_evidence_is_rejected(tmp_path: Path, case: str) -> None:
@@ -271,6 +284,14 @@ def test_incomplete_or_conflicting_evidence_is_rejected(tmp_path: Path, case: st
         data["elapsed_seconds"] = float("nan")
     elif case == "unknown-field":
         data["private_field"] = True
+    elif case == "missing-coverage-data":
+        (tmp_path / data["coverage_file"]).unlink()
+    elif case == "empty-coverage-data":
+        (tmp_path / data["coverage_file"]).write_bytes(b"")
+    elif case == "changed-coverage-data":
+        (tmp_path / data["coverage_file"]).write_bytes(b"replaced")
+    elif case == "wrong-coverage-name":
+        data["coverage_file"] = "coverage-9.data"
     else:
         data["collection"] = list(reversed(data["collection"]))
     paths[0].write_text(json.dumps(data))
@@ -392,6 +413,7 @@ def temp_project(directory: Path) -> tuple[Path, Path, dict[str, str]]:
     tests.mkdir(parents=True)
     (root / "pyproject.toml").write_text(
         '[tool.pytest.ini_options]\nmarkers = ["integration: synthetic integration"]\n'
+        '[tool.coverage.run]\nbranch = true\nsource = ["tests"]\n'
     )
     (tests / "test_primary.py").write_text("""import os
 import pytest
@@ -422,8 +444,11 @@ def test_pg_only(database):
         ],
     ):
         subprocess.run(command, cwd=root, check=True, capture_output=True)
-    env = os.environ.copy()
-    env.pop("PYTEST_ADDOPTS", None)
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith(("COV_CORE", "COVERAGE")) and key != "PYTEST_ADDOPTS"
+    }
     env["SPEECHNEXUS_TEST_DATABASE_URL"] = "synthetic-isolated-postgres"
     env["SPEECHNEXUS_TEST_MYSQL_URL"] = "synthetic-isolated-mysql"
     return root, target, env
@@ -441,6 +466,8 @@ def test_real_runner_does_not_hide_failure_or_mistake_collection_for_execution(
     ) -> subprocess.CompletedProcess[str]:
         flags = ["--collect-only"] if collect else []
         actual = {**env, "SYNTHETIC_FAIL_CASE": "1"} if fail else env
+        # Each execution must measure from scratch, exactly like a new job.
+        (directory / f"coverage-{index}.data").unlink(missing_ok=True)
         return subprocess.run(
             [
                 sys.executable,
@@ -452,6 +479,8 @@ def test_real_runner_does_not_hide_failure_or_mistake_collection_for_execution(
                 "2",
                 "--report",
                 str(paths[index]),
+                "--coverage-data",
+                str(directory / f"coverage-{index}.data"),
                 *flags,
             ],
             cwd=root,
@@ -479,6 +508,42 @@ def test_real_runner_does_not_hide_failure_or_mistake_collection_for_execution(
     assert failed_report["exit_code"] == 1
 
 
+def test_shard_fails_when_tests_pass_but_coverage_is_unusable(tmp_path: Path) -> None:
+    root, target, env = temp_project(tmp_path)
+    # Line-only data cannot feed a branch gate: passing tests must not outvote it.
+    (root / "pyproject.toml").write_text(
+        '[tool.pytest.ini_options]\nmarkers = ["integration: synthetic integration"]\n'
+        '[tool.coverage.run]\nbranch = false\nsource = ["tests"]\n'
+    )
+    report = tmp_path / "integration-shard-0.json"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(target),
+            "run",
+            "--index",
+            "0",
+            "--count",
+            "1",
+            "--report",
+            str(report),
+            "--coverage-data",
+            str(tmp_path / "coverage-0.data"),
+        ],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "no branches" in result.stderr
+    assert json.loads(report.read_text())["coverage_digest"] == ""
+    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+    with pytest.raises(ValueError, match="coverage"):
+        GATE.verify_reports([report], source_head=head, count=1)
+
+
 def test_resource_partition_runner_records_the_complete_synthetic_execution(tmp_path: Path) -> None:
     root, target, env = temp_project(tmp_path)
     (root / "tests/integration/test_example_browser.py").write_text(
@@ -500,6 +565,8 @@ def test_resource_partition_runner_records_the_complete_synthetic_execution(tmp_
                 "6",
                 "--report",
                 str(report),
+                "--coverage-data",
+                str(tmp_path / f"coverage-{index}.data"),
             ],
             cwd=root,
             env=env,
@@ -544,6 +611,8 @@ def test_environment_cannot_silently_select_a_partial_or_unconfigured_suite(
             "2",
             "--report",
             str(report),
+            "--coverage-data",
+            str(tmp_path / "coverage-0.data"),
         ],
         env=env,
         capture_output=True,
@@ -559,7 +628,7 @@ def test_integration_gate_names_describe_evidence_and_reject_missing_execution(r
     jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
     assert {
         "Gate: Python execution and static checks",
-        "Gate: six-shard integration evidence",
+        "Gate: six-shard integration evidence and merged coverage",
         "Gate: required checks for this change",
         "Web: lint, types, tests, build and accessibility",
         "Compose: configuration validation",
@@ -572,8 +641,8 @@ def test_integration_gate_names_describe_evidence_and_reject_missing_execution(r
     }
     assert set(shards["services"]) == {"postgres", "mysql"}
     gate = jobs["coordination"]
-    assert gate["needs"] == ["changes", "integration_shards"] and "always()" in gate["if"]
-    assert "needs.changes.outputs.mode == 'full'" in gate["if"]
+    assert gate["needs"] == ["changes", "python_checks", "integration_shards"]
+    assert "always()" in gate["if"] and "needs.changes.outputs.mode == 'full'" in gate["if"]
     condition = gate["steps"][0]["run"]
     executed = subprocess.run(
         ["bash", "-e", "-c", condition],
@@ -582,6 +651,17 @@ def test_integration_gate_names_describe_evidence_and_reject_missing_execution(r
         check=False,
     )
     assert (executed.returncode == 0) == (result == "success")
+    # The merged judgment needs the measured dataset too; a failed or skipped
+    # measurement job must stop this gate instead of judging a partial dataset.
+    measurement = gate["steps"][1]
+    for state in ("success", "failure", "skipped", "cancelled", ""):
+        executed = subprocess.run(
+            ["bash", "-e", "-c", measurement["run"]],
+            env={**os.environ, "MEASUREMENT_RESULT": state},
+            capture_output=True,
+            check=False,
+        )
+        assert (executed.returncode == 0) == (state == "success")
 
 
 def test_actual_node_http_consumer_gets_locked_tools_only_in_its_partition() -> None:
@@ -788,6 +868,7 @@ def test_every_shard_provisions_private_workbench_pg_without_replacing_dual_data
     assert "--pg-bin /usr/lib/postgresql/16/bin" in run["run"]
     assert '--integration-shard "${{ matrix.shard }}" --shard-count 6' in run["run"]
     assert '--shard-report "$RUNNER_TEMP/integration-shard-${{ matrix.shard }}.json"' in run["run"]
+    assert '--shard-coverage "$RUNNER_TEMP/coverage-${{ matrix.shard }}.data"' in run["run"]
     assert '--output "$RUNNER_TEMP/workbench-pg-shard-${{ matrix.shard }}.json"' in run["run"]
     assert "--collect-only" not in run["run"]
     assert "if" not in run and "continue-on-error" not in run
@@ -811,5 +892,6 @@ def test_every_shard_provisions_private_workbench_pg_without_replacing_dual_data
     assert evidence["with"]["path"].splitlines() == [
         "${{ runner.temp }}/integration-shard-${{ matrix.shard }}.json",
         "${{ runner.temp }}/workbench-pg-shard-${{ matrix.shard }}.json",
+        "${{ runner.temp }}/coverage-${{ matrix.shard }}.data",
     ]
     assert evidence["with"]["if-no-files-found"] == "error"

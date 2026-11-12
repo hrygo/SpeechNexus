@@ -195,13 +195,20 @@ def build_pytest_command(
 
 
 def build_integration_shard_command(
-    *, index: int, count: int, report: Path, progress: Path | None = None
+    *,
+    index: int,
+    count: int,
+    report: Path,
+    coverage_data: Path,
+    progress: Path | None = None,
 ) -> list[str]:
     """Delegate inventory, partitioning and same-head evidence to the canonical runner."""
     if type(count) is not int or not 1 <= count <= 16:
         raise ValueError("shard count must be within 1..16")
     if type(index) is not int or not 0 <= index < count:
         raise ValueError("shard index is outside the partition")
+    if coverage_data.name != f"coverage-{index}.data":
+        raise ValueError("shard coverage data must be named coverage-<index>.data")
     command = [
         sys.executable,
         "scripts/dev-env/integration-shards.py",
@@ -212,6 +219,8 @@ def build_integration_shard_command(
         str(count),
         "--report",
         str(report),
+        "--coverage-data",
+        str(coverage_data),
     ]
     if progress is not None:
         command.extend(["--progress", str(progress)])
@@ -320,6 +329,12 @@ def argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--shard-count", type=int, metavar="COUNT")
     parser.add_argument("--shard-report", type=Path, metavar="PATH")
+    parser.add_argument(
+        "--shard-coverage",
+        type=Path,
+        metavar="PATH",
+        help="coverage database the integration partition exports; named coverage-<index>.data",
+    )
     parser.add_argument("--python-shard", type=int)
     parser.add_argument("--python-shard-count", type=int)
     parser.add_argument("--python-shard-report", type=Path)
@@ -370,6 +385,10 @@ def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     if shard:
         if args.shard_count is None or args.shard_report is None:
             parser.error("--integration-shard requires --shard-count and --shard-report")
+        if args.shard_coverage is None:
+            # An integration partition that exports no coverage cannot contribute
+            # to the merged global gate, so this is not optional evidence.
+            parser.error("--integration-shard requires --shard-coverage")
         if args.workbench_runtime or args.browser or args.admin_workspaces:
             parser.error("integration shard mode cannot use runtime or browser probe selection")
         try:
@@ -377,6 +396,7 @@ def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
                 index=args.integration_shard,
                 count=args.shard_count,
                 report=args.shard_report,
+                coverage_data=args.shard_coverage,
             )
         except ValueError as error:
             parser.error(str(error))
@@ -388,6 +408,8 @@ def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
             parser.error("PG lifecycle --output must differ from --shard-report")
     elif args.shard_count is not None or args.shard_report is not None:
         parser.error("--shard-count and --shard-report require --integration-shard")
+    elif args.shard_coverage is not None:
+        parser.error("--shard-coverage requires --integration-shard")
     elif args.output is None:
         args.output = ROOT / ".runtime/team-c/c00-pg-probe.json"
     return args
@@ -840,11 +862,13 @@ def main() -> int:
                 index=args.integration_shard,
                 count=args.shard_count,
                 report=shard_report,
+                coverage_data=args.shard_coverage.resolve(),
                 progress=progress_path,
             )
             result["integration_shard"] = args.integration_shard
             result["shard_count"] = args.shard_count
             result["shard_report"] = str(shard_report)
+            result["shard_coverage"] = str(args.shard_coverage.resolve())
         else:
             command = build_pytest_command(
                 coverage=args.coverage,

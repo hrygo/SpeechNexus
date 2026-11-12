@@ -88,119 +88,248 @@ def reports(root: Path) -> list[Path]:
     return paths
 
 
-def test_file_affinity_has_a_complete_deterministic_balanced_union() -> None:
-    full = sorted(
-        f"tests/unit/test_{file}.py::test_{case}"
-        for file, count in enumerate((7, 5, 3, 1))
-        for case in range(count)
+def git_repository(root: Path) -> str:
+    for command in (
+        ["git", "init", "-q"],
+        ["git", "add", "."],
+        [
+            "git",
+            "-c",
+            "user.name=Synthetic CI",
+            "-c",
+            "user.email=synthetic@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-qm",
+            "synthetic",
+        ],
+    ):
+        subprocess.run(command, cwd=root, check=True, capture_output=True)
+    return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+
+
+def collected(root: Path, data: Path, code: str, name: str) -> Path:
+    """Real branch data from a real nested coverage run; never hand-written arcs."""
+    script = root / f"_probe_{name}.py"
+    script.write_text(code)
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith(("COV_CORE", "COVERAGE", "PYTEST_ADDOPTS"))
+    }
+    env["COVERAGE_FILE"] = str(data)
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "coverage",
+            "run",
+            "--branch",
+            "--rcfile",
+            str(root / "pyproject.toml"),
+            str(script),
+        ],
+        cwd=root,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
     )
-    lanes = [GATE.partition(full, index, 2) for index in range(2)]
-    assert [len(lane) for lane in lanes] == [8, 8]
-    assert sorted(lanes[0] + lanes[1]) == full
-    assert not set(lanes[0]).intersection(lanes[1])
-    assert GATE.partition(full, 0, 1) == full
-    for index in range(2):
-        assert GATE.partition(list(reversed(full)), index, 2) == lanes[index]
-        assert {item.split("::")[0] for item in lanes[index]}.isdisjoint(
-            item.split("::")[0] for item in lanes[1 - index]
+    return data
+
+
+def job_evidence(root: Path, head: str, *, workers: int = 2) -> tuple[Path, Path]:
+    (root / "app/integration.py").write_text("def handle(value):\n    return value + 1\n")
+    parts = root / "job-parts"
+    parts.mkdir(parents=True)
+    entries = []
+    for index in range(workers):
+        flag = "True" if index == 0 else "False"
+        copy = collected(
+            root,
+            parts / f"coverage-{index}.data",
+            f"from app.sample import choose\nassert choose({flag})\n",
+            f"job{index}",
         )
+        entries.append(
+            {"index": index, "file": copy.name, "digest": GATE.require_branch_data(copy)}
+        )
+    summary = {
+        "kind": "parallel-full-python-coverage",
+        "source_head": head,
+        "config_digest": GATE.digest(root / "pyproject.toml"),
+        "workers": workers,
+        "tests_passed": True,
+        "stopped": True,
+        "collected": len(NODEIDS),
+        "passed": len(NODEIDS),
+        "coverage_parts": entries,
+        "coverage_percent": 75.0,
+    }
+    path = root / "workbench-pg-coverage.json"
+    path.write_text(json.dumps(summary))
+    return path, parts
+
+
+def shard_evidence(root: Path, directory: Path, head: str, *, count: int = 2) -> None:
+    directory.mkdir(parents=True)
+    for index in range(count):
+        path = collected(
+            root,
+            directory / f"coverage-{index}.data",
+            "from app.integration import handle\nassert handle(1) == 2\n",
+            f"shard{index}",
+        )
+        report = {
+            "version": 2,
+            "source_head": head,
+            "shard_index": index,
+            "shard_count": count,
+            "collection_digest": "sha256:" + "0" * 64,
+            "collection": [f"tests/integration/test_demo.py::test_{item}" for item in range(4)],
+            "selected": [f"tests/integration/test_demo.py::test_{index}"],
+            "outcomes": {f"tests/integration/test_demo.py::test_{index}": "passed"},
+            "exit_code": 0,
+            "executed": True,
+            "coverage_file": path.name,
+            "coverage_digest": GATE.require_branch_data(path),
+            "elapsed_seconds": 1.0,
+        }
+        (directory / f"integration-shard-{index}.json").write_text(json.dumps(report))
+
+
+def combine_args(
+    root: Path, head: str, *, count: int = 2, probe_rcfile: Path | None = None
+) -> argparse.Namespace:
+    summary, parts = job_evidence(root, head)
+    integration = root / "integration"
+    shard_evidence(root, integration, head, count=count)
+    return argparse.Namespace(
+        job_summary=summary,
+        job_parts=parts,
+        integration_dir=integration,
+        count=count,
+        output=root / "merged",
+        probe_rcfile=probe_rcfile,
+    )
 
 
 @pytest.mark.parametrize(
-    "case",
+    "failure",
     [
-        "missing-worker",
-        "duplicate-worker",
-        "head",
-        "config",
-        "count",
-        "boolean-index",
-        "different-collection",
-        "wrong-partition",
-        "missing-outcome",
-        "skip",
-        "failure",
-        "collect-only",
-        "failed-exit",
-        "boolean-exit",
-        "changed-data",
-        "line-only",
-        "outside-runtime",
-        "nan-duration",
-        "extra-field",
-        "duplicate-json-field",
+        "missing-shard",
+        "missing-shard-data",
+        "changed-shard-data",
+        "stray-shard-data",
+        "missing-job-part",
+        "changed-job-part",
+        "wrong-head",
+        "wrong-config",
+        "incomplete-job",
+        "wrong-shard-version",
+        "duplicate-summary-field",
     ],
 )
-def test_incomplete_execution_or_coverage_cannot_pass(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    case: str,
+def test_merge_requires_every_dataset_before_it_judges(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
     root = setup_root(tmp_path, monkeypatch)
-    paths = reports(root)
-    assert GATE.verify_reports(paths, head=HEAD, count=2)[1] == len(NODEIDS)
-    data = json.loads(paths[0].read_text())
-    if case == "missing-worker":
-        paths.pop()
-    elif case == "duplicate-worker":
-        paths[1] = paths[0]
-    elif case == "head":
+    head = git_repository(root)
+    args = combine_args(root, head)
+    report = args.integration_dir / "integration-shard-1.json"
+    summary = args.job_summary
+    if failure == "missing-shard":
+        report.unlink()
+    elif failure == "missing-shard-data":
+        (args.integration_dir / "coverage-1.data").unlink()
+    elif failure == "changed-shard-data":
+        (args.integration_dir / "coverage-1.data").write_bytes(b"replaced")
+    elif failure == "stray-shard-data":
+        (args.integration_dir / "coverage-7.data").write_bytes(b"stray")
+    elif failure == "missing-job-part":
+        (args.job_parts / "coverage-0.data").unlink()
+    elif failure == "changed-job-part":
+        (args.job_parts / "coverage-0.data").write_bytes(b"replaced")
+    elif failure == "wrong-head":
+        data = json.loads(summary.read_text())
         data["source_head"] = "b" * 40
-    elif case == "config":
+        summary.write_text(json.dumps(data))
+    elif failure == "wrong-config":
+        data = json.loads(summary.read_text())
         data["config_digest"] = "0" * 64
-    elif case == "count":
-        data["count"] = 1
-    elif case == "boolean-index":
-        data["index"] = False
-    elif case == "different-collection":
-        data["collection"] = sorted([*NODEIDS, "tests/unit/test_new.py::test_new"])
-    elif case == "wrong-partition":
-        data["selected"] = GATE.partition(NODEIDS, 1, 2)
-    elif case == "missing-outcome":
-        data["outcomes"].pop(data["selected"][0])
-    elif case in ("skip", "failure"):
-        data["outcomes"][data["selected"][0]] = case
-    elif case == "collect-only":
-        data["executed"] = False
-    elif case == "failed-exit":
-        data["exit_code"] = 1
-    elif case == "boolean-exit":
-        data["exit_code"] = False
-    elif case == "changed-data":
-        data["coverage_digest"] = "0" * 64
-    elif case == "line-only":
-        (root / data["coverage_file"]).unlink()
-        data["coverage_digest"] = GATE.digest(coverage_file(root, 0, branches=False))
-    elif case == "outside-runtime":
-        data["coverage_file"] = "../elsewhere"
-    elif case == "nan-duration":
-        data["elapsed_seconds"] = float("nan")
-    elif case == "extra-field":
-        data["private"] = True
-    paths[0].write_text(json.dumps(data))
-    if case == "duplicate-json-field":
-        paths[0].write_text(json.dumps(data)[:-1] + ',"exit_code":0}')
-    with pytest.raises(ValueError):
-        GATE.verify_reports(paths, head=HEAD, count=2)
+        summary.write_text(json.dumps(data))
+    elif failure == "incomplete-job":
+        data = json.loads(summary.read_text())
+        data["tests_passed"] = False
+        summary.write_text(json.dumps(data))
+    elif failure == "wrong-shard-version":
+        data = json.loads(report.read_text())
+        data["version"] = 1
+        report.write_text(json.dumps(data))
+    else:
+        text = summary.read_text()
+        summary.write_text(text[:-1] + ',"kind":"other"}')
+    expected = "shard 1" if failure.startswith(("missing-shard", "wrong-shard")) else "."
+    with pytest.raises(ValueError, match=expected):
+        GATE.run_combine(args)
+    # A rejected dataset cannot leave a combined database behind for a later report.
+    assert not (args.output / "coverage.data").exists()
+    assert json.loads((args.output / "merged.json").read_text())["coverage_passed"] is False
 
 
-@pytest.mark.parametrize("complete", [False, True])
-def test_only_combined_data_enforces_the_unchanged_eighty_percent_gate(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    complete: bool,
+def test_merge_judges_the_merged_percentage_through_the_project_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
     root = setup_root(tmp_path, monkeypatch)
-    left, right = coverage_file(root, 0), coverage_file(root, 1)
-    output = root / "combined"
-    output.mkdir()
-    percent, code = GATE.combine_coverage([left, right] if complete else [left], output)
-    assert (code == 0) == complete
-    assert (percent >= 80) == complete
-    assert left.is_file() and right.is_file()  # Evidence remains available after combine.
-    assert (
-        json.loads((output / "coverage.json").read_text())["totals"]["percent_covered"] == percent
+    head = git_repository(root)
+    args = combine_args(root, head)
+
+    # Without the integration datasets the reachable total is below the gate; the
+    # merge is therefore what carries the same 80% threshold over the line.
+    measured_only = root / "measured-only"
+    measured_only.mkdir()
+    GATE.combine_data(
+        sorted(args.job_parts.glob("coverage-*.data")),
+        measured_only,
+        config_file=root / "pyproject.toml",
     )
+    assert GATE.gate_report(measured_only, rcfile=root / "pyproject.toml") != 0
+    captured = capfd.readouterr()
+    assert "less than fail-under=80" in captured.out + captured.err
+
+    assert GATE.run_combine(args) == 0
+    merged = json.loads((args.output / "merged.json").read_text())
+    assert merged["job_parts"] == 2 and merged["shards"] == 2
+    assert merged["coverage_percent"] == 100.0 and merged["coverage_passed"] is True
+
+
+def test_unexecuted_source_fails_on_the_merged_dataset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = setup_root(tmp_path, monkeypatch)
+    head = git_repository(root)
+    # The module exists when the lanes measure, so it is part of the denominator
+    # and stands at 0%: the merged report must fail, proving it is not a constant pass.
+    (root / "app/wide.py").write_text("\n".join(f"VALUE_{index} = {index}" for index in range(10)))
+    args = combine_args(root, head)
+    assert GATE.run_combine(args) != 0
+    assert json.loads((args.output / "merged.json").read_text())["coverage_passed"] is False
+
+
+@pytest.mark.parametrize("fail_under", ["80", "101"])
+def test_probe_rcfile_only_changes_the_local_threshold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fail_under: str
+) -> None:
+    root = setup_root(tmp_path, monkeypatch)
+    head = git_repository(root)
+    probe = root / "probe.toml"
+    probe.write_text(
+        '[tool.coverage.run]\nbranch = true\nsource = ["app"]\n'
+        f"[tool.coverage.report]\nfail_under = {fail_under}\n"
+    )
+    args = combine_args(root, head, probe_rcfile=probe)
+    assert (GATE.run_combine(args) == 0) is (fail_under == "80")
 
 
 @pytest.mark.parametrize("condition", ["success", "failed-exit", "unstopped", "missing-report"])
@@ -245,9 +374,15 @@ def test_parent_requires_both_probe_lifecycles_before_combining(
     directory = root / "result-parts"
     assert all((directory / f"worker-{index}.log").is_file() for index in range(2))
     summary = json.loads(args.output.read_text())
-    assert summary["coverage_passed"] == (condition == "success")
+    assert summary["tests_passed"] == (condition == "success")
     if condition == "success":
         assert summary["collected"] == len(NODEIDS)
+        assert [part["file"] for part in summary["coverage_parts"]] == [
+            "coverage-0.data",
+            "coverage-1.data",
+        ]
+    else:
+        assert summary["coverage_parts"] == []
 
 
 @pytest.mark.parametrize("exists", [False, True])

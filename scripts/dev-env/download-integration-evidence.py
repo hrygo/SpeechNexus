@@ -1,7 +1,8 @@
 """Fetch same-run integration evidence through bounded GitHub CLI processes.
 
 Use only the stdlib so the coordinator need not install project dependencies.
-Verify the API's archive digest before reading only the two expected JSON files.
+Verify the API's archive digest before reading only the expected report and
+coverage-data members, including the measured dataset behind the merged gate.
 """
 
 from __future__ import annotations
@@ -20,6 +21,11 @@ from typing import Any
 
 ARCHIVE_LIMIT = 16 * 1024 * 1024
 REPORT_LIMIT = 8 * 1024 * 1024
+COVERAGE_DATA_LIMIT = 32 * 1024 * 1024
+COVERAGE_ARTIFACT = "workbench-pg-full-coverage"
+COVERAGE_ARTIFACT_LIMIT = 32 * 1024 * 1024
+COVERAGE_PARTS_DIR = "workbench-pg-coverage-parts"
+COVERAGE_SUMMARY = "workbench-pg-coverage.json"
 FETCH_ATTEMPTS = 3
 
 
@@ -63,13 +69,158 @@ def fetch_api(endpoint: str, target: Path, limit: int) -> None:
             return
 
 
-def download(repository: str, run_id: int, count: int, output: Path) -> None:
+def download_shards(
+    repository: str, run_id: int, count: int, output: Path, root: Path, artifacts: list[Any]
+) -> None:
+    selected = [a for a in artifacts if a["name"].startswith("integration-shard-")]
+    expected = {f"integration-shard-{i}" for i in range(count)}
+    if len(selected) != count or {a["name"] for a in selected} != expected:
+        raise ValueError("Integration artifacts are missing, duplicate or unexpected")
+    reports = root / "reports"
+    reports.mkdir()
+
+    def fetch_one(artifact: dict[str, Any]) -> None:
+        artifact_id = artifact["id"]
+        size = artifact["size_in_bytes"]
+        digest = artifact["digest"]
+        if (
+            type(artifact_id) is not int
+            or artifact_id < 1
+            or type(size) is not int
+            or not 0 < size <= ARCHIVE_LIMIT
+            or artifact["expired"] is not False
+            or artifact["workflow_run"]["id"] != run_id
+            or not isinstance(digest, str)
+            or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
+        ):
+            raise ValueError("Invalid or expired integration artifact metadata")
+        index = int(artifact["name"].removeprefix("integration-shard-"))
+        archive = root / f"{index}.zip"
+        try:
+            fetch_api(f"repos/{repository}/actions/artifacts/{artifact_id}/zip", archive, size)
+        except ArtifactFetchError as error:
+            raise ArtifactFetchError(error.category, error.exit_status, shard=index) from None
+        if archive.stat().st_size != size:
+            raise ValueError("Downloaded archive size does not match API metadata")
+        with archive.open("rb") as stream:
+            actual_digest = "sha256:" + hashlib.file_digest(stream, "sha256").hexdigest()
+        if actual_digest != digest:
+            raise ValueError("Integration artifact digest mismatch")
+        names = {
+            f"integration-shard-{index}.json",
+            f"workbench-pg-shard-{index}.json",
+            f"coverage-{index}.data",
+        }
+        limits = {
+            f"integration-shard-{index}.json": REPORT_LIMIT,
+            f"workbench-pg-shard-{index}.json": REPORT_LIMIT,
+            f"coverage-{index}.data": COVERAGE_DATA_LIMIT,
+        }
+        with zipfile.ZipFile(archive) as zipped:
+            members = zipped.infolist()
+            if len(members) != len(names) or {m.filename for m in members} != names:
+                raise ValueError("Unexpected integration archive members")
+            for member in members:
+                if not 0 < member.file_size <= limits[member.filename]:
+                    raise ValueError("Integration archive member is oversized or empty")
+                # Never extract arbitrary paths, directories or symlinks from the ZIP.
+                (reports / member.filename).write_bytes(zipped.read(member))
+        print(f"Verified integration artifact {index}: {size} bytes", flush=True)
+
+    with ThreadPoolExecutor(max_workers=min(3, count)) as workers:
+        list(workers.map(fetch_one, selected))
+    output.mkdir()
+    for report in reports.iterdir():
+        report.rename(output / report.name)
+
+
+def download_coverage(
+    repository: str, run_id: int, output: Path, root: Path, artifacts: list[Any], workers: int
+) -> None:
+    """Fetch the measured dataset; an absent artifact is a failing gate, not a smaller one."""
+    if type(workers) is not int or workers not in (1, 2):
+        raise ValueError("Invalid Python coverage worker count")
+    matches = [a for a in artifacts if a["name"] == COVERAGE_ARTIFACT]
+    if len(matches) != 1:
+        raise ValueError("Python coverage artifact is missing, duplicate or unexpected")
+    artifact = matches[0]
+    artifact_id = artifact["id"]
+    size = artifact["size_in_bytes"]
+    digest = artifact["digest"]
+    if (
+        type(artifact_id) is not int
+        or artifact_id < 1
+        or type(size) is not int
+        or not 0 < size <= COVERAGE_ARTIFACT_LIMIT
+        or artifact["expired"] is not False
+        or artifact["workflow_run"]["id"] != run_id
+        or not isinstance(digest, str)
+        or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
+    ):
+        raise ValueError("Invalid or expired Python coverage artifact metadata")
+    archive = root / "coverage.zip"
+    try:
+        fetch_api(f"repos/{repository}/actions/artifacts/{artifact_id}/zip", archive, size)
+    except ArtifactFetchError as error:
+        raise ArtifactFetchError(error.category, error.exit_status, shard=None) from None
+    if archive.stat().st_size != size:
+        raise ValueError("Downloaded coverage archive size does not match API metadata")
+    with archive.open("rb") as stream:
+        actual_digest = "sha256:" + hashlib.file_digest(stream, "sha256").hexdigest()
+    if actual_digest != digest:
+        raise ValueError("Python coverage artifact digest mismatch")
+    required = {COVERAGE_SUMMARY} | {
+        f"{COVERAGE_PARTS_DIR}/coverage-{index}.data" for index in range(workers)
+    }
+    allowed = {COVERAGE_SUMMARY, f"{COVERAGE_PARTS_DIR}/coverage.data"} | {
+        f"{COVERAGE_PARTS_DIR}/coverage-{index}.data" for index in range(workers)
+    }
+    for index in range(workers):
+        for name in (f"worker-{index}.json", f"worker-{index}.log", f"postgres-{index}.json"):
+            allowed.add(f"{COVERAGE_PARTS_DIR}/{name}")
+    limits = {COVERAGE_SUMMARY: REPORT_LIMIT} | {
+        f"{COVERAGE_PARTS_DIR}/coverage-{index}.data": COVERAGE_DATA_LIMIT
+        for index in range(workers)
+    }
+    with zipfile.ZipFile(archive) as zipped:
+        members = zipped.infolist()
+        names = {member.filename for member in members}
+        if not required <= names or names - allowed:
+            raise ValueError("Unexpected or missing Python coverage archive members")
+        if len(members) > 64:
+            raise ValueError("Python coverage archive has too many members")
+        published = 0
+        for member in members:
+            if member.filename not in required:
+                continue
+            if not 0 < member.file_size <= limits[member.filename]:
+                raise ValueError("Python coverage archive member is oversized or empty")
+            destination = output / member.filename
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(zipped.read(member))
+            published += 1
+        if published != len(required):
+            raise ValueError("Python coverage archive omitted a required member")
+    print(f"Verified Python coverage artifact: {size} bytes", flush=True)
+
+
+def download(
+    repository: str,
+    run_id: int,
+    count: int,
+    output: Path,
+    *,
+    coverage_output: Path | None = None,
+    coverage_workers: int = 2,
+) -> None:
     if not re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9_.-]+", repository):
         raise ValueError("Invalid repository")
     if type(run_id) is not int or run_id < 1 or type(count) is not int or not 1 <= count <= 16:
         raise ValueError("Invalid run or partition count")
     if output.exists() or output.is_symlink():
         raise ValueError("Evidence output must be new")
+    if coverage_output is not None and (coverage_output.exists() or coverage_output.is_symlink()):
+        raise ValueError("Coverage output must be new")
     with tempfile.TemporaryDirectory(prefix="integration-download-", dir=output.parent) as temp:
         root = Path(temp)
         metadata = root / "metadata.json"
@@ -82,57 +233,11 @@ def download(repository: str, run_id: int, count: int, output: Path) -> None:
         artifacts = data["artifacts"]
         if type(data["total_count"]) is not int or data["total_count"] != len(artifacts):
             raise ValueError("Artifact inventory is incomplete")
-        selected = [a for a in artifacts if a["name"].startswith("integration-shard-")]
-        expected = {f"integration-shard-{i}" for i in range(count)}
-        if len(selected) != count or {a["name"] for a in selected} != expected:
-            raise ValueError("Integration artifacts are missing, duplicate or unexpected")
-        reports = root / "reports"
-        reports.mkdir()
-
-        def fetch_one(artifact: dict[str, Any]) -> None:
-            artifact_id = artifact["id"]
-            size = artifact["size_in_bytes"]
-            digest = artifact["digest"]
-            if (
-                type(artifact_id) is not int
-                or artifact_id < 1
-                or type(size) is not int
-                or not 0 < size <= ARCHIVE_LIMIT
-                or artifact["expired"] is not False
-                or artifact["workflow_run"]["id"] != run_id
-                or not isinstance(digest, str)
-                or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
-            ):
-                raise ValueError("Invalid or expired integration artifact metadata")
-            index = int(artifact["name"].removeprefix("integration-shard-"))
-            archive = root / f"{index}.zip"
-            try:
-                fetch_api(f"repos/{repository}/actions/artifacts/{artifact_id}/zip", archive, size)
-            except ArtifactFetchError as error:
-                raise ArtifactFetchError(error.category, error.exit_status, shard=index) from None
-            if archive.stat().st_size != size:
-                raise ValueError("Downloaded archive size does not match API metadata")
-            with archive.open("rb") as stream:
-                actual_digest = "sha256:" + hashlib.file_digest(stream, "sha256").hexdigest()
-            if actual_digest != digest:
-                raise ValueError("Integration artifact digest mismatch")
-            names = {f"integration-shard-{index}.json", f"workbench-pg-shard-{index}.json"}
-            with zipfile.ZipFile(archive) as zipped:
-                members = zipped.infolist()
-                if len(members) != 2 or {m.filename for m in members} != names:
-                    raise ValueError("Unexpected integration archive members")
-                for member in members:
-                    if not 0 < member.file_size <= REPORT_LIMIT:
-                        raise ValueError("Integration archive report is oversized or empty")
-                    # Never extract arbitrary paths, directories or symlinks from the ZIP.
-                    (reports / member.filename).write_bytes(zipped.read(member))
-            print(f"Verified integration artifact {index}: {size} bytes", flush=True)
-
-        with ThreadPoolExecutor(max_workers=min(3, count)) as workers:
-            list(workers.map(fetch_one, selected))
-        output.mkdir()
-        for report in reports.iterdir():
-            report.rename(output / report.name)
+        download_shards(repository, run_id, count, output, root, artifacts)
+        if coverage_output is not None:
+            download_coverage(
+                repository, run_id, coverage_output, root, artifacts, coverage_workers
+            )
 
 
 def main() -> int:
@@ -141,9 +246,18 @@ def main() -> int:
     parser.add_argument("--run-id", type=int, required=True)
     parser.add_argument("--count", type=int, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--coverage-output", type=Path)
+    parser.add_argument("--coverage-workers", type=int, default=2)
     args = parser.parse_args()
     try:
-        download(args.repository, args.run_id, args.count, args.output)
+        download(
+            args.repository,
+            args.run_id,
+            args.count,
+            args.output,
+            coverage_output=args.coverage_output,
+            coverage_workers=args.coverage_workers,
+        )
     except ArtifactFetchError as error:
         shard = "metadata" if error.shard is None else str(error.shard)
         status = "timeout" if error.exit_status is None else str(error.exit_status)

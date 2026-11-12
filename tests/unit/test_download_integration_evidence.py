@@ -27,6 +27,7 @@ def archive(index: int, *, unexpected: bool = False) -> bytes:
         zipped.writestr(
             "../outside.json" if unexpected else f"workbench-pg-shard-{index}.json", "{}"
         )
+        zipped.writestr(f"coverage-{index}.data", b"synthetic branch data")
     return data.getvalue()
 
 
@@ -71,7 +72,12 @@ def test_download_checks_real_zip_hash_and_only_publishes_expected_reports(
     output = tmp_path / "reports"
     MODULE.download("owner/repo", 123, 2, output)
     assert {p.name for p in output.iterdir()} == {
-        f"{prefix}-shard-{i}.json" for prefix in ("integration", "workbench-pg") for i in range(2)
+        *(
+            f"{prefix}-shard-{i}.json"
+            for prefix in ("integration", "workbench-pg")
+            for i in range(2)
+        ),
+        *(f"coverage-{i}.data" for i in range(2)),
     }
     assert calls[0] == "repos/owner/repo/actions/runs/123/artifacts?per_page=100"
     assert set(calls[1:]) == {f"repos/owner/repo/actions/artifacts/{i}/zip" for i in (1, 2)}
@@ -129,6 +135,172 @@ def test_report_size_limit_does_not_require_a_large_test_fixture(
     with pytest.raises(ValueError, match="oversized"):
         MODULE.download("owner/repo", 123, 2, tmp_path / "reports")
     assert not (tmp_path / "reports").exists()
+
+
+def coverage_archive(*, members: dict[str, bytes] | None = None, workers: int = 2) -> bytes:
+    data = io.BytesIO()
+    with zipfile.ZipFile(data, "w") as zipped:
+        for name, payload in (members or coverage_members(workers)).items():
+            zipped.writestr(name, payload)
+    return data.getvalue()
+
+
+def coverage_members(workers: int = 2) -> dict[str, bytes]:
+    members = {MODULE.COVERAGE_SUMMARY: b'{"synthetic": true}'}
+    members.update(
+        {
+            f"{MODULE.COVERAGE_PARTS_DIR}/coverage-{index}.data": b"synthetic"
+            for index in range(workers)
+        }
+    )
+    return members
+
+
+def setup_coverage_api(
+    monkeypatch: pytest.MonkeyPatch, archive_bytes: bytes | None = None
+) -> dict[str, Any]:
+    payload = archive_bytes if archive_bytes is not None else coverage_archive()
+    data: dict[str, Any] = {
+        "total_count": 1,
+        "artifacts": [
+            {
+                "id": 9,
+                "name": MODULE.COVERAGE_ARTIFACT,
+                "size_in_bytes": len(payload),
+                "digest": "sha256:" + hashlib.sha256(payload).hexdigest(),
+                "expired": False,
+                "workflow_run": {"id": 123},
+            }
+        ],
+    }
+
+    def fetch(endpoint: str, target: Path, limit: int) -> None:
+        payload_bytes = json.dumps(data).encode() if "?per_page=100" in endpoint else payload
+        assert len(payload_bytes) <= limit
+        target.write_bytes(payload_bytes)
+
+    monkeypatch.setattr(MODULE, "fetch_api", fetch)
+    return data
+
+
+def test_coverage_artifact_is_verified_and_published_under_its_own_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data = setup_coverage_api(monkeypatch)
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    MODULE.download_coverage(
+        "owner/repo", 123, tmp_path / "coverage", staging, data["artifacts"], 2
+    )
+    assert sorted(
+        str(path.relative_to(tmp_path / "coverage"))
+        for path in (tmp_path / "coverage").rglob("*")
+        if path.is_file()
+    ) == [
+        f"{MODULE.COVERAGE_PARTS_DIR}/coverage-0.data",
+        f"{MODULE.COVERAGE_PARTS_DIR}/coverage-1.data",
+        MODULE.COVERAGE_SUMMARY,
+    ]
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "missing-artifact",
+        "duplicate-artifact",
+        "missing-summary",
+        "missing-worker",
+        "extra-member",
+        "escape",
+    ],
+)
+def test_coverage_artifact_that_cannot_contribute_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    if case == "missing-artifact":
+        data = setup_coverage_api(monkeypatch)
+        data["artifacts"] = []
+    elif case == "duplicate-artifact":
+        data = setup_coverage_api(monkeypatch)
+        data["artifacts"].append(dict(data["artifacts"][0], id=10))
+        data["total_count"] = 2
+    elif case == "missing-summary":
+        members = coverage_members()
+        members.pop(MODULE.COVERAGE_SUMMARY)
+        data = setup_coverage_api(monkeypatch, coverage_archive(members=members))
+    elif case == "missing-worker":
+        # Summary declares the worker dataset; the archive omits it.
+        members = coverage_members(workers=1)
+        data = setup_coverage_api(monkeypatch, coverage_archive(members=members))
+    elif case == "extra-member":
+        members = coverage_members()
+        members["workbench-pg-coverage-parts/extra.txt"] = b"unexpected"
+        data = setup_coverage_api(monkeypatch, coverage_archive(members=members))
+    else:
+        members = coverage_members()
+        members["../escape.data"] = b"unexpected"
+        data = setup_coverage_api(monkeypatch, coverage_archive(members=members))
+    output = tmp_path / "coverage"
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    with pytest.raises(ValueError):
+        MODULE.download_coverage("owner/repo", 123, output, staging, data["artifacts"], 2)
+    assert not output.exists()
+
+
+def test_download_combines_both_artifact_sets_in_one_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = coverage_archive()
+    shard_archives = {i + 1: archive(i) for i in range(2)}
+    data: dict[str, Any] = {
+        "total_count": 3,
+        "artifacts": [
+            *(
+                {
+                    "id": index + 1,
+                    "name": f"integration-shard-{index}",
+                    "size_in_bytes": len(shard_archives[index + 1]),
+                    "digest": "sha256:" + hashlib.sha256(shard_archives[index + 1]).hexdigest(),
+                    "expired": False,
+                    "workflow_run": {"id": 123},
+                }
+                for index in range(2)
+            ),
+            {
+                "id": 9,
+                "name": MODULE.COVERAGE_ARTIFACT,
+                "size_in_bytes": len(payload),
+                "digest": "sha256:" + hashlib.sha256(payload).hexdigest(),
+                "expired": False,
+                "workflow_run": {"id": 123},
+            },
+        ],
+    }
+
+    def fetch(endpoint: str, target: Path, limit: int) -> None:
+        if "?per_page=100" in endpoint:
+            payload_bytes = json.dumps(data).encode()
+        elif "/9/zip" in endpoint:
+            payload_bytes = payload
+        else:
+            payload_bytes = shard_archives[int(endpoint.split("/")[-2])]
+        assert len(payload_bytes) <= limit
+        target.write_bytes(payload_bytes)
+
+    monkeypatch.setattr(MODULE, "fetch_api", fetch)
+    shards, coverage = tmp_path / "shards", tmp_path / "coverage"
+    MODULE.download("owner/repo", 123, 2, shards, coverage_output=coverage, coverage_workers=2)
+    assert {path.name for path in shards.iterdir()} == {
+        *(
+            f"{prefix}-shard-{i}.json"
+            for prefix in ("integration", "workbench-pg")
+            for i in range(2)
+        ),
+        *(f"coverage-{i}.data" for i in range(2)),
+    }
+    assert (coverage / MODULE.COVERAGE_SUMMARY).is_file()
+    assert (coverage / MODULE.COVERAGE_PARTS_DIR / "coverage-1.data").is_file()
 
 
 def test_cli_process_is_bounded_and_never_receives_a_token_argument(

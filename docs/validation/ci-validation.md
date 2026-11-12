@@ -10,8 +10,8 @@ CI 使用[工作流](../../.github/workflows/ci.yml)和[标准库路由](../../s
 | 触发或变更 | 范围 |
 | --- | --- |
 | PR 仅修改根 `README.md` / `README.en.md` / `AGENTS.md`、`docs/` 内 Markdown、`.agents/skills/<skill>/` 内 Markdown / JSON / YAML | 路由回归、Design Token 静态门禁、差异检查、矩阵新鲜度检查（仅矩阵、关联源、快照或生成器变化时重渲染）、Node Controller 镜像范围检查与其门禁、最终门禁；镜像构建按独立范围判定，通常跳过。不安装项目依赖、不启动业务测试服务。差异检查以取得准确基线为前提；否则回退全量 |
-| PR 仅修改已知 Web 源码/静态资产，可混合上述文档 | Python 静态/契约检查、覆盖率及完整 Web 检查；覆盖率作业仍使用私有 PostgreSQL 和 MinIO，六个双数据库集成分片与部署检查不适用 |
-| PR 仅修改已知独立引擎目录或明确列出的引擎单元测试，可混合上述 Web/文档 | `no-db`：保留 Python 静态/契约/覆盖率、完整 Web、构建和部署检查；覆盖率作业仍使用私有 PostgreSQL 和 MinIO，六个双数据库集成分片及其汇总不适用 |
+| PR 仅修改已知 Web 源码/静态资产，可混合上述文档 | Python 静态/契约检查、覆盖率数据采集及完整 Web 检查；采集作业仍使用私有 PostgreSQL 和 MinIO，六个双数据库集成分片、覆盖率判定与部署检查不适用 |
+| PR 仅修改已知独立引擎目录或明确列出的引擎单元测试，可混合上述 Web/文档 | `no-db`：保留 Python 静态/契约检查、覆盖率数据采集、完整 Web、构建和部署检查；采集作业仍使用私有 PostgreSQL 和 MinIO，六个双数据库集成分片、覆盖率判定及其汇总不适用 |
 | CI、脚本、测试、依赖、配置、契约、迁移、部署、其他路径或空/不确定差异 | 完整 Python/Web/部署检查，六个 PG/InnoDB/MinIO 分片及证据汇总 |
 | `main` push、手动运行及未知事件 | 始终全量 |
 
@@ -38,10 +38,10 @@ Node Controller 镜像验证由 CI 以同提交的 [reusable workflow](../../.gi
 | job ID | Actions 显示名称 | 实际职责 |
 | --- | --- | --- |
 | `changes` | `Scope routing and CI / design-token checks` | 检查路由边界与 Design Token，按准确差异选择范围 |
-| `python_checks` | `Python: tests, coverage and package build` | Python 单元、契约、CI、Workbench PG/Runtime 及选定 Speech PG 测试，合并覆盖率、媒体工具链及 Python 包构建 |
+| `python_checks` | `Python: tests, coverage and package build` | Python 单元、契约、CI、Workbench PG/Runtime 及选定 Speech PG 测试，导出两 worker 覆盖率数据集（不判定）、媒体工具链及 Python 包构建 |
 | `python_contracts` | `Python: lint, types and contract compatibility` | Ruff、mypy、模块边界、生成漂移、协议兼容与 schema 校验 |
 | `integration_shards` | `Integration 0–3: PG/MySQL/MinIO`；`Integration 4–5: Web + PG/MySQL/MinIO` | 六个真实隔离服务分片；混合集合中的浏览器与 Node HTTP 消费者只分配到后两片，普通 DB 用例按估算成本分配到全部六片，具体工具需求按各片实际用例计算 |
-| `coordination` | `Gate: six-shard integration evidence` | 验收六片成功及同提交、完整互斥集合、实际执行证据，不在此节点重新执行测试 |
+| `coordination` | `Gate: six-shard integration evidence and merged coverage` | 验收六片成功及同提交、完整互斥集合、实际执行证据；下载六份分片覆盖数据与采集作业数据集，合并后按 80% 判定一次，不在此节点重新执行测试 |
 | `python_checks_gate` | `Gate: Python execution and static checks` | 要求 Python 执行与静态/契约两个作业均成功，不执行测试 |
 | `node_controller_image` | `Node Controller image evidence` | 调用镜像 scope、双架构构建与内部证据门禁，按输入差异决定是否构建 |
 | `delivery_tracking` | `Docs: delivery matrix freshness` | 从提交快照离线重渲染矩阵并比对；仅矩阵、关联源、快照或生成器变化时执行渲染 |
@@ -51,9 +51,9 @@ Node Controller 镜像验证由 CI 以同提交的 [reusable workflow](../../.gi
 
 完整范围要求覆盖率、契约生成漂移及六个真实双数据库分片；契约兼容和结构变更的基线比较仅在 PR 执行，`main` push 与手动全量运行不会执行这些 PR 专属步骤。比较步骤获取当时的目标分支头作为基线，与路由使用的事件准确 base SHA 是不同依据。集成汇总继续核对同一提交、完整收集、互斥并集和实际执行结果，不以数量或仅收集代替证据。唯一允许的跳过是 `tests/integration/test_gateway_submit_ledger.py` 中以 `[mysql]` 结尾的既有 PostgreSQL 专属产品适配器参数；这不构成 MySQL 协调路径通过的证据，其他必需用例跳过会使汇总失败。
 
-Python 测试作业通过 `python-coverage.py run --workers 2` 在同一 runner 内并发两个 `workbench-pg-probe.py --full-coverage` 进程，运行配置的非集成测试目录、脚本显式列出的 Workbench PG／Runtime 文件，以及发布证据、绑定生命周期和停用意图三个 Speech PG 测试文件。Workbench 文件按 `WORKBENCH_PG_TESTS` 和 `WORKBENCH_RUNTIME_TESTS` 清单选择，新增文件不会自动进入此作业；标记为 `integration` 的用例由独立分片收集和执行；未带该标记的用例不因此自动进入分片，真实模型资格测试见下文。各进程独占临时 PG、Unix socket 与 coverage 文件；Speech PG 测试在 full coverage 模式使用同一 worker 的私有 socket，不连接 runner 的系统数据库。集成分片仍使用显式配置的双库地址。作业仍只准备一次依赖及隔离 MinIO。父进程先准备四个 fixture 共用的 `speechnexus-workbench-saved` 测试桶，避免两个进程首次创建竞态；其对象按随机 project 前缀隔离，其余桶按文件独占或随机命名。测试按完整收集的文件分组，文件内用例不拆开，较大文件先分到当前用例数较少的一组；这是确定性的数量均衡，不是耗时均衡。
+Python 测试作业通过 `python-coverage.py run --workers 2` 在同一 runner 内并发两个 `workbench-pg-probe.py --full-coverage` 进程，运行配置的非集成测试目录、脚本显式列出的 Workbench PG／Runtime 文件，以及发布证据、绑定生命周期和停用意图三个 Speech PG 测试文件；该作业只测量并导出数据，不做覆盖率判定。Workbench 文件按 `WORKBENCH_PG_TESTS` 和 `WORKBENCH_RUNTIME_TESTS` 清单选择，新增文件不会自动进入此作业；标记为 `integration` 的用例由独立分片收集和执行；未带该标记的用例不因此自动进入分片，真实模型资格测试见下文。各进程独占临时 PG、Unix socket 与 coverage 文件；Speech PG 测试在 full coverage 模式使用同一 worker 的私有 socket，不连接 runner 的系统数据库。集成分片仍使用显式配置的双库地址。作业仍只准备一次依赖及隔离 MinIO。父进程先准备四个 fixture 共用的 `speechnexus-workbench-saved` 测试桶，避免两个进程首次创建竞态；其对象按随机 project 前缀隔离，其余桶按文件独占或随机命名。测试按完整收集的文件分组，文件内用例不拆开，较大文件先分到当前用例数较少的一组；这是确定性的数量均衡，不是耗时均衡。
 
-每片保留原完整覆盖源与 branch 配置，只在片内使用 `--cov-fail-under=0` 采集局部数据。父进程必须确认两片执行成功、私有 PG 已停止、同一 SHA/配置、相同完整 collection、精确分配且互斥并集覆盖全集、每个结果实际通过及覆盖数据摘要一致，再显式组合全部分片并按 `pyproject.toml` 原全项目 **80%** 门槛执行 `coverage report`。缺片、失败、跳过、收集限定或仅有局部高覆盖率均不能放行；入口拒绝任何非空 `PYTEST_ADDOPTS`，即使其选项不缩小集合。这里的完整集合以 pytest 收集时各 worker 观察到的结果为准；同一插件或配置在两片共同遗漏用例时，同集与分配校验不能独立发现，仍须审查测试根目录、pytest 配置和插件变更。执行证据校验通过后，复制各片原始覆盖数据并生成组合产物，以 `workbench-pg-full-coverage` 上传；覆盖率不足仍保留这些产物并失败。若覆盖率步骤已运行且失败、作业未取消，工作流尝试上传已生成的日志及分片／生命周期／汇总报告；步骤未运行、作业取消或上传失败时不能保证留存。测试或执行证据校验失败不会生成合格的组合产物。直接使用 `scripts/dev-env/workbench-pg-probe.py` 的 `--full-coverage` 模式仍是单次 pytest 的全项目 80%；`--coverage` 仍是独立的 C 层 90% 检查。两种模式都须安装锁定依赖并提供 `--pg-bin`，运行前置条件见[验证指南](../agent-verification.md)，具体参数可用 `uv run python scripts/dev-env/workbench-pg-probe.py --help` 查看。
+每片保留原完整覆盖源与 branch 配置，只在片内使用 `--cov-fail-under=0` 采集局部数据，并固定导出到 `coverage-<shard>.data`。父进程必须确认两片执行成功、私有 PG 已停止、同一 SHA/配置、相同完整 collection、精确分配且互斥并集覆盖全集、每个结果实际通过及覆盖数据摘要一致，然后复制各片原始数据并按 worker 归档为 `workbench-pg-coverage-parts/coverage-<worker>.data`，连同汇总以 `workbench-pg-full-coverage` 上传；覆盖率不足不由该作业判定，因此数据照常保留。若采集步骤已运行且失败、作业未取消，工作流尝试上传已生成的日志及分片／生命周期／汇总报告；步骤未运行、作业取消或上传失败时不能保证留存。测试或执行证据校验失败不会生成合格的覆盖数据集。入口拒绝任何非空 `PYTEST_ADDOPTS`，即使其选项不缩小集合；完整集合以 pytest 收集时各 worker 观察到的结果为准，同一插件或配置在两片共同遗漏用例时，同集与分配校验不能独立发现，仍须审查测试根目录、pytest 配置和插件变更。直接使用 `scripts/dev-env/workbench-pg-probe.py` 的 `--full-coverage` 模式是单次 pytest、只覆盖非集成范围的本地检查，仍沿用项目 `fail_under = 80`：只被集成测试执行的新增代码会让它失败，而 CI 的合并门禁通过。本机要按门禁口径复核时使用上文的 `combine` 路径，或在该模式下自行加 `--cov-fail-under=0` 只看数据。`--coverage` 仍是独立的 C 层 90% 检查。两种模式都须安装锁定依赖并提供 `--pg-bin`，运行前置条件见[验证指南](../agent-verification.md)，具体参数可用 `uv run python scripts/dev-env/workbench-pg-probe.py --help` 查看。
 
 集成分片在安装 Python 依赖后，通过 `uv run python scripts/dev-env/integration-shards.py requirements --index 0 --count 6` 等命令实际收集完整 integration nodeid（包括参数化身份），以执行时相同的资源分组与成本加权分片算法输出对应分片的 `node_contracts` 与 `browser` 需求；工作流分别传入各分片的 index。`*_browser.py` 与两个合成浏览器探针模块声明浏览器依赖；回归核对当前所有 Node 浏览器探针消费者均被分类。收集错误或设置了非空 `PYTEST_ADDOPTS` 均会失败，即使该选项本身不缩小选择，也不能输出“无需工具”放行。该步骤只收集，实际执行和六份报告的互斥并集核验仍独立必需。预检记录 pytest 最终收集结果，未单独校验所有插件对收集的影响；汇总比较各片报告的相同全集，也不能独立发现所有分片共同遗漏的用例。须保持受控依赖与 pytest 配置，并审查收集范围的变更。
 
@@ -73,25 +73,29 @@ Python 测试作业通过 `python-coverage.py run --workers 2` 在同一 runner 
 
 分片验收应区分取消、未开始测试与断言失败；回退脚本接线可恢复原官方安装路径。
 
-每个集成分片还检查 PostgreSQL 16 工具，通过 `workbench-pg-probe.py --integration-shard` 启动独立的私有 Unix socket PG，再把 Workbench DSN 传给原 `integration-shards.py run`。双数据库与 MinIO 环境仍指向该作业既有隔离测试服务，不用私有 Workbench DSN 替换协调数据库地址。原分片报告路径、完整 collection、实际执行与意外跳过拒绝规则保持不变；驱动器的生命周期报告与分片报告一并上传，分别保存，不替代分片执行报告。仅有单个分片作业成功不能替代汇总验收。
+每个集成分片还检查 PostgreSQL 16 工具，通过 `workbench-pg-probe.py --integration-shard` 启动独立的私有 Unix socket PG，再把 Workbench DSN 传给原 `integration-shards.py run`。双数据库与 MinIO 环境仍指向该作业既有隔离测试服务，不用私有 Workbench DSN 替换协调数据库地址。原分片报告路径、完整 collection、实际执行与意外跳过拒绝规则保持不变；驱动器把分片覆盖数据路径交给 `integration-shards.py run`，生命周期报告、分片报告与该片覆盖数据一并上传，分别保存，不替代分片执行报告。仅有单个分片作业成功不能替代汇总验收。
 
 真实内网模型资格与可复现集成分别验收。`qualification` 标记的三条纪要用例调用配置的真实模型，不进入普通 `integration` 分片，也不计作 CI 通过；它们使用测试装配的工作台运行时与隔离数据库，不能单独证明目标生产部署或替代协调事务的确定性门禁。`make workbench-llm-qualification` 要求显式的私有 Workbench PG DSN、获准内网 LLM endpoint/model，并构建真实 Web 入口后选择这三项；缺少上述配置时入口直接失败。该命令没有禁止 `PYTEST_ADDOPTS` 等外部选项缩小选择，验收时须确认三项均实际通过，不能将跳过或部分通过当成资格证据。普通 CI 的分片完整性仍拒绝任何必需用例跳过，阶段 AC 仍须另附这三项真实模型与版本证据。
 
 不在整个 workflow 的 `on` 中设置 `paths` / `paths-ignore`：被整体过滤的必需检查可能长期 Pending。[GitHub 路径过滤说明](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onpushpull_requestpull_request_targetpathspaths-ignore)、[作业条件与 skipped 语义](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-jobs-with-conditions)是维护入口；核验日期为 2026-10-25。
 
-汇总使用 runner 自带 GitHub CLI 和标准库脚本 `download-integration-evidence.py`：只列当前仓库/运行，最多一页 100 个制品且拒绝截断；以 `integration-shard-` 开头的制品必须恰为六个预期名称，其他名称的制品可以同时存在；元数据响应上限为 1 MiB，制品最多三个并发下载进程。每次请求限 15 秒，进程失败或超时最多尝试三次，每次使用独立临时文件，完整性校验失败不放行；令牌仅经环境传入。先核对未过期、所属运行、压缩大小与 API 提供的 SHA-256，再只读 ZIP 内该片的两份固定 JSON，不提取任意路径；单 ZIP 接受上限 16 MiB，单 JSON 保持原集成报告的 8 MiB 上限；下载先写临时文件，进程退出后才检查实际大小，因此这些上限不是传输期间的磁盘写入硬限制。输出目录必须事先不存在，全部下载及归档校验成功后才开始发布报告；既有同提交、完整互斥集合与逐项执行检查继续独立执行。仅汇总作业有 `actions: read`，全局仍仅 `contents: read`，超时为两分钟；不以 CLI 下载成功替代业务证据验收。依据：[官方 artifact REST API](https://docs.github.com/en/rest/actions/artifacts)、[GitHub CLI API](https://cli.github.com/manual/gh_api)，核验日期 2026-10-27。
+汇总使用 runner 自带 GitHub CLI 和标准库脚本 `download-integration-evidence.py`：只列当前仓库/运行，最多一页 100 个制品且拒绝截断；以 `integration-shard-` 开头的制品必须恰为六个预期名称，其他名称的制品可以同时存在；元数据响应上限为 1 MiB，制品最多三个并发下载进程。每次请求限 15 秒，进程失败或超时最多尝试三次，每次使用独立临时文件，完整性校验失败不放行；令牌仅经环境传入。先核对未过期、所属运行、压缩大小与 API 提供的 SHA-256，再只读 ZIP 内的三份固定成员——该片报告、PG 生命周期报告与 `coverage-<shard>.data`——不提取任意路径；单 ZIP 接受上限 16 MiB，单 JSON 保持原集成报告的 8 MiB 上限，覆盖数据上限 32 MiB；下载先写临时文件，进程退出后才检查实际大小，因此这些上限不是传输期间的磁盘写入硬限制。`workbench-pg-full-coverage` 制品只按白名单提取汇总 JSON 与两份 `coverage-<worker>.data`，名称、数量、大小或摘要不符即失败。输出目录必须事先不存在，全部下载及归档校验成功后才开始发布报告；既有同提交、完整互斥集合与逐项执行检查继续独立执行。仅汇总作业有 `actions: read`，全局仍仅 `contents: read`，超时为十分钟（含锁定依赖安装与合并判定）；不以 CLI 下载成功替代业务证据验收。依据：[官方 artifact REST API](https://docs.github.com/en/rest/actions/artifacts)、[GitHub CLI API](https://cli.github.com/manual/gh_api)，核验日期 2026-10-27。
 
 历史性能分析和运行故障记录见[归档](../archive/validation/2026-10-ci-validation-history.md)。
 
 ## 覆盖率门禁、采集边界与结构性余量
 
-覆盖率门禁由 `python_checks` 作业执行，判定对象是 `[tool.coverage.run].source` 列出的全部生产包，参数为 `branch = true`、`[tool.coverage.report].fail_under = 80`、`skip_covered = true`、`show_missing = true`。采集范围是上文 `python-coverage.py run --workers 2` 段列出的四个测试集合：`tests/unit`、`tests/contract`、`tests/ci`、`tests/integration/test_probe_inventory.py`，加 `WORKBENCH_PG_TESTS`、`WORKBENCH_RUNTIME_TESTS` 与 `SPEECH_PG_COVERAGE_TESTS`；`tests/integration` 下其余用例由六个集成分片执行，**不产生覆盖数据**。父进程核对两片执行证据后 `coverage combine`，再用 `coverage report --rcfile pyproject.toml` 判定。
+覆盖率数据在 `python_checks` 作业采集、在 `coordination` 汇总作业判定一次。判定对象是 `[tool.coverage.run].source` 列出的全部生产包，参数为 `branch = true`、`[tool.coverage.report].fail_under = 80`、`skip_covered = true`、`show_missing = true`。数据来源是全量路由实际执行的两类覆盖数据：`python-coverage.py run --workers 2` 导出的两份 `coverage-<worker>.data`，覆盖上文列出的四个测试集合（`tests/unit`、`tests/contract`、`tests/ci`、`tests/integration/test_probe_inventory.py`）加 `WORKBENCH_PG_TESTS`、`WORKBENCH_RUNTIME_TESTS` 与 `SPEECH_PG_COVERAGE_TESTS`；以及六个集成分片各自导出的 `coverage-<shard>.data`，覆盖 `tests/integration` 下其余用例。汇总用 `python-coverage.py combine` 合并八份数据，再以 `coverage report --rcfile pyproject.toml` 判定。采集作业与分片都不判定，同一门槛只在一处生效。
+
+汇总作业对每份数据校验名称、存在性、大小、SHA-256 与 branch 数据，并要求采集作业结果为成功、六片结果均为成功、数据摘要与分片报告一致；任一份缺失、为空、被替换或采集作业未成功都直接失败，不会退化为「只用采集作业的数据判定通过」。合并结果写入 `merged.json`（数据份数、合并百分比、判定结果），同时以 `merged-python-coverage` 制品留存。
+
+覆盖率判定只存在于执行六个分片的全量路由（`full`）。`web` 与 `no-db` 路由仍采集数据但不判定，这是「判定与采集同源」的直接结果，作为已知覆盖缺口记入下文维护事项。
 
 判定函数是 `coverage.results.should_fail_under`，语义为 `round(total, 0) < fail_under`：**79.5%–79.99% 通过、低于 79.5% 失败**，失败输出 `Coverage failure: total of N is less than fail-under=80`。`total` 是语句与分支的加权覆盖率 `(已覆盖语句 + 已覆盖分支) / (语句 + 分支)`，不是语句覆盖率。
 
-### 分母包含集成独占语句
+### 合并前后的实测依据
 
-门禁的分母是 `source` 下全部可执行语句与分支，其中一部分只能由 `tests/integration` 执行；采集范围到不了那部分代码，它们恒以「未覆盖」计入分母。2026-11-13 在 `97c70504` 上用 [ci.yml](../../.github/workflows/ci.yml) 相同脚本实测：
+门禁的分母始终是 `source` 下全部可执行语句与分支，其中一部分只能由 `tests/integration` 执行。判定只在采集作业数据上运行时，那部分代码恒以「未覆盖」计入分母——这是把判定迁到合并数据的直接原因。2026-11-13 在 `97c70504` 上用 [ci.yml](../../.github/workflows/ci.yml) 相同脚本实测合并前作业范围，并用同一提交的八份数据（两份 worker 数据 + 六份分片数据）实测合并结果：
 
 | 观测 | 数值 |
 | --- | --- |
@@ -139,15 +143,15 @@ Python 测试作业通过 `python-coverage.py run --workers 2` 在同一 runner 
 
 这张表是**补测之后**的快照：`#605` 序列中的 #621 之后紧跟 #622（109 行单元测试）、#626（149 行 CI 测试）、#627（294 行单元测试），这些补测把对应文件的集成独占比例压了下来。在功能提交自身的 head 上，比例更高——两片的失败就发生在补测之前。新增代码的类型分布与全量集成独占一致：集中在 Postgres/SQL 适配层与 `*_runtime.py` 装配根。
 
-结论是结构性的，不是测试质量问题：在现有采集范围下，门禁的实测可达上限就是 79.7275%，可用余量只有 142 个判定单元；任何只被集成测试执行的新增代码都会直接消耗这个余量，新增约 179 个未覆盖判定单元即触发失败。补单元测试可以临时抬高总量，但不改变「分母包含采集范围外的语句」这一事实，下一次集成边界改动会重演同一失败。
+合并判定消除了这个结构性错配：集成用例本来就在六个分片里执行，其覆盖数据并入后，4021 语句与 1380 分支边由「恒未覆盖」变为按实际执行计入，TOTAL 从 79.7275% 变为 88.4056%，余量从 142 提升到 5543 个判定单元，可再容纳约 6972 个新增未覆盖判定单元。这不改变分母、不新增测试执行时间，也不放松 `fail_under`；只被集成测试执行的新增代码不再消耗余量，但仍须满足既有的单元测试政策（见下文方案对比中的 B 项）。
 
 ### 方案对比
 
-代价以本卡实测为准（macOS 18 核；PG 16.15 / MySQL 8.4 / MinIO 容器；2621 个非浏览器集成用例分三个并行进程执行，三个进程各自耗时 737 / 757 / 781 秒）。浏览器用例（40 例，14 个 `*_browser.py` 模块与 2 个合成浏览器探针模块）需要 Web 构建，未纳入测量；另有 10 个 Node/TS 消费者用例因未构建 Web 产物在本机失败。两者都只会让集成独占量偏小，因此表内 4021 是下界。
+代价以本次实测为准（macOS 18 核；PG 16.15 / MySQL 8.4 / MinIO 容器；2621 个非浏览器集成用例分三个并行进程执行，三个进程各自耗时 737 / 757 / 781 秒）。浏览器用例（40 例，14 个 `*_browser.py` 模块与 2 个合成浏览器探针模块）需要 Web 构建，未纳入测量；另有 10 个 Node/TS 消费者用例因未构建 Web 产物在本机失败。两者都只会让集成独占量偏小，因此表内 4021 是下界。
 
 | 方案 | 对 4021 语句 / 1380 分支边的影响 | CI 壁钟增量 | 维护成本 | 会不会引入新盲区 |
 | --- | --- | --- | --- | --- |
-| **A1** 分片导出覆盖数据，在汇总证据里合并判定 | 计入 4021 + 1380，TOTAL 变 88.41%，余量 5543 单元 | 测试 0 分钟（分片已执行）；新增 6 份覆盖数据制品（每份约 1–2 MB）与一次 `combine`（十秒级）；汇总作业 2 分钟超时需要上调 | 中：分片内启用 `--cov` 并落盘，`download-integration-evidence.py` 增列数据文件，覆盖率判定从 `python_checks` 迁到协调汇总，路由范围需重新定义 | 无（分母不变）；但覆盖判定只在执行分片的全量路由存在 |
+| **A1** 分片导出覆盖数据，在汇总证据里合并判定（**已采用**） | 计入 4021 + 1380，TOTAL 变 88.41%，余量 5543 单元 | 测试 0 分钟（分片已执行）；新增 6 份覆盖数据制品（每份约 1–2 MB）与一次 `combine`（十秒级）；汇总作业超时由 2 分钟上调到 10 分钟（含安装与判定） | 中：分片内启用 `--cov` 并落盘，`download-integration-evidence.py` 增列数据文件，覆盖率判定从 `python_checks` 迁到协调汇总 | 无（分母不变）；判定只在执行分片的全量路由存在 |
 | **A2** 覆盖率作业内直接跑集成分片 | 同上 | +约 1100 秒（2621 例按 0.85 秒/例摊到两个 worker，各约 1310 例并行）；10 分钟作业预算需提到 25 分钟以上；另需在覆盖率作业增加 MySQL 服务 | 高：作业预算、服务、`python-coverage.py` 的 2 worker 上限一起改 | 无 |
 | **B** 政策化：新增集成边界模块必须自带单元覆盖 | 4021 不变；新增 N 个集成独占判定单元时须新覆盖 0.795×(62237+N) − 49620，即 N=500/1000/2000 时须覆盖 51%/65%/72% | 0 | 每片新增测试代码；最近三片为补余量已写 552 行专用单测（#627 294 行、#622 109 行、#626 149 行），最终余量为约 140 个判定单元 | 浅测试风险：只覆盖判定单元、不约束断言强度 |
 | **C1** 仅排除 3 个 100% 集成独占文件（36 语句） | 79.7275% → 79.7736% | 0 | 低 | 小但无效，数量级不足以解决问题 |
@@ -155,47 +159,51 @@ Python 测试作业通过 `python-coverage.py run --workers 2` 在同一 runner 
 | **C3** 排除全部 197 个含集成独占语句的文件（18298 语句） | 79.7275% → 89.6185% | 0 | 低 | 极大：37.9% 判定单元退出约束，是「让数字好看」而非修复 |
 | **D** 下调 `fail_under` | 79.0 时余量 453 单元（2.5 倍）；不改变结构 | 0 | 极低 | 门禁变松，同类漂移被掩盖而不是暴露 |
 
-### 推荐与落地边界
+### 采用方案与维护事项
 
-推荐 **A1 + B 作为并行政策**，并把 C、D 排除在修复手段之外：
+采用 **A1 为结构性修复、B 为并行政策**，并把 C、D 排除在修复手段之外：
 
 - **A1 是结构性修复**：集成用例本来就在六个分片里执行，让它们顺手产出覆盖数据并在汇总证据中合并，分母与采集范围重新对齐，实测 TOTAL 从 79.7275% 变为 88.4056%，余量从 142 提升到 5543 个判定单元。它不新增测试执行时间，也不引入新的盲区。
-- **B 作为政策补充而非替代**：可单元验证的行为仍应写单元测试；但只用 B 就是当前做法——每片新增约 51%–72% 的单元覆盖才能维持阈值，成本随时长上升且容易产出为覆盖率而写的浅测试。
-- **C 会让盲区不可见**：C2 已经要隐去 3538 语句 + 1072 分支。若最终选择任何排除方案，必须同时发布被排除清单（文件 + 语句数），不允许只报总数；本卡评估的 C1/C2 清单见下文。
-- **D 不推荐**：把 80 改成 79 只是把「新增 179 个未覆盖判定单元即失败」换成「新增 453 个即失败」，下一块集成专属代码仍会撞线，同时降低了对既有回归的敏感度；这是把门禁改松来消除失败，不解决分母与采集范围错配。
+- **B 是政策补充而非替代**：可单元验证的行为仍应写单元测试；只用 B 时，每片新增约 51%–72% 的单元覆盖才能维持阈值，成本随时长上升且容易产出为覆盖率而写的浅测试。
+- **C 会让盲区不可见**：C2 已经要隐去 3538 语句 + 1072 分支。任何排除方案都必须同时发布被排除清单（文件 + 语句数），不允许只报总数；本章评估的 C1/C2 清单见下文。
+- **D 被排除**：把 80 改成 79 只是把「新增 179 个未覆盖判定单元即失败」换成「新增 453 个即失败」，下一块集成专属代码仍会撞线，同时降低了对既有回归的敏感度；这是把门禁改松来消除失败，不解决分母与采集范围错配。
 
-落点文件（实施卡执行，本卡不改）：
+维护事项：
 
-| 文件 | 需要的改动 |
+- `web` 与 `no-db` 路由只采集数据、不判定覆盖率。若要让这两条路由也受覆盖率约束，需要在不执行分片的前提下单独设计判定位置，并避免与全量路由重复判定。
+- 分片覆盖数据使分片作业的制品多出一份（约 1–2 MB）并把汇总作业超时提到 10 分钟；分片作业自身的 30 分钟预算不变。
+- 覆盖数据只在分片实际执行时产生；`--collect-only` 预检不产生数据，其报告不构成覆盖证据。
+
+实施位置：
+
+| 文件 | 当前职责 |
 | --- | --- |
-| [.github/workflows/ci.yml](../../.github/workflows/ci.yml) | 集成分片步骤输出覆盖数据并随分片制品上传；汇总作业组合数据后执行覆盖率判定；相应调整汇总作业超时 |
-| [scripts/dev-env/integration-shards.py](../../scripts/dev-env/integration-shards.py) | `run` 子命令为分片 pytest 增加 `--cov --cov-fail-under=0`，并固定每个分片的覆盖数据路径 |
-| [scripts/dev-env/download-integration-evidence.py](../../scripts/dev-env/download-integration-evidence.py) | 在既有分片证据里增列覆盖数据文件的校验与下载 |
-| [scripts/dev-env/python-coverage.py](../../scripts/dev-env/python-coverage.py) | 接受可选的外部覆盖数据集，或在组合阶段并入分片数据；两 worker 的完整执行证据校验保持不变 |
+| [.github/workflows/ci.yml](../../.github/workflows/ci.yml) | 分片步骤导出 `coverage-<shard>.data` 并随分片制品上传；`coordination` 下载两类数据、校验、合并并判定；超时 10 分钟 |
+| [scripts/dev-env/integration-shards.py](../../scripts/dev-env/integration-shards.py) | `run` 子命令以 `--cov --cov-fail-under=0 --cov-report=` 采集，固定 `COVERAGE_FILE`，在报告里记录数据文件名与 SHA-256；`check` 校验执行证据与数据摘要 |
+| [scripts/dev-env/download-integration-evidence.py](../../scripts/dev-env/download-integration-evidence.py) | 分片制品按三份固定成员下载；`workbench-pg-full-coverage` 按白名单提取汇总与两份 worker 数据；名称、数量、大小、摘要不符即失败 |
+| [scripts/dev-env/python-coverage.py](../../scripts/dev-env/python-coverage.py) | `run` 只测量并导出两 worker 数据与 `workbench-pg-full-coverage`；`combine` 校验八份数据、合并、按 `pyproject.toml` 判定，并写 `merged.json` |
 | [pyproject.toml](../../pyproject.toml) | **不改**：`fail_under = 80`、`source`、`branch` 均维持现状 |
 
-批准：这属于门禁治理变更（改变判定所在作业与必要检查的证据构成），需要仓库维护者/门禁负责人批准；`ci.yml` 与判定位置的变化还要同步 `main` 的 required status checks 说明与本节。**本卡只产出分析与方案，未改任何门禁参数，未改 `ci.yml`、脚本或测试。**
+这属于门禁治理变更（改变判定所在作业与必要检查的证据构成）；`ci.yml` 的判定位置变化须与本节、`main` 的 required status checks 说明保持同步。
 
 ### 复现测量
 
-三条命令即可复现量级（本机需可用的隔离 PostgreSQL、MinIO、MySQL 与 `SPEECHNEXUS_TEST_*` 变量；作业范围还需 `--pg-bin` 指向含 `initdb`/`pg_ctl` 的目录）：
+两条命令即可复现（本机需可用的隔离 PostgreSQL、MinIO、MySQL 与 `SPEECHNEXUS_TEST_*` 变量；采集范围还需 `--pg-bin` 指向含 `initdb`/`pg_ctl` 的目录）：
 
 ```sh
-# 1) 门禁同范围（与 ci.yml 相同脚本）
+# 1) 采集作业范围：两 worker 数据写到 /tmp/cov/job-parts，汇总在 /tmp/cov/job.json
 uv run python scripts/dev-env/python-coverage.py run --pg-bin <pg-bin> --workers 2 --output /tmp/cov/job.json
-#    该脚本仅在两个 worker 全部通过时才组合并打印 TOTAL；本机若出现环境相关失败，
-#    可分别取两个探针目录中的 .coverage 手工 combine 后 report。
 
-# 2) 集成范围（六个分片的非浏览器用例全集，等价于 `pytest -m integration tests/integration`）
-uv run pytest -m integration tests/integration -q -k "not browser" \
-  --ignore=tests/integration/test_workbench_orphan_probes.py \
-  --ignore=tests/integration/test_workbench_realtime_synthetic_probes.py \
-  --cov --cov-fail-under=0 --cov-report=
-
-# 3) 差异（作业范围数据在前，集成范围数据在 `--` 之后）
-uv run python /tmp/coverage-delta.py "$PWD" /tmp/cov/job-parts/coverage-0.data /tmp/cov/job-parts/coverage-1.data \
-  -- /tmp/cov/integration-0.data /tmp/cov/integration-1.data /tmp/cov/integration-2.data
+# 2) 合并判定：--job-parts 与 --integration-dir 指向两类数据目录，输出 merged.json 与合并数据
+uv run python scripts/dev-env/python-coverage.py combine \
+  --job-summary /tmp/cov/job.json --job-parts /tmp/cov/job-parts \
+  --integration-dir /tmp/cov/integration-shards --count 6 --output /tmp/cov/merged
+#    集成数据按 coverage-<shard>.data 命名；缺任一份、为空或摘要不符即失败，不会退化为作业范围数据判定。
 ```
+
+集成分片数据由 `integration-shards.py run --index <i> --count 6 --coverage-data <目录>/coverage-<i>.data --report <目录>/integration-shard-<i>.data` 产生（`check` 子命令校验报告与数据一致）。没有可用分片数据时，`combine` 直接失败；只想复现作业范围量级可对 `/tmp/cov/job-parts` 自行 `coverage combine` 后 `coverage report`，但这不是门禁路径。
+
+`coverage-delta.py` 是一次性只读脚本（不进入仓库），用于比较作业范围与集成范围的语句集合：先把每份数据复制成临时目录下的 `.coverage.*`，用 `Coverage(..., config_file=pyproject.toml).combine()` 合并，再对每个文件取 `analysis2()` 的语句集合做差集。
 
 `coverage-delta.py` 是只读的一次性脚本（不进入仓库）：先把每份数据复制成临时目录下的 `.coverage.*`，用 `Coverage(..., config_file=pyproject.toml).combine()` 合并，再对每个文件取 `analysis2()` 的语句集合做差集，输出集成独占语句总数与逐文件条数。
 

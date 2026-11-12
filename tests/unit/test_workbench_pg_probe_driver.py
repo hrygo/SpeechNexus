@@ -210,7 +210,10 @@ def test_shard_command_delegates_the_complete_run_and_report_to_the_original_run
     tmp_path: Path,
 ) -> None:
     report = tmp_path / "shard report.json"
-    assert DRIVER.build_integration_shard_command(index=2, count=6, report=report) == [
+    coverage = tmp_path / "coverage-2.data"
+    assert DRIVER.build_integration_shard_command(
+        index=2, count=6, report=report, coverage_data=coverage
+    ) == [
         DRIVER.sys.executable,
         "scripts/dev-env/integration-shards.py",
         "run",
@@ -220,13 +223,24 @@ def test_shard_command_delegates_the_complete_run_and_report_to_the_original_run
         "6",
         "--report",
         str(report),
+        "--coverage-data",
+        str(coverage),
     ]
+    with pytest.raises(ValueError, match="coverage-<index>"):
+        DRIVER.build_integration_shard_command(
+            index=2, count=6, report=report, coverage_data=tmp_path / "shard-2.data"
+        )
 
 
 @pytest.mark.parametrize("index,count", [(-1, 6), (6, 6), (0, 0), (0, 17), (True, 6)])
 def test_shard_builder_rejects_invalid_partition(index: int, count: int, tmp_path: Path) -> None:
     with pytest.raises(ValueError):
-        DRIVER.build_integration_shard_command(index=index, count=count, report=tmp_path / "r.json")
+        DRIVER.build_integration_shard_command(
+            index=index,
+            count=count,
+            report=tmp_path / "r.json",
+            coverage_data=tmp_path / "coverage-0.data",
+        )
 
 
 def test_shard_arguments_have_an_independent_default_driver_report(tmp_path: Path) -> None:
@@ -241,12 +255,34 @@ def test_shard_arguments_have_an_independent_default_driver_report(tmp_path: Pat
             "6",
             "--shard-report",
             str(report),
+            "--shard-coverage",
+            str(tmp_path / "coverage-0.data"),
         ]
     )
     assert args.integration_shard == 0 and args.shard_count == 6
     assert args.shard_report == report
+    assert args.shard_coverage == tmp_path / "coverage-0.data"
     assert args.output == tmp_path / "workbench-pg-shard-0.json"
     assert args.output != args.shard_report
+
+
+def test_shard_coverage_must_be_named_for_the_partition(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit) as raised:
+        DRIVER.parse_arguments(
+            [
+                "--pg-bin",
+                "/synthetic/pg/bin",
+                "--integration-shard",
+                "0",
+                "--shard-count",
+                "6",
+                "--shard-report",
+                str(tmp_path / "shard.json"),
+                "--shard-coverage",
+                str(tmp_path / "coverage-1.data"),
+            ]
+        )
+    assert raised.value.code == 2
 
 
 @pytest.mark.parametrize(
@@ -271,6 +307,8 @@ def test_shard_mode_rejects_probe_selection_modes(extra: list[str], tmp_path: Pa
                 "6",
                 "--shard-report",
                 str(tmp_path / "shard.json"),
+                "--shard-coverage",
+                str(tmp_path / "coverage-0.data"),
                 *extra,
             ]
         )
@@ -283,6 +321,8 @@ def test_shard_mode_rejects_probe_selection_modes(extra: list[str], tmp_path: Pa
         ["--integration-shard", "0"],
         ["--shard-count", "6"],
         ["--shard-report", "r.json"],
+        ["--integration-shard", "0", "--shard-count", "6", "--shard-report", "r.json"],
+        ["--shard-coverage", "coverage-0.data"],
     ],
 )
 def test_shard_identity_and_report_are_required_together(flags: list[str]) -> None:

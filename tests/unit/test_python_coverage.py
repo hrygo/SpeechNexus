@@ -289,7 +289,11 @@ def test_merge_judges_the_merged_percentage_through_the_project_configuration(
     # merge is therefore what carries the same 80% threshold over the line.
     measured_only = root / "measured-only"
     measured_only.mkdir()
-    GATE.combine_data(sorted(args.job_parts.glob("coverage-*.data")), measured_only)
+    GATE.combine_data(
+        sorted(args.job_parts.glob("coverage-*.data")),
+        measured_only,
+        config_file=root / "pyproject.toml",
+    )
     assert GATE.gate_report(measured_only, rcfile=root / "pyproject.toml") != 0
     captured = capfd.readouterr()
     assert "less than fail-under=80" in captured.out + captured.err

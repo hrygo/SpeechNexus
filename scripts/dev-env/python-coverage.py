@@ -309,14 +309,14 @@ def require_branch_data(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def combine_data(files: Sequence[Path], directory: Path) -> float:
+def combine_data(files: Sequence[Path], directory: Path, *, config_file: Path) -> float:
     """Combine explicit data files; the unchanged gate is reported by the caller."""
     from coverage import Coverage
 
     combined = directory / "coverage.data"
     cov = Coverage(
         data_file=str(combined),
-        config_file=str(combined_config()),
+        config_file=str(config_file),
     )
     cov.combine(data_paths=[str(path) for path in files], strict=True, keep=True)
     cov.save()
@@ -443,7 +443,11 @@ def run_parallel(args: argparse.Namespace) -> int:
         # so the uploaded artifact holds only data files and execution logs.
         combined = directory.with_name(directory.name + "-combined")
         combined.mkdir()
-        percent = combine_data([directory / part["file"] for part in parts], combined)
+        percent = combine_data(
+            [directory / part["file"] for part in parts],
+            combined,
+            config_file=combined_config(),
+        )
         summary.update(coverage_parts=parts, coverage_percent=percent)
         return 0
     finally:
@@ -568,7 +572,7 @@ def run_combine(args: argparse.Namespace) -> int:
     try:
         measured = verify_job_evidence(args.job_summary, args.job_parts, head=head)
         shards = verify_shard_evidence(args.integration_dir, args.count, head=head)
-        percent = combine_data([*measured, *shards], output)
+        percent = combine_data([*measured, *shards], output, config_file=rcfile)
         code = gate_report(output, rcfile=rcfile)
         summary.update(
             job_parts=len(measured),

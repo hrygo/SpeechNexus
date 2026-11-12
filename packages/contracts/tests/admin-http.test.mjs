@@ -23,7 +23,7 @@ for (const example of examples) {
       assert.equal(check(), value);
       if (example.kind === "response") {
         const name =
-          example.status !== 200
+          example.status >= 400
             ? "ErrorResponse"
             : example.operation === "listWorkspaces"
               ? "WorkspaceList"
@@ -78,9 +78,15 @@ test("the validated client rejects unselected writes at runtime before fetching"
     calls++;
     return Response.json({});
   });
+  // The collection POST is selected, but only PATCH is selected on one
+  // workspace; a write the surface does not expose must not reach the network.
   await assert.rejects(
-    client.POST("/v1/nexus/workspaces", { body: { display_name: "Synthetic" } }),
+    client.POST("/v1/nexus/workspaces/{workspace_id}", {
+      params: { path: { workspace_id: "workspace-default" } },
+      body: { display_name: "Synthetic" },
+    }),
     /Unknown HTTP operation/,
   );
+  await assert.rejects(client.DELETE("/v1/nexus/workspaces"), /Unknown HTTP operation/);
   assert.equal(calls, 0);
 });

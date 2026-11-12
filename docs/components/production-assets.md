@@ -335,11 +335,12 @@ aggregate and unit/contract coverage gate; the current partitioning and gate sco
 are defined in [CI validation](../validation/ci-validation.md).
 
 
-## Shared workspace reads
+## Shared workspace reads and writes
 
-The backend implements `GET /v1/nexus/workspaces` and
-`GET /v1/nexus/workspaces/{workspace_id}` using the existing `0003_assets`
-`speech_workspaces` authority. The default group is the actual migration row:
+The backend implements `GET /v1/nexus/workspaces`,
+`GET /v1/nexus/workspaces/{workspace_id}`, `POST /v1/nexus/workspaces` and
+`PATCH /v1/nexus/workspaces/{workspace_id}` using the existing `0003_assets`
+`speech_workspaces` authority and the `0049_workspace_commands` replay ledger. The default group is the actual migration row:
 missing records are never synthesized. Both active and disabled groups remain
 readable; existing asset upload rules continue to reject disabled groups.
 Workspace grouping does not establish a user, ACL, tenant or private boundary.
@@ -367,8 +368,8 @@ Missing configuration or unavailable storage returns 503. Existing
 policy as asset routes. Host authorities reject userinfo, path/query/fragment
 separators even when the parsed component is empty; no new identity system or client-selected endpoint is
 introduced. Fixed public errors never include SQL, credentials or private paths.
-The runtime OpenAPI includes only the two implemented GETs with namespaced admin
-components; planned workspace POST/PATCH and policy-management routes remain
+The runtime OpenAPI includes the two implemented GETs and the two accepted
+writes with namespaced admin components; policy-management routes remain
 unregistered. The optional Python service injection is for explicit composition
 and isolated tests, and never creates a fallback record.
 
@@ -379,3 +380,42 @@ storage deadlines, read-only enforcement, service reconstruction, configured
 lifetimes and the original asset upload/read path. These tests use synthetic
 content and do not qualify a speech engine, GPU capacity or production network.
 Their definitions do not establish a passing run in the current environment.
+
+## Shared workspace writes
+
+Writes use a separately granted non-owner login configured by
+`SPEECHNEXUS_WORKSPACE_WRITER_DATABASE_URL`. Reads keep the asset runtime role,
+whose only `speech_workspaces` write privilege is `UPDATE (metadata_revision)`;
+that role therefore cannot rename or disable a group, and the existing negative
+test keeps it that way. Startup verifies the declared surface instead of the DSN
+name: schema `USAGE` without `CREATE`, only `speech_workspaces` and
+`speech_workspace_commands`, column-level `INSERT`/`UPDATE` sets equal to
+`workspace_schema.py`, and no `DELETE`/`TRUNCATE`/`REFERENCES`/`TRIGGER` or
+table-level `INSERT`/`UPDATE`.
+
+The create identity is server allocated (`workspace-` plus a random hex suffix)
+and never taken from the request; the contract declares no client field for it.
+`expected_metadata_revision` is the compare-and-set operand, and a successful
+update increments `metadata_revision` exactly once inside the same transaction
+that records the command. `policy_id` is refused with
+`422 workspace_policy_unsupported` because no policy registry exists; the stored
+`policy_revision` therefore keeps its migration default. `display_name` is not a
+uniqueness key: the contract declares no name identity and no duplicate-name
+error, so only the workspace identity is unique.
+
+`Idempotency-Key` stays optional, as the frozen contract declares it. When it is
+present, `speech_workspace_commands` records one row per key digest: a repeat of
+the same operation, target and body resolves to the current state of the same
+identity (201 for create, 200 for update, no second row and no second revision
+increment); a different body, target or operation answers
+`409 idempotency_conflict`; two concurrent identical requests serialize on a
+transaction-scoped advisory lock, and a duplicate refused at commit is re-read in
+a fresh transaction so the original wins. The ledger stores no foreign key to
+`speech_workspaces`: a replay whose recorded group was deleted answers 503
+instead of recreating it. Without a configured writer the two operations answer
+`503 workspace_service_unavailable`; reads are unaffected.
+
+Unit tests cover the boundary mapping with an in-memory port. Real uniqueness,
+serialization, compare-and-set and replay are proved by
+`tests/integration/test_workspace_writes.py` against an isolated PostgreSQL
+server, which is the only evidence that the constraints and transactions work.

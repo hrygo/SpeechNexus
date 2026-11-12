@@ -427,6 +427,11 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         if db.dialect == "postgresql"
         else set()
     )
+    # The accepted workspace command ledger (0049). It is a private
+    # workspace-writer table, outside the shared coordination surface.
+    workspace_command_tables = (
+        {"speech_workspace_commands"} if db.dialect == "postgresql" else set()
+    )
     assert binding_tables <= {row["name"] for row in rows}
     assert profile_tables <= {row["name"] for row in rows}
     assert publication_tables <= {row["name"] for row in rows}
@@ -436,6 +441,7 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
     assert draft_tables <= {row["name"] for row in rows}
     assert intent_tables <= {row["name"] for row in rows}
     assert voice_publication_tables <= {row["name"] for row in rows}
+    assert workspace_command_tables <= {row["name"] for row in rows}
     assert (
         {row["name"] for row in rows}
         - {
@@ -452,6 +458,7 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         - draft_tables
         - intent_tables
         - voice_publication_tables
+        - workspace_command_tables
         == (set(SPEECH_UPDATES) | set(GATEWAY_UPDATES))
     )
     if db.dialect == "postgresql":
@@ -466,6 +473,7 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
                 | draft_tables
                 | intent_tables
                 | voice_publication_tables
+                | workspace_command_tables
             ):
                 with (
                     pytest.raises(psycopg.errors.InsufficientPrivilege),

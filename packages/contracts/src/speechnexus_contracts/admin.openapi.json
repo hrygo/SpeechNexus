@@ -58,6 +58,65 @@
             "$ref": "#/components/responses/ServiceUnavailable"
           }
         }
+      },
+      "post": {
+        "tags": ["workspaces"],
+        "operationId": "createWorkspace",
+        "summary": "Create a content and budget group",
+        "description": "A workspace is not a user, tenant, ACL, or privacy boundary. Creation is\nan administrative grouping action; it does not grant personal ownership.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Workspace created.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
       }
     },
     "/v1/nexus/workspaces/{workspace_id}": {
@@ -100,6 +159,70 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      },
+      "patch": {
+        "tags": ["workspaces"],
+        "operationId": "updateWorkspace",
+        "summary": "Update workspace display metadata or status",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspacePatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated workspace.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
           },
           "503": {
             "$ref": "#/components/responses/ServiceUnavailable"
@@ -235,6 +358,16 @@
         "schema": {
           "type": "string",
           "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "minLength": 8,
           "maxLength": 128
         }
       },
@@ -825,6 +958,42 @@
           "observed.turn_detection.silence_duration_ms"
         ]
       },
+      "WorkspaceCreateRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["display_name"],
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "policy_id": {
+            "$ref": "#/components/schemas/Identifier"
+          }
+        }
+      },
+      "WorkspacePatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "minProperties": 2,
+        "required": ["expected_metadata_revision"],
+        "properties": {
+          "expected_metadata_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "disabled"]
+          }
+        }
+      },
       "ResourcePoolList": {
         "type": "object",
         "additionalProperties": false,
@@ -1069,6 +1238,26 @@
       },
       "ServiceUnavailable": {
         "description": "Control-plane dependency unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Revision mismatch, idempotency conflict, or incompatible lifecycle transition.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "UnprocessableEntity": {
+        "description": "Invalid binding, capacity, or qualification composition.",
         "content": {
           "application/json": {
             "schema": {

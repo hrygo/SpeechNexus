@@ -148,6 +148,7 @@ from speechnexus_backend.speech.interfaces.http.workspaces import (
     create_workspace_router,
     workspace_error,
 )
+from speechnexus_backend.workspace_writer_runtime import WorkspaceWriterRuntime
 
 
 class _SpeechAPI(FastAPI):
@@ -248,6 +249,16 @@ def create_app(
     )
     asset_service = assets or (runtime.service if runtime is not None else None)
     workspace_service = workspaces or (runtime.workspaces if runtime is not None else None)
+    workspace_writer_runtime = (
+        WorkspaceWriterRuntime(resolved_settings)
+        if workspaces is None
+        and workspace_service is not None
+        and resolved_settings.workspace_writer_database_url is not None
+        else None
+    )
+    if workspace_writer_runtime is not None and workspace_service is not None:
+        # Reads keep the asset role; only the two writes use the writer identity.
+        workspace_service = workspace_service.with_writes(workspace_writer_runtime)
     resource_pool_runtime = (
         ResourcePoolRuntime(resolved_settings)
         if resource_pools is None
@@ -489,6 +500,9 @@ def create_app(
             if binding_list_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, binding_list_runtime.close)
                 await run_in_threadpool(binding_list_runtime.open)
+            if workspace_writer_runtime is not None:
+                resources.push_async_callback(run_in_threadpool, workspace_writer_runtime.close)
+                await run_in_threadpool(workspace_writer_runtime.open)
             if pronunciation_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, pronunciation_runtime.close)
                 await run_in_threadpool(pronunciation_runtime.open)
@@ -698,11 +712,12 @@ def create_app(
                 if error.status_code == 404
                 else "workspace_method_not_allowed"
             )
-            headers = (
-                {"Allow": error.headers["Allow"]}
-                if error.headers and "Allow" in error.headers
-                else {}
+            reported = (
+                error.headers["Allow"] if error.headers and "Allow" in error.headers else None
             )
+            # The workspace surface now serves GET and POST at one template;
+            # Starlette names only the first partial route, so merge them all.
+            headers = allowed_methods(path, reported) if error.status_code == 405 else {}
             return workspace_error(code, request.state.request_id, headers=headers)
         if (path == JOB_PREFIX or path.startswith(JOB_PREFIX + "/")) and error.status_code in (
             404,

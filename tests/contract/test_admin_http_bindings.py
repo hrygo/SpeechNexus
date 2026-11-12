@@ -24,6 +24,7 @@ CONFIG = json.loads((ROOT / "contracts/bindings.json").read_text())["http_surfac
 
 
 SOURCE = document(ROOT / "contracts/admin-openapi.yaml")
+HTTP_METHODS = frozenset({"get", "post", "put", "patch", "delete", "head", "options", "trace"})
 
 
 def resolve(node: dict[str, Any]) -> dict[str, Any]:
@@ -35,13 +36,18 @@ def resolve(node: dict[str, Any]) -> dict[str, Any]:
     return node
 
 
+def operation_source(operation_id: str) -> dict[str, Any]:
+    return next(
+        item[method]
+        for item in SOURCE["paths"].values()
+        for method in HTTP_METHODS
+        if isinstance(item.get(method), dict) and item[method].get("operationId") == operation_id
+    )
+
+
 def source_accepts(example: dict[str, Any]) -> bool:
     """Read original OpenAPI constraints independently of the generated bundle."""
-    operation = next(
-        item["get"]
-        for item in SOURCE["paths"].values()
-        if "get" in item and item["get"]["operationId"] == example["operation"]
-    )
+    operation = operation_source(example["operation"])
     value = example["value"]
 
     def valid(schema: dict[str, Any], candidate: Any) -> bool:
@@ -57,7 +63,11 @@ def source_accepts(example: dict[str, Any]) -> bool:
             return False
         schema = resolve(response)["content"]["application/json"]["schema"]
         return "body" in value and valid(schema, value["body"])
-    if set(value) - {"path", "query", "headers"}:
+    # Only the declared body media type may carry a body; a read declares none.
+    groups_declared = {"path", "query", "headers"}
+    if "requestBody" in operation:
+        groups_declared.add("body")
+    if set(value) - groups_declared:
         return False
     headers = value.get("headers", {})
     if len({key.lower() for key in headers}) != len(headers):
@@ -85,17 +95,26 @@ def source_accepts(example: dict[str, Any]) -> bool:
             candidate = number
         if not valid(schema, candidate):
             return False
+    if "requestBody" in operation:
+        body = operation["requestBody"]["content"]["application/json"]["schema"]
+        if "body" not in value or not valid(resolve(body), value["body"]):
+            return False
+    elif "body" in value:
+        return False
     return all(not (set(value.get(key, {})) - declared[key]) for key in ("path", "query"))
 
 
-def test_only_selected_reads_are_closed_without_changing_source_defaults() -> None:
+def test_only_selected_operations_are_closed_without_changing_source_defaults() -> None:
     actual = contract()
     assert actual == generator().bundle_http_surface(CONFIG)
     validate(actual)
     assert set(actual["paths"]) == set(CONFIG["paths"])
     assert set(actual["paths"]["/v1/nexus/admin/resource-pools"]) == {"get"}
-    for item in actual["paths"].values():
-        assert set(item) == {"get"}
+    assert set(actual["paths"]["/v1/nexus/admin/model-bindings"]) == {"get"}
+    # The workspace collection carries the read and the create; the selected
+    # revision path carries the read and the update. Nothing else is closed.
+    assert set(actual["paths"]["/v1/nexus/workspaces"]) == {"get", "post"}
+    assert set(actual["paths"]["/v1/nexus/workspaces/{workspace_id}"]) == {"get", "patch"}
     assert actual["components"]["parameters"]["Limit"]["schema"]["default"] == 50
     assert actual["security"] == [{"SharedServiceKey": []}, {}]
     actual["paths"].clear()
@@ -117,7 +136,7 @@ def test_python_transport_preserves_shared_examples(example: dict[str, Any]) -> 
         if example["kind"] == "response":
             name: Literal["ErrorResponse", "WorkspaceList", "Workspace"] = (
                 "ErrorResponse"
-                if example["status"] != 200
+                if example["status"] >= 400
                 else "WorkspaceList"
                 if example["operation"] == "listWorkspaces"
                 else "Workspace"
@@ -129,7 +148,7 @@ def test_python_transport_preserves_shared_examples(example: dict[str, Any]) -> 
     assert value == example["value"]
 
 
-@pytest.mark.parametrize("operation", ["createWorkspace", "updateWorkspace", "getDiagnostics"])
+@pytest.mark.parametrize("operation", ["publishProfileRevision", "getDiagnostics"])
 def test_unselected_operations_are_rejected(operation: str) -> None:
     with pytest.raises(ValueError, match="Unknown HTTP operation"):
         validate_request(operation, {})

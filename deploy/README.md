@@ -267,6 +267,23 @@ SELECT 且拒绝任何写权限，未配置时列表返回 `503 model_binding_se
 或 grant。未配置时 `/v1/nexus/jobs` 返回既有错误包封的 `503 job_unavailable`，不会
 伪造 pending Job。
 
+工作区写操作默认关闭。执行 `0049_workspace_commands` 后，由 owner 运行
+`workspace_writer_grants(schema, role)` 并为非 owner 角色设置
+`SPEECHNEXUS_WORKSPACE_WRITER_DATABASE_URL`；不得复用 Compose bootstrap owner 或资产
+运行时角色。读取继续使用资产运行时角色，该角色对 `speech_workspaces` 只被授予
+`UPDATE (metadata_revision)`，因而无法改写显示名或状态；写操作使用本配置的独立身份。
+启动按 schema 校验其权限面：仅 `speech_workspaces` 与 `speech_workspace_commands`
+两张声明表，`speech_workspaces` 只接受列级 `INSERT (workspace_id, display_name,
+workspace_state, created_at_us)` 与 `UPDATE (display_name, workspace_state,
+metadata_revision)`，命令表只接受列级 `INSERT`，表级 `INSERT`/`UPDATE` 与任何
+`DELETE`/`TRUNCATE`/`REFERENCES`/`TRIGGER` 一律拒绝；校验不通过时进程启动失败，
+不执行迁移或 grant。同一 `Idempotency-Key` 的相同请求返回首次接受的身份，不同请求体、
+目标或操作返回 `409 idempotency_conflict`，记录的接受结果已被删除时返回 503 而不重建；
+`expected_metadata_revision` 与存储值不一致返回 `409 configuration_changed`。
+`policy_id` 在尚无策略注册表的部署中返回 `422 workspace_policy_unsupported`。
+未配置本变量时两个写操作返回 `503 workspace_service_unavailable`，读操作不受影响。
+API 容器的 `environment` 必须显式透传该变量；未透传等同于未配置。
+
 声音发布还需要独立的 publisher 角色：应用 0047 后由 owner 运行
 `voice_publication_grants(schema, role)`，设置 `SPEECHNEXUS_VOICE_PUBLISHER_DATABASE_URL`；
 它必须与 Job writer 指向同一数据库和服务器，但不得复用 Job writer 身份。启动按 schema

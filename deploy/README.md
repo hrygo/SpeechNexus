@@ -276,6 +276,14 @@ SELECT 且拒绝任何写权限，未配置时列表返回 `503 model_binding_se
 `speech_publication_lifecycle_events` 的 SELECT，供 `GET /v1/nexus/audit-events`；
 该身份不得复用生命周期写入角色，否则读取路径会获得追加或重放证据的能力。未配置时
 返回 `503 audit_service_unavailable`。
+`SPEECHNEXUS_MODEL_INSTANCE_READER_DATABASE_URL` 只授予 `engine_instances` 与
+`speech_binding_revisions` 的 SELECT，供 `GET /v1/nexus/admin/model-instances` 与
+`GET /v1/nexus/admin/model-instances/{instance_id}/generations/{generation}`；实例意图、
+租约、命令、提交意图与停止证据不在该身份可读范围内，不得复用 owner 或任何写入角色。
+该投影目前没有对应的仓库授权函数，按
+[最小部署手册 §6](../docs/operations/compose-minimal.md#6-创建非-owner-运行角色与最小授权)
+中的显式 `GRANT` 预置。未配置时两个端点返回
+`503 model_instance_service_unavailable`。
 
 公开 Job 提交与读取默认关闭。应用 `0017_job_submissions` 并为非 owner 角色授予
 `speech_jobs` / `speech_job_events` / `speech_job_submissions` 的最小写入权限及发布事实

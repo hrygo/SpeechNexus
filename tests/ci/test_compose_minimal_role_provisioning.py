@@ -1,11 +1,17 @@
 """Guard the compose-minimal role provisioning steps against doc/code drift.
 
-The runbook creates five non-owner roles and calls repository grant functions by
+The runbook creates six non-owner roles and calls repository grant functions by
 name, states the current migration head, and runs host commands that import the
 workspace members. A renamed grant function, a re-pointed head, or a host
 command that cannot import ``speechnexus_backend`` turns the runbook into
 instructions that fail on a clean machine, and a stale 503 code sends the
 operator to the wrong endpoint.
+
+The instance-reader step is the one role whose authority is not declared by a
+``*_grants`` function: the runbook grants its two relations inline, so the
+function-name check above cannot see it. ``model_instance_reader_relations``
+closes that blind spot by comparing the inline ``GRANT`` against the relations
+the runtime verifies at startup (``READABLE`` in ``model_instance_runtime.py``).
 
 These checks parse text only: they run under the system interpreter, like the
 other ``tests/ci`` guards, and never import the backend or open a database.
@@ -35,6 +41,11 @@ SETTINGS_FIELD = re.compile(r"^\s*([a-z0-9_]+_database_url)\s*:", re.MULTILINE)
 UNAVAILABLE_CODE = re.compile(r"`503 ([a-z][a-z0-9_]+)`")
 SHELL_BLOCK = re.compile(r"```bash\n(.*?)```", re.DOTALL)
 REVISION = re.compile(r'^revision = "([^"]+)"$', re.MULTILINE)
+READABLE = re.compile(r"^READABLE = \(([^)]*)\)$", re.MULTILINE)
+INSTANCE_READER_GRANT = re.compile(
+    r'"GRANT SELECT ON (?P<relations>[^"]*) TO \{\}"\)\s*\.format\((?P<arguments>.*?)\n\s*\)',
+    re.DOTALL,
+)
 DOWN_REVISION = re.compile(r'^down_revision = "([^"]+)"$', re.MULTILINE)
 
 
@@ -55,6 +66,14 @@ def defined_grant_functions() -> set[str]:
 
 def named_grant_functions(document: str) -> set[str]:
     return set(GRANT_CALL.findall(document)) | set(GRANT_BACKTICK.findall(document))
+
+
+def model_instance_reader_relations() -> list[str]:
+    source = read(BACKEND / "speechnexus_backend/model_instance_runtime.py")
+    declaration = READABLE.search(source)
+    if declaration is None:
+        raise AssertionError("model_instance_runtime.py declares no READABLE tuple")
+    return re.findall(r'"([a-z0-9_]+)"', declaration.group(1))
 
 
 def migration_head() -> str:
@@ -134,6 +153,36 @@ class ComposeMinimalRoleProvisioningTests(unittest.TestCase):
         sources = "\n".join(backend_sources())
         unknown = sorted(code for code in codes if f'"{code}"' not in sources)
         self.assertEqual(unknown, [], f"documented 503 codes are not raised: {unknown}")
+
+    def test_the_base_compose_forwards_the_model_instance_reader_dsn(self) -> None:
+        # Same contract as the workspace writer: the runbook's instance-reader
+        # step ends by writing this URL, so the base api service must keep
+        # forwarding it with the empty default.
+        self.assertIn(
+            "SPEECHNEXUS_MODEL_INSTANCE_READER_DATABASE_URL: "
+            "${SPEECHNEXUS_MODEL_INSTANCE_READER_DATABASE_URL:-}",
+            read(COMPOSE),
+        )
+
+    def test_the_instance_reader_grant_matches_the_runtime_readable_relations(self) -> None:
+        relations = model_instance_reader_relations()
+        self.assertTrue(relations, "runtime must declare the relations it verifies")
+        expected = ", ".join("{}." + relation for relation in relations)
+        grants = [
+            found.group("relations")
+            for found in INSTANCE_READER_GRANT.finditer(self.document)
+            if '"sn_model_instance_reader"' in found.group("arguments")
+        ]
+        # Both provisioning paths grant this role inline: the new-install script
+        # and the upgrade script. A renamed relation in either one drifts from
+        # the runtime's own startup check.
+        self.assertEqual(len(grants), 2, "both provisioning scripts must grant the instance reader")
+        self.assertEqual(grants, [expected, expected], "grant drifted from READABLE")
+        self.assertNotIn(
+            "model_instance_reader_grants(",
+            self.document,
+            "no such helper exists; the runbook must grant inline until one does",
+        )
 
     def test_the_base_compose_forwards_the_workspace_writer_dsn(self) -> None:
         # The runbook's workspace writer step ends by writing this URL; the base

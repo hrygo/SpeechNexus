@@ -16,6 +16,7 @@ from starlette.responses import Response
 from speechnexus_backend import __version__
 from speechnexus_backend.artifact_runtime import ArtifactRuntime
 from speechnexus_backend.asset_runtime import AssetRuntime
+from speechnexus_backend.audit_reader_runtime import AuditReaderRuntime
 from speechnexus_backend.binding_list_runtime import BindingListRuntime
 from speechnexus_backend.binding_runtime import (
     BindingAdminReaderRuntime,
@@ -35,6 +36,7 @@ from speechnexus_backend.resource_pool_runtime import ResourcePoolRuntime
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.artifacts import ArtifactService
 from speechnexus_backend.speech.application.assets import AssetService
+from speechnexus_backend.speech.application.audit_events import AuditEventService
 from speechnexus_backend.speech.application.binding_default_drafts import BindingDefaultDrafts
 from speechnexus_backend.speech.application.binding_drafts import BindingDrafts
 from speechnexus_backend.speech.application.binding_publication import (
@@ -79,6 +81,7 @@ from speechnexus_backend.speech.interfaces.http.asset_contract import asset_http
 from speechnexus_backend.speech.interfaces.http.asset_errors import asset_error
 from speechnexus_backend.speech.interfaces.http.asset_ingress import AssetIngress
 from speechnexus_backend.speech.interfaces.http.assets import create_asset_router
+from speechnexus_backend.speech.interfaces.http.audit_events import create_audit_event_router
 from speechnexus_backend.speech.interfaces.http.binding_contract import binding_http_contract
 from speechnexus_backend.speech.interfaces.http.binding_ingress import BindingIngress
 from speechnexus_backend.speech.interfaces.http.binding_lifecycle import (
@@ -212,6 +215,7 @@ def create_app(
     workspaces: WorkspaceService | None = None,
     resource_pools: ResourcePoolService | None = None,
     binding_summaries: BindingSummaryService | None = None,
+    audit_events: AuditEventService | None = None,
     profiles: ProfileDrafts | None = None,
     bindings: BindingDrafts | None = None,
     binding_defaults: BindingDefaultDrafts | None = None,
@@ -282,6 +286,17 @@ def create_app(
         if binding_summaries is not None:
             return binding_summaries
         return binding_list_runtime.service if binding_list_runtime is not None else None
+
+    audit_runtime = (
+        AuditReaderRuntime(resolved_settings)
+        if audit_events is None and resolved_settings.audit_reader_database_url is not None
+        else None
+    )
+
+    def get_audit_events() -> AuditEventService | None:
+        if audit_events is not None:
+            return audit_events
+        return audit_runtime.service if audit_runtime is not None else None
 
     artifact_runtime = (
         ArtifactRuntime(resolved_settings)
@@ -500,6 +515,9 @@ def create_app(
             if binding_list_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, binding_list_runtime.close)
                 await run_in_threadpool(binding_list_runtime.open)
+            if audit_runtime is not None:
+                resources.push_async_callback(run_in_threadpool, audit_runtime.close)
+                await run_in_threadpool(audit_runtime.open)
             if workspace_writer_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, workspace_writer_runtime.close)
                 await run_in_threadpool(workspace_writer_runtime.open)
@@ -632,6 +650,7 @@ def create_app(
     app.include_router(create_workspace_router(lambda: workspace_service))
     app.include_router(create_resource_pool_router(get_resource_pools))
     app.include_router(create_model_binding_list_router(get_binding_summaries))
+    app.include_router(create_audit_event_router(get_audit_events))
     app.include_router(create_profile_router(get_profiles))
     app.include_router(create_pronunciation_router(get_pronunciations))
     app.include_router(

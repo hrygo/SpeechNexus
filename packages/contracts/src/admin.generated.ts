@@ -649,7 +649,18 @@ export interface paths {
      *     lifecycle changes. The audit table stores only `kind=binding` events;
      *     profile, workspace, and policy changes currently produce no audit
      *     events, so this endpoint cannot return them. The `action` filter
-     *     matches one recorded action exactly.
+     *     matches one recorded action exactly; a value no recorded event carries
+     *     returns an empty page instead of an error.
+     *
+     *     Rows are ordered by `occurred_at` descending, then by `id` descending.
+     *     That pair is a total order because `id` is unique, so a page boundary
+     *     never depends on unspecified database order. `cursor` resumes strictly
+     *     after the position it records and is bound to the `action` filter that
+     *     produced it: a cursor from another filter, or one this operation did
+     *     not issue, returns 400 `invalid_audit_cursor`. `limit` defaults to 50
+     *     and must be between 1 and 100; any other value returns 400
+     *     `invalid_audit_request`. `has_more` is false and `next_cursor` is null
+     *     on the last page and for an empty collection.
      */
     get: operations["listAuditEvents"];
     put?: never;
@@ -3544,6 +3555,7 @@ export interface operations {
           "application/json": components["schemas"]["AuditEventList"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       503: components["responses"]["ServiceUnavailable"];
     };

@@ -19,7 +19,10 @@
     "ResourcePool",
     "ResourcePoolList",
     "CapacityManifestRecord",
-    "QualificationReportRecord"
+    "QualificationReportRecord",
+    "AuditEvent",
+    "AuditEventList",
+    "AuditChangeSummary"
   ],
   "$defs": {
     "WorkspaceCreateRequest": {
@@ -2335,6 +2338,118 @@
           "description": "Release-evidence locator of the authoritative document:\n`release-evidence://<engine>/<evidence-bundle>/qualification-report.json`.\nIt maps to `deploy/engines/<engine>/evidence/<evidence-bundle>/` and\nis resolved offline by scripts/dev-env/verify-release-evidence.py.\nThe response never embeds or copies the document body.\n"
         }
       }
+    },
+    "AuditEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "object",
+        "actor_type",
+        "request_id",
+        "action",
+        "resource_type",
+        "resource_id",
+        "occurred_at",
+        "policy_revision"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.audit_event"
+        },
+        "actor_type": {
+          "type": "string",
+          "enum": ["anonymous", "shared_credential"]
+        },
+        "credential_label": {
+          "type": ["string", "null"],
+          "maxLength": 128
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "resource_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "resource_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "occurred_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "policy_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "change_summary": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AuditChangeSummary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "AuditChangeSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["changed_fields"],
+      "properties": {
+        "changed_fields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "uniqueItems": true,
+          "description": "RFC 6901 JSON Pointers for fields changed by the audited action.\nStore field names only; never include before/after values, request\nbodies, credentials, content, audio, feature vectors, or paths.\n",
+          "items": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 256,
+            "pattern": "^/(?:[^/~]|~0|~1)+(?:/(?:[^/~]|~0|~1)+)*$"
+          }
+        },
+        "reason": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        }
+      }
+    },
+    "AuditEventList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object", "data", "has_more", "next_cursor"],
+      "properties": {
+        "object": {
+          "const": "nexus.list"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AuditEvent"
+          }
+        },
+        "has_more": {
+          "type": "boolean"
+        },
+        "next_cursor": {
+          "type": ["string", "null"]
+        }
+      }
     }
   },
   "anyOf": [
@@ -2388,6 +2503,15 @@
     },
     {
       "$ref": "#/$defs/QualificationReportRecord"
+    },
+    {
+      "$ref": "#/$defs/AuditEvent"
+    },
+    {
+      "$ref": "#/$defs/AuditEventList"
+    },
+    {
+      "$ref": "#/$defs/AuditChangeSummary"
     }
   ]
 }

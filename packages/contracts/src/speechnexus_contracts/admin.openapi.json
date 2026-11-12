@@ -326,6 +326,60 @@
           }
         }
       }
+    },
+    "/v1/nexus/audit-events": {
+      "get": {
+        "tags": ["audit"],
+        "operationId": "listAuditEvents",
+        "summary": "List model binding lifecycle audit events",
+        "description": "Returns the append-only audit events recorded for model binding\nlifecycle changes. The audit table stores only `kind=binding` events;\nprofile, workspace, and policy changes currently produce no audit\nevents, so this endpoint cannot return them. The `action` filter\nmatches one recorded action exactly; a value no recorded event carries\nreturns an empty page instead of an error.\n\nRows are ordered by `occurred_at` descending, then by `id` descending.\nThat pair is a total order because `id` is unique, so a page boundary\nnever depends on unspecified database order. `cursor` resumes strictly\nafter the position it records and is bound to the `action` filter that\nproduced it: a cursor from another filter, or one this operation did\nnot issue, returns 400 `invalid_audit_cursor`. `limit` defaults to 50\nand must be between 1 and 100; any other value returns 400\n`invalid_audit_request`. `has_more` is false and `next_cursor` is null\non the last page and for an empty collection.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            }
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Audit events ordered by (occurred_at, id).",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditEventList"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1203,6 +1257,118 @@
       "External_shared_capability_domains_schema_json_ReleaseTier": {
         "type": "string",
         "enum": ["experimental", "best_effort", "production"]
+      },
+      "AuditEventList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["object", "data", "has_more", "next_cursor"],
+        "properties": {
+          "object": {
+            "const": "nexus.list"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditEvent"
+            }
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "AuditEvent": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "object",
+          "actor_type",
+          "request_id",
+          "action",
+          "resource_type",
+          "resource_id",
+          "occurred_at",
+          "policy_revision"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "object": {
+            "const": "nexus.audit_event"
+          },
+          "actor_type": {
+            "type": "string",
+            "enum": ["anonymous", "shared_credential"]
+          },
+          "credential_label": {
+            "type": ["string", "null"],
+            "maxLength": 128
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "action": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "resource_type": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "resource_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "policy_revision": {
+            "$ref": "#/components/schemas/Revision"
+          },
+          "change_summary": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AuditChangeSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "AuditChangeSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["changed_fields"],
+        "properties": {
+          "changed_fields": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 128,
+            "uniqueItems": true,
+            "description": "RFC 6901 JSON Pointers for fields changed by the audited action.\nStore field names only; never include before/after values, request\nbodies, credentials, content, audio, feature vectors, or paths.\n",
+            "items": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 256,
+              "pattern": "^/(?:[^/~]|~0|~1)+(?:/(?:[^/~]|~0|~1)+)*$"
+            }
+          },
+          "reason": {
+            "type": ["string", "null"],
+            "maxLength": 2000
+          }
+        }
       }
     },
     "responses": {

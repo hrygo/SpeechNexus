@@ -10,7 +10,8 @@ export type HttpOperation =
   | "getWorkspace"
   | "updateWorkspace"
   | "listResourcePools"
-  | "listModelBindings";
+  | "listModelBindings"
+  | "listAuditEvents";
 type HttpPaths = {
   "/v1/nexus/workspaces": Pick<paths["/v1/nexus/workspaces"], "parameters" | "get" | "post">;
   "/v1/nexus/workspaces/{workspace_id}": Pick<
@@ -25,6 +26,7 @@ type HttpPaths = {
     paths["/v1/nexus/admin/model-bindings"],
     "parameters" | "get"
   >;
+  "/v1/nexus/audit-events": Pick<paths["/v1/nexus/audit-events"], "parameters" | "get">;
 };
 const validator = createHttpValidator(bundle);
 export function validateRequest<T>(operation: HttpOperation, value: T): T {

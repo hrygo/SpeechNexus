@@ -12339,6 +12339,145 @@
         "has_more": false,
         "next_cursor": null
       }
+    },
+    {
+      "id": "admin-AuditEvent-valid",
+      "profile": "admin",
+      "schema": "AuditEvent",
+      "valid": true,
+      "value": {
+        "id": "lifecycle-0123456789abcdef0123456789abcdef",
+        "object": "nexus.audit_event",
+        "actor_type": "anonymous",
+        "credential_label": null,
+        "request_id": "synthetic-request",
+        "action": "model_binding.retire",
+        "resource_type": "model_binding",
+        "resource_id": "asr-quality",
+        "occurred_at": "2026-11-12T00:00:00.000001Z",
+        "policy_revision": "7",
+        "change_summary": {
+          "changed_fields": [
+            "/publication/status",
+            "/publication/retired_at"
+          ],
+          "reason": null
+        }
+      }
+    },
+    {
+      "id": "admin-AuditEvent-internal-revision-identity",
+      "profile": "admin",
+      "schema": "AuditEvent",
+      "valid": false,
+      "value": {
+        "id": "lifecycle-0123456789abcdef0123456789abcdef",
+        "object": "nexus.audit_event",
+        "actor_type": "anonymous",
+        "credential_label": null,
+        "request_id": "synthetic-request",
+        "action": "model_binding.retire",
+        "resource_type": "model_binding",
+        "resource_id": "asr-quality",
+        "occurred_at": "2026-11-12T00:00:00.000001Z",
+        "policy_revision": "7",
+        "change_summary": {
+          "changed_fields": [
+            "/publication/status",
+            "/publication/retired_at"
+          ],
+          "reason": null
+        },
+        "revision_id": "binding-asr-quality-1"
+      }
+    },
+    {
+      "id": "admin-AuditEventList-valid",
+      "profile": "admin",
+      "schema": "AuditEventList",
+      "valid": true,
+      "value": {
+        "object": "nexus.list",
+        "data": [
+          {
+            "id": "lifecycle-0123456789abcdef0123456789abcdef",
+            "object": "nexus.audit_event",
+            "actor_type": "anonymous",
+            "credential_label": null,
+            "request_id": "synthetic-request",
+            "action": "model_binding.retire",
+            "resource_type": "model_binding",
+            "resource_id": "asr-quality",
+            "occurred_at": "2026-11-12T00:00:00.000001Z",
+            "policy_revision": "7",
+            "change_summary": {
+              "changed_fields": [
+                "/publication/status",
+                "/publication/retired_at"
+              ],
+              "reason": null
+            }
+          }
+        ],
+        "has_more": true,
+        "next_cursor": "eyJ2IjoxfQ"
+      }
+    },
+    {
+      "id": "admin-AuditEventList-numeric-cursor",
+      "profile": "admin",
+      "schema": "AuditEventList",
+      "valid": false,
+      "value": {
+        "object": "nexus.list",
+        "data": [
+          {
+            "id": "lifecycle-0123456789abcdef0123456789abcdef",
+            "object": "nexus.audit_event",
+            "actor_type": "anonymous",
+            "credential_label": null,
+            "request_id": "synthetic-request",
+            "action": "model_binding.retire",
+            "resource_type": "model_binding",
+            "resource_id": "asr-quality",
+            "occurred_at": "2026-11-12T00:00:00.000001Z",
+            "policy_revision": "7",
+            "change_summary": {
+              "changed_fields": [
+                "/publication/status",
+                "/publication/retired_at"
+              ],
+              "reason": null
+            }
+          }
+        ],
+        "has_more": true,
+        "next_cursor": 1
+      }
+    },
+    {
+      "id": "admin-AuditChangeSummary-valid",
+      "profile": "admin",
+      "schema": "AuditChangeSummary",
+      "valid": true,
+      "value": {
+        "changed_fields": [
+          "/publication/status"
+        ],
+        "reason": "replace the experimental revision"
+      }
+    },
+    {
+      "id": "admin-AuditChangeSummary-unrooted-field",
+      "profile": "admin",
+      "schema": "AuditChangeSummary",
+      "valid": false,
+      "value": {
+        "changed_fields": [
+          "status"
+        ],
+        "reason": null
+      }
     }
   ]
 }

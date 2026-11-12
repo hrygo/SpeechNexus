@@ -88,5 +88,17 @@ def parse(
 ) -> models.QualificationReportRecord: ...
 
 
+@overload
+def parse(name: Literal["AuditEvent"], value: Any) -> models.AuditEvent: ...
+
+
+@overload
+def parse(name: Literal["AuditEventList"], value: Any) -> models.AuditEventList: ...
+
+
+@overload
+def parse(name: Literal["AuditChangeSummary"], value: Any) -> models.AuditChangeSummary: ...
+
+
 def parse(name: str, value: Any) -> Any:
     return validate_profile("admin", name, value)

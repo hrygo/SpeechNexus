@@ -29,10 +29,16 @@ _SELECT_BASE = (
     "r.revision, r.generation_job_id, r.input_json, r.binding_json, "
     "r.created_at_us AS revision_created_at_us, "
     "j.state AS job_state, j.result_json, j.error_code, "
-    "j.workspace_id AS job_workspace_id, j.updated_at_us AS job_updated_at_us "
+    "j.workspace_id AS job_workspace_id, j.updated_at_us AS job_updated_at_us, "
+    "p.voice_id AS published_voice_id, p.voice_revision AS published_voice_revision, "
+    "p.validation_job_id "
     "FROM speech_voice_drafts AS d "
     "JOIN speech_voice_draft_revisions AS r ON r.draft_id = d.draft_id "
-    "JOIN speech_jobs AS j ON j.job_id = r.generation_job_id"
+    "JOIN speech_jobs AS j ON j.job_id = r.generation_job_id "
+    # The owner-privileged projection of a published draft's facts; a draft that
+    # was never published simply has no row here.
+    "LEFT JOIN speech_voice_draft_publications AS p "
+    "ON p.draft_id = d.draft_id AND p.revision = r.revision"
 )
 # The public GET and metadata paths only ever expose the draft head.
 _SELECT = _SELECT_BASE + " WHERE d.draft_id=%s AND r.revision = d.head_revision"
@@ -63,23 +69,54 @@ def _stamp(value: int) -> str:
     return (datetime(1970, 1, 1, tzinfo=UTC) + timedelta(microseconds=value)).isoformat()
 
 
+def _resolved_previews(row: dict[str, Any]) -> list[str]:
+    """The previews of one revision, re-checked against the Job that produced it."""
+    try:
+        result = json.loads(row["result_json"])
+    except TypeError, ValueError:
+        # A committed result that is not JSON is a storage defect, not a reason to
+        # answer with a body our own contract rejects.
+        raise PublicJobUnavailableError from None
+    if not isinstance(result, dict):
+        raise PublicJobUnavailableError
+    if (
+        result.get("voice_draft_id") != row["draft_id"]
+        or result.get("draft_revision") != row.get("revision", row["head_revision"])
+        or result.get("kind") != "voice_" + row["kind"]
+    ):
+        raise PublicJobUnavailableError
+    previews = result.get("preview_artifact_ids")
+    if not isinstance(previews, list) or not previews:
+        raise PublicJobUnavailableError
+    return previews
+
+
 def _view(row: dict[str, Any]) -> dict[str, Any]:
     status = row["status"]
     previews: list[str] = []
     failure: dict[str, Any] | None = None
+    published: dict[str, str] = {}
     if status == "generating":
         if row["job_state"] == "succeeded":
-            result = json.loads(row["result_json"])
-            if (
-                result.get("voice_draft_id") != row["draft_id"]
-                or result.get("draft_revision") != row.get("revision", row["head_revision"])
-                or result.get("kind") != "voice_" + row["kind"]
-            ):
-                raise PublicJobUnavailableError
-            status, previews = "candidate", result["preview_artifact_ids"]
+            status, previews = "candidate", _resolved_previews(row)
         elif row["job_state"] in ("failed", "cancelled", "expired"):
             status = "failed"
             failure = _failure(row["job_state"], row.get("error_code"))
+    elif status == "published":
+        # A published revision must carry the facts the contract requires: the
+        # voice it became and the validation Job that measured it. They come from
+        # the owner-privileged projection, so a missing row or a generation Job
+        # that never succeeded is a storage outage (503) -- never a body that
+        # violates our own contract (500).
+        facts = {
+            "validation_job_id": row["validation_job_id"],
+            "published_voice_id": row["published_voice_id"],
+            "published_voice_revision": row["published_voice_revision"],
+        }
+        if row["job_state"] != "succeeded" or any(value is None for value in facts.values()):
+            raise PublicJobUnavailableError
+        published = facts
+        previews = _resolved_previews(row)
     draft = {
         "resource_type": "voice_draft",
         "object": "nexus.voice_draft",
@@ -108,6 +145,7 @@ def _view(row: dict[str, Any]) -> dict[str, Any]:
             "preview_artifact_ids": previews,
             "failure": failure,
             "created_at": _stamp(row.get("revision_created_at_us", row["created_at_us"])),
+            **published,
         },
     }
 
@@ -139,8 +177,14 @@ def _artifact_fact(
 
 
 def _require_candidate(connection: SpeechConnection, row: dict[str, Any]) -> None:
-    """Reject an unverified candidate before the metadata transaction writes."""
-    if _view(row)["revision"]["status"] != "candidate":
+    """Reject an unverified candidate before the metadata transaction writes.
+
+    The predicate is about the generation Job only: a draft is a candidate exactly
+    when its generation Job succeeded while the stored status is still
+    ``generating``. It deliberately does not go through ``_view``, which also
+    projects publication facts and therefore needs the published-draft projection.
+    """
+    if row["status"] != "generating" or row["job_state"] != "succeeded":
         return
     previews = resolve_voice_previews(
         workspace_id=row["job_workspace_id"],

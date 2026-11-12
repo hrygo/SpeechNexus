@@ -23,6 +23,7 @@ from psycopg.rows import dict_row
 from sqlalchemy import create_engine
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.pool import NullPool
+from tests.support.migrations import head_revision
 
 from speechnexus_backend.speech.domain.public_jobs import canonical_digest
 from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
@@ -32,7 +33,7 @@ pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
 VARIABLE = "SPEECHNEXUS_TEST_DATABASE_URL"
 BASE = "0045_pronunciation_set_summary"
-HEAD = "0052_quarantine_releases"
+HEAD = head_revision()
 _INTENT: dict[str, Any] = {
     "input": {"text": "historical intent"},
     "kind": "tts",

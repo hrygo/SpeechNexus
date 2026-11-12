@@ -345,6 +345,69 @@ def test_publication_projection_and_guards() -> None:
     assert timestamp(0) == "1970-01-01T00:00:00Z"
 
 
+# Today's validation lane measures one fixed probe, so every other fixture uses the
+# same capability set: a hardcoded projection would stay green against all of them.
+# This set is still legal for ``VoiceCapabilities`` and exists to make the
+# provenance of the published document observable.
+MEASURED_ELSEWHERE = {
+    "languages": ["zh"],
+    "sample_rates_hz": [48000],
+    "audio_formats": ["mp3"],
+    "modes": ["chunked"],
+}
+
+
+def test_projection_capabilities_come_from_the_evidence_row() -> None:
+    """Declaring the capability set in the projection must be impossible (#519).
+
+    ``replace`` keeps the measured row and swaps only its capability facts, which
+    is what a second measurement lane would legitimately produce. A projection that
+    declared its own set -- or copied the single set today's probe happens to
+    measure -- fails the first assertion; the identity assertion additionally pins
+    that the document consumes the evidence object instead of rebuilding a
+    dictionary from parts.
+    """
+    measured = build_evidence(_facts(_report()), _report(), measured_by="worker", measured_at_us=1)
+    # Swapping the measured facts also re-derives the row digest, exactly as a
+    # different measurement lane would have produced the row in the first place.
+    evidence = replace(
+        measured,
+        capabilities=MEASURED_ELSEWHERE,
+        evidence_digest=type(measured).compute_digest(
+            draft_id=measured.draft_id,
+            draft_revision=measured.draft_revision,
+            validation_job_id=measured.validation_job_id,
+            validation_id=measured.validation_id,
+            binding_revision_id=measured.binding_revision_id,
+            report_artifact_id=measured.report_artifact_id,
+            report_sha256=measured.report_sha256,
+            report_receipt_id=measured.report_receipt_id,
+            evidence_kind=measured.evidence_kind,
+            measured_by=measured.measured_by,
+            capabilities=MEASURED_ELSEWHERE,
+            coverage=measured.coverage,
+            material=None if measured.material is None else measured.material.as_json(),
+        ),
+    )
+    document = build_voice_revision_document(
+        voice_id="voice-reference",
+        revision="1",
+        display_name="Voice",
+        source_type="cloned",
+        draft_id="draft-reference",
+        draft_revision="1",
+        material=VoiceMaterial.from_value(MATERIAL),
+        evidence=evidence,
+        binding_id="voice-model",
+        binding_revision="1",
+        checked_at_us=0,
+        published_at_us=0,
+    )
+    assert document["capabilities"] is evidence.capabilities
+    assert document["capabilities"] == MEASURED_ELSEWHERE
+    assert document["capabilities"] != CAPABILITIES
+
+
 def test_checked_at_and_contract_errors() -> None:
     assert build_evidence_checked_at_us({"created_at": "1970-01-01T00:00:00.5Z"}) == 500_000
     for value in ({}, {"created_at": "not-a-time"}, {"created_at": "2026-01-01T00:00:00"}):

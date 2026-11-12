@@ -6,6 +6,9 @@ from speechnexus_backend.speech.infrastructure.job_writer_columns import (
     VOICE_DRAFT_REVISION_INSERT_COLUMNS,
     VOICE_METADATA_COMMAND_INSERT_COLUMNS,
 )
+from speechnexus_backend.speech.infrastructure.voice_publication_schema import (
+    voice_draft_publication_reader_grants,
+)
 
 VOICE_DRAFT_DDL = (
     """CREATE TABLE speech_voice_drafts (
@@ -72,6 +75,9 @@ def voice_draft_grants(schema: str, role: str) -> tuple[str, ...]:
         f'GRANT SELECT ON "{schema}".speech_voice_metadata_commands TO "{role}"',
         f"GRANT INSERT ({', '.join(VOICE_METADATA_COMMAND_INSERT_COLUMNS)}) "
         f'ON "{schema}".speech_voice_metadata_commands TO "{role}"',
+        # The same identity reads the draft back, and a published draft's revision
+        # must carry the facts that only the owner-privileged view exposes.
+        *voice_draft_publication_reader_grants(schema, role),
     )
 
 

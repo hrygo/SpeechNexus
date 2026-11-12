@@ -8,6 +8,7 @@ import psycopg
 import pytest
 from alembic import command
 from tests.integration.test_public_job_progress_migration_pg import _isolated_schema, _url
+from tests.support.migrations import head_revision
 
 pytestmark = pytest.mark.integration
 
@@ -67,7 +68,7 @@ def test_0051_widens_the_legacy_check_and_refuses_to_erase_publication_events() 
         with pytest.raises(RuntimeError, match="require preservation"):
             command.downgrade(config, "0050_profile_retirements")
         assert query.execute("SELECT version_num FROM alembic_version").fetchone() == {
-            "version_num": "0052_quarantine_releases"
+            "version_num": head_revision()
         }
 
         query.execute(f"DELETE FROM {EVENT}")

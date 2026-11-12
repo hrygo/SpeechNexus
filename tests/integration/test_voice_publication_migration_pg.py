@@ -12,6 +12,7 @@ from tests.integration.test_public_job_progress_migration_pg import (
     _isolated_schema,
     _url,
 )
+from tests.support.migrations import head_revision
 
 pytestmark = pytest.mark.integration
 
@@ -19,6 +20,7 @@ _EVIDENCE = "speech_voice_capability_evidence"
 _REVISIONS = "speech_voice_revisions"
 _INTENTS = "speech_voice_publication_intents"
 _VIEW = "speech_published_voice_revisions"
+_DRAFT_VIEW = "speech_voice_draft_publications"
 
 
 def _one(
@@ -89,8 +91,7 @@ def test_downgrade_refuses_a_custom_publication() -> None:
         with pytest.raises(RuntimeError, match="require preservation"):
             command.downgrade(config, "0046_public_job_intents")
         assert (
-            _one(query, "SELECT version_num FROM alembic_version")["version_num"]
-            == "0052_quarantine_releases"
+            _one(query, "SELECT version_num FROM alembic_version")["version_num"] == head_revision()
         )
 
 
@@ -112,7 +113,7 @@ def test_upgrade_creates_ledger_view_and_reruns_idempotently() -> None:
         ]
         assert _REVISIONS in view and "speech_builtin_voice_qualifications" in view
         revision = _one(query, "SELECT version_num FROM alembic_version")["version_num"]
-        assert revision == "0052_quarantine_releases"
+        assert revision == head_revision()
 
 
 def test_downgrade_refuses_to_discard_evidence_then_restores_legacy_view() -> None:
@@ -122,8 +123,7 @@ def test_downgrade_refuses_to_discard_evidence_then_restores_legacy_view() -> No
         with pytest.raises(RuntimeError, match="require preservation"):
             command.downgrade(config, "0046_public_job_intents")
         assert (
-            _one(query, "SELECT version_num FROM alembic_version")["version_num"]
-            == "0052_quarantine_releases"
+            _one(query, "SELECT version_num FROM alembic_version")["version_num"] == head_revision()
         )
         # A schema with no custom publication or measurement may still roll back.
         query.execute(f"DELETE FROM {_EVIDENCE}")
@@ -150,3 +150,49 @@ def test_downgrade_refuses_to_discard_evidence_then_restores_legacy_view() -> No
         )
         query.execute(f'DROP OWNED BY "{reader}"')
         query.execute(f'DROP ROLE "{reader}"')
+
+
+def test_published_draft_projection_view_upgrades_and_drops_cleanly() -> None:
+    """0053 only adds a projection: the facts behind it survive its downgrade."""
+    with _isolated_schema(_url()) as (config, query):
+        command.upgrade(config, "0052_quarantine_releases")
+        assert _one(query, f"SELECT to_regclass('{_DRAFT_VIEW}') AS t")["t"] is None
+        command.upgrade(config, "head")
+        command.upgrade(config, "head")
+        options = _one(
+            query,
+            "SELECT reloptions FROM pg_class WHERE relname=%s",
+            (_DRAFT_VIEW,),
+        )["reloptions"]
+        assert set(options or ()) == {"security_barrier=true", "security_invoker=false"}
+        columns = [
+            row["column_name"]
+            for row in query.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema=current_schema() AND table_name=%s "
+                "ORDER BY ordinal_position",
+                (_DRAFT_VIEW,),
+            ).fetchall()
+        ]
+        assert columns == [
+            "draft_id",
+            "revision",
+            "voice_id",
+            "voice_revision",
+            "validation_job_id",
+        ]
+        # A draft that was never published has no row; one publication yields one.
+        assert _one(query, f"SELECT count(*) AS n FROM {_DRAFT_VIEW}")["n"] == 0
+        _seed_custom_publication(query)
+        assert _one(query, f"SELECT * FROM {_DRAFT_VIEW}") == {
+            "draft_id": "draft-evidence",
+            "revision": "1",
+            "voice_id": "voice-custom",
+            "voice_revision": "1",
+            "validation_job_id": "job-evidence-validation",
+        }
+        command.downgrade(config, "0052_quarantine_releases")
+        assert _one(query, f"SELECT to_regclass('{_DRAFT_VIEW}') AS t")["t"] is None
+        assert _one(query, f"SELECT count(*) AS n FROM {_REVISIONS}")["n"] == 1
+        command.upgrade(config, "head")
+        assert _one(query, f"SELECT count(*) AS n FROM {_DRAFT_VIEW}")["n"] == 1

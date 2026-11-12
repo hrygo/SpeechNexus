@@ -20,6 +20,7 @@ from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
+from tests.support.migrations import head_revision
 from tests.support.profile_examples import profile_request
 from tests.unit.test_profile_lifecycle import request
 
@@ -1014,7 +1015,7 @@ def test_profile_retirement_migration_widens_both_stored_checks() -> None:
             query.execute(insert, ("sha256:" + "c" * 64, "retire", "sha256:" + "d" * 64))
         command.upgrade(config, "head")
         assert query.execute("SELECT version_num FROM alembic_version").fetchone() == {
-            "version_num": "0052_quarantine_releases"
+            "version_num": head_revision()
         }
         assert "length(" in _publication_state_check(query)
         query.execute(insert, ("sha256:" + "c" * 64, "retire", "sha256:" + "d" * 64))

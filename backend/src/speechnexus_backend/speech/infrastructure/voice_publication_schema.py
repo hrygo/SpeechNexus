@@ -11,6 +11,11 @@ The public catalogue reads ``speech_published_voice_revisions``. The view now
 accepts a custom draft document as well as a builtin qualification document and
 keeps the fail-closed rule: a selected publication whose document is missing
 still raises the catalogue's 503 instead of silently dropping one row.
+
+``getVoiceDraft`` needs the opposite projection: the facts of one published draft
+rather than a document. ``speech_voice_draft_publications`` exposes them without
+opening the evidence ledger to the API identity, so a draft that has been
+published stays readable instead of violating its own response contract.
 """
 
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
@@ -19,6 +24,7 @@ EVIDENCE_TABLE = "speech_voice_capability_evidence"
 REVISION_TABLE = "speech_voice_revisions"
 INTENT_TABLE = "speech_voice_publication_intents"
 READER_VIEW = "speech_published_voice_revisions"
+DRAFT_PUBLICATION_VIEW = "speech_voice_draft_publications"
 
 _EVIDENCE_ID = r"'^vce-[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$'"
 _IDENTIFIER = r"'^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$'"
@@ -148,6 +154,28 @@ LEFT JOIN speech_publication_retirements r
   ON r.kind=p.kind AND r.object_id=p.object_id
  AND r.revision=p.revision AND r.revision_id=p.revision_id
 WHERE p.kind='voice'"""
+
+
+# A published draft's facts, projected for the identity that serves ``getVoiceDraft``.
+# The draft reader may learn that a draft became a voice, which revision it became
+# and which validation Job measured it, but not the evidence row itself: the view
+# runs as its owner (like the catalogue reader view), so the internal ledger and
+# the immutable revision document stay unreadable to the API identity. One row per
+# draft revision, because ``speech_voice_revisions`` is unique on that pair; a
+# draft that was never published simply has no row here.
+DRAFT_PUBLICATION_VIEW_DDL = f"""CREATE VIEW {DRAFT_PUBLICATION_VIEW}
+WITH (security_barrier = true, security_invoker = false) AS
+SELECT v.draft_id AS draft_id, v.draft_revision AS revision,
+       v.voice_id AS voice_id, v.revision AS voice_revision,
+       e.validation_job_id AS validation_job_id
+FROM {REVISION_TABLE} v
+JOIN {EVIDENCE_TABLE} e ON e.evidence_id = v.evidence_id"""
+
+
+def voice_draft_publication_reader_grants(schema: str, role: str) -> tuple[str, ...]:
+    """The draft reader's projection of a publication, never the ledger behind it."""
+    schema, role = checked_sql_name(schema), checked_sql_name(role)
+    return (f'GRANT SELECT ON "{schema}".{DRAFT_PUBLICATION_VIEW} TO "{role}"',)
 
 
 def voice_evidence_recorder_grants(schema: str, role: str) -> tuple[str, ...]:

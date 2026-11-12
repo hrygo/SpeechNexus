@@ -605,6 +605,29 @@ def test_job_writer_rejects_extra_artifact_insert_column(jobs_db: JobSandbox) ->
         _verify_privileges(connection, jobs_db.schema)
 
 
+def test_job_writer_without_the_draft_publication_view_fails_startup(
+    jobs_db: JobSandbox,
+) -> None:
+    """A published draft is unreadable without the projection, so startup refuses.
+
+    The view is the only place the draft reader can learn the published voice and
+    the validation Job; without the grant ``getVoiceDraft`` cannot answer its
+    declared 200 for a published draft (#519).
+    """
+    jobs_db.admin.execute(
+        f'REVOKE SELECT ON "{jobs_db.schema}".speech_voice_draft_publications FROM "{jobs_db.role}"'
+    )
+    with (
+        _connect(jobs_db, jobs_db.role) as connection,
+        pytest.raises(ValueError, match="lacks SELECT on speech_voice_draft_publications"),
+    ):
+        _verify_privileges(connection, jobs_db.schema)
+    runtime = JobRuntime(_job_settings(jobs_db))
+    with pytest.raises(ValueError, match="Public Job writer startup rejected"):
+        runtime.open()
+    assert runtime.jobs is None
+
+
 def test_job_writer_minimum_role_starts_and_creates_one_job(jobs_db: JobSandbox) -> None:
     runtime = JobRuntime(_job_settings(jobs_db))
     runtime.open()

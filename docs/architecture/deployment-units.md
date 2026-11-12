@@ -36,7 +36,7 @@ date: 2026-10-26
 | Execution Gateway | 持久提交屏障、执行、取消、观察与停止证据；已有 `speechnexus-gateway` | 协议和编排不要求 CUDA；当前节点适配器随 Linux 算力栈资格验证，其他平台未资格化 | 绑定受管 `node_id` / `gateway_id` 与引擎代次；现有 `fcntl` 入口锁要求同节点、同网关身份的候选进程共享私有锁目录 |
 | Node Controller | 批准模板的容器生命周期；已有 `speechnexus-node-controller` | 当前 Docker daemon 适配器服务于 Linux 容器节点；控制协议不绑定调用方平台 | 与实际受管 daemon 所在节点绑定；独占受限容器管理权限，不要求业务调用方同机 |
 | 推理引擎、引擎扩展及模型 | 当前选定的 CUDA / vLLM、vLLM-Omni 和固定模型组合 | 当前路线以 Linux 为目标，按硬件、镜像与模型组合资格化 | 独立镜像、依赖锁和 Python 环境；API、工作台不安装或直接调用 GPU runtime |
-| 音频安全检查 | 当前私有 `AudioInspectionProcess` 与媒体检查命令 | 现有沙箱需要 Linux，不需要 GPU | 是 CPU 媒体执行边界；优先复用受控执行组件，独立服务是否必要及跨机协议尚待设计，默认 API 未启用 |
+| 音频安全检查 | 独立检查容器：非特权、只读根、无出站网络，私有 HTTP 检查接口 | 需要 Linux 容器与 CPU，不需要 GPU | 是 CPU 媒体执行边界；不持有 PG/对象存储凭据，不写持久状态；默认 API 未启用，设计见[独立检查容器](../components/asset-inspection-container.md) |
 | PostgreSQL、S3 兼容对象存储 | 全局权威记录与固定版本输入、制品 | 按各数据服务的平台支持和部署资格验证 | 两种数据服务可分别部署；不要求与业务或算力同机 |
 | 迁移与部署工具 | 版本化 DDL、最小授权、批准模板和制品准备 | 按工具及目标环境验证 | 使用独立部署身份；正常业务启动不执行迁移或扩大权限 |
 
@@ -119,21 +119,22 @@ Windows 等平台保持未验证，支持范围扩展以单元的安装、启动
 
 ## 4. Linux 媒体检查边界
 
-现有 [音频检查沙箱](../archive/components/audio-asset-inspection.md)使用 pidfd、seccomp、bubblewrap、
-prlimit 和 `/proc`，属于 Linux 平台实现。当前
-[AssetRuntime](../../backend/src/speechnexus_backend/asset_runtime.py)默认装配 `TextAssetInspector`，
-仅在显式 `SPEECHNEXUS_ASSET_INSPECTOR=audio` 且选择器与宿主 `bwrap`/`prlimit` 齐备时装配进程检查器；
-公开音频路径仍待宿主沙箱批准，尚未启用。不能把沙箱代码位于 backend 包内等同于 API 启动必须使用 Linux。
+音频检查是**独立部署单元**：一个非特权、只读根、无出站网络的检查容器，经部署内网的私有 HTTP
+接口接收一次上传的字节，返回可被 API 复核的解码回执。平台边界、调用协议、输入传递、安全加固、
+容量、生命周期与配置见[独立检查容器](../components/asset-inspection-container.md)。
 
-为了保持业务服务的平台边界，应将 Linux 检查能力封装在明确的执行组件中。
-先比较复用受控 Linux 检查 worker 与独立媒体服务，选择满足隔离和恢复要求的最小部署形态；
-不为迁出平台代码强制新增常驻网络服务。确定形态前须完成调用、取消、停止与故障恢复设计。
-现有本地接口接收 `BinaryIO` / 文件描述符，不能直接当作远程协议使用；跨机设计需要固定对象
-引用、检查版本、限额和可验证回执，不能传任意路径、端点或容器命令。
-Linux CPU 媒体组件可与算力组件同机，但要独立核算资源，不因此占用 GPU 槽位。
+该容器不需要 `CAP_SYS_ADMIN`：命名空间、只读挂载与能力集由容器运行时在创建时建立，容器内进程
+不调用 `unshare`/`mount`/`pivot_root`/`setns`，也不在容器内再起 bubblewrap。业务内容只经
+「客户端 → API」与「API → 检查容器」两条链路，检查容器不持有对象存储或 PG 凭据，不写任何持久状态。
 
-服务化之前先冻结相应机器契约并完成生产者、消费者和装配验证；本页不预先指定新路由。
-不能通过忽略类型错误、改用普通 PID 或降低现有隔离/停止证据要求来取得跨平台通过。
+当前实现仍是 API 进程内的 bubblewrap 检查组（[历史边界](../archive/components/audio-asset-inspection.md)
+保留其设计事实）。[AssetRuntime](../../backend/src/speechnexus_backend/asset_runtime.py)默认装配
+`TextAssetInspector`；在检查容器与 API 适配器交付前，公开音频路径保持不可用。不能把沙箱代码位于
+backend 包内等同于 API 启动必须使用 Linux，也不能以健康检查或镜像存在推断该单元已验收。
+
+容器形态不改变既有约束：机器契约先冻结再新增路由；本地 `BinaryIO` 接口不能当作远程协议使用；
+检查版本、限额与可验证回执必须显式定义；Linux CPU 媒体组件可与算力组件同机，但要独立核算资源，
+不占用 GPU 槽位；不得以忽略类型错误、改用普通 PID 或降低隔离/停止证据要求取得跨平台通过。
 
 ## 5. 当前装配与证据
 

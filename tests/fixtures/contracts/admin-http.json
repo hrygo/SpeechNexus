@@ -595,6 +595,383 @@
       },
       "valid": false,
       "status": 503
+    },
+    {
+      "id": "create-minimal",
+      "operation": "createWorkspace",
+      "kind": "request",
+      "value": {
+        "body": {
+          "display_name": "共享分组"
+        },
+        "headers": {
+          "Idempotency-Key": "workspace-create-0001"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "create-ready",
+      "operation": "createWorkspace",
+      "kind": "request",
+      "value": {
+        "body": {
+          "display_name": "Shared group",
+          "policy_id": "policy-quota-r1"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-request",
+          "Idempotency-Key": "workspace-create-0002"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "create-keyless",
+      "operation": "createWorkspace",
+      "kind": "request",
+      "value": {
+        "body": {
+          "display_name": "Keyless group"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "create-unknown-field",
+      "operation": "createWorkspace",
+      "kind": "request",
+      "value": {
+        "body": {
+          "display_name": "Shared group",
+          "workspace_id": "workspace-client"
+        },
+        "headers": {
+          "Idempotency-Key": "workspace-create-0003"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "create-name-empty",
+      "operation": "createWorkspace",
+      "kind": "request",
+      "value": {
+        "body": {
+          "display_name": ""
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "create-name-too-long",
+      "operation": "createWorkspace",
+      "kind": "request",
+      "value": {
+        "body": {
+          "display_name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "create-missing-body",
+      "operation": "createWorkspace",
+      "kind": "request",
+      "value": {
+        "headers": {
+          "Idempotency-Key": "workspace-create-0004"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "create-key-too-short",
+      "operation": "createWorkspace",
+      "kind": "request",
+      "value": {
+        "body": {
+          "display_name": "Shared group"
+        },
+        "headers": {
+          "Idempotency-Key": "short"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "create-response",
+      "operation": "createWorkspace",
+      "kind": "response",
+      "value": {
+        "body": {
+          "id": "workspace-shared-7",
+          "object": "nexus.workspace",
+          "display_name": "共享分组",
+          "status": "active",
+          "metadata_revision": 1,
+          "policy_revision": "1",
+          "created_at": "2026-11-12T00:00:00Z"
+        }
+      },
+      "valid": true,
+      "status": 201
+    },
+    {
+      "id": "create-response-numeric-policy",
+      "operation": "createWorkspace",
+      "kind": "response",
+      "value": {
+        "body": {
+          "id": "workspace-shared-7",
+          "object": "nexus.workspace",
+          "display_name": "共享分组",
+          "status": "active",
+          "metadata_revision": 1,
+          "policy_revision": 1,
+          "created_at": "2026-11-12T00:00:00Z"
+        }
+      },
+      "valid": false,
+      "status": 201
+    },
+    {
+      "id": "create-response-private-field",
+      "operation": "createWorkspace",
+      "kind": "response",
+      "value": {
+        "body": {
+          "id": "workspace-shared-7",
+          "object": "nexus.workspace",
+          "display_name": "共享分组",
+          "status": "active",
+          "metadata_revision": 1,
+          "policy_revision": "1",
+          "created_at": "2026-11-12T00:00:00Z",
+          "workspace_state": "active"
+        }
+      },
+      "valid": false,
+      "status": 201
+    },
+    {
+      "id": "createWorkspace-error-409",
+      "operation": "createWorkspace",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "idempotency_conflict",
+            "type": "invalid_request_error",
+            "message": "The key identifies another workspace intent.",
+            "param": null,
+            "request_id": "synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "createWorkspace-error-422",
+      "operation": "createWorkspace",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "workspace_policy_unsupported",
+            "type": "invalid_request_error",
+            "message": "This deployment has no policy registry for policy_id.",
+            "param": "policy_id",
+            "request_id": "synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 422
+    },
+    {
+      "id": "createWorkspace-error-503",
+      "operation": "createWorkspace",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "workspace_service_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Workspace storage is unavailable.",
+            "param": null,
+            "request_id": "synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 503
+    },
+    {
+      "id": "update-minimal",
+      "operation": "updateWorkspace",
+      "kind": "request",
+      "value": {
+        "path": {
+          "workspace_id": "workspace-shared-7"
+        },
+        "body": {
+          "expected_metadata_revision": 3,
+          "display_name": "Renamed group"
+        },
+        "headers": {
+          "Idempotency-Key": "workspace-update-0001"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "update-status-only",
+      "operation": "updateWorkspace",
+      "kind": "request",
+      "value": {
+        "path": {
+          "workspace_id": "workspace-shared-7"
+        },
+        "body": {
+          "expected_metadata_revision": 1,
+          "status": "disabled"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "update-missing-expected",
+      "operation": "updateWorkspace",
+      "kind": "request",
+      "value": {
+        "path": {
+          "workspace_id": "workspace-shared-7"
+        },
+        "body": {
+          "display_name": "Renamed group"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "update-single-property",
+      "operation": "updateWorkspace",
+      "kind": "request",
+      "value": {
+        "path": {
+          "workspace_id": "workspace-shared-7"
+        },
+        "body": {
+          "expected_metadata_revision": 2
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "update-unknown-field",
+      "operation": "updateWorkspace",
+      "kind": "request",
+      "value": {
+        "path": {
+          "workspace_id": "workspace-shared-7"
+        },
+        "body": {
+          "expected_metadata_revision": 2,
+          "policy_id": "policy-quota-r1"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "update-invalid-status",
+      "operation": "updateWorkspace",
+      "kind": "request",
+      "value": {
+        "path": {
+          "workspace_id": "workspace-shared-7"
+        },
+        "body": {
+          "expected_metadata_revision": 2,
+          "status": "ready"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "update-path-traversal",
+      "operation": "updateWorkspace",
+      "kind": "request",
+      "value": {
+        "path": {
+          "workspace_id": "../private"
+        },
+        "body": {
+          "expected_metadata_revision": 2,
+          "display_name": "Renamed group"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "update-response",
+      "operation": "updateWorkspace",
+      "kind": "response",
+      "value": {
+        "body": {
+          "id": "workspace-shared-7",
+          "object": "nexus.workspace",
+          "display_name": "共享分组",
+          "status": "disabled",
+          "metadata_revision": 4,
+          "policy_revision": "1",
+          "created_at": "2026-11-12T00:00:00Z"
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "updateWorkspace-error-404",
+      "operation": "updateWorkspace",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "workspace_not_found",
+            "type": "not_found_error",
+            "message": "The workspace was not found.",
+            "param": null,
+            "request_id": "synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 404
+    },
+    {
+      "id": "updateWorkspace-error-409",
+      "operation": "updateWorkspace",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "configuration_changed",
+            "type": "invalid_request_error",
+            "message": "The workspace metadata revision changed.",
+            "param": null,
+            "request_id": "synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 409
     }
   ]
 }

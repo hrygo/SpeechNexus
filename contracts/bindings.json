@@ -376,6 +376,8 @@
       "operations": [
         "listWorkspaces",
         "getWorkspace",
+        "createWorkspace",
+        "updateWorkspace",
         "listResourcePools",
         "listModelBindings"
       ]

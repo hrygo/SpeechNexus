@@ -39,8 +39,6 @@ KNOWN_UNSERVED_ADMIN_OPERATIONS = frozenset(
         ("/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/retirements", "post"),
         ("/v1/nexus/admin/qualification-reports/{report_id}", "get"),
         ("/v1/nexus/audit-events", "get"),
-        ("/v1/nexus/workspaces", "post"),
-        ("/v1/nexus/workspaces/{workspace_id}", "patch"),
     }
 )
 
@@ -199,8 +197,12 @@ def test_profile_surface_does_not_advertise_other_admin_methods_or_change_worksp
     assert set(actual["paths"]["/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}"]) == {
         "get"
     }
-    assert all(set(item) == {"get"} for item in workspace_contract()["paths"].values())
-    assert "/v1/nexus/admin/profiles" not in workspace_contract()["paths"]
+    # The workspace surface owns its own reads and the two accepted writes; no
+    # profile operation or profile path leaks into it.
+    workspace = workspace_contract()["paths"]
+    assert set(workspace["/v1/nexus/workspaces"]) == {"get", "post"}
+    assert set(workspace["/v1/nexus/workspaces/{workspace_id}"]) == {"get", "patch"}
+    assert "/v1/nexus/admin/profiles" not in workspace
     for unknown in ("publishProfileRevision", "retireProfileRevision", "queryProfileCommand"):
         with pytest.raises(ValueError, match="Unknown HTTP operation"):
             validate_request(unknown, {})

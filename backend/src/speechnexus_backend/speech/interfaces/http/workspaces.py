@@ -1,4 +1,10 @@
-"""Real shared-group reads; canonical DTO validation stays at the HTTP boundary."""
+"""Real shared-group reads and the two accepted writes at the HTTP boundary.
+
+The write bodies are read with an explicit byte and time budget before any DTO
+validation, so an oversized or slow body never reaches the authority. Both
+operations require canonical request validation; the declared responses are
+validated before they leave this boundary, including the error statuses.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +12,7 @@ import asyncio
 import base64
 import binascii
 import json
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -24,13 +31,21 @@ from speechnexus_backend.speech.application.workspaces import WorkspaceService
 from speechnexus_backend.speech.domain.assets import identifier
 from speechnexus_backend.speech.domain.workspaces import (
     Workspace,
+    WorkspaceConflictError,
     WorkspaceNotFoundError,
+    WorkspacePolicyUnsupportedError,
     WorkspaceQuery,
     WorkspaceUnavailableError,
 )
 from speechnexus_backend.speech.interfaces.http.origin_policy import rejected_authority
 
+_LOG = logging.getLogger(__name__)
 PREFIX = "/v1/nexus/workspaces"
+CREATE, UPDATE = "createWorkspace", "updateWorkspace"
+# The declared bodies carry one display name, two enum words and one integer.
+# The bound is generous for that shape and still refuses an unbounded body.
+MAX_WRITE_BODY_BYTES = 4096
+WRITE_RECEIVE_TIMEOUT_SECONDS = 2
 _ERRORS = {
     "invalid_workspace_request": (400, "invalid_request_error", "Invalid workspace request."),
     "invalid_workspace_cursor": (400, "invalid_request_error", "Invalid workspace cursor."),
@@ -42,6 +57,26 @@ _ERRORS = {
         "invalid_request_error",
         "The workspace method is not allowed.",
     ),
+    "idempotency_conflict": (
+        409,
+        "invalid_request_error",
+        "The key identifies another workspace intent.",
+    ),
+    "configuration_changed": (
+        409,
+        "invalid_request_error",
+        "The workspace metadata revision changed.",
+    ),
+    "workspace_identity_conflict": (
+        409,
+        "invalid_request_error",
+        "The workspace identity is already taken.",
+    ),
+    "workspace_policy_unsupported": (
+        422,
+        "invalid_request_error",
+        "This deployment has no policy registry for policy_id.",
+    ),
     "workspace_service_unavailable": (
         503,
         "service_unavailable_error",
@@ -51,28 +86,46 @@ _ERRORS = {
 
 
 def workspace_error(
-    code: str, request_id: str, *, headers: dict[str, str] | None = None
+    code: str,
+    request_id: str,
+    *,
+    operation: str | None = None,
+    param: str | None = None,
+    headers: dict[str, str] | None = None,
 ) -> JSONResponse:
+    """Emit one fixed public error; a write error is checked against its operation."""
     if code not in _ERRORS:
         code = "workspace_service_unavailable"
     status, kind, message = _ERRORS[code]
-    return JSONResponse(
-        status_code=status,
-        headers={"Cache-Control": "no-store", "X-Should-Retry": "false", **(headers or {})},
-        content=parse(
+    response_headers = {
+        "Cache-Control": "no-store",
+        "X-Should-Retry": "false",
+        **(headers or {}),
+    }
+    body = dict(
+        parse(
             "ErrorResponse",
             {
                 "error": {
                     "code": code,
                     "type": kind,
                     "message": message,
-                    "param": None,
+                    "param": param,
                     "request_id": request_id,
                     "retryable": False,
                 }
             },
-        ),
+        )
     )
+    if operation is not None:
+        try:
+            validate_response(operation, status, {"body": body, "headers": response_headers})
+        except ContractValidationError:
+            # A status the frozen contract does not declare is a defect in the
+            # boundary, not a reason to rewrite one error into another. Keep the
+            # stable mapping and record the drift loudly.
+            _LOG.warning("Workspace %s error status %s is not declared", operation, status)
+    return JSONResponse(status_code=status, headers=response_headers, content=body)
 
 
 def cursor_for(after_id: str) -> str:
@@ -158,6 +211,102 @@ class WorkspaceIngress:
         await self._app(scope, receive, send)
 
 
+def _object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Duplicate JSON key")
+        result[key] = value
+    return result
+
+
+def _constant(_: str) -> Any:
+    raise ValueError("Nonfinite JSON number")
+
+
+def _json(raw: bytes) -> Any:
+    return json.loads(raw.decode("utf-8"), object_pairs_hook=_object, parse_constant=_constant)
+
+
+async def _write_envelope(request: Request) -> dict[str, Any]:
+    """Read one bounded canonical write envelope; never drain an oversized body."""
+    if request.scope.get("query_string"):
+        raise ContractValidationError("Workspace writes declare no query")
+    headers: dict[str, str] = {}
+    for name in ("x-request-id", "idempotency-key"):
+        values = request.headers.getlist(name)
+        if len(values) > 1:
+            raise ContractValidationError("Ambiguous header")
+        if values:
+            headers[name] = values[0]
+    media_type = request.headers.get("content-type", "").partition(";")[0].strip().lower()
+    if media_type != "application/json":
+        raise ContractValidationError("Workspace writes accept application/json only")
+    body = bytearray()
+    async with asyncio.timeout(WRITE_RECEIVE_TIMEOUT_SECONDS):
+        async for chunk in request.stream():
+            if len(body) + len(chunk) > MAX_WRITE_BODY_BYTES:
+                raise ContractValidationError("Workspace write body exceeds its bound")
+            body.extend(chunk)
+    return {
+        "path": request.path_params,
+        "headers": headers,
+        "body": _json(bytes(body)),
+    }
+
+
+def _created(service: WorkspaceService, envelope: dict[str, Any], request_id: str) -> Response:
+    try:
+        receipt = service.create(
+            display_name=envelope["body"]["display_name"],
+            policy_id=envelope["body"].get("policy_id"),
+            request_id=request_id,
+            idempotency_key=envelope["headers"].get("idempotency-key"),
+        )
+        wire = public_workspace(receipt.workspace)
+        validate_response(CREATE, 201, {"body": wire, "headers": {"X-Request-ID": request_id}})
+        return JSONResponse(wire, status_code=201, headers={"Cache-Control": "no-store"})
+    except WorkspacePolicyUnsupportedError:
+        return workspace_error(
+            "workspace_policy_unsupported", request_id, operation=CREATE, param="policy_id"
+        )
+    except WorkspaceConflictError as error:
+        return workspace_error(error.code, request_id, operation=CREATE)
+    except WorkspaceNotFoundError:
+        return workspace_error("workspace_not_found", request_id, operation=CREATE)
+    except ValueError:
+        # Defensive: canonical validation already refuses these shapes.
+        return workspace_error("invalid_workspace_request", request_id, operation=CREATE)
+    except Exception:
+        # No driver, validation or caller data leaves this boundary.
+        return workspace_error("workspace_service_unavailable", request_id, operation=CREATE)
+
+
+def _updated(service: WorkspaceService, envelope: dict[str, Any], request_id: str) -> Response:
+    body = envelope["body"]
+    try:
+        receipt = service.update(
+            workspace_id=envelope["path"]["workspace_id"],
+            # JSON Schema integer also admits an integral JSON number.
+            expected_metadata_revision=int(body["expected_metadata_revision"]),
+            display_name=body.get("display_name"),
+            status=body.get("status"),
+            request_id=request_id,
+            idempotency_key=envelope["headers"].get("idempotency-key"),
+        )
+        wire = public_workspace(receipt.workspace)
+        validate_response(UPDATE, 200, {"body": wire, "headers": {"X-Request-ID": request_id}})
+        return JSONResponse(wire, headers={"Cache-Control": "no-store"})
+    except WorkspaceConflictError as error:
+        return workspace_error(error.code, request_id, operation=UPDATE)
+    except WorkspaceNotFoundError:
+        return workspace_error("workspace_not_found", request_id, operation=UPDATE)
+    except ValueError:
+        return workspace_error("invalid_workspace_request", request_id, operation=UPDATE)
+    except Exception:
+        return workspace_error("workspace_service_unavailable", request_id, operation=UPDATE)
+
+
 def create_workspace_router(get_service: Callable[[], WorkspaceService | None]) -> APIRouter:
     router = APIRouter(tags=["workspaces"])
     # Deployment defaults are selected by the authoritative source, not copied
@@ -240,12 +389,33 @@ def create_workspace_router(get_service: Callable[[], WorkspaceService | None]) 
             return workspace_error("workspace_service_unavailable", request_id)
         return JSONResponse(content=body, headers={"Cache-Control": "no-store"})
 
+    async def write(request: Request, *, operation: str) -> Response:
+        request_id = str(request.state.request_id)
+        service = get_service()
+        if service is None:
+            return workspace_error("workspace_service_unavailable", request_id, operation=operation)
+        try:
+            envelope = await _write_envelope(request)
+            validate_request(operation, envelope)
+        except ContractValidationError, TimeoutError, ClientDisconnect, ValueError, TypeError:
+            return workspace_error("invalid_workspace_request", request_id, operation=operation)
+        handler = _created if operation == CREATE else _updated
+        return await run_in_threadpool(handler, service, envelope, request_id)
+
     @router.get(PREFIX, operation_id="listWorkspaces")
     async def list_workspaces(request: Request) -> Response:
         return await read(request, single=False)
 
+    @router.post(PREFIX, operation_id=CREATE)
+    async def create_workspace(request: Request) -> Response:
+        return await write(request, operation=CREATE)
+
     @router.get(PREFIX + "/{workspace_id}", operation_id="getWorkspace")
     async def get_workspace(request: Request) -> Response:
         return await read(request, single=True)
+
+    @router.patch(PREFIX + "/{workspace_id}", operation_id=UPDATE)
+    async def update_workspace(request: Request) -> Response:
+        return await write(request, operation=UPDATE)
 
     return router

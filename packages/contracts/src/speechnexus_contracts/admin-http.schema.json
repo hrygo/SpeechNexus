@@ -45,6 +45,58 @@
         }
       }
     },
+    "createWorkspace": {
+      "path": "/v1/nexus/workspaces",
+      "method": "post",
+      "request": "HttpRequest_createWorkspace",
+      "parameters": {
+        "path": {},
+        "query": {},
+        "headers": {
+          "x-request-id": "string",
+          "idempotency-key": "string"
+        }
+      },
+      "responses": {
+        "201": {
+          "schema": "HttpResponse_createWorkspace_201",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_createWorkspace_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_createWorkspace_401",
+          "headers": {},
+          "json": true
+        },
+        "403": {
+          "schema": "HttpResponse_createWorkspace_403",
+          "headers": {},
+          "json": true
+        },
+        "409": {
+          "schema": "HttpResponse_createWorkspace_409",
+          "headers": {},
+          "json": true
+        },
+        "422": {
+          "schema": "HttpResponse_createWorkspace_422",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_createWorkspace_503",
+          "headers": {},
+          "json": true
+        }
+      }
+    },
     "getWorkspace": {
       "path": "/v1/nexus/workspaces/{workspace_id}",
       "method": "get",
@@ -88,6 +140,65 @@
         },
         "503": {
           "schema": "HttpResponse_getWorkspace_503",
+          "headers": {},
+          "json": true
+        }
+      }
+    },
+    "updateWorkspace": {
+      "path": "/v1/nexus/workspaces/{workspace_id}",
+      "method": "patch",
+      "request": "HttpRequest_updateWorkspace",
+      "parameters": {
+        "path": {
+          "workspace_id": "string"
+        },
+        "query": {},
+        "headers": {
+          "x-request-id": "string",
+          "idempotency-key": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_updateWorkspace_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_updateWorkspace_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_updateWorkspace_401",
+          "headers": {},
+          "json": true
+        },
+        "403": {
+          "schema": "HttpResponse_updateWorkspace_403",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_updateWorkspace_404",
+          "headers": {},
+          "json": true
+        },
+        "409": {
+          "schema": "HttpResponse_updateWorkspace_409",
+          "headers": {},
+          "json": true
+        },
+        "422": {
+          "schema": "HttpResponse_updateWorkspace_422",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_updateWorkspace_503",
           "headers": {},
           "json": true
         }
@@ -189,6 +300,14 @@
     "HttpResponse_listWorkspaces_401",
     "HttpResponse_listWorkspaces_403",
     "HttpResponse_listWorkspaces_503",
+    "HttpRequest_createWorkspace",
+    "HttpResponse_createWorkspace_201",
+    "HttpResponse_createWorkspace_400",
+    "HttpResponse_createWorkspace_401",
+    "HttpResponse_createWorkspace_403",
+    "HttpResponse_createWorkspace_409",
+    "HttpResponse_createWorkspace_422",
+    "HttpResponse_createWorkspace_503",
     "HttpRequest_getWorkspace",
     "HttpResponse_getWorkspace_200",
     "HttpResponse_getWorkspace_400",
@@ -196,6 +315,15 @@
     "HttpResponse_getWorkspace_403",
     "HttpResponse_getWorkspace_404",
     "HttpResponse_getWorkspace_503",
+    "HttpRequest_updateWorkspace",
+    "HttpResponse_updateWorkspace_200",
+    "HttpResponse_updateWorkspace_400",
+    "HttpResponse_updateWorkspace_401",
+    "HttpResponse_updateWorkspace_403",
+    "HttpResponse_updateWorkspace_404",
+    "HttpResponse_updateWorkspace_409",
+    "HttpResponse_updateWorkspace_422",
+    "HttpResponse_updateWorkspace_503",
     "HttpRequest_listResourcePools",
     "HttpResponse_listResourcePools_200",
     "HttpResponse_listResourcePools_400",
@@ -779,6 +907,42 @@
         "observed.turn_detection.silence_duration_ms"
       ]
     },
+    "WorkspaceCreateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["display_name"],
+      "properties": {
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "policy_id": {
+          "$ref": "#/$defs/Identifier"
+        }
+      }
+    },
+    "WorkspacePatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 2,
+      "required": ["expected_metadata_revision"],
+      "properties": {
+        "expected_metadata_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "disabled"]
+        }
+      }
+    },
     "ResourcePoolList": {
       "type": "object",
       "additionalProperties": false,
@@ -1116,6 +1280,161 @@
       },
       "required": ["body"]
     },
+    "HttpRequest_createWorkspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "idempotency-key": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/WorkspaceCreateRequest"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createWorkspace_201": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/Workspace"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createWorkspace_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createWorkspace_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createWorkspace_403": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createWorkspace_409": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createWorkspace_422": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createWorkspace_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
     "HttpRequest_getWorkspace": {
       "type": "object",
       "additionalProperties": false,
@@ -1236,6 +1555,181 @@
       "required": ["body"]
     },
     "HttpResponse_getWorkspace_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_updateWorkspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "workspace_id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": ["workspace_id"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "idempotency-key": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/WorkspacePatch"
+        }
+      },
+      "required": ["path", "body"]
+    },
+    "HttpResponse_updateWorkspace_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/Workspace"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateWorkspace_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateWorkspace_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateWorkspace_403": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateWorkspace_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateWorkspace_409": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateWorkspace_422": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateWorkspace_503": {
       "type": "object",
       "additionalProperties": false,
       "properties": {

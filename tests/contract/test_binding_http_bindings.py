@@ -161,7 +161,13 @@ def test_binding_surface_selects_only_declared_draft_and_lifecycle_operations() 
             "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/activations"
         ]
     ) == {"post"}
-    assert all(set(item) == {"get"} for item in workspace_contract()["paths"].values())
+    # The workspace surface serves its own reads and the two writes; the
+    # binding surface must not add a method to it.
+    assert set(workspace_contract()["paths"]["/v1/nexus/workspaces"]) == {"get", "post"}
+    assert set(workspace_contract()["paths"]["/v1/nexus/workspaces/{workspace_id}"]) == {
+        "get",
+        "patch",
+    }
     # The binding draft surface owns only the collection POST; the list GET is
     # a separate admin read selected by its own surface.
     assert set(workspace_contract()["paths"]["/v1/nexus/admin/model-bindings"]) == {"get"}

@@ -42,7 +42,6 @@ KNOWN_UNSERVED_ADMIN_OPERATIONS = frozenset(
         ("/v1/nexus/admin/policies/{policy_id}", "patch"),
         ("/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/retirements", "post"),
         ("/v1/nexus/admin/qualification-reports/{report_id}", "get"),
-        ("/v1/nexus/admin/resource-pools", "get"),
         ("/v1/nexus/audit-events", "get"),
         ("/v1/nexus/workspaces", "post"),
         ("/v1/nexus/workspaces/{workspace_id}", "patch"),

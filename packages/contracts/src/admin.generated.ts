@@ -4195,6 +4195,7 @@ export interface operations {
           "application/json": components["schemas"]["ResourcePoolList"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       503: components["responses"]["ServiceUnavailable"];
     };

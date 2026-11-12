@@ -30,6 +30,7 @@ from speechnexus_backend.pronunciation_runtime import (
     PronunciationRuntime,
     PronunciationWriterRuntime,
 )
+from speechnexus_backend.resource_pool_runtime import ResourcePoolRuntime
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.artifacts import ArtifactService
 from speechnexus_backend.speech.application.assets import AssetService
@@ -51,6 +52,7 @@ from speechnexus_backend.speech.application.readiness import (
     ReadinessProbe,
     ReadinessService,
 )
+from speechnexus_backend.speech.application.resource_pools import ResourcePoolService
 from speechnexus_backend.speech.application.speech_synthesis import SpeechSynthesis
 from speechnexus_backend.speech.application.transcription import Transcription
 from speechnexus_backend.speech.application.voice_catalogue import VoiceCatalogue
@@ -103,6 +105,9 @@ from speechnexus_backend.speech.interfaces.http.pronunciations import (
     PronunciationIngress,
     create_pronunciation_router,
     pronunciation_http_contract,
+)
+from speechnexus_backend.speech.interfaces.http.resource_pools import (
+    create_resource_pool_router,
 )
 from speechnexus_backend.speech.interfaces.http.speech import PREFIX as SPEECH_PREFIX
 from speechnexus_backend.speech.interfaces.http.speech import create_speech_router
@@ -195,6 +200,7 @@ def create_app(
     assets: AssetService | None = None,
     artifacts: ArtifactService | None = None,
     workspaces: WorkspaceService | None = None,
+    resource_pools: ResourcePoolService | None = None,
     profiles: ProfileDrafts | None = None,
     bindings: BindingDrafts | None = None,
     binding_defaults: BindingDefaultDrafts | None = None,
@@ -232,6 +238,18 @@ def create_app(
     )
     asset_service = assets or (runtime.service if runtime is not None else None)
     workspace_service = workspaces or (runtime.workspaces if runtime is not None else None)
+    resource_pool_runtime = (
+        ResourcePoolRuntime(resolved_settings)
+        if resource_pools is None
+        and resolved_settings.resource_pool_reader_database_url is not None
+        else None
+    )
+
+    def get_resource_pools() -> ResourcePoolService | None:
+        if resource_pools is not None:
+            return resource_pools
+        return resource_pool_runtime.service if resource_pool_runtime is not None else None
+
     artifact_runtime = (
         ArtifactRuntime(resolved_settings)
         if artifacts is None
@@ -443,6 +461,9 @@ def create_app(
             if catalogue_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, catalogue_runtime.close)
                 await run_in_threadpool(catalogue_runtime.open)
+            if resource_pool_runtime is not None:
+                resources.push_async_callback(run_in_threadpool, resource_pool_runtime.close)
+                await run_in_threadpool(resource_pool_runtime.open)
             if pronunciation_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, pronunciation_runtime.close)
                 await run_in_threadpool(pronunciation_runtime.open)
@@ -566,6 +587,7 @@ def create_app(
     app.include_router(create_speech_router(lambda: speech))
     app.include_router(create_transcription_router(lambda: transcriptions))
     app.include_router(create_workspace_router(lambda: workspace_service))
+    app.include_router(create_resource_pool_router(get_resource_pools))
     app.include_router(create_profile_router(get_profiles))
     app.include_router(create_pronunciation_router(get_pronunciations))
     app.include_router(

@@ -196,6 +196,7 @@ def test_backend_exposes_valid_operational_openapi() -> None:
         "/v1/nexus/assets/{asset_id}/content",
         "/v1/nexus/workspaces",
         "/v1/nexus/workspaces/{workspace_id}",
+        "/v1/nexus/admin/resource-pools",
         "/v1/nexus/admin/profiles",
         "/v1/nexus/profiles",
         "/v1/nexus/profiles/{profile_id}/revisions/{revision}",

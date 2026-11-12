@@ -13,7 +13,9 @@
     "ProfilePublicationRequest",
     "ProfileActivationRequest",
     "ProfilePublishedRevision",
-    "ModelBindingActivationRequest"
+    "ModelBindingActivationRequest",
+    "ResourcePool",
+    "ResourcePoolList"
   ],
   "$defs": {
     "WorkspaceCreateRequest": {
@@ -2091,6 +2093,113 @@
           ]
         }
       }
+    },
+    "ResourcePool": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A logical capability pool. The same pool may contain ready instances on\nseveral host nodes; `node_ids` lists the nodes that currently contribute\nto the aggregate counts.\n",
+      "required": [
+        "id",
+        "object",
+        "node_ids",
+        "service_class",
+        "max_active_slots",
+        "realtime_reserved_slots",
+        "active_slots",
+        "quarantine_slots",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_PoolId"
+        },
+        "object": {
+          "const": "nexus.resource_pool"
+        },
+        "node_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
+        },
+        "service_class": {
+          "$ref": "#/$defs/ServiceClass"
+        },
+        "max_active_slots": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "realtime_reserved_slots": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "active_slots": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "quarantine_slots": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status": {
+          "type": "string",
+          "enum": ["ready", "degraded", "unavailable"]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "ready"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "node_ids": {
+                "minItems": 1
+              },
+              "max_active_slots": {
+                "minimum": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_shared_identifiers_schema_json_PoolId": {
+      "type": "string",
+      "enum": [
+        "asr-realtime",
+        "tts-realtime",
+        "asr-batch",
+        "tts-batch",
+        "voice-creation",
+        "auxiliary"
+      ],
+      "description": "Logical capability resource pool identifier. Pools may span multiple host nodes."
+    },
+    "ServiceClass": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_ServiceClass"
+    },
+    "ResourcePoolList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object", "data"],
+      "properties": {
+        "object": {
+          "const": "nexus.list"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResourcePool"
+          }
+        }
+      }
     }
   },
   "anyOf": [
@@ -2126,6 +2235,12 @@
     },
     {
       "$ref": "#/$defs/ModelBindingActivationRequest"
+    },
+    {
+      "$ref": "#/$defs/ResourcePool"
+    },
+    {
+      "$ref": "#/$defs/ResourcePoolList"
     }
   ]
 }

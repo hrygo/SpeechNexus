@@ -93,12 +93,13 @@ def test_only_selected_reads_are_closed_without_changing_source_defaults() -> No
     assert actual == generator().bundle_http_surface(CONFIG)
     validate(actual)
     assert set(actual["paths"]) == set(CONFIG["paths"])
+    assert set(actual["paths"]["/v1/nexus/admin/resource-pools"]) == {"get"}
     for item in actual["paths"].values():
         assert set(item) == {"get"}
     assert actual["components"]["parameters"]["Limit"]["schema"]["default"] == 50
     assert actual["security"] == [{"SharedServiceKey": []}, {}]
     actual["paths"].clear()
-    assert len(contract()["paths"]) == 2
+    assert len(contract()["paths"]) == 3
 
 
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda example: example["id"])

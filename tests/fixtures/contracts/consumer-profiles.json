@@ -12104,6 +12104,105 @@
         "updated_at": "2026-11-03T00:00:02Z",
         "abort_recovery": null
       }
+    },
+    {
+      "id": "admin-ResourcePool-valid",
+      "profile": "admin",
+      "schema": "ResourcePool",
+      "valid": true,
+      "value": {
+        "id": "asr-realtime",
+        "object": "nexus.resource_pool",
+        "node_ids": [
+          "node-a",
+          "node-b"
+        ],
+        "service_class": "realtime",
+        "max_active_slots": 6,
+        "realtime_reserved_slots": 4,
+        "active_slots": 2,
+        "quarantine_slots": 1,
+        "status": "ready"
+      }
+    },
+    {
+      "id": "admin-ResourcePool-internal-field",
+      "profile": "admin",
+      "schema": "ResourcePool",
+      "valid": false,
+      "value": {
+        "id": "asr-realtime",
+        "object": "nexus.resource_pool",
+        "node_ids": [
+          "node-a",
+          "node-b"
+        ],
+        "service_class": "realtime",
+        "max_active_slots": 6,
+        "realtime_reserved_slots": 4,
+        "active_slots": 2,
+        "quarantine_slots": 1,
+        "status": "ready",
+        "fencing_token": 7
+      }
+    },
+    {
+      "id": "admin-ResourcePoolList-valid",
+      "profile": "admin",
+      "schema": "ResourcePoolList",
+      "valid": true,
+      "value": {
+        "object": "nexus.list",
+        "data": [
+          {
+            "id": "asr-realtime",
+            "object": "nexus.resource_pool",
+            "node_ids": [
+              "node-a",
+              "node-b"
+            ],
+            "service_class": "realtime",
+            "max_active_slots": 6,
+            "realtime_reserved_slots": 4,
+            "active_slots": 2,
+            "quarantine_slots": 1,
+            "status": "ready"
+          },
+          {
+            "id": "voice-creation",
+            "object": "nexus.resource_pool",
+            "node_ids": [],
+            "service_class": "interactive",
+            "max_active_slots": 0,
+            "realtime_reserved_slots": 0,
+            "active_slots": 0,
+            "quarantine_slots": 0,
+            "status": "unavailable"
+          }
+        ]
+      }
+    },
+    {
+      "id": "admin-ResourcePoolList-ready-without-node",
+      "profile": "admin",
+      "schema": "ResourcePoolList",
+      "valid": false,
+      "value": {
+        "object": "nexus.list",
+        "data": [
+          {
+            "id": "asr-realtime",
+            "object": "nexus.resource_pool",
+            "node_ids": [],
+            "service_class": "realtime",
+            "max_active_slots": 6,
+            "realtime_reserved_slots": 4,
+            "active_slots": 2,
+            "quarantine_slots": 1,
+            "status": "ready"
+          }
+        ]
+      }
     }
   ]
 }

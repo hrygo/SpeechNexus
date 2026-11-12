@@ -42,6 +42,17 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
         "service_unavailable_error",
         "Asset inspection is unavailable.",
     ),
+    "asset_inspection_busy": (
+        503,
+        "service_unavailable_error",
+        "Asset inspection is temporarily busy.",
+    ),
+    "invalid_asset_audio": (422, "invalid_request_error", "The asset is not valid audio."),
+    "asset_audio_too_long": (
+        422,
+        "invalid_request_error",
+        "The audio exceeds the duration limit.",
+    ),
     "range_not_satisfiable": (416, "invalid_request_error", "The byte range is not satisfiable."),
     "asset_service_unavailable": (
         503,
@@ -49,6 +60,14 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
         "Asset storage is unavailable.",
     ),
 }
+
+
+# Only a temporary inspector capacity or deadline outcome may be retried. Every
+# other Asset error states that repeating the same request cannot succeed, and
+# `X-Should-Retry` stays false for all of them: it suppresses automatic SDK
+# transport replay of a body that may no longer be available, which is a
+# different question from whether a new logical upload may succeed.
+_RETRYABLE = frozenset({"asset_inspection_busy"})
 
 
 def asset_error(
@@ -80,7 +99,7 @@ def asset_error(
                     "message": message,
                     "param": param,
                     "request_id": request_id,
-                    "retryable": False,
+                    "retryable": code in _RETRYABLE,
                 }
             },
         ),

@@ -1,23 +1,26 @@
-"""Composition-root selection between the text and audio Asset inspectors.
+"""Composition-root selection between the text and HTTP audio Asset inspectors.
 
 The default text inspector keeps ``asr_input`` unavailable with the domain error
-code, and ``audio`` fails startup naming its own setting instead of falling back.
-Audio decoding itself is qualified separately; these tests never run a worker.
+code; ``audio`` fails startup naming the setting that is missing, unusable or
+self-contradictory instead of falling back to text. Protocol behaviour and the
+public error mapping live in ``test_audio_inspection_http``; no inspector socket
+is opened here.
 """
 
 from __future__ import annotations
 
 import io
-from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import Mock
 
 import pytest
-from pydantic import AnyHttpUrl, SecretStr
+from pydantic import AnyHttpUrl, SecretStr, ValidationError
 
-from speechnexus_backend import asset_runtime as asset_runtime_module
 from speechnexus_backend.app import create_app
-from speechnexus_backend.asset_runtime import AssetRuntime, build_asset_inspector
+from speechnexus_backend.asset_runtime import (
+    AssetRuntime,
+    build_asset_inspector,
+)
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.assets import (
     AssetInspector,
@@ -32,15 +35,33 @@ from speechnexus_backend.speech.domain.assets import (
     UploadIntent,
     reserve_asset,
 )
-from speechnexus_backend.speech.infrastructure.audio_asset_inspector import (
-    ProcessAudioAssetInspector,
+from speechnexus_backend.speech.infrastructure.audio_inspection_http import (
+    HttpAudioAssetInspector,
 )
 from tests.unit.backend.test_health import _settings
 
 BODY = b"RIFF-not-decoded-here"
 POLICY = AssetPolicy(60)
-COMMAND = "/opt/speechnexus-inspect/bin/inspect --receipt"
-LAUNCHER = "/opt/speechnexus-inspect/bin/python3"
+URL = "http://asset-inspector.invalid:8080"
+TOKEN = SecretStr("inspection-token-0001")
+
+# Container-only settings retired from this process. Any non-empty value is an
+# operator intent this process can no longer honour.
+RETIRED = [
+    (
+        "audio_inspection_runtime_root",
+        "/opt/speechnexus-inspect/image",
+        "SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT",
+    ),
+    ("audio_inspection_command", "/opt/inspect --receipt", "SPEECHNEXUS_AUDIO_INSPECTION_COMMAND"),
+    (
+        "audio_inspection_launcher_python",
+        "/opt/inspect/bin/python3",
+        "SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON",
+    ),
+    ("audio_inspection_bubblewrap", "/usr/bin/bwrap", "SPEECHNEXUS_AUDIO_INSPECTION_BUBBLEWRAP"),
+    ("audio_inspection_prlimit", "/usr/bin/prlimit", "SPEECHNEXUS_AUDIO_INSPECTION_PRLIMIT"),
+]
 
 
 def _runtime_settings(**changes: Any) -> Settings:
@@ -54,19 +75,12 @@ def _runtime_settings(**changes: Any) -> Settings:
     )
 
 
-def _audio_settings(root: Path, **changes: Any) -> Settings:
-    tools = root.parent / "host-tools"
-    tools.mkdir(exist_ok=True)
-    for name in ("bwrap", "prlimit"):
-        (tools / name).touch()
+def _audio_settings(**changes: Any) -> Settings:
     return _runtime_settings(
         **{
             "asset_inspector": "audio",
-            "audio_inspection_runtime_root": root,
-            "audio_inspection_command": COMMAND,
-            "audio_inspection_launcher_python": LAUNCHER,
-            "audio_inspection_bubblewrap": tools / "bwrap",
-            "audio_inspection_prlimit": tools / "prlimit",
+            "asset_inspection_url": URL,
+            "asset_inspection_token": TOKEN,
         }
         | changes
     )
@@ -119,44 +133,26 @@ def test_default_configuration_installs_the_text_inspector_and_rejects_asr_input
     objects.check_writes_available.assert_not_called()
 
 
-@pytest.mark.parametrize(
-    "field,value,variable",
-    [
-        (
-            "audio_inspection_runtime_root",
-            Path("/opt/speechnexus-inspect/image"),
-            "SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT",
-        ),
-        (
-            "audio_inspection_command",
-            COMMAND,
-            "SPEECHNEXUS_AUDIO_INSPECTION_COMMAND",
-        ),
-        (
-            "audio_inspection_launcher_python",
-            LAUNCHER,
-            "SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON",
-        ),
-        (
-            "audio_inspection_bubblewrap",
-            Path("/usr/bin/bwrap"),
-            "SPEECHNEXUS_AUDIO_INSPECTION_BUBBLEWRAP",
-        ),
-        (
-            "audio_inspection_prlimit",
-            Path("/usr/bin/prlimit"),
-            "SPEECHNEXUS_AUDIO_INSPECTION_PRLIMIT",
-        ),
-    ],
-)
-def test_text_mode_rejects_a_configured_audio_prerequisite(
-    field: str, value: Any, variable: str
+@pytest.mark.parametrize("field,value,variable", RETIRED)
+def test_text_mode_rejects_a_retired_local_prerequisite(
+    field: str, value: str, variable: str
 ) -> None:
     with pytest.raises(ValueError) as caught:
         build_asset_inspector(_runtime_settings(**{field: value}))
     message = str(caught.value)
     assert variable in message
-    assert "SPEECHNEXUS_ASSET_INSPECTOR=text" in message
+    # The message must say where the capability went, not just that it is wrong.
+    assert "asset-inspector deployment unit" in message
+    assert "SPEECHNEXUS_ASSET_INSPECTION_URL" in message
+    assert "SPEECHNEXUS_ASSET_INSPECTION_TOKEN" in message
+
+
+@pytest.mark.parametrize("field,value,variable", RETIRED)
+def test_audio_mode_rejects_a_retired_local_prerequisite(
+    field: str, value: str, variable: str
+) -> None:
+    with pytest.raises(ValueError, match=variable):
+        build_asset_inspector(_audio_settings(**{field: value}))
 
 
 def test_text_mode_rejects_an_environment_configured_runtime_root(
@@ -169,21 +165,30 @@ def test_text_mode_rejects_an_environment_configured_runtime_root(
         build_asset_inspector(_settings())
 
 
-def test_text_mode_names_every_configured_audio_prerequisite() -> None:
-    settings = _runtime_settings(
-        audio_inspection_runtime_root=Path("/opt/speechnexus-inspect/image"),
-        audio_inspection_command=COMMAND,
-        audio_inspection_launcher_python=LAUNCHER,
-    )
+@pytest.mark.parametrize(
+    "field,value,variable",
+    [
+        ("asset_inspection_url", URL, "SPEECHNEXUS_ASSET_INSPECTION_URL"),
+        ("asset_inspection_token", TOKEN, "SPEECHNEXUS_ASSET_INSPECTION_TOKEN"),
+    ],
+)
+def test_text_mode_rejects_a_configured_inspection_endpoint(
+    field: str, value: Any, variable: str
+) -> None:
+    with pytest.raises(ValueError) as caught:
+        build_asset_inspector(_runtime_settings(**{field: value}))
+    message = str(caught.value)
+    assert variable in message
+    assert "SPEECHNEXUS_ASSET_INSPECTOR=text" in message
+
+
+def test_text_mode_names_every_configured_inspection_setting() -> None:
+    settings = _runtime_settings(asset_inspection_url=URL, asset_inspection_token=TOKEN)
     with pytest.raises(ValueError) as caught:
         build_asset_inspector(settings)
     message = str(caught.value)
-    for variable in (
-        "SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT",
-        "SPEECHNEXUS_AUDIO_INSPECTION_COMMAND",
-        "SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON",
-    ):
-        assert variable in message
+    assert "SPEECHNEXUS_ASSET_INSPECTION_URL" in message
+    assert "SPEECHNEXUS_ASSET_INSPECTION_TOKEN" in message
 
 
 def test_text_mode_ignores_settings_that_always_carry_defaults() -> None:
@@ -195,11 +200,13 @@ def test_text_mode_ignores_settings_that_always_carry_defaults() -> None:
     assert type(build_asset_inspector(settings)) is TextAssetInspector
 
 
-def test_text_mode_without_audio_prerequisites_still_builds(
+def test_text_mode_without_inspection_settings_still_builds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     for variable in (
         "SPEECHNEXUS_ASSET_INSPECTOR",
+        "SPEECHNEXUS_ASSET_INSPECTION_URL",
+        "SPEECHNEXUS_ASSET_INSPECTION_TOKEN",
         "SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT",
         "SPEECHNEXUS_AUDIO_INSPECTION_COMMAND",
         "SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON",
@@ -212,166 +219,183 @@ def test_text_mode_without_audio_prerequisites_still_builds(
     assert type(build_asset_inspector(settings)) is TextAssetInspector
 
 
+def test_audio_mode_requires_the_inspector_url() -> None:
+    with pytest.raises(ValueError, match="SPEECHNEXUS_ASSET_INSPECTION_URL"):
+        build_asset_inspector(_audio_settings(asset_inspection_url=None))
+
+
+def test_audio_mode_requires_the_inspector_token() -> None:
+    with pytest.raises(ValueError, match="SPEECHNEXUS_ASSET_INSPECTION_TOKEN"):
+        build_asset_inspector(_audio_settings(asset_inspection_token=None))
+
+
+def test_audio_mode_requires_a_url_and_a_token_together() -> None:
+    """One half of the pair never silently configures an unauthenticated caller."""
+    with pytest.raises(ValueError, match="SPEECHNEXUS_ASSET_INSPECTION_TOKEN"):
+        build_asset_inspector(_runtime_settings(asset_inspector="audio", asset_inspection_url=URL))
+    with pytest.raises(ValueError, match="SPEECHNEXUS_ASSET_INSPECTION_URL"):
+        build_asset_inspector(
+            _runtime_settings(asset_inspector="audio", asset_inspection_token=TOKEN)
+        )
+
+
+def test_a_trailing_slash_origin_is_accepted() -> None:
+    inspector = cast(
+        HttpAudioAssetInspector,
+        build_asset_inspector(_audio_settings(asset_inspection_url=URL + "/")),
+    )
+    try:
+        assert type(inspector) is HttpAudioAssetInspector
+    finally:
+        inspector.close()
+
+
 @pytest.mark.parametrize(
-    "field,variable",
+    "url",
+    [URL + "/internal/v1/inspection/audio", URL + "?token=leak", URL + "#fragment"],
+)
+def test_audio_mode_rejects_a_url_with_a_path_query_or_fragment(url: str) -> None:
+    with pytest.raises(ValueError, match="SPEECHNEXUS_ASSET_INSPECTION_URL"):
+        build_asset_inspector(_audio_settings(asset_inspection_url=url))
+
+
+def test_a_url_with_embedded_credentials_is_rejected_by_settings() -> None:
+    with pytest.raises(ValidationError) as caught:
+        _audio_settings(asset_inspection_url="http://user:secret@inspector.invalid:8080")
+    assert "SPEECHNEXUS_ASSET_INSPECTION_URL" in str(caught.value)
+    assert "SPEECHNEXUS_ASSET_INSPECTION_TOKEN" in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "changes",
     [
-        ("audio_inspection_runtime_root", "SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT"),
-        ("audio_inspection_command", "SPEECHNEXUS_AUDIO_INSPECTION_COMMAND"),
-        ("audio_inspection_launcher_python", "SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON"),
+        {"asset_inspection_timeout_seconds": 11.9},
+        {"audio_inspection_wall_seconds": 13.5},
     ],
 )
-def test_audio_mode_without_a_selector_fails_startup_naming_it(
-    tmp_path: Path, field: str, variable: str
+def test_the_client_budget_must_outlive_the_decode_budget(
+    changes: dict[str, Any],
 ) -> None:
-    root = tmp_path / "image"
-    root.mkdir()
-    missing = "" if field != "audio_inspection_runtime_root" else None
-    settings = _audio_settings(root, **{field: missing})
-    with pytest.raises(ValueError, match=variable):
-        AssetRuntime(settings)
+    with pytest.raises(ValueError) as caught:
+        build_asset_inspector(_audio_settings(**changes))
+    message = str(caught.value)
+    assert "SPEECHNEXUS_ASSET_INSPECTION_TIMEOUT_SECONDS" in message
+    assert "SPEECHNEXUS_AUDIO_INSPECTION_WALL_SECONDS" in message
 
 
-def test_api_startup_rejects_a_missing_audio_runtime_root(tmp_path: Path) -> None:
-    settings = _audio_settings(
-        tmp_path / "image", audio_inspection_runtime_root=tmp_path / "absent"
-    )
-    with pytest.raises(ValueError, match="SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT"):
-        create_app(settings=settings)
+def test_audio_mode_assembles_the_http_inspector_and_keeps_voice_reference_unavailable() -> None:
+    inspector = cast(HttpAudioAssetInspector, build_asset_inspector(_audio_settings()))
+    try:
+        assert type(inspector) is HttpAudioAssetInspector
+        assert inspector.inspect("text_input", io.BytesIO(b"plain text"), POLICY).facts is not None
+        assert inspector.inspect("voice_reference", io.BytesIO(BODY), POLICY) == Inspection(
+            available=False
+        )
+    finally:
+        inspector.close()
 
 
-@pytest.mark.parametrize(
-    "field,value,variable",
-    [
-        ("audio_inspection_runtime_root", Path("/"), "SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT"),
-        (
-            "audio_inspection_runtime_root",
-            Path("relative-image"),
-            "SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT",
-        ),
-        (
-            "audio_inspection_launcher_python",
-            "python3",
-            "SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON",
-        ),
-        (
-            "audio_inspection_launcher_python",
-            "../python3",
-            "SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON",
-        ),
-        ("audio_inspection_command", "inspect --receipt", "SPEECHNEXUS_AUDIO_INSPECTION_COMMAND"),
-        (
-            "audio_inspection_command",
-            "/opt/inspect 'unterminated",
-            "SPEECHNEXUS_AUDIO_INSPECTION_COMMAND",
-        ),
-        ("audio_inspection_command", "# comment only", "SPEECHNEXUS_AUDIO_INSPECTION_COMMAND"),
-        (
-            "audio_inspection_bubblewrap",
-            Path("/nonexistent/bwrap"),
-            "SPEECHNEXUS_AUDIO_INSPECTION_BUBBLEWRAP",
-        ),
-        (
-            "audio_inspection_prlimit",
-            Path("/nonexistent/prlimit"),
-            "SPEECHNEXUS_AUDIO_INSPECTION_PRLIMIT",
-        ),
-    ],
-)
-def test_audio_mode_with_an_unusable_selector_fails_startup_naming_it(
-    tmp_path: Path, field: str, value: Any, variable: str
+def test_configured_policy_reaches_the_adapter(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    root = tmp_path / "image"
-    root.mkdir()
-    with pytest.raises(ValueError, match=variable):
-        build_asset_inspector(_audio_settings(root, **{field: value}))
+    from speechnexus_backend import asset_runtime as asset_runtime_module
 
-
-def test_audio_mode_with_absent_paths_names_them(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT"):
-        build_asset_inspector(_audio_settings(tmp_path / "absent"))
-    root = tmp_path / "image"
-    root.mkdir()
-    settings = _audio_settings(root)
-    bubblewrap = settings.audio_inspection_bubblewrap
-    assert bubblewrap is not None
-    bubblewrap.unlink()
-    with pytest.raises(ValueError, match="SPEECHNEXUS_AUDIO_INSPECTION_BUBBLEWRAP"):
-        build_asset_inspector(settings)
-
-
-def test_audio_mode_assembles_the_process_inspector_and_keeps_voice_reference_unavailable(
-    tmp_path: Path,
-) -> None:
-    root = tmp_path / "image"
-    root.mkdir()
-    inspector = build_asset_inspector(_audio_settings(root))
-    assert type(inspector) is ProcessAudioAssetInspector
-    assert inspector.inspect("text_input", io.BytesIO(b"plain text"), POLICY).facts is not None
-    assert inspector.inspect("voice_reference", io.BytesIO(BODY), POLICY) == Inspection(
-        available=False
-    )
-
-
-def test_configured_selectors_and_limits_reach_the_supervisor(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
     captured: list[tuple[Any, ...]] = []
 
-    class _Process:
-        def __init__(self, root: Path, command: tuple[str, ...], limits: Any, **kwargs: Any):
-            captured.append((root, command, limits, kwargs))
+    class _Inspector:
+        def __init__(self, url: str, token: SecretStr, **limits: Any) -> None:
+            captured.append((url, token, limits))
 
         def close(self) -> bool:
             return True
 
-    class _Inspector:
-        def __init__(self, process: Any, *, max_duration_ms: int, max_receipt_bytes: int = 4096):
-            self.process = process
-            self.max_duration_ms = max_duration_ms
-            self.max_receipt_bytes = max_receipt_bytes
-
-    monkeypatch.setattr(asset_runtime_module, "AudioInspectionProcess", _Process)
-    monkeypatch.setattr(asset_runtime_module, "ProcessAudioAssetInspector", _Inspector)
-    root = tmp_path / "image"
-    root.mkdir()
+    monkeypatch.setattr(asset_runtime_module, "HttpAudioAssetInspector", _Inspector)
     settings = _audio_settings(
-        root,
         audio_inspection_max_duration_ms=99,
         audio_inspection_max_input_bytes=1024,
-        audio_inspection_memory_bytes=64 * 1024**2,
-        audio_inspection_cpu_seconds=2,
         audio_inspection_wall_seconds=1.5,
-        audio_inspection_output_bytes=512,
         audio_inspection_max_receipt_bytes=256,
+        asset_inspection_max_response_bytes=128,
+        asset_inspection_timeout_seconds=4,
     )
-    inspector = build_asset_inspector(settings)
-    resolved, command, limits, kwargs = captured[0]
-    assert resolved == root.resolve()
-    assert command == (COMMAND.split()[0], "--receipt")
-    assert kwargs["launcher_python"] == LAUNCHER
-    assert kwargs["bubblewrap"] == root.parent / "host-tools" / "bwrap"
-    assert kwargs["prlimit"] == root.parent / "host-tools" / "prlimit"
-    assert (
-        limits.input_bytes,
-        limits.memory_bytes,
-        limits.cpu_seconds,
-        limits.wall_seconds,
-        limits.output_bytes,
-    ) == (1024, 64 * 1024**2, 2, 1.5, 512)
-    assert isinstance(inspector, _Inspector)
-    assert inspector.max_duration_ms == 99
-    assert inspector.max_receipt_bytes == 256
+    build_asset_inspector(settings)
+    url, token, limits = captured[0]
+    assert url == URL + "/"
+    assert token.get_secret_value() == TOKEN.get_secret_value()
+    assert limits["wall_seconds"] == 1.5
+    assert limits["timeout_seconds"] == 4
+    assert limits["max_duration_ms"] == 99
+    assert limits["max_input_bytes"] == 1024
+    # The receipt bound is the smaller of the inspector cap and this read bound.
+    assert limits["max_receipt_bytes"] == 128
+
+
+@pytest.mark.parametrize(
+    "field,value,variable,target",
+    [
+        (
+            "audio_inspection_memory_bytes",
+            512 * 1024**2,
+            "SPEECHNEXUS_AUDIO_INSPECTION_MEMORY_BYTES",
+            "SPEECHNEXUS_INSPECTION_MEMORY_BYTES",
+        ),
+        (
+            "audio_inspection_cpu_seconds",
+            2,
+            "SPEECHNEXUS_AUDIO_INSPECTION_CPU_SECONDS",
+            "SPEECHNEXUS_INSPECTION_CPU_SECONDS",
+        ),
+        (
+            "audio_inspection_output_bytes",
+            512,
+            "SPEECHNEXUS_AUDIO_INSPECTION_OUTPUT_BYTES",
+            "SPEECHNEXUS_INSPECTION_OUTPUT_BYTES",
+        ),
+    ],
+)
+def test_a_migrated_resource_limit_fails_startup_naming_both_keys(
+    field: str, value: int, variable: str, target: str
+) -> None:
+    with pytest.raises(ValueError) as caught:
+        build_asset_inspector(_audio_settings(**{field: value}))
+    message = str(caught.value)
+    assert variable in message
+    assert target in message
+
+
+def test_the_compose_forwarded_resource_defaults_stay_inert() -> None:
+    """Compose always forwards these values; only a change is an operator intent."""
+    settings = _audio_settings(
+        audio_inspection_memory_bytes=256 * 1024**2,
+        audio_inspection_cpu_seconds=5,
+        audio_inspection_output_bytes=4096,
+    )
+    inspector = cast(HttpAudioAssetInspector, build_asset_inspector(settings))
+    try:
+        assert type(inspector) is HttpAudioAssetInspector
+    finally:
+        inspector.close()
+
+
+def test_api_startup_rejects_a_missing_inspector_url() -> None:
+    with pytest.raises(ValueError, match="SPEECHNEXUS_ASSET_INSPECTION_URL"):
+        create_app(settings=_audio_settings(asset_inspection_url=None))
 
 
 def test_blank_forwarded_values_mean_unconfigured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("SPEECHNEXUS_ASSET_INSPECTOR", "")
-    monkeypatch.setenv("SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT", "")
-    monkeypatch.setenv("SPEECHNEXUS_AUDIO_INSPECTION_COMMAND", "")
-    monkeypatch.setenv("SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON", "")
-    monkeypatch.setenv("SPEECHNEXUS_AUDIO_INSPECTION_BUBBLEWRAP", "")
-    monkeypatch.setenv("SPEECHNEXUS_AUDIO_INSPECTION_PRLIMIT", "")
+    for variable in (
+        "SPEECHNEXUS_ASSET_INSPECTOR",
+        "SPEECHNEXUS_ASSET_INSPECTION_URL",
+        "SPEECHNEXUS_ASSET_INSPECTION_TOKEN",
+        "SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT",
+        "SPEECHNEXUS_AUDIO_INSPECTION_COMMAND",
+        "SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON",
+        "SPEECHNEXUS_AUDIO_INSPECTION_BUBBLEWRAP",
+        "SPEECHNEXUS_AUDIO_INSPECTION_PRLIMIT",
+    ):
+        monkeypatch.setenv(variable, "")
     settings = Settings(
         service_name="speechnexus-api-test",
         database_url=SecretStr("postgresql://unused@127.0.0.1/unused"),
@@ -380,6 +404,8 @@ def test_blank_forwarded_values_mean_unconfigured(
         object_storage_bucket="test",
     )
     assert settings.asset_inspector == "text"
+    assert settings.asset_inspection_url is None
+    assert settings.asset_inspection_token is None
     assert settings.audio_inspection_runtime_root is None
     assert settings.audio_inspection_bubblewrap is None
     assert settings.audio_inspection_prlimit is None

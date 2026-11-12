@@ -18,31 +18,33 @@ content creates a durable `rejected` fact and no object. ASR/voice inputs requir
 a real `AssetInspector`; the default inspector reports unavailable and creates
 neither fake audio facts nor a validation task without a consumer.
 
-The private [audio inspection process boundary](../archive/components/audio-asset-inspection.md) adds
-real Linux supervision and resource-limit tests. `AssetRuntime` selects either
-inspector from `SPEECHNEXUS_ASSET_INSPECTOR`: the default `text` keeps
-`asr_input`/`voice_reference` unavailable with `asset_inspection_unavailable`,
-while `audio` assembles the process inspector and requires
-`SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT`,
-`SPEECHNEXUS_AUDIO_INSPECTION_COMMAND`,
-`SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON` and installed `bwrap`/`prlimit`.
-A missing, unusable or host-absent prerequisite fails api startup naming that
-variable; it never falls back to text. The reverse mismatch is rejected too:
-with `SPEECHNEXUS_ASSET_INSPECTOR=text`, explicitly setting any audio
-prerequisite (`SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT`,
-`SPEECHNEXUS_AUDIO_INSPECTION_COMMAND`,
-`SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON`,
-`SPEECHNEXUS_AUDIO_INSPECTION_BUBBLEWRAP`,
-`SPEECHNEXUS_AUDIO_INSPECTION_PRLIMIT`) fails startup naming every variable
-that was set, instead of silently keeping the text inspector with `asr_input`
-unavailable. Only values the operator actually supplies count: blank Compose
-forwards mean unconfigured, and limit settings that always carry defaults never
-imply audio intent. The shared `packages/media` source
-includes a private inspector for PCM WAV and explicitly described raw PCM;
-configuring it does not establish an approved deployment image or public
-integration. Host sandbox approval, target-runtime qualification, public
-error/result mapping and HTTP/PG/MinIO acceptance remain prerequisites for
-audio `ready`.
+`AssetRuntime` selects either inspector from `SPEECHNEXUS_ASSET_INSPECTOR`: the
+default `text` keeps `asr_input`/`voice_reference` unavailable with
+`asset_inspection_unavailable`, while `audio` assembles the HTTP
+`AssetInspector` that speaks the frozen internal protocol
+(`contracts/internal/asset-inspection.openapi.yaml`, see the
+[container design](asset-inspection-container.md)) to the separate,
+outbound-free `asset-inspector` deployment unit. The audio kind requires
+`SPEECHNEXUS_ASSET_INSPECTION_URL` and `SPEECHNEXUS_ASSET_INSPECTION_TOKEN`. A
+missing, unusable or self-contradictory prerequisite fails api startup naming
+that variable; it never falls back to text. The reverse mismatch is rejected
+too: with `SPEECHNEXUS_ASSET_INSPECTOR=text`, explicitly setting either endpoint
+key fails startup naming every variable that was set, instead of silently
+keeping the text inspector with `asr_input` unavailable. Only values the
+operator actually supplies count: blank Compose forwards mean unconfigured.
+
+Audio inspection no longer starts a decoder process on this host, so the five
+local-process selectors `SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT`, `_COMMAND`,
+`_LAUNCHER_PYTHON`, `_BUBBLEWRAP` and `_PRLIMIT` are retired: an image mount
+point, command line, interpreter and host tool paths belong to the inspection
+image. Any non-empty value fails startup in both selector modes and names the
+endpoint keys that replace them. The former per-process resource limits remain
+declared for one release only because Compose forwards their defaults; those
+defaults are inert, and any other value fails startup naming the inspector-side
+`SPEECHNEXUS_INSPECTION_*` key that replaces it. Inspection therefore writes no
+Asset row, object or event when it is unavailable, busy or rejects the content.
+Host sandbox approval, target-runtime qualification and deployment acceptance
+remain prerequisites for audio `ready`.
 
 An optional idempotency key is scoped by the authoritative deployment/schema,
 asset operation and workspace. Its stored SHA-256 identifies the key without
@@ -173,18 +175,36 @@ receive disconnects. Filename and client Content-Type do not determine storage
 identity or validated MIME facts.
 
 `SPEECHNEXUS_ASSET_INSPECTOR` accepts `text` (default) or `audio`. The audio
-kind validates its selectors and the host tool paths during composition, before
-any pool or S3 client is created, and takes explicit limits:
+kind validates its endpoint and budgets during composition, before any pool or
+S3 client is created: `SPEECHNEXUS_ASSET_INSPECTION_URL` (inspector origin, no
+default), `SPEECHNEXUS_ASSET_INSPECTION_TOKEN` (private bearer, no default),
+`SPEECHNEXUS_ASSET_INSPECTION_TIMEOUT_SECONDS` (15 s, and at least
+`SPEECHNEXUS_AUDIO_INSPECTION_WALL_SECONDS` + 2) and
+`SPEECHNEXUS_ASSET_INSPECTION_MAX_RESPONSE_BYTES` (4096). The URL must be an
+`http(s)` origin without a path, query or embedded credentials; the inspection
+path is fixed by the protocol. API-side policy stays here:
 `SPEECHNEXUS_AUDIO_INSPECTION_MAX_DURATION_MS` (default 120000),
 `SPEECHNEXUS_AUDIO_INSPECTION_MAX_INPUT_BYTES` (25 MiB),
-`SPEECHNEXUS_AUDIO_INSPECTION_MEMORY_BYTES` (256 MiB),
-`SPEECHNEXUS_AUDIO_INSPECTION_CPU_SECONDS` (5),
-`SPEECHNEXUS_AUDIO_INSPECTION_WALL_SECONDS` (10),
-`SPEECHNEXUS_AUDIO_INSPECTION_OUTPUT_BYTES` and
-`SPEECHNEXUS_AUDIO_INSPECTION_MAX_RECEIPT_BYTES` (4096). Blank values forwarded
-by Compose mean unconfigured; the tool paths default to `/usr/bin/bwrap` and
-`/usr/bin/prlimit`. These settings install no image, host package or sandbox
-policy.
+`SPEECHNEXUS_AUDIO_INSPECTION_WALL_SECONDS` (10, sent as the decode budget) and
+`SPEECHNEXUS_AUDIO_INSPECTION_MAX_RECEIPT_BYTES` (4096). The receipt read bound
+is the smaller of that bound and
+`SPEECHNEXUS_ASSET_INSPECTION_MAX_RESPONSE_BYTES`. `_MEMORY_BYTES`,
+`_CPU_SECONDS` and `_OUTPUT_BYTES` belong to the inspector container
+(`SPEECHNEXUS_INSPECTION_*`) and have no effect here. Blank values forwarded by
+Compose mean unconfigured. These settings install no image, host package or
+sandbox policy.
+
+A required inspection failure is projected onto the frozen public codes: an
+unparsable or revalidation-failing receipt, a bad bearer and a byte-cap mismatch
+are the non-retryable `503 asset_inspection_unavailable`; a busy inspector, an
+expired decode deadline, an unreachable endpoint or a read timeout are the
+retryable `503 asset_inspection_busy`; `422 invalid_asset_audio` and
+`422 asset_audio_too_long` are permanent content verdicts. An unsupported media
+type belongs to the content family: the ingress bounds only the byte count, so a
+format this deployment does not accept is the caller's file and retrying it
+cannot succeed. `X-Should-Retry` stays `false` for every Asset
+503, so an SDK never replays the transport request; only `error.retryable`
+permits a new logical upload.
 
 Asset endpoints accept only configured `asset_allowed_hosts` (default
 `localhost`, `127.0.0.1`, `::1`). Requests carrying Origin require an exact

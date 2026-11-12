@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import logging
-import shlex
 from collections.abc import Callable
-from pathlib import Path, PurePosixPath
+
+from pydantic import SecretStr
 
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.assets import (
@@ -17,165 +17,176 @@ from speechnexus_backend.speech.application.workspaces import WorkspaceService
 from speechnexus_backend.speech.domain.assets import AssetError, AssetPolicy
 from speechnexus_backend.speech.infrastructure.assets_minio import MinioAssetObjects
 from speechnexus_backend.speech.infrastructure.assets_postgres import PostgresAssetMetadata
-from speechnexus_backend.speech.infrastructure.audio_asset_inspector import (
-    ProcessAudioAssetInspector,
-)
-from speechnexus_backend.speech.infrastructure.audio_inspection_process import (
-    AudioInspectionProcess,
-    InspectionProcessLimits,
+from speechnexus_backend.speech.infrastructure.audio_inspection_http import (
+    HttpAudioAssetInspector,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
 from speechnexus_backend.speech.infrastructure.workspaces_postgres import PostgresWorkspaceReads
 
-DEFAULT_BUBBLEWRAP = Path("/usr/bin/bwrap")
-DEFAULT_PRLIMIT = Path("/usr/bin/prlimit")
-
 _LOG = logging.getLogger(__name__)
 
-# Narrow shutdown handle for the one inspector that owns an OS process. The
-# AssetInspector protocol stays domain-only: no transport or supervisor type
-# leaks into it, and "no closer" is stated by the composition root instead of
-# guessed with isinstance at shutdown.
+# Narrow shutdown handle for an inspector that owns resources. The AssetInspector
+# protocol stays domain-only: no transport type leaks into it, and "no closer" is
+# stated by the composition root instead of guessed with isinstance at shutdown.
 type InspectorCloser = Callable[[], bool]
-# Prerequisites that only exist when the operator supplies them. Limit settings
-# are absent here on purpose: they always carry a default, so their value cannot
-# show that audio inspection was requested.
-_AUDIO_PREREQUISITES: tuple[tuple[str, str], ...] = (
+
+_INFO = (
+    "audio inspection runs in the asset-inspector deployment unit; configure "
+    "SPEECHNEXUS_ASSET_INSPECTION_URL and SPEECHNEXUS_ASSET_INSPECTION_TOKEN"
+)
+# Settings the inspector container owns now. They stay declared for one release
+# so a stale environment is diagnosed instead of silently ignored: the old values
+# no longer change any limit here, and an empty value (Compose forwards one for
+# every unset variable) counts as unconfigured.
+_RETIRED_PREREQUISITES: tuple[tuple[str, str], ...] = (
     ("audio_inspection_runtime_root", "SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT"),
     ("audio_inspection_command", "SPEECHNEXUS_AUDIO_INSPECTION_COMMAND"),
     ("audio_inspection_launcher_python", "SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON"),
     ("audio_inspection_bubblewrap", "SPEECHNEXUS_AUDIO_INSPECTION_BUBBLEWRAP"),
     ("audio_inspection_prlimit", "SPEECHNEXUS_AUDIO_INSPECTION_PRLIMIT"),
 )
+# Resource limits that moved to the inspector unchanged. Compose forwards their
+# publish-time defaults, so equality with the retired default is the normal case;
+# any other value is an operator intent this process can no longer honour.
+_MIGRATED_LIMITS: tuple[tuple[str, str, int, str], ...] = (
+    (
+        "audio_inspection_memory_bytes",
+        "SPEECHNEXUS_AUDIO_INSPECTION_MEMORY_BYTES",
+        256 * 1024**2,
+        "SPEECHNEXUS_INSPECTION_MEMORY_BYTES",
+    ),
+    (
+        "audio_inspection_cpu_seconds",
+        "SPEECHNEXUS_AUDIO_INSPECTION_CPU_SECONDS",
+        5,
+        "SPEECHNEXUS_INSPECTION_CPU_SECONDS",
+    ),
+    (
+        "audio_inspection_output_bytes",
+        "SPEECHNEXUS_AUDIO_INSPECTION_OUTPUT_BYTES",
+        4096,
+        "SPEECHNEXUS_INSPECTION_OUTPUT_BYTES",
+    ),
+)
+# Prerequisites that only exist when the operator configures them. Limit settings
+# are absent on purpose: they always carry a default, so a value cannot show that
+# audio inspection was requested.
+_INSPECTOR_PREREQUISITES: tuple[tuple[str, str], ...] = (
+    ("asset_inspection_url", "SPEECHNEXUS_ASSET_INSPECTION_URL"),
+    ("asset_inspection_token", "SPEECHNEXUS_ASSET_INSPECTION_TOKEN"),
+)
 
 
-def _configured_audio_prerequisites(settings: Settings) -> list[str]:
-    """Name every audio prerequisite the operator explicitly configured.
+def _configured(settings: Settings, fields: tuple[tuple[str, str], ...]) -> list[str]:
+    """Name every prerequisite the operator explicitly configured.
 
     ``model_fields_set`` records values supplied through the constructor or the
-    environment, so it distinguishes operator intent from a field pydantic
-    filled with its default. A supplied blank counts as unconfigured: the
-    settings validators already normalize blank selectors, and Compose forwards
-    empty values for variables it does not set. Only fields without a usable
-    default appear in ``_AUDIO_PREREQUISITES``; limits such as
-    ``audio_inspection_max_duration_ms`` never count as evidence of intent.
+    environment, so it distinguishes operator intent from a field pydantic filled
+    with its default. A supplied blank counts as unconfigured: the settings
+    validators already normalize blank selectors, and Compose forwards empty
+    values for variables it does not set.
     """
     configured: list[str] = []
-    for field, variable in _AUDIO_PREREQUISITES:
+    for field, variable in fields:
         if field not in settings.model_fields_set:
             continue
         value = getattr(settings, field)
-        if value is None or (isinstance(value, str) and not value.strip()):
+        raw = value.get_secret_value() if isinstance(value, SecretStr) else value
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
             continue
         configured.append(variable)
     return configured
 
 
-def _inspection_root(settings: Settings) -> Path:
-    variable = "SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT"
-    root = settings.audio_inspection_runtime_root
-    if root is None:
-        raise ValueError(f"{variable} is required when SPEECHNEXUS_ASSET_INSPECTOR=audio")
-    resolved = root.resolve()
-    # The supervisor rejects "/" as an image; fail before Popen with the setting's name.
-    if not root.is_absolute() or resolved == Path("/") or not resolved.is_dir():
-        raise ValueError(f"{variable} must name a private inspection image directory: {root}")
-    return resolved
+def _refuse_retired_inspector_settings(settings: Settings) -> None:
+    """Fail startup instead of silently ignoring a setting this process retired.
+
+    An ignored target, launcher path or resource limit would leave the operator
+    believing a limit is enforced while the inspector container uses its own.
+    """
+    retired = _configured(settings, _RETIRED_PREREQUISITES)
+    if retired:
+        names = ", ".join(retired)
+        raise ValueError(f"{names} no longer select a local inspection process; {_INFO}")
+    drifted = [
+        (variable, target)
+        for field, variable, default, target in _MIGRATED_LIMITS
+        if field in settings.model_fields_set and getattr(settings, field) != default
+    ]
+    if drifted:
+        names = "; ".join(
+            f"{variable} is owned by the inspector container now, set {target}"
+            for variable, target in drifted
+        )
+        raise ValueError(names)
 
 
-def _inspection_command(settings: Settings) -> tuple[str, ...]:
-    variable = "SPEECHNEXUS_AUDIO_INSPECTION_COMMAND"
-    raw = settings.audio_inspection_command
-    if not raw.strip():
-        raise ValueError(f"{variable} is required when SPEECHNEXUS_ASSET_INSPECTOR=audio")
-    try:
-        command = tuple(shlex.split(raw))
-    except ValueError:
-        raise ValueError(f"{variable} is not a valid shell command") from None
-    if not command:
-        raise ValueError(f"{variable} is not a valid shell command")
-    executable = PurePosixPath(command[0])
-    if (
-        not executable.is_absolute()
-        or ".." in executable.parts
-        or any("\0" in argument or len(argument) > 8192 for argument in command)
-    ):
-        raise ValueError(f"{variable} must start with an absolute image executable")
-    return command
-
-
-def _inspection_launcher(settings: Settings) -> str:
-    variable = "SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON"
-    interpreter = PurePosixPath(settings.audio_inspection_launcher_python)
-    if not interpreter.is_absolute() or ".." in interpreter.parts or "\0" in str(interpreter):
-        raise ValueError(f"{variable} must be an absolute interpreter path inside the image")
-    return settings.audio_inspection_launcher_python
-
-
-def _inspection_tool(variable: str, configured: Path | None, default: Path) -> Path:
-    path = configured if configured is not None else default
-    if not path.is_file():
-        raise ValueError(f"{variable} does not name an installed executable: {path}")
-    return path
-
-
-def _build_audio_inspector(
+def _build_http_audio_inspector(
     settings: Settings,
-) -> tuple[ProcessAudioAssetInspector, InspectorCloser]:
-    root = _inspection_root(settings)
-    command = _inspection_command(settings)
-    launcher = _inspection_launcher(settings)
-    bubblewrap = _inspection_tool(
-        "SPEECHNEXUS_AUDIO_INSPECTION_BUBBLEWRAP",
-        settings.audio_inspection_bubblewrap,
-        DEFAULT_BUBBLEWRAP,
-    )
-    prlimit = _inspection_tool(
-        "SPEECHNEXUS_AUDIO_INSPECTION_PRLIMIT",
-        settings.audio_inspection_prlimit,
-        DEFAULT_PRLIMIT,
-    )
-    process = AudioInspectionProcess(
-        root,
-        command,
-        InspectionProcessLimits(
-            input_bytes=settings.audio_inspection_max_input_bytes,
-            memory_bytes=settings.audio_inspection_memory_bytes,
-            cpu_seconds=settings.audio_inspection_cpu_seconds,
-            wall_seconds=settings.audio_inspection_wall_seconds,
-            output_bytes=settings.audio_inspection_output_bytes,
-        ),
-        launcher_python=launcher,
-        bubblewrap=bubblewrap,
-        prlimit=prlimit,
-    )
-    inspector = ProcessAudioAssetInspector(
-        process,
+) -> tuple[HttpAudioAssetInspector, InspectorCloser]:
+    """Build the private HTTP inspector or fail naming the exact variable.
+
+    No implicit default endpoint, host or token is invented here: a missing,
+    unusable or self-contradictory configuration stops startup instead of
+    degrading to the text inspector.
+    """
+    url_variable = "SPEECHNEXUS_ASSET_INSPECTION_URL"
+    token_variable = "SPEECHNEXUS_ASSET_INSPECTION_TOKEN"
+    url = settings.asset_inspection_url
+    if url is None:
+        raise ValueError(f"{url_variable} is required when SPEECHNEXUS_ASSET_INSPECTOR=audio")
+    # The endpoint path is fixed by the protocol. Accepting a base URL with a path
+    # would let two spellings of the same deployment look different.
+    if (url.path or "/") != "/" or url.query or url.fragment:
+        raise ValueError(
+            f"{url_variable} must name the inspector origin only, without a path, "
+            "query or fragment: the inspection path is fixed"
+        )
+    token = settings.asset_inspection_token
+    if token is None:
+        raise ValueError(f"{token_variable} is required when SPEECHNEXUS_ASSET_INSPECTOR=audio")
+    wall_seconds = settings.audio_inspection_wall_seconds
+    if settings.asset_inspection_timeout_seconds < wall_seconds + 2:
+        raise ValueError(
+            "SPEECHNEXUS_ASSET_INSPECTION_TIMEOUT_SECONDS must exceed "
+            "SPEECHNEXUS_AUDIO_INSPECTION_WALL_SECONDS by at least 2 s; got "
+            f"{settings.asset_inspection_timeout_seconds} and {wall_seconds}"
+        )
+    inspector = HttpAudioAssetInspector(
+        str(url),
+        token,
+        timeout_seconds=settings.asset_inspection_timeout_seconds,
+        wall_seconds=wall_seconds,
         max_duration_ms=settings.audio_inspection_max_duration_ms,
-        max_receipt_bytes=settings.audio_inspection_max_receipt_bytes,
+        max_input_bytes=settings.audio_inspection_max_input_bytes,
+        # The receipt bound is the smaller of the inspector's own cap and this
+        # process's read bound, so neither side can widen the other.
+        max_receipt_bytes=min(
+            settings.audio_inspection_max_receipt_bytes,
+            settings.asset_inspection_max_response_bytes,
+        ),
     )
-    # The supervisor is the only inspector part with real OS teardown. Hand the
-    # runtime its close handle so shutdown never has to name its type.
-    return inspector, process.close
+    return inspector, inspector.close
 
 
 def _select_asset_inspector(
     settings: Settings,
 ) -> tuple[AssetInspector, InspectorCloser | None]:
-    """Build the configured inspector and its optional supervisor shutdown handle.
+    """Build the configured inspector and its optional shutdown handle.
 
-    ``None`` states that this inspector owns no process to tear down; it is not
+    ``None`` states that this inspector owns nothing to tear down; it is not
     inferred from the object's class, so the runtime shutdown path stays free of
     infrastructure imports and concrete-type checks.
     """
+    _refuse_retired_inspector_settings(settings)
     if settings.asset_inspector == "audio":
-        return _build_audio_inspector(settings)
-    configured = _configured_audio_prerequisites(settings)
+        return _build_http_audio_inspector(settings)
+    configured = _configured(settings, _INSPECTOR_PREREQUISITES)
     if configured:
         names = ", ".join(configured)
         raise ValueError(
             f"{names} configured but SPEECHNEXUS_ASSET_INSPECTOR=text; "
-            "select audio or unset every audio inspection prerequisite"
+            "select audio or unset every asset-inspection setting"
         )
     return TextAssetInspector(), None
 
@@ -185,7 +196,7 @@ def build_asset_inspector(settings: Settings) -> AssetInspector:
 
     Every audio prerequisite is validated here, at composition time, so a
     deployment either starts with the configured inspector or fails naming the
-    setting that is missing, unusable or absent from the host. Selecting ``text``
+    setting that is missing, unusable or self-contradictory. Selecting ``text``
     while explicitly configuring an audio prerequisite also fails: otherwise the
     operator's audio intent would silently degrade to an unavailable inspector.
     """
@@ -267,22 +278,23 @@ class AssetRuntime:
             raise
 
     def close(self) -> bool:
-        """Stop the inspector supervisor, then release the owned transports.
+        """Refuse new inspections, release the inspector, then the transports.
 
-        The inspector is stopped first: it owns a live OS process and pidfds
-        that no transport teardown can reach, and it is the only step that can
-        report an unconfirmed stop. Stopping it before the pool and object
-        client also sets the supervisor's ``_closed`` flag while those
-        transports still exist, so no new inspection can start into a runtime
-        that is already being dismantled. This ordering is not a dependency:
-        an inspection reads only the prepared body and the supervisor pipe, not
-        ``_objects`` or ``_pool``.
+        The inspector is closed first: it owns the only connection pool a
+        dismantled runtime must not keep using, and closing it sets the flag that
+        refuses new inspections while the other transports still exist. A request
+        already inside an inspection fails as ``503`` and leaves no half-written
+        state, because inspection precedes every database transaction and object
+        PUT. This ordering is not a dependency: an inspection reads only the
+        prepared body, not ``_objects`` or ``_pool``.
 
-        Returns ``False`` when the inspector did not confirm that its
-        supervisor stopped. The transports are still closed, but callers must
-        not read that as a clean shutdown: the unconfirmed stop is logged here
-        and returned. No exception is raised because this also runs while
-        reporting an ``open()`` failure, where it would mask the startup error.
+        Returns ``False`` only when the inspector did not confirm it stopped. The
+        HTTP inspector owns no process to confirm, so it reports ``True``: the
+        inspection container belongs to the deployment unit and this process
+        never claims to have stopped it. A future closer that cannot confirm a
+        stop is logged here and returned rather than raised, because this also
+        runs while reporting an ``open()`` failure, where it would mask the
+        startup error.
         """
         stopped = True
         try:
@@ -290,8 +302,8 @@ class AssetRuntime:
                 stopped = self._close_inspector()
                 if not stopped:
                     _LOG.warning(
-                        "Asset inspector did not confirm its supervisor stopped; "
-                        "an inspection process may survive shutdown"
+                        "Asset inspector did not confirm it stopped; "
+                        "inspection capacity may outlive shutdown"
                     )
         finally:
             self._objects.close()

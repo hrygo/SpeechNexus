@@ -1,8 +1,8 @@
 """AssetRuntime shutdown and failed-startup release of the audio inspector.
 
 Inspector *selection* is covered by ``test_asset_inspector_wiring``; this module
-covers the lifetime the composition root owns: ``close()`` must stop the process
-supervisor before releasing the transports, the ``open()`` failure path must do
+covers the lifetime the composition root owns: ``close()`` must close the
+inspector before releasing the transports, the ``open()`` failure path must do
 the same, and an unconfirmed stop must not read as a clean shutdown. Keeping the
 module separate keeps the wiring fixtures focused on configuration validation.
 """
@@ -12,7 +12,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
-from pathlib import Path
 from typing import BinaryIO
 
 import pytest
@@ -20,7 +19,11 @@ import pytest
 from speechnexus_backend import asset_runtime as asset_runtime_module
 from speechnexus_backend.asset_runtime import AssetRuntime
 from speechnexus_backend.speech.domain.assets import AssetPolicy, AssetPurpose, Inspection
-from tests.unit.backend.test_asset_inspector_wiring import _audio_settings, _runtime_settings
+from tests.unit.backend.test_asset_inspector_wiring import (
+    URL,
+    _audio_settings,
+    _runtime_settings,
+)
 
 _NAMESPACE_DIGEST = "sha256:" + "0" * 64
 
@@ -127,7 +130,7 @@ def test_failed_open_closes_the_inspector_and_the_transports(
     assert events == ["inspector", "objects", "pool"]
 
 
-def test_unconfirmed_supervisor_stop_is_reported_and_never_reads_as_success(
+def test_unconfirmed_inspector_stop_is_reported_and_never_reads_as_success(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     events: list[str] = []
@@ -138,7 +141,7 @@ def test_unconfirmed_supervisor_stop_is_reported_and_never_reads_as_success(
         stopped = runtime.close()
 
     assert stopped is False
-    assert "did not confirm its supervisor stopped" in caplog.text
+    assert "did not confirm it stopped" in caplog.text
     # The transports are still released; only the confirmation is missing.
     assert (objects.closed, pool.closed) == (1, 1)
     assert events == ["inspector", "objects", "pool"]
@@ -150,42 +153,40 @@ def test_text_inspector_owns_no_process_and_closes_cleanly() -> None:
     assert runtime.close() is True
 
 
-class RoutingSupervisor:
-    def __init__(self) -> None:
+class RecordingCloseableInspector:
+    """HTTP-shaped inspector whose only real behaviour is a recorded close."""
+
+    def __init__(self, url: str, token: object, **limits: object) -> None:
+        self.url = url
+        self.token = token
+        self.limits = limits
         self.close_calls = 0
+
+    def inspect(self, purpose: AssetPurpose, body: BinaryIO, policy: AssetPolicy) -> Inspection:
+        return Inspection(available=False)
 
     def close(self) -> bool:
         self.close_calls += 1
         return True
 
 
-class RecordingAudioInspector:
-    def __init__(self, process: RoutingSupervisor, **limits: object) -> None:
-        self.process = process
-        self.limits = limits
-
-    def inspect(self, purpose: AssetPurpose, body: BinaryIO, policy: AssetPolicy) -> Inspection:
-        return Inspection(available=False)
-
-
-def test_composition_root_hands_the_supervisor_stop_to_the_runtime(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_composition_root_hands_the_inspector_close_to_the_runtime(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    supervisor = RoutingSupervisor()
+    inspector = RecordingCloseableInspector(URL, None)
     events: list[str] = []
     pool = RecordingPool(events)
     objects = RecordingObjects(events)
     monkeypatch.setattr(
-        asset_runtime_module, "AudioInspectionProcess", lambda *args, **kwargs: supervisor
+        asset_runtime_module,
+        "HttpAudioAssetInspector",
+        lambda *args, **kwargs: inspector,
     )
-    monkeypatch.setattr(asset_runtime_module, "ProcessAudioAssetInspector", RecordingAudioInspector)
     monkeypatch.setattr(asset_runtime_module, "speech_pool", lambda *args, **kwargs: pool)
     monkeypatch.setattr(asset_runtime_module, "MinioAssetObjects", lambda *args, **kwargs: objects)
-    root = tmp_path / "image"
-    root.mkdir()
 
-    runtime = AssetRuntime(_audio_settings(root))
+    runtime = AssetRuntime(_audio_settings())
 
     assert runtime.close() is True
-    assert supervisor.close_calls == 1
+    assert inspector.close_calls == 1
     assert events == ["objects", "pool"]

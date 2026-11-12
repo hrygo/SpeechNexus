@@ -16,7 +16,12 @@ from speechnexus_contracts import parse
 from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.application.assets import AssetService
 from speechnexus_backend.speech.application.readiness import ReadinessService
-from speechnexus_backend.speech.domain.assets import AssetError, AssetPolicy, UploadResult
+from speechnexus_backend.speech.domain.assets import (
+    AssetError,
+    AssetPolicy,
+    Inspection,
+    UploadResult,
+)
 from tests.fake.readiness import StaticProbe
 from tests.unit.backend.test_health import _settings
 from tests.unit.test_assets import READY, RESERVED, WRITING, setup_service
@@ -290,3 +295,85 @@ async def test_unmatched_asset_paths_and_methods_keep_the_public_envelope(asset_
         assert response.status_code == status
         parse("ErrorResponse", response.json())
     metadata.get.assert_not_called()
+
+
+class CountingInspector:
+    """Fake inspection client that only records whether it was asked to decode."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def inspect(self, purpose: Any, body: Any, policy: Any) -> Inspection:
+        self.calls += 1
+        return Inspection(available=False)
+
+
+async def test_an_oversized_upload_never_reaches_the_request_handler() -> None:
+    """The ingress refuses it before the app, so inspection semantics never apply.
+
+    `413 encoded_too_large` means "this deployment's two byte ceilings disagree"
+    only because this middleware already refuses anything larger than
+    `asset_max_bytes + 16 KiB`. If the refusal moved below the handler, an
+    inspector `413` would silently become the caller's problem.
+    """
+    service = Mock(spec=AssetService)
+    app = create_app(
+        settings=_settings().model_copy(
+            update={"asset_allowed_hosts": ("test",), "asset_max_bytes": 32}
+        ),
+        readiness=ReadinessService([StaticProbe("synthetic")], timeout_seconds=1),
+        assets=service,
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/nexus/assets",
+            files={"file": ("clip.wav", b"x" * 20_000)},
+            data={"purpose": "asr_input"},
+            headers={"X-Request-ID": "trace-oversize"},
+        )
+
+    assert response.status_code == 413
+    assert response.json()["error"]["code"] == "asset_too_large"
+    assert response.json()["error"]["retryable"] is False
+    # The handler never ran, so neither the inspector nor a reservation could.
+    service.upload.assert_not_called()
+
+
+async def test_an_oversized_upload_never_calls_the_inspection_client() -> None:
+    inspector = CountingInspector()
+    metadata, objects = Mock(), Mock()
+    metadata.reserve.return_value = UploadResult("created", RESERVED)
+    # The control request only needs to prove it reaches inspection; an unknown
+    # write result keeps it from walking the publish path with mock objects.
+    metadata.begin_write.return_value = UploadResult("unknown", None)
+    service = AssetService(metadata, objects, inspector, AssetPolicy(60))
+    app = create_app(
+        settings=_settings().model_copy(
+            update={
+                "asset_allowed_hosts": ("test",),
+                "asset_default_ttl_seconds": 60,
+                "asset_max_bytes": 32,
+            }
+        ),
+        readiness=ReadinessService([StaticProbe("synthetic")], timeout_seconds=1),
+        assets=service,
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        oversized = await client.post(
+            "/v1/nexus/assets",
+            files={"file": ("clip.wav", b"x" * 20_000)},
+            data={"purpose": "asr_input"},
+        )
+        assert oversized.status_code == 413
+        assert oversized.json()["error"]["code"] == "asset_too_large"
+        assert inspector.calls == 0
+        metadata.reserve.assert_not_called()
+
+        # Control: a body under both ceilings does reach inspection, so the zero
+        # above is a real refusal and not a disconnected fake.
+        await client.post(
+            "/v1/nexus/assets",
+            files={"file": ("clip.wav", b"xxxx")},
+            data={"purpose": "asr_input"},
+        )
+        assert inspector.calls == 1

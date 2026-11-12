@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus internal asset inspection API
-  version: 0.1.0.dev0
+  version: 0.1.0.dev1
   description: |
     Private single-request audio inspection protocol between the Speech API and
     the isolated `asset-inspector` deployment unit. The inspector decodes one
@@ -19,11 +19,13 @@ info:
     fields and keeps no semantic copy of that structure.
 
     Unavailability and content rejection are distinct stable outcomes. A
-    `422 invalid_media` / `422 media_limit_exceeded` is a permanent rejection of
-    the supplied bytes. A `429 busy`, `503 unavailable`, or `504 deadline_exceeded`
-    is a temporary infrastructure outcome for which a new request may later
-    succeed. Neither category authorizes the caller to create an Asset row,
-    publish an object, or infer a public `ready` state.
+    `415 unsupported_media` / `422 invalid_media` / `422 media_limit_exceeded` is
+    a permanent rejection of the supplied bytes: the public upload path bounds
+    only the byte count, so a media type the recipe does not accept is the
+    caller's file, not this deployment's fault. A `429 busy`, `503 unavailable`,
+    or `504 deadline_exceeded` is a temporary infrastructure outcome for which a
+    new request may later succeed. Neither category authorizes the caller to
+    create an Asset row, publish an object, or infer a public `ready` state.
 security:
   - InspectionBearer: []
 paths:
@@ -272,10 +274,13 @@ components:
                 status: encoded_too_large
     UnsupportedMedia:
       description: |
-        The recipe does not accept the supplied media type. The public upload
-        path only sends `audio/wav`; this outcome therefore indicates a
-        deployment or caller configuration mismatch and maps to public
-        `503 asset_inspection_unavailable`.
+        The media type is not one this recipe accepts. The public upload path
+        bounds the byte count but never filters the media type, so the file
+        reaches the inspector exactly as the caller supplied it: an unsupported
+        encoding is a permanent content verdict, not an outage, and a new
+        request with the same bytes cannot succeed. The API maps this to public
+        `422 invalid_asset_audio`, the same code as `invalid_media`. No Asset
+        row, object, event, or Job is written.
       content:
         application/json:
           schema:

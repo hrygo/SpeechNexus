@@ -126,11 +126,14 @@ parameter, header or other-status change still rejects. Each approval is
 printed as `approved response replacement:` and listed in
 `approved_response_replacements` in JSON mode.
 
-The same registry covers a response body edited in place: both sides then name
-the identical schema reference, and the entry still filters only that exact
-response pointer for its exact version pair. The version bump keeps the approval
-from silently covering a later change under the same version. New entries must
-add matching negative cases and update the frozen assertion in
+The same registry covers a response body edited in place. An entry matches when
+the baseline and the current contract name the response schema exactly as the
+entry records, so it covers both an unchanged reference whose body narrows and a
+reference retargeted at the declared component that wraps the same document; in
+either case it still filters only that exact response pointer for its exact
+version pair. The version bump keeps the approval from silently covering a later
+change under the same version. New entries must add matching negative cases and
+update the frozen assertion in
 [`tests/contract/test_approved_http_parameter_and_response_changes.py`](../../tests/contract/test_approved_http_parameter_and_response_changes.py).
 
 ## What the check establishes

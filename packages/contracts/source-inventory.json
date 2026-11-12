@@ -1,6 +1,6 @@
 {
   "admin-openapi.yaml": {
-    "sha256": "6a46b959b0c939d953ffc4aa7eafb29b19b3dbe3d288e25f947271cc761027e8",
+    "sha256": "21fb02d1095e8e64463745fc970e3d7cb70d8258239bea27b91afb5a3795f85d",
     "version": "0.1.0.dev9"
   },
   "binding-defaults-producer.openapi.yaml": {

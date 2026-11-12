@@ -786,9 +786,6 @@ class ExternalModelInstanceSchemaJsonRoot(TypedDict):
     quarantine_reason: NotRequired[str | None]
 
 
-type ModelRuntimeInstance = ExternalModelInstanceSchemaJsonRoot
-
-
 class ExternalSharedReceiptsSchemaJsonExecutionReceipt(TypedDict):
     receipt_id: ExternalSharedIdentifiersSchemaJsonIdentifier
     request_id: NotRequired[str | None]
@@ -842,11 +839,7 @@ class ExternalScenarioProfileSchemaJsonRoot(TypedDict):
     supersedes_revision: NotRequired[ExternalScenarioProfileSchemaJsonRevision | None]
 
 
-class ModelInstanceList(TypedDict):
-    object: Literal["nexus.list"]
-    data: list[ExternalModelInstanceSchemaJsonRoot]
-    has_more: bool
-    next_cursor: str | None
+type ModelRuntimeInstance = ExternalModelInstanceSchemaJsonRoot
 
 
 class ExternalSharedErrorsSchemaJsonOperationRecovery(TypedDict):
@@ -907,6 +900,13 @@ class ProfilePublishedRevision(TypedDict):
     publication: Publication
     validation: ExternalScenarioProfileSchemaJsonProfileValidation
     supersedes_revision: NotRequired[ExternalScenarioProfileSchemaJsonRevision | None]
+
+
+class ModelInstanceList(TypedDict):
+    object: Literal["nexus.list"]
+    data: list[ModelRuntimeInstance]
+    has_more: bool
+    next_cursor: str | None
 
 
 class ExternalSharedErrorsSchemaJsonErrorBody(TypedDict):

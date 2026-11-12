@@ -2464,7 +2464,7 @@
         "data": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/External_model_instance_schema_json_Root"
+            "$ref": "#/$defs/ModelRuntimeInstance"
           }
         },
         "has_more": {
@@ -2474,6 +2474,9 @@
           "type": ["string", "null"]
         }
       }
+    },
+    "ModelRuntimeInstance": {
+      "$ref": "#/$defs/External_model_instance_schema_json_Root"
     },
     "External_model_instance_schema_json_Root": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2835,9 +2838,6 @@
           "maxLength": 128
         }
       }
-    },
-    "ModelRuntimeInstance": {
-      "$ref": "#/$defs/External_model_instance_schema_json_Root"
     }
   },
   "anyOf": [

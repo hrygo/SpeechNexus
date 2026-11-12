@@ -421,7 +421,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/External_model_instance_schema_json_Root"
+                  "$ref": "#/components/schemas/ModelRuntimeInstance"
                 }
               }
             }
@@ -1410,7 +1410,7 @@
           "data": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/External_model_instance_schema_json_Root"
+              "$ref": "#/components/schemas/ModelRuntimeInstance"
             }
           },
           "has_more": {
@@ -1420,6 +1420,9 @@
             "type": ["string", "null"]
           }
         }
+      },
+      "ModelRuntimeInstance": {
+        "$ref": "#/components/schemas/External_model_instance_schema_json_Root"
       },
       "External_model_instance_schema_json_Root": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",

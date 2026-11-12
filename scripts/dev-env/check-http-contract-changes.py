@@ -195,10 +195,11 @@ _APPROVED_RESPONSE_REPLACEMENTS: dict[tuple[str, str, str, str, str, str], dict[
             "The recorded instance projection no longer requires facts the runtime "
             "instance store does not hold (loaded artifact digests, process start and "
             "heartbeat times, and the instance stop document's evidence kind and "
-            "digest); the response reference is unchanged on both sides."
+            "digest); the single read now names the same document through the declared "
+            "component ModelRuntimeInstance."
         ),
         "from_schema": "./model-instance.schema.json",
-        "to_schema": "./model-instance.schema.json",
+        "to_schema": "#/components/schemas/ModelRuntimeInstance",
     },
 }
 

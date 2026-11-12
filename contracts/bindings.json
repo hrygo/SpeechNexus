@@ -72,10 +72,7 @@
         "AuditChangeSummary",
         "ModelInstanceList",
         "ModelRuntimeInstance"
-      ],
-      "schema_refs": {
-        "ModelRuntimeInstance": "model-instance.schema.json#"
-      }
+      ]
     },
     "workbench": {
       "source": "workbench-openapi.yaml",

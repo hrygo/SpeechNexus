@@ -869,6 +869,7 @@ export interface components {
       | "stopped"
       | "failed"
       | "quarantined";
+    ModelRuntimeInstance: components["schemas"]["model-instance.schema"];
     ModelInstanceList: {
       /** @constant */
       object: "nexus.list";

@@ -34,6 +34,13 @@ MODEL_INSTANCE_REASON = (
     "heartbeat times, and the instance stop document's evidence kind and "
     "digest); the response reference is unchanged on both sides."
 )
+MODEL_INSTANCE_SINGLE_READ_REASON = (
+    "The recorded instance projection no longer requires facts the runtime "
+    "instance store does not hold (loaded artifact digests, process start and "
+    "heartbeat times, and the instance stop document's evidence kind and "
+    "digest); the single read now names the same document through the declared "
+    "component ModelRuntimeInstance."
+)
 
 
 def module() -> ModuleType:
@@ -212,9 +219,9 @@ def test_the_parameter_and_response_registries_are_frozen() -> None:
             NARROW_CURRENT_VERSION,
         ): {
             "issue": "#605",
-            "reason": MODEL_INSTANCE_REASON,
+            "reason": MODEL_INSTANCE_SINGLE_READ_REASON,
             "from_schema": "./model-instance.schema.json",
-            "to_schema": "./model-instance.schema.json",
+            "to_schema": "#/components/schemas/ModelRuntimeInstance",
         },
     }
 
@@ -378,8 +385,15 @@ def test_a_response_replacement_does_not_cover_a_different_status(
     assert len(approved) == 1
 
 
-def instance_document(*, version: str) -> dict[str, Any]:
-    """Synthetic responses whose in-place body is unchanged and only narrows."""
+def instance_document(
+    *, version: str, generation_schema: str = "./model-instance.schema.json"
+) -> dict[str, Any]:
+    """Synthetic responses whose in-place body is unchanged and only narrows.
+
+    ``generation_schema`` selects how the single read names the instance
+    document: the baseline points at the file, the narrowed contract at the
+    declared component that wraps the same file.
+    """
 
     def operation(operation_id: str, schema: str) -> dict[str, Any]:
         return {
@@ -400,7 +414,7 @@ def instance_document(*, version: str) -> dict[str, Any]:
                 "get": operation("listModelInstances", "#/components/schemas/ModelInstanceList")
             },
             MODEL_INSTANCE_GENERATION_PATH: {
-                "get": operation("getModelInstance", "./model-instance.schema.json")
+                "get": operation("getModelInstance", generation_schema)
             },
         },
     }
@@ -439,7 +453,10 @@ def test_the_in_place_response_narrowing_is_filtered_at_its_exact_version_pair(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     base = instance_document(version=NARROW_BASE_VERSION)
-    current = instance_document(version=NARROW_CURRENT_VERSION)
+    current = instance_document(
+        version=NARROW_CURRENT_VERSION,
+        generation_schema="#/components/schemas/ModelRuntimeInstance",
+    )
     findings = [
         f"{MODEL_INSTANCE_POINTER}/application/json/properties/data/items/$defs/ReadinessFacts: "
         "response required guarantees removed: ['loaded_artifact_digests']",
@@ -458,7 +475,8 @@ def test_the_in_place_response_narrowing_is_filtered_at_its_exact_version_pair(
     )
     assert (
         f"{MODEL_INSTANCE_GENERATION_POINTER}: response schema replaced "
-        "./model-instance.schema.json -> ./model-instance.schema.json" in approved[1]
+        "./model-instance.schema.json -> "
+        "#/components/schemas/ModelRuntimeInstance" in approved[1]
     )
     assert all("#605" in item for item in approved)
 
@@ -483,7 +501,10 @@ def test_the_in_place_response_narrowing_never_covers_another_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     base = instance_document(version=NARROW_BASE_VERSION)
-    current = instance_document(version=NARROW_CURRENT_VERSION)
+    current = instance_document(
+        version=NARROW_CURRENT_VERSION,
+        generation_schema="#/components/schemas/ModelRuntimeInstance",
+    )
     other = f"{SOURCE}:paths//v1/nexus/admin/model-bindings/get/responses/200"
     other_finding = f"{other}/application/json/$defs/ModelBindingSummary: property removed"
     findings = [

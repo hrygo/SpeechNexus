@@ -1044,7 +1044,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "./model-instance.schema.json"
+                $ref: "#/components/schemas/ModelRuntimeInstance"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -1835,6 +1835,8 @@ components:
       $ref: "shared/lifecycle.schema.json#/$defs/RetirementRequest"
     InstanceState:
       $ref: "shared/runtime-states.schema.json#/$defs/InstanceState"
+    ModelRuntimeInstance:
+      $ref: "./model-instance.schema.json"
     ModelInstanceList:
       type: object
       additionalProperties: false
@@ -1845,7 +1847,7 @@ components:
         data:
           type: array
           items:
-            $ref: "./model-instance.schema.json"
+            $ref: "#/components/schemas/ModelRuntimeInstance"
         has_more:
           type: boolean
         next_cursor:

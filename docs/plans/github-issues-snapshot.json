@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-11T21:14:09+08:00",
+  "fetched_at": "2026-11-12T23:21:22Z",
   "issues": [
     {
       "number": 336,
@@ -272,8 +272,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/415",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "预设发布与激活的 CAS 事务及已发布列表",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "enhancement"
@@ -1150,8 +1150,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/592",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "voice_reference 参考音频只走文本检查，音频校验仅覆盖 asr_input",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [],
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/340"
     },
@@ -1180,8 +1180,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/599",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "AssetRuntime 未关闭音频检查器监督器，关停与 open 失败路径漏清理",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [],
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
     }

@@ -192,6 +192,46 @@ is ready: confirm the worker is running without restarts, for example with
 `docker compose --env-file deploy/compose.env -f deploy/compose.yaml ps` and
 `logs job-dispatch-worker`, and fix the DSN/grants before retrying.
 
+The container entrypoint is not the worker: it is `deploy/job-startup-gate.py`,
+mounted read-only and given the worker's own environment. Before it `exec`s
+`speechnexus-job-dispatch-worker`, the gate verifies the prerequisites the worker
+could only discover *after* claiming a lease and names each missing one:
+
+- the dispatch DSN is present and its role is not a superuser, does not own schema
+  `CREATE`, the database or any schema relation (the same guard the worker runs);
+- the worker's own `SELECT` probes pass, and - when
+  `SPEECHNEXUS_JOB_DISPATCH_KINDS` contains `voice_validation` - the two
+  `voice_validation_worker_grants` relations are readable;
+- the post-claim write columns (`speech_jobs`, `coordination_jobs`,
+  `speech_job_events`, `speech_job_cancellation_not_submitted`) are granted, so a
+  role missing `job_dispatch_grants` stops at container start instead of failing
+  after the first claim;
+- `speech.alembic_version` exists and its single row equals the packaged migration
+  head (a role provisioned before the read-only grant reports the head as `pending`
+  instead of failing the upgrade);
+- both `SPEECHNEXUS_OBJECT_STORAGE_BUCKET` (Artifact) and
+  `SPEECHNEXUS_EXECUTION_RESULT_BUCKET` (gateway staging read-back) exist and have
+  versioning enabled; the gateway's private `result_bucket` in
+  `gateway-file-asr.json`/`gateway-file-tts.json` equals the latter. This covers
+  the staging bucket that `check_ready` alone never probed, so a missing or
+  unversioned result bucket no longer fails only after the first publication.
+
+A failure exits non-zero with `FAIL: <named prerequisite>` and the worker never
+starts; the real engine and a registered `ready` instance, and the API-side
+writer/admission DSNs, are printed as `pending` lines because they are deployment
+inputs this container cannot verify - the API already answers `503 job_unavailable`
+at creation for a blank Job writer/admission DSN, which is before any claim. The
+gate reads the gateway configs through `SPEECHNEXUS_JOB_GATE_PRIVATE_DIR`
+(`/run/speechnexus-private` in Compose); it never reads credentials from them.
+
+Provision the three Job roles with
+`uv run --all-packages python scripts/dev-env/provision-job-roles.py` after the
+migration profile; it reads the role names and passwords from the three Job DSNs
+and installs the five dispatch grant groups, the writer baseline, the read-only
+`speech.alembic_version` `SELECT` and `voice_validation_worker_grants` when that
+kind is selected. The step-by-step path
+is [the minimal deployment runbook §6](../docs/operations/compose-minimal.md#异步-job-运行角色与授权).
+
 The command-by-command path from a blank environment to one submitted Job,
 including the six prerequisites above and a read-only preflight, is
 [the asynchronous Job runbook](../docs/operations/async-job-runbook.md).

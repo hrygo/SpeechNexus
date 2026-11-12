@@ -14,11 +14,13 @@ COPY execution-gateway/README.md execution-gateway/pyproject.toml execution-gate
 COPY node-controller/README.md node-controller/pyproject.toml node-controller/
 COPY packages/contracts/pyproject.toml packages/contracts/
 COPY packages/media/README.md packages/media/pyproject.toml packages/media/source-inventory.json packages/media/
+COPY asset-inspector/README.md asset-inspector/pyproject.toml asset-inspector/
 COPY backend/src backend/src
 COPY execution-gateway/src execution-gateway/src
 COPY node-controller/src node-controller/src
 COPY packages/contracts/src packages/contracts/src
 COPY packages/media/src packages/media/src
+COPY asset-inspector/src asset-inspector/src
 COPY deploy/engines/cpu-vad/requirements.txt /tmp/cpu-vad-requirements.txt
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=secret,id=proxy_ca \

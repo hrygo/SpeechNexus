@@ -15,9 +15,10 @@ name: speechnexus
 # `migrate`, `engine-register`, `binding-disable-worker`, `job-dispatch-worker`,
 # `admin`, `workbench` and `asset-inspector` are opt-in profiles and therefore do
 # not appear in the base service list. The `job-dispatch` profile assembles the
-# public Job dispatcher
-# process, but it still requires a real engine behind the execution gateway; it does
-# not by itself make asynchronous Jobs an accepted end-to-end capability. The
+# public Job dispatcher process behind a startup gate that names a missing dispatch
+# grant, migration head or Job bucket before any lease is claimed, but it still
+# requires a real engine behind the execution gateway; it does not by itself make
+# asynchronous Jobs an accepted end-to-end capability. The
 # `asset-inspection` profile assembles the private HTTP audio inspector; audio
 # inspection additionally needs `SPEECHNEXUS_ASSET_INSPECTOR=audio` plus the
 # inspection URL/token in compose.env.
@@ -388,12 +389,20 @@ services:
   # gateway origin can stay on loopback: the worker rejects plain HTTP outside
   # loopback. Every operating bound has no in-process default, so the values here
   # are this bootstrap's explicit reference values, not capacity or model
-  # qualification. A blank dispatch DSN or a missing grant fails closed before any
-  # lease is claimed. There is no healthcheck, so that failure surfaces as a
-  # restart loop instead of a ready service; provision the DSN and grants first.
+  # qualification.
+  #
+  # The entrypoint is the deployment-owned startup gate, not the worker itself. It
+  # verifies the prerequisites the worker could only discover after claiming a
+  # lease - the dispatch role and its post-claim write columns, the migration head,
+  # and both the Artifact and execution-result buckets (existence and versioning) -
+  # then execs `speechnexus-job-dispatch-worker`. A missing item therefore exits
+  # non-zero naming it while the container starts, before any Job is claimed. The
+  # gate prints the real engine and the API-side writer/admission DSNs as pending
+  # external inputs instead of failing on them; see deploy/README.md.
   job-dispatch-worker:
     profiles: ["job-dispatch"]
     build: *python-build
+    entrypoint: ["python", "/opt/speechnexus/job-startup-gate.py"]
     command: ["speechnexus-job-dispatch-worker"]
     user: "${SPEECHNEXUS_RUNTIME_UID:?set SPEECHNEXUS_RUNTIME_UID from id -u}:${SPEECHNEXUS_RUNTIME_GID:?set SPEECHNEXUS_RUNTIME_GID from id -g}"
     network_mode: "service:gateway"
@@ -421,6 +430,13 @@ services:
       # least privilege. read_only/cap_drop constrain the process, not S3 rights.
       SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-speechnexus}
       SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in compose.env}
+      # The gate reads the gateway's own private configs here to prove the staging
+      # bucket the gateway writes equals SPEECHNEXUS_EXECUTION_RESULT_BUCKET. The
+      # directory is mounted read-only; the worker itself never reads it.
+      SPEECHNEXUS_JOB_GATE_PRIVATE_DIR: /run/speechnexus-private
+    volumes:
+      - ./job-startup-gate.py:/opt/speechnexus/job-startup-gate.py:ro
+      - ${SPEECHNEXUS_PRIVATE_CONFIG_DIR:?set SPEECHNEXUS_PRIVATE_CONFIG_DIR in compose.env}:/run/speechnexus-private:ro
     depends_on:
       postgres:
         condition: service_healthy

@@ -16,7 +16,7 @@ date: 2026-10-28
 | 能力 | 当前结论 | 依赖 / 原因 |
 | --- | --- | --- |
 | 公开 TTS `POST /v1/audio/speech` | **本 Compose 未装配** | 同步 TTS 工厂已实现，但本配置只预置 gateway 私有 file-TTS 配置引用，未提供 API 配方及结算数据库配置；其他部署的受控实测见[窗口记录](../archive/audits/2026-11-03-controlled-tts-prepare.md) |
-| 异步 Job 完整执行链 | **未贯通** | 默认 `up` 不启动 `job-dispatch-worker`；`job-dispatch` profile 可按需启动该派发进程，但需要单独的 worker DSN（`SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL`，示例中默认为空，空值在领取租约前 fail-closed）与真实引擎。启用 `voice_validation` 还需 `voice_validation_worker_grants`，缺少时启动角色校验即拒绝，不会领取 Job。API 的创建和读取路由需要另配 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL`；原子准入还需独立的 `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL` 与同库 admission 角色，未配置时创建返回 503（读取与取消仍可用）。派发入口已装配生产 planner 与结果发布器，但本配置不提供真实引擎。当前范围见 [F-JOB](../prd.md#f-job) 和 [F-ASYNC](../prd.md#f-async) |
+| 异步 Job 完整执行链 | **未贯通** | 默认 `up` 不启动 `job-dispatch-worker`；`job-dispatch` profile 可按需启动该派发进程，但需要单独的 worker DSN（`SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL`，示例中默认为空，空值在领取租约前 fail-closed）与真实引擎。启用 `voice_validation` 还需 `voice_validation_worker_grants`，缺少时启动角色校验即拒绝，不会领取 Job。API 的创建和读取路由需要另配 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL`；原子准入还需独立的 `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL` 与同库 admission 角色，未配置时创建返回 503（读取与取消仍可用）。派发入口已装配生产 planner 与结果发布器，容器 entrypoint 是 `deploy/job-startup-gate.py`：迁移 head、派发角色写入列、Artifact 桶与 gateway staging 结果桶缺失或未版本化时在启动期点名退出，不会先领取 Job；三个 Job 角色由 [§6 的异步 Job 运行角色](#异步-job-运行角色与授权) 预置。本配置不提供真实引擎。当前范围见 [F-JOB](../prd.md#f-job) 和 [F-ASYNC](../prd.md#f-async) |
 | 公开同步 ASR 成功响应 | **本部署未验证** | 文件 worker 已有成功终态写入；历史部署曾返回 `504 operation_timeout`，见[本机端到端记录](../archive/operations/local-end-to-end.md#112-公开-v1audiotranscriptions已执行504未成功)。不能将那次结果或组件实现推定为当前部署的公开链路验收 |
 | 节点控制器、runtime delivery、asset maintenance | **未装配** | 本配置有意排除这些服务；不能以本 Compose 的探活结果证明完整部署与发布资格 |
 | 真实模型质量、容量、GPU、物理多节点资格 | **未证明** | Compose 启动、健康检查和合成配置都不能替代模型/设备/拓扑验收 |
@@ -612,6 +612,104 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 该查询应无输出。该角色的表级授权只应是 `engine_instances` 与
 `speech_binding_revisions` 的 `SELECT`，可对照 `information_schema.table_privileges`
 或启动校验输出核对；两张表之外的表一律不授权。
+
+### 异步 Job 运行角色与授权
+
+启用 `job-dispatch` profile 前先预置三个互不相同的非 owner 角色：`sn_job_writer` 供 API
+创建/读取 Job 与 voice 草稿，`sn_job_admission` 供原子准入，`sn_job_dispatch` 供派发
+worker（`voice_validation` 车道也用它）。三者不得复用 `sn_api`、`sn_gateway` 或 bootstrap
+owner；数据库级撤权已由本节开头的新装脚本完成，这里只建角色并追加授权。
+
+角色名与口令来自三条 Job DSN。先在本轮生成口令并把 DSN 写回 `deploy/compose.env`，
+口令不打印到终端；三条 DSN 默认留空，所以不启用异步 Job 的部署仍可渲染并启动：
+
+```bash
+umask 077
+export SPEECHNEXUS_JOB_WRITER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export SPEECHNEXUS_JOB_ADMISSION_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export SPEECHNEXUS_JOB_DISPATCH_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+```
+
+```bash
+python3 - <<'PY'
+import os
+import re
+from pathlib import Path
+
+roles = {
+    "SPEECHNEXUS_JOB_WRITER_DATABASE_URL": (
+        "sn_job_writer",
+        "SPEECHNEXUS_JOB_WRITER_ROLE_PASSWORD",
+    ),
+    "SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL": (
+        "sn_job_admission",
+        "SPEECHNEXUS_JOB_ADMISSION_ROLE_PASSWORD",
+    ),
+    "SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL": (
+        "sn_job_dispatch",
+        "SPEECHNEXUS_JOB_DISPATCH_ROLE_PASSWORD",
+    ),
+}
+path = Path("deploy/compose.env")
+text = path.read_text()
+for key, (role, password_key) in roles.items():
+    url = f"postgresql://{role}:{os.environ[password_key]}@postgres:5432/speechnexus"
+    pattern = rf"(?m)^{re.escape(key)}=.*$"
+    line = f"{key}={url}"
+    text = (
+        re.sub(pattern, line, text, count=1)
+        if re.search(pattern, text)
+        else text + line + "\n"
+    )
+path.write_text(text)
+path.chmod(0o600)
+print("Job DSNs written to deploy/compose.env")
+PY
+```
+
+三条 DSN 同样按示例的 `postgres` 服务名与 `speechnexus` 库名生成；改了 Compose 服务名、
+端口或库名时同步修改。随后用迁移 owner 安装角色与授权（脚本读取 DSN 中的身份，所以授权
+目标与运行时身份不会漂移；角色已存在时直接停止）：
+
+```bash
+set -a
+. deploy/compose.env
+set +a
+export SN_ADMIN_DSN="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:${SPEECHNEXUS_POSTGRES_HOST_PORT:-55432}/${POSTGRES_DB}"
+
+uv run --all-packages python scripts/dev-env/provision-job-roles.py
+```
+
+期望输出 `job roles ready: sn_job_writer sn_job_admission sn_job_dispatch; grants: 220
+statements`；`SPEECHNEXUS_JOB_DISPATCH_KINDS` 含 `voice_validation` 时额外安装
+`voice_validation_worker_grants` 的两张 `SELECT`，语句数相应增加。`--print-statements`
+只渲染 SQL、不连接数据库，便于先评审。授权面：
+
+- `sn_job_writer`：`job_runtime_grants`、`job_dispatch_grants`、`public_job_grants`、
+  `voice_draft_grants`、`public_job_submission_grants`、`job_cancellation_fence_grants`、
+  `cancellation_not_submitted_grants`、`cancellation_reconciliation_grants`，外加
+  `speechnexus_backend.job_runtime` 启动校验需要的发布/素材基线 `SELECT` 和
+  `coordination_jobs` 的四个认领列 `UPDATE`。缺任一项时 API 以
+  `Public Job writer startup rejected` 退出，不会带着错误权限面上线。
+- `sn_job_admission`：`public_job_admission_grants`（原子准入的写入面）。
+- `sn_job_dispatch`：`job_runtime_grants`、`job_dispatch_grants`、`public_job_grants`、
+  `cancellation_reconciliation_grants`、`coordination_runtime_grants`，外加迁移元数据
+  `speech.alembic_version` 的只读 `SELECT`（启动闸门用它核对发布 head）；缺少 `SELECT`
+  或认领后的写入列时，worker 的启动闸门在本容器启动阶段点名该表/列并退出，不会先领取
+  Job 再失败。
+
+已有部署若在本次之前已建好 `sn_job_dispatch`，补一条只读授权即可让启动闸门核对精确 head；
+不补也不会被误判为故障——闸门会把 head 记为 `pending`，由启动探针继续校验本版本用到的列：
+
+```sql
+GRANT SELECT ON speech.alembic_version TO sn_job_dispatch;
+```
+
+`job-dispatch-worker` 的入口是 `deploy/job-startup-gate.py`（由 `deploy/compose.yaml`
+挂载并以该脚本作为 entrypoint）。它先核对角色守卫、与 worker 启动同源的 `SELECT` 探针、
+认领后的写入列、迁移 head，以及 Artifact 桶与 gateway staging 结果桶的存在和版本化，
+全部通过后才 `exec` 真正的派发进程；真实引擎与已注册实例作为部署方输入以 `pending`
+行提示，不作为闸门失败条件（引擎可用性另按 #572 的真实验收处理）。
 
 ### 已有部署的授权升级
 

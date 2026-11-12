@@ -28,9 +28,9 @@ date: 2026-11-08
 | --- | --- | --- | --- |
 | 1 | API 的 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL` 与 `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL` | `POST /v1/nexus/jobs` 返回 `503 job_unavailable` | 没有 Job 可被 claim |
 | 2 | 迁移到唯一 head（`migration` profile，`speechnexus-job-migrate --schema speech`） | Job/准入关系不存在，迁移版本表为空 | 创建失败或 worker 启动即退出 |
-| 3 | 派发角色与五组 grant（启用 `voice_validation` 再加两张 `SELECT`） | worker 启动角色校验失败，`restart: unless-stopped` 下形成重启循环 | 不领取租约，或先 claim 后失败 |
+| 3 | 派发角色与五组 grant（启用 `voice_validation` 再加两张 `SELECT`） | worker 的启动闸门点名缺授权的表/列并退出，`restart: unless-stopped` 下形成重启循环 | 启动期失败，不领取租约 |
 | 4 | 真实引擎与已注册 `ready` 实例（`engine-registration` profile） | 创建返回 `429 job_capacity_exhausted`，或提交必然失败 | 有 Job 但没有可执行实例 |
-| 5 | gateway 的 `result_bucket` 存在、被 `minio-init` 创建并启用版本化，且与 env 一致 | claim 之后首次结果发布失败 | 引擎已执行，结果读不回 |
+| 5 | gateway 的 `result_bucket` 存在、被 `minio-init` 创建并启用版本化，且与 env 一致 | worker 的启动闸门点名缺桶/缺版本化/配置不一致并退出 | 启动期失败，不领取租约 |
 | 6 | `network_mode: service:gateway` 下的启动顺序与网关重建后的 worker 重建 | worker 命名空间失效或指向旧 gateway | 进程在，网关调用全部失败 |
 
 ## 2. `up -d`/`--wait` 成功 ≠ 就绪
@@ -39,8 +39,9 @@ date: 2026-11-08
 `job-dispatch-worker` 没有 healthcheck，`--wait` 对它没有可等待的探针，因此：
 
 - `up -d`、`--wait` 返回 0 只表示容器被创建；
-- DSN 为空或授权缺失时 worker 在领取租约前退出，`restart: unless-stopped` 让它反复重启，
-  而 Compose 仍报告成功；
+- DSN 为空、授权缺失、迁移落后或 Job 桶缺失时，worker 的 entrypoint 启动闸门
+  （`deploy/job-startup-gate.py`）在领取租约前点名退出，`restart: unless-stopped` 让它反复
+  重启，而 Compose 仍报告成功；
 - API 的 Job 身份校验发生在**启动期**，通过 `/readyz` 也不代表 `/v1/nexus/jobs` 可用
   （`/readyz` 只做数据库 `SELECT 1` 与对象存储健康 URL）。
 
@@ -250,171 +251,18 @@ set +a
 export SN_ADMIN_DSN="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:${SPEECHNEXUS_POSTGRES_HOST_PORT:-55432}/${POSTGRES_DB}"
 ```
 
-下面的脚本从三个 Job DSN 里读取角色名与口令，创建角色并安装授权；它只做 `CREATE ROLE`、
-`ALTER ROLE ... PASSWORD` 和追加式 `GRANT`，不改写产品数据、不执行迁移。角色已存在时直接
-停止，不猜测归属。
-
-> 本机验证：对一次性 PostgreSQL 16.15 执行过同一份代码，输出
-> `job roles ready: sn_job_writer sn_job_admission sn_job_dispatch; grants: 219 statements`，
-> 退出码 `0`。
+创建与授权由仓库脚本 `scripts/dev-env/provision-job-roles.py` 完成，步骤与
+[最小部署手册 §6 的异步 Job 运行角色](compose-minimal.md#异步-job-运行角色与授权)
+一致，这里只执行同一条命令：
 
 ```bash
-uv run python - <<'PY'
-"""创建异步 Job 的三个非 owner 角色并安装文档声明的授权函数。
-
-必须使用迁移 owner DSN(`SN_ADMIN_DSN`)运行。角色名与口令取自 `deploy/compose.env`
-中的三个 Job DSN,因此授权目标与运行时身份不会漂移。只新增角色和追加式 GRANT。
-"""
-
-import os
-from urllib.parse import unquote, urlsplit
-
-import psycopg
-from psycopg import sql
-
-from speechnexus_backend.speech.infrastructure.coordination_grants import (
-    coordination_runtime_grants,
-)
-from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
-    cancellation_not_submitted_grants,
-    cancellation_reconciliation_grants,
-    job_cancellation_fence_grants,
-)
-from speechnexus_backend.speech.infrastructure.job_schema import (
-    job_dispatch_grants,
-    job_runtime_grants,
-)
-from speechnexus_backend.speech.infrastructure.public_job_admission_grants import (
-    public_job_admission_grants,
-)
-from speechnexus_backend.speech.infrastructure.public_job_schema import public_job_grants
-from speechnexus_backend.speech.infrastructure.public_job_submission_schema import (
-    public_job_submission_grants,
-)
-from speechnexus_backend.speech.infrastructure.voice_draft_schema import (
-    voice_draft_grants,
-    voice_validation_worker_grants,
-)
-
-SCHEMA = "speech"
-ROLE_KEYS = (
-    "SPEECHNEXUS_JOB_WRITER_DATABASE_URL",
-    "SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL",
-    "SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL",
-)
-
-
-def identity(key: str) -> tuple[str, str]:
-    raw = os.environ.get(key, "").strip()
-    if not raw:
-        raise SystemExit(f"{key} is blank; fill the Job DSNs in deploy/compose.env first")
-    parts = urlsplit(raw)
-    if not parts.username or not parts.hostname:
-        raise SystemExit(f"{key} is not a usable postgresql:// DSN")
-    return unquote(parts.username), unquote(parts.password or "")
-
-
-writer, admission, dispatch = (identity(key)[0] for key in ROLE_KEYS)
-roles = dict(zip(("writer", "admission", "dispatch"), (writer, admission, dispatch)))
-if len(set(roles.values())) != 3:
-    raise SystemExit("the three Job DSNs must name three distinct non-owner roles")
-gateway_role = os.environ.get("SN_GATEWAY_ROLE", "sn_gateway")
-
-statements: list[str] = []
-statements += list(job_runtime_grants(SCHEMA, writer))
-statements += list(job_dispatch_grants(SCHEMA, writer))
-statements += list(public_job_grants(SCHEMA, writer))
-statements += list(voice_draft_grants(SCHEMA, writer))
-statements += list(public_job_submission_grants(SCHEMA, writer))
-statements += list(job_cancellation_fence_grants(SCHEMA, writer))
-statements += list(cancellation_not_submitted_grants(SCHEMA, writer))
-statements += list(cancellation_reconciliation_grants(SCHEMA, writer))
-statements += list(public_job_admission_grants(SCHEMA, admission))
-statements += list(job_runtime_grants(SCHEMA, dispatch))
-statements += list(job_dispatch_grants(SCHEMA, dispatch))
-statements += list(public_job_grants(SCHEMA, dispatch))
-statements += list(cancellation_reconciliation_grants(SCHEMA, dispatch))
-statements += list(
-    coordination_runtime_grants(SCHEMA, speech_role=dispatch, gateway_role=gateway_role)
-)
-kinds = {
-    kind.strip()
-    for kind in os.environ.get("SPEECHNEXUS_JOB_DISPATCH_KINDS", "asr,tts").split(",")
-    if kind.strip()
-}
-if "voice_validation" in kinds:
-    statements += list(voice_validation_worker_grants(SCHEMA, dispatch))
-
-# API 的 Job writer 还要读 8 张发布/素材表,并读协调表、更新认领列;这些基线授权
-# 不在上面的 Job 授权函数里。缺任一项,`JobRuntime.open()` 会以
-# "Public Job writer startup rejected" 拒绝启动;容器 Restarting,Job 创建是连接失败
-baseline_select = (
-    "speech_workspaces",
-    "speech_publications",
-    "speech_publication_heads",
-    "speech_catalog_state",
-    "speech_publication_retirements",
-    "speech_binding_revisions",
-    "speech_assets",
-    "speech_pronunciation_revisions",
-    "admission_operations",
-    "coordination_jobs",
-)
-for table in baseline_select:
-    statements.append(
-        sql.SQL("GRANT SELECT ON {}.{} TO {}").format(
-            sql.Identifier(SCHEMA), sql.Identifier(table), sql.Identifier(writer)
-        )
-    )
-statements.append(
-    sql.SQL("GRANT UPDATE ({}) ON {}.{} TO {}").format(
-        sql.SQL(", ").join(
-            sql.Identifier(column)
-            for column in (
-                "claim_owner_id",
-                "claim_expires_at_us",
-                "claim_version",
-                "job_state",
-            )
-        ),
-        sql.Identifier(SCHEMA),
-        sql.Identifier("coordination_jobs"),
-        sql.Identifier(writer),
-    )
-)
-
-with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
-    if conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (gateway_role,)).fetchone() is None:
-        raise SystemExit(f"gateway role {gateway_role} is missing; run the baseline roles first")
-    existing = [
-        role
-        for name, role in ((key, identity(key)[0]) for key in ROLE_KEYS)
-        if conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)).fetchone()
-    ]
-    if existing:
-        raise SystemExit(f"roles already exist: {', '.join(existing)}; inspect ownership first")
-    for key in ROLE_KEYS:
-        role, password = identity(key)
-        conn.execute(
-            sql.SQL("CREATE ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT").format(
-                sql.Identifier(role)
-            )
-        )
-        conn.execute(
-            sql.SQL("ALTER ROLE {} PASSWORD {}").format(sql.Identifier(role), sql.Literal(password))
-        )
-    for statement in statements:
-        conn.execute(statement)
-    for role in (*roles.values(), gateway_role):
-        row = conn.execute(
-            "SELECT rolsuper OR rolcreatedb OR rolcreaterole FROM pg_roles WHERE rolname = %s",
-            (role,),
-        ).fetchone()
-        if row is None or any(row):
-            raise SystemExit(f"role {role} is not a usable non-owner role")
-print(f"job roles ready: {writer} {admission} {dispatch}; grants: {len(statements)} statements")
-PY
+uv run --all-packages python scripts/dev-env/provision-job-roles.py
 ```
+
+脚本从三个 Job DSN 里读取角色名与口令，只做 `CREATE ROLE`、`ALTER ROLE ... PASSWORD` 和
+追加式 `GRANT`，不改写产品数据、不执行迁移。角色已存在时直接停止，不猜测归属；期望输出
+`job roles ready: sn_job_writer sn_job_admission sn_job_dispatch; grants: 220 statements`
+（`voice_validation` 车道会多出两张 `SELECT`）。`--print-statements` 只渲染 SQL，不连接数据库。
 
 脚本默认 `SN_GATEWAY_ROLE=sn_gateway`；若基础部署的 gateway 角色名不同，用实际 DSN 的用户名
 覆盖该变量。`coordination_runtime_grants` 要求两个角色不同，因此必须先有基础 gateway 角色。
@@ -510,9 +358,12 @@ psql "$SPEECHNEXUS_MIGRATION_DATABASE_URL" -Atc \
 ## 8. 第 5 步：前置 5 —— gateway 的 `result_bucket`
 
 gateway 把 staging 结果写进私有配置里的 `objects.result_bucket`，派发 worker 按
-`SPEECHNEXUS_EXECUTION_RESULT_BUCKET` 读回。两者不一致时，Job 会在 claim 之后、第一次结果
-发布时失败。该桶必须由 `minio-init` 创建并启用版本化——`check_ready` 只检查 Artifact 桶，
-不能替代这一步。
+`SPEECHNEXUS_EXECUTION_RESULT_BUCKET` 读回。两者不一致或该桶缺失/未版本化时，早期实现在
+claim 之后、第一次结果发布时才失败；进程内的 `ResultArtifactPublisher.check_ready()` 只探
+Artifact 桶，不能替代这一步。参考部署现在把补丁放在容器 entrypoint：
+`job-dispatch-worker` 先运行 `deploy/job-startup-gate.py`，由它核对这两个桶的存在与版本化、
+核对两份 gateway 私有配置的 `objects.result_bucket` 与 env 一致，通过后才 `exec` 派发进程。
+因此这里的手工核对与 `minio-init` 输出是同一组判据的运维复核，不是唯一的失败前移手段。
 
 核对 env 与两份私有配置一致：
 
@@ -555,13 +406,17 @@ bucket ready: speechnexus-inputs (versioning enabled)
 bucket ready: speechnexus-results (versioning enabled)
 ```
 
-`run --rm minio-init` 与桶输出**未在本机验证**（需要运行中的 MinIO 与 bootstrap 凭据）。
+2026-11-13 在容器 PostgreSQL 16.15 与容器 MinIO（`deploy/compose.yaml`）上实跑，输出与上面
+逐字一致；同一环境的启动闸门在 result 桶缺失时以退出码 `1` 点名
+`SPEECHNEXUS_EXECUTION_RESULT_BUCKET`（第 13 节）。
 
 ## 9. 第 6 步：前置 6 —— 启动顺序与网络命名空间
 
 `job-dispatch-worker` 用 `network_mode: "service:gateway"` 加入 gateway 的完整网络命名空间，
 因此只能在 `gateway` healthy 之后启动，且 gateway 被重建后必须显式重建 worker。Compose 的
-`depends_on.restart: true` 只处理显式 Compose 更新，daemon 重启或外部重建不在此列。
+`depends_on.restart: true` 只处理显式 Compose 更新，daemon 重启或外部重建不在此列。启动闸门
+在 worker 容器内运行并以 `exec` 替换为派发进程，不改变这个网络命名空间关系；闸门失败时容器
+直接退出并点名缺项，`RestartCount` 增长的原因在 `logs job-dispatch-worker` 里可直接读到。
 
 先确认解析后的接线（不需要 daemon）：
 
@@ -673,7 +528,9 @@ curl -sS http://127.0.0.1:8000/v1/nexus/jobs/<job_id>
 
 ## 11. 自检脚本
 
-只读检查六项前置，不改文件、不写数据库、不执行迁移、不重启容器：
+只读检查六项前置，不改文件、不写数据库、不执行迁移、不重启容器。它和 worker 容器里的
+启动闸门分工不同：自检给运维在部署前后做完整判定（含无法在容器内看到的私有配置与实例
+注册），闸门在容器启动时只阻断 claim 并点名容器内可判定的缺项。
 
 脚本把每一项判成三种状态：
 
@@ -812,7 +669,7 @@ FAIL(配置写了但不对,任何阶段都必须修):前置 1
 | `select version_num from speech.alembic_version` | `0048_voice_evidence_scan_index` |
 | 15 张 Job/准入关系计数 | `15` |
 | 第 4 节的 DSN 生成脚本（作用于 env 副本） | 输出三个角色名，值未打印，mode `0600` |
-| 第 6 节的角色与授权脚本（DSN 派生的角色名与口令） | 输出 `grants: 219 statements`，退出码 `0` |
+| 第 6 节的角色与授权脚本（DSN 派生的角色名与口令） | 输出 `grants: 220 statements`，退出码 `0` |
 | `JobRuntime.open()`（用第 6 节建出的 writer/admission 角色） | 输出 `OPENED: PublicJobs jobs is not None: True`、`CLOSED` |
 | 撤销 writer 的 8 张表 `SELECT` 后再次 `open()` | 报 `Public Job writer startup rejected`；恢复授权后再次 `OPENED` |
 | worker 同款列权限探测（8 条）、20 个写入列与 owner/DDL 守卫（`f`） | 全部通过 |
@@ -848,3 +705,36 @@ FAIL(配置写了但不对,任何阶段都必须修):前置 1
 | `engine-register` 与 `"outcome": "registered"` | 没有真实引擎；按项目约定不得用 fake 引擎代替 |
 | `docker compose ... up -d`（`job-dispatch` profile）与 `docker inspect` 网络命名空间 | 没有启动参考部署；第 6 项的真实拓扑未复现，判定逻辑只在一次性合成容器上试过 |
 | `POST /v1/nexus/assets`、`POST /v1/nexus/jobs`、`GET /v1/nexus/jobs/{id}` | 需要完整参考部署、真实引擎与 ready 输入资产 |
+
+### 2026-11-13 增补（#649，基线 `origin/main` `60b70d57`）
+
+本轮只补齐参考部署里属于配置 / 装配 / 文档 / 初始化脚本的前置；真实引擎端到端不在此列，
+#572 保持打开。验证在独立 worktree 中执行，容器 PostgreSQL 16.15 与容器 MinIO 来自
+`deploy/compose.yaml`，测后删除。
+
+已在本机执行：
+
+| 命令 / 操作 | 实际结果 |
+| --- | --- |
+| `docker compose build minio-init`（`60b70d57` 原状） | 失败：`Distribution not found at: file:///app/asset-inspector`。`deploy/images/python.Dockerfile` 未 COPY `asset-inspector` workspace 成员；补齐后构建成功 |
+| `--profile job-dispatch config --format json` | 服务 `api gateway job-dispatch-worker minio minio-init postgres`；worker `entrypoint = ["python", "/opt/speechnexus/job-startup-gate.py"]`、`network_mode = service:gateway`、两个桶均为 `speechnexus-results`，并挂载闸门脚本与私有配置目录 |
+| `--profile migration run --rm migrate` | 退出码 `0`；`speech.alembic_version = 0052_quarantine_releases`，`speech` schema 82 张表 |
+| `run --rm minio-init` | `bucket ready: speechnexus-inputs (versioning enabled)`、`bucket ready: speechnexus-results (versioning enabled)` |
+| `uv run --all-packages python scripts/dev-env/provision-job-roles.py`（对容器 PG） | `job roles ready: sn_job_writer sn_job_admission sn_job_dispatch; grants: 220 statements`，退出码 `0` |
+| 启动闸门成功路径（容器内，真实 PG/MinIO） | `job dispatch startup gate: OK`，随后 exec 到 `gate-exec-reached-worker` |
+| 启动闸门 + 未创建的 result 桶 | 退出码 `1`：`FAIL: bucket ... (SPEECHNEXUS_EXECUTION_RESULT_BUCKET) does not exist`，加两份私有配置 `result_bucket` 不一致；没有 exec，worker 未启动 |
+| 启动闸门 + 未启用版本化的 result 桶 | 退出码 `1`：`FAIL: bucket speechnexus-unversioned (...) is not versioned` |
+| 启动闸门 + 撤销派发角色 `SELECT ON speech.coordination_jobs` | 退出码 `1`：`FAIL: dispatch role cannot run the startup probe on coordination_jobs`，点名五组授权 |
+| 启动闸门 + 撤销 `speech.alembic_version` 只读 `SELECT`（模拟本次之前的旧部署） | `pending: migration head not verifiable: ...`，退出码 `0`，不把升级误判为故障；恢复授权后重新核对 head |
+| 反例：从 `deploy/init-object-storage.py` 删掉 result 桶条目 | `tests/ci/test_reference_deploy_job_prereqs.py` 1 项 FAIL；`git checkout --` 恢复后 14 项 OK |
+| `python3 -m unittest discover -s tests/ci` | 91 项 OK |
+| `python3 scripts/dev-env/check-doc-refs.py` | `RESULT PASS` |
+| `ruff check .` / `ruff format --check .` / `uv run mypy --platform linux` / `uv run lint-imports` | 全部通过；`mypy` 1413 个源文件无错误 |
+
+未在本机验证（附原因）：
+
+| 命令 / 操作 | 原因 |
+| --- | --- |
+| 完整 `up -d --build`（`api`、`gateway` 与 `job-dispatch` profile）与 `/readyz` | 本轮只起容器 PG/MinIO 并跑一次性迁移、桶初始化与启动闸门；完整拓扑还需要私有配置与真实模型窗口 |
+| `engine-register` 与 `asr`/`tts` Job 端到端 | 没有真实引擎；按项目约定不得用 fake 引擎替代真实部署验收 |
+| worker 在 `network_mode: service:gateway` 下真实 claim、结果发布与命名空间重建 | 需要完整参考部署；本轮只证明闸门在 worker 进程之前失败并点名 |

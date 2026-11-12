@@ -261,6 +261,22 @@ binding 历史、`speech_publications` 与证据表。未配置时 GET 返回
 `speech_publication_heads` 与 `speech_publication_retirements`；启动逐表校验
 SELECT 且拒绝任何写权限，未配置时列表返回 `503 model_binding_service_unavailable`。
 
+公开读取面另需三个只读非 owner 身份，`compose.yaml` 的 api 环境均以空默认透传，
+未配置的既有部署仍可渲染并启动；配置了与声明权限面不符的角色则 API 启动失败。
+`SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL` 使用 `model_catalog_reader_grants`：
+`speech_publications`、仅已发布的 `speech_published_binding_revisions` 视图、
+`speech_catalog_state`、`speech_publication_retirements` 与
+`speech_publication_heads` 的 SELECT，不读草稿表，供 `GET /v1/models` 与
+`GET /v1/models/{model}`；未配置或读取失败时返回 `503 model_catalogue_unavailable`。
+`SPEECHNEXUS_ARTIFACT_READER_DATABASE_URL` 使用 `artifact_reader_grants`：
+`speech_artifacts` 与 `speech_workspaces` 的 SELECT，供
+`GET /v1/nexus/artifacts/{artifact_id}` 及其内容下载，并继续使用上文的成对对象存储
+键；未配置时返回 `503 artifact_service_unavailable`。
+`SPEECHNEXUS_AUDIT_READER_DATABASE_URL` 使用 `audit_reader_grants`：仅
+`speech_publication_lifecycle_events` 的 SELECT，供 `GET /v1/nexus/audit-events`；
+该身份不得复用生命周期写入角色，否则读取路径会获得追加或重放证据的能力。未配置时
+返回 `503 audit_service_unavailable`。
+
 公开 Job 提交与读取默认关闭。应用 `0017_job_submissions` 并为非 owner 角色授予
 `speech_jobs` / `speech_job_events` / `speech_job_submissions` 的最小写入权限及发布事实
 只读权限后，设置 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL`；启动只验证权限，不执行迁移

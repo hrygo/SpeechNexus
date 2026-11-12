@@ -193,10 +193,18 @@ async def test_only_source_binding_paths_are_exposed_with_namespaced_schemas() -
         document = (await http.get("/openapi.json")).json()
     paths = {p: v for p, v in document["paths"].items() if p.startswith(PATH)}
     revision = PATH + "/{binding_id}/revisions/{revision}"
-    assert set(paths) == {PATH, revision, revision + "/retirements", revision + "/activations"}
+    publication = PATH + "/{binding_id}/publications"
+    assert set(paths) == {
+        PATH,
+        revision,
+        publication,
+        revision + "/retirements",
+        revision + "/activations",
+    }
     # The collection serves the draft create and the administrative list.
     assert set(paths[PATH]) == {"get", "post"}
     assert set(paths[revision]) == {"get"}
+    assert set(paths[publication]) == {"post"}
     assert set(paths[revision + "/retirements"]) == {"post"}
     assert set(paths[revision + "/activations"]) == {"post"}
     assert "BindingDraft_ModelBindingDraftRevision" in document["components"]["schemas"]

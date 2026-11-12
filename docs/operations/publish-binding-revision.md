@@ -1,13 +1,20 @@
 ---
 title: 发布 binding revision（运维命令）
 status: active
-version: "1.1.0"
-date: 2026-10-28
+version: "1.2.0"
+date: 2026-11-13
 ---
 
 # 发布 binding revision（运维命令）
 
-该命令发布已存在的不可变 binding revision，并以显式观察值保护当前选择。它不创建草稿，也不实现 `publishModelBindingRevision` HTTP 端点。证据 ID 是操作员提供的事实，不证明资格报告内容、真实引擎或生产准入。
+该命令发布已存在的不可变 binding revision，并以显式观察值保护当前选择；它不创建草稿。
+证据 ID 是操作员提供的事实，不证明资格报告内容、真实引擎或生产准入。
+
+公共 HTTP 契约的 `publishModelBindingRevision` 是另一条已装配的写路径，见
+[binding 生命周期](binding-lifecycle.md#发布)。它使用契约内的 head 观察
+（`expected_current_revision`）和独立的事件账本重放，不携带本命令的
+`expected_catalog_revision` 或 installation/database 观察值，因此不能替代本命令在
+跨部署观察上的保护；也不能把任一命令的成功当作 HTTP 端到端或生产准入的证明。
 
 ## 前置条件
 

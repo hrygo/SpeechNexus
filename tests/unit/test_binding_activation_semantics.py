@@ -219,7 +219,7 @@ def lifecycle_command(
         if action == "activate"
         else {"mode": action, "reason": "synthetic lifecycle reason"}
     )
-    return _command(
+    result = _command(
         ACTIVATE_OPERATION if action == "activate" else RETIRE_OPERATION,
         {"path": {"binding_id": binding, "revision": target}, "body": body},
         "synthetic-cross-operation",
@@ -227,6 +227,8 @@ def lifecycle_command(
         credential_label=None,
         key=key,
     )
+    assert isinstance(result, (BindingActivationCommand, BindingRetirementCommand))
+    return result
 
 
 def run_lifecycle(

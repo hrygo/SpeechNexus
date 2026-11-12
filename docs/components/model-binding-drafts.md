@@ -352,18 +352,26 @@ hard network interruption of COMMIT. A successful but delayed COMMIT may return
 503 unknown; only the original complete intent/key can resolve it. Real PG tests
 cover delay before/after commit, same-key concurrent different intents, original
 writer rollback, lost acknowledgment, pressure, client cancellation and restart.
-The served OpenAPI projects the four selected draft/lifecycle methods. Same-source
+The served OpenAPI projects the five selected draft/lifecycle methods. Same-source
 TypeScript runs against an actual loopback HTTP server with the minimum-role PG
 writer; CI installs locked Node tools in every partition containing that probe.
 
 ## Remaining implementation
 
-Publication of an already-stored revision now has an explicit operator command
-(`speechnexus-publish-binding`, see the [operations guide](../operations/publish-binding-revision.md)).
-It is not an HTTP route and does not implement the frozen
-`publishModelBindingRevision` endpoint. The command requires both evidence
-identities and writes `speech_publications` plus
-`speech_binding_publication_evidence` in one transaction. The fixed GET projects
+Publication of an already-stored revision has two explicit paths.
+`POST /v1/nexus/admin/model-bindings/{binding_id}/publications`
+(`publishModelBindingRevision`) names the draft revision and the observed head in
+its body, writes `speech_publications` plus
+`speech_binding_publication_evidence` (`evidence_source=publish_http`), advances
+the head and records one `model_binding.publish` event in the same transaction;
+the original `Idempotency-Key` replays the stored revision with `200`, while an
+already-published target is `409 binding_not_draft`. The operator command
+(`speechnexus-publish-binding`, see the
+[operations guide](../operations/publish-binding-revision.md)) additionally
+requires catalogue-revision and installation observations that the public
+contract cannot express, so it remains the stronger path across deployments.
+Neither path proves capacity-manifest content, qualification, real engine
+behaviour or production admission. The fixed GET projects
 that stored state: `draft`, `published`, or `503 binding_unavailable` when a
 publication has no matching evidence. Binding retirement, activation/rollback,
 head selection and append-only audit events are implemented through the separate

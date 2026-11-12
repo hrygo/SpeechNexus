@@ -23,6 +23,9 @@ from speechnexus_backend.speech.domain.binding_lifecycle import (
     BindingLifecycleNotFoundError,
     BindingLifecycleReceipt,
     BindingLifecycleUnavailableError,
+    BindingPublicationCommand,
+    BindingPublicationEvidenceError,
+    BindingPublicationHeadConflictError,
     BindingRetirementCommand,
 )
 from speechnexus_backend.speech.domain.configuration import document_digest
@@ -30,7 +33,14 @@ from speechnexus_backend.speech.interfaces.binding_drafts import revision_to_wir
 from speechnexus_backend.speech.interfaces.http.binding_ingress import (
     ACTIVATE_OPERATION as ACTIVATE,
 )
-from speechnexus_backend.speech.interfaces.http.binding_ingress import ACTIVATE_PATH, RETIRE_PATH
+from speechnexus_backend.speech.interfaces.http.binding_ingress import (
+    ACTIVATE_PATH,
+    PUBLISH_PATH,
+    RETIRE_PATH,
+)
+from speechnexus_backend.speech.interfaces.http.binding_ingress import (
+    PUBLISH_OPERATION as PUBLISH,
+)
 from speechnexus_backend.speech.interfaces.http.binding_ingress import (
     RETIRE_OPERATION as RETIRE,
 )
@@ -63,6 +73,16 @@ _ERRORS = {
         "invalid_request_error",
         "Retired and disabled bindings cannot be activated.",
     ),
+    "binding_not_draft": (
+        409,
+        "invalid_request_error",
+        "Only a stored draft binding revision can be published.",
+    ),
+    "capacity_manifest_mismatch": (
+        422,
+        "invalid_request_error",
+        "The capacity manifest does not describe the draft binding revision.",
+    ),
     "binding_result_unknown": (
         503,
         "service_unavailable_error",
@@ -72,6 +92,8 @@ _ERRORS = {
 
 
 class BindingLifecycle(Protocol):
+    def publish(self, command: BindingPublicationCommand) -> BindingLifecycleReceipt: ...
+
     def retire(self, command: BindingRetirementCommand) -> BindingLifecycleReceipt: ...
 
     def activate(self, command: BindingActivationCommand) -> BindingLifecycleReceipt: ...
@@ -161,12 +183,16 @@ def _command(
     actor_type: str,
     credential_label: str | None,
     key: str | None,
-) -> BindingRetirementCommand | BindingActivationCommand:
+) -> BindingPublicationCommand | BindingRetirementCommand | BindingActivationCommand:
     identity = envelope["path"]
+    body = envelope["body"]
     intent = _intent(operation, envelope)
+    # The publication path names only the binding; its body names the exact
+    # draft revision, so the command revision comes from the validated body.
+    revision = body["expected_revision"] if operation == PUBLISH else identity["revision"]
     common = {
         "binding_id": identity["binding_id"],
-        "revision": identity["revision"],
+        "revision": revision,
         "request_id": request_id,
         "actor_type": actor_type,
         "credential_label": credential_label,
@@ -174,15 +200,21 @@ def _command(
         "intent_digest": document_digest(intent),
     }
     if operation == RETIRE:
-        body = envelope["body"]
         return BindingRetirementCommand(
             **common,
             mode=body["mode"],
             reason=body.get("reason"),
         )
+    if operation == PUBLISH:
+        return BindingPublicationCommand(
+            **common,
+            expected_current_revision=body["expected_current_revision"],
+            capacity_manifest_id=body["capacity_manifest_id"],
+            qualification_report_id=body["qualification_report_id"],
+        )
     return BindingActivationCommand(
         **common,
-        expected_current_revision=envelope["body"]["expected_current_revision"],
+        expected_current_revision=body["expected_current_revision"],
     )
 
 
@@ -205,20 +237,28 @@ def _run(
             credential_label=credential_label,
             key=key,
         )
-        receipt = (
-            provider.retire(cast(BindingRetirementCommand, command))
-            if operation == RETIRE
-            else provider.activate(cast(BindingActivationCommand, command))
-        )
+        if operation == PUBLISH:
+            receipt = provider.publish(cast(BindingPublicationCommand, command))
+        elif operation == RETIRE:
+            receipt = provider.retire(cast(BindingRetirementCommand, command))
+        else:
+            receipt = provider.activate(cast(BindingActivationCommand, command))
         wire = _receipt_wire(receipt)
         headers = {"Cache-Control": "no-store"}
         if operation == RETIRE and receipt.status == "disabled":
             headers["X-Binding-Disable-Cleanup"] = "pending_or_unknown"
-        validate_response(operation, 200, {"body": wire, "headers": headers})
-        return JSONResponse(wire, headers=headers)
+        # A publication creates one fact; only the original key replays it.
+        status = 200 if operation != PUBLISH or receipt.replayed else 201
+        validate_response(operation, status, {"body": wire, "headers": headers})
+        return JSONResponse(wire, status_code=status, headers=headers)
     except BindingLifecycleNotFoundError:
         return _error("binding_not_found", request_id, operation)
-    except BindingActivationConflictError as error:
+    except (BindingActivationConflictError, BindingPublicationHeadConflictError) as error:
+        intent = (
+            "publication"
+            if isinstance(error, BindingPublicationHeadConflictError)
+            else "activation"
+        )
         return _error(
             error.code,
             request_id,
@@ -226,10 +266,12 @@ def _run(
             message=(
                 "The active binding revision changed. "
                 f"Expected expected_current_revision={json.dumps(error.current_revision)} "
-                "when this activation was rejected. "
-                "Refresh the binding state and confirm the intended activation before resubmitting."
+                f"when this {intent} was rejected. "
+                f"Refresh the binding state and confirm the intended {intent} before resubmitting."
             ),
         )
+    except BindingPublicationEvidenceError:
+        return _error("capacity_manifest_mismatch", request_id, operation)
     except BindingLifecycleConflictError as error:
         return _error(error.code, request_id, operation)
     except BindingLifecycleUnavailableError:
@@ -284,6 +326,10 @@ def create_binding_lifecycle_router(
     async def retire(request: Request) -> Response:
         return await handle(request, operation=RETIRE)
 
+    async def publish(request: Request) -> Response:
+        return await handle(request, operation=PUBLISH)
+
     router.add_api_route(ACTIVATE_PATH, activate, methods=["POST"], operation_id=ACTIVATE)
     router.add_api_route(RETIRE_PATH, retire, methods=["POST"], operation_id=RETIRE)
+    router.add_api_route(PUBLISH_PATH, publish, methods=["POST"], operation_id=PUBLISH)
     return router

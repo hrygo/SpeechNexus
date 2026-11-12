@@ -7,6 +7,7 @@ export { ContractValidationError } from "./errors.mjs";
 export type HttpOperation =
   | "createModelBindingDraft"
   | "getModelBindingRevision"
+  | "publishModelBindingRevision"
   | "retireModelBindingRevision"
   | "activatePublishedModelBindingRevision";
 type HttpPaths = {
@@ -17,6 +18,10 @@ type HttpPaths = {
   "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}": Pick<
     paths["/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}"],
     "parameters" | "get"
+  >;
+  "/v1/nexus/admin/model-bindings/{binding_id}/publications": Pick<
+    paths["/v1/nexus/admin/model-bindings/{binding_id}/publications"],
+    "parameters" | "post"
   >;
   "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/retirements": Pick<
     paths["/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/retirements"],

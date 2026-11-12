@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from speechnexus_backend.speech.infrastructure.catalog_revision_schema import RETIREMENT_TABLE
+from speechnexus_backend.speech.infrastructure.binding_publication_evidence_schema import (
+    TABLE as EVIDENCE_TABLE,
+)
+from speechnexus_backend.speech.infrastructure.catalog_revision_schema import (
+    RETIREMENT_TABLE,
+    STATE_TABLE,
+)
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 from speechnexus_backend.speech.infrastructure.publication_schema import TABLE as PUBLICATION_TABLE
 
@@ -54,8 +60,8 @@ LIFECYCLE_DDL = (
         event_id VARCHAR(128) COLLATE "C" PRIMARY KEY,
         kind VARCHAR(16) COLLATE "C" NOT NULL DEFAULT 'binding' CHECK (kind = 'binding'),
         action VARCHAR(64) COLLATE "C" NOT NULL
-            CHECK (action IN ('model_binding.retire', 'model_binding.disable',
-                              'model_binding.activate')),
+            CHECK (action IN ('model_binding.publish', 'model_binding.retire',
+                              'model_binding.disable', 'model_binding.activate')),
         binding_id VARCHAR(128) COLLATE "C" NOT NULL
             CHECK (binding_id ~ {_IDENTIFIER}),
         revision VARCHAR(19) COLLATE "C" NOT NULL
@@ -120,6 +126,31 @@ def binding_lifecycle_grants(schema: str, role: str) -> tuple[str, ...]:
         # reads only the columns its predicate needs.
         f"GRANT SELECT (consumer_kind, consumer_id, consumer_revision, released_at_us), "
         f'UPDATE (released_at_us) ON "{schema}".speech_asset_references TO {target}',
+    )
+
+
+def binding_publication_grants(schema: str, role: str) -> tuple[str, ...]:
+    """Provision the HTTP publication writer without immutable rewrites.
+
+    This is the additive privilege set the publication port needs on top of the
+    lifecycle declaration: it records evidence and append-only lifecycle events,
+    advances the selected head and the catalogue version, and never receives
+    DELETE on the pointer, UPDATE on append-only facts, or any other speech table.
+    """
+    schema, role = checked_sql_name(schema), checked_sql_name(role)
+    target = f'"{role}"'
+    return (
+        f'GRANT USAGE ON SCHEMA "{schema}" TO {target}',
+        f'GRANT SELECT, INSERT ON "{schema}".{PUBLICATION_TABLE} TO {target}',
+        f'GRANT SELECT, INSERT ON "{schema}".{EVIDENCE_TABLE} TO {target}',
+        f'GRANT SELECT ON "{schema}".speech_binding_revisions, '
+        f'"{schema}".{RETIREMENT_TABLE} TO {target}',
+        f'GRANT SELECT, INSERT ON "{schema}".{HEAD_TABLE} TO {target}',
+        f"GRANT UPDATE (revision, revision_id, updated_at_us) ON "
+        f'"{schema}".{HEAD_TABLE} TO {target}',
+        f'GRANT SELECT ON "{schema}".{STATE_TABLE} TO {target}',
+        f'GRANT UPDATE (revision, generated_at_us) ON "{schema}".{STATE_TABLE} TO {target}',
+        f'GRANT SELECT, INSERT ON "{schema}".{EVENT_TABLE} TO {target}',
     )
 
 

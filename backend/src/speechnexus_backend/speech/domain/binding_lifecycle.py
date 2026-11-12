@@ -39,6 +39,23 @@ class BindingActivationConflictError(BindingLifecycleConflictError):
         super().__init__("configuration_changed")
 
 
+class BindingPublicationHeadConflictError(BindingLifecycleConflictError):
+    """The selected head changed before the publication transaction's commit."""
+
+    def __init__(self, current_revision: str | None) -> None:
+        if current_revision is not None:
+            revision_number(current_revision)
+        self.current_revision = current_revision
+        super().__init__("configuration_changed")
+
+
+class BindingPublicationEvidenceError(ValueError):
+    """The capacity manifest evidence does not describe the draft revision."""
+
+    def __init__(self) -> None:
+        super().__init__("capacity_manifest_mismatch")
+
+
 def _digest(value: str | None) -> None:
     if value is not None and re.fullmatch(r"sha256:[0-9a-f]{64}", value) is None:
         raise ValueError("Invalid lifecycle digest")
@@ -94,6 +111,22 @@ class BindingActivationCommand(_LifecycleCommand):
         _LifecycleCommand.__post_init__(self)
         if self.expected_current_revision is not None:
             revision_number(self.expected_current_revision)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BindingPublicationCommand(_LifecycleCommand):
+    """Publish one stored draft revision and make it the selected head."""
+
+    expected_current_revision: str | None = None
+    capacity_manifest_id: str
+    qualification_report_id: str
+
+    def __post_init__(self) -> None:
+        _LifecycleCommand.__post_init__(self)
+        if self.expected_current_revision is not None:
+            revision_number(self.expected_current_revision)
+        identifier(self.capacity_manifest_id)
+        identifier(self.qualification_report_id)
 
 
 @dataclass(frozen=True, slots=True)

@@ -15,7 +15,19 @@ void client.GET("/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision
 });
 // @ts-expect-error unselected GET on a path that also has a reviewed POST
 void client.GET("/v1/nexus/admin/model-bindings");
-// @ts-expect-error publication is outside this contract-only surface
-void validateRequest("publishModelBindingRevision", {});
+declare const publication: components["schemas"]["ModelBindingPublicationRequest"];
+void client.POST("/v1/nexus/admin/model-bindings/{binding_id}/publications", {
+  params: { path: { binding_id: "asr-quality" } },
+  body: publication,
+});
+// @ts-expect-error the publication path is a reviewed POST with no GET
+void client.GET("/v1/nexus/admin/model-bindings/{binding_id}/publications", {
+  params: { path: { binding_id: "asr-quality" } },
+});
+void validateRequest("publishModelBindingRevision", {
+  path: { binding_id: "asr-quality" },
+  headers: { "Idempotency-Key": "publish-asr-quality-2-20261113" },
+  body: publication,
+});
 // @ts-expect-error there is no Operation/query-by-key recovery resource
 void client.GET("/v1/nexus/operations/{operation_id}", {});

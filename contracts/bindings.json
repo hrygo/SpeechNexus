@@ -515,12 +515,14 @@
       "paths": [
         "/v1/nexus/admin/model-bindings",
         "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}",
+        "/v1/nexus/admin/model-bindings/{binding_id}/publications",
         "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/retirements",
         "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/activations"
       ],
       "operations": [
         "createModelBindingDraft",
         "getModelBindingRevision",
+        "publishModelBindingRevision",
         "retireModelBindingRevision",
         "activatePublishedModelBindingRevision"
       ]

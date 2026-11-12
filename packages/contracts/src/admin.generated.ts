@@ -642,7 +642,8 @@ export interface paths {
      *     the background reconciler and does not require this endpoint. Before
      *     budget is released, every submit intent belonging to the lease must be
      *     closed with complete cleanup evidence; the response lists those intents
-     *     in lexicographic order. `observed_at` is the operator-observed
+     *     in lexicographic order. Each lease carries at most one submit intent, so
+     *     the released list holds zero or one identifier. `observed_at` is the operator-observed
      *     termination time and must not be later than the server's
      *     `budget_released_at`.
      *
@@ -945,7 +946,12 @@ export interface components {
       evidence_observed_at: string;
       reason: string;
       idempotent_replay: boolean;
-      /** @description Sorted lexicographically for stable idempotent responses. Producer validation rejects unsorted or repeated values. */
+      /**
+       * @description Sorted lexicographically for stable idempotent responses. Producer
+       *     validation rejects unsorted or repeated values. One lease carries at
+       *     most one submit intent: the submission identity and its capacity
+       *     reserve are one-to-one, so the array holds zero or one element.
+       */
       released_submit_intent_ids: components["schemas"]["Identifier"][];
     };
     CapacityManifestRecord: {
@@ -3612,6 +3618,7 @@ export interface operations {
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
       409: components["responses"]["Conflict"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   getDiagnostics: {

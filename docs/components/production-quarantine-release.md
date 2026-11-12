@@ -12,11 +12,11 @@ date: 2026-11-13
 [生产租约隔离与释放事务](production-leases.md)之后，补上机器证据不可得时由运维确认
 终止的唯一持久入口。
 
-**交付状态**：设计已定稿，HTTP 承接、迁移与权限安装尚未交付（#635）。当前契约声明存在而
-生产无承接，后端 router 没有该 operation、`speech` 命名空间没有释放证据列或账本，
-`tests/contract/test_profile_http_bindings.py:36` 仍把该 operation 记在
-`KNOWN_UNSERVED_ADMIN_OPERATIONS`。在实现合入前，任何调用都得不到 200，也不得手工
-`INSERT`/`UPDATE` 模拟本页的事务。
+**交付状态**：已交付（#635）。契约、迁移 `0052_quarantine_releases`、释放事务、
+专用非 owner 角色与启动期逐列校验已装配；`tests/contract/test_profile_http_bindings.py`
+的 `KNOWN_UNSERVED_ADMIN_OPERATIONS` 已清空并保留门禁。实现与验证证据见
+`tests/integration/test_quarantine_release.py`、`tests/unit/backend/test_quarantine_release_*.py`。
+任何调用仍不得手工 `INSERT`/`UPDATE` 模拟本页的事务；证据与账本由本入口独占写入。
 
 四条不变量，任一不成立都不得声明该路径可用：
 

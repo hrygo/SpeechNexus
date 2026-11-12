@@ -215,6 +215,7 @@ def test_backend_exposes_valid_operational_openapi() -> None:
         "/v1/nexus/admin/capacity-manifests/{manifest_id}",
         "/v1/nexus/admin/qualification-reports/{report_id}",
         "/v1/nexus/admin/diagnostics",
+        "/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases",
         "/v1/nexus/audit-events",
         "/v1/nexus/pronunciation-sets",
         "/v1/nexus/pronunciation-sets/{pronunciation_id}/revisions/{revision}",

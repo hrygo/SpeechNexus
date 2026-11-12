@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SpeechNexus administration API",
-    "version": "0.1.0.dev10",
+    "version": "0.1.0.dev11",
     "description": "Deployment-scoped administration and observation API. These routes do not\nestablish a user identity, role, or tenant boundary. A deployment may expose\nthem on a separate listener or route allowlist, but the API itself must not\npretend that hiding a navigation entry is authorization.\n\nModel binding revisions and runtime instances are separate resources.\nCapacity manifest and qualification report documents stay in the release\nevidence chain; the admin API exposes only the identity facts the\npublication evidence table records: the evidence identifier, the document\ndigest when the publishing path recorded one, and the first recording time.\nIt exposes no release-evidence locator because no column stores one. No\nresponse exposes private artifact paths, engine endpoints, credentials, or\narbitrary container control.\n"
   },
   "security": [

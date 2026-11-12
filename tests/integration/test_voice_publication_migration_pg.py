@@ -90,7 +90,7 @@ def test_downgrade_refuses_a_custom_publication() -> None:
             command.downgrade(config, "0046_public_job_intents")
         assert (
             _one(query, "SELECT version_num FROM alembic_version")["version_num"]
-            == "0051_binding_publication_events"
+            == "0052_quarantine_releases"
         )
 
 
@@ -112,7 +112,7 @@ def test_upgrade_creates_ledger_view_and_reruns_idempotently() -> None:
         ]
         assert _REVISIONS in view and "speech_builtin_voice_qualifications" in view
         revision = _one(query, "SELECT version_num FROM alembic_version")["version_num"]
-        assert revision == "0051_binding_publication_events"
+        assert revision == "0052_quarantine_releases"
 
 
 def test_downgrade_refuses_to_discard_evidence_then_restores_legacy_view() -> None:
@@ -123,7 +123,7 @@ def test_downgrade_refuses_to_discard_evidence_then_restores_legacy_view() -> No
             command.downgrade(config, "0046_public_job_intents")
         assert (
             _one(query, "SELECT version_num FROM alembic_version")["version_num"]
-            == "0051_binding_publication_events"
+            == "0052_quarantine_releases"
         )
         # A schema with no custom publication or measurement may still roll back.
         query.execute(f"DELETE FROM {_EVIDENCE}")

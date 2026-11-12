@@ -1014,7 +1014,7 @@ def test_profile_retirement_migration_widens_both_stored_checks() -> None:
             query.execute(insert, ("sha256:" + "c" * 64, "retire", "sha256:" + "d" * 64))
         command.upgrade(config, "head")
         assert query.execute("SELECT version_num FROM alembic_version").fetchone() == {
-            "version_num": "0051_binding_publication_events"
+            "version_num": "0052_quarantine_releases"
         }
         assert "length(" in _publication_state_check(query)
         query.execute(insert, ("sha256:" + "c" * 64, "retire", "sha256:" + "d" * 64))

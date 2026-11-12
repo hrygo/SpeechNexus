@@ -533,6 +533,55 @@
           "json": true
         }
       }
+    },
+    "releaseQuarantinedAdmissionLease": {
+      "path": "/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases",
+      "method": "post",
+      "request": "HttpRequest_releaseQuarantinedAdmissionLease",
+      "parameters": {
+        "path": {
+          "lease_id": "string"
+        },
+        "query": {},
+        "headers": {
+          "x-request-id": "string",
+          "idempotency-key": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_releaseQuarantinedAdmissionLease_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_releaseQuarantinedAdmissionLease_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_releaseQuarantinedAdmissionLease_401",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_releaseQuarantinedAdmissionLease_404",
+          "headers": {},
+          "json": true
+        },
+        "409": {
+          "schema": "HttpResponse_releaseQuarantinedAdmissionLease_409",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_releaseQuarantinedAdmissionLease_503",
+          "headers": {},
+          "json": true
+        }
+      }
     }
   },
   "x-nexus-entrypoints": [
@@ -609,7 +658,14 @@
     "HttpRequest_getDiagnostics",
     "HttpResponse_getDiagnostics_200",
     "HttpResponse_getDiagnostics_401",
-    "HttpResponse_getDiagnostics_503"
+    "HttpResponse_getDiagnostics_503",
+    "HttpRequest_releaseQuarantinedAdmissionLease",
+    "HttpResponse_releaseQuarantinedAdmissionLease_200",
+    "HttpResponse_releaseQuarantinedAdmissionLease_400",
+    "HttpResponse_releaseQuarantinedAdmissionLease_401",
+    "HttpResponse_releaseQuarantinedAdmissionLease_404",
+    "HttpResponse_releaseQuarantinedAdmissionLease_409",
+    "HttpResponse_releaseQuarantinedAdmissionLease_503"
   ],
   "$defs": {
     "WorkspaceList": {
@@ -2234,6 +2290,96 @@
         }
       }
     },
+    "QuarantineReleaseRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_kind", "evidence_digest", "observed_at", "reason"],
+      "properties": {
+        "evidence_kind": {
+          "type": "string",
+          "const": "operator_verified_instance_terminated"
+        },
+        "evidence_digest": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "pattern": "\\S"
+        }
+      }
+    },
+    "QuarantineRelease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lease_id",
+        "object",
+        "lease_state",
+        "cleanup_state",
+        "budget_released_at",
+        "evidence_kind",
+        "evidence_digest",
+        "evidence_observed_at",
+        "reason",
+        "idempotent_replay",
+        "released_submit_intent_ids"
+      ],
+      "properties": {
+        "lease_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.quarantine_release"
+        },
+        "lease_state": {
+          "type": "string",
+          "const": "released"
+        },
+        "cleanup_state": {
+          "type": "string",
+          "const": "complete"
+        },
+        "budget_released_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "evidence_kind": {
+          "type": "string",
+          "const": "operator_verified_instance_terminated"
+        },
+        "evidence_digest": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "evidence_observed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "pattern": "\\S"
+        },
+        "idempotent_replay": {
+          "type": "boolean"
+        },
+        "released_submit_intent_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 1,
+          "description": "Sorted lexicographically for stable idempotent responses. Producer\nvalidation rejects unsorted or repeated values. One lease carries at\nmost one submit intent: the submission identity and its capacity\nreserve are one-to-one, so the array holds zero or one element.\n",
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
+        }
+      }
+    },
     "HttpRequest_listWorkspaces": {
       "type": "object",
       "additionalProperties": false,
@@ -3737,6 +3883,149 @@
       "required": ["body"]
     },
     "HttpResponse_getDiagnostics_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_releaseQuarantinedAdmissionLease": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "lease_id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": ["lease_id"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "idempotency-key": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/QuarantineReleaseRequest"
+        }
+      },
+      "required": ["path", "body"]
+    },
+    "HttpResponse_releaseQuarantinedAdmissionLease_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/QuarantineRelease"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_releaseQuarantinedAdmissionLease_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_releaseQuarantinedAdmissionLease_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_releaseQuarantinedAdmissionLease_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_releaseQuarantinedAdmissionLease_409": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_releaseQuarantinedAdmissionLease_503": {
       "type": "object",
       "additionalProperties": false,
       "properties": {

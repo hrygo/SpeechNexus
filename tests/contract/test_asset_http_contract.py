@@ -61,6 +61,7 @@ def test_packaged_http_surface_is_closed_and_matches_real_operations() -> None:
         "/v1/nexus/admin/capacity-manifests/{manifest_id}",
         "/v1/nexus/admin/qualification-reports/{report_id}",
         "/v1/nexus/admin/diagnostics",
+        "/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases",
         "/v1/nexus/audit-events",
         "/v1/nexus/pronunciation-sets",
         "/v1/nexus/pronunciation-sets/{pronunciation_id}/revisions/{revision}",

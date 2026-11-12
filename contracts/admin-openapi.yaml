@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus administration API
-  version: 0.1.0.dev10
+  version: 0.1.0.dev11
   description: |
     Deployment-scoped administration and observation API. These routes do not
     establish a user identity, role, or tenant boundary. A deployment may expose
@@ -1135,7 +1135,8 @@ paths:
         the background reconciler and does not require this endpoint. Before
         budget is released, every submit intent belonging to the lease must be
         closed with complete cleanup evidence; the response lists those intents
-        in lexicographic order. `observed_at` is the operator-observed
+        in lexicographic order. Each lease carries at most one submit intent, so
+        the released list holds zero or one identifier. `observed_at` is the operator-observed
         termination time and must not be later than the server's
         `budget_released_at`.
 
@@ -1176,6 +1177,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/nexus/admin/diagnostics:
     get:
       tags: [diagnostics]
@@ -2029,7 +2032,12 @@ components:
         released_submit_intent_ids:
           type: array
           uniqueItems: true
-          description: Sorted lexicographically for stable idempotent responses. Producer validation rejects unsorted or repeated values.
+          maxItems: 1
+          description: |
+            Sorted lexicographically for stable idempotent responses. Producer
+            validation rejects unsorted or repeated values. One lease carries at
+            most one submit intent: the submission identity and its capacity
+            reserve are one-to-one, so the array holds zero or one element.
           items:
             $ref: "#/components/schemas/Identifier"
     CapacityManifestRecord:

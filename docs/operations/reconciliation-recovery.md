@@ -221,7 +221,7 @@ dispatch 记录之间。当前状态机要求未观测执行的 unknown 也必�
 | `POST /internal/v1/executions/{submit_intent_id}/abort` 与 `/abort-intents` | 网关已注册的组件鉴权入口；先持久接收，再等待发送锁/claim/外发 | 用原始身份与完整原意图发起有界 abort；提交结果未知时只查询原 GET，发送 `Accept: application/vnd.speechnexus.execution-recovery.v1+json` 并核对 `abort_recovery` 的原摘要、首次接收与 claim 状态。外发尝试持有有界租约：接收已提交、尝试未调用、引擎已接受未落本地、结果丢失四个窗口都由重启后的恢复按原身份重发，重复外发幂等；回执记录的身份或实例代次与权威执行不一致时按冲突失败且不外发（这些列只在准入写入一次）；未裁决尝试按指数退避（30 s 起、封顶 30 min）重试，8 次后用尽为 `exhausted` 并停止重发 | 普通 GET 表示不含 `abort_recovery`；receipt、claim 或 `receipt=null` 均不证明停止或释放；file worker 只取消本进程任务，仍不直接归还预算 |
 | `record_stop` / `mark_execution_unknown` | 可信进程内的 `ExecutionFactBoundary`；文件头明确 no HTTP route（`execution-gateway/src/speechnexus_gateway/interfaces/submit_transactions.py:3`） | 供生产 adapter/恢复 worker 写入不可变执行事实；`mark_execution_unknown` 只能让风险保持/升级 | 不是运维 CLI；不能用来改写任意已有 unknown，不能绕开证据或版本守卫 |
 | 后端 `release_lease` / `release_in_transaction` | `LeaseTransactionBoundary` 是进程内端口，没有 HTTP route；当前 `backend/src/speechnexus_backend/app.py` 的路由清单未装配该服务 | 在原始执行已是 terminal + complete、停止/资源释放证据齐全且 version 匹配时原子释放 lease、槽位和配额 | 不接受 unknown、timeout、404、重启或调用方自报的布尔值；不能在租约已释放后重扣预算 |
-| OpenAPI 声明的 `POST /v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases` | **契约先行，生产未实现**：[管理契约](../../contracts/admin-openapi.yaml)中有声明，但后端 router/服务中没有对应 handler；当前 `speech.admission_leases` 也没有 `quarantine_release_*` 列 | 无。不要调用或伪造该入口 | 这不是当前受支持路径；缺 API、服务和数据库证据列，属于 G7 缺口 |
+| `POST /v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases` | 已装配：router 在 `backend/src/speechnexus_backend/speech/interfaces/http/quarantine_releases.py`，事务在 `speech/infrastructure/quarantine_release_sql.py`，账本表 `speech.admission_quarantine_releases` 由迁移 `0052_quarantine_releases` 建立且只允许追加。请求体是 `evidence_kind=operator_verified_instance_terminated` 的证据四元组，`Idempotency-Key` 可选（8–128 字节） | 用地库时间校验 `observed_at` 后，在同一事务内写入 `execution_stop_evidence`、把唯一提交意图从 `unknown_quarantined/quarantined` 关闭为 `aborted/complete`、复用既有 `release()` 归还 lease/槽位/配额，最后追加账本行。同键同证据与换键同证据都只读重放原 `budget_released_at`；同键不同证据、消费者已按机器证据释放、租约未隔离或意图不在隔离态均返回 409 且零写入 | 不提供绕过停止证据的强制释放，不自动扫描，不归还实例基线预算，不自动让 host 退出隔离，不改写或删除任何证据；事务结果不明时返回 503 `quarantine_release_unknown`，必须先按原键查询再决策 |
 
 `record_stop` 写入的是“执行已停止”的不可变事实；`release_lease` 才归还 A 侧的
 lease、instance/host 和 workspace 配额。两者分属不同权威，不能互相替代。只把
@@ -237,8 +237,10 @@ lease、instance/host 和 workspace 配额。两者分属不同权威，不能�
    `fencing_token`，时间不早于 dispatch，且摘要来自原始证据而不是当前时钟；
 4. 原子地关闭全部未解决 submit intent，再释放 lease；只写证据或只释放租约都不算完成。
 
-当前产品没有实现这条人工双证据入口。即使满足以上事实，也只能升级给实现 owner；
-不要直接执行 SQL 或复制测试脚本。
+人工双证据入口由上面的 admin `quarantine-releases` 承接：证据种类固定为
+`operator_verified_instance_terminated`，只处理 `quarantined` 租约与 `unknown_quarantined`
+意图，且一次请求最多关闭一条提交意图。不满足这些前提时不要直接执行 SQL、复制测试脚本或
+伪造证据；按第 6 节升级。
 
 ## 6. 升级路径
 
@@ -249,7 +251,8 @@ lease、instance/host 和 workspace 配额。两者分属不同权威，不能�
 - `execution_stop_evidence` 超过 1 条、证据时间早于 dispatch、或 instance/generation 不匹配；
 - 准入持续 503，且无法把 HTTP 拒绝码与进程内 `reconciliation_required` 分开；
 - 当前网关没有恢复配置/节点凭据，节点控制器无法返回同一代次的 `verified-stop`；
-- 需要调用 admin `quarantine-releases` 或直接复用后端 `release_lease` 才能推进。
+- admin `quarantine-releases` 返回 409/503 且按原键查询仍无法判定，或只能直接复用后端
+  `release_lease` 才能推进。
 
 升级包至少包含：完整 base SHA、原 `submit_intent_id` / `lease_id` /
 `fencing_token`、第 3 节三组查询输出、对象 `x-amz-version-id` / 长度 / SHA-256、

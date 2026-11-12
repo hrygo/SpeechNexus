@@ -67,7 +67,7 @@ def test_0051_widens_the_legacy_check_and_refuses_to_erase_publication_events() 
         with pytest.raises(RuntimeError, match="require preservation"):
             command.downgrade(config, "0050_profile_retirements")
         assert query.execute("SELECT version_num FROM alembic_version").fetchone() == {
-            "version_num": "0051_binding_publication_events"
+            "version_num": "0052_quarantine_releases"
         }
 
         query.execute(f"DELETE FROM {EVENT}")

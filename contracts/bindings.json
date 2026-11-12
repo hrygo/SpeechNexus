@@ -407,7 +407,8 @@
         "/v1/nexus/audit-events",
         "/v1/nexus/admin/capacity-manifests/{manifest_id}",
         "/v1/nexus/admin/qualification-reports/{report_id}",
-        "/v1/nexus/admin/diagnostics"
+        "/v1/nexus/admin/diagnostics",
+        "/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases"
       ],
       "operations": [
         "listWorkspaces",
@@ -421,7 +422,8 @@
         "listAuditEvents",
         "getCapacityManifest",
         "getQualificationReport",
-        "getDiagnostics"
+        "getDiagnostics",
+        "releaseQuarantinedAdmissionLease"
       ]
     },
     "runtime": {

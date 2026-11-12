@@ -25,19 +25,14 @@ EXAMPLES = json.loads((ROOT / "tests/fixtures/contracts/profile-http.json").read
 CONFIG = json.loads((ROOT / "contracts/bindings.json").read_text())["http_surfaces"]["profile"]
 POST, GET = "createProfileRevision", "getProfileRevisionForAdministration"
 HTTP_METHODS = frozenset({"get", "post", "put", "patch", "delete", "head", "options", "trace"})
-# Existing contract-first admin declarations outside the generated service
-# surface. Keeping them explicit makes any new unbound path or method fail
+# Contract-first admin declarations outside the generated service surface.
+# Keeping this inventory explicit makes any new unbound path or method fail
 # instead of silently widening the gap between the contract and its consumers.
-# The remaining entry is a tracked gap, not accepted design:
-# `releaseQuarantinedAdmissionLease` has no handler, the production schema
-# records no quarantine-release evidence, reason, observed time or idempotency
-# key, and its release transaction consumes gateway stop evidence instead of
-# creating operator evidence. See docs/operations/reconciliation-recovery.md.
-KNOWN_UNSERVED_ADMIN_OPERATIONS = frozenset(
-    {
-        ("/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases", "post"),
-    }
-)
+# Every declared admin operation now has a generated surface and a production
+# handler: `releaseQuarantinedAdmissionLease` left the inventory when #635
+# implemented it. The gate itself remains: an empty set still fails closed on
+# any future declaration that no reviewed surface or handler covers.
+KNOWN_UNSERVED_ADMIN_OPERATIONS: frozenset[tuple[str, str]] = frozenset()
 
 
 def resolve(node: dict[str, Any]) -> dict[str, Any]:
@@ -188,7 +183,7 @@ def test_profile_surface_does_not_advertise_other_admin_methods_or_change_worksp
     actual = contract()
     assert actual == generator().bundle_http_surface(CONFIG)
     validate(actual)
-    assert actual["info"]["version"] == "0.1.0.dev10"
+    assert actual["info"]["version"] == "0.1.0.dev11"
     assert set(actual["paths"]) == set(CONFIG["paths"])
     assert set(actual["paths"]["/v1/nexus/admin/profiles"]) == {"post"}
     assert set(actual["paths"]["/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}"]) == {

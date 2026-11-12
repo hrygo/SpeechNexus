@@ -1,0 +1,406 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SpeechNexus internal asset inspection API",
+    "version": "0.1.0.dev0",
+    "description": "Private single-request audio inspection protocol between the Speech API and\nthe isolated `asset-inspector` deployment unit. The inspector decodes one\nuntrusted encoded audio body and returns only media counts and digests; it\nnever reads object storage, writes PostgreSQL, publishes an Asset, or\nproduces a `ready` fact. The API revalidates the receipt against its own\nbuffered digest, byte count, media type, sample clock, and duration budget\nbefore any durable write.\n\nEach request carries exactly one complete body. There is no session, job\nidentity, idempotency key, filename, client MIME type, workspace, purpose,\nor object key on this protocol. The request body is the raw encoded audio,\nnot JSON or base64. `200` reuses the canonical `AudioInspectionSuccess`\nschema from `audio-inspection.schema.json`; this document adds no receipt\nfields and keeps no semantic copy of that structure.\n\nUnavailability and content rejection are distinct stable outcomes. A\n`422 invalid_media` / `422 media_limit_exceeded` is a permanent rejection of\nthe supplied bytes. A `429 busy`, `503 unavailable`, or `504 deadline_exceeded`\nis a temporary infrastructure outcome for which a new request may later\nsucceed. Neither category authorizes the caller to create an Asset row,\npublish an object, or infer a public `ready` state.\n"
+  },
+  "security": [
+    {
+      "InspectionBearer": []
+    }
+  ],
+  "paths": {
+    "/internal/v1/inspection/audio": {
+      "post": {
+        "operationId": "inspectAssetAudio",
+        "summary": "Decode one complete untrusted audio upload and return media facts",
+        "description": "The body must be a single `audio/wav` encoding accepted by the fixed\n`pcm-decode-1` recipe. The inspector validates length before decoding,\ncaps concurrency at its configured slot count, and never queues. A\nrequest either receives one complete receipt or one failure envelope.\n\n`X-Nexus-Deadline-Ms` and `X-Nexus-Max-Duration-Ms` are budget requests,\nnot permissions: the inspector clamps each value to its own configured\nhard limit and never accepts a client-selected command, path, endpoint,\nenvironment value, or decoder option. `X-Request-Id` is correlation-only\nand must not contain content.\n\nA body that has not been fully read with the declared `Content-Length`\ndoes not start decoding. The inspector recomputes the digest and byte\ncount over the bytes it actually received; the API compares them with\nits own values, so transport substitution or request mixing is\ndetectable.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ContentLengthHeader"
+          },
+          {
+            "$ref": "#/components/parameters/DeadlineBudgetHeader"
+          },
+          {
+            "$ref": "#/components/parameters/MaxDurationHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestIdHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "Raw encoded audio bytes. `Content-Type` is exactly\n`application/octet-stream`; JSON wrappers and base64 are not accepted.\nThe body is capped by the smaller of the API asset byte limit and the\ninspector encoded-byte limit. The API rejects a body over its own\nlimit before making this request, so `413` here indicates a deployment\nconfiguration mismatch rather than a content rejection.\n",
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Complete decode receipt. The body is exactly `AudioInspectionSuccess`\nfrom `audio-inspection.schema.json`; the API rejects an unknown field,\na non-`audio/wav` media type, a digest or byte mismatch, an implausible\nsample clock, a duration over its configured limit, or a receipt over\nits configured response-byte bound. A receipt that fails revalidation\nis API-side unavailability, never content rejection.\n",
+            "headers": {
+              "Content-Type": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "application/json"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Correlation ID echoed from the request when supplied.",
+                "schema": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_internal_audio_inspection_schema_json_AudioInspectionSuccess"
+                },
+                "example": {
+                  "schema_version": 1,
+                  "status": "complete",
+                  "recipe_version": "pcm-decode-1",
+                  "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "encoded_bytes": 2048,
+                  "media_type": "audio/wav",
+                  "sample_rate_hz": 16000,
+                  "channels": 1,
+                  "source_samples": 16000,
+                  "duration_ms": 1000
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "413": {
+            "$ref": "#/components/responses/EncodedTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMedia"
+          },
+          "422": {
+            "description": "One of two permanent content outcomes. `invalid_media` means the\ncomplete body is not an acceptable WAV (truncated, inconsistent RIFF,\nmalformed chunk structure, or non-PCM). `media_limit_exceeded` means\nthe media itself exceeds the duration or decode budget while the\ninspector wall clock had not expired. The API maps `invalid_media`\nto public `422 invalid_asset_audio` and `media_limit_exceeded` to\npublic `422 asset_audio_too_long`; neither writes an Asset row,\nobject, or event.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetInspectionFailure"
+                },
+                "examples": {
+                  "invalid_media": {
+                    "value": {
+                      "schema_version": 1,
+                      "status": "invalid_media"
+                    }
+                  },
+                  "media_limit_exceeded": {
+                    "value": {
+                      "schema_version": 1,
+                      "status": "media_limit_exceeded"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/Busy"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/DeadlineExceeded"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "ContentLengthHeader": {
+        "name": "Content-Length",
+        "in": "header",
+        "required": true,
+        "description": "Exact encoded body length in bytes. Missing, non-numeric, or a value that\ndoes not equal the bytes actually received is `400 bad_request`; the\ninspector does not start decoding a short or over-declared body.\n",
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "DeadlineBudgetHeader": {
+        "name": "X-Nexus-Deadline-Ms",
+        "in": "header",
+        "required": true,
+        "description": "Wall-clock decode budget in milliseconds for this request. It covers\ndecoding only and is clamped to the inspector's configured maximum. On\nexpiry the inspector kills the decoder child process and returns\n`504 deadline_exceeded`.\n",
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "MaxDurationHeader": {
+        "name": "X-Nexus-Max-Duration-Ms",
+        "in": "header",
+        "required": true,
+        "description": "Media duration ceiling in milliseconds for this request. It is a budget\nrequest clamped to the inspector's configured maximum. A media duration\nover the effective ceiling is `422 media_limit_exceeded` while the wall\nclock is still valid.\n",
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "XRequestIdHeader": {
+        "name": "X-Request-ID",
+        "in": "header",
+        "required": false,
+        "description": "Opaque client correlation value. It must not contain audio, filenames,\npaths, credentials, or business content, and it does not select an\nendpoint or change decode behavior.\n",
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "schemas": {
+      "External_internal_audio_inspection_schema_json_AudioInspectionSuccess": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "status",
+          "recipe_version",
+          "sha256",
+          "encoded_bytes",
+          "media_type",
+          "sample_rate_hz",
+          "channels",
+          "source_samples",
+          "duration_ms"
+        ],
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1
+          },
+          "status": {
+            "const": "complete"
+          },
+          "recipe_version": {
+            "const": "pcm-decode-1"
+          },
+          "sha256": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Sha256Digest"
+          },
+          "encoded_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1073741824
+          },
+          "media_type": {
+            "enum": ["audio/wav", "audio/pcm"]
+          },
+          "sample_rate_hz": {
+            "type": "integer",
+            "minimum": 8000,
+            "maximum": 192000
+          },
+          "channels": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8
+          },
+          "source_samples": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 16588800000
+          },
+          "duration_ms": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400000
+          }
+        }
+      },
+      "External_shared_identifiers_schema_json_Sha256Digest": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      },
+      "AssetInspectionFailure": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Closed private failure envelope. It carries no vendor message, command,\npath, token, input fragment, or stack trace. The stable `status` value is\nthe only discriminator; consumers must not parse prose.\n",
+        "required": ["schema_version", "status"],
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "bad_request",
+              "unauthorized",
+              "encoded_too_large",
+              "unsupported_media",
+              "invalid_media",
+              "media_limit_exceeded",
+              "busy",
+              "unavailable",
+              "deadline_exceeded"
+            ]
+          }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "`Content-Length` is missing or disagrees with the received byte count, or\nanother request header is malformed. The body is not decoded and no\nreceipt is produced. The API treats this as internal protocol violation\nand maps it to public `503 asset_inspection_unavailable`, never to a\ncontent rejection.\n",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AssetInspectionFailure"
+            },
+            "examples": {
+              "bad_request": {
+                "value": {
+                  "schema_version": 1,
+                  "status": "bad_request"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "The bearer token is missing or wrong. This is a deployment configuration\nfailure, not a caller input problem; the API maps it to public\n`503 asset_inspection_unavailable`. The response never echoes the token.\n",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AssetInspectionFailure"
+            },
+            "examples": {
+              "unauthorized": {
+                "value": {
+                  "schema_version": 1,
+                  "status": "unauthorized"
+                }
+              }
+            }
+          }
+        }
+      },
+      "EncodedTooLarge": {
+        "description": "The encoded body exceeds the inspector byte cap. This is a deployment\nlimit mismatch, not a permanent content verdict; the API maps it to\npublic `503 asset_inspection_unavailable`.\n",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AssetInspectionFailure"
+            },
+            "examples": {
+              "encoded_too_large": {
+                "value": {
+                  "schema_version": 1,
+                  "status": "encoded_too_large"
+                }
+              }
+            }
+          }
+        }
+      },
+      "UnsupportedMedia": {
+        "description": "The recipe does not accept the supplied media type. The public upload\npath only sends `audio/wav`; this outcome therefore indicates a\ndeployment or caller configuration mismatch and maps to public\n`503 asset_inspection_unavailable`.\n",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AssetInspectionFailure"
+            },
+            "examples": {
+              "unsupported_media": {
+                "value": {
+                  "schema_version": 1,
+                  "status": "unsupported_media"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Busy": {
+        "description": "Every configured inspection slot is in use. The inspector has no queue:\nit rejects immediately instead of holding the connection. A new request\nlater may succeed, and a repeated inspection of the same bytes has no\nside effects. The API maps this to public `503 asset_inspection_busy`\nwith `retryable: true`.\n",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AssetInspectionFailure"
+            },
+            "examples": {
+              "busy": {
+                "value": {
+                  "schema_version": 1,
+                  "status": "busy"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Unavailable": {
+        "description": "The inspector is not ready, its startup self-check failed, or a decoder\nchild process failed unexpectedly. A new request may succeed after the\ndeployment unit restarts, but this response proves no content verdict and\nwrites no state. The API maps this to public\n`503 asset_inspection_busy`: the inspector is configured, but this\nrequest cannot be served now.\n",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AssetInspectionFailure"
+            },
+            "examples": {
+              "unavailable": {
+                "value": {
+                  "schema_version": 1,
+                  "status": "unavailable"
+                }
+              }
+            }
+          }
+        }
+      },
+      "DeadlineExceeded": {
+        "description": "The clamped wall-clock deadline expired and the inspector killed the\ndecoder child process. This is a temporary budget outcome, not evidence\nthat the media is invalid; the API maps it to public\n`503 asset_inspection_busy` with `retryable: true`. The slot is released\nonly after the child is dead.\n",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AssetInspectionFailure"
+            },
+            "examples": {
+              "deadline_exceeded": {
+                "value": {
+                  "schema_version": 1,
+                  "status": "deadline_exceeded"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "InspectionBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "opaque-inspection-token",
+        "description": "Deployment-injected token accepted only by the inspector. It is separate\nfrom the public shared service key and from every component credential\nused by the execution gateway or node controller. The inspector compares\nit in constant time; a missing or wrong token returns `401`. The token\nnever appears in a response, log, or error message.\n"
+      }
+    }
+  }
+}

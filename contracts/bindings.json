@@ -386,6 +386,13 @@
         "/internal/v1/nodes/{node_id}/instances/{instance_id}/generations/{instance_generation}/verified-stop"
       ]
     },
+    "asset_inspection": {
+      "source": "internal/asset-inspection.openapi.yaml",
+      "paths": [
+        "/internal/v1/inspection/audio"
+      ],
+      "operations": ["inspectAssetAudio"]
+    },
     "assets": {
       "source": "speech-openapi.yaml",
       "paths": [

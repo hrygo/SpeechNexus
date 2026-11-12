@@ -282,7 +282,10 @@ metadata_revision)`，命令表只接受列级 `INSERT`，表级 `INSERT`/`UPDAT
 `expected_metadata_revision` 与存储值不一致返回 `409 configuration_changed`。
 `policy_id` 在尚无策略注册表的部署中返回 `422 workspace_policy_unsupported`。
 未配置本变量时两个写操作返回 `503 workspace_service_unavailable`，读操作不受影响。
-API 容器的 `environment` 必须显式透传该变量；未透传等同于未配置。
+`compose.yaml` 的 api 环境以空默认透传本变量，未配置的既有部署仍可渲染并启动；
+配置了与声明权限面不符的角色则 API 启动失败，请求不会带着错误身份上线。
+进程内还要求资产运行时已装配（成对的 `SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY` /
+`_SECRET_KEY`，Compose 固定提供），只设置本变量而关闭资产运行时不会装配写端口。
 
 声音发布还需要独立的 publisher 角色：应用 0047 后由 owner 运行
 `voice_publication_grants(schema, role)`，设置 `SPEECHNEXUS_VOICE_PUBLISHER_DATABASE_URL`；

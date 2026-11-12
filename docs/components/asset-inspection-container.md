@@ -7,7 +7,7 @@ date: 2026-11-12
 
 # 音频资产检查的独立检查容器
 
-本文规定公开 `POST /v1/nexus/assets` 的 `asr_input` 音频检查如何由一个**独立、无出站网络、非特权**的检查容器完成，以及 Speech API 与它之间的调用协议、输入传递、安全边界、容量语义、生命周期、配置、验收与迁移。本文是实现该形态的输入，不表示容器已经交付；当前实现仍是 API 进程内用 bubblewrap 启动解码子进程（`backend/src/speechnexus_backend/speech/infrastructure/audio_inspection_process.py:342`），交付状态以[跟踪矩阵](../plans/delivery-tracking.md)为准。
+本文规定公开 `POST /v1/nexus/assets` 的 `asr_input` 音频检查如何由一个**独立、无出站网络、非特权**的检查容器完成，以及 Speech API 与它之间的调用协议、输入传递、安全边界、容量语义、生命周期、配置、验收与迁移。本文是实现该形态的输入，不表示容器已经交付：API 侧已按本页装配 HTTP 适配器并完成失败投影，检查容器镜像与部署装配仍待交付。旧进程监督器（`backend/src/speechnexus_backend/speech/infrastructure/audio_inspection_process.py:342`）已不再被组合根装配，按 §9.1 在其退役卡删除。交付状态以[跟踪矩阵](../plans/delivery-tracking.md)为准。
 
 四条不变量，任一不成立都不得声明可用：
 

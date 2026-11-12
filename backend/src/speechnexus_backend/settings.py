@@ -57,8 +57,19 @@ class Settings(BaseSettings):
     asset_allowed_hosts: tuple[str, ...] = ("localhost", "127.0.0.1", "::1")
     asset_allowed_origins: tuple[str, ...] = ()
     # The default text inspector keeps asr_input/voice_reference unavailable; the
-    # audio kind requires the three selectors below and never falls back to text.
+    # audio kind requires a configured HTTP inspector and never falls back to text.
+    # Audio bytes are decoded by the separate `asset-inspector` deployment unit, so
+    # this process holds only the request policy it revalidates locally.
     asset_inspector: Literal["text", "audio"] = "text"
+    asset_inspection_url: AnyHttpUrl | None = None
+    asset_inspection_token: SecretStr | None = Field(default=None, min_length=1)
+    asset_inspection_timeout_seconds: float = Field(default=15, gt=0, le=60)
+    asset_inspection_max_response_bytes: int = Field(default=4096, ge=1, le=65536)
+    # Retained API-side policy for the audio inspector: the duration ceiling, the
+    # local byte ceiling, the decode budget sent as a request header, and the
+    # receipt bound. `audio_inspection_memory_bytes`, `_cpu_seconds` and
+    # `_output_bytes` belong to the inspector container now; they stay declared
+    # until the retirement cycle deletes them together with the process supervisor.
     audio_inspection_runtime_root: Path | None = None
     audio_inspection_command: str = ""
     audio_inspection_launcher_python: str = ""
@@ -181,12 +192,25 @@ class Settings(BaseSettings):
         "audio_inspection_runtime_root",
         "audio_inspection_bubblewrap",
         "audio_inspection_prlimit",
+        "asset_inspection_url",
+        "asset_inspection_token",
         mode="before",
     )
     @classmethod
     def empty_profile_writer_is_disabled(cls, value: Any) -> Any:
         raw = value.get_secret_value() if isinstance(value, SecretStr) else value
         return None if isinstance(raw, str) and not raw.strip() else value
+
+    @field_validator("asset_inspection_url")
+    @classmethod
+    def inspection_url_carries_no_credentials(cls, value: AnyHttpUrl | None) -> AnyHttpUrl | None:
+        """Keep the inspector bearer in its own secret field, never in the URL."""
+        if value is not None and (value.username or value.password):
+            raise ValueError(
+                "SPEECHNEXUS_ASSET_INSPECTION_URL must not embed credentials; "
+                "set SPEECHNEXUS_ASSET_INSPECTION_TOKEN"
+            )
+        return value
 
     @field_validator("asset_inspector", mode="before")
     @classmethod

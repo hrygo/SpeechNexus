@@ -116,6 +116,10 @@ class Settings(BaseSettings):
     audit_read_concurrency: int = Field(default=2, ge=1, le=4)
     audit_read_timeout_seconds: float = Field(default=3, gt=0, le=30)
 
+    model_instance_reader_database_url: SecretStr | None = Field(default=None, min_length=1)
+    model_instance_read_concurrency: int = Field(default=2, ge=1, le=4)
+    model_instance_read_timeout_seconds: float = Field(default=3, gt=0, le=30)
+
     workspace_writer_database_url: SecretStr | None = Field(default=None, min_length=1)
 
     capability_default_workspace_id: str = Field(
@@ -194,6 +198,7 @@ class Settings(BaseSettings):
         "resource_pool_reader_database_url",
         "binding_list_reader_database_url",
         "audit_reader_database_url",
+        "model_instance_reader_database_url",
         "workspace_writer_database_url",
         "pronunciation_reader_database_url",
         "pronunciation_writer_database_url",

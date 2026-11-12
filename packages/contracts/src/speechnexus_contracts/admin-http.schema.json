@@ -292,6 +292,91 @@
         }
       }
     },
+    "listModelInstances": {
+      "path": "/v1/nexus/admin/model-instances",
+      "method": "get",
+      "request": "HttpRequest_listModelInstances",
+      "parameters": {
+        "path": {},
+        "query": {
+          "cursor": "string",
+          "limit": "integer",
+          "host_node_id": "string",
+          "state": "string"
+        },
+        "headers": {
+          "x-request-id": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_listModelInstances_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_listModelInstances_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_listModelInstances_401",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_listModelInstances_503",
+          "headers": {},
+          "json": true
+        }
+      }
+    },
+    "getModelInstance": {
+      "path": "/v1/nexus/admin/model-instances/{instance_id}/generations/{generation}",
+      "method": "get",
+      "request": "HttpRequest_getModelInstance",
+      "parameters": {
+        "path": {
+          "instance_id": "string",
+          "generation": "integer"
+        },
+        "query": {},
+        "headers": {
+          "x-request-id": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_getModelInstance_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_getModelInstance_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_getModelInstance_401",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_getModelInstance_404",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_getModelInstance_503",
+          "headers": {},
+          "json": true
+        }
+      }
+    },
     "listAuditEvents": {
       "path": "/v1/nexus/audit-events",
       "method": "get",
@@ -376,6 +461,17 @@
     "HttpResponse_listModelBindings_403",
     "HttpResponse_listModelBindings_405",
     "HttpResponse_listModelBindings_503",
+    "HttpRequest_listModelInstances",
+    "HttpResponse_listModelInstances_200",
+    "HttpResponse_listModelInstances_400",
+    "HttpResponse_listModelInstances_401",
+    "HttpResponse_listModelInstances_503",
+    "HttpRequest_getModelInstance",
+    "HttpResponse_getModelInstance_200",
+    "HttpResponse_getModelInstance_400",
+    "HttpResponse_getModelInstance_401",
+    "HttpResponse_getModelInstance_404",
+    "HttpResponse_getModelInstance_503",
     "HttpRequest_listAuditEvents",
     "HttpResponse_listAuditEvents_200",
     "HttpResponse_listAuditEvents_400",
@@ -1197,6 +1293,611 @@
     "External_shared_capability_domains_schema_json_ReleaseTier": {
       "type": "string",
       "enum": ["experimental", "best_effort", "production"]
+    },
+    "InstanceState": {
+      "$ref": "#/$defs/External_shared_runtime_states_schema_json_InstanceState"
+    },
+    "External_shared_runtime_states_schema_json_InstanceState": {
+      "type": "string",
+      "enum": [
+        "preparing",
+        "loading",
+        "warming_up",
+        "ready",
+        "draining",
+        "stopping",
+        "stopped",
+        "failed",
+        "quarantined"
+      ],
+      "description": "Observed lifecycle state. Only `stopped` proves that the process or container and its reserved resources are gone; `failed` and `quarantined` may still retain capacity."
+    },
+    "ModelInstanceList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object", "data", "has_more", "next_cursor"],
+      "properties": {
+        "object": {
+          "const": "nexus.list"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ModelRuntimeInstance"
+          }
+        },
+        "has_more": {
+          "type": "boolean"
+        },
+        "next_cursor": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "ModelRuntimeInstance": {
+      "$ref": "#/$defs/External_model_instance_schema_json_Root"
+    },
+    "External_model_instance_schema_json_Root": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "ModelRuntimeInstance",
+      "description": "Dynamic runtime instance fact for a node-scoped engine process or container. This schema is internal to admin, scheduler, deployment controller, and execution gateway; it is not a public model or voice DTO. A new generation is required after every restart. Every observed fact is reported only when its producer actually recorded it; a producer that does not record a fact omits the member instead of synthesizing a value. `stop_evidence` is the instance-level physical stop document and never the execution-level lease or submit-intent evidence.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "instance_id",
+        "host_node_id",
+        "gateway_id",
+        "binding",
+        "binding_revision_id",
+        "pool_id",
+        "generation",
+        "config_digest",
+        "state",
+        "readiness",
+        "observed"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "1.0.0"
+        },
+        "instance_id": {
+          "$ref": "#/$defs/External_model_instance_schema_json_Identifier"
+        },
+        "host_node_id": {
+          "$ref": "#/$defs/External_model_instance_schema_json_Identifier"
+        },
+        "gateway_id": {
+          "$ref": "#/$defs/External_model_instance_schema_json_Identifier"
+        },
+        "binding": {
+          "$ref": "#/$defs/External_model_instance_schema_json_BindingReference"
+        },
+        "binding_revision_id": {
+          "$ref": "#/$defs/External_model_instance_schema_json_Identifier",
+          "description": "Must equal ModelBindingRevision.revision_id for the referenced binding."
+        },
+        "pool_id": {
+          "$ref": "#/$defs/External_model_instance_schema_json_PoolId"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Monotonic per-instance generation allocated by the deployment controller. Stale generations must be fenced."
+        },
+        "config_digest": {
+          "$ref": "#/$defs/External_model_instance_schema_json_Sha256Digest"
+        },
+        "state": {
+          "$ref": "#/$defs/External_model_instance_schema_json_InstanceState"
+        },
+        "readiness": {
+          "$ref": "#/$defs/External_model_instance_schema_json_ReadinessFacts"
+        },
+        "observed": {
+          "$ref": "#/$defs/External_model_instance_schema_json_ObservedFacts"
+        },
+        "controller": {
+          "$ref": "#/$defs/External_model_instance_schema_json_ControllerFacts"
+        },
+        "quarantine_reason": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "pattern": "\\S"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "ready"
+              }
+            },
+            "required": ["state"]
+          },
+          "then": {
+            "properties": {
+              "readiness": {
+                "required": ["accepting_new_work", "ready_at"],
+                "properties": {
+                  "accepting_new_work": {
+                    "const": true
+                  },
+                  "ready_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "not": {
+                  "const": "ready"
+                }
+              }
+            },
+            "required": ["state"]
+          },
+          "then": {
+            "properties": {
+              "readiness": {
+                "properties": {
+                  "accepting_new_work": {
+                    "const": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "draining"
+              }
+            },
+            "required": ["state"]
+          },
+          "then": {
+            "properties": {
+              "readiness": {
+                "properties": {
+                  "accepting_new_work": {
+                    "const": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "stopped"
+              }
+            },
+            "required": ["state"]
+          },
+          "then": {
+            "properties": {
+              "observed": {
+                "required": ["stopped_at"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "quarantined"
+              }
+            },
+            "required": ["state"]
+          },
+          "then": {
+            "required": ["quarantine_reason"],
+            "properties": {
+              "quarantine_reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "not": {
+                  "const": "quarantined"
+                }
+              }
+            },
+            "required": ["state"]
+          },
+          "then": {
+            "properties": {
+              "quarantine_reason": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ],
+      "$defs": {
+        "Identifier": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "Sha256Digest": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+        },
+        "PoolId": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_PoolId"
+        },
+        "InstanceState": {
+          "$ref": "#/$defs/External_shared_runtime_states_schema_json_InstanceState"
+        },
+        "BindingReference": {
+          "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+        },
+        "ReadinessFacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Readiness facts for this generation. `accepting_new_work` is always declared because it follows directly from `state`; the remaining members are present only when the producer observed and recorded them.",
+          "required": ["accepting_new_work"],
+          "properties": {
+            "accepting_new_work": {
+              "type": "boolean"
+            },
+            "loaded_artifact_digests": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/External_model_instance_schema_json_Sha256Digest"
+              },
+              "description": "Digests of the exact artifacts this generation loaded, when the producer records the loaded set. An empty array records that nothing was loaded; an absent member records that the loaded set was not recorded."
+            },
+            "warmed_capabilities": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^(asr|tts|voice|audio)\\.[a-z0-9_.-]{2,64}$"
+              },
+              "description": "Capabilities this generation warmed, when the producer records the warmed set."
+            },
+            "ready_at": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Time this generation began accepting new work, when recorded; null means the transition was not recorded."
+            }
+          }
+        },
+        "StopEvidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Instance-level physical stop evidence: the process or container exited, its reserved resources were released, and the observation was verified. Lease and submit-intent cleanup evidence is execution-level, carries its own kinds, and is not reported here.",
+          "required": [
+            "process_or_container_exited",
+            "resources_released_confirmed",
+            "verified_at"
+          ],
+          "properties": {
+            "process_or_container_exited": {
+              "const": true
+            },
+            "resources_released_confirmed": {
+              "const": true
+            },
+            "verified_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "exit_code": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 255
+            },
+            "runtime_container_id": {
+              "type": ["string", "null"],
+              "maxLength": 128
+            }
+          }
+        },
+        "ObservedFacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Observed timing and termination facts for this generation. Every member is optional: a producer that did not record a fact omits it rather than inventing one.",
+          "properties": {
+            "started_at": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Recorded process or container start time. A producer that only tracks readiness and stop transitions does not record it."
+            },
+            "last_heartbeat_at": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Recorded most recent heartbeat. A producer without a heartbeat channel does not record it."
+            },
+            "stopped_at": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Time the physical stop was verified, when recorded; null means the instance was not observed stopped."
+            },
+            "stop_evidence": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/External_model_instance_schema_json_StopEvidence"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Instance-level physical stop evidence, when the producer recorded it."
+            }
+          }
+        },
+        "ControllerFacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["controller_id", "intent_id"],
+          "properties": {
+            "controller_id": {
+              "$ref": "#/$defs/External_model_instance_schema_json_Identifier"
+            },
+            "intent_id": {
+              "$ref": "#/$defs/External_model_instance_schema_json_Identifier"
+            },
+            "template_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "schema_version": "1.0.0",
+          "instance_id": "inst-asr-1",
+          "host_node_id": "node-gb10-1",
+          "gateway_id": "gateway-1",
+          "binding": {
+            "id": "asr-quality",
+            "revision": "7"
+          },
+          "binding_revision_id": "mbrev-asr-quality-7",
+          "pool_id": "asr-realtime",
+          "generation": 42,
+          "config_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+          "state": "ready",
+          "readiness": {
+            "accepting_new_work": true,
+            "ready_at": "2026-10-22T09:00:10Z"
+          },
+          "observed": {
+            "stopped_at": null,
+            "stop_evidence": null
+          },
+          "controller": {
+            "controller_id": "node-controller-1",
+            "intent_id": "intent-prepare-42",
+            "template_id": "approved-asr-realtime-v7"
+          },
+          "quarantine_reason": null
+        },
+        {
+          "schema_version": "1.0.0",
+          "instance_id": "inst-tts-2",
+          "host_node_id": "node-gb10-1",
+          "gateway_id": "gateway-1",
+          "binding": {
+            "id": "tts-interactive",
+            "revision": "5"
+          },
+          "binding_revision_id": "mbrev-tts-interactive-5",
+          "pool_id": "tts-realtime",
+          "generation": 7,
+          "config_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "state": "stopped",
+          "readiness": {
+            "accepting_new_work": false,
+            "ready_at": "2026-10-22T08:00:00Z"
+          },
+          "observed": {
+            "stopped_at": "2026-10-22T10:00:05Z",
+            "stop_evidence": {
+              "process_or_container_exited": true,
+              "resources_released_confirmed": true,
+              "verified_at": "2026-10-22T10:00:05Z",
+              "exit_code": 0,
+              "runtime_container_id": "container-tts-2"
+            }
+          },
+          "controller": {
+            "controller_id": "node-controller-1",
+            "intent_id": "intent-stop-7",
+            "template_id": "approved-tts-realtime-v7"
+          },
+          "quarantine_reason": null
+        }
+      ]
+    },
+    "External_model_instance_schema_json_Identifier": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+    },
+    "External_model_instance_schema_json_BindingReference": {
+      "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+    },
+    "External_model_instance_schema_json_PoolId": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_PoolId"
+    },
+    "External_model_instance_schema_json_Sha256Digest": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+    },
+    "External_shared_identifiers_schema_json_Sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "External_model_instance_schema_json_InstanceState": {
+      "$ref": "#/$defs/External_shared_runtime_states_schema_json_InstanceState"
+    },
+    "External_model_instance_schema_json_ReadinessFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Readiness facts for this generation. `accepting_new_work` is always declared because it follows directly from `state`; the remaining members are present only when the producer observed and recorded them.",
+      "required": ["accepting_new_work"],
+      "properties": {
+        "accepting_new_work": {
+          "type": "boolean"
+        },
+        "loaded_artifact_digests": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_model_instance_schema_json_Sha256Digest"
+          },
+          "description": "Digests of the exact artifacts this generation loaded, when the producer records the loaded set. An empty array records that nothing was loaded; an absent member records that the loaded set was not recorded."
+        },
+        "warmed_capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(asr|tts|voice|audio)\\.[a-z0-9_.-]{2,64}$"
+          },
+          "description": "Capabilities this generation warmed, when the producer records the warmed set."
+        },
+        "ready_at": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Time this generation began accepting new work, when recorded; null means the transition was not recorded."
+        }
+      }
+    },
+    "External_model_instance_schema_json_ObservedFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Observed timing and termination facts for this generation. Every member is optional: a producer that did not record a fact omits it rather than inventing one.",
+      "properties": {
+        "started_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Recorded process or container start time. A producer that only tracks readiness and stop transitions does not record it."
+        },
+        "last_heartbeat_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Recorded most recent heartbeat. A producer without a heartbeat channel does not record it."
+        },
+        "stopped_at": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Time the physical stop was verified, when recorded; null means the instance was not observed stopped."
+        },
+        "stop_evidence": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_model_instance_schema_json_StopEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Instance-level physical stop evidence, when the producer recorded it."
+        }
+      }
+    },
+    "External_model_instance_schema_json_StopEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Instance-level physical stop evidence: the process or container exited, its reserved resources were released, and the observation was verified. Lease and submit-intent cleanup evidence is execution-level, carries its own kinds, and is not reported here.",
+      "required": ["process_or_container_exited", "resources_released_confirmed", "verified_at"],
+      "properties": {
+        "process_or_container_exited": {
+          "const": true
+        },
+        "resources_released_confirmed": {
+          "const": true
+        },
+        "verified_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "exit_code": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 255
+        },
+        "runtime_container_id": {
+          "type": ["string", "null"],
+          "maxLength": 128
+        }
+      }
+    },
+    "External_model_instance_schema_json_ControllerFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["controller_id", "intent_id"],
+      "properties": {
+        "controller_id": {
+          "$ref": "#/$defs/External_model_instance_schema_json_Identifier"
+        },
+        "intent_id": {
+          "$ref": "#/$defs/External_model_instance_schema_json_Identifier"
+        },
+        "template_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
     },
     "AuditEventList": {
       "type": "object",
@@ -2137,6 +2838,246 @@
       "required": ["headers", "body"]
     },
     "HttpResponse_listModelBindings_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_listModelInstances": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {
+            "cursor": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            },
+            "host_node_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "state": {
+              "$ref": "#/$defs/InstanceState"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      },
+      "required": []
+    },
+    "HttpResponse_listModelInstances_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ModelInstanceList"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listModelInstances_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listModelInstances_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listModelInstances_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_getModelInstance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "instance_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": ["instance_id", "generation"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      },
+      "required": ["path"]
+    },
+    "HttpResponse_getModelInstance_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ModelRuntimeInstance"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getModelInstance_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getModelInstance_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getModelInstance_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getModelInstance_503": {
       "type": "object",
       "additionalProperties": false,
       "properties": {

@@ -26,6 +26,7 @@ from speechnexus_backend.binding_runtime import (
 )
 from speechnexus_backend.job_runtime import JobRuntime
 from speechnexus_backend.model_catalog_runtime import ModelCatalogRuntime
+from speechnexus_backend.model_instance_runtime import ModelInstanceRuntime
 from speechnexus_backend.profile_runtime import ProfileRuntime
 from speechnexus_backend.pronunciation_runtime import (
     PronunciationPublisherRuntime,
@@ -45,6 +46,7 @@ from speechnexus_backend.speech.application.binding_publication import (
 from speechnexus_backend.speech.application.binding_summaries import BindingSummaryService
 from speechnexus_backend.speech.application.capability_snapshot import CapabilityPolicy
 from speechnexus_backend.speech.application.job_cancellation import JobCancellationService
+from speechnexus_backend.speech.application.model_instances import ModelInstanceService
 from speechnexus_backend.speech.application.profile_drafts import ProfileDrafts
 from speechnexus_backend.speech.application.pronunciation_drafts import (
     PronunciationReader,
@@ -101,6 +103,7 @@ from speechnexus_backend.speech.interfaces.http.middleware import (
 from speechnexus_backend.speech.interfaces.http.model_bindings import (
     create_model_binding_list_router,
 )
+from speechnexus_backend.speech.interfaces.http.model_instances import create_model_instance_router
 from speechnexus_backend.speech.interfaces.http.models import ModelCatalogue, create_model_router
 from speechnexus_backend.speech.interfaces.http.profile_contract import profile_http_contract
 from speechnexus_backend.speech.interfaces.http.profile_ingress import ProfileIngress
@@ -216,6 +219,7 @@ def create_app(
     resource_pools: ResourcePoolService | None = None,
     binding_summaries: BindingSummaryService | None = None,
     audit_events: AuditEventService | None = None,
+    model_instances: ModelInstanceService | None = None,
     profiles: ProfileDrafts | None = None,
     bindings: BindingDrafts | None = None,
     binding_defaults: BindingDefaultDrafts | None = None,
@@ -297,6 +301,18 @@ def create_app(
         if audit_events is not None:
             return audit_events
         return audit_runtime.service if audit_runtime is not None else None
+
+    model_instance_runtime = (
+        ModelInstanceRuntime(resolved_settings)
+        if model_instances is None
+        and resolved_settings.model_instance_reader_database_url is not None
+        else None
+    )
+
+    def get_model_instances() -> ModelInstanceService | None:
+        if model_instances is not None:
+            return model_instances
+        return model_instance_runtime.service if model_instance_runtime is not None else None
 
     artifact_runtime = (
         ArtifactRuntime(resolved_settings)
@@ -518,6 +534,9 @@ def create_app(
             if audit_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, audit_runtime.close)
                 await run_in_threadpool(audit_runtime.open)
+            if model_instance_runtime is not None:
+                resources.push_async_callback(run_in_threadpool, model_instance_runtime.close)
+                await run_in_threadpool(model_instance_runtime.open)
             if workspace_writer_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, workspace_writer_runtime.close)
                 await run_in_threadpool(workspace_writer_runtime.open)
@@ -651,6 +670,7 @@ def create_app(
     app.include_router(create_resource_pool_router(get_resource_pools))
     app.include_router(create_model_binding_list_router(get_binding_summaries))
     app.include_router(create_audit_event_router(get_audit_events))
+    app.include_router(create_model_instance_router(get_model_instances))
     app.include_router(create_profile_router(get_profiles))
     app.include_router(create_pronunciation_router(get_pronunciations))
     app.include_router(

@@ -1689,16 +1689,46 @@ def test_binding_instance_and_qualification_positive_and_negative_examples() -> 
     with pytest.raises(ValidationError):
         qualification_validator.validate(missing_engine_identity)
 
-    stopped_instance = copy.deepcopy(
+    # The narrowed facts are optional: a ready instance needs its readiness
+    # time and a stopped one needs its stop time, while the facts the instance
+    # store does not record are no longer required anywhere.
+    assert instance_schema["$defs"]["ReadinessFacts"]["required"] == ["accepting_new_work"]
+    assert "required" not in instance_schema["$defs"]["ObservedFacts"]
+    assert instance_schema["$defs"]["StopEvidence"]["required"] == [
+        "process_or_container_exited",
+        "resources_released_confirmed",
+        "verified_at",
+    ]
+    stopped_example = copy.deepcopy(
         next(
             example
             for example in cast(list[dict[str, Any]], instance_schema["examples"])
             if example["state"] == "stopped"
         )
     )
-    stopped_instance["observed"]["stop_evidence"] = None
+    stopped_without_evidence = copy.deepcopy(stopped_example)
+    stopped_without_evidence["observed"]["stop_evidence"] = None
+    instance_validator.validate(stopped_without_evidence)
+    stopped_instance = copy.deepcopy(stopped_example)
+    del stopped_instance["observed"]["stopped_at"]
     with pytest.raises(ValidationError):
         instance_validator.validate(stopped_instance)
+    incomplete_evidence = copy.deepcopy(stopped_example)
+    del incomplete_evidence["observed"]["stop_evidence"]["resources_released_confirmed"]
+    with pytest.raises(ValidationError):
+        instance_validator.validate(incomplete_evidence)
+    execution_style_evidence = copy.deepcopy(stopped_example)
+    execution_style_evidence["observed"]["stop_evidence"]["kind"] = "process_or_container_exited"
+    with pytest.raises(ValidationError):
+        instance_validator.validate(execution_style_evidence)
+    # The recorded observations stay optional; an execution-level fact the
+    # instance store does not hold is not part of this document.
+    invented_execution_fact = copy.deepcopy(
+        cast(list[dict[str, Any]], instance_schema["examples"])[0]
+    )
+    invented_execution_fact["observed"]["exit_code"] = 0
+    with pytest.raises(ValidationError):
+        instance_validator.validate(invented_execution_fact)
 
 
 def test_model_binding_publication_separates_target_and_current_revision() -> None:

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SpeechNexus administration API",
-    "version": "0.1.0.dev8",
+    "version": "0.1.0.dev9",
     "description": "Deployment-scoped administration and observation API. These routes do not\nestablish a user identity, role, or tenant boundary. A deployment may expose\nthem on a separate listener or route allowlist, but the API itself must not\npretend that hiding a navigation entry is authorization.\n\nModel binding revisions and runtime instances are separate resources.\nCapacity manifest and qualification report documents stay in the release\nevidence chain; the admin API exposes only their recorded identity and\nlocator. No response exposes private artifact paths, engine endpoints,\ncredentials, or arbitrary container control.\n"
   },
   "security": [
@@ -327,6 +327,120 @@
         }
       }
     },
+    "/v1/nexus/admin/model-instances": {
+      "get": {
+        "tags": ["model-instances"],
+        "operationId": "listModelInstances",
+        "summary": "List observed runtime instances",
+        "description": "Returns recorded instance generations ordered by `instance_id`\nascending, then by `generation` ascending. That pair is the instance\ntable's primary key, so the ordering is total: a page boundary is a\nposition in the key frontier, never an offset into an unordered scan.\n`cursor` resumes strictly after the position it records and is bound to\nthe `host_node_id` and `state` filters that produced it; reusing it\nunder another filter returns 400 `invalid_model_instance_cursor`.\n`limit` defaults to 50 and must be between 1 and 100. Any other limit, an\nunknown query parameter, or a filter value outside the declared schema\nreturns 400 `invalid_model_instance_request`. `has_more` is false and\n`next_cursor` is null on the last page and for an empty collection.\n\nEach row reports the facts recorded for that generation in the runtime\ninstance store and its binding revision: identity, binding revision,\npool, generation, configuration digest, observed state, readiness time,\nstop time and quarantine reason. Facts that store does not record are\nomitted instead of synthesized; in particular a row never carries loaded\nartifact digests, the process start time, a heartbeat time or instance\nstop evidence.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "name": "host_node_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Identifier"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/InstanceState"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Runtime instances.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelInstanceList"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/v1/nexus/admin/model-instances/{instance_id}/generations/{generation}": {
+      "get": {
+        "tags": ["model-instances"],
+        "operationId": "getModelInstance",
+        "summary": "Get one observed runtime instance",
+        "description": "Returns one recorded instance generation with the same recorded facts a\nlist row carries. The lookup has two layers, and the two misses share\nthe 404 status but not the code: `error.code` is\n`model_instance_unknown` when no generation of `instance_id` is\nrecorded, and `model_instance_generation_unknown` when the instance is\nrecorded but the requested `generation` is not. Malformed path values\nreturn 400 `invalid_model_instance_request`; an unreadable store returns\n503 instead of reporting absence.\n",
+        "parameters": [
+          {
+            "name": "instance_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Identifier"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/GenerationPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Runtime instance.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelRuntimeInstance"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/ModelInstanceNotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
     "/v1/nexus/audit-events": {
       "get": {
         "tags": ["audit"],
@@ -431,6 +545,15 @@
         "required": true,
         "schema": {
           "$ref": "#/components/schemas/Identifier"
+        }
+      },
+      "GenerationPath": {
+        "name": "generation",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     },
@@ -1258,6 +1381,611 @@
         "type": "string",
         "enum": ["experimental", "best_effort", "production"]
       },
+      "InstanceState": {
+        "$ref": "#/components/schemas/External_shared_runtime_states_schema_json_InstanceState"
+      },
+      "External_shared_runtime_states_schema_json_InstanceState": {
+        "type": "string",
+        "enum": [
+          "preparing",
+          "loading",
+          "warming_up",
+          "ready",
+          "draining",
+          "stopping",
+          "stopped",
+          "failed",
+          "quarantined"
+        ],
+        "description": "Observed lifecycle state. Only `stopped` proves that the process or container and its reserved resources are gone; `failed` and `quarantined` may still retain capacity."
+      },
+      "ModelInstanceList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["object", "data", "has_more", "next_cursor"],
+        "properties": {
+          "object": {
+            "const": "nexus.list"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelRuntimeInstance"
+            }
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "ModelRuntimeInstance": {
+        "$ref": "#/components/schemas/External_model_instance_schema_json_Root"
+      },
+      "External_model_instance_schema_json_Root": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ModelRuntimeInstance",
+        "description": "Dynamic runtime instance fact for a node-scoped engine process or container. This schema is internal to admin, scheduler, deployment controller, and execution gateway; it is not a public model or voice DTO. A new generation is required after every restart. Every observed fact is reported only when its producer actually recorded it; a producer that does not record a fact omits the member instead of synthesizing a value. `stop_evidence` is the instance-level physical stop document and never the execution-level lease or submit-intent evidence.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "instance_id",
+          "host_node_id",
+          "gateway_id",
+          "binding",
+          "binding_revision_id",
+          "pool_id",
+          "generation",
+          "config_digest",
+          "state",
+          "readiness",
+          "observed"
+        ],
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "1.0.0"
+          },
+          "instance_id": {
+            "$ref": "#/components/schemas/External_model_instance_schema_json_Identifier"
+          },
+          "host_node_id": {
+            "$ref": "#/components/schemas/External_model_instance_schema_json_Identifier"
+          },
+          "gateway_id": {
+            "$ref": "#/components/schemas/External_model_instance_schema_json_Identifier"
+          },
+          "binding": {
+            "$ref": "#/components/schemas/External_model_instance_schema_json_BindingReference"
+          },
+          "binding_revision_id": {
+            "$ref": "#/components/schemas/External_model_instance_schema_json_Identifier",
+            "description": "Must equal ModelBindingRevision.revision_id for the referenced binding."
+          },
+          "pool_id": {
+            "$ref": "#/components/schemas/External_model_instance_schema_json_PoolId"
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Monotonic per-instance generation allocated by the deployment controller. Stale generations must be fenced."
+          },
+          "config_digest": {
+            "$ref": "#/components/schemas/External_model_instance_schema_json_Sha256Digest"
+          },
+          "state": {
+            "$ref": "#/components/schemas/External_model_instance_schema_json_InstanceState"
+          },
+          "readiness": {
+            "$ref": "#/components/schemas/External_model_instance_schema_json_ReadinessFacts"
+          },
+          "observed": {
+            "$ref": "#/components/schemas/External_model_instance_schema_json_ObservedFacts"
+          },
+          "controller": {
+            "$ref": "#/components/schemas/External_model_instance_schema_json_ControllerFacts"
+          },
+          "quarantine_reason": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000,
+                "pattern": "\\S"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "ready"
+                }
+              },
+              "required": ["state"]
+            },
+            "then": {
+              "properties": {
+                "readiness": {
+                  "required": ["accepting_new_work", "ready_at"],
+                  "properties": {
+                    "accepting_new_work": {
+                      "const": true
+                    },
+                    "ready_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "not": {
+                    "const": "ready"
+                  }
+                }
+              },
+              "required": ["state"]
+            },
+            "then": {
+              "properties": {
+                "readiness": {
+                  "properties": {
+                    "accepting_new_work": {
+                      "const": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "draining"
+                }
+              },
+              "required": ["state"]
+            },
+            "then": {
+              "properties": {
+                "readiness": {
+                  "properties": {
+                    "accepting_new_work": {
+                      "const": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "stopped"
+                }
+              },
+              "required": ["state"]
+            },
+            "then": {
+              "properties": {
+                "observed": {
+                  "required": ["stopped_at"]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "quarantined"
+                }
+              },
+              "required": ["state"]
+            },
+            "then": {
+              "required": ["quarantine_reason"],
+              "properties": {
+                "quarantine_reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "not": {
+                    "const": "quarantined"
+                  }
+                }
+              },
+              "required": ["state"]
+            },
+            "then": {
+              "properties": {
+                "quarantine_reason": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ],
+        "$defs": {
+          "Identifier": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+          },
+          "Sha256Digest": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Sha256Digest"
+          },
+          "PoolId": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_PoolId"
+          },
+          "InstanceState": {
+            "$ref": "#/components/schemas/External_shared_runtime_states_schema_json_InstanceState"
+          },
+          "BindingReference": {
+            "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+          },
+          "ReadinessFacts": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Readiness facts for this generation. `accepting_new_work` is always declared because it follows directly from `state`; the remaining members are present only when the producer observed and recorded them.",
+            "required": ["accepting_new_work"],
+            "properties": {
+              "accepting_new_work": {
+                "type": "boolean"
+              },
+              "loaded_artifact_digests": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/External_model_instance_schema_json_Sha256Digest"
+                },
+                "description": "Digests of the exact artifacts this generation loaded, when the producer records the loaded set. An empty array records that nothing was loaded; an absent member records that the loaded set was not recorded."
+              },
+              "warmed_capabilities": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "pattern": "^(asr|tts|voice|audio)\\.[a-z0-9_.-]{2,64}$"
+                },
+                "description": "Capabilities this generation warmed, when the producer records the warmed set."
+              },
+              "ready_at": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Time this generation began accepting new work, when recorded; null means the transition was not recorded."
+              }
+            }
+          },
+          "StopEvidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Instance-level physical stop evidence: the process or container exited, its reserved resources were released, and the observation was verified. Lease and submit-intent cleanup evidence is execution-level, carries its own kinds, and is not reported here.",
+            "required": [
+              "process_or_container_exited",
+              "resources_released_confirmed",
+              "verified_at"
+            ],
+            "properties": {
+              "process_or_container_exited": {
+                "const": true
+              },
+              "resources_released_confirmed": {
+                "const": true
+              },
+              "verified_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "exit_code": {
+                "type": ["integer", "null"],
+                "minimum": 0,
+                "maximum": 255
+              },
+              "runtime_container_id": {
+                "type": ["string", "null"],
+                "maxLength": 128
+              }
+            }
+          },
+          "ObservedFacts": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Observed timing and termination facts for this generation. Every member is optional: a producer that did not record a fact omits it rather than inventing one.",
+            "properties": {
+              "started_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "Recorded process or container start time. A producer that only tracks readiness and stop transitions does not record it."
+              },
+              "last_heartbeat_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "Recorded most recent heartbeat. A producer without a heartbeat channel does not record it."
+              },
+              "stopped_at": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Time the physical stop was verified, when recorded; null means the instance was not observed stopped."
+              },
+              "stop_evidence": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/External_model_instance_schema_json_StopEvidence"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Instance-level physical stop evidence, when the producer recorded it."
+              }
+            }
+          },
+          "ControllerFacts": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["controller_id", "intent_id"],
+            "properties": {
+              "controller_id": {
+                "$ref": "#/components/schemas/External_model_instance_schema_json_Identifier"
+              },
+              "intent_id": {
+                "$ref": "#/components/schemas/External_model_instance_schema_json_Identifier"
+              },
+              "template_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            }
+          }
+        },
+        "examples": [
+          {
+            "schema_version": "1.0.0",
+            "instance_id": "inst-asr-1",
+            "host_node_id": "node-gb10-1",
+            "gateway_id": "gateway-1",
+            "binding": {
+              "id": "asr-quality",
+              "revision": "7"
+            },
+            "binding_revision_id": "mbrev-asr-quality-7",
+            "pool_id": "asr-realtime",
+            "generation": 42,
+            "config_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+            "state": "ready",
+            "readiness": {
+              "accepting_new_work": true,
+              "ready_at": "2026-10-22T09:00:10Z"
+            },
+            "observed": {
+              "stopped_at": null,
+              "stop_evidence": null
+            },
+            "controller": {
+              "controller_id": "node-controller-1",
+              "intent_id": "intent-prepare-42",
+              "template_id": "approved-asr-realtime-v7"
+            },
+            "quarantine_reason": null
+          },
+          {
+            "schema_version": "1.0.0",
+            "instance_id": "inst-tts-2",
+            "host_node_id": "node-gb10-1",
+            "gateway_id": "gateway-1",
+            "binding": {
+              "id": "tts-interactive",
+              "revision": "5"
+            },
+            "binding_revision_id": "mbrev-tts-interactive-5",
+            "pool_id": "tts-realtime",
+            "generation": 7,
+            "config_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+            "state": "stopped",
+            "readiness": {
+              "accepting_new_work": false,
+              "ready_at": "2026-10-22T08:00:00Z"
+            },
+            "observed": {
+              "stopped_at": "2026-10-22T10:00:05Z",
+              "stop_evidence": {
+                "process_or_container_exited": true,
+                "resources_released_confirmed": true,
+                "verified_at": "2026-10-22T10:00:05Z",
+                "exit_code": 0,
+                "runtime_container_id": "container-tts-2"
+              }
+            },
+            "controller": {
+              "controller_id": "node-controller-1",
+              "intent_id": "intent-stop-7",
+              "template_id": "approved-tts-realtime-v7"
+            },
+            "quarantine_reason": null
+          }
+        ]
+      },
+      "External_model_instance_schema_json_Identifier": {
+        "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+      },
+      "External_model_instance_schema_json_BindingReference": {
+        "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+      },
+      "External_model_instance_schema_json_PoolId": {
+        "$ref": "#/components/schemas/External_shared_identifiers_schema_json_PoolId"
+      },
+      "External_model_instance_schema_json_Sha256Digest": {
+        "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Sha256Digest"
+      },
+      "External_shared_identifiers_schema_json_Sha256Digest": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      },
+      "External_model_instance_schema_json_InstanceState": {
+        "$ref": "#/components/schemas/External_shared_runtime_states_schema_json_InstanceState"
+      },
+      "External_model_instance_schema_json_ReadinessFacts": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Readiness facts for this generation. `accepting_new_work` is always declared because it follows directly from `state`; the remaining members are present only when the producer observed and recorded them.",
+        "required": ["accepting_new_work"],
+        "properties": {
+          "accepting_new_work": {
+            "type": "boolean"
+          },
+          "loaded_artifact_digests": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/External_model_instance_schema_json_Sha256Digest"
+            },
+            "description": "Digests of the exact artifacts this generation loaded, when the producer records the loaded set. An empty array records that nothing was loaded; an absent member records that the loaded set was not recorded."
+          },
+          "warmed_capabilities": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^(asr|tts|voice|audio)\\.[a-z0-9_.-]{2,64}$"
+            },
+            "description": "Capabilities this generation warmed, when the producer records the warmed set."
+          },
+          "ready_at": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Time this generation began accepting new work, when recorded; null means the transition was not recorded."
+          }
+        }
+      },
+      "External_model_instance_schema_json_ObservedFacts": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Observed timing and termination facts for this generation. Every member is optional: a producer that did not record a fact omits it rather than inventing one.",
+        "properties": {
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Recorded process or container start time. A producer that only tracks readiness and stop transitions does not record it."
+          },
+          "last_heartbeat_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Recorded most recent heartbeat. A producer without a heartbeat channel does not record it."
+          },
+          "stopped_at": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Time the physical stop was verified, when recorded; null means the instance was not observed stopped."
+          },
+          "stop_evidence": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/External_model_instance_schema_json_StopEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Instance-level physical stop evidence, when the producer recorded it."
+          }
+        }
+      },
+      "External_model_instance_schema_json_StopEvidence": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Instance-level physical stop evidence: the process or container exited, its reserved resources were released, and the observation was verified. Lease and submit-intent cleanup evidence is execution-level, carries its own kinds, and is not reported here.",
+        "required": ["process_or_container_exited", "resources_released_confirmed", "verified_at"],
+        "properties": {
+          "process_or_container_exited": {
+            "const": true
+          },
+          "resources_released_confirmed": {
+            "const": true
+          },
+          "verified_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "exit_code": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "maximum": 255
+          },
+          "runtime_container_id": {
+            "type": ["string", "null"],
+            "maxLength": 128
+          }
+        }
+      },
+      "External_model_instance_schema_json_ControllerFacts": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["controller_id", "intent_id"],
+        "properties": {
+          "controller_id": {
+            "$ref": "#/components/schemas/External_model_instance_schema_json_Identifier"
+          },
+          "intent_id": {
+            "$ref": "#/components/schemas/External_model_instance_schema_json_Identifier"
+          },
+          "template_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
       "AuditEventList": {
         "type": "object",
         "additionalProperties": false,
@@ -1452,6 +2180,16 @@
             }
           }
         },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "ModelInstanceNotFound": {
+        "description": "No recorded instance generation matches the request. Both misses use\n404; `error.code` distinguishes them. `model_instance_unknown` means no\ngeneration of the instance id is recorded. `model_instance_generation_unknown`\nmeans the instance is recorded but the requested generation is not.\n",
         "content": {
           "application/json": {
             "schema": {

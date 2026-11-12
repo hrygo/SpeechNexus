@@ -164,6 +164,43 @@ _APPROVED_RESPONSE_REPLACEMENTS: dict[tuple[str, str, str, str, str, str], dict[
         "from_schema": "./qualification-report.schema.json",
         "to_schema": "#/components/schemas/QualificationReportRecord",
     },
+    (
+        "contracts/admin-openapi.yaml",
+        "/v1/nexus/admin/model-instances",
+        "get",
+        "200",
+        "0.1.0.dev8",
+        "0.1.0.dev9",
+    ): {
+        "issue": "#605",
+        "reason": (
+            "The recorded instance projection no longer requires facts the runtime "
+            "instance store does not hold (loaded artifact digests, process start and "
+            "heartbeat times, and the instance stop document's evidence kind and "
+            "digest); the response reference is unchanged on both sides."
+        ),
+        "from_schema": "#/components/schemas/ModelInstanceList",
+        "to_schema": "#/components/schemas/ModelInstanceList",
+    },
+    (
+        "contracts/admin-openapi.yaml",
+        "/v1/nexus/admin/model-instances/{instance_id}/generations/{generation}",
+        "get",
+        "200",
+        "0.1.0.dev8",
+        "0.1.0.dev9",
+    ): {
+        "issue": "#605",
+        "reason": (
+            "The recorded instance projection no longer requires facts the runtime "
+            "instance store does not hold (loaded artifact digests, process start and "
+            "heartbeat times, and the instance stop document's evidence kind and "
+            "digest); the single read now names the same document through the declared "
+            "component ModelRuntimeInstance."
+        ),
+        "from_schema": "./model-instance.schema.json",
+        "to_schema": "#/components/schemas/ModelRuntimeInstance",
+    },
 }
 
 

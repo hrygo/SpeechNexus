@@ -54,6 +54,8 @@ def test_packaged_http_surface_is_closed_and_matches_real_operations() -> None:
         "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}",
         "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/activations",
         "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/retirements",
+        "/v1/nexus/admin/model-instances",
+        "/v1/nexus/admin/model-instances/{instance_id}/generations/{generation}",
         "/v1/nexus/audit-events",
         "/v1/nexus/pronunciation-sets",
         "/v1/nexus/pronunciation-sets/{pronunciation_id}/revisions/{revision}",

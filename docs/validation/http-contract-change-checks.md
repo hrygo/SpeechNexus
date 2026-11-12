@@ -8,7 +8,7 @@ fake behavior and upgrade impact, followed by consumer verification.
 
 | Source | Version and paths checked on 2026-11-05 | Compared surface |
 | --- | --- | --- |
-| admin-openapi.yaml | 0.1.0.dev8; 20 paths | All declared paths, including request/response Nexus fields |
+| admin-openapi.yaml | 0.1.0.dev9; 20 paths | All declared paths, including request/response Nexus fields |
 | workbench-openapi.yaml | 0.1.0.dev2; 41 paths | All declared paths |
 | internal/runtime-control.openapi.yaml | 0.1.0.dev1; 5 paths | All declared paths |
 | internal/execution-control.openapi.yaml | 0.4.0.dev1; 9 paths | All declared paths |
@@ -124,8 +124,16 @@ and every response field except `content` and `description` must be unchanged.
 Only findings under that exact response pointer are filtered. A request-body,
 parameter, header or other-status change still rejects. Each approval is
 printed as `approved response replacement:` and listed in
-`approved_response_replacements` in JSON mode. New entries must add matching
-negative cases and update the frozen assertion in
+`approved_response_replacements` in JSON mode.
+
+The same registry covers a response body edited in place. An entry matches when
+the baseline and the current contract name the response schema exactly as the
+entry records, so it covers both an unchanged reference whose body narrows and a
+reference retargeted at the declared component that wraps the same document; in
+either case it still filters only that exact response pointer for its exact
+version pair. The version bump keeps the approval from silently covering a later
+change under the same version. New entries must add matching negative cases and
+update the frozen assertion in
 [`tests/contract/test_approved_http_parameter_and_response_changes.py`](../../tests/contract/test_approved_http_parameter_and_response_changes.py).
 
 ## What the check establishes

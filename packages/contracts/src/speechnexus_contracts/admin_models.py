@@ -418,6 +418,47 @@ class AuditChangeSummary(TypedDict):
     reason: NotRequired[str | None]
 
 
+type ExternalModelInstanceSchemaJsonIdentifier = ExternalSharedIdentifiersSchemaJsonIdentifier
+type ExternalModelInstanceSchemaJsonBindingReference = (
+    ExternalSharedReferencesSchemaJsonResourceReference
+)
+type ExternalModelInstanceSchemaJsonPoolId = ExternalSharedIdentifiersSchemaJsonPoolId
+type ExternalModelInstanceSchemaJsonSha256Digest = ExternalSharedIdentifiersSchemaJsonSha256Digest
+type ExternalSharedRuntimeStatesSchemaJsonInstanceState = Literal[
+    "preparing",
+    "loading",
+    "warming_up",
+    "ready",
+    "draining",
+    "stopping",
+    "stopped",
+    "failed",
+    "quarantined",
+]
+type WarmedCapability = str
+
+
+class ExternalModelInstanceSchemaJsonReadinessFacts(TypedDict):
+    accepting_new_work: bool
+    loaded_artifact_digests: NotRequired[list[ExternalModelInstanceSchemaJsonSha256Digest]]
+    warmed_capabilities: NotRequired[list[WarmedCapability]]
+    ready_at: NotRequired[str | None]
+
+
+class ExternalModelInstanceSchemaJsonStopEvidence(TypedDict):
+    process_or_container_exited: Literal[True]
+    resources_released_confirmed: Literal[True]
+    verified_at: str
+    exit_code: NotRequired[int | None]
+    runtime_container_id: NotRequired[str | None]
+
+
+class ExternalModelInstanceSchemaJsonControllerFacts(TypedDict):
+    controller_id: ExternalModelInstanceSchemaJsonIdentifier
+    intent_id: ExternalModelInstanceSchemaJsonIdentifier
+    template_id: NotRequired[str]
+
+
 type Identifier = ExternalSharedIdentifiersSchemaJsonIdentifier
 type Revision = ExternalSharedIdentifiersSchemaJsonRevision
 
@@ -616,6 +657,18 @@ class AuditEventList(TypedDict):
     next_cursor: str | None
 
 
+type ExternalModelInstanceSchemaJsonInstanceState = (
+    ExternalSharedRuntimeStatesSchemaJsonInstanceState
+)
+
+
+class ExternalModelInstanceSchemaJsonObservedFacts(TypedDict):
+    started_at: NotRequired[str]
+    last_heartbeat_at: NotRequired[str]
+    stopped_at: NotRequired[str | None]
+    stop_evidence: NotRequired[ExternalModelInstanceSchemaJsonStopEvidence | None]
+
+
 class WorkspaceCreateRequest(TypedDict):
     display_name: str
     policy_id: NotRequired[Identifier]
@@ -716,6 +769,23 @@ class ProfilePublicationRequest(TypedDict):
     validation: ExternalScenarioProfileSchemaJsonProfileValidation
 
 
+class ExternalModelInstanceSchemaJsonRoot(TypedDict):
+    schema_version: Literal["1.0.0"]
+    instance_id: ExternalModelInstanceSchemaJsonIdentifier
+    host_node_id: ExternalModelInstanceSchemaJsonIdentifier
+    gateway_id: ExternalModelInstanceSchemaJsonIdentifier
+    binding: ExternalModelInstanceSchemaJsonBindingReference
+    binding_revision_id: ExternalModelInstanceSchemaJsonIdentifier
+    pool_id: ExternalModelInstanceSchemaJsonPoolId
+    generation: int
+    config_digest: ExternalModelInstanceSchemaJsonSha256Digest
+    state: ExternalModelInstanceSchemaJsonInstanceState
+    readiness: ExternalModelInstanceSchemaJsonReadinessFacts
+    observed: ExternalModelInstanceSchemaJsonObservedFacts
+    controller: NotRequired[ExternalModelInstanceSchemaJsonControllerFacts]
+    quarantine_reason: NotRequired[str | None]
+
+
 class ExternalSharedReceiptsSchemaJsonExecutionReceipt(TypedDict):
     receipt_id: ExternalSharedIdentifiersSchemaJsonIdentifier
     request_id: NotRequired[str | None]
@@ -767,6 +837,9 @@ class ExternalScenarioProfileSchemaJsonRoot(TypedDict):
     publication: Publication1
     validation: NotRequired[ExternalScenarioProfileSchemaJsonProfileValidation]
     supersedes_revision: NotRequired[ExternalScenarioProfileSchemaJsonRevision | None]
+
+
+type ModelRuntimeInstance = ExternalModelInstanceSchemaJsonRoot
 
 
 class ExternalSharedErrorsSchemaJsonOperationRecovery(TypedDict):
@@ -829,6 +902,13 @@ class ProfilePublishedRevision(TypedDict):
     supersedes_revision: NotRequired[ExternalScenarioProfileSchemaJsonRevision | None]
 
 
+class ModelInstanceList(TypedDict):
+    object: Literal["nexus.list"]
+    data: list[ModelRuntimeInstance]
+    has_more: bool
+    next_cursor: str | None
+
+
 class ExternalSharedErrorsSchemaJsonErrorBody(TypedDict):
     code: str
     type: ExternalSharedErrorsSchemaJsonErrorType
@@ -866,4 +946,6 @@ type AdminContracts = (
     | AuditEvent
     | AuditEventList
     | AuditChangeSummary
+    | ModelInstanceList
+    | ModelRuntimeInstance
 )

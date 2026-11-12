@@ -16,8 +16,31 @@ AUDIT_PATH = "/v1/nexus/audit-events"
 AUDIT_POINTER = f"{SOURCE}:paths/{AUDIT_PATH}/get"
 CAPACITY_PATH = "/v1/nexus/admin/capacity-manifests/{manifest_id}"
 CAPACITY_POINTER = f"{SOURCE}:paths/{CAPACITY_PATH}/get/responses/200"
+MODEL_INSTANCE_PATH = "/v1/nexus/admin/model-instances"
+MODEL_INSTANCE_POINTER = f"{SOURCE}:paths/{MODEL_INSTANCE_PATH}/get/responses/200"
+MODEL_INSTANCE_GENERATION_PATH = (
+    "/v1/nexus/admin/model-instances/{instance_id}/generations/{generation}"
+)
+MODEL_INSTANCE_GENERATION_POINTER = (
+    f"{SOURCE}:paths/{MODEL_INSTANCE_GENERATION_PATH}/get/responses/200"
+)
 BASE_VERSION = "0.1.0.dev7"
 CURRENT_VERSION = "0.1.0.dev8"
+NARROW_BASE_VERSION = "0.1.0.dev8"
+NARROW_CURRENT_VERSION = "0.1.0.dev9"
+MODEL_INSTANCE_REASON = (
+    "The recorded instance projection no longer requires facts the runtime "
+    "instance store does not hold (loaded artifact digests, process start and "
+    "heartbeat times, and the instance stop document's evidence kind and "
+    "digest); the response reference is unchanged on both sides."
+)
+MODEL_INSTANCE_SINGLE_READ_REASON = (
+    "The recorded instance projection no longer requires facts the runtime "
+    "instance store does not hold (loaded artifact digests, process start and "
+    "heartbeat times, and the instance stop document's evidence kind and "
+    "digest); the single read now names the same document through the declared "
+    "component ModelRuntimeInstance."
+)
 
 
 def module() -> ModuleType:
@@ -173,6 +196,32 @@ def test_the_parameter_and_response_registries_are_frozen() -> None:
             ),
             "from_schema": "./qualification-report.schema.json",
             "to_schema": "#/components/schemas/QualificationReportRecord",
+        },
+        (
+            SOURCE,
+            MODEL_INSTANCE_PATH,
+            "get",
+            "200",
+            NARROW_BASE_VERSION,
+            NARROW_CURRENT_VERSION,
+        ): {
+            "issue": "#605",
+            "reason": MODEL_INSTANCE_REASON,
+            "from_schema": "#/components/schemas/ModelInstanceList",
+            "to_schema": "#/components/schemas/ModelInstanceList",
+        },
+        (
+            SOURCE,
+            MODEL_INSTANCE_GENERATION_PATH,
+            "get",
+            "200",
+            NARROW_BASE_VERSION,
+            NARROW_CURRENT_VERSION,
+        ): {
+            "issue": "#605",
+            "reason": MODEL_INSTANCE_SINGLE_READ_REASON,
+            "from_schema": "./model-instance.schema.json",
+            "to_schema": "#/components/schemas/ModelRuntimeInstance",
         },
     }
 
@@ -334,3 +383,138 @@ def test_a_response_replacement_does_not_cover_a_different_status(
 
     assert remaining == [status_finding]
     assert len(approved) == 1
+
+
+def instance_document(
+    *, version: str, generation_schema: str = "./model-instance.schema.json"
+) -> dict[str, Any]:
+    """Synthetic responses whose in-place body is unchanged and only narrows.
+
+    ``generation_schema`` selects how the single read names the instance
+    document: the baseline points at the file, the narrowed contract at the
+    declared component that wraps the same file.
+    """
+
+    def operation(operation_id: str, schema: str) -> dict[str, Any]:
+        return {
+            "operationId": operation_id,
+            "responses": {
+                "200": {
+                    "description": "Recorded runtime instances.",
+                    "content": {"application/json": {"schema": {"$ref": schema}}},
+                }
+            },
+        }
+
+    return {
+        "openapi": "3.1.0",
+        "info": {"title": "Synthetic", "version": version},
+        "paths": {
+            MODEL_INSTANCE_PATH: {
+                "get": operation("listModelInstances", "#/components/schemas/ModelInstanceList")
+            },
+            MODEL_INSTANCE_GENERATION_PATH: {
+                "get": operation("getModelInstance", generation_schema)
+            },
+        },
+    }
+
+
+def apply_instance_narrowing(
+    monkeypatch: pytest.MonkeyPatch,
+    base: dict[str, Any],
+    current: dict[str, Any],
+    findings: list[str],
+) -> tuple[list[str], list[str]]:
+    loaded = module()
+    monkeypatch.setattr(
+        loaded,
+        "_APPROVED_RESPONSE_REPLACEMENTS",
+        {
+            key: value
+            for key, value in loaded._APPROVED_RESPONSE_REPLACEMENTS.items()
+            if key[1] in {MODEL_INSTANCE_PATH, MODEL_INSTANCE_GENERATION_PATH}
+        },
+    )
+    return cast(
+        tuple[list[str], list[str]],
+        loaded._apply_approved_response_replacements(
+            SOURCE,
+            base,
+            current,
+            base["info"]["version"],
+            current["info"]["version"],
+            findings,
+        ),
+    )
+
+
+def test_the_in_place_response_narrowing_is_filtered_at_its_exact_version_pair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = instance_document(version=NARROW_BASE_VERSION)
+    current = instance_document(
+        version=NARROW_CURRENT_VERSION,
+        generation_schema="#/components/schemas/ModelRuntimeInstance",
+    )
+    findings = [
+        f"{MODEL_INSTANCE_POINTER}/application/json/properties/data/items/$defs/ReadinessFacts: "
+        "response required guarantees removed: ['loaded_artifact_digests']",
+        f"{MODEL_INSTANCE_GENERATION_POINTER}/application/json/$defs/ObservedFacts: "
+        "response required guarantees removed: ['last_heartbeat_at', 'started_at']",
+    ]
+
+    remaining, approved = apply_instance_narrowing(monkeypatch, base, current, findings)
+
+    assert remaining == []
+    assert len(approved) == 2
+    assert (
+        f"{MODEL_INSTANCE_POINTER}: response schema replaced "
+        "#/components/schemas/ModelInstanceList -> "
+        "#/components/schemas/ModelInstanceList" in approved[0]
+    )
+    assert (
+        f"{MODEL_INSTANCE_GENERATION_POINTER}: response schema replaced "
+        "./model-instance.schema.json -> "
+        "#/components/schemas/ModelRuntimeInstance" in approved[1]
+    )
+    assert all("#605" in item for item in approved)
+
+
+def test_the_in_place_response_narrowing_is_not_active_without_the_version_bump(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = instance_document(version=NARROW_BASE_VERSION)
+    current = instance_document(version=NARROW_BASE_VERSION)
+    findings = [
+        f"{MODEL_INSTANCE_POINTER}/application/json/$defs/StopEvidence: "
+        "response required guarantees removed: ['digest', 'kind']"
+    ]
+
+    remaining, approved = apply_instance_narrowing(monkeypatch, base, current, findings)
+
+    assert remaining == findings
+    assert approved == []
+
+
+def test_the_in_place_response_narrowing_never_covers_another_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = instance_document(version=NARROW_BASE_VERSION)
+    current = instance_document(
+        version=NARROW_CURRENT_VERSION,
+        generation_schema="#/components/schemas/ModelRuntimeInstance",
+    )
+    other = f"{SOURCE}:paths//v1/nexus/admin/model-bindings/get/responses/200"
+    other_finding = f"{other}/application/json/$defs/ModelBindingSummary: property removed"
+    findings = [
+        f"{MODEL_INSTANCE_POINTER}/application/json: response required guarantees removed: []",
+        f"{MODEL_INSTANCE_GENERATION_POINTER}/application/json: "
+        "response required guarantees removed: []",
+        other_finding,
+    ]
+
+    remaining, approved = apply_instance_narrowing(monkeypatch, base, current, findings)
+
+    assert remaining == [other_finding]
+    assert len(approved) == 2

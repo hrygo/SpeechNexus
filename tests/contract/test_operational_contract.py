@@ -208,6 +208,8 @@ def test_backend_exposes_valid_operational_openapi() -> None:
         "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}",
         "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/activations",
         "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/retirements",
+        "/v1/nexus/admin/model-instances",
+        "/v1/nexus/admin/model-instances/{instance_id}/generations/{generation}",
         "/v1/nexus/audit-events",
         "/v1/nexus/pronunciation-sets",
         "/v1/nexus/pronunciation-sets/{pronunciation_id}/revisions/{revision}",

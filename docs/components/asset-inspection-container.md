@@ -124,7 +124,7 @@ X-Request-Id: <opaque>              # 仅用于日志关联，不含内容
 | 400 | `bad_request` | `Content-Length` 缺失/不符、头非法 | `503`（内部契约违例，不暴露） |
 | 401 | `unauthorized` | token 缺失或错误 | `503`（配置错误） |
 | 413 | `encoded_too_large` | 超过检查器字节上限 | `503`（两侧上限不一致，是配置问题，不是内容拒绝） |
-| 415 | `unsupported_media` | 配方不接受该媒体类型 | `503`（配置问题） |
+| 415 | `unsupported_media` | 配方不接受该媒体类型 | `AssetError("invalid_asset_audio")` → 公开 `422`，**不落库** |
 | 422 | `invalid_media` | 完整读取后判定不是合格 WAV（截断、RIFF 不一致、块结构异常、非 PCM） | `AssetError("invalid_asset_audio")` → 公开 `422`，**不落库** |
 | 422 | `media_limit_exceeded` | 时长或解码预算被媒体本身超出（期限未到期） | `AssetError("asset_audio_too_long")` → 公开 `422`，**不落库** |
 | 429 | `busy` | 并发槽已满（无排队） | `503`（可重试） |
@@ -132,6 +132,8 @@ X-Request-Id: <opaque>              # 仅用于日志关联，不含内容
 | 504 | `deadline_exceeded` | 墙钟期限到，子进程已被杀死 | `503`（可重试） |
 
 同一个 `media_limit_exceeded` 可能来自字节/时长上限，也可能来自解码器自身的协作式超时。检查器按自己的墙钟是否到期区分：已到期记 `504`，未到期记 `422`。
+
+`413` 与 `415` 的内容归属不同。公开入口已按 `asset_max_bytes + 16 KiB` 先拒绝超长 body，字节数在到达检查器之前就由本进程约束，因此检查器返回 `413` 只可能表示两侧字节上限不一致——那是部署配置问题。媒体类型不经公开入口过滤：调用方的 MP3 或文本会原样送到检查器，`415` 描述的是这份文件本身，重试同一份字节不会成功，因此它与 `invalid_media` 同属内容判决，回公开 `422 invalid_asset_audio`。
 
 无法连接、连接复位、读超时、响应超限、JSON 非法、回执字段不合法，一律 `503`。这些失败**不**产生 `rejected` 行，也**不**被解释成内容非法。
 

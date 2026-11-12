@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SpeechNexus internal asset inspection API",
-    "version": "0.1.0.dev0",
-    "description": "Private single-request audio inspection protocol between the Speech API and\nthe isolated `asset-inspector` deployment unit. The inspector decodes one\nuntrusted encoded audio body and returns only media counts and digests; it\nnever reads object storage, writes PostgreSQL, publishes an Asset, or\nproduces a `ready` fact. The API revalidates the receipt against its own\nbuffered digest, byte count, media type, sample clock, and duration budget\nbefore any durable write.\n\nEach request carries exactly one complete body. There is no session, job\nidentity, idempotency key, filename, client MIME type, workspace, purpose,\nor object key on this protocol. The request body is the raw encoded audio,\nnot JSON or base64. `200` reuses the canonical `AudioInspectionSuccess`\nschema from `audio-inspection.schema.json`; this document adds no receipt\nfields and keeps no semantic copy of that structure.\n\nUnavailability and content rejection are distinct stable outcomes. A\n`422 invalid_media` / `422 media_limit_exceeded` is a permanent rejection of\nthe supplied bytes. A `429 busy`, `503 unavailable`, or `504 deadline_exceeded`\nis a temporary infrastructure outcome for which a new request may later\nsucceed. Neither category authorizes the caller to create an Asset row,\npublish an object, or infer a public `ready` state.\n"
+    "version": "0.1.0.dev1",
+    "description": "Private single-request audio inspection protocol between the Speech API and\nthe isolated `asset-inspector` deployment unit. The inspector decodes one\nuntrusted encoded audio body and returns only media counts and digests; it\nnever reads object storage, writes PostgreSQL, publishes an Asset, or\nproduces a `ready` fact. The API revalidates the receipt against its own\nbuffered digest, byte count, media type, sample clock, and duration budget\nbefore any durable write.\n\nEach request carries exactly one complete body. There is no session, job\nidentity, idempotency key, filename, client MIME type, workspace, purpose,\nor object key on this protocol. The request body is the raw encoded audio,\nnot JSON or base64. `200` reuses the canonical `AudioInspectionSuccess`\nschema from `audio-inspection.schema.json`; this document adds no receipt\nfields and keeps no semantic copy of that structure.\n\nUnavailability and content rejection are distinct stable outcomes. A\n`415 unsupported_media` / `422 invalid_media` / `422 media_limit_exceeded` is\na permanent rejection of the supplied bytes: the public upload path bounds\nonly the byte count, so a media type the recipe does not accept is the\ncaller's file, not this deployment's fault. A `429 busy`, `503 unavailable`,\nor `504 deadline_exceeded` is a temporary infrastructure outcome for which a\nnew request may later succeed. Neither category authorizes the caller to\ncreate an Asset row, publish an object, or infer a public `ready` state.\n"
   },
   "security": [
     {
@@ -322,7 +322,7 @@
         }
       },
       "UnsupportedMedia": {
-        "description": "The recipe does not accept the supplied media type. The public upload\npath only sends `audio/wav`; this outcome therefore indicates a\ndeployment or caller configuration mismatch and maps to public\n`503 asset_inspection_unavailable`.\n",
+        "description": "The media type is not one this recipe accepts. The public upload path\nbounds the byte count but never filters the media type, so the file\nreaches the inspector exactly as the caller supplied it: an unsupported\nencoding is a permanent content verdict, not an outage, and a new\nrequest with the same bytes cannot succeed. The API maps this to public\n`422 invalid_asset_audio`, the same code as `invalid_media`. No Asset\nrow, object, event, or Job is written.\n",
         "content": {
           "application/json": {
             "schema": {

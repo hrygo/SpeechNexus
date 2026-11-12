@@ -195,12 +195,14 @@ Compose mean unconfigured. These settings install no image, host package or
 sandbox policy.
 
 A required inspection failure is projected onto the frozen public codes: an
-unparsable or revalidation-failing receipt, a bad bearer, a byte-cap mismatch and
-an unsupported media type are the non-retryable `503
-asset_inspection_unavailable`; a busy inspector, an expired decode deadline, an
-unreachable endpoint or a read timeout are the retryable `503
-asset_inspection_busy`; `422 invalid_asset_audio` and `422 asset_audio_too_long`
-are permanent content verdicts. `X-Should-Retry` stays `false` for every Asset
+unparsable or revalidation-failing receipt, a bad bearer and a byte-cap mismatch
+are the non-retryable `503 asset_inspection_unavailable`; a busy inspector, an
+expired decode deadline, an unreachable endpoint or a read timeout are the
+retryable `503 asset_inspection_busy`; `422 invalid_asset_audio` and
+`422 asset_audio_too_long` are permanent content verdicts. An unsupported media
+type belongs to the content family: the ingress bounds only the byte count, so a
+format this deployment does not accept is the caller's file and retrying it
+cannot succeed. `X-Should-Retry` stays `false` for every Asset
 503, so an SDK never replays the transport request; only `error.retryable`
 permits a new logical upload.
 

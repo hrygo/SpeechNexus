@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SpeechNexus public speech API",
-    "version": "0.1.0.dev17",
+    "version": "0.1.0.dev18",
     "description": "SpeechNexus public speech protocol.\n\nThe OpenAI-compatible subset is limited to the paths, fields, formats, and\nevents explicitly declared here. A standard OpenAI SDK can use this API by\nsetting base_url to <deployment>/v1 and supplying any api_key value unless\nthe deployment enables a shared service key. SpeechNexus enhancements live\nunder /v1/nexus and the optional `nexus` request field; a standard request\nnever needs an enhancement wrapper. Unsupported standard parameters are\nrejected with 422 `unsupported_parameter`, never silently ignored.\n\nRealtime has two connection modes at GET /v1/realtime: a pre-created\nnexus session (`session_id`) and a compatibility transcription session\nopened with `model`. Both accept the declared standard transcription\nevent subset. TTS, previews, metadata, and operation coordination remain\nnexus.* events and are available only in a nexus-created session.\n"
   },
   "security": [
@@ -1135,7 +1135,7 @@
         }
       },
       "AssetContentUnprocessable": {
-        "description": "The bytes were fully received but are not acceptable audio. Two stable\ncodes share this status.\n\n`invalid_asset_audio`: not a qualified audio encoding (truncated,\ninconsistent RIFF, malformed chunk structure, or non-PCM).\n`asset_audio_too_long`: the media itself exceeds the configured duration\nor decode budget.\n\nBoth are permanent content rejections. No `speech_assets` row, object,\nevent, or Job is written; retrying the same bytes cannot succeed.\n`X-Should-Retry` is `false`. This 422 is not a transient inspector\noutage: a busy or unavailable inspector is the 503 family above.\n",
+        "description": "The bytes were fully received but are not acceptable audio. Two stable\ncodes share this status.\n\n`invalid_asset_audio`: not a qualified audio encoding (truncated,\ninconsistent RIFF, malformed chunk structure, non-PCM, or a media type\nthe deployment does not accept such as an MP3 body).\n`asset_audio_too_long`: the media itself exceeds the configured duration\nor decode budget.\n\nBoth are permanent content rejections. No `speech_assets` row, object,\nevent, or Job is written; retrying the same bytes cannot succeed.\n`X-Should-Retry` is `false`. This 422 is not a transient inspector\noutage: a busy or unavailable inspector is the 503 family above.\n",
         "headers": {
           "X-Should-Retry": {
             "$ref": "#/components/headers/NoOrdinaryRetry"
@@ -1178,7 +1178,7 @@
           "invalid_asset_audio": {
             "type": "invalid_request_error",
             "retryable": false,
-            "description": "The uploaded bytes are not qualified audio: truncated, inconsistent\nRIFF, malformed chunk structure, or non-PCM. No Asset row is written.\n"
+            "description": "The uploaded bytes are not qualified audio: truncated, inconsistent\nRIFF, malformed chunk structure, non-PCM, or a media type the\ndeployment does not accept. No Asset row is written.\n"
           },
           "asset_audio_too_long": {
             "type": "invalid_request_error",
@@ -1203,7 +1203,7 @@
         }
       },
       "AssetUploadUnavailable": {
-        "description": "Storage, retention configuration, or inspection is unavailable, or an\noriginal commit/PUT is unknown. Two inspection outcomes share this status\nand are not interchangeable.\n\n`asset_inspection_unavailable` means the deployment has no usable audio\ninspector configured (missing URL/token, incompatible contract, or a\nconfiguration-level refusal such as a bad bearer token, byte cap, or\nmedia type). Retrying the same request cannot succeed until deployment\nconfiguration changes, so `retryable` is `false`.\n\n`asset_inspection_busy` means a usable inspector is temporarily unable to\nserve this request: all slots are occupied, decoding exceeded its\nwall-clock deadline, or the inspector is restarting or overloaded.\nInspection has no side effects, so a new request with the same body may\nsucceed later; `retryable` is `true`. This is the only Asset 503 for\nwhich \"retrying the same request may succeed\" holds.\n\n`X-Should-Retry` remains `false` for every Asset 503. It suppresses\nautomatic SDK transport replay of an upload whose body may no longer be\navailable; it does not say whether a new logical request can succeed.\nOnly `error.retryable` carries that statement. For\n`asset_inspection_busy`, issue a new upload instead of replaying the\noriginal transport request.\n\nUnknown commit/PUT results are not ordinary retry permission. Location is\npresent when an original Asset identity is known. Without an\nIdempotency-Key a new request is a new logical upload, not guaranteed\nrecovery.\n",
+        "description": "Storage, retention configuration, or inspection is unavailable, or an\noriginal commit/PUT is unknown. Two inspection outcomes share this status\nand are not interchangeable.\n\n`asset_inspection_unavailable` means the deployment has no usable audio\ninspector configured (missing URL/token, incompatible contract, or a\nconfiguration-level refusal such as a bad bearer token or byte cap).\nRetrying the same request cannot succeed until deployment configuration\nchanges, so `retryable` is `false`.\n\n`asset_inspection_busy` means a usable inspector is temporarily unable to\nserve this request: all slots are occupied, decoding exceeded its\nwall-clock deadline, or the inspector is restarting or overloaded.\nInspection has no side effects, so a new request with the same body may\nsucceed later; `retryable` is `true`. This is the only Asset 503 for\nwhich \"retrying the same request may succeed\" holds.\n\n`X-Should-Retry` remains `false` for every Asset 503. It suppresses\nautomatic SDK transport replay of an upload whose body may no longer be\navailable; it does not say whether a new logical request can succeed.\nOnly `error.retryable` carries that statement. For\n`asset_inspection_busy`, issue a new upload instead of replaying the\noriginal transport request.\n\nUnknown commit/PUT results are not ordinary retry permission. Location is\npresent when an original Asset identity is known. Without an\nIdempotency-Key a new request is a new logical upload, not guaranteed\nrecovery.\n",
         "headers": {
           "Location": {
             "$ref": "#/components/headers/AssetLocation"

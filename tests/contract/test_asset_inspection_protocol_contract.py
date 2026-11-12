@@ -159,3 +159,46 @@ def test_binding_manifest_registers_the_internal_surface() -> None:
     assert surface["operations"] == [OPERATION]
     assert surface.get("validate") is None
     assert generated_artifact()["paths"][PATH]["post"]["operationId"] == OPERATION
+
+
+def test_an_unsupported_media_type_is_a_content_verdict_not_an_outage() -> None:
+    """The ingress bounds bytes only, so the caller's encoding reaches the recipe.
+
+    A format the recipe does not accept is therefore the caller's file, and the
+    public answer must be the permanent `422` family. A `503` here would tell the
+    caller to retry bytes that can never succeed, which is the exact confusion the
+    protocol separates.
+    """
+    protocol = load(PROTOCOL)
+    unsupported = protocol["components"]["responses"]["UnsupportedMedia"]
+    text = " ".join(unsupported["description"].split())
+    assert "422 invalid_asset_audio" in text
+    assert "503 asset_inspection_unavailable" not in text
+    assert "permanent content verdict" in text
+    assert "No Asset row" in text
+
+    # The byte cap keeps the opposite meaning: the ingress already refuses an
+    # oversized upload, so a `413` from the inspector proves a limit mismatch.
+    too_large = protocol["components"]["responses"]["EncodedTooLarge"]
+    oversized = " ".join(too_large["description"].split())
+    assert "503 asset_inspection_unavailable" in oversized
+    assert "422 invalid_asset_audio" not in oversized
+
+
+def test_public_unavailability_no_longer_lists_a_media_type_refusal() -> None:
+    public = load(PUBLIC)
+    operation = public["paths"]["/v1/nexus/assets"]["post"]
+    unavailable = resolve(public, operation["responses"]["503"])
+    description = " ".join(unavailable["description"].split()).lower()
+    # The retired cause: a media type is content, so it left the 503 vocabulary.
+    assert "media type" not in description
+    for entry in unavailable["x-nexus-error-codes"].values():
+        assert "media type" not in entry["description"].lower()
+
+    content = resolve(public, operation["responses"]["422"])
+    content_text = " ".join(content["description"].split()).lower()
+    assert "media type" in content_text
+    code_text = " ".join(
+        content["x-nexus-error-codes"]["invalid_asset_audio"]["description"].split()
+    ).lower()
+    assert "media type" in code_text

@@ -10,16 +10,16 @@ maps every private outcome onto the public error vocabulary frozen in
 Two failure families are kept strictly apart, because mislabelling one as the
 other either deletes valid content or retries invalid content forever:
 
-* a permanent content verdict (``invalid_media``, ``media_limit_exceeded``)
-  raises ``AssetError`` with a ``422`` public code before any Asset row exists,
-  so no metadata, object or event is written;
+* a permanent content verdict (``invalid_media``, ``unsupported_media``,
+  ``media_limit_exceeded``) raises ``AssetError`` with a ``422`` public code
+  before any Asset row exists, so no metadata, object or event is written;
 * an infrastructure outcome (``busy``, ``deadline_exceeded``, an unreachable or
   timing-out inspector) raises ``asset_inspection_busy``, which is the only
   retryable Asset ``503``;
 * a configuration or protocol refusal (``bad_request``, ``unauthorized``,
-  ``encoded_too_large``, ``unsupported_media``, an unparsable or invalid
-  receipt) raises ``asset_inspection_unavailable``: retrying cannot fix a
-  deployment that cannot speak this protocol.
+  ``encoded_too_large``, an unparsable or invalid receipt) raises
+  ``asset_inspection_unavailable``: retrying cannot fix a deployment that cannot
+  speak this protocol.
 
 No response body, header, token or input fragment is ever propagated: the
 failure envelope's ``status`` string is the only private value that is read.
@@ -57,8 +57,12 @@ RECIPE_MEDIA_TYPE = "audio/wav"
 # phrases and vendor messages are never parsed.
 _STATUS_CODES: dict[str, str] = {
     # Permanent content verdicts. Retrying the same bytes cannot succeed and no
-    # Asset row is written.
+    # Asset row is written. `unsupported_media` belongs here because the public
+    # upload path bounds only the byte count and forwards the caller's encoding
+    # unchanged: a format this deployment does not accept is the caller's file,
+    # so an outage code would tell them to retry forever.
     "invalid_media": "invalid_asset_audio",
+    "unsupported_media": "invalid_asset_audio",
     "media_limit_exceeded": "asset_audio_too_long",
     # Temporary infrastructure outcomes. Inspection is side-effect free, so a new
     # request with the same body may succeed later.
@@ -66,12 +70,13 @@ _STATUS_CODES: dict[str, str] = {
     "unavailable": "asset_inspection_busy",
     "deadline_exceeded": "asset_inspection_busy",
     # Configuration and protocol refusals. These are deployment faults, not
-    # content faults and not retryable: a byte cap, media type or token that this
-    # process cannot satisfy will not change by asking again.
+    # content faults and not retryable: a byte cap or token that this process
+    # cannot satisfy will not change by asking again. `encoded_too_large` means
+    # the inspector's own cap is stricter than this process's, because the
+    # ingress already refuses anything over `asset_max_bytes + 16 KiB`.
     "bad_request": "asset_inspection_unavailable",
     "unauthorized": "asset_inspection_unavailable",
     "encoded_too_large": "asset_inspection_unavailable",
-    "unsupported_media": "asset_inspection_unavailable",
 }
 
 # The API's own upload concurrency is bounded at four, and the protocol uses one

@@ -40,7 +40,7 @@ MAPPING = [
     ("bad_request", 400, "asset_inspection_unavailable", 503, False),
     ("unauthorized", 401, "asset_inspection_unavailable", 503, False),
     ("encoded_too_large", 413, "asset_inspection_unavailable", 503, False),
-    ("unsupported_media", 415, "asset_inspection_unavailable", 503, False),
+    ("unsupported_media", 415, "invalid_asset_audio", 422, False),
     ("invalid_media", 422, "invalid_asset_audio", 422, False),
     ("media_limit_exceeded", 422, "asset_audio_too_long", 422, False),
     ("busy", 429, "asset_inspection_busy", 503, True),
@@ -164,7 +164,7 @@ def test_every_private_status_maps_to_its_frozen_public_code(
         ("bad_request", "asset_inspection_unavailable", False),
         ("unauthorized", "asset_inspection_unavailable", False),
         ("encoded_too_large", "asset_inspection_unavailable", False),
-        ("unsupported_media", "asset_inspection_unavailable", False),
+        ("unsupported_media", "invalid_asset_audio", False),
         ("invalid_media", "invalid_asset_audio", False),
         ("media_limit_exceeded", "asset_audio_too_long", False),
         ("busy", "asset_inspection_busy", True),
@@ -386,6 +386,7 @@ def test_a_success_receipt_leaves_the_body_rewound_for_publication() -> None:
     [
         # A permanent content verdict must not leave a rejected row behind.
         ("invalid_media", 422, "invalid_asset_audio"),
+        ("unsupported_media", 415, "invalid_asset_audio"),
         ("media_limit_exceeded", 422, "asset_audio_too_long"),
         # Neither must an unavailable or busy inspector.
         ("busy", 429, "asset_inspection_busy"),

@@ -3458,9 +3458,9 @@ export interface components {
      *
      *     `asset_inspection_unavailable` means the deployment has no usable audio
      *     inspector configured (missing URL/token, incompatible contract, or a
-     *     configuration-level refusal such as a bad bearer token, byte cap, or
-     *     media type). Retrying the same request cannot succeed until deployment
-     *     configuration changes, so `retryable` is `false`.
+     *     configuration-level refusal such as a bad bearer token or byte cap).
+     *     Retrying the same request cannot succeed until deployment configuration
+     *     changes, so `retryable` is `false`.
      *
      *     `asset_inspection_busy` means a usable inspector is temporarily unable to
      *     serve this request: all slots are occupied, decoding exceeded its
@@ -3496,7 +3496,8 @@ export interface components {
      *     codes share this status.
      *
      *     `invalid_asset_audio`: not a qualified audio encoding (truncated,
-     *     inconsistent RIFF, malformed chunk structure, or non-PCM).
+     *     inconsistent RIFF, malformed chunk structure, non-PCM, or a media type
+     *     the deployment does not accept such as an MP3 body).
      *     `asset_audio_too_long`: the media itself exceeds the configured duration
      *     or decode budget.
      *

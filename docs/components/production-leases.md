@@ -77,6 +77,9 @@ B 原生 record_execution_observation 写入的 failed/not_required 是另一条
 not-submitted 终态写入公共 Job，再走同一 release，期限本身仍不是释放证据。
 派发器不重试被拒绝或结果未知的 release；此时租约保持占用，公共 Job 与 held 账目的
 不一致是持久、可查询的事实，由运营按原 lease_id 协调，自动扫描归 #528。
+网关与节点控制器都无法产出机器可读终态证据、只有运维能独立确认旧实例已不存在时，
+释放走[隔离租约的运维释放](production-quarantine-release.md)的独立事务；那条路径的
+证据来源不同，容量扣减规则仍复用本单元的 `release()`。
 
 attempt 锁串行化 A 的准入/隔离/释放。释放前核对冻结 required_stage_ids 与实际全部
 lease 的 stage 集合完全一致、无缺失或重复，再读取其他 lease 的已释放事实；无需倒序

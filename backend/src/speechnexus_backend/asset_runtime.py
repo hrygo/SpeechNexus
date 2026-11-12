@@ -143,8 +143,22 @@ def _build_http_audio_inspector(
             "query or fragment: the inspection path is fixed"
         )
     token = settings.asset_inspection_token
-    if token is None:
-        raise ValueError(f"{token_variable} is required when SPEECHNEXUS_ASSET_INSPECTOR=audio")
+    # A blank token is not a configured caller. ``settings.py`` already maps a
+    # blank value to ``None``, but through one validator shared with unrelated
+    # optional settings; this constructor owns the promise "audio fails startup
+    # naming the variable" and must not depend on a normalization it does not
+    # control. A whitespace-only token would otherwise pass every check, start
+    # the process and send ``Authorization: Bearer    ``; httpx refuses that
+    # header locally as an illegal value, so every request fails as a runtime
+    # ``503`` (observed as ``asset_inspection_busy``): a configuration error
+    # disguised as an outage. ``asset_inspection_url`` needs no separate blank
+    # check because a blank value cannot parse as a URL and arrives here as
+    # ``None``.
+    if token is None or not token.get_secret_value().strip():
+        raise ValueError(
+            f"{token_variable} is required when SPEECHNEXUS_ASSET_INSPECTOR=audio; "
+            "a blank value is not a configured token"
+        )
     wall_seconds = settings.audio_inspection_wall_seconds
     if settings.asset_inspection_timeout_seconds < wall_seconds + 2:
         raise ValueError(

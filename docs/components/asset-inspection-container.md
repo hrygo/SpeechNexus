@@ -254,13 +254,13 @@ API 已经把上传内容完整收进私有、非链接的临时文件（`backen
 | 挂载 | 无 volume、无 bind mount、不挂 `docker.sock`；可写区仅 tmpfs `/run/inspection`（64 MiB）与 `/tmp`（16 MiB），属主 `10001:10001`、`mode=0700` |
 | 加固 | `read_only`、`cap_drop: [ALL]`、`no-new-privileges`、`pids_limit: 64`、`mem_limit: 768m`、`cpus: 2.0`、`init`、`stop_grace_period: 30s`；不加 `cap_add`，不设 `seccomp=unconfined`/`apparmor=unconfined`，`user` 沿用镜像的 `10001:10001` |
 | 健康检查 | 镜像内 `GET /healthz`（未鉴权、不写盘），`interval 5s`、`timeout 3s`、`retries 20`、`start_period 5s`；`/readyz` 仍由启动自检控制，不纳入 Compose 探针 |
-| 鉴权 token | 唯一来源是部署文件中的 `SPEECHNEXUS_ASSET_INSPECTION_TOKEN`，同一值分别注入 API 的 `SPEECHNEXUS_ASSET_INSPECTION_TOKEN` 与本容器的 `SPEECHNEXUS_INSPECTION_TOKEN`；仓库内无字面默认值，示例文件留空 |
+| 鉴权 token | 唯一来源是部署文件中的 `SPEECHNEXUS_ASSET_INSPECTION_TOKEN`，同一值分别注入 API 的 `SPEECHNEXUS_ASSET_INSPECTION_TOKEN` 与本容器的 `SPEECHNEXUS_INSPECTION_TOKEN`；仓库内无字面默认值，示例文件留空。selector、URL、token 三键必须同时设置 |
 | API 装配 | `SPEECHNEXUS_ASSET_INSPECTOR` 默认 `text`；切到 `audio` 需同时设置 `SPEECHNEXUS_ASSET_INSPECTION_URL=http://asset-inspector:8080` 与该 token |
 | 上线前检查 | `make stack-config` 校验基础配置、`job-dispatch` 与 `asset-inspection` 三个 profile 均可解析；默认 `config --services` 仍为 `api gateway minio minio-init postgres` |
 
 `api` 不建立 `depends_on: asset-inspector`。启动期校验的对象是配置（URL 形态、token 是否存在、预算关系），不是可达性：检查器停机时 API 照常启动，`asr_input`/`voice_reference` 在请求期返回 `503 asset_inspection_unavailable`，文本资产、健康检查与保留期维护路径不受影响（§8 A2/A6）。反向的硬 `service_healthy` 门控会把检查器故障升级为 API 全量不可用，让不需要解码能力的路径一起不可用，因此不采用。
 
-token 的强制点同理不在 Compose 层：Compose 对所有服务（含未启用 profile 的服务）做插值，`${VAR:?}` 会让从不启用该 profile 的部署在 `config`/`up` 阶段失败；给示例文件填占位符又会让 `text` 模式启动失败（「配置了 token 但选择器是 `text`」是防降级校验，见 §7.3）。因此 Compose 层保留空白默认值，强制点在启动期：空 token 时检查器进程退出并点名 `SPEECHNEXUS_INSPECTION_TOKEN`，`audio` 缺 token 时 API 拒绝启动并点名 `SPEECHNEXUS_ASSET_INSPECTION_TOKEN`，与 `SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL` 留空即失败的形态一致。
+token 的强制点同理不在 Compose 层：Compose 对所有服务（含未启用 profile 的服务）做插值，`${VAR:?}` 会让从不启用该 profile 的部署在 `config`/`up` 阶段失败；给示例文件填占位符又会让 `text` 模式启动失败（「配置了 token 但选择器是 `text`」是防降级校验，见 §7.3）。因此 Compose 层保留空白默认值，强制点在启动期，且**空值与全空白值一律按未配置处理**：检查器进程以自己的变量名退出，`audio` 选择下 API 在装配检查器时以 `SPEECHNEXUS_ASSET_INSPECTION_TOKEN` 拒绝启动（`backend/src/speechnexus_backend/asset_runtime.py` 的 `_build_http_audio_inspector`）。该检查刻意不依赖 `Settings` 中「空串归一为 `None`」的共享校验器——那个校验器同时服务二十多个无关字段，一旦收窄，全空白 token 会让进程启动成功、每请求发出非法的 `Authorization` 头并被报成运行期 503；装配点的本地判空保证错误始终停在启动期。与 `SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL` 留空即失败的形态一致。
 
 ## 5. 容量与并发
 
@@ -320,7 +320,7 @@ API 侧：
 | 键 | 默认 | 约束 |
 | --- | --- | --- |
 | `SPEECHNEXUS_ASSET_INSPECTION_URL` | 无 | `audio` 时必填；必须是 `http(s)` 绝对 URL；不提供 `localhost` 或服务发现的隐式回退 |
-| `SPEECHNEXUS_ASSET_INSPECTION_TOKEN` | 无 | `audio` 时必填；`SecretStr`，不落日志 |
+| `SPEECHNEXUS_ASSET_INSPECTION_TOKEN` | 无 | `audio` 时必填；空值与全空白值都按缺失处理并在启动期报错；`SecretStr`，不落日志 |
 | `SPEECHNEXUS_ASSET_INSPECTION_TIMEOUT_SECONDS` | 15 | `1..60`，且 ≥ `AUDIO_INSPECTION_WALL_SECONDS + 2` |
 | `SPEECHNEXUS_ASSET_INSPECTION_MAX_RESPONSE_BYTES` | 4096 | 回执读取上限 |
 
@@ -346,7 +346,7 @@ API 侧：
 
 这 8 个字段仍声明在 `Settings`，且只用于**拒绝**：前 5 个任一被显式设为非空值、后 3 个任一偏离默认值时，`audio` 与 `text` 都启动失败，错误消息点名旧键并指向 `SPEECHNEXUS_ASSET_INSPECTION_URL`/`_TOKEN` 或检查器侧新键（`backend/src/speechnexus_backend/asset_runtime.py:101` 的 `_refuse_retired_inspector_settings`）。空值（Compose 转发空串）按未配置处理（`backend/src/speechnexus_backend/asset_runtime.py:80` 的既有判定）。删除这些字段会让残留配置被静默忽略，因此它们不随旧路径代码一起删除。
 
-「配了音频前置但选择器是 `text`」的反向校验（`backend/src/speechnexus_backend/asset_runtime.py:188`）覆盖 §7.1 的新增键，防止静默降级。
+「配了音频前置但选择器是 `text`」的反向校验（`backend/src/speechnexus_backend/asset_runtime.py:200`）覆盖 §7.1 的新增键，防止静默降级。
 
 ## 8. 验收条件
 

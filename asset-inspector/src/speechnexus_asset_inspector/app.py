@@ -123,7 +123,9 @@ def create_app(
             return _failure("unauthorized")
         content_type = request.headers.get("content-type")
         if content_type is None or content_type.strip().lower() != _CONTENT_TYPE:
-            return _failure("unsupported_media")
+            # A header mismatch is a protocol/configuration fault, not a verdict
+            # on the payload; 415 is reserved for a real content rejection.
+            return _failure("bad_request")
         raw_length = request.headers.get("content-length")
         if raw_length is None:
             return _failure("bad_request")
@@ -144,8 +146,6 @@ def create_app(
             request_id = _request_id(request)
         except BodyProtocolError:
             return _failure("bad_request")
-        if not service.ready:
-            return _failure("unavailable")
         try:
             outcome = await service.inspect(
                 _body(request),

@@ -134,11 +134,14 @@ async def test_missing_or_wrong_bearer_is_unauthorized(tmp_path: Path, token: st
     assert failure(payload)["status"] == "unauthorized"
 
 
-async def test_wrong_content_type_is_unsupported_media(tmp_path: Path) -> None:
+@pytest.mark.parametrize("content_type", [None, "audio/wav", "application/json"])
+async def test_content_type_mismatch_is_a_bad_request(
+    tmp_path: Path, content_type: str | None
+) -> None:
     app = create_app(service(tmp_path))
-    status, _, payload = await post(app, pcm_wav(800), content_type="audio/wav")
-    assert status == 415
-    assert failure(payload)["status"] == "unsupported_media"
+    status, _, payload = await post(app, pcm_wav(800), content_type=content_type)
+    assert status == 400
+    assert failure(payload)["status"] == "bad_request"
 
 
 async def test_content_length_mismatch_is_bad_request(tmp_path: Path) -> None:
@@ -227,12 +230,16 @@ async def test_receipt_over_output_cap_is_unavailable(tmp_path: Path) -> None:
     assert failure(payload)["status"] == "unavailable"
 
 
-async def test_unready_service_rejects_without_decoding(tmp_path: Path) -> None:
-    svc = InspectorService(settings(), runtime_root=tmp_path, runner=BlockingRunner())
+async def test_unready_service_reports_retryable_busy_without_decoding(
+    tmp_path: Path,
+) -> None:
+    counting = CountingRunner()
+    svc = InspectorService(settings(), runtime_root=tmp_path, runner=counting)
     app = create_app(svc)
     status, _, payload = await post(app, pcm_wav(80))
-    assert status == 503
-    assert failure(payload)["status"] == "unavailable"
+    assert status == 429
+    assert failure(payload)["status"] == "busy"
+    assert counting.calls == 0
     assert svc.in_flight == 0
 
 
@@ -275,6 +282,15 @@ async def test_self_check_failure_exits_the_process(tmp_path: Path) -> None:
         await wait_until(lambda: bool(exits))
     assert exits == [1]
     assert not svc.ready
+
+
+class CountingRunner:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def run(self, **_kwargs: object) -> RunOutcome:
+        self.calls += 1
+        return RunOutcome("unavailable")
 
 
 class BrokenRunner:

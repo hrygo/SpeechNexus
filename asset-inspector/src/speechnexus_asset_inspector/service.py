@@ -108,6 +108,11 @@ class InspectorService:
         deadline_ms: int,
         max_duration_ms: int,
     ) -> InspectionOutcome:
+        # A starting service is temporarily at capacity: report the retryable
+        # busy verdict, never a terminal unavailable or a real decode attempt.
+        if not self._ready:
+            await self._discard(stream, declared_bytes)
+            return InspectionOutcome("busy")
         # Decide capacity before accepting the body: a slow upload must not
         # bypass the slot bound, and a full service rejects without queueing.
         if not self._acquire():

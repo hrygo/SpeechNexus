@@ -16,7 +16,7 @@ separate card. This member supplies the service and its image only.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/healthz` | process liveness |
-| `GET` | `/readyz` | self-check state, contract/recipe versions, limits and `in_flight`; `503` until the startup self-check decodes its built-in 5 ms WAV |
+| `GET` | `/readyz` | **unfrozen operational endpoint** (not in the private contract): self-check state, contract/recipe versions, limits and `in_flight`; `503` until the startup self-check decodes its built-in 5 ms WAV. C3 does not consume it; capability probing is a separate decision. |
 | `POST` | `/internal/v1/inspection/audio` | the frozen private contract |
 
 The runtime image keeps `prlimit` and removes `unshare`, `mount`, `umount`,
@@ -27,6 +27,13 @@ or changes privilege.
 application/octet-stream`, an exact `Content-Length`, `X-Nexus-Deadline-Ms` and
 `X-Nexus-Max-Duration-Ms`. Optional `X-Request-ID` is echoed on `200` only.
 Every budget is clamped to the server value in this member's configuration.
+
+A `Content-Type` mismatch is a protocol/configuration fault and returns
+`400 bad_request`, not a content verdict. `415 unsupported_media` is reserved
+for a payload whose media type the recipe rejects. While the startup self-check
+is still running, requests are refused with the retryable `429 busy` (a
+temporary capacity state), never the terminal `503 unavailable` that means the
+service is misconfigured.
 
 ## Configuration
 

@@ -164,10 +164,12 @@ jobs:
 
       - name: Verify inspection startup before complete regression
         # Fail the same required job early on an unusable native dependency.
+        # The probe decodes a synthetic WAV through the real inspection recipe
+        # (PyAV/FFmpeg), which is the only native stack audio inspection needs.
         # The complete coverage run remains unchanged after this real probe.
         run: >-
           uv run pytest -q
-          tests/unit/backend/test_audio_inspection_process.py::test_real_worker_sees_only_readonly_input_and_no_host_environment
+          tests/unit/media/test_audio_inspection.py::test_real_decode_binds_complete_source_facts_to_digest_without_pcm
 
       - name: Ensure PostgreSQL 16 tools for the private coverage cluster
         run: |

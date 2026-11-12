@@ -2,15 +2,21 @@
 
 This page preserves the 2026-10-26 candidate, experiment and qualification
 record. References below to a PR candidate, pending handoff or CI result describe
-that point in time, not the current merge or deployment state. The current
-[`asset_runtime.py`](../../../backend/src/speechnexus_backend/asset_runtime.py) still installs `TextAssetInspector`; the process inspector
-exists in the repository but is not thereby enabled in the public Asset runtime.
+that point in time, not the current merge or deployment state. At that time
+[`asset_runtime.py`](../../../backend/src/speechnexus_backend/asset_runtime.py) installed only `TextAssetInspector`; the process inspector
+existed in the repository but was not thereby enabled in the public Asset runtime.
 Current integration and acceptance status must be checked against the candidate
 and [delivery tracking](../../plans/delivery-tracking.md).
 
+The process path recorded below is retired: audio inspection now happens in the
+separate, outbound-free inspection container described in the
+[独立检查容器](../../components/asset-inspection-container.md). The process
+supervisor, its fixed launcher and their unit tests no longer exist in the
+repository, so the module paths quoted here are historical references only.
+
 A02 now supplies the private Linux process supervisor, a separately packaged
 media decoder/inspection command, a generated success-receipt contract and a
-narrow `ProcessAudioAssetInspector` consumer. `AssetRuntime` still installs
+narrow process-inspector consumer (`audio_asset_inspector.py`). `AssetRuntime` still installs
 `TextAssetInspector`; public audio inspection remains unavailable. Existing
 public Asset identities, original-key recovery, object versions and the
 deployment's seven-day default retention are unchanged. The media extraction
@@ -56,7 +62,7 @@ a published or jointly accepted deployment image; B must confirm compatibility
 before shared integration. AssetRuntime still installs TextAssetInspector.
 
 The same PR candidate adds the canonical private success receipt and
-`ProcessAudioAssetInspector`, described in the
+the process inspector (`audio_asset_inspector.py`), described in the
 [receipt handoff](../plans/2026-10-26-a02-audio-receipt-handoff.md). It validates
 the generated contract, original input digest/length, exact sample clock and
 cancellation before exposing media facts. Default composition remains unchanged;

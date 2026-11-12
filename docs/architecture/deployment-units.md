@@ -127,10 +127,12 @@ Windows 等平台保持未验证，支持范围扩展以单元的安装、启动
 不调用 `unshare`/`mount`/`pivot_root`/`setns`，也不在容器内再起 bubblewrap。业务内容只经
 「客户端 → API」与「API → 检查容器」两条链路，检查容器不持有对象存储或 PG 凭据，不写任何持久状态。
 
-当前实现仍是 API 进程内的 bubblewrap 检查组（[历史边界](../archive/components/audio-asset-inspection.md)
-保留其设计事实）。[AssetRuntime](../../backend/src/speechnexus_backend/asset_runtime.py)默认装配
-`TextAssetInspector`；在检查容器与 API 适配器交付前，公开音频路径保持不可用。不能把沙箱代码位于
-backend 包内等同于 API 启动必须使用 Linux，也不能以健康检查或镜像存在推断该单元已验收。
+实现上，`SPEECHNEXUS_ASSET_INSPECTOR=audio` 时
+[AssetRuntime](../../backend/src/speechnexus_backend/asset_runtime.py)在创建连接池与对象存储客户端
+之前装配 HTTP 适配器，解码与内容判定全部由检查容器完成；API 进程内不再有 bubblewrap 检查组，旧
+监督器已删除（[历史边界](../archive/components/audio-asset-inspection.md)保留其设计事实）。默认
+`text` 装配 `TextAssetInspector`，公开音频路径返回 `503 asset_inspection_unavailable`。不能把沙箱
+代码位于 backend 包内等同于 API 启动必须使用 Linux，也不能以健康检查或镜像存在推断该单元已验收。
 
 容器形态不改变既有约束：机器契约先冻结再新增路由；本地 `BinaryIO` 接口不能当作远程协议使用；
 检查版本、限额与可验证回执必须显式定义；Linux CPU 媒体组件可与算力组件同机，但要独立核算资源，

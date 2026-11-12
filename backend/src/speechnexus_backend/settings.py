@@ -67,9 +67,12 @@ class Settings(BaseSettings):
     asset_inspection_max_response_bytes: int = Field(default=4096, ge=1, le=65536)
     # Retained API-side policy for the audio inspector: the duration ceiling, the
     # local byte ceiling, the decode budget sent as a request header, and the
-    # receipt bound. `audio_inspection_memory_bytes`, `_cpu_seconds` and
-    # `_output_bytes` belong to the inspector container now; they stay declared
-    # until the retirement cycle deletes them together with the process supervisor.
+    # receipt bound. The remaining eight keys have no consumer left: the five
+    # local process selectors and `audio_inspection_memory_bytes`, `_cpu_seconds`
+    # and `_output_bytes` are declared so a stale environment is refused at
+    # startup instead of being silently ignored (see `_RETIRED_PREREQUISITES` and
+    # `_MIGRATED_LIMITS` in `asset_runtime.py`). They stay declared for that
+    # diagnostic value alone.
     audio_inspection_runtime_root: Path | None = None
     audio_inspection_command: str = ""
     audio_inspection_launcher_python: str = ""

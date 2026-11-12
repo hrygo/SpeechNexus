@@ -11,12 +11,17 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import wave
+from contextlib import redirect_stdout
+from tempfile import TemporaryFile
 from typing import Any
 
 import httpx
 import pytest
 from pydantic import SecretStr
 
+from speechnexus_asset_inspector import child
+from speechnexus_asset_inspector.protocol import HTTP_STATUS, failure_body
 from speechnexus_backend.speech.domain.assets import (
     AssetError,
     AssetPolicy,
@@ -218,6 +223,13 @@ def test_transport_failures_are_the_retryable_busy_outcome(error: Exception) -> 
         {"duration_ms": 120_001},
         # sample clock and duration disagree: 16000 samples at 16 kHz is 1000 ms
         {"source_samples": 16000, "sample_rate_hz": 48000, "duration_ms": 1000},
+        {"source_samples": 16000.0},
+        {"sample_rate_hz": 0},
+        {"channels": 0},
+        {"encoded_bytes": float(len(BODY))},
+        {"schema_version": True},
+        {"schema_version": 1.0},
+        {"media_type": "text/plain"},
         {"status": "partial"},
         {"recipe_version": "pcm-decode-2"},
         {"schema_version": 2},
@@ -508,3 +520,98 @@ def test_unusable_constructor_limits_are_refused(changes: dict[str, Any]) -> Non
             _transport=httpx.MockTransport(lambda request: httpx.Response(200)),
             **limits,
         )
+
+
+# ---------------------------------------------------------------------------
+# Content verdicts end to end through the surviving implementation.
+#
+# The retired in-process supervisor was the last place where real audio bytes,
+# the real decoder and this adapter met. Those judgements have two owners now:
+# the `asset-inspector` unit decodes and classifies the content (its own verdicts
+# are asserted in `tests/unit/inspector/test_inspection_service.py`), and this
+# adapter projects the wire verdict onto the frozen public codes. The handler
+# below keeps the two joined: it runs the inspector's own decode child on the
+# exact bytes the adapter sent and answers in the inspector's wire vocabulary,
+# so a content verdict is produced by real decoding, not by a canned receipt.
+# ---------------------------------------------------------------------------
+
+_CHILD_MAX_BYTES = 1 << 20
+
+
+def pcm_wav(samples: int = 4800, *, sample_rate_hz: int = 48000, channels: int = 2) -> bytes:
+    """A structurally complete synthetic PCM WAV: 4800 frames are 100 ms."""
+    output = io.BytesIO()
+    with wave.open(output, "wb") as encoded:
+        encoded.setnchannels(channels)
+        encoded.setsampwidth(2)
+        encoded.setframerate(sample_rate_hz)
+        encoded.writeframes(b"\x01\x00\x02\x00" * samples)
+    return output.getvalue()
+
+
+def decoded(request: httpx.Request) -> httpx.Response:
+    """Answer with the real decode child's verdict for the received bytes."""
+    # The budget travels in the request header, exactly as the protocol defines it.
+    budget_ms = int(request.headers["X-Nexus-Max-Duration-Ms"])
+    with TemporaryFile() as source:
+        source.write(request.content)
+        source.flush()
+        source.seek(0)
+        printed = io.StringIO()
+        with redirect_stdout(printed):
+            child.main(
+                [
+                    "--input-fd",
+                    str(source.fileno()),
+                    "--max-encoded-bytes",
+                    str(_CHILD_MAX_BYTES),
+                    "--max-duration-ms",
+                    str(budget_ms),
+                    "--timeout-seconds",
+                    "10",
+                ]
+            )
+    document = json.loads(printed.getvalue())
+    if document["status"] == "complete":
+        return json_response(200, document)
+    return httpx.Response(
+        HTTP_STATUS[document["status"]],
+        content=failure_body(document["status"]),
+        headers={"Content-Type": "application/json"},
+    )
+
+
+def test_qualified_audio_becomes_the_decoded_facts_through_the_real_decoder() -> None:
+    result = inspector(decoded).inspect("asr_input", io.BytesIO(pcm_wav()), POLICY)
+
+    assert result.available and result.error_code is None
+    assert result.facts == MediaFacts("audio/wav", 100, 48000, 2)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        # Not a container at all, and a valid container missing its tail.
+        b"synthetic-private-corrupt-audio",
+        pcm_wav()[:-64],
+    ],
+)
+def test_malformed_audio_is_the_permanent_content_verdict(content: bytes) -> None:
+    with pytest.raises(AssetError) as caught:
+        inspector(decoded).inspect("asr_input", io.BytesIO(content), POLICY)
+
+    assert caught.value.code == "invalid_asset_audio"
+    status, body, should_retry = public(caught.value.code)
+    assert (status, body["retryable"], should_retry) == (422, False, "false")
+
+
+def test_audio_over_the_shared_duration_budget_is_the_permanent_too_long_verdict() -> None:
+    # One key bounds both the request the adapter sends and the child's own
+    # decode budget, so exceeding it is the caller's file, never a deployment
+    # fault and never retryable.
+    with pytest.raises(AssetError) as caught:
+        inspector(decoded, max_duration_ms=50).inspect("asr_input", io.BytesIO(pcm_wav()), POLICY)
+
+    assert caught.value.code == "asset_audio_too_long"
+    status, body, should_retry = public(caught.value.code)
+    assert (status, body["retryable"], should_retry) == (422, False, "false")

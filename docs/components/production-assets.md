@@ -38,13 +38,15 @@ local-process selectors `SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT`, `_COMMAND`,
 `_LAUNCHER_PYTHON`, `_BUBBLEWRAP` and `_PRLIMIT` are retired: an image mount
 point, command line, interpreter and host tool paths belong to the inspection
 image. Any non-empty value fails startup in both selector modes and names the
-endpoint keys that replace them. The former per-process resource limits remain
-declared for one release only because Compose forwards their defaults; those
-defaults are inert, and any other value fails startup naming the inspector-side
-`SPEECHNEXUS_INSPECTION_*` key that replaces it. Inspection therefore writes no
-Asset row, object or event when it is unavailable, busy or rejects the content.
-Host sandbox approval, target-runtime qualification and deployment acceptance
-remain prerequisites for audio `ready`.
+endpoint keys that replace them. The former per-process resource limits have no
+consumer either; they stay declared only as refusal anchors, because Compose
+forwards their defaults and dropping the declarations would let a stale
+environment be ignored silently. Those defaults are inert, and any other value
+fails startup naming the inspector-side `SPEECHNEXUS_INSPECTION_*` key that
+replaces it. Inspection therefore writes no Asset row, object or event when it
+is unavailable, busy or rejects the content. Host sandbox approval,
+target-runtime qualification and deployment acceptance remain prerequisites for
+audio `ready`.
 
 An optional idempotency key is scoped by the authoritative deployment/schema,
 asset operation and workspace. Its stored SHA-256 identifies the key without

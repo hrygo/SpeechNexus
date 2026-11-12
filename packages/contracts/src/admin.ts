@@ -17,6 +17,8 @@ export type Contracts = Pick<
   | "ProfileActivationRequest"
   | "ProfilePublishedRevision"
   | "ModelBindingActivationRequest"
+  | "ResourcePool"
+  | "ResourcePoolList"
 >;
 const parseValue = createProfileParser(bundle);
 export function parse<K extends keyof Contracts>(name: K, value: unknown): Contracts[K] {

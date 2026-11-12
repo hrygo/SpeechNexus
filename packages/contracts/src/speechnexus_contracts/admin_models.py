@@ -404,6 +404,10 @@ class Publication1(TypedDict):
     disabled_reason: str | None
 
 
+type ExternalSharedIdentifiersSchemaJsonPoolId = Literal[
+    "asr-realtime", "tts-realtime", "asr-batch", "tts-batch", "voice-creation", "auxiliary"
+]
+type ServiceClass = ExternalSharedCapabilityDomainsSchemaJsonServiceClass
 type Identifier = ExternalSharedIdentifiersSchemaJsonIdentifier
 type Revision = ExternalSharedIdentifiersSchemaJsonRevision
 
@@ -531,6 +535,23 @@ class ProfileActivationRequest(TypedDict):
 
 class ModelBindingActivationRequest(TypedDict):
     expected_current_revision: Revision | None
+
+
+class ResourcePool(TypedDict):
+    id: ExternalSharedIdentifiersSchemaJsonPoolId
+    object: Literal["nexus.resource_pool"]
+    node_ids: list[Identifier]
+    service_class: ServiceClass
+    max_active_slots: int
+    realtime_reserved_slots: int
+    active_slots: int
+    quarantine_slots: int
+    status: Literal["ready", "degraded", "unavailable"]
+
+
+class ResourcePoolList(TypedDict):
+    object: Literal["nexus.list"]
+    data: list[ResourcePool]
 
 
 class WorkspaceCreateRequest(TypedDict):
@@ -774,4 +795,6 @@ type AdminContracts = (
     | ProfileActivationRequest
     | ProfilePublishedRevision
     | ModelBindingActivationRequest
+    | ResourcePool
+    | ResourcePoolList
 )

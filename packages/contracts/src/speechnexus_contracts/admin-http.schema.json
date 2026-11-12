@@ -92,6 +92,42 @@
           "json": true
         }
       }
+    },
+    "listResourcePools": {
+      "path": "/v1/nexus/admin/resource-pools",
+      "method": "get",
+      "request": "HttpRequest_listResourcePools",
+      "parameters": {
+        "path": {},
+        "query": {},
+        "headers": {
+          "x-request-id": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_listResourcePools_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_listResourcePools_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_listResourcePools_401",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_listResourcePools_503",
+          "headers": {},
+          "json": true
+        }
+      }
     }
   },
   "x-nexus-entrypoints": [
@@ -107,7 +143,12 @@
     "HttpResponse_getWorkspace_401",
     "HttpResponse_getWorkspace_403",
     "HttpResponse_getWorkspace_404",
-    "HttpResponse_getWorkspace_503"
+    "HttpResponse_getWorkspace_503",
+    "HttpRequest_listResourcePools",
+    "HttpResponse_listResourcePools_200",
+    "HttpResponse_listResourcePools_400",
+    "HttpResponse_listResourcePools_401",
+    "HttpResponse_listResourcePools_503"
   ],
   "$defs": {
     "WorkspaceList": {
@@ -679,6 +720,117 @@
         "observed.turn_detection.silence_duration_ms"
       ]
     },
+    "ResourcePoolList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object", "data"],
+      "properties": {
+        "object": {
+          "const": "nexus.list"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResourcePool"
+          }
+        }
+      }
+    },
+    "ResourcePool": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A logical capability pool. The same pool may contain ready instances on\nseveral host nodes; `node_ids` lists the nodes that currently contribute\nto the aggregate counts.\n",
+      "required": [
+        "id",
+        "object",
+        "node_ids",
+        "service_class",
+        "max_active_slots",
+        "realtime_reserved_slots",
+        "active_slots",
+        "quarantine_slots",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_PoolId"
+        },
+        "object": {
+          "const": "nexus.resource_pool"
+        },
+        "node_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
+        },
+        "service_class": {
+          "$ref": "#/$defs/ServiceClass"
+        },
+        "max_active_slots": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "realtime_reserved_slots": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "active_slots": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "quarantine_slots": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status": {
+          "type": "string",
+          "enum": ["ready", "degraded", "unavailable"]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "ready"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "node_ids": {
+                "minItems": 1
+              },
+              "max_active_slots": {
+                "minimum": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_shared_identifiers_schema_json_PoolId": {
+      "type": "string",
+      "enum": [
+        "asr-realtime",
+        "tts-realtime",
+        "asr-batch",
+        "tts-batch",
+        "voice-creation",
+        "auxiliary"
+      ],
+      "description": "Logical capability resource pool identifier. Pools may span multiple host nodes."
+    },
+    "ServiceClass": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_ServiceClass"
+    },
+    "External_shared_capability_domains_schema_json_ServiceClass": {
+      "type": "string",
+      "enum": ["realtime", "interactive", "batch"]
+    },
     "HttpRequest_listWorkspaces": {
       "type": "object",
       "additionalProperties": false,
@@ -926,6 +1078,105 @@
       "required": ["body"]
     },
     "HttpResponse_getWorkspace_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_listResourcePools": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      },
+      "required": []
+    },
+    "HttpResponse_listResourcePools_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ResourcePoolList"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listResourcePools_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listResourcePools_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listResourcePools_503": {
       "type": "object",
       "additionalProperties": false,
       "properties": {

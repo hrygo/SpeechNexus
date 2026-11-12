@@ -62,5 +62,13 @@ def parse(
 ) -> models.ModelBindingActivationRequest: ...
 
 
+@overload
+def parse(name: Literal["ResourcePool"], value: Any) -> models.ResourcePool: ...
+
+
+@overload
+def parse(name: Literal["ResourcePoolList"], value: Any) -> models.ResourcePoolList: ...
+
+
 def parse(name: str, value: Any) -> Any:
     return validate_profile("admin", name, value)

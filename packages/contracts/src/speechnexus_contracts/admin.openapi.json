@@ -106,6 +106,44 @@
           }
         }
       }
+    },
+    "/v1/nexus/admin/resource-pools": {
+      "get": {
+        "tags": ["resource-pools"],
+        "operationId": "listResourcePools",
+        "summary": "List logical resource pools and current reservations",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resource pools.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourcePoolList"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -727,6 +765,117 @@
           "observed.turn_detection.mode",
           "observed.turn_detection.silence_duration_ms"
         ]
+      },
+      "ResourcePoolList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["object", "data"],
+        "properties": {
+          "object": {
+            "const": "nexus.list"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourcePool"
+            }
+          }
+        }
+      },
+      "ResourcePool": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "A logical capability pool. The same pool may contain ready instances on\nseveral host nodes; `node_ids` lists the nodes that currently contribute\nto the aggregate counts.\n",
+        "required": [
+          "id",
+          "object",
+          "node_ids",
+          "service_class",
+          "max_active_slots",
+          "realtime_reserved_slots",
+          "active_slots",
+          "quarantine_slots",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_PoolId"
+          },
+          "object": {
+            "const": "nexus.resource_pool"
+          },
+          "node_ids": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/Identifier"
+            }
+          },
+          "service_class": {
+            "$ref": "#/components/schemas/ServiceClass"
+          },
+          "max_active_slots": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "realtime_reserved_slots": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "active_slots": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "quarantine_slots": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "enum": ["ready", "degraded", "unavailable"]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "ready"
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "properties": {
+                "node_ids": {
+                  "minItems": 1
+                },
+                "max_active_slots": {
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "External_shared_identifiers_schema_json_PoolId": {
+        "type": "string",
+        "enum": [
+          "asr-realtime",
+          "tts-realtime",
+          "asr-batch",
+          "tts-batch",
+          "voice-creation",
+          "auxiliary"
+        ],
+        "description": "Logical capability resource pool identifier. Pools may span multiple host nodes."
+      },
+      "ServiceClass": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_ServiceClass"
+      },
+      "External_shared_capability_domains_schema_json_ServiceClass": {
+        "type": "string",
+        "enum": ["realtime", "interactive", "batch"]
       }
     },
     "responses": {

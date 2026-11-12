@@ -84,6 +84,10 @@ class Settings(BaseSettings):
     artifact_reader_database_url: SecretStr | None = Field(default=None, min_length=1)
     artifact_read_timeout_seconds: float = Field(default=3, gt=0, le=30)
 
+    resource_pool_reader_database_url: SecretStr | None = Field(default=None, min_length=1)
+    resource_pool_read_concurrency: int = Field(default=2, ge=1, le=4)
+    resource_pool_read_timeout_seconds: float = Field(default=3, gt=0, le=30)
+
     capability_default_workspace_id: str = Field(
         default="workspace-default", pattern=r"^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$"
     )
@@ -157,6 +161,7 @@ class Settings(BaseSettings):
         "profile_writer_database_url",
         "model_catalog_reader_database_url",
         "artifact_reader_database_url",
+        "resource_pool_reader_database_url",
         "pronunciation_reader_database_url",
         "pronunciation_writer_database_url",
         "pronunciation_publisher_database_url",

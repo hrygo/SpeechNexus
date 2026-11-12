@@ -98,6 +98,52 @@ released only after the child has been reaped. If a killed child cannot be
 reaped within one second the service exits so the container runtime destroys
 the PID namespace.
 
+## Build cache and local mirrors
+
+The dependency install runs under a BuildKit cache mount on `/root/.cache/uv`,
+so a rebuild that only touches sources reuses the already-extracted wheels. The
+cache never enters the image, and `UV_LINK_MODE=copy` keeps `/app/.venv`
+self-contained.
+
+Measured on one aarch64 host, `uv sync --frozen --package
+speechnexus-asset-inspector --no-dev --no-editable`:
+
+| Build | uv step (log offset) | Total build |
+| --- | --- | --- |
+| Cold builder, empty cache mount | `Prepared 11 packages in 2m 12s` | 184.7s |
+| Source-only change, warm cache mount | `Prepared 1 package in 300ms`, no downloads | 7.2s |
+| `--no-cache-filter=builder` | full re-download | 4m 55s |
+
+`--no-cache-filter` does not preserve cache mounts, so it cannot be used to
+measure reuse; invalidate the builder with a real source change instead.
+
+Two build arguments select local mirrors. Both default to empty, which keeps the
+project's original sources, and neither writes a tracked file.
+
+`UV_DEFAULT_INDEX_URL` sets `UV_DEFAULT_INDEX` for the sync step only. With
+`--frozen`, uv keeps `uv.lock` byte-identical (its sha256 is unchanged before and
+after) but resolves package downloads through the configured index: a cold-cache
+run with uv's global configuration disabled downloaded every wheel from
+`files.pythonhosted.org`, and the same run with the mirror set downloaded every
+wheel from that mirror. A build with an unreachable value fails with
+`Failed to fetch: <index>/hatchling/`, which is how the argument's wiring is
+verified without depending on network reachability.
+
+`DEBIAN_MIRROR` rewrites only the main archive `URIs:` line of
+`/etc/apt/sources.list.d/debian.sources`. The `bookworm-security` suite keeps
+`http://deb.debian.org/debian-security`, the `Suites` and `Components` fields are
+untouched, and every entry keeps
+`Signed-By=/usr/share/keyrings/debian-archive-keyring.gpg`, so a mirror serving
+unsigned or tampered metadata still fails the build.
+
+```sh
+# Local builds only; CI keeps the default sources.
+docker build -f asset-inspector/Dockerfile \
+  --build-arg UV_DEFAULT_INDEX_URL=https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple \
+  --build-arg DEBIAN_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian \
+  -t speechnexus-asset-inspector .
+```
+
 ## Verification
 
 ```sh

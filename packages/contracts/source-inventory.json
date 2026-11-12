@@ -15,6 +15,10 @@
     "sha256": "3f27dfa3d0b30542c8506abcb5124d13a81b41a54539297c5d0604858b247b40",
     "version": null
   },
+  "internal/asset-inspection.openapi.yaml": {
+    "sha256": "50f5489a4a21a22f541da7705b2c07300b09c506a1d893466236ecfebeb5a5e8",
+    "version": "0.1.0.dev0"
+  },
   "internal/audio-inspection.schema.json": {
     "sha256": "e44787aa83a7f24b3c9818b2fde4f83d29c41db41f5b92b343e6a283da5a3a71",
     "version": "1.0.0"
@@ -132,8 +136,8 @@
     "version": null
   },
   "speech-openapi.yaml": {
-    "sha256": "bb4e63c5f7eb812ff9d4f81e8b54ca334d09329cc71cbdd37b832ca694e80009",
-    "version": "0.1.0.dev16"
+    "sha256": "7e315a6bf8144c0fb6edc38904c5db39269a4ab10f270e89049627d2944d47cb",
+    "version": "0.1.0.dev17"
   },
   "voice-resource.schema.json": {
     "sha256": "540a0547a796be66b8f7597d4fe6e9f63184b30907237d1a1575a02b211f00c9",

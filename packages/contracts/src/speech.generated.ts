@@ -588,11 +588,21 @@ export interface paths {
      *     text publication unit accepts at most 4 MiB and one million UTF-8 text
      *     characters. Missing workspace_id selects workspace-default. Missing TTL
      *     requires an explicit deployment default; retention is fixed with the
-     *     original reservation. Audio readiness requires an installed real inspector.
+     *     original reservation. Audio readiness requires an installed real
+     *     inspector. A non-audio body under purpose `asr_input` is
+     *     `422 invalid_asset_audio`; a body over the media duration or decode
+     *     budget is `422 asset_audio_too_long`. Neither writes an Asset row,
+     *     object, or event. A configured inspector that is temporarily busy, over
+     *     its deadline, or overloaded is the retryable
+     *     `503 asset_inspection_busy`; a deployment with no usable inspector is the
+     *     non-retryable `503 asset_inspection_unavailable`.
      *     An unknown or in-progress upload is queried at Location when that header
      *     is available, or reconciled with the same Idempotency-Key and original
-     *     body. X-Should-Retry: false suppresses ordinary SDK transport retries;
-     *     creating another upload is never recovery of the original.
+     *     body. `X-Should-Retry` remains `false` to suppress automatic SDK
+     *     transport replay; `error.retryable` is `true` only for
+     *     `asset_inspection_busy`, meaning a new logical upload may succeed.
+     *     Creating a new upload is never recovery of an original upload whose
+     *     commit is unknown.
      */
     post: operations["uploadAsset"];
     delete?: never;
@@ -3442,14 +3452,61 @@ export interface components {
       };
     };
     /**
-     * @description Storage, retention configuration or inspection is unavailable, or an original
-     *     commit/PUT is unknown. Unknown results are not ordinary retry permission.
-     *     Location is present when an original Asset identity is known. Without an
-     *     Idempotency-Key a new request is a new logical upload, not guaranteed recovery.
+     * @description Storage, retention configuration, or inspection is unavailable, or an
+     *     original commit/PUT is unknown. Two inspection outcomes share this status
+     *     and are not interchangeable.
+     *
+     *     `asset_inspection_unavailable` means the deployment has no usable audio
+     *     inspector configured (missing URL/token, incompatible contract, or a
+     *     configuration-level refusal such as a bad bearer token, byte cap, or
+     *     media type). Retrying the same request cannot succeed until deployment
+     *     configuration changes, so `retryable` is `false`.
+     *
+     *     `asset_inspection_busy` means a usable inspector is temporarily unable to
+     *     serve this request: all slots are occupied, decoding exceeded its
+     *     wall-clock deadline, or the inspector is restarting or overloaded.
+     *     Inspection has no side effects, so a new request with the same body may
+     *     succeed later; `retryable` is `true`. This is the only Asset 503 for
+     *     which "retrying the same request may succeed" holds.
+     *
+     *     `X-Should-Retry` remains `false` for every Asset 503. It suppresses
+     *     automatic SDK transport replay of an upload whose body may no longer be
+     *     available; it does not say whether a new logical request can succeed.
+     *     Only `error.retryable` carries that statement. For
+     *     `asset_inspection_busy`, issue a new upload instead of replaying the
+     *     original transport request.
+     *
+     *     Unknown commit/PUT results are not ordinary retry permission. Location is
+     *     present when an original Asset identity is known. Without an
+     *     Idempotency-Key a new request is a new logical upload, not guaranteed
+     *     recovery.
      */
     AssetUploadUnavailable: {
       headers: {
         Location?: components["headers"]["AssetLocation"];
+        "X-Should-Retry"?: components["headers"]["NoOrdinaryRetry"];
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /**
+     * @description The bytes were fully received but are not acceptable audio. Two stable
+     *     codes share this status.
+     *
+     *     `invalid_asset_audio`: not a qualified audio encoding (truncated,
+     *     inconsistent RIFF, malformed chunk structure, or non-PCM).
+     *     `asset_audio_too_long`: the media itself exceeds the configured duration
+     *     or decode budget.
+     *
+     *     Both are permanent content rejections. No `speech_assets` row, object,
+     *     event, or Job is written; retrying the same bytes cannot succeed.
+     *     `X-Should-Retry` is `false`. This 422 is not a transient inspector
+     *     outage: a busy or unavailable inspector is the 503 family above.
+     */
+    AssetContentUnprocessable: {
+      headers: {
         "X-Should-Retry"?: components["headers"]["NoOrdinaryRetry"];
         [name: string]: unknown;
       };
@@ -3916,7 +3973,12 @@ export interface components {
   headers: {
     /** @description Relative URL of the original Asset; its existence or readiness may be unknown. */
     AssetLocation: string;
-    /** @description Suppress ordinary SDK retries; reconcile the original identity instead. */
+    /**
+     * @description Suppress automatic SDK transport replay; reconcile the original identity
+     *     instead. This does not contradict `error.retryable`: a retryable error
+     *     authorizes a new logical request, not a replay of the same transport
+     *     attempt.
+     */
     NoOrdinaryRetry: "false";
     /** @description Validated client request ID or a server-generated correlation ID. */
     XRequestId: string;
@@ -4875,7 +4937,7 @@ export interface operations {
       409: components["responses"]["AssetUploadConflict"];
       410: components["responses"]["Gone"];
       413: components["responses"]["PayloadTooLarge"];
-      422: components["responses"]["UnprocessableEntity"];
+      422: components["responses"]["AssetContentUnprocessable"];
       429: components["responses"]["TooManyRequests"];
       503: components["responses"]["AssetUploadUnavailable"];
     };

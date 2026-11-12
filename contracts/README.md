@@ -26,6 +26,22 @@ root/semantic limits and does not alter the default request surface.
   separately bind original input digest/length, exact source clock, configured
   limits and process completion. This is not a public Asset/stop/budget receipt.
 
+- `internal/asset-inspection.openapi.yaml`: private single-request HTTP protocol
+  for `POST /internal/v1/inspection/audio`. The body is raw encoded audio, the
+  request carries a bearer token plus deadline/duration budget headers, and
+  `200` reuses `AudioInspectionSuccess` without adding receipt fields. The closed
+  failure envelope distinguishes permanent content rejection (`invalid_media`,
+  `media_limit_exceeded`) from temporary outcomes (`busy`, `unavailable`,
+  `deadline_exceeded`). Registered as the `asset_inspection` HTTP surface; it is
+  bundled as an artifact but not a generated client because the request body is
+  binary rather than JSON.
+
+  The public Asset upload vocabulary adds `422 invalid_asset_audio` and
+  `422 asset_audio_too_long` for permanent content rejection, and
+  `503 asset_inspection_busy` for a configured but temporarily unavailable
+  inspector. The existing `503 asset_inspection_unavailable` remains
+  `retryable: false` and means no usable inspector is configured.
+
 - `operations.openapi.yaml`: liveness and readiness protocol shared by the
   speech API, execution gateway, and deployment probes.
 - `speech-openapi.yaml`: the public OpenAI-compatible Audio subset

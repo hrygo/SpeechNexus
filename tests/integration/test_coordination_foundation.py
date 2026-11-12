@@ -432,6 +432,11 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
     workspace_command_tables = (
         {"speech_workspace_commands"} if db.dialect == "postgresql" else set()
     )
+    # The append-only operator release ledger (0052). It is private to the
+    # dedicated release role; neither coordination owner may read or write it.
+    quarantine_release_tables = (
+        {"admission_quarantine_releases"} if db.dialect == "postgresql" else set()
+    )
     assert binding_tables <= {row["name"] for row in rows}
     assert profile_tables <= {row["name"] for row in rows}
     assert publication_tables <= {row["name"] for row in rows}
@@ -442,6 +447,7 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
     assert intent_tables <= {row["name"] for row in rows}
     assert voice_publication_tables <= {row["name"] for row in rows}
     assert workspace_command_tables <= {row["name"] for row in rows}
+    assert quarantine_release_tables <= {row["name"] for row in rows}
     assert (
         {row["name"] for row in rows}
         - {
@@ -459,6 +465,7 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         - intent_tables
         - voice_publication_tables
         - workspace_command_tables
+        - quarantine_release_tables
         == (set(SPEECH_UPDATES) | set(GATEWAY_UPDATES))
     )
     if db.dialect == "postgresql":
@@ -474,6 +481,7 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
                 | intent_tables
                 | voice_publication_tables
                 | workspace_command_tables
+                | quarantine_release_tables
             ):
                 with (
                     pytest.raises(psycopg.errors.InsufficientPrivilege),

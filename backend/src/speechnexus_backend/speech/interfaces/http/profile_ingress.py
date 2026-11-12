@@ -42,14 +42,14 @@ def _matches(template: str, path: str) -> bool:
     )
 
 
-def public_target(path: str) -> tuple[str, str] | None:
+def public_target(path: str, method: str) -> tuple[str, str] | None:
     return next(
         ((operation, "GET") for template, operation in PUBLIC.items() if _matches(template, path)),
         None,
     )
 
 
-def target(path: str) -> tuple[str, str] | None:
+def target(path: str, method: str) -> tuple[str, str] | None:
     if path == CREATE_PATH:
         return CREATE, "POST"
     if READ_PATTERN.fullmatch(path):

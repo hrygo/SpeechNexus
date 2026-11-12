@@ -63,6 +63,14 @@ def parse(
 
 
 @overload
+def parse(name: Literal["ModelBindingSummary"], value: Any) -> models.ModelBindingSummary: ...
+
+
+@overload
+def parse(name: Literal["ModelBindingList"], value: Any) -> models.ModelBindingList: ...
+
+
+@overload
 def parse(name: Literal["ResourcePool"], value: Any) -> models.ResourcePool: ...
 
 

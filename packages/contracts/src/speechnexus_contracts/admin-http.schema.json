@@ -128,6 +128,58 @@
           "json": true
         }
       }
+    },
+    "listModelBindings": {
+      "path": "/v1/nexus/admin/model-bindings",
+      "method": "get",
+      "request": "HttpRequest_listModelBindings",
+      "parameters": {
+        "path": {},
+        "query": {
+          "cursor": "string",
+          "limit": "integer",
+          "status": "string"
+        },
+        "headers": {
+          "x-request-id": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_listModelBindings_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_listModelBindings_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_listModelBindings_401",
+          "headers": {},
+          "json": true
+        },
+        "403": {
+          "schema": "HttpResponse_listModelBindings_403",
+          "headers": {},
+          "json": true
+        },
+        "405": {
+          "schema": "HttpResponse_listModelBindings_405",
+          "headers": {
+            "allow": "string"
+          },
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_listModelBindings_503",
+          "headers": {},
+          "json": true
+        }
+      }
     }
   },
   "x-nexus-entrypoints": [
@@ -148,7 +200,14 @@
     "HttpResponse_listResourcePools_200",
     "HttpResponse_listResourcePools_400",
     "HttpResponse_listResourcePools_401",
-    "HttpResponse_listResourcePools_503"
+    "HttpResponse_listResourcePools_503",
+    "HttpRequest_listModelBindings",
+    "HttpResponse_listModelBindings_200",
+    "HttpResponse_listModelBindings_400",
+    "HttpResponse_listModelBindings_401",
+    "HttpResponse_listModelBindings_403",
+    "HttpResponse_listModelBindings_405",
+    "HttpResponse_listModelBindings_503"
   ],
   "$defs": {
     "WorkspaceList": {
@@ -831,6 +890,105 @@
       "type": "string",
       "enum": ["realtime", "interactive", "batch"]
     },
+    "ModelBindingList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object", "data", "has_more", "next_cursor"],
+      "properties": {
+        "object": {
+          "const": "nexus.list"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ModelBindingSummary"
+          }
+        },
+        "has_more": {
+          "type": "boolean"
+        },
+        "next_cursor": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "ModelBindingSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "binding_id",
+        "latest_revision",
+        "current_revision",
+        "logical_model",
+        "tasks",
+        "release_tier",
+        "publication_status"
+      ],
+      "properties": {
+        "binding_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "latest_revision": {
+          "$ref": "#/$defs/Revision",
+          "description": "Highest immutable revision in this binding family."
+        },
+        "current_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Active revision used for new work; null when the family has never been published or its current revision was retired."
+        },
+        "logical_model": {
+          "type": "string"
+        },
+        "tasks": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_model_binding_schema_json_SpeechTaskKind"
+          }
+        },
+        "release_tier": {
+          "$ref": "#/$defs/ReleaseTier"
+        },
+        "publication_status": {
+          "type": "string",
+          "enum": ["draft", "published", "retired", "disabled"],
+          "description": "Publication status of latest_revision. A newer draft can coexist with a different current_revision."
+        }
+      }
+    },
+    "External_model_binding_schema_json_SpeechTaskKind": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_SpeechTaskKind"
+    },
+    "External_shared_capability_domains_schema_json_SpeechTaskKind": {
+      "type": "string",
+      "enum": [
+        "asr_realtime",
+        "asr_full_segment_review",
+        "asr_file",
+        "tts_realtime",
+        "tts_file",
+        "voice_design",
+        "voice_clone",
+        "voice_validation",
+        "forced_alignment",
+        "speaker_diarization",
+        "vad"
+      ]
+    },
+    "ReleaseTier": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_ReleaseTier"
+    },
+    "External_shared_capability_domains_schema_json_ReleaseTier": {
+      "type": "string",
+      "enum": ["experimental", "best_effort", "production"]
+    },
     "HttpRequest_listWorkspaces": {
       "type": "object",
       "additionalProperties": false,
@@ -1177,6 +1335,157 @@
       "required": ["body"]
     },
     "HttpResponse_listResourcePools_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_listModelBindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {
+            "cursor": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            },
+            "status": {
+              "type": "string",
+              "enum": ["draft", "published", "retired", "disabled"]
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      },
+      "required": []
+    },
+    "HttpResponse_listModelBindings_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ModelBindingList"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listModelBindings_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listModelBindings_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listModelBindings_403": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listModelBindings_405": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "string"
+            }
+          },
+          "required": ["allow"],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpResponse_listModelBindings_503": {
       "type": "object",
       "additionalProperties": false,
       "properties": {

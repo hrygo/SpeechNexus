@@ -2494,6 +2494,16 @@ export interface components {
         "application/json": components["schemas"]["ErrorResponse"];
       };
     };
+    /** @description The model binding collection accepts GET for the list and POST for drafts. */
+    BindingListMethodNotAllowed: {
+      headers: {
+        Allow: string;
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
     /** @description Shared service credential required or invalid. */
     Unauthorized: {
       headers: {
@@ -3097,7 +3107,10 @@ export interface operations {
           "application/json": components["schemas"]["ModelBindingList"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      405: components["responses"]["BindingListMethodNotAllowed"];
       503: components["responses"]["ServiceUnavailable"];
     };
   };

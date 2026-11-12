@@ -17,6 +17,8 @@ export type Contracts = Pick<
   | "ProfileActivationRequest"
   | "ProfilePublishedRevision"
   | "ModelBindingActivationRequest"
+  | "ModelBindingSummary"
+  | "ModelBindingList"
   | "ResourcePool"
   | "ResourcePoolList"
   | "CapacityManifestRecord"

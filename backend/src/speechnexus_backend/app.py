@@ -16,6 +16,7 @@ from starlette.responses import Response
 from speechnexus_backend import __version__
 from speechnexus_backend.artifact_runtime import ArtifactRuntime
 from speechnexus_backend.asset_runtime import AssetRuntime
+from speechnexus_backend.binding_list_runtime import BindingListRuntime
 from speechnexus_backend.binding_runtime import (
     BindingAdminReaderRuntime,
     BindingDefaultsRuntime,
@@ -39,6 +40,7 @@ from speechnexus_backend.speech.application.binding_drafts import BindingDrafts
 from speechnexus_backend.speech.application.binding_publication import (
     BindingPublicationFacts,
 )
+from speechnexus_backend.speech.application.binding_summaries import BindingSummaryService
 from speechnexus_backend.speech.application.capability_snapshot import CapabilityPolicy
 from speechnexus_backend.speech.application.job_cancellation import JobCancellationService
 from speechnexus_backend.speech.application.profile_drafts import ProfileDrafts
@@ -92,6 +94,9 @@ from speechnexus_backend.speech.interfaces.http.method_errors import method_not_
 from speechnexus_backend.speech.interfaces.http.middleware import (
     RequestIdMiddleware,
     require_request_abort_capture,
+)
+from speechnexus_backend.speech.interfaces.http.model_bindings import (
+    create_model_binding_list_router,
 )
 from speechnexus_backend.speech.interfaces.http.models import ModelCatalogue, create_model_router
 from speechnexus_backend.speech.interfaces.http.profile_contract import profile_http_contract
@@ -167,7 +172,11 @@ class _SpeechAPI(FastAPI):
                 binding_http_contract(producer=self._binding_defaults_enabled),
             ):
                 surface = copy.deepcopy(contract)
-                document["paths"].update(surface["paths"])
+                # Surfaces may describe different methods of one path (for
+                # example the binding list GET beside the draft POST). Merge the
+                # methods instead of dropping an operation another surface owns.
+                for path, item in surface["paths"].items():
+                    document["paths"].setdefault(path, {}).update(item)
                 components = document.setdefault("components", {})
                 for category, definitions in surface["components"].items():
                     namespace = components.setdefault(category, {})
@@ -201,6 +210,7 @@ def create_app(
     artifacts: ArtifactService | None = None,
     workspaces: WorkspaceService | None = None,
     resource_pools: ResourcePoolService | None = None,
+    binding_summaries: BindingSummaryService | None = None,
     profiles: ProfileDrafts | None = None,
     bindings: BindingDrafts | None = None,
     binding_defaults: BindingDefaultDrafts | None = None,
@@ -249,6 +259,18 @@ def create_app(
         if resource_pools is not None:
             return resource_pools
         return resource_pool_runtime.service if resource_pool_runtime is not None else None
+
+    binding_list_runtime = (
+        BindingListRuntime(resolved_settings)
+        if binding_summaries is None
+        and resolved_settings.binding_list_reader_database_url is not None
+        else None
+    )
+
+    def get_binding_summaries() -> BindingSummaryService | None:
+        if binding_summaries is not None:
+            return binding_summaries
+        return binding_list_runtime.service if binding_list_runtime is not None else None
 
     artifact_runtime = (
         ArtifactRuntime(resolved_settings)
@@ -464,6 +486,9 @@ def create_app(
             if resource_pool_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, resource_pool_runtime.close)
                 await run_in_threadpool(resource_pool_runtime.open)
+            if binding_list_runtime is not None:
+                resources.push_async_callback(run_in_threadpool, binding_list_runtime.close)
+                await run_in_threadpool(binding_list_runtime.open)
             if pronunciation_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, pronunciation_runtime.close)
                 await run_in_threadpool(pronunciation_runtime.open)
@@ -543,7 +568,11 @@ def create_app(
         max_bytes=resolved_settings.binding_receive_max_bytes,
         concurrency=resolved_settings.binding_receive_concurrency,
         receive_timeout_seconds=resolved_settings.binding_receive_timeout_seconds,
-        is_enabled=lambda: get_bindings() is not None or get_binding_lifecycle() is not None,
+        is_enabled=lambda: (
+            get_bindings() is not None
+            or get_binding_lifecycle() is not None
+            or get_binding_summaries() is not None
+        ),
         allowed_hosts=resolved_settings.asset_allowed_hosts,
         allowed_origins=resolved_settings.asset_allowed_origins,
     )
@@ -588,6 +617,7 @@ def create_app(
     app.include_router(create_transcription_router(lambda: transcriptions))
     app.include_router(create_workspace_router(lambda: workspace_service))
     app.include_router(create_resource_pool_router(get_resource_pools))
+    app.include_router(create_model_binding_list_router(get_binding_summaries))
     app.include_router(create_profile_router(get_profiles))
     app.include_router(create_pronunciation_router(get_pronunciations))
     app.include_router(

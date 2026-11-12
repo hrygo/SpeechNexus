@@ -162,7 +162,9 @@ def test_binding_surface_selects_only_declared_draft_and_lifecycle_operations() 
         ]
     ) == {"post"}
     assert all(set(item) == {"get"} for item in workspace_contract()["paths"].values())
-    assert "/v1/nexus/admin/model-bindings" not in workspace_contract()["paths"]
+    # The binding draft surface owns only the collection POST; the list GET is
+    # a separate admin read selected by its own surface.
+    assert set(workspace_contract()["paths"]["/v1/nexus/admin/model-bindings"]) == {"get"}
     for unknown in ("publishModelBindingRevision", "listModelBindings", "queryBindingCommand"):
         with pytest.raises(ValueError, match="Unknown HTTP operation"):
             validate_request(unknown, {})

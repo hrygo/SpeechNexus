@@ -21,6 +21,7 @@ from speechnexus_backend.speech.interfaces.http.draft_ingress import DraftIngres
 PREFIX = "/v1/nexus/admin/model-bindings"
 CREATE_PATH = next(path for path, item in contract()["paths"].items() if "post" in item)
 READ_PATH = next(path for path, item in contract()["paths"].items() if "get" in item)
+LIST_OPERATION = "listModelBindings"
 RETIRE_OPERATION = "retireModelBindingRevision"
 ACTIVATE_OPERATION = "activatePublishedModelBindingRevision"
 _OPERATION_PATHS = {
@@ -48,9 +49,15 @@ DEFAULTS_PATTERN = re.compile(
 )
 
 
-def target(path: str, *, producer: bool = False) -> tuple[str, str] | None:
+def target(path: str, method: str, *, producer: bool = False) -> tuple[str, str] | None:
     if path == CREATE_PATH:
-        return CREATE, "POST"
+        # The collection is both the draft create (POST) and the admin list
+        # (GET); an unsupported method reports both allowed methods.
+        if method == "GET":
+            return LIST_OPERATION, "GET"
+        if method == "POST":
+            return CREATE, "POST"
+        return LIST_OPERATION, "GET, POST"
     if READ_PATTERN.fullmatch(path):
         return READ, "GET"
     if RETIRE_PATTERN.fullmatch(path):
@@ -71,7 +78,7 @@ class BindingIngress(DraftIngress):
             error=partial(ingress_error, producer=producer),
             create_operation=CREATE,
             read_operation=READ,
-            read_operations=(READ_DEFAULTS,) if producer else (),
+            read_operations=(LIST_OPERATION, READ_DEFAULTS) if producer else (LIST_OPERATION,),
             write_operations=(RETIRE_OPERATION, ACTIVATE_OPERATION),
             **kwargs,
         )

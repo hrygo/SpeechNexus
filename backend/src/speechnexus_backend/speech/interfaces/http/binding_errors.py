@@ -3,6 +3,7 @@
 from typing import Any
 
 from speechnexus_contracts.admin import parse
+from speechnexus_contracts.admin_http import validate_response as validate_admin_response
 from speechnexus_contracts.binding_defaults_http import (
     validate_response as validate_defaults_response,
 )
@@ -11,6 +12,7 @@ from starlette.responses import JSONResponse
 
 CREATE = "createModelBindingDraft"
 READ = "getModelBindingRevision"
+LIST = "listModelBindings"
 READ_DEFAULTS = "getModelBindingParameterDefaults"
 ERRORS = {
     "invalid_binding_request": (400, "invalid_request_error", "Invalid binding request."),
@@ -89,12 +91,15 @@ def binding_error(
         )
     )
     if operation is not None:
-        validate = (
-            validate_defaults_response
-            if operation == READ_DEFAULTS or (operation == CREATE and producer)
-            else validate_response
-        )
-        validate(operation, status, {"body": body, "headers": headers})
+        if operation == LIST:
+            validate_admin_response(operation, status, {"body": body, "headers": headers})
+        else:
+            validate = (
+                validate_defaults_response
+                if operation == READ_DEFAULTS or (operation == CREATE and producer)
+                else validate_response
+            )
+            validate(operation, status, {"body": body, "headers": headers})
     return JSONResponse(body, status_code=status, headers=headers)
 
 

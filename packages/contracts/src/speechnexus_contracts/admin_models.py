@@ -404,6 +404,7 @@ class Publication1(TypedDict):
     disabled_reason: str | None
 
 
+type ReleaseTier = ExternalSharedCapabilityDomainsSchemaJsonReleaseTier
 type ExternalSharedIdentifiersSchemaJsonPoolId = Literal[
     "asr-realtime", "tts-realtime", "asr-batch", "tts-batch", "voice-creation", "auxiliary"
 ]
@@ -536,6 +537,23 @@ class ProfileActivationRequest(TypedDict):
 
 class ModelBindingActivationRequest(TypedDict):
     expected_current_revision: Revision | None
+
+
+class ModelBindingSummary(TypedDict):
+    binding_id: Identifier
+    latest_revision: Revision
+    current_revision: Revision | None
+    logical_model: str
+    tasks: list[ExternalModelBindingSchemaJsonSpeechTaskKind]
+    release_tier: ReleaseTier
+    publication_status: Literal["draft", "published", "retired", "disabled"]
+
+
+class ModelBindingList(TypedDict):
+    object: Literal["nexus.list"]
+    data: list[ModelBindingSummary]
+    has_more: bool
+    next_cursor: str | None
 
 
 class ResourcePool(TypedDict):
@@ -810,6 +828,8 @@ type AdminContracts = (
     | ProfileActivationRequest
     | ProfilePublishedRevision
     | ModelBindingActivationRequest
+    | ModelBindingSummary
+    | ModelBindingList
     | ResourcePool
     | ResourcePoolList
     | CapacityManifestRecord

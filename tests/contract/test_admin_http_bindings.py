@@ -99,7 +99,7 @@ def test_only_selected_reads_are_closed_without_changing_source_defaults() -> No
     assert actual["components"]["parameters"]["Limit"]["schema"]["default"] == 50
     assert actual["security"] == [{"SharedServiceKey": []}, {}]
     actual["paths"].clear()
-    assert len(contract()["paths"]) == 3
+    assert len(contract()["paths"]) == 4
 
 
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda example: example["id"])

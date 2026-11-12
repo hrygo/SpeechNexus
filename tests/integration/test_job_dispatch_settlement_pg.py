@@ -6,7 +6,6 @@ real admission, claim, planner, state store and LeaseService path.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 from collections.abc import Mapping
@@ -166,6 +165,23 @@ def _lease(db: Any, job_id: str) -> dict[str, Any]:
     )
     assert len(rows) == 1
     return cast(dict[str, Any], rows[0])
+
+
+def _deadline(db: Any, job_id: str) -> int:
+    """The deadline admission froze for this Job; the planner re-derives it from here."""
+    rows = db.query("SELECT deadline_at_us FROM admission_leases WHERE operation_id=%s", (job_id,))
+    assert len(rows) == 1
+    return int(rows[0]["deadline_at_us"])
+
+
+@dataclass
+class _Clock:
+    """A dispatcher time source this test sets exactly instead of racing a wall clock."""
+
+    now_us: int
+
+    def __call__(self) -> int:
+        return self.now_us
 
 
 def _read(store: Any, job_id: str) -> PublicJob:
@@ -431,19 +447,18 @@ async def test_past_deadline_and_gateway_not_found_settle_without_submitting(
     db = admission_database.runtime.foundation.database
     _asset(db)
     baseline = _capacity_snapshot(db)
-    db.query(
-        "UPDATE speech_binding_revisions SET definition_json=jsonb_set("
-        "definition_json::jsonb, '{execution_defaults,asr,timeout_seconds}', '0.05')::text "
-        "WHERE binding_id=%s AND revision='1'",
-        (BINDING,),
-    )
+    # The binding keeps its production timeout, so the create commits without
+    # racing its own deadline: no assertion here waits on how long admission takes.
     created = _submit(_store(admission_database), db, kind="asr", key="dispatch-asr-expired")
     assert created.outcome == "created", created.error_code
     job_id = created.job.job_id
-    await asyncio.sleep(0.2)
+    # Expiry is a state the dispatcher observes, not a delay this test sits out.
+    # The deadline stays the one admission committed and the planner verifies;
+    # only the dispatcher's clock is placed one second past it.
+    clock = _Clock(_deadline(db, job_id) + 1_000_000)
 
     gateway = _Gateway(db)
-    dispatcher = _dispatcher(_pool(admission_database), db, gateway, _Publisher())
+    dispatcher = _dispatcher(_pool(admission_database), db, gateway, _Publisher(), now_us=clock)
     batch = await dispatcher.run_once("worker-a3")
 
     assert batch.claimed == 1 and batch.failed == 1, batch

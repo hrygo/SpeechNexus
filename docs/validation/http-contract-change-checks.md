@@ -44,8 +44,9 @@ network reference loading, runtime API call, permission change or migration.
 
 A source version change is visible in the inventory and never automatically
 waives a finding. Version/upgrade descriptions and consumer acceptance remain
-required. This tool has no skip/waiver switch. Breaking changes need an explicit
-version/migration approach under the existing contract handoff process.
+required. This tool has no general skip/waiver switch; the only exception is the
+exact approved operation removal registry below. Breaking changes need an
+explicit version/migration approach under the existing contract handoff process.
 
 ## Frozen internal additive promotions
 
@@ -73,6 +74,25 @@ keep the previous shape without that key. An old gateway rejects a custom
 command containing the new property deterministically instead of silently
 falling back, while a builtin command remains valid because it never carries the
 key; deployment must upgrade gateways before the backend starts emitting it.
+
+## Approved operation removals
+
+A breaking operation removal may be accepted only through the literal
+`_APPROVED_OPERATION_REMOVALS` registry in
+`scripts/dev-env/check-http-contract-changes.py`. Each key is exact: source,
+path, method, baseline version, current version and change kind
+(`operation-removed`); the value names the approving issue and reason. Only the
+matching `operation removed` finding is filtered from the report. The registry
+is not a general waiver: every other finding still rejects, and the target
+operation must be present in the baseline and absent from the current source.
+An entry is active only for its exact version pair; any other pair leaves the
+removal unapproved, so a wrong or reverted version cannot silently authorize it.
+At the exact pair, a stale entry, an entry that names a different method, or a
+whole-path removal rejects the comparison. Each approval is printed separately
+in text mode and listed in `approved_removals` in JSON mode.
+
+New entries must add matching negative cases and update the frozen assertion in
+[`tests/contract/test_approved_http_operation_removals.py`](../../tests/contract/test_approved_http_operation_removals.py).
 
 ## What the check establishes
 

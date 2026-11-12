@@ -34,6 +34,30 @@ UNVERIFIED = (
     "Consumer upgrade, migration and actual deployment qualification",
 )
 
+# Literal allowlist for breaking operation removals explicitly approved by the
+# product owner. This is not a relaxation of structural checks: only an exact
+# source/path/method/version-pair/change-kind match is filtered, every other
+# finding still rejects, and every entry must correspond to a real removal in
+# this comparison or it rejects too. New entries must add matching negative
+# cases and update the frozen assertion in
+# tests/contract/test_approved_http_operation_removals.py.
+_APPROVED_OPERATION_REMOVALS: dict[tuple[str, str, str, str, str, str], dict[str, str]] = {
+    (
+        "contracts/admin-openapi.yaml",
+        "/v1/nexus/admin/profiles",
+        "get",
+        "0.1.0.dev6",
+        "0.1.0.dev7",
+        "operation-removed",
+    ): {
+        "issue": "#603",
+        "reason": (
+            "Unimplemented legacy declaration; the published profile lists v1/v2 "
+            "already cover the capability."
+        ),
+    }
+}
+
 
 def _kernel() -> ModuleType:
     spec = importlib.util.spec_from_file_location("_http_contract_change_kernel", _KERNEL)
@@ -58,6 +82,58 @@ def _version(document: Any) -> str:
     return str(document["info"]["version"])
 
 
+def _apply_approved_operation_removals(
+    source: str,
+    base: Mapping[str, Any],
+    current: Mapping[str, Any],
+    base_version: str,
+    current_version: str,
+    findings: list[str],
+) -> tuple[list[str], list[str]]:
+    remaining = list(findings)
+    approved: list[str] = []
+    for key, metadata in _APPROVED_OPERATION_REMOVALS.items():
+        entry_source, path, method, from_version, to_version, change = key
+        if entry_source != source:
+            continue
+        pointer = f"{source}:paths/{path}/{method}"
+        problem: str | None = None
+        if change != "operation-removed":
+            problem = f"unsupported change kind {change!r}"
+        elif (base_version, current_version) != (from_version, to_version):
+            # Entries are active only for their exact version pair. A different
+            # pair leaves any removal unapproved instead of treating the entry as
+            # a blanket permission; it also keeps synthetic fixtures isolated.
+            continue
+        elif not metadata.get("issue") or not metadata.get("reason"):
+            problem = "entry must include a non-empty issue and reason"
+        else:
+            base_paths = base.get("paths")
+            current_paths = current.get("paths")
+            base_item = base_paths.get(path) if isinstance(base_paths, Mapping) else None
+            current_item = current_paths.get(path) if isinstance(current_paths, Mapping) else None
+            base_methods = base_item if isinstance(base_item, Mapping) else {}
+            current_methods = current_item if isinstance(current_item, Mapping) else {}
+            if method not in base_methods:
+                problem = "baseline does not declare this operation"
+            elif path not in (current_paths if isinstance(current_paths, Mapping) else {}):
+                problem = (
+                    "the whole path was removed; only an exact operation removal can be approved"
+                )
+            elif method in current_methods:
+                problem = "current contract still declares this operation"
+            else:
+                expected = f"{pointer}: operation removed"
+                if expected not in remaining:
+                    problem = f"exact finding {expected!r} is absent"
+                else:
+                    remaining.remove(expected)
+                    approved.append(f"{expected} [{metadata['issue']}: {metadata['reason']}]")
+                    continue
+        remaining.append(f"{pointer}: approved operation removal entry does not match: {problem}")
+    return remaining, approved
+
+
 def inspect_sources(
     base: str, *, surface: Literal["nonstandard", "speech"] = "nonstandard"
 ) -> dict[str, Any]:
@@ -79,6 +155,8 @@ def inspect_sources(
     compare = _kernel()._compare_openapi
     rows: list[dict[str, Any]] = []
     findings: list[str] = []
+    approved_removals: list[str] = []
+    compared_sources: set[str] = set()
     selected = (SPEECH_SOURCE,) if surface == "speech" else SOURCES
     for path in selected:
         row: dict[str, Any] = {"path": path, "base_version": None, "current_version": None}
@@ -99,11 +177,24 @@ def inspect_sources(
             row["base_version"], row["current_version"] = _version(old), _version(new)
             row["paths"] = len(new["paths"])
             detected = list(compare(old, new, path, base_git_ref=resolved, standard_only=False))
+            detected, approved = _apply_approved_operation_removals(
+                path,
+                old,
+                new,
+                row["base_version"],
+                row["current_version"],
+                detected,
+            )
             findings.extend(detected)
+            approved_removals.extend(approved)
             row["findings"] = len(detected)
+            compared_sources.add(path)
         except ValueError, OSError, yaml.YAMLError, subprocess.CalledProcessError, RecursionError:
             # Broken sources/refs or an unbounded schema cannot turn into a pass.
             findings.append(f"{path}: source or reference comparison failed; not proven")
+    selected_approval_sources = {key[0] for key in _APPROVED_OPERATION_REMOVALS} & set(selected)
+    for source in sorted(selected_approval_sources - compared_sources):
+        findings.append(f"{source}: approved operation removal entries could not be verified")
     return {
         "baseline": resolved,
         "scope": "known-speech-http-structure"
@@ -111,6 +202,7 @@ def inspect_sources(
         else "known-nonstandard-http-structure",
         "sources": rows,
         "findings": findings,
+        "approved_removals": approved_removals,
         "unverified": list(UNVERIFIED),
     }
 
@@ -136,6 +228,8 @@ def main() -> int:
             print(f"{row['path']}: {row['base_version']} -> {row['current_version']}")
         for finding in report["findings"]:
             print("  - " + finding)
+        for approval in report["approved_removals"]:
+            print("  approved: " + approval)
         print("Known HTTP structural checks: " + ("rejected" if report["findings"] else "passed"))
         print("Not a full protocol compatibility proof; see unverified scope:")
         for boundary in report["unverified"]:

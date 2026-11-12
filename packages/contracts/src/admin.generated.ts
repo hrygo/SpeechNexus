@@ -54,8 +54,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List scenario-profile families and their immutable revisions */
-    get: operations["listProfileFamilies"];
+    get?: never;
     put?: never;
     /**
      * Create an immutable draft scenario-profile revision
@@ -742,23 +741,6 @@ export interface components {
         param?: null;
         nexus?: never;
       };
-    };
-    ProfileFamilySummary: {
-      profile_id: components["schemas"]["Identifier"];
-      latest_revision: components["schemas"]["Revision"];
-      current_revision: components["schemas"]["Revision"] | null;
-      /** @enum {string} */
-      kind: "asr" | "tts" | "duplex";
-      release_tier: components["schemas"]["ReleaseTier"];
-      /** @enum {string} */
-      publication_status: "draft" | "published" | "retired" | "disabled";
-    };
-    ProfileFamilyList: {
-      /** @constant */
-      object: "nexus.list";
-      data: components["schemas"]["ProfileFamilySummary"][];
-      has_more: boolean;
-      next_cursor: string | null;
     };
     ProfilePublicationRequest: {
       expected_revision: components["schemas"]["Revision"];
@@ -3653,35 +3635,6 @@ export interface operations {
       404: components["responses"]["NotFound"];
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
-    };
-  };
-  listProfileFamilies: {
-    parameters: {
-      query?: {
-        cursor?: components["parameters"]["Cursor"];
-        limit?: components["parameters"]["Limit"];
-        status?: "draft" | "published" | "retired" | "disabled";
-      };
-      header?: {
-        "X-Request-ID"?: components["parameters"]["XRequestId"];
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Profile families. Filtering by status applies to latest_revision. */
-      200: {
-        headers: {
-          "X-Request-ID"?: components["headers"]["XRequestId"];
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ProfileFamilyList"];
-        };
-      };
-      401: components["responses"]["Unauthorized"];
-      503: components["responses"]["ServiceUnavailable"];
     };
   };
   createProfileRevision: {

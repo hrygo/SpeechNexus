@@ -7,7 +7,7 @@ date: 2026-11-12
 
 # 音频资产检查的独立检查容器
 
-本文规定公开 `POST /v1/nexus/assets` 的 `asr_input` 音频检查如何由一个**独立、无出站网络、非特权**的检查容器完成，以及 Speech API 与它之间的调用协议、输入传递、安全边界、容量语义、生命周期、配置、验收与迁移。本文是实现该形态的输入，不表示容器已经交付：API 侧已按本页装配 HTTP 适配器并完成失败投影，检查容器镜像与部署装配仍待交付。旧进程监督器（`backend/src/speechnexus_backend/speech/infrastructure/audio_inspection_process.py:342`）已不再被组合根装配，按 §9.1 在其退役卡删除。交付状态以[跟踪矩阵](../plans/delivery-tracking.md)为准。
+本文规定公开 `POST /v1/nexus/assets` 的 `asr_input` 音频检查如何由一个**独立、无出站网络、非特权**的检查容器完成，以及 Speech API 与它之间的调用协议、输入传递、安全边界、容量语义、生命周期、配置、验收与迁移。本文是实现该形态的输入，不表示容器已经交付：API 侧已按本页装配 HTTP 适配器并完成失败投影，检查容器镜像与部署装配仍待交付。旧进程监督器（`backend/src/speechnexus_backend/speech/infrastructure/audio_asset_inspector.py`、`audio_inspection_process.py` 与固定 launcher `_audio_inspection_launcher.py`）已删除，`audio` 路径只有 HTTP 适配器一种实现。交付状态以[跟踪矩阵](../plans/delivery-tracking.md)为准。
 
 四条不变量，任一不成立都不得声明可用：
 
@@ -38,7 +38,7 @@ date: 2026-11-12
 | --- | --- |
 | 入口边界 | 接收 multipart、限制并发与字节数、按 `asset_max_bytes` 私有缓冲并计算 SHA-256（`backend/src/speechnexus_backend/speech/interfaces/http/asset_ingress.py:28`） |
 | 调用 | 用同一份字节向检查容器发一次请求，携带期限与时长上限；只尝试一次，不自动重试 |
-| 事实判定 | 不信任回执自述：重新核对摘要、字节数、媒体类型、采样时钟与时长上限（复用 `backend/src/speechnexus_backend/speech/infrastructure/audio_asset_inspector.py:109` 的判定） |
+| 事实判定 | 不信任回执自述：重新核对摘要、字节数、媒体类型、采样时钟与时长上限（复用 `backend/src/speechnexus_backend/speech/infrastructure/audio_inspection_http.py:281` 的判定） |
 | 持久化 | 校验通过后才进入既有 `reserve → begin_write → PUT → publish` 路径（`backend/src/speechnexus_backend/speech/application/assets.py:179`） |
 | 错误投影 | 把检查器的私有状态映射为公开错误；不可用与永久拒绝严格分开 |
 
@@ -152,7 +152,7 @@ X-Request-Id: <opaque>              # 仅用于日志关联，不含内容
 
 - **API 超时**：立即返回 `503`；检查器仍可能在自身期限内继续解码，最坏多做 `WALL_SECONDS` 的无效工作，不写任何状态，槽位在子进程死亡后释放。协议不做「取消消息」，因为检查没有副作用，取消只影响资源占用。
 - **客户端断开**：请求体未读完时，检查器读到短读，**不启动解码**，不产生回执；请求体已读完后，ASGI 层不保证可观测断开，因此取消的确定性边界是「检查器期限」而不是「断开时刻」。该语义写入验收（§8 A5），不宣称立即取消。
-- **API 侧协作式取消**：`AssetInspector` 实现保留 `cancelled` 回调并在发送前、收到回执后检查；公开上传路径当前没有可用的取消信号源（`backend/src/speechnexus_backend/speech/infrastructure/audio_asset_inspector.py:57` 的默认值即 `lambda: False`），本设计不改变这一点，只保留接口。
+- **API 侧协作式取消**：`AssetInspector` 实现保留 `cancelled` 回调并在发送前、收到回执后检查；公开上传路径当前没有可用的取消信号源（`backend/src/speechnexus_backend/speech/infrastructure/audio_inspection_http.py:123` 的默认值即 `lambda: False`），本设计不改变这一点，只保留接口。
 
 ## 3. 输入传递
 
@@ -233,7 +233,7 @@ API 已经把上传内容完整收进私有、非链接的临时文件（`backen
 
 于是检查容器内的进程一次都不调用 `unshare`/`mount`/`pivot_root`/`setns`，`CAP_SYS_ADMIN` 不再是被需要的权限；`--privileged`、`cap_add`、`seccomp=unconfined`、`apparmor=unconfined` 以及宿主 `kernel.apparmor_restrict_unprivileged_userns` 的调整都不在方案内。
 
-随之退役的是旧监督器里为 bwrap 服务的机制：pidfd 身份传递、固定 launcher、guardian、进程内 seccomp 过滤器、`_audio_inspection_launcher.py`。它们存在的目的是「在 wrapper 可能撒谎时证明真实 worker 已退出」；现在子进程就是解码器本身，`Popen` 的 PID 即真实身份，`SIGKILL` + `wait` 是可验证的退出证据。容器级兜底更强：子进程在 1 s 内无法回收时，服务进程主动 `exit(非 0)`，容器重启后整个 PID 命名空间被销毁，不存在存活进程。
+旧监督器里为 bwrap 服务的机制（pidfd 身份传递、固定 launcher、guardian、进程内 seccomp 过滤器、`_audio_inspection_launcher.py`）已随旧路径一并删除。它们存在的目的曾是「在 wrapper 可能撒谎时证明真实 worker 已退出」；现在子进程就是解码器本身，`Popen` 的 PID 即真实身份，`SIGKILL` + `wait` 是可验证的退出证据。容器级兜底更强：子进程在 1 s 内无法回收时，服务进程主动 `exit(非 0)`，容器重启后整个 PID 命名空间被销毁，不存在存活进程。
 
 ### 4.3 残余风险
 
@@ -315,18 +315,17 @@ API 侧：
 | `SPEECHNEXUS_AUDIO_INSPECTION_WALL_SECONDS` | 变为下发给检查器的解码预算 |
 | `SPEECHNEXUS_AUDIO_INSPECTION_MAX_RECEIPT_BYTES` | 与 `ASSET_INSPECTION_MAX_RESPONSE_BYTES` 取小 |
 
-### 7.3 废弃
+### 7.3 无消费者的旧键（只用于拒绝）
 
-12 个 `SPEECHNEXUS_AUDIO_INSPECTION_*` 键的去向合计为：5 个废弃、4 个保留、3 个迁移到检查器。选择器仍只有 `SPEECHNEXUS_ASSET_INSPECTOR`，不新增取值。
+12 个 `SPEECHNEXUS_AUDIO_INSPECTION_*` 键的去向合计为：8 个无消费者、4 个保留。选择器仍只有 `SPEECHNEXUS_ASSET_INSPECTOR`，不新增取值。
 
-`SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT`、`_COMMAND`、`_LAUNCHER_PYTHON`、`_BUBBLEWRAP`、`_PRLIMIT`：镜像挂载点、命令行、解释器与两个宿主工具的路径全部由检查容器镜像与部署固定，API 不再需要知道。
+`SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT`、`_COMMAND`、`_LAUNCHER_PYTHON`、`_BUBBLEWRAP`、`_PRLIMIT`：镜像挂载点、命令行、解释器与两个宿主工具的路径全部由检查容器镜像与部署固定，API 不再需要知道；旧进程监督器删除后这 5 个字段没有任何消费者。
 
-迁移路径：
+`_MEMORY_BYTES`、`_CPU_SECONDS`、`_OUTPUT_BYTES` 同样没有消费者：它们迁到检查器的 `SPEECHNEXUS_INSPECTION_*`，语义不变。
 
-1. 保留这 5 个字段一个发布周期，仅用于**诊断**：任一被显式设置为非空值时，`audio` 与 `text` 都启动失败，错误消息点名旧键并指向 `SPEECHNEXUS_ASSET_INSPECTION_URL`/`_TOKEN`。空值（Compose 转发空串）按未配置处理（`backend/src/speechnexus_backend/asset_runtime.py:68` 的既有判定）。
-2. 「配了音频前置但选择器是 `text`」的反向校验（`backend/src/speechnexus_backend/asset_runtime.py:173`）扩展到新增键，防止静默降级。
-3. 下个发布周期删除这 5 个字段与 `audio_inspection_process.py`、`_audio_inspection_launcher.py`。`Settings` 的 `extra="ignore"`（`backend/src/speechnexus_backend/settings.py:29`）保证届时环境里残留的旧键不会导致启动失败。
-4. `_MEMORY_BYTES`、`_CPU_SECONDS`、`_OUTPUT_BYTES` 不保留在 API：它们迁到检查器的 `SPEECHNEXUS_INSPECTION_*`，语义不变。
+这 8 个字段仍声明在 `Settings`，且只用于**拒绝**：前 5 个任一被显式设为非空值、后 3 个任一偏离默认值时，`audio` 与 `text` 都启动失败，错误消息点名旧键并指向 `SPEECHNEXUS_ASSET_INSPECTION_URL`/`_TOKEN` 或检查器侧新键（`backend/src/speechnexus_backend/asset_runtime.py:101` 的 `_refuse_retired_inspector_settings`）。空值（Compose 转发空串）按未配置处理（`backend/src/speechnexus_backend/asset_runtime.py:80` 的既有判定）。删除这些字段会让残留配置被静默忽略，因此它们不随旧路径代码一起删除。
+
+「配了音频前置但选择器是 `text`」的反向校验（`backend/src/speechnexus_backend/asset_runtime.py:188`）覆盖 §7.1 的新增键，防止静默降级。
 
 ## 8. 验收条件
 
@@ -371,10 +370,10 @@ $COMPOSE exec -T postgres sh -c "$PSQL \"SELECT asset_state, media_type, duratio
 ### 9.1 迁移步骤
 
 1. 构建检查器镜像并以 `asset-inspection` profile 启动；确认 `/readyz` 200 且返回的契约/配方版本为 `1`/`pcm-decode-1`。（检查器优先启动，API 不做 `depends_on`。）
-2. 在 `deploy/compose.env` 加入 §7.1 的三个 API 键，保留 `SPEECHNEXUS_ASSET_INSPECTOR=audio`，删除 §7.3 的 5 个旧键（或留空）。
+2. 在 `deploy/compose.env` 加入 §7.1 的 API 键，保留 `SPEECHNEXUS_ASSET_INSPECTOR=audio`，删除 §7.3 的 8 个旧键（或留空）。
 3. 重建 api；启动日志应显示能力探测通过。若探测成功但版本或上限不兼容，API 拒绝启动并点名变量。
 4. 执行 §8 的 A1–A7，把结果写入[跟踪矩阵](../plans/delivery-tracking.md)对应需求的验证列。
-5. 全部通过后，删除 `audio_inspection_process.py`、`_audio_inspection_launcher.py`、5 个旧配置字段与它们的单测；归档[旧检查边界](../archive/components/audio-asset-inspection.md)指向本页。
+5. 旧进程监督器（`audio_inspection_process.py`、`audio_asset_inspector.py`、`_audio_inspection_launcher.py`）与它们的单测已删除；[旧检查边界](../archive/components/audio-asset-inspection.md) 作为历史记录保留并指向本页。§7.3 的 8 个旧键仍保留在 `Settings` 中，配置了就让启动失败，因此部署侧必须删掉这些变量，不能指望它们被忽略。
 
 数据库无需变更：`speech_assets` 的状态机（`backend/src/speechnexus_backend/speech/infrastructure/asset_schema.py:24`）与音频列约束（`backend/src/speechnexus_backend/speech/infrastructure/asset_schema.py:47`）已经足够；不新增表、不新增列、不新增授权，也不改迁移。
 
@@ -398,7 +397,7 @@ $COMPOSE exec -T postgres sh -c "$PSQL \"SELECT asset_state, media_type, duratio
 | C3 API 适配器 | `AssetInspector` 的 HTTP 实现替换进程实现：一次请求、回执复核、失败分类、`AssetError` 永久拒绝、`close()` 语义、装配期校验与能力探测 | C1（可与 C2 并行） | 1 d | 单测覆盖回执篡改（摘要/字节/时钟/时长/版本）、不可用不落库、永久拒绝不落库、关闭后拒绝新检查；`open()` 失败路径可安全关闭 |
 | C4 部署装配 | Compose `asset-inspection` profile、专用 `internal` 网络、加固与资源上限、健康检查、`compose.env.example`、运维文档与上线前检查说明 | C2 | 0.5 d | `make stack-config` 通过；`config --services` 仍为 5 个（C9）；检查器无宿主端口、无 volume、无出站 |
 | C5 真实部署验收 | 在 aarch64 参考部署执行 A1–A7，记录命令、输出、镜像摘要与环境 | C2 C3 C4 | 0.5 d | §8 全部通过；证据写入跟踪矩阵 |
-| C6 退役旧路径 | 删除 `audio_inspection_process.py`、`_audio_inspection_launcher.py`、5 个旧键、相关单测；归档页指向本页 | C5 | 0.5 d | `rg audio_inspection_process` 无产品引用；`uv run pytest` 相关用例迁移；启动仍无降级路径 |
+| C6 退役旧路径 | 删除 `audio_asset_inspector.py`、`audio_inspection_process.py`、`_audio_inspection_launcher.py` 与只测它们的 5 个单测；内容判决（合格/畸形/超时长）改由 HTTP 适配器接真实解码子进程与 `asset-inspector` 服务单测承担；8 个无消费者的旧键保留为启动拒绝锚点；归档页指向本页 | C5 | 0.5 d | `git grep audio_inspection_process`/`audio_asset_inspector` 在 `backend/src`、`packages`、`tests` 无产品引用；`uv run pytest tests/unit` 无新增失败；旧键仍会让启动失败 |
 
 依赖顺序：`C1 → {C2, C3} → C4 → C5 → C6`。C1 是唯一对外可见的语义变更，必须先行冻结；C2/C3 可并行；C4 依赖 C2 的镜像与服务名；C6 必须等 C5 通过，避免在新路径未验收时失去唯一实现。
 

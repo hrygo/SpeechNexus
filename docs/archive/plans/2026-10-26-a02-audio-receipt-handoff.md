@@ -24,7 +24,7 @@ date: 2026-10-26
 - `audio_inspection` 是显式选择的生成 profile；Python 入口为
   `speechnexus_contracts.audio_inspection.parse`，TypeScript 为 `@speechnexus/contracts/audio-inspection`。
   类型/校验器由原生成流水线产出，共享摘要域复用 canonical source，不新增平行字段定义或 HTTP client。
-- [ProcessAudioAssetInspector](../../../backend/src/speechnexus_backend/speech/infrastructure/audio_asset_inspector.py)
+- [进程检查器消费者](../../../backend/src/speechnexus_backend/speech/infrastructure/audio_asset_inspector.py)
   消费已完整结束的私有进程输出，独立绑定实际输入长度/摘要，检查整数表示、源时钟/时长关系、
   配置时长限制与最后取消状态，再投影既有 `MediaFacts`。
 - 仅接 `asr_input` 的 PCM WAV 私有检查；`text_input` 沿用原 TextAssetInspector，

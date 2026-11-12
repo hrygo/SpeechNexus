@@ -74,7 +74,7 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/runtime-governance.md"
       ],
-      "implementation": "音频检查组件仅接收 PCM WAV 和显式描述的原始 PCM。`SPEECHNEXUS_ASSET_INSPECTOR`（`text`|`audio`，默认 `text`）选择检查器；`audio` 由 `build_asset_inspector()`（`backend/src/speechnexus_backend/asset_runtime.py:115`）在创建连接池与对象存储客户端之前装配 `ProcessAudioAssetInspector`，并新增 12 个 `SPEECHNEXUS_AUDIO_INSPECTION_*` 键（与选择器合计 13 个新 env 键）。`audio` 缺项、路径不可用或宿主缺 `bwrap`/`prlimit` 时启动失败并点名变量，不回退文本检查。`AssetRuntime.close()` 只关闭对象存储客户端与 PG 连接池，未关闭检查器持有的 `AudioInspectionProcess`（#599）。",
+      "implementation": "音频检查组件仅接收 PCM WAV 和显式描述的原始 PCM。`SPEECHNEXUS_ASSET_INSPECTOR`（`text`|`audio`，默认 `text`）选择检查器；`audio` 由 `build_asset_inspector()`（`backend/src/speechnexus_backend/asset_runtime.py:194`）在创建连接池与对象存储客户端之前装配 `HttpAudioAssetInspector`（`backend/src/speechnexus_backend/speech/infrastructure/audio_inspection_http.py:105`），由独立 `asset-inspector` 部署单元解码并把回执交给 API 复核；API 侧只保留时长上限、字节上限、解码预算与回执上限 4 个 `SPEECHNEXUS_AUDIO_INSPECTION_*` 键。旧的本机进程检查器已删除；`SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT`/`_COMMAND`/`_LAUNCHER_PYTHON`/`_BUBBLEWRAP`/`_PRLIMIT` 被显式设置、或 `_MEMORY_BYTES`/`_CPU_SECONDS`/`_OUTPUT_BYTES` 偏离已发布默认值时，`text` 与 `audio` 都在启动时失败并点名替代键，残留配置不会被静默忽略。`AssetRuntime.close()` 先关闭检查器、再关闭对象存储客户端与 PG 连接池；HTTP 检查器没有本机进程可确认停止，因此上报已释放。",
       "integration": "默认 `text` 下公开 `asr_input` 上传仍 `503 asset_inspection_unavailable`，默认部署行为未变（隔离 PG+MinIO 实测 `speech_assets` 0→0）。`audio` 部署的正向 `asr_input → 201 ready` 与 Job 创建未取得证据；`voice_reference` 在 `audio` 下仍 `available=False`（#592）。",
       "verification": "2026-11-11 增量核验：隔离 PG+MinIO 下默认 `text` 的 `asr_input` 上传仍 `503 asset_inspection_unavailable`、`speech_assets` 0→0；`audio` 缺运行根目录时启动失败并点名 `SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT`；反例（改为静默降级）触发新增装配用例 14 failed。未验证：正向 `asr_input → 201 ready` 与创建 Job 尚无可复现证据（宿主沙箱批准已下，`DEL-524` 在 MegaCube 执行中）；`audio` 真实进程路径未在 Linux 实跑。",
       "gap": "默认装配仍无法创建音频类 Job；`asr_input` 正向闭环未验证。`audio` 部署的关停与 `open()` 失败清理漏关检查器监督器（#599）。",
@@ -92,7 +92,7 @@
         {
           "url": "https://github.com/hrygo/SpeechNexus/issues/599",
           "label": "关停漏清理",
-          "note": "AssetRuntime.close() 与 open() 失败路径未关闭 AudioInspectionProcess"
+          "note": "AssetRuntime.close() 与 open() 失败路径漏关检查器持有的资源（旧实现为本机进程监督器，该实现已删除）"
         },
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/6544a934/backend/src/speechnexus_backend/asset_runtime.py#L115",
@@ -1926,9 +1926,9 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "声音契约要求克隆输入引用参考音频并显式确认使用；preview_only 状态不得携带已发布声音版本。`voice_reference` 不走音频检查，也不回退文本检查：`audio_asset_inspector.py:72-76` 对非 `asr_input` 直接返回 `Inspection(available=False)`，该行为由 `tests/unit/backend/test_audio_asset_inspector.py:191` 显式锁定。",
+      "implementation": "声音契约要求克隆输入引用参考音频并显式确认使用；preview_only 状态不得携带已发布声音版本。`voice_reference` 不走音频检查，也不回退文本检查：`backend/src/speechnexus_backend/speech/infrastructure/audio_inspection_http.py:164` 对非 `asr_input` 直接返回 `Inspection(available=False)`，该行为由 `tests/unit/backend/test_audio_inspection_http.py:308` 显式锁定。",
       "integration": "契约不证明材料、绑定及发布的生产接线；来源确认也不等于身份或独立授权。装配 `audio` 后 `voice_reference` 上传会因 `reserve_asset()` 抛 `asset_inspection_unavailable` 硬失败，声音克隆参考音频无法进入 `ready`，#519/#529 的真实部署端到端因此阻断于 #592。",
-      "verification": "未取得当前真实部署验收证据。2026-11-11 增量核验：`voice_reference → available=False` 由单元用例锁定（`tests/unit/backend/test_audio_asset_inspector.py:191`）；未在部署上实测 `voice_reference` 上传。",
+      "verification": "未取得当前真实部署验收证据。2026-11-12 增量核验：`voice_reference → available=False` 由单元用例锁定（`tests/unit/backend/test_audio_inspection_http.py:308`）；未在部署上实测 `voice_reference` 上传。",
       "gap": "`voice_reference` 是否纳入音频检查待产品口径决定（#592），当前属能力缺口而非缺陷已修；装配后调用方收到通用 `asset_inspection_unavailable`，未点名该 purpose 不支持。设计、克隆、复用、退役和发布的真实执行及跨版本依赖仍须验收。",
       "evidence": [
         {

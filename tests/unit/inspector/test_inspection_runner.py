@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import tempfile
 import time
 from pathlib import Path
 
@@ -12,6 +13,7 @@ import pytest
 from tests.unit.inspector.support import PRLIMIT, TOKEN, settings
 
 from speechnexus_asset_inspector.runner import SubprocessRunner
+from speechnexus_asset_inspector.service import self_check_wav
 from speechnexus_asset_inspector.settings import ConfigurationError, InspectionSettings
 
 
@@ -147,6 +149,7 @@ def test_child_environment_carries_no_service_secret() -> None:
     assert not any(name.startswith("SPEECHNEXUS_") for name in environment)
     assert environment["OPENBLAS_NUM_THREADS"] == "1"
     assert environment["OMP_NUM_THREADS"] == "1"
+    assert environment["MKL_NUM_THREADS"] == "1"
 
 
 def test_classify_distinguishes_cooperative_limit_from_wall_deadline() -> None:
@@ -238,5 +241,72 @@ def test_child_process_really_sees_the_configured_address_space() -> None:
         assert limits["fsize"] == 4097
         assert limits["nofile"] == 64
         assert limits["core"] == 0
+
+    asyncio.run(probe())
+
+
+@pytest.mark.skipif(not PRLIMIT.is_file(), reason="prlimit is only installed on Linux")
+def test_decoder_dependencies_import_inside_the_production_address_space() -> None:
+    """Real Av/NumPy/inspection imports fit the 256 MiB child, not just the numbers."""
+
+    async def probe() -> None:
+        resolved = settings()
+        assert resolved.memory_bytes == 256 * 1024 * 1024
+        runner = SubprocessRunner(resolved, prlimit=PRLIMIT)
+        process = await asyncio.create_subprocess_exec(
+            *runner.dependency_probe_command(),
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=runner.child_environment,
+        )
+        try:
+            async with asyncio.timeout(60):
+                out, err = await process.communicate()
+        finally:
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
+        assert process.returncode == 0, err.decode("utf-8", "replace")
+        report = json.loads(out)
+        assert set(report["dependencies"]) == {
+            "av",
+            "numpy",
+            "speechnexus_media.inspection",
+        }
+        assert report["thread_environment"] == {
+            "OPENBLAS_NUM_THREADS": "1",
+            "OMP_NUM_THREADS": "1",
+            "MKL_NUM_THREADS": "1",
+        }
+
+    asyncio.run(probe())
+
+
+@pytest.mark.skipif(not PRLIMIT.is_file(), reason="prlimit is only installed on Linux")
+def test_real_decode_completes_inside_the_production_address_space(tmp_path: Path) -> None:
+    """The built-in 5 ms WAV decodes through the real child at 256 MiB."""
+
+    async def probe() -> None:
+        resolved = settings()
+        assert resolved.memory_bytes == 256 * 1024 * 1024
+        runner = SubprocessRunner(resolved, prlimit=PRLIMIT)
+        content = self_check_wav()
+        with tempfile.TemporaryFile(dir=tmp_path) as body:
+            body.write(content)
+            body.flush()
+            body.seek(0)
+            outcome = await runner.run(
+                input_fd=body.fileno(),
+                max_encoded_bytes=resolved.max_encoded_bytes,
+                max_duration_ms=resolved.max_duration_ms,
+                wall_seconds=min(resolved.max_wall_seconds, 10.0),
+            )
+        assert outcome.status == "complete", outcome.status
+        receipt = json.loads(outcome.output)
+        assert receipt["status"] == "complete"
+        assert receipt["media_type"] == "audio/wav"
+        assert receipt["duration_ms"] == 5
+        assert receipt["encoded_bytes"] == len(content)
 
     asyncio.run(probe())

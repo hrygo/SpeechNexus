@@ -166,6 +166,8 @@ class ProfileRuntime:
                 if table == "speech_profile_commands"
                 else {"key_digest"}
                 if table == "speech_profile_lifecycle_intents"
+                else {"status", "retired_at_us", "disabled_reason"}
+                if table == "speech_profile_publications"
                 else set()
             )
             columns = connection.execute(

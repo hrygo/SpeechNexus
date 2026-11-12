@@ -22,6 +22,7 @@ READ_PATTERN = re.compile(
 LIFECYCLE = {
     READ_PATH + "/publications": "publishProfileRevision",
     READ_PATH + "/activations": "activatePublishedProfileRevision",
+    READ_PATH + "/retirements": "retireProfileRevision",
 }
 PUBLIC = {
     "/v1/nexus/profiles": "listProfiles",
@@ -92,6 +93,10 @@ class ProfileIngress(DraftIngress):
             error=ingress_error,
             create_operation=CREATE,
             read_operation=READ,
-            write_operations=("publishProfileRevision", "activatePublishedProfileRevision"),
+            write_operations=(
+                "publishProfileRevision",
+                "activatePublishedProfileRevision",
+                "retireProfileRevision",
+            ),
             **kwargs,
         )

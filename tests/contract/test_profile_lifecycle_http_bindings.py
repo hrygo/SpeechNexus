@@ -27,6 +27,7 @@ from tests.contract.test_binding_http_bindings import SOURCE, source_accepts
 
 ROOT = Path(__file__).resolve().parents[2]
 OPERATIONS = ("publishProfileRevision", "activatePublishedProfileRevision")
+RETIREMENT = "retireProfileRevision"
 EXAMPLES = json.loads((ROOT / "tests/fixtures/contracts/profile-lifecycle-http.json").read_text())[
     "examples"
 ]
@@ -69,6 +70,39 @@ def test_lifecycle_success_cannot_claim_a_draft_is_published(operation: str) -> 
     assert not source_accepts(draft)
 
 
+def test_retirement_declares_every_response_its_shared_ingress_can_produce() -> None:
+    """The bounded profile writer answers these statuses for every mutation path.
+
+    ``ProfileIngress`` refuses a request before the handler (Host/Origin 403,
+    method 405, receive deadline 408, declared/actual bytes 413, media 415,
+    local capacity 429, unconfigured writer 503), and a profile mutation whose
+    original result is unreadable returns 503 ``profile_result_unknown``. The
+    retirement operation is served through that same ingress, so its declared
+    response set must cover those statuses like publication and activation do.
+    """
+    post = next(
+        item["post"]
+        for item in SOURCE["paths"].values()
+        if item.get("post", {}).get("operationId") == RETIREMENT
+    )
+    declared = set(post["responses"])
+    assert declared >= {
+        "200",
+        "400",
+        "401",
+        "403",
+        "404",
+        "405",
+        "408",
+        "409",
+        "413",
+        "415",
+        "422",
+        "429",
+        "503",
+    }, f"retirement is missing shared ingress/unknown-result responses: {declared}"
+
+
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda e: e["id"])
 def test_lifecycle_runtime_agrees_with_source_without_mutation(example: dict[str, Any]) -> None:
     assert source_accepts(example) is example["valid"]
@@ -94,13 +128,15 @@ def test_future_lifecycle_surface_does_not_expand_the_existing_draft_surface() -
     validate(actual)
     assert actual["info"]["version"] == "0.1.0.dev9"
     assert all(set(item) == {"post"} for item in actual["paths"].values())
-    assert len(actual["paths"]) == 2
+    assert len(actual["paths"]) == 3
     assert not (set(actual["paths"]) & set(draft_contract()["paths"]))
     assert set(draft_contract()["paths"]) == {
         "/v1/nexus/admin/profiles",
         "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}",
     }
-    for unknown in ("createProfileRevision", "queryProfileCommand", "retireProfileRevision"):
+    operations = {item["post"]["operationId"] for item in actual["paths"].values()}
+    assert operations == {*OPERATIONS, RETIREMENT}
+    for unknown in ("createProfileRevision", "queryProfileCommand", "queryProfileRetirement"):
         with pytest.raises(ValueError, match="Unknown HTTP operation"):
             validate_request(unknown, {})
 

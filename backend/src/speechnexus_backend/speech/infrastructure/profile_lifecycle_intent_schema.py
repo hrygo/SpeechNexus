@@ -5,7 +5,7 @@ from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_nam
 PROFILE_LIFECYCLE_INTENT_DDL = (
     """CREATE TABLE speech_profile_lifecycle_intents (
         key_digest VARCHAR(71) COLLATE "C" PRIMARY KEY,
-        operation VARCHAR(8) NOT NULL CHECK (operation IN ('publish','activate')),
+        operation VARCHAR(8) NOT NULL CHECK (operation IN ('publish','activate','retire')),
         profile_id VARCHAR(128) COLLATE "C" NOT NULL,
         revision VARCHAR(19) COLLATE "C" NOT NULL,
         intent_json TEXT NOT NULL CHECK (OCTET_LENGTH(intent_json) BETWEEN 1 AND 262144),

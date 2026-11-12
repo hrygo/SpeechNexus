@@ -47,6 +47,7 @@ def test_packaged_http_surface_is_closed_and_matches_real_operations() -> None:
         "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}",
         "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/publications",
         "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/activations",
+        "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/retirements",
         "/v1/nexus/profiles",
         "/v1/nexus/profiles/{profile_id}/revisions/{revision}",
         "/v2/nexus/profiles",

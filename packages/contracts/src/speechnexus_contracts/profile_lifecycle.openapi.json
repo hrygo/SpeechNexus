@@ -178,6 +178,91 @@
           }
         }
       }
+    },
+    "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/retirements": {
+      "post": {
+        "tags": ["profiles"],
+        "operationId": "retireProfileRevision",
+        "summary": "Retire or disable a scenario-profile revision",
+        "description": "`retire` stops new references while already fixed jobs and sessions keep\ntheir pinned revision. `disable` additionally blocks new submissions\nthat would select this revision. If the revision is current, retirement\nclears the family's current pointer; it does not silently roll back to\nanother revision. Use the activations endpoint to select a known-good\npublished revision explicitly. An identical Idempotency-Key replay\nreturns the original retirement; a changed intent under the same key\nreturns 409 `idempotency_conflict`.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProfileIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/RevisionPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileRevisionRetirementRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Profile revision retired or disabled.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_scenario_profile_schema_json_Root"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "405": {
+            "$ref": "#/components/responses/ProfileCreateMethodNotAllowed"
+          },
+          "408": {
+            "$ref": "#/components/responses/ProfileReceiveTimeout"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/ProfileRequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/ProfileMediaUnsupported"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/ProfileReceiveFull"
+          },
+          "503": {
+            "$ref": "#/components/responses/ProfileLifecycleUnknown"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2282,6 +2367,46 @@
             ]
           }
         }
+      },
+      "ProfileRevisionRetirementRequest": {
+        "$ref": "#/components/schemas/External_shared_lifecycle_schema_json_RetirementRequest"
+      },
+      "External_shared_lifecycle_schema_json_RetirementRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["mode"],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["retire", "disable"]
+          },
+          "reason": {
+            "type": ["string", "null"],
+            "maxLength": 2000
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "mode": {
+                  "const": "disable"
+                }
+              },
+              "required": ["mode"]
+            },
+            "then": {
+              "required": ["reason"],
+              "properties": {
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                }
+              }
+            }
+          }
+        ]
       }
     },
     "headers": {

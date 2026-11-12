@@ -9,7 +9,7 @@ from typing import Literal
 from speechnexus_backend.speech.domain.assets import identifier
 from speechnexus_backend.speech.domain.configuration import document_digest, revision_number
 
-type ProfileLifecycleOperation = Literal["publish", "activate"]
+type ProfileLifecycleOperation = Literal["publish", "activate", "retire"]
 
 
 def _digest(value: str) -> None:
@@ -26,7 +26,7 @@ class ProfileLifecycleCommand:
     intent: bytes = field(repr=False)
 
     def __post_init__(self) -> None:
-        if self.operation not in ("publish", "activate"):
+        if self.operation not in ("publish", "activate", "retire"):
             raise ValueError("Invalid profile lifecycle operation")
         identifier(self.profile_id)
         revision_number(self.revision)

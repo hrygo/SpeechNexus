@@ -180,8 +180,10 @@ async def test_only_source_profile_paths_are_exposed_with_namespaced_schemas() -
         PATH + "/{profile_id}/revisions/{revision}",
         PATH + "/{profile_id}/revisions/{revision}/publications",
         PATH + "/{profile_id}/revisions/{revision}/activations",
+        PATH + "/{profile_id}/revisions/{revision}/retirements",
     }
     assert set(paths[PATH]) == {"post"}
+    assert set(paths[PATH + "/{profile_id}/revisions/{revision}/retirements"]) == {"post"}
     assert set(paths[PATH + "/{profile_id}/revisions/{revision}"]) == {"get"}
     assert "ProfileDraft_ProfileDraftRevision" in document["components"]["schemas"]
     from speechnexus_backend.speech.interfaces.http.profile_contract import profile_http_contract

@@ -4,10 +4,12 @@ The later [P2a private intent journal](profile-lifecycle-intents.md) persists or
 commands only. It adds no publisher, pointer or public outcome; the P1a authority
 and remaining lifecycle boundaries described here continue to apply.
 
-This A00/A02 unit supplies future consumer contracts, not a publisher. The product
-still registers only the existing draft create/fixed-get profile routes. No
-publication transaction, trusted validation-report provider, default pointer,
-activation route, historical Job change or engine qualification is implemented here.
+This A00/A02 unit originally supplied consumer contracts only. The product now
+registers the publication, activation and retirement POSTs, the two public lists
+and the fixed revision GET as well; the current implementation and qualification
+boundary are described in [Profile drafts](profile-drafts.md). No trusted
+validation-report provider, default pointer, historical Job change or engine
+qualification is implemented here.
 
 ## Source and entrypoints
 
@@ -26,21 +28,27 @@ It introduces no parallel parameter, evidence or lifecycle domain.
   `validateRequest`, `validateResponse` and `createValidatedClient`. Static types
   reuse `admin.generated`; the client requires an explicit JSON byte bound.
 
-The separate `profile_lifecycle` HTTP surface selects only `publishProfileRevision`
-and `activatePublishedProfileRevision`. Existing `profile-http` remains draft
-create/fixed-get only; packaging a future surface does not register it in the
-product's operational OpenAPI. There is no retirement, arbitrary current/latest,
-Operation or query-by-key route in this unit. Generator versions remain
+The separate `profile_lifecycle` HTTP surface selects `publishProfileRevision`,
+`activatePublishedProfileRevision` and `retireProfileRevision`. Existing
+`profile-http` remains draft create/fixed-get only; packaging the surface does
+not register it in the product's operational OpenAPI. There is no arbitrary
+current/latest, Operation or query-by-key route in this unit. Retirement accepts
+`mode=retire|disable` plus an optional bounded `reason`; it clears the family
+current pointer when the target is current, records `retired_at_us` for `retire`
+and the required reason for `disable`, and never rolls back automatically.
+Generator versions remain
 datamodel-code-generator 0.86.0, openapi-typescript 7.13.0 and static projection 1;
 dependency locks are unchanged.
 
 ## Original intent and uncertain results
 
-Both POST operations retain their existing path, request DTO, optional
-Idempotency-Key, original-result replay and current-pointer CAS semantics.
-Publication still requires verification of evidence for the fixed revision;
-activation still requires an existing published revision. A caller-supplied
-validation object or digest cannot establish server authority or production quality.
+All three POST operations retain their existing path, request DTO, optional
+Idempotency-Key and original-result replay semantics; publication and activation
+also keep the current-pointer CAS. Publication still requires verification of
+evidence for the fixed revision; activation still requires an existing published
+revision; retirement requires a currently published revision and applies no CAS
+because it only removes eligibility. A caller-supplied validation object or
+digest cannot establish server authority or production quality.
 Cross-field target identity, trusted evidence lookup and current eligibility remain
 server-side work; structural parsing cannot prove them.
 
@@ -59,13 +67,21 @@ automatic recovery. A fixed revision GET describes the resource, not the identit
 or outcome of a publication/activation command; its existing 503 read-unavailable
 response cannot be turned into 404 or permission to repeat a mutation under a new key.
 
-Successful 200 responses must be published revisions with validation evidence and
-the canonical publication timestamp rules; draft, retired and disabled responses
-are rejected. Existing conflict/missing responses are retained. Ingress declarations
+A publication or activation 200 response must be a published revision with
+validation evidence and the canonical publication timestamp rules; draft, retired
+and disabled responses are rejected. A retirement 200 response is the same fixed
+revision carrying `retired` or `disabled` publication facts and the matching
+`retired_at`/`disabled_reason`. Existing conflict/missing responses are retained. Ingress declarations
 also cover Host/Origin refusal 403, method refusal 405 with required `Allow: POST`,
 receive timeout 408, size 413, media 415 and capacity 429. Those describe this
 HTTP attempt and do not resolve a prior unknown original-key result. Bounds are
-deployment input, not new profile defaults.
+deployment input, not new profile defaults. Retirement is served by the same
+ingress, so `retireProfileRevision` declares the same set: `200`/`400`/`401`/
+`403`/`404`/`405`/`408`/`409`/`413`/`415`/`422`/`429`/`503`. The paired binding
+test reads the source contract and fails when any of them disappears, and the
+runtime cases drive a real `GET` and an unconfigured writer through that exit so
+the 405 `ProfileCreateMethodNotAllowed` and 503 `ProfileLifecycleUnknown` bodies
+are validated instead of surfacing as an unvalidated 500.
 
 ## Verification and remaining implementation
 

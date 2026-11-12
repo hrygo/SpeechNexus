@@ -1,6 +1,7 @@
 """One key then one family lock; replay precedes evidence and current-head CAS."""
 
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Any
 
 from speechnexus_backend.speech.application.profile_documents import (
@@ -81,6 +82,9 @@ def _snapshot(publication: PublishedProfile) -> bytes:
             "created_at_us": p.draft.created_at_us,
             "validation": decode_document(p.validation),
             "published_at_us": p.published_at_us,
+            "status": p.status,
+            "retired_at_us": p.retired_at_us,
+            "disabled_reason": p.disabled_reason,
         }
     )
 
@@ -111,9 +115,18 @@ def _original(cursor: ProfileCursor, command: ProfileLifecycleCommand) -> Profil
         encode_document(value["definition"]),
         value["created_at_us"],
     )
+    # Publication results written before retirement storage kept only the
+    # published state; absent keys are that original state, never a new guess.
     return ProfileLifecycleResult(
         "replayed",
-        PublishedProfile(draft, encode_document(value["validation"]), value["published_at_us"]),
+        PublishedProfile(
+            draft,
+            encode_document(value["validation"]),
+            value["published_at_us"],
+            value.get("status", "published"),
+            value.get("retired_at_us"),
+            value.get("disabled_reason"),
+        ),
     )
 
 
@@ -153,9 +166,60 @@ def mutate_profile(
     if not families or draft is None:
         return reject("profile_not_found")
     current = families[0]["current_revision"]
+    publication = read_publication(cursor, command.profile_id, command.revision)
+    if command.operation == "retire":
+        # A retirement has no current-head CAS: the family lock serializes it
+        # with publish/activate, and only a published revision can be retired or
+        # disabled. The original-key result was already returned above, so a
+        # replay still returns the original retirement after this state change.
+        if publication is None or publication.status != "published":
+            return reject("profile_not_published")
+        now, mode = clock(), body["mode"]
+        if mode == "disable":
+            retirement = replace(
+                publication,
+                status="disabled",
+                retired_at_us=None,
+                disabled_reason=body["reason"],
+            )
+            _update(
+                cursor,
+                "UPDATE speech_profile_publications "
+                "SET status='disabled',retired_at_us=NULL,disabled_reason=%s "
+                "WHERE profile_id=%s AND revision=%s AND status='published'",
+                (retirement.disabled_reason, command.profile_id, command.revision),
+            )
+        else:
+            retirement = replace(
+                publication,
+                status="retired",
+                retired_at_us=max(now, publication.published_at_us),
+                disabled_reason=None,
+            )
+            _update(
+                cursor,
+                "UPDATE speech_profile_publications "
+                "SET status='retired',retired_at_us=%s,disabled_reason=NULL "
+                "WHERE profile_id=%s AND revision=%s AND status='published'",
+                (retirement.retired_at_us, command.profile_id, command.revision),
+            )
+        # Retiring or disabling the current revision clears the family pointer.
+        # It never auto-selects another revision; use an activation to do that.
+        if current == command.revision:
+            _update(
+                cursor,
+                "UPDATE speech_profile_families SET current_revision=NULL WHERE profile_id=%s",
+                (command.profile_id,),
+            )
+        snapshot = _snapshot(retirement)
+        cursor.execute(
+            "INSERT INTO speech_profile_lifecycle_results (key_digest,result_json,result_digest) "
+            "VALUES (%s,%s,%s)",
+            (command.key_digest, snapshot.decode(), document_digest(snapshot)),
+        )
+        return ProfileLifecycleResult("completed", retirement)
     if current != body["expected_current_revision"]:
         return reject("configuration_changed")
-    publication = read_publication(cursor, command.profile_id, command.revision)
     if command.operation == "publish":
         if publication is not None:
             return reject("profile_already_published")

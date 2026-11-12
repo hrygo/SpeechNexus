@@ -163,8 +163,10 @@ def test_missing_column_and_table_grants_refuse_before_any_write(
         # profile_draft_grants grants UPDATE(latest_revision); profile_publication_grants
         # grants UPDATE(current_revision); every other families column is not updatable.
         "UPDATE speech_profile_families SET profile_id='forged'",
-        # publications grants SELECT/INSERT only; no UPDATE on any column.
-        "UPDATE speech_profile_publications SET status='retired', retired_at_us=1",
+        # publications grants UPDATE only on the retirement lifecycle columns;
+        # the published evidence itself stays read-only.
+        "UPDATE speech_profile_publications SET validation_json='forged'",
+        "UPDATE speech_profile_publications SET authority_digest='forged'",
         "UPDATE speech_profile_lifecycle_results SET error_code='changed'",
     )
     for statement in denied:

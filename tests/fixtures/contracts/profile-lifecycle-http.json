@@ -2502,6 +2502,434 @@
       },
       "valid": false,
       "status": 201
+    },
+    {
+      "id": "retire-original",
+      "operation": "retireProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "mode": "retire",
+          "reason": null
+        },
+        "headers": {
+          "X-Request-ID": "lifecycle-synthetic",
+          "Idempotency-Key": "retire-original-synthetic"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "retire-keyless",
+      "operation": "retireProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "mode": "retire"
+        },
+        "headers": {
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "retire-disable-original",
+      "operation": "retireProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "mode": "disable",
+          "reason": "synthetic operator disable"
+        },
+        "headers": {
+          "X-Request-ID": "lifecycle-synthetic",
+          "Idempotency-Key": "retire-disable-synthetic"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "retire-invalid-mode",
+      "operation": "retireProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "mode": "remove"
+        },
+        "headers": {
+          "X-Request-ID": "lifecycle-synthetic",
+          "Idempotency-Key": "retire-invalid-mode-synthetic"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "retire-disable-missing-reason",
+      "operation": "retireProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "mode": "disable"
+        },
+        "headers": {
+          "X-Request-ID": "lifecycle-synthetic",
+          "Idempotency-Key": "retire-disable-missing-synthetic"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "retire-disable-empty-reason",
+      "operation": "retireProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "mode": "disable",
+          "reason": ""
+        },
+        "headers": {
+          "X-Request-ID": "lifecycle-synthetic",
+          "Idempotency-Key": "retire-disable-empty-synthetic"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "retire-disable-null-reason",
+      "operation": "retireProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "mode": "disable",
+          "reason": null
+        },
+        "headers": {
+          "X-Request-ID": "lifecycle-synthetic",
+          "Idempotency-Key": "retire-disable-null-synthetic"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "retire-reason-too-long",
+      "operation": "retireProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "mode": "disable",
+          "reason": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        "headers": {
+          "X-Request-ID": "lifecycle-synthetic",
+          "Idempotency-Key": "retire-reason-long-synthetic"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "retire-unknown-body-field",
+      "operation": "retireProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "mode": "retire",
+          "unknown": true
+        },
+        "headers": {
+          "X-Request-ID": "lifecycle-synthetic",
+          "Idempotency-Key": "retire-unknown-field-synthetic"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "retire-invalid-key",
+      "operation": "retireProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "mode": "retire"
+        },
+        "headers": {
+          "X-Request-ID": "lifecycle-synthetic",
+          "Idempotency-Key": "short"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "retire-unknown-query",
+      "operation": "retireProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "mode": "retire"
+        },
+        "headers": {
+          "X-Request-ID": "lifecycle-synthetic",
+          "Idempotency-Key": "retire-query-synthetic"
+        },
+        "query": {
+          "unknown": "1"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "retire-success-retired",
+      "operation": "retireProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": [
+            "realtime"
+          ],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": [
+            "asr.language",
+            "asr.preview_interval_ms"
+          ],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "schema_version": "1.0.0",
+          "profile_id": "caption-draft",
+          "revision": "1",
+          "publication": {
+            "status": "retired",
+            "published_at": "2026-10-25T00:00:00Z",
+            "retired_at": "2026-10-25T00:05:00Z",
+            "disabled_reason": null
+          },
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "retire-success-disabled",
+      "operation": "retireProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": [
+            "realtime"
+          ],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": [
+            "asr.language",
+            "asr.preview_interval_ms"
+          ],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "schema_version": "1.0.0",
+          "profile_id": "caption-draft",
+          "revision": "1",
+          "publication": {
+            "status": "disabled",
+            "published_at": "2026-10-25T00:00:00Z",
+            "retired_at": null,
+            "disabled_reason": "synthetic operator disable"
+          },
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "retire-http-400",
+      "operation": "retireProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "invalid_profile_request",
+            "type": "invalid_request_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 400
+    },
+    {
+      "id": "retire-http-404",
+      "operation": "retireProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_not_found",
+            "type": "not_found_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 404
+    },
+    {
+      "id": "retire-http-409",
+      "operation": "retireProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "idempotency_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 409
     }
   ]
 }

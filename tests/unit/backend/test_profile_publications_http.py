@@ -2,6 +2,9 @@
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from speechnexus_contracts.profile_lifecycle_http import (
+    validate_response as lifecycle_response,
+)
 from speechnexus_contracts.profile_public_http import validate_response
 
 from speechnexus_backend.app import create_app
@@ -225,3 +228,155 @@ def test_published_summary_projection_has_a_fixed_key_set(sandbox: Sandbox) -> N
     assert set(v2) == set(v1) | {"current_revision"}
     assert v1["id"] == result.publication.draft.profile_id
     assert v1["revision"] == "1"
+
+
+def test_actual_http_retirement_replays_conflicts_and_clears_the_pointer(sandbox: Sandbox) -> None:
+    s = sandbox
+    identity = profile_request()["profile_id"]
+    revision = f"/v1/nexus/admin/profiles/{identity}/revisions/1"
+    fixed = f"{PUBLIC}/{identity}/revisions/1"
+    app = _app(s)
+    with TestClient(app) as http:
+        s.draft()
+        assert s.port.mutate(s.publish()).outcome == "completed"
+        retired = http.post(
+            revision + "/retirements",
+            json={"mode": "retire"},
+            headers={"Idempotency-Key": "http-retire-key"},
+        )
+        assert retired.status_code == 200, retired.text
+        body = retired.json()
+        assert body["publication"]["status"] == "retired"
+        assert body["publication"]["retired_at"] is not None
+        assert body["publication"]["disabled_reason"] is None
+        assert http.get(fixed).json() == body
+        assert http.get(PUBLIC).json()["data"] == []
+        assert http.get(PUBLIC_V2).json()["data"] == []
+        assert (
+            s.admin.execute("SELECT current_revision FROM speech_profile_families").fetchall()[0][
+                "current_revision"
+            ]
+            is None
+        )
+        replay = http.post(
+            revision + "/retirements",
+            json={"mode": "retire"},
+            headers={"Idempotency-Key": "http-retire-key"},
+        )
+        assert replay.status_code == 200 and replay.json() == body
+        conflict = http.post(
+            revision + "/retirements",
+            json={"mode": "disable", "reason": "changed intent"},
+            headers={"Idempotency-Key": "http-retire-key"},
+        )
+        assert conflict.status_code == 409
+        assert conflict.json()["error"]["code"] == "idempotency_conflict"
+        for invalid in (
+            {"mode": "remove"},
+            {"mode": "disable"},
+            {"mode": "disable", "reason": ""},
+            {"mode": "retire", "unknown": True},
+        ):
+            invalid_response = http.post(
+                revision + "/retirements",
+                json=invalid,
+                headers={"Idempotency-Key": "http-invalid-retirement"},
+            )
+            assert invalid_response.status_code == 400, invalid_response.text
+        terminal = http.post(
+            revision + "/retirements",
+            json={"mode": "retire"},
+            headers={"Idempotency-Key": "http-terminal-key"},
+        )
+        assert terminal.status_code == 409
+        assert terminal.json()["error"]["code"] == "profile_not_published"
+        missing = http.post(
+            f"/v1/nexus/admin/profiles/{identity}/revisions/99/retirements",
+            json={"mode": "retire"},
+            headers={"Idempotency-Key": "http-missing-key"},
+        )
+        assert missing.status_code == 404
+        assert missing.json()["error"]["code"] == "profile_not_found"
+
+
+def test_actual_http_disable_records_the_reason_and_never_selects_a_replacement(
+    sandbox: Sandbox,
+) -> None:
+    s = sandbox
+    identity = profile_request()["profile_id"]
+    with TestClient(_app(s)) as http:
+        s.draft()
+        assert s.port.mutate(s.publish()).outcome == "completed"
+        s.draft("2")
+        assert s.port.mutate(s.publish("2", "1", "http-publish-2")).outcome == "completed"
+        disabled = http.post(
+            f"/v1/nexus/admin/profiles/{identity}/revisions/2/retirements",
+            json={"mode": "disable", "reason": "synthetic operator disable"},
+            headers={"Idempotency-Key": "http-disable-key"},
+        )
+        assert disabled.status_code == 200, disabled.text
+        body = disabled.json()
+        assert body["publication"]["status"] == "disabled"
+        assert body["publication"]["retired_at"] is None
+        assert body["publication"]["disabled_reason"] == "synthetic operator disable"
+        assert (
+            s.admin.execute("SELECT current_revision FROM speech_profile_families").fetchall()[0][
+                "current_revision"
+            ]
+            is None
+        )
+        # Disabling the current revision clears the default pointer without
+        # silently selecting revision 1. Both revisions keep their published
+        # history: revision 1 was never retired and revision 2 stays readable.
+        assert [item["revision"] for item in http.get(PUBLIC).json()["data"]] == ["1"]
+        assert [
+            (item["revision"], item["current_revision"])
+            for item in http.get(PUBLIC_V2).json()["data"]
+        ] == [("1", None)]
+        assert http.get(f"{PUBLIC}/{identity}/revisions/2").json()["publication"] == {
+            "status": "disabled",
+            "published_at": body["publication"]["published_at"],
+            "retired_at": None,
+            "disabled_reason": "synthetic operator disable",
+        }
+        activation = http.post(
+            f"/v1/nexus/admin/profiles/{identity}/revisions/2/activations",
+            json={"expected_current_revision": None},
+            headers={"Idempotency-Key": "http-activate-disabled"},
+        )
+        assert activation.status_code == 409
+        assert activation.json()["error"]["code"] == "profile_not_published"
+
+
+def test_retirement_path_produces_its_declared_405_and_lifecycle_unknown(
+    sandbox: Sandbox,
+) -> None:
+    """The declared 405/503 are produced by the real exit, not a framework default."""
+    identity = profile_request()["profile_id"]
+    path = f"/v1/nexus/admin/profiles/{identity}/revisions/1/retirements"
+    with TestClient(_app(sandbox)) as http:
+        method = http.get(path)
+        assert method.status_code == 405, method.text
+        assert method.headers["Allow"] == "POST"
+        assert method.json()["error"]["code"] == "profile_method_not_allowed"
+        assert method.json()["error"]["request_id"] == method.headers["X-Request-ID"]
+        lifecycle_response(
+            "retireProfileRevision",
+            405,
+            {"body": method.json(), "headers": dict(method.headers)},
+        )
+    # No provider: the shared mutation ingress answers the declared 503 before
+    # any body parse, so the operation cannot fail as an unvalidated 500.
+    with TestClient(_app()) as http:
+        unavailable = http.post(
+            path, json={"mode": "retire"}, headers={"Idempotency-Key": "unconfigured-retire"}
+        )
+        assert unavailable.status_code == 503, unavailable.text
+        body = unavailable.json()
+        assert body["error"]["code"] == "profile_result_unknown"
+        assert body["error"]["retryable"] is False
+        lifecycle_response(
+            "retireProfileRevision",
+            503,
+            {"body": body, "headers": dict(unavailable.headers)},
+        )

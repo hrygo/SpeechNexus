@@ -19,7 +19,8 @@ PROFILE_PUBLICATION_DDL = (
         CHECK ((status='published' AND retired_at_us IS NULL AND disabled_reason IS NULL)
             OR (status='retired' AND retired_at_us IS NOT NULL
                 AND retired_at_us >= published_at_us AND disabled_reason IS NULL)
-            OR (status='disabled' AND disabled_reason IS NOT NULL))
+            OR (status='disabled' AND disabled_reason IS NOT NULL
+                AND length(disabled_reason) BETWEEN 1 AND 2000))
     )""",
     'ALTER TABLE speech_profile_families ADD COLUMN current_revision VARCHAR(19) COLLATE "C"',
     """ALTER TABLE speech_profile_families ADD CONSTRAINT speech_profile_current_publication
@@ -66,6 +67,10 @@ def profile_publication_grants(schema: str, role: str) -> tuple[str, ...]:
             )
         ),
         f'GRANT UPDATE (current_revision) ON "{schema}".speech_profile_families TO "{role}"',
+        # Retirement mutates the lifecycle outcome only. Published evidence
+        # (validation, digests, authority, published_at_us) stays immutable.
+        f"GRANT UPDATE (status, retired_at_us, disabled_reason) ON "
+        f'"{schema}".speech_profile_publications TO "{role}"',
         # SELECT ... FOR UPDATE needs UPDATE on at least one column. The intent key is
         # never mutated; PROFILE_INTENT_IMMUTABILITY_DDL rejects any actual UPDATE.
         f'GRANT UPDATE (key_digest) ON "{schema}".speech_profile_lifecycle_intents TO "{role}"',

@@ -16,6 +16,12 @@ from speechnexus_backend.speech.domain.profile_lifecycle import (
     ProfileLifecycleOperation,
 )
 
+_SOURCE_OPERATION = {
+    "publish": "publishProfileRevision",
+    "activate": "activatePublishedProfileRevision",
+    "retire": "retireProfileRevision",
+}
+
 
 def _prepare(
     operation: ProfileLifecycleOperation,
@@ -26,11 +32,7 @@ def _prepare(
 ) -> ProfileLifecycleCommand:
     try:
         headers = {} if idempotency_key is None else {"Idempotency-Key": idempotency_key}
-        source_operation = (
-            "publishProfileRevision"
-            if operation == "publish"
-            else "activatePublishedProfileRevision"
-        )
+        source_operation = _SOURCE_OPERATION[operation]
         validate_request(
             source_operation,
             {
@@ -69,3 +71,9 @@ def prepare_profile_activation(
     profile_id: str, revision: str, request: Any, idempotency_key: str | None = None
 ) -> ProfileLifecycleCommand:
     return _prepare("activate", profile_id, revision, request, idempotency_key)
+
+
+def prepare_profile_retirement(
+    profile_id: str, revision: str, request: Any, idempotency_key: str | None = None
+) -> ProfileLifecycleCommand:
+    return _prepare("retire", profile_id, revision, request, idempotency_key)

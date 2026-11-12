@@ -499,9 +499,14 @@
       "typescript_source": "admin",
       "paths": [
         "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/publications",
-        "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/activations"
+        "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/activations",
+        "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/retirements"
       ],
-      "operations": ["publishProfileRevision", "activatePublishedProfileRevision"]
+      "operations": [
+        "publishProfileRevision",
+        "activatePublishedProfileRevision",
+        "retireProfileRevision"
+      ]
     },
     "binding": {
       "source": "admin-openapi.yaml",

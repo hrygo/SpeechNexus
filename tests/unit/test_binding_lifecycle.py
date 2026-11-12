@@ -17,6 +17,7 @@ from speechnexus_backend.speech.domain.binding_lifecycle import (
     BindingLifecycleNotFoundError,
     BindingLifecycleReceipt,
     BindingLifecycleUnavailableError,
+    BindingPublicationCommand,
     BindingRetirementCommand,
 )
 from speechnexus_backend.speech.infrastructure.binding_lifecycle_postgres import (
@@ -86,6 +87,9 @@ class Provider:
         if self.error is not None:
             raise self.error
         return self.result
+
+    def publish(self, command: BindingPublicationCommand) -> BindingLifecycleReceipt:
+        raise AssertionError("retirement and activation tests must not publish")
 
 
 def client(provider: Provider | None = None) -> AsyncClient:

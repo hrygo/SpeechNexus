@@ -1,4 +1,4 @@
-"""Independent source acceptance and consumer validation; no binding HTTP service."""
+"""Independent source acceptance and consumer validation of the binding surface."""
 
 from __future__ import annotations
 
@@ -151,6 +151,9 @@ def test_binding_surface_selects_only_declared_draft_and_lifecycle_operations() 
     assert set(
         actual["paths"]["/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}"]
     ) == {"get"}
+    assert set(actual["paths"]["/v1/nexus/admin/model-bindings/{binding_id}/publications"]) == {
+        "post"
+    }
     assert set(
         actual["paths"][
             "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/retirements"
@@ -171,11 +174,11 @@ def test_binding_surface_selects_only_declared_draft_and_lifecycle_operations() 
     # The binding draft surface owns only the collection POST; the list GET is
     # a separate admin read selected by its own surface.
     assert set(workspace_contract()["paths"]["/v1/nexus/admin/model-bindings"]) == {"get"}
-    for unknown in ("publishModelBindingRevision", "listModelBindings", "queryBindingCommand"):
+    for unknown in ("listModelBindings", "queryBindingCommand"):
         with pytest.raises(ValueError, match="Unknown HTTP operation"):
             validate_request(unknown, {})
     actual["paths"].clear()
-    assert len(contract()["paths"]) == 4
+    assert len(contract()["paths"]) == 5
 
 
 @pytest.mark.parametrize("keyed", [True, False])
@@ -240,3 +243,60 @@ def test_activation_unknown_recovery_preserves_original_path_body_and_key() -> N
             if status == 503:
                 assert response.json()["error"]["retryable"] is False
         assert calls[0] == calls[1]
+
+
+PUBLICATION = "publishModelBindingRevision"
+PUBLICATION_PATH = "/v1/nexus/admin/model-bindings/{binding_id}/publications"
+
+
+def test_publication_declares_every_response_its_shared_ingress_can_produce() -> None:
+    """The binding writer answers these statuses before the publication handler runs.
+
+    ``BindingIngress`` refuses a request before dispatch (Host/Origin 403, method
+    405, receive deadline 408, declared/actual bytes 413, media 415, local
+    capacity 429, unconfigured writer or unreadable original result 503). The
+    publication operation is served through that same ingress, so its declared
+    response set must cover those statuses like retirement and activation do.
+    """
+    post = SOURCE["paths"][PUBLICATION_PATH]["post"]
+    assert post["operationId"] == PUBLICATION
+    assert post["requestBody"]["required"] is True
+    declared = set(post["responses"])
+    assert declared >= {
+        "200",
+        "201",
+        "400",
+        "401",
+        "403",
+        "404",
+        "405",
+        "408",
+        "409",
+        "413",
+        "415",
+        "422",
+        "429",
+        "503",
+    }, f"publication is missing shared ingress/unknown-result responses: {declared}"
+    assert post["responses"]["201"]["description"] == "Binding published."
+    assert post["responses"]["200"]["description"].startswith("Idempotent replay")
+    unknown, _ = resolve(post["responses"]["503"], SOURCE)
+    schema, _ = resolve(unknown["content"]["application/json"]["schema"], SOURCE)
+    # The narrowed error keeps the shared ErrorBody and fixes the retry contract.
+    narrowed = schema["allOf"][1]["properties"]["error"]["properties"]
+    assert narrowed["code"]["const"] == "binding_result_unknown"
+    assert narrowed["retryable"]["const"] is False
+    assert narrowed["nexus"] is False
+
+
+def test_publication_path_names_the_draft_in_the_body_not_the_path() -> None:
+    post = SOURCE["paths"][PUBLICATION_PATH]["post"]
+    assert "/{revision}" not in PUBLICATION_PATH
+    request, _ = resolve(post["requestBody"]["content"]["application/json"]["schema"], SOURCE)
+    assert request["required"] == [
+        "expected_revision",
+        "expected_current_revision",
+        "capacity_manifest_id",
+        "qualification_report_id",
+    ]
+    assert request["additionalProperties"] is False

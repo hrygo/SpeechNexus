@@ -1,11 +1,15 @@
 ---
-title: binding 退役、激活与回滚
+title: binding 发布、退役、激活与回滚
 status: active
-version: "1.0.0"
-date: 2026-10-28
+version: "1.1.0"
+date: 2026-11-13
 ---
 
-# binding 退役、激活与回滚
+# binding 发布、退役、激活与回滚
+
+发布、退役、激活三个写命令共用一个生命周期写入角色和一个 append-only 事件账本；
+每个成功命令在推进 head 的同一事务里追加一条 `model_binding.*` 事件，原始
+`Idempotency-Key` 的重放由该账本判定。
 
 `0023_publication_lifecycle` 让新执行通过 append-only publication 之上的
 `speech_publication_heads` 选择版本。退役只移除选择和可见性，不删除历史；
@@ -21,7 +25,9 @@ schema 可按部署配置，例如：
 export SPEECHNEXUS_DATABASE_SCHEMA=speech
 ```
 
-角色使用 `binding_lifecycle_grants`，获得：
+角色使用 `binding_lifecycle_grants` 与 `binding_publication_grants` 两组声明：
+
+`binding_lifecycle_grants` 获得：
 
 - `speech_publications`、`speech_publication_retirements`、
   `speech_publication_lifecycle_events` 和 `speech_binding_disable_intents` 的
@@ -34,11 +40,61 @@ export SPEECHNEXUS_DATABASE_SCHEMA=speech
   released_at_us` 列级 `SELECT` 及 `released_at_us` 列级 `UPDATE`（voice 退休释放引用，
   无 INSERT/DELETE）。
 
-启动会拒绝 owner、schema CREATE、序列权限、其它 speech 表权限和更宽的列级写权限。
-`0047_voice_publication_evidence` 增加了素材引用的列权限；升级已有部署后必须由 owner 重跑
-`binding_lifecycle_grants`，否则 `BindingLifecycleRuntime.open()` 会拒绝启动。
-未配置 DSN 时两个生命周期端点 fail closed，返回
+`binding_publication_grants` 追加发布命令需要的权限，且不扩大不可变事实的写面：
+
+- `speech_publications`、`speech_publication_lifecycle_events` 的 `SELECT, INSERT`；
+- `speech_binding_publication_evidence` 的 `SELECT, INSERT`（证据行只追加，无 UPDATE/DELETE）；
+- `speech_binding_revisions`、`speech_publication_retirements` 的 `SELECT`；
+- `speech_publication_heads` 的 `SELECT, INSERT` 及
+  `revision, revision_id, updated_at_us` 列级 `UPDATE`（无 DELETE）；
+- `speech_catalog_state` 的 `SELECT` 及 `revision, generated_at_us` 列级 `UPDATE`。
+
+启动会拒绝 owner、schema CREATE、序列权限、其它 speech 表权限和更宽的列级写权限；
+证据表上多出一条列级 `UPDATE`、或 head 上多出 `DELETE`，`BindingLifecycleRuntime.open()`
+都会拒绝启动。升级已有部署后必须由 owner 重新执行两组声明，否则启动失败。
+`0047_voice_publication_evidence` 增加了素材引用的列权限；
+`0051_binding_publication_events` 把发布命令纳入事件账本。
+未配置 DSN 时三个生命周期端点 fail closed，返回
 `503 binding_result_unknown`；不会复用 draft writer 或 owner 身份。
+
+## 发布
+
+把已存草稿 revision 发布为新的选中 head：
+
+```bash
+curl -sS -X POST \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: publish-asr-quality-2-20261113' \
+  -d '{"expected_revision":"2","expected_current_revision":"1",
+       "capacity_manifest_id":"cap-asr-quality-2",
+       "qualification_report_id":"qrep-asr-quality-2"}' \
+  http://127.0.0.1:8000/v1/nexus/admin/model-bindings/asr-quality/publications
+```
+
+`expected_revision` 是目标草稿 revision，`expected_current_revision` 是提交前观察到的
+head（无 head 时为 `null`）。成功返回 `201` 与更新后的 `ModelBindingRevision`；
+`capacity_manifest_id` 必须与草稿 `execution_recipe` 声明的值一致，否则 `422
+capacity_manifest_mismatch`。两个 evidence ID 是调用方声明的事实，不证明容量清单或
+资格报告的内容、真实引擎或生产准入。
+
+发布的行为是显式的：
+
+- 相同完整意图与相同 `Idempotency-Key`：返回 `200` 与原结果，不新增发布、证据或事件，
+  目录版本不再次推进；并发同 key 请求在事件账本 advisory lock 上串行化；
+- 相同 key、不同意图：`409 idempotency_conflict`，零写入；
+- 目标 revision 已发布或已退役、换新 key 再发布：`409 binding_not_draft`；
+  head 只指向已发布版本，重复发布会建立第二条事实行，因此被拒绝；
+- 观察的 head 已变化：`409 configuration_changed`，消息带实际观察到的 revision；
+- 目标 revision 不存在：`404 binding_not_found`。
+
+一次真实发布在同一事务中只写一行 `speech_publications` 和一行
+`speech_binding_publication_evidence`（`evidence_source=publish_http`）、把 head 指向该
+revision、由触发器推进一次目录版本，并追加一条 `model_binding.publish` 事件。
+未配置写入角色时返回 `503 binding_result_unknown`，不落库。
+
+发布与运维命令 `speechnexus-publish-binding` 是两条独立路径：该命令还要求
+`expected_catalog_revision` 与 installation/database 观察值，公共 HTTP 契约无法表达
+这些字段，见[发布命令说明](publish-binding-revision.md)。
 
 ## 退役
 

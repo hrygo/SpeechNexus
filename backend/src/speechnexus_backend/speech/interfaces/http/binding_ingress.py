@@ -22,6 +22,7 @@ PREFIX = "/v1/nexus/admin/model-bindings"
 CREATE_PATH = next(path for path, item in contract()["paths"].items() if "post" in item)
 READ_PATH = next(path for path, item in contract()["paths"].items() if "get" in item)
 LIST_OPERATION = "listModelBindings"
+PUBLISH_OPERATION = "publishModelBindingRevision"
 RETIRE_OPERATION = "retireModelBindingRevision"
 ACTIVATE_OPERATION = "activatePublishedModelBindingRevision"
 _OPERATION_PATHS = {
@@ -30,6 +31,7 @@ _OPERATION_PATHS = {
     for specification in item.values()
     if isinstance(specification, dict) and "operationId" in specification
 }
+PUBLISH_PATH = _OPERATION_PATHS[PUBLISH_OPERATION]
 RETIRE_PATH = _OPERATION_PATHS[RETIRE_OPERATION]
 ACTIVATE_PATH = _OPERATION_PATHS[ACTIVATE_OPERATION]
 
@@ -41,6 +43,7 @@ def _pattern(path: str) -> re.Pattern[str]:
 
 
 READ_PATTERN = _pattern(READ_PATH)
+PUBLISH_PATTERN = _pattern(PUBLISH_PATH)
 RETIRE_PATTERN = _pattern(RETIRE_PATH)
 ACTIVATE_PATTERN = _pattern(ACTIVATE_PATH)
 DEFAULTS_PATH = next(path for path, item in defaults_contract()["paths"].items() if "get" in item)
@@ -60,6 +63,8 @@ def target(path: str, method: str, *, producer: bool = False) -> tuple[str, str]
         return LIST_OPERATION, "GET, POST"
     if READ_PATTERN.fullmatch(path):
         return READ, "GET"
+    if PUBLISH_PATTERN.fullmatch(path):
+        return PUBLISH_OPERATION, "POST"
     if RETIRE_PATTERN.fullmatch(path):
         return RETIRE_OPERATION, "POST"
     if ACTIVATE_PATTERN.fullmatch(path):
@@ -79,6 +84,6 @@ class BindingIngress(DraftIngress):
             create_operation=CREATE,
             read_operation=READ,
             read_operations=(LIST_OPERATION, READ_DEFAULTS) if producer else (LIST_OPERATION,),
-            write_operations=(RETIRE_OPERATION, ACTIVATE_OPERATION),
+            write_operations=(PUBLISH_OPERATION, RETIRE_OPERATION, ACTIVATE_OPERATION),
             **kwargs,
         )

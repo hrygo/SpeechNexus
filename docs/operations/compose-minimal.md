@@ -325,7 +325,7 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 ```
 
 上述容器名、用户和数据库名对应默认配置；若部署值不同，先核对实际名称再查询。
-仓库当前迁移链的 head 为 `0050_profile_retirements`；实际部署必须以所用发布制品中的唯一
+仓库当前迁移链的 head 为 `0051_binding_publication_events`；实际部署必须以所用发布制品中的唯一
 head 为准，查询结果须与之相符。不要把旧版 `0027_gateway_abort_intents` 或
 `0039_public_job_progress` 当作当前 head，也不要跳过检查或手工修改版本表。
 
@@ -793,8 +793,9 @@ print("disable worker roles and existing runtime port grants installed")
 PYROLE
 ```
 
-如果启用生命周期 API，须使用 `binding_lifecycle_grants` 单独配置其既有非 owner 身份，
-并设置 `SPEECHNEXUS_BINDING_LIFECYCLE_DATABASE_URL`；不要向上述两个新角色授予生命周期
+如果启用生命周期 API，须使用 `binding_lifecycle_grants` 与
+`binding_publication_grants` 两组声明配置其既有非 owner 身份，并设置
+`SPEECHNEXUS_BINDING_LIFECYCLE_DATABASE_URL`；不要向上述两个新角色授予生命周期
 写权限。扫描和结算 DSN 分别通过部署私有配置设置为 `SPEECHNEXUS_DISABLE_DATABASE_URL`
 和 `SPEECHNEXUS_DISABLE_SETTLEMENT_DATABASE_URL`，必须对应不同角色和同一数据库。worker
 使用 gateway 已配置的 gateway/node 标识与组件凭据。

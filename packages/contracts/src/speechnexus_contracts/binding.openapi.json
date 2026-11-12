@@ -142,6 +142,103 @@
         "description": "Reads only the explicitly named immutable revision; never allocates,\npublishes, activates or selects a current/default revision. Invalid\npath/header/query values or read body/framing return 400. Return 404\nonly when an authoritative read confirms this revision is absent.\nUnreadable metadata returns 503 binding_unavailable with retryable: true\nfor this same fixed GET. It is not absence or evidence that a prior\ncreate did not commit. Host/Origin refusal uses 403; unsupported methods\nuse 405 with Allow. No Operation or keyless recovery is implied.\n"
       }
     },
+    "/v1/nexus/admin/model-bindings/{binding_id}/publications": {
+      "post": {
+        "tags": ["model-bindings"],
+        "operationId": "publishModelBindingRevision",
+        "summary": "Publish a draft binding revision with capacity and qualification evidence",
+        "description": "The referenced capacity manifest and qualification report must describe\nthe same binding revision and compatible topology. Production release\ntier additionally requires every required qualification scenario to pass.\n`expected_revision` is the exact draft revision to publish and activate\nfor new sessions and jobs; it is not the family head. The publication\natomically makes that revision current. `expected_current_revision` is\nthe active revision observed before the request and is a compare-and-swap\nguard; null is valid only when no revision is active. A changed pointer\nreturns 409 `configuration_changed`. Replaying the same Idempotency-Key\nand canonical intent returns 200 with the original result; the same key\nwith a different intent returns 409 `idempotency_conflict`. A target\nrevision that is not draft returns 409 `binding_not_draft`.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/BindingIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelBindingPublicationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Binding published.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_model_binding_schema_json_Root"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Idempotent replay of the same publication.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_model_binding_schema_json_Root"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "405": {
+            "$ref": "#/components/responses/BindingCreateMethodNotAllowed"
+          },
+          "408": {
+            "$ref": "#/components/responses/BindingReceiveTimeout"
+          },
+          "413": {
+            "$ref": "#/components/responses/BindingRequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/BindingMediaUnsupported"
+          },
+          "429": {
+            "$ref": "#/components/responses/BindingReceiveFull"
+          },
+          "503": {
+            "$ref": "#/components/responses/BindingCreationUnknown"
+          }
+        }
+      }
+    },
     "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/retirements": {
       "post": {
         "tags": ["model-bindings"],
@@ -2590,6 +2687,37 @@
             }
           }
         ]
+      },
+      "ModelBindingPublicationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expected_revision",
+          "expected_current_revision",
+          "capacity_manifest_id",
+          "qualification_report_id"
+        ],
+        "properties": {
+          "expected_revision": {
+            "$ref": "#/components/schemas/Revision"
+          },
+          "expected_current_revision": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Revision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "capacity_manifest_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "qualification_report_id": {
+            "$ref": "#/components/schemas/Identifier"
+          }
+        }
       },
       "ModelBindingRetirementRequest": {
         "$ref": "#/components/schemas/External_shared_lifecycle_schema_json_RetirementRequest"

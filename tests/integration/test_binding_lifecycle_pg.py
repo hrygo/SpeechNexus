@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import uuid
@@ -55,6 +56,7 @@ from speechnexus_backend.speech.infrastructure.public_job_submission_schema impo
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import PostgresPublicJobs
 from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import (
     binding_lifecycle_grants,
+    binding_publication_grants,
 )
 from speechnexus_backend.speech.infrastructure.publications_postgres import PostgresPublications
 from speechnexus_backend.speech.infrastructure.publications_sql import (
@@ -63,6 +65,7 @@ from speechnexus_backend.speech.infrastructure.publications_sql import (
 )
 from speechnexus_backend.speech.interfaces.http.binding_ingress import (
     ACTIVATE_PATH,
+    PUBLISH_PATH,
     RETIRE_PATH,
 )
 
@@ -261,6 +264,7 @@ def sandbox() -> Iterator[Sandbox]:
         cleanup.callback(admin.execute, f'DROP OWNED BY "{role}"')
         for grant in (
             *binding_lifecycle_grants(schema, role),
+            *binding_publication_grants(schema, role),
             *job_runtime_grants(schema, role),
             *public_job_grants(schema, role),
             *job_dispatch_grants(schema, role),
@@ -594,7 +598,10 @@ def test_lifecycle_runtime_accepts_only_the_least_privilege_role(sandbox: Sandbo
     life = "sn_life_only_" + uuid.uuid4().hex[:10]
     sandbox.admin.execute(f"CREATE ROLE \"{life}\" LOGIN PASSWORD '{PASSWORD}'")
     try:
-        for grant in binding_lifecycle_grants(sandbox.schema, life):
+        for grant in (
+            *binding_lifecycle_grants(sandbox.schema, life),
+            *binding_publication_grants(sandbox.schema, life),
+        ):
             sandbox.admin.execute(grant)
         runtime = BindingLifecycleRuntime(
             _settings().model_copy(
@@ -626,6 +633,264 @@ def test_lifecycle_runtime_accepts_only_the_least_privilege_role(sandbox: Sandbo
         with pytest.raises(ValueError, match="Binding lifecycle startup rejected"):
             rejected.open()
         rejected.close()
+        sandbox.admin.execute(
+            f'REVOKE SELECT ON "{sandbox.schema}".speech_binding_families FROM "{life}"'
+        )
+
+        # One extra writable evidence column is a wider port than the publication
+        # command uses; startup must refuse it instead of trusting a comment.
+        sandbox.admin.execute(
+            f"GRANT UPDATE (recorded_at_us) ON "
+            f'"{sandbox.schema}".speech_binding_publication_evidence TO "{life}"'
+        )
+        widened = BindingLifecycleRuntime(
+            _settings().model_copy(
+                update={
+                    "database_schema": sandbox.schema,
+                    "binding_lifecycle_database_url": SecretStr(
+                        make_conninfo(sandbox.url, user=life, password=PASSWORD)
+                    ),
+                }
+            )
+        )
+        with pytest.raises(ValueError, match="Binding lifecycle startup rejected"):
+            widened.open()
+        widened.close()
     finally:
         sandbox.admin.execute(f'DROP OWNED BY "{life}"')
         sandbox.admin.execute(f'DROP ROLE IF EXISTS "{life}"')
+
+
+PUBLISH_URL = PUBLISH_PATH.format(binding_id="tts-quality")
+PUBLISH_KEY = {"Idempotency-Key": "publish-tts-quality-3-20261113"}
+PUBLISH_BODY = {
+    "expected_revision": "3",
+    "expected_current_revision": "2",
+    "capacity_manifest_id": "cap-tts-quality-3",
+    "qualification_report_id": "qrep-tts-quality-3",
+}
+
+
+def _draft(sandbox: Sandbox, revision: str, revision_id: str) -> None:
+    recipe = DEFINITION["execution_recipe"]
+    assert isinstance(recipe, dict)
+    create_binding_revision(
+        sandbox.admin,
+        {
+            **DEFINITION,
+            "revision": revision,
+            "revision_id": revision_id,
+            "logical_model": "qwen3-tts-customvoice-" + revision,
+            "execution_recipe": {**recipe, "capacity_manifest_id": "cap-tts-quality-" + revision},
+        },
+    )
+
+
+def _http(sandbox: Sandbox) -> AsyncClient:
+    app = _app(sandbox)
+    return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+
+
+def _factual_counts(sandbox: Sandbox) -> tuple[int, int, int, int]:
+    return (
+        scalar(sandbox.admin, "SELECT count(*) FROM speech_publications WHERE kind='binding'"),
+        scalar(sandbox.admin, "SELECT count(*) FROM speech_binding_publication_evidence"),
+        scalar(sandbox.admin, "SELECT count(*) FROM speech_publication_lifecycle_events"),
+        scalar(sandbox.admin, "SELECT revision FROM speech_catalog_state WHERE singleton IS TRUE"),
+    )
+
+
+async def test_http_publication_creates_replays_and_refuses_a_second_fact(
+    sandbox: Sandbox,
+) -> None:
+    _seed(sandbox)
+    _draft(sandbox, "3", "binding-rev-3")
+    async with _http(sandbox) as client:
+        before = _factual_counts(sandbox)
+        created = await client.post(PUBLISH_URL, json=PUBLISH_BODY, headers=PUBLISH_KEY)
+        assert created.status_code == 201, created.text
+        document = created.json()
+        assert document["binding_id"] == "tts-quality"
+        assert document["revision"] == "3"
+        assert document["publication"] == {
+            "status": "published",
+            "published_at": document["publication"]["published_at"],
+            "retired_at": None,
+            "capacity_manifest_id": "cap-tts-quality-3",
+            "qualification_report_id": "qrep-tts-quality-3",
+            "disabled_reason": None,
+        }
+        assert "execution_defaults" not in document
+
+        after = _factual_counts(sandbox)
+        assert after[0] == before[0] + 1
+        assert after[1] == before[1] + 1
+        assert after[2] == before[2] + 1
+        assert after[3] == before[3] + 1, "a real insert advances the catalogue version once"
+        head = sandbox.admin.execute(
+            "SELECT revision, revision_id FROM speech_publication_heads "
+            "WHERE kind='binding' AND object_id='tts-quality'"
+        ).fetchone()
+        assert head == ("3", "binding-rev-3")
+        evidence = sandbox.admin.execute(
+            "SELECT evidence_source, capacity_manifest_id, qualification_report_id "
+            "FROM speech_binding_publication_evidence "
+            "WHERE object_id='tts-quality' AND revision='3'"
+        ).fetchone()
+        assert evidence == ("publish_http", "cap-tts-quality-3", "qrep-tts-quality-3")
+        event = sandbox.admin.execute(
+            "SELECT action, result_status, revision_id, actor_type "
+            "FROM speech_publication_lifecycle_events WHERE revision='3'"
+        ).fetchone()
+        assert event == ("model_binding.publish", "published", "binding-rev-3", "anonymous")
+
+        replayed = await client.post(PUBLISH_URL, json=PUBLISH_BODY, headers=PUBLISH_KEY)
+        assert replayed.status_code == 200, replayed.text
+        assert replayed.json() == document
+        assert _factual_counts(sandbox) == after, "a replay writes nothing"
+
+        conflicting = await client.post(
+            PUBLISH_URL,
+            json={**PUBLISH_BODY, "qualification_report_id": "qrep-tts-quality-2"},
+            headers=PUBLISH_KEY,
+        )
+        assert conflicting.status_code == 409, conflicting.text
+        assert conflicting.json()["error"]["code"] == "idempotency_conflict"
+        assert _factual_counts(sandbox) == after
+
+        duplicate = await client.post(
+            PUBLISH_URL, json=PUBLISH_BODY, headers={"Idempotency-Key": "publish-second-key"}
+        )
+        assert duplicate.status_code == 409, duplicate.text
+        assert duplicate.json()["error"]["code"] == "binding_not_draft"
+        assert _factual_counts(sandbox) == after
+
+
+async def test_http_publication_uses_head_and_evidence_preconditions(sandbox: Sandbox) -> None:
+    _seed(sandbox)
+    _draft(sandbox, "3", "binding-rev-3")
+    _draft(sandbox, "4", "binding-rev-4")
+    async with _http(sandbox) as client:
+        stale = await client.post(
+            PUBLISH_URL,
+            json={
+                **PUBLISH_BODY,
+                "expected_revision": "4",
+                "expected_current_revision": "1",
+                "capacity_manifest_id": "cap-tts-quality-4",
+                "qualification_report_id": "qrep-tts-quality-4",
+            },
+            headers={"Idempotency-Key": "publish-stale-head"},
+        )
+        assert stale.status_code == 409, stale.text
+        assert stale.json()["error"]["code"] == "configuration_changed"
+        assert 'expected_current_revision="2"' in stale.json()["error"]["message"]
+
+        mismatch = await client.post(
+            PUBLISH_URL,
+            json={
+                **PUBLISH_BODY,
+                "expected_revision": "4",
+                "expected_current_revision": "2",
+                "capacity_manifest_id": "cap-tts-quality-3",
+                "qualification_report_id": "qrep-tts-quality-4",
+            },
+            headers={"Idempotency-Key": "publish-wrong-capacity"},
+        )
+        assert mismatch.status_code == 422, mismatch.text
+        assert mismatch.json()["error"]["code"] == "capacity_manifest_mismatch"
+
+        missing = await client.post(
+            PUBLISH_URL,
+            json={**PUBLISH_BODY, "expected_revision": "9"},
+            headers={"Idempotency-Key": "publish-missing-revision"},
+        )
+        assert missing.status_code == 404, missing.text
+        assert missing.json()["error"]["code"] == "binding_not_found"
+        assert _factual_counts(sandbox)[:3] == (2, 2, 0)
+
+        # The same intent later succeeds: preconditions reject before any write.
+        created = await client.post(
+            PUBLISH_URL,
+            json={
+                **PUBLISH_BODY,
+                "expected_revision": "4",
+                "capacity_manifest_id": "cap-tts-quality-4",
+                "qualification_report_id": "qrep-tts-quality-4",
+            },
+            headers={"Idempotency-Key": "publish-after-preconditions"},
+        )
+        assert created.status_code == 201, created.text
+        assert created.json()["revision"] == "4"
+
+
+async def test_concurrent_publication_with_one_key_serializes_on_the_journal(
+    sandbox: Sandbox,
+) -> None:
+    _seed(sandbox)
+    _draft(sandbox, "3", "binding-rev-3")
+    async with _http(sandbox) as client:
+        first, second = await asyncio.gather(
+            client.post(PUBLISH_URL, json=PUBLISH_BODY, headers=PUBLISH_KEY),
+            client.post(PUBLISH_URL, json=PUBLISH_BODY, headers=PUBLISH_KEY),
+        )
+    assert sorted([first.status_code, second.status_code]) == [200, 201]
+    assert first.json() == second.json()
+    assert scalar(sandbox.admin, "SELECT count(*) FROM speech_publication_lifecycle_events") == 1
+    assert (
+        scalar(
+            sandbox.admin,
+            "SELECT count(*) FROM speech_publications WHERE object_id='tts-quality' "
+            "AND revision='3'",
+        )
+        == 1
+    )
+
+
+def test_publication_declaration_covers_only_the_publication_port(sandbox: Sandbox) -> None:
+    """The publication privilege set must not imply retirement or evidence rewrites."""
+
+    role = "sn_pub_only_" + uuid.uuid4().hex[:10]
+    admin, schema = sandbox.admin, sandbox.schema
+    admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")
+    try:
+        for grant in binding_publication_grants(schema, role):
+            admin.execute(grant)
+
+        def table(table: str, privilege: str) -> bool | None:
+            row = admin.execute(
+                "SELECT pg_catalog.has_table_privilege(%s, %s, %s)",
+                (role, f'"{schema}".{table}', privilege),
+            ).fetchone()
+            return None if row is None else bool(row[0])
+
+        def columns(table: str, privilege: str) -> list[str] | None:
+            row = admin.execute(
+                "SELECT array_agg(column_name::text ORDER BY column_name) "
+                "FROM information_schema.columns "
+                "WHERE table_schema=%s AND table_name=%s AND pg_catalog.has_column_privilege("
+                "%s, format('%%I.%%I', table_schema, table_name), column_name, %s)",
+                (schema, table, role, privilege),
+            ).fetchone()
+            return None if row is None else cast(list[str], row[0])
+
+        assert table("speech_publication_heads", "DELETE") is False
+        assert table("speech_publications", "DELETE") is False
+        assert table("speech_binding_publication_evidence", "DELETE") is False
+        assert table("speech_binding_revisions", "INSERT") is False
+        assert table("speech_publication_retirements", "INSERT") is False
+        assert table("speech_binding_disable_intents", "INSERT") is False
+        assert columns("speech_publication_heads", "UPDATE") == [
+            "revision",
+            "revision_id",
+            "updated_at_us",
+        ]
+        assert columns("speech_catalog_state", "UPDATE") == ["generated_at_us", "revision"]
+        assert columns("speech_publications", "UPDATE") is None
+        assert columns("speech_binding_publication_evidence", "UPDATE") is None
+        # Reads stay bounded to what the command and its projection consume.
+        assert table("speech_binding_families", "SELECT") is False
+        assert table("speech_binding_commands", "SELECT") is False
+    finally:
+        admin.execute(f'DROP OWNED BY "{role}"')
+        admin.execute(f'DROP ROLE IF EXISTS "{role}"')

@@ -720,6 +720,20 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/BindingCreateMethodNotAllowed"
+        "408":
+          $ref: "#/components/responses/BindingReceiveTimeout"
+        "413":
+          $ref: "#/components/responses/BindingRequestTooLarge"
+        "415":
+          $ref: "#/components/responses/BindingMediaUnsupported"
+        "429":
+          $ref: "#/components/responses/BindingReceiveFull"
+        "503":
+          $ref: "#/components/responses/BindingCreationUnknown"
   /v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/activations:
     post:
       tags: [model-bindings]

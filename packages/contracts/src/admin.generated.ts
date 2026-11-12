@@ -3299,9 +3299,16 @@ export interface operations {
       };
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["BindingCreateMethodNotAllowed"];
+      408: components["responses"]["BindingReceiveTimeout"];
       409: components["responses"]["Conflict"];
+      413: components["responses"]["BindingRequestTooLarge"];
+      415: components["responses"]["BindingMediaUnsupported"];
       422: components["responses"]["UnprocessableEntity"];
+      429: components["responses"]["BindingReceiveFull"];
+      503: components["responses"]["BindingCreationUnknown"];
     };
   };
   activatePublishedModelBindingRevision: {

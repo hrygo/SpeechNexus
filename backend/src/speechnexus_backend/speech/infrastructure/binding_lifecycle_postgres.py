@@ -11,6 +11,7 @@ from typing import Any, Literal, cast
 import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
+from speechnexus_backend.speech.application.binding_documents import decode_document
 from speechnexus_backend.speech.domain.binding_lifecycle import (
     BindingActivationCommand,
     BindingActivationConflictError,
@@ -19,9 +20,19 @@ from speechnexus_backend.speech.domain.binding_lifecycle import (
     BindingLifecycleReceipt,
     BindingLifecycleStatus,
     BindingLifecycleUnavailableError,
+    BindingPublicationCommand,
+    BindingPublicationEvidenceError,
+    BindingPublicationHeadConflictError,
     BindingRetirementCommand,
 )
+from speechnexus_backend.speech.domain.binding_publication_evidence import (
+    BindingPublicationEvidence,
+)
+from speechnexus_backend.speech.domain.publications import Publication
 from speechnexus_backend.speech.infrastructure.binding_disable_barrier import lock_binding
+from speechnexus_backend.speech.infrastructure.binding_publication_evidence_sql import (
+    insert_evidence,
+)
 from speechnexus_backend.speech.infrastructure.catalog_revision_schema import RETIREMENT_TABLE
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import (
@@ -29,8 +40,12 @@ from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema impo
     EVENT_TABLE,
     HEAD_TABLE,
 )
+from speechnexus_backend.speech.infrastructure.publications_sql import append_publication
 
-type LifecycleOperation = Literal["retire", "disable", "activate"]
+type LifecycleOperation = Literal["publish", "retire", "disable", "activate"]
+type LifecycleCommand = (
+    BindingPublicationCommand | BindingRetirementCommand | BindingActivationCommand
+)
 
 
 class _Cursor:
@@ -73,6 +88,16 @@ class PostgresBindingLifecycle:
         return self._run(
             lambda cursor: self._activate(cursor, command),
             preserve=(BindingLifecycleConflictError, BindingLifecycleNotFoundError),
+        )
+
+    def publish(self, command: BindingPublicationCommand) -> BindingLifecycleReceipt:
+        return self._run(
+            lambda cursor: self._publish(cursor, command),
+            preserve=(
+                BindingLifecycleConflictError,
+                BindingLifecycleNotFoundError,
+                BindingPublicationEvidenceError,
+            ),
         )
 
     def _run[T](
@@ -238,10 +263,98 @@ class PostgresBindingLifecycle:
             replayed=False,
         )
 
+    def _publish(
+        self, cursor: _Cursor, command: BindingPublicationCommand
+    ) -> BindingLifecycleReceipt:
+        # The publication path never rewrites a publication row: a target that is
+        # already published (or retired) is not a draft and cannot be re-published
+        # under a new key. Only the original key replays.
+        self._lock(cursor, command.binding_id)
+        replay = self._replay(cursor, command, "publish")
+        if replay is not None:
+            return replay
+        if self._state(cursor, command.binding_id, command.revision) is not None:
+            raise BindingLifecycleConflictError("binding_not_draft")
+        cursor.execute(
+            "SELECT revision_id, definition_json, created_at_us FROM speech_binding_revisions "
+            "WHERE binding_id=%s AND revision=%s",
+            (command.binding_id, command.revision),
+        )
+        drafts = cursor.fetchall()
+        if not drafts:
+            raise BindingLifecycleNotFoundError
+        if len(drafts) != 1:
+            raise BindingLifecycleUnavailableError
+        draft = drafts[0]
+        revision_id = str(draft["revision_id"])
+        definition = decode_document(str(draft["definition_json"]).encode("utf-8"))
+        recipe = definition.get("execution_recipe")
+        declared = recipe.get("capacity_manifest_id") if isinstance(recipe, dict) else None
+        if not isinstance(declared, str) or declared != command.capacity_manifest_id:
+            raise BindingPublicationEvidenceError
+        head = self._head(cursor, command.binding_id)
+        current_revision = None if head is None else str(head["revision"])
+        if current_revision != command.expected_current_revision:
+            raise BindingPublicationHeadConflictError(current_revision)
+        occurred_at_us = self._clock(cursor)
+        publication = Publication(
+            kind="binding",
+            object_id=command.binding_id,
+            revision=int(command.revision),
+            revision_id=revision_id,
+            published_at_us=occurred_at_us,
+        )
+        evidence = BindingPublicationEvidence(
+            object_id=command.binding_id,
+            revision=int(command.revision),
+            revision_id=revision_id,
+            capacity_manifest_id=command.capacity_manifest_id,
+            qualification_report_id=command.qualification_report_id,
+            evidence_source="publish_http",
+            recorded_at_us=occurred_at_us,
+        )
+        # The head compare-and-swap is re-checked inside the append under the same
+        # binding lock. The catalogue version is not a caller observation here, so
+        # an unrelated publication must not turn this request into a conflict.
+        if not append_publication(
+            cursor,
+            publication,
+            expected_current_revision=command.expected_current_revision,
+            verify_catalog=False,
+        ):
+            raise BindingLifecycleConflictError("binding_not_draft")
+        if not insert_evidence(cursor, evidence):
+            raise BindingLifecycleUnavailableError
+        policy_revision = self._catalog_revision(cursor)
+        self._record(
+            cursor,
+            command,
+            action="model_binding.publish",
+            result_status="published",
+            retired_at_us=None,
+            disabled_reason=None,
+            occurred_at_us=occurred_at_us,
+            policy_revision=policy_revision,
+            change_summary={
+                "changed_fields": ["/publication/status", "/publication/head_revision"],
+                "reason": None,
+            },
+        )
+        state = self._state(cursor, command.binding_id, command.revision)
+        if state is None:
+            raise BindingLifecycleUnavailableError
+        return self._receipt(
+            state,
+            status="published",
+            retired_at_us=None,
+            disabled_reason=None,
+            replayed=False,
+        )
+
     def _replay(
         self,
         cursor: _Cursor,
-        command: BindingRetirementCommand | BindingActivationCommand,
+        command: LifecycleCommand,
         operation: LifecycleOperation,
     ) -> BindingLifecycleReceipt | None:
         if command.key_digest is None:
@@ -283,7 +396,7 @@ class PostgresBindingLifecycle:
     def _record(
         self,
         cursor: _Cursor,
-        command: BindingRetirementCommand | BindingActivationCommand,
+        command: LifecycleCommand,
         *,
         action: str,
         result_status: str,

@@ -39,12 +39,19 @@ def append_publication(
     *,
     expected_current_revision: object = MISSING_HEAD,
     expected_catalog_revision: object = MISSING_HEAD,
+    verify_catalog: bool = True,
 ) -> bool:
     """Return whether this call inserted the row; a race resolves to no insert.
 
     An actual insert fires the catalogue-version trigger in this same
     transaction.  A conflict inserts nothing and therefore leaves the version
     unchanged.
+
+    ``verify_catalog`` protects a caller that observed the catalogue version
+    before its transaction. The HTTP publication path reads the selected head
+    under the binding advisory lock in the same transaction, so it passes
+    ``False``: the head CAS is its exact precondition and an unrelated object's
+    publication must not turn its request into a spurious conflict.
     """
     cursor.execute(
         "SELECT pg_advisory_xact_lock(hashtextextended("
@@ -59,20 +66,24 @@ def append_publication(
             return False
         if expected_current_revision is MISSING_HEAD:
             raise BindingHeadPreconditionError("expected_current_revision_required")
-        if type(expected_catalog_revision) is not int or expected_catalog_revision < 1:
-            raise BindingHeadPreconditionError("expected_catalog_revision_required")
+        if verify_catalog:
+            if type(expected_catalog_revision) is not int or expected_catalog_revision < 1:
+                raise BindingHeadPreconditionError("expected_catalog_revision_required")
+        elif expected_catalog_revision is not MISSING_HEAD:
+            raise BindingHeadPreconditionError("unexpected_catalog_guard")
         if expected_current_revision is not None:
             if not isinstance(expected_current_revision, str):
                 raise ValueError("Invalid configuration revision")
             revision_number(expected_current_revision)
-        cursor.execute(
-            "SELECT revision FROM speech_catalog_state WHERE singleton IS TRUE FOR UPDATE"
-        )
-        state = cursor.fetchall()
-        if len(state) != 1:
-            raise ValueError("Publication catalogue state is not unique")
-        if state[0]["revision"] != expected_catalog_revision:
-            raise BindingHeadPreconditionError("configuration_changed")
+        if verify_catalog:
+            cursor.execute(
+                "SELECT revision FROM speech_catalog_state WHERE singleton IS TRUE FOR UPDATE"
+            )
+            state = cursor.fetchall()
+            if len(state) != 1:
+                raise ValueError("Publication catalogue state is not unique")
+            if state[0]["revision"] != expected_catalog_revision:
+                raise BindingHeadPreconditionError("configuration_changed")
         cursor.execute(
             f"SELECT revision FROM {HEAD_TABLE} WHERE kind = %s AND object_id = %s",
             (publication.kind, publication.object_id),

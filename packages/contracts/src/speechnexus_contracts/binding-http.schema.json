@@ -142,6 +142,101 @@
         }
       }
     },
+    "publishModelBindingRevision": {
+      "path": "/v1/nexus/admin/model-bindings/{binding_id}/publications",
+      "method": "post",
+      "request": "HttpRequest_publishModelBindingRevision",
+      "parameters": {
+        "path": {
+          "binding_id": "string"
+        },
+        "query": {},
+        "headers": {
+          "x-request-id": "string",
+          "idempotency-key": "string"
+        }
+      },
+      "responses": {
+        "201": {
+          "schema": "HttpResponse_publishModelBindingRevision_201",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "200": {
+          "schema": "HttpResponse_publishModelBindingRevision_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_publishModelBindingRevision_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_publishModelBindingRevision_401",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_publishModelBindingRevision_404",
+          "headers": {},
+          "json": true
+        },
+        "409": {
+          "schema": "HttpResponse_publishModelBindingRevision_409",
+          "headers": {},
+          "json": true
+        },
+        "422": {
+          "schema": "HttpResponse_publishModelBindingRevision_422",
+          "headers": {},
+          "json": true
+        },
+        "403": {
+          "schema": "HttpResponse_publishModelBindingRevision_403",
+          "headers": {},
+          "json": true
+        },
+        "405": {
+          "schema": "HttpResponse_publishModelBindingRevision_405",
+          "headers": {
+            "allow": "string"
+          },
+          "json": true
+        },
+        "408": {
+          "schema": "HttpResponse_publishModelBindingRevision_408",
+          "headers": {},
+          "json": true
+        },
+        "413": {
+          "schema": "HttpResponse_publishModelBindingRevision_413",
+          "headers": {},
+          "json": true
+        },
+        "415": {
+          "schema": "HttpResponse_publishModelBindingRevision_415",
+          "headers": {},
+          "json": true
+        },
+        "429": {
+          "schema": "HttpResponse_publishModelBindingRevision_429",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_publishModelBindingRevision_503",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        }
+      }
+    },
     "retireModelBindingRevision": {
       "path": "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/retirements",
       "method": "post",
@@ -344,6 +439,21 @@
     "HttpResponse_getModelBindingRevision_403",
     "HttpResponse_getModelBindingRevision_405",
     "HttpResponse_getModelBindingRevision_503",
+    "HttpRequest_publishModelBindingRevision",
+    "HttpResponse_publishModelBindingRevision_201",
+    "HttpResponse_publishModelBindingRevision_200",
+    "HttpResponse_publishModelBindingRevision_400",
+    "HttpResponse_publishModelBindingRevision_401",
+    "HttpResponse_publishModelBindingRevision_404",
+    "HttpResponse_publishModelBindingRevision_409",
+    "HttpResponse_publishModelBindingRevision_422",
+    "HttpResponse_publishModelBindingRevision_403",
+    "HttpResponse_publishModelBindingRevision_405",
+    "HttpResponse_publishModelBindingRevision_408",
+    "HttpResponse_publishModelBindingRevision_413",
+    "HttpResponse_publishModelBindingRevision_415",
+    "HttpResponse_publishModelBindingRevision_429",
+    "HttpResponse_publishModelBindingRevision_503",
     "HttpRequest_retireModelBindingRevision",
     "HttpResponse_retireModelBindingRevision_200",
     "HttpResponse_retireModelBindingRevision_400",
@@ -2605,6 +2715,37 @@
         }
       ]
     },
+    "ModelBindingPublicationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expected_revision",
+        "expected_current_revision",
+        "capacity_manifest_id",
+        "qualification_report_id"
+      ],
+      "properties": {
+        "expected_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "expected_current_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "capacity_manifest_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "qualification_report_id": {
+          "$ref": "#/$defs/Identifier"
+        }
+      }
+    },
     "ModelBindingRetirementRequest": {
       "$ref": "#/$defs/External_shared_lifecycle_schema_json_RetirementRequest"
     },
@@ -3069,6 +3210,290 @@
         },
         "body": {
           "$ref": "#/$defs/BindingReadUnavailableError"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_publishModelBindingRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "binding_id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": ["binding_id"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "idempotency-key": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ModelBindingPublicationRequest"
+        }
+      },
+      "required": ["path", "body"]
+    },
+    "HttpResponse_publishModelBindingRevision_201": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/External_model_binding_schema_json_Root"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_publishModelBindingRevision_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/External_model_binding_schema_json_Root"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_publishModelBindingRevision_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_publishModelBindingRevision_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_publishModelBindingRevision_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_publishModelBindingRevision_409": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_publishModelBindingRevision_422": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_publishModelBindingRevision_403": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_publishModelBindingRevision_405": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "string",
+              "const": "POST"
+            }
+          },
+          "required": ["allow"],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpResponse_publishModelBindingRevision_408": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_publishModelBindingRevision_413": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_publishModelBindingRevision_415": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_publishModelBindingRevision_429": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_publishModelBindingRevision_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/BindingCreationUnknownError"
         }
       },
       "required": ["body"]

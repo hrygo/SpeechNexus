@@ -24,6 +24,9 @@ from speechnexus_backend.speech.infrastructure.binding_lifecycle_postgres import
 from speechnexus_backend.speech.infrastructure.binding_publication_evidence_schema import (
     ADMIN_READER_TABLES as _ADMIN_READER_TABLES,
 )
+from speechnexus_backend.speech.infrastructure.binding_publication_evidence_schema import (
+    TABLE as _EVIDENCE_TABLE,
+)
 from speechnexus_backend.speech.infrastructure.catalog_revision_schema import (
     RETIREMENT_TABLE,
     STATE_TABLE,
@@ -371,12 +374,13 @@ class BindingAdminReaderRuntime:
                     self._diagnostics = None
 
 
-_LIFECYCLE_READ_ONLY = (
-    "speech_binding_revisions",
-    "speech_binding_publication_evidence",
-)
+# The lifecycle writer also serves the HTTP publication command: it records one
+# evidence row per publication, while the immutable revision itself stays
+# SELECT-only here.
+_LIFECYCLE_READ_ONLY = ("speech_binding_revisions",)
 _LIFECYCLE_INSERT_ONLY = (
     "speech_publications",
+    _EVIDENCE_TABLE,
     RETIREMENT_TABLE,
     EVENT_TABLE,
     DISABLE_INTENT_TABLE,

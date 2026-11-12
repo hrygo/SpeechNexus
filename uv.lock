@@ -5,6 +5,7 @@ requires-python = "==3.14.*"
 [manifest]
 members = [
     "speechnexus",
+    "speechnexus-asset-inspector",
     "speechnexus-backend",
     "speechnexus-contracts",
     "speechnexus-execution-gateway",
@@ -1660,6 +1661,23 @@ dev = [
     { name = "types-jsonschema", specifier = ">=4.23,<5" },
     { name = "types-pymysql", specifier = ">=1.1,<2" },
     { name = "types-pyyaml", specifier = ">=6,<7" },
+]
+
+[[package]]
+name = "speechnexus-asset-inspector"
+version = "0.1.0.dev0"
+source = { editable = "asset-inspector" }
+dependencies = [
+    { name = "speechnexus-media", extra = ["audio"] },
+    { name = "starlette" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "speechnexus-media", extras = ["audio"], editable = "packages/media" },
+    { name = "starlette", specifier = ">=1.9,<2" },
+    { name = "uvicorn", specifier = ">=0.54,<0.55" },
 ]
 
 [[package]]

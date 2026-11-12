@@ -1,14 +1,19 @@
-"""Compose forwards the three read-only projection identities; the API decides from them.
+"""Compose forwards the read-only projection identities; the API decides from them.
 
 ``deploy/compose.yaml`` did not carry ``SPEECHNEXUS_AUDIT_READER_DATABASE_URL``,
-``SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL`` or
-``SPEECHNEXUS_ARTIFACT_READER_DATABASE_URL`` for the api service, so the assembly
-conditions in :func:`create_app` could never be true in a Compose deployment and
-the corresponding endpoints answered their documented 503 by design::
+``SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL``,
+``SPEECHNEXUS_ARTIFACT_READER_DATABASE_URL`` or
+``SPEECHNEXUS_MODEL_INSTANCE_READER_DATABASE_URL`` for the api service, so the
+assembly conditions in :func:`create_app` could never be true in a Compose
+deployment and the corresponding endpoints answered their documented 503 by
+design::
 
     GET /v1/nexus/audit-events        -> 503 audit_service_unavailable
     GET /v1/models, /v1/models/{id}   -> 503 model_catalogue_unavailable
     GET /v1/nexus/artifacts/{id}      -> 503 artifact_service_unavailable
+    GET /v1/nexus/admin/model-instances
+    GET /v1/nexus/admin/model-instances/{id}/generations/{generation}
+                                      -> 503 model_instance_service_unavailable
 
 These tests pin the wiring itself, not the PostgreSQL authority:
 
@@ -20,8 +25,8 @@ These tests pin the wiring itself, not the PostgreSQL authority:
 - the process assembles each runtime only when its own DSN is set; the Artifact
   runtime additionally keeps the paired object-storage keys it always required.
 
-The role surfaces and the startup self-checks are covered by the audit, catalog
-and artifact integration tests.
+The role surfaces and the startup self-checks are covered by the audit, catalog,
+artifact and model instance integration tests.
 """
 
 from __future__ import annotations
@@ -67,6 +72,12 @@ READERS = [
         "/v1/nexus/artifacts/artifact-demo",
         "artifact_service_unavailable",
     ),
+    (
+        "SPEECHNEXUS_MODEL_INSTANCE_READER_DATABASE_URL",
+        "model_instance_reader_database_url",
+        "/v1/nexus/admin/model-instances",
+        "model_instance_service_unavailable",
+    ),
 ]
 IDS = [variable for variable, *_ in READERS]
 DSNS = {
@@ -78,6 +89,9 @@ DSNS = {
     ),
     "SPEECHNEXUS_ARTIFACT_READER_DATABASE_URL": (
         "postgresql://sn_artifact_reader:placeholder@postgres:5432/speechnexus"
+    ),
+    "SPEECHNEXUS_MODEL_INSTANCE_READER_DATABASE_URL": (
+        "postgresql://sn_model_instance_reader:placeholder@postgres:5432/speechnexus"
     ),
 }
 
@@ -183,10 +197,35 @@ async def test_the_empty_value_compose_forwards_keeps_each_projection_at_503(
     assert response.json()["error"]["code"] == code
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/v1/nexus/admin/model-instances",
+        "/v1/nexus/admin/model-instances/instance-demo/generations/1",
+    ],
+)
+async def test_the_empty_instance_reader_value_keeps_both_endpoints_at_503(path: str) -> None:
+    """The list and the single-generation GET share one assembly condition.
+
+    A reader identity that Compose forwards as empty must leave both endpoints on
+    the documented 503, not silently serve an empty page or a fabricated 404.
+    """
+    app = app_module.create_app(settings=_with(model_instance_reader_database_url=""))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(path)
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "model_instance_service_unavailable"
+
+
 def test_no_runtime_is_assembled_while_every_reader_dsn_is_unset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    seen: dict[str, list[Settings]] = {"audit": [], "catalogue": [], "artifact": []}
+    seen: dict[str, list[Settings]] = {
+        "audit": [],
+        "catalogue": [],
+        "artifact": [],
+        "instances": [],
+    }
 
     def spy(runtime: str) -> type:
         class Spy:
@@ -198,15 +237,21 @@ def test_no_runtime_is_assembled_while_every_reader_dsn_is_unset(
     monkeypatch.setattr(app_module, "AuditReaderRuntime", spy("audit"))
     monkeypatch.setattr(app_module, "ModelCatalogRuntime", spy("catalogue"))
     monkeypatch.setattr(app_module, "ArtifactRuntime", spy("artifact"))
+    monkeypatch.setattr(app_module, "ModelInstanceRuntime", spy("instances"))
     app_module.create_app(settings=_with())
-    assert seen == {"audit": [], "catalogue": [], "artifact": []}
+    assert seen == {"audit": [], "catalogue": [], "artifact": [], "instances": []}
 
 
 def test_each_runtime_is_assembled_from_its_own_reader_dsn(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     readers = {field: SecretStr(DSNS[variable]) for variable, field, _, _ in READERS}
-    seen: dict[str, list[Settings]] = {"audit": [], "catalogue": [], "artifact": []}
+    seen: dict[str, list[Settings]] = {
+        "audit": [],
+        "catalogue": [],
+        "artifact": [],
+        "instances": [],
+    }
 
     def spy(runtime: str) -> type:
         class Spy:
@@ -218,6 +263,7 @@ def test_each_runtime_is_assembled_from_its_own_reader_dsn(
     monkeypatch.setattr(app_module, "AuditReaderRuntime", spy("audit"))
     monkeypatch.setattr(app_module, "ModelCatalogRuntime", spy("catalogue"))
     monkeypatch.setattr(app_module, "ArtifactRuntime", spy("artifact"))
+    monkeypatch.setattr(app_module, "ModelInstanceRuntime", spy("instances"))
     app_module.create_app(settings=_with(**(_object_storage() | readers)))
     assert [settings.audit_reader_database_url for settings in seen["audit"]] == [
         readers["audit_reader_database_url"]
@@ -227,6 +273,9 @@ def test_each_runtime_is_assembled_from_its_own_reader_dsn(
     ]
     assert [settings.artifact_reader_database_url for settings in seen["artifact"]] == [
         readers["artifact_reader_database_url"]
+    ]
+    assert [settings.model_instance_reader_database_url for settings in seen["instances"]] == [
+        readers["model_instance_reader_database_url"]
     ]
 
 
@@ -267,6 +316,7 @@ def test_the_example_env_declares_the_reader_entry_blank(
     [
         "SPEECHNEXUS_WORKSPACE_WRITER_ROLE_PASSWORD",
         "SPEECHNEXUS_AUDIT_READER_ROLE_PASSWORD",
+        "SPEECHNEXUS_MODEL_INSTANCE_READER_ROLE_PASSWORD",
     ],
 )
 def test_the_example_env_names_the_optional_role_passwords(variable: str) -> None:

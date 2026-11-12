@@ -332,8 +332,10 @@ head 为准，查询结果须与之相符。不要把旧版 `0027_gateway_abort_
 ## 6. 创建非 owner 运行角色与最小授权
 
 以下脚本必须使用 **迁移 owner DSN** 运行；它创建 API、gateway writer、gateway
-query、工作区 writer 与审计 reader 五个独立角色并调用仓库授权函数。此段只用于新建、
-独占的 SpeechNexus 数据库：
+query、工作区 writer、审计 reader 与实例读取 reader 六个独立角色。除实例读取面外，
+各身份的最小授权都由仓库授权函数声明；实例读取投影目前没有对应的 `*_grants` 函数，
+脚本按它的运行时启动校验所核验的两张表显式授权。此段只用于新建、独占的 SpeechNexus
+数据库：
 它会撤销数据库级 `PUBLIC TEMPORARY/CREATE`、`public` schema 的 CREATE 和大对象
 写函数的 PUBLIC EXECUTE。已有共享数据库应先导出 ACL、核对其他角色依赖，再由部署
 负责人评审等价最小授权；不要直接套用。应用启动只检查这些前置条件，不修改 ACL。
@@ -341,13 +343,15 @@ query、工作区 writer 与审计 reader 五个独立角色并调用仓库授�
 失败不会整体回滚。失败后须先核对已创建的角色和实际 ACL，按保存的原状态及获准的
 恢复步骤处理；直接重跑会因已有角色而停止，不能假设数据库仍处于执行前状态。
 
-工作区 writer 与审计 reader 的口令不在 `deploy/compose.env.example` 中预置，先在当前
-shell 生成；口令不打印到终端，只在下面的脚本和写回环境文件时使用：
+工作区 writer、审计 reader 与实例读取 reader 的口令不在
+`deploy/compose.env.example` 中给出可用值（那里只有 `change-me-*` 占位），先在本轮
+重新生成，口令不打印到终端，只在下面的脚本和写回环境文件时使用：
 
 ```bash
 umask 077
 export SPEECHNEXUS_WORKSPACE_WRITER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 export SPEECHNEXUS_AUDIT_READER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export SPEECHNEXUS_MODEL_INSTANCE_READER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 ```
 
 先在当前 shell 载入环境文件：
@@ -387,6 +391,7 @@ roles = {
     "sn_gateway_query": os.environ["SPEECHNEXUS_GATEWAY_QUERY_ROLE_PASSWORD"],
     "sn_workspace_writer": os.environ["SPEECHNEXUS_WORKSPACE_WRITER_ROLE_PASSWORD"],
     "sn_audit_reader": os.environ["SPEECHNEXUS_AUDIT_READER_ROLE_PASSWORD"],
+    "sn_model_instance_reader": os.environ["SPEECHNEXUS_MODEL_INSTANCE_READER_ROLE_PASSWORD"],
 }
 with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     # PostgreSQL 角色属于整个集群，即使数据库是专用的也要先核对。
@@ -460,6 +465,22 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
         conn.execute(statement)
     for statement in audit_reader_grants(schema, "sn_audit_reader"):
         conn.execute(statement)
+    # No grants function declares this projection yet, so mirror the read-only
+    # reader functions exactly: schema USAGE plus SELECT on the two relations
+    # the runtime verifies at startup (READABLE in model_instance_runtime.py).
+    conn.execute(
+        sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
+            sql.Identifier(schema), sql.Identifier("sn_model_instance_reader")
+        )
+    )
+    conn.execute(
+        sql.SQL("GRANT SELECT ON {}.engine_instances, {}.speech_binding_revisions TO {}")
+        .format(
+            sql.Identifier(schema),
+            sql.Identifier(schema),
+            sql.Identifier("sn_model_instance_reader"),
+        )
+    )
 
     # Transcription resolves the selected published binding and checks its
     # retirement through the runtime facts port.
@@ -474,7 +495,10 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
             sql.Identifier("sn_api"),
         )
     )
-    print("roles ready: sn_api sn_gateway sn_gateway_query sn_workspace_writer sn_audit_reader")
+    print(
+        "roles ready: sn_api sn_gateway sn_gateway_query sn_workspace_writer "
+        "sn_audit_reader sn_model_instance_reader"
+    )
 PY
 ```
 
@@ -482,7 +506,7 @@ PY
 CREATE 权限，停止启动服务；不要用超级用户连接绕过检查。API 启动时还会再次核验
 `sn_api` 不是数据库/表 owner，也不是可继承的 owner 成员。
 
-脚本成功后，把两个新角色的连接地址写回 `deploy/compose.env`；脚本替换同名空行或追加，
+脚本成功后，把三个新角色的连接地址写回 `deploy/compose.env`；脚本替换同名空行或追加，
 不打印口令：
 
 ```bash
@@ -502,6 +526,11 @@ values = {
         f"{os.environ['SPEECHNEXUS_AUDIT_READER_ROLE_PASSWORD']}"
         "@postgres:5432/speechnexus"
     ),
+    "SPEECHNEXUS_MODEL_INSTANCE_READER_DATABASE_URL": (
+        "postgresql://sn_model_instance_reader:"
+        f"{os.environ['SPEECHNEXUS_MODEL_INSTANCE_READER_ROLE_PASSWORD']}"
+        "@postgres:5432/speechnexus"
+    ),
 }
 path = Path("deploy/compose.env")
 text = path.read_text()
@@ -511,12 +540,12 @@ for key, item in values.items():
     text = re.sub(pattern, line, text, count=1) if re.search(pattern, text) else text + line + "\n"
 path.write_text(text)
 path.chmod(0o600)
-print("workspace writer and audit reader DSNs written to deploy/compose.env")
+print("workspace writer, audit reader and instance reader DSNs written to deploy/compose.env")
 PY
 ```
 
-两行都按示例的 `postgres` 服务名和 `speechnexus` 库名生成；改了 Compose 服务名、端口或
-数据库名时同步修改这两行。
+三行都按示例的 `postgres` 服务名和 `speechnexus` 库名生成；改了 Compose 服务名、端口或
+数据库名时同步修改这三行。
 
 ### 工作区写角色 `sn_workspace_writer`
 
@@ -549,18 +578,50 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 未配置 `SPEECHNEXUS_AUDIT_READER_DATABASE_URL` 时该端点返回
 `503 audit_service_unavailable`。
 
-本基础编排的 `api` 服务没有转发 `SPEECHNEXUS_AUDIT_READER_DATABASE_URL`，所以即使角色
-与连接地址已按上一步写入 `deploy/compose.env`，本部署面的审计读取仍返回该 503；转发该
-变量的编排变体用同一个 `sn_audit_reader` 角色即可返回 `200` 与空列表。
+`deploy/compose.yaml` 的 `api` 服务以空默认透传该变量：只写 `deploy/compose.env` 而不建
+角色时容器照常启动，该端点仍返回上面的 503；角色与连接地址都按上一步预置后，同一部署面
+返回 `200` 与空列表，容器不需要改动。
+
+### 实例读取角色 `sn_model_instance_reader`
+
+`GET /v1/nexus/admin/model-instances` 与
+`GET /v1/nexus/admin/model-instances/{instance_id}/generations/{generation}` 用独立只读
+身份读 `engine_instances` 与它引用的不可变 `speech_binding_revisions`，只投影已记录的实例
+代次。实例意图、租约、提交意图、命令、停止证据与凭据都不在该身份可读范围内，复用 owner
+或任何写入角色会让这两个读取端点同时获得命令实例的能力。
+
+该读取面目前没有对应的仓库授权函数，`sn_model_instance_reader` 的授权就是上面脚本里
+声明的 schema `USAGE` 与这两张表的 `SELECT`；不要手写额外的表或列授权，也不要给整表
+`INSERT`/`UPDATE`、`DELETE`、`TRUNCATE`、`REFERENCES` 或 schema `CREATE`。进程启动时
+自己核验同一组关系（`model_instance_runtime.py` 的 `READABLE`）：schema `USAGE`、两张表
+的 `SELECT`、且无上述写权限，任一不满足即报
+`Model instance reader startup rejected` 并退出，不会带着错误身份上线。未配置 `SPEECHNEXUS_MODEL_INSTANCE_READER_DATABASE_URL` 时两个端点返回
+`503 model_instance_service_unavailable`。
+
+`deploy/compose.yaml` 的 `api` 服务以空默认透传该变量：只写 `deploy/compose.env` 而不建
+角色时容器照常启动，两个端点仍返回上面的 503；角色与连接地址都预置后，列表返回 `200`，
+单条读取按记录返回 `200` 或 `404 model_instance_unknown` /
+`404 model_instance_generation_unknown`。核对写权限确实没有落到该角色（含列级授权）：
+
+```bash
+docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
+  "select table_name, privilege_type, column_name from information_schema.column_privileges \
+   where grantee = 'sn_model_instance_reader' and privilege_type in ('INSERT','UPDATE','REFERENCES') order by 1, 2, 3"
+```
+
+该查询应无输出。该角色的表级授权只应是 `engine_instances` 与
+`speech_binding_revisions` 的 `SELECT`，可对照 `information_schema.table_privileges`
+或启动校验输出核对；两张表之外的表一律不授权。
 
 ### 已有部署的授权升级
 
 上面的脚本只适用于新建、独占的数据库；已有部署不重跑它的撤权与建角色部分。应用新迁移
 后，用同一个迁移 owner 连接对既有角色重放对应的授权函数即可，`GRANT` 是追加式操作，
-重复执行不改变既有权限。`0049_workspace_commands` 之后新增的工作区写角色与审计读取角色
-在既有部署上同样需要预置：下面的脚本先按需创建这两个角色，再重放全部相关授权。角色尚不
-存在时先按上文生成口令；已存在时改用其现有口令，脚本不会修改已存在角色的口令，用新生成
-的口令写连接地址会连不上。
+重复执行不改变既有权限。`0049_workspace_commands` 之后新增的工作区写、审计读取与实例读取
+三个角色在既有部署上同样需要预置：下面的脚本先按需创建这三个角色，再重放全部相关授权。
+角色尚不存在时先按上文生成口令；已存在时改用其现有口令，脚本不会修改已存在角色的口令，
+用新生成的口令写连接地址会连不上。实例读取面按上文的显式 `GRANT` 重放，因为它没有对应的
+仓库授权函数。
 
 ```bash
 uv run --all-packages python - <<'PY'
@@ -583,6 +644,7 @@ schema = "speech"
 new_roles = {
     "sn_workspace_writer": os.environ["SPEECHNEXUS_WORKSPACE_WRITER_ROLE_PASSWORD"],
     "sn_audit_reader": os.environ["SPEECHNEXUS_AUDIT_READER_ROLE_PASSWORD"],
+    "sn_model_instance_reader": os.environ["SPEECHNEXUS_MODEL_INSTANCE_READER_ROLE_PASSWORD"],
 }
 with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     for role, password in new_roles.items():
@@ -605,7 +667,20 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
         conn.execute(statement)
     for statement in audit_reader_grants(schema, "sn_audit_reader"):
         conn.execute(statement)
-print("gateway, workspace writer and audit reader grants refreshed")
+    conn.execute(
+        sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
+            sql.Identifier(schema), sql.Identifier("sn_model_instance_reader")
+        )
+    )
+    conn.execute(
+        sql.SQL("GRANT SELECT ON {}.engine_instances, {}.speech_binding_revisions TO {}")
+        .format(
+            sql.Identifier(schema),
+            sql.Identifier(schema),
+            sql.Identifier("sn_model_instance_reader"),
+        )
+    )
+print("gateway, workspace writer, audit reader and instance reader grants refreshed")
 PY
 ```
 
@@ -613,10 +688,12 @@ PY
 `gateway_query_grants` 时控制面以 `invalid execution query reader authority` 拒绝启动；
 漏掉 `gateway_abort_grants` 新增的尝试列时启动继续，但持久取消接收能力被关闭
 （fail-soft），网关不再接收新的取消。升级顺序：先迁移，再重放授权，最后启动
-服务；启动日志出现上述拒绝时停止服务并核对授权，不带病运行。工作区写与审计读取的
+服务；启动日志出现上述拒绝时停止服务并核对授权，不带病运行。工作区写、审计读取与实例读取的
 授权同样在迁移后重放：漏掉 `workspace_writer_grants` 时 API 以
 `Workspace writer startup rejected` 拒绝启动，漏掉 `audit_reader_grants` 时以
-`Audit reader startup rejected` 拒绝启动；两个角色未配置连接地址时对应端点保持 503。
+`Audit reader startup rejected` 拒绝启动，漏掉实例读取的两张表 `SELECT` 时以
+`Model instance reader startup rejected` 拒绝启动；三个角色未配置连接地址时对应端点
+保持 503。
 
 Gateway query 身份仅取得六张执行恢复关系及安装身份表的必要列读取权，不得写产品或持久对象。
 原生 `pg_settings` 的默认会话参数 UPDATE 与 SET/set_config 属于会话能力，不作为

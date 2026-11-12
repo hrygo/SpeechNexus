@@ -120,6 +120,99 @@ def test_default_configuration_installs_the_text_inspector_and_rejects_asr_input
 
 
 @pytest.mark.parametrize(
+    "field,value,variable",
+    [
+        (
+            "audio_inspection_runtime_root",
+            Path("/opt/speechnexus-inspect/image"),
+            "SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT",
+        ),
+        (
+            "audio_inspection_command",
+            COMMAND,
+            "SPEECHNEXUS_AUDIO_INSPECTION_COMMAND",
+        ),
+        (
+            "audio_inspection_launcher_python",
+            LAUNCHER,
+            "SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON",
+        ),
+        (
+            "audio_inspection_bubblewrap",
+            Path("/usr/bin/bwrap"),
+            "SPEECHNEXUS_AUDIO_INSPECTION_BUBBLEWRAP",
+        ),
+        (
+            "audio_inspection_prlimit",
+            Path("/usr/bin/prlimit"),
+            "SPEECHNEXUS_AUDIO_INSPECTION_PRLIMIT",
+        ),
+    ],
+)
+def test_text_mode_rejects_a_configured_audio_prerequisite(
+    field: str, value: Any, variable: str
+) -> None:
+    with pytest.raises(ValueError) as caught:
+        build_asset_inspector(_runtime_settings(**{field: value}))
+    message = str(caught.value)
+    assert variable in message
+    assert "SPEECHNEXUS_ASSET_INSPECTOR=text" in message
+
+
+def test_text_mode_rejects_an_environment_configured_runtime_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT", "/opt/speechnexus-inspect/image"
+    )
+    with pytest.raises(ValueError, match="SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT"):
+        build_asset_inspector(_settings())
+
+
+def test_text_mode_names_every_configured_audio_prerequisite() -> None:
+    settings = _runtime_settings(
+        audio_inspection_runtime_root=Path("/opt/speechnexus-inspect/image"),
+        audio_inspection_command=COMMAND,
+        audio_inspection_launcher_python=LAUNCHER,
+    )
+    with pytest.raises(ValueError) as caught:
+        build_asset_inspector(settings)
+    message = str(caught.value)
+    for variable in (
+        "SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT",
+        "SPEECHNEXUS_AUDIO_INSPECTION_COMMAND",
+        "SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON",
+    ):
+        assert variable in message
+
+
+def test_text_mode_ignores_settings_that_always_carry_defaults() -> None:
+    settings = _runtime_settings(
+        audio_inspection_max_duration_ms=99,
+        audio_inspection_max_input_bytes=1024,
+        audio_inspection_max_receipt_bytes=256,
+    )
+    assert type(build_asset_inspector(settings)) is TextAssetInspector
+
+
+def test_text_mode_without_audio_prerequisites_still_builds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for variable in (
+        "SPEECHNEXUS_ASSET_INSPECTOR",
+        "SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT",
+        "SPEECHNEXUS_AUDIO_INSPECTION_COMMAND",
+        "SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON",
+        "SPEECHNEXUS_AUDIO_INSPECTION_BUBBLEWRAP",
+        "SPEECHNEXUS_AUDIO_INSPECTION_PRLIMIT",
+    ):
+        monkeypatch.delenv(variable, raising=False)
+    settings = _settings()
+    assert settings.asset_inspector == "text"
+    assert type(build_asset_inspector(settings)) is TextAssetInspector
+
+
+@pytest.mark.parametrize(
     "field,variable",
     [
         ("audio_inspection_runtime_root", "SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT"),
@@ -292,3 +385,4 @@ def test_blank_forwarded_values_mean_unconfigured(
     assert settings.audio_inspection_prlimit is None
     assert settings.audio_inspection_command == ""
     assert settings.audio_inspection_launcher_python == ""
+    assert type(build_asset_inspector(settings)) is TextAssetInspector

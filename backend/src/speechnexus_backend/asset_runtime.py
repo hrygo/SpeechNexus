@@ -37,6 +37,38 @@ _LOG = logging.getLogger(__name__)
 # leaks into it, and "no closer" is stated by the composition root instead of
 # guessed with isinstance at shutdown.
 type InspectorCloser = Callable[[], bool]
+# Prerequisites that only exist when the operator supplies them. Limit settings
+# are absent here on purpose: they always carry a default, so their value cannot
+# show that audio inspection was requested.
+_AUDIO_PREREQUISITES: tuple[tuple[str, str], ...] = (
+    ("audio_inspection_runtime_root", "SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT"),
+    ("audio_inspection_command", "SPEECHNEXUS_AUDIO_INSPECTION_COMMAND"),
+    ("audio_inspection_launcher_python", "SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON"),
+    ("audio_inspection_bubblewrap", "SPEECHNEXUS_AUDIO_INSPECTION_BUBBLEWRAP"),
+    ("audio_inspection_prlimit", "SPEECHNEXUS_AUDIO_INSPECTION_PRLIMIT"),
+)
+
+
+def _configured_audio_prerequisites(settings: Settings) -> list[str]:
+    """Name every audio prerequisite the operator explicitly configured.
+
+    ``model_fields_set`` records values supplied through the constructor or the
+    environment, so it distinguishes operator intent from a field pydantic
+    filled with its default. A supplied blank counts as unconfigured: the
+    settings validators already normalize blank selectors, and Compose forwards
+    empty values for variables it does not set. Only fields without a usable
+    default appear in ``_AUDIO_PREREQUISITES``; limits such as
+    ``audio_inspection_max_duration_ms`` never count as evidence of intent.
+    """
+    configured: list[str] = []
+    for field, variable in _AUDIO_PREREQUISITES:
+        if field not in settings.model_fields_set:
+            continue
+        value = getattr(settings, field)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            continue
+        configured.append(variable)
+    return configured
 
 
 def _inspection_root(settings: Settings) -> Path:
@@ -138,6 +170,13 @@ def _select_asset_inspector(
     """
     if settings.asset_inspector == "audio":
         return _build_audio_inspector(settings)
+    configured = _configured_audio_prerequisites(settings)
+    if configured:
+        names = ", ".join(configured)
+        raise ValueError(
+            f"{names} configured but SPEECHNEXUS_ASSET_INSPECTOR=text; "
+            "select audio or unset every audio inspection prerequisite"
+        )
     return TextAssetInspector(), None
 
 
@@ -146,7 +185,9 @@ def build_asset_inspector(settings: Settings) -> AssetInspector:
 
     Every audio prerequisite is validated here, at composition time, so a
     deployment either starts with the configured inspector or fails naming the
-    setting that is missing, unusable or absent from the host.
+    setting that is missing, unusable or absent from the host. Selecting ``text``
+    while explicitly configuring an audio prerequisite also fails: otherwise the
+    operator's audio intent would silently degrade to an unavailable inspector.
     """
     return _select_asset_inspector(settings)[0]
 

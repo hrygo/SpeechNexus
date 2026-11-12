@@ -41,6 +41,13 @@ Additional profiles are opt-in:
 - `job-dispatch`: explicitly starts the public Job dispatcher
   `job-dispatch-worker`; it is absent from the base topology and the base `up`
   never starts it.
+- `asset-inspection`: explicitly starts the private audio inspection container
+  `asset-inspector`; it is absent from the base topology, publishes no host port
+  and joins only a dedicated `internal: true` network. Enabling it requires
+  `SPEECHNEXUS_ASSET_INSPECTOR=audio`, `SPEECHNEXUS_ASSET_INSPECTION_URL` and a
+  non-empty `SPEECHNEXUS_ASSET_INSPECTION_TOKEN` in `compose.env`. The design and
+  the verified assembly facts are in the
+  [asset inspection container](../docs/components/asset-inspection-container.md#44-compose-装配).
 
 The `workbench` container serves only the frontend; it does not start the
 independent Workbench API. Setting `SPEECHNEXUS_PROCESS_ROLE` identifies a
@@ -87,6 +94,15 @@ Published ports bind to loopback only:
 - MinIO S3: `127.0.0.1:59000`; console: `127.0.0.1:59001`
 - Admin UI (`web` profile): `http://127.0.0.1:8080`
 - Workbench UI (`web` profile): `http://127.0.0.1:8081`
+
+The `asset-inspection` profile publishes nothing: `asset-inspector` is reachable
+only as `http://asset-inspector:8080` from containers on its `internal: true`
+network, so the host has no inspection endpoint to probe. The API deliberately
+does not depend on the container being healthy: with `audio` selected, a stopped
+or misconfigured inspector answers `503 asset_inspection_unavailable` per request
+instead of blocking API startup. A blank token makes the inspector container exit
+at startup naming `SPEECHNEXUS_INSPECTION_TOKEN`; the resulting restart loop is a
+configuration error, not a ready service.
 
 The gateway's private file-ASR/file-TTS object adapter requires a private IP
 literal rather than a DNS name, so MinIO receives the fixed Compose-network

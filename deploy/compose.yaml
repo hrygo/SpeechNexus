@@ -13,10 +13,14 @@ name: speechnexus
 #     report object storage, which this bootstrap surface does not assemble.
 # Adding any of them here would incorrectly claim those capabilities are assembled.
 # `migrate`, `engine-register`, `binding-disable-worker`, `job-dispatch-worker`,
-# `admin` and `workbench` are opt-in profiles and therefore do not appear in the
-# base service list. The `job-dispatch` profile assembles the public Job dispatcher
+# `admin`, `workbench` and `asset-inspector` are opt-in profiles and therefore do
+# not appear in the base service list. The `job-dispatch` profile assembles the
+# public Job dispatcher
 # process, but it still requires a real engine behind the execution gateway; it does
-# not by itself make asynchronous Jobs an accepted end-to-end capability.
+# not by itself make asynchronous Jobs an accepted end-to-end capability. The
+# `asset-inspection` profile assembles the private HTTP audio inspector; audio
+# inspection additionally needs `SPEECHNEXUS_ASSET_INSPECTOR=audio` plus the
+# inspection URL/token in compose.env.
 
 x-python-build: &python-build
   context: ..
@@ -129,10 +133,16 @@ services:
       SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL: ${SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL:?set SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL in compose.env}
       SPEECHNEXUS_EXECUTION_GATEWAY_TIMEOUT_SECONDS: ${SPEECHNEXUS_EXECUTION_GATEWAY_TIMEOUT_SECONDS:-10}
       SPEECHNEXUS_ASSET_DEFAULT_TTL_SECONDS: ${SPEECHNEXUS_ASSET_DEFAULT_TTL_SECONDS:-604800}
-      # text (default) keeps asr_input/voice_reference unavailable. audio needs
-      # the private inspection image, host bwrap/prlimit and an approved sandbox
-      # boundary; a missing selector fails api startup instead of falling back.
+      # text (default) keeps asr_input/voice_reference at 503
+      # asset_inspection_unavailable and needs no extra container. audio calls the
+      # private inspection container over the `asset-inspection` network and needs
+      # both keys below; they are forwarded empty so the default text path starts
+      # without that container, and a non-empty value with text stops API startup
+      # by design. Selecting audio without them also stops startup, naming the
+      # missing key instead of degrading to text.
       SPEECHNEXUS_ASSET_INSPECTOR: ${SPEECHNEXUS_ASSET_INSPECTOR:-text}
+      SPEECHNEXUS_ASSET_INSPECTION_URL: ${SPEECHNEXUS_ASSET_INSPECTION_URL:-}
+      SPEECHNEXUS_ASSET_INSPECTION_TOKEN: ${SPEECHNEXUS_ASSET_INSPECTION_TOKEN:-}
       SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT: ${SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT:-}
       SPEECHNEXUS_AUDIO_INSPECTION_COMMAND: ${SPEECHNEXUS_AUDIO_INSPECTION_COMMAND:-}
       SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON: ${SPEECHNEXUS_AUDIO_INSPECTION_LAUNCHER_PYTHON:-}
@@ -140,6 +150,9 @@ services:
       SPEECHNEXUS_AUDIO_INSPECTION_PRLIMIT: ${SPEECHNEXUS_AUDIO_INSPECTION_PRLIMIT:-}
       SPEECHNEXUS_AUDIO_INSPECTION_MAX_DURATION_MS: ${SPEECHNEXUS_AUDIO_INSPECTION_MAX_DURATION_MS:-120000}
       SPEECHNEXUS_AUDIO_INSPECTION_MAX_INPUT_BYTES: ${SPEECHNEXUS_AUDIO_INSPECTION_MAX_INPUT_BYTES:-26214400}
+      # Migrated decode budgets: a non-default value stops API startup and names
+      # the inspector-side SPEECHNEXUS_INSPECTION_* key, so these stay at the
+      # defaults; the inspector container owns them.
       SPEECHNEXUS_AUDIO_INSPECTION_MEMORY_BYTES: ${SPEECHNEXUS_AUDIO_INSPECTION_MEMORY_BYTES:-268435456}
       SPEECHNEXUS_AUDIO_INSPECTION_CPU_SECONDS: ${SPEECHNEXUS_AUDIO_INSPECTION_CPU_SECONDS:-5}
       SPEECHNEXUS_AUDIO_INSPECTION_WALL_SECONDS: ${SPEECHNEXUS_AUDIO_INSPECTION_WALL_SECONDS:-10}
@@ -161,6 +174,18 @@ services:
       - "127.0.0.1:${SPEECHNEXUS_API_HOST_PORT:-8000}:8000"
     volumes:
       - ${SPEECHNEXUS_PRIVATE_CONFIG_DIR:?set SPEECHNEXUS_PRIVATE_CONFIG_DIR in compose.env}:/run/speechnexus-private:ro
+    # The dedicated inspection network exists only to reach
+    # http://asset-inspector:8080. Object storage, PostgreSQL and the gateway stay
+    # on `default`, so `internal: true` costs the API no egress. There is
+    # deliberately no `depends_on` on asset-inspector: a stopped or crashed
+    # inspector must not block API startup. With `audio` selected the API still
+    # starts (startup validates the URL, token and limits, not reachability) and
+    # answers 503 asset_inspection_unavailable per request, which is the A2/A6
+    # contract; a hard `service_healthy` gate would turn an inspection outage into
+    # a total API outage, including text-only, health and retention routes.
+    networks:
+      default:
+      asset-inspection:
     depends_on:
       postgres:
         condition: service_healthy
@@ -187,6 +212,81 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    restart: unless-stopped
+
+  # Opt-in audio inspection container. The API reaches it at
+  # http://asset-inspector:8080 over the dedicated `internal: true` network, and
+  # nothing is published to the host or to any network with a default gateway.
+  # `docker compose up` without the `asset-inspection` profile therefore keeps the
+  # text inspector and the exact same host surface. Hardening and resource limits
+  # follow docs/components/asset-inspection-container.md §4.1: read-only root, only
+  # private tmpfs writable, no capabilities, no new privileges, no volume, no
+  # bind mount and no Docker socket.
+  asset-inspector:
+    profiles: ["asset-inspection"]
+    build:
+      context: ..
+      dockerfile: asset-inspector/Dockerfile
+    environment:
+      # The same shared bearer token the API sends; it authorizes one inspection
+      # per request and is the only credential this container holds. Enabling the
+      # profile also requires SPEECHNEXUS_ASSET_INSPECTOR=audio and the matching
+      # API URL above.
+      #
+      # Blank default, no literal value, and no `:?` guard, for two measured
+      # reasons. Compose interpolates every service on `config`, including
+      # services excluded by an inactive profile, so a required-variable guard on
+      # this key would fail `docker compose config`/`up` for deployments that never
+      # enable the profile. Giving `compose.env.example` a non-blank placeholder
+      # instead would make the default text-mode API refuse to start, because a
+      # configured token with SPEECHNEXUS_ASSET_INSPECTOR=text is a deliberate
+      # fail-fast contradiction. The key therefore stays optional at the Compose
+      # layer and is enforced at startup: an empty token makes this container exit
+      # naming SPEECHNEXUS_INSPECTION_TOKEN, and enabling audio in the API without
+      # it stops API startup naming SPEECHNEXUS_ASSET_INSPECTION_TOKEN. This is the
+      # same fail-closed shape as a blank SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL.
+      SPEECHNEXUS_INSPECTION_TOKEN: ${SPEECHNEXUS_ASSET_INSPECTION_TOKEN:-}
+    networks:
+      - asset-inspection
+    # No `ports`: the container is reachable only by service name from containers
+    # attached to the same internal network.
+    # No `volumes`: every writable path is a private tmpfs recycled on exit, and
+    # the API sends bytes in the request instead of a shared directory.
+    tmpfs:
+      # Owned by the image's fixed runtime uid/gid (USER 10001:10001); 0700 keeps
+      # both paths private to that single user. Both filesystems are RAM charged
+      # to the container's memory limit.
+      - /run/inspection:size=64m,mode=0700,uid=10001,gid=10001
+      - /tmp:size=16m,mode=0700,uid=10001,gid=10001
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 768m
+    cpus: 2.0
+    # tini as PID 1 reaps decoder/prlimit leftovers; the service itself exits
+    # non-zero when a child cannot be reaped, so the container restarts whole.
+    init: true
+    # Must exceed the inspection wall budget (20 s default) plus 2 s.
+    stop_grace_period: 30s
+    healthcheck:
+      # /healthz is unauthenticated and touches no writable path, so this probe
+      # works on the read-only root. /readyz stays 503 until the startup self-check
+      # decodes its synthetic WAV. `python` is the image venv interpreter; no
+      # extra tool is installed and nothing is written to disk.
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2)",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
     restart: unless-stopped
 
   gateway:
@@ -451,3 +551,10 @@ networks:
     ipam:
       config:
         - subnet: 172.28.0.0/24
+  # No default gateway and no host port: the inspection container can neither
+  # reach the internet nor be reached from the host. Only `api` (client) and
+  # `asset-inspector` join it, so a decoder compromise cannot reach PostgreSQL,
+  # MinIO or the gateway. Do not attach services that need outbound access, and do
+  # not move the object store or the gateway onto this network.
+  asset-inspection:
+    internal: true

@@ -41,6 +41,7 @@ pnpm build
 uv build --all-packages --out-dir dist/python
 docker compose --env-file deploy/compose.env.example -f deploy/compose.yaml config --quiet
 docker compose --env-file deploy/compose.env.example -f deploy/compose.yaml --profile job-dispatch config --quiet
+docker compose --env-file deploy/compose.env.example -f deploy/compose.yaml --profile asset-inspection config --quiet
 ./scripts/dev-env/service-smoke.sh
 
 git diff --check

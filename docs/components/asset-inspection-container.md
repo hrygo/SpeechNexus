@@ -1,13 +1,13 @@
 ---
 title: "音频资产检查的独立检查容器"
-status: proposed
+status: active
 version: "1.0.0"
 date: 2026-11-12
 ---
 
 # 音频资产检查的独立检查容器
 
-本文规定公开 `POST /v1/nexus/assets` 的 `asr_input` 音频检查如何由一个**独立、无出站网络、非特权**的检查容器完成，以及 Speech API 与它之间的调用协议、输入传递、安全边界、容量语义、生命周期、配置、验收与迁移。本文是实现该形态的输入，不表示容器已经交付：API 侧已按本页装配 HTTP 适配器并完成失败投影，检查容器镜像与部署装配仍待交付。旧进程监督器（`backend/src/speechnexus_backend/speech/infrastructure/audio_asset_inspector.py`、`audio_inspection_process.py` 与固定 launcher `_audio_inspection_launcher.py`）已删除，`audio` 路径只有 HTTP 适配器一种实现。交付状态以[跟踪矩阵](../plans/delivery-tracking.md)为准。
+本文规定公开 `POST /v1/nexus/assets` 的 `asr_input` 音频检查如何由一个**独立、无出站网络、非特权**的检查容器完成，以及 Speech API 与它之间的调用协议、输入传递、安全边界、容量语义、生命周期、配置、验收与迁移。API 侧已按本页装配 HTTP 适配器并完成失败投影；检查容器镜像（C2）、[Compose 装配](#44-compose-装配)（C4）与旧进程路径退役（C6）已交付。真实部署验收（C5，§8 A1–A7）尚未完成，因此本页不声明公开音频检查已通过部署验收。旧进程监督器（`audio_asset_inspector.py`、`audio_inspection_process.py` 与固定 launcher `_audio_inspection_launcher.py`）已删除，`audio` 路径只有 HTTP 适配器一种实现。交付状态以[跟踪矩阵](../plans/delivery-tracking.md)为准。
 
 四条不变量，任一不成立都不得声明可用：
 
@@ -241,6 +241,27 @@ API 已经把上传内容完整收进私有、非链接的临时文件（`backen
 - 共享 bearer token 只授权「提交一次检查」，不授予任何其他能力；网络内只有 API 与检查器两个成员，token 用于阻断误连与他人加入网络后的横向调用。token 通过环境注入，不写日志、不进错误消息。
 - 检查器不做内容分级、不做病毒扫描、不做转写；它不解码就不产生任何业务结论。
 
+### 4.4 Compose 装配
+
+`deploy/compose.yaml` 以 opt-in profile 装配检查容器：默认 `up` 不启动它，基础服务列表、宿主端口映射与镜像构建入口都不变。
+
+| 项 | 装配事实 |
+| --- | --- |
+| 服务 / profile | 服务名 `asset-inspector`，`profiles: ["asset-inspection"]`；启动命令为 `docker compose --env-file deploy/compose.env -f deploy/compose.yaml --profile asset-inspection up -d asset-inspector` |
+| 构建 | `build.context: ..`（仓库根，与其它服务一致）、`dockerfile: asset-inspector/Dockerfile`；不挂载私有配置目录 |
+| 网络 | 只接入专用网络 `asset-inspection`（`internal: true`，无默认网关）；该网络成员仅有 `api` 与 `asset-inspector`，需要出网的 postgres、minio、gateway 都不在其中 |
+| 端口暴露 | 不写 `ports`，不发布任何宿主端口；API 侧唯一入口是 `http://asset-inspector:8080`，8080 由镜像 `EXPOSE` 声明 |
+| 挂载 | 无 volume、无 bind mount、不挂 `docker.sock`；可写区仅 tmpfs `/run/inspection`（64 MiB）与 `/tmp`（16 MiB），属主 `10001:10001`、`mode=0700` |
+| 加固 | `read_only`、`cap_drop: [ALL]`、`no-new-privileges`、`pids_limit: 64`、`mem_limit: 768m`、`cpus: 2.0`、`init`、`stop_grace_period: 30s`；不加 `cap_add`，不设 `seccomp=unconfined`/`apparmor=unconfined`，`user` 沿用镜像的 `10001:10001` |
+| 健康检查 | 镜像内 `GET /healthz`（未鉴权、不写盘），`interval 5s`、`timeout 3s`、`retries 20`、`start_period 5s`；`/readyz` 仍由启动自检控制，不纳入 Compose 探针 |
+| 鉴权 token | 唯一来源是部署文件中的 `SPEECHNEXUS_ASSET_INSPECTION_TOKEN`，同一值分别注入 API 的 `SPEECHNEXUS_ASSET_INSPECTION_TOKEN` 与本容器的 `SPEECHNEXUS_INSPECTION_TOKEN`；仓库内无字面默认值，示例文件留空 |
+| API 装配 | `SPEECHNEXUS_ASSET_INSPECTOR` 默认 `text`；切到 `audio` 需同时设置 `SPEECHNEXUS_ASSET_INSPECTION_URL=http://asset-inspector:8080` 与该 token |
+| 上线前检查 | `make stack-config` 校验基础配置、`job-dispatch` 与 `asset-inspection` 三个 profile 均可解析；默认 `config --services` 仍为 `api gateway minio minio-init postgres` |
+
+`api` 不建立 `depends_on: asset-inspector`。启动期校验的对象是配置（URL 形态、token 是否存在、预算关系），不是可达性：检查器停机时 API 照常启动，`asr_input`/`voice_reference` 在请求期返回 `503 asset_inspection_unavailable`，文本资产、健康检查与保留期维护路径不受影响（§8 A2/A6）。反向的硬 `service_healthy` 门控会把检查器故障升级为 API 全量不可用，让不需要解码能力的路径一起不可用，因此不采用。
+
+token 的强制点同理不在 Compose 层：Compose 对所有服务（含未启用 profile 的服务）做插值，`${VAR:?}` 会让从不启用该 profile 的部署在 `config`/`up` 阶段失败；给示例文件填占位符又会让 `text` 模式启动失败（「配置了 token 但选择器是 `text`」是防降级校验，见 §7.3）。因此 Compose 层保留空白默认值，强制点在启动期：空 token 时检查器进程退出并点名 `SPEECHNEXUS_INSPECTION_TOKEN`，`audio` 缺 token 时 API 拒绝启动并点名 `SPEECHNEXUS_ASSET_INSPECTION_TOKEN`，与 `SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL` 留空即失败的形态一致。
+
 ## 5. 容量与并发
 
 | 参数 | 默认 | 依据 |
@@ -395,7 +416,7 @@ $COMPOSE exec -T postgres sh -c "$PSQL \"SELECT asset_state, media_type, duratio
 | C1 契约冻结 | 在 `contracts/internal/` 冻结检查 HTTP 协议（请求头语义、`200` 复用 `AudioInspectionSuccess`、失败信封与状态词表）；公开错误新增 `invalid_asset_audio`、`asset_audio_too_long`；`asset_inspection_unavailable` 的 `retryable`/`X-Should-Retry` 改为可重试 | 无 | 0.5 d | `make contracts-check`、`uv run pytest tests/contract`、`make contracts-drift` 全绿；正例/负例覆盖 `422`/`503`；路由一致性检查不改动既有错误码语义 |
 | C2 检查器服务与镜像 | 新工作区成员 `asset-inspector/`（入口 `speechnexus-asset-inspector`），异步服务 + 每请求子进程 + `prlimit` + 期限 + 并发槽 + `/healthz`/`/readyz` + 自检；独立 Dockerfile，非 root、只读根、最小依赖；新增工作区成员会改动 `uv.lock`，须单独审阅 | C1 | 1.5 d | 合成 WAV 正例、截断/随机字节负例、期限强杀、槽位拒绝、子进程不可回收时进程退出；镜像在 aarch64 构建并通过 `/readyz`；单测只用合成字节 |
 | C3 API 适配器 | `AssetInspector` 的 HTTP 实现替换进程实现：一次请求、回执复核、失败分类、`AssetError` 永久拒绝、`close()` 语义、装配期校验与能力探测 | C1（可与 C2 并行） | 1 d | 单测覆盖回执篡改（摘要/字节/时钟/时长/版本）、不可用不落库、永久拒绝不落库、关闭后拒绝新检查；`open()` 失败路径可安全关闭 |
-| C4 部署装配 | Compose `asset-inspection` profile、专用 `internal` 网络、加固与资源上限、健康检查、`compose.env.example`、运维文档与上线前检查说明 | C2 | 0.5 d | `make stack-config` 通过；`config --services` 仍为 5 个（C9）；检查器无宿主端口、无 volume、无出站 |
+| C4 部署装配 | `deploy/compose.yaml` 的 `asset-inspector` 服务（profile `asset-inspection`）、专用 `internal` 网络、加固与资源上限、`/healthz` 探针、`compose.env.example` 与 `deploy/README.md` 的 profile 说明；事实见 §4.4 | C2 | 0.5 d | `make stack-config`（含 `--profile asset-inspection`）通过；默认 `config --services` 仍为 5 个且不含检查器（C9）；检查器 `Ports` 为空、无 volume、无默认网关（§4.1/§4.4） |
 | C5 真实部署验收 | 在 aarch64 参考部署执行 A1–A7，记录命令、输出、镜像摘要与环境 | C2 C3 C4 | 0.5 d | §8 全部通过；证据写入跟踪矩阵 |
 | C6 退役旧路径 | 删除 `audio_asset_inspector.py`、`audio_inspection_process.py`、`_audio_inspection_launcher.py` 与只测它们的 5 个单测；内容判决（合格/畸形/超时长）改由 HTTP 适配器接真实解码子进程与 `asset-inspector` 服务单测承担；8 个无消费者的旧键保留为启动拒绝锚点；归档页指向本页 | C5 | 0.5 d | `git grep audio_inspection_process`/`audio_asset_inspector` 在 `backend/src`、`packages`、`tests` 无产品引用；`uv run pytest tests/unit` 无新增失败；旧键仍会让启动失败 |
 

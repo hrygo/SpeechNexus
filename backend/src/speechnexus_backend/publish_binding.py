@@ -1,8 +1,11 @@
 """Explicit operator command that promotes one stored binding revision.
 
-This is the supported publication path until the frozen
-``publishModelBindingRevision`` endpoint has an evidence store. It never
-creates, edits or activates a revision and it exposes no HTTP surface.
+The frozen ``publishModelBindingRevision`` HTTP endpoint publishes from
+inside the API process and only checks the caller-declared evidence IDs
+against the stored draft. This command additionally carries the operator's
+installation, database, schema and catalogue observations, so a deployment
+that requires those cross-checks still has a path. It never creates, edits
+or activates a revision and it exposes no HTTP surface.
 """
 
 from __future__ import annotations

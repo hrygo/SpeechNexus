@@ -83,6 +83,191 @@ Python 测试作业通过 `python-coverage.py run --workers 2` 在同一 runner 
 
 历史性能分析和运行故障记录见[归档](../archive/validation/2026-10-ci-validation-history.md)。
 
+## 覆盖率门禁、采集边界与结构性余量
+
+覆盖率门禁由 `python_checks` 作业执行，判定对象是 `[tool.coverage.run].source` 列出的全部生产包，参数为 `branch = true`、`[tool.coverage.report].fail_under = 80`、`skip_covered = true`、`show_missing = true`。采集范围是上文 `python-coverage.py run --workers 2` 段列出的四个测试集合：`tests/unit`、`tests/contract`、`tests/ci`、`tests/integration/test_probe_inventory.py`，加 `WORKBENCH_PG_TESTS`、`WORKBENCH_RUNTIME_TESTS` 与 `SPEECH_PG_COVERAGE_TESTS`；`tests/integration` 下其余用例由六个集成分片执行，**不产生覆盖数据**。父进程核对两片执行证据后 `coverage combine`，再用 `coverage report --rcfile pyproject.toml` 判定。
+
+判定函数是 `coverage.results.should_fail_under`，语义为 `round(total, 0) < fail_under`：**79.5%–79.99% 通过、低于 79.5% 失败**，失败输出 `Coverage failure: total of N is less than fail-under=80`。`total` 是语句与分支的加权覆盖率 `(已覆盖语句 + 已覆盖分支) / (语句 + 分支)`，不是语句覆盖率。
+
+### 分母包含集成独占语句
+
+门禁的分母是 `source` 下全部可执行语句与分支，其中一部分只能由 `tests/integration` 执行；采集范围到不了那部分代码，它们恒以「未覆盖」计入分母。2026-11-13 在 `97c70504` 上用 [ci.yml](../../.github/workflows/ci.yml) 相同脚本实测：
+
+| 观测 | 数值 |
+| --- | --- |
+| 语句 / 分支 | 48315 / 13922 |
+| 已覆盖语句 / 已覆盖分支 | 40050 / 9570 |
+| `percent_covered` | **79.7275%**（显示 80%，通过） |
+| 判定单元 | 49620 / 62237 = 79.7275% |
+| 距 79.5% 的余量 | **142 个判定单元（0.23 个百分点）** |
+| 使门禁失败的新增未覆盖判定单元 | **179 个** |
+| 集成独占语句（197 个文件） | **4021（占 48315 的 8.3%）** |
+| 集成独占分支边 | **1380（占 13922 的 9.9%）** |
+| 作业范围实测可达上限 | 79.7275%，即门禁要求维持可达上限的 99.7% |
+| 并入非浏览器集成覆盖后 | 已覆盖 44071 语句 + 10950 分支 → **88.4056%**，余量 5543 单元，可再容纳约 **6972** 个未覆盖判定单元 |
+
+集成独占语句并非零散分布，而是集中在基础设施与装配边界：
+
+| 区域 | 语句 | 文件数 |
+| --- | --- | --- |
+| 基础设施适配层（Postgres / SQL） | 2683 | 129 |
+| 其他后端模块（worker、校验、发布编排） | 627 | 18 |
+| 运行时装配根（`*_runtime.py`） | 427 | 14 |
+| 应用服务 | 117 | 14 |
+| HTTP 接口 | 104 | 11 |
+| 领域层 | 63 | 11 |
+
+按包划分：`backend` 3661 语句 / 166 文件、`execution-gateway` 351 / 27、`node-controller` 6 / 3、`packages` 3 / 1。单个文件集成独占比例最高的样例：`speech/infrastructure/runtime_sql.py` 161/211、`qualification_probe_approval.py` 103/124、`speech/infrastructure/workspaces_postgres.py` 98/152、`speech/infrastructure/public_job_admission.py` 192/380、`public_jobs_postgres.py` 100/706。
+
+### 新增代码的分布
+
+近 10 个改到 production Python 的已合并 PR，其改动文件的当前语句量与其中仍只被集成测试命中的比例：
+
+| commit | PR | production 文件 | 语句 | 集成独占 | 占比 |
+| --- | --- | --- | --- | --- | --- |
+| `9ee2ca04` | #623 | 9 | 1027 | 25 | 2.4% |
+| `ae3c8857` | #621 | 10 | 1188 | 187 | 15.7% |
+| `9d480881` | #619 | 5 | 649 | 15 | 2.3% |
+| `228ea403` | #618 | 13 | 1216 | 108 | 8.9% |
+| `65598969` | #617 | 2 | 202 | 0 | 0.0% |
+| `7a3b61a0` | #615 | 1 | 110 | 15 | 13.6% |
+| `8c023545` | #614 | 4 | 159 | 0 | 0.0% |
+| `7b26e0b6` | #612 | 8 | 554 | 0 | 0.0% |
+| `27c945d0` | #611 | 4 | 426 | 15 | 3.5% |
+| `e06a11e1` | #609 | 2 | 143 | 0 | 0.0% |
+| 合计 | — | 58 | 5674 | 365 | 6.4% |
+
+这张表是**补测之后**的快照：`#605` 序列中的 #621 之后紧跟 #622（109 行单元测试）、#626（149 行 CI 测试）、#627（294 行单元测试），这些补测把对应文件的集成独占比例压了下来。在功能提交自身的 head 上，比例更高——两片的失败就发生在补测之前。新增代码的类型分布与全量集成独占一致：集中在 Postgres/SQL 适配层与 `*_runtime.py` 装配根。
+
+结论是结构性的，不是测试质量问题：在现有采集范围下，门禁的实测可达上限就是 79.7275%，可用余量只有 142 个判定单元；任何只被集成测试执行的新增代码都会直接消耗这个余量，新增约 179 个未覆盖判定单元即触发失败。补单元测试可以临时抬高总量，但不改变「分母包含采集范围外的语句」这一事实，下一次集成边界改动会重演同一失败。
+
+### 方案对比
+
+代价以本卡实测为准（macOS 18 核；PG 16.15 / MySQL 8.4 / MinIO 容器；2621 个非浏览器集成用例分三个并行进程执行，三个进程各自耗时 737 / 757 / 781 秒）。浏览器用例（40 例，14 个 `*_browser.py` 模块与 2 个合成浏览器探针模块）需要 Web 构建，未纳入测量；另有 10 个 Node/TS 消费者用例因未构建 Web 产物在本机失败。两者都只会让集成独占量偏小，因此表内 4021 是下界。
+
+| 方案 | 对 4021 语句 / 1380 分支边的影响 | CI 壁钟增量 | 维护成本 | 会不会引入新盲区 |
+| --- | --- | --- | --- | --- |
+| **A1** 分片导出覆盖数据，在汇总证据里合并判定 | 计入 4021 + 1380，TOTAL 变 88.41%，余量 5543 单元 | 测试 0 分钟（分片已执行）；新增 6 份覆盖数据制品（每份约 1–2 MB）与一次 `combine`（十秒级）；汇总作业 2 分钟超时需要上调 | 中：分片内启用 `--cov` 并落盘，`download-integration-evidence.py` 增列数据文件，覆盖率判定从 `python_checks` 迁到协调汇总，路由范围需重新定义 | 无（分母不变）；但覆盖判定只在执行分片的全量路由存在 |
+| **A2** 覆盖率作业内直接跑集成分片 | 同上 | +约 1100 秒（2621 例按 0.85 秒/例摊到两个 worker，各约 1310 例并行）；10 分钟作业预算需提到 25 分钟以上；另需在覆盖率作业增加 MySQL 服务 | 高：作业预算、服务、`python-coverage.py` 的 2 worker 上限一起改 | 无 |
+| **B** 政策化：新增集成边界模块必须自带单元覆盖 | 4021 不变；新增 N 个集成独占判定单元时须新覆盖 0.795×(62237+N) − 49620，即 N=500/1000/2000 时须覆盖 51%/65%/72% | 0 | 每片新增测试代码；最近三片为补余量已写 552 行专用单测（#627 294 行、#622 109 行、#626 149 行），最终余量为约 140 个判定单元 | 浅测试风险：只覆盖判定单元、不约束断言强度 |
+| **C1** 仅排除 3 个 100% 集成独占文件（36 语句） | 79.7275% → 79.7736% | 0 | 低 | 小但无效，数量级不足以解决问题 |
+| **C2** 排除 58 个集成独占 ≥50% 的文件（3538 语句 + 1072 分支） | 79.7275% → 84.5715%（余量 3676 单元） | 0 | 低（`omit` 一项） | 大：7.4% 判定单元永久脱离覆盖约束 |
+| **C3** 排除全部 197 个含集成独占语句的文件（18298 语句） | 79.7275% → 89.6185% | 0 | 低 | 极大：37.9% 判定单元退出约束，是「让数字好看」而非修复 |
+| **D** 下调 `fail_under` | 79.0 时余量 453 单元（2.5 倍）；不改变结构 | 0 | 极低 | 门禁变松，同类漂移被掩盖而不是暴露 |
+
+### 推荐与落地边界
+
+推荐 **A1 + B 作为并行政策**，并把 C、D 排除在修复手段之外：
+
+- **A1 是结构性修复**：集成用例本来就在六个分片里执行，让它们顺手产出覆盖数据并在汇总证据中合并，分母与采集范围重新对齐，实测 TOTAL 从 79.7275% 变为 88.4056%，余量从 142 提升到 5543 个判定单元。它不新增测试执行时间，也不引入新的盲区。
+- **B 作为政策补充而非替代**：可单元验证的行为仍应写单元测试；但只用 B 就是当前做法——每片新增约 51%–72% 的单元覆盖才能维持阈值，成本随时长上升且容易产出为覆盖率而写的浅测试。
+- **C 会让盲区不可见**：C2 已经要隐去 3538 语句 + 1072 分支。若最终选择任何排除方案，必须同时发布被排除清单（文件 + 语句数），不允许只报总数；本卡评估的 C1/C2 清单见下文。
+- **D 不推荐**：把 80 改成 79 只是把「新增 179 个未覆盖判定单元即失败」换成「新增 453 个即失败」，下一块集成专属代码仍会撞线，同时降低了对既有回归的敏感度；这是把门禁改松来消除失败，不解决分母与采集范围错配。
+
+落点文件（实施卡执行，本卡不改）：
+
+| 文件 | 需要的改动 |
+| --- | --- |
+| [.github/workflows/ci.yml](../../.github/workflows/ci.yml) | 集成分片步骤输出覆盖数据并随分片制品上传；汇总作业组合数据后执行覆盖率判定；相应调整汇总作业超时 |
+| [scripts/dev-env/integration-shards.py](../../scripts/dev-env/integration-shards.py) | `run` 子命令为分片 pytest 增加 `--cov --cov-fail-under=0`，并固定每个分片的覆盖数据路径 |
+| [scripts/dev-env/download-integration-evidence.py](../../scripts/dev-env/download-integration-evidence.py) | 在既有分片证据里增列覆盖数据文件的校验与下载 |
+| [scripts/dev-env/python-coverage.py](../../scripts/dev-env/python-coverage.py) | 接受可选的外部覆盖数据集，或在组合阶段并入分片数据；两 worker 的完整执行证据校验保持不变 |
+| [pyproject.toml](../../pyproject.toml) | **不改**：`fail_under = 80`、`source`、`branch` 均维持现状 |
+
+批准：这属于门禁治理变更（改变判定所在作业与必要检查的证据构成），需要仓库维护者/门禁负责人批准；`ci.yml` 与判定位置的变化还要同步 `main` 的 required status checks 说明与本节。**本卡只产出分析与方案，未改任何门禁参数，未改 `ci.yml`、脚本或测试。**
+
+### 复现测量
+
+三条命令即可复现量级（本机需可用的隔离 PostgreSQL、MinIO、MySQL 与 `SPEECHNEXUS_TEST_*` 变量；作业范围还需 `--pg-bin` 指向含 `initdb`/`pg_ctl` 的目录）：
+
+```sh
+# 1) 门禁同范围（与 ci.yml 相同脚本）
+uv run python scripts/dev-env/python-coverage.py run --pg-bin <pg-bin> --workers 2 --output /tmp/cov/job.json
+#    该脚本仅在两个 worker 全部通过时才组合并打印 TOTAL；本机若出现环境相关失败，
+#    可分别取两个探针目录中的 .coverage 手工 combine 后 report。
+
+# 2) 集成范围（六个分片的非浏览器用例全集，等价于 `pytest -m integration tests/integration`）
+uv run pytest -m integration tests/integration -q -k "not browser" \
+  --ignore=tests/integration/test_workbench_orphan_probes.py \
+  --ignore=tests/integration/test_workbench_realtime_synthetic_probes.py \
+  --cov --cov-fail-under=0 --cov-report=
+
+# 3) 差异（作业范围数据在前，集成范围数据在 `--` 之后）
+uv run python /tmp/coverage-delta.py "$PWD" /tmp/cov/job-parts/coverage-0.data /tmp/cov/job-parts/coverage-1.data \
+  -- /tmp/cov/integration-0.data /tmp/cov/integration-1.data /tmp/cov/integration-2.data
+```
+
+`coverage-delta.py` 是只读的一次性脚本（不进入仓库）：先把每份数据复制成临时目录下的 `.coverage.*`，用 `Coverage(..., config_file=pyproject.toml).combine()` 合并，再对每个文件取 `analysis2()` 的语句集合做差集，输出集成独占语句总数与逐文件条数。
+
+测量是确定性的：同一子集（5 个模块、155 例）连续两次运行耗时 95.26 秒与 88.32 秒，两次的已覆盖语句集合在 708 个文件、11150 行上**完全一致（差异 0 行）**；覆盖数据只由实际执行的语句决定，与用例顺序、分片方式和并行度无关，分三组并行与单进程一次运行得到同一并集。可能让结果偏小的情况只有用例跳过与环境相关失败：本机缺 `SPEECHNEXUS_WORKBENCH_TEST_DSN` 时 210 例跳过，另有 10 个 Node/TS 消费者用例因未构建 Web 产物失败，因此 4021 是集成独占量的下界。
+
+### 排除方案的盲区清单
+
+下列清单对应方案 C2（排除集成独占 ≥50% 的 58 个文件，按语句数降序）。这些语句在排除后不再受任何覆盖率约束：共 3538 语句、1072 分支，占判定单元总量的 7.4%。C1 的 3 个文件（`profile_lifecycle_intents_postgres.py` 22 语句、`qualification_admission_grants.py` 8 语句、`profile_lifecycle_intents.py` 6 语句）是它的子集；C3 的范围是此表的超集（另有 139 个文件只含少量集成独占语句）。
+
+| 文件 | 语句 | 其中集成独占 |
+| --- | --- | --- |
+| `backend/src/speechnexus_backend/speech/infrastructure/public_job_admission.py` | 380 | 192 |
+| `backend/src/speechnexus_backend/speech/infrastructure/runtime_sql.py` | 211 | 161 |
+| `backend/src/speechnexus_backend/speech/infrastructure/workspaces_postgres.py` | 152 | 98 |
+| `backend/src/speechnexus_backend/tts_settlement_worker.py` | 138 | 76 |
+| `backend/src/speechnexus_backend/qualification_probe_approval.py` | 124 | 103 |
+| `backend/src/speechnexus_backend/speech/infrastructure/pronunciation_drafts_sql.py` | 118 | 83 |
+| `backend/src/speechnexus_backend/speech/infrastructure/runtime_delivery_sql.py` | 114 | 81 |
+| `backend/src/speechnexus_backend/speech/infrastructure/admission_sql.py` | 110 | 82 |
+| `backend/src/speechnexus_backend/speech/infrastructure/qualification_admission_postgres.py` | 104 | 94 |
+| `backend/src/speechnexus_backend/workspace_writer_runtime.py` | 101 | 58 |
+| `backend/src/speechnexus_backend/builtin_voice_publication.py` | 97 | 82 |
+| `backend/src/speechnexus_backend/profile_runtime.py` | 92 | 64 |
+| `backend/src/speechnexus_backend/speech/infrastructure/runtime_observation_sql.py` | 84 | 55 |
+| `backend/src/speechnexus_backend/binding_list_runtime.py` | 83 | 53 |
+| `backend/src/speechnexus_backend/resource_pool_runtime.py` | 81 | 52 |
+| `backend/src/speechnexus_backend/speech/infrastructure/qualified_speech_facts_postgres.py` | 78 | 42 |
+| `backend/src/speechnexus_backend/speech/infrastructure/lease_release_sql.py` | 76 | 61 |
+| `backend/src/speechnexus_backend/speech/infrastructure/job_cancellation_reconciliation_postgres.py` | 72 | 37 |
+| `backend/src/speechnexus_backend/speech/infrastructure/pronunciation_drafts_postgres.py` | 72 | 43 |
+| `backend/src/speechnexus_backend/qualification_probe_execution.py` | 66 | 58 |
+| `backend/src/speechnexus_backend/speech/infrastructure/leases_sql.py` | 63 | 41 |
+| `backend/src/speechnexus_backend/speech/interfaces/http/resource_pools.py` | 60 | 30 |
+| `backend/src/speechnexus_backend/speech/infrastructure/binding_defaults_sql.py` | 57 | 40 |
+| `backend/src/speechnexus_backend/speech/infrastructure/binding_summaries_postgres.py` | 56 | 29 |
+| `backend/src/speechnexus_backend/speech/infrastructure/owners_sql.py` | 55 | 36 |
+| `backend/src/speechnexus_backend/speech/infrastructure/tts_settlement_postgres.py` | 54 | 31 |
+| `backend/src/speechnexus_backend/speech/infrastructure/voice_catalogue_postgres.py` | 53 | 38 |
+| `backend/src/speechnexus_backend/artifact_runtime.py` | 51 | 30 |
+| `execution-gateway/src/speechnexus_gateway/infrastructure/barrier_sql.py` | 49 | 35 |
+| `backend/src/speechnexus_backend/builtin_voice_source_approval.py` | 46 | 28 |
+| `backend/src/speechnexus_backend/speech/infrastructure/voice_retirements_postgres.py` | 46 | 23 |
+| `execution-gateway/src/speechnexus_gateway/infrastructure/output_interval_sql.py` | 46 | 34 |
+| `backend/src/speechnexus_backend/speech/infrastructure/migrations/versions/0023_publication_lifecycle.py` | 40 | 22 |
+| `backend/src/speechnexus_backend/speech/interfaces/admission_transactions.py` | 36 | 20 |
+| `backend/src/speechnexus_backend/speech/infrastructure/binding_defaults_postgres.py` | 32 | 16 |
+| `backend/src/speechnexus_backend/builtin_voice_revocation.py` | 31 | 29 |
+| `backend/src/speechnexus_backend/speech/infrastructure/migrations/versions/0022_catalog_revision_state.py` | 31 | 16 |
+| `backend/src/speechnexus_backend/speech/infrastructure/resource_pools_postgres.py` | 31 | 16 |
+| `execution-gateway/src/speechnexus_gateway/infrastructure/recovery_sql.py` | 30 | 16 |
+| `execution-gateway/src/speechnexus_gateway/infrastructure/command_redaction_sql.py` | 29 | 18 |
+| `execution-gateway/src/speechnexus_gateway/infrastructure/stop_sql.py` | 29 | 17 |
+| `backend/src/speechnexus_backend/speech/infrastructure/tts_settlement_sql.py` | 24 | 14 |
+| `backend/src/speechnexus_backend/speech/infrastructure/migrations/versions/0011_binding_parameter_defaults.py` | 22 | 11 |
+| `backend/src/speechnexus_backend/speech/infrastructure/profile_lifecycle_intents_postgres.py` | 22 | 22 |
+| `execution-gateway/src/speechnexus_gateway/infrastructure/drain_sql.py` | 21 | 11 |
+| `backend/src/speechnexus_backend/speech/infrastructure/public_job_admission_grants.py` | 20 | 11 |
+| `execution-gateway/src/speechnexus_gateway/infrastructure/binding_disable_guard.py` | 20 | 11 |
+| `execution-gateway/src/speechnexus_gateway/infrastructure/abort_recovery_sql.py` | 19 | 11 |
+| `execution-gateway/src/speechnexus_gateway/infrastructure/abort_authority.py` | 18 | 13 |
+| `execution-gateway/src/speechnexus_gateway/infrastructure/observation_sql.py` | 18 | 11 |
+| `backend/src/speechnexus_backend/speech/infrastructure/builtin_voice_grants.py` | 13 | 8 |
+| `backend/src/speechnexus_backend/speech/infrastructure/runtime_delivery_schema.py` | 13 | 8 |
+| `backend/src/speechnexus_backend/speech/infrastructure/asset_schema.py` | 12 | 9 |
+| `backend/src/speechnexus_backend/speech/infrastructure/pronunciation_draft_schema.py` | 10 | 6 |
+| `backend/src/speechnexus_backend/speech/infrastructure/qualification_admission_grants.py` | 8 | 8 |
+| `backend/src/speechnexus_backend/speech/infrastructure/profile_draft_schema.py` | 7 | 4 |
+| `backend/src/speechnexus_backend/speech/infrastructure/tts_settlement_schema.py` | 7 | 4 |
+| `backend/src/speechnexus_backend/speech/application/profile_lifecycle_intents.py` | 6 | 6 |
+
+这张表本身就是排除方案的成本：58 个基础设施文件连同其未被覆盖的分支一起退出门禁视野，门禁显示的 85% 不再覆盖它们。
+
 ## 集成分片耗时与超时
 
 `integration_shards` 的作业超时为 30 分钟。超时是作业预算：改变它不改变用例选择、断言、`fail-fast`、分片算法或证据验收，也不放松任何检查。

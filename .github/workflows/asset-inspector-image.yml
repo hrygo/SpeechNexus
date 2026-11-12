@@ -1,0 +1,148 @@
+name: Asset inspector image
+
+# Independent image coverage for `asset-inspector/Dockerfile`. No other
+# workflow builds this image today, so a broken Dockerfile, lock file or
+# service import would only surface on a real deployment.
+#
+# This workflow is deliberately not called by `ci.yml` and registers no
+# required status check: an inspector-only failure must never block an
+# unrelated pull request. Build-relevant paths are declared twice on purpose.
+# `on.pull_request.paths` is the GitHub-side routing signal; the `scope` job
+# re-derives the same decision from the exact base SHA with a local diff; the
+# `gate` job then refuses any run where the two disagree. Since this workflow
+# only starts when a build input changed, `scope` must always answer `true` for
+# a pull request run; a skipped image is only reachable by not starting the
+# workflow at all.
+#
+# `main` pushes and manual runs build both native architectures, matching the
+# Node Controller image workflow.
+
+on:
+  pull_request:
+    paths:
+      - "asset-inspector/**"
+      - "packages/media/**"
+      - "backend/README.md"
+      - "backend/pyproject.toml"
+      - "execution-gateway/README.md"
+      - "execution-gateway/pyproject.toml"
+      - "node-controller/README.md"
+      - "node-controller/pyproject.toml"
+      - "packages/contracts/README.md"
+      - "packages/contracts/pyproject.toml"
+      - "deploy/images/verify-asset-inspector-image.py"
+      - "tests/ci/test_asset_inspector_image_ci.py"
+      - ".dockerignore"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/asset-inspector-image.yml"
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: asset-inspector-image-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scope:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    outputs:
+      required: ${{ steps.scope.outputs.required }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Check image inputs
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" != pull_request ]]; then
+            echo 'required=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ ! "$BASE_SHA" =~ ^[0-9a-f]{40}$ || "$BASE_SHA" =~ ^0+$ ]]; then
+            echo '::error::Missing or invalid PR base SHA'
+            exit 1
+          fi
+          if ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          fi
+          changes="$RUNNER_TEMP/asset-inspector-changes"
+          git diff --name-only --no-renames -z "$BASE_SHA" HEAD -- > "$changes"
+          # Empty differences are ambiguous; require the build rather than skip it.
+          required=false
+          if [[ ! -s "$changes" ]]; then required=true; fi
+          while IFS= read -r -d '' path; do
+            case "$path" in
+              asset-inspector/*|packages/media/*|\
+              backend/README.md|backend/pyproject.toml|\
+              execution-gateway/README.md|execution-gateway/pyproject.toml|\
+              node-controller/README.md|node-controller/pyproject.toml|\
+              packages/contracts/README.md|packages/contracts/pyproject.toml|\
+              deploy/images/verify-asset-inspector-image.py|\
+              tests/ci/test_asset_inspector_image_ci.py|\
+              .dockerignore|pyproject.toml|uv.lock|\
+              .github/workflows/asset-inspector-image.yml)
+                required=true; break ;;
+            esac
+          done < "$changes"
+          echo "required=$required" >> "$GITHUB_OUTPUT"
+
+  image:
+    name: Build and probe (${{ matrix.runner }})
+    needs: [scope]
+    if: ${{ needs.scope.outputs.required == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Build the image and probe its runtime invariants
+        run: python3 deploy/images/verify-asset-inspector-image.py
+
+  gate:
+    name: "Gate: asset-inspector image evidence"
+    needs: [scope, image]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require a required scope and a successful matrix
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          REQUIRED: ${{ needs.scope.outputs.required }}
+          IMAGE_RESULT: ${{ needs.image.result }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$SCOPE_RESULT" != success ]]; then
+            echo "::error::Image scope=$SCOPE_RESULT"
+            exit 1
+          fi
+          case "$REQUIRED" in
+            true) expected=success ;;
+            false)
+              echo "::error::Scope skipped the image, but a '$EVENT_NAME' run only starts on build inputs"
+              exit 1 ;;
+            *) echo '::error::Missing or invalid image scope'; exit 1 ;;
+          esac
+          if [[ "$IMAGE_RESULT" != "$expected" ]]; then
+            echo "::error::Image required=$REQUIRED; matrix=$IMAGE_RESULT"
+            exit 1
+          fi
+          echo "Verified: both native-architecture image probes succeeded."

@@ -21,6 +21,7 @@
 - [完整准入的私有命令存储](production-admission-storage.md)
 - [生产 Job/outbox 与 worker 认领](production-jobs.md)
 - [生产租约隔离与释放事务](production-leases.md)
+- [隔离租约的运维释放：持久证据、原子释放与幂等](production-quarantine-release.md)（设计；未交付）
 - [生产 owner 任期事务](production-owners.md)
 - [Runtime 意图存储与未观察快照](production-runtime-intents.md)
 - [生产资产发布单元](production-assets.md)

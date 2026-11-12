@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import shlex
+from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
 from speechnexus_backend.settings import Settings
@@ -28,6 +30,13 @@ from speechnexus_backend.speech.infrastructure.workspaces_postgres import Postgr
 DEFAULT_BUBBLEWRAP = Path("/usr/bin/bwrap")
 DEFAULT_PRLIMIT = Path("/usr/bin/prlimit")
 
+_LOG = logging.getLogger(__name__)
+
+# Narrow shutdown handle for the one inspector that owns an OS process. The
+# AssetInspector protocol stays domain-only: no transport or supervisor type
+# leaks into it, and "no closer" is stated by the composition root instead of
+# guessed with isinstance at shutdown.
+type InspectorCloser = Callable[[], bool]
 # Prerequisites that only exist when the operator supplies them. Limit settings
 # are absent here on purpose: they always carry a default, so their value cannot
 # show that audio inspection was requested.
@@ -110,7 +119,9 @@ def _inspection_tool(variable: str, configured: Path | None, default: Path) -> P
     return path
 
 
-def _build_audio_inspector(settings: Settings) -> ProcessAudioAssetInspector:
+def _build_audio_inspector(
+    settings: Settings,
+) -> tuple[ProcessAudioAssetInspector, InspectorCloser]:
     root = _inspection_root(settings)
     command = _inspection_command(settings)
     launcher = _inspection_launcher(settings)
@@ -138,11 +149,35 @@ def _build_audio_inspector(settings: Settings) -> ProcessAudioAssetInspector:
         bubblewrap=bubblewrap,
         prlimit=prlimit,
     )
-    return ProcessAudioAssetInspector(
+    inspector = ProcessAudioAssetInspector(
         process,
         max_duration_ms=settings.audio_inspection_max_duration_ms,
         max_receipt_bytes=settings.audio_inspection_max_receipt_bytes,
     )
+    # The supervisor is the only inspector part with real OS teardown. Hand the
+    # runtime its close handle so shutdown never has to name its type.
+    return inspector, process.close
+
+
+def _select_asset_inspector(
+    settings: Settings,
+) -> tuple[AssetInspector, InspectorCloser | None]:
+    """Build the configured inspector and its optional supervisor shutdown handle.
+
+    ``None`` states that this inspector owns no process to tear down; it is not
+    inferred from the object's class, so the runtime shutdown path stays free of
+    infrastructure imports and concrete-type checks.
+    """
+    if settings.asset_inspector == "audio":
+        return _build_audio_inspector(settings)
+    configured = _configured_audio_prerequisites(settings)
+    if configured:
+        names = ", ".join(configured)
+        raise ValueError(
+            f"{names} configured but SPEECHNEXUS_ASSET_INSPECTOR=text; "
+            "select audio or unset every audio inspection prerequisite"
+        )
+    return TextAssetInspector(), None
 
 
 def build_asset_inspector(settings: Settings) -> AssetInspector:
@@ -154,16 +189,7 @@ def build_asset_inspector(settings: Settings) -> AssetInspector:
     while explicitly configuring an audio prerequisite also fails: otherwise the
     operator's audio intent would silently degrade to an unavailable inspector.
     """
-    if settings.asset_inspector == "audio":
-        return _build_audio_inspector(settings)
-    configured = _configured_audio_prerequisites(settings)
-    if configured:
-        names = ", ".join(configured)
-        raise ValueError(
-            f"{names} configured but SPEECHNEXUS_ASSET_INSPECTOR=text; "
-            "select audio or unset every audio inspection prerequisite"
-        )
-    return TextAssetInspector()
+    return _select_asset_inspector(settings)[0]
 
 
 class AssetRuntime:
@@ -172,7 +198,7 @@ class AssetRuntime:
             raise ValueError("Explicit object-storage credentials are required")
         # Resolve the inspector before creating owned transports: a rejected
         # audio configuration fails startup without opening a pool or S3 client.
-        self.inspector: AssetInspector = build_asset_inspector(settings)
+        self.inspector, self._close_inspector = _select_asset_inspector(settings)
         self._schema = settings.database_schema
         self._pool = speech_pool(settings.database_url.get_secret_value(), schema=self._schema)
         self.workspaces = WorkspaceService(PostgresWorkspaceReads(self._pool))
@@ -193,8 +219,8 @@ class AssetRuntime:
         )
 
     def open(self) -> None:
-        self._pool.open()
         try:
+            self._pool.open()
             # Check the configured runtime principal, not a migration fallback.
             # This is an owner/DDL guard, not a full deployment privilege audit.
             with self._pool.connection() as connection:
@@ -240,6 +266,34 @@ class AssetRuntime:
             self.close()
             raise
 
-    def close(self) -> None:
-        self._objects.close()
-        self._pool.close()
+    def close(self) -> bool:
+        """Stop the inspector supervisor, then release the owned transports.
+
+        The inspector is stopped first: it owns a live OS process and pidfds
+        that no transport teardown can reach, and it is the only step that can
+        report an unconfirmed stop. Stopping it before the pool and object
+        client also sets the supervisor's ``_closed`` flag while those
+        transports still exist, so no new inspection can start into a runtime
+        that is already being dismantled. This ordering is not a dependency:
+        an inspection reads only the prepared body and the supervisor pipe, not
+        ``_objects`` or ``_pool``.
+
+        Returns ``False`` when the inspector did not confirm that its
+        supervisor stopped. The transports are still closed, but callers must
+        not read that as a clean shutdown: the unconfirmed stop is logged here
+        and returned. No exception is raised because this also runs while
+        reporting an ``open()`` failure, where it would mask the startup error.
+        """
+        stopped = True
+        try:
+            if self._close_inspector is not None:
+                stopped = self._close_inspector()
+                if not stopped:
+                    _LOG.warning(
+                        "Asset inspector did not confirm its supervisor stopped; "
+                        "an inspection process may survive shutdown"
+                    )
+        finally:
+            self._objects.close()
+            self._pool.close()
+        return stopped

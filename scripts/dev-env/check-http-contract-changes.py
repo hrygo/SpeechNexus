@@ -166,6 +166,46 @@ _APPROVED_RESPONSE_REPLACEMENTS: dict[tuple[str, str, str, str, str, str], dict[
     },
     (
         "contracts/admin-openapi.yaml",
+        "/v1/nexus/admin/capacity-manifests/{manifest_id}",
+        "get",
+        "200",
+        "0.1.0.dev9",
+        "0.1.0.dev10",
+    ): {
+        "issue": "#605",
+        "reason": (
+            "The recorded evidence reference keeps only facts the publication "
+            "evidence table stores: the identifier, the digest when a publication "
+            "row recorded one, and the earliest recording time. No column stores "
+            "a release-evidence locator and the digest column is nullable, so both "
+            "fields are optional; the response reference is unchanged on both "
+            "sides."
+        ),
+        "from_schema": "#/components/schemas/CapacityManifestRecord",
+        "to_schema": "#/components/schemas/CapacityManifestRecord",
+    },
+    (
+        "contracts/admin-openapi.yaml",
+        "/v1/nexus/admin/qualification-reports/{report_id}",
+        "get",
+        "200",
+        "0.1.0.dev9",
+        "0.1.0.dev10",
+    ): {
+        "issue": "#605",
+        "reason": (
+            "The recorded evidence reference keeps only facts the publication "
+            "evidence table stores: the identifier, the digest when a publication "
+            "row recorded one, and the earliest recording time. No column stores "
+            "a release-evidence locator and the digest column is nullable, so both "
+            "fields are optional; the response reference is unchanged on both "
+            "sides."
+        ),
+        "from_schema": "#/components/schemas/QualificationReportRecord",
+        "to_schema": "#/components/schemas/QualificationReportRecord",
+    },
+    (
+        "contracts/admin-openapi.yaml",
         "/v1/nexus/admin/model-instances",
         "get",
         "200",

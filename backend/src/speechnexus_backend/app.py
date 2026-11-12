@@ -40,6 +40,10 @@ from speechnexus_backend.speech.application.assets import AssetService
 from speechnexus_backend.speech.application.audit_events import AuditEventService
 from speechnexus_backend.speech.application.binding_default_drafts import BindingDefaultDrafts
 from speechnexus_backend.speech.application.binding_drafts import BindingDrafts
+from speechnexus_backend.speech.application.binding_evidence import (
+    BindingEvidenceReader,
+    BindingEvidenceService,
+)
 from speechnexus_backend.speech.application.binding_publication import (
     BindingPublicationFacts,
 )
@@ -85,12 +89,16 @@ from speechnexus_backend.speech.interfaces.http.asset_ingress import AssetIngres
 from speechnexus_backend.speech.interfaces.http.assets import create_asset_router
 from speechnexus_backend.speech.interfaces.http.audit_events import create_audit_event_router
 from speechnexus_backend.speech.interfaces.http.binding_contract import binding_http_contract
+from speechnexus_backend.speech.interfaces.http.binding_evidence import (
+    create_binding_evidence_router,
+)
 from speechnexus_backend.speech.interfaces.http.binding_ingress import BindingIngress
 from speechnexus_backend.speech.interfaces.http.binding_lifecycle import (
     BindingLifecycle,
     create_binding_lifecycle_router,
 )
 from speechnexus_backend.speech.interfaces.http.bindings import create_binding_router
+from speechnexus_backend.speech.interfaces.http.diagnostics import create_diagnostics_router
 from speechnexus_backend.speech.interfaces.http.health import create_health_router
 from speechnexus_backend.speech.interfaces.http.job_errors import job_error
 from speechnexus_backend.speech.interfaces.http.jobs import PREFIX as JOB_PREFIX
@@ -224,6 +232,7 @@ def create_app(
     bindings: BindingDrafts | None = None,
     binding_defaults: BindingDefaultDrafts | None = None,
     binding_publication_facts: BindingPublicationFacts | None = None,
+    binding_evidence: BindingEvidenceReader | None = None,
     binding_lifecycle: BindingLifecycle | None = None,
     pronunciations: PronunciationReader | None = None,
     pronunciation_writer: PronunciationWriter | None = None,
@@ -494,6 +503,13 @@ def create_app(
             return binding_publication_facts
         return binding_admin_runtime.provider if binding_admin_runtime is not None else None
 
+    def get_binding_evidence() -> BindingEvidenceService | None:
+        if binding_evidence is not None:
+            return BindingEvidenceService(binding_evidence)
+        if binding_admin_runtime is not None and binding_admin_runtime.provider is not None:
+            return BindingEvidenceService(binding_admin_runtime.provider)
+        return None
+
     binding_lifecycle_runtime = (
         BindingLifecycleRuntime(resolved_settings)
         if binding_lifecycle is None
@@ -690,6 +706,8 @@ def create_app(
         )
     )
     app.include_router(create_binding_lifecycle_router(get_binding_lifecycle))
+    app.include_router(create_binding_evidence_router(get_binding_evidence))
+    app.include_router(create_diagnostics_router(resolved_readiness))
     # Declared operations without an owning feature answer one stable 503
     # instead of a framework 404 that reads like "unknown resource".
     app.include_router(create_unimplemented_router())

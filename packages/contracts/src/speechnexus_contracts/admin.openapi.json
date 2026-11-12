@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SpeechNexus administration API",
-    "version": "0.1.0.dev9",
-    "description": "Deployment-scoped administration and observation API. These routes do not\nestablish a user identity, role, or tenant boundary. A deployment may expose\nthem on a separate listener or route allowlist, but the API itself must not\npretend that hiding a navigation entry is authorization.\n\nModel binding revisions and runtime instances are separate resources.\nCapacity manifest and qualification report documents stay in the release\nevidence chain; the admin API exposes only their recorded identity and\nlocator. No response exposes private artifact paths, engine endpoints,\ncredentials, or arbitrary container control.\n"
+    "version": "0.1.0.dev10",
+    "description": "Deployment-scoped administration and observation API. These routes do not\nestablish a user identity, role, or tenant boundary. A deployment may expose\nthem on a separate listener or route allowlist, but the API itself must not\npretend that hiding a navigation entry is authorization.\n\nModel binding revisions and runtime instances are separate resources.\nCapacity manifest and qualification report documents stay in the release\nevidence chain; the admin API exposes only the identity facts the\npublication evidence table records: the evidence identifier, the document\ndigest when the publishing path recorded one, and the first recording time.\nIt exposes no release-evidence locator because no column stores one. No\nresponse exposes private artifact paths, engine endpoints, credentials, or\narbitrary container control.\n"
   },
   "security": [
     {
@@ -485,6 +485,142 @@
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/v1/nexus/admin/capacity-manifests/{manifest_id}": {
+      "get": {
+        "tags": ["model-bindings"],
+        "operationId": "getCapacityManifest",
+        "summary": "Get a recorded capacity manifest reference",
+        "description": "Returns the recorded identity of one immutable capacity manifest: its\nidentifier, its document digest when the publication recorded one, and\nthe first time the deployment recorded publication evidence naming that\nmanifest. The evidence table stores no release-evidence locator, so the\nresponse never carries one. The manifest body is not stored or copied\nhere; it remains the authoritative document in the release evidence\nchain and is resolved offline by\nscripts/dev-env/verify-release-evidence.py.\n\nIdentifiers that do not match the declared pattern return 400\n`invalid_binding_request`. An unreadable evidence store returns 503\n`binding_unavailable` with `retryable: true` instead of reporting\nabsence; 404 means the evidence store was read and names no capacity\nmanifest with this identifier.\n",
+        "parameters": [
+          {
+            "name": "manifest_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Identifier"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recorded capacity manifest reference.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapacityManifestRecord"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/v1/nexus/admin/qualification-reports/{report_id}": {
+      "get": {
+        "tags": ["model-bindings"],
+        "operationId": "getQualificationReport",
+        "summary": "Get a recorded qualification report reference",
+        "description": "Returns the recorded identity of one deployment qualification report:\nits identifier, its document digest when the publication recorded one,\nand the first time the deployment recorded publication evidence naming\nthat report. The evidence table stores no release-evidence locator, so\nthe response never carries one. The report body is not stored or copied\nhere; it remains the authoritative document in the release evidence\nchain and is resolved offline by\nscripts/dev-env/verify-release-evidence.py.\n\nIdentifiers that do not match the declared pattern return 400\n`invalid_binding_request`. An unreadable evidence store returns 503\n`binding_unavailable` with `retryable: true` instead of reporting\nabsence; 404 means the evidence store was read and names no\nqualification report with this identifier.\n",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Identifier"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recorded qualification report reference.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QualificationReportRecord"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/v1/nexus/admin/diagnostics": {
+      "get": {
+        "tags": ["diagnostics"],
+        "operationId": "getDiagnostics",
+        "summary": "Read redacted diagnostics",
+        "description": "Diagnostics are read-only and never trigger model loading. Responses omit\ncontent, audio, feature vectors, credentials, object keys, and private\nmodel paths. This deployment reports `ok` when every readiness probe\npassed and `unready` otherwise; the declared `degraded` state is reserved\nfor probes that can distinguish a reduced capability from a failed one.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Diagnostics snapshot.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Diagnostics"
+                }
+              }
+            }
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -2095,6 +2231,96 @@
           "reason": {
             "type": ["string", "null"],
             "maxLength": 2000
+          }
+        }
+      },
+      "CapacityManifestRecord": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "recorded_at"],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "digest": {
+            "$ref": "#/components/schemas/Sha256Digest",
+            "description": "SHA-256 of the authoritative capacity manifest document bytes. The\npublication evidence table stores it only when the publishing path\nsupplied a digest, so it is omitted for evidence recorded without\none rather than synthesized or reported as a placeholder.\n"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the deployment first recorded publication evidence naming this\ncapacity manifest. The evidence table records one timestamp per\npublication row; this value is the earliest such row.\n"
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^release-evidence://[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9._-]*/capacity-manifest\\.json$",
+            "description": "Release-evidence locator of the authoritative document. This\ndeployment records no locator for a publication evidence row, so the\nresponse omits the field. The document stays in the release evidence\nchain and is resolved offline by\nscripts/dev-env/verify-release-evidence.py; the response never\nembeds or copies the document body.\n"
+          }
+        }
+      },
+      "Sha256Digest": {
+        "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Sha256Digest"
+      },
+      "QualificationReportRecord": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "recorded_at"],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "digest": {
+            "$ref": "#/components/schemas/Sha256Digest",
+            "description": "SHA-256 of the authoritative qualification report document bytes.\nThe publication evidence table stores it only when the publishing\npath supplied a digest, so it is omitted for evidence recorded\nwithout one rather than synthesized or reported as a placeholder.\n"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the deployment first recorded publication evidence naming this\nqualification report. The evidence table records one timestamp per\npublication row; this value is the earliest such row.\n"
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^release-evidence://[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9._-]*/qualification-report\\.json$",
+            "description": "Release-evidence locator of the authoritative document. This\ndeployment records no locator for a publication evidence row, so the\nresponse omits the field. The document stays in the release evidence\nchain and is resolved offline by\nscripts/dev-env/verify-release-evidence.py; the response never\nembeds or copies the document body.\n"
+          }
+        }
+      },
+      "Diagnostics": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "generated_at", "checks"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["ok", "degraded", "unready"]
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "status", "detail"],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": ["ok", "degraded", "failed"]
+                },
+                "detail": {
+                  "type": ["string", "null"]
+                }
+              }
+            }
           }
         }
       }

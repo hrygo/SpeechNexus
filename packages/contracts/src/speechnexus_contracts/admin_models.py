@@ -624,16 +624,16 @@ class ResourcePoolList(TypedDict):
 
 class CapacityManifestRecord(TypedDict):
     id: Identifier
-    digest: Sha256Digest
+    digest: NotRequired[Sha256Digest]
     recorded_at: str
-    source: str
+    source: NotRequired[str]
 
 
 class QualificationReportRecord(TypedDict):
     id: Identifier
-    digest: Sha256Digest
+    digest: NotRequired[Sha256Digest]
     recorded_at: str
-    source: str
+    source: NotRequired[str]
 
 
 class AuditEvent(TypedDict):

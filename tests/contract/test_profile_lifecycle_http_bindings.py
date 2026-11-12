@@ -126,7 +126,7 @@ def test_future_lifecycle_surface_does_not_expand_the_existing_draft_surface() -
     actual = contract()
     assert actual == generator().bundle_http_surface(manifest["http_surfaces"]["profile_lifecycle"])
     validate(actual)
-    assert actual["info"]["version"] == "0.1.0.dev9"
+    assert actual["info"]["version"] == "0.1.0.dev10"
     assert all(set(item) == {"post"} for item in actual["paths"].values())
     assert len(actual["paths"]) == 3
     assert not (set(actual["paths"]) & set(draft_contract()["paths"]))

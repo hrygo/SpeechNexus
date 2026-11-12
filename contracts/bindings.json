@@ -222,7 +222,9 @@
       "version": "1.0.0",
       "format": "json-schema",
       "client": false,
-      "schemas": ["ScenarioProfileRevision"],
+      "schemas": [
+        "ScenarioProfileRevision"
+      ],
       "schema_refs": {
         "ScenarioProfileRevision": "#"
       }
@@ -232,7 +234,9 @@
       "version": "1.0.0",
       "format": "json-schema",
       "client": false,
-      "schemas": ["ModelBindingRevision"],
+      "schemas": [
+        "ModelBindingRevision"
+      ],
       "schema_refs": {
         "ModelBindingRevision": "#"
       }
@@ -242,7 +246,9 @@
       "version": "1.0.0",
       "format": "json-schema",
       "client": false,
-      "schemas": ["BuiltinVoiceQualificationAuthorization"],
+      "schemas": [
+        "BuiltinVoiceQualificationAuthorization"
+      ],
       "schema_refs": {
         "BuiltinVoiceQualificationAuthorization": "#"
       }
@@ -252,7 +258,10 @@
       "version": "1.0.0",
       "format": "json-schema",
       "client": false,
-      "schemas": ["QualificationReport", "CapacityManifest"],
+      "schemas": [
+        "QualificationReport",
+        "CapacityManifest"
+      ],
       "schema_refs": {
         "QualificationReport": "#",
         "CapacityManifest": "capacity-manifest.schema.json#"
@@ -289,14 +298,18 @@
       "format": "json-schema",
       "client": false,
       "definitions_prefix": "/$defs/",
-      "schemas": ["GatewayRecoveryConfig"]
+      "schemas": [
+        "GatewayRecoveryConfig"
+      ]
     },
     "binding_defaults": {
       "source": "binding-parameter-defaults.schema.json",
       "version": "1.0.0",
       "format": "json-schema",
       "client": false,
-      "schemas": ["BindingParameterDefaultsSnapshot"],
+      "schemas": [
+        "BindingParameterDefaultsSnapshot"
+      ],
       "schema_refs": {
         "BindingParameterDefaultsSnapshot": "#"
       }
@@ -317,14 +330,21 @@
       "paths": [
         "/v1/nexus/pronunciation-sets/{pronunciation_id}/revisions/{revision}"
       ],
-      "operations": ["getPronunciationRevision"]
+      "operations": [
+        "getPronunciationRevision"
+      ]
     },
     "pronunciation_sets": {
       "source": "speech-openapi.yaml",
       "validate": true,
       "typescript_source": "speech",
-      "paths": ["/v1/nexus/pronunciation-sets"],
-      "operations": ["listPronunciationSets", "createPronunciationRevision"]
+      "paths": [
+        "/v1/nexus/pronunciation-sets"
+      ],
+      "operations": [
+        "listPronunciationSets",
+        "createPronunciationRevision"
+      ]
     },
     "voice_catalogue": {
       "source": "speech-openapi.yaml",
@@ -334,7 +354,10 @@
         "/v1/nexus/voices",
         "/v1/nexus/voices/{voice_id}/revisions/{revision}"
       ],
-      "operations": ["listVoices", "getVoiceRevision"]
+      "operations": [
+        "listVoices",
+        "getVoiceRevision"
+      ]
     },
     "voice_drafts": {
       "source": "speech-openapi.yaml",
@@ -367,7 +390,9 @@
       "paths": [
         "/v1/nexus/voices/{voice_id}/revisions/{revision}/retirements"
       ],
-      "operations": ["retireVoiceRevision"]
+      "operations": [
+        "retireVoiceRevision"
+      ]
     },
     "admin": {
       "source": "admin-openapi.yaml",
@@ -379,7 +404,10 @@
         "/v1/nexus/admin/model-bindings",
         "/v1/nexus/admin/model-instances",
         "/v1/nexus/admin/model-instances/{instance_id}/generations/{generation}",
-        "/v1/nexus/audit-events"
+        "/v1/nexus/audit-events",
+        "/v1/nexus/admin/capacity-manifests/{manifest_id}",
+        "/v1/nexus/admin/qualification-reports/{report_id}",
+        "/v1/nexus/admin/diagnostics"
       ],
       "operations": [
         "listWorkspaces",
@@ -390,7 +418,10 @@
         "listModelBindings",
         "listModelInstances",
         "getModelInstance",
-        "listAuditEvents"
+        "listAuditEvents",
+        "getCapacityManifest",
+        "getQualificationReport",
+        "getDiagnostics"
       ]
     },
     "runtime": {
@@ -408,7 +439,9 @@
       "paths": [
         "/internal/v1/inspection/audio"
       ],
-      "operations": ["inspectAssetAudio"]
+      "operations": [
+        "inspectAssetAudio"
+      ]
     },
     "assets": {
       "source": "speech-openapi.yaml",
@@ -480,7 +513,10 @@
         "/v1/nexus/admin/profiles",
         "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}"
       ],
-      "operations": ["createProfileRevision", "getProfileRevisionForAdministration"]
+      "operations": [
+        "createProfileRevision",
+        "getProfileRevisionForAdministration"
+      ]
     },
     "profile_public": {
       "source": "speech-openapi.yaml",
@@ -491,7 +527,11 @@
         "/v1/nexus/profiles/{profile_id}/revisions/{revision}",
         "/v2/nexus/profiles"
       ],
-      "operations": ["listProfiles", "getProfileRevision", "listPublishedProfiles"]
+      "operations": [
+        "listProfiles",
+        "getProfileRevision",
+        "listPublishedProfiles"
+      ]
     },
     "profile_lifecycle": {
       "source": "admin-openapi.yaml",

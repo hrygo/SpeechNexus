@@ -15,16 +15,19 @@ import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
 from speechnexus_backend.speech.application.binding_documents import decode_document
+from speechnexus_backend.speech.application.binding_evidence import EvidenceKind
 from speechnexus_backend.speech.application.binding_publication import PublishedBinding
 from speechnexus_backend.speech.domain.assets import identifier
 from speechnexus_backend.speech.domain.binding_drafts import (
     BindingDraft,
     BindingUnavailableError,
 )
+from speechnexus_backend.speech.domain.binding_evidence import RecordedEvidenceIdentity
 from speechnexus_backend.speech.domain.configuration import revision_number
 from speechnexus_backend.speech.infrastructure.binding_drafts_sql import read_draft
 from speechnexus_backend.speech.infrastructure.binding_publication_evidence_sql import (
     find_evidence,
+    find_recorded_identity,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.publications_sql import (
@@ -93,6 +96,15 @@ class PostgresBindingAdminReader:
         identifier(binding_id)
         revision_number(revision)
         return self._run(lambda cursor: read_draft(cursor, binding_id, revision))
+
+    def recorded_evidence(
+        self, kind: EvidenceKind, identity: str
+    ) -> RecordedEvidenceIdentity | None:
+        """Return the recorded identity of one document, or ``None`` if unnamed."""
+        if not isinstance(kind, EvidenceKind):
+            raise BindingUnavailableError
+        identifier(identity)
+        return self._run(lambda cursor: find_recorded_identity(cursor, kind.value, identity))
 
     def project(self, draft: BindingDraft) -> PublishedBinding | None:
         """Return published facts, ``None`` for an unpublicized draft, or fail closed."""

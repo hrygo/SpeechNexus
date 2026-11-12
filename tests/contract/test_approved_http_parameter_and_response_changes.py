@@ -28,6 +28,15 @@ BASE_VERSION = "0.1.0.dev7"
 CURRENT_VERSION = "0.1.0.dev8"
 NARROW_BASE_VERSION = "0.1.0.dev8"
 NARROW_CURRENT_VERSION = "0.1.0.dev9"
+EVIDENCE_BASE_VERSION = "0.1.0.dev9"
+EVIDENCE_CURRENT_VERSION = "0.1.0.dev10"
+EVIDENCE_REASON = (
+    "The recorded evidence reference keeps only facts the publication evidence "
+    "table stores: the identifier, the digest when a publication row recorded "
+    "one, and the earliest recording time. No column stores a release-evidence "
+    "locator and the digest column is nullable, so both fields are optional; "
+    "the response reference is unchanged on both sides."
+)
 MODEL_INSTANCE_REASON = (
     "The recorded instance projection no longer requires facts the runtime "
     "instance store does not hold (loaded artifact digests, process start and "
@@ -195,6 +204,32 @@ def test_the_parameter_and_response_registries_are_frozen() -> None:
                 "the release evidence chain."
             ),
             "from_schema": "./qualification-report.schema.json",
+            "to_schema": "#/components/schemas/QualificationReportRecord",
+        },
+        (
+            SOURCE,
+            CAPACITY_PATH,
+            "get",
+            "200",
+            EVIDENCE_BASE_VERSION,
+            EVIDENCE_CURRENT_VERSION,
+        ): {
+            "issue": "#605",
+            "reason": EVIDENCE_REASON,
+            "from_schema": "#/components/schemas/CapacityManifestRecord",
+            "to_schema": "#/components/schemas/CapacityManifestRecord",
+        },
+        (
+            SOURCE,
+            "/v1/nexus/admin/qualification-reports/{report_id}",
+            "get",
+            "200",
+            EVIDENCE_BASE_VERSION,
+            EVIDENCE_CURRENT_VERSION,
+        ): {
+            "issue": "#605",
+            "reason": EVIDENCE_REASON,
+            "from_schema": "#/components/schemas/QualificationReportRecord",
             "to_schema": "#/components/schemas/QualificationReportRecord",
         },
         (

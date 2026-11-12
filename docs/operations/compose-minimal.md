@@ -167,7 +167,8 @@ PY
 一次性 operator 身份；本机示例沿用 bootstrap owner。它们不会传给 `api` 或 `gateway`，
 基础配置中 API 使用 `sn_api`，gateway 分别使用 `sn_gateway` 写入和 `sn_gateway_query`
 只读查询。API 的 profile、binding、Job 等可选数据库连接默认为空；启用对应能力时须按
-各自要求另行配置身份与授权，不能假定基础角色已覆盖。生产部署必须把迁移和注册连接
+各自要求另行配置身份与授权，不能假定基础角色已覆盖。工作区写与审计读取的连接地址由
+第 6 节的角色预置步骤写入本文件。生产部署必须把迁移和注册连接
 换成独立、受审计的 operator 凭据，不能复用运行角色。
 
 ## 3. 准备私有文件
@@ -324,20 +325,31 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 ```
 
 上述容器名、用户和数据库名对应默认配置；若部署值不同，先核对实际名称再查询。
-仓库当前迁移链的 head 为 `0039_public_job_progress`；实际部署必须以所用发布制品中的唯一
-head 为准，查询结果须与之相符。不要把旧版 `0027_gateway_abort_intents` 当作当前 head，
-也不要跳过检查或手工修改版本表。
+仓库当前迁移链的 head 为 `0049_workspace_commands`；实际部署必须以所用发布制品中的唯一
+head 为准，查询结果须与之相符。不要把旧版 `0027_gateway_abort_intents` 或
+`0039_public_job_progress` 当作当前 head，也不要跳过检查或手工修改版本表。
 
 ## 6. 创建非 owner 运行角色与最小授权
 
 以下脚本必须使用 **迁移 owner DSN** 运行；它创建 API、gateway writer、gateway
-query 三个独立角色并调用仓库授权函数。此段只用于新建、独占的 SpeechNexus 数据库：
+query、工作区 writer 与审计 reader 五个独立角色并调用仓库授权函数。此段只用于新建、
+独占的 SpeechNexus 数据库：
 它会撤销数据库级 `PUBLIC TEMPORARY/CREATE`、`public` schema 的 CREATE 和大对象
 写函数的 PUBLIC EXECUTE。已有共享数据库应先导出 ACL、核对其他角色依赖，再由部署
 负责人评审等价最小授权；不要直接套用。应用启动只检查这些前置条件，不修改 ACL。
 脚本使用 `autocommit=True`：每条已成功执行的撤权、角色创建或授权会立即提交；中途
 失败不会整体回滚。失败后须先核对已创建的角色和实际 ACL，按保存的原状态及获准的
 恢复步骤处理；直接重跑会因已有角色而停止，不能假设数据库仍处于执行前状态。
+
+工作区 writer 与审计 reader 的口令不在 `deploy/compose.env.example` 中预置，先在当前
+shell 生成；口令不打印到终端，只在下面的脚本和写回环境文件时使用：
+
+```bash
+umask 077
+export SPEECHNEXUS_WORKSPACE_WRITER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export SPEECHNEXUS_AUDIT_READER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+```
+
 先在当前 shell 载入环境文件：
 
 ```bash
@@ -346,7 +358,7 @@ set -a
 set +a
 export SN_ADMIN_DSN="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:${SPEECHNEXUS_POSTGRES_HOST_PORT:-55432}/${POSTGRES_DB}"
 
-uv run python - <<'PY'
+uv run --all-packages python - <<'PY'
 import os
 from psycopg import sql
 import psycopg
@@ -363,12 +375,18 @@ from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema imp
 from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema import (
     gateway_abort_grants, gateway_binding_barrier_grants,
 )
+from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import (
+    audit_reader_grants,
+)
+from speechnexus_backend.speech.infrastructure.workspace_schema import workspace_writer_grants
 
 schema = "speech"
 roles = {
     "sn_api": os.environ["SPEECHNEXUS_API_ROLE_PASSWORD"],
     "sn_gateway": os.environ["SPEECHNEXUS_GATEWAY_ROLE_PASSWORD"],
     "sn_gateway_query": os.environ["SPEECHNEXUS_GATEWAY_QUERY_ROLE_PASSWORD"],
+    "sn_workspace_writer": os.environ["SPEECHNEXUS_WORKSPACE_WRITER_ROLE_PASSWORD"],
+    "sn_audit_reader": os.environ["SPEECHNEXUS_AUDIT_READER_ROLE_PASSWORD"],
 }
 with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     # PostgreSQL 角色属于整个集群，即使数据库是专用的也要先核对。
@@ -438,6 +456,10 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
         *gateway_binding_barrier_grants(schema, "sn_gateway"),
     ):
         conn.execute(statement)
+    for statement in workspace_writer_grants(schema, "sn_workspace_writer"):
+        conn.execute(statement)
+    for statement in audit_reader_grants(schema, "sn_audit_reader"):
+        conn.execute(statement)
 
     # Transcription resolves the selected published binding and checks its
     # retirement through the runtime facts port.
@@ -452,7 +474,7 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
             sql.Identifier("sn_api"),
         )
     )
-    print("roles ready: sn_api sn_gateway sn_gateway_query")
+    print("roles ready: sn_api sn_gateway sn_gateway_query sn_workspace_writer sn_audit_reader")
 PY
 ```
 
@@ -460,39 +482,141 @@ PY
 CREATE 权限，停止启动服务；不要用超级用户连接绕过检查。API 启动时还会再次核验
 `sn_api` 不是数据库/表 owner，也不是可继承的 owner 成员。
 
+脚本成功后，把两个新角色的连接地址写回 `deploy/compose.env`；脚本替换同名空行或追加，
+不打印口令：
+
+```bash
+python3 - <<'PY'
+import os
+import re
+from pathlib import Path
+
+values = {
+    "SPEECHNEXUS_WORKSPACE_WRITER_DATABASE_URL": (
+        "postgresql://sn_workspace_writer:"
+        f"{os.environ['SPEECHNEXUS_WORKSPACE_WRITER_ROLE_PASSWORD']}"
+        "@postgres:5432/speechnexus"
+    ),
+    "SPEECHNEXUS_AUDIT_READER_DATABASE_URL": (
+        "postgresql://sn_audit_reader:"
+        f"{os.environ['SPEECHNEXUS_AUDIT_READER_ROLE_PASSWORD']}"
+        "@postgres:5432/speechnexus"
+    ),
+}
+path = Path("deploy/compose.env")
+text = path.read_text()
+for key, item in values.items():
+    pattern = rf"(?m)^{re.escape(key)}=.*$"
+    line = f"{key}={item}"
+    text = re.sub(pattern, line, text, count=1) if re.search(pattern, text) else text + line + "\n"
+path.write_text(text)
+path.chmod(0o600)
+print("workspace writer and audit reader DSNs written to deploy/compose.env")
+PY
+```
+
+两行都按示例的 `postgres` 服务名和 `speechnexus` 库名生成；改了 Compose 服务名、端口或
+数据库名时同步修改这两行。
+
+### 工作区写角色 `sn_workspace_writer`
+
+`POST /v1/nexus/workspaces` 与 `PATCH /v1/nexus/workspaces/{workspace_id}` 用独立 writer
+身份写 `speech_workspaces` 与 0049 的 `speech_workspace_commands` 重放账本。读取继续使用
+`sn_api` 的资产运行时角色，该角色对 `speech_workspaces` 只有 `UPDATE (metadata_revision)`，
+不能改写显示名或状态。未配置 `SPEECHNEXUS_WORKSPACE_WRITER_DATABASE_URL` 时两个写操作
+返回 `503 workspace_service_unavailable`，列表与单条读取不受影响。
+
+`deploy/compose.yaml` 的 `api` 服务以空默认透传该变量：只写 `deploy/compose.env` 而不建
+角色时容器照常启动，两个写操作仍返回上面的 503；建了角色但权限面不符时 API 启动失败并
+报 `Workspace writer startup rejected`，不会带着错误身份上线。授权由
+`workspace_writer_grants(schema, role)` 声明，只含两张表的 `SELECT` 与列级
+`INSERT`/`UPDATE`；不要手写 `GRANT`，也不要给整表 `INSERT`/`UPDATE`、`DELETE`、
+`TRUNCATE`、`REFERENCES` 或 schema `CREATE`。核对列级授权（表级 `SELECT` 由启动校验和
+读取路径验证）：
+
+```bash
+docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
+  "select table_name, privilege_type, column_name from information_schema.column_privileges \
+   where grantee = 'sn_workspace_writer' and privilege_type in ('INSERT','UPDATE') order by 1, 2, 3"
+```
+
+### 审计读取角色 `sn_audit_reader`
+
+`GET /v1/nexus/audit-events` 用独立只读身份读 `speech_publication_lifecycle_events`。
+生命周期 writer 对同一张表持有 `INSERT`，复用 writer 身份会让审计读取路径也能追加或
+重放证据。授权由 `audit_reader_grants(schema, role)` 声明：schema `USAGE` 加该表的
+`SELECT`，不含任何写权限；启动校验不通过时报 `Audit reader startup rejected` 并退出。
+未配置 `SPEECHNEXUS_AUDIT_READER_DATABASE_URL` 时该端点返回
+`503 audit_service_unavailable`。
+
+本基础编排的 `api` 服务没有转发 `SPEECHNEXUS_AUDIT_READER_DATABASE_URL`，所以即使角色
+与连接地址已按上一步写入 `deploy/compose.env`，本部署面的审计读取仍返回该 503；转发该
+变量的编排变体用同一个 `sn_audit_reader` 角色即可返回 `200` 与空列表。
+
 ### 已有部署的授权升级
 
 上面的脚本只适用于新建、独占的数据库；已有部署不重跑它的撤权与建角色部分。应用新迁移
 后，用同一个迁移 owner 连接对既有角色重放对应的授权函数即可，`GRANT` 是追加式操作，
-重复执行不改变既有权限：
+重复执行不改变既有权限。`0049_workspace_commands` 之后新增的工作区写角色与审计读取角色
+在既有部署上同样需要预置：下面的脚本先按需创建这两个角色，再重放全部相关授权。角色尚不
+存在时先按上文生成口令；已存在时改用其现有口令，脚本不会修改已存在角色的口令，用新生成
+的口令写连接地址会连不上。
 
 ```bash
-uv run python - <<'PY'
+uv run --all-packages python - <<'PY'
 import os
 
 import psycopg
+from psycopg import sql
 from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema import (
     gateway_abort_grants,
 )
 from speechnexus_backend.speech.infrastructure.gateway_query_grants import (
     gateway_query_grants,
 )
+from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import (
+    audit_reader_grants,
+)
+from speechnexus_backend.speech.infrastructure.workspace_schema import workspace_writer_grants
 
 schema = "speech"
+new_roles = {
+    "sn_workspace_writer": os.environ["SPEECHNEXUS_WORKSPACE_WRITER_ROLE_PASSWORD"],
+    "sn_audit_reader": os.environ["SPEECHNEXUS_AUDIT_READER_ROLE_PASSWORD"],
+}
 with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
+    for role, password in new_roles.items():
+        if conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)).fetchone():
+            continue
+        conn.execute(
+            sql.SQL("CREATE ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT")
+            .format(sql.Identifier(role))
+        )
+        conn.execute(
+            sql.SQL("ALTER ROLE {} PASSWORD {}").format(
+                sql.Identifier(role), sql.Literal(password)
+            )
+        )
     for statement in gateway_abort_grants(schema, "sn_gateway"):
         conn.execute(statement)
     for statement in gateway_query_grants(schema, "sn_gateway_query"):
         conn.execute(statement)
-print("gateway write and query grants refreshed")
+    for statement in workspace_writer_grants(schema, "sn_workspace_writer"):
+        conn.execute(statement)
+    for statement in audit_reader_grants(schema, "sn_audit_reader"):
+        conn.execute(statement)
+print("gateway, workspace writer and audit reader grants refreshed")
 PY
 ```
 
-两份授权须同时重放。查询角色的列集由网关按精确集合校验，漏掉 `gateway_query_grants`
-时控制面以 `invalid execution query reader authority` 拒绝启动；漏掉
-`gateway_abort_grants` 新增的尝试列时启动继续，但持久取消接收能力被关闭
-（fail-soft），网关不再接收新的取消。升级顺序：先迁移，再重放两份授权，最后启动
-服务；启动日志出现上述拒绝时停止服务并核对授权，不带病运行。
+两份 gateway 授权须同时重放。查询角色的列集由网关按精确集合校验，漏掉
+`gateway_query_grants` 时控制面以 `invalid execution query reader authority` 拒绝启动；
+漏掉 `gateway_abort_grants` 新增的尝试列时启动继续，但持久取消接收能力被关闭
+（fail-soft），网关不再接收新的取消。升级顺序：先迁移，再重放授权，最后启动
+服务；启动日志出现上述拒绝时停止服务并核对授权，不带病运行。工作区写与审计读取的
+授权同样在迁移后重放：漏掉 `workspace_writer_grants` 时 API 以
+`Workspace writer startup rejected` 拒绝启动，漏掉 `audit_reader_grants` 时以
+`Audit reader startup rejected` 拒绝启动；两个角色未配置连接地址时对应端点保持 503。
 
 Gateway query 身份仅取得六张执行恢复关系及安装身份表的必要列读取权，不得写产品或持久对象。
 原生 `pg_settings` 的默认会话参数 UPDATE 与 SET/set_config 属于会话能力，不作为
@@ -651,7 +775,7 @@ worker 要求 PostgreSQL 16 或更新版本，并在启动时拒绝可切换其�
 
 ```bash
 # SN_ADMIN_DSN 通过第 6 节所述的获准秘密渠道提供。
-uv run python - <<'PYROLE'
+uv run --all-packages python - <<'PYROLE'
 import os
 import psycopg
 from speechnexus_backend.speech.infrastructure.admission_postgres import binding_disable_admission_grants

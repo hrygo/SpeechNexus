@@ -229,6 +229,46 @@ def test_audio_mode_requires_the_inspector_token() -> None:
         build_asset_inspector(_audio_settings(asset_inspection_token=None))
 
 
+@pytest.mark.parametrize("token", ["", "   ", "\t\n"])
+def test_audio_mode_treats_a_blank_token_as_unconfigured(token: str) -> None:
+    """An empty or whitespace-only token is absence, not an unauthenticated caller.
+
+    Compose forwards ``SPEECHNEXUS_ASSET_INSPECTION_TOKEN=""`` for a key it does
+    not set, so a blank value must stop startup naming the variable instead of
+    starting and sending ``Authorization: Bearer `` — answered 401 by the
+    inspector and reported as a runtime ``503 asset_inspection_unavailable``.
+    """
+    with pytest.raises(ValueError) as caught:
+        build_asset_inspector(_audio_settings(asset_inspection_token=token))
+    message = str(caught.value)
+    assert "SPEECHNEXUS_ASSET_INSPECTION_TOKEN" in message
+    assert "SPEECHNEXUS_ASSET_INSPECTION_URL" not in message
+
+
+def test_audio_mode_rejects_a_blank_token_without_settings_normalization() -> None:
+    """The composition root keeps its own blank check.
+
+    ``Settings`` maps a blank token to ``None`` through one validator shared with
+    unrelated optional settings. The constructor promise "audio fails startup
+    naming the variable" must not depend on that normalization: narrowing it
+    would let a whitespace-only token start the API.
+    """
+    settings = Settings.model_construct(
+        **(_audio_settings().model_dump() | {"asset_inspection_token": SecretStr("   ")})
+    )
+    with pytest.raises(ValueError, match="SPEECHNEXUS_ASSET_INSPECTION_TOKEN"):
+        build_asset_inspector(settings)
+
+
+def test_audio_mode_rejects_an_empty_url_as_unconfigured() -> None:
+    """A blank URL is absence too, and the message names the variable."""
+    with pytest.raises(ValueError) as caught:
+        build_asset_inspector(_audio_settings(asset_inspection_url=""))
+    message = str(caught.value)
+    assert "SPEECHNEXUS_ASSET_INSPECTION_URL" in message
+    assert "SPEECHNEXUS_ASSET_INSPECTION_TOKEN" not in message
+
+
 def test_audio_mode_requires_a_url_and_a_token_together() -> None:
     """One half of the pair never silently configures an unauthenticated caller."""
     with pytest.raises(ValueError, match="SPEECHNEXUS_ASSET_INSPECTION_TOKEN"):

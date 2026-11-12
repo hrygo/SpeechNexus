@@ -109,6 +109,7 @@ service-smoke:
 stack-config:
 	docker compose --env-file deploy/compose.env.example -f deploy/compose.yaml config --quiet
 	docker compose --env-file deploy/compose.env.example -f deploy/compose.yaml --profile job-dispatch config --quiet
+	docker compose --env-file deploy/compose.env.example -f deploy/compose.yaml --profile asset-inspection config --quiet
 
 format:
 	uv run ruff format .

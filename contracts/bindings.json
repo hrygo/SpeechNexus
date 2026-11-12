@@ -62,7 +62,9 @@
         "ProfilePublishedRevision",
         "ModelBindingActivationRequest",
         "ResourcePool",
-        "ResourcePoolList"
+        "ResourcePoolList",
+        "CapacityManifestRecord",
+        "QualificationReportRecord"
       ]
     },
     "workbench": {

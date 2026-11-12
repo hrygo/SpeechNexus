@@ -1,17 +1,18 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus administration API
-  version: 0.1.0.dev7
+  version: 0.1.0.dev8
   description: |
     Deployment-scoped administration and observation API. These routes do not
     establish a user identity, role, or tenant boundary. A deployment may expose
     them on a separate listener or route allowlist, but the API itself must not
     pretend that hiding a navigation entry is authorization.
 
-    Model binding revisions, runtime instances, capacity manifests, and
-    qualification reports are separate resources. No response exposes private
-    artifact paths, engine endpoints, credentials, or arbitrary container
-    control.
+    Model binding revisions and runtime instances are separate resources.
+    Capacity manifest and qualification report documents stay in the release
+    evidence chain; the admin API exposes only their recorded identity and
+    locator. No response exposes private artifact paths, engine endpoints,
+    credentials, or arbitrary container control.
 servers:
   - url: /
 security:
@@ -24,7 +25,6 @@ tags:
   - name: model-instances
   - name: resource-pools
   - name: quarantine
-  - name: policies
   - name: diagnostics
   - name: audit
 paths:
@@ -903,7 +903,13 @@ paths:
     get:
       tags: [model-bindings]
       operationId: getCapacityManifest
-      summary: Get an immutable capacity manifest
+      summary: Get a recorded capacity manifest reference
+      description: |
+        Returns the recorded identity of one immutable capacity manifest: its
+        identifier, document digest, recording time, and release-evidence
+        locator. The manifest body is not stored or copied here; it remains the
+        authoritative document in the release evidence chain and is resolved
+        offline by scripts/dev-env/verify-release-evidence.py.
       parameters:
         - name: manifest_id
           in: path
@@ -913,14 +919,14 @@ paths:
         - $ref: "#/components/parameters/XRequestId"
       responses:
         "200":
-          description: Capacity manifest.
+          description: Recorded capacity manifest reference.
           headers:
             X-Request-ID:
               $ref: "#/components/headers/XRequestId"
           content:
             application/json:
               schema:
-                $ref: "./capacity-manifest.schema.json"
+                $ref: "#/components/schemas/CapacityManifestRecord"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -929,7 +935,13 @@ paths:
     get:
       tags: [model-bindings]
       operationId: getQualificationReport
-      summary: Get a qualification report
+      summary: Get a recorded qualification report reference
+      description: |
+        Returns the recorded identity of one deployment qualification report:
+        its identifier, document digest, recording time, and release-evidence
+        locator. The report body is not stored or copied here; it remains the
+        authoritative document in the release evidence chain and is resolved
+        offline by scripts/dev-env/verify-release-evidence.py.
       parameters:
         - name: report_id
           in: path
@@ -939,14 +951,14 @@ paths:
         - $ref: "#/components/parameters/XRequestId"
       responses:
         "200":
-          description: Qualification report.
+          description: Recorded qualification report reference.
           headers:
             X-Request-ID:
               $ref: "#/components/headers/XRequestId"
           content:
             application/json:
               schema:
-                $ref: "./qualification-report.schema.json"
+                $ref: "#/components/schemas/QualificationReportRecord"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -1058,89 +1070,6 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
-  /v1/nexus/admin/policies:
-    get:
-      tags: [policies]
-      operationId: listPolicies
-      summary: List deployment and workspace policies
-      parameters:
-        - $ref: "#/components/parameters/Cursor"
-        - $ref: "#/components/parameters/Limit"
-        - $ref: "#/components/parameters/WorkspaceIdQuery"
-        - $ref: "#/components/parameters/XRequestId"
-      responses:
-        "200":
-          description: Policies.
-          headers:
-            X-Request-ID:
-              $ref: "#/components/headers/XRequestId"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PolicyList"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "503":
-          $ref: "#/components/responses/ServiceUnavailable"
-  /v1/nexus/admin/policies/{policy_id}:
-    get:
-      tags: [policies]
-      operationId: getPolicy
-      summary: Get current policy revision
-      parameters:
-        - $ref: "#/components/parameters/PolicyIdPath"
-        - $ref: "#/components/parameters/XRequestId"
-      responses:
-        "200":
-          description: Policy.
-          headers:
-            X-Request-ID:
-              $ref: "#/components/headers/XRequestId"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Policy"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-    patch:
-      tags: [policies]
-      operationId: updatePolicy
-      summary: Create a new policy revision
-      description: |
-        The request carries `expected_revision`. A mismatch returns 409
-        `configuration_changed`. Governance changes are not inference overrides.
-      parameters:
-        - $ref: "#/components/parameters/PolicyIdPath"
-        - $ref: "#/components/parameters/XRequestId"
-        - $ref: "#/components/parameters/IdempotencyKey"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PolicyPatch"
-      responses:
-        "200":
-          description: New policy revision.
-          headers:
-            X-Request-ID:
-              $ref: "#/components/headers/XRequestId"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Policy"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
-        "422":
-          $ref: "#/components/responses/UnprocessableEntity"
   /v1/nexus/admin/diagnostics:
     get:
       tags: [diagnostics]
@@ -1170,11 +1099,16 @@ paths:
     get:
       tags: [audit]
       operationId: listAuditEvents
-      summary: List anonymous or shared-credential operation records
+      summary: List model binding lifecycle audit events
+      description: |
+        Returns the append-only audit events recorded for model binding
+        lifecycle changes. The audit table stores only `kind=binding` events;
+        profile, workspace, and policy changes currently produce no audit
+        events, so this endpoint cannot return them. The `action` filter
+        matches one recorded action exactly.
       parameters:
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
-        - $ref: "#/components/parameters/WorkspaceIdQuery"
         - name: action
           in: query
           required: false
@@ -1236,12 +1170,6 @@ components:
         minimum: 1
         maximum: 100
         default: 50
-    WorkspaceIdQuery:
-      name: workspace_id
-      in: query
-      required: false
-      schema:
-        $ref: "#/components/schemas/Identifier"
     WorkspaceIdPath:
       name: workspace_id
       in: path
@@ -1266,12 +1194,6 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/Revision"
-    PolicyIdPath:
-      name: policy_id
-      in: path
-      required: true
-      schema:
-        $ref: "#/components/schemas/Identifier"
     LeaseIdPath:
       name: lease_id
       in: path
@@ -1328,7 +1250,7 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     UnprocessableEntity:
-      description: Invalid binding, capacity, qualification, or policy composition.
+      description: Invalid binding, capacity, or qualification composition.
       content:
         application/json:
           schema:
@@ -1966,122 +1888,56 @@ components:
           description: Sorted lexicographically for stable idempotent responses. Producer validation rejects unsorted or repeated values.
           items:
             $ref: "#/components/schemas/Identifier"
-    PolicyQuotas:
+    CapacityManifestRecord:
       type: object
       additionalProperties: false
-      properties:
-        max_concurrent_jobs:
-          type: [integer, "null"]
-          minimum: 0
-        max_realtime_sessions:
-          type: [integer, "null"]
-          minimum: 0
-        max_queue_wait_ms:
-          type: [integer, "null"]
-          minimum: 0
-    PolicyRetention:
-      type: object
-      additionalProperties: false
-      properties:
-        asset_ttl_seconds:
-          type: integer
-          minimum: 60
-        artifact_ttl_seconds:
-          type: integer
-          minimum: 60
-        job_event_ttl_seconds:
-          type: integer
-          minimum: 60
-    PolicyQuotasPatch:
-      allOf:
-        - $ref: "#/components/schemas/PolicyQuotas"
-        - type: object
-          minProperties: 1
-    PolicyRetentionPatch:
-      allOf:
-        - $ref: "#/components/schemas/PolicyRetention"
-        - type: object
-          minProperties: 1
-    PolicyFeatures:
-      type: object
-      additionalProperties: false
-      required: [workbench_enabled, llm_enabled, voice_creation_enabled]
-      properties:
-        workbench_enabled:
-          type: boolean
-        llm_enabled:
-          type: boolean
-        voice_creation_enabled:
-          type: boolean
-    PolicyFeaturesPatch:
-      type: object
-      additionalProperties: false
-      minProperties: 1
-      properties:
-        workbench_enabled:
-          type: boolean
-        llm_enabled:
-          type: boolean
-        voice_creation_enabled:
-          type: boolean
-    Policy:
-      type: object
-      additionalProperties: false
-      required: [id, object, revision, scope, quotas, retention, features, updated_at]
+      required: [id, digest, recorded_at, source]
       properties:
         id:
           $ref: "#/components/schemas/Identifier"
-        object:
-          const: nexus.policy
-        revision:
-          $ref: "#/components/schemas/Revision"
-        scope:
-          type: object
-          additionalProperties: false
-          required: [workspace_id]
-          properties:
-            workspace_id:
-              oneOf:
-                - $ref: "#/components/schemas/Identifier"
-                - type: "null"
-        quotas:
-          $ref: "#/components/schemas/PolicyQuotas"
-        retention:
-          $ref: "#/components/schemas/PolicyRetention"
-        features:
-          $ref: "#/components/schemas/PolicyFeatures"
-        updated_at:
+        digest:
+          $ref: "#/components/schemas/Sha256Digest"
+          description: SHA-256 of the authoritative capacity manifest document bytes.
+        recorded_at:
           type: string
           format: date-time
-    PolicyList:
+          description: When the deployment recorded this evidence identity.
+        source:
+          type: string
+          minLength: 1
+          maxLength: 256
+          pattern: '^release-evidence://[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9._-]*/capacity-manifest\.json$'
+          description: |
+            Release-evidence locator of the authoritative document:
+            `release-evidence://<engine>/<evidence-bundle>/capacity-manifest.json`.
+            It maps to `deploy/engines/<engine>/evidence/<evidence-bundle>/` and
+            is resolved offline by scripts/dev-env/verify-release-evidence.py.
+            The response never embeds or copies the document body.
+    QualificationReportRecord:
       type: object
       additionalProperties: false
-      required: [object, data, has_more, next_cursor]
+      required: [id, digest, recorded_at, source]
       properties:
-        object:
-          const: nexus.list
-        data:
-          type: array
-          items:
-            $ref: "#/components/schemas/Policy"
-        has_more:
-          type: boolean
-        next_cursor:
-          type: [string, "null"]
-    PolicyPatch:
-      type: object
-      additionalProperties: false
-      minProperties: 2
-      required: [expected_revision]
-      properties:
-        expected_revision:
-          $ref: "#/components/schemas/Revision"
-        quotas:
-          $ref: "#/components/schemas/PolicyQuotasPatch"
-        retention:
-          $ref: "#/components/schemas/PolicyRetentionPatch"
-        features:
-          $ref: "#/components/schemas/PolicyFeaturesPatch"
+        id:
+          $ref: "#/components/schemas/Identifier"
+        digest:
+          $ref: "#/components/schemas/Sha256Digest"
+          description: SHA-256 of the authoritative qualification report document bytes.
+        recorded_at:
+          type: string
+          format: date-time
+          description: When the deployment recorded this evidence identity.
+        source:
+          type: string
+          minLength: 1
+          maxLength: 256
+          pattern: '^release-evidence://[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9._-]*/qualification-report\.json$'
+          description: |
+            Release-evidence locator of the authoritative document:
+            `release-evidence://<engine>/<evidence-bundle>/qualification-report.json`.
+            It maps to `deploy/engines/<engine>/evidence/<evidence-bundle>/` and
+            is resolved offline by scripts/dev-env/verify-release-evidence.py.
+            The response never embeds or copies the document body.
     Diagnostics:
       type: object
       additionalProperties: false

@@ -70,5 +70,15 @@ def parse(name: Literal["ResourcePool"], value: Any) -> models.ResourcePool: ...
 def parse(name: Literal["ResourcePoolList"], value: Any) -> models.ResourcePoolList: ...
 
 
+@overload
+def parse(name: Literal["CapacityManifestRecord"], value: Any) -> models.CapacityManifestRecord: ...
+
+
+@overload
+def parse(
+    name: Literal["QualificationReportRecord"], value: Any
+) -> models.QualificationReportRecord: ...
+
+
 def parse(name: str, value: Any) -> Any:
     return validate_profile("admin", name, value)

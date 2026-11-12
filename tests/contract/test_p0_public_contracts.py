@@ -601,7 +601,6 @@ def test_public_specs_validate_and_declare_openai_compatible_paths() -> None:
         "/v1/nexus/admin/qualification-reports/{report_id}",
         "/v1/nexus/admin/resource-pools",
         "/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases",
-        "/v1/nexus/admin/policies",
         "/v1/nexus/admin/diagnostics",
         "/v1/nexus/audit-events",
     } <= set(admin["paths"])
@@ -2107,14 +2106,14 @@ def test_audit_change_summary_records_field_names_without_payloads() -> None:
         "object": "nexus.audit_event",
         "actor_type": "anonymous",
         "request_id": "req-audit-demo",
-        "action": "policy.update",
-        "resource_type": "policy",
-        "resource_id": "policy-deployment",
+        "action": "model_binding.retire",
+        "resource_type": "model_binding",
+        "resource_id": "binding-asr-quality",
         "occurred_at": "2026-10-23T00:00:00Z",
         "policy_revision": "7",
         "change_summary": {
-            "changed_fields": ["/quotas/max_concurrent_jobs", "/features/llm_enabled"],
-            "reason": "increase admitted concurrency",
+            "changed_fields": ["/status", "/retired_at"],
+            "reason": "replace the experimental revision",
         },
     }
     validator.validate(event)
@@ -3741,18 +3740,31 @@ def test_openapi_request_schemas_reject_unknown_fields() -> None:
         with pytest.raises(ValidationError):
             pronunciation_validator.validate(incomplete)
 
-    policy_patch_validator = _component_validator(_resolved_yaml(_ADMIN_OPENAPI), "PolicyPatch")
-    policy_patch_validator.validate(
-        {"expected_revision": "2", "features": {"workbench_enabled": False}}
-    )
-    with pytest.raises(ValidationError):
-        policy_patch_validator.validate(
-            {"expected_revision": "2", "quotas": {"max_concurrent_job": 2}}
-        )
-    with pytest.raises(ValidationError):
-        policy_patch_validator.validate({"expected_revision": "2", "quotas": {}})
-    with pytest.raises(ValidationError):
-        policy_patch_validator.validate({"expected_revision": "2"})
+
+def test_evidence_responses_expose_only_a_reference_record() -> None:
+    """The admin surface records where evidence lives; it never copies the document."""
+    admin = _resolved_yaml(_ADMIN_OPENAPI)
+    for name, document in (
+        ("CapacityManifestRecord", "capacity-manifest.json"),
+        ("QualificationReportRecord", "qualification-report.json"),
+    ):
+        validator = _component_validator(admin, name)
+        record = {
+            "id": f"{name.lower()}-synthetic",
+            "digest": "sha256:" + "a" * 64,
+            "recorded_at": "2026-10-22T09:00:00Z",
+            "source": f"release-evidence://gb10/bundle-20261027/{document}",
+        }
+        validator.validate(record)
+        for removed in ("topology_ref", "topology", "resource_envelope", "software", "scenarios"):
+            with pytest.raises(ValidationError):
+                validator.validate(record | {removed: {}})
+        with pytest.raises(ValidationError):
+            validator.validate({key: value for key, value in record.items() if key != "source"})
+        with pytest.raises(ValidationError):
+            validator.validate(
+                record | {"source": f"deploy/engines/gb10/evidence/bundle/{document}"}
+            )
 
 
 def test_operation_result_status_is_separate_from_cleanup_state() -> None:

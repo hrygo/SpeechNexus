@@ -2722,7 +2722,7 @@
         }
       },
       "External_admin_openapi_yaml_UnprocessableEntity": {
-        "description": "Invalid binding, capacity, qualification, or policy composition.",
+        "description": "Invalid binding, capacity, or qualification composition.",
         "content": {
           "application/json": {
             "schema": {

@@ -1,8 +1,10 @@
-"""Parallelize the complete Python gate inside one runner, then enforce global coverage.
+"""Measure the complete Python gate in one job, then merge every lane's coverage.
 
 Each worker is hosted by the existing disposable-PG probe. Neither a passing
-fragment nor a collect-only report can replace complete execution and the 80%
-combined gate. No dependency, runner job, or shared database is added.
+fragment nor a collect-only report can replace complete execution. This job only
+measures and exports its data; the integration summary job merges the six
+partitions' data with it and enforces the unchanged global gate, so a partition
+that was skipped or exported nothing fails the gate instead of shrinking it.
 """
 
 from __future__ import annotations
@@ -25,6 +27,38 @@ from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[2]
 DRIVER = ROOT / "scripts/dev-env/workbench-pg-probe.py"
+COVERAGE_DATA_LIMIT = 32 * 1024 * 1024
+SUMMARY_FIELDS = frozenset(
+    {
+        "kind",
+        "source_head",
+        "config_digest",
+        "workers",
+        "tests_passed",
+        "stopped",
+        "collected",
+        "passed",
+        "coverage_parts",
+        "coverage_percent",
+    }
+)
+SHARD_REPORT_FIELDS = frozenset(
+    {
+        "version",
+        "source_head",
+        "shard_index",
+        "shard_count",
+        "collection_digest",
+        "collection",
+        "selected",
+        "outcomes",
+        "exit_code",
+        "executed",
+        "coverage_file",
+        "coverage_digest",
+        "elapsed_seconds",
+    }
+)
 FIELDS = {
     "version",
     "source_head",
@@ -250,29 +284,61 @@ def verify_reports(paths: Sequence[Path], *, head: str, count: int) -> tuple[lis
     return files, len(full)
 
 
-def combine_coverage(files: Sequence[Path], directory: Path) -> tuple[float, int]:
+def combined_config() -> Path:
+    return ROOT / "pyproject.toml"
+
+
+def require_branch_data(path: Path) -> str:
+    """One data file is only evidence if it carries branch arcs for real files."""
+    from coverage import CoverageData
+
+    if not path.is_file():
+        raise ValueError(f"Coverage data file is missing: {path.name}")
+    if not 0 < path.stat().st_size <= COVERAGE_DATA_LIMIT:
+        raise ValueError(f"Coverage data file is empty or oversized: {path.name}")
+    from coverage.exceptions import DataError
+
+    try:
+        data = CoverageData(basename=str(path))
+        data.read()
+        valid = data.has_arcs() and data.measured_files()
+    except DataError:
+        raise ValueError(f"Coverage data file is unreadable: {path.name}") from None
+    if not valid:
+        raise ValueError(f"Coverage data file has no branches or files: {path.name}")
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def combine_data(files: Sequence[Path], directory: Path) -> float:
+    """Combine explicit data files; the unchanged gate is reported by the caller."""
     from coverage import Coverage
 
     combined = directory / "coverage.data"
-    cov = Coverage(data_file=str(combined), config_file=str(ROOT / "pyproject.toml"))
+    cov = Coverage(
+        data_file=str(combined),
+        config_file=str(combined_config()),
+    )
     cov.combine(data_paths=[str(path) for path in files], strict=True, keep=True)
     cov.save()
-    percent = cov.json_report(outfile=str(directory / "coverage.json"))
-    gate = subprocess.run(
+    return cov.json_report(outfile=str(directory / "coverage.json"))
+
+
+def gate_report(directory: Path, *, rcfile: Path) -> int:
+    """Report through the project configuration, so fail_under stays authoritative."""
+    return subprocess.run(
         [
             sys.executable,
             "-m",
             "coverage",
             "report",
             "--rcfile",
-            str(ROOT / "pyproject.toml"),
+            str(rcfile),
             "--data-file",
-            str(combined),
+            str(directory / "coverage.data"),
         ],
         cwd=ROOT,
         check=False,
-    )
-    return percent, gate.returncode
+    ).returncode
 
 
 def prepare_shared_bucket() -> None:
@@ -304,13 +370,18 @@ def run_parallel(args: argparse.Namespace) -> int:
     head = source_head()
     directory = args.output.with_suffix("").with_name(args.output.stem + "-parts")
     directory.mkdir(parents=True)  # Never reuse unknown results from an earlier attempt.
+    config_digest = digest(combined_config())
     summary: dict[str, Any] = {
         "kind": "parallel-full-python-coverage",
         "source_head": head,
+        "config_digest": config_digest,
         "workers": args.workers,
         "tests_passed": False,
         "stopped": False,
-        "coverage_passed": False,
+        "collected": None,
+        "passed": None,
+        "coverage_parts": [],
+        "coverage_percent": None,
     }
     try:
         prepare_shared_bucket()
@@ -359,14 +430,162 @@ def run_parallel(args: argparse.Namespace) -> int:
         )
         if source_head() != head:
             raise ValueError("Source changed while the Python gate was executing")
+        if digest(combined_config()) != config_digest:
+            raise ValueError("Coverage configuration changed while the Python gate was executing")
         summary.update(tests_passed=True, stopped=True, collected=count, passed=count)
+        parts = []
         for index, path in enumerate(files):
-            shutil.copyfile(path, directory / f"coverage-{index}.data")
-        percent, code = combine_coverage(files, directory)
-        summary.update(coverage_percent=percent, coverage_passed=code == 0)
-        return code
+            copy = directory / f"coverage-{index}.data"
+            shutil.copyfile(path, copy)
+            parts.append({"index": index, "file": copy.name, "digest": require_branch_data(copy)})
+        # Measurement only: the merged judgment runs where all eight datasets exist.
+        # The combined probe stays beside (not inside) the exported parts directory,
+        # so the uploaded artifact holds only data files and execution logs.
+        combined = directory.with_name(directory.name + "-combined")
+        combined.mkdir()
+        percent = combine_data([directory / part["file"] for part in parts], combined)
+        summary.update(coverage_parts=parts, coverage_percent=percent)
+        return 0
     finally:
         args.output.write_text(json.dumps(summary, sort_keys=True, indent=2) + "\n")
+
+
+def verify_job_evidence(summary_path: Path, parts_dir: Path, *, head: str) -> list[Path]:
+    """The measured dataset must come from this source, configuration and full run."""
+    if summary_path.stat().st_size > 16 * 1024 * 1024:
+        raise ValueError("Python coverage summary is oversized")
+    data = json.loads(summary_path.read_text(encoding="utf-8"), object_pairs_hook=unique_fields)
+    if not isinstance(data, dict) or set(data) != SUMMARY_FIELDS:
+        raise ValueError("Python coverage summary has an unsupported shape")
+    if (
+        data["kind"] != "parallel-full-python-coverage"
+        or data["source_head"] != head
+        or data["config_digest"] != digest(combined_config())
+        or type(data["workers"]) is not int
+        or data["workers"] not in (1, 2)
+    ):
+        raise ValueError("Python coverage summary came from another source or configuration")
+    if (
+        data["tests_passed"] is not True
+        or data["stopped"] is not True
+        or type(data["collected"]) is not int
+        or type(data["passed"]) is not int
+        or data["collected"] < 1
+        or data["passed"] != data["collected"]
+    ):
+        raise ValueError("Python coverage summary lacks complete, stopped execution evidence")
+    parts = data["coverage_parts"]
+    if not isinstance(parts, list) or len(parts) != data["workers"]:
+        raise ValueError("Python coverage summary does not list every worker dataset")
+    files: list[Path] = []
+    indices: set[int] = set()
+    for part in parts:
+        if not isinstance(part, dict) or set(part) != {"index", "file", "digest"}:
+            raise ValueError("Python coverage summary has an unsupported worker entry")
+        index = part["index"]
+        if type(index) is not int or index in indices or not 0 <= index < data["workers"]:
+            raise ValueError("Python coverage summary has a duplicate or invalid worker")
+        indices.add(index)
+        if part["file"] != f"coverage-{index}.data":
+            raise ValueError("Python worker coverage data has an unexpected name")
+        path = parts_dir / part["file"]
+        try:
+            part_digest = require_branch_data(path)
+        except ValueError:
+            raise ValueError(f"Python worker {index} coverage data is missing or invalid") from None
+        if part_digest != part["digest"]:
+            raise ValueError(f"Python worker {index} coverage data is changed")
+        files.append(path)
+    if indices != set(range(data["workers"])):
+        raise ValueError("Python coverage summary omitted a worker dataset")
+    return sorted(files, key=lambda path: path.name)
+
+
+def verify_shard_evidence(directory: Path, count: int, *, head: str) -> list[Path]:
+    """Every partition must contribute its own dataset; none may be silently absent."""
+    if type(count) is not int or not 1 <= count <= 16:
+        raise ValueError("Invalid integration partition count")
+    expected = {f"coverage-{index}.data" for index in range(count)}
+    if {path.name for path in directory.glob("coverage-*.data")} - expected:
+        raise ValueError("Unexpected integration coverage data is present")
+    files: list[Path] = []
+    for index in range(count):
+        report = directory / f"integration-shard-{index}.json"
+        if not report.is_file():
+            raise ValueError(f"Missing integration coverage evidence for shard {index}")
+        data = json.loads(report.read_text(encoding="utf-8"), object_pairs_hook=unique_fields)
+        if not isinstance(data, dict) or set(data) != SHARD_REPORT_FIELDS:
+            raise ValueError(f"Integration shard {index} report has an unsupported shape")
+        if (
+            type(data["version"]) is not int
+            or data["version"] != 2
+            or data["source_head"] != head
+            or type(data["shard_index"]) is not int
+            or data["shard_index"] != index
+            or type(data["shard_count"]) is not int
+            or data["shard_count"] != count
+        ):
+            raise ValueError(f"Integration shard {index} report has a different identity")
+        if (
+            data["executed"] is not True
+            or type(data["exit_code"]) is not int
+            or data["exit_code"] != 0
+        ):
+            raise ValueError(f"Integration shard {index} did not execute successfully")
+        name = f"coverage-{index}.data"
+        if data["coverage_file"] != name:
+            raise ValueError(f"Integration shard {index} reported unexpected coverage data")
+        path = directory / name
+        try:
+            shard_digest = require_branch_data(path)
+        except ValueError:
+            raise ValueError(
+                f"Integration shard {index} coverage data is missing or invalid"
+            ) from None
+        if shard_digest != data["coverage_digest"]:
+            raise ValueError(f"Integration shard {index} coverage data is changed")
+        files.append(path)
+    return files
+
+
+def run_combine(args: argparse.Namespace) -> int:
+    """Merge the measured dataset with all integration partitions, then judge once."""
+    head = source_head()
+    rcfile = (args.probe_rcfile or combined_config()).resolve()
+    output = args.output.resolve()
+    if output.exists() or output.is_symlink():
+        raise ValueError("Merged coverage output must be new")
+    output.mkdir(parents=True)
+    summary: dict[str, Any] = {
+        "kind": "merged-python-coverage-gate",
+        "source_head": head,
+        "config_digest": digest(combined_config()),
+        "job_parts": 0,
+        "shards": 0,
+        "coverage_percent": None,
+        "coverage_passed": False,
+    }
+    try:
+        measured = verify_job_evidence(args.job_summary, args.job_parts, head=head)
+        shards = verify_shard_evidence(args.integration_dir, args.count, head=head)
+        percent = combine_data([*measured, *shards], output)
+        code = gate_report(output, rcfile=rcfile)
+        summary.update(
+            job_parts=len(measured),
+            shards=len(shards),
+            coverage_percent=percent,
+            coverage_passed=code == 0,
+        )
+        print(
+            f"Merged {len(measured)} measured dataset(s) and {len(shards)} integration "
+            f"partition(s): {percent:.4f}% covered.",
+            flush=True,
+        )
+        return code
+    finally:
+        (output / "merged.json").write_text(
+            json.dumps(summary, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+        )
 
 
 def main() -> int:
@@ -381,9 +600,26 @@ def main() -> int:
     worker.add_argument("--count", type=int, required=True)
     worker.add_argument("--report", type=Path, required=True)
     worker.add_argument("pytest_options", nargs=argparse.REMAINDER)
+    combine = commands.add_parser(
+        "combine", help="merge the measured and integration datasets and enforce the gate"
+    )
+    combine.add_argument("--job-summary", type=Path, required=True)
+    combine.add_argument("--job-parts", type=Path, required=True)
+    combine.add_argument("--integration-dir", type=Path, required=True)
+    combine.add_argument("--count", type=int, required=True)
+    combine.add_argument("--output", type=Path, required=True)
+    combine.add_argument(
+        "--probe-rcfile",
+        type=Path,
+        help="alternate coverage configuration for local reproduction only; CI never passes it",
+    )
     args = parser.parse_args()
     try:
-        return run_worker(args) if args.command == "worker" else run_parallel(args)
+        if args.command == "run":
+            return run_parallel(args)
+        if args.command == "worker":
+            return run_worker(args)
+        return run_combine(args)
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError) as error:
         print(f"Python coverage rejected: {type(error).__name__}: {error}", file=sys.stderr)
         return 1

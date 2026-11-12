@@ -172,7 +172,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: ./scripts/dev-env/minio-test-service.sh
 
-      - name: Run Python unit, contract, CI and Workbench PG tests with combined coverage
+      - name: Measure Python unit, contract, CI and Workbench PG tests for the merged gate
         id: coverage
         env:
           SPEECHNEXUS_TEST_MINIO_ENDPOINT: http://127.0.0.1:59000
@@ -429,6 +429,7 @@ jobs:
             --pg-bin /usr/lib/postgresql/16/bin \
             --integration-shard "${{ matrix.shard }}" --shard-count 6 \
             --shard-report "$RUNNER_TEMP/integration-shard-${{ matrix.shard }}.json" \
+            --shard-coverage "$RUNNER_TEMP/coverage-${{ matrix.shard }}.data" \
             --output "$RUNNER_TEMP/workbench-pg-shard-${{ matrix.shard }}.json"
 
       - name: Publish integration partition timing
@@ -481,17 +482,23 @@ jobs:
           path: |
             ${{ runner.temp }}/integration-shard-${{ matrix.shard }}.json
             ${{ runner.temp }}/workbench-pg-shard-${{ matrix.shard }}.json
+            ${{ runner.temp }}/coverage-${{ matrix.shard }}.data
           if-no-files-found: error
           retention-days: 7
           overwrite: true
 
-  # Full scope still requires actual execution and a complete, disjoint inventory.
+  # Full scope still requires actual execution, a complete disjoint inventory, and
+  # one coverage judgment over the measured dataset plus all six partitions. The
+  # gate keeps failing closed: absent shards or absent coverage data stop it exactly
+  # like a test failure does.
   coordination:
-    name: "Gate: six-shard integration evidence"
-    needs: [changes, integration_shards]
+    name: "Gate: six-shard integration evidence and merged coverage"
+    needs: [changes, python_checks, integration_shards]
     if: ${{ always() && needs.changes.result == 'success' && needs.changes.outputs.mode == 'full' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 2
+    # Setup and a locked install are new here: the merged judgment needs the same
+    # coverage version the measurement used. Download plus combine stay in seconds.
+    timeout-minutes: 10
     permissions:
       contents: read
       actions: read
@@ -505,10 +512,30 @@ jobs:
             exit 1
           fi
 
+      - name: Require the Python coverage measurement
+        env:
+          MEASUREMENT_RESULT: ${{ needs.python_checks.result }}
+        run: |
+          if [[ "$MEASUREMENT_RESULT" != success ]]; then
+            echo "::error::Python coverage measurement=$MEASUREMENT_RESULT"
+            exit 1
+          fi
+
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          prune-cache: true
+
+      - name: Install locked dependencies for the coverage judgment
+        run: uv sync --locked --all-packages --all-groups
 
       - name: Download integration partition evidence
         # The Node action hung after successful downloads in both client modes.
@@ -520,13 +547,69 @@ jobs:
         run: |
           python3 scripts/dev-env/download-integration-evidence.py \
             --repository "$CI_REPOSITORY" --run-id "$CI_RUN_ID" \
-            --count 6 --output "$RUNNER_TEMP/integration-shards"
+            --count 6 --output "$RUNNER_TEMP/integration-shards" \
+            --coverage-output "$RUNNER_TEMP/coverage-evidence"
 
       - name: Verify same-commit collection, partition coverage and actual test outcomes
         run: |
           python3 scripts/dev-env/integration-shards.py check \
             --count 6 --head "$(git rev-parse HEAD)" \
             --reports-dir "$RUNNER_TEMP/integration-shards"
+
+      - name: Merge the measured and integration coverage and enforce the unchanged gate
+        # Measured dataset plus six partition datasets, then one report through
+        # pyproject.toml. Missing or digest-divergent data fails before any report.
+        run: |
+          uv run python scripts/dev-env/python-coverage.py combine \
+            --job-summary "$RUNNER_TEMP/coverage-evidence/workbench-pg-coverage.json" \
+            --job-parts "$RUNNER_TEMP/coverage-evidence/workbench-pg-coverage-parts" \
+            --integration-dir "$RUNNER_TEMP/integration-shards" \
+            --count 6 --output "$RUNNER_TEMP/coverage-merge"
+
+      - name: Publish the merged coverage result
+        # Observation only: reads what the judgment above wrote and never decides.
+        if: ${{ always() }}
+        run: |
+          python3 - "$RUNNER_TEMP/coverage-merge/merged.json" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          entry = {"Merged data sources": "unavailable", "Merged coverage": "unavailable",
+                   "fail_under=80": "unavailable"}
+          path = Path(sys.argv[1])
+          try:
+              data = json.loads(path.read_text(encoding="utf-8"))
+              sources = data["job_parts"] + data["shards"]
+              entry["Merged data sources"] = f"{data['job_parts']} measured + {data['shards']} shard = {sources}"
+              percent = data["coverage_percent"]
+              if isinstance(percent, (int, float)):
+                  entry["Merged coverage"] = f"{percent:.4f}%"
+              entry["fail_under=80"] = "passed" if data["coverage_passed"] else "failed"
+          except (OSError, KeyError, TypeError, ValueError):
+              pass
+          lines = ["### Merged Python coverage gate", "", "| metric | value |", "| --- | --- |"]
+          lines.extend(f"| {name} | {value} |" for name, value in entry.items())
+          lines.extend([
+              "",
+              "The six integration partitions are the only source of integration-only",
+              "coverage; a missing dataset fails this gate instead of shrinking it.",
+              "",
+          ])
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as output:
+              output.write("\n".join(lines))
+          PY
+
+      - name: Preserve merged coverage evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: merged-python-coverage
+          path: ${{ runner.temp }}/coverage-merge/
+          if-no-files-found: warn
+          retention-days: 7
+          overwrite: true
 
       - name: Publish per-shard timing comparison
         # Observation only: reads the evidence downloaded above and never gates.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -111,8 +112,9 @@ def test_integration_evidence_uses_bounded_same_run_cli_with_read_only_access() 
     job = _WORKFLOW["jobs"]["coordination"]
     assert _WORKFLOW["permissions"] == {"contents": "read"}
     assert job["permissions"] == {"contents": "read", "actions": "read"}
-    assert job["timeout-minutes"] == 2
-    assert set(job["needs"]) == {"changes", "integration_shards"}
+    # Setup plus a locked install precede the merge; the judgment itself is seconds.
+    assert job["timeout-minutes"] == 10
+    assert set(job["needs"]) == {"changes", "integration_shards", "python_checks"}
     step = next(s for s in job["steps"] if "download-integration-evidence.py" in s.get("run", ""))
     assert step["env"] == {
         "GH_TOKEN": "${{ github.token }}",
@@ -121,12 +123,71 @@ def test_integration_evidence_uses_bounded_same_run_cli_with_read_only_access() 
     }
     assert '--repository "$CI_REPOSITORY" --run-id "$CI_RUN_ID"' in step["run"]
     assert '--count 6 --output "$RUNNER_TEMP/integration-shards"' in step["run"]
+    assert '--coverage-output "$RUNNER_TEMP/coverage-evidence"' in step["run"]
     assert not any("actions/download-artifact@" in s.get("uses", "") for s in job["steps"])
     assert "if" not in step and "continue-on-error" not in step
     check = job["steps"][job["steps"].index(step) + 1]
     assert "scripts/dev-env/integration-shards.py check" in check["run"]
     assert '--count 6 --head "$(git rev-parse HEAD)"' in check["run"]
     assert "if" not in check and "continue-on-error" not in check
+    merge = job["steps"][job["steps"].index(check) + 1]
+    assert "uv run python scripts/dev-env/python-coverage.py combine" in merge["run"]
+    assert (
+        '--job-summary "$RUNNER_TEMP/coverage-evidence/workbench-pg-coverage.json"' in merge["run"]
+    )
+    assert (
+        '--job-parts "$RUNNER_TEMP/coverage-evidence/workbench-pg-coverage-parts"' in merge["run"]
+    )
+    assert '--integration-dir "$RUNNER_TEMP/integration-shards"' in merge["run"]
+    assert '--count 6 --output "$RUNNER_TEMP/coverage-merge"' in merge["run"]
+    # The gate must never be redirected to a different configuration or threshold.
+    assert "--probe-rcfile" not in merge["run"] and "--fail-under" not in merge["run"]
+    assert "if" not in merge and "continue-on-error" not in merge
+
+
+def test_merging_needs_both_evidence_sets_and_fails_closed_without_them() -> None:
+    job = _WORKFLOW["jobs"]["coordination"]
+    steps = job["steps"]
+    shards = next(step for step in steps if step.get("name") == "Require every integration shard")
+    assert shards["env"] == {"SHARDS_RESULT": "${{ needs.integration_shards.result }}"}
+    measurement = next(
+        step for step in steps if step.get("name") == "Require the Python coverage measurement"
+    )
+    assert measurement["env"] == {"MEASUREMENT_RESULT": "${{ needs.python_checks.result }}"}
+    for state in _STATES:
+        passed = subprocess.run(
+            ["bash", "-e", "-c", measurement["run"]],
+            env={**os.environ, "MEASUREMENT_RESULT": state},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert (passed.returncode == 0) == (state == "success")
+    # Coverage judgment is composed here, so the final gate already requires it.
+    python_gate = _WORKFLOW["jobs"]["python"]
+    assert "coordination" in python_gate["needs"]
+    assert _EXPECTED["full"]["COORDINATION_RESULT"] == "success"
+
+
+def test_measured_coverage_is_exported_and_each_shard_uploads_its_dataset() -> None:
+    execution = _WORKFLOW["jobs"]["python_checks"]
+    steps = execution["steps"]
+    coverage = next(step for step in steps if step.get("id") == "coverage")
+    assert "uv run python scripts/dev-env/python-coverage.py run" in coverage["run"]
+    artifact = next(
+        step for step in steps if step.get("with", {}).get("name") == "workbench-pg-full-coverage"
+    )
+    assert artifact["with"]["if-no-files-found"] == "error"
+    shards = _WORKFLOW["jobs"]["integration_shards"]
+    run = next(step for step in shards["steps"] if "--integration-shard" in step.get("run", ""))
+    assert '--shard-coverage "$RUNNER_TEMP/coverage-${{ matrix.shard }}.data"' in run["run"]
+    evidence = next(
+        step
+        for step in shards["steps"]
+        if step.get("name") == "Preserve integration partition evidence"
+    )
+    assert evidence["with"]["if-no-files-found"] == "error"
+    assert "${{ runner.temp }}/coverage-${{ matrix.shard }}.data" in evidence["with"]["path"]
 
 
 def _run_gate(

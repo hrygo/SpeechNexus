@@ -1,8 +1,10 @@
 """Run complete integration partitions; verify their union using only the stdlib.
 
-The check subcommand also runs on the GitHub runner's system Python (3.12).
-The requirements and run commands import pytest. Reports contain test identities, not DSNs,
-credentials, request bodies, or captured test output.
+Every partition also exports the coverage data its own pytest run measures, so the
+global gate is judged on one dataset instead of on the fraction the Python job can
+reach. The check subcommand also runs on the GitHub runner's system Python (3.12).
+The requirements and run commands import pytest. Reports contain test identities and
+coverage digests, not DSNs, credentials, request bodies, or captured test output.
 """
 
 from __future__ import annotations
@@ -36,12 +38,21 @@ FIELDS = frozenset(
         "outcomes",
         "exit_code",
         "executed",
+        "coverage_file",
+        "coverage_digest",
         "elapsed_seconds",
     }
 )
+# A partition exports its own coverage database as a named file rather than a bare
+# `.coverage`, so the artifact member and the evidence are both self-describing and
+# the summary job combines explicit paths instead of discovering parallel data files.
+COVERAGE_FILE_PATTERN = re.compile(r"coverage-(\d+)\.data")
+COVERAGE_DATA_LIMIT = 32 * 1024 * 1024
+COVERAGE_OPTIONS = ("--cov", "--cov-fail-under=0", "--cov-report=")
 # The directory may also hold live progress or other sidecars; only the exact
 # report names are evidence.
 REPORT_NAME_PATTERN = re.compile(r"integration-shard-\d+\.json")
+
 
 # One Web/Chromium or Node-contract case costs several ordinary DB cases: the
 # browser cases drive the production bundles and the Node consumers build the
@@ -289,7 +300,7 @@ def verify_reports(paths: Sequence[Path], *, source_head: str, count: int) -> Ev
         data = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique)
         if not isinstance(data, dict) or set(data) != FIELDS:
             raise ValueError("Integration report has an unsupported shape")
-        if type(data["version"]) is not int or data["version"] != 1:
+        if type(data["version"]) is not int or data["version"] != 2:
             raise ValueError("Integration report has an unsupported version")
         if (
             data["source_head"] != source_head
@@ -317,6 +328,23 @@ def verify_reports(paths: Sequence[Path], *, source_head: str, count: int) -> Ev
             or data["exit_code"] != 0
         ):
             raise ValueError("Collect-only, failed, cancelled or incomplete shards cannot pass")
+        # The coverage database is part of this shard's evidence: its name is bound
+        # to the shard index and its digest proves the file being merged is the one
+        # the partition reported. A shard that measured nothing cannot pass.
+        expected_coverage = f"coverage-{index}.data"
+        reported_coverage = data["coverage_file"]
+        reported_digest = data["coverage_digest"]
+        if reported_coverage != expected_coverage:
+            raise ValueError("Shard coverage data has an unexpected name")
+        measured = path.parent / expected_coverage
+        if (
+            not isinstance(reported_digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", reported_digest) is None
+            or not measured.is_file()
+            or not 0 < measured.stat().st_size <= COVERAGE_DATA_LIMIT
+            or hashlib.sha256(measured.read_bytes()).hexdigest() != reported_digest
+        ):
+            raise ValueError("Shard coverage data is missing, empty or changed")
         seconds = data["elapsed_seconds"]
         if (
             type(seconds) not in (int, float)
@@ -402,6 +430,33 @@ def write_progress(
         pass
 
 
+def coverage_data_path(args: argparse.Namespace) -> Path:
+    """Bind one shard's coverage database to its own name and verify it afterwards."""
+    path: Path = args.coverage_data.resolve()
+    match = COVERAGE_FILE_PATTERN.fullmatch(path.name)
+    if match is None or int(match.group(1)) != args.index:
+        raise ValueError("Coverage data must be named coverage-<shard index>.data")
+    if path.exists() or path.is_symlink():
+        raise ValueError("Coverage data must start absent so a stale file cannot pass")
+    return path
+
+
+def verify_coverage_data(path: Path) -> str:
+    """A shard without branch data cannot contribute to the merged judgment."""
+    from coverage import CoverageData
+
+    if not path.is_file():
+        raise ValueError(f"Integration shard wrote no coverage data: {path.name}")
+    size = path.stat().st_size
+    if not 0 < size <= COVERAGE_DATA_LIMIT:
+        raise ValueError(f"Integration coverage data is empty or oversized: {path.name}")
+    data = CoverageData(basename=str(path))
+    data.read()
+    if not data.has_arcs() or not data.measured_files():
+        raise ValueError(f"Integration coverage data has no branches or files: {path.name}")
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def run_shard(args: argparse.Namespace) -> int:
     import pytest
 
@@ -414,6 +469,13 @@ def run_shard(args: argparse.Namespace) -> int:
         for name in ("SPEECHNEXUS_TEST_DATABASE_URL", "SPEECHNEXUS_TEST_MYSQL_URL")
     ):
         raise ValueError("Both isolated database URLs are required")
+    data_file = args.coverage_data
+    if not args.collect_only:
+        data_file = coverage_data_path(args)
+        data_file.parent.mkdir(parents=True, exist_ok=True)
+        # pytest-cov writes exactly this file; the evidence carries its digest so
+        # the summary job can prove it merges the data this partition reported.
+        os.environ["COVERAGE_FILE"] = str(data_file)
     os.chdir(ROOT)
     source_head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     started = time.monotonic()
@@ -429,6 +491,7 @@ def run_shard(args: argparse.Namespace) -> int:
             self.skipped = 0
             self.last_started: str | None = None
             self.last_completed: str | None = None
+            self.coverage_error: str | None = None
 
         def _publish(self) -> None:
             if args.progress is None:
@@ -510,8 +573,18 @@ def run_shard(args: argparse.Namespace) -> int:
         @pytest.hookimpl(trylast=True)
         def pytest_sessionfinish(self, session: pytest.Session, exitstatus: int) -> None:
             elapsed = time.monotonic() - started
+            # A collect-only probe is a diagnostic, never shard evidence; it carries
+            # empty coverage fields so the checker rejects it on `executed` first.
+            coverage_digest = ""
+            if not args.collect_only:
+                try:
+                    coverage_digest = verify_coverage_data(data_file)
+                except ValueError as error:
+                    # Passing tests cannot outvote a partition that exported no
+                    # usable coverage: report it, then fail the shard below.
+                    self.coverage_error = str(error)
             data = {
-                "version": 1,
+                "version": 2,
                 "source_head": source_head,
                 "shard_index": args.index,
                 "shard_count": args.count,
@@ -521,6 +594,8 @@ def run_shard(args: argparse.Namespace) -> int:
                 "outcomes": self.outcomes,
                 "exit_code": int(exitstatus),
                 "executed": not args.collect_only,
+                "coverage_file": "" if args.collect_only else data_file.name,
+                "coverage_digest": coverage_digest,
                 "elapsed_seconds": round(elapsed, 6),
             }
             args.report.parent.mkdir(parents=True, exist_ok=True)
@@ -534,7 +609,13 @@ def run_shard(args: argparse.Namespace) -> int:
     options = ["-m", "integration", "tests/integration", "-q", "--durations=20"]
     if args.collect_only:
         options.append("--collect-only")
-    return int(pytest.main(options, plugins=[ShardPlugin()]))
+    else:
+        options.extend(COVERAGE_OPTIONS)
+    plugin = ShardPlugin()
+    code = int(pytest.main(options, plugins=[plugin]))
+    if plugin.coverage_error is not None:
+        raise ValueError(plugin.coverage_error)
+    return code
 
 
 def resource_class_means(evidence: Evidence) -> dict[bool, ClassMean]:
@@ -613,6 +694,12 @@ def main() -> int:
     run.add_argument("--index", type=int, required=True)
     run.add_argument("--count", type=int, required=True)
     run.add_argument("--report", type=Path, required=True)
+    run.add_argument(
+        "--coverage-data",
+        type=Path,
+        required=True,
+        help="coverage database this partition exports; named coverage-<index>.data",
+    )
     run.add_argument(
         "--progress",
         type=Path,

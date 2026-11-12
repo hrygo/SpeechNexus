@@ -286,9 +286,19 @@ def test_native_tcp_serves_the_owned_runtime_and_strict_read_boundary(assets: As
                         == 400
                     )
                     assert client.get(PREFIX + "/workspace-missing").status_code == 404
-                    assert (
-                        client.post(PREFIX, json={"display_name": "Synthetic"}).status_code == 405
+                    # The routes exist, but this composition configures no
+                    # workspace writer: the operations report unavailable
+                    # instead of performing a write.
+                    created = client.post(PREFIX, json={"display_name": "Synthetic"})
+                    assert created.status_code == 503
+                    validate_response("createWorkspace", 503, {"body": created.json()})
+                    assert created.json()["error"]["code"] == "workspace_service_unavailable"
+                    patched = client.patch(
+                        PREFIX + "/workspace-default",
+                        json={"expected_metadata_revision": 1, "status": "disabled"},
                     )
+                    assert patched.status_code == 503
+                    validate_response("updateWorkspace", 503, {"body": patched.json()})
                     assert client.get("/readyz").status_code == 200
                 assert (
                     assets.db.query("SELECT * FROM speech_workspaces ORDER BY workspace_id")

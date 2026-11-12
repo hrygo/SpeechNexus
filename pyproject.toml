@@ -10,7 +10,7 @@ dependencies = []
 package = false
 
 [tool.uv.workspace]
-members = ["backend", "execution-gateway", "node-controller", "packages/contracts", "packages/media"]
+members = ["asset-inspector", "backend", "execution-gateway", "node-controller", "packages/contracts", "packages/media"]
 
 [dependency-groups]
 dev = [
@@ -56,6 +56,7 @@ markers = [
 [tool.coverage.run]
 branch = true
 source = [
+  "asset-inspector/src/speechnexus_asset_inspector",
   "backend/src/speechnexus_backend",
   "execution-gateway/src/speechnexus_gateway",
   "node-controller/src/speechnexus_node_controller",
@@ -72,7 +73,7 @@ skip_covered = true
 [tool.ruff]
 line-length = 100
 target-version = "py314"
-src = ["backend/src", "execution-gateway/src", "node-controller/src", "packages/media/src", "tests"]
+src = ["asset-inspector/src", "backend/src", "execution-gateway/src", "node-controller/src", "packages/media/src", "tests"]
 
 [tool.ruff.per-file-target-version]
 # These lightweight entry points use the runner's system Python, without uv.
@@ -99,6 +100,7 @@ no_implicit_optional = true
 warn_redundant_casts = true
 show_error_codes = true
 files = [
+  "asset-inspector/src",
   "backend/src",
   "execution-gateway/src",
   "node-controller/src",
@@ -117,11 +119,23 @@ ignore_missing_imports = true
 
 [tool.importlinter]
 root_packages = [
+  "speechnexus_asset_inspector",
   "speechnexus_backend",
   "speechnexus_gateway",
   "speechnexus_contracts",
   "speechnexus_node_controller",
   "speechnexus_media",
+]
+
+[[tool.importlinter.contracts]]
+name = "Asset inspector depends only on the shared media kernel"
+type = "forbidden"
+source_modules = ["speechnexus_asset_inspector"]
+forbidden_modules = [
+  "speechnexus_backend",
+  "speechnexus_gateway",
+  "speechnexus_node_controller",
+  "speechnexus_contracts",
 ]
 
 [[tool.importlinter.contracts]]

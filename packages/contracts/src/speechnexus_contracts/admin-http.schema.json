@@ -291,6 +291,46 @@
           "json": true
         }
       }
+    },
+    "listAuditEvents": {
+      "path": "/v1/nexus/audit-events",
+      "method": "get",
+      "request": "HttpRequest_listAuditEvents",
+      "parameters": {
+        "path": {},
+        "query": {
+          "cursor": "string",
+          "limit": "integer",
+          "action": "string"
+        },
+        "headers": {
+          "x-request-id": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_listAuditEvents_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_listAuditEvents_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_listAuditEvents_401",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_listAuditEvents_503",
+          "headers": {},
+          "json": true
+        }
+      }
     }
   },
   "x-nexus-entrypoints": [
@@ -335,7 +375,12 @@
     "HttpResponse_listModelBindings_401",
     "HttpResponse_listModelBindings_403",
     "HttpResponse_listModelBindings_405",
-    "HttpResponse_listModelBindings_503"
+    "HttpResponse_listModelBindings_503",
+    "HttpRequest_listAuditEvents",
+    "HttpResponse_listAuditEvents_200",
+    "HttpResponse_listAuditEvents_400",
+    "HttpResponse_listAuditEvents_401",
+    "HttpResponse_listAuditEvents_503"
   ],
   "$defs": {
     "WorkspaceList": {
@@ -1152,6 +1197,118 @@
     "External_shared_capability_domains_schema_json_ReleaseTier": {
       "type": "string",
       "enum": ["experimental", "best_effort", "production"]
+    },
+    "AuditEventList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object", "data", "has_more", "next_cursor"],
+      "properties": {
+        "object": {
+          "const": "nexus.list"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AuditEvent"
+          }
+        },
+        "has_more": {
+          "type": "boolean"
+        },
+        "next_cursor": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "AuditEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "object",
+        "actor_type",
+        "request_id",
+        "action",
+        "resource_type",
+        "resource_id",
+        "occurred_at",
+        "policy_revision"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.audit_event"
+        },
+        "actor_type": {
+          "type": "string",
+          "enum": ["anonymous", "shared_credential"]
+        },
+        "credential_label": {
+          "type": ["string", "null"],
+          "maxLength": 128
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "resource_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "resource_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "occurred_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "policy_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "change_summary": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AuditChangeSummary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "AuditChangeSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["changed_fields"],
+      "properties": {
+        "changed_fields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "uniqueItems": true,
+          "description": "RFC 6901 JSON Pointers for fields changed by the audited action.\nStore field names only; never include before/after values, request\nbodies, credentials, content, audio, feature vectors, or paths.\n",
+          "items": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 256,
+            "pattern": "^/(?:[^/~]|~0|~1)+(?:/(?:[^/~]|~0|~1)+)*$"
+          }
+        },
+        "reason": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        }
+      }
     },
     "HttpRequest_listWorkspaces": {
       "type": "object",
@@ -1980,6 +2137,121 @@
       "required": ["headers", "body"]
     },
     "HttpResponse_listModelBindings_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_listAuditEvents": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {
+            "cursor": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            },
+            "action": {
+              "type": "string",
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      },
+      "required": []
+    },
+    "HttpResponse_listAuditEvents_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/AuditEventList"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listAuditEvents_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listAuditEvents_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listAuditEvents_503": {
       "type": "object",
       "additionalProperties": false,
       "properties": {

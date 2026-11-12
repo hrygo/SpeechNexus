@@ -410,6 +410,14 @@ type ExternalSharedIdentifiersSchemaJsonPoolId = Literal[
 ]
 type ServiceClass = ExternalSharedCapabilityDomainsSchemaJsonServiceClass
 type Sha256Digest = ExternalSharedIdentifiersSchemaJsonSha256Digest
+type ChangedField = str
+
+
+class AuditChangeSummary(TypedDict):
+    changed_fields: list[ChangedField]
+    reason: NotRequired[str | None]
+
+
 type Identifier = ExternalSharedIdentifiersSchemaJsonIdentifier
 type Revision = ExternalSharedIdentifiersSchemaJsonRevision
 
@@ -585,6 +593,27 @@ class QualificationReportRecord(TypedDict):
     digest: Sha256Digest
     recorded_at: str
     source: str
+
+
+class AuditEvent(TypedDict):
+    id: Identifier
+    object: Literal["nexus.audit_event"]
+    actor_type: Literal["anonymous", "shared_credential"]
+    credential_label: NotRequired[str | None]
+    request_id: str
+    action: str
+    resource_type: str
+    resource_id: Identifier
+    occurred_at: str
+    policy_revision: Revision
+    change_summary: NotRequired[AuditChangeSummary | None]
+
+
+class AuditEventList(TypedDict):
+    object: Literal["nexus.list"]
+    data: list[AuditEvent]
+    has_more: bool
+    next_cursor: str | None
 
 
 class WorkspaceCreateRequest(TypedDict):
@@ -834,4 +863,7 @@ type AdminContracts = (
     | ResourcePoolList
     | CapacityManifestRecord
     | QualificationReportRecord
+    | AuditEvent
+    | AuditEventList
+    | AuditChangeSummary
 )

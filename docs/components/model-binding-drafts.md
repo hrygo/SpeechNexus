@@ -367,7 +367,13 @@ identities and writes `speech_publications` plus
 that stored state: `draft`, `published`, or `503 binding_unavailable` when a
 publication has no matching evidence. Binding retirement, activation/rollback,
 head selection and append-only audit events are implemented through the separate
-lifecycle writer described above. The separate opt-in producer mode can persist
+lifecycle writer described above. The recorded events are readable through
+`GET /v1/nexus/audit-events`: the projection selects only the frozen `AuditEvent`
+fields, pages by the stored `(occurred_at_us DESC, event_id DESC)` order with a
+composite cursor bound to the exact `action` filter, and runs on a dedicated
+SELECT-only identity verified against that single table at startup. Only
+`kind=binding` events exist in the table, so profile, workspace and policy
+changes remain absent from this read surface. The separate opt-in producer mode can persist
 explicit default declarations, but full parameter resolution and qualification
 remain open. The shared publication repository can record retirement facts, but
 the voice retirement API still has no production handler; voice activation has

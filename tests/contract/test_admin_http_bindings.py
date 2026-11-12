@@ -111,6 +111,7 @@ def test_only_selected_operations_are_closed_without_changing_source_defaults() 
     assert set(actual["paths"]) == set(CONFIG["paths"])
     assert set(actual["paths"]["/v1/nexus/admin/resource-pools"]) == {"get"}
     assert set(actual["paths"]["/v1/nexus/admin/model-bindings"]) == {"get"}
+    assert set(actual["paths"]["/v1/nexus/audit-events"]) == {"get"}
     # The workspace collection carries the read and the create; the selected
     # revision path carries the read and the update. Nothing else is closed.
     assert set(actual["paths"]["/v1/nexus/workspaces"]) == {"get", "post"}
@@ -118,7 +119,7 @@ def test_only_selected_operations_are_closed_without_changing_source_defaults() 
     assert actual["components"]["parameters"]["Limit"]["schema"]["default"] == 50
     assert actual["security"] == [{"SharedServiceKey": []}, {}]
     actual["paths"].clear()
-    assert len(contract()["paths"]) == 4
+    assert len(contract()["paths"]) == 5
 
 
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda example: example["id"])

@@ -38,7 +38,6 @@ KNOWN_UNSERVED_ADMIN_OPERATIONS = frozenset(
         ("/v1/nexus/admin/model-instances/{instance_id}/generations/{generation}", "get"),
         ("/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/retirements", "post"),
         ("/v1/nexus/admin/qualification-reports/{report_id}", "get"),
-        ("/v1/nexus/audit-events", "get"),
     }
 )
 

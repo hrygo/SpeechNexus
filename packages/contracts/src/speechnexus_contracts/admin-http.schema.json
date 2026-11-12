@@ -416,6 +416,123 @@
           "json": true
         }
       }
+    },
+    "getCapacityManifest": {
+      "path": "/v1/nexus/admin/capacity-manifests/{manifest_id}",
+      "method": "get",
+      "request": "HttpRequest_getCapacityManifest",
+      "parameters": {
+        "path": {
+          "manifest_id": "string"
+        },
+        "query": {},
+        "headers": {
+          "x-request-id": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_getCapacityManifest_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_getCapacityManifest_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_getCapacityManifest_401",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_getCapacityManifest_404",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_getCapacityManifest_503",
+          "headers": {},
+          "json": true
+        }
+      }
+    },
+    "getQualificationReport": {
+      "path": "/v1/nexus/admin/qualification-reports/{report_id}",
+      "method": "get",
+      "request": "HttpRequest_getQualificationReport",
+      "parameters": {
+        "path": {
+          "report_id": "string"
+        },
+        "query": {},
+        "headers": {
+          "x-request-id": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_getQualificationReport_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_getQualificationReport_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_getQualificationReport_401",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_getQualificationReport_404",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_getQualificationReport_503",
+          "headers": {},
+          "json": true
+        }
+      }
+    },
+    "getDiagnostics": {
+      "path": "/v1/nexus/admin/diagnostics",
+      "method": "get",
+      "request": "HttpRequest_getDiagnostics",
+      "parameters": {
+        "path": {},
+        "query": {},
+        "headers": {
+          "x-request-id": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_getDiagnostics_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_getDiagnostics_401",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_getDiagnostics_503",
+          "headers": {},
+          "json": true
+        }
+      }
     }
   },
   "x-nexus-entrypoints": [
@@ -476,7 +593,23 @@
     "HttpResponse_listAuditEvents_200",
     "HttpResponse_listAuditEvents_400",
     "HttpResponse_listAuditEvents_401",
-    "HttpResponse_listAuditEvents_503"
+    "HttpResponse_listAuditEvents_503",
+    "HttpRequest_getCapacityManifest",
+    "HttpResponse_getCapacityManifest_200",
+    "HttpResponse_getCapacityManifest_400",
+    "HttpResponse_getCapacityManifest_401",
+    "HttpResponse_getCapacityManifest_404",
+    "HttpResponse_getCapacityManifest_503",
+    "HttpRequest_getQualificationReport",
+    "HttpResponse_getQualificationReport_200",
+    "HttpResponse_getQualificationReport_400",
+    "HttpResponse_getQualificationReport_401",
+    "HttpResponse_getQualificationReport_404",
+    "HttpResponse_getQualificationReport_503",
+    "HttpRequest_getDiagnostics",
+    "HttpResponse_getDiagnostics_200",
+    "HttpResponse_getDiagnostics_401",
+    "HttpResponse_getDiagnostics_503"
   ],
   "$defs": {
     "WorkspaceList": {
@@ -2011,6 +2144,96 @@
         }
       }
     },
+    "CapacityManifestRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "recorded_at"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "digest": {
+          "$ref": "#/$defs/Sha256Digest",
+          "description": "SHA-256 of the authoritative capacity manifest document bytes. The\npublication evidence table stores it only when the publishing path\nsupplied a digest, so it is omitted for evidence recorded without\none rather than synthesized or reported as a placeholder.\n"
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the deployment first recorded publication evidence naming this\ncapacity manifest. The evidence table records one timestamp per\npublication row; this value is the earliest such row.\n"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^release-evidence://[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9._-]*/capacity-manifest\\.json$",
+          "description": "Release-evidence locator of the authoritative document. This\ndeployment records no locator for a publication evidence row, so the\nresponse omits the field. The document stays in the release evidence\nchain and is resolved offline by\nscripts/dev-env/verify-release-evidence.py; the response never\nembeds or copies the document body.\n"
+        }
+      }
+    },
+    "Sha256Digest": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+    },
+    "QualificationReportRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "recorded_at"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "digest": {
+          "$ref": "#/$defs/Sha256Digest",
+          "description": "SHA-256 of the authoritative qualification report document bytes.\nThe publication evidence table stores it only when the publishing\npath supplied a digest, so it is omitted for evidence recorded\nwithout one rather than synthesized or reported as a placeholder.\n"
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the deployment first recorded publication evidence naming this\nqualification report. The evidence table records one timestamp per\npublication row; this value is the earliest such row.\n"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^release-evidence://[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9._-]*/qualification-report\\.json$",
+          "description": "Release-evidence locator of the authoritative document. This\ndeployment records no locator for a publication evidence row, so the\nresponse omits the field. The document stays in the release evidence\nchain and is resolved offline by\nscripts/dev-env/verify-release-evidence.py; the response never\nembeds or copies the document body.\n"
+        }
+      }
+    },
+    "Diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "generated_at", "checks"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["ok", "degraded", "unready"]
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "status", "detail"],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": ["ok", "degraded", "failed"]
+              },
+              "detail": {
+                "type": ["string", "null"]
+              }
+            }
+          }
+        }
+      }
+    },
     "HttpRequest_listWorkspaces": {
       "type": "object",
       "additionalProperties": false,
@@ -3193,6 +3416,327 @@
       "required": ["body"]
     },
     "HttpResponse_listAuditEvents_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_getCapacityManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "manifest_id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": ["manifest_id"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      },
+      "required": ["path"]
+    },
+    "HttpResponse_getCapacityManifest_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/CapacityManifestRecord"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getCapacityManifest_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getCapacityManifest_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getCapacityManifest_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getCapacityManifest_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_getQualificationReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "report_id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": ["report_id"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      },
+      "required": ["path"]
+    },
+    "HttpResponse_getQualificationReport_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/QualificationReportRecord"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getQualificationReport_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getQualificationReport_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getQualificationReport_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getQualificationReport_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_getDiagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      },
+      "required": []
+    },
+    "HttpResponse_getDiagnostics_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/Diagnostics"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getDiagnostics_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getDiagnostics_503": {
       "type": "object",
       "additionalProperties": false,
       "properties": {

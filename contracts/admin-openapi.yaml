@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus administration API
-  version: 0.1.0.dev9
+  version: 0.1.0.dev10
   description: |
     Deployment-scoped administration and observation API. These routes do not
     establish a user identity, role, or tenant boundary. A deployment may expose
@@ -10,9 +10,12 @@ info:
 
     Model binding revisions and runtime instances are separate resources.
     Capacity manifest and qualification report documents stay in the release
-    evidence chain; the admin API exposes only their recorded identity and
-    locator. No response exposes private artifact paths, engine endpoints,
-    credentials, or arbitrary container control.
+    evidence chain; the admin API exposes only the identity facts the
+    publication evidence table records: the evidence identifier, the document
+    digest when the publishing path recorded one, and the first recording time.
+    It exposes no release-evidence locator because no column stores one. No
+    response exposes private artifact paths, engine endpoints, credentials, or
+    arbitrary container control.
 servers:
   - url: /
 security:
@@ -970,10 +973,19 @@ paths:
       summary: Get a recorded capacity manifest reference
       description: |
         Returns the recorded identity of one immutable capacity manifest: its
-        identifier, document digest, recording time, and release-evidence
-        locator. The manifest body is not stored or copied here; it remains the
-        authoritative document in the release evidence chain and is resolved
-        offline by scripts/dev-env/verify-release-evidence.py.
+        identifier, its document digest when the publication recorded one, and
+        the first time the deployment recorded publication evidence naming that
+        manifest. The evidence table stores no release-evidence locator, so the
+        response never carries one. The manifest body is not stored or copied
+        here; it remains the authoritative document in the release evidence
+        chain and is resolved offline by
+        scripts/dev-env/verify-release-evidence.py.
+
+        Identifiers that do not match the declared pattern return 400
+        `invalid_binding_request`. An unreadable evidence store returns 503
+        `binding_unavailable` with `retryable: true` instead of reporting
+        absence; 404 means the evidence store was read and names no capacity
+        manifest with this identifier.
       parameters:
         - name: manifest_id
           in: path
@@ -991,10 +1003,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CapacityManifestRecord"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/nexus/admin/qualification-reports/{report_id}:
     get:
       tags: [model-bindings]
@@ -1002,10 +1018,19 @@ paths:
       summary: Get a recorded qualification report reference
       description: |
         Returns the recorded identity of one deployment qualification report:
-        its identifier, document digest, recording time, and release-evidence
-        locator. The report body is not stored or copied here; it remains the
-        authoritative document in the release evidence chain and is resolved
-        offline by scripts/dev-env/verify-release-evidence.py.
+        its identifier, its document digest when the publication recorded one,
+        and the first time the deployment recorded publication evidence naming
+        that report. The evidence table stores no release-evidence locator, so
+        the response never carries one. The report body is not stored or copied
+        here; it remains the authoritative document in the release evidence
+        chain and is resolved offline by
+        scripts/dev-env/verify-release-evidence.py.
+
+        Identifiers that do not match the declared pattern return 400
+        `invalid_binding_request`. An unreadable evidence store returns 503
+        `binding_unavailable` with `retryable: true` instead of reporting
+        absence; 404 means the evidence store was read and names no
+        qualification report with this identifier.
       parameters:
         - name: report_id
           in: path
@@ -1023,10 +1048,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/QualificationReportRecord"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/nexus/admin/model-instances/{instance_id}/generations/{generation}:
     get:
       tags: [model-instances]
@@ -1155,7 +1184,9 @@ paths:
       description: |
         Diagnostics are read-only and never trigger model loading. Responses omit
         content, audio, feature vectors, credentials, object keys, and private
-        model paths.
+        model paths. This deployment reports `ok` when every readiness probe
+        passed and `unready` otherwise; the declared `degraded` state is reserved
+        for probes that can distinguish a reduced capability from a failed one.
       parameters:
         - $ref: "#/components/parameters/XRequestId"
       responses:
@@ -2004,53 +2035,69 @@ components:
     CapacityManifestRecord:
       type: object
       additionalProperties: false
-      required: [id, digest, recorded_at, source]
+      required: [id, recorded_at]
       properties:
         id:
           $ref: "#/components/schemas/Identifier"
         digest:
           $ref: "#/components/schemas/Sha256Digest"
-          description: SHA-256 of the authoritative capacity manifest document bytes.
+          description: |
+            SHA-256 of the authoritative capacity manifest document bytes. The
+            publication evidence table stores it only when the publishing path
+            supplied a digest, so it is omitted for evidence recorded without
+            one rather than synthesized or reported as a placeholder.
         recorded_at:
           type: string
           format: date-time
-          description: When the deployment recorded this evidence identity.
+          description: |
+            When the deployment first recorded publication evidence naming this
+            capacity manifest. The evidence table records one timestamp per
+            publication row; this value is the earliest such row.
         source:
           type: string
           minLength: 1
           maxLength: 256
           pattern: '^release-evidence://[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9._-]*/capacity-manifest\.json$'
           description: |
-            Release-evidence locator of the authoritative document:
-            `release-evidence://<engine>/<evidence-bundle>/capacity-manifest.json`.
-            It maps to `deploy/engines/<engine>/evidence/<evidence-bundle>/` and
-            is resolved offline by scripts/dev-env/verify-release-evidence.py.
-            The response never embeds or copies the document body.
+            Release-evidence locator of the authoritative document. This
+            deployment records no locator for a publication evidence row, so the
+            response omits the field. The document stays in the release evidence
+            chain and is resolved offline by
+            scripts/dev-env/verify-release-evidence.py; the response never
+            embeds or copies the document body.
     QualificationReportRecord:
       type: object
       additionalProperties: false
-      required: [id, digest, recorded_at, source]
+      required: [id, recorded_at]
       properties:
         id:
           $ref: "#/components/schemas/Identifier"
         digest:
           $ref: "#/components/schemas/Sha256Digest"
-          description: SHA-256 of the authoritative qualification report document bytes.
+          description: |
+            SHA-256 of the authoritative qualification report document bytes.
+            The publication evidence table stores it only when the publishing
+            path supplied a digest, so it is omitted for evidence recorded
+            without one rather than synthesized or reported as a placeholder.
         recorded_at:
           type: string
           format: date-time
-          description: When the deployment recorded this evidence identity.
+          description: |
+            When the deployment first recorded publication evidence naming this
+            qualification report. The evidence table records one timestamp per
+            publication row; this value is the earliest such row.
         source:
           type: string
           minLength: 1
           maxLength: 256
           pattern: '^release-evidence://[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9._-]*/qualification-report\.json$'
           description: |
-            Release-evidence locator of the authoritative document:
-            `release-evidence://<engine>/<evidence-bundle>/qualification-report.json`.
-            It maps to `deploy/engines/<engine>/evidence/<evidence-bundle>/` and
-            is resolved offline by scripts/dev-env/verify-release-evidence.py.
-            The response never embeds or copies the document body.
+            Release-evidence locator of the authoritative document. This
+            deployment records no locator for a publication evidence row, so the
+            response omits the field. The document stays in the release evidence
+            chain and is resolved offline by
+            scripts/dev-env/verify-release-evidence.py; the response never
+            embeds or copies the document body.
     Diagnostics:
       type: object
       additionalProperties: false

@@ -521,10 +521,19 @@ export interface paths {
     /**
      * Get a recorded capacity manifest reference
      * @description Returns the recorded identity of one immutable capacity manifest: its
-     *     identifier, document digest, recording time, and release-evidence
-     *     locator. The manifest body is not stored or copied here; it remains the
-     *     authoritative document in the release evidence chain and is resolved
-     *     offline by scripts/dev-env/verify-release-evidence.py.
+     *     identifier, its document digest when the publication recorded one, and
+     *     the first time the deployment recorded publication evidence naming that
+     *     manifest. The evidence table stores no release-evidence locator, so the
+     *     response never carries one. The manifest body is not stored or copied
+     *     here; it remains the authoritative document in the release evidence
+     *     chain and is resolved offline by
+     *     scripts/dev-env/verify-release-evidence.py.
+     *
+     *     Identifiers that do not match the declared pattern return 400
+     *     `invalid_binding_request`. An unreadable evidence store returns 503
+     *     `binding_unavailable` with `retryable: true` instead of reporting
+     *     absence; 404 means the evidence store was read and names no capacity
+     *     manifest with this identifier.
      */
     get: operations["getCapacityManifest"];
     put?: never;
@@ -545,10 +554,19 @@ export interface paths {
     /**
      * Get a recorded qualification report reference
      * @description Returns the recorded identity of one deployment qualification report:
-     *     its identifier, document digest, recording time, and release-evidence
-     *     locator. The report body is not stored or copied here; it remains the
-     *     authoritative document in the release evidence chain and is resolved
-     *     offline by scripts/dev-env/verify-release-evidence.py.
+     *     its identifier, its document digest when the publication recorded one,
+     *     and the first time the deployment recorded publication evidence naming
+     *     that report. The evidence table stores no release-evidence locator, so
+     *     the response never carries one. The report body is not stored or copied
+     *     here; it remains the authoritative document in the release evidence
+     *     chain and is resolved offline by
+     *     scripts/dev-env/verify-release-evidence.py.
+     *
+     *     Identifiers that do not match the declared pattern return 400
+     *     `invalid_binding_request`. An unreadable evidence store returns 503
+     *     `binding_unavailable` with `retryable: true` instead of reporting
+     *     absence; 404 means the evidence store was read and names no
+     *     qualification report with this identifier.
      */
     get: operations["getQualificationReport"];
     put?: never;
@@ -656,7 +674,9 @@ export interface paths {
      * Read redacted diagnostics
      * @description Diagnostics are read-only and never trigger model loading. Responses omit
      *     content, audio, feature vectors, credentials, object keys, and private
-     *     model paths.
+     *     model paths. This deployment reports `ok` when every readiness probe
+     *     passed and `unready` otherwise; the declared `degraded` state is reserved
+     *     for probes that can distinguish a reduced capability from a failed one.
      */
     get: operations["getDiagnostics"];
     put?: never;
@@ -930,39 +950,55 @@ export interface components {
     };
     CapacityManifestRecord: {
       id: components["schemas"]["Identifier"];
-      /** @description SHA-256 of the authoritative capacity manifest document bytes. */
-      digest: components["schemas"]["Sha256Digest"];
+      /**
+       * @description SHA-256 of the authoritative capacity manifest document bytes. The
+       *     publication evidence table stores it only when the publishing path
+       *     supplied a digest, so it is omitted for evidence recorded without
+       *     one rather than synthesized or reported as a placeholder.
+       */
+      digest?: components["schemas"]["Sha256Digest"];
       /**
        * Format: date-time
-       * @description When the deployment recorded this evidence identity.
+       * @description When the deployment first recorded publication evidence naming this
+       *     capacity manifest. The evidence table records one timestamp per
+       *     publication row; this value is the earliest such row.
        */
       recorded_at: string;
       /**
-       * @description Release-evidence locator of the authoritative document:
-       *     `release-evidence://<engine>/<evidence-bundle>/capacity-manifest.json`.
-       *     It maps to `deploy/engines/<engine>/evidence/<evidence-bundle>/` and
-       *     is resolved offline by scripts/dev-env/verify-release-evidence.py.
-       *     The response never embeds or copies the document body.
+       * @description Release-evidence locator of the authoritative document. This
+       *     deployment records no locator for a publication evidence row, so the
+       *     response omits the field. The document stays in the release evidence
+       *     chain and is resolved offline by
+       *     scripts/dev-env/verify-release-evidence.py; the response never
+       *     embeds or copies the document body.
        */
-      source: string;
+      source?: string;
     };
     QualificationReportRecord: {
       id: components["schemas"]["Identifier"];
-      /** @description SHA-256 of the authoritative qualification report document bytes. */
-      digest: components["schemas"]["Sha256Digest"];
+      /**
+       * @description SHA-256 of the authoritative qualification report document bytes.
+       *     The publication evidence table stores it only when the publishing
+       *     path supplied a digest, so it is omitted for evidence recorded
+       *     without one rather than synthesized or reported as a placeholder.
+       */
+      digest?: components["schemas"]["Sha256Digest"];
       /**
        * Format: date-time
-       * @description When the deployment recorded this evidence identity.
+       * @description When the deployment first recorded publication evidence naming this
+       *     qualification report. The evidence table records one timestamp per
+       *     publication row; this value is the earliest such row.
        */
       recorded_at: string;
       /**
-       * @description Release-evidence locator of the authoritative document:
-       *     `release-evidence://<engine>/<evidence-bundle>/qualification-report.json`.
-       *     It maps to `deploy/engines/<engine>/evidence/<evidence-bundle>/` and
-       *     is resolved offline by scripts/dev-env/verify-release-evidence.py.
-       *     The response never embeds or copies the document body.
+       * @description Release-evidence locator of the authoritative document. This
+       *     deployment records no locator for a publication evidence row, so the
+       *     response omits the field. The document stays in the release evidence
+       *     chain and is resolved offline by
+       *     scripts/dev-env/verify-release-evidence.py; the response never
+       *     embeds or copies the document body.
        */
-      source: string;
+      source?: string;
     };
     Diagnostics: {
       /** @enum {string} */
@@ -3453,8 +3489,10 @@ export interface operations {
           "application/json": components["schemas"]["CapacityManifestRecord"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   getQualificationReport: {
@@ -3480,8 +3518,10 @@ export interface operations {
           "application/json": components["schemas"]["QualificationReportRecord"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   getModelInstance: {

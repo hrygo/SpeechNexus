@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from speechnexus_backend.speech.domain.binding_evidence import RecordedEvidenceIdentity
 from speechnexus_backend.speech.domain.binding_publication_evidence import (
     BindingPublicationEvidence,
 )
@@ -47,6 +48,51 @@ def find_evidence(
     if len(rows) > 1:
         raise ValueError("Publication evidence identity is not unique")
     return _evidence(rows[0]) if rows else None
+
+
+# Document kind -> the two immutable evidence columns naming it. The mapping is
+# fixed here so a caller cannot select another relation or expression.
+_RECORDED_IDENTITY_COLUMNS = {
+    "capacity_manifest": ("capacity_manifest_id", "capacity_manifest_digest"),
+    "qualification_report": ("qualification_report_id", "qualification_report_digest"),
+}
+
+
+def find_recorded_identity(
+    cursor: EvidenceCursor, kind: str, identity: str
+) -> RecordedEvidenceIdentity | None:
+    """Return the facts every publication row naming this document agrees on.
+
+    A capacity manifest or qualification report identifier is not unique in the
+    evidence table: several immutable binding revisions may name the same
+    document. The earliest recorded time is therefore a derived fact, and two
+    conflicting recorded digests make the identity ambiguous. That conflict is
+    reported as an unreadable store instead of selecting one value silently.
+    """
+    columns = _RECORDED_IDENTITY_COLUMNS.get(kind)
+    if columns is None:
+        raise ValueError("Unknown release evidence kind")
+    identity_column, digest_column = columns
+    cursor.execute(
+        "SELECT min(recorded_at_us) AS recorded_at_us, min(" + digest_column + ") AS digest, "
+        "count(DISTINCT " + digest_column + ") AS digest_count "
+        "FROM speech_binding_publication_evidence "
+        "WHERE kind = 'binding' AND " + identity_column + " = %s",
+        (identity,),
+    )
+    rows = cursor.fetchall()
+    if len(rows) != 1:
+        raise ValueError("Recorded evidence identity is ambiguous")
+    row = rows[0]
+    if int(row["digest_count"]) > 1:
+        raise ValueError("Recorded evidence identity carries conflicting digests")
+    if row["recorded_at_us"] is None:
+        return None
+    return RecordedEvidenceIdentity(
+        identity=identity,
+        recorded_at_us=int(row["recorded_at_us"]),
+        digest=row["digest"],
+    )
 
 
 def insert_evidence(cursor: EvidenceCursor, evidence: BindingPublicationEvidence) -> bool:

@@ -13,7 +13,10 @@ export type HttpOperation =
   | "listModelBindings"
   | "listModelInstances"
   | "getModelInstance"
-  | "listAuditEvents";
+  | "listAuditEvents"
+  | "getCapacityManifest"
+  | "getQualificationReport"
+  | "getDiagnostics";
 type HttpPaths = {
   "/v1/nexus/workspaces": Pick<paths["/v1/nexus/workspaces"], "parameters" | "get" | "post">;
   "/v1/nexus/workspaces/{workspace_id}": Pick<
@@ -37,6 +40,15 @@ type HttpPaths = {
     "parameters" | "get"
   >;
   "/v1/nexus/audit-events": Pick<paths["/v1/nexus/audit-events"], "parameters" | "get">;
+  "/v1/nexus/admin/capacity-manifests/{manifest_id}": Pick<
+    paths["/v1/nexus/admin/capacity-manifests/{manifest_id}"],
+    "parameters" | "get"
+  >;
+  "/v1/nexus/admin/qualification-reports/{report_id}": Pick<
+    paths["/v1/nexus/admin/qualification-reports/{report_id}"],
+    "parameters" | "get"
+  >;
+  "/v1/nexus/admin/diagnostics": Pick<paths["/v1/nexus/admin/diagnostics"], "parameters" | "get">;
 };
 const validator = createHttpValidator(bundle);
 export function validateRequest<T>(operation: HttpOperation, value: T): T {

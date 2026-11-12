@@ -28,12 +28,14 @@ HTTP_METHODS = frozenset({"get", "post", "put", "patch", "delete", "head", "opti
 # Existing contract-first admin declarations outside the generated service
 # surface. Keeping them explicit makes any new unbound path or method fail
 # instead of silently widening the gap between the contract and its consumers.
+# The remaining entry is a tracked gap, not accepted design:
+# `releaseQuarantinedAdmissionLease` has no handler, the production schema
+# records no quarantine-release evidence, reason, observed time or idempotency
+# key, and its release transaction consumes gateway stop evidence instead of
+# creating operator evidence. See docs/operations/reconciliation-recovery.md.
 KNOWN_UNSERVED_ADMIN_OPERATIONS = frozenset(
     {
         ("/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases", "post"),
-        ("/v1/nexus/admin/capacity-manifests/{manifest_id}", "get"),
-        ("/v1/nexus/admin/diagnostics", "get"),
-        ("/v1/nexus/admin/qualification-reports/{report_id}", "get"),
     }
 )
 
@@ -186,7 +188,7 @@ def test_profile_surface_does_not_advertise_other_admin_methods_or_change_worksp
     actual = contract()
     assert actual == generator().bundle_http_surface(CONFIG)
     validate(actual)
-    assert actual["info"]["version"] == "0.1.0.dev9"
+    assert actual["info"]["version"] == "0.1.0.dev10"
     assert set(actual["paths"]) == set(CONFIG["paths"])
     assert set(actual["paths"]["/v1/nexus/admin/profiles"]) == {"post"}
     assert set(actual["paths"]["/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}"]) == {

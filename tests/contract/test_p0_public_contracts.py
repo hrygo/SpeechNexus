@@ -3771,30 +3771,34 @@ def test_openapi_request_schemas_reject_unknown_fields() -> None:
             pronunciation_validator.validate(incomplete)
 
 
-def test_evidence_responses_expose_only_a_reference_record() -> None:
-    """The admin surface records where evidence lives; it never copies the document."""
+def test_evidence_responses_expose_only_recorded_facts() -> None:
+    """The admin surface reports recorded identity, never an evidence document or locator."""
     admin = _resolved_yaml(_ADMIN_OPENAPI)
     for name, document in (
         ("CapacityManifestRecord", "capacity-manifest.json"),
         ("QualificationReportRecord", "qualification-report.json"),
     ):
         validator = _component_validator(admin, name)
-        record = {
+        identity = {
             "id": f"{name.lower()}-synthetic",
-            "digest": "sha256:" + "a" * 64,
             "recorded_at": "2026-10-22T09:00:00Z",
-            "source": f"release-evidence://gb10/bundle-20261027/{document}",
         }
-        validator.validate(record)
+        # The publication evidence table stores no locator and the digest column is
+        # nullable, so both fields stay optional and the response omits them.
+        validator.validate(identity)
+        validator.validate(identity | {"digest": "sha256:" + "a" * 64})
+        validator.validate(
+            identity | {"source": f"release-evidence://gb10/bundle-20261027/{document}"}
+        )
         for removed in ("topology_ref", "topology", "resource_envelope", "software", "scenarios"):
             with pytest.raises(ValidationError):
-                validator.validate(record | {removed: {}})
-        with pytest.raises(ValidationError):
-            validator.validate({key: value for key, value in record.items() if key != "source"})
+                validator.validate(identity | {removed: {}})
         with pytest.raises(ValidationError):
             validator.validate(
-                record | {"source": f"deploy/engines/gb10/evidence/bundle/{document}"}
+                identity | {"source": f"deploy/engines/gb10/evidence/bundle/{document}"}
             )
+        with pytest.raises(ValidationError):
+            validator.validate(identity | {"digest": "sha256:not-a-digest"})
 
 
 def test_operation_result_status_is_separate_from_cleanup_state() -> None:

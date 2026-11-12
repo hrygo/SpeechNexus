@@ -112,6 +112,9 @@ def test_only_selected_operations_are_closed_without_changing_source_defaults() 
     assert set(actual["paths"]["/v1/nexus/admin/resource-pools"]) == {"get"}
     assert set(actual["paths"]["/v1/nexus/admin/model-bindings"]) == {"get"}
     assert set(actual["paths"]["/v1/nexus/admin/model-instances"]) == {"get"}
+    assert set(actual["paths"]["/v1/nexus/admin/capacity-manifests/{manifest_id}"]) == {"get"}
+    assert set(actual["paths"]["/v1/nexus/admin/qualification-reports/{report_id}"]) == {"get"}
+    assert set(actual["paths"]["/v1/nexus/admin/diagnostics"]) == {"get"}
     assert set(
         actual["paths"]["/v1/nexus/admin/model-instances/{instance_id}/generations/{generation}"]
     ) == {"get"}
@@ -123,7 +126,7 @@ def test_only_selected_operations_are_closed_without_changing_source_defaults() 
     assert actual["components"]["parameters"]["Limit"]["schema"]["default"] == 50
     assert actual["security"] == [{"SharedServiceKey": []}, {}]
     actual["paths"].clear()
-    assert len(contract()["paths"]) == 7
+    assert len(contract()["paths"]) == 10
 
 
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda example: example["id"])
@@ -153,7 +156,7 @@ def test_python_transport_preserves_shared_examples(example: dict[str, Any]) -> 
     assert value == example["value"]
 
 
-@pytest.mark.parametrize("operation", ["publishProfileRevision", "getDiagnostics"])
+@pytest.mark.parametrize("operation", ["publishProfileRevision", "publishModelBindingRevision"])
 def test_unselected_operations_are_rejected(operation: str) -> None:
     with pytest.raises(ValueError, match="Unknown HTTP operation"):
         validate_request(operation, {})
@@ -167,7 +170,7 @@ def test_invalid_operation_selectors_fail_closed(operations: Any) -> None:
         generator().bundle_http_surface(CONFIG | {"operations": operations})
 
 
-@pytest.mark.parametrize("operation", ["unknownOperation", "getDiagnostics"])
+@pytest.mark.parametrize("operation", ["unknownOperation", "publishModelBindingRevision"])
 def test_selection_cannot_escape_reviewed_paths(operation: str) -> None:
     with pytest.raises(ValueError, match="outside the reviewed paths"):
         generator().bundle_http_surface(CONFIG | {"operations": [operation]})

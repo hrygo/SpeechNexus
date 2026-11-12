@@ -217,6 +217,8 @@ API 已经把上传内容完整收进私有、非链接的临时文件（`backen
 
 单请求内部还有一层：新子进程、`prlimit --as/--cpu/--fsize/--nofile/--core`、独立期限、stdout 上限 `output_bytes`、stderr 丢弃。cgroup 限制是容器级总量，`prlimit` 是子进程级上限，两者不互相替代。
 
+子进程环境把数值库线程数固定为 1（`OPENBLAS_NUM_THREADS`、`OMP_NUM_THREADS`、`MKL_NUM_THREADS`）。`--as` 是按子进程固定的地址空间，而 BLAS 默认按核数开线程池；不锁线程时，同一份 256 MiB 在大核数机器上会让 `import numpy` 直接分配失败（`Memory allocation still failed after 10 retries`），小核数机器看不出差异。单元测试在真实 `prlimit` 下导入 `av`、`numpy` 与 `speechnexus_media.inspection` 并解码内置 5 ms WAV，作为该包络的回归证据。
+
 ### 4.2 为什么不需要 `CAP_SYS_ADMIN`，也不再需要 bwrap
 
 旧形态里，bwrap 必须在**容器内部**再创建一次 user/mount/PID 命名空间。`DEL-524` 的实测已经定位失败根因：api 容器 `CapEff=0`、`NoNewPrivs=1`、`Seccomp=2`、`CapDrop=[ALL]`，而 moby 默认 seccomp profile 只在具备 `CAP_SYS_ADMIN` 时放行 `unshare`/`mount`/`umount2`/`setns`/`sethostname`，`pivot_root` 直接返回 `ERRNO`；因此 `bwrap --unshare-user` 必然失败，`apparmor=unconfined` 与一次性容器都不能改变这一点。

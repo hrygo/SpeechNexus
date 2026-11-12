@@ -34,13 +34,16 @@ type RunStatus = Literal[
 ]
 
 # Minimal child environment: no inspection bearer token, no service credentials
-# and no inherited PATH that could resolve an unexpected executable.
+# and no inherited PATH that could resolve an unexpected executable. Numeric
+# libraries stay single-threaded because the address-space ceiling is fixed per
+# child while a default BLAS pool grows with the host's core count.
 _CHILD_ENVIRONMENT: dict[str, str] = {
     "PATH": "/usr/local/bin:/usr/bin:/bin",
     "PYTHONDONTWRITEBYTECODE": "1",
     "PYTHONUNBUFFERED": "1",
     "OPENBLAS_NUM_THREADS": "1",
     "OMP_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1",
     "LANG": "C.UTF-8",
     "LC_ALL": "C.UTF-8",
 }
@@ -112,6 +115,10 @@ class SubprocessRunner:
     def probe_command(self) -> list[str]:
         """Run the child's limit report under the same wrapper as a real decode."""
         return self._wrap([*self.child_command(), "--report-limits"])
+
+    def dependency_probe_command(self) -> list[str]:
+        """Import the decoder's real dependencies under the same wrapper."""
+        return self._wrap([*self.child_command(), "--report-dependencies"])
 
     def command(
         self,

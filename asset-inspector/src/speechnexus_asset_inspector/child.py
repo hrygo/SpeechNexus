@@ -10,6 +10,7 @@ passes a minimal environment without the inspection bearer token.
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import resource
@@ -25,6 +26,11 @@ from speechnexus_media.domain import (
 from speechnexus_media.inspection import inspect_audio
 
 _SCHEMA_VERSION = 1
+
+# The imports the decode path really needs, plus the thread-count variables that
+# keep their address space independent of the host's core count.
+_DEPENDENCY_MODULES = ("av", "numpy", "speechnexus_media.inspection")
+_THREAD_VARIABLES = ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS")
 
 
 def _emit(payload: Mapping[str, object]) -> None:
@@ -61,13 +67,33 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-duration-ms", type=int)
     parser.add_argument("--timeout-seconds", type=float)
     parser.add_argument("--report-limits", action="store_true")
+    parser.add_argument("--report-dependencies", action="store_true")
     return parser
+
+
+def _dependency_report() -> dict[str, object]:
+    """Import the decoder's dependencies and report the inherited thread setting.
+
+    This runs before the decode path pins its own thread environment, so the
+    report shows what the parent passed rather than what the child fixes up.
+    """
+    dependencies: dict[str, str] = {}
+    for name in _DEPENDENCY_MODULES:
+        module = importlib.import_module(name)
+        dependencies[name] = str(getattr(module, "__version__", "imported"))
+    return {
+        "dependencies": dependencies,
+        "thread_environment": {name: os.environ.get(name) for name in _THREAD_VARIABLES},
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.report_limits:
         _emit({"limits": _limits()})
+        return 0
+    if args.report_dependencies:
+        _emit(_dependency_report())
         return 0
     if (
         args.input_fd is None
@@ -86,6 +112,7 @@ def main(argv: list[str] | None = None) -> int:
         # still prohibits additional processes and unbounded address space.
         os.environ["OPENBLAS_NUM_THREADS"] = "1"
         os.environ["OMP_NUM_THREADS"] = "1"
+        os.environ["MKL_NUM_THREADS"] = "1"
         import av
 
         av.logging.set_level(None)

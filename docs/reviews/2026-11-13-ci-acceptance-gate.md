@@ -396,9 +396,11 @@ applied: CommandResult = ctx.mutate(migrate)   # 旧守卫删除
 def annotate(label: str, other: CommandResult) -> None:
     if other.ok:
         print(label)
+
+
 ...
 started = ctx.mutate(start, env=ctx.child_env)
-annotate(started)          # started 落在 label 位，other 无人传
+annotate(started)  # started 落在 label 位，other 无人传
 ```
 ```text
 -> exit=0 GREEN
@@ -408,7 +410,7 @@ annotate(started)          # started 落在 label 位，other 无人传
 
 ```python
 def migration_verify(head, database_version) -> str | None:
-    return None          # 迁移落后也报 PASS
+    return None  # 迁移落后也报 PASS
 ```
 ```text
 -> exit=0 GREEN（dry-run 不调用该函数）

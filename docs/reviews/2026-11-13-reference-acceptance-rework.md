@@ -396,18 +396,24 @@ import importlib.util, os, sys
 from pathlib import Path
 
 REPO = Path("/private/tmp/sn667")
-spec = importlib.util.spec_from_file_location("ra", REPO / "scripts/dev-env/reference-acceptance.py")
-m = importlib.util.module_from_spec(spec); sys.modules["ra"] = m; spec.loader.exec_module(m)
+spec = importlib.util.spec_from_file_location(
+    "ra", REPO / "scripts/dev-env/reference-acceptance.py"
+)
+m = importlib.util.module_from_spec(spec)
+sys.modules["ra"] = m
+spec.loader.exec_module(m)
 
 env_file = Path("/tmp/sn667probe/review.env")
 merged, child = m.effective_env(env_file, dict(os.environ))
 merged = dict(merged)
-merged["SN_ADMIN_DSN"] = "postgresql://speechnexus:change-me-local-postgres@127.0.0.1:56632/speechnexus"
+merged["SN_ADMIN_DSN"] = (
+    "postgresql://speechnexus:change-me-local-postgres@127.0.0.1:56632/speechnexus"
+)
 child = dict(merged)
 ctx = m.Context(
     env=merged,
     env_file=env_file,
-    compose_file=Path("/tmp/sn667probe/compose.yaml"),   # 只含 postgres 服务的临时 compose
+    compose_file=Path("/tmp/sn667probe/compose.yaml"),  # 只含 postgres 服务的临时 compose
     project="sn667rev",
     runner=m.Runner(),
     dry_run=False,
@@ -424,50 +430,69 @@ print("RUN_EXIT=", code)
 
 ```python
 import subprocess, sys, pathlib
+
 REPO = pathlib.Path("/private/tmp/sn667")
 SCRIPT = REPO / "scripts/dev-env/reference-acceptance.py"
 ORIG = SCRIPT.read_text()
 
 MUTATIONS = {
- "M1 drop up exit-code check": (
-   '    if not started.ok:\n'
-   '        raise StepFailureError(\n'
-   '            f"栈未起来（docker compose up 退出码 {started.code}）：{started.tail(6)}",\n'
-   '            inputs=[\n'
-   '                "看上面构建输出修复 Dockerfile/构建参数；"\n'
-   '                "旧容器仍可能是 running/healthy，ps 的状态不能替代 up 的退出码",\n'
-   '            ],\n'
-   '        )\n', ''),
- "M2 gate FAIL no longer decides first": (
-   '    failures = [\n'
-   '        line.strip().removeprefix("FAIL: ") for line in output.splitlines() if "FAIL: " in line\n'
-   '    ]\n'
-   '    if failures:',
-   '    failures = []\n    if failures:'),
- "M3 ACL comparison returns no gaps": (
-   "    labels: dict[str, str] = {}\n    for check in checks:",
-   "    return []\n    labels: dict[str, str] = {}\n    for check in checks:"),
- "M4 catch-all narrowed to ZeroDivisionError": (
-   '        except Exception as unexpected:  # one summary line, never a traceback',
-   '        except ZeroDivisionError as unexpected:  # one summary line, never a traceback'),
- "M5 migrate run without --build": (
-   '"--profile", "migration", "run", "--build", "--rm", "migrate"',
-   '"--profile", "migration", "run", "--rm", "migrate"'),
- "M6 gate ordered before stack": (
-   'def git_commit(ctx: Context) -> str:',
-   'STEPS = STEPS[:4] + (STEPS[5], STEPS[4]) + STEPS[6:]\n\n\ndef git_commit(ctx: Context) -> str:'),
- "M7 unparsed GRANT silently skipped": (
-   "        checks.extend(parse_grant_statement(statement))",
-   "        try:\n            checks.extend(parse_grant_statement(statement))\n        except StepFailureError:\n            continue"),
+    "M1 drop up exit-code check": (
+        "    if not started.ok:\n"
+        "        raise StepFailureError(\n"
+        '            f"栈未起来（docker compose up 退出码 {started.code}）：{started.tail(6)}",\n'
+        "            inputs=[\n"
+        '                "看上面构建输出修复 Dockerfile/构建参数；"\n'
+        '                "旧容器仍可能是 running/healthy，ps 的状态不能替代 up 的退出码",\n'
+        "            ],\n"
+        "        )\n",
+        "",
+    ),
+    "M2 gate FAIL no longer decides first": (
+        "    failures = [\n"
+        '        line.strip().removeprefix("FAIL: ") for line in output.splitlines() if "FAIL: " in line\n'
+        "    ]\n"
+        "    if failures:",
+        "    failures = []\n    if failures:",
+    ),
+    "M3 ACL comparison returns no gaps": (
+        "    labels: dict[str, str] = {}\n    for check in checks:",
+        "    return []\n    labels: dict[str, str] = {}\n    for check in checks:",
+    ),
+    "M4 catch-all narrowed to ZeroDivisionError": (
+        "        except Exception as unexpected:  # one summary line, never a traceback",
+        "        except ZeroDivisionError as unexpected:  # one summary line, never a traceback",
+    ),
+    "M5 migrate run without --build": (
+        '"--profile", "migration", "run", "--build", "--rm", "migrate"',
+        '"--profile", "migration", "run", "--rm", "migrate"',
+    ),
+    "M6 gate ordered before stack": (
+        "def git_commit(ctx: Context) -> str:",
+        "STEPS = STEPS[:4] + (STEPS[5], STEPS[4]) + STEPS[6:]\n\n\ndef git_commit(ctx: Context) -> str:",
+    ),
+    "M7 unparsed GRANT silently skipped": (
+        "        checks.extend(parse_grant_statement(statement))",
+        "        try:\n            checks.extend(parse_grant_statement(statement))\n        except StepFailureError:\n            continue",
+    ),
 }
+
 
 def run_tests():
     proc = subprocess.run(
         [sys.executable, "-m", "unittest", "tests.ci.test_reference_acceptance", "-q"],
-        cwd=REPO, capture_output=True, text=True)
-    failed = sorted({line.split(" (")[0].strip() for line in proc.stderr.splitlines()
-                     if line.startswith(("FAIL:", "ERROR:"))})
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+    )
+    failed = sorted(
+        {
+            line.split(" (")[0].strip()
+            for line in proc.stderr.splitlines()
+            if line.startswith(("FAIL:", "ERROR:"))
+        }
+    )
     return proc.returncode, failed
+
 
 try:
     base = run_tests()

@@ -22,6 +22,7 @@ from starlette.responses import JSONResponse, Response
 
 from speechnexus_backend.speech.application.quarantine_releases import (
     QuarantineReleaseService,
+    QuarantineSurfaceError,
     QuarantineUnavailableError,
     QuarantineUnknownError,
 )
@@ -144,6 +145,10 @@ def _release(
         )
     except QuarantineReleaseRejectedError as error:
         return _reject(error, request_id)
+    except QuarantineSurfaceError as error:
+        # A deployment defect is named instead of being reported as a conflict:
+        # the lease state was never the problem and nothing was released.
+        return release_error(error.code, request_id)
     except QuarantineUnavailableError:
         return release_error("quarantine_release_unavailable", request_id)
     except QuarantineUnknownError:

@@ -43,14 +43,33 @@ ERRORS: dict[str, tuple[int, str, str]] = {
         "service_unavailable_error",
         "Quarantine release storage is unavailable.",
     ),
+    "quarantine_release_schema_not_migrated": (
+        503,
+        "service_unavailable_error",
+        "Quarantine release storage is missing a table or column; migrate schema.",
+    ),
+    "quarantine_release_privilege_missing": (
+        503,
+        "service_unavailable_error",
+        "Quarantine release role no longer holds its declared grants.",
+    ),
+    "quarantine_release_failed": (
+        503,
+        "service_unavailable_error",
+        "Quarantine release transaction failed before releasing capacity.",
+    ),
 }
+#: Only a transient storage outage can heal without an operator. A missing
+#: migration, a revoked grant or an unexpected refusal needs a deployment fix,
+#: so reporting them as retryable would make operator scripts poll forever.
+RETRYABLE = frozenset({"quarantine_release_unavailable"})
 
 
 def release_error(code: str, request_id: str) -> JSONResponse:
     if code not in ERRORS:
         code = "quarantine_release_unknown"
     status, kind, message = ERRORS[code]
-    retryable = code == "quarantine_release_unavailable"
+    retryable = code in RETRYABLE
     headers = {"Cache-Control": "no-store", "X-Should-Retry": str(retryable).lower()}
     body = dict(
         parse(
@@ -71,4 +90,4 @@ def release_error(code: str, request_id: str) -> JSONResponse:
     return JSONResponse(body, status_code=status, headers=headers)
 
 
-__all__ = ["ERRORS", "OPERATION", "release_error"]
+__all__ = ["ERRORS", "OPERATION", "RETRYABLE", "release_error"]

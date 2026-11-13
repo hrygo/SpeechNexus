@@ -100,6 +100,10 @@ schema 验证形状；跨记录身份、时间关系、阶段集合、预算与�
 实现按职责拆为 owner、admission、job、execution、runtime、meter 小端口；上表列的是事务契约，不表示每个端口均已完成生产装配或端到端验收。
 其中 [quarantine_lease、release_lease 与原租约查询](../components/production-leases.md)已有独立生产实现，
 只按网关权威事实搬移/结算当前 lease；[完整配方准入事务](../components/production-admission.md)已接入同步 TTS 与同步转写，完整调度及其他业务链仍须分别验收。
+[运维隔离释放](../components/production-quarantine-release.md)是 `record_stop` 与
+`release_lease` 在同一事务里的组合端口，只在 PostgreSQL 上实现：它依赖 `FOR UPDATE`
+锁序、plpgsql append-only 触发器与 `jsonb_typeof` 约束，**没有 InnoDB 等价实现**，
+双库协调门禁不覆盖该端点。
 同一个 admission 端口负责完整配方；不能拆成多个独立事务 repository 调用，
 再期待异常时逐项补偿。attempt/submit/runtime 等持久幂等身份的摘要不匹配必须报冲突；
 pool/claim 的读取返回当前权威，后续任期已覆盖当前投影时不能据此证明旧事务未提交。

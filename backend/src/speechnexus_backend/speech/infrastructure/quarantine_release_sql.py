@@ -134,12 +134,15 @@ def _branch_f(cursor: LeaseCursor, lease: Row, evidence: ReleaseEvidence) -> Rel
         reason=stop["reason"],
     ):
         raise QuarantineReleaseRejectedError("quarantine_release_conflict")
+    # The replay carries the stored facts, not the request's: the four fields were
+    # just proven equal, and building the answer from the rows keeps the response
+    # correct even if the comparison above is later weakened.
     return ReleaseLedger(
         lease["lease_id"],
-        evidence.evidence_kind,
-        evidence.evidence_digest,
-        evidence.observed_at_us,
-        evidence.reason,
+        stop["evidence_kind"],
+        stop["evidence_digest"],
+        stop["observed_at_us"],
+        stop["reason"],
         budget,
         (rows[0]["submit_intent_id"],),
         None,

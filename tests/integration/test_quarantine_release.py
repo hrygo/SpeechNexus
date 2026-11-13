@@ -42,6 +42,7 @@ from speechnexus_backend.quarantine_release_runtime import (
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.quarantine_releases import (
     QuarantineReleaseService,
+    QuarantineSurfaceError,
     QuarantineUnknownError,
 )
 from speechnexus_backend.speech.application.readiness import ReadinessService
@@ -568,6 +569,7 @@ def test_operator_first_makes_the_consumer_replay(db: Sandbox) -> None:
 
     result = db.consumer_release()
 
+    assert result.outcome == "replayed", "the consumer must take the replay branch"
     assert result.fact is not None
     assert result.fact.budget_released_at_us == outcome.ledger.budget_released_at_us
     assert db.projections() == snapshot
@@ -586,11 +588,22 @@ def test_evidence_split_release_still_replays_read_only(db: Sandbox) -> None:
     db.consumer_release()
     snapshot = db.projections()
     stored = db.query("SELECT observed_at_us FROM execution_stop_evidence")[0]
+    stored_budget = db.query(
+        "SELECT budget_released_at_us FROM admission_leases WHERE lease_id = %s", (LEASE,)
+    )[0]["budget_released_at_us"]
     evidence = db.evidence(observed_at=_stamp(int(stored["observed_at_us"])))
 
     replay = db.release(evidence)
 
     assert replay.idempotent_replay is True
+    # Branch F's whole value is returning the stored release fact, so the values
+    # are asserted, not just "no write happened".
+    assert replay.ledger.budget_released_at_us == stored_budget
+    assert replay.ledger.released_submit_intent_ids == (INTENT,)
+    assert replay.ledger.evidence_kind == KIND
+    assert replay.ledger.evidence_digest == DIGEST
+    assert replay.ledger.evidence_observed_at_us == stored["observed_at_us"]
+    assert replay.ledger.reason == REASON
     assert db.projections() == snapshot
     assert db.count(TABLE) == 0
 
@@ -821,7 +834,9 @@ def test_one_extra_column_grant_fails_startup(sandbox: Sandbox) -> None:
         )
         pool.open()
         try:
-            with pytest.raises(ValueError, match="declared surface"):
+            with pytest.raises(
+                ValueError, match=r"declared surface at admission_leases\.quarantine_observed_at_us"
+            ):
                 verify_quarantine_release_role(pool, sandbox.schema)
         finally:
             pool.close()
@@ -846,7 +861,9 @@ def test_one_missing_column_grant_fails_startup(sandbox: Sandbox) -> None:
         )
         pool.open()
         try:
-            with pytest.raises(ValueError, match="declared surface"):
+            with pytest.raises(
+                ValueError, match=r"declared surface at workspace_quotas\.held_attempts"
+            ):
                 verify_quarantine_release_role(pool, sandbox.schema)
         finally:
             pool.close()
@@ -1020,6 +1037,17 @@ def test_terminated_backend_leaves_no_partial_release(db: Sandbox) -> None:
 
 
 def test_lost_commit_acknowledgement_is_unknown_until_queried(db: Sandbox) -> None:
+    """A **service-level simulation** of a lost COMMIT acknowledgement.
+
+    The wrapper commits through the real adapter and only then raises
+    ``QuarantineUnknownError``, so this case proves the business conclusion —
+    "after an unknown result, querying by the original key returns the replay" —
+    and nothing about the transport. It is **not** evidence that a real
+    "COMMIT sent, acknowledgement lost" outage is classified as unknown: that
+    branch is the adapter's ``except OperationalError``, exercised by
+    ``test_terminated_backend_leaves_no_partial_release`` with a terminated
+    backend. Design §9.2 #17 records the same limitation.
+    """
     evidence = db.evidence()
 
     class _LostAck:
@@ -1209,3 +1237,175 @@ async def test_assembled_app_releases_through_its_own_runtime(db: Sandbox) -> No
     assert wrong.json()["error"]["code"] == "idempotency_conflict"
     assert db.count(TABLE) == 1
     assert db.count("execution_stop_evidence") == 1
+
+
+def test_a_release_waits_for_the_pool_lock_before_any_submit_intent_lock(db: Sandbox) -> None:
+    """The release joins the global lock order; it never takes a later lock first.
+
+    The gateway's own order is ``resource_pools → admission_leases →
+    submit_intents``. If the release closed intents before taking the pool row
+    lock, a gateway session holding the pool and asking for the intent would close
+    a cycle. This case observes the order directly: while the release blocks on the
+    pool row, it must hold **no** lock on ``submit_intents``.
+    """
+    evidence = db.evidence()
+    holder = psycopg.connect(db.url, autocommit=False)
+    completed: list[ReleaseOutcome] = []
+    failures: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            completed.append(db.service().release(evidence))
+        except BaseException as error:
+            failures.append(error)
+
+    holder.execute(f'SET search_path TO "{db.schema}",pg_catalog')
+    holder.execute("SELECT pool_id FROM resource_pools WHERE pool_id = %s FOR UPDATE", (POOL,))
+    thread = threading.Thread(target=run)
+    thread.start()
+    try:
+        pid = _wait_for_lock_wait(db, "FROM resource_pools")
+        held = db.query(
+            "SELECT c.relname AS name, l.granted AS granted, l.mode AS mode "
+            "FROM pg_catalog.pg_locks l "
+            "JOIN pg_catalog.pg_class c ON c.oid = l.relation "
+            "WHERE l.pid = %s AND c.relname IN ('resource_pools', 'submit_intents')",
+            (pid,),
+        )
+        blockers = db.query("SELECT pg_catalog.pg_blocking_pids(%s) AS pids", (pid,))[0]["pids"]
+        holder_pid = holder.info.backend_pid
+    finally:
+        holder.rollback()
+        holder.close()
+        thread.join(timeout=30)
+
+    assert not thread.is_alive()
+    assert failures == []
+    # It is queued behind the holder at the pool row...
+    assert holder_pid in blockers, (blockers, holder_pid)
+    assert "resource_pools" in {row["name"] for row in held}, held
+    # ...and has not touched a later lock in the order.
+    assert "submit_intents" not in {row["name"] for row in held}, held
+    assert len(completed) == 1
+    assert completed[0].idempotent_replay is False
+    assert db.count(TABLE) == 1
+
+
+def test_a_revoked_select_grant_is_named_instead_of_reported_as_a_conflict(db: Sandbox) -> None:
+    """Runtime revocation is a deployment defect: 42501, not 409 evidence conflict."""
+    db.admin.execute(f'REVOKE SELECT ON "{db.schema}".admission_leases FROM "{db.release_role}"')
+    snapshot = db.projections()
+    try:
+        with pytest.raises(QuarantineSurfaceError) as raised:
+            db.service().release(db.evidence())
+    finally:
+        db.admin.execute(f'GRANT SELECT ON "{db.schema}".admission_leases TO "{db.release_role}"')
+
+    assert raised.value.code == "quarantine_release_privilege_missing"
+    assert not isinstance(raised.value, QuarantineReleaseRejectedError)
+    assert db.projections() == snapshot
+    assert db.count(TABLE) == 0
+
+
+def test_a_mid_transaction_privilege_loss_rolls_back_and_names_the_defect(db: Sandbox) -> None:
+    """A revoked UPDATE column fails after the evidence and CAS writes, and rolls back."""
+    db.admin.execute(
+        f'REVOKE UPDATE (held_attempts) ON "{db.schema}".workspace_quotas FROM "{db.release_role}"'
+    )
+    snapshot = db.projections()
+    try:
+        with pytest.raises(QuarantineSurfaceError) as raised:
+            db.service().release(db.evidence())
+    finally:
+        db.admin.execute(
+            f'GRANT UPDATE (held_attempts) ON "{db.schema}".workspace_quotas TO "{db.release_role}"'
+        )
+
+    assert raised.value.code == "quarantine_release_privilege_missing"
+    assert db.projections() == snapshot
+    assert db.count("execution_stop_evidence") == 0
+    assert db.count(TABLE) == 0
+
+
+@pytest.mark.parametrize("table", [TABLE, "execution_stop_evidence"])
+def test_a_missing_relation_is_reported_as_an_unmigrated_schema(db: Sandbox, table: str) -> None:
+    """A missing table is "migrate", not "change the evidence".
+
+    Two positions are covered: the level-one ledger read (``admission_quarantine_
+    releases``) and a write deeper in the transaction (the stop evidence), so both
+    read and write refusals name the same deployment defect.
+    """
+    snapshot = db.projections()
+    hidden = f"{table}_hidden"
+    db.admin.execute(f'ALTER TABLE "{db.schema}".{table} RENAME TO {hidden}')
+    try:
+        with pytest.raises(QuarantineSurfaceError) as raised:
+            db.service().release(db.evidence())
+    finally:
+        db.admin.execute(f'ALTER TABLE "{db.schema}".{hidden} RENAME TO {table}')
+
+    assert raised.value.code == "quarantine_release_schema_not_migrated"
+    assert not isinstance(raised.value, QuarantineReleaseRejectedError)
+    assert db.projections() == snapshot
+    assert db.count(TABLE) == 0
+
+
+@pytest.mark.parametrize("privilege", ["USAGE", "SELECT", "USAGE, SELECT"])
+def test_an_extra_sequence_grant_fails_startup(sandbox: Sandbox, privilege: str) -> None:
+    """Sequences are invisible to the table enumeration, so they are checked alone.
+
+    The release transaction needs no sequence at all: any ``USAGE``/``SELECT`` on a
+    sequence in the configured schema widens the surface without showing up in the
+    column-by-column equality.
+    """
+    extra = f"qr_seq_{uuid.uuid4().hex[:8]}"
+    sequence = f"qr_sequence_{uuid.uuid4().hex[:8]}"
+    sandbox.admin.execute(f'CREATE SEQUENCE "{sandbox.schema}"."{sequence}"')
+    sandbox.admin.execute(f"CREATE ROLE \"{extra}\" LOGIN PASSWORD '{PASSWORD}'")
+    try:
+        for statement in quarantine_release_grants(sandbox.schema, extra):
+            sandbox.admin.execute(statement)
+        pool = speech_pool(
+            _connection_url(sandbox.url, extra),
+            schema=sandbox.schema,
+            max_size=1,
+            name="qr-sequence",
+        )
+        pool.open()
+        try:
+            verify_quarantine_release_role(pool, sandbox.schema)
+            sandbox.admin.execute(
+                f'GRANT {privilege} ON SEQUENCE "{sandbox.schema}"."{sequence}" TO "{extra}"'
+            )
+            with pytest.raises(ValueError, match="sequence"):
+                verify_quarantine_release_role(pool, sandbox.schema)
+        finally:
+            pool.close()
+    finally:
+        _drop_role(sandbox.admin, extra)
+        sandbox.admin.execute(f'DROP SEQUENCE IF EXISTS "{sandbox.schema}"."{sequence}"')
+
+
+def test_the_runtime_refuses_to_start_with_an_extra_sequence_grant(sandbox: Sandbox) -> None:
+    """The process boundary fails closed, not just the internal check."""
+    extra = f"qr_seq_runtime_{uuid.uuid4().hex[:8]}"
+    sequence = f"qr_sequence_runtime_{uuid.uuid4().hex[:8]}"
+    sandbox.admin.execute(f'CREATE SEQUENCE "{sandbox.schema}"."{sequence}"')
+    sandbox.admin.execute(f"CREATE ROLE \"{extra}\" LOGIN PASSWORD '{PASSWORD}'")
+    try:
+        for statement in quarantine_release_grants(sandbox.schema, extra):
+            sandbox.admin.execute(statement)
+        sandbox.admin.execute(
+            f'GRANT USAGE ON SEQUENCE "{sandbox.schema}"."{sequence}" TO "{extra}"'
+        )
+        runtime = QuarantineReleaseRuntime(_app_settings(sandbox, role=extra))
+        # The process boundary must name the stray sequence, not just refuse:
+        # otherwise the operator only learns "startup rejected".
+        with pytest.raises(
+            ValueError, match=f"startup rejected.*sequence privileges on {sequence}"
+        ):
+            runtime.open()
+        assert runtime.service is None
+    finally:
+        _drop_role(sandbox.admin, extra)
+        sandbox.admin.execute(f'DROP SEQUENCE IF EXISTS "{sandbox.schema}"."{sequence}"')

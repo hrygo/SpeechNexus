@@ -37,6 +37,7 @@ from speechnexus_backend.speech.infrastructure.quarantine_release_schema import 
 from speechnexus_backend.startup_privileges import (
     refuse_foreign_relation_privileges,
     refuse_schema_create,
+    refuse_sequence_privileges,
     require_schema_usage,
 )
 
@@ -94,6 +95,17 @@ def _require_minimum_surface(connection: SpeechConnection, schema: str) -> None:
         DECLARED_TABLES,
         subject=SUBJECT,
         declared_hint="FULL_READ/READ_COLUMNS/FULL_INSERT/UPDATE_COLUMNS",
+    )
+    # The release transaction touches no sequence, so the declared sequence set
+    # is empty: any USAGE/SELECT/UPDATE on a sequence in this schema is a stray
+    # grant, invisible to both the table enumeration and the column equality.
+    refuse_sequence_privileges(
+        connection,
+        None,
+        schema,
+        (),
+        subject=SUBJECT,
+        declared_hint="the declared sequence set",
     )
     rows = connection.execute(
         "SELECT c.relname AS table_name, a.attname AS column_name, "
@@ -215,8 +227,15 @@ class QuarantineReleaseRuntime:
                     self._diagnostics = None
                 if not isinstance(error, Exception):
                     raise
+                # A verification failure is our own ValueError and its message
+                # names the offending relation, column or sequence, so keep it:
+                # "startup rejected" alone leaves the operator guessing. A driver
+                # failure contributes only its type, never its message, because a
+                # conninfo can carry the DSN into the startup log.
+                detail = str(error) if isinstance(error, ValueError) else type(error).__name__
                 raise ValueError(
-                    "Quarantine release startup rejected; verify migration and release role"
+                    f"Quarantine release startup rejected ({detail}); "
+                    "verify migration and release role"
                 ) from None
 
     def close(self) -> None:

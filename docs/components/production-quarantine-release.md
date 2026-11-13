@@ -12,11 +12,15 @@ date: 2026-11-13
 [生产租约隔离与释放事务](production-leases.md)之后，补上机器证据不可得时由运维确认
 终止的唯一持久入口。
 
-**交付状态**：已交付（#635）。契约、迁移 `0052_quarantine_releases`、释放事务、
-专用非 owner 角色与启动期逐列校验已装配；`tests/contract/test_profile_http_bindings.py`
-的 `KNOWN_UNSERVED_ADMIN_OPERATIONS` 已清空并保留门禁。实现与验证证据见
+**交付状态**：已交付（#635）。契约、迁移
+`0052_quarantine_releases`、释放事务、专用非 owner 角色、启动期逐列校验与 Compose 透传
+已装配；`tests/contract/test_profile_http_bindings.py` 的
+`KNOWN_UNSERVED_ADMIN_OPERATIONS` 已清空并保留门禁。实现与验证证据见
 `tests/integration/test_quarantine_release.py`、`tests/unit/backend/test_quarantine_release_*.py`。
-任何调用仍不得手工 `INSERT`/`UPDATE` 模拟本页的事务；证据与账本由本入口独占写入。
+启用该端点需要按[最小部署手册 §6](../operations/compose-minimal.md#6-创建非-owner-运行角色与最小授权)
+预置 `sn_quarantine_release` 并设置 `SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL`；未配置时
+端点返回 `503 quarantine_release_unavailable`。任何调用仍不得手工 `INSERT`/`UPDATE` 模拟
+本页的事务；证据与账本由本入口独占写入。
 
 四条不变量，任一不成立都不得声明该路径可用：
 
@@ -264,7 +268,7 @@ resource_pools
 | 2 | 无锁读取租约、attempt、该租约的提交意图，定位父键并判存在 | 404 |
 | 3 | 按 §3.1 顺序取全部 `FOR UPDATE` | 冲突/重试 |
 | 4 | 锁后重核对冻结字段（`lease_id`/`operation_id`/`attempt_id`/`stage_id`/`pool_id`/`host_node_id`/`instance_id`/`instance_generation`/`gateway_id`/`fencing_token`/`reserved_*`）与 `attempt.workspace_id` | `reconciliation_required` |
-| 5 | 锁后重读账本行（`SELECT ... FOR UPDATE`，首次为空）重做 §4.2 判定；命中 B/C/D/E 则本事务只返回、不写入 | 200 / 409 |
+| 5 | 锁后**普通 `SELECT`**（不取行锁）重读账本行，首次为空；重做 §4.2 判定，命中 B/C/D/E 则本事务只返回、不写入 | 200 / 409 |
 | 6 | 状态前提：租约 `quarantined/quarantined`、`quarantine_observed_at_us` 非空、提交意图恰为 1 条且 `unknown_quarantined/quarantined` | 409 `quarantine_release_conflict` |
 | 7 | 取数据库时间 `now_us`（最后一次可能等待之后）；校验 `recorded_at_us (或 dispatched_at_us) <= observed_at_us <= now_us` | 400 |
 | 8 | INSERT `execution_stop_evidence` 运维证据行（§2.3） | `reconciliation_required` |
@@ -277,6 +281,30 @@ resource_pools
 步骤 10 复用 `backend/src/speechnexus_backend/speech/domain/lease_release.py:105` 的
 `release()`，因此"哪些容量允许归还、最后 stage 才结算 attempt quota、host 不自动恢复
 active"这些规则只有一份实现。本事务新增的只有步骤 6–9、12。
+
+**步骤 5 必须是普通 `SELECT`，不能加 `FOR UPDATE`。** PostgreSQL 的
+`SELECT ... FOR UPDATE` 要求对目标表至少一列持有 `UPDATE` 权限，而 §8.1 给账本表的授权
+只有 `SELECT + INSERT`——这正是 append-only 的授权前提。要 `FOR UPDATE` 就必须授予账本表
+的 `UPDATE`，那会把第 3 条不变量（"释放事实与证据一经写入不再改写"）从数据库保证降级成
+应用承诺，与 §2.2 的触发器设计直接冲突。两者的取舍没有中间态：最小授权 + 普通 `SELECT`
+是自洽解，`FOR UPDATE` + `UPDATE` 授权是自毁解。
+
+不加行锁仍能保证正确性，因为它依赖三条已成立的事实：
+
+1. **账本只有本事务一个写入者，且写入排在租约行锁之后**（步骤 12）。同租约的两个写事务
+   必然在锁序第 6 位的 `admission_leases` 行锁处串行化，后者在 READ COMMITTED 下逐语句取
+   新快照，因此步骤 5 的重读一定看得见前者已提交的行——不存在"两个写者都没读到账本就各写
+   一行"的窗口。
+2. **账本行提交后不可改写**（§2.2 的 append-only 触发器），所以步骤 5 读到的行就是终态
+   事实，不会在两次读取之间发生语义漂移。
+3. **`lease_id` 是主键**：绕过应用直写的并发插入会拿到唯一冲突（适配器映射为 409），因此
+   即便上述两条同时失效，也不会产生第二条释放记录。
+
+此外账本行对 `admission_leases` 的复合外键 `(lease_id, operation_id, attempt_id)` 在
+`INSERT` 时对父行取 `FOR KEY SHARE`，与租约上的 `FOR UPDATE` 互斥，所以**即使绕过应用
+直接写账本，也必须排在租约行锁之后**——这比"主键是第二道防线"更强一层。删除第 2 级重读
+本身是可观测的：并发同键不同证据的落败方会从 `idempotency_conflict` 退化成
+`quarantine_release_conflict`（见 §9.3 反例表）。
 
 ### 3.3 失败边界与中间态
 
@@ -500,19 +528,36 @@ endpoint 的用法一致。
 | 404 | `quarantine_release_not_found` | 分支 A | `false` |
 | 409 | `idempotency_conflict` | 分支 C | `false` |
 | 409 | `quarantine_release_conflict` | 分支 E/F：证据不匹配、租约未隔离、意图不在 `unknown_quarantined/quarantined`、提交意图数不是 1 | `false` |
-| 503 | `quarantine_release_unknown` | 事务结果不明（提交确认丢失、连接中断） | `false`（先查，不盲重） |
+| 503 | `quarantine_release_unknown` | 事务结果不明（提交确认丢失、连接中断、语句被取消） | `false`（先查，不盲重） |
 | 503 | `quarantine_release_unavailable` | 连接池/存储不可用，事务未开始 | `true` |
+| 503 | `quarantine_release_schema_not_migrated` | 目标关系或列不存在（库未迁移到 `0052`，或 `SPEECHNEXUS_DATABASE_SCHEMA` 指错） | `false` |
+| 503 | `quarantine_release_privilege_missing` | 运行期授权被回收：`insufficient_privilege`（42501） | `false` |
+| 503 | `quarantine_release_failed` | 其它未声明的存储拒绝；事务已确认回滚，未释放任何容量 | `false` |
 
 409 一律 `retryable: false`：同请求重试不会改变结论；客户端必须换证据、换租约或转人工
 协调。`observed_at` 落在未来属于 400 而非 409——时间参数是请求内容，服务器状态变化永远
 不会让它变合法。
 
-**一个契约前置缺口**：该 operation 的当前 responses 只有 200/400/401/404/409，没有声明
-任何 5xx（`contracts/admin-openapi.yaml:1161`）。因此两个 503 码在实现合入前需要给该
-operation 补 `$ref: "#/components/responses/ServiceUnavailable"`——该组件已存在
-（`contracts/admin-openapi.yaml:1400`）且被 `listPolicies` 等 operation 使用，属于纯追加
-的契约变更，不改变既有字段。缺这一步时实现只能把 unknown 报成未声明状态，等于对外
-承诺了不可核验的行为；实现卡须先做这项契约追加，再加路由。
+后三个 503 码是"部署缺陷不是业务冲突"的显式分类。表缺失、列缺失与授权被回收在启动期
+校验之后仍可能发生（运行期被 `REVOKE`、表被 `DROP ... CASCADE`），把它们映射成
+`409 quarantine_release_conflict` 会让运维去换证据或升级租约，而真正要修的是迁移或授权；
+这也与"把实现违约包装成可重试 503"是同一个错误的反方向。只有真实的状态不匹配
+（证据不符、租约未隔离、意图状态不符、同键不同证据）才返回 409。除
+`quarantine_release_unavailable` 外所有码都 `retryable: false`，包括后三个：重试同一个
+请求不会修好缺失的表或权限。
+
+**预算耗尽的两种终局。** 语句内超时（`statement_timeout` 触发的 `QueryCanceled`）属于
+`OperationalError` 家族，写事务里返回 `quarantine_release_unknown`、只读第 1 级返回
+`quarantine_release_unavailable`；语句之间的预算检查（`_BudgetExpiredError`）在两级都返回
+`quarantine_release_unavailable`。这两条分支的数据库状态相同（事务未开始或已确认回滚），
+差异只在"能否排除 COMMIT 语句本身被取消"，因此 `retryable` 只是提示而不是承诺；客户端
+在两种情况下都按同键查询或重试，不会重复释放。
+
+**契约出口**：该 operation 的 responses 声明了 `503
+$ref: "#/components/responses/ServiceUnavailable"`（`contracts/admin-openapi.yaml`，
+与服务端 5xx 出口一一对应），因此上表全部 503 码都在已声明状态内；`error.code` 由
+`contracts/shared/errors.schema.json` 的 `^[a-z][a-z0-9_]{2,63}$` 约束，新增码不需要再改
+契约。
 
 ## 8. 权限面
 
@@ -567,16 +612,26 @@ API 进程的运行时角色。原因见 §1.2：它必须能写 B 的两张表�
 2. 拒绝任何可切换/管理/预定义身份：不存在 `pg_has_role(SESSION_USER, other, 'SET')`、
    不存在 `MEMBER WITH ADMIN OPTION`、`rolsuper/createrole/createdb/replication/bypassrls`
    全假、不以 `USAGE` 继承任何 `pg_` 前缀角色。
-3. **逐列精确等式**：枚举 schema 内全部关系与列，对每列取
+3. **逐列精确等式**：枚举 schema 内的 `relkind IN ('r','p','v','m')` 关系与列，对每列取
    `has_column_privilege(..., 'SELECT'/'INSERT'/'UPDATE')`，与该角色的声明白名单逐项
    比较，`rd == allowed_read`、`ins == allowed_insert`、`upd == allowed_update` 必须同时
    成立；`ref` 必须为假；表级 `has_table_privilege(..., 'DELETE,TRUNCATE,TRIGGER')`
    必须为假。任一列"多给"或"少给"都终止启动——这正是"多给一列必须红"的守卫来源。
-4. 关键负向断言：`submit_intents.request_document` 与 `admission_leases.reserved_slots`
+4. **序列单独判定**：序列（`relkind='S'`）不在上面的枚举里，也没有列级 ACL，必须用
+   `has_sequence_privilege` 单独查：schema 内任何序列上的 `USAGE`/`SELECT`/`UPDATE` 都
+   终止启动（本事务不碰任何序列，声明集为空）。不能用 `has_table_privilege` 代替——序列
+   与表的权限字母含义不同，会误读同样的 ACL 位。
+5. 关键负向断言：`submit_intents.request_document` 与 `admission_leases.reserved_slots`
    的 `SELECT` 必须为假，`execution_stop_evidence` 的 `UPDATE` 必须为假。
-5. 校验不可变保证真实存在：`pg_trigger` 中存在
+6. 校验不可变保证真实存在：`pg_trigger` 中存在
    `admission_quarantine_releases_append_only` 且已启用。缺触发器说明迁移没装齐，
    此时"永不重写"只是文档承诺。
+
+**校验边界**：覆盖范围是**配置 schema 内的表、分区表、视图、物化视图、外表与序列**。
+其他 schema（含 `public`）、数据库级权限、函数 `EXECUTE` 与 `ALTER DEFAULT PRIVILEGES`
+产生的未来对象不在这条等式内——函数 `EXECUTE` 无法按同样的方式否定，因为 PostgreSQL
+默认把新函数的 `EXECUTE` 授予 `PUBLIC`；真正承重的守卫是 §1.3 的 CAS、列级授权与
+append-only 触发器，启动校验只保证"没有多给的表面"。
 
 启动快照不替代后续授权变更的持续核验：授权被放宽后，进程在重启前不会察觉；这与既有
 worker 的边界相同，运维侧须把授权变更纳入发布检查。
@@ -607,7 +662,7 @@ worker 的边界相同，运维侧须把授权变更纳入发布检查。
 | 11 | 非法证据四元组：`evidence_kind` 非常量、`reason` 空白或超长、`observed_at < recorded_at`、`observed_at < dispatched_at`、`observed_at > 服务端当前时间` | 400；零写入 |
 | 12 | 意图 `version` 或租约 `version` 耗尽（`MAX_VERSION`） | 拒绝并整笔回滚；投影不变 |
 | 13 | 兄弟 stage 已释放的 last-stage 结算 | attempt quota 恰好归还一次；quota 版本推进一次 |
-| 14 | 权限负例 | 用一个多授一列的测试角色启动 → 启动校验拒绝，事务根本不会运行（见 §9.3 反例 8） |
+| 14 | 权限负例 | 用一个多授一列的测试角色启动 → 启动校验拒绝，事务根本不会运行（见 §9.3 反例 9） |
 | 15 | 账本与租约一致性 | 每行账本都存在对应的 `released/complete` 租约，且 `budget_released_at_us` 与租约列相等（本设计不建跨表约束，靠此用例守住） |
 | 23 | 租约不存在 | 404 `quarantine_release_not_found`，零写入 |
 
@@ -616,48 +671,73 @@ worker 的边界相同，运维侧须把授权变更纳入发布检查。
 | # | 注入 | 断言 |
 | --- | --- | --- |
 | 16 | 事务在步骤 9 与 11 之间被 `pg_terminate_backend` 杀掉 | 全量回滚：证据 0 条、账本 0 条、投影与租约与事务前逐行相等；同键重试一次成功 |
-| 17 | 服务端 COMMIT 已发出、客户端确认丢失 | 首次返回 503 + `quarantine_release_unknown`；同键重试命中分支 B，返回首次的 `budget_released_at`，投影只扣一次 |
+| 17 | 服务端 COMMIT 已发出、客户端确认丢失 | **服务级模拟**：包装层在真正提交之后抛 `QuarantineUnknownError`，证明"unknown 之后按原键查询拿到重放"这条业务结论。它不是真实网络故障证据——适配器把"COMMIT 确认丢失"分类成 unknown 的那条分支由 16 覆盖（同 `except OperationalError`） |
 | 18 | 两连接并发同键同证据 | 一方 200 提交、另一方 200 重放；总扣减一次；无唯一约束异常泄漏成 500 |
-| 19 | 两连接并发同键不同证据 | 一方 200、一方 409（顺序不定）；数据库里只有一份证据与一份账本 |
+| 19 | 两连接并发同键不同证据 | 一方 200、一方 409 `idempotency_conflict`（顺序不定）；数据库里只有一份证据与一份账本 |
 | 20 | 运维事务与同 attempt 另一 stage 的释放并发 | 不死锁（锁序一致），两笔都提交，attempt quota 只归还一次 |
 | 21 | 证据 INSERT 违反唯一约束（预置一条机器证据） | 整笔回滚、返回冲突，不产生第二条证据行 |
 | 22 | 另一个会话对同一租约行长期持有 `FOR UPDATE`，重放请求带 1 s `statement_timeout` | 重放仍按时返回 200（§4.4 第 1 级不加锁）；把第 1 级去掉则被锁等待打断、超时红 |
+| 23 | 另一个会话按网关顺序先持 `resource_pools` 行锁，再发起释放 | 释放会话在等待 pool 时 `pg_locks` 里没有任何 `submit_intents` 行锁；放行后释放成功、容量只扣一次。锁序反转时该用例红（见 §9.3） |
+| 24 | 运行期撤销释放角色对某表的 `SELECT`（启动校验早已通过） | 503 `quarantine_release_privilege_missing`，不是 409；零写入 |
+| 25 | 把账本表或释放事务读到的某表改名（等价于迁移未到位） | 503 `quarantine_release_schema_not_migrated`，不是 409；零写入 |
+| 26 | 启动前给释放角色多授 schema 内一个序列的 `USAGE`/`SELECT` | 启动校验拒绝（§8.2 第 4 项），进程不注册路由 |
 
 ### 9.3 反例：删掉哪个守卫，哪条用例会红
 
-每条都必须"先红后绿"：先删守卫跑出红，再恢复并确认绿。
+每条都必须"先红后绿"：先删守卫跑出红，再恢复并确认绿。**只有下表列出的结论是可观测的**；
+未列出的守卫属于下一小节说明的纵深防御。
 
 | # | 删掉的守卫 | 变红的用例 |
 | --- | --- | --- |
-| 1 | 步骤 9 的 `execution_state/cleanup_state/version` CAS（改成无条件 `UPDATE`） | 8（把 `executing` 意图改写成 `aborted`）、18/19（并发双方都成功） |
-| 2 | 步骤 5（与 §4.4 第 1 级）的同键摘要比较（`key_eq ∧ ¬ev_eq` 放行成 200） | 3 |
-| 3 | 步骤 1/5 的账本读取（每次请求都重新释放） | 2（`budget_released_at` 变成新时间且投影二次扣减） |
-| 4 | 步骤 7 的 `observed_at` 上下界 | 11 |
-| 5 | 表级 CHECK `evidence_observed_at_us <= budget_released_at_us` | 11 的第三条（改库直写时能落库） |
-| 6 | `admission_quarantine_releases_append_only` 触发器 | 证据重写用例；§8.2 第 5 项启动校验同时变红 |
-| 7 | 步骤 6 的"意图必须 `unknown_quarantined`"前提 | 6（把机器证据的释放当成运维释放重放第二次） |
-| 8 | 启动校验的逐列精确等式（改成只查"必须有的"） | 14 |
-| 9 | 锁序（把 `submit_intents` 的写提到 `resource_pools` 之前） | 20 |
-| 10 | 步骤 10 复用 `release()`（改成手写扣减） | 13（last-stage quota 归还两次）、隔离维度的架构分支用例 |
+| 1 | 步骤 9 的 CAS **与**步骤 6 的"意图必须 `unknown_quarantined/quarantined`"前提同时删除 | 8（把 `executing` 意图改写成 `aborted`）。单独删任一条仍 42 绿，见下节 |
+| 2 | 步骤 5 与 §4.4 第 1 级的同键摘要比较（`key_eq ∧ ¬ev_eq` 放行成 200） | 3 |
+| 3 | 步骤 5 的第 2 级账本重读 | 19（落败方从 `idempotency_conflict` 退化成 `quarantine_release_conflict`） |
+| 4 | 步骤 1/5 的两级账本读取（每次请求都重新释放） | 2（`budget_released_at` 变成新时间且投影二次扣减） |
+| 5 | 步骤 7 的 `observed_at` 上下界 | 11 |
+| 6 | 表级 CHECK `evidence_observed_at_us <= budget_released_at_us` | 11 的第三条（改库直写时能落库） |
+| 7 | `admission_quarantine_releases_append_only` 触发器 | 证据重写用例；§8.2 第 6 项启动校验同时变红 |
+| 8 | 步骤 6 的"意图必须 `unknown_quarantined`"前提（与 1 同一对） | 6（把机器证据的释放当成运维释放重放第二次） |
+| 9 | 启动校验的逐列精确等式（改成只查"必须有的"） | 14 |
+| 10 | 启动校验的序列判定（§8.2 第 4 项） | 26 |
+| 11 | 锁序（把 `submit_intents` 的 `FOR UPDATE` 提到 `resource_pools` 之前） | 23（释放会话在等待 pool 时已持有 `submit_intents` 行锁） |
+| 12 | 步骤 10 复用 `release()`（改成手写扣减） | 13（last-stage quota 归还两次）、隔离维度的架构分支用例 |
+| 13 | `except` 链里把存储类异常并回业务冲突分支 | 24/25（错误码退化成 409） |
+
+#### 9.3.1 未被用例观测的纵深防御
+
+以下四层在真实 PG 上单独删除**不改变任何用例结论**（实测 42 passed）。它们不是死代码，
+但也不能当作"有守护"：
+
+| 层 | 位置 | 为何不可观测 | 何时才可观测 |
+| --- | --- | --- | --- |
+| 意图状态前提 | `domain/quarantine_release.py` 的 `require_releasable` | 与步骤 9 的 CAS 互为兜底：删掉它时 CAS（`rowcount != 1`）仍在写之前拦下同一状态 | 与 CAS 同时删除，或用例构造出"前提为真但 CAS 失败"的路径 |
+| 意图 CAS | `quarantine_release_sql.py` 的 `_close_intent` | 同上，删掉它时状态前提在写之前就拒绝 | 同上 |
+| 锁后冻结字段重核对 | `quarantine_release_sql.py` 的 `frozen` 逐字段比较 | 准入之后没有任何写入路径修改 `operation_id`/`host_node_id`/`reserved_*` 等冻结列，`hint` 与锁后行不可能不同 | 出现"准入后改写租约身份或预留向量"的迁移或新事务（例如引入租约接管改写预留） |
+| `result.outcome != "committed"` 守卫 | `quarantine_release_sql.py` 末尾 | 步骤 6 已要求租约为 `quarantined/quarantined`，`release_in_transaction` 在同一事务里只会返回 `committed` | `release()` 增加新的返回值（例如"部分结算"）或本事务允许非隔离租约 |
+
+锁序曾属于这一组（反转后 42 绿），现已由用例 23 观测。
 
 ### 9.4 契约与装配面
 
-实现卡同时需要（本卡不实施）：
-
-- 从 `tests/contract/test_profile_http_bindings.py:36` 的
-  `KNOWN_UNSERVED_ADMIN_OPERATIONS` 删除该 operation；该文件同时断言"已承接的 operation
-  必须离开清单"，留着会红。
-- 该 operation 当前不在 `backend/src/speechnexus_backend/speech/interfaces/http/unimplemented.py:62`
-  的占位表里，因此 `scripts/dev-env/check-route-conformance.py` 的路由一致性需要按
-  "新 router 必须在占位 router 之前 include"复核，但不需要新增占位条目。
-- 给该 operation 追加 `503 ServiceUnavailable`（§7.2 的前置缺口）；否则 unknown 与
-  存储不可用两个结论没有声明过的出口。
-- 按 §5 追加 `released_submit_intent_ids` 的 `maxItems: 1`（可与上一条同 PR，也可拆开）。
+- 该 operation 已从 `tests/contract/test_profile_http_bindings.py` 的
+  `KNOWN_UNSERVED_ADMIN_OPERATIONS` 移除，清单为空且门禁保留（已承接的 operation 再出现
+  会红）。
+- 路由一致性由 `scripts/dev-env/check-route-conformance.py` 校验；该 operation 不在
+  `backend/src/speechnexus_backend/speech/interfaces/http/unimplemented.py` 的占位表里。
+- 契约声明 `503 ServiceUnavailable`，并把 `released_submit_intent_ids` 收窄为
+  `maxItems: 1`（§5）。
+- **装配面**：`deploy/compose.yaml` 的 `api` 环境以 `${VAR:-}` 空默认透传
+  `SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL`，未配置的空值使端点停在
+  `503 quarantine_release_unavailable`，而不是让整栈渲染失败；
+  `deploy/compose.env.example` 声明该键与
+  `SPEECHNEXUS_QUARANTINE_RELEASE_ROLE_PASSWORD`；角色预置步骤在
+  [最小部署手册 §6](../operations/compose-minimal.md#6-创建非-owner-运行角色与最小授权)
+  （`quarantine_release_grants`、DSN 写回、列级核对 SQL、已有部署的授权升级）。装配面由
+  `tests/unit/backend/test_reader_dsn_wiring.py` 与
+  `tests/ci/test_compose_minimal_role_provisioning.py` 守护。
 - 术语与行文以[协调事务](../architecture/coordination-transactions.md)、
   [运行治理](../architecture/runtime-governance.md)与
-  [对账恢复](../operations/reconciliation-recovery.md)为准；实现合入后
-  `docs/architecture/speech-api.md` 与 `docs/operations/reconciliation-recovery.md`
-  第 5.1 节关于"生产未实现该入口"的表述需要同 PR 更新。
+  [对账恢复](../operations/reconciliation-recovery.md)为准。
 
 ## 10. 明确不做
 

@@ -325,6 +325,25 @@ SELECT 且拒绝任何写权限，未配置时列表返回 `503 model_binding_se
 中的显式 `GRANT` 预置。未配置时两个端点返回
 `503 model_instance_service_unavailable`。
 
+隔离租约的运维释放另需独立写入身份
+`SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL`：由 owner 运行
+`quarantine_release_grants(schema, role)` 预置的非 owner 角色，持有 schema `USAGE`
+（无 `CREATE`）与九张关系的列级 `SELECT`/`UPDATE`/`INSERT`。它在同一个事务里写
+`execution_stop_evidence` 运维证据、关闭唯一提交意图、归还 `workspace_quotas`、
+`host_nodes`、`engine_instances`、`admission_leases` 的容量，并追加
+`admission_quarantine_releases` 账本；其中只有后两张表有 `INSERT`，账本表没有
+`UPDATE`，因为 append-only 触发器负责不可改写。该身份不得复用迁移 owner、`sn_api`
+运行时角色或任何 gateway/worker 写入身份。启动时逐列比对实际 ACL 与声明面：多一列、
+少一列、schema 内任何序列的 `USAGE`/`SELECT`/`UPDATE`、append-only 触发器缺失或未启用
+都会让 API 启动失败并报 `Quarantine release startup rejected`。`compose.yaml` 的 api
+环境以空默认透传本变量，未配置的既有部署仍可渲染并启动，此时
+`POST /v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases` 返回
+`503 quarantine_release_unavailable`（`retryable: true`，须先确认该键是否配置，不要盲目
+轮询）。已配置但运行期授权被回收时返回 `503 quarantine_release_privilege_missing`，迁移
+未到位时返回 `503 quarantine_release_schema_not_migrated`，其余存储拒绝返回
+`503 quarantine_release_failed`；这四种 5xx 都不表示证据冲突，只有真实的状态不匹配才返回
+`409 quarantine_release_conflict`。
+
 公开 Job 提交与读取默认关闭。应用 `0017_job_submissions` 并为非 owner 角色授予
 `speech_jobs` / `speech_job_events` / `speech_job_submissions` 的最小写入权限及发布事实
 只读权限后，设置 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL`；启动只验证权限，不执行迁移

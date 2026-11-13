@@ -332,7 +332,7 @@ head 为准，查询结果须与之相符。不要把旧版 `0027_gateway_abort_
 ## 6. 创建非 owner 运行角色与最小授权
 
 以下脚本必须使用 **迁移 owner DSN** 运行；它创建 API、gateway writer、gateway
-query、工作区 writer、审计 reader 与实例读取 reader 六个独立角色。除实例读取面外，
+query、工作区 writer、审计 reader、实例读取 reader 与隔离释放七个独立角色。除实例读取面外，
 各身份的最小授权都由仓库授权函数声明；实例读取投影目前没有对应的 `*_grants` 函数，
 脚本按它的运行时启动校验所核验的两张表显式授权。此段只用于新建、独占的 SpeechNexus
 数据库：
@@ -343,7 +343,7 @@ query、工作区 writer、审计 reader 与实例读取 reader 六个独立角�
 失败不会整体回滚。失败后须先核对已创建的角色和实际 ACL，按保存的原状态及获准的
 恢复步骤处理；直接重跑会因已有角色而停止，不能假设数据库仍处于执行前状态。
 
-工作区 writer、审计 reader 与实例读取 reader 的口令不在
+工作区 writer、审计 reader、实例读取 reader 与隔离释放角色的口令不在
 `deploy/compose.env.example` 中给出可用值（那里只有 `change-me-*` 占位），先在本轮
 重新生成，口令不打印到终端，只在下面的脚本和写回环境文件时使用：
 
@@ -352,6 +352,7 @@ umask 077
 export SPEECHNEXUS_WORKSPACE_WRITER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 export SPEECHNEXUS_AUDIT_READER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 export SPEECHNEXUS_MODEL_INSTANCE_READER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export SPEECHNEXUS_QUARANTINE_RELEASE_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 ```
 
 先在当前 shell 载入环境文件：
@@ -392,6 +393,7 @@ roles = {
     "sn_workspace_writer": os.environ["SPEECHNEXUS_WORKSPACE_WRITER_ROLE_PASSWORD"],
     "sn_audit_reader": os.environ["SPEECHNEXUS_AUDIT_READER_ROLE_PASSWORD"],
     "sn_model_instance_reader": os.environ["SPEECHNEXUS_MODEL_INSTANCE_READER_ROLE_PASSWORD"],
+    "sn_quarantine_release": os.environ["SPEECHNEXUS_QUARANTINE_RELEASE_ROLE_PASSWORD"],
 }
 with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     # PostgreSQL 角色属于整个集群，即使数据库是专用的也要先核对。
@@ -465,6 +467,13 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
         conn.execute(statement)
     for statement in audit_reader_grants(schema, "sn_audit_reader"):
         conn.execute(statement)
+    # The release transaction writes B's stop evidence and A's capacity counters,
+    # so its identity is declared by quarantine_release_grants(): schema USAGE
+    # plus the exact column surface of the nine relations it reads, updates and
+    # inserts. Do not hand-write this GRANT and do not reuse the owner, the api
+    # runtime role or any gateway/worker writer.
+    for statement in quarantine_release_grants(schema, "sn_quarantine_release"):
+        conn.execute(statement)
     # No grants function declares this projection yet, so mirror the read-only
     # reader functions exactly: schema USAGE plus SELECT on the two relations
     # the runtime verifies at startup (READABLE in model_instance_runtime.py).
@@ -497,7 +506,7 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     )
     print(
         "roles ready: sn_api sn_gateway sn_gateway_query sn_workspace_writer "
-        "sn_audit_reader sn_model_instance_reader"
+        "sn_audit_reader sn_model_instance_reader sn_quarantine_release"
     )
 PY
 ```
@@ -506,7 +515,7 @@ PY
 CREATE 权限，停止启动服务；不要用超级用户连接绕过检查。API 启动时还会再次核验
 `sn_api` 不是数据库/表 owner，也不是可继承的 owner 成员。
 
-脚本成功后，把三个新角色的连接地址写回 `deploy/compose.env`；脚本替换同名空行或追加，
+脚本成功后，把四个新角色的连接地址写回 `deploy/compose.env`；脚本替换同名空行或追加，
 不打印口令：
 
 ```bash
@@ -531,6 +540,11 @@ values = {
         f"{os.environ['SPEECHNEXUS_MODEL_INSTANCE_READER_ROLE_PASSWORD']}"
         "@postgres:5432/speechnexus"
     ),
+    "SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL": (
+        "postgresql://sn_quarantine_release:"
+        f"{os.environ['SPEECHNEXUS_QUARANTINE_RELEASE_ROLE_PASSWORD']}"
+        "@postgres:5432/speechnexus"
+    ),
 }
 path = Path("deploy/compose.env")
 text = path.read_text()
@@ -540,12 +554,15 @@ for key, item in values.items():
     text = re.sub(pattern, line, text, count=1) if re.search(pattern, text) else text + line + "\n"
 path.write_text(text)
 path.chmod(0o600)
-print("workspace writer, audit reader and instance reader DSNs written to deploy/compose.env")
+print(
+    "workspace writer, audit reader, instance reader and quarantine release DSNs "
+    "written to deploy/compose.env"
+)
 PY
 ```
 
-三行都按示例的 `postgres` 服务名和 `speechnexus` 库名生成；改了 Compose 服务名、端口或
-数据库名时同步修改这三行。
+四行都按示例的 `postgres` 服务名和 `speechnexus` 库名生成；改了 Compose 服务名、端口或
+数据库名时同步修改这四行。
 
 ### 工作区写角色 `sn_workspace_writer`
 
@@ -711,15 +728,66 @@ GRANT SELECT ON speech.alembic_version TO sn_job_dispatch;
 全部通过后才 `exec` 真正的派发进程；真实引擎与已注册实例作为部署方输入以 `pending`
 行提示，不作为闸门失败条件（引擎可用性另按 #572 的真实验收处理）。
 
+### 隔离释放角色 `sn_quarantine_release`
+
+`POST /v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases` 用独立的非 owner
+身份执行一次跨所有者事务：写 B 的 `execution_stop_evidence` 运维证据、把唯一提交意图从
+`unknown_quarantined/quarantined` 关闭为 `aborted/complete`，再写 A 的
+`admission_quarantine_releases` 账本并归还 `workspace_quotas`、`host_nodes`、
+`engine_instances`、`admission_leases` 的容量。因此该身份持有 B 两张表的窄写权，绝不能
+复用迁移 owner、`sn_api` 运行时角色或任一 gateway/worker 写入身份。
+
+授权由 `quarantine_release_grants(schema, role)` 声明：schema `USAGE`（无 `CREATE`）加
+九张关系的列级 `SELECT`/`UPDATE`/`INSERT`，其中只有
+`execution_stop_evidence` 与 `admission_quarantine_releases` 两张表有 `INSERT`，账本表只有
+`SELECT + INSERT`（append-only 触发器保证不可改写，故连该表的 `UPDATE` 都不授予）。
+不要手写额外的表、列或序列授权，也不要给 `DELETE`、`TRUNCATE`、`TRIGGER`、
+`REFERENCES`、schema `CREATE` 或用 `FOR UPDATE` 去要账本的 `UPDATE` 权限。
+
+进程启动时逐列核对实际 ACL 与声明面：多给一列、少给一列、schema 内任何序列的
+`USAGE`/`SELECT`/`UPDATE`、`admission_quarantine_releases_append_only` 触发器缺失或被
+禁用，任一情况都以 `Quarantine release startup rejected` 拒绝启动，不会带着错误身份上线。
+未配置 `SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL` 时该端点返回
+`503 quarantine_release_unavailable`（`retryable: true`），所以运维脚本反复看到它时先确认
+这个键是否配置，而不是继续轮询。已配置但授权被回收时返回
+`503 quarantine_release_privilege_missing`，表/列缺失时返回
+`503 quarantine_release_schema_not_migrated`，两者都 `retryable: false`：修部署，不重试。
+
+`deploy/compose.yaml` 的 `api` 服务以空默认透传该变量：只写 `deploy/compose.env` 而不建
+角色时容器照常启动，该端点仍返回上面的 503；角色与连接地址都预置后，同一部署面即可释放，
+容器不需要改动。核对列级授权（表级 `SELECT` 由启动校验和事务读取路径验证）：
+
+```bash
+docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
+  "select table_name, privilege_type, column_name from information_schema.column_privileges \
+   where grantee = 'sn_quarantine_release' and privilege_type in ('INSERT','UPDATE') order by 1, 2, 3"
+```
+
+输出应只含声明面里的列：三处容量投影的计数与 `version`、`submit_intents` 的
+`execution_state/cleanup_state/terminated_at_us/updated_at_us/version`、
+`admission_leases` 的 `lease_state/cleanup_state/budget_released_at_us/version`、
+`resource_pools.version`，以及 `execution_stop_evidence` 与
+`admission_quarantine_releases` 的整表 `INSERT`（`column_name` 为
+`NULL`）。再确认没有 `DELETE`/`TRUNCATE`/`REFERENCES` 落到该角色：
+
+```bash
+docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
+  "select table_name, privilege_type from information_schema.table_privileges \
+   where grantee = 'sn_quarantine_release' and privilege_type in \
+     ('DELETE','TRUNCATE','REFERENCES','TRIGGER') order by 1, 2"
+```
+
+该查询应无输出。
+
 ### 已有部署的授权升级
 
 上面的脚本只适用于新建、独占的数据库；已有部署不重跑它的撤权与建角色部分。应用新迁移
 后，用同一个迁移 owner 连接对既有角色重放对应的授权函数即可，`GRANT` 是追加式操作，
-重复执行不改变既有权限。`0049_workspace_commands` 之后新增的工作区写、审计读取与实例读取
-三个角色在既有部署上同样需要预置：下面的脚本先按需创建这三个角色，再重放全部相关授权。
-角色尚不存在时先按上文生成口令；已存在时改用其现有口令，脚本不会修改已存在角色的口令，
-用新生成的口令写连接地址会连不上。实例读取面按上文的显式 `GRANT` 重放，因为它没有对应的
-仓库授权函数。
+重复执行不改变既有权限。`0049_workspace_commands` 之后新增的工作区写、审计读取、实例读取
+与隔离释放四个角色在既有部署上同样需要预置：下面的脚本先按需创建这四个角色，再重放全部
+相关授权。角色尚不存在时先按上文生成口令；已存在时改用其现有口令，脚本不会修改已存在
+角色的口令，用新生成的口令写连接地址会连不上。实例读取面按上文的显式 `GRANT` 重放，因为
+它没有对应的仓库授权函数；隔离释放面按 `quarantine_release_grants` 重放。
 
 ```bash
 uv run --all-packages python - <<'PY'
@@ -736,6 +804,9 @@ from speechnexus_backend.speech.infrastructure.gateway_query_grants import (
 from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import (
     audit_reader_grants,
 )
+from speechnexus_backend.speech.infrastructure.quarantine_release_schema import (
+    quarantine_release_grants,
+)
 from speechnexus_backend.speech.infrastructure.workspace_schema import workspace_writer_grants
 
 schema = "speech"
@@ -743,6 +814,7 @@ new_roles = {
     "sn_workspace_writer": os.environ["SPEECHNEXUS_WORKSPACE_WRITER_ROLE_PASSWORD"],
     "sn_audit_reader": os.environ["SPEECHNEXUS_AUDIT_READER_ROLE_PASSWORD"],
     "sn_model_instance_reader": os.environ["SPEECHNEXUS_MODEL_INSTANCE_READER_ROLE_PASSWORD"],
+    "sn_quarantine_release": os.environ["SPEECHNEXUS_QUARANTINE_RELEASE_ROLE_PASSWORD"],
 }
 with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     for role, password in new_roles.items():
@@ -765,6 +837,8 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
         conn.execute(statement)
     for statement in audit_reader_grants(schema, "sn_audit_reader"):
         conn.execute(statement)
+    for statement in quarantine_release_grants(schema, "sn_quarantine_release"):
+        conn.execute(statement)
     conn.execute(
         sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
             sql.Identifier(schema), sql.Identifier("sn_model_instance_reader")
@@ -778,7 +852,10 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
             sql.Identifier("sn_model_instance_reader"),
         )
     )
-print("gateway, workspace writer, audit reader and instance reader grants refreshed")
+print(
+    "gateway, workspace writer, audit reader, instance reader and quarantine release "
+    "grants refreshed"
+)
 PY
 ```
 
@@ -786,12 +863,13 @@ PY
 `gateway_query_grants` 时控制面以 `invalid execution query reader authority` 拒绝启动；
 漏掉 `gateway_abort_grants` 新增的尝试列时启动继续，但持久取消接收能力被关闭
 （fail-soft），网关不再接收新的取消。升级顺序：先迁移，再重放授权，最后启动
-服务；启动日志出现上述拒绝时停止服务并核对授权，不带病运行。工作区写、审计读取与实例读取的
-授权同样在迁移后重放：漏掉 `workspace_writer_grants` 时 API 以
+服务；启动日志出现上述拒绝时停止服务并核对授权，不带病运行。工作区写、审计读取、实例读取
+与隔离释放的授权同样在迁移后重放：漏掉 `workspace_writer_grants` 时 API 以
 `Workspace writer startup rejected` 拒绝启动，漏掉 `audit_reader_grants` 时以
 `Audit reader startup rejected` 拒绝启动，漏掉实例读取的两张表 `SELECT` 时以
-`Model instance reader startup rejected` 拒绝启动；三个角色未配置连接地址时对应端点
-保持 503。
+`Model instance reader startup rejected` 拒绝启动，漏掉 `quarantine_release_grants` 或
+启动期序列判定未通过时以 `Quarantine release startup rejected` 拒绝启动，拒绝信息同时
+点名不符的关系、列或序列；四个角色未配置连接地址时对应端点保持 503。
 
 Gateway query 身份仅取得六张执行恢复关系及安装身份表的必要列读取权，不得写产品或持久对象。
 原生 `pg_settings` 的默认会话参数 UPDATE 与 SET/set_config 属于会话能力，不作为
@@ -907,6 +985,10 @@ instance 来“绕过”冲突；先核对旧 head、owner 和 readiness 证据�
 | `engine-register` 报 `invalid_recipe` | recipe 结构、摘要、stage/instance 或 binding plan 不一致 |
 | `engine-register` 报 `pool_owner_conflict` / `previous_generation_active` | 已有活动 owner 或旧 generation 仍 ready；先核对/停止旧实例，不能修改 token 假装接管 |
 | 容器已启动但 API 转写返回 `504 operation_timeout` | 按原身份检查准入、网关、worker 和终态事实；历史超时原因不能直接套用到新运行，也不要用增加超时或重提新执行掩盖 |
+| `POST .../quarantine-releases` 持续 `503 quarantine_release_unavailable` | 先查 `SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL` 是否配置：空值使端点永久停在可重试的 503，不会自愈；再查角色口令、DNS 与连接池 |
+| 同一端点返回 `503 quarantine_release_privilege_missing` | 运行期授权被回收或与声明面不符；重放 `quarantine_release_grants`，不要改为授予 owner 或整表写权 |
+| 同一端点返回 `503 quarantine_release_schema_not_migrated` | 该库未迁移到当前 head（或 `SPEECHNEXUS_DATABASE_SCHEMA` 指错）；先迁移再重试 |
+| 同一端点返回 `503 quarantine_release_failed` | 存储以未声明的错误拒绝了事务，已确认回滚且未释放容量；按 API 日志的 `sqlstate` 定位，不要当业务冲突处理 |
 | 公开 `/v1/audio/speech` 不可用 | 本 Compose 没有提供 API 侧同步 TTS 所需配方及结算数据库配置；另见[同步 TTS 装配要求](../components/synchronous-speech.md) |
 
 ## 10. 停止与清理边界

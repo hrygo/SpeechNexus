@@ -14,6 +14,7 @@ from speechnexus_contracts.admin_http import validate_response
 from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.application.quarantine_releases import (
     QuarantineReleaseService,
+    QuarantineSurfaceError,
     QuarantineUnavailableError,
     QuarantineUnknownError,
 )
@@ -26,6 +27,7 @@ from speechnexus_backend.speech.domain.quarantine_release import (
 from speechnexus_backend.speech.interfaces.http.quarantine_release_errors import (
     ERRORS,
     OPERATION,
+    RETRYABLE,
 )
 from speechnexus_backend.speech.interfaces.http.quarantine_releases import PATH
 from tests.unit.backend.test_health import _settings
@@ -195,6 +197,48 @@ async def test_unknown_result_is_not_retryable(port: _Transactions) -> None:
     assert response.json()["error"]["retryable"] is False
 
 
+@pytest.mark.parametrize(
+    "code",
+    [
+        "quarantine_release_schema_not_migrated",
+        "quarantine_release_privilege_missing",
+        "quarantine_release_failed",
+    ],
+)
+async def test_a_storage_surface_defect_is_named_instead_of_reported_as_a_conflict(
+    port: _Transactions, code: str
+) -> None:
+    """A missing table or a revoked grant is a deployment defect, never a 409.
+
+    Reporting it as ``quarantine_release_conflict`` would send the operator to
+    change evidence or escalate a lease that is not the problem, and its
+    ``retryable`` flag must stay false: replaying the request cannot repair the
+    deployment.
+    """
+    port.commit_failure = QuarantineSurfaceError(code)
+    async with _client(QuarantineReleaseService(port)) as client:
+        response = await post(client, _body())
+
+    assert response.status_code == 503, response.text
+    error = response.json()["error"]
+    assert error["code"] == code
+    assert error["type"] == "service_unavailable_error"
+    assert error["retryable"] is False
+    assert response.headers["x-should-retry"] == "false"
+    validate_response(OPERATION, 503, {"body": response.json(), "headers": dict(response.headers)})
+
+
+async def test_a_read_surface_defect_is_not_hidden_by_the_read_level(
+    port: _Transactions,
+) -> None:
+    port.lookup_failure = QuarantineSurfaceError("quarantine_release_schema_not_migrated")
+    async with _client(QuarantineReleaseService(port)) as client:
+        response = await post(client, _body())
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "quarantine_release_schema_not_migrated"
+
+
 async def test_missing_service_reports_unavailable() -> None:
     async with _client(None) as client:
         response = await post(client, _body())
@@ -262,11 +306,17 @@ async def test_error_catalogue_covers_every_mapped_code() -> None:
         "quarantine_release_conflict",
         "quarantine_release_unknown",
         "quarantine_release_unavailable",
+        "quarantine_release_schema_not_migrated",
+        "quarantine_release_privilege_missing",
+        "quarantine_release_failed",
     }
     for _code, (status, kind, message) in ERRORS.items():
         assert status in (400, 404, 409, 503)
         assert kind.endswith("_error")
         assert message
+    # Only a storage outage can heal without an operator; the rest of the 5xx
+    # family names a defect that retrying cannot repair.
+    assert {"quarantine_release_unavailable"} == RETRYABLE
     assert datetime(1970, 1, 1, tzinfo=UTC) + timedelta(microseconds=OBSERVED_AT_US) == datetime(
         2026, 11, 13, 0, 0, 0, 123456, tzinfo=UTC
     )

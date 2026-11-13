@@ -12,6 +12,7 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechConnec
 
 _TABLE_SURFACE = "'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'"
 _COLUMN_SURFACE = "'SELECT,INSERT,UPDATE,REFERENCES'"
+_SEQUENCE_SURFACE = "'USAGE,SELECT,UPDATE'"
 
 
 def current_role(connection: SpeechConnection) -> str:
@@ -104,6 +105,42 @@ def refuse_column_privileges(
             )
 
 
+def refuse_sequence_privileges(
+    connection: SpeechConnection,
+    role: str | None,
+    schema: str,
+    declared: tuple[str, ...],
+    *,
+    subject: str,
+    declared_hint: str,
+) -> None:
+    """Sequences carry their own ACL and are invisible to every table check.
+
+    ``relkind='S'`` is outside the table/view/materialized-view enumeration, so
+    an extra sequence grant never shows up in the column-by-column equality: the
+    role holds ``USAGE``/``SELECT``/``UPDATE`` on a counter nobody declared.
+    ``has_table_privilege`` cannot stand in for this check because sequence and
+    table privilege letters mean different authorities, and there is no column
+    ACL on a sequence.
+    """
+    clause, prefix = _role_argument(role)
+    row = connection.execute(
+        "SELECT c.relname AS name FROM pg_catalog.pg_class c "
+        "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
+        "WHERE n.nspname=%s AND c.relkind='S' "
+        "AND c.relname <> ALL(%s::text[]) "
+        f"AND pg_catalog.has_sequence_privilege({clause}, c.oid, {_SEQUENCE_SURFACE}) "
+        "ORDER BY c.relname LIMIT 1",
+        (schema, list(declared), *prefix),
+    ).fetchone()
+    if row is not None:
+        raise ValueError(
+            f"{subject} must not hold sequence privileges on {row['name']}; "
+            f"declare it in {declared_hint} only if the transaction needs it, "
+            "or revoke the stray sequence grant"
+        )
+
+
 def refuse_foreign_relation_privileges(
     connection: SpeechConnection,
     role: str | None,
@@ -138,6 +175,7 @@ __all__ = [
     "refuse_column_privileges",
     "refuse_foreign_relation_privileges",
     "refuse_schema_create",
+    "refuse_sequence_privileges",
     "refuse_table_privileges",
     "require_schema_usage",
 ]

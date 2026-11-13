@@ -14,6 +14,7 @@ holds the minimum column grants for that one transaction.
 
 from __future__ import annotations
 
+from speechnexus_backend.speech.infrastructure.coordination_grants import DIMENSIONS
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 
 TABLE = "admission_quarantine_releases"
@@ -103,23 +104,15 @@ FULL_INSERT = frozenset({"execution_stop_evidence", TABLE})
 
 #: Every column this role may update, per table. No control-plane configuration
 #: column appears here: release never lowers a threshold, raises a ceiling or
-#: returns a host to active.
+#: returns a host to active. The dimensional columns are derived from
+#: ``coordination_grants.DIMENSIONS`` instead of being listed by hand: a future
+#: dimension must widen this declaration too, so startup refuses the release role
+#: instead of letting the extra ``UPDATE host_nodes`` column fail at request time.
 UPDATE_COLUMNS: dict[str, frozenset[str]] = {
     "resource_pools": frozenset({"version"}),
     "workspace_quotas": frozenset({"held_attempts", "quarantined_attempts", "version"}),
     "host_nodes": frozenset(
-        {
-            f"{prefix}_{dimension}"
-            for prefix in ("held", "quarantined")
-            for dimension in (
-                "unified_physical_memory_bytes",
-                "device_memory_bytes",
-                "host_memory_bytes",
-                "cpu_decode_millicores",
-                "host_pcm_buffer_bytes",
-                "scratch_disk_bytes",
-            )
-        }
+        {f"{prefix}_{dimension}" for prefix in ("held", "quarantined") for dimension in DIMENSIONS}
         | {"version"}
     ),
     "engine_instances": frozenset({"held_slots", "quarantined_slots", "version"}),

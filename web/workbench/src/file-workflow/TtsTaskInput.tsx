@@ -60,7 +60,7 @@ export function TtsTaskInput({
           id="tts-text"
           value={text}
           rows={8}
-          maxLength={200000}
+          maxLength={4096}
           required
           disabled={!needsText || state.busy}
           onChange={(event) => setText(event.target.value)}

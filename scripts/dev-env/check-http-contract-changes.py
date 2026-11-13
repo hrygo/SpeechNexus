@@ -14,7 +14,7 @@ import sys
 from collections.abc import Mapping
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import yaml
 
@@ -240,6 +240,82 @@ _APPROVED_RESPONSE_REPLACEMENTS: dict[tuple[str, str, str, str, str, str], dict[
         ),
         "from_schema": "./model-instance.schema.json",
         "to_schema": "#/components/schemas/ModelRuntimeInstance",
+    },
+}
+
+
+# Bound keywords that can be tightened, and the numeric direction that makes a
+# change a narrowing. A bound edit is only "narrowing" when the admitted value
+# set shrinks: an upper bound moves down, a lower bound moves up.
+_BOUND_DIRECTIONS: dict[str, Literal["down", "up"]] = {
+    "maxLength": "down",
+    "maxItems": "down",
+    "maxProperties": "down",
+    "maximum": "down",
+    "exclusiveMaximum": "down",
+    "minLength": "up",
+    "minItems": "up",
+    "minProperties": "up",
+    "minContains": "up",
+    "maxContains": "down",
+    "minimum": "up",
+    "exclusiveMinimum": "up",
+}
+
+# Exact, product-approved request-bound narrowings. This class exists because a
+# narrowing is a real structural change that the closed-tagged-object proof
+# cannot express: it removes declared capability without removing a declaration.
+# An entry is filtered only when every one of these holds, and every other case
+# still rejects:
+#
+# - the exact source/path/method/version pair matches, so the entry never covers
+#   another operation or a later version period;
+# - the named component is reachable from that operation's request body, so the
+#   entry cannot be satisfied by an unrelated schema that happens to carry the
+#   same property;
+# - the declared pointer and property name agree and name one bound keyword;
+# - the numeric direction really is a narrowing ("max*" down, "min*" up), so a
+#   relaxation, a type change or a structural change is never approved here;
+# - the service schema differs from the baseline by exactly that one bound, so
+#   the entry cannot hide a second simultaneous request change;
+# - the entry carries the capability proof: why no admitted request is lost.
+#   A registration without a proof is a defect, not an approval.
+#
+# A narrowing that already landed keeps the entry dormant (baseline and current
+# both carry the new bound) instead of reporting it as unbacked. New entries must
+# add matching negative cases and update the frozen assertion in
+# tests/contract/test_approved_http_request_bound_narrowings.py.
+_APPROVED_REQUEST_BOUND_NARROWINGS: dict[
+    tuple[str, str, str, str, str, str, str, str, str, int | float, int | float],
+    dict[str, str],
+] = {
+    (
+        "contracts/speech-openapi.yaml",
+        "/v1/nexus/jobs",
+        "post",
+        "0.1.0.dev18",
+        "0.1.0.dev18",
+        "TtsJobInput",
+        "oneOf/0/properties/text",
+        "text",
+        "maxLength",
+        200000,
+        4096,
+    ): {
+        "issue": "#690",
+        "reason": (
+            "One async tts Job performs exactly one synthesis, so its inline text "
+            "bound must equal the synchronous input bound and the enforcing domain "
+            "and gateway limits; 200000 described text the service never accepts."
+        ),
+        "proof": (
+            "Production admission assembly, real HTTP: 4096 characters created a Job "
+            "(202) and 4097 characters were already refused (400, domain "
+            "MAX_SPEECH_TEXT_CHARS=4096), so no text above 4096 was ever usable and "
+            "the narrowing removes only unachievable promises. 4096 code points also "
+            "stay within the 16384-byte gateway budget, so the character bound is the "
+            "binding constraint."
+        ),
     },
 }
 
@@ -510,6 +586,283 @@ def _apply_approved_response_replacements(
     return remaining, approved
 
 
+# Annotation-only members carry no constraint, so recording them as structure
+# would reject a narrowing for documenting itself. The response-replacement
+# approval already ignores `description` on the same reasoning.
+_NON_STRUCTURAL_KEYS = frozenset({"description"})
+
+
+def _is_number(value: object) -> bool:
+    return type(value) in (int, float)
+
+
+def _bound_movement(keyword: str, base: object, current: object) -> str | None:
+    """Classify a bound edit as a narrowing or a relaxation; None if neither."""
+
+    direction = _BOUND_DIRECTIONS.get(keyword)
+    if direction is None or not _is_number(base) or not _is_number(current):
+        return None
+    left = cast(int | float, base)
+    right = cast(int | float, current)
+    if left == right:
+        return None
+    narrowed = right < left if direction == "down" else right > left
+    return "narrowing" if narrowed else "relaxation"
+
+
+def _schema_components(document: Mapping[str, Any]) -> Mapping[str, Any]:
+    components = document.get("components")
+    schemas = components.get("schemas") if isinstance(components, Mapping) else None
+    return schemas if isinstance(schemas, Mapping) else {}
+
+
+def _request_body(document: Mapping[str, Any], path: str, method: str) -> Mapping[str, Any] | None:
+    paths = document.get("paths")
+    item = paths.get(path) if isinstance(paths, Mapping) else None
+    operation = item.get(method) if isinstance(item, Mapping) else None
+    body = operation.get("requestBody") if isinstance(operation, Mapping) else None
+    return body if isinstance(body, Mapping) else None
+
+
+def _reachable_schemas(document: Mapping[str, Any], node: object) -> set[str]:
+    """Component schema names reachable from a node through local references."""
+
+    schemas = _schema_components(document)
+    names: set[str] = set()
+    pending = [node]
+    while pending:
+        value = pending.pop()
+        if isinstance(value, Mapping):
+            reference = value.get("$ref")
+            if isinstance(reference, str) and reference.startswith("#/components/schemas/"):
+                name = reference.rsplit("/", 1)[-1]
+                if name not in names:
+                    names.add(name)
+                    target = schemas.get(name)
+                    if isinstance(target, Mapping):
+                        pending.append(target)
+            pending.extend(value.values())
+        elif isinstance(value, list):
+            pending.extend(value)
+    return names
+
+
+def _bound_surface(
+    node: object,
+    document: Mapping[str, Any],
+    *,
+    pointer: str = "",
+    trail: tuple[str, ...] = (),
+) -> tuple[object, dict[str, dict[str, object]]]:
+    """Split a subtree into its bound-free shape and its numeric bound values.
+
+    Component references are expanded so two versions compare by meaning rather
+    than by reference name; the expansion is labelled, so a rename still shows up
+    as a structural difference. Bound keywords are removed from the shape and
+    recorded per pointer, which lets a registration prove that one bound is the
+    only difference between the baseline and current service schema.
+    """
+
+    if isinstance(node, Mapping):
+        reference = node.get("$ref")
+        if isinstance(reference, str) and reference.startswith("#/components/schemas/"):
+            name = reference.rsplit("/", 1)[-1]
+            target = _schema_components(document).get(name)
+            if not isinstance(target, Mapping):
+                return {"$unresolved": name}, {}
+            if name in trail:
+                return {"$cycle": name}, {}
+            nested_pointer = f"{pointer}/$ref({name})" if pointer else f"$ref({name})"
+            body, bounds = _bound_surface(
+                target, document, pointer=nested_pointer, trail=(*trail, name)
+            )
+            shape: dict[str, object] = {"$ref": name, "$body": body}
+            merged = dict(bounds)
+            for key, value in node.items():
+                if key == "$ref":
+                    continue
+                child_pointer = f"{pointer}/{key}" if pointer else key
+                shape[key], child_bounds = _bound_surface(
+                    value, document, pointer=child_pointer, trail=trail
+                )
+                merged.update(child_bounds)
+            return shape, merged
+        shape = {}
+        bounds = {}
+        for key, value in node.items():
+            if key in _NON_STRUCTURAL_KEYS:
+                continue
+            if key in _BOUND_DIRECTIONS and _is_number(value):
+                bounds.setdefault(pointer, {})[key] = value
+                continue
+            child_pointer = f"{pointer}/{key}" if pointer else key
+            shape[key], child_bounds = _bound_surface(
+                value, document, pointer=child_pointer, trail=trail
+            )
+            bounds.update(child_bounds)
+        return shape, bounds
+    if isinstance(node, list):
+        shape_items = []
+        bounds = {}
+        for index, item in enumerate(node):
+            child_pointer = f"{pointer}/{index}" if pointer else str(index)
+            child_shape, child_bounds = _bound_surface(
+                item, document, pointer=child_pointer, trail=trail
+            )
+            shape_items.append(child_shape)
+            bounds.update(child_bounds)
+        return shape_items, bounds
+    return node, {}
+
+
+def _bound_differences(
+    base: dict[str, dict[str, object]], current: dict[str, dict[str, object]]
+) -> dict[tuple[str, str], tuple[object, object]]:
+    differences: dict[tuple[str, str], tuple[object, object]] = {}
+    for pointer in {*base, *current}:
+        base_keywords = base.get(pointer, {})
+        current_keywords = current.get(pointer, {})
+        for keyword in {*base_keywords, *current_keywords}:
+            before = base_keywords.get(keyword)
+            after = current_keywords.get(keyword)
+            if before != after:
+                differences[(pointer, keyword)] = (before, after)
+    return differences
+
+
+def _request_body_surface(
+    document: Mapping[str, Any], path: str, method: str
+) -> tuple[object, dict[str, dict[str, object]]] | None:
+    body = _request_body(document, path, method)
+    return None if body is None else _bound_surface(body, document)
+
+
+def _service_schema(
+    document: Mapping[str, Any], component: str
+) -> tuple[object, dict[str, dict[str, object]]] | None:
+    target = _schema_components(document).get(component)
+    if not isinstance(target, Mapping):
+        return None
+    return _bound_surface(target, document)
+
+
+def _apply_approved_request_bound_narrowings(
+    source: str,
+    base: Mapping[str, Any],
+    current: Mapping[str, Any],
+    base_version: str,
+    current_version: str,
+    findings: list[str],
+) -> tuple[list[str], list[str]]:
+    remaining = list(findings)
+    approved: list[str] = []
+    for key, metadata in _APPROVED_REQUEST_BOUND_NARROWINGS.items():
+        (
+            entry_source,
+            path,
+            method,
+            from_version,
+            to_version,
+            component,
+            pointer,
+            field,
+            keyword,
+            from_bound,
+            to_bound,
+        ) = key
+        if entry_source != source:
+            continue
+        pointer_label = f"{source}:paths/{path}/{method}/requestBody"
+        if (base_version, current_version) != (from_version, to_version):
+            continue
+        expected = (
+            f"{pointer_label}/application/json/oneOf: "
+            "exclusive variants changed; compatibility needs explicit proof"
+        )
+        problem: str | None = None
+        if not all(metadata.get(name) for name in ("issue", "reason", "proof")):
+            problem = "entry must include a non-empty issue, reason and proof"
+        elif not pointer.endswith(f"properties/{field}"):
+            problem = f"declared pointer does not end with properties/{field}"
+        elif _bound_movement(keyword, from_bound, to_bound) != "narrowing":
+            problem = (
+                f"{keyword} {from_bound} -> {to_bound} is not a narrowing; "
+                "only a shrinking admitted set can be registered"
+            )
+        elif component not in _reachable_schemas(
+            base, _request_body(base, path, method)
+        ) or component not in _reachable_schemas(current, _request_body(current, path, method)):
+            problem = f"{component} is not reachable from this operation request body"
+        else:
+            # The kernel emits one finding for the whole request body, because it
+            # inlines every exclusive variant before comparing. The registration
+            # therefore proves the whole body, not just its own component: any
+            # change anywhere else in the same body keeps the finding, otherwise
+            # the entry would downgrade the gate from "this bound moved" to "this
+            # operation moved and one of its bounds happens to be registered".
+            base_surface = _request_body_surface(base, path, method)
+            current_surface = _request_body_surface(current, path, method)
+            base_schema = _service_schema(base, component)
+            current_schema = _service_schema(current, component)
+            if base_surface is None or current_surface is None:
+                problem = "operation does not declare a request body"
+            elif base_schema is None or current_schema is None:
+                problem = f"component {component} is missing on one side"
+            else:
+                base_shape, base_bounds = base_surface
+                current_shape, current_bounds = current_surface
+                differences = _bound_differences(base_bounds, current_bounds)
+                shape_same = _kernel()._same_json_tree(base_shape, current_shape)
+                before = base_schema[1].get(pointer, {}).get(keyword)
+                after = current_schema[1].get(pointer, {}).get(keyword)
+                if (before, after) == (to_bound, to_bound):
+                    # The narrowing already landed: the entry stays dormant until
+                    # its version period changes, so it does not report a backlog
+                    # item once the change is the new baseline, and it never adds
+                    # a finding of its own. A change beside a dormant entry keeps
+                    # the kernel's own finding, which the entry does not touch.
+                    continue
+                if not shape_same:
+                    problem = "another structural change exists in the same operation request body"
+                elif len(differences) != 1:
+                    problem = (
+                        f"the operation request body has {len(differences)} bound "
+                        "differences; exactly the registered one is required — register "
+                        "one narrowing per operation request body per change, or split "
+                        "the change so each narrowing lands on its own"
+                    )
+                else:
+                    (only_pointer, only_keyword), (before_moved, after_moved) = next(
+                        iter(differences.items())
+                    )
+                    marker = f"$ref({component})"
+                    if (
+                        only_keyword != keyword
+                        or marker not in only_pointer
+                        or not only_pointer.endswith(pointer)
+                    ):
+                        problem = "the only bound difference is not the registered field"
+                    elif (before_moved, after_moved) != (from_bound, to_bound):
+                        problem = (
+                            f"declared {keyword} {from_bound} -> {to_bound} does not match "
+                            f"the documents {before_moved} -> {after_moved}"
+                        )
+                    elif expected not in remaining:
+                        problem = f"exact finding {expected!r} is absent"
+                    else:
+                        remaining.remove(expected)
+                        approved.append(
+                            f"{pointer_label}/{component}/{pointer}: request bound narrowed "
+                            f"{keyword} {from_bound} -> {to_bound} "
+                            f"[{metadata['issue']}: {metadata['reason']}]"
+                        )
+                        continue
+        remaining.append(
+            f"{pointer_label}: approved request bound narrowing entry does not match: {problem}"
+        )
+    return remaining, approved
+
+
 def inspect_sources(
     base: str, *, surface: Literal["nonstandard", "speech"] = "nonstandard"
 ) -> dict[str, Any]:
@@ -534,6 +887,7 @@ def inspect_sources(
     approved_removals: list[str] = []
     approved_parameters: list[str] = []
     approved_replacements: list[str] = []
+    approved_narrowings: list[str] = []
     compared_sources: set[str] = set()
     selected = (SPEECH_SOURCE,) if surface == "speech" else SOURCES
     for path in selected:
@@ -579,10 +933,19 @@ def inspect_sources(
                 row["current_version"],
                 detected,
             )
+            detected, approved_narrowing = _apply_approved_request_bound_narrowings(
+                path,
+                old,
+                new,
+                row["base_version"],
+                row["current_version"],
+                detected,
+            )
             findings.extend(detected)
             approved_removals.extend(approved)
             approved_parameters.extend(approved_parameter)
             approved_replacements.extend(approved_replacement)
+            approved_narrowings.extend(approved_narrowing)
             row["findings"] = len(detected)
             compared_sources.add(path)
         except ValueError, OSError, yaml.YAMLError, subprocess.CalledProcessError, RecursionError:
@@ -592,6 +955,7 @@ def inspect_sources(
         {key[0] for key in _APPROVED_OPERATION_REMOVALS}
         | {key[0] for key in _APPROVED_PARAMETER_REMOVALS}
         | {key[0] for key in _APPROVED_RESPONSE_REPLACEMENTS}
+        | {key[0] for key in _APPROVED_REQUEST_BOUND_NARROWINGS}
     ) & set(selected)
     for source in sorted(selected_approval_sources - compared_sources):
         findings.append(f"{source}: approved change entries could not be verified")
@@ -605,6 +969,7 @@ def inspect_sources(
         "approved_removals": approved_removals,
         "approved_parameter_removals": approved_parameters,
         "approved_response_replacements": approved_replacements,
+        "approved_request_bound_narrowings": approved_narrowings,
         "unverified": list(UNVERIFIED),
     }
 
@@ -636,6 +1001,8 @@ def main() -> int:
             print("  approved parameter removal: " + approval)
         for approval in report["approved_response_replacements"]:
             print("  approved response replacement: " + approval)
+        for approval in report["approved_request_bound_narrowings"]:
+            print("  approved request bound narrowing: " + approval)
         print("Known HTTP structural checks: " + ("rejected" if report["findings"] else "passed"))
         print("Not a full protocol compatibility proof; see unverified scope:")
         for boundary in report["unverified"]:

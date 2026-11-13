@@ -136,6 +136,64 @@ change under the same version. New entries must add matching negative cases and
 update the frozen assertion in
 [`tests/contract/test_approved_http_parameter_and_response_changes.py`](../../tests/contract/test_approved_http_parameter_and_response_changes.py).
 
+## Approved request-bound narrowings
+
+A request bound may be narrowed only through the literal
+`_APPROVED_REQUEST_BOUND_NARROWINGS` registry. Each key is exact: source, path,
+method, baseline version, current version, component schema, the pointer of the
+bound inside that component, the property name, the bound keyword, the old value
+and the new value. The value names the approving issue, reason and capability
+proof. Only findings on that operation's exact request-body `oneOf` pointer are
+filtered.
+
+The registry exists because a narrowing is a real structural change without a
+declaration removal: the closed-tagged-object proof only admits optional property
+additions, so a shrinking request bound was previously indistinguishable from an
+unproven `oneOf` change. Approving it is not a relaxation, and each entry is
+constrained on every axis:
+
+- the version pair must match, so the entry never covers a later version period;
+- the named component must be reachable from that operation's request body
+  through local references, so an unrelated schema carrying the same property
+  cannot satisfy it;
+- the pointer must end with `properties/<field>`, so the declared property name
+  and the declared pointer cannot disagree;
+- the numeric direction must shrink the admitted set — `max*` moves down and
+  `min*` moves up. A relaxation, a non-numeric value, a type change or any other
+  structural edit still rejects;
+- the **whole request body must differ by exactly that one bound**. The kernel
+  emits a single finding per request body because it inlines every exclusive
+  variant before comparing, so proving only the named component would let any
+  sibling variant change ride on the entry. The body shape must be unchanged
+  everywhere and the only bound difference must sit at the registered field
+  inside the registered component, identified by the `$ref(<component>)` marker
+  in the surface pointer. A sibling variant narrowing, relaxation, added property
+  or any other simultaneous change still rejects; `description` is annotation, so
+  documenting the new bound is not a structural change;
+- `issue`, `reason` and `proof` must all be present. The proof states why no
+  admitted request is lost, so an entry without one is a defect and rejects.
+
+One entry covers **one narrowing per operation request body per change**. Two
+real narrowings in the same body cannot share an entry and cannot be registered
+together, because the body would then differ by two bounds while a single entry
+proves one; that limits a landing to one narrowing at a time. The rejection says
+so and names the remedy — register one narrowing per body per change, or split the
+change so each narrowing lands on its own. This is a deliberate fail-closed
+trade-off: splitting a change or using the next version period stays available,
+while approving several simultaneous narrowings with one proof would remove the
+per-entry audit trail.
+
+A narrowing that already landed leaves its entry dormant: when the baseline and
+the current contract both carry the new bound the entry neither filters nor
+rejects, and it never adds a finding of its own — a change the kernel already
+tolerates, such as an added optional property, stays approved. A dormant entry
+also never covers a change beside it, because dormancy removes nothing: any
+finding the kernel raises for that request body still stands. A contract reverted to the old bound makes the entry unbacked and
+rejects. Each approval is printed as `approved request bound narrowing:` and
+listed in `approved_request_bound_narrowings` in JSON mode. New entries must add
+matching negative cases and update the frozen assertion in
+[`tests/contract/test_approved_http_request_bound_narrowings.py`](../../tests/contract/test_approved_http_request_bound_narrowings.py).
+
 ## What the check establishes
 
 The existing directional comparison kernel is reused: reject known request

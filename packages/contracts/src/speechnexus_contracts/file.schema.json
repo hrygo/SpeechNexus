@@ -551,7 +551,8 @@
             "text": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 200000
+              "maxLength": 4096,
+              "description": "Inline text for one Job. A Job performs exactly one speech\nsynthesis, so the body bound is the same as `input` on\n`/v1/audio/speech`; longer text is rejected instead of being\nsplit, truncated, or silently shortened.\n"
             }
           }
         },

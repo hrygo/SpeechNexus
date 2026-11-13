@@ -199,7 +199,13 @@ def probe_source(path: str, spec: str) -> str:
         if fragment not in text:
             raise AssertionError(f"{path} does not contain {fragment!r}")
         return fragment
-    tree = ast.parse(text)
+    try:
+        tree = ast.parse(text)
+    except SyntaxError as error:
+        raise AssertionError(
+            f"{path} uses syntax this interpreter cannot parse ({error}); "
+            "pin a text: probe instead of an AST symbol"
+        ) from None
     chunks: list[str] = []
     for symbol in spec.split("|"):
         node = _symbol_node(tree, symbol)

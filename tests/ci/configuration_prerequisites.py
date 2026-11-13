@@ -337,8 +337,10 @@ ROWS: tuple[Row, ...] = (
         evidence=f"{UNIT_PAIRS}::test_the_profile_writer_and_evidence_document_name_each_other",
         probes=(
             *probe((PROFILE_RUNTIME, ("ProfileRuntime.__init__", "_publication_authority"))),
+            # The constant lives in a module using PEP 758 syntax, which the CI
+            # interpreter (3.12) cannot parse; pin its exact source line as text.
             "backend/src/speechnexus_backend/speech/infrastructure/profile_publication_evidence.py"
-            "::EVIDENCE_FILE_VARIABLE",
+            '::text:EVIDENCE_FILE_VARIABLE = "SPEECHNEXUS_PROFILE_PUBLICATION_EVIDENCE_FILE"',
         ),
         message_keys=(PROFILE_WRITER, PROFILE_EVIDENCE),
     ),

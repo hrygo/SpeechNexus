@@ -13,14 +13,31 @@ coupled constraints found by hand in issue #690 were never pinned by a test:
 * the admission plan rebuilds a ``SpeechPlan`` from the full body text, whose own
   ceiling is 4096 code points, so 4097 characters are refused with the generic
   400 ``invalid_job_request`` even though the contract promises
-  ``TtsJobInput.text.maxLength: 200000``. The same 400 also covers a body over
-  the receive bound, so the two limits are not distinguishable by code.
+  ``TtsJobInput.text.maxLength: 200000``. The same 400 also answers a body over
+  the receive bound and an unparsable document, so those causes are not
+  distinguishable by code.
 
 Each case asserts the public status code, the stable error code and the exact row
 deltas across the public Job, intent and admission tables. Rows come from the
 same production transaction, so a refusal that still reserved capacity or wrote a
-Job would fail here. Issue #690 owns the contract correction for the text
-ceiling; this module pins current behaviour instead of inventing a new code.
+Job would fail here. This module pins current behaviour instead of inventing a
+new code: #690 owns the text-ceiling contract correction, #702 the missing-quota
+503 semantics, and #703 the undeclared receive bound with its 413.
+
+Known boundaries, recorded rather than fixed here:
+
+* the shared ``_counts`` helper covers the ten public and admission tables, but
+  not ``workspace_quotas`` or ``speech_workspaces``. A refusal path that only
+  committed a quota ``UPDATE`` and no row would therefore go unnoticed; the
+  same-key replay case checks ``held_attempts`` directly for that reason. Adding
+  those tables widens every delta assertion and belongs to a follow-up.
+* case 4 deliberately pins the current deployment default
+  ``job_receive_max_bytes = 262144``. Raising that default fails its premise
+  assertion with the observed value, which is a scenario change to re-derive,
+  not a flake to delete.
+* ``PLAN_TEXT_CEILING`` and ``CONTRACT_TEXT_CEILING`` are bound to #690, and case
+  4's 400 ``invalid_job_request`` is bound to #703: converge the contract on 4096
+  and declare a 413 and both cases must be updated in the same change.
 """
 
 from __future__ import annotations
@@ -57,6 +74,8 @@ TEXT = "synthetic public job"
 PLAN_TEXT_CEILING = 4096
 # ``TtsJobInput.text.maxLength`` in contracts/speech-openapi.yaml.
 CONTRACT_TEXT_CEILING = 200_000
+# ``settings.job_receive_max_bytes`` in backend/src/speechnexus_backend/settings.py.
+RECEIVE_BOUND = 262_144
 
 
 def _app(admission: AdmissionDatabase) -> Any:
@@ -154,7 +173,8 @@ async def test_text_above_the_plan_ceiling_is_refused_without_rows(
 
     The refusal is the generic 400 ``invalid_job_request``: the public surface
     cannot tell the plan ceiling apart from the contract's 200000-character
-    promise, the receive bound, or a malformed body (issue #690).
+    promise, the receive bound (#703), or a malformed body. #690 owns converging
+    the contract on this ceiling.
     """
     _seed(admission_database)
     db = admission_database.runtime.foundation.database
@@ -194,7 +214,9 @@ async def test_create_without_a_provisioned_workspace_quota_is_refused_without_r
     so the default workspace is only creatable where an operator registered a
     quota for it. Provisioning that row makes the same unnamed body succeed,
     which is the evidence that the refusal is the missing reservation target and
-    not an invalid request document.
+    not an invalid request document. Issue #702 owns the refusal's public shape:
+    503 ``job_unavailable`` with a message and a non-retryable flag that describe
+    a storage outage rather than an unprovisioned workspace.
     """
     _seed(admission_database)
     db = admission_database.runtime.foundation.database
@@ -253,21 +275,42 @@ async def test_create_without_a_provisioned_workspace_quota_is_refused_without_r
 async def test_body_over_the_receive_bound_is_refused_before_any_write(
     admission_database: AdmissionDatabase,
 ) -> None:
-    """A body above ``job_receive_max_bytes`` is refused with no row written.
+    """A wire body above ``job_receive_max_bytes`` is refused before parse and write.
 
-    The text stays inside the contract's 200000-character ceiling, yet the wire
-    body (about 300 KB of Chinese text) is above the deployment's 262144-byte
-    receive bound. The contract-advertised payload is therefore undeliverable for
-    a second independent reason on top of the plan ceiling, and both walls answer
-    with the same public code (issue #690). What this case pins is the order: the
-    receive bound refuses before any reservation or public row is written.
+    The text is exactly at the plan ceiling and inside the contract ceiling, so
+    the document itself would be admissible. Only the extra ``padding`` member --
+    unknown to the contract, sized past the deployment's receive bound -- pushes
+    the serialised body over that bound. That makes the bound falsifiable: with
+    the bound in place the receive layer answers 400 ``invalid_job_request``
+    before parsing, while an assembly without it lets the same body reach
+    contract validation and answers 422 ``unsupported_parameter``. Loosening
+    ``max_bytes`` at the one assembly point (the Job router in ``app.py``)
+    therefore turns this case red.
+
+    Two deliberate couplings; neither is a flake:
+
+    * ``RECEIVE_BOUND`` mirrors the deployment default. Raising
+      ``job_receive_max_bytes`` fails the premise assertion below with the
+      observed value: the contract-legal-but-oversized scenario disappears, so
+      re-derive the case instead of deleting the guard.
+    * ``PLAN_TEXT_CEILING`` / ``CONTRACT_TEXT_CEILING`` move with #690, and the
+      400 code asserted here moves with #703's declared bound and 413.
+
+    Refusal is pre-write: no Job, intent, submission, operation, attempt,
+    request, lease or outbox row appears.
     """
     _seed(admission_database)
     db = admission_database.runtime.foundation.database
     max_bytes = _settings().job_receive_max_bytes
-    text = "中" * 100_000
-    body = _body(input={"text": text})
+    text = "中" * PLAN_TEXT_CEILING
     assert len(text) <= CONTRACT_TEXT_CEILING
+    # ``padding`` is not a contract member; it exists only to grow the body past
+    # the receive bound while the text stays admissible.
+    body = _body(input={"text": text}, padding="a" * (RECEIVE_BOUND + 1024))
+    assert max_bytes == RECEIVE_BOUND, (
+        f"job_receive_max_bytes moved to {max_bytes}; re-derive this case instead of "
+        "deleting the premise guard"
+    )
     assert _wire_bytes(body) > max_bytes > 0
     async with AsyncClient(
         transport=ASGITransport(app=_app(admission_database)), base_url="http://test"
@@ -279,8 +322,8 @@ async def test_body_over_the_receive_bound_is_refused_before_any_write(
         assert refused.status_code == 400, refused.text
         code, kind, retryable = _error(refused)
         assert (code, kind, retryable) == ("invalid_job_request", "invalid_request_error", False)
-        # The rejection is pre-write: no Job, intent, submission, operation,
-        # attempt, request, lease or outbox row appeared.
+        # A parsed body would be 422 for the unknown member instead of 400, and a
+        # written one would move at least one of the ten deltas.
         assert _counts(db) == before
 
 

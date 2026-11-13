@@ -20,6 +20,7 @@ date: 2026-10-28
 | 公开同步 ASR 成功响应 | **本部署未验证** | 文件 worker 已有成功终态写入；历史部署曾返回 `504 operation_timeout`，见[本机端到端记录](../archive/operations/local-end-to-end.md#112-公开-v1audiotranscriptions已执行504未成功)。不能将那次结果或组件实现推定为当前部署的公开链路验收 |
 | 节点控制器、runtime delivery、asset maintenance | **未装配** | 本配置有意排除这些服务；不能以本 Compose 的探活结果证明完整部署与发布资格 |
 | Profile 发布 / 激活（`POST .../publications`、`.../activations`） | **默认未启用；启用时资格由部署方文档提供** | 默认 `SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL` 为空，`sn_profile_writer` 未预置，发布路由返回 `503 profile_result_unknown`（能力未启用）。启用 writer 必须同时提供已评审发布证据文档 `SPEECHNEXUS_PROFILE_PUBLICATION_EVIDENCE_FILE`：缺任一输入、文档不可读或格式非法时 API 在启动阶段点名变量退出，不会等发布时才回 503。资格内容与评审责任在部署方，本配置不提供任何默认资格。步骤见 [§6 预设发布资格输入](#预设发布资格输入与-sn_profile_writer-角色) |
+| 自定义发音词典与 voice 发布（`/v1/nexus/pronunciations*`、`/v1/nexus/voice-publications*`） | **默认未启用** | 发音词典的三个身份与 `sn_voice_publisher` 不在本参考部署预置：读取返回 `503 pronunciation_unavailable`，`publish: true` 返回 `422 pronunciation_publication_not_supported`，voice 发布返回 `503 voice_draft_unavailable`。原因与启用路径见 [故意不预置的身份](#故意不预置的身份) |
 | 真实模型质量、容量、GPU、物理多节点资格 | **未证明** | Compose 启动、健康检查和合成配置都不能替代模型/设备/拓扑验收 |
 
 因此本文件的“通过”只表示 **最小单元已装配并可探活**，不表示公开 ASR/TTS 业务已可用。
@@ -168,9 +169,11 @@ PY
 `SPEECHNEXUS_REGISTRATION_DATABASE_URL` 与 `SPEECHNEXUS_MIGRATION_DATABASE_URL` 是
 一次性 operator 身份；本机示例沿用 bootstrap owner。它们不会传给 `api` 或 `gateway`，
 基础配置中 API 使用 `sn_api`，gateway 分别使用 `sn_gateway` 写入和 `sn_gateway_query`
-只读查询。API 的 profile、binding、Job 等可选数据库连接默认为空；启用对应能力时须按
-各自要求另行配置身份与授权，不能假定基础角色已覆盖。工作区写与审计读取的连接地址由
-第 6 节的角色预置步骤写入本文件。生产部署必须把迁移和注册连接
+只读查询。API 的 profile、Job 与 audio inspection 等可选数据库连接默认为空；启用对应能力时须按
+各自要求另行配置身份与授权，不能假定基础角色已覆盖。工作区写、审计读取、实例读取、隔离
+释放、公开目录、Artifact、资源池、binding 列表、binding 写、binding admin 读取与 binding
+生命周期的连接地址由第 6 节的角色预置步骤写入本文件；每类身份的当前处置见
+[透传 DSN 覆盖表](#透传-dsn-覆盖表)。生产部署必须把迁移和注册连接
 换成独立、受审计的 operator 凭据，不能复用运行角色。
 
 ## 3. 准备私有文件
@@ -333,13 +336,17 @@ head 为准，查询结果须与之相符。不要把旧版 `0027_gateway_abort_
 
 ## 6. 创建非 owner 运行角色与最小授权
 
-以下脚本必须使用 **迁移 owner DSN** 运行；它创建 API、gateway writer、gateway
-query、工作区 writer、审计 reader、实例读取 reader 与隔离释放七个独立角色。预设发布的写角色
-`sn_profile_writer` 不在此脚本内：它必须与部署方的资格文档同时启用，步骤见
-[预设发布资格输入与 sn_profile_writer 角色](#预设发布资格输入与-sn_profile_writer-角色)。除实例读取面外，
-各身份的最小授权都由仓库授权函数声明；实例读取投影目前没有对应的 `*_grants` 函数，
-脚本按它的运行时启动校验所核验的两张表显式授权。此段只用于新建、独占的 SpeechNexus
-数据库：
+以下脚本必须使用 **迁移 owner DSN** 运行，创建 API、gateway writer、gateway query、工作区
+writer、审计 reader、实例读取 reader、隔离释放、公开目录 reader、Artifact reader、资源池
+reader、binding 列表 reader、binding 写、binding admin reader 与 binding 生命周期共十四个
+独立非 owner 角色。每个透传键当前是否有预置步骤见文末
+[透传 DSN 覆盖表](#透传-dsn-覆盖表)，未预置的键及其原因见
+[故意不预置的身份](#故意不预置的身份)。预设发布的写角色 `sn_profile_writer` 不在此脚本内：
+它必须与部署方的资格文档同时启用，步骤见
+[预设发布资格输入与 sn_profile_writer 角色](#预设发布资格输入与-sn_profile_writer-角色)。
+各身份的最小授权都由仓库授权函数声明；实例读取、资源池读取与 binding 列表读取三个只读
+投影目前没有对应的 `*_grants` 函数，脚本按各自运行时启动校验所核验的关系显式授权。此段
+只用于新建、独占的 SpeechNexus 数据库：
 它会撤销数据库级 `PUBLIC TEMPORARY/CREATE`、`public` schema 的 CREATE 和大对象
 写函数的 PUBLIC EXECUTE。已有共享数据库应先导出 ACL、核对其他角色依赖，再由部署
 负责人评审等价最小授权；不要直接套用。应用启动只检查这些前置条件，不修改 ACL。
@@ -347,9 +354,10 @@ query、工作区 writer、审计 reader、实例读取 reader 与隔离释放�
 失败不会整体回滚。失败后须先核对已创建的角色和实际 ACL，按保存的原状态及获准的
 恢复步骤处理；直接重跑会因已有角色而停止，不能假设数据库仍处于执行前状态。
 
-工作区 writer、审计 reader、实例读取 reader 与隔离释放角色的口令不在
-`deploy/compose.env.example` 中给出可用值（那里只有 `change-me-*` 占位），先在本轮
-重新生成，口令不打印到终端，只在下面的脚本和写回环境文件时使用：
+工作区 writer、审计 reader、实例读取 reader、隔离释放、公开目录 reader、Artifact reader、
+资源池 reader、binding 列表 reader、binding 写、binding admin reader 与 binding 生命周期
+角色的口令不在 `deploy/compose.env.example` 中给出可用值（那里只有 `change-me-*` 占位），
+先在本轮重新生成，口令不打印到终端，只在下面的脚本和写回环境文件时使用：
 
 ```bash
 umask 077
@@ -357,6 +365,13 @@ export SPEECHNEXUS_WORKSPACE_WRITER_ROLE_PASSWORD="$(python3 -c 'import secrets;
 export SPEECHNEXUS_AUDIT_READER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 export SPEECHNEXUS_MODEL_INSTANCE_READER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 export SPEECHNEXUS_QUARANTINE_RELEASE_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export SPEECHNEXUS_CATALOG_READER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export SPEECHNEXUS_ARTIFACT_READER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export SPEECHNEXUS_RESOURCE_POOL_READER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export SPEECHNEXUS_BINDING_LIST_READER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export SPEECHNEXUS_BINDING_WRITER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export SPEECHNEXUS_BINDING_ADMIN_READER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export SPEECHNEXUS_BINDING_LIFECYCLE_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 ```
 
 先在当前 shell 载入环境文件：
@@ -371,7 +386,12 @@ uv run --all-packages python - <<'PY'
 import os
 from psycopg import sql
 import psycopg
+from speechnexus_backend.speech.infrastructure.artifact_schema import artifact_reader_grants
 from speechnexus_backend.speech.infrastructure.asset_schema import asset_runtime_grants
+from speechnexus_backend.speech.infrastructure.binding_draft_schema import binding_draft_grants
+from speechnexus_backend.speech.infrastructure.binding_publication_evidence_schema import (
+    binding_admin_reader_grants,
+)
 from speechnexus_backend.speech.infrastructure.coordination_grants import (
     coordination_runtime_grants,
 )
@@ -385,7 +405,13 @@ from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema impor
     gateway_abort_grants, gateway_binding_barrier_grants,
 )
 from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import (
-    audit_reader_grants,
+    audit_reader_grants, binding_lifecycle_grants, binding_publication_grants,
+)
+from speechnexus_backend.speech.infrastructure.publication_schema import (
+    model_catalog_reader_grants,
+)
+from speechnexus_backend.speech.infrastructure.quarantine_release_schema import (
+    quarantine_release_grants,
 )
 from speechnexus_backend.speech.infrastructure.workspace_schema import workspace_writer_grants
 
@@ -398,6 +424,13 @@ roles = {
     "sn_audit_reader": os.environ["SPEECHNEXUS_AUDIT_READER_ROLE_PASSWORD"],
     "sn_model_instance_reader": os.environ["SPEECHNEXUS_MODEL_INSTANCE_READER_ROLE_PASSWORD"],
     "sn_quarantine_release": os.environ["SPEECHNEXUS_QUARANTINE_RELEASE_ROLE_PASSWORD"],
+    "sn_catalog_reader": os.environ["SPEECHNEXUS_CATALOG_READER_ROLE_PASSWORD"],
+    "sn_artifact_reader": os.environ["SPEECHNEXUS_ARTIFACT_READER_ROLE_PASSWORD"],
+    "sn_resource_pool_reader": os.environ["SPEECHNEXUS_RESOURCE_POOL_READER_ROLE_PASSWORD"],
+    "sn_binding_list_reader": os.environ["SPEECHNEXUS_BINDING_LIST_READER_ROLE_PASSWORD"],
+    "sn_binding_writer": os.environ["SPEECHNEXUS_BINDING_WRITER_ROLE_PASSWORD"],
+    "sn_binding_admin_reader": os.environ["SPEECHNEXUS_BINDING_ADMIN_READER_ROLE_PASSWORD"],
+    "sn_binding_lifecycle": os.environ["SPEECHNEXUS_BINDING_LIFECYCLE_ROLE_PASSWORD"],
 }
 with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     # PostgreSQL 角色属于整个集群，即使数据库是专用的也要先核对。
@@ -471,6 +504,21 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
         conn.execute(statement)
     for statement in audit_reader_grants(schema, "sn_audit_reader"):
         conn.execute(statement)
+    for statement in model_catalog_reader_grants(schema, "sn_catalog_reader"):
+        conn.execute(statement)
+    for statement in artifact_reader_grants(schema, "sn_artifact_reader"):
+        conn.execute(statement)
+    for statement in binding_draft_grants(schema, "sn_binding_writer"):
+        conn.execute(statement)
+    for statement in binding_admin_reader_grants(schema, "sn_binding_admin_reader"):
+        conn.execute(statement)
+    # Lifecycle publication records evidence in the same transaction that
+    # advances the selected head, so both declarations belong to one identity.
+    for statement in (
+        *binding_lifecycle_grants(schema, "sn_binding_lifecycle"),
+        *binding_publication_grants(schema, "sn_binding_lifecycle"),
+    ):
+        conn.execute(statement)
     # The release transaction writes B's stop evidence and A's capacity counters,
     # so its identity is declared by quarantine_release_grants(): schema USAGE
     # plus the exact column surface of the nine relations it reads, updates and
@@ -478,9 +526,11 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     # runtime role or any gateway/worker writer.
     for statement in quarantine_release_grants(schema, "sn_quarantine_release"):
         conn.execute(statement)
-    # No grants function declares this projection yet, so mirror the read-only
-    # reader functions exactly: schema USAGE plus SELECT on the two relations
-    # the runtime verifies at startup (READABLE in model_instance_runtime.py).
+    # No grants function declares these three projections yet, so mirror the
+    # read-only reader functions exactly: schema USAGE plus SELECT on the
+    # relations each runtime verifies at startup (READABLE in
+    # model_instance_runtime.py, resource_pool_runtime.py and
+    # binding_list_runtime.py).
     conn.execute(
         sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
             sql.Identifier(schema), sql.Identifier("sn_model_instance_reader")
@@ -492,6 +542,37 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
             sql.Identifier(schema),
             sql.Identifier(schema),
             sql.Identifier("sn_model_instance_reader"),
+        )
+    )
+    conn.execute(
+        sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
+            sql.Identifier(schema), sql.Identifier("sn_resource_pool_reader")
+        )
+    )
+    conn.execute(
+        sql.SQL("GRANT SELECT ON {}.engine_instances, {}.resource_pools TO {}")
+        .format(
+            sql.Identifier(schema),
+            sql.Identifier(schema),
+            sql.Identifier("sn_resource_pool_reader"),
+        )
+    )
+    conn.execute(
+        sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
+            sql.Identifier(schema), sql.Identifier("sn_binding_list_reader")
+        )
+    )
+    conn.execute(
+        sql.SQL('GRANT SELECT ON {}.speech_binding_families, {}.speech_binding_revisions, '
+                '{}.speech_publications, {}.speech_publication_heads, '
+                '{}.speech_publication_retirements TO {}')
+        .format(
+            sql.Identifier(schema),
+            sql.Identifier(schema),
+            sql.Identifier(schema),
+            sql.Identifier(schema),
+            sql.Identifier(schema),
+            sql.Identifier("sn_binding_list_reader"),
         )
     )
 
@@ -510,7 +591,10 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     )
     print(
         "roles ready: sn_api sn_gateway sn_gateway_query sn_workspace_writer "
-        "sn_audit_reader sn_model_instance_reader sn_quarantine_release"
+        "sn_audit_reader sn_model_instance_reader sn_quarantine_release "
+        "sn_catalog_reader sn_artifact_reader sn_resource_pool_reader "
+        "sn_binding_list_reader sn_binding_writer sn_binding_admin_reader "
+        "sn_binding_lifecycle"
     )
 PY
 ```
@@ -519,7 +603,7 @@ PY
 CREATE 权限，停止启动服务；不要用超级用户连接绕过检查。API 启动时还会再次核验
 `sn_api` 不是数据库/表 owner，也不是可继承的 owner 成员。
 
-脚本成功后，把四个新角色的连接地址写回 `deploy/compose.env`；脚本替换同名空行或追加，
+脚本成功后，把十一个新角色的连接地址写回 `deploy/compose.env`；脚本替换同名空行或追加，
 不打印口令：
 
 ```bash
@@ -549,6 +633,41 @@ values = {
         f"{os.environ['SPEECHNEXUS_QUARANTINE_RELEASE_ROLE_PASSWORD']}"
         "@postgres:5432/speechnexus"
     ),
+    "SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL": (
+        "postgresql://sn_catalog_reader:"
+        f"{os.environ['SPEECHNEXUS_CATALOG_READER_ROLE_PASSWORD']}"
+        "@postgres:5432/speechnexus"
+    ),
+    "SPEECHNEXUS_ARTIFACT_READER_DATABASE_URL": (
+        "postgresql://sn_artifact_reader:"
+        f"{os.environ['SPEECHNEXUS_ARTIFACT_READER_ROLE_PASSWORD']}"
+        "@postgres:5432/speechnexus"
+    ),
+    "SPEECHNEXUS_RESOURCE_POOL_READER_DATABASE_URL": (
+        "postgresql://sn_resource_pool_reader:"
+        f"{os.environ['SPEECHNEXUS_RESOURCE_POOL_READER_ROLE_PASSWORD']}"
+        "@postgres:5432/speechnexus"
+    ),
+    "SPEECHNEXUS_BINDING_LIST_READER_DATABASE_URL": (
+        "postgresql://sn_binding_list_reader:"
+        f"{os.environ['SPEECHNEXUS_BINDING_LIST_READER_ROLE_PASSWORD']}"
+        "@postgres:5432/speechnexus"
+    ),
+    "SPEECHNEXUS_BINDING_WRITER_DATABASE_URL": (
+        "postgresql://sn_binding_writer:"
+        f"{os.environ['SPEECHNEXUS_BINDING_WRITER_ROLE_PASSWORD']}"
+        "@postgres:5432/speechnexus"
+    ),
+    "SPEECHNEXUS_BINDING_ADMIN_READER_DATABASE_URL": (
+        "postgresql://sn_binding_admin_reader:"
+        f"{os.environ['SPEECHNEXUS_BINDING_ADMIN_READER_ROLE_PASSWORD']}"
+        "@postgres:5432/speechnexus"
+    ),
+    "SPEECHNEXUS_BINDING_LIFECYCLE_DATABASE_URL": (
+        "postgresql://sn_binding_lifecycle:"
+        f"{os.environ['SPEECHNEXUS_BINDING_LIFECYCLE_ROLE_PASSWORD']}"
+        "@postgres:5432/speechnexus"
+    ),
 }
 path = Path("deploy/compose.env")
 text = path.read_text()
@@ -559,14 +678,16 @@ for key, item in values.items():
 path.write_text(text)
 path.chmod(0o600)
 print(
-    "workspace writer, audit reader, instance reader and quarantine release DSNs "
-    "written to deploy/compose.env"
+    "workspace writer, audit reader, instance reader, quarantine release, catalogue "
+    "reader, Artifact reader, resource pool reader, binding list reader, binding "
+    "writer, binding admin reader and binding lifecycle DSNs written to "
+    "deploy/compose.env"
 )
 PY
 ```
 
-四行都按示例的 `postgres` 服务名和 `speechnexus` 库名生成；改了 Compose 服务名、端口或
-数据库名时同步修改这四行。
+这些行都按示例的 `postgres` 服务名和 `speechnexus` 库名生成；改了 Compose 服务名、端口或
+数据库名时同步修改。
 
 ### 工作区写角色 `sn_workspace_writer`
 
@@ -790,6 +911,128 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 
 该查询应无输出。
 
+### 公开目录、Artifact、资源池与 binding 身份
+
+下面七个身份覆盖 `api` 容器里其余会按需启用的数据库读写面。它们与工作区写、审计读取、
+实例读取、隔离释放一样，由 `deploy/compose.yaml` 的 `api` 服务以空默认透传：连接地址为空
+时容器照常启动，对应端点保持表中那一个稳定 503（这是「能力未启用」，不是待排查的故障）；
+写了地址但角色或授权缺失时 API 在启动阶段点名拒绝，不会带着错误身份上线，也不会等到第一个
+请求才失败。
+
+| 身份 | 键 | 端点 / 用途 | 未配置时 | 授权声明 |
+| --- | --- | --- | --- | --- |
+| `sn_catalog_reader` | `SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL` | `GET /v1/models`、`GET /v1/models/{model}`、`GET /v1/voices` | `503 model_catalogue_unavailable`、`503 voice_catalogue_unavailable` | `model_catalog_reader_grants` |
+| `sn_artifact_reader` | `SPEECHNEXUS_ARTIFACT_READER_DATABASE_URL` | `GET /v1/nexus/artifacts/{artifact_id}` 与 `.../content` | `503 artifact_service_unavailable` | `artifact_reader_grants` |
+| `sn_resource_pool_reader` | `SPEECHNEXUS_RESOURCE_POOL_READER_DATABASE_URL` | `GET /v1/nexus/admin/resource-pools` | `503 resource_pool_service_unavailable` | 本节脚本内显式 `GRANT`（无授权函数） |
+| `sn_binding_list_reader` | `SPEECHNEXUS_BINDING_LIST_READER_DATABASE_URL` | `GET /v1/nexus/admin/model-bindings` | `503 model_binding_service_unavailable` | 本节脚本内显式 `GRANT`（无授权函数） |
+| `sn_binding_writer` | `SPEECHNEXUS_BINDING_WRITER_DATABASE_URL` | `POST /v1/nexus/admin/model-bindings` 与 draft 读取 | `503 binding_unavailable` | `binding_draft_grants` |
+| `sn_binding_admin_reader` | `SPEECHNEXUS_BINDING_ADMIN_READER_DATABASE_URL` | admin binding GET 投影与发布事实读取 | `503 binding_unavailable` | `binding_admin_reader_grants` |
+| `sn_binding_lifecycle` | `SPEECHNEXUS_BINDING_LIFECYCLE_DATABASE_URL` | `POST .../model-bindings/{binding_id}/publications`、`POST .../model-bindings/{binding_id}/revisions/{revision}/retirements` 与 `.../activations`，以及停用意图 | `503 binding_result_unknown`（`retryable: false`） | `binding_lifecycle_grants` + `binding_publication_grants` |
+
+`sn_catalog_reader` 只读已发布事实：`speech_publications`、只含已发布的
+`speech_published_binding_revisions` 视图、`speech_catalog_state`、
+`speech_publication_heads` 与 `speech_publication_retirements`，永远读不到草稿
+`speech_binding_revisions` 本体，也不能推进目录版本。启动自检不合格时报
+`Model catalogue reader startup rejected`。它同时驱动 `GET /v1/voices`，所以只配
+`/v1/models` 一半能力并不存在：一个身份、两个公开读端点。
+
+`sn_artifact_reader` 只 `SELECT` `speech_artifacts` 与 `speech_workspaces`，字节仍由对象
+存储凭据按版本读取；对象存储键缺失属于 §2 的必填项，不属于本身份。启动自检不合格时报
+`Artifact reader startup rejected (<异常类型>)`。
+
+`sn_resource_pool_reader` 只 `SELECT` `engine_instances` 与 `resource_pools`；准入命令、
+租约、提交意图与凭据都不在其可读范围。启动自检不合格时报
+`Resource pool reader startup rejected`。
+
+`sn_binding_list_reader` 只 `SELECT` `speech_binding_families`、
+`speech_binding_revisions`、`speech_publications`、`speech_publication_heads` 与
+`speech_publication_retirements`。命令、幂等键、发布证据与生命周期事件历史不在其可读
+范围。启动自检不合格时报 `Binding list reader startup rejected`。
+
+`sn_binding_writer` 对 `speech_binding_families`、`speech_binding_revisions`、
+`speech_binding_commands` 持有 `SELECT`/`INSERT`，并且只有
+`speech_binding_families.latest_revision` 的列级 `UPDATE`。它不与
+`SPEECHNEXUS_BINDING_DEFAULTS_WRITER_DATABASE_URL` 同时配置：两种 producer 模式互斥，
+同时出现时 API 在启动阶段拒绝（见[故意不预置的身份](#故意不预置的身份)）。启动自检不合格
+时报 `Binding writer startup rejected`。
+
+`sn_binding_admin_reader` 对 `speech_binding_families`、`speech_binding_revisions`、
+`speech_binding_commands`、`speech_publications`、`speech_binding_publication_evidence`
+与 `speech_publication_retirements` 只有 `SELECT`，用于 admin GET 与发布事实投影。启动
+自检不合格时报 `Binding admin reader startup rejected`。
+
+`sn_binding_lifecycle` 是 binding 发布、退休、激活与停用意图的唯一写入身份：两份声明
+（`binding_lifecycle_grants` 与 `binding_publication_grants`）必须一起重放，因为它要在同一
+事务里写证据、事件、选中 head、目录版本和素材引用释放。启动自检不合格时报
+`Binding lifecycle startup rejected`。
+
+核对这七个身份的实际表级授权（列级 `UPDATE` 不出现在这个视图里，单独看下一条）：
+
+```bash
+docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
+  "select grantee, table_name, privilege_type from information_schema.table_privileges \
+   where grantee in ('sn_catalog_reader','sn_artifact_reader','sn_resource_pool_reader', \
+     'sn_binding_list_reader','sn_binding_writer','sn_binding_admin_reader', \
+     'sn_binding_lifecycle') and privilege_type in ('SELECT','INSERT','UPDATE') \
+   order by 1, 2, 3"
+```
+
+预期结果逐身份如下（`SELECT` 之外只允许 `sn_binding_writer` 与 `sn_binding_lifecycle`
+的 `INSERT`，`INSERT` 列集由启动校验逐列核对）：
+
+- `sn_catalog_reader`：`SELECT` 于 `speech_publications`、
+  `speech_published_binding_revisions`、`speech_catalog_state`、
+  `speech_publication_heads`、`speech_publication_retirements`；
+- `sn_artifact_reader`：`SELECT` 于 `speech_artifacts`、`speech_workspaces`；
+- `sn_resource_pool_reader`：`SELECT` 于 `engine_instances`、`resource_pools`；
+- `sn_binding_list_reader`：`SELECT` 于 `speech_binding_families`、
+  `speech_binding_revisions`、`speech_publications`、`speech_publication_heads`、
+  `speech_publication_retirements`；
+- `sn_binding_writer`：三张 binding 表的 `SELECT`/`INSERT`；
+- `sn_binding_admin_reader`：上面六张表的 `SELECT`；
+- `sn_binding_lifecycle`：`speech_publication_heads`、`speech_binding_disable_intents`、
+  `speech_publications`、`speech_publication_retirements`、
+  `speech_publication_lifecycle_events` 与 `speech_binding_publication_evidence` 的
+  `SELECT`/`INSERT`，`speech_catalog_state` 与 `speech_binding_revisions` 的 `SELECT`。
+
+五个只读 identity 必须没有任何写权限：
+
+```bash
+docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
+  "select grantee, table_name, privilege_type from information_schema.table_privileges \
+   where grantee in ('sn_catalog_reader','sn_artifact_reader','sn_resource_pool_reader', \
+     'sn_binding_list_reader','sn_binding_admin_reader') \
+   and privilege_type in ('INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER') \
+   order by 1, 2, 3"
+```
+
+该查询应无输出。`sn_binding_writer` 的列级 `UPDATE` 只应是
+`speech_binding_families.latest_revision`：
+
+```bash
+docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
+  "select table_name, column_name from information_schema.column_privileges \
+   where grantee = 'sn_binding_writer' and privilege_type = 'UPDATE' order by 1, 2"
+```
+
+该查询应只输出 `speech_binding_families|latest_revision` 一行；出现第二行即权限面过宽，
+重放 `binding_draft_grants` 前先撤销多余列。生命周期身份只持有三个表上的列级 `UPDATE`
+（发布指针、目录版本与素材引用释放），同样不体现在表级视图里：
+
+```bash
+docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
+  "select table_name, column_name from information_schema.column_privileges \
+   where grantee = 'sn_binding_lifecycle' and privilege_type = 'UPDATE' order by 1, 2"
+```
+
+该查询应只输出 `speech_asset_references|released_at_us`、`speech_catalog_state|generated_at_us`、
+`speech_catalog_state|revision`、`speech_publication_heads|revision`、
+`speech_publication_heads|revision_id` 与 `speech_publication_heads|updated_at_us` 六行；
+多出任何一行都表示该身份可以把发布事实改成任意值。
+
+已有部署按[已有部署的授权升级](#已有部署的授权升级)重放：七个身份都在该脚本的
+`new_roles` 与授权重放列表内，`GRANT` 是追加式操作，重复执行不改变既有权限。
+
 ### 预设发布资格输入与 sn_profile_writer 角色
 
 `POST /v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/publications` 在写入前只
@@ -982,11 +1225,14 @@ curl -sS -w '\nhttp=%{http_code}\n' -X POST \
 
 上面的脚本只适用于新建、独占的数据库；已有部署不重跑它的撤权与建角色部分。应用新迁移
 后，用同一个迁移 owner 连接对既有角色重放对应的授权函数即可，`GRANT` 是追加式操作，
-重复执行不改变既有权限。`0049_workspace_commands` 之后新增的工作区写、审计读取、实例读取
-与隔离释放四个角色在既有部署上同样需要预置：下面的脚本先按需创建这四个角色，再重放全部
-相关授权。角色尚不存在时先按上文生成口令；已存在时改用其现有口令，脚本不会修改已存在
-角色的口令，用新生成的口令写连接地址会连不上。实例读取面按上文的显式 `GRANT` 重放，因为
-它没有对应的仓库授权函数；隔离释放面按 `quarantine_release_grants` 重放。
+重复执行不改变既有权限。`0049_workspace_commands` 之后新增的工作区写、审计读取、实例读取、
+隔离释放，以及本节新增的公开目录、Artifact、资源池、binding 列表、binding 写、
+binding admin 读取与 binding 生命周期共十一个角色在既有部署上同样需要预置：下面的脚本
+先按需创建这十一个角色，再重放全部相关授权。角色尚不存在时先按上文生成口令；已存在时
+改用其现有口令，脚本不会修改已存在角色的口令，用新生成的口令写连接地址会连不上。实例
+读取、资源池读取与 binding 列表读取三个面按上文的显式 `GRANT` 重放，因为它们没有对应的
+仓库授权函数；隔离释放面按 `quarantine_release_grants` 重放，binding 生命周期面按
+`binding_lifecycle_grants` 与 `binding_publication_grants` 两份声明一起重放。
 
 ```bash
 uv run --all-packages python - <<'PY'
@@ -994,6 +1240,11 @@ import os
 
 import psycopg
 from psycopg import sql
+from speechnexus_backend.speech.infrastructure.artifact_schema import artifact_reader_grants
+from speechnexus_backend.speech.infrastructure.binding_draft_schema import binding_draft_grants
+from speechnexus_backend.speech.infrastructure.binding_publication_evidence_schema import (
+    binding_admin_reader_grants,
+)
 from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema import (
     gateway_abort_grants,
 )
@@ -1001,7 +1252,10 @@ from speechnexus_backend.speech.infrastructure.gateway_query_grants import (
     gateway_query_grants,
 )
 from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import (
-    audit_reader_grants,
+    audit_reader_grants, binding_lifecycle_grants, binding_publication_grants,
+)
+from speechnexus_backend.speech.infrastructure.publication_schema import (
+    model_catalog_reader_grants,
 )
 from speechnexus_backend.speech.infrastructure.quarantine_release_schema import (
     quarantine_release_grants,
@@ -1014,6 +1268,13 @@ new_roles = {
     "sn_audit_reader": os.environ["SPEECHNEXUS_AUDIT_READER_ROLE_PASSWORD"],
     "sn_model_instance_reader": os.environ["SPEECHNEXUS_MODEL_INSTANCE_READER_ROLE_PASSWORD"],
     "sn_quarantine_release": os.environ["SPEECHNEXUS_QUARANTINE_RELEASE_ROLE_PASSWORD"],
+    "sn_catalog_reader": os.environ["SPEECHNEXUS_CATALOG_READER_ROLE_PASSWORD"],
+    "sn_artifact_reader": os.environ["SPEECHNEXUS_ARTIFACT_READER_ROLE_PASSWORD"],
+    "sn_resource_pool_reader": os.environ["SPEECHNEXUS_RESOURCE_POOL_READER_ROLE_PASSWORD"],
+    "sn_binding_list_reader": os.environ["SPEECHNEXUS_BINDING_LIST_READER_ROLE_PASSWORD"],
+    "sn_binding_writer": os.environ["SPEECHNEXUS_BINDING_WRITER_ROLE_PASSWORD"],
+    "sn_binding_admin_reader": os.environ["SPEECHNEXUS_BINDING_ADMIN_READER_ROLE_PASSWORD"],
+    "sn_binding_lifecycle": os.environ["SPEECHNEXUS_BINDING_LIFECYCLE_ROLE_PASSWORD"],
 }
 with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     for role, password in new_roles.items():
@@ -1038,6 +1299,19 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
         conn.execute(statement)
     for statement in quarantine_release_grants(schema, "sn_quarantine_release"):
         conn.execute(statement)
+    for statement in model_catalog_reader_grants(schema, "sn_catalog_reader"):
+        conn.execute(statement)
+    for statement in artifact_reader_grants(schema, "sn_artifact_reader"):
+        conn.execute(statement)
+    for statement in binding_draft_grants(schema, "sn_binding_writer"):
+        conn.execute(statement)
+    for statement in binding_admin_reader_grants(schema, "sn_binding_admin_reader"):
+        conn.execute(statement)
+    for statement in (
+        *binding_lifecycle_grants(schema, "sn_binding_lifecycle"),
+        *binding_publication_grants(schema, "sn_binding_lifecycle"),
+    ):
+        conn.execute(statement)
     conn.execute(
         sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
             sql.Identifier(schema), sql.Identifier("sn_model_instance_reader")
@@ -1051,9 +1325,41 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
             sql.Identifier("sn_model_instance_reader"),
         )
     )
+    conn.execute(
+        sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
+            sql.Identifier(schema), sql.Identifier("sn_resource_pool_reader")
+        )
+    )
+    conn.execute(
+        sql.SQL("GRANT SELECT ON {}.engine_instances, {}.resource_pools TO {}")
+        .format(
+            sql.Identifier(schema),
+            sql.Identifier(schema),
+            sql.Identifier("sn_resource_pool_reader"),
+        )
+    )
+    conn.execute(
+        sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
+            sql.Identifier(schema), sql.Identifier("sn_binding_list_reader")
+        )
+    )
+    conn.execute(
+        sql.SQL('GRANT SELECT ON {}.speech_binding_families, {}.speech_binding_revisions, '
+                '{}.speech_publications, {}.speech_publication_heads, '
+                '{}.speech_publication_retirements TO {}')
+        .format(
+            sql.Identifier(schema),
+            sql.Identifier(schema),
+            sql.Identifier(schema),
+            sql.Identifier(schema),
+            sql.Identifier(schema),
+            sql.Identifier("sn_binding_list_reader"),
+        )
+    )
 print(
-    "gateway, workspace writer, audit reader, instance reader and quarantine release "
-    "grants refreshed"
+    "gateway, workspace writer, audit reader, instance reader, quarantine release, "
+    "catalogue reader, Artifact reader, resource pool reader, binding list reader, "
+    "binding writer, binding admin reader and binding lifecycle grants refreshed"
 )
 PY
 ```
@@ -1090,6 +1396,88 @@ Gateway query 身份仅取得六张执行恢复关系及安装身份表的必要
 部署前保存原 ACL 与私有配置。回退时先停止本次 gateway/worker，切回已验版本和
 对应配置，再按保存的 ACL 恢复受影响的其他角色；不要通过给 reader 加写权、owner
 身份或切回 writer 凭据绕过启动检查。此变更不修改既有执行或预算数据。
+
+### 透传 DSN 覆盖表
+
+`deploy/compose.yaml` 透传的全部 27 个 `*_DATABASE_URL` 键按下表处置：要么本文有可执行的
+预置步骤，要么在[故意不预置的身份](#故意不预置的身份)里写明原因与「部署方怎么判断它已经
+启用」。本表本身由 `tests/ci/test_reference_deploy_dsn_coverage.py` 守护——新增透传键既
+没有步骤也不在清单里、删掉某个已预置身份的步骤、或把清单项删掉，都会让它变红。`守护`
+列是钉住该行事实的用例：`覆盖` 为本表用例，`角色` 为
+`tests/ci/test_compose_minimal_role_provisioning.py`，`Job` 为
+`tests/ci/test_reference_deploy_job_prereqs.py`，`发布` 为
+`tests/ci/test_reference_deploy_profile_publication.py`。每一行至少由 `覆盖` 检查。
+
+| 键 | 身份 | 端点 / 用途 | 未配置时的实际行为 | 处置 | 守护 |
+| --- | --- | --- | --- | --- | --- |
+| `SPEECHNEXUS_API_DATABASE_URL` | `sn_api` | 同步转写、资产与工作区读取的基线身份（容器内名为 `SPEECHNEXUS_DATABASE_URL`） | 渲染期必填：缺值 `docker compose config` 失败 | 预置 | 覆盖+角色 |
+| `SPEECHNEXUS_GATEWAY_CONTROL_DATABASE_URL` | `sn_gateway` | 执行网关控制面写入 | 渲染期必填：缺值 `docker compose config` 失败 | 预置 | 覆盖+角色 |
+| `SPEECHNEXUS_GATEWAY_CONTROL_QUERY_DATABASE_URL` | `sn_gateway_query` | 执行网关恢复只读查询 | 渲染期必填：缺值 `docker compose config` 失败 | 预置 | 覆盖+角色 |
+| `SPEECHNEXUS_MIGRATION_DATABASE_URL` | bootstrap owner | `migration` profile 的一次性迁移 | 渲染期必填；生产须换独立 operator 凭据 | 预置 | 覆盖 |
+| `SPEECHNEXUS_REGISTRATION_DATABASE_URL` | bootstrap owner | `engine-registration` profile 的一次性注册 | 渲染期必填；生产须换独立 operator 凭据 | 预置 | 覆盖 |
+| `SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL` | `sn_profile_writer` | Profile 发布 | `503 profile_result_unknown`；配了 DSN 却缺证据文档时启动失败 | 预置 | 覆盖+发布 |
+| `SPEECHNEXUS_WORKSPACE_WRITER_DATABASE_URL` | `sn_workspace_writer` | `POST/PATCH /v1/nexus/workspaces` | `503 workspace_service_unavailable` | 预置 | 覆盖+角色 |
+| `SPEECHNEXUS_AUDIT_READER_DATABASE_URL` | `sn_audit_reader` | `GET /v1/nexus/audit-events` | `503 audit_service_unavailable` | 预置 | 覆盖+角色 |
+| `SPEECHNEXUS_MODEL_INSTANCE_READER_DATABASE_URL` | `sn_model_instance_reader` | admin 模型实例读取 | `503 model_instance_service_unavailable` | 预置 | 覆盖+角色 |
+| `SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL` | `sn_quarantine_release` | 隔离释放事务 | `503 quarantine_release_unavailable` | 预置 | 覆盖+角色 |
+| `SPEECHNEXUS_JOB_WRITER_DATABASE_URL` | `sn_job_writer` | Job 创建/读取与 voice 草稿 | 空值 → `503 job_unavailable`（创建与读取都不可用） | 预置 | 覆盖+Job |
+| `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL` | `sn_job_admission` | 原子准入 | 空值 → Job 创建 `503 job_unavailable`（准入未装配） | 预置 | 覆盖+Job |
+| `SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL` | `sn_job_dispatch` | `job-dispatch` profile 派发 | 空值 → 启动闸门点名拒绝启动，不领取 Job | 预置 | 覆盖+Job |
+| `SPEECHNEXUS_DISABLE_DATABASE_URL` | `sn_disable_scan` | `binding-disable` profile 扫描 | 空值 → worker 启动即退出并点名显式连接 | 预置 | 覆盖 |
+| `SPEECHNEXUS_DISABLE_SETTLEMENT_DATABASE_URL` | `sn_disable_settle` | 停用租约结算 | 空值 → worker 启动即退出并点名显式连接（与扫描角色同一条拒绝） | 预置 | 覆盖 |
+| `SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL` | `sn_catalog_reader` | `GET /v1/models`、`GET /v1/models/{model}`、`GET /v1/voices` | `503 model_catalogue_unavailable`、`503 voice_catalogue_unavailable` | 预置 | 覆盖+角色 |
+| `SPEECHNEXUS_ARTIFACT_READER_DATABASE_URL` | `sn_artifact_reader` | Artifact 元数据与内容 | `503 artifact_service_unavailable` | 预置 | 覆盖+角色 |
+| `SPEECHNEXUS_RESOURCE_POOL_READER_DATABASE_URL` | `sn_resource_pool_reader` | `GET /v1/nexus/admin/resource-pools` | `503 resource_pool_service_unavailable` | 预置 | 覆盖+角色 |
+| `SPEECHNEXUS_BINDING_LIST_READER_DATABASE_URL` | `sn_binding_list_reader` | `GET /v1/nexus/admin/model-bindings` | `503 model_binding_service_unavailable` | 预置 | 覆盖+角色 |
+| `SPEECHNEXUS_BINDING_WRITER_DATABASE_URL` | `sn_binding_writer` | binding draft 写入 | `503 binding_unavailable` | 预置 | 覆盖+角色 |
+| `SPEECHNEXUS_BINDING_ADMIN_READER_DATABASE_URL` | `sn_binding_admin_reader` | admin binding 读取与发布事实 | `503 binding_unavailable` | 预置 | 覆盖+角色 |
+| `SPEECHNEXUS_BINDING_LIFECYCLE_DATABASE_URL` | `sn_binding_lifecycle` | binding 发布、退休、激活与停用意图（`POST .../model-bindings/{binding_id}/publications` 等） | `503 binding_result_unknown`（`retryable: false`） | 预置 | 覆盖+角色 |
+| `SPEECHNEXUS_BINDING_DEFAULTS_WRITER_DATABASE_URL` | `sn_binding_defaults_writer`（不创建） | 默认参数 producer 模式 | 空值 → 与未配置 binding writer 相同：写入端点 `503 binding_unavailable` | 故意不预置 | 覆盖+角色 |
+| `SPEECHNEXUS_PRONUNCIATION_READER_DATABASE_URL` | `sn_pronunciation_reader`（不创建） | 发音词典固定读取 | `503 pronunciation_unavailable` | 故意不预置 | 覆盖 |
+| `SPEECHNEXUS_PRONUNCIATION_WRITER_DATABASE_URL` | `sn_pronunciation_writer`（不创建） | 发音词典草稿写入 | `503 pronunciation_unavailable` | 故意不预置 | 覆盖 |
+| `SPEECHNEXUS_PRONUNCIATION_PUBLISHER_DATABASE_URL` | `sn_pronunciation_publisher`（不创建） | 发音词典原子发布 | `publish: true` → `422 pronunciation_publication_not_supported`；读取与草稿按上面两条 | 故意不预置 | 覆盖 |
+| `SPEECHNEXUS_VOICE_PUBLISHER_DATABASE_URL` | `sn_voice_publisher`（不创建） | voice 发布 | `503 voice_draft_unavailable`；Job 创建与读取不受影响 | 故意不预置 | 覆盖 |
+
+表中没有死键：27 个透传键都有运行时消费者。设置里另有两个不在本表范围的键：
+`SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` 只被未装配的 TTS 结算 worker 读取
+（见[仍不可用的能力](#仍不可用的能力)），本 Compose 不透传；
+`SPEECHNEXUS_PUBLICATION_WRITER_DATABASE_URL` 属于 host 侧 `speechnexus-publish-binding`
+CLI 的配置，同样不经过本 Compose。两者都不是死键，只是不属于本部署面。
+
+### 故意不预置的身份
+
+以下五项不给预置步骤，原因与启用判断写在各项内。它们的共同点是：未配置时对应能力关闭并
+返回表中那个稳定错误，不会「假装可用」；一旦配置了地址，缺失的角色或授权会让 API 在启动
+阶段点名拒绝，也不会静默降级。
+
+**`sn_binding_defaults_writer`（`SPEECHNEXUS_BINDING_DEFAULTS_WRITER_DATABASE_URL`）**
+是 `sn_binding_writer` 之外的另一种 producer 模式，两者互斥：设置里两者同时存在时
+API 在构造路由前即拒绝启动（`Configure one explicit binding writer mode`）。本参考部署
+选择 `sn_binding_writer` 模式，所以不创建它。部署方判断方式：该键为空即该模式未启用；
+要改用它，先清空 `SPEECHNEXUS_BINDING_WRITER_DATABASE_URL` 再创建
+`sn_binding_defaults_writer` 并重放 `binding_defaults_grants`（它已包含
+`binding_draft_grants` 的全部授权），启动自检通过后默认参数 producer 才生效。
+
+**`sn_pronunciation_reader` / `sn_pronunciation_writer` / `sn_pronunciation_publisher`**
+（`SPEECHNEXUS_PRONUNCIATION_READER_DATABASE_URL`、
+`SPEECHNEXUS_PRONUNCIATION_WRITER_DATABASE_URL`、
+`SPEECHNEXUS_PRONUNCIATION_PUBLISHER_DATABASE_URL`）属于独立的发音词典能力，不在本参考
+部署声明装配的同步 ASR/TTS 面上（见[仍不可用的能力](#仍不可用的能力)），所以不创建这三个
+身份。部署方判断方式：三个键为空时读取端点返回 `503 pronunciation_unavailable`，
+`publish: true` 的写入返回 `422 pronunciation_publication_not_supported`，`publish: false`
+的草稿写入同样 503；这三个稳定码表示能力未启用。要启用，按
+[发音词典组件说明](../components/pronunciation-drafts.md#identities-grants-and-startup-verification)
+创建三个非 owner 角色并分别重放读取（两表加发布账本的 `SELECT`）、
+`pronunciation_draft_grants`、`pronunciation_publication_grants`；读取面目前也没有授权
+函数，按 runtime 的声明显式 `GRANT`，身份配错时启动报 `Pronunciation ... startup rejected`。
+
+**`sn_voice_publisher`（`SPEECHNEXUS_VOICE_PUBLISHER_DATABASE_URL`）** 不预置，因为
+voice 发布要求先有 `voice_design` / `voice_validation` 车道产生的证据：本参考部署的
+`job-dispatch` 启动闸门明确拒绝这两个 kind（见[异步 Job 段](#异步-job-运行角色与授权)），
+没有任何可发布的测量记录，创建该角色只会得到一个写入即失败的发布路径。部署方判断方式：
+键为空时发布返回 `503 voice_draft_unavailable`，Job 创建与读取不受影响；要启用，先装配
+gateway 的 voice 车道私有配置与 `SPEECHNEXUS_JOB_DISPATCH_KINDS`，再创建
+`sn_voice_publisher` 并重放 `voice_publication_grants`，最后配置该键。
 
 ## 7. 启动 API 与 gateway
 

@@ -173,11 +173,22 @@ constrained on every axis:
 - `issue`, `reason` and `proof` must all be present. The proof states why no
   admitted request is lost, so an entry without one is a defect and rejects.
 
+One entry covers **one narrowing per operation request body per change**. Two
+real narrowings in the same body cannot share an entry and cannot be registered
+together, because the body would then differ by two bounds while a single entry
+proves one; that limits a landing to one narrowing at a time. The rejection says
+so and names the remedy — register one narrowing per body per change, or split the
+change so each narrowing lands on its own. This is a deliberate fail-closed
+trade-off: splitting a change or using the next version period stays available,
+while approving several simultaneous narrowings with one proof would remove the
+per-entry audit trail.
+
 A narrowing that already landed leaves its entry dormant: when the baseline and
-the current contract both carry the new bound nothing in the request body moved,
-so the entry neither filters nor rejects. A dormant entry never covers a change
-beside it — if anything else in that request body differs, the entry is not
-dormant and the finding stays. A contract reverted to the old bound makes the entry unbacked and
+the current contract both carry the new bound the entry neither filters nor
+rejects, and it never adds a finding of its own — a change the kernel already
+tolerates, such as an added optional property, stays approved. A dormant entry
+also never covers a change beside it, because dormancy removes nothing: any
+finding the kernel raises for that request body still stands. A contract reverted to the old bound makes the entry unbacked and
 rejects. Each approval is printed as `approved request bound narrowing:` and
 listed in `approved_request_bound_narrowings` in JSON mode. New entries must add
 matching negative cases and update the frozen assertion in

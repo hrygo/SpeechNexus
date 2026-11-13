@@ -815,18 +815,21 @@ def _apply_approved_request_bound_narrowings(
                 shape_same = _kernel()._same_json_tree(base_shape, current_shape)
                 before = base_schema[1].get(pointer, {}).get(keyword)
                 after = current_schema[1].get(pointer, {}).get(keyword)
-                if (before, after) == (to_bound, to_bound) and not differences and shape_same:
+                if (before, after) == (to_bound, to_bound):
                     # The narrowing already landed: the entry stays dormant until
                     # its version period changes, so it does not report a backlog
-                    # item once the change is the new baseline. A dormant entry
-                    # still never covers another change in the same body.
+                    # item once the change is the new baseline, and it never adds
+                    # a finding of its own. A change beside a dormant entry keeps
+                    # the kernel's own finding, which the entry does not touch.
                     continue
                 if not shape_same:
                     problem = "another structural change exists in the same operation request body"
                 elif len(differences) != 1:
                     problem = (
                         f"the operation request body has {len(differences)} bound "
-                        "differences; exactly the registered one is required"
+                        "differences; exactly the registered one is required — register "
+                        "one narrowing per operation request body per change, or split "
+                        "the change so each narrowing lands on its own"
                     )
                 else:
                     (only_pointer, only_keyword), (before_moved, after_moved) = next(

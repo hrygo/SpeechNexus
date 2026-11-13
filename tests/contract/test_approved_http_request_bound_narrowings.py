@@ -347,8 +347,34 @@ def test_a_dormant_registration_does_not_cover_a_sibling_change() -> None:
 
     findings, approved = analyze(base, current)
 
+    # A dormant entry removes nothing, so the kernel's own finding still stands.
+    # It must not contribute a finding of its own either, which is why the
+    # assertion is the kernel finding rather than the entry's message.
     assert approved == []
-    assert any("is not the registered field" in finding for finding in findings)
+    assert FINDING in findings
+
+
+def test_a_dormant_entry_adds_no_finding_of_its_own() -> None:
+    """Dormancy is silent: the entry neither filters nor rejects.
+
+    A change the kernel already tolerates -- an added optional property -- must
+    stay approved-clean when the narrowing has landed. Before this case existed
+    the tightened dormancy condition made the entry itself reject that change,
+    turning a tolerated edit red with an entry-level finding.
+    """
+    loaded = module()
+    base = document(TO_BOUND)
+    current = document(TO_BOUND)
+
+    remaining, approved = cast(
+        tuple[list[str], list[str]],
+        loaded._apply_approved_request_bound_narrowings(
+            SOURCE, base, current, VERSION, VERSION, []
+        ),
+    )
+
+    assert remaining == []
+    assert approved == []
 
 
 def test_a_structural_change_beside_the_narrowing_still_rejects() -> None:

@@ -89,6 +89,7 @@ class ImageWorkflowTests(unittest.TestCase):
             "COORDINATION_RESULT": "skipped",
             "WEB_RESULT": "skipped",
             "DEPLOYMENT_RESULT": "skipped",
+            "ACCEPTANCE_RESULT": "skipped",
         }
         for result in ("success", "failure", "cancelled", "skipped", ""):
             for required in ("true", "false", "", "TRUE", "invalid"):
@@ -108,6 +109,7 @@ class ImageWorkflowTests(unittest.TestCase):
             "COORDINATION_RESULT": "skipped",
             "WEB_RESULT": "skipped",
             "DEPLOYMENT_RESULT": "skipped",
+            "ACCEPTANCE_RESULT": "skipped",
             "CONTROLLER_RESULT": "success",
             "CONTROLLER_REQUIRED": "false",
         }
@@ -115,6 +117,51 @@ class ImageWorkflowTests(unittest.TestCase):
             with self.subTest(result=result):
                 actual = execute(FINAL_GATE, {**base, "DELIVERY_RESULT": result})
                 self.assertEqual(actual.returncode == 0, result == "success", actual.stderr)
+
+    def test_final_gate_requires_the_reference_acceptance_entry(self) -> None:
+        base = {
+            "MODE": "docs",
+            "ROUTING_RESULT": "success",
+            "DELIVERY_RESULT": "success",
+            "CHECKS_RESULT": "skipped",
+            "COORDINATION_RESULT": "skipped",
+            "WEB_RESULT": "skipped",
+            "DEPLOYMENT_RESULT": "skipped",
+            "ACCEPTANCE_RESULT": "skipped",
+            "CONTROLLER_RESULT": "success",
+            "CONTROLLER_REQUIRED": "false",
+        }
+        for result in ("success", "failure", "cancelled", "skipped", ""):
+            with self.subTest(result=result):
+                actual = execute(FINAL_GATE, {**base, "ACCEPTANCE_RESULT": result})
+                self.assertEqual(actual.returncode == 0, result == "skipped", actual.stderr)
+
+    def test_final_gate_rejects_a_skipped_entry_where_the_scope_runs_it(self) -> None:
+        # The acceptance entry runs for full/no-db scopes; a skip there means the
+        # operator entry point was not executed, so it cannot satisfy the gate.
+        base = {
+            "ROUTING_RESULT": "success",
+            "DELIVERY_RESULT": "success",
+            "CONTROLLER_RESULT": "success",
+            "CONTROLLER_REQUIRED": "false",
+        }
+        for mode in ("full", "no-db"):
+            applied = {
+                "CHECKS_RESULT": "success",
+                "COORDINATION_RESULT": "success" if mode == "full" else "skipped",
+                "WEB_RESULT": "success",
+                "DEPLOYMENT_RESULT": "success",
+                "ACCEPTANCE_RESULT": "success",
+            }
+            with self.subTest(mode=mode, result="success"):
+                actual = execute(FINAL_GATE, {**base, **applied, "MODE": mode})
+                self.assertEqual(actual.returncode, 0, actual.stderr)
+            for result in ("skipped", "failure", "cancelled", ""):
+                with self.subTest(mode=mode, result=result):
+                    actual = execute(
+                        FINAL_GATE, {**base, **applied, "MODE": mode, "ACCEPTANCE_RESULT": result}
+                    )
+                    self.assertNotEqual(actual.returncode, 0, actual.stderr)
 
 
 class ScopeTests(unittest.TestCase):

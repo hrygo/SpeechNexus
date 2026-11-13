@@ -92,6 +92,34 @@ reference acceptance: FAIL step=migrate exit=20
 `docker compose run` 无法启动，闸门也就无法判定）。退出码标识步骤，不表示行序：栈是 60，
 闸门是 50，两者相邻且栈在前。
 
+## 机器可读输出（CI 契约）
+
+`.github/workflows/ci.yml` 的 `Deploy: reference acceptance entry (dry-run execution)` 作业解析本入口的日志，
+解析与断言的唯一实现在 `scripts/dev-env/ci-entry-guard.py`（子命令 `log`）。下列行是**契约**，不是偶然措辞：
+改格式必须同时改本节的表格、守卫脚本与作业断言。
+
+| 行 | 格式 | 约束 |
+| --- | --- | --- |
+| 首行块 | `steps=<N> order=<csv> mode=<dry-run\|apply> gate=<compose\|direct>` | `<csv>` 的 id 顺序必须等于下面的「步骤顺序」；`<N>` 等于步骤数 |
+| 步骤首行 | `[i/N] <ident> — <title>` | `<ident>` 按序对应 `<csv>`，`i` 从 1 开始，分母等于步骤数 |
+| 步骤结论 | `      结论: (PLAN\|PASS\|FAIL) — <detail>` | 每步一条；`--dry-run` 下必须全是 `PLAN`，声明 `PASS` 即虚报 |
+| 延后项 | `      待输入: <reason>` | 每条都必须登记（见下）；`--dry-run` 下不因延后项判失败，只把它计入 `pending=K` |
+| 汇总记录 | `步骤记录: <ident>=<outcome> ...` | 与逐条 `结论:` 一一对应 |
+| 结论行 | `reference acceptance: DRY-RUN PASS steps=<N> [pending=<K>]` / `reference acceptance: PASS steps=<N>` / `reference acceptance: FAIL step=<ident> exit=<code>` | `pending=K` 必须等于 `待输入:` 行数；FAIL 行的 `step` 是失败步 id |
+
+**步骤顺序**（`order=` 与 `[i/N]` 必须逐字相符）：
+`tools, migrate, roles, buckets, stack, gate, health`。新增或重排步骤时，同步守卫脚本的
+`EXPECTED_STEP_ORDER` 与本节——两处不一致会让作业直接红，避免「文档写的顺序」和「实际执行的顺序」
+悄悄分叉。
+
+**延后项登记**：`DECLARED_DEFERRALS` 的每条是「slug → 必须同时出现的稳定词」，不匹配整句。把说明写得更
+清楚（措辞改变但关键词仍在）不会变红；出现新的延后项、或换用别的关键词，会红并给出登记行与位置。
+登记通道是给**无法静态判定**或**新延后输入**用的，不是放宽 PASS 含义的开关。
+
+同一作业还跑另外两条守卫：`sites`（每个 `ctx.mutate(...)` 结果必须被判定，且 `ctx.read(...)` 不得携带
+写命令）与 `probe`（用必然失败的输入调用入口的纯判定函数）。两条的边界写在
+[CI 验证规则](../validation/ci-validation.md)。
+
 ## 幂等与重跑
 
 - `migrate`：`speechnexus-job-migrate` 在已到 head 的库上是空操作，重复执行不改版本行；每轮

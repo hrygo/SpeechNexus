@@ -79,6 +79,7 @@ src = ["asset-inspector/src", "backend/src", "execution-gateway/src", "node-cont
 # These lightweight entry points use the runner's system Python, without uv.
 # Deployers run this one with the host Python (macOS 3.9, Ubuntu 24.04 3.12).
 "scripts/dev-env/check-async-job-prereqs.py" = "py39"
+"scripts/dev-env/ci-entry-guard.py" = "py312"
 "scripts/dev-env/ci-routing.py" = "py312"
 "scripts/dev-env/prepare-ci-browser.py" = "py312"
 "scripts/dev-env/download-integration-evidence.py" = "py312"

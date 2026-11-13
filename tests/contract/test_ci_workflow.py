@@ -29,6 +29,7 @@ _EXPECTED = {
         "COORDINATION_RESULT": "skipped",
         "WEB_RESULT": "skipped",
         "DEPLOYMENT_RESULT": "skipped",
+        "ACCEPTANCE_RESULT": "skipped",
     },
     "web": {
         **_DELIVERY,
@@ -36,6 +37,7 @@ _EXPECTED = {
         "COORDINATION_RESULT": "skipped",
         "WEB_RESULT": "success",
         "DEPLOYMENT_RESULT": "skipped",
+        "ACCEPTANCE_RESULT": "skipped",
     },
     "full": {
         **_DELIVERY,
@@ -43,6 +45,7 @@ _EXPECTED = {
         "COORDINATION_RESULT": "success",
         "WEB_RESULT": "success",
         "DEPLOYMENT_RESULT": "success",
+        "ACCEPTANCE_RESULT": "success",
     },
     "no-db": {
         **_DELIVERY,
@@ -50,6 +53,7 @@ _EXPECTED = {
         "COORDINATION_RESULT": "skipped",
         "WEB_RESULT": "success",
         "DEPLOYMENT_RESULT": "success",
+        "ACCEPTANCE_RESULT": "success",
     },
 }
 
@@ -219,6 +223,7 @@ def test_protected_status_never_passes_missing_evidence(
         "web",
         "deployment",
         "delivery_tracking",
+        "reference_acceptance",
         "node_controller_image",
     }
     assert _GATE["if"] == "${{ always() }}"
@@ -231,6 +236,7 @@ def test_protected_status_never_passes_missing_evidence(
         "COORDINATION_RESULT": "${{ needs.coordination.result }}",
         "WEB_RESULT": "${{ needs.web.result }}",
         "DEPLOYMENT_RESULT": "${{ needs.deployment.result }}",
+        "ACCEPTANCE_RESULT": "${{ needs.reference_acceptance.result }}",
         "CONTROLLER_RESULT": "${{ needs.node_controller_image.result }}",
         "CONTROLLER_REQUIRED": "${{ needs.node_controller_image.outputs.required }}",
     }
@@ -248,6 +254,15 @@ def test_final_gate_requires_the_web_and_deployment_results_for_its_scope(
     states = {**_EXPECTED[mode], lane: state}
     result = _run_gate({"MODE": mode, "ROUTING_RESULT": "success", **states})
     assert (result.returncode == 0) is (states == _EXPECTED[mode])
+
+
+@pytest.mark.parametrize("mode", list(_EXPECTED))
+@pytest.mark.parametrize("state", _STATES)
+def test_final_gate_requires_the_reference_acceptance_entry(mode: str, state: str) -> None:
+    states = {**_EXPECTED[mode], "ACCEPTANCE_RESULT": state}
+    result = _run_gate({"MODE": mode, "ROUTING_RESULT": "success", **states})
+    expected = "skipped" if mode in ("docs", "web") else "success"
+    assert (result.returncode == 0) is (state == expected)
 
 
 @pytest.mark.parametrize("mode", list(_EXPECTED))

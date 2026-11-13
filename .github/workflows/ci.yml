@@ -696,6 +696,7 @@ jobs:
         coordination,
         web,
         deployment,
+        reference_acceptance,
         node_controller_image,
       ]
     if: ${{ always() }}
@@ -711,6 +712,7 @@ jobs:
           COORDINATION_RESULT: ${{ needs.coordination.result }}
           WEB_RESULT: ${{ needs.web.result }}
           DEPLOYMENT_RESULT: ${{ needs.deployment.result }}
+          ACCEPTANCE_RESULT: ${{ needs.reference_acceptance.result }}
           CONTROLLER_RESULT: ${{ needs.node_controller_image.result }}
           CONTROLLER_REQUIRED: ${{ needs.node_controller_image.outputs.required }}
         run: |
@@ -732,20 +734,25 @@ jobs:
           esac
           case "$MODE" in
             docs)
-              checks=skipped; coordination=skipped; web=skipped; deployment=skipped ;;
+              checks=skipped; coordination=skipped; web=skipped; deployment=skipped;
+              acceptance=skipped ;;
             web)
-              checks=success; coordination=skipped; web=success; deployment=skipped ;;
+              checks=success; coordination=skipped; web=success; deployment=skipped;
+              acceptance=skipped ;;
             no-db)
-              checks=success; coordination=skipped; web=success; deployment=success ;;
+              checks=success; coordination=skipped; web=success; deployment=success;
+              acceptance=success ;;
             full)
-              checks=success; coordination=success; web=success; deployment=success ;;
+              checks=success; coordination=success; web=success; deployment=success;
+              acceptance=success ;;
             *)
               echo "::error::Missing or invalid CI scope"
               exit 1 ;;
           esac
           if [[ "$CHECKS_RESULT" != "$checks" || "$COORDINATION_RESULT" != "$coordination" ||
-                "$WEB_RESULT" != "$web" || "$DEPLOYMENT_RESULT" != "$deployment" ]]; then
-            echo "::error::Scope=$MODE; Python=$CHECKS_RESULT; PG/InnoDB=$COORDINATION_RESULT; Web=$WEB_RESULT; deployment=$DEPLOYMENT_RESULT"
+                "$WEB_RESULT" != "$web" || "$DEPLOYMENT_RESULT" != "$deployment" ||
+                "$ACCEPTANCE_RESULT" != "$acceptance" ]]; then
+            echo "::error::Scope=$MODE; Python=$CHECKS_RESULT; PG/InnoDB=$COORDINATION_RESULT; Web=$WEB_RESULT; deployment=$DEPLOYMENT_RESULT; acceptance=$ACCEPTANCE_RESULT"
             exit 1
           fi
           echo "Verified scope=$MODE; inapplicable lanes are not application-test evidence."
@@ -838,3 +845,282 @@ jobs:
             -f deploy/compose.yaml \
             --profile job-dispatch \
             config --quiet
+
+  # `scripts/dev-env/reference-acceptance.py` is the operator's single command for
+  # deciding whether the reference deployment works, but no job executed it: the
+  # tests/ci cases drive it through a fake Runner, so an entry point that only
+  # works under stubs could merge untouched. This job runs the real process the
+  # way an operator does, so corrupting the entry itself fails a PR.
+  #
+  # Coverage boundary: `--dry-run` executes the real `tools` step (docker/compose/
+  # uv versions, the compose-derived `${KEY:?}` set plus the entry's own required
+  # keys, compose rendering, three distinct Job DSN identities), the migration
+  # head derived from the revision graph, the bucket-name derivation, the resolved
+  # `--profile job-dispatch` compose document that stack/gate read, and the private
+  # input scan (JSON parse, result-bucket agreement, VAD digest) against synthetic
+  # inputs. It plans and never runs migrate/roles/buckets/stack/gate/health: those
+  # write state or need a real engine, so this job proves the entry point's
+  # preconditions, derivations and step order, not a deployment.
+  #
+  # The last step is a negative control. Without it the positive run would stay
+  # green even if the entry swallowed every failure, so a corrupted environment
+  # must still exit non-zero and name the failing step. The job therefore covers
+  # what "Compose: configuration validation" does not: not the Compose file, but
+  # the Python entry point that reads it.
+  reference_acceptance:
+    name: "Deploy: reference acceptance entry (dry-run execution)"
+    needs: [changes]
+    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'no-db' }}
+    runs-on: ubuntu-24.04
+    # The entry point plus both controls measured under 1 s locally; checkout,
+    # setup-uv and the three `docker compose config` renders dominate. The job runs
+    # beside python_checks and integration_shards, so it adds no critical-path
+    # minutes; the ceiling only bounds a hung docker daemon.
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+
+      - name: Prepare the acceptance environment from the committed example
+        run: |
+          cp deploy/compose.env.example deploy/compose.env
+          cat >> deploy/compose.env <<'EOF'
+
+          # CI overlay: the three Job DSNs are blank in the committed example
+          # because the base topology must render without them; the entry point
+          # requires all three to name distinct roles.
+          SPEECHNEXUS_JOB_WRITER_DATABASE_URL=postgresql://sn_job_writer:change-me-job-writer@postgres:5432/speechnexus
+          SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL=postgresql://sn_job_admission:change-me-job-admission@postgres:5432/speechnexus
+          SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL=postgresql://sn_job_dispatch:change-me-job-dispatch@postgres:5432/speechnexus
+          EOF
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import shutil
+          from pathlib import Path
+
+          # Synthetic private inputs under the gitignored deploy/.runtime/private
+          # directory the example env file names, so the stack step's static scan
+          # runs against complete inputs instead of deferring every check.
+          private = Path("deploy/.runtime/private")
+          private.mkdir(parents=True, exist_ok=True)
+          for name in ("gateway-file-asr", "gateway-file-tts", "transcription-recipe"):
+              shutil.copyfile(f"deploy/private/{name}.example.json", private / f"{name}.json")
+          model = private / "silero_vad.onnx"
+          model.write_bytes(b"speechnexus synthetic vad model for the CI dry-run\n")
+          lane = private / "gateway-file-asr.json"
+          document = json.loads(lane.read_text(encoding="utf-8"))
+          document["vad_model_sha256"] = hashlib.sha256(model.read_bytes()).hexdigest()
+          lane.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+          print("private inputs:", sorted(item.name for item in private.iterdir()))
+          PY
+
+      - name: Execute the reference acceptance entry in dry-run mode
+        env:
+          SN_ADMIN_DSN: postgresql://speechnexus:change-me-local-postgres@postgres:5432/speechnexus
+        run: |
+          set -o pipefail
+          log="$RUNNER_TEMP/reference-acceptance-dry-run.log"
+          started="$SECONDS"
+          code=0
+          python3 scripts/dev-env/reference-acceptance.py --dry-run 2>&1 | tee "$log" || code=$?
+          deferred="$(grep -c '待输入: ' "$log" || true)"
+          {
+            echo "### Reference acceptance entry (dry-run)"
+            echo ""
+            echo "| metric | value |"
+            echo "| --- | --- |"
+            echo "| entry exit | $code |"
+            echo "| entry wall clock | $((SECONDS - started))s |"
+            echo "| deferred inputs | ${deferred} (every one must be declared in the verify step) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$code" -ne 0 ]]; then
+            echo "::error::reference-acceptance.py --dry-run exited $code"
+            exit "$code"
+          fi
+
+      - name: Verify every step really ran, in the documented order
+        run: |
+          python3 - "$RUNNER_TEMP/reference-acceptance-dry-run.log" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          # The deferred inputs the dry-run is allowed to report. The list is
+          # explicit on purpose: a new deferral must be registered with one line
+          # here instead of silently widening what "PASS" means, and anything the
+          # entry defers without a registration turns this job red.
+          DECLARED_PENDING = (
+              "gateway 未 healthy；job-dispatch-worker 的 network_mode: service:gateway 需要它先运行",
+          )
+
+          log = Path(sys.argv[1]).read_text(encoding="utf-8")
+          expected = ["tools", "migrate", "roles", "buckets", "stack", "gate", "health"]
+          problems = []
+          seen = re.findall(r"^\[\d+/7\] (\w+) —", log, re.MULTILINE)
+          if seen != expected:
+              problems.append(f"step sequence {seen} != {expected}")
+          if any(line.strip().startswith("结论: FAIL") for line in log.splitlines()):
+              problems.append("a step reported FAIL despite exit 0")
+          if f"order={', '.join(expected)} mode=dry-run" not in log:
+              problems.append("header order line does not name the documented step order")
+          if "reference acceptance: DRY-RUN PASS steps=7" not in log:
+              problems.append("missing the dry-run PASS verdict")
+          pending = [
+              line.split("待输入: ", 1)[1].strip()
+              for line in log.splitlines()
+              if "待输入: " in line
+          ]
+          undeclared = [reason for reason in pending if reason not in DECLARED_PENDING]
+          if undeclared:
+              problems.append(
+                  "undeclared deferred input(s), register each in DECLARED_PENDING: "
+                  + " | ".join(undeclared)
+              )
+          counter = re.search(r"^reference acceptance: .*pending=(\d+)$", log, re.MULTILINE)
+          counted = int(counter.group(1)) if counter else 0
+          if counted != len(pending):
+              problems.append(
+                  f"verdict counts pending={counted} but the log carries {len(pending)} deferred lines"
+              )
+          for problem in problems:
+              print(f"::error::{problem}")
+          raise SystemExit(1 if problems else 0)
+          PY
+
+      - name: "Static sweep: every mutating command is judged"
+        # The dry-run never executes `ctx.mutate`, so it cannot see a lost exit
+        # code check there (that is the B1 regression). This sweep reads the
+        # entry point's own AST instead: every `ctx.mutate(...)` result must be
+        # judged, either by reading `.ok` on it, by comparing `.code`, or by
+        # handing it to a module helper that reads `.ok` on that parameter.
+        # Boundary: it proves the judgement exists somewhere, not that the
+        # judgement is correct, and it cannot see a guard that was emptied while
+        # keeping the `.ok` read.
+        run: |
+          python3 - <<'PY'
+          import ast
+          from pathlib import Path
+
+          source = Path("scripts/dev-env/reference-acceptance.py").read_text(encoding="utf-8")
+
+          def is_mutate(node: ast.AST) -> bool:
+              return (
+                  isinstance(node, ast.Call)
+                  and isinstance(node.func, ast.Attribute)
+                  and node.func.attr == "mutate"
+                  and isinstance(node.func.value, ast.Name)
+                  and node.func.value.id == "ctx"
+              )
+
+          tree = ast.parse(source)
+          functions = [
+              node
+              for node in ast.walk(tree)
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+          ]
+          ok_helpers = set()
+          for function in functions:
+              params = {argument.arg for argument in function.args.args}
+              for inner in ast.walk(function):
+                  if (
+                      isinstance(inner, ast.Attribute)
+                      and inner.attr == "ok"
+                      and isinstance(inner.value, ast.Name)
+                      and inner.value.id in params
+                  ):
+                      ok_helpers.add(function.name)
+
+          problems: list[str] = []
+          sites = 0
+          for function in functions:
+              nodes = list(ast.walk(function))
+              for node in nodes:
+                  if isinstance(node, ast.Expr) and is_mutate(node.value):
+                      sites += 1
+                      problems.append(
+                          f"{function.name}:{node.lineno} ctx.mutate(...) result discarded"
+                      )
+                  target = None
+                  if (
+                      isinstance(node, ast.Assign)
+                      and len(node.targets) == 1
+                      and isinstance(node.targets[0], ast.Name)
+                      and is_mutate(node.value)
+                  ):
+                      target = node.targets[0].id
+                  if target is None:
+                      continue
+                  sites += 1
+                  judged = any(
+                      isinstance(inner, ast.Attribute)
+                      and inner.attr == "ok"
+                      and isinstance(inner.value, ast.Name)
+                      and inner.value.id == target
+                      for inner in nodes
+                      if inner is not node
+                  ) or any(
+                      isinstance(inner, ast.Compare)
+                      and any(
+                          isinstance(part, ast.Attribute)
+                          and part.attr == "code"
+                          and isinstance(part.value, ast.Name)
+                          and part.value.id == target
+                          for part in ast.walk(inner)
+                      )
+                      for inner in nodes
+                      if inner is not node
+                  ) or any(
+                      isinstance(inner, ast.Call)
+                      and isinstance(inner.func, ast.Name)
+                      and inner.func.id in ok_helpers
+                      and any(
+                          isinstance(argument, ast.Name) and argument.id == target
+                          for argument in inner.args
+                      )
+                      for inner in nodes
+                      if inner is not node
+                  )
+                  if not judged:
+                      problems.append(
+                          f"{function.name}:{node.lineno} {target} = ctx.mutate(...) never "
+                          f"judges {target}.ok / {target}.code"
+                      )
+          if not sites:
+              problems.append("no ctx.mutate call site found; the sweep would be vacuous")
+          for problem in problems:
+              print(f"::error::{problem}")
+          print(f"mutating call sites judged: {sites - len([p for p in problems if 'never' in p or 'discarded' in p])}/{sites}")
+          raise SystemExit(1 if problems else 0)
+          PY
+
+      - name: Reject a corrupted environment instead of passing quietly
+        env:
+          # The same shell-only admin DSN the positive run uses, so the only
+          # corruption this control introduces is the blank bucket key.
+          SN_ADMIN_DSN: postgresql://speechnexus:change-me-local-postgres@postgres:5432/speechnexus
+        run: |
+          broken="$RUNNER_TEMP/reference-acceptance-broken.env"
+          cp deploy/compose.env "$broken"
+          echo "SPEECHNEXUS_OBJECT_STORAGE_BUCKET=" >> "$broken"
+          code=0
+          python3 scripts/dev-env/reference-acceptance.py --dry-run --env-file "$broken" \
+            > "$RUNNER_TEMP/reference-acceptance-broken.log" 2>&1 || code=$?
+          cat "$RUNNER_TEMP/reference-acceptance-broken.log"
+          if [[ "$code" -eq 0 ]]; then
+            echo "::error::the entry accepted a blank SPEECHNEXUS_OBJECT_STORAGE_BUCKET (exit 0)"
+            exit 1
+          fi
+          if ! grep -q 'FAIL step=tools' "$RUNNER_TEMP/reference-acceptance-broken.log"; then
+            echo "::error::the corrupted environment was not attributed to step=tools"
+            exit 1
+          fi
+          echo "negative control: exit=$code step=tools"

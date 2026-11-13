@@ -94,7 +94,9 @@ const server = createServer(async (req, res) => {
       );
     }
     if (path === "/v1/nexus/assets/asset-original/content" && req.method === "GET") {
-      // Replay reads the inline text back from the durable material; this is not a metadata read.
+      // Replay reads the inline text back from the durable material; this is not a metadata read,
+      // so it is counted separately and makes the report's metadataOnly own its real value.
+      current.contentReads++;
       const body = Buffer.from(
         current.kind === "asr" ? "synthetic audio" : "synthetic original text",
       );
@@ -182,6 +184,7 @@ try {
         posts: [],
         jobs: [],
         gets: 0,
+        contentReads: 0,
         requests: 0,
         unexpected: 0,
         handlerErrors: 0,
@@ -320,6 +323,7 @@ try {
         scenario,
         uploads: state.posts.length,
         metadataReads: state.gets,
+        contentReads: state.contentReads,
         jobs: state.jobs.length,
       });
       await context.close();
@@ -327,6 +331,8 @@ try {
   }
   assert.deepEqual(errors, []);
   assert.deepEqual(outbound, []);
+  // Measured, never assumed: the sum of the per-scenario counters the loopback just observed.
+  const contentReads = results.reduce((total, row) => total + row.contentReads, 0);
   const report = {
     checkedAt: new Date().toISOString(),
     browser: browser.version(),
@@ -337,7 +343,9 @@ try {
     noAutomaticRestoreRequests: true,
     noOperationRequests: true,
     originalKeys: true,
-    metadataOnly: true,
+    contentReads,
+    // Only a probe that never fetched /content may call itself metadata-only.
+    metadataOnly: contentReads === 0,
     pageErrors: errors.length,
     outboundRequests: outbound.length,
   };

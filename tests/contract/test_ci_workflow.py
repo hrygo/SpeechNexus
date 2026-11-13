@@ -22,9 +22,12 @@ _PROBE_SPEC.loader.exec_module(_PROBE)
 _GATE = _WORKFLOW["jobs"]["python"]
 _STATES = ("success", "failure", "skipped", "cancelled", "")
 _DELIVERY = {"DELIVERY_RESULT": "success"}
+# `docs_format` is the only lane a prose-only change owes; every heavier scope owes
+# the same file set through `python_contracts`' `uv run ruff format --check .`.
 _EXPECTED = {
     "docs": {
         **_DELIVERY,
+        "DOCS_FORMAT_RESULT": "success",
         "CHECKS_RESULT": "skipped",
         "COORDINATION_RESULT": "skipped",
         "WEB_RESULT": "skipped",
@@ -33,6 +36,7 @@ _EXPECTED = {
     },
     "web": {
         **_DELIVERY,
+        "DOCS_FORMAT_RESULT": "skipped",
         "CHECKS_RESULT": "success",
         "COORDINATION_RESULT": "skipped",
         "WEB_RESULT": "success",
@@ -41,6 +45,7 @@ _EXPECTED = {
     },
     "full": {
         **_DELIVERY,
+        "DOCS_FORMAT_RESULT": "skipped",
         "CHECKS_RESULT": "success",
         "COORDINATION_RESULT": "success",
         "WEB_RESULT": "success",
@@ -49,6 +54,7 @@ _EXPECTED = {
     },
     "no-db": {
         **_DELIVERY,
+        "DOCS_FORMAT_RESULT": "skipped",
         "CHECKS_RESULT": "success",
         "COORDINATION_RESULT": "skipped",
         "WEB_RESULT": "success",
@@ -218,6 +224,7 @@ def test_protected_status_never_passes_missing_evidence(
     assert _GATE["name"] == "Gate: required checks for this change"
     assert set(_GATE["needs"]) == {
         "changes",
+        "docs_format",
         "python_checks_gate",
         "coordination",
         "web",
@@ -232,6 +239,7 @@ def test_protected_status_never_passes_missing_evidence(
         "MODE": "${{ needs.changes.outputs.mode }}",
         "ROUTING_RESULT": "${{ needs.changes.result }}",
         "DELIVERY_RESULT": "${{ needs.delivery_tracking.result }}",
+        "DOCS_FORMAT_RESULT": "${{ needs.docs_format.result }}",
         "CHECKS_RESULT": "${{ needs.python_checks_gate.result }}",
         "COORDINATION_RESULT": "${{ needs.coordination.result }}",
         "WEB_RESULT": "${{ needs.web.result }}",
@@ -417,3 +425,56 @@ def test_required_workflow_is_never_filtered_out_and_classification_is_lightweig
         == "${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'no-db' }}"
     )
     assert jobs["web"]["if"] == jobs["python_checks"]["if"]
+
+
+def test_prose_only_changes_owe_the_markdown_format_lane() -> None:
+    job = _WORKFLOW["jobs"]["docs_format"]
+    assert job["name"] == "Docs: markdown code block formatting"
+    assert job["needs"] == ["changes"]
+    # The other three scopes run the same command inside `python_contracts`; running
+    # this lane there too would duplicate the check, skipping it would leave the hole.
+    assert job["if"] == "${{ needs.changes.outputs.mode == 'docs' }}"
+    assert isinstance(job["timeout-minutes"], int) and job["timeout-minutes"] <= 5
+    runs = [step.get("run", "") for step in job["steps"]]
+    assert not any("uv sync" in run for run in runs)
+    assert not any("pnpm install" in run for run in runs)
+    assert not any(step.get("if") for step in job["steps"])
+    checkout = next(step for step in job["steps"] if "actions/checkout@" in step.get("uses", ""))
+    assert checkout["with"]["persist-credentials"] is False
+    setup = next(step for step in job["steps"] if "astral-sh/setup-uv@" in step.get("uses", ""))
+    assert setup["with"]["version"] == "${{ env.UV_VERSION }}"
+    # Byte-for-byte the same Ruff invocation the full static lane uses: the checked
+    # file set (`.`) is identical, so no Markdown surface is covered by one lane and
+    # missed by the other. tests/ci pins the version against uv.lock.
+    assert runs[-1] == 'uvx --from "ruff==${RUFF_VERSION}" ruff format --check .'
+    static_format = next(
+        step["run"]
+        for step in _WORKFLOW["jobs"]["python_contracts"]["steps"]
+        if step.get("run", "").endswith("ruff format --check .")
+    )
+    assert static_format == "uv run ruff format --check ."
+    assert runs[-1].split("ruff format", 1)[1] == static_format.split("ruff format", 1)[1]
+
+
+def test_the_gate_requires_the_markdown_format_result_only_for_prose_scope() -> None:
+    assert "docs_format" in _GATE["needs"]
+    assert _EXPECTED["docs"]["DOCS_FORMAT_RESULT"] == "success"
+    for mode in ("web", "no-db", "full"):
+        assert _EXPECTED[mode]["DOCS_FORMAT_RESULT"] == "skipped"
+    lane = next(
+        step
+        for step in _GATE["steps"]
+        if step.get("name") == "Require successful routing and every applicable CI result"
+    )
+    assert lane["env"]["DOCS_FORMAT_RESULT"] == "${{ needs.docs_format.result }}"
+    # A docs-format failure is not absorbed by the routing or delivery evidence.
+    result = _run_gate(
+        {
+            "MODE": "docs",
+            "ROUTING_RESULT": "success",
+            **_EXPECTED["docs"],
+            "DOCS_FORMAT_RESULT": "failure",
+        }
+    )
+    assert result.returncode != 0
+    assert "docs_format=failure" in result.stdout

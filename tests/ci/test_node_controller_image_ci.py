@@ -85,6 +85,7 @@ class ImageWorkflowTests(unittest.TestCase):
             "MODE": "docs",
             "ROUTING_RESULT": "success",
             "DELIVERY_RESULT": "success",
+            "DOCS_FORMAT_RESULT": "success",
             "CHECKS_RESULT": "skipped",
             "COORDINATION_RESULT": "skipped",
             "WEB_RESULT": "skipped",
@@ -105,6 +106,7 @@ class ImageWorkflowTests(unittest.TestCase):
         base = {
             "MODE": "docs",
             "ROUTING_RESULT": "success",
+            "DOCS_FORMAT_RESULT": "success",
             "CHECKS_RESULT": "skipped",
             "COORDINATION_RESULT": "skipped",
             "WEB_RESULT": "skipped",
@@ -123,6 +125,7 @@ class ImageWorkflowTests(unittest.TestCase):
             "MODE": "docs",
             "ROUTING_RESULT": "success",
             "DELIVERY_RESULT": "success",
+            "DOCS_FORMAT_RESULT": "success",
             "CHECKS_RESULT": "skipped",
             "COORDINATION_RESULT": "skipped",
             "WEB_RESULT": "skipped",
@@ -145,6 +148,7 @@ class ImageWorkflowTests(unittest.TestCase):
             "MODE": "web",
             "ROUTING_RESULT": "success",
             "DELIVERY_RESULT": "success",
+            "DOCS_FORMAT_RESULT": "skipped",
             "CONTROLLER_RESULT": "success",
             "CONTROLLER_REQUIRED": "false",
             "CHECKS_RESULT": "success",
@@ -156,6 +160,7 @@ class ImageWorkflowTests(unittest.TestCase):
         actual = execute(FINAL_GATE, base)
         self.assertEqual(actual.returncode, 0, actual.stdout + actual.stderr)
         wrong = {
+            "DOCS_FORMAT_RESULT": "success",
             "CHECKS_RESULT": "skipped",
             "COORDINATION_RESULT": "success",
             "WEB_RESULT": "skipped",
@@ -178,6 +183,7 @@ class ImageWorkflowTests(unittest.TestCase):
         }
         for mode in ("full", "no-db"):
             applied = {
+                "DOCS_FORMAT_RESULT": "skipped",
                 "CHECKS_RESULT": "success",
                 "COORDINATION_RESULT": "success" if mode == "full" else "skipped",
                 "WEB_RESULT": "success",
@@ -193,6 +199,29 @@ class ImageWorkflowTests(unittest.TestCase):
                         FINAL_GATE, {**base, **applied, "MODE": mode, "ACCEPTANCE_RESULT": result}
                     )
                     self.assertNotEqual(actual.returncode, 0, actual.stderr)
+
+    def test_docs_scope_owes_the_markdown_format_lane(self) -> None:
+        # #659/#661 merged as prose-only pull requests while `ruff format --check`
+        # was skipped, then `main` went red on the same Markdown. The docs branch of
+        # the final gate must require the lane's success, not accept a skip.
+        base = {
+            "MODE": "docs",
+            "ROUTING_RESULT": "success",
+            "DELIVERY_RESULT": "success",
+            "CHECKS_RESULT": "skipped",
+            "COORDINATION_RESULT": "skipped",
+            "WEB_RESULT": "skipped",
+            "DEPLOYMENT_RESULT": "skipped",
+            "ACCEPTANCE_RESULT": "skipped",
+            "CONTROLLER_RESULT": "success",
+            "CONTROLLER_REQUIRED": "false",
+        }
+        actual = execute(FINAL_GATE, {**base, "DOCS_FORMAT_RESULT": "success"})
+        self.assertEqual(actual.returncode, 0, actual.stdout + actual.stderr)
+        for result in ("skipped", "failure", "cancelled", ""):
+            with self.subTest(result=result):
+                actual = execute(FINAL_GATE, {**base, "DOCS_FORMAT_RESULT": result})
+                self.assertNotEqual(actual.returncode, 0, actual.stderr)
 
 
 class ScopeTests(unittest.TestCase):

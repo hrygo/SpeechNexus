@@ -78,12 +78,14 @@ class AnchorTests(unittest.TestCase):
         self.assertIn("tables --write", problems[0])
 
     def test_a_shrunk_table_without_touching_the_pin_is_red(self) -> None:
+        # Derived from the live registries, so growing a table cannot leave a stale
+        # copy here that silently makes this case vacuous.
         shrunk = {
-            "MUTATE_SITES": 7,
-            "READ_ARGUMENTS": 3,
-            "WRITE_TOKENS": 7,
-            "PROBE_CASES": 9,
-            "DECLARED_DEFERRALS": 1,
+            "MUTATE_SITES": len(GUARD.MUTATE_SITES) - 1,
+            "READ_ARGUMENTS": len(GUARD.READ_ARGUMENTS),
+            "WRITE_TOKENS": len(GUARD.WRITE_TOKENS),
+            "PROBE_CASES": len(GUARD.PROBE_CASES),
+            "DECLARED_DEFERRALS": len(GUARD.DECLARED_DEFERRALS),
             "SELFTEST_CASES": len(GUARD.SELFTEST_CASES),
         }
         with mock.patch.object(GUARD, "PINNED_COUNTS", shrunk):
@@ -97,16 +99,18 @@ class AnchorTests(unittest.TestCase):
         with mock.patch.object(GUARD, "MUTATE_SITES", broken):
             problems = GUARD.audit_evidence()
         self.assertTrue(problems)
-        self.assertIn("不是 `TestCase` 方法", problems[0])
+        self.assertIn("test*.py 模块里", problems[0])
 
 
 EVIDENCE_FIXTURE = """
 import unittest
 
+FLAG = False
+
 
 class FixtureTest(unittest.TestCase):
     def test_asserts(self):
-        self.assertEqual(1, 1)
+        self.assertEqual(len(["a"]), 1)
 
     def test_without_any_assertion(self):
         value = 1
@@ -114,19 +118,109 @@ class FixtureTest(unittest.TestCase):
 
     @unittest.skip("parked")
     def test_skipped_by_decorator(self):
-        self.assertEqual(1, 1)
+        self.assertEqual(len(["a"]), 1)
 
     def test_skipped_in_body(self):
         self.skipTest("parked")
-        self.assertEqual(1, 1)
+        self.assertEqual(len(["a"]), 1)
 
     def test_truncated_before_the_body(self):
         return
-        self.assertEqual(1, 1)
+        self.assertEqual(len(["a"]), 1)
+
+    def test_constant_branch_return(self):
+        if True:
+            return
+        self.assertEqual(len(["a"]), 1)
+
+    def test_constant_assertion(self):
+        self.assertTrue(True)
+
+    def test_assertion_swallowed_by_try(self):
+        try:
+            self.assertEqual(len(["a"]), 2)
+        except AssertionError:
+            pass
+
+    def test_duplicated_evidence(self):
+        self.assertEqual(len(["a"]), 1)
+
+    def test_duplicated_evidence(self):
+        return
+
+    @unittest.expectedFailure
+    def test_expected_failure(self):
+        self.assertEqual(len(["a"]), 2)
+
+    @unittest.skipIf(False, "never on this platform")
+    def test_skip_if_literal_false(self):
+        self.assertEqual(len(["a"]), 1)
+
+    @unittest.skipIf(FLAG, "not literal")
+    def test_skip_if_unknown(self):
+        self.assertEqual(len(["a"]), 1)
+
+    def test_business_object_skip(self):
+        queue = Queue()
+        queue.skip("not a unittest skip")
+        self.assertEqual(len(["a"]), 1)
+
+
+class Queue:
+    def skip(self, reason):
+        return reason
+
+
+@unittest.skip("whole class parked")
+class SkippedClassTest(unittest.TestCase):
+    def test_class_level_skip(self):
+        self.assertEqual(len(["a"]), 1)
+
+
+class FixtureSkipTest(unittest.TestCase):
+    def setUp(self):
+        self.skipTest("fixture unavailable")
+
+    def test_set_up_skip(self):
+        self.assertEqual(len(["a"]), 1)
+
+
+class SkippedBaseTest(unittest.TestCase):
+    def test_a_base_case(self):
+        self.assertEqual(len(["a"]), 1)
+
+
+@unittest.skip("base parked")
+class SkippedBaseClassTest(SkippedBaseTest):
+    pass
+
+
+class InheritedClassSkipTest(SkippedBaseClassTest):
+    def test_inherited_class_skip(self):
+        self.assertEqual(len(["a"]), 1)
+
+
+class BaseFixtureSkipTest(unittest.TestCase):
+    def setUp(self):
+        self.skipTest("base fixture unavailable")
+
+
+class InheritedFixtureSkipTest(BaseFixtureSkipTest):
+    def test_inherited_fixture_skip(self):
+        self.assertEqual(len(["a"]), 1)
 
 
 def test_a_module_level_function():
-    assert True
+    assert len(["a"]) == 1
+"""
+
+DECOY_FIXTURE = """
+import unittest
+
+
+class DecoyTest(unittest.TestCase):
+    def test_decoy_evidence(self):
+        self.assertEqual(len(["a"]), 1)
 """
 
 
@@ -137,6 +231,7 @@ class RegistryRubricTests(unittest.TestCase):
         root = Path(directory)
         (root / "tests/ci").mkdir(parents=True)
         (root / "tests/ci/test_fixture_evidence.py").write_text(EVIDENCE_FIXTURE, encoding="utf-8")
+        (root / "tests/ci/helper_evidence.py").write_text(DECOY_FIXTURE, encoding="utf-8")
         return root
 
     def _evidence_problems(self, evidence: str) -> list[str]:
@@ -149,33 +244,67 @@ class RegistryRubricTests(unittest.TestCase):
             ):
                 return [str(problem) for problem in GUARD.audit_evidence()]
 
+    def _assert_red(self, evidence: str, expected: str) -> None:
+        problems = self._evidence_problems(evidence)
+        self.assertTrue(problems, f"{evidence} 必须红")
+        self.assertIn(expected, problems[0])
+
     def test_an_asserting_test_case_method_is_accepted(self) -> None:
         self.assertEqual(self._evidence_problems("test:test_asserts"), [])
 
     def test_an_evidence_test_without_an_assertion_is_red(self) -> None:
-        problems = self._evidence_problems("test:test_without_any_assertion")
-        self.assertTrue(problems)
-        self.assertIn("没有任何断言", problems[0])
+        self._assert_red("test:test_without_any_assertion", "没有任何断言")
 
     def test_a_skipped_evidence_test_is_red(self) -> None:
-        problems = self._evidence_problems("test:test_skipped_by_decorator")
-        self.assertTrue(problems)
-        self.assertIn("被 skip", problems[0])
+        self._assert_red("test:test_skipped_by_decorator", "会被跳过或不算失败")
 
     def test_skip_inside_the_body_is_red_too(self) -> None:
-        problems = self._evidence_problems("test:test_skipped_in_body")
-        self.assertTrue(problems)
-        self.assertIn("skipTest", problems[0])
+        self._assert_red("test:test_skipped_in_body", "skipTest")
 
     def test_an_emptied_evidence_body_is_red(self) -> None:
-        problems = self._evidence_problems("test:test_truncated_before_the_body")
-        self.assertTrue(problems)
-        self.assertIn("死代码", problems[0])
+        self._assert_red("test:test_truncated_before_the_body", "死代码")
+
+    def test_a_constant_branch_return_is_red(self) -> None:
+        self._assert_red("test:test_constant_branch_return", "死代码")
+
+    def test_a_constant_assertion_is_red(self) -> None:
+        self._assert_red("test:test_constant_assertion", "恒真")
+
+    def test_an_assertion_swallowed_by_try_is_red(self) -> None:
+        self._assert_red("test:test_assertion_swallowed_by_try", "吞")
+
+    def test_a_duplicated_evidence_definition_is_red(self) -> None:
+        self._assert_red("test:test_duplicated_evidence", "定义了 2 次")
+
+    def test_expected_failure_is_red(self) -> None:
+        self._assert_red("test:test_expected_failure", "expectedFailure")
+
+    def test_a_class_level_skip_is_red(self) -> None:
+        self._assert_red("test:test_class_level_skip", "类 `SkippedClassTest` 上的")
+
+    def test_a_skip_promoted_to_a_base_class_is_red(self) -> None:
+        self._assert_red("test:test_inherited_class_skip", "类 `SkippedBaseClassTest` 上的")
+
+    def test_a_fixture_skip_promoted_to_a_base_class_is_red(self) -> None:
+        self._assert_red("test:test_inherited_fixture_skip", "`BaseFixtureSkipTest.setUp` 里的")
+
+    def test_a_fixture_level_skip_is_red(self) -> None:
+        self._assert_red("test:test_set_up_skip", "setUp")
+
+    def test_a_skip_condition_that_is_not_literal_is_red(self) -> None:
+        self._assert_red("test:test_skip_if_unknown", "不是字面量")
+
+    def test_a_skip_condition_that_is_false_is_green(self) -> None:
+        self.assertEqual(self._evidence_problems("test:test_skip_if_literal_false"), [])
+
+    def test_a_business_object_skip_method_is_not_a_unittest_skip(self) -> None:
+        self.assertEqual(self._evidence_problems("test:test_business_object_skip"), [])
 
     def test_a_module_level_function_is_not_a_runnable_evidence(self) -> None:
-        problems = self._evidence_problems("test:test_a_module_level_function")
-        self.assertTrue(problems)
-        self.assertIn("不是 `TestCase` 方法", problems[0])
+        self._assert_red("test:test_a_module_level_function", "`TestCase` 类里")
+
+    def test_a_module_unittest_does_not_collect_is_not_evidence(self) -> None:
+        self._assert_red("test:test_decoy_evidence", "test*.py 模块里")
 
     def test_a_judgement_pointer_must_name_a_real_entry_definition(self) -> None:
         self.assertEqual(GUARD.check_judgements(ENTRY), [])
@@ -447,6 +576,37 @@ class WiringTests(unittest.TestCase):
         message = "\n".join(problems)
         self.assertIn("echo", message)
         self.assertIn("sites", message)
+
+    def test_a_shell_prelude_before_the_guard_command_is_green(self) -> None:
+        # `set -euo pipefail` is normal hardening, not a claim about the guard
+        # command; rejecting it was a false red.
+        text = WORKFLOW.read_text(encoding="utf-8")
+        guarded = text.replace(
+            "          python3 scripts/dev-env/ci-entry-guard.py sites",
+            "          set -euo pipefail\n"
+            "          python3 scripts/dev-env/ci-entry-guard.py sites",
+        )
+        self.assertNotEqual(text, guarded)
+        with tempfile.TemporaryDirectory() as directory:
+            copied = Path(directory) / "ci.yml"
+            copied.write_text(guarded, encoding="utf-8")
+            problems, _summary = GUARD.run_wiring(copied)
+        self.assertEqual(problems, [], "\n".join(problems))
+
+    def test_a_real_command_before_the_guard_command_is_red(self) -> None:
+        text = WORKFLOW.read_text(encoding="utf-8")
+        replaced = text.replace(
+            "          python3 scripts/dev-env/ci-entry-guard.py sites",
+            "          docker compose config --quiet\n"
+            "          python3 scripts/dev-env/ci-entry-guard.py sites",
+        )
+        self.assertNotEqual(text, replaced)
+        with tempfile.TemporaryDirectory() as directory:
+            copied = Path(directory) / "ci.yml"
+            copied.write_text(replaced, encoding="utf-8")
+            problems, _summary = GUARD.run_wiring(copied)
+        self.assertTrue(problems)
+        self.assertIn("前面还有会先执行的命令", "\n".join(problems))
 
     def test_a_missing_guard_subcommand_is_red(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")

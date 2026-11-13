@@ -395,7 +395,7 @@ $COMPOSE exec -T postgres sh -c "$PSQL \"SELECT asset_state, media_type, duratio
 
 ### 9.1 迁移步骤
 
-1. 构建检查器镜像并以 `asset-inspection` profile 启动；确认 `/readyz` 200 且返回的契约/配方版本为 `1`/`pcm-decode-1`。（检查器优先启动，API 不做 `depends_on`。）
+1. 构建检查器镜像并以 `asset-inspection` profile 启动；确认 `/readyz` 200 且返回的契约/配方版本为 `1`/`pcm-decode-1`。（检查器优先启动，API 不做 `depends_on`。）参考部署里以「跑通第 7 步」为目标的操作顺序、可复制命令与失败形态见[异步 Job runbook](../operations/async-job-runbook.md)第 10 节。
 2. 在 `deploy/compose.env` 加入 §7.1 的 API 键，保留 `SPEECHNEXUS_ASSET_INSPECTOR=audio`，删除 §7.3 的 8 个旧键（或留空）。
 3. 重建 api；启动日志应显示能力探测通过。若探测成功但版本或上限不兼容，API 拒绝启动并点名变量。
 4. 执行 §8 的 A1–A7，把结果写入[跟踪矩阵](../plans/delivery-tracking.md)对应需求的验证列。

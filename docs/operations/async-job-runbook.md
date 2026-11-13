@@ -16,8 +16,8 @@ date: 2026-11-08
 [`scripts/dev-env/check-async-job-prereqs.py`](../../scripts/dev-env/check-async-job-prereqs.py)：
 它按本文的六项逐条判定为 `PASS`/`FAIL`/`PENDING`，FAIL 时点名缺哪一项；`PENDING` 表示
 依赖的部署产物（私有配置、ready 实例）尚未生成，是"还没到该阶段"而不是配置错误，判定
-规则见[第 11 节](#11-自检脚本)。本手册的每条命令都标注了执行状态；未在本机
-验证的命令一律注明原因，见[第 13 节](#13-本机验证记录与未验证项)。
+规则见[第 12 节](#12-自检脚本)。本手册的每条命令都标注了执行状态；未在本机
+验证的命令一律注明原因，见[第 14 节](#14-本机验证记录与未验证项)。
 
 本文不改变能力结论：**满足六项前置不等于异步 Job 已验收**。真实模型质量、GPU 容量、物理
 多节点、内容网络与最终 Gate 仍按[文档索引](../README.md)分别取证。
@@ -32,6 +32,10 @@ date: 2026-11-08
 | 4 | 真实引擎与已注册 `ready` 实例（`engine-registration` profile） | 创建返回 `429 job_capacity_exhausted`，或提交必然失败 | 有 Job 但没有可执行实例 |
 | 5 | gateway 的 `result_bucket` 存在、被 `minio-init` 创建并启用版本化，且与 env 一致 | worker 的启动闸门点名缺桶/缺版本化/配置不一致并退出 | 启动期失败，不领取租约 |
 | 6 | `network_mode: service:gateway` 下的启动顺序与网关重建后的 worker 重建 | worker 命名空间失效或指向旧 gateway | 进程在，网关调用全部失败 |
+
+第 7 步在这六项之外还有一项硬前置：`asr_input`/`voice_reference` 上传必须先由
+`asset-inspector` 部署单元判定。默认部署不装配它，音频上传恒为
+`503 asset_inspection_unavailable`；装配与验证见第 10 节。
 
 ## 2. `up -d`/`--wait` 成功 ≠ 就绪
 
@@ -69,7 +73,7 @@ curl -sS http://127.0.0.1:8000/v1/nexus/jobs?limit=1
 每轮输出一行
 `{"event":"job_dispatch_batch",...}`（只有计数，没有命令或凭据）；`/readyz` 为 `200`；
 列表接口返回 `200`（空页也是 `200`，只有存储未装配才是 `503 job_unavailable`）。
-上述判据都需要运行中的参考部署，**本片未在本机执行**（第 13 节）；其中重启次数与网络
+上述判据都需要运行中的参考部署，**本片未在本机执行**（第 14 节）；其中重启次数与网络
 命名空间的读取逻辑由自检脚本覆盖，日志与列表判据只能在实际部署上取证。
 
 ## 3. 第 0 步：基础拓扑
@@ -169,7 +173,7 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 | 只配 writer 就能创建、但返回 5xx | 缺少 admission 同库身份；不要用 writer 顶替 |
 
 命令执行状态：DSN 生成脚本已在本机对 env 副本执行；`up -d api`、日志检查与 `/readyz`
-**未在本机验证**（本片不启动完整参考部署，见第 13 节）。
+**未在本机验证**（本片不启动完整参考部署，见第 14 节）。
 
 ## 5. 第 2 步：前置 2 —— 迁移
 
@@ -354,7 +358,7 @@ psql "$SPEECHNEXUS_MIGRATION_DATABASE_URL" -Atc \
 | 创建返回 `429 job_capacity_exhausted` | 没有 `ready` 实例，或其实例的 binding revision 与请求的发布不一致 |
 
 `engine-health 200` 只证明 HTTP 可达，不证明模型或实例身份；注册命令也不启动任何容器。
-命令执行状态：健康探测与注册命令**未在本机验证**（本片没有真实引擎，见第 13 节）；
+命令执行状态：健康探测与注册命令**未在本机验证**（本片没有真实引擎，见第 14 节）；
 注册事实查询已执行。
 
 ## 8. 第 5 步：前置 5 —— gateway 的 `result_bucket`
@@ -410,7 +414,7 @@ bucket ready: speechnexus-results (versioning enabled)
 
 2026-11-13 在容器 PostgreSQL 16.15 与容器 MinIO（`deploy/compose.yaml`）上实跑，输出与上面
 逐字一致；同一环境的启动闸门在 result 桶缺失时以退出码 `1` 点名
-`SPEECHNEXUS_EXECUTION_RESULT_BUCKET`（第 13 节）。
+`SPEECHNEXUS_EXECUTION_RESULT_BUCKET`（第 14 节）。
 
 ## 9. 第 6 步：前置 6 —— 启动顺序与网络命名空间
 
@@ -475,18 +479,190 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 
 重建 gateway 后同样重跑上面两条命令；只重建 gateway 不会让 worker 自动换命名空间。
 
-两条启动命令与 `docker inspect` **未在本机验证**（本片不启动完整部署，见第 13 节）。
+两条启动命令与 `docker inspect` **未在本机验证**（本片不启动完整部署，见第 14 节）。
 第 6 项的运行时分支**未在真实参考部署上复现**（本片不启动完整拓扑）；它只在一次性的
 合成容器上验证过判定逻辑，不构成部署证据。真实拓扑按上面的 `docker inspect` 与
 `RestartCount` 核对。
 
-## 10. 第 7 步：提交并观察一次 Job
+## 10. 第 7 步的前置：`asset-inspector` 部署单元与音频检查装配
+
+第 7 步的第一个动作是上传一个 `ready` 的 `asr_input` 资产。音频上传不是"把字节写进对象
+存储"就完事：`asr_input` 与 `voice_reference` 必须先由音频检查器解码并给出媒体事实，判定
+通过才落库。这项能力**不在这六项计数内**，但同样是硬前置——默认部署面没有装配任何音频
+检查器，上传是确定失败而不是降级。
+
+默认装配的面貌：选择器 `SPEECHNEXUS_ASSET_INSPECTOR` 默认 `text`
+（`backend/src/speechnexus_backend/settings.py:68`），`text` 检查器只校验 `text_input`，
+两个音频用途一律判为不可用（`backend/src/speechnexus_backend/speech/application/assets.py:92`），
+`reserve_asset()` 于是在写入任何记录之前抛出 `asset_inspection_unavailable`
+（`backend/src/speechnexus_backend/speech/domain/assets.py:277`）。这就是"按文档走到第 7 步却
+撞上 503"的全部原因：默认拓扑里没有能检查音频的组件。
+
+### 10.1 装配事实
+
+| 项 | 事实 |
+| --- | --- |
+| 服务 / profile | 服务名 `asset-inspector`，`profiles: ["asset-inspection"]`（`deploy/compose.yaml:241`）；不启用该 profile 时服务不被创建，默认服务集合仍是第 3 节的五个 |
+| 构建 | 独立镜像 `asset-inspector/Dockerfile`（`deploy/compose.yaml:245`）：解码器 `av` 与 `numpy` 只装在检查器镜像里，API 镜像不含解码能力 |
+| 网络 | 只接入 `asset-inspection`（`internal: true`，无默认网关，`deploy/compose.yaml:590`）；成员仅 `api` 与该容器；不发布宿主端口，无 volume、无 bind mount、不挂 docker socket |
+| 健康检查 | `GET /healthz`（未鉴权、不写盘），`start_period 5s`、`interval 5s`、`timeout 3s`、`retries 20`（`deploy/compose.yaml:291`） |
+| 加固 | `read_only`、`cap_drop: [ALL]`、`no-new-privileges`、`pids_limit: 64`、`mem_limit: 768m`、`cpus: 2.0`、`user 10001:10001` |
+| 与 API 的关系 | API 不 `depends_on` 检查器（`deploy/compose.yaml:196`）：检查器停着只让检查类请求失败，API 照常启动，文本资产、`/readyz` 与保留期维护不受影响 |
+| 选择键 | `SPEECHNEXUS_ASSET_INSPECTOR`，取值域恰为 `text` \| `audio`，默认 `text`，空值按 `text` 处理（`backend/src/speechnexus_backend/settings.py:68`） |
+| 端点 / 令牌 | `SPEECHNEXUS_ASSET_INSPECTION_URL` 只写 origin，不带路径、查询参数或内嵌凭据；令牌以 `SPEECHNEXUS_ASSET_INSPECTION_TOKEN` 注入 API，同一值以 `SPEECHNEXUS_INSPECTION_TOKEN` 注入容器（`deploy/compose.yaml:264`） |
+
+组件设计、协议与验收条件见[音频检查容器](../components/asset-inspection-container.md)；本节只给
+"把它接进参考部署、跑通第 7 步"的最小路径。
+
+### 10.2 三步装配
+
+1. 在 `deploy/compose.env` 设置三键。令牌自备，两个容器共用同一个值，用下面的命令生成：
+
+```bash
+python3 -c 'import secrets; print(secrets.token_hex(32))'
+```
+
+```dotenv
+SPEECHNEXUS_ASSET_INSPECTOR=audio
+SPEECHNEXUS_ASSET_INSPECTION_URL=http://asset-inspector:8080
+SPEECHNEXUS_ASSET_INSPECTION_TOKEN=<上一步输出的令牌>
+```
+
+2. 首次构建并启动检查器（不带 `--profile asset-inspection` 时这个容器不会被创建）：
+
+```bash
+docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
+  --profile asset-inspection up -d --build asset-inspector
+```
+
+3. 重建 `api`，让选择器生效。三键在进程启动期解析，改了 `compose.env` 必须重建容器
+（`up -d` 会因环境变化重建；进程内 reload 不生效）：
+
+```bash
+docker compose --env-file deploy/compose.env -f deploy/compose.yaml up -d api
+```
+
+装配是"要么全对、要么启动失败"：任何一键写错都在启动期被点名，见 §10.5，不存在"配了一半
+先降级到文本"的中间态。
+
+### 10.3 验证
+
+检查器不发布宿主端口，探针要在容器里执行。从 API 容器发请求同时证明"API 能按服务名到达
+检查器"：
+
+```bash
+docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
+  exec -T api python -c \
+  "import urllib.request; print(urllib.request.urlopen('http://asset-inspector:8080/readyz', timeout=2).read().decode())"
+```
+
+预期 `200`，body 形如（`max_encoded_bytes`/`max_wall_seconds` 随镜像默认值变化；判据是
+`contract_version` 与 `recipe_version`）：
+
+```json
+{"contract_version":1,"recipe_version":"pcm-decode-1","max_encoded_bytes":4194304,"max_wall_seconds":20.0,"in_flight":0}
+```
+
+`/readyz` 在启动自检（真实解码一段内置合成 WAV）通过之前返回 `503`
+（`asset-inspector/src/speechnexus_asset_inspector/app.py:108`），所以这条 `200` 表示"真的能
+解码"，不只是端口通。
+
+端到端判据是第 11 节的上传：`purpose=asr_input` 的合成 WAV 返回 `201`，`status` 为
+`ready`，且 `media_type`/`duration_ms`/`sample_rate_hz`/`channels` 来自检查器回执而不是本地
+猜测。若仍返回 `503 asset_inspection_unavailable`，说明装配没生效——按 §10.4 判形态，再按
+§10.2 逐键核对。
+
+### 10.4 未装配时看到什么
+
+停掉检查器不会改变 API 的可用性（API 全程 `healthy`、不重启），只让检查类请求失败。两条
+路径给出同一个响应体：
+
+| 状态 | `purpose=asr_input` 上传的响应 |
+| --- | --- |
+| 选择器 `text`（默认），或 `audio` 但 URL/令牌为空 | `503` `asset_inspection_unavailable`，`param: null` |
+| `audio` 配置正确，但检查器容器停着或不可达 | 同上，一字不差 |
+
+两行的完整响应（实测，`request_id` 的真实值从略）：
+
+```json
+{
+  "error": {
+    "code": "asset_inspection_unavailable",
+    "type": "service_unavailable_error",
+    "message": "Asset inspection is unavailable.",
+    "param": null,
+    "request_id": "…",
+    "retryable": false
+  }
+}
+```
+
+更细的失败分类——检查器不服务某个 `purpose` 时同码带 `param: purpose`、检查器忙或超出解码
+预算时为可重试的 `asset_inspection_busy`——见[音频检查容器](../components/asset-inspection-container.md)
+的协议失败分类，本节只区分"没装配"与"装配好了"。
+
+响应头带 `X-Should-Retry: false`，`error.retryable` 为 `false`：同一个请求重试不会成功，必须
+先改部署（`backend/src/speechnexus_backend/speech/interfaces/http/asset_errors.py:40` 给出
+503 映射，同文件 `:86` 的 `_RETRYABLE` 只包含 `asset_inspection_busy`）。失败不写
+`speech_assets` 行，也不留 `staging`/`reserved` 记录，所以没有可重试的原上传，重试等于再上传
+一次。
+
+### 10.5 键写错时的启动期拒绝
+
+装配点在选择器上做校验：先跑退役键检查（`backend/src/speechnexus_backend/asset_runtime.py:216`
+调用 `_refuse_retired_inspector_settings`），再由 `_build_http_audio_inspector` 校验 URL 与
+令牌。配错不会变成运行期 503，而是 API 起不来并点名变量：
+
+| 配置 | 结果 |
+| --- | --- |
+| `audio` 但 URL 为空 | `ValueError: SPEECHNEXUS_ASSET_INSPECTION_URL is required when SPEECHNEXUS_ASSET_INSPECTOR=audio` |
+| `audio` 但令牌为空或全空白 | `ValueError: SPEECHNEXUS_ASSET_INSPECTION_TOKEN is required when SPEECHNEXUS_ASSET_INSPECTOR=audio; a blank value is not a configured token` |
+| `text` 却设置了 URL 或令牌 | `ValueError: SPEECHNEXUS_ASSET_INSPECTION_URL configured but SPEECHNEXUS_ASSET_INSPECTOR=text; select audio or unset every asset-inspection setting` |
+| `text` 却把某个音频上限改离默认值 | `ValueError: SPEECHNEXUS_AUDIO_INSPECTION_MAX_DURATION_MS only take effect with SPEECHNEXUS_ASSET_INSPECTOR=audio; select audio or keep the default value` |
+| 检查器容器拿不到令牌 | 容器退出码 `1`：`asset inspector configuration error: SPEECHNEXUS_INSPECTION_TOKEN must be a non-empty bearer token` |
+
+第 3、4 行是同一种防降级校验的两个分支（`text` 下配了音频前置、`text` 下改了音频上限）：
+两处都在启动期拒绝，不会把音频意图静默降级成文本检查。最后一行是容易漏的一环：Compose 里
+检查器的 `SPEECHNEXUS_INSPECTION_TOKEN` 与 API 的 `SPEECHNEXUS_ASSET_INSPECTION_TOKEN` 取自
+同一个环境变量（`deploy/compose.yaml:264`），不需要给两个服务各写一遍；但漏填会让检查器起
+不来，而 API 只会给出 §10.4 的 503。
+
+### 10.6 退役键：配了就起不来
+
+旧的本机进程检查器已删除，它用过的键仍声明在 `Settings` 里，**只用于拒绝**。任何选择器下
+（`text` 或 `audio`）命中都会让 API 启动失败，所以从旧部署升级必须删掉这些变量，不能指望
+它们被忽略（`backend/src/speechnexus_backend/asset_runtime.py:122`）：
+
+| 键 | 现状 | 处置 |
+| --- | --- | --- |
+| `SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT`、`_COMMAND`、`_LAUNCHER_PYTHON`、`_BUBBLEWRAP`、`_PRLIMIT` | 本机进程检查器的路径、命令、解释器与沙箱键，已无消费者 | 删除或留空（空值按未配置处理） |
+| `SPEECHNEXUS_AUDIO_INSPECTION_MEMORY_BYTES`、`_CPU_SECONDS`、`_OUTPUT_BYTES` | 解码预算，已迁到检查器侧的 `SPEECHNEXUS_INSPECTION_*` | 保持发布的默认值；要调整就改容器侧同名键 |
+
+实测的拒绝消息（前者取自 `text` 部署，`audio` 同样命中；后者是预算迁移）：
+
+```text
+ValueError: SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT no longer select a local inspection process; audio inspection runs in the asset-inspector deployment unit; configure SPEECHNEXUS_ASSET_INSPECTION_URL and SPEECHNEXUS_ASSET_INSPECTION_TOKEN
+```
+
+```text
+ValueError: SPEECHNEXUS_AUDIO_INSPECTION_MEMORY_BYTES is owned by the inspector container now, set SPEECHNEXUS_INSPECTION_MEMORY_BYTES
+```
+
+拒绝发生在创建连接池与对象存储客户端之前（`backend/src/speechnexus_backend/asset_runtime.py:252`
+的 `AssetRuntime.__init__`），因此不会留下半装配状态：API 进程直接退出，
+`restart: unless-stopped` 下表现为重启循环，`logs api` 的首条即点名该键。
+
+命令执行状态：§10.2 的两条启动命令、§10.3 的两条判据、§10.4 的两行失败形态，以及
+§10.5/§10.6 的拒绝消息都在本机按原样执行过（基线 `origin/main` `4cfdfe77`），逐条输出见
+[第 14 节](#14-本机验证记录与未验证项)。
+
+## 11. 第 7 步：提交并观察一次 Job
 
 六项前置满足后，`POST /v1/nexus/jobs` 才不再返回 `503`。异步 ASR 还需要一个 `ready`
 的输入 Asset；上传音频需要已装配的真实检查器，未装配时上传**直接失败**
 `503 asset_inspection_unavailable`（`x-should-retry: false`），且不会产生 `staging`/`reserved`
 行——`reserve_asset()` 在写入任何记录之前就抛出该错（`speech/domain/assets.py`）。这不在六项
-计数内，但同样阻止 Job 创建。装配缺口见 #589。
+计数内，但同样阻止 Job 创建。装配步骤见第 10 节，组件设计见[音频检查容器](../components/asset-inspection-container.md)。
 
 上传输入资产（`purpose` 只接受 `asr_input`、`voice_reference`、`text_input`）：
 
@@ -517,7 +693,7 @@ curl -sS http://127.0.0.1:8000/v1/nexus/jobs/<job_id>
 ```
 
 预期状态依次推进 `queued` → `running` → `succeeded`，`artifacts` 出现已提交制品；每个状态
-变化都有对应的持久事件。若停在 `queued`，按第 12 节定位。若停在 `running` 超过
+变化都有对应的持久事件。若停在 `queued`，按第 13 节定位。若停在 `running` 超过
 `SPEECHNEXUS_JOB_DISPATCH_JOB_TIMEOUT_SECONDS`，该轮派发按未知处理，不把仍可能运行的引擎
 写成确定性 `failed`；租约到期后由下一个 worker 按同一 `submit_intent_id` 接手，不会创建
 第二个执行。
@@ -528,7 +704,7 @@ curl -sS http://127.0.0.1:8000/v1/nexus/jobs/<job_id>
 
 命令执行状态：以上三条 HTTP 命令**未在本机验证**（没有完整参考部署与真实引擎）。
 
-## 11. 自检脚本
+## 12. 自检脚本
 
 只读检查六项前置，不改文件、不写数据库、不执行迁移、不重启容器。它和 worker 容器里的
 启动闸门分工不同：自检给运维在部署前后做完整判定（含无法在容器内看到的私有配置与实例
@@ -547,7 +723,7 @@ curl -sS http://127.0.0.1:8000/v1/nexus/jobs/<job_id>
 被阶段降级。实例行已存在但 `instance_state` 不是 `ready` 属于部署后的活证据，任何阶段
 都记 `FAIL`；`PENDING` 只表示“查不到该实例行，尚未注册”。
 
-### 11.1 两次运行：部署前看 PENDING，部署后看真 FAIL
+### 12.1 两次运行：部署前看 PENDING，部署后看真 FAIL
 
 `--phase auto`（默认）按客观信号选阶段：Compose 项目容器、`deploy/.runtime` 或私有配置
 目录下已生成非隐藏文件，任一出现即按部署后判定，否则按部署前。`compose-minimal.md`
@@ -626,7 +802,7 @@ FAIL 并点名该键（以下为实测输出节选，阶段为部署后）：
 FAIL(配置写了但不对,任何阶段都必须修):前置 1
 ```
 
-### 11.2 三态判定的实测输入
+### 12.2 三态判定的实测输入
 
 在 `/private/tmp/sn-572b`（基于 `decf0104`）、以 `deploy/compose.yaml` 与合成 env 执行，
 2026-11-08：
@@ -643,7 +819,7 @@ FAIL(配置写了但不对,任何阶段都必须修):前置 1
 把私有配置缺失改回 FAIL、把已注册但非 ready 的实例改回 PENDING、删掉阶段判定、让
 `resolve_phase` 恒返回 `pre`、或让 `main()` 忽略 `--phase`，都会让对应用例变红。
 
-## 12. 失败排查
+## 13. 失败排查
 
 | 现象 | 先看 | 前置 |
 | --- | --- | --- |
@@ -656,7 +832,7 @@ FAIL(配置写了但不对,任何阶段都必须修):前置 1
 | worker 在、但网关调用全部失败 | worker 的网络命名空间是否仍指向当前 gateway 容器 | 6 |
 | 迁移报 `alembic_version` 不存在或版本偏低 | 迁移是否执行到目标库、发布制品 head | 2 |
 
-## 13. 本机验证记录与未验证项
+## 14. 本机验证记录与未验证项
 
 本片在 `/private/tmp/sn-572`（基于 `origin/main` 的 `cc22f6d0`）执行，2026-11-08。
 一次性 PostgreSQL 16.15 容器 `sn572-pg`（`127.0.0.1:55492`）用于迁移与授权验证，
@@ -741,3 +917,48 @@ FAIL(配置写了但不对,任何阶段都必须修):前置 1
 | 完整 `up -d --build`（`api`、`gateway` 与 `job-dispatch` profile）与 `/readyz` | 本轮只起容器 PG/MinIO 并跑一次性迁移、桶初始化与启动闸门；完整拓扑还需要私有配置与真实模型窗口 |
 | `engine-register` 与 `asr`/`tts` Job 端到端 | 没有真实引擎；按项目约定不得用 fake 引擎替代真实部署验收 |
 | worker 在 `network_mode: service:gateway` 下真实 claim、结果发布与命名空间重建 | 需要完整参考部署；本轮只证明闸门在 worker 进程之前失败并点名 |
+
+### 2026-11-13 增补（#680，基线 `origin/main` `4cfdfe77`）
+
+本轮为第 7 步补音频检查器前置（第 10 节），并在独立 worktree `/private/tmp/sn680` 上按该节
+命令实跑。PostgreSQL 16.15、MinIO、检查器与 API 全部来自 `deploy/compose.yaml`（Compose
+项目名 `sn680`），测后连同数据卷一并删除。检查器镜像与 API 镜像都由本轮从仓库源码构建。
+
+已在本机执行：
+
+| 命令 / 操作 | 实际结果 |
+| --- | --- |
+| `--profile asset-inspection config --services` | `api asset-inspector gateway minio minio-init postgres`；不带 profile 时仍是 `api gateway minio minio-init postgres` |
+| `--profile asset-inspection up -d --build asset-inspector` | 镜像构建成功，容器 `Up (healthy)`；`docker inspect` 显示只接入 `sn680_asset-inspection`、`HostConfig.PortBindings` 为空、`PidsLimit=64`、`Memory=805306368`、`CapDrop=["ALL"]`、`User=10001:10001` |
+| 检查器空令牌（`docker run -e SPEECHNEXUS_INSPECTION_TOKEN= <镜像>`） | 退出码 `1`，`asset inspector configuration error: SPEECHNEXUS_INSPECTION_TOKEN must be a non-empty bearer token` |
+| `exec -T api python -c "…/readyz…"` | `{"contract_version":1,"recipe_version":"pcm-decode-1","max_encoded_bytes":4194304,"max_wall_seconds":20.0,"in_flight":0}` |
+| `POST /v1/nexus/assets`（`asr_input` + 合成 0.5 s/16 kHz 单声道 WAV；选择器 `audio`，检查器在线） | `201`，`location: /v1/nexus/assets/asset-…`，`status=ready`、`media_type=audio/wav`、`bytes=16044`、`duration_ms=500`、`sample_rate_hz=16000`、`channels=1` |
+| 同上但选择器为 `text`（URL/令牌留空） | `503`，`code=asset_inspection_unavailable`、`type=service_unavailable_error`、`param=null`、`retryable=false`、响应头 `x-should-retry: false`；`speech_assets` 行数前后不变 |
+| 同上但保留 `audio` 而停掉检查器容器 | 与上一行相同的 503 响应体；同时 API `RestartCount` 仍为 `0`、`State` 为 `running`、`/readyz` 仍 `200` |
+| 同上但 `SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT=/var/lib/sn/inspection`（`text` 部署） | API 启动失败：`ValueError: SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT no longer select a local inspection process; …` |
+| 同上但 `SPEECHNEXUS_AUDIO_INSPECTION_MEMORY_BYTES=536870912` | API 启动失败：`ValueError: SPEECHNEXUS_AUDIO_INSPECTION_MEMORY_BYTES is owned by the inspector container now, set SPEECHNEXUS_INSPECTION_MEMORY_BYTES` |
+| `audio` 但 URL 与令牌留空 | API 启动失败：`ValueError: SPEECHNEXUS_ASSET_INSPECTION_URL is required when SPEECHNEXUS_ASSET_INSPECTOR=audio` |
+| `text` 却发现设置了检查器 URL | API 启动失败：`ValueError: SPEECHNEXUS_ASSET_INSPECTION_URL configured but SPEECHNEXUS_ASSET_INSPECTOR=text; select audio or unset every asset-inspection setting` |
+| `text` 却把 `SPEECHNEXUS_AUDIO_INSPECTION_MAX_DURATION_MS` 改成 `60000` | API 启动失败：`ValueError: SPEECHNEXUS_AUDIO_INSPECTION_MAX_DURATION_MS only take effect with SPEECHNEXUS_ASSET_INSPECTOR=audio; select audio or keep the default value` |
+| `python3 scripts/dev-env/check-doc-refs.py` | `SUMMARY refs=371 EXTERNAL=1 OK=370`、`RESULT PASS` |
+| `ruff format --check .`（0.17.2，含 Markdown 内的 Python 代码块） | `1809 files already formatted`，退出码 `0` |
+
+为了让 API 在本机起来，用了两处**非生产**改动。它们只存在于 `/private/tmp`，不改变任何
+仓库文件，也不构成第 10 节的步骤：
+
+1. 一次性 override 文件清空 `api` 的 `depends_on`——本机没有真实 gateway 与引擎，而
+   `deploy/compose.yaml` 里 `api` 依赖 `gateway: service_healthy`。
+2. 私有配置目录用 `deploy/private/*.example.json` 派生的合成配方（把
+   `binding_publication_id` 对齐 `binding_revision_id` 并重算 RFC 8785 摘要），并给
+   `sn_api` 角色授予 `SELECT/INSERT/UPDATE/DELETE ON ALL TABLES IN SCHEMA speech`——范围宽于
+   生产最小授权。示例配方原样加载会在 `TranscriptionRecipe.__post_init__` 处失败
+   （`The published and execution binding revisions must match`）；受审 private 配置仍只能
+   由部署方提供。
+
+未在本机验证（附原因）：
+
+| 命令 / 操作 | 原因 |
+| --- | --- |
+| 第 11 节的 `POST /v1/nexus/jobs` 与后续状态轮询 | 需要真实引擎与受审配方；本机只有合成私有配置 |
+| 受审配方 + 最小授权的完整 `up -d --build`（`api`、`gateway`、`job-dispatch`） | 同上；本轮只证明检查器装配与上传判据 |
+| `make stack-config` 对三个 profile 的解析 | 未执行；本轮只按 profile 逐次跑 `config --services` |

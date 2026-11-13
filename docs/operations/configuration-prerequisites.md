@@ -95,7 +95,9 @@ settings 类或一个可选选择键都会让守护变红，直到在本表分�
   `AssetRuntime`。没有凭据时 `SPEECHNEXUS_ASSET_INSPECTOR=audio`、检查器 URL/TOKEN 与
   五个音频预算都被接受且无消费者，进程正常启动；业务端点按
   [生产资产说明](../components/production-assets.md) 返回既有的 503。这是既有的
-  「资产运行时未装配」语义，扫描表对应行的「当前表现」已写明条件。
+  「资产运行时未装配」语义，扫描表对应行的「当前表现」已写明条件。把音频检查器真正装配起来
+  （`asset-inspection` profile、选择器与 URL/令牌三键、验证命令，以及未装配时的确切错误码）
+  见[异步 Job runbook](async-job-runbook.md)第 10 节。
 - **`SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL` 配在 API 进程上**：该键只被
   `job-dispatch` worker 入口（及其启动闸门）读取；API 进程的 settings 有该字段以外的
   组合根没有消费者，配在 API 上不会生效也不会报错。表行已写明「仅 worker 入口」。

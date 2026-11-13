@@ -120,8 +120,9 @@ reference acceptance: FAIL step=migrate exit=20
 结果不得被丢弃——裸语句和 `_ =` 都算，赋给 `_` 即红、不看之后有没有再读；`ctx.read(...)` 的 argv 必须是
 字面量、`READ_ARGUMENTS` 里登记的构造助手或 `*` 展开的登记只读段，且不含写命令）、`probe`（用必然失败的
 输入调用登记过的纯判定函数）、`wiring`（四条守卫子命令各自是所在步骤的第一条被执行的命令，只允许
-`set`/`export`/`cd` 之类的环境前置）。它们只检查**结构**：判定条件被反转、把 `.ok` 读出来却仍不中断、
-经 `psql -c` 间接写库等等都看不见，边界写在[CI 验证规则](../validation/ci-validation.md)。
+`set`/`export`/`cd`/`umask`/`unset`/`: ` 这类环境前置）。它们只检查**结构**：判定条件被反转、把 `.ok`
+读出来却仍不中断、经 `psql -c` 间接写库等等都看不见，边界写在
+[CI 验证规则](../validation/ci-validation.md)。
 
 登记表与守卫脚本是同一次改动的两面：
 
@@ -132,13 +133,18 @@ reference acceptance: FAIL step=migrate exit=20
   `python3 scripts/dev-env/ci-entry-guard.py tables --write` 重写本块，使两侧在同一次提交里一致。
 - 登记不是橡皮章：「判定在哪」列必须用反引号点出入口里真实存在的定义（`step_gate`、`gate_verdict`
   之类），入口改名或删函数即红；「证据」列必须指向一个会被 `unittest` 收集的 `TestCase` 方法或 probe
-  用例；类级（含同文件基类）与方法级的 skip/`expectedFailure`、`setUp`/`setUpClass` 里的 `skipTest`、
-  同类同名重复定义、开头或字面量恒真分支里的早退、缺失或字面量恒真的断言、会吞 `AssertionError` 的
-  `try/except` 都红（逐条形态见
-  [CI 验证规则](../validation/ci-validation.md)的 `sites` 段）。校验到的是「这条证据会被收集、会真的
-  执行、断言不会被跳过或吞掉」，不是「它覆盖了这个站点的语义」——证据的相关性、`return` 与恒真断言藏在
-  非字面量形态里、`*` 展开与构造助手按名字认，以及判定本身，仍由评审和真实 apply 运行负责。
-  `SELFTEST_CASES` 是守卫自身的语料，把规则改松会先让自检失败。
+  用例，且只能指向一处——裸方法名在多个 `TestCase` 里同名出现即红，此时写成
+  `test:<模块>::<类>::<方法名>` 限定；类级（含同文件基类）与方法级的 skip/`expectedFailure`、类体里赋值
+  重新绑定证据方法名、`setUp`/`setUpClass` 里的 `skipTest`、同类同名重复定义、开头或字面量恒真分支里的
+  早退、缺失或字面量恒真的断言、会吞 `AssertionError` 的 `try/except` 都红（逐条形态见
+  [CI 验证规则](../validation/ci-validation.md)的 `sites` 段）。条件跳过只在能于 CI 平台 Linux 上算出值
+  时才按值判定（`sys.platform`/`platform.system()`/`os.name` 的 `==`/`!=`/`startswith`/`endswith` 及其
+  组合、绑定到它们的模块级常量），算出会运行则绿、算出会跳过则红，算不出则维持「无法确认会运行」的红。
+  校验到的是「这条证据会被收集、不会被守卫认出的挂起形态停掉」，不是「它覆盖了这个站点的
+  语义」——证据的相关性、`skipTest` 藏在 `setUp` 调用的模块级助手里、`return` 与恒真断言藏在非字面量
+  形态里、`*` 展开与构造助手按名字认，以及判定本身，仍由评审和真实 apply 运行负责。
+  `SELFTEST_CASES` 是守卫自身的语料，覆盖 mutate/read 形态；把那些规则改松会先让自检失败，证据规则
+  则由 `tests/ci` 的守卫用例锚住。
 
 <!-- ci-entry-guard:tables:start -->
 ### 结构守卫的登记表

@@ -103,9 +103,18 @@ class AnchorTests(unittest.TestCase):
 
 
 EVIDENCE_FIXTURE = """
+import sys
 import unittest
 
-FLAG = False
+FLAG = len(["a"]) > 1
+SKIP_ON_WINDOWS = False
+SKIP_ON_CI = sys.platform == "win32"
+REBOUND_FLAG = False
+
+
+def _rebind_flag():
+    global REBOUND_FLAG
+    REBOUND_FLAG = True
 
 
 class FixtureTest(unittest.TestCase):
@@ -160,6 +169,38 @@ class FixtureTest(unittest.TestCase):
     def test_skip_if_unknown(self):
         self.assertEqual(len(["a"]), 1)
 
+    @unittest.skipIf(sys.platform == "win32", "windows only")
+    def test_skip_if_windows(self):
+        self.assertEqual(len(["a"]), 1)
+
+    @unittest.skipUnless(sys.platform != "win32", "not windows")
+    def test_skip_unless_not_windows(self):
+        self.assertEqual(len(["a"]), 1)
+
+    @unittest.skipIf(sys.platform.startswith("win"), "windows only")
+    def test_skip_if_windows_prefix(self):
+        self.assertEqual(len(["a"]), 1)
+
+    @unittest.skipIf(SKIP_ON_WINDOWS, "module constant, false on linux")
+    def test_skip_if_module_constant_false(self):
+        self.assertEqual(len(["a"]), 1)
+
+    @unittest.skipIf(SKIP_ON_CI, "module constant derived from sys.platform")
+    def test_skip_if_platform_constant(self):
+        self.assertEqual(len(["a"]), 1)
+
+    @unittest.skipUnless(sys.platform == "win32", "windows only")
+    def test_skip_unless_windows(self):
+        self.assertEqual(len(["a"]), 1)
+
+    @unittest.skipIf(True, "always")
+    def test_skip_if_true(self):
+        self.assertEqual(len(["a"]), 1)
+
+    @unittest.skipIf(REBOUND_FLAG, "module constant rebound at runtime")
+    def test_skip_if_rebound_constant(self):
+        self.assertEqual(len(["a"]), 1)
+
     def test_business_object_skip(self):
         queue = Queue()
         queue.skip("not a unittest skip")
@@ -169,6 +210,41 @@ class FixtureTest(unittest.TestCase):
 class Queue:
     def skip(self, reason):
         return reason
+
+
+class PlatformFixtureTest(unittest.TestCase):
+    def setUp(self):
+        if sys.platform == "win32":
+            self.skipTest("windows cannot run the fake runner")
+
+    def test_platform_fixture_guard(self):
+        self.assertEqual(len(["a"]), 1)
+
+
+class UnknownFixtureTest(unittest.TestCase):
+    def setUp(self):
+        if FLAG:
+            self.skipTest("fixture unavailable")
+
+    def test_unknown_fixture_guard(self):
+        self.assertEqual(len(["a"]), 1)
+
+
+class RebindingTest(unittest.TestCase):
+    def test_rebound_evidence(self):
+        self.assertEqual(len(["a"]), 1)
+
+    test_rebound_evidence = unittest.skip("rebound")(test_rebound_evidence)
+
+
+class FirstAmbiguousTest(unittest.TestCase):
+    def test_ambiguous_evidence(self):
+        self.assertEqual(len(["a"]), 1)
+
+
+class SecondAmbiguousTest(unittest.TestCase):
+    def test_ambiguous_evidence(self):
+        self.assertEqual(len(["a"]), 1)
 
 
 @unittest.skip("whole class parked")
@@ -296,6 +372,45 @@ class RegistryRubricTests(unittest.TestCase):
 
     def test_a_skip_condition_that_is_false_is_green(self) -> None:
         self.assertEqual(self._evidence_problems("test:test_skip_if_literal_false"), [])
+
+    def test_platform_skip_conditions_that_never_trigger_on_ci_are_green(self) -> None:
+        for evidence in (
+            "test:test_skip_if_windows",
+            "test:test_skip_unless_not_windows",
+            "test:test_skip_if_windows_prefix",
+            "test:test_skip_if_module_constant_false",
+            "test:test_skip_if_platform_constant",
+            "test:test_platform_fixture_guard",
+        ):
+            with self.subTest(evidence=evidence):
+                self.assertEqual(self._evidence_problems(evidence), [])
+
+    def test_platform_skip_conditions_that_trigger_on_ci_are_red(self) -> None:
+        self._assert_red("test:test_skip_unless_windows", "不会运行")
+        self._assert_red("test:test_skip_if_true", "不会运行")
+
+    def test_a_rebound_module_constant_is_not_proof(self) -> None:
+        self._assert_red("test:test_skip_if_rebound_constant", "不是字面量")
+
+    def test_an_unknown_fixture_guard_is_red(self) -> None:
+        self._assert_red("test:test_unknown_fixture_guard", "skipTest")
+
+    def test_a_class_body_rebinding_of_the_evidence_is_red(self) -> None:
+        self._assert_red("test:test_rebound_evidence", "重新绑定")
+
+    def test_a_name_defined_in_two_classes_is_red(self) -> None:
+        self._assert_red("test:test_ambiguous_evidence", "同名出现")
+
+    def test_a_qualified_registration_resolves_a_duplicated_name(self) -> None:
+        self.assertEqual(
+            self._evidence_problems(
+                "test:test_fixture_evidence.py::SecondAmbiguousTest::test_ambiguous_evidence"
+            ),
+            [],
+        )
+        self._assert_red(
+            "test:test_fixture_evidence.py::NoSuchTest::test_ambiguous_evidence", "不存在"
+        )
 
     def test_a_business_object_skip_method_is_not_a_unittest_skip(self) -> None:
         self.assertEqual(self._evidence_problems("test:test_business_object_skip"), [])

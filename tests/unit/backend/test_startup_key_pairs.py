@@ -25,7 +25,6 @@ from speechnexus_backend.app import create_app
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech_runtime import build_speech
 from speechnexus_backend.transcription_runtime import build_transcription
-from tests.ci.configuration_prerequisites import API_ROLE_IDENTITIES
 from tests.unit.backend.test_health import _settings
 
 JOB_WRITER = "SPEECHNEXUS_JOB_WRITER_DATABASE_URL"
@@ -90,7 +89,29 @@ def test_a_job_companion_dsn_is_accepted_when_the_writer_is_configured() -> None
     assert runtime._settings.voice_publisher_database_url is not None
 
 
-@pytest.mark.parametrize("variable", API_ROLE_IDENTITIES)
+# Identity DSNs each runtime refuses outside the API role. Derived from the settings
+# model instead of the scan table so a newly added identity field is exercised here
+# until it is classified: a key is exempt only when something other than the API
+# composition root consumes it.
+NON_IDENTITY_DSNS = frozenset(
+    {
+        # Composed for any role once object-storage credentials exist.
+        "artifact_reader_database_url",
+        # Companions of the Job writer: the missing-writer refusal owns them.
+        "job_admission_database_url",
+        "voice_publisher_database_url",
+        # Worker-only settlement identity.
+        "speech_settlement_database_url",
+    }
+)
+IDENTITY_DSNS = tuple(
+    "SPEECHNEXUS_" + name.upper()
+    for name in Settings.model_fields
+    if name.endswith("_database_url") and name not in NON_IDENTITY_DSNS
+)
+
+
+@pytest.mark.parametrize("variable", IDENTITY_DSNS)
 def test_a_non_api_role_refuses_every_identity_dsn(variable: str) -> None:
     """An identity DSN is only composed for the API role; other roles refuse.
 
@@ -119,7 +140,9 @@ def test_the_profile_writer_and_evidence_document_name_each_other() -> None:
         create_app(
             settings=_base(profile_writer_database_url=SecretStr(DSN)),
         )
-    assert "SPEECHNEXUS_PROFILE_PUBLICATION_EVIDENCE_FILE" in str(without_evidence.value)
+    evidence_message = str(without_evidence.value)
+    assert "SPEECHNEXUS_PROFILE_PUBLICATION_EVIDENCE_FILE" in evidence_message
+    assert "SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL" in evidence_message
 
 
 @pytest.mark.parametrize("missing", ["secret", "access"])

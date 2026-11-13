@@ -83,3 +83,40 @@ def test_a_partial_file_engine_configuration_is_refused(
     """Every gateway pair refuses alone, whatever the missing half is."""
     with pytest.raises(ValueError, match=expected):
         _settings(**changes)
+
+
+def test_blank_optional_values_are_unconfigured(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``KEY=`` means "not configured": the gateway must still start (#660 review FP-2)."""
+    monkeypatch.setenv("SPEECHNEXUS_GATEWAY_CONTROL_DATABASE_URL", CONTROL)
+    for name in (
+        "CONTROL_QUERY_DATABASE_URL",
+        "COMPONENT_TOKEN",
+        "INGRESS_LOCK_DIRECTORY",
+        "RECOVERY_CONFIG_FILE",
+        "RECOVERY_NODE_COMPONENT_TOKEN",
+        "FILE_ASR_CONFIG_FILE",
+        "FILE_TTS_OBJECT_ACCESS_KEY",
+    ):
+        monkeypatch.setenv("SPEECHNEXUS_GATEWAY_" + name, "")
+
+    settings = Settings()
+
+    assert settings.control_query_database_url is None
+    assert settings.component_token is None
+    assert settings.execution_control_enabled is False
+
+
+def test_a_blank_query_dsn_does_not_hide_a_missing_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-blank query DSN is a real configuration and still names the token."""
+    monkeypatch.setenv("SPEECHNEXUS_GATEWAY_CONTROL_DATABASE_URL", CONTROL)
+    monkeypatch.setenv("SPEECHNEXUS_GATEWAY_CONTROL_QUERY_DATABASE_URL", QUERY)
+    monkeypatch.setenv("SPEECHNEXUS_GATEWAY_COMPONENT_TOKEN", "")
+
+    with pytest.raises(ValueError) as caught:
+        Settings()
+
+    message = str(caught.value)
+    assert "SPEECHNEXUS_GATEWAY_CONTROL_QUERY_DATABASE_URL" in message
+    assert "SPEECHNEXUS_GATEWAY_COMPONENT_TOKEN" in message

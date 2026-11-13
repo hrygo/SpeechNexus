@@ -60,5 +60,5 @@ def test_a_root_key_without_an_authenticated_template_names_both(
 
     message = str(caught.value)
     assert "SPEECHNEXUS_CONTROLLER_ENGINE_AUTH_ROOT_KEY" in message
-    assert "template" in message
-    assert "unset the key" in message
+    assert "no approved template declares engine authentication" in message
+    assert "declare an authenticated engine template or unset the key" in message

@@ -837,7 +837,7 @@ def _truthiness_problems(tree: ast.Module, label: str) -> list[str]:
 
 
 def audit_evidence() -> list[str]:
-    """Every registration must point at an assertion that really runs."""
+    """Every registration must point at one assertion that really runs on the CI platform."""
     problems: list[str] = []
     probe_cases = {row.case for row in PROBE_CASES}
     for row in MUTATE_SITES:
@@ -852,30 +852,48 @@ def audit_evidence() -> list[str]:
         if not row.evidence.startswith("test:"):
             problems.append(
                 f"MUTATE_SITES 的 `{row.key}` 证据 `{row.evidence}` 不是可核对的形态"
-                "（`test:<tests/ci 用例名>` 或 `probe:<case>`）"
+                "（`test:<tests/ci 用例名>`、`test:<模块>::<类>::<方法名>` 或 `probe:<case>`）"
             )
             continue
-        name = row.evidence.split(":", 1)[1]
-        found = _find_test(name)
-        if found is None:
+        locator = _evidence_locator(row.evidence.split(":", 1)[1])
+        if locator is None:
+            problems.append(
+                f"MUTATE_SITES 的 `{row.key}` 证据 `{row.evidence}` 的定位写法无法解析；"
+                "用 `test:<方法名>`，同名方法出现在多处时用 `test:<模块>::<类>::<方法名>`"
+            )
+            continue
+        module, klass_name, name = locator
+        found = _find_tests(name, module=module, klass_name=klass_name)
+        if not found:
             problems.append(
                 f"MUTATE_SITES 的 `{row.key}` 指向不存在（或不在 `TestCase` 类里、不在 "
                 f"{COLLECTED_TEST_GLOB} 模块里）的 tests/ci 用例 `{name}`；"
                 "删测试必须同时改登记，否则「谁在守护」是空话"
             )
             continue
-        path, tree, klass, members = found
-        where = f"{_display(path)}:{klass.lineno}"
-        if len(members) > 1:
-            lines = "、".join(str(member.lineno) for member in members)
+        if len(found) > 1:
+            places = "、".join(f"{_display(match.path)}:{match.klass.lineno}" for match in found)
             problems.append(
-                f"MUTATE_SITES 的 `{row.key}` 证据 `{name}` 在 `{klass.name}` 里定义了 "
-                f"{len(members)} 次（行 {lines}）；守卫读到第一个、运行时用最后一个，"
+                f"MUTATE_SITES 的 `{row.key}` 证据 `{name}` 在 {len(found)} 个 `TestCase` 里"
+                f"同名出现（{places}）；守卫不按 glob 顺序挑，证据必须唯一定位："
+                "把登记写成 `test:<模块>::<类>::<方法名>`，或给方法改名"
+            )
+            continue
+        match = found[0]
+        where = f"{_display(match.path)}:{match.klass.lineno}"
+        if len(match.members) > 1:
+            lines = "、".join(str(member.lineno) for member in match.members)
+            problems.append(
+                f"MUTATE_SITES 的 `{row.key}` 证据 `{name}` 在 `{match.klass.name}` 里定义了 "
+                f"{len(match.members)} 次（行 {lines}）；守卫读到第一个、运行时用最后一个，"
                 "同名重复定义必须红"
             )
-        node = members[0]
-        problems += _evidence_skip_problems(row.key, name, where, tree, klass, node)
-        problems += _evidence_body_problems(row.key, name, f"{_display(path)}:{node.lineno}", node)
+        node = match.members[0]
+        problems += _evidence_rebinding_problems(row.key, name, match.klass)
+        problems += _evidence_skip_problems(row.key, name, where, match.tree, match.klass, node)
+        problems += _evidence_body_problems(
+            row.key, name, f"{_display(match.path)}:{node.lineno}", node
+        )
     return problems
 
 
@@ -915,27 +933,74 @@ def _is_test_case(tree: ast.Module, klass: ast.ClassDef) -> bool:
     )
 
 
-def _find_test(
-    name: str,
-) -> tuple[Path, ast.Module, ast.ClassDef, tuple[ast.FunctionDef, ...]] | None:
-    """The `TestCase` class and same-named methods, in a module discovery really collects."""
-    if not name.startswith("test"):
-        return None
-    for path in sorted((ROOT / "tests/ci").glob(COLLECTED_TEST_GLOB)):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.ClassDef):
-                continue
-            if not _is_test_case(tree, node):
-                continue
-            members = tuple(
-                member
-                for member in node.body
-                if isinstance(member, ast.FunctionDef) and member.name == name
-            )
-            if members:
-                return path, tree, node, members
+@dataclass(frozen=True)
+class _EvidenceMatch:
+    """One `TestCase` class that defines an evidence method, with all same-named defs."""
+
+    path: Path
+    tree: ast.Module
+    klass: ast.ClassDef
+    members: tuple[ast.FunctionDef, ...]
+
+
+# Parsing every collected module once per registration made `sites` cost 8 parses of
+# the whole `tests/ci` tree. The key carries the file stamp so a rewritten fixture in
+# a temp directory is re-parsed instead of served stale.
+_MODULE_INDEX_CACHE: dict[
+    tuple[str, int, int],
+    tuple[ast.Module, dict[str, tuple[tuple[ast.ClassDef, tuple[ast.FunctionDef, ...]], ...]]],
+] = {}
+
+
+def _module_evidence_index(
+    path: Path,
+) -> tuple[ast.Module, dict[str, tuple[tuple[ast.ClassDef, tuple[ast.FunctionDef, ...]], ...]]]:
+    """The module's AST and its `method name -> [(TestCase, definitions)]` index."""
+    stat = path.stat()
+    key = (str(path), stat.st_mtime_ns, stat.st_size)
+    cached = _MODULE_INDEX_CACHE.get(key)
+    if cached is not None:
+        return cached
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    grouped: dict[str, list[tuple[ast.ClassDef, tuple[ast.FunctionDef, ...]]]] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef) or not _is_test_case(tree, node):
+            continue
+        members: dict[str, list[ast.FunctionDef]] = {}
+        for member in node.body:
+            if isinstance(member, ast.FunctionDef) and member.name.startswith("test"):
+                members.setdefault(member.name, []).append(member)
+        for name, definitions in members.items():
+            grouped.setdefault(name, []).append((node, tuple(definitions)))
+    index = {name: tuple(entries) for name, entries in grouped.items()}
+    _MODULE_INDEX_CACHE[key] = (tree, index)
+    return tree, index
+
+
+def _evidence_locator(payload: str) -> tuple[str, str, str] | None:
+    """(module, class, method) of one evidence cell; module/class empty when unqualified."""
+    parts = payload.split("::")
+    if len(parts) == 1:
+        return ("", "", parts[0]) if parts[0].startswith("test") else None
+    if len(parts) == 3 and all(part.strip() for part in parts) and parts[2].startswith("test"):
+        return parts[0], parts[1], parts[2]
     return None
+
+
+def _find_tests(name: str, *, module: str = "", klass_name: str = "") -> list[_EvidenceMatch]:
+    """Every `TestCase` in a collected module that defines `name`, never just the first."""
+    if not name.startswith("test"):
+        return []
+    matches: list[_EvidenceMatch] = []
+    for path in sorted((ROOT / "tests/ci").glob(COLLECTED_TEST_GLOB)):
+        if module and path.name != module:
+            continue
+        tree, index = _module_evidence_index(path)
+        for klass, members in index.get(name, ()):
+            if klass_name and klass.name != klass_name:
+                continue
+            matches.append(_EvidenceMatch(path, tree, klass, members))
+    return matches
 
 
 def _decorator_signature(decorator: ast.expr) -> tuple[str, list[ast.expr], str]:
@@ -950,7 +1015,129 @@ def _decorator_signature(decorator: ast.expr) -> tuple[str, list[ast.expr], str]
     return "", [], source
 
 
-def _skip_decorator_reason(decorator: ast.expr) -> str:
+# The acceptance job runs on `ubuntu-24.04`, so a condition that is provably false
+# there cannot stop an evidence case from running in CI. The value is fixed here
+# rather than read from the interpreter running the guard, so a macOS workstation and
+# the CI runner reach the same verdict.
+CI_PLATFORM = "linux"
+CI_PLATFORM_STRINGS = {
+    "sys.platform": "linux",
+    "platform.system()": "Linux",
+    "os.name": "posix",
+}
+
+
+def _platform_comparison(operator: ast.cmpop, left: str, right: str) -> bool | None:
+    """`==`/`!=` over two platform strings; any other operator stays undecided."""
+    if isinstance(operator, ast.Eq):
+        return left == right
+    if isinstance(operator, ast.NotEq):
+        return left != right
+    return None
+
+
+def _platform_string(node: ast.expr) -> str | None:
+    """The CI-platform value of a platform probe, or None when it is not one."""
+    return CI_PLATFORM_STRINGS.get(ast.unparse(node).strip())
+
+
+def _ci_condition_value(node: ast.expr, constants: Mapping[str, bool]) -> bool | None:
+    """Value of a skip condition on the CI platform, or None when that is not provable.
+
+    Deliberately narrow: literals, module-level names bound to a provable value, `not`,
+    `and`/`or`, `==`/`!=` against `sys.platform`/`platform.system()`/`os.name`, and
+    `startswith`/`endswith` on them. Anything else stays unknown and keeps the old
+    "cannot confirm it runs" verdict.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, bool):
+        return node.value
+    if isinstance(node, ast.Name):
+        return constants.get(node.id)
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        inner = _ci_condition_value(node.operand, constants)
+        return None if inner is None else not inner
+    if isinstance(node, ast.BoolOp):
+        values = [_ci_condition_value(value, constants) for value in node.values]
+        if isinstance(node.op, ast.And):
+            if any(value is False for value in values):
+                return False
+            return True if all(value is True for value in values) else None
+        if any(value is True for value in values):
+            return True
+        return False if all(value is False for value in values) else None
+    if isinstance(node, ast.Compare) and len(node.ops) == 1 and len(node.comparators) == 1:
+        left, right = node.left, node.comparators[0]
+        left_platform, right_platform = _platform_string(left), _platform_string(right)
+        if (
+            left_platform is not None
+            and isinstance(right, ast.Constant)
+            and isinstance(right.value, str)
+        ):
+            return _platform_comparison(node.ops[0], left_platform, right.value)
+        if (
+            right_platform is not None
+            and isinstance(left, ast.Constant)
+            and isinstance(left.value, str)
+        ):
+            return _platform_comparison(node.ops[0], left.value, right_platform)
+        return None
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in {"startswith", "endswith"}
+        and len(node.args) == 1
+        and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str)
+    ):
+        platform = _platform_string(node.func.value)
+        suffix = node.args[0].value
+        if platform is not None and isinstance(suffix, str):
+            return (
+                platform.startswith(suffix)
+                if node.func.attr == "startswith"
+                else platform.endswith(suffix)
+            )
+    return None
+
+
+def _module_constants(tree: ast.Module) -> dict[str, bool]:
+    """Module-level names bound once to a value the CI platform makes provable.
+
+    A name assigned anywhere else (a `global` rebind in `setUpModule`, a local with the
+    same name) is left out: the module-level value would no longer be the one `unittest`
+    evaluates, so proving it would prove the wrong thing.
+    """
+    assignments: dict[str, int] = {}
+    for node in ast.walk(tree):
+        targets: list[ast.expr] = []
+        if isinstance(node, ast.Assign):
+            targets = list(node.targets)
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+        for target in targets:
+            if isinstance(target, ast.Name):
+                assignments[target.id] = assignments.get(target.id, 0) + 1
+    constants: dict[str, bool] = {}
+    for statement in tree.body:
+        if isinstance(statement, ast.Assign) and len(statement.targets) == 1:
+            target = statement.targets[0]
+            if isinstance(target, ast.Name) and assignments.get(target.id) == 1:
+                value = _ci_condition_value(statement.value, constants)
+                if value is not None:
+                    constants[target.id] = value
+        elif (
+            isinstance(statement, ast.AnnAssign)
+            and isinstance(statement.target, ast.Name)
+            and statement.value is not None
+            and assignments.get(statement.target.id) == 1
+        ):
+            value = _ci_condition_value(statement.value, constants)
+            if value is not None:
+                constants[statement.target.id] = value
+    return constants
+
+
+def _skip_decorator_reason(decorator: ast.expr, constants: Mapping[str, bool]) -> str:
     """Why this decorator makes the test not count as evidence, or "" when it does not."""
     name, arguments, source = _decorator_signature(decorator)
     if name == "expectedfailure":
@@ -960,10 +1147,19 @@ def _skip_decorator_reason(decorator: ast.expr) -> str:
     if name not in {"skipif", "skipunless"}:
         return f"`{source}`（装饰器名字里带 skip）" if "skip" in name else ""
     condition = arguments[0] if arguments else None
-    if isinstance(condition, ast.Constant) and isinstance(condition.value, bool):
-        skipped = condition.value if name == "skipif" else not condition.value
-        return f"`{source}`（条件恒为 {condition.value}，该用例不会运行）" if skipped else ""
-    return f"`{source}`（skip 条件不是字面量，无法确认这个用例会运行；证据用例不要带条件跳过）"
+    if condition is None:
+        return f"`{source}`（没有可判定的条件，无法确认这个用例会运行）"
+    value = _ci_condition_value(condition, constants)
+    if value is None:
+        return (
+            f"`{source}`（skip 条件不是字面量，也不是在 CI 平台（{CI_PLATFORM}）上可判定的 "
+            "`sys.platform`/`platform.system()`/`os.name` 形态，无法确认这个用例会运行；"
+            "证据用例不要带无法判定的条件跳过）"
+        )
+    skipped = value if name == "skipif" else not value
+    if not skipped:
+        return ""
+    return f"`{source}`（在 CI 平台（{CI_PLATFORM}）上条件为 {value}，该用例不会运行）"
 
 
 def _skips_here(inner: ast.AST) -> bool:
@@ -988,6 +1184,61 @@ def _raise_or_call_marks(node: ast.AST) -> list[str]:
     ]
 
 
+def _reachable_skip_marks(
+    statements: Sequence[ast.stmt], constants: Mapping[str, bool]
+) -> list[str]:
+    """Skip marks that can still execute on the CI platform, following `if` conditions."""
+    marks: list[str] = []
+    for statement in statements:
+        marks += _reachable_marks_in(statement, constants)
+    return marks
+
+
+def _reachable_marks_in(node: ast.AST, constants: Mapping[str, bool]) -> list[str]:
+    """Marks of one statement; a branch the CI platform provably skips is not entered."""
+    if isinstance(node, ast.If):
+        value = _ci_condition_value(node.test, constants)
+        if value is True:
+            return _reachable_skip_marks(node.body, constants)
+        if value is False:
+            return _reachable_skip_marks(node.orelse, constants)
+        return _reachable_skip_marks(node.body, constants) + _reachable_skip_marks(
+            node.orelse, constants
+        )
+    if isinstance(node, (ast.For, ast.AsyncFor, ast.While)):
+        return _reachable_skip_marks(node.body, constants) + _reachable_skip_marks(
+            node.orelse, constants
+        )
+    if isinstance(node, (ast.With, ast.AsyncWith)):
+        return _reachable_skip_marks(node.body, constants)
+    if isinstance(node, ast.Try):
+        marks: list[str] = []
+        for block in (node.body, node.orelse, node.finalbody):
+            marks += _reachable_skip_marks(block, constants)
+        for handler in node.handlers:
+            marks += _reachable_skip_marks(handler.body, constants)
+        return marks
+    return _raise_or_call_marks(node)
+
+
+def _evidence_rebinding_problems(key: str, name: str, klass: ast.ClassDef) -> list[str]:
+    """A class-body assignment to the evidence name replaces the method `unittest` runs."""
+    for statement in klass.body:
+        targets: list[ast.expr] = []
+        if isinstance(statement, ast.Assign):
+            targets = list(statement.targets)
+        elif isinstance(statement, ast.AnnAssign):
+            targets = [statement.target]
+        if not any(isinstance(target, ast.Name) and target.id == name for target in targets):
+            continue
+        source = ast.unparse(statement).splitlines()[0]
+        return [
+            f"MUTATE_SITES 的 `{key}` 证据 `{name}` 在 `{klass.name}` 的类体里被重新绑定"
+            f"（`{source[:70]}`）；运行时执行的是绑定后的对象，守卫读到的定义不再是证据"
+        ]
+    return []
+
+
 def _evidence_skip_problems(
     key: str,
     name: str,
@@ -997,14 +1248,15 @@ def _evidence_skip_problems(
     node: ast.FunctionDef,
 ) -> list[str]:
     """Method-level, class-level and fixture-level skips all turn evidence into a no-op."""
+    constants = _module_constants(tree)
     reasons: list[str] = []
     for decorator in node.decorator_list:
-        reason = _skip_decorator_reason(decorator)
+        reason = _skip_decorator_reason(decorator, constants)
         if reason:
             reasons.append(f"方法上的 {reason}")
     for owner in _class_ancestry(tree, klass):
         for decorator in owner.decorator_list:
-            reason = _skip_decorator_reason(decorator)
+            reason = _skip_decorator_reason(decorator, constants)
             if reason:
                 reasons.append(f"类 `{owner.name}` 上的 {reason}")
         for member in owner.body:
@@ -1012,12 +1264,10 @@ def _evidence_skip_problems(
                 continue
             if member.name not in {"setUp", "setUpClass"}:
                 continue
-            for statement in member.body:
-                for mark in _raise_or_call_marks(statement):
-                    reasons.append(f"`{owner.name}.{member.name}` 里的 {mark}")
-    for statement in node.body:
-        for mark in _raise_or_call_marks(statement):
-            reasons.append(f"正文里的 {mark}")
+            for mark in _reachable_skip_marks(member.body, constants):
+                reasons.append(f"`{owner.name}.{member.name}` 里的 {mark}")
+    for mark in _reachable_skip_marks(node.body, constants):
+        reasons.append(f"正文里的 {mark}")
     if not reasons:
         return []
     return [
@@ -1458,7 +1708,9 @@ def _run_scripts(step: str) -> list[str]:
 
 # Statements that only set up the shell before the guard runs. Requiring the guard
 # command to be the very first line made a correct `set -euo pipefail` prelude red.
-GUARD_PRELUDE = re.compile(r"^(set|export|cd|umask|unset|:)\b")
+# The separator is `\s|$` rather than `\b`: `:` and the space after it are both
+# non-word characters, so `\b` can never match the standard `: "${VAR:?}"` guard.
+GUARD_PRELUDE = re.compile(r"^(set|export|cd|umask|unset|:)(\s|$)")
 
 
 def _executed_lines(script: str) -> list[str]:
@@ -1500,8 +1752,9 @@ def run_wiring(workflow_path: Path) -> tuple[list[str], str]:
                         if earlier:
                             problems.append(
                                 f"步骤 `{name}` 里 `{candidate}` 前面还有会先执行的命令 "
-                                f"`{earlier[0][:70]}`；只有 `set`/`export`/`cd`/`umask`/`: ` "
-                                "这类环境前置可以出现在守卫命令之前"
+                                f"`{earlier[0][:70]}`；只有 "
+                                "`set`/`export`/`cd`/`umask`/`unset`/`: ` 这类环境前置可以出现在"
+                                "守卫命令之前"
                             )
                     if candidate in guard_invocations:
                         problems.append(

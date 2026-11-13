@@ -1,34 +1,32 @@
 #!/usr/bin/env python3
-"""Audit the reference-acceptance entry point from inside its CI job.
+"""Structural-integrity guard for the reference-acceptance entry point.
 
-Why this exists: `scripts/dev-env/reference-acceptance.py` is the operator's only
-answer to "can this reference deployment run", and its `--dry-run` never executes
-the state-changing steps. Three guards run here so a corrupted entry point fails a
-PR instead of only an apply run:
+What this guard is: a **structure** check over the operator entry point, the
+workflow that runs it, and its own registration tables. It answers one question:
+*did a mutating command, a read-only argv, a probed judgement function, a
+workflow invocation, or a registration row disappear or drift without the
+anchored tables being updated in the same change?*
 
-* ``sites``  — static audit. Every ``<ctx>.mutate(...)`` site must be judged, and
-  every ``<ctx>.read(...)`` must stay read-only (no ``compose run/up`` and no
-  ``sh -c``).
-* ``probe``  — behavioural probe. Imports the entry as a module and calls its
-  pure judgement functions with inputs that must fail; this is what catches
-  "emptied apply-path judgement" such as ``migration_verify`` returning ``None``
-  forever.
-* ``log``    — the documented, machine-readable dry-run output contract plus the
-  declared deferral set, so the job cannot silently widen what "PASS" means.
+What this guard is not: it does not prove that a condition is correct. An earlier
+revision classified conditions (`.ok` / `.code` in an `if`) and claimed to catch a
+deleted guard; that classification produced false reds for every equivalent
+writing and false greens for bare-object truthiness, and it still could not see an
+inverted condition. Semantics stay with ``tests/ci``'s fake-Runner cases (the
+evidence column below names them) and with a real apply run.
 
-Contract and registration locations:
+Registered tables (mirrored into ``docs/operations/reference-acceptance.md`` inside
+the anchor block; ``tables --write`` regenerates it):
 
-* machine-readable output: ``docs/operations/reference-acceptance.md``
-  («机器可读输出» section);
-* the two registration tables are the ``DECLARED_DEFERRALS`` and
-  ``REGISTERED_UNAUDITED`` constants below; every failure message prints the
-  table and its line so a maintainer can register a legitimate new shape with one
-  line and a mandatory reason.
+* ``MUTATE_SITES``      - every ``<recv>.mutate(...)`` command, its judgement, its evidence
+* ``READ_ARGUMENTS``    - helpers/variables allowed to build a ``<recv>.read(...)`` argv
+* ``WRITE_TOKENS``      - argv words that make a read argv state-changing
+* ``PROBE_CASES``       - pure judgement functions exercised with failing inputs
+* ``DECLARED_DEFERRALS``- deferred inputs the dry-run may report
+* ``SELFTEST_CASES``    - fixtures that must keep passing *and* failing as designed
 
-Honest boundary: this file proves *structure*, not deployment behaviour. It
-cannot see a judgement whose condition was inverted but still reads ``.ok``, it
-does not execute Docker/database paths, and it only reasons about the forms
-listed in ``ACCEPTED_JUDGEMENTS``.
+Every table is compared with the documentation block on each invocation, so
+weakening one of them (deleting a case, shrinking the write-token set, dropping a
+site row) is a red build unless the documentation changes in the same diff.
 """
 
 from __future__ import annotations
@@ -40,51 +38,300 @@ import re
 import sys
 import tempfile
 import types
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 
 ROOT = Path(__file__).resolve().parents[2]
 SELF = Path(__file__).resolve()
 ENTRY_DEFAULT = ROOT / "scripts/dev-env/reference-acceptance.py"
-CONTRACT_DOC = "docs/operations/reference-acceptance.md"
+WORKFLOW_DEFAULT = ROOT / ".github/workflows/ci.yml"
+CONTRACT_DOC = ROOT / "docs/operations/reference-acceptance.md"
+ANCHOR_START = "<!-- ci-entry-guard:tables:start -->"
+ANCHOR_END = "<!-- ci-entry-guard:tables:end -->"
 
 # The dry-run step order the operator runbook documents. It is deliberately a
-# second copy: the entry's own STEPS tuple and the CI log must both match it, so a
-# reordering in the entry (the B3 regression) cannot pass by agreeing with itself.
+# second copy of the entry's own STEPS order: a reordering in the entry (B3) cannot
+# pass by agreeing with itself.
 EXPECTED_STEP_ORDER = ("tools", "migrate", "roles", "buckets", "stack", "gate", "health")
 
-# Deferred inputs the dry-run may report. Keyed by a stable slug; the value is the
-# set of words that identify that deferral. A log line is registered when it
-# contains every word of exactly one entry, so rewording the explanation stays
-# green while a different deferral still has to be registered here with one line.
-# Declare words, not sentences: a sentence would make the wording a merge gate.
-DECLARED_DEFERRALS: dict[str, tuple[str, ...]] = {
-    "gateway-requires-running-stack": ("gateway", "healthy"),
+
+@dataclass(frozen=True)
+class SiteRow:
+    """One mutating command that must exist, in this function, with this argv."""
+
+    key: str
+    judgement: str
+    evidence: str
+
+
+MUTATE_SITES: tuple[SiteRow, ...] = (
+    SiteRow(
+        "step_migrate:start",
+        "migrate 前置的 postgres up（幂等）",
+        "test:test_behind_migration_stops_before_roles_buckets_and_stack",
+    ),
+    SiteRow(
+        "step_migrate:migrate",
+        "migrate 退出码与 alembic_version 单行比对",
+        "test:test_migrate_step_builds_before_running",
+    ),
+    SiteRow(
+        "step_roles:provision_argv()",
+        "provision-job-roles 退出码 + 已装 ACL 逐条比对",
+        "test:test_roles_step_creates_once_then_reports_idempotent",
+    ),
+    SiteRow(
+        "step_buckets:start",
+        "minio 启动到 healthy",
+        "test:test_bucket_names_follow_the_init_script_rules",
+    ),
+    SiteRow(
+        "step_buckets:initialize",
+        "minio-init 建桶与版本化",
+        "test:test_bucket_names_follow_the_init_script_rules",
+    ),
+    SiteRow(
+        "step_buckets:verify",
+        "独立只读核对桶与版本化",
+        "test:test_bucket_names_follow_the_init_script_rules",
+    ),
+    SiteRow("step_gate:argv", "闸门 ok/FAIL 判定（gate_verdict）", "probe:gate_verdict-fail"),
+    SiteRow(
+        "step_stack:ctx.compose('up', '-d', '--build', '--wait', 'api', 'gateway')",
+        "compose up 退出码判失败",
+        "test:test_up_exit_nonzero_with_healthy_ps_is_red",
+    ),
+)
+
+# Callables allowed inside a `read` argv, and registered as a whole argv. A read
+# argv that is neither a literal tuple/list nor one of these rows is red.
+READ_ARGUMENTS: tuple[tuple[str, str, str], ...] = (
+    ("psql_argv", "builder", "只读 psql -Atc SELECT/目录查询；写语句不在本函数内构造"),
+    ("provision_argv", "builder", "--print-statements 只读渲染 GRANT 语句"),
+    ("str", "value", "把仓库路径/端口渲染成单个 argv 词，不产生子命令"),
+)
+
+# argv words that turn a `read` into a state change. `uv run` is the one allowed
+# pair; every other `run` (compose run, docker run) is a write.
+WRITE_TOKENS: tuple[str, ...] = ("run", "up", "start", "down", "restart", "rm", "create")
+SHELL_TOKENS: tuple[str, ...] = ("sh", "bash", "zsh", "dash")
+INTERPRETER_TOKENS: tuple[str, ...] = ("python", "python3", "perl", "ruby", "node")
+
+
+@dataclass(frozen=True)
+class ProbeRow:
+    """A pure judgement function that must keep rejecting its failing inputs."""
+
+    case: str
+    function: str
+    expectation: str
+    must_raise: bool = True
+
+
+PROBE_CASES: tuple[ProbeRow, ...] = (
+    ProbeRow(
+        "migration_verify-behind",
+        "migration_verify",
+        "迁移落后/多行/空 必须失败，正好在 head 通过",
+        False,
+    ),
+    ProbeRow("gate_verdict-ok", "gate_verdict", "OK 行解析出 ok/pending 两类条目"),
+    ProbeRow("gate_verdict-fail", "gate_verdict", "FAIL 行必须抛 StepFailureError"),
+    ProbeRow("gate_verdict-exit", "gate_verdict", "闸门退出码非零不得读成通过"),
+    ProbeRow("gate_verdict-fail-wins", "gate_verdict", "FAIL 与 OK 同时出现必须判失败"),
+    ProbeRow("env_gaps", "env_gaps", "空白键入列表、非空键不入列", False),
+    ProbeRow("dsn_identity", "dsn_identity", "空 DSN 与非 postgresql DSN 必须失败"),
+    ProbeRow("migration_heads", "migration_heads", "单链取唯一 head，双 head 必须失败"),
+    ProbeRow("bucket_names", "bucket_names", "去重；三个桶名键全空必须失败"),
+)
+
+
+@dataclass(frozen=True)
+class DeferralRow:
+    """A deferred input the dry-run may report, identified by stable words."""
+
+    slug: str
+    words: tuple[str, ...]
+    exclude: tuple[str, ...] = ()
+
+
+# Row counts are pinned so a table cannot shrink silently: deleting a row means
+# lowering a pin here *and* changing the documentation anchor in the same diff.
+PINNED_COUNTS: Mapping[str, int] = {
+    "MUTATE_SITES": 8,
+    "READ_ARGUMENTS": 3,
+    "WRITE_TOKENS": 7,
+    "PROBE_CASES": 9,
+    "DECLARED_DEFERRALS": 1,
+    "SELFTEST_CASES": 17,
 }
 
-# Sites the static audit cannot decide, registered explicitly with a mandatory
-# reason. Key format: ``<function>:<unparse of the site>[0:60]``.
-REGISTERED_UNAUDITED: dict[str, str] = {}
-
-ACCEPTED_JUDGEMENTS = (
-    "1) `var = ctx.mutate(...)` 后在同一个函数内用条件位置判定 `.ok`/`.code`",
-    "   （if / while / assert / match / IfExp / BoolOp / Compare / 推导式 if / Not 均可）；",
-    "2) 先绑局部再判定：`code = var.code` / `flag = var.ok`，再在条件位置使用该局部；",
-    "3) 位置实参或关键字实参交给辅助函数，且该函数对应的形参被读 `.ok`",
-    "   （本模块或仓库其它模块的 `def <name>(...)` 均可，按形参名匹配）；",
-    "4) 直接 `if ctx.mutate(...).ok:` / `if ctx.mutate(...).code:`；",
-    "5) 实在无法静态判定的形态，在 REGISTERED_UNAUDITED 登记一行并写明理由。",
-)
-
-READ_ONLY_RULE = (
-    "`ctx.read(...)` 只允许只读命令：argv 里出现 compose 的 run/up/start/down/restart/rm "
-    "或 sh/bash/zsh -c 一律判红（`uv run …` 例外）。dry-run 会真的执行 read 里的命令。"
+DECLARED_DEFERRALS: tuple[DeferralRow, ...] = (
+    DeferralRow(
+        "gateway-requires-running-stack",
+        ("gateway", "healthy"),
+        ("lane", "配置", "镜像", "模型", "engine", "引擎"),
+    ),
 )
 
 
-class AuditError(Exception):
-    """A guard failed with a message that is meant to become a ``::error::``."""
+@dataclass(frozen=True)
+class SelftestCase:
+    """A fixture that pins the guard's own rules; weakening a rule breaks a case."""
+
+    case: str
+    source: str
+    expect_red: bool
+    note: str
+    baseline: tuple[SiteRow, ...] = ()
+    require_sites: bool = False
+
+
+SELFTEST_CASES: tuple[SelftestCase, ...] = (
+    SelftestCase(
+        "vacuity-empty-module",
+        "def nothing(ctx):\n    return 1\n",
+        True,
+        "没有 mutate 站点必须红（反空转）",
+        require_sites=True,
+    ),
+    SelftestCase(
+        "discarded-result",
+        "def step(ctx):\n    ctx.mutate(('docker', 'compose', 'up', '-d'))\n",
+        True,
+        "结果被丢弃必须红",
+    ),
+    SelftestCase(
+        "unregistered-site",
+        "def step(ctx):\n"
+        "    started = ctx.mutate(('docker', 'compose', 'rm', '-f'))\n"
+        "    return started\n",
+        True,
+        "清单里没有的写命令必须红",
+    ),
+    SelftestCase(
+        "receiver-agnostic",
+        "def step(ctx):\n"
+        "    started = ctx.runner.mutate(('docker', 'compose', 'up', '-d'))\n"
+        "    if started.ok:\n        return 'ok'\n",
+        True,
+        "换接收者（ctx.runner.mutate）也算站点，未登记即红",
+    ),
+    SelftestCase(
+        "truthiness-bare",
+        "def step(ctx):\n"
+        "    applied = ctx.mutate(('docker', 'compose', 'up', '-d'))\n"
+        "    if applied:\n        return 'ok'\n",
+        True,
+        "裸对象真值必须红（CommandResult 无 __bool__）",
+        baseline=(
+            SiteRow("step:('docker', 'compose', 'up', '-d')", "fixture", "probe:gate_verdict-fail"),
+        ),
+        require_sites=True,
+    ),
+    SelftestCase(
+        "truthiness-negated",
+        "def step(ctx):\n"
+        "    started = ctx.mutate(('docker', 'compose', 'up', '-d'))\n"
+        "    if not started:\n        raise RuntimeError('failed')\n",
+        True,
+        "`if not started:` 必须红（恒真=守卫被架空）",
+        baseline=(
+            SiteRow("step:('docker', 'compose', 'up', '-d')", "fixture", "probe:gate_verdict-fail"),
+        ),
+        require_sites=True,
+    ),
+    SelftestCase(
+        "truthiness-is-not-none",
+        "def step(ctx):\n"
+        "    applied = ctx.mutate(('docker', 'compose', 'up', '-d'))\n"
+        "    if applied is not None:\n        return 'ok'\n",
+        True,
+        "`is not None` 判定必须红（结果永不为 None）",
+        baseline=(
+            SiteRow("step:('docker', 'compose', 'up', '-d')", "fixture", "probe:gate_verdict-fail"),
+        ),
+        require_sites=True,
+    ),
+    SelftestCase(
+        "truthiness-ok-is-fine",
+        "def step(ctx):\n"
+        "    applied = ctx.mutate(('docker', 'compose', 'up', '-d'))\n"
+        "    if not applied.ok:\n        raise RuntimeError('failed')\n",
+        False,
+        "`.ok` 形态必须绿（结构上不是恒真条件）",
+        baseline=(
+            SiteRow("step:('docker', 'compose', 'up', '-d')", "fixture", "probe:gate_verdict-fail"),
+        ),
+        require_sites=True,
+    ),
+    SelftestCase(
+        "read-literal-write",
+        "def step(ctx):\n    ctx.read(('docker', 'compose', 'down'))\n",
+        True,
+        "read 里出现 compose down 必须红",
+    ),
+    SelftestCase(
+        "read-shell-c",
+        "def step(ctx):\n    ctx.read(('sh', '-c', 'touch /tmp/x'))\n",
+        True,
+        "read 里出现 sh -c 必须红",
+    ),
+    SelftestCase(
+        "read-interpreter-c",
+        "def step(ctx):\n    ctx.read(('python3', '-c', 'open(\"/tmp/x\", \"w\")'))\n",
+        True,
+        "read 里出现解释器 -c 必须红",
+    ),
+    SelftestCase(
+        "read-uv-run-allowed",
+        "def step(ctx):\n    ctx.read(('uv', 'run', '--locked', 'python', 'x.py'))\n",
+        False,
+        "uv run 是唯一允许的 run 配对",
+    ),
+    SelftestCase(
+        "read-uv-run-docker-not-exempt",
+        "def step(ctx):\n    ctx.read(('uv', 'run', 'docker', 'compose', 'run', '-d', 'api'))\n",
+        True,
+        "uv run 不能豁免后面的 compose run",
+    ),
+    SelftestCase(
+        "read-registered-builder",
+        "def step(ctx):\n    ctx.read(psql_argv(ctx, 'SELECT 1'))\n",
+        False,
+        "登记过的只读 argv 构造器可接受",
+    ),
+    SelftestCase(
+        "read-unknown-builder",
+        "def step(ctx):\n    ctx.read(shoot())\n",
+        True,
+        "未登记的 argv 构造器必须红",
+    ),
+    SelftestCase(
+        "read-variable-argv",
+        "def step(ctx):\n    argv = ('sh', '-c', 'touch /tmp/x')\n    ctx.read(argv)\n",
+        True,
+        "read 的 argv 藏在变量里必须红（旧版静默放过）",
+    ),
+    SelftestCase(
+        "registered-site-passes",
+        "def step(ctx):\n"
+        "    started = ctx.mutate(ctx.compose('up', '-d', '--build', '--wait', 'api', 'gateway'))\n"
+        "    return started\n",
+        False,
+        "清单内的站点形态必须绿",
+        baseline=(
+            SiteRow(
+                "step:ctx.compose('up', '-d', '--build', '--wait', 'api', 'gateway')",
+                "fixture",
+                "probe:gate_verdict-fail",
+            ),
+        ),
+        require_sites=True,
+    ),
+)
 
 
 def _report(problems: Sequence[str]) -> int:
@@ -94,22 +341,187 @@ def _report(problems: Sequence[str]) -> int:
     return 1
 
 
-def _constant_line(source: Path, name: str) -> int:
-    """Return the 1-based line where ``name =`` starts, for a stable pointer."""
-    for index, line in enumerate(source.read_text(encoding="utf-8").splitlines(), start=1):
-        if line.startswith(name) or line.lstrip().startswith(f"{name}:"):
+def _line_of(path: Path, needle: str) -> int:
+    """Line of the module-level `NEEDLE: ...` assignment, so hints point at real code."""
+    if not path.is_file():
+        return 0
+    for index, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if line.startswith(needle + ":"):
             return index
     return 0
 
 
-def _registration_hint(table: str) -> str:
-    line = _constant_line(SELF, table)
-    return f"登记处: {SELF.relative_to(ROOT)}:{line} 的表 {table}（一行登记 + 必填理由）"
+def _hint(where: str, needle: str, note: str) -> str:
+    line = _line_of(Path(where), needle) if Path(where).is_file() else "?"
+    return f"登记处: {where}:{line} 的 {needle}（{note}）"
 
 
 # ---------------------------------------------------------------------------
-# Static audit (`sites`)
+# Registries and their documentation anchor
 # ---------------------------------------------------------------------------
+
+
+def render_tables() -> str:
+    lines = [
+        "### 结构守卫的登记表",
+        "",
+        "本块由 `python3 scripts/dev-env/ci-entry-guard.py tables --write` 生成，"
+        "与 `scripts/dev-env/ci-entry-guard.py` 的常量逐行对应；改动任一登记都必须同时更新另一侧，"
+        "否则作业红。",
+        "",
+        "#### 行数锚点（任何一张表缩水都要同时改这里的数字）",
+        "",
+        "| 表 | 行数 |",
+        "| --- | --- |",
+    ]
+    for name, count in PINNED_COUNTS.items():
+        lines.append(f"| `{name}` | {count} |")
+    lines += [
+        "",
+        "#### MUTATE_SITES（每条写命令必须存在，且能指出谁在别处判定它）",
+        "",
+        "| 站点 | 判定在哪 | 证据 |",
+        "| --- | --- | --- |",
+    ]
+    for site in MUTATE_SITES:
+        lines.append(f"| `{site.key}` | {site.judgement} | `{site.evidence}` |")
+    lines += [
+        "",
+        "#### READ_ARGUMENTS（允许出现在 `read` argv 里的助手与词包装）",
+        "",
+        "| 助手 | 形态 | 为什么只读 |",
+        "| --- | --- | --- |",
+    ]
+    for name, kind, reason in READ_ARGUMENTS:
+        label = "整体 argv 构造器" if kind == "builder" else "argv 词包装"
+        lines.append(f"| `{name}` | {label} | {reason} |")
+    lines += [
+        "",
+        "#### WRITE_TOKENS（`read` 里出现即判红的 argv 词）",
+        "",
+        "`" + "`, `".join(WRITE_TOKENS) + "`；`uv run` 是唯一允许的 `run` 配对；"
+        "`"
+        + "`, `".join(SHELL_TOKENS)
+        + "`（及 `"
+        + "`, `".join(INTERPRETER_TOKENS)
+        + "`）紧跟 `-c` 一律判红。",
+        "",
+        "#### PROBE_CASES（必须用失败输入调用的纯判定函数）",
+        "",
+        "| 用例 | 入口函数 | 失败形态 | 断言 |",
+        "| --- | --- | --- | --- |",
+    ]
+    for probe_row in PROBE_CASES:
+        shape = "raise" if probe_row.must_raise else "返回失败值"
+        lines.append(
+            f"| `{probe_row.case}` | `{probe_row.function}` | {shape} | {probe_row.expectation} |"
+        )
+    lines += [
+        "",
+        "#### DECLARED_DEFERRALS（dry-run 允许报告的延后输入）",
+        "",
+        "| slug | 必须同时出现的词 | 出现即视为别的延后项 |",
+        "| --- | --- | --- |",
+    ]
+    for deferral in DECLARED_DEFERRALS:
+        words = "、".join(f"`{word}`" for word in deferral.words)
+        exclude = "、".join(f"`{word}`" for word in deferral.exclude) or "—"
+        lines.append(f"| `{deferral.slug}` | {words} | {exclude} |")
+    lines += [
+        "",
+        "#### SELFTEST_CASES（守卫自身的自检语料）",
+        "",
+        "| 用例 | 说明 | 期望 |",
+        "| --- | --- | --- |",
+    ]
+    for case in SELFTEST_CASES:
+        expected = "红" if case.expect_red else "绿"
+        lines.append(f"| `{case.case}` | {case.note} | {expected} |")
+    return "\n".join(lines)
+
+
+def check_counts() -> list[str]:
+    actual = {
+        "MUTATE_SITES": len(MUTATE_SITES),
+        "READ_ARGUMENTS": len(READ_ARGUMENTS),
+        "WRITE_TOKENS": len(WRITE_TOKENS),
+        "PROBE_CASES": len(PROBE_CASES),
+        "DECLARED_DEFERRALS": len(DECLARED_DEFERRALS),
+        "SELFTEST_CASES": len(SELFTEST_CASES),
+    }
+    problems: list[str] = []
+    for name, pinned in PINNED_COUNTS.items():
+        if actual[name] != pinned:
+            problems.append(
+                f"{name} 现在有 {actual[name]} 行，锚点写的是 {pinned} 行；"
+                "删/加登记必须同时改 PINNED_COUNTS 与文档锚点块，并在 PR 里说明为什么"
+            )
+    for name in actual:
+        if name not in PINNED_COUNTS:
+            problems.append(f"{name} 没有行数锚点；把它加进 PINNED_COUNTS")
+    return problems
+
+
+def _display(path: Path) -> str:
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
+def check_anchor(path: Path = CONTRACT_DOC) -> list[str]:
+    if not path.is_file():
+        return [f"契约文档不存在: {_display(path)}"]
+    text = path.read_text(encoding="utf-8")
+    if ANCHOR_START not in text or ANCHOR_END not in text:
+        return [
+            f"{_display(path)} 缺少登记表锚点（{ANCHOR_START} … {ANCHOR_END}）；"
+            "跑 `python3 scripts/dev-env/ci-entry-guard.py tables --write` 生成"
+        ]
+    body = text.split(ANCHOR_START, 1)[1].split(ANCHOR_END, 1)[0].strip()
+    expected = render_tables().strip()
+    if body != expected:
+        return [
+            f"{_display(path)} 的登记表与守卫脚本不一致；"
+            "改登记时同步文档，或跑 `python3 scripts/dev-env/ci-entry-guard.py tables --write`。\n"
+            "不一致的第一行: " + _first_difference(body, expected)
+        ]
+    return []
+
+
+def _first_difference(actual: str, expected: str) -> str:
+    actual_lines, expected_lines = actual.splitlines(), expected.splitlines()
+    for index in range(max(len(actual_lines), len(expected_lines))):
+        got = actual_lines[index] if index < len(actual_lines) else "<缺失>"
+        want = expected_lines[index] if index < len(expected_lines) else "<多余>"
+        if got != want:
+            return f"文档 `{got}` / 期望 `{want}`"
+    return "内容相同但空白不同"
+
+
+def write_anchor(path: Path = CONTRACT_DOC) -> None:
+    text = path.read_text(encoding="utf-8")
+    if ANCHOR_START in text and ANCHOR_END in text:
+        before = text.split(ANCHOR_START, 1)[0]
+        after = text.split(ANCHOR_END, 1)[1]
+        path.write_text(
+            f"{before}{ANCHOR_START}\n{render_tables()}\n{ANCHOR_END}{after}", encoding="utf-8"
+        )
+        return
+    path.write_text(
+        text.rstrip() + f"\n\n{ANCHOR_START}\n{render_tables()}\n{ANCHOR_END}\n", encoding="utf-8"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Entry-point audit (`sites`)
+# ---------------------------------------------------------------------------
+
+
+def _function_nodes(tree: ast.Module) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
+    return [
+        node for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
 
 
 def _own_nodes(function: ast.AST) -> list[ast.AST]:
@@ -125,357 +537,305 @@ def _own_nodes(function: ast.AST) -> list[ast.AST]:
     return collected
 
 
-def _parent_map(nodes: Iterable[ast.AST]) -> dict[int, ast.AST]:
-    parents: dict[int, ast.AST] = {}
-    for node in nodes:
-        for child in ast.iter_child_nodes(node):
-            parents[id(child)] = node
-    return parents
+def _call_name(call: ast.Call) -> str:
+    func = call.func
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    if isinstance(func, ast.Name):
+        return func.id
+    return ""
 
 
-def _in_judgement(node: ast.AST, parents: Mapping[int, ast.AST]) -> bool:
-    """Whether ``node`` decides control flow (test/subject), not just sits in a body."""
-    child = node
-    current = parents.get(id(node))
-    while current is not None:
-        if (
-            isinstance(current, (ast.If, ast.While, ast.Assert, ast.IfExp))
-            and child is current.test
-        ):
-            return True
-        if isinstance(current, ast.Match) and child is current.subject:
-            return True
-        child, current = current, parents.get(id(current))
-    return False
+def _context_call(call: ast.Call) -> str:
+    """`read`/`mutate` on the entry's context object, whatever wraps it.
 
-
-class _ModuleIndex:
-    """Function -> (ordered formal params, the params whose ``.ok`` is read).
-
-    Resolution is per parameter name, not per function: handing the result to a
-    helper that reads some *other* parameter's ``.ok`` is not a judgement. When the
-    callee is not defined in the audited file it is looked up across the repo, so a
-    judgement moved into another module stays green.
+    The receiver chain must start at ``ctx``/``context``, so ``handle.read(1 << 20)``
+    and ``response.read()`` are not mistaken for entry calls, while
+    ``ctx.runner.mutate(...)`` still counts as a mutating site.
     """
+    func = call.func
+    if not isinstance(func, ast.Attribute) or func.attr not in {"read", "mutate"}:
+        return ""
+    root: ast.expr = func.value
+    while isinstance(root, ast.Attribute):
+        root = root.value
+    if isinstance(root, ast.Name) and root.id in {"ctx", "context"}:
+        return func.attr
+    return ""
 
-    def __init__(self, search_root: Path) -> None:
-        self.search_root = search_root
-        self._local: dict[str, tuple[list[str], set[str]]] = {}
-        self._remote: dict[str, tuple[list[str], set[str]] | None] = {}
 
-    def index_local(self, tree: ast.Module) -> None:
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                self._local[node.name] = _ok_parameters(node)
+def site_key(function: str, call: ast.Call) -> str:
+    """Stable identity of one mutating call: enclosing function + its argv."""
+    argv = ast.unparse(call.args[0]) if call.args else "<no-argv>"
+    return f"{function}:{argv[:80]}"
 
-    def parameters(self, name: str) -> tuple[list[str], set[str]] | None:
-        if name in self._local:
-            return self._local[name]
-        if name not in self._remote:
-            self._remote[name] = self._scan_repo(name)
-        return self._remote[name]
 
-    def _scan_repo(self, name: str) -> tuple[list[str], set[str]] | None:
-        needle = f"def {name}("
-        for path in sorted(self.search_root.rglob("*.py")):
-            if any(
-                part in {".git", ".venv", "node_modules", ".runtime", "__pycache__"}
-                for part in path.parts
-            ):
+def _argv_tokens(argument: ast.expr) -> tuple[list[str], list[str]]:
+    """Flatten an argv expression into literal words plus what could not be resolved."""
+    words: list[str] = []
+    unresolved: list[str] = []
+    elements = argument.elts if isinstance(argument, (ast.Tuple, ast.List)) else [argument]
+    for element in elements:
+        if isinstance(element, ast.Constant) and isinstance(element.value, str):
+            words.append(element.value)
+        elif isinstance(element, ast.Starred):
+            if not isinstance(element.value, (ast.Attribute, ast.Name)):
+                unresolved.append(ast.unparse(element))
+        elif isinstance(element, ast.Call):
+            name = _call_name(element)
+            if name in _value_wrappers():
                 continue
-            try:
-                content = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
+            unresolved.append(f"builder {name}")
+        elif isinstance(element, ast.Name):
+            unresolved.append(f"variable {element.id}")
+        elif isinstance(element, ast.Attribute):
+            unresolved.append(f"attribute {ast.unparse(element)}")
+        else:
+            unresolved.append(ast.unparse(element))
+    return words, unresolved
+
+
+def _argument_rows() -> dict[str, tuple[str, str]]:
+    return {name: (kind, reason) for name, kind, reason in READ_ARGUMENTS}
+
+
+def _value_wrappers() -> frozenset[str]:
+    return frozenset(name for name, (kind, _reason) in _argument_rows().items() if kind == "value")
+
+
+def _write_words(words: Sequence[str]) -> list[str]:
+    """Words that make a read argv state-changing, honouring the `uv run` pair."""
+    flagged: list[str] = []
+    for index, word in enumerate(words):
+        lowered = word.lower()
+        if lowered in WRITE_TOKENS:
+            previous = words[index - 1].lower() if index else ""
+            if lowered == "run" and previous == "uv":
                 continue
-            if needle not in content:
-                continue
-            try:
-                tree = ast.parse(content)
-            except SyntaxError:
-                continue
-            for node in ast.walk(tree):
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
-                    order, ok_names = _ok_parameters(node)
-                    if ok_names:
-                        return order, ok_names
-        return None
+            flagged.append(word)
+        if lowered in SHELL_TOKENS or lowered in INTERPRETER_TOKENS:
+            following = words[index + 1] if index + 1 < len(words) else ""
+            if following == "-c":
+                flagged.append(f"{word} -c")
+    return flagged
 
 
-def _ok_parameters(function: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[list[str], set[str]]:
-    """Ordered positional-or-keyword params plus the ones whose ``.ok`` is read."""
-    order = [argument.arg for argument in (*function.args.posonlyargs, *function.args.args)]
-    order.extend(argument.arg for argument in function.args.kwonlyargs)
-    names = set(order)
-    reading: set[str] = set()
-    for node in _own_nodes(function):
-        if (
-            isinstance(node, ast.Attribute)
-            and node.attr == "ok"
-            and isinstance(node.value, ast.Name)
-            and node.value.id in names
-        ):
-            reading.add(node.value.id)
-    return order, reading
-
-
-def _attribute_on(node: ast.AST, name: str) -> bool:
-    return (
-        isinstance(node, ast.Attribute)
-        and isinstance(node.value, ast.Name)
-        and node.value.id == name
-    )
-
-
-def _judged_name(
-    name: str, nodes: Sequence[ast.AST], parents: Mapping[int, ast.AST], index: _ModuleIndex
-) -> bool:
-    """Whether ``name`` is judged in a condition position, following one-step aliases."""
-    aliases = {name}
-    for _ in range(4):
-        grown = False
-        for node in nodes:
-            target: ast.expr | None = None
-            value: ast.expr | None = None
-            if isinstance(node, ast.AnnAssign):
-                target, value = node.target, node.value
-            elif isinstance(node, ast.Assign) and len(node.targets) == 1:
-                target, value = node.targets[0], node.value
-            if not isinstance(target, ast.Name) or value is None:
-                continue
-            source: str | None = None
-            if isinstance(value, ast.Name) and value.id in aliases:
-                source = value.id
-            elif isinstance(value, ast.Attribute) and isinstance(value.value, ast.Name):
-                if value.value.id in aliases:
-                    source = value.value.id
-            elif isinstance(value, ast.Call):
-                source = None
-            if source is not None and target.id not in aliases:
-                aliases.add(target.id)
-                grown = True
-        if not grown:
-            break
-    for node in nodes:
-        if not isinstance(node, ast.Name) or node.id not in aliases:
-            continue
-        parent = parents.get(id(node))
-        if (
-            isinstance(parent, ast.Attribute)
-            and parent.attr in {"ok", "code"}
-            and _in_judgement(parent, parents)
-        ):
-            return True
-        if _in_judgement(node, parents):
-            return True
-        if _handed_to_judging_helper(node, parent, index):
-            return True
-    return False
-
-
-def _handed_to_judging_helper(node: ast.expr, parent: ast.AST | None, index: _ModuleIndex) -> bool:
-    """A local bound to the result still counts when a judging helper receives it."""
-    if not isinstance(parent, ast.Call):
-        return False
-    callee = parent.func
-    name = (
-        callee.id
-        if isinstance(callee, ast.Name)
-        else (callee.attr if isinstance(callee, ast.Attribute) else "")
-    )
-    if not name:
-        return False
-    resolved = index.parameters(name)
-    if resolved is None:
-        return False
-    order, ok_names = resolved
-    plain = [argument for argument in parent.args if not isinstance(argument, ast.Starred)]
-    for position, argument in enumerate(plain):
-        if argument is node and position < len(order):
-            return order[position] in ok_names
-    for keyword in parent.keywords:
-        if keyword.value is node and keyword.arg is not None:
-            return keyword.arg in ok_names
-    return False
-
-
-def _site_judged_by_call(
-    site: ast.Call, nodes: Sequence[ast.AST], index: _ModuleIndex
-) -> tuple[bool, str]:
-    """Whether the mutate result is handed to a helper that judges that argument."""
-    parents = _parent_map(nodes)
-    parent = parents.get(id(site))
-    if not isinstance(parent, ast.Call):
-        return False, "not an argument"
-    callee = parent.func
-    name = (
-        callee.id
-        if isinstance(callee, ast.Name)
-        else (callee.attr if isinstance(callee, ast.Attribute) else "")
-    )
-    if not name:
-        return False, "调用目标不是具名函数，无法按形参匹配"
-    resolved = index.parameters(name)
-    if resolved is None:
-        return False, f"helper {name} 未解析出读 `.ok` 的形参（若是新助手，确认它在仓库内可解析）"
-    order, ok_names = resolved
-    plain_args = [argument for argument in parent.args if not isinstance(argument, ast.Starred)]
-    for position, argument in enumerate(parent.args):
-        if argument is not site:
-            continue
-        if isinstance(argument, ast.Starred):
-            return False, "以 *args 展开传递，无法按形参名匹配"
-        if position >= len(plain_args):
-            return False, "与 *args 混用，无法按形参名匹配"
-        if position >= len(order):
-            return False, "位置实参超出已声明形参"
-        formal = order[position]
-        return formal in ok_names, f"位置实参 -> 形参 {formal}"
-    for keyword in parent.keywords:
-        if keyword.value is site:
-            if keyword.arg is None:
-                return False, "以 **kwargs 传递，无法按形参名匹配"
-            return keyword.arg in ok_names, f"关键字实参 -> 形参 {keyword.arg}"
-    return False, "不是本调用的直接实参"
-
-
-def _classify_site(
-    site: ast.Call,
-    function_name: str,
-    nodes: Sequence[ast.AST],
-    parents: Mapping[int, ast.AST],
-    index: _ModuleIndex,
-) -> tuple[str, bool, str]:
-    """Return (kind, judged, detail)."""
-    parent = parents.get(id(site))
-    judged, detail = False, ""
-    if isinstance(parent, ast.AnnAssign) and isinstance(parent.target, ast.Name):
-        return (
-            "annotated assignment",
-            _judged_name(parent.target.id, nodes, parents, index),
-            parent.target.id,
-        )
-    if isinstance(parent, ast.Assign):
-        if len(parent.targets) == 1 and isinstance(parent.targets[0], ast.Name):
-            name = parent.targets[0].id
-            return ("assignment", _judged_name(name, nodes, parents, index), name)
-        return ("assignment to non-name target", False, ast.unparse(parent.targets[0])[:40])
-    if isinstance(parent, ast.Attribute) and parent.attr in {"ok", "code"}:
-        return ("inline attribute", _in_judgement(parent, parents), f".{parent.attr}")
-    if isinstance(parent, ast.Call):
-        judged, detail = _site_judged_by_call(site, nodes, index)
-        return ("argument", judged, detail)
-    if isinstance(parent, ast.Return):
-        return ("return", False, "结果从函数返回，调用方的判定不在本函数内")
-    if isinstance(parent, ast.Expr):
-        return ("discarded", False, "结果被丢弃")
-    if isinstance(parent, ast.Starred):
-        return ("starred", False, "以 *args 展开传递")
-    return ("other", False, f"父节点 {type(parent).__name__} 不是可识别形态")
-
-
-_COMPOSE_WRITE_TOKENS = frozenset({"run", "up", "start", "down", "restart", "rm", "create"})
-_SHELLS = frozenset({"sh", "bash", "zsh", "dash"})
-
-
-def _read_violations(call: ast.Call, function_name: str) -> str | None:
-    """Refuse a ``ctx.read`` whose argv carries a state-changing command."""
-    tokens = [
-        node.value
-        for node in ast.walk(call)
-        if isinstance(node, ast.Constant) and isinstance(node.value, str)
-    ]
-    if not tokens:
-        return None
-    words = {token.strip().lower() for token in tokens if token.strip()}
-    shell_with_command = bool(words & _SHELLS) and "-c" in words
-    # `uv run …` is how the roles step reads rendered GRANT statements; that pairing
-    # is exempt. Any other `run` (compose run, docker run) is exactly the write this
-    # rule forbids, and `read` really does execute its argv during the dry-run.
-    write = sorted(word for word in _COMPOSE_WRITE_TOKENS if word in words)
-    if "uv" in words:
-        write = [word for word in write if word != "run"]
-    if not write and not shell_with_command:
-        return None
-    found = ", ".join(write) or f"{', '.join(sorted(words & _SHELLS))} -c"
-    return (
-        f"{function_name}:{call.lineno} `ctx.read(...)` 携带写命令（{found}）。\n{READ_ONLY_RULE}"
-    )
-
-
-def audit_sites(
-    entry: Path, search_root: Path, *, require_sites: bool = True
-) -> tuple[list[str], str]:
-    source = entry.read_text(encoding="utf-8")
+def audit_sources(
+    source: str,
+    *,
+    label: str = "<source>",
+    baseline: Sequence[SiteRow] = MUTATE_SITES,
+    require_sites: bool = True,
+) -> list[str]:
     try:
         tree = ast.parse(source)
     except SyntaxError as error:
-        return [f"{entry}: 无法解析入口脚本：{error}"], "0 sites"
-    index = _ModuleIndex(search_root)
-    index.index_local(tree)
+        return [f"{label}: 无法解析：{error}"]
     problems: list[str] = []
-    checked = registered = 0
-    functions = [
-        node for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-    ]
+    found: dict[str, str] = {}
     seen: set[int] = set()
-    for function in functions:
+    for function in _function_nodes(tree):
         nodes = _own_nodes(function)
-        parents = _parent_map(nodes)
+        parents = {id(child): node for node in nodes for child in ast.iter_child_nodes(node)}
         for node in nodes:
             if not isinstance(node, ast.Call):
                 continue
-            func = node.func
-            attribute = func.attr if isinstance(func, ast.Attribute) else None
-            receiver = (
-                func.value.id
-                if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)
-                else None
-            )
-            if attribute == "read":
-                violation = _read_violations(node, function.name)
-                if violation:
-                    problems.append(violation)
-                continue
-            if attribute != "mutate" or receiver is None:
-                continue
-            if id(node) in seen:
-                problems.append(f"{function.name}:{node.lineno} 同一站点被重复计数")
-                continue
-            seen.add(id(node))
-            kind, judged, detail = _classify_site(node, function.name, nodes, parents, index)
-            key = f"{function.name}:{ast.unparse(node)[:60]}"
-            reason = REGISTERED_UNAUDITED.get(key)
-            if reason is not None:
-                if not reason.strip():
+            call = _context_call(node)
+            if call == "mutate":
+                if id(node) in seen:
+                    problems.append(f"{label}:{node.lineno} 同一站点被重复计数")
+                    continue
+                seen.add(id(node))
+                key = site_key(function.name, node)
+                found[key] = function.name
+                if isinstance(parents.get(id(node)), ast.Expr):
                     problems.append(
-                        f"{function.name}:{node.lineno} REGISTERED_UNAUDITED[{key!r}] 的理由为空"
+                        f"{label}:{node.lineno} `{key}` 的结果被丢弃；写命令的退出码没有接收者"
                     )
-                registered += 1
                 continue
-            if judged:
-                checked += 1
+            if call != "read":
                 continue
-            problems.append(
-                f"{function.name}:{node.lineno} {kind} 未被判定（{detail}）；"
-                f"`ctx.mutate(...)` 的结果必须被判定。\n"
-                f"接受写法：\n" + "\n".join(ACCEPTED_JUDGEMENTS) + "\n"
-                f"{_registration_hint('REGISTERED_UNAUDITED')}\n"
-                f'登记行: REGISTERED_UNAUDITED[{key!r}] = "<必填理由>"\n'
-                f"契约: {CONTRACT_DOC}"
+            argument = node.args[0] if node.args else None
+            if argument is None:
+                problems.append(f"{label}:{node.lineno} `read` 没有 argv")
+                continue
+            if isinstance(argument, ast.Call):
+                builder = _call_name(argument)
+                row = _argument_rows().get(builder)
+                if row is None or row[0] != "builder":
+                    problems.append(
+                        f"{label}:{node.lineno} `read` 的 argv 由未登记的助手 `{builder}` 构造；"
+                        "在 READ_ARGUMENTS 登记它并写明为什么只读\n"
+                        + _hint(
+                            str(SELF.relative_to(ROOT)), "READ_ARGUMENTS", "一行登记 + 只读理由"
+                        )
+                    )
+                continue
+            words, unresolved = _argv_tokens(argument)
+            if unresolved:
+                problems.append(
+                    f"{label}:{node.lineno} `read` 的 argv 无法静态确定"
+                    f"（{', '.join(sorted(set(unresolved)))}）；"
+                    "改成字面量元组，或在 READ_ARGUMENTS 登记 argv 构造助手\n"
+                    + _hint(str(SELF.relative_to(ROOT)), "READ_ARGUMENTS", "一行登记 + 只读理由")
+                )
+            flagged = _write_words(words)
+            if flagged:
+                problems.append(
+                    f"{label}:{node.lineno} `read` 携带写命令"
+                    f"（{', '.join(sorted(set(flagged)))}）；"
+                    "dry-run 会真的执行 read 里的命令，写命令必须走 mutate"
+                )
+    problems += _truthiness_problems(tree, label)
+    baseline_by_key = {row.key: row for row in baseline}
+    for key in sorted(set(baseline_by_key) - set(found)):
+        registered = baseline_by_key[key]
+        problems.append(
+            f"{label} 登记的写命令消失了: `{key}`（{registered.judgement}）；"
+            "删命令必须同时删登记并说明谁来守护\n"
+            + _hint(str(SELF.relative_to(ROOT)), "MUTATE_SITES", "删登记要同时改文档块")
+        )
+    for key in sorted(set(found) - set(baseline_by_key)):
+        problems.append(
+            f"{label} 出现未登记的写命令: `{key}`；在 MUTATE_SITES 登记它、写明判定在哪、"
+            "并给出存在的测试或 probe 用例\n"
+            + _hint(str(SELF.relative_to(ROOT)), "MUTATE_SITES", "一行登记 + 判定位置 + 证据")
+        )
+    if require_sites and not found:
+        problems.append(
+            f"{label} 里没有任何 `<recv>.mutate(...)` 站点；守卫会变成空转，"
+            "先确认入口仍执行写命令（本次检查不接受空清单）"
+        )
+    return problems
+
+
+def _result_names(tree: ast.Module) -> set[str]:
+    """Names bound from a mutating call, whose type has no truthiness and is never None."""
+    names: set[str] = set()
+    for function in _function_nodes(tree):
+        for node in _own_nodes(function):
+            target: ast.expr | None
+            value: ast.expr | None
+            if isinstance(node, ast.Assign) and len(node.targets) == 1:
+                target, value = node.targets[0], node.value
+            elif isinstance(node, ast.AnnAssign):
+                target, value = node.target, node.value
+            else:
+                continue
+            if (
+                isinstance(target, ast.Name)
+                and isinstance(value, ast.Call)
+                and _context_call(value) == "mutate"
+            ):
+                names.add(target.id)
+    return names
+
+
+def _mentions(node: ast.AST, names: set[str]) -> bool:
+    return any(isinstance(inner, ast.Name) and inner.id in names for inner in ast.walk(node))
+
+
+def _truthiness_problems(tree: ast.Module, label: str) -> list[str]:
+    """`CommandResult` has no `__bool__` and is never None, so these tests are constant.
+
+    This is a type-shape check, not a judgement check: it does not care whether the
+    branch is right, only that the condition is not a constant.
+    """
+    names = _result_names(tree)
+    if not names:
+        return []
+    found: list[str] = []
+    for node in ast.walk(tree):
+        test: ast.expr | None = None
+        if isinstance(node, (ast.Assert, ast.If, ast.IfExp, ast.While)):
+            test = node.test
+        if test is None:
+            continue
+        candidate = test
+        if isinstance(candidate, ast.UnaryOp) and isinstance(candidate.op, ast.Not):
+            candidate = candidate.operand
+        line = getattr(node, "lineno", 0)
+        if isinstance(candidate, ast.Name) and candidate.id in names:
+            found.append(
+                f"{label}:{line} 条件直接用了 `{candidate.id}` 的真值；"
+                f"`{candidate.id}` 是 `CommandResult`（无 `__bool__`），该条件恒真/恒假。"
+                "改成 `.ok`/`.code` 判定"
             )
-    if not seen and require_sites:
-        problems.append("入口里没有 `ctx.mutate(...)` 站点；扫描会变成空转，先确认入口仍执行写命令")
-    used = {
-        f"{fn.name}:{ast.unparse(node)[:60]}"
-        for fn in functions
-        for node in _own_nodes(fn)
-        if isinstance(node, ast.Call)
-    }
-    for key in REGISTERED_UNAUDITED:
-        if key not in used:
-            print(f"::warning::REGISTERED_UNAUDITED 的登记 {key!r} 不再匹配任何站点，可以删除")
-    summary = f"mutating sites: {checked} judged, {registered} registered, {len(seen)} total"
-    return problems, summary
+        elif (
+            isinstance(candidate, ast.Compare)
+            and isinstance(candidate.left, ast.Name)
+            and candidate.left.id in names
+            and len(candidate.ops) == 1
+            and isinstance(candidate.ops[0], (ast.Is, ast.IsNot))
+            and isinstance(candidate.comparators[0], ast.Constant)
+            and candidate.comparators[0].value is None
+        ):
+            found.append(
+                f"{label}:{line} 用 `{candidate.left.id} is None` 判定 `CommandResult`；"
+                "它由 `ctx.mutate` 直接返回，永远不是 None，该条件恒为真/假。改用 `.ok`/`.code`"
+            )
+    return found
+
+
+def audit_evidence() -> list[str]:
+    """Every registration must point at something that exists."""
+    problems: list[str] = []
+    probe_cases = {row.case for row in PROBE_CASES}
+    for row in MUTATE_SITES:
+        if row.evidence.startswith("probe:"):
+            case = row.evidence.split(":", 1)[1]
+            if case not in probe_cases:
+                problems.append(
+                    f"MUTATE_SITES 的 `{row.key}` 指向不存在的 probe 用例 `{case}`；"
+                    "把它加到 PROBE_CASES，或改成存在的 tests/ci 用例"
+                )
+            continue
+        if not row.evidence.startswith("test:"):
+            problems.append(
+                f"MUTATE_SITES 的 `{row.key}` 证据 `{row.evidence}` 不是可核对的形态"
+                "（`test:<tests/ci 用例名>` 或 `probe:<case>`）"
+            )
+            continue
+        name = row.evidence.split(":", 1)[1]
+        if _find_test(name) is None:
+            problems.append(
+                f"MUTATE_SITES 的 `{row.key}` 指向不存在的 tests/ci 用例 `{name}`；"
+                "删测试必须同时改登记，否则「谁在守护」是空话"
+            )
+    return problems
+
+
+def _find_test(name: str) -> Path | None:
+    for path in sorted((ROOT / "tests/ci").glob("*.py")):
+        if f"def {name}(" in path.read_text(encoding="utf-8"):
+            return path
+    return None
+
+
+def selftest() -> list[str]:
+    problems: list[str] = []
+    for case in SELFTEST_CASES:
+        found = audit_sources(
+            case.source,
+            label=case.case,
+            baseline=case.baseline,
+            require_sites=case.require_sites,
+        )
+        actual_red = bool(found)
+        if actual_red != case.expect_red:
+            expected = "红" if case.expect_red else "绿"
+            problems.append(
+                f"自检用例 `{case.case}` 期望{expected}，"
+                f"实际{'红' if actual_red else '绿'}：{case.note}\n"
+                "自检语料是守卫自身的锚点；改规则时同步更新用例与文档表 SELFTEST_CASES"
+            )
+    return problems
+
+
+def run_sites(entry: Path) -> tuple[list[str], str]:
+    problems = check_anchor() + check_counts() + audit_evidence() + selftest()
+    problems += audit_sources(entry.read_text(encoding="utf-8"), label=entry.name)
+    return problems, f"sites: {len(MUTATE_SITES)} registered"
 
 
 # ---------------------------------------------------------------------------
@@ -486,17 +846,19 @@ def audit_sites(
 def _load_entry(entry: Path) -> ModuleType:
     spec = importlib.util.spec_from_file_location("reference_acceptance_under_test", entry)
     if spec is None or spec.loader is None:
-        raise AuditError(f"无法加载入口模块: {entry}")
+        raise SystemExit(f"::error::无法加载入口模块: {entry}")
     module = importlib.util.module_from_spec(spec)
-    # dataclasses resolve ``cls.__module__`` while the module is still executing
-    # (Python 3.14+), so the module must already be importable by name.
+    # dataclasses resolve ``cls.__module__`` while the module executes (3.14+).
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
 
-def _probe_checks(entry: Path) -> list[tuple[str, Callable[[], None]]]:
-    module = _load_entry(entry)
+def _probe_implementations(module: ModuleType) -> dict[str, Sequence[object]]:
+    """case -> (callable, expectations) implementations, matched by PROBE_CASES."""
+
+    def command_result(code: int, stdout: str) -> object:
+        return module.CommandResult(("x",), code, stdout, "")
 
     def migration_verify_behind() -> None:
         assert module.migration_verify("head", "old") is not None, "迁移落后必须判失败"
@@ -507,65 +869,47 @@ def _probe_checks(entry: Path) -> list[tuple[str, Callable[[], None]]]:
         assert module.migration_verify("head", "head\n") is None, "正好在 head 必须通过"
 
     def gate_verdict_ok() -> None:
-        result = module.CommandResult(
-            ("x",), 0, "job dispatch startup gate: OK\nok: db\npending: engine", ""
+        ok_lines, pending = module.gate_verdict(
+            command_result(0, "job dispatch startup gate: OK\nok: db\npending: engine")
         )
-        ok_lines, pending = module.gate_verdict(result)
         assert ok_lines == ["db"], ok_lines
         assert pending == ["engine"], pending
 
     def gate_verdict_fail() -> None:
-        failed = module.CommandResult(("x",), 0, "job dispatch startup gate: OK\nFAIL: broken", "")
         try:
-            module.gate_verdict(failed)
+            module.gate_verdict(command_result(0, "job dispatch startup gate: OK\nFAIL: broken"))
         except module.StepFailureError:
-            pass
-        else:
-            raise AssertionError("FAIL 行必须判失败")
+            return
+        raise AssertionError("FAIL 行必须判失败")
 
-    def gate_verdict_nonzero_exit() -> None:
-        nonzero = module.CommandResult(("x",), 1, "job dispatch startup gate: OK", "")
+    def gate_verdict_exit() -> None:
         try:
-            module.gate_verdict(nonzero)
+            module.gate_verdict(command_result(1, "job dispatch startup gate: OK"))
         except module.StepFailureError:
-            pass
-        else:
-            raise AssertionError("闸门退出码非零时不能读成通过")
+            return
+        raise AssertionError("闸门退出码非零时不能读成通过")
 
-    def gate_fail_beats_ok() -> None:
-        both = module.CommandResult(("x",), 0, "job dispatch startup gate: OK\nFAIL: nope", "")
+    def gate_verdict_fail_wins() -> None:
         try:
-            module.gate_verdict(both)
+            module.gate_verdict(command_result(0, "job dispatch startup gate: OK\nFAIL: nope"))
         except module.StepFailureError:
-            pass
-        else:
-            raise AssertionError("FAIL 行与 OK 行同时出现时必须判失败")
+            return
+        raise AssertionError("FAIL 行与 OK 行同时出现时必须判失败")
 
-    def env_gaps_detects_blanks() -> None:
+    def env_gaps() -> None:
         assert module.env_gaps({"A": " ", "B": "x"}, ["A", "B"]) == ["A"]
         assert module.env_gaps({"A": "x"}, ["A"]) == []
 
-    def dsn_identity_rejects() -> None:
+    def dsn_identity() -> None:
         assert module.parse_dsn("mysql://u:p@h/db") is None
-        assert module.parse_dsn("u:p@h/db") is None
         assert module.parse_dsn("postgresql://u:p@h:5432/db") == ("u", "p", "h:5432")
-        context = module.Context(
-            env={},
-            env_file=entry.parent / "unused.env",
-            compose_file=entry.parent / "unused.yaml",
-            project="probe",
-            runner=module.Runner(),
-            dry_run=True,
-            gate_mode="compose",
-        )
         try:
-            module.dsn_identity(context.env, "MISSING_DSN", consumer="probe")
+            module.dsn_identity({}, "MISSING_DSN", consumer="probe")
         except module.StepFailureError:
-            pass
-        else:
-            raise AssertionError("空 DSN 必须判失败")
+            return
+        raise AssertionError("空 DSN 必须判失败")
 
-    def migration_graph_single_head() -> None:
+    def migration_heads() -> None:
         with tempfile.TemporaryDirectory(prefix="probe-migrations-") as directory:
             versions = Path(directory)
             (versions / "a.py").write_text(
@@ -582,55 +926,215 @@ def _probe_checks(entry: Path) -> list[tuple[str, Callable[[], None]]]:
             try:
                 module.migration_heads(versions)
             except module.StepFailureError:
-                pass
-            else:
-                raise AssertionError("两个 head 必须判失败")
+                return
+            raise AssertionError("两个 head 必须判失败")
 
-    def bucket_names_derives() -> None:
-        context = types.SimpleNamespace(
-            env={
-                "SPEECHNEXUS_OBJECT_STORAGE_BUCKET": "same",
-                "SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET": "same",
-            }
-        )
-        assert module.bucket_names(context) == ["same"]
-        empty = types.SimpleNamespace(env={})
-        try:
-            module.bucket_names(empty)
-        except module.StepFailureError:
-            pass
-        else:
-            raise AssertionError("三个桶名键全空必须判失败")
-
-    return [
-        ("migration_verify", migration_verify_behind),
-        ("gate_verdict_ok", gate_verdict_ok),
-        ("gate_verdict_fail", gate_verdict_fail),
-        ("gate_verdict_nonzero_exit", gate_verdict_nonzero_exit),
-        ("gate_fail_beats_ok", gate_fail_beats_ok),
-        ("env_gaps", env_gaps_detects_blanks),
-        ("dsn_identity", dsn_identity_rejects),
-        ("migration_heads", migration_graph_single_head),
-        ("bucket_names", bucket_names_derives),
-    ]
-
-
-def probe(entry: Path) -> tuple[list[str], str]:
-    problems: list[str] = []
-    ran = 0
-    for name, check in _probe_checks(entry):
-        try:
-            check()
-        except AssertionError as error:
-            location = entry if entry.is_relative_to(ROOT) else entry.name
-            problems.append(
-                f"probe {name}: {error}\n"
-                f"该判定函数被掏空或判据反转（入口: {location}）；修好后重跑该步骤。"
+    def bucket_names() -> None:
+        assert module.bucket_names(
+            types.SimpleNamespace(
+                env={
+                    "SPEECHNEXUS_OBJECT_STORAGE_BUCKET": "same",
+                    "SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET": "same",
+                }
             )
-        except Exception as error:
-            problems.append(f"probe {name}: {type(error).__name__}: {error}")
-        ran += 1
-    return problems, f"probe checks: {ran - len(problems)}/{ran} passed"
+        ) == ["same"], "同名桶必须去重成一条"
+        try:
+            module.bucket_names(types.SimpleNamespace(env={}))
+        except module.StepFailureError:
+            return
+        raise AssertionError("三个桶名键全空必须判失败")
+
+    return {
+        "migration_verify-behind": (migration_verify_behind, ()),
+        "gate_verdict-ok": (gate_verdict_ok, ()),
+        "gate_verdict-fail": (gate_verdict_fail, ()),
+        "gate_verdict-exit": (gate_verdict_exit, ()),
+        "gate_verdict-fail-wins": (gate_verdict_fail_wins, ()),
+        "env_gaps": (env_gaps, ()),
+        "dsn_identity": (dsn_identity, ()),
+        "migration_heads": (migration_heads, ()),
+        "bucket_names": (bucket_names, ()),
+    }
+
+
+def _function_raises(entry: Path, name: str) -> bool:
+    tree = ast.parse(entry.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
+            return any(isinstance(inner, ast.Raise) for inner in ast.walk(node))
+    return False
+
+
+def run_probe(entry: Path) -> tuple[list[str], str]:
+    problems = check_anchor()
+    module = _load_entry(entry)
+    implementations = _probe_implementations(module)
+    declared = {row.case: row for row in PROBE_CASES}
+    for case in sorted(set(declared) - set(implementations)):
+        problems.append(f"PROBE_CASES 登记了 `{case}` 但没有实现；删实现要同时删登记与文档表")
+    for case in sorted(set(implementations) - set(declared)):
+        problems.append(
+            f"probe 实现 `{case}` 不在 PROBE_CASES 里登记；新增用例必须同时登记（含文档表）"
+        )
+    for case, row in declared.items():
+        if case not in implementations:
+            continue
+        if not hasattr(module, row.function):
+            problems.append(
+                f"probe `{case}` 找不到入口函数 `{row.function}`；入口改名/删除后要同步 "
+                "PROBE_CASES 与文档表，再确认语义由谁守护"
+            )
+            continue
+        if row.must_raise and not _function_raises(entry, row.function):
+            problems.append(
+                f"PROBE_CASES 登记的判定函数 `{row.function}` 声明用 `raise` 拒绝失败输入，"
+                "但函数体已经不含任何 `raise`；判据可能被换成了静默返回"
+            )
+        implementation = implementations[case][0]
+        try:
+            implementation()  # type: ignore[operator]
+        except AssertionError as error:
+            reason = str(error) or row.expectation
+            problems.append(
+                f"probe `{case}` 失败: {reason}\n"
+                f"该函数（{row.function}）不再拒绝必须失败的输入；先确认这是缺陷再改 probe"
+            )
+        except TypeError as error:
+            problems.append(
+                f"probe `{case}` 与入口签名不匹配: {error}\n"
+                f"签名变化时同步 probe 用例、PROBE_CASES 与文档表（`{row.function}`）"
+            )
+    return problems, f"probe: {len(declared)} cases"
+
+
+# ---------------------------------------------------------------------------
+# Workflow wiring (`wiring`)
+# ---------------------------------------------------------------------------
+
+_JOB_HEADER = "  reference_acceptance:"
+_STEP_PREFIX = "      - name: "
+
+
+def _job_block(workflow: str) -> str:
+    lines = workflow.splitlines()
+    try:
+        start = next(index for index, line in enumerate(lines) if line.rstrip() == _JOB_HEADER)
+    except StopIteration:
+        return ""
+    for index in range(start + 1, len(lines)):
+        line = lines[index]
+        if re.match(r"^  [a-zA-Z_][\w-]*:\s*$", line):
+            return "\n".join(lines[start:index])
+    return "\n".join(lines[start:])
+
+
+def _step_blocks(job: str) -> list[tuple[str, str]]:
+    blocks: list[tuple[str, str]] = []
+    current_name: str | None = None
+    current: list[str] = []
+    for line in job.splitlines():
+        if line.startswith(_STEP_PREFIX):
+            if current_name is not None:
+                blocks.append((current_name, "\n".join(current)))
+            current_name = line[len(_STEP_PREFIX) :].strip().strip('"')
+            current = []
+            continue
+        if current_name is not None:
+            current.append(line)
+    if current_name is not None:
+        blocks.append((current_name, "\n".join(current)))
+    return blocks
+
+
+def _run_scripts(step: str) -> list[str]:
+    scripts: list[str] = []
+    lines = step.splitlines()
+    index = 0
+    while index < len(lines):
+        if re.match(r"^        run: \|\s*$", lines[index]):
+            body: list[str] = []
+            index += 1
+            while index < len(lines):
+                line = lines[index]
+                if line.strip() and not line.startswith("          "):
+                    break
+                body.append(line[10:] if line.startswith("          ") else "")
+                index += 1
+            scripts.append("\n".join(body).strip("\n"))
+            continue
+        index += 1
+    return scripts
+
+
+def _first_command(script: str) -> str:
+    for line in script.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        return stripped
+    return ""
+
+
+def run_wiring(workflow_path: Path) -> tuple[list[str], str]:
+    problems = check_anchor() + check_counts()
+    job = _job_block(workflow_path.read_text(encoding="utf-8"))
+    if not job:
+        return [
+            f"`{workflow_path.relative_to(ROOT)}` 里找不到 `{_JOB_HEADER.strip()}` 作业"
+        ], "wiring: 0"
+    if "timeout-minutes: 5" not in job:
+        problems.append("reference_acceptance 作业缺少 `timeout-minutes: 5` 上限")
+    steps = _step_blocks(job)
+    guard_invocations: dict[str, str] = {}
+    for name, step in steps:
+        for script in _run_scripts(step):
+            first = _first_command(script)
+            commands = [
+                line.strip()
+                for line in script.splitlines()
+                if "ci-entry-guard.py" in line and not line.strip().startswith("#")
+            ]
+            executed: list[str] = []
+            for line in commands:
+                for candidate in ("sites", "probe", "log", "wiring"):
+                    if f"ci-entry-guard.py {candidate}" in line:
+                        executed.append(candidate)
+            for command in executed:
+                if not first.startswith("python3 scripts/dev-env/ci-entry-guard.py"):
+                    problems.append(
+                        f"步骤 `{name}` 的 `{command}` 被 `echo` 或别的命令包住，"
+                        "不是该步骤的第一条命令（只有第一条命令会被 "
+                        "`bash -euo pipefail` 按守卫执行）"
+                    )
+                elif f"ci-entry-guard.py {command}" not in first:
+                    problems.append(
+                        f"步骤 `{name}` 里 `{command}` 不是该步骤的第一条命令；"
+                        "只有第一条命令会被 `bash -euo pipefail` 按守卫执行，"
+                        "`echo` 提到命令不算执行"
+                    )
+                if command in guard_invocations:
+                    problems.append(
+                        f"子命令 `{command}` 在步骤 `{name}` 与 "
+                        f"`{guard_invocations[command]}` 重复执行"
+                    )
+                guard_invocations[command] = name
+    expected = {"sites": "", "probe": "", "log": "", "wiring": ""}
+    for command in expected:
+        if command not in guard_invocations:
+            problems.append(
+                f"作业没有以第一条命令执行 `ci-entry-guard.py {command}`；"
+                "四条守卫子命令都必须真实执行（缺一条就等于关掉一类结构检查）"
+            )
+    control = dict(steps).get("Reject a corrupted environment instead of passing quietly", "")
+    if not control:
+        problems.append(
+            "缺少负对照步骤 `Reject a corrupted environment instead of passing quietly`"
+        )
+    else:
+        for marker in ("reference-acceptance.py --dry-run --env-file", "FAIL step=tools"):
+            if marker not in control:
+                problems.append(f"负对照步骤缺少 `{marker}`")
+    return problems, f"wiring: {len(guard_invocations)} guard steps"
 
 
 # ---------------------------------------------------------------------------
@@ -638,37 +1142,53 @@ def probe(entry: Path) -> tuple[list[str], str]:
 # ---------------------------------------------------------------------------
 
 _STEP_LINE = re.compile(r"^\[(\d+)/(\d+)\] (\w+) — ", re.MULTILINE)
-_HEADER = re.compile(r"^steps=(\d+) order=([a-z_, ]+) mode=dry-run gate=(\w+)$", re.MULTILINE)
+_HEADER = re.compile(
+    r"^steps=(\d+) order=([\w, ]+) mode=(dry-run|apply) gate=(compose|direct)$", re.MULTILINE
+)
 _CONCLUSION = re.compile(r"^\s+结论: (PLAN|PASS|FAIL) — ", re.MULTILINE)
-_RECORDS = re.compile(r"^步骤记录: (.+)$", re.MULTILINE)
 _DEFERRAL = re.compile(r"^\s+待输入: (.+)$", re.MULTILINE)
+_RECORDS = re.compile(r"^步骤记录: (.+)$", re.MULTILINE)
 _VERDICT = re.compile(r"^reference acceptance: (DRY-RUN PASS|PASS|FAIL)[^\n]*$", re.MULTILINE)
 _PENDING_COUNT = re.compile(r"pending=(\d+)")
 
 
-def check_log(log: Path, step_order: Sequence[str]) -> tuple[list[str], str]:
+def _deferral_matches(deferred: str) -> list[str]:
+    folded = deferred.casefold()
+    return [
+        row.slug
+        for row in DECLARED_DEFERRALS
+        if all(word.casefold() in folded for word in row.words)
+        and not any(word.casefold() in folded for word in row.exclude)
+    ]
+
+
+def check_log(
+    log: Path, step_order: Sequence[str], *, expect_mode: str = "dry-run"
+) -> tuple[list[str], str]:
     text = log.read_text(encoding="utf-8")
     problems: list[str] = []
     header = _HEADER.search(text)
     if header is None:
         problems.append(
-            "缺少机器可读首行 `steps=<N> order=<csv> mode=dry-run gate=<mode>`；"
-            f"契约见 {CONTRACT_DOC}（机器可读输出）。"
+            "缺少机器可读首行 `steps=<N> order=<csv> mode=<dry-run|apply> gate=<mode>`；"
+            "契约见 docs/operations/reference-acceptance.md 的「机器可读输出（CI 契约）」"
         )
     else:
         declared = [name.strip() for name in header.group(2).split(",")]
         if declared != list(step_order):
             problems.append(
                 f"首行 order={declared} 与契约 {list(step_order)} 不一致；"
-                f"同步 {CONTRACT_DOC} 的步骤顺序与 ci-entry-guard.py 的 EXPECTED_STEP_ORDER。"
+                "同步文档的步骤顺序与 ci-entry-guard.py 的 EXPECTED_STEP_ORDER"
             )
         if int(header.group(1)) != len(step_order):
             problems.append(f"首行 steps={header.group(1)} 与契约步骤数 {len(step_order)} 不一致")
+        if header.group(3) != expect_mode:
+            problems.append(f"首行 mode={header.group(3)} 与本次检查的 {expect_mode} 不一致")
     seen = [match.group(3) for match in _STEP_LINE.finditer(text)]
     if seen != list(step_order):
         problems.append(
             f"步骤行序列 {seen} 与契约 {list(step_order)} 不一致；"
-            f"契约见 {CONTRACT_DOC}（`[i/N] <ident> — <title>` 首行）。"
+            "契约是 `[i/N] <ident> — <title>` 首行"
         )
     totals = {int(match.group(2)) for match in _STEP_LINE.finditer(text)}
     if totals and totals != {len(step_order)}:
@@ -680,15 +1200,16 @@ def check_log(log: Path, step_order: Sequence[str]) -> tuple[list[str], str]:
         problems.append(
             f"只有 {len(conclusions)} 条 `结论:` 行，契约要求每步一条（{len(step_order)}）"
         )
-    claimed = sorted({outcome for outcome in conclusions if outcome != "PLAN"})
-    if claimed:
-        problems.append(
-            f"dry-run 的步骤结论必须是 PLAN，实际出现 {claimed}；"
-            "dry-run 不执行写命令，声明 PASS 即虚报"
-        )
+    if expect_mode == "dry-run":
+        claimed = sorted({outcome for outcome in conclusions if outcome != "PLAN"})
+        if claimed:
+            problems.append(
+                f"dry-run 的步骤结论必须是 PLAN，实际出现 {claimed}；"
+                "dry-run 不执行写命令，声明 PASS 即虚报"
+            )
     records = _RECORDS.search(text)
     if records is None:
-        problems.append(f"缺少 `步骤记录: <ident>=<outcome>` 行；契约见 {CONTRACT_DOC}")
+        problems.append("缺少 `步骤记录: <ident>=<outcome>` 行")
     else:
         pairs = [item.split("=", 1) for item in records.group(1).split() if "=" in item]
         recorded = [(ident, outcome) for ident, outcome in pairs]
@@ -708,49 +1229,44 @@ def check_log(log: Path, step_order: Sequence[str]) -> tuple[list[str], str]:
     unregistered: list[str] = []
     ambiguous: list[str] = []
     for deferred in deferrals:
-        matches = [
-            slug
-            for slug, words in DECLARED_DEFERRALS.items()
-            if all(word.casefold() in deferred.casefold() for word in words)
-        ]
+        matches = _deferral_matches(deferred)
         if not matches:
             unregistered.append(deferred)
         elif len(matches) > 1:
             ambiguous.append(f"{deferred} -> {matches}")
     if ambiguous:
         problems.append(
-            "一条延后项同时匹配多个登记，无法判断是哪一条；给相关登记补一个区分词（不是整句）：\n- "
-            + "\n- ".join(ambiguous)
-            + f"\n{_registration_hint('DECLARED_DEFERRALS')}"
+            "一条延后项同时匹配多个登记；给相关登记补区分词或 exclude"
+            "（登记表见文档块 DECLARED_DEFERRALS）"
         )
     if unregistered:
-        registered = "\n".join(
-            f"- {slug} 需要同时出现这些词: {list(words)}"
-            for slug, words in DECLARED_DEFERRALS.items()
+        declared_rows = "\n".join(
+            f"- `{deferral.slug}`: 必须同时出现 {list(deferral.words)}，"
+            f"且不含 {list(deferral.exclude) or '（无排除词）'}"
+            for deferral in DECLARED_DEFERRALS
         )
         problems.append(
             "未登记的延后项（新延后输入必须登记，不能静默放宽 PASS 的含义）：\n- "
             + "\n- ".join(unregistered)
-            + f"\n已登记:\n{registered}"
-            + f"\n{_registration_hint('DECLARED_DEFERRALS')}\n"
-            + '登记行: DECLARED_DEFERRALS["<slug>"] = ("<词1>", "<词2>")  # 只放稳定词，不放整句\n'
-            + f"契约: {CONTRACT_DOC}"
+            + f"\n已登记:\n{declared_rows}\n"
+            + _hint(str(SELF.relative_to(ROOT)), "DECLARED_DEFERRALS", "一行登记 + 稳定词 + 排除词")
         )
     verdict = _VERDICT.search(text)
     if verdict is None:
-        problems.append(
-            f"缺少结论行 `reference acceptance: DRY-RUN PASS steps=N`；契约见 {CONTRACT_DOC}"
-        )
+        problems.append("缺少结论行 `reference acceptance: DRY-RUN PASS steps=N`")
     else:
-        if verdict.group(1) != "DRY-RUN PASS":
-            problems.append(f"dry-run 结论必须是 `DRY-RUN PASS`，实际 `{verdict.group(1)}`")
+        expected_verdict = "DRY-RUN PASS" if expect_mode == "dry-run" else "PASS"
+        if verdict.group(1) != expected_verdict:
+            problems.append(
+                f"{expect_mode} 结论必须是 `{expected_verdict}`，实际 `{verdict.group(1)}`"
+            )
         counted = _PENDING_COUNT.search(verdict.group(0))
         pending_total = int(counted.group(1)) if counted else 0
         if pending_total != len(deferrals):
             problems.append(
                 f"结论行 pending={pending_total} 与日志中 {len(deferrals)} 条 `待输入:` 不一致"
             )
-    return problems, f"deferrals: {len(deferrals)}"
+    return problems, f"log: {len(deferrals)} deferrals"
 
 
 # ---------------------------------------------------------------------------
@@ -758,50 +1274,71 @@ def check_log(log: Path, step_order: Sequence[str]) -> tuple[list[str], str]:
 # ---------------------------------------------------------------------------
 
 
-def _entry_order(entry: Path) -> list[str]:
+def _run_step_order(entry: Path) -> list[str]:
     module = _load_entry(entry)
-    steps = module.STEPS
-    return [step.ident for step in steps]
+    return [step.ident for step in module.STEPS]
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Guard the reference-acceptance entry point from CI"
+        description="Structure guard for the reference-acceptance entry"
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    sites_parser = subparsers.add_parser(
-        "sites", help="audit mutate judgement and read-only boundary"
-    )
-    sites_parser.add_argument("--entry", type=Path, default=ENTRY_DEFAULT)
-    sites_parser.add_argument("--search-root", type=Path, default=ROOT)
+    sites = subparsers.add_parser("sites", help="mutating sites, read-only argv, registries")
+    sites.add_argument("--entry", type=Path, default=ENTRY_DEFAULT)
 
-    probe_parser = subparsers.add_parser(
-        "probe", help="exercise the entry's pure judgement functions"
-    )
+    probe_parser = subparsers.add_parser("probe", help="exercise registered judgement functions")
     probe_parser.add_argument("--entry", type=Path, default=ENTRY_DEFAULT)
 
     log_parser = subparsers.add_parser("log", help="verify the documented dry-run output contract")
     log_parser.add_argument("--log", type=Path, required=True)
     log_parser.add_argument("--entry", type=Path, default=ENTRY_DEFAULT)
+    log_parser.add_argument(
+        "--expect-mode",
+        choices=("dry-run", "apply"),
+        default="dry-run",
+        help="日志来自哪种运行；合同格式两种都要能解析",
+    )
+
+    wiring = subparsers.add_parser("wiring", help="verify the workflow still runs every guard")
+    wiring.add_argument("--workflow", type=Path, default=WORKFLOW_DEFAULT)
+
+    tables = subparsers.add_parser("tables", help="print or write the registered tables")
+    tables.add_argument(
+        "--write", action="store_true", help="rewrite the documentation anchor block"
+    )
+    tables.add_argument("--doc", type=Path, default=CONTRACT_DOC)
 
     arguments = parser.parse_args(argv)
     try:
         if arguments.command == "sites":
-            problems, summary = audit_sites(arguments.entry, arguments.search_root)
+            problems, summary = run_sites(arguments.entry)
         elif arguments.command == "probe":
-            problems, summary = probe(arguments.entry)
+            problems, summary = run_probe(arguments.entry)
+        elif arguments.command == "wiring":
+            problems, summary = run_wiring(arguments.workflow)
+        elif arguments.command == "tables":
+            if arguments.write:
+                write_anchor(arguments.doc)
+                print(f"tables: 已写入 {_display(arguments.doc)}")
+                return 0
+            print(render_tables())
+            return 0
         else:
-            order = _entry_order(arguments.entry)
+            order = _run_step_order(arguments.entry)
             if order != list(EXPECTED_STEP_ORDER):
                 problems = [
                     f"入口 STEPS 顺序 {order} 与契约 {list(EXPECTED_STEP_ORDER)} 不一致；"
-                    f"同步 {CONTRACT_DOC} 与 ci-entry-guard.py 的 EXPECTED_STEP_ORDER。"
+                    "同步文档的步骤顺序与 EXPECTED_STEP_ORDER"
                 ]
-                summary = "step order: mismatch"
+                summary = "log: step order mismatch"
             else:
-                problems, summary = check_log(arguments.log, EXPECTED_STEP_ORDER)
-    except AuditError as error:
+                log_problems, summary = check_log(
+                    arguments.log, EXPECTED_STEP_ORDER, expect_mode=arguments.expect_mode
+                )
+                problems = check_anchor() + check_counts() + log_problems
+    except SystemExit as error:
         print(f"::error::{error}")
         return 1
     except Exception as error:

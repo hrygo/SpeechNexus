@@ -136,6 +136,37 @@ class ImageWorkflowTests(unittest.TestCase):
                 actual = execute(FINAL_GATE, {**base, "ACCEPTANCE_RESULT": result})
                 self.assertEqual(actual.returncode == 0, result == "skipped", actual.stderr)
 
+    def test_web_scope_expects_python_and_web_success_and_skips_the_rest(self) -> None:
+        # The `web` branch of the final gate is a truth table of its own: Python and
+        # Web must succeed, PG/InnoDB, delivery and the acceptance entry must be
+        # skipped. Mirroring it here keeps tests/ci as strong as tests/contract,
+        # which already asserts it.
+        base = {
+            "MODE": "web",
+            "ROUTING_RESULT": "success",
+            "DELIVERY_RESULT": "success",
+            "CONTROLLER_RESULT": "success",
+            "CONTROLLER_REQUIRED": "false",
+            "CHECKS_RESULT": "success",
+            "COORDINATION_RESULT": "skipped",
+            "WEB_RESULT": "success",
+            "DEPLOYMENT_RESULT": "skipped",
+            "ACCEPTANCE_RESULT": "skipped",
+        }
+        actual = execute(FINAL_GATE, base)
+        self.assertEqual(actual.returncode, 0, actual.stdout + actual.stderr)
+        wrong = {
+            "CHECKS_RESULT": "skipped",
+            "COORDINATION_RESULT": "success",
+            "WEB_RESULT": "skipped",
+            "DEPLOYMENT_RESULT": "success",
+            "ACCEPTANCE_RESULT": "success",
+        }
+        for name, value in wrong.items():
+            with self.subTest(lane=name):
+                actual = execute(FINAL_GATE, {**base, name: value})
+                self.assertNotEqual(actual.returncode, 0, f"{name}={value} 必须让门禁失败")
+
     def test_final_gate_rejects_a_skipped_entry_where_the_scope_runs_it(self) -> None:
         # The acceptance entry runs for full/no-db scopes; a skip there means the
         # operator entry point was not executed, so it cannot satisfy the gate.

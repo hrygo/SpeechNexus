@@ -1163,6 +1163,8 @@ def _binding_sites(node: ast.AST) -> list[tuple[str, str]]:
         return [("declaration", name) for name in node.names]
     if isinstance(node, ast.Delete):
         return [("delete", name) for target in node.targets for name in _target_names(target)]
+    if isinstance(node, ast.TypeAlias):
+        return [("type-alias", node.name.id)]
     if isinstance(node, ast.MatchAs) and node.name:
         return [("match-target", node.name)]
     if isinstance(node, ast.MatchStar) and node.name:
@@ -1835,8 +1837,10 @@ GUARD_PRELUDE = re.compile(r"^(set|export|cd|umask|unset|:)(\s|$)")
 # `: > file` truncates a file at once, `: $(rm -rf …)` runs the command, and
 # `export FOO=<(rm -rf …)` runs it in a subshell — so a line carrying any of these
 # operators is not a prelude. The same limit covers `set`/`export`/`cd`/`umask`/`unset`,
-# which could already carry `$(…)` and `&&` before this rule existed.
-PRELUDE_SHELL_OPERATORS = (">", "<", "|", ";", "&", "$(", "`")
+# which could already carry `$(…)` and `&&` before this rule existed. A trailing
+# backslash is here for the opposite reason: it joins the *next* line into this one, so
+# `: \` swallows the guard command itself into the no-op and the guard never runs.
+PRELUDE_SHELL_OPERATORS = (">", "<", "|", ";", "&", "$(", "`", "\\")
 
 
 def _is_guard_prelude(line: str) -> bool:
@@ -1855,8 +1859,63 @@ def _executed_lines(script: str) -> list[str]:
     ]
 
 
-_RUNS_ON = re.compile(r"^    runs-on: (.+)$")
+_RUNS_ON = re.compile(r"^    runs-on:(.*)$")
+_RUNS_ON_ITEM = re.compile(r"^ {4,}-[ \t]+(.+?)[ \t]*$")
 _JOB_LINE = re.compile(r"^  ([a-zA-Z_][\w-]*):\s*$")
+
+
+def _runs_on_elements(value: str) -> list[str]:
+    """The runner images one inline `runs-on` value names.
+
+    `runs-on` is a scalar (`ubuntu-24.04`) or an inline sequence (`[ubuntu-24.04]`);
+    both name the same image, so both are read the same way.
+    """
+    stripped = value.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        return [element.strip() for element in stripped[1:-1].split(",") if element.strip()]
+    return [stripped]
+
+
+def _runs_on_declarations(workflow: str) -> list[tuple[str, str]]:
+    """(job, image) for every runner image the workflow's `runs-on` keys name.
+
+    YAML spells one `runs-on` three ways: a scalar on the key's line, an inline
+    sequence on the key's line, or a block sequence on the lines after it. Reading
+    only the scalar form left a job on another runner out of `runners` entirely, so
+    the same semantics were green as a block sequence and red as an inline one — the
+    opposite verdicts this check exists to prevent.
+    """
+    declarations: list[tuple[str, str]] = []
+    job = ""
+    lines = workflow.splitlines()
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        index += 1
+        header = _JOB_LINE.match(line)
+        if header:
+            job = header.group(1)
+            continue
+        runs_on = _RUNS_ON.match(line)
+        if not runs_on or not job:
+            continue
+        value = runs_on.group(1).strip()
+        if value:
+            declarations.extend((job, element) for element in _runs_on_elements(value))
+            continue
+        items = 0
+        while index < len(lines):
+            item = _RUNS_ON_ITEM.match(lines[index])
+            if not item:
+                break
+            index += 1
+            items += 1
+            declarations.append((job, item.group(1)))
+        if not items:
+            # An empty `runs-on` names no image; recording it keeps the job in the
+            # checked set instead of skipping it silently.
+            declarations.append((job, ""))
+    return declarations
 
 
 def check_platform_runner(workflow: str) -> list[str]:
@@ -1868,16 +1927,7 @@ def check_platform_runner(workflow: str) -> list[str]:
     `wiring` checks it against the workflow: a job added on another runner image would
     make every platform condition wrong for that job while the guard stayed green.
     """
-    runners: list[tuple[str, str]] = []
-    job = ""
-    for line in workflow.splitlines():
-        header = _JOB_LINE.match(line)
-        if header:
-            job = header.group(1)
-            continue
-        runs_on = _RUNS_ON.match(line)
-        if runs_on and job:
-            runners.append((job, runs_on.group(1).strip()))
+    runners = _runs_on_declarations(workflow)
     if not runners:
         return [
             "workflow 里没有任何 `runs-on`；平台条件按写死的 "
@@ -1928,9 +1978,9 @@ def run_wiring(workflow_path: Path) -> tuple[list[str], str]:
                             problems.append(
                                 f"步骤 `{name}` 里 `{candidate}` 前面还有会先执行的命令 "
                                 f"`{earlier[0][:70]}`；只有 `set`/`export`/`cd`/`umask`/`unset`/"
-                                "`: ` 这类**不含** `>`/`<`/`|`/`;`/`&`/`$(`/反引号 的环境前置可以"
-                                "出现在守卫命令之前（重定向、管道、命令链、命令替换、进程替换"
-                                "都会先执行）"
+                                "`: ` 这类**不含** `>`/`<`/`|`/`;`/`&`/`$(`/反引号/反斜杠续行 "
+                                "的环境前置可以出现在守卫命令之前（重定向、管道、命令链、"
+                                "命令替换、进程替换会先执行，续行会把下一行并进这一行）"
                             )
                     if candidate in guard_invocations:
                         problems.append(

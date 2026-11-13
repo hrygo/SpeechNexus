@@ -8,12 +8,22 @@ post-claim grants, the migration head or the two Job buckets.
 
 This module parses text only, like the other ``tests/ci`` guards. It runs under
 the system interpreter and never imports the backend, builds an image, connects
-to PostgreSQL or starts a container. Three mutations are meant to turn it red:
+to PostgreSQL or starts a container. Mutations that must turn it red:
 
 - removing the execution-result bucket from ``deploy/init-object-storage.py``;
 - removing the result-bucket probe from ``deploy/job-startup-gate.py`` or
   unwiring the gate from the dispatcher entrypoint;
-- dropping a grant group from the provisioning path or from its documentation.
+- dropping a grant group for one role from the provisioning path (the call is
+  matched per role, so a group that survives only on another role is red) or
+  from its documentation;
+- dropping a workspace member's source ``COPY`` line (the guard requires the
+  metadata and the source line, not just one occurrence of the member name).
+
+The behaviour that cannot be proven from text - every check runs, a failure
+exits 1, a failure never ``exec``s and a clean run does - is proven by
+``tests/unit/test_job_startup_gate.py``, which calls ``main()`` with injected
+collaborators. The text guard here only requires that the wiring it can see still
+exists and that the exit happens after the failure branch.
 """
 
 from __future__ import annotations
@@ -75,18 +85,29 @@ def workspace_members() -> list[str]:
 class ReferenceDeployBuildTests(unittest.TestCase):
     def test_the_python_image_copies_every_uv_workspace_member(self) -> None:
         # The image runs `uv sync --all-packages`, which resolves every workspace
-        # member; a member the Dockerfile does not COPY makes the whole reference
-        # deployment fail with "Distribution not found", before any service starts.
+        # member. A member whose metadata is missing fails the build; a member whose
+        # src is missing still builds (an empty wheel) and then fails at import, so
+        # both COPY lines are required, not just one occurrence of the name.
         dockerfile = read(PYTHON_IMAGE)
-        missing = [
-            member
-            for member in workspace_members()
-            if f"COPY {member}/" not in dockerfile and f" {member} " not in dockerfile
-        ]
+        missing = []
+        for member in workspace_members():
+            metadata = re.search(
+                rf"(?m)^COPY [^\n]*\b{re.escape(member)}/(pyproject\.toml|README\.md)\b",
+                dockerfile,
+            )
+            sources = re.search(
+                rf"(?m)^COPY [^\n]*\b{re.escape(member)}/src\b",
+                dockerfile,
+            )
+            if metadata is None:
+                missing.append(f"{member}: metadata COPY")
+            if sources is None:
+                missing.append(f"{member}: src COPY")
         self.assertEqual(
             missing,
             [],
-            f"deploy/images/python.Dockerfile must COPY every uv workspace member: {missing}",
+            "deploy/images/python.Dockerfile must COPY every uv workspace member's "
+            f"metadata and src: {missing}",
         )
 
 
@@ -148,9 +169,35 @@ class DispatcherStartupGateTests(unittest.TestCase):
         self.assertIn("client.bucket_exists(bucket.name)", gate)
         self.assertIn("client.get_bucket_versioning(bucket.name)", gate)
         self.assertIn("versioning.status != ENABLED", gate)
-        self.assertIn("os.execvp(command[0], command)", gate)
+
+    def test_the_gate_execs_only_after_the_failure_branch(self) -> None:
+        # The exact ordering is proven behaviourally by
+        # tests/unit/test_job_startup_gate.py; a text guard can at least prove the
+        # exec is delegated to the injected callable and sits after `if failures:`.
+        gate = read(GATE)
+        self.assertIn("execute: Callable[[str, Sequence[str]], Any]", gate)
+        self.assertIn("execute(command[0], command)", gate)
+        self.assertNotIn("os.execvp(command[0], command)", gate)
+        failure_branch = gate.index("if failures:")
+        exec_call = gate.index("execute(command[0], command)")
+        self.assertLess(failure_branch, exec_call)
+        self.assertIn("return 1", gate[failure_branch:exec_call])
+
+    def test_the_gate_rejects_a_lane_the_bootstrap_does_not_assemble(self) -> None:
+        # A kind inside the dispatchable union but outside the assembled lanes used
+        # to be a `pending` line; the worker then claimed it and failed after claim.
+        gate = read(GATE)
+        self.assertIn("def gateway_lane_findings(", gate)
+        self.assertIn("DISPATCHABLE_JOB_KIND_UNION", gate)
+        self.assertIn("assembles no gateway lane", gate)
+        self.assertNotIn("is not assembled by this bootstrap; its result_bucket", gate)
+        self.assertIn("GATEWAY_CONFIGS", gate)
+        self.assertIn('"asr": "gateway-file-asr.json"', gate)
+        self.assertIn('"tts": "gateway-file-tts.json"', gate)
 
     def test_the_gate_covers_the_post_claim_write_columns(self) -> None:
+        # Every relation the dispatcher writes after a claim must be named: the Job
+        # transition, the result Artifact publication and the capacity release.
         gate = read(GATE)
         self.assertIn("has_column_privilege", gate)
         for table in (
@@ -158,11 +205,25 @@ class DispatcherStartupGateTests(unittest.TestCase):
             "coordination_jobs",
             "speech_job_events",
             "speech_job_cancellation_not_submitted",
+            "speech_artifacts",
+            "admission_leases",
+            "admission_attempts",
+            "workspace_quotas",
+            "host_nodes",
+            "engine_instances",
         ):
             self.assertIn(f'"{table}"', gate)
+        self.assertIn("ARTIFACT_INSERT_COLUMNS", gate)
+        self.assertIn("RELEASE_WRITE_TABLES", gate)
         self.assertIn("DISPATCH_STARTUP_PROBES", gate)
         self.assertIn("DISPATCH_VOICE_VALIDATION_PROBES", gate)
         self.assertIn("DISPATCH_ROLE_GUARD_SQL", gate)
+
+    def test_the_gate_fails_closed_on_an_unreadable_migration_head(self) -> None:
+        gate = read(GATE)
+        self.assertIn("upgrade prerequisite", gate)
+        self.assertIn("GRANT SELECT ON {table} TO {target}", gate)
+        self.assertNotIn("migration head not verifiable", gate)
 
     def test_the_gate_names_the_external_engine_and_api_dsns_instead_of_failing(self) -> None:
         gate = read(GATE)
@@ -177,10 +238,51 @@ class DispatcherStartupGateTests(unittest.TestCase):
 
 
 class JobRoleProvisioningTests(unittest.TestCase):
-    def test_the_provisioning_script_installs_every_grant_group(self) -> None:
+    def statements_body(self) -> str:
         source = read(PROVISION)
-        missing = [name for name in DISPATCH_GRANT_GROUPS if f"{name}(" not in source]
-        self.assertEqual(missing, [], f"provisioning script omits grant groups: {missing}")
+        match = re.search(r"(?ms)^def statements\(.*?(?=^def |\Z)", source)
+        self.assertIsNotNone(match, "provisioning script declares no statements()")
+        assert match is not None
+        return match.group(0)
+
+    def test_each_role_installs_its_own_grant_groups(self) -> None:
+        # Matching the role argument (not just the group name) is what makes a
+        # group that survives only on another role red: the gate checks the
+        # dispatch role, so a dispatch call removed is a real regression.
+        body = self.statements_body()
+        required = {
+            "writer": (
+                "job_runtime_grants",
+                "job_dispatch_grants",
+                "public_job_grants",
+                "voice_draft_grants",
+                "public_job_submission_grants",
+                "job_cancellation_fence_grants",
+                "cancellation_not_submitted_grants",
+                "cancellation_reconciliation_grants",
+            ),
+            "dispatch": (
+                "job_runtime_grants",
+                "job_dispatch_grants",
+                "public_job_grants",
+                "cancellation_reconciliation_grants",
+            ),
+            "admission": ("public_job_admission_grants",),
+        }
+        missing = []
+        for role, groups in required.items():
+            for group in groups:
+                if re.search(rf"{group}\(\s*schema,\s*{role}\s*\)", body) is None:
+                    missing.append(f"{group} for {role}")
+        if (
+            re.search(r"coordination_runtime_grants\(\s*schema,\s*speech_role=dispatch", body)
+            is None
+        ):
+            missing.append("coordination_runtime_grants for dispatch")
+        self.assertEqual(missing, [], f"provisioning script omits role grants: {missing}")
+        source = read(PROVISION)
+        for name in DISPATCH_GRANT_GROUPS:
+            self.assertIn(f"{name}(", source)
         self.assertIn("voice_validation_worker_grants", source)
         self.assertIn('if "voice_validation" in kinds:', source)
         self.assertIn("public_job_admission_grants", source)

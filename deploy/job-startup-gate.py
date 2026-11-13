@@ -1,27 +1,40 @@
 """Deployment-owned startup gate for the public Job dispatcher container.
 
 `job-dispatch-worker` in `deploy/compose.yaml` runs this module as its
-entrypoint. It verifies every deployment prerequisite that the dispatcher
-process cannot discover until *after* it has claimed a lease, prints one named
-failure per missing item, and only then `exec`s `speechnexus-job-dispatch-worker`.
-A missing bucket, a stale migration, an unversioned staging bucket or a role
-without the write columns therefore fails while the container starts, before
-any Job can be claimed, instead of surfacing as a Job stuck in `running`.
+entrypoint. It verifies the deployment prerequisites that the dispatcher process
+cannot discover until *after* it has claimed a lease, prints one named failure
+per missing item, and only then `exec`s `speechnexus-job-dispatch-worker`. A
+missing bucket, a stale or unreadable migration head, an unversioned staging
+bucket, a lane this bootstrap does not assemble or a role without the post-claim
+write columns therefore fails while the container starts, before any Job can be
+claimed, instead of surfacing as a Job stuck in `running` or failed after claim.
 
-Two inputs are deliberately *not* failures here:
+Every check is a hard failure except two inputs the gate deliberately reports as
+`pending`:
 
 - the real engine and its registered instance (prerequisite 4 of #572) are a
-  deployment input this bootstrap cannot verify without engine credentials, so
-  the gate prints a `pending` line naming them and continues;
+  deployment input this bootstrap cannot verify without engine credentials;
 - the API-side Job writer/admission DSNs are only visible to the API container.
   A blank one already fails creation with `503 job_unavailable`, which is before
-  any claim; the gate reports that boundary on its pending line instead.
+  any claim.
 
-The SELECT probes, the role guard and the migration head come from the running
-production code (`speechnexus_backend.job_dispatch_runtime` and the packaged
-alembic scripts), so this file never re-states a privilege surface that could
-drift. `tests/ci/test_reference_deploy_job_prereqs.py` guards the wiring and
-`tests/unit/test_job_startup_gate.py` exercises the failure naming with fakes.
+The migration head is a hard failure, not a `pending` line: a dispatch role
+provisioned before the read-only `speech.alembic_version` grant is
+indistinguishable from a database that is genuinely behind, so the gate refuses
+to start and names the one `GRANT` that fixes it (upgrade prerequisite,
+documented in `docs/operations/compose-minimal.md` §6). The startup SELECT
+probes cannot stand in for it: they cover the columns this build reads, not the
+views, tables, indexes or other columns a migration may add.
+
+The SELECT probes, the role guard, the migration head, the Artifact INSERT
+columns and the release-path UPDATE columns all come from the running production
+code (`speechnexus_backend.job_dispatch_runtime` and
+`speechnexus_backend.speech.infrastructure.*`), so this file never re-states a
+privilege surface that could drift. `main()` takes its `env`, `connect`,
+`client`, `head` and `execute` collaborators as parameters, which is how
+`tests/unit/test_job_startup_gate.py` proves the wiring, the exit code and the
+"no `exec` after a failure" ordering without PostgreSQL or MinIO;
+`tests/ci/test_reference_deploy_job_prereqs.py` guards the text-level wiring.
 """
 
 from __future__ import annotations
@@ -34,7 +47,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 from urllib.parse import unquote, urlsplit
 
 from minio.commonconfig import ENABLED
@@ -44,6 +57,9 @@ from speechnexus_backend.job_dispatch_runtime import (
     DISPATCH_STARTUP_PROBES,
     DISPATCH_VOICE_VALIDATION_PROBES,
 )
+from speechnexus_backend.speech.domain.job_dispatch import DISPATCHABLE_JOB_KIND_UNION
+from speechnexus_backend.speech.infrastructure.artifact_schema import ARTIFACT_INSERT_COLUMNS
+from speechnexus_backend.speech.infrastructure.coordination_grants import SPEECH_UPDATES
 
 DSN_ENV = "SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL"
 RUNTIME_DSN_ENV = "SPEECHNEXUS_DATABASE_URL"
@@ -58,11 +74,30 @@ PRIVATE_DIR_ENV = "SPEECHNEXUS_JOB_GATE_PRIVATE_DIR"
 DEFAULT_PRIVATE_DIR = "/run/speechnexus-private"
 WORKER_COMMAND = "speechnexus-job-dispatch-worker"
 
-# The dispatcher writes these columns after it claims. `job_dispatch_grants` and
-# `cancellation_reconciliation_grants` declare them, and this gate re-checks them
-# with `has_column_privilege` before the worker exists. The read-only self-check
-# in scripts/dev-env/check-async-job-prereqs.py keeps the same surface; a unit
-# test compares both copies and the grant functions they come from.
+# The dispatcher writes these columns after it claims. `job_dispatch_grants`,
+# `artifact_publisher_grants`, `cancellation_reconciliation_grants` and
+# `coordination_runtime_grants` declare them, and this gate re-checks them with
+# `has_column_privilege` before the worker exists. The read-only self-check in
+# scripts/dev-env/check-async-job-prereqs.py keeps the same surface; a unit test
+# compares both copies and the grant functions they come from.
+#
+# The tables below are every relation the dispatch worker writes after a claim,
+# taken from the dispatcher code:
+#   - the claim/renew/terminal transition (`PostgresDispatchQueue` and
+#     `PostgresDispatchStateStore` in job_dispatch_postgres.py);
+#   - the committed result Artifact (`ResultArtifactPublisher.publish` ->
+#     `PostgresArtifactWriter.insert_ready` in results.py / artifacts_postgres.py);
+#   - the capacity release of a terminal asr/tts Job (`PostgresLeaseSettler` ->
+#     `LeaseService.release` -> lease_release_sql.py).
+# `artifact_publisher_grants`/`coordination_runtime_grants` are the grant
+# declarations the provisioning script installs for the dispatch role.
+RELEASE_WRITE_TABLES = (
+    "admission_leases",
+    "admission_attempts",
+    "workspace_quotas",
+    "host_nodes",
+    "engine_instances",
+)
 DISPATCH_WRITE_SURFACE: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "speech_jobs",
@@ -93,6 +128,12 @@ DISPATCH_WRITE_SURFACE: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "INSERT",
         ("job_id", "observed_at_us", "observer"),
     ),
+    # Result publication writes the Artifact row after the claim; the columns come
+    # from the publisher's own declaration so an added column cannot slip through.
+    ("speech_artifacts", "INSERT", ARTIFACT_INSERT_COLUMNS),
+    # Capacity release of a terminal Job updates the same coordination columns the
+    # bindings declare; deriving them keeps this gate and the grant in step.
+    *((table, "UPDATE", tuple(SPEECH_UPDATES[table].split())) for table in RELEASE_WRITE_TABLES),
 )
 
 DISPATCH_GRANT_GROUPS = (
@@ -103,6 +144,10 @@ DISPATCH_GRANT_GROUPS = (
     "coordination_runtime_grants",
 )
 
+# The lanes this bootstrap assembles: `deploy/compose.yaml` forwards exactly the
+# asr and tts private configs to the gateway, and the gate verifies those two
+# lanes' `objects.result_bucket`. A kind outside this map is not served by the
+# reference deployment, so the worker would claim it and fail after the claim.
 GATEWAY_CONFIGS = {
     "asr": "gateway-file-asr.json",
     "tts": "gateway-file-tts.json",
@@ -228,7 +273,8 @@ def write_privilege_findings(connection: Any, schema: str) -> tuple[list[str], i
     checked = sum(len(columns) for _, _, columns in DISPATCH_WRITE_SURFACE)
     findings = [
         f"dispatch role lacks {row[0]}; it would fail after claiming a Job - install "
-        "job_dispatch_grants and cancellation_reconciliation_grants for this role"
+        + ", ".join(DISPATCH_GRANT_GROUPS)
+        + " for this role"
         for row in rows
     ]
     return findings, checked
@@ -248,15 +294,17 @@ def expected_migration_head() -> str:
 
 
 def migration_findings(
-    connection: Any, schema: str, expected_head: str
+    connection: Any, schema: str, expected_head: str, role: str
 ) -> tuple[list[str], str | None]:
-    """Return (findings, verified head), never failing on a missing grant.
+    """Return (findings, verified head); an unreadable head is a failure.
 
     ``to_regclass`` needs no grant, so "the migration profile never ran" is always
-    a named startup failure. Comparing the exact head needs a read-only ``SELECT``
-    that the provisioning script installs; a deployment whose dispatch role
-    predates that grant keeps the column probes (they cover what this build uses)
-    and the gate reports the head as pending instead of failing an upgrade.
+    a named startup failure. Reading the exact head needs the read-only ``SELECT``
+    that the provisioning script installs. A role provisioned before that grant is
+    indistinguishable from a genuinely stale database, so the check fails closed
+    and names the one statement that fixes it instead of starting the worker on an
+    unverified head. The startup SELECT probes are not a substitute: they cover
+    the columns this build reads, not views, tables, indexes or other columns.
     """
     table = f"{_identifier(schema)}.alembic_version"
     try:
@@ -272,7 +320,13 @@ def migration_findings(
     try:
         rows = connection.execute(f"SELECT version_num FROM {table}").fetchall()
     except Exception:
-        return [], None
+        target = '"' + role.replace('"', '""') + '"'
+        return [
+            f"{table} exists but the dispatch role cannot read it, so the migration "
+            "head cannot be verified: run "
+            f"GRANT SELECT ON {table} TO {target} (upgrade prerequisite) and restart "
+            "the container; the gate does not start the worker on an unverified head"
+        ], None
     versions = [row[0] for row in rows]
     if len(versions) != 1:
         return [
@@ -281,8 +335,9 @@ def migration_findings(
         ], None
     if versions[0] != expected_head:
         return [
-            f"migration is behind: {table} is {versions[0]}, the artifact head is "
-            f"{expected_head}; run the migration profile before the job-dispatch profile"
+            f"migration differs from the artifact head: {table} is {versions[0]}, the "
+            f"artifact head is {expected_head}; run the migration profile before the "
+            "job-dispatch profile"
         ], None
     return [], expected_head
 
@@ -343,23 +398,47 @@ def referenced_buckets(env: Mapping[str, str]) -> tuple[list[BucketCheck], list[
     )
 
 
+def gateway_lane_findings(kinds: Sequence[str]) -> list[str]:
+    """Reject every lane this bootstrap cannot serve, before any claim.
+
+    The dispatcher claims any kind inside `DISPATCHABLE_JOB_KIND_UNION`, so a lane
+    without an assembled gateway config would be claimed and then fail at submit
+    or publication time - exactly the "fails after claim" shape this gate exists
+    to remove. Both the typo case and the known-but-unassembled case are failures;
+    the messages differ so an operator can tell them apart.
+    """
+    findings: list[str] = []
+    for kind in dict.fromkeys(kinds):
+        if kind not in DISPATCHABLE_JOB_KIND_UNION:
+            findings.append(
+                f"{KINDS_ENV} names {kind!r}, which is not a dispatchable Job kind "
+                f"({', '.join(DISPATCHABLE_JOB_KIND_UNION)}); the worker refuses to start "
+                "on an unknown lane"
+            )
+        elif kind not in GATEWAY_CONFIGS:
+            findings.append(
+                f"{KINDS_ENV} names {kind!r} but this bootstrap assembles no gateway lane "
+                f"for it (only {', '.join(GATEWAY_CONFIGS)}); the worker would claim "
+                f"{kind} Jobs and fail after the claim. Remove the kind, or assemble the "
+                "lane (private gateway config, SPEECHNEXUS_GATEWAY_FILE_*_CONFIG_FILE and "
+                "GATEWAY_CONFIGS) before enabling it"
+            )
+    return findings
+
+
 def gateway_config_findings(
     private_dir: Path, result_bucket: str, kinds: Sequence[str]
-) -> tuple[list[str], list[str], list[str]]:
+) -> tuple[list[str], list[str]]:
     """Compare the gateway's own `objects.result_bucket` with the worker's env.
 
-    Returns (findings, checked files, pending lanes).
+    Only assembled lanes are read here; `gateway_lane_findings` rejects the rest.
+    Returns (findings, checked files).
     """
     findings: list[str] = []
     checked: list[str] = []
-    pending: list[str] = []
     for kind in dict.fromkeys(kinds):
         filename = GATEWAY_CONFIGS.get(kind)
         if filename is None:
-            pending.append(
-                f"gateway lane {kind} is not assembled by this bootstrap; its "
-                "result_bucket cannot be verified and no engine can serve it"
-            )
             continue
         path = private_dir / filename
         if not path.is_file():
@@ -386,7 +465,7 @@ def gateway_config_findings(
             )
             continue
         checked.append(filename)
-    return findings, checked, pending
+    return findings, checked
 
 
 def object_storage_client(env: Mapping[str, str]) -> tuple[Any, list[str]]:
@@ -421,11 +500,16 @@ def object_storage_client(env: Mapping[str, str]) -> tuple[Any, list[str]]:
 
 def database_findings(
     connect: Callable[[str], Any], env: Mapping[str, str], expected_head: str
-) -> tuple[list[str], list[str], list[str]]:
-    """Run the role guard, the SELECT probes, writes and the migration check."""
+) -> tuple[list[str], list[str]]:
+    """Run the role guard, the migration head, the SELECT probes and the writes.
+
+    The migration head is compared before the column checks: a database that is
+    behind must be named as such, instead of surfacing later as a missing column or
+    a crashed probe in a surface this build happens to look at.
+    """
     findings = dsn_findings(env)
     if findings:
-        return findings, [], []
+        return findings, []
     dsn = env[RUNTIME_DSN_ENV].strip()
     schema = env.get(SCHEMA_ENV, "speech").strip() or "speech"
     kinds = dispatch_kinds(env)
@@ -442,116 +526,142 @@ def database_findings(
                 "the dispatch role or the database network is not ready"
             ],
             [],
-            [],
         )
     passed: list[str] = []
-    pending: list[str] = []
     try:
         connection.execute("SELECT set_config('search_path', %s, true)", (schema,))
         identities = connection.execute("SELECT SESSION_USER, CURRENT_USER").fetchone()
         if identities is None:
-            return ["dispatch role identity is unavailable"], passed, pending
+            return ["dispatch role identity is unavailable"], passed
         findings += role_guard_findings(connection, schema, identities[0], identities[1])
         if findings:
-            return findings, passed, pending
+            return findings, passed
+        migration_failures, verified_head = migration_findings(
+            connection, schema, expected_head, identities[1]
+        )
+        findings += migration_failures
+        if migration_failures:
+            return findings, passed
         probe_failures, _ = probe_findings(connection, kinds)
         findings += probe_failures
         if probe_failures:
-            return findings, passed, pending
-        write_failures, checked_writes = write_privilege_findings(connection, schema)
+            return findings, passed
+        try:
+            write_failures, checked_writes = write_privilege_findings(connection, schema)
+        except Exception as error:
+            # A missing relation or column means the migration and this build
+            # disagree; name that instead of printing a driver traceback.
+            reason = str(error).strip().splitlines()[0][:300]
+            return (
+                [
+                    f"the post-claim write columns cannot be read from {schema}: "
+                    f"{reason or 'no detail'}; run the migration profile and re-install "
+                    "the dispatch grants"
+                ],
+                passed,
+            )
         findings += write_failures
         if write_failures:
-            return findings, passed, pending
-        migration_failures, verified_head = migration_findings(connection, schema, expected_head)
-        findings += migration_failures
-        if findings:
-            return findings, passed, pending
+            return findings, passed
         passed.append(
-            f"role guard, startup SELECT probes and {checked_writes} post-claim write columns"
+            "migration head "
+            + str(verified_head)
+            + ", role guard, startup SELECT probes and "
+            + f"{checked_writes} post-claim write columns"
         )
-        if verified_head is not None:
-            passed.append(f"migration head {verified_head}")
-        else:
-            pending.append(
-                "migration head not verifiable: the dispatch role cannot read "
-                f"{schema}.alembic_version; grant the read-only SELECT from "
-                "docs/operations/compose-minimal.md §6 for an exact-head check "
-                "(the startup SELECT probes still verify the columns this build uses)"
-            )
     finally:
         close = getattr(connection, "close", None)
         if callable(close):
             close()
-    return findings, passed, pending
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    env = os.environ
-    arguments = list(argv if argv is not None else sys.argv[1:])
-    expected_head = expected_migration_head()
-    failures: list[str] = []
-    passed: list[str] = []
-
-    db_failures, db_passed, db_pending = database_findings(_psycopg_connect, env, expected_head)
-    failures += db_failures
-    if db_passed and not db_failures:
-        passed.append("database: " + ", ".join(db_passed))
-
-    buckets, bucket_env_failures = referenced_buckets(env)
-    failures += bucket_env_failures
-    if buckets:
-        client, client_failures = object_storage_client(env)
-        failures += client_failures
-        if client is not None:
-            bucket_failures, bucket_passed = bucket_findings(client, buckets)
-            failures += bucket_failures
-            if bucket_passed and not bucket_failures:
-                passed.append("object storage: versioned buckets " + ", ".join(bucket_passed))
-
-    kinds = dispatch_kinds(env)
-    result_bucket = env.get(RESULT_BUCKET_ENV, "").strip()
-    private_dir = Path(env.get(PRIVATE_DIR_ENV, DEFAULT_PRIVATE_DIR))
-    config_failures, config_checked, lane_pending = gateway_config_findings(
-        private_dir, result_bucket, kinds
-    )
-    failures += config_failures
-    config_pending = [*db_pending]
-    config_pending += lane_pending
-    if config_checked:
-        passed.append("gateway staging bucket matches " + ", ".join(config_checked))
-
-    print("job dispatch startup gate: deployment prerequisites before any claim")
-    for line in passed:
-        print(f"  ok: {line}")
-    for line in config_pending:
-        print(f"  pending: {line}")
-    print(
-        "  pending: real engine and a registered ready instance are a deployment "
-        "input this gate cannot verify; register one (engine-registration profile) "
-        "before submitting a Job"
-    )
-    print(
-        "  pending: API-side writer/admission DSNs live in the api container; a "
-        "blank one already fails Job creation with 503 job_unavailable, before any claim"
-    )
-    if failures:
-        for line in failures:
-            print(f"  FAIL: {line}")
-        print(
-            f"job dispatch startup gate: {len(failures)} prerequisite(s) missing; "
-            f"refusing to start {WORKER_COMMAND}"
-        )
-        return 1
-    print("job dispatch startup gate: OK")
-    command = arguments or [WORKER_COMMAND]
-    os.execvp(command[0], command)
-    return 1  # pragma: no cover - execvp never returns on success
+    return findings, passed
 
 
 def _psycopg_connect(dsn: str) -> Any:
     import psycopg
 
     return psycopg.connect(dsn, connect_timeout=10)
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    env: Mapping[str, str] | None = None,
+    connect: Callable[[str], Any] = _psycopg_connect,
+    client_factory: Callable[[Mapping[str, str]], tuple[Any, list[str]]] = object_storage_client,
+    head: Callable[[], str] = expected_migration_head,
+    execute: Callable[[str, Sequence[str]], Any] = os.execvp,
+    output: TextIO | None = None,
+) -> int:
+    """Run every check, print one named line per item, then `exec` the worker.
+
+    The collaborators are parameters so the tests can prove the wiring, the exit
+    code and the ordering ("a failure returns 1 and never calls `execute`")
+    without PostgreSQL, MinIO or a real `exec`. A successful run never returns:
+    `execute` replaces the process, and the trailing `return 1` only satisfies the
+    type checker for the case where an injected `execute` returns.
+    """
+    source = os.environ if env is None else env
+    stream = sys.stdout if output is None else output
+    arguments = list(argv if argv is not None else sys.argv[1:])
+    expected_head = head()
+    failures: list[str] = []
+    passed: list[str] = []
+
+    db_failures, db_passed = database_findings(connect, source, expected_head)
+    failures += db_failures
+    if db_passed and not db_failures:
+        passed.append("database: " + ", ".join(db_passed))
+
+    buckets, bucket_env_failures = referenced_buckets(source)
+    failures += bucket_env_failures
+    if buckets:
+        store, client_failures = client_factory(source)
+        failures += client_failures
+        if store is not None:
+            bucket_failures, bucket_passed = bucket_findings(store, buckets)
+            failures += bucket_failures
+            if bucket_passed and not bucket_failures:
+                passed.append("object storage: versioned buckets " + ", ".join(bucket_passed))
+
+    kinds = dispatch_kinds(source)
+    result_bucket = source.get(RESULT_BUCKET_ENV, "").strip()
+    private_dir = Path(source.get(PRIVATE_DIR_ENV, DEFAULT_PRIVATE_DIR))
+    failures += gateway_lane_findings(kinds)
+    config_failures, config_checked = gateway_config_findings(private_dir, result_bucket, kinds)
+    failures += config_failures
+    if config_checked:
+        passed.append("gateway staging bucket matches " + ", ".join(config_checked))
+
+    print("job dispatch startup gate: deployment prerequisites before any claim", file=stream)
+    for line in passed:
+        print(f"  ok: {line}", file=stream)
+    print(
+        "  pending: real engine and a registered ready instance are a deployment "
+        "input this gate cannot verify; register one (engine-registration profile) "
+        "before submitting a Job",
+        file=stream,
+    )
+    print(
+        "  pending: API-side writer/admission DSNs live in the api container; a "
+        "blank one already fails Job creation with 503 job_unavailable, before any claim",
+        file=stream,
+    )
+    if failures:
+        for line in failures:
+            print(f"  FAIL: {line}", file=stream)
+        print(
+            f"job dispatch startup gate: {len(failures)} prerequisite(s) missing; "
+            f"refusing to start {WORKER_COMMAND}",
+            file=stream,
+        )
+        return 1
+    print("job dispatch startup gate: OK", file=stream)
+    # `exec` replaces the process, so buffered stdout would be lost. The image sets
+    # PYTHONUNBUFFERED, but the gate must not depend on that when it runs outside it.
+    stream.flush()
+    command = arguments or [WORKER_COMMAND]
+    execute(command[0], command)
+    return 1  # pragma: no cover - execvp never returns on success
 
 
 if __name__ == "__main__":

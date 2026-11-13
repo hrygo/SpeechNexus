@@ -187,8 +187,9 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
   'select version_num from speech.alembic_version'
 ```
 
-预期是**一行非空版本号**，且与所用发布制品的唯一 head 一致。在仓库当前 head 上实测为
-`0048_voice_evidence_scan_index`；不要把该值当作固定目标，升级后以发布制品的 head 为准。
+预期是**一行非空版本号**，且与所用发布制品的唯一 head 一致。不要把某个具体版本号当作
+固定目标：仓库的迁移链会前进，判据始终是"与制品内的唯一 head 相同"，启动闸门也正是用它
+比对（`expected_migration_head()`）。
 
 同一入口也可以不经过 Compose 直接执行（本机已对一次性 PostgreSQL 16.15 实例验证）：
 
@@ -261,8 +262,9 @@ uv run --all-packages python scripts/dev-env/provision-job-roles.py
 
 脚本从三个 Job DSN 里读取角色名与口令，只做 `CREATE ROLE`、`ALTER ROLE ... PASSWORD` 和
 追加式 `GRANT`，不改写产品数据、不执行迁移。角色已存在时直接停止，不猜测归属；期望输出
-`job roles ready: sn_job_writer sn_job_admission sn_job_dispatch; grants: 220 statements`
-（`voice_validation` 车道会多出两张 `SELECT`）。`--print-statements` 只渲染 SQL，不连接数据库。
+`job roles ready: sn_job_writer sn_job_admission sn_job_dispatch; grants: <N> statements`。
+语句数随授权函数变化，不要当固定值：以 `--print-statements` 的输出条数为准，首次安装后把
+该值记为本次基线。`--print-statements` 只渲染 SQL，不连接数据库。
 
 脚本默认 `SN_GATEWAY_ROLE=sn_gateway`；若基础部署的 gateway 角色名不同，用实际 DSN 的用户名
 覆盖该变量。`coordination_runtime_grants` 要求两个角色不同，因此必须先有基础 gateway 角色。
@@ -603,7 +605,8 @@ FAIL 与 PENDING 下逐条给出原因，末尾分别汇总编号。
 - 运行时判定只做 `SELECT`（`has_table_privilege`/`has_column_privilege` 与 `LIMIT 0` 列探测）、
   引擎 `/health` GET 和 `docker inspect` 读取；
 - 权限项覆盖 writer 的 17 张表 `SELECT`、15 张表的列级 `INSERT`/`UPDATE`（含 `speech_jobs`
-  的 `error_code` 等终止写列），以及派发角色的 8 条启动探测加 20 个写入列；
+  的 `error_code` 等终止写列），以及派发角色的启动探测与认领后写入列（列数随写面增长，
+  以闸门实际输出为准）；
 - 没有 `psql`、Docker daemon 或数据库从宿主机不可达时，相应运行时证据标 `SKIP` 并说明原因；
 - 对象桶的存在与版本化需要签名凭据，脚本不持有凭据，因此该项恒为 SKIP，靠 `minio-init`
   输出核对；
@@ -666,13 +669,13 @@ FAIL(配置写了但不对,任何阶段都必须修):前置 1
 | `docker compose ... config --services`（基础 / `job-dispatch` / `migration`） | 分别解析出 5 / 6 / 6 个服务，见第 3 节 |
 | `docker compose ... --profile job-dispatch config --format json` | 打印 `service:gateway`、`restart: True`、两个桶名与 `healthcheck: False` |
 | `uv run speechnexus-job-migrate --schema speech`（迁移 DSN 指向一次性 PG） | 退出码 `0`，无 stdout |
-| `select version_num from speech.alembic_version` | `0048_voice_evidence_scan_index` |
+| `select version_num from speech.alembic_version` | 一行非空版本号（与发布制品的唯一 head 一致） |
 | 15 张 Job/准入关系计数 | `15` |
 | 第 4 节的 DSN 生成脚本（作用于 env 副本） | 输出三个角色名，值未打印，mode `0600` |
-| 第 6 节的角色与授权脚本（DSN 派生的角色名与口令） | 输出 `grants: 220 statements`，退出码 `0` |
+| 第 6 节的角色与授权脚本（DSN 派生的角色名与口令） | 输出 `grants: 220 statements`（该轮基线的快照；条数随授权函数变化，以 `--print-statements` 为准），退出码 `0` |
 | `JobRuntime.open()`（用第 6 节建出的 writer/admission 角色） | 输出 `OPENED: PublicJobs jobs is not None: True`、`CLOSED` |
 | 撤销 writer 的 8 张表 `SELECT` 后再次 `open()` | 报 `Public Job writer startup rejected`；恢复授权后再次 `OPENED` |
-| worker 同款列权限探测（8 条）、20 个写入列与 owner/DDL 守卫（`f`） | 全部通过 |
+| worker 同款列权限探测、认领后写入列与 owner/DDL 守卫（`f`） | 全部通过 |
 | 同源断言测试（`tests/unit/test_async_job_prereqs_check.py`） | 5 项通过；临时删掉生产的一条探测后第 1 项变红 |
 | `check-async-job-prereqs.py`（Python 3.9.6 / 3.12.14 解析并运行 `--offline`） | 均通过；语法按 3.9 校验 |
 | `check-async-job-prereqs.py` 的全部几种输入 | 见下 |
@@ -720,12 +723,12 @@ FAIL(配置写了但不对,任何阶段都必须修):前置 1
 | `--profile job-dispatch config --format json` | 服务 `api gateway job-dispatch-worker minio minio-init postgres`；worker `entrypoint = ["python", "/opt/speechnexus/job-startup-gate.py"]`、`network_mode = service:gateway`、两个桶均为 `speechnexus-results`，并挂载闸门脚本与私有配置目录 |
 | `--profile migration run --rm migrate` | 退出码 `0`；`speech.alembic_version = 0052_quarantine_releases`，`speech` schema 82 张表 |
 | `run --rm minio-init` | `bucket ready: speechnexus-inputs (versioning enabled)`、`bucket ready: speechnexus-results (versioning enabled)` |
-| `uv run --all-packages python scripts/dev-env/provision-job-roles.py`（对容器 PG） | `job roles ready: sn_job_writer sn_job_admission sn_job_dispatch; grants: 220 statements`，退出码 `0` |
+| `uv run --all-packages python scripts/dev-env/provision-job-roles.py`（对容器 PG） | `job roles ready: sn_job_writer sn_job_admission sn_job_dispatch; grants: 220 statements`（该轮基线快照，条数以 `--print-statements` 为准），退出码 `0` |
 | 启动闸门成功路径（容器内，真实 PG/MinIO） | `job dispatch startup gate: OK`，随后 exec 到 `gate-exec-reached-worker` |
 | 启动闸门 + 未创建的 result 桶 | 退出码 `1`：`FAIL: bucket ... (SPEECHNEXUS_EXECUTION_RESULT_BUCKET) does not exist`，加两份私有配置 `result_bucket` 不一致；没有 exec，worker 未启动 |
 | 启动闸门 + 未启用版本化的 result 桶 | 退出码 `1`：`FAIL: bucket speechnexus-unversioned (...) is not versioned` |
 | 启动闸门 + 撤销派发角色 `SELECT ON speech.coordination_jobs` | 退出码 `1`：`FAIL: dispatch role cannot run the startup probe on coordination_jobs`，点名五组授权 |
-| 启动闸门 + 撤销 `speech.alembic_version` 只读 `SELECT`（模拟本次之前的旧部署） | `pending: migration head not verifiable: ...`，退出码 `0`，不把升级误判为故障；恢复授权后重新核对 head |
+| 启动闸门 + 撤销 `speech.alembic_version` 只读 `SELECT`（模拟本次之前的旧部署） | 旧行为是 `pending: migration head not verifiable` + 退出码 `0`；返修后改为 `FAIL` 点名该表与 `GRANT SELECT ON speech.alembic_version TO sn_job_dispatch`（升级前置），退出码 `1` |
 | 反例：从 `deploy/init-object-storage.py` 删掉 result 桶条目 | `tests/ci/test_reference_deploy_job_prereqs.py` 1 项 FAIL；`git checkout --` 恢复后 14 项 OK |
 | `python3 -m unittest discover -s tests/ci` | 91 项 OK |
 | `python3 scripts/dev-env/check-doc-refs.py` | `RESULT PASS` |

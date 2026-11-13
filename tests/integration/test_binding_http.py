@@ -12,6 +12,7 @@ import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -24,6 +25,7 @@ from psycopg_pool import ConnectionPool
 from tests.integration.test_production_jobs import ROOT, FaultConnection, JobDatabase
 from tests.integration.test_production_jobs import database as database
 from tests.support.binding_examples import binding_request
+from tests.support.profile_evidence import publication_evidence
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend import binding_runtime as runtime_module
@@ -652,7 +654,7 @@ def test_actual_pg_http_preserves_large_integer_definition(http_db: HTTPDatabase
 
 
 def test_binding_and_profile_use_distinct_minimum_roles_and_lifetimes(
-    http_db: HTTPDatabase,
+    http_db: HTTPDatabase, tmp_path: Path
 ) -> None:
     from tests.support.profile_examples import profile_request
 
@@ -676,6 +678,9 @@ def test_binding_and_profile_use_distinct_minimum_roles_and_lifetimes(
                 "profile_writer_database_url": make_conninfo(
                     db.url, user=role, password="synthetic_peer_profile"
                 ),
+                # The writer exists only with a reviewed evidence document; this
+                # case exercises role isolation and pool lifetime, not publishing.
+                "profile_publication_evidence_file": publication_evidence(tmp_path),
             }
         )
         app = create_app(settings=settings)

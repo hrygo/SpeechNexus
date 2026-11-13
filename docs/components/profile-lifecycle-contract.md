@@ -111,7 +111,7 @@ work-package names in this document identify historical ownership, not current s
 | --- | --- | --- |
 | Fixed profile definition | A02 `speech_profile_revisions` / 0009 | Real immutable draft reads exist; allocation head is not a published/current pointer |
 | Submitted ProfileValidation | Existing admin request and scenario schema 1.0.0 / caller | A claim retained in the original intent, not trusted evidence |
-| Trusted Profile-specific checks | A02 producer with applicable B deployment facts | No production producer/adapter is registered yet; remain unavailable |
+| Trusted Profile-specific checks | Deployment-owned reviewed evidence document (`SPEECHNEXUS_PROFILE_PUBLICATION_EVIDENCE_FILE`) | Read at API startup; a missing, unreadable or invalid document fails startup naming the variable, and revisions it does not cover are a durable 422 `profile_not_eligible` |
 | Binding/capacity/software/topology/quality facts | Existing contracts and B's named evidence; A registry integration | Must be resolved and matched where applicable; cannot substitute a binding report for Profile validation |
 | Published state/current pointer | Later A02 P2 transaction | Not implemented by this command or observation boundary |
 
@@ -135,8 +135,12 @@ the narrow `ProfilePublicationVerifier` port. A real verifier must resolve trust
 current Profile-specific evidence and check full schema/producer rules, capability
 composition and applicable tier/quality facts. A binding's
 `DeploymentQualificationReport` is a different fact and cannot stand in for this
-Profile validation. No trusted production verifier is implemented or registered
-by this unit; `UnavailableProfilePublicationVerifier` always reports unavailable.
+Profile validation. The registered production verifier reads the deployment's
+reviewed evidence document at startup and binds each publish to the exact
+definition and validation bytes it reviewed; the deployment owns producing and
+reviewing that document, and the repository ships no default entry. A
+writer-enabled process that cannot read it fails startup naming
+`SPEECHNEXUS_PROFILE_PUBLICATION_EVIDENCE_FILE` instead of reporting unavailable.
 
 `observe_publication_evidence` accepts only a structured observation bound to the
 exact profile/revision, definition digest and complete intent digest. Empty,
@@ -153,4 +157,6 @@ transactional authority rechecking, persistent result recovery and pointer updat
 The P1 observation boundary itself has no database, migration, grants, new public
 wire fields, route registration or lifecycle writes; the separate P2a journal
 has its own storage and migration. Synthetic test providers exercise the consumer
-boundary only; P1's real authority producer and the rest of A-CONFIG-01 remain open.
+boundary only. The deployment-owned reviewed evidence document is the registered
+authority source for this boundary; its review content, the rest of A-CONFIG-01 and
+any production quality claim remain open.

@@ -96,6 +96,11 @@ class Settings(BaseSettings):
     profile_receive_concurrency: int = Field(default=4, ge=1, le=4)
     profile_receive_timeout_seconds: float = Field(default=5, gt=0, le=30)
     profile_transaction_timeout_seconds: float = Field(default=3, gt=0, le=30)
+    # Publication authority is deployment-owned reviewed evidence, never a
+    # default. The writer starts only with a readable document; a missing,
+    # unreadable or malformed one stops startup naming this key instead of
+    # letting a publication answer 503 profile_result_unknown after the write.
+    profile_publication_evidence_file: Path | None = None
 
     model_catalog_reader_database_url: SecretStr | None = Field(default=None, min_length=1)
     model_catalog_read_concurrency: int = Field(default=2, ge=1, le=4)
@@ -218,6 +223,7 @@ class Settings(BaseSettings):
         "job_admission_database_url",
         "voice_publisher_database_url",
         "execution_gateway_component_credential",
+        "profile_publication_evidence_file",
         "transcription_recipe_file",
         "transcription_input_bucket",
         "speech_recipe_file",

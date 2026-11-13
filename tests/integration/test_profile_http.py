@@ -12,6 +12,7 @@ import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -23,6 +24,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 from tests.integration.test_production_jobs import ROOT, FaultConnection, JobDatabase
 from tests.integration.test_production_jobs import database as database
+from tests.support.profile_evidence import publication_evidence
 from tests.support.profile_examples import profile_request
 from tests.unit.backend.test_health import _settings
 
@@ -73,8 +75,13 @@ class HTTPDatabase:
         pytest.fail("No actual HTTP profile writer lock wait observed")
 
 
+def _publication_evidence(tmp_path: Path) -> str:
+    """A deployment document with no reviewed revision: drafts only."""
+    return publication_evidence(tmp_path)
+
+
 @pytest.fixture
-def http_db(database: JobDatabase) -> Iterator[HTTPDatabase]:
+def http_db(database: JobDatabase, tmp_path: Path) -> Iterator[HTTPDatabase]:
     role = database.role.replace("sn_jobs_role_", "sn_profile_")
     database.query(f"CREATE ROLE \"{role}\" LOGIN PASSWORD 'synthetic_profile_http'")
     try:
@@ -90,6 +97,7 @@ def http_db(database: JobDatabase) -> Iterator[HTTPDatabase]:
                 "profile_writer_database_url": make_conninfo(
                     database.url, user=role, password="synthetic_profile_http"
                 ),
+                "profile_publication_evidence_file": _publication_evidence(tmp_path),
                 "asset_allowed_hosts": ("testserver", "test", "127.0.0.1"),
                 "profile_receive_concurrency": 1,
                 "profile_transaction_timeout_seconds": 1,

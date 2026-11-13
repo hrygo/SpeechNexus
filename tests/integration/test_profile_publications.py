@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import time
 import uuid
@@ -21,6 +22,7 @@ from psycopg.rows import dict_row
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 from tests.support.migrations import head_revision
+from tests.support.profile_evidence import publication_evidence
 from tests.support.profile_examples import profile_request
 from tests.unit.test_profile_lifecycle import request
 
@@ -45,6 +47,16 @@ from speechnexus_backend.speech.interfaces.profile_lifecycle import (
 )
 
 pytestmark = pytest.mark.integration
+
+
+def _empty_evidence(directory: Path) -> str:
+    """A deployment document declaring no reviewed revision (drafts only)."""
+    return publication_evidence(directory)
+
+
+@pytest.fixture
+def evidence(tmp_path: Path) -> str:
+    return _empty_evidence(tmp_path)
 
 
 def migration_head(config: Config) -> str:
@@ -395,7 +407,9 @@ def test_intent_update_is_rejected_while_row_lock_and_normal_mutations_work(
     assert s.port.mutate(s.activate("1", "1", "normal-activation")).outcome == "completed"
 
 
-def test_writer_and_reader_privileges_and_real_runtime_fail_closed(sandbox: Sandbox) -> None:
+def test_writer_and_reader_privileges_and_real_runtime_refuses_unreviewed_publication(
+    sandbox: Sandbox, evidence: str
+) -> None:
     from fastapi.testclient import TestClient
     from tests.unit.backend.test_health import _settings
 
@@ -464,11 +478,11 @@ def test_writer_and_reader_privileges_and_real_runtime_fail_closed(sandbox: Sand
             "profile_writer_database_url": make_conninfo(
                 s.url, user=s.role, password="synthetic_profile_test"
             ),
+            "profile_publication_evidence_file": evidence,
             "asset_allowed_hosts": ("testserver",),
         }
     )
     s.draft("2")
-    before = s.snapshot()
     app = create_app(settings=settings)
     with TestClient(app) as http:
         from speechnexus_backend.speech.application.profile_documents import decode_document
@@ -479,9 +493,12 @@ def test_writer_and_reader_privileges_and_real_runtime_fail_closed(sandbox: Sand
             json=decode_document(command.intent)["body"],
             headers={"Idempotency-Key": "unregistered-runtime-key"},
         )
+        # A readable deployment document that reviews no revision is an
+        # authoritative refusal, not an unavailable authority: the same request
+        # used to answer 503 profile_result_unknown because no authority existed.
         assert (
-            response.status_code == 503
-            and response.json()["error"]["code"] == "profile_result_unknown"
+            response.status_code == 422
+            and response.json()["error"]["code"] == "profile_not_eligible"
         )
         listing = http.get("/v1/nexus/profiles")
         assert listing.status_code == 200
@@ -498,7 +515,23 @@ def test_writer_and_reader_privileges_and_real_runtime_fail_closed(sandbox: Sand
             ("1", None)
         ]
         s.admin.execute("UPDATE speech_profile_families SET current_revision='1'")
-    assert s.snapshot() == before
+    # The refusal is durable by design: one immutable intent and one rejection
+    # receipt, with no publication row and no pointer change.
+    receipt = s.admin.execute(
+        "SELECT i.profile_id, i.revision, r.error_code "
+        "FROM speech_profile_lifecycle_intents i "
+        "JOIN speech_profile_lifecycle_results r ON r.key_digest=i.key_digest "
+        "WHERE i.revision='2'"
+    ).fetchall()
+    assert receipt == [
+        {"profile_id": command.profile_id, "revision": "2", "error_code": "profile_not_eligible"}
+    ]
+    assert s.admin.execute("SELECT count(*) AS n FROM speech_profile_publications").fetchone() == {
+        "n": 1
+    }
+    assert s.admin.execute("SELECT current_revision FROM speech_profile_families").fetchone() == {
+        "current_revision": "1"
+    }
 
 
 @pytest.mark.parametrize(
@@ -538,7 +571,7 @@ def test_writer_and_reader_privileges_and_real_runtime_fail_closed(sandbox: Sand
     ],
 )
 def test_startup_rejects_writer_privilege_escalation(
-    sandbox: Sandbox, suffix: str, statements: list[str], message: str
+    sandbox: Sandbox, evidence: str, suffix: str, statements: list[str], message: str
 ) -> None:
     """A wider grant must fail startup; table-level UPDATE is checked explicitly."""
     from tests.unit.backend.test_health import _settings
@@ -565,6 +598,7 @@ def test_startup_rejects_writer_privilege_escalation(
                     "profile_writer_database_url": make_conninfo(
                         s.url, user=role, password="synthetic_profile_test"
                     ),
+                    "profile_publication_evidence_file": evidence,
                 }
             )
         )
@@ -581,7 +615,9 @@ def test_startup_rejects_writer_privilege_escalation(
         s.admin.execute(f'DROP ROLE "{role}"')
 
 
-def test_published_lists_expose_only_the_published_projection(sandbox: Sandbox) -> None:
+def test_published_lists_expose_only_the_published_projection(
+    sandbox: Sandbox, evidence: str
+) -> None:
     """Public projections never carry a draft body, command identity or replay key."""
     from fastapi.testclient import TestClient
     from speechnexus_contracts.profile_public_http import validate_response
@@ -610,6 +646,7 @@ def test_published_lists_expose_only_the_published_projection(sandbox: Sandbox) 
             "profile_writer_database_url": make_conninfo(
                 s.url, user=s.role, password="synthetic_profile_test"
             ),
+            "profile_publication_evidence_file": evidence,
             "asset_allowed_hosts": ("testserver",),
         }
     )
@@ -904,7 +941,9 @@ def test_concurrent_distinct_key_retirements_only_one_changes_the_facts(sandbox:
         blocker.close()
 
 
-def test_real_runtime_serves_retirement_with_minimum_writer_grants(sandbox: Sandbox) -> None:
+def test_real_runtime_serves_retirement_with_minimum_writer_grants(
+    sandbox: Sandbox, evidence: str
+) -> None:
     """The composed API answers the contract path with its real writer role."""
     from fastapi.testclient import TestClient
     from tests.unit.backend.test_health import _settings
@@ -923,6 +962,7 @@ def test_real_runtime_serves_retirement_with_minimum_writer_grants(sandbox: Sand
             "profile_writer_database_url": make_conninfo(
                 s.url, user=s.role, password="synthetic_profile_test"
             ),
+            "profile_publication_evidence_file": evidence,
             "asset_allowed_hosts": ("testserver",),
         }
     )
@@ -969,6 +1009,89 @@ def test_real_runtime_serves_retirement_with_minimum_writer_grants(sandbox: Sand
     assert s.admin.execute("SELECT current_revision FROM speech_profile_families").fetchone() == {
         "current_revision": None
     }
+
+
+def test_reviewed_deployment_document_publishes_through_the_real_runtime(
+    sandbox: Sandbox, tmp_path: Path
+) -> None:
+    """Deployment-owned evidence is the production authority; publish answers 200."""
+    from fastapi.testclient import TestClient
+    from tests.unit.backend.test_health import _settings
+
+    from speechnexus_backend.app import create_app
+    from speechnexus_backend.settings import Settings
+    from speechnexus_backend.speech.application.profile_documents import encode_document
+    from speechnexus_backend.speech.domain.configuration import document_digest
+    from speechnexus_backend.speech.infrastructure.profile_publication_evidence import (
+        EVIDENCE_FILE_VARIABLE,
+    )
+
+    s = sandbox
+    identity = profile_request()["profile_id"]
+    s.draft()
+    body = json.loads(s.publish().intent)["body"]
+    stored = s.admin.execute(
+        "SELECT definition_json,definition_digest FROM speech_profile_revisions "
+        "WHERE profile_id=%s AND revision=%s",
+        (identity, "1"),
+    ).fetchone()
+    assert stored is not None
+    definition_digest = document_digest(stored["definition_json"].encode())
+    assert definition_digest == stored["definition_digest"]
+    entry = {
+        "profile_id": identity,
+        "revision": "1",
+        "definition_digest": definition_digest,
+        "validation_digest": document_digest(encode_document(body["validation"])),
+        "reviewed_by": "synthetic-release-review",
+        "reviewed_at": "2026-11-20T09:00:00Z",
+    }
+    evidence = tmp_path / "profile-publication-evidence.json"
+    evidence.write_text(
+        json.dumps({"format": "speechnexus.profile-publication-evidence/1", "entries": [entry]})
+        + "\n",
+        encoding="utf-8",
+    )
+    settings = Settings(
+        **{
+            **_settings().model_dump(),
+            "database_schema": s.schema,
+            "profile_writer_database_url": make_conninfo(
+                s.url, user=s.role, password="synthetic_profile_test"
+            ),
+            "profile_publication_evidence_file": str(evidence),
+            "asset_allowed_hosts": ("testserver",),
+        }
+    )
+    path = f"/v1/nexus/admin/profiles/{identity}/revisions/1/publications"
+    with TestClient(create_app(settings=settings)) as http:
+        response = http.post(
+            path, json=body, headers={"Idempotency-Key": "reviewed-deployment-key"}
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["publication"]["status"] == "published"
+        replay = http.post(path, json=body, headers={"Idempotency-Key": "reviewed-deployment-key"})
+        assert replay.status_code == 200 and replay.json() == response.json()
+        committed = s.admin.execute(
+            "SELECT authority_digest,status FROM speech_profile_publications "
+            "WHERE profile_id=%s AND revision=%s",
+            (identity, "1"),
+        ).fetchone()
+        assert committed is not None and committed["status"] == "published"
+        assert committed["authority_digest"] == document_digest(encode_document(entry))
+        # A revision outside the reviewed document is a durable 422, never 503.
+        s.draft("2")
+        unreviewed = json.loads(s.publish("2", "1", "unreviewed-key").intent)["body"]
+        refused = http.post(
+            f"/v1/nexus/admin/profiles/{identity}/revisions/2/publications",
+            json=unreviewed,
+            headers={"Idempotency-Key": "unreviewed-key"},
+        )
+        assert refused.status_code == 422, refused.text
+        assert refused.json()["error"]["code"] == "profile_not_eligible"
+    # The same real DSN without the document stops startup naming the variable.
+    with pytest.raises(ValueError, match=EVIDENCE_FILE_VARIABLE):
+        create_app(settings=settings.model_copy(update={"profile_publication_evidence_file": None}))
 
 
 def _publication_state_check(query: Any) -> str:

@@ -358,9 +358,17 @@ def create_app(
             return artifacts
         return artifact_runtime.service if artifact_runtime is not None else None
 
+    # The reviewed publication authority is constructed together with the
+    # writer: an evidence path without a writer fails startup naming both keys
+    # instead of being silently ignored, and a writer without authority fails
+    # startup naming the evidence key.
     profile_runtime = (
         ProfileRuntime(resolved_settings)
-        if profiles is None and resolved_settings.profile_writer_database_url is not None
+        if profiles is None
+        and (
+            resolved_settings.profile_writer_database_url is not None
+            or resolved_settings.profile_publication_evidence_file is not None
+        )
         else None
     )
 

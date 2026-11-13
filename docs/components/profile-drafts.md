@@ -171,6 +171,10 @@ The composition root exposes only `POST /v1/nexus/admin/profiles` and
 reads return unavailable 503. A blank value also disables the writer. It never
 falls back to `SPEECHNEXUS_DATABASE_URL` or a migration/owner identity. The writer
 is allowed only in the `api` process role and has its own bounded pool/lifetime.
+Enabling it also requires the deployment-owned reviewed publication evidence
+document described under [Publication / activation CAS](#publication--activation-cas-415):
+the process refuses to start without a readable one and names
+`SPEECHNEXUS_PROFILE_PUBLICATION_EVIDENCE_FILE`.
 
 An operator must first apply migration `0009_profile_drafts` and provision a
 separate non-owner identity with exactly the existing `profile_draft_grants`
@@ -242,11 +246,17 @@ object write or network request occurs. Activation selects an existing published
 revision; drafts, retired and disabled targets cannot be activated. The trusted
 verifier must be a bounded local read-only source applicable under this lock.
 
-The default production verifier is deliberately unavailable. Per the PO's
-`defer_success` decision, an unregistered/unreadable trusted validation source
-returns the existing 503 `profile_result_unknown`, rolls back new intent/facts,
-and never advances the pointer. This is not a confirmed failure or permission to
-change keys. A trusted explicit ineligibility is a durable 422
+The production verifier is deployment-owned reviewed evidence
+(`infrastructure/profile_publication_evidence.py`): the API reads one bounded
+JSON document named by `SPEECHNEXUS_PROFILE_PUBLICATION_EVIDENCE_FILE` at startup
+and binds each publication to the reviewed `(profile_id, revision)` entry, its
+definition digest and its validation-report digest. No document, an unreadable
+document or an invalid one fails startup naming that variable, so a writer-enabled
+deployment never answers a publication with 503 `profile_result_unknown` because
+authority was never wired; the document is a review record, not a measurement,
+and installing it proves no engine, quality, capacity or topology fact. A revision
+the document does not cover, or whose stored definition or submitted validation
+report differs from the reviewed one, is a trusted explicit ineligibility: a durable 422
 `profile_not_eligible`; CAS conflicts remain durable 409 `configuration_changed`.
 An existing publication is 409 `profile_already_published`; an unactivatable
 revision is 409 `profile_not_published`, and a missing target is 404.
@@ -323,10 +333,13 @@ column-level `REFERENCES` at startup. Its successful verifier is explicitly a
 `tests/unit/test_profile_publications.py` executes the same product SQL on an
 in-memory SQLite oracle with lock syntax removed, and the HTTP tests drive the
 actual application/router against it. These synthetic checks do not establish
-production verifier wiring, deployment topology, real engine use of a published
-pointer, or production publication qualification. The production verifier stays
-deliberately unavailable and fail-closed (503 `profile_result_unknown`), so no
-successful production publication path is claimed here.
+deployment topology, real engine use of a published pointer, or production
+publication qualification. The production verifier consumes deployment-owned
+reviewed evidence and is fail-closed: a writer-enabled API refuses to start
+without it, and a revision outside the document is a durable 422 rather than a
+503. `tests/integration/test_profile_publications.py` drives that real document
+through a real PostgreSQL writer, which is deployment wiring evidence, not a
+claim about the reviewed facts themselves.
 
 ## Retirement and disable (#605)
 

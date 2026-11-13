@@ -31,6 +31,7 @@ from psycopg.rows import dict_row
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 from tests.integration.probe_execution import ObservedProbe, require_probe_execution
+from tests.support.profile_evidence import publication_evidence
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
@@ -107,7 +108,7 @@ async def start(app: FastAPI, sock: socket.socket) -> tuple[uvicorn.Server, asyn
     return server, task
 
 
-async def test_admin_profiles_real_http_pg_browser() -> None:
+async def test_admin_profiles_real_http_pg_browser(tmp_path: Path) -> None:
     dsn = os.environ.get("SPEECHNEXUS_WORKBENCH_TEST_DSN")
     if not dsn:
         pytest.skip("disposable Unix-socket-only PostgreSQL probe not configured")
@@ -162,11 +163,13 @@ async def test_admin_profiles_real_http_pg_browser() -> None:
                 *profile_publication_grants(schema, role),
             ):
                 await owner.execute(grant)
+            evidence = publication_evidence(tmp_path)
             settings = Settings(
                 **{
                     **_settings().model_dump(),
                     "database_schema": schema,
                     "profile_writer_database_url": make_conninfo(dsn, user=role),
+                    "profile_publication_evidence_file": evidence,
                     "asset_allowed_hosts": ("127.0.0.1",),
                     "asset_allowed_origins": (origin,),
                 }

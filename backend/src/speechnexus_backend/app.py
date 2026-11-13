@@ -210,6 +210,44 @@ class _SpeechAPI(FastAPI):
         return document
 
 
+# A Job companion DSN selects a secondary pool that ``JobRuntime.open()`` builds;
+# nothing outside ``JobRuntime`` reads it. With the writer identity blank, the
+# companion key used to be accepted and ignored: the process started clean and the
+# enabled capability kept answering its "not configured" 503, so an operator could
+# not tell a typo or a missing writer from an intentional absence (#660).
+_JOB_COMPANION_DATABASES = (
+    (
+        "job_admission_database_url",
+        "SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL",
+        "the admission pool is created by the public Job writer runtime",
+    ),
+    (
+        "voice_publisher_database_url",
+        "SPEECHNEXUS_VOICE_PUBLISHER_DATABASE_URL",
+        "the voice publisher pool is created by the public Job writer runtime",
+    ),
+)
+
+
+def _refuse_job_companion_database_without_writer(settings: Settings) -> None:
+    """Name a configured Job companion DSN that this process would never open.
+
+    The refusal belongs to the composition root, not ``Settings``: a Job companion
+    DSN is meaningful only for the API role that also configures the writer, and
+    the injected-port tests build a settings object without ever composing a Job
+    runtime. Naming both keys and the repair is what turns a silent 503 into an
+    actionable startup error.
+    """
+    if settings.job_writer_database_url is not None:
+        return
+    for field, variable, consequence in _JOB_COMPANION_DATABASES:
+        if getattr(settings, field) is not None:
+            raise ValueError(
+                f"{variable} is configured but SPEECHNEXUS_JOB_WRITER_DATABASE_URL is blank; "
+                f"{consequence}, so set SPEECHNEXUS_JOB_WRITER_DATABASE_URL or unset {variable}"
+            )
+
+
 def _build_readiness(settings: Settings) -> ReadinessService:
     probes: list[ReadinessProbe] = [
         PostgresReadinessProbe(
@@ -258,6 +296,7 @@ def create_app(
     """Create an API instance with explicit dependencies for tests and deployment."""
 
     resolved_settings = settings or Settings()
+    _refuse_job_companion_database_without_writer(resolved_settings)
     producer = (
         binding_defaults is not None
         or resolved_settings.binding_defaults_writer_database_url is not None

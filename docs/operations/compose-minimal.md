@@ -1456,7 +1456,7 @@ Gateway query 身份仅取得六张执行恢复关系及安装身份表的必要
 | `SPEECHNEXUS_PRONUNCIATION_READER_DATABASE_URL` | `sn_pronunciation_reader`（不创建） | 发音词典固定读取 | `503 pronunciation_unavailable` | 故意不预置 | 覆盖 |
 | `SPEECHNEXUS_PRONUNCIATION_WRITER_DATABASE_URL` | `sn_pronunciation_writer`（不创建） | 发音词典草稿写入 | `503 pronunciation_unavailable` | 故意不预置 | 覆盖 |
 | `SPEECHNEXUS_PRONUNCIATION_PUBLISHER_DATABASE_URL` | `sn_pronunciation_publisher`（不创建） | 发音词典原子发布 | `publish: true` → `422 pronunciation_publication_not_supported`；读取与草稿按上面两条 | 故意不预置 | 覆盖 |
-| `SPEECHNEXUS_VOICE_PUBLISHER_DATABASE_URL` | `sn_voice_publisher`（不创建） | voice 发布 | 只配该键时无启动报错也不生效：`JobRuntime` 未构造，发布仍 `503 voice_draft_unavailable`；Job 创建与读取不受影响 | 故意不预置 | 覆盖 |
+| `SPEECHNEXUS_VOICE_PUBLISHER_DATABASE_URL` | `sn_voice_publisher`（不创建） | voice 发布 | 未配 Job writer 时启动即拒绝并点名两个键（本键已配置、`SPEECHNEXUS_JOB_WRITER_DATABASE_URL` 为空）；两键都为空时发布 `503 voice_draft_unavailable`；writer 已配时跨库启动拒绝并点名同库要求 | 故意不预置 | 覆盖 |
 
 表中没有死键：27 个透传键都有运行时消费者。设置里另有两个不在本表范围的键：
 `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` 只被未装配的 TTS 结算 worker 读取
@@ -1509,23 +1509,26 @@ voice 发布要求先有 `voice_design` / `voice_validation` 车道产生的证�
 `job-dispatch` 启动闸门明确拒绝这两个 kind（见[异步 Job 段](#异步-job-运行角色与授权)），
 没有任何可发布的测量记录，创建该角色只会得到一个写入即失败的发布路径。
 
-**只配这一个键不会有任何启动报错，也不会让发布生效。** publisher 连接池由 `JobRuntime`
-在 `open()` 里创建，而 `JobRuntime` 只在 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL` 非空时才被
-构造，所以「配了该键但没配 Job writer」与「两个键都为空」的可观察结果完全相同：发布端点
-仍是 `503 voice_draft_unavailable`（两者实测一致），Job 创建与读取不受影响。这是本表里
-唯一一处「配置了却不生效且不报错」的形态，判断依据只能是这两个键的组合，不能只看本键；
-`deploy/compose.env.example` 也把该前置写在键旁。
+**只配这一个键现在会在启动期被拒绝。** publisher 连接池由 `JobRuntime` 在 `open()` 里
+创建，而 `JobRuntime` 只在 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL` 非空时才被构造；组合根
+因此在构造任何运行体前检查伴生 DSN，消息同时点名
+`SPEECHNEXUS_VOICE_PUBLISHER_DATABASE_URL` 与 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL`，并说明
+两键要么同时配置、要么都留空（#660）。在此之前，配了该键却漏配 writer 与两个键都为空给
+操作者的可观察结果完全相同：发布端点回到 `503 voice_draft_unavailable`，无法从启动日志
+区分。两键都为空时发布端点仍是 `503 voice_draft_unavailable`，Job 创建与读取不受影响。
+同类「配置了却不生效」的其余键见
+[配置前提扫描](../operations/configuration-prerequisites.md)。
 
-部署方判断方式：`SPEECHNEXUS_JOB_WRITER_DATABASE_URL` 为空（无论本键是否已配）时发布返回
+部署方判断方式：两键任缺一项时进程不启动并点名缺的那个键；两键都为空时发布返回
 `503 voice_draft_unavailable`。要启用，按顺序执行：
 
 1. 先启用 Job writer 三键——`SPEECHNEXUS_JOB_WRITER_DATABASE_URL`、
    `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL`、`SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL` 与
    三个非 owner 角色，见[异步 Job 运行角色与授权](#异步-job-运行角色与授权)；
 2. 保证 `sn_voice_publisher` 与 `sn_job_writer` 指向**同一个数据库**：`JobRuntime` 在启动时
-   比较两个连接的数据库身份，不同库拒绝启动。该拒绝被统一包装成
-   `Public Job writer startup rejected; verify migration and writer role`，不会单独点名
-   voice publisher，排查时按两个 DSN 的库名核对；
+   比较两个连接的数据库身份，不同库拒绝启动，并点名这两个键与
+   「must connect to the same database」；其余 writer 身份、授权或迁移问题仍统一包装成
+   `Public Job writer startup rejected; verify migration and writer role`；
 3. 装配 gateway 的 voice 车道私有配置与 `SPEECHNEXUS_JOB_DISPATCH_KINDS`，再创建
    `sn_voice_publisher` 并重放 `voice_publication_grants`，最后配置该键。
 

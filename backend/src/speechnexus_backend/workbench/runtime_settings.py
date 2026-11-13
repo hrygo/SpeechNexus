@@ -172,6 +172,16 @@ class WorkbenchSettings(BaseSettings):
             self.llm_qualification_reference,
         )
         if endpoint is None and model is None and qualification is None:
+            if self.llm_api_key is not None:
+                # The key alone used to be accepted and never read: settings said an
+                # intranet LLM credential existed while every assistant route stayed
+                # off. Name the group and the repair instead (#660).
+                raise ValueError(
+                    "SPEECHNEXUS_WORKBENCH_LLM_API_KEY is configured but "
+                    "SPEECHNEXUS_WORKBENCH_LLM_ENDPOINT, SPEECHNEXUS_WORKBENCH_LLM_MODEL "
+                    "and SPEECHNEXUS_WORKBENCH_LLM_QUALIFICATION_REFERENCE are blank; "
+                    "configure the whole intranet text LLM or unset the key"
+                )
             return TextLlmSettings()
         if endpoint is None or model is None or qualification is None:
             raise ValueError("configure the whole intranet text LLM or none of it")

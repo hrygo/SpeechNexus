@@ -177,6 +177,15 @@ class _PoolDiagnostics(logging.Filter):
         return True
 
 
+class _SplitJobDatabaseError(ValueError):
+    """A configured Job companion identity reaches another database.
+
+    Distinct from the generic startup rejection so ``open()`` can keep this message
+    intact: an operator who split the DSNs needs the two keys and the same-database
+    rule, not a hint to re-check the migration or the writer role (#660).
+    """
+
+
 class JobRuntime:
     def __init__(self, settings: Settings) -> None:
         if settings.job_writer_database_url is None or settings.process_role != "api":
@@ -215,21 +224,31 @@ class JobRuntime:
                     connection.execute("SET LOCAL statement_timeout='3s'")
                     _verify_privileges(connection, self._settings.database_schema)
                 admission_pool = self._open_admission_pool()
+                self._admission_pool = admission_pool
                 if admission_pool is not None and _database_identity(pool) != _database_identity(
                     admission_pool
                 ):
-                    raise ValueError(
-                        "Public Job writer and admission roles must share one database"
+                    # Identity mismatch is not a privilege or migration fault, so it
+                    # must not be masked as one: the message names both keys and the
+                    # rule. Assignment above lets the shared cleanup close the pool.
+                    raise _SplitJobDatabaseError(
+                        "SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL and "
+                        "SPEECHNEXUS_JOB_WRITER_DATABASE_URL must connect to the same database: "
+                        "one admission transaction reserves the row and writes the Job, so point "
+                        "both at one database or unset SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL"
                     )
-                self._admission_pool = admission_pool
                 publisher_pool = self._open_publisher_pool()
+                self._publisher_pool = publisher_pool
                 if publisher_pool is not None and _database_identity(pool) != _database_identity(
                     publisher_pool
                 ):
-                    raise ValueError(
-                        "Public Job writer and voice publisher must share one database"
+                    raise _SplitJobDatabaseError(
+                        "SPEECHNEXUS_VOICE_PUBLISHER_DATABASE_URL and "
+                        "SPEECHNEXUS_JOB_WRITER_DATABASE_URL must connect to the same database: "
+                        "the publisher appends the publication rows and revision pointers the Job "
+                        "writer's schema verifies, so point both at one database or unset "
+                        "SPEECHNEXUS_VOICE_PUBLISHER_DATABASE_URL"
                     )
-                self._publisher_pool = publisher_pool
                 adapter = PostgresPublicJobs(
                     pool,
                     admission_pool=admission_pool,
@@ -264,6 +283,11 @@ class JobRuntime:
                     logger.removeFilter(diagnostic)
                     self._diagnostics = None
                 if not isinstance(error, Exception):
+                    raise
+                # A split-database configuration is a composition error, not the
+                # migration/role fault the generic message describes; keep its own
+                # named repair (the pool cleanup above already ran).
+                if isinstance(error, _SplitJobDatabaseError):
                     raise
                 raise ValueError(
                     "Public Job writer startup rejected; verify migration and writer role"

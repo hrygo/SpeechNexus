@@ -69,6 +69,16 @@ class Settings(BaseSettings):
             raise ValueError(
                 "execution control requires both a component token and a lock directory"
             )
+        if self.control_query_database_url is not None and self.component_token is None:
+            # Without execution control this DSN is never opened: the read-only
+            # query pool belongs to the control lifespan. Accepting it alone would
+            # leave an operator believing a reader identity is in use (#660).
+            raise ValueError(
+                "SPEECHNEXUS_GATEWAY_CONTROL_QUERY_DATABASE_URL is configured but "
+                "SPEECHNEXUS_GATEWAY_COMPONENT_TOKEN is blank; the read-only query pool "
+                "belongs to execution control, so configure the component token and ingress "
+                "lock directory or unset the query DSN"
+            )
         if self.ingress_lock_directory is not None:
             if not self.ingress_lock_directory.is_absolute():
                 raise ValueError("ingress lock directory must be an absolute host-mounted path")

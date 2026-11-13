@@ -1,6 +1,6 @@
 """Guard the compose-minimal role provisioning steps against doc/code drift.
 
-The runbook creates six non-owner roles and calls repository grant functions by
+The runbook creates seven non-owner roles and calls repository grant functions by
 name, states the current migration head, and runs host commands that import the
 workspace members. A renamed grant function, a re-pointed head, or a host
 command that cannot import ``speechnexus_backend`` turns the runbook into
@@ -183,6 +183,37 @@ class ComposeMinimalRoleProvisioningTests(unittest.TestCase):
             self.document,
             "no such helper exists; the runbook must grant inline until one does",
         )
+
+    def test_the_base_compose_forwards_the_quarantine_release_dsn(self) -> None:
+        # The release endpoint is fail-closed at startup, so without this line the
+        # role the runbook provisions could never be reached from the api service.
+        self.assertIn(
+            "SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL: "
+            "${SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL:-}",
+            read(COMPOSE),
+        )
+
+    def test_both_provisioning_paths_install_the_quarantine_release_role(self) -> None:
+        # The authority is declared by the repository grant function, so both
+        # scripts (fresh install and upgrade of an existing deployment) must call
+        # it for the same role name, and that role's password must come from the
+        # environment exactly like the other optional identities.
+        calls = re.findall(
+            r'quarantine_release_grants\(schema, "(sn_quarantine_release)"\)', self.document
+        )
+        self.assertEqual(len(calls), 2, "both provisioning scripts must install the release role")
+        self.assertIn(
+            '"sn_quarantine_release": os.environ["SPEECHNEXUS_QUARANTINE_RELEASE_ROLE_PASSWORD"]',
+            self.document,
+        )
+
+    def test_the_runbook_writes_the_quarantine_release_dsn_back(self) -> None:
+        self.assertIn('"SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL": (', self.document)
+        self.assertIn("postgresql://sn_quarantine_release:", self.document)
+
+    def test_the_quarantine_release_section_names_the_startup_refusal(self) -> None:
+        self.assertIn("Quarantine release startup rejected", self.document)
+        self.assertIn("sn_quarantine_release", read(ENV_EXAMPLE))
 
     def test_the_base_compose_forwards_the_workspace_writer_dsn(self) -> None:
         # The runbook's workspace writer step ends by writing this URL; the base

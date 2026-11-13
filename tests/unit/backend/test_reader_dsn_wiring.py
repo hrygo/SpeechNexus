@@ -1,9 +1,10 @@
-"""Compose forwards the read-only projection identities; the API decides from them.
+"""Compose forwards the optional database identities; the API decides from them.
 
 ``deploy/compose.yaml`` did not carry ``SPEECHNEXUS_AUDIT_READER_DATABASE_URL``,
 ``SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL``,
-``SPEECHNEXUS_ARTIFACT_READER_DATABASE_URL`` or
-``SPEECHNEXUS_MODEL_INSTANCE_READER_DATABASE_URL`` for the api service, so the
+``SPEECHNEXUS_ARTIFACT_READER_DATABASE_URL``,
+``SPEECHNEXUS_MODEL_INSTANCE_READER_DATABASE_URL`` or
+``SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL`` for the api service, so the
 assembly conditions in :func:`create_app` could never be true in a Compose
 deployment and the corresponding endpoints answered their documented 503 by
 design::
@@ -14,6 +15,12 @@ design::
     GET /v1/nexus/admin/model-instances
     GET /v1/nexus/admin/model-instances/{id}/generations/{generation}
                                       -> 503 model_instance_service_unavailable
+    POST /v1/nexus/admin/admission-leases/{id}/quarantine-releases
+                                      -> 503 quarantine_release_unavailable
+
+The first four are read-only projection identities; the quarantine release one is
+a dedicated writer whose startup check compares the live ACL with its declared
+surface. Both kinds share the forwarding contract below.
 
 These tests pin the wiring itself, not the PostgreSQL authority:
 
@@ -26,7 +33,7 @@ These tests pin the wiring itself, not the PostgreSQL authority:
   runtime additionally keeps the paired object-storage keys it always required.
 
 The role surfaces and the startup self-checks are covered by the audit, catalog,
-artifact and model instance integration tests.
+artifact, model instance and quarantine release integration tests.
 """
 
 from __future__ import annotations
@@ -94,6 +101,17 @@ DSNS = {
         "postgresql://sn_model_instance_reader:placeholder@postgres:5432/speechnexus"
     ),
 }
+#: The quarantine release identity is a writer, so it is not part of ``READERS``.
+#: It keeps the same Compose forwarding contract and the same unconfigured 503.
+QUARANTINE_RELEASE = (
+    "SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL",
+    "quarantine_release_database_url",
+    "/v1/nexus/admin/admission-leases/lease-stage-main/quarantine-releases",
+    "quarantine_release_unavailable",
+)
+DSNS[QUARANTINE_RELEASE[0]] = (
+    "postgresql://sn_quarantine_release:placeholder@postgres:5432/speechnexus"
+)
 
 # docker compose refuses to render without the :? interpolation inputs. These
 # placeholders are synthetic and exist only to make the render exit zero.
@@ -317,6 +335,7 @@ def test_the_example_env_declares_the_reader_entry_blank(
         "SPEECHNEXUS_WORKSPACE_WRITER_ROLE_PASSWORD",
         "SPEECHNEXUS_AUDIT_READER_ROLE_PASSWORD",
         "SPEECHNEXUS_MODEL_INSTANCE_READER_ROLE_PASSWORD",
+        "SPEECHNEXUS_QUARANTINE_RELEASE_ROLE_PASSWORD",
     ],
 )
 def test_the_example_env_names_the_optional_role_passwords(variable: str) -> None:
@@ -338,7 +357,57 @@ def test_compose_renders_each_reader_blank_then_configured(tmp_path: Path) -> No
     unconfigured = _render({}, tmp_path)
     for variable, *_ in READERS:
         assert unconfigured[variable] == ""
+    assert unconfigured[QUARANTINE_RELEASE[0]] == ""
 
     configured = _render(DSNS, tmp_path)
     for variable, value in DSNS.items():
         assert configured[variable] == value
+
+
+# ---------------------------------------------------------------------------
+# The quarantine release identity is a writer with a startup authority check.
+# It keeps the forwarding contract but fails differently: a configured DSN runs
+# the column-by-column self-check at startup, an empty one answers 503.
+# ---------------------------------------------------------------------------
+
+
+def test_the_compose_api_service_forwards_the_quarantine_release_dsn() -> None:
+    variable = QUARANTINE_RELEASE[0]
+    assert API_ENV[variable] == "${" + variable + ":-}"
+
+
+def test_the_quarantine_release_dsn_defaults_to_empty() -> None:
+    variable, field, _path, _code = QUARANTINE_RELEASE
+    assert ":?" not in API_ENV[variable]
+    assert getattr(_with(**{field: ""}), field) is None
+
+
+async def test_the_empty_quarantine_release_value_keeps_the_endpoint_at_503() -> None:
+    _variable, field, path, code = QUARANTINE_RELEASE
+    app = app_module.create_app(settings=_with(**{field: ""}))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(path, json={})
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == code
+    assert response.json()["error"]["retryable"] is True
+
+
+def test_the_quarantine_release_runtime_is_assembled_from_its_own_dsn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[Settings] = []
+
+    class Spy:
+        def __init__(self, settings: Settings) -> None:
+            seen.append(settings)
+
+    monkeypatch.setattr(app_module, "QuarantineReleaseRuntime", Spy)
+    app_module.create_app(settings=_with())
+    assert seen == []
+    dsn = SecretStr(DSNS[QUARANTINE_RELEASE[0]])
+    app_module.create_app(settings=_with(**{QUARANTINE_RELEASE[1]: dsn}))
+    assert [settings.quarantine_release_database_url for settings in seen] == [dsn]
+
+
+def test_the_example_env_declares_the_quarantine_release_entry_blank() -> None:
+    assert f"{QUARANTINE_RELEASE[0]}=" in EXAMPLE_PATH.read_text(encoding="utf-8").splitlines()

@@ -10,6 +10,7 @@ import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
 from speechnexus_backend.speech.application.quarantine_releases import (
+    QuarantineSurfaceError,
     QuarantineUnavailableError,
     QuarantineUnknownError,
 )
@@ -26,6 +27,33 @@ from speechnexus_backend.speech.infrastructure.quarantine_release_sql import (
     quarantine_release_in_transaction,
     read_ledger,
 )
+
+#: A missing relation, column or schema object means the migration chain did not
+#: reach 0052 in this database; the fix is `speechnexus-job-migrate`, not new
+#: evidence. ``InvalidSchemaName`` covers a mis-set ``SPEECHNEXUS_DATABASE_SCHEMA``.
+_MISSING_OBJECT = (
+    psycopg.errors.UndefinedTable,
+    psycopg.errors.UndefinedColumn,
+    psycopg.errors.UndefinedObject,
+    psycopg.errors.UndefinedFunction,
+    psycopg.errors.InvalidSchemaName,
+)
+
+
+def _surface_defect(error: BaseException) -> str:
+    """Name a storage refusal instead of reporting it as a business conflict.
+
+    Only a genuine state mismatch may become 409: a lease that is not
+    quarantined, evidence that does not match, an idempotency key owned by
+    another request. A missing table or a revoked grant is a deployment defect,
+    and reporting it as ``quarantine_release_conflict`` would tell the operator
+    to change evidence or escalate a lease that is not the problem.
+    """
+    if isinstance(error, psycopg.errors.InsufficientPrivilege):
+        return "quarantine_release_privilege_missing"
+    if isinstance(error, _MISSING_OBJECT):
+        return "quarantine_release_schema_not_migrated"
+    return "quarantine_release_failed"
 
 
 class _BudgetExpiredError(Exception):
@@ -96,8 +124,10 @@ class PostgresQuarantineReleases:
             raise QuarantineUnavailableError from None
         except psycopg.OperationalError, psycopg.InterfaceError:
             raise QuarantineUnavailableError from None
-        except psycopg.Error, ValueError, TypeError, KeyError:
-            raise QuarantineReleaseRejectedError("quarantine_release_conflict") from None
+        except (psycopg.Error, ValueError, TypeError, KeyError) as error:
+            # The read-only transaction confirmed rollback; a broken read surface
+            # is never a lease conflict.
+            raise QuarantineSurfaceError(_surface_defect(error)) from None
         if ledger is None:
             return None
         outcome = decide_replay(ledger, evidence)
@@ -138,8 +168,11 @@ class PostgresQuarantineReleases:
                 raise QuarantineUnavailableError from None
             except psycopg.OperationalError, psycopg.InterfaceError:
                 raise QuarantineUnknownError from None  # Never repeat an ambiguous write.
-            except psycopg.Error, ValueError, TypeError, KeyError:
-                raise QuarantineReleaseRejectedError("quarantine_release_conflict") from None
+            except (psycopg.Error, ValueError, TypeError, KeyError) as error:
+                # The connection context rolled back, so nothing was released;
+                # a missing table, a revoked grant or an unexpected storage
+                # refusal is a deployment defect, not an evidence conflict.
+                raise QuarantineSurfaceError(_surface_defect(error)) from None
         raise QuarantineUnavailableError from None
 
 

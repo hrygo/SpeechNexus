@@ -64,7 +64,7 @@ worktree  /private/tmp/sn667            branch review/667-acceptance-rework（�
 隔离 PG   compose 项目 sn667rev，postgres:16.15-alpine，127.0.0.1:56632
           （只用于 roles 步：真迁移 + 真 provision + 真 ACL 读）
 构建实验  sn667bf / sn667bf2 / sn667bf3 / sn667b1（坏 Dockerfile，端口 56644/56655）
-探针目录  /tmp/sn667probe（compose.yaml、review.env、full.env、drive_roles.py、mutate.py）
+探针目录  /tmp/sn667probe（compose.yaml、review.env、full.env、drive_roles.py、mutate.py；收尾已删，原文见附录）
 ```
 
 关键命令（可复现）：
@@ -384,6 +384,126 @@ reference acceptance: DRY-RUN PASS steps=7 pending=2
 `order=tools, migrate, roles, buckets, stack, gate, health` 与文档首行逐字一致；`commit` 是真实短哈希（说明记录代码在 git 检出下工作，R7 的 `unknown` 只在 git 不可用时出现）。
 
 ---
+
+## 附：复现脚本原文（隔离目录已删，可直接重建）
+
+`/tmp/sn667probe` 已在收尾时删除；下面两段是本轮实际使用的驱动脚本原文，复现时重建即可。
+
+`drive_roles.py`（真实 PG 上只驱动 `roles` 一步；**必须在仓库根目录运行**，`uv run` 需要 project）：
+
+```python
+import importlib.util, os, sys
+from pathlib import Path
+
+REPO = Path("/private/tmp/sn667")
+spec = importlib.util.spec_from_file_location("ra", REPO / "scripts/dev-env/reference-acceptance.py")
+m = importlib.util.module_from_spec(spec); sys.modules["ra"] = m; spec.loader.exec_module(m)
+
+env_file = Path("/tmp/sn667probe/review.env")
+merged, child = m.effective_env(env_file, dict(os.environ))
+merged = dict(merged)
+merged["SN_ADMIN_DSN"] = "postgresql://speechnexus:change-me-local-postgres@127.0.0.1:56632/speechnexus"
+child = dict(merged)
+ctx = m.Context(
+    env=merged,
+    env_file=env_file,
+    compose_file=Path("/tmp/sn667probe/compose.yaml"),   # 只含 postgres 服务的临时 compose
+    project="sn667rev",
+    runner=m.Runner(),
+    dry_run=False,
+    gate_mode="compose",
+    repo_root=REPO,
+    child_env=child,
+)
+role_step = next(s for s in m.STEPS if s.ident == "roles")
+code = m.run_steps((role_step,), ctx)
+print("RUN_EXIT=", code)
+```
+
+`mutate.py`（7 组变异：改一行 → 跑原测试 → 复原并断言复原）：
+
+```python
+import subprocess, sys, pathlib
+REPO = pathlib.Path("/private/tmp/sn667")
+SCRIPT = REPO / "scripts/dev-env/reference-acceptance.py"
+ORIG = SCRIPT.read_text()
+
+MUTATIONS = {
+ "M1 drop up exit-code check": (
+   '    if not started.ok:\n'
+   '        raise StepFailureError(\n'
+   '            f"栈未起来（docker compose up 退出码 {started.code}）：{started.tail(6)}",\n'
+   '            inputs=[\n'
+   '                "看上面构建输出修复 Dockerfile/构建参数；"\n'
+   '                "旧容器仍可能是 running/healthy，ps 的状态不能替代 up 的退出码",\n'
+   '            ],\n'
+   '        )\n', ''),
+ "M2 gate FAIL no longer decides first": (
+   '    failures = [\n'
+   '        line.strip().removeprefix("FAIL: ") for line in output.splitlines() if "FAIL: " in line\n'
+   '    ]\n'
+   '    if failures:',
+   '    failures = []\n    if failures:'),
+ "M3 ACL comparison returns no gaps": (
+   "    labels: dict[str, str] = {}\n    for check in checks:",
+   "    return []\n    labels: dict[str, str] = {}\n    for check in checks:"),
+ "M4 catch-all narrowed to ZeroDivisionError": (
+   '        except Exception as unexpected:  # one summary line, never a traceback',
+   '        except ZeroDivisionError as unexpected:  # one summary line, never a traceback'),
+ "M5 migrate run without --build": (
+   '"--profile", "migration", "run", "--build", "--rm", "migrate"',
+   '"--profile", "migration", "run", "--rm", "migrate"'),
+ "M6 gate ordered before stack": (
+   'def git_commit(ctx: Context) -> str:',
+   'STEPS = STEPS[:4] + (STEPS[5], STEPS[4]) + STEPS[6:]\n\n\ndef git_commit(ctx: Context) -> str:'),
+ "M7 unparsed GRANT silently skipped": (
+   "        checks.extend(parse_grant_statement(statement))",
+   "        try:\n            checks.extend(parse_grant_statement(statement))\n        except StepFailureError:\n            continue"),
+}
+
+def run_tests():
+    proc = subprocess.run(
+        [sys.executable, "-m", "unittest", "tests.ci.test_reference_acceptance", "-q"],
+        cwd=REPO, capture_output=True, text=True)
+    failed = sorted({line.split(" (")[0].strip() for line in proc.stderr.splitlines()
+                     if line.startswith(("FAIL:", "ERROR:"))})
+    return proc.returncode, failed
+
+try:
+    base = run_tests()
+    print(f"baseline: exit={base[0]} failed={len(base[1])}")
+    for name, (old, new) in MUTATIONS.items():
+        assert old in ORIG, f"anchor missing for {name}"
+        SCRIPT.write_text(ORIG.replace(old, new, 1))
+        code, failed = run_tests()
+        print(f"{name}: exit={code} red={len(failed)}")
+        for item in failed:
+            print("    -", item)
+finally:
+    SCRIPT.write_text(ORIG)
+    print("restored:", SCRIPT.read_text() == ORIG)
+```
+
+`/tmp/sn667probe/compose.yaml`（只用于 `roles` 步的真 PG）：
+
+```yaml
+services:
+  postgres:
+    image: postgres:16.15-alpine
+    environment:
+      POSTGRES_USER: speechnexus
+      POSTGRES_PASSWORD: change-me-local-postgres
+      POSTGRES_DB: speechnexus
+    ports:
+      - "127.0.0.1:56632:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U speechnexus -d speechnexus"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+```
+
+`/tmp/sn667probe/review.env` 的关键项：`POSTGRES_USER=speechnexus`、`POSTGRES_PASSWORD=change-me-local-postgres`、`POSTGRES_DB=speechnexus`、`SPEECHNEXUS_DATABASE_SCHEMA=speech`、`SPEECHNEXUS_MIGRATION_DATABASE_URL=postgresql://speechnexus:change-me-local-postgres@127.0.0.1:56632/speechnexus`、三条 Job DSN（`sn_job_writer`/`sn_job_admission`/`sn_job_dispatch`，口令任意）、`SN_GATEWAY_ROLE=sn_gateway`。
 
 ## 只能依赖作者陈述 / 未验证的点
 

@@ -603,8 +603,12 @@ PY
 CREATE 权限，停止启动服务；不要用超级用户连接绕过检查。API 启动时还会再次核验
 `sn_api` 不是数据库/表 owner，也不是可继承的 owner 成员。
 
-脚本成功后，把十一个新角色的连接地址写回 `deploy/compose.env`；脚本替换同名空行或追加，
-不打印口令：
+脚本成功后，把十一个非基线身份的连接地址写回 `deploy/compose.env`（其中
+`sn_workspace_writer`、`sn_audit_reader`、`sn_model_instance_reader` 与
+`sn_quarantine_release` 四个此前已有写回，本节新增七个）；脚本替换同名空行或追加，不打印
+口令。写回脚本与上面的口令导出一一对应，必须**在同一个 shell 里执行**：写回脚本用
+`os.environ[...]` 读取导出值，换一个 shell 会因缺少 `SPEECHNEXUS_*_ROLE_PASSWORD` 抛
+`KeyError`。
 
 ```bash
 python3 - <<'PY'
@@ -921,7 +925,7 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 
 | 身份 | 键 | 端点 / 用途 | 未配置时 | 授权声明 |
 | --- | --- | --- | --- | --- |
-| `sn_catalog_reader` | `SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL` | `GET /v1/models`、`GET /v1/models/{model}`、`GET /v1/voices` | `503 model_catalogue_unavailable`、`503 voice_catalogue_unavailable` | `model_catalog_reader_grants` |
+| `sn_catalog_reader` | `SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL` | `GET /v1/models`、`GET /v1/models/{model}`、`GET /v1/nexus/voices` | `503 model_catalogue_unavailable`、`503 voice_catalogue_unavailable` | `model_catalog_reader_grants` |
 | `sn_artifact_reader` | `SPEECHNEXUS_ARTIFACT_READER_DATABASE_URL` | `GET /v1/nexus/artifacts/{artifact_id}` 与 `.../content` | `503 artifact_service_unavailable` | `artifact_reader_grants` |
 | `sn_resource_pool_reader` | `SPEECHNEXUS_RESOURCE_POOL_READER_DATABASE_URL` | `GET /v1/nexus/admin/resource-pools` | `503 resource_pool_service_unavailable` | 本节脚本内显式 `GRANT`（无授权函数） |
 | `sn_binding_list_reader` | `SPEECHNEXUS_BINDING_LIST_READER_DATABASE_URL` | `GET /v1/nexus/admin/model-bindings` | `503 model_binding_service_unavailable` | 本节脚本内显式 `GRANT`（无授权函数） |
@@ -933,7 +937,7 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 `speech_published_binding_revisions` 视图、`speech_catalog_state`、
 `speech_publication_heads` 与 `speech_publication_retirements`，永远读不到草稿
 `speech_binding_revisions` 本体，也不能推进目录版本。启动自检不合格时报
-`Model catalogue reader startup rejected`。它同时驱动 `GET /v1/voices`，所以只配
+`Model catalogue reader startup rejected`。它同时驱动 `GET /v1/nexus/voices`，所以只配
 `/v1/models` 一半能力并不存在：一个身份、两个公开读端点。
 
 `sn_artifact_reader` 只 `SELECT` `speech_artifacts` 与 `speech_workspaces`，字节仍由对象
@@ -1401,12 +1405,28 @@ Gateway query 身份仅取得六张执行恢复关系及安装身份表的必要
 
 `deploy/compose.yaml` 透传的全部 27 个 `*_DATABASE_URL` 键按下表处置：要么本文有可执行的
 预置步骤，要么在[故意不预置的身份](#故意不预置的身份)里写明原因与「部署方怎么判断它已经
-启用」。本表本身由 `tests/ci/test_reference_deploy_dsn_coverage.py` 守护——新增透传键既
-没有步骤也不在清单里、删掉某个已预置身份的步骤、或把清单项删掉，都会让它变红。`守护`
-列是钉住该行事实的用例：`覆盖` 为本表用例，`角色` 为
-`tests/ci/test_compose_minimal_role_provisioning.py`，`Job` 为
-`tests/ci/test_reference_deploy_job_prereqs.py`，`发布` 为
-`tests/ci/test_reference_deploy_profile_publication.py`。每一行至少由 `覆盖` 检查。
+启用」。`未配置时的实际行为` 一列只写未配置时可观察到的稳定结果——渲染期失败、具名启动
+拒绝、或固定的 HTTP 状态与错误码，不写无法从报文核对的「能力未启用」。有行关闭的是叠加
+能力而不是基线写入，那一行按实测写出真正发生的事，不用统一的失败形态去凑。
+
+本表由 `tests/ci/test_reference_deploy_dsn_coverage.py` 守护：新增透传键既没有步骤也不在
+清单里、删掉某个已预置身份的步骤、把清单项删掉、把某行的身份改成脚本不创建的角色、把端点
+改成契约里不存在的路径、把失败码换成别的能力真实存在的码、把 DSN 写回里的「角色↔口令变量」
+换错、或改掉某个计数，都会让它变红。`守护` 列只表示「另有哪个用例钉住该行的同一事实」：
+
+- `覆盖`：本表用例，逐行核对键集合、身份、端点、失败码与写回配对；
+- `角色`：`tests/ci/test_compose_minimal_role_provisioning.py`，核对本行所属角色的授权
+  声明与角色口令来源；故意不预置的行没有角色，因此只有 `覆盖`；
+- `Job`：`tests/ci/test_reference_deploy_job_prereqs.py`，只出现在 Job 三键行；
+- `发布`：`tests/ci/test_reference_deploy_profile_publication.py`，只出现在
+  `sn_profile_writer` 行。
+
+「表中没有死键」的判定范围是 `backend/src`、`execution-gateway/src` 与 `deploy/*.py` 里的
+读取位置：settings 字段（含 `env_prefix` 组合）、`Field`/`validation_alias` 别名、
+`os.environ[...]`/`os.environ.get(...)`/`os.getenv(...)` 字面，以及绑定到这类名字后再被
+下标或 `.get` 读取的模块常量。`scripts/`、`tests/`、`web/` 不在扫描范围内：那里的名字是
+夹具、运维命令或前端字段，不能证明产品侧有消费者，计入会把死键判活。新增的透传键若只被
+`scripts/` 消费会被判为死键——这是需要人工判定并补读取位置或改写本段的信号。
 
 | 键 | 身份 | 端点 / 用途 | 未配置时的实际行为 | 处置 | 守护 |
 | --- | --- | --- | --- | --- | --- |
@@ -1425,18 +1445,18 @@ Gateway query 身份仅取得六张执行恢复关系及安装身份表的必要
 | `SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL` | `sn_job_dispatch` | `job-dispatch` profile 派发 | 空值 → 启动闸门点名拒绝启动，不领取 Job | 预置 | 覆盖+Job |
 | `SPEECHNEXUS_DISABLE_DATABASE_URL` | `sn_disable_scan` | `binding-disable` profile 扫描 | 空值 → worker 启动即退出并点名显式连接 | 预置 | 覆盖 |
 | `SPEECHNEXUS_DISABLE_SETTLEMENT_DATABASE_URL` | `sn_disable_settle` | 停用租约结算 | 空值 → worker 启动即退出并点名显式连接（与扫描角色同一条拒绝） | 预置 | 覆盖 |
-| `SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL` | `sn_catalog_reader` | `GET /v1/models`、`GET /v1/models/{model}`、`GET /v1/voices` | `503 model_catalogue_unavailable`、`503 voice_catalogue_unavailable` | 预置 | 覆盖+角色 |
+| `SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL` | `sn_catalog_reader` | `GET /v1/models`、`GET /v1/models/{model}`、`GET /v1/nexus/voices` | `503 model_catalogue_unavailable`、`503 voice_catalogue_unavailable` | 预置 | 覆盖+角色 |
 | `SPEECHNEXUS_ARTIFACT_READER_DATABASE_URL` | `sn_artifact_reader` | Artifact 元数据与内容 | `503 artifact_service_unavailable` | 预置 | 覆盖+角色 |
 | `SPEECHNEXUS_RESOURCE_POOL_READER_DATABASE_URL` | `sn_resource_pool_reader` | `GET /v1/nexus/admin/resource-pools` | `503 resource_pool_service_unavailable` | 预置 | 覆盖+角色 |
 | `SPEECHNEXUS_BINDING_LIST_READER_DATABASE_URL` | `sn_binding_list_reader` | `GET /v1/nexus/admin/model-bindings` | `503 model_binding_service_unavailable` | 预置 | 覆盖+角色 |
-| `SPEECHNEXUS_BINDING_WRITER_DATABASE_URL` | `sn_binding_writer` | binding draft 写入 | `503 binding_unavailable` | 预置 | 覆盖+角色 |
+| `SPEECHNEXUS_BINDING_WRITER_DATABASE_URL` | `sn_binding_writer` | binding draft 写入与 draft 读取 | 空值 → 写入 `503 binding_result_unknown`、draft 读取 `503 binding_unavailable` | 预置 | 覆盖+角色 |
 | `SPEECHNEXUS_BINDING_ADMIN_READER_DATABASE_URL` | `sn_binding_admin_reader` | admin binding 读取与发布事实 | `503 binding_unavailable` | 预置 | 覆盖+角色 |
 | `SPEECHNEXUS_BINDING_LIFECYCLE_DATABASE_URL` | `sn_binding_lifecycle` | binding 发布、退休、激活与停用意图（`POST .../model-bindings/{binding_id}/publications` 等） | `503 binding_result_unknown`（`retryable: false`） | 预置 | 覆盖+角色 |
-| `SPEECHNEXUS_BINDING_DEFAULTS_WRITER_DATABASE_URL` | `sn_binding_defaults_writer`（不创建） | 默认参数 producer 模式 | 空值 → 与未配置 binding writer 相同：写入端点 `503 binding_unavailable` | 故意不预置 | 覆盖+角色 |
+| `SPEECHNEXUS_BINDING_DEFAULTS_WRITER_DATABASE_URL` | `sn_binding_defaults_writer`（不创建） | 默认参数 producer 模式 | 键为空即该模式关闭：legacy binding 写入仍由 `sn_binding_writer` 正常处理（`POST` 照常 `201`）；defaults 快照 `GET` 不由该模式服务，`BindingIngress` 按无效 binding 请求拒绝（`400 invalid_binding_request`）；两键同配时 API 在构造路由前拒绝启动（`Configure one explicit binding writer mode`） | 故意不预置 | 覆盖 |
 | `SPEECHNEXUS_PRONUNCIATION_READER_DATABASE_URL` | `sn_pronunciation_reader`（不创建） | 发音词典固定读取 | `503 pronunciation_unavailable` | 故意不预置 | 覆盖 |
 | `SPEECHNEXUS_PRONUNCIATION_WRITER_DATABASE_URL` | `sn_pronunciation_writer`（不创建） | 发音词典草稿写入 | `503 pronunciation_unavailable` | 故意不预置 | 覆盖 |
 | `SPEECHNEXUS_PRONUNCIATION_PUBLISHER_DATABASE_URL` | `sn_pronunciation_publisher`（不创建） | 发音词典原子发布 | `publish: true` → `422 pronunciation_publication_not_supported`；读取与草稿按上面两条 | 故意不预置 | 覆盖 |
-| `SPEECHNEXUS_VOICE_PUBLISHER_DATABASE_URL` | `sn_voice_publisher`（不创建） | voice 发布 | `503 voice_draft_unavailable`；Job 创建与读取不受影响 | 故意不预置 | 覆盖 |
+| `SPEECHNEXUS_VOICE_PUBLISHER_DATABASE_URL` | `sn_voice_publisher`（不创建） | voice 发布 | 只配该键时无启动报错也不生效：`JobRuntime` 未构造，发布仍 `503 voice_draft_unavailable`；Job 创建与读取不受影响 | 故意不预置 | 覆盖 |
 
 表中没有死键：27 个透传键都有运行时消费者。设置里另有两个不在本表范围的键：
 `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` 只被未装配的 TTS 结算 worker 读取
@@ -1446,17 +1466,30 @@ CLI 的配置，同样不经过本 Compose。两者都不是死键，只是不�
 
 ### 故意不预置的身份
 
-以下五项不给预置步骤，原因与启用判断写在各项内。它们的共同点是：未配置时对应能力关闭并
-返回表中那个稳定错误，不会「假装可用」；一旦配置了地址，缺失的角色或授权会让 API 在启动
-阶段点名拒绝，也不会静默降级。
+以下五项不给预置步骤，原因与启用判断写在各项内。它们的共同点是：未配置时对应能力关闭，
+可观察结果与表中「未配置时的实际行为」那一格一致（具名启动拒绝、固定状态码或「写入照常、
+快照路径不被服务」），不会「假装可用」；一旦配置了地址，缺失的角色或授权会让 API 在启动
+阶段点名拒绝，不会带着错误身份上线。这五项里有两项还有「配了不等于生效」的前置，分别在
+项内写明：`sn_binding_defaults_writer` 与 `sn_binding_writer` 互斥，`sn_voice_publisher`
+依赖 Job writer。
 
 **`sn_binding_defaults_writer`（`SPEECHNEXUS_BINDING_DEFAULTS_WRITER_DATABASE_URL`）**
 是 `sn_binding_writer` 之外的另一种 producer 模式，两者互斥：设置里两者同时存在时
-API 在构造路由前即拒绝启动（`Configure one explicit binding writer mode`）。本参考部署
-选择 `sn_binding_writer` 模式，所以不创建它。部署方判断方式：该键为空即该模式未启用；
-要改用它，先清空 `SPEECHNEXUS_BINDING_WRITER_DATABASE_URL` 再创建
-`sn_binding_defaults_writer` 并重放 `binding_defaults_grants`（它已包含
-`binding_draft_grants` 的全部授权），启动自检通过后默认参数 producer 才生效。
+`Settings` 校验即抛 `Configure one explicit binding writer mode`，API 在构造路由前就拒绝
+启动。本参考部署选择 `sn_binding_writer` 模式，所以不创建它。
+
+关闭该模式时不会把 binding 写入一起关掉，也不会出现 `503 binding_unavailable`：legacy
+`POST /v1/nexus/admin/model-bindings` 仍由 `sn_binding_writer` 处理（参考部署实测 `201`），
+变化的只是默认参数快照那条 `GET .../revisions/{revision}/parameter-defaults`——producer
+关闭时该路由不注册，`BindingIngress` 把这类未识别路径按无效 binding 请求拒绝，实测
+`400 invalid_binding_request`。也就是说参考部署里「默认参数 producer 未启用」的可观察事实
+是「写入照常、快照路径不可用」，不是写入 503；这也是本表唯一一行关闭叠加能力而非基线写面
+的条目。
+
+部署方判断方式：该键为空即该模式未启用；要改用它，先清空
+`SPEECHNEXUS_BINDING_WRITER_DATABASE_URL` 再创建 `sn_binding_defaults_writer` 并重放
+`binding_defaults_grants`（它已包含 `binding_draft_grants` 的全部授权），启动自检通过后
+默认参数 producer 才生效，快照 `GET` 同时出现。
 
 **`sn_pronunciation_reader` / `sn_pronunciation_writer` / `sn_pronunciation_publisher`**
 （`SPEECHNEXUS_PRONUNCIATION_READER_DATABASE_URL`、
@@ -1474,10 +1507,27 @@ API 在构造路由前即拒绝启动（`Configure one explicit binding writer m
 **`sn_voice_publisher`（`SPEECHNEXUS_VOICE_PUBLISHER_DATABASE_URL`）** 不预置，因为
 voice 发布要求先有 `voice_design` / `voice_validation` 车道产生的证据：本参考部署的
 `job-dispatch` 启动闸门明确拒绝这两个 kind（见[异步 Job 段](#异步-job-运行角色与授权)），
-没有任何可发布的测量记录，创建该角色只会得到一个写入即失败的发布路径。部署方判断方式：
-键为空时发布返回 `503 voice_draft_unavailable`，Job 创建与读取不受影响；要启用，先装配
-gateway 的 voice 车道私有配置与 `SPEECHNEXUS_JOB_DISPATCH_KINDS`，再创建
-`sn_voice_publisher` 并重放 `voice_publication_grants`，最后配置该键。
+没有任何可发布的测量记录，创建该角色只会得到一个写入即失败的发布路径。
+
+**只配这一个键不会有任何启动报错，也不会让发布生效。** publisher 连接池由 `JobRuntime`
+在 `open()` 里创建，而 `JobRuntime` 只在 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL` 非空时才被
+构造，所以「配了该键但没配 Job writer」与「两个键都为空」的可观察结果完全相同：发布端点
+仍是 `503 voice_draft_unavailable`（两者实测一致），Job 创建与读取不受影响。这是本表里
+唯一一处「配置了却不生效且不报错」的形态，判断依据只能是这两个键的组合，不能只看本键；
+`deploy/compose.env.example` 也把该前置写在键旁。
+
+部署方判断方式：`SPEECHNEXUS_JOB_WRITER_DATABASE_URL` 为空（无论本键是否已配）时发布返回
+`503 voice_draft_unavailable`。要启用，按顺序执行：
+
+1. 先启用 Job writer 三键——`SPEECHNEXUS_JOB_WRITER_DATABASE_URL`、
+   `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL`、`SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL` 与
+   三个非 owner 角色，见[异步 Job 运行角色与授权](#异步-job-运行角色与授权)；
+2. 保证 `sn_voice_publisher` 与 `sn_job_writer` 指向**同一个数据库**：`JobRuntime` 在启动时
+   比较两个连接的数据库身份，不同库拒绝启动。该拒绝被统一包装成
+   `Public Job writer startup rejected; verify migration and writer role`，不会单独点名
+   voice publisher，排查时按两个 DSN 的库名核对；
+3. 装配 gateway 的 voice 车道私有配置与 `SPEECHNEXUS_JOB_DISPATCH_KINDS`，再创建
+   `sn_voice_publisher` 并重放 `voice_publication_grants`，最后配置该键。
 
 ## 7. 启动 API 与 gateway
 

@@ -21,6 +21,19 @@ interface TaskIdentity {
   readonly pending: "create" | "cancel" | null;
   readonly operationId: string | null;
   readonly cursor: string | null;
+  /**
+   * The protocol definitively refused this create attempt, so the durable intent is
+   * spent: it can only be abandoned explicitly, never replayed. `pending` keeps its
+   * original "a request may be in flight, so its outcome is unknown" meaning and is
+   * never repurposed for the refusal; the field is written only after the refusal was
+   * observed, so the crash window before any answer still reloads as unknown (#707).
+   *
+   * A journal from before #707 counts keys strictly, so it rejects a record carrying
+   * this field as `invalid` instead of misreading it; the Host then reports unavailable
+   * recovery and keeps the record (see FileTaskHost). That is a safe failure, not
+   * backward compatibility.
+   */
+  readonly settled?: "terminal";
 }
 
 export interface TtsSelection {
@@ -140,8 +153,9 @@ function validRecord(value: unknown): RecoveryRecord {
   if (row.version !== 1 && row.version !== 2) return invalid();
   const expected = row.version === 1 ? fields : [...fields, ...ttsFields];
   const hasModelKey = row.version === 2 && Object.hasOwn(row, "effectiveModelKey");
+  const hasSettled = Object.hasOwn(row, "settled");
   if (
-    Object.keys(row).length !== expected.length + Number(hasModelKey) ||
+    Object.keys(row).length !== expected.length + Number(hasModelKey) + Number(hasSettled) ||
     expected.some((field) => !Object.hasOwn(row, field))
   )
     return invalid();
@@ -176,6 +190,20 @@ function validRecord(value: unknown): RecoveryRecord {
   if (row.pending === "create" && row.jobId !== null) return invalid();
   if (row.jobId === null && (row.pending !== "create" || row.cursor !== null)) return invalid();
   if (row.pending === null && row.operationId !== null) return invalid();
+  if (hasSettled) {
+    // A settled intent is exactly a create attempt that the protocol answered terminally
+    // and that produced no Job of its own, so there is nothing left to replay or query.
+    // `pending: "create"` is the schema's only jobId-less form; the field, not the
+    // pending value, carries the refusal.
+    if (
+      row.settled !== "terminal" ||
+      row.pending !== "create" ||
+      row.jobId !== null ||
+      row.operationId !== null ||
+      row.cursor !== null
+    )
+      return invalid();
+  }
   if (
     row.cursor !== null &&
     (typeof row.cursor !== "string" || !/^[1-9][0-9]{0,18}$/.test(row.cursor))
@@ -263,7 +291,10 @@ export class SessionTaskJournal implements FileTaskJournal {
         (before.jobId !== null && before.jobId !== record.jobId) ||
         (before.version === 2 &&
           before.effectiveModelKey !== undefined &&
-          (record.version !== 2 || record.effectiveModelKey !== before.effectiveModelKey)))
+          (record.version !== 2 || record.effectiveModelKey !== before.effectiveModelKey)) ||
+        // A settled intent cannot be un-settled: losing the field would make the next
+        // reload rebuild it as an unconfirmed submission, which is the defect #707 fixes.
+        (before.settled === "terminal" && record.settled !== "terminal"))
     )
       throw new TaskJournalError("changed");
     const raw = JSON.stringify(record);

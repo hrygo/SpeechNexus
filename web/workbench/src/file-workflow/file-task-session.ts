@@ -137,6 +137,12 @@ interface TaskView {
   readonly canReplay: boolean;
   readonly requiresInput: boolean;
   readonly uploadRejected?: boolean;
+  /**
+   * The protocol definitively refused this create attempt, so the durable intent is
+   * spent: it can be neither replayed nor created over. Only explicit abandonment ends
+   * it. Never set for an unknown outcome, which stays reconcilable by its original key.
+   */
+  readonly rejected?: boolean;
   readonly assetRecoveryId?: string | undefined;
   readonly notice: string;
   readonly asset?: FileContracts["Asset"];
@@ -230,12 +236,20 @@ export class FileTaskSession {
       this.#model = record.model;
       // The submit body is rebuilt on demand: v2 text lives only in the uploaded asset,
       // never in this record, so replay reads it back instead of trusting local storage.
+      const settled = record.settled === "terminal";
       this.#view = {
         ...this.#view,
-        unknown: record.pending !== null,
-        canReplay: record.pending !== null && record.operationId === null,
+        // `pending` alone cannot tell a submission still awaiting its answer from one the
+        // protocol already refused; only an observed terminal refusal persists `settled`,
+        // so a reload keeps that distinction instead of rebuilding every pending create
+        // as unknown (#707). The crash window never carries the field and stays unknown.
+        unknown: record.pending !== null && !settled,
+        canReplay: record.pending !== null && record.operationId === null && !settled,
         cursor: record.cursor ?? undefined,
-        notice: "已找到原任务身份。请恢复读取；未确认的请求仅按原键重放。",
+        ...(settled ? { rejected: true } : {}),
+        notice: settled
+          ? "已找到原任务身份；该意图已被协议确定性拒绝并作废。"
+          : "已找到原任务身份。请恢复读取；未确认的请求仅按原键重放。",
       };
       if (this.#view.canReplay)
         this.#replay =
@@ -259,7 +273,9 @@ export class FileTaskSession {
   }
 
   #persist(
-    update: Partial<Pick<TaskRecord, "jobId" | "pending" | "operationId" | "cursor">> & {
+    update: Partial<
+      Pick<TaskRecord, "jobId" | "pending" | "operationId" | "cursor" | "settled">
+    > & {
       effectiveModelKey?: string;
     },
   ) {
@@ -483,13 +499,35 @@ export class FileTaskSession {
         // This branch settles *this attempt*: the protocol does not accept the same
         // request again (e.g. 422 `job_text_asset_unsupported`), so a fresh intent with its
         // own key is the only way forward. It does not claim the key has no Job row: 409
-        // `idempotency_conflict` identifies another intent's Job under this key
-        // (contracts/speech-openapi.yaml:803-805). Abandoning the settled record still
-        // needs UI work outside this task; nothing here submits a replacement.
+        // `idempotency_conflict` identifies *another* intent's Job under this key
+        // (contracts/speech-openapi.yaml:803-805), which still spends this one, but the
+        // replacement must not reuse the key. 409 `execution_cleanup_pending` is classified
+        // as an unknown outcome for a create attempt before reaching here, precisely
+        // because it proves a Job exists. Nothing here submits a replacement; the user
+        // abandons the spent intent explicitly in the UI.
+        // An identified original execution stays queryable, so it is never settled: that
+        // would hide the only unresolved submission the user could reconcile.
+        const spent =
+          operation === "create" &&
+          !this.#view.job &&
+          !this.#record?.jobId &&
+          !this.#record?.operationId;
+        if (spent) {
+          try {
+            // Record the observed refusal so a reload keeps it settled instead of
+            // rebuilding an unconfirmed submission. Only a *refused* attempt reaches
+            // this point: the crash window between sending and any answer persists
+            // `pending: "create"` without this field and reloads as unknown.
+            this.#persist({ settled: "terminal" });
+          } catch {
+            /* The protocol's answer still stands in this page; a reload degrades to unknown. */
+          }
+        }
         this.#update({
           unknown: false,
           canReplay: false,
           recovery: undefined,
+          ...(spent ? { rejected: true } : {}),
           notice: contractError.message,
         });
       } else {
@@ -633,6 +671,9 @@ export class FileTaskSession {
 
   async #submit() {
     const signal = this.#lifetime.signal;
+    // A terminally refused intent is spent: resubmitting it would just repeat the same
+    // refusal, and the UI only offers explicit abandonment (#707).
+    if (this.#view.rejected || this.#record?.settled === "terminal") return;
     if (!this.#record) {
       if (!this.#view.asset) {
         if (this.#assetHintId) throw new Error("Read the original Asset first");
@@ -793,7 +834,12 @@ export class FileTaskSession {
   }
 
   async continueAfterValidation() {
-    if (this.#view.asset?.status === "ready" && !this.#view.job && !this.#view.unknown)
+    if (
+      this.#view.asset?.status === "ready" &&
+      !this.#view.job &&
+      !this.#view.unknown &&
+      !this.#view.rejected
+    )
       await this.#run(() => this.#submit(), true);
   }
 

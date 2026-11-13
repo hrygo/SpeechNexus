@@ -60,6 +60,36 @@ describe("session task journal", () => {
     expect(storage.data.get("task")).toBe(value);
   });
 
+  it("roundtrips an observed terminal refusal and never lets it be un-settled", () => {
+    const storage = memoryStorage();
+    const journal = new SessionTaskJournal(storage, "task");
+    journal.load();
+    const spent = { ...record(), settled: "terminal" } as const;
+    journal.save(spent);
+    expect(new SessionTaskJournal(storage, "task").load()).toEqual(spent);
+    // Dropping the field would rebuild the refused intent as an unconfirmed submission on
+    // the next reload, which is exactly the defect #707 removes.
+    const revived = Object.fromEntries(
+      Object.entries(spent).filter(([field]) => field !== "settled"),
+    ) as unknown as TaskRecord;
+    expect(() => journal.save(revived)).toThrow(TaskJournalError);
+    expect(new SessionTaskJournal(storage, "task").load()).toEqual(spent);
+  });
+
+  it.each([
+    JSON.stringify({ ...record(), settled: "unknown" }),
+    JSON.stringify({ ...record(), settled: true }),
+    JSON.stringify({ ...record(), settled: "terminal", operationId: "op-demo" }),
+    JSON.stringify({ ...record(), settled: "terminal", jobId: "job-demo", pending: null }),
+    JSON.stringify({ ...record(), settled: "terminal", operationId: null, cursor: "1" }),
+    JSON.stringify({ ...record(), settled: "terminal", futureApi: 1 }),
+  ])("rejects a settled intent in any shape but the one terminal refusal produces", (value) => {
+    const storage = memoryStorage();
+    storage.data.set("task", value);
+    expect(() => new SessionTaskJournal(storage, "task").load()).toThrow(TaskJournalError);
+    expect(storage.data.get("task")).toBe(value);
+  });
+
   it("prevents stale instances and immutable intent changes from overwriting the original", () => {
     const storage = memoryStorage();
     const first = new SessionTaskJournal(storage, "task");

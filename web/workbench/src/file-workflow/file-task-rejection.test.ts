@@ -13,7 +13,11 @@ const file = () => new File(["synthetic audio"], "synthetic.wav", { type: "audio
 
 type Responder = (attempt: number) => Response | Promise<Response>;
 
-function envelope(status: number, code: string, extra: { operationId?: string } = {}) {
+function envelope(
+  status: number,
+  code: string,
+  extra: { operationId?: string; receipt?: boolean } = {},
+) {
   const type =
     status === 429
       ? "rate_limit_error"
@@ -28,12 +32,34 @@ function envelope(status: number, code: string, extra: { operationId?: string } 
       param: null,
       request_id: "req-demo",
       retryable: status === 429 || status >= 500,
-      ...(extra.operationId ? { nexus: { operation_id: extra.operationId } } : {}),
+      ...(extra.operationId
+        ? {
+            nexus: {
+              operation_id: extra.operationId,
+              ...(extra.receipt
+                ? {
+                    receipt: {
+                      receipt_id: "receipt-demo",
+                      requested: {},
+                      effective: {},
+                      observed: {},
+                      missing: [],
+                      unknown: [],
+                    },
+                  }
+                : {}),
+            },
+          }
+        : {}),
     },
   });
 }
 
-function rejection(status: number, code: string, extra: { operationId?: string } = {}) {
+function rejection(
+  status: number,
+  code: string,
+  extra: { operationId?: string; receipt?: boolean } = {},
+) {
   return Response.json(envelope(status, code, extra), { status });
 }
 
@@ -80,6 +106,9 @@ function setup({
   return {
     make,
     stored,
+    // The Host's explicit abandonment removes the recovery key; the journal keeps no
+    // "current intent" of its own.
+    clear: () => data.clear(),
     stats: {
       get executions() {
         return executions;
@@ -257,9 +286,56 @@ describe("submission rejection classes", () => {
     expect(snapshot.canReplay).toBe(false);
     expect(snapshot.recovery).toBeUndefined();
     expect(snapshot.notice).toContain("job_text_asset_unsupported");
+    // The spent intent is now abandonable instead of holding the page forever (#707).
+    expect(snapshot.rejected).toBe(true);
+    expect(canFinishTask(snapshot)).toBe(true);
+    // Only the observed refusal is persisted; a crash before any answer has no `settled`.
+    expect(f.stored()).toMatchObject({ pending: "create", settled: "terminal", jobId: null });
     await session.replay();
     expect(f.stats.createKeys).toHaveLength(1);
     session.dispose();
+  });
+
+  it("never starts a replacement create while a terminally refused intent awaits explicit abandonment", async () => {
+    const f = setup({ create: () => rejection(422, "job_binding_incomplete") });
+    const session = f.make();
+    await session.start(file(), "asr-quality");
+    expect(canFinishTask(session.getSnapshot())).toBe(true);
+    // #707 counterexample 3: the new-intent path is the Host's explicit abandonment, not
+    // any silent retry. Starting over and continuing validation must both stay refused.
+    await session.start(file(), "asr-quality");
+    await session.continueAfterValidation();
+    await session.replay();
+    expect(f.stats.createKeys).toHaveLength(1);
+    expect(f.stored()).toMatchObject({ settled: "terminal" });
+    session.dispose();
+  });
+
+  it("settles a 409 idempotency_conflict spent intent and only a new key can replace it", async () => {
+    // That code identifies *another* intent's Job under this key: this attempt is spent,
+    // but the replacement must not reuse the key or it would conflict again.
+    const f = setup({ create: () => rejection(409, "idempotency_conflict") });
+    const first = f.make();
+    await first.start(file(), "asr-quality");
+    expect(first.getSnapshot()).toMatchObject({ unknown: false, rejected: true, canReplay: false });
+    const spentKey = f.stats.createKeys[0]!;
+    expect(f.stored()).toMatchObject({ settled: "terminal" });
+    first.dispose();
+    const restored = f.make();
+    await restored.restore();
+    expect(restored.getSnapshot()).toMatchObject({
+      unknown: false,
+      rejected: true,
+      canReplay: false,
+    });
+    expect(f.stats.createKeys).toHaveLength(1);
+    // Only the explicit abandonment removes the recovery record; then a fresh key is used.
+    f.clear();
+    const fresh = f.make();
+    await fresh.start(file(), "asr-quality");
+    expect(f.stats.createKeys).toHaveLength(2);
+    expect(f.stats.createKeys[1]).not.toBe(spentKey);
+    fresh.dispose();
   });
 
   it("keeps an explicit new-intent path for a first deterministic upload rejection", async () => {
@@ -284,8 +360,34 @@ describe("submission rejection classes", () => {
     expect(snapshot.recovery?.error.code).toBe("execution_cleanup_pending");
     expect(snapshot.notice).toContain("读取原执行");
     expect(canFinishTask(snapshot)).toBe(false);
+    // It proves a Job exists, so it must never be recorded as a spent intent (#707).
+    expect(snapshot.rejected).toBeUndefined();
+    expect(f.stored()).not.toHaveProperty("settled");
     session.dispose();
   });
+
+  it.each(["operation_in_progress", "response_not_replayable"] as const)(
+    "keeps %s unknown against its identified original execution and never settles it",
+    async (code) => {
+      const f = setup({
+        create: () =>
+          rejection(409, code, {
+            operationId: "op-demo",
+            receipt: code === "response_not_replayable",
+          }),
+      });
+      const session = f.make();
+      await session.start(file(), "asr-quality");
+      const snapshot = session.getSnapshot();
+      expect(snapshot).toMatchObject({ unknown: true, canReplay: false });
+      expect(snapshot.notice).toContain("不要创建替代执行");
+      expect(f.stored()).toMatchObject({ pending: "create", operationId: "op-demo" });
+      expect(f.stored()).not.toHaveProperty("settled");
+      expect(snapshot.rejected).toBeUndefined();
+      expect(canFinishTask(snapshot)).toBe(false);
+      session.dispose();
+    },
+  );
 
   it("treats 409 execution_cleanup_pending on the cancel path as a settled attempt", async () => {
     // The cancel request was deterministically refused against a known Job identity, so the
@@ -301,6 +403,9 @@ describe("submission rejection classes", () => {
     expect(snapshot.recovery).toBeUndefined();
     expect(snapshot.notice).toContain("execution_cleanup_pending");
     expect(snapshot.cancellation).toBeUndefined();
+    // A cancel attempt against a known Job is not a settled create intent (#707 scope).
+    expect(snapshot.rejected).toBeUndefined();
+    expect(f.stored()).not.toHaveProperty("settled");
     session.dispose();
   });
 

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-12T23:21:22Z",
+  "fetched_at": "2026-11-13T02:16:29Z",
   "issues": [
     {
       "number": 336,
@@ -292,8 +292,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/416",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "节点预热动作整体 wall-clock 截止与 non-ready 判定",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "enhancement"
@@ -871,8 +871,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/519",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "实现声音草稿发布（publishVoiceDraftRevision）与能力一致性",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "enhancement"

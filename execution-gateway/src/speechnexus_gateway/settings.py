@@ -8,6 +8,11 @@ from typing import Any, Literal, get_args
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from speechnexus_gateway.environment import (
+    PLANES,
+    refuse_unrecognised_prefixed_environment,
+)
+
 
 class Settings(BaseSettings):
     """Runtime settings loaded from SPEECHNEXUS_GATEWAY_* environment variables."""
@@ -84,6 +89,15 @@ class Settings(BaseSettings):
             if isinstance(value, str) and not value.strip():
                 normalized[name] = None
         return normalized
+
+    @model_validator(mode="after")
+    def prefixed_environment_names_a_setting(self) -> Settings:
+        # A `SPEECHNEXUS_GATEWAY_*` name that matches no field is inert, so the
+        # operator cannot tell a configured gateway from a misspelled one.
+        refuse_unrecognised_prefixed_environment(
+            Settings, "the execution gateway service", planes=PLANES
+        )
+        return self
 
     @model_validator(mode="after")
     def validate_control_configuration(self) -> Settings:

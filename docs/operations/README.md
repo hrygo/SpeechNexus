@@ -14,6 +14,7 @@
 
 - [最小 Compose 部署](compose-minimal.md) · [本地端到端历史记录](../archive/operations/local-end-to-end.md) · [注册引擎](register-engine.md)。
 - [配置前提扫描](configuration-prerequisites.md)：配置了却不生效的键、当前表现与元守护边界。
+- [服务前缀环境变量的启动校验](environment-key-prefixes.md)：拼错或配错入口的前缀变量在启动时点名拒绝/告警。
 - [参考部署异步 Job 的六项前置与自检](async-job-runbook.md) · 只读自检 `scripts/dev-env/check-async-job-prereqs.py`。
 - [参考部署一条命令验收](reference-acceptance.md) · `scripts/dev-env/reference-acceptance.py`（工具/迁移/角色/桶/栈/启动闸门/健康）。
 - [容量清单](capacity-manifest.md) · [资格报告](qualification-report.md) · [内建声音资格](builtin-voice-qualification.md)。

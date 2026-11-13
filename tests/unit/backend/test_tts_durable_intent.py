@@ -573,6 +573,10 @@ def test_deadline_covers_admission_query_and_recovery(slow_phase: str) -> None:
 
     short_plan = replace(plan(), timeout_seconds=0.01)
     release = threading.Event()
+    # Set only by the fakes below, once the blocked work they simulate has really
+    # returned. The assertions read these flags instead of measuring how fast the
+    # machine happened to be.
+    blocked_work_returned = threading.Event()
 
     class SlowAdmission(Admission):
         def admit(self, value: SpeechPlan) -> SubmitExecutionRequest:
@@ -582,7 +586,10 @@ def test_deadline_covers_admission_query_and_recovery(slow_phase: str) -> None:
 
         def recover(self, request_id: str) -> tuple[SpeechPlan, SubmitExecutionRequest]:
             if slow_phase == "recover_slow":
-                release.wait(1)
+                # Long enough that a stalled scheduler cannot end this wait before
+                # the test asserts that the blocked call never got to return.
+                release.wait(10)
+                blocked_work_returned.set()
             request = self.admit(short_plan)
             request["deadline_at"] = "2020-01-01T00:00:00Z"
             return short_plan, request
@@ -613,19 +620,28 @@ def test_deadline_covers_admission_query_and_recovery(slow_phase: str) -> None:
         cast(Any, object()),
         cancellation=cancellation,
     )
-    started = time.monotonic()
     try:
         with pytest.raises(SpeechDeadlineExceededError):
-            if slow_phase in ("recover_expired", "recover_slow"):
+            if slow_phase == "recover_expired":
+                # The stored execution deadline is in 2020. A budget far above any
+                # scheduler delay keeps the wall clock out of the decision: the only
+                # reason this call stops is the already-expired execution deadline.
+                adapter.recover("request-test", timeout_seconds=30)
+            elif slow_phase == "recover_slow":
                 adapter.recover("request-test", timeout_seconds=0.01)
             else:
                 adapter.synthesize(short_plan)
         if slow_phase in ("admission", "recover_slow"):
             assert gateway.calls == 0
         if slow_phase == "recover_expired":
+            # Exactly one observation of the original execution, then stop: the
+            # query is what discovers the expired stored deadline, and no poll
+            # iteration is allowed after it.
             assert gateway.calls == 1
         if slow_phase == "recover_slow":
-            assert time.monotonic() - started < 0.5
+            # The recovery budget abandoned a blocked admission call; the blocked
+            # work had not returned when the deadline was reported.
+            assert not blocked_work_returned.is_set()
         if slow_phase in ("admission", "query"):
             assert len(cancellation.calls) == 1
             assert cancellation.calls[0][1] == "deadline_exceeded"

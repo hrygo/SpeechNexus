@@ -26,6 +26,9 @@ class Server(ThreadingHTTPServer):
         self.slow_stage = "HEAD.headers"
         self.started = threading.Event()
         self.disconnected = threading.Event()
+        # Set only when the whole 1.2 s trickle was written; proving it stayed
+        # clear is how the test shows the client stopped the read itself.
+        self.trickled = threading.Event()
         self.calls: list[tuple[str, str, str]] = []
         ref = reference()
         self.slow_key = "/" + ref.storage_bucket + "/" + ref.object_key
@@ -57,6 +60,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.write(f"X-Trickle-{index}: synthetic\r\n".encode())
                     self.wfile.flush()
                     time.sleep(0.03)
+                self.server.trickled.set()
             self.wfile.write(
                 (f"x-amz-version-id: v1\r\nContent-Length: {len(BODY)}\r\n\r\n").encode()
             )
@@ -67,6 +71,7 @@ class Handler(BaseHTTPRequestHandler):
                         self.wfile.write(bytes([byte]))
                         self.wfile.flush()
                         time.sleep(0.03)
+                    self.server.trickled.set()
                     self.wfile.write(BODY[40:])
                 else:
                     self.wfile.write(BODY)
@@ -121,10 +126,14 @@ async def test_trickling_input_cannot_extend_total_deadline_and_releases_socket(
 ) -> None:
     server.slow_stage = stage
     value = adapter(server, tmp_path)
-    started = time.monotonic()
     with pytest.raises(ExecutionInputError, match="execution_input_deadline_exceeded"):
-        await read(value, duration_seconds=0.08)
-    assert time.monotonic() - started < 0.5
+        # The budget only has to outlive the fast HEAD/GET setup so the slow stage
+        # is really exercised. It stays a quarter of the 1.2 s trickle the peer
+        # keeps writing, so only a total deadline can end the read this early.
+        await read(value, duration_seconds=0.3)
+    # The peer never finished trickling: the read was cut, not drained.
+    assert not server.trickled.is_set()
+    assert server.started.is_set()
     assert [verb for verb, _, _ in server.calls] == (
         ["HEAD"] if stage == "HEAD.headers" else ["HEAD", "GET"]
     )

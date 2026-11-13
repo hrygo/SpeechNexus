@@ -1,7 +1,6 @@
 """Encoded audio staging uses one private, bounded PUT and fixed-version readback."""
 
 import asyncio
-import time
 from dataclasses import replace
 from typing import Any
 
@@ -236,15 +235,18 @@ async def test_audio_trickle_headers_obey_one_total_deadline(server: Server, met
         bucket="sn-audio-test",
         access_key="synthetic",
         secret_key="synthetic",
-        timeout_seconds=0.08,
+        # The budget only has to outlive the upload itself so the slow response is
+        # really reached. It stays a quarter of the 1.2 s trickle the peer keeps
+        # writing, so only a total deadline can end the call this early.
+        timeout_seconds=0.3,
     )
-    started = time.monotonic()
     with pytest.raises(TtsResultError, match="tts_result_deadline_exceeded"):
         await value.stage(result, cancelled=lambda: False)
-    # The server trickles a header every 30 ms for 1.2 s; a per-packet inactivity timeout would
-    # run that long, so staying below it proves the total deadline is what stopped the upload.
-    # Keep a wide margin above the 80 ms budget for loaded CI schedulers.
-    assert time.monotonic() - started < 1.0
+    # The peer trickles a header every 30 ms for 1.2 s; a per-packet inactivity
+    # timeout would run that long. It never finished here, so the total deadline is
+    # what stopped the upload, and the accepted body was not rolled back.
+    assert not server.trickled.is_set()
+    assert server.started.is_set()
     assert server.bodies[server.slow_key] == result.body
     assert sum(verb == "PUT" for verb, _ in server.calls) == 1
 

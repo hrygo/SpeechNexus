@@ -24,6 +24,9 @@ class Server(ThreadingHTTPServer):
         super().__init__(("127.0.0.1", 0), Handler)
         self.slow_method = "PUT"
         self.started = threading.Event()
+        # Set only when the whole 1.2 s trickle was written; proving it stayed
+        # clear is how the test shows the client stopped the read itself.
+        self.trickled = threading.Event()
         self.calls: list[tuple[str, str]] = []
         self.bodies: dict[str, bytes] = {}
         self.slow_key = (
@@ -65,6 +68,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.write(f"X-Trickle-{index}: synthetic\r\n".encode())
                     self.wfile.flush()
                     time.sleep(0.03)
+                self.server.trickled.set()
             length = len(body) if self.command != "PUT" else 0
             self.wfile.write(
                 (
@@ -110,12 +114,16 @@ async def test_trickle_headers_cannot_extend_total_deadline(
     server: Server, tmp_path: Path, method: str
 ) -> None:
     server.slow_method = method
-    value = adapter(server, tmp_path, 0.08)
-    started = time.monotonic()
+    # The budget only has to outlive the fast PUT/HEAD/GET setup so the slow stage
+    # is really exercised. It stays a quarter of the 1.2 s trickle the peer keeps
+    # writing, so only a total deadline can end the read this early.
+    value = adapter(server, tmp_path, 0.3)
     try:
         with pytest.raises(AsrResultError, match="asr_result_deadline_exceeded"):
             await value.stage(RESULT, cancelled=lambda: False)
-        assert time.monotonic() - started < 0.5
+        # The peer never finished trickling: the read was cut, not drained.
+        assert not server.trickled.is_set()
+        assert server.started.is_set()
         assert [verb for verb, _ in server.calls] == {
             "PUT": ["PUT"],
             "HEAD": ["PUT", "HEAD"],

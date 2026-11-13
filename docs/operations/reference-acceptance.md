@@ -116,9 +116,105 @@ reference acceptance: FAIL step=migrate exit=20
 清楚（措辞改变但关键词仍在）不会变红；出现新的延后项、或换用别的关键词，会红并给出登记行与位置。
 登记通道是给**无法静态判定**或**新延后输入**用的，不是放宽 PASS 含义的开关。
 
-同一作业还跑另外两条守卫：`sites`（每个 `ctx.mutate(...)` 结果必须被判定，且 `ctx.read(...)` 不得携带
-写命令）与 `probe`（用必然失败的输入调用入口的纯判定函数）。两条的边界写在
-[CI 验证规则](../validation/ci-validation.md)。
+同一作业还跑另外三条结构守卫：`sites`（每条 `<ctx>.mutate(...)` 必须仍在 `MUTATE_SITES` 清单里、
+结果不得被丢弃、`ctx.read(...)` 的 argv 必须可静态确定且不含写命令）、`probe`（用必然失败的
+输入调用登记过的纯判定函数）、`wiring`（四条守卫子命令各自是所在步骤的第一条命令）。
+它们只检查**结构**：判定条件被反转、把 `.ok` 读出来却仍不中断、经 `psql -c` 间接写库等等都看不见，
+边界写在 [CI 验证规则](../validation/ci-validation.md)。
+
+登记表与守卫脚本是同一次改动的两面：
+
+- 六张表（`MUTATE_SITES`、`READ_ARGUMENTS`、`WRITE_TOKENS`、`PROBE_CASES`、`DECLARED_DEFERRALS`、
+  `SELFTEST_CASES`）的权威定义在 `scripts/dev-env/ci-entry-guard.py`；下面的锚点块是它逐行渲染的
+  镜像，每次运行都会比较，缺行、多行、改词都红。
+- 改登记的标准动作是改脚本常量，然后跑
+  `python3 scripts/dev-env/ci-entry-guard.py tables --write` 重写本块，使两侧在同一次提交里一致。
+- 登记不是橡皮章：`MUTATE_SITES` 的「证据」列必须指向存在的 `tests/ci` 用例或 probe 用例，
+  否则红；`SELFTEST_CASES` 是守卫自身的语料，把规则改松会先让自检失败。
+
+<!-- ci-entry-guard:tables:start -->
+### 结构守卫的登记表
+
+本块由 `python3 scripts/dev-env/ci-entry-guard.py tables --write` 生成，与 `scripts/dev-env/ci-entry-guard.py` 的常量逐行对应；改动任一登记都必须同时更新另一侧，否则作业红。
+
+#### 行数锚点（任何一张表缩水都要同时改这里的数字）
+
+| 表 | 行数 |
+| --- | --- |
+| `MUTATE_SITES` | 8 |
+| `READ_ARGUMENTS` | 3 |
+| `WRITE_TOKENS` | 7 |
+| `PROBE_CASES` | 9 |
+| `DECLARED_DEFERRALS` | 1 |
+| `SELFTEST_CASES` | 17 |
+
+#### MUTATE_SITES（每条写命令必须存在，且能指出谁在别处判定它）
+
+| 站点 | 判定在哪 | 证据 |
+| --- | --- | --- |
+| `step_migrate:start` | migrate 前置的 postgres up（幂等） | `test:test_behind_migration_stops_before_roles_buckets_and_stack` |
+| `step_migrate:migrate` | migrate 退出码与 alembic_version 单行比对 | `test:test_migrate_step_builds_before_running` |
+| `step_roles:provision_argv()` | provision-job-roles 退出码 + 已装 ACL 逐条比对 | `test:test_roles_step_creates_once_then_reports_idempotent` |
+| `step_buckets:start` | minio 启动到 healthy | `test:test_bucket_names_follow_the_init_script_rules` |
+| `step_buckets:initialize` | minio-init 建桶与版本化 | `test:test_bucket_names_follow_the_init_script_rules` |
+| `step_buckets:verify` | 独立只读核对桶与版本化 | `test:test_bucket_names_follow_the_init_script_rules` |
+| `step_gate:argv` | 闸门 ok/FAIL 判定（gate_verdict） | `probe:gate_verdict-fail` |
+| `step_stack:ctx.compose('up', '-d', '--build', '--wait', 'api', 'gateway')` | compose up 退出码判失败 | `test:test_up_exit_nonzero_with_healthy_ps_is_red` |
+
+#### READ_ARGUMENTS（允许出现在 `read` argv 里的助手与词包装）
+
+| 助手 | 形态 | 为什么只读 |
+| --- | --- | --- |
+| `psql_argv` | 整体 argv 构造器 | 只读 psql -Atc SELECT/目录查询；写语句不在本函数内构造 |
+| `provision_argv` | 整体 argv 构造器 | --print-statements 只读渲染 GRANT 语句 |
+| `str` | argv 词包装 | 把仓库路径/端口渲染成单个 argv 词，不产生子命令 |
+
+#### WRITE_TOKENS（`read` 里出现即判红的 argv 词）
+
+`run`, `up`, `start`, `down`, `restart`, `rm`, `create`；`uv run` 是唯一允许的 `run` 配对；`sh`, `bash`, `zsh`, `dash`（及 `python`, `python3`, `perl`, `ruby`, `node`）紧跟 `-c` 一律判红。
+
+#### PROBE_CASES（必须用失败输入调用的纯判定函数）
+
+| 用例 | 入口函数 | 失败形态 | 断言 |
+| --- | --- | --- | --- |
+| `migration_verify-behind` | `migration_verify` | 返回失败值 | 迁移落后/多行/空 必须失败，正好在 head 通过 |
+| `gate_verdict-ok` | `gate_verdict` | raise | OK 行解析出 ok/pending 两类条目 |
+| `gate_verdict-fail` | `gate_verdict` | raise | FAIL 行必须抛 StepFailureError |
+| `gate_verdict-exit` | `gate_verdict` | raise | 闸门退出码非零不得读成通过 |
+| `gate_verdict-fail-wins` | `gate_verdict` | raise | FAIL 与 OK 同时出现必须判失败 |
+| `env_gaps` | `env_gaps` | 返回失败值 | 空白键入列表、非空键不入列 |
+| `dsn_identity` | `dsn_identity` | raise | 空 DSN 与非 postgresql DSN 必须失败 |
+| `migration_heads` | `migration_heads` | raise | 单链取唯一 head，双 head 必须失败 |
+| `bucket_names` | `bucket_names` | raise | 去重；三个桶名键全空必须失败 |
+
+#### DECLARED_DEFERRALS（dry-run 允许报告的延后输入）
+
+| slug | 必须同时出现的词 | 出现即视为别的延后项 |
+| --- | --- | --- |
+| `gateway-requires-running-stack` | `gateway`、`healthy` | `lane`、`配置`、`镜像`、`模型`、`engine`、`引擎` |
+
+#### SELFTEST_CASES（守卫自身的自检语料）
+
+| 用例 | 说明 | 期望 |
+| --- | --- | --- |
+| `vacuity-empty-module` | 没有 mutate 站点必须红（反空转） | 红 |
+| `discarded-result` | 结果被丢弃必须红 | 红 |
+| `unregistered-site` | 清单里没有的写命令必须红 | 红 |
+| `receiver-agnostic` | 换接收者（ctx.runner.mutate）也算站点，未登记即红 | 红 |
+| `truthiness-bare` | 裸对象真值必须红（CommandResult 无 __bool__） | 红 |
+| `truthiness-negated` | `if not started:` 必须红（恒真=守卫被架空） | 红 |
+| `truthiness-is-not-none` | `is not None` 判定必须红（结果永不为 None） | 红 |
+| `truthiness-ok-is-fine` | `.ok` 形态必须绿（结构上不是恒真条件） | 绿 |
+| `read-literal-write` | read 里出现 compose down 必须红 | 红 |
+| `read-shell-c` | read 里出现 sh -c 必须红 | 红 |
+| `read-interpreter-c` | read 里出现解释器 -c 必须红 | 红 |
+| `read-uv-run-allowed` | uv run 是唯一允许的 run 配对 | 绿 |
+| `read-uv-run-docker-not-exempt` | uv run 不能豁免后面的 compose run | 红 |
+| `read-registered-builder` | 登记过的只读 argv 构造器可接受 | 绿 |
+| `read-unknown-builder` | 未登记的 argv 构造器必须红 | 红 |
+| `read-variable-argv` | read 的 argv 藏在变量里必须红（旧版静默放过） | 红 |
+| `registered-site-passes` | 清单内的站点形态必须绿 | 绿 |
+<!-- ci-entry-guard:tables:end -->
 
 ## 幂等与重跑
 

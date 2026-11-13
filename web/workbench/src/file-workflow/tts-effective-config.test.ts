@@ -200,11 +200,11 @@ describe("TTS effective resource confirmation", () => {
     const legacy = { ...record };
     delete legacy.effectiveModelKey;
     test.storage.setItem("tts", JSON.stringify(legacy));
-    const command = jobCommand(test.record());
+    const command = jobCommand(test.record(), "Synthetic test.");
     const session = test.make();
     await session.restore();
     expect(test.record()).toHaveProperty("effectiveModelKey");
-    expect(jobCommand(test.record())).toEqual(command);
+    expect(jobCommand(test.record(), "Synthetic test.")).toEqual(command);
     session.dispose();
   });
 

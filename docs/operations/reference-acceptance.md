@@ -117,10 +117,11 @@ reference acceptance: FAIL step=migrate exit=20
 登记通道是给**无法静态判定**或**新延后输入**用的，不是放宽 PASS 含义的开关。
 
 同一作业还跑另外三条结构守卫：`sites`（每条 `<ctx>.mutate(...)` 必须仍在 `MUTATE_SITES` 清单里、
-结果不得被丢弃、`ctx.read(...)` 的 argv 必须可静态确定且不含写命令）、`probe`（用必然失败的
-输入调用登记过的纯判定函数）、`wiring`（四条守卫子命令各自是所在步骤的第一条命令）。
-它们只检查**结构**：判定条件被反转、把 `.ok` 读出来却仍不中断、经 `psql -c` 间接写库等等都看不见，
-边界写在 [CI 验证规则](../validation/ci-validation.md)。
+结果不得被丢弃——裸语句和 `_ =` 都算、`ctx.read(...)` 的 argv 必须是字面量、`READ_ARGUMENTS` 里登记的
+构造助手或 `*` 展开的登记只读段，且不含写命令）、`probe`（用必然失败的输入调用登记过的纯判定函数）、
+`wiring`（四条守卫子命令各自是所在步骤的第一条命令）。它们只检查**结构**：判定条件被反转、把 `.ok`
+读出来却仍不中断、经 `psql -c` 间接写库等等都看不见，边界写在
+[CI 验证规则](../validation/ci-validation.md)。
 
 登记表与守卫脚本是同一次改动的两面：
 
@@ -129,8 +130,12 @@ reference acceptance: FAIL step=migrate exit=20
   镜像，每次运行都会比较，缺行、多行、改词都红。
 - 改登记的标准动作是改脚本常量，然后跑
   `python3 scripts/dev-env/ci-entry-guard.py tables --write` 重写本块，使两侧在同一次提交里一致。
-- 登记不是橡皮章：`MUTATE_SITES` 的「证据」列必须指向存在的 `tests/ci` 用例或 probe 用例，
-  否则红；`SELFTEST_CASES` 是守卫自身的语料，把规则改松会先让自检失败。
+- 登记不是橡皮章：「判定在哪」列必须用反引号点出入口里真实存在的定义（`step_gate`、`gate_verdict`
+  之类），入口改名或删函数即红；「证据」列必须指向一个会被 `unittest` 收集的 `TestCase` 方法或 probe
+  用例，且该用例不带 skip 装饰器/`skipTest`、不在正文开头 `return`/`raise` 让后文成死代码、正文至少有
+  一条断言，否则红。校验到的是「这条证据每次 CI 都会真的判红」，不是「它覆盖了这个站点的语义」——
+  证据的相关性与判定本身仍由评审和真实 apply 运行负责。`SELFTEST_CASES` 是守卫自身的语料，把规则
+  改松会先让自检失败。
 
 <!-- ci-entry-guard:tables:start -->
 ### 结构守卫的登记表
@@ -142,31 +147,32 @@ reference acceptance: FAIL step=migrate exit=20
 | 表 | 行数 |
 | --- | --- |
 | `MUTATE_SITES` | 8 |
-| `READ_ARGUMENTS` | 3 |
+| `READ_ARGUMENTS` | 4 |
 | `WRITE_TOKENS` | 7 |
 | `PROBE_CASES` | 9 |
 | `DECLARED_DEFERRALS` | 1 |
-| `SELFTEST_CASES` | 17 |
+| `SELFTEST_CASES` | 20 |
 
 #### MUTATE_SITES（每条写命令必须存在，且能指出谁在别处判定它）
 
 | 站点 | 判定在哪 | 证据 |
 | --- | --- | --- |
-| `step_migrate:start` | migrate 前置的 postgres up（幂等） | `test:test_behind_migration_stops_before_roles_buckets_and_stack` |
-| `step_migrate:migrate` | migrate 退出码与 alembic_version 单行比对 | `test:test_migrate_step_builds_before_running` |
-| `step_roles:provision_argv()` | provision-job-roles 退出码 + 已装 ACL 逐条比对 | `test:test_roles_step_creates_once_then_reports_idempotent` |
-| `step_buckets:start` | minio 启动到 healthy | `test:test_bucket_names_follow_the_init_script_rules` |
-| `step_buckets:initialize` | minio-init 建桶与版本化 | `test:test_bucket_names_follow_the_init_script_rules` |
-| `step_buckets:verify` | 独立只读核对桶与版本化 | `test:test_bucket_names_follow_the_init_script_rules` |
-| `step_gate:argv` | 闸门 ok/FAIL 判定（gate_verdict） | `probe:gate_verdict-fail` |
-| `step_stack:ctx.compose('up', '-d', '--build', '--wait', 'api', 'gateway')` | compose up 退出码判失败 | `test:test_up_exit_nonzero_with_healthy_ps_is_red` |
+| `step_migrate:start` | `step_migrate` 的 postgres up 退出码（幂等） | `test:test_behind_migration_stops_before_roles_buckets_and_stack` |
+| `step_migrate:migrate` | `migration_verify`：migrate 退出码与 alembic_version 单行比对 | `test:test_migrate_step_builds_before_running` |
+| `step_roles:provision_argv()` | `step_roles`：provision-job-roles 退出码 + 已装 ACL 逐条比对 | `test:test_roles_step_creates_once_then_reports_idempotent` |
+| `step_buckets:start` | `step_buckets`：minio 启动到 healthy | `test:test_bucket_names_follow_the_init_script_rules` |
+| `step_buckets:initialize` | `step_buckets`：minio-init 退出码与建桶输出行数 | `test:test_bucket_names_follow_the_init_script_rules` |
+| `step_buckets:verify` | `bucket_names`：独立只读核对桶数量与版本化 | `test:test_bucket_names_follow_the_init_script_rules` |
+| `step_gate:argv` | `gate_verdict`：闸门 ok/FAIL 判定 | `probe:gate_verdict-fail` |
+| `step_stack:ctx.compose('up', '-d', '--build', '--wait', 'api', 'gateway')` | `step_stack`：compose up 退出码判失败 | `test:test_up_exit_nonzero_with_healthy_ps_is_red` |
 
-#### READ_ARGUMENTS（允许出现在 `read` argv 里的助手与词包装）
+#### READ_ARGUMENTS（允许出现在 `read` argv 里的助手、词包装与 `*` 展开段）
 
 | 助手 | 形态 | 为什么只读 |
 | --- | --- | --- |
 | `psql_argv` | 整体 argv 构造器 | 只读 psql -Atc SELECT/目录查询；写语句不在本函数内构造 |
 | `provision_argv` | 整体 argv 构造器 | --print-statements 只读渲染 GRANT 语句 |
+| `compose_argv` | 可被 `*` 展开的只读 argv 段 | `docker compose -p … --env-file … -f …` 前缀；展开后仍拼只读子命令 |
 | `str` | argv 词包装 | 把仓库路径/端口渲染成单个 argv 词，不产生子命令 |
 
 #### WRITE_TOKENS（`read` 里出现即判红的 argv 词）
@@ -213,6 +219,9 @@ reference acceptance: FAIL step=migrate exit=20
 | `read-registered-builder` | 登记过的只读 argv 构造器可接受 | 绿 |
 | `read-unknown-builder` | 未登记的 argv 构造器必须红 | 红 |
 | `read-variable-argv` | read 的 argv 藏在变量里必须红（旧版静默放过） | 红 |
+| `read-starred-unregistered` | `*` 展开一个未登记的只读段必须红（旧版静默跳过整个 argv） | 红 |
+| `read-starred-registered` | `*` 展开 READ_ARGUMENTS 里登记过的只读 argv 段可接受 | 绿 |
+| `discarded-to-underscore` | 把结果赋给 `_` 也是丢弃（旧版只认裸语句） | 红 |
 | `registered-site-passes` | 清单内的站点形态必须绿 | 绿 |
 <!-- ci-entry-guard:tables:end -->
 

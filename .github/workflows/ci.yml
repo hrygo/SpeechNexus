@@ -856,23 +856,27 @@ jobs:
   # What "structure" means here, and what it does not mean. The guard proves four
   # things and claims only those: (1) every `<ctx>.mutate(...)` command the entry
   # shipped is still present, at the site the anchored registry names, with an
-  # evidence pointer that survives (`sites`); (2) every registered pure judgement
-  # function still rejects a failing input (`probe`); (3) the `read` boundary can be
-  # decided statically - a literal argv or a registered argv builder - and carries
-  # no write word, because the dry-run really executes `read` commands; (4) the
-  # workflow still runs all four guard subcommands, each as the first command of
-  # its step, so a `echo`-only replacement cannot pass (`wiring`). It does NOT
-  # prove a condition is correct: an inverted `if` that still reads `.ok` is
-  # invisible to an AST, which is why the judgement itself stays with the fake
-  # Runner cases in tests/ci and with a real apply run. `probe` only covers the
-  # registered pure functions, not `step_*` bodies.
+  # evidence pointer to a collected `TestCase` method that still asserts and is
+  # not skipped (`sites`); (2) every registered pure judgement function still
+  # rejects a failing input (`probe`); (3) the `read` boundary can be decided
+  # statically - a literal argv, a registered argv builder, or a registered
+  # read-only segment spliced with `*` - and carries no write word, because the
+  # dry-run really executes `read` commands; (4) the workflow still runs all four
+  # guard subcommands, each as the first command of its step, so a `echo`-only
+  # replacement cannot pass (`wiring`). It does NOT prove a condition is correct:
+  # an inverted `if` that still reads `.ok` is invisible to an AST, which is why
+  # the judgement itself stays with the fake Runner cases in tests/ci and with a
+  # real apply run. `probe` only covers the registered pure functions, not
+  # `step_*` bodies.
   #
   # Every registration (sites, read arguments, write words, probe cases, deferrals,
   # self-test fixtures) is mirrored into `docs/operations/reference-acceptance.md`
   # inside an anchor block that the guard compares on every run, so deleting a row
   # or shrinking a word list is red unless the documentation changes in the same
   # diff. A shape the guard cannot decide is registered with a reason and an
-  # evidence pointer instead of forcing the author to bend the code.
+  # evidence pointer instead of forcing the author to bend the code. The `judgement`
+  # column is checkable too: each row must name, in backticks, a definition the entry
+  # really has, so a stale or empty "who judges this" cell is red.
   #
   # Coverage boundary: `--dry-run` executes the real `tools` step (docker/compose/
   # uv versions, the compose-derived `${KEY:?}` set plus the entry's own required
@@ -880,10 +884,13 @@ jobs:
   # head derived from the revision graph, the bucket-name derivation, the resolved
   # `--profile job-dispatch` compose document that stack/gate read, and the private
   # input scan (JSON parse, result-bucket agreement, VAD digest) against synthetic
-  # inputs derived from `deploy/compose.yaml`. It plans and never runs a mutating
-  # command: those write state or need a real engine, so a decision that needs a
-  # live database, Docker or a model is still only exercised by an apply run and by
-  # the fake-Runner cases in tests/ci.
+  # inputs derived from `deploy/compose.yaml` and copied from
+  # `deploy/private/*.example.json`. A private mount with no committed example
+  # fails the preparation step: an empty placeholder would make that scan pass by
+  # merely being readable. It plans and never runs a mutating command: those write
+  # state or need a real engine, so a decision that needs a live database, Docker
+  # or a model is still only exercised by an apply run and by the fake-Runner cases
+  # in tests/ci.
   #
   # The negative control makes "green" mean something. Without it the positive run
   # would stay green even if the entry swallowed every failure, so a corrupted
@@ -974,16 +981,14 @@ jobs:
               if example.is_file():
                   shutil.copyfile(example, private / name)
                   continue
-              # A mount without a committed example is not a reason to fail the
-              # job: the dry-run only parses the JSON configs, so synthesize a
-              # placeholder and say so in the job summary.
-              if name.endswith(".json"):
-                  (private / name).write_text("{}\n", encoding="utf-8")
-              else:
-                  (private / name).write_bytes(b"")
-              missing.append(name)
+              missing.append(f"compose 挂载 {name}，但缺少 {example.as_posix()} 示例")
           if missing:
-              print(f"::warning::私有挂载没有 committed 示例，已合成占位: {', '.join(missing)}")
+              # A synthesized placeholder would make the private input scan below
+              # (JSON parse, result-bucket agreement, VAD digest) pass against an
+              # empty document: `{}` is readable, so "the file exists" would stand in
+              # for "the input is complete". A mount without a committed example is a
+              # gate failure, not a warning.
+              raise SystemExit("; ".join(missing))
           # Lane configs name their VAD model and its digest; satisfy both from the
           # file each lane asks for, so a renamed model stays green.
           for config_path in sorted(private.glob("*.json")):

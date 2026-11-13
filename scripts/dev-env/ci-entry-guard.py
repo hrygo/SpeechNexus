@@ -26,7 +26,10 @@ the anchor block; ``tables --write`` regenerates it):
 
 Every table is compared with the documentation block on each invocation, so
 weakening one of them (deleting a case, shrinking the write-token set, dropping a
-site row) is a red build unless the documentation changes in the same diff.
+site row) is a red build unless the documentation changes in the same diff. The
+``MUTATE_SITES`` rows are read against the code too: the evidence must be a
+collected ``TestCase`` method that asserts something and is not skipped or
+truncated, and the judgement cell must name a definition the entry really has.
 """
 
 from __future__ import annotations
@@ -69,47 +72,54 @@ class SiteRow:
 MUTATE_SITES: tuple[SiteRow, ...] = (
     SiteRow(
         "step_migrate:start",
-        "migrate 前置的 postgres up（幂等）",
+        "`step_migrate` 的 postgres up 退出码（幂等）",
         "test:test_behind_migration_stops_before_roles_buckets_and_stack",
     ),
     SiteRow(
         "step_migrate:migrate",
-        "migrate 退出码与 alembic_version 单行比对",
+        "`migration_verify`：migrate 退出码与 alembic_version 单行比对",
         "test:test_migrate_step_builds_before_running",
     ),
     SiteRow(
         "step_roles:provision_argv()",
-        "provision-job-roles 退出码 + 已装 ACL 逐条比对",
+        "`step_roles`：provision-job-roles 退出码 + 已装 ACL 逐条比对",
         "test:test_roles_step_creates_once_then_reports_idempotent",
     ),
     SiteRow(
         "step_buckets:start",
-        "minio 启动到 healthy",
+        "`step_buckets`：minio 启动到 healthy",
         "test:test_bucket_names_follow_the_init_script_rules",
     ),
     SiteRow(
         "step_buckets:initialize",
-        "minio-init 建桶与版本化",
+        "`step_buckets`：minio-init 退出码与建桶输出行数",
         "test:test_bucket_names_follow_the_init_script_rules",
     ),
     SiteRow(
         "step_buckets:verify",
-        "独立只读核对桶与版本化",
+        "`bucket_names`：独立只读核对桶数量与版本化",
         "test:test_bucket_names_follow_the_init_script_rules",
     ),
-    SiteRow("step_gate:argv", "闸门 ok/FAIL 判定（gate_verdict）", "probe:gate_verdict-fail"),
+    SiteRow("step_gate:argv", "`gate_verdict`：闸门 ok/FAIL 判定", "probe:gate_verdict-fail"),
     SiteRow(
         "step_stack:ctx.compose('up', '-d', '--build', '--wait', 'api', 'gateway')",
-        "compose up 退出码判失败",
+        "`step_stack`：compose up 退出码判失败",
         "test:test_up_exit_nonzero_with_healthy_ps_is_red",
     ),
 )
 
 # Callables allowed inside a `read` argv, and registered as a whole argv. A read
-# argv that is neither a literal tuple/list nor one of these rows is red.
+# argv that is neither a literal tuple/list nor one of these rows is red. `spread`
+# rows may be spliced with `*`: the segment is read-only by registration, because
+# its words are not visible to the guard.
 READ_ARGUMENTS: tuple[tuple[str, str, str], ...] = (
     ("psql_argv", "builder", "只读 psql -Atc SELECT/目录查询；写语句不在本函数内构造"),
     ("provision_argv", "builder", "--print-statements 只读渲染 GRANT 语句"),
+    (
+        "compose_argv",
+        "spread",
+        "`docker compose -p … --env-file … -f …` 前缀；展开后仍拼只读子命令",
+    ),
     ("str", "value", "把仓库路径/端口渲染成单个 argv 词，不产生子命令"),
 )
 
@@ -161,11 +171,11 @@ class DeferralRow:
 # lowering a pin here *and* changing the documentation anchor in the same diff.
 PINNED_COUNTS: Mapping[str, int] = {
     "MUTATE_SITES": 8,
-    "READ_ARGUMENTS": 3,
+    "READ_ARGUMENTS": 4,
     "WRITE_TOKENS": 7,
     "PROBE_CASES": 9,
     "DECLARED_DEFERRALS": 1,
-    "SELFTEST_CASES": 17,
+    "SELFTEST_CASES": 20,
 }
 
 DECLARED_DEFERRALS: tuple[DeferralRow, ...] = (
@@ -316,6 +326,24 @@ SELFTEST_CASES: tuple[SelftestCase, ...] = (
         "read 的 argv 藏在变量里必须红（旧版静默放过）",
     ),
     SelftestCase(
+        "read-starred-unregistered",
+        "def step(ctx):\n    argv = ('sh', '-c', 'touch /tmp/x')\n    ctx.read((*argv,))\n",
+        True,
+        "`*` 展开一个未登记的只读段必须红（旧版静默跳过整个 argv）",
+    ),
+    SelftestCase(
+        "read-starred-registered",
+        "def step(ctx):\n    ctx.read((*ctx.compose_argv, 'ps', '-a'))\n",
+        False,
+        "`*` 展开 READ_ARGUMENTS 里登记过的只读 argv 段可接受",
+    ),
+    SelftestCase(
+        "discarded-to-underscore",
+        "def step(ctx):\n    _ = ctx.mutate(('docker', 'compose', 'up', '-d'))\n",
+        True,
+        "把结果赋给 `_` 也是丢弃（旧版只认裸语句）",
+    ),
+    SelftestCase(
         "registered-site-passes",
         "def step(ctx):\n"
         "    started = ctx.mutate(ctx.compose('up', '-d', '--build', '--wait', 'api', 'gateway'))\n"
@@ -387,14 +415,18 @@ def render_tables() -> str:
         lines.append(f"| `{site.key}` | {site.judgement} | `{site.evidence}` |")
     lines += [
         "",
-        "#### READ_ARGUMENTS（允许出现在 `read` argv 里的助手与词包装）",
+        "#### READ_ARGUMENTS（允许出现在 `read` argv 里的助手、词包装与 `*` 展开段）",
         "",
         "| 助手 | 形态 | 为什么只读 |",
         "| --- | --- | --- |",
     ]
     for name, kind, reason in READ_ARGUMENTS:
-        label = "整体 argv 构造器" if kind == "builder" else "argv 词包装"
-        lines.append(f"| `{name}` | {label} | {reason} |")
+        labels = {
+            "builder": "整体 argv 构造器",
+            "value": "argv 词包装",
+            "spread": "可被 `*` 展开的只读 argv 段",
+        }
+        lines.append(f"| `{name}` | {labels.get(kind, kind)} | {reason} |")
     lines += [
         "",
         "#### WRITE_TOKENS（`read` 里出现即判红的 argv 词）",
@@ -579,7 +611,12 @@ def _argv_tokens(argument: ast.expr) -> tuple[list[str], list[str]]:
         if isinstance(element, ast.Constant) and isinstance(element.value, str):
             words.append(element.value)
         elif isinstance(element, ast.Starred):
-            if not isinstance(element.value, (ast.Attribute, ast.Name)):
+            # `*x` splices words the guard cannot read, so the spliced name has to be
+            # a registered read-only segment. Silently skipping the element (the old
+            # behaviour) let `ctx.read((*argv,))` carry any command at all.
+            spread = _spread_name(element.value)
+            row = _argument_rows().get(spread) if spread else None
+            if row is None or row[0] != "spread":
                 unresolved.append(ast.unparse(element))
         elif isinstance(element, ast.Call):
             name = _call_name(element)
@@ -593,6 +630,15 @@ def _argv_tokens(argument: ast.expr) -> tuple[list[str], list[str]]:
         else:
             unresolved.append(ast.unparse(element))
     return words, unresolved
+
+
+def _spread_name(value: ast.expr) -> str:
+    """Name of the tuple spliced by `*`, so a registered segment can be recognised."""
+    if isinstance(value, ast.Attribute):
+        return value.attr
+    if isinstance(value, ast.Name):
+        return value.id
+    return ""
 
 
 def _argument_rows() -> dict[str, tuple[str, str]]:
@@ -648,9 +694,17 @@ def audit_sources(
                 seen.add(id(node))
                 key = site_key(function.name, node)
                 found[key] = function.name
-                if isinstance(parents.get(id(node)), ast.Expr):
+                parent = parents.get(id(node))
+                if isinstance(parent, ast.Expr):
                     problems.append(
                         f"{label}:{node.lineno} `{key}` 的结果被丢弃；写命令的退出码没有接收者"
+                    )
+                elif isinstance(parent, ast.Assign) and any(
+                    isinstance(target, ast.Name) and target.id == "_" for target in parent.targets
+                ):
+                    problems.append(
+                        f"{label}:{node.lineno} `{key}` 的结果被赋给 `_` 后丢弃；"
+                        "写命令的退出码没有接收者（`_ =` 与裸表达式一样算丢弃）"
                     )
                 continue
             if call != "read":
@@ -778,7 +832,7 @@ def _truthiness_problems(tree: ast.Module, label: str) -> list[str]:
 
 
 def audit_evidence() -> list[str]:
-    """Every registration must point at something that exists."""
+    """Every registration must point at an assertion that really runs."""
     problems: list[str] = []
     probe_cases = {row.case for row in PROBE_CASES}
     for row in MUTATE_SITES:
@@ -797,19 +851,136 @@ def audit_evidence() -> list[str]:
             )
             continue
         name = row.evidence.split(":", 1)[1]
-        if _find_test(name) is None:
+        found = _find_test(name)
+        if found is None:
             problems.append(
-                f"MUTATE_SITES 的 `{row.key}` 指向不存在的 tests/ci 用例 `{name}`；"
-                "删测试必须同时改登记，否则「谁在守护」是空话"
+                f"MUTATE_SITES 的 `{row.key}` 指向不存在（或不是 `TestCase` 方法）的 tests/ci 用例 "
+                f"`{name}`；删测试必须同时改登记，否则「谁在守护」是空话"
             )
+            continue
+        path, node = found
+        problems += _evidence_body_problems(row.key, name, path, node)
     return problems
 
 
-def _find_test(name: str) -> Path | None:
+def _find_test(name: str) -> tuple[Path, ast.FunctionDef] | None:
+    """The `TestCase` method the evidence names: it must be collected, not merely defined."""
     for path in sorted((ROOT / "tests/ci").glob("*.py")):
-        if f"def {name}(" in path.read_text(encoding="utf-8"):
-            return path
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            if not any("TestCase" in ast.unparse(base) for base in node.bases):
+                continue
+            for member in node.body:
+                if isinstance(member, ast.FunctionDef) and member.name == name:
+                    return path, member
     return None
+
+
+def _assertion_line(node: ast.FunctionDef) -> bool:
+    """True when the body contains an `assert` statement or an `assert*` method call."""
+    for inner in ast.walk(node):
+        if isinstance(inner, ast.Assert):
+            return True
+        if (
+            isinstance(inner, ast.Call)
+            and isinstance(inner.func, ast.Attribute)
+            and inner.func.attr.startswith("assert")
+        ):
+            return True
+    return False
+
+
+def _skip_marks(node: ast.FunctionDef) -> list[str]:
+    """Decorators and in-body `skipTest` calls that turn the evidence into a no-op."""
+    marks = [
+        ast.unparse(decorator).splitlines()[0]
+        for decorator in node.decorator_list
+        if "skip" in ast.unparse(decorator).casefold()
+    ]
+    for statement in node.body:
+        for inner in ast.walk(statement):
+            if (
+                isinstance(inner, ast.Call)
+                and isinstance(inner.func, ast.Attribute)
+                and inner.func.attr.casefold() in {"skiptest", "skip"}
+            ):
+                marks.append(ast.unparse(inner).splitlines()[0])
+    return marks
+
+
+def _evidence_body_problems(key: str, name: str, path: Path, node: ast.FunctionDef) -> list[str]:
+    """A named test is not evidence if it is skipped, truncated, or asserts nothing."""
+    problems: list[str] = []
+    where = f"{_display(path)}:{node.lineno}"
+    marks = _skip_marks(node)
+    if marks:
+        problems.append(
+            f"MUTATE_SITES 的 `{key}` 证据 `{name}`（{where}）被 skip 掉了："
+            f"{', '.join(marks)}；被跳过的用例每次都绿，不能作为证据"
+        )
+    body = node.body
+    for statement in body[:-1]:
+        if isinstance(statement, (ast.Return, ast.Raise)):
+            problems.append(
+                f"MUTATE_SITES 的 `{key}` 证据 `{name}`（{where}）在前面 `"
+                f"{ast.unparse(statement).splitlines()[0]}` 早退，"
+                "剩下的正文是死代码；掏空证据必须红"
+            )
+            break
+    if not _assertion_line(node):
+        problems.append(
+            f"MUTATE_SITES 的 `{key}` 证据 `{name}`（{where}）的正文没有任何断言；"
+            "被登记为证据的用例必须自己判红，不能只是被导入"
+        )
+    return problems
+
+
+def _entry_defined_names(entry: Path) -> set[str]:
+    """Names the entry defines: functions, classes, and bound attributes/assignments."""
+    names: set[str] = set()
+    tree = ast.parse(entry.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    names.add(target.id)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+    return names
+
+
+def check_judgements(entry: Path) -> list[str]:
+    """The `判定在哪` column must point at a definition the entry really has."""
+    problems: list[str] = []
+    defined = _entry_defined_names(entry)
+    seen: set[str] = set()
+    for row in MUTATE_SITES:
+        if row.key in seen:
+            problems.append(
+                f"MUTATE_SITES 的 `{row.key}` 登记了多次；同一站点只能有一行判定，"
+                "重复行会让「判定在哪」两说并存"
+            )
+            continue
+        seen.add(row.key)
+        pointers = re.findall(r"`([^`]+)`", row.judgement)
+        if not pointers:
+            problems.append(
+                f"MUTATE_SITES 的 `{row.key}` 的「判定在哪」没有反引号指向入口定义的名字"
+                "（写成 `判在` 的那个函数，例如 `step_gate`）；"
+                "判定位置必须可核对，不能只写一句描述"
+            )
+            continue
+        for pointer in pointers:
+            if pointer not in defined:
+                problems.append(
+                    f"MUTATE_SITES 的 `{row.key}` 的「判定在哪」写着 `{pointer}`，"
+                    f"但 {entry.name} 没有定义它；入口改名/删函数时必须同步这列"
+                )
+    return problems
 
 
 def selftest() -> list[str]:
@@ -834,6 +1005,7 @@ def selftest() -> list[str]:
 
 def run_sites(entry: Path) -> tuple[list[str], str]:
     problems = check_anchor() + check_counts() + audit_evidence() + selftest()
+    problems += check_judgements(entry)
     problems += audit_sources(entry.read_text(encoding="utf-8"), label=entry.name)
     return problems, f"sites: {len(MUTATE_SITES)} registered"
 

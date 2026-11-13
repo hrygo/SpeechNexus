@@ -1901,7 +1901,10 @@ def _runs_on_declarations(workflow: str) -> list[tuple[str, str]]:
             continue
         value = runs_on.group(1).strip()
         if value:
-            declarations.extend((job, element) for element in _runs_on_elements(value))
+            # An empty inline sequence (`runs-on: []`) names no image either; it is
+            # recorded empty so the job stays in the checked set, exactly like the
+            # empty block-sequence form below.
+            declarations.extend((job, element) for element in _runs_on_elements(value) or [""])
             continue
         items = 0
         while index < len(lines):

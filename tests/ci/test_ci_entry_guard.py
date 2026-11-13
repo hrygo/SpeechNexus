@@ -805,9 +805,9 @@ class WiringTests(unittest.TestCase):
             problems, _summary = GUARD.run_wiring(copied)
         return [str(problem) for problem in problems]
 
-    def _workflow_problems(self, replace: tuple[str, str]) -> list[str]:
+    def _workflow_problems(self, replace: tuple[str, str], count: int = -1) -> list[str]:
         text = WORKFLOW.read_text(encoding="utf-8")
-        replaced = text.replace(*replace)
+        replaced = text.replace(*replace, count)
         self.assertNotEqual(text, replaced)
         with tempfile.TemporaryDirectory() as directory:
             copied = Path(directory) / "ci.yml"
@@ -934,11 +934,13 @@ class WiringTests(unittest.TestCase):
         # `runs-on: macos-14`, `runs-on: [macos-14]` and `runs-on:` + `- macos-14` all
         # name the same image, so all three have to agree; reading only the scalar
         # form left a job on another runner out of `runners` entirely, which is the
-        # opposite verdict from the equivalent inline sequence.
+        # opposite verdict from the equivalent inline sequence. An empty value names
+        # no image at all, so `runs-on: []` and the empty block sequence agree too.
         for replacement, red in (
             ("    runs-on: macos-14", True),
             ("    runs-on: [macos-14]", True),
             ("    runs-on:\n      - macos-14", True),
+            ("    runs-on: [ubuntu-24.04, macos-14]", True),
             ("    runs-on: [ubuntu-24.04]", False),
             ("    runs-on:\n      - ubuntu-24.04", False),
         ):
@@ -953,6 +955,17 @@ class WiringTests(unittest.TestCase):
                 )
             ),
         )
+
+    def test_an_empty_inline_runner_sequence_is_red(self) -> None:
+        # `runs-on: []` names no image, so it must be red like the empty block form
+        # instead of dropping that job out of the checked set. Only one job is
+        # rewritten: rewriting all of them would leave no `runs-on` to read at all,
+        # which is a different (already covered) failure.
+        problems = self._workflow_problems(
+            ("    runs-on: ubuntu-24.04", "    runs-on: []"), count=1
+        )
+        self.assertTrue(problems)
+        self.assertIn("runs-on", "\n".join(problems))
 
     def test_a_missing_guard_subcommand_is_red(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")

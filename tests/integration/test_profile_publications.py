@@ -22,6 +22,7 @@ from psycopg.rows import dict_row
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 from tests.support.migrations import head_revision
+from tests.support.profile_evidence import publication_evidence
 from tests.support.profile_examples import profile_request
 from tests.unit.test_profile_lifecycle import request
 
@@ -50,12 +51,7 @@ pytestmark = pytest.mark.integration
 
 def _empty_evidence(directory: Path) -> str:
     """A deployment document declaring no reviewed revision (drafts only)."""
-    path = directory / "profile-publication-evidence.json"
-    path.write_text(
-        json.dumps({"format": "speechnexus.profile-publication-evidence/1", "entries": []}) + "\n",
-        encoding="utf-8",
-    )
-    return str(path)
+    return publication_evidence(directory)
 
 
 @pytest.fixture

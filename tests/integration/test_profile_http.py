@@ -24,6 +24,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 from tests.integration.test_production_jobs import ROOT, FaultConnection, JobDatabase
 from tests.integration.test_production_jobs import database as database
+from tests.support.profile_evidence import publication_evidence
 from tests.support.profile_examples import profile_request
 from tests.unit.backend.test_health import _settings
 
@@ -76,12 +77,7 @@ class HTTPDatabase:
 
 def _publication_evidence(tmp_path: Path) -> str:
     """A deployment document with no reviewed revision: drafts only."""
-    path = tmp_path / "profile-publication-evidence.json"
-    path.write_text(
-        json.dumps({"format": "speechnexus.profile-publication-evidence/1", "entries": []}) + "\n",
-        encoding="utf-8",
-    )
-    return str(path)
+    return publication_evidence(tmp_path)
 
 
 @pytest.fixture

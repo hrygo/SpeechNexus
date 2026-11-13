@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { FileTaskSession } from "./file-task-session";
+import { FileTaskSession, retainRecovery } from "./file-task-session";
 import { canFinishTask } from "./file-task-policy";
 import { SpeechFileClient, parse } from "./speech-file-client";
 import { SessionTaskJournal } from "./task-journal";
@@ -13,27 +13,28 @@ const file = () => new File(["synthetic audio"], "synthetic.wav", { type: "audio
 
 type Responder = (attempt: number) => Response | Promise<Response>;
 
-function rejection(status: number, code: string, extra: { operationId?: string } = {}) {
+function envelope(status: number, code: string, extra: { operationId?: string } = {}) {
   const type =
     status === 429
       ? "rate_limit_error"
       : status >= 500
         ? "service_unavailable_error"
         : "invalid_request_error";
-  return Response.json(
-    parse("ErrorResponse", {
-      error: {
-        code,
-        type,
-        message: `Synthetic rejection ${code}`,
-        param: null,
-        request_id: "req-demo",
-        retryable: status === 429 || status >= 500,
-        ...(extra.operationId ? { nexus: { operation_id: extra.operationId } } : {}),
-      },
-    }),
-    { status },
-  );
+  return parse("ErrorResponse", {
+    error: {
+      code,
+      type,
+      message: `Synthetic rejection ${code}`,
+      param: null,
+      request_id: "req-demo",
+      retryable: status === 429 || status >= 500,
+      ...(extra.operationId ? { nexus: { operation_id: extra.operationId } } : {}),
+    },
+  });
+}
+
+function rejection(status: number, code: string, extra: { operationId?: string } = {}) {
+  return Response.json(envelope(status, code, extra), { status });
 }
 
 const createOk: Responder = () => Response.json(job(), { status: 202 });
@@ -42,7 +43,10 @@ const uploadOk: Responder = () => Response.json(asset(), { status: 201 });
 function setup({
   create = createOk,
   upload = uploadOk,
-}: { create?: Responder; upload?: Responder } = {}) {
+  cancel = () => {
+    throw new Error("Unexpected cancellation request");
+  },
+}: { create?: Responder; upload?: Responder; cancel?: Responder } = {}) {
   const data = new Map<string, string>();
   const storage = {
     getItem: (key: string) => data.get(key) ?? null,
@@ -60,6 +64,8 @@ function setup({
     const path = new URL(request.url).pathname;
     if (path === "/v1/nexus/assets" && request.method === "POST") return upload(uploadAttempts++);
     if (path === "/v1/nexus/assets/asset-demo") return Response.json(asset());
+    if (path === "/v1/nexus/jobs/job-demo/cancellations" && request.method === "POST")
+      return cancel(0);
     if (path === "/v1/nexus/jobs" && request.method === "POST") {
       createKeys.push(request.headers.get("Idempotency-Key") ?? "");
       bodies.push(await request.clone().text());
@@ -244,8 +250,9 @@ describe("submission rejection classes", () => {
     const session = f.make();
     await session.start(file(), "asr-quality");
     const snapshot = session.getSnapshot();
-    // No Job row exists for a 4xx contract refusal, so the intent is spent and a new
-    // intent is safe; this is the behavior that must not regress.
+    // A 4xx refusal settles this attempt (the protocol will not accept the same request
+    // again), so the unknown flag may be cleared and a fresh intent needs its own key;
+    // this is the behavior that must not regress.
     expect(snapshot.unknown).toBe(false);
     expect(snapshot.canReplay).toBe(false);
     expect(snapshot.recovery).toBeUndefined();
@@ -264,5 +271,101 @@ describe("submission rejection classes", () => {
     expect(canFinishTask(snapshot)).toBe(true);
     expect(f.stats.createKeys).toHaveLength(0);
     session.dispose();
+  });
+
+  it("keeps the intent unknown when a create attempt is refused with 409 execution_cleanup_pending", async () => {
+    // That code proves a Job already exists (contracts/speech-openapi.yaml:2852-2854), so on
+    // a create attempt it says nothing about whether *this* intent was admitted.
+    const f = setup({ create: () => rejection(409, "execution_cleanup_pending") });
+    const session = f.make();
+    await session.start(file(), "asr-quality");
+    const snapshot = session.getSnapshot();
+    expect(snapshot).toMatchObject({ unknown: true, canReplay: true });
+    expect(snapshot.recovery?.error.code).toBe("execution_cleanup_pending");
+    expect(snapshot.notice).toContain("读取原执行");
+    expect(canFinishTask(snapshot)).toBe(false);
+    session.dispose();
+  });
+
+  it("treats 409 execution_cleanup_pending on the cancel path as a settled attempt", async () => {
+    // The cancel request was deterministically refused against a known Job identity, so the
+    // same operation context that keeps a create unknown must clear it here.
+    const f = setup({ cancel: () => rejection(409, "execution_cleanup_pending") });
+    const session = f.make();
+    await session.start(file(), "asr-quality");
+    expect(session.getSnapshot().job?.id).toBe("job-demo");
+    await session.cancel();
+    const snapshot = session.getSnapshot();
+    expect(snapshot.unknown).toBe(false);
+    expect(snapshot.canReplay).toBe(false);
+    expect(snapshot.recovery).toBeUndefined();
+    expect(snapshot.notice).toContain("execution_cleanup_pending");
+    expect(snapshot.cancellation).toBeUndefined();
+    session.dispose();
+  });
+
+  it("keeps an earlier recovery envelope when a later 503 carries no operation identity", async () => {
+    const f = setup({
+      create: (attempt) =>
+        attempt === 0 ? rejection(500, "internal_error") : rejection(503, "job_outcome_unknown"),
+    });
+    const session = f.make();
+    await session.start(file(), "asr-quality");
+    expect(session.getSnapshot().recovery?.error.code).toBe("internal_error");
+    await session.replay();
+    const snapshot = session.getSnapshot();
+    expect(snapshot).toMatchObject({ unknown: true, canReplay: true });
+    // The first envelope still describes the unresolved submission; the nexus-less 503
+    // must not replace it with an identity-free one.
+    expect(snapshot.recovery?.error.code).toBe("internal_error");
+    expect(snapshot.recovery?.error.message).toBe("Synthetic rejection internal_error");
+    session.dispose();
+  });
+
+  it("adopts a later operation identity so it stays queryable", async () => {
+    const f = setup({
+      create: (attempt) =>
+        attempt === 0
+          ? rejection(500, "internal_error")
+          : rejection(503, "job_outcome_unknown", { operationId: "op-demo" }),
+    });
+    const session = f.make();
+    await session.start(file(), "asr-quality");
+    expect(session.getSnapshot().recovery?.error.nexus).toBeUndefined();
+    await session.replay();
+    const snapshot = session.getSnapshot();
+    expect(snapshot.recovery?.error.nexus?.operation_id).toBe("op-demo");
+    expect(snapshot.canReplay).toBe(false);
+    expect(f.stored()).toMatchObject({ operationId: "op-demo" });
+    await session.replay();
+    expect(f.stats.createKeys).toHaveLength(2);
+    session.dispose();
+  });
+});
+
+describe("recovery identity retention", () => {
+  it("never replaces an already identified original execution", () => {
+    const identified = envelope(503, "job_outcome_unknown", { operationId: "op-first" });
+    for (const incoming of [
+      envelope(503, "job_outcome_unknown"),
+      envelope(503, "job_outcome_unknown", { operationId: "op-second" }),
+      envelope(500, "internal_error"),
+      envelope(409, "operation_in_progress", { operationId: "op-second" }),
+    ])
+      expect(retainRecovery(identified, incoming)).toBe(identified);
+  });
+
+  it("keeps a later identity over an envelope without one", () => {
+    const previous = envelope(500, "internal_error");
+    const incoming = envelope(503, "job_outcome_unknown", { operationId: "op-demo" });
+    expect(retainRecovery(previous, incoming)).toBe(incoming);
+    expect(retainRecovery(undefined, incoming)).toBe(incoming);
+  });
+
+  it("keeps the first identity-free envelope when nothing identifies an execution", () => {
+    const previous = envelope(500, "internal_error");
+    const incoming = envelope(503, "job_outcome_unknown");
+    expect(retainRecovery(previous, incoming)).toBe(previous);
+    expect(retainRecovery(undefined, incoming)).toBe(incoming);
   });
 });

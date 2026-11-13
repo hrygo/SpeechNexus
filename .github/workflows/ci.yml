@@ -891,14 +891,16 @@ jobs:
   # What "structure" means here, and what it does not mean. The guard proves four
   # things and claims only those: (1) every `<ctx>.mutate(...)` command the entry
   # shipped is still present, at the site the anchored registry names, with an
-  # evidence pointer to a collected `TestCase` method that still asserts and is
-  # not skipped (`sites`); (2) every registered pure judgement function still
+  # evidence pointer to a collected `TestCase` method that really asserts - not
+  # skipped at method, class or fixture level, not an `expectedFailure`, not
+  # defined twice (`sites`); (2) every registered pure judgement function still
   # rejects a failing input (`probe`); (3) the `read` boundary can be decided
   # statically - a literal argv, a registered argv builder, or a registered
   # read-only segment spliced with `*` - and carries no write word, because the
   # dry-run really executes `read` commands; (4) the workflow still runs all four
-  # guard subcommands, each as the first command of its step, so a `echo`-only
-  # replacement cannot pass (`wiring`). It does NOT prove a condition is correct:
+  # guard subcommands, each as the first executed command of its step (`set -euo
+  # pipefail` and friends are allowed), so a `echo`-only replacement cannot pass
+  # (`wiring`). It does NOT prove a condition is correct:
   # an inverted `if` that still reads `.ok` is invisible to an AST, which is why
   # the judgement itself stays with the fake Runner cases in tests/ci and with a
   # real apply run. `probe` only covers the registered pure functions, not

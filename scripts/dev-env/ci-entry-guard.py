@@ -59,6 +59,11 @@ ANCHOR_END = "<!-- ci-entry-guard:tables:end -->"
 # pass by agreeing with itself.
 EXPECTED_STEP_ORDER = ("tools", "migrate", "roles", "buckets", "stack", "gate", "health")
 
+# `unittest discover -s tests/ci` collects `test*.py` only, so a same-named
+# `TestCase` in a helper module (`error_codes.py`, ...) never runs and cannot be
+# quoted as evidence.
+COLLECTED_TEST_GLOB = "test*.py"
+
 
 @dataclass(frozen=True)
 class SiteRow:
@@ -854,85 +859,298 @@ def audit_evidence() -> list[str]:
         found = _find_test(name)
         if found is None:
             problems.append(
-                f"MUTATE_SITES 的 `{row.key}` 指向不存在（或不是 `TestCase` 方法）的 tests/ci 用例 "
-                f"`{name}`；删测试必须同时改登记，否则「谁在守护」是空话"
+                f"MUTATE_SITES 的 `{row.key}` 指向不存在（或不在 `TestCase` 类里、不在 "
+                f"{COLLECTED_TEST_GLOB} 模块里）的 tests/ci 用例 `{name}`；"
+                "删测试必须同时改登记，否则「谁在守护」是空话"
             )
             continue
-        path, node = found
-        problems += _evidence_body_problems(row.key, name, path, node)
+        path, tree, klass, members = found
+        where = f"{_display(path)}:{klass.lineno}"
+        if len(members) > 1:
+            lines = "、".join(str(member.lineno) for member in members)
+            problems.append(
+                f"MUTATE_SITES 的 `{row.key}` 证据 `{name}` 在 `{klass.name}` 里定义了 "
+                f"{len(members)} 次（行 {lines}）；守卫读到第一个、运行时用最后一个，"
+                "同名重复定义必须红"
+            )
+        node = members[0]
+        problems += _evidence_skip_problems(row.key, name, where, tree, klass, node)
+        problems += _evidence_body_problems(row.key, name, f"{_display(path)}:{node.lineno}", node)
     return problems
 
 
-def _find_test(name: str) -> tuple[Path, ast.FunctionDef] | None:
-    """The `TestCase` method the evidence names: it must be collected, not merely defined."""
-    for path in sorted((ROOT / "tests/ci").glob("*.py")):
+def _module_classes(tree: ast.Module) -> dict[str, ast.ClassDef]:
+    """Class definitions of one module, by name, for resolving its own bases."""
+    return {node.name: node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)}
+
+
+def _base_name(base: ast.expr) -> str:
+    """The class name a base expression names, without module or type arguments."""
+    return ast.unparse(base).split(".")[-1].split("[")[0].strip()
+
+
+def _class_ancestry(tree: ast.Module, klass: ast.ClassDef) -> list[ast.ClassDef]:
+    """`klass` plus its same-module base classes, nearest first."""
+    by_name = _module_classes(tree)
+    ancestry: list[ast.ClassDef] = []
+    queue = [klass]
+    while queue:
+        current = queue.pop(0)
+        if any(current is known for known in ancestry):
+            continue
+        ancestry.append(current)
+        for base in current.bases:
+            parent = by_name.get(_base_name(base))
+            if parent is not None:
+                queue.append(parent)
+    return ancestry
+
+
+def _is_test_case(tree: ast.Module, klass: ast.ClassDef) -> bool:
+    """`unittest` runs this class only if some class in its own bases is a TestCase."""
+    return any(
+        "TestCase" in ast.unparse(base)
+        for owner in _class_ancestry(tree, klass)
+        for base in owner.bases
+    )
+
+
+def _find_test(
+    name: str,
+) -> tuple[Path, ast.Module, ast.ClassDef, tuple[ast.FunctionDef, ...]] | None:
+    """The `TestCase` class and same-named methods, in a module discovery really collects."""
+    if not name.startswith("test"):
+        return None
+    for path in sorted((ROOT / "tests/ci").glob(COLLECTED_TEST_GLOB)):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not isinstance(node, ast.ClassDef):
                 continue
-            if not any("TestCase" in ast.unparse(base) for base in node.bases):
+            if not _is_test_case(tree, node):
                 continue
-            for member in node.body:
-                if isinstance(member, ast.FunctionDef) and member.name == name:
-                    return path, member
+            members = tuple(
+                member
+                for member in node.body
+                if isinstance(member, ast.FunctionDef) and member.name == name
+            )
+            if members:
+                return path, tree, node, members
     return None
 
 
-def _assertion_line(node: ast.FunctionDef) -> bool:
-    """True when the body contains an `assert` statement or an `assert*` method call."""
-    for inner in ast.walk(node):
-        if isinstance(inner, ast.Assert):
-            return True
-        if (
-            isinstance(inner, ast.Call)
-            and isinstance(inner.func, ast.Attribute)
-            and inner.func.attr.startswith("assert")
-        ):
-            return True
-    return False
+def _decorator_signature(decorator: ast.expr) -> tuple[str, list[ast.expr], str]:
+    """(lower-cased name, call arguments, source) of one decorator expression."""
+    source = ast.unparse(decorator).splitlines()[0]
+    if isinstance(decorator, ast.Call):
+        return _call_name(decorator).casefold(), list(decorator.args), source
+    if isinstance(decorator, ast.Attribute):
+        return decorator.attr.casefold(), [], source
+    if isinstance(decorator, ast.Name):
+        return decorator.id.casefold(), [], source
+    return "", [], source
 
 
-def _skip_marks(node: ast.FunctionDef) -> list[str]:
-    """Decorators and in-body `skipTest` calls that turn the evidence into a no-op."""
-    marks = [
-        ast.unparse(decorator).splitlines()[0]
-        for decorator in node.decorator_list
-        if "skip" in ast.unparse(decorator).casefold()
+def _skip_decorator_reason(decorator: ast.expr) -> str:
+    """Why this decorator makes the test not count as evidence, or "" when it does not."""
+    name, arguments, source = _decorator_signature(decorator)
+    if name == "expectedfailure":
+        return f"`{source}`（断言失败也会被计为通过）"
+    if name == "skip":
+        return f"`{source}`（无条件跳过）"
+    if name not in {"skipif", "skipunless"}:
+        return f"`{source}`（装饰器名字里带 skip）" if "skip" in name else ""
+    condition = arguments[0] if arguments else None
+    if isinstance(condition, ast.Constant) and isinstance(condition.value, bool):
+        skipped = condition.value if name == "skipif" else not condition.value
+        return f"`{source}`（条件恒为 {condition.value}，该用例不会运行）" if skipped else ""
+    return f"`{source}`（skip 条件不是字面量，无法确认这个用例会运行；证据用例不要带条件跳过）"
+
+
+def _skips_here(inner: ast.AST) -> bool:
+    """A `skipTest(...)` call or a `raise ...SkipTest` statement."""
+    if (
+        isinstance(inner, ast.Call)
+        and isinstance(inner.func, ast.Attribute)
+        and inner.func.attr.casefold() == "skiptest"
+    ):
+        return True
+    return (
+        isinstance(inner, ast.Raise)
+        and inner.exc is not None
+        and "SkipTest" in ast.unparse(inner.exc)
+    )
+
+
+def _raise_or_call_marks(node: ast.AST) -> list[str]:
+    """`skipTest` calls and `raise ...SkipTest` statements inside one statement subtree."""
+    return [
+        f"`{ast.unparse(inner).splitlines()[0]}`" for inner in ast.walk(node) if _skips_here(inner)
     ]
+
+
+def _evidence_skip_problems(
+    key: str,
+    name: str,
+    where: str,
+    tree: ast.Module,
+    klass: ast.ClassDef,
+    node: ast.FunctionDef,
+) -> list[str]:
+    """Method-level, class-level and fixture-level skips all turn evidence into a no-op."""
+    reasons: list[str] = []
+    for decorator in node.decorator_list:
+        reason = _skip_decorator_reason(decorator)
+        if reason:
+            reasons.append(f"方法上的 {reason}")
+    for owner in _class_ancestry(tree, klass):
+        for decorator in owner.decorator_list:
+            reason = _skip_decorator_reason(decorator)
+            if reason:
+                reasons.append(f"类 `{owner.name}` 上的 {reason}")
+        for member in owner.body:
+            if not isinstance(member, ast.FunctionDef):
+                continue
+            if member.name not in {"setUp", "setUpClass"}:
+                continue
+            for statement in member.body:
+                for mark in _raise_or_call_marks(statement):
+                    reasons.append(f"`{owner.name}.{member.name}` 里的 {mark}")
     for statement in node.body:
-        for inner in ast.walk(statement):
-            if (
-                isinstance(inner, ast.Call)
-                and isinstance(inner.func, ast.Attribute)
-                and inner.func.attr.casefold() in {"skiptest", "skip"}
+        for mark in _raise_or_call_marks(statement):
+            reasons.append(f"正文里的 {mark}")
+    if not reasons:
+        return []
+    return [
+        f"MUTATE_SITES 的 `{key}` 证据 `{name}`（{where}）会被跳过或不算失败："
+        f"{'；'.join(reasons)}；这样的用例每次都绿，不能作为证据"
+    ]
+
+
+TRIVIAL_ASSERT_CALLS = (
+    "assertTrue",
+    "assert_",
+    "assertFalse",
+    "assertEqual",
+    "assertIs",
+    "assertNotEqual",
+    "assertIsNot",
+    "assertIsNone",
+    "assertIsNotNone",
+)
+
+
+def _is_assertion(node: ast.AST) -> bool:
+    if isinstance(node, ast.Assert):
+        return True
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr.startswith("assert")
+    )
+
+
+def _trivial_assertion_source(node: ast.AST) -> str:
+    """Reason text when the assertion can never fail, else ""."""
+    if isinstance(node, ast.Assert):
+        if isinstance(node.test, ast.Constant) and bool(node.test.value):
+            return ast.unparse(node).splitlines()[0]
+        return ""
+    if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+        return ""
+    attribute = node.func.attr
+    if attribute not in TRIVIAL_ASSERT_CALLS:
+        return ""
+    values = [
+        argument.value if isinstance(argument, ast.Constant) else argument for argument in node.args
+    ]
+    literals = [isinstance(argument, ast.Constant) for argument in node.args]
+    source = ast.unparse(node).splitlines()[0]
+    trivial = False
+    if attribute in {"assertTrue", "assert_"} and literals == [True]:
+        trivial = bool(values[0])
+    elif attribute == "assertFalse" and literals == [True]:
+        trivial = not values[0]
+    elif attribute in {"assertEqual", "assertIs"} and literals == [True, True]:
+        trivial = values[0] == values[1]
+    elif attribute in {"assertNotEqual", "assertIsNot"} and literals == [True, True]:
+        trivial = values[0] != values[1]
+    elif literals == [True] and attribute in {"assertIsNone", "assertIsNotNone"}:
+        trivial = (values[0] is None) == (attribute == "assertIsNone")
+    return source if trivial else ""
+
+
+def _swallowing_try_sources(node: ast.FunctionDef) -> list[str]:
+    """`try` blocks whose handlers would swallow an AssertionError raised inside them."""
+    swallow = {"assertionerror", "exception", "baseexception"}
+    sources: list[str] = []
+    for inner in ast.walk(node):
+        if not isinstance(inner, ast.Try):
+            continue
+        asserts = [
+            visitor
+            for statement in inner.body
+            for visitor in ast.walk(statement)
+            if _is_assertion(visitor) and not _trivial_assertion_source(visitor)
+        ]
+        if not asserts:
+            continue
+        for handler in inner.handlers:
+            if handler.type is None or any(
+                token in ast.unparse(handler.type).casefold() for token in swallow
             ):
-                marks.append(ast.unparse(inner).splitlines()[0])
-    return marks
+                sources.append(ast.unparse(inner).splitlines()[0])
+                break
+    return sources
 
 
-def _evidence_body_problems(key: str, name: str, path: Path, node: ast.FunctionDef) -> list[str]:
-    """A named test is not evidence if it is skipped, truncated, or asserts nothing."""
-    problems: list[str] = []
-    where = f"{_display(path)}:{node.lineno}"
-    marks = _skip_marks(node)
-    if marks:
-        problems.append(
-            f"MUTATE_SITES 的 `{key}` 证据 `{name}`（{where}）被 skip 掉了："
-            f"{', '.join(marks)}；被跳过的用例每次都绿，不能作为证据"
-        )
-    body = node.body
-    for statement in body[:-1]:
+def _truncation_sources(node: ast.FunctionDef) -> list[str]:
+    """Early exits that make the rest of the evidence body dead code."""
+    sources: list[str] = []
+    for statement in node.body[:-1]:
         if isinstance(statement, (ast.Return, ast.Raise)):
-            problems.append(
-                f"MUTATE_SITES 的 `{key}` 证据 `{name}`（{where}）在前面 `"
-                f"{ast.unparse(statement).splitlines()[0]}` 早退，"
-                "剩下的正文是死代码；掏空证据必须红"
-            )
+            sources.append(ast.unparse(statement).splitlines()[0])
             break
-    if not _assertion_line(node):
+    for inner in ast.walk(node):
+        if not isinstance(inner, ast.If):
+            continue
+        if not (isinstance(inner.test, ast.Constant) and bool(inner.test.value)):
+            continue
+        if any(isinstance(statement, (ast.Return, ast.Raise)) for statement in inner.body):
+            sources.append(ast.unparse(inner).splitlines()[0])
+            break
+    return sources
+
+
+def _evidence_body_problems(key: str, name: str, where: str, node: ast.FunctionDef) -> list[str]:
+    """A named test is not evidence if it exits early, asserts nothing, or cannot fail."""
+    problems: list[str] = []
+    truncations = _truncation_sources(node)
+    if truncations:
+        problems.append(
+            f"MUTATE_SITES 的 `{key}` 证据 `{name}`（{where}）在前面 `{truncations[0]}` 早退，"
+            "剩下的正文是死代码；掏空证据必须红"
+        )
+    assertions = [
+        inner for statement in node.body for inner in ast.walk(statement) if _is_assertion(inner)
+    ]
+    meaningful = [item for item in assertions if not _trivial_assertion_source(item)]
+    if not assertions:
         problems.append(
             f"MUTATE_SITES 的 `{key}` 证据 `{name}`（{where}）的正文没有任何断言；"
             "被登记为证据的用例必须自己判红，不能只是被导入"
+        )
+    elif not meaningful:
+        trivial = _trivial_assertion_source(assertions[0])
+        problems.append(
+            f"MUTATE_SITES 的 `{key}` 证据 `{name}`（{where}）的断言恒真（`{trivial}`），"
+            "永远不会失败；掏空证据必须红"
+        )
+    swallowing = _swallowing_try_sources(node)
+    if swallowing:
+        problems.append(
+            f"MUTATE_SITES 的 `{key}` 证据 `{name}`（{where}）把断言包在会吞 "
+            f"`AssertionError` 的 try/except 里（`{swallowing[0]}`）；"
+            "被吞掉的断言不是证据"
         )
     return problems
 
@@ -1238,13 +1456,18 @@ def _run_scripts(step: str) -> list[str]:
     return scripts
 
 
-def _first_command(script: str) -> str:
-    for line in script.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        return stripped
-    return ""
+# Statements that only set up the shell before the guard runs. Requiring the guard
+# command to be the very first line made a correct `set -euo pipefail` prelude red.
+GUARD_PRELUDE = re.compile(r"^(set|export|cd|umask|unset|:)\b")
+
+
+def _executed_lines(script: str) -> list[str]:
+    """Command lines of one `run:` block, in order, without blanks and comments."""
+    return [
+        line.strip()
+        for line in script.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
 
 
 def run_wiring(workflow_path: Path) -> tuple[list[str], str]:
@@ -1260,41 +1483,37 @@ def run_wiring(workflow_path: Path) -> tuple[list[str], str]:
     guard_invocations: dict[str, str] = {}
     for name, step in steps:
         for script in _run_scripts(step):
-            first = _first_command(script)
-            commands = [
-                line.strip()
-                for line in script.splitlines()
-                if "ci-entry-guard.py" in line and not line.strip().startswith("#")
-            ]
-            executed: list[str] = []
-            for line in commands:
+            lines = _executed_lines(script)
+            for position, line in enumerate(lines):
                 for candidate in ("sites", "probe", "log", "wiring"):
-                    if f"ci-entry-guard.py {candidate}" in line:
-                        executed.append(candidate)
-            for command in executed:
-                if not first.startswith("python3 scripts/dev-env/ci-entry-guard.py"):
-                    problems.append(
-                        f"步骤 `{name}` 的 `{command}` 被 `echo` 或别的命令包住，"
-                        "不是该步骤的第一条命令（只有第一条命令会被 "
-                        "`bash -euo pipefail` 按守卫执行）"
-                    )
-                elif f"ci-entry-guard.py {command}" not in first:
-                    problems.append(
-                        f"步骤 `{name}` 里 `{command}` 不是该步骤的第一条命令；"
-                        "只有第一条命令会被 `bash -euo pipefail` 按守卫执行，"
-                        "`echo` 提到命令不算执行"
-                    )
-                if command in guard_invocations:
-                    problems.append(
-                        f"子命令 `{command}` 在步骤 `{name}` 与 "
-                        f"`{guard_invocations[command]}` 重复执行"
-                    )
-                guard_invocations[command] = name
+                    if f"ci-entry-guard.py {candidate}" not in line:
+                        continue
+                    if not line.startswith("python3 scripts/dev-env/ci-entry-guard.py"):
+                        problems.append(
+                            f"步骤 `{name}` 的 `{candidate}` 不是直接执行的命令"
+                            f"（写成 `{line[:70]}`）；`echo` 提到命令不算执行"
+                        )
+                    else:
+                        earlier = [
+                            other for other in lines[:position] if not GUARD_PRELUDE.match(other)
+                        ]
+                        if earlier:
+                            problems.append(
+                                f"步骤 `{name}` 里 `{candidate}` 前面还有会先执行的命令 "
+                                f"`{earlier[0][:70]}`；只有 `set`/`export`/`cd`/`umask`/`: ` "
+                                "这类环境前置可以出现在守卫命令之前"
+                            )
+                    if candidate in guard_invocations:
+                        problems.append(
+                            f"子命令 `{candidate}` 在步骤 `{name}` 与 "
+                            f"`{guard_invocations[candidate]}` 重复执行"
+                        )
+                    guard_invocations[candidate] = name
     expected = {"sites": "", "probe": "", "log": "", "wiring": ""}
     for command in expected:
         if command not in guard_invocations:
             problems.append(
-                f"作业没有以第一条命令执行 `ci-entry-guard.py {command}`；"
+                f"作业没有以第一条被执行的命令运行 `ci-entry-guard.py {command}`；"
                 "四条守卫子命令都必须真实执行（缺一条就等于关掉一类结构检查）"
             )
     control = dict(steps).get("Reject a corrupted environment instead of passing quietly", "")

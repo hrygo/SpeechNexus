@@ -117,11 +117,11 @@ reference acceptance: FAIL step=migrate exit=20
 登记通道是给**无法静态判定**或**新延后输入**用的，不是放宽 PASS 含义的开关。
 
 同一作业还跑另外三条结构守卫：`sites`（每条 `<ctx>.mutate(...)` 必须仍在 `MUTATE_SITES` 清单里、
-结果不得被丢弃——裸语句和 `_ =` 都算、`ctx.read(...)` 的 argv 必须是字面量、`READ_ARGUMENTS` 里登记的
-构造助手或 `*` 展开的登记只读段，且不含写命令）、`probe`（用必然失败的输入调用登记过的纯判定函数）、
-`wiring`（四条守卫子命令各自是所在步骤的第一条命令）。它们只检查**结构**：判定条件被反转、把 `.ok`
-读出来却仍不中断、经 `psql -c` 间接写库等等都看不见，边界写在
-[CI 验证规则](../validation/ci-validation.md)。
+结果不得被丢弃——裸语句和 `_ =` 都算，赋给 `_` 即红、不看之后有没有再读；`ctx.read(...)` 的 argv 必须是
+字面量、`READ_ARGUMENTS` 里登记的构造助手或 `*` 展开的登记只读段，且不含写命令）、`probe`（用必然失败的
+输入调用登记过的纯判定函数）、`wiring`（四条守卫子命令各自是所在步骤的第一条被执行的命令，只允许
+`set`/`export`/`cd` 之类的环境前置）。它们只检查**结构**：判定条件被反转、把 `.ok` 读出来却仍不中断、
+经 `psql -c` 间接写库等等都看不见，边界写在[CI 验证规则](../validation/ci-validation.md)。
 
 登记表与守卫脚本是同一次改动的两面：
 
@@ -132,10 +132,13 @@ reference acceptance: FAIL step=migrate exit=20
   `python3 scripts/dev-env/ci-entry-guard.py tables --write` 重写本块，使两侧在同一次提交里一致。
 - 登记不是橡皮章：「判定在哪」列必须用反引号点出入口里真实存在的定义（`step_gate`、`gate_verdict`
   之类），入口改名或删函数即红；「证据」列必须指向一个会被 `unittest` 收集的 `TestCase` 方法或 probe
-  用例，且该用例不带 skip 装饰器/`skipTest`、不在正文开头 `return`/`raise` 让后文成死代码、正文至少有
-  一条断言，否则红。校验到的是「这条证据每次 CI 都会真的判红」，不是「它覆盖了这个站点的语义」——
-  证据的相关性与判定本身仍由评审和真实 apply 运行负责。`SELFTEST_CASES` 是守卫自身的语料，把规则
-  改松会先让自检失败。
+  用例；类级（含同文件基类）与方法级的 skip/`expectedFailure`、`setUp`/`setUpClass` 里的 `skipTest`、
+  同类同名重复定义、开头或字面量恒真分支里的早退、缺失或字面量恒真的断言、会吞 `AssertionError` 的
+  `try/except` 都红（逐条形态见
+  [CI 验证规则](../validation/ci-validation.md)的 `sites` 段）。校验到的是「这条证据会被收集、会真的
+  执行、断言不会被跳过或吞掉」，不是「它覆盖了这个站点的语义」——证据的相关性、`return` 与恒真断言藏在
+  非字面量形态里、`*` 展开与构造助手按名字认，以及判定本身，仍由评审和真实 apply 运行负责。
+  `SELFTEST_CASES` 是守卫自身的语料，把规则改松会先让自检失败。
 
 <!-- ci-entry-guard:tables:start -->
 ### 结构守卫的登记表

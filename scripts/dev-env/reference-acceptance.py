@@ -36,7 +36,9 @@ role, a bucket or a database row.
 
 Read-only boundary: this script does not edit `deploy/`,
 `docs/operations/compose-minimal.md`, backend or contract files. Containers and
-networks are isolated by `--project-name` so a run can share a host.
+volumes are named per `--project-name`, but `deploy/compose.yaml` pins the stack
+network to `172.28.0.0/24`, so two reference stacks cannot run concurrently on
+one host; `--project-name` isolates reruns of the same stack, not a parallel one.
 """
 
 from __future__ import annotations
@@ -44,6 +46,7 @@ from __future__ import annotations
 import argparse
 import ast
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -318,9 +321,14 @@ def effective_env(
 
 
 def mandatory_env_keys(compose_text: str) -> tuple[str, ...]:
-    """Derive the keys compose itself refuses to render without."""
-    keys = set(MANDATORY_EXPANSION.findall(compose_text)) | set(EXTRA_REQUIRED)
+    """Every key this entry point requires non-empty: compose-derived plus extras."""
+    keys = set(compose_env_keys(compose_text)) | set(EXTRA_REQUIRED)
     return tuple(sorted(keys))
+
+
+def compose_env_keys(compose_text: str) -> tuple[str, ...]:
+    """The `${KEY:?}` expansions compose refuses to render without."""
+    return tuple(sorted(set(MANDATORY_EXPANSION.findall(compose_text))))
 
 
 def env_gaps(env: Mapping[str, str], keys: Sequence[str]) -> list[str]:
@@ -495,7 +503,11 @@ def privilege_gaps(ctx: Context, probes: Sequence[PrivilegeProbe]) -> list[str]:
         values.append(
             f"('{label}', pg_catalog.{function}('{probe.role}', {target}, '{probe.privilege}'))"
         )
-    sql = "SELECT v.label FROM (VALUES " + ", ".join(values) + ") AS v(label, ok) WHERE NOT v.ok"
+    sql = (
+        "SELECT v.label FROM (VALUES "
+        + ", ".join(values)
+        + ") AS v(label, ok) WHERE v.ok IS NOT TRUE"
+    )
     return psql_rows(ctx, sql, purpose="授权面")
 
 
@@ -514,6 +526,167 @@ def job_role_probes(ctx: Context) -> tuple[list[PrivilegeProbe], tuple[str, str,
         PrivilegeProbe(dispatch, "speech_job_events", "INSERT", "job_id"),
     ]
     return probes, (writer, admission, dispatch)
+
+
+# Privileges a rendered `GRANT` can carry for the two target classes this entry
+# point verifies. The provision script renders these four shapes, and nothing
+# else: `GRANT USAGE ON SCHEMA`, `GRANT <privileges> ON schema.relation`,
+# `GRANT <privilege> (columns) ON schema.relation`, and the same with a quoted
+# identifier. A new shape (sequence, function, ALL TABLES) fails loudly instead
+# of being skipped, so an unparsed statement can never be reported as installed.
+TABLE_PRIVILEGES = frozenset(
+    {"SELECT", "INSERT", "UPDATE", "DELETE", "REFERENCES", "TRIGGER", "TRUNCATE"}
+)
+COLUMN_PRIVILEGES = frozenset({"SELECT", "INSERT", "UPDATE", "REFERENCES"})
+
+
+@dataclass(frozen=True)
+class DeclaredGrant:
+    """One catalog check: a declared privilege and the predicate that reads it."""
+
+    label: str
+    predicate: str
+
+
+def unquote_identifier(raw: str, *, context: str) -> str:
+    """Strip one layer of SQL identifier quotes and refuse anything unsafe."""
+    text = raw.strip()
+    if len(text) >= 2 and text[0] == '"' and text[-1] == '"':
+        text = text[1:-1]
+    if SQL_IDENTIFIER.fullmatch(text) is None:
+        raise StepFailureError(f"{context} 中的标识符不是安全的小写标识符: {raw!r}")
+    return text
+
+
+def identifier_list(raw: str, *, context: str) -> list[str]:
+    items = [item for item in raw.split(",") if item.strip()]
+    if not items:
+        raise StepFailureError(f"{context} 的列列表为空")
+    return [unquote_identifier(item, context=context) for item in items]
+
+
+def parse_grant_statement(statement: str) -> list[DeclaredGrant]:
+    """Turn one rendered `GRANT` line into catalog checks.
+
+    Only the shapes `provision-job-roles.py --print-statements` renders are
+    understood. Anything else raises, because silently ignoring a statement is
+    how the previous version claimed a coverage it never checked.
+    """
+    if not statement.startswith("GRANT ") or not statement.endswith(";"):
+        raise StepFailureError(
+            "无法解析的授权语句（只认识 provision-job-roles.py 当前渲染的 GRANT 形态）: "
+            + statement[:160]
+        )
+    body = statement[len("GRANT ") : -1].strip()
+    head, separator, rest = body.partition(" ON ")
+    if not separator:
+        raise StepFailureError(f"授权语句缺少 ON 子句: {statement[:160]}")
+    privileges_text = head
+    columns: list[str] = []
+    if " (" in head:
+        privileges_text, _, columns_text = head.partition(" (")
+        columns = identifier_list(columns_text.rstrip().removesuffix(")"), context=statement)
+    privileges = [item.strip().upper() for item in privileges_text.split(",") if item.strip()]
+    if not privileges:
+        raise StepFailureError(f"授权语句没有权限名: {statement[:160]}")
+    target, separator, role_text = rest.rpartition(" TO ")
+    if not separator:
+        raise StepFailureError(f"授权语句缺少 TO 子句: {statement[:160]}")
+    role = unquote_identifier(role_text, context=statement)
+    target = target.strip()
+    if target.startswith("SCHEMA "):
+        if columns:
+            raise StepFailureError(f"schema 授权不接受列列表: {statement[:160]}")
+        schema = unquote_identifier(target[len("SCHEMA ") :], context=statement)
+        checks: list[DeclaredGrant] = []
+        for privilege in privileges:
+            if privilege != "USAGE":
+                raise StepFailureError(f"不认识的 schema 权限 {privilege}: {statement[:160]}")
+            checks.append(
+                DeclaredGrant(
+                    f"{role} 缺少 SCHEMA {schema} 的 USAGE",
+                    f"pg_catalog.has_schema_privilege('{role}', '{schema}', 'USAGE')",
+                )
+            )
+        return checks
+    if " " in target:
+        raise StepFailureError(
+            "无法解析的授权目标（只支持 SCHEMA 与 schema.relation）: " + statement[:160]
+        )
+    schema_part, separator, relation_part = target.partition(".")
+    if not separator:
+        raise StepFailureError(f"授权目标不是 schema.relation: {statement[:160]}")
+    schema = unquote_identifier(schema_part, context=statement)
+    relation = unquote_identifier(relation_part, context=statement)
+    checks = []
+    if columns:
+        if len(privileges) != 1:
+            raise StepFailureError(f"列级授权语句带多个权限，无法判断列级作用域: {statement[:160]}")
+        privilege = privileges[0]
+        if privilege not in COLUMN_PRIVILEGES:
+            raise StepFailureError(f"列级不支持的权限 {privilege}: {statement[:160]}")
+        for column in columns:
+            checks.append(
+                DeclaredGrant(
+                    f"{role} 缺少 {schema}.{relation}.{column} 的 {privilege}",
+                    "pg_catalog.has_column_privilege("
+                    f"'{role}', '{schema}.{relation}', '{column}', '{privilege}')",
+                )
+            )
+        return checks
+    for privilege in privileges:
+        if privilege not in TABLE_PRIVILEGES:
+            raise StepFailureError(f"不认识的表权限 {privilege}: {statement[:160]}")
+        checks.append(
+            DeclaredGrant(
+                f"{role} 缺少 {schema}.{relation} 的 {privilege}",
+                f"pg_catalog.has_table_privilege('{role}', '{schema}.{relation}', '{privilege}')",
+            )
+        )
+    return checks
+
+
+def rendered_grant_checks(text: str) -> tuple[int, list[DeclaredGrant]]:
+    """Return (statement count, expanded catalog checks) for rendered grants."""
+    statements = [line.strip() for line in text.splitlines() if line.strip()]
+    if not statements:
+        raise StepFailureError("provision-job-roles.py --print-statements 没有输出授权语句")
+    checks: list[DeclaredGrant] = []
+    for statement in statements:
+        checks.extend(parse_grant_statement(statement))
+    return len(statements), checks
+
+
+def declared_grant_gaps(ctx: Context, checks: Sequence[DeclaredGrant]) -> list[str]:
+    """Return one label per declared privilege the installed ACL does not grant.
+
+    This is an inclusion check: every privilege the provision script declares
+    must be readable from the catalog for that role. Extra grants are not an
+    error, so a deployment that also holds baseline grants stays green.
+    """
+    labels: dict[str, str] = {}
+    for check in checks:
+        labels.setdefault(check.label, check.predicate)
+    rows: list[str] = []
+    batch: list[str] = []
+    for label, predicate in labels.items():
+        escaped = label.replace("'", "''")
+        batch.append(f"('{escaped}', {predicate})")
+        if len(batch) >= 300:
+            rows.extend(acl_gap_batch(ctx, batch))
+            batch = []
+    if batch:
+        rows.extend(acl_gap_batch(ctx, batch))
+    return rows
+
+
+def acl_gap_batch(ctx: Context, rows: Sequence[str]) -> list[str]:
+    sql = (
+        "SELECT v.label FROM (VALUES "
+        + ", ".join(rows)
+        + ") AS v(label, ok) WHERE v.ok IS NOT TRUE"
+    )
+    return psql_rows(ctx, sql, purpose="声明授权面")
 
 
 def provision_argv(*extra: str) -> tuple[str, ...]:
@@ -672,7 +845,12 @@ def bucket_names(ctx: Context) -> list[str]:
 
 
 def http_json(url: str, *, timeout: float = 5.0) -> tuple[int, str, str]:
-    """GET one probe endpoint; return (status, body, error)."""
+    """GET one probe endpoint; return (status, body, error).
+
+    ``http.client.InvalidURL`` (a malformed host port makes it raise from
+    ``urlopen``) and any other transport exception become the same error tuple,
+    so a mistyped port can never escape as an unhandled traceback.
+    """
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:
             body = response.read().decode("utf-8", "replace")
@@ -680,8 +858,8 @@ def http_json(url: str, *, timeout: float = 5.0) -> tuple[int, str, str]:
     except urllib.error.HTTPError as error:
         body = error.read().decode("utf-8", "replace")
         return error.code, body, ""
-    except (urllib.error.URLError, OSError) as error:
-        return 0, "", str(error)
+    except (urllib.error.URLError, OSError, http.client.HTTPException, ValueError) as error:
+        return 0, "", f"{type(error).__name__}: {error}"
 
 
 def step_tools(ctx: Context) -> str:
@@ -731,14 +909,15 @@ def step_tools(ctx: Context) -> str:
     identities = {dsn_identity(ctx.env, key, consumer="Job 角色")[0] for key in JOB_DSN_KEYS}
     if len(identities) != 3:
         raise StepFailureError(
-            "三条 Job DSN 必须指向三个互不相同的非 owner 角色，实际: "
-            + ", ".join(sorted(identities)),
+            "三条 Job DSN 必须指向三个互不相同的角色，实际: " + ", ".join(sorted(identities)),
             inputs=list(JOB_DSN_KEYS),
         )
     return (
         f"docker {docker.stdout.strip()} / compose {version_match.group(0)} / "
         f"python {sys.version_info.major}.{sys.version_info.minor} / uv 可用；"
-        f"{len(mandatory_env_keys(compose_text))} 个必需 env 键非空；compose 渲染通过"
+        f"{len(compose_env_keys(compose_text))} 个 compose 派生键 + "
+        f"{len(EXTRA_REQUIRED)} 个入口额外键（共 {len(mandatory_env_keys(compose_text))} 个）"
+        f"非空；compose 渲染通过"
     )
 
 
@@ -747,7 +926,7 @@ def step_migrate(ctx: Context) -> str:
     schema = ctx.schema()
     dsn_identity(ctx.env, "SPEECHNEXUS_MIGRATION_DATABASE_URL", consumer="migration profile")
     start = ctx.compose("up", "-d", "--wait", "postgres")
-    migrate = ctx.compose("--profile", "migration", "run", "--rm", "migrate")
+    migrate = ctx.compose("--profile", "migration", "run", "--build", "--rm", "migrate")
     version_sql = f"SELECT version_num FROM {schema}.alembic_version"
     if ctx.dry_run:
         ctx.plan(start)
@@ -783,7 +962,8 @@ def step_roles(ctx: Context) -> str:
             ctx.pending.append("uv 不可用；执行时无法预置角色")
         ctx.plan(provision_argv())
         return (
-            f"计划：核对 {gateway_role} 基线角色 → 需要时执行 provision-job-roles.py → 校验授权探针"
+            f"计划：核对 {gateway_role} 基线角色 → 需要时执行 provision-job-roles.py → "
+            "渲染授权语句并与已装 ACL 逐条比对 → 校验授权探针"
         )
 
     existing_baseline = roles_in_database(ctx, (gateway_role,))
@@ -794,6 +974,7 @@ def step_roles(ctx: Context) -> str:
         )
     existing = roles_in_database(ctx, (writer, admission, dispatch))
     environment = provision_environment(ctx)
+    reported_statements: int | None = None
     if not existing:
         provisioned = ctx.mutate(provision_argv(), env=environment)
         if not provisioned.ok:
@@ -804,15 +985,8 @@ def step_roles(ctx: Context) -> str:
         match = re.search(r"grants: (\d+) statements", provisioned.output())
         if match is None:
             raise StepFailureError(f"角色预置输出无法解析：{provisioned.tail(3)}")
-        statements = int(match.group(1))
-        gaps = privilege_gaps(ctx, probes)
-        if gaps:
-            raise StepFailureError("授权探针失败: " + "; ".join(gaps), inputs=list(JOB_DSN_KEYS))
-        return (
-            f"{writer} {admission} {dispatch} 已创建；grants: {statements} statements；"
-            f"{len(probes)} 个授权探针通过"
-        )
-    if existing != {writer, admission, dispatch}:
+        reported_statements = int(match.group(1))
+    elif existing != {writer, admission, dispatch}:
         partial = sorted({writer, admission, dispatch} - existing)
         raise StepFailureError(
             "Job 角色部分存在（已存在: "
@@ -828,16 +1002,35 @@ def step_roles(ctx: Context) -> str:
             f"provision-job-roles.py --print-statements 失败：{rendered.tail(3)}",
             inputs=list(JOB_DSN_KEYS),
         )
-    statements = rendered.stdout.count(";")
-    gaps = privilege_gaps(ctx, probes)
-    if gaps:
+    statements, checks = rendered_grant_checks(rendered.stdout)
+    if reported_statements is not None and reported_statements != statements:
         raise StepFailureError(
-            "已有角色的授权面与声明不一致: " + "; ".join(gaps),
-            inputs=["按 docs/operations/compose-minimal.md §6 重新安装该角色的 grant 组"],
+            f"provision 报告安装 {reported_statements} 条 GRANT，重渲染得到 {statements} 条；"
+            "授权面有两个来源，先核对 provision-job-roles.py 与本次环境"
+        )
+    gaps = declared_grant_gaps(ctx, checks)
+    if gaps:
+        shown = "; ".join(gaps[:8])
+        more = f"（另有 {len(gaps) - 8} 项）" if len(gaps) > 8 else ""
+        raise StepFailureError(
+            f"已装 ACL 与声明的 {statements} 条 GRANT 不一致：{len(gaps)} 项缺失 — {shown}{more}",
+            inputs=[
+                "按 docs/operations/compose-minimal.md §6 重新安装点名的 grant 组；不要只补探针"
+            ],
+        )
+    probe_gaps = privilege_gaps(ctx, probes)
+    if probe_gaps:
+        raise StepFailureError("授权探针失败: " + "; ".join(probe_gaps), inputs=list(JOB_DSN_KEYS))
+    if reported_statements is not None:
+        return (
+            f"{writer} {admission} {dispatch} 已创建；grants: {reported_statements} statements；"
+            f"{len(checks)} 项声明授权与已装 ACL 逐条核对全部在位；"
+            f"{len(probes)} 个授权探针通过"
         )
     return (
         f"三个角色已存在（幂等：未重复 CREATE ROLE，未新增授权）；"
-        f"重渲染 {statements} 条 GRANT 与已装面一致；{len(probes)} 个授权探针通过"
+        f"重渲染 {statements} 条 GRANT、{len(checks)} 项授权与已装 ACL 逐条核对全部在位；"
+        f"{len(probes)} 个授权探针通过"
     )
 
 
@@ -889,8 +1082,10 @@ def step_buckets(ctx: Context) -> str:
 
 
 def gate_compose_argv(ctx: Context) -> tuple[str, ...]:
+    # --build: `compose run` reuses an already built image otherwise, so a
+    # checkout that moved the migration head could be judged by an old image.
     return ctx.compose(
-        "--profile", "job-dispatch", "run", "--rm", "-T", "job-dispatch-worker", "true"
+        "--profile", "job-dispatch", "run", "--build", "--rm", "-T", "job-dispatch-worker", "true"
     )
 
 
@@ -908,6 +1103,7 @@ def gate_direct_argv(
     argv: list[str] = [
         *ctx.compose_argv,
         "run",
+        "--build",
         "--rm",
         "-T",
         "--no-deps",
@@ -926,16 +1122,12 @@ def gate_direct_argv(
 
 
 def gate_verdict(result: CommandResult) -> tuple[list[str], list[str]]:
-    """Return (ok lines, pending lines) or raise when the gate did not pass."""
+    """Return (ok lines, pending lines) or raise when the gate did not pass.
+
+    FAIL is decided first: a gate output that carries both a FAIL line and an OK
+    line must never be read as a pass.
+    """
     output = result.output()
-    ok_lines = [line.strip().removeprefix("ok: ") for line in output.splitlines() if "ok: " in line]
-    pending = [
-        line.strip().removeprefix("pending: ")
-        for line in output.splitlines()
-        if "pending: " in line
-    ]
-    if "job dispatch startup gate: OK" in output and result.ok:
-        return ok_lines, pending
     failures = [
         line.strip().removeprefix("FAIL: ") for line in output.splitlines() if "FAIL: " in line
     ]
@@ -944,13 +1136,23 @@ def gate_verdict(result: CommandResult) -> tuple[list[str], list[str]]:
             "启动闸门判定失败: " + "; ".join(failures),
             inputs=["补齐闸门点名的授权/迁移/桶或私有配置后重跑"],
         )
+    if "job dispatch startup gate: OK" in output and result.ok:
+        ok_lines = [
+            line.strip().removeprefix("ok: ") for line in output.splitlines() if "ok: " in line
+        ]
+        pending = [
+            line.strip().removeprefix("pending: ")
+            for line in output.splitlines()
+            if "pending: " in line
+        ]
+        return ok_lines, pending
     if "cannot share network namespace" in output:
         raise StepFailureError(
             "启动闸门容器无法启动：job-dispatch-worker 使用 network_mode: service:gateway，"
             "gateway 必须先运行；" + result.tail(2),
             inputs=[
-                "按 docs/operations/compose-minimal.md §3 准备私有配置与批准的 Silero ONNX，"
-                "让 gateway 先 healthy；或加 --gate-mode direct 只跑闸门自身检查",
+                "gate 在 stack 之后运行；栈步已要求 gateway running/healthy。"
+                "若单独执行本步失败，先跑 stack 步或改用 --gate-mode direct"
             ],
         )
     raise StepFailureError(f"启动闸门没有给出判定（退出码 {result.code}）：{result.tail(3)}")
@@ -964,7 +1166,10 @@ def step_gate(ctx: Context) -> str:
         ctx.require(
             service_healthy(ctx, "gateway"),
             "gateway 未 healthy；job-dispatch-worker 的 network_mode: service:gateway 需要它先运行",
-            inputs=["先让 gateway healthy（私有配置 + 批准的 Silero ONNX）"],
+            inputs=[
+                "gate 在 stack 之后运行：栈步已要求 api/gateway running/healthy，"
+                "先看 stack 步的失败原因（私有配置/模型/容器日志）"
+            ],
         )
     else:
         argv, environment = gate_direct_argv(ctx, config)
@@ -1027,6 +1232,17 @@ def stack_private_inputs(ctx: Context, config: Mapping[str, object]) -> list[str
     return problems
 
 
+def surface_command_output(result: CommandResult, *, label: str, lines: int = 6) -> None:
+    """Print the tail of a mutating command so its output is not invisible."""
+    text = result.output()
+    if not text:
+        return
+    tail = text.splitlines()[-lines:]
+    print(f"      {label}（退出码 {result.code}，最后 {len(tail)} 行）:")
+    for line in tail:
+        print(f"        {line}")
+
+
 def step_stack(ctx: Context) -> str:
     config = compose_config(ctx)
     problems = stack_private_inputs(ctx, config)
@@ -1051,6 +1267,15 @@ def step_stack(ctx: Context) -> str:
             inputs=["按 docs/operations/compose-minimal.md §6 预置基线角色"],
         )
     started = ctx.mutate(ctx.compose("up", "-d", "--build", "--wait", "api", "gateway"))
+    if not started.ok:
+        raise StepFailureError(
+            f"栈未起来（docker compose up 退出码 {started.code}）：{started.tail(6)}",
+            inputs=[
+                "看上面构建输出修复 Dockerfile/构建参数；"
+                "旧容器仍可能是 running/healthy，ps 的状态不能替代 up 的退出码",
+            ],
+        )
+    surface_command_output(started, label="构建/启动输出")
     states = compose_services(ctx)
 
     def describe(service: str) -> str:
@@ -1071,17 +1296,23 @@ def step_stack(ctx: Context) -> str:
             + f"；compose 退出码 {started.code}：{started.tail(4)}",
             inputs=["核对 api/gateway 容器日志与 §9 失败对照表"],
         )
-    return "api 与 gateway 均 running/healthy"
+    return "api 与 gateway 均 running/healthy（compose up 退出 0）"
+
+
+def host_port(ctx: Context, key: str, default: str) -> str:
+    """Read a published host port and refuse anything a URL cannot carry."""
+    raw = ctx.env.get(key, "").strip() or default
+    if not raw.isdigit() or not 1 <= int(raw) <= 65535:
+        raise StepFailureError(
+            f"{key}={raw!r} 不是 1..65535 的端口；健康检查无法构造 URL",
+            inputs=[f"{key}=<host port>"],
+        )
+    return raw
 
 
 def step_health(ctx: Context) -> str:
-    api_port = (
-        ctx.env.get("SPEECHNEXUS_API_HOST_PORT", DEFAULT_API_PORT).strip() or DEFAULT_API_PORT
-    )
-    gateway_port = (
-        ctx.env.get("SPEECHNEXUS_GATEWAY_HOST_PORT", DEFAULT_GATEWAY_PORT).strip()
-        or DEFAULT_GATEWAY_PORT
-    )
+    api_port = host_port(ctx, "SPEECHNEXUS_API_HOST_PORT", DEFAULT_API_PORT)
+    gateway_port = host_port(ctx, "SPEECHNEXUS_GATEWAY_HOST_PORT", DEFAULT_GATEWAY_PORT)
     probes = (
         (f"http://127.0.0.1:{api_port}/healthz", "ok"),
         (f"http://127.0.0.1:{api_port}/readyz", "ready"),
@@ -1153,21 +1384,22 @@ STEPS: tuple[Step, ...] = (
         step_buckets,
     ),
     Step(
-        "gate",
-        "启动闸门在真实栈上的判定",
-        EXIT_GATE,
-        "job-startup-gate.py 与私有配置可在 worker 内读到；compose 模式还需要 gateway 先 healthy",
-        "job dispatch startup gate: OK；ok 行列出数据库/对象存储/私有配置结论，"
-        "pending 行是真引擎等外部输入",
-        step_gate,
-    ),
-    Step(
         "stack",
         "API 与 gateway 起来",
         EXIT_STACK,
         "私有配置与批准模型齐备；api/gateway 的基线角色已预置",
         "docker compose up -d --build --wait api gateway 退出 0；两个服务 running/healthy",
         step_stack,
+    ),
+    Step(
+        "gate",
+        "启动闸门在真实栈上的判定",
+        EXIT_GATE,
+        "api 与 gateway 已 running/healthy（gate 在 stack 之后）；"
+        "job-startup-gate.py 与私有配置可在 worker 内读到",
+        "job dispatch startup gate: OK；ok 行列出数据库/对象存储/私有配置结论，"
+        "pending 行是真引擎等外部输入",
+        step_gate,
     ),
     Step(
         "health",
@@ -1180,8 +1412,64 @@ STEPS: tuple[Step, ...] = (
 )
 
 
+def git_commit(ctx: Context) -> str:
+    """Read the checkout commit for the acceptance record; never fail the run."""
+    result = ctx.read(("git", "-C", str(ctx.repo_root), "rev-parse", "--short", "HEAD"))
+    if not result.ok:
+        return "unknown"
+    return result.stdout.strip() or "unknown"
+
+
+def environment_record(ctx: Context) -> str:
+    """The environment part of the acceptance record #572 asks for."""
+    schema = ctx.env.get("SPEECHNEXUS_DATABASE_SCHEMA", DEFAULT_SCHEMA).strip() or DEFAULT_SCHEMA
+    mode = "dry-run" if ctx.dry_run else "apply"
+    return (
+        f"环境记录: repo={ctx.repo_root} commit={git_commit(ctx)} "
+        f"project={ctx.project} mode={mode} gate={ctx.gate_mode} schema={schema}"
+    )
+
+
+def images_record(ctx: Context) -> str:
+    """Best-effort image record: which service image ran this acceptance."""
+    result = ctx.read((*ctx.compose_argv, "images", "--format", "json"))
+    if not result.ok:
+        return "镜像记录: 不可用（docker compose images 失败）"
+    images: list[str] = []
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        try:
+            document = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(document, Mapping):
+            continue
+        service = str(document.get("Service") or "")
+        if not service:
+            continue
+        name = str(document.get("Repository") or "")
+        tag = str(document.get("Tag") or "")
+        image_id = str(document.get("ID") or "")[:12]
+        images.append(f"{service}={name}:{tag}@{image_id}")
+    if not images:
+        return "镜像记录: 无（compose 项目还没有构建服务镜像）"
+    return "镜像记录: " + ", ".join(sorted(images))
+
+
+def print_records(records: Sequence[tuple[str, str]], ctx: Context, steps: Sequence[Step]) -> None:
+    """Print per-step pass/fail/not-run plus the environment and image record."""
+    done = " ".join(f"{ident}={status}" for ident, status in records)
+    skipped = [step.ident for step in steps if step.ident not in {r[0] for r in records}]
+    extras = f" 未运行: {', '.join(skipped)}" if skipped else ""
+    print(f"步骤记录: {done}{extras}")
+    print(environment_record(ctx))
+    print(images_record(ctx))
+
+
 def run_steps(steps: Sequence[Step], ctx: Context) -> int:
     total = len(steps)
+    records: list[tuple[str, str]] = []
     for index, step in enumerate(steps, start=1):
         print(f"[{index}/{total}] {step.ident} — {step.title}")
         print(f"      前置检查: {step.precondition}")
@@ -1189,16 +1477,33 @@ def run_steps(steps: Sequence[Step], ctx: Context) -> int:
         try:
             conclusion = step.run(ctx)
         except StepFailureError as failure:
+            records.append((step.ident, "FAIL"))
             print(f"      结论: FAIL — {failure.message}")
             for needed in failure.inputs:
                 print(f"      需要输入: {needed}")
-            print(f"reference acceptance: FAIL step={step.ident} exit={step.exit_code}")
             remaining = ", ".join(item.ident for item in steps[index:])
             if remaining:
                 print(f"      未执行: {remaining}")
+            print_records(records, ctx, steps)
+            print(f"reference acceptance: FAIL step={step.ident} exit={step.exit_code}")
+            return step.exit_code
+        except Exception as unexpected:  # one summary line, never a traceback
+            records.append((step.ident, "FAIL"))
+            print(f"      结论: FAIL — 未预期异常 {type(unexpected).__name__}: {unexpected}")
+            print(
+                "      需要输入: 核对本步的环境键取值、端口与文件路径；"
+                "该异常不是步骤自身的判定，修复后重跑同一命令"
+            )
+            remaining = ", ".join(item.ident for item in steps[index:])
+            if remaining:
+                print(f"      未执行: {remaining}")
+            print_records(records, ctx, steps)
+            print(f"reference acceptance: FAIL step={step.ident} exit={step.exit_code}")
             return step.exit_code
         status = "PLAN" if ctx.dry_run else "PASS"
+        records.append((step.ident, status))
         print(f"      结论: {status} — {conclusion}")
+    print_records(records, ctx, steps)
     if ctx.dry_run:
         suffix = f" pending={len(ctx.pending)}" if ctx.pending else ""
         print(f"reference acceptance: DRY-RUN PASS steps={total}{suffix}")
@@ -1219,7 +1524,8 @@ def build_parser() -> argparse.ArgumentParser:
             "步骤与失败退出码\n"
             f"{step_table}\n\n"
             "顺序: 迁移在角色预置之前，因为 provision-job-roles.py 的 GRANT 需要迁移后的关系\n"
-            "（compose-minimal.md §5 在 §6 之前）。\n\n"
+            "（compose-minimal.md §5 在 §6 之前）。栈在闸门之前：job-dispatch-worker 使用\n"
+            "network_mode: service:gateway，gateway 未 healthy 时 compose run 无法启动。\n\n"
             "示例\n"
             "  set -a; . deploy/compose.env; set +a\n"
             '  export SN_ADMIN_DSN="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:'

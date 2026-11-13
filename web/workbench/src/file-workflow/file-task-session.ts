@@ -34,6 +34,102 @@ class OriginalTextUnavailableError extends Error {
   }
 }
 
+/**
+ * What a rejected submission settles. `terminal` means the protocol will not accept this
+ * same request again (a fresh intent needs its own key); it does not assert that the key
+ * has no Job row. `unknown-outcome` means the submission may already execute, and
+ * `intent-kept` means this attempt was refused but the same intent may still succeed.
+ */
+type RejectionDisposition = "terminal" | "unknown-outcome" | "intent-kept";
+
+/** Which submission class was in flight; some codes only settle one of them. */
+type RejectionOperation = "create" | "cancel" | "upload";
+
+/**
+ * Dispositions tied to an exact (HTTP status, contract error code) pair. The public
+ * protocol binds each code to one status, so neither field alone classifies a rejection:
+ * - 503 `job_outcome_unknown`: the submission may already be executing; the contract
+ *   requires keeping the original key and request, then replaying or querying the
+ *   original Job (contracts/speech-openapi.yaml:840-842).
+ * - 429 `job_capacity_exhausted`: admission writes no row and asks for a Retry-After
+ *   delay (contracts/speech-openapi.yaml:823-824).
+ * - 503 `job_unavailable`: storage refused this attempt without reporting a Job fact.
+ *   The public Job error table marks exactly `job_outcome_unknown`,
+ *   `job_capacity_exhausted` and `job_admission_contended` retryable
+ *   (backend/src/speechnexus_backend/speech/interfaces/http/job_errors.py:129-134), while
+ *   `job_unavailable` itself is `retryable: false` (same file:113). The kept intent is
+ *   still replayed under its original key, which cannot duplicate an execution; the
+ *   disposition is named `intent-kept` rather than `retryable` so that the protocol's
+ *   retry permission (`ServiceUnavailable`: "retry only when `retryable` is true",
+ *   contracts/speech-openapi.yaml:2897-2901) is not confused with "the durable intent
+ *   survives". The client does not consume `error.retryable` at all.
+ * - 503 `job_admission_contended`: admission state changed concurrently; retryable by
+ *   the same public Job error table.
+ * - 503 `asset_inspection_busy`: the only Asset 503 whose "a new request later may
+ *   succeed" statement holds (contracts/speech-openapi.yaml:2682-2689).
+ */
+const rejectionTable = [
+  [503, "job_outcome_unknown", "unknown-outcome"],
+  [503, "job_unavailable", "intent-kept"],
+  [503, "job_admission_contended", "intent-kept"],
+  [503, "asset_inspection_busy", "intent-kept"],
+  [429, "job_capacity_exhausted", "intent-kept"],
+] as const satisfies readonly (readonly [number, string, RejectionDisposition])[];
+
+function rejectionDisposition(
+  status: number,
+  code: string,
+  operation: RejectionOperation,
+): RejectionDisposition {
+  const known = rejectionTable.find(([knownStatus, knownCode]) => {
+    return knownStatus === status && knownCode === code;
+  });
+  if (known) return known[2];
+  // A `*unknown` code always means the outcome is unknown, whatever its status: the
+  // protocol also uses 4xx for it, e.g. 409 `voice_draft_outcome_unknown` and
+  // `pronunciation_outcome_unknown`, whose submissions may already have committed
+  // (contracts/speech-openapi.yaml:2950-2954, 3177-3180).
+  if (code.endsWith("unknown")) return "unknown-outcome";
+  // 429 is a rate refusal that names its own delay, never a spent intent.
+  if (status === 429) return "intent-kept";
+  // 409 `execution_cleanup_pending` means a Job already exists whose original execution
+  // has not confirmed stop (contracts/speech-openapi.yaml:2852-2854), so it settles only
+  // the cancel attempt this client sends against that known Job identity. The backend
+  // emits it from cancel/retry handlers only (backend/.../interfaces/http/jobs.py:607),
+  // and this client never calls retry. The generic create-path 409 component also lists
+  // "cleanup pending" (contracts/speech-openapi.yaml:2860-2865), so if a future backend
+  // answered a create with it, it would say nothing about whether *this* intent was
+  // admitted: keep the intent unknown instead of spending it.
+  if (operation !== "cancel" && status === 409 && code === "execution_cleanup_pending")
+    return "unknown-outcome";
+  // Any other 4xx contract refusal settles *this attempt*: the protocol does not accept
+  // the same request again (a fresh intent needs its own key), so the unknown flag may be
+  // cleared. This is not a claim that the key has no Job row: 409 `idempotency_conflict`
+  // identifies another intent's Job under the same key
+  // (contracts/speech-openapi.yaml:803-805), and duplicate execution stays impossible
+  // because replaying this body under the key is precisely what conflicts.
+  if (status >= 400 && status < 500) return "terminal";
+  // An unlisted 5xx (or non-contract status) may already have executed; never spend the
+  // intent on it.
+  return "unknown-outcome";
+}
+
+/**
+ * Which refusal envelope becomes the visible recovery identity. A later refusal never
+ * replaces an already identified original execution, and an envelope carrying
+ * `nexus.operation_id` is kept over one without it so the queryable identity is not lost.
+ */
+export function retainRecovery(
+  previous: FileContracts["ErrorResponse"] | undefined,
+  incoming: FileContracts["ErrorResponse"],
+): FileContracts["ErrorResponse"] {
+  const identity = (value: FileContracts["ErrorResponse"] | undefined) =>
+    value?.error.nexus?.operation_id;
+  if (identity(previous)) return previous!;
+  if (identity(incoming)) return incoming;
+  return previous ?? incoming;
+}
+
 interface TaskView {
   readonly busy: boolean;
   readonly inputFixed: boolean;
@@ -244,6 +340,23 @@ export class FileTaskSession {
       return value;
     } catch (error) {
       if (this.#lifetime.signal.aborted) return;
+      // Only a mutation rejection can spend a submission; a failed read changes no intent.
+      const contractError = mutation && error instanceof SpeechResponseError ? error : undefined;
+      // The durable record names the submission class in flight: `#cancelIntent` persists
+      // `pending: "cancel"` before its request and `#submit` persists `pending: "create"`
+      // before its own, while an upload-only attempt has no record yet. Some codes settle
+      // only one class, so the classifier needs this context.
+      const operation: RejectionOperation | undefined = mutation
+        ? this.#record?.pending === "cancel"
+          ? "cancel"
+          : this.#upload
+            ? "upload"
+            : "create"
+        : undefined;
+      const rejection =
+        contractError && operation
+          ? rejectionDisposition(contractError.status, contractError.code, operation)
+          : undefined;
       if (error instanceof UploadInputMismatchError) {
         this.#update({ notice: "输入与原素材不一致，请重新提供原文件或原文本。" });
       } else if (mutation && error instanceof SpeechUploadRecoveryError) {
@@ -314,27 +427,72 @@ export class FileTaskSession {
               ? "恢复记录未能确认。保留原请求身份，请恢复读取或按原键重试。"
               : "操作结果未知。请读取原任务，或按原幂等键重放；不要创建替代任务。",
         });
+      } else if (mutation && this.#upload && this.#view.unknown && !this.#view.asset) {
+        // An unconfirmed original upload outranks every rejection class below: no class
+        // may clear it or pretend this attempt proved anything about it.
+        this.#replay = undefined;
+        this.#update({
+          canReplay: false,
+          notice: contractError
+            ? `当前请求被拒绝（${contractError.status}: ${contractError.code}），原上传仍未确认；保留原身份。`
+            : "原上传仍未确认；请保留原身份。",
+        });
+      } else if (contractError && rejection === "unknown-outcome") {
+        // The original submission may already be executing; the contract requires keeping
+        // its key and request, then replaying or querying that Job, never a new intent
+        // (contracts/speech-openapi.yaml:840-842). An identified original execution is
+        // queried instead of replayed.
+        const recovery = retainRecovery(this.#view.recovery, contractError.detail);
+        const operationId = recovery.error.nexus?.operation_id;
+        // Persist only the identity this branch actually keeps, so the durable record and
+        // the visible recovery never point at two different operations.
+        if (operationId && recovery === contractError.detail) {
+          try {
+            this.#persist({ operationId });
+          } catch {
+            /* Pending original intent remains durable; no replacement is submitted. */
+          }
+        }
+        this.#replay = operationId
+          ? undefined
+          : async () => {
+              await action();
+            };
+        this.#update({
+          unknown: true,
+          canReplay: !operationId,
+          recovery,
+          notice: operationId
+            ? "提交结果未知，但已取得原执行身份。请读取原执行；不要新建任务。"
+            : "提交结果未知，原提交可能已执行。请读取原执行，或按原幂等键重放；不要新建任务。",
+        });
+      } else if (contractError && rejection === "intent-kept") {
+        // This attempt was refused before acting on the intent, yet the same intent may
+        // still succeed. Keep it replayable and leave any earlier unknown-outcome evidence
+        // untouched, because clearing it would hide the original pending submission. The
+        // same key cannot start a second execution, so replay is the safe reconciliation.
+        this.#replay = async () => {
+          await action();
+        };
+        this.#update({
+          canReplay: true,
+          notice: `提交被暂时拒绝（${contractError.status} ${contractError.code}）；原意图已保留，按原键重试不会产生第二次执行，不要新建任务。`,
+        });
+      } else if (contractError && rejection === "terminal") {
+        this.#replay = undefined;
+        // This branch settles *this attempt*: the protocol does not accept the same
+        // request again (e.g. 422 `job_text_asset_unsupported`), so a fresh intent with its
+        // own key is the only way forward. It does not claim the key has no Job row: 409
+        // `idempotency_conflict` identifies another intent's Job under this key
+        // (contracts/speech-openapi.yaml:803-805). Abandoning the settled record still
+        // needs UI work outside this task; nothing here submits a replacement.
+        this.#update({
+          unknown: false,
+          canReplay: false,
+          recovery: undefined,
+          notice: contractError.message,
+        });
       } else {
-        if (mutation && this.#upload && this.#view.unknown && !this.#view.asset) {
-          this.#replay = undefined;
-          this.#update({
-            canReplay: false,
-            notice:
-              error instanceof SpeechResponseError
-                ? `当前请求被拒绝（${error.status}: ${error.code}），原上传仍未确认；保留原身份。`
-                : "原上传仍未确认；请保留原身份。",
-          });
-          return;
-        }
-        if (mutation) {
-          this.#replay = undefined;
-          // A terminal contract rejection is the one case a user can recover from alone: a
-          // 4xx such as 422 `job_text_asset_unsupported` (unreachable from this client now
-          // that TTS sends contract-supported `text`) proves no Job was written for this key,
-          // so the intent is spent and a fresh intent is safe. Abandoning that spent record
-          // still needs UI work outside this task; nothing here submits a replacement.
-          this.#update({ unknown: false, canReplay: false, recovery: undefined });
-        }
         this.#update({
           notice: error instanceof SpeechResponseError ? error.message : "读取失败，请重新读取。",
         });

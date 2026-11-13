@@ -126,7 +126,8 @@ export class SpeechFileClient {
     });
     assertResponse(result.response, result.error);
     if (!result.data) throw new Error("Missing asset content");
-    // The contract bounds published text to 4 MiB; job input text is bounded at 200000 characters.
+    // The contract bounds published asset text to 4 MiB; inline Job input text is
+    // bounded at 4096 characters, the same as `/v1/audio/speech`.
     const limit = 4 * 1024 * 1024;
     const reader = result.data.getReader();
     const chunks: Uint8Array<ArrayBuffer>[] = [];

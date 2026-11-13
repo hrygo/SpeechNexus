@@ -98,7 +98,7 @@ function DemoSession({ scenario }: { scenario: TtsDemoScenario }) {
         <textarea
           id="tts-text"
           value={text}
-          maxLength={200000}
+          maxLength={4096}
           disabled={started || state.busy}
           onChange={(event) => setText(event.target.value)}
         />

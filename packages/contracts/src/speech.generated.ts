@@ -397,6 +397,16 @@ export interface paths {
      *     503 `job_unavailable` for that client-fixable condition. `voice_design`
      *     remains preview-only and cannot be selected for `tts`.
      *
+     *     A request that does not match the declared `JobCreateRequest` shape is
+     *     rejected before any admission attempt and creates no Job row: an unknown
+     *     field, an undeclared enum value, or a `tts` inline `text` above the
+     *     declared 4096-character bound returns 422 `unsupported_parameter`. The
+     *     bound is never enforced by splitting, truncating or silently shortening
+     *     the text, so a `tts` Job synthesizes exactly the text it was admitted
+     *     with and at most what `/v1/audio/speech` accepts for one `input`. A body
+     *     above the configured receive limit returns 400 `invalid_job_request`
+     *     before schema validation.
+     *
      *     Original-key replay is checked before mutable publication/workspace
      *     facts: the same canonical request returns the stored Job even after
      *     retirement or supersession. A changed pin is another intent and
@@ -1461,6 +1471,12 @@ export interface components {
     };
     TtsJobInput:
       | {
+          /**
+           * @description Inline text for one Job. A Job performs exactly one speech
+           *     synthesis, so the body bound is the same as `input` on
+           *     `/v1/audio/speech`; longer text is rejected instead of being
+           *     split, truncated, or silently shortened.
+           */
           text: string;
         }
       | {

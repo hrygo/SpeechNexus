@@ -285,6 +285,30 @@ describe("fixed text synthesis intent", () => {
     first.dispose();
   });
 
+  it("accepts inline text at the declared 4096-character bound", async () => {
+    const test = setup();
+    const first = test.make();
+    await first.startText("词".repeat(4096), selection());
+    expect(test.transport.stats.uploads).toBe(1);
+    expect(test.transport.stats.createKeys).toHaveLength(1);
+    first.dispose();
+  });
+
+  it.each([4097, 200000])(
+    "rejects %i inline characters before uploading or storing text",
+    async (length) => {
+      const test = setup();
+      const first = test.make();
+      await first.startText("词".repeat(length), selection());
+      expect(test.transport.stats.uploads).toBe(0);
+      expect(test.transport.stats.createKeys).toHaveLength(0);
+      expect(first.getSnapshot().job).toBeUndefined();
+      expect(first.getSnapshot().notice).not.toContain("词");
+      expect(test.data.size).toBe(0);
+      first.dispose();
+    },
+  );
+
   it("does not confirm an ASR response as a TTS job", async () => {
     const test = setup();
     const client = new SpeechFileClient("http://127.0.0.1", async (input) => {

@@ -133,7 +133,7 @@ OpenAI Audio 的字段与兼容范围分别对照[转写接口](https://develope
 }
 ```
 
-ASR `input` 的目标是只接受所选工作空间存在、功能策略允许且为 `ready` 的 `audio_asset_id`；TTS `input` 使用 `text` 或 `text_asset_id` 二选一，顶层 `voice` 使用 `{id,revision}`，可选 `pronunciation` 也使用 `{id,revision}`。TTS 的 inline `text` 上限为 4096 字符，与 `/v1/audio/speech` 的 `input` 相同：一次 Job 只合成一次，超限请求按声明形状拒绝（422 `unsupported_parameter`，不写 Job 行），不切分、不截断、也不静默缩短。任务创建时解析 `model` 为 `ModelBindingRevision`，固定所有执行依赖，在响应 `effective_configuration` 中回显；排队期间不随“默认模型”或预设发布而变化。
+ASR `input` 的目标是只接受所选工作空间存在、功能策略允许且为 `ready` 的 `audio_asset_id`；TTS `input` 使用 `text` 或 `text_asset_id` 二选一，顶层 `voice` 使用 `{id,revision}`，可选 `pronunciation` 也使用 `{id,revision}`。TTS 的 inline `text` 上限为 4096 字符，与 `/v1/audio/speech` 的 `input` 相同：一次 Job 只合成一次，超限请求按声明形状拒绝（422 `unsupported_parameter`，不写 Job 行），不切分、不截断、也不静默缩短。长文切分合成是独立的产品能力，当前未实现，由上游按单元切分后各自提交 Job。任务创建时解析 `model` 为 `ModelBindingRevision`，固定所有执行依赖，在响应 `effective_configuration` 中回显；排队期间不随“默认模型”或预设发布而变化。
 
 当前公开 Job 创建先读取工作空间是否 active、资产的 workspace、状态与用途，再进入写入事务；事务内重新核验绑定选择，但未在同一事务内重新核验这些工作空间和资产事实，也不能据此证明完整功能策略已生效。资源状态变化与创建竞争时的权威裁决仍须接入并验收。
 

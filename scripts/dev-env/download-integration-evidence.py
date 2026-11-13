@@ -3,6 +3,10 @@
 Use only the stdlib so the coordinator need not install project dependencies.
 Verify the API's archive digest before reading only the expected report and
 coverage-data members, including the measured dataset behind the merged gate.
+
+Rerunning failed jobs keeps the earlier attempt's artifact as a peer of the same
+name inside one run, so the measured dataset is selected by creation time and the
+chosen artifact is then verified exactly like a single one.
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ import subprocess
 import tempfile
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -134,16 +139,47 @@ def download_shards(
         report.rename(output / report.name)
 
 
+def artifact_created_at(artifact: Any) -> datetime:
+    """A rerun's peer artifact is distinguishable only by its creation time."""
+    created_at = artifact.get("created_at") if isinstance(artifact, dict) else None
+    if not isinstance(created_at, str):
+        raise ValueError("Python coverage artifact has no creation timestamp")
+    try:
+        stamp = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+    except ValueError:
+        raise ValueError("Python coverage artifact has an unusable creation timestamp") from None
+    if stamp.tzinfo is None:
+        raise ValueError("Python coverage artifact timestamp is not timezone aware")
+    return stamp
+
+
+def select_coverage_artifact(artifacts: list[Any]) -> tuple[Any, int]:
+    """Pick the attempt that produced the evidence when a rerun left a peer behind.
+
+    One job uploads this name once per attempt, so peers can only come from an
+    earlier attempt of the same run and the newest creation time is the current
+    evidence. Anything else stays fatal: no artifact, an unusable or ambiguous
+    inventory, and every later verification failure all refuse the gate.
+    """
+    matches = [artifact for artifact in artifacts if artifact["name"] == COVERAGE_ARTIFACT]
+    if not matches:
+        raise ValueError("Python coverage artifact is missing")
+    if len(matches) == 1:
+        return matches[0], 1
+    stamps = [artifact_created_at(artifact) for artifact in matches]
+    newest = max(stamps)
+    if stamps.count(newest) != 1:
+        raise ValueError("Python coverage artifact inventory is ambiguous")
+    return matches[stamps.index(newest)], len(matches)
+
+
 def download_coverage(
     repository: str, run_id: int, output: Path, root: Path, artifacts: list[Any], workers: int
 ) -> None:
     """Fetch the measured dataset; an absent artifact is a failing gate, not a smaller one."""
     if type(workers) is not int or workers not in (1, 2):
         raise ValueError("Invalid Python coverage worker count")
-    matches = [a for a in artifacts if a["name"] == COVERAGE_ARTIFACT]
-    if len(matches) != 1:
-        raise ValueError("Python coverage artifact is missing, duplicate or unexpected")
-    artifact = matches[0]
+    artifact, inventory = select_coverage_artifact(artifacts)
     artifact_id = artifact["id"]
     size = artifact["size_in_bytes"]
     digest = artifact["digest"]
@@ -201,7 +237,11 @@ def download_coverage(
             published += 1
         if published != len(required):
             raise ValueError("Python coverage archive omitted a required member")
-    print(f"Verified Python coverage artifact: {size} bytes", flush=True)
+    print(
+        f"Verified Python coverage artifact: {size} bytes "
+        f"(id={artifact_id}, inventory={inventory})",
+        flush=True,
+    )
 
 
 def download(

@@ -120,7 +120,7 @@ def analyze(
     loaded = module()
     findings = list(loaded._kernel()._compare_openapi(base, current, SOURCE, standard_only=False))
     if registry is not None:
-        setattr(loaded, "_APPROVED_REQUEST_BOUND_NARROWINGS", registry)
+        vars(loaded)["_APPROVED_REQUEST_BOUND_NARROWINGS"] = registry
     return cast(
         tuple[list[str], list[str]],
         loaded._apply_approved_request_bound_narrowings(

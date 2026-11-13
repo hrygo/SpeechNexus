@@ -8,7 +8,12 @@ name instead. That rule is only as good as the two things it depends on: the set
 of settings a surface declares, and the set of prefixed names that are
 legitimately *not* settings.
 
-Both are derived here from the sources with :mod:`ast`, never copied by hand:
+Both are derived here from the sources with :mod:`ast`, never copied by hand.
+Product sources target Python 3.14 (PEP 758 exception lists) while CI runs this
+module under the system interpreter, so a source the local parser rejects is read
+at text level instead and recorded in :data:`TEXT_READS` /
+:data:`DISCOVERY_TEXT_READS`; an unreadable source that yields no declaration or
+no key is an explicit failure, never an empty set that silently passes.
 
 ``SURFACES``
     Every settings class, its package, the operator name of the process that

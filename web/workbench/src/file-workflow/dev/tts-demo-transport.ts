@@ -53,6 +53,7 @@ export function createTtsDemoTransport(scenario: TtsDemoScenario) {
     },
   });
   const originals = new Map<string, string>();
+  const uploadedText = new Map<string, string>();
   let lostCreate = false;
   let lostCancel = false;
   const artifact = async () =>
@@ -90,6 +91,7 @@ export function createTtsDemoTransport(scenario: TtsDemoScenario) {
       if (form.get("purpose") !== "text_input" || !(file instanceof File))
         return error("invalid_request", 422);
       stats.uploads++;
+      uploadedText.set("asset-text", await file.text());
       return Response.json(
         parse("Asset", {
           ...sample("ready-audio"),
@@ -103,6 +105,13 @@ export function createTtsDemoTransport(scenario: TtsDemoScenario) {
         }),
         { status: 201 },
       );
+    }
+    if (path === "/v1/nexus/assets/asset-text/content") {
+      const content = uploadedText.get("asset-text");
+      if (content === undefined) return error("asset_not_found", 404);
+      return new Response(new TextEncoder().encode(content), {
+        headers: { "content-type": "application/octet-stream" },
+      });
     }
     if (path === "/v1/nexus/jobs" && request.method === "POST") {
       const command = parse("JobCreateRequest", await request.json());

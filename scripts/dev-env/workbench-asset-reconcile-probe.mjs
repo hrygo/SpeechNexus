@@ -93,6 +93,17 @@ const server = createServer(async (req, res) => {
           : { "X-Should-Retry": "false" },
       );
     }
+    if (path === "/v1/nexus/assets/asset-original/content" && req.method === "GET") {
+      // Replay reads the inline text back from the durable material; this is not a metadata read.
+      const body = Buffer.from(
+        current.kind === "asr" ? "synthetic audio" : "synthetic original text",
+      );
+      res.writeHead(200, {
+        "Content-Type": "application/octet-stream",
+        "Content-Length": body.length,
+      });
+      return res.end(body);
+    }
     if (path === "/v1/nexus/assets/asset-original" && req.method === "GET") {
       current.gets++;
       return current.failRead ? json(error("asset_service_unavailable"), 503) : json(asset());
@@ -102,10 +113,10 @@ const server = createServer(async (req, res) => {
       for await (const part of req) bytes.push(part);
       const command = parse("JobCreateRequest", JSON.parse(Buffer.concat(bytes).toString("utf8")));
       assert.equal(command.kind, current.kind);
-      assert.equal(
-        command.input[current.kind === "asr" ? "audio_asset_id" : "text_asset_id"],
-        "asset-original",
-      );
+      if (current.kind === "asr") assert.equal(command.input.audio_asset_id, "asset-original");
+      // TTS submits inline text; the uploaded text asset is only the durable readback source,
+      // so the body must carry the exact text and no asset identifier.
+      else assert.deepEqual(command.input, { text: "synthetic original text" });
       if (current.kind === "tts") {
         assert.deepEqual(command.voice, { id: "voice-demo", revision: "1" });
         assert.deepEqual(command.profile, { id: "profile-demo", revision: "2" });

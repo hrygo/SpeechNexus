@@ -27,6 +27,13 @@ const assetIdentityFields = [
   "sha256",
 ] as const;
 
+/** The durable intent's original text could not be read back; no substitute may be sent. */
+class OriginalTextUnavailableError extends Error {
+  constructor() {
+    super("Original text asset is not readable");
+  }
+}
+
 interface TaskView {
   readonly busy: boolean;
   readonly inputFixed: boolean;
@@ -74,7 +81,6 @@ export class FileTaskSession {
     Readonly<Pick<FileContracts["Asset"], (typeof assetIdentityFields)[number]>> | undefined;
   #tts: Readonly<TtsSelection> | undefined;
   #model: string | undefined;
-  #command: FileContracts["JobCreateRequest"] | undefined;
   #replay: (() => Promise<void>) | undefined;
 
   constructor(client: SpeechFileClient, journal?: FileTaskJournal) {
@@ -126,7 +132,8 @@ export class FileTaskSession {
     if (this.#record) {
       const record = this.#record;
       this.#model = record.model;
-      this.#command = jobCommand(record);
+      // The submit body is rebuilt on demand: v2 text lives only in the uploaded asset,
+      // never in this record, so replay reads it back instead of trusting local storage.
       this.#view = {
         ...this.#view,
         unknown: record.pending !== null,
@@ -284,6 +291,17 @@ export class FileTaskSession {
           operation: undefined,
           notice: "原执行已有恢复身份。请重新读取原执行状态；不要创建替代执行。",
         });
+      } else if (mutation && error instanceof OriginalTextUnavailableError) {
+        // Nothing was submitted, so the original request is intact: keep it replayable
+        // instead of reporting an unknown outcome or creating a substitute task.
+        this.#replay = async () => {
+          await action();
+        };
+        this.#update({
+          unknown: true,
+          canReplay: true,
+          notice: "原文本素材暂不可读取。保留原请求身份；请按原键重试，不要创建替代任务。",
+        });
       } else if (mutation && !(error instanceof SpeechResponseError)) {
         this.#replay = async () => {
           await action();
@@ -310,6 +328,11 @@ export class FileTaskSession {
         }
         if (mutation) {
           this.#replay = undefined;
+          // A terminal contract rejection is the one case a user can recover from alone: a
+          // 4xx such as 422 `job_text_asset_unsupported` (unreachable from this client now
+          // that TTS sends contract-supported `text`) proves no Job was written for this key,
+          // so the intent is spent and a fresh intent is safe. Abandoning that spent record
+          // still needs UI work outside this task; nothing here submits a replacement.
           this.#update({ unknown: false, canReplay: false, recovery: undefined });
         }
         this.#update({
@@ -388,7 +411,6 @@ export class FileTaskSession {
     });
     this.#replay = undefined;
     this.#file = undefined;
-    this.#text = undefined;
   }
 
   #acknowledgeUpload(asset: FileContracts["Asset"]) {
@@ -431,47 +453,67 @@ export class FileTaskSession {
     }
   }
 
+  /**
+   * The one submit body for a durable record. v2 text is supplied only here: in-memory for
+   * a fresh intent, otherwise read back from its immutable uploaded asset, never from the
+   * recovery journal.
+   */
+  async #submitCommand(record: TaskRecord): Promise<FileContracts["JobCreateRequest"]> {
+    if (record.version === 1) return jobCommand(record);
+    let text = this.#text;
+    if (text === undefined) {
+      try {
+        text = await this.#client.assetText(record.assetId, this.#lifetime.signal);
+      } catch {
+        // Aborted calls leave view updates to #run; a real read failure must not become a
+        // substitute intent, so it keeps the original request identity replayable.
+        throw new OriginalTextUnavailableError();
+      }
+    }
+    return jobCommand(record, text);
+  }
+
   async #submit() {
     const signal = this.#lifetime.signal;
-    // Replay the original validated payload, independent of refreshed asset views.
-    if (this.#command) {
-      this.#persist({ pending: "create" });
-      const job = await this.#client.create(this.#command, this.#createKey, signal);
-      this.#acceptJob(job, { jobId: job.id, pending: null, operationId: null });
-      this.#update({ job, notice: "任务已接收。读取当前状态或连接任务事件。" });
-      return;
+    if (!this.#record) {
+      if (!this.#view.asset) {
+        if (this.#assetHintId) throw new Error("Read the original Asset first");
+        await this.#prepareUpload();
+        const asset = await this.#uploadInput();
+        if (!asset) throw new Error("Missing file intent");
+        this.#acceptAsset(asset);
+      }
+      const asset = this.#view.asset;
+      if (asset) this.#checkAsset(asset);
+      if (asset?.status !== "ready") {
+        this.#update({ notice: "素材尚未就绪。请重新读取校验状态。" });
+        return;
+      }
+      const identity = {
+        model: this.#model!,
+        assetId: asset.id,
+        workspaceId: asset.workspace_id,
+        createKey: this.#createKey,
+        cancelKey: this.#cancelKey,
+        jobId: null,
+        pending: "create" as const,
+        operationId: null,
+        cursor: null,
+      };
+      this.#record = this.#upload
+        ? uploadJobRecord(this.#upload)
+        : this.#tts
+          ? { ...identity, ...this.#tts, version: 2 }
+          : { ...identity, version: 1 };
     }
-    if (!this.#view.asset) {
-      if (this.#assetHintId) throw new Error("Read the original Asset first");
-      await this.#prepareUpload();
-      const asset = await this.#uploadInput();
-      if (!asset) throw new Error("Missing file intent");
-      this.#acceptAsset(asset);
-    }
-    const asset = this.#view.asset;
-    if (asset) this.#checkAsset(asset);
-    if (asset?.status !== "ready") {
-      this.#update({ notice: "素材尚未就绪。请重新读取校验状态。" });
-      return;
-    }
-    const identity = {
-      model: this.#model!,
-      assetId: asset.id,
-      workspaceId: asset.workspace_id,
-      createKey: this.#createKey,
-      cancelKey: this.#cancelKey,
-      jobId: null,
-      pending: "create" as const,
-      operationId: null,
-      cursor: null,
-    };
-    this.#record = this.#upload
-      ? uploadJobRecord(this.#upload)
-      : this.#tts
-        ? { ...identity, ...this.#tts, version: 2 }
-        : { ...identity, version: 1 };
-    this.#command = jobCommand(this.#record);
-    await this.#submit();
+    // A replay reuses the original keys and the body built from the durable record; the body
+    // itself is never parked on the instance, so the text does not outlive its submission.
+    const command: FileContracts["JobCreateRequest"] = await this.#submitCommand(this.#record);
+    this.#text = undefined;
+    this.#persist({ pending: "create" });
+    const job = await this.#client.create(command, this.#createKey, signal);
+    this.#acceptJob(job, { jobId: job.id, pending: null, operationId: null });
+    this.#update({ job, notice: "任务已接收。读取当前状态或连接任务事件。" });
   }
 
   async start(file: File, model: string) {

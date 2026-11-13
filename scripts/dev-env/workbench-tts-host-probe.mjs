@@ -169,7 +169,7 @@ const middleware = (vite) => {
         const body = parse("JobCreateRequest", JSON.parse(Buffer.concat(chunks)));
         assert.equal(body.kind, "tts");
         assert.equal(body.model, "tts-quality");
-        assert.deepEqual(body.input, { text_asset_id: "asset-text" });
+        assert.deepEqual(body.input, { text });
         assert.deepEqual(body.voice, { id: "voice-demo", revision: "1" });
         assert.deepEqual(body.profile, { id: "profile-demo", revision: "2" });
         assert.deepEqual(body.output, { audio_format: "wav", save_artifacts: true });
@@ -180,6 +180,15 @@ const middleware = (vite) => {
           return res.end("{");
         }
         return json(res, job(), 202);
+      }
+      // The durable text material is the replay source: the submit body carries the inline
+      // text, so a reloaded session reads it back from this route instead of the journal.
+      if (path === "/v1/nexus/assets/asset-text/content") {
+        res.writeHead(200, {
+          "Content-Type": "application/octet-stream",
+          "Content-Length": payload.length,
+        });
+        return res.end(payload);
       }
       if (path === "/v1/nexus/jobs/job-demo") return json(res, job());
       if (path === "/v1/nexus/jobs/job-demo/events") {

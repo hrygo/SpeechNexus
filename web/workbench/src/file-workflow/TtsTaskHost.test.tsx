@@ -94,6 +94,8 @@ function fixture() {
     result: { kind: "tts", audio_artifact_id: artifact.id, receipt_id: "receipt-demo" },
   });
   const upload = vi.spyOn(client, "uploadText").mockResolvedValue(asset);
+  // Success path only; assetText() failures live in the session suite (tts-task.test.ts).
+  const assetText = vi.spyOn(client, "assetText").mockResolvedValue(text);
   const create = vi.spyOn(client, "create").mockResolvedValue(job);
   const getJob = vi.spyOn(client, "getJob").mockResolvedValue(job);
   const getAsset = vi.spyOn(client, "getAsset").mockResolvedValue(asset);
@@ -111,6 +113,7 @@ function fixture() {
     artifact,
     complete,
     upload,
+    assetText,
     create,
     getJob,
     getAsset,
@@ -215,7 +218,7 @@ describe("production text synthesis host", () => {
     expect(f.create.mock.calls[0]?.[0]).toMatchObject({
       kind: "tts",
       model: selection.model,
-      input: { text_asset_id: "asset-text" },
+      input: { text },
       voice: { id: selection.voiceId, revision: "1" },
       profile: { id: selection.profileId, revision: "2" },
       output: { audio_format: "wav", save_artifacts: true },

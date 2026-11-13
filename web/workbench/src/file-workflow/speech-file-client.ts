@@ -114,6 +114,47 @@ export class SpeechFileClient {
     return asset;
   }
 
+  /**
+   * Read the immutable text input back for a replay. The body is used at submission time
+   * only: the durable journal keeps the asset identity and never the text.
+   */
+  async assetText(assetId: string, signal?: AbortSignal) {
+    const result = await this.#client.GET("/v1/nexus/assets/{asset_id}/content", {
+      params: { path: { asset_id: assetId } },
+      signal: signal ?? null,
+      parseAs: "stream",
+    });
+    assertResponse(result.response, result.error);
+    if (!result.data) throw new Error("Missing asset content");
+    // The contract bounds published text to 4 MiB; job input text is bounded at 200000 characters.
+    const limit = 4 * 1024 * 1024;
+    const reader = result.data.getReader();
+    const chunks: Uint8Array<ArrayBuffer>[] = [];
+    let bytes = 0;
+    try {
+      while (true) {
+        signal?.throwIfAborted();
+        const { value, done } = await reader.read();
+        signal?.throwIfAborted();
+        if (done) break;
+        bytes += value.length;
+        if (bytes > limit) throw new Error("Asset text exceeds local read policy");
+        chunks.push(value);
+      }
+    } finally {
+      await reader.cancel().catch(() => undefined);
+      reader.releaseLock();
+    }
+    const content = new Uint8Array(bytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      content.set(chunk, offset);
+      offset += chunk.length;
+    }
+    // Exact roundtrip decoding: fatal rejects malformed UTF-8 and the BOM stays a character.
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(content);
+  }
+
   async getJob(jobId: string, signal?: AbortSignal) {
     const result = await this.#client.GET("/v1/nexus/jobs/{job_id}", {
       params: { path: { job_id: jobId } },

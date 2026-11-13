@@ -64,19 +64,39 @@ export function asrCommand(intent: Pick<TaskRecord, "model" | "assetId" | "works
   }) satisfies FileContracts["JobCreateRequest"];
 }
 
-/** v2 fixes the asset and both revisioned selections; no text is stored locally. */
-export function jobCommand(record: RecoveryRecord) {
-  if (isUploadRecord(record)) throw new TaskJournalError("invalid");
-  if (record.version === 1) return asrCommand(record);
+/** v2 fixes both revisioned selections and the uploaded text asset; the body is not stored. */
+function ttsCommand(record: TtsTaskRecord, text: string) {
   return parse("JobCreateRequest", {
     kind: "tts",
     model: record.model,
     workspace_id: record.workspaceId,
-    input: { text_asset_id: record.assetId },
+    // The contract accepts either inline `text` or (not yet materialized) `text_asset_id`;
+    // `job_text_asset_unsupported` rejects the latter until the frozen text asset exists.
+    input: { text },
     voice: { id: record.voiceId, revision: record.voiceRevision },
     profile: { id: record.profileId, revision: record.profileRevision },
     output: { audio_format: "wav", save_artifacts: true },
   });
+}
+
+/**
+ * Shape-only body for validating and comparing a durable record. Submission requires the
+ * real text; this placeholder is parsed but never sent, logged or persisted.
+ */
+const shapeText = "\u0000";
+
+/** One durable intent's canonical body; v2 requires the text used only at submission. */
+export function jobCommand(record: RecoveryRecord, text?: string) {
+  if (isUploadRecord(record)) throw new TaskJournalError("invalid");
+  if (record.version === 1) return asrCommand(record);
+  if (text === undefined) throw new TaskJournalError("invalid");
+  return ttsCommand(record, text);
+}
+
+/** Private write barrier: what a record fixes, independent of text it never stores. */
+function commandShape(record: RecoveryRecord) {
+  if (isUploadRecord(record)) throw new TaskJournalError("invalid");
+  return record.version === 1 ? asrCommand(record) : ttsCommand(record, shapeText);
 }
 
 const fields = [
@@ -92,7 +112,8 @@ const fields = [
   "cursor",
 ] as const;
 const ttsFields = ["voiceId", "voiceRevision", "profileId", "profileRevision"] as const;
-const fixed = ["version", "createKey", "cancelKey"] as const;
+// Fields a durable intent never changes; v2 pins the uploaded text asset that supplies its body.
+const fixed = ["version", "createKey", "cancelKey", "assetId"] as const;
 
 function validRecord(value: unknown): RecoveryRecord {
   const invalid = () => {
@@ -161,7 +182,7 @@ function validRecord(value: unknown): RecoveryRecord {
   )
     return invalid();
   try {
-    jobCommand(row as unknown as TaskRecord);
+    commandShape(row as unknown as TaskRecord);
   } catch {
     return invalid();
   }
@@ -227,8 +248,10 @@ export class SessionTaskJournal implements FileTaskJournal {
           record.cursor !== null ||
           record.createKey !== beforeUpload.createKey ||
           record.cancelKey !== beforeUpload.cancelKey ||
-          JSON.stringify(jobCommand(uploadJobRecord(beforeUpload))) !==
-            JSON.stringify(jobCommand(record))
+          // The create record must reference the acknowledged upload's own text asset.
+          record.assetId !== beforeUpload.assetId ||
+          JSON.stringify(commandShape(uploadJobRecord(beforeUpload))) !==
+            JSON.stringify(commandShape(record))
         )
           throw new TaskJournalError("changed");
       }
@@ -236,7 +259,7 @@ export class SessionTaskJournal implements FileTaskJournal {
       before &&
       (afterUpload ||
         fixed.some((field) => before[field] !== record[field]) ||
-        JSON.stringify(jobCommand(before)) !== JSON.stringify(jobCommand(record)) ||
+        JSON.stringify(commandShape(before)) !== JSON.stringify(commandShape(record)) ||
         (before.jobId !== null && before.jobId !== record.jobId) ||
         (before.version === 2 &&
           before.effectiveModelKey !== undefined &&

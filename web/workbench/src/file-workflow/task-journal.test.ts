@@ -76,6 +76,19 @@ describe("session task journal", () => {
     expect(new SessionTaskJournal(storage, "task").load()).toEqual(spent);
   });
 
+  it("carries the settled verdict through a later rewrite instead of erasing it", () => {
+    // No session write follows a settled refusal today, so this guards the write path a
+    // future one would use: saving the record again must carry `settled` rather than
+    // silently rebuilding the refused intent (#707 review carry case).
+    const storage = memoryStorage();
+    const journal = new SessionTaskJournal(storage, "task");
+    journal.load();
+    const spent = { ...record(), settled: "terminal" } as const;
+    journal.save(spent);
+    journal.save({ ...spent });
+    expect(new SessionTaskJournal(storage, "task").load()).toEqual(spent);
+  });
+
   it.each([
     JSON.stringify({ ...record(), settled: "unknown" }),
     JSON.stringify({ ...record(), settled: true }),

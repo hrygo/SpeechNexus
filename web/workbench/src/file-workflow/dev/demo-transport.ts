@@ -28,11 +28,26 @@ export function createDemoTransport(scenario: DemoScenario) {
   let lostCreate = false;
   let lostCancel = false;
   let expiredHistory = false;
-  const error = (status: number, code: string) => {
-    const envelope = sample("ErrorResponse", "recover-operation");
-    envelope.error.code = code;
-    envelope.error.message = "Synthetic development scenario";
-    return Response.json(parse("ErrorResponse", envelope), { status });
+  const error = (status: number, code: string, operationId?: string) => {
+    // A plain refusal names no execution; only an unknown outcome yields the identified
+    // operation the page can query later (`error.nexus.operation_id`).
+    const envelope: FileContracts["ErrorResponse"] = parse("ErrorResponse", {
+      error: {
+        code,
+        type:
+          status === 429
+            ? "rate_limit_error"
+            : status >= 500
+              ? "service_unavailable_error"
+              : "invalid_request_error",
+        message: "Synthetic development scenario",
+        param: null,
+        request_id: "req-demo",
+        retryable: status === 429 || status >= 500,
+        ...(operationId ? { nexus: { operation_id: operationId } } : {}),
+      },
+    });
+    return Response.json(envelope, { status });
   };
   const fetch: typeof globalThis.fetch = async (input, init) => {
     const request = input instanceof Request ? input : new Request(input, init);
@@ -59,7 +74,7 @@ export function createDemoTransport(scenario: DemoScenario) {
         stats.executions++;
         intents.set(key, { body: JSON.stringify(body), job: structuredClone(job) });
       }
-      if (scenario === "operation-recovery") return error(409, "operation_in_progress");
+      if (scenario === "operation-recovery") return error(409, "operation_in_progress", "op-demo");
       if (scenario === "create-unknown" && !lostCreate) {
         lostCreate = true;
         throw new TypeError("Synthetic lost create response");

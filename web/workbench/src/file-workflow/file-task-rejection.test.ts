@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { FileTaskSession, retainRecovery } from "./file-task-session";
+import { FileTaskSession, retainRecovery, settlesReplayedIntent } from "./file-task-session";
 import { canFinishTask } from "./file-task-policy";
 import { SpeechFileClient, parse } from "./speech-file-client";
 import { SessionTaskJournal } from "./task-journal";
@@ -118,6 +118,31 @@ function setup({
     },
   };
 }
+
+describe("replayed-intent settlement predicate", () => {
+  it.each([
+    // Refusals the protocol answers only after looking up the original key.
+    [409, "idempotency_conflict", true],
+    [422, "job_binding_incomplete", true],
+    [422, "job_text_asset_unsupported", true],
+    [422, "voice_not_published", true],
+    [422, "model_binding_retired", true],
+    [422, "model_binding_task_not_supported", true],
+    // Answers that may precede the key lookup (auth, gateway, body parsing): never settle.
+    [401, "invalid_credentials", false],
+    [403, "forbidden", false],
+    [404, "job_not_found", false],
+    [405, "method_not_allowed", false],
+    [400, "invalid_job_request", false],
+    [413, "request_too_large", false],
+    [422, "unsupported_parameter", false],
+    [422, "workspace_not_found", false],
+    [409, "operation_in_progress", false],
+    [409, "voice_draft_outcome_unknown", false],
+  ])("settles only %i %s after the key check: %s", (status, code, settles) => {
+    expect(settlesReplayedIntent({ status, code })).toBe(settles);
+  });
+});
 
 describe("submission rejection classes", () => {
   it("keeps one unknown outcome and its recovery identity for 503 job_outcome_unknown", async () => {
@@ -293,6 +318,118 @@ describe("submission rejection classes", () => {
     expect(f.stored()).toMatchObject({ pending: "create", settled: "terminal", jobId: null });
     await session.replay();
     expect(f.stats.createKeys).toHaveLength(1);
+    session.dispose();
+  });
+
+  it("keeps an earlier unknown outcome unknown when a replay is refused before the key check", async () => {
+    // A lost answer and a refusal share one persisted shape (`pending: "create"`, no Job),
+    // so a refusal that an auth layer can answer *before* the protocol looks up the
+    // original key cannot settle the earlier attempt. Persisting it as final would let the
+    // user abandon a possibly executed submission and start a duplicate (#707 review M1).
+    const f = setup({
+      create: (attempt) =>
+        attempt === 0
+          ? rejection(503, "job_outcome_unknown")
+          : rejection(401, "invalid_credentials"),
+    });
+    const session = f.make();
+    await session.start(file(), "asr-quality");
+    expect(session.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+
+    await session.replay();
+    expect(session.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    expect(session.getSnapshot().rejected).toBeUndefined();
+    expect(session.getSnapshot().notice).toContain("不能证明原提交未执行");
+    expect(canFinishTask(session.getSnapshot())).toBe(false);
+    expect(f.stats.createKeys).toHaveLength(2);
+    expect(new Set(f.stats.createKeys).size).toBe(1);
+    expect(f.stored()).toMatchObject({ pending: "create" });
+    expect(f.stored()).not.toHaveProperty("settled");
+    session.dispose();
+
+    // Reloading must still rebuild the unknown submission, never a settled refusal.
+    const restored = f.make();
+    await restored.restore();
+    expect(restored.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    expect(restored.getSnapshot().rejected).toBeUndefined();
+    expect(canFinishTask(restored.getSnapshot())).toBe(false);
+    restored.dispose();
+  });
+
+  it("keeps a reloaded unknown outcome unknown when its replay is refused before the key check", async () => {
+    const f = setup({
+      create: (attempt) =>
+        attempt === 0
+          ? rejection(503, "job_outcome_unknown")
+          : rejection(401, "invalid_credentials"),
+    });
+    const first = f.make();
+    await first.start(file(), "asr-quality");
+    first.dispose();
+    const restored = f.make();
+    await restored.restore();
+    expect(restored.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    await restored.replay();
+    expect(restored.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    expect(restored.getSnapshot().rejected).toBeUndefined();
+    expect(f.stored()).not.toHaveProperty("settled");
+    restored.dispose();
+  });
+
+  it("settles a replayed intent when the refusal is emitted after the key check", async () => {
+    // `job_binding_incomplete` comes from the admission path: `PublicJobs.submit` replays
+    // the original key before it validates the intent and re-checks it before propagating
+    // this refusal, so it also proves no earlier attempt under the key became a Job.
+    const f = setup({
+      create: (attempt) =>
+        attempt === 0
+          ? rejection(503, "job_outcome_unknown")
+          : rejection(422, "job_binding_incomplete"),
+    });
+    const first = f.make();
+    await first.start(file(), "asr-quality");
+    first.dispose();
+    const restored = f.make();
+    await restored.restore();
+    expect(restored.getSnapshot().unknown).toBe(true);
+    await restored.replay();
+    expect(restored.getSnapshot()).toMatchObject({
+      unknown: false,
+      rejected: true,
+      canReplay: false,
+    });
+    expect(canFinishTask(restored.getSnapshot())).toBe(true);
+    expect(f.stored()).toMatchObject({ pending: "create", settled: "terminal" });
+    restored.dispose();
+  });
+
+  it("never settles a refusal that names an identified execution", async () => {
+    // An envelope carrying `nexus.operation_id` identifies an execution the user could
+    // still reconcile; a persisted settled verdict would hide that identity (#707 M2).
+    const f = setup({
+      create: () => rejection(409, "idempotency_conflict", { operationId: "op-demo" }),
+    });
+    const session = f.make();
+    await session.start(file(), "asr-quality");
+    expect(session.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    expect(session.getSnapshot().rejected).toBeUndefined();
+    expect(session.getSnapshot().recovery?.error.nexus?.operation_id).toBe("op-demo");
+    expect(canFinishTask(session.getSnapshot())).toBe(false);
+    expect(f.stored()).not.toHaveProperty("settled");
+    session.dispose();
+  });
+
+  it("keeps a body-level refusal unknown on a first attempt", async () => {
+    // `unsupported_parameter` is answered while parsing the body, before the protocol looks
+    // up the key (interfaces/http/jobs.py `_create`), so even a first refusal cannot rule
+    // out a concurrent commit; it must not settle the durable intent.
+    const f = setup({ create: () => rejection(422, "unsupported_parameter") });
+    const session = f.make();
+    await session.start(file(), "asr-quality");
+    expect(session.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    expect(session.getSnapshot().rejected).toBeUndefined();
+    expect(canFinishTask(session.getSnapshot())).toBe(false);
+    expect(f.stored()).not.toHaveProperty("settled");
     session.dispose();
   });
 

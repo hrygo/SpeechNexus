@@ -330,12 +330,26 @@ function contractBody(text: string) {
   };
 }
 
-function failure(code: string, status: number) {
-  const envelope = structuredClone(
-    fixtures.examples.find((entry) => entry.id === "recover-operation")!.value,
-  ) as { error: { code: string } };
-  envelope.error.code = code;
-  return Response.json(parse("ErrorResponse", envelope), { status });
+function failure(code: string, status: number, operationId?: string) {
+  return Response.json(
+    parse("ErrorResponse", {
+      error: {
+        code,
+        type:
+          status === 429
+            ? "rate_limit_error"
+            : status >= 500
+              ? "service_unavailable_error"
+              : "invalid_request_error",
+        message: `Synthetic rejection ${code}`,
+        param: null,
+        request_id: "req-demo",
+        retryable: status === 429 || status >= 500,
+        ...(operationId ? { nexus: { operation_id: operationId } } : {}),
+      },
+    }),
+    { status },
+  );
 }
 
 /** Mirrors public_job_admission: `text_asset_id` is a 422 until the frozen text material exists. */
@@ -484,7 +498,7 @@ describe("workbench TTS submit shape (#685)", () => {
       const request = input instanceof Request ? input : new Request(input, init);
       if (new URL(request.url).pathname === "/v1/nexus/jobs") {
         creates++;
-        return failure("operation_in_progress", 409);
+        return failure("operation_in_progress", 409, "op-demo");
       }
       return test.transport.fetch(request, init);
     });

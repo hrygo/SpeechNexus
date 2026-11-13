@@ -97,7 +97,108 @@ class AnchorTests(unittest.TestCase):
         with mock.patch.object(GUARD, "MUTATE_SITES", broken):
             problems = GUARD.audit_evidence()
         self.assertTrue(problems)
-        self.assertIn("不存在的 tests/ci 用例", problems[0])
+        self.assertIn("不是 `TestCase` 方法", problems[0])
+
+
+EVIDENCE_FIXTURE = """
+import unittest
+
+
+class FixtureTest(unittest.TestCase):
+    def test_asserts(self):
+        self.assertEqual(1, 1)
+
+    def test_without_any_assertion(self):
+        value = 1
+        return None
+
+    @unittest.skip("parked")
+    def test_skipped_by_decorator(self):
+        self.assertEqual(1, 1)
+
+    def test_skipped_in_body(self):
+        self.skipTest("parked")
+        self.assertEqual(1, 1)
+
+    def test_truncated_before_the_body(self):
+        return
+        self.assertEqual(1, 1)
+
+
+def test_a_module_level_function():
+    assert True
+"""
+
+
+class RegistryRubricTests(unittest.TestCase):
+    """The `judgement` and `evidence` columns must be checkable, not decorative."""
+
+    def _workspace(self, directory: str) -> Path:
+        root = Path(directory)
+        (root / "tests/ci").mkdir(parents=True)
+        (root / "tests/ci/test_fixture_evidence.py").write_text(EVIDENCE_FIXTURE, encoding="utf-8")
+        return root
+
+    def _evidence_problems(self, evidence: str) -> list[str]:
+        row = GUARD.SiteRow("step_x:argv", "fixture", evidence)
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._workspace(directory)
+            with (
+                mock.patch.object(GUARD, "ROOT", root),
+                mock.patch.object(GUARD, "MUTATE_SITES", (row,)),
+            ):
+                return [str(problem) for problem in GUARD.audit_evidence()]
+
+    def test_an_asserting_test_case_method_is_accepted(self) -> None:
+        self.assertEqual(self._evidence_problems("test:test_asserts"), [])
+
+    def test_an_evidence_test_without_an_assertion_is_red(self) -> None:
+        problems = self._evidence_problems("test:test_without_any_assertion")
+        self.assertTrue(problems)
+        self.assertIn("没有任何断言", problems[0])
+
+    def test_a_skipped_evidence_test_is_red(self) -> None:
+        problems = self._evidence_problems("test:test_skipped_by_decorator")
+        self.assertTrue(problems)
+        self.assertIn("被 skip", problems[0])
+
+    def test_skip_inside_the_body_is_red_too(self) -> None:
+        problems = self._evidence_problems("test:test_skipped_in_body")
+        self.assertTrue(problems)
+        self.assertIn("skipTest", problems[0])
+
+    def test_an_emptied_evidence_body_is_red(self) -> None:
+        problems = self._evidence_problems("test:test_truncated_before_the_body")
+        self.assertTrue(problems)
+        self.assertIn("死代码", problems[0])
+
+    def test_a_module_level_function_is_not_a_runnable_evidence(self) -> None:
+        problems = self._evidence_problems("test:test_a_module_level_function")
+        self.assertTrue(problems)
+        self.assertIn("不是 `TestCase` 方法", problems[0])
+
+    def test_a_judgement_pointer_must_name_a_real_entry_definition(self) -> None:
+        self.assertEqual(GUARD.check_judgements(ENTRY), [])
+        for judgement, expected in (
+            ("谁也没判", "没有反引号"),
+            ("`gate_verdict_removed` 判定", "没有定义它"),
+        ):
+            with self.subTest(judgement=judgement):
+                row = GUARD.SiteRow("step_x:argv", judgement, "probe:gate_verdict-fail")
+                with mock.patch.object(GUARD, "MUTATE_SITES", (row,)):
+                    problems = GUARD.check_judgements(ENTRY)
+                self.assertTrue(problems)
+                self.assertIn(expected, problems[0])
+
+    def test_a_duplicated_site_row_is_red(self) -> None:
+        rows = (
+            GUARD.SiteRow("step_x:argv", "`step_gate` 判", "probe:gate_verdict-fail"),
+            GUARD.SiteRow("step_x:argv", "`step_stack` 判", "probe:gate_verdict-fail"),
+        )
+        with mock.patch.object(GUARD, "MUTATE_SITES", rows):
+            problems = GUARD.check_judgements(ENTRY)
+        self.assertTrue(problems)
+        self.assertIn("登记了多次", problems[0])
 
 
 class SiteInventoryTests(unittest.TestCase):
@@ -162,6 +263,12 @@ class SiteInventoryTests(unittest.TestCase):
         self.assertTrue(problems)
         self.assertIn("被丢弃", problems[0])
 
+    def test_a_result_assigned_to_underscore_is_a_discard(self) -> None:
+        source = "def step(ctx):\n    _ = ctx.mutate(('docker', 'compose', 'up', '-d'))\n"
+        problems = audit(source, baseline=(SITE,))
+        self.assertTrue(problems)
+        self.assertIn("赋给 `_`", problems[0])
+
     def test_a_bare_result_name_in_a_condition_is_red(self) -> None:
         for test in (
             "if started:",
@@ -219,6 +326,12 @@ class SiteInventoryTests(unittest.TestCase):
             "unknown builder": ("ctx.read(shoot())", True),
             "variable argv": ("argv = ('docker', 'compose', 'down')\n    ctx.read(argv)", None),
             "value wrapper": ("ctx.read(('git', '-C', str(ctx.repo_root), 'status'))", False),
+            "registered spread": ("ctx.read((*ctx.compose_argv, 'ps', '-a'))", False),
+            "unregistered spread": (
+                "argv = ('sh', '-c', 'rm -rf /')\n    ctx.read((*argv,))",
+                True,
+            ),
+            "unregistered attribute spread": ("ctx.read((*ctx.extra_argv, 'ps'))", True),
         }
         for name, (statement, expected_red) in cases.items():
             with self.subTest(name):

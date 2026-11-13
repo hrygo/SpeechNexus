@@ -25,20 +25,20 @@ Skill 的说明、参考、合成评测数据及展示元数据不参与产品�
 
 三个受保护检查为 `Gate: required checks for this change`、`Web: lint, types, tests, build and accessibility`、`Compose: configuration validation`。它们分别替代原 `Python quality and tests`、`Web quality, tests, and build`、`Deployment configuration`；变更显示名称时必须同步 `main` 的 required status checks，并保持 GitHub Actions app 绑定及其他保护策略。迁移时先确认新名称在当前提交实际通过，再替换保护列表，不将缺失检查视为通过。
 
-验收入口作业 `reference_acceptance` 由 `Gate: required checks for this change` 按与 `deployment` 相同的范围映射要求：docs/web 范围期望 skipped，no-db/full 范围期望 success，失败、取消或该跑却跳过都使门禁失败。它不新增受保护状态名，三个受保护检查保持不变。它真实执行 `scripts/dev-env/reference-acceptance.py --dry-run`：工具与版本、从 `deploy/compose.yaml` 派生的 `${KEY:?}` 键与入口额外必需键、compose 渲染、三条互不相同的 Job DSN 身份、从迁移目录派生的 head、桶名和私有输入扫描都由脚本本身计算；合成私有输入按 `deploy/compose.yaml` 挂载的文件名与 lane 配置里的 `vad_model_file` 派生，新增 lane 或改模型文件名不需要改工作流。
+验收入口作业 `reference_acceptance` 由 `Gate: required checks for this change` 按与 `deployment` 相同的范围映射要求：docs/web 范围期望 skipped，no-db/full 范围期望 success，失败、取消或该跑却跳过都使门禁失败。它不新增受保护状态名，三个受保护检查保持不变。它真实执行 `scripts/dev-env/reference-acceptance.py --dry-run`：工具与版本、从 `deploy/compose.yaml` 派生的 `${KEY:?}` 键与入口额外必需键、compose 渲染、三条互不相同的 Job DSN 身份、从迁移目录派生的 head、桶名和私有输入扫描都由脚本本身计算；合成私有输入按 `deploy/compose.yaml` 挂载的文件名与 lane 配置里的 `vad_model_file` 派生，新增 lane 或改模型文件名不需要改工作流；新增私有挂载必须同时提交 `deploy/private/<name>.example.json`，缺示例时准备步骤直接失败——合成的空 JSON 只会让私有输入扫描凭「文件可读」假通过，所以这里没有降级通道。
 
 作业另有四条不依赖写步骤的守卫，实现在 `scripts/dev-env/ci-entry-guard.py`，只做**结构完整性**检查，不做语义校验：
 
 - `log` 校验[机器可读输出契约](../operations/reference-acceptance.md#机器可读输出ci-契约)：步骤顺序、逐条结论、`pending=N` 与 `待输入` 行数、dry-run 不得声明 PASS；延后项按稳定词登记（`DECLARED_DEFERRALS`，匹配「必须同时出现的词」并排除别的条件词），新增延后项必须一行登记，未登记即红。
-- `sites` 把入口里的每条 `<ctx>.mutate(...)`（含 `ctx.runner.mutate`）与 `MUTATE_SITES` 清单逐条比对：命令消失、命令新增、结果被丢弃、`read` 的 argv 不是字面量也不是登记过的构造助手、`read` argv 里出现写词（`run/up/start/down/restart/rm/create`；`uv run` 是唯一允许配对；`sh`/`bash`/`python` 等紧跟 `-c` 一律判红）都使作业红。清单里每条都写「判定在哪个函数」和可核对的证据（`tests/ci` 用例名或 probe 用例名），证据不存在也是红。
+- `sites` 把入口里的每条 `<ctx>.mutate(...)`（含 `ctx.runner.mutate`）与 `MUTATE_SITES` 清单逐条比对：命令消失、命令新增、结果被丢弃（裸表达式语句，以及赋给 `_` 后不再使用）、`read` 的 argv 既不是字面量也不是 `READ_ARGUMENTS` 里登记的 argv 构造助手或 `*` 展开的登记只读段、`read` argv 里出现写词（`run/up/start/down/restart/rm/create`；`uv run` 是唯一允许配对；`sh`/`bash`/`python` 等紧跟 `-c` 一律判红）都使作业红。清单的「判定在哪」列必须用反引号点出入口里真实存在的定义，改名或删函数即红；「证据」列必须指向一个会被 `unittest` 收集的 `TestCase` 方法或 probe 用例——名字不存在、带 skip 装饰器或 `skipTest`、正文开头就 `return`/`raise` 让后文成死代码、正文没有任何断言，都使作业红。
 - `probe` 用必然失败的输入调用 `PROBE_CASES` 里登记的纯判定函数；用例集合与实现集合不一致、入口函数改名/签名变化都会点名到「更新登记表与文档」，而不是误报「判定被掏空」。
 - `wiring` 要求四条子命令各自是所在步骤的第一条命令，因此把调用换成仍含命令字符串的 `echo` 会红。
 
-六张登记表（站点、只读 argv 助手、写词、probe 用例、延后项、自检语料）逐行镜像在[参考验收入口](../operations/reference-acceptance.md)的锚点块里，守卫每次运行都比较两侧：删一行登记、缩小写词集合或删掉一个自检用例，都必须在同一次改动里改文档，否则红。守卫每次运行还会跑自检语料（反空转、丢弃结果、未登记站点、`echo`/`sh -c` 写形态、`read` 藏变量等），所以把规则改松会先弄红自检。
+六张登记表（站点、只读 argv 助手、写词、probe 用例、延后项、自检语料）逐行镜像在[参考验收入口](../operations/reference-acceptance.md)的锚点块里，守卫每次运行都比较两侧：删一行登记、缩小写词集合或删掉一个自检用例，都必须在同一次改动里改文档，否则红。守卫每次运行还会跑自检语料（反空转、丢弃结果与 `_ =`、未登记站点、`echo`/`sh -c` 写形态、`read` 藏变量与 `*` 展开等），所以把规则改松会先弄红自检。
 
 **覆盖边界**：迁移、角色、桶、栈、闸门与健康检查在 dry-run 下只被计划、不被执行。因此本作业证明的是入口的前置检查、派生值、步骤顺序、延后项契约和写/读边界的存在性，**不是一次参考部署**。
 
-四条守卫都只看结构，下面这些看不见：判定条件被反转却仍读 `.ok`／`.code`（`if not started.ok: raise` 语义反了也绿）；把 `.ok` 读出来只打日志、随后仍不中断；`ctx.read` 里用 `psql -c "DELETE …"` 间接写库；把 `ctx.mutate` 包进自定义函数再丢弃返回；`getattr`/反射拿到的 `mutate`；`bit=` 以外的执行原语（`subprocess`、`os.system`）；对已登记站点的判定语义作任何改动。登记表只证明「这条命令还在、这条登记指向一个真实证据」，不证明证据本身覆盖了该形态的语义——这仍由 `tests/ci` 的假 Runner 用例与真实 apply 运行负责。所以「入口有 CI 作业」不等于「入口已被完整守住」，只是「入口的结构不会在无人知晓的情况下消失」。
+四条守卫都只看结构，下面这些看不见：判定条件写反方向却仍读 `.ok`／`.code`（正确写法是 `if not started.ok: raise`，改写成 `if started.ok: raise` 仍绿）；把 `.ok` 读出来只打日志、随后仍不中断；`ctx.read` 里用 `psql -c "DELETE …"` 间接写库；换接收者名、别名或包进自定义函数再丢弃返回的 `ctx.mutate`；`getattr`/反射拿到的 `mutate`；`bit=` 以外的执行原语（`subprocess`、`os.system`）；对已登记站点的判定语义作任何改动；证据与被登记站点不相关（只校验它会被收集、有断言、未被跳过）。登记表只证明「这条命令还在、这条证据会真的判红、这一行的判定位置确实存在」，不证明证据覆盖了该站点的语义，也不证明「判定在哪」那句描述属实——这仍由 `tests/ci` 的假 Runner 用例与真实 apply 运行负责。行数锚点挡的是「不知情的缩水」：同一次改动里改 `PINNED_COUNTS` 再跑 `tables --write` 仍可行，取舍留给评审。所以「入口有 CI 作业」不等于「入口已被完整守住」，只是「入口的结构不会在无人知晓的情况下消失」。
 
 作业级条件让不适用项明确显示 skipped；最终 CI 门禁用 `always()` 执行，核对路由成功和各项实际结果。非法/缺失路由、失败、取消或本应执行却跳过均失败。不适用不表示业务验证已通过。
 

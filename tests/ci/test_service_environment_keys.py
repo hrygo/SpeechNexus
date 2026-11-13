@@ -25,10 +25,13 @@ from __future__ import annotations
 import ast
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from tests.ci import service_environment_keys as registry
 from tests.ci.service_environment_keys import (
     BACKEND_ENVIRONMENT,
     CONTROLLER_ENVIRONMENT,
+    DISCOVERY_TEXT_READS,
     GATEWAY_ENVIRONMENT,
     PACKAGE_ROOTS,
     ROOT,
@@ -36,13 +39,24 @@ from tests.ci.service_environment_keys import (
     SERVICE_PREFIXES,
     SHARED_DEFINITIONS,
     SURFACES,
+    TEXT_READS,
     WORKBENCH_REGISTRY,
     all_planes,
+    can_parse_pep758,
+    declarations_from_ast,
+    declarations_from_text,
     declared_prefix,
+    declared_settings_classes,
     derived_keys,
     discovered_prefixes,
     discovered_settings_classes,
     inventory_tokens,
+    keys_from_ast,
+    keys_from_text,
+    parse_source,
+    prefix_from_ast,
+    prefix_from_text,
+    read,
     registered_planes,
     surface_keys,
 )
@@ -242,3 +256,158 @@ class EngineParityTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SourceReaderTest(unittest.TestCase):
+    """The registry must stay correct when the system interpreter cannot parse.
+
+    ``pyproject.toml`` targets Python 3.14, so product sources use PEP 758
+    exception lists (``except A, B:``). The ``changes`` job runs this guard with
+    the system interpreter (3.12 on the CI image), which rejects that syntax, so
+    reading a settings module cannot depend on being able to parse it. These
+    cases pin the text reader: it must reproduce the AST result, it must record
+    every module it had to read, and it must fail loudly instead of deriving an
+    empty key set -- an empty set would make every downstream check pass.
+    """
+
+    PEP758_SOURCE = """
+class ShadowSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=None,
+        env_prefix="SPEECHNEXUS_SHADOW_",
+        extra="ignore",
+    )
+
+    bucket: str = Field(validation_alias="SPEECHNEXUS_SHADOW_BUCKET")
+    plain: str
+
+    def read(self) -> None:
+        try:
+            pass
+        except ValueError, TypeError:
+            pass
+"""
+
+    def test_the_interpreter_capability_probe_matches_the_fixture(self) -> None:
+        """A 3.14 interpreter parses the fixture, a 3.12 one cannot."""
+        self.assertEqual(parse_source(self.PEP758_SOURCE) is None, not can_parse_pep758())
+
+    def test_the_text_reader_extracts_prefix_alias_and_plain_field(self) -> None:
+        """Golden case: no interpreter is involved, so it pins the semantics."""
+        self.assertEqual(
+            prefix_from_text(self.PEP758_SOURCE, "ShadowSettings", "pydantic", "fixture"),
+            "SPEECHNEXUS_SHADOW_",
+        )
+        self.assertEqual(
+            keys_from_text(self.PEP758_SOURCE, "ShadowSettings", "pydantic", "fixture"),
+            {
+                "bucket": "SPEECHNEXUS_SHADOW_BUCKET",
+                "plain": "SPEECHNEXUS_SHADOW_PLAIN",
+            },
+        )
+        self.assertEqual(declarations_from_text(self.PEP758_SOURCE), frozenset({"ShadowSettings"}))
+
+    def test_the_text_reader_matches_the_ast_reader_on_parseable_settings_modules(self) -> None:
+        """Equivalence, checked against the AST itself wherever this Python has one."""
+        for surface in SURFACES:
+            source = read(surface.module)
+            tree = parse_source(source)
+            if tree is None:
+                continue
+            with self.subTest(surface=surface.id):
+                self.assertEqual(
+                    keys_from_text(source, surface.cls, surface.kind, surface.module),
+                    keys_from_ast(tree, surface, source),
+                )
+                try:
+                    expected = prefix_from_ast(tree, surface.cls, surface.kind, surface.module)
+                except AssertionError:
+                    # A surface whose every field carries a validation_alias declares
+                    # no prefix at all; both readers must reject it the same way.
+                    with self.assertRaises(AssertionError):
+                        prefix_from_text(source, surface.cls, surface.kind, surface.module)
+                else:
+                    self.assertEqual(
+                        prefix_from_text(source, surface.cls, surface.kind, surface.module),
+                        expected,
+                    )
+                self.assertEqual(
+                    declarations_from_text(source), declarations_from_ast(tree, source)
+                )
+
+    def test_a_module_the_interpreter_cannot_parse_is_read_and_recorded(self) -> None:
+        """The fallback ran, and nothing it read was dropped or left empty."""
+        discovered = discovered_settings_classes()
+        discovered_prefixes()
+        for surface in SURFACES:
+            self.assertTrue(derived_keys(surface), surface.id)
+
+        unparseable = {
+            path.relative_to(ROOT).as_posix(): path.read_text(encoding="utf-8")
+            for root in PACKAGE_ROOTS
+            for path in sorted((ROOT / root).rglob("*.py"))
+            if parse_source(path.read_text(encoding="utf-8")) is None
+        }
+        self.assertLessEqual(
+            TEXT_READS, set(unparseable), "a recorded text read must really be unparseable"
+        )
+        settings_bearing = {
+            label: source
+            for label, source in unparseable.items()
+            if any(marker in source for marker in registry._SETTINGS_MARKERS)
+        }
+        self.assertEqual(
+            DISCOVERY_TEXT_READS,
+            set(settings_bearing),
+            "discovery must record exactly the settings sources it could not parse",
+        )
+        for label, source in settings_bearing.items():
+            with self.subTest(module=label):
+                names = declarations_from_text(source)
+                self.assertTrue(names, "the text reader must find the settings declarations")
+                for name in names:
+                    self.assertIn((label, name), discovered, "text-read class was dropped")
+        if not can_parse_pep758():
+            self.assertTrue(
+                unparseable,
+                "the system interpreter cannot read PEP 758 sources, so the text reader "
+                "must have been exercised by the real scan",
+            )
+            self.assertTrue(TEXT_READS, "the real scan must have triggered the text reader")
+
+    def test_a_settings_source_without_a_readable_declaration_fails_loudly(self) -> None:
+        """Unparseable and empty must be an explicit red naming the interpreter."""
+        broken = (
+            "from pydantic_settings import BaseSettings\n"
+            "\n"
+            "def build() -> BaseSettings:\n"
+            "    def broken(:\n"
+        )
+        self.assertIsNone(parse_source(broken))
+
+        with self.assertRaises(AssertionError) as error:
+            declared_settings_classes(broken, "fixture.py")
+
+        message = str(error.exception)
+        self.assertIn("cannot be parsed by this interpreter", message)
+        self.assertIn("Python", message)
+        self.assertIn("fixture.py", message)
+
+    def test_a_surface_whose_text_reader_derives_no_key_fails_loudly(self) -> None:
+        """An empty key set would silently satisfy every downstream check."""
+        broken = (
+            "from pydantic_settings import BaseSettings\n"
+            "\n"
+            "class Settings(BaseSettings):\n"
+            "    def broken(:\n"
+        )
+        surface = next(item for item in SURFACES if item.id == "backend")
+
+        with (
+            mock.patch.object(registry, "read", return_value=broken),
+            self.assertRaises(AssertionError) as error,
+        ):
+            derived_keys(surface)
+
+        self.assertIn("empty key set", str(error.exception))
+        self.assertIn("cannot be parsed by this interpreter", str(error.exception))

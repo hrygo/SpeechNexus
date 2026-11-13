@@ -39,6 +39,8 @@ before anyone ships a refusal that breaks that deployment.
 from __future__ import annotations
 
 import ast
+import re
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -357,22 +359,195 @@ def _keyword(call: ast.AST, name: str) -> ast.AST | None:
     return None
 
 
-def _class_node(path: str, cls: str) -> ast.ClassDef:
-    for node in ast.walk(ast.parse(read(path))):
+#: Modules read as text because this interpreter cannot parse their source.
+#:
+#: ``pyproject.toml`` targets Python 3.14, so product sources use PEP 758
+#: exception lists (``except A, B:``), which the system interpreter CI runs this
+#: file with (3.12) rejects. Every read that falls back to text is recorded here:
+#: the tests assert the record holds exactly the modules the local parser
+#: rejects, that each recorded module still yields its declarations and keys, and
+#: that a settings-bearing module whose text has no extractable declaration fails
+#: loudly instead of being skipped.
+TEXT_READS: set[str] = set()
+
+#: Modules whose settings declarations came from the text reader during
+#: discovery, separately from :data:`TEXT_READS` (which records the key/prefix
+#: reads). Both are asserted against the modules this interpreter rejects, so a
+#: fallback that runs without being recorded, or a recorded fallback that yields
+#: nothing, is red.
+DISCOVERY_TEXT_READS: set[str] = set()
+
+_SETTINGS_MARKERS = ("BaseSettings", "_ENV_PREFIX")
+_CLASS_LINE = re.compile(r"^class\s+(\w+)\s*(?:\(([^)]*)\))?\s*:", re.MULTILINE)
+_FIELD_LINE = re.compile(r"^ {4}(\w+)\s*:", re.MULTILINE)
+_ALIAS_ARGUMENT = re.compile(r"""validation_alias\s*=\s*["']([A-Za-z0-9_]+)["']""")
+_ENV_PREFIX_ASSIGNMENT = re.compile(r"""^_ENV_PREFIX\s*=\s*["']([^"']+)["']""", re.MULTILINE)
+_ENV_PREFIX_CONCAT = re.compile(r"""_ENV_PREFIX\s*\+\s*["']([A-Za-z0-9_]+)["']""")
+_ENV_PREFIX_CONFIG = re.compile(r"""env_prefix\s*=\s*["']([^"']+)["']""")
+_FROM_ENV_METHOD = re.compile(r"^\s+def from_env\(", re.MULTILINE)
+
+_PEP758_PROBE = "try:\n    pass\nexcept ValueError, TypeError:\n    pass\n"
+
+
+def parse_source(source: str) -> ast.Module | None:
+    """Return the AST, or ``None`` when this interpreter cannot read the source."""
+    try:
+        return ast.parse(source)
+    except SyntaxError:
+        return None
+
+
+def can_parse_pep758() -> bool:
+    """Whether this interpreter accepts the PEP 758 exception list used by the sources."""
+    return parse_source(_PEP758_PROBE) is not None
+
+
+def _unreadable(path: str) -> AssertionError:
+    return AssertionError(
+        f"{path} cannot be parsed by this interpreter "
+        f"(Python {sys.version_info.major}.{sys.version_info.minor}) and no text "
+        "reader covers it; refusing to skip a settings source silently"
+    )
+
+
+def _class_blocks(source: str) -> list[tuple[str, str, str]]:
+    """Return ``(name, bases, block)`` for every top-level class, by indentation."""
+    lines = source.splitlines()
+    blocks: list[tuple[str, str, str]] = []
+    for index, line in enumerate(lines):
+        match = _CLASS_LINE.match(line)
+        if match is None:
+            continue
+        end = len(lines)
+        for following in range(index + 1, len(lines)):
+            candidate = lines[following]
+            if candidate and not candidate[0].isspace() and not candidate.startswith("#"):
+                end = following
+                break
+        blocks.append((match.group(1), match.group(2) or "", "\n".join(lines[index:end])))
+    return blocks
+
+
+def _class_block(source: str, cls: str, label: str) -> str:
+    for name, _, block in _class_blocks(source):
+        if name == cls:
+            return block
+    raise AssertionError(f"{cls} is not declared in {label}")
+
+
+def declarations_from_ast(tree: ast.Module, source: str) -> frozenset[str]:
+    """Return the settings class names of a parsed module."""
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for base in node.bases:
+            if isinstance(base, ast.Name) and base.id == "BaseSettings":
+                names.add(node.name)
+            if isinstance(base, ast.Attribute) and base.attr == "BaseSettings":
+                names.add(node.name)
+    if "_ENV_PREFIX = " in source:
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef) and any(
+                isinstance(item, ast.FunctionDef) and item.name == "from_env" for item in node.body
+            ):
+                names.add(node.name)
+    return frozenset(names)
+
+
+def declarations_from_text(source: str) -> frozenset[str]:
+    """Return the settings class names of a module this interpreter cannot parse."""
+    blocks = _class_blocks(source)
+    names = {name for name, bases, _ in blocks if "BaseSettings" in bases}
+    if "_ENV_PREFIX = " in source:
+        names.update(name for name, _, block in blocks if _FROM_ENV_METHOD.search(block))
+    return frozenset(names)
+
+
+def declared_settings_classes(source: str, label: str) -> frozenset[str]:
+    """Return the settings class names in ``source``, parsed or read as text."""
+    tree = parse_source(source)
+    if tree is not None:
+        return declarations_from_ast(tree, source)
+    names = declarations_from_text(source)
+    if not names:
+        raise AssertionError(
+            f"{_unreadable(label).args[0]} "
+            "and the text reader found no settings declaration; refusing to skip it silently"
+        )
+    return names
+
+
+def keys_from_text(source: str, cls: str, kind: str, label: str) -> dict[str, str]:
+    """Return ``{field: environment name}`` for a surface this interpreter cannot parse."""
+    block = _class_block(source, cls, label)
+    if kind == "from_env":
+        assignment = _ENV_PREFIX_ASSIGNMENT.search(source)
+        prefix = assignment.group(1) if assignment else ""
+        return {
+            suffix.lower(): f"{prefix}{suffix}" for suffix in _ENV_PREFIX_CONCAT.findall(source)
+        }
+    config = _ENV_PREFIX_CONFIG.search(block)
+    prefix = config.group(1) if config else ""
+    chunks: list[tuple[str, str]] = []
+    for line in block.splitlines():
+        match = _FIELD_LINE.match(line)
+        if match is not None:
+            chunks.append((match.group(1), line))
+        elif chunks:
+            chunks[-1] = (chunks[-1][0], f"{chunks[-1][1]}\n{line}")
+    keys: dict[str, str] = {}
+    for name, chunk in chunks:
+        if name == "model_config":
+            continue
+        alias = _ALIAS_ARGUMENT.search(chunk)
+        keys[name] = alias.group(1) if alias else f"{prefix}{name.upper()}"
+    return keys
+
+
+def prefix_from_text(source: str, cls: str, kind: str, label: str) -> str:
+    """Return the declared prefix of a surface this interpreter cannot parse."""
+    if kind == "from_env":
+        assignment = _ENV_PREFIX_ASSIGNMENT.search(source)
+        if assignment:
+            return assignment.group(1)
+        raise AssertionError(f"{cls} in {label} declares no _ENV_PREFIX")
+    config = _ENV_PREFIX_CONFIG.search(_class_block(source, cls, label))
+    if config:
+        return config.group(1)
+    raise AssertionError(f"{cls} in {label} declares no env_prefix")
+
+
+def _class_node(tree: ast.Module, label: str, cls: str) -> ast.ClassDef:
+    for node in ast.walk(tree):
         if isinstance(node, ast.ClassDef) and node.name == cls:
             return node
-    raise AssertionError(f"{cls} is not declared in {path}")
+    raise AssertionError(f"{cls} is not declared in {label}")
 
 
 def derived_keys(surface: Surface) -> dict[str, str]:
     """Return ``{field: environment name}`` derived from the surface's source."""
-    node = _class_node(surface.module, surface.cls)
+    source = read(surface.module)
+    tree = parse_source(source)
+    if tree is None:
+        TEXT_READS.add(surface.module)
+        keys = keys_from_text(source, surface.cls, surface.kind, surface.module)
+        if not keys:
+            raise AssertionError(
+                f"{surface.id}: {_unreadable(surface.module).args[0]} "
+                "and the text reader derived no key; refusing to check an empty key set"
+            )
+        return keys
+    return keys_from_ast(tree, surface, source)
+
+
+def keys_from_ast(tree: ast.Module, surface: Surface, source: str) -> dict[str, str]:
+    node = _class_node(tree, surface.module, surface.cls)
     if surface.kind == "from_env":
-        tree = ast.parse(read(surface.module))
         prefix = ""
         for statement in tree.body:
             if _name_of(statement) == "_ENV_PREFIX":
-                prefix = _constant(statement.value) or ""  # type: ignore[attr-defined]
+                prefix = _constant(_statement_value(statement)) or ""
         keys: dict[str, str] = {}
         for call in ast.walk(node):
             if not isinstance(call, ast.Call):
@@ -434,12 +609,22 @@ def declared_prefix(service: str) -> str:
     for the hand-written one, so a new prefix cannot appear silently.
     """
     surface = next(item for item in SURFACES if item.service == service)
-    if surface.kind == "from_env":
-        for statement in ast.parse(read(surface.module)).body:
+    source = read(surface.module)
+    tree = parse_source(source)
+    if tree is None:
+        TEXT_READS.add(surface.module)
+        return prefix_from_text(source, surface.cls, surface.kind, surface.module)
+    return prefix_from_ast(tree, surface.cls, surface.kind, surface.module)
+
+
+def prefix_from_ast(tree: ast.Module, cls: str, kind: str, label: str) -> str:
+    """Return the prefix a parsed surface declares."""
+    if kind == "from_env":
+        for statement in tree.body:
             if _name_of(statement) == "_ENV_PREFIX":
                 return _constant(_statement_value(statement)) or ""
-        raise AssertionError(f"{surface.id} declares no _ENV_PREFIX")
-    node = _class_node(surface.module, surface.cls)
+        raise AssertionError(f"{cls} in {label} declares no _ENV_PREFIX")
+    node = _class_node(tree, label, cls)
     for statement in node.body:
         config = _statement_value(statement)
         if _name_of(statement) == "model_config" and config is not None:
@@ -447,7 +632,7 @@ def declared_prefix(service: str) -> str:
                 value = _keyword(call, "env_prefix")
                 if value is not None:
                     return _constant(value) or ""
-    raise AssertionError(f"{surface.id} declares no env_prefix")
+    raise AssertionError(f"{cls} in {label} declares no env_prefix")
 
 
 def discovered_settings_classes() -> frozenset[tuple[str, str]]:
@@ -455,22 +640,17 @@ def discovered_settings_classes() -> frozenset[tuple[str, str]]:
     found: set[tuple[str, str]] = set()
     for root in PACKAGE_ROOTS:
         for path in sorted((ROOT / root).rglob("*.py")):
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.ClassDef):
-                    continue
-                for base in node.bases:
-                    if isinstance(base, ast.Name) and base.id == "BaseSettings":
-                        found.add((path.relative_to(ROOT).as_posix(), node.name))
-                    if isinstance(base, ast.Attribute) and base.attr == "BaseSettings":
-                        found.add((path.relative_to(ROOT).as_posix(), node.name))
-            if "_ENV_PREFIX = " in path.read_text(encoding="utf-8"):
-                for node in ast.walk(tree):
-                    if isinstance(node, ast.ClassDef) and any(
-                        isinstance(item, ast.FunctionDef) and item.name == "from_env"
-                        for item in node.body
-                    ):
-                        found.add((path.relative_to(ROOT).as_posix(), node.name))
+            source = path.read_text(encoding="utf-8")
+            if not any(marker in source for marker in _SETTINGS_MARKERS):
+                # Cannot declare a settings surface. Skipping the parse keeps this
+                # file runnable on the system interpreter, which cannot read the
+                # PEP 758 sources the product targets.
+                continue
+            label = path.relative_to(ROOT).as_posix()
+            if parse_source(source) is None:
+                DISCOVERY_TEXT_READS.add(label)
+            for name in declared_settings_classes(source, label):
+                found.add((label, name))
     return frozenset(found)
 
 
@@ -479,7 +659,20 @@ def discovered_prefixes() -> frozenset[str]:
     prefixes: set[str] = set()
     for root in PACKAGE_ROOTS:
         for path in sorted((ROOT / root).rglob("*.py")):
-            tree = ast.parse(path.read_text(encoding="utf-8"))
+            source = path.read_text(encoding="utf-8")
+            if "_ENV_PREFIX" not in source and "env_prefix" not in source:
+                continue
+            label = path.relative_to(ROOT).as_posix()
+            tree = parse_source(source)
+            if tree is None:
+                TEXT_READS.add(label)
+                assignment = _ENV_PREFIX_ASSIGNMENT.search(source)
+                if assignment:
+                    prefixes.add(assignment.group(1))
+                for _, _, block in _class_blocks(source):
+                    for declared in _ENV_PREFIX_CONFIG.findall(block):
+                        prefixes.add(declared)
+                continue
             for node in ast.walk(tree):
                 if isinstance(node, ast.ClassDef) and any(
                     isinstance(item, ast.FunctionDef) and item.name == "from_env"
@@ -519,7 +712,9 @@ class RegisteredPlane:
 
 def registered_planes(module: str, constant: str) -> tuple[RegisteredPlane, ...]:
     """Return the planes declared in ``constant`` of ``module``, read from the source."""
-    tree = ast.parse(read(module))
+    tree = parse_source(read(module))
+    if tree is None:
+        raise _unreadable(module)
     for statement in tree.body:
         if _name_of(statement) != constant:
             continue

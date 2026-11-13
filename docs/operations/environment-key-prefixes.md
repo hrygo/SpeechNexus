@@ -64,7 +64,7 @@ entrypoint; it has no effect here. Unset it or move it to that process.
 4. 部署面清单里的每个变量都必须是已声明设置项或已登记归属，新增环境变量未分类即红；反向也校验没有登记了却无人使用的空转条目；
 5. 三份扫描引擎（后端、网关、节点控制器）的共享定义按 AST 逐节点比对，任一份漂移即红。
 
-设置项键集合由 `settings.py` 的字段派生（`model_config(env_prefix)` 或 `validation_alias`），不是手抄。
+设置项键集合由 `settings.py` 的字段派生（`model_config(env_prefix)` 或 `validation_alias`），不是手抄。该模块在 CI 里由系统解释器（3.12）执行，而产品源码按 Python 3.14 编写（PEP 758 免括号 `except`），所以读不到的源码改走文本级抽取并把命中的模块记入 `DISCOVERY_TEXT_READS` / `TEXT_READS` 供用例断言；抽不出声明或键集合为空时直接红，不静默跳过。
 
 复核误伤面（需要 `docker compose`；`--profile '*'` 才会解析 opt-in 服务的环境）：
 

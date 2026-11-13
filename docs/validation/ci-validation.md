@@ -25,11 +25,11 @@ Skill 的说明、参考、合成评测数据及展示元数据不参与产品�
 
 三个受保护检查为 `Gate: required checks for this change`、`Web: lint, types, tests, build and accessibility`、`Compose: configuration validation`。它们分别替代原 `Python quality and tests`、`Web quality, tests, and build`、`Deployment configuration`；变更显示名称时必须同步 `main` 的 required status checks，并保持 GitHub Actions app 绑定及其他保护策略。迁移时先确认新名称在当前提交实际通过，再替换保护列表，不将缺失检查视为通过。
 
-验收入口作业 `reference_acceptance` 由 `Gate: required checks for this change` 按与 `deployment` 相同的范围映射要求：docs/web 范围期望 skipped，no-db/full 范围期望 success，失败、取消或该跑却跳过都使门禁失败。它不新增受保护状态名，三个受保护检查保持不变。它真实执行 `scripts/dev-env/reference-acceptance.py --dry-run`：工具与版本、从 `deploy/compose.yaml` 派生的 `${KEY:?}` 键与入口额外必需键、compose 渲染、三条互不相同的 Job DSN 身份、从迁移目录派生的 head、桶名和私有输入扫描都由脚本本身计算。
+验收入口作业 `reference_acceptance` 由 `Gate: required checks for this change` 按与 `deployment` 相同的范围映射要求：docs/web 范围期望 skipped，no-db/full 范围期望 success，失败、取消或该跑却跳过都使门禁失败。它不新增受保护状态名，三个受保护检查保持不变。它真实执行 `scripts/dev-env/reference-acceptance.py --dry-run`：工具与版本、从 `deploy/compose.yaml` 派生的 `${KEY:?}` 键与入口额外必需键、compose 渲染、三条互不相同的 Job DSN 身份、从迁移目录派生的 head、桶名和私有输入扫描都由脚本本身计算；合成私有输入按 `deploy/compose.yaml` 挂载的文件名与 lane 配置里的 `vad_model_file` 派生，新增 lane 或改模型文件名不需要改工作流。
 
-作业对入口还有两条不依赖执行的守护。其一是延后项声明：dry-run 允许报告的 `待输入` 必须逐条列在作业内的 `DECLARED_PENDING` 常量里，实际集合是声明集合的子集才通过；新增延后项必须以一行声明登记，未声明的延后项直接使作业失败，同时核对 `pending=N` 与日志行数一致，避免「PASS」的含义被静默放宽。其二是 `ctx.mutate` 判定的 AST 扫描：每个 `ctx.mutate(...)` 的结果必须被判定——读取 `.ok`、在比较中读 `.code`，或交给模块内读取该参数 `.ok` 的辅助函数；结果被丢弃或赋值后未判定即失败。该扫描只证明判定存在，不证明判定正确，也看不见「保留 `.ok` 读取但清空守卫体」的改动。
+作业另有三条不依赖写步骤的守卫，实现在 `scripts/dev-env/ci-entry-guard.py`。`log` 校验[机器可读输出契约](../operations/reference-acceptance.md#机器可读输出ci-契约)：步骤顺序、逐条结论、`pending=N` 与 `待输入` 行数、dry-run 不得声明 PASS；延后项按稳定词登记（`DECLARED_DEFERRALS`，匹配「必须同时出现的词」而非整句），新增延后项必须一行登记，未登记即红。`sites` 审计判定站点：每个 `ctx.mutate(...)` 结果必须在条件位置被判定，注解赋值、先绑局部、位置/关键字实参交给按形参名读取 `.ok` 的助手、以及移动到其它模块的判定助手都算；无法静态判定的形态在 `REGISTERED_UNAUDITED` 登记一行并写明理由。`probe` 用必然失败的输入调用入口的纯判定函数，把「判定函数被掏空」变成红。
 
-**覆盖边界**：迁移、角色、桶、栈、闸门与健康检查在 dry-run 下只被计划、不被执行。因此本作业证明的是入口的前置检查、派生值、步骤顺序、延后项集合与判定存在性，**不是一次参考部署**。`stack` 是否按 `compose up` 的退出码判失败这类只存在于 apply 路径的语义，本作业只能靠 AST 扫描确认「有判定」；判定是否真的把非零退出码读成失败，仍由 `tests/ci` 的假 Runner 用例和真实 apply 运行负责。任何把「入口有 CI 作业」当作「入口已被完整守住」的推论都不成立。
+**覆盖边界**：迁移、角色、桶、栈、闸门与健康检查在 dry-run 下只被计划、不被执行。因此本作业证明的是入口的前置检查、派生值、步骤顺序、延后项契约、判定站点与纯判定函数，**不是一次参考部署**。三条守卫都只看结构：判定条件被反转却仍读 `.ok`／`.code` 看不见；`ctx.read` 经 `psql_argv` 间接写库看不见；把 `ctx.mutate` 包进自定义函数再丢弃返回看不见；任何需要真实数据库、Docker 或模型的结论都不在覆盖内。这些仍由 `tests/ci` 的假 Runner 用例与真实 apply 运行负责，所以「入口有 CI 作业」不等于「入口已被完整守住」。
 
 作业级条件让不适用项明确显示 skipped；最终 CI 门禁用 `always()` 执行，核对路由成功和各项实际结果。非法/缺失路由、失败、取消或本应执行却跳过均失败。不适用不表示业务验证已通过。
 
@@ -54,7 +54,7 @@ Node Controller 镜像验证由 CI 以同提交的 [reusable workflow](../../.gi
 | `python` | `Gate: required checks for this change` | 按已验证范围核对全部适用结果，阻止失败、取消与意外跳过 |
 | `web` | `Web: lint, types, tests, build and accessibility` | 格式、lint、TypeScript、SDK 契约、workspace 测试和构建、真实浏览器无障碍与对比度 |
 | `deployment` | `Compose: configuration validation` | 执行 `docker compose config --quiet`，不启动服务或发布部署 |
-| `reference_acceptance` | `Deploy: reference acceptance entry (dry-run execution)` | 真实执行 `scripts/dev-env/reference-acceptance.py --dry-run`：工具版本、派生环境键、compose 渲染、三条 Job DSN 身份、迁移 head、桶名与私有输入扫描；延后项必须在作业内显式登记；对入口做 `ctx.mutate` 判定的 AST 扫描；另做一条损坏环境的负对照，不启动服务或执行写步骤 |
+| `reference_acceptance` | `Deploy: reference acceptance entry (dry-run execution)` | 真实执行 `scripts/dev-env/reference-acceptance.py --dry-run`：工具版本、派生环境键、compose 渲染、三条 Job DSN 身份、迁移 head、桶名与派生出的私有输入；`ci-entry-guard.py` 的 `log`/`sites`/`probe` 三条守卫（输出契约与延后项登记、`ctx.mutate` 判定与 `ctx.read` 只读边界、纯判定函数探针）；另做一条损坏环境的负对照，不启动服务或执行写步骤 |
 
 完整范围要求覆盖率、契约生成漂移及六个真实双数据库分片；契约兼容和结构变更的基线比较仅在 PR 执行，`main` push 与手动全量运行不会执行这些 PR 专属步骤。比较步骤获取当时的目标分支头作为基线，与路由使用的事件准确 base SHA 是不同依据。集成汇总继续核对同一提交、完整收集、互斥并集和实际执行结果，不以数量或仅收集代替证据。唯一允许的跳过是 `tests/integration/test_gateway_submit_ledger.py` 中以 `[mysql]` 结尾的既有 PostgreSQL 专属产品适配器参数；这不构成 MySQL 协调路径通过的证据，其他必需用例跳过会使汇总失败。
 

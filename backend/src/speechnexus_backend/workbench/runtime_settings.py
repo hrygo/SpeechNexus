@@ -7,6 +7,10 @@ from urllib.parse import urlsplit
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from speechnexus_backend.environment import (
+    WORKBENCH_PLANES,
+    refuse_unrecognised_prefixed_environment,
+)
 from speechnexus_backend.workbench.application.llm import LlmProfile
 from speechnexus_backend.workbench.infrastructure.openai_text_llm import (
     TextLlmSettings,
@@ -220,6 +224,15 @@ class WorkbenchSettings(BaseSettings):
             qualification_reference=qualification,
             deadline_seconds=self.llm_deadline_seconds,
         )
+
+    @model_validator(mode="after")
+    def prefixed_environment_names_a_setting(self) -> WorkbenchSettings:
+        # `SPEECHNEXUS_WORKBENCH_*` is its own namespace; a misspelling inside it
+        # was accepted in silence and left the capability off.
+        refuse_unrecognised_prefixed_environment(
+            WorkbenchSettings, "the workbench service", planes=WORKBENCH_PLANES
+        )
+        return self
 
     @model_validator(mode="after")
     def complete_text_llm_configuration(self) -> WorkbenchSettings:

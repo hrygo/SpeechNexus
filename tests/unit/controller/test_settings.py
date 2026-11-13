@@ -69,18 +69,31 @@ def test_production_rejects_missing_identity(required_settings: dict[str, Any]) 
         Settings(environment="production", **required_settings)
 
 
-@pytest.mark.parametrize("source", ["missing", "default", "misspelled"])
-def test_production_rejects_missing_default_or_misspelled_environment_identity(
+@pytest.mark.parametrize("source", ["missing", "default"])
+def test_production_rejects_missing_or_default_environment_identity(
     required_settings: dict[str, Any], monkeypatch: pytest.MonkeyPatch, source: str
 ) -> None:
     monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_ENVIRONMENT", "production")
     if source == "default":
         monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_NODE_ID", "node-local-1")
-    elif source == "misspelled":
-        monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_NODEID", "node-cube-01")
 
     with pytest.raises(ValidationError, match="explicit non-default node_id"):
         Settings(**required_settings)
+
+
+def test_a_misspelled_identity_key_is_refused_by_name(
+    required_settings: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``SPEECHNEXUS_CONTROLLER_NODEID`` used to be dropped without a word (#674)."""
+    monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_ENVIRONMENT", "production")
+    monkeypatch.setenv("SPEECHNEXUS_CONTROLLER_NODEID", "node-cube-01")
+
+    with pytest.raises(ValidationError) as error:
+        Settings(**required_settings)
+
+    message = str(error.value)
+    assert "SPEECHNEXUS_CONTROLLER_NODEID" in message
+    assert "SPEECHNEXUS_CONTROLLER_NODE_ID" in message
 
 
 def test_production_rejects_explicit_development_default(

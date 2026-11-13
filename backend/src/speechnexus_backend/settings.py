@@ -9,6 +9,11 @@ from urllib.parse import urlsplit
 from pydantic import AnyHttpUrl, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from speechnexus_backend.environment import (
+    PLANES,
+    refuse_unrecognised_prefixed_environment,
+)
+
 ProcessRole = Literal[
     "api",
     "realtime-gateway",
@@ -256,6 +261,19 @@ class Settings(BaseSettings):
     @classmethod
     def empty_asset_inspector_is_text(cls, value: Any) -> Any:
         return "text" if isinstance(value, str) and not value.strip() else value
+
+    @model_validator(mode="after")
+    def prefixed_environment_names_a_setting(self) -> Self:
+        # A `SPEECHNEXUS_*` name that matches no field is inert: the operator
+        # believes the capability is configured and the start says nothing.
+        # Refuse it here, before any other assembled-state complaint, so the
+        # typo is named instead of being reported as a missing capability.
+        refuse_unrecognised_prefixed_environment(
+            Settings,
+            f"the speech backend process (SPEECHNEXUS_PROCESS_ROLE={self.process_role})",
+            planes=PLANES,
+        )
+        return self
 
     @model_validator(mode="after")
     def asset_credentials_are_paired(self) -> Self:

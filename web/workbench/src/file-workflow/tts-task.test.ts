@@ -468,3 +468,108 @@ describe("workbench TTS submit shape (#685)", () => {
     first.dispose();
   });
 });
+
+describe("workbench TTS text readback (#688 review M1)", () => {
+  type AssetFault = "404" | "410" | "503" | "invalid-utf8" | "oversize";
+
+  /** The readback is the only new network surface; every failure must keep the intent as-is. */
+  function guarded(test: ReturnType<typeof setup>) {
+    let fault: AssetFault | null = null;
+    const creates: string[] = [];
+    const client = new SpeechFileClient("http://127.0.0.1", async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (path === "/v1/nexus/assets/asset-text/content" && fault !== null) {
+        if (fault === "404") return failure("asset_not_found", 404);
+        if (fault === "410") return failure("asset_expired", 410);
+        if (fault === "503") return failure("service_unavailable", 503);
+        return new Response(
+          fault === "invalid-utf8"
+            ? // "fo" + 0x80 (continuation byte, never valid) + "o"
+              new Uint8Array([0x66, 0x6f, 0x80, 0x6f])
+            : new Uint8Array(4 * 1024 * 1024 + 1),
+          { headers: { "content-type": "application/octet-stream" } },
+        );
+      }
+      if (path === "/v1/nexus/jobs" && request.method === "POST")
+        creates.push(await request.clone().text());
+      return test.transport.fetch(request);
+    });
+    return {
+      client,
+      fail: (next: AssetFault | null) => {
+        fault = next;
+      },
+      creates,
+    };
+  }
+
+  /** Submit once, lose the create response, then restore the pending intent in a new session. */
+  async function staged() {
+    const test = setup("create-unknown");
+    const guard = guarded(test);
+    const first = new FileTaskSession(guard.client, new SessionTaskJournal(test.storage, "tts"));
+    await first.startText(sentinel, selection());
+    expect(first.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    expect(guard.creates).toHaveLength(1);
+    first.dispose();
+    const saved = test.data.get("tts")!;
+    const second = new FileTaskSession(guard.client, new SessionTaskJournal(test.storage, "tts"));
+    await second.restore();
+    return { test, guard, saved, second, originalBody: guard.creates[0]! };
+  }
+
+  it.each(["404", "410", "503", "invalid-utf8", "oversize"] as const)(
+    "keeps the pending intent and sends nothing when readback fails with %s",
+    async (fault) => {
+      const { test, guard, saved, second } = await staged();
+      guard.fail(fault);
+      await second.replay();
+      expect(guard.creates).toHaveLength(1);
+      expect(test.data.get("tts")).toBe(saved);
+      expect(second.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+      expect(second.getSnapshot().job).toBeUndefined();
+      expect(second.getSnapshot().notice).toContain("原文本素材暂不可读取");
+      second.dispose();
+    },
+  );
+
+  it("replays the identical original body once the asset is readable again", async () => {
+    const { test, guard, saved, second, originalBody } = await staged();
+    guard.fail("503");
+    await second.replay();
+    expect(guard.creates).toHaveLength(1);
+    expect(test.data.get("tts")).toBe(saved);
+    guard.fail(null);
+    await second.replay();
+    expect(guard.creates).toHaveLength(2);
+    expect(guard.creates[1]).toBe(originalBody);
+    expect(new Set(test.transport.stats.createKeys).size).toBe(1);
+    expect(test.transport.stats.bodies[1]).toBe(test.transport.stats.bodies[0]);
+    expect(test.transport.stats.executions).toBe(1);
+    expect(second.getSnapshot().job?.id).toBe("job-demo");
+    expect(test.read().pending).toBeNull();
+    second.dispose();
+  });
+
+  it.each(["invalid-utf8", "oversize"] as const)(
+    "never fabricates a body from %s content",
+    async (fault) => {
+      const { test, guard, saved, second, originalBody } = await staged();
+      guard.fail(fault);
+      await second.replay();
+      expect(guard.creates).toHaveLength(1);
+      expect(test.data.get("tts")).toBe(saved);
+      expect(second.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+      guard.fail(null);
+      await second.replay();
+      expect(guard.creates).toHaveLength(2);
+      // Not a placeholder, empty string or truncated prefix: the exact original body.
+      expect(guard.creates[1]).toBe(originalBody);
+      const body = parse("JobCreateRequest", JSON.parse(guard.creates[1]!));
+      expect("text" in body.input ? body.input.text : undefined).toBe(sentinel);
+      expect(originalBody).not.toContain("\\u0000");
+      second.dispose();
+    },
+  );
+});

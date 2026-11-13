@@ -94,6 +94,7 @@ function fixture() {
     result: { kind: "tts", audio_artifact_id: artifact.id, receipt_id: "receipt-demo" },
   });
   const upload = vi.spyOn(client, "uploadText").mockResolvedValue(asset);
+  // Success path only; assetText() failures live in the session suite (tts-task.test.ts).
   const assetText = vi.spyOn(client, "assetText").mockResolvedValue(text);
   const create = vi.spyOn(client, "create").mockResolvedValue(job);
   const getJob = vi.spyOn(client, "getJob").mockResolvedValue(job);

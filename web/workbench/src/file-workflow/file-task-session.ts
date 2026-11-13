@@ -81,7 +81,6 @@ export class FileTaskSession {
     Readonly<Pick<FileContracts["Asset"], (typeof assetIdentityFields)[number]>> | undefined;
   #tts: Readonly<TtsSelection> | undefined;
   #model: string | undefined;
-  #command: FileContracts["JobCreateRequest"] | undefined;
   #replay: (() => Promise<void>) | undefined;
 
   constructor(client: SpeechFileClient, journal?: FileTaskJournal) {
@@ -507,11 +506,12 @@ export class FileTaskSession {
           ? { ...identity, ...this.#tts, version: 2 }
           : { ...identity, version: 1 };
     }
-    // A replay reuses the original keys and exact body independent of refreshed asset views.
-    this.#command = await this.#submitCommand(this.#record);
+    // A replay reuses the original keys and the body built from the durable record; the body
+    // itself is never parked on the instance, so the text does not outlive its submission.
+    const command: FileContracts["JobCreateRequest"] = await this.#submitCommand(this.#record);
     this.#text = undefined;
     this.#persist({ pending: "create" });
-    const job = await this.#client.create(this.#command, this.#createKey, signal);
+    const job = await this.#client.create(command, this.#createKey, signal);
     this.#acceptJob(job, { jobId: job.id, pending: null, operationId: null });
     this.#update({ job, notice: "任务已接收。读取当前状态或连接任务事件。" });
   }

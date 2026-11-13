@@ -1,6 +1,7 @@
 """Explicit configuration for the independent C-owned workbench service."""
 
 import ipaddress
+from typing import Any, get_args
 from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
@@ -85,6 +86,28 @@ class WorkbenchSettings(BaseSettings):
     export_max_archive_entries: int = Field(default=1024, ge=1, le=100_000)
     export_max_audio_seconds: float = Field(default=36000, gt=0, le=604800)
     export_validation_timeout_seconds: float = Field(default=30, gt=0, le=300)
+
+    @model_validator(mode="before")
+    @classmethod
+    def blank_optional_values_are_unconfigured(cls, values: Any) -> Any:
+        """Treat a blank env value as "not configured".
+
+        ``KEY=`` is the ordinary spelling of an unset optional key in env templates
+        and platform env lists, and the backend ``Settings`` already normalizes a
+        blank DSN to ``None``. Without the same normalization here pydantic hands
+        ``''``/``SecretStr('')`` to the pair validators, which then refuse a
+        configuration the operator never made (#660 review FP-1).
+        """
+        if not isinstance(values, dict):
+            return values
+        normalized = dict(values)
+        for name, field in cls.model_fields.items():
+            if type(None) not in get_args(field.annotation):
+                continue
+            value = normalized.get(name)
+            if isinstance(value, str) and not value.strip():
+                normalized[name] = None
+        return normalized
 
     @staticmethod
     def _explicit_host(value: str) -> bool:

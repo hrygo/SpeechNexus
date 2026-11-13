@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, get_args
 
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -62,6 +62,28 @@ class Settings(BaseSettings):
     file_voice_clone_object_secret_key: SecretStr | None = Field(
         default=None, min_length=1, repr=False
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def blank_optional_values_are_unconfigured(cls, values: Any) -> Any:
+        """Treat a blank env value as "not configured".
+
+        A hand-written env file or platform env list spells an unset optional key
+        as ``KEY=``. Before this, pydantic turned that into ``''``/``SecretStr('')``
+        and the pair validators reported a configuration the operator never made
+        (#660 review FP-2). Required fields are left alone so a blank DSN still
+        fails as an empty value.
+        """
+        if not isinstance(values, dict):
+            return values
+        normalized = dict(values)
+        for name, field in cls.model_fields.items():
+            if type(None) not in get_args(field.annotation):
+                continue
+            value = normalized.get(name)
+            if isinstance(value, str) and not value.strip():
+                normalized[name] = None
+        return normalized
 
     @model_validator(mode="after")
     def validate_control_configuration(self) -> Settings:

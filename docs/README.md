@@ -13,6 +13,7 @@
 | [Agent 验证指南](agent-verification.md) | 按改动选择检查、锁定依赖、隔离服务前置与证据范围 |
 | [组件与实现说明](components/README.md) | 组件职责、接口、事务及实现接线 |
 | [运维与部署文档](operations/README.md) | 安装配置、运行恢复与发布操作 |
+| [配置前提扫描](operations/configuration-prerequisites.md) | 哪些键配置了却不生效、当前是点名拒绝还是文档声明；含元守护的覆盖与盲区 |
 | [验证规则](validation/README.md) | CI 调度与契约变更结构检查的范围和限制 |
 | [上线前检查脚本](operations/release-preflight.md) | C0–C11 局部检查和 C12 独立验收要求；默认不写产品数据库，但会加载 shell 配置，可能访问网络及写缓存；另有历史候选假设 |
 | [产品与架构设计](speechnexus-product-architecture.md)                                               | 产品范围、AdminUI / 工作台、领域与模块、场景预设、共享访问、部署与验收          |

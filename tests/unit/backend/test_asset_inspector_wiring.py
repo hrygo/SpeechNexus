@@ -18,6 +18,7 @@ from pydantic import AnyHttpUrl, SecretStr, ValidationError
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.asset_runtime import (
+    _AUDIO_ONLY_LIMITS,
     AssetRuntime,
     build_asset_inspector,
 )
@@ -39,6 +40,18 @@ from speechnexus_backend.speech.infrastructure.audio_inspection_http import (
     HttpAudioAssetInspector,
 )
 from tests.unit.backend.test_health import _settings
+
+# The API-side defaults live in ``settings.py`` and are bound to this tuple by the
+# ``tests/ci`` meta-guard, so this file never carries a third copy of them.
+AUDIO_LIMIT_DEFAULTS = {field: default for field, _, default in _AUDIO_ONLY_LIMITS}
+AUDIO_LIMIT_VARIABLES = {field: variable for field, variable, _ in _AUDIO_ONLY_LIMITS}
+AUDIO_LIMIT_OVERRIDES = {
+    "audio_inspection_max_duration_ms": 99,
+    "audio_inspection_max_reference_duration_ms": 30_000,
+    "audio_inspection_max_input_bytes": 1024,
+    "audio_inspection_wall_seconds": 1.5,
+    "audio_inspection_max_receipt_bytes": 256,
+}
 
 BODY = b"RIFF-not-decoded-here"
 POLICY = AssetPolicy(60)
@@ -193,55 +206,21 @@ def test_text_mode_names_every_configured_inspection_setting() -> None:
 
 def test_text_mode_accepts_the_compose_forwarded_limit_defaults() -> None:
     """Compose forwards these values; equality with the default states no intent."""
-    settings = _runtime_settings(
-        audio_inspection_max_duration_ms=120_000,
-        audio_inspection_max_input_bytes=25 * 1024 * 1024,
-        audio_inspection_max_receipt_bytes=4096,
-    )
+    settings = _runtime_settings(**AUDIO_LIMIT_DEFAULTS)
     assert type(build_asset_inspector(settings)) is TextAssetInspector
 
 
 @pytest.mark.parametrize(
-    ("field", "value", "variable"),
-    [
-        (
-            "audio_inspection_max_duration_ms",
-            99,
-            "SPEECHNEXUS_AUDIO_INSPECTION_MAX_DURATION_MS",
-        ),
-        (
-            "audio_inspection_max_reference_duration_ms",
-            30_000,
-            "SPEECHNEXUS_AUDIO_INSPECTION_MAX_REFERENCE_DURATION_MS",
-        ),
-        (
-            "audio_inspection_max_input_bytes",
-            1024,
-            "SPEECHNEXUS_AUDIO_INSPECTION_MAX_INPUT_BYTES",
-        ),
-        ("audio_inspection_wall_seconds", 1.5, "SPEECHNEXUS_AUDIO_INSPECTION_WALL_SECONDS"),
-        (
-            "audio_inspection_max_receipt_bytes",
-            256,
-            "SPEECHNEXUS_AUDIO_INSPECTION_MAX_RECEIPT_BYTES",
-        ),
-    ],
-    ids=[
-        "duration",
-        "reference-duration",
-        "input-bytes",
-        "wall-seconds",
-        "receipt-bytes",
-    ],
+    ("field", "value"),
+    sorted(AUDIO_LIMIT_OVERRIDES.items()),
+    ids=sorted(AUDIO_LIMIT_OVERRIDES),
 )
-def test_text_mode_rejects_a_narrowed_audio_only_limit(
-    field: str, value: float, variable: str
-) -> None:
+def test_text_mode_rejects_a_narrowed_audio_only_limit(field: str, value: float) -> None:
     """A narrowed audio budget with the text inspector would enforce nothing (#660)."""
     with pytest.raises(ValueError) as caught:
         build_asset_inspector(_runtime_settings(**{field: value}))
     message = str(caught.value)
-    assert variable in message
+    assert AUDIO_LIMIT_VARIABLES[field] in message
     assert "SPEECHNEXUS_ASSET_INSPECTOR=audio" in message
 
 

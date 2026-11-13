@@ -4,11 +4,13 @@
 
 ## 复现方式
 
-第一次提交故意让下面这段 Python 代码块不符合 `ruff format`，第二次提交复原。两次都只改 `docs/`，因此路由为 `docs`，`python_contracts` 与其它依赖项目依赖的作业都是 skipped：
+第一次提交故意让下面这段 Python 代码块不符合 `ruff format`（CI run 43435830566：`Docs: markdown code block formatting` fail 7 s，`--> docs/reviews/2026-11-13-docs-format-gate-evidence.md:10:11`），第二次提交复原后同一作业转绿。
+
+两次都只改 `docs/`，因此路由为 `docs`，`python_contracts` 与其它依赖项目依赖的作业都是 skipped：
 
 ```python
-def prove( flag ):
-    payload  =  {"flag":flag,"path":  "/tmp/x"}
+def prove(flag):
+    payload = {"flag": flag, "path": "/tmp/x"}
     return payload
 ```
 

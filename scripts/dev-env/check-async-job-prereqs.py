@@ -178,6 +178,7 @@ WRITER_REQUIRED_SELECT: tuple[str, ...] = (
     "speech_artifacts",
     "speech_voice_drafts",
     "speech_voice_draft_revisions",
+    "speech_voice_draft_publications",
     "speech_voice_metadata_commands",
 )
 

@@ -89,6 +89,9 @@ REQUIRED_SELECT = (
     "speech_artifacts",
     "speech_voice_drafts",
     "speech_voice_draft_revisions",
+    # The owner-privileged projection of a published draft's facts; the evidence
+    # ledger and the immutable revision document behind it stay unreadable here.
+    "speech_voice_draft_publications",
     "speech_voice_metadata_commands",
 )
 REQUIRED_INSERT = (

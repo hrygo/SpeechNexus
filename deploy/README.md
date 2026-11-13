@@ -331,6 +331,14 @@ SELECT 且拒绝任何写权限，未配置时列表返回 `503 model_binding_se
 或 grant。未配置时 `/v1/nexus/jobs` 返回既有错误包封的 `503 job_unavailable`，不会
 伪造 pending Job。
 
+应用 `0053_voice_draft_publication` 后，Job writer 还必须只读
+`speech_voice_draft_publications`：这是发布后草稿读投影的事实来源（`draft_id`、草稿
+revision、`voice_id`、voice revision、`validation_job_id`）。视图由迁移 owner 持有并以
+`security_invoker = false` 执行，因此该身份只读视图，仍不持有
+`speech_voice_capability_evidence` 或 `speech_voice_revisions` 的任何权限；
+`voice_draft_grants` 已包含这条授权。缺少它时已发布的草稿无法投影出契约要求的字段，
+启动按声明读面直接失败，不会带着半个读模型上线。
+
 工作区写操作默认关闭。执行 `0049_workspace_commands` 后，由 owner 运行
 `workspace_writer_grants(schema, role)` 并为非 owner 角色设置
 `SPEECHNEXUS_WORKSPACE_WRITER_DATABASE_URL`；不得复用 Compose bootstrap owner 或资产

@@ -1,5 +1,6 @@
 """Real migrated PG publication: evidence, immutability, replay and release."""
 
+import asyncio
 import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
@@ -8,8 +9,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 from psycopg import errors
 from psycopg.conninfo import make_conninfo
+from speechnexus_contracts.voice_drafts_http import validate_response
 from tests.integration.test_public_jobs_http import JobSandbox
 from tests.integration.test_voice_drafts_pg import (
     _body,
@@ -21,7 +24,9 @@ from tests.integration.test_voice_drafts_pg import (
 from tests.integration.test_voice_drafts_pg import (
     voice_db as voice_db,
 )
+from tests.unit.backend.test_health import _settings
 
+from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.application.voice_capability_evidence import (
     VoiceEvidenceConflictError,
     VoiceEvidenceNotEligibleError,
@@ -294,6 +299,79 @@ def test_publish_writes_one_immutable_revision_and_reads_back(
     assert keyless_created is False and keyless == body
     assert voice_db.count("speech_voice_revisions") == 1
     assert voice_db.count("speech_voice_publication_intents") == 1
+
+
+def test_published_draft_is_readable_with_its_publication_facts(
+    voice_db: JobSandbox,
+) -> None:
+    """A published draft must be representable by ``getVoiceDraft`` (#519).
+
+    Before the projection existed the revision omitted the published voice and the
+    validation Job, so the declared 200 was answered with 500. This asserts the
+    read path itself: the projection row appears only after the publication, and
+    both the head read and the revision-pinned read answer a contract-valid 200.
+    """
+    draft, job, raw = _validating_draft(voice_db)
+    PostgresVoiceEvidenceRecorder(voice_db.pool).record(job.job_id, raw, "pytest/recorder")
+    # A measured but unpublished draft has no projection row: the LEFT JOIN above
+    # cannot be satisfied by an unrelated publication.
+    assert voice_db.count("speech_voice_draft_publications") == 0
+    app = create_app(settings=_settings(), jobs=voice_db.jobs, voice_drafts=_provider(voice_db))
+
+    async def read(path: str) -> Any:
+        async with AsyncClient(transport=ASGITransport(app), base_url="http://localhost") as http:
+            return await http.get(path)
+
+    read_path = "/v1/nexus/voice-drafts/" + draft["id"]
+    before = asyncio.run(read(read_path))
+    assert before.status_code == 200, before.text
+    validate_response("getVoiceDraft", 200, {"body": before.json()})
+    assert before.json()["revision"]["status"] == "candidate"
+    assert "published_voice_id" not in before.json()["revision"]
+
+    body, created = _publications(voice_db).publish(
+        draft["id"],
+        _payload(draft, job.job_id),
+        request_id="request-publish-read",
+        idempotency_key=None,
+    )
+    assert created
+    assert voice_db.count("speech_voice_draft_publications") == 1
+    assert voice_db.query(
+        "SELECT draft_id, revision, voice_id, voice_revision, validation_job_id "
+        "FROM speech_voice_draft_publications"
+    ) == [
+        {
+            "draft_id": draft["id"],
+            "revision": draft["head_revision"],
+            "voice_id": body["voice_id"],
+            "voice_revision": body["voice_revision"],
+            "validation_job_id": job.job_id,
+        }
+    ]
+    # The projection runs as its owner: the draft reader needs no privilege on the
+    # evidence table or the immutable revision document behind it.
+    options = voice_db.query(
+        "SELECT reloptions FROM pg_class WHERE relname = 'speech_voice_draft_publications'"
+    )[0]["reloptions"]
+    assert set(options or ()) == {"security_barrier=true", "security_invoker=false"}
+
+    head = asyncio.run(read(read_path))
+    assert head.status_code == 200, head.text
+    view = head.json()
+    validate_response("getVoiceDraft", 200, {"body": view})
+    assert view["draft"]["status"] == "published"
+    revision = view["revision"]
+    assert revision["status"] == "published"
+    assert revision["validation_job_id"] == job.job_id
+    assert revision["published_voice_id"] == body["voice_id"]
+    assert revision["published_voice_revision"] == body["voice_revision"]
+    assert revision["preview_artifact_ids"]
+
+    pinned = asyncio.run(read(read_path + "?draft_revision=" + draft["head_revision"]))
+    assert pinned.status_code == 200, pinned.text
+    validate_response("getVoiceDraft", 200, {"body": pinned.json()})
+    assert pinned.json() == view
 
 
 def test_builtin_and_custom_publications_paginate_together(voice_db: JobSandbox) -> None:

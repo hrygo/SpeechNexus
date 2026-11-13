@@ -314,6 +314,32 @@ workspace 内找不到 ready 的 `validation_report`、receipt 与结果不一�
 `speech_asset_references.released_at_us` 置为退休时刻，使内容删除不再被已退休 revision
 永久钉住。
 
+### 发布后的草稿读投影
+
+发布把草稿置为 `published`，读侧必须能把这个状态投影成已声明的 200：`getVoiceDraft`
+的 revision 在 `published` 时携带 `validation_job_id`、`published_voice_id` 与
+`published_voice_revision`，并按生成 Job 的结果回填非空 `preview_artifact_ids`。三个
+发布事实来自 `speech_voice_draft_publications` 视图（`draft_id`、草稿 revision、
+`voice_id`、voice revision、`validation_job_id`），由
+`0053_voice_draft_publication` 创建。视图以 `security_invoker = false` 由迁移
+owner 执行，与 `speech_published_voice_revisions` 同一机制，因此 Job writer 只读视图，
+仍不能读取 `speech_voice_capability_evidence` 或 `speech_voice_revisions`；发布事实只在
+此投影一次，不在草稿行上另存第二份真相。视图对未发布的草稿没有行，读投影按 `draft_id`
+与 revision 左连接它；`published` 状态下事实缺失、生成 Job 未成功或结果无法解析时按
+存储不可用返回 503，不拼出违反自身契约的 500。
+
+发布文档的 `capabilities` 只投影证据行：`build_voice_revision_document` 直接引用证据
+对象的 `capabilities`，不重新组装字典。当前 validation lane 只测一组固定 probe
+（`en`、`[24000]`、`wav`、`complete`），实测证据的能力集因此相同；投影仍必须逐字段来自
+证据行，`tests/unit/backend/test_voice_capability_evidence.py` 用一组同样合法但不同的事实
+（`zh`、`[48000]`、`mp3`、`chunked`）证明这一点，硬编码当默认集会失败。
+
+发布事务不复做「生成 Job 已成功、preview receipt 已就绪」的检查。这条推理链是：草稿只有
+在生成 Job 成功产出预览后才进入可校验状态；证据要求报告 `publication_eligible`、
+`reusable_tts` 检查通过，并要求被发布的素材在 `speech_asset_objects` 中有 ready 的
+bytes/sha256 证明。素材就绪且校验报告通过即等价于「存在可交付的参考音频」；发布不重新
+生成、不读取对象字节，因此不复做生成侧检查。
+
 ## 迁移与生产装配
 
 `0048_voice_evidence_scan_index` 在 `0047` 之后增加部分索引
@@ -326,7 +352,9 @@ CHECK 扩展到 `voice_validation`。`0044_voice_preview_jobs` 只把同一 CHEC
 `voice_preview`，不改表、索引或授权。`0047_voice_publication_evidence` 接在
 `0046_public_job_intents` 之后，增加证据表、不可变修订表、发布回执表与指向两者的
 `UNIQUE (draft_id, draft_revision)` 索引，并把 `speech_published_voice_revisions` 换成
-`COALESCE` 视图；`alembic heads` 仍只有一个 head。0047 downgrade 在排他锁内检查证据与
+`COALESCE` 视图。`0053_voice_draft_publication` 接在 `0052_quarantine_releases`
+之后增加发布事实投影视图；它是纯投影，downgrade 只删除视图，事实仍留在修订表与证据表。
+`alembic heads` 仍只有一个 head。0047 downgrade 在排他锁内检查证据与
 自定义发布，非空时抛出 `RuntimeError` 要求保留，空库才恢复旧视图并删表；重复 upgrade
 是幂等的。
 

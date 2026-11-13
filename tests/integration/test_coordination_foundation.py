@@ -417,12 +417,14 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
     # table with its own grants, outside the shared coordination surface.
     intent_tables = {"speech_job_intents"} if db.dialect == "postgresql" else set()
     # The voice capability ledger, immutable revisions and publication receipts
-    # (0047). Private voice publication tables, outside coordination.
+    # (0047), plus the owner-privileged projection the draft reader selects
+    # (0053). Private voice publication relations, outside coordination.
     voice_publication_tables = (
         {
             "speech_voice_capability_evidence",
             "speech_voice_revisions",
             "speech_voice_publication_intents",
+            "speech_voice_draft_publications",
         }
         if db.dialect == "postgresql"
         else set()

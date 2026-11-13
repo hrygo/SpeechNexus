@@ -126,8 +126,13 @@ DISPATCH_ROLE_GUARD = (
     "WHERE r.rolname=%(role)s AND d.datname=CURRENT_DATABASE()"
 )
 
-# worker 在领取租约前只探测 SELECT,写权限靠部署授权;这里补上它实际写入的列,
-# 否则 REVOKE UPDATE (error_code) 之后仍会误报 PASS(终止写会在运行时失败)。
+# worker 在领取租约前只探测 SELECT,写权限靠部署授权;这里补上它认领后实际写入的
+# 每一列,否则 REVOKE INSERT ON speech.speech_artifacts 或撤销终止释放列之后仍会
+# 误报 PASS(写入会在领取之后才失败)。关系清单与列清单分别来自 worker 的代码:
+# job_dispatch_postgres.py(认领/终止)、artifacts_postgres.py(结果发布)与
+# lease_release_sql.py(容量释放);列声明来自 artifact_schema.ARTIFACT_INSERT_COLUMNS
+# 与 coordination_grants.SPEECH_UPDATES。deploy/job-startup-gate.py 的
+# DISPATCH_WRITE_SURFACE 是该表的另一份副本,由 tests/unit 的等式测试约束。
 DISPATCH_WRITE_PROBES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "speech_jobs",
@@ -157,6 +162,78 @@ DISPATCH_WRITE_PROBES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "speech_job_cancellation_not_submitted",
         "INSERT",
         ("job_id", "observed_at_us", "observer"),
+    ),
+    (
+        "speech_artifacts",
+        "INSERT",
+        (
+            "artifact_id",
+            "workspace_id",
+            "artifact_kind",
+            "artifact_state",
+            "media_type",
+            "bytes",
+            "sha256",
+            "receipt_id",
+            "source_operation_id",
+            "object_key",
+            "storage_version_id",
+            "created_at_us",
+            "expires_at_us",
+        ),
+    ),
+    (
+        "admission_leases",
+        "UPDATE",
+        (
+            "lease_state",
+            "cleanup_state",
+            "budget_released_at_us",
+            "quarantine_observed_at_us",
+            "quarantine_reason_code",
+            "version",
+        ),
+    ),
+    ("admission_attempts", "UPDATE", ("quota_state", "version")),
+    (
+        "workspace_quotas",
+        "UPDATE",
+        ("held_attempts", "quarantined_attempts", "version"),
+    ),
+    (
+        "host_nodes",
+        "UPDATE",
+        (
+            "node_state",
+            "version",
+            "held_unified_physical_memory_bytes",
+            "held_device_memory_bytes",
+            "held_host_memory_bytes",
+            "held_cpu_decode_millicores",
+            "held_host_pcm_buffer_bytes",
+            "held_scratch_disk_bytes",
+            "quarantined_unified_physical_memory_bytes",
+            "quarantined_device_memory_bytes",
+            "quarantined_host_memory_bytes",
+            "quarantined_cpu_decode_millicores",
+            "quarantined_host_pcm_buffer_bytes",
+            "quarantined_scratch_disk_bytes",
+        ),
+    ),
+    (
+        "engine_instances",
+        "UPDATE",
+        (
+            "instance_state",
+            "held_slots",
+            "quarantined_slots",
+            "base_budget_kind",
+            "ready_at_us",
+            "stopped_at_us",
+            "quarantine_reason",
+            "last_fencing_token",
+            "version",
+        ),
     ),
 )
 
@@ -355,6 +432,10 @@ WRITER_UPDATE_COLUMNS: dict[str, tuple[str, ...]] = {
 
 # 复制自 speech.domain.job_dispatch.DispatchJobKind 的取值。
 DISPATCHABLE_KINDS = frozenset({"asr", "tts", "voice_design", "voice_clone", "voice_validation"})
+# 本参考部署装配的车道:deploy/compose.yaml 只把 asr 与 tts 的私有 gateway 配置传给
+# gateway,启动闸门的 GATEWAY_CONFIGS 与之相同。其余 kind 会被 worker 认领后在提交/
+# 发布阶段失败,所以与闸门一样判 FAIL,而不是留作部署后再说。
+ASSEMBLED_KINDS = frozenset({"asr", "tts"})
 
 # 本次运行按部署前还是部署后判定;pre 表示私有配置/容器/ready 实例还不存在。
 Phase = Literal["pre", "post"]
@@ -1040,9 +1121,15 @@ def check_dispatch_role(
     unknown = [kind for kind in kinds if kind not in DISPATCHABLE_KINDS]
     if unknown:
         check.fail("SPEECHNEXUS_JOB_DISPATCH_KINDS 含不可派发 kind:" + ", ".join(unknown))
-    if "voice_validation" in kinds:
-        check.note(
-            "kinds 含 voice_validation;额外要求 voice_validation_worker_grants 的两张 SELECT"
+    unassembled = [kind for kind in kinds if kind not in ASSEMBLED_KINDS]
+    if unassembled:
+        check.fail(
+            "SPEECHNEXUS_JOB_DISPATCH_KINDS 含本参考部署未装配的车道:"
+            + ", ".join(unassembled)
+            + ";deploy/compose.yaml 只把 asr/tts 的 gateway 配置传给 gateway,"
+            "worker 会认领该车道的 Job 后在提交阶段失败。要么从 kinds 里去掉,"
+            "要么先装配车道(私有 gateway 配置、SPEECHNEXUS_GATEWAY_FILE_*_CONFIG_FILE "
+            "与闸门的 GATEWAY_CONFIGS)"
         )
     if offline or dsn is None:
         check.probe("运行时: SKIP — 未执行角色/授权探测")

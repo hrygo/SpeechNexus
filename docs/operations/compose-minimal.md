@@ -16,7 +16,7 @@ date: 2026-10-28
 | 能力 | 当前结论 | 依赖 / 原因 |
 | --- | --- | --- |
 | 公开 TTS `POST /v1/audio/speech` | **本 Compose 未装配** | 同步 TTS 工厂已实现，但本配置只预置 gateway 私有 file-TTS 配置引用，未提供 API 配方及结算数据库配置；其他部署的受控实测见[窗口记录](../archive/audits/2026-11-03-controlled-tts-prepare.md) |
-| 异步 Job 完整执行链 | **未贯通** | 默认 `up` 不启动 `job-dispatch-worker`；`job-dispatch` profile 可按需启动该派发进程，但需要单独的 worker DSN（`SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL`，示例中默认为空，空值在领取租约前 fail-closed）与真实引擎。启用 `voice_validation` 还需 `voice_validation_worker_grants`，缺少时启动角色校验即拒绝，不会领取 Job。API 的创建和读取路由需要另配 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL`；原子准入还需独立的 `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL` 与同库 admission 角色，未配置时创建返回 503（读取与取消仍可用）。派发入口已装配生产 planner 与结果发布器，容器 entrypoint 是 `deploy/job-startup-gate.py`：迁移 head、派发角色写入列、Artifact 桶与 gateway staging 结果桶缺失或未版本化时在启动期点名退出，不会先领取 Job；三个 Job 角色由 [§6 的异步 Job 运行角色](#异步-job-运行角色与授权) 预置。本配置不提供真实引擎。当前范围见 [F-JOB](../prd.md#f-job) 和 [F-ASYNC](../prd.md#f-async) |
+| 异步 Job 完整执行链 | **未贯通** | 默认 `up` 不启动 `job-dispatch-worker`；`job-dispatch` profile 可按需启动该派发进程，但需要单独的 worker DSN（`SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL`，示例中默认为空，空值在领取租约前 fail-closed）与真实引擎。派发车道限定为参考部署装配的 `asr`、`tts`；`SPEECHNEXUS_JOB_DISPATCH_KINDS` 写其它 kind 时启动闸门点名拒绝，不会认领该车道的 Job（要启用别的车道需先装配 gateway 车道，见 [§6](#异步-job-运行角色与授权)）。API 的创建和读取路由需要另配 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL`；原子准入还需独立的 `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL` 与同库 admission 角色，未配置时创建返回 503（读取与取消仍可用）。派发入口已装配生产 planner 与结果发布器，容器 entrypoint 是 `deploy/job-startup-gate.py`：迁移 head、派发角色写入列、Artifact 桶与 gateway staging 结果桶缺失或未版本化时在启动期点名退出，不会先领取 Job；三个 Job 角色由 [§6 的异步 Job 运行角色](#异步-job-运行角色与授权) 预置。本配置不提供真实引擎。当前范围见 [F-JOB](../prd.md#f-job) 和 [F-ASYNC](../prd.md#f-async) |
 | 公开同步 ASR 成功响应 | **本部署未验证** | 文件 worker 已有成功终态写入；历史部署曾返回 `504 operation_timeout`，见[本机端到端记录](../archive/operations/local-end-to-end.md#112-公开-v1audiotranscriptions已执行504未成功)。不能将那次结果或组件实现推定为当前部署的公开链路验收 |
 | 节点控制器、runtime delivery、asset maintenance | **未装配** | 本配置有意排除这些服务；不能以本 Compose 的探活结果证明完整部署与发布资格 |
 | 真实模型质量、容量、GPU、物理多节点资格 | **未证明** | Compose 启动、健康检查和合成配置都不能替代模型/设备/拓扑验收 |
@@ -63,8 +63,9 @@ recorder DSN 与报告对象存储读取凭据）。`migrate` 和 `engine-regist
 `migration` 和 `engine-registration` profile；`binding-disable-worker` 属于
 `binding-disable` profile，`job-dispatch-worker` 属于 `job-dispatch` profile，
 `admin` / `workbench` 属于 `web` profile，因此都不属于上面的基础集合。Job 派发
-profile 的变量、默认 `dispatch_kinds` 与启用 `voice_validation` 所需的额外授权见
-[deploy/README.md](../../deploy/README.md#job-dispatcher-job-dispatch-profile)。
+profile 的变量与默认 `dispatch_kinds` 见
+[deploy/README.md](../../deploy/README.md#job-dispatcher-job-dispatch-profile)；
+本参考部署只装配 `asr`、`tts` 车道，启动闸门对其它 kind 点名拒绝（见 §6 的异步 Job 段）。
 
 默认网络固定使用 `172.28.0.0/24`，MinIO 地址为 `172.28.0.10`；启动前须核对该网段
 不会与宿主机路由或其他容器网络冲突。若需使用其他网段，部署配置中的 Compose 子网、
@@ -634,7 +635,7 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 
 启用 `job-dispatch` profile 前先预置三个互不相同的非 owner 角色：`sn_job_writer` 供 API
 创建/读取 Job 与 voice 草稿，`sn_job_admission` 供原子准入，`sn_job_dispatch` 供派发
-worker（`voice_validation` 车道也用它）。三者不得复用 `sn_api`、`sn_gateway` 或 bootstrap
+worker。三者不得复用 `sn_api`、`sn_gateway` 或 bootstrap
 owner；数据库级撤权已由本节开头的新装脚本完成，这里只建角色并追加授权。
 
 角色名与口令来自三条 Job DSN。先在本轮生成口令并把 DSN 写回 `deploy/compose.env`，
@@ -697,10 +698,10 @@ export SN_ADMIN_DSN="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.
 uv run --all-packages python scripts/dev-env/provision-job-roles.py
 ```
 
-期望输出 `job roles ready: sn_job_writer sn_job_admission sn_job_dispatch; grants: 220
-statements`；`SPEECHNEXUS_JOB_DISPATCH_KINDS` 含 `voice_validation` 时额外安装
-`voice_validation_worker_grants` 的两张 `SELECT`，语句数相应增加。`--print-statements`
-只渲染 SQL、不连接数据库，便于先评审。授权面：
+期望输出 `job roles ready: sn_job_writer sn_job_admission sn_job_dispatch; grants: <N>
+statements`；语句数随授权函数变化，不要把它当固定值——以 `--print-statements` 的输出条数
+为准，首次安装后把该值记为本次基线。`--print-statements` 只渲染 SQL、不连接数据库，便于
+先评审。授权面：
 
 - `sn_job_writer`：`job_runtime_grants`、`job_dispatch_grants`、`public_job_grants`、
   `voice_draft_grants`、`public_job_submission_grants`、`job_cancellation_fence_grants`、
@@ -711,22 +712,29 @@ statements`；`SPEECHNEXUS_JOB_DISPATCH_KINDS` 含 `voice_validation` 时额外�
 - `sn_job_admission`：`public_job_admission_grants`（原子准入的写入面）。
 - `sn_job_dispatch`：`job_runtime_grants`、`job_dispatch_grants`、`public_job_grants`、
   `cancellation_reconciliation_grants`、`coordination_runtime_grants`，外加迁移元数据
-  `speech.alembic_version` 的只读 `SELECT`（启动闸门用它核对发布 head）；缺少 `SELECT`
-  或认领后的写入列时，worker 的启动闸门在本容器启动阶段点名该表/列并退出，不会先领取
-  Job 再失败。
+  `speech.alembic_version` 的只读 `SELECT`（启动闸门用它核对发布 head）。缺这条 `SELECT`、
+  缺认领后的任一写入列、或 head 落后时，worker 的启动闸门在本容器启动阶段点名并退出，
+  不会先领取 Job 再失败。
 
-已有部署若在本次之前已建好 `sn_job_dispatch`，补一条只读授权即可让启动闸门核对精确 head；
-不补也不会被误判为故障——闸门会把 head 记为 `pending`，由启动探针继续校验本版本用到的列：
+**升级前置（必须，不是建议）**：在本次之前建好的 `sn_job_dispatch` 没有
+`speech.alembic_version` 的只读授权，而缺授权与"库真的落后"在闸门看来无法区分，所以闸门
+对读不到的 head 一律拒绝启动并点名该表。升级镜像或重启 `job-dispatch` profile 之前先补：
 
 ```sql
 GRANT SELECT ON speech.alembic_version TO sn_job_dispatch;
 ```
 
 `job-dispatch-worker` 的入口是 `deploy/job-startup-gate.py`（由 `deploy/compose.yaml`
-挂载并以该脚本作为 entrypoint）。它先核对角色守卫、与 worker 启动同源的 `SELECT` 探针、
-认领后的写入列、迁移 head，以及 Artifact 桶与 gateway staging 结果桶的存在和版本化，
-全部通过后才 `exec` 真正的派发进程；真实引擎与已注册实例作为部署方输入以 `pending`
-行提示，不作为闸门失败条件（引擎可用性另按 #572 的真实验收处理）。
+挂载并以该脚本作为 entrypoint）。它先核对角色守卫、迁移 head、与 worker 启动同源的
+`SELECT` 探针、认领后的写入列（派发状态、结果 Artifact 发布、终止时的容量释放），以及
+Artifact 桶与 gateway staging 结果桶的存在和版本化，全部通过后才 `exec` 真正的派发进程；
+真实引擎与已注册实例作为部署方输入以 `pending` 行提示，不作为闸门失败条件（引擎可用性
+另按 #572 的真实验收处理）。`SPEECHNEXUS_JOB_DISPATCH_KINDS` 只能取本参考部署装配的
+`asr`、`tts`：其它 kind（例如 `voice_design`、`voice_validation`）在闸门里点名拒绝，
+因为 worker 会认领该车道而在提交/发布阶段才失败。要启用别的车道，先装配 gateway 的
+私有配置与 `SPEECHNEXUS_GATEWAY_FILE_*_CONFIG_FILE`，再把该车道加入闸门的
+`GATEWAY_CONFIGS`，并同时安装该车道需要的授权组（`voice_validation` 对应
+`voice_validation_worker_grants`）。
 
 ### 隔离释放角色 `sn_quarantine_release`
 

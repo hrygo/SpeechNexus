@@ -792,7 +792,6 @@ def test_expired_original_is_queried_before_recovery_decision(state: str) -> Non
 def test_recovery_budget_bounds_original_query_and_result_reads(phase: str) -> None:
     import asyncio
     import threading
-    import time
 
     from speechnexus_contracts.execution_canonical import effective_execution_request
 
@@ -800,6 +799,9 @@ def test_recovery_budget_bounds_original_query_and_result_reads(phase: str) -> N
     from speechnexus_backend.speech.infrastructure.transcription_submit import command_digest
 
     release = threading.Event()
+    query_completed = threading.Event()
+    receipt_completed = threading.Event()
+    read_returned = threading.Event()
     request = build_tts_submit(plan(), execution())
     request["deadline_at"] = "2020-01-01T00:00:00Z"
     payload = b"\0\0" * 2400
@@ -811,12 +813,15 @@ def test_recovery_budget_bounds_original_query_and_result_reads(phase: str) -> N
     class SlowGateway(Gateway):
         async def query(self, identity: str) -> Any:
             if phase == "query":
-                await asyncio.sleep(0.2)
+                # Far longer than the 0.03 s budget; the event below must stay unset.
+                await asyncio.sleep(2.0)
+                query_completed.set()
             return {**request, "execution_state": "succeeded"}
 
         async def audio_staging_result(self, identity: str) -> Any:
             if phase == "receipt":
-                await asyncio.sleep(0.2)
+                await asyncio.sleep(2.0)
+                receipt_completed.set()
             digest = command_digest(effective_execution_request(request))
             return {
                 "submit_intent_id": identity,
@@ -838,18 +843,30 @@ def test_recovery_budget_bounds_original_query_and_result_reads(phase: str) -> N
     class Results:
         def read(self, reference: Any, storage_version: str) -> bytes:
             if phase == "object":
-                release.wait(1)
+                # The read is abandoned, never awaited: it only returns once the
+                # test releases it, which happens after the assertion below.
+                release.wait(5)
+                read_returned.set()
             return payload
 
     gateway = SlowGateway()
     adapter = GatewaySynthesizer(
         cast(GatewayExecutionClient, gateway), OriginalAdmission(), Results()
     )
-    started = time.monotonic()
     try:
         with pytest.raises(SpeechDeadlineExceededError):
             adapter.recover("request-test", timeout_seconds=0.03)
-        assert time.monotonic() - started < 0.5
+        # Judged from the peer operations, not from how fast this host returned:
+        # the budget cancelled the slow step before it could complete, so no
+        # state below was ever recorded.
+        if phase == "query":
+            assert not query_completed.is_set()
+        elif phase == "receipt":
+            assert not receipt_completed.is_set()
+        else:
+            # The blocking read is abandoned rather than awaited. If the budget
+            # were ignored, recover would wait for it and set this event.
+            assert not read_returned.is_set()
         assert gateway.submissions == []
     finally:
         release.set()

@@ -11,18 +11,19 @@ coupled constraints found by hand in issue #690 were never pinned by a test:
   refuses with 503 ``job_unavailable`` -- a code whose message and non-retryable
   flag describe a storage outage rather than missing capacity provisioning;
 * the admission plan rebuilds a ``SpeechPlan`` from the full body text, whose own
-  ceiling is 4096 code points, so 4097 characters are refused with the generic
-  400 ``invalid_job_request`` even though the contract promises
-  ``TtsJobInput.text.maxLength: 200000``. The same 400 also answers a body over
-  the receive bound and an unparsable document, so those causes are not
-  distinguishable by code.
+  ceiling is 4096 code points, so 4097 characters are refused. #690 narrowed
+  ``TtsJobInput.text.maxLength`` to that same ceiling, so the refusal is now the
+  contract's declared 422 ``unsupported_parameter`` and happens before admission.
+  A body over the receive bound still answers the 400 ``invalid_job_request`` that
+  an unparsable document uses, so those two causes stay indistinguishable by code
+  until #703 declares a separate answer.
 
 Each case asserts the public status code, the stable error code and the exact row
 deltas across the public Job, intent and admission tables. Rows come from the
 same production transaction, so a refusal that still reserved capacity or wrote a
 Job would fail here. This module pins current behaviour instead of inventing a
-new code: #690 owns the text-ceiling contract correction, #702 the missing-quota
-503 semantics, and #703 the undeclared receive bound with its 413.
+new code: #690 landed the text-ceiling contract correction, #702 the
+missing-quota 503 semantics, and #703 the undeclared receive bound with its 413.
 
 Known boundaries, recorded rather than fixed here:
 
@@ -35,9 +36,10 @@ Known boundaries, recorded rather than fixed here:
   ``job_receive_max_bytes = 262144``. Raising that default fails its premise
   assertion with the observed value, which is a scenario change to re-derive,
   not a flake to delete.
-* ``PLAN_TEXT_CEILING`` and ``CONTRACT_TEXT_CEILING`` are bound to #690, and case
-  4's 400 ``invalid_job_request`` is bound to #703: converge the contract on 4096
-  and declare a 413 and both cases must be updated in the same change.
+* ``PLAN_TEXT_CEILING`` and ``CONTRACT_TEXT_CEILING`` are the same 4096 number
+  since #690, so case 3 asserts one ceiling through two layers. Case 4's 400
+  ``invalid_job_request`` is bound to #703: declaring a 413 and a distinguishable
+  code for the receive bound must update that case in the same change.
 """
 
 from __future__ import annotations
@@ -73,7 +75,7 @@ TEXT = "synthetic public job"
 # ``MAX_SPEECH_TEXT_CHARS`` in speech/domain/speech_synthesis.py.
 PLAN_TEXT_CEILING = 4096
 # ``TtsJobInput.text.maxLength`` in contracts/speech-openapi.yaml.
-CONTRACT_TEXT_CEILING = 200_000
+CONTRACT_TEXT_CEILING = 4_096
 # ``settings.job_receive_max_bytes`` in backend/src/speechnexus_backend/settings.py.
 RECEIVE_BOUND = 262_144
 
@@ -169,12 +171,13 @@ async def test_admitted_tts_create_writes_job_intent_and_reservation(
 async def test_text_above_the_plan_ceiling_is_refused_without_rows(
     admission_database: AdmissionDatabase,
 ) -> None:
-    """4096 code points are accepted and 4097 are refused by the admission plan.
+    """4096 code points are accepted and 4097 are refused by the contract.
 
-    The refusal is the generic 400 ``invalid_job_request``: the public surface
-    cannot tell the plan ceiling apart from the contract's 200000-character
-    promise, the receive bound (#703), or a malformed body. #690 owns converging
-    the contract on this ceiling.
+    #690 narrowed ``TtsJobInput.text.maxLength`` to the admission plan's ceiling,
+    so the refusal is the declared 422 ``unsupported_parameter`` and it happens at
+    the contract check: the document never reaches admission, which is why no row
+    moves. A text over the receive bound instead answers the 400
+    ``invalid_job_request`` that #703 owns.
     """
     _seed(admission_database)
     db = admission_database.runtime.foundation.database
@@ -198,9 +201,9 @@ async def test_text_above_the_plan_ceiling_is_refused_without_rows(
         refused = await client.post(
             PREFIX, json=over_limit, headers={"Idempotency-Key": "synthetic-over-plan-ceiling"}
         )
-        assert refused.status_code == 400, refused.text
+        assert refused.status_code == 422, refused.text
         code, kind, retryable = _error(refused)
-        assert (code, kind, retryable) == ("invalid_job_request", "invalid_request_error", False)
+        assert (code, kind, retryable) == ("unsupported_parameter", "invalid_request_error", False)
         assert _counts(db) == after_limit
 
 

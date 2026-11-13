@@ -54,6 +54,38 @@ jobs:
             --event="$EVENT_NAME" --base="$BASE_SHA" \
             --output="$GITHUB_OUTPUT" --summary="$GITHUB_STEP_SUMMARY"
 
+  # `docs` scope skips every job that installs project dependencies, but Ruff's
+  # formatter also formats the Python code blocks inside Markdown; that is the one
+  # check a prose-only pull request could break while merging green (#659, #661, #673).
+  # This lane installs only the pinned formatter and re-runs the exact command the
+  # full static lane uses, so its file set can never be narrower than that lane's.
+  docs_format:
+    name: "Docs: markdown code block formatting"
+    needs: [changes]
+    if: ${{ needs.changes.outputs.mode == 'docs' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      # Same pinned Ruff the locked `dev` group installs; tests/ci keeps both equal.
+      RUFF_VERSION: "0.17.2"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up uv for the standalone formatter
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          prune-cache: true
+
+      - name: Check Markdown code block formatting with the pinned Ruff
+        run: uvx --from "ruff==${RUFF_VERSION}" ruff format --check .
+
   # The committed snapshot is the only render input, so a hand-edited matrix or a
   # stale snapshot-derived view fails here without querying GitHub. Unrelated
   # changes skip the regeneration step and cannot be blocked by this gate.
@@ -691,6 +723,7 @@ jobs:
     needs:
       [
         changes,
+        docs_format,
         delivery_tracking,
         python_checks_gate,
         coordination,
@@ -708,6 +741,7 @@ jobs:
           MODE: ${{ needs.changes.outputs.mode }}
           ROUTING_RESULT: ${{ needs.changes.result }}
           DELIVERY_RESULT: ${{ needs.delivery_tracking.result }}
+          DOCS_FORMAT_RESULT: ${{ needs.docs_format.result }}
           CHECKS_RESULT: ${{ needs.python_checks_gate.result }}
           COORDINATION_RESULT: ${{ needs.coordination.result }}
           WEB_RESULT: ${{ needs.web.result }}
@@ -735,24 +769,25 @@ jobs:
           case "$MODE" in
             docs)
               checks=skipped; coordination=skipped; web=skipped; deployment=skipped;
-              acceptance=skipped ;;
+              acceptance=skipped; docs_format=success ;;
             web)
               checks=success; coordination=skipped; web=success; deployment=skipped;
-              acceptance=skipped ;;
+              acceptance=skipped; docs_format=skipped ;;
             no-db)
               checks=success; coordination=skipped; web=success; deployment=success;
-              acceptance=success ;;
+              acceptance=success; docs_format=skipped ;;
             full)
               checks=success; coordination=success; web=success; deployment=success;
-              acceptance=success ;;
+              acceptance=success; docs_format=skipped ;;
             *)
               echo "::error::Missing or invalid CI scope"
               exit 1 ;;
           esac
           if [[ "$CHECKS_RESULT" != "$checks" || "$COORDINATION_RESULT" != "$coordination" ||
                 "$WEB_RESULT" != "$web" || "$DEPLOYMENT_RESULT" != "$deployment" ||
-                "$ACCEPTANCE_RESULT" != "$acceptance" ]]; then
-            echo "::error::Scope=$MODE; Python=$CHECKS_RESULT; PG/InnoDB=$COORDINATION_RESULT; Web=$WEB_RESULT; deployment=$DEPLOYMENT_RESULT; acceptance=$ACCEPTANCE_RESULT"
+                "$ACCEPTANCE_RESULT" != "$acceptance" ||
+                "$DOCS_FORMAT_RESULT" != "$docs_format" ]]; then
+            echo "::error::Scope=$MODE; Python=$CHECKS_RESULT; PG/InnoDB=$COORDINATION_RESULT; Web=$WEB_RESULT; deployment=$DEPLOYMENT_RESULT; acceptance=$ACCEPTANCE_RESULT; docs_format=$DOCS_FORMAT_RESULT"
             exit 1
           fi
           echo "Verified scope=$MODE; inapplicable lanes are not application-test evidence."

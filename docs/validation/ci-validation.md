@@ -25,6 +25,8 @@ Skill 的说明、参考、合成评测数据及展示元数据不参与产品�
 
 三个受保护检查为 `Gate: required checks for this change`、`Web: lint, types, tests, build and accessibility`、`Compose: configuration validation`。它们分别替代原 `Python quality and tests`、`Web quality, tests, and build`、`Deployment configuration`；变更显示名称时必须同步 `main` 的 required status checks，并保持 GitHub Actions app 绑定及其他保护策略。迁移时先确认新名称在当前提交实际通过，再替换保护列表，不将缺失检查视为通过。
 
+验收入口作业 `reference_acceptance` 是一个独立显示的执行作业，不接入最终门禁：接入需要修改既有 `Gate: required checks for this change` 的范围映射，并同步其真值表回归，超出本作业「只新增一个作业」的最小改动边界。它以与非文档范围相同的条件运行，失败会直接显示在 PR 的检查列表中，但它本身不是合入阻断项；若团队要求阻断，把它加入该门禁的 `needs` 与各范围期望值即可，无需新增受保护状态名。它真实执行 `scripts/dev-env/reference-acceptance.py --dry-run`：工具与版本、从 `deploy/compose.yaml` 派生的 `${KEY:?}` 键与入口额外必需键、compose 渲染、三条互不相同的 Job DSN 身份、从迁移目录派生的 head、桶名和私有输入扫描都由脚本本身计算；另有一条负对照要求损坏的环境仍以非零退出并点名步骤，避免入口吞掉失败时作业仍然变绿。迁移、角色、桶、栈、闸门与健康检查只被计划、不被执行，因此它证明的是入口的前置检查、派生值与步骤顺序，不是一次参考部署；`stack` 是否判 `compose up` 退出码这类只存在于 apply 路径的语义不在覆盖内，仍由 `tests/ci` 的用例与真实 apply 运行负责。
+
 作业级条件让不适用项明确显示 skipped；最终 CI 门禁用 `always()` 执行，核对路由成功和各项实际结果。非法/缺失路由、失败、取消或本应执行却跳过均失败。不适用不表示业务验证已通过。
 
 矩阵新鲜度作业 `delivery_tracking` 每次运行都检出仓库，但只有本次差异触及 `docs/plans/delivery-tracking.md`、`docs/plans/delivery-issues.json`、`docs/plans/github-issues-snapshot.json`、`scripts/dev-env/refresh-implementation-tracker.py` 或 `scripts/dev-env/delivery_tracker.py` 时才执行重渲染；无关 PR 的该步骤 skipped，作业仍成功，不阻塞合并。重渲染只读提交的快照，并以快照的 `fetched_at` 固定表头时间，随后 `git diff --exit-code` 拒绝手改或陈旧矩阵。基线不可取得或差异计算失败时保守执行，不以跳过掩盖；该作业不查询 GitHub，因此不证明快照覆盖未来 issue 变化。
@@ -48,6 +50,7 @@ Node Controller 镜像验证由 CI 以同提交的 [reusable workflow](../../.gi
 | `python` | `Gate: required checks for this change` | 按已验证范围核对全部适用结果，阻止失败、取消与意外跳过 |
 | `web` | `Web: lint, types, tests, build and accessibility` | 格式、lint、TypeScript、SDK 契约、workspace 测试和构建、真实浏览器无障碍与对比度 |
 | `deployment` | `Compose: configuration validation` | 执行 `docker compose config --quiet`，不启动服务或发布部署 |
+| `reference_acceptance` | `Deploy: reference acceptance entry (dry-run execution)` | 真实执行 `scripts/dev-env/reference-acceptance.py --dry-run`：工具版本、派生环境键、compose 渲染、三条 Job DSN 身份、迁移 head、桶名与私有输入扫描；并做一条损坏环境的负对照，不启动服务或执行写步骤 |
 
 完整范围要求覆盖率、契约生成漂移及六个真实双数据库分片；契约兼容和结构变更的基线比较仅在 PR 执行，`main` push 与手动全量运行不会执行这些 PR 专属步骤。比较步骤获取当时的目标分支头作为基线，与路由使用的事件准确 base SHA 是不同依据。集成汇总继续核对同一提交、完整收集、互斥并集和实际执行结果，不以数量或仅收集代替证据。唯一允许的跳过是 `tests/integration/test_gateway_submit_ledger.py` 中以 `[mysql]` 结尾的既有 PostgreSQL 专属产品适配器参数；这不构成 MySQL 协调路径通过的证据，其他必需用例跳过会使汇总失败。
 

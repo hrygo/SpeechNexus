@@ -838,3 +838,152 @@ jobs:
             -f deploy/compose.yaml \
             --profile job-dispatch \
             config --quiet
+
+  # `scripts/dev-env/reference-acceptance.py` is the operator's single command for
+  # deciding whether the reference deployment works, but no job executed it: the
+  # tests/ci cases drive it through a fake Runner, so an entry point that only
+  # works under stubs could merge untouched. This job runs the real process the
+  # way an operator does, so corrupting the entry itself fails a PR.
+  #
+  # Coverage boundary: `--dry-run` executes the real `tools` step (docker/compose/
+  # uv versions, the compose-derived `${KEY:?}` set plus the entry's own required
+  # keys, compose rendering, three distinct Job DSN identities), the migration
+  # head derived from the revision graph, the bucket-name derivation, the resolved
+  # `--profile job-dispatch` compose document that stack/gate read, and the private
+  # input scan (JSON parse, result-bucket agreement, VAD digest) against synthetic
+  # inputs. It plans and never runs migrate/roles/buckets/stack/gate/health: those
+  # write state or need a real engine, so this job proves the entry point's
+  # preconditions, derivations and step order, not a deployment.
+  #
+  # The last step is a negative control. Without it the positive run would stay
+  # green even if the entry swallowed every failure, so a corrupted environment
+  # must still exit non-zero and name the failing step. The job therefore covers
+  # what "Compose: configuration validation" does not: not the Compose file, but
+  # the Python entry point that reads it.
+  reference_acceptance:
+    name: "Deploy: reference acceptance entry (dry-run execution)"
+    needs: [changes]
+    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'no-db' }}
+    runs-on: ubuntu-24.04
+    # The entry point plus both controls measured under 1 s locally; checkout,
+    # setup-uv and the three `docker compose config` renders dominate. The job runs
+    # beside python_checks and integration_shards, so it adds no critical-path
+    # minutes; the ceiling only bounds a hung docker daemon.
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+
+      - name: Prepare the acceptance environment from the committed example
+        run: |
+          cp deploy/compose.env.example deploy/compose.env
+          cat >> deploy/compose.env <<'EOF'
+
+          # CI overlay: the three Job DSNs are blank in the committed example
+          # because the base topology must render without them; the entry point
+          # requires all three to name distinct roles.
+          SPEECHNEXUS_JOB_WRITER_DATABASE_URL=postgresql://sn_job_writer:change-me-job-writer@postgres:5432/speechnexus
+          SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL=postgresql://sn_job_admission:change-me-job-admission@postgres:5432/speechnexus
+          SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL=postgresql://sn_job_dispatch:change-me-job-dispatch@postgres:5432/speechnexus
+          EOF
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import shutil
+          from pathlib import Path
+
+          # Synthetic private inputs under the gitignored deploy/.runtime/private
+          # directory the example env file names, so the stack step's static scan
+          # runs against complete inputs instead of deferring every check.
+          private = Path("deploy/.runtime/private")
+          private.mkdir(parents=True, exist_ok=True)
+          for name in ("gateway-file-asr", "gateway-file-tts", "transcription-recipe"):
+              shutil.copyfile(f"deploy/private/{name}.example.json", private / f"{name}.json")
+          model = private / "silero_vad.onnx"
+          model.write_bytes(b"speechnexus synthetic vad model for the CI dry-run\n")
+          lane = private / "gateway-file-asr.json"
+          document = json.loads(lane.read_text(encoding="utf-8"))
+          document["vad_model_sha256"] = hashlib.sha256(model.read_bytes()).hexdigest()
+          lane.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+          print("private inputs:", sorted(item.name for item in private.iterdir()))
+          PY
+
+      - name: Execute the reference acceptance entry in dry-run mode
+        env:
+          SN_ADMIN_DSN: postgresql://speechnexus:change-me-local-postgres@postgres:5432/speechnexus
+        run: |
+          set -o pipefail
+          log="$RUNNER_TEMP/reference-acceptance-dry-run.log"
+          started="$SECONDS"
+          code=0
+          python3 scripts/dev-env/reference-acceptance.py --dry-run 2>&1 | tee "$log" || code=$?
+          {
+            echo "### Reference acceptance entry (dry-run)"
+            echo ""
+            echo "| metric | value |"
+            echo "| --- | --- |"
+            echo "| entry exit | $code |"
+            echo "| entry wall clock | $((SECONDS - started))s |"
+            echo "| deferred inputs | 1 (gateway health; dry-run never starts the stack) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$code" -ne 0 ]]; then
+            echo "::error::reference-acceptance.py --dry-run exited $code"
+            exit "$code"
+          fi
+
+      - name: Verify every step really ran, in the documented order
+        run: |
+          python3 - "$RUNNER_TEMP/reference-acceptance-dry-run.log" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          log = Path(sys.argv[1]).read_text(encoding="utf-8")
+          expected = ["tools", "migrate", "roles", "buckets", "stack", "gate", "health"]
+          problems = []
+          seen = re.findall(r"^\[\d+/7\] (\w+) —", log, re.MULTILINE)
+          if seen != expected:
+              problems.append(f"step sequence {seen} != {expected}")
+          if any(line.strip().startswith("结论: FAIL") for line in log.splitlines()):
+              problems.append("a step reported FAIL despite exit 0")
+          if f"order={', '.join(expected)} mode=dry-run" not in log:
+              problems.append("header order line does not name the documented step order")
+          if "reference acceptance: DRY-RUN PASS steps=7" not in log:
+              problems.append("missing the dry-run PASS verdict")
+          if "pending=1" not in log:
+              problems.append("expected exactly one deferred input (gateway health)")
+          for problem in problems:
+              print(f"::error::{problem}")
+          raise SystemExit(1 if problems else 0)
+          PY
+
+      - name: Reject a corrupted environment instead of passing quietly
+        env:
+          # The same shell-only admin DSN the positive run uses, so the only
+          # corruption this control introduces is the blank bucket key.
+          SN_ADMIN_DSN: postgresql://speechnexus:change-me-local-postgres@postgres:5432/speechnexus
+        run: |
+          broken="$RUNNER_TEMP/reference-acceptance-broken.env"
+          cp deploy/compose.env "$broken"
+          echo "SPEECHNEXUS_OBJECT_STORAGE_BUCKET=" >> "$broken"
+          code=0
+          python3 scripts/dev-env/reference-acceptance.py --dry-run --env-file "$broken" \
+            > "$RUNNER_TEMP/reference-acceptance-broken.log" 2>&1 || code=$?
+          cat "$RUNNER_TEMP/reference-acceptance-broken.log"
+          if [[ "$code" -eq 0 ]]; then
+            echo "::error::the entry accepted a blank SPEECHNEXUS_OBJECT_STORAGE_BUCKET (exit 0)"
+            exit 1
+          fi
+          if ! grep -q 'FAIL step=tools' "$RUNNER_TEMP/reference-acceptance-broken.log"; then
+            echo "::error::the corrupted environment was not attributed to step=tools"
+            exit 1
+          fi
+          echo "negative control: exit=$code step=tools"

@@ -1,5 +1,6 @@
 """Real loopback warmup failures never grant readiness or repeat a POST by address."""
 
+import select
 import socket
 import time
 from collections.abc import Iterator
@@ -7,6 +8,7 @@ from contextlib import AbstractContextManager, ExitStack, contextmanager, nullco
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from ipaddress import ip_address
 from pathlib import Path
 from threading import Event, Thread
 from types import SimpleNamespace
@@ -48,14 +50,97 @@ def _only_progress(runtime: Any) -> Any:
     return next(iter(runtime._warmup_progress.values()))
 
 
+# The warmup budget below is not a correctness criterion. It only has to outlast
+# a loopback POST and stay far below every stall this peer serves; what the tests
+# judge is the peer's own events, the request sequence and the runtime's counters.
+# Measured margins under load are recorded in the PR for this file.
+WARMUP_BUDGET_SECONDS = 1.0
+# 24 progress steps of this size keep a slow peer trickling far past the budget.
+TRICKLE_SECONDS = 0.5
+# A peer that never answers holds the connection open past any budget.
+STALL_SECONDS = 6.0
+# Fake-clock anchor for the budget-arithmetic cases: large enough that a loopback
+# POST always fits in whatever remains of it, and still far below the intent
+# deadline, so the assertions never depend on how fast the POST really is.
+ANCHOR_BUDGET_SECONDS = 5.0
+
+
+def _ipv6_loopback_available() -> bool:
+    """Whether this host can bind and reach the IPv6 loopback twin address."""
+    if not socket.has_ipv6:
+        return False
+    try:
+        with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as probe:
+            probe.bind(("::1", 0))
+    except OSError:
+        return False
+    return True
+
+
+IPV6_LOOPBACK = _ipv6_loopback_available()
+# The twin-address scenario is the real one on macOS and Linux, where ``::1`` is
+# always assigned. On a host that disables IPv6 entirely, the same tests would
+# fail at bind; that capability gap is stated here instead of hidden in a timeout.
+requires_ipv6_loopback = pytest.mark.skipif(
+    not IPV6_LOOPBACK,
+    reason="twin container addresses need an assignable IPv6 loopback (::1)",
+)
+
+
+class _LoopbackV4Server(ThreadingHTTPServer):
+    address_family = socket.AF_INET
+
+
+class _LoopbackV6Server(ThreadingHTTPServer):
+    address_family = socket.AF_INET6
+
+
+def _server(address: str, port: int, handler: type[BaseHTTPRequestHandler]) -> ThreadingHTTPServer:
+    """Listen on a literal address; the family follows the literal, not this host.
+
+    macOS only assigns 127.0.0.1 to the loopback interface, so a second container
+    address on this host has to be the IPv6 loopback ``::1``. Both literals are
+    always-assigned loopbacks on macOS and Linux, which keeps the test twin-address
+    scenario real on both without depending on 127.0.0.0/8 being locally routable.
+    """
+    family = socket.AF_INET6 if ip_address(address).version == 6 else socket.AF_INET
+    server_class = _LoopbackV6Server if family == socket.AF_INET6 else _LoopbackV4Server
+    return server_class((address, port), handler)
+
+
 @contextmanager
 def responding(
     mode: str, *, address: str = "127.0.0.1", port: int = 0
-) -> Iterator[tuple[ThreadingHTTPServer, list[str], Event]]:
+) -> Iterator[tuple[ThreadingHTTPServer, list[str], Event, Event]]:
     requests: list[str] = []
-    completed, stopping = Event(), Event()
+    completed, stopping, aborted = Event(), Event(), Event()
 
     class Handler(BaseHTTPRequestHandler):
+        def _hold(self, seconds: float) -> bool:
+            """Wait while the client is still connected, else record its hangup.
+
+            A client whose deadline fired stops reading and closes the socket, which
+            this peer observes as EOF. ``aborted`` therefore records that the client
+            ended the exchange; returning ``False`` ends the response like a real
+            stalled server does, without ever completing it.
+            """
+            end = time.monotonic() + seconds
+            while not stopping.is_set():
+                readable, _, _ = select.select([self.connection], [], [], 0)
+                if readable:
+                    try:
+                        if self.connection.recv(1, socket.MSG_PEEK) == b"":
+                            aborted.set()
+                            return False
+                    except OSError:
+                        aborted.set()
+                        return False
+                remaining = end - time.monotonic()
+                if remaining <= 0:
+                    return True
+                stopping.wait(min(remaining, 0.01))
+            return False
+
         def do_POST(self) -> None:
             self.rfile.read(int(self.headers["Content-Length"]))
             requests.append(self.path)
@@ -66,20 +151,20 @@ def responding(
                 if mode == "headers":
                     self.wfile.write(b"HTTP/1.1 200 OK\r\n")
                     for index in range(24):
-                        if stopping.wait(0.05):
+                        if not self._hold(TRICKLE_SECONDS):
                             return
                         self.wfile.write(f"X-Progress-{index}: yes\r\n".encode())
                     completed.set()
                     self.wfile.write(b"Content-Length: 0\r\nConnection: close\r\n\r\n")
                     return
-                if mode == "combined" and stopping.wait(0.25):
+                if mode == "combined" and not self._hold(TRICKLE_SECONDS):
                     return
                 if mode == "stall":
-                    stopping.wait(5)
+                    self._hold(STALL_SECONDS)
                     return
                 if mode == "redirect":
                     self.send_response(302)
-                    self.send_header("Location", "http://127.0.0.2/")
+                    self.send_header("Location", "http://[::1]/")
                     self.send_header("Content-Length", "0")
                     self.end_headers()
                     completed.set()
@@ -87,20 +172,20 @@ def responding(
                 status = 503 if mode == "rejected" else 200
                 payload = b"x" * (1025 if mode == "oversized" else 1)
                 self.send_response(status)
-                self.send_header("Content-Length", "24" if mode == "body" else str(len(payload)))
+                self.send_header(
+                    "Content-Length", "24" if mode in {"body", "combined"} else str(len(payload))
+                )
                 if mode == "encoded":
                     self.send_header("Content-Encoding", "gzip")
                 self.end_headers()
-                if mode == "body":
+                if mode in {"body", "combined"}:
                     for index in range(24):
-                        if stopping.wait(0.05):
+                        if not self._hold(TRICKLE_SECONDS):
                             return
                         if index == 23:
                             completed.set()
                         self.wfile.write(b"x")
                 else:
-                    if mode == "combined" and stopping.wait(0.25):
-                        return
                     completed.set()
                     self.wfile.write(payload)
             except OSError:
@@ -110,11 +195,11 @@ def responding(
         def log_message(self, _format: str, *args: object) -> None:
             pass
 
-    server = ThreadingHTTPServer((address, port), Handler)
+    server = _server(address, port, Handler)
     thread = Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     try:
-        yield server, requests, completed
+        yield server, requests, completed, aborted
     finally:
         stopping.set()
         server.shutdown()
@@ -166,15 +251,18 @@ def _replied(
 def test_partial_progress_cannot_extend_the_total_warmup_deadline(
     tmp_path: Path, phase: str
 ) -> None:
-    with responding(phase) as (server, requests, completed):
+    with responding(phase) as (server, requests, completed, aborted):
         body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
         rule = _warmup_rule(server, body, digest, attempts=1)
         assert rule.warmup is not None
-        rule = replace(rule, warmup=replace(rule.warmup, timeout_seconds=0.4))
+        rule = replace(rule, warmup=replace(rule.warmup, timeout_seconds=WARMUP_BUDGET_SECONDS))
         runtime = _runtime(_engine(addresses=("127.0.0.1",)))
         observation = runtime.prepare(build_request(), build_template(readiness=rule))
         assert observation.observed_instance_state is ObservedInstanceState.WARMING_UP
+        # Exactly one POST, and the peer observed the client hang up while it was
+        # still trickling: the response was cut by the total deadline, not drained.
         assert len(requests) == 1
+        assert aborted.wait(5)
         # Rejecting only after the entire slow response arrives is also a failure.
         assert not completed.is_set()
         assert _only_progress(runtime).completed == 0
@@ -182,15 +270,17 @@ def test_partial_progress_cannot_extend_the_total_warmup_deadline(
         assert observation.stop_evidence is None
 
 
+@requires_ipv6_loopback
 @pytest.mark.parametrize("failure", ["rejected", "redirect", "disconnect", "oversized", "encoded"])
 def test_one_prepare_does_not_repeat_a_failed_post_at_the_next_container_address(
     tmp_path: Path, failure: str
 ) -> None:
     with (
-        responding(failure) as (first, first_requests, _),
-        responding("ok", address="127.0.0.2", port=first.server_port) as (
+        responding(failure) as (first, first_requests, _, _),
+        responding("ok", address="::1", port=first.server_port) as (
             _,
             second_requests,
+            _,
             _,
         ),
     ):
@@ -198,7 +288,7 @@ def test_one_prepare_does_not_repeat_a_failed_post_at_the_next_container_address
         rule = _warmup_rule(first, body, digest, attempts=1)
         assert rule.warmup is not None
         rule = replace(rule, warmup=replace(rule.warmup, max_response_bytes=1024))
-        engine = _engine(addresses=("127.0.0.1", "127.0.0.2"))
+        engine = _engine(addresses=("127.0.0.1", "::1"))
         runtime = _runtime(engine)
         observation = runtime.prepare(build_request(), build_template(readiness=rule))
         assert observation.observed_instance_state is ObservedInstanceState.WARMING_UP
@@ -209,13 +299,17 @@ def test_one_prepare_does_not_repeat_a_failed_post_at_the_next_container_address
         assert observation.stop_evidence is None
 
 
+@requires_ipv6_loopback
 def test_choose_a_reachable_address_before_sending_the_only_warmup_post(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    with responding("ok") as (server, requests, _):
+    with responding("ok") as (server, requests, _, _):
         body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
         rule = _warmup_rule(server, body, digest, attempts=1)
-        runtime = _runtime(_engine(addresses=("127.0.0.2", "127.0.0.1")))
+        # Nothing listens on the IPv6 loopback, so that declared address is
+        # refused immediately on every host instead of blackholing like an
+        # unassigned 127.0.0.0/8 address does on macOS.
+        runtime = _runtime(_engine(addresses=("::1", "127.0.0.1")))
         send = runtime._run_warmup
         attempted: list[str] = []
 
@@ -245,7 +339,7 @@ def test_exhausted_tcp_probe_budget_prevents_warmup(
         elapsed += min(0.25, timeout)
         raise OSError("synthetic unreachable container")
 
-    with responding("ok") as (server, requests, _):
+    with responding("ok") as (server, requests, _, _):
         body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
         rule = _warmup_rule(server, body, digest, attempts=1)
         runtime = _runtime(
@@ -264,49 +358,77 @@ def test_exhausted_tcp_probe_budget_prevents_warmup(
         assert observation.stop_evidence is None
 
 
-def test_attempts_share_one_deadline_and_exhaustion_sends_nothing_more(tmp_path: Path) -> None:
-    with responding("stall") as (server, requests, _):
+def test_attempts_share_one_deadline_and_exhaustion_sends_nothing_more(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One action, one deadline: attempts spend it, they never renew it.
+
+    The module clock is injected so the budget arithmetic is exercised without
+    measuring how fast this host runs a loopback POST. The peer still stalls for
+    real, and the peer's own events (POST count and client hangup) decide whether
+    the runtime honoured its single deadline.
+    """
+    elapsed = 0.0
+    with responding("stall") as (server, requests, _, aborted):
         body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
         rule = _warmup_rule(server, body, digest, attempts=4)
         assert rule.warmup is not None
-        rule = replace(rule, warmup=replace(rule.warmup, timeout_seconds=0.35))
+        rule = replace(rule, warmup=replace(rule.warmup, timeout_seconds=WARMUP_BUDGET_SECONDS))
         template = build_template(readiness=rule)
         runtime = _runtime(_engine(addresses=("127.0.0.1",)))
-        started = time.monotonic()
+        monkeypatch.setattr(docker_runtime, "time", SimpleNamespace(monotonic=lambda: elapsed))
 
         first = runtime.prepare(build_request(), template)
 
-        elapsed = time.monotonic() - started
         assert first.observed_instance_state is ObservedInstanceState.WARMING_UP
-        assert len(requests) == 1
-        # Four attempts must not multiply the 0.35 s wall-clock action budget.
-        assert elapsed < 0.35 * 2
+        # One observation spends at most one attempt, and the peer saw it end.
+        assert len(requests) == 1 and aborted.wait(5)
+        # The anchor belongs to the action, so a later attempt reuses it.
+        assert runtime._warmup_deadlines[(SAMPLE_INSTANCE_ID, 1)] == pytest.approx(
+            WARMUP_BUDGET_SECONDS
+        )
 
+        second = runtime.prepare(build_request(), template)
+
+        assert second.observed_instance_state is ObservedInstanceState.WARMING_UP
+        assert len(requests) == 2
+        assert runtime._warmup_deadlines[(SAMPLE_INSTANCE_ID, 1)] == pytest.approx(
+            WARMUP_BUDGET_SECONDS
+        )
+
+        # The budget is spent, so four attempts cannot multiply it: the remaining
+        # observations send nothing and keep reporting warming up.
+        elapsed = WARMUP_BUDGET_SECONDS + 0.05
         for _ in range(3):
             repeated = runtime.prepare(build_request(), template)
             assert repeated.observed_instance_state is ObservedInstanceState.WARMING_UP
-        assert len(requests) == 1
-        assert time.monotonic() - started < 0.35 * 2
+        assert len(requests) == 2
+        assert runtime._warmup_deadlines[(SAMPLE_INSTANCE_ID, 1)] == pytest.approx(
+            WARMUP_BUDGET_SECONDS
+        )
+        assert _only_progress(runtime).completed == 0
         assert first.observed_peak_memory is not None
         assert first.stop_evidence is None
 
 
+@requires_ipv6_loopback
 def test_a_stalled_response_is_non_ready_and_never_retried_at_another_address(
     tmp_path: Path,
 ) -> None:
     with (
-        responding("stall") as (first, first_requests, _),
-        responding("ok", address="127.0.0.2", port=first.server_port) as (
+        responding("stall") as (first, first_requests, _, _),
+        responding("ok", address="::1", port=first.server_port) as (
             _,
             second_requests,
+            _,
             _,
         ),
     ):
         body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
         rule = _warmup_rule(first, body, digest, attempts=1)
         assert rule.warmup is not None
-        rule = replace(rule, warmup=replace(rule.warmup, timeout_seconds=0.3))
-        runtime = _runtime(_engine(addresses=("127.0.0.1", "127.0.0.2")))
+        rule = replace(rule, warmup=replace(rule.warmup, timeout_seconds=WARMUP_BUDGET_SECONDS))
+        runtime = _runtime(_engine(addresses=("127.0.0.1", "::1")))
 
         observation = runtime.prepare(build_request(), build_template(readiness=rule))
 
@@ -326,7 +448,7 @@ def test_exhausted_action_budget_stops_address_probing_and_warmup(
         elapsed += min(timeout, 0.2)
         raise OSError("synthetic unreachable container")
 
-    with responding("ok") as (server, requests, _):
+    with responding("ok") as (server, requests, _, _):
         body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
         rule = _warmup_rule(server, body, digest, attempts=1)
         assert rule.warmup is not None
@@ -362,7 +484,7 @@ def test_container_start_spends_the_one_warmup_budget_anchored_before_daemon_wor
         attempted.append(timeout)
         raise OSError("synthetic unreachable container")
 
-    with responding("ok") as (server, requests, _):
+    with responding("ok") as (server, requests, _, _):
         body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
         rule = _warmup_rule(server, body, digest, attempts=1)
         assert rule.warmup is not None
@@ -408,7 +530,7 @@ def test_budget_spent_during_daemon_work_sends_no_probe_and_no_post(
         attempted.append(timeout)
         return nullcontext()
 
-    with responding("ok") as (server, requests, _):
+    with responding("ok") as (server, requests, _, _):
         body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
         rule = _warmup_rule(server, body, digest, attempts=1)
         assert rule.warmup is not None
@@ -451,7 +573,7 @@ def test_replacement_container_inherits_the_original_action_deadline(
         attempted.append(timeout)
         raise OSError("synthetic unreachable container")
 
-    with responding("ok") as (server, requests, _):
+    with responding("ok") as (server, requests, _, _):
         body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
         rule = _warmup_rule(server, body, digest, attempts=4)
         assert rule.warmup is not None
@@ -498,7 +620,7 @@ def test_confirmed_stop_lets_the_same_generation_start_a_new_budget(
             return nullcontext()
         raise OSError("synthetic unreachable container")
 
-    with responding("ok") as (server, requests, _):
+    with responding("ok") as (server, requests, _, _):
         body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
         rule = _warmup_rule(server, body, digest, attempts=1)
         assert rule.warmup is not None
@@ -545,7 +667,7 @@ def test_generation_change_starts_a_new_action_budget(
             return nullcontext()
         raise OSError("synthetic unreachable container")
 
-    with responding("ok") as (server, requests, _):
+    with responding("ok") as (server, requests, _, _):
         body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
         rule = _warmup_rule(server, body, digest, attempts=1)
         assert rule.warmup is not None
@@ -583,7 +705,7 @@ def test_a_restarted_adapter_reports_warming_up_without_probing_or_posting(
         probed.append(address[0])
         return nullcontext()
 
-    with responding("ok") as (server, requests, _):
+    with responding("ok") as (server, requests, _, _):
         body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
         rule = _warmup_rule(server, body, digest, attempts=2)
         template = build_template(readiness=rule)
@@ -622,11 +744,11 @@ def test_an_intent_resumed_in_the_same_process_spends_the_remaining_budget(
     elapsed = 0.0
     deadlines: list[float] = []
 
-    with responding("ok") as (server, requests, _):
+    with responding("ok") as (server, requests, _, _):
         body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
         rule = _warmup_rule(server, body, digest, attempts=2)
         assert rule.warmup is not None
-        rule = replace(rule, warmup=replace(rule.warmup, timeout_seconds=0.4))
+        rule = replace(rule, warmup=replace(rule.warmup, timeout_seconds=ANCHOR_BUDGET_SECONDS))
         template = build_template(readiness=rule)
         runtime = _runtime(_engine(addresses=("127.0.0.1",)))
         monkeypatch.setattr(docker_runtime, "time", SimpleNamespace(monotonic=lambda: elapsed))
@@ -640,17 +762,22 @@ def test_an_intent_resumed_in_the_same_process_spends_the_remaining_budget(
 
         prepared = runtime.prepare(build_request(), template)
         assert prepared.observed_instance_state is ObservedInstanceState.WARMING_UP
-        assert deadlines == [pytest.approx(0.4)]
+        assert deadlines == [pytest.approx(ANCHOR_BUDGET_SECONDS)]
 
-        elapsed = 0.3
+        # Most of the anchor is gone, but a fresh budget would be 4 s later.
+        elapsed = ANCHOR_BUDGET_SECONDS - 1.0
         resumed = runtime.inspect(build_request(), template, resumed=True)
 
         assert resumed is not None
         assert resumed.observed_instance_state is ObservedInstanceState.READY
         assert len(requests) == 2
-        # The in-memory anchor keeps the original 0.4 s deadline instead of
-        # restarting a fresh window when the later version is observed.
-        assert deadlines == [pytest.approx(0.4), pytest.approx(0.4)]
+        # The in-memory anchor keeps the original deadline instead of restarting
+        # a fresh window when the later version is observed.
+        assert deadlines == [
+            pytest.approx(ANCHOR_BUDGET_SECONDS),
+            pytest.approx(ANCHOR_BUDGET_SECONDS),
+        ]
+        assert _only_progress(runtime).deadline == pytest.approx(ANCHOR_BUDGET_SECONDS)
 
 
 def test_a_new_intent_after_a_restart_anchors_its_own_budget(
@@ -658,11 +785,11 @@ def test_a_new_intent_after_a_restart_anchors_its_own_budget(
 ) -> None:
     elapsed = 0.0
 
-    with responding("ok") as (server, requests, _):
+    with responding("ok") as (server, requests, _, _):
         body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
         rule = _warmup_rule(server, body, digest, attempts=2)
         assert rule.warmup is not None
-        rule = replace(rule, warmup=replace(rule.warmup, timeout_seconds=0.4))
+        rule = replace(rule, warmup=replace(rule.warmup, timeout_seconds=ANCHOR_BUDGET_SECONDS))
         template = build_template(readiness=rule)
         runtime = _runtime(_engine(addresses=("127.0.0.1",)))
         monkeypatch.setattr(docker_runtime, "time", SimpleNamespace(monotonic=lambda: elapsed))
@@ -670,7 +797,9 @@ def test_a_new_intent_after_a_restart_anchors_its_own_budget(
         first = runtime.prepare(build_request(), template)
 
         assert first.observed_instance_state is ObservedInstanceState.WARMING_UP
-        assert runtime._warmup_deadlines[(SAMPLE_INSTANCE_ID, 1)] == pytest.approx(0.4)
+        assert runtime._warmup_deadlines[(SAMPLE_INSTANCE_ID, 1)] == pytest.approx(
+            ANCHOR_BUDGET_SECONDS
+        )
         assert len(requests) == 1
 
         # A version-1 intent is new work, so the restarted adapter grants it a
@@ -692,7 +821,7 @@ def test_a_passed_intent_deadline_is_non_ready_with_zero_outbound(
         probed.append(address[0])
         return nullcontext()
 
-    with responding("ok") as (server, requests, _):
+    with responding("ok") as (server, requests, _, _):
         body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
         rule = _warmup_rule(server, body, digest, attempts=1)
         template = build_template(readiness=rule)
@@ -764,7 +893,7 @@ def test_a_restarted_controller_keeps_an_unresolved_warmup_closed(
         probed.append(address[0])
         return nullcontext()
 
-    with responding("ok") as (server, requests, _):
+    with responding("ok") as (server, requests, _, _):
         body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
         rule = _warmup_rule(server, body, digest, attempts=2)
         template = build_template(readiness=rule)
@@ -823,11 +952,11 @@ def test_a_redirect_is_not_followed_to_another_reachable_endpoint(tmp_path: Path
 
 def test_an_exhausted_warmup_reports_a_reason_and_keeps_the_peak_hold(tmp_path: Path) -> None:
     """The deadline is observable, but it is neither a failure nor a release."""
-    with responding("stall") as (server, requests, _):
+    with responding("stall") as (server, requests, _, _):
         body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
         rule = _warmup_rule(server, body, digest, attempts=2)
         assert rule.warmup is not None
-        rule = replace(rule, warmup=replace(rule.warmup, timeout_seconds=0.3))
+        rule = replace(rule, warmup=replace(rule.warmup, timeout_seconds=WARMUP_BUDGET_SECONDS))
         template = build_template(readiness=rule)
         store = InMemoryIntentStore()
         service = _control_service(template, store, _runtime(_engine(addresses=("127.0.0.1",))))
@@ -857,11 +986,11 @@ def test_an_exhausted_warmup_reports_a_reason_and_keeps_the_peak_hold(tmp_path: 
 
 def test_a_restart_keeps_the_persisted_deadline_reason(tmp_path: Path) -> None:
     """A restarted adapter has no anchor, but it must not erase the reason."""
-    with responding("stall") as (server, requests, _):
+    with responding("stall") as (server, requests, _, _):
         body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
         rule = _warmup_rule(server, body, digest, attempts=2)
         assert rule.warmup is not None
-        rule = replace(rule, warmup=replace(rule.warmup, timeout_seconds=0.3))
+        rule = replace(rule, warmup=replace(rule.warmup, timeout_seconds=WARMUP_BUDGET_SECONDS))
         template = build_template(readiness=rule)
         engine = _engine(addresses=("127.0.0.1",))
         store = InMemoryIntentStore()
@@ -888,7 +1017,7 @@ def test_a_restart_keeps_the_persisted_deadline_reason(tmp_path: Path) -> None:
 
 
 def test_a_completed_warmup_reports_no_reason(tmp_path: Path) -> None:
-    with responding("ok") as (server, requests, _):
+    with responding("ok") as (server, requests, _, _):
         body, digest = _warmup_body(tmp_path, b"synthetic-warmup")
         rule = _warmup_rule(server, body, digest, attempts=1)
         runtime = _runtime(_engine(addresses=("127.0.0.1",)))

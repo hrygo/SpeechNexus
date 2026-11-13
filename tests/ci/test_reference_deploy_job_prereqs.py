@@ -17,7 +17,12 @@ to PostgreSQL or starts a container. Mutations that must turn it red:
   matched per role, so a group that survives only on another role is red) or
   from its documentation;
 - dropping a workspace member's source ``COPY`` line (the guard requires the
-  metadata and the source line, not just one occurrence of the member name).
+  metadata and the source line, not just one occurrence of the member name);
+- letting ``deploy/README.md`` describe an older gate: a post-claim relation
+  removed from its list, a stale relation or column count, the removed
+  ``pending`` migration-head wording, or a lane the bootstrap does not assemble
+  presented as selectable. The guard reads the gate's own write surface and
+  ``GATEWAY_CONFIGS`` and compares them with that description.
 
 The behaviour that cannot be proven from text - every check runs, a failure
 exits 1, a failure never ``exec``s and a clean run does - is proven by
@@ -28,6 +33,7 @@ exists and that the exit happens after the failure branch.
 
 from __future__ import annotations
 
+import ast
 import re
 import unittest
 from pathlib import Path
@@ -41,6 +47,8 @@ GATE = ROOT / "deploy/job-startup-gate.py"
 PROVISION = ROOT / "scripts/dev-env/provision-job-roles.py"
 MINIMAL_DOC = ROOT / "docs/operations/compose-minimal.md"
 RUNBOOK = ROOT / "docs/operations/async-job-runbook.md"
+DEPLOY_README = ROOT / "deploy/README.md"
+PREFLIGHT = ROOT / "scripts/dev-env/check-async-job-prereqs.py"
 PROJECT = ROOT / "pyproject.toml"
 
 DISPATCH_GRANT_GROUPS = (
@@ -73,6 +81,52 @@ def service_block(document: str, name: str) -> str:
     following = SERVICE_HEADER.search(document, header.end())
     end = following.start() if following is not None else len(document)
     return document[header.start() : end]
+
+
+def normalise(document: str) -> str:
+    """Collapse wrapping so a claim is matched across source line breaks."""
+    return re.sub(r"\s+", " ", document)
+
+
+GATE_START = "the gate verifies the prerequisites the worker"
+GATE_END = "The startup check runs before the dispatcher exists"
+
+
+def deploy_readme_gate_description() -> str:
+    """Return only the paragraphs that describe what the gate checks.
+
+    The rest of the file mentions the same relations, buckets and lanes for other
+    roles, so a whole-document ``assertIn`` would stay green after this part lost
+    a fact. The two anchors fail loudly if the document is restructured instead of
+    silently matching nothing.
+    """
+    document = read(DEPLOY_README)
+    start = document.index(GATE_START)
+    end = document.index(GATE_END, start)
+    return document[start:end]
+
+
+def literal_assignment(path: Path, name: str) -> object:
+    """Return one module-level literal assignment without importing the module.
+
+    ``deploy/`` and ``scripts/dev-env/`` read backend constants at runtime, which
+    the system interpreter running this suite cannot import; the literal copies
+    they must agree on are still checkable as syntax.
+    """
+    for node in ast.parse(read(path)).body:
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            target, value = node.target.id, node.value
+        elif (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+        ):
+            target, value = node.targets[0].id, node.value
+        else:
+            continue
+        if target == name and value is not None:
+            return ast.literal_eval(value)
+    raise AssertionError(f"{name} is not a literal assignment in {path}")
 
 
 def workspace_members() -> list[str]:
@@ -235,6 +289,47 @@ class DispatcherStartupGateTests(unittest.TestCase):
         gate = read(GATE)
         self.assertIn("alembic_version", gate)
         self.assertIn("--profile migration run --rm migrate", gate)
+
+
+class DeployReadmeGateTests(unittest.TestCase):
+    """`deploy/README.md` must describe the gate that actually ships.
+
+    The gate remains the single source of the write surface, the migration-head
+    refusal and the assembled lanes; the README restates them for operators, so a
+    change to any of the three turns this guard red until the README says the same
+    thing. `tests/unit/test_job_startup_gate.py` proves the behaviour; this suite
+    only proves the operator-facing description did not drift.
+    """
+
+    def test_the_readme_documents_every_post_claim_write_relation(self) -> None:
+        surface = literal_assignment(PREFLIGHT, "DISPATCH_WRITE_PROBES")
+        assert isinstance(surface, tuple)
+        readme = normalise(deploy_readme_gate_description())
+        for table, _, columns in surface:
+            self.assertIn(f"`{table}`", readme, f"{table} must be documented")
+            self.assertIsInstance(columns, tuple)
+        self.assertIn(f"{len(surface)} relations", readme)
+        self.assertIn(f"{sum(len(columns) for _, _, columns in surface)} columns", readme)
+
+    def test_the_readme_states_the_migration_head_refusal(self) -> None:
+        readme = normalise(deploy_readme_gate_description())
+        self.assertIn("GRANT SELECT ON speech.alembic_version", readme)
+        self.assertIn("refuses to start", readme)
+        # The old wording made an unreadable head look like a supported upgrade.
+        self.assertNotIn("reports the head as `pending`", readme)
+        self.assertNotIn("instead of failing the upgrade", readme)
+
+    def test_the_readme_documents_only_the_assembled_lanes(self) -> None:
+        configs = literal_assignment(GATE, "GATEWAY_CONFIGS")
+        assert isinstance(configs, dict)
+        readme = normalise(deploy_readme_gate_description())
+        for lane in configs:
+            self.assertIn(f"`{lane}`", readme)
+        self.assertIn("rejected at container", readme)
+        self.assertIn("before a claim", readme)
+        # Grant-only framing used to present the lane as a supported opt-in.
+        self.assertNotIn("Enabling `voice_validation` is not only a kinds change", readme)
+        self.assertNotIn("`voice_validation_worker_grants` relations are readable", readme)
 
 
 class JobRoleProvisioningTests(unittest.TestCase):

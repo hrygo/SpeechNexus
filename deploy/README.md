@@ -199,16 +199,27 @@ could only discover *after* claiming a lease and names each missing one:
 
 - the dispatch DSN is present and its role is not a superuser, does not own schema
   `CREATE`, the database or any schema relation (the same guard the worker runs);
-- the worker's own `SELECT` probes pass, and - when
-  `SPEECHNEXUS_JOB_DISPATCH_KINDS` contains `voice_validation` - the two
-  `voice_validation_worker_grants` relations are readable;
-- the post-claim write columns (`speech_jobs`, `coordination_jobs`,
-  `speech_job_events`, `speech_job_cancellation_not_submitted`) are granted, so a
-  role missing `job_dispatch_grants` stops at container start instead of failing
-  after the first claim;
-- `speech.alembic_version` exists and its single row equals the packaged migration
-  head (a role provisioned before the read-only grant reports the head as `pending`
-  instead of failing the upgrade);
+- `speech.alembic_version` exists, the dispatch role can read it, and its single
+  row equals the packaged migration head. An unreadable head is a startup failure,
+  not a `pending` line: the gate cannot tell a missing read-only grant from a
+  database that is genuinely behind, so it refuses to start and names
+  `GRANT SELECT ON speech.alembic_version TO <role>` — the upgrade prerequisite in
+  the minimal runbook §6. The eight startup `SELECT` probes are not a substitute:
+  they cover the columns this build reads, not views, tables, indexes or other
+  columns a migration adds;
+- the worker's own `SELECT` probes pass;
+- every column the dispatcher writes after claiming is granted, across the 10
+  relations it writes: the Job transition (`speech_jobs`, `coordination_jobs`,
+  `speech_job_events`, `speech_job_cancellation_not_submitted`), the committed
+  result Artifact (`speech_artifacts` INSERT) and the capacity release of a
+  terminal Job (`admission_leases`, `admission_attempts`, `workspace_quotas`,
+  `host_nodes`, `engine_instances` UPDATE) — 67 columns in total. A role missing
+  `job_dispatch_grants`, `artifact_publisher_grants` or
+  `coordination_runtime_grants` stops at container start instead of failing after
+  the first claim or the first result publication;
+- every requested lane is one this bootstrap assembles:
+  `SPEECHNEXUS_JOB_DISPATCH_KINDS` must stay inside `asr`/`tts`, and any other
+  kind is named and rejected before a claim (see the lane rules below);
 - both `SPEECHNEXUS_OBJECT_STORAGE_BUCKET` (Artifact) and
   `SPEECHNEXUS_EXECUTION_RESULT_BUCKET` (gateway staging read-back) exist and have
   versioning enabled; the gateway's private `result_bucket` in
@@ -217,19 +228,21 @@ could only discover *after* claiming a lease and names each missing one:
   unversioned result bucket no longer fails only after the first publication.
 
 A failure exits non-zero with `FAIL: <named prerequisite>` and the worker never
-starts; the real engine and a registered `ready` instance, and the API-side
-writer/admission DSNs, are printed as `pending` lines because they are deployment
-inputs this container cannot verify - the API already answers `503 job_unavailable`
-at creation for a blank Job writer/admission DSN, which is before any claim. The
-gate reads the gateway configs through `SPEECHNEXUS_JOB_GATE_PRIVATE_DIR`
+starts. Exactly two inputs are printed as `pending` lines because they are
+deployment inputs this container cannot verify: the real engine and a registered
+`ready` instance, and the API-side writer/admission DSNs — the API already answers
+`503 job_unavailable` at creation for a blank Job writer/admission DSN, which is
+before any claim. Every other prerequisite above is a hard failure. The gate reads
+the gateway configs through `SPEECHNEXUS_JOB_GATE_PRIVATE_DIR`
 (`/run/speechnexus-private` in Compose); it never reads credentials from them.
 
 Provision the three Job roles with
 `uv run --all-packages python scripts/dev-env/provision-job-roles.py` after the
 migration profile; it reads the role names and passwords from the three Job DSNs
-and installs the five dispatch grant groups, the writer baseline, the read-only
-`speech.alembic_version` `SELECT` and `voice_validation_worker_grants` when that
-kind is selected. The step-by-step path
+and installs the five dispatch grant groups, the writer baseline and the read-only
+`speech.alembic_version` `SELECT`. When the selected kinds include
+`voice_validation` it also installs that lane's two extra `SELECT`s, which only
+matter once the lane itself is assembled (see below). The step-by-step path
 is [the minimal deployment runbook §6](../docs/operations/compose-minimal.md#异步-job-运行角色与授权).
 
 The command-by-command path from a blank environment to one submitted Job,
@@ -258,25 +271,27 @@ is a local convenience, not object-layer least privilege: `read_only`, `cap_drop
 and `no-new-privileges` constrain the container process only, not S3
 authorization, so production must supply narrowly scoped object credentials.
 
-`SPEECHNEXUS_JOB_DISPATCH_KINDS` selects the kinds this process claims and
-defaults to `asr,tts`. It is comma-separated, de-duplicated and must stay inside
-the dispatchable union (`asr`, `tts`, `voice_design`, `voice_clone`,
-`voice_validation`). `voice_design`/`voice_clone` need the separate voice lanes;
-the default queue never claims them. Enabling `voice_validation` is not only a
-kinds change:
+`SPEECHNEXUS_JOB_DISPATCH_KINDS` selects the lanes this process claims and
+defaults to `asr,tts`. It is comma-separated and de-duplicated, and it must stay
+inside the lanes this bootstrap assembles: `deploy/compose.yaml` forwards exactly
+the private ASR and TTS gateway configs, so `asr` and `tts` are the only kinds the
+gate accepts. Any other kind — `voice_design`, `voice_clone`, `voice_validation`
+or a value outside the dispatchable union — is named and rejected at container
+start, before a claim. `voice_design`/`voice_clone` are non-dispatchable generation
+lanes, and `voice_validation` submits through the voice-clone command lane, which
+this file never configures for the gateway: the worker would claim such a Job and
+fail after the claim, or never be served an engine for it.
 
-1. install the dispatcher-role grants — `job_runtime_grants`,
-   `job_dispatch_grants` (which already includes the Artifact publisher and the
-   cancellation not-submitted INSERT), `public_job_grants`,
-   `cancellation_reconciliation_grants` and `coordination_runtime_grants`;
-2. additionally install `voice_validation_worker_grants(schema, worker_role)`.
-   Beyond `USAGE` on the schema, it grants only two `SELECT`s — on
-   `speech_voice_draft_revisions` and `speech_assets` — the frozen draft revision
-   and the ready reference Asset the validation reader replays (#553). It grants
-   no draft writes, publication tables or object-storage rights. When
-   `voice_validation` is in `SPEECHNEXUS_JOB_DISPATCH_KINDS`, the worker probes
-   both tables during its startup role check and refuses to start without them;
-3. set `SPEECHNEXUS_JOB_DISPATCH_KINDS=asr,tts,voice_validation` in `compose.env`.
+Serving another lane is a topology change, not a `kinds` change: add its private
+gateway config and `SPEECHNEXUS_GATEWAY_FILE_*_CONFIG_FILE` entry to
+`compose.yaml`, add the kind to the gate's `GATEWAY_CONFIGS`, install that lane's
+extra grants, and only then select it. For `voice_validation` the extra grants are
+`voice_validation_worker_grants(schema, worker_role)`: beyond `USAGE` on the schema
+it grants only two `SELECT`s — on `speech_voice_draft_revisions` and
+`speech_assets` — the frozen draft revision and the ready reference Asset the
+validation reader replays (#553). It grants no draft writes, publication tables or
+object-storage rights, and the worker probes both tables when that lane is
+selected.
 
 The startup check runs before the dispatcher exists, so a missing grant stops the
 process (non-zero exit, a restart loop under Compose) instead of claiming a Job

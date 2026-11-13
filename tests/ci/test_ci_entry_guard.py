@@ -462,6 +462,19 @@ class RegistryRubricTests(unittest.TestCase):
         self.assertEqual(GUARD._module_constants(ast.parse("F = False\n")), {"F": False})
         self.assertEqual(GUARD._module_constants(ast.parse("F: bool = False\n")), {"F": False})
 
+    def test_a_type_alias_is_not_a_provable_constant(self) -> None:
+        # PEP 695 `type X = …` is a static binding like `def`/`class`; leaving it out
+        # made `FLAG = False` + `type FLAG = int` + `@skipIf(FLAG)` green while the
+        # case really ran as `OK (skipped=1)`.
+        source = (
+            "FLAG = False\n"
+            "type FLAG = int\n"
+            "@unittest.skipIf(FLAG, 'skip')\n"
+            "def test_x():\n"
+            "    pass\n"
+        )
+        self.assertEqual(GUARD._module_constants(ast.parse(source)), {})
+
     def test_a_module_level_rebinding_of_the_evidence_is_red(self) -> None:
         self._assert_red("test:test_module_rebound_evidence", "模块顶层被重新绑定")
 
@@ -885,6 +898,13 @@ class WiringTests(unittest.TestCase):
         self.assertTrue(self._prelude_problems("export FOO=<(rm -rf /tmp/ci-entry-guard-probe)"))
         self.assertTrue(self._prelude_problems("cd /tmp && rm -rf /tmp/ci-entry-guard-probe"))
 
+    def test_a_line_continuation_prelude_is_red(self) -> None:
+        # A trailing `\` joins the next line into this one, so `: \` swallows the
+        # guard command into the no-op and the guard never runs.
+        problems = self._prelude_problems(": \\")
+        self.assertTrue(problems)
+        self.assertIn("会先执行的命令", "\n".join(problems))
+
     def test_every_job_runs_on_the_runner_the_platform_conditions_assume(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertEqual(GUARD.check_platform_runner(workflow), [])
@@ -909,6 +929,30 @@ class WiringTests(unittest.TestCase):
         message = "\n".join(problems)
         self.assertIn("macos-14", message)
         self.assertIn(GUARD.CI_RUNNER_IMAGE, message)
+
+    def test_every_runs_on_spelling_gets_the_same_verdict(self) -> None:
+        # `runs-on: macos-14`, `runs-on: [macos-14]` and `runs-on:` + `- macos-14` all
+        # name the same image, so all three have to agree; reading only the scalar
+        # form left a job on another runner out of `runners` entirely, which is the
+        # opposite verdict from the equivalent inline sequence.
+        for replacement, red in (
+            ("    runs-on: macos-14", True),
+            ("    runs-on: [macos-14]", True),
+            ("    runs-on:\n      - macos-14", True),
+            ("    runs-on: [ubuntu-24.04]", False),
+            ("    runs-on:\n      - ubuntu-24.04", False),
+        ):
+            with self.subTest(replacement=replacement):
+                problems = self._workflow_problems(("    runs-on: ubuntu-24.04", replacement))
+                self.assertEqual(bool(problems), red, "\n".join(problems))
+        self.assertIn(
+            "macos-14",
+            "\n".join(
+                self._workflow_problems(
+                    ("    runs-on: ubuntu-24.04", "    runs-on:\n      - macos-14")
+                )
+            ),
+        )
 
     def test_a_missing_guard_subcommand_is_red(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")

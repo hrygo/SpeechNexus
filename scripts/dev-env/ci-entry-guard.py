@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import hashlib
 import importlib.util
 import re
 import sys
@@ -889,7 +890,7 @@ def audit_evidence() -> list[str]:
                 "同名重复定义必须红"
             )
         node = match.members[0]
-        problems += _evidence_rebinding_problems(row.key, name, match.klass)
+        problems += _evidence_rebinding_problems(row.key, name, match.tree, match.klass)
         problems += _evidence_skip_problems(row.key, name, where, match.tree, match.klass, node)
         problems += _evidence_body_problems(
             row.key, name, f"{_display(match.path)}:{node.lineno}", node
@@ -944,10 +945,13 @@ class _EvidenceMatch:
 
 
 # Parsing every collected module once per registration made `sites` cost 8 parses of
-# the whole `tests/ci` tree. The key carries the file stamp so a rewritten fixture in
-# a temp directory is re-parsed instead of served stale.
+# the whole `tests/ci` tree. The key carries a digest of the file bytes, not the file
+# stamp: `mtime_ns` can be restored after a rewrite (`os.utime`, `cp -p`, `rsync -a`,
+# a tar extraction), and a stamp-keyed cache would then serve the AST of the previous
+# content. The cache is still a per-process dict that never evicts, which is what a
+# single CLI run over a checkout needs; a long-lived process would hold every module.
 _MODULE_INDEX_CACHE: dict[
-    tuple[str, int, int],
+    tuple[str, str],
     tuple[ast.Module, dict[str, tuple[tuple[ast.ClassDef, tuple[ast.FunctionDef, ...]], ...]]],
 ] = {}
 
@@ -956,12 +960,12 @@ def _module_evidence_index(
     path: Path,
 ) -> tuple[ast.Module, dict[str, tuple[tuple[ast.ClassDef, tuple[ast.FunctionDef, ...]], ...]]]:
     """The module's AST and its `method name -> [(TestCase, definitions)]` index."""
-    stat = path.stat()
-    key = (str(path), stat.st_mtime_ns, stat.st_size)
+    payload = path.read_bytes()
+    key = (str(path), hashlib.blake2b(payload, digest_size=16).hexdigest())
     cached = _MODULE_INDEX_CACHE.get(key)
     if cached is not None:
         return cached
-    tree = ast.parse(path.read_text(encoding="utf-8"))
+    tree = ast.parse(payload.decode("utf-8"))
     grouped: dict[str, list[tuple[ast.ClassDef, tuple[ast.FunctionDef, ...]]]] = {}
     for node in ast.walk(tree):
         if not isinstance(node, ast.ClassDef) or not _is_test_case(tree, node):
@@ -1015,15 +1019,24 @@ def _decorator_signature(decorator: ast.expr) -> tuple[str, list[ast.expr], str]
     return "", [], source
 
 
-# The acceptance job runs on `ubuntu-24.04`, so a condition that is provably false
-# there cannot stop an evidence case from running in CI. The value is fixed here
-# rather than read from the interpreter running the guard, so a macOS workstation and
-# the CI runner reach the same verdict.
-CI_PLATFORM = "linux"
+# Every job in `.github/workflows/ci.yml` runs on this image. The platform strings a
+# skip condition is evaluated against are **derived** from it instead of being asserted
+# beside it, and `check_platform_runner` refuses a workflow that puts any job on another
+# image: a condition proved false for linux only means something on a machine that
+# reports `sys.platform == "linux"`. The value is fixed here rather than read from the
+# interpreter running the guard, so a macOS workstation and the CI runner reach the same
+# verdict about CI.
+CI_RUNNER_IMAGE = "ubuntu-24.04"
+_RUNNER_IMAGE_PLATFORM = {"ubuntu": "linux", "macos": "darwin", "windows": "win32"}
+_RUNNER_FAMILY_PLATFORM_STRINGS = {
+    "linux": {"platform.system()": "Linux", "os.name": "posix"},
+    "darwin": {"platform.system()": "Darwin", "os.name": "posix"},
+    "win32": {"platform.system()": "Windows", "os.name": "nt"},
+}
+CI_PLATFORM = _RUNNER_IMAGE_PLATFORM[CI_RUNNER_IMAGE.rsplit("-", 1)[0]]
 CI_PLATFORM_STRINGS = {
-    "sys.platform": "linux",
-    "platform.system()": "Linux",
-    "os.name": "posix",
+    "sys.platform": CI_PLATFORM,
+    **_RUNNER_FAMILY_PLATFORM_STRINGS[CI_PLATFORM],
 }
 
 
@@ -1100,40 +1113,108 @@ def _ci_condition_value(node: ast.expr, constants: Mapping[str, bool]) -> bool |
     return None
 
 
-def _module_constants(tree: ast.Module) -> dict[str, bool]:
-    """Module-level names bound once to a value the CI platform makes provable.
+def _target_names(target: ast.expr) -> list[str]:
+    """Every name one assignment target binds, expanding tuple/list/starred targets."""
+    if isinstance(target, ast.Name):
+        return [target.id]
+    if isinstance(target, (ast.Tuple, ast.List)):
+        return [name for element in target.elts for name in _target_names(element)]
+    if isinstance(target, ast.Starred):
+        return _target_names(target.value)
+    return []
 
-    A name assigned anywhere else (a `global` rebind in `setUpModule`, a local with the
-    same name) is left out: the module-level value would no longer be the one `unittest`
-    evaluates, so proving it would prove the wrong thing.
+
+def _binding_sites(node: ast.AST) -> list[tuple[str, str]]:
+    """(form, name) for every name this statement or expression can bind.
+
+    The form is recorded so a `for` target, an augmented assignment and an unpacking
+    target are all visible to the caller instead of only `Assign`/`AnnAssign`.
     """
-    assignments: dict[str, int] = {}
+    if isinstance(node, ast.Assign):
+        return [("assign", name) for target in node.targets for name in _target_names(target)]
+    if isinstance(node, ast.AnnAssign):
+        return [("annassign", name) for name in _target_names(node.target)]
+    if isinstance(node, ast.AugAssign):
+        return [("augassign", name) for name in _target_names(node.target)]
+    if isinstance(node, (ast.For, ast.AsyncFor)):
+        return [("for-target", name) for name in _target_names(node.target)]
+    if isinstance(node, (ast.With, ast.AsyncWith)):
+        return [
+            ("with-target", name)
+            for item in node.items
+            if item.optional_vars is not None
+            for name in _target_names(item.optional_vars)
+        ]
+    if isinstance(node, ast.ExceptHandler):
+        return [("except-target", node.name)] if node.name else []
+    if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp)):
+        return [
+            ("comprehension-target", name)
+            for generator in node.generators
+            for name in _target_names(generator.target)
+        ]
+    if isinstance(node, ast.NamedExpr):
+        return [("walrus", name) for name in _target_names(node.target)]
+    if isinstance(node, (ast.Import, ast.ImportFrom)):
+        return [("import", alias.asname or alias.name.split(".")[0]) for alias in node.names]
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return [("definition", node.name)]
+    if isinstance(node, (ast.Global, ast.Nonlocal)):
+        return [("declaration", name) for name in node.names]
+    if isinstance(node, ast.Delete):
+        return [("delete", name) for target in node.targets for name in _target_names(target)]
+    if isinstance(node, ast.MatchAs) and node.name:
+        return [("match-target", node.name)]
+    if isinstance(node, ast.MatchStar) and node.name:
+        return [("match-target", node.name)]
+    if isinstance(node, ast.MatchMapping) and node.rest:
+        return [("match-target", node.rest)]
+    return []
+
+
+def _module_binding_forms(tree: ast.Module) -> dict[str, tuple[str, ...]]:
+    """Every name the module binds, with the form of each binding site.
+
+    A binding is labelled `module-<form>` only when the statement doing it is a direct
+    statement of the module body; everything else keeps its bare form. The label is what
+    lets `_module_constants` require the single binding to be a module-level simple
+    assignment instead of merely counting statements of one kind.
+    """
+    module_statements = {id(statement) for statement in tree.body}
+    forms: dict[str, list[str]] = {}
     for node in ast.walk(tree):
-        targets: list[ast.expr] = []
-        if isinstance(node, ast.Assign):
-            targets = list(node.targets)
-        elif isinstance(node, ast.AnnAssign):
-            targets = [node.target]
-        for target in targets:
-            if isinstance(target, ast.Name):
-                assignments[target.id] = assignments.get(target.id, 0) + 1
+        for form, name in _binding_sites(node):
+            forms.setdefault(name, []).append(
+                f"module-{form}" if id(node) in module_statements else form
+            )
+    return {name: tuple(entries) for name, entries in forms.items()}
+
+
+def _module_constants(tree: ast.Module) -> dict[str, bool]:
+    """Module-level names bound exactly once, by a module-level simple assignment.
+
+    `unittest` evaluates the value the name holds when the decorator runs, so the
+    module-level value is the one being evaluated only when nothing else in the module
+    can rebind it. A name bound anywhere else is left out — a `for` target, an augmented
+    assignment (`|=`, `+=`), an unpacking target, a `with … as`, an `except … as`, a
+    comprehension target, a walrus, an import, a `def`/`class`, a `global`/`nonlocal`
+    declaration, or a `del` — because proving the module-level value would prove the
+    wrong thing about the value `unittest` sees.
+    """
+    forms = _module_binding_forms(tree)
     constants: dict[str, bool] = {}
     for statement in tree.body:
         if isinstance(statement, ast.Assign) and len(statement.targets) == 1:
-            target = statement.targets[0]
-            if isinstance(target, ast.Name) and assignments.get(target.id) == 1:
-                value = _ci_condition_value(statement.value, constants)
-                if value is not None:
-                    constants[target.id] = value
-        elif (
-            isinstance(statement, ast.AnnAssign)
-            and isinstance(statement.target, ast.Name)
-            and statement.value is not None
-            and assignments.get(statement.target.id) == 1
-        ):
-            value = _ci_condition_value(statement.value, constants)
-            if value is not None:
-                constants[statement.target.id] = value
+            target, form, value = statement.targets[0], "module-assign", statement.value
+        elif isinstance(statement, ast.AnnAssign) and statement.value is not None:
+            target, form, value = statement.target, "module-annassign", statement.value
+        else:
+            continue
+        if not isinstance(target, ast.Name) or forms.get(target.id) != (form,):
+            continue
+        result = _ci_condition_value(value, constants)
+        if result is not None:
+            constants[target.id] = result
     return constants
 
 
@@ -1221,21 +1302,58 @@ def _reachable_marks_in(node: ast.AST, constants: Mapping[str, bool]) -> list[st
     return _raise_or_call_marks(node)
 
 
-def _evidence_rebinding_problems(key: str, name: str, klass: ast.ClassDef) -> list[str]:
-    """A class-body assignment to the evidence name replaces the method `unittest` runs."""
+def _rebinds_evidence_name(node: ast.AST, name: str) -> bool:
+    """Whether one statement rebinds `name` as an attribute of some object."""
+    if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        return any(isinstance(target, ast.Attribute) and target.attr == name for target in targets)
+    if isinstance(node, ast.Delete):
+        return any(
+            isinstance(target, ast.Attribute) and target.attr == name for target in node.targets
+        )
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+        if node.func.id == "setattr" and len(node.args) >= 2:
+            attribute = node.args[1]
+            return isinstance(attribute, ast.Constant) and attribute.value == name
+        if node.func.id == "delattr" and len(node.args) >= 2:
+            attribute = node.args[1]
+            return isinstance(attribute, ast.Constant) and attribute.value == name
+    return False
+
+
+def _evidence_rebinding_problems(
+    key: str, name: str, tree: ast.Module, klass: ast.ClassDef
+) -> list[str]:
+    """Any assignment to the evidence name replaces the method `unittest` runs.
+
+    Both scopes count: the class body (`test_x = unittest.skip(...)(test_x)`) and the
+    module body (`Cls.test_x = unittest.skip(...)(Cls.test_x)`, `setattr(Cls, …)`),
+    because a line moved one indent left used to be green while the runtime still
+    reported `OK (skipped=1)`.
+    """
     for statement in klass.body:
-        targets: list[ast.expr] = []
         if isinstance(statement, ast.Assign):
-            targets = list(statement.targets)
+            targets: list[ast.expr] = list(statement.targets)
         elif isinstance(statement, ast.AnnAssign):
             targets = [statement.target]
-        if not any(isinstance(target, ast.Name) and target.id == name for target in targets):
+        else:
             continue
-        source = ast.unparse(statement).splitlines()[0]
-        return [
-            f"MUTATE_SITES 的 `{key}` 证据 `{name}` 在 `{klass.name}` 的类体里被重新绑定"
-            f"（`{source[:70]}`）；运行时执行的是绑定后的对象，守卫读到的定义不再是证据"
-        ]
+        if any(isinstance(target, ast.Name) and target.id == name for target in targets):
+            source = ast.unparse(statement).splitlines()[0]
+            return [
+                f"MUTATE_SITES 的 `{key}` 证据 `{name}` 在 `{klass.name}` 的类体里被重新绑定"
+                f"（`{source[:70]}`）；运行时执行的是绑定后的对象，守卫读到的定义不再是证据"
+            ]
+    for statement in tree.body:
+        for node in ast.walk(statement):
+            if not _rebinds_evidence_name(node, name):
+                continue
+            source = ast.unparse(node).splitlines()[0]
+            return [
+                f"MUTATE_SITES 的 `{key}` 证据 `{name}` 在模块顶层被重新绑定"
+                f"（`{source[:70]}`）；类体重绑是红，往下挪一层到模块级同样红——"
+                "运行时执行的是绑定后的对象"
+            ]
     return []
 
 
@@ -1712,6 +1830,21 @@ def _run_scripts(step: str) -> list[str]:
 # non-word characters, so `\b` can never match the standard `: "${VAR:?}"` guard.
 GUARD_PRELUDE = re.compile(r"^(set|export|cd|umask|unset|:)(\s|$)")
 
+# A prelude line is trusted as shell setup only. Redirection, piping, command chaining,
+# command substitution and process substitution still execute work before the guard —
+# `: > file` truncates a file at once, `: $(rm -rf …)` runs the command, and
+# `export FOO=<(rm -rf …)` runs it in a subshell — so a line carrying any of these
+# operators is not a prelude. The same limit covers `set`/`export`/`cd`/`umask`/`unset`,
+# which could already carry `$(…)` and `&&` before this rule existed.
+PRELUDE_SHELL_OPERATORS = (">", "<", "|", ";", "&", "$(", "`")
+
+
+def _is_guard_prelude(line: str) -> bool:
+    """Whether one line only prepares the shell, so nothing has run before the guard."""
+    if not GUARD_PRELUDE.match(line):
+        return False
+    return not any(operator in line for operator in PRELUDE_SHELL_OPERATORS)
+
 
 def _executed_lines(script: str) -> list[str]:
     """Command lines of one `run:` block, in order, without blanks and comments."""
@@ -1722,9 +1855,51 @@ def _executed_lines(script: str) -> list[str]:
     ]
 
 
+_RUNS_ON = re.compile(r"^    runs-on: (.+)$")
+_JOB_LINE = re.compile(r"^  ([a-zA-Z_][\w-]*):\s*$")
+
+
+def check_platform_runner(workflow: str) -> list[str]:
+    """Every job must run on `CI_RUNNER_IMAGE`, the image `CI_PLATFORM` is derived from.
+
+    The skip-condition evaluator decides whether a case runs *on CI* by fixing
+    `sys.platform`/`platform.system()`/`os.name` to the linux values. That is an
+    assumption about the machine, not a fact the guard can read from the interpreter, so
+    `wiring` checks it against the workflow: a job added on another runner image would
+    make every platform condition wrong for that job while the guard stayed green.
+    """
+    runners: list[tuple[str, str]] = []
+    job = ""
+    for line in workflow.splitlines():
+        header = _JOB_LINE.match(line)
+        if header:
+            job = header.group(1)
+            continue
+        runs_on = _RUNS_ON.match(line)
+        if runs_on and job:
+            runners.append((job, runs_on.group(1).strip()))
+    if not runners:
+        return [
+            "workflow 里没有任何 `runs-on`；平台条件按写死的 "
+            f"`{CI_PLATFORM}` 判定，读不到 runner 就无法核对这个假设"
+        ]
+    problems: list[str] = []
+    for job_name, runner in runners:
+        if runner == CI_RUNNER_IMAGE:
+            continue
+        problems.append(
+            f"作业 `{job_name}` 的 `runs-on` 是 `{runner}`，而平台条件按写死的 "
+            f"`{CI_PLATFORM}`（`sys.platform`/`platform.system()`/`os.name`）判定；"
+            f"`CI_RUNNER_IMAGE` 只描述 `{CI_RUNNER_IMAGE}`。新增别的 runner 前先决定平台"
+            "条件在它上面怎么判，再同步 `CI_RUNNER_IMAGE`/`CI_PLATFORM_STRINGS`"
+        )
+    return problems
+
+
 def run_wiring(workflow_path: Path) -> tuple[list[str], str]:
-    problems = check_anchor() + check_counts()
-    job = _job_block(workflow_path.read_text(encoding="utf-8"))
+    workflow = workflow_path.read_text(encoding="utf-8")
+    problems = check_anchor() + check_counts() + check_platform_runner(workflow)
+    job = _job_block(workflow)
     if not job:
         return [
             f"`{workflow_path.relative_to(ROOT)}` 里找不到 `{_JOB_HEADER.strip()}` 作业"
@@ -1747,14 +1922,15 @@ def run_wiring(workflow_path: Path) -> tuple[list[str], str]:
                         )
                     else:
                         earlier = [
-                            other for other in lines[:position] if not GUARD_PRELUDE.match(other)
+                            other for other in lines[:position] if not _is_guard_prelude(other)
                         ]
                         if earlier:
                             problems.append(
                                 f"步骤 `{name}` 里 `{candidate}` 前面还有会先执行的命令 "
-                                f"`{earlier[0][:70]}`；只有 "
-                                "`set`/`export`/`cd`/`umask`/`unset`/`: ` 这类环境前置可以出现在"
-                                "守卫命令之前"
+                                f"`{earlier[0][:70]}`；只有 `set`/`export`/`cd`/`umask`/`unset`/"
+                                "`: ` 这类**不含** `>`/`<`/`|`/`;`/`&`/`$(`/反引号 的环境前置可以"
+                                "出现在守卫命令之前（重定向、管道、命令链、命令替换、进程替换"
+                                "都会先执行）"
                             )
                     if candidate in guard_invocations:
                         problems.append(

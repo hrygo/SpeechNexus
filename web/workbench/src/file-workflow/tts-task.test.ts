@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { FileTaskSession } from "./file-task-session";
+import { canFinishTask } from "./file-task-policy";
 import { SpeechFileClient, parse } from "./speech-file-client";
 import { SessionTaskJournal, jobCommand, type TaskRecord, type TtsSelection } from "./task-journal";
 import { createTtsDemoTransport } from "./dev/tts-demo-transport";
@@ -329,12 +330,26 @@ function contractBody(text: string) {
   };
 }
 
-function failure(code: string, status: number) {
-  const envelope = structuredClone(
-    fixtures.examples.find((entry) => entry.id === "recover-operation")!.value,
-  ) as { error: { code: string } };
-  envelope.error.code = code;
-  return Response.json(parse("ErrorResponse", envelope), { status });
+function failure(code: string, status: number, operationId?: string) {
+  return Response.json(
+    parse("ErrorResponse", {
+      error: {
+        code,
+        type:
+          status === 429
+            ? "rate_limit_error"
+            : status >= 500
+              ? "service_unavailable_error"
+              : "invalid_request_error",
+        message: `Synthetic rejection ${code}`,
+        param: null,
+        request_id: "req-demo",
+        retryable: status === 429 || status >= 500,
+        ...(operationId ? { nexus: { operation_id: operationId } } : {}),
+      },
+    }),
+    { status },
+  );
 }
 
 /** Mirrors public_job_admission: `text_asset_id` is a 422 until the frozen text material exists. */
@@ -447,6 +462,35 @@ describe("workbench TTS submit shape (#685)", () => {
     second.dispose();
   });
 
+  it("settles the deployment's 422 job_text_asset_unsupported and reloads it as settled", async () => {
+    const test = setup();
+    const client = new SpeechFileClient("http://127.0.0.1", async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (new URL(request.url).pathname === "/v1/nexus/jobs" && request.method === "POST")
+        return failure("job_text_asset_unsupported", 422);
+      return test.transport.fetch(request);
+    });
+    const make = () => new FileTaskSession(client, new SessionTaskJournal(test.storage, "tts"));
+    const first = make();
+    await first.startText(sentinel, selection());
+    // This is the refusal named by #707: the protocol answered definitively, so the page
+    // must offer explicit abandonment rather than hold an unconfirmed submission forever.
+    expect(first.getSnapshot()).toMatchObject({ unknown: false, rejected: true, canReplay: false });
+    expect(first.getSnapshot().notice).toContain("job_text_asset_unsupported");
+    expect(canFinishTask(first.getSnapshot())).toBe(true);
+    expect(test.read()).toMatchObject({ version: 2, pending: "create", settled: "terminal" });
+    first.dispose();
+    const second = make();
+    await second.restore();
+    expect(second.getSnapshot()).toMatchObject({
+      unknown: false,
+      rejected: true,
+      canReplay: false,
+    });
+    expect(second.getSnapshot().notice).not.toContain("结果未知");
+    second.dispose();
+  });
+
   it("never replays a create that returned an identified original operation", async () => {
     const test = setup();
     let creates = 0;
@@ -454,7 +498,7 @@ describe("workbench TTS submit shape (#685)", () => {
       const request = input instanceof Request ? input : new Request(input, init);
       if (new URL(request.url).pathname === "/v1/nexus/jobs") {
         creates++;
-        return failure("operation_in_progress", 409);
+        return failure("operation_in_progress", 409, "op-demo");
       }
       return test.transport.fetch(request, init);
     });

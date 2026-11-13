@@ -93,6 +93,12 @@ export function FileTaskPanel({
       {state.unknown && (
         <p role="alert">请求结果尚未确认。请核对原素材或任务；重放只使用原输入和原键。</p>
       )}
+      {state.rejected && (
+        <p role="status">
+          原提交已被协议确定性拒绝，原意图作废：不能重放，刷新也不会再变回「结果未知」。
+          本页只能明确结束并重新开始；服务端数据不会因此删除。
+        </p>
+      )}
       <dl>
         <dt>素材</dt>
         <dd>{state.asset?.id ?? state.assetRecoveryId ?? savedAssetId ?? "尚未确认"}</dd>
@@ -157,7 +163,7 @@ export function FileTaskPanel({
         >
           按原键重放
         </button>
-        {state.asset?.status === "ready" && !job && !state.unknown && (
+        {state.asset?.status === "ready" && !job && !state.unknown && !state.rejected && (
           <button
             type="button"
             disabled={state.busy}
@@ -254,9 +260,11 @@ export function FileTaskPanel({
       {finishing && (
         <div role="group" aria-label="确认本页新任务">
           <p>
-            {state.uploadRejected
-              ? "原上传已明确拒绝。结束本页输入并重新选择？不会删除服务端数据。"
-              : "结束本页任务恢复并新建？服务器上的原任务与制品继续保留。"}
+            {state.rejected
+              ? "原提交已被协议确定性拒绝，这次意图已作废。结束本页记录并重新开始？新任务会使用新的幂等键，不会删除服务端数据。"
+              : state.uploadRejected
+                ? "原上传已明确拒绝。结束本页输入并重新选择？不会删除服务端数据。"
+                : "结束本页任务恢复并新建？服务器上的原任务与制品继续保留。"}
           </p>
           <button
             type="button"
@@ -267,7 +275,7 @@ export function FileTaskPanel({
               setPreparingNew(false);
             }}
           >
-            结束本页任务并新建
+            {state.rejected ? "放弃这次意图并新建" : "结束本页任务并新建"}
           </button>
           <button type="button" onClick={() => setPreparingNew(false)}>
             保留本页任务

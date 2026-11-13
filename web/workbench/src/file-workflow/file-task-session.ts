@@ -104,14 +104,45 @@ function rejectionDisposition(
     return "unknown-outcome";
   // Any other 4xx contract refusal settles *this attempt*: the protocol does not accept
   // the same request again (a fresh intent needs its own key), so the unknown flag may be
-  // cleared. This is not a claim that the key has no Job row: 409 `idempotency_conflict`
-  // identifies another intent's Job under the same key
+  // cleared. Persisting that verdict for a create intent additionally requires
+  // `settlesReplayedIntent` below, which removes the attempts that may have been sent
+  // before the protocol checked the original key. This is not a claim that the key has no
+  // Job row: 409 `idempotency_conflict` identifies another intent's Job under the same key
   // (contracts/speech-openapi.yaml:803-805), and duplicate execution stays impossible
   // because replaying this body under the key is precisely what conflicts.
   if (status >= 400 && status < 500) return "terminal";
   // An unlisted 5xx (or non-contract status) may already have executed; never spend the
   // intent on it.
   return "unknown-outcome";
+}
+
+/**
+ * Admission refusals of the public create path that the protocol emits only after it has
+ * looked up the original idempotency key. `PublicJobs.submit` replays a known key before
+ * touching the intent and checks it again before propagating a validation refusal
+ * (backend/src/speechnexus_backend/speech/application/public_jobs.py:607-647), while the
+ * body-level answers (`invalid_job_request`, `unsupported_parameter`) are produced before
+ * any key lookup (backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:442-461).
+ *
+ * For these codes a refusal therefore also proves that an earlier attempt under the same
+ * key never became a Job. Every other 4xx may be answered before the replay check — a
+ * gateway 401/403/404/405 or a body-level 400/413 — so it says nothing about an earlier
+ * submission whose answer was never observed, and must leave the intent unknown (#707
+ * review M1). The list only covers `asr`/`tts` creates, the only kinds this client issues;
+ * the voice-draft kinds resolve part of their binding before the replay.
+ */
+export function settlesReplayedIntent(error: {
+  readonly status: number;
+  readonly code: string;
+}): boolean {
+  if (error.status === 409) return error.code === "idempotency_conflict";
+  if (error.status !== 422) return false;
+  return (
+    error.code === "job_text_asset_unsupported" ||
+    error.code === "voice_not_published" ||
+    error.code.startsWith("job_binding_") ||
+    error.code.startsWith("model_binding_")
+  );
 }
 
 /**
@@ -137,6 +168,12 @@ interface TaskView {
   readonly canReplay: boolean;
   readonly requiresInput: boolean;
   readonly uploadRejected?: boolean;
+  /**
+   * The protocol definitively refused this create attempt, so the durable intent is
+   * spent: it can be neither replayed nor created over. Only explicit abandonment ends
+   * it. Never set for an unknown outcome, which stays reconcilable by its original key.
+   */
+  readonly rejected?: boolean;
   readonly assetRecoveryId?: string | undefined;
   readonly notice: string;
   readonly asset?: FileContracts["Asset"];
@@ -230,12 +267,20 @@ export class FileTaskSession {
       this.#model = record.model;
       // The submit body is rebuilt on demand: v2 text lives only in the uploaded asset,
       // never in this record, so replay reads it back instead of trusting local storage.
+      const settled = record.settled === "terminal";
       this.#view = {
         ...this.#view,
-        unknown: record.pending !== null,
-        canReplay: record.pending !== null && record.operationId === null,
+        // `pending` alone cannot tell a submission still awaiting its answer from one the
+        // protocol already refused; only an observed terminal refusal persists `settled`,
+        // so a reload keeps that distinction instead of rebuilding every pending create
+        // as unknown (#707). The crash window never carries the field and stays unknown.
+        unknown: record.pending !== null && !settled,
+        canReplay: record.pending !== null && record.operationId === null && !settled,
         cursor: record.cursor ?? undefined,
-        notice: "已找到原任务身份。请恢复读取；未确认的请求仅按原键重放。",
+        ...(settled ? { rejected: true } : {}),
+        notice: settled
+          ? "已找到原任务身份；该意图已被协议确定性拒绝并作废。"
+          : "已找到原任务身份。请恢复读取；未确认的请求仅按原键重放。",
       };
       if (this.#view.canReplay)
         this.#replay =
@@ -259,7 +304,9 @@ export class FileTaskSession {
   }
 
   #persist(
-    update: Partial<Pick<TaskRecord, "jobId" | "pending" | "operationId" | "cursor">> & {
+    update: Partial<
+      Pick<TaskRecord, "jobId" | "pending" | "operationId" | "cursor" | "settled">
+    > & {
       effectiveModelKey?: string;
     },
   ) {
@@ -479,19 +526,69 @@ export class FileTaskSession {
           notice: `提交被暂时拒绝（${contractError.status} ${contractError.code}）；原意图已保留，按原键重试不会产生第二次执行，不要新建任务。`,
         });
       } else if (contractError && rejection === "terminal") {
-        this.#replay = undefined;
         // This branch settles *this attempt*: the protocol does not accept the same
         // request again (e.g. 422 `job_text_asset_unsupported`), so a fresh intent with its
         // own key is the only way forward. It does not claim the key has no Job row: 409
-        // `idempotency_conflict` identifies another intent's Job under this key
-        // (contracts/speech-openapi.yaml:803-805). Abandoning the settled record still
-        // needs UI work outside this task; nothing here submits a replacement.
-        this.#update({
-          unknown: false,
-          canReplay: false,
-          recovery: undefined,
-          notice: contractError.message,
-        });
+        // `idempotency_conflict` identifies *another* intent's Job under this key
+        // (contracts/speech-openapi.yaml:803-805), which still spends this one, but the
+        // replacement must not reuse the key. 409 `execution_cleanup_pending` is classified
+        // as an unknown outcome for a create attempt before reaching here, precisely
+        // because it proves a Job exists. Nothing here submits a replacement; the user
+        // abandons the spent intent explicitly in the UI.
+        //
+        // Settling a durable create intent is stricter than settling this attempt: the
+        // conclusion is persisted and a reload will present it as final, so it must not
+        // hide an earlier submission of the same intent whose outcome was never observed
+        // (a lost answer keeps the record in the *same* shape as a refusal: `pending:
+        // "create"`, no Job). Only a refusal the protocol emits after it has checked the
+        // original key proves that earlier submission never became a Job. A refusal that
+        // may precede that check (401/403/404/405 auth and gateway answers, body-level
+        // 400/413) cannot speak for the earlier attempt, so it stays unknown and the
+        // original key remains the only reconciliation. This is the temporal gap that
+        // makes a state-only predicate unsafe (#707 review M1).
+        // An identified original execution stays queryable, so it is never settled: that
+        // would hide the only unresolved submission the user could reconcile.
+        const settles =
+          operation === "create" &&
+          !this.#view.job &&
+          !this.#record?.jobId &&
+          !this.#record?.operationId &&
+          !contractError.detail.error.nexus?.operation_id &&
+          settlesReplayedIntent(contractError);
+        if (operation === "create" && !settles) {
+          // Keep the unknown state, its recovery envelope and the replay handle: this
+          // refusal rules out this *answer*, not an earlier submission, so the original
+          // key stays the only reconciliation.
+          this.#replay = async () => {
+            await action();
+          };
+          this.#update({
+            unknown: true,
+            canReplay: true,
+            recovery: retainRecovery(this.#view.recovery, contractError.detail),
+            notice: `提交被拒绝（${contractError.status} ${contractError.code}），但该拒绝不能证明原提交未执行；保留原键与未知状态，不要新建任务。`,
+          });
+        } else {
+          this.#replay = undefined;
+          if (settles) {
+            try {
+              // Record the observed refusal so a reload keeps it settled instead of
+              // rebuilding an unconfirmed submission. Only a *refused* attempt reaches
+              // this point: the crash window between sending and any answer persists
+              // `pending: "create"` without this field and reloads as unknown.
+              this.#persist({ settled: "terminal" });
+            } catch {
+              /* The protocol's answer still stands in this page; a reload degrades to unknown. */
+            }
+          }
+          this.#update({
+            unknown: false,
+            canReplay: false,
+            recovery: undefined,
+            ...(settles ? { rejected: true } : {}),
+            notice: contractError.message,
+          });
+        }
       } else {
         this.#update({
           notice: error instanceof SpeechResponseError ? error.message : "读取失败，请重新读取。",
@@ -633,6 +730,9 @@ export class FileTaskSession {
 
   async #submit() {
     const signal = this.#lifetime.signal;
+    // A terminally refused intent is spent: resubmitting it would just repeat the same
+    // refusal, and the UI only offers explicit abandonment (#707).
+    if (this.#view.rejected || this.#record?.settled === "terminal") return;
     if (!this.#record) {
       if (!this.#view.asset) {
         if (this.#assetHintId) throw new Error("Read the original Asset first");
@@ -793,7 +893,12 @@ export class FileTaskSession {
   }
 
   async continueAfterValidation() {
-    if (this.#view.asset?.status === "ready" && !this.#view.job && !this.#view.unknown)
+    if (
+      this.#view.asset?.status === "ready" &&
+      !this.#view.job &&
+      !this.#view.unknown &&
+      !this.#view.rejected
+    )
       await this.#run(() => this.#submit(), true);
   }
 

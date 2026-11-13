@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { FileTaskSession } from "./file-task-session";
+import { canFinishTask } from "./file-task-policy";
 import { SpeechFileClient, parse } from "./speech-file-client";
 import { SessionTaskJournal } from "./task-journal";
 import { createDemoTransport } from "./dev/demo-transport";
@@ -33,6 +34,22 @@ function setup(scenario: Parameters<typeof createDemoTransport>[0] = "success") 
     session,
     file: new File(["synthetic audio"], "private-name.wav"),
   };
+}
+
+function rejection(status: number, code: string) {
+  return Response.json(
+    parse("ErrorResponse", {
+      error: {
+        code,
+        type: "invalid_request_error",
+        message: `Synthetic rejection ${code}`,
+        param: null,
+        request_id: "req-demo",
+        retryable: false,
+      },
+    }),
+    { status },
+  );
 }
 
 describe("durable file task identities", () => {
@@ -122,6 +139,60 @@ describe("durable file task identities", () => {
     expect(test.transport.stats.createKeys).toHaveLength(0);
     expect(first.getSnapshot().notice).not.toContain("private");
     first.dispose();
+  });
+
+  it("restores a terminally refused create as settled instead of an unknown submission", async () => {
+    const test = setup();
+    let creates = 0;
+    const client = new SpeechFileClient("http://127.0.0.1", async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (new URL(request.url).pathname === "/v1/nexus/jobs" && request.method === "POST") {
+        creates++;
+        return rejection(422, "job_binding_incomplete");
+      }
+      return test.transport.fetch(request);
+    });
+    const make = () => new FileTaskSession(client, new SessionTaskJournal(test.storage, "task"));
+    const first = make();
+    await first.start(test.file, "asr-quality");
+    expect(first.getSnapshot()).toMatchObject({ unknown: false, rejected: true, canReplay: false });
+    first.dispose();
+    // The observed refusal is what survives reload; `pending` keeps its in-flight meaning.
+    expect(test.read()).toMatchObject({ pending: "create", settled: "terminal", jobId: null });
+    const second = make();
+    await second.restore();
+    expect(second.getSnapshot()).toMatchObject({
+      unknown: false,
+      rejected: true,
+      canReplay: false,
+    });
+    expect(second.getSnapshot().notice).not.toContain("结果未知");
+    expect(canFinishTask(second.getSnapshot())).toBe(true);
+    // Restoring a settled intent reads no identity and submits nothing.
+    expect(creates).toBe(1);
+    second.dispose();
+  });
+
+  it("keeps a lost create response unknown and never records a settled refusal", async () => {
+    const test = setup();
+    const client = new SpeechFileClient("http://127.0.0.1", async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (new URL(request.url).pathname === "/v1/nexus/jobs" && request.method === "POST")
+        throw new TypeError("Synthetic lost create response");
+      return test.transport.fetch(request);
+    });
+    const make = () => new FileTaskSession(client, new SessionTaskJournal(test.storage, "task"));
+    const first = make();
+    await first.start(test.file, "asr-quality");
+    expect(first.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    expect(first.getSnapshot().rejected).toBeUndefined();
+    expect(test.read()).not.toHaveProperty("settled");
+    first.dispose();
+    const second = make();
+    await second.restore();
+    expect(second.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    expect(canFinishTask(second.getSnapshot())).toBe(false);
+    second.dispose();
   });
 
   it("keeps original pending identity if storage fails after the server accepts create", async () => {
@@ -260,5 +331,14 @@ describe("durable file task identities", () => {
     await start;
     expect(test.data.get("task")).toBe(before);
     expect(test.read().pending).toBe("create");
+    // The response never arrived, so no refusal was observed: writing `settled` here would
+    // claim a guaranteed outcome the protocol never gave.
+    expect(test.read()).not.toHaveProperty("settled");
+    const restored = test.session();
+    await restored.restore();
+    expect(restored.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    expect(restored.getSnapshot().rejected).toBeUndefined();
+    expect(canFinishTask(restored.getSnapshot())).toBe(false);
+    restored.dispose();
   });
 });

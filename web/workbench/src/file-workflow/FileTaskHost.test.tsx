@@ -193,6 +193,83 @@ describe("production Workbench file host", () => {
     expect(f.upload.mock.calls[1]?.[0].size).toBe(4);
     expect(f.create).toHaveBeenCalledTimes(1);
   });
+  it("offers explicit abandonment after a deterministic create rejection, and a reload keeps it settled", async () => {
+    const f = fixture();
+    f.create.mockRejectedValue(
+      new SpeechResponseError(
+        422,
+        parse("ErrorResponse", {
+          error: {
+            code: "job_binding_incomplete",
+            type: "invalid_request_error",
+            message: "Synthetic terminal rejection",
+            retryable: false,
+            request_id: "req-demo",
+            param: null,
+          },
+        }),
+      ),
+    );
+    const view = render(<FileTaskHost client={f.client} storage={f.storage} />);
+    selectInput();
+    fireEvent.submit(screen.getByLabelText("音频文件").closest("form")!);
+    await screen.findByRole("button", { name: "准备新任务" });
+    expect(f.create).toHaveBeenCalledTimes(1);
+    // The protocol answered definitively: no unknown alert, and the input stays locked so
+    // no replacement intent can start before the user abandons this one explicitly.
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText(/不能重放，刷新也/)).toBeInTheDocument();
+    expect(screen.getByLabelText("音频文件")).toBeDisabled();
+    expect(f.data.get(key)).toContain('"settled":"terminal"');
+    const spentKey = f.create.mock.calls[0]?.[1];
+
+    // Reload keeps the refusal settled instead of reviving it as "result unknown".
+    view.unmount();
+    render(<FileTaskHost client={f.client} storage={f.storage} />);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText(/不能重放，刷新也/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "准备新任务" })).toBeInTheDocument();
+    // Counterexample 3 also holds across a reload: the input stays locked and nothing is
+    // resubmitted until the user explicitly abandons the spent intent.
+    expect(screen.getByLabelText("音频文件")).toBeDisabled();
+    expect(f.create).toHaveBeenCalledTimes(1);
+
+    // Abandonment is explicit and two-stepped; only its confirmation removes the record.
+    fireEvent.click(screen.getByRole("button", { name: "准备新任务" }));
+    fireEvent.click(screen.getByRole("button", { name: "保留本页任务" }));
+    expect(f.data.has(key)).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "准备新任务" }));
+    expect(screen.getByRole("button", { name: "放弃这次意图并新建" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "放弃这次意图并新建" }));
+    expect(f.data.has(key)).toBe(false);
+    expect(screen.getByLabelText("转写模型")).toHaveFocus();
+
+    // A replacement intent uses a fresh idempotency key; the spent key is never reused.
+    fireEvent.change(screen.getByLabelText("转写模型"), { target: { value: "asr-quality" } });
+    fireEvent.change(screen.getByLabelText("音频文件"), {
+      target: { files: [new NodeFile(["synthetic"], "new.wav", { type: "audio/wav" })] },
+    });
+    fireEvent.submit(screen.getByLabelText("音频文件").closest("form")!);
+    await waitFor(() => expect(f.create).toHaveBeenCalledTimes(2));
+    expect(f.create.mock.calls[1]?.[1]).not.toBe(spentKey);
+  });
+
+  it("fails safe when a recovery record carries fields this format does not know", () => {
+    const f = fixture();
+    // A reader from before #707 counts keys strictly, so it rejects a #707 settled record
+    // as invalid instead of picking a shape; the Host must keep it and submit nothing.
+    f.data.set(
+      key,
+      JSON.stringify({ ...stored(null, "create"), settled: "terminal", futureApi: 1 }),
+    );
+    render(<FileTaskHost client={f.client} storage={f.storage} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("恢复信息不可用");
+    expect(screen.queryByRole("button", { name: "上传并转写" })).not.toBeInTheDocument();
+    expect(f.upload).not.toHaveBeenCalled();
+    expect(f.create).not.toHaveBeenCalled();
+    expect(f.data.has(key)).toBe(true);
+  });
+
   it.each([false, true])(
     "never discards a previously unknown upload after later 413; restored=%s",
     async (restored) => {

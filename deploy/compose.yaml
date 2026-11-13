@@ -159,6 +159,14 @@ services:
       SPEECHNEXUS_AUDIO_INSPECTION_WALL_SECONDS: ${SPEECHNEXUS_AUDIO_INSPECTION_WALL_SECONDS:-10}
       SPEECHNEXUS_AUDIO_INSPECTION_OUTPUT_BYTES: ${SPEECHNEXUS_AUDIO_INSPECTION_OUTPUT_BYTES:-4096}
       SPEECHNEXUS_AUDIO_INSPECTION_MAX_RECEIPT_BYTES: ${SPEECHNEXUS_AUDIO_INSPECTION_MAX_RECEIPT_BYTES:-4096}
+      # Enabling the profile writer also requires a reviewed publication
+      # evidence document. The key is forwarded with an empty default and no
+      # `:?` guard (a required-variable guard would fail `docker compose config`
+      # for every deployment that never enables the writer), and the API fails
+      # at startup naming this key when it is blank, unreadable or malformed.
+      # That startup refusal replaces the previous silent 503
+      # profile_result_unknown from inside the publication writer.
+      SPEECHNEXUS_PROFILE_PUBLICATION_EVIDENCE_FILE: ${SPEECHNEXUS_PROFILE_PUBLICATION_EVIDENCE_FILE:-}
       SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL: ${SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL:-}
       SPEECHNEXUS_BINDING_WRITER_DATABASE_URL: ${SPEECHNEXUS_BINDING_WRITER_DATABASE_URL:-}
       SPEECHNEXUS_BINDING_DEFAULTS_WRITER_DATABASE_URL: ${SPEECHNEXUS_BINDING_DEFAULTS_WRITER_DATABASE_URL:-}

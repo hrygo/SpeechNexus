@@ -287,7 +287,7 @@ minimum privilege remains the deployment's responsibility. Do not treat the API
 role's superset as worker evidence. A running dispatcher is still not a real
 engine, GPU or end-to-end asynchronous acceptance.
 
-预设草稿 HTTP writer 默认关闭。仅在操作者已应用 `0009_profile_drafts` 并独立配置最小非 owner 角色后，设置 `SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL`；不得复用 Compose bootstrap owner。启动仅验证权限并管理独立连接池，不执行迁移或 grant。原请求/原键重放、固定读取和限额见 [profile drafts](../docs/components/profile-drafts.md#http-runtime-and-controlled-writer)。此配置不发布或激活预设。
+预设草稿 HTTP writer 默认关闭。仅在操作者已应用 `0009_profile_drafts` 并独立配置最小非 owner 角色后，设置 `SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL`；不得复用 Compose bootstrap owner。启用 writer 必须同时设置 `SPEECHNEXUS_PROFILE_PUBLICATION_EVIDENCE_FILE`，指向部署方评审过的发布资格文档：该文档按 revision 绑定已存定义摘要与评审过的校验报告摘要，仓库不提供任何默认资格。缺任一输入、文档不可读或格式非法时 API 在启动阶段点名变量退出，不会把发布留到运行时返回 `503 profile_result_unknown`。角色预置与资格文档生成步骤见 [最小部署 §6](../docs/operations/compose-minimal.md#预设发布资格输入与-sn_profile_writer-角色)。启动仅验证权限与资格文档并管理独立连接池，不执行迁移或 grant。原请求/原键重放、固定读取和限额见 [profile drafts](../docs/components/profile-drafts.md#http-runtime-and-controlled-writer)。
 
 绑定草稿选择一个显式模式：`SPEECHNEXUS_BINDING_WRITER_DATABASE_URL` 使用旧三表角色；
 `SPEECHNEXUS_BINDING_DEFAULTS_WRITER_DATABASE_URL` 使用预先迁移到 0011 的四表最小角色，

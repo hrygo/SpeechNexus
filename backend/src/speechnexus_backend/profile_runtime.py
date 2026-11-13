@@ -7,10 +7,16 @@ import threading
 import uuid
 
 from speechnexus_backend.settings import Settings
+from speechnexus_backend.speech.application.profile_lifecycle import ProfilePublicationVerifier
 from speechnexus_backend.speech.infrastructure.postgres_pool import (
     SpeechConnection,
     SpeechPool,
     speech_pool,
+)
+from speechnexus_backend.speech.infrastructure.profile_publication_evidence import (
+    EVIDENCE_FILE_VARIABLE,
+    DeploymentFilePublicationVerifier,
+    load_reviewed_publications,
 )
 from speechnexus_backend.speech.infrastructure.profile_publications_postgres import PostgresProfiles
 
@@ -27,11 +33,45 @@ class _PoolDiagnostics(logging.Filter):
         return True
 
 
+def _publication_authority(settings: Settings) -> ProfilePublicationVerifier:
+    """Resolve the deployment's publication authority before any pool exists.
+
+    The writer exists to serve drafts *and* publications, so enabling it without
+    a readable authority source asks the operator to declare which revision
+    definitions and validation reports a deployment actually reviewed. There is
+    no built-in or fallback document: without this input the previous behaviour
+    was to accept the request and answer 503 ``profile_result_unknown`` from
+    inside the writer, which is a configuration error disguised as an outage.
+    """
+    path = settings.profile_publication_evidence_file
+    if path is None:
+        raise ValueError(
+            f"{EVIDENCE_FILE_VARIABLE} is required when "
+            "SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL enables the profile writer: "
+            "publication authority is deployment-owned reviewed evidence, and an "
+            "unwired authority would answer every publication with "
+            "503 profile_result_unknown"
+        )
+    return DeploymentFilePublicationVerifier(load_reviewed_publications(path))
+
+
 class ProfileRuntime:
     def __init__(self, settings: Settings) -> None:
+        if (
+            settings.profile_publication_evidence_file is not None
+            and settings.profile_writer_database_url is None
+        ):
+            raise ValueError(
+                f"{EVIDENCE_FILE_VARIABLE} is configured but "
+                "SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL is blank; the reviewed "
+                "publication evidence has no profile writer to authorize"
+            )
         if settings.profile_writer_database_url is None or settings.process_role != "api":
             raise ValueError("Configure an explicit API profile writer identity")
         self._settings = settings
+        # Resolve the authority before opening a pool: a rejected configuration
+        # fails startup naming the variable and owns no connection.
+        self._verifier = _publication_authority(settings)
         self._pool: SpeechPool | None = None
         self.provider: PostgresProfiles | None = None
         # Only this object's connection-pool lifetime is protected here. Profile
@@ -63,6 +103,7 @@ class ProfileRuntime:
                 self.provider = PostgresProfiles(
                     pool,
                     timeout_seconds=self._settings.profile_transaction_timeout_seconds,
+                    verifier=self._verifier,
                 )
             except BaseException as error:
                 try:

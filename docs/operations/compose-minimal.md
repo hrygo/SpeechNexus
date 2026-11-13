@@ -19,6 +19,7 @@ date: 2026-10-28
 | 异步 Job 完整执行链 | **未贯通** | 默认 `up` 不启动 `job-dispatch-worker`；`job-dispatch` profile 可按需启动该派发进程，但需要单独的 worker DSN（`SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL`，示例中默认为空，空值在领取租约前 fail-closed）与真实引擎。启用 `voice_validation` 还需 `voice_validation_worker_grants`，缺少时启动角色校验即拒绝，不会领取 Job。API 的创建和读取路由需要另配 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL`；原子准入还需独立的 `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL` 与同库 admission 角色，未配置时创建返回 503（读取与取消仍可用）。派发入口已装配生产 planner 与结果发布器，容器 entrypoint 是 `deploy/job-startup-gate.py`：迁移 head、派发角色写入列、Artifact 桶与 gateway staging 结果桶缺失或未版本化时在启动期点名退出，不会先领取 Job；三个 Job 角色由 [§6 的异步 Job 运行角色](#异步-job-运行角色与授权) 预置。本配置不提供真实引擎。当前范围见 [F-JOB](../prd.md#f-job) 和 [F-ASYNC](../prd.md#f-async) |
 | 公开同步 ASR 成功响应 | **本部署未验证** | 文件 worker 已有成功终态写入；历史部署曾返回 `504 operation_timeout`，见[本机端到端记录](../archive/operations/local-end-to-end.md#112-公开-v1audiotranscriptions已执行504未成功)。不能将那次结果或组件实现推定为当前部署的公开链路验收 |
 | 节点控制器、runtime delivery、asset maintenance | **未装配** | 本配置有意排除这些服务；不能以本 Compose 的探活结果证明完整部署与发布资格 |
+| Profile 发布 / 激活（`POST .../publications`、`.../activations`） | **默认未启用；启用时资格由部署方文档提供** | 默认 `SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL` 为空，`sn_profile_writer` 未预置，发布路由返回 `503 profile_result_unknown`（能力未启用）。启用 writer 必须同时提供已评审发布证据文档 `SPEECHNEXUS_PROFILE_PUBLICATION_EVIDENCE_FILE`：缺任一输入、文档不可读或格式非法时 API 在启动阶段点名变量退出，不会等发布时才回 503。资格内容与评审责任在部署方，本配置不提供任何默认资格。步骤见 [§6 预设发布资格输入](#预设发布资格输入与-sn_profile_writer-角色) |
 | 真实模型质量、容量、GPU、物理多节点资格 | **未证明** | Compose 启动、健康检查和合成配置都不能替代模型/设备/拓扑验收 |
 
 因此本文件的“通过”只表示 **最小单元已装配并可探活**，不表示公开 ASR/TTS 业务已可用。
@@ -332,7 +333,9 @@ head 为准，查询结果须与之相符。不要把旧版 `0027_gateway_abort_
 ## 6. 创建非 owner 运行角色与最小授权
 
 以下脚本必须使用 **迁移 owner DSN** 运行；它创建 API、gateway writer、gateway
-query、工作区 writer、审计 reader、实例读取 reader 与隔离释放七个独立角色。除实例读取面外，
+query、工作区 writer、审计 reader、实例读取 reader 与隔离释放七个独立角色。预设发布的写角色
+`sn_profile_writer` 不在此脚本内：它必须与部署方的资格文档同时启用，步骤见
+[预设发布资格输入与 sn_profile_writer 角色](#预设发布资格输入与-sn_profile_writer-角色)。除实例读取面外，
 各身份的最小授权都由仓库授权函数声明；实例读取投影目前没有对应的 `*_grants` 函数，
 脚本按它的运行时启动校验所核验的两张表显式授权。此段只用于新建、独占的 SpeechNexus
 数据库：
@@ -778,6 +781,194 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 ```
 
 该查询应无输出。
+
+### 预设发布资格输入与 sn_profile_writer 角色
+
+`POST /v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/publications` 在写入前只
+接受一个只读资格端口的观察结果。该端口要求把目标 revision 的**定义字节**与调用方提交的
+**校验报告字节**同时绑定到部署方评审过的记录上。仓库不内置、也不生成这种资格：默认
+`SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL` 为空时整条发布路径返回
+`503 profile_result_unknown`，属于「能力未启用」；一旦启用 writer，writer 与资格文档必须
+同时配置，缺任一输入或文档不可读、格式非法时 API 在启动阶段点名缺失的变量并退出，不会等
+到发布时才回 503。资格文档是部署方的评审记录，代码只做字节绑定，不证明真实引擎、模型
+质量、容量或物理拓扑。
+
+**a. 生成写角色口令并写回 DSN。** `sn_profile_writer` 是独立非 owner 身份，不得复用
+`sn_api`、迁移 owner 或任一 gateway/worker 角色：
+
+```bash
+umask 077
+export SPEECHNEXUS_PROFILE_WRITER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+python3 - <<'PY'
+import os
+import re
+from pathlib import Path
+
+url = (
+    "postgresql://sn_profile_writer:"
+    + os.environ["SPEECHNEXUS_PROFILE_WRITER_ROLE_PASSWORD"]
+    + "@postgres:5432/speechnexus"
+)
+path = Path("deploy/compose.env")
+text = path.read_text()
+line = "SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL=" + url
+pattern = r"(?m)^SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL=.*$"
+text = re.sub(pattern, line, text, count=1) if re.search(pattern, text) else text + line + "\n"
+path.write_text(text)
+path.chmod(0o600)
+print("profile writer DSN written to deploy/compose.env")
+PY
+```
+
+DSN 沿用示例的 `postgres` 服务名与 `speechnexus` 库名；改了 Compose 服务名、端口或库名
+时同步修改。
+
+**b. 建角色并重放两个授权函数。** 先把数据库迁移到 §5 渲染的唯一 head（发布表来自
+`0033_profile_publications`，退休列来自 `0050_profile_retirements`），再用迁移 owner
+连接创建角色并重放 `profile_draft_grants` 与 `profile_publication_grants`：
+
+```bash
+set -a
+. deploy/compose.env
+set +a
+export SN_ADMIN_DSN="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:${SPEECHNEXUS_POSTGRES_HOST_PORT:-55432}/${POSTGRES_DB}"
+uv run --all-packages python - <<'PY'
+import os
+
+import psycopg
+from psycopg import sql
+from speechnexus_backend.speech.infrastructure.profile_draft_schema import profile_draft_grants
+from speechnexus_backend.speech.infrastructure.profile_publication_schema import (
+    profile_publication_grants,
+)
+
+schema, role = os.environ.get("SPEECHNEXUS_DATABASE_SCHEMA", "speech"), "sn_profile_writer"
+with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
+    existing = conn.execute("SELECT 1 FROM pg_roles WHERE rolname=%s", (role,)).fetchone()
+    if existing is None:
+        conn.execute(
+            sql.SQL("CREATE ROLE {} LOGIN PASSWORD {}").format(
+                sql.Identifier(role),
+                sql.Literal(os.environ["SPEECHNEXUS_PROFILE_WRITER_ROLE_PASSWORD"]),
+            )
+        )
+    for statement in (
+        *profile_draft_grants(schema, role),
+        *profile_publication_grants(schema, role),
+    ):
+        conn.execute(statement)
+print("profile writer role and grants ready: " + role)
+PY
+```
+
+角色已存在时沿用其现有口令，脚本不改写口令。新装与既有部署都用同一段重放：`GRANT` 是
+追加式操作，重复执行不改变既有权限；不要手工增删表级、列级授权，API 启动会逐列核对实际
+ACL 与端口声明面，多给或少给都以 `Profile writer startup rejected` 拒绝启动。
+
+**c. 生成已评审发布证据文档。** 先从目标部署取该 revision 已存的定义，并把评审过的校验
+报告保存为 JSON 文件（内容必须与发布请求体里的 `validation` 完全相同），再由下面的脚本
+计算两个摘要并写出文档。文档放在只读私有目录（§3 的 `deploy/.runtime/private`），权限
+`0600`：
+
+```bash
+mkdir -p deploy/.runtime/private
+uv run --all-packages python - <<'PY'
+import json
+import os
+from pathlib import Path
+
+import psycopg
+from psycopg import sql
+from speechnexus_backend.speech.application.profile_documents import encode_document
+from speechnexus_backend.speech.domain.configuration import document_digest
+
+identity, revision = os.environ["PROFILE_ID"], os.environ["PROFILE_REVISION"]
+validation = json.loads(Path(os.environ["PROFILE_VALIDATION_FILE"]).read_text())
+schema = os.environ.get("SPEECHNEXUS_DATABASE_SCHEMA", "speech")
+query = sql.SQL(
+    "SELECT definition_json FROM {}.speech_profile_revisions "
+    "WHERE profile_id=%s AND revision=%s"
+).format(sql.Identifier(schema))
+with psycopg.connect(os.environ["SN_ADMIN_DSN"]) as conn:
+    row = conn.execute(query, (identity, revision)).fetchone()
+if row is None:
+    raise SystemExit("no stored revision for " + identity + "/" + revision)
+document = {
+    "format": "speechnexus.profile-publication-evidence/1",
+    "entries": [
+        {
+            "profile_id": identity,
+            "revision": revision,
+            "definition_digest": document_digest(row[0].encode()),
+            "validation_digest": document_digest(encode_document(validation)),
+            "reviewed_by": os.environ["PROFILE_REVIEWER"],
+            "reviewed_at": os.environ["PROFILE_REVIEWED_AT"],
+        }
+    ],
+}
+target = Path("deploy/.runtime/private/profile-publication-evidence.json")
+if target.exists():
+    raise SystemExit("evidence document already exists; review before replacing it")
+target.write_text(json.dumps(document, indent=2) + "\n")
+target.chmod(0o600)
+print("wrote " + str(target))
+PY
+```
+
+`PROFILE_ID`、`PROFILE_REVISION` 是发布目标，`PROFILE_VALIDATION_FILE` 是评审过的校验报告
+JSON，`PROFILE_REVIEWER` 是评审者标签（1..256 字符），`PROFILE_REVIEWED_AT` 是 ISO 8601
+时间（带时区）。没有评审过任何 revision 时写
+`{"format": "speechnexus.profile-publication-evidence/1", "entries": []}`：这是显式声明
+「暂无可发布 revision」，草稿与固定读取仍可用，发布被稳定拒绝而不是 503。文档只在 API
+启动时读取一次，内容变化后必须重启 API。
+
+**d. 写回文档路径并重启 API。** 容器内路径固定位于只读私有目录：
+
+```bash
+python3 - <<'PY'
+import re
+from pathlib import Path
+
+line = "SPEECHNEXUS_PROFILE_PUBLICATION_EVIDENCE_FILE=/run/speechnexus-private/profile-publication-evidence.json"
+path = Path("deploy/compose.env")
+text = path.read_text()
+pattern = r"(?m)^SPEECHNEXUS_PROFILE_PUBLICATION_EVIDENCE_FILE=.*$"
+text = re.sub(pattern, line, text, count=1) if re.search(pattern, text) else text + line + "\n"
+path.write_text(text)
+path.chmod(0o600)
+print("publication evidence path written to deploy/compose.env")
+PY
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml up -d --build api
+```
+
+只写 writer DSN 而不写文档路径，或路径指向不可读、格式非法的文档时，API 启动失败并点名
+变量，容器不进入可服务状态；写了文档路径而没有 writer DSN 同样启动失败，并点名
+`SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL`（两者必须成对出现）：
+
+```text
+ValueError: SPEECHNEXUS_PROFILE_PUBLICATION_EVIDENCE_FILE is required when
+SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL enables the profile writer: publication authority
+is deployment-owned reviewed evidence, and an unwired authority would answer every
+publication with 503 profile_result_unknown
+```
+
+这是刻意的 fail-closed：配置错误在启动时暴露，不会伪装成发布时的 503。
+
+**e. 发布一次并核对结果。** 请求体与评审时的 `validation` 完全相同，带显式
+`Idempotency-Key`：
+
+```bash
+curl -sS -w '\nhttp=%{http_code}\n' -X POST \
+  "http://127.0.0.1:8000/v1/nexus/admin/profiles/${PROFILE_ID}/revisions/${PROFILE_REVISION}/publications" \
+  -H 'content-type: application/json' \
+  -H 'idempotency-key: profile-publication-1' \
+  --data @deploy/.runtime/private/publication-request.json
+```
+
+预期 `http=200`，响应 `publication.status` 为 `published` 且 `published_at` 非空；同键重放
+返回同一结果，换键重发已发布 revision 返回 `409 profile_already_published`。目标未出现在
+证据文档中、定义摘要或校验报告摘要不一致时返回 `422 profile_not_eligible`，拒绝在写入发布
+事实之前完成（只落一条不可变拒绝回执），不是 503。
 
 ### 已有部署的授权升级
 

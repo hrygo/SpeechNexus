@@ -416,7 +416,16 @@ async def test_the_asset_reconcile_probe_stays_on_synthetic_loopback() -> None:
     assert payload["noAutomaticRestoreRequests"] is True
     assert payload["noOperationRequests"] is True
     assert payload["originalKeys"] is True
-    assert payload["metadataOnly"] is True
+    # The replay really does read material content (the TTS path fetches the inline text back),
+    # so the probe must disclose the measured count and stop calling itself metadata-only. Both
+    # are bound to observed behaviour: the per-scenario rows must account for the total, and the
+    # TTS hint row is the one that reads while the ASR hint row does not.
+    rows = {(row["kind"], row["scenario"]): row for row in payload["scenarios"]}
+    assert payload["contentReads"] >= 1
+    assert payload["contentReads"] == sum(row["contentReads"] for row in payload["scenarios"])
+    assert rows["tts", "hint"]["contentReads"] >= 1
+    assert rows["asr", "hint"]["contentReads"] == 0
+    assert payload["metadataOnly"] is False
     assert_quiet(payload)
 
 

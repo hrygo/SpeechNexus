@@ -58,6 +58,16 @@ def _build_dependencies(
         raise ValueError(
             "approved native engine templates require an engine authentication root key"
         )
+    if credentials is not None and all(
+        template.engine_auth is EngineAuthKind.NONE for template in approved
+    ):
+        # Nothing would ever read the key, so accepting it would report an
+        # authenticated engine fleet that does not exist (#660).
+        raise ValueError(
+            "SPEECHNEXUS_CONTROLLER_ENGINE_AUTH_ROOT_KEY is configured but no approved "
+            "template declares engine authentication; declare an authenticated engine "
+            "template or unset the key"
+        )
     api = DockerApi(
         socket_path=str(settings.docker_socket_path),
         timeout_seconds=settings.docker_request_timeout_seconds,

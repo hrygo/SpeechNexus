@@ -75,6 +75,27 @@ _INSPECTOR_PREREQUISITES: tuple[tuple[str, str], ...] = (
     ("asset_inspection_url", "SPEECHNEXUS_ASSET_INSPECTION_URL"),
     ("asset_inspection_token", "SPEECHNEXUS_ASSET_INSPECTION_TOKEN"),
 )
+# API-side policy that only the audio inspector consumes. With the text inspector
+# selected every limit is inert, so an explicitly narrowed ceiling (a decode budget,
+# an input byte cap or a receipt bound) used to be accepted and ignored; a
+# deployment that believed it enforced a bound enforced nothing (#660). Compose
+# forwards these keys with their defaults, so only a non-default value -- the
+# operator's own intent -- is refused.
+_AUDIO_ONLY_LIMITS: tuple[tuple[str, str, float], ...] = (
+    ("audio_inspection_max_duration_ms", "SPEECHNEXUS_AUDIO_INSPECTION_MAX_DURATION_MS", 120_000),
+    (
+        "audio_inspection_max_reference_duration_ms",
+        "SPEECHNEXUS_AUDIO_INSPECTION_MAX_REFERENCE_DURATION_MS",
+        60_000,
+    ),
+    (
+        "audio_inspection_max_input_bytes",
+        "SPEECHNEXUS_AUDIO_INSPECTION_MAX_INPUT_BYTES",
+        25 * 1024 * 1024,
+    ),
+    ("audio_inspection_wall_seconds", "SPEECHNEXUS_AUDIO_INSPECTION_WALL_SECONDS", 10),
+    ("audio_inspection_max_receipt_bytes", "SPEECHNEXUS_AUDIO_INSPECTION_MAX_RECEIPT_BYTES", 4096),
+)
 
 
 def _configured(settings: Settings, fields: tuple[tuple[str, str], ...]) -> list[str]:
@@ -201,6 +222,17 @@ def _select_asset_inspector(
         raise ValueError(
             f"{names} configured but SPEECHNEXUS_ASSET_INSPECTOR=text; "
             "select audio or unset every asset-inspection setting"
+        )
+    drifted = [
+        variable
+        for field, variable, default in _AUDIO_ONLY_LIMITS
+        if field in settings.model_fields_set and getattr(settings, field) != default
+    ]
+    if drifted:
+        names = ", ".join(drifted)
+        raise ValueError(
+            f"{names} only take effect with SPEECHNEXUS_ASSET_INSPECTOR=audio; "
+            "select audio or keep the default value"
         )
     return TextAssetInspector(), None
 

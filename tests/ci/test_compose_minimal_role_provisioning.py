@@ -1,10 +1,11 @@
 """Guard the compose-minimal role provisioning steps against doc/code drift.
 
-The runbook creates seven non-owner roles and calls repository grant functions by
-name, states the current migration head, and runs host commands that import the
+The runbook creates fourteen non-owner roles (three base identities plus eleven
+that arrived with later migrations), calls repository grant functions by name,
+states the current migration head, and runs host commands that import the
 workspace members. A renamed grant function, a re-pointed head, or a host
 command that cannot import ``speechnexus_backend`` turns the runbook into
-instructions that fail on a clean machine, and a stale 503 code sends the
+instructions that fail on a clean machine, and a stale error code sends the
 operator to the wrong endpoint.
 
 The instance-reader step is the one role whose authority is not declared by a
@@ -12,6 +13,12 @@ The instance-reader step is the one role whose authority is not declared by a
 function-name check above cannot see it. ``model_instance_reader_relations``
 closes that blind spot by comparing the inline ``GRANT`` against the relations
 the runtime verifies at startup (``READABLE`` in ``model_instance_runtime.py``).
+
+Error codes are checked against the handler that raises them: ``tests/ci/error_codes.py``
+indexes each handler module's wire codes with their status, including the
+pronunciation pair whose wire name is composed at the boundary and the ``422``
+publication refusal. A code is only accepted when one module both composes (or
+declares) that wire name and gives it the documented status.
 
 These checks parse text only: they run under the system interpreter, like the
 other ``tests/ci`` guards, and never import the backend or open a database.
@@ -22,6 +29,8 @@ from __future__ import annotations
 import re
 import unittest
 from pathlib import Path
+
+from tests.ci.error_codes import declarations, documented_codes
 
 ROOT = Path(__file__).resolve().parents[2]
 DOC = ROOT / "docs/operations/compose-minimal.md"
@@ -38,7 +47,6 @@ ROLE_PASSWORD_USE = re.compile(
     r'"(sn_[a-z_]+)": os\.environ\["(SPEECHNEXUS_[A-Z0-9_]*_ROLE_PASSWORD)"\]'
 )
 SETTINGS_FIELD = re.compile(r"^\s*([a-z0-9_]+_database_url)\s*:", re.MULTILINE)
-UNAVAILABLE_CODE = re.compile(r"`503 ([a-z][a-z0-9_]+)`")
 SHELL_BLOCK = re.compile(r"```bash\n(.*?)```", re.DOTALL)
 REVISION = re.compile(r'^revision = "([^"]+)"$', re.MULTILINE)
 READABLE = re.compile(r"^READABLE = \(([^)]*)\)$", re.MULTILINE)
@@ -147,24 +155,25 @@ class ComposeMinimalRoleProvisioningTests(unittest.TestCase):
         )
         self.assertEqual(missing, [], f"roles read passwords no step provides: {missing}")
 
-    def test_documented_unavailable_codes_exist_in_the_http_handlers(self) -> None:
-        codes = set(UNAVAILABLE_CODE.findall(self.document))
-        self.assertTrue(codes, "runbook must name the 503 codes operators will see")
-        sources = "\n".join(backend_sources())
-        unknown: list[str] = []
-        for code in sorted(codes):
-            if f'"{code}"' in sources:
-                continue
-            # The pronunciation router composes its wire codes from one stable
-            # prefix plus the shared error table, so `pronunciation_unavailable`
-            # is correct while the literal never appears in a handler. Keep the
-            # exception narrow: the prefix must be applied by string concatenation
-            # in the same module that declares the bare code.
-            prefix, _, bare = code.rpartition("_")
-            built = f'"{prefix}_" + code' in sources and f'"{bare}"' in sources
-            if not built:
-                unknown.append(code)
-        self.assertEqual(unknown, [], f"documented 503 codes are not raised: {unknown}")
+    def test_documented_error_codes_are_declared_by_a_handler_with_that_status(self) -> None:
+        """A quoted code must be a code some handler raises with that status.
+
+        Both halves matter. ``pronunciation_unavailable`` never appears literally:
+        the boundary composes it from one stable prefix, so the check has to know
+        that shape. ``422 pronunciation_publication_not_supported`` is not a 503 at
+        all, and the earlier guard ignored every non-503 code. Reading them from a
+        per-module index also keeps the prefix and the bare reason in the module
+        that actually composes them instead of anywhere in the backend tree.
+        """
+        documented = documented_codes(self.document)
+        self.assertTrue(documented, "runbook must name the error codes operators will see")
+        index = declarations()
+        problems = [
+            f"{status} {code}"
+            for code, status in sorted(documented.items())
+            if not any(codes.get(code) == status for codes in index.values())
+        ]
+        self.assertEqual(problems, [], f"documented codes are not raised: {problems}")
 
     def test_the_base_compose_forwards_the_model_instance_reader_dsn(self) -> None:
         # Same contract as the workspace writer: the runbook's instance-reader

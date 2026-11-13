@@ -21,19 +21,48 @@ a container. Mutations that must turn it red:
 - removing the empty-default forward for an optional identity (a ``:?`` guard
   would fail ``docker compose config`` for deployments that never enable it);
 - declaring a new ``*_database_url`` setting without forwarding it or recording
-  it as outside the Compose surface.
+  it as outside the Compose surface;
+- re-pointing a row at another identity, or at a path no contract declares;
+- quoting a real code that the row's own handlers never raise, or the wrong
+  status for a code those handlers do raise;
+- swapping a role's password variable in the DSN write-back, or writing a role
+  whose name disagrees with the row's identity;
+- changing a documented count (roles, write-backs, column-level ``UPDATE`` rows)
+  so it no longer matches the scripts or grant declarations it describes.
+
+Two properties bound what this guard can claim:
+
+1. **Identity and endpoint are compared with executable identifiers.** A row's
+   identity must be a role the provisioning scripts create (or, for an
+   exemption, the exact role the exemption section names), and an endpoint is
+   only accepted when a contract under ``contracts/`` declares that path. A
+   plausible-looking word is not evidence.
+2. **The dead-key scan covers a stated scope.** ``readable_env_names`` reads
+   ``backend/src``, ``execution-gateway/src`` and ``deploy/*.py``, and only value
+   positions: a settings field, ``validation_alias``/``alias``, an
+   ``os.environ[...]``/``os.environ.get(...)``/``os.getenv(...)`` literal, or a
+   constant bound to such a name and then subscripted. ``scripts/``, ``tests/``
+   and ``web/`` are out of scope: a name there is a fixture or an operator
+   command, not a consumer, and counting it would mark a dead key alive. A
+   forwarded key that only ``scripts/`` consumes therefore goes red and needs a
+   human decision (document it, or expose a real consumer).
 
 The relation-level check mirrors ``tests/ci/test_compose_minimal_role_provisioning.py``:
 the two read projections without a ``*_grants`` function are granted inline, so
 their ``GRANT`` text is compared with the ``READABLE`` tuple the runtime verifies
-at startup.
+at startup. The wire-code index is shared with that module through
+``tests/ci/error_codes.py`` so both guards ask the same question about ``503``
+and ``422`` codes.
 """
 
 from __future__ import annotations
 
+import json
 import re
 import unittest
 from pathlib import Path
+
+from tests.ci.error_codes import declarations, documented_codes
 
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = ROOT / "deploy/compose.yaml"
@@ -59,6 +88,10 @@ SETTING_KEY = re.compile(r'"([a-z0-9_]+_database_url)"')
 # Both the suffixed (SPEECHNEXUS_API_DATABASE_URL) and the bare
 # (SPEECHNEXUS_DATABASE_URL) container forms exist.
 DSN_ENV_NAME = r"SPEECHNEXUS_(?:[A-Z0-9_]+_)?DATABASE_URL"
+# A module constant that only *names* a DSN counts as a read once something
+# subscripts or `.get`s it; the binding gates do exactly that.
+CONSTANT_DSN = re.compile(rf'(?m)^([A-Z][A-Z0-9_]*) = "({DSN_ENV_NAME})"$')
+CONSTANT_READ = re.compile(r"\[\s*([A-Z][A-Z0-9_]*)\s*\]|\.get\(\s*([A-Z][A-Z0-9_]*)\s*[,)]")
 
 PROVISIONED = "预置"
 DELIBERATE = "故意不预置"
@@ -192,18 +225,19 @@ DELIBERATE_ANCHORS: dict[str, tuple[str, ...]] = {
     ),
 }
 
-# Role -> the grant declaration the runbook must replay for that exact role. The
+# Role -> the grant declarations the runbook must replay for that exact role. The
 # count is required because both provisioning paths (fresh install and upgrade of
-# an existing deployment) must cover it.
-ROLE_GRANT_BINDINGS: dict[str, tuple[str, int]] = {
-    "sn_catalog_reader": ("model_catalog_reader_grants", 2),
-    "sn_artifact_reader": ("artifact_reader_grants", 2),
-    "sn_binding_writer": ("binding_draft_grants", 2),
-    "sn_binding_admin_reader": ("binding_admin_reader_grants", 2),
-    "sn_binding_lifecycle": ("binding_lifecycle_grants", 2),
-    "sn_workspace_writer": ("workspace_writer_grants", 2),
-    "sn_audit_reader": ("audit_reader_grants", 2),
-    "sn_quarantine_release": ("quarantine_release_grants", 2),
+# an existing deployment) must cover it; the lifecycle writer needs both of its
+# declarations, so replaying only one is drift.
+ROLE_GRANT_BINDINGS: dict[str, tuple[tuple[str, ...], int]] = {
+    "sn_catalog_reader": (("model_catalog_reader_grants",), 2),
+    "sn_artifact_reader": (("artifact_reader_grants",), 2),
+    "sn_binding_writer": (("binding_draft_grants",), 2),
+    "sn_binding_admin_reader": (("binding_admin_reader_grants",), 2),
+    "sn_binding_lifecycle": (("binding_lifecycle_grants", "binding_publication_grants"), 2),
+    "sn_workspace_writer": (("workspace_writer_grants",), 2),
+    "sn_audit_reader": (("audit_reader_grants",), 2),
+    "sn_quarantine_release": (("quarantine_release_grants",), 2),
 }
 
 # Roles the runbook creates after the three base identities: the fresh-install
@@ -236,6 +270,98 @@ INLINE_READERS: dict[str, str] = {
 # Settings that exist but are not part of this Compose surface; the runbook must
 # say so instead of leaving a reader to guess whether the key is dead.
 NON_COMPOSE_SETTINGS_KEYS = {"SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL"}
+
+# The dead-key scan scope. Kept as data so the runbook's own statement of the
+# boundary can be compared with what the scanner actually reads.
+SCAN_ROOTS = ("backend/src", "execution-gateway/src", "deploy")
+
+# Row -> the handler modules that answer the row's endpoints. A documented code
+# must be declared by one of them with the documented status: a real 503 from a
+# different capability is drift, not a detail.
+ROW_HANDLER_MODULES: dict[str, tuple[str, ...]] = {
+    "SPEECHNEXUS_API_DATABASE_URL": (),
+    "SPEECHNEXUS_GATEWAY_CONTROL_DATABASE_URL": (),
+    "SPEECHNEXUS_GATEWAY_CONTROL_QUERY_DATABASE_URL": (),
+    "SPEECHNEXUS_MIGRATION_DATABASE_URL": (),
+    "SPEECHNEXUS_REGISTRATION_DATABASE_URL": (),
+    "SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL": ("profile_publications.py", "profile_errors.py"),
+    "SPEECHNEXUS_WORKSPACE_WRITER_DATABASE_URL": ("workspaces.py",),
+    "SPEECHNEXUS_AUDIT_READER_DATABASE_URL": ("audit_events.py",),
+    "SPEECHNEXUS_MODEL_INSTANCE_READER_DATABASE_URL": ("model_instances.py",),
+    "SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL": (
+        "quarantine_releases.py",
+        "quarantine_release_errors.py",
+    ),
+    "SPEECHNEXUS_JOB_WRITER_DATABASE_URL": ("jobs.py", "job_errors.py"),
+    "SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL": ("jobs.py", "job_errors.py"),
+    "SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL": (),
+    "SPEECHNEXUS_DISABLE_DATABASE_URL": (),
+    "SPEECHNEXUS_DISABLE_SETTLEMENT_DATABASE_URL": (),
+    "SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL": (
+        "models.py",
+        "model_errors.py",
+        "voices.py",
+    ),
+    "SPEECHNEXUS_ARTIFACT_READER_DATABASE_URL": ("artifacts.py", "artifact_errors.py"),
+    "SPEECHNEXUS_RESOURCE_POOL_READER_DATABASE_URL": ("resource_pools.py",),
+    "SPEECHNEXUS_BINDING_LIST_READER_DATABASE_URL": ("model_bindings.py",),
+    "SPEECHNEXUS_BINDING_WRITER_DATABASE_URL": ("bindings.py", "binding_errors.py"),
+    "SPEECHNEXUS_BINDING_ADMIN_READER_DATABASE_URL": (
+        "bindings.py",
+        "binding_errors.py",
+        "binding_evidence.py",
+    ),
+    "SPEECHNEXUS_BINDING_LIFECYCLE_DATABASE_URL": ("binding_lifecycle.py", "binding_errors.py"),
+    "SPEECHNEXUS_BINDING_DEFAULTS_WRITER_DATABASE_URL": ("bindings.py", "binding_errors.py"),
+    "SPEECHNEXUS_PRONUNCIATION_READER_DATABASE_URL": (
+        "pronunciations.py",
+        "pronunciation_sets.py",
+    ),
+    "SPEECHNEXUS_PRONUNCIATION_WRITER_DATABASE_URL": (
+        "pronunciations.py",
+        "pronunciation_sets.py",
+    ),
+    "SPEECHNEXUS_PRONUNCIATION_PUBLISHER_DATABASE_URL": ("pronunciation_sets.py",),
+    "SPEECHNEXUS_VOICE_PUBLISHER_DATABASE_URL": ("voice_publications.py",),
+}
+
+# The §6 write-back block: one entry per non-base identity. The role and the
+# password variable must stay paired; swapping either one hands an identity
+# another identity's credential.
+WRITE_BACK = re.compile(
+    r'"(?P<key>SPEECHNEXUS_[A-Z0-9_]*_DATABASE_URL)":\s*\(\s*'
+    r'"postgresql://(?P<role>sn_[a-z_]+):"\s*'
+    r'f"\{os\.environ\[\'(?P<password>[A-Z0-9_]+)\'\]\}"',
+    re.DOTALL,
+)
+WRITE_BACK_KEYS = {
+    "SPEECHNEXUS_WORKSPACE_WRITER_DATABASE_URL",
+    "SPEECHNEXUS_AUDIT_READER_DATABASE_URL",
+    "SPEECHNEXUS_MODEL_INSTANCE_READER_DATABASE_URL",
+    "SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL",
+    "SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL",
+    "SPEECHNEXUS_ARTIFACT_READER_DATABASE_URL",
+    "SPEECHNEXUS_RESOURCE_POOL_READER_DATABASE_URL",
+    "SPEECHNEXUS_BINDING_LIST_READER_DATABASE_URL",
+    "SPEECHNEXUS_BINDING_WRITER_DATABASE_URL",
+    "SPEECHNEXUS_BINDING_ADMIN_READER_DATABASE_URL",
+    "SPEECHNEXUS_BINDING_LIFECYCLE_DATABASE_URL",
+}
+
+# `POST /v1/...` and `GET .../content`: the ellipsis form names a suffix of a
+# declared path, everything else must match one exactly.
+ENDPOINT = re.compile(
+    r"(?:GET|POST|PATCH|PUT|DELETE)(?:/(?:GET|POST|PATCH|PUT|DELETE))*\s+([A-Za-z0-9_./{}-]+)"
+)
+CONTRACT_FILE = re.compile(r"contracts/.*\.(?:ya?ml|json)$")
+RELATION_COLUMN = re.compile(r"`([a-z0-9_]+)\|([a-z0-9_]+)`")
+GRANT_UPDATE = re.compile(
+    r"UPDATE\s*\((?P<columns>[^)]*)\)\s*ON.{0,80}?\{schema\}\"\s*\.\s*"
+    r"(?:\{(?P<constant>[A-Z][A-Z0-9_]*)\}|(?P<relation>[a-z0-9_]+))",
+    re.DOTALL,
+)
+CHINESE_DIGITS = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+LIFECYCLE_GRANTS_MODULE = "publication_lifecycle_schema.py"
 
 
 def read(path: Path) -> str:
@@ -300,6 +426,100 @@ def inline_grants(document: str) -> dict[str, list[set[str]]]:
         for role in INLINE_ROLE.findall(match.group("arguments")):
             grants.setdefault(role, []).append(relations)
     return grants
+
+
+def contract_paths() -> set[str]:
+    """Every path a contract declares, without importing the contract packages.
+
+    JSON contracts are parsed with the standard library; YAML contracts only have
+    their ``paths:`` block scanned line by line, which is where the route keys
+    live. Nothing else in a contract is treated as a route.
+    """
+    paths: set[str] = set()
+    for path in sorted(ROOT.glob("contracts/**/*")):
+        name = path.relative_to(ROOT).as_posix()
+        if not CONTRACT_FILE.match(name):
+            continue
+        text = read(path)
+        if path.suffix == ".json":
+            try:
+                document = json.loads(text)
+            except ValueError:
+                continue
+            if isinstance(document, dict) and isinstance(document.get("paths"), dict):
+                paths |= {key for key in document["paths"] if isinstance(key, str)}
+            continue
+        lines = text.splitlines()
+        for index, line in enumerate(lines):
+            if line.rstrip() != "paths:":
+                continue
+            for candidate in lines[index + 1 :]:
+                if candidate.strip() and not candidate.startswith("  "):
+                    break
+                match = re.match(r"^  (/v1/[^:\s]+):", candidate)
+                if match is not None:
+                    paths.add(match.group(1))
+    return paths
+
+
+def chinese_number(word: str) -> int:
+    """Read the runbook's own numerals (``十一``, ``十四``, ``六``)."""
+    if word == "十":
+        return 10
+    if word.startswith("十"):
+        return 10 + CHINESE_DIGITS[word[1]]
+    if "十" in word:
+        tens, _, ones = word.partition("十")
+        return CHINESE_DIGITS[tens] * 10 + (CHINESE_DIGITS[ones] if ones else 0)
+    return CHINESE_DIGITS[word]
+
+
+def stated_number(pattern: str, document: str) -> int:
+    match = re.search(pattern, document)
+    if match is None:
+        raise AssertionError(f"runbook no longer states the count for {pattern!r}")
+    return chinese_number(match.group(1))
+
+
+def lifecycle_column_updates() -> set[str]:
+    """The column-level ``UPDATE`` rows the lifecycle grant declarations hand out.
+
+    Both declarations are replayed by the runbook, so the documented six rows are
+    the union of the two. Relation names come from the module constants, not from
+    a second prose copy.
+    """
+    source = read(BACKEND / "speech/infrastructure" / LIFECYCLE_GRANTS_MODULE)
+    start = source.index("def binding_lifecycle_grants")
+    end = source.index("def audit_reader_grants")
+    constants = table_constants()
+    rows: set[str] = set()
+    for match in GRANT_UPDATE.finditer(source[start:end]):
+        constant = match.group("constant")
+        relation = match.group("relation")
+        table = constants[constant] if constant is not None else relation
+        if constant is not None and table is None:
+            raise AssertionError(f"{LIFECYCLE_GRANTS_MODULE} names unknown table {constant}")
+        for column in match.group("columns").split(","):
+            rows.add(f"{table}|{column.strip()}")
+    if not rows:
+        raise AssertionError("no column-level UPDATE found in the lifecycle grants")
+    return rows
+
+
+def documented_lifecycle_columns(document: str) -> tuple[int, set[str]]:
+    """The stated count and the listed rows of the lifecycle column check."""
+    marker = "生命周期身份只持有三个表上的列级"
+    start = document.index(marker)
+    sentence = re.search(r"该查询应只输出(.*?)；", document[start:], re.DOTALL)
+    if sentence is None:
+        raise AssertionError("runbook no longer states the expected column-level rows")
+    body = sentence.group(1)
+    count = re.search(r"([一二三四五六七八九十]+)行", body)
+    if count is None:
+        raise AssertionError("runbook no longer states how many rows the check expects")
+    return chinese_number(count.group(1)), {
+        f"{table}|{column}" for table, column in RELATION_COLUMN.findall(body)
+    }
 
 
 class ComposeDsnCoverageTests(unittest.TestCase):
@@ -451,27 +671,202 @@ class ComposeDsnCoverageTests(unittest.TestCase):
     def test_the_runbook_names_this_guard(self) -> None:
         self.assertIn(Path(__file__).name, self.document)
 
+    def test_every_row_has_a_handler_binding(self) -> None:
+        self.assertEqual(
+            sorted(set(ROW_HANDLER_MODULES)),
+            sorted(self.table),
+            "every table row must say which handlers answer it, even when the row "
+            "states a render-time or startup failure instead of an HTTP code",
+        )
+
+    def test_each_row_identity_is_an_identity_an_executable_step_uses(self) -> None:
+        """Identity cells are checked as identifiers, not as plausible words.
+
+        A provisioned row must name a role that appears in an executable step
+        (``bash`` block), and an exempt row must name the exact role its exemption
+        section explains and no executable step creates. Prose alone is not
+        evidence, so renaming a row's identity to ``sn_wrong_identity`` is red even
+        though it still reads like a role.
+        """
+        executable = "\n".join(re.findall(r"```(?:bash|sh)\n(.*?)```", self.document, re.DOTALL))
+        self.assertTrue(executable, "the runbook has no executable steps")
+        created = set(re.findall(r'"(sn_[a-z_]+)": os\.environ\[', self.document))
+        section = deliberate_section()
+        problems: list[str] = []
+        for key, cells in self.table.items():
+            if cells[0] == "bootstrap owner":
+                continue
+            role = re.match(r"`?(sn_[a-z_]+)`?", cells[0])
+            if role is None:
+                problems.append(f"{key}: identity cell names no role")
+                continue
+            name = role.group(1)
+            if cells[3] == PROVISIONED:
+                if name not in executable:
+                    problems.append(f"{key}: {name} appears in no executable provisioning step")
+            else:
+                if f"`{name}`" not in section:
+                    problems.append(f"{key}: {name} is not the role the exemption declares")
+                if name in created:
+                    problems.append(f"{key}: {name} is exempt yet a script creates it")
+        self.assertEqual(problems, [], "row identities drifted: " + "; ".join(problems))
+
+    def test_each_documented_endpoint_is_a_declared_route(self) -> None:
+        """An endpoint cell must name a path a contract actually declares."""
+        declared = contract_paths()
+        self.assertTrue(declared, "no contract path was found")
+        problems: list[str] = []
+        for key, cells in self.table.items():
+            for token in ENDPOINT.findall(cells[1]):
+                if "..." in token:
+                    suffix = token.split("...", 1)[1]
+                    matched = any(path.endswith(suffix) for path in declared)
+                else:
+                    matched = token in declared
+                if not matched:
+                    problems.append(f"{key}: {token} is not a declared route")
+        self.assertEqual(problems, [], "documented endpoints drifted: " + "; ".join(problems))
+
+    def test_each_row_failure_code_is_declared_by_its_own_handlers(self) -> None:
+        """The behaviour column may only name codes its own handlers raise.
+
+        Matching the shape ``503 <word>`` is not enough: another capability's real
+        503 passes that test and sends the operator to the wrong table. Each
+        documented code must be declared, with the documented status, by one of
+        the modules bound to the row.
+        """
+        index = declarations()
+        problems: list[str] = []
+        for key, cells in self.table.items():
+            for code, status in documented_codes(cells[2]).items():
+                modules = ROW_HANDLER_MODULES[key]
+                matched = [
+                    module for module in modules if index.get(module, {}).get(code) == status
+                ]
+                if not matched:
+                    problems.append(
+                        f"{key}: `{status} {code}` is not raised with that status "
+                        f"by {list(modules)}"
+                    )
+        self.assertEqual(problems, [], "row failure codes drifted: " + "; ".join(problems))
+
+    def test_the_stated_role_counts_match_the_runbook_scripts(self) -> None:
+        """The prose count and the script it describes must agree."""
+        created = set(re.findall(r'"(sn_[a-z_]+)": os\.environ\[', self.document))
+        stated_install = stated_number(
+            r"共([一二三四五六七八九十]+)个\s*独立非 owner 角色", self.document
+        )
+        self.assertEqual(
+            stated_install,
+            len(created),
+            "the §6 introduction miscounts the roles its script creates",
+        )
+        write_back = WRITE_BACK.findall(self.document)
+        stated_write_back = stated_number(
+            r"把([一二三四五六七八九十]+)个非基线身份的连接地址写回", self.document
+        )
+        self.assertEqual(
+            stated_write_back,
+            len(write_back),
+            "the write-back paragraph miscounts the identities the block writes",
+        )
+
+    def test_the_dsn_write_back_pairs_each_identity_with_its_own_password(self) -> None:
+        """Role, password variable and row identity are one triple, not three words.
+
+        Swapping ``sn_binding_writer``'s password variable for the admin reader's
+        still looks like a DSN write-back; it hands one identity another identity's
+        credential. The pairing is derived from the role, so neither side can drift
+        alone.
+        """
+        entries = WRITE_BACK.findall(self.document)
+        found = {key: (role, password) for key, role, password in entries}
+        self.assertEqual(
+            sorted(found), sorted(WRITE_BACK_KEYS), "the write-back block changed shape"
+        )
+        problems: list[str] = []
+        for key, (role, password) in sorted(found.items()):
+            identity = re.match(r"`?(sn_[a-z_]+)`?", self.table[key][0])
+            if identity is None:
+                problems.append(f"{key}: the coverage table names no role")
+                continue
+            if role != identity.group(1):
+                problems.append(
+                    f"{key}: writes {role}, but the row's identity is {identity.group(1)}"
+                )
+            expected = f"SPEECHNEXUS_{role.removeprefix('sn_').upper()}_ROLE_PASSWORD"
+            if password != expected:
+                problems.append(f"{key}: {role} reads {password}, expected {expected}")
+        self.assertEqual(problems, [], "write-back identity drifted: " + "; ".join(problems))
+
+    def test_the_lifecycle_column_update_expectation_matches_the_grants(self) -> None:
+        """The documented count and rows of the column-level check come from code."""
+        expected = lifecycle_column_updates()
+        stated, listed = documented_lifecycle_columns(self.document)
+        self.assertEqual(
+            listed,
+            expected,
+            "the documented column-level UPDATE rows differ from the grant declarations",
+        )
+        self.assertEqual(
+            stated,
+            len(listed),
+            "the runbook states one row count and lists another",
+        )
+
+    def test_the_dead_key_scan_scope_is_documented(self) -> None:
+        # The scanner cannot see a consumer it does not read; the runbook has to
+        # state that boundary instead of promising a scope it does not cover.
+        for root in SCAN_ROOTS:
+            self.assertIn(root, self.document, f"the runbook must state the scan root {root}")
+        for outside in ("scripts/", "tests/"):
+            self.assertIn(
+                outside,
+                self.document,
+                f"the runbook must say that {outside} is outside the dead-key scan",
+            )
+
 
 def readable_env_names() -> set[str]:
     """Container env names some settings class or module actually reads.
 
-    ``env_prefix`` composition is why a literal scan is not enough: the gateway
-    reads ``SPEECHNEXUS_GATEWAY_CONTROL_DATABASE_URL`` through its
+    A name counts only where it is *read*, never where it merely appears: a
+    docstring, a comment or a module constant that nothing subscripts proves
+    nothing (a fake ``README = "SPEECHNEXUS_…_DATABASE_URL"`` used to pass).
+
+    Three shapes survive that test. ``env_prefix`` composition is why a literal
+    scan is not enough: the gateway reads
+    ``SPEECHNEXUS_GATEWAY_CONTROL_DATABASE_URL`` through its
     ``SPEECHNEXUS_GATEWAY_`` prefix plus the ``control_database_url`` field, so the
-    full name never appears in any source file. The bare ``SPEECHNEXUS_DATABASE_URL``
-    alias also has no intermediate segment, so the name pattern allows that form.
+    full name never appears in any source file. ``validation_alias``/``alias`` and
+    the ``os.environ``/``os.getenv`` calls are the direct reads, and a constant
+    bound to a name and then subscripted is how ``deploy/job-startup-gate.py``
+    reaches the container-side name while naming the host key in its error text.
     """
     names: set[str] = set()
-    for root in (ROOT / "backend/src", ROOT / "execution-gateway/src"):
-        for path in root.rglob("*.py"):
+    for root in SCAN_ROOTS:
+        for path in (ROOT / root).rglob("*.py"):
             text = read(path)
             prefixes = re.findall(r'env_prefix="([A-Z_]+)"', text)
             fields = re.findall(r"(?m)^\s{4}([a-z0-9_]+_database_url)\s*:", text)
             for prefix in prefixes:
                 names |= {prefix + field.upper() for field in fields}
-            names |= set(re.findall(rf'validation_alias="({DSN_ENV_NAME})"', text))
-            names |= set(re.findall(r'"(SPEECHNEXUS_DATABASE_URL)"', text))
-            names |= set(re.findall(rf'"({DSN_ENV_NAME})"', text))
+            names |= set(re.findall(rf'(?:validation_alias|alias)="({DSN_ENV_NAME})"', text))
+            names |= set(
+                re.findall(
+                    rf'(?:os\.environ\[|os\.environ\.get\(|os\.getenv\()\s*"({DSN_ENV_NAME})"',
+                    text,
+                )
+            )
+            constants = dict(CONSTANT_DSN.findall(text))
+            if not constants:
+                continue
+            read_constants = {
+                first or second for first, second in CONSTANT_READ.findall(text) if first or second
+            }
+            for name in read_constants:
+                if name in constants:
+                    names.add(constants[name])
     return names
 
 
@@ -544,10 +939,11 @@ class InlineReaderGrantTests(unittest.TestCase):
 
     def test_role_grant_bindings_are_replayed_in_both_provisioning_paths(self) -> None:
         problems: list[str] = []
-        for role, (grant, expected) in ROLE_GRANT_BINDINGS.items():
-            found = len(re.findall(rf'{grant}\(schema, "{role}"\)', self.document))
-            if found != expected:
-                problems.append(f"{role}: {grant} appears {found} times, expected {expected}")
+        for role, (grants, expected) in ROLE_GRANT_BINDINGS.items():
+            for grant in grants:
+                found = len(re.findall(rf'{grant}\(schema, "{role}"\)', self.document))
+                if found != expected:
+                    problems.append(f"{role}: {grant} appears {found} times, expected {expected}")
         self.assertEqual(problems, [], "role provisioning drifted: " + "; ".join(problems))
 
     def test_no_reader_grant_function_is_invented(self) -> None:

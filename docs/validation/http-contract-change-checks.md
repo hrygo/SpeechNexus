@@ -136,6 +136,46 @@ change under the same version. New entries must add matching negative cases and
 update the frozen assertion in
 [`tests/contract/test_approved_http_parameter_and_response_changes.py`](../../tests/contract/test_approved_http_parameter_and_response_changes.py).
 
+## Approved request-bound narrowings
+
+A request bound may be narrowed only through the literal
+`_APPROVED_REQUEST_BOUND_NARROWINGS` registry. Each key is exact: source, path,
+method, baseline version, current version, component schema, the pointer of the
+bound inside that component, the property name, the bound keyword, the old value
+and the new value. The value names the approving issue, reason and capability
+proof. Only findings on that operation's exact request-body `oneOf` pointer are
+filtered.
+
+The registry exists because a narrowing is a real structural change without a
+declaration removal: the closed-tagged-object proof only admits optional property
+additions, so a shrinking request bound was previously indistinguishable from an
+unproven `oneOf` change. Approving it is not a relaxation, and each entry is
+constrained on every axis:
+
+- the version pair must match, so the entry never covers a later version period;
+- the named component must be reachable from that operation's request body
+  through local references, so an unrelated schema carrying the same property
+  cannot satisfy it;
+- the pointer must end with `properties/<field>`, so the declared property name
+  and the declared pointer cannot disagree;
+- the numeric direction must shrink the admitted set — `max*` moves down and
+  `min*` moves up. A relaxation, a non-numeric value, a type change or any other
+  structural edit still rejects;
+- the baseline and current service schemas must differ by exactly that one
+  bound. Another simultaneous bound change, an added or removed property or any
+  other structural difference still rejects. `description` is annotation, so
+  documenting the new bound is not a structural change;
+- `issue`, `reason` and `proof` must all be present. The proof states why no
+  admitted request is lost, so an entry without one is a defect and rejects.
+
+A narrowing that already landed leaves its entry dormant: when the baseline and
+the current contract both carry the new bound the entry neither filters nor
+rejects. A contract reverted to the old bound makes the entry unbacked and
+rejects. Each approval is printed as `approved request bound narrowing:` and
+listed in `approved_request_bound_narrowings` in JSON mode. New entries must add
+matching negative cases and update the frozen assertion in
+[`tests/contract/test_approved_http_request_bound_narrowings.py`](../../tests/contract/test_approved_http_request_bound_narrowings.py).
+
 ## What the check establishes
 
 The existing directional comparison kernel is reused: reject known request

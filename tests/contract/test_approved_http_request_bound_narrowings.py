@@ -20,6 +20,9 @@ PATH = "/v1/nexus/jobs"
 OTHER_PATH = "/v1/nexus/jobs-batch"
 METHOD = "post"
 COMPONENT = "TtsJobInput"
+# A second exclusive variant in the same request body: the channel the review
+# found, because the kernel collapses every variant difference into one finding.
+SIBLING = "VoicePreviewJobInput"
 POINTER = "oneOf/0/properties/text"
 FIELD = "text"
 KEYWORD = "maxLength"
@@ -88,12 +91,37 @@ def operation() -> dict[str, Any]:
             "required": True,
             "content": {
                 "application/json": {
-                    "schema": {"oneOf": [{"$ref": f"#/components/schemas/{COMPONENT}"}]}
+                    "schema": {
+                        "oneOf": [
+                            {"$ref": f"#/components/schemas/{COMPONENT}"},
+                            {"$ref": f"#/components/schemas/{SIBLING}"},
+                        ]
+                    }
                 }
             },
         },
         "responses": {"202": {"description": "Synthetic"}},
     }
+
+
+def sibling(bound: int | None, *, extra: str | None = None) -> dict[str, Any]:
+    properties: dict[str, Any] = {
+        "text": {"type": "string", "minLength": 1},
+    }
+    if bound is not None:
+        properties["text"][KEYWORD] = bound
+    if extra is not None:
+        properties[extra] = {"type": "string"}
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["text"],
+        "properties": properties,
+    }
+
+
+def schemas_for(bound: int | None, sibling_bound: int | None = 2000) -> dict[str, Any]:
+    return {COMPONENT: component(bound), SIBLING: sibling(sibling_bound)}
 
 
 def document(
@@ -107,7 +135,7 @@ def document(
         "openapi": "3.1.0",
         "info": {"title": "Synthetic", "version": version},
         "paths": {path: {METHOD: copy.deepcopy(operation())} for path in paths},
-        "components": {"schemas": schemas or {COMPONENT: component(bound)}},
+        "components": {"schemas": schemas or schemas_for(bound)},
     }
 
 
@@ -269,7 +297,58 @@ def test_a_second_simultaneous_bound_change_still_rejects() -> None:
 
     assert approved == []
     assert FINDING in findings
-    assert any("another bound also changed" in finding for finding in findings)
+    assert any("2 bound differences" in finding for finding in findings)
+
+
+# The kernel emits one finding per request body and inlines every exclusive
+# variant first, so a registration that proved only its own component would let
+# any sibling variant change ride on it. Each case below changes a sibling only.
+def test_a_sibling_variant_narrowing_still_rejects() -> None:
+    base = document(FROM_BOUND)
+    current = document(TO_BOUND, schemas=schemas_for(TO_BOUND, sibling_bound=100))
+
+    findings, approved = analyze(base, current)
+
+    assert approved == []
+    assert FINDING in findings
+    assert any("2 bound differences" in finding for finding in findings)
+
+
+def test_a_sibling_variant_relaxation_still_rejects() -> None:
+    base = document(FROM_BOUND)
+    current = document(TO_BOUND, schemas=schemas_for(TO_BOUND, sibling_bound=5000))
+
+    findings, approved = analyze(base, current)
+
+    assert approved == []
+    assert FINDING in findings
+    assert any("2 bound differences" in finding for finding in findings)
+
+
+def test_a_sibling_variant_added_property_still_rejects() -> None:
+    base = document(FROM_BOUND)
+    current = document(
+        TO_BOUND,
+        schemas={COMPONENT: component(TO_BOUND), SIBLING: sibling(2000, extra="prompt")},
+    )
+
+    findings, approved = analyze(base, current)
+
+    assert approved == []
+    assert FINDING in findings
+    assert any(
+        "another structural change exists in the same operation request body" in f for f in findings
+    )
+
+
+def test_a_dormant_registration_does_not_cover_a_sibling_change() -> None:
+    base = document(TO_BOUND)
+    current = document(TO_BOUND, schemas=schemas_for(TO_BOUND, sibling_bound=5000))
+
+    findings, approved = analyze(base, current)
+
+    assert approved == []
+    assert any("is not the registered field" in finding for finding in findings)
 
 
 def test_a_structural_change_beside_the_narrowing_still_rejects() -> None:

@@ -256,6 +256,8 @@ _BOUND_DIRECTIONS: dict[str, Literal["down", "up"]] = {
     "minLength": "up",
     "minItems": "up",
     "minProperties": "up",
+    "minContains": "up",
+    "maxContains": "down",
     "minimum": "up",
     "exclusiveMinimum": "up",
 }
@@ -728,6 +730,13 @@ def _bound_differences(
     return differences
 
 
+def _request_body_surface(
+    document: Mapping[str, Any], path: str, method: str
+) -> tuple[object, dict[str, dict[str, object]]] | None:
+    body = _request_body(document, path, method)
+    return None if body is None else _bound_surface(body, document)
+
+
 def _service_schema(
     document: Mapping[str, Any], component: str
 ) -> tuple[object, dict[str, dict[str, object]]] | None:
@@ -785,39 +794,66 @@ def _apply_approved_request_bound_narrowings(
         ) or component not in _reachable_schemas(current, _request_body(current, path, method)):
             problem = f"{component} is not reachable from this operation request body"
         else:
+            # The kernel emits one finding for the whole request body, because it
+            # inlines every exclusive variant before comparing. The registration
+            # therefore proves the whole body, not just its own component: any
+            # change anywhere else in the same body keeps the finding, otherwise
+            # the entry would downgrade the gate from "this bound moved" to "this
+            # operation moved and one of its bounds happens to be registered".
+            base_surface = _request_body_surface(base, path, method)
+            current_surface = _request_body_surface(current, path, method)
             base_schema = _service_schema(base, component)
             current_schema = _service_schema(current, component)
-            if base_schema is None or current_schema is None:
+            if base_surface is None or current_surface is None:
+                problem = "operation does not declare a request body"
+            elif base_schema is None or current_schema is None:
                 problem = f"component {component} is missing on one side"
             else:
-                base_shape, base_bounds = base_schema
-                current_shape, current_bounds = current_schema
-                before = base_bounds.get(pointer, {}).get(keyword)
-                after = current_bounds.get(pointer, {}).get(keyword)
-                if (before, after) == (to_bound, to_bound):
+                base_shape, base_bounds = base_surface
+                current_shape, current_bounds = current_surface
+                differences = _bound_differences(base_bounds, current_bounds)
+                shape_same = _kernel()._same_json_tree(base_shape, current_shape)
+                before = base_schema[1].get(pointer, {}).get(keyword)
+                after = current_schema[1].get(pointer, {}).get(keyword)
+                if (before, after) == (to_bound, to_bound) and not differences and shape_same:
                     # The narrowing already landed: the entry stays dormant until
                     # its version period changes, so it does not report a backlog
-                    # item once the change is the new baseline.
+                    # item once the change is the new baseline. A dormant entry
+                    # still never covers another change in the same body.
                     continue
-                if before != from_bound or after != to_bound:
+                if not shape_same:
+                    problem = "another structural change exists in the same operation request body"
+                elif len(differences) != 1:
                     problem = (
-                        f"declared {keyword} {from_bound} -> {to_bound} does not match "
-                        f"the documents {before} -> {after}"
+                        f"the operation request body has {len(differences)} bound "
+                        "differences; exactly the registered one is required"
                     )
-                elif not _kernel()._same_json_tree(base_shape, current_shape):
-                    problem = "another structural change exists in the same service schema"
-                elif set(_bound_differences(base_bounds, current_bounds)) != {(pointer, keyword)}:
-                    problem = "another bound also changed in the same service schema"
-                elif expected not in remaining:
-                    problem = f"exact finding {expected!r} is absent"
                 else:
-                    remaining.remove(expected)
-                    approved.append(
-                        f"{pointer_label}/{component}/{pointer}: request bound narrowed "
-                        f"{keyword} {from_bound} -> {to_bound} "
-                        f"[{metadata['issue']}: {metadata['reason']}]"
+                    (only_pointer, only_keyword), (before_moved, after_moved) = next(
+                        iter(differences.items())
                     )
-                    continue
+                    marker = f"$ref({component})"
+                    if (
+                        only_keyword != keyword
+                        or marker not in only_pointer
+                        or not only_pointer.endswith(pointer)
+                    ):
+                        problem = "the only bound difference is not the registered field"
+                    elif (before_moved, after_moved) != (from_bound, to_bound):
+                        problem = (
+                            f"declared {keyword} {from_bound} -> {to_bound} does not match "
+                            f"the documents {before_moved} -> {after_moved}"
+                        )
+                    elif expected not in remaining:
+                        problem = f"exact finding {expected!r} is absent"
+                    else:
+                        remaining.remove(expected)
+                        approved.append(
+                            f"{pointer_label}/{component}/{pointer}: request bound narrowed "
+                            f"{keyword} {from_bound} -> {to_bound} "
+                            f"[{metadata['issue']}: {metadata['reason']}]"
+                        )
+                        continue
         remaining.append(
             f"{pointer_label}: approved request bound narrowing entry does not match: {problem}"
         )

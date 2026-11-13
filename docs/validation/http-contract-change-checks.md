@@ -161,16 +161,23 @@ constrained on every axis:
 - the numeric direction must shrink the admitted set — `max*` moves down and
   `min*` moves up. A relaxation, a non-numeric value, a type change or any other
   structural edit still rejects;
-- the baseline and current service schemas must differ by exactly that one
-  bound. Another simultaneous bound change, an added or removed property or any
-  other structural difference still rejects. `description` is annotation, so
+- the **whole request body must differ by exactly that one bound**. The kernel
+  emits a single finding per request body because it inlines every exclusive
+  variant before comparing, so proving only the named component would let any
+  sibling variant change ride on the entry. The body shape must be unchanged
+  everywhere and the only bound difference must sit at the registered field
+  inside the registered component, identified by the `$ref(<component>)` marker
+  in the surface pointer. A sibling variant narrowing, relaxation, added property
+  or any other simultaneous change still rejects; `description` is annotation, so
   documenting the new bound is not a structural change;
 - `issue`, `reason` and `proof` must all be present. The proof states why no
   admitted request is lost, so an entry without one is a defect and rejects.
 
 A narrowing that already landed leaves its entry dormant: when the baseline and
-the current contract both carry the new bound the entry neither filters nor
-rejects. A contract reverted to the old bound makes the entry unbacked and
+the current contract both carry the new bound nothing in the request body moved,
+so the entry neither filters nor rejects. A dormant entry never covers a change
+beside it — if anything else in that request body differs, the entry is not
+dormant and the finding stays. A contract reverted to the old bound makes the entry unbacked and
 rejects. Each approval is printed as `approved request bound narrowing:` and
 listed in `approved_request_bound_narrowings` in JSON mode. New entries must add
 matching negative cases and update the frozen assertion in

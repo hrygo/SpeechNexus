@@ -144,6 +144,60 @@ async def test_an_unrepresentable_unit_never_opens_a_connection() -> None:
     assert calls == 0
 
 
+def unit_with_text(text: str) -> RenderUnit:
+    dependencies = RenderDependencies(
+        original=RevisionPin("original", 1),
+        working=RevisionPin("working", 2),
+        chapter_id="chapter",
+        role_id="narrator",
+        text_plan=RevisionPin("plan", 1),
+        voice=RevisionPin("voice", 3),
+        model="tts-quality",
+        model_binding=RevisionPin("binding", 4),
+        text=text,
+    )
+    return RenderUnit.create(
+        unit_id="unit", book_id="book", ordinal=0, dependencies=dependencies, now=NOW
+    )
+
+
+async def test_text_above_the_job_bound_is_rejected_locally_before_any_connection() -> None:
+    """One Job synthesizes once, so an over-bound unit is refused at the contract check.
+
+    The public Job contract bounds inline text to 4096 characters. Exceeding it is
+    rejected locally with the same error the remote 400/422 produces, and no
+    connection is opened, so the refusal never becomes an unknown outcome.
+    """
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(202, json={"id": "job_1"})
+
+    with pytest.raises(RenderSubmissionRejectedError):
+        await PublicSpeechRenderJobs(client(handler)).submit(
+            unit=unit_with_text("中" * 4097), key="key-12345678", reference="gen:abc"
+        )
+    assert calls == 0
+
+
+async def test_text_at_the_job_bound_is_still_submitted() -> None:
+    """The declared bound stays usable: exactly 4096 characters still reaches the API."""
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(202, json={"id": "job_1"})
+
+    job_id = await PublicSpeechRenderJobs(client(handler)).submit(
+        unit=unit_with_text("中" * 4096), key="key-12345678", reference="gen:abc"
+    )
+
+    assert job_id == "job_1"
+    assert len(seen["body"]["input"]["text"]) == 4096
+
+
 def job(**changes: Any) -> dict[str, Any]:
     value: dict[str, Any] = {
         "id": "job_1",

@@ -126,6 +126,9 @@ describe("replayed-intent settlement predicate", () => {
     [422, "job_binding_incomplete", true],
     [422, "job_text_asset_unsupported", true],
     [422, "voice_not_published", true],
+    [422, "model_not_published", true],
+    [422, "profile_not_published", true],
+    [422, "asset_not_ready", true],
     [422, "model_binding_retired", true],
     [422, "model_binding_task_not_supported", true],
     // Answers that may precede the key lookup (auth, gateway, body parsing): never settle.
@@ -402,6 +405,46 @@ describe("submission rejection classes", () => {
     expect(f.stored()).toMatchObject({ pending: "create", settled: "terminal" });
     restored.dispose();
   });
+
+  // #715: these three publication/asset 422s are resolved only after `PublicJobs.submit`
+  // has read the original key, and the handler re-reads it before propagating them
+  // (public_jobs.py:607-647; `_prepare_job` runs inside `_submit_new`). They are the same
+  // class as `job_text_asset_unsupported`, so the spent intent must become abandonable
+  // instead of staying an unknown submission whose only exit is a duplicate.
+  it.each(["model_not_published", "profile_not_published", "asset_not_ready"] as const)(
+    "settles a 422 %s refusal as an abandonable spent intent and keeps it settled after reload",
+    async (code) => {
+      const f = setup({ create: () => rejection(422, code) });
+      const first = f.make();
+      await first.start(file(), "asr-quality");
+      const snapshot = first.getSnapshot();
+      // 已作废: the protocol answered definitively, so no unknown state and no replay.
+      expect(snapshot).toMatchObject({ unknown: false, rejected: true, canReplay: false });
+      expect(snapshot.recovery).toBeUndefined();
+      expect(snapshot.notice).toContain(code);
+      // 可放弃: the page offers explicit abandonment instead of holding the intent forever.
+      expect(canFinishTask(snapshot)).toBe(true);
+      expect(f.stored()).toMatchObject({ pending: "create", settled: "terminal", jobId: null });
+      first.dispose();
+
+      // Reloading must rebuild the settled verdict, never revive it as an unknown submission.
+      const restored = f.make();
+      await restored.restore();
+      expect(restored.getSnapshot()).toMatchObject({
+        unknown: false,
+        rejected: true,
+        canReplay: false,
+      });
+      expect(restored.getSnapshot().recovery).toBeUndefined();
+      expect(restored.getSnapshot().notice).toContain("确定性拒绝并作废");
+      expect(canFinishTask(restored.getSnapshot())).toBe(true);
+      // Neither restore nor a replay handle may submit the spent intent again.
+      await restored.replay();
+      expect(f.stats.createKeys).toHaveLength(1);
+      expect(f.stats.executions).toBe(0);
+      restored.dispose();
+    },
+  );
 
   it("never settles a refusal that names an identified execution", async () => {
     // An envelope carrying `nexus.operation_id` identifies an execution the user could

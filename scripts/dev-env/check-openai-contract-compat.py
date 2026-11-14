@@ -1543,16 +1543,46 @@ def _compare_schema(
                     exemption=exemption,
                 )
 
+    # Conditional branches are compared as the schemas they are. An annotation never
+    # changes acceptance, so a branch re-resolved with a new (or removed) `description`
+    # is not a compatibility finding -- the same rule `oneOf` variants already follow
+    # through `_compatibility_shape`, and the policy this check documents as
+    # "annotation-only edits do not change acceptance". Before #806 a reference resolved
+    # inside a branch could not be re-annotated without an explicit proof, which made the
+    # documented rule false for exactly the shared error envelope (`ErrorBody` is also
+    # reached through a conditional in `shared/deletion.schema.json`).
     for keyword in (
         "if",
         "then",
         "else",
         "not",
+        "contains",
+        "prefixItems",
+    ):
+        if not _same_json_tree(
+            _compatibility_shape(base_schema.get(keyword), standard_only=False),
+            _compatibility_shape(current_schema.get(keyword), standard_only=False),
+            numeric_equivalent=True,
+        ):
+            _issue(
+                issues,
+                f"{pointer}/{keyword}",
+                "conditional or composed constraint changed; compatibility needs explicit proof",
+            )
+    # These stay exact trees, and that is deliberately stricter than the conditional
+    # branches above. `dependentRequired` maps literal property names to name lists, so
+    # a key such as "description" here is data. `dependentSchemas` and
+    # `unevaluatedProperties` are schema-valued, but they are also not what #806 had to
+    # re-annotate: resolving the shared error envelope goes through `then`, so stripping
+    # annotations here would widen the tolerance beyond the defect being fixed. The
+    # asymmetry is a known expense, not a rule: wherever this comparison reaches the
+    # keyword directly -- beside a conditional, not inside one, where the branch's own
+    # shaped comparison governs instead -- an annotation-only edit under it is a finding
+    # even though it cannot change acceptance.
+    for keyword in (
         "dependentRequired",
         "dependentSchemas",
         "unevaluatedProperties",
-        "contains",
-        "prefixItems",
     ):
         if not _same_json_tree(
             base_schema.get(keyword), current_schema.get(keyword), numeric_equivalent=True

@@ -2,8 +2,8 @@
   "version": "1.0.0",
   "scope": "workbench HTTP surface only; other surfaces and behaviour review are separate units",
   "contract": "contracts/workbench-openapi.yaml",
-  "contract_sha256": "06eaebb54b829bb073fcaa622aa0444fbba52d848005a8a8e36382d01cc475ae",
-  "audited_head": "10dd9b0ec66e0c5fdfd1c098886c5ac535d69232",
+  "contract_sha256": "65bab45ddbc591479e087d52f7db9324d3cbcbc0769fc3a1cc0097bcdd079980",
+  "audited_head": "7efb3c1ebe976ec3f2ab17b5ecea550971e39252",
   "operations": [
     {
       "id": "cancelAssistantTurn",
@@ -20,6 +20,7 @@
       ],
       "tests": [
         "tests/integration/test_workbench_assistant_http.py",
+        "tests/unit/backend/test_workbench_export_assistant_refusal_retryable.py",
         "tests/unit/backend/test_workbench_http_degradations.py",
         "tests/unit/backend/test_workbench_http_error_fallback.py",
         "web/workbench/src/assistant/assistant-session.test.ts"
@@ -41,6 +42,7 @@
       ],
       "tests": [
         "tests/integration/test_workbench_exports_http.py",
+        "tests/unit/backend/test_workbench_export_assistant_refusal_retryable.py",
         "tests/unit/backend/test_workbench_http_degradations.py",
         "tests/unit/backend/test_workbench_http_error_fallback.py",
         "web/workbench/src/books/BookExportPanel.test.tsx",
@@ -64,6 +66,7 @@
       ],
       "tests": [
         "tests/integration/test_workbench_assistant_http.py",
+        "tests/unit/backend/test_workbench_export_assistant_refusal_retryable.py",
         "tests/unit/backend/test_workbench_http_degradations.py",
         "tests/unit/backend/test_workbench_http_error_fallback.py",
         "web/workbench/src/assistant/AssistantHost.test.tsx",
@@ -106,6 +109,7 @@
       ],
       "tests": [
         "tests/integration/test_workbench_exports_http.py",
+        "tests/unit/backend/test_workbench_export_assistant_refusal_retryable.py",
         "tests/unit/backend/test_workbench_http_degradations.py",
         "tests/unit/backend/test_workbench_http_error_fallback.py",
         "web/workbench/src/books/BookExportPanel.test.tsx",
@@ -437,6 +441,7 @@
       "tests": [
         "tests/integration/test_workbench_assistant_http.py",
         "tests/unit/backend/test_workbench_assistant_views.py",
+        "tests/unit/backend/test_workbench_export_assistant_refusal_retryable.py",
         "tests/unit/backend/test_workbench_http_degradations.py",
         "tests/unit/backend/test_workbench_http_error_fallback.py",
         "web/workbench/src/assistant/assistant-session.test.ts"
@@ -481,6 +486,7 @@
       "tests": [
         "tests/integration/test_workbench_exports_http.py",
         "tests/integration/test_workbench_runtime_export_dispatch.py",
+        "tests/unit/backend/test_workbench_export_assistant_refusal_retryable.py",
         "tests/unit/backend/test_workbench_export_views.py",
         "tests/unit/backend/test_workbench_http_degradations.py",
         "tests/unit/backend/test_workbench_http_error_fallback.py",

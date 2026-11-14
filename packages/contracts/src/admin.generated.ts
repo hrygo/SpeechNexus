@@ -1285,6 +1285,7 @@ export interface components {
       message: string;
       param: string | null;
       request_id: string;
+      /** @description Whether the same dispatch may be retried after the refusal. The value belongs to the refusing operation's disposition, not to the status or the code: one operation's 409 may ask the caller to wait out a cleanup (retryable) while another 409 in the same operation reports a spent idempotency key (not retryable), so a caller reads this field instead of inferring retryability from the status. It answers only that question, and only for a refusal. A 5xx states an unknown outcome rather than a refusal, so the original identity is replayed because the outcome is unknown, not because this field permits a retry: a 503 `outcome_unknown` is `retryable: false` and must still be replayed under the original Idempotency-Key. The meaning is per operation rather than global: workbench operations publish their disposition in `contracts/workbench-openapi.yaml`, while the speech Job operations compute this field from the narrower question 'may an unknown execution outcome be replayed?', which is why `execution_cleanup_pending` is `false` there although the correct action is to dispatch the same intent again under the same key; a consumer that must state one code's operator step reads that operation's published vocabulary instead of this field. */
       retryable: boolean;
       retry_after_ms?: number | null;
       nexus?: components["schemas"]["OperationRecovery"];

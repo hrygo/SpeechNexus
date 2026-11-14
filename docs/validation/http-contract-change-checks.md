@@ -215,6 +215,20 @@ as `1` and `1.0` remain equivalent at value-comparison sites; the existing exact
 subtree proof for response intersections stays conservative. Literal objects are
 data: keys such as `description`, `$ref` or `properties.nexus` inside them are not
 interpreted as schema annotations, references or extension exclusions. The
+annotation rule holds inside conditional branches too: `if`/`then`/`else`, `not`,
+`contains` and `prefixItems` are compared with annotations removed at schema
+position, so re-annotating a shared definition that is also reached through a
+conditional is not a finding, while any constraint change there still is.
+`dependentRequired` stays exact because its keys are literal property names, not
+schema positions. `dependentSchemas` and `unevaluatedProperties` are
+schema-valued yet still compared as exact trees wherever this kernel compares the
+keyword directly — beside a conditional, not inside one, where the branch's own
+shaped comparison governs instead. An annotation-only edit there is therefore
+still a finding even though it cannot change acceptance: deliberately stricter
+than the conditional branches. Only the branch keywords were relaxed, because
+only they carry the re-annotated shared envelope; a regression case pins that the
+stricter direct comparison stays a finding instead of drifting into the
+annotation rule. The
 OpenAI policy still excludes schema properties named `nexus`, including when
 checking overlapping constraints beside a reference.
 

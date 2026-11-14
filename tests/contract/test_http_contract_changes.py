@@ -758,6 +758,150 @@ def test_known_safe_changes_and_annotations_do_not_fail_the_check() -> None:
     )
 
 
+def _conditional_response(inner: dict[str, Any]) -> dict[str, Any]:
+    """One response schema whose error body is reached through a conditional branch.
+
+    This is the shape `shared/deletion.schema.json` uses, and the reason a shared
+    envelope cannot be re-annotated today: the reference is resolved inside `then`, which
+    used to be compared as an exact tree.
+    """
+    return {
+        "type": "object",
+        "properties": {"status": {"type": "string"}},
+        "allOf": [
+            {
+                "if": {"properties": {"status": {"const": "failed"}}},
+                "then": {"properties": {"error": inner}},
+            }
+        ],
+    }
+
+
+def test_an_annotation_inside_a_conditional_branch_does_not_fail_the_check() -> None:
+    """`description` is annotation wherever a schema sits, including inside `then`.
+
+    #806 adds a description to the shared `ErrorBody.retryable` field. That body is also
+    reached through a conditional in `shared/deletion.schema.json`, so an annotation on it
+    surfaced as "conditional or composed constraint changed" -- contradicting this
+    check's own documented rule that annotation-only edits do not change acceptance.
+    """
+    path = "/v1/workbench/projects"
+    inner: dict[str, Any] = {"type": "object", "properties": {"code": {"type": "string"}}}
+    base = document(path, None, _conditional_response(copy.deepcopy(inner)))
+    current = document(
+        path,
+        None,
+        _conditional_response(
+            {
+                **inner,
+                "description": "The refusal this branch reports.",
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": "Stable machine-readable error code.",
+                    }
+                },
+            }
+        ),
+    )
+    assert (
+        kernel()._compare_openapi(base, current, "synthetic.openapi.yaml", standard_only=False)
+        == []
+    )
+
+
+@pytest.mark.parametrize(
+    ("mutate", "expected"),
+    [
+        (lambda branch: branch["then"].update({"required": ["error"]}), "required added"),
+        (
+            lambda branch: branch["then"]["properties"]["error"].update({"type": "string"}),
+            "type changed",
+        ),
+        (
+            lambda branch: branch["if"]["properties"]["status"].update({"enum": ["failed"]}),
+            "condition changed",
+        ),
+    ],
+)
+def test_a_constraint_inside_a_conditional_branch_still_fails_the_check(
+    mutate: Callable[[dict[str, Any]], None], expected: str
+) -> None:
+    """Only annotations are tolerated: a real branch constraint change still rejects."""
+    path = "/v1/workbench/projects"
+    inner: dict[str, Any] = {"type": "object", "properties": {"code": {"type": "string"}}}
+    base = document(path, None, _conditional_response(copy.deepcopy(inner)))
+    current = document(path, None, _conditional_response(copy.deepcopy(inner)))
+    mutate(
+        current["paths"][path]["post"]["responses"]["201"]["content"]["application/json"]["schema"][
+            "allOf"
+        ][0]
+    )
+    assert kernel()._compare_openapi(
+        base, current, "synthetic.openapi.yaml", standard_only=False
+    ), expected
+
+
+def test_literal_data_that_names_an_annotation_key_is_still_compared() -> None:
+    """`description` inside `const` or as a dependent property name is data, not annotation.
+
+    The annotation tolerance is only sound if it stops at schema position: dropping a
+    `description` key held inside `const` would hide a changed literal.
+    """
+    path = "/v1/workbench/projects"
+    inner: dict[str, Any] = {
+        "type": "object",
+        "properties": {"error": {"const": {"description": "before"}}},
+    }
+    base = document(path, None, _conditional_response(inner))
+    current = document(
+        path,
+        None,
+        _conditional_response(
+            {"type": "object", "properties": {"error": {"const": {"description": "after"}}}}
+        ),
+    )
+    assert kernel()._compare_openapi(base, current, "synthetic.openapi.yaml", standard_only=False)
+
+    dependent: dict[str, Any] = {"type": "object", "dependentRequired": {"description": ["a"]}}
+    base = document(path, None, _conditional_response(dependent))
+    current = document(
+        path,
+        None,
+        _conditional_response({"type": "object", "dependentRequired": {"description": []}}),
+    )
+    assert kernel()._compare_openapi(base, current, "synthetic.openapi.yaml", standard_only=False)
+
+
+@pytest.mark.parametrize("keyword", ["dependentSchemas", "unevaluatedProperties"])
+def test_a_schema_valued_keyword_is_compared_exactly_where_it_sits(keyword: str) -> None:
+    """The documented annotation rule is limited to conditional branches on purpose.
+
+    `dependentSchemas` and `unevaluatedProperties` hold schemas, so an annotation in one
+    cannot change acceptance either -- yet the keyword itself stays an exact-tree
+    comparison, which is deliberately stricter than `then`/`not` beside it. #806 relaxed
+    only the keywords that carry the re-annotated shared envelope; relaxing these too
+    would widen the tolerance beyond the defect. This case pins the stricter behaviour so
+    it cannot silently become the documented rule, and so the doc's "stricter than the
+    conditional branches" sentence stays falsifiable.
+    """
+    path = "/v1/workbench/projects"
+    before: dict[str, Any] = {"type": "object", keyword: {"value": {"type": "string"}}}
+    after: dict[str, Any] = {
+        "type": "object",
+        keyword: {"value": {"type": "string", "description": "Annotated after landing."}},
+    }
+    findings = kernel()._compare_openapi(
+        document(path, None, before),
+        document(path, None, after),
+        "synthetic.openapi.yaml",
+        standard_only=False,
+    )
+    assert any("conditional or composed constraint changed" in finding for finding in findings), (
+        findings
+    )
+
+
 def _git(root: Path, *args: str) -> str:
     return subprocess.check_output(
         [

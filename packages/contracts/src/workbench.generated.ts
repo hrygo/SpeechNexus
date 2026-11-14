@@ -919,7 +919,27 @@ export interface paths {
      *     caller must read it instead of inferring retryability from the status. When
      *     the refusing layer named a delay, a retryable refusal forwards it on the
      *     `Retry-After` header and in `error.retry_after_ms`; a non-retryable refusal
-     *     never states one.
+     *     never states one. The field's own definition, and the scope of what it
+     *     answers, are stated once for every service that publishes it in
+     *     `contracts/shared/errors.schema.json` (`ErrorBody.retryable`); this operation
+     *     is one of the places that states the disposition. Two directions matter here
+     *     and neither is "read the field and nothing else":
+     *
+     *     - A `false` answers "repeating this same dispatch cannot change the answer",
+     *       not "this answer may be forgotten". The `503 outcome_unknown` above is
+     *       `false` while still requiring the original Idempotency-Key: a 5xx is not a
+     *       refusal, so replaying the original identity is recovery of an unknown
+     *       outcome, not a retry this field permits.
+     *     - The value is one service's answer, not a shared constant. The public Job
+     *       contract computes its own `retryable` from the narrower question "may an
+     *       unknown execution outcome be replayed?" and therefore answers `false` for
+     *       `execution_cleanup_pending`, whose correct action is to dispatch the same
+     *       intent again under the same key. This operation publishes that same wait as
+     *       retryable, `render_submission_cleanup_pending`, because it is stating the
+     *       operator step; that disposition is declared rather than served today, for
+     *       the reason stated above. A consumer with no per-code vocabulary reads this
+     *       field; a consumer that must state the step for one code reads the codes
+     *       here.
      *
      *     `param` carries the upstream field pointer when the refusing layer named
      *     one, and is null otherwise; it is a field pointer in both services, never a
@@ -1878,6 +1898,7 @@ export interface components {
       message: string;
       param: string | null;
       request_id: string;
+      /** @description Whether the same dispatch may be retried after the refusal. The value belongs to the refusing operation's disposition, not to the status or the code: one operation's 409 may ask the caller to wait out a cleanup (retryable) while another 409 in the same operation reports a spent idempotency key (not retryable), so a caller reads this field instead of inferring retryability from the status. It answers only that question, and only for a refusal. A 5xx states an unknown outcome rather than a refusal, so the original identity is replayed because the outcome is unknown, not because this field permits a retry: a 503 `outcome_unknown` is `retryable: false` and must still be replayed under the original Idempotency-Key. The meaning is per operation rather than global: workbench operations publish their disposition in `contracts/workbench-openapi.yaml`, while the speech Job operations compute this field from the narrower question 'may an unknown execution outcome be replayed?', which is why `execution_cleanup_pending` is `false` there although the correct action is to dispatch the same intent again under the same key; a consumer that must state one code's operator step reads that operation's published vocabulary instead of this field. */
       retryable: boolean;
       retry_after_ms?: number | null;
       nexus?: components["schemas"]["OperationRecovery"];

@@ -298,6 +298,21 @@ interface TaskView {
   readonly stream: "idle" | "connecting" | "ended" | "interrupted" | "history-expired";
 }
 
+/**
+ * The one reconciling action an unconfirmed restored submission can actually take. An
+ * identified original execution is *queried* -- its key cannot be replayed, see
+ * `canReplay`; a pending cancel names a readable Job and keeps both paths; a create crash
+ * window carries no readable identity at all, so only its original key is left. The copy
+ * must name exactly that action and never offer one the page disables (#771 review M1/S1).
+ */
+function resumedNoticeFor(record: TaskRecord): string {
+  if (record.operationId !== null)
+    return "已找到原执行身份；该请求结果尚未确认，请读取原执行核对，不要新建任务。";
+  if (record.jobId !== null)
+    return "已找到原任务身份；该请求结果尚未确认，请读取原任务核对，或按原输入与原键重放。";
+  return "已找到原任务身份；该请求结果尚未确认，请按原输入与原键重放，不要新建任务。";
+}
+
 /** A single file intent; explicit replay retains its original keys and payload. */
 export class FileTaskSession {
   readonly #client: SpeechFileClient;
@@ -403,6 +418,13 @@ export class FileTaskSession {
       // A settled cancel intent names its Job and stays readable, so it says which
       // class was refused; only the refusal itself is final (#723).
       const settledCancel = settled === "terminal" && record.pending === "cancel";
+      // `settled` is written only after an observed refusal, so it alone decides whether
+      // the page may claim one. The four restored fields derive from it as one table
+      // (file-task-persistence.test.ts pins every row): `unknown` and `rejected` are
+      // mutually exclusive by construction, `canReplay` implies `unknown`, and
+      // `unreplayable` implies `rejected`. The crash window carries no `settled` and
+      // describes an unconfirmed submission, so it must never be worded as a refusal
+      // (#771).
       this.#view = {
         ...this.#view,
         // `pending` alone cannot tell a submission still awaiting its answer from one the
@@ -422,7 +444,11 @@ export class FileTaskSession {
             ? "已找到原任务身份；该请求因请求体超过本部署的接收上限被拒绝，原意图作废。"
             : settledCancel
               ? "已找到原任务身份；该取消请求已被协议确定性拒绝并作废。请读取原任务核对，再显式收尾。"
-              : "已找到原任务身份；该意图已被协议确定性拒绝并作废。",
+              : settled === "terminal"
+                ? "已找到原任务身份；该意图已被协议确定性拒绝并作废。"
+                : record.pending !== null
+                  ? resumedNoticeFor(record)
+                  : "已找到原任务身份；请读取原任务状态。",
       };
       if (this.#view.canReplay)
         this.#replay =

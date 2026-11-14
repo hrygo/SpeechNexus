@@ -510,6 +510,86 @@ describe("production Workbench file host", () => {
     expect(f.upload).not.toHaveBeenCalled();
     expect(f.create.mock.calls[0]?.[1]).toBe(uuid);
   });
+  it("restores the create crash window with an alert that names the reads it can perform", async () => {
+    const f = fixture();
+    f.data.set(key, JSON.stringify(stored(null, "create")));
+    render(<FileTaskHost client={f.client} storage={f.storage} />);
+    // #780 review M2: the durable record always names its confirmed input Asset and
+    // `GET /v1/nexus/assets/{id}` answers for it, so "nothing to verify" was a false
+    // negative. The crash window's one read is that Asset; the #771 replay stays offered.
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("请求结果尚未确认。请核对原素材；若重放，只使用原输入和原键。");
+    expect(alert).not.toHaveTextContent("没有可核对");
+    expect(screen.getByText("asset-demo")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "读取原状态" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "按原键重放" })).toBeEnabled();
+    expect(f.getJob).not.toHaveBeenCalled();
+    expect(f.getAsset).not.toHaveBeenCalled();
+    expect(f.create).not.toHaveBeenCalled();
+    // The named read is real, and reading the input may not clear the unconfirmed
+    // submission: `unknown`, `canReplay` and the #771 status line all survive (#771).
+    fireEvent.click(screen.getByRole("button", { name: "读取原状态" }));
+    await waitFor(() => expect(f.getAsset).toHaveBeenCalledTimes(1));
+    expect(f.getAsset.mock.calls[0]?.[0]).toBe("asset-demo");
+    expect(screen.getByRole("alert")).toHaveTextContent("请核对原素材");
+    expect(screen.getByRole("button", { name: "按原键重放" })).toBeEnabled();
+    expect(screen.getByTestId("file-job-status")).toHaveTextContent("尚未确认");
+    expect(screen.getByText(/该请求结果尚未确认，请按原输入与原键重放/)).toBeInTheDocument();
+  });
+  it("renders the execution identity the alert asks to read", () => {
+    const f = fixture();
+    f.data.set(key, JSON.stringify({ ...stored(null, "create"), operationId: "op-demo" }));
+    render(<FileTaskHost client={f.client} storage={f.storage} />);
+    // #780 review M1: the 原执行 row used to be assembled from the read Operation and the
+    // recovery envelope only, so a restored execution identity showed "无" while the alert
+    // asked the user to read it. Both now render the same derived value.
+    expect(screen.getByRole("alert")).toHaveTextContent("请读取原执行核对");
+    expect(screen.getByText("op-demo")).toBeInTheDocument();
+    expect(screen.getByText("asset-demo")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "读取原状态" })).toBeEnabled();
+  });
+  it.each([
+    { shape: "create crash window", record: stored(null, "create"), read: "asset", replay: true },
+    {
+      shape: "create with execution identity",
+      record: { ...stored(null, "create"), operationId: "op-demo" },
+      read: "operation",
+      replay: false,
+    },
+    { shape: "pending cancel", record: stored("job-demo", "cancel"), read: "job", replay: true },
+    {
+      shape: "pending cancel with execution identity",
+      record: { ...stored("job-demo", "cancel"), operationId: "op-demo" },
+      read: "operation",
+      replay: false,
+    },
+  ])("reloaded $shape alerts exactly the actions it enables", ({ record, read, replay }) => {
+    const f = fixture();
+    f.data.set(key, JSON.stringify(record));
+    render(<FileTaskHost client={f.client} storage={f.storage} />);
+    const alert = screen.getByRole("alert");
+    // The rendered copy's action set, read from its own product strings.
+    const phrase: Record<string, string> = {
+      operation: "读取原执行",
+      job: "读取原任务",
+      asset: "核对原素材",
+    };
+    const copy = alert.textContent ?? "";
+    const named = Object.entries(phrase)
+      .filter(([, text]) => copy.includes(text))
+      .map(([target]) => target);
+    expect(named).toEqual(read === null ? [] : [read]);
+    // Both directions against the buttons the user can really press: the copy names a read
+    // iff `读取原状态` is enabled, and mentions the replay iff `按原键重放` is enabled. The
+    // fixture's own `read`/`replay` columns keep that equality from being a tautology.
+    const refresh = screen.getByRole("button", { name: "读取原状态" });
+    const replayButton = screen.getByRole("button", { name: "按原键重放" });
+    expect(named.length > 0).toBe(read !== null);
+    expect(named.length > 0).toBe(!refresh.hasAttribute("disabled"));
+    expect(copy.includes("重放")).toBe(replay);
+    expect(copy.includes("重放")).toBe(!replayButton.hasAttribute("disabled"));
+    expect(f.getJob).not.toHaveBeenCalled();
+  });
   it("reads a durable Asset hint without upload and waits for explicit continue", async () => {
     const f = fixture();
     const base = stored(null);

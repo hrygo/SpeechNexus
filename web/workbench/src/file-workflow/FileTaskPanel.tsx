@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { FileTaskSession } from "./file-task-session";
+import { type FileTaskSession, unconfirmedAlertFor } from "./file-task-session";
 import type { FileContracts } from "./speech-file-client";
 
 import { canFinishTask } from "./file-task-policy";
@@ -12,13 +12,11 @@ export type ImportTranscript = (
 export function FileTaskPanel({
   session,
   onNew,
-  savedAssetId,
   result,
   onImportTranscript,
 }: {
   session: FileTaskSession;
   onNew: () => void;
-  savedAssetId: string | null;
   result?: ReactNode;
   onImportTranscript?: ImportTranscript | undefined;
 }) {
@@ -92,8 +90,12 @@ export function FileTaskPanel({
     >
       <h2 id="file-detail-title">任务与原始结果</h2>
       <p role="status">{state.notice}</p>
+      {/* The alert's action list is generated from the same read handle `refresh()` uses, so
+          it never asks for a read this state cannot perform (#780). */}
       {state.unknown && (
-        <p role="alert">请求结果尚未确认。请核对原素材或任务；重放只使用原输入和原键。</p>
+        <p role="alert">
+          {unconfirmedAlertFor({ read: state.readTarget, replay: state.canReplay })}
+        </p>
       )}
       {state.rejected && !state.unreplayable && (
         <p role="status">
@@ -109,7 +111,8 @@ export function FileTaskPanel({
       )}
       <dl>
         <dt>素材</dt>
-        <dd>{state.asset?.id ?? state.assetRecoveryId ?? savedAssetId ?? "尚未确认"}</dd>
+        {/* One source for the identity the alert may name as readable (#780 review M1). */}
+        <dd>{state.assetIdentity ?? "尚未确认"}</dd>
         <dt>素材状态</dt>
         <dd>{state.asset?.status ?? "尚未确认"}</dd>
         <dt>任务</dt>
@@ -141,7 +144,9 @@ export function FileTaskPanel({
         <dt>资源清理</dt>
         <dd>{job?.cleanup_state ?? "尚无证据"}</dd>
         <dt>原执行</dt>
-        <dd>{state.operation?.id ?? state.recovery?.error.nexus?.operation_id ?? "无"}</dd>
+        {/* Same derived identity the alert and `refresh()` use, so the row cannot say "无"
+            while the alert asks for that read (#780 review M1). */}
+        <dd>{state.operationIdentity ?? "无"}</dd>
         <dt>执行状态</dt>
         <dd>
           {state.operation
@@ -161,7 +166,13 @@ export function FileTaskPanel({
         </p>
       )}
       <div className="file-task-actions">
-        <button type="button" disabled={state.busy} onClick={() => void session.restore()}>
+        {/* Disabled while any session action is still running, and whenever the page holds no
+            readable identity at all; the alert is generated from that same read handle (#780). */}
+        <button
+          type="button"
+          disabled={state.busy || state.readTarget === null}
+          onClick={() => void session.restore()}
+        >
           读取原状态
         </button>
         <button

@@ -36,7 +36,6 @@ function initialize(client: SpeechFileClient, kind: TaskKind, supplied?: TaskSto
     return {
       session,
       model: record?.model ?? "",
-      savedAssetId: record?.assetId ?? null,
       kind,
       selection:
         record && "voiceId" in record
@@ -110,7 +109,6 @@ function ActiveTask({
         onImportTranscript={onImportTranscript}
         session={session}
         onNew={onNew}
-        savedAssetId={host.savedAssetId}
         result={
           host.kind === "tts" ? (
             <TtsTaskResult session={session} workbench={workbench} />

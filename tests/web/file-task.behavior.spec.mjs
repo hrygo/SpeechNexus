@@ -456,9 +456,14 @@ test("结算码之外的 409 不结算：保持未知并按原键重放取消", 
   await expect(notice(page)).toHaveText(
     "取消请求被拒绝（409 job_retry_not_allowed），但该拒绝不能证明原取消未生效；保留原键与未知状态，请读取原任务。",
   );
+  // The alert's action list is generated from the state's own handles (#780): this state
+  // names a Job, so it offers that read and the replay, and never the queryable execution
+  // it has no identity for.
   await expect(
-    panel(page).getByText("请求结果尚未确认。请核对原素材或任务；重放只使用原输入和原键。"),
+    panel(page).getByText("请求结果尚未确认。请读取原任务核对；若重放，只使用原输入和原键。"),
   ).toBeVisible();
+  await expect(panel(page).getByText("读取原执行")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "读取原状态" })).toBeEnabled();
   await expect(finishButton(page)).toHaveCount(0);
   await expect(replayButton(page)).toBeEnabled();
 

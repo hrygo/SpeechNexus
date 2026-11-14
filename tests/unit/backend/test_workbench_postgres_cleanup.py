@@ -213,7 +213,7 @@ async def test_server_sqlstate_arriving_after_the_cleanup_allowance_is_a_known_a
     assert "synthetic" not in str(error.value)
 
 
-async def test_connection_lost_during_commit_stays_unknown_without_a_sqlstate(
+async def test_connection_lost_during_commit_keeps_the_driver_verdict_unknown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     uow = _answered_uow(
@@ -227,6 +227,11 @@ async def test_connection_lost_during_commit_stays_unknown_without_a_sqlstate(
             pass
     assert error.value.commit_unknown
     assert error.value.sqlstate is None
+    # Unknown here is the driver's own verdict about a COMMIT that was already sent,
+    # not our exit deadline discarding a reply: those two must stay distinguishable,
+    # and only the driver's verdict may stand for a lost connection.
+    assert isinstance(error.value.__context__, psycopg.OperationalError)
+    assert not isinstance(error.value.__context__, TimeoutError)
     assert "synthetic" not in str(error.value)
 
 
@@ -255,4 +260,9 @@ async def test_commit_reply_beyond_the_transaction_budget_is_unknown_not_abort(
             pass
     assert error.value.commit_unknown
     assert error.value.sqlstate is None
+    # A truncated reply is the deadline cutting the wait, never a driver answer: this
+    # is the complement of the lost-connection case above, so the two causes cannot be
+    # conflated into one "unknown".
+    assert isinstance(error.value.__context__, (TimeoutError, asyncio.CancelledError))
+    assert not isinstance(error.value.__context__, psycopg.Error)
     assert connection.pgconn.closed

@@ -1136,6 +1136,10 @@ describe("render unit text bounds (#745)", () => {
  *
  * The walk covers the whole vocabulary, so a new code cannot ship with the two
  * disagreeing: it has to be classified, and its copy has to match that classification.
+ *
+ * The state depends on what *this tab* observed, not only on the journal's refusal bit: a
+ * rejection restored by a reload is `recorded`, because the record keeps no category and
+ * the aside may then claim neither "可重试" nor "确定性拒绝" (#794 review MF-1).
  */
 describe("recovered intent after a refusal (#794)", () => {
   /**
@@ -1145,10 +1149,13 @@ describe("recovered intent after a refusal (#794)", () => {
    * published code (#755), which is the property the walk needs, and the status-specific
    * copy (429's `Retry-After`, 415's media type) is pinned by its own case above.
    */
-  const refusalOf = (code: RenderRefusalCode) =>
+  // The parameter is a plain string so the walk can also build the upstream codes this
+  // page only aliases (MF-2); the envelope is synthetic, and every published code is in the
+  // contract's union already.
+  const refusalOf = (code: string) =>
     new WorkbenchResponseError(422, {
       error: {
-        code,
+        code: code as Contracts["ErrorResponse"]["error"]["code"],
         type: "invalid_request_error",
         message: `Synthetic ${code} for the recovered-intent equation.`,
         param: null,
@@ -1181,6 +1188,11 @@ describe("recovered intent after a refusal (#794)", () => {
       });
       // The control follows what the copy says, in both directions: a matched pair may not
       // read "可重试" beside a blocked replay, nor withhold the retry its copy names.
+      //
+      // This line is what makes a regression of the retained handle visible in the whole
+      // vocabulary: deleting it leaves the 16-case walk green under the same
+      // `disabled={busy}` mutation that turns 15 cases red with it (measured on #794's
+      // counter-example 2), and only the single reload case below still fails.
       expect(replay.disabled, `${code} control`).toBe(!step.includes("可重试"));
       // The copy and the classification agree, which is what keeps the equation above
       // anchored to the product's own table instead of to the implementation's.
@@ -1198,7 +1210,7 @@ describe("recovered intent after a refusal (#794)", () => {
     },
   );
 
-  it("keeps a settled refusal unreplayable after a reload and ends it explicitly", async () => {
+  it("keeps a settled refusal unreplayable in the tab that saw it", async () => {
     const view = setup();
     view.generate.mockRejectedValueOnce(refusalOf("render_submission_media_unsupported"));
     fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
@@ -1206,32 +1218,73 @@ describe("recovered intent after a refusal (#794)", () => {
     // The copy that reported the refusal says repeating it cannot change the answer.
     expect(alert.textContent).toContain("重复提交不会改变结果");
     expect(alert.textContent).not.toContain("结果尚未确认");
-    const replay = screen.getByRole("button", { name: RECOVERED_INTENT_CONTROLS.replay });
-    expect(replay).toBeDisabled();
+    expect(screen.getByRole("button", { name: RECOVERED_INTENT_CONTROLS.replay })).toBeDisabled();
     expect(screen.getByText(RECOVERED_INTENT.settled.note)).toBeTruthy();
+  });
 
-    // The journal keeps one refusal bit, so a reload cannot tell a terminal refusal from a
-    // retryable one; the reading that never re-offers a spent key is "settled" (#771's
-    // family: a reload may not revive an action the refusal ruled out).
-    view.unmount();
-    render(<RenderUnitPanel client={view.client} chapter={chapter} />);
-    await screen.findByRole("list", { name: "单元列表" });
-    const reloaded = screen.getByRole<HTMLButtonElement>("button", {
-      name: RECOVERED_INTENT_CONTROLS.replay,
-    });
-    expect(reloaded).toBeDisabled();
-    expect(screen.getByText(RECOVERED_INTENT.settled.note)).toBeTruthy();
+  it.each([
+    ["render_submission_media_unsupported", "重复提交不会改变结果"],
+    ["render_submission_rate_limited", "可重试"],
+  ])(
+    "does not call a reloaded %s refusal deterministic, and it stays unreplayable",
+    async (code, copy) => {
+      const view = setup();
+      view.generate.mockRejectedValueOnce(refusalOf(code));
+      fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toContain(copy);
 
-    // Defence in depth for the same invariant: even if a future edit drops the control's
-    // `disabled` attribute, the action itself refuses to re-send the spent key.
-    reloaded.disabled = false;
-    fireEvent.click(reloaded);
-    expect(view.generate).toHaveBeenCalledTimes(1);
+      // The journal keeps one refusal bit, which cannot tell a terminal refusal from a
+      // retryable one. A reload must therefore neither re-offer a possibly spent key, nor
+      // repeat the terminal reading for a refusal whose answer said the opposite -- #794's
+      // first review caught the second half (MF-1).
+      view.unmount();
+      render(<RenderUnitPanel client={view.client} chapter={chapter} />);
+      await screen.findByRole("list", { name: "单元列表" });
+      const reloaded = screen.getByRole<HTMLButtonElement>("button", {
+        name: RECOVERED_INTENT_CONTROLS.replay,
+      });
+      expect(reloaded).toBeDisabled();
+      expect(screen.getByText(RECOVERED_INTENT.recorded.note)).toBeTruthy();
+      // The aside may claim only what the record still holds: that a refusal was recorded.
+      const note = screen.getByText(RECOVERED_INTENT.recorded.note).textContent ?? "";
+      expect(note).toContain("服务端拒绝过这次派发");
+      expect(note).not.toContain("确定性拒绝");
+      expect(note).not.toContain("不会改变结果");
+      expect(note).not.toContain("该拒绝的下一步是稍后再派发");
 
-    // The explicit end is the only way forward, and it clears the retained request.
-    fireEvent.click(screen.getByRole("button", { name: RECOVERED_INTENT_CONTROLS.dismiss }));
-    await waitFor(() => expect(screen.queryByText(RECOVERED_INTENT.settled.note)).toBeNull());
-    expect(screen.queryByRole("button", { name: RECOVERED_INTENT_CONTROLS.dismiss })).toBeNull();
+      // Defence in depth for the same invariant: even if a future edit drops the control's
+      // `disabled` attribute, the action itself refuses to re-send the recorded key.
+      reloaded.disabled = false;
+      fireEvent.click(reloaded);
+      expect(view.generate).toHaveBeenCalledTimes(1);
+
+      // The explicit end is the only way forward, and it clears the retained request.
+      fireEvent.click(screen.getByRole("button", { name: RECOVERED_INTENT_CONTROLS.dismiss }));
+      await waitFor(() => expect(screen.queryByText(RECOVERED_INTENT.recorded.note)).toBeNull());
+      expect(screen.queryByRole("button", { name: RECOVERED_INTENT_CONTROLS.dismiss })).toBeNull();
+    },
+  );
+
+  it("reads the raw cleanup 409 as the retryable wait, and keeps its own code for diagnosis", async () => {
+    // The dispatch route maps this upstream code to `render_submission_cleanup_pending`, so a
+    // page normally never sees it (#794 review MF-2). Answering it as the generic "no
+    // disposition" refusal would publish a terminal reading for a refusal whose whole
+    // meaning is "a Job exists, wait for its cleanup" -- the one direction #755 rules out.
+    const view = setup();
+    view.generate.mockRejectedValueOnce(refusalOf("execution_cleanup_pending"));
+    fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("上一次执行还在清理");
+    expect(alert.textContent).not.toContain("没有这个拒绝码的处置说明");
+    // The diagnosis still quotes the code the server sent, not the mapping this page used.
+    expect(alert).toHaveAttribute("title", "execution_cleanup_pending");
+    expect(screen.getByRole("button", { name: RECOVERED_INTENT_CONTROLS.replay })).toBeEnabled();
+    expect(screen.getByText(RECOVERED_INTENT.kept.note)).toBeTruthy();
+    // No state of this aside may assert a Job fact: the paragraph above states it per code.
+    for (const state of Object.keys(RECOVERED_INTENT) as RecoveredIntent[]) {
+      expect(RECOVERED_INTENT[state].note, `${state} note`).not.toContain("没有创建作业");
+    }
   });
 
   it("keeps the same-key replay for an unobserved dispatch and offers no end", async () => {

@@ -449,6 +449,49 @@ test("415：提示指向媒体类型配置，不提供重试", async ({ page }) 
   expect(backend.calls.unexpected).toEqual([]);
 });
 
+/**
+ * The click the other three cases cannot make (#794 review S3).
+ *
+ * A click on a `disabled` control is refused by Chromium before any handler runs, so
+ * `settledReplayIsUnavailable`'s forced click proves only that the *attribute* is set: the
+ * app-side action guard behind it (the check in `execute`) never runs. This case drops the
+ * attribute the way a regression in the control's own rendering would, clicks for real, and
+ * asserts that the retained key still is not re-sent -- the guard, not the attribute, is what
+ * keeps a settled key spent.
+ */
+test("415：摘掉 disabled 之后点击也不重发——应用侧动作守卫", async ({ page }) => {
+  const backend = await installBackend(page);
+  backend.plan.generate = () => ({
+    status: 415,
+    json: refusal(415, "render_submission_media_unsupported"),
+  });
+
+  const units = await openRenderUnits(page);
+  await expectNetworkLocked(page);
+  await dispatch(units).click();
+  await expect(problem(units)).toContainText("重复提交不会改变结果");
+  await expect(replay(units)).toBeDisabled();
+  expect(backend.calls.generations).toHaveLength(1);
+
+  // Remove the attribute and prove the control is now really clickable, so the click below
+  // reaches React's handler instead of being swallowed by the browser.
+  await replay(units).evaluate((button) => {
+    button.disabled = false;
+  });
+  await expect(replay(units)).toBeEnabled();
+  await replay(units).click();
+  await holdForUnexpectedRetry(page);
+  expect(
+    backend.calls.generations,
+    "a settled key is not re-sent even when its control is clickable",
+  ).toHaveLength(1);
+  expect(backend.calls.executions).toHaveLength(0);
+  expect(backend.calls.unexpected).toEqual([]);
+  // The handler did run and re-render: the aside still offers the explicit end, which is
+  // the step the action guard leaves available.
+  await expect(dismiss(units)).toBeEnabled();
+});
+
 test("403：权限提示在真实布局里可见且不提供重试", async ({ page }) => {
   // #790 asks for 415 *and* 403: both are deployment facts whose next step is not on
   // this page, and both were only proven in jsdom. 403 shares 415's shape (terminal,

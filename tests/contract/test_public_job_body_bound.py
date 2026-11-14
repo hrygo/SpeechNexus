@@ -18,6 +18,15 @@ The cases below pin the two independent ceilings to their own answers:
   move the other);
 * a malformed ``Content-Length`` -> 400 ``invalid_job_request``: a negative
   length is a broken request, not an oversized one.
+
+Two coverage points exist because the answer is easy to get subtly wrong:
+
+* the bound is inclusive: a body of exactly ``job_receive_max_bytes`` is read,
+  and only ``max_bytes + 1`` is refused. An implementation that compares ``>=``
+  refuses a body the deployment still accepts, and no other case here notices;
+* a body sent without ``Content-Length`` (chunked transfer) is bounded while it
+  streams. The declared-length check alone would be dispatched by simply
+  omitting the header, so the streaming accumulator is the only guard there.
 """
 
 from __future__ import annotations
@@ -77,7 +86,89 @@ def _body(*, text: str = "synthetic public job", **extra: Any) -> dict[str, Any]
 
 
 def _wire_bytes(body: dict[str, Any]) -> int:
-    return len(json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    """Bytes ``httpx`` puts on the wire for ``json=body``.
+
+    ``httpx`` serializes with ``ensure_ascii=False`` and the default separators, so
+    a compact encoding here would understate the real body by the space after
+    every separator and make an exact-boundary assertion silently loose.
+    """
+    return len(json.dumps(body, ensure_ascii=False).encode("utf-8"))
+
+
+def _exact_payload(size: int) -> bytes:
+    """Serialized Job body of exactly ``size`` bytes, same encoding ``httpx`` uses.
+
+    The known members stay contract-legal; only the unknown ``padding`` member
+    grows the body, so the receive layer -- not the schema -- is what decides.
+    """
+    empty = _body(padding="")
+    overhead = _wire_bytes(empty)
+    assert size > overhead
+    payload = json.dumps(_body(padding="a" * (size - overhead)), ensure_ascii=False).encode("utf-8")
+    assert len(payload) == size
+    return payload
+
+
+class _Captured:
+    """Status and JSON body of one raw ASGI call."""
+
+    def __init__(self) -> None:
+        self.status = 0
+        self.body = b""
+
+    def payload(self) -> dict[str, Any]:
+        assert self.body, "the app returned an empty body"
+        return cast(dict[str, Any], json.loads(self.body))
+
+
+async def _post_without_content_length(
+    app: Any, payload: bytes, *, chunks: int, key: str
+) -> _Captured:
+    """POST ``payload`` as a chunked request: no ``Content-Length`` reaches the app.
+
+    The real server omits the header for ``Transfer-Encoding: chunked`` bodies, so
+    this drives the same ``request.stream()`` path: several ``http.request``
+    messages with ``more_body`` before the final empty one.
+    """
+    size = max(1, -(-len(payload) // chunks))
+    pending = [payload[index : index + size] for index in range(0, len(payload), size)]
+    path = PREFIX.encode()
+    scope: dict[str, Any] = {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.3"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": PREFIX,
+        "raw_path": path,
+        "query_string": b"",
+        "root_path": "",
+        "headers": [
+            (b"host", b"test"),
+            (b"content-type", b"application/json"),
+            (b"transfer-encoding", b"chunked"),
+            (b"idempotency-key", key.encode()),
+        ],
+        "client": ("127.0.0.1", 51000),
+        "server": ("test", 80),
+        "state": {},
+    }
+    captured = _Captured()
+
+    async def receive() -> dict[str, Any]:
+        if pending:
+            return {"type": "http.request", "body": pending.pop(0), "more_body": True}
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message: dict[str, Any]) -> None:
+        if message["type"] == "http.response.start":
+            captured.status = cast(int, message["status"])
+        elif message["type"] == "http.response.body":
+            captured.body += cast(bytes, message.get("body", b""))
+
+    assert not any(name == b"content-length" for name, _ in scope["headers"])
+    await app(scope, receive, send)
+    return captured
 
 
 def test_create_job_declares_a_413_payload_too_large() -> None:
@@ -152,6 +243,75 @@ async def test_declared_content_length_over_the_bound_answers_the_declared_413()
     assert response.status_code == 413, response.text
     assert response.json()["error"]["code"] == JOB_REQUEST_TOO_LARGE
     assert_error_contract("createJob", response)
+    assert jobs.submitted == []
+
+
+@pytest.mark.parametrize(
+    ("offset", "status", "code"),
+    [
+        (-1, 422, "unsupported_parameter"),
+        (0, 422, "unsupported_parameter"),
+        (1, 413, JOB_REQUEST_TOO_LARGE),
+    ],
+    ids=["one-byte-under-bound", "exactly-at-bound", "one-byte-over-bound"],
+)
+async def test_the_receive_bound_is_inclusive(offset: int, status: int, code: str) -> None:
+    """``max_bytes`` itself is read; only ``max_bytes + 1`` is refused.
+
+    The accepted answers are 422 ``unsupported_parameter``: that code is produced
+    after the receive layer has read the whole body, so it proves the bound let the
+    document through instead of merely producing a different error.
+    """
+    jobs = _RecordingJobs()
+    app = create_app(settings=_settings(), jobs=cast(Any, jobs))
+    max_bytes = _settings().job_receive_max_bytes
+    payload = _exact_payload(max_bytes + offset)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            PREFIX,
+            content=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Idempotency-Key": f"synthetic-bound{offset:+d}",
+            },
+        )
+
+    assert len(payload) == max_bytes + offset
+    assert response.status_code == status, response.text
+    assert response.json()["error"]["code"] == code
+    assert_error_contract("createJob", response)
+    assert jobs.submitted == []
+
+
+async def test_a_chunked_body_without_content_length_is_bounded_while_streaming() -> None:
+    """The streaming accumulator is the only guard when no length is declared.
+
+    The declared-length check is bypassed by omitting ``Content-Length`` (chunked
+    transfer). If the accumulator were removed, the oversized body would reach
+    schema validation and answer 422 instead of 413, which this case would catch.
+    """
+    jobs = _RecordingJobs()
+    app = create_app(settings=_settings(), jobs=cast(Any, jobs))
+    max_bytes = _settings().job_receive_max_bytes
+    oversized = _exact_payload(max_bytes + 1024)
+
+    # Control on the same transport: a small chunked body is routed and validated
+    # normally, so a 413 below cannot come from the transport being unsupported.
+    small = await _post_without_content_length(
+        app, _exact_payload(2048), chunks=4, key="synthetic-chunked-small"
+    )
+    assert small.status == 422, small.body
+    assert small.payload()["error"]["code"] == "unsupported_parameter"
+
+    refused = await _post_without_content_length(
+        app, oversized, chunks=5, key="synthetic-chunked-oversized"
+    )
+    assert refused.status == 413, refused.body
+    error = refused.payload()["error"]
+    assert error["code"] == JOB_REQUEST_TOO_LARGE
+    assert error["type"] == "invalid_request_error"
+    assert error["retryable"] is False
+    # The refusal happened before parse and admission.
     assert jobs.submitted == []
 
 

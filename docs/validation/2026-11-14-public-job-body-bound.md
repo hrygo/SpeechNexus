@@ -55,6 +55,24 @@ PROBE same-key-replay        wire=    195B status=202 code=- retryable=- job=job
 - `text-4097-422`：正文超计划上限但 wire 远低于字节上限，仍是 422 `unsupported_parameter`。
 - `normal-202` 与 `same-key-replay`：同键重放返回同一个 `job-…`，且重放不写新行。
 
+## 边界包含性与分块传输
+
+契约用例 `tests/contract/test_public_job_body_bound.py` 直接钉住两条容易写错的性质（裸 ASGI，
+不走真 TCP；真 TCP 复核见[非作者审查](../reviews/2026-11-14-body-bound-413.md)）：
+
+| 发送方式 | wire | 结果 |
+| --- | --- | --- |
+| `Content-Length` 精确 | `max-1` = 262143 B | 422 `unsupported_parameter`（读完了整个 body，才在校验层被拒） |
+| `Content-Length` 精确 | `max` = 262144 B | 422 `unsupported_parameter`（**边界包含**，不是 413） |
+| `Content-Length` 精确 | `max+1` = 262145 B | 413 `job_request_too_large` |
+| 分块、无 `Content-Length` | 2 048 B | 422 `unsupported_parameter`（同一传输可用性对照） |
+| 分块、无 `Content-Length` | `max+1024` B | 413 `job_request_too_large` |
+
+- 「422」在这里是**通过接收层的证据**：该码只在 body 被完整读出、进入契约校验后产生，所以它
+  证明上限放行了这份文档，而不是换了个错误码。
+- 无 `Content-Length` 时声明长度检查整段跳过，只有流式累计那处兜底能拦住；因此上表最后一档
+  是「去掉声明长度就绕过」这一路径的唯一防线。
+
 ## 反例（变异实验，均已还原，未进入提交）
 
 | 变异 | 改动 | 期望 | 实际 |
@@ -64,6 +82,8 @@ PROBE same-key-replay        wire=    195B status=202 code=- retryable=- job=job
 | C | 把 `ContractValidationError` 分支改报 `job_request_too_large`（两上限并成一个码） | 4097 正文用例红 | 红：`assert 413 == 422`（`test_text_above_the_declared_ceiling_keeps_its_own_422` 两条 + `test_text_above_the_plan_ceiling_is_refused_without_rows[postgresql]`） |
 | D | 工作台处置表把 `[413, "job_request_too_large"]` 改为 `"unknown-outcome"` | 工作台用例红 | 红：3 条（处置表行、`does not let the body-bound refusal fall through to the unknown 5xx branch`、会话级 `treats a body over the deployment receive bound as a refusal, not an unknown outcome`），notice 变成「提交结果未知，原提交可能已执行」 |
 | E | 把 `--declared<0` 与 `declared>max_bytes` 合并回同一个 `_TooLargeError` | 负长度用例红 | 红：`assert 413 == 400`（`test_negative_content_length_stays_a_400_not_a_413`） |
+| F | 声明长度比较 `declared > max_bytes` 改成 `>=`（off-by-one） | 恰好 `max_bytes` 的用例红 | 红：`assert 413 == 422`（`test_the_receive_bound_is_inclusive[exactly-at-bound]`）；`max-1`/`max+1` 与其余 10 条全绿——正是「没有这条用例就漏掉」的形态 |
+| G | 删掉流式累计里的 `if size > max_bytes: raise _TooLargeError` | 分块超限用例红 | 红：`assert 422 == 413`（`test_a_chunked_body_without_content_length_is_bounded_while_streaming`）；声明长度那几条仍绿，说明它只守分块这条路径 |
 
 `make contracts-speech-changes`（`--surface speech`，baseline 解析为 `cef3943…`）在变异 B 下
 **仍然是绿的**：该工具的未验证范围明确包含「added statuses/media … evolution」，所以它不承担
@@ -100,6 +120,8 @@ issue #703 的表格写「正文 100,000 汉字（≤ 契约 `maxLength: 200000`
   这一段；413 是接收层拒绝，与执行无关。
 - 未压测超大请求体的内存与连接占用；`_receive` 分块累计后才判超限，所以正好超限的请求会先
   收满 `max_bytes` 再拒。
+- 本记录的分块路径证据是裸 ASGI（精确控制 header 与分片），不是真 TCP；真 uvicorn + 真实 TCP
+  的复核见[非作者审查](../reviews/2026-11-14-body-bound-413.md)，此处未重复实跑。
 - 未验证反向代理（uvicorn/nginx）自身的请求体上限是否先于应用层拒绝；若代理更小，客户端会
   收到代理的 413 且不带本契约信封。
 - 只测了 `kind=tts`；其他 kind 共用同一接收层与映射，但未逐 kind 实跑。

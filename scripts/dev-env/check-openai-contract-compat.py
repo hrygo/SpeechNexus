@@ -1569,9 +1569,16 @@ def _compare_schema(
                 f"{pointer}/{keyword}",
                 "conditional or composed constraint changed; compatibility needs explicit proof",
             )
-    # These three carry literal property names as keys (`dependentRequired` and
-    # `dependentSchemas`) or a bare schema-or-boolean, so their trees stay exact: a name
-    # such as "description" here is data, not an annotation to drop.
+    # These stay exact trees, and that is deliberately stricter than the conditional
+    # branches above. `dependentRequired` maps literal property names to name lists, so
+    # a key such as "description" here is data. `dependentSchemas` and
+    # `unevaluatedProperties` are schema-valued, but they are also not what #806 had to
+    # re-annotate: resolving the shared error envelope goes through `then`, so stripping
+    # annotations here would widen the tolerance beyond the defect being fixed. The
+    # asymmetry is a known expense, not a rule: wherever this comparison reaches the
+    # keyword directly -- beside a conditional, not inside one, where the branch's own
+    # shaped comparison governs instead -- an annotation-only edit under it is a finding
+    # even though it cannot change acceptance.
     for keyword in (
         "dependentRequired",
         "dependentSchemas",

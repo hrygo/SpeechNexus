@@ -873,6 +873,35 @@ def test_literal_data_that_names_an_annotation_key_is_still_compared() -> None:
     assert kernel()._compare_openapi(base, current, "synthetic.openapi.yaml", standard_only=False)
 
 
+@pytest.mark.parametrize("keyword", ["dependentSchemas", "unevaluatedProperties"])
+def test_a_schema_valued_keyword_is_compared_exactly_where_it_sits(keyword: str) -> None:
+    """The documented annotation rule is limited to conditional branches on purpose.
+
+    `dependentSchemas` and `unevaluatedProperties` hold schemas, so an annotation in one
+    cannot change acceptance either -- yet the keyword itself stays an exact-tree
+    comparison, which is deliberately stricter than `then`/`not` beside it. #806 relaxed
+    only the keywords that carry the re-annotated shared envelope; relaxing these too
+    would widen the tolerance beyond the defect. This case pins the stricter behaviour so
+    it cannot silently become the documented rule, and so the doc's "stricter than the
+    conditional branches" sentence stays falsifiable.
+    """
+    path = "/v1/workbench/projects"
+    before: dict[str, Any] = {"type": "object", keyword: {"value": {"type": "string"}}}
+    after: dict[str, Any] = {
+        "type": "object",
+        keyword: {"value": {"type": "string", "description": "Annotated after landing."}},
+    }
+    findings = kernel()._compare_openapi(
+        document(path, None, before),
+        document(path, None, after),
+        "synthetic.openapi.yaml",
+        standard_only=False,
+    )
+    assert any("conditional or composed constraint changed" in finding for finding in findings), (
+        findings
+    )
+
+
 def _git(root: Path, *args: str) -> str:
     return subprocess.check_output(
         [

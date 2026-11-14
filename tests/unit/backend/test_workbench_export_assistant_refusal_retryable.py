@@ -8,17 +8,23 @@ literally: `recovery/command-journal.ts` classifies a *settled* refusal (4xx, wi
 affordance.
 
 Both routers answer their refusals through `http_versions._error`, whose `retryable`
-argument defaults to `False`. That default is the premise: a 4xx from one of these six
-operations is a deterministic refusal -- no export and no turn was created -- so the
-retained key can never produce a different answer and replay must stay off. The premise
-was true but untested. Nothing made `_error(..., retryable=True)` on one of these branches
-visible: the envelope schema allows both values, the panel tests build their own
-`ErrorResponse` fixtures, and the suites that already drive these routes assert the field
-only for 500/503 (`test_workbench_http_error_fallback`).
+argument defaults to `False`. That default is the premise, and it is not one uniform fact.
+Five of the statuses below settle the attempt: the operation refused before creating
+anything, so the retained key can never produce a different answer and replay must stay
+off. The sixth, `408 request_timeout`, is answered by the ingress layer before dispatch
+("Request body deadline exceeded"), so it created nothing either; the field stays `false`
+there for the same reason as the rest -- these routes never state a retry permission --
+while the panel reaches the same conclusion on its own, because a 408 does not settle the
+attempt and it keeps the key regardless of this field. The premise was true but untested.
+Nothing made `_error(..., retryable=True)` on one of these branches visible: the envelope
+schema allows both values, the panel tests build their own `ErrorResponse` fixtures, and
+the suites that already drive these routes assert the field only for 500/503
+(`test_workbench_http_error_fallback`).
 
 This module drives every 4xx branch of the six operations through the real app and asserts
-the field on the answer, so adding a retry permission to any of them fails here instead of
-silently offering a replay that can only re-refuse.
+the field on the answer, so adding a retry permission to any of them fails here: on a
+settled refusal it would silently offer a replay that can only re-refuse, and on 408 it
+would state a step these operations cannot take.
 
 What this does not cover: the same operations' 5xx answers are deliberately
 `retryable: false` *and* replayable -- a 5xx is not a settled refusal, so the panels keep
@@ -241,11 +247,16 @@ async def _call(case: _Case) -> httpx.Response:
     ids=[f"{case.operation}-{case.status}-{case.code}" for case in CASES],
 )
 async def test_every_4xx_refusal_is_terminal(case: _Case) -> None:
-    """A 4xx here rejects the same request forever, so the panel must not replay it.
+    """No 4xx from these operations may grant a retry permission.
 
-    `retryable: true` on any of these branches tells `command-journal.ts` that the
-    retained key is still worth re-sending, which can only reproduce the same refusal
-    while looking like recovery.
+    For a settled refusal -- 4xx other than 408/429 -- `retryable: true` tells
+    `command-journal.ts` that the retained key is still worth re-sending, which can only
+    reproduce the same refusal while looking like recovery. The two exceptions settle
+    nothing: a 408 may have crossed the network before the deadline, and a 429 was
+    answered before anything existed, so the panel keeps the key either way. The field
+    still has to be `false` there, because no branch of these two routers knows a step
+    the caller could take; this assertion is about that absence, not about the panel's
+    408 rule.
     """
     response = await _call(case)
     assert response.status_code == case.status, response.text
@@ -258,8 +269,9 @@ async def test_every_4xx_refusal_is_terminal(case: _Case) -> None:
         f"{case.operation} answered {case.status} {case.code} with "
         f"retryable={error['retryable']}; these operations have no per-code vocabulary, "
         "so the export and assistant panels read this field to decide whether the "
-        "original Idempotency-Key may be replayed. A 4xx settled the attempt, so the "
-        "answer must stay terminal"
+        "original Idempotency-Key may be replayed. A settled refusal would become "
+        "replayable, and 408/429 would gain a permission they do not need because the "
+        "panel keeps the key by itself; no 4xx from these operations may grant one"
     )
     assert response.headers["x-should-retry"] == "false", dict(response.headers)
     assert response.headers["cache-control"] == "no-store", dict(response.headers)

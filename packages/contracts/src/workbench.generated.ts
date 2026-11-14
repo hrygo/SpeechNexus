@@ -934,10 +934,12 @@ export interface paths {
      *       contract computes its own `retryable` from the narrower question "may an
      *       unknown execution outcome be replayed?" and therefore answers `false` for
      *       `execution_cleanup_pending`, whose correct action is to dispatch the same
-     *       intent again under the same key. This operation answers `true` for that
-     *       same wait, as `render_submission_cleanup_pending`, because it is stating
-     *       the operator step. A consumer with no per-code vocabulary reads this field;
-     *       a consumer that must state the step for one code reads the codes here.
+     *       intent again under the same key. This operation publishes that same wait as
+     *       retryable, `render_submission_cleanup_pending`, because it is stating the
+     *       operator step; that disposition is declared rather than served today, for
+     *       the reason stated above. A consumer with no per-code vocabulary reads this
+     *       field; a consumer that must state the step for one code reads the codes
+     *       here.
      *
      *     `param` carries the upstream field pointer when the refusing layer named
      *     one, and is null otherwise; it is a field pointer in both services, never a

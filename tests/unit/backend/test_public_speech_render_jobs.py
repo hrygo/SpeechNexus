@@ -15,7 +15,6 @@ from speechnexus_backend.workbench.application.render_reconcile import RenderJob
 from speechnexus_backend.workbench.application.render_units import (
     RenderRejection,
     RenderRejectionCause,
-    RenderSubmissionConflictError,
     RenderSubmissionRejectedError,
     RenderSubmissionUnknownError,
 )
@@ -95,20 +94,22 @@ async def test_keyless_submit_omits_the_header_and_keeps_the_reference() -> None
 
 
 @pytest.mark.parametrize(
-    ("status", "error"),
-    [
-        (409, RenderSubmissionConflictError),
-        (400, RenderSubmissionRejectedError),
-        (401, RenderSubmissionRejectedError),
-        (413, RenderSubmissionRejectedError),
-        (422, RenderSubmissionRejectedError),
-    ],
+    "status",
+    [400, 401, 403, 409, 413, 415, 422, 429],
 )
-async def test_refusals_are_not_reported_as_unknown(status: int, error: type[Exception]) -> None:
+async def test_refusals_are_not_reported_as_unknown(status: int) -> None:
+    """Every declined status is a refusal that created no Job, 429 included.
+
+    A 429 used to fall through to the unknown outcome, which told the caller to
+    replay an original key for a submission the server never admitted. A 409 used to
+    become a conflict error that dropped the upstream code, folding three different
+    next steps into one. Both are refusals of *this* request: they state no Job exists.
+    """
+
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(status, json={})
 
-    with pytest.raises(error):
+    with pytest.raises(RenderSubmissionRejectedError):
         await PublicSpeechRenderJobs(client(handler)).submit(
             unit=unit(), key="key-12345678", reference="gen:abc"
         )
@@ -148,14 +149,20 @@ async def test_an_unrepresentable_unit_never_opens_a_connection() -> None:
     assert calls == 0
 
 
-def upstream_error(code: str | None, *, param: str | None = None) -> dict[str, Any]:
+def upstream_error(
+    code: str | None,
+    *,
+    param: str | None = None,
+    kind: str = "invalid_request_error",
+    retryable: bool = False,
+) -> dict[str, Any]:
     """A refusal body in the declared public shape; ``code`` is optional to omit it."""
     error: dict[str, Any] = {
-        "type": "invalid_request_error",
+        "type": kind,
         "message": "The voice revision is not published.",
         "param": param,
         "request_id": "req_upstream_1",
-        "retryable": False,
+        "retryable": retryable,
     }
     if code is not None:
         error["code"] = code
@@ -205,6 +212,110 @@ async def test_every_refusal_code_reaches_the_caller_unfolded(status: int, code:
 
 
 @pytest.mark.parametrize(
+    "code",
+    [
+        "idempotency_conflict",
+        "execution_cleanup_pending",
+        "job_retry_not_allowed",
+        "job_retry_unavailable",
+        "voice_draft_stale_revision",
+    ],
+)
+async def test_a_409_keeps_the_upstream_code_that_names_its_step(code: str) -> None:
+    """One status, five codes, three different next steps: the code is the cause (#755)."""
+    error = await refusal(lambda _: httpx.Response(409, json=upstream_error(code)))
+    assert error.rejection is not None
+    assert error.rejection.cause is RenderRejectionCause.UPSTREAM_CODE
+    assert (error.rejection.status_code, error.rejection.upstream_code) == (409, code)
+
+
+@pytest.mark.parametrize("status", [401, 403, 415])
+async def test_an_authentication_media_or_permission_refusal_keeps_its_own_status(
+    status: int,
+) -> None:
+    """These are not 422s: the refusing status itself names a different operator step."""
+    error = await refusal(
+        lambda _: httpx.Response(
+            status,
+            json=upstream_error(
+                None,
+                kind="authentication_error" if status == 401 else "invalid_request_error",
+            ),
+        )
+    )
+    assert error.rejection is not None
+    assert error.rejection.status_code == status
+
+
+async def test_a_429_keeps_the_delay_it_states() -> None:
+    """A capacity refusal names when retrying is worth it; dropping it leaves a guess."""
+    error = await refusal(
+        lambda _: httpx.Response(
+            429,
+            json=upstream_error("job_capacity_exhausted", kind="rate_limit_error", retryable=True),
+            headers={"Retry-After": "7"},
+        )
+    )
+    assert error.rejection is not None
+    assert error.rejection.cause is RenderRejectionCause.UPSTREAM_CODE
+    assert (error.rejection.status_code, error.rejection.upstream_code) == (
+        429,
+        "job_capacity_exhausted",
+    )
+    assert error.rejection.retry_after_seconds == 7
+
+
+@pytest.mark.parametrize(
+    ("header", "expected"),
+    [
+        ("7", 7),
+        ("0", 0),
+        # HTTP-date and fractional delays are not the declared form; none is invented
+        # from a clock reading, and the refusal still stands with no stated delay.
+        ("Wed, 21 Oct 2015 07:28:00 GMT", None),
+        ("1.5", None),
+        ("-1", None),
+        ("", None),
+    ],
+)
+async def test_only_a_declared_delta_seconds_delay_is_read(
+    header: str, expected: int | None
+) -> None:
+    error = await refusal(
+        lambda _: httpx.Response(
+            429,
+            json=upstream_error("job_capacity_exhausted", kind="rate_limit_error", retryable=True),
+            headers={"Retry-After": header},
+        )
+    )
+    assert error.rejection is not None
+    assert error.rejection.retry_after_seconds == expected
+
+
+async def test_a_delay_on_a_non_429_refusal_is_not_believed() -> None:
+    """Only the capacity 429 declares a delay in this contract; a stray header is dropped."""
+    error = await refusal(
+        lambda _: httpx.Response(
+            422, json=upstream_error("voice_not_published"), headers={"Retry-After": "9"}
+        )
+    )
+    assert error.rejection is not None
+    assert error.rejection.retry_after_seconds is None
+
+
+async def test_a_refusal_without_a_readable_envelope_keeps_the_delay_it_read() -> None:
+    """The header is observed even when the body is not, so the wait is not lost."""
+    error = await refusal(
+        lambda _: httpx.Response(
+            429, content=b"<html>429 Too Many Requests</html>", headers={"Retry-After": "3"}
+        )
+    )
+    assert error.rejection is not None
+    assert error.rejection.cause is RenderRejectionCause.UPSTREAM_UNREADABLE
+    assert (error.rejection.status_code, error.rejection.retry_after_seconds) == (429, 3)
+
+
+@pytest.mark.parametrize(
     ("status", "body"),
     [
         # A refusal generated before the JSON layer, e.g. a proxy's own 413 page.
@@ -245,6 +356,24 @@ def test_a_rejection_cannot_name_a_cause_it_did_not_observe() -> None:
         RenderRejection(RenderRejectionCause.LOCAL_CONTRACT, upstream_code="voice_not_published")
     with pytest.raises(ValueError):
         RenderRejection(RenderRejectionCause.LOCAL_CONTRACT, status_code=422)
+    # A delay is an observed upstream fact: no response was read locally, and a
+    # negative or non-integer value is not a delay this contract can state.
+    with pytest.raises(ValueError):
+        RenderRejection(RenderRejectionCause.LOCAL_CONTRACT, retry_after_seconds=3)
+    with pytest.raises(ValueError):
+        RenderRejection(
+            RenderRejectionCause.UPSTREAM_CODE,
+            status_code=429,
+            upstream_code="job_capacity_exhausted",
+            retry_after_seconds=-1,
+        )
+    with pytest.raises(ValueError):
+        RenderRejection(
+            RenderRejectionCause.UPSTREAM_CODE,
+            status_code=429,
+            upstream_code="job_capacity_exhausted",
+            retry_after_seconds=True,
+        )
 
 
 def unit_with_text(text: str) -> RenderUnit:

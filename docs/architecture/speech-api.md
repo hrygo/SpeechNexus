@@ -250,6 +250,8 @@ Profile、voice 和 model binding revision 不可变；升级只影响后续新�
 
 前两行是同一个条件（派发的内联正文超过 `MAX_SPEECH_TEXT_CHARS`）在两个入口各自的声明：状态码与错误码都不同，但都由同一个 `MAX_SPEECH_TEXT_CHARS` 约束，消费者按 `error.code` 与 `param` 分支，不按状态码分支。最后一行是同一条约束在工作台渲染入口的表现，源文本容量与内联正文上界的差异见 §1.4。
 
+工作台派发（`generateRenderUnitV2`）把上游拒绝按**操作者下一步**而不是按上游状态码折叠成稳定码：`401`/`403`/`415` 分别是部署凭据、提交权限、媒体类型被拒，`409` 区分幂等键被占用、执行清理中（唯一可重试的冲突）与其它冲突，`429` 是准入前拒绝且不写 Job 行。是否可重试由 `error.retryable` 表达，属于具体处置而不是状态码：`429` 与 409 清理中为 `true`，`401`/`403`/`415` 与幂等冲突为 `false`。上游带 `Retry-After` 时，可重试拒绝在响应头与 `error.retry_after_ms` 同时给出该延迟；终态拒绝从不给延迟。`503 outcome_unknown` 仍表示可能已建 Job，只能按原键恢复，与上述“确定没有建 Job”的拒绝互不替代。
+
 契约中的分页列表使用 `data`、`has_more`、`next_cursor`，共用的 `limit` 为 1–100，默认 50；Job 列表按 `(created_at,id)` 排序。`JobList` schema 要求 `has_more` 和 `next_cursor` 字段存在，但允许后者为 null，未约束两者的一致性；生产者须保证续页语义，客户端不能只凭结构校验确认可继续读取。OpenAI 兼容的 `/v1/models` 列表使用 `object` 和 `data`，不声明这些分页字段或游标参数。分页游标绑定过滤条件、部署与工作空间，不能跨请求作用域续读；这属于查询一致性，不是权限边界。SSE `id` 是持久化 job_event_seq，支持 `Last-Event-ID`；事件保留期结束后返回 `410 event_history_expired`，客户端读取 Job 当前状态，不伪造历史。
 
 `JobEvent.data` 不是任意 JSON：每个 `job.*` / `artifact.published` 类型都有独立的封闭 data schema，分别约束其声明的字段和状态。目标语义要求 `job.succeeded` 至少携带一个 committed Artifact 和与权威 Job kind 匹配的结构化 `result`；`job.failed` 即使进入 `cleanup_state=quarantined` 也保持失败结果与结构化错误；`job.cancelled` 只允许 `not_required` / `complete`。未知嵌套字段和不匹配的 `type` / `status` 组合按契约错误拒绝，不能借事件扩展绕过稳定字段。工作台的 MinutesJob、AssistantTurn、ExportJob 与 ExportEvent 使用同一原则：失败错误为结构化 `code / message / retryable / param`，非 failed 状态不得携带非空错误对象。

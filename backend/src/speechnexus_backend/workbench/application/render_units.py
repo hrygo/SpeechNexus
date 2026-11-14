@@ -47,10 +47,6 @@ class RenderSubmissionUnknownError(Exception):
     """The Job submission may have succeeded; only the original key can recover it."""
 
 
-class RenderSubmissionConflictError(Exception):
-    """The same key names a different submission intent."""
-
-
 class RenderRejectionCause(StrEnum):
     """How far a dispatch refusal could be proven, and no further.
 
@@ -59,6 +55,12 @@ class RenderRejectionCause(StrEnum):
     unpublished voice is published, a workspace without a quota row is
     provisioned, an unready asset is uploaded again. Collapsing them into one
     anonymous refusal is what leaves the workbench guessing.
+
+    A retryable refusal is deliberately not a separate cause. "Retry later" is
+    not a fact about *what the upstream said* but the workbench's own promise
+    about the operator step, and it is stated once, on the published disposition
+    (``workbench.interfaces.http_render_units``). Keeping it here as well would
+    give the same judgment two authorities that can disagree.
     """
 
     LOCAL_CONTRACT = "local_contract"
@@ -79,12 +81,19 @@ class RenderRejection:
     when the upstream stated a code, or the locally proven one when the unit's own
     contract check refused it. Only ``UPSTREAM_CODE`` may name an upstream code,
     and an unreadable envelope names nothing at all.
+
+    ``retry_after_seconds`` is the delay the refusing layer named on the wire,
+    forwarded unchanged: the upstream ``Retry-After`` header of a 429 (and only
+    that status), or ``None`` when it named none. It is a fact, not a decision --
+    an unreadable envelope may still carry one, because the header was read even
+    when the body was not.
     """
 
     cause: RenderRejectionCause
     status_code: int | None = None
     upstream_code: str | None = None
     param: str | None = None
+    retry_after_seconds: int | None = None
 
     def __post_init__(self) -> None:
         coded = self.cause is RenderRejectionCause.UPSTREAM_CODE
@@ -96,26 +105,58 @@ class RenderRejection:
             raise ValueError("an unreadable rejection names no field")
         if self.cause is RenderRejectionCause.LOCAL_CONTRACT and self.status_code is not None:
             raise ValueError("a local rejection has no upstream status")
+        if (
+            self.cause is RenderRejectionCause.LOCAL_CONTRACT
+            and self.retry_after_seconds is not None
+        ):
+            raise ValueError("a local rejection read no upstream delay")
+        if self.retry_after_seconds is not None and (
+            type(self.retry_after_seconds) is not int or self.retry_after_seconds < 0
+        ):
+            raise ValueError("a stated retry delay is a non-negative whole number of seconds")
 
     @classmethod
     def local_contract(cls, *, param: str | None = None) -> RenderRejection:
         return cls(RenderRejectionCause.LOCAL_CONTRACT, param=param)
 
     @classmethod
-    def upstream(cls, *, status_code: int, code: str, param: str | None) -> RenderRejection:
-        return cls(RenderRejectionCause.UPSTREAM_CODE, status_code, code, param)
+    def upstream(
+        cls,
+        *,
+        status_code: int,
+        code: str,
+        param: str | None,
+        retry_after_seconds: int | None = None,
+    ) -> RenderRejection:
+        return cls(
+            RenderRejectionCause.UPSTREAM_CODE,
+            status_code,
+            code,
+            param,
+            retry_after_seconds,
+        )
 
     @classmethod
-    def unreadable(cls, *, status_code: int) -> RenderRejection:
-        return cls(RenderRejectionCause.UPSTREAM_UNREADABLE, status_code)
+    def unreadable(
+        cls, *, status_code: int, retry_after_seconds: int | None = None
+    ) -> RenderRejection:
+        return cls(
+            RenderRejectionCause.UPSTREAM_UNREADABLE,
+            status_code,
+            retry_after_seconds=retry_after_seconds,
+        )
 
 
 class RenderSubmissionRejectedError(Exception):
-    """The pinned unit cannot be expressed as a valid public speech Job.
+    """The upstream refused this dispatch; no Job row was created.
 
-    ``rejection`` states what the refusal could prove about its cause; the public
-    speech adapter always states one. ``None`` means the raising layer stated
-    nothing, so no consumer may read a cause out of it.
+    A refusal states a definite absence, which is why every 4xx in the adapter's
+    refusal set -- including a 409 whose key names another intent, a 401/403/415
+    policy refusal and a 429 whose admission found no capacity -- is reported as
+    this error rather than as an unknown outcome. ``rejection`` states what the
+    refusal could prove about its cause; the public speech adapter always states
+    one. ``None`` means the raising layer stated nothing, so no consumer may read
+    a cause out of it.
     """
 
     def __init__(self, rejection: RenderRejection | None = None) -> None:

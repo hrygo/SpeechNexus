@@ -12,7 +12,6 @@ from speechnexus_backend.workbench.application.render_units import (
     RenderDispatchUnavailableError,
     RenderRejection,
     RenderRejectionCause,
-    RenderSubmissionConflictError,
     RenderSubmissionRejectedError,
     RenderSubmissionUnknownError,
     WorkbenchRenderUnits,
@@ -77,6 +76,43 @@ _REFUSAL_CODES = {
 }
 _FALLBACK_REFUSAL = "render_submission_rejected"
 
+# The 409 family is one status class with three operator steps (#755): a key already
+# spent on another intent ("inspect that Job or use a new key"), a previous execution
+# that has not confirmed its stop ("wait, then retry" -- the one conflict worth
+# retrying), and everything else. Only a code this table names may claim one of the
+# first two; an unreadable 409 envelope keeps the unnamed conflict step instead of
+# borrowing a step it did not prove.
+_CONFLICT_CODES = {
+    "idempotency_conflict": "render_submission_idempotency_conflict",
+    "execution_cleanup_pending": "render_submission_cleanup_pending",
+}
+_CONFLICT_FALLBACK = "render_submission_conflict"
+
+# Statuses that already name the operator's next step by themselves (#755): a 401 is
+# a broken credential, a 403 a permission refusal, a 415 a refused media type, a 429
+# an admission refusal that wrote no row. The status is enough even when the envelope
+# cannot be read, which is why these stay out of the code table -- folding them into
+# the 422 "the request is invalid" bucket is a wrong attribution, and the operator
+# step for each is different.
+_STATUS_REFUSALS = {
+    401: "render_submission_credentials_rejected",
+    403: "render_submission_permission_denied",
+    415: "render_submission_media_unsupported",
+    429: "render_submission_capacity_exhausted",
+}
+
+# The only refusals whose next step is "wait, then dispatch again". Stated once, so
+# that a 429 or a cleanup wait can never be published as terminal and a 401/403/415
+# or a spent idempotency key can never be published as retryable (#755 is where those
+# two directions were confused). The route reads this set for the envelope's
+# `retryable`, and the panel mirrors it for its copy.
+_RETRYABLE_REFUSAL_CODES = frozenset(
+    {
+        "render_submission_capacity_exhausted",
+        "render_submission_cleanup_pending",
+    }
+)
+
 
 def refusal_code(rejection: RenderRejection | None) -> str:
     """The workbench disposition a dispatch refusal demands, or the unnamed fallback.
@@ -86,7 +122,7 @@ def refusal_code(rejection: RenderRejection | None) -> str:
     any request, an upstream envelope that could not be read, or an upstream code
     whose operator step this vocabulary does not name.
     """
-    if rejection is None or rejection.cause is RenderRejectionCause.UPSTREAM_UNREADABLE:
+    if rejection is None:
         return _FALLBACK_REFUSAL
     if rejection.cause is RenderRejectionCause.LOCAL_CONTRACT:
         # The unit never left the workbench; only the text bound can be named locally.
@@ -95,6 +131,20 @@ def refusal_code(rejection: RenderRejection | None) -> str:
             if rejection.param in _INLINE_TEXT_PARAMS
             else _FALLBACK_REFUSAL
         )
+    # A conflict is decided by its code, and by nothing else: the same status also
+    # retries the previous execution's cleanup, which shares no step with a spent key.
+    status = rejection.status_code
+    if status == 409:
+        upstream = rejection.upstream_code
+        if upstream is None:
+            return _CONFLICT_FALLBACK
+        return _CONFLICT_CODES.get(upstream, _CONFLICT_FALLBACK)
+    if status is not None:
+        status_refusal = _STATUS_REFUSALS.get(status)
+        if status_refusal is not None:
+            return status_refusal
+    if rejection.cause is RenderRejectionCause.UPSTREAM_UNREADABLE:
+        return _FALLBACK_REFUSAL
     upstream = rejection.upstream_code
     if upstream is None:  # Excluded by RenderRejection; kept for a total mapping.
         return _FALLBACK_REFUSAL
@@ -117,6 +167,18 @@ def refusal_code(rejection: RenderRejection | None) -> str:
         # The deployment receive limit refuses the derived body whatever code it sends.
         return "render_submission_body_too_large"
     return _REFUSAL_CODES.get(upstream, _FALLBACK_REFUSAL)
+
+
+def refusal_retryable(code: str) -> bool:
+    """Whether this disposition's next step is to wait and dispatch again."""
+    return code in _RETRYABLE_REFUSAL_CODES
+
+
+def retry_after_seconds(rejection: RenderRejection | None, code: str) -> int | None:
+    """The upstream delay, forwarded only for a disposition that may be retried."""
+    if rejection is None or not refusal_retryable(code):
+        return None
+    return rejection.retry_after_seconds
 
 
 def refusal_param(rejection: RenderRejection | None) -> str | None:
@@ -278,14 +340,15 @@ def create_render_unit_router(
                 return _error("workbench_unavailable", rid, operation)
             except RenderSubmissionUnknownError:
                 return _error("outcome_unknown", rid, operation)
-            except RenderSubmissionConflictError:
-                return _error("idempotency_conflict", rid, operation)
             except RenderSubmissionRejectedError as error:
+                code = refusal_code(error.rejection)
                 return _error(
-                    refusal_code(error.rejection),
+                    code,
                     rid,
                     operation,
                     param=refusal_param(error.rejection),
+                    retryable=refusal_retryable(code),
+                    retry_after_seconds=retry_after_seconds(error.rejection, code),
                 )
             except RenderAttemptConflictError:
                 return _error("render_attempt_conflict", rid, operation)

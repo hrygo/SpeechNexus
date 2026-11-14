@@ -208,6 +208,7 @@ class WorkbenchJobError(TypedDict):
     param: NotRequired[str | None]
 
 
+type RenderUnitText = str
 type ResourceReference = ExternalSharedReferencesSchemaJsonResourceReference
 type Sha256Digest = ExternalSharedIdentifiersSchemaJsonSha256Digest
 
@@ -494,7 +495,7 @@ class Chapter(TypedDict):
 
 class RenderUnitCreateRequest(TypedDict):
     ordinal: int
-    text: str
+    text: RenderUnitText
     voice: RenderUnitVoice
     pronunciation: NotRequired[RenderUnitVoice]
     model: str
@@ -503,7 +504,7 @@ class RenderUnitCreateRequest(TypedDict):
 
 class RenderUnitPatch(TypedDict):
     expected_revision: Revision
-    text: NotRequired[str]
+    text: NotRequired[RenderUnitText]
     voice: NotRequired[RenderUnitVoice]
     pronunciation: NotRequired[RenderUnitVoice | None]
     model: NotRequired[str]
@@ -630,7 +631,7 @@ class RenderUnitV2(TypedDict):
     chapter_id: Identifier
     ordinal: int
     revision: Revision
-    text: str
+    text: RenderUnitText
     voice: RenderUnitVoice
     pronunciation: NotRequired[RenderUnitVoice | None]
     model: str
@@ -646,7 +647,7 @@ class RenderUnitV2(TypedDict):
 class RenderUnitCreateRequestV2(TypedDict):
     model_binding: ResourceReference
     ordinal: int
-    text: str
+    text: RenderUnitText
     voice: RenderUnitVoice
     pronunciation: NotRequired[RenderUnitVoice]
     model: str
@@ -656,7 +657,7 @@ class RenderUnitCreateRequestV2(TypedDict):
 class RenderUnitPatchV2(TypedDict):
     model_binding: NotRequired[ResourceReference]
     expected_revision: Revision
-    text: NotRequired[str]
+    text: NotRequired[RenderUnitText]
     voice: NotRequired[RenderUnitVoice]
     pronunciation: NotRequired[RenderUnitVoice | None]
     model: NotRequired[str]
@@ -786,7 +787,7 @@ class RenderUnit(TypedDict):
     chapter_id: Identifier
     ordinal: int
     revision: Revision
-    text: str
+    text: RenderUnitText
     voice: RenderUnitVoice
     pronunciation: NotRequired[RenderUnitVoice | None]
     model: str

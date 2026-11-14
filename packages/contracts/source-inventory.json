@@ -136,7 +136,7 @@
     "version": null
   },
   "speech-openapi.yaml": {
-    "sha256": "50fbdd0f69e5024722a70b1867b7bef40079bfe05d055356a6357955f3637872",
+    "sha256": "54283b9ec59ab44e0a06f72ef03050fcc53518ca00fc3c49b8049a49f4f2dfc6",
     "version": "0.1.0.dev18"
   },
   "voice-resource.schema.json": {
@@ -144,7 +144,7 @@
     "version": null
   },
   "workbench-openapi.yaml": {
-    "sha256": "e0138dff9de096a5fc8d2c10c5c7ba532df6736a99091d4ef601d144a20438c9",
+    "sha256": "17ea2b485cce3a20e29ab34672512da3dc29d71d207bbf7fe0a04920353a057f",
     "version": "0.1.0.dev2"
   }
 }

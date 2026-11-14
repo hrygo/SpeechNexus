@@ -34,7 +34,8 @@
         "input": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 4096
+          "maxLength": 4096,
+          "description": "Text spoken by one synthesis, bounded at `MAX_SPEECH_TEXT_CHARS`\n(4096) characters: one request synthesizes its `input` exactly once\nand never splits, truncates, or silently shortens it. Text above the\nbound is refused as `400` `invalid_request` with `param: input`.\n`POST /v1/nexus/jobs` enforces the same bound on `TtsJobInput.text`\nbut reports the same condition as `422` `unsupported_parameter`\n(the asynchronous entry classifies a body that does not match the\ndeclared Job shape, the synchronous entry a body this route cannot\naccept). Both codes describe one limit, so a consumer branches on\n`error.code` and `param`, not on the status code.\n"
         },
         "voice": {
           "type": "string",
@@ -553,7 +554,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 4096,
-              "description": "Inline text for one Job. A Job performs exactly one speech\nsynthesis, so the body bound is the same as `input` on\n`/v1/audio/speech`; longer text is rejected instead of being\nsplit, truncated, or silently shortened.\n"
+              "description": "Inline text for one Job. A Job performs exactly one speech\nsynthesis, so the body bound is the same `MAX_SPEECH_TEXT_CHARS`\n(4096) that `input` on `/v1/audio/speech` declares; longer text is\nrejected instead of being split, truncated, or silently shortened.\nThis asynchronous entry reports an over-bound body as `422`\n`unsupported_parameter`, while `/v1/audio/speech` reports the same\ncondition as `400` `invalid_request` with `param: input`. The two\ncodes describe one limit and differ by entry point, so a consumer\nbranches on `error.code` and `param`, not on the status code.\n"
             }
           }
         },

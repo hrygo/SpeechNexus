@@ -18,6 +18,9 @@ from typing import Any, cast
 import yaml
 
 from speechnexus_backend.speech.domain.speech_synthesis import MAX_SPEECH_TEXT_CHARS
+from speechnexus_backend.workbench.infrastructure.render_units_schema import (
+    render_units_migration_sql,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "contracts" / "workbench-openapi.yaml"
@@ -116,3 +119,15 @@ def _domain_rejects(length: int) -> bool:
     except ValueError:
         return True
     return False
+
+
+def test_the_declared_source_capacity_matches_the_stored_check_constraint() -> None:
+    """The table check is the storage half of the same capacity; it must agree."""
+
+    declared = cast(dict[str, Any], _schemas()["RenderUnitText"])["maxLength"]
+    ddl = str(render_units_migration_sql("synthetic_schema"))
+
+    assert f"length(text) <= {declared}" in ddl, (
+        "the render_units CHECK constraint must accept exactly the capacity the "
+        "contract declares, so a stored unit is never wider than its schema"
+    )

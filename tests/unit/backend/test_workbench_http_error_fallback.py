@@ -12,8 +12,9 @@ declaration gap observable.
 
 from __future__ import annotations
 
+import json
 import logging
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -22,7 +23,9 @@ from speechnexus_contracts.workbench import parse
 from speechnexus_contracts.workbench_http import validate_response
 
 from speechnexus_backend.workbench.app import create_app
+from speechnexus_backend.workbench.application.llm import LlmError
 from speechnexus_backend.workbench.application.version_ports import VersionStoreError
+from speechnexus_backend.workbench.interfaces.http_versions import _error
 
 PRIVATE = "private-synthetic-777"
 LOGGER = "speechnexus_backend.workbench.interfaces.http_versions"
@@ -232,5 +235,115 @@ async def test_the_declaration_gap_is_recorded_with_its_status(
         and "operation=getBookExport" in record.getMessage()
         and "code=store_unavailable" in record.getMessage()
         and "request_id=rid-777-probe" in record.getMessage()
+        for record in caplog.records
+    ), [record.getMessage() for record in caplog.records]
+
+
+class _UnreadableSpool:
+    """A verified spool whose committed metadata cannot be read, and whose close fails.
+
+    Both failures are real: the measurement is the ETag the route needs before it can
+    stream, and `close` joins a reader worker that may already be gone, which is the
+    ``OSError`` that used to escape this handler as a bare ``text/plain`` 500.
+    """
+
+    status = 200
+    length = 8
+    start = 0
+
+    class _Content:
+        size = 8
+
+        @property
+        def sha256(self) -> str:
+            raise RuntimeError(f"{PRIVATE}-unreadable-metadata")
+
+    content = _Content()
+
+    def __init__(self) -> None:
+        self.close_attempts = 0
+
+    async def close(self) -> None:
+        self.close_attempts += 1
+        raise OSError("spool close failed")
+
+
+class _CleanupFailureDownloads:
+    def __init__(self) -> None:
+        self.spool = _UnreadableSpool()
+
+    async def prepare(self, **_: Any) -> Any:
+        return self.spool
+
+
+class _OutOfRangeLlm:
+    """A text-LLM port that reports a code no disposition in the table names."""
+
+    async def create_minutes(self, **_: Any) -> Any:
+        raise LlmError(cast("Any", f"{PRIVATE}-out-of-range"))
+
+
+async def test_a_spool_cleanup_failure_still_answers_the_envelope(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.ERROR)
+    downloads = _CleanupFailureDownloads()
+    app = create_app(
+        None,
+        downloads=downloads,  # type: ignore[arg-type]
+        default_workspace_id="workspace-synthetic",
+        deployment_id="synthetic",
+        cursor_key=b"synthetic-32-byte-cursor-key-00000",
+        max_json_bytes=4096,
+        body_timeout_seconds=0.05,
+    )
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://workbench.test") as c:
+        response = await c.get(
+            "/v1/workbench/saved-assets/asset_1/content",
+            headers={"X-Request-ID": "rid-777-cleanup"},
+        )
+    envelope(response, "downloadSavedAsset", 500, "internal_error")
+    # Cleanup ran exactly once and its failure did not replace the answer.
+    assert downloads.spool.close_attempts == 1
+    recorded = [record.getMessage() for record in caplog.records]
+    assert any(
+        "download spool cleanup failed" in message and "request_id=rid-777-cleanup" in message
+        for message in recorded
+    ), recorded
+    assert any("unhandled workbench failure" in message for message in recorded), recorded
+
+
+async def test_an_out_of_range_llm_code_is_a_structured_503() -> None:
+    app = create_app(
+        None,
+        meetings=_OutOfRangeLlm(),  # type: ignore[arg-type]
+        default_workspace_id="workspace-synthetic",
+        deployment_id="synthetic",
+        cursor_key=b"synthetic-32-byte-cursor-key-00000",
+        max_json_bytes=4096,
+        body_timeout_seconds=0.05,
+    )
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://workbench.test") as c:
+        response = await c.post(
+            "/v1/workbench/meetings/meeting_1/minutes",
+            json={"template_revision": "1"},
+            headers=IDEMPOTENT,
+        )
+    # An unknown private code projects to the unavailable disposition, not to a table key
+    # that does not exist (which raised KeyError out of the handler before #777).
+    envelope(response, "createMeetingMinutes", 503, "llm_unavailable")
+
+
+def test_the_error_entry_point_is_total(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.WARNING, logger=LOGGER)
+    response = _error(f"{PRIVATE}-unknown-code", "rid-777-total", "getAssistantTurn")
+    assert response.status_code == 500
+    body: Any = parse("ErrorResponse", json.loads(bytes(response.body)))
+    assert body["error"]["code"] == "internal_error"
+    assert any(
+        "unknown workbench error code" in record.getMessage()
+        and f"{PRIVATE}-unknown-code" in record.getMessage()
         for record in caplog.records
     ), [record.getMessage() for record in caplog.records]

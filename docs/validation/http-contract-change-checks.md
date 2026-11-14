@@ -372,6 +372,18 @@ exception text to the caller. `tests/unit/backend/test_workbench_http_error_fall
 pins the assistant-turn, book-export and render-generation surfaces, whose
 operations declare no `500`.
 
+That coverage is per surface, so the inventory is no longer the only CI signal for
+an incomplete declaration list: `tests/unit/backend/test_workbench_http_degradations.py`
+sweeps every routed operation (read from the live app) against every failure class
+its router names and freezes the `(operation, status)` pairs that today answer from
+the declaration-independent envelope. Adding an operation, a handler branch, a
+status in the error table or a declaration changes that set, and the test fails
+until the declarations and the registry agree — a new pair must be registered with
+the issue that closes the gap, and a pair that a declaration closed must be
+deleted. The sweep injects at the router's boundaries rather than reproducing a
+deployment: it states which statuses an operation's handler can answer, not which
+exceptions production sends it.
+
 ## Explicit complete speech HTTP selection
 
 ```bash

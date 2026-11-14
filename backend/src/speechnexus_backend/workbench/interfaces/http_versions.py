@@ -255,6 +255,21 @@ ERRORS = {
     "internal_error": (500, "api_error", "Workbench request could not be completed."),
 }
 
+# The stable text-LLM dispositions, keyed by the private code the LLM port raises. Both
+# readers of that port (assistant turns and minutes) project through this one table:
+# anything unrecognised reports as `llm_unavailable` rather than inventing a public code
+# or, worse, building a table key that does not exist (#777's out-of-range reproduction).
+LLM_CODES = {
+    "disabled": "llm_disabled",
+    "invalid_input": "llm_invalid_input",
+    "profile_mismatch": "llm_profile_mismatch",
+    "unavailable": "llm_unavailable",
+    "invalid_response": "llm_invalid_response",
+    "source_not_sealed": "llm_source_not_sealed",
+    "source_changed": "llm_source_changed",
+    "source_unavailable": "llm_source_unavailable",
+}
+
 
 def _error(
     code: str,
@@ -276,7 +291,20 @@ def _error(
     static table alone: same status, ``code`` and correlation, still validated against
     ``ErrorResponse``, only the per-operation declaration gate is skipped. Structure
     stays a guarantee of this layer; the declaration mismatch is logged, never echoed.
+
+    Every caller names a code from the table above, and a code that is not in it is a
+    defect in this layer, not a refusal: reporting it as ``internal_error`` keeps this
+    entry point total. A dynamic code (one forwarded from a port as-is) must never be
+    able to leave the handler as a ``KeyError``, which is the same bare 500 this
+    function exists to prevent.
     """
+    if code not in ERRORS:
+        _log.error(
+            "unknown workbench error code; answering internal_error code=%r operation=%s",
+            code,
+            operation,
+        )
+        code = "internal_error"
     try:
         return _declared_error(
             code,
@@ -353,6 +381,14 @@ def _minimal_error(code: str, rid: str, *, retryable: bool = False) -> JSONRespo
     independently keeps the last resort intact when the richer envelope's extra facts
     are what failed validation, and ``parse`` keeps the structural guarantee: skipping
     the declaration gate may not cost a valid error body.
+
+    The dropped ``retry_after_ms`` is unreachable with the current table rather than
+    lost: only two dispositions are retryable (the 429 admission refusal and the 409
+    cleanup wait), both are raised by the routed render submission operation
+    (``generateRenderUnitV2``), and that operation declares 429 and 409. A future
+    retryable disposition must therefore declare its status on every operation that can
+    emit it -- otherwise this fallback would answer ``retryable: true`` with no delay,
+    telling the client to retry without saying when.
     """
     status, kind, message = ERRORS[code]
     body = parse(

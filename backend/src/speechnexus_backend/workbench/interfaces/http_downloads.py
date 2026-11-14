@@ -1,6 +1,7 @@
 """Generated public download operations over fully verified committed bytes."""
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 
 from fastapi import APIRouter, Request
@@ -25,6 +26,8 @@ from speechnexus_backend.workbench.interfaces.http_versions import (
     _error,
     _unexpected_error,
 )
+
+_log = logging.getLogger(__name__)
 
 
 class _DownloadResponse(StreamingResponse):
@@ -121,7 +124,27 @@ def create_download_router(
                 return _error("store_unavailable", rid, operation)
             except Exception as error:
                 if prepared is not None:
-                    await prepared.close()
+                    # Cleanup owns the spool's permit, so it runs even on the failure path;
+                    # it can fail on its own (the reader's worker is gone, so close raises
+                    # OSError) and an escaping cleanup failure used to replace the caller's
+                    # only machine-readable answer with a bare text/plain 500 (#777). The
+                    # cause is recorded and the envelope is answered regardless; only a
+                    # cancellation keeps travelling, because that is the one outcome this
+                    # route must not answer at all.
+                    try:
+                        await prepared.close()
+                    except asyncio.CancelledError:
+                        raise
+                    except BaseException as close_failure:
+                        _log.error(
+                            "download spool cleanup failed after an unhandled failure; "
+                            "answering with the error envelope anyway "
+                            "operation=%s request_id=%s error=%r",
+                            operation,
+                            rid,
+                            close_failure,
+                            exc_info=close_failure,
+                        )
                 return _unexpected_error(error, rid, operation)
 
         return handle

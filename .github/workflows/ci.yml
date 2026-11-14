@@ -853,6 +853,27 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      # Behavior, not accessibility: the file task panel's four key state transitions
+      # (#724 cancellation, #729/#731 413 exit and unknown outcome) were only covered by
+      # unit/component tests. It runs in this job because it needs the same locked
+      # install, the same built preview bundles and the same Chromium; its own
+      # configuration selects only `*.behavior.spec.mjs`, so it can neither replace nor
+      # widen the accessibility gate that runs before it.
+      - name: Check file task state transitions in a real browser
+        id: behavior
+        run: pnpm test:behavior
+
+      - name: Preserve behavior evidence
+        if: ${{ !cancelled() && (steps.behavior.outcome == 'success' || steps.behavior.outcome == 'failure') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: web-behavior-evidence
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: error
+          retention-days: 7
+
   deployment:
     name: "Compose: configuration validation"
     needs: [changes]

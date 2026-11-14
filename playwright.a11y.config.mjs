@@ -1,5 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
+import { previewServers } from "./tests/web/preview-servers.mjs";
+
 export default defineConfig({
   testDir: "./tests/web",
   testMatch: "**/*.a11y.spec.mjs",
@@ -20,17 +22,5 @@ export default defineConfig({
     screenshot: "only-on-failure",
     serviceWorkers: "block",
   },
-  webServer: [
-    {
-      command: "pnpm --filter @speechnexus/admin preview --host 127.0.0.1 --port 4173 --strictPort",
-      url: "http://127.0.0.1:4173",
-      reuseExistingServer: false,
-    },
-    {
-      command:
-        "pnpm --filter @speechnexus/workbench preview --host 127.0.0.1 --port 4174 --strictPort",
-      url: "http://127.0.0.1:4174",
-      reuseExistingServer: false,
-    },
-  ],
+  webServer: previewServers,
 });

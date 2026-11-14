@@ -22,11 +22,18 @@ interface TaskIdentity {
   readonly operationId: string | null;
   readonly cursor: string | null;
   /**
-   * The protocol definitively refused this create attempt, so the durable intent is
-   * spent: it can only be abandoned explicitly, never replayed. `pending` keeps its
-   * original "a request may be in flight, so its outcome is unknown" meaning and is
-   * never repurposed for the refusal; the field is written only after the refusal was
+   * The protocol definitively refused this attempt, so the durable intent is spent: it
+   * can only be abandoned explicitly, never replayed. `pending` keeps its original
+   * "a request may be in flight, so its outcome is unknown" meaning and is never
+   * repurposed for the refusal; the field is written only after the refusal was
    * observed, so the crash window before any answer still reloads as unknown (#707).
+   *
+   * One verdict covers both submission classes this client sends: a create attempt the
+   * protocol refused without producing a Job of its own (#707), and a cancel attempt it
+   * refused against the known Job the attempt names (#723). Both are refusals the
+   * protocol will not accept on replay, so neither may be replayed or replaced silently.
+   * `validRecord` keeps the field on a still-pending intent and off any identified
+   * execution; it does not spell out the class shapes the record's own invariants pin.
    *
    * A journal from before #707 counts keys strictly, so it rejects a record carrying
    * this field as `invalid` instead of misreading it; the Host then reports unavailable
@@ -191,17 +198,14 @@ function validRecord(value: unknown): RecoveryRecord {
   if (row.jobId === null && (row.pending !== "create" || row.cursor !== null)) return invalid();
   if (row.pending === null && row.operationId !== null) return invalid();
   if (hasSettled) {
-    // A settled intent is exactly a create attempt that the protocol answered terminally
-    // and that produced no Job of its own, so there is nothing left to replay or query.
-    // `pending: "create"` is the schema's only jobId-less form; the field, not the
-    // pending value, carries the refusal.
-    if (
-      row.settled !== "terminal" ||
-      row.pending !== "create" ||
-      row.jobId !== null ||
-      row.operationId !== null ||
-      row.cursor !== null
-    )
+    // The verdict rides on an intent that is still pending: the invariants above already
+    // pin such a record to `pending: "create"` with no Job and no cursor, or to
+    // `pending: "cancel"` with the Job that refusal named, so this field adds no shape of
+    // its own and must not restate them. Its own bounds are the single value, a pending
+    // (never confirmed) intent, and no identified execution: an attempt that named one
+    // stays queryable and is never settled (#707 review M2). A confirmed cancel cursor is
+    // not part of the verdict, because events keep advancing afterwards.
+    if (row.settled !== "terminal" || row.pending === null || row.operationId !== null)
       return invalid();
   }
   if (
@@ -294,7 +298,12 @@ export class SessionTaskJournal implements FileTaskJournal {
           (record.version !== 2 || record.effectiveModelKey !== before.effectiveModelKey)) ||
         // A settled intent cannot be un-settled: losing the field would make the next
         // reload rebuild it as an unconfirmed submission, which is the defect #707 fixes.
-        (before.settled === "terminal" && record.settled !== "terminal"))
+        // It also cannot be re-pointed: the verdict names the submission class that was
+        // refused and, for a cancel, the Job that refusal named (#723).
+        (before.settled === "terminal" &&
+          (record.settled !== "terminal" ||
+            record.pending !== before.pending ||
+            record.jobId !== before.jobId)))
     )
       throw new TaskJournalError("changed");
     const raw = JSON.stringify(record);

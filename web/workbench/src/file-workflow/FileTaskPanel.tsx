@@ -45,6 +45,8 @@ export function FileTaskPanel({
     !!job &&
     !state.busy &&
     !state.unknown &&
+    // A settled cancel intent cannot be resent (#723); the page offers explicit finish.
+    !state.rejected &&
     !["succeeded", "failed", "cancelled", "expired"].includes(job.status);
   const confirming = prepared !== undefined && prepared === job && cancellable;
   const finishing = preparingNew && prepared === job && canFinishTask(state);
@@ -95,8 +97,8 @@ export function FileTaskPanel({
       )}
       {state.rejected && (
         <p role="status">
-          原提交已被协议确定性拒绝，原意图作废：不能重放，刷新也不会再变回「结果未知」。
-          本页只能明确结束并重新开始；服务端数据不会因此删除。
+          原请求已被协议确定性拒绝，原意图作废：不能重放，刷新也不会再变回「结果未知」。
+          读取原任务核对后，可用「准备新任务」明确结束；服务端数据不会因此删除。
         </p>
       )}
       <dl>
@@ -261,7 +263,7 @@ export function FileTaskPanel({
         <div role="group" aria-label="确认本页新任务">
           <p>
             {state.rejected
-              ? "原提交已被协议确定性拒绝，这次意图已作废。结束本页记录并重新开始？新任务会使用新的幂等键，不会删除服务端数据。"
+              ? "原请求已被协议确定性拒绝，这次意图已作废。结束本页记录并重新开始？新任务会使用新的幂等键，不会删除服务端数据。"
               : state.uploadRejected
                 ? "原上传已明确拒绝。结束本页输入并重新选择？不会删除服务端数据。"
                 : "结束本页任务恢复并新建？服务器上的原任务与制品继续保留。"}

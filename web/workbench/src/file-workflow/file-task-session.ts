@@ -170,6 +170,54 @@ export function settlesReplayedIntent(error: {
 }
 
 /**
+ * Cancel refusals that answer a question about the target Job, so they settle the
+ * durable attempt instead of leaving it unknown. The record always names its Job, which
+ * stays readable, so the persisted verdict can only be "this cancellation request is
+ * spent", never "this Job is forgotten".
+ * - 409 `execution_cleanup_pending`: the Job is terminal and its execution has not
+ *   confirmed stop. `PostgresPublicJobs.cancel` reports it right after it locked the Job
+ *   and resolved this workspace's cancellation key
+ *   (backend/src/speechnexus_backend/speech/infrastructure/public_jobs_postgres.py:751-768),
+ *   and #691 already reads that context as a conclusive answer on the cancel path.
+ * - 409 `idempotency_conflict`: the key lookup itself refused (same method:758-765), so a
+ *   different cancellation owns this key and no reply of this attempt can change that.
+ * - 404 `job_not_found`: for a Job this deployment cannot see, so nothing left to
+ *   reconcile. That reading rests on the current cancel implementation, not on the
+ *   contract: the handler calls `service.cancel` without a workspace
+ *   (backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:600-614, 794-808),
+ *   `PublicJobs.cancel` defaults `workspace_id=None`
+ *   (backend/src/speechnexus_backend/speech/application/public_jobs.py:1274-1285), and
+ *   `_lock_cancel_target` adds the workspace predicate only when it is not None
+ *   (backend/src/speechnexus_backend/speech/infrastructure/public_jobs_postgres.py:1014-1031),
+ *   so the lookup is by job id alone. `speech_jobs` rows are never deleted, so the id this
+ *   record holds cannot disappear; the same `job_not_found` also covers a malformed id
+ *   (`ValueError`, …/http/jobs.py:612-613), which this record cannot carry because its
+ *   `jobId` came from a parsed `Job` resource. Residual risk: the contract also allows 404
+ *   for "Jobs outside the caller's workspace" (contracts/speech-openapi.yaml:990), so if
+ *   the backend ever scopes this lookup by workspace, a 404 stops proving absence and this
+ *   settlement would mark a still-cancellable Job as spent. The same premise already
+ *   carries the lost-response replay: two POSTs under one key, the second answered 404,
+ *   settle here, which is safe only while the lookup ignores the workspace and Job rows
+ *   never vanish.
+ * The remaining cancel 4xx describe the *caller*, not the Job — 400
+ * `invalid_job_request`, 401/403 authentication or authorization, 405 routing
+ * (contracts/speech-openapi.yaml:1024-1031) — and can be answered before the request is
+ * examined, so retrying after the environment is fixed is a real reconciliation and they
+ * stay unknown (#707 review M1). Every outcome-unknown class and every 5xx is classified
+ * before this predicate and keeps its unknown state as well.
+ */
+export function settlesCancelAttempt(error: {
+  readonly status: number;
+  readonly code: string;
+}): boolean {
+  if (error.status === 404) return error.code === "job_not_found";
+  return (
+    error.status === 409 &&
+    (error.code === "execution_cleanup_pending" || error.code === "idempotency_conflict")
+  );
+}
+
+/**
  * Which refusal envelope becomes the visible recovery identity. A later refusal never
  * replaces an already identified original execution, and an envelope carrying
  * `nexus.operation_id` is kept over one without it so the queryable identity is not lost.
@@ -193,9 +241,10 @@ interface TaskView {
   readonly requiresInput: boolean;
   readonly uploadRejected?: boolean;
   /**
-   * The protocol definitively refused this create attempt, so the durable intent is
-   * spent: it can be neither replayed nor created over. Only explicit abandonment ends
-   * it. Never set for an unknown outcome, which stays reconcilable by its original key.
+   * The protocol definitively refused this attempt, so the durable intent is spent: it
+   * can be neither replayed nor replaced. Only explicit abandonment ends it; a Job the
+   * record names stays readable, but its cancel intent cannot be sent again. Never set
+   * for an unknown outcome, which stays reconcilable by its original key.
    */
   readonly rejected?: boolean;
   readonly assetRecoveryId?: string | undefined;
@@ -292,18 +341,24 @@ export class FileTaskSession {
       // The submit body is rebuilt on demand: v2 text lives only in the uploaded asset,
       // never in this record, so replay reads it back instead of trusting local storage.
       const settled = record.settled === "terminal";
+      // A settled cancel intent names its Job and stays readable, so it says which
+      // class was refused; only the refusal itself is final (#723).
+      const settledCancel = settled && record.pending === "cancel";
       this.#view = {
         ...this.#view,
         // `pending` alone cannot tell a submission still awaiting its answer from one the
         // protocol already refused; only an observed terminal refusal persists `settled`,
         // so a reload keeps that distinction instead of rebuilding every pending create
-        // as unknown (#707). The crash window never carries the field and stays unknown.
+        // as unknown (#707) and every pending cancel as "outcome unknown" (#723). The
+        // crash window never carries the field and stays unknown.
         unknown: record.pending !== null && !settled,
         canReplay: record.pending !== null && record.operationId === null && !settled,
         cursor: record.cursor ?? undefined,
         ...(settled ? { rejected: true } : {}),
         notice: settled
-          ? "已找到原任务身份；该意图已被协议确定性拒绝并作废。"
+          ? settledCancel
+            ? "已找到原任务身份；该取消请求已被协议确定性拒绝并作废。请读取原任务核对，再显式收尾。"
+            : "已找到原任务身份；该意图已被协议确定性拒绝并作废。"
           : "已找到原任务身份。请恢复读取；未确认的请求仅按原键重放。",
       };
       if (this.#view.canReplay)
@@ -560,26 +615,44 @@ export class FileTaskSession {
         // because it proves a Job exists. Nothing here submits a replacement; the user
         // abandons the spent intent explicitly in the UI.
         //
-        // Settling a durable create intent is stricter than settling this attempt: the
+        // Settling a durable intent is stricter than settling this attempt: the
         // conclusion is persisted and a reload will present it as final, so it must not
         // hide an earlier submission of the same intent whose outcome was never observed
-        // (a lost answer keeps the record in the *same* shape as a refusal: `pending:
-        // "create"`, no Job). Only a refusal the protocol emits after it has checked the
-        // original key proves that earlier submission never became a Job. A refusal that
-        // may precede that check (401/403/404/405 auth and gateway answers, body-level
-        // 400/413) cannot speak for the earlier attempt, so it stays unknown and the
-        // original key remains the only reconciliation. This is the temporal gap that
-        // makes a state-only predicate unsafe (#707 review M1).
+        // (a lost answer keeps the record in the *same* shape as a refusal). Only a
+        // refusal the protocol emits after it has checked the original key proves that
+        // earlier submission never took effect. A refusal that may precede that check
+        // (401/403/404/405 auth and gateway answers, body-level 400/413) cannot speak for
+        // the earlier attempt, so it stays unknown and the original key remains the only
+        // reconciliation. This is the temporal gap that makes a state-only predicate
+        // unsafe (#707 review M1). The cancel path keeps the same rule where it applies,
+        // but its record also names the Job, so a refusal that is an answer about that
+        // Job (`settlesCancelAttempt`) spends only the cancellation request and leaves the
+        // identity readable: no reply can bring the Job back or accept its cancellation.
         // An identified original execution stays queryable, so it is never settled: that
         // would hide the only unresolved submission the user could reconcile.
-        const settles =
+        const envelopeOperationId = contractError.detail.error.nexus?.operation_id;
+        const settlesCreate =
           operation === "create" &&
           !this.#view.job &&
           !this.#record?.jobId &&
           !this.#record?.operationId &&
-          !contractError.detail.error.nexus?.operation_id &&
+          !envelopeOperationId &&
           settlesReplayedIntent(contractError);
-        if (operation === "create" && !settles) {
+        // A cancel attempt already names the Job it was refused against, so the
+        // create-path gates (`jobId`/`view.job` must be empty) cannot apply here. What
+        // makes the persisted verdict safe is the predicate above, not the record shape:
+        // the refused attempt is spent, while the Job it named stays readable.
+        const settlesCancel =
+          operation === "cancel" &&
+          this.#record?.pending === "cancel" &&
+          this.#record.jobId !== null &&
+          !this.#record.operationId &&
+          !envelopeOperationId &&
+          settlesCancelAttempt(contractError);
+        const settles = settlesCreate || settlesCancel;
+        const refusalProvesNothing =
+          (operation === "create" && !settlesCreate) || (operation === "cancel" && !settlesCancel);
+        if (refusalProvesNothing) {
           // Keep the unknown state, its recovery envelope and the replay handle: this
           // refusal rules out this *answer*, not an earlier submission, so the original
           // key stays the only reconciliation.
@@ -590,7 +663,10 @@ export class FileTaskSession {
             unknown: true,
             canReplay: true,
             recovery: retainRecovery(this.#view.recovery, contractError.detail),
-            notice: `提交被拒绝（${contractError.status} ${contractError.code}），但该拒绝不能证明原提交未执行；保留原键与未知状态，不要新建任务。`,
+            notice:
+              operation === "cancel"
+                ? `取消请求被拒绝（${contractError.status} ${contractError.code}），但该拒绝不能证明原取消未生效；保留原键与未知状态，请读取原任务。`
+                : `提交被拒绝（${contractError.status} ${contractError.code}），但该拒绝不能证明原提交未执行；保留原键与未知状态，不要新建任务。`,
           });
         } else {
           this.#replay = undefined;
@@ -599,7 +675,8 @@ export class FileTaskSession {
               // Record the observed refusal so a reload keeps it settled instead of
               // rebuilding an unconfirmed submission. Only a *refused* attempt reaches
               // this point: the crash window between sending and any answer persists
-              // `pending: "create"` without this field and reloads as unknown.
+              // `pending: "create"`/`pending: "cancel"` without this field and reloads as
+              // unknown.
               this.#persist({ settled: "terminal" });
             } catch {
               /* The protocol's answer still stands in this page; a reload degrades to unknown. */
@@ -928,7 +1005,11 @@ export class FileTaskSession {
 
   async cancel() {
     const jobId = this.#view.job?.id;
-    if (!jobId || this.#view.unknown) return;
+    // A settled cancel attempt is spent (#723): resending its key could be in flight
+    // while the record still says "refused", so a reload could not tell that unknown
+    // outcome from the recorded one. The Job stays readable; the page offers explicit
+    // finish instead. A settled create attempt owns no Job, so the same guard is inert.
+    if (!jobId || this.#view.unknown || this.#view.rejected) return;
     await this.#run(() => this.#cancelIntent(jobId), true);
   }
 

@@ -4,6 +4,7 @@ import {
   FileTaskSession,
   rejectionDisposition,
   retainRecovery,
+  settlesCancelAttempt,
   settlesReplayedIntent,
 } from "./file-task-session";
 import { canFinishTask } from "./file-task-policy";
@@ -88,6 +89,7 @@ function setup({
   let attempts = 0;
   let uploadAttempts = 0;
   let executions = 0;
+  let cancellations = 0;
   const createKeys: string[] = [];
   const bodies: string[] = [];
   const client = new SpeechFileClient("http://127.0.0.1", async (input, init) => {
@@ -95,8 +97,11 @@ function setup({
     const path = new URL(request.url).pathname;
     if (path === "/v1/nexus/assets" && request.method === "POST") return upload(uploadAttempts++);
     if (path === "/v1/nexus/assets/asset-demo") return Response.json(asset());
-    if (path === "/v1/nexus/jobs/job-demo/cancellations" && request.method === "POST")
+    if (path === "/v1/nexus/jobs/job-demo/cancellations" && request.method === "POST") {
+      cancellations++;
       return cancel(0);
+    }
+    if (path === "/v1/nexus/jobs/job-demo" && request.method === "GET") return Response.json(job());
     if (path === "/v1/nexus/jobs" && request.method === "POST") {
       createKeys.push(request.headers.get("Idempotency-Key") ?? "");
       bodies.push(await request.clone().text());
@@ -117,6 +122,9 @@ function setup({
     stats: {
       get executions() {
         return executions;
+      },
+      get cancellations() {
+        return cancellations;
       },
       createKeys,
       bodies,
@@ -639,7 +647,8 @@ describe("submission rejection classes", () => {
 
   it("treats 409 execution_cleanup_pending on the cancel path as a settled attempt", async () => {
     // The cancel request was deterministically refused against a known Job identity, so the
-    // same operation context that keeps a create unknown must clear it here.
+    // same operation context that keeps a create unknown must clear it here (#691), and the
+    // refusal is persisted as spent instead of reloading as an unknown cancellation (#723).
     const f = setup({ cancel: () => rejection(409, "execution_cleanup_pending") });
     const session = f.make();
     await session.start(file(), "asr-quality");
@@ -651,9 +660,14 @@ describe("submission rejection classes", () => {
     expect(snapshot.recovery).toBeUndefined();
     expect(snapshot.notice).toContain("execution_cleanup_pending");
     expect(snapshot.cancellation).toBeUndefined();
-    // A cancel attempt against a known Job is not a settled create intent (#707 scope).
-    expect(snapshot.rejected).toBeUndefined();
-    expect(f.stored()).not.toHaveProperty("settled");
+    // The refused cancel attempt is spent, so the page offers only an explicit end; the
+    // Job it named stays readable through the ordinary refresh.
+    expect(snapshot.rejected).toBe(true);
+    expect(f.stored()).toMatchObject({
+      pending: "cancel",
+      settled: "terminal",
+      jobId: "job-demo",
+    });
     session.dispose();
   });
 
@@ -692,6 +706,211 @@ describe("submission rejection classes", () => {
     expect(f.stored()).toMatchObject({ operationId: "op-demo" });
     await session.replay();
     expect(f.stats.createKeys).toHaveLength(2);
+    session.dispose();
+  });
+});
+
+describe("cancel-attempt settlement", () => {
+  it.each([
+    // Answers about the target Job: the attempt is spent, the Job stays readable.
+    [409, "execution_cleanup_pending", true],
+    [409, "idempotency_conflict", true],
+    [404, "job_not_found", true],
+    // Answers about the caller or the envelope; retrying after a fix is a real
+    // reconciliation, so they may precede the cancellation being examined.
+    [400, "invalid_job_request", false],
+    [401, "invalid_credentials", false],
+    [403, "forbidden", false],
+    [405, "method_not_allowed", false],
+    // Outcome-unknown classes are classified before this predicate and never reach it.
+    [503, "job_outcome_unknown", false],
+    [409, "voice_draft_outcome_unknown", false],
+    [409, "operation_in_progress", false],
+    [409, "response_not_replayable", false],
+    [404, "asset_not_found", false],
+  ])("settles only the Job answers on the cancel path: %i %s -> %s", (status, code, settles) => {
+    expect(settlesCancelAttempt({ status, code })).toBe(settles);
+  });
+
+  it.each([
+    [409, "execution_cleanup_pending"],
+    [409, "idempotency_conflict"],
+  ] as const)(
+    "persists a cancel refusal answered after the key check as spent: %i %s",
+    async (status, code) => {
+      const f = setup({ cancel: () => rejection(status, code) });
+      const first = f.make();
+      await first.start(file(), "asr-quality");
+      await first.cancel();
+      expect(first.getSnapshot()).toMatchObject({
+        unknown: false,
+        rejected: true,
+        canReplay: false,
+      });
+      expect(first.getSnapshot().notice).toContain(code);
+      expect(canFinishTask(first.getSnapshot())).toBe(true);
+      expect(f.stored()).toMatchObject({
+        pending: "cancel",
+        jobId: "job-demo",
+        settled: "terminal",
+      });
+      first.dispose();
+
+      // Counterexample 1: without the cancel class, this reload would rebuild an unknown
+      // cancellation and show "结果未知" for a refusal the protocol already gave.
+      const restored = f.make();
+      await restored.restore();
+      expect(restored.getSnapshot()).toMatchObject({
+        unknown: false,
+        rejected: true,
+        canReplay: false,
+        job: { id: "job-demo" },
+      });
+      expect(restored.getSnapshot().notice).not.toContain("结果未知");
+      expect(canFinishTask(restored.getSnapshot())).toBe(true);
+      // The spent intent is neither replayed nor re-cancelled; only its Job is read.
+      await restored.replay();
+      await restored.cancel();
+      expect(f.stats.cancellations).toBe(1);
+      expect(f.stats.createKeys).toHaveLength(1);
+      expect(f.stored()).toMatchObject({ pending: "cancel", settled: "terminal" });
+      restored.dispose();
+    },
+  );
+
+  it("settles a cancel for a Job the protocol reports as absent", async () => {
+    // `job_not_found` answers a question about the named Job: nothing left to reconcile,
+    // so the intent is spent instead of stranding the page in unknown (#723).
+    const f = setup({ cancel: () => rejection(404, "job_not_found") });
+    const first = f.make();
+    await first.start(file(), "asr-quality");
+    await first.cancel();
+    expect(first.getSnapshot()).toMatchObject({ unknown: false, rejected: true });
+    expect(canFinishTask(first.getSnapshot())).toBe(true);
+    expect(f.stored()).toMatchObject({ pending: "cancel", settled: "terminal" });
+    first.dispose();
+    const restored = f.make();
+    await restored.restore();
+    expect(restored.getSnapshot()).toMatchObject({ unknown: false, rejected: true });
+    expect(restored.getSnapshot().notice).not.toContain("结果未知");
+    await restored.cancel();
+    expect(f.stats.cancellations).toBe(1);
+    restored.dispose();
+  });
+
+  it("keeps a cancel refusal about the caller and envelope unknown", async () => {
+    // A 401 can be answered before the cancellation is examined at all, so it cannot prove
+    // the earlier attempt did not take effect; retrying after the environment is fixed is
+    // the reconciliation (#707 review M1).
+    const f = setup({ cancel: () => rejection(401, "invalid_credentials") });
+    const first = f.make();
+    await first.start(file(), "asr-quality");
+    await first.cancel();
+    expect(first.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    expect(first.getSnapshot().rejected).toBeUndefined();
+    expect(first.getSnapshot().notice).toContain("不能证明原取消未生效");
+    expect(canFinishTask(first.getSnapshot())).toBe(false);
+    expect(f.stored()).toMatchObject({ pending: "cancel", jobId: "job-demo" });
+    expect(f.stored()).not.toHaveProperty("settled");
+    first.dispose();
+
+    const restored = f.make();
+    await restored.restore();
+    expect(restored.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    expect(restored.getSnapshot().rejected).toBeUndefined();
+    expect(canFinishTask(restored.getSnapshot())).toBe(false);
+    restored.dispose();
+  });
+
+  it("keeps a lost cancellation response unknown and never records a settled refusal", async () => {
+    // Counterexample 3: the request left but no answer arrived. Nothing observed a
+    // refusal, so the record must stay in-flight and reload as unknown.
+    const f = setup({
+      cancel: () => {
+        throw new TypeError("Synthetic lost cancellation response");
+      },
+    });
+    const first = f.make();
+    await first.start(file(), "asr-quality");
+    await first.cancel();
+    expect(first.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    expect(first.getSnapshot().rejected).toBeUndefined();
+    expect(canFinishTask(first.getSnapshot())).toBe(false);
+    expect(f.stored()).toMatchObject({ pending: "cancel", jobId: "job-demo" });
+    expect(f.stored()).not.toHaveProperty("settled");
+    first.dispose();
+
+    const restored = f.make();
+    await restored.restore();
+    expect(restored.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    expect(f.stored()).not.toHaveProperty("settled");
+    expect(canFinishTask(restored.getSnapshot())).toBe(false);
+    // Retrying the original cancellation key is still the only reconciliation.
+    await restored.replay();
+    expect(f.stats.cancellations).toBe(2);
+    restored.dispose();
+  });
+
+  it.each([
+    [503, "job_outcome_unknown"],
+    [409, "voice_draft_outcome_unknown"],
+    [500, "internal_error"],
+  ] as const)("never settles an unknown-outcome cancel: %i %s", async (status, code) => {
+    const f = setup({ cancel: () => rejection(status, code) });
+    const first = f.make();
+    await first.start(file(), "asr-quality");
+    await first.cancel();
+    const snapshot = first.getSnapshot();
+    expect(snapshot.unknown).toBe(true);
+    expect(snapshot.rejected).toBeUndefined();
+    expect(canFinishTask(snapshot)).toBe(false);
+    expect(f.stored()).toMatchObject({ pending: "cancel" });
+    expect(f.stored()).not.toHaveProperty("settled");
+    first.dispose();
+    const restored = f.make();
+    await restored.restore();
+    expect(restored.getSnapshot()).toMatchObject({ unknown: true });
+    expect(restored.getSnapshot().rejected).toBeUndefined();
+    restored.dispose();
+  });
+
+  it("keeps a cancel intent that was refused before it acted replayable and un-settled", async () => {
+    // 503 `job_unavailable` is `intent-kept`, not a verdict about this attempt: the same
+    // intent may still succeed, so nothing is persisted as final (#723).
+    const f = setup({ cancel: () => rejection(503, "job_unavailable") });
+    const first = f.make();
+    await first.start(file(), "asr-quality");
+    await first.cancel();
+    expect(first.getSnapshot()).toMatchObject({ unknown: false, canReplay: true });
+    expect(first.getSnapshot().notice).toContain("原意图已保留");
+    expect(first.getSnapshot().rejected).toBeUndefined();
+    expect(f.stored()).toMatchObject({ pending: "cancel" });
+    expect(f.stored()).not.toHaveProperty("settled");
+    first.dispose();
+    const restored = f.make();
+    await restored.restore();
+    expect(restored.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    expect(restored.getSnapshot().rejected).toBeUndefined();
+    expect(f.stored()).not.toHaveProperty("settled");
+    restored.dispose();
+  });
+
+  it("never settles a cancel refusal that names an identified execution", async () => {
+    // An envelope carrying `nexus.operation_id` identifies an execution the user could
+    // still reconcile; persisting a settled verdict would hide that identity (#707 M2).
+    const f = setup({
+      cancel: () => rejection(409, "execution_cleanup_pending", { operationId: "op-demo" }),
+    });
+    const session = f.make();
+    await session.start(file(), "asr-quality");
+    await session.cancel();
+    const snapshot = session.getSnapshot();
+    expect(snapshot).toMatchObject({ unknown: true, canReplay: true });
+    expect(snapshot.recovery?.error.nexus?.operation_id).toBe("op-demo");
+    expect(snapshot.rejected).toBeUndefined();
+    expect(canFinishTask(snapshot)).toBe(false);
+    expect(f.stored()).toMatchObject({ pending: "cancel", operationId: null });
+    expect(f.stored()).not.toHaveProperty("settled");
     session.dispose();
   });
 });

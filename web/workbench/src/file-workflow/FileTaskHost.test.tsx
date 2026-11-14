@@ -254,6 +254,29 @@ describe("production Workbench file host", () => {
     expect(f.create.mock.calls[1]?.[1]).not.toBe(spentKey);
   });
 
+  it("shows a reloaded settled cancellation as refused, not unknown, and offers only the explicit end", async () => {
+    const f = fixture();
+    f.data.set(key, JSON.stringify({ ...stored("job-demo", "cancel"), settled: "terminal" }));
+    render(<FileTaskHost client={f.client} storage={f.storage} />);
+    // No unknown alert: the protocol already answered this cancellation (#723).
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText(/不能重放，刷新也/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "准备新任务" })).toBeInTheDocument();
+    // The Job the refusal named stays readable, but the spent cancel intent is never
+    // replayed or re-sent, so its button stays disabled.
+    fireEvent.click(screen.getByRole("button", { name: "读取原状态" }));
+    await screen.findByText("job-demo");
+    expect(screen.getByRole("button", { name: "准备取消" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "按原键重放" })).toBeDisabled();
+    // Only the explicit, two-stepped end clears the record.
+    fireEvent.click(screen.getByRole("button", { name: "准备新任务" }));
+    fireEvent.click(screen.getByRole("button", { name: "放弃这次意图并新建" }));
+    expect(f.data.has(key)).toBe(false);
+    expect(f.getJob).toHaveBeenCalled();
+    expect(f.cancel).not.toHaveBeenCalled();
+    expect(f.create).not.toHaveBeenCalled();
+  });
+
   it("fails safe when a recovery record carries fields this format does not know", () => {
     const f = fixture();
     // A reader from before #707 counts keys strictly, so it rejects a #707 settled record

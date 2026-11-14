@@ -154,9 +154,9 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/runtime-governance.md"
       ],
-      "implementation": "同步语音请求支持 nexus.max_output_audio_ms（100–3600000ms），有效上限贯穿生成校验、HTTP、固定执行计划、完整持久请求及网关；保留源样本、PCM及编码制品边界。自定义声音 TTS 泳道已打通（#519 片 2 / PR #563）：内部 `TtsEffectiveParameters.reference_text` 为可选字段、仅在 custom 命令出现，builtin 命令形状与旧版逐字一致；网关 `CommandFileCustomTts` 走 Base clone lane；未发布/退役/design 声音统一 422 `voice_not_published`（公开状态码由 503 变更）。",
+      "implementation": "同步语音请求支持 nexus.max_output_audio_ms（100–3600000ms），有效上限贯穿生成校验、HTTP、固定执行计划、完整持久请求及网关；保留源样本、PCM及编码制品边界。自定义声音 TTS 泳道已打通（#519 片 2 / PR #563）：内部 `TtsEffectiveParameters.reference_text` 为可选字段、仅在 custom 命令出现，builtin 命令形状与旧版逐字一致；网关 `CommandFileCustomTts` 走 Base clone lane；未发布/退役/design 声音统一 422 `voice_not_published`（公开状态码由 503 变更）。 一次合成的正文上界统一为 `MAX_SPEECH_TEXT_CHARS`（4096）（#704/#705，PR #737）：同步 `/v1/audio/speech` 的 `input` 与异步 `TtsJobInput.text` 声明同一上界，超界按入口给出不同码——同步 400 `invalid_request` 且 `param: input`，异步 422 `unsupported_parameter`——两者描述同一限制，消费者按 `error.code`/`param` 分支而非状态码。",
       "integration": "PR #413 已合入主干 7182911f81811c25e0dab546f54fdc80303d9c34，公开请求级上限接通生产提交装配；公共 Job、各 binding 的完整能力上限、长文本处理和发布仍按正式路径校验。",
-      "verification": "2026-11-04 增量核验：固定候选的定向边界、SDK、隔离 PostgreSQL 和适用 CI 已通过，非作者 Sol 及增量复核无阻断；主干与受检候选整树一致。真实引擎验收按用户要求暂缓；#406 已于 2026-11-13 依代码交付证据关闭（`settings.speech_max_output_audio_ms`、`SpeechSynthesis.synthesize(max_output_audio_ms=...)` 与 `_limits.max_output_audio_ms` 的收紧链均在主干），真实引擎与资格证据仍未取得；短输入同步成功不代表长文本或 Base 模型资格。",
+      "verification": "2026-11-04 增量核验：固定候选的定向边界、SDK、隔离 PostgreSQL 和适用 CI 已通过，非作者 Sol 及增量复核无阻断；主干与受检候选整树一致。真实引擎验收按用户要求暂缓；#406 已于 2026-11-13 依代码交付证据关闭（`settings.speech_max_output_audio_ms`、`SpeechSynthesis.synthesize(max_output_audio_ms=...)` 与 `_limits.max_output_audio_ms` 的收紧链均在主干），真实引擎与资格证据仍未取得；短输入同步成功不代表长文本或 Base 模型资格。 2026-11-14 增量核验：`tests/contract/test_tts_text_bound_consistency.py` 实跑 4097 字符边界，分别断言同步 400 `invalid_request`（点名 `input`）与异步 422 `unsupported_parameter`，并要求契约描述同时点名两码；该守卫只覆盖契约与 HTTP 校验层，真实引擎仍未验。",
       "gap": "请求级上限真实引擎证据暂缓；公共 Job、各 binding 的完整能力上限、长文本处理和发布仍待完整验收。短输入同步成功不代表长文本或 Base 模型资格。",
       "evidence": [
         {
@@ -223,9 +223,9 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/runtime-governance.md"
       ],
-      "implementation": "API 已装配 Job router，注册创建、读取、重试、事件流与取消（POST /v1/nexus/jobs/{job_id}/cancellations）；取消受理在同一事务写受理回执与围栏投影，执行网关在创建执行的同一事务读取围栏并以既有 gateway_barrier_fenced 落终态，不派发、不写输出流；公开列表按 (created_at_us, job_id) keyset 游标分页，整页 artifact 以 artifact_id = ANY 一次批读，0042 迁移删除被 keyset 索引前缀覆盖的 speech_jobs_workspace_created。公共错误面：#473（PR #474/#476/#477）为 9 条未实现操作建立中央占位路由与专用错误码 `operation_not_implemented`（503、`retryable=false`、`X-Should-Retry: false`），并以「未实现不得与真实故障共用错误码」的测试守住可辨识性；该响应组件 `OperationNotImplemented` 属语音公共契约面，与 C-CONTRACT 交叉，主责仍按 F-JOB（消费者是 Job/Operation 面）保留。派发期确定性结构拒绝已与传输未知分离（#566 / PR #568）：确定性拒绝落 `invalid_execution_request`（`failed`/`not_required`/不保留容量/不可重试），传输失败落 `unknown_quarantined` 并保留容量；残留：该码仍非「未外发」的充分条件（引擎 4xx 与 stage 期结果存储不可用同码却进 `unknown_quarantined`），见 #569。",
+      "implementation": "API 已装配 Job router，注册创建、读取、重试、事件流与取消（POST /v1/nexus/jobs/{job_id}/cancellations）；取消受理在同一事务写受理回执与围栏投影，执行网关在创建执行的同一事务读取围栏并以既有 gateway_barrier_fenced 落终态，不派发、不写输出流；公开列表按 (created_at_us, job_id) keyset 游标分页，整页 artifact 以 artifact_id = ANY 一次批读，0042 迁移删除被 keyset 索引前缀覆盖的 speech_jobs_workspace_created。公共错误面：#473（PR #474/#476/#477）为 9 条未实现操作建立中央占位路由与专用错误码 `operation_not_implemented`（503、`retryable=false`、`X-Should-Retry: false`），并以「未实现不得与真实故障共用错误码」的测试守住可辨识性；该响应组件 `OperationNotImplemented` 属语音公共契约面，与 C-CONTRACT 交叉，主责仍按 F-JOB（消费者是 Job/Operation 面）保留。派发期确定性结构拒绝已与传输未知分离（#566 / PR #568）：确定性拒绝落 `invalid_execution_request`（`failed`/`not_required`/不保留容量/不可重试），传输失败落 `unknown_quarantined` 并保留容量；两桶不变量随 #569 的 PR #573 落地（`execution_cleanup_pending` 承接已外发桶，`FileStageUnavailableError` 归本地拒绝并释放容量）；残留：`invalid_execution_request` 仍非「未外发」的充分条件——泳道在引擎请求之后抛基类 `InvalidExecutionRequestError` 时按保守隔离处理（`file_execution_worker.py` 的 `_run` 只把 `FileCommandInvalidError`/`FileStageUnavailableError` 走 `_reject_without_quarantine`），且该码仍聚合「阶段未配置」这类部署事实；legacy 行读路径不改写，判别需按 state/cleanup/dispatched_at 组合。 公开创建路径声明接收上限，超出返回 413 `job_request_too_large`（#703，PR #725）；workspace 行存在但无配额行走 422 `workspace_not_configured`，与 503 `job_unavailable` 存储故障分离（#702，PR #732）。",
       "integration": "派发器在任何提交前退出统一写 not-submitted 观察，对账 worker 仅在\"该观察 + 网关 404\"或\"aborted + cleanup complete + 白名单停止证据\"时结算为 cancelled；重试与 SSE 事件路由已随 Job router 注册，对账 worker 默认关闭，生产 planner 未装配。",
-      "verification": "隔离 PG 上取消与围栏 24 passed（含受理先于提交、真实锁等待、重启收敛、三类提交前退出收敛）；历史 schema 消费者 100 passed；契约检查与 3373 项契约测试通过。公开列表以隔离 PG 上 100 条 succeeded 页断言整页 2 次事务读，并对适配器真实 SQL 断言单次 Index Scan、无 Sort、keyset 谓词进入 Index Cond。未做真实引擎停止证据注入。",
+      "verification": "隔离 PG 上取消与围栏 24 passed（含受理先于提交、真实锁等待、重启收敛、三类提交前退出收敛）；历史 schema 消费者 100 passed；契约检查与 3373 项契约测试通过。公开列表以隔离 PG 上 100 条 succeeded 页断言整页 2 次事务读，并对适配器真实 SQL 断言单次 Index Scan、无 Sort、keyset 谓词进入 Index Cond。未做真实引擎停止证据注入。 2026-11-14 增量核验：`tests/contract/test_public_job_body_bound.py` 与 `tests/contract/test_public_job_workspace_default.py` 分别钉住 413 `job_request_too_large` 与 422 `workspace_not_configured` 的声明与分码，未在目标部署实测接收上限。",
       "gap": "生产 planner 与对账 worker 未在生产装配中启用；真实引擎/网关故障注入与物理拓扑验收未完成；公开列表的查询计划与索引体积未在目标环境验收。",
       "evidence": [
         {
@@ -1047,10 +1047,10 @@
         "docs/architecture/technical-blueprint.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "工作台 App 挂载稿件宿主及 ASR / TTS 两种文件任务；FileTaskHost 默认使用同源 SpeechFileClient 和本地任务恢复，并为 ASR 提供转写导入回调。",
+      "implementation": "工作台 App 挂载稿件宿主及 ASR / TTS 两种文件任务；FileTaskHost 默认使用同源 SpeechFileClient 和本地任务恢复，并为 ASR 提供转写导入回调。 文件任务面板的终态拒绝与 413 出口已有明确处置（原卡无原生父 Epic、未登记，均已关闭）：取消被确定拒绝后持久结算，刷新不再把作废意图复活成未知（#723，PR #724）；413 首答可两步确认放弃并以新幂等键新建，413 非首答仍是未知且不可放弃、不声称已确证无执行（#729，PR #731）。",
       "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
-      "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
-      "gap": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。2026-11-14 增量核验：`tests/web/file-task.behavior.spec.mjs` 在真实 Chromium 上驱动 `vite preview` 生产构建里的真实 `FileTaskHost`，只把 `/v1/nexus/**` 换成脚本应答，覆盖四条状态转换——413 首答（显示已作废、两步确认后输入解锁且幂等键换新）、413 非首答（仍未知、仍不可放弃、按原键重放只用原键）、取消被确定拒绝（可放弃、刷新后仍作废）、503 `job_outcome_unknown`（未知、禁止新建、可按原键重放）；网络锁在每次运行实测 `net::ERR_BLOCKED_BY_CLIENT`。CI 在既有 Web 作业内顺序追加 `pnpm test:behavior`（`playwright.behavior.config.mjs` 只选 `*.behavior.spec.mjs`，与 a11y 分属独立配置与报告目录；两门禁共用 4173/4174 且 `--strictPort`，不能并发或塞进 matrix）。该层是 preview 构建 + 注入应答，不含真实后端或 PG。",
+      "gap": "浏览器行为规格（PR #741）只驱动 preview 构建与注入应答，关联 issue #740 仍 open；纯 `web/` 改动在 PR 阶段不跑 Web 集成分片，真实后端 + 真实 PG 的浏览器链没有 PR 信号（#757，PR #758 在开）。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/App.tsx",
@@ -1556,10 +1556,10 @@
         "docs/architecture/technical-blueprint.md",
         "docs/components/workbench-export-integrity.md"
       ],
-      "implementation": "工作台 App 挂载 BooksHost；工厂装配 PostgreSQL 书籍/单元及按客户端配置的 Speech Job。生成页面与生产路由使用 v2；契约中的 v1 生成操作未接入。",
-      "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
-      "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
-      "gap": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "implementation": "工作台 App 挂载 BooksHost；工厂装配 PostgreSQL 书籍/单元及按客户端配置的 Speech Job。生成页面与生产路由使用 v2；契约中的 v1 生成操作未接入。 单元文本的两个上限已在契约中分别声明（#704/#705，PR #737）：共享定义 `RenderUnitText` 的 `maxLength: 200000` 是单元源容量，与 `render_units` 表的 CHECK `length(text) <= 200000` 同源；一次派发的内联正文上界是 `MAX_SPEECH_TEXT_CHARS`（4096）。派发把整段单元文本内联进一个公共 Job 请求体，超界在适配器的 `parse(\"JobCreateRequest\", ...)` 处被契约校验拒绝并投影为 422 `render_submission_rejected`，不创建 Job、不截断。单元编辑器同时展示两个上限并按 Unicode 码点计数（`render-unit-bounds.ts` 的 `renderUnitLength`，两个常量镜像生成的契约 bundle），422 时按本地已知的 4096 指名「超过一次派发上限」并给出切分动作（#745，PR #746）；字数提示只作 `aria-describedby` 描述、不取可访问名，避免 `getByLabel` 子串匹配把控件解析成两个元素（#753 的主干红，PR #756 恢复）。",
+      "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 渲染派发经 `PublicSpeechRenderJobs`（`backend/src/speechnexus_backend/workbench/infrastructure/public_speech_render_jobs.py`）提交公共 Job：上游 422 的六类 `error.code`、409 族与 401/403/415 全部折成无原因的 `RenderSubmissionRejectedError`/`RenderSubmissionConflictError`，429 落入 `RenderSubmissionUnknownError`，上游原因与 `Retry-After` 均被丢弃（#750/#754/#755）；PR #752 正在补上游原因保留。",
+      "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。2026-11-14 增量核验：`tests/contract/test_render_unit_text_bound.py` 钉住「所有 `RenderUnit*.text` 站点共享同一 200000 声明」「契约容量与 `render_units` CHECK 同值」「契约描述写明 4096 派发上界与已注册的 `generateRenderUnitV2`」；`tests/contract/test_tts_text_bound_consistency.py` 实跑断言同步与异步入口同界（同步 400 `invalid_request` + `param: input`，异步 422 `unsupported_parameter`）；`web/workbench/src/books/render-unit-bounds.test.ts` 把两个常量钉到生成契约 bundle，`RenderUnitPanel.test.tsx` 覆盖码点计数、2049 个星形平面字符不误判超界、非文本 422 显示泛指，以及每个表单标签在 `exact: false`/`exact: true` 下只命中一个元素。主干 `26fd8b39` 的 push CI 全绿（含 Integration 4/5 与 Web 作业）。这些用例只证明契约校验与组件行为，未在真实浏览器或真实后端派发。",
+      "gap": "真实服务链路与目标部署未验；渲染派发的拒绝分类仍丢失上游可区分原因（#750，PR #752 在审）、429 被报成结果未知（#754）、409 族与 401/403/415 折叠成同一无原因码（#755）；单元编辑器对超界原因的指认仍是本地码点判断而非服务端原因位（随 #750 收口）。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/App.tsx",
@@ -2073,9 +2073,9 @@
         "docs/architecture/data-deletion.md"
       ],
       "implementation": "Python 镜像使用冻结的 workspace 依赖与带摘要的 CPU VAD 依赖；当前镜像同步全部 workspace 包。`scripts/dev-env/minio-test-service.sh` 以 `${build_args[@]+\"${build_args[@]}\"}` 展开空 `build_args`，兼容 macOS bash 3.2 + `set -u`（CI 的 bash 5 不受影响，#596）。测试中 4 处结构上恒真的 `Event.is_set()` 断言已删除，2 处有效守护保留（#593）。",
-      "integration": "CI 有 Compose 配置检查；`tests/integration` 的 PG/双库用例在缺 DSN 时必须失败而非跳过（21 个文件的跳过路径改为 `pytest.fail`，PR #583），并由静态扫描守护固化（`tests/integration/test_pg_dsn_skip_guard.py`，PR #584），门禁不再把未执行记为通过；按角色裁剪依赖、干净安装及跨平台部署仍需验收。",
+      "integration": "CI 有 Compose 配置检查；`tests/integration` 的 PG/双库用例在缺 DSN 时必须失败而非跳过（21 个文件的跳过路径改为 `pytest.fail`，PR #583），并由静态扫描守护固化（`tests/integration/test_pg_dsn_skip_guard.py`，PR #584），门禁不再把未执行记为通过；按角色裁剪依赖、干净安装及跨平台部署仍需验收。 审查类 PR 的改动路径由 `changes` 作业内的 `scripts/dev-env/check-review-pr-boundary.py` 机器门禁判定（#738，PR #739）：`review:`/`review：` 标题前缀、`review/` 或 `docs/review` 分支前缀、结构上同时改动 `docs/reviews/` 与其它路径，三条信号任一命中即按审查 PR 检查，边界为全部路径落在 `docs/reviews/`，`REVIEW_ROOT` 由 `tests/ci/test_review_pr_boundary.py` 钉住；比较端点按检出形态取 `refs/pull/<n>/merge` 合并提交的第一父提交，`head.sha` 检出下取 `merge-base(base, HEAD)`，不再用陈旧 `base.sha` 的两点比较（#747，PR #749）；`docs` 路由下该步骤已实测执行（运行 43570172238/43570366503）。",
       "verification": "未取得当前真实部署验收证据。2026-11-08 增量核验：无 DSN 运行 `tests/integration` 的 skipped 由 2107 降为 291，原被静默跳过的 PG/双库用例转为失败；守护解析 `pytest.skip`、`pytest.xfail`、`pytest.mark.skipif` 及导入别名，沿同文件嵌套函数与跨文件 helper 传播 DSN 来源，`tests/support` 自读 DSN 模块（含 fixture 注入）直接上报，白名单为空；`psql`、引擎 dialect 分支、MinIO 与 Workbench 专用变量按非数据库前置处理。边界：`exec`、插件注入与自定义 marker 不在覆盖内。2026-11-11 增量核验：#596 在 macOS bash 3.2.57 + `set -u` 下复现 `build_args[@]: unbound variable`，修复后空数组路径输出 `ok isolated MinIO ready`、有参数分支仍传入 `--secret`；未在 bash 4/5 或 Linux CI 重跑。#593 按 Event 的 set 点逐条判定：恒真 4 处删除、有效守护 2 处保留。",
-      "gap": "模型制品、角色权限、迁移回滚和目标平台须按实际发布制品验证；静态镜像配置不能证明运行资格；测试门禁的真实执行不证明真实服务、设备或目标部署资格。`minio-test-service.sh` 的兼容性仅在 macOS bash 3.2.57 实测，bash 4/5 与 Linux 未重跑。",
+      "gap": "模型制品、角色权限、迁移回滚和目标平台须按实际发布制品验证；静态镜像配置不能证明运行资格；测试门禁的真实执行不证明真实服务、设备或目标部署资格。`minio-test-service.sh` 的兼容性仅在 macOS bash 3.2.57 实测，bash 4/5 与 Linux 未重跑。 纯 `web/` 改动路由为 `mode=web`，而 `integration_shards` 只在 `mode=full` 执行，因此 Web 集成分片（Integration 4/5，真实浏览器 + 真实后端）在 PR 阶段不运行（#757，PR #758 在开）；该项改变须同时量化新增墙钟与作业数，并保持 `Gate: six-shard integration evidence` 语义。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/deploy/images/python.Dockerfile",

@@ -11,6 +11,7 @@ import {
   RENDER_UNIT_SOURCE_LIMIT,
   renderUnitLength,
 } from "./render-unit-bounds";
+import { RENDER_REFUSAL_STEPS, refusedCode, type RenderRefusalCode } from "./render-refusals";
 import "./books.css";
 
 const problems = {
@@ -25,18 +26,40 @@ const problems = {
 export type RenderUnitProblem = keyof typeof problems;
 
 /**
- * A refusal the panel could attribute to the inline dispatch bound. The 422
- * envelope carries no sub-reason (shared `ErrorBody` has only
- * `code`/`type`/`message`/`param`/`request_id`/`retryable`, and this operation
- * always sends `param: null` with a fixed message), so the only way to name it is
- * the one local fact the panel has: the dispatched text exceeds the bound in the
- * contract's own unit. `over` is that measured length.
+ * Three shapes, because a refusal can be known three ways.
+ *
+ * `key` is the panel's own state (connection, conflict, storage). `refusal` carries
+ * the published disposition the server stated, whose copy lives in
+ * `render-refusals.ts`. `textOverDispatch` is the local attribution `#745` added:
+ * it is only reached when the server stated no cause at all and the panel measured
+ * the dispatched text itself above the bound in the contract's unit, so a 422
+ * caused by an unpublished voice is never blamed on the text.
  */
-type UnitProblem = { key: RenderUnitProblem } | { key: "textOverDispatch"; over: number };
+type UnitProblem =
+  | { key: RenderUnitProblem }
+  | { key: "textOverDispatch"; over: number }
+  | { key: "refusal"; code: RenderRefusalCode; over?: number };
+
+function dispatchOverMessage(over: number): string {
+  return `该单元文本 ${over} 字符超过一次派发上限 ${RENDER_UNIT_DISPATCH_LIMIT} 字符，服务端因此拒绝了本次派发，未生成作业。下一步：把文本切分为每段不超过 ${RENDER_UNIT_DISPATCH_LIMIT} 字符的多个单元后分别派发；${RENDER_UNIT_SOURCE_LIMIT} 字符的源容量不必缩小。`;
+}
 
 function problemMessage(problem: UnitProblem): string {
-  if (problem.key !== "textOverDispatch") return problems[problem.key];
-  return `该单元文本 ${problem.over} 字符超过一次派发上限 ${RENDER_UNIT_DISPATCH_LIMIT} 字符，服务端因此拒绝了本次派发，未生成作业。下一步：把文本切分为每段不超过 ${RENDER_UNIT_DISPATCH_LIMIT} 字符的多个单元后分别派发；${RENDER_UNIT_SOURCE_LIMIT} 字符的源容量不必缩小。`;
+  if (problem.key === "textOverDispatch") return dispatchOverMessage(problem.over);
+  if (problem.key === "refusal") {
+    // The stated text bound is named with the measured length when the panel has it.
+    return problem.over === undefined
+      ? RENDER_REFUSAL_STEPS[problem.code]
+      : dispatchOverMessage(problem.over);
+  }
+  return problems[problem.key];
+}
+
+/** The stable code, offered for diagnosis only — never woven into the copy. */
+function problemTitle(problem: UnitProblem): string | undefined {
+  if (problem.key === "textOverDispatch") return "render_submission_rejected";
+  if (problem.key === "refusal") return problem.code;
+  return undefined;
 }
 
 /**
@@ -141,12 +164,21 @@ function problemOf(error: unknown, dispatched?: string): UnitProblem {
     if (error.code === "outcome_unknown") return { key: "unknown" };
     if (error.code === "revision_conflict") return { key: "conflict" };
     if (error.code === "invalid_change") return { key: "rejected" };
-    if (error.code === "render_submission_rejected") {
-      if (dispatched !== undefined) {
-        const over = renderUnitLength(dispatched);
-        if (over > RENDER_UNIT_DISPATCH_LIMIT) return { key: "textOverDispatch", over };
+    const refusal = refusedCode(error.code);
+    if (refusal !== null) {
+      const measured = dispatched === undefined ? undefined : renderUnitLength(dispatched);
+      const over =
+        measured !== undefined && measured > RENDER_UNIT_DISPATCH_LIMIT ? measured : undefined;
+      if (refusal === "render_submission_text_too_long") {
+        return over === undefined
+          ? { key: "refusal", code: refusal }
+          : { key: "refusal", code: refusal, over };
       }
-      return { key: "rejected" };
+      // The fallback states no cause; only the panel's own measurement may name the text.
+      if (refusal === "render_submission_rejected" && over !== undefined) {
+        return { key: "textOverDispatch", over };
+      }
+      return { key: "refusal", code: refusal };
     }
     if (error.status >= 500 || error.code === "store_unavailable") return { key: "unavailable" };
     return { key: "unknown" };
@@ -633,7 +665,7 @@ function ChapterUnits({
           className="books-problem"
           role="alert"
           // The stable code is for diagnosis; the operator copy stays readable.
-          title={problem.key === "textOverDispatch" ? "render_submission_rejected" : undefined}
+          title={problemTitle(problem)}
         >
           {problemMessage(problem)}
         </p>

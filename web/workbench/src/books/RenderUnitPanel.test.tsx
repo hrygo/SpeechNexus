@@ -7,6 +7,16 @@ import {
   parse,
 } from "../manuscripts/workbench-client";
 import { RenderUnitPanel } from "./RenderUnitPanel";
+import {
+  RENDER_REFUSAL_CODES,
+  RENDER_REFUSAL_STEPS,
+  type RenderRefusalCode,
+} from "./render-refusals";
+
+/** Every published disposition, so a new code cannot ship without a panel answer. */
+const RENDER_REFUSAL_DISPOSITIONS: [RenderRefusalCode, string][] = RENDER_REFUSAL_CODES.map(
+  (code) => [code, RENDER_REFUSAL_STEPS[code]],
+);
 
 function unit(changes: Partial<Contracts["RenderUnitV2"]> = {}) {
   return parse("RenderUnitV2", {
@@ -820,7 +830,80 @@ describe("render unit text bounds (#745)", () => {
     expect(alert.textContent).toContain("请求被拒绝");
     expect(alert.textContent).not.toContain("超过一次派发上限");
     expect(alert.textContent).not.toContain("该单元文本");
-    expect(alert).not.toHaveAttribute("title");
+    // The fallback code is still a diagnostic; the copy above stays readable.
+    expect(alert.textContent).not.toContain("render_submission_rejected");
+    expect(alert).toHaveAttribute("title", "render_submission_rejected");
+  });
+
+  it.each(RENDER_REFUSAL_DISPOSITIONS)(
+    "states the operator step for %s instead of the generic refusal",
+    async (code, step) => {
+      const { generate } = setup();
+      generate.mockRejectedValueOnce(
+        new WorkbenchResponseError(422, {
+          error: {
+            code,
+            type: "invalid_request_error",
+            message: "The pinned render unit cannot be dispatched as a speech Job.",
+            param: null,
+            request_id: "request-demo",
+            retryable: false,
+          },
+        }),
+      );
+      fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toBe(step);
+      // Neither the machine code nor the "unknown" answer may stand in for a cause.
+      expect(alert.textContent).not.toContain(code);
+      expect(alert.textContent).not.toContain("结果尚未确认");
+      expect(alert.textContent).not.toContain("按原键重试");
+      // The code stays available for diagnosis, outside the operator copy.
+      expect(alert).toHaveAttribute("title", code);
+    },
+  );
+
+  it("answers a refusal code this workbench does not publish with the unknown state", async () => {
+    // The guard test pins the vocabulary on both sides; this is the runtime backlog
+    // for a code that reached the panel without a disposition (e.g. a newer server).
+    const { generate } = setup();
+    generate.mockRejectedValueOnce(
+      new WorkbenchResponseError(422, {
+        error: {
+          code: "render_submission_not_in_this_vocabulary",
+          type: "invalid_request_error",
+          message: "Synthetic unhandled refusal.",
+          param: null,
+          request_id: "request-demo",
+          retryable: false,
+        },
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("结果尚未确认");
+  });
+
+  it("names the stated text bound with the measured length when the server says so", async () => {
+    const { generate } = setup([unit({ text: "旁白".repeat(2500) })]);
+    generate.mockRejectedValueOnce(
+      new WorkbenchResponseError(422, {
+        error: {
+          code: "render_submission_text_too_long",
+          type: "invalid_request_error",
+          message: "The unit text exceeds the one-request inline bound.",
+          param: "input.text",
+          request_id: "request-demo",
+          retryable: false,
+        },
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("该单元文本 5000 字符");
+    expect(alert.textContent).toContain("4096 字符");
+    expect(alert.textContent).toContain("200000 字符的源容量不必缩小");
+    expect(alert).toHaveAttribute("title", "render_submission_text_too_long");
   });
 
   it("keeps the generic refusal when the local text does not explain the 422", async () => {

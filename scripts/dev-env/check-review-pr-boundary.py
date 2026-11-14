@@ -73,6 +73,15 @@ and ``HEAD`` is the fork point and ``merge-base..HEAD`` is the pull request's ow
 work. The form is derived from the commit itself, so a missing ``--head-sha``
 cannot silently fall back to the two-point reading of a merge ref.
 
+Two details make that reading safe rather than convenient. The parents are checked
+*in order* - first parent the base branch tip, second the merged head - because a
+subject that names the roles the other way round would otherwise start the diff at
+the pull request head and hide the paths it carries (a false green, the one
+direction this gate cannot take). And a ``--head-sha`` that disagrees with the
+merge's second parent is only a warning: re-runs read an event payload frozen at
+the last event, and falling back to ``merge-base(base.sha, HEAD)`` there is exactly
+the two-point reading this fix removes.
+
 Trade-off (under-report vs. mis-report). A declared review PR (signals 1-2)
 fails closed: if the exact diff cannot be computed it is red, because the cost
 of a false green is the incident class above and the remediation is entirely in
@@ -124,7 +133,7 @@ FETCH_BACKOFF_SECONDS = 2.0
 
 
 class DiffUnavailableError(Exception):
-    """The exact base-to-HEAD diff could not be computed."""
+    """This pull request's own change set could not be computed."""
 
 
 @dataclass(frozen=True)
@@ -186,6 +195,7 @@ class Comparison:
     left: str
     right: str
     label: str
+    warning: str = ""
 
     def short(self) -> str:
         return f"{self.left[:12]}..{self.right[:12]} ({self.label})"
@@ -361,14 +371,22 @@ def _parents(cwd: Path, rev: str) -> list[str]:
     ]
 
 
-def _merge_ref(cwd: Path, head: str, head_sha: str) -> Comparison | None:
+def _merge_ref(cwd: Path, head: str, head_sha: str, parents: Sequence[str]) -> Comparison | None:
     """The ``refs/pull/<n>/merge`` reading of ``head``, or ``None``.
 
-    GitHub's synthetic merge commit says ``Merge <head> into <base>`` and carries
-    exactly those two commits as its parents. Both facts are checked, so an
-    ordinary merge an author made on their own branch is not mistaken for it.
+    GitHub's subject is ``Merge <head> into <base>`` and its parents are ordered
+    ``[<base>, <head>]`` - the base branch tip first, because the merge is built
+    on top of it. Both facts are checked *in that order*: a subject that names the
+    roles the other way round must not be read as a merge ref, because picking the
+    wrong side of the merge hides the pull request's own paths and reports a green.
+
+    A ``head_sha`` that disagrees with the second parent (a re-run reading a stale
+    payload, or a push between the event and the checkout) is only an advisory:
+    the checked-out merge ref is still the thing whose first parent isolates this
+    pull request's delta, so the comparison stays the same and the disagreement is
+    reported as a warning. Falling back to ``merge-base(base.sha, HEAD)`` here
+    would silently restore the two-point reading of a merge ref (#747).
     """
-    parents = _parents(cwd, head)
     if len(parents) != 2:
         return None
     message = _raw_commit(cwd, head).split(b"\n\n", 1)[-1].decode("utf-8", errors="replace")
@@ -376,15 +394,16 @@ def _merge_ref(cwd: Path, head: str, head_sha: str) -> Comparison | None:
     if match is None:
         return None
     merged, onto = match.group(1), match.group(2)
-    if {merged, onto} != set(parents):
+    if list(parents) != [onto, merged]:
         return None
+    warning = ""
     if head_sha and head_sha != merged:
-        # The event names a different head than the checked-out merge commit (a
-        # force push between the event and the checkout), so the merge shape is
-        # not the one this event describes; fall back to the three-point reading.
-        return None
+        warning = (
+            f"the event names head {head_sha[:12]} but the checked-out merge ref merged "
+            f"{merged[:12]}; comparing against the merge ref's first parent anyway"
+        )
     _ensure_commit(onto, cwd)
-    return Comparison(onto, head, "merge ref against its first parent")
+    return Comparison(onto, head, "merge ref against its first parent", warning)
 
 
 def _merge_base(cwd: Path, left: str, right: str) -> str:
@@ -413,13 +432,21 @@ def comparison(base: str, head_sha: str, cwd: Path) -> Comparison:
     if not re.fullmatch(r"[0-9a-f]{40}", base) or base == "0" * 40:
         raise DiffUnavailableError("no exact 40-character base commit SHA was provided")
     head = _rev_parse(cwd, "HEAD")
+    parents = _parents(cwd, head)
     if head_sha != head:
-        merged = _merge_ref(cwd, head, head_sha)
+        merged = _merge_ref(cwd, head, head_sha, parents)
         if merged is not None:
             return merged
     _ensure_commit(base, cwd)
     fork = _merge_base(cwd, base, head)
-    return Comparison(fork, head, "merge base of base.sha and HEAD")
+    warning = ""
+    if len(parents) >= 2:
+        warning = (
+            "HEAD is a merge commit that is not a GitHub merge ref (subject "
+            "`Merge <head> into <base>` with the base tip as the first parent); "
+            "three-point comparison used instead of a merge first parent"
+        )
+    return Comparison(fork, head, "merge base of base.sha and HEAD", warning)
 
 
 def changed_paths(ends: Comparison, cwd: Path) -> list[str]:
@@ -449,6 +476,8 @@ def _write_summary(summary: Path | None, verdict: Verdict, ends: Comparison | No
         handle.write(f"### Review PR boundary: {status}\n\n")
         if ends is not None:
             handle.write(f"- Compared: `{ends.short()}`\n")
+            if ends.warning:
+                handle.write(f"- Comparison warning: {ends.warning}\n")
         if verdict.signals:
             handle.write(f"- Signals: {', '.join(verdict.signals)}\n")
         if verdict.reports:
@@ -463,6 +492,11 @@ def _report(verdict: Verdict, paths: Sequence[str] | None, ends: Comparison | No
     print(json.dumps(verdict.as_dict(), ensure_ascii=True))
     if ends is not None:
         print(f"review-pr-boundary: compared {ends.short()}")
+        if ends.warning:
+            print(
+                f"::warning title=Review PR boundary comparison::{ends.warning}",
+                file=sys.stderr,
+            )
     if verdict.ok:
         print(f"review-pr-boundary: {verdict.reason}")
         return

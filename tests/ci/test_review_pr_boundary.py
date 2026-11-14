@@ -292,6 +292,25 @@ class GitFixture(unittest.TestCase):
         self.git("commit", "-qm", "Synthetic review-pr fixture")
         return self.git("rev-parse", "HEAD")
 
+    MAIN_MOVED_REPORT = "docs/reviews/2026-11-14-main-line.md"
+    MAIN_MOVED_IMPL = "backend/y.py"
+
+    def merge_ref(self, pr_files: dict[str, str]) -> tuple[str, str]:
+        """Build main-line movement, then GitHub's merge ref for one pull request."""
+        self.git("checkout", "-q", "-b", "pr")
+        for name, content in pr_files.items():
+            self.write(name, content)
+        pr_head = self.commit()
+        self.git("checkout", "-q", "main")
+        # Two commits land on main after the pull request opened: a review report
+        # and implementation. Nothing in them belongs to the pull request.
+        self.write(self.MAIN_MOVED_REPORT, "# Another review\n")
+        self.commit()
+        self.write(self.MAIN_MOVED_IMPL, "y = 1\n")
+        main_tip = self.commit()
+        self.git("merge", "--no-ff", "pr", "-m", f"Merge {pr_head} into {main_tip}")
+        return pr_head, main_tip
+
     def run_guard(self, *extra: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [sys.executable, str(SCRIPT), "--event", "pull_request", "--base", self.base, *extra],
@@ -406,25 +425,6 @@ class MergeBaseTests(GitFixture):
     set, minutes after #739 landed the gate).
     """
 
-    MAIN_MOVED_REPORT = "docs/reviews/2026-11-14-main-line.md"
-    MAIN_MOVED_IMPL = "backend/y.py"
-
-    def merge_ref(self, pr_files: dict[str, str]) -> tuple[str, str]:
-        """Build main-line movement, then GitHub's merge ref for one pull request."""
-        self.git("checkout", "-q", "-b", "pr")
-        for name, content in pr_files.items():
-            self.write(name, content)
-        pr_head = self.commit()
-        self.git("checkout", "-q", "main")
-        # Two commits land on main after the pull request opened: a review report
-        # and implementation. Nothing in them belongs to the pull request.
-        self.write(self.MAIN_MOVED_REPORT, "# Another review\n")
-        self.commit()
-        self.write(self.MAIN_MOVED_IMPL, "y = 1\n")
-        main_tip = self.commit()
-        self.git("merge", "--no-ff", "pr", "-m", f"Merge {pr_head} into {main_tip}")
-        return pr_head, main_tip
-
     def test_main_moving_after_the_pr_opened_keeps_a_declared_review_green(self) -> None:
         # The nail for #747: base.sha predates two main-line commits, and the pull
         # request itself only adds its own report.
@@ -466,6 +466,53 @@ class MergeBaseTests(GitFixture):
         self.assertEqual(ends.left, main_tip)
         self.assertEqual(ends.right, self.git("rev-parse", "HEAD"))
         self.assertEqual(ends.label, "merge ref against its first parent")
+
+    def test_a_stale_head_sha_warns_and_keeps_the_first_parent_comparison(self) -> None:
+        # A re-run reads an event payload whose head.sha is older than the merge
+        # ref it checks out. The merge ref is still the right thing to compare, so
+        # the reading must not fall back to merge-base(base.sha, HEAD) - that is
+        # the two-point reading again, and it is red here by construction (#751).
+        pr_head, main_tip = self.merge_ref({REPORT: "# Own review\n"})
+        stale_head = self.git("rev-parse", f"{pr_head}^")
+        result = self.run_guard(
+            "--head-sha", stale_head, "--title", "review: own report", "--head-ref", "review/747"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout.splitlines()[0])
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["violations"], [])
+        self.assertIn(f"compared {main_tip[:12]}..", result.stdout)
+        self.assertIn("::warning title=Review PR boundary comparison::", result.stderr)
+        self.assertIn(stale_head[:12], result.stderr)
+        self.assertIn(pr_head[:12], result.stderr)
+
+    def test_a_merge_commit_with_inverted_roles_is_not_read_as_a_merge_ref(self) -> None:
+        # Shape guard (ordered parents, no --head-sha in play). A pull request that
+        # really carries implementation, merged with GitHub's two commits but a
+        # subject that swaps their roles, was read as a merge ref by the set-only
+        # check: the comparison then started at the pull request head, the carried
+        # paths dropped out of the change set, and the gate reported green. A false
+        # green is the one direction this gate cannot take, so the ordering is
+        # pinned: the first parent has to be the ``into`` side.
+        self.git("checkout", "-q", "-b", "pr")
+        self.write(REPORT, "# Own review\n")
+        self.write("backend/pr-impl.py", "x = 1\n")
+        pr_head = self.commit()
+        self.git("checkout", "-q", "main")
+        self.write(self.MAIN_MOVED_REPORT, "# Another review\n")
+        self.write(self.MAIN_MOVED_IMPL, "y = 1\n")
+        main_tip = self.commit()
+        # GitHub's parents, inverted subject: `Merge <base> into <head>`.
+        self.git("merge", "-q", "--no-ff", "pr", "-m", "carried implementation")
+        self.git("commit", "-q", "--amend", "-m", f"Merge {main_tip} into {pr_head}")
+        self.assertEqual(self.git("rev-parse", "HEAD^1"), main_tip)
+        self.assertEqual(self.git("rev-parse", "HEAD^2"), pr_head)
+        result = self.run_guard("--title", "chore: 整理文档", "--head-ref", "chore/750")
+        self.assertEqual(result.returncode, 1)
+        payload = json.loads(result.stdout.splitlines()[0])
+        self.assertEqual(payload["signals"], ["docs/reviews mixed with other paths"])
+        self.assertIn("backend/pr-impl.py", payload["violations"])
+        self.assertIn("not a GitHub merge ref", result.stderr)
 
     def test_a_head_checkout_uses_the_signed_off_merge_base(self) -> None:
         # A checkout pinned to the pull request head has no merge commit; three
@@ -512,6 +559,93 @@ class MergeBaseTests(GitFixture):
         self.assertTrue(payload["applicable"])
         self.assertFalse(payload["ok"])
         self.assertIn("::error title=Review PR boundary unverifiable::", result.stderr)
+
+
+class MergeParentFetchTests(GitFixture):
+    """The production shape: `fetch-depth: 1` holds the merge commit only.
+
+    `changes` checks out a single commit, so the merge ref's first parent is not
+    in the object store and the gate fetches it by SHA - the same mechanism the
+    routing step uses for `base.sha`. Every CI run takes this path and it had no
+    test; without it the comparison would be red on a fetch that never happened.
+    """
+
+    def shallow_merge_ref_clone(self) -> tuple[Path, str, str, str]:
+        pr_head, main_tip = self.merge_ref({REPORT: "# Own review\n"})
+        merge = self.git("rev-parse", "HEAD")
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        origin = Path(scratch.name) / "origin.git"
+        shallow = Path(scratch.name) / "shallow"
+        subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True)
+        # A real server only serves arbitrary reachable SHAs when told to; GitHub
+        # does, a local bare repository has to be configured to behave the same.
+        subprocess.run(
+            ["git", "-C", str(origin), "config", "uploadpack.allowReachableSHA1InWant", "true"],
+            check=True,
+        )
+        self.git("remote", "add", "origin", str(origin))
+        self.git("push", "-q", "origin", "main", "pr")
+        self.git("push", "-q", "origin", f"{merge}:refs/heads/merge-ref")
+        subprocess.run(
+            [
+                "git",
+                "clone",
+                "-q",
+                "--depth",
+                "1",
+                "--branch",
+                "merge-ref",
+                f"file://{origin}",
+                str(shallow),
+            ],
+            check=True,
+        )
+        return shallow, pr_head, main_tip, merge
+
+    def object_present(self, repo: Path, commit: str) -> bool:
+        return (
+            subprocess.run(
+                ["git", "-C", str(repo), "cat-file", "-e", f"{commit}^{{commit}}"],
+                capture_output=True,
+                check=False,
+            ).returncode
+            == 0
+        )
+
+    def test_the_merge_parent_is_fetched_before_the_comparison(self) -> None:
+        shallow, pr_head, main_tip, merge = self.shallow_merge_ref_clone()
+        self.assertFalse(self.object_present(shallow, main_tip))
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--event",
+                "pull_request",
+                "--base",
+                self.base,
+                "--head-sha",
+                pr_head,
+                "--title",
+                "review: own report",
+                "--head-ref",
+                "review/750",
+            ],
+            cwd=shallow,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout.splitlines()[0])
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["reports"], [REPORT])
+        self.assertEqual(payload["violations"], [])
+        self.assertIn(f"compared {main_tip[:12]}..{merge[:12]}", result.stdout)
+        self.assertTrue(self.object_present(shallow, main_tip))
+        # The merge ref carries the base branch tip as its first parent, so the
+        # stale base commit itself is never needed.
+        self.assertFalse(self.object_present(shallow, self.base))
 
 
 class WiringTests(unittest.TestCase):

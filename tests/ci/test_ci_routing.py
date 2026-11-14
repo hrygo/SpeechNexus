@@ -13,10 +13,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/dev-env/ci-routing.py"
+SHARD_SCRIPT = ROOT / "scripts/dev-env/integration-shards.py"
+WORKFLOW = ROOT / ".github/workflows/ci.yml"
 SPEC = importlib.util.spec_from_file_location("ci_routing", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 ROUTER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(ROUTER)
+SHARD_SPEC = importlib.util.spec_from_file_location("integration_partitioner", SHARD_SCRIPT)
+assert SHARD_SPEC is not None and SHARD_SPEC.loader is not None
+PARTITIONER = importlib.util.module_from_spec(SHARD_SPEC)
+sys.modules[SHARD_SPEC.name] = PARTITIONER
+SHARD_SPEC.loader.exec_module(PARTITIONER)
 
 
 class PathRoutingTests(unittest.TestCase):
@@ -264,7 +271,7 @@ class GitRoutingTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["mode"], "docs")
-        self.assertEqual(output.read_text(), "mode=docs\n")
+        self.assertEqual(output.read_text(), "mode=docs\nexcluded_shards=[]\n")
 
     def test_lightweight_route_still_rejects_bad_diffs(self) -> None:
         self.write("README.md", "# Updated with trailing space \n")
@@ -277,6 +284,68 @@ class GitRoutingTests(unittest.TestCase):
             check=False,
         )
         self.assertNotEqual(result.returncode, 0)
+
+
+class IntegrationLaneTests(unittest.TestCase):
+    """The route's integration lanes must be the partitioner's Web-capable lanes (#757)."""
+
+    def _collection(self) -> list[str]:
+        browser = [
+            "tests/integration/test_workbench_example_browser.py::test_page[postgresql]",
+            "tests/integration/test_workbench_example_browser.py::test_page[mysql]",
+            "tests/integration/test_workbench_orphan_probes.py::test_probe",
+        ]
+        node = list(PARTITIONER.NODE_CONTRACT_TESTS)
+        ordinary = [f"tests/integration/test_plain_{index}.py::test_db" for index in range(40)]
+        return [*browser, *node, *ordinary]
+
+    def test_web_lanes_are_exactly_the_partition_indices_that_select_web_consumers(self) -> None:
+        collection = self._collection()
+        count = ROUTER.INTEGRATION_SHARD_COUNT
+        selected_web_lanes = {
+            index
+            for index in range(count)
+            if any(
+                PARTITIONER.requires_browser(nodeid) or nodeid in PARTITIONER.NODE_CONTRACT_TESTS
+                for nodeid in PARTITIONER.partition(collection, index, count)
+            )
+        }
+        self.assertEqual(selected_web_lanes, set(ROUTER.web_lanes(count)))
+        # Every Web consumer has to run under `web`, not just some of them.
+        executed = {
+            nodeid
+            for index in ROUTER.web_lanes(count)
+            for nodeid in PARTITIONER.partition(collection, index, count)
+        }
+        self.assertLessEqual(set(collection[:5]), executed)
+
+    def test_only_the_web_route_removes_lanes_and_it_keeps_its_own_web_lanes(self) -> None:
+        count = ROUTER.INTEGRATION_SHARD_COUNT
+        self.assertEqual(ROUTER.excluded_shards("full"), ())
+        self.assertEqual(ROUTER.excluded_shards("docs"), ())
+        self.assertEqual(ROUTER.excluded_shards("no-db"), ())
+        excluded = ROUTER.excluded_shards("web")
+        self.assertEqual(
+            [row["shard"] for row in excluded],
+            sorted(set(range(count)) - set(ROUTER.web_lanes(count))),
+        )
+        # An empty matrix is a workflow error, so a route that runs the job must keep
+        # at least the Web-capable lanes.
+        self.assertTrue(ROUTER.web_lanes(count))
+        self.assertLess(len(excluded), count)
+
+    def test_router_and_workflow_agree_on_the_partition_count(self) -> None:
+        count = ROUTER.INTEGRATION_SHARD_COUNT
+        workflow = WORKFLOW.read_text()
+        self.assertIn(f"--shard-count {count}", workflow)
+        self.assertIn(f"--count {count}", workflow)
+        self.assertIn(f"shard: [{', '.join(str(index) for index in range(count))}]", workflow)
+
+    def test_static_lanes_stay_inside_the_declared_partition_count(self) -> None:
+        self.assertEqual(tuple(range(ROUTER.INTEGRATION_SHARD_COUNT)), tuple(range(6)))
+        self.assertEqual(ROUTER.web_lanes(3), (2,))
+        self.assertEqual(ROUTER.web_lanes(6), (4, 5))
+        self.assertEqual(ROUTER.web_lanes(16), (11, 12, 13, 14, 15))
 
 
 if __name__ == "__main__":

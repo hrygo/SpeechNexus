@@ -10,7 +10,7 @@ CI 使用[工作流](../../.github/workflows/ci.yml)和[标准库路由](../../s
 | 触发或变更 | 范围 |
 | --- | --- |
 | PR 仅修改根 `README.md` / `README.en.md` / `AGENTS.md`、`docs/` 内 Markdown、`.agents/skills/<skill>/` 内 Markdown / JSON / YAML | 路由回归、审查 PR 路径边界、Design Token 静态门禁、Markdown 代码块格式检查（独立作业 `docs_format`）、差异检查、矩阵新鲜度检查（仅矩阵、关联源、快照或生成器变化时重渲染）、Node Controller 镜像范围检查与其门禁、最终门禁；镜像构建按独立范围判定，通常跳过。不安装项目依赖、不启动业务测试服务。差异检查以取得准确基线为前提；否则回退全量 |
-| PR 仅修改已知 Web 源码/静态资产，可混合上述文档 | Python 静态/契约检查、覆盖率数据采集及完整 Web 检查；采集作业仍使用私有 PostgreSQL 和 MinIO，六个双数据库集成分片、覆盖率判定与部署检查不适用 |
+| PR 仅修改已知 Web 源码/静态资产，可混合上述文档 | Python 静态/契约检查、覆盖率数据采集、完整 Web 检查，以及 Web 能力道 `Integration 4`/`Integration 5`（真实后端 + PostgreSQL/MySQL/MinIO + 真实浏览器）；采集作业仍使用私有 PostgreSQL 和 MinIO，DB-only 分片 0–3、覆盖率判定与部署检查不适用 |
 | PR 仅修改已知独立引擎目录或明确列出的引擎单元测试，可混合上述 Web/文档 | `no-db`：保留 Python 静态/契约检查、覆盖率数据采集、完整 Web、构建和部署检查；采集作业仍使用私有 PostgreSQL 和 MinIO，六个双数据库集成分片、覆盖率判定及其汇总不适用 |
 | CI、脚本、测试、依赖、配置、契约、迁移、部署、其他路径或空/不确定差异 | 完整 Python/Web/部署检查，六个 PG/InnoDB/MinIO 分片及证据汇总 |
 | `main` push、手动运行及未知事件 | 始终全量 |
@@ -41,6 +41,50 @@ Skill 的说明、参考、合成评测数据及展示元数据不参与产品�
 四条守卫都只看结构，下面这些看不见：判定条件写反方向却仍读 `.ok`／`.code`（正确写法是 `if not started.ok: raise`，改写成 `if started.ok: raise` 仍绿）；把 `.ok` 读出来只打日志、随后仍不中断；`ctx.read` 里用 `psql -c "DELETE …"` 间接写库；换接收者名、别名或包进自定义函数再丢弃返回的 `ctx.mutate`；`getattr`/反射拿到的 `mutate`；`bit=` 以外的执行原语（`subprocess`、`os.system`）；对已登记站点的判定语义作任何改动；证据与被登记站点不相关（只校验它会被收集、不会被守卫认出的挂起形态停掉、断言不是字面量恒真也不会被吞）；`skipTest` 藏在 `setUp` 调用的模块级助手里（守卫只看 `setUp`/`setUpClass` 自身的语句）；运行期用 `globals()`/`exec` 或下标改写模块常量、证据方法名（守卫只数静态绑定，只扫模块体与类体里的属性赋值、`setattr`/`delattr` 与 `del`）；绑定形态按名字在整个模块里收集，因此函数体或类体里的 `type` 别名也会让同名模块常量失去可证明性，这是宁可误红的取舍；`return` 藏在非字面量条件里，或断言恒真但形态不在上面那张单子里（例如 `assertIn('a', 'abc')`）；`*` 展开与 `read` 构造助手按**名字**认，同名不同语义的本地元组骗得过；环境前置不是 shell 解析的结果（只按「行首关键字 + 字符黑名单」认前缀行，不解析 shell），黑名单以外的 shell 构造仍可能被当成前置；平台条件按写死的 Linux 判定，`wiring` 只核对 `ci.yml` 里每个作业 `runs-on`（标量、行内列表、块状列表）的标量元素等于 `CI_RUNNER_IMAGE`，既不核对镜像实际报告的平台字符串，也不读别的 workflow（含 reusable workflow）里的 runner；「判定在哪」那句描述本身属实与否（只校验反引号里的名字在入口里存在）。登记表只证明「这条命令还在、这条证据会被收集且不会被守卫认出的挂起形态停掉、这一行的判定位置确实存在」，不证明证据覆盖了该站点的语义，也不证明「判定在哪」那句描述属实——这仍由 `tests/ci` 的假 Runner 用例与真实 apply 运行负责。行数锚点挡的是「不知情的缩水」：同一次改动里改 `PINNED_COUNTS` 再跑 `tables --write` 仍可行，取舍留给评审。所以「入口有 CI 作业」不等于「入口已被完整守住」，只是「入口的结构不会在无人知晓的情况下消失」。
 
 作业级条件让不适用项明确显示 skipped；最终 CI 门禁用 `always()` 执行，核对路由成功和各项实际结果。非法/缺失路由、失败、取消或本应执行却跳过均失败。不适用不表示业务验证已通过。
+
+## Web 范围执行 Web 能力道
+
+`web` 范围此前只跑 Python 检查与 `web` 作业：`integration_shards` 的作业条件是 `mode == 'full'`，而路由把 `web/` 改动判为 `web`。因此纯前端改动从不执行唯一在真实浏览器里驱动工作台产物、真实后端、真实 PostgreSQL/MySQL 与 MinIO 的分片（4/5，#757）。#745 只改 `web/workbench/src/**`，自己的 PR 全绿，主干合并后才在 `Integration 4` 因 Playwright strict mode violation 变红；修复 PR #756 的 PR 运行里该分片同样 skipping，作者只能手动 `workflow_dispatch` 才拿到证据。另一层（`tests/web/*.behavior.spec.mjs`，在 `web` 作业里跑 preview 构建并用 `page.route` 注入应答）覆盖的是同一产物在**替身**后端下的交互，不覆盖真实后端与真实数据库那条链；两层能力不重叠，而其中一层在 `web` 路由下不执行。
+
+采用 **只跑 Web 能力道**：`web` 路由保留六片中的 4、5 两片。`ci-routing.py` 按 `mode` 输出 `excluded_shards`（`web` 为 0–3 四行，其余范围为 `[]`），工作流把它用作 `strategy.matrix.exclude`；六片仍静态声明在 `[.github/workflows/ci.yml](../../.github/workflows/ci.yml)` 里，`full` 不排除任何片，也不改变矩阵只声明六片的既有事实。分片算法、`--index` 与 `--count 6` 全未改动，所以 `web` 路由在 4、5 两片执行的 nodeid 集与 `full` 路由在同一两片执行的**完全相同**——不是另一个子集，也没有新增筛选逻辑；`tests/ci/test_ci_routing.py` 用真实分区器交叉核对「Web 能力道恰好是所有浏览器/Node 契约消费者被选中的那些片」。
+
+被排除的方案与理由：
+
+- **新增独立「Web 集成」作业**：要重复服务容器、锁定 Python/Web 依赖、构建与 Chromium 安装，还要另写一套「只跑驱动浏览器/产物的用例」选择逻辑，与六片分区、分片证据和覆盖数据脱钩，两套选择必然漂移。现有作业已经把这些前置串好，重排分片只是少展开四片。
+- **把 `web` 判成 `full`**：作业数、runner 分钟与 PR 墙钟按 `full` 增长，其中四片 DB-only 分片、部署检查与参考验收入口对 `web/` 改动没有信号；这是用全跑掩盖范围判断，也正是「不得把 full 变成默认」要避免的。
+- **只跑 `test_workbench_real_runtime_*`**：admin、删除、会议、合成探针等浏览器与 Node 契约消费者同样只在 4/5 两片执行，缩到单一文件名前缀会把同类缺口留在别的模块；分层筛选还需要在分片器之外再写一条选择路径。
+
+### 实测代价
+
+`web` 路由新增 **2 个作业**（`Integration 4`、`Integration 5`），其余作业集合不变。分片作业墙钟实测区间为 6 分 49 秒 – 9 分 41 秒（`Integration 5`：run `43573021394` 549 s、run `43575396153` 409 s；`Integration 4`：同两次运行 581 s / 481 s；每片 392 例，pytest 执行约 6 分钟，其余为锁定依赖安装、Web 构建与 Chromium 准备）。这些作业与 `python_checks`、`web` 同波次启动，因此 PR 墙钟增量是 `max(分片 4, 现有关键路径) − 现有关键路径`：现有 `web` 路由的关键路径是 `python_checks`（run `43572881930`：544 s 墙钟中 511 s 是该作业），据此增量为 **约 0–1.5 分钟**；runner 分钟增量 **约 15–19 分钟**（两片之和）。
+
+| 路由 | 作业行数 | 实际执行作业 | 分片作业 | 实测墙钟 | runner 分钟 | 覆盖真实浏览器链 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `web`（改造前，run `43572881930`） | 15 | 9 | 0（六片整体 skipping） | 9 分 04 秒 | 14.6 | 否 |
+| `web`（改造后，本方案） | 16 | 11 | 2（4、5 片） | 约 9 分 04 秒 – 10 分 10 秒 | 约 33 | 是 |
+| `full`（run `43573021394`：同一分支手动运行） | 21 | 20 | 6 | 11 分 11 秒 | 69.4 | 是 |
+
+「把 `web` 判成 `full`」的代价即最后一行：相对改造前多 6 个作业行、11 个实际执行作业、约 55 runner 分钟，相对本方案仍多 5 个作业行与约 36 runner 分钟；而其中四片 DB-only 分片、部署检查与参考验收入口对纯 Web 改动不产生信号。
+
+
+### 语义与门禁
+
+- `coordination`（`Gate: six-shard integration evidence and merged coverage`）仍是 `mode == 'full'` 专属：条件、依赖、六片必然成功、同提交完整互斥集合与实际执行证据、以及合并后的 `fail_under=80` 判定全部不变；`web`/`no-db`/`docs` 下它继续 skipped。本次移动的是**分片作业的展开范围**，不是六片证据门禁的语义。
+- 最终门禁 `Gate: required checks for this change` 新增一条范围映射：`integration_shards` 结果按范围核对——`docs`/`no-db` 期望 `skipped`，`web`/`full` 期望 `success`。这是收紧：改造前 `web` 路由对该作业没有任何要求，分片失败或被跳过都不会阻止合并；现在 `web` 上分片失败、取消或意外跳过都会让受保护检查变红。`docs`/`no-db` 的期望未变（仍不适用），`full` 上的期望与 `coordination` 重合而不冲突。
+- Web 能力道上新增一条失败关闭守卫：`web` 路由下若该片没有选中任何浏览器或 Node 契约消费者（例如收集分类被改坏、分区退化成纯哈希分片），作业直接失败，避免「跑了但没跑浏览器用例」再次以绿呈现。该步骤只在 `web` 路由执行，`full` 路由的步骤与断言不变。
+- `web` 路由下两片仍产出 `coverage-<shard>.data`，但只作为失败证据随分片制品留存：覆盖率仍只在 `full` 的单一判定点合并判定，`web`/`no-db` 不判定（既有缺口不变，见下文维护事项）。
+
+### 复现与验证
+
+```sh
+# 路由输出：pure-Web 改动应为 web，并排除 0–3 片
+python3 scripts/dev-env/ci-routing.py --event pull_request --base <sha> --output /tmp/route
+cat /tmp/route    # mode=web / excluded_shards=[{"shard": 0}, ..., {"shard": 3}]
+# 门禁与矩阵形状的结构回归（不安装项目依赖）
+python3 -m unittest discover -s tests/ci -v
+```
+
+改动集的三条反例（都必须在 PR 阶段得到预期结论）见 issue #757 与本次修复 PR 的说明：把作业条件改回 `mode == 'full'` 时，#745 那类改动的 `web` 路由运行变绿（证明是该条件在起作用）；把 `web` 判成 `full` 时作业数与 runner 分钟按上表增长；在 `web` 路由 head 上把 `aria-label` 加回去时 `Integration 4` 与最终门禁变红。
 
 正文范围的 Markdown 代码块格式由独立作业 `docs_format` 把关。Ruff 的格式化器会解析并重排 Markdown 内标记为 `python` 的代码块，而 `docs` 范围不执行 `python_contracts`，`uv run ruff format --check .` 因而在这条路径上从未运行：PR #659、#661 是单文件 `docs/reviews/` 新增（路由输出 `{"mode": "docs"}`），CI 显示 lint 作业 skipping 后正常合并，随后 `main` 的 push 运行在 `Check Python formatting with Ruff` 上变红（`docs/reviews/2026-11-13-ci-acceptance-gate.md:399`、`docs/reviews/2026-11-13-reference-acceptance-rework.md:399`），并让 #662 的同类红被误判为它自身的问题（#673）。该作业只检出仓库并用 `uvx --from "ruff==${RUFF_VERSION}"` 安装锁定版本（与 `uv.lock` 的 `ruff` 版本一致，`tests/ci/test_ci_ruff_pin.py` 双向核对这一处钉住的版本），不安装项目依赖；命令与 `python_contracts` 的格式步骤逐字相同（`ruff format --check .`），所以检查的文件集合不会比全量道窄，也不存在第二份会与路由白名单漂移的路径清单。范围映射：`docs` 期望 success，`web`／`no-db`／`full` 期望 skipped——这三种范围已由 `python_contracts` 执行同一命令，重复运行只增加固定开销；`Gate: required checks for this change` 按此映射核对，`docs` 上失败、取消或意外跳过都使门禁失败。
 
@@ -77,8 +121,8 @@ Node Controller 镜像验证由 CI 以同提交的 [reusable workflow](../../.gi
 | `changes` | `Scope routing and CI / design-token checks` | 检查路由边界、审查 PR 改动路径边界与 Design Token，按准确差异选择范围 |
 | `python_checks` | `Python: tests, coverage and package build` | Python 单元、契约、CI、Workbench PG/Runtime 及选定 Speech PG 测试，导出两 worker 覆盖率数据集（不判定）、媒体工具链及 Python 包构建 |
 | `python_contracts` | `Python: lint, types and contract compatibility` | Ruff、mypy、模块边界、生成漂移、协议兼容与 schema 校验 |
-| `integration_shards` | `Integration 0–3: PG/MySQL/MinIO`；`Integration 4–5: Web + PG/MySQL/MinIO` | 六个真实隔离服务分片；混合集合中的浏览器与 Node HTTP 消费者只分配到后两片，普通 DB 用例按估算成本分配到全部六片，具体工具需求按各片实际用例计算 |
-| `coordination` | `Gate: six-shard integration evidence and merged coverage` | 验收六片成功及同提交、完整互斥集合、实际执行证据；下载六份分片覆盖数据与采集作业数据集，合并后按 80% 判定一次，不在此节点重新执行测试 |
+| `integration_shards` | `Integration 0–3: PG/MySQL/MinIO`；`Integration 4–5: Web + PG/MySQL/MinIO` | 六个真实隔离服务分片；混合集合中的浏览器与 Node HTTP 消费者只分配到后两片，普通 DB 用例按估算成本分配到全部六片，具体工具需求按各片实际用例计算。`full` 展开六片；`web` 只展开 4、5 两片（`excluded_shards` 排除 0–3），`docs`/`no-db` 跳过整个作业 |
+| `coordination` | `Gate: six-shard integration evidence and merged coverage` | 验收六片成功及同提交、完整互斥集合、实际执行证据；下载六份分片覆盖数据与采集作业数据集，合并后按 80% 判定一次，不在此节点重新执行测试。仍只在 `full` 范围执行 |
 | `python_checks_gate` | `Gate: Python execution and static checks` | 要求 Python 执行与静态/契约两个作业均成功，不执行测试 |
 | `node_controller_image` | `Node Controller image evidence` | 调用镜像 scope、双架构构建与内部证据门禁，按输入差异决定是否构建 |
 | `docs_format` | `Docs: markdown code block formatting` | 以与 `uv.lock` 一致的锁定 Ruff 复跑 `ruff format --check .`（含 Markdown 内 Python 代码块）；只在 `docs` 范围执行，只装 Ruff 自身，不安装项目依赖 |
@@ -317,7 +361,7 @@ uv run python scripts/dev-env/python-coverage.py combine \
 
 ## 集成分片耗时与超时
 
-`integration_shards` 的作业超时为 30 分钟。超时是作业预算：改变它不改变用例选择、断言、`fail-fast`、分片算法或证据验收，也不放松任何检查。
+`integration_shards` 的作业超时为 30 分钟。超时是作业预算：改变它不改变用例选择、断言、`fail-fast`、分片算法或证据验收，也不放松任何检查。该预算与两级超时对 `web` 路由的 4、5 两片同样适用：`web` 只改变展开哪些片，不改变片的执行内容、内层上限或收尾预留。
 
 分片执行有两级超时，二者必须成对调整：
 

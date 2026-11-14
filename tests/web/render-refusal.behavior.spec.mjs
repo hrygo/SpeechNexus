@@ -684,11 +684,39 @@ test("415：刷新之后仍然不可重放，强制点击也不发出已结算�
   await expect(retainedIntent(reloaded)).toContainText("服务端已确定性拒绝这次派发");
   await expect(retainedIntent(reloaded)).not.toContainText("无法判断该拒绝是否可重试");
   await expect(dismiss(reloaded)).toBeEnabled();
-  await replay(reloaded).click({ force: true });
+  await expect(dispatch(reloaded)).toBeDisabled();
+  expect(backend.calls.generations).toHaveLength(1);
+
+  // A `disabled` control is refused by the browser before any handler runs, so a forced
+  // click cannot prove the page's own guard: it never reaches it (the #797 review measured
+  // exactly this: with the action guard deleted, this shape of assertion still passed).
+  // This case peels the layers apart the way the pre-reload 415 spec does -- drop the
+  // attribute a rendering regression would drop, click for real, then invoke the handler
+  // React would have run. The guard, not the attribute, is what keeps a reloaded settled
+  // key spent.
+  await replay(reloaded).evaluate((button) => {
+    button.disabled = false;
+  });
+  await expect(replay(reloaded)).toBeEnabled();
+  await replay(reloaded).click();
   await holdForUnexpectedRetry(page);
   expect(
     backend.calls.generations,
-    "a reloaded terminal refusal is not re-sent by a forced click",
+    "a click on a control React still renders disabled reaches no handler",
+  ).toHaveLength(1);
+
+  const reached = await replay(reloaded).evaluate((button) => {
+    const key = Object.keys(button).find((name) => name.startsWith("__reactProps$"));
+    const props = key === undefined ? null : button[key];
+    if (props === null || typeof props.onClick !== "function") return "unreachable";
+    props.onClick();
+    return "invoked";
+  });
+  expect(reached, "the spec must reach the handler to prove the reloaded guard").toBe("invoked");
+  await holdForUnexpectedRetry(page);
+  expect(
+    backend.calls.generations,
+    "a reloaded settled key is not re-sent even when its handler is invoked directly",
   ).toHaveLength(1);
   expect(backend.calls.executions).toHaveLength(0);
   expect(backend.calls.unexpected).toEqual([]);

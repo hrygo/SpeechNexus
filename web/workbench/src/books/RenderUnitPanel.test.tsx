@@ -1154,6 +1154,29 @@ describe("recovered intent after a refusal (#794)", () => {
    */
   // The parameter is a plain string so the walk can also build the raw upstream code this
   // page only aliases (MF-2); `ErrorResponse.error.code` is an open string in the contract.
+  /**
+   * Invoke the click handler React attached to a control React still renders disabled.
+   *
+   * A `disabled` control receives no mouse event, and React omits its listener, so
+   * `fireEvent.click` after stripping the attribute never reaches the page's own guard: it
+   * only shows that nothing was dispatched. The props object on the node is the one way in,
+   * and it is how the browser specs prove the same layer (#797 review MF-3).
+   */
+  async function invokeReplayHandler(control: HTMLElement) {
+    const key = Object.keys(control).find((name) => name.startsWith("__reactProps$"));
+    const props =
+      key === undefined
+        ? null
+        : ((control as unknown as Record<string, { onClick?: () => unknown } | undefined>)[key] ??
+          null);
+    expect(props?.onClick, "the control must carry the handler this test invokes").toBeTypeOf(
+      "function",
+    );
+    await act(async () => {
+      await props!.onClick!();
+    });
+  }
+
   const refusalOf = (code: string) =>
     new WorkbenchResponseError(422, {
       error: {
@@ -1276,11 +1299,18 @@ describe("recovered intent after a refusal (#794)", () => {
 
       // What the handle does is part of the same statement: a usable replay re-sends the
       // original key, and a withheld one sends nothing even when the attribute is removed
-      // from under it (the action guard, not the attribute, is what refuses the key).
+      // from under it. For the withheld rows the plain click never reaches the handler (a
+      // control React renders disabled is not wired for it), so the guard is proven by
+      // invoking the handler directly -- otherwise deleting the guard would leave this
+      // assertion green (#797 review MF-3).
       after.disabled = false;
       fireEvent.click(after);
       await waitFor(() => expect(view.generate).toHaveBeenCalledTimes(retryable ? 2 : 1));
       if (retryable) expect(view.generate.mock.calls[1]).toEqual(view.generate.mock.calls[0]);
+      else {
+        await invokeReplayHandler(after);
+        expect(view.generate, `${code} handler invocation`).toHaveBeenCalledTimes(1);
+      }
     },
   );
 
@@ -1318,11 +1348,13 @@ describe("recovered intent after a refusal (#794)", () => {
     expect(note).not.toContain("不会改变结果");
     expect(note).not.toContain("该拒绝的下一步是稍后再派发");
 
-    // Defence in depth for the same invariant: even if a future edit drops the control's
-    // `disabled` attribute, the action itself refuses to re-send the recorded key.
+    // Defence in depth for the same invariant, through the same two layers the table above
+    // uses: the attribute a rendering regression would drop, then the handler itself.
     reloaded.disabled = false;
     fireEvent.click(reloaded);
     expect(view.generate).not.toHaveBeenCalled();
+    await invokeReplayHandler(reloaded);
+    expect(view.generate, "the action guard refuses the migrated key too").not.toHaveBeenCalled();
 
     // The explicit end is the only way forward, and it clears the retained request.
     fireEvent.click(screen.getByRole("button", { name: RECOVERED_INTENT_CONTROLS.dismiss }));

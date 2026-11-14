@@ -28,6 +28,12 @@ export type RefusalCategory = "retryable" | "terminal";
  *
  * Reading it as `retryable` would let a reload re-send a key a terminal refusal had
  * already spent, so the conservative direction is the only determinate one.
+ *
+ * `unclassified` is also final once written: a panel that has no classification table
+ * stores it, and `save(load())` writes back exactly the value the one determinate reading
+ * produced, so the migration loses nothing further -- but no later reader can turn it into
+ * a category. The only way out of that record is the panel's explicit end (dismiss), not a
+ * better guess.
  */
 export type RecordedRefusal = RefusalCategory | "unclassified";
 
@@ -40,6 +46,17 @@ export type RecordedRefusal = RefusalCategory | "unclassified";
  * carries `rejected` instead of `refused`, and it is *restored* (see `#parse`) rather than
  * discarded, so a tab that upgrades mid-flight keeps its key. What this build writes is
  * only the shape below; the legacy shape is accepted on read and never written.
+ *
+ * The migration is one-way, and the down direction fails closed. A previous bundle reads
+ * *every* record this build writes -- `retryable`, `terminal`, `unclassified`, `refused:
+ * null`, even the empty record -- as an invalid shape, because its key check demands the
+ * four keys it knew; the consumer then takes its storage-error path, reports
+ * "恢复信息未能保存，已暂停提交" and locks submissions until the record goes away. Nothing
+ * is silently dropped and nothing is misread as replayable, and `sessionStorage` is
+ * tab-scoped, so closing the tab is the whole recovery. Bumping `version` would not change
+ * that: the older reader rejects the shape before it ever looks at the number, which is
+ * why there is no writer that emits both shapes -- the answer to a downgrade is the new
+ * bundle, not a record two versions can read.
  */
 export type PendingRecord<C> = {
   version: 1;
@@ -81,7 +98,7 @@ function recordShape(input: unknown): "current" | "legacy" {
 function refusedField(value: unknown): RecordedRefusal | null {
   if (value === "retryable" || value === "terminal" || value === "unclassified") return value;
   if (value === null) return null;
-  throw new Error("Invalid private recovery refusal");
+  throw new Error("Invalid private recovery state");
 }
 
 export class CommandJournal<C> {

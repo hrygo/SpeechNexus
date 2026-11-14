@@ -1149,13 +1149,12 @@ describe("recovered intent after a refusal (#794)", () => {
    * published code (#755), which is the property the walk needs, and the status-specific
    * copy (429's `Retry-After`, 415's media type) is pinned by its own case above.
    */
-  // The parameter is a plain string so the walk can also build the upstream codes this
-  // page only aliases (MF-2); the envelope is synthetic, and every published code is in the
-  // contract's union already.
+  // The parameter is a plain string so the walk can also build the raw upstream code this
+  // page only aliases (MF-2); `ErrorResponse.error.code` is an open string in the contract.
   const refusalOf = (code: string) =>
     new WorkbenchResponseError(422, {
       error: {
-        code: code as Contracts["ErrorResponse"]["error"]["code"],
+        code,
         type: "invalid_request_error",
         message: `Synthetic ${code} for the recovered-intent equation.`,
         param: null,

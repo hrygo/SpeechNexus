@@ -6,18 +6,61 @@ import {
   type Contracts,
   type WorkbenchClient,
 } from "../manuscripts/workbench-client";
+import {
+  RENDER_UNIT_DISPATCH_LIMIT,
+  RENDER_UNIT_SOURCE_LIMIT,
+  renderUnitLength,
+} from "./render-unit-bounds";
 import "./books.css";
 
 const problems = {
   unavailable: "当前部署尚未启用工作台，或连接不可用。",
   conflict: "该单元已被修改（修订冲突）。请刷新后按新修订重做，本页不会自动重试。",
   rejected: "请求被拒绝。请核对单元文本或声音后再重做。",
+  /**
+   * The 422 envelope carries no sub-reason: the shared `ErrorBody` declares only
+   * `code`/`type`/`message`/`param`/`request_id`/`retryable`, and this operation
+   * always sends `param: null` with a fixed message. So the panel names the cause
+   * from the one local fact it has — the dispatched text is over the inline
+   * bound — and renders the measured length in `problemMessage`.
+   */
+  textOverDispatch: `该单元文本超过一次派发上限 ${RENDER_UNIT_DISPATCH_LIMIT} 码元，本次派发因此被拒绝。下一步：把文本切分为每段不超过 ${RENDER_UNIT_DISPATCH_LIMIT} 码元的多个单元后分别派发。`,
   missing: "该章节或单元已不可读取。",
   unknown: "结果尚未确认。请核对连接后按原键重试，不要重新创建。",
   storage: "恢复信息未能保存，已暂停提交。请修复浏览器存储后重试。",
 } as const;
 
 export type RenderUnitProblem = keyof typeof problems;
+
+/** A problem and, when the panel could measure it, the text length that caused it. */
+interface ProblemState {
+  key: RenderUnitProblem;
+  over: number | null;
+}
+
+function problemMessage(problem: ProblemState): string {
+  if (problem.key !== "textOverDispatch" || problem.over === null) return problems[problem.key];
+  return `该单元文本 ${problem.over} 码元（UTF-16）超过一次派发上限 ${RENDER_UNIT_DISPATCH_LIMIT} 码元，因此本次派发被拒绝（422 render_submission_rejected），未生成作业。下一步：把文本切分为每段不超过 ${RENDER_UNIT_DISPATCH_LIMIT} 码元的多个单元后分别派发；${RENDER_UNIT_SOURCE_LIMIT} 码元的源容量不必缩小。`;
+}
+
+/**
+ * The two bounds are different things, and only one of them is an input bound.
+ * Showing both — and the split step for the dispatch bound — keeps the refusal
+ * from being a surprise the operator has to reverse-engineer.
+ */
+function TextBounds({ id, label, text }: { id: string; label: string; text: string }) {
+  const length = renderUnitLength(text);
+  return (
+    <p className="books-status" id={id} aria-label={`${label} 字数`}>
+      {`已 ${length} 码元（UTF-16 码元，与 maxLength 同单位） · 一次派发上限 ${RENDER_UNIT_DISPATCH_LIMIT} 码元 · 源容量上限 ${RENDER_UNIT_SOURCE_LIMIT} 码元。`}
+      {length > RENDER_UNIT_SOURCE_LIMIT
+        ? `超过源容量上限 ${RENDER_UNIT_SOURCE_LIMIT} 码元：保存该单元会被契约拒绝。`
+        : length > RENDER_UNIT_DISPATCH_LIMIT
+          ? `超过一次派发上限，不能一次派发：请切分为每段不超过 ${RENDER_UNIT_DISPATCH_LIMIT} 码元的多个单元；${RENDER_UNIT_SOURCE_LIMIT} 码元的源容量仍可保存。`
+          : "可一次派发。"}
+    </p>
+  );
+}
 
 const voiceProblems = {
   unavailable: "音色目录不可用：当前部署未配置语音底座，或底座未提供已发布音色。",
@@ -86,16 +129,28 @@ function splitVoiceKey(key: string): { voiceId: string; voiceRevision: string } 
   return { voiceId: key.slice(0, at), voiceRevision: key.slice(at + 1) };
 }
 
-function problemOf(error: unknown): RenderUnitProblem {
+/**
+ * `dispatched` is the text the panel believes the server put in the request body.
+ * It is only passed for a dispatch, and only decides whether a refusal may be
+ * attributed to the inline text bound.
+ */
+function problemOf(error: unknown, dispatched?: string): ProblemState {
   if (error instanceof WorkbenchResponseError) {
-    if (error.status === 404) return "missing";
-    if (error.code === "outcome_unknown") return "unknown";
-    if (error.code === "revision_conflict") return "conflict";
-    if (error.code === "invalid_change") return "rejected";
-    if (error.status >= 500 || error.code === "store_unavailable") return "unavailable";
-    return "unknown";
+    if (error.status === 404) return { key: "missing", over: null };
+    if (error.code === "outcome_unknown") return { key: "unknown", over: null };
+    if (error.code === "revision_conflict") return { key: "conflict", over: null };
+    if (error.code === "invalid_change") return { key: "rejected", over: null };
+    if (error.code === "render_submission_rejected") {
+      const over = dispatched === undefined ? null : renderUnitLength(dispatched);
+      return over !== null && over > RENDER_UNIT_DISPATCH_LIMIT
+        ? { key: "textOverDispatch", over }
+        : { key: "rejected", over: null };
+    }
+    if (error.status >= 500 || error.code === "store_unavailable")
+      return { key: "unavailable", over: null };
+    return { key: "unknown", over: null };
   }
-  return error instanceof TypeError ? "unavailable" : "unknown";
+  return { key: error instanceof TypeError ? "unavailable" : "unknown", over: null };
 }
 
 interface Draft {
@@ -127,7 +182,7 @@ function ChapterUnits({
 }) {
   const [units, setUnits] = useState<Contracts["RenderUnitV2"][]>([]);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
-  const [problem, setProblem] = useState<RenderUnitProblem | null>(null);
+  const [problem, setProblem] = useState<ProblemState | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
@@ -251,7 +306,7 @@ function ChapterUnits({
       setRecovery({ journal, pending: journal.load().command, rejected: false, blocked: false });
     } catch {
       setRecovery((r) => ({ ...r, blocked: true }));
-      setProblem("storage");
+      setProblem({ key: "storage", over: null });
       return false;
     }
     flight.current = true;
@@ -281,7 +336,7 @@ function ChapterUnits({
         journal.clear();
       } catch {
         setRecovery((r) => ({ ...r, blocked: true }));
-        setProblem("storage");
+        setProblem({ key: "storage", over: null });
         return false;
       }
       setRecovery({ journal, pending: null, rejected: false, blocked: false });
@@ -329,12 +384,21 @@ function ChapterUnits({
           rejected: record.rejected,
           blocked: false,
         });
-        const problem = record.uncertain ? "unknown" : problemOf(error);
-        if (command.kind === "create") setCreateProblem(problem);
-        else setProblem(problem);
+        if (command.kind === "create")
+          setCreateProblem(record.uncertain ? "unknown" : problemOf(error).key);
+        else if (record.uncertain) setProblem({ key: "unknown", over: null });
+        else
+          setProblem(
+            problemOf(
+              error,
+              command.kind === "generate"
+                ? units.find((unit) => unit.id === command.unitId)?.text
+                : undefined,
+            ),
+          );
       } catch {
         setRecovery((r) => ({ ...r, blocked: true }));
-        setProblem("storage");
+        setProblem({ key: "storage", over: null });
       }
       return false;
     } finally {
@@ -351,7 +415,7 @@ function ChapterUnits({
       setProblem(null);
     } catch {
       setRecovery((r) => ({ ...r, blocked: true }));
-      setProblem("storage");
+      setProblem({ key: "storage", over: null });
     }
   }
   async function addUnit(input: {
@@ -566,7 +630,7 @@ function ChapterUnits({
       )}
       {problem !== null && (
         <p className="books-problem" role="alert">
-          {problems[problem]}
+          {problemMessage(problem)}
         </p>
       )}
       {notice !== null && <p className="books-notice">{notice}</p>}
@@ -660,10 +724,13 @@ function ChapterUnits({
             新单元文本
             <textarea
               required
+              maxLength={RENDER_UNIT_SOURCE_LIMIT}
+              aria-describedby="create-unit-text-bounds"
               value={create.text}
               onChange={(event) => setCreateField("text", event.target.value)}
             />
           </label>
+          <TextBounds id="create-unit-text-bounds" label="新单元文本" text={create.text} />
           {voices !== null && voices.length > 0 && (
             <label>
               从已发布音色填入
@@ -869,6 +936,8 @@ function ChapterUnits({
                       {`${label} 文本`}
                       <textarea
                         value={draft.text}
+                        maxLength={RENDER_UNIT_SOURCE_LIMIT}
+                        aria-describedby={`unit-${unit.id}-text-bounds`}
                         onChange={(event) =>
                           setDrafts((current) => ({
                             ...current,
@@ -877,6 +946,11 @@ function ChapterUnits({
                         }
                       />
                     </label>
+                    <TextBounds
+                      id={`unit-${unit.id}-text-bounds`}
+                      label={`${label} 文本`}
+                      text={draft.text}
+                    />
                     <label>
                       {`${label} 已发布音色`}
                       <select

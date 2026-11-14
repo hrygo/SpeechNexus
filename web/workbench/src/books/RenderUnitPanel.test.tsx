@@ -733,3 +733,90 @@ it("labels a capped history instead of pretending it is complete", async () => {
   fireEvent.click(screen.getByRole("button", { name: "单元 1 生成历史" }));
   await screen.findByText(/仅显示最近 1 条记录/);
 });
+
+describe("render unit text bounds (#745)", () => {
+  /** A contract-valid refusal: the shared ErrorBody has no sub-reason to branch on. */
+  function refusedDispatch() {
+    return new WorkbenchResponseError(422, {
+      error: {
+        code: "render_submission_rejected",
+        type: "invalid_request_error",
+        message: "The pinned render unit cannot be dispatched as a speech Job.",
+        param: null,
+        request_id: "request-demo",
+        retryable: false,
+      },
+    });
+  }
+
+  it("shows the current length against both bounds and names the split step", async () => {
+    setup([unit({ text: "旁白".repeat(2500) })]);
+    const bounds = await screen.findByLabelText("单元 1 文本 字数");
+    expect(bounds).toHaveTextContent("已 5000 码元（UTF-16 码元，与 maxLength 同单位）");
+    expect(bounds).toHaveTextContent("一次派发上限 4096 码元");
+    expect(bounds).toHaveTextContent("源容量上限 200000 码元");
+    expect(bounds).toHaveTextContent("超过一次派发上限，不能一次派发");
+    expect(bounds).toHaveTextContent("切分为每段不超过 4096 码元的多个单元");
+    // The editor keeps the source capacity; the dispatch bound is not an input cap.
+    expect(screen.getByLabelText("单元 1 文本")).toHaveAttribute("maxLength", "200000");
+  });
+
+  it("says a text under the dispatch bound can be dispatched in one request", async () => {
+    setup();
+    const bounds = await screen.findByLabelText("单元 1 文本 字数");
+    expect(bounds).toHaveTextContent("已 6 码元");
+    expect(bounds).toHaveTextContent("可一次派发。");
+    expect(bounds).not.toHaveTextContent("超过一次派发上限");
+  });
+
+  it("counts UTF-16 code units, so astral text is never under-estimated", async () => {
+    // 2049 astral code points are one code point each but 4098 UTF-16 code units:
+    // a code-point count would say 2049 and wrongly promise a single dispatch.
+    setup([unit({ text: "𝐀".repeat(2049) })]);
+    const bounds = await screen.findByLabelText("单元 1 文本 字数");
+    expect(bounds).toHaveTextContent("已 4098 码元");
+    expect(bounds).toHaveTextContent("超过一次派发上限，不能一次派发");
+  });
+
+  it("names text over the inline bound when a dispatch is rejected", async () => {
+    const { generate } = setup([unit({ text: "旁白".repeat(2500) })]);
+    generate.mockRejectedValueOnce(refusedDispatch());
+    fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("该单元文本 5000 码元（UTF-16）");
+    expect(alert.textContent).toContain("超过一次派发上限 4096 码元");
+    expect(alert.textContent).toContain("render_submission_rejected");
+    expect(alert.textContent).toContain("切分为每段不超过 4096 码元的多个单元");
+    expect(alert.textContent).toContain("200000 码元的源容量不必缩小");
+    // The generic advice must not stand in for a cause the panel can name.
+    expect(alert.textContent).not.toContain("请核对单元文本或声音");
+    expect(alert.textContent).not.toContain("结果尚未确认");
+  });
+
+  it("keeps the generic refusal when the local text does not explain the 422", async () => {
+    const { generate } = setup();
+    generate.mockRejectedValueOnce(refusedDispatch());
+    fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
+    const alert = await screen.findByRole("alert");
+    // A refusal this panel cannot attribute must not be blamed on the text length.
+    expect(alert.textContent).toContain("请求被拒绝");
+    expect(alert.textContent).not.toContain("超过一次派发上限");
+  });
+
+  it("keeps 200000 code units editable and stops only above the source capacity", async () => {
+    setup([]);
+    await screen.findByText("该章节还没有渲染单元。");
+    const textarea = screen.getByLabelText("新单元文本");
+    expect(textarea).toHaveAttribute("maxLength", "200000");
+    fireEvent.change(textarea, { target: { value: "a".repeat(200000) } });
+    const bounds = screen.getByLabelText("新单元文本 字数");
+    expect(bounds).toHaveTextContent("已 200000 码元");
+    expect(bounds).not.toHaveTextContent("超过源容量上限");
+    expect(bounds).toHaveTextContent("超过一次派发上限，不能一次派发");
+    // One code unit more is what the source capacity refuses.
+    fireEvent.change(textarea, { target: { value: "a".repeat(200001) } });
+    expect(screen.getByLabelText("新单元文本 字数")).toHaveTextContent(
+      "超过源容量上限 200000 码元：保存该单元会被契约拒绝。",
+    );
+  });
+});

@@ -826,6 +826,7 @@ FAIL(配置写了但不对,任何阶段都必须修):前置 1
 | `up -d`/`--wait` 成功但 Job 一直 `queued` | worker 是否在反复重启；`logs job-dispatch-worker` 的首条错误 | 3、6 |
 | `POST /v1/nexus/jobs` 返回 `503 job_unavailable` | writer/admission DSN 是否为空、API 是否重建 | 1 |
 | 创建返回 `429 job_capacity_exhausted` | `engine_instances` 是否有该 binding 的 `ready` 实例 | 4 |
+| 创建返回 `422 workspace_not_configured` | 该工作空间是否注册过引擎（`workspace_quotas` 无行即未配置配额；重试不会改变结果） | 4 |
 | 创建返回 `422 job_binding_incomplete` | binding 是否带完整 `execution_defaults` | 六项之外 |
 | worker 启动即退出 | 角色守卫、`permission denied`、缺少 `voice_validation_worker_grants` | 3 |
 | Job 进入 `running` 后结果读不回 | worker 与 gateway 的 `result_bucket` 是否一致、桶是否版本化 | 5 |

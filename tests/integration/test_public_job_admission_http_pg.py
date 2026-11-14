@@ -7,9 +7,12 @@ coupled constraints found by hand in issue #690 were never pinned by a test:
 
 * a TTS create is admitted against ``workspace_quotas``, so the body must name a
   provisioned workspace. Omitting ``workspace_id`` selects ``workspace-default``,
-  which the asset migration creates without a quota row, and admission then
-  refuses with 503 ``job_unavailable`` -- a code whose message and non-retryable
-  flag describe a storage outage rather than missing capacity provisioning;
+  which the asset migration creates without a quota row, while the quota row is
+  written only by engine registration. Admission answers that deterministic
+  condition with 422 ``workspace_not_configured`` (#702); it previously answered
+  the 503 ``job_unavailable`` storage-outage code, whose message and retry shape
+  did not describe missing capacity provisioning. A failed storage read keeps the
+  503 answer, so the two cases stay distinguishable in both directions;
 * the admission plan rebuilds a ``SpeechPlan`` from the full body text, whose own
   ceiling is 4096 code points, so 4097 characters are refused. #690 narrowed
   ``TtsJobInput.text.maxLength`` to that same ceiling, so the refusal is now the
@@ -42,8 +45,9 @@ every refusal case compares the counter values, and every success case asserts
 the expected movement -- one attempt held, one slot held on the known instance,
 a positive host budget delta on the known node -- instead of "nothing changed".
 This module pins current behaviour instead of inventing a new code: #690 landed
-the text-ceiling contract correction, #702 the missing-quota 503 semantics, and
-#703 the declared receive bound with its 413 and ``job_request_too_large``.
+the text-ceiling contract correction, #702 replaced the missing-quota 503 with
+422 ``workspace_not_configured`` while keeping a genuine storage fault on 503,
+and #703 the declared receive bound with its 413 and ``job_request_too_large``.
 
 Boundaries -- what this module does not claim:
 
@@ -63,7 +67,13 @@ Boundaries -- what this module does not claim:
   assertions, so a dimension mix-up that keeps the total positive is not caught
   here.
 * The refusal cases prove the request left no committed trace in that surface;
-  they do not qualify network, commit-loss or failover behaviour. The same 400
+  they do not qualify network, commit-loss or failover behaviour. The storage-fault
+  case revokes the admission role's SELECT on ``workspace_quotas``, which models a
+  failed read of the reservation row; it is not a network partition or failover
+  qualification. A second storage case terminates that role's session, i.e. a
+  connection-level failure: the store reports an unknown outcome and the answer is
+  the retryable 503 ``job_outcome_unknown``, so the two storage failures are pinned
+  to their own retry rules instead of one shared "storage is down" code. The same 400
   answers several refusing causes: this module separates the receive bound (413)
   and the declared text ceiling (422) from it, but not bad JSON from a bad
   ``Idempotency-Key``.
@@ -445,16 +455,21 @@ async def test_text_above_the_plan_ceiling_is_refused_without_rows(
 async def test_create_without_a_provisioned_workspace_quota_is_refused_without_rows(
     admission_database: AdmissionDatabase,
 ) -> None:
-    """An unnamed workspace or a missing quota row is refused before admission.
+    """A missing quota row is a deterministic 422, never the 503 storage outage.
 
     ``JobCreateBase.workspace_id`` is optional and the server substitutes
     ``workspace-default``; admission still reserves against ``workspace_quotas``,
-    so the default workspace is only creatable where an operator registered a
-    quota for it. Provisioning that row makes the same unnamed body succeed,
-    which is the evidence that the refusal is the missing reservation target and
-    not an invalid request document. Issue #702 owns the refusal's public shape:
-    503 ``job_unavailable`` with a message and a non-retryable flag that describe
-    a storage outage rather than an unprovisioned workspace.
+    which only engine registration provisions. The asset migration seeds the
+    workspace row without a quota row, so an unregistered deployment answers a
+    schema-valid create deterministically (#702): 422 ``workspace_not_configured``,
+    non-retryable, with no row written. Provisioning that row makes the same
+    unnamed body succeed, which is the evidence that the refusal is the missing
+    reservation target and not an invalid request document.
+
+    The same case also separates the deterministic refusal from a genuine
+    storage-side failure by revoking the admission role's read: a failed quota
+    read keeps the 503 ``job_unavailable`` storage-outage answer, so moving that
+    fault onto the new 422 must fail here.
     """
     _seed(admission_database)
     db = admission_database.runtime.foundation.database
@@ -468,8 +483,8 @@ async def test_create_without_a_provisioned_workspace_quota_is_refused_without_r
         refused = await client.post(
             PREFIX, json=unnamed, headers={"Idempotency-Key": "synthetic-unnamed-workspace"}
         )
-        assert refused.status_code == 503, refused.text
-        assert _error(refused) == ("job_unavailable", "service_unavailable_error", False)
+        assert refused.status_code == 422, refused.text
+        assert _error(refused) == ("workspace_not_configured", "invalid_request_error", False)
         assert _snapshot(db) == before
 
         # A workspace row without its quota row fails identically when named.
@@ -486,8 +501,8 @@ async def test_create_without_a_provisioned_workspace_quota_is_refused_without_r
             json=_body(workspace_id="workspace-quota-gap"),
             headers={"Idempotency-Key": "synthetic-quota-gap"},
         )
-        assert gap.status_code == 503, gap.text
-        assert _error(gap) == ("job_unavailable", "service_unavailable_error", False)
+        assert gap.status_code == 422, gap.text
+        assert _error(gap) == ("workspace_not_configured", "invalid_request_error", False)
         assert _snapshot(db) == gap_before
 
         # Naming a workspace that does not exist at all stays the client error.
@@ -499,6 +514,30 @@ async def test_create_without_a_provisioned_workspace_quota_is_refused_without_r
         assert unknown.status_code == 422, unknown.text
         assert _error(unknown) == ("workspace_not_found", "invalid_request_error", False)
         assert _snapshot(db) == gap_before
+
+        # A genuine storage-side failure keeps the 503 storage-outage answer. The
+        # admission role cannot read ``workspace_quotas`` after the revoke, so this
+        # is a failed read rather than the deterministic no-row condition above.
+        assert admission_database.admission_role is not None
+        db.query(
+            f'REVOKE SELECT ON "{db.schema}".workspace_quotas '
+            f'FROM "{admission_database.admission_role}"'
+        )
+        try:
+            fault_before = _snapshot(db)
+            faulted = await client.post(
+                PREFIX,
+                json=_body(workspace_id="workspace-quota-gap"),
+                headers={"Idempotency-Key": "synthetic-storage-fault"},
+            )
+            assert faulted.status_code == 503, faulted.text
+            assert _error(faulted) == ("job_unavailable", "service_unavailable_error", False)
+            assert _snapshot(db) == fault_before
+        finally:
+            db.query(
+                f'GRANT SELECT ON "{db.schema}".workspace_quotas '
+                f'TO "{admission_database.admission_role}"'
+            )
 
         db.query(
             "INSERT INTO workspace_quotas "
@@ -515,6 +554,66 @@ async def test_create_without_a_provisioned_workspace_quota_is_refused_without_r
         # default workspace, which is the evidence the refusal was the missing
         # reservation target and not an invalid document.
         _expect_reservation(provisioned_before, _snapshot(db), "workspace-default")
+
+
+async def test_a_killed_admission_connection_is_a_retryable_unknown_outcome(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """A connection-level failure is ``job_outcome_unknown``, not ``job_unavailable``.
+
+    ``PostgresPublicJobs.create`` maps a ``psycopg.OperationalError`` -- the
+    connection died between pool checkout and the first statement -- to
+    ``outcome_unknown``, and the HTTP layer answers 503 ``job_outcome_unknown``
+    with ``retryable: true``. The rejected/ambiguous *query* refusal in the
+    sibling case above answers 503 ``job_unavailable`` with ``retryable: false``.
+    The contract must therefore not promise one retry rule for every storage
+    failure: this case is what makes the narrowed wording falsifiable, because
+    combining both failures onto either code turns one of the two cases red.
+
+    The failure is produced without a fake: a create succeeds (leaving an idle
+    admitted connection in the pool), that session is terminated server-side, and
+    the next create acquires the dead connection. Only the admission role's
+    sessions are killed, so the workspace/binding reads on the writer pool still
+    succeed and the failure lands where this case claims it does.
+    """
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    _add_spare_host(db)
+    _grant_capacity(db)
+    body = _body()
+    async with AsyncClient(
+        transport=ASGITransport(app=_app(admission_database)), base_url="http://test"
+    ) as client:
+        warm = await client.post(
+            PREFIX, json=body, headers={"Idempotency-Key": "synthetic-connection-warm"}
+        )
+        assert warm.status_code == 202, warm.text
+        assert admission_database.admission_role is not None
+        killed = db.query(
+            "SELECT pg_terminate_backend(pid) AS killed FROM pg_stat_activity "
+            "WHERE usename = %s AND pid <> pg_backend_pid()",
+            (admission_database.admission_role,),
+        )
+        assert any(row["killed"] for row in killed), killed
+        before = _snapshot(db)
+        failed = await client.post(
+            PREFIX, json=body, headers={"Idempotency-Key": "synthetic-connection-fault"}
+        )
+        assert failed.status_code == 503, failed.text
+        assert _error(failed) == ("job_outcome_unknown", "service_unavailable_error", True)
+        assert _snapshot(db) == before, "a refused connection attempt must leave no trace"
+        # ``retryable: true`` is the promise this code carries: after the pool replaces
+        # the dead connection the same key is admitted, and the fault wrote no row, so
+        # this is that key's first (and only) execution.
+        retried = await client.post(
+            PREFIX, json=body, headers={"Idempotency-Key": "synthetic-connection-fault"}
+        )
+        assert retried.status_code == 202, retried.text
+        replay = await client.post(
+            PREFIX, json=body, headers={"Idempotency-Key": "synthetic-connection-fault"}
+        )
+        assert replay.status_code == 202, replay.text
+        assert replay.json()["id"] == retried.json()["id"]
 
 
 async def test_body_over_the_receive_bound_is_refused_before_any_write(

@@ -72,6 +72,13 @@ export type RejectionOperation = "create" | "cancel" | "upload";
  * 413 `job_request_too_large` (#703) is deliberately not in this table: unlike every
  * entry above it is a third class, handled by `unreplayable` in `rejectionDisposition`
  * below, because no single disposition answers both questions it raises (#729).
+ * - 422 `workspace_not_configured`: the workspace exists but has no provisioned quota
+ *   row, so admission has nothing to charge (#702). It is *not* terminal: provisioning
+ *   the workspace admits the same body under the same idempotency key, so the durable
+ *   intent must stay replayable (`intent-kept`). It is deliberately kept apart from the
+ *   503 `job_unavailable` storage outage: both keep the intent, but the status and code
+ *   tell the user which refusal happened. It is absent from `settlesReplayedIntent`
+ *   below, which only spends a create intent.
  */
 const rejectionTable = [
   [503, "job_outcome_unknown", "unknown-outcome"],
@@ -79,6 +86,10 @@ const rejectionTable = [
   [503, "job_admission_contended", "intent-kept"],
   [503, "asset_inspection_busy", "intent-kept"],
   [429, "job_capacity_exhausted", "intent-kept"],
+  // A missing quota row is a configuration gap, not a closed door: after an operator
+  // registers an engine for the workspace, this same body under this same key is
+  // admitted, so spending the intent would strand a replayable request (#702 review M1).
+  [422, "workspace_not_configured", "intent-kept"],
 ] as const satisfies readonly (readonly [number, string, RejectionDisposition])[];
 
 /** Exported for the disposition table's own tests; the session is the only caller. */
@@ -167,6 +178,11 @@ export function rejectionDisposition(
  * - `asset_not_ready`: `_require_inputs` (:833 → :1379-1431), plus the admission store's
  *   own `asset_not_ready` rejection (:1468-1488), which runs inside the admission
  *   transaction, i.e. even later than the key check (#715).
+ *
+ * `workspace_not_configured` is deliberately absent: the admission store emits it after
+ * the key check, so it *would* prove that no earlier attempt became a Job, but it is a
+ * configuration refusal rather than a closed door -- replaying the same key succeeds once
+ * the workspace has a quota row -- so the intent must not be spent (#702 review M1).
  */
 export function settlesReplayedIntent(error: {
   readonly status: number;

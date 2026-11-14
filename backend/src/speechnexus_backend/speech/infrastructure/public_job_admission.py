@@ -157,14 +157,37 @@ def _binding(cursor: _Cursor, model_id: str, revision: str) -> tuple[str, int, d
 
 
 def _quota(cursor: _Cursor, workspace_id: str) -> dict[str, Any]:
-    return _one(
-        cursor,
+    """Resolve the reservation row; no row is a configuration fact, not an outage.
+
+    ``speech_workspaces`` is seeded with ``workspace-default`` by the asset
+    migration, while ``workspace_quotas`` is written only when an engine is
+    registered for that workspace. A create for a workspace without a quota row
+    can therefore never be admitted by retrying, so it must not answer the
+    storage-outage code: the empty read is deterministic and reported as
+    ``workspace_not_configured``. A failed read (an exception) stays
+    ``job_unavailable``. The workspace row itself is created by that migration
+    and has no product deletion path -- the admin surface creates and patches
+    state -- so the join's empty result cannot mean a vanished workspace;
+    ``PublicJobs`` has already answered ``workspace_not_found`` for an unknown id
+    before admission.
+    """
+    cursor.execute(
         "SELECT q.policy_revision, q.version, q.held_attempts, q.quarantined_attempts, "
         "w.policy_revision AS workspace_policy_revision "
         "FROM workspace_quotas AS q JOIN speech_workspaces AS w "
         "ON w.workspace_id=q.workspace_id WHERE q.workspace_id=%s",
         (workspace_id,),
     )
+    rows = cursor.fetchall()
+    if not rows:
+        raise PublicJobAdmissionRejectedError("workspace_not_configured")
+    if len(rows) != 1:
+        # Defensive only: both joined columns are primary keys, so the join yields at
+        # most one row and this branch is unreachable under the shipped schema. It
+        # answers the storage-outage code rather than a caller-fixable 4xx because
+        # duplicated reservation rows would be data the store cannot reconcile.
+        raise PublicJobAdmissionRejectedError("job_unavailable")
+    return rows[0]
 
 
 def _instance(cursor: _Cursor, binding_revision_id: str) -> dict[str, Any]:

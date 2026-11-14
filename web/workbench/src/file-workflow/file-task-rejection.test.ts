@@ -152,6 +152,10 @@ describe("replayed-intent settlement predicate", () => {
     [422, "asset_not_ready", true],
     [422, "model_binding_retired", true],
     [422, "model_binding_task_not_supported", true],
+    // #702 review M1: a missing quota row is answered after the key check, yet it is
+    // not a spent intent -- the same key is admitted once an operator provisions the
+    // workspace -- so it must not settle an earlier unobserved attempt either.
+    [422, "workspace_not_configured", false],
     // Answers that may precede the key lookup (auth, gateway, body parsing): never settle.
     [401, "invalid_credentials", false],
     [403, "forbidden", false],
@@ -194,6 +198,11 @@ describe("submission rejection disposition", () => {
     [429, "job_capacity_exhausted", "intent-kept"],
     [503, "job_unavailable", "intent-kept"],
     [503, "job_admission_contended", "intent-kept"],
+    // #702 review M1: a workspace without a provisioned quota row is a deterministic
+    // refusal, but not a terminal one -- provisioning the workspace admits the same
+    // request under the same key, so the intent stays replayable like the 503 outage
+    // (which shares the disposition; the status and code still tell them apart).
+    [422, "workspace_not_configured", "intent-kept"],
   ] as const)("%i %s is %s", (status, code, disposition) => {
     expect(rejectionDisposition(status, code, "create")).toBe(disposition);
   });
@@ -388,6 +397,57 @@ describe("submission rejection classes", () => {
     await session.replay();
     expect(f.stats.createKeys).toHaveLength(1);
     session.dispose();
+  });
+
+  it("keeps a missing workspace quota replayable instead of spending the intent", async () => {
+    // #702 review M1: admission refuses the create because the workspace has no
+    // `workspace_quotas` row (the asset migration seeds the workspace; engine
+    // registration seeds its quota). That refusal is deterministic only *until an
+    // operator provisions the workspace*: afterwards the same body under the same key is
+    // admitted. Calling it terminal stranded a replayable intent -- and the pre-fix 503
+    // `job_unavailable` kept it -- so the intent must stay `intent-kept`.
+    const f = setup({
+      create: (attempt) =>
+        attempt === 0
+          ? rejection(422, "workspace_not_configured")
+          : Response.json(job(), { status: 202 }),
+    });
+    const session = f.make();
+    await session.start(file(), "asr-quality");
+    const refused = session.getSnapshot();
+    // This attempt was refused, but the same intent may still succeed: unknown stays
+    // clear, the intent stays replayable and nothing is presented as spent.
+    expect(refused).toMatchObject({ unknown: false, canReplay: true });
+    expect(refused.rejected).toBeUndefined();
+    expect(refused.recovery).toBeUndefined();
+    expect(refused.notice).toContain("422");
+    expect(refused.notice).toContain("workspace_not_configured");
+    expect(refused.notice).toContain("原意图已保留");
+    expect(refused.notice).toContain("不要新建任务");
+    // No settlement is persisted, and the page offers replay rather than an explicit end.
+    expect(f.stored()).toMatchObject({ pending: "create", jobId: null });
+    expect(f.stored()?.settled).toBeUndefined();
+    expect(canFinishTask(refused)).toBe(false);
+    // The 503 storage outage shares the replayable disposition by design; it is the
+    // visible status and code, not the disposition, that tell the user which refusal
+    // happened. What must never come back is the terminal classification (#702 M1).
+    expect(rejectionDisposition(503, "job_unavailable", "create")).toBe("intent-kept");
+    expect(rejectionDisposition(422, "workspace_not_configured", "create")).toBe("intent-kept");
+    expect(rejectionDisposition(422, "workspace_not_configured", "create")).not.toBe("terminal");
+    session.dispose();
+    // A reload cannot prove the refusal was observed, so it stays conservative: the
+    // intent is replayable with the unknown flag raised (the accepted cost of not
+    // adding a separate "settled but replayable" state).
+    const restored = f.make();
+    await restored.restore();
+    expect(restored.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    // The load-bearing proof: the *same* key is admitted once the workspace is
+    // provisioned, and the replay creates exactly one execution.
+    await restored.replay();
+    expect(restored.getSnapshot().job?.id).toBe("job-demo");
+    expect(new Set(f.stats.createKeys).size).toBe(1);
+    expect(f.stats.executions).toBe(1);
+    restored.dispose();
   });
 
   it("treats a body over the deployment receive bound as a refusal, not an unknown outcome", async () => {

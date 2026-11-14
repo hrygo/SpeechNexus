@@ -1137,9 +1137,12 @@ describe("render unit text bounds (#745)", () => {
  * The walk covers the whole vocabulary, so a new code cannot ship with the two
  * disagreeing: it has to be classified, and its copy has to match that classification.
  *
- * The state depends on what *this tab* observed, not only on the journal's refusal bit: a
- * rejection restored by a reload is `recorded`, because the record keeps no category and
- * the aside may then claim neither "可重试" nor "确定性拒绝" (#794 review MF-1).
+ * `#798` closed the other half: the state used to depend on what *this tab* observed, so a
+ * rejection restored by a reload was `recorded` -- the record kept no category, and the
+ * aside could claim neither "可重试" nor "确定性拒绝". The journal now persists the
+ * category, so a reload reads the same state the tab read; `recorded` survives only for a
+ * record written before the category existed, which is read as the conservative
+ * "a refusal happened, its category is unknown" (never as retryable).
  */
 describe("recovered intent after a refusal (#794)", () => {
   /**
@@ -1151,6 +1154,29 @@ describe("recovered intent after a refusal (#794)", () => {
    */
   // The parameter is a plain string so the walk can also build the raw upstream code this
   // page only aliases (MF-2); `ErrorResponse.error.code` is an open string in the contract.
+  /**
+   * Invoke the click handler React attached to a control React still renders disabled.
+   *
+   * A `disabled` control receives no mouse event, and React omits its listener, so
+   * `fireEvent.click` after stripping the attribute never reaches the page's own guard: it
+   * only shows that nothing was dispatched. The props object on the node is the one way in,
+   * and it is how the browser specs prove the same layer (#797 review MF-3).
+   */
+  async function invokeReplayHandler(control: HTMLElement) {
+    const key = Object.keys(control).find((name) => name.startsWith("__reactProps$"));
+    const props =
+      key === undefined
+        ? null
+        : ((control as unknown as Record<string, { onClick?: () => unknown } | undefined>)[key] ??
+          null);
+    expect(props?.onClick, "the control must carry the handler this test invokes").toBeTypeOf(
+      "function",
+    );
+    await act(async () => {
+      await props!.onClick!();
+    });
+  }
+
   const refusalOf = (code: string) =>
     new WorkbenchResponseError(422, {
       error: {
@@ -1222,49 +1248,119 @@ describe("recovered intent after a refusal (#794)", () => {
     expect(screen.getByText(RECOVERED_INTENT.settled.note)).toBeTruthy();
   });
 
+  /**
+   * `#798`: one refusal, one offer -- whichever side of a reload it is read from.
+   *
+   * Every row is measured twice: in the tab that saw the refusal, and after a reload of that
+   * tab over the same journal. The two must agree on the control, on what a click does, and
+   * on whether the copy names a retry; only the paragraph that carries the copy changes
+   * (the server's alert in-tab, the aside's note after). The reload is a real one -- the
+   * panel is unmounted and a new one restores the record from `sessionStorage` -- so a row
+   * cannot pass by the state being kept in memory.
+   */
   it.each([
-    ["render_submission_media_unsupported", "重复提交不会改变结果"],
-    ["render_submission_rate_limited", "可重试"],
-  ])(
-    "does not call a reloaded %s refusal deterministic, and it stays unreplayable",
-    async (code, copy) => {
+    ["429 rate limited", "render_submission_rate_limited", "kept"],
+    ["cleanup wait", "render_submission_cleanup_pending", "kept"],
+    ["raw cleanup 409", "execution_cleanup_pending", "kept"],
+    ["415 media unsupported", "render_submission_media_unsupported", "settled"],
+    ["403 permission denied", "render_submission_permission_denied", "settled"],
+    ["409 idempotency conflict", "render_submission_idempotency_conflict", "settled"],
+  ] as const)(
+    "%s offers the same handle before and after a reload",
+    async (_label, code, state) => {
       const view = setup();
       view.generate.mockRejectedValueOnce(refusalOf(code));
       fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
       const alert = await screen.findByRole("alert");
-      expect(alert.textContent).toContain(copy);
+      const retryable = state === "kept";
+      // The classification the operator is handed before the reload: the copy names a retry
+      // exactly when the refusal is retryable, which is the same equation #794 asserts.
+      expect(alert.textContent?.includes("可重试"), `${code} alert`).toBe(retryable);
 
-      // The journal keeps one refusal bit, which cannot tell a terminal refusal from a
-      // retryable one. A reload must therefore neither re-offer a possibly spent key, nor
-      // repeat the terminal reading for a refusal whose answer said the opposite -- #794's
-      // first review caught the second half (MF-1).
+      // Before the reload: the state, its note, and the request count it starts from.
+      const before = screen.getByRole<HTMLButtonElement>("button", {
+        name: RECOVERED_INTENT_CONTROLS.replay,
+      });
+      expect(before.disabled, `${code} before the reload`).toBe(!retryable);
+      expect(screen.getByText(RECOVERED_INTENT[state].note)).toBeTruthy();
+      expect(view.generate).toHaveBeenCalledTimes(1);
+
+      // The reload: a new panel reading the record the previous one wrote.
       view.unmount();
       render(<RenderUnitPanel client={view.client} chapter={chapter} />);
       await screen.findByRole("list", { name: "单元列表" });
-      const reloaded = screen.getByRole<HTMLButtonElement>("button", {
+      const after = screen.getByRole<HTMLButtonElement>("button", {
         name: RECOVERED_INTENT_CONTROLS.replay,
       });
-      expect(reloaded).toBeDisabled();
-      expect(screen.getByText(RECOVERED_INTENT.recorded.note)).toBeTruthy();
-      // The aside may claim only what the record still holds: that a refusal was recorded.
-      const note = screen.getByText(RECOVERED_INTENT.recorded.note).textContent ?? "";
-      expect(note).toContain("服务端拒绝过这次派发");
-      expect(note).not.toContain("确定性拒绝");
-      expect(note).not.toContain("不会改变结果");
-      expect(note).not.toContain("该拒绝的下一步是稍后再派发");
+      expect(after.disabled, `${code} after the reload`).toBe(!retryable);
+      expect(screen.getByText(RECOVERED_INTENT[state].note)).toBeTruthy();
+      // The aside carries the same statement after the reload: the wait, or its absence.
+      expect(RECOVERED_INTENT[state].note.includes("可重试"), `${code} note`).toBe(retryable);
 
-      // Defence in depth for the same invariant: even if a future edit drops the control's
-      // `disabled` attribute, the action itself refuses to re-send the recorded key.
-      reloaded.disabled = false;
-      fireEvent.click(reloaded);
-      expect(view.generate).toHaveBeenCalledTimes(1);
-
-      // The explicit end is the only way forward, and it clears the retained request.
-      fireEvent.click(screen.getByRole("button", { name: RECOVERED_INTENT_CONTROLS.dismiss }));
-      await waitFor(() => expect(screen.queryByText(RECOVERED_INTENT.recorded.note)).toBeNull());
-      expect(screen.queryByRole("button", { name: RECOVERED_INTENT_CONTROLS.dismiss })).toBeNull();
+      // What the handle does is part of the same statement: a usable replay re-sends the
+      // original key, and a withheld one sends nothing even when the attribute is removed
+      // from under it. For the withheld rows the plain click never reaches the handler (a
+      // control React renders disabled is not wired for it), so the guard is proven by
+      // invoking the handler directly -- otherwise deleting the guard would leave this
+      // assertion green (#797 review MF-3).
+      after.disabled = false;
+      fireEvent.click(after);
+      await waitFor(() => expect(view.generate).toHaveBeenCalledTimes(retryable ? 2 : 1));
+      if (retryable) expect(view.generate.mock.calls[1]).toEqual(view.generate.mock.calls[0]);
+      else {
+        await invokeReplayHandler(after);
+        expect(view.generate, `${code} handler invocation`).toHaveBeenCalledTimes(1);
+      }
     },
   );
+
+  it("keeps a record written before #798 unreplayable, and says only what it holds", async () => {
+    // The migration reading is a property of the panel, not only of the journal: a record
+    // that says "rejected" and nothing else cannot say whether the refusal was retryable,
+    // so the reload takes the direction that cannot re-send a spent key. Reading it as
+    // retryable would turn this case red, which is the assertion #798's migration rests on.
+    sessionStorage.setItem(
+      "speechnexus.workbench.units.chapter_demo.pending.v1",
+      JSON.stringify({
+        version: 1,
+        command: {
+          kind: "generate",
+          chapterId: "chapter_demo",
+          unitId: "unit_demo",
+          expectedRevision: "1",
+          key: "legacy-key",
+        },
+        uncertain: false,
+        rejected: true,
+      }),
+    );
+    const view = setup();
+    await screen.findByRole("list", { name: "单元列表" });
+    const reloaded = screen.getByRole<HTMLButtonElement>("button", {
+      name: RECOVERED_INTENT_CONTROLS.replay,
+    });
+    expect(reloaded).toBeDisabled();
+    expect(screen.getByText(RECOVERED_INTENT.recorded.note)).toBeTruthy();
+    // The aside may claim only what the record still holds: that a refusal was recorded.
+    const note = screen.getByText(RECOVERED_INTENT.recorded.note).textContent ?? "";
+    expect(note).toContain("服务端拒绝过这次派发");
+    expect(note).not.toContain("确定性拒绝");
+    expect(note).not.toContain("不会改变结果");
+    expect(note).not.toContain("该拒绝的下一步是稍后再派发");
+
+    // Defence in depth for the same invariant, through the same two layers the table above
+    // uses: the attribute a rendering regression would drop, then the handler itself.
+    reloaded.disabled = false;
+    fireEvent.click(reloaded);
+    expect(view.generate).not.toHaveBeenCalled();
+    await invokeReplayHandler(reloaded);
+    expect(view.generate, "the action guard refuses the migrated key too").not.toHaveBeenCalled();
+
+    // The explicit end is the only way forward, and it clears the retained request.
+    fireEvent.click(screen.getByRole("button", { name: RECOVERED_INTENT_CONTROLS.dismiss }));
+    await waitFor(() => expect(screen.queryByText(RECOVERED_INTENT.recorded.note)).toBeNull());
+    expect(screen.queryByRole("button", { name: RECOVERED_INTENT_CONTROLS.dismiss })).toBeNull();
+  });
 
   it("reads the raw cleanup 409 as the retryable wait, and keeps its own code for diagnosis", async () => {
     // The dispatch route maps this upstream code to `render_submission_cleanup_pending`, so a

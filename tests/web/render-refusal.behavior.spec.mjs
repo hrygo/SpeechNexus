@@ -335,7 +335,8 @@ test("429：按服务端声明的延时渲染计时文案，重试按钮真的�
   // outcome is unknown.
   await expect(replay(units)).toBeEnabled();
   await expect(dismiss(units)).toBeEnabled();
-  await expect(retainedIntent(units)).toContainText("该拒绝的下一步是稍后再派发");
+  await expect(retainedIntent(units)).toContainText("该拒绝可重试");
+  await expect(retainedIntent(units)).toContainText("等待后用原键重新派发");
   // Nothing may be dispatchable behind the retry: the unit button is the fresh-dispatch
   // path and it stays locked while the original intent is unresolved.
   await expect(dispatch(units)).toBeDisabled();
@@ -590,7 +591,7 @@ test("409 execution_cleanup_pending：提示等清理完成再重试，且按原
   // dispatch -- is the handle the panel must leave usable, and the aside may not call the
   // outcome unknown.
   await expect(replay(units)).toBeEnabled();
-  await expect(retainedIntent(units)).toContainText("该拒绝的下一步是稍后再派发");
+  await expect(retainedIntent(units)).toContainText("该拒绝可重试");
   expect(backend.calls.generations).toHaveLength(1);
   expect(backend.calls.executions).toHaveLength(0);
   expect(backend.calls.reads).toBe(0);
@@ -600,5 +601,123 @@ test("409 execution_cleanup_pending：提示等清理完成再重试，且按原
   expect(backend.calls.generations).toHaveLength(2);
   expect(backend.calls.generations[1]).toBe(backend.calls.generations[0]);
   expect(backend.calls.executions).toEqual([ids.job]);
+  expect(backend.calls.unexpected).toEqual([]);
+});
+
+/**
+ * `#798`: the offer survives the reload -- one refusal, one handle on both sides.
+ *
+ * `#794` made the in-tab offer follow the refusal's classification, but the journal kept a
+ * single "was refused" bit: the same 429 was replayable before a reload and withheld after
+ * one, because the reloaded page could not tell a retryable refusal from a spent key. The
+ * category is now persisted with the record, so these two cases measure the same two
+ * refusals on the other side of a real `page.reload()`: the browser's own storage
+ * (`sessionStorage`, per tab) carries the record, the server's second answer is the same
+ * stub, and the request log only grows where the aside says it may.
+ */
+test("429：刷新之后仍然可以按原键重放，且只重发同一次派发", async ({ page }) => {
+  const backend = await installBackend(page);
+  backend.plan.generate = (index) =>
+    index === 0
+      ? {
+          status: 429,
+          json: refusal(429, "render_submission_rate_limited", {
+            retryable: true,
+            retryAfterMs: 3000,
+          }),
+          headers: { "Retry-After": "3" },
+        }
+      : { status: 202, json: responses().accepted };
+
+  const units = await openRenderUnits(page);
+  await expectNetworkLocked(page);
+  await dispatch(units).click();
+  await expect(problem(units)).toContainText("至少等待 3 秒");
+  await expect(replay(units)).toBeEnabled();
+  expect(backend.calls.generations).toHaveLength(1);
+
+  // The reload a page cannot avoid: the record is the only thing that crosses it, so what
+  // the aside says here is exactly what the previous tab wrote down.
+  await page.reload();
+  const reloaded = await openRenderUnits(page);
+  await expect(replay(reloaded)).toBeEnabled();
+  await expect(dismiss(reloaded)).toBeEnabled();
+  await expect(retainedIntent(reloaded)).toContainText("该拒绝可重试");
+  await expect(retainedIntent(reloaded)).toContainText("等待后用原键重新派发");
+  // No paragraph may report the refusal as unknown on this side of the reload either.
+  await expect(reloaded.getByText("结果尚未确认")).toHaveCount(0);
+  await expect(replay(reloaded)).toBeEnabled();
+  expect(backend.calls.generations, "a reload sends nothing on its own").toHaveLength(1);
+  expect(backend.calls.executions).toHaveLength(0);
+
+  await replay(reloaded).click();
+  await expect(reloaded.getByText(new RegExp(`语音作业 ${ids.job}`))).toHaveCount(1);
+  // Exactly one further request, carrying the key the refused dispatch used, and exactly
+  // one execution: the retry reconciled with the original intent instead of re-inventing it.
+  expect(backend.calls.generations, "the reloaded retry is one request").toHaveLength(2);
+  expect(backend.calls.generations[1], "the reloaded retry reuses the original key").toBe(
+    backend.calls.generations[0],
+  );
+  expect(backend.calls.executions).toEqual([ids.job]);
+  expect(backend.calls.unexpected).toEqual([]);
+});
+
+test("415：刷新之后仍然不可重放，强制点击也不发出已结算的键", async ({ page }) => {
+  const backend = await installBackend(page);
+  backend.plan.generate = () => ({
+    status: 415,
+    json: refusal(415, "render_submission_media_unsupported"),
+  });
+
+  const units = await openRenderUnits(page);
+  await expectNetworkLocked(page);
+  await dispatch(units).click();
+  await expect(problem(units)).toContainText("重复提交不会改变结果");
+  await expect(replay(units)).toBeDisabled();
+  expect(backend.calls.generations).toHaveLength(1);
+
+  await page.reload();
+  const reloaded = await openRenderUnits(page);
+  // The terminal reading is persisted with the refusal, so the reloaded page does not fall
+  // back to "the record cannot say" and does not re-offer the key either (#798).
+  await expect(replay(reloaded)).toBeDisabled();
+  await expect(retainedIntent(reloaded)).toContainText("服务端已确定性拒绝这次派发");
+  await expect(retainedIntent(reloaded)).not.toContainText("无法判断该拒绝是否可重试");
+  await expect(dismiss(reloaded)).toBeEnabled();
+  await expect(dispatch(reloaded)).toBeDisabled();
+  expect(backend.calls.generations).toHaveLength(1);
+
+  // A `disabled` control is refused by the browser before any handler runs, so a forced
+  // click cannot prove the page's own guard: it never reaches it (the #797 review measured
+  // exactly this: with the action guard deleted, this shape of assertion still passed).
+  // This case peels the layers apart the way the pre-reload 415 spec does -- drop the
+  // attribute a rendering regression would drop, click for real, then invoke the handler
+  // React would have run. The guard, not the attribute, is what keeps a reloaded settled
+  // key spent.
+  await replay(reloaded).evaluate((button) => {
+    button.disabled = false;
+  });
+  await expect(replay(reloaded)).toBeEnabled();
+  await replay(reloaded).click();
+  await holdForUnexpectedRetry(page);
+  expect(
+    backend.calls.generations,
+    "a click on a control React still renders disabled reaches no handler",
+  ).toHaveLength(1);
+
+  const reached = await replay(reloaded).evaluate((button) => {
+    const key = Object.keys(button).find((name) => name.startsWith("__reactProps$"));
+    const props = key === undefined ? null : button[key];
+    if (props === null || typeof props.onClick !== "function") return "unreachable";
+    props.onClick();
+    return "invoked";
+  });
+  expect(reached, "the spec must reach the handler to prove the reloaded guard").toBe("invoked");
+  await holdForUnexpectedRetry(page);
+  expect(
+    backend.calls.generations,
+    "a reloaded settled key is not re-sent even when its handler is invoked directly",
+  ).toHaveLength(1);
+  expect(backend.calls.executions).toHaveLength(0);
   expect(backend.calls.unexpected).toEqual([]);
 });

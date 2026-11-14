@@ -1,5 +1,5 @@
 import { unitJournal, type UnitCommand } from "./book-journal";
-import type { CommandJournal } from "../recovery/command-journal";
+import type { CommandJournal, RecordedRefusal } from "../recovery/command-journal";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   WorkbenchResponseError,
@@ -17,12 +17,7 @@ import {
   refusedCode,
   type RenderRefusalCode,
 } from "./render-refusals";
-import {
-  RECOVERED_INTENT,
-  RECOVERED_INTENT_CONTROLS,
-  recoveredIntentOf,
-  type ObservedAnswer,
-} from "./recovered-intent";
+import { RECOVERED_INTENT, RECOVERED_INTENT_CONTROLS, recoveredIntentOf } from "./recovered-intent";
 
 const problems = {
   unavailable: "当前部署尚未启用工作台，或连接不可用。",
@@ -352,14 +347,13 @@ function ChapterUnits({
   const [recovery, setRecovery] = useState<{
     journal: CommandJournal<UnitCommand> | null;
     pending: UnitCommand | null;
-    rejected: boolean;
     /**
-     * The answer this tab observed for the retained command, as `RECOVERED_INTENT` reads it:
-     * `kept` when the refusal's own step is another dispatch of the same intent, `settled`
-     * when its copy says repeating it cannot change the outcome, `none` when nothing was
-     * observed here (a refusal restored by a reload, which the journal cannot classify).
+     * The refusal the journal holds for the retained command, or `null` when it holds none.
+     * The category is persisted with the record (#798), so this is the same value before
+     * and after a reload; the aside and both controls are read from it through
+     * `recoveredIntentOf`, which is the panel's only reading of the record.
      */
-    answer: ObservedAnswer;
+    refused: RecordedRefusal | null;
     blocked: boolean;
   }>(() => {
     try {
@@ -367,15 +361,9 @@ function ChapterUnits({
         record = journal.load();
       if (record.command && record.command.chapterId !== chapter.id)
         throw new Error("Unit scope mismatch");
-      return {
-        journal,
-        pending: record.command,
-        rejected: record.rejected,
-        answer: "none",
-        blocked: false,
-      };
+      return { journal, pending: record.command, refused: record.refused, blocked: false };
     } catch {
-      return { journal: null, pending: null, rejected: false, answer: "none", blocked: true };
+      return { journal: null, pending: null, refused: null, blocked: true };
     }
   });
   const owner = useRef({ generation: 0, alive: true });
@@ -487,8 +475,7 @@ function ChapterUnits({
       setRecovery({
         journal,
         pending: journal.load().command,
-        rejected: false,
-        answer: "none",
+        refused: null,
         blocked: false,
       });
     } catch {
@@ -526,7 +513,7 @@ function ChapterUnits({
         setProblem({ key: "storage" });
         return false;
       }
-      setRecovery({ journal, pending: null, rejected: false, answer: "none", blocked: false });
+      setRecovery({ journal, pending: null, refused: null, blocked: false });
       setUnits((current) =>
         command.kind === "create"
           ? [...current.filter((item) => item.id !== updated.id), updated]
@@ -567,22 +554,31 @@ function ChapterUnits({
         error.status >= 400 &&
         error.status < 500 &&
         error.status !== 408;
+      const stored =
+        command.kind === "generate"
+          ? units.find((unit) => unit.id === command.unitId)?.text
+          : undefined;
+      // One answer for the alert and the record: an earlier unobserved attempt keeps the
+      // unknown outcome, otherwise the refusal is reported as the server stated it, and
+      // that same classification decides whether the retained key is still usable (#794).
+      // The classification is now written down beside the refusal, not only rendered from
+      // it, so a reload reads the answer this tab read (#798). `keepsReplay` stays the one
+      // place the panel turns a disposition into "may this key be re-sent", so the record
+      // and the alert cannot disagree.
+      const answer = problemOf(error, stored);
+      const category: RecordedRefusal | null = !rejected
+        ? null
+        : keepsReplay(answer)
+          ? "retryable"
+          : "terminal";
       try {
-        journal.failure(rejected);
+        journal.failure(category);
         const record = journal.load();
-        const stored =
-          command.kind === "generate"
-            ? units.find((unit) => unit.id === command.unitId)?.text
-            : undefined;
-        // One answer for the alert and the aside: an earlier unobserved attempt keeps the
-        // unknown answer, otherwise the refusal is reported as the server stated it, and
-        // that same problem decides whether the retained key is still usable (#794).
-        const shown: UnitProblem = record.uncertain ? { key: "unknown" } : problemOf(error, stored);
+        const shown: UnitProblem = record.uncertain ? { key: "unknown" } : answer;
         setRecovery({
           journal,
           pending: record.command,
-          rejected: record.rejected,
-          answer: keepsReplay(shown) ? "kept" : "settled",
+          refused: record.refused,
           blocked: false,
         });
         if (command.kind === "create") setCreateProblem(shown);
@@ -598,14 +594,13 @@ function ChapterUnits({
     }
   }
   function dismissRejected() {
-    if (!recovery.rejected || busy || !recovery.journal) return;
+    if (recovery.refused === null || busy || !recovery.journal) return;
     try {
       recovery.journal.clear();
       setRecovery((r) => ({
         ...r,
         pending: null,
-        rejected: false,
-        answer: "none",
+        refused: null,
         blocked: false,
       }));
       setCreateProblem(null);

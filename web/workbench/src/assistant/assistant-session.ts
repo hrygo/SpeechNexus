@@ -89,8 +89,8 @@ export class AssistantSession {
       this.#state = {
         ...this.#state,
         pending: record.command,
-        rejected: record.rejected,
-        problem: record.command ? (record.rejected ? "rejected" : "unknown") : null,
+        rejected: record.refused !== null,
+        problem: record.command ? (record.refused !== null ? "rejected" : "unknown") : null,
       };
     } catch {
       this.#state = { ...this.#state, blocked: true, problem: "storage" };
@@ -231,11 +231,15 @@ export class AssistantSession {
         error.status < 500 &&
         ![408, 429].includes(error.status);
       try {
-        this.#journal.failure(rejected);
+        // This session holds no refusal table of its own -- #755 classifies the render
+        // dispatch, not an assistant turn -- so it records that a refusal was observed
+        // without a category. `unclassified` is the one value no reader may take as
+        // retryable (#798); this panel never re-offers a key on that basis anyway.
+        this.#journal.failure(rejected ? "unclassified" : null);
         const record = this.#journal.load();
         this.#set({
           busy: false,
-          rejected: record.rejected,
+          rejected: record.refused !== null,
           problem: record.uncertain ? "unknown" : problemOf(error),
         });
       } catch {

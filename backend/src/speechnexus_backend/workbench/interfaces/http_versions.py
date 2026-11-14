@@ -199,6 +199,55 @@ ERRORS = {
         "invalid_request_error",
         "The pinned render unit cannot be dispatched as a speech Job.",
     ),
+    # The refusal status families whose meaning is carried by the status, not by the
+    # upstream code. Each is a distinct next step for the operator, so none of them
+    # may be folded into the 422 "the request is invalid" bucket: a 401 is a broken
+    # deployment credential, a 403 a permission refusal, a 415 a media-type refusal,
+    # a 429 an admission refusal that wrote no row and asks for a delay.
+    "render_submission_credentials_rejected": (
+        401,
+        "authentication_error",
+        "The speech service rejected the deployment credential.",
+    ),
+    "render_submission_permission_denied": (
+        403,
+        "permission_error",
+        "This deployment is not permitted to submit the Job.",
+    ),
+    "render_submission_media_unsupported": (
+        415,
+        "invalid_request_error",
+        "The refusing layer does not accept the JSON media type this dispatch sends.",
+    ),
+    # The three 409 meanings share one status class and differ only in the operator
+    # step: a key that is already spent on another intent, a previous execution that
+    # has not confirmed its stop (the one conflict that is worth retrying), and
+    # everything else. Only the middle one is retryable.
+    "render_submission_idempotency_conflict": (
+        409,
+        "invalid_request_error",
+        "The Idempotency-Key already names another submission intent; inspect that "
+        "Job or dispatch under a new key.",
+    ),
+    "render_submission_cleanup_pending": (
+        409,
+        "invalid_request_error",
+        "The unit's previous execution is not confirmed stopped; retry after cleanup.",
+    ),
+    "render_submission_conflict": (
+        409,
+        "invalid_request_error",
+        "The refusing layer reported a conflict this workbench cannot attribute to one step.",
+    ),
+    # A 429 proves "not now", not "why": it may be exhausted admission capacity or a
+    # limiter in front of it, so both the name and the message stop short of a cause
+    # nobody read (#755's attribution rule applied to a status-only observation).
+    "render_submission_rate_limited": (
+        429,
+        "rate_limit_error",
+        "The refusing layer declined this dispatch (rate limit or exhausted capacity) "
+        "and created no Job; retry after the stated delay.",
+    ),
     "internal_error": (500, "api_error", "Workbench request could not be completed."),
 }
 
@@ -210,24 +259,35 @@ def _error(
     *,
     content_range: str | None = None,
     param: str | None = None,
+    retryable: bool = False,
+    retry_after_seconds: int | None = None,
 ) -> JSONResponse:
     status, kind, message = ERRORS[code]
-    body = parse(
-        "ErrorResponse",
-        {
-            "error": {
-                "code": code,
-                "type": kind,
-                "message": message,
-                "param": param,
-                "request_id": rid,
-                "retryable": False,
-            }
-        },
-    )
-    headers = {"X-Request-ID": rid, "Cache-Control": "no-store", "X-Should-Retry": "false"}
+    error: dict[str, object] = {
+        "code": code,
+        "type": kind,
+        "message": message,
+        "param": param,
+        "request_id": rid,
+        # The retry permission is the disposition's, not the status layer's: a 409
+        # cleanup wait may be retried and a 401 may not, whatever their status code
+        # suggests. Only a disposition that says "retry" passes this as true.
+        "retryable": retryable,
+    }
+    if retry_after_seconds is not None:
+        # The delayed answer states the same fact twice, in the unit this protocol
+        # declares for each: seconds on the header, milliseconds in the envelope.
+        error["retry_after_ms"] = retry_after_seconds * 1000
+    body = parse("ErrorResponse", {"error": error})
+    headers = {
+        "X-Request-ID": rid,
+        "Cache-Control": "no-store",
+        "X-Should-Retry": str(retryable).lower(),
+    }
     if content_range is not None:
         headers["Content-Range"] = content_range
+    if retry_after_seconds is not None:
+        headers["Retry-After"] = str(retry_after_seconds)
     if operation is not None:
         validate_response(operation, status, {"body": body, "headers": headers})
     return JSONResponse(body, status_code=status, headers=headers)

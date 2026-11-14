@@ -3078,6 +3078,11 @@
           "headers": {},
           "json": true
         },
+        "403": {
+          "schema": "HttpResponse_generateRenderUnitV2_403",
+          "headers": {},
+          "json": true
+        },
         "404": {
           "schema": "HttpResponse_generateRenderUnitV2_404",
           "headers": {},
@@ -3085,6 +3090,11 @@
         },
         "409": {
           "schema": "HttpResponse_generateRenderUnitV2_409",
+          "headers": {},
+          "json": true
+        },
+        "415": {
+          "schema": "HttpResponse_generateRenderUnitV2_415",
           "headers": {},
           "json": true
         },
@@ -3781,8 +3791,10 @@
     "HttpResponse_generateRenderUnitV2_202",
     "HttpResponse_generateRenderUnitV2_400",
     "HttpResponse_generateRenderUnitV2_401",
+    "HttpResponse_generateRenderUnitV2_403",
     "HttpResponse_generateRenderUnitV2_404",
     "HttpResponse_generateRenderUnitV2_409",
+    "HttpResponse_generateRenderUnitV2_415",
     "HttpResponse_generateRenderUnitV2_422",
     "HttpResponse_generateRenderUnitV2_429",
     "HttpResponse_generateRenderUnitV2_503",
@@ -16688,6 +16700,22 @@
       },
       "required": ["body"]
     },
+    "HttpResponse_generateRenderUnitV2_403": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
     "HttpResponse_generateRenderUnitV2_404": {
       "type": "object",
       "additionalProperties": false,
@@ -16705,6 +16733,22 @@
       "required": ["body"]
     },
     "HttpResponse_generateRenderUnitV2_409": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_generateRenderUnitV2_415": {
       "type": "object",
       "additionalProperties": false,
       "properties": {

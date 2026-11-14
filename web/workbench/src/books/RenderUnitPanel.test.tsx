@@ -935,10 +935,43 @@ describe("render unit text bounds (#745)", () => {
     expect(alert.textContent).not.toContain("按原键重试");
   });
 
-  it("keeps 429 with the unknown state because a replay uses the original key", async () => {
-    // Admission contention is the one 4xx that is replayed rather than abandoned
-    // (the journal above makes the same exception), so it must not read as a refusal;
-    // its own capacity code is tracked separately from this vocabulary.
+  it("answers a 429 with its retry step, the stated delay and no invented cause", async () => {
+    // #754: a 429 is a refusal that created no Job, not an unknown outcome. Telling
+    // the operator to replay the original key as a recovery would send them to
+    // recover a submission that never started; the step is "wait, then dispatch
+    // again", and the server's own Retry-After is rendered. The copy names both
+    // possible causes instead of asserting one: a 429 proves "not now", not "why".
+    const { generate } = setup();
+    generate.mockRejectedValueOnce(
+      new WorkbenchResponseError(429, {
+        error: {
+          code: "render_submission_rate_limited",
+          type: "rate_limit_error",
+          message: "The refusing layer declined this dispatch and created no Job.",
+          param: null,
+          request_id: "request-demo",
+          retryable: true,
+          retry_after_ms: 3000,
+        },
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("限流或容量不足");
+    expect(alert.textContent).toContain("等待 3 秒");
+    expect(alert.textContent).toContain("可重试");
+    expect(alert.textContent).not.toContain("结果尚未确认");
+    expect(alert.textContent).not.toContain("按原键重试");
+    // No cause may be asserted that the 429 cannot prove.
+    expect(alert.textContent).not.toContain("容量已用尽");
+    // The machine code stays in the title, never in the operator copy.
+    expect(alert.textContent).not.toContain("render_submission_rate_limited");
+    expect(alert).toHaveAttribute("title", "render_submission_rate_limited");
+  });
+
+  it("keeps a 429 whose code it does not know as a retryable refusal", async () => {
+    // A proxy or a newer server may answer 429 with a code this page does not list.
+    // The status still proves no Job was created, so it must read as a refusal.
     const { generate } = setup();
     generate.mockRejectedValueOnce(
       new WorkbenchResponseError(429, {
@@ -949,12 +982,61 @@ describe("render unit text bounds (#745)", () => {
           param: null,
           request_id: "request-demo",
           retryable: true,
+          retry_after_ms: 1500,
         },
       }),
     );
     fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("结果尚未确认");
+    expect(alert.textContent).toContain("没有创建作业");
+    expect(alert.textContent).toContain("等待 2 秒");
+    expect(alert.textContent).not.toContain("结果尚未确认");
+  });
+
+  it("says a cleanup wait is retryable", async () => {
+    // #755's most error-prone direction: a 409 cleanup wait may be retried, unlike
+    // every other conflict.
+    const { generate } = setup();
+    generate.mockRejectedValueOnce(
+      new WorkbenchResponseError(409, {
+        error: {
+          code: "render_submission_cleanup_pending",
+          type: "invalid_request_error",
+          message: "The previous execution did not confirm its stop.",
+          param: null,
+          request_id: "request-demo",
+          retryable: true,
+        },
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("清理");
+    expect(alert.textContent).toContain("可重试");
+    expect(alert.textContent).not.toContain("结果尚未确认");
+    expect(alert).toHaveAttribute("title", "render_submission_cleanup_pending");
+  });
+
+  it("says a spent idempotency key is final and needs a new key", async () => {
+    const { generate } = setup();
+    generate.mockRejectedValueOnce(
+      new WorkbenchResponseError(409, {
+        error: {
+          code: "render_submission_idempotency_conflict",
+          type: "invalid_request_error",
+          message: "The key already names another intent.",
+          param: null,
+          request_id: "request-demo",
+          retryable: false,
+        },
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("请求键");
+    expect(alert.textContent).toContain("不要复用旧键");
+    expect(alert.textContent).not.toContain("结果尚未确认");
+    expect(alert).toHaveAttribute("title", "render_submission_idempotency_conflict");
   });
 
   it.each([400, 409])(

@@ -11,13 +11,21 @@ import {
   RENDER_UNIT_SOURCE_LIMIT,
   renderUnitLength,
 } from "./render-unit-bounds";
-import { RENDER_REFUSAL_STEPS, refusedCode, type RenderRefusalCode } from "./render-refusals";
-import "./books.css";
+import {
+  isRetryableRefusal,
+  refusalStep,
+  refusedCode,
+  type RenderRefusalCode,
+} from "./render-refusals";
 
 const problems = {
   unavailable: "当前部署尚未启用工作台，或连接不可用。",
   conflict: "该单元已被修改（修订冲突）。请刷新后按新修订重做，本页不会自动重试。",
-  rejected: "请求被拒绝。请核对单元文本或声音后再重做。",
+  // The old copy told the operator to "check the unit text or voice". That is a guess,
+  // and it was wrong for every refusal whose cause is the deployment (#755): the panel
+  // now states only what it knows (no Job was created) and points at the machine code.
+  rejected:
+    "请求被拒绝，本次派发没有创建作业。本页没有这个拒绝码的处置说明（机器码见标题）。下一步：更新本页到与服务端匹配的版本，或把这个机器码交给运维排查；重复提交不会改变结果。",
   missing: "该章节或单元已不可读取。",
   unknown: "结果尚未确认。请核对连接后按原键重试，不要重新创建。",
   storage: "恢复信息未能保存，已暂停提交。请修复浏览器存储后重试。",
@@ -26,19 +34,27 @@ const problems = {
 export type RenderUnitProblem = keyof typeof problems;
 
 /**
- * Three shapes, because a refusal can be known three ways.
+ * Four shapes, because a refusal can be known four ways.
  *
  * `key` is the panel's own state (connection, conflict, storage). `refusal` carries
  * the published disposition the server stated, whose copy lives in
  * `render-refusals.ts`. `textOverDispatch` is the local attribution `#745` added:
  * it is only reached when the server stated no cause at all and the panel measured
  * the dispatched text itself above the bound in the contract's unit, so a 422
- * caused by an unpublished voice is never blamed on the text.
+ * caused by an unpublished voice is never blamed on the text. `retryLater` is the
+ * 429 answer for a code this page does not know: admission refused before writing a
+ * Job, so it is a definite "wait, then retry" and never the unknown outcome (#754).
  */
 type UnitProblem =
   | { key: RenderUnitProblem }
   | { key: "textOverDispatch"; over: number }
-  | { key: "refusal"; code: RenderRefusalCode; over?: number }
+  | {
+      key: "refusal";
+      code: RenderRefusalCode;
+      over?: number;
+      retryAfter?: number | undefined;
+    }
+  | { key: "retryLater"; retryAfter?: number | undefined }
   | { key: "inFlight"; code: InFlightCode };
 
 /**
@@ -67,10 +83,11 @@ function dispatchOverMessage(over: number): string {
 function problemMessage(problem: UnitProblem): string {
   if (problem.key === "textOverDispatch") return dispatchOverMessage(problem.over);
   if (problem.key === "inFlight") return DISPATCH_IN_FLIGHT_STEPS[problem.code];
+  if (problem.key === "retryLater") return retryLaterMessage(problem.retryAfter);
   if (problem.key === "refusal") {
     // The stated text bound is named with the measured length when the panel has it.
     return problem.over === undefined
-      ? RENDER_REFUSAL_STEPS[problem.code]
+      ? refusalStep(problem.code, problem.retryAfter)
       : dispatchOverMessage(problem.over);
   }
   return problems[problem.key];
@@ -81,6 +98,26 @@ function problemTitle(problem: UnitProblem): string | undefined {
   if (problem.key === "textOverDispatch") return "render_submission_rejected";
   if (problem.key === "refusal" || problem.key === "inFlight") return problem.code;
   return undefined;
+}
+
+/**
+ * The delay the server named for a retryable refusal, in the unit the operator reads.
+ *
+ * `error.retry_after_ms` is the envelope's copy of the `Retry-After` header; a value
+ * that states no wait (null, or a zero/negative delay) is not rendered, because
+ * "wait 0 seconds" is not an instruction.
+ */
+function retryAfterSeconds(error: WorkbenchResponseError): number | undefined {
+  const message = error.retryAfterMs;
+  if (message === null || message === undefined || message <= 0) return undefined;
+  return Math.ceil(message / 1000);
+}
+
+/** A 429 whose code this page does not know: still a refusal, never an unknown outcome. */
+function retryLaterMessage(retryAfter?: number): string {
+  return retryAfter === undefined
+    ? "服务端当前拒绝派发（限流或容量不足），且没有创建作业。下一步：稍后重新派发这次生成；这不是结果未知。"
+    : `服务端当前拒绝派发（限流或容量不足），且没有创建作业。下一步：等待 ${retryAfter} 秒后重新派发这次生成；这不是结果未知。`;
 }
 
 /**
@@ -207,15 +244,23 @@ function problemOf(error: unknown, dispatched?: string): UnitProblem {
       if (refusal === "render_submission_rejected" && over !== undefined) {
         return { key: "textOverDispatch", over };
       }
-      return { key: "refusal", code: refusal };
+      // Only the two retryable dispositions carry a delay; a stray value on a
+      // terminal one is dropped rather than promising a retry that cannot work.
+      return isRetryableRefusal(refusal)
+        ? { key: "refusal", code: refusal, retryAfter: retryAfterSeconds(error) }
+        : { key: "refusal", code: refusal };
     }
+    // A 429 is a refusal, not an unknown outcome (#754): admission refused before
+    // writing any Job row, so "结果尚未确认 / 按原键重放" would send the operator to
+    // recover a submission that never started. The code is normally known to this
+    // page; an unknown one still keeps the retryable disposition.
+    if (error.status === 429) return { key: "retryLater", retryAfter: retryAfterSeconds(error) };
     if (error.status >= 500 || error.code === "store_unavailable") return { key: "unavailable" };
     // A 4xx is a definite refusal: no Job was created, so "结果尚未确认" would send
-    // the operator to replay a request that cannot start. 408 and 429 are the same
-    // exceptions the journal above makes - a timeout or an exhausted admission is
-    // replayed with the original key, not abandoned - so they keep the unknown state
-    // and only a 5xx (or an outcome-unknown code) may otherwise claim uncertainty.
-    if (error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status))
+    // the operator to replay a request that cannot start. 408 is the exception the
+    // journal above makes too - a body receive timeout may have crossed the network -
+    // so only a 5xx (or an outcome-unknown code) may otherwise claim uncertainty.
+    if (error.status >= 400 && error.status < 500 && error.status !== 408)
       return { key: "rejected" };
     return { key: "unknown" };
   }
@@ -439,11 +484,16 @@ function ChapterUnits({
       return true;
     } catch (error) {
       if (!owner.current.alive) return false;
+      // A 4xx settles this attempt: the server refused it and no Job was created, so
+      // the intent may be retried under a fresh key. A 429 belongs here too (#754): it
+      // is an admission refusal, not an unknown outcome, and replaying the original
+      // key as "recovery" is exactly the wrong step. 408 keeps the uncertain state:
+      // the body may have crossed the network before the receive deadline.
       const rejected =
         error instanceof WorkbenchResponseError &&
         error.status >= 400 &&
         error.status < 500 &&
-        ![408, 429].includes(error.status);
+        error.status !== 408;
       try {
         journal.failure(rejected);
         const record = journal.load();

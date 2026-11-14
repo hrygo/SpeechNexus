@@ -829,9 +829,12 @@ export interface paths {
      * Submit a speech Job for a render unit
      * @description Creates one speech Job for the unit's fixed revision and records the
      *     attempt before returning 202. A changed unit revision or an attempt that
-     *     is already running returns 409. An identical Idempotency-Key replay
-     *     returns the original accepted result; a changed intent under the same key
-     *     returns 409 `idempotency_conflict`.
+     *     is already running returns 409 (`revision_conflict`,
+     *     `render_attempt_conflict`). An identical Idempotency-Key replay returns
+     *     the original accepted result; a changed intent under the same key returns
+     *     409 `idempotency_conflict`. Those three are this operation's own conflicts,
+     *     decided before any dispatch; a 409 the refusing layer returns is answered
+     *     with the dispatch-refusal vocabulary below instead.
      *
      *     An unreadable or uncertain Job submission returns 503 `outcome_unknown`.
      *     That response does not prove that no Job was created. Only a caller
@@ -840,12 +843,46 @@ export interface paths {
      *     automatic retry, new key or query-by-key resource is provided. Keyless
      *     submissions have no promised recovery.
      *
-     *     A refusal is not interchangeable with the others: the public Job contract
-     *     states the same status class for a text over its inline bound, an
-     *     unpublished voice, an unprovisioned workspace, an unready asset and an
-     *     oversized request body, and the operator step differs in each case. This
-     *     operation therefore answers `422` with one stable disposition code, chosen
-     *     by that step rather than by the upstream code name:
+     *     A refusal states a definite absence: no Job row was created. Its status
+     *     names four families whose operator step differs completely, and none of
+     *     them is "the request is invalid":
+     *
+     *     - `429 render_submission_rate_limited` - the refusing layer declined
+     *       without writing a row. A 429 proves "not now" and not "why": admission
+     *       may have found no capacity, or a limiter in front of it may have refused
+     *       the request, and the code names neither because neither was read. Both
+     *       share the step, so it is retryable: wait for the stated delay, then
+     *       dispatch the same unit again. This is not `503 outcome_unknown`, which
+     *       also preserves the original key because a Job may exist: here nothing was
+     *       created, so no replay recovery is being asked for.
+     *     - `409` carries three meanings, all with no Job row created.
+     *       `render_submission_idempotency_conflict` - the key already names another
+     *       submission intent; inspect that Job or dispatch under a new key. Not
+     *       retryable. `render_submission_conflict` - a conflict whose next step this
+     *       vocabulary cannot name. Not retryable. The third is reserved rather than
+     *       served: `render_submission_cleanup_pending` ("the unit's previous
+     *       execution has not confirmed its stop; wait for the cleanup, then retry",
+     *       retryable) stays declared, but this operation reaches the Job creation
+     *       and read endpoints only, and the public Job contract raises that code
+     *       from its cancel and retry handlers alone, so no dispatch answers with it
+     *       today. It is listed so a consumer that later sees it handles it without a
+     *       vocabulary change;
+     *       `tests/contract/test_render_refusal_vocabulary.py` re-derives the
+     *       reachable set from the Job handler and fails if it becomes reachable
+     *       while this paragraph still says it is not.
+     *     - `401 render_submission_credentials_rejected` - the speech service rejected
+     *       the deployment credential. `403 render_submission_permission_denied` - the
+     *       deployment is not permitted to submit. `415
+     *       render_submission_media_unsupported` - the refusing layer does not accept
+     *       the JSON media type this dispatch sends. An operator fixes the deployment;
+     *       editing the unit cannot, and none of the three is retryable.
+     *
+     *     For the remaining refusals the public Job contract states one status class
+     *     for a text over its inline bound, an unpublished voice, an unprovisioned
+     *     workspace, an unready asset and an oversized request body, and the operator
+     *     step differs in each case. This operation therefore answers `422` with one
+     *     stable disposition code, chosen by that step rather than by the upstream
+     *     code name:
      *
      *     - `render_submission_text_too_long` - the unit text exceeds the inline
      *       bound of one Job request; split it into units within that bound.
@@ -875,6 +912,14 @@ export interface paths {
      *       name. It is never used to overwrite a cause that was stated. A consumer
      *       may add its own measurement to this answer, and must not read it as a
      *       statement that the text is fine.
+     *
+     *     `error.retryable` states whether the same dispatch may be retried after the
+     *     refusal, and it belongs to the disposition rather than to the status: a
+     *     cleanup wait is retryable and a spent key is not, though both answer 409. A
+     *     caller must read it instead of inferring retryability from the status. When
+     *     the refusing layer named a delay, a retryable refusal forwards it on the
+     *     `Retry-After` header and in `error.retry_after_ms`; a non-retryable refusal
+     *     never states one.
      *
      *     `param` carries the upstream field pointer when the refusing layer named
      *     one, and is null otherwise; it is a field pointer in both services, never a
@@ -1971,6 +2016,15 @@ export interface components {
     };
     /** @description Shared service credential required or invalid. */
     Unauthorized: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /** @description Credential accepted, but this deployment is not permitted to perform the operation. */
+    Forbidden: {
       headers: {
         [name: string]: unknown;
       };
@@ -4013,8 +4067,10 @@ export interface operations {
       };
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
       404: components["responses"]["NotFound"];
       409: components["responses"]["Conflict"];
+      415: components["responses"]["UnsupportedMediaType"];
       422: components["responses"]["UnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];
       503: components["responses"]["RenderDispatchUnknown"];

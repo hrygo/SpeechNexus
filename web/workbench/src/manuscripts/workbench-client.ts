@@ -7,12 +7,23 @@ export { parse, type Contracts } from "../../../../packages/contracts/src/workbe
 
 export class WorkbenchResponseError extends Error {
   readonly code: string;
+  /**
+   * The delay the server declared for a retry, in milliseconds, or `null` when it
+   * declared none (`ErrorBody.retry_after_ms`, the envelope's copy of `Retry-After`).
+   *
+   * It is surfaced because the operator copy needs it: a retryable refusal may say
+   * "wait N seconds" only if the page can read N, and the body is the only place the
+   * declared field travels. It says nothing about whether the request may be retried
+   * -- `code` decides that -- so a value here is never read as permission.
+   */
+  readonly retryAfterMs: number | null;
   constructor(
     readonly status: number,
     detail: Contracts["ErrorResponse"],
   ) {
     super(`Workbench request failed (${status})`);
     this.code = detail.error.code;
+    this.retryAfterMs = detail.error.retry_after_ms ?? null;
   }
 }
 

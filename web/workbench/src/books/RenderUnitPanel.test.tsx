@@ -6,12 +6,12 @@ import {
   type Contracts,
   parse,
 } from "../manuscripts/workbench-client";
+import { RenderUnitPanel } from "./RenderUnitPanel";
 import {
-  RenderUnitPanel,
   RECOVERED_INTENT,
   RECOVERED_INTENT_CONTROLS,
   type RecoveredIntent,
-} from "./RenderUnitPanel";
+} from "./recovered-intent";
 import {
   RENDER_REFUSAL_CODES,
   RENDER_REFUSAL_STEPS,

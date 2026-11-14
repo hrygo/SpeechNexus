@@ -178,6 +178,12 @@ ERRORS = {
         "invalid_request_error",
         "The pinned voice revision is not published; publish it before dispatching.",
     ),
+    "render_submission_binding_unavailable": (
+        422,
+        "invalid_request_error",
+        "The pinned model binding or profile revision is not published; "
+        "publish it or pin a published revision.",
+    ),
     "render_submission_asset_unavailable": (
         422,
         "invalid_request_error",

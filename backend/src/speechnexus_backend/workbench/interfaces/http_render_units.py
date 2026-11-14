@@ -60,6 +60,10 @@ _REFUSAL_CODES = {
     "workspace_disabled": "render_submission_workspace_unavailable",
     "voice_not_published": "render_submission_voice_unavailable",
     "asset_not_ready": "render_submission_asset_unavailable",
+    # One step ("publish the revision or pin a published one"), so one code: a pinned
+    # model binding and a pinned profile differ in the resource, not in the action.
+    "model_binding_not_published": "render_submission_binding_unavailable",
+    "profile_not_published": "render_submission_binding_unavailable",
     "job_request_too_large": "render_submission_body_too_large",
 }
 _FALLBACK_REFUSAL = "render_submission_rejected"

@@ -15,18 +15,24 @@ from speechnexus_backend.workbench.application.render_units import (
     RenderRejection,
     RenderSubmissionRejectedError,
     RenderSubmissionUnknownError,
+    WorkbenchRenderUnits,
 )
 from speechnexus_backend.workbench.domain.render_units import (
     RenderDependencies,
     RenderUnit,
     RevisionPin,
 )
+from speechnexus_backend.workbench.infrastructure.public_speech_render_jobs import (
+    PublicSpeechRenderJobs,
+)
+from tests.unit.backend.test_public_speech_render_jobs import upstream_error
+from tests.unit.backend.test_workbench_render_dispatch import _Store as DispatchStore
 
 NOW = datetime(2026, 10, 24, tzinfo=UTC)
 PATH = "/v2/workbench/render-units/unit_1/generations"
 
 
-def unit() -> RenderUnit:
+def unit(text: str = "合成旁白单元") -> RenderUnit:
     dependencies = RenderDependencies(
         original=RevisionPin("original", 1),
         working=RevisionPin("working", 2),
@@ -36,7 +42,7 @@ def unit() -> RenderUnit:
         voice=RevisionPin("voice", 3),
         model="tts-quality",
         model_binding=RevisionPin("binding", 4),
-        text="合成旁白单元",
+        text=text,
     )
     return RenderUnit.create(
         unit_id="unit_1", book_id="book", ordinal=0, dependencies=dependencies, now=NOW
@@ -67,9 +73,7 @@ def app(service: _Service | None) -> FastAPI:
     )
 
 
-async def call(
-    service: _Service | None, *, headers: dict[str, str] | None = None
-) -> httpx.Response:
+async def call(service: Any, *, headers: dict[str, str] | None = None) -> httpx.Response:
     transport = httpx.ASGITransport(app=app(service))
     async with httpx.AsyncClient(transport=transport, base_url="http://workbench.test") as client:
         return await client.post(PATH, json={"expected_unit_revision": "1"}, headers=headers or {})
@@ -185,7 +189,7 @@ async def test_a_refusal_reports_the_operator_step_it_demands(
         # An upstream refusal whose envelope could not be read: no cause may be invented.
         RenderRejection.unreadable(status_code=422),
         # An upstream code whose operator step this vocabulary does not name.
-        RenderRejection.upstream(status_code=422, code="model_binding_not_published", param=None),
+        RenderRejection.upstream(status_code=422, code="job_kind_not_supported", param=None),
         # No rejection detail at all (a producer that states nothing, and the default).
         None,
     ],
@@ -214,3 +218,100 @@ async def test_v1_generation_is_not_declared_here() -> None:
             json={"expected_unit_revision": "1"},
         )
     assert response.status_code in {404, 405}
+
+
+def speech_client(handler: httpx.MockTransport) -> httpx.AsyncClient:
+    return httpx.AsyncClient(base_url="http://speech.test", transport=handler)
+
+
+def dispatchable(text: str = "合成旁白单元") -> RenderUnit:
+    """A unit still at revision 1, so the route's `expected_unit_revision: 1` matches."""
+    dependencies = RenderDependencies(
+        original=RevisionPin("original", 1),
+        working=RevisionPin("working", 2),
+        chapter_id="chapter",
+        role_id="narrator",
+        text_plan=RevisionPin("plan", 1),
+        voice=RevisionPin("voice", 3),
+        model="tts-quality",
+        model_binding=RevisionPin("binding", 4),
+        text=text,
+    )
+    return RenderUnit.create(
+        unit_id="unit_1", book_id="book", ordinal=0, dependencies=dependencies, now=NOW
+    )
+
+
+def dispatched(unit_record: RenderUnit, handler: httpx.MockTransport) -> WorkbenchRenderUnits:
+    """The real chain: route -> real service -> real adapter -> a synthetic refusal."""
+    jobs = PublicSpeechRenderJobs(speech_client(handler))
+    return WorkbenchRenderUnits(DispatchStore(unit_record), jobs)
+
+
+@pytest.mark.parametrize(
+    ("status", "code", "param", "expected"),
+    [
+        (422, "unsupported_parameter", "input.text", "render_submission_text_too_long"),
+        (422, "unsupported_parameter", "model", "render_submission_field_unsupported"),
+        (422, "workspace_not_configured", None, "render_submission_workspace_not_configured"),
+        (422, "workspace_not_found", None, "render_submission_workspace_unavailable"),
+        (422, "voice_not_published", "voice.revision", "render_submission_voice_unavailable"),
+        (422, "asset_not_ready", None, "render_submission_asset_unavailable"),
+        (
+            422,
+            "model_binding_not_published",
+            "model_binding.revision",
+            "render_submission_binding_unavailable",
+        ),
+        (413, "job_request_too_large", None, "render_submission_body_too_large"),
+        # A refused unit is still refused; an unrecognized cause keeps the fallback.
+        (422, "job_kind_not_supported", None, "render_submission_rejected"),
+    ],
+)
+async def test_a_coded_refusal_reaches_the_route_as_a_workbench_code(
+    status: int, code: str, param: str | None, expected: str
+) -> None:
+    """One chain, not two halves: HTTP route -> service -> adapter -> public code.
+
+    The adapter and the mapping each have their own tests, but only this one proves
+    they are wired to each other: the body below is what a client actually receives
+    after the upstream refusal, so a mapping that stops being reachable (or a route
+    that stops calling it) shows up here and nowhere else.
+    """
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, json=upstream_error(code, param=param))
+
+    response = await call(dispatched(dispatchable(), httpx.MockTransport(handler)))
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["code"] == expected
+    assert response.json()["error"]["retryable"] is False
+
+
+async def test_an_unreadable_upstream_refusal_stays_the_unnamed_fallback() -> None:
+    """A proxy page proves the refusal, not its cause: the route must not invent one."""
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(413, content=b"<html>413 Request Entity Too Large</html>")
+
+    response = await call(dispatched(dispatchable(), httpx.MockTransport(handler)))
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["code"] == "render_submission_rejected"
+    assert response.json()["error"]["param"] is None
+
+
+async def test_a_locally_over_bound_unit_is_named_by_the_route_with_no_request() -> None:
+    """The over-bound text never leaves the process, and the route still names it."""
+
+    calls = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(202, json={"id": "job_1"})
+
+    response = await call(dispatched(dispatchable("中" * 4097), httpx.MockTransport(handler)))
+    assert calls == 0
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["code"] == "render_submission_text_too_long"
+    assert response.json()["error"]["param"] == "input.text"

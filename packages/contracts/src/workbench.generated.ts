@@ -859,6 +859,9 @@ export interface paths {
      *       published; publish it, or pin a published revision.
      *     - `render_submission_asset_unavailable` - the pinned asset is not ready;
      *       wait for readiness or upload it again.
+     *     - `render_submission_binding_unavailable` - the pinned model binding or
+     *       profile revision is not published; publish it or pin a published
+     *       revision. Both resources share one code because they share one step.
      *     - `render_submission_body_too_large` - the Job request body derived from
      *       the unit text exceeds the deployment receive limit; shorten the text or
      *       raise the limit.

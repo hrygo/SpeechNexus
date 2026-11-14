@@ -26,6 +26,7 @@ a pytest failure.
 from __future__ import annotations
 
 import ast
+import functools
 import re
 from pathlib import Path
 from typing import cast
@@ -68,6 +69,9 @@ PANEL = ROOT / "web" / "workbench" / "src" / "books" / "RenderUnitPanel.tsx"
 JOBS_HTTP = (
     ROOT / "backend" / "src" / "speechnexus_backend" / "speech" / "interfaces" / "http" / "jobs.py"
 )
+# The whole speech package, because `ModelBindingError` is constructed by both the
+# application service and its storage adapter.
+SPEECH_SRC = ROOT / "backend" / "src" / "speechnexus_backend" / "speech"
 
 PREFIX = "render_submission_"
 # The refusal vocabulary is stated on the dispatch operation and referenced by the
@@ -171,19 +175,77 @@ def _except_type_names(handler: ast.ExceptHandler) -> list[str]:
     return []
 
 
+def _job_error_calls(node: ast.AST) -> list[ast.Call]:
+    return [
+        call
+        for call in ast.walk(node)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Name)
+        and call.func.id == "job_error"
+        and call.args
+    ]
+
+
+def _literal_code(call: ast.Call) -> str | None:
+    """The code this call states outright, or None when it forwards one at runtime.
+
+    None is not "no code": it means the code is decided at runtime and the guard must
+    resolve it from the surrounding `except` table. Treating an unrecognised spelling
+    as "no dynamic code" is how a guard silently stops checking anything, so every
+    non-literal shape below either resolves or fails loudly.
+    """
+    argument = call.args[0]
+    if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
+        return argument.value
+    return None
+
+
+@functools.cache
+def _model_binding_raised_codes() -> frozenset[str]:
+    """The literal codes `ModelBindingError` is constructed with anywhere in speech.
+
+    Derived from the constructor sites rather than assumed from the family prefix:
+    an assumed family would keep a stale mapping key passing after a family member
+    loses its raise site (MF-2). A construction without a literal code fails loudly,
+    because this derivation cannot see through it.
+    """
+    codes: set[str] = set()
+    for path in sorted(SPEECH_SRC.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "ModelBindingError"
+            ):
+                continue
+            argument = node.args[0] if len(node.args) == 1 else None
+            if not (isinstance(argument, ast.Constant) and isinstance(argument.value, str)):
+                raise AssertionError(
+                    f"{path}: ModelBindingError is constructed without a literal code "
+                    f"at line {node.lineno}; this guard derives its code set from those "
+                    "literals and cannot resolve a runtime value"
+                )
+            codes.add(argument.value)
+    assert codes, "the ModelBindingError constructor sites must be discoverable"
+    return frozenset(codes)
+
+
 def _dynamic_code_set(exception_name: str) -> frozenset[str]:
-    """The codes one exception class can forward through `job_error(error.code)`."""
+    """The codes one exception class can forward through a non-literal `job_error`."""
     if exception_name == "JobAdmissionRejectedError":
         # The admission store answers with a fixed, declared rejection vocabulary.
         return _ADMISSION_REJECTION_CODES
     if exception_name == "ModelBindingError":
-        # The class carries one code of its own declared family. Reading the family
-        # out of the public table over-approximates inside one prefix, which is the
-        # strict direction for the disjointness assertion below.
-        return frozenset(code for code in UPSTREAM_JOB_ERRORS if code.startswith("model_binding_"))
+        # The class carries one of the codes it is actually constructed with, so the
+        # derived set is exact; `test_the_model_binding_family_is_exactly_what_is_raised`
+        # pins the derived set to the declared family, which is what makes "exact"
+        # falsifiable when the family grows.
+        return _model_binding_raised_codes()
     raise AssertionError(
-        f"the create handler takes a dynamic code from {exception_name}; teach this guard "
-        "that class's code set instead of letting the derived set silently under-approximate"
+        f"the create handler forwards a runtime code from {exception_name}; teach this "
+        "guard that class's code set instead of letting the derived set silently "
+        "under-approximate"
     )
 
 
@@ -202,32 +264,57 @@ def _create_route_codes() -> frozenset[str]:
         for node in ast.walk(tree)
         if isinstance(node, ast.AsyncFunctionDef) and node.name == "_create"
     )
+    handlers = [node for node in ast.walk(create) if isinstance(node, ast.ExceptHandler)]
+    owner: dict[int, ast.ExceptHandler] = {}
+    for handler in handlers:
+        for call in _job_error_calls(handler):
+            owner[id(call)] = handler
     codes: set[str] = set()
-    for node in ast.walk(create):
-        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+    for call in _job_error_calls(create):
+        literal = _literal_code(call)
+        if literal is not None:
+            codes.add(literal)
             continue
-        if node.func.id != "job_error" or not node.args:
-            continue
-        argument = node.args[0]
-        if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
-            codes.add(argument.value)
-    # `job_error(error.code)` forwards a code the exception itself carries; resolve
-    # those from the except table so a class gaining a code moves this set too.
-    for handler in (node for node in ast.walk(create) if isinstance(node, ast.ExceptHandler)):
-        forwards_code = any(
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "job_error"
-            and node.args
-            and isinstance(node.args[0], ast.Attribute)
-            and node.args[0].attr == "code"
-            for node in ast.walk(handler)
-        )
-        if not forwards_code:
-            continue
-        for exception_name in _except_type_names(handler):
+        # The code is decided at runtime. Never skip it because the spelling looks
+        # unfamiliar: `error.code`, `str(error.code)`, `error.reason` and a bare
+        # variable all forward a code this derivation cannot read, and the default
+        # answer is a loud failure rather than a quietly smaller set (MF-1).
+        owner_handler = owner.get(id(call))
+        if owner_handler is None:
+            raise AssertionError(
+                f"line {call.lineno}: job_error() in the create handler takes a "
+                "runtime code outside any except handler; this guard cannot derive "
+                "which codes that branch can answer with"
+            )
+        exception_names = _except_type_names(owner_handler)
+        if not exception_names:
+            raise AssertionError(
+                f"line {call.lineno}: the except clause forwarding a runtime code has no "
+                "readable exception name; this guard cannot resolve its code set"
+            )
+        for exception_name in exception_names:
             codes |= _dynamic_code_set(exception_name)
     return frozenset(codes)
+
+
+def test_the_model_binding_family_is_exactly_what_is_raised() -> None:
+    """The derived binding code set and the declared family may not drift apart (MF-2).
+
+    The reachable derivation reads `ModelBindingError`'s constructor literals instead
+    of assuming "every `model_binding_*` code is raised". That is only exact while the
+    two sets are equal: a declared family member that lost its raise site would
+    otherwise keep a stale mapping key green, and a raised code outside the family
+    would be an undeclared public error. Comparing them here turns either drift into a
+    red test *before* it can widen the reachable set silently.
+    """
+
+    family = frozenset(code for code in UPSTREAM_JOB_ERRORS if code.startswith("model_binding_"))
+    raised = _model_binding_raised_codes()
+    assert raised == family, (
+        "ModelBindingError must be constructed with exactly its declared family: "
+        f"raised-but-undeclared={sorted(raised - family)}, "
+        f"declared-but-never-raised={sorted(family - raised)}"
+    )
 
 
 def test_the_unreachable_mapping_is_declared_and_still_unreachable() -> None:
@@ -249,9 +336,9 @@ def test_the_unreachable_mapping_is_declared_and_still_unreachable() -> None:
     assert len(reachable) >= 20, reachable
     assert "idempotency_conflict" in reachable
 
-    # Derivation is a strict over-approximation only inside the `model_binding_`
-    # family; every mapped key below is either a literal in the handler or an
-    # admission-rejection code, so this comparison is exact in both directions.
+    # Every mapped key is a literal in the handler or an admission/`ModelBindingError`
+    # code, and the family test below pins that class's raised set to its declared
+    # family, so this comparison is exact in both directions rather than assuming it.
     mapped = set(_REFUSAL_CODES) | set(_CONFLICT_CODES)
     unknown = sorted(mapped - reachable - reserved)
     assert unknown == [], (

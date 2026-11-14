@@ -265,11 +265,71 @@ export function retainRecovery(
   return previous ?? incoming;
 }
 
+/**
+ * The one readable handle behind "读取原状态", in `refresh()`'s own branch order. `null` is
+ * the restored crash window's shape: a durable create intent whose request never answered
+ * and whose answer named no Job or Operation, so a read would issue no request at all.
+ */
+export type ReadTarget = "operation" | "job" | "asset";
+
+/** The identities a restored page may read; `null` means that handle does not exist. */
+interface ReadableIdentities {
+  readonly operationId: string | null;
+  readonly jobId: string | null;
+  readonly assetId: string | null;
+}
+
+/**
+ * The single predicate for "what can this page read" (#780). `refresh()` dispatches on it,
+ * the restored status line is worded from it, and the alert's action list is generated from
+ * the same value. A second hand-written copy of these three conditions is how the alert came
+ * to promise a read the crash window cannot perform.
+ */
+function readTargetOf(identities: ReadableIdentities): ReadTarget | null {
+  if (identities.operationId) return "operation";
+  if (identities.jobId) return "job";
+  if (identities.assetId) return "asset";
+  return null;
+}
+
+/** What an unconfirmed outcome really allows: one read handle and, maybe, the replay. */
+export interface UnconfirmedActions {
+  readonly read: ReadTarget | null;
+  readonly replay: boolean;
+}
+
+/**
+ * The alert for an unconfirmed outcome. Every clause is generated from `actions`, so the
+ * sentence can neither omit an enabled action nor name one the page disables. The crash
+ * window has no read handle, so it may only name the original-key replay (#780).
+ */
+export function unconfirmedAlertFor(actions: UnconfirmedActions): string {
+  const read =
+    actions.read === "operation"
+      ? "读取原执行核对"
+      : actions.read === "job"
+        ? "读取原任务核对"
+        : actions.read === "asset"
+          ? "核对原素材"
+          : null;
+  if (read && actions.replay) return `请求结果尚未确认。请${read}；若重放，只使用原输入和原键。`;
+  if (read) return `请求结果尚未确认。请${read}；不要新建任务。`;
+  if (actions.replay)
+    return "请求结果尚未确认。没有可核对的原素材、原任务或原执行身份；重放只使用原输入和原键，不会新建任务。";
+  return "请求结果尚未确认。当前页没有可核对的原素材、原任务或原执行身份；请保留原请求，不要新建任务。";
+}
+
 interface TaskView {
   readonly busy: boolean;
   readonly inputFixed: boolean;
   readonly unknown: boolean;
   readonly canReplay: boolean;
+  /**
+   * What "读取原状态" would actually read for this snapshot, or `null` when it would send no
+   * request (#780). Derived from `refresh()`'s own branch selector under `#update`, so the
+   * affordance, the alert and the request cannot disagree.
+   */
+  readonly readTarget: ReadTarget | null;
   readonly requiresInput: boolean;
   readonly uploadRejected?: boolean;
   /**
@@ -306,9 +366,18 @@ interface TaskView {
  * must name exactly that action and never offer one the page disables (#771 review M1/S1).
  */
 function resumedNoticeFor(record: TaskRecord): string {
-  if (record.operationId !== null)
+  // A restored record names no asset handle: `record.assetId` is a confirmed upload, not a
+  // `refresh()` branch, so this predicate can only yield `operation`, `job` or `null` here.
+  // That unreachable asset branch is exactly why the old shared alert promised a read the
+  // crash window cannot perform (#780).
+  const read = readTargetOf({
+    operationId: record.operationId,
+    jobId: record.jobId,
+    assetId: null,
+  });
+  if (read === "operation")
     return "已找到原执行身份；该请求结果尚未确认，请读取原执行核对，不要新建任务。";
-  if (record.jobId !== null)
+  if (read === "job")
     return "已找到原任务身份；该请求结果尚未确认，请读取原任务核对，或按原输入与原键重放。";
   return "已找到原任务身份；该请求结果尚未确认，请按原输入与原键重放，不要新建任务。";
 }
@@ -349,6 +418,7 @@ export class FileTaskSession {
     inputFixed: false,
     unknown: false,
     canReplay: false,
+    readTarget: null,
     requiresInput: false,
     notice: "选择输入开始任务。",
     stream: "idle",
@@ -456,6 +526,9 @@ export class FileTaskSession {
             ? () => this.#cancelIntent(record.jobId!)
             : () => this.#submit();
     }
+    // Publish the restored read handle once the record and upload hint are known; it is
+    // `readTargetOf` over the same handles `refresh()` dispatches on (#780).
+    this.#view = { ...this.#view, readTarget: this.#readTarget(this.#view) };
   }
   getSnapshot = () => this.#view;
   subscribe = (listener: () => void) => {
@@ -465,9 +538,30 @@ export class FileTaskSession {
     };
   };
 
+  /**
+   * The handles `refresh()` would read, taken from the same sources its branches use: the
+   * recovery envelope or durable record, the accepted Job, the read Asset, or the upload
+   * record's own ids. Restored records expose no asset handle, which is why a reload of the
+   * crash window can read nothing (#780).
+   */
+  #readableIdentities(view: TaskView): ReadableIdentities {
+    return {
+      operationId: view.recovery?.error.nexus?.operation_id ?? this.#record?.operationId ?? null,
+      jobId: view.job?.id ?? this.#record?.jobId ?? null,
+      assetId: view.asset?.id ?? this.#upload?.assetId ?? this.#assetHintId,
+    };
+  }
+
+  #readTarget(view: TaskView): ReadTarget | null {
+    return readTargetOf(this.#readableIdentities(view));
+  }
+
   #update(update: Partial<TaskView>) {
     if (this.#lifetime.signal.aborted) return;
-    this.#view = { ...this.#view, ...update };
+    const next = { ...this.#view, ...update };
+    // Recompute the read handle against the view it describes: the button, the copy and
+    // `refresh()` are all consumers of that one value (#780).
+    this.#view = { ...next, readTarget: this.#readTarget(next) };
     this.#listeners.forEach((listener) => listener());
   }
 
@@ -1112,10 +1206,16 @@ export class FileTaskSession {
 
   async refresh() {
     await this.#run(async () => {
-      const operationId =
-        this.#view.recovery?.error.nexus?.operation_id ?? this.#record?.operationId;
-      if (operationId) {
-        const operation = await this.#client.getOperation(operationId, this.#lifetime.signal);
+      // One selector for "what can be read": the alert and the affordance read the same
+      // value, so a state with no readable handle must not be dispatched here at all
+      // (#780). The branches below keep their original behavior.
+      const identity = this.#readableIdentities(this.#view);
+      const target = readTargetOf(identity);
+      if (target === "operation") {
+        const operation = await this.#client.getOperation(
+          identity.operationId!,
+          this.#lifetime.signal,
+        );
         this.#update({ operation, notice: "已读取原执行；不会创建替代执行。" });
         if (operation.job_id) {
           const job = await this.#client.getJob(operation.job_id, this.#lifetime.signal);
@@ -1134,21 +1234,15 @@ export class FileTaskSession {
           this.#replay = undefined;
           this.#update({ job, unknown: false, canReplay: false, recovery: undefined });
         }
-      } else if (this.#view.job || this.#record?.jobId) {
-        const job = await this.#client.getJob(
-          this.#view.job?.id ?? this.#record!.jobId!,
-          this.#lifetime.signal,
-        );
+      } else if (target === "job") {
+        const job = await this.#client.getJob(identity.jobId!, this.#lifetime.signal);
         this.#acceptJob(job);
         this.#update({
           job,
           notice: "已重新读取当前任务。",
         });
-      } else if (this.#view.asset || this.#upload?.assetId || this.#assetHintId) {
-        const asset = await this.#client.getAsset(
-          this.#view.asset?.id ?? this.#upload?.assetId ?? this.#assetHintId!,
-          this.#lifetime.signal,
-        );
+      } else if (target === "asset") {
+        const asset = await this.#client.getAsset(identity.assetId!, this.#lifetime.signal);
         if (this.#assetIdentity) this.#checkAsset(asset);
         else this.#acceptAsset(asset);
         this.#update({

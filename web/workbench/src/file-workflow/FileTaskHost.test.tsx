@@ -510,6 +510,64 @@ describe("production Workbench file host", () => {
     expect(f.upload).not.toHaveBeenCalled();
     expect(f.create.mock.calls[0]?.[1]).toBe(uuid);
   });
+  it("restores the create crash window with an alert that names only the original-key replay", () => {
+    const f = fixture();
+    f.data.set(key, JSON.stringify(stored(null, "create")));
+    render(<FileTaskHost client={f.client} storage={f.storage} />);
+    // #780: no Job, no Operation and no asset handle survived the crash, so `读取原状态`
+    // would issue no request at all. The alert may therefore not ask for a read; it names
+    // the one reconciliation this state really has, and the affordance agrees with it.
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "请求结果尚未确认。没有可核对的原素材、原任务或原执行身份；重放只使用原输入和原键，不会新建任务。",
+    );
+    expect(screen.getByRole("button", { name: "读取原状态" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "按原键重放" })).toBeEnabled();
+    expect(f.getJob).not.toHaveBeenCalled();
+    expect(f.getAsset).not.toHaveBeenCalled();
+    expect(f.create).not.toHaveBeenCalled();
+  });
+  it.each([
+    { shape: "create crash window", record: stored(null, "create"), read: null, replay: true },
+    {
+      shape: "create with execution identity",
+      record: { ...stored(null, "create"), operationId: "op-demo" },
+      read: "operation",
+      replay: false,
+    },
+    { shape: "pending cancel", record: stored("job-demo", "cancel"), read: "job", replay: true },
+    {
+      shape: "pending cancel with execution identity",
+      record: { ...stored("job-demo", "cancel"), operationId: "op-demo" },
+      read: "operation",
+      replay: false,
+    },
+  ])("reloaded $shape alerts exactly the actions it enables", ({ record, read, replay }) => {
+    const f = fixture();
+    f.data.set(key, JSON.stringify(record));
+    render(<FileTaskHost client={f.client} storage={f.storage} />);
+    const alert = screen.getByRole("alert");
+    // The rendered copy's action set, read from its own product strings.
+    const phrase: Record<string, string> = {
+      operation: "读取原执行",
+      job: "读取原任务",
+      asset: "核对原素材",
+    };
+    const copy = alert.textContent ?? "";
+    const named = Object.entries(phrase)
+      .filter(([, text]) => copy.includes(text))
+      .map(([target]) => target);
+    expect(named).toEqual(read === null ? [] : [read]);
+    // Both directions against the buttons the user can really press: the copy names a read
+    // iff `读取原状态` is enabled, and mentions the replay iff `按原键重放` is enabled. The
+    // fixture's own `read`/`replay` columns keep that equality from being a tautology.
+    const refresh = screen.getByRole("button", { name: "读取原状态" });
+    const replayButton = screen.getByRole("button", { name: "按原键重放" });
+    expect(named.length > 0).toBe(read !== null);
+    expect(named.length > 0).toBe(!refresh.hasAttribute("disabled"));
+    expect(copy.includes("重放")).toBe(replay);
+    expect(copy.includes("重放")).toBe(!replayButton.hasAttribute("disabled"));
+    expect(f.getJob).not.toHaveBeenCalled();
+  });
   it("reads a durable Asset hint without upload and waits for explicit continue", async () => {
     const f = fixture();
     const base = stored(null);

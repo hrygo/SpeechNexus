@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { FileTaskSession } from "./file-task-session";
+import { type FileTaskSession, unconfirmedAlertFor } from "./file-task-session";
 import type { FileContracts } from "./speech-file-client";
 
 import { canFinishTask } from "./file-task-policy";
@@ -92,8 +92,12 @@ export function FileTaskPanel({
     >
       <h2 id="file-detail-title">任务与原始结果</h2>
       <p role="status">{state.notice}</p>
+      {/* The alert's action list is generated from the same read handle `refresh()` uses, so
+          it never asks for a read this state cannot perform (#780). */}
       {state.unknown && (
-        <p role="alert">请求结果尚未确认。请核对原素材或任务；重放只使用原输入和原键。</p>
+        <p role="alert">
+          {unconfirmedAlertFor({ read: state.readTarget, replay: state.canReplay })}
+        </p>
       )}
       {state.rejected && !state.unreplayable && (
         <p role="status">
@@ -161,7 +165,13 @@ export function FileTaskPanel({
         </p>
       )}
       <div className="file-task-actions">
-        <button type="button" disabled={state.busy} onClick={() => void session.restore()}>
+        {/* Disabled exactly when `refresh()` would send no request: the crash window has no
+            readable handle, and the alert may not name a read that cannot happen (#780). */}
+        <button
+          type="button"
+          disabled={state.busy || state.readTarget === null}
+          onClick={() => void session.restore()}
+        >
           读取原状态
         </button>
         <button

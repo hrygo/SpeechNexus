@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { FileTaskSession } from "./file-task-session";
+import { FileTaskSession, unconfirmedAlertFor, type ReadTarget } from "./file-task-session";
 import { canFinishTask } from "./file-task-policy";
 import { SpeechFileClient, parse } from "./speech-file-client";
 import { SessionTaskJournal, type FileTaskJournal, type TaskRecord } from "./task-journal";
@@ -802,6 +802,64 @@ function journalVerdict(record: TaskRecord): "valid" | "invalid" {
   }
 }
 
+/** Fixture example, cloned so no parser mutates a value shared across cells. */
+const example = (id: string) => structuredClone(fixtures.examples.find((e) => e.id === id)!.value);
+
+/**
+ * The copy fragments each readable handle must own (#780). The alert is asserted against
+ * the fragment of the handle the state enables, never against a whole literal, so wording
+ * and enablement cannot drift apart without one of the two failing.
+ */
+const readPhrase: Readonly<Record<ReadTarget, string>> = {
+  operation: "读取原执行",
+  job: "读取原任务",
+  asset: "核对原素材",
+};
+
+function namedReads(alert: string): ReadTarget[] {
+  return (Object.keys(readPhrase) as ReadTarget[]).filter((target) =>
+    alert.includes(readPhrase[target]),
+  );
+}
+
+/** The read handle a row's own declared facts require, independent of the widget's table. */
+function expectedRead(row: RestoreRow): ReadTarget | null {
+  const record = restoreRecord(row.pending, row.settled, row.operationId);
+  if (record.operationId !== null) return "operation";
+  return record.jobId !== null ? "job" : null;
+}
+
+/** A restored page whose only observable effect is the routes its reads actually hit. */
+function restoreWithRequests(record: TaskRecord) {
+  const requests: string[] = [];
+  const journal: FileTaskJournal = {
+    load: () => record,
+    save: () => {
+      throw new Error("a restored page never writes");
+    },
+  };
+  const client = new SpeechFileClient("http://127.0.0.1", (input) => {
+    const request = input instanceof Request ? input : new Request(input);
+    const path = new URL(request.url).pathname;
+    requests.push(path);
+    // No `job_id`: the operation read must stay a single request, so the projection this
+    // test measures is the read dispatch alone, not its follow-up.
+    if (path.startsWith("/v1/nexus/operations/"))
+      return Promise.resolve(Response.json({ ...example("operation"), job_id: null }));
+    if (path.startsWith("/v1/nexus/jobs/"))
+      return Promise.resolve(Response.json(example("queued-job")));
+    return Promise.resolve(Response.json(example("ready-audio")));
+  });
+  return { session: new FileTaskSession(client, journal), requests };
+}
+
+/** The handle a real request proves the page can read; any other route would be a bug. */
+function hitTarget(path: string): ReadTarget {
+  if (path.startsWith("/v1/nexus/operations/")) return "operation";
+  if (path.startsWith("/v1/nexus/jobs/")) return "job";
+  return "asset";
+}
+
 describe("restored recovery projection", () => {
   it.each(restoreMatrix)(
     "pending=$pending settled=$settled operationId=$operationId projects one coherent verdict",
@@ -832,6 +890,46 @@ describe("restored recovery projection", () => {
       expect(state.canReplay && !state.unknown).toBe(false);
       expect(state.unreplayable === true && state.rejected !== true).toBe(false);
       expect(journalVerdict(record)).toBe(row.journal);
+    },
+  );
+});
+
+/**
+ * Alert coverage over the same 18 cells (#780). The alert is what asks the user to act, so
+ * its action list must be exactly the actions this state enables. The equality is asserted
+ * against the state's own handles -- `readTarget` and `canReplay` -- not against another
+ * copy of the sentence, and a second test grounds those handles in the routes a real
+ * restore() issues, so a change that merely rewords both sides cannot satisfy it.
+ */
+describe("restored alert names exactly the enabled actions", () => {
+  it.each(restoreMatrix)(
+    "pending=$pending settled=$settled operationId=$operationId alerts only what it can do",
+    (row) => {
+      const state = restoreSnapshot(restoreRecord(row.pending, row.settled, row.operationId));
+      const alert = unconfirmedAlertFor({ read: state.readTarget, replay: state.canReplay });
+      expect(state.readTarget).toBe(expectedRead(row));
+      // Copy vs enablement, both directions: the alert names the read handle this state
+      // enables and no other; the crash window enables none, so it names none.
+      expect(namedReads(alert)).toEqual(state.readTarget === null ? [] : [state.readTarget]);
+      expect(alert.includes("重放")).toBe(state.canReplay);
+      // A state without any handle may not ask the user to verify something it can reach.
+      if (state.readTarget === null && state.canReplay)
+        expect(alert).toContain("没有可核对的原素材、原任务或原执行身份");
+    },
+  );
+
+  it.each(restoreMatrix)(
+    "pending=$pending settled=$settled operationId=$operationId reads only what the alert names",
+    async (row) => {
+      const record = restoreRecord(row.pending, row.settled, row.operationId);
+      const { session, requests } = restoreWithRequests(record);
+      const before = session.getSnapshot();
+      const alert = unconfirmedAlertFor({ read: before.readTarget, replay: before.canReplay });
+      await session.restore();
+      // Ground truth: the routes the page actually hits. This is what "可用" means, and
+      // it is the one thing the copy cannot influence.
+      expect(namedReads(alert)).toEqual([...new Set(requests.map(hitTarget))]);
+      expect(before.readTarget).toBe(requests.length === 0 ? null : hitTarget(requests[0]!));
     },
   );
 });

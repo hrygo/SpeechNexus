@@ -26,13 +26,23 @@ import re
 from pathlib import Path
 from typing import cast
 
+import pytest
 import yaml
 
 from speechnexus_backend.speech.interfaces.http.job_errors import (
     _ERRORS as UPSTREAM_JOB_ERRORS,
 )
-from speechnexus_backend.workbench.interfaces.http_render_units import _REFUSAL_CODES
+from speechnexus_backend.workbench.application.render_units import RenderRejection
+from speechnexus_backend.workbench.interfaces.http_render_units import (
+    _REFUSAL_CODES,
+    refusal_code,
+)
 from speechnexus_backend.workbench.interfaces.http_versions import ERRORS
+
+# The adapter refuses dispatch on exactly these statuses
+# (`public_speech_render_jobs._REFUSAL_STATUSES`), so a code that lands here has to
+# produce a published disposition whatever it is.
+REFUSAL_STATUSES = (400, 401, 403, 413, 415, 422)
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "contracts" / "workbench-openapi.yaml"
@@ -117,3 +127,35 @@ def test_the_mapping_only_names_codes_the_upstream_contract_declares() -> None:
         == _REFUSAL_CODES["profile_not_published"]
         == "render_submission_binding_unavailable"
     )
+
+
+def test_every_mapping_value_names_a_published_code() -> None:
+    """A mapping value that is not a declared code makes the route raise, not answer.
+
+    The three-way vocabulary comparison above only pins the code *set*; it says
+    nothing about the values the mapping may produce. Adding a mapping entry is the
+    most common edit here, and a typo in its value turns a refusal into a `KeyError`
+    inside `_error` — a 500 with no stated cause, exactly the defect #750 closes.
+    """
+
+    undeclared = sorted(set(_REFUSAL_CODES.values()) - set(ERRORS))
+    assert undeclared == [], (
+        f"{undeclared} are produced by the mapping but declared nowhere in ERRORS; "
+        "the route would raise instead of answering"
+    )
+    assert refusal_code(None) in ERRORS, "the fallback code must itself be declared"
+
+
+@pytest.mark.parametrize("status", REFUSAL_STATUSES)
+def test_every_refusal_code_and_status_maps_to_a_published_disposition(status: int) -> None:
+    """The mapping is total: no upstream code at a refusal status may escape it."""
+
+    for upstream in sorted(UPSTREAM_JOB_ERRORS):
+        for param in (None, "input.text", "voice.revision"):
+            code = refusal_code(
+                RenderRejection.upstream(status_code=status, code=upstream, param=param)
+            )
+            assert code in ERRORS, (
+                f"{upstream} at {status} (param={param!r}) produced {code!r}, "
+                "which is not a declared workbench error code"
+            )

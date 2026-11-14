@@ -60,10 +60,20 @@ _REFUSAL_CODES = {
     "workspace_disabled": "render_submission_workspace_unavailable",
     "voice_not_published": "render_submission_voice_unavailable",
     "asset_not_ready": "render_submission_asset_unavailable",
-    # One step ("publish the revision or pin a published one"), so one code: a pinned
-    # model binding and a pinned profile differ in the resource, not in the action.
+    "job_text_asset_unsupported": "render_submission_asset_unavailable",
+    # One step ("pin a revision this deployment can dispatch"), so one code: a pinned
+    # model, binding or profile differs in the resource, not in the action.
+    "model_not_published": "render_submission_binding_unavailable",
     "model_binding_not_published": "render_submission_binding_unavailable",
+    "model_binding_retired": "render_submission_binding_unavailable",
+    "model_binding_not_current": "render_submission_binding_unavailable",
+    "model_binding_mismatch": "render_submission_binding_unavailable",
+    "model_binding_task_not_supported": "render_submission_binding_unavailable",
+    "job_binding_incomplete": "render_submission_binding_unavailable",
     "profile_not_published": "render_submission_binding_unavailable",
+    # A pinned reference that resolves to nothing is a pinned field the operator has
+    # to correct; the step is the same as any other unsupported pinned value.
+    "pronunciation_not_found": "render_submission_field_unsupported",
     "job_request_too_large": "render_submission_body_too_large",
 }
 _FALLBACK_REFUSAL = "render_submission_rejected"
@@ -91,6 +101,14 @@ def refusal_code(rejection: RenderRejection | None) -> str:
         return _FALLBACK_REFUSAL
     if upstream == "unsupported_parameter":
         # #745's lesson: a 422 attributes to the text only when the upstream says so.
+        # The upstream public Job contract sends `param: null` for *every* error
+        # (`speech/interfaces/http/job_errors.py`), so the two branches below are
+        # reachable only after the upstream starts naming the parameter. Until then an
+        # unsupported parameter states no cause this workbench can act on: it stays the
+        # fallback, and the caller's own measurement is the only admissible
+        # attribution (which is exactly what the workbench panel does, #745).
+        if rejection.param is None:
+            return _FALLBACK_REFUSAL
         return (
             "render_submission_text_too_long"
             if rejection.param in _INLINE_TEXT_PARAMS

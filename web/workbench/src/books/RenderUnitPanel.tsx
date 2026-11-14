@@ -181,6 +181,13 @@ function problemOf(error: unknown, dispatched?: string): UnitProblem {
       return { key: "refusal", code: refusal };
     }
     if (error.status >= 500 || error.code === "store_unavailable") return { key: "unavailable" };
+    // A 4xx is a definite refusal: no Job was created, so "结果尚未确认" would send
+    // the operator to replay a request that cannot start. 408 and 429 are the same
+    // exceptions the journal above makes - a timeout or an exhausted admission is
+    // replayed with the original key, not abandoned - so they keep the unknown state
+    // and only a 5xx (or an outcome-unknown code) may otherwise claim uncertainty.
+    if (error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status))
+      return { key: "rejected" };
     return { key: "unknown" };
   }
   return { key: error instanceof TypeError ? "unavailable" : "unknown" };

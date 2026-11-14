@@ -863,9 +863,11 @@ describe("render unit text bounds (#745)", () => {
     },
   );
 
-  it("answers a refusal code this workbench does not publish with the unknown state", async () => {
-    // The guard test pins the vocabulary on both sides; this is the runtime backlog
-    // for a code that reached the panel without a disposition (e.g. a newer server).
+  it("answers an unpublishable refusal code with the generic refusal, not uncertainty", async () => {
+    // The guard test pins the vocabulary on both sides; this is the runtime answer for
+    // a code that reached the panel without a disposition (e.g. a newer server). A 4xx
+    // is a definite refusal - no Job was created - so claiming an unknown outcome would
+    // send the operator to replay a request that cannot start.
     const { generate } = setup();
     generate.mockRejectedValueOnce(
       new WorkbenchResponseError(422, {
@@ -881,8 +883,55 @@ describe("render unit text bounds (#745)", () => {
     );
     fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
     const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("请求被拒绝");
+    expect(alert.textContent).not.toContain("结果尚未确认");
+    expect(alert.textContent).not.toContain("按原键重试");
+  });
+
+  it("keeps 429 with the unknown state because a replay uses the original key", async () => {
+    // Admission contention is the one 4xx that is replayed rather than abandoned
+    // (the journal above makes the same exception), so it must not read as a refusal;
+    // its own capacity code is tracked separately from this vocabulary.
+    const { generate } = setup();
+    generate.mockRejectedValueOnce(
+      new WorkbenchResponseError(429, {
+        error: {
+          code: "job_capacity_exhausted",
+          type: "rate_limit_error",
+          message: "Synthetic capacity refusal.",
+          param: null,
+          request_id: "request-demo",
+          retryable: true,
+        },
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
+    const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("结果尚未确认");
   });
+
+  it.each([400, 409])(
+    "treats an unstated %i refusal as a refusal rather than an unknown outcome",
+    async (status) => {
+      const { generate } = setup();
+      generate.mockRejectedValueOnce(
+        new WorkbenchResponseError(status, {
+          error: {
+            code: "some_unstated_refusal",
+            type: "invalid_request_error",
+            message: "Synthetic unstated refusal.",
+            param: null,
+            request_id: "request-demo",
+            retryable: false,
+          },
+        }),
+      );
+      fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toContain("请求被拒绝");
+      expect(alert.textContent).not.toContain("结果尚未确认");
+    },
+  );
 
   it("names the stated text bound with the measured length when the server says so", async () => {
     const { generate } = setup([unit({ text: "旁白".repeat(2500) })]);

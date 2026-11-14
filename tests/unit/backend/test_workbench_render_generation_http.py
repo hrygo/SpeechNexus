@@ -263,9 +263,17 @@ def dispatched(unit_record: RenderUnit, handler: httpx.MockTransport) -> Workben
             "model_binding.revision",
             "render_submission_binding_unavailable",
         ),
+        (422, "model_binding_retired", None, "render_submission_binding_unavailable"),
         (413, "job_request_too_large", None, "render_submission_body_too_large"),
         # A refused unit is still refused; an unrecognized cause keeps the fallback.
         (422, "job_kind_not_supported", None, "render_submission_rejected"),
+        # #750 / #745: upstream names no parameter today (it sends `param: null` for
+        # every error), so an unsupported parameter states no cause and must stay the
+        # fallback - the panel's own measurement is then the only admissible
+        # attribution. Naming a field here would blame the pinned voice for an
+        # over-bound text.
+        (422, "unsupported_parameter", None, "render_submission_rejected"),
+        (422, "job_text_asset_unsupported", None, "render_submission_asset_unavailable"),
     ],
 )
 async def test_a_coded_refusal_reaches_the_route_as_a_workbench_code(

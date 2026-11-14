@@ -850,29 +850,39 @@ export interface paths {
      *     - `render_submission_text_too_long` - the unit text exceeds the inline
      *       bound of one Job request; split it into units within that bound.
      *     - `render_submission_field_unsupported` - a pinned field value is not
-     *       supported by this Job request; correct the pin.
+     *       supported by this Job request, or names a resource that no longer
+     *       exists; correct the pin.
      *     - `render_submission_workspace_not_configured` - the workspace has no
      *       provisioned Job quota; an operator must provision it, retrying cannot.
-     *     - `render_submission_workspace_unavailable` - the workspace does not exist
-     *       or is disabled; select another workspace.
+     *     - `render_submission_workspace_unavailable` - the target workspace does
+     *       not exist or is disabled; an operator must restore it, because the
+     *       deployment fixes the workspace and a consumer cannot select another.
      *     - `render_submission_voice_unavailable` - the pinned voice revision is not
      *       published; publish it, or pin a published revision.
      *     - `render_submission_asset_unavailable` - the pinned asset is not ready;
      *       wait for readiness or upload it again.
-     *     - `render_submission_binding_unavailable` - the pinned model binding or
-     *       profile revision is not published; publish it or pin a published
-     *       revision. Both resources share one code because they share one step.
+     *     - `render_submission_binding_unavailable` - the pinned model, model
+     *       binding or profile revision is not published, is retired, or does not
+     *       match this request; pin a revision this deployment can dispatch. All
+     *       of those resources share one code because they share one step.
      *     - `render_submission_body_too_large` - the Job request body derived from
      *       the unit text exceeds the deployment receive limit; shorten the text or
      *       raise the limit.
      *     - `render_submission_rejected` - the fallback: the unit is not expressible
      *       as one Job request locally, the upstream refusal envelope could not be
-     *       read, or the upstream stated a code whose operator step this vocabulary
-     *       does not name. It is never used to overwrite a cause that was stated.
+     *       read, the upstream stated an unsupported parameter without naming it, or
+     *       the upstream stated a code whose operator step this vocabulary does not
+     *       name. It is never used to overwrite a cause that was stated. A consumer
+     *       may add its own measurement to this answer, and must not read it as a
+     *       statement that the text is fine.
      *
      *     `param` carries the upstream field pointer when the refusing layer named
      *     one, and is null otherwise; it is a field pointer in both services, never a
-     *     code. The upstream Job code itself is deliberately not forwarded: it is an
+     *     code. The upstream public Job contract currently sends a null `param` for
+     *     every error, so today the only refusal that names a field is one this
+     *     workbench proved locally (the inline text bound, via
+     *     `render_submission_text_too_long`); the upstream-named branches exist so
+     *     that they become live without a consumer change when it starts naming one. The upstream Job code itself is deliberately not forwarded: it is an
      *     implementation detail of that contract, whereas these codes are this
      *     operation's own promise to its consumers.
      */

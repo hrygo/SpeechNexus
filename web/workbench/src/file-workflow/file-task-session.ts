@@ -403,6 +403,13 @@ export class FileTaskSession {
       // A settled cancel intent names its Job and stays readable, so it says which
       // class was refused; only the refusal itself is final (#723).
       const settledCancel = settled === "terminal" && record.pending === "cancel";
+      // `settled` is written only after an observed refusal, so it alone decides whether
+      // the page may claim one. The four restored fields derive from it as one table
+      // (file-task-persistence.test.ts pins every row): `unknown` and `rejected` are
+      // mutually exclusive by construction, `canReplay` implies `unknown`, and
+      // `unreplayable` implies `rejected`. The crash window carries no `settled` and
+      // describes an unconfirmed submission, so it must never be worded as a refusal
+      // (#771).
       this.#view = {
         ...this.#view,
         // `pending` alone cannot tell a submission still awaiting its answer from one the
@@ -422,7 +429,11 @@ export class FileTaskSession {
             ? "已找到原任务身份；该请求因请求体超过本部署的接收上限被拒绝，原意图作废。"
             : settledCancel
               ? "已找到原任务身份；该取消请求已被协议确定性拒绝并作废。请读取原任务核对，再显式收尾。"
-              : "已找到原任务身份；该意图已被协议确定性拒绝并作废。",
+              : settled === "terminal"
+                ? "已找到原任务身份；该意图已被协议确定性拒绝并作废。"
+                : record.pending !== null
+                  ? "已找到原任务身份；该请求结果尚未确认，请读取原任务核对，或按原输入与原键重放。"
+                  : "已找到原任务身份；请读取原任务状态。",
       };
       if (this.#view.canReplay)
         this.#replay =

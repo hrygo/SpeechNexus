@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { FileTaskSession } from "./file-task-session";
 import { canFinishTask } from "./file-task-policy";
 import { SpeechFileClient, parse } from "./speech-file-client";
-import { SessionTaskJournal } from "./task-journal";
+import { SessionTaskJournal, type FileTaskJournal, type TaskRecord } from "./task-journal";
 import { createDemoTransport } from "./dev/demo-transport";
 import fixtures from "../../../../tests/fixtures/contracts/file-workflow.json";
 
@@ -168,6 +168,11 @@ describe("durable file task identities", () => {
     });
     expect(second.getSnapshot().notice).not.toContain("结果未知");
     expect(canFinishTask(second.getSnapshot())).toBe(true);
+    // #771: this verdict alone must block replay. `unreplayable` stays absent (this is the
+    // terminal class, not the 413 one), so nothing but `settled === undefined` can be what
+    // denies `canReplay`; the public replay action must not resend the refused body either.
+    expect(second.getSnapshot().unreplayable).toBeUndefined();
+    await second.replay();
     // Restoring a settled intent reads no identity and submits nothing.
     expect(creates).toBe(1);
     second.dispose();
@@ -191,6 +196,14 @@ describe("durable file task identities", () => {
     const second = make();
     await second.restore();
     expect(second.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    expect(second.getSnapshot().rejected).toBeUndefined();
+    // #771: the crash window (pending create, no observed answer) reloads as one
+    // unconfirmed submission. The status line must say so and must never borrow the
+    // wording of a refusal, which would contradict the alert and the offered replay.
+    expect(second.getSnapshot().notice).toBe(
+      "已找到原任务身份；该请求结果尚未确认，请读取原任务核对，或按原输入与原键重放。",
+    );
+    expect(second.getSnapshot().notice).not.toContain("确定性拒绝");
     expect(canFinishTask(second.getSnapshot())).toBe(false);
     second.dispose();
   });
@@ -416,4 +429,206 @@ describe("durable file task identities", () => {
     expect(canFinishTask(restored.getSnapshot())).toBe(false);
     restored.dispose();
   });
+});
+
+/**
+ * Restored recovery projection (#771): the four fields the page reads plus the status line
+ * it renders, one row per `(pending, settled)` pair. `operationId` is `null` in every row
+ * because that is the only shape where `canReplay` is still a question; an identified
+ * original execution always denies replay, which is a separate, already-pinned rule.
+ *
+ * The rows marked `invalid` are shapes `SessionTaskJournal` refuses; the fabricated journal
+ * below bypasses that validation on purpose so the projection is pinned for all nine cells,
+ * including the incoherent ones, and the same test proves the journal keeps them unreachable.
+ * Reachable rows therefore cannot be silently re-worded, and the journal cannot start
+ * accepting a shape whose projection would over-claim a refusal.
+ */
+const resumedNotice =
+  "已找到原任务身份；该请求结果尚未确认，请读取原任务核对，或按原输入与原键重放。";
+const identifiedNotice = "已找到原任务身份；请读取原任务状态。";
+const terminalCreateNotice = "已找到原任务身份；该意图已被协议确定性拒绝并作废。";
+const terminalCancelNotice =
+  "已找到原任务身份；该取消请求已被协议确定性拒绝并作废。请读取原任务核对，再显式收尾。";
+const unreplayableNotice =
+  "已找到原任务身份；该请求因请求体超过本部署的接收上限被拒绝，原意图作废。";
+
+interface RestoreRow {
+  readonly pending: "create" | "cancel" | null;
+  readonly settled: "terminal" | "unreplayable" | undefined;
+  /** Whether the durable journal can actually carry this pair. */
+  readonly journal: "valid" | "invalid";
+  readonly unknown: boolean;
+  readonly canReplay: boolean;
+  readonly rejected: boolean;
+  readonly unreplayable: boolean;
+  readonly notice: string;
+}
+
+const restoreMatrix: readonly RestoreRow[] = [
+  {
+    pending: null,
+    settled: undefined,
+    journal: "valid",
+    unknown: false,
+    canReplay: false,
+    rejected: false,
+    unreplayable: false,
+    notice: identifiedNotice,
+  },
+  {
+    pending: null,
+    settled: "terminal",
+    journal: "invalid",
+    unknown: false,
+    canReplay: false,
+    rejected: true,
+    unreplayable: false,
+    notice: terminalCreateNotice,
+  },
+  {
+    pending: null,
+    settled: "unreplayable",
+    journal: "invalid",
+    unknown: false,
+    canReplay: false,
+    rejected: true,
+    unreplayable: true,
+    notice: unreplayableNotice,
+  },
+  {
+    pending: "create",
+    settled: undefined,
+    journal: "valid",
+    unknown: true,
+    canReplay: true,
+    rejected: false,
+    unreplayable: false,
+    notice: resumedNotice,
+  },
+  {
+    pending: "create",
+    settled: "terminal",
+    journal: "valid",
+    unknown: false,
+    canReplay: false,
+    rejected: true,
+    unreplayable: false,
+    notice: terminalCreateNotice,
+  },
+  {
+    pending: "create",
+    settled: "unreplayable",
+    journal: "valid",
+    unknown: false,
+    canReplay: false,
+    rejected: true,
+    unreplayable: true,
+    notice: unreplayableNotice,
+  },
+  {
+    pending: "cancel",
+    settled: undefined,
+    journal: "valid",
+    unknown: true,
+    canReplay: true,
+    rejected: false,
+    unreplayable: false,
+    notice: resumedNotice,
+  },
+  {
+    pending: "cancel",
+    settled: "terminal",
+    journal: "valid",
+    unknown: false,
+    canReplay: false,
+    rejected: true,
+    unreplayable: false,
+    notice: terminalCancelNotice,
+  },
+  {
+    pending: "cancel",
+    settled: "unreplayable",
+    journal: "invalid",
+    unknown: false,
+    canReplay: false,
+    rejected: true,
+    unreplayable: true,
+    notice: unreplayableNotice,
+  },
+];
+
+const restoreKey = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+
+function restoreRecord(pending: RestoreRow["pending"], settled: RestoreRow["settled"]): TaskRecord {
+  return {
+    version: 1,
+    model: "asr-quality",
+    assetId: "asset-demo",
+    workspaceId: "ws-default",
+    createKey: restoreKey(1),
+    cancelKey: restoreKey(2),
+    // A pending create owns no Job; a cancel names one, and an acknowledged intent keeps it.
+    jobId: pending === "create" ? null : "job-demo",
+    pending,
+    operationId: null,
+    cursor: null,
+    ...(settled === undefined ? {} : { settled }),
+  };
+}
+
+function restoreSnapshot(record: TaskRecord) {
+  const journal: FileTaskJournal = {
+    load: () => record,
+    save: () => {
+      throw new Error("a restored page never writes");
+    },
+  };
+  const client = new SpeechFileClient("http://127.0.0.1", () => {
+    throw new Error("a restored page never requests");
+  });
+  return new FileTaskSession(client, journal).getSnapshot();
+}
+
+function journalVerdict(record: TaskRecord): "valid" | "invalid" {
+  const data = new Map<string, string>([["restore", JSON.stringify(record)]]);
+  const storage = {
+    getItem: (key: string) => data.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      data.set(key, value);
+    },
+  };
+  try {
+    new SessionTaskJournal(storage, "restore").load();
+    return "valid";
+  } catch {
+    return "invalid";
+  }
+}
+
+describe("restored recovery projection", () => {
+  it.each(restoreMatrix)(
+    "pending=$pending settled=$settled projects one coherent verdict",
+    (row) => {
+      const state = restoreSnapshot(restoreRecord(row.pending, row.settled));
+      expect({
+        unknown: state.unknown,
+        canReplay: state.canReplay,
+        rejected: state.rejected === true,
+        unreplayable: state.unreplayable === true,
+      }).toEqual({
+        unknown: row.unknown,
+        canReplay: row.canReplay,
+        rejected: row.rejected,
+        unreplayable: row.unreplayable,
+      });
+      expect(state.notice).toBe(row.notice);
+      // Compatibility of the four fields, checked on every cell: a refusal and an unknown
+      // outcome are different answers to the same question, so they can never both be true;
+      // replay exists only for the unknown outcome; `unreplayable` is a kind of refusal.
+      expect(state.unknown && state.rejected === true).toBe(false);
+      expect(state.canReplay && !state.unknown).toBe(false);
+      expect(state.unreplayable === true && state.rejected !== true).toBe(false);
+      expect(journalVerdict(restoreRecord(row.pending, row.settled))).toBe(row.journal);
+    },
+  );
 });

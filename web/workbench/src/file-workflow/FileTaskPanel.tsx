@@ -12,13 +12,11 @@ export type ImportTranscript = (
 export function FileTaskPanel({
   session,
   onNew,
-  savedAssetId,
   result,
   onImportTranscript,
 }: {
   session: FileTaskSession;
   onNew: () => void;
-  savedAssetId: string | null;
   result?: ReactNode;
   onImportTranscript?: ImportTranscript | undefined;
 }) {
@@ -113,7 +111,8 @@ export function FileTaskPanel({
       )}
       <dl>
         <dt>素材</dt>
-        <dd>{state.asset?.id ?? state.assetRecoveryId ?? savedAssetId ?? "尚未确认"}</dd>
+        {/* One source for the identity the alert may name as readable (#780 review M1). */}
+        <dd>{state.assetIdentity ?? "尚未确认"}</dd>
         <dt>素材状态</dt>
         <dd>{state.asset?.status ?? "尚未确认"}</dd>
         <dt>任务</dt>
@@ -145,7 +144,9 @@ export function FileTaskPanel({
         <dt>资源清理</dt>
         <dd>{job?.cleanup_state ?? "尚无证据"}</dd>
         <dt>原执行</dt>
-        <dd>{state.operation?.id ?? state.recovery?.error.nexus?.operation_id ?? "无"}</dd>
+        {/* Same derived identity the alert and `refresh()` use, so the row cannot say "无"
+            while the alert asks for that read (#780 review M1). */}
+        <dd>{state.operationIdentity ?? "无"}</dd>
         <dt>执行状态</dt>
         <dd>
           {state.operation
@@ -165,8 +166,8 @@ export function FileTaskPanel({
         </p>
       )}
       <div className="file-task-actions">
-        {/* Disabled exactly when `refresh()` would send no request: the crash window has no
-            readable handle, and the alert may not name a read that cannot happen (#780). */}
+        {/* Disabled while a read is already running, and whenever the page holds no readable
+            identity at all; the alert names that same read handle (#780). */}
         <button
           type="button"
           disabled={state.busy || state.readTarget === null}

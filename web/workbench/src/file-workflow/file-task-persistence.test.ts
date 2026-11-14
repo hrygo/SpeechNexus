@@ -218,12 +218,22 @@ describe("durable file task identities", () => {
     // #771: the crash window (pending create, no observed answer) reloads as one
     // unconfirmed submission. The status line must say so and must never borrow the
     // wording of a refusal, which would contradict the alert and the offered replay.
-    // This shape names no readable Job or execution (see the zero-request assertion
-    // below), so the copy may promise only the original-key replay (review S1).
+    // This shape names no readable Job or execution, so the status line may promise only
+    // the original-key replay (review S1).
     expect(second.getSnapshot().notice).toBe(replayOnlyNotice);
     expect(second.getSnapshot().notice).not.toContain("确定性拒绝");
     expect(second.getSnapshot().notice).not.toContain("读取");
-    expect(requests, "the crash window has no readable identity to reconcile").toBe(0);
+    // #780 review M2: the durable record always names its confirmed input Asset
+    // (`task-journal.ts`), and `GET /v1/nexus/assets/{id}` answers for it, so "nothing to
+    // verify" would be a false negative. One read of that Asset, and it may not clear the
+    // unconfirmed submission (#771) -- only an upload recovery acknowledges the upload.
+    expect(requests, "the crash window reads exactly its durable input Asset").toBe(1);
+    expect(second.getSnapshot()).toMatchObject({
+      readTarget: "asset",
+      assetIdentity: "asset-demo",
+      operationIdentity: null,
+    });
+    expect(second.getSnapshot().assetRecoveryId).toBeUndefined();
     expect(canFinishTask(second.getSnapshot())).toBe(false);
     second.dispose();
   });
@@ -822,11 +832,16 @@ function namedReads(alert: string): ReadTarget[] {
   );
 }
 
-/** The read handle a row's own declared facts require, independent of the widget's table. */
+/**
+ * The read handle a row's own declared facts require, derived from the record alone. The
+ * journal always names the confirmed input Asset, so a restored cell is never identity-less:
+ * that is why the crash window may not be told there is nothing to verify (#780 review M2).
+ */
 function expectedRead(row: RestoreRow): ReadTarget | null {
   const record = restoreRecord(row.pending, row.settled, row.operationId);
   if (record.operationId !== null) return "operation";
-  return record.jobId !== null ? "job" : null;
+  if (record.jobId !== null) return "job";
+  return record.assetId === "" ? null : "asset";
 }
 
 /** A restored page whose only observable effect is the routes its reads actually hit. */
@@ -896,10 +911,12 @@ describe("restored recovery projection", () => {
 
 /**
  * Alert coverage over the same 18 cells (#780). The alert is what asks the user to act, so
- * its action list must be exactly the actions this state enables. The equality is asserted
- * against the state's own handles -- `readTarget` and `canReplay` -- not against another
- * copy of the sentence, and a second test grounds those handles in the routes a real
- * restore() issues, so a change that merely rewords both sides cannot satisfy it.
+ * its action list must be exactly the actions this state enables. Three independent oracles
+ * are used, and each one catches something the others do not: `expectedRead` derives the
+ * handle from the row's declared facts (it, not the route assertion, is what a reordered
+ * `readTargetOf` trips -- review M6); the route assertion grounds the handle in the requests
+ * a real `restore()` issues, which the copy cannot influence; and the fragment equality
+ * compares the copy against the rendered enablement.
  */
 describe("restored alert names exactly the enabled actions", () => {
   it.each(restoreMatrix)(
@@ -908,13 +925,17 @@ describe("restored alert names exactly the enabled actions", () => {
       const state = restoreSnapshot(restoreRecord(row.pending, row.settled, row.operationId));
       const alert = unconfirmedAlertFor({ read: state.readTarget, replay: state.canReplay });
       expect(state.readTarget).toBe(expectedRead(row));
+      // The identity rows render the same derived values the alert is built from, so the
+      // panel cannot say "无" while the alert asks for that read (#780 review M1).
+      expect(state.operationIdentity).toBe(row.operationId === null ? null : "op-demo");
+      expect(state.assetIdentity).toBe("asset-demo");
       // Copy vs enablement, both directions: the alert names the read handle this state
-      // enables and no other; the crash window enables none, so it names none.
+      // enables and no other.
       expect(namedReads(alert)).toEqual(state.readTarget === null ? [] : [state.readTarget]);
       expect(alert.includes("重放")).toBe(state.canReplay);
-      // A state without any handle may not ask the user to verify something it can reach.
-      if (state.readTarget === null && state.canReplay)
-        expect(alert).toContain("没有可核对的原素材、原任务或原执行身份");
+      // A restored intent always names a readable Asset, so no cell may claim otherwise
+      // (#780 review M2: a false negative is as wrong as a false promise).
+      expect(alert).not.toContain("没有可核对");
     },
   );
 
@@ -930,6 +951,60 @@ describe("restored alert names exactly the enabled actions", () => {
       // it is the one thing the copy cannot influence.
       expect(namedReads(alert)).toEqual([...new Set(requests.map(hitTarget))]);
       expect(before.readTarget).toBe(requests.length === 0 ? null : hitTarget(requests[0]!));
+    },
+  );
+});
+
+/**
+ * The generator's whole contract, one cell per reachable combination (#780 review S3/S4):
+ * the two states the restored matrix cannot reach -- an identified execution that is still
+ * replayable, and a readable Asset that is still replayable -- and the identity-less
+ * negative branch are all pinned here, verbatim and by fragment.
+ */
+describe("alert generator names exactly the actions it is given", () => {
+  const combinations: { read: ReadTarget | null; replay: boolean; copy: string }[] = [
+    {
+      read: "operation",
+      replay: true,
+      copy: "请求结果尚未确认。请读取原执行核对；若重放，只使用原输入和原键。",
+    },
+    {
+      read: "operation",
+      replay: false,
+      copy: "请求结果尚未确认。请读取原执行核对；不要新建任务。",
+    },
+    {
+      read: "job",
+      replay: true,
+      copy: "请求结果尚未确认。请读取原任务核对；若重放，只使用原输入和原键。",
+    },
+    { read: "job", replay: false, copy: "请求结果尚未确认。请读取原任务核对；不要新建任务。" },
+    {
+      read: "asset",
+      replay: true,
+      copy: "请求结果尚未确认。请核对原素材；若重放，只使用原输入和原键。",
+    },
+    { read: "asset", replay: false, copy: "请求结果尚未确认。请核对原素材；不要新建任务。" },
+    {
+      read: null,
+      replay: true,
+      copy: "请求结果尚未确认。没有可核对的素材、任务或执行身份；重放只使用原输入和原键，不会新建任务。",
+    },
+    {
+      read: null,
+      replay: false,
+      copy: "请求结果尚未确认。当前页没有可核对的素材、任务或执行身份；请保留原请求，不要新建任务。",
+    },
+  ];
+
+  it.each(combinations)(
+    "read=$read replay=$replay names exactly those actions",
+    ({ read, replay, copy }) => {
+      expect(unconfirmedAlertFor({ read, replay })).toBe(copy);
+      expect(namedReads(copy)).toEqual(read === null ? [] : [read]);
+      expect(copy.includes("重放")).toBe(replay);
+      // The negative branch exists for one shape only: a page that holds no identity at all.
+      expect(copy.includes("没有可核对")).toBe(read === null);
     },
   );
 });

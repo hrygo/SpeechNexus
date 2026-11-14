@@ -267,12 +267,16 @@ export function retainRecovery(
 
 /**
  * The one readable handle behind "读取原状态", in `refresh()`'s own branch order. `null` is
- * the restored crash window's shape: a durable create intent whose request never answered
- * and whose answer named no Job or Operation, so a read would issue no request at all.
+ * the shape with no identity at all: an unconfirmed *upload* whose answer never named an
+ * Asset, so a read would issue no request.
  */
 export type ReadTarget = "operation" | "job" | "asset";
 
-/** The identities a restored page may read; `null` means that handle does not exist. */
+/**
+ * The identities this page may read; `null` means that handle does not exist. Every source
+ * here is readable by id over the public contract, so "can this page read it" is a capability
+ * fact, never a description of what `refresh()` happens to do.
+ */
 interface ReadableIdentities {
   readonly operationId: string | null;
   readonly jobId: string | null;
@@ -281,9 +285,9 @@ interface ReadableIdentities {
 
 /**
  * The single predicate for "what can this page read" (#780). `refresh()` dispatches on it,
- * the restored status line is worded from it, and the alert's action list is generated from
- * the same value. A second hand-written copy of these three conditions is how the alert came
- * to promise a read the crash window cannot perform.
+ * the restored status line is worded from it, the panel's identity rows render it, and the
+ * alert's action list is generated from the same value. A second hand-written copy of these
+ * three conditions is how the alert came to promise a read the page cannot perform.
  */
 function readTargetOf(identities: ReadableIdentities): ReadTarget | null {
   if (identities.operationId) return "operation";
@@ -300,8 +304,9 @@ export interface UnconfirmedActions {
 
 /**
  * The alert for an unconfirmed outcome. Every clause is generated from `actions`, so the
- * sentence can neither omit an enabled action nor name one the page disables. The crash
- * window has no read handle, so it may only name the original-key replay (#780).
+ * sentence can neither omit an enabled action nor name one the page disables. Its negative
+ * branch is reserved for the identity-less state (#780 review M2): a restored intent always
+ * names its Asset, so the crash window must not be told there is nothing to verify.
  */
 export function unconfirmedAlertFor(actions: UnconfirmedActions): string {
   const read =
@@ -315,8 +320,8 @@ export function unconfirmedAlertFor(actions: UnconfirmedActions): string {
   if (read && actions.replay) return `请求结果尚未确认。请${read}；若重放，只使用原输入和原键。`;
   if (read) return `请求结果尚未确认。请${read}；不要新建任务。`;
   if (actions.replay)
-    return "请求结果尚未确认。没有可核对的原素材、原任务或原执行身份；重放只使用原输入和原键，不会新建任务。";
-  return "请求结果尚未确认。当前页没有可核对的原素材、原任务或原执行身份；请保留原请求，不要新建任务。";
+    return "请求结果尚未确认。没有可核对的素材、任务或执行身份；重放只使用原输入和原键，不会新建任务。";
+  return "请求结果尚未确认。当前页没有可核对的素材、任务或执行身份；请保留原请求，不要新建任务。";
 }
 
 interface TaskView {
@@ -325,11 +330,15 @@ interface TaskView {
   readonly unknown: boolean;
   readonly canReplay: boolean;
   /**
-   * What "读取原状态" would actually read for this snapshot, or `null` when it would send no
-   * request (#780). Derived from `refresh()`'s own branch selector under `#update`, so the
+   * What "读取原状态" can actually read for this snapshot, or `null` when the page holds no
+   * readable identity (#780). Derived from `#readableIdentities` under `#update`, so the
    * affordance, the alert and the request cannot disagree.
    */
   readonly readTarget: ReadTarget | null;
+  /** The execution identity the page holds, rendered as-is by the panel's 原执行 row (#780). */
+  readonly operationIdentity: string | null;
+  /** The input Asset identity the page holds, rendered as-is by the panel's 素材 row (#780). */
+  readonly assetIdentity: string | null;
   readonly requiresInput: boolean;
   readonly uploadRejected?: boolean;
   /**
@@ -359,22 +368,16 @@ interface TaskView {
 }
 
 /**
- * The one reconciling action an unconfirmed restored submission can actually take. An
- * identified original execution is *queried* -- its key cannot be replayed, see
- * `canReplay`; a pending cancel names a readable Job and keeps both paths; a create crash
- * window carries no readable identity at all, so only its original key is left. The copy
- * must name exactly that action and never offer one the page disables (#771 review M1/S1).
+ * The restored status line for an unconfirmed submission, worded from the same read handle
+ * `refresh()` dispatches on (#771, #780). An identified original execution is *queried* --
+ * its key cannot be replayed, see `canReplay`; a pending cancel names a readable Job and
+ * keeps both paths; an unconfirmed create with no Job/Operation identity is reconciled by
+ * its original key only. A reachable input Asset is deliberately not offered here: it
+ * verifies the input, never the submission, so the alert names that read and the status
+ * line keeps its #771 wording. The copy must name exactly what the page can do and never
+ * offer an action it disables.
  */
-function resumedNoticeFor(record: TaskRecord): string {
-  // A restored record names no asset handle: `record.assetId` is a confirmed upload, not a
-  // `refresh()` branch, so this predicate can only yield `operation`, `job` or `null` here.
-  // That unreachable asset branch is exactly why the old shared alert promised a read the
-  // crash window cannot perform (#780).
-  const read = readTargetOf({
-    operationId: record.operationId,
-    jobId: record.jobId,
-    assetId: null,
-  });
+function resumedNoticeFor(read: ReadTarget | null): string {
   if (read === "operation")
     return "已找到原执行身份；该请求结果尚未确认，请读取原执行核对，不要新建任务。";
   if (read === "job")
@@ -419,6 +422,8 @@ export class FileTaskSession {
     unknown: false,
     canReplay: false,
     readTarget: null,
+    operationIdentity: null,
+    assetIdentity: null,
     requiresInput: false,
     notice: "选择输入开始任务。",
     stream: "idle",
@@ -426,7 +431,8 @@ export class FileTaskSession {
   #watch: AbortController | undefined;
   #file: File | undefined;
   #text: string | undefined;
-  #assetIdentity:
+  /** The verified fields of the accepted Asset, used to reject a read that disagrees. */
+  #verifiedAsset:
     Readonly<Pick<FileContracts["Asset"], (typeof assetIdentityFields)[number]>> | undefined;
   #tts: Readonly<TtsSelection> | undefined;
   #model: string | undefined;
@@ -458,7 +464,7 @@ export class FileTaskSession {
           profileRevision: upload.profileRevision,
         });
       if (upload.pending === "validation")
-        this.#assetIdentity = Object.freeze({
+        this.#verifiedAsset = Object.freeze({
           id: upload.assetId!,
           workspace_id: upload.workspaceId!,
           purpose: upload.version === 3 || upload.version === 5 ? "asr_input" : "text_input",
@@ -517,7 +523,7 @@ export class FileTaskSession {
               : settled === "terminal"
                 ? "已找到原任务身份；该意图已被协议确定性拒绝并作废。"
                 : record.pending !== null
-                  ? resumedNoticeFor(record)
+                  ? resumedNoticeFor(this.#readTarget(this.#view))
                   : "已找到原任务身份；请读取原任务状态。",
       };
       if (this.#view.canReplay)
@@ -526,9 +532,9 @@ export class FileTaskSession {
             ? () => this.#cancelIntent(record.jobId!)
             : () => this.#submit();
     }
-    // Publish the restored read handle once the record and upload hint are known; it is
-    // `readTargetOf` over the same handles `refresh()` dispatches on (#780).
-    this.#view = { ...this.#view, readTarget: this.#readTarget(this.#view) };
+    // Publish the restored read handle and identity rows once the record and upload hint are
+    // known: all three come from one `readTargetOf` over the handles `refresh()` uses (#780).
+    this.#view = { ...this.#view, ...this.#derive(this.#view) };
   }
   getSnapshot = () => this.#view;
   subscribe = (listener: () => void) => {
@@ -539,16 +545,22 @@ export class FileTaskSession {
   };
 
   /**
-   * The handles `refresh()` would read, taken from the same sources its branches use: the
-   * recovery envelope or durable record, the accepted Job, the read Asset, or the upload
-   * record's own ids. Restored records expose no asset handle, which is why a reload of the
-   * crash window can read nothing (#780).
+   * Every readable identity the page holds, taken from the handles its reads address: the
+   * kept recovery envelope, the durable record, the Operation it already read, the accepted
+   * Job, the read Asset, or the upload record's own ids. Each one is resolvable by id over the
+   * public contract -- `record.assetId` included, since the journal always names the confirmed
+   * input Asset (#780 review M2).
    */
   #readableIdentities(view: TaskView): ReadableIdentities {
     return {
-      operationId: view.recovery?.error.nexus?.operation_id ?? this.#record?.operationId ?? null,
+      operationId:
+        view.recovery?.error.nexus?.operation_id ??
+        this.#record?.operationId ??
+        view.operation?.id ??
+        null,
       jobId: view.job?.id ?? this.#record?.jobId ?? null,
-      assetId: view.asset?.id ?? this.#upload?.assetId ?? this.#assetHintId,
+      assetId:
+        view.asset?.id ?? this.#record?.assetId ?? this.#upload?.assetId ?? this.#assetHintId,
     };
   }
 
@@ -556,12 +568,22 @@ export class FileTaskSession {
     return readTargetOf(this.#readableIdentities(view));
   }
 
+  /** The derived fields, all computed from the same identities so they cannot drift (#780). */
+  #derive(view: TaskView): Pick<TaskView, "readTarget" | "operationIdentity" | "assetIdentity"> {
+    const identity = this.#readableIdentities(view);
+    return {
+      readTarget: readTargetOf(identity),
+      operationIdentity: identity.operationId,
+      assetIdentity: identity.assetId,
+    };
+  }
+
   #update(update: Partial<TaskView>) {
     if (this.#lifetime.signal.aborted) return;
     const next = { ...this.#view, ...update };
-    // Recompute the read handle against the view it describes: the button, the copy and
-    // `refresh()` are all consumers of that one value (#780).
-    this.#view = { ...next, readTarget: this.#readTarget(next) };
+    // Recompute the derived values against the view they describe: the button, the copy, the
+    // identity rows and `refresh()` are all consumers of these one values (#780).
+    this.#view = { ...next, ...this.#derive(next) };
     this.#listeners.forEach((listener) => listener());
   }
 
@@ -625,15 +647,18 @@ export class FileTaskSession {
 
   #checkAsset(asset: FileContracts["Asset"]) {
     if (
-      !this.#assetIdentity ||
-      assetIdentityFields.some((field) => asset[field] !== this.#assetIdentity![field])
+      !this.#verifiedAsset ||
+      assetIdentityFields.some((field) => asset[field] !== this.#verifiedAsset![field])
     )
       throw new Error("Speech resource mismatch");
   }
 
   /** Read existing identities only. Never create or cancel during restoration. */
   async restore() {
-    if (this.#record || this.#upload) await this.refresh();
+    // The one read predicate gates the action too: the old `#record || #upload` check was a
+    // fourth condition, and a page holding a readable identity outside it claimed a read that
+    // sent nothing (#780 review S1).
+    if (this.#readTarget(this.#view) !== null) await this.refresh();
   }
 
   async #run<T>(action: () => Promise<T>, mutation = false): Promise<T | undefined> {
@@ -1007,7 +1032,7 @@ export class FileTaskSession {
     )
       throw new Error("Speech resource mismatch");
     this.#acknowledgeUpload(asset);
-    this.#assetIdentity = Object.freeze({ ...asset });
+    this.#verifiedAsset = Object.freeze({ ...asset });
     this.#update({
       asset,
       unknown: false,
@@ -1243,12 +1268,13 @@ export class FileTaskSession {
         });
       } else if (target === "asset") {
         const asset = await this.#client.getAsset(identity.assetId!, this.#lifetime.signal);
-        if (this.#assetIdentity) this.#checkAsset(asset);
-        else this.#acceptAsset(asset);
-        this.#update({
-          asset,
-          notice: "已重新读取素材。",
-        });
+        // Only an upload recovery acknowledges the upload and clears its unknown state. A
+        // submitted intent reads its input Asset to verify the input, so its submission stays
+        // unconfirmed: `unknown`, `canReplay`, the replay handle and the #771 status copy all
+        // survive, and the Asset row is the read's visible result.
+        if (this.#verifiedAsset) this.#checkAsset(asset);
+        else if (!this.#record) this.#acceptAsset(asset);
+        this.#update(this.#record ? { asset } : { asset, notice: "已重新读取素材。" });
       }
     });
   }

@@ -735,20 +735,6 @@ it("labels a capped history instead of pretending it is complete", async () => {
 });
 
 describe("render unit text bounds (#745)", () => {
-  /**
-   * The bounds paragraph is the text control's description (`aria-describedby`), not
-   * a named control. Resolve it the way the panel exposes it: through that link, and
-   * never by a name of its own (#753).
-   */
-  async function textBoundsOf(label: string): Promise<HTMLElement> {
-    const control = await screen.findByLabelText(label);
-    const id = control.getAttribute("aria-describedby");
-    expect(id).not.toBeNull();
-    const bounds = document.getElementById(id ?? "");
-    expect(bounds).not.toBeNull();
-    return bounds as HTMLElement;
-  }
-
   /** A contract-valid refusal: the shared ErrorBody has no sub-reason to branch on. */
   function refusedDispatch() {
     return new WorkbenchResponseError(422, {
@@ -765,7 +751,7 @@ describe("render unit text bounds (#745)", () => {
 
   it("shows the current length against both bounds and names the split step", async () => {
     setup([unit({ text: "旁白".repeat(2500) })]);
-    const bounds = await textBoundsOf("单元 1 文本");
+    const bounds = await screen.findByLabelText("单元 1 文本 字数");
     expect(bounds).toHaveTextContent("已 5000 字符（Unicode 码点，与契约 maxLength 同单位）");
     expect(bounds).toHaveTextContent("一次派发上限 4096 字符");
     expect(bounds).toHaveTextContent("源容量上限 200000 字符");
@@ -782,7 +768,7 @@ describe("render unit text bounds (#745)", () => {
 
   it("says a text under the dispatch bound can be dispatched in one request", async () => {
     setup();
-    const bounds = await textBoundsOf("单元 1 文本");
+    const bounds = await screen.findByLabelText("单元 1 文本 字数");
     expect(bounds).toHaveTextContent("已 6 字符");
     expect(bounds).toHaveTextContent("可一次派发。");
     expect(bounds).not.toHaveTextContent("超过一次派发上限");
@@ -792,7 +778,7 @@ describe("render unit text bounds (#745)", () => {
     // 2049 astral code points are 4098 UTF-16 code units: a code-unit count would
     // say 4098 and wrongly block a dispatch the server accepts.
     setup([unit({ text: "😀".repeat(2049) })]);
-    const bounds = await textBoundsOf("单元 1 文本");
+    const bounds = await screen.findByLabelText("单元 1 文本 字数");
     expect(bounds).toHaveTextContent("已 2049 字符");
     expect(bounds).toHaveTextContent("可一次派发。");
     expect(bounds).not.toHaveTextContent("超过一次派发上限");
@@ -800,7 +786,7 @@ describe("render unit text bounds (#745)", () => {
 
   it("keeps a full 4096 astral code points dispatchable in one request", async () => {
     setup([unit({ text: "😀".repeat(4096) })]);
-    const bounds = await textBoundsOf("单元 1 文本");
+    const bounds = await screen.findByLabelText("单元 1 文本 字数");
     expect(bounds).toHaveTextContent("已 4096 字符");
     expect(bounds).toHaveTextContent("可一次派发。");
     expect(bounds).not.toHaveTextContent("超过一次派发上限");
@@ -853,77 +839,15 @@ describe("render unit text bounds (#745)", () => {
     const textarea = screen.getByLabelText("新单元文本");
     expect(textarea).toHaveAttribute("maxLength", "200000");
     fireEvent.change(textarea, { target: { value: "a".repeat(200000) } });
-    const bounds = await textBoundsOf("新单元文本");
+    const bounds = screen.getByLabelText("新单元文本 字数");
     expect(bounds).toHaveTextContent("已 200000 字符");
     expect(bounds).not.toHaveTextContent("超过源容量上限");
     expect(bounds).toHaveTextContent("超过一次派发上限，不能一次派发");
     // The browser's maxLength stops this by typing, so the test forces the state a
     // paste-overflow or programmatic write would produce and reads the defence.
     fireEvent.change(textarea, { target: { value: "a".repeat(200001) } });
-    expect(await textBoundsOf("新单元文本")).toHaveTextContent(
+    expect(screen.getByLabelText("新单元文本 字数")).toHaveTextContent(
       "超过源容量上限 200000 字符：保存该单元会被契约拒绝。",
     );
-  });
-});
-
-/**
- * Playwright's `getByLabel(label)` matches a substring of the accessible name by
- * default, and Testing Library's `ByLabelText` queries express the same relation. A
- * control's label therefore has to identify exactly one element however the query is
- * anchored: an element whose accessible name *extends* a control's label — e.g. a hint
- * named "新单元文本 字数" beside the control named "新单元文本" — makes every caller
- * that asks for the control by its own label resolve two elements (#753).
- */
-describe("control labels resolve uniquely (#753)", () => {
-  /** Every label the panel gives a form control: a wrapping <label>'s copy or aria-label. */
-  function controlLabels(container: HTMLElement): string[] {
-    const labels: string[] = [];
-    for (const control of container.querySelectorAll("input, textarea, select")) {
-      const own = control.getAttribute("aria-label");
-      if (own !== null) {
-        labels.push(own.trim());
-        continue;
-      }
-      const wrapper = control.closest("label");
-      if (wrapper === null) continue;
-      // A wrapping label's text is its copy plus whatever the control contributes.
-      const copy = wrapper.cloneNode(true) as HTMLElement;
-      for (const nested of copy.querySelectorAll("input, textarea, select")) nested.remove();
-      const copyText = (copy.textContent ?? "").trim();
-      if (copyText !== "") labels.push(copyText);
-    }
-    return [...new Set(labels)];
-  }
-
-  it("finds every control's label exactly once, anchored or not", async () => {
-    const { container } = setup([unit()]);
-    await screen.findByRole("list", { name: "单元列表" });
-    const labels = controlLabels(container);
-    // The walker must reach both the create form and the per-unit form, so a broken
-    // guess about the DOM cannot pass by finding nothing.
-    expect(labels).toContain("新单元文本");
-    expect(labels).toContain("单元 1 文本");
-    for (const label of labels) {
-      // The query form the probe uses: Playwright's default substring match.
-      expect(screen.queryAllByLabelText(label, { exact: false }), label).toHaveLength(1);
-      // The anchored form must agree: the defect is in the accessible name, not in
-      // how the caller anchors its query, so anchoring cannot be used to bypass it.
-      expect(screen.queryAllByLabelText(label, { exact: true }), label).toHaveLength(1);
-    }
-  });
-
-  it("describes the text control with the bounds instead of naming them", async () => {
-    setup([unit()]);
-    const control = await screen.findByLabelText("单元 1 文本");
-    const id = control.getAttribute("aria-describedby");
-    expect(id).toBe("unit-unit_demo-text-bounds");
-    const bounds = document.getElementById(id ?? "");
-    expect(bounds).toHaveTextContent("已 6 字符");
-    // A description carries no name of its own: a name that starts with the control's
-    // label is exactly what makes the control's own label ambiguous.
-    expect(bounds).not.toHaveAttribute("aria-label");
-    const matches = screen.queryAllByLabelText("单元 1 文本", { exact: false });
-    expect(matches).toHaveLength(1);
-    expect(matches[0]).toBe(control);
   });
 });

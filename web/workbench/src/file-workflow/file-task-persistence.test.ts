@@ -216,6 +216,81 @@ describe("durable file task identities", () => {
     second.dispose();
   });
 
+  it("restores a terminally refused cancel as settled instead of an unknown cancellation", async () => {
+    const test = setup();
+    let cancellations = 0;
+    const client = new SpeechFileClient("http://127.0.0.1", async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (
+        new URL(request.url).pathname === "/v1/nexus/jobs/job-demo/cancellations" &&
+        request.method === "POST"
+      ) {
+        cancellations++;
+        return rejection(409, "execution_cleanup_pending");
+      }
+      return test.transport.fetch(request);
+    });
+    const make = () => new FileTaskSession(client, new SessionTaskJournal(test.storage, "task"));
+    const first = make();
+    await first.start(test.file, "asr-quality");
+    await first.cancel();
+    expect(first.getSnapshot()).toMatchObject({ unknown: false, rejected: true, canReplay: false });
+    first.dispose();
+    // The refused cancel intent is spent; the Job it named keeps its own readable facts.
+    expect(test.read()).toMatchObject({
+      pending: "cancel",
+      jobId: "job-demo",
+      settled: "terminal",
+    });
+    const second = make();
+    await second.restore();
+    expect(second.getSnapshot()).toMatchObject({
+      unknown: false,
+      rejected: true,
+      canReplay: false,
+      job: { id: "job-demo" },
+    });
+    // Counterexample 1: a reader that ignored the cancel class would restore this as
+    // "result unknown" and forbid the explicit end of the page.
+    expect(second.getSnapshot().notice).not.toContain("结果未知");
+    expect(canFinishTask(second.getSnapshot())).toBe(true);
+    await second.replay();
+    await second.cancel();
+    expect(cancellations).toBe(1);
+    expect(test.transport.stats.createKeys).toHaveLength(1);
+    expect(test.transport.stats.executions).toBe(1);
+    expect(test.read()).toMatchObject({ pending: "cancel", settled: "terminal" });
+    second.dispose();
+  });
+
+  it("keeps a lost cancellation response unknown and never records a settled refusal", async () => {
+    const test = setup();
+    const client = new SpeechFileClient("http://127.0.0.1", async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (
+        new URL(request.url).pathname === "/v1/nexus/jobs/job-demo/cancellations" &&
+        request.method === "POST"
+      )
+        throw new TypeError("Synthetic lost cancellation response");
+      return test.transport.fetch(request);
+    });
+    const make = () => new FileTaskSession(client, new SessionTaskJournal(test.storage, "task"));
+    const first = make();
+    await first.start(test.file, "asr-quality");
+    await first.cancel();
+    expect(first.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    expect(first.getSnapshot().rejected).toBeUndefined();
+    expect(test.read()).toMatchObject({ pending: "cancel" });
+    expect(test.read()).not.toHaveProperty("settled");
+    first.dispose();
+    const second = make();
+    await second.restore();
+    expect(second.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    expect(second.getSnapshot().rejected).toBeUndefined();
+    expect(canFinishTask(second.getSnapshot())).toBe(false);
+    second.dispose();
+  });
+
   it("restores operation recovery identity using GET only", async () => {
     const test = setup();
     let creates = 0;

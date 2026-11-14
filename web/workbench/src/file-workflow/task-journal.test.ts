@@ -28,6 +28,11 @@ function record(): TaskRecord {
   };
 }
 
+/** A cancel intent names the Job it was refused against. */
+function cancelRecord(): TaskRecord {
+  return { ...record(), jobId: "job-demo", pending: "cancel" };
+}
+
 describe("session task journal", () => {
   it("roundtrips only bounded metadata, no audio or full wire response", () => {
     const storage = memoryStorage();
@@ -96,11 +101,42 @@ describe("session task journal", () => {
     JSON.stringify({ ...record(), settled: "terminal", jobId: "job-demo", pending: null }),
     JSON.stringify({ ...record(), settled: "terminal", operationId: null, cursor: "1" }),
     JSON.stringify({ ...record(), settled: "terminal", futureApi: 1 }),
-  ])("rejects a settled intent in any shape but the one terminal refusal produces", (value) => {
+    // A settled verdict only rides on a still-pending intent that names no identified
+    // execution (#707 M2); the class shapes themselves come from the earlier invariants
+    // (#723 keeps them shared instead of restating them here).
+    JSON.stringify({ ...cancelRecord(), settled: "terminal", operationId: "op-demo" }),
+    JSON.stringify({ ...cancelRecord(), settled: "terminal", jobId: null }),
+    JSON.stringify({ ...cancelRecord(), settled: "terminal", pending: null }),
+  ])("rejects a settled verdict the protocol never produces", (value) => {
     const storage = memoryStorage();
     storage.data.set("task", value);
     expect(() => new SessionTaskJournal(storage, "task").load()).toThrow(TaskJournalError);
     expect(storage.data.get("task")).toBe(value);
+  });
+
+  it("roundtrips a settled cancel attempt whose Job and cursor stay readable", () => {
+    const storage = memoryStorage();
+    const journal = new SessionTaskJournal(storage, "task");
+    journal.load();
+    const spent = { ...cancelRecord(), settled: "terminal" } as const;
+    journal.save(spent);
+    expect(new SessionTaskJournal(storage, "task").load()).toEqual(spent);
+    // The confirmed event cursor is not part of the verdict: events keep advancing while
+    // the refusal is recorded, and a cancel record may already carry one.
+    const advanced = { ...spent, cursor: "7" } as const;
+    journal.save(advanced);
+    expect(new SessionTaskJournal(storage, "task").load()).toEqual(advanced);
+    // The verdict names the attempt it spends, so neither its class nor its Job can be
+    // re-pointed, and dropping the field would revive the refused cancellation.
+    expect(() => journal.save({ ...advanced, jobId: "job-other" })).toThrow(TaskJournalError);
+    expect(() =>
+      journal.save({ ...advanced, pending: "create", jobId: null, cursor: null }),
+    ).toThrow(TaskJournalError);
+    const revived = Object.fromEntries(
+      Object.entries(advanced).filter(([field]) => field !== "settled"),
+    ) as unknown as TaskRecord;
+    expect(() => journal.save(revived)).toThrow(TaskJournalError);
+    expect(new SessionTaskJournal(storage, "task").load()).toEqual(advanced);
   });
 
   it("prevents stale instances and immutable intent changes from overwriting the original", () => {

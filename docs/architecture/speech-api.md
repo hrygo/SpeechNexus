@@ -56,7 +56,7 @@ SpeechCommand
 | `GET /v1/nexus/profiles`、`GET /v2/nexus/profiles`、`GET /v1/nexus/profiles/{profile_id}/revisions/{revision}` | 列出与读取可用的不可变预设；v2 额外返回可空的默认指针 `current_revision`，v1 形状不变 |
 | `POST /v1/audio/transcriptions` | multipart 文件 ASR；成功返回 JSON / text 等声明格式 |
 | `POST /v1/audio/speech` | JSON 文本 TTS；首期返回完整音频 |
-| `POST /v1/nexus/jobs` | 契约支持持久化 ASR、TTS 及音色设计、克隆、预览和验证作业；返回 `202`、Job 和 Location，各类型须分别核验实际装配 |
+| `POST /v1/nexus/jobs` | 契约支持持久化 ASR、TTS 及音色设计、克隆、预览和验证作业；返回 `202`、Job 和 Location，各类型须分别核验实际装配。请求体另有由部署配置 `job_receive_max_bytes` 决定的字节上限（默认 262144 B / 256 KiB）；声明或实收字节超限在 schema 校验前返回 `413 PayloadTooLarge` 与稳定码 `job_request_too_large`，不写任何行。这与正文 `TtsJobInput.text` 4096 字符上限的 `422 unsupported_parameter` 是两个上限、两个码：413 表示本次部署收不下这个请求体，422 表示请求形状或声明字段界不满足 |
 | `GET /v1/nexus/jobs`、`GET /v1/nexus/jobs/{job_id}` | 游标分页与作业状态；包含执行版本与结果引用 |
 | `POST /v1/nexus/jobs/{job_id}/cancellations` | 幂等请求取消；等待停止证据时返回 `202` 和 `Retry-After`，已终结返回 `200`；接受请求不等于资源已释放，须查看 `cleanup_state` |
 | `POST /v1/nexus/jobs/{job_id}/retries` | 从终态任务意图创建新 Job；仅 `failed`（排除 `cancellation_unconfirmed`）、`cancelled`、`expired` 可重试，其余状态返回 `409 job_retry_not_allowed`；旧执行尚未得到可核验的停止证据时返回 `409 execution_cleanup_pending`，不复活旧任务或覆盖旧成品 |

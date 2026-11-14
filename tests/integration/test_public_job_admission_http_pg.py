@@ -13,10 +13,11 @@ coupled constraints found by hand in issue #690 were never pinned by a test:
 * the admission plan rebuilds a ``SpeechPlan`` from the full body text, whose own
   ceiling is 4096 code points, so 4097 characters are refused. #690 narrowed
   ``TtsJobInput.text.maxLength`` to that same ceiling, so the refusal is now the
-  contract's declared 422 ``unsupported_parameter`` and happens before admission.
-  A body over the receive bound still answers the 400 ``invalid_job_request`` that
-  an unparsable document uses, so those two causes stay indistinguishable by code
-  until #703 declares a separate answer.
+  contract's declared 422 ``unsupported_parameter`` and happens before admission;
+* a body over the deployment receive bound answers the declared 413
+  ``PayloadTooLarge`` with code ``job_request_too_large`` (#703), which is a
+  different code from both the 400 an unparsable document gets and the 422 above,
+  so the two ceilings stay distinguishable by code.
 
 Each case asserts the public status code, the stable error code and the exact
 before/after state of the request's write surface. Rows come from the same
@@ -42,7 +43,7 @@ the expected movement -- one attempt held, one slot held on the known instance,
 a positive host budget delta on the known node -- instead of "nothing changed".
 This module pins current behaviour instead of inventing a new code: #690 landed
 the text-ceiling contract correction, #702 the missing-quota 503 semantics, and
-#703 the undeclared receive bound with its 413.
+#703 the declared receive bound with its 413 and ``job_request_too_large``.
 
 Boundaries -- what this module does not claim:
 
@@ -62,18 +63,19 @@ Boundaries -- what this module does not claim:
   assertions, so a dimension mix-up that keeps the total positive is not caught
   here.
 * The refusal cases prove the request left no committed trace in that surface;
-  they do not prove a refusal code is the right contract shape (#702, #703 own
-  those corrections) and do not qualify network, commit-loss or failover
-  behaviour. The same 400 answers several refusing causes.
+  they do not qualify network, commit-loss or failover behaviour. The same 400
+  answers several refusing causes: this module separates the receive bound (413)
+  and the declared text ceiling (422) from it, but not bad JSON from a bad
+  ``Idempotency-Key``.
 * The receive-bound case deliberately pins the current deployment default
   ``job_receive_max_bytes = 262144``. Raising that default fails its premise
   assertion with the observed value, which is a scenario change to re-derive,
   not a flake to delete.
 * ``PLAN_TEXT_CEILING`` and ``CONTRACT_TEXT_CEILING`` are the same 4096 number
   since #690, so the text-ceiling case asserts one ceiling through two layers.
-  The receive-bound case's 400 ``invalid_job_request`` is bound to #703:
-  declaring a 413 and a distinguishable code for the receive bound must update
-  that case in the same change.
+  #703 declared the receive bound and gave it 413 ``job_request_too_large``, so
+  the two ceilings are pinned to two different codes here; moving one back onto
+  the other's status or code must update these cases in the same change.
 """
 
 from __future__ import annotations
@@ -406,8 +408,8 @@ async def test_text_above_the_plan_ceiling_is_refused_without_rows(
     #690 narrowed ``TtsJobInput.text.maxLength`` to the admission plan's ceiling,
     so the refusal is the declared 422 ``unsupported_parameter`` and it happens at
     the contract check: the document never reaches admission, which is why no row
-    and no in-place counter moves. A text over the receive bound instead answers
-    the 400 ``invalid_job_request`` that #703 owns.
+    and no in-place counter moves. A body over the receive bound instead answers
+    the declared 413 ``job_request_too_large`` of #703.
     """
     _seed(admission_database)
     db = admission_database.runtime.foundation.database
@@ -524,10 +526,11 @@ async def test_body_over_the_receive_bound_is_refused_before_any_write(
     the document itself would be admissible. Only the extra ``padding`` member --
     unknown to the contract, sized past the deployment's receive bound -- pushes
     the serialised body over that bound. That makes the bound falsifiable: with
-    the bound in place the receive layer answers 400 ``invalid_job_request``
-    before parsing, while an assembly without it lets the same body reach
-    contract validation and answers 422 ``unsupported_parameter``. Loosening
-    ``max_bytes`` at the one assembly point (the Job router in ``app.py``)
+    the bound in place the receive layer answers the declared 413
+    ``PayloadTooLarge`` with code ``job_request_too_large`` before parsing, while
+    an assembly without it lets the same body reach contract validation and
+    answers 422 ``unsupported_parameter``. Loosening ``max_bytes`` at the one
+    assembly point (the Job router in ``app.py``) or answering 400 again
     therefore turns this case red.
 
     Two deliberate couplings; neither is a flake:
@@ -536,8 +539,9 @@ async def test_body_over_the_receive_bound_is_refused_before_any_write(
       ``job_receive_max_bytes`` fails the premise assertion below with the
       observed value: the contract-legal-but-oversized scenario disappears, so
       re-derive the case instead of deleting the guard.
-    * ``PLAN_TEXT_CEILING`` / ``CONTRACT_TEXT_CEILING`` move with #690, and the
-      400 code asserted here moves with #703's declared bound and 413.
+    * ``PLAN_TEXT_CEILING`` / ``CONTRACT_TEXT_CEILING`` move with #690; the 413
+      and ``job_request_too_large`` asserted here are #703's declared answer for
+      this bound.
 
     Refusal is pre-write: no Job, intent, submission, operation, attempt,
     request, lease or outbox row appears, and no quota attempt, node-budget or
@@ -564,10 +568,10 @@ async def test_body_over_the_receive_bound_is_refused_before_any_write(
         refused = await client.post(
             PREFIX, json=body, headers={"Idempotency-Key": "synthetic-oversized-body"}
         )
-        assert refused.status_code == 400, refused.text
+        assert refused.status_code == 413, refused.text
         code, kind, retryable = _error(refused)
-        assert (code, kind, retryable) == ("invalid_job_request", "invalid_request_error", False)
-        # A parsed body would be 422 for the unknown member instead of 400, and a
+        assert (code, kind, retryable) == ("job_request_too_large", "invalid_request_error", False)
+        # A parsed body would be 422 for the unknown member instead of 413, and a
         # written one would move at least one of the ten row counts or one of the
         # in-place counters.
         assert _snapshot(db) == before

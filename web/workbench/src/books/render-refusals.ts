@@ -9,8 +9,9 @@
  * same operation also splits the status families a 422 says nothing about: a 401
  * credential refusal, a 403 permission refusal and a 415 media-type refusal are
  * deployment facts, a 409 is either a spent key, a cleanup wait or an unnamed
- * conflict, and a 429 is a retryable admission refusal -- not an unknown outcome
- * (#754, #755).
+ * conflict, and a 429 is a retryable refusal -- not an unknown outcome (#754,
+ * #755). The 429 code names neither rate limit nor capacity: the status proves
+ * only that the request was declined now, and the two share one step.
  *
  * This list is the consumer half of that promise, and it is the only place that
  * knows the vocabulary: `tests/contract/test_render_refusal_vocabulary.py` fails
@@ -40,7 +41,7 @@ export const RENDER_REFUSAL_CODES = [
   "render_submission_credentials_rejected",
   "render_submission_permission_denied",
   "render_submission_media_unsupported",
-  "render_submission_capacity_exhausted",
+  "render_submission_rate_limited",
   "render_submission_rejected",
 ] as const;
 
@@ -53,12 +54,13 @@ export type RenderRefusalCode = (typeof RENDER_REFUSAL_CODES)[number];
  * once, here, so the copy below and the journal's "was this attempt settled?"
  * decision cannot disagree with the server's `error.retryable`. Everything else in
  * the vocabulary is terminal: the same request cannot start a Job, whatever the
- * operator does next. A 429 admission refusal and a 409 cleanup wait are the only
- * two exceptions, and they are exceptions in opposite directions from what the
- * status code alone suggests (429 looks rate-limited, 409 looks final).
+ * operator does next. The 429 refusal and the 409 cleanup wait are the only two
+ * exceptions. The cleanup wait is listed although no dispatch returns it today
+ * (reserved, see `_CONFLICT_CODES_RESERVED`): the mirror must stay exact, and a
+ * consumer reaching the upstream cancel/retry path later needs no copy change.
  */
 export const RENDER_REFUSAL_RETRYABLE = [
-  "render_submission_capacity_exhausted",
+  "render_submission_rate_limited",
   "render_submission_cleanup_pending",
 ] as const satisfies readonly RenderRefusalCode[];
 
@@ -92,6 +94,10 @@ export const RENDER_REFUSAL_STEPS: Record<RenderRefusalCode, string> = {
     "派发请求体超过部署的接收上限，因此没有提交作业。下一步：缩短该单元正文后再派发，或由运维调大接收上限。",
   render_submission_idempotency_conflict:
     "本次派发没有创建作业。这个请求键已经被另一次意图不同的派发占用，服务端拒绝把它当作同一次派发。下一步：先刷新单元状态，确认那次派发是否已经生成了作业；确认后用一个新的请求键重新派发，不要复用旧键。",
+  // Reserved: the upstream raises this from its cancel and retry handlers only, and
+  // this operation reaches neither, so no dispatch answers with this code today
+  // (see `_CONFLICT_CODES_RESERVED`). The copy stays so a caller that later sees it
+  // has a step without a vocabulary change.
   render_submission_cleanup_pending:
     "本次派发没有创建新作业。该单元的上一次执行还在清理，服务端尚未确认它已经停止，因此拒绝再提交。下一步：等这一次清理完成后再派发；这里可重试，不需要换键，也不要把它当成结果未知。",
   render_submission_conflict:
@@ -102,8 +108,8 @@ export const RENDER_REFUSAL_STEPS: Record<RenderRefusalCode, string> = {
     "语音底座认可凭据，但这个部署没有权限提交作业（策略或 Host/Origin 限制），派发被拒绝。下一步：由运维放开该部署的提交权限后再派发；改单元内容或重复提交都不会成功。",
   render_submission_media_unsupported:
     "拒绝这次派发的一层不接受本页发送的 JSON 媒体类型，请求没有到达作业准入。本页固定发送 UTF-8 application/json，因此这不取决于单元内容。下一步：由运维修正前置代理或部署的媒体类型配置后再派发；重复提交不会改变结果。",
-  render_submission_capacity_exhausted:
-    "语音底座的作业容量已用尽，本次派发在准入前被拒绝，没有创建作业。下一步：等容量释放后重新派发这次生成；这是可重试的拒绝，不是结果未知，不要按旧结果推断是否已生成。",
+  render_submission_rate_limited:
+    "服务端以 429 拒绝了这次派发（限流或容量不足），没有创建作业。429 只能说明「现在不行」、无法区分限流与容量，因此本页不再替它断言具体原因。下一步：等服务端要求的时间后重新派发这次生成；这是可重试的拒绝，不是结果未知，不要按旧结果推断是否已生成。",
   render_submission_rejected:
     "请求被拒绝，且服务端没有给出本页能据以指示下一步的原因。下一步：核对单元文本与固定字段后重做；重复提交不会改变结果。",
 };

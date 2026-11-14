@@ -935,18 +935,19 @@ describe("render unit text bounds (#745)", () => {
     expect(alert.textContent).not.toContain("按原键重试");
   });
 
-  it("answers a capacity refusal with its retry step and the stated delay", async () => {
-    // #754: a 429 is an admission refusal that created no Job, not an unknown
-    // outcome. Telling the operator to replay the original key as a recovery would
-    // send them to recover a submission that never started; the step is "wait, then
-    // dispatch again", and the server's own Retry-After is rendered.
+  it("answers a 429 with its retry step, the stated delay and no invented cause", async () => {
+    // #754: a 429 is a refusal that created no Job, not an unknown outcome. Telling
+    // the operator to replay the original key as a recovery would send them to
+    // recover a submission that never started; the step is "wait, then dispatch
+    // again", and the server's own Retry-After is rendered. The copy names both
+    // possible causes instead of asserting one: a 429 proves "not now", not "why".
     const { generate } = setup();
     generate.mockRejectedValueOnce(
       new WorkbenchResponseError(429, {
         error: {
-          code: "render_submission_capacity_exhausted",
+          code: "render_submission_rate_limited",
           type: "rate_limit_error",
-          message: "Job admission found no capacity and created no Job.",
+          message: "The refusing layer declined this dispatch and created no Job.",
           param: null,
           request_id: "request-demo",
           retryable: true,
@@ -956,14 +957,16 @@ describe("render unit text bounds (#745)", () => {
     );
     fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("容量已用尽");
+    expect(alert.textContent).toContain("限流或容量不足");
     expect(alert.textContent).toContain("等待 3 秒");
     expect(alert.textContent).toContain("可重试");
     expect(alert.textContent).not.toContain("结果尚未确认");
     expect(alert.textContent).not.toContain("按原键重试");
+    // No cause may be asserted that the 429 cannot prove.
+    expect(alert.textContent).not.toContain("容量已用尽");
     // The machine code stays in the title, never in the operator copy.
-    expect(alert.textContent).not.toContain("render_submission_capacity_exhausted");
-    expect(alert).toHaveAttribute("title", "render_submission_capacity_exhausted");
+    expect(alert.textContent).not.toContain("render_submission_rate_limited");
+    expect(alert).toHaveAttribute("title", "render_submission_rate_limited");
   });
 
   it("keeps a 429 whose code it does not know as a retryable refusal", async () => {

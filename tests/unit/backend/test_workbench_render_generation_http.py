@@ -267,10 +267,11 @@ async def test_an_over_bound_unit_is_refused_instead_of_shortened() -> None:
             False,
             None,
         ),
-        # #754: a capacity refusal is retryable, and forwards the delay it read.
+        # #754: a 429 refusal is retryable, and forwards the delay it read. The code
+        # names no cause because the status cannot prove one (S1).
         (
             RenderRejection.unreadable(status_code=429, retry_after_seconds=5),
-            "render_submission_capacity_exhausted",
+            "render_submission_rate_limited",
             None,
             429,
             True,
@@ -278,7 +279,7 @@ async def test_an_over_bound_unit_is_refused_instead_of_shortened() -> None:
         ),
         (
             RenderRejection.upstream(status_code=429, code="job_capacity_exhausted", param=None),
-            "render_submission_capacity_exhausted",
+            "render_submission_rate_limited",
             None,
             429,
             True,
@@ -469,7 +470,7 @@ def dispatched(unit_record: RenderUnit, handler: httpx.MockTransport) -> Workben
         ),
         (
             # Retryable, but the upstream states no delay for a 409 (only the 429
-            # capacity refusal declares ``Retry-After``), so none is republished.
+            # 429 declares ``Retry-After``), so none is republished.
             409,
             "execution_cleanup_pending",
             None,
@@ -484,7 +485,7 @@ def dispatched(unit_record: RenderUnit, handler: httpx.MockTransport) -> Workben
             429,
             "job_capacity_exhausted",
             None,
-            "render_submission_capacity_exhausted",
+            "render_submission_rate_limited",
             429,
             True,
             3,
@@ -493,7 +494,7 @@ def dispatched(unit_record: RenderUnit, handler: httpx.MockTransport) -> Workben
             429,
             "job_admission_contended",
             None,
-            "render_submission_capacity_exhausted",
+            "render_submission_rate_limited",
             429,
             True,
             3,
@@ -587,7 +588,7 @@ async def test_a_429_without_a_delay_still_says_retryable_without_inventing_a_wa
 
     response = await call(dispatched(dispatchable(), httpx.MockTransport(handler)))
     assert response.status_code == 429, response.text
-    assert response.json()["error"]["code"] == "render_submission_capacity_exhausted"
+    assert response.json()["error"]["code"] == "render_submission_rate_limited"
     assert response.json()["error"]["retryable"] is True
     assert response.json()["error"].get("retry_after_ms") is None
     assert "Retry-After" not in response.headers

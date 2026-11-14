@@ -847,18 +847,29 @@ export interface paths {
      *     names four families whose operator step differs completely, and none of
      *     them is "the request is invalid":
      *
-     *     - `429 render_submission_capacity_exhausted` - admission found no capacity
-     *       and wrote no row. It is retryable: wait for the stated delay, then
+     *     - `429 render_submission_rate_limited` - the refusing layer declined
+     *       without writing a row. A 429 proves "not now" and not "why": admission
+     *       may have found no capacity, or a limiter in front of it may have refused
+     *       the request, and the code names neither because neither was read. Both
+     *       share the step, so it is retryable: wait for the stated delay, then
      *       dispatch the same unit again. This is not `503 outcome_unknown`, which
      *       also preserves the original key because a Job may exist: here nothing was
      *       created, so no replay recovery is being asked for.
      *     - `409` carries three meanings, all with no Job row created.
      *       `render_submission_idempotency_conflict` - the key already names another
      *       submission intent; inspect that Job or dispatch under a new key. Not
-     *       retryable. `render_submission_cleanup_pending` - the unit's previous
-     *       execution has not confirmed its stop; wait for the cleanup, then retry.
-     *       Retryable. `render_submission_conflict` - a conflict whose next step this
-     *       vocabulary cannot name. Not retryable.
+     *       retryable. `render_submission_conflict` - a conflict whose next step this
+     *       vocabulary cannot name. Not retryable. The third is reserved rather than
+     *       served: `render_submission_cleanup_pending` ("the unit's previous
+     *       execution has not confirmed its stop; wait for the cleanup, then retry",
+     *       retryable) stays declared, but this operation reaches the Job creation
+     *       and read endpoints only, and the public Job contract raises that code
+     *       from its cancel and retry handlers alone, so no dispatch answers with it
+     *       today. It is listed so a consumer that later sees it handles it without a
+     *       vocabulary change;
+     *       `tests/contract/test_render_refusal_vocabulary.py` re-derives the
+     *       reachable set from the Job handler and fails if it becomes reachable
+     *       while this paragraph still says it is not.
      *     - `401 render_submission_credentials_rejected` - the speech service rejected
      *       the deployment credential. `403 render_submission_permission_denied` - the
      *       deployment is not permitted to submit. `415

@@ -248,7 +248,7 @@ async def test_an_authentication_media_or_permission_refusal_keeps_its_own_statu
 
 
 async def test_a_429_keeps_the_delay_it_states() -> None:
-    """A capacity refusal names when retrying is worth it; dropping it leaves a guess."""
+    """A 429 refusal names when retrying is worth it; dropping it leaves a guess."""
     error = await refusal(
         lambda _: httpx.Response(
             429,
@@ -293,7 +293,7 @@ async def test_only_a_declared_delta_seconds_delay_is_read(
 
 
 async def test_a_delay_on_a_non_429_refusal_is_not_believed() -> None:
-    """Only the capacity 429 declares a delay in this contract; a stray header is dropped."""
+    """Only the 429 declares a delay in this contract; a stray header is dropped."""
     error = await refusal(
         lambda _: httpx.Response(
             422, json=upstream_error("voice_not_published"), headers={"Retry-After": "9"}

@@ -88,17 +88,34 @@ _CONFLICT_CODES = {
 }
 _CONFLICT_FALLBACK = "render_submission_conflict"
 
+# The conflict keys this ingress reserves without being able to receive them today.
+# The adapter only calls the upstream Job creation and read endpoints, and that
+# contract raises `execution_cleanup_pending` from its cancel and retry handlers
+# alone, so a dispatch can never answer with the cleanup wait. The code stays
+# declared so that a caller which later reaches those endpoints needs no vocabulary
+# change; `tests/contract/test_render_refusal_vocabulary.py` derives the reachable
+# set from the upstream handler and fails if an entry here ever becomes reachable
+# (the contract prose promises it is not) or if a mapped code is neither reachable
+# nor listed here.
+_CONFLICT_CODES_RESERVED = frozenset({"execution_cleanup_pending"})
+
 # Statuses that already name the operator's next step by themselves (#755): a 401 is
 # a broken credential, a 403 a permission refusal, a 415 a refused media type, a 429
-# an admission refusal that wrote no row. The status is enough even when the envelope
-# cannot be read, which is why these stay out of the code table -- folding them into
-# the 422 "the request is invalid" bucket is a wrong attribution, and the operator
-# step for each is different.
+# a refusal that wrote no row. The status is enough even when the envelope cannot be
+# read, which is why these stay out of the code table -- folding them into the 422
+# "the request is invalid" bucket is a wrong attribution, and the operator step for
+# each is different.
 _STATUS_REFUSALS = {
     401: "render_submission_credentials_rejected",
     403: "render_submission_permission_denied",
     415: "render_submission_media_unsupported",
-    429: "render_submission_capacity_exhausted",
+    # A 429 says "not now", not why: admission may have found no capacity, or a
+    # limiter in front of it may have refused the request, and an unreadable
+    # envelope names neither. The two share one step (wait, then dispatch again),
+    # so they share one code that asserts only what the status proves -- a code
+    # named "capacity" would state a cause nobody read (#755's wrong-attribution
+    # family, found in review of #754).
+    429: "render_submission_rate_limited",
 }
 
 # The only refusals whose next step is "wait, then dispatch again". Stated once, so
@@ -106,9 +123,24 @@ _STATUS_REFUSALS = {
 # or a spent idempotency key can never be published as retryable (#755 is where those
 # two directions were confused). The route reads this set for the envelope's
 # `retryable`, and the panel mirrors it for its copy.
+#
+# This deliberately diverges from the upstream marker in one entry. The public Job
+# contract computes its own `retryable` from a three-name allow-list
+# (`speech/interfaces/http/job_errors.py`: `job_outcome_unknown`,
+# `job_capacity_exhausted`, `job_admission_contended`) and therefore publishes
+# `retryable: false` for `execution_cleanup_pending`. That list answers a different
+# question -- "may an unknown execution outcome be replayed?" -- which is why it
+# admits `job_capacity_exhausted` as well; this set answers "does waiting, then
+# dispatching again, have a chance of succeeding?", and for a cleanup wait it does.
+# The workbench never reads the upstream `retryable` field (`_refusal()` keeps only
+# status, code, param and `Retry-After`), so the two are independent statements, not
+# a contradiction. Do not "fix" this entry by copying the upstream allow-list: the
+# cleanup wait is unreachable from this ingress today (see
+# `_CONFLICT_CODES_RESERVED`) and the day it becomes reachable, the upstream marker
+# or this reasoning has to be revisited first.
 _RETRYABLE_REFUSAL_CODES = frozenset(
     {
-        "render_submission_capacity_exhausted",
+        "render_submission_rate_limited",
         "render_submission_cleanup_pending",
     }
 )

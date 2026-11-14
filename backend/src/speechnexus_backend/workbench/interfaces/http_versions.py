@@ -239,10 +239,14 @@ ERRORS = {
         "invalid_request_error",
         "The refusing layer reported a conflict this workbench cannot attribute to one step.",
     ),
-    "render_submission_capacity_exhausted": (
+    # A 429 proves "not now", not "why": it may be exhausted admission capacity or a
+    # limiter in front of it, so both the name and the message stop short of a cause
+    # nobody read (#755's attribution rule applied to a status-only observation).
+    "render_submission_rate_limited": (
         429,
         "rate_limit_error",
-        "Job admission found no capacity and created no Job; retry after the stated delay.",
+        "The refusing layer declined this dispatch (rate limit or exhausted capacity) "
+        "and created no Job; retry after the stated delay.",
     ),
     "internal_error": (500, "api_error", "Workbench request could not be completed."),
 }

@@ -25,6 +25,7 @@ a pytest failure.
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 from typing import cast
@@ -32,6 +33,9 @@ from typing import cast
 import pytest
 import yaml
 
+from speechnexus_backend.speech.application.public_jobs import (
+    _ADMISSION_REJECTION_CODES,
+)
 from speechnexus_backend.speech.interfaces.http.job_errors import (
     _ERRORS as UPSTREAM_JOB_ERRORS,
 )
@@ -41,6 +45,7 @@ from speechnexus_backend.workbench.infrastructure.public_speech_render_jobs impo
 )
 from speechnexus_backend.workbench.interfaces.http_render_units import (
     _CONFLICT_CODES,
+    _CONFLICT_CODES_RESERVED,
     _REFUSAL_CODES,
     _RETRYABLE_REFUSAL_CODES,
     refusal_code,
@@ -58,6 +63,11 @@ ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "contracts" / "workbench-openapi.yaml"
 PANEL_VOCABULARY = ROOT / "web" / "workbench" / "src" / "books" / "render-refusals.ts"
 PANEL = ROOT / "web" / "workbench" / "src" / "books" / "RenderUnitPanel.tsx"
+# The public Job handler that answers this adapter's create call. Reachability is a
+# property of *that* table, not of the vocabulary it draws from.
+JOBS_HTTP = (
+    ROOT / "backend" / "src" / "speechnexus_backend" / "speech" / "interfaces" / "http" / "jobs.py"
+)
 
 PREFIX = "render_submission_"
 # The refusal vocabulary is stated on the dispatch operation and referenced by the
@@ -123,8 +133,18 @@ def test_every_code_has_an_operator_step_and_the_panel_uses_the_list() -> None:
     )
 
 
-def test_the_mapping_only_names_codes_the_upstream_contract_declares() -> None:
-    """A mapped code that upstream never sends would be an unreachable branch."""
+def test_every_mapped_code_is_declared_in_the_upstream_vocabulary() -> None:
+    """Every mapped code is a declared public Job code.
+
+    This is the *vocabulary* check only: it says a mapped code is spelled like a real
+    upstream code, not that this ingress can receive it. Reachability is a different
+    and narrower set (`cancel` and `retry` add codes no creation request produces), so
+    it is derived and asserted in
+    `test_the_unreachable_mapping_is_declared_and_still_unreachable` below. Claiming
+    "upstream never sends it would be unreachable" here would be the very guard
+    defect the #755 review found: a check whose docstring promises something larger
+    than what it tests.
+    """
 
     upstream = set(UPSTREAM_JOB_ERRORS)
     unknown = sorted((set(_REFUSAL_CODES) | set(_CONFLICT_CODES)) - upstream)
@@ -140,6 +160,131 @@ def test_the_mapping_only_names_codes_the_upstream_contract_declares() -> None:
     # #755: the three 409 meanings are distinct steps, and only the cleanup wait is
     # retryable, so no two of them may collapse onto one code.
     assert len({*_CONFLICT_CODES.values(), "render_submission_conflict"}) == 3
+
+
+def _except_type_names(handler: ast.ExceptHandler) -> list[str]:
+    node = handler.type
+    if isinstance(node, ast.Name):
+        return [node.id]
+    if isinstance(node, ast.Tuple):
+        return [element.id for element in node.elts if isinstance(element, ast.Name)]
+    return []
+
+
+def _dynamic_code_set(exception_name: str) -> frozenset[str]:
+    """The codes one exception class can forward through `job_error(error.code)`."""
+    if exception_name == "JobAdmissionRejectedError":
+        # The admission store answers with a fixed, declared rejection vocabulary.
+        return _ADMISSION_REJECTION_CODES
+    if exception_name == "ModelBindingError":
+        # The class carries one code of its own declared family. Reading the family
+        # out of the public table over-approximates inside one prefix, which is the
+        # strict direction for the disjointness assertion below.
+        return frozenset(code for code in UPSTREAM_JOB_ERRORS if code.startswith("model_binding_"))
+    raise AssertionError(
+        f"the create handler takes a dynamic code from {exception_name}; teach this guard "
+        "that class's code set instead of letting the derived set silently under-approximate"
+    )
+
+
+def _create_route_codes() -> frozenset[str]:
+    """The upstream codes the createJob route can answer with, derived from its source.
+
+    The public Job vocabulary is not this set. `execution_cleanup_pending`,
+    `job_retry_not_allowed` and `job_retry_unavailable` are raised by the cancel and
+    retry handlers, which a creation request never reaches, so comparing the workbench
+    mapping against the whole vocabulary passes for a branch this ingress cannot
+    receive -- exactly the guard defect the #755 review found (M1).
+    """
+    tree = ast.parse(JOBS_HTTP.read_text(encoding="utf-8"), filename=str(JOBS_HTTP))
+    create = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "_create"
+    )
+    codes: set[str] = set()
+    for node in ast.walk(create):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+            continue
+        if node.func.id != "job_error" or not node.args:
+            continue
+        argument = node.args[0]
+        if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
+            codes.add(argument.value)
+    # `job_error(error.code)` forwards a code the exception itself carries; resolve
+    # those from the except table so a class gaining a code moves this set too.
+    for handler in (node for node in ast.walk(create) if isinstance(node, ast.ExceptHandler)):
+        forwards_code = any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "job_error"
+            and node.args
+            and isinstance(node.args[0], ast.Attribute)
+            and node.args[0].attr == "code"
+            for node in ast.walk(handler)
+        )
+        if not forwards_code:
+            continue
+        for exception_name in _except_type_names(handler):
+            codes |= _dynamic_code_set(exception_name)
+    return frozenset(codes)
+
+
+def test_the_unreachable_mapping_is_declared_and_still_unreachable() -> None:
+    """A mapped code must be reachable from createJob, or explicitly reserved (M1).
+
+    `execution_cleanup_pending` is retained because a caller that later reaches the
+    upstream cancel and retry endpoints should not need a vocabulary change. The
+    retention is only honest while the public contract says the code is reserved
+    rather than served, and only while that sentence stays falsifiable: this test
+    re-derives the reachable set from the Job handler, so the moment the code becomes
+    reachable the contract paragraph is wrong and this test fails until both the
+    annotation and the prose are corrected.
+    """
+    reachable = _create_route_codes()
+    reserved = set(_CONFLICT_CODES_RESERVED)
+
+    # The derivation must be real: the create vocabulary is wide and certainly
+    # contains the code that names a spent key.
+    assert len(reachable) >= 20, reachable
+    assert "idempotency_conflict" in reachable
+
+    # Derivation is a strict over-approximation only inside the `model_binding_`
+    # family; every mapped key below is either a literal in the handler or an
+    # admission-rejection code, so this comparison is exact in both directions.
+    mapped = set(_REFUSAL_CODES) | set(_CONFLICT_CODES)
+    unknown = sorted(mapped - reachable - reserved)
+    assert unknown == [], (
+        f"{unknown} are mapped but no createJob answer can produce them; either the "
+        "mapping went stale or the code belongs in _CONFLICT_CODES_RESERVED with "
+        "matching contract prose"
+    )
+    assert reserved <= set(UPSTREAM_JOB_ERRORS), (
+        "a reserved code must still be a declared public Job code"
+    )
+    assert not (reserved & reachable), (
+        f"{sorted(reserved & reachable)} became reachable from createJob while the "
+        "contract still says this operation does not answer with it; update the "
+        "contract paragraph and _CONFLICT_CODES_RESERVED together with this test"
+    )
+    assert reserved == {"execution_cleanup_pending"}, (
+        "the reserved set is a reviewed decision; changing it requires the contract "
+        "prose and the panel copy to change in the same edit"
+    )
+    # The contract is the consumer-facing half of the same claim.
+    document = yaml.safe_load(CONTRACT.read_text(encoding="utf-8"))
+    description = cast(
+        dict[str, str],
+        document["paths"]["/v2/workbench/render-units/{unit_id}/generations"]["post"],
+    )["description"]
+    for upstream in sorted(reserved):
+        served_code = _CONFLICT_CODES[upstream]
+        assert served_code in description, (
+            f"{served_code} is reserved, so the contract must still name it"
+        )
+    assert "reserved rather than" in description, (
+        "the contract must state that the reserved 409 is not served by this operation"
+    )
 
 
 def test_every_mapping_value_names_a_published_code() -> None:
@@ -221,7 +366,7 @@ def test_the_retryability_of_every_status_and_upstream_code_is_the_stated_one() 
 @pytest.mark.parametrize(
     ("status", "upstream", "expected_code", "expected_retryable"),
     [
-        (429, "job_capacity_exhausted", "render_submission_capacity_exhausted", True),
+        (429, "job_capacity_exhausted", "render_submission_rate_limited", True),
         (409, "execution_cleanup_pending", "render_submission_cleanup_pending", True),
         (409, "idempotency_conflict", "render_submission_idempotency_conflict", False),
         (409, "job_retry_not_allowed", "render_submission_conflict", False),

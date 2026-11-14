@@ -1,6 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { FileTaskSession, retainRecovery, settlesReplayedIntent } from "./file-task-session";
+import {
+  FileTaskSession,
+  rejectionDisposition,
+  retainRecovery,
+  settlesReplayedIntent,
+} from "./file-task-session";
 import { canFinishTask } from "./file-task-policy";
 import { SpeechFileClient, parse } from "./speech-file-client";
 import { SessionTaskJournal } from "./task-journal";
@@ -137,13 +142,51 @@ describe("replayed-intent settlement predicate", () => {
     [404, "job_not_found", false],
     [405, "method_not_allowed", false],
     [400, "invalid_job_request", false],
-    [413, "request_too_large", false],
+    // The create body above the deployment receive bound (#703). Terminal for this
+    // request, yet still outside the key-check whitelist: it is answered before the
+    // protocol looks the original key up (#707 review M1).
+    [413, "job_request_too_large", false],
     [422, "unsupported_parameter", false],
     [422, "workspace_not_found", false],
     [409, "operation_in_progress", false],
     [409, "voice_draft_outcome_unknown", false],
   ])("settles only %i %s after the key check: %s", (status, code, settles) => {
     expect(settlesReplayedIntent({ status, code })).toBe(settles);
+  });
+});
+
+describe("submission rejection disposition", () => {
+  // The disposition decides what the user is told: a terminal refusal of this
+  // request, "the submission may already execute", or "this attempt was refused
+  // but the intent may still succeed". An unlisted 5xx is unknown; a 4xx is a
+  // protocol refusal, never an unknown outcome.
+  it.each([
+    // Over the deployment receive bound (#703): deterministic, actionable, terminal.
+    [413, "job_request_too_large", "terminal"],
+    // Other 4xx causes keep the same disposition: the document, not the transport.
+    [400, "invalid_job_request", "terminal"],
+    [413, "asset_too_large", "terminal"],
+    [422, "unsupported_parameter", "terminal"],
+    [409, "idempotency_conflict", "terminal"],
+    // Answers that admit the submission may already be executing.
+    [503, "job_outcome_unknown", "unknown-outcome"],
+    [409, "voice_draft_outcome_unknown", "unknown-outcome"],
+    // Refusals that leave the same intent replayable.
+    [429, "job_capacity_exhausted", "intent-kept"],
+    [503, "job_unavailable", "intent-kept"],
+    [503, "job_admission_contended", "intent-kept"],
+  ] as const)("%i %s is %s", (status, code, disposition) => {
+    expect(rejectionDisposition(status, code, "create")).toBe(disposition);
+  });
+
+  it("does not let the body-bound refusal fall through to the unknown 5xx branch", () => {
+    // A 5xx or a non-contract status is unknown because the request may have run.
+    expect(rejectionDisposition(500, "job_request_too_large", "create")).toBe("unknown-outcome");
+    // The declared pair is a refusal, so it must not inherit that classification.
+    expect(rejectionDisposition(413, "job_request_too_large", "create")).not.toBe(
+      "unknown-outcome",
+    );
+    expect(rejectionDisposition(413, "job_request_too_large", "upload")).toBe("terminal");
   });
 });
 
@@ -321,6 +364,31 @@ describe("submission rejection classes", () => {
     expect(f.stored()).toMatchObject({ pending: "create", settled: "terminal", jobId: null });
     await session.replay();
     expect(f.stats.createKeys).toHaveLength(1);
+    session.dispose();
+  });
+
+  it("treats a body over the deployment receive bound as a refusal, not an unknown outcome", async () => {
+    // #703 gave the create body ceiling its own declared answer: 413
+    // `job_request_too_large`. It is a deterministic refusal of this request, so the
+    // panel must name it as a rejection instead of the generic "the submission may
+    // already have executed" message. The durable intent still stays unknown: that
+    // refusal is answered before the original key is looked up, so it cannot prove an
+    // earlier submission under the same key never became a Job (#707 review M1).
+    const f = setup({ create: () => rejection(413, "job_request_too_large") });
+    const session = f.make();
+    await session.start(file(), "asr-quality");
+    const snapshot = session.getSnapshot();
+    expect(snapshot.notice).toContain("413");
+    expect(snapshot.notice).toContain("job_request_too_large");
+    expect(snapshot.notice).toContain("提交被拒绝");
+    expect(snapshot.notice).not.toContain("提交结果未知");
+    expect(snapshot).toMatchObject({ unknown: true, canReplay: true });
+    expect(snapshot.rejected).toBeUndefined();
+    expect(canFinishTask(snapshot)).toBe(false);
+    // The refusal rules out this answer, not an earlier submission: nothing is persisted
+    // as settled, so a reload rebuilds the unknown intent instead of a spent one.
+    expect(f.stored()).toMatchObject({ pending: "create" });
+    expect(f.stored()).not.toHaveProperty("settled");
     session.dispose();
   });
 

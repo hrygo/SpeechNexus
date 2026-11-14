@@ -7,6 +7,11 @@ from starlette.responses import JSONResponse
 
 _ERRORS: dict[str, tuple[int, str, str]] = {
     "invalid_job_request": (400, "invalid_request_error", "Invalid Job request."),
+    "job_request_too_large": (
+        413,
+        "invalid_request_error",
+        "The Job request body exceeds the deployment receive limit.",
+    ),
     "job_not_found": (404, "not_found_error", "The Job was not found."),
     "job_method_not_allowed": (405, "invalid_request_error", "The Job method is not allowed."),
     "idempotency_conflict": (

@@ -403,9 +403,20 @@ export interface paths {
      *     declared 4096-character bound returns 422 `unsupported_parameter`. The
      *     bound is never enforced by splitting, truncating or silently shortening
      *     the text, so a `tts` Job synthesizes exactly the text it was admitted
-     *     with and at most what `/v1/audio/speech` accepts for one `input`. A body
-     *     above the configured receive limit returns 400 `invalid_job_request`
-     *     before schema validation.
+     *     with and at most what `/v1/audio/speech` accepts for one `input`.
+     *
+     *     Independent of every field bound, the request body has a byte ceiling.
+     *     It is a deployment setting rather than a contract constant; the
+     *     deployment default is 256 KiB. A body whose declared `Content-Length` or
+     *     received bytes exceed that ceiling is refused before schema validation
+     *     and creates no Job row: 413 `PayloadTooLarge` with code
+     *     `job_request_too_large`, non-retryable. This answer is distinct from the
+     *     422 `unsupported_parameter` above: 413 means the transport body is larger
+     *     than this deployment receives, so the caller must shorten the body or the
+     *     operator must raise the deployment limit; 422 means the request shape or a
+     *     declared field bound was not satisfied. Because the ceiling is
+     *     deployment-configurable, a body accepted at one deployment can be refused
+     *     at another; the contract does not promise a fixed byte size.
      *
      *     Original-key replay is checked before mutable publication/workspace
      *     facts: the same canonical request returns the stored Job even after
@@ -3632,7 +3643,11 @@ export interface components {
         "application/json": components["schemas"]["ErrorResponse"];
       };
     };
-    /** @description Upload or request body exceeds the declared bound. */
+    /**
+     * @description Upload or request body exceeds the declared or deployment-configured
+     *     bound. The reply is non-retryable unchanged: the caller must shorten the
+     *     body, and only the deployment operator can raise the limit.
+     */
     PayloadTooLarge: {
       headers: {
         [name: string]: unknown;
@@ -4694,6 +4709,7 @@ export interface operations {
       404: components["responses"]["NotFound"];
       405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
+      413: components["responses"]["PayloadTooLarge"];
       422: components["responses"]["UnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];
       503: components["responses"]["ServiceUnavailable"];

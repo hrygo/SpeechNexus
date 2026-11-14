@@ -40,10 +40,10 @@ class OriginalTextUnavailableError extends Error {
  * has no Job row. `unknown-outcome` means the submission may already execute, and
  * `intent-kept` means this attempt was refused but the same intent may still succeed.
  */
-type RejectionDisposition = "terminal" | "unknown-outcome" | "intent-kept";
+export type RejectionDisposition = "terminal" | "unknown-outcome" | "intent-kept";
 
 /** Which submission class was in flight; some codes only settle one of them. */
-type RejectionOperation = "create" | "cancel" | "upload";
+export type RejectionOperation = "create" | "cancel" | "upload";
 
 /**
  * Dispositions tied to an exact (HTTP status, contract error code) pair. The public
@@ -67,6 +67,13 @@ type RejectionOperation = "create" | "cancel" | "upload";
  *   the same public Job error table.
  * - 503 `asset_inspection_busy`: the only Asset 503 whose "a new request later may
  *   succeed" statement holds (contracts/speech-openapi.yaml:2682-2689).
+ * - 413 `job_request_too_large`: the create body exceeded the deployment's receive
+ *   bound (#703). It is a terminal refusal of *this* request -- re-sending the same
+ *   bytes cannot be admitted while that bound is in force -- and never an unknown
+ *   outcome, so it is listed explicitly instead of relying on the 4xx fallback below.
+ *   It is deliberately absent from `settlesReplayedIntent`: the refusal is answered
+ *   before the protocol looks up the original idempotency key, so it proves nothing
+ *   about an earlier submission under that key (#707 review M1).
  */
 const rejectionTable = [
   [503, "job_outcome_unknown", "unknown-outcome"],
@@ -74,9 +81,11 @@ const rejectionTable = [
   [503, "job_admission_contended", "intent-kept"],
   [503, "asset_inspection_busy", "intent-kept"],
   [429, "job_capacity_exhausted", "intent-kept"],
+  [413, "job_request_too_large", "terminal"],
 ] as const satisfies readonly (readonly [number, string, RejectionDisposition])[];
 
-function rejectionDisposition(
+/** Exported for the disposition table's own tests; the session is the only caller. */
+export function rejectionDisposition(
   status: number,
   code: string,
   operation: RejectionOperation,
@@ -97,7 +106,7 @@ function rejectionDisposition(
   // the cancel attempt this client sends against that known Job identity. The backend
   // emits it from cancel/retry handlers only (backend/.../interfaces/http/jobs.py:607),
   // and this client never calls retry. The generic create-path 409 component also lists
-  // "cleanup pending" (contracts/speech-openapi.yaml:2860-2865), so if a future backend
+  // "cleanup pending" (contracts/speech-openapi.yaml:2873-2878), so if a future backend
   // answered a create with it, it would say nothing about whether *this* intent was
   // admitted: keep the intent unknown instead of spending it.
   if (operation !== "cancel" && status === 409 && code === "execution_cleanup_pending")

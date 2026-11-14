@@ -388,7 +388,11 @@ async def _receive(request: Request, max_bytes: int, receive_timeout: float) -> 
             declared = int(lengths[0])
         except ValueError:
             raise ValueError("Invalid Content-Length") from None
-        if declared < 0 or declared > max_bytes:
+        if declared < 0:
+            # A negative length is a malformed request, not an oversized one, so it
+            # keeps the 400 invalid_job_request answer instead of claiming 413.
+            raise ValueError("Invalid Content-Length")
+        if declared > max_bytes:
             raise _TooLargeError
     content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if content_type != "application/json":
@@ -450,7 +454,11 @@ async def _create(
             raw.decode("utf-8"), object_pairs_hook=_object, parse_constant=_constant
         )
     except _TooLargeError:
-        return job_error("invalid_job_request", request_id)
+        # The transport body exceeded the deployment's receive bound. This is a
+        # separate answer from the 422 declared-shape/text-ceiling refusal below,
+        # so a caller can tell "this deployment receives less" from "my request
+        # is not a declared Job request".
+        return job_error("job_request_too_large", request_id)
     except ValueError, TypeError, RecursionError, UnicodeDecodeError:
         return job_error("invalid_job_request", request_id)
     try:

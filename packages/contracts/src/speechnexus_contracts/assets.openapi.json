@@ -1125,7 +1125,7 @@
         }
       },
       "PayloadTooLarge": {
-        "description": "Upload or request body exceeds the declared bound.",
+        "description": "Upload or request body exceeds the declared or deployment-configured\nbound. The reply is non-retryable unchanged: the caller must shorten the\nbody, and only the deployment operator can raise the limit.\n",
         "content": {
           "application/json": {
             "schema": {

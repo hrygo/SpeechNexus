@@ -54,6 +54,29 @@ jobs:
             --event="$EVENT_NAME" --base="$BASE_SHA" \
             --output="$GITHUB_OUTPUT" --summary="$GITHUB_STEP_SUMMARY"
 
+      # Review pull requests carry review artifacts only
+      # (`docs/operations/agent-delivery-sop.md`, step 4). This lane and
+      # `delivery_tracking` are the two jobs without a scope filter, so a
+      # docs-only review PR reaches both; only this one already holds the exact
+      # base-to-HEAD diff from the routing step above, so the boundary check needs
+      # no second checkout or fetch and its red is attributed to the route. It has
+      # to live in an unfiltered job because a review PR is a `docs`-scope PR
+      # (#738: implementation that was byte-identical to the reviewed head merged
+      # under a `review:` title, and the reviewed code then landed as a different
+      # revision). `changes` failing fails `Gate: required checks for this
+      # change`; `--admin` is not needed and is not the supported path.
+      - name: Reject review pull requests that carry non-review paths
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          python3 scripts/dev-env/check-review-pr-boundary.py \
+            --event="$EVENT_NAME" --base="$BASE_SHA" \
+            --title="$PR_TITLE" --head-ref="$PR_HEAD_REF" \
+            --summary="$GITHUB_STEP_SUMMARY"
+
   # `docs` scope skips every job that installs project dependencies, but Ruff's
   # formatter also formats the Python code blocks inside Markdown; that is the one
   # check a prose-only pull request could break while merging green (#659, #661, #673).

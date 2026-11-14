@@ -43,11 +43,17 @@ function problemMessage(problem: UnitProblem): string {
  * The two bounds are different things, and only one of them is an input bound.
  * Showing both — and the split step for the dispatch bound — keeps the refusal
  * from being a surprise the operator has to reverse-engineer.
+ *
+ * This paragraph describes the textarea, it is not a control of its own, so it is
+ * linked with `aria-describedby` and carries no accessible name. Naming it would
+ * force a name that extends the control's label ("… 字数"), and a name a control's
+ * label is a prefix of makes substring label queries — Playwright's `getByLabel`
+ * default — resolve that one control to two elements.
  */
-function TextBounds({ id, label, text }: { id: string; label: string; text: string }) {
+function TextBounds({ id, text }: { id: string; text: string }) {
   const length = renderUnitLength(text);
   return (
-    <p className="books-status" id={id} aria-label={`${label} 字数`}>
+    <p className="books-status" id={id}>
       {`已 ${length} 字符（Unicode 码点，与契约 maxLength 同单位） · 一次派发上限 ${RENDER_UNIT_DISPATCH_LIMIT} 字符 · 源容量上限 ${RENDER_UNIT_SOURCE_LIMIT} 字符。`}
       {/* The source-capacity branch is unreachable by typing: the textarea's own
           maxLength stops there first. It stays as the defence for a value set
@@ -735,7 +741,7 @@ function ChapterUnits({
               onChange={(event) => setCreateField("text", event.target.value)}
             />
           </label>
-          <TextBounds id="create-unit-text-bounds" label="新单元文本" text={create.text} />
+          <TextBounds id="create-unit-text-bounds" text={create.text} />
           {voices !== null && voices.length > 0 && (
             <label>
               从已发布音色填入
@@ -951,11 +957,7 @@ function ChapterUnits({
                         }
                       />
                     </label>
-                    <TextBounds
-                      id={`unit-${unit.id}-text-bounds`}
-                      label={`${label} 文本`}
-                      text={draft.text}
-                    />
+                    <TextBounds id={`unit-${unit.id}-text-bounds`} text={draft.text} />
                     <label>
                       {`${label} 已发布音色`}
                       <select

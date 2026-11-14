@@ -18,28 +18,62 @@ coupled constraints found by hand in issue #690 were never pinned by a test:
   an unparsable document uses, so those two causes stay indistinguishable by code
   until #703 declares a separate answer.
 
-Each case asserts the public status code, the stable error code and the exact row
-deltas across the public Job, intent and admission tables. Rows come from the
-same production transaction, so a refusal that still reserved capacity or wrote a
-Job would fail here. This module pins current behaviour instead of inventing a
-new code: #690 landed the text-ceiling contract correction, #702 the
-missing-quota 503 semantics, and #703 the undeclared receive bound with its 413.
+Each case asserts the public status code, the stable error code and the exact
+before/after state of the request's write surface. Rows come from the same
+production transaction, so a refusal that still reserved capacity or wrote a Job
+would fail here. The snapshot covers a fixed list, not "everything":
 
-Known boundaries, recorded rather than fixed here:
+* row counts of the ten public/admission tables (``_counts``);
+* ``workspace_quotas`` per workspace: ``held_attempts`` (the reservation counter
+  admission increments in place), its CAS ``version``, and the columns bounding
+  it -- ``max_attempts``, ``quarantined_attempts``, ``policy_revision``;
+* ``speech_workspaces`` per workspace: the catalog row every quota hangs off
+  (``display_name``, ``workspace_state``, ``metadata_revision``,
+  ``policy_revision``);
+* ``host_nodes`` per node: every ``held_<dimension>`` budget counter and its
+  ``version`` CAS token (the admission role may ``UPDATE`` exactly those);
+* ``engine_instances`` per ``(instance_id, instance_generation)``:
+  ``held_slots`` and its ``version``.
 
-* the shared ``_counts`` helper covers the ten public and admission tables, but
-  not ``workspace_quotas`` or ``speech_workspaces``. A refusal path that only
-  committed a quota ``UPDATE`` and no row would therefore go unnoticed; the
-  same-key replay case checks ``held_attempts`` directly for that reason. Adding
-  those tables widens every delta assertion and belongs to a follow-up.
-* case 4 deliberately pins the current deployment default
+Row counts alone cannot see a refusal that only committed one of those in-place
+``UPDATE``s: no row appears or disappears, only counters and versions move. So
+every refusal case compares the counter values, and every success case asserts
+the expected movement -- one attempt held, one slot held on the known instance,
+a positive host budget delta on the known node -- instead of "nothing changed".
+This module pins current behaviour instead of inventing a new code: #690 landed
+the text-ceiling contract correction, #702 the missing-quota 503 semantics, and
+#703 the undeclared receive bound with its 413.
+
+Boundaries -- what this module does not claim:
+
+* The snapshot is a fixed column list over the four tables above plus the ten row
+  counts. It does not cover ``resource_pools``, ``runtime_instance_heads`` /
+  ``runtime_instance_intents``, ``submit_intents``, the dispatch/execution
+  ledgers or any other table; a stray write there is not this module's evidence.
+  Even inside the snapshotted tables it sees only those columns: for
+  ``host_nodes`` the ``allocatable_*`` and ``quarantined_*`` families are not
+  compared; for ``engine_instances`` only ``held_slots`` / ``version`` are, not
+  its ``peak_*``, ``steady_*``, slot-bound or quarantine columns.
+* The success assertion pins which fixture rows must move: node ``host-test`` and
+  ``instance-new`` generation 1, the fixture's known ready identity. A product
+  change that selects a different valid instance fails the case and is a scenario
+  to re-derive, not a flake. It does not pin the per-dimension physical amounts:
+  those derive from the stored runtime plan and are the admission unit's own
+  assertions, so a dimension mix-up that keeps the total positive is not caught
+  here.
+* The refusal cases prove the request left no committed trace in that surface;
+  they do not prove a refusal code is the right contract shape (#702, #703 own
+  those corrections) and do not qualify network, commit-loss or failover
+  behaviour. The same 400 answers several refusing causes.
+* The receive-bound case deliberately pins the current deployment default
   ``job_receive_max_bytes = 262144``. Raising that default fails its premise
   assertion with the observed value, which is a scenario change to re-derive,
   not a flake to delete.
 * ``PLAN_TEXT_CEILING`` and ``CONTRACT_TEXT_CEILING`` are the same 4096 number
-  since #690, so case 3 asserts one ceiling through two layers. Case 4's 400
-  ``invalid_job_request`` is bound to #703: declaring a 413 and a distinguishable
-  code for the receive bound must update that case in the same change.
+  since #690, so the text-ceiling case asserts one ceiling through two layers.
+  The receive-bound case's 400 ``invalid_job_request`` is bound to #703:
+  declaring a 413 and a distinguishable code for the receive bound must update
+  that case in the same change.
 """
 
 from __future__ import annotations
@@ -61,6 +95,7 @@ from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
+from speechnexus_backend.speech.infrastructure.coordination_grants import DIMENSIONS
 
 pytestmark = [
     pytest.mark.integration,
@@ -78,6 +113,15 @@ PLAN_TEXT_CEILING = 4096
 CONTRACT_TEXT_CEILING = 4_096
 # ``settings.job_receive_max_bytes`` in backend/src/speechnexus_backend/settings.py.
 RECEIVE_BOUND = 262_144
+# The fixture's ready identity: ``_prepare_ready`` drives ``instance-new``
+# generation 1 to ready, and admission selects instances by
+# ``(instance_id, instance_generation)``. Success assertions pin these keys
+# instead of "exactly one row moved", which would accept a write to any row.
+HOST_NODE = "host-test"
+INSTANCE = ("instance-new", 1)
+INSTANCE_KEY = "/".join(str(part) for part in INSTANCE)
+# ``host_nodes.topology_digest`` is ``sha256:`` plus 64 hex characters.
+TOPOLOGY_DIGEST = "sha256:" + "a" * 64
 
 
 def _app(admission: AdmissionDatabase) -> Any:
@@ -115,8 +159,189 @@ def _grant_capacity(db: JobDatabase) -> None:
     db.query("UPDATE workspace_quotas SET max_attempts = 64, held_attempts = 0")
 
 
-def _deltas(before: dict[str, int], after: dict[str, int]) -> dict[str, int]:
-    return {table: after[table] - before[table] for table in before}
+def _add_spare_host(db: JobDatabase) -> None:
+    """A second node row the admitted request must never touch.
+
+    With a single node row, "the known node moved" and "some node moved" coincide,
+    so the node identity assertion would be vacuous. The spare row keeps it
+    falsifiable while staying inert for admission: no engine instance names it and
+    its ``held_*`` counters start at zero.
+    """
+    db.query(
+        "INSERT INTO host_nodes "
+        "(host_node_id, memory_architecture, node_state, topology_digest, "
+        "allocatable_unified_physical_memory_bytes, allocatable_device_memory_bytes, "
+        "allocatable_host_memory_bytes, allocatable_cpu_decode_millicores, "
+        "allocatable_host_pcm_buffer_bytes, allocatable_scratch_disk_bytes) "
+        "VALUES ('host-spare', 'unified_memory', 'active', %s, "
+        "1000000, 1000000, 1000000, 1000000, 1000000, 1000000)",
+        (TOPOLOGY_DIGEST,),
+    )
+
+
+# ``workspace_quotas`` carries the reservation counter admission mutates in place:
+# ``held_attempts`` is the number of admitted-but-unfinished attempts and
+# ``version`` is its compare-and-set token. ``max_attempts``,
+# ``quarantined_attempts`` and ``policy_revision`` bound that counter, so a
+# refusal must leave every one of them exactly as it was.
+QUOTA_COLUMNS = (
+    "max_attempts",
+    "held_attempts",
+    "quarantined_attempts",
+    "policy_revision",
+    "version",
+)
+# ``speech_workspaces`` holds no attempt counter. The snapshot takes the columns
+# the workspace update path can write (``workspaces_postgres.py`` updates
+# ``display_name``, ``workspace_state`` and ``metadata_revision``) plus
+# ``policy_revision``, which admission reads into the plan. The admission role has
+# read-only access to this table, so comparing it is depth against a product write
+# that bypasses the granted surface; the rows are snapshotted because the table is
+# the FK target that makes a quota row resolvable.
+WORKSPACE_COLUMNS = (
+    "display_name",
+    "workspace_state",
+    "metadata_revision",
+    "policy_revision",
+)
+# Admission reserves host budget in the same transaction as the quota:
+# ``UPDATE host_nodes SET held_<dimension> = %s, version = version + 1``. The
+# admission role is granted exactly those ``held_*`` columns and ``version``
+# (``public_job_admission_grants.py``), so this is the complete in-place write
+# surface on the node row.
+HOST_COLUMNS = (*(("held_" + dimension) for dimension in DIMENSIONS), "version")
+# ... and the instance slot counter: ``UPDATE engine_instances SET held_slots = %s,
+# version = version + 1``. The admission role's instance grant is those two
+# columns only.
+INSTANCE_COLUMNS = ("held_slots", "version")
+
+
+def _table_state(
+    db: JobDatabase,
+    table: str,
+    keys: tuple[str, ...],
+    columns: tuple[str, ...],
+) -> dict[str, Any]:
+    """Row count plus every snapshot column, keyed by the table's identity."""
+    rows = {
+        "/".join(str(row[name]) for name in keys): {name: row[name] for name in columns}
+        for row in db.query(f"SELECT {', '.join((*keys, *columns))} FROM {table}")
+    }
+    return {"count": len(rows), "rows": rows}
+
+
+def _snapshot(db: JobDatabase) -> dict[str, Any]:
+    """Everything a create request must, or must not, change.
+
+    ``_counts`` only sees rows that appear or disappear. Admission also moves
+    counter columns in place -- one attempt on ``workspace_quotas``, host budget
+    on ``host_nodes`` and one slot on ``engine_instances`` -- so a refusal that
+    committed those ``UPDATE``s keeps every row count flat and leaves no trace in
+    a rows-only snapshot. Comparing the values is what makes such a refusal
+    visible; the ``speech_workspaces`` catalog rows are compared for the same
+    reason.
+    """
+    return {
+        "rows": _counts(db),
+        "workspace_quotas": _table_state(db, "workspace_quotas", ("workspace_id",), QUOTA_COLUMNS),
+        "speech_workspaces": _table_state(
+            db, "speech_workspaces", ("workspace_id",), WORKSPACE_COLUMNS
+        ),
+        "host_nodes": _table_state(db, "host_nodes", ("host_node_id",), HOST_COLUMNS),
+        "engine_instances": _table_state(
+            db, "engine_instances", ("instance_id", "instance_generation"), INSTANCE_COLUMNS
+        ),
+    }
+
+
+def _row_deltas(before: dict[str, Any], after: dict[str, Any]) -> dict[str, int]:
+    rows = before["rows"]
+    return {table: after["rows"][table] - rows[table] for table in rows}
+
+
+def _quota(db: JobDatabase, workspace_id: str = WORKSPACE) -> dict[str, Any]:
+    """The reservation row an admitted create must have moved."""
+    rows = db.query(
+        f"SELECT {', '.join(QUOTA_COLUMNS)} FROM workspace_quotas WHERE workspace_id = %s",
+        (workspace_id,),
+    )
+    assert len(rows) == 1, rows
+    return dict(rows[0])
+
+
+def _expect_row_moved(
+    before: dict[str, Any],
+    after: dict[str, Any],
+    key: str,
+    columns: tuple[str, ...],
+    label: str,
+) -> dict[str, int]:
+    """The named row's counters advanced by one CAS step, every other row is still.
+
+    Pinning the key matters: "exactly one row moved" also passes when admission
+    charges a different node or instance than the one the request was admitted
+    against. ``held`` counters are cumulative occupancy, so they may only grow,
+    and the row's ``version`` must advance by exactly one; an unchanged named row
+    means the reservation never landed where it belongs.
+    """
+    assert after["count"] == before["count"], f"{label}: row count changed"
+    before_rows, after_rows = before["rows"], after["rows"]
+    assert set(before_rows) == set(after_rows), f"{label}: identity set changed"
+    assert key in before_rows, f"{label}: {key} is not a fixture row"
+    previous, current = before_rows[key], after_rows[key]
+    assert current["version"] == previous["version"] + 1, (
+        f"{label}: {key} version {previous['version']} -> {current['version']}"
+    )
+    deltas = {name: current[name] - previous[name] for name in columns if name != "version"}
+    assert all(delta >= 0 for delta in deltas.values()), f"{label}: {key} moved down: {deltas}"
+    assert sum(deltas.values()) > 0, f"{label}: {key} counter did not move"
+    others_moved = {
+        name for name in after_rows if name != key and after_rows[name] != before_rows[name]
+    }
+    assert not others_moved, f"{label}: a row other than {key} moved: {sorted(others_moved)}"
+    return deltas
+
+
+def _expect_reservation(
+    before: dict[str, Any], after: dict[str, Any], workspace_id: str = WORKSPACE
+) -> None:
+    """One attempt, one slot and host budget are now held by this admission.
+
+    A success case that only asserted "nothing else changed" would pass against an
+    admission that never touched the reservation rows, so the change itself is
+    pinned: this workspace's ``held_attempts`` and CAS ``version`` advance by one,
+    every *other* workspace quota row and the whole ``speech_workspaces`` catalog
+    stay put, the known node's ``held_*`` budget grows with its ``version``,
+    the known instance gains exactly one held slot, and the ten public/admission
+    tables grow by one row each.
+    """
+    before_quotas = before["workspace_quotas"]["rows"]
+    previous = before_quotas[workspace_id]
+    after_quotas = after["workspace_quotas"]["rows"]
+    assert after_quotas[workspace_id] == {
+        **previous,
+        "held_attempts": previous["held_attempts"] + 1,
+        "version": previous["version"] + 1,
+    }
+    assert after["workspace_quotas"]["count"] == before["workspace_quotas"]["count"]
+    # The reservation must be addressed to one workspace. Another quota row
+    # moving in the same transaction is a cross-tenant leak, not a side effect.
+    assert {key: row for key, row in after_quotas.items() if key != workspace_id} == {
+        key: row for key, row in before_quotas.items() if key != workspace_id
+    }, "a workspace other than the admitted one had its quota row changed"
+    assert after["speech_workspaces"] == before["speech_workspaces"]
+    slot_deltas = _expect_row_moved(
+        before["engine_instances"],
+        after["engine_instances"],
+        INSTANCE_KEY,
+        INSTANCE_COLUMNS,
+        "instance slots",
+    )
+    assert slot_deltas == {"held_slots": 1}, f"unexpected instance slot movement: {slot_deltas}"
+    _expect_row_moved(
+        before["host_nodes"], after["host_nodes"], HOST_NODE, HOST_COLUMNS, "host budget"
+    )
+    assert _row_deltas(before, after) == dict.fromkeys(before["rows"], 1)
 
 
 def _error(response: Response) -> tuple[str, str, bool]:
@@ -133,9 +358,10 @@ async def test_admitted_tts_create_writes_job_intent_and_reservation(
     """A valid body returns 202 and every public/admission row commits once."""
     _seed(admission_database)
     db = admission_database.runtime.foundation.database
+    _add_spare_host(db)
     _grant_capacity(db)
     body = _body()
-    before = _counts(db)
+    before = _snapshot(db)
     async with AsyncClient(
         transport=ASGITransport(app=_app(admission_database)), base_url="http://test"
     ) as client:
@@ -149,8 +375,11 @@ async def test_admitted_tts_create_writes_job_intent_and_reservation(
         # the stored intent all name the workspace whose quota was reserved.
         assert job["workspace_id"] == WORKSPACE
         assert created.headers["Location"] == PREFIX + "/" + job["id"]
-        counts = _counts(db)
-        assert _deltas(before, counts) == dict.fromkeys(before, 1)
+        admitted = _snapshot(db)
+        # The reservation itself is asserted: ``held_attempts`` +1 for this
+        # workspace, one slot on the known instance, a positive budget delta on
+        # the known node, and one row in each public/admission table.
+        _expect_reservation(before, admitted)
         intent = db.query(
             "SELECT request_digest, request_document FROM speech_job_intents WHERE job_id = %s",
             (job["id"],),
@@ -165,7 +394,8 @@ async def test_admitted_tts_create_writes_job_intent_and_reservation(
         assert db.query("SELECT job_id FROM speech_job_intents") == [{"job_id": job["id"]}]
         read = await client.get(PREFIX + "/" + job["id"])
         assert read.status_code == 200 and read.json()["id"] == job["id"]
-        assert _counts(db) == counts
+        # A read is side-effect free: no row, no counter, no catalog column moves.
+        assert _snapshot(db) == admitted
 
 
 async def test_text_above_the_plan_ceiling_is_refused_without_rows(
@@ -176,23 +406,24 @@ async def test_text_above_the_plan_ceiling_is_refused_without_rows(
     #690 narrowed ``TtsJobInput.text.maxLength`` to the admission plan's ceiling,
     so the refusal is the declared 422 ``unsupported_parameter`` and it happens at
     the contract check: the document never reaches admission, which is why no row
-    moves. A text over the receive bound instead answers the 400
-    ``invalid_job_request`` that #703 owns.
+    and no in-place counter moves. A text over the receive bound instead answers
+    the 400 ``invalid_job_request`` that #703 owns.
     """
     _seed(admission_database)
     db = admission_database.runtime.foundation.database
+    _add_spare_host(db)
     _grant_capacity(db)
     async with AsyncClient(
         transport=ASGITransport(app=_app(admission_database)), base_url="http://test"
     ) as client:
-        before = _counts(db)
+        before = _snapshot(db)
         at_limit = _body(input={"text": "中" * PLAN_TEXT_CEILING})
         accepted = await client.post(
             PREFIX, json=at_limit, headers={"Idempotency-Key": "synthetic-at-plan-ceiling"}
         )
         assert accepted.status_code == 202, accepted.text
-        after_limit = _counts(db)
-        assert _deltas(before, after_limit) == dict.fromkeys(before, 1)
+        after_limit = _snapshot(db)
+        _expect_reservation(before, after_limit)
 
         over_limit = _body(input={"text": "中" * (PLAN_TEXT_CEILING + 1)})
         # The body stays far below the receive bound, so only the plan's own text
@@ -204,7 +435,9 @@ async def test_text_above_the_plan_ceiling_is_refused_without_rows(
         assert refused.status_code == 422, refused.text
         code, kind, retryable = _error(refused)
         assert (code, kind, retryable) == ("unsupported_parameter", "invalid_request_error", False)
-        assert _counts(db) == after_limit
+        # The refusal committed nothing: the accepted attempt is still the only
+        # reservation, and no quota, node-budget or instance-slot counter moved.
+        assert _snapshot(db) == after_limit
 
 
 async def test_create_without_a_provisioned_workspace_quota_is_refused_without_rows(
@@ -223,18 +456,19 @@ async def test_create_without_a_provisioned_workspace_quota_is_refused_without_r
     """
     _seed(admission_database)
     db = admission_database.runtime.foundation.database
+    _add_spare_host(db)
     unnamed = _body()
     del unnamed["workspace_id"]
     async with AsyncClient(
         transport=ASGITransport(app=_app(admission_database)), base_url="http://test"
     ) as client:
-        before = _counts(db)
+        before = _snapshot(db)
         refused = await client.post(
             PREFIX, json=unnamed, headers={"Idempotency-Key": "synthetic-unnamed-workspace"}
         )
         assert refused.status_code == 503, refused.text
         assert _error(refused) == ("job_unavailable", "service_unavailable_error", False)
-        assert _counts(db) == before
+        assert _snapshot(db) == before
 
         # A workspace row without its quota row fails identically when named.
         db.query(
@@ -242,6 +476,9 @@ async def test_create_without_a_provisioned_workspace_quota_is_refused_without_r
             "(workspace_id, display_name, workspace_state, created_at_us) "
             "VALUES ('workspace-quota-gap', 'test', 'active', 1)"
         )
+        # The catalog row is this case's setup, so the baseline moves with it; a
+        # missing quota beside an existing workspace must still reserve nothing.
+        gap_before = _snapshot(db)
         gap = await client.post(
             PREFIX,
             json=_body(workspace_id="workspace-quota-gap"),
@@ -249,7 +486,7 @@ async def test_create_without_a_provisioned_workspace_quota_is_refused_without_r
         )
         assert gap.status_code == 503, gap.text
         assert _error(gap) == ("job_unavailable", "service_unavailable_error", False)
-        assert _counts(db) == before
+        assert _snapshot(db) == gap_before
 
         # Naming a workspace that does not exist at all stays the client error.
         unknown = await client.post(
@@ -259,20 +496,23 @@ async def test_create_without_a_provisioned_workspace_quota_is_refused_without_r
         )
         assert unknown.status_code == 422, unknown.text
         assert _error(unknown) == ("workspace_not_found", "invalid_request_error", False)
-        assert _counts(db) == before
+        assert _snapshot(db) == gap_before
 
         db.query(
             "INSERT INTO workspace_quotas "
             "(workspace_id, max_attempts, held_attempts, policy_revision) "
             "VALUES ('workspace-default', 8, 0, 'policy-test')"
         )
+        provisioned_before = _snapshot(db)
         provisioned = await client.post(
             PREFIX, json=unnamed, headers={"Idempotency-Key": "synthetic-unnamed-workspace"}
         )
         assert provisioned.status_code == 202, provisioned.text
         assert provisioned.json()["workspace_id"] == "workspace-default"
-        after = _counts(db)
-        assert _deltas(before, after) == dict.fromkeys(before, 1)
+        # The same unnamed body now reserves one attempt against the provisioned
+        # default workspace, which is the evidence the refusal was the missing
+        # reservation target and not an invalid document.
+        _expect_reservation(provisioned_before, _snapshot(db), "workspace-default")
 
 
 async def test_body_over_the_receive_bound_is_refused_before_any_write(
@@ -300,10 +540,12 @@ async def test_body_over_the_receive_bound_is_refused_before_any_write(
       400 code asserted here moves with #703's declared bound and 413.
 
     Refusal is pre-write: no Job, intent, submission, operation, attempt,
-    request, lease or outbox row appears.
+    request, lease or outbox row appears, and no quota attempt, node-budget or
+    instance-slot counter moves.
     """
     _seed(admission_database)
     db = admission_database.runtime.foundation.database
+    _add_spare_host(db)
     max_bytes = _settings().job_receive_max_bytes
     text = "中" * PLAN_TEXT_CEILING
     assert len(text) <= CONTRACT_TEXT_CEILING
@@ -318,7 +560,7 @@ async def test_body_over_the_receive_bound_is_refused_before_any_write(
     async with AsyncClient(
         transport=ASGITransport(app=_app(admission_database)), base_url="http://test"
     ) as client:
-        before = _counts(db)
+        before = _snapshot(db)
         refused = await client.post(
             PREFIX, json=body, headers={"Idempotency-Key": "synthetic-oversized-body"}
         )
@@ -326,8 +568,9 @@ async def test_body_over_the_receive_bound_is_refused_before_any_write(
         code, kind, retryable = _error(refused)
         assert (code, kind, retryable) == ("invalid_job_request", "invalid_request_error", False)
         # A parsed body would be 422 for the unknown member instead of 400, and a
-        # written one would move at least one of the ten deltas.
-        assert _counts(db) == before
+        # written one would move at least one of the ten row counts or one of the
+        # in-place counters.
+        assert _snapshot(db) == before
 
 
 async def test_same_key_replay_returns_the_original_job_without_new_rows(
@@ -336,34 +579,40 @@ async def test_same_key_replay_returns_the_original_job_without_new_rows(
     """One key replays the stored Job; a fresh key is a second admitted Job.
 
     Replay is decided before any reservation, so it must neither reserve a second
-    attempt nor write the public rows again. A different key with the same body is
-    a genuinely new Job, which is what keeps the replay assertion meaningful.
+    attempt nor write the public rows again -- and, since the snapshot covers the
+    in-place counters, the replay also proves the quota, node-budget and
+    instance-slot counters were not held twice. A different key with the same body
+    is a genuinely new Job, which is what keeps the replay assertion meaningful.
     """
     _seed(admission_database)
     db = admission_database.runtime.foundation.database
+    _add_spare_host(db)
     _grant_capacity(db)
     body = _body()
     headers = {"Idempotency-Key": "synthetic-replay-key"}
     async with AsyncClient(
         transport=ASGITransport(app=_app(admission_database)), base_url="http://test"
     ) as client:
-        before = _counts(db)
+        before = _snapshot(db)
         created = await client.post(PREFIX, json=body, headers=headers)
         assert created.status_code == 202, created.text
         original = created.json()
-        after_create = _counts(db)
-        assert _deltas(before, after_create) == dict.fromkeys(before, 1)
+        after_create = _snapshot(db)
+        _expect_reservation(before, after_create)
 
         replay = await client.post(PREFIX, json=body, headers=headers)
         assert replay.status_code == 202, replay.text
         assert replay.json()["id"] == original["id"]
         assert replay.headers["Location"] == created.headers["Location"]
-        assert _counts(db) == after_create
-        assert db.query("SELECT held_attempts FROM workspace_quotas") == [{"held_attempts": 1}]
+        # Byte-identical state: no second attempt, slot or host budget was held.
+        assert _snapshot(db) == after_create
+        assert _quota(db)["held_attempts"] == 1
 
         fresh = await client.post(
             PREFIX, json=body, headers={"Idempotency-Key": "synthetic-replay-key-2"}
         )
         assert fresh.status_code == 202, fresh.text
         assert fresh.json()["id"] != original["id"]
-        assert _deltas(after_create, _counts(db)) == dict.fromkeys(before, 1)
+        # A different key is a second admission: exactly one more attempt, slot and
+        # host budget, again addressed to the same known rows.
+        _expect_reservation(after_create, _snapshot(db))

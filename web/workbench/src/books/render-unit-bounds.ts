@@ -1,4 +1,6 @@
 /**
+ * #757 route proof: this branch exists only to run a `web`-scope CI pass.
+ *
  * The two `RenderUnit.text` bounds, which are different things (#745).
  *
  * `RenderUnitText` (`contracts/workbench-openapi.yaml` → workbench schema

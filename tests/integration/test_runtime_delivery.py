@@ -45,6 +45,14 @@ from speechnexus_backend.speech.infrastructure.runtime_observation_codec import 
 
 pytestmark = pytest.mark.integration
 CLAIM = DeliveryClaimRequest("delivery-test", ("host-test",), 30000000)
+# A deferred retry is anchored on the clock read inside the deferring transaction,
+# so the quiet window it leaves is delay_us minus that transaction's own commit
+# latency: the commit that publishes the backoff also consumes it. The product
+# floor (100 ms) is therefore not a usable test window -- a slow but correct
+# commit leaves the row already due and a claim rightly returns "claimed". Keep
+# the window far above any measured commit latency (300x the worst observed
+# ~103 ms) and assert the persisted arithmetic instead of racing the wall clock.
+RETRY_DELAY_US = 30000000
 
 
 @dataclass
@@ -158,11 +166,16 @@ def test_mismatched_receipt_and_retry_never_reopen_submission(delivery: Delivery
     reply = _wire(delivery.runtime)
     reply["instance_id"] = "instance-other"
     assert delivery.port.acknowledge(started.ticket, json.dumps(reply)).outcome == "rejected"
-    assert delivery.port.defer(started.ticket, "not_found", 100000).outcome == "committed"
+    assert delivery.port.defer(started.ticket, "not_found", RETRY_DELAY_US).outcome == "committed"
     db = delivery.runtime.foundation.database
-    row = db.query("SELECT * FROM runtime_intent_deliveries")[0]
-    assert row["delivery_phase"] == "unknown" and row["acknowledged_at_us"] is None
+    deferred = db.query("SELECT * FROM runtime_intent_deliveries")[0]
+    assert deferred["delivery_phase"] == "unknown" and deferred["acknowledged_at_us"] is None
+    # The quiet window is the ledger's own arithmetic, not a property of how fast
+    # this process happens to observe it after the committing round trip.
+    assert int(deferred["next_attempt_at_us"]) - int(deferred["updated_at_us"]) == RETRY_DELAY_US
     assert delivery.port.claim(CLAIM).outcome == "empty"
+    # A claim that finds nothing due must not reopen submission or touch the row.
+    assert db.query("SELECT * FROM runtime_intent_deliveries")[0] == deferred
     db.query("UPDATE runtime_intent_deliveries SET next_attempt_at_us=0")
     assert delivery.ticket().phase == "unknown"
 

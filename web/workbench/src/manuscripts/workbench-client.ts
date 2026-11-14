@@ -8,13 +8,32 @@ export { parse, type Contracts } from "../../../../packages/contracts/src/workbe
 export class WorkbenchResponseError extends Error {
   readonly code: string;
   /**
+   * The contract's own retry permission for this refusal (`ErrorBody.retryable`,
+   * required on every error body).
+   *
+   * It is surfaced because it is the one property a status gets backwards, and because
+   * it is the only retryability statement a consumer without a per-code vocabulary can
+   * read: `generateRenderUnitV2` publishes one `code` per operator step and the panel
+   * mirrors that vocabulary (`books/render-refusals.ts`), while the export and assistant
+   * routes publish no such vocabulary at all (#803). Reading this field is not a second
+   * table -- it is the field the contract already carries, and
+   * `tests/contract/test_render_refusal_vocabulary.py` keeps the render mirror equal to
+   * the server's answer for the codes that have both.
+   *
+   * It answers "may this same request be sent again", never "may an unknown outcome be
+   * replayed": a 503 `outcome_unknown` is deliberately `retryable: false` while still
+   * requiring the original key to be kept, so the recovery journals decide the second
+   * question from the status family (`recovery/command-journal.ts`).
+   */
+  readonly retryable: boolean;
+  /**
    * The delay the server declared for a retry, in milliseconds, or `null` when it
    * declared none (`ErrorBody.retry_after_ms`, the envelope's copy of `Retry-After`).
    *
    * It is surfaced because the operator copy needs it: a retryable refusal may say
    * "wait N seconds" only if the page can read N, and the body is the only place the
    * declared field travels. It says nothing about whether the request may be retried
-   * -- `code` decides that -- so a value here is never read as permission.
+   * -- `retryable` decides that -- so a value here is never read as permission.
    */
   readonly retryAfterMs: number | null;
   constructor(
@@ -23,6 +42,7 @@ export class WorkbenchResponseError extends Error {
   ) {
     super(`Workbench request failed (${status})`);
     this.code = detail.error.code;
+    this.retryable = detail.error.retryable;
     this.retryAfterMs = detail.error.retry_after_ms ?? null;
   }
 }

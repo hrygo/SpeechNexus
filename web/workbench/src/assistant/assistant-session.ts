@@ -1,5 +1,11 @@
 import { assistantJournal, type AssistantCommand } from "./assistant-journal";
-import type { CommandJournal, JournalStorage } from "../recovery/command-journal";
+import {
+  refusedCategory,
+  refusedReplayable,
+  type CommandJournal,
+  type JournalStorage,
+  type RecordedRefusal,
+} from "../recovery/command-journal";
 import {
   WorkbenchResponseError,
   type Contracts,
@@ -27,7 +33,12 @@ export interface AssistantState {
   readonly problem: AssistantProblem | null;
   readonly watching: boolean;
   readonly pending: AssistantCommand | null;
-  readonly rejected: boolean;
+  /**
+   * The refusal the journal holds for the retained command (#803), or `null` when it holds
+   * none. It is the persisted category, not "what this tab observed", so a reload reads the
+   * same one; `refusedReplayable` is the only reading of it.
+   */
+  readonly refused: RecordedRefusal | null;
   readonly blocked: boolean;
 }
 
@@ -47,7 +58,11 @@ function problemOf(error: unknown): AssistantProblem {
     if (error.status === 404) return "missing";
     if (error.code === "revision_conflict" || error.code === "idempotency_conflict")
       return "conflict";
-    if (error.status >= 400 && error.status < 500) return "rejected";
+    // Only a settled 4xx is reported as a refusal, the same bit the journal records: a 408
+    // may have crossed the network before the receive deadline, and a 429 was answered
+    // before anything existed, so neither may claim "the server refused this" (#803).
+    if (error.status >= 400 && error.status < 500)
+      return [408, 429].includes(error.status) ? "unknown" : "rejected";
     return "unavailable";
   }
   // A transport failure is not evidence that the request was rejected.
@@ -69,7 +84,7 @@ export class AssistantSession {
     problem: null,
     watching: false,
     pending: null,
-    rejected: false,
+    refused: null,
     blocked: false,
   };
   #listeners = new Set<() => void>();
@@ -89,8 +104,11 @@ export class AssistantSession {
       this.#state = {
         ...this.#state,
         pending: record.command,
-        rejected: record.refused !== null,
-        problem: record.command ? (record.refused !== null ? "rejected" : "unknown") : null,
+        refused: record.refused,
+        // A restored refusal is stated by the aside, which is the only block that can word it
+        // per category; the alert's "结果尚未确认" copy would name a handle the record may
+        // take away (#803). Only a command with no refusal is still the unknown outcome.
+        problem: record.command && record.refused === null ? "unknown" : null,
       };
     } catch {
       this.#state = { ...this.#state, blocked: true, problem: "storage" };
@@ -172,7 +190,7 @@ export class AssistantSession {
     try {
       if (!this.#journal) throw new Error("Recovery unavailable");
       this.#journal.begin(command);
-      this.#set({ pending: this.#journal.load().command, rejected: false, blocked: false });
+      this.#set({ pending: this.#journal.load().command, refused: null, blocked: false });
     } catch {
       this.#set({ blocked: true, problem: "storage" });
       return;
@@ -182,6 +200,10 @@ export class AssistantSession {
   async replay(): Promise<void> {
     const command = this.#state.pending;
     if (!command || this.#state.busy || !this.#journal) return;
+    // The control's `disabled` is only how this is shown: a refusal whose state withholds
+    // the replay is not re-sent through any path, because the record says this key may have
+    // been spent (#803, the same two layers `RenderUnitPanel` uses).
+    if (!refusedReplayable(this.#state.refused)) return;
     try {
       this.#journal.save(this.#journal.load());
     } catch {
@@ -221,25 +243,26 @@ export class AssistantSession {
         this.#set({ busy: false, blocked: true, problem: "storage" });
         return;
       }
-      this.#set({ turn, pending: null, rejected: false, busy: false, problem: null });
+      this.#set({ turn, pending: null, refused: null, busy: false, problem: null });
       this.#watch(turn);
     } catch (error) {
       if (generation !== this.#generation) return;
-      const rejected =
+      // A 4xx other than 408/429 settles this attempt: the workbench created no turn, and
+      // 408 may have crossed the network before the receive deadline. `refusedCategory`
+      // states what that writes and why it needs no second code table (#803).
+      const settled =
         error instanceof WorkbenchResponseError &&
         error.status >= 400 &&
         error.status < 500 &&
         ![408, 429].includes(error.status);
       try {
-        // This session holds no refusal table of its own -- #755 classifies the render
-        // dispatch, not an assistant turn -- so it records that a refusal was observed
-        // without a category. `unclassified` is the one value no reader may take as
-        // retryable (#798); this panel never re-offers a key on that basis anyway.
-        this.#journal.failure(rejected ? "unclassified" : null);
+        this.#journal.failure(
+          refusedCategory(settled, error instanceof WorkbenchResponseError && error.retryable),
+        );
         const record = this.#journal.load();
         this.#set({
           busy: false,
-          rejected: record.refused !== null,
+          refused: record.refused,
           problem: record.uncertain ? "unknown" : problemOf(error),
         });
       } catch {
@@ -248,10 +271,10 @@ export class AssistantSession {
     }
   }
   dismissRejected(): void {
-    if (!this.#state.rejected || this.#state.busy || !this.#journal) return;
+    if (this.#state.refused === null || this.#state.busy || !this.#journal) return;
     try {
       this.#journal.clear();
-      this.#set({ pending: null, rejected: false, problem: null, blocked: false });
+      this.#set({ pending: null, refused: null, problem: null, blocked: false });
     } catch {
       this.#set({ blocked: true, problem: "storage" });
     }

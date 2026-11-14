@@ -26,6 +26,6 @@ export const assistantProblems = {
   unavailable: "当前部署尚未启用工作台，或连接不可用。",
   unknown: "结果尚未确认。请核对连接后按原键重试，不要重新创建。",
   missing: "回合已不可读取。",
-  rejected: "请求被拒绝。请核对输入后重试。",
+  rejected: "本次助手请求已被拒绝，服务端没有接受它。下一步：核对输入后重新提交一次回合。",
   conflict: "同一请求键已用于不同内容。请使用新的请求键。",
 } as const;

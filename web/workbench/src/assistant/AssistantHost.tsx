@@ -1,8 +1,30 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { WorkbenchClient, type Contracts } from "../manuscripts/workbench-client";
+import { refusedReplayable, type RecordedRefusal } from "../recovery/command-journal";
 import { AssistantSession } from "./assistant-session";
 import { assistantProblems as problems, availabilityCopy, designState } from "./copy";
 import "./assistant.css";
+
+/**
+ * What the retained request can offer, per the refusal the journal holds (#803).
+ *
+ * The state is read from the record exactly as the render panel reads it, and the two
+ * controls follow `refusedReplayable` / "a refusal is ended explicitly". Only the wording
+ * is this panel's own: the assistant route publishes no per-code operator step, so this
+ * copy may not name one, and it may never promise a handle the state withholds.
+ */
+function recoveryNote(refused: RecordedRefusal | null): string {
+  switch (refused) {
+    case null:
+      return "原请求已保存在此标签页。结果未确认前不能另建请求，也不会自动重放。";
+    case "retryable":
+      return "原请求已保存在此标签页。这次拒绝可重试：等待后用原键重新派发仍是同一次助手请求，本页不自动重试。";
+    case "terminal":
+      return "原请求已保存在此标签页。服务端已确定性拒绝这次助手请求：同一次请求再发送不会改变结果，所以这里禁用了按原键重放。用「结束已拒绝助手请求」明确结束它，再按那次拒绝的说明重新提交。";
+    case "unclassified":
+      return "原请求已保存在此标签页。这条记录只说明服务端拒绝过这次助手请求，没有保存该拒绝是否可重试，因此本页不提供按原键重放。请按那次拒绝的说明处理，或用「结束已拒绝助手请求」结束它后重新提交。";
+  }
+}
 
 export function AssistantHost({
   client,
@@ -78,16 +100,20 @@ export function AssistantHost({
 
       {state.pending && (
         <aside aria-label="助手原请求恢复">
-          <p>原请求已保存在此标签页。结果未确认前不能另建请求，也不会自动重放。</p>
+          <p>{recoveryNote(state.refused)}</p>
           {state.pending.kind === "create" && (
             <p>
               项目 {state.pending.projectId} · 请求键 {state.pending.key}
             </p>
           )}
-          <button type="button" disabled={state.busy} onClick={() => void session.replay()}>
+          <button
+            type="button"
+            disabled={state.busy || !refusedReplayable(state.refused)}
+            onClick={() => void session.replay()}
+          >
             按原键重放助手请求
           </button>
-          {state.rejected && (
+          {state.refused !== null && (
             <button type="button" onClick={() => session.dismissRejected()}>
               结束已拒绝助手请求
             </button>

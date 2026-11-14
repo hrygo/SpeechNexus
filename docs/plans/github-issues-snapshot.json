@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-14T09:43:25+08:00",
+  "fetched_at": "2026-11-14T17:17:14+08:00",
   "issues": [
     {
       "number": 336,
@@ -1196,50 +1196,50 @@
       "parent_issue_url": null
     },
     {
-      "number": 702,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/702",
+      "number": 740,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/740",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "契约合法请求得到 503「Job storage is unavailable」，真实原因是默认 workspace 无配额行",
+      "title": "文件任务面板的关键状态转换没有一条真实浏览器测试：连续切片都把「未在真实浏览器手点」写进未验证项",
       "state": "open",
       "state_reason": null,
       "labels": [],
       "parent_issue_url": null
     },
     {
-      "number": 703,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/703",
+      "number": 750,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/750",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "POST /v1/nexus/jobs 有未声明的请求体上限，超限返回 400 而非契约已有的 413 PayloadTooLarge",
+      "title": "渲染派发把上游六类 422 折叠成一个无原因的拒绝：可分信息在适配器被 from None 丢弃，工作台只能靠本地猜",
       "state": "open",
       "state_reason": null,
       "labels": [],
       "parent_issue_url": null
     },
     {
-      "number": 704,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/704",
+      "number": 754,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/754",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "RenderUnit text 上界仍为 200000：与「一次合成 4096」的关系需实测并统一",
+      "title": "429 job_capacity_exhausted 被报成「结果未知」：一个带 Retry-After 的可重试拒绝，让用户在不该重放的时候重放",
       "state": "open",
       "state_reason": null,
       "labels": [],
       "parent_issue_url": null
     },
     {
-      "number": 705,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/705",
+      "number": 755,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/755",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "同一「正文超上限」在同步与异步入口给出不同错误码，需统一或给出跨入口对照",
+      "title": "渲染派发把 409 族与 401/403/415 也折成一个无原因的码：该等、该换键、该换凭据被说成同一件事",
       "state": "open",
       "state_reason": null,
       "labels": [],
       "parent_issue_url": null
     },
     {
-      "number": 723,
-      "html_url": "https://github.com/hrygo/SpeechNexus/issues/723",
+      "number": 757,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/757",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
-      "title": "取消路径终态拒绝不清理持久 pending:cancel，重载后把已作废的取消复活成未知",
+      "title": "纯 web 改动永远不会跑 Web 集成分片：改前端破坏真实浏览器集成测试时 PR 阶段无任何信号（#745 就是这么红的）",
       "state": "open",
       "state_reason": null,
       "labels": [],

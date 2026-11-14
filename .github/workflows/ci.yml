@@ -24,6 +24,7 @@ jobs:
     timeout-minutes: 3
     outputs:
       mode: ${{ steps.route.outputs.mode }}
+      excluded_shards: ${{ steps.route.outputs.excluded_shards }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -360,10 +361,18 @@ jobs:
       - name: Validate API and event schemas
         run: uv run python scripts/dev-env/validate-contracts.py
 
+  # A Web-only change must reach the partitions that select the browser and
+  # Node-contract consumers: only there does a real browser drive the built
+  # bundles against the real backend, PostgreSQL/MySQL and MinIO. #745 changed
+  # only `web/workbench/src/**`, merged with every check green, and broke `main`
+  # afterwards; the fix PR #756 had to start a manual run to obtain that evidence
+  # (#757). The six-partition universe stays declared below and `full` keeps all
+  # of it; a `web` route removes only the lanes that cannot exercise it, through
+  # the route-derived `exclude` (docs/validation/ci-validation.md).
   integration_shards:
     name: "Integration ${{ matrix.shard }}: ${{ matrix.shard >= 4 && 'Web + PG/MySQL/MinIO' || 'PG/MySQL/MinIO' }}"
     needs: [changes]
-    if: ${{ needs.changes.outputs.mode == 'full' }}
+    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' }}
     runs-on: ubuntu-24.04
     # Baseline: the four database partitions need 7-9.5 min of job wall clock.
     # PR #498's Integration 2 attempt 1 stalled at 84% and hit the old 18 min
@@ -381,6 +390,11 @@ jobs:
         # The canonical partitioner groups Web consumers into two lanes and
         # ordinary DB cases into four; tools still follow the actual collection.
         shard: [0, 1, 2, 3, 4, 5]
+        # Route-derived rows that keep only the lanes the route can exercise
+        # (empty for `full`, lanes 0-3 for `web`). Never empty unless it is meant
+        # to be, and never the reason a matrix comes out empty: every route that
+        # expands this job keeps at least the two Web-capable lanes.
+        exclude: ${{ fromJSON(needs.changes.outputs.excluded_shards) }}
     services:
       postgres:
         image: postgres:16.15-alpine
@@ -442,6 +456,34 @@ jobs:
         run: |
           uv run python scripts/dev-env/integration-shards.py requirements \
             --index "${{ matrix.shard }}" --count 6 >> "$GITHUB_OUTPUT"
+
+      - name: Require the Web lanes to select actual Web consumers
+        # The Web-capable lanes are the only place the cases they select can run:
+        # the `*_browser.py` / browser-probe modules (`browser`) and the Node HTTP
+        # contract consumers (`node_contracts`). A `web` route buys evidence only if
+        # a lane selects at least one of them; a lane that selects neither has
+        # degenerated into a plain hash split of DB cases — the same no-signal state
+        # #757 removes, one layer down. A lane may legitimately select only one of
+        # the two kinds, so either one is enough. Missing, empty or any other value
+        # fails closed (each variable is compared against the literal `true`), and
+        # the full route never runs this step.
+        #
+        # What this does not cover: that every Web lane still selects both kinds
+        # (pinned against the real partitioner in
+        # `tests/ci/test_ci_routing.py::IntegrationLaneTests`), or anything about
+        # coverage — the `coverage-<shard>.data` files these lanes upload are kept
+        # as failure evidence only. The merged `fail_under=80` judgement is the
+        # `coordination` gate, which stays `full`-only.
+        if: ${{ needs.changes.outputs.mode == 'web' }}
+        env:
+          BROWSER: ${{ steps.integration_tools.outputs.browser }}
+          NODE_CONTRACTS: ${{ steps.integration_tools.outputs.node_contracts }}
+          SHARD: ${{ matrix.shard }}
+        run: |
+          if [[ "${BROWSER:-}" != "true" && "${NODE_CONTRACTS:-}" != "true" ]]; then
+            echo "::error::Web-scope integration partition ${SHARD} selected no browser consumer and no Node-contract consumer (browser=${BROWSER:-<empty>}, node_contracts=${NODE_CONTRACTS:-<empty>})"
+            exit 1
+          fi
 
       - name: Set up Node.js for actual contract HTTP consumption
         if: steps.integration_tools.outputs.node_contracts == 'true' || steps.integration_tools.outputs.browser == 'true'
@@ -756,6 +798,7 @@ jobs:
         delivery_tracking,
         python_checks_gate,
         coordination,
+        integration_shards,
         web,
         deployment,
         reference_acceptance,
@@ -773,6 +816,7 @@ jobs:
           DOCS_FORMAT_RESULT: ${{ needs.docs_format.result }}
           CHECKS_RESULT: ${{ needs.python_checks_gate.result }}
           COORDINATION_RESULT: ${{ needs.coordination.result }}
+          INTEGRATION_RESULT: ${{ needs.integration_shards.result }}
           WEB_RESULT: ${{ needs.web.result }}
           DEPLOYMENT_RESULT: ${{ needs.deployment.result }}
           ACCEPTANCE_RESULT: ${{ needs.reference_acceptance.result }}
@@ -795,28 +839,38 @@ jobs:
             true|false) ;;
             *) echo '::error::Missing or invalid Node Controller image scope'; exit 1 ;;
           esac
+          # `integration` is the route's own evidence, not the six-shard gate:
+          # `coordination` keeps requiring all six partitions plus merged coverage
+          # and stays `skipped` outside `full`. A `web` route owes the two
+          # Web-capable partitions because they are the only ones selecting the
+          # browser consumers (#757); the other routes owe no integration lane.
           case "$MODE" in
             docs)
-              checks=skipped; coordination=skipped; web=skipped; deployment=skipped;
-              acceptance=skipped; docs_format=success ;;
+              checks=skipped; coordination=skipped; integration=skipped;
+              web=skipped; deployment=skipped; acceptance=skipped;
+              docs_format=success ;;
             web)
-              checks=success; coordination=skipped; web=success; deployment=skipped;
-              acceptance=skipped; docs_format=skipped ;;
+              checks=success; coordination=skipped; integration=success;
+              web=success; deployment=skipped; acceptance=skipped;
+              docs_format=skipped ;;
             no-db)
-              checks=success; coordination=skipped; web=success; deployment=success;
-              acceptance=success; docs_format=skipped ;;
+              checks=success; coordination=skipped; integration=skipped;
+              web=success; deployment=success; acceptance=success;
+              docs_format=skipped ;;
             full)
-              checks=success; coordination=success; web=success; deployment=success;
-              acceptance=success; docs_format=skipped ;;
+              checks=success; coordination=success; integration=success;
+              web=success; deployment=success; acceptance=success;
+              docs_format=skipped ;;
             *)
               echo "::error::Missing or invalid CI scope"
               exit 1 ;;
           esac
           if [[ "$CHECKS_RESULT" != "$checks" || "$COORDINATION_RESULT" != "$coordination" ||
+                "$INTEGRATION_RESULT" != "$integration" ||
                 "$WEB_RESULT" != "$web" || "$DEPLOYMENT_RESULT" != "$deployment" ||
                 "$ACCEPTANCE_RESULT" != "$acceptance" ||
                 "$DOCS_FORMAT_RESULT" != "$docs_format" ]]; then
-            echo "::error::Scope=$MODE; Python=$CHECKS_RESULT; PG/InnoDB=$COORDINATION_RESULT; Web=$WEB_RESULT; deployment=$DEPLOYMENT_RESULT; acceptance=$ACCEPTANCE_RESULT; docs_format=$DOCS_FORMAT_RESULT"
+            echo "::error::Scope=$MODE; Python=$CHECKS_RESULT; PG/InnoDB=$COORDINATION_RESULT; integration=$INTEGRATION_RESULT; Web=$WEB_RESULT; deployment=$DEPLOYMENT_RESULT; acceptance=$ACCEPTANCE_RESULT; docs_format=$DOCS_FORMAT_RESULT"
             exit 1
           fi
           echo "Verified scope=$MODE; inapplicable lanes are not application-test evidence."

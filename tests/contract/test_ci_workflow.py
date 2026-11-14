@@ -24,12 +24,17 @@ _STATES = ("success", "failure", "skipped", "cancelled", "")
 _DELIVERY = {"DELIVERY_RESULT": "success"}
 # `docs_format` is the only lane a prose-only change owes; every heavier scope owes
 # the same file set through `python_contracts`' `uv run ruff format --check .`.
+# `INTEGRATION_RESULT` is the route's own integration evidence: a `web` change owes
+# the two Web-capable partitions (#757), while `coordination` — the six-shard
+# evidence and merged-coverage gate — keeps requiring `full` and stays skipped
+# everywhere else. A skipped integration job on `web` therefore fails the gate.
 _EXPECTED = {
     "docs": {
         **_DELIVERY,
         "DOCS_FORMAT_RESULT": "success",
         "CHECKS_RESULT": "skipped",
         "COORDINATION_RESULT": "skipped",
+        "INTEGRATION_RESULT": "skipped",
         "WEB_RESULT": "skipped",
         "DEPLOYMENT_RESULT": "skipped",
         "ACCEPTANCE_RESULT": "skipped",
@@ -39,6 +44,7 @@ _EXPECTED = {
         "DOCS_FORMAT_RESULT": "skipped",
         "CHECKS_RESULT": "success",
         "COORDINATION_RESULT": "skipped",
+        "INTEGRATION_RESULT": "success",
         "WEB_RESULT": "success",
         "DEPLOYMENT_RESULT": "skipped",
         "ACCEPTANCE_RESULT": "skipped",
@@ -48,6 +54,7 @@ _EXPECTED = {
         "DOCS_FORMAT_RESULT": "skipped",
         "CHECKS_RESULT": "success",
         "COORDINATION_RESULT": "success",
+        "INTEGRATION_RESULT": "success",
         "WEB_RESULT": "success",
         "DEPLOYMENT_RESULT": "success",
         "ACCEPTANCE_RESULT": "success",
@@ -57,6 +64,7 @@ _EXPECTED = {
         "DOCS_FORMAT_RESULT": "skipped",
         "CHECKS_RESULT": "success",
         "COORDINATION_RESULT": "skipped",
+        "INTEGRATION_RESULT": "skipped",
         "WEB_RESULT": "success",
         "DEPLOYMENT_RESULT": "success",
         "ACCEPTANCE_RESULT": "success",
@@ -106,6 +114,45 @@ def test_browser_preparation_keeps_partition_selection_and_original_budgets() ->
     assert shards["timeout-minutes"] == 30
     assert jobs["web"]["timeout-minutes"] == 10
     assert shards["strategy"]["matrix"]["shard"] == [0, 1, 2, 3, 4, 5]
+
+
+def test_a_web_route_runs_the_partitions_that_select_the_browser_consumers() -> None:
+    """#745 merged green and broke `main`; #756 needed a manual run for evidence (#757)."""
+    shards = _WORKFLOW["jobs"]["integration_shards"]
+    # `web` is a scope that must reach the browser chain, so this job can no longer
+    # be `full`-only; `docs`/`no-db` keep skipping it through this same gate.
+    assert shards["if"] == (
+        "${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' }}"
+    )
+    matrix = shards["strategy"]["matrix"]
+    # The six-partition universe stays declared in the workflow, so `full` cannot
+    # silently shrink; the route only removes lanes it cannot exercise.
+    assert matrix["shard"] == [0, 1, 2, 3, 4, 5]
+    assert matrix["exclude"] == "${{ fromJSON(needs.changes.outputs.excluded_shards) }}"
+    assert _WORKFLOW["jobs"]["changes"]["outputs"]["excluded_shards"] == (
+        "${{ steps.route.outputs.excluded_shards }}"
+    )
+    # A Web route buys evidence only if its lanes really select a Web consumer;
+    # the guard must be tied to `web`, must read both selection kinds the step name
+    # promises, and must fail closed on anything but `true`. A lane may legitimately
+    # select only one kind, so the two are combined with `&&` on the "not true" side.
+    guard = next(
+        s
+        for s in shards["steps"]
+        if s.get("name") == "Require the Web lanes to select actual Web consumers"
+    )
+    assert guard["if"] == "${{ needs.changes.outputs.mode == 'web' }}"
+    assert guard["env"] == {
+        "BROWSER": "${{ steps.integration_tools.outputs.browser }}",
+        "NODE_CONTRACTS": "${{ steps.integration_tools.outputs.node_contracts }}",
+        "SHARD": "${{ matrix.shard }}",
+    }
+    assert (
+        'if [[ "${BROWSER:-}" != "true" && "${NODE_CONTRACTS:-}" != "true" ]]; then' in guard["run"]
+    )
+    assert "exit 1" in guard["run"] and "continue-on-error" not in guard
+    tools = next(s for s in shards["steps"] if s.get("id") == "integration_tools")
+    assert shards["steps"].index(tools) < shards["steps"].index(guard)
 
 
 def test_integration_shard_budget_matches_the_workflow_job_timeout() -> None:
@@ -227,6 +274,7 @@ def test_protected_status_never_passes_missing_evidence(
         "docs_format",
         "python_checks_gate",
         "coordination",
+        "integration_shards",
         "web",
         "deployment",
         "delivery_tracking",
@@ -242,6 +290,7 @@ def test_protected_status_never_passes_missing_evidence(
         "DOCS_FORMAT_RESULT": "${{ needs.docs_format.result }}",
         "CHECKS_RESULT": "${{ needs.python_checks_gate.result }}",
         "COORDINATION_RESULT": "${{ needs.coordination.result }}",
+        "INTEGRATION_RESULT": "${{ needs.integration_shards.result }}",
         "WEB_RESULT": "${{ needs.web.result }}",
         "DEPLOYMENT_RESULT": "${{ needs.deployment.result }}",
         "ACCEPTANCE_RESULT": "${{ needs.reference_acceptance.result }}",
@@ -251,6 +300,22 @@ def test_protected_status_never_passes_missing_evidence(
     states = {**_EXPECTED[mode], "CHECKS_RESULT": checks, "COORDINATION_RESULT": coordination}
     result = _run_gate({"MODE": mode, "ROUTING_RESULT": "success", **states})
     assert (result.returncode == 0) is (states == _EXPECTED[mode])
+
+
+@pytest.mark.parametrize("mode", list(_EXPECTED))
+@pytest.mark.parametrize("state", _STATES)
+def test_final_gate_requires_the_route_own_integration_lanes(mode: str, state: str) -> None:
+    states = {**_EXPECTED[mode], "INTEGRATION_RESULT": state}
+    result = _run_gate({"MODE": mode, "ROUTING_RESULT": "success", **states})
+    expected = "success" if mode in ("web", "full") else "skipped"
+    assert (result.returncode == 0) is (state == expected)
+
+
+@pytest.mark.parametrize("mode", list(_EXPECTED))
+def test_final_gate_rejects_missing_integration_result(mode: str) -> None:
+    states = {key: value for key, value in _EXPECTED[mode].items() if key != "INTEGRATION_RESULT"}
+    result = _run_gate({"MODE": mode, "ROUTING_RESULT": "success", **states})
+    assert result.returncode != 0
 
 
 @pytest.mark.parametrize("mode", list(_EXPECTED))
@@ -419,7 +484,9 @@ def test_required_workflow_is_never_filtered_out_and_classification_is_lightweig
     assert "github.event.pull_request.base.sha" in str(routing)
     assert "uv sync" not in commands and "pnpm install" not in commands
     assert "services" not in routing and "needs" not in routing
-    assert jobs["integration_shards"]["if"] == "${{ needs.changes.outputs.mode == 'full' }}"
+    assert jobs["integration_shards"]["if"] == (
+        "${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' }}"
+    )
     assert (
         jobs["deployment"]["if"]
         == "${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'no-db' }}"

@@ -634,11 +634,20 @@ def test_integration_gate_names_describe_evidence_and_reject_missing_execution(r
         "Compose: configuration validation",
     } <= {job["name"] for job in jobs.values()}
     shards = jobs["integration_shards"]
+    # Six partitions stay declared, so `full` cannot silently shrink. The route
+    # removes only lanes it cannot exercise (`web` keeps the Web-capable ones), and
+    # the `full` route excludes nothing (#757).
     assert shards["strategy"] == {
         "fail-fast": False,
         "max-parallel": 6,
-        "matrix": {"shard": [0, 1, 2, 3, 4, 5]},
+        "matrix": {
+            "shard": [0, 1, 2, 3, 4, 5],
+            "exclude": "${{ fromJSON(needs.changes.outputs.excluded_shards) }}",
+        },
     }
+    assert shards["if"] == (
+        "${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' }}"
+    )
     assert set(shards["services"]) == {"postgres", "mysql"}
     gate = jobs["coordination"]
     assert gate["needs"] == ["changes", "python_checks", "integration_shards"]

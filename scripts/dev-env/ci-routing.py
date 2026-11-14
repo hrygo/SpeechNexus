@@ -12,6 +12,16 @@ from pathlib import Path, PurePosixPath
 from typing import Literal
 
 Mode = Literal["docs", "web", "no-db", "full"]
+# The integration job declares this many partitions and every partition is derived
+# from the complete collection. This module does not import `integration-shards.py`
+# (that would pull pytest into a stdlib-only router), so the Web-lane rule below is a
+# second copy of `max(1, count // 3)` over the same count. The copy is what can drift:
+# `tests/ci/test_ci_routing.py::IntegrationLaneTests` imports the real partitioner,
+# partitions a real-shaped collection and asserts that the lanes named here are
+# exactly the lanes that select browser/Node-contract consumers, so a change to
+# either side turns that test red before the workflow can run the wrong lanes.
+INTEGRATION_SHARD_COUNT = 6
+WEB_LANE_SHARE_DIVISOR = 3
 _ROOT_PROSE = {"AGENTS.md", "README.md", "README.en.md"}
 _SKILL_DOCUMENT_SUFFIXES = {".md", ".json", ".yaml", ".yml"}
 _WEB_SUFFIXES = {".ts", ".tsx", ".css", ".html", ".svg", ".png", ".webp", ".jpg", ".woff2"}
@@ -75,6 +85,33 @@ def classify(paths: Sequence[str]) -> Mode:
     return mode
 
 
+def web_lanes(count: int = INTEGRATION_SHARD_COUNT) -> tuple[int, ...]:
+    """Partition indices the canonical partitioner reserves for Web consumers."""
+    share = max(1, count // WEB_LANE_SHARE_DIVISOR)
+    return tuple(range(count - share, count))
+
+
+def excluded_shards(mode: Mode) -> tuple[dict[str, int], ...]:
+    """`strategy.matrix.exclude` rows that keep only the lanes a route can exercise.
+
+    A Web source change is exercised end-to-end only by the Web-capable partitions:
+    they are the ones selecting the `*_browser.py` modules and the Node-contract
+    consumers, i.e. a real browser driving the built bundles against the real
+    backend, PostgreSQL/MySQL and MinIO. Without them a `web/`-only pull request
+    merges with no signal from that chain — #745 did, and broke `main`; the fix PR
+    #756 could only obtain evidence from a manual run (#757).
+
+    Every other route keeps the whole six-partition universe, and so does `full`:
+    the job's mode gate, not this list, excludes `docs`/`no-db`. Removing the four
+    DB-only lanes under `web` is the cheapest way to run every browser consumer;
+    the measured cost is recorded in `docs/validation/ci-validation.md`.
+    """
+    if mode != "web":
+        return ()
+    lanes = set(web_lanes())
+    return tuple({"shard": index} for index in range(INTEGRATION_SHARD_COUNT) if index not in lanes)
+
+
 def _git(cwd: Path, *args: str) -> bytes:
     return subprocess.check_output(["git", *args], cwd=cwd, stderr=subprocess.PIPE, timeout=30)
 
@@ -100,7 +137,10 @@ def detect_route(event: str, base: str, cwd: Path) -> tuple[Mode, str]:
     mode = classify(paths)
     reasons = {
         "docs": "Only prose or skill documents/metadata changed; heavy checks are out of scope.",
-        "web": "Web sources changed; retain Python consumer/unit checks and the complete Web lane.",
+        "web": (
+            "Web sources changed; retain Python consumer/unit checks, the complete Web "
+            "lane and the Web-capable integration partitions."
+        ),
         "no-db": (
             "Standalone engines changed; retain Python/Web/deployment checks, without DB shards."
         ),
@@ -122,8 +162,14 @@ def main() -> int:
         print("Diff validation failed; inspect git diff --check locally.", file=sys.stderr)
         return 1
     if args.output:
+        # `excluded_shards` keeps the integration job's matrix from expanding lanes
+        # the route cannot exercise. It is always valid JSON; `full` and the routes
+        # without integration lanes exclude nothing, so it is never the reason a
+        # matrix would come out empty.
+        excluded = json.dumps([dict(row) for row in excluded_shards(mode)])
         with args.output.open("a") as handle:
             handle.write(f"mode={mode}\n")
+            handle.write(f"excluded_shards={excluded}\n")
     if args.summary:
         with args.summary.open("a") as handle:
             handle.write(f"### CI route: {mode}\n\n{reason}\n")

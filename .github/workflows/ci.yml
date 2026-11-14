@@ -57,10 +57,15 @@ jobs:
       # Review pull requests carry review artifacts only
       # (`docs/operations/agent-delivery-sop.md`, step 4). This lane and
       # `delivery_tracking` are the two jobs without a scope filter, so a
-      # docs-only review PR reaches both; only this one already holds the exact
-      # base-to-HEAD diff from the routing step above, so the boundary check needs
-      # no second checkout or fetch and its red is attributed to the route. It has
-      # to live in an unfiltered job because a review PR is a `docs`-scope PR
+      # docs-only review PR reaches both; only this one already holds a checkout
+      # and the routing step above, so the boundary check needs no second checkout
+      # and its red is attributed to the route. The change set is the pull
+      # request's own delta: `base.sha` is frozen at the pull request's last event,
+      # so comparing against it counts whatever `main` merged in between as part of
+      # this pull request (#747). A merge-ref checkout is therefore compared with
+      # its own first parent, and the step only needs `head.sha` to confirm that
+      # shape. It has to live in an unfiltered job because a review PR is a
+      # `docs`-scope PR
       # (#738: implementation that was byte-identical to the reviewed head merged
       # under a `review:` title, and the reviewed code then landed as a different
       # revision). `changes` failing fails `Gate: required checks for this
@@ -69,11 +74,12 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           python3 scripts/dev-env/check-review-pr-boundary.py \
-            --event="$EVENT_NAME" --base="$BASE_SHA" \
+            --event="$EVENT_NAME" --base="$BASE_SHA" --head-sha="$HEAD_SHA" \
             --title="$PR_TITLE" --head-ref="$PR_HEAD_REF" \
             --summary="$GITHUB_STEP_SUMMARY"
 

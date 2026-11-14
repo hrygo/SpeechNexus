@@ -48,6 +48,40 @@ and any file type inside ``docs/reviews/`` counts - implementation dropped at
 ``docs/reviews/impl.py`` would pass. That directory is not imported or executed,
 so the third gap is harmless, but it is a gap.
 
+Comparison base. The change set is the pull request's own delta; base-branch
+progress must never enter it. ``actions/checkout`` on a ``pull_request`` event
+checks out ``refs/pull/<n>/merge``, so ``HEAD`` is GitHub's synthetic merge
+commit, whose subject is ``Merge <head> into <base>``: the first parent is the
+base branch tip the merge was built on and the second parent is the pull request
+head. Comparing that merge commit with its first parent is exactly what the pull
+request adds on top of the base branch: main-line commits are already inside the
+first parent and drop out.
+
+``github.event.pull_request.base.sha`` is frozen at the pull request's last
+event, so it lags as soon as ``main`` moves. Diffing against it counts main-line
+progress as this pull request's change, and three dots do not help: ``base.sha``
+is an ancestor of the merge commit's first parent, so ``merge-base(base.sha,
+HEAD)`` *is* ``base.sha`` and ``git diff base.sha...HEAD`` returns the same paths.
+PR #741 hit exactly this minutes after #739 landed the gate: base ``d58127c0``,
+merge first parent ``4514b65b``, so three reports merged into ``main`` in between
+(``docs/reviews/2026-11-14-*.md``) landed next to the pull request's own browser
+specs and the structural signal read it as a review PR carrying implementation.
+
+When ``HEAD`` is the pull request head itself - a local run, or a checkout pinned
+to ``head.sha`` - three dots are correct instead: the merge base of ``base.sha``
+and ``HEAD`` is the fork point and ``merge-base..HEAD`` is the pull request's own
+work. The form is derived from the commit itself, so a missing ``--head-sha``
+cannot silently fall back to the two-point reading of a merge ref.
+
+Two details make that reading safe rather than convenient. The parents are checked
+*in order* - first parent the base branch tip, second the merged head - because a
+subject that names the roles the other way round would otherwise start the diff at
+the pull request head and hide the paths it carries (a false green, the one
+direction this gate cannot take). And a ``--head-sha`` that disagrees with the
+merge's second parent is only a warning: re-runs read an event payload frozen at
+the last event, and falling back to ``merge-base(base.sha, HEAD)`` there is exactly
+the two-point reading this fix removes.
+
 Trade-off (under-report vs. mis-report). A declared review PR (signals 1-2)
 fails closed: if the exact diff cannot be computed it is red, because the cost
 of a false green is the incident class above and the remediation is entirely in
@@ -84,6 +118,11 @@ TITLE_PREFIXES = ("review:", "review：")
 BRANCH_PREFIXES = ("review/", "docs/review")
 SOP = "docs/operations/agent-delivery-sop.md"
 
+# GitHub builds `refs/pull/<n>/merge` as a merge commit whose subject names both
+# sides: `Merge <head> into <base>`. Recognising that shape is what keeps a
+# merge-ref checkout from being read with the stale two-point base.
+MERGE_REF_MESSAGE = re.compile(r"^Merge ([0-9a-f]{40}) into ([0-9a-f]{40})$")
+
 # One retry with a fixed backoff: a single network blip must not turn every
 # declared review PR red, but the decision stays fail-closed when the base really
 # cannot be fetched. The lane's own budget is minutes, and the routing step above
@@ -94,7 +133,7 @@ FETCH_BACKOFF_SECONDS = 2.0
 
 
 class DiffUnavailableError(Exception):
-    """The exact base-to-HEAD diff could not be computed."""
+    """This pull request's own change set could not be computed."""
 
 
 @dataclass(frozen=True)
@@ -145,6 +184,23 @@ class Verdict:
         }
 
 
+@dataclass(frozen=True)
+class Comparison:
+    """The two commits whose tree delta is this pull request's own change set.
+
+    ``label`` names the shape the runner checked out, so a log line or a step
+    summary can be traced back to the comparison without a re-run.
+    """
+
+    left: str
+    right: str
+    label: str
+    warning: str = ""
+
+    def short(self) -> str:
+        return f"{self.left[:12]}..{self.right[:12]} ({self.label})"
+
+
 def is_review_path(path: str) -> bool:
     return path.startswith(REVIEW_ROOT)
 
@@ -173,8 +229,8 @@ def judge(signals: Signals, paths: Sequence[str] | None, unavailable: str = "") 
                 violations=(),
                 reports=(),
                 reason=(
-                    "The exact base-to-HEAD diff is unavailable; a declared review PR "
-                    f"cannot be verified{detail}."
+                    "The exact change set of this pull request is unavailable; a declared "
+                    f"review PR cannot be verified{detail}."
                 ),
             )
         return Verdict(
@@ -252,12 +308,17 @@ def _git_failure(exc: subprocess.CalledProcessError | subprocess.TimeoutExpired)
     return f"exit {exc.returncode}: {exc}"
 
 
-def _fetch_base(base: str, cwd: Path) -> None:
-    """Fetch the exact base commit, retrying once with a fixed backoff."""
+def _fetch_commit(commit: str, cwd: Path) -> None:
+    """Fetch one commit from origin, retrying once with a fixed backoff.
+
+    ``--depth=1`` is enough: every comparison this gate makes is a tree diff, so
+    only the commit and its tree are needed, and the routing step above already
+    paid for the checkout.
+    """
     detail = ""
     for attempt in range(1, FETCH_ATTEMPTS + 1):
         try:
-            _git(cwd, "fetch", "--no-tags", "--depth=1", "origin", base)
+            _git(cwd, "fetch", "--no-tags", "--depth=1", "origin", commit)
             return
         except FileNotFoundError as exc:  # pragma: no cover - git missing from the runner
             raise DiffUnavailableError(f"git is not available: {exc}") from exc
@@ -266,42 +327,157 @@ def _fetch_base(base: str, cwd: Path) -> None:
             if attempt < FETCH_ATTEMPTS:
                 time.sleep(FETCH_BACKOFF_SECONDS)
     raise DiffUnavailableError(
-        f"fetching base {base} from origin failed after {FETCH_ATTEMPTS} attempts: {detail}"
+        f"fetching {commit} from origin failed after {FETCH_ATTEMPTS} attempts: {detail}"
     )
 
 
-def changed_paths(base: str, cwd: Path) -> list[str]:
-    """Changed paths between the exact base commit and HEAD.
+def _rev_parse(cwd: Path, rev: str) -> str:
+    try:
+        return _git(cwd, "rev-parse", "--verify", f"{rev}^{{commit}}").strip().decode("utf-8")
+    except FileNotFoundError as exc:  # pragma: no cover - git missing from the runner
+        raise DiffUnavailableError(f"git is not available: {exc}") from exc
+    except subprocess.CalledProcessError as exc:
+        raise DiffUnavailableError(f"resolving {rev} failed: {_git_failure(exc)}") from exc
+
+
+def _ensure_commit(commit: str, cwd: Path) -> None:
+    try:
+        _git(cwd, "cat-file", "-e", f"{commit}^{{commit}}")
+    except FileNotFoundError as exc:  # pragma: no cover - git missing from the runner
+        raise DiffUnavailableError(f"git is not available: {exc}") from exc
+    except subprocess.CalledProcessError:
+        _fetch_commit(commit, cwd)
+
+
+def _raw_commit(cwd: Path, rev: str) -> bytes:
+    try:
+        return _git(cwd, "cat-file", "commit", rev)
+    except FileNotFoundError as exc:  # pragma: no cover - git missing from the runner
+        raise DiffUnavailableError(f"git is not available: {exc}") from exc
+    except subprocess.CalledProcessError as exc:
+        raise DiffUnavailableError(f"reading {rev} failed: {_git_failure(exc)}") from exc
+
+
+def _parents(cwd: Path, rev: str) -> list[str]:
+    """Parent SHAs from the raw commit object.
+
+    A shallow checkout hides a commit's parents from ``rev-parse`` but not from the
+    object itself, so the merge shape stays readable at ``fetch-depth: 1``.
+    """
+    return [
+        line.split(b" ", 1)[1].decode("ascii", errors="replace")
+        for line in _raw_commit(cwd, rev).splitlines()
+        if line.startswith(b"parent ")
+    ]
+
+
+def _merge_ref(cwd: Path, head: str, head_sha: str, parents: Sequence[str]) -> Comparison | None:
+    """The ``refs/pull/<n>/merge`` reading of ``head``, or ``None``.
+
+    GitHub's subject is ``Merge <head> into <base>`` and its parents are ordered
+    ``[<base>, <head>]`` - the base branch tip first, because the merge is built
+    on top of it. Both facts are checked *in that order*: a subject that names the
+    roles the other way round must not be read as a merge ref, because picking the
+    wrong side of the merge hides the pull request's own paths and reports a green.
+
+    A ``head_sha`` that disagrees with the second parent (a re-run reading a stale
+    payload, or a push between the event and the checkout) is only an advisory:
+    the checked-out merge ref is still the thing whose first parent isolates this
+    pull request's delta, so the comparison stays the same and the disagreement is
+    reported as a warning. Falling back to ``merge-base(base.sha, HEAD)`` here
+    would silently restore the two-point reading of a merge ref (#747).
+    """
+    if len(parents) != 2:
+        return None
+    message = _raw_commit(cwd, head).split(b"\n\n", 1)[-1].decode("utf-8", errors="replace")
+    match = MERGE_REF_MESSAGE.match(message.splitlines()[0].strip() if message else "")
+    if match is None:
+        return None
+    merged, onto = match.group(1), match.group(2)
+    if list(parents) != [onto, merged]:
+        return None
+    warning = ""
+    if head_sha and head_sha != merged:
+        warning = (
+            f"the event names head {head_sha[:12]} but the checked-out merge ref merged "
+            f"{merged[:12]}; comparing against the merge ref's first parent anyway"
+        )
+    _ensure_commit(onto, cwd)
+    return Comparison(onto, head, "merge ref against its first parent", warning)
+
+
+def _merge_base(cwd: Path, left: str, right: str) -> str:
+    try:
+        out = _git(cwd, "merge-base", left, right)
+    except FileNotFoundError as exc:  # pragma: no cover - git missing from the runner
+        raise DiffUnavailableError(f"git is not available: {exc}") from exc
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise DiffUnavailableError(
+            f"computing the merge base of {left} and {right} failed: {_git_failure(exc)}"
+        ) from exc
+    sha = out.strip().decode("utf-8")
+    if not sha:
+        raise DiffUnavailableError(f"the merge base of {left} and {right} is empty")
+    return sha
+
+
+def comparison(base: str, head_sha: str, cwd: Path) -> Comparison:
+    """The commits to diff, chosen so base-branch progress cannot leak in.
+
+    A merge-ref checkout is compared against its own first parent. Any other
+    checkout (the pull request head itself, or a plain branch in a local run) is
+    compared three-dot: ``merge-base(base.sha, HEAD)..HEAD``. See the module
+    docstring for why the two-point reading of ``base.sha`` is wrong.
+    """
+    if not re.fullmatch(r"[0-9a-f]{40}", base) or base == "0" * 40:
+        raise DiffUnavailableError("no exact 40-character base commit SHA was provided")
+    head = _rev_parse(cwd, "HEAD")
+    parents = _parents(cwd, head)
+    if head_sha != head:
+        merged = _merge_ref(cwd, head, head_sha, parents)
+        if merged is not None:
+            return merged
+    _ensure_commit(base, cwd)
+    fork = _merge_base(cwd, base, head)
+    warning = ""
+    if len(parents) >= 2:
+        warning = (
+            "HEAD is a merge commit that is not a GitHub merge ref (subject "
+            "`Merge <head> into <base>` with the base tip as the first parent); "
+            "three-point comparison used instead of a merge first parent"
+        )
+    return Comparison(fork, head, "merge base of base.sha and HEAD", warning)
+
+
+def changed_paths(ends: Comparison, cwd: Path) -> list[str]:
+    """Changed paths of this pull request's own delta.
 
     ``--no-renames`` keeps a source file renamed into ``docs/reviews/`` visible as
     the deleted original plus the new path, so the original cannot hide inside
     the review directory.
     """
-    if not re.fullmatch(r"[0-9a-f]{40}", base) or base == "0" * 40:
-        raise DiffUnavailableError("no exact 40-character base commit SHA was provided")
+    _ensure_commit(ends.left, cwd)
     try:
-        _git(cwd, "cat-file", "-e", f"{base}^{{commit}}")
-    except FileNotFoundError as exc:  # pragma: no cover - git missing from the runner
-        raise DiffUnavailableError(f"git is not available: {exc}") from exc
-    except subprocess.CalledProcessError:
-        _fetch_base(base, cwd)
-    try:
-        raw = _git(cwd, "diff", "--name-only", "--no-renames", "-z", base, "HEAD", "--")
+        raw = _git(cwd, "diff", "--name-only", "--no-renames", "-z", ends.left, ends.right, "--")
     except FileNotFoundError as exc:  # pragma: no cover - git missing from the runner
         raise DiffUnavailableError(f"git is not available: {exc}") from exc
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         raise DiffUnavailableError(
-            f"computing git diff {base}..HEAD failed: {_git_failure(exc)}"
+            f"computing git diff {ends.left}..{ends.right} failed: {_git_failure(exc)}"
         ) from exc
     return [name.decode("utf-8", errors="surrogateescape") for name in raw.split(b"\0") if name]
 
 
-def _write_summary(summary: Path | None, verdict: Verdict) -> None:
+def _write_summary(summary: Path | None, verdict: Verdict, ends: Comparison | None) -> None:
     if summary is None:
         return
     status = "not applicable" if not verdict.applicable else ("pass" if verdict.ok else "fail")
     with summary.open("a", encoding="utf-8", errors="replace") as handle:
         handle.write(f"### Review PR boundary: {status}\n\n")
+        if ends is not None:
+            handle.write(f"- Compared: `{ends.short()}`\n")
+            if ends.warning:
+                handle.write(f"- Comparison warning: {ends.warning}\n")
         if verdict.signals:
             handle.write(f"- Signals: {', '.join(verdict.signals)}\n")
         if verdict.reports:
@@ -311,9 +487,16 @@ def _write_summary(summary: Path | None, verdict: Verdict) -> None:
         handle.write(f"\n{verdict.reason}\n")
 
 
-def _report(verdict: Verdict, paths: Sequence[str] | None) -> None:
+def _report(verdict: Verdict, paths: Sequence[str] | None, ends: Comparison | None) -> None:
     """Emit GitHub annotations and the remediation that keeps the check fixable."""
     print(json.dumps(verdict.as_dict(), ensure_ascii=True))
+    if ends is not None:
+        print(f"review-pr-boundary: compared {ends.short()}")
+        if ends.warning:
+            print(
+                f"::warning title=Review PR boundary comparison::{ends.warning}",
+                file=sys.stderr,
+            )
     if verdict.ok:
         print(f"review-pr-boundary: {verdict.reason}")
         return
@@ -361,6 +544,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--event", required=True, help="github.event_name")
     parser.add_argument("--base", default="", help="github.event.pull_request.base.sha")
+    parser.add_argument("--head-sha", default="", help="github.event.pull_request.head.sha")
     parser.add_argument("--title", default="", help="github.event.pull_request.title")
     parser.add_argument("--head-ref", default="", help="github.event.pull_request.head.ref")
     parser.add_argument("--summary", type=Path, help="append a Markdown section here")
@@ -378,21 +562,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "the review boundary is a pull-request-time constraint."
             ),
         )
-        _write_summary(args.summary, verdict)
+        _write_summary(args.summary, verdict, None)
         print(json.dumps(verdict.as_dict(), ensure_ascii=True))
         return 0
 
     paths: list[str] | None
+    ends: Comparison | None = None
     unavailable = ""
     try:
-        paths = changed_paths(args.base, Path.cwd())
+        ends = comparison(args.base, args.head_sha, Path.cwd())
+        paths = changed_paths(ends, Path.cwd())
     except DiffUnavailableError as exc:
         paths = None
         unavailable = str(exc)
     signals = detect_signals(args.title, args.head_ref, paths or ())
     verdict = judge(signals, paths, unavailable)
-    _write_summary(args.summary, verdict)
-    _report(verdict, paths)
+    _write_summary(args.summary, verdict, ends)
+    _report(verdict, paths, ends)
     return 0 if verdict.ok else 1
 
 

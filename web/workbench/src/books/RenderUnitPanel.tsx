@@ -17,6 +17,12 @@ import {
   refusedCode,
   type RenderRefusalCode,
 } from "./render-refusals";
+import {
+  RECOVERED_INTENT,
+  RECOVERED_INTENT_CONTROLS,
+  recoveredIntentOf,
+  type ObservedAnswer,
+} from "./recovered-intent";
 
 const problems = {
   unavailable: "当前部署尚未启用工作台，或连接不可用。",
@@ -53,6 +59,8 @@ type UnitProblem =
       code: RenderRefusalCode;
       over?: number;
       retryAfter?: number | undefined;
+      /** The code the server actually sent, when this page read it as an alias. */
+      reported?: string;
     }
   | { key: "retryLater"; retryAfter?: number | undefined }
   | { key: "inFlight"; code: InFlightCode };
@@ -76,6 +84,24 @@ function dispatchInFlight(code: string): InFlightCode | null {
   return code in DISPATCH_IN_FLIGHT_STEPS ? (code as InFlightCode) : null;
 }
 
+/**
+ * The upstream 409 whose meaning the workbench owns (#794 review MF-2).
+ *
+ * `execution_cleanup_pending` is what the speech base answers when a previous execution
+ * of the unit has not confirmed that it stopped: a Job *exists* and its cleanup is still
+ * pending, so the next step is to wait and then dispatch the same intent again. The
+ * dispatch route maps it to `render_submission_cleanup_pending` before the envelope
+ * leaves the server (`backend`'s `_CONFLICT_CODES`), so this page normally never sees the
+ * raw code; when it does -- an older or differently configured deployment -- answering it
+ * as the generic "no disposition" refusal would publish a *terminal* reading for a refusal
+ * #755 says must not be read as final. Recognizing it is the consumer-side alias, in the
+ * same spirit as `DISPATCH_IN_FLIGHT_STEPS` recognizing the raw 409 codes, and it is why
+ * the panel never asserts "没有创建作业" from this reply: the Job is the earlier one.
+ */
+const UPSTREAM_REFUSAL_ALIASES: Readonly<Record<string, RenderRefusalCode>> = {
+  execution_cleanup_pending: "render_submission_cleanup_pending",
+};
+
 function dispatchOverMessage(over: number): string {
   return `该单元文本 ${over} 字符超过一次派发上限 ${RENDER_UNIT_DISPATCH_LIMIT} 字符，服务端因此拒绝了本次派发，未生成作业。下一步：把文本切分为每段不超过 ${RENDER_UNIT_DISPATCH_LIMIT} 字符的多个单元后分别派发；${RENDER_UNIT_SOURCE_LIMIT} 字符的源容量不必缩小。`;
 }
@@ -96,7 +122,8 @@ function problemMessage(problem: UnitProblem): string {
 /** The stable code, offered for diagnosis only — never woven into the copy. */
 function problemTitle(problem: UnitProblem): string | undefined {
   if (problem.key === "textOverDispatch") return "render_submission_rejected";
-  if (problem.key === "refusal" || problem.key === "inFlight") return problem.code;
+  if (problem.key === "refusal") return problem.reported ?? problem.code;
+  if (problem.key === "inFlight") return problem.code;
   return undefined;
 }
 
@@ -118,6 +145,24 @@ function retryLaterMessage(retryAfter?: number): string {
   return retryAfter === undefined
     ? "服务端当前拒绝派发（限流或容量不足），且没有创建作业。下一步：稍后重新派发这次生成；这不是结果未知。"
     : `服务端当前拒绝派发（限流或容量不足），且没有创建作业。下一步：等待 ${retryAfter} 秒后重新派发这次生成；这不是结果未知。`;
+}
+
+/**
+ * Whether the retained command's original key can still start a Job, per answer (#794).
+ *
+ * The question is not the status family but the published classification (#755): a 429
+ * and the cleanup wait are refusals *now* whose own step is to dispatch the same intent
+ * again after waiting, so the retained key is still the right request. Every other
+ * answer settles it -- a 4xx refusal will not start a Job for the same request, a
+ * revision conflict names a new revision instead, and the local over-bound attribution
+ * names a split -- while an unobserved answer (`unknown`) or an unreachable deployment
+ * (`unavailable`) still needs the original key, because a Job may already exist under it
+ * and only that key can find it again.
+ */
+function keepsReplay(problem: UnitProblem): boolean {
+  if (problem.key === "refusal") return isRetryableRefusal(problem.code);
+  if (problem.key === "retryLater") return true;
+  return problem.key === "unknown" || problem.key === "unavailable";
 }
 
 /**
@@ -230,15 +275,19 @@ function problemOf(error: unknown, dispatched?: string): UnitProblem {
     if (error.code === "invalid_change") return { key: "rejected" };
     const inFlight = dispatchInFlight(error.code);
     if (inFlight !== null) return { key: "inFlight", code: inFlight };
-    const refusal = refusedCode(error.code);
+    const refusal = refusedCode(error.code) ?? UPSTREAM_REFUSAL_ALIASES[error.code] ?? null;
     if (refusal !== null) {
       const measured = dispatched === undefined ? undefined : renderUnitLength(dispatched);
       const over =
         measured !== undefined && measured > RENDER_UNIT_DISPATCH_LIMIT ? measured : undefined;
+      // The alias is read as its disposition, but the diagnosis keeps the code the server
+      // sent: a report quoting the mapped code would quote something the server never said.
+      const reported = refusal === error.code ? undefined : error.code;
+      const withReported = reported === undefined ? {} : { reported };
       if (refusal === "render_submission_text_too_long") {
         return over === undefined
-          ? { key: "refusal", code: refusal }
-          : { key: "refusal", code: refusal, over };
+          ? { key: "refusal", code: refusal, ...withReported }
+          : { key: "refusal", code: refusal, over, ...withReported };
       }
       // The fallback states no cause; only the panel's own measurement may name the text.
       if (refusal === "render_submission_rejected" && over !== undefined) {
@@ -247,8 +296,8 @@ function problemOf(error: unknown, dispatched?: string): UnitProblem {
       // Only the two retryable dispositions carry a delay; a stray value on a
       // terminal one is dropped rather than promising a retry that cannot work.
       return isRetryableRefusal(refusal)
-        ? { key: "refusal", code: refusal, retryAfter: retryAfterSeconds(error) }
-        : { key: "refusal", code: refusal };
+        ? { key: "refusal", code: refusal, retryAfter: retryAfterSeconds(error), ...withReported }
+        : { key: "refusal", code: refusal, ...withReported };
     }
     // A 429 is a refusal, not an unknown outcome (#754): admission refused before
     // writing any Job row, so "结果尚未确认 / 按原键重放" would send the operator to
@@ -304,6 +353,13 @@ function ChapterUnits({
     journal: CommandJournal<UnitCommand> | null;
     pending: UnitCommand | null;
     rejected: boolean;
+    /**
+     * The answer this tab observed for the retained command, as `RECOVERED_INTENT` reads it:
+     * `kept` when the refusal's own step is another dispatch of the same intent, `settled`
+     * when its copy says repeating it cannot change the outcome, `none` when nothing was
+     * observed here (a refusal restored by a reload, which the journal cannot classify).
+     */
+    answer: ObservedAnswer;
     blocked: boolean;
   }>(() => {
     try {
@@ -311,9 +367,15 @@ function ChapterUnits({
         record = journal.load();
       if (record.command && record.command.chapterId !== chapter.id)
         throw new Error("Unit scope mismatch");
-      return { journal, pending: record.command, rejected: record.rejected, blocked: false };
+      return {
+        journal,
+        pending: record.command,
+        rejected: record.rejected,
+        answer: "none",
+        blocked: false,
+      };
     } catch {
-      return { journal: null, pending: null, rejected: false, blocked: true };
+      return { journal: null, pending: null, rejected: false, answer: "none", blocked: true };
     }
   });
   const owner = useRef({ generation: 0, alive: true });
@@ -329,6 +391,7 @@ function ChapterUnits({
     };
   }, []);
   const locked = busy || recovery.pending !== null || recovery.blocked;
+  const intent = recoveredIntentOf(recovery);
   const generating = units
     .filter((unit) => unit.status === "generating")
     .map((unit) => unit.id)
@@ -412,12 +475,22 @@ function ChapterUnits({
 
   async function execute(command: UnitCommand, fresh: boolean): Promise<boolean> {
     if (flight.current || (fresh && recovery.pending !== null)) return false;
+    // A refusal whose state withholds the replay is not re-sent through any path, not only
+    // through the disabled control: the state table is the single answer to "may this key
+    // be re-sent", and the button's `disabled` is only how it is shown (#794).
+    if (!fresh && intent !== null && !RECOVERED_INTENT[intent].replay) return false;
     const journal = recovery.journal;
     try {
       if (!journal) throw new Error("Recovery unavailable");
       if (fresh) journal.begin(command);
       else journal.save(journal.load());
-      setRecovery({ journal, pending: journal.load().command, rejected: false, blocked: false });
+      setRecovery({
+        journal,
+        pending: journal.load().command,
+        rejected: false,
+        answer: "none",
+        blocked: false,
+      });
     } catch {
       setRecovery((r) => ({ ...r, blocked: true }));
       setProblem({ key: "storage" });
@@ -453,7 +526,7 @@ function ChapterUnits({
         setProblem({ key: "storage" });
         return false;
       }
-      setRecovery({ journal, pending: null, rejected: false, blocked: false });
+      setRecovery({ journal, pending: null, rejected: false, answer: "none", blocked: false });
       setUnits((current) =>
         command.kind === "create"
           ? [...current.filter((item) => item.id !== updated.id), updated]
@@ -497,20 +570,23 @@ function ChapterUnits({
       try {
         journal.failure(rejected);
         const record = journal.load();
-        setRecovery({
-          journal,
-          pending: record.command,
-          rejected: record.rejected,
-          blocked: false,
-        });
         const stored =
           command.kind === "generate"
             ? units.find((unit) => unit.id === command.unitId)?.text
             : undefined;
-        if (command.kind === "create")
-          setCreateProblem(record.uncertain ? { key: "unknown" } : problemOf(error));
-        else if (record.uncertain) setProblem({ key: "unknown" });
-        else setProblem(stored === undefined ? problemOf(error) : problemOf(error, stored));
+        // One answer for the alert and the aside: an earlier unobserved attempt keeps the
+        // unknown answer, otherwise the refusal is reported as the server stated it, and
+        // that same problem decides whether the retained key is still usable (#794).
+        const shown: UnitProblem = record.uncertain ? { key: "unknown" } : problemOf(error, stored);
+        setRecovery({
+          journal,
+          pending: record.command,
+          rejected: record.rejected,
+          answer: keepsReplay(shown) ? "kept" : "settled",
+          blocked: false,
+        });
+        if (command.kind === "create") setCreateProblem(shown);
+        else setProblem(shown);
       } catch {
         setRecovery((r) => ({ ...r, blocked: true }));
         setProblem({ key: "storage" });
@@ -525,7 +601,13 @@ function ChapterUnits({
     if (!recovery.rejected || busy || !recovery.journal) return;
     try {
       recovery.journal.clear();
-      setRecovery((r) => ({ ...r, pending: null, rejected: false, blocked: false }));
+      setRecovery((r) => ({
+        ...r,
+        pending: null,
+        rejected: false,
+        answer: "none",
+        blocked: false,
+      }));
       setCreateProblem(null);
       setProblem(null);
     } catch {
@@ -726,22 +808,20 @@ function ChapterUnits({
       {(recovery.pending || recovery.blocked) && (
         <aside aria-label="单元原请求恢复">
           <p>
-            {recovery.blocked
-              ? problems.storage
-              : "原请求已保存在此标签页。不会自动重放，结果未知时不能更换意图。"}
+            {recovery.blocked || intent === null ? problems.storage : RECOVERED_INTENT[intent].note}
           </p>
           {recovery.pending && (
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || intent === null || !RECOVERED_INTENT[intent].replay}
               onClick={() => void execute(recovery.pending!, false)}
             >
-              按原键重放单元请求
+              {RECOVERED_INTENT_CONTROLS.replay}
             </button>
           )}
-          {recovery.rejected && (
+          {recovery.pending && intent !== null && RECOVERED_INTENT[intent].dismiss && (
             <button type="button" disabled={busy} onClick={dismissRejected}>
-              结束已拒绝单元请求
+              {RECOVERED_INTENT_CONTROLS.dismiss}
             </button>
           )}
         </aside>

@@ -130,6 +130,18 @@ function rejectionDisposition(
  * submission whose answer was never observed, and must leave the intent unknown (#707
  * review M1). The list only covers `asr`/`tts` creates, the only kinds this client issues;
  * the voice-draft kinds resolve part of their binding before the replay.
+ *
+ * The publication/asset 422s belong to the same class even though they read mutable facts:
+ * `_submit_new` → `_prepare_job` resolves them only after the initial replay
+ * (:1046, :741-880), its `except` re-reads the key before re-raising (:624-647), and the
+ * contract itself puts the original-key replay before mutable publication facts
+ * (contracts/speech-openapi.yaml:847-852). Emission points:
+ * - `model_not_published`: :783 (model is not a string), :801 (no published binding),
+ *   :805 (binding lacks the required task), :837 (no catalogue revision).
+ * - `profile_not_published`: :822 (profile revision is not published).
+ * - `asset_not_ready`: `_require_inputs` (:833 → :1379-1431), plus the admission store's
+ *   own `asset_not_ready` rejection (:1468-1488), which runs inside the admission
+ *   transaction, i.e. even later than the key check (#715).
  */
 export function settlesReplayedIntent(error: {
   readonly status: number;
@@ -140,6 +152,9 @@ export function settlesReplayedIntent(error: {
   return (
     error.code === "job_text_asset_unsupported" ||
     error.code === "voice_not_published" ||
+    error.code === "model_not_published" ||
+    error.code === "profile_not_published" ||
+    error.code === "asset_not_ready" ||
     error.code.startsWith("job_binding_") ||
     error.code.startsWith("model_binding_")
   );

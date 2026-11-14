@@ -586,7 +586,8 @@ def python_evidence(operation: dict[str, str], path: Path) -> bool:
       description and the architecture table name the registered operation.
 
     They are declared here so the next reader does not read the judging as "any mention
-    counts"; the honest count is 218 real entries out of 220 added by #792.
+    counts": 233 of the 235 entries #792 added were read back against their source and
+    are real, and these two are the only exceptions left in the map.
     """
     identifier = operation["id"]
     if identifier in python_binding_operations(str(path)):

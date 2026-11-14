@@ -816,9 +816,10 @@ function journalVerdict(record: TaskRecord): "valid" | "invalid" {
 const example = (id: string) => structuredClone(fixtures.examples.find((e) => e.id === id)!.value);
 
 /**
- * The copy fragments each readable handle must own (#780). The alert is asserted against
- * the fragment of the handle the state enables, never against a whole literal, so wording
- * and enablement cannot drift apart without one of the two failing.
+ * The copy fragments each readable handle must own (#780). The matrix asserts the alert
+ * against the fragment of the handle the state enables, never against a whole literal, so
+ * wording and enablement cannot drift apart without one of the two failing; only the
+ * generator's own table pins whole sentences.
  */
 const readPhrase: Readonly<Record<ReadTarget, string>> = {
   operation: "读取原执行",
@@ -833,15 +834,16 @@ function namedReads(alert: string): ReadTarget[] {
 }
 
 /**
- * The read handle a row's own declared facts require, derived from the record alone. The
- * journal always names the confirmed input Asset, so a restored cell is never identity-less:
- * that is why the crash window may not be told there is nothing to verify (#780 review M2).
+ * The read handle a row's own declared facts require, derived from the record alone. A task
+ * record cannot exist without its confirmed input Asset (`task-journal.ts` rejects an empty
+ * `assetId`), so a restored cell is never identity-less: that is why the crash window may not
+ * be told there is nothing to verify (#780 review M2).
  */
-function expectedRead(row: RestoreRow): ReadTarget | null {
+function expectedRead(row: RestoreRow): ReadTarget {
   const record = restoreRecord(row.pending, row.settled, row.operationId);
   if (record.operationId !== null) return "operation";
   if (record.jobId !== null) return "job";
-  return record.assetId === "" ? null : "asset";
+  return "asset";
 }
 
 /** A restored page whose only observable effect is the routes its reads actually hit. */
@@ -957,10 +959,10 @@ describe("restored alert names exactly the enabled actions", () => {
 });
 
 /**
- * The generator's whole contract, one cell per reachable combination (#780 review S3/S4):
- * the two states the restored matrix cannot reach -- an identified execution that is still
- * replayable, and a readable Asset that is still replayable -- and the identity-less
- * negative branch are all pinned here, verbatim and by fragment.
+ * The generator's contract over every combination of its inputs (#780 review S3/S4). The
+ * restored matrix reaches five of these eight; an identified execution that is still
+ * replayable and the two identity-less shapes are only pinned here, verbatim and by fragment,
+ * so the copy is a function of its inputs and not just of the states that happen to be built.
  */
 describe("alert generator names exactly the actions it is given", () => {
   const combinations: { read: ReadTarget | null; replay: boolean; copy: string }[] = [

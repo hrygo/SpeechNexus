@@ -267,8 +267,8 @@ export function retainRecovery(
 
 /**
  * The one readable handle behind "读取原状态", in `refresh()`'s own branch order. `null` is
- * the shape with no identity at all: an unconfirmed *upload* whose answer never named an
- * Asset, so a read would issue no request.
+ * the shape with no identity at all: an unconfirmed *upload* that named no Asset the page
+ * could keep, so a read would issue no request.
  */
 export type ReadTarget = "operation" | "job" | "asset";
 

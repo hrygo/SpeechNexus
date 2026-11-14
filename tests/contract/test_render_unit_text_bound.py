@@ -142,7 +142,7 @@ def test_the_documentation_names_the_registered_dispatch_operation() -> None:
     table_rows = [
         line
         for line in ARCHITECTURE.read_text().splitlines()
-        if line.startswith("|") and "render-units" in line
+        if line.startswith("|") and "render_submission_rejected" in line
     ]
     assert len(table_rows) == 1, "the cross-entry table must state one render dispatch row"
     assert _DISPATCH_OPERATION in table_rows[0]

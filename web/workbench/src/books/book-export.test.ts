@@ -31,6 +31,19 @@ function job(overrides: Record<string, unknown> = {}) {
   });
 }
 
+function refusal(status: number, code: string, retryable: boolean) {
+  return new WorkbenchResponseError(status, {
+    error: {
+      code,
+      type: "invalid_request_error",
+      message: "private-synthetic",
+      param: null,
+      request_id: "request-demo",
+      retryable,
+    },
+  });
+}
+
 function setup() {
   const client = new WorkbenchClient(vi.fn());
   const create = vi.spyOn(client, "createBookExport").mockResolvedValue(job());
@@ -149,6 +162,64 @@ describe("book export session", () => {
     expect(state.problem).toBe("conflict");
     expect(state.job).toBeNull();
     expect(state.busy).toBe(false);
+  });
+
+  it("writes the category the contract states and reads it back after a reload", async () => {
+    // #803: the export route publishes no per-code operator vocabulary, so the category
+    // comes from the envelope's own retry permission instead of a second code table.
+    const { client, create, session } = setup();
+    create.mockRejectedValueOnce(refusal(422, "invalid_change", false));
+    await session.start("zip", "key-demo");
+    expect(session.getSnapshot()).toMatchObject({ refused: "terminal", busy: false });
+    // A reload sees the persisted category, not a guess from the status, and it no longer
+    // reports "结果尚未确认，请按原键重放" for a request the server already answered: the
+    // aside words the refusal, and the alert stays out of it (#803).
+    const restored = new BookExportSession(client, book, { pollMs: 10 });
+    expect(restored.getSnapshot()).toMatchObject({ refused: "terminal", problem: null });
+    expect(restored.getSnapshot().pending).toMatchObject({ key: "key-demo" });
+  });
+
+  it("keeps a refusal the contract calls retryable, whatever its status", async () => {
+    // The field decides, not the status family: a retryable 4xx would keep the key, and a
+    // status-only reading would spend it. The workbench publishes no such disposition for
+    // this route today, which is exactly why the panel must not hard-code "4xx = spent".
+    const { create, session } = setup();
+    create.mockRejectedValueOnce(refusal(409, "revision_conflict", true));
+    await session.start("zip", "key-demo");
+    expect(session.getSnapshot().refused).toBe("retryable");
+  });
+
+  it("does not re-send a key whose refusal the record withholds", async () => {
+    // Twice: the record is a settlement, and the path is guarded in the session, not only
+    // by the panel's `disabled` attribute (#803, the two layers of #794).
+    const { create, session } = setup();
+    create.mockRejectedValueOnce(refusal(422, "invalid_change", false));
+    await session.start("zip", "key-demo");
+    expect(session.getSnapshot().refused).toBe("terminal");
+    await session.replay();
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("restores a record written before #803 as unclassified and withholds the replay", async () => {
+    const { client, create } = setup();
+    sessionStorage.setItem(
+      "speechnexus.workbench.exports.book_demo.pending.v1",
+      JSON.stringify({
+        version: 1,
+        command: {
+          kind: "create",
+          bookId: book.id,
+          body: { expected_casting_revision: book.casting_revision, format: "zip" },
+          key: "legacy-key",
+        },
+        uncertain: false,
+        rejected: true,
+      }),
+    );
+    const restored = new BookExportSession(client, book, { pollMs: 10 });
+    expect(restored.getSnapshot()).toMatchObject({ refused: "unclassified", problem: null });
+    await restored.replay();
+    expect(create).not.toHaveBeenCalled();
   });
 
   it("stops updating after disposal and reports terminal states", async () => {

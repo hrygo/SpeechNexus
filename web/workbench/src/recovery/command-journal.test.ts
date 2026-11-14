@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CommandJournal, fields } from "./command-journal";
+import { CommandJournal, fields, refusedCategory, refusedReplayable } from "./command-journal";
 function storage() {
   const data = new Map<string, string>();
   return {
@@ -182,6 +182,24 @@ describe("private command journal", () => {
     store.data.set("synthetic", "external-record");
     expect(() => journal.begin({ key: "original-key", body: "合成正文" })).toThrow();
     expect(store.data.get("synthetic")).toBe("external-record");
+  });
+  it("classifies a refusal only when it is settled, and by the contract's own permission", () => {
+    // The consumer states two facts it already holds (#803): whether the answer settled the
+    // attempt, and the envelope's `error.retryable`. Nothing else may become a category, so
+    // "no answer observed" and "the server said it may be retried" cannot be confused.
+    expect(refusedCategory(false, false)).toBeNull();
+    expect(refusedCategory(false, true)).toBeNull();
+    expect(refusedCategory(true, false)).toBe("terminal");
+    expect(refusedCategory(true, true)).toBe("retryable");
+  });
+  it("reads one record one way: only an unspent key or a retryable refusal may be re-sent", () => {
+    // The determinate direction of `unclassified` is the migration rule #798 stated and
+    // #803 made single-source: a refusal was observed, so the key may have been spent, and
+    // the record cannot say it was not.
+    expect(refusedReplayable(null)).toBe(true);
+    expect(refusedReplayable("retryable")).toBe(true);
+    expect(refusedReplayable("terminal")).toBe(false);
+    expect(refusedReplayable("unclassified")).toBe(false);
   });
   it("refuses corrupt private data without replacing it", () => {
     const store = storage();

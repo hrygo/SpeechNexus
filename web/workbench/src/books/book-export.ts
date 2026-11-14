@@ -1,5 +1,11 @@
 import { exportJournal, type ExportCommand } from "./book-journal";
-import type { CommandJournal, JournalStorage } from "../recovery/command-journal";
+import {
+  refusedCategory,
+  refusedReplayable,
+  type CommandJournal,
+  type JournalStorage,
+  type RecordedRefusal,
+} from "../recovery/command-journal";
 import {
   WorkbenchResponseError,
   type Contracts,
@@ -16,7 +22,12 @@ export interface BookExportState {
   readonly problem: BookExportProblem | null;
   readonly watching: boolean;
   readonly pending: ExportCommand | null;
-  readonly rejected: boolean;
+  /**
+   * The refusal the journal holds for the retained command (#803), or `null` when it holds
+   * none. It is the persisted category, not "what this tab observed", so a reload reads the
+   * same one; `refusedReplayable` is the only reading of it.
+   */
+  readonly refused: RecordedRefusal | null;
   readonly blocked: boolean;
 }
 
@@ -56,7 +67,7 @@ export class BookExportSession {
     problem: null,
     watching: false,
     pending: null,
-    rejected: false,
+    refused: null,
     blocked: false,
   };
   #listeners = new Set<() => void>();
@@ -78,8 +89,11 @@ export class BookExportSession {
       this.#state = {
         ...this.#state,
         pending: record.command,
-        rejected: record.refused !== null,
-        problem: record.command ? "unknown" : null,
+        refused: record.refused,
+        // A restored refusal is stated by the aside, which is the only block that can word it
+        // per category; the alert's "结果尚未确认" copy would name a handle the record may
+        // take away (#803). Only a command with no refusal is still the unknown outcome.
+        problem: record.command && record.refused === null ? "unknown" : null,
       };
     } catch {
       this.#state = { ...this.#state, blocked: true, problem: "storage" };
@@ -118,7 +132,7 @@ export class BookExportSession {
     try {
       if (!this.#journal) throw new Error("Recovery unavailable");
       this.#journal.begin(command);
-      this.#set({ pending: this.#journal.load().command, rejected: false, blocked: false });
+      this.#set({ pending: this.#journal.load().command, refused: null, blocked: false });
     } catch {
       this.#set({ blocked: true, problem: "storage" });
       return;
@@ -128,6 +142,10 @@ export class BookExportSession {
   async replay(): Promise<void> {
     const command = this.#state.pending;
     if (!command || this.#state.busy || !this.#journal) return;
+    // The control's `disabled` is only how this is shown: a refusal whose state withholds
+    // the replay is not re-sent through any path, because the record says this key may have
+    // been spent (#803, the same two layers `RenderUnitPanel` uses).
+    if (!refusedReplayable(this.#state.refused)) return;
     try {
       this.#journal.save(this.#journal.load());
     } catch {
@@ -165,24 +183,26 @@ export class BookExportSession {
         this.#set({ busy: false, blocked: true, problem: "storage" });
         return;
       }
-      this.#set({ job, pending: null, rejected: false, busy: false, problem: null });
+      this.#set({ job, pending: null, refused: null, busy: false, problem: null });
       this.#watch(job);
     } catch (error) {
       if (generation !== this.#generation) return;
-      const rejected =
+      // A 4xx other than 408/429 settles this attempt: the workbench created no export, and
+      // 408 may have crossed the network before the receive deadline. `refusedCategory`
+      // states what that writes and why it needs no second code table (#803).
+      const settled =
         error instanceof WorkbenchResponseError &&
         error.status >= 400 &&
         error.status < 500 &&
         ![408, 429].includes(error.status);
       try {
-        // Exports have no refusal table to classify against, so the record states that a
-        // refusal was observed without claiming whether its key may be re-sent: the
-        // journal keeps `unclassified`, which no reader may take as retryable (#798).
-        this.#journal.failure(rejected ? "unclassified" : null);
+        this.#journal.failure(
+          refusedCategory(settled, error instanceof WorkbenchResponseError && error.retryable),
+        );
         const record = this.#journal.load();
         this.#set({
           busy: false,
-          rejected: record.refused !== null,
+          refused: record.refused,
           problem: record.uncertain ? "unknown" : problemOf(error),
         });
       } catch {
@@ -191,10 +211,10 @@ export class BookExportSession {
     }
   }
   dismissRejected(): void {
-    if (!this.#state.rejected || this.#state.busy || !this.#journal) return;
+    if (this.#state.refused === null || this.#state.busy || !this.#journal) return;
     try {
       this.#journal.clear();
-      this.#set({ pending: null, rejected: false, problem: null, blocked: false });
+      this.#set({ pending: null, refused: null, problem: null, blocked: false });
     } catch {
       this.#set({ blocked: true, problem: "storage" });
     }

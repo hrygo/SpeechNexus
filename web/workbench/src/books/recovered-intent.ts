@@ -1,5 +1,5 @@
 import type { UnitCommand } from "./book-journal";
-import type { RecordedRefusal } from "../recovery/command-journal";
+import { refusedReplayable, type RecordedRefusal } from "../recovery/command-journal";
 
 /**
  * The states a retained render-unit command can be in, and what each one may offer
@@ -28,12 +28,17 @@ import type { RecordedRefusal } from "../recovery/command-journal";
  *   disabled and the aside explains why (#794 removed the handle from that state instead of
  *   promising it).
  * - `recorded`: a refusal recorded without a category -- one written before #798, or one
- *   from a panel that does not classify its refusals. It is still a refusal, so replay
- *   stays off (the conservative reading of that migration), but the aside may not call it
- *   deterministic, because the record does not know that.
+ *   written before #803 by a panel that had no classification to write. It is still a
+ *   refusal, so replay stays off (the reading `refusedReplayable` states once), but the
+ *   aside may not call it deterministic, because the record does not know that.
  *
  * The aside also never restates the Job facts of the answer: the paragraph that reported
  * the refusal already states them per code, and the stored record does not hold them.
+ *
+ * `replay` is `refusedReplayable`'s answer for the state's refusal, not a second opinion:
+ * the same function decides the export and assistant panels' replay controls, so one
+ * refusal cannot offer a handle in one panel and withhold it in another (#803). `dismiss`
+ * is the other shared half -- a recorded refusal is ended explicitly or not at all.
  *
  * The sentence and the controls are asserted together by `RenderUnitPanel.test.tsx` and by
  * `tests/web/render-refusal.behavior.spec.mjs`: a control's exact label may appear in the
@@ -41,22 +46,22 @@ import type { RecordedRefusal } from "../recovery/command-journal";
  */
 export const RECOVERED_INTENT = {
   unknown: {
-    replay: true,
+    replay: refusedReplayable(null),
     dismiss: false,
     note: "原请求已保存在此标签页。不会自动重放；结果未确认时用「按原键重放单元请求」核对它，不要更换意图。",
   },
   kept: {
-    replay: true,
+    replay: refusedReplayable("retryable"),
     dismiss: true,
     note: "原请求已保存在此标签页。这次派发被服务端拒绝，而该拒绝可重试：下一步就是等待后用原键重新派发，所以「按原键重放单元请求」仍是同一次派发，本页不自动重试；不想再等时用「结束已拒绝单元请求」结束它。",
   },
   settled: {
-    replay: false,
+    replay: refusedReplayable("terminal"),
     dismiss: true,
     note: "原请求已保存在此标签页。服务端已确定性拒绝这次派发：同一次请求再发送不会改变结果，所以这里禁用了按原键重放。用「结束已拒绝单元请求」明确结束它，再按那次拒绝的处置说明重新开始。",
   },
   recorded: {
-    replay: false,
+    replay: refusedReplayable("unclassified"),
     dismiss: true,
     note: "原请求已保存在此标签页。这条记录只说明服务端拒绝过这次派发，没有保存该拒绝是否可重试，因此本页不提供按原键重放。请按那次拒绝的处置说明处理，或用「结束已拒绝单元请求」结束它后重新派发。",
   },

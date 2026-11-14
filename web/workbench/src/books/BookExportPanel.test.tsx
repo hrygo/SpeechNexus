@@ -44,7 +44,39 @@ const artifact = {
   created_at: "2026-10-24T12:00:05Z",
 };
 
-function setup() {
+function refusal(status: number, code: string, retryable: boolean) {
+  return new WorkbenchResponseError(status, {
+    error: {
+      code,
+      type: "invalid_request_error",
+      message: "synthetic ingress refusal",
+      param: null,
+      request_id: "request_demo",
+      retryable,
+    },
+  });
+}
+
+/** The record a previous tab wrote: one refusal bit, no category (#798/#803). */
+function legacyExportRecord(rejected: boolean) {
+  sessionStorage.setItem(
+    "speechnexus.workbench.exports.book_demo.pending.v1",
+    JSON.stringify({
+      version: 1,
+      command: {
+        kind: "create",
+        bookId: book.id,
+        body: { expected_casting_revision: book.casting_revision, format: "zip" },
+        key: "legacy-export-key",
+      },
+      uncertain: false,
+      rejected,
+    }),
+  );
+}
+
+function setup(before?: () => void) {
+  before?.();
   const client = new WorkbenchClient(vi.fn());
   const create = vi.spyOn(client, "createBookExport").mockResolvedValue(job());
   const read = vi.spyOn(client, "bookExport").mockResolvedValue(job());
@@ -206,4 +238,54 @@ it("keeps an export unknown after a later replay receives an ingress rejection",
   expect(create.mock.calls[1]).toEqual(create.mock.calls[0]);
   expect(screen.queryByRole("button", { name: "结束已拒绝导出请求" })).toBeNull();
   expect(screen.getByLabelText("导出格式")).toBeDisabled();
+});
+
+it("withholds the same-key replay for a settled refusal and says what it holds", async () => {
+  const { create } = setup();
+  create.mockRejectedValueOnce(refusal(422, "invalid_change", false));
+  fireEvent.click(screen.getByRole("button", { name: "发起导出" }));
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("本次导出请求已被拒绝");
+  // The alert does not speak for the handle: the aside does, per the category it read.
+  expect(alert.textContent).not.toContain("按原键重放");
+  const replay = screen.getByRole<HTMLButtonElement>("button", { name: "按原键重放导出请求" });
+  expect(replay).toBeDisabled();
+  expect(screen.getByText(/已确定性拒绝这次导出请求/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "结束已拒绝导出请求" })).toBeTruthy();
+  // The attribute is only how it is shown: the session refuses the spent key too, so a
+  // rendering regression cannot re-dispatch it (#803 keeps #794's two layers here).
+  replay.disabled = false;
+  fireEvent.click(replay);
+  expect(create).toHaveBeenCalledTimes(1);
+  expect(screen.getByLabelText("导出格式")).toBeDisabled();
+});
+
+it("keeps the replay for a refusal the contract calls retryable", async () => {
+  // The envelope's own retry permission decides, not the status family: a retryable 4xx
+  // keeps the key, which a status-only reading would spend. This route publishes no such
+  // disposition today, so the field is what the panel must be able to follow (#803).
+  const { create } = setup();
+  create.mockRejectedValueOnce(refusal(409, "revision_conflict", true));
+  fireEvent.click(screen.getByRole("button", { name: "发起导出" }));
+  expect(await screen.findByText(/这次拒绝可重试/)).toBeTruthy();
+  const replay = screen.getByRole("button", { name: "按原键重放导出请求" });
+  expect(replay).toBeEnabled();
+  create.mockResolvedValueOnce(job());
+  fireEvent.click(replay);
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+  // Same key, same intent: the retry is the same request, not a new one.
+  expect(create.mock.calls[1]).toEqual(create.mock.calls[0]);
+});
+
+it("reads a record written before #803 as unclassified, without claiming determinism", async () => {
+  setup(() => legacyExportRecord(true));
+  const replay = await screen.findByRole<HTMLButtonElement>("button", {
+    name: "按原键重放导出请求",
+  });
+  expect(replay).toBeDisabled();
+  expect(screen.getByText(/没有保存该拒绝是否可重试/)).toBeTruthy();
+  // The panel may claim only what the record still holds: that a refusal was recorded.
+  const note = screen.getByText(/没有保存该拒绝是否可重试/).textContent ?? "";
+  expect(note).not.toContain("不会改变结果");
+  expect(screen.getByRole("button", { name: "结束已拒绝导出请求" })).toBeTruthy();
 });

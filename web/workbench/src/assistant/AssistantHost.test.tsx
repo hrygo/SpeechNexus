@@ -92,6 +92,37 @@ describe("assistant panel", () => {
   });
 });
 
+function refusal(status: number, code: string, retryable: boolean) {
+  return new WorkbenchResponseError(status, {
+    error: {
+      code,
+      type: "invalid_request_error",
+      message: "合成拒绝",
+      param: null,
+      request_id: "request_demo",
+      retryable,
+    },
+  });
+}
+
+/** The record a previous tab wrote: one refusal bit, no category (#798/#803). */
+function legacyAssistantRecord() {
+  sessionStorage.setItem(
+    "speechnexus.workbench.assistant.pending.v1",
+    JSON.stringify({
+      version: 1,
+      command: {
+        kind: "create",
+        projectId: "project_demo",
+        body: { input_text: "合成问题", voice: { id: "voice_0", revision: "1" } },
+        key: "legacy-turn-key",
+      },
+      uncertain: false,
+      rejected: true,
+    }),
+  );
+}
+
 beforeEach(() => sessionStorage.clear());
 
 const recoveryProject = parse("Project", {
@@ -188,4 +219,36 @@ it("keeps the original assistant intent unknown when a later replay is rejected 
   expect(sessionStorage.getItem("speechnexus.workbench.assistant.pending.v1")).toContain(
     "original-turn-key",
   );
+});
+
+it("withholds the same-key replay for a settled refusal and says what it holds", async () => {
+  const view = mount("available", 1, [recoveryProject]);
+  view.create.mockRejectedValueOnce(refusal(422, "invalid_change", false));
+  await fillTurn();
+  fireEvent.click(screen.getByRole("button", { name: "提交回合" }));
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("本次助手请求已被拒绝");
+  // The alert does not speak for the handle: the aside does, per the category it read.
+  expect(alert.textContent).not.toContain("按原键重放");
+  const replay = screen.getByRole<HTMLButtonElement>("button", { name: "按原键重放助手请求" });
+  expect(replay).toBeDisabled();
+  expect(screen.getByText(/已确定性拒绝这次助手请求/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "结束已拒绝助手请求" })).toBeTruthy();
+  // The attribute is only how it is shown: the session refuses the spent key too.
+  replay.disabled = false;
+  fireEvent.click(replay);
+  await waitFor(() => expect(view.create).toHaveBeenCalledTimes(1));
+  expect(screen.getByLabelText("问题")).toBeDisabled();
+});
+
+it("reads a record written before #803 as unclassified, without claiming determinism", async () => {
+  legacyAssistantRecord();
+  mount("available", 1, [recoveryProject]);
+  const replay = await screen.findByRole<HTMLButtonElement>("button", {
+    name: "按原键重放助手请求",
+  });
+  expect(replay).toBeDisabled();
+  const note = screen.getByText(/没有保存该拒绝是否可重试/).textContent ?? "";
+  expect(note).not.toContain("不会改变结果");
+  expect(screen.getByRole("button", { name: "结束已拒绝助手请求" })).toBeTruthy();
 });

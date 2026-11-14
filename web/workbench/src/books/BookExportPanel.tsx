@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { Contracts, WorkbenchClient } from "../manuscripts/workbench-client";
+import { refusedReplayable, type RecordedRefusal } from "../recovery/command-journal";
 import {
   BookExportSession,
   isTerminal,
@@ -13,12 +14,34 @@ const problems: Record<BookExportProblem, string> = {
   storage: "恢复信息未能保存，已暂停提交。请修复浏览器存储后重试。",
   unavailable: "导出服务当前不可用。作业状态尚未确认，请按原键重试，不要重新创建。",
   conflict: "服务端版本或幂等键冲突。请重新读取书目修订后再发起导出。",
-  rejected: "本次导出请求已被拒绝。请核对导出格式与选择范围后重试。",
+  rejected:
+    "本次导出请求已被拒绝，服务端没有接受它。下一步：核对导出格式与选择范围后重新发起一次导出。",
   missing: "该导出或书目已不可读取。",
   unknown: "提交结果尚未确认。已保留本次请求键，请按原键重放。",
 };
 
 const formats: readonly ExportFormat[] = ["zip", "wav", "mp3"];
+
+/**
+ * What the retained request can offer, per the refusal the journal holds (#803).
+ *
+ * The state is read from the record, exactly as the render panel reads it, and the two
+ * controls follow `refusedReplayable` / "a refusal is ended explicitly". Only the wording
+ * is this panel's own: the export route publishes no per-code operator step, so this copy
+ * may not name one, and it may never promise a handle the state withholds.
+ */
+function recoveryNote(refused: RecordedRefusal | null): string {
+  switch (refused) {
+    case null:
+      return "原请求已保存在此标签页。结果未确认前不能切换意图，也不会自动重放。";
+    case "retryable":
+      return "原请求已保存在此标签页。这次拒绝可重试：等待后用原键重新派发仍是同一次导出请求，本页不自动重试。";
+    case "terminal":
+      return "原请求已保存在此标签页。服务端已确定性拒绝这次导出请求：同一次请求再发送不会改变结果，所以这里禁用了按原键重放。用「结束已拒绝导出请求」明确结束它，再按那次拒绝的说明重新发起。";
+    case "unclassified":
+      return "原请求已保存在此标签页。这条记录只说明服务端拒绝过这次导出请求，没有保存该拒绝是否可重试，因此本页不提供按原键重放。请按那次拒绝的说明处理，或用「结束已拒绝导出请求」结束它后重新发起。";
+  }
+}
 
 export function BookExportPanel({
   client,
@@ -102,17 +125,21 @@ export function BookExportPanel({
 
         {state.pending && (
           <aside aria-label="导出原请求恢复">
-            <p>原请求已保存在此标签页，不能切换意图，也不会自动重放。</p>
+            <p>{recoveryNote(state.refused)}</p>
             {state.pending.kind === "create" && (
               <p>
                 固定修订 {state.pending.body.expected_casting_revision} · 格式{" "}
                 {state.pending.body.format}
               </p>
             )}
-            <button type="button" disabled={state.busy} onClick={() => void session.replay()}>
+            <button
+              type="button"
+              disabled={state.busy || !refusedReplayable(state.refused)}
+              onClick={() => void session.replay()}
+            >
               按原键重放导出请求
             </button>
-            {state.rejected && (
+            {state.refused !== null && (
               <button type="button" onClick={() => session.dismissRejected()}>
                 结束已拒绝导出请求
               </button>

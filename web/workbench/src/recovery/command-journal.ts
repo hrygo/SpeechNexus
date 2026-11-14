@@ -19,23 +19,72 @@ export type RefusalCategory = "retryable" | "terminal";
  * The refusal a record carries: its category, or the fact that a refusal was recorded
  * without one.
  *
- * `unclassified` is read -- never `retryable` -- because the lost information cannot be
- * recovered:
+ * `unclassified` is what the records this build no longer writes carry:
  * - every record written before #798 held only `rejected`, which says a refusal was
  *   observed but not whether the same key may be re-sent;
- * - a panel whose refusals are not classified by #755's table (the assistant turn and the
- *   book export) records that a refusal happened, not what its next step is.
+ * - every record written before #803 by the export and assistant panels held
+ *   `unclassified` for every refusal. Those two wrote no category because nothing had
+ *   told them one -- not because their refusals meant something else (#803): their
+ *   refusals are the same "this key may / may not be re-sent" answer, stated by the
+ *   contract's own `error.retryable`.
  *
- * Reading it as `retryable` would let a reload re-send a key a terminal refusal had
- * already spent, so the conservative direction is the only determinate one.
+ * It is read -- never `retryable` -- because the lost information cannot be recovered:
+ * neither source can say whether the key was spent. Reading it as `retryable` would let
+ * a reload re-send a key a terminal refusal had already spent, so `refusedReplayable`
+ * takes the one direction that cannot.
  *
- * `unclassified` is also final once written: a panel that has no classification table
- * stores it, and `save(load())` writes back exactly the value the one determinate reading
- * produced, so the migration loses nothing further -- but no later reader can turn it into
- * a category. The only way out of that record is the panel's explicit end (dismiss), not a
- * better guess.
+ * `unclassified` is also final once written: `save(load())` writes back exactly the value
+ * the one determinate reading produced, so the migration loses nothing further -- but no
+ * later reader can turn it into a category. The only way out of that record is the
+ * panel's explicit end (dismiss), not a better guess.
  */
 export type RecordedRefusal = RefusalCategory | "unclassified";
+
+/**
+ * The classification one answer writes down, from the two facts its consumer holds (#803).
+ *
+ * `settled` is the caller's own "this answer settles the attempt" bit: the server refused
+ * and created nothing, so no Job can exist under the retained key. It is false for an
+ * unobserved answer (a transport failure or a body-receive timeout, which may have
+ * crossed the network) and for the two answers that are explicitly *not* settlements: a
+ * 5xx, and the 429 whose own step is "wait, then dispatch again".
+ *
+ * `retryable` is the contract's retry permission for that refusal (`error.retryable`,
+ * required on every `ErrorBody`) and is only read when `settled` is true. It is never a
+ * code table copied here: the render panel mirrors the one published dispatch vocabulary
+ * per code because it also has to render the operator step for each code
+ * (`books/render-refusals.ts`), while a panel with no such vocabulary reads the field
+ * itself. `tests/contract/test_render_refusal_vocabulary.py` keeps those two equal for
+ * the codes that have both, and `tests/contract` keeps the field itself required, so the
+ * three consumers classify one refusal from one promise instead of three tables (#803).
+ */
+export function refusedCategory(settled: boolean, retryable: boolean): RecordedRefusal | null {
+  if (!settled) return null;
+  return retryable ? "retryable" : "terminal";
+}
+
+/**
+ * The single reading of a record's refusal: may the retained key be re-sent? (#803)
+ *
+ * The three consumers -- `RenderUnitPanel` through `books/recovered-intent.ts`,
+ * `BookExportSession` and `AssistantSession` -- all read this answer, so one refusal
+ * cannot offer a replay in one panel and withhold it in another.
+ *
+ * - `null` (no refusal observed): **yes**. The key is the only way to find a Job the
+ *   request may have created, so withholding it would strand the operator.
+ * - `retryable`: **yes**. The refusal's own next step is to dispatch the same intent
+ *   again, so the retained key is still the right request.
+ * - `terminal`: **no**. The refusal says repeating the request cannot change the outcome;
+ *   a replay would only re-refuse while looking like recovery.
+ * - `unclassified`: **no**, and that direction is final rather than "unknown". A refusal
+ *   *was* observed, so the key may have been spent; the record merely cannot say whether
+ *   it was. Sending it again on that basis is the one mistake this journal exists to
+ *   prevent, while withholding it costs only the operator's explicit end and a fresh
+ *   request. This is the same direction #798's migration chose, now stated once.
+ */
+export function refusedReplayable(refused: RecordedRefusal | null): boolean {
+  return refused === null || refused === "retryable";
+}
 
 /**
  * The persisted record. `refused` is the whole knowledge the next page has about the last

@@ -33,16 +33,19 @@ from speechnexus_backend.speech.interfaces.http.job_errors import (
     _ERRORS as UPSTREAM_JOB_ERRORS,
 )
 from speechnexus_backend.workbench.application.render_units import RenderRejection
+from speechnexus_backend.workbench.infrastructure.public_speech_render_jobs import (
+    _REFUSAL_STATUSES,
+)
 from speechnexus_backend.workbench.interfaces.http_render_units import (
     _REFUSAL_CODES,
     refusal_code,
 )
 from speechnexus_backend.workbench.interfaces.http_versions import ERRORS
 
-# The adapter refuses dispatch on exactly these statuses
-# (`public_speech_render_jobs._REFUSAL_STATUSES`), so a code that lands here has to
-# produce a published disposition whatever it is.
-REFUSAL_STATUSES = (400, 401, 403, 413, 415, 422)
+# The adapter's own refusal set, imported rather than copied: adding a status there
+# must widen this guard in the same commit, which is what the parametrization below
+# promises. A hard-coded tuple would silently keep the old set.
+REFUSAL_STATUSES = sorted(_REFUSAL_STATUSES)
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "contracts" / "workbench-openapi.yaml"

@@ -60,7 +60,6 @@ _REFUSAL_CODES = {
     "workspace_disabled": "render_submission_workspace_unavailable",
     "voice_not_published": "render_submission_voice_unavailable",
     "asset_not_ready": "render_submission_asset_unavailable",
-    "job_text_asset_unsupported": "render_submission_asset_unavailable",
     # One step ("pin a revision this deployment can dispatch"), so one code: a pinned
     # model, binding or profile differs in the resource, not in the action.
     "model_not_published": "render_submission_binding_unavailable",

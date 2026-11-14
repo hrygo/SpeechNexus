@@ -129,6 +129,13 @@ async def test_an_over_bound_unit_is_refused_instead_of_shortened() -> None:
             "input.text",
         ),
         (
+            # The upstream Job body carries the text as `input.text` in v1 and `text`
+            # in the inline v2 shape; both name the same field the operator must split.
+            RenderRejection.upstream(status_code=422, code="unsupported_parameter", param="text"),
+            "render_submission_text_too_long",
+            "text",
+        ),
+        (
             RenderRejection.upstream(status_code=422, code="unsupported_parameter", param="model"),
             "render_submission_field_unsupported",
             "model",
@@ -273,7 +280,6 @@ def dispatched(unit_record: RenderUnit, handler: httpx.MockTransport) -> Workben
         # attribution. Naming a field here would blame the pinned voice for an
         # over-bound text.
         (422, "unsupported_parameter", None, "render_submission_rejected"),
-        (422, "job_text_asset_unsupported", None, "render_submission_asset_unavailable"),
     ],
 )
 async def test_a_coded_refusal_reaches_the_route_as_a_workbench_code(

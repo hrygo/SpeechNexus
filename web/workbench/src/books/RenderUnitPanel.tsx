@@ -38,7 +38,27 @@ export type RenderUnitProblem = keyof typeof problems;
 type UnitProblem =
   | { key: RenderUnitProblem }
   | { key: "textOverDispatch"; over: number }
-  | { key: "refusal"; code: RenderRefusalCode; over?: number };
+  | { key: "refusal"; code: RenderRefusalCode; over?: number }
+  | { key: "inFlight"; code: InFlightCode };
+
+/**
+ * The two 409s this route emits while a dispatch is already under way. Their next
+ * step is "wait for it and refresh", not the generic "check the text or voice": the
+ * request was refused because of an attempt that exists, so re-dispatching would only
+ * add a second attempt.
+ */
+const DISPATCH_IN_FLIGHT_STEPS = {
+  render_attempt_conflict:
+    "该单元已有一次派发在进行，本次请求被拒绝。下一步：等这次派发结束后刷新；不要重复派发。",
+  idempotency_conflict:
+    "该请求键已被另一次派发占用（同一个键不能用于不同意图）。下一步：刷新后重新发起一次派发；不要复用旧键。",
+} as const;
+
+type InFlightCode = keyof typeof DISPATCH_IN_FLIGHT_STEPS;
+
+function dispatchInFlight(code: string): InFlightCode | null {
+  return code in DISPATCH_IN_FLIGHT_STEPS ? (code as InFlightCode) : null;
+}
 
 function dispatchOverMessage(over: number): string {
   return `该单元文本 ${over} 字符超过一次派发上限 ${RENDER_UNIT_DISPATCH_LIMIT} 字符，服务端因此拒绝了本次派发，未生成作业。下一步：把文本切分为每段不超过 ${RENDER_UNIT_DISPATCH_LIMIT} 字符的多个单元后分别派发；${RENDER_UNIT_SOURCE_LIMIT} 字符的源容量不必缩小。`;
@@ -46,6 +66,7 @@ function dispatchOverMessage(over: number): string {
 
 function problemMessage(problem: UnitProblem): string {
   if (problem.key === "textOverDispatch") return dispatchOverMessage(problem.over);
+  if (problem.key === "inFlight") return DISPATCH_IN_FLIGHT_STEPS[problem.code];
   if (problem.key === "refusal") {
     // The stated text bound is named with the measured length when the panel has it.
     return problem.over === undefined
@@ -58,7 +79,7 @@ function problemMessage(problem: UnitProblem): string {
 /** The stable code, offered for diagnosis only — never woven into the copy. */
 function problemTitle(problem: UnitProblem): string | undefined {
   if (problem.key === "textOverDispatch") return "render_submission_rejected";
-  if (problem.key === "refusal") return problem.code;
+  if (problem.key === "refusal" || problem.key === "inFlight") return problem.code;
   return undefined;
 }
 
@@ -164,6 +185,8 @@ function problemOf(error: unknown, dispatched?: string): UnitProblem {
     if (error.code === "outcome_unknown") return { key: "unknown" };
     if (error.code === "revision_conflict") return { key: "conflict" };
     if (error.code === "invalid_change") return { key: "rejected" };
+    const inFlight = dispatchInFlight(error.code);
+    if (inFlight !== null) return { key: "inFlight", code: inFlight };
     const refusal = refusedCode(error.code);
     if (refusal !== null) {
       const measured = dispatched === undefined ? undefined : renderUnitLength(dispatched);

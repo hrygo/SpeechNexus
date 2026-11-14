@@ -593,6 +593,39 @@ it("dispatches generation for the revision shown and names the speech job", asyn
   await screen.findByText(/已提交生成，语音作业 job_demo/);
 });
 
+it.each([
+  [
+    "render_attempt_conflict",
+    "该单元已有一次派发在进行，本次请求被拒绝。下一步：等这次派发结束后刷新；不要重复派发。",
+  ],
+  [
+    "idempotency_conflict",
+    "该请求键已被另一次派发占用（同一个键不能用于不同意图）。下一步：刷新后重新发起一次派发；不要复用旧键。",
+  ],
+])("names the in-flight attempt behind a %s instead of blaming the fields", async (code, step) => {
+  // 409 here means an attempt already exists: re-dispatching adds a second one, so
+  // "check the text or voice" is a wrong next step even though the status is right.
+  const { generate } = setup();
+  generate.mockRejectedValueOnce(
+    new WorkbenchResponseError(409, {
+      error: {
+        code,
+        type: "invalid_request_error",
+        message: "Synthetic attempt conflict.",
+        param: null,
+        request_id: "request-demo",
+        retryable: false,
+      },
+    }),
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toBe(step);
+  expect(alert.textContent).not.toContain("请核对单元文本或声音");
+  expect(alert.textContent).not.toContain(code);
+  expect(alert).toHaveAttribute("title", code);
+});
+
 it("keeps the original key when the dispatch result is unknown", async () => {
   const { generate } = setup();
   generate.mockRejectedValueOnce(

@@ -24,7 +24,10 @@ from speechnexus_backend.workbench.interfaces.http_ingress import (
     request_id,
     validate_limits,
 )
-from speechnexus_backend.workbench.interfaces.http_versions import _error
+from speechnexus_backend.workbench.interfaces.http_versions import (
+    _error,
+    _unexpected_error,
+)
 from speechnexus_backend.workbench.interfaces.teleprompter_views import teleprompter_payload
 
 OPERATIONS = frozenset({"getTeleprompterState", "updateTeleprompterState"})
@@ -96,8 +99,8 @@ def create_teleprompter_router(
                     rid,
                     operation,
                 )
-            except Exception:
-                return _error("internal_error", rid, operation)
+            except Exception as error:
+                return _unexpected_error(error, rid, operation)
 
         return handle
 

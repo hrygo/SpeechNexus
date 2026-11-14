@@ -34,7 +34,10 @@ from speechnexus_backend.workbench.interfaces.http_ingress import (
     request_id,
     validate_limits,
 )
-from speechnexus_backend.workbench.interfaces.http_versions import _error
+from speechnexus_backend.workbench.interfaces.http_versions import (
+    _error,
+    _unexpected_error,
+)
 from speechnexus_backend.workbench.interfaces.render_unit_views import (
     render_generations_payload,
     render_unit_payload,
@@ -394,9 +397,9 @@ def create_render_unit_router(
                     rid,
                     operation,
                 )
-            except Exception:
+            except Exception as error:
                 # CancelledError is a BaseException and must reach the ASGI host.
-                return _error("internal_error", rid, operation)
+                return _unexpected_error(error, rid, operation)
 
         return handle
 

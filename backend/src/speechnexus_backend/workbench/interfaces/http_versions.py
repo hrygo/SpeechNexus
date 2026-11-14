@@ -7,11 +7,13 @@ it does not silently enable workbench in the shared production composition root.
 from __future__ import annotations
 
 import copy
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.routing import APIRoute, iter_route_contexts
+from speechnexus_contracts import ContractValidationError
 from speechnexus_contracts.workbench import parse
 from speechnexus_contracts.workbench_http import contract, validate_response
 from starlette.exceptions import HTTPException
@@ -43,6 +45,8 @@ from speechnexus_backend.workbench.interfaces.version_views import (
     revision_payload,
     transcript_view,
 )
+
+_log = logging.getLogger(__name__)
 
 OPERATIONS = frozenset(
     {
@@ -251,8 +255,80 @@ ERRORS = {
     "internal_error": (500, "api_error", "Workbench request could not be completed."),
 }
 
+# The stable text-LLM dispositions, keyed by the private code the LLM port raises. Both
+# readers of that port (assistant turns and minutes) project through this one table:
+# anything unrecognised reports as `llm_unavailable` rather than inventing a public code
+# or, worse, building a table key that does not exist (#777's out-of-range reproduction).
+LLM_CODES = {
+    "disabled": "llm_disabled",
+    "invalid_input": "llm_invalid_input",
+    "profile_mismatch": "llm_profile_mismatch",
+    "unavailable": "llm_unavailable",
+    "invalid_response": "llm_invalid_response",
+    "source_not_sealed": "llm_source_not_sealed",
+    "source_changed": "llm_source_changed",
+    "source_unavailable": "llm_source_unavailable",
+}
+
 
 def _error(
+    code: str,
+    rid: str,
+    operation: str | None,
+    *,
+    content_range: str | None = None,
+    param: str | None = None,
+    retryable: bool = False,
+    retry_after_seconds: int | None = None,
+) -> JSONResponse:
+    """Answer one refusal without depending on the operation's response declarations.
+
+    The declared envelope is built and checked first. When an operation never declared
+    that response — no ``500`` at all, or any ``400``/``408``/``413``/``415``/``503`` it
+    omits — the check refuses the envelope, and letting
+    that refusal escape replaces the caller's only machine-readable answer with a bare
+    ``text/plain`` 500 from the ASGI host. The same refusal is then rebuilt from the
+    static table alone: same status, ``code`` and correlation, still validated against
+    ``ErrorResponse``, only the per-operation declaration gate is skipped. Structure
+    stays a guarantee of this layer; the declaration mismatch is logged, never echoed.
+
+    Every caller names a code from the table above, and a code that is not in it is a
+    defect in this layer, not a refusal: reporting it as ``internal_error`` keeps this
+    entry point total. A dynamic code (one forwarded from a port as-is) must never be
+    able to leave the handler as a ``KeyError``, which is the same bare 500 this
+    function exists to prevent.
+    """
+    if code not in ERRORS:
+        _log.error(
+            "unknown workbench error code; answering internal_error code=%r operation=%s",
+            code,
+            operation,
+        )
+        code = "internal_error"
+    try:
+        return _declared_error(
+            code,
+            rid,
+            operation,
+            content_range=content_range,
+            param=param,
+            retryable=retryable,
+            retry_after_seconds=retry_after_seconds,
+        )
+    except ContractValidationError as failure:
+        _log.warning(
+            "workbench error response outside the operation's declarations; "
+            "answering with the declaration-independent envelope "
+            "operation=%s code=%s request_id=%s failure=%r",
+            operation,
+            code,
+            rid,
+            failure,
+        )
+        return _minimal_error(code, rid, retryable=retryable)
+
+
+def _declared_error(
     code: str,
     rid: str,
     operation: str | None,
@@ -291,6 +367,69 @@ def _error(
     if operation is not None:
         validate_response(operation, status, {"body": body, "headers": headers})
     return JSONResponse(body, status_code=status, headers=headers)
+
+
+def _minimal_error(code: str, rid: str, *, retryable: bool = False) -> JSONResponse:
+    """The declaration-independent envelope, used only when the gate refused the other.
+
+    It carries the fields ``ErrorResponse`` requires and nothing taken from the request
+    or from an operation's declarations: the stable status/``code``/``type``/``message``
+    from the table above, a null ``param``, the caller's ``request_id`` and the retry
+    permission. Optional facts an operation never declared are not claimed either — the
+    offending ``param``, an advertised wait or a content range — because a refusal the
+    operation does not list has no declared detail to fill them with. Building it
+    independently keeps the last resort intact when the richer envelope's extra facts
+    are what failed validation, and ``parse`` keeps the structural guarantee: skipping
+    the declaration gate may not cost a valid error body.
+
+    The dropped ``retry_after_ms`` is unreachable with the current table rather than
+    lost: only two dispositions are retryable (the 429 admission refusal and the 409
+    cleanup wait), both are raised by the routed render submission operation
+    (``generateRenderUnitV2``), and that operation declares 429 and 409. A future
+    retryable disposition must therefore declare its status on every operation that can
+    emit it -- otherwise this fallback would answer ``retryable: true`` with no delay,
+    telling the client to retry without saying when.
+    """
+    status, kind, message = ERRORS[code]
+    body = parse(
+        "ErrorResponse",
+        {
+            "error": {
+                "code": code,
+                "type": kind,
+                "message": message,
+                "param": None,
+                "request_id": rid,
+                "retryable": retryable,
+            }
+        },
+    )
+    return JSONResponse(
+        body,
+        status_code=status,
+        headers={
+            "X-Request-ID": rid,
+            "Cache-Control": "no-store",
+            "X-Should-Retry": str(retryable).lower(),
+        },
+    )
+
+
+def _unexpected_error(error: BaseException, rid: str, operation: str) -> JSONResponse:
+    """Last-resort 500 for an exception no branch named: record the cause, never return it.
+
+    The original failure is the only thing that can explain a 500 the deployment did not
+    classify, so it is logged with its ``repr``; the envelope still states the stable
+    ``internal_error`` refusal and never the exception's text.
+    """
+    _log.error(
+        "unhandled workbench failure operation=%s request_id=%s error=%r",
+        operation,
+        rid,
+        error,
+        exc_info=error,
+    )
+    return _error("internal_error", rid, operation)
 
 
 async def _dispatch(
@@ -385,9 +524,9 @@ def create_version_router(
                     rid,
                     operation,
                 )
-            except Exception:
+            except Exception as error:
                 # CancelledError is a BaseException and must reach the ASGI host.
-                return _error("internal_error", rid, operation)
+                return _unexpected_error(error, rid, operation)
 
         return handle
 

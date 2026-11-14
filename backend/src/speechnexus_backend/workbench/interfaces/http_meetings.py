@@ -28,7 +28,11 @@ from speechnexus_backend.workbench.interfaces.http_ingress import (
     request_id,
     validate_limits,
 )
-from speechnexus_backend.workbench.interfaces.http_versions import _error
+from speechnexus_backend.workbench.interfaces.http_versions import (
+    LLM_CODES,
+    _error,
+    _unexpected_error,
+)
 from speechnexus_backend.workbench.interfaces.meeting_views import meeting_payload, minutes_payload
 
 OPERATIONS = frozenset(
@@ -136,15 +140,17 @@ def create_meeting_router(
             except MinutesTaskConflictError:
                 return _error("minutes_conflict", rid, operation)
             except LlmError as error:
-                return _error("llm_" + error.code, rid, operation)
+                # An out-of-range private code projects to the unavailable disposition
+                # instead of a table key that does not exist (#777).
+                return _error(LLM_CODES.get(error.code, "llm_unavailable"), rid, operation)
             except VersionStoreError as error:
                 return _error(
                     "outcome_unknown" if error.commit_unknown else "store_unavailable",
                     rid,
                     operation,
                 )
-            except Exception:
-                return _error("internal_error", rid, operation)
+            except Exception as error:
+                return _unexpected_error(error, rid, operation)
 
         return handle
 

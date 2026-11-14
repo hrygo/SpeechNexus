@@ -350,6 +350,48 @@ PR CI runs this additional check in the existing Python job against the fetched
 base. Existing protected check names, six database partitions, conditional Node
 prerequisites and complete/disjoint report verification remain unchanged.
 
+## Runtime refusals the declarations do not list
+
+The inventory compares declarations; it does not prove that a running operation
+answers only the responses it declares. An operation can answer a status its list
+omits — no `500` at all, or a `400`/`408`/`413`/`415`/`503` it never listed — and
+adding that declaration afterwards is one of the changes left unverified above.
+A green inventory is therefore not evidence that a client of an incomplete
+operation receives the contract's error envelope.
+
+The workbench HTTP layer keeps that guarantee independent of the declarations.
+Every refusal is built from the static error table and validated against
+`ErrorResponse`; the operation's response declarations are checked afterwards. A
+mismatch answers the same status, `code` and correlation in a
+declaration-independent envelope that preserves `Cache-Control: no-store`,
+`X-Request-ID` and `X-Should-Retry`, instead of letting the failed check escape as
+a bare `text/plain` 500 from the ASGI host. The mismatch is logged with the
+operation, `code` and `request_id`, and an unhandled failure logs the original
+exception's `repr`, so the missing declaration stays visible without returning
+exception text to the caller. `tests/unit/backend/test_workbench_http_error_fallback.py`
+pins the assistant-turn, book-export and render-generation surfaces, whose
+operations declare no `500`.
+
+That coverage is per surface, so the inventory is no longer the only CI signal for
+an incomplete declaration list: `tests/unit/backend/test_workbench_http_degradations.py`
+sweeps every routed operation (read from the live app) against every failure class
+its router names and freezes the `(operation, status)` pairs that today answer from
+the declaration-independent envelope. Adding an operation, a handler branch, a
+status in the error table or a declaration changes that set, and the test fails
+until the declarations and the registry agree — a new pair must be registered with
+the issue that closes the gap, and a pair that a declaration closed must be
+deleted. The sweep injects at the router's boundaries rather than reproducing a
+deployment: it states which statuses an operation's handler can answer, not which
+exceptions production sends it.
+
+A fixed injection matrix cannot see a branch added for a type it never raises, so two
+source-level checks in the same module close that path: every branch that answers a
+status must catch a type the matrix raises, and every refusal code a router names as a
+literal must be declared for the operations that router dispatches, or already
+registered. Because the registry follows the handler chains rather than production
+traffic, its size measures the declaration surface the fallback covers, not the number
+of real gaps.
+
 ## Explicit complete speech HTTP selection
 
 ```bash

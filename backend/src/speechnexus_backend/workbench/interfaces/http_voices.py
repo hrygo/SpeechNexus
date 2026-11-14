@@ -19,7 +19,10 @@ from speechnexus_backend.workbench.interfaces.http_ingress import (
     request_id,
     validate_limits,
 )
-from speechnexus_backend.workbench.interfaces.http_versions import _error
+from speechnexus_backend.workbench.interfaces.http_versions import (
+    _error,
+    _unexpected_error,
+)
 from speechnexus_backend.workbench.interfaces.voice_views import (
     voice_catalogue_payload,
     voice_revision_payload,
@@ -94,9 +97,9 @@ def create_voice_router(
             except ValueError:
                 # A query the frozen values refuse, before any call leaves the workbench.
                 return _error("invalid_request", rid, operation)
-            except Exception:
+            except Exception as error:
                 # CancelledError is a BaseException and must reach the ASGI host.
-                return _error("internal_error", rid, operation)
+                return _unexpected_error(error, rid, operation)
 
         return handle
 

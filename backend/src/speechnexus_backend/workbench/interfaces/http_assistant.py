@@ -31,22 +31,13 @@ from speechnexus_backend.workbench.interfaces.http_ingress import (
     request_id,
     validate_limits,
 )
-from speechnexus_backend.workbench.interfaces.http_versions import _error
+from speechnexus_backend.workbench.interfaces.http_versions import (
+    LLM_CODES,
+    _error,
+    _unexpected_error,
+)
 
 OPERATIONS = frozenset({"createAssistantTurn", "getAssistantTurn", "cancelAssistantTurn"})
-
-# Stable text-LLM codes from the shared error table; anything unrecognised reports
-# as unavailable rather than inventing a new public code.
-_LLM_CODES = {
-    "disabled": "llm_disabled",
-    "invalid_input": "llm_invalid_input",
-    "profile_mismatch": "llm_profile_mismatch",
-    "unavailable": "llm_unavailable",
-    "invalid_response": "llm_invalid_response",
-    "source_not_sealed": "llm_source_not_sealed",
-    "source_changed": "llm_source_changed",
-    "source_unavailable": "llm_source_unavailable",
-}
 
 
 def create_assistant_router(
@@ -114,7 +105,7 @@ def create_assistant_router(
             except IngressError as error:
                 return _error(error.code, rid, operation)
             except LlmError as error:
-                return _error(_LLM_CODES.get(error.code, "llm_unavailable"), rid, operation)
+                return _error(LLM_CODES.get(error.code, "llm_unavailable"), rid, operation)
             except ResourceNotFoundError:
                 return _error("resource_not_found", rid, operation)
             except IdempotencyConflictError:
@@ -131,9 +122,9 @@ def create_assistant_router(
                     rid,
                     operation,
                 )
-            except Exception:
+            except Exception as error:
                 # CancelledError is a BaseException and must reach the ASGI host.
-                return _error("internal_error", rid, operation)
+                return _unexpected_error(error, rid, operation)
 
         return handle
 

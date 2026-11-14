@@ -450,16 +450,24 @@ test("415：提示指向媒体类型配置，不提供重试", async ({ page }) 
 });
 
 /**
- * The click the other three cases cannot make (#794 review S3).
+ * Both lines of defence behind the disabled handle (#794 review S3).
  *
- * A click on a `disabled` control is refused by Chromium before any handler runs, so
- * `settledReplayIsUnavailable`'s forced click proves only that the *attribute* is set: the
- * app-side action guard behind it (the check in `execute`) never runs. This case drops the
- * attribute the way a regression in the control's own rendering would, clicks for real, and
- * asserts that the retained key still is not re-sent -- the guard, not the attribute, is what
- * keeps a settled key spent.
+ * A click on a `disabled` control is refused before any handler runs, so
+ * `settledReplayIsUnavailable`'s forced click proves only that the attribute is set: the
+ * action guard in `execute` behind it never runs. This case peels the two layers apart.
+ *
+ * First layer: drop the attribute the way a regression in the control's own rendering
+ * would. The browser now reports the control as clickable, and a plain click is still
+ * swallowed -- React's listener table omits the mouse event for a control whose *rendered
+ * prop* is `disabled`, so removing the attribute exposes nothing but still shows that the
+ * click never reaches the page's code.
+ *
+ * Second layer: invoke the same `onClick` React would run, which is the only way to reach
+ * `execute` at all. The retained key must still not be re-sent: the state table, not the
+ * attribute, is what refuses a settled refusal. A regression that renders the control
+ * enabled without the guard turns this count to 2 (measured: #794 review S3).
  */
-test("415：摘掉 disabled 之后点击也不重发——应用侧动作守卫", async ({ page }) => {
+test("415：两层守卫之下，可点的重放控件也发不出已结算的键", async ({ page }) => {
   const backend = await installBackend(page);
   backend.plan.generate = () => ({
     status: 415,
@@ -473,8 +481,8 @@ test("415：摘掉 disabled 之后点击也不重发——应用侧动作守卫"
   await expect(replay(units)).toBeDisabled();
   expect(backend.calls.generations).toHaveLength(1);
 
-  // Remove the attribute and prove the control is now really clickable, so the click below
-  // reaches React's handler instead of being swallowed by the browser.
+  // The attribute a rendering regression would drop: the control is now clickable for the
+  // DOM, and a real click is still not a dispatch.
   await replay(units).evaluate((button) => {
     button.disabled = false;
   });
@@ -483,7 +491,23 @@ test("415：摘掉 disabled 之后点击也不重发——应用侧动作守卫"
   await holdForUnexpectedRetry(page);
   expect(
     backend.calls.generations,
-    "a settled key is not re-sent even when its control is clickable",
+    "a click on a control React still renders disabled reaches no handler",
+  ).toHaveLength(1);
+
+  // The handler React refuses to run, invoked directly: the action guard is what keeps the
+  // settled key spent once the control itself is gone.
+  const reached = await replay(units).evaluate((button) => {
+    const key = Object.keys(button).find((name) => name.startsWith("__reactProps$"));
+    const props = key === undefined ? null : button[key];
+    if (props === null || typeof props.onClick !== "function") return "unreachable";
+    props.onClick();
+    return "invoked";
+  });
+  expect(reached, "the spec must reach the handler to prove the guard").toBe("invoked");
+  await holdForUnexpectedRetry(page);
+  expect(
+    backend.calls.generations,
+    "a settled key is not re-sent even when its handler is invoked directly",
   ).toHaveLength(1);
   expect(backend.calls.executions).toHaveLength(0);
   expect(backend.calls.unexpected).toEqual([]);

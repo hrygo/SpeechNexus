@@ -11,6 +11,7 @@ import {
   RENDER_UNIT_SOURCE_LIMIT,
   renderUnitLength,
 } from "./render-unit-bounds";
+import { RENDER_REFUSAL_STEPS, refusedCode, type RenderRefusalCode } from "./render-refusals";
 import "./books.css";
 
 const problems = {
@@ -25,18 +26,61 @@ const problems = {
 export type RenderUnitProblem = keyof typeof problems;
 
 /**
- * A refusal the panel could attribute to the inline dispatch bound. The 422
- * envelope carries no sub-reason (shared `ErrorBody` has only
- * `code`/`type`/`message`/`param`/`request_id`/`retryable`, and this operation
- * always sends `param: null` with a fixed message), so the only way to name it is
- * the one local fact the panel has: the dispatched text exceeds the bound in the
- * contract's own unit. `over` is that measured length.
+ * Three shapes, because a refusal can be known three ways.
+ *
+ * `key` is the panel's own state (connection, conflict, storage). `refusal` carries
+ * the published disposition the server stated, whose copy lives in
+ * `render-refusals.ts`. `textOverDispatch` is the local attribution `#745` added:
+ * it is only reached when the server stated no cause at all and the panel measured
+ * the dispatched text itself above the bound in the contract's unit, so a 422
+ * caused by an unpublished voice is never blamed on the text.
  */
-type UnitProblem = { key: RenderUnitProblem } | { key: "textOverDispatch"; over: number };
+type UnitProblem =
+  | { key: RenderUnitProblem }
+  | { key: "textOverDispatch"; over: number }
+  | { key: "refusal"; code: RenderRefusalCode; over?: number }
+  | { key: "inFlight"; code: InFlightCode };
+
+/**
+ * The two 409s this route emits while a dispatch is already under way. Their next
+ * step is "wait for it and refresh", not the generic "check the text or voice": the
+ * request was refused because of an attempt that exists, so re-dispatching would only
+ * add a second attempt.
+ */
+const DISPATCH_IN_FLIGHT_STEPS = {
+  render_attempt_conflict:
+    "该单元已有一次派发在进行，本次请求被拒绝。下一步：等这次派发结束后刷新；不要重复派发。",
+  idempotency_conflict:
+    "该请求键已被另一次派发占用（同一个键不能用于不同意图）。下一步：刷新后重新发起一次派发；不要复用旧键。",
+} as const;
+
+type InFlightCode = keyof typeof DISPATCH_IN_FLIGHT_STEPS;
+
+function dispatchInFlight(code: string): InFlightCode | null {
+  return code in DISPATCH_IN_FLIGHT_STEPS ? (code as InFlightCode) : null;
+}
+
+function dispatchOverMessage(over: number): string {
+  return `该单元文本 ${over} 字符超过一次派发上限 ${RENDER_UNIT_DISPATCH_LIMIT} 字符，服务端因此拒绝了本次派发，未生成作业。下一步：把文本切分为每段不超过 ${RENDER_UNIT_DISPATCH_LIMIT} 字符的多个单元后分别派发；${RENDER_UNIT_SOURCE_LIMIT} 字符的源容量不必缩小。`;
+}
 
 function problemMessage(problem: UnitProblem): string {
-  if (problem.key !== "textOverDispatch") return problems[problem.key];
-  return `该单元文本 ${problem.over} 字符超过一次派发上限 ${RENDER_UNIT_DISPATCH_LIMIT} 字符，服务端因此拒绝了本次派发，未生成作业。下一步：把文本切分为每段不超过 ${RENDER_UNIT_DISPATCH_LIMIT} 字符的多个单元后分别派发；${RENDER_UNIT_SOURCE_LIMIT} 字符的源容量不必缩小。`;
+  if (problem.key === "textOverDispatch") return dispatchOverMessage(problem.over);
+  if (problem.key === "inFlight") return DISPATCH_IN_FLIGHT_STEPS[problem.code];
+  if (problem.key === "refusal") {
+    // The stated text bound is named with the measured length when the panel has it.
+    return problem.over === undefined
+      ? RENDER_REFUSAL_STEPS[problem.code]
+      : dispatchOverMessage(problem.over);
+  }
+  return problems[problem.key];
+}
+
+/** The stable code, offered for diagnosis only — never woven into the copy. */
+function problemTitle(problem: UnitProblem): string | undefined {
+  if (problem.key === "textOverDispatch") return "render_submission_rejected";
+  if (problem.key === "refusal" || problem.key === "inFlight") return problem.code;
+  return undefined;
 }
 
 /**
@@ -147,14 +191,32 @@ function problemOf(error: unknown, dispatched?: string): UnitProblem {
     if (error.code === "outcome_unknown") return { key: "unknown" };
     if (error.code === "revision_conflict") return { key: "conflict" };
     if (error.code === "invalid_change") return { key: "rejected" };
-    if (error.code === "render_submission_rejected") {
-      if (dispatched !== undefined) {
-        const over = renderUnitLength(dispatched);
-        if (over > RENDER_UNIT_DISPATCH_LIMIT) return { key: "textOverDispatch", over };
+    const inFlight = dispatchInFlight(error.code);
+    if (inFlight !== null) return { key: "inFlight", code: inFlight };
+    const refusal = refusedCode(error.code);
+    if (refusal !== null) {
+      const measured = dispatched === undefined ? undefined : renderUnitLength(dispatched);
+      const over =
+        measured !== undefined && measured > RENDER_UNIT_DISPATCH_LIMIT ? measured : undefined;
+      if (refusal === "render_submission_text_too_long") {
+        return over === undefined
+          ? { key: "refusal", code: refusal }
+          : { key: "refusal", code: refusal, over };
       }
-      return { key: "rejected" };
+      // The fallback states no cause; only the panel's own measurement may name the text.
+      if (refusal === "render_submission_rejected" && over !== undefined) {
+        return { key: "textOverDispatch", over };
+      }
+      return { key: "refusal", code: refusal };
     }
     if (error.status >= 500 || error.code === "store_unavailable") return { key: "unavailable" };
+    // A 4xx is a definite refusal: no Job was created, so "结果尚未确认" would send
+    // the operator to replay a request that cannot start. 408 and 429 are the same
+    // exceptions the journal above makes - a timeout or an exhausted admission is
+    // replayed with the original key, not abandoned - so they keep the unknown state
+    // and only a 5xx (or an outcome-unknown code) may otherwise claim uncertainty.
+    if (error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status))
+      return { key: "rejected" };
     return { key: "unknown" };
   }
   return { key: error instanceof TypeError ? "unavailable" : "unknown" };
@@ -639,7 +701,7 @@ function ChapterUnits({
           className="books-problem"
           role="alert"
           // The stable code is for diagnosis; the operator copy stays readable.
-          title={problem.key === "textOverDispatch" ? "render_submission_rejected" : undefined}
+          title={problemTitle(problem)}
         >
           {problemMessage(problem)}
         </p>

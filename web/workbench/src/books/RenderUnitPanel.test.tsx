@@ -7,6 +7,16 @@ import {
   parse,
 } from "../manuscripts/workbench-client";
 import { RenderUnitPanel } from "./RenderUnitPanel";
+import {
+  RENDER_REFUSAL_CODES,
+  RENDER_REFUSAL_STEPS,
+  type RenderRefusalCode,
+} from "./render-refusals";
+
+/** Every published disposition, so a new code cannot ship without a panel answer. */
+const RENDER_REFUSAL_DISPOSITIONS: [RenderRefusalCode, string][] = RENDER_REFUSAL_CODES.map(
+  (code) => [code, RENDER_REFUSAL_STEPS[code]],
+);
 
 function unit(changes: Partial<Contracts["RenderUnitV2"]> = {}) {
   return parse("RenderUnitV2", {
@@ -583,6 +593,39 @@ it("dispatches generation for the revision shown and names the speech job", asyn
   await screen.findByText(/已提交生成，语音作业 job_demo/);
 });
 
+it.each([
+  [
+    "render_attempt_conflict",
+    "该单元已有一次派发在进行，本次请求被拒绝。下一步：等这次派发结束后刷新；不要重复派发。",
+  ],
+  [
+    "idempotency_conflict",
+    "该请求键已被另一次派发占用（同一个键不能用于不同意图）。下一步：刷新后重新发起一次派发；不要复用旧键。",
+  ],
+])("names the in-flight attempt behind a %s instead of blaming the fields", async (code, step) => {
+  // 409 here means an attempt already exists: re-dispatching adds a second one, so
+  // "check the text or voice" is a wrong next step even though the status is right.
+  const { generate } = setup();
+  generate.mockRejectedValueOnce(
+    new WorkbenchResponseError(409, {
+      error: {
+        code,
+        type: "invalid_request_error",
+        message: "Synthetic attempt conflict.",
+        param: null,
+        request_id: "request-demo",
+        retryable: false,
+      },
+    }),
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toBe(step);
+  expect(alert.textContent).not.toContain("请核对单元文本或声音");
+  expect(alert.textContent).not.toContain(code);
+  expect(alert).toHaveAttribute("title", code);
+});
+
 it("keeps the original key when the dispatch result is unknown", async () => {
   const { generate } = setup();
   generate.mockRejectedValueOnce(
@@ -834,7 +877,129 @@ describe("render unit text bounds (#745)", () => {
     expect(alert.textContent).toContain("请求被拒绝");
     expect(alert.textContent).not.toContain("超过一次派发上限");
     expect(alert.textContent).not.toContain("该单元文本");
-    expect(alert).not.toHaveAttribute("title");
+    // The fallback code is still a diagnostic; the copy above stays readable.
+    expect(alert.textContent).not.toContain("render_submission_rejected");
+    expect(alert).toHaveAttribute("title", "render_submission_rejected");
+  });
+
+  it.each(RENDER_REFUSAL_DISPOSITIONS)(
+    "states the operator step for %s instead of the generic refusal",
+    async (code, step) => {
+      const { generate } = setup();
+      generate.mockRejectedValueOnce(
+        new WorkbenchResponseError(422, {
+          error: {
+            code,
+            type: "invalid_request_error",
+            message: "The pinned render unit cannot be dispatched as a speech Job.",
+            param: null,
+            request_id: "request-demo",
+            retryable: false,
+          },
+        }),
+      );
+      fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toBe(step);
+      // Neither the machine code nor the "unknown" answer may stand in for a cause.
+      expect(alert.textContent).not.toContain(code);
+      expect(alert.textContent).not.toContain("结果尚未确认");
+      expect(alert.textContent).not.toContain("按原键重试");
+      // The code stays available for diagnosis, outside the operator copy.
+      expect(alert).toHaveAttribute("title", code);
+    },
+  );
+
+  it("answers an unpublishable refusal code with the generic refusal, not uncertainty", async () => {
+    // The guard test pins the vocabulary on both sides; this is the runtime answer for
+    // a code that reached the panel without a disposition (e.g. a newer server). A 4xx
+    // is a definite refusal - no Job was created - so claiming an unknown outcome would
+    // send the operator to replay a request that cannot start.
+    const { generate } = setup();
+    generate.mockRejectedValueOnce(
+      new WorkbenchResponseError(422, {
+        error: {
+          code: "render_submission_not_in_this_vocabulary",
+          type: "invalid_request_error",
+          message: "Synthetic unhandled refusal.",
+          param: null,
+          request_id: "request-demo",
+          retryable: false,
+        },
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("请求被拒绝");
+    expect(alert.textContent).not.toContain("结果尚未确认");
+    expect(alert.textContent).not.toContain("按原键重试");
+  });
+
+  it("keeps 429 with the unknown state because a replay uses the original key", async () => {
+    // Admission contention is the one 4xx that is replayed rather than abandoned
+    // (the journal above makes the same exception), so it must not read as a refusal;
+    // its own capacity code is tracked separately from this vocabulary.
+    const { generate } = setup();
+    generate.mockRejectedValueOnce(
+      new WorkbenchResponseError(429, {
+        error: {
+          code: "job_capacity_exhausted",
+          type: "rate_limit_error",
+          message: "Synthetic capacity refusal.",
+          param: null,
+          request_id: "request-demo",
+          retryable: true,
+        },
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("结果尚未确认");
+  });
+
+  it.each([400, 409])(
+    "treats an unstated %i refusal as a refusal rather than an unknown outcome",
+    async (status) => {
+      const { generate } = setup();
+      generate.mockRejectedValueOnce(
+        new WorkbenchResponseError(status, {
+          error: {
+            code: "some_unstated_refusal",
+            type: "invalid_request_error",
+            message: "Synthetic unstated refusal.",
+            param: null,
+            request_id: "request-demo",
+            retryable: false,
+          },
+        }),
+      );
+      fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toContain("请求被拒绝");
+      expect(alert.textContent).not.toContain("结果尚未确认");
+    },
+  );
+
+  it("names the stated text bound with the measured length when the server says so", async () => {
+    const { generate } = setup([unit({ text: "旁白".repeat(2500) })]);
+    generate.mockRejectedValueOnce(
+      new WorkbenchResponseError(422, {
+        error: {
+          code: "render_submission_text_too_long",
+          type: "invalid_request_error",
+          message: "The unit text exceeds the one-request inline bound.",
+          param: "input.text",
+          request_id: "request-demo",
+          retryable: false,
+        },
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("该单元文本 5000 字符");
+    expect(alert.textContent).toContain("4096 字符");
+    expect(alert.textContent).toContain("200000 字符的源容量不必缩小");
+    expect(alert).toHaveAttribute("title", "render_submission_text_too_long");
   });
 
   it("keeps the generic refusal when the local text does not explain the 422", async () => {

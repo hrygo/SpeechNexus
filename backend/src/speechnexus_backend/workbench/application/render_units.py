@@ -7,6 +7,8 @@ idempotency and how a chapter resolves to its owning project.
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
+from enum import StrEnum
 from typing import Protocol
 from uuid import uuid4
 
@@ -49,8 +51,76 @@ class RenderSubmissionConflictError(Exception):
     """The same key names a different submission intent."""
 
 
+class RenderRejectionCause(StrEnum):
+    """How far a dispatch refusal could be proven, and no further.
+
+    The public Job contract states the same *status class* for refusals whose
+    operator step is completely different: a text over its bound is split, an
+    unpublished voice is published, a workspace without a quota row is
+    provisioned, an unready asset is uploaded again. Collapsing them into one
+    anonymous refusal is what leaves the workbench guessing.
+    """
+
+    LOCAL_CONTRACT = "local_contract"
+    """The pinned unit is not expressible as one Job request; no request was sent."""
+
+    UPSTREAM_CODE = "upstream_code"
+    """The upstream public error envelope named a stable ``code``."""
+
+    UPSTREAM_UNREADABLE = "upstream_unreadable"
+    """The upstream refused, and its envelope could not be read: no cause is claimed."""
+
+
+@dataclass(frozen=True, slots=True)
+class RenderRejection:
+    """The reason a pinned unit produced no Job, bounded to what was observed.
+
+    ``param`` is the field pointer named by the refusing layer: the upstream one
+    when the upstream stated a code, or the locally proven one when the unit's own
+    contract check refused it. Only ``UPSTREAM_CODE`` may name an upstream code,
+    and an unreadable envelope names nothing at all.
+    """
+
+    cause: RenderRejectionCause
+    status_code: int | None = None
+    upstream_code: str | None = None
+    param: str | None = None
+
+    def __post_init__(self) -> None:
+        coded = self.cause is RenderRejectionCause.UPSTREAM_CODE
+        if coded and self.upstream_code is None:
+            raise ValueError("a coded rejection requires the upstream code")
+        if not coded and self.upstream_code is not None:
+            raise ValueError("only a coded rejection may name an upstream code")
+        if self.cause is RenderRejectionCause.UPSTREAM_UNREADABLE and self.param is not None:
+            raise ValueError("an unreadable rejection names no field")
+        if self.cause is RenderRejectionCause.LOCAL_CONTRACT and self.status_code is not None:
+            raise ValueError("a local rejection has no upstream status")
+
+    @classmethod
+    def local_contract(cls, *, param: str | None = None) -> RenderRejection:
+        return cls(RenderRejectionCause.LOCAL_CONTRACT, param=param)
+
+    @classmethod
+    def upstream(cls, *, status_code: int, code: str, param: str | None) -> RenderRejection:
+        return cls(RenderRejectionCause.UPSTREAM_CODE, status_code, code, param)
+
+    @classmethod
+    def unreadable(cls, *, status_code: int) -> RenderRejection:
+        return cls(RenderRejectionCause.UPSTREAM_UNREADABLE, status_code)
+
+
 class RenderSubmissionRejectedError(Exception):
-    """The pinned unit cannot be expressed as a valid public speech Job."""
+    """The pinned unit cannot be expressed as a valid public speech Job.
+
+    ``rejection`` states what the refusal could prove about its cause; the public
+    speech adapter always states one. ``None`` means the raising layer stated
+    nothing, so no consumer may read a cause out of it.
+    """
+
+    def __init__(self, rejection: RenderRejection | None = None) -> None:
+        super().__init__("render submission rejected")
+        self.rejection = rejection
 
 
 class RenderJobPort(Protocol):

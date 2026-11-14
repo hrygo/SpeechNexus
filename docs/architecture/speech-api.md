@@ -135,7 +135,7 @@ OpenAI Audio 的字段与兼容范围分别对照[转写接口](https://develope
 
 ASR `input` 的目标是只接受所选工作空间存在、功能策略允许且为 `ready` 的 `audio_asset_id`；TTS `input` 使用 `text` 或 `text_asset_id` 二选一，顶层 `voice` 使用 `{id,revision}`，可选 `pronunciation` 也使用 `{id,revision}`。TTS 的 inline `text` 上限为 4096 字符，与 `/v1/audio/speech` 的 `input` 相同：一次 Job 只合成一次，超限请求按声明形状拒绝（422 `unsupported_parameter`，不写 Job 行），不切分、不截断、也不静默缩短。同一个「正文超过一次合成上限」条件在两个入口给出各自声明、互相对应的码：`/v1/audio/speech` 返回 `400 invalid_request` 并带 `param: input`，`POST /v1/nexus/jobs` 返回 `422 unsupported_parameter`；两个码分别代表同步入口无法接受该正文、异步入口不满足已声明的 Job 形状，消费者按 `error.code` 与 `param` 分支，不按状态码分支。长文切分合成是独立的产品能力，当前未实现，由上游按单元切分后各自提交 Job。任务创建时解析 `model` 为 `ModelBindingRevision`，固定所有执行依赖，在响应 `effective_configuration` 中回显；排队期间不随“默认模型”或预设发布而变化。
 
-工作台的 `RenderUnit*.text` 是单元保存的源文本容量上限（200000 字符），不是请求体上限：派发把单元正文内联进一个公开 Job 请求体，该内联正文上界是 `MAX_SPEECH_TEXT_CHARS`（4096），与 `/v1/audio/speech` 的 `input` 和 `TtsJobInput.text` 相同。超过该内联上界的单元不能一次派发，已注册的派发操作 `generateRenderUnitV2`（`POST /v2/workbench/render-units/{unit_id}/generations`）返回 `422 render_submission_rejected` 且不提交 Job，不截断、也不静默缩短源文本；需要一次派发的文本须按不超过 4096 字符切分为多个单元。两个上限保持不同，是因为单元是编辑与溯源边界，而一个 Job 请求体只承载一次内联正文。
+工作台的 `RenderUnit*.text` 是单元保存的源文本容量上限（200000 字符），不是请求体上限：派发把单元正文内联进一个公开 Job 请求体，该内联正文上界是 `MAX_SPEECH_TEXT_CHARS`（4096），与 `/v1/audio/speech` 的 `input` 和 `TtsJobInput.text` 相同。超过该内联上界的单元不能一次派发，已注册的派发操作 `generateRenderUnitV2`（`POST /v2/workbench/render-units/{unit_id}/generations`）返回 `422 render_submission_text_too_long` 且不提交 Job，不截断、也不静默缩短源文本；需要一次派发的文本须按不超过 4096 字符切分为多个单元。两个上限保持不同，是因为单元是编辑与溯源边界，而一个 Job 请求体只承载一次内联正文。
 
 `workspace_id` 可省略：契约默认值为 `workspace-default`，服务端据此选择默认工作空间，响应中的 `workspace_id` 是解析后的值；显式写 `workspace-default` 与省略字段是同一份规范意图。准入在写入事务内按该工作空间的 `workspace_quotas` 行保留一次 attempt，而配额行由引擎注册写入（见[注册引擎](../operations/register-engine.md)）。因此默认部署里「工作空间行存在、但没有配额行」是确定性拒绝：请求返回 422 `workspace_not_configured` 且不写 Job 行，补上配额前重试同一请求不会成功，补齐后同一幂等键下的同一请求即可准入；它不是 503 `job_unavailable`。后者表示存储拒绝了这次读取或无法归并已持久化的数据，重试解决不了，因此 `retryable: false`；连接级失败与事务内超时由 503 `job_outcome_unknown`（`retryable: true`）承担，客户端应按 `retryable` 而非状态码判断能否重试。
 
@@ -246,7 +246,7 @@ Profile、voice 和 model binding revision 不可变；升级只影响后续新�
 | `POST /v1/nexus/jobs` | 请求体字节 | 部署配置 `job_receive_max_bytes`（默认 262144 B） | 413 | `job_request_too_large` | 无 | 否 |
 | `POST /v1/nexus/assets` | 上传字节 | 4 MiB | 413 | `asset_too_large` | 无 | 否 |
 | `POST /v1/nexus/assets` | 文本资产字符 | 1000000 字符 | 422 | `asset_text_too_long` | 无 | 否 |
-| `POST /v2/workbench/render-units/{unit_id}/generations`（`generateRenderUnitV2`） | 单元 `text` 的一次派发 | 4096 字符（`RenderUnit.text` 源容量 200000） | 422 | `render_submission_rejected` | 无 | 否 |
+| `POST /v2/workbench/render-units/{unit_id}/generations`（`generateRenderUnitV2`） | 单元 `text` 的一次派发 | 4096 字符（`RenderUnit.text` 源容量 200000） | 422 | `render_submission_text_too_long` | `input.text` | 否 |
 
 前两行是同一个条件（派发的内联正文超过 `MAX_SPEECH_TEXT_CHARS`）在两个入口各自的声明：状态码与错误码都不同，但都由同一个 `MAX_SPEECH_TEXT_CHARS` 约束，消费者按 `error.code` 与 `param` 分支，不按状态码分支。最后一行是同一条约束在工作台渲染入口的表现，源文本容量与内联正文上界的差异见 §1.4。
 

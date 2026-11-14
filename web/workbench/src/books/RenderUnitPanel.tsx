@@ -6,6 +6,11 @@ import {
   type Contracts,
   type WorkbenchClient,
 } from "../manuscripts/workbench-client";
+import {
+  RENDER_UNIT_DISPATCH_LIMIT,
+  RENDER_UNIT_SOURCE_LIMIT,
+  renderUnitLength,
+} from "./render-unit-bounds";
 import "./books.css";
 
 const problems = {
@@ -18,6 +23,44 @@ const problems = {
 } as const;
 
 export type RenderUnitProblem = keyof typeof problems;
+
+/**
+ * A refusal the panel could attribute to the inline dispatch bound. The 422
+ * envelope carries no sub-reason (shared `ErrorBody` has only
+ * `code`/`type`/`message`/`param`/`request_id`/`retryable`, and this operation
+ * always sends `param: null` with a fixed message), so the only way to name it is
+ * the one local fact the panel has: the dispatched text exceeds the bound in the
+ * contract's own unit. `over` is that measured length.
+ */
+type UnitProblem = { key: RenderUnitProblem } | { key: "textOverDispatch"; over: number };
+
+function problemMessage(problem: UnitProblem): string {
+  if (problem.key !== "textOverDispatch") return problems[problem.key];
+  return `该单元文本 ${problem.over} 字符超过一次派发上限 ${RENDER_UNIT_DISPATCH_LIMIT} 字符，服务端因此拒绝了本次派发，未生成作业。下一步：把文本切分为每段不超过 ${RENDER_UNIT_DISPATCH_LIMIT} 字符的多个单元后分别派发；${RENDER_UNIT_SOURCE_LIMIT} 字符的源容量不必缩小。`;
+}
+
+/**
+ * The two bounds are different things, and only one of them is an input bound.
+ * Showing both — and the split step for the dispatch bound — keeps the refusal
+ * from being a surprise the operator has to reverse-engineer.
+ */
+function TextBounds({ id, label, text }: { id: string; label: string; text: string }) {
+  const length = renderUnitLength(text);
+  return (
+    <p className="books-status" id={id} aria-label={`${label} 字数`}>
+      {`已 ${length} 字符（Unicode 码点，与契约 maxLength 同单位） · 一次派发上限 ${RENDER_UNIT_DISPATCH_LIMIT} 字符 · 源容量上限 ${RENDER_UNIT_SOURCE_LIMIT} 字符。`}
+      {/* The source-capacity branch is unreachable by typing: the textarea's own
+          maxLength stops there first. It stays as the defence for a value set
+          outside the input (paste-overflow, programmatic state), and says what
+          the contract would do with it. */}
+      {length > RENDER_UNIT_SOURCE_LIMIT
+        ? `超过源容量上限 ${RENDER_UNIT_SOURCE_LIMIT} 字符：保存该单元会被契约拒绝。`
+        : length > RENDER_UNIT_DISPATCH_LIMIT
+          ? `超过一次派发上限，不能一次派发：请切分为每段不超过 ${RENDER_UNIT_DISPATCH_LIMIT} 字符的多个单元；${RENDER_UNIT_SOURCE_LIMIT} 字符的源容量仍可保存。`
+          : "可一次派发。"}
+    </p>
+  );
+}
 
 const voiceProblems = {
   unavailable: "音色目录不可用：当前部署未配置语音底座，或底座未提供已发布音色。",
@@ -86,16 +129,29 @@ function splitVoiceKey(key: string): { voiceId: string; voiceRevision: string } 
   return { voiceId: key.slice(0, at), voiceRevision: key.slice(at + 1) };
 }
 
-function problemOf(error: unknown): RenderUnitProblem {
+/**
+ * `dispatched` is the text the panel believes the server put in the request body.
+ * Only a dispatch passes it, and only then may a refusal be attributed to the
+ * inline text bound — and only when the measured code points exceed it, so a
+ * 422 caused by an unpublished voice or binding is never blamed on the text.
+ */
+function problemOf(error: unknown, dispatched?: string): UnitProblem {
   if (error instanceof WorkbenchResponseError) {
-    if (error.status === 404) return "missing";
-    if (error.code === "outcome_unknown") return "unknown";
-    if (error.code === "revision_conflict") return "conflict";
-    if (error.code === "invalid_change") return "rejected";
-    if (error.status >= 500 || error.code === "store_unavailable") return "unavailable";
-    return "unknown";
+    if (error.status === 404) return { key: "missing" };
+    if (error.code === "outcome_unknown") return { key: "unknown" };
+    if (error.code === "revision_conflict") return { key: "conflict" };
+    if (error.code === "invalid_change") return { key: "rejected" };
+    if (error.code === "render_submission_rejected") {
+      if (dispatched !== undefined) {
+        const over = renderUnitLength(dispatched);
+        if (over > RENDER_UNIT_DISPATCH_LIMIT) return { key: "textOverDispatch", over };
+      }
+      return { key: "rejected" };
+    }
+    if (error.status >= 500 || error.code === "store_unavailable") return { key: "unavailable" };
+    return { key: "unknown" };
   }
-  return error instanceof TypeError ? "unavailable" : "unknown";
+  return { key: error instanceof TypeError ? "unavailable" : "unknown" };
 }
 
 interface Draft {
@@ -127,7 +183,7 @@ function ChapterUnits({
 }) {
   const [units, setUnits] = useState<Contracts["RenderUnitV2"][]>([]);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
-  const [problem, setProblem] = useState<RenderUnitProblem | null>(null);
+  const [problem, setProblem] = useState<UnitProblem | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
@@ -194,7 +250,7 @@ function ChapterUnits({
   }, [client, generating]);
 
   const [voices, setVoices] = useState<Contracts["VoiceSummary"][] | null>(null);
-  const [createProblem, setCreateProblem] = useState<RenderUnitProblem | null>(null);
+  const [createProblem, setCreateProblem] = useState<UnitProblem | null>(null);
   const [create, setCreate] = useState({
     ordinal: "",
     text: "",
@@ -251,7 +307,7 @@ function ChapterUnits({
       setRecovery({ journal, pending: journal.load().command, rejected: false, blocked: false });
     } catch {
       setRecovery((r) => ({ ...r, blocked: true }));
-      setProblem("storage");
+      setProblem({ key: "storage" });
       return false;
     }
     flight.current = true;
@@ -281,7 +337,7 @@ function ChapterUnits({
         journal.clear();
       } catch {
         setRecovery((r) => ({ ...r, blocked: true }));
-        setProblem("storage");
+        setProblem({ key: "storage" });
         return false;
       }
       setRecovery({ journal, pending: null, rejected: false, blocked: false });
@@ -329,12 +385,17 @@ function ChapterUnits({
           rejected: record.rejected,
           blocked: false,
         });
-        const problem = record.uncertain ? "unknown" : problemOf(error);
-        if (command.kind === "create") setCreateProblem(problem);
-        else setProblem(problem);
+        const stored =
+          command.kind === "generate"
+            ? units.find((unit) => unit.id === command.unitId)?.text
+            : undefined;
+        if (command.kind === "create")
+          setCreateProblem(record.uncertain ? { key: "unknown" } : problemOf(error));
+        else if (record.uncertain) setProblem({ key: "unknown" });
+        else setProblem(stored === undefined ? problemOf(error) : problemOf(error, stored));
       } catch {
         setRecovery((r) => ({ ...r, blocked: true }));
-        setProblem("storage");
+        setProblem({ key: "storage" });
       }
       return false;
     } finally {
@@ -351,7 +412,7 @@ function ChapterUnits({
       setProblem(null);
     } catch {
       setRecovery((r) => ({ ...r, blocked: true }));
-      setProblem("storage");
+      setProblem({ key: "storage" });
     }
   }
   async function addUnit(input: {
@@ -541,6 +602,9 @@ function ChapterUnits({
   return (
     <section className="books-units" aria-label="渲染单元">
       <h3>渲染单元</h3>
+      <p className="books-status" aria-label="单元文本计数口径">
+        {`字数按 Unicode 码点计，与契约 maxLength 同一单位；一次派发上限 ${RENDER_UNIT_DISPATCH_LIMIT} 字符，源容量上限 ${RENDER_UNIT_SOURCE_LIMIT} 字符。编辑框另受浏览器 maxLength=${RENDER_UNIT_SOURCE_LIMIT} 护栏，它按 UTF-16 码元计数（星形平面字符占 2 个），纯星形文本约 10 万字符就到输入上限，契约本身仍允许 20 万字符。`}
+      </p>
       {(recovery.pending || recovery.blocked) && (
         <aside aria-label="单元原请求恢复">
           <p>
@@ -565,8 +629,13 @@ function ChapterUnits({
         </aside>
       )}
       {problem !== null && (
-        <p className="books-problem" role="alert">
-          {problems[problem]}
+        <p
+          className="books-problem"
+          role="alert"
+          // The stable code is for diagnosis; the operator copy stays readable.
+          title={problem.key === "textOverDispatch" ? "render_submission_rejected" : undefined}
+        >
+          {problemMessage(problem)}
         </p>
       )}
       {notice !== null && <p className="books-notice">{notice}</p>}
@@ -660,10 +729,13 @@ function ChapterUnits({
             新单元文本
             <textarea
               required
+              maxLength={RENDER_UNIT_SOURCE_LIMIT}
+              aria-describedby="create-unit-text-bounds"
               value={create.text}
               onChange={(event) => setCreateField("text", event.target.value)}
             />
           </label>
+          <TextBounds id="create-unit-text-bounds" label="新单元文本" text={create.text} />
           {voices !== null && voices.length > 0 && (
             <label>
               从已发布音色填入
@@ -749,7 +821,7 @@ function ChapterUnits({
       </form>
       {createProblem !== null && (
         <p role="alert" aria-label="新增单元错误">
-          {problems[createProblem]}
+          {problemMessage(createProblem)}
         </p>
       )}
       {units.length === 0 ? (
@@ -869,6 +941,8 @@ function ChapterUnits({
                       {`${label} 文本`}
                       <textarea
                         value={draft.text}
+                        maxLength={RENDER_UNIT_SOURCE_LIMIT}
+                        aria-describedby={`unit-${unit.id}-text-bounds`}
                         onChange={(event) =>
                           setDrafts((current) => ({
                             ...current,
@@ -877,6 +951,11 @@ function ChapterUnits({
                         }
                       />
                     </label>
+                    <TextBounds
+                      id={`unit-${unit.id}-text-bounds`}
+                      label={`${label} 文本`}
+                      text={draft.text}
+                    />
                     <label>
                       {`${label} 已发布音色`}
                       <select

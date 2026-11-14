@@ -2185,6 +2185,39 @@ paths:
         same path, body and key to recover the original accepted result; no
         automatic retry, new key or query-by-key resource is provided. Keyless
         submissions have no promised recovery.
+
+        A refusal is not interchangeable with the others: the public Job contract
+        states the same status class for a text over its inline bound, an
+        unpublished voice, an unprovisioned workspace, an unready asset and an
+        oversized request body, and the operator step differs in each case. This
+        operation therefore answers `422` with one stable disposition code, chosen
+        by that step rather than by the upstream code name:
+
+        - `render_submission_text_too_long` - the unit text exceeds the inline
+          bound of one Job request; split it into units within that bound.
+        - `render_submission_field_unsupported` - a pinned field value is not
+          supported by this Job request; correct the pin.
+        - `render_submission_workspace_not_configured` - the workspace has no
+          provisioned Job quota; an operator must provision it, retrying cannot.
+        - `render_submission_workspace_unavailable` - the workspace does not exist
+          or is disabled; select another workspace.
+        - `render_submission_voice_unavailable` - the pinned voice revision is not
+          published; publish it, or pin a published revision.
+        - `render_submission_asset_unavailable` - the pinned asset is not ready;
+          wait for readiness or upload it again.
+        - `render_submission_body_too_large` - the Job request body derived from
+          the unit text exceeds the deployment receive limit; shorten the text or
+          raise the limit.
+        - `render_submission_rejected` - the fallback: the unit is not expressible
+          as one Job request locally, the upstream refusal envelope could not be
+          read, or the upstream stated a code whose operator step this vocabulary
+          does not name. It is never used to overwrite a cause that was stated.
+
+        `param` carries the upstream field pointer when the refusing layer named
+        one, and is null otherwise; it is a field pointer in both services, never a
+        code. The upstream Job code itself is deliberately not forwarded: it is an
+        implementation detail of that contract, whereas these codes are this
+        operation's own promise to its consumers.
       parameters:
         - $ref: "#/components/parameters/RenderUnitIdPath"
         - $ref: "#/components/parameters/XRequestId"
@@ -2499,12 +2532,14 @@ components:
         `TtsJobInput` declare. A unit whose text exceeds the inline bound cannot
         be dispatched in one request: the registered dispatch operation
         `generateRenderUnitV2` (`POST /v2/workbench/render-units/{unit_id}/generations`)
-        refuses it with `422` `render_submission_rejected` and submits no Job,
+        refuses it with `422` `render_submission_text_too_long` and submits no Job,
         instead of truncating or silently shortening the text. Text that must be
         dispatched in one request has to be split into units of at most 4096
         characters; the two bounds stay distinct because the unit is the editing
         and provenance boundary while one Job request body carries one inline
-        body.
+        body. The dispatch operation's refusal vocabulary is stated once there; a
+        refusal that names no cause this workbench acts on keeps the generic
+        `render_submission_rejected`.
     ResourceReference:
       $ref: "shared/references.schema.json#/$defs/ResourceReference"
     ErrorResponse:

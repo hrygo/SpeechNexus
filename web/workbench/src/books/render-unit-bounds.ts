@@ -12,7 +12,9 @@
  * of one request, never the size of the source: a longer unit stays valid to
  * store, it just cannot be dispatched in one request and has to be split into
  * units of at most 4096. The registered dispatch operation refuses it with
- * `422` `render_submission_rejected` instead of truncating.
+ * `422` `render_submission_text_too_long` instead of truncating, and only falls
+ * back to the generic `render_submission_rejected` when the refusal names no
+ * cause this workbench can act on.
  *
  * Both values are mirrored from the generated contract bundles; the pair is
  * pinned to those bundles by `render-unit-bounds.test.ts`, so a contract change

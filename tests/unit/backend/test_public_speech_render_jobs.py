@@ -183,7 +183,7 @@ async def test_a_coded_refusal_keeps_the_upstream_code_and_param() -> None:
     assert error.rejection.cause is RenderRejectionCause.UPSTREAM_CODE
     assert error.rejection.status_code == 422
     assert error.rejection.upstream_code == "voice_not_published"
-    assert error.rejection.upstream_param == "voice.revision"
+    assert error.rejection.param == "voice.revision"
 
 
 @pytest.mark.parametrize(
@@ -230,7 +230,7 @@ async def test_an_unreadable_refusal_states_no_cause(status: int, body: Any) -> 
     assert error.rejection.cause is RenderRejectionCause.UPSTREAM_UNREADABLE
     assert error.rejection.status_code == status
     assert error.rejection.upstream_code is None
-    assert error.rejection.upstream_param is None
+    assert error.rejection.param is None
 
 
 def test_a_rejection_cannot_name_a_cause_it_did_not_observe() -> None:
@@ -301,8 +301,14 @@ async def test_text_at_the_job_bound_is_still_submitted() -> None:
     assert len(seen["body"]["input"]["text"]) == 4096
 
 
-async def test_a_locally_refused_unit_states_no_upstream_cause() -> None:
-    """The refused unit never reached the API; its contract error stays chained, not dropped."""
+async def test_a_locally_refused_unit_names_only_the_field_it_proved() -> None:
+    """The refused unit never reached the API; its contract error stays chained, not dropped.
+
+    The adapter must not restate the inline bound: it replaces the text with a short
+    valid one and re-validates, which proves the text is the *only* refused part and
+    therefore names the text field. A refusal caused by another pinned field proves
+    nothing about the text and must not name it.
+    """
     calls = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -319,8 +325,19 @@ async def test_a_locally_refused_unit_states_no_upstream_cause() -> None:
     assert caught.value.rejection.cause is RenderRejectionCause.LOCAL_CONTRACT
     assert caught.value.rejection.status_code is None
     assert caught.value.rejection.upstream_code is None
-    assert caught.value.rejection.upstream_param is None
+    assert caught.value.rejection.param == "input.text"
     assert isinstance(caught.value.__cause__, ContractValidationError)
+
+
+async def test_a_local_refusal_of_another_field_names_no_text_cause() -> None:
+    """Only a proven text bound may be named; an over-long reference proves nothing."""
+    with pytest.raises(RenderSubmissionRejectedError) as caught:
+        await PublicSpeechRenderJobs(client(lambda _: httpx.Response(202, json={}))).submit(
+            unit=unit_with_text("中"), key="key-12345678", reference="gen:" + "x" * 300
+        )
+    assert caught.value.rejection is not None
+    assert caught.value.rejection.cause is RenderRejectionCause.LOCAL_CONTRACT
+    assert caught.value.rejection.param is None
 
 
 def job(**changes: Any) -> dict[str, Any]:

@@ -119,9 +119,12 @@ def test_the_source_bound_is_documented_as_a_request_bound_difference() -> None:
     assert "source capacity" in description
     assert "request bound" in description
     assert "inline" in description
-    # It states what actually happens to a unit above the inline bound.
-    assert "render_submission_rejected" in description
+    # It states what actually happens to a unit above the inline bound, with the
+    # disposition code an operator acts on rather than a generic refusal.
+    assert "render_submission_text_too_long" in description
     assert "422" in description
+    # The unnamed fallback stays named, so a reader knows which code means "no cause".
+    assert "render_submission_rejected" in description
 
 
 def test_the_documentation_names_the_registered_dispatch_operation() -> None:
@@ -142,7 +145,7 @@ def test_the_documentation_names_the_registered_dispatch_operation() -> None:
     table_rows = [
         line
         for line in ARCHITECTURE.read_text().splitlines()
-        if line.startswith("|") and "render_submission_rejected" in line
+        if line.startswith("|") and "render_submission_text_too_long" in line
     ]
     assert len(table_rows) == 1, "the cross-entry table must state one render dispatch row"
     assert _DISPATCH_OPERATION in table_rows[0]

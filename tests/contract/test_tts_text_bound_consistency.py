@@ -307,10 +307,10 @@ def test_the_cross_entry_bound_table_states_each_entry_column() -> None:
     assert "1000000" in asset_text["声明上限"]
 
     render = _capability_bound_row(
-        rows, "`POST /v2/workbench/render-units", "render_submission_rejected"
+        rows, "`POST /v2/workbench/render-units", "render_submission_text_too_long"
     )
     assert render["状态码"] == "422"
-    assert render["param"] == "无"
+    assert render["param"] == "`input.text`"
     assert "generateRenderUnitV2" in render["入口"]
     assert "4096" in render["声明上限"]
     assert "200000" in render["声明上限"]

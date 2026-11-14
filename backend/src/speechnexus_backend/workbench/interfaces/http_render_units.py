@@ -10,6 +10,8 @@ from starlette.responses import JSONResponse, Response
 
 from speechnexus_backend.workbench.application.render_units import (
     RenderDispatchUnavailableError,
+    RenderRejection,
+    RenderRejectionCause,
     RenderSubmissionConflictError,
     RenderSubmissionRejectedError,
     RenderSubmissionUnknownError,
@@ -44,6 +46,63 @@ OPERATIONS = frozenset(
     for name in ("listRenderUnits", "createRenderUnit", "getRenderUnit", "updateRenderUnit")
     for suffix in ("", "V2")
 ) | {"generateRenderUnitV2", "listRenderUnitGenerationsV2"}
+
+# The public refusal vocabulary is keyed to the operator step, not to the upstream
+# Job code that reports it: `#702`/`#703` keep revising which upstream code states
+# which fact, and a 1:1 mirror would fossilize that churn into this contract. The
+# upstream code is still how the adapter chooses a disposition, and the upstream
+# `param` is forwarded unchanged because it is the same thing this envelope means:
+# which request field the refusal names.
+_INLINE_TEXT_PARAMS = frozenset({"input.text", "text"})
+_REFUSAL_CODES = {
+    "workspace_not_configured": "render_submission_workspace_not_configured",
+    "workspace_not_found": "render_submission_workspace_unavailable",
+    "workspace_disabled": "render_submission_workspace_unavailable",
+    "voice_not_published": "render_submission_voice_unavailable",
+    "asset_not_ready": "render_submission_asset_unavailable",
+    "job_request_too_large": "render_submission_body_too_large",
+}
+_FALLBACK_REFUSAL = "render_submission_rejected"
+
+
+def refusal_code(rejection: RenderRejection | None) -> str:
+    """The workbench disposition a dispatch refusal demands, or the unnamed fallback.
+
+    ``render_submission_rejected`` is not a catch-all for convenience: it means the
+    refusal stated no cause this workbench can act on - a unit refused locally before
+    any request, an upstream envelope that could not be read, or an upstream code
+    whose operator step this vocabulary does not name.
+    """
+    if rejection is None or rejection.cause is RenderRejectionCause.UPSTREAM_UNREADABLE:
+        return _FALLBACK_REFUSAL
+    if rejection.cause is RenderRejectionCause.LOCAL_CONTRACT:
+        # The unit never left the workbench; only the text bound can be named locally.
+        return (
+            "render_submission_text_too_long"
+            if rejection.param in _INLINE_TEXT_PARAMS
+            else _FALLBACK_REFUSAL
+        )
+    upstream = rejection.upstream_code
+    if upstream is None:  # Excluded by RenderRejection; kept for a total mapping.
+        return _FALLBACK_REFUSAL
+    if upstream == "unsupported_parameter":
+        # #745's lesson: a 422 attributes to the text only when the upstream says so.
+        return (
+            "render_submission_text_too_long"
+            if rejection.param in _INLINE_TEXT_PARAMS
+            else "render_submission_field_unsupported"
+        )
+    if rejection.status_code == 413:
+        # The deployment receive limit refuses the derived body whatever code it sends.
+        return "render_submission_body_too_large"
+    return _REFUSAL_CODES.get(upstream, _FALLBACK_REFUSAL)
+
+
+def refusal_param(rejection: RenderRejection | None) -> str | None:
+    """The field pointer the refusing layer named, forwarded only when it stated one."""
+    if rejection is None or rejection.cause is RenderRejectionCause.UPSTREAM_UNREADABLE:
+        return None
+    return rejection.param
 
 
 def create_render_unit_router(
@@ -200,8 +259,13 @@ def create_render_unit_router(
                 return _error("outcome_unknown", rid, operation)
             except RenderSubmissionConflictError:
                 return _error("idempotency_conflict", rid, operation)
-            except RenderSubmissionRejectedError:
-                return _error("render_submission_rejected", rid, operation)
+            except RenderSubmissionRejectedError as error:
+                return _error(
+                    refusal_code(error.rejection),
+                    rid,
+                    operation,
+                    param=refusal_param(error.rejection),
+                )
             except RenderAttemptConflictError:
                 return _error("render_attempt_conflict", rid, operation)
             except RevisionConflictError:

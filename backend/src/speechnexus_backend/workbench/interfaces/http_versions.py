@@ -148,6 +148,46 @@ ERRORS = {
         "invalid_request_error",
         "A render attempt is already running for this unit.",
     ),
+    # The dispatch refusal vocabulary, keyed to the operator step each one demands
+    # rather than to the upstream Job code that reports it. `render_submission_rejected`
+    # stays the fallback: a local contract refusal, or an upstream refusal whose
+    # envelope named no cause this workbench can act on.
+    "render_submission_text_too_long": (
+        422,
+        "invalid_request_error",
+        "The unit text exceeds the one-request inline bound; split it into units "
+        "within that bound.",
+    ),
+    "render_submission_field_unsupported": (
+        422,
+        "invalid_request_error",
+        "A pinned field value is not supported by this Job request.",
+    ),
+    "render_submission_workspace_not_configured": (
+        422,
+        "invalid_request_error",
+        "The workspace has no provisioned Job quota; an operator must provision it.",
+    ),
+    "render_submission_workspace_unavailable": (
+        422,
+        "invalid_request_error",
+        "The workspace does not exist or is disabled; select another workspace.",
+    ),
+    "render_submission_voice_unavailable": (
+        422,
+        "invalid_request_error",
+        "The pinned voice revision is not published; publish it before dispatching.",
+    ),
+    "render_submission_asset_unavailable": (
+        422,
+        "invalid_request_error",
+        "The pinned asset is not ready; wait for readiness or upload it again.",
+    ),
+    "render_submission_body_too_large": (
+        422,
+        "invalid_request_error",
+        "The derived Job request body exceeds the deployment receive limit; shorten the unit text.",
+    ),
     "render_submission_rejected": (
         422,
         "invalid_request_error",
@@ -158,7 +198,12 @@ ERRORS = {
 
 
 def _error(
-    code: str, rid: str, operation: str | None, *, content_range: str | None = None
+    code: str,
+    rid: str,
+    operation: str | None,
+    *,
+    content_range: str | None = None,
+    param: str | None = None,
 ) -> JSONResponse:
     status, kind, message = ERRORS[code]
     body = parse(
@@ -168,7 +213,7 @@ def _error(
                 "code": code,
                 "type": kind,
                 "message": message,
-                "param": None,
+                "param": param,
                 "request_id": rid,
                 "retryable": False,
             }

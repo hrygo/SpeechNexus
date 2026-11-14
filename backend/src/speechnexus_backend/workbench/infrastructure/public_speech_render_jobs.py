@@ -43,6 +43,30 @@ _REFUSAL_STATUSES = frozenset({400, 401, 403, 413, 415, 422})
 
 _log = logging.getLogger(__name__)
 
+# Field pointer of the one Job field that carries the unit text. The adapter names
+# it only after proving the text is what the local contract check refused.
+_INLINE_TEXT_POINTER = "input.text"
+_SHORT_TEXT = "synthetic"
+
+
+def _local_rejection(body: dict[str, object], *, text: str) -> RenderRejection:
+    """Name the locally proven offending field without restating any contract bound.
+
+    The contract is the only authority for the bound: replacing the text with a short
+    valid one and re-validating the same request proves that *only* the text is
+    refused. A unit's text is a non-empty string (the render domain enforces
+    ``1 <= len(text) <= 200000``), so "only the text is refused" means the inline
+    text bound, never a length-independent failure. If the probe still fails, some
+    other pinned field is at fault and no field is named.
+    """
+    try:
+        parse("JobCreateRequest", {**body, "input": {"text": _SHORT_TEXT}})
+    except ContractValidationError, TypeError, ValueError:
+        return RenderRejection.local_contract()
+    if not text:
+        return RenderRejection.local_contract()
+    return RenderRejection.local_contract(param=_INLINE_TEXT_POINTER)
+
 
 def _refusal(response: httpx.Response) -> RenderRejection:
     """Read the upstream envelope; claim no cause when it cannot be read.
@@ -110,7 +134,9 @@ class PublicSpeechRenderJobs:
         except (ContractValidationError, TypeError, ValueError) as error:
             # No request is sent, so the cause is the local contract check itself;
             # the validation error stays chained instead of being discarded.
-            raise RenderSubmissionRejectedError(RenderRejection.local_contract()) from error
+            raise RenderSubmissionRejectedError(
+                _local_rejection(body, text=dependencies.text)
+            ) from error
         try:
             response = await self._client.post("/v1/nexus/jobs", json=command, headers=headers)
         except httpx.HTTPError, TimeoutError:

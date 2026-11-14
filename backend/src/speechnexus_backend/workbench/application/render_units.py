@@ -75,28 +75,31 @@ class RenderRejectionCause(StrEnum):
 class RenderRejection:
     """The reason a pinned unit produced no Job, bounded to what was observed.
 
-    Only ``UPSTREAM_CODE`` may name an upstream code or param: a locally refused
-    unit never reached the API, and an unreadable envelope states nothing, so
-    neither may be reported as if the upstream had explained itself.
+    ``param`` is the field pointer named by the refusing layer: the upstream one
+    when the upstream stated a code, or the locally proven one when the unit's own
+    contract check refused it. Only ``UPSTREAM_CODE`` may name an upstream code,
+    and an unreadable envelope names nothing at all.
     """
 
     cause: RenderRejectionCause
     status_code: int | None = None
     upstream_code: str | None = None
-    upstream_param: str | None = None
+    param: str | None = None
 
     def __post_init__(self) -> None:
         coded = self.cause is RenderRejectionCause.UPSTREAM_CODE
         if coded and self.upstream_code is None:
             raise ValueError("a coded rejection requires the upstream code")
-        if not coded and (self.upstream_code is not None or self.upstream_param is not None):
-            raise ValueError("only a coded rejection may name an upstream code or param")
+        if not coded and self.upstream_code is not None:
+            raise ValueError("only a coded rejection may name an upstream code")
+        if self.cause is RenderRejectionCause.UPSTREAM_UNREADABLE and self.param is not None:
+            raise ValueError("an unreadable rejection names no field")
         if self.cause is RenderRejectionCause.LOCAL_CONTRACT and self.status_code is not None:
             raise ValueError("a local rejection has no upstream status")
 
     @classmethod
-    def local_contract(cls) -> RenderRejection:
-        return cls(RenderRejectionCause.LOCAL_CONTRACT)
+    def local_contract(cls, *, param: str | None = None) -> RenderRejection:
+        return cls(RenderRejectionCause.LOCAL_CONTRACT, param=param)
 
     @classmethod
     def upstream(cls, *, status_code: int, code: str, param: str | None) -> RenderRejection:

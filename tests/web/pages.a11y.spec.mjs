@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { lockToPreview } from "./network-lock.mjs";
 import {
   tags,
   scan,
@@ -14,12 +15,7 @@ const apps = [
 ];
 
 test.beforeEach(async ({ context }) => {
-  await context.route("**/*", (route) => {
-    const url = new URL(route.request().url());
-    if (url.hostname === "127.0.0.1" && ["4173", "4174"].includes(url.port))
-      return route.continue();
-    return route.abort("blockedbyclient");
-  });
+  await lockToPreview(context);
 });
 
 for (const app of apps) {

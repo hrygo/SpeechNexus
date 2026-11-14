@@ -32,6 +32,7 @@ from speechnexus_backend import profile_runtime as runtime_module
 from speechnexus_backend.app import create_app
 from speechnexus_backend.profile_runtime import ProfileRuntime
 from speechnexus_backend.settings import Settings
+from speechnexus_backend.speech.domain.configuration import document_digest
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.profile_draft_schema import profile_draft_grants
 from speechnexus_backend.speech.infrastructure.profile_publication_schema import (
@@ -195,6 +196,10 @@ def test_actual_commit_reply_loss_pressure_and_original_identity(
     monkeypatch.setattr(runtime_module, "speech_pool", fault_pool)
     body, app = profile_request(), http_db.app(profile_transaction_timeout_seconds=0.05)
     headers = KEY if keyed else {}
+    # The 0.05 s budget bounds only the manufactured failures below: the lost
+    # commit acknowledgment fails during commit, and while this block holds the
+    # pool's single connection every checkout waits for it and is guaranteed to
+    # time out. Neither outcome depends on machine speed.
     with TestClient(app) as client:
         pool = app.state.profile_runtime._pool
         with pool.connection() as connection:
@@ -224,13 +229,23 @@ def test_actual_commit_reply_loss_pressure_and_original_identity(
                     response.status_code == 503 and response.json()["error"]["retryable"] is False
                 )
         assert http_db.snapshot() == before
+    # The pool is released. Reading the committed revision and replaying the
+    # original key are paths that must succeed, so they run on the fixture's
+    # normal budget instead of inheriting the 0.05 s used to force the failures.
+    with TestClient(http_db.app()) as client:
         assert client.get(fixed(body)).status_code == 200
         assert client.get(fixed(body, "99")).status_code == 404
         if keyed:
             replay = client.post(PATH, json=body, headers=KEY)
-            assert replay.status_code == 201 and replay.json()["revision"] == "1"
+            assert replay.status_code == 201, replay.text
+            assert replay.json()["revision"] == "1"
         # Keyless uncertainty is observed, never assigned a guessed recovery key.
         assert http_db.snapshot() == before and http_db.db.counts() == (0, 0)
+    # The replayed 201 is the original caller's command, not a second allocation.
+    if keyed:
+        commands = http_db.snapshot()["speech_profile_commands"]
+        assert len(commands) == 1
+        assert commands[0]["key_digest"] == document_digest(KEY["Idempotency-Key"].encode())
 
 
 def test_original_key_waits_for_real_transaction_then_replays(http_db: HTTPDatabase) -> None:
@@ -466,6 +481,9 @@ def test_sql_deadline_returns_unknown_without_committing_partial_command(
         "INSERT INTO speech_profile_families (profile_id) VALUES (%s)", (body["profile_id"],)
     )
     before = http_db.snapshot()
+    # The competing transaction holds the family row lock for this entire block,
+    # so the 0.1 s budget is guaranteed to expire while the writer waits on that
+    # lock: this 503 is forced by the lock, not by machine speed.
     with TestClient(http_db.app(profile_transaction_timeout_seconds=0.1)) as client:
         blocker = http_db.db.blocker()
         try:
@@ -476,9 +494,22 @@ def test_sql_deadline_returns_unknown_without_committing_partial_command(
         finally:
             blocker.rollback()
             blocker.close()
-        # Only the caller's explicit original-key POST may attempt its original intent again.
-        assert client.post(PATH, json=body, headers=KEY).status_code == 201
-    assert len(http_db.snapshot()["speech_profile_commands"]) == 1
+    # The lock is gone. Only the caller's explicit original-key POST may attempt
+    # its original intent again, and that attempt must not inherit the 0.1 s
+    # deadline: that budget exists solely to force the first failure while the
+    # row lock is held. The replay therefore runs with the fixture's normal
+    # budget, so retrying the original key is a behavior assertion, not a race
+    # against how fast one transaction finishes on a loaded machine.
+    with TestClient(http_db.app()) as client:
+        replay = client.post(PATH, json=body, headers=KEY)
+        assert replay.status_code == 201, replay.text
+        assert replay.json()["profile_id"] == body["profile_id"]
+        assert replay.json()["revision"] == "1"
+    # The replay recovered the original command instead of allocating a new one,
+    # and that command is still the caller's original idempotency key.
+    commands = http_db.snapshot()["speech_profile_commands"]
+    assert len(commands) == 1
+    assert commands[0]["key_digest"] == document_digest(KEY["Idempotency-Key"].encode())
 
 
 @pytest.mark.parametrize("login_kind", ["superuser", "schema_owner"])

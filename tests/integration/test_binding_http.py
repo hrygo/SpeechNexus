@@ -185,6 +185,10 @@ def test_actual_commit_reply_loss_pressure_and_original_identity(
     monkeypatch.setattr(runtime_module, "speech_pool", fault_pool)
     body, app = binding_request(), http_db.app(binding_transaction_timeout_seconds=0.05)
     headers = KEY if keyed else {}
+    # The 0.05 s budget bounds only the manufactured failures below: the lost
+    # commit acknowledgment fails during commit, and while this block holds the
+    # pool's single connection every checkout waits for it and is guaranteed to
+    # time out. Neither outcome depends on machine speed.
     with TestClient(app) as client:
         pool = app.state.binding_runtime._pool
         with pool.connection() as connection:
@@ -214,11 +218,17 @@ def test_actual_commit_reply_loss_pressure_and_original_identity(
                     response.status_code == 503 and response.json()["error"]["retryable"] is False
                 )
         assert http_db.snapshot() == before
+    # The pool is released. Reading the committed revision and replaying the
+    # original key are paths that must succeed, so they run on the fixture's
+    # normal budget instead of inheriting the 0.05 s used to force the failures.
+    with TestClient(http_db.app()) as client:
         assert client.get(fixed(body)).status_code == 200
         assert client.get(fixed(body, "99")).status_code == 404
         if keyed:
             replay = client.post(PATH, json=body, headers=KEY)
-            assert replay.status_code == 201 and replay.json()["revision"] == "1"
+            assert replay.status_code == 201, replay.text
+            revision_id = before["speech_binding_revisions"][0]["revision_id"]
+            assert replay.json()["revision_id"] == revision_id
         # Keyless uncertainty is observed, never assigned a guessed recovery key.
         assert http_db.snapshot() == before and http_db.db.counts() == (0, 0)
 
@@ -623,6 +633,9 @@ def test_successful_but_delayed_commit_is_unknown_then_original_replay(
     monkeypatch.setattr(runtime_module, "speech_pool", fault_pool)
     body = binding_request()
     app = http_db.app(binding_transaction_timeout_seconds=0.05)
+    # The manufactured slowness is the sleep(0.15) inside the commit itself, which
+    # cannot finish inside the 0.05 s budget no matter how fast the machine is
+    # (the elapsed assertion pins that). Only this first attempt gets that budget.
     with TestClient(app) as client:
         pool = app.state.binding_runtime._pool
         with pool.connection() as connection:
@@ -638,8 +651,13 @@ def test_successful_but_delayed_commit_is_unknown_then_original_replay(
         assert unknown.json()["error"]["retryable"] is False
         before = http_db.snapshot()
         assert len(before["speech_binding_revisions"]) == 1
+    # The commit actually landed, so the original-key replay must recover that
+    # same revision. It runs on the fixture's normal budget: the 0.05 s exists
+    # only to make the delayed commit fail, never to bound a replay that should
+    # succeed.
+    with TestClient(http_db.app()) as client:
         replay = client.post(PATH, json=body, headers=KEY)
-        assert replay.status_code == 201
+        assert replay.status_code == 201, replay.text
         assert replay.json()["revision_id"] == before["speech_binding_revisions"][0]["revision_id"]
         assert http_db.snapshot() == before and http_db.db.counts() == (0, 0)
 

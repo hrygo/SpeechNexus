@@ -121,6 +121,80 @@ function retryLaterMessage(retryAfter?: number): string {
 }
 
 /**
+ * Whether the retained command's original key can still start a Job, per answer (#794).
+ *
+ * The question is not the status family but the published classification (#755): a 429
+ * and the cleanup wait are refusals *now* whose own step is to dispatch the same intent
+ * again after waiting, so the retained key is still the right request. Every other
+ * answer settles it -- a 4xx refusal will not start a Job for the same request, a
+ * revision conflict names a new revision instead, and the local over-bound attribution
+ * names a split -- while an unobserved answer (`unknown`) or an unreachable deployment
+ * (`unavailable`) still needs the original key, because a Job may already exist under it
+ * and only that key can find it again.
+ */
+function keepsReplay(problem: UnitProblem): boolean {
+  if (problem.key === "refusal") return isRetryableRefusal(problem.code);
+  if (problem.key === "retryLater") return true;
+  return problem.key === "unknown" || problem.key === "unavailable";
+}
+
+/**
+ * The three states a retained command can be in, and what each one may offer (#794).
+ *
+ * The journal records two facts -- `uncertain` (no answer was observed) and `rejected` (a
+ * definitive refusal was observed) -- and this table is the one place that turns them
+ * into a sentence and two controls, so the paragraph cannot name a handle its state
+ * disables (#780/#782's equation, applied to this aside). `replay` re-sends the retained
+ * command under its original key, so it belongs to the states where that exact request
+ * can still change the outcome; a settled refusal says the opposite in the copy that
+ * reported it ("重复提交不会改变结果", "不要复用旧键"), and #794 removed the handle
+ * from that state instead of promising it. `dismiss` ends the retained request
+ * explicitly, and belongs to the states that know the request was refused: an unobserved
+ * answer must keep its original key, because a Job may exist under it.
+ *
+ * The sentence and the controls are asserted together by
+ * `RenderUnitPanel.test.tsx` and by `tests/web/render-refusal.behavior.spec.mjs`: a
+ * control's exact label may appear in the note if and only if the state renders it.
+ */
+export const RECOVERED_INTENT = {
+  unknown: {
+    replay: true,
+    dismiss: false,
+    note: "原请求已保存在此标签页。不会自动重放；结果未确认时用「按原键重放单元请求」核对它，不要更换意图。",
+  },
+  kept: {
+    replay: true,
+    dismiss: true,
+    note: "原请求已保存在此标签页。这次派发被拒绝、没有创建作业，但该拒绝的下一步是稍后再派发，所以「按原键重放单元请求」仍是同一次派发，本页不自动重试；不想再等时用「结束已拒绝单元请求」结束它。",
+  },
+  settled: {
+    replay: false,
+    dismiss: true,
+    note: "原请求已保存在此标签页。服务端已确定性拒绝这次派发，没有创建作业：同一次请求再发送不会改变结果，所以这里禁用了按原键重放。用「结束已拒绝单元请求」明确结束它，再按那次拒绝的处置说明重新开始。",
+  },
+} as const;
+
+export type RecoveredIntent = keyof typeof RECOVERED_INTENT;
+
+/** The control labels the note may name; exactly one per `RECOVERED_INTENT` flag. */
+export const RECOVERED_INTENT_CONTROLS = {
+  replay: "按原键重放单元请求",
+  dismiss: "结束已拒绝单元请求",
+} as const;
+
+/** The state of a retained command, from the journal's two flags plus the live answer. */
+function recoveredIntentOf(recovery: {
+  pending: UnitCommand | null;
+  rejected: boolean;
+  retryable: boolean;
+  blocked: boolean;
+}): RecoveredIntent | null {
+  if (recovery.blocked || recovery.pending === null) return null;
+  if (!recovery.rejected) return "unknown";
+  return recovery.retryable ? "kept" : "settled";
+}
+
+/**
  * The two bounds are different things, and only one of them is an input bound.
  * Showing both — and the split step for the dispatch bound — keeps the refusal
  * from being a surprise the operator has to reverse-engineer.
@@ -304,6 +378,16 @@ function ChapterUnits({
     journal: CommandJournal<UnitCommand> | null;
     pending: UnitCommand | null;
     rejected: boolean;
+    /**
+     * The refusal this page observed keeps the original key usable
+     * (`RENDER_REFUSAL_RETRYABLE`), so the retained command is `kept`, not `settled`.
+     *
+     * Only an answer seen in this tab can set it: the journal persists one refusal bit,
+     * which cannot tell a terminal refusal from a retryable one. A reloaded rejection is
+     * therefore read as settled -- the reading that never re-offers a spent key -- while
+     * the explicit end and a fresh dispatch stay available.
+     */
+    retryable: boolean;
     blocked: boolean;
   }>(() => {
     try {
@@ -311,9 +395,15 @@ function ChapterUnits({
         record = journal.load();
       if (record.command && record.command.chapterId !== chapter.id)
         throw new Error("Unit scope mismatch");
-      return { journal, pending: record.command, rejected: record.rejected, blocked: false };
+      return {
+        journal,
+        pending: record.command,
+        rejected: record.rejected,
+        retryable: false,
+        blocked: false,
+      };
     } catch {
-      return { journal: null, pending: null, rejected: false, blocked: true };
+      return { journal: null, pending: null, rejected: false, retryable: false, blocked: true };
     }
   });
   const owner = useRef({ generation: 0, alive: true });
@@ -329,6 +419,7 @@ function ChapterUnits({
     };
   }, []);
   const locked = busy || recovery.pending !== null || recovery.blocked;
+  const intent = recoveredIntentOf(recovery);
   const generating = units
     .filter((unit) => unit.status === "generating")
     .map((unit) => unit.id)
@@ -412,12 +503,21 @@ function ChapterUnits({
 
   async function execute(command: UnitCommand, fresh: boolean): Promise<boolean> {
     if (flight.current || (fresh && recovery.pending !== null)) return false;
+    // A settled refusal is not re-sent through any path, not only through the disabled
+    // control: its key is spent, and the copy that reported it says so (#794).
+    if (!fresh && intent === "settled") return false;
     const journal = recovery.journal;
     try {
       if (!journal) throw new Error("Recovery unavailable");
       if (fresh) journal.begin(command);
       else journal.save(journal.load());
-      setRecovery({ journal, pending: journal.load().command, rejected: false, blocked: false });
+      setRecovery({
+        journal,
+        pending: journal.load().command,
+        rejected: false,
+        retryable: false,
+        blocked: false,
+      });
     } catch {
       setRecovery((r) => ({ ...r, blocked: true }));
       setProblem({ key: "storage" });
@@ -453,7 +553,7 @@ function ChapterUnits({
         setProblem({ key: "storage" });
         return false;
       }
-      setRecovery({ journal, pending: null, rejected: false, blocked: false });
+      setRecovery({ journal, pending: null, rejected: false, retryable: false, blocked: false });
       setUnits((current) =>
         command.kind === "create"
           ? [...current.filter((item) => item.id !== updated.id), updated]
@@ -497,20 +597,23 @@ function ChapterUnits({
       try {
         journal.failure(rejected);
         const record = journal.load();
-        setRecovery({
-          journal,
-          pending: record.command,
-          rejected: record.rejected,
-          blocked: false,
-        });
         const stored =
           command.kind === "generate"
             ? units.find((unit) => unit.id === command.unitId)?.text
             : undefined;
-        if (command.kind === "create")
-          setCreateProblem(record.uncertain ? { key: "unknown" } : problemOf(error));
-        else if (record.uncertain) setProblem({ key: "unknown" });
-        else setProblem(stored === undefined ? problemOf(error) : problemOf(error, stored));
+        // One answer for the alert and the aside: an earlier unobserved attempt keeps the
+        // unknown answer, otherwise the refusal is reported as the server stated it, and
+        // that same problem decides whether the retained key is still usable (#794).
+        const shown: UnitProblem = record.uncertain ? { key: "unknown" } : problemOf(error, stored);
+        setRecovery({
+          journal,
+          pending: record.command,
+          rejected: record.rejected,
+          retryable: keepsReplay(shown),
+          blocked: false,
+        });
+        if (command.kind === "create") setCreateProblem(shown);
+        else setProblem(shown);
       } catch {
         setRecovery((r) => ({ ...r, blocked: true }));
         setProblem({ key: "storage" });
@@ -525,7 +628,13 @@ function ChapterUnits({
     if (!recovery.rejected || busy || !recovery.journal) return;
     try {
       recovery.journal.clear();
-      setRecovery((r) => ({ ...r, pending: null, rejected: false, blocked: false }));
+      setRecovery((r) => ({
+        ...r,
+        pending: null,
+        rejected: false,
+        retryable: false,
+        blocked: false,
+      }));
       setCreateProblem(null);
       setProblem(null);
     } catch {
@@ -726,22 +835,20 @@ function ChapterUnits({
       {(recovery.pending || recovery.blocked) && (
         <aside aria-label="单元原请求恢复">
           <p>
-            {recovery.blocked
-              ? problems.storage
-              : "原请求已保存在此标签页。不会自动重放，结果未知时不能更换意图。"}
+            {recovery.blocked || intent === null ? problems.storage : RECOVERED_INTENT[intent].note}
           </p>
           {recovery.pending && (
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || intent === null || !RECOVERED_INTENT[intent].replay}
               onClick={() => void execute(recovery.pending!, false)}
             >
-              按原键重放单元请求
+              {RECOVERED_INTENT_CONTROLS.replay}
             </button>
           )}
-          {recovery.rejected && (
+          {recovery.pending && intent !== null && RECOVERED_INTENT[intent].dismiss && (
             <button type="button" disabled={busy} onClick={dismissRejected}>
-              结束已拒绝单元请求
+              {RECOVERED_INTENT_CONTROLS.dismiss}
             </button>
           )}
         </aside>

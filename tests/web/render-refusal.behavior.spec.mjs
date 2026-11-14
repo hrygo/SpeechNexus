@@ -211,6 +211,34 @@ const problem = (units) => units.locator('p.books-problem[role="alert"]');
 const dispatch = (units) => units.getByRole("button", { name: "单元 1 生成配音" });
 const replay = (units) => units.getByRole("button", { name: "按原键重放单元请求" });
 const dismiss = (units) => units.getByRole("button", { name: "结束已拒绝单元请求" });
+/** The retained-intent aside's own paragraph (the one that explains the two handles). */
+const retainedIntent = (units) => units.locator('aside[aria-label="单元原请求恢复"] p');
+
+/**
+ * A refusal settled the original key, so the replay handle must not be usable (#794).
+ *
+ * The three assertions are the issue's three claims: the control is disabled, the aside
+ * says the refusal is settled rather than "结果未知", and a click on the disabled control
+ * sends nothing -- `force` skips Playwright's actionability wait, so what is asserted is
+ * the browser refusing activation on a disabled control, not the wait. The request count
+ * is re-read by the caller after a settle window; this helper reads it before, so the pair
+ * brackets the click.
+ */
+async function settledReplayIsUnavailable(page, backend, units) {
+  await expect(replay(units)).toBeDisabled();
+  // The explicit end is the step the aside names, and it is really offered.
+  await expect(dismiss(units)).toBeEnabled();
+  await expect(retainedIntent(units)).toContainText("服务端已确定性拒绝这次派发");
+  // The old aside claimed the outcome was unknown; a settled refusal is not unknown.
+  await expect(retainedIntent(units)).not.toContainText("结果未知时不能更换意图");
+  expect(backend.calls.generations, "the settled key is not re-sent before the click").toHaveLength(
+    1,
+  );
+  await replay(units).click({ force: true });
+  // A click cannot reach the action behind a disabled control; the count is re-read by the
+  // caller after `holdForUnexpectedRetry`, which also rules out a timer-based re-send.
+  expect(backend.calls.generations, "a click on the settled handle sends nothing").toHaveLength(1);
+}
 
 /**
  * Assert the refusal paragraph is really laid out where the operator reads it.
@@ -305,9 +333,13 @@ test("429：按服务端声明的延时渲染计时文案，重试按钮真的�
   await expect(units.getByText(`语音作业 ${ids.job}`)).toHaveCount(0);
 
   // The retry the panel offers is usable, and it is the keyed one: the panel keeps the
-  // original intent so a retry reconciles instead of inventing a second dispatch.
+  // original intent so a retry reconciles instead of inventing a second dispatch. #794
+  // fixed the other half of this equation -- the handle is enabled here *because* the copy
+  // above names another dispatch ("可重试"), and the aside says so instead of claiming the
+  // outcome is unknown.
   await expect(replay(units)).toBeEnabled();
   await expect(dismiss(units)).toBeEnabled();
+  await expect(retainedIntent(units)).toContainText("该拒绝的下一步是稍后再派发");
   // Nothing may be dispatchable behind the retry: the unit button is the fresh-dispatch
   // path and it stays locked while the original intent is unresolved.
   await expect(dispatch(units)).toBeDisabled();
@@ -371,12 +403,13 @@ test("409 idempotency_conflict：指向先查该执行再换新键，且不承�
   await expectLaidOutAndUnobscured(alert);
 
   // No unconditional retry: no fresh dispatch is enabled, no retry-labelled control is
-  // offered, and the refused attempt is the only request. (The panel does still render
-  // the keyed `按原键重放单元请求` control for a settled refusal; whether a settled
-  // refusal should keep that handle is a panel question reported on #790, so this spec
-  // asserts the copy and the dispatch affordances and deliberately not that handle.)
+  // offered, and the refused attempt is the only request.
   await expect(dispatch(units)).toBeDisabled();
   await expect(units.getByRole("button", { name: /重试|重新派发/ })).toHaveCount(0);
+  // #794: the copy above says the spent key cannot be reused, so the keyed
+  // `按原键重放单元请求` handle is settled too -- disabled, and a click sends nothing.
+  // (The #790 version of this spec deferred that handle here; this is the answer.)
+  await settledReplayIsUnavailable(page, backend, units);
   await holdForUnexpectedRetry(page);
   expect(backend.calls.generations, "a spent key may not be re-sent on its own").toHaveLength(1);
   expect(backend.calls.executions).toHaveLength(0);
@@ -411,6 +444,9 @@ test("415：提示指向媒体类型配置，不提供重试", async ({ page }) 
   // retry exists, and no timer or effect re-sends the refused request.
   await expect(dispatch(units)).toBeDisabled();
   await expect(units.getByRole("button", { name: /重试|重新派发/ })).toHaveCount(0);
+  // #794: "重复提交不会改变结果" is the copy of this very paragraph, so the keyed
+  // original-key handle cannot stay usable beside it.
+  await settledReplayIsUnavailable(page, backend, units);
   await holdForUnexpectedRetry(page);
   expect(backend.calls.generations, "a 415 is not re-sent").toHaveLength(1);
   expect(backend.calls.executions).toHaveLength(0);
@@ -443,6 +479,9 @@ test("403：权限提示在真实布局里可见且不提供重试", async ({ pa
 
   await expect(dispatch(units)).toBeDisabled();
   await expect(units.getByRole("button", { name: /重试|重新派发/ })).toHaveCount(0);
+  // #794: "重复提交都不会成功" settles the retained key the same way it settles the
+  // fresh-dispatch button.
+  await settledReplayIsUnavailable(page, backend, units);
   await holdForUnexpectedRetry(page);
   expect(backend.calls.generations).toHaveLength(1);
   expect(backend.calls.executions).toHaveLength(0);
@@ -484,7 +523,11 @@ test("409 execution_cleanup_pending：提示等清理完成再重试，且按原
   await expectLaidOutAndUnobscured(alert);
 
   // The retry is offered and really re-sends: one further request, same key, one Job.
+  // #794: "不需要换键" is the copy of this code, so the retained key -- not a fresh
+  // dispatch -- is the handle the panel must leave usable, and the aside may not call the
+  // outcome unknown.
   await expect(replay(units)).toBeEnabled();
+  await expect(retainedIntent(units)).toContainText("该拒绝的下一步是稍后再派发");
   expect(backend.calls.generations).toHaveLength(1);
   expect(backend.calls.executions).toHaveLength(0);
   expect(backend.calls.reads).toBe(0);

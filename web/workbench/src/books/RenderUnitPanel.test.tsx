@@ -6,10 +6,16 @@ import {
   type Contracts,
   parse,
 } from "../manuscripts/workbench-client";
-import { RenderUnitPanel } from "./RenderUnitPanel";
+import {
+  RenderUnitPanel,
+  RECOVERED_INTENT,
+  RECOVERED_INTENT_CONTROLS,
+  type RecoveredIntent,
+} from "./RenderUnitPanel";
 import {
   RENDER_REFUSAL_CODES,
   RENDER_REFUSAL_STEPS,
+  isRetryableRefusal,
   type RenderRefusalCode,
 } from "./render-refusals";
 
@@ -1110,6 +1116,134 @@ describe("render unit text bounds (#745)", () => {
     expect(await textBoundsOf("新单元文本")).toHaveTextContent(
       "超过源容量上限 200000 字符：保存该单元会被契约拒绝。",
     );
+  });
+});
+
+/**
+ * `#794`: the panel may not keep offering an action its own copy calls pointless.
+ *
+ * The equation under test is between three values, none of which implies the others: the
+ * published classification (`RENDER_REFUSAL_RETRYABLE`), the operator copy that states it
+ * (`RENDER_REFUSAL_STEPS`), and the controls the panel renders (`RECOVERED_INTENT`). For
+ * the render dispatch a refusal whose copy names another dispatch of the same intent keeps
+ * the original-key replay usable, and a refusal whose copy says the same request cannot
+ * change the outcome -- 415 "重复提交不会改变结果", 403 "重复提交都不会成功", the spent
+ * key's "不要复用旧键" -- must not leave that request available. The copy is asserted
+ * against the classification and the control against the copy, because asserting the
+ * control against the classification alone would let a hand-written sentence drift free
+ * (the #782 shape) and asserting the control against a literal per case would restate the
+ * implementation instead of the rule.
+ *
+ * The walk covers the whole vocabulary, so a new code cannot ship with the two
+ * disagreeing: it has to be classified, and its copy has to match that classification.
+ */
+describe("recovered intent after a refusal (#794)", () => {
+  /**
+   * A refusal carrying `code`, as the panel's classification reads it.
+   *
+   * The status is 422 for every code on purpose: `problemOf` keys the disposition off the
+   * published code (#755), which is the property the walk needs, and the status-specific
+   * copy (429's `Retry-After`, 415's media type) is pinned by its own case above.
+   */
+  const refusalOf = (code: RenderRefusalCode) =>
+    new WorkbenchResponseError(422, {
+      error: {
+        code,
+        type: "invalid_request_error",
+        message: `Synthetic ${code} for the recovered-intent equation.`,
+        param: null,
+        request_id: "request-demo",
+        retryable: false,
+      },
+    });
+
+  it("names a retained-intent control in the note only when its state renders it", () => {
+    // The note is the state's only explanation of what is on offer, so it may not name an
+    // action the state withholds -- the exact defect this issue reports, one level up.
+    for (const state of Object.keys(RECOVERED_INTENT) as RecoveredIntent[]) {
+      const { note, replay, dismiss } = RECOVERED_INTENT[state];
+      expect(note.includes(RECOVERED_INTENT_CONTROLS.replay), `${state} note`).toBe(replay);
+      expect(note.includes(RECOVERED_INTENT_CONTROLS.dismiss), `${state} note`).toBe(dismiss);
+    }
+  });
+
+  it.each(RENDER_REFUSAL_CODES)(
+    "keeps the original-key replay after %s exactly when its copy promises a retry",
+    async (code) => {
+      const { generate } = setup();
+      generate.mockRejectedValueOnce(refusalOf(code));
+      fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
+      await screen.findByRole("alert");
+
+      const step = RENDER_REFUSAL_STEPS[code];
+      const replay = screen.getByRole<HTMLButtonElement>("button", {
+        name: RECOVERED_INTENT_CONTROLS.replay,
+      });
+      // The control follows what the copy says, in both directions: a matched pair may not
+      // read "可重试" beside a blocked replay, nor withhold the retry its copy names.
+      expect(replay.disabled, `${code} control`).toBe(!step.includes("可重试"));
+      // The copy and the classification agree, which is what keeps the equation above
+      // anchored to the product's own table instead of to the implementation's.
+      expect(step.includes("可重试"), `${code} classification`).toBe(isRetryableRefusal(code));
+
+      // One state decides the note and both controls; the other states must not be on
+      // screen beside it.
+      const state = isRetryableRefusal(code) ? "kept" : "settled";
+      const other = isRetryableRefusal(code) ? "settled" : "kept";
+      expect(screen.getByText(RECOVERED_INTENT[state].note)).toBeTruthy();
+      expect(screen.queryByText(RECOVERED_INTENT[other].note)).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: RECOVERED_INTENT_CONTROLS.dismiss }),
+      ).not.toBeNull();
+    },
+  );
+
+  it("keeps a settled refusal unreplayable after a reload and ends it explicitly", async () => {
+    const view = setup();
+    view.generate.mockRejectedValueOnce(refusalOf("render_submission_media_unsupported"));
+    fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
+    const alert = await screen.findByRole("alert");
+    // The copy that reported the refusal says repeating it cannot change the answer.
+    expect(alert.textContent).toContain("重复提交不会改变结果");
+    expect(alert.textContent).not.toContain("结果尚未确认");
+    const replay = screen.getByRole("button", { name: RECOVERED_INTENT_CONTROLS.replay });
+    expect(replay).toBeDisabled();
+    expect(screen.getByText(RECOVERED_INTENT.settled.note)).toBeTruthy();
+
+    // The journal keeps one refusal bit, so a reload cannot tell a terminal refusal from a
+    // retryable one; the reading that never re-offers a spent key is "settled" (#771's
+    // family: a reload may not revive an action the refusal ruled out).
+    view.unmount();
+    render(<RenderUnitPanel client={view.client} chapter={chapter} />);
+    await screen.findByRole("list", { name: "单元列表" });
+    const reloaded = screen.getByRole<HTMLButtonElement>("button", {
+      name: RECOVERED_INTENT_CONTROLS.replay,
+    });
+    expect(reloaded).toBeDisabled();
+    expect(screen.getByText(RECOVERED_INTENT.settled.note)).toBeTruthy();
+
+    // Defence in depth for the same invariant: even if a future edit drops the control's
+    // `disabled` attribute, the action itself refuses to re-send the spent key.
+    reloaded.disabled = false;
+    fireEvent.click(reloaded);
+    expect(view.generate).toHaveBeenCalledTimes(1);
+
+    // The explicit end is the only way forward, and it clears the retained request.
+    fireEvent.click(screen.getByRole("button", { name: RECOVERED_INTENT_CONTROLS.dismiss }));
+    await waitFor(() => expect(screen.queryByText(RECOVERED_INTENT.settled.note)).toBeNull());
+    expect(screen.queryByRole("button", { name: RECOVERED_INTENT_CONTROLS.dismiss })).toBeNull();
+  });
+
+  it("keeps the same-key replay for an unobserved dispatch and offers no end", async () => {
+    const view = setup();
+    view.generate.mockRejectedValueOnce(new TypeError("synthetic lost reply"));
+    fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
+    await screen.findByRole("alert");
+    // The request may have crossed the network: the original key is the only way to find a
+    // Job it created, so the handle stays and the explicit end stays away (#780's rule).
+    expect(screen.getByRole("button", { name: RECOVERED_INTENT_CONTROLS.replay })).toBeEnabled();
+    expect(screen.getByText(RECOVERED_INTENT.unknown.note)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: RECOVERED_INTENT_CONTROLS.dismiss })).toBeNull();
   });
 });
 

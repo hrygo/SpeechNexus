@@ -162,6 +162,10 @@ def test_committed_reply_loss_then_pressure_never_becomes_snapshot_absence(
     body = {**binding_request(), "parameter_defaults": {}}
     app = producer_db.app(binding_transaction_timeout_seconds=0.05)
     headers = KEY if keyed else {}
+    # The 0.05 s budget bounds only the manufactured failures below: the lost
+    # commit acknowledgment fails during commit, and while this block holds the
+    # pool's single connection every checkout waits for it and is guaranteed to
+    # time out. Neither outcome depends on machine speed.
     with TestClient(app) as client:
         pool = app.state.binding_defaults_runtime._pool
         with pool.connection() as connection:
@@ -181,11 +185,19 @@ def test_committed_reply_loss_then_pressure_never_becomes_snapshot_absence(
                 )
             if keyed:
                 assert client.post(PATH, json=body, headers=KEY).status_code == 503
+    # The pool is released. Reading the committed snapshot and replaying the
+    # original key are paths that must succeed, so they run on the fixture's
+    # normal budget instead of inheriting the 0.05 s used to force the failures.
+    with TestClient(producer_db.app()) as client:
         restored = client.get(snapshot_path(body))
         assert restored.status_code == 200
         assert restored.json()["snapshot_id"] == before[TABLE][0]["snapshot_id"]
         if keyed:
-            assert client.post(PATH, json=body, headers=KEY).json()["revision"] == "1"
+            replay = client.post(PATH, json=body, headers=KEY)
+            assert replay.status_code == 201, replay.text
+            assert replay.json()["revision"] == "1"
+            revision_id = before["speech_binding_revisions"][0]["revision_id"]
+            assert replay.json()["revision_id"] == revision_id
         assert producer_db.snapshot() == before
 
 

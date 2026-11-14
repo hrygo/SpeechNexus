@@ -234,13 +234,25 @@ def test_pool_pressure_closed_and_corrupt_history_are_503_not_404(read_db: ReadD
     db = read_db
     app = db.app(pronunciation_read_timeout_seconds=0.05)
     before = db.snapshot()
+    # While this block holds the pool's single reader connection every checkout
+    # waits for it and is guaranteed to time out, so the 0.05 s budget forces the
+    # 503 without depending on machine speed. That budget bounds no other step.
     with TestClient(app) as client:
         pool = app.state.pronunciation_runtime._pool
         with pool.connection():
             for path in (GET, GET[:-1] + "99"):
                 response = client.get(path)
                 assert response.status_code == 503 and response.json()["error"]["retryable"] is True
-        assert client.get(GET).status_code == 200
+    # The pool is released. This read, the corrupt-history 503 and the closed-pool
+    # 503 are not manufactured by the deadline, so they run on the fixture's
+    # normal budget. Order is unchanged: a healthy read first, then corruption,
+    # then a closed pool.
+    recovered = db.app()
+    with TestClient(recovered) as client:
+        original = client.get(GET)
+        assert original.status_code == 200, original.text
+        assert original.json()["revision"] == "1"
+        assert original.json()["entries"] == pronunciation_request()["entries"]
         assert db.snapshot() == before
         db.query(
             "UPDATE speech_pronunciation_revisions SET definition_json=%s",
@@ -250,7 +262,7 @@ def test_pool_pressure_closed_and_corrupt_history_are_503_not_404(read_db: ReadD
         response = client.get(GET)
         assert response.status_code == 503 and "synthetic_corrupt" not in response.text
         assert db.snapshot() == corrupt
-        pool.close()
+        recovered.state.pronunciation_runtime._pool.close()
         assert client.get(GET).status_code == 503
 
 
@@ -259,16 +271,29 @@ def test_sql_read_deadline_retains_history_and_recovers_same_revision(
 ) -> None:
     db = read_db
     before = db.snapshot()
-    with TestClient(db.app(pronunciation_read_timeout_seconds=0.05)) as client:
-        with psycopg.connect(db.url) as blocker:
-            blocker.execute(
-                f'LOCK TABLE "{db.schema}".speech_pronunciation_revisions IN ACCESS EXCLUSIVE MODE'
-            )
-            for path in (GET, GET[:-1] + "99"):
-                response = client.get(path)
-                assert response.status_code == 503
-                assert response.json()["error"]["code"] == "pronunciation_unavailable"
-        assert client.get(GET).status_code == 200
+    # The blocker holds an ACCESS EXCLUSIVE table lock for this whole block, so
+    # the blocked SELECT is guaranteed to hit the 0.05 s statement deadline: this
+    # 503 is forced by the lock, not by machine speed.
+    with (
+        TestClient(db.app(pronunciation_read_timeout_seconds=0.05)) as client,
+        psycopg.connect(db.url) as blocker,
+    ):
+        blocker.execute(
+            f'LOCK TABLE "{db.schema}".speech_pronunciation_revisions IN ACCESS EXCLUSIVE MODE'
+        )
+        for path in (GET, GET[:-1] + "99"):
+            response = client.get(path)
+            assert response.status_code == 503
+            assert response.json()["error"]["code"] == "pronunciation_unavailable"
+    # The lock is released with the blocker. Recovering the same revision and
+    # observing that a different one is absent are paths that must succeed, so
+    # they run on the fixture's normal budget instead of inheriting the 0.05 s
+    # used to force the blocked read to fail.
+    with TestClient(db.app()) as client:
+        recovered = client.get(GET)
+        assert recovered.status_code == 200, recovered.text
+        assert recovered.json()["revision"] == "1"
+        assert recovered.json()["entries"] == pronunciation_request()["entries"]
         assert client.get(GET[:-1] + "99").status_code == 404
     assert db.snapshot() == before
 

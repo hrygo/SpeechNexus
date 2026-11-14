@@ -35,12 +35,21 @@ interface TaskIdentity {
    * `validRecord` keeps the field on a still-pending intent and off any identified
    * execution; it does not spell out the class shapes the record's own invariants pin.
    *
+   * The value records what the refusal proves, which the page must not overstate:
+   * - `terminal`: the protocol answered after it looked up the original key, so no earlier
+   *   attempt under that key became a Job (a fresh intent cannot duplicate one);
+   * - `unreplayable`: the refusal was about this request's own bytes (HTTP 413), which no
+   *   replay can change, so the key is dead — but that answer came before the key lookup
+   *   and therefore proves nothing about an earlier attempt, and it only ever answers a
+   *   create request (#729).
+   *
    * A journal from before #707 counts keys strictly, so it rejects a record carrying
    * this field as `invalid` instead of misreading it; the Host then reports unavailable
    * recovery and keeps the record (see FileTaskHost). That is a safe failure, not
-   * backward compatibility.
+   * backward compatibility. The same holds for a pre-#729 reader that only knows
+   * `terminal`: it rejects `unreplayable` as invalid and changes nothing.
    */
-  readonly settled?: "terminal";
+  readonly settled?: "terminal" | "unreplayable";
 }
 
 export interface TtsSelection {
@@ -201,11 +210,18 @@ function validRecord(value: unknown): RecoveryRecord {
     // The verdict rides on an intent that is still pending: the invariants above already
     // pin such a record to `pending: "create"` with no Job and no cursor, or to
     // `pending: "cancel"` with the Job that refusal named, so this field adds no shape of
-    // its own and must not restate them. Its own bounds are the single value, a pending
+    // its own and must not restate them. Its own bounds are the known values, a pending
     // (never confirmed) intent, and no identified execution: an attempt that named one
     // stays queryable and is never settled (#707 review M2). A confirmed cancel cursor is
-    // not part of the verdict, because events keep advancing afterwards.
-    if (row.settled !== "terminal" || row.pending === null || row.operationId !== null)
+    // not part of the verdict, because events keep advancing afterwards. `unreplayable` is
+    // create-scoped on top of that: a cancel refusal is about authority over a known Job,
+    // never about request bytes, so a record claiming both is incoherent (#729).
+    if (
+      (row.settled !== "terminal" && row.settled !== "unreplayable") ||
+      row.pending === null ||
+      row.operationId !== null ||
+      (row.settled === "unreplayable" && (row.pending !== "create" || row.jobId !== null))
+    )
       return invalid();
   }
   if (
@@ -296,12 +312,13 @@ export class SessionTaskJournal implements FileTaskJournal {
         (before.version === 2 &&
           before.effectiveModelKey !== undefined &&
           (record.version !== 2 || record.effectiveModelKey !== before.effectiveModelKey)) ||
-        // A settled intent cannot be un-settled: losing the field would make the next
-        // reload rebuild it as an unconfirmed submission, which is the defect #707 fixes.
-        // It also cannot be re-pointed: the verdict names the submission class that was
-        // refused and, for a cancel, the Job that refusal named (#723).
-        (before.settled === "terminal" &&
-          (record.settled !== "terminal" ||
+        // A settled intent cannot be un-settled or re-labelled: losing the field would make
+        // the next reload rebuild it as an unconfirmed submission, which is the defect #707
+        // fixes, and swapping the value would change what the page may claim (#729). It also
+        // cannot be re-pointed: the verdict names the submission class that was refused and,
+        // for a cancel, the Job that refusal named (#723).
+        (before.settled !== undefined &&
+          (record.settled !== before.settled ||
             record.pending !== before.pending ||
             record.jobId !== before.jobId)))
     )

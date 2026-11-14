@@ -515,6 +515,50 @@ describe("workbench TTS submit shape (#685)", () => {
     second.dispose();
   });
 
+  it("lets the user abandon a 413 body-bound refusal and reloads it as void, not unknown", async () => {
+    // #729: the inline text body is what the receive layer measures, so this is the class
+    // that can strand a TTS user. The verdict must survive reload and must not claim the
+    // key has no Job, because the refusal predates the key lookup.
+    const test = setup();
+    const client = new SpeechFileClient("http://127.0.0.1", async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (new URL(request.url).pathname === "/v1/nexus/jobs" && request.method === "POST")
+        return failure("job_request_too_large", 413);
+      return test.transport.fetch(request);
+    });
+    const make = () => new FileTaskSession(client, new SessionTaskJournal(test.storage, "tts"));
+    const first = make();
+    await first.startText(sentinel, selection());
+    const snapshot = first.getSnapshot();
+    expect(snapshot).toMatchObject({
+      unknown: false,
+      rejected: true,
+      unreplayable: true,
+      canReplay: false,
+    });
+    expect(snapshot.notice).toContain("413");
+    expect(snapshot.notice).toContain("作废");
+    expect(snapshot.notice).not.toContain("未执行");
+    expect(canFinishTask(snapshot)).toBe(true);
+    expect(test.read()).toMatchObject({
+      version: 2,
+      pending: "create",
+      settled: "unreplayable",
+    });
+    first.dispose();
+    const second = make();
+    await second.restore();
+    expect(second.getSnapshot()).toMatchObject({
+      unknown: false,
+      rejected: true,
+      unreplayable: true,
+      canReplay: false,
+    });
+    expect(second.getSnapshot().notice).not.toContain("结果未知");
+    expect(canFinishTask(second.getSnapshot())).toBe(true);
+    second.dispose();
+  });
+
   it("never replays a create that returned an identified original operation", async () => {
     const test = setup();
     let creates = 0;

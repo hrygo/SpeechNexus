@@ -277,6 +277,66 @@ describe("production Workbench file host", () => {
     expect(f.create).not.toHaveBeenCalled();
   });
 
+  it("gives the user an exit after a 413 body-bound refusal, without claiming no execution", async () => {
+    // #729: the 413 is answered before the key lookup, so the intent cannot be "settled"
+    // like a post-key 4xx; but replaying the same oversized body can never succeed. The
+    // page must therefore allow explicit abandonment, say only that the request was
+    // refused, and never claim the server did not execute anything.
+    const f = fixture();
+    f.create.mockRejectedValue(
+      new SpeechResponseError(
+        413,
+        parse("ErrorResponse", {
+          error: {
+            code: "job_request_too_large",
+            type: "invalid_request_error",
+            message: "Synthetic body bound",
+            retryable: false,
+            request_id: "req-demo",
+            param: null,
+          },
+        }),
+      ),
+    );
+    const view = render(<FileTaskHost client={f.client} storage={f.storage} />);
+    selectInput();
+    fireEvent.submit(screen.getByLabelText("音频文件").closest("form")!);
+    await screen.findByRole("button", { name: "准备新任务" });
+    expect(f.create).toHaveBeenCalledTimes(1);
+    // The protocol refused this request: no "result unconfirmed" alert.
+    expect(screen.queryByText(/请求结果尚未确认/)).not.toBeInTheDocument();
+    // The notice and the refusal paragraph both name the bound; neither names an outcome.
+    expect(screen.getAllByText(/请求体超过本部署的接收上限/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/结果未知/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/未执行/)).not.toBeInTheDocument();
+    expect(f.data.get(key)).toContain('"settled":"unreplayable"');
+    const spentKey = f.create.mock.calls[0]?.[1];
+
+    // A reload keeps the verdict and still offers the exit instead of rebuilding an
+    // unknown submission whose only action is a guaranteed-failing replay.
+    view.unmount();
+    render(<FileTaskHost client={f.client} storage={f.storage} />);
+    expect(screen.getAllByText(/请求体超过本部署的接收上限/).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "准备新任务" })).toBeInTheDocument();
+    expect(screen.getByLabelText("音频文件")).toBeDisabled();
+    expect(f.create).toHaveBeenCalledTimes(1);
+
+    // Abandonment is explicit and yields a fresh idempotency key for the replacement.
+    fireEvent.click(screen.getByRole("button", { name: "准备新任务" }));
+    expect(screen.getByText(/这次请求被拒绝，原意图作废/)).toBeInTheDocument();
+    expect(screen.queryByText(/确定性拒绝/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "放弃这次意图并新建" }));
+    expect(f.data.has(key)).toBe(false);
+    fireEvent.change(screen.getByLabelText("转写模型"), { target: { value: "asr-quality" } });
+    fireEvent.change(screen.getByLabelText("音频文件"), {
+      target: { files: [new NodeFile(["synthetic"], "smaller.wav", { type: "audio/wav" })] },
+    });
+    f.create.mockResolvedValue(parse("Job", example("queued-job")));
+    fireEvent.submit(screen.getByLabelText("音频文件").closest("form")!);
+    await waitFor(() => expect(f.create).toHaveBeenCalledTimes(2));
+    expect(f.create.mock.calls[1]?.[1]).not.toBe(spentKey);
+  });
+
   it("fails safe when a recovery record carries fields this format does not know", () => {
     const f = fixture();
     // A reader from before #707 counts keys strictly, so it rejects a #707 settled record

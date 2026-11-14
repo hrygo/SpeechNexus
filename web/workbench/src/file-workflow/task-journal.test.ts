@@ -81,6 +81,25 @@ describe("session task journal", () => {
     expect(new SessionTaskJournal(storage, "task").load()).toEqual(spent);
   });
 
+  it("roundtrips an unreplayable 413 verdict and never lets it be un-settled or re-labelled", () => {
+    // #729: the request-bytes refusal is a distinct persisted verdict. It shares the
+    // abandon-only shape with `terminal`, but a reader must be able to keep the difference
+    // between "no execution proven" and "proven no execution".
+    const storage = memoryStorage();
+    const journal = new SessionTaskJournal(storage, "task");
+    journal.load();
+    const voided = { ...record(), settled: "unreplayable" } as const;
+    journal.save(voided);
+    expect(new SessionTaskJournal(storage, "task").load()).toEqual(voided);
+    const revived = Object.fromEntries(
+      Object.entries(voided).filter(([field]) => field !== "settled"),
+    ) as unknown as TaskRecord;
+    expect(() => journal.save(revived)).toThrow(TaskJournalError);
+    // Re-labelling would change what the page may claim about an earlier attempt.
+    expect(() => journal.save({ ...voided, settled: "terminal" })).toThrow(TaskJournalError);
+    expect(new SessionTaskJournal(storage, "task").load()).toEqual(voided);
+  });
+
   it("carries the settled verdict through a later rewrite instead of erasing it", () => {
     // No session write follows a settled refusal today, so this guards the write path a
     // future one would use: saving the record again must carry `settled` rather than
@@ -96,6 +115,7 @@ describe("session task journal", () => {
 
   it.each([
     JSON.stringify({ ...record(), settled: "unknown" }),
+    JSON.stringify({ ...record(), settled: "later" }),
     JSON.stringify({ ...record(), settled: true }),
     JSON.stringify({ ...record(), settled: "terminal", operationId: "op-demo" }),
     JSON.stringify({ ...record(), settled: "terminal", jobId: "job-demo", pending: null }),

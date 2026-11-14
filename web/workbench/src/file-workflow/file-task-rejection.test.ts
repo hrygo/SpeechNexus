@@ -78,11 +78,19 @@ function setup({
   cancel = () => {
     throw new Error("Unexpected cancellation request");
   },
-}: { create?: Responder; upload?: Responder; cancel?: Responder } = {}) {
+  failWrite,
+}: {
+  create?: Responder;
+  upload?: Responder;
+  cancel?: Responder;
+  /** Returns true for a write the fixture must refuse, e.g. a one-shot quota error. */
+  failWrite?: (value: string) => boolean;
+} = {}) {
   const data = new Map<string, string>();
   const storage = {
     getItem: (key: string) => data.get(key) ?? null,
     setItem: (key: string, value: string) => {
+      if (failWrite?.(value)) throw new DOMException("Synthetic quota", "QuotaExceededError");
       data.set(key, value);
     },
   };
@@ -150,9 +158,10 @@ describe("replayed-intent settlement predicate", () => {
     [404, "job_not_found", false],
     [405, "method_not_allowed", false],
     [400, "invalid_job_request", false],
-    // The create body above the deployment receive bound (#703). Terminal for this
-    // request, yet still outside the key-check whitelist: it is answered before the
-    // protocol looks the original key up (#707 review M1).
+    // The create body above the deployment receive bound (#703). Unreplayable for this
+    // intent, yet still outside the key-check whitelist: it is answered before the
+    // protocol looks the original key up, so it proves nothing about an earlier
+    // submission under that key (#707 review M1, #729).
     [413, "job_request_too_large", false],
     [422, "unsupported_parameter", false],
     [422, "workspace_not_found", false],
@@ -165,12 +174,14 @@ describe("replayed-intent settlement predicate", () => {
 
 describe("submission rejection disposition", () => {
   // The disposition decides what the user is told: a terminal refusal of this
-  // request, "the submission may already execute", or "this attempt was refused
-  // but the intent may still succeed". An unlisted 5xx is unknown; a 4xx is a
-  // protocol refusal, never an unknown outcome.
+  // request, "the submission may already execute", "this attempt was refused
+  // but the intent may still succeed", or the request-bytes refusal that is spent
+  // for replay yet cannot claim anything about execution (#729). An unlisted 5xx
+  // is unknown; a 4xx is a protocol refusal, never an unknown outcome.
   it.each([
-    // Over the deployment receive bound (#703): deterministic, actionable, terminal.
-    [413, "job_request_too_large", "terminal"],
+    // Over the deployment receive bound (#703): deterministic for replay, but answered
+    // before the key lookup, so it is its own third class rather than "terminal" (#729).
+    [413, "job_request_too_large", "unreplayable"],
     // Other 4xx causes keep the same disposition: the document, not the transport.
     [400, "invalid_job_request", "terminal"],
     [413, "asset_too_large", "terminal"],
@@ -191,10 +202,14 @@ describe("submission rejection disposition", () => {
     // A 5xx or a non-contract status is unknown because the request may have run.
     expect(rejectionDisposition(500, "job_request_too_large", "create")).toBe("unknown-outcome");
     // The declared pair is a refusal, so it must not inherit that classification.
+    expect(rejectionDisposition(413, "job_request_too_large", "create")).toBe("unreplayable");
     expect(rejectionDisposition(413, "job_request_too_large", "create")).not.toBe(
       "unknown-outcome",
     );
+    // Create-scoped: the upload path answers its own `asset_too_large`, and a cancel has
+    // no durable create intent to spend.
     expect(rejectionDisposition(413, "job_request_too_large", "upload")).toBe("terminal");
+    expect(rejectionDisposition(413, "job_request_too_large", "cancel")).toBe("terminal");
   });
 });
 
@@ -379,24 +394,40 @@ describe("submission rejection classes", () => {
     // #703 gave the create body ceiling its own declared answer: 413
     // `job_request_too_large`. It is a deterministic refusal of this request, so the
     // panel must name it as a rejection instead of the generic "the submission may
-    // already have executed" message. The durable intent still stays unknown: that
-    // refusal is answered before the original key is looked up, so it cannot prove an
-    // earlier submission under the same key never became a Job (#707 review M1).
+    // already have executed" message, and must not offer a replay whose body is the same
+    // impossible request (#729). It still may not claim an earlier submission never
+    // executed: the answer precedes the key lookup, so the verdict is `unreplayable`
+    // rather than `terminal` (#707 review M1).
     const f = setup({ create: () => rejection(413, "job_request_too_large") });
     const session = f.make();
     await session.start(file(), "asr-quality");
     const snapshot = session.getSnapshot();
     expect(snapshot.notice).toContain("413");
     expect(snapshot.notice).toContain("job_request_too_large");
-    expect(snapshot.notice).toContain("提交被拒绝");
+    expect(snapshot.notice).toContain("作废");
     expect(snapshot.notice).not.toContain("提交结果未知");
-    expect(snapshot).toMatchObject({ unknown: true, canReplay: true });
-    expect(snapshot.rejected).toBeUndefined();
-    expect(canFinishTask(snapshot)).toBe(false);
-    // The refusal rules out this answer, not an earlier submission: nothing is persisted
-    // as settled, so a reload rebuilds the unknown intent instead of a spent one.
-    expect(f.stored()).toMatchObject({ pending: "create" });
-    expect(f.stored()).not.toHaveProperty("settled");
+    // 已作废: the protocol refused, so the page must not claim the result is unconfirmed.
+    expect(snapshot).toMatchObject({
+      unknown: false,
+      rejected: true,
+      unreplayable: true,
+      canReplay: false,
+    });
+    expect(snapshot.recovery).toBeUndefined();
+    // 不声称已确证无执行: the refusal predates the key lookup, so no execution claim.
+    expect(snapshot.notice).not.toContain("未执行");
+    expect(snapshot.notice).not.toContain("尚未确认");
+    // 可放弃: the explicit end-of-page path replaces a guaranteed-failing replay.
+    expect(canFinishTask(snapshot)).toBe(true);
+    expect(f.stored()).toMatchObject({
+      pending: "create",
+      settled: "unreplayable",
+      jobId: null,
+    });
+    // Replaying is refused client-side: the same bytes would just be refused again.
+    await session.replay();
+    expect(f.stats.createKeys).toHaveLength(1);
+    expect(f.stats.executions).toBe(0);
     session.dispose();
   });
 
@@ -521,6 +552,228 @@ describe("submission rejection classes", () => {
       restored.dispose();
     },
   );
+
+  // #729: 413 is answered by the receive layer before the original key is looked up, so it
+  // cannot settle the intent (#707 M1) — yet replaying the same body can never succeed
+  // either, so "unknown + replay" strands the user in a guaranteed-failing loop. The
+  // refusal is about the request bytes: the intent is void for replay purposes only, and
+  // the page must not claim the key has no Job.
+  it("persists the 413 verdict so a reload still offers the exit", async () => {
+    const f = setup({ create: () => rejection(413, "job_request_too_large") });
+    const first = f.make();
+    await first.start(file(), "asr-quality");
+    first.dispose();
+    const restored = f.make();
+    await restored.restore();
+    expect(restored.getSnapshot()).toMatchObject({
+      unknown: false,
+      rejected: true,
+      unreplayable: true,
+      canReplay: false,
+    });
+    // The reload copy names the refusal and the void intent; it neither revives the
+    // unknown state nor claims the refused submission never executed.
+    expect(restored.getSnapshot().notice).toContain("作废");
+    expect(restored.getSnapshot().notice).not.toContain("结果未知");
+    expect(restored.getSnapshot().notice).not.toContain("未执行");
+    expect(canFinishTask(restored.getSnapshot())).toBe(true);
+    await restored.replay();
+    expect(f.stats.createKeys).toHaveLength(1);
+    expect(f.stats.executions).toBe(0);
+    restored.dispose();
+  });
+
+  it("keeps 401, 403 and 405 unknown and unabandonable on a first attempt", async () => {
+    // Counterexample to broadening the new verdict: these may be answered before the key
+    // lookup too, but unlike 413 the same request becomes meaningful after the environment
+    // is fixed, so the original key must stay the only reconciliation (#707/#723).
+    for (const [status, code] of [
+      [401, "invalid_credentials"],
+      [403, "forbidden"],
+      [405, "method_not_allowed"],
+    ] as const) {
+      const f = setup({ create: () => rejection(status, code) });
+      const session = f.make();
+      await session.start(file(), "asr-quality");
+      const snapshot = session.getSnapshot();
+      expect(snapshot).toMatchObject({ unknown: true, canReplay: true });
+      expect(snapshot.rejected).toBeUndefined();
+      expect(snapshot.unreplayable).toBeUndefined();
+      expect(snapshot.notice).toContain("不能证明原提交未执行");
+      expect(canFinishTask(snapshot)).toBe(false);
+      expect(f.stored()).toMatchObject({ pending: "create" });
+      expect(f.stored()).not.toHaveProperty("settled");
+      session.dispose();
+    }
+  });
+
+  it("keeps the 413 crash window unknown: a lost answer records no verdict", async () => {
+    // The refusal never arrived, so nothing may be persisted: a reload must rebuild the
+    // unconfirmed submission instead of reading it as a spendable intent (#729 AC 3).
+    const f = setup({
+      create: () => {
+        throw new TypeError("Synthetic lost 413 response");
+      },
+    });
+    const session = f.make();
+    await session.start(file(), "asr-quality");
+    const snapshot = session.getSnapshot();
+    expect(snapshot).toMatchObject({ unknown: true, canReplay: true });
+    expect(snapshot.rejected).toBeUndefined();
+    expect(snapshot.unreplayable).toBeUndefined();
+    expect(canFinishTask(snapshot)).toBe(false);
+    expect(f.stored()).not.toHaveProperty("settled");
+    session.dispose();
+    const restored = f.make();
+    await restored.restore();
+    expect(restored.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    expect(restored.getSnapshot().rejected).toBeUndefined();
+    expect(canFinishTask(restored.getSnapshot())).toBe(false);
+    restored.dispose();
+  });
+
+  it("voids a 413 that answers the intent's only create request, even after a failed journal write", async () => {
+    // #729 review M1 (A1-3b): `#submit` assigns `#record` in memory *before* it persists, so
+    // judging by "a record exists" would read this retry as a second answer and pin a page
+    // whose single create request is the one the 413 refused. The verdict must follow "a
+    // request was really sent", which a failed local write does not do.
+    let failedOnce = false;
+    const f = setup({
+      failWrite: (value) => {
+        if (failedOnce || !value.includes('"pending":"create"')) return false;
+        failedOnce = true;
+        return true;
+      },
+      create: () => rejection(413, "job_request_too_large"),
+    });
+    const session = f.make();
+    await session.start(file(), "asr-quality");
+    expect(failedOnce).toBe(true);
+    // The journal write failed, so no request left this page: the intent is still unconfirmed.
+    expect(f.stats.createKeys).toHaveLength(0);
+    expect(session.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    expect(canFinishTask(session.getSnapshot())).toBe(false);
+
+    await session.replay();
+    // The only create request of this intent got the 413, so it is the first answer.
+    expect(f.stats.createKeys).toHaveLength(1);
+    const snapshot = session.getSnapshot();
+    expect(snapshot).toMatchObject({
+      unknown: false,
+      rejected: true,
+      unreplayable: true,
+      canReplay: false,
+    });
+    expect(snapshot.notice).not.toContain("此前已有提交尝试");
+    expect(snapshot.notice).not.toContain("未执行");
+    expect(canFinishTask(snapshot)).toBe(true);
+    expect(f.stored()).toMatchObject({ settled: "unreplayable" });
+    session.dispose();
+  });
+
+  it("keeps a 413 replay of an earlier unobserved attempt unknown instead of voiding it", async () => {
+    // The dangerous shape: attempt 1 was sent, its answer was lost, so it may already have
+    // become a Job. Attempt 2 replays the same key and is refused with 413, which the receive
+    // layer answers *before* the key lookup. Voiding the intent here would let the user
+    // abandon a possibly executed submission and start a duplicate -- the one thing #707
+    // review M1 forbids -- so the verdict may only be written when this 413 is the intent's
+    // first answer (#729).
+    const f = setup({
+      create: (attempt) => {
+        if (attempt === 0) throw new TypeError("Synthetic lost create response");
+        return rejection(413, "job_request_too_large");
+      },
+    });
+    const session = f.make();
+    await session.start(file(), "asr-quality");
+    expect(session.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+
+    await session.replay();
+    const refused = session.getSnapshot();
+    // No exit is granted: the earlier attempt is still the unresolved question.
+    expect(refused).toMatchObject({ unknown: true, canReplay: true });
+    expect(refused.rejected).toBeUndefined();
+    expect(refused.unreplayable).toBeUndefined();
+    expect(canFinishTask(refused)).toBe(false);
+    expect(refused.notice).toContain("已有提交尝试");
+    expect(refused.notice).toContain("不能证明原提交未执行");
+    expect(refused.notice).not.toContain("作废");
+    // Nothing is persisted as a verdict, so a reload rebuilds the same unknown intent.
+    expect(f.stored()).toMatchObject({ pending: "create", jobId: null });
+    expect(f.stored()).not.toHaveProperty("settled");
+    session.dispose();
+
+    const reloaded = f.make();
+    await reloaded.restore();
+    expect(reloaded.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    expect(reloaded.getSnapshot().rejected).toBeUndefined();
+    expect(canFinishTask(reloaded.getSnapshot())).toBe(false);
+    reloaded.dispose();
+  });
+
+  it("keeps an identified execution queryable when a 413 answers a second attempt", async () => {
+    // A non-first 413 gains an identity: the guard withholds the exit, and the identity stays
+    // the reconciliation instead of a replay that would be refused again (#729).
+    const f = setup({
+      create: (attempt) =>
+        attempt === 0
+          ? rejection(401, "invalid_credentials")
+          : rejection(413, "job_request_too_large", { operationId: "op-demo" }),
+    });
+    const session = f.make();
+    await session.start(file(), "asr-quality");
+    await session.replay();
+    const refused = session.getSnapshot();
+    expect(refused).toMatchObject({ unknown: true, canReplay: false });
+    expect(refused.rejected).toBeUndefined();
+    expect(refused.unreplayable).toBeUndefined();
+    expect(refused.recovery?.error.nexus?.operation_id).toBe("op-demo");
+    expect(refused.notice).toContain("读取原执行");
+    expect(canFinishTask(refused)).toBe(false);
+    expect(f.stored()).not.toHaveProperty("settled");
+    session.dispose();
+  });
+
+  it("does not void after a known refusal either, because the durable shape cannot tell them apart", async () => {
+    // A 429 is a refusal that proves nothing executed, yet the journal keeps only
+    // `pending: "create"` -- the same shape a lost answer leaves. The first-answer rule is
+    // therefore applied to every non-first 413: the exit is withheld rather than risk
+    // abandoning a submission whose earlier attempt a reload would still call unknown (#729).
+    const f = setup({
+      create: (attempt) =>
+        attempt === 0
+          ? rejection(429, "job_capacity_exhausted")
+          : rejection(413, "job_request_too_large"),
+    });
+    const session = f.make();
+    await session.start(file(), "asr-quality");
+    expect(canFinishTask(session.getSnapshot())).toBe(false);
+    await session.replay();
+    expect(session.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    expect(session.getSnapshot().unreplayable).toBeUndefined();
+    expect(canFinishTask(session.getSnapshot())).toBe(false);
+    expect(f.stored()).not.toHaveProperty("settled");
+    session.dispose();
+  });
+
+  it("never hides an identified execution behind the 413 verdict", async () => {
+    // A 413 cannot normally name an execution, but an identity that is already known is
+    // the only reconciliation left and must stay queryable (#707 M2).
+    const f = setup({
+      create: () => rejection(413, "job_request_too_large", { operationId: "op-demo" }),
+    });
+    const session = f.make();
+    await session.start(file(), "asr-quality");
+    const snapshot = session.getSnapshot();
+    // Query the identified execution; never replay the oversized body.
+    expect(snapshot).toMatchObject({ unknown: true, canReplay: false });
+    expect(snapshot.rejected).toBeUndefined();
+    expect(snapshot.unreplayable).toBeUndefined();
+    expect(snapshot.recovery?.error.nexus?.operation_id).toBe("op-demo");
+    expect(canFinishTask(snapshot)).toBe(false);
+    expect(f.stored()).not.toHaveProperty("settled");
+    session.dispose();
+  });
 
   it("never settles a refusal that names an identified execution", async () => {
     // An envelope carrying `nexus.operation_id` identifies an execution the user could

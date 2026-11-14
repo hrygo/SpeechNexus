@@ -132,19 +132,24 @@ def test_a_web_route_runs_the_partitions_that_select_the_browser_consumers() -> 
     assert _WORKFLOW["jobs"]["changes"]["outputs"]["excluded_shards"] == (
         "${{ steps.route.outputs.excluded_shards }}"
     )
-    # A Web route buys evidence only if its lanes really select browser consumers;
-    # the guard must be tied to `web` and must fail closed on anything but `true`.
+    # A Web route buys evidence only if its lanes really select a Web consumer;
+    # the guard must be tied to `web`, must read both selection kinds the step name
+    # promises, and must fail closed on anything but `true`. A lane may legitimately
+    # select only one kind, so the two are combined with `&&` on the "not true" side.
     guard = next(
         s
         for s in shards["steps"]
-        if s.get("name") == "Require the Web lanes to select actual browser consumers"
+        if s.get("name") == "Require the Web lanes to select actual Web consumers"
     )
     assert guard["if"] == "${{ needs.changes.outputs.mode == 'web' }}"
     assert guard["env"] == {
         "BROWSER": "${{ steps.integration_tools.outputs.browser }}",
+        "NODE_CONTRACTS": "${{ steps.integration_tools.outputs.node_contracts }}",
         "SHARD": "${{ matrix.shard }}",
     }
-    assert 'if [[ "$BROWSER" != "true" ]]; then' in guard["run"]
+    assert (
+        'if [[ "${BROWSER:-}" != "true" && "${NODE_CONTRACTS:-}" != "true" ]]; then' in guard["run"]
+    )
     assert "exit 1" in guard["run"] and "continue-on-error" not in guard
     tools = next(s for s in shards["steps"] if s.get("id") == "integration_tools")
     assert shards["steps"].index(tools) < shards["steps"].index(guard)

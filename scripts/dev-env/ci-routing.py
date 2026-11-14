@@ -13,10 +13,13 @@ from typing import Literal
 
 Mode = Literal["docs", "web", "no-db", "full"]
 # The integration job declares this many partitions and every partition is derived
-# from the complete collection. `integration-shards.py` gives the Web-capable lanes
-# `max(1, count // 3)` of them (i.e. the last ones), so naming those lanes here keeps
-# the selection rule in one place instead of a second hard-coded copy.
-# `tests/ci/test_ci_routing.py` cross-checks both against the partitioner.
+# from the complete collection. This module does not import `integration-shards.py`
+# (that would pull pytest into a stdlib-only router), so the Web-lane rule below is a
+# second copy of `max(1, count // 3)` over the same count. The copy is what can drift:
+# `tests/ci/test_ci_routing.py::IntegrationLaneTests` imports the real partitioner,
+# partitions a real-shaped collection and asserts that the lanes named here are
+# exactly the lanes that select browser/Node-contract consumers, so a change to
+# either side turns that test red before the workflow can run the wrong lanes.
 INTEGRATION_SHARD_COUNT = 6
 WEB_LANE_SHARE_DIVISOR = 3
 _ROOT_PROSE = {"AGENTS.md", "README.md", "README.en.md"}

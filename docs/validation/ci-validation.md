@@ -150,8 +150,9 @@ Python 测试作业通过 `python-coverage.py run --workers 2` 在同一 runner 
 
 - `coordination`（`Gate: six-shard integration evidence and merged coverage`）仍是 `mode == 'full'` 专属：条件、依赖、六片必然成功、同提交完整互斥集合与实际执行证据、以及合并后的 `fail_under=80` 判定全部不变；`web`/`no-db`/`docs` 下它继续 skipped。本次移动的是**分片作业的展开范围**，不是六片证据门禁的语义。
 - 最终门禁 `Gate: required checks for this change` 新增一条范围映射：`integration_shards` 结果按范围核对——`docs`/`no-db` 期望 `skipped`，`web`/`full` 期望 `success`。这是收紧：改造前 `web` 路由对该作业没有任何要求，分片失败或被跳过都不会阻止合并；现在 `web` 上分片失败、取消或意外跳过都会让受保护检查变红。`docs`/`no-db` 的期望未变（仍不适用），`full` 上的期望与 `coordination` 重合而不冲突。
-- Web 能力道上新增一条失败关闭守卫：`web` 路由下若该片没有选中任何浏览器或 Node 契约消费者（例如收集分类被改坏、分区退化成纯哈希分片），作业直接失败，避免「跑了但没跑浏览器用例」再次以绿呈现。该步骤只在 `web` 路由执行，`full` 路由的步骤与断言不变。
-- `web` 路由下两片仍产出 `coverage-<shard>.data`，但只作为失败证据随分片制品留存：覆盖率仍只在 `full` 的单一判定点合并判定，`web`/`no-db` 不判定（既有缺口不变，见下文维护事项）。
+- Web 能力道上新增一条失败关闭守卫 `Require the Web lanes to select actual Web consumers`：`web` 路由下若该片**既没有**选中浏览器消费者（`steps.integration_tools.outputs.browser`）**也没有**选中 Node HTTP 契约消费者（同一步骤的 `node_contracts`），作业直接失败，避免「跑了但没跑 Web 用例」再次以绿呈现。两路都读 `requirements` 的真实输出，未出现、为空或不是字面 `true` 一律按未选中处理（fail closed）；任意一路为真即通过，因为单个分片可以只承载其中一类。该步骤只在 `web` 路由执行，`full` 路由的步骤与断言不变；判据（`tests/contract/test_ci_workflow.py`）与判定结论（`tests/ci/test_ci_routing.py::WebLaneGuardTests` 用真实 `requirements` 向量执行该步骤脚本）都被钉住。
+- 该守卫只证明「这一片确实在跑 Web 用例」，不证明两类都被选中、也不证明线上集合被完整覆盖：`tests/ci/test_ci_routing.py::IntegrationLaneTests` 用真实分区器（fixture 集合，不是线上 2754 例）钉住每个 Web 能力道都同时选中浏览器与 Node 契约消费者，并逐元素比对确认该 fixture 的全部 Web 用例都落在这些道上；线上集合的覆盖证据仍是 `full` 路由的分片报告。
+- `web` 路由下两片仍产出 `coverage-<shard>.data`，但**没有消费者判断**：它只作为失败证据随分片制品留存，`coordination` 不下载、不合并、不按阈值判定，覆盖率仍只在 `full` 的单一判定点合并判定（`web`/`no-db` 不判定，既有缺口不变，见下文维护事项）。守卫注释与本节都不得把它读成「覆盖率达到 80%」的证据。
 
 ### 复现与验证
 
@@ -168,6 +169,7 @@ python3 -m unittest discover -s tests/ci -v
 - 同改动只加一个 `web/` 注释后推成 `web` 路由：run `43577755898` 全绿，`Integration 4`/`Integration 5` 实际执行（`browser=true` 守卫通过），最终门禁 success。
 - **条件改回 `mode == 'full'`**：基线工作流（`26fd8b39`）加回 #745 的 `aria-label`，`web` 路由 run `43577811710` 全绿、`integration_shards` 整体 skipping —— 证明红灯来自展开条件，而不是别的东西。
 - **`web` 判成 `full`**：同一 `web` 改动按 `full` 判定的作业集就是上表最后一行的实测值（21 行 / 20 执行 / 67.9 runner 分钟），相对本方案多 5 个作业行与约 38 runner 分钟。
+- **守卫的判据向量**：`tests/ci/test_ci_routing.py::WebLaneGuardTests` 直接执行工作流里该步骤的脚本，输入取自真实 `requirements` 输出——只有 Node 契约消费者（`browser=false, node_contracts=true`，浏览器分类器失效时的真实分区结果）与只有浏览器消费者都通过；两类都没有（DB-only 分片）与 output 缺失都失败关闭，并把实际取值写进错误文案。
 - **复现 #745**：在 `web` 路由 head 上把 `aria-label="新单元文本 字数"` 加回去，run `43577800599` 里 `web` 作业 green、`Integration 4` 失败于 `workbench-chapter-create-probe.mjs` 的 Playwright strict mode violation，最终门禁 failure。这是本改动要堵的那一层：组件侧守卫（#756）不存在时，只有真实后端 + 真实数据库 + 真实浏览器那条链能看见它。
 
 ## 覆盖率门禁、采集边界与结构性余量

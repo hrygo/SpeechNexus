@@ -457,20 +457,31 @@ jobs:
           uv run python scripts/dev-env/integration-shards.py requirements \
             --index "${{ matrix.shard }}" --count 6 >> "$GITHUB_OUTPUT"
 
-      - name: Require the Web lanes to select actual browser consumers
-        # A `web` route only buys evidence if these lanes really select the
-        # `*_browser.py` modules or the Node-contract consumers. If the collection
-        # stops classifying any of them as Web, the partitioner falls back to a
-        # plain hash split and this job would pass while executing DB cases only —
-        # the same no-signal state #757 removes, one layer down. Empty, missing or
-        # any other value fails closed; nothing about the full route changes.
+      - name: Require the Web lanes to select actual Web consumers
+        # The Web-capable lanes are the only place the cases they select can run:
+        # the `*_browser.py` / browser-probe modules (`browser`) and the Node HTTP
+        # contract consumers (`node_contracts`). A `web` route buys evidence only if
+        # a lane selects at least one of them; a lane that selects neither has
+        # degenerated into a plain hash split of DB cases — the same no-signal state
+        # #757 removes, one layer down. A lane may legitimately select only one of
+        # the two kinds, so either one is enough. Missing, empty or any other value
+        # fails closed (each variable is compared against the literal `true`), and
+        # the full route never runs this step.
+        #
+        # What this does not cover: that every Web lane still selects both kinds
+        # (pinned against the real partitioner in
+        # `tests/ci/test_ci_routing.py::IntegrationLaneTests`), or anything about
+        # coverage — the `coverage-<shard>.data` files these lanes upload are kept
+        # as failure evidence only. The merged `fail_under=80` judgement is the
+        # `coordination` gate, which stays `full`-only.
         if: ${{ needs.changes.outputs.mode == 'web' }}
         env:
           BROWSER: ${{ steps.integration_tools.outputs.browser }}
+          NODE_CONTRACTS: ${{ steps.integration_tools.outputs.node_contracts }}
           SHARD: ${{ matrix.shard }}
         run: |
-          if [[ "$BROWSER" != "true" ]]; then
-            echo "::error::Web-scope integration partition ${SHARD} selected no browser or Node-contract consumer"
+          if [[ "${BROWSER:-}" != "true" && "${NODE_CONTRACTS:-}" != "true" ]]; then
+            echo "::error::Web-scope integration partition ${SHARD} selected no browser consumer and no Node-contract consumer (browser=${BROWSER:-<empty>}, node_contracts=${NODE_CONTRACTS:-<empty>})"
             exit 1
           fi
 

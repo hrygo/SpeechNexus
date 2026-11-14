@@ -37,10 +37,12 @@ class OriginalTextUnavailableError extends Error {
 /**
  * What a rejected submission settles. `terminal` means the protocol will not accept this
  * same request again (a fresh intent needs its own key); it does not assert that the key
- * has no Job row. `unknown-outcome` means the submission may already execute, and
- * `intent-kept` means this attempt was refused but the same intent may still succeed.
+ * has no Job row. `unknown-outcome` means the submission may already execute,
+ * `intent-kept` means this attempt was refused but the same intent may still succeed, and
+ * `unreplayable` means the refusal is about the bytes of this request: replay is futile
+ * by construction, yet the refusal cannot speak for an earlier attempt either (#729).
  */
-export type RejectionDisposition = "terminal" | "unknown-outcome" | "intent-kept";
+export type RejectionDisposition = "terminal" | "unknown-outcome" | "intent-kept" | "unreplayable";
 
 /** Which submission class was in flight; some codes only settle one of them. */
 export type RejectionOperation = "create" | "cancel" | "upload";
@@ -67,13 +69,9 @@ export type RejectionOperation = "create" | "cancel" | "upload";
  *   the same public Job error table.
  * - 503 `asset_inspection_busy`: the only Asset 503 whose "a new request later may
  *   succeed" statement holds (contracts/speech-openapi.yaml:2682-2689).
- * - 413 `job_request_too_large`: the create body exceeded the deployment's receive
- *   bound (#703). It is a terminal refusal of *this* request -- re-sending the same
- *   bytes cannot be admitted while that bound is in force -- and never an unknown
- *   outcome, so it is listed explicitly instead of relying on the 4xx fallback below.
- *   It is deliberately absent from `settlesReplayedIntent`: the refusal is answered
- *   before the protocol looks up the original idempotency key, so it proves nothing
- *   about an earlier submission under that key (#707 review M1).
+ * 413 `job_request_too_large` (#703) is deliberately not in this table: unlike every
+ * entry above it is a third class, handled by `unreplayable` in `rejectionDisposition`
+ * below, because no single disposition answers both questions it raises (#729).
  */
 const rejectionTable = [
   [503, "job_outcome_unknown", "unknown-outcome"],
@@ -81,7 +79,6 @@ const rejectionTable = [
   [503, "job_admission_contended", "intent-kept"],
   [503, "asset_inspection_busy", "intent-kept"],
   [429, "job_capacity_exhausted", "intent-kept"],
-  [413, "job_request_too_large", "terminal"],
 ] as const satisfies readonly (readonly [number, string, RejectionDisposition])[];
 
 /** Exported for the disposition table's own tests; the session is the only caller. */
@@ -111,6 +108,20 @@ export function rejectionDisposition(
   // admitted: keep the intent unknown instead of spending it.
   if (operation !== "cancel" && status === 409 && code === "execution_cleanup_pending")
     return "unknown-outcome";
+  // 413 `job_request_too_large` is the one refusal that is about the bytes of *this
+  // request* rather than about the intent under the key, and it is the only class that a
+  // terminal-versus-unknown choice cannot answer without lying (#729):
+  // - `unknown-outcome` would keep one action, replaying the same body under the key. The
+  //   body cannot change, so the answer can never change either: the user is pinned to a
+  //   loop whose only offered action is guaranteed to fail (#703/#707).
+  // - `terminal` would clear the intent, and the page would then present it as settled —
+  //   but the receive layer answers 413 before it looks the original key up, so it proves
+  //   nothing about an earlier submission under that key (#707 review M1).
+  // The disposition is therefore a third class: settled as a *replay* question, unsettled
+  // as an *execution* question. Create-scoped like the 409 rule above, because the stable
+  // code names the Job request; the upload path answers its own `asset_too_large`.
+  if (status === 413 && code === "job_request_too_large" && operation === "create")
+    return "unreplayable";
   // Any other 4xx contract refusal settles *this attempt*: the protocol does not accept
   // the same request again (a fresh intent needs its own key), so the unknown flag may be
   // cleared. Persisting that verdict for a create intent additionally requires
@@ -139,6 +150,11 @@ export function rejectionDisposition(
  * submission whose answer was never observed, and must leave the intent unknown (#707
  * review M1). The list only covers `asr`/`tts` creates, the only kinds this client issues;
  * the voice-draft kinds resolve part of their binding before the replay.
+ *
+ * 413 stays out of this list, and must: the receive layer answers it before the key lookup,
+ * so it proves nothing about an earlier attempt. It is not thereby unrecoverable — the
+ * exit comes from `rejectionDisposition`'s `unreplayable` verdict, which records that the
+ * *request* can never be accepted again without pretending the key has no Job (#729).
  *
  * The publication/asset 422s belong to the same class even though they read mutable facts:
  * `_submit_new` → `_prepare_job` resolves them only after the initial replay
@@ -247,6 +263,14 @@ interface TaskView {
    * for an unknown outcome, which stays reconcilable by its original key.
    */
   readonly rejected?: boolean;
+  /**
+   * The refusal was about the bytes of this request (413), so the durable intent can never
+   * be replayed successfully, but the refusal also proves nothing about an earlier attempt
+   * under the key (#729). It always accompanies `rejected`, and only changes what the page
+   * may claim: the intent is void, not "no execution confirmed". A `terminal` refusal never
+   * sets it, because there the protocol answered after checking the original key.
+   */
+  readonly unreplayable?: boolean;
   readonly assetRecoveryId?: string | undefined;
   readonly notice: string;
   readonly asset?: FileContracts["Asset"];
@@ -271,6 +295,24 @@ export class FileTaskSession {
   #upload: UploadRecord | null;
   #assetHintId: string | null = null;
   #uploadHasBeenAttempted = false;
+  /**
+   * Whether a create request has already been issued for this durable intent. A 413 may void
+   * the intent only when this attempt is the first *sent* one: an earlier request under the
+   * same key may already have become a Job, and the receive layer answers 413 before it looks
+   * the key up, so it cannot rule that out (#729, #707 review M1).
+   *
+   * The fact is "a request was sent", not "a record exists": `#submit` assigns `#record` in
+   * memory before it persists, so a failed journal write would otherwise read as a second
+   * attempt and pin a page whose only create was the one that got the 413 (#729 review M1).
+   * It flips only right before the request is actually sent. A restored create record starts
+   * as issued because the record is written immediately before the request, so a crash in
+   * between is indistinguishable from a sent one -- the safe direction, since treating it as
+   * first could void a possibly executed submission. A restored upload record never carried
+   * a create request, so it starts unissued.
+   */
+  #createEverIssued = false;
+  /** The entry snapshot of `!#createEverIssued` for the request in flight; see `#submit`. */
+  #createAttemptIsFirst = false;
   #view: TaskView = {
     busy: false,
     inputFixed: false,
@@ -297,6 +339,7 @@ export class FileTaskSession {
     this.#uploadHasBeenAttempted = saved !== null;
     this.#view = { ...this.#view, inputFixed: saved !== null };
     this.#record = saved?.version === 1 || saved?.version === 2 ? saved : null;
+    this.#createEverIssued = this.#record !== null;
     this.#upload = isUploadRecord(saved) ? saved : null;
     this.#assetHintId = uploadHint(this.#upload);
     this.#uploadKey = this.#upload?.uploadKey ?? crypto.randomUUID();
@@ -340,26 +383,30 @@ export class FileTaskSession {
       this.#model = record.model;
       // The submit body is rebuilt on demand: v2 text lives only in the uploaded asset,
       // never in this record, so replay reads it back instead of trusting local storage.
-      const settled = record.settled === "terminal";
+      const settled = record.settled;
       // A settled cancel intent names its Job and stays readable, so it says which
       // class was refused; only the refusal itself is final (#723).
-      const settledCancel = settled && record.pending === "cancel";
+      const settledCancel = settled === "terminal" && record.pending === "cancel";
       this.#view = {
         ...this.#view,
         // `pending` alone cannot tell a submission still awaiting its answer from one the
-        // protocol already refused; only an observed terminal refusal persists `settled`,
-        // so a reload keeps that distinction instead of rebuilding every pending create
-        // as unknown (#707) and every pending cancel as "outcome unknown" (#723). The
-        // crash window never carries the field and stays unknown.
-        unknown: record.pending !== null && !settled,
-        canReplay: record.pending !== null && record.operationId === null && !settled,
+        // protocol already refused; only an observed refusal persists `settled`, so a
+        // reload keeps that distinction instead of rebuilding every pending create as
+        // unknown (#707) and every pending cancel as "outcome unknown" (#723). The crash
+        // window never carries the field and stays unknown.
+        unknown: record.pending !== null && settled === undefined,
+        canReplay: record.pending !== null && record.operationId === null && settled === undefined,
         cursor: record.cursor ?? undefined,
-        ...(settled ? { rejected: true } : {}),
-        notice: settled
-          ? settledCancel
-            ? "已找到原任务身份；该取消请求已被协议确定性拒绝并作废。请读取原任务核对，再显式收尾。"
-            : "已找到原任务身份；该意图已被协议确定性拒绝并作废。"
-          : "已找到原任务身份。请恢复读取；未确认的请求仅按原键重放。",
+        ...(settled === undefined ? {} : { rejected: true }),
+        // The two settled values differ only in what the page may claim, never in what the
+        // user can do: both are abandoned explicitly and both are unreplayable.
+        ...(settled === "unreplayable" ? { unreplayable: true } : {}),
+        notice:
+          settled === "unreplayable"
+            ? "已找到原任务身份；该请求因请求体超过本部署的接收上限被拒绝，原意图作废。"
+            : settledCancel
+              ? "已找到原任务身份；该取消请求已被协议确定性拒绝并作废。请读取原任务核对，再显式收尾。"
+              : "已找到原任务身份；该意图已被协议确定性拒绝并作废。",
       };
       if (this.#view.canReplay)
         this.#replay =
@@ -604,6 +651,71 @@ export class FileTaskSession {
           canReplay: true,
           notice: `提交被暂时拒绝（${contractError.status} ${contractError.code}）；原意图已保留，按原键重试不会产生第二次执行，不要新建任务。`,
         });
+      } else if (contractError && rejection === "unreplayable") {
+        // The refusal is about the bytes of this request (#729). Replaying it can only
+        // produce the same refusal, so the durable intent is spent *for replay* — but the
+        // answer was produced before the protocol looked up the original key, so it cannot
+        // be presented as proof that nothing executed. Both facts must survive reload,
+        // which is why the verdict is persisted as `unreplayable` and not as `terminal`.
+        // An identified execution would be the only reconciliation left, so it is never
+        // hidden behind this verdict: any known identity keeps the unknown state instead
+        // (#707 M2). This does not submit a replacement; the user abandons explicitly in
+        // the UI and the Host removes this record, so the next intent gets a fresh key.
+        const identified =
+          Boolean(this.#view.job) ||
+          Boolean(this.#record?.jobId) ||
+          Boolean(this.#record?.operationId) ||
+          Boolean(contractError.detail.error.nexus?.operation_id);
+        if (!this.#createAttemptIsFirst) {
+          // This intent already sent an earlier create request, so a Job may exist under the
+          // original key and the 413 -- answered before the key lookup -- says nothing about
+          // it. Voiding the intent here would hand the user an explicit "abandon and start
+          // over" over a possibly executed submission, which is exactly the duplicate this
+          // card must not create (#707 review M1). Keep the unknown state, its identity and
+          // the replay handle: the original key remains the only reconciliation. The state is
+          // unconditional because the durable shape (`pending: "create"`, no Job, no verdict)
+          // is identical for a lost answer, so a narrower page state would contradict the
+          // one a reload rebuilds.
+          this.#replay = async () => {
+            await action();
+          };
+          this.#update({
+            unknown: true,
+            canReplay: !identified,
+            recovery: retainRecovery(this.#view.recovery, contractError.detail),
+            notice: identified
+              ? `提交被拒绝（${contractError.status} ${contractError.code}），且已有可查询的执行身份；请读取原执行核对成功、失败或不确定，不要新建任务。`
+              : `提交被拒绝（${contractError.status} ${contractError.code}）：请求体超过本部署的接收上限，但该意图此前已有提交尝试，这次拒绝不能证明原提交未执行；保留原键与未知状态，不要新建任务。`,
+          });
+        } else if (identified) {
+          // Query, do not replay: the identity is the only reconciliation, and re-sending
+          // the same bytes would be refused again before it could ever reach that Job.
+          this.#replay = undefined;
+          this.#update({
+            unknown: true,
+            canReplay: false,
+            recovery: retainRecovery(this.#view.recovery, contractError.detail),
+            notice: `提交被拒绝（${contractError.status} ${contractError.code}），且已有可查询的执行身份；请读取原执行核对成功、失败或不确定，不要新建任务。`,
+          });
+        } else {
+          this.#replay = undefined;
+          try {
+            // A reload must keep the verdict (the original key can never be replayed), so
+            // it is recorded before it is shown. Only an *observed* refusal reaches this
+            // point: a lost answer persists no `settled` field and reloads as unknown.
+            this.#persist({ settled: "unreplayable" });
+          } catch {
+            /* The protocol's answer still stands in this page; a reload degrades to unknown. */
+          }
+          this.#update({
+            unknown: false,
+            canReplay: false,
+            recovery: undefined,
+            rejected: true,
+            unreplayable: true,
+            notice: `提交被拒绝（${contractError.status} ${contractError.code}）：请求体超过本部署的接收上限，这次请求被拒绝、原意图作废；同一请求不能按原键重放，请结束本页并用新的幂等键新建。`,
+          });
+        }
       } else if (contractError && rejection === "terminal") {
         // This branch settles *this attempt*: the protocol does not accept the same
         // request again (e.g. 422 `job_text_asset_unsupported`), so a fresh intent with its
@@ -621,13 +733,16 @@ export class FileTaskSession {
         // (a lost answer keeps the record in the *same* shape as a refusal). Only a
         // refusal the protocol emits after it has checked the original key proves that
         // earlier submission never took effect. A refusal that may precede that check
-        // (401/403/404/405 auth and gateway answers, body-level 400/413) cannot speak for
+        // (401/403/404/405 auth and gateway answers, body-level 400) cannot speak for
         // the earlier attempt, so it stays unknown and the original key remains the only
         // reconciliation. This is the temporal gap that makes a state-only predicate
         // unsafe (#707 review M1). The cancel path keeps the same rule where it applies,
         // but its record also names the Job, so a refusal that is an answer about that
         // Job (`settlesCancelAttempt`) spends only the cancellation request and leaves the
         // identity readable: no reply can bring the Job back or accept its cancellation.
+        // A body-level 413 never reaches this branch: it is the `unreplayable` class
+        // above, where the original key is dead as well, so neither replay nor unknown is
+        // a truthful answer (#729).
         // An identified original execution stays queryable, so it is never settled: that
         // would hide the only unresolved submission the user could reconcile.
         const envelopeOperationId = contractError.detail.error.nexus?.operation_id;
@@ -831,9 +946,14 @@ export class FileTaskSession {
 
   async #submit() {
     const signal = this.#lifetime.signal;
-    // A terminally refused intent is spent: resubmitting it would just repeat the same
-    // refusal, and the UI only offers explicit abandonment (#707).
-    if (this.#view.rejected || this.#record?.settled === "terminal") return;
+    // A refused intent is spent: resubmitting it would just repeat the same refusal, and
+    // the UI only offers explicit abandonment (#707). Both settled values are spent; the
+    // `unreplayable` one adds that the refusal was about the request bytes (#729).
+    if (this.#view.rejected || this.#record?.settled !== undefined) return;
+    // Read before the record below is created and before this request is sent: see
+    // `#createEverIssued` for why "already sent" -- not "record exists" -- is the proof that
+    // no earlier create request exists for this intent.
+    const firstCreateAttempt = !this.#createEverIssued;
     if (!this.#record) {
       if (!this.#view.asset) {
         if (this.#assetHintId) throw new Error("Read the original Asset first");
@@ -870,6 +990,10 @@ export class FileTaskSession {
     const command: FileContracts["JobCreateRequest"] = await this.#submitCommand(this.#record);
     this.#text = undefined;
     this.#persist({ pending: "create" });
+    // The journal write above succeeded, so the request really is going out from here on:
+    // record that (and keep the entry snapshot for this attempt's error branch).
+    this.#createAttemptIsFirst = firstCreateAttempt;
+    this.#createEverIssued = true;
     const job = await this.#client.create(command, this.#createKey, signal);
     this.#acceptJob(job, { jobId: job.id, pending: null, operationId: null });
     this.#update({ job, notice: "任务已接收。读取当前状态或连接任务事件。" });

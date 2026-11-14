@@ -384,6 +384,14 @@ deleted. The sweep injects at the router's boundaries rather than reproducing a
 deployment: it states which statuses an operation's handler can answer, not which
 exceptions production sends it.
 
+A fixed injection matrix cannot see a branch added for a type it never raises, so two
+source-level checks in the same module close that path: every branch that answers a
+status must catch a type the matrix raises, and every refusal code a router names as a
+literal must be declared for the operations that router dispatches, or already
+registered. Because the registry follows the handler chains rather than production
+traffic, its size measures the declaration surface the fallback covers, not the number
+of real gaps.
+
 ## Explicit complete speech HTTP selection
 
 ```bash

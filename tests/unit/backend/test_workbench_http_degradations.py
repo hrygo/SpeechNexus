@@ -19,27 +19,56 @@ through its real router with the two boundaries stubbed:
 A pair is *degraded* exactly when the router answers and the layer logs
 ``workbench error response outside the operation's declarations``; the sweep records that
 pair and checks the answer it observed (status from ``ERRORS``, JSON content type, an
-``ErrorResponse`` body, echoed request id). ``DEGRADATIONS`` below is the frozen answer.
+``ErrorResponse`` body, echoed request id). ``DEGRADATIONS`` below is the frozen answer:
+the set on which the declarations and the handler chains currently disagree.
 
-Two properties worth stating because they are the reason this registry is not a list of
-production incidents: the sweep freezes what the *handler chains* can answer, not what
-today's services happen to raise (a listing route is therefore registered for a 409 that
-only a mutation would produce -- the shared chain decides the answer, not the caller), and
-the 408 is injected at the boundary instead of streaming a slow body, which keeps the
-sweep deterministic without pretending the ingress path itself is covered here (it is
-covered by ``test_workbench_http_error_fallback.py``).
+What this guard sees, and what it cannot:
+
+* reversed declarations and a new routed operation are always visible -- a declaration
+  that closes a gap leaves a stale pair, and a new operation without declarations adds
+  pairs;
+* a branch added for a *new exception type* is invisible to the sweep, because the matrix
+  only raises the types it knows. ``test_every_answering_branch_is_driven_by_the_sweep``
+  closes that path statically: every branch that answers a status must catch a type the
+  matrix raises, so such a branch fails until the matrix grows with it (this is exactly
+  the hole MF-3 found -- an added ``except OSError`` that answered 429 stayed green);
+* a new *value* of an already-injected type is driven only if the matrix raises that
+  value (a brand-new port code, for instance).
+  ``test_literal_refusal_codes_are_declared_or_registered`` covers the codes a router
+  names itself; a code only a port can return stays invisible until the matrix raises it;
+* an operation the app does not route answers nothing today and is outside the sweep
+  entirely; it enters the registry the moment it gains a route.
+
+The sweep freezes what the *handler chains* can answer, not what today's services happen
+to raise, and a large share of the pairs is therefore chain capability: a read-only route
+is registered for a 409 its service never raises because the shared chain decides the
+answer, not the caller. The count is the size of the declaration surface the fallback
+covers, **not** the number of real gaps in production -- closing one real gap can delete
+several pairs that only ever described the chain. The 408 is likewise injected at the
+boundary instead of streaming a slow body, which keeps the sweep deterministic without
+pretending the ingress path itself is covered here (that is
+``test_workbench_http_error_fallback.py``).
+
+The sweep also asserts that every routed operation was observed calling its service
+(``NO_SERVICE`` lists the three routes that cannot, each for a reason), so a sweep that
+silently stopped driving an operation fails instead of reporting "nothing degrades". For
+those three routes the pair set stays blind to a branch only they can reach -- they answer
+from composition state, so no injection drives their dispatch -- though the two static
+tests still name such a branch.
 
 Changing this set is a decision, in both directions:
 
 * a new pair means a client answer is now structural-only -- register the pair with the
   issue that closes the gap and why answering without a declaration is allowed meanwhile;
-* a pair that disappeared means the operation now declares that response -- delete the
-  pair. The registry fails until it agrees with the declarations, so neither direction can
-  happen silently.
+* a pair that disappeared means the operation now declares that response -- delete it.
+  The registry fails until it agrees with the declarations and with the answering branches,
+  so a changed answer cannot pass unreviewed.
 """
 
 from __future__ import annotations
 
+import ast
+import builtins
 import json
 import logging
 import re
@@ -54,6 +83,7 @@ from speechnexus_contracts import workbench_http
 from speechnexus_contracts.workbench import parse
 
 from speechnexus_backend.workbench.app import create_app
+from speechnexus_backend.workbench.application.books import OrdinalConflictError
 from speechnexus_backend.workbench.application.downloads import DownloadError
 from speechnexus_backend.workbench.application.llm import LlmError
 from speechnexus_backend.workbench.application.render_units import (
@@ -62,14 +92,25 @@ from speechnexus_backend.workbench.application.render_units import (
     RenderSubmissionRejectedError,
     RenderSubmissionUnknownError,
 )
+from speechnexus_backend.workbench.application.saved_assets import ObjectZoneUnavailableError
 from speechnexus_backend.workbench.application.transcript_sources import TranscriptSourceError
 from speechnexus_backend.workbench.application.version_ports import VersionStoreError
 from speechnexus_backend.workbench.application.versions import (
     IdempotencyConflictError,
     ResourceNotFoundError,
 )
+from speechnexus_backend.workbench.application.voices import VoiceCatalogueUnavailableError
 from speechnexus_backend.workbench.domain.assistant import AssistantStateConflictError
+from speechnexus_backend.workbench.domain.deletion import (
+    ConfirmationMismatchError,
+    DeletionDependencyConflictError,
+    DeletionOwnerMismatchError,
+    DeletionPlanChangedError,
+    DeletionPlanExpiredError,
+)
 from speechnexus_backend.workbench.domain.exports import ExportStateConflictError
+from speechnexus_backend.workbench.domain.meetings import MeetingSourceUnsupportedError
+from speechnexus_backend.workbench.domain.minutes_tasks import MinutesTaskConflictError
 from speechnexus_backend.workbench.domain.render_units import RenderAttemptConflictError
 from speechnexus_backend.workbench.domain.versions import (
     InvalidVersionChangeError,
@@ -107,8 +148,8 @@ DEGRADATIONS: dict[int, dict[str, Any]] = {
     400: {
         "issue": "#777",
         "reason": (
-            "The shared ingress refuses a malformed or contract-invalid request on every "
-            "route, and these operations never declared 400."
+            "The shared ingress refuses a malformed or contract-invalid request on every route, "
+            "and these operations never declared 400."
         ),
         "operations": frozenset(
             {
@@ -122,8 +163,8 @@ DEGRADATIONS: dict[int, dict[str, Any]] = {
     404: {
         "issue": "#777",
         "reason": (
-            "The shared not-found branch answers 404 on this route, and the "
-            "operation's declaration list omits it."
+            "The shared not-found branch answers 404 on this route, and the operation's "
+            "declaration list omits it."
         ),
         "operations": frozenset(
             {
@@ -153,8 +194,8 @@ DEGRADATIONS: dict[int, dict[str, Any]] = {
     409: {
         "issue": "#777",
         "reason": (
-            "The shared conflict branch (revision, idempotency, render attempt) answers 409 "
-            "on this route, and the declaration list omits it."
+            "The shared conflict branch (revision, idempotency, render attempt) answers 409 on "
+            "this route, and the declaration list omits it."
         ),
         "operations": frozenset(
             {
@@ -185,8 +226,8 @@ DEGRADATIONS: dict[int, dict[str, Any]] = {
     410: {
         "issue": "#777",
         "reason": (
-            "The shared source/download expiry branch answers 410, and the declaration list omits "
-            "it."
+            "The shared source/download expiry branch answers 410, and the declaration list "
+            "omits it."
         ),
         "operations": frozenset(
             {
@@ -224,8 +265,8 @@ DEGRADATIONS: dict[int, dict[str, Any]] = {
     415: {
         "issue": "#777",
         "reason": (
-            "The shared ingress refuses a non-JSON media type for a body on these "
-            "operations, which never declared 415."
+            "The shared ingress refuses a non-JSON media type for a body on these operations, "
+            "which never declared 415."
         ),
         "operations": frozenset(
             {
@@ -237,8 +278,8 @@ DEGRADATIONS: dict[int, dict[str, Any]] = {
     422: {
         "issue": "#777",
         "reason": (
-            "A shared refusal branch reports a semantic rejection as 422, and the declaration list "
-            "omits it."
+            "A shared refusal branch reports a semantic rejection as 422, and the declaration "
+            "list omits it."
         ),
         "operations": frozenset(
             {
@@ -259,8 +300,10 @@ DEGRADATIONS: dict[int, dict[str, Any]] = {
                 "getTranscriptRevision",
                 "listBooks",
                 "listChapters",
+                "listProjects",
                 "listRenderUnits",
                 "listRenderUnitsV2",
+                "listTranscripts",
             }
         ),
     },
@@ -459,6 +502,20 @@ INJECTIONS: tuple[BaseException, ...] = (
             status_code=429, code="job_capacity_exhausted", param=None, retry_after_seconds=7
         )
     ),
+    # The remaining refusal types each router names; the static test below fails if a
+    # router grows a branch for a type this tuple does not raise.
+    OrdinalConflictError(),
+    VoiceCatalogueUnavailableError(),
+    ObjectZoneUnavailableError(),
+    MeetingSourceUnsupportedError(),
+    MinutesTaskConflictError(),
+    DeletionOwnerMismatchError(),
+    ConfirmationMismatchError(),
+    DeletionPlanExpiredError(),
+    DeletionPlanChangedError(),
+    DeletionDependencyConflictError(),
+    # A query a router refuses locally, before any call leaves the workbench.
+    ValueError(PRIVATE),
 )
 
 
@@ -622,3 +679,131 @@ def test_registry_entries_state_an_issue_and_a_reason() -> None:
         assert entry["issue"].startswith("#"), status
         assert entry["reason"].strip(), status
         assert entry["operations"], f"status {status} has no operations"
+
+
+# ---- Static half of the guard -------------------------------------------------------
+#
+# The sweep is a fixed matrix, so a branch added for a *new* exception type would never be
+# driven and its pairs would never appear: the registry could stay green while the layer
+# silently grew a degradation no test can see. These two checks close that path from the
+# source side. The first requires every branch that answers a status to catch a type the
+# matrix actually raises; the second requires every refusal code a router names as a
+# literal to be declared for the operations that router actually dispatches, or already
+# registered.
+
+RESPONSE_CALLS = frozenset({"_error", "_unexpected_error"})
+DECLARED = {
+    operation["operationId"]: {int(status) for status in operation["responses"]}
+    for item in workbench_http.contract()["paths"].values()
+    for operation in item.values()
+}
+
+
+def _module_operations() -> dict[str, frozenset[str]]:
+    """Which operations each router module serves, as the live app registers them."""
+    app = _app(RuntimeError(PRIVATE))
+    served: dict[str, set[str]] = {}
+    for context in iter_route_contexts(app.routes):
+        route = context.original_route
+        if isinstance(route, APIRoute) and route.operation_id:
+            module = route.endpoint.__module__.rsplit(".", 1)[-1]
+            served.setdefault(module, set()).add(route.operation_id)
+    return {module: frozenset(names) for module, names in served.items()}
+
+
+SERVED = _module_operations()
+
+
+def _resolve(module: Any, expression: ast.expr) -> Any:
+    if isinstance(expression, ast.Name):
+        # A builtin (`OSError`, `ValueError`) is not an attribute of the module.
+        return getattr(module, expression.id, None) or builtins.__dict__.get(expression.id)
+    if isinstance(expression, ast.Attribute):
+        base = _resolve(module, expression.value)
+        return None if base is None else getattr(base, expression.attr, None)
+    if isinstance(expression, ast.Tuple):
+        return [_resolve(module, element) for element in expression.elts]
+    return None
+
+
+def _answering_branches(module: Any) -> set[type]:
+    """Exception types whose handler in this router answers a status."""
+    tree = ast.parse(Path(module.__file__).read_text())
+    caught: set[type] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ExceptHandler) or node.type is None:
+            continue
+        answers = any(
+            isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Name)
+            and call.func.id in RESPONSE_CALLS
+            for call in ast.walk(node)
+        )
+        if not answers:
+            continue
+        resolved = _resolve(module, node.type)
+        for candidate in resolved if isinstance(resolved, list) else [resolved]:
+            if isinstance(candidate, type):
+                caught.add(candidate)
+    return caught
+
+
+def _literal_refusals(module: Any) -> set[str]:
+    """Codes this router names literally, plus ``internal_error`` when it answers 500s."""
+    tree = ast.parse(Path(module.__file__).read_text())
+    codes: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+            continue
+        if node.func.id == "_unexpected_error":
+            codes.add("internal_error")
+        elif (
+            node.func.id == "_error"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ):
+            codes.add(node.args[0].value)
+    return codes
+
+
+def test_every_answering_branch_is_driven_by_the_sweep() -> None:
+    injected = {type(failure) for failure in INJECTIONS}
+    uncovered: list[str] = []
+    for module in INTERFACE_MODULES:
+        name = module.__name__.rsplit(".", 1)[-1]
+        for caught in sorted(_answering_branches(module), key=lambda item: item.__name__):
+            # The unclassified failure the sweep raises is an Exception subclass, so the
+            # catch-all branch is driven; every other branch needs its own instance.
+            if caught is Exception or caught in injected:
+                continue
+            uncovered.append(f"{name}: except {caught.__name__}")
+    assert not uncovered, (
+        "these router branches answer a status but the sweep never raises them, so their "
+        "declarations were never exercised and their pairs would appear silently. Add an "
+        "instance to INJECTIONS, then register or remove the pairs it produces:\n  "
+        + "\n  ".join(uncovered)
+    )
+
+
+def test_literal_refusal_codes_are_declared_or_registered() -> None:
+    frozen = _frozen()
+    unaccounted: list[str] = []
+    for module in INTERFACE_MODULES:
+        name = module.__name__.rsplit(".", 1)[-1]
+        for code in sorted(_literal_refusals(module)):
+            assert code in ERRORS, f"{name} names {code!r}, which the error table lacks"
+            status = ERRORS[code][0]
+            # Only operations whose dispatch can actually reach a service: the routes in
+            # NO_SERVICE answer from composition state (or refuse before dispatch), so the
+            # branch they name here is unreachable for them by construction.
+            for operation in sorted(SERVED.get(name, frozenset()) - NO_SERVICE):
+                if status in DECLARED[operation] or (operation, status) in frozen:
+                    continue
+                unaccounted.append(f"{name}: {operation} answers {status} ({code})")
+    assert not unaccounted, (
+        "these refusal codes are emitted for operations whose declaration list omits the "
+        "status, and the pair is not registered either. Declare the response for the "
+        "operation, or register the (operation, status) pair with its issue:\n  "
+        + "\n  ".join(unaccounted)
+    )

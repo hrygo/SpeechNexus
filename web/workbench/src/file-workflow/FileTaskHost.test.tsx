@@ -6,7 +6,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import fixtures from "../../../../tests/fixtures/contracts/file-workflow.json";
 import { FileTaskHost } from "./FileTaskHost";
 import { inputFingerprint } from "./input-fingerprint";
-import { FileTaskSession } from "./file-task-session";
+import { FileTaskSession, readTargetAction, type ReadTarget } from "./file-task-session";
 import { SessionTaskJournal } from "./task-journal";
 import { SpeechFileClient, SpeechResponseError, parse } from "./speech-file-client";
 
@@ -53,6 +53,17 @@ function fixture() {
   const fetch = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("unexpected network"));
   return { data, storage, client, upload, create, getJob, getAsset, cancel, fetch };
 }
+/**
+ * The read targets a rendered sentence names, read from the product's own phrase table (#782).
+ * No copy is compared verbatim here: the panel has one page and one read, so the status line and
+ * the alert must name the same object or the user is told to look in two places at once.
+ */
+function namedReads(copy: string): ReadTarget[] {
+  return (Object.keys(readTargetAction) as ReadTarget[]).filter((target) =>
+    copy.includes(readTargetAction[target]),
+  );
+}
+
 function selectInput(model = "asr-quality") {
   fireEvent.change(screen.getByLabelText("转写模型"), { target: { value: model } });
   fireEvent.change(screen.getByLabelText("音频文件"), {
@@ -534,7 +545,44 @@ describe("production Workbench file host", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("请核对原素材");
     expect(screen.getByRole("button", { name: "按原键重放" })).toBeEnabled();
     expect(screen.getByTestId("file-job-status")).toHaveTextContent("尚未确认");
-    expect(screen.getByText(/该请求结果尚未确认，请按原输入与原键重放/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/该请求结果尚未确认，请核对原素材，或按原输入与原键重放/),
+    ).toBeInTheDocument();
+    // #782 review M3: this is the pure recovery crash window -- the state that motivated the
+    // card. Its status line used to name nothing while the alert asked for the input Asset,
+    // so the one page told the reader to look in two places. Both now name the Asset.
+    const status = document.querySelector(".file-task-detail > p[role=status]");
+    expect(namedReads(status?.textContent ?? "")).toEqual(namedReads(alert.textContent ?? ""));
+    expect(namedReads(status?.textContent ?? "")).toEqual(["asset"]);
+  });
+  it("names one read target on both the status line and the alert of the same page", async () => {
+    const f = fixture();
+    // The crash window is durable before the page opens; the replay then loses its own answer,
+    // so the page holds an unconfirmed submission and the one readable identity is the input
+    // Asset -- never the Job this copy used to name (#782).
+    f.data.set(key, JSON.stringify(stored(null, "create")));
+    f.create.mockRejectedValue(new TypeError("synthetic lost answer"));
+    render(<FileTaskHost client={f.client} storage={f.storage} />);
+    fireEvent.click(screen.getByRole("button", { name: "按原键重放" }));
+    await waitFor(() => expect(f.create).toHaveBeenCalledTimes(1));
+    const alert = await screen.findByRole("alert");
+    // The panel's own status line (FileTaskPanel.tsx `role=status`), selected by attribute the
+    // way the behavior spec selects it: a quoted role string here would also be read as
+    // evidence for the unrelated workbench-status operation by
+    // `scripts/dev-env/check-operation-coverage.py`, whose committed map must stay current.
+    const status = document.querySelector(".file-task-detail > p[role=status]");
+    expect(status).not.toBeNull();
+    // The same-page assertion: one object for the two sentences, because there is one read.
+    expect(namedReads(status?.textContent ?? "")).toEqual(namedReads(alert.textContent ?? ""));
+    expect(namedReads(status?.textContent ?? "")).toEqual(["asset"]);
+    expect(screen.getByRole("button", { name: "按原键重放" })).toBeEnabled();
+    // Ground truth (it is NOT the equality guard): the page really reads what the copy names.
+    // This route assertion and the click below catch "promised a read it does not perform";
+    // they cannot catch "the two sentences disagree", which only the equality assertion above
+    // covers -- deleting just that line leaves both these green (review M4).
+    fireEvent.click(screen.getByRole("button", { name: "读取原状态" }));
+    await waitFor(() => expect(f.getAsset).toHaveBeenCalledTimes(1));
+    expect(f.getAsset.mock.calls[0]?.[0]).toBe("asset-demo");
   });
   it("renders the execution identity the alert asks to read", () => {
     const f = fixture();
@@ -588,6 +636,10 @@ describe("production Workbench file host", () => {
     expect(named.length > 0).toBe(!refresh.hasAttribute("disabled"));
     expect(copy.includes("重放")).toBe(replay);
     expect(copy.includes("重放")).toBe(!replayButton.hasAttribute("disabled"));
+    // #782 review M3: the recovery path is where this defect started, so every reloaded shape
+    // must word its status line from the same target the alert names on that page.
+    const status = document.querySelector(".file-task-detail > p[role=status]");
+    expect(namedReads(status?.textContent ?? "")).toEqual(named);
     expect(f.getJob).not.toHaveBeenCalled();
   });
   it("reads a durable Asset hint without upload and waits for explicit continue", async () => {

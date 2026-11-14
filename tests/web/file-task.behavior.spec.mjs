@@ -309,7 +309,7 @@ test("成功路径：提交得到 Job，读取后结果与制品可见", async (
   // (FileTaskPanel.tsx:118 `任务状态` testid) plus the session's own receipt notice
   // (file-task-session.ts:1015).
   await expect(page.getByTestId("file-job-status")).toHaveText("queued");
-  await expect(notice(page)).toHaveText("任务已接收。读取当前状态或连接任务事件。");
+  await expect(notice(page)).toHaveText("任务已接收。请读取原任务核对。也可连接任务事件。");
   await expect(panel(page).getByRole("heading", { name: "任务与原始结果" })).toBeVisible();
 
   // Action two: an explicit read of the same Job. The page never polls, so the succeeded
@@ -454,7 +454,7 @@ test("结算码之外的 409 不结算：保持未知并按原键重放取消", 
   // The refusal rules out this answer, not the earlier request: the intent keeps its
   // unknown state, its original key and its replay handle (file-task-session.ts:795-805).
   await expect(notice(page)).toHaveText(
-    "取消请求被拒绝（409 job_retry_not_allowed），但该拒绝不能证明原取消未生效；保留原键与未知状态，请读取原任务。",
+    "取消请求被拒绝（409 job_retry_not_allowed），但该拒绝不能证明原取消未生效；保留原键与未知状态。请读取原任务核对，或按原输入与原键重放。不要新建任务。",
   );
   // The alert's action list is generated from the state's own handles (#780): this state
   // names a Job, so it offers that read and the replay, and never the queryable execution

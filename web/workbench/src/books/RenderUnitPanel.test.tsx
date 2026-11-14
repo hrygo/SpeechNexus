@@ -1189,10 +1189,11 @@ describe("recovered intent after a refusal (#794)", () => {
       // The control follows what the copy says, in both directions: a matched pair may not
       // read "可重试" beside a blocked replay, nor withhold the retry its copy names.
       //
-      // This line is what makes a regression of the retained handle visible in the whole
-      // vocabulary: deleting it leaves the 16-case walk green under the same
-      // `disabled={busy}` mutation that turns 15 cases red with it (measured on #794's
-      // counter-example 2), and only the single reload case below still fails.
+      // This line is what makes a regression of the retained handle visible across the whole
+      // vocabulary instead of only in the cases that assert the control directly: with it
+      // deleted, the `disabled={busy}` mutation turns 3 cases red (the in-tab settled one and
+      // the two reload ones below) instead of 17, while the walk itself stays green. Measured
+      // on #794's counter-example 2; that is why this assertion is not redundant with them.
       expect(replay.disabled, `${code} control`).toBe(!step.includes("可重试"));
       // The copy and the classification agree, which is what keeps the equation above
       // anchored to the product's own table instead of to the implementation's.

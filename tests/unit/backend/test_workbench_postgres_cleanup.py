@@ -130,3 +130,129 @@ async def test_stalled_cleanup_closes_socket_releases_slot_and_invalidates_sessi
         if not task.done():
             task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+
+
+class _AnsweredExit:
+    """A transaction whose exit answers after a delay, like a busy server would."""
+
+    def __init__(self, *, delay: float, failure: BaseException | None) -> None:
+        self._delay = delay
+        self._failure = failure
+
+    async def __aenter__(self) -> _AnsweredExit:
+        return self
+
+    async def __aexit__(
+        self,
+        kind: type[BaseException] | None,
+        error: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        await asyncio.sleep(self._delay)
+        if self._failure is not None:
+            raise self._failure
+
+
+class _AnsweredConnection:
+    def __init__(self, exit_context: _AnsweredExit) -> None:
+        self.pgconn = _Socket()
+        self.exit_context = exit_context
+
+    async def __aenter__(self) -> _AnsweredConnection:
+        return self
+
+    async def __aexit__(
+        self,
+        kind: type[BaseException] | None,
+        error: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self.pgconn.finish()
+
+    async def execute(self, query: str, params: object = None) -> None:
+        pass
+
+    def transaction(self) -> _AnsweredExit:
+        return self.exit_context
+
+
+def _answered_uow(
+    monkeypatch: pytest.MonkeyPatch, exit_context: _AnsweredExit
+) -> PostgresVersionUnitOfWork:
+    connection = _AnsweredConnection(exit_context)
+
+    async def connect(*args: object, **kwargs: object) -> _AnsweredConnection:
+        return connection
+
+    monkeypatch.setattr(psycopg.AsyncConnection, "connect", connect)
+    # The cleanup allowance is far shorter than the server's answer on purpose: the
+    # allowance must not be what decides the outcome.
+    return PostgresVersionUnitOfWork(
+        "synthetic",
+        schema="workbench_test",
+        max_connections=1,
+        transaction_timeout=2,
+        cleanup_timeout=0.02,
+    )
+
+
+async def test_server_sqlstate_arriving_after_the_cleanup_allowance_is_a_known_abort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    uow = _answered_uow(
+        monkeypatch,
+        _AnsweredExit(
+            delay=0.1, failure=psycopg.errors.ForeignKeyViolation("synthetic private detail")
+        ),
+    )
+    with pytest.raises(VersionStoreError) as error:
+        async with uow.transaction():
+            pass
+    assert error.value.sqlstate == "23503"
+    assert not error.value.commit_unknown
+    assert "synthetic" not in str(error.value)
+
+
+async def test_connection_lost_during_commit_stays_unknown_without_a_sqlstate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    uow = _answered_uow(
+        monkeypatch,
+        _AnsweredExit(
+            delay=0.1, failure=psycopg.OperationalError("synthetic private driver message")
+        ),
+    )
+    with pytest.raises(VersionStoreError) as error:
+        async with uow.transaction():
+            pass
+    assert error.value.commit_unknown
+    assert error.value.sqlstate is None
+    assert "synthetic" not in str(error.value)
+
+
+async def test_commit_reply_beyond_the_transaction_budget_is_unknown_not_abort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = _AnsweredConnection(
+        _AnsweredExit(delay=0.5, failure=psycopg.errors.ForeignKeyViolation("synthetic"))
+    )
+
+    async def connect(*args: object, **kwargs: object) -> _AnsweredConnection:
+        return connection
+
+    monkeypatch.setattr(psycopg.AsyncConnection, "connect", connect)
+    # Here the transaction budget itself (not the cleanup allowance) is exhausted while
+    # the COMMIT is in flight: nothing the server answered could be observed.
+    uow = PostgresVersionUnitOfWork(
+        "synthetic",
+        schema="workbench_test",
+        max_connections=1,
+        transaction_timeout=0.05,
+        cleanup_timeout=0.04,
+    )
+    with pytest.raises(VersionStoreError) as error:
+        async with uow.transaction():
+            pass
+    assert error.value.commit_unknown
+    assert error.value.sqlstate is None
+    assert connection.pgconn.closed

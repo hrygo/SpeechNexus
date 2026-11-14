@@ -212,9 +212,20 @@ class PostgresVersionUnitOfWork:
         connection: psycopg.AsyncConnection[tuple[object, ...]],
         context: AbstractAsyncContextManager[psycopg.AsyncTransaction],
         error: BaseException | None,
+        *,
+        deadline: float | None = None,
     ) -> None:
         # wait_for(task) can itself wait indefinitely for driver cancellation.
         # Wait without cancelling, then close the private socket BEFORE cancellation.
+        #
+        # The cleanup allowance bounds cleanup, never the decision. A COMMIT still in
+        # flight is the one reply that separates a determinate rollback from an
+        # unknowable outcome, so it is awaited until the transaction's own deadline.
+        # Cutting it at the cleanup allowance discards a server determination that was
+        # already on its way and reports that knowable refusal as "commit uncertain".
+        allowance = self._cleanup_timeout
+        if deadline is not None:
+            allowance = max(0.0, deadline - asyncio.get_running_loop().time())
         task = asyncio.create_task(
             context.__aexit__(
                 None if error is None else type(error),
@@ -223,7 +234,7 @@ class PostgresVersionUnitOfWork:
             )
         )
         try:
-            done, _ = await asyncio.wait({task}, timeout=self._cleanup_timeout)
+            done, _ = await asyncio.wait({task}, timeout=allowance)
             if not done:
                 raise TimeoutError("workbench transaction exit deadline")
             task.result()
@@ -238,7 +249,8 @@ class PostgresVersionUnitOfWork:
         committing = False
         session: _Session | None = None
         try:
-            async with asyncio.timeout(self._timeout), self._slots:
+            budget = asyncio.timeout(self._timeout)
+            async with budget, self._slots:
                 connection = await psycopg.AsyncConnection.connect(
                     self._dsn,
                     autocommit=True,
@@ -278,7 +290,12 @@ class PostgresVersionUnitOfWork:
                         raise
                     else:
                         committing = True
-                        await self._exit_transaction(connection, context, None)
+                        # The COMMIT reply is the evidence that separates a determinate
+                        # refusal from an unknowable outcome, so it is awaited against
+                        # the transaction's own deadline rather than the cleanup bound.
+                        await self._exit_transaction(
+                            connection, context, None, deadline=budget.when()
+                        )
                 finally:
                     # This connection is never pooled. No extra async rollback/logging
                     # on AsyncConnection.__aexit__ can extend cleanup or expose a query.

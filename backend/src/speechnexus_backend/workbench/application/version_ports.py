@@ -26,6 +26,12 @@ class VersionStoreError(Exception):
 
     sqlstate is optional internal diagnostic metadata, never a public response field.
     Consumers must not infer rollback from it or retry a mutation automatically.
+
+    commit_unknown answers one question: did the store's answer leave the outcome
+    undecidable? It is True only when the server never determined the transaction
+    inside its own budget (transport loss, shutdown, or budget exhaustion while the
+    COMMIT was in flight). A server that answered carries its SQLSTATE, and a reply
+    that merely arrives later than a cleanup allowance is still that answer.
     """
 
     def __init__(self, *, sqlstate: str | None, commit_unknown: bool) -> None:

@@ -14,7 +14,9 @@ These tests pin three things:
 * the three signals are independent, so renaming the title or the branch alone
   does not un-gate the check;
 * the gate is wired into the one lane that runs for every scope, and that lane
-  is required by the protected merge gate.
+  is required by the protected merge gate;
+* the change set is the pull request's own delta: a base branch that advanced
+  after the pull request opened must not appear in it (#747).
 
 Standard library only: this module runs in the dependency-free routing lane.
 """
@@ -212,7 +214,7 @@ class BaseFetchTests(unittest.TestCase):
             return b""
 
         with mock.patch.object(GUARD, "_git", fake_git):
-            GUARD._fetch_base("a" * 40, Path("/tmp"))
+            GUARD._fetch_commit("a" * 40, Path("/tmp"))
         self.assertEqual(len(calls), 2)
 
     def test_a_persistent_fetch_failure_names_the_fetch_and_the_exit_code(self) -> None:
@@ -225,9 +227,9 @@ class BaseFetchTests(unittest.TestCase):
             mock.patch.object(GUARD, "_git", fake_git),
             self.assertRaises(GUARD.DiffUnavailableError) as caught,
         ):
-            GUARD._fetch_base("a" * 40, Path("/tmp"))
+            GUARD._fetch_commit("a" * 40, Path("/tmp"))
         message = str(caught.exception)
-        self.assertIn(f"fetching base {'a' * 40} from origin failed after 2 attempts", message)
+        self.assertIn(f"fetching {'a' * 40} from origin failed after 2 attempts", message)
         self.assertIn("exit 128", message)
         self.assertIn("could not resolve host", message)
 
@@ -243,13 +245,15 @@ class BaseFetchTests(unittest.TestCase):
             mock.patch.object(GUARD, "_git", fake_git),
             self.assertRaises(GUARD.DiffUnavailableError) as caught,
         ):
-            GUARD.changed_paths("a" * 40, Path("/tmp"))
+            GUARD.changed_paths(GUARD.Comparison("a" * 40, "HEAD", "test"), Path("/tmp"))
         message = str(caught.exception)
         self.assertIn(f"computing git diff {'a' * 40}..HEAD failed", message)
         self.assertIn("bad object HEAD", message)
 
 
-class GitFixtureTests(unittest.TestCase):
+class GitFixture(unittest.TestCase):
+    """A throwaway repository with one commit on ``main`` at ``self.base``."""
+
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -296,6 +300,10 @@ class GitFixtureTests(unittest.TestCase):
             capture_output=True,
             check=False,
         )
+
+
+class GitFixtureTests(GitFixture):
+    """The boundary against a real repository that has one pull request."""
 
     def test_a_real_violation_diff_is_red_and_names_every_offending_path(self) -> None:
         self.write(REPORT, "# Review\n")
@@ -386,6 +394,126 @@ class GitFixtureTests(unittest.TestCase):
         ast.parse(SCRIPT.read_text(), feature_version=(3, 12))
 
 
+class MergeBaseTests(GitFixture):
+    """Main advancing after the pull request opened must not enter its change set.
+
+    `github.event.pull_request.base.sha` is frozen at the pull request's last
+    event, while `main` keeps moving; `actions/checkout` on `pull_request` checks
+    out `refs/pull/<n>/merge`, whose first parent is the base branch tip at
+    merge-ref build time. The gate compares the merge commit with that first
+    parent, so main-line reports never land in a review pull request (#747: PR
+    #741 was red with three `main` reports and 28 unrelated paths in the change
+    set, minutes after #739 landed the gate).
+    """
+
+    MAIN_MOVED_REPORT = "docs/reviews/2026-11-14-main-line.md"
+    MAIN_MOVED_IMPL = "backend/y.py"
+
+    def merge_ref(self, pr_files: dict[str, str]) -> tuple[str, str]:
+        """Build main-line movement, then GitHub's merge ref for one pull request."""
+        self.git("checkout", "-q", "-b", "pr")
+        for name, content in pr_files.items():
+            self.write(name, content)
+        pr_head = self.commit()
+        self.git("checkout", "-q", "main")
+        # Two commits land on main after the pull request opened: a review report
+        # and implementation. Nothing in them belongs to the pull request.
+        self.write(self.MAIN_MOVED_REPORT, "# Another review\n")
+        self.commit()
+        self.write(self.MAIN_MOVED_IMPL, "y = 1\n")
+        main_tip = self.commit()
+        self.git("merge", "--no-ff", "pr", "-m", f"Merge {pr_head} into {main_tip}")
+        return pr_head, main_tip
+
+    def test_main_moving_after_the_pr_opened_keeps_a_declared_review_green(self) -> None:
+        # The nail for #747: base.sha predates two main-line commits, and the pull
+        # request itself only adds its own report.
+        pr_head, _ = self.merge_ref({REPORT: "# Own review\n"})
+        self.assertEqual(self.git("merge-base", self.base, "HEAD"), self.base)
+        two_point = self.git("diff", "--name-only", "--no-renames", self.base, "HEAD").splitlines()
+        self.assertIn(self.MAIN_MOVED_REPORT, two_point)
+        self.assertIn(self.MAIN_MOVED_IMPL, two_point)
+        result = self.run_guard(
+            "--head-sha", pr_head, "--title", "review: own report", "--head-ref", "review/747"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout.splitlines()[0])
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["signals"], ["title prefix", "branch prefix"])
+        self.assertEqual(payload["violations"], [])
+        self.assertIn("merge ref against its first parent", result.stdout.splitlines()[1])
+
+    def test_main_moving_after_the_pr_opened_keeps_an_undeclared_pr_not_applicable(self) -> None:
+        # The measured #741 shape: title `test:`, branch `test/`, no review intent.
+        # The two-point reading reported `docs/reviews mixed with other paths`.
+        pr_head, _ = self.merge_ref({"tests/web/file-task.behavior.spec.mjs": "export {};\n"})
+        result = self.run_guard(
+            "--head-sha",
+            pr_head,
+            "--title",
+            "test: 文件任务面板的关键状态转换加真实浏览器规格 (#740)",
+            "--head-ref",
+            "test/740-behavior-specs",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout.splitlines()[0])
+        self.assertFalse(payload["applicable"])
+        self.assertTrue(payload["ok"])
+
+    def test_the_merge_ref_reading_is_its_first_parent(self) -> None:
+        pr_head, main_tip = self.merge_ref({REPORT: "# Own review\n"})
+        ends = GUARD.comparison(self.base, pr_head, self.root)
+        self.assertEqual(ends.left, main_tip)
+        self.assertEqual(ends.right, self.git("rev-parse", "HEAD"))
+        self.assertEqual(ends.label, "merge ref against its first parent")
+
+    def test_a_head_checkout_uses_the_signed_off_merge_base(self) -> None:
+        # A checkout pinned to the pull request head has no merge commit; three
+        # dots apply and still drop main-line progress.
+        self.git("checkout", "-q", "-b", "pr")
+        self.write(REPORT, "# Own review\n")
+        pr_head = self.commit()
+        self.git("checkout", "-q", "main")
+        self.write(self.MAIN_MOVED_REPORT, "# Another review\n")
+        self.write(self.MAIN_MOVED_IMPL, "y = 1\n")
+        self.commit()
+        self.git("checkout", "-q", "pr")
+        result = self.run_guard(
+            "--head-sha", pr_head, "--title", "review: own report", "--head-ref", "review/747"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(json.loads(result.stdout.splitlines()[0])["ok"])
+        self.assertIn("merge base of base.sha and HEAD", result.stdout.splitlines()[1])
+
+    def test_a_violation_on_the_pr_itself_is_red_with_main_ahead(self) -> None:
+        # Counterexample 4 in the merge-ref shape: the pull request really does
+        # carry implementation next to its report, so the gate must stay red.
+        pr_head, _ = self.merge_ref({REPORT: "# Own review\n", "backend/pr-impl.py": "x = 1\n"})
+        result = self.run_guard(
+            "--head-sha", pr_head, "--title", "review: x", "--head-ref", "review/747"
+        )
+        self.assertEqual(result.returncode, 1)
+        payload = json.loads(result.stdout.splitlines()[0])
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["violations"], ["backend/pr-impl.py"])
+        self.assertEqual(payload["reports"], [REPORT])
+
+    def test_a_declared_review_that_cannot_read_its_change_set_is_red(self) -> None:
+        # Fail-closed survives the new comparison: an unresolvable base (no origin
+        # remote in the fixture, so the fetch cannot succeed) keeps a declared
+        # review RGB-red instead of silently skipping the boundary.
+        self.write(REPORT, "# Own review\n")
+        self.commit()
+        result = self.run_guard(
+            "--base", "b" * 40, "--title", "review: x", "--head-ref", "review/747"
+        )
+        self.assertEqual(result.returncode, 1)
+        payload = json.loads(result.stdout.splitlines()[0])
+        self.assertTrue(payload["applicable"])
+        self.assertFalse(payload["ok"])
+        self.assertIn("::error title=Review PR boundary unverifiable::", result.stderr)
+
+
 class WiringTests(unittest.TestCase):
     def job_block(self, job: str) -> str:
         after = CI.split(f"\n  {job}:\n", 1)[1]
@@ -413,6 +541,7 @@ class WiringTests(unittest.TestCase):
         for wiring in (
             "EVENT_NAME: ${{ github.event_name }}",
             "BASE_SHA: ${{ github.event.pull_request.base.sha }}",
+            "HEAD_SHA: ${{ github.event.pull_request.head.sha }}",
             "PR_TITLE: ${{ github.event.pull_request.title }}",
             "PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}",
         ):
@@ -420,7 +549,7 @@ class WiringTests(unittest.TestCase):
                 self.assertIn(wiring, changes)
         command = (
             "          python3 scripts/dev-env/check-review-pr-boundary.py \\\n"
-            '            --event="$EVENT_NAME" --base="$BASE_SHA" \\\n'
+            '            --event="$EVENT_NAME" --base="$BASE_SHA" --head-sha="$HEAD_SHA" \\\n'
             '            --title="$PR_TITLE" --head-ref="$PR_HEAD_REF" \\\n'
             '            --summary="$GITHUB_STEP_SUMMARY"'
         )

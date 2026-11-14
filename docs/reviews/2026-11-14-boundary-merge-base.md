@@ -443,6 +443,33 @@ review-pr-boundary: compared 0b79b633cfb5..fee607b1ffdc (merge ref against its f
 合入的报告而红，新代码绿。这也是 #747 验收标准里「不再需要手动 Update branch」的直接
 证据（除本 PR 的运行日志之外的第二份）。
 
+### 11. 本报告 PR 自身：docs 路由下该步骤的首次日志观测（#751）
+
+本报告 PR（#751，`review/750-boundary-fix`）是第一个在新门禁在册后、按 `docs` 路由
+运行的审查 PR，运行 43570172238（job 132372621241）的 `changes` 作业日志同时包含路由
+结果与该步骤输出：
+
+```text
+{"mode": "docs", "reason": "Only prose or skill documents/metadata changed; heavy checks are out of scope."}
+run: python3 scripts/dev-env/check-review-pr-boundary.py \
+       --event="$EVENT_NAME" --base="$BASE_SHA" \       # 基线版 ci.yml：没有 --head-sha
+       --title="$PR_TITLE" --head-ref="$PR_HEAD_REF" ...
+{"applicable": true, "ok": true, "signals": ["title prefix", "branch prefix"],
+ "violations": [], "reports": ["docs/reviews/2026-11-14-boundary-merge-base.md"],
+ "reason": "Review PR changes only docs/reviews/ (1 report file(s))."}
+```
+
+这条观测同时补上 `ci-validation.md` 里登记的「docs 路由下本步骤真的执行尚无日志」缺口，
+并顺带说明两件容易误判的事：
+
+- 该运行跑的是**基线版脚本与基线版 `ci.yml`**（命令行没有 `--head-sha`、没有
+  `compared ...` 行），因为只加一份报告的 PR，其合并树的 `scripts/` 与 `ci.yml` 就是
+  主干的；因此 **merge-base 修复只能在改这两个文件的 PR 上被观测**（#749 的运行日志就是
+  那样一份：`HEAD_SHA` + `compared cdf60a9efc16..82072bf7f234`）。
+- 「`pull_request` 取的是基线分支的工作流」这个既有说法与 #749 的日志不符（它会取到
+  PR 侧的 `--head-sha`）；对只加报告的 PR 两种假设的观察结果恰好相同，所以 #751 的日志
+  不能用来支持那句措辞，只能用来说明调度与执行。该段不是本 PR 的改动范围，建议见建议 3。
+
 ## 新绿
 
 - 主干前进（含 `docs/reviews/` 报告）不再进入比较集：`MergeBaseTests` 六条用例 + 我在
@@ -469,6 +496,9 @@ review-pr-boundary: compared 0b79b633cfb5..fee607b1ffdc (merge ref against its f
 | 15:10 | `uv sync`、`ruff check`、`ruff format --check`、`mypy --platform linux`、`lint-imports` 全绿 |
 | 15:11 | `gh pr checks 749` 全 pass；取运行 43567960143 的边界步骤日志（`compared cdf60a9efc16..82072bf7f234`）；PR #749 自身输入上旧红/新绿复算 |
 | 15:12 | 写本报告，`uv run --no-project ruff format` + `ruff format --check .`；`git diff origin/main...HEAD` 仅含本报告；提交并 push `review/750-boundary-fix` |
+| 15:13 | 开 PR #751；`gh pr checks` 全绿（`changes` pass、docs 路由） |
+| 15:15 | 取运行 43570172238 日志：首次拿到 `{"mode": "docs"}` + 该步骤输出；确认它执行的是基线版脚本（无 `--head-sha`、无 `compared` 行），补证据 11 并修正「无观测」那条 |
+| 15:16 | `git fetch` 后主干已到 `6e1ed2c5`（#746 实现合入）；`git diff origin/main...HEAD --stat` 仍仅含本报告（merge-base `0b79b633`） |
 
 ## 只能依赖作者陈述的点
 
@@ -481,9 +511,10 @@ review-pr-boundary: compared 0b79b633cfb5..fee607b1ffdc (merge ref against its f
 3. **GitHub 合并提交主题/父序的稳定性**属外部假设，无法用仓库状态证明；我只核实了
    今天（2026-11-14）真实 `refs/pull/749/merge` 的形态，以及 #741 日志与旧代码输出
    反推出的形态一致。
-4. **「docs 路由下该步骤真的执行」仍无日志观测**：本 PR 的路由是 `full`（日志里
-   `{"mode": "full"...}`），不是 docs；该结论仍是结构推断，与本 PR 无关但未因本 PR
-   变成实测。
+4. **「docs 路由下该步骤真的执行」在本报告 PR 之前无日志观测**（#749 的路由是
+   `full`）；我在本报告 PR #751 上取得了第一份同时含 `{"mode": "docs"}` 与该步骤输出的
+   日志（证据 11），但那份运行执行的是基线版脚本，所以它证明的是「调度 + 执行」，
+   不是新代码在 docs 路由下的行为。
 5. **`fetch-depth: 1` 下抓取第一父提交的 CI 实际耗时**作者只写了「与路由抓取 `base.sha`
    同一机制」，我没有在 GitHub runner 上量过墙钟时间；本地与真实远端的成功抓取是
    实测的，耗时按同机制推断。

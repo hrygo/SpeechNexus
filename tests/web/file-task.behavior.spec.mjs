@@ -17,6 +17,11 @@ import { lockToPreview, expectNetworkLocked } from "./network-lock.mjs";
  * The public protocol itself is still exercised in the page: job commands are built by
  * the real client, answered payloads are parsed by the generated contract parser, and a
  * malformed shape would fail the test because the page rejects it.
+ *
+ * Every asserted string is product copy, cited next to the assertion as the single
+ * `web/workbench/src/` occurrence that renders it; nothing here is assembled from test
+ * vocabulary. Page state is likewise always produced by two or more real actions
+ * (submit, read, cancel, reload), never by writing a record or a view field directly.
  */
 
 const workbench = "http://127.0.0.1:4174";
@@ -61,15 +66,17 @@ function syntheticWav() {
 }
 
 /**
- * Install the scripted HTTP boundary. `create`/`cancel` answer per test; anything else
- * the page asks for is recorded and refused, so an unexpected request is a loud failure
- * instead of a silent network call.
+ * Install the scripted HTTP boundary. `create`/`cancel`/`getJob` answer per test (the
+ * default read is the queued Job the create answer names); anything else the page asks
+ * for is recorded and refused, so an unexpected request is a loud failure instead of a
+ * silent network call.
  */
 async function installBackend(page) {
-  const calls = { assets: 0, creates: [], cancels: [], unexpected: [] };
+  const calls = { assets: 0, creates: [], cancels: [], reads: 0, unexpected: [] };
   const plan = {
     create: (route) => route.fulfill({ status: 202, json: example("queued-job") }),
     cancel: (route) => route.fulfill({ status: 202, json: example("cancel-job") }),
+    getJob: (route) => route.fulfill({ status: 200, json: example("queued-job") }),
   };
   await page.route("**/v1/nexus/**", async (route) => {
     const request = route.request();
@@ -85,7 +92,8 @@ async function installBackend(page) {
       return;
     }
     if (path === "/v1/nexus/jobs/job-demo" && request.method() === "GET") {
-      await route.fulfill({ status: 200, json: example("queued-job") });
+      calls.reads += 1;
+      await plan.getJob(route);
       return;
     }
     if (path === "/v1/nexus/jobs/job-demo/cancellations" && request.method() === "POST") {
@@ -113,6 +121,14 @@ async function submitFileTask(page) {
     buffer: syntheticWav(),
   });
   await page.getByRole("button", { name: "上传并转写" }).click();
+}
+
+/** Both real steps of the cancel confirmation: open it, then confirm the named Job. */
+async function requestCancel(page) {
+  await page.getByRole("button", { name: "准备取消" }).click();
+  const confirmCancel = page.getByRole("group", { name: "确认取消原任务" });
+  await expect(confirmCancel).toBeVisible();
+  await confirmCancel.getByRole("button", { name: "确认取消 job-demo" }).click();
 }
 
 const panel = (page) => page.locator(".file-task-detail");
@@ -278,5 +294,238 @@ test("未知结果（503 job_outcome_unknown）：显示未知、禁止新建、
   await expect(panel(page).getByText("请求结果尚未确认")).toHaveCount(0);
   expect(backend.calls.creates).toHaveLength(2);
   expect(backend.calls.creates[1]).toBe(backend.calls.creates[0]);
+  expect(backend.calls.unexpected).toEqual([]);
+});
+
+test("成功路径：提交得到 Job，读取后结果与制品可见", async ({ page }) => {
+  const backend = await installBackend(page);
+  backend.plan.getJob = (route) => route.fulfill({ status: 200, json: example("succeeded-job") });
+
+  await openWorkbench(page);
+  await expectNetworkLocked(page);
+  await submitFileTask(page);
+
+  // Action one: the create answer names this Job, and the page shows exactly that Job
+  // (FileTaskPanel.tsx:118 `任务状态` testid) plus the session's own receipt notice
+  // (file-task-session.ts:1015).
+  await expect(page.getByTestId("file-job-status")).toHaveText("queued");
+  await expect(notice(page)).toHaveText("任务已接收。读取当前状态或连接任务事件。");
+  await expect(panel(page).getByRole("heading", { name: "任务与原始结果" })).toBeVisible();
+
+  // Action two: an explicit read of the same Job. The page never polls, so the succeeded
+  // state below can only come from this answer (file-task-session.ts:1119).
+  await page.getByRole("button", { name: "读取原状态" }).click();
+  await expect(page.getByTestId("file-job-status")).toHaveText("succeeded");
+  await expect(notice(page)).toHaveText("已重新读取当前任务。");
+  expect(backend.calls.reads).toBe(1);
+
+  // The succeeded Job's result is rendered by product code: the transcript artifact
+  // section heading (FileTaskPanel.tsx:228), its download policy line (:240), the import
+  // action the artifact/receipt match unlocks (:237, canImport at :28-38), and the
+  // artifact button built from the Job's own artifact id (:252).
+  await expect(panel(page).getByRole("heading", { name: "原始转写制品" })).toBeVisible();
+  await expect(
+    panel(page).getByText("下载本任务已提交的原始 JSON，单个制品上限 16 MiB。"),
+  ).toBeVisible();
+  await expect(panel(page).getByRole("button", { name: "导入到项目稿件" })).toBeEnabled();
+  await expect(
+    panel(page).getByRole("button", { name: "下载原始制品 artifact-demo" }),
+  ).toBeEnabled();
+  // A succeeded Job whose cleanup is complete offers the explicit end-of-page record
+  // (FileTaskPanel.tsx:257-267 `准备新任务`, via canFinishTask at file-task-policy.ts:22-23).
+  await expect(finishButton(page)).toBeVisible();
+  expect(backend.calls.creates).toHaveLength(1);
+  expect(backend.calls.unexpected).toEqual([]);
+});
+
+test("成功路径收尾：准备新任务只展开确认，单次点击不结束记录", async ({ page }) => {
+  const backend = await installBackend(page);
+  backend.plan.getJob = (route) => route.fulfill({ status: 200, json: example("succeeded-job") });
+
+  await openWorkbench(page);
+  await expectNetworkLocked(page);
+  await submitFileTask(page);
+  await page.getByRole("button", { name: "读取原状态" }).click();
+  await expect(page.getByTestId("file-job-status")).toHaveText("succeeded");
+
+  const durable = await journal(page);
+  expect(durable, "the succeeded Job must already own the page record").not.toBeNull();
+
+  // Step one opens the confirmation group (FileTaskPanel.tsx:268-294, aria-label
+  // "确认本页新任务"); it must not end the record, clear the journal, or submit anything.
+  await finishButton(page).click();
+  const confirmFinish = page.getByRole("group", { name: "确认本页新任务" });
+  await expect(confirmFinish).toBeVisible();
+  await expect(
+    confirmFinish.getByText("结束本页任务恢复并新建？服务器上的原任务与制品继续保留。"),
+  ).toBeVisible();
+  await expect(confirmFinish.getByRole("button", { name: "保留本页任务" })).toBeVisible();
+  expect(await journal(page), "one click may not drop the page record").toBe(durable);
+  await expect(page.getByTestId("file-job-status")).toHaveText("succeeded");
+  expect(backend.calls.creates, "one click may not submit a new intent").toHaveLength(1);
+
+  // Step two can also be declined without touching the record.
+  await confirmFinish.getByRole("button", { name: "保留本页任务" }).click();
+  await expect(page.getByRole("group", { name: "确认本页新任务" })).toHaveCount(0);
+  await expect(page.getByTestId("file-job-status")).toHaveText("succeeded");
+  expect(await journal(page)).toBe(durable);
+
+  // Confirmed, step two ends the record and starts a fresh, empty intent
+  // (FileTaskPanel.tsx:288 `结束本页任务并新建`; FileTaskHost.tsx:162-172 clearCompleted
+  // plus a new session, whose initial notice is file-task-session.ts:338 "选择输入开始任务。").
+  await finishButton(page).click();
+  await page
+    .getByRole("group", { name: "确认本页新任务" })
+    .getByRole("button", { name: "结束本页任务并新建" })
+    .click();
+  await expect(page.getByRole("group", { name: "确认本页新任务" })).toHaveCount(0);
+  expect(await journal(page)).toBeNull();
+  await expect(page.locator("#file-task-model")).toBeEnabled();
+  await expect(page.locator("#file-task-model")).toHaveValue("");
+  await expect(page.locator("#file-task-input")).toBeEnabled();
+  await expect(page.getByTestId("file-job-status")).toHaveText("尚未确认");
+  await expect(panel(page).getByText("选择输入开始任务。")).toBeVisible();
+  expect(backend.calls.unexpected).toEqual([]);
+});
+
+test("取消被 409 idempotency_conflict 拒绝：结算为作废，重载保持终态", async ({ page }) => {
+  const backend = await installBackend(page);
+  backend.plan.cancel = (route) =>
+    route.fulfill({ status: 409, json: refusal(409, "idempotency_conflict") });
+
+  await openWorkbench(page);
+  await expectNetworkLocked(page);
+  await submitFileTask(page);
+  await expect(page.getByTestId("file-job-status")).toHaveText("queued");
+  await requestCancel(page);
+
+  // The second settlement class at the cancel boundary (the first,
+  // 409 `execution_cleanup_pending`, is covered above): this key identifies another
+  // cancellation intent, so this attempt is spent while the Job stays readable
+  // (file-task-session.ts:241-250 `settlesCancelAttempt`). The page may then say the
+  // intent is void (FileTaskPanel.tsx:100) and offer the explicit end (:257).
+  await expect(panel(page).getByText("原请求已被协议确定性拒绝，原意图作废")).toBeVisible();
+  await expect(unknownAlert(page)).toHaveCount(0);
+  await expect(finishButton(page)).toBeVisible();
+  await expect(replayButton(page)).toBeDisabled();
+  expect(backend.calls.cancels).toHaveLength(1);
+
+  const persisted = await journalRecord(page);
+  expect(persisted, "the cancel verdict must be durable before it is shown").not.toBeNull();
+  expect(persisted.settled).toBe("terminal");
+
+  // Reload rebuilds the page from the journal alone: the restored notice is the session's
+  // own settled-cancel wording (file-task-session.ts:424), no request is made, and both
+  // classes of the verdict survive.
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "文件转写" })).toBeVisible();
+  await expect(notice(page)).toHaveText(
+    "已找到原任务身份；该取消请求已被协议确定性拒绝并作废。请读取原任务核对，再显式收尾。",
+  );
+  await expect(panel(page).getByText("原请求已被协议确定性拒绝，原意图作废")).toBeVisible();
+  await expect(panel(page).getByText("刷新也不会再变回")).toBeVisible();
+  await expect(unknownAlert(page)).toHaveCount(0);
+  await expect(finishButton(page)).toBeVisible();
+  await expect(replayButton(page)).toBeDisabled();
+  expect(backend.calls.creates).toHaveLength(1);
+  expect(backend.calls.cancels).toHaveLength(1);
+  expect(backend.calls.reads).toBe(0);
+  expect(backend.calls.unexpected).toEqual([]);
+});
+
+test("结算码之外的 409 不结算：保持未知并按原键重放取消", async ({ page }) => {
+  const backend = await installBackend(page);
+  // A real 409 from the same public Job error table (backend/.../http/job_errors.py:28-31)
+  // that answers the retry operation, not this cancellation key, and carries no
+  // `nexus.operation_id`. It is therefore not one of the three answers
+  // `settlesCancelAttempt` accepts (file-task-session.ts:241-250) and cannot prove
+  // anything about this cancellation request.
+  backend.plan.cancel = (route) =>
+    backend.calls.cancels.length === 1
+      ? route.fulfill({ status: 409, json: refusal(409, "job_retry_not_allowed") })
+      : route.fulfill({ status: 202, json: example("cancel-job") });
+
+  await openWorkbench(page);
+  await expectNetworkLocked(page);
+  await submitFileTask(page);
+  await expect(page.getByTestId("file-job-status")).toHaveText("queued");
+  await requestCancel(page);
+
+  // The refusal rules out this answer, not the earlier request: the intent keeps its
+  // unknown state, its original key and its replay handle (file-task-session.ts:795-805).
+  await expect(notice(page)).toHaveText(
+    "取消请求被拒绝（409 job_retry_not_allowed），但该拒绝不能证明原取消未生效；保留原键与未知状态，请读取原任务。",
+  );
+  await expect(
+    panel(page).getByText("请求结果尚未确认。请核对原素材或任务；重放只使用原输入和原键。"),
+  ).toBeVisible();
+  await expect(finishButton(page)).toHaveCount(0);
+  await expect(replayButton(page)).toBeEnabled();
+
+  const persisted = await journalRecord(page);
+  expect(persisted, "the pending cancellation must stay durable").not.toBeNull();
+  expect(persisted.pending).toBe("cancel");
+  expect(persisted).not.toHaveProperty("settled");
+
+  // The original key is still the only reconciliation: replaying it moves the page
+  // forward without a replacement intent (file-task-session.ts:1161).
+  await replayButton(page).click();
+  await expect(page.getByTestId("file-job-status")).toHaveText("queued");
+  await expect(unknownAlert(page)).toHaveCount(0);
+  await expect(notice(page)).toHaveText("已收到取消响应；资源释放以 cleanup_state 为准。");
+  expect(backend.calls.cancels).toHaveLength(2);
+  expect(backend.calls.cancels[1]).toBe(backend.calls.cancels[0]);
+  expect(backend.calls.unexpected).toEqual([]);
+});
+
+test("413 首答重载：保持不可重放的作废态，三步显式放弃", async ({ page }) => {
+  const backend = await installBackend(page);
+  backend.plan.create = (route) =>
+    backend.calls.creates.length === 1
+      ? route.fulfill({ status: 413, json: refusal(413, "job_request_too_large") })
+      : route.fulfill({ status: 202, json: example("queued-job") });
+
+  await openWorkbench(page);
+  await expectNetworkLocked(page);
+  await submitFileTask(page);
+
+  // The third class (#731) is persisted as `unreplayable`, not `terminal`: the refusal
+  // precedes the original key lookup, so it proves nothing about an earlier attempt
+  // (file-task-session.ts:717-724). The product shows the verdict only after persisting
+  // it, so waiting for the rendered paragraph also waits for the durable write.
+  await expect(panel(page).getByText("原请求因请求体超过本部署的接收上限被拒绝")).toBeVisible();
+  expect((await journalRecord(page))?.settled).toBe("unreplayable");
+
+  // Reload restores the third class from the journal alone; the restored notice is the
+  // session's own unreplayable wording (file-task-session.ts:422).
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "文件转写" })).toBeVisible();
+  await expect(notice(page)).toHaveText(
+    "已找到原任务身份；该请求因请求体超过本部署的接收上限被拒绝，原意图作废。",
+  );
+  await expect(panel(page).getByText("原请求因请求体超过本部署的接收上限被拒绝")).toBeVisible();
+  await expect(panel(page).getByText("请求结果尚未确认")).toHaveCount(0);
+  await expect(unknownAlert(page)).toHaveCount(0);
+  await expect(replayButton(page)).toBeDisabled();
+  await expect(page.locator("#file-task-model")).toBeDisabled();
+  expect((await journalRecord(page))?.settled).toBe("unreplayable");
+  expect(backend.calls.creates, "a reload must not resend the void intent").toHaveLength(1);
+
+  // The restored verdict ends only through the explicit second step: the group's own
+  // unreplayable sentence (FileTaskPanel.tsx:272) and its abandon label (:288).
+  await finishButton(page).click();
+  const confirmFinish = page.getByRole("group", { name: "确认本页新任务" });
+  await expect(confirmFinish).toBeVisible();
+  await expect(confirmFinish.getByText("这次请求被拒绝，原意图作废")).toBeVisible();
+  await expect(confirmFinish.getByRole("button", { name: "保留本页任务" })).toBeVisible();
+  expect(await journal(page), "one click may not drop the void record").not.toBeNull();
+  await expect(replayButton(page)).toBeDisabled();
+
+  await confirmFinish.getByRole("button", { name: "放弃这次意图并新建" }).click();
+  await expect(page.getByRole("group", { name: "确认本页新任务" })).toHaveCount(0);
+  expect(await journal(page)).toBeNull();
+  await expect(page.locator("#file-task-model")).toBeEnabled();
+  await expect(page.locator("#file-task-model")).toHaveValue("");
+  await expect(page.getByTestId("file-job-status")).toHaveText("尚未确认");
   expect(backend.calls.unexpected).toEqual([]);
 });

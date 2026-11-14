@@ -350,6 +350,28 @@ PR CI runs this additional check in the existing Python job against the fetched
 base. Existing protected check names, six database partitions, conditional Node
 prerequisites and complete/disjoint report verification remain unchanged.
 
+## Runtime refusals the declarations do not list
+
+The inventory compares declarations; it does not prove that a running operation
+answers only the responses it declares. An operation can answer a status its list
+omits — no `500` at all, or a `400`/`408`/`413`/`415`/`503` it never listed — and
+adding that declaration afterwards is one of the changes left unverified above.
+A green inventory is therefore not evidence that a client of an incomplete
+operation receives the contract's error envelope.
+
+The workbench HTTP layer keeps that guarantee independent of the declarations.
+Every refusal is built from the static error table and validated against
+`ErrorResponse`; the operation's response declarations are checked afterwards. A
+mismatch answers the same status, `code` and correlation in a
+declaration-independent envelope that preserves `Cache-Control: no-store`,
+`X-Request-ID` and `X-Should-Retry`, instead of letting the failed check escape as
+a bare `text/plain` 500 from the ASGI host. The mismatch is logged with the
+operation, `code` and `request_id`, and an unhandled failure logs the original
+exception's `repr`, so the missing declaration stays visible without returning
+exception text to the caller. `tests/unit/backend/test_workbench_http_error_fallback.py`
+pins the assistant-turn, book-export and render-generation surfaces, whose
+operations declare no `500`.
+
 ## Explicit complete speech HTTP selection
 
 ```bash

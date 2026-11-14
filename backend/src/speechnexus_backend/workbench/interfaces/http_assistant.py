@@ -31,7 +31,10 @@ from speechnexus_backend.workbench.interfaces.http_ingress import (
     request_id,
     validate_limits,
 )
-from speechnexus_backend.workbench.interfaces.http_versions import _error
+from speechnexus_backend.workbench.interfaces.http_versions import (
+    _error,
+    _unexpected_error,
+)
 
 OPERATIONS = frozenset({"createAssistantTurn", "getAssistantTurn", "cancelAssistantTurn"})
 
@@ -131,9 +134,9 @@ def create_assistant_router(
                     rid,
                     operation,
                 )
-            except Exception:
+            except Exception as error:
                 # CancelledError is a BaseException and must reach the ASGI host.
-                return _error("internal_error", rid, operation)
+                return _unexpected_error(error, rid, operation)
 
         return handle
 

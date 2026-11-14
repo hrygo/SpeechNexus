@@ -21,7 +21,10 @@ from speechnexus_backend.workbench.interfaces.http_ingress import (
     read_envelope,
     request_id,
 )
-from speechnexus_backend.workbench.interfaces.http_versions import _error
+from speechnexus_backend.workbench.interfaces.http_versions import (
+    _error,
+    _unexpected_error,
+)
 
 
 class _DownloadResponse(StreamingResponse):
@@ -116,10 +119,10 @@ def create_download_router(
                 return _error("resource_not_found", rid, operation)
             except VersionStoreError:
                 return _error("store_unavailable", rid, operation)
-            except Exception:
+            except Exception as error:
                 if prepared is not None:
                     await prepared.close()
-                return _error("internal_error", rid, operation)
+                return _unexpected_error(error, rid, operation)
 
         return handle
 

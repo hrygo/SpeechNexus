@@ -28,7 +28,10 @@ from speechnexus_backend.workbench.interfaces.http_ingress import (
     request_id,
     validate_limits,
 )
-from speechnexus_backend.workbench.interfaces.http_versions import _error
+from speechnexus_backend.workbench.interfaces.http_versions import (
+    _error,
+    _unexpected_error,
+)
 from speechnexus_backend.workbench.interfaces.meeting_views import meeting_payload, minutes_payload
 
 OPERATIONS = frozenset(
@@ -143,8 +146,8 @@ def create_meeting_router(
                     rid,
                     operation,
                 )
-            except Exception:
-                return _error("internal_error", rid, operation)
+            except Exception as error:
+                return _unexpected_error(error, rid, operation)
 
         return handle
 

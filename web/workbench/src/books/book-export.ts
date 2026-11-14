@@ -78,7 +78,7 @@ export class BookExportSession {
       this.#state = {
         ...this.#state,
         pending: record.command,
-        rejected: record.rejected,
+        rejected: record.refused !== null,
         problem: record.command ? "unknown" : null,
       };
     } catch {
@@ -175,11 +175,14 @@ export class BookExportSession {
         error.status < 500 &&
         ![408, 429].includes(error.status);
       try {
-        this.#journal.failure(rejected);
+        // Exports have no refusal table to classify against, so the record states that a
+        // refusal was observed without claiming whether its key may be re-sent: the
+        // journal keeps `unclassified`, which no reader may take as retryable (#798).
+        this.#journal.failure(rejected ? "unclassified" : null);
         const record = this.#journal.load();
         this.#set({
           busy: false,
-          rejected: record.rejected,
+          rejected: record.refused !== null,
           problem: record.uncertain ? "unknown" : problemOf(error),
         });
       } catch {

@@ -4,15 +4,25 @@ The map is evidence of production wiring, not an acceptance result: a bound
 operation still needs behavioural review for the original ACs. `--write`
 re-derives the map and keeps existing named-dependency registrations; `--check`
 fails when the committed map drifts from the contract or the code.
+
+Test evidence is read from both sides of the repository: the TypeScript suite below
+`web/workbench/src` (which drives the client) and every test-suffixed file below
+`tests/`, including the Python suite (which drives the routers and the generated
+contract). Each language is matched on surfaces it really has -- see
+:func:`test_pattern` and :func:`python_evidence`.
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
+import functools
 import hashlib
+import io
 import json
 import re
 import subprocess
+import tokenize
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +38,26 @@ CONSUMER_ROOTS = (Path("web/workbench/src"),)
 TEST_ROOTS = (Path("web/workbench/src"), Path("tests"))
 CONSUMER_SUFFIXES = (".ts", ".tsx")
 TEST_SUFFIXES = (".ts", ".tsx", ".py", ".mjs")
+# Python drives the generated contract and the routers instead of the hand-written client,
+# so its evidence is a request, a binding call or an exact operationId handle. A client
+# method name is not one of them: in Python the same word is an unrelated domain method
+# (`transcript.revise()`, `snapshot.status()`), the false positive #788 removed when
+# `getByRole("status")` counted for the client's `status()` (#792).
+BINDING_FUNCTIONS = frozenset(
+    {
+        "validate_request",
+        "validate_response",
+        "validate_event",
+        "validate_http_request",
+        "validate_workbench_response",
+        "iter_events",
+        "assert_contract",
+    }
+)
+# This file's operationIds are the gate's own fixture data, so crediting it as coverage
+# of those operations is self-credit: the same strings would satisfy the gate whether or
+# not a single request is ever served (#792).
+GATE_SELF_TEST = Path("tests/unit/test_operation_coverage.py")
 PENDING_KEYS = ("owner", "artifact", "unblock_condition", "impact")
 
 
@@ -62,8 +92,26 @@ def is_consumer_candidate(path: Path) -> bool:
     )
 
 
-def is_test_candidate(path: Path) -> bool:
-    return path.suffix in TEST_SUFFIXES and (".test." in path.name or path.parts[0] == "tests")
+def is_test_candidate(root: Path, path: Path) -> bool:
+    """A test is a ``.test.`` asset or any test-suffixed file below ``root/tests``.
+
+    ``path`` is absolute here because it comes from ``(root / base).rglob()``, so the
+    scope has to be read from the path relative to ``root``: comparing ``parts[0]``
+    against the literal ``tests`` never matched an absolute path, which kept every
+    Python test below ``tests/`` out of the evidence set (#792).
+    """
+    if path.suffix not in TEST_SUFFIXES:
+        return False
+    resolved = path if path.is_absolute() else root / path
+    try:
+        relative = resolved.relative_to(root)
+    except ValueError:
+        return False
+    if relative == GATE_SELF_TEST:
+        return False
+    if ".test." in path.name:
+        return True
+    return relative.parts[0] == "tests"
 
 
 def client_methods(root: Path) -> dict[tuple[str, str], str]:
@@ -88,7 +136,7 @@ def consumer_pattern(operation: dict[str, str]) -> re.Pattern[str]:
 
 
 def test_pattern(operation: dict[str, str], method: str | None) -> re.Pattern[str]:
-    """Match evidence that reaches this operation's real request surface.
+    """Match TypeScript evidence that reaches this operation's real request surface.
 
     Only four forms count: the contract ``operationId``, the exact method+path the
     client sends, a call to the client method that performs the request, or that
@@ -96,6 +144,10 @@ def test_pattern(operation: dict[str, str], method: str | None) -> re.Pattern[st
     A bare quoted name is never evidence: ``getByRole("status")`` asserts an ARIA
     role that happens to share a word with the client method, and accepting it let
     any decorative string satisfy the coverage gate (#788).
+
+    The client-method legs exist because the workbench client is the surface a
+    TypeScript test drives; Python has no such client, so it is served by
+    :func:`python_evidence` instead (#792).
     """
     escaped_id = re.escape(operation["id"])
     escaped_path = re.escape(operation["path"])
@@ -108,6 +160,442 @@ def test_pattern(operation: dict[str, str], method: str | None) -> re.Pattern[st
         # ties the method name to this operation instead of to an unrelated string.
         patterns.append(rf"\bspyOn\(\s*[^,()\n]+,\s*[\"']{escaped_method}[\"']\s*\)")
     return re.compile("|".join(patterns))
+
+
+@functools.cache
+def python_tokens(path: str) -> tuple[tokenize.TokenInfo, ...]:
+    """The meaningful tokens of one Python file: comments and layout are dropped."""
+    text = Path(path).read_text(errors="ignore")
+    layout = {
+        tokenize.COMMENT,
+        tokenize.NL,
+        tokenize.NEWLINE,
+        tokenize.ENCODING,
+        tokenize.INDENT,
+        tokenize.DEDENT,
+    }
+    return tuple(
+        token
+        for token in tokenize.generate_tokens(io.StringIO(text).readline)
+        if token.type not in layout
+    )
+
+
+@functools.cache
+def python_docstrings(path: str) -> frozenset[tuple[int, int]]:
+    """Where one file's docstrings start, by ``(line, column)``.
+
+    A module, class or function docstring is its own expression statement; it documents
+    the call surface instead of being part of it, so a bare docstring naming an
+    operation is not a handle.
+    """
+    try:
+        tree = ast.parse(Path(path).read_text(errors="ignore"))
+    except SyntaxError, ValueError:
+        return frozenset()
+    starts: set[tuple[int, int]] = set()
+    for node in ast.walk(tree):
+        body = getattr(node, "body", None)
+        if not isinstance(body, list) or not body:
+            continue
+        first = body[0]
+        if (
+            isinstance(first, ast.Expr)
+            and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)
+        ):
+            starts.add((first.value.lineno, first.value.col_offset))
+    return frozenset(starts)
+
+
+@functools.cache
+def python_constants(path: str) -> dict[str, str]:
+    """One level of ``NAME = "text"`` bindings in one file.
+
+    ``PATH = "/v1/workbench/meetings/meeting-demo"`` followed by ``c.get(PATH)`` is the
+    dominant way the backend tests spell a route, so the name has to resolve.
+    """
+    try:
+        tokens = python_tokens(path)
+    except tokenize.TokenError, IndentationError, SyntaxError:
+        return {}
+    constants: dict[str, str] = {}
+    for index, token in enumerate(tokens):
+        if token.type != tokenize.NAME or index + 2 >= len(tokens):
+            continue
+        if tokens[index + 1].string != "=" or tokens[index + 2].type != tokenize.STRING:
+            continue
+        try:
+            value = ast.literal_eval(tokens[index + 2].string)
+        except SyntaxError, ValueError:
+            continue
+        if isinstance(value, str):
+            constants[token.string] = value
+    return constants
+
+
+@functools.cache
+def python_operation_handles(path: str) -> frozenset[str]:
+    """String literals one Python file uses as handles, not as prose.
+
+    A test may name an operation as a bare handle: ``"getBookExport"`` in a
+    parametrize list, a routed-operation set driving real requests, or a dict key.
+    That is what a handle looks like syntactically -- an argument, a collection
+    element, a mapping key or an assigned value -- so the literal has to sit in one of
+    those positions. Comments, docstrings and prose assertions are excluded, and so is
+    a substring: ``example("getVoiceRevision-invalid-request")`` is a fixture key
+    belonging to another operation, and ``\\b`` matched the operationId inside it.
+    """
+    try:
+        tokens = python_tokens(path)
+    except tokenize.TokenError, IndentationError, SyntaxError:
+        return frozenset()
+    documented = python_docstrings(path)
+    handles: set[str] = set()
+    previous: tokenize.TokenInfo | None = None
+    for token in tokens:
+        if token.type == tokenize.STRING and previous is not None:
+            opens_a_value = (
+                previous.type == tokenize.OP
+                and previous.string
+                in {
+                    "(",
+                    "[",
+                    "{",
+                    ",",
+                    ":",
+                    "=",
+                    "==",
+                    "!=",
+                }
+            ) or (previous.type == tokenize.NAME and previous.string in {"return", "yield"})
+            if opens_a_value and (token.start[0], token.start[1]) not in documented:
+                try:
+                    value = ast.literal_eval(token.string)
+                except SyntaxError, ValueError:
+                    value = None
+                if isinstance(value, str):
+                    handles.add(value)
+        previous = token
+    return frozenset(handles)
+
+
+def _skip_space(text: str, index: int) -> int:
+    while index < len(text) and text[index].isspace():
+        index += 1
+    return index
+
+
+def _literal_at(text: str, index: int) -> tuple[str, int] | None:
+    """Read the quoted literal at ``index`` with its interpolations masked to ``{}``.
+
+    Python tests build URLs as f-strings (``f"/v1/workbench/books/{book['id']}"``), so a
+    regular expression over the source cannot tell where the path ends: the quotes
+    inside the interpolation would look like the closing quote and a sibling route
+    (``.../{book['id']}/chapters``) would read as this one -- and a same-quote
+    interpolation (``f"…{book["id"]}…"``, PEP 701) would read as a shorter path that
+    matches the wrong route. Counting braces keeps every segment intact.
+    """
+    quote = text[index]
+    index += 1
+    literal: list[str] = []
+    depth = 0
+    while index < len(text):
+        character = text[index]
+        if character == "\\":
+            literal.append(text[index : index + 2])
+            index += 2
+            continue
+        if depth:
+            if character == "{":
+                depth += 1
+            elif character == "}":
+                depth -= 1
+                if depth == 0:
+                    literal.append("{}")
+            index += 1
+            continue
+        if character == "{":
+            if text[index : index + 2] == "{{":
+                literal.append("{{")
+                index += 2
+                continue
+            depth = 1
+            index += 1
+            continue
+        if character == quote:
+            return "".join(literal), index + 1
+        literal.append(character)
+        index += 1
+    return None
+
+
+def _expression_at(text: str, index: int, constants: dict[str, str]) -> tuple[str, int] | None:
+    """Resolve one argument: literals and one-level constants joined by ``+``.
+
+    ``"/v1/…/meetings"``, ``PATH``, ``PATH + "/minutes"`` and ``f"{VOICE}"`` all resolve;
+    anything that would need the value of a parameter or a table entry does not, which
+    keeps this a reading of names rather than a dataflow analysis.
+    """
+    parts: list[str] = []
+    index = _skip_space(text, index)
+    while index < len(text):
+        character = text[index]
+        if character in "\"'":
+            parsed = _literal_at(text, index)
+            if parsed is None:
+                return None
+            value, index = parsed
+            parts.append(value)
+        else:
+            start = index
+            while index < len(text) and (text[index].isalnum() or text[index] == "_"):
+                index += 1
+            if index == start:
+                return None
+            name = text[start:index]
+            if index < len(text) and text[index] in "\"'":
+                # An f-string's prefix (`f"…"`, `rf"…"`) reads as a name before the quote.
+                parsed = _literal_at(text, index)
+                if parsed is None or name.lower() not in {"f", "r", "rf", "fr", "b", "u"}:
+                    return None
+                value, index = parsed
+                parts.append(value)
+            elif name in constants:
+                parts.append(constants[name])
+            else:
+                return None
+        index = _skip_space(text, index)
+        if index < len(text) and text[index] == "+":
+            index = _skip_space(text, index + 1)
+            continue
+        break
+    return ("".join(parts), index) if parts else None
+
+
+@functools.cache
+def request_paths(path: str, method: str) -> tuple[str, ...]:
+    """The path expressions one file hands to this verb's request call.
+
+    Both spellings carry the route: the client call (``c.get("…")``, ``c.put(PATH)``) and
+    httpx's generic form ``c.request("GET", "…")``. The argument is resolved through
+    literals, one level of module constants and ``+`` concatenation, so the shapes the
+    backend tests actually use stay visible without modelling assignment flow.
+    """
+    text = Path(path).read_text(errors="ignore")
+    constants = python_constants(path)
+    found: list[str] = []
+    for call in re.finditer(r"\.(get|post|put|patch|delete|request)\(", text):
+        verb = call.group(1)
+        index = call.end()
+        if verb == "request":
+            spelled = _expression_at(text, index, constants)
+            if spelled is None:
+                continue
+            verb_value, index = spelled
+            index = _skip_space(text, index)
+            if index >= len(text) or text[index] != ",":
+                continue
+            if verb_value.strip().upper() != method.upper():
+                continue
+            index += 1
+        elif verb != method:
+            continue
+        expression = _expression_at(text, index, constants)
+        if expression is not None:
+            found.append(expression[0])
+    return tuple(found)
+
+
+def _segments(path: str) -> list[str]:
+    trimmed = path.split("?", 1)[0].split("#", 1)[0].strip("/")
+    return trimmed.split("/") if trimmed else []
+
+
+def _route_matches(template: list[str], sent: str) -> bool:
+    """Whether one sent path is this route template: same length, same static segments."""
+    wildcards = [segment.startswith("{") and segment.endswith("}") for segment in template]
+    actual = _segments(sent)
+    if len(actual) != len(template):
+        return False
+    for declared, value, wildcard in zip(template, actual, wildcards, strict=True):
+        if wildcard:
+            if not value:
+                return False
+            continue
+        if declared != value:
+            return False
+    return True
+
+
+def requests_route(operation: dict[str, str], path: Path) -> bool:
+    """Whether the file issues a real request to this operation's own route.
+
+    The route template and the request share their static segments and their length,
+    so a request cannot stand in for a sibling route or for the other verb on the
+    same path: ``POST /v1/workbench/projects`` is not the read, and
+    ``/v1/workbench/exports/{export_id}/content`` is not the export read.
+    """
+    template = _segments(operation["path"])
+    return any(
+        _route_matches(template, literal)
+        for literal in request_paths(str(path), operation["method"])
+    )
+
+
+@functools.cache
+def javascript_literals(path: str) -> tuple[tuple[str, int], ...]:
+    """The string and template literals of one JS file, interpolations masked."""
+    text = Path(path).read_text(errors="ignore")
+    literals: list[tuple[str, int]] = []
+    index = 0
+    while index < len(text):
+        if text[index] in "\"`'":
+            parsed = _literal_at(text, index)
+            if parsed is None:
+                break
+            value, end = parsed
+            literals.append((value, index))
+            index = end
+            continue
+        index += 1
+    return tuple(literals)
+
+
+def javascript_evidence(operation: dict[str, str], path: Path) -> bool:
+    """Whether one browser spec really drives this operation.
+
+    A browser spec answers the API from a scripted route table, so a route the table
+    serves is a route the spec drives: the entry names the path and checks
+    ``request.method()``, and the spec fails on a request it did not declare. Two
+    surfaces count here: the exact ``operationId`` as its own literal
+    (``readEvents("streamExportEvents", …)``) and a route-table path that matches this
+    operation's template with its verb stated in the same entry. A fixture id is not a
+    handle: ``listRenderUnits-response-200-v2`` is a longer literal for the fixture set
+    and says nothing about the v1 read, while the table's own
+    ``/v2/workbench/chapters/${…}/render-units`` entry does speak for the v2 read.
+    """
+    text = Path(path).read_text(errors="ignore")
+    if re.search(rf"[\"']{re.escape(operation['id'])}[\"']", text):
+        return True
+    template = _segments(operation["path"])
+    verb = re.escape(operation["method"].upper())
+    for literal, offset in javascript_literals(str(path)):
+        if not _route_matches(template, literal):
+            continue
+        if re.search(rf"[\"']{verb}[\"']", text[max(0, offset - 120) : offset + 260]):
+            return True
+    return False
+
+
+@functools.cache
+def python_binding_operations(path: str) -> frozenset[str]:
+    """operationIds handed to a generated-contract binding call as its own argument.
+
+    The call names the operation it validates (``validate_response("getBook", 200, …)``),
+    which is the Python side of the client method: it is a real boundary, not a string.
+    Arguments are read from the call's own parentheses, so a mention inside a comment or
+    a docstring -- where the text is not even tokenised as a call -- cannot satisfy it.
+    """
+    try:
+        tokens = python_tokens(path)
+    except tokenize.TokenError, IndentationError, SyntaxError:
+        return frozenset()
+    found: set[str] = set()
+    for index, token in enumerate(tokens):
+        if token.type != tokenize.NAME or token.string not in BINDING_FUNCTIONS:
+            continue
+        if index + 1 >= len(tokens) or tokens[index + 1].string != "(":
+            continue
+        depth = 0
+        for argument in tokens[index + 1 :]:
+            value = argument.string
+            if value == "(":
+                depth += 1
+            elif value == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            elif depth == 1 and argument.type == tokenize.STRING:
+                try:
+                    literal = ast.literal_eval(value)
+                except SyntaxError, ValueError:
+                    continue
+                if isinstance(literal, str):
+                    found.add(literal)
+    return frozenset(found)
+
+
+@functools.cache
+def python_operation_id_assertions(path: str) -> frozenset[str]:
+    """operationIds compared against a live document's ``operationId``.
+
+    ``schema["paths"][path]["get"]["operationId"] == "getBook"`` asserts the route the
+    application mounts carries this operation, which the string in a comment does not.
+    """
+    try:
+        tokens = python_tokens(path)
+    except tokenize.TokenError, IndentationError, SyntaxError:
+        return frozenset()
+    found: set[str] = set()
+    for index, token in enumerate(tokens):
+        if token.type != tokenize.STRING:
+            continue
+        try:
+            if ast.literal_eval(token.string) != "operationId":
+                continue
+        except SyntaxError, ValueError:
+            continue
+        following = tokens[index + 1 : index + 5]
+        if len(following) < 3:
+            continue
+        if following[0].string != "]" or following[1].string != "==":
+            continue
+        if following[2].type != tokenize.STRING:
+            continue
+        try:
+            literal = ast.literal_eval(following[2].string)
+        except SyntaxError, ValueError:
+            continue
+        if isinstance(literal, str):
+            found.add(literal)
+    return frozenset(found)
+
+
+def python_evidence(operation: dict[str, str], path: Path) -> bool:
+    """Whether one Python file really reaches this operation.
+
+    Three surfaces count, all of them real: a request to the route the app serves (the
+    client call or httpx's ``request(verb, path)``, with literals, one level of module
+    constants and ``+`` concatenation resolved), a generated-contract binding call that
+    states the operation it validates, and an exact ``operationId`` handle (a live
+    ``operationId`` assertion, a parametrised list or a routed-operation set the test
+    drives). A mention in a comment, a docstring, a contract description or a longer
+    fixture key is not evidence (#788, #792).
+
+    Two entries in the reviewed map are *declared* exceptions rather than evidence, and
+    are kept because no rule excludes them while deleting them would just fail the
+    check -- both operations stay bound on their other evidence:
+
+    * ``getProject`` in ``tests/contract/test_workbench_http_bindings.py``: the id is
+      passed to ``validate_http_request("../../private", "getProject", {})`` inside
+      ``pytest.raises(ValueError, match="Unknown HTTP profile")``. The unknown profile
+      is rejected before an operation is selected, so the operation is never reached.
+    * ``generateRenderUnitV2`` in ``tests/contract/test_render_unit_text_bound.py``: the
+      id is stored in ``_DISPATCH_OPERATION`` only to assert that the contract
+      description and the architecture table name the registered operation.
+
+    They are declared here so the next reader does not read the judging as "any mention
+    counts"; the honest count is 218 real entries out of 220 added by #792.
+    """
+    identifier = operation["id"]
+    if identifier in python_binding_operations(str(path)):
+        return True
+    if identifier in python_operation_id_assertions(str(path)):
+        return True
+    if requests_route(operation, path):
+        return True
+    return identifier in python_operation_handles(str(path))
 
 
 def scan(
@@ -130,9 +618,15 @@ def scan(
                 consumers.append(path.relative_to(root).as_posix())
     for base in TEST_ROOTS:
         for path in sorted((root / base).rglob("*")):
-            if not path.is_file() or not is_test_candidate(path):
+            if not path.is_file() or not is_test_candidate(root, path):
                 continue
-            if reference.search(path.read_text(errors="ignore")):
+            if path.suffix == ".py":
+                matched = python_evidence(operation, path)
+            elif path.suffix == ".mjs":
+                matched = javascript_evidence(operation, path)
+            else:
+                matched = bool(reference.search(path.read_text(errors="ignore")))
+            if matched:
                 tests.append(path.relative_to(root).as_posix())
     return sorted(set(consumers)), sorted(set(tests))
 
@@ -178,6 +672,9 @@ def derive(root: Path) -> dict[str, Any]:
         ),
         "contract": CONTRACT.as_posix(),
         "contract_sha256": sha256_bytes((root / CONTRACT).read_bytes()),
+        # The commit the map was derived on. `--write` runs before the map is committed,
+        # so this names the base the evidence was read from, never the commit that
+        # carries the map; `differences()` therefore does not compare it (#792).
         "audited_head": subprocess.run(
             ["git", "-C", str(root), "rev-parse", "HEAD"],
             capture_output=True,

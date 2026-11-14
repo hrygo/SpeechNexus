@@ -220,3 +220,350 @@ def test_unbound_quoted_property_does_not_bind_the_method(tmp_path: Path) -> Non
     )
     pattern = module.test_pattern(status_operation(), "status")
     assert pattern.search(source.read_text()) is None
+
+
+def book_operation() -> dict[str, str]:
+    return {"id": "getBook", "method": "get", "path": "/v1/workbench/books/{book_id}"}
+
+
+def python_source(tmp_path: Path, name: str, body: str) -> Path:
+    source = tmp_path / "tests/unit/backend" / name
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text(body)
+    return source
+
+
+def test_absolute_paths_below_tests_are_discovered(tmp_path: Path) -> None:
+    """#792: the scan passes absolute paths, so the scope must be read after `relative_to`."""
+    module = load()
+    python_test = module.ROOT / "tests/unit/backend/test_workbench_http_versions.py"
+    assert python_test.is_absolute()
+    assert module.is_test_candidate(module.ROOT, python_test)
+    assert module.is_test_candidate(module.ROOT, module.ROOT / "tests/conftest.py")
+    assert not module.is_test_candidate(module.ROOT, module.ROOT / "scripts/dev-env/check_x.py")
+    assert module.is_test_candidate(module.ROOT, module.ROOT / "web/workbench/src/a.test.ts")
+    # A path relative to the root is the same file, and a relative path outside it is not.
+    relative = Path("tests/unit/backend/test_workbench_http_versions.py")
+    assert not relative.is_absolute()
+    assert module.is_test_candidate(module.ROOT, relative)
+    assert not module.is_test_candidate(module.ROOT, Path("scripts/dev-env/check_x.py"))
+
+
+def test_gate_own_unit_test_is_not_evidence_of_its_operations() -> None:
+    """Its operationIds are fixture data: crediting them would be the gate citing itself."""
+    module = load()
+    assert module.is_test_candidate(module.ROOT, module.ROOT / module.GATE_SELF_TEST) is False
+
+
+def test_python_request_to_the_route_is_evidence(tmp_path: Path) -> None:
+    module = load()
+    source = python_source(
+        tmp_path,
+        "test_books.py",
+        "async def test_reads_a_book(client: Any) -> None:\n"
+        "    book = await client.get(f\"/v1/workbench/books/{book['id']}\")\n",
+    )
+    assert module.python_evidence(book_operation(), source)
+
+
+def test_python_request_to_a_sibling_route_is_not_evidence(tmp_path: Path) -> None:
+    """`.../{book_id}/chapters` serves the chapter listing, not the book read."""
+    module = load()
+    source = python_source(
+        tmp_path,
+        "test_chapters.py",
+        "async def test_lists_chapters(client: Any) -> None:\n"
+        "    await client.get(f\"/v1/workbench/books/{book['id']}/chapters\")\n",
+    )
+    assert module.python_evidence(book_operation(), source) is False
+
+
+def test_python_request_with_another_verb_is_not_evidence(tmp_path: Path) -> None:
+    """`POST /v1/workbench/projects` creates; it does not cover the project listing."""
+    module = load()
+    source = python_source(
+        tmp_path,
+        "test_projects.py",
+        "async def test_creates(client: Any) -> None:\n"
+        '    await client.post("/v1/workbench/projects", json={"name": "synthetic"})\n',
+    )
+    operation = {"id": "listProjects", "method": "get", "path": "/v1/workbench/projects"}
+    assert module.python_evidence(operation, source) is False
+
+
+def test_python_contract_binding_call_is_evidence(tmp_path: Path) -> None:
+    module = load()
+    source = python_source(
+        tmp_path,
+        "test_contract.py",
+        'assert validate_response("getBook", 200, {"body": payload}) is payload\n',
+    )
+    assert module.python_evidence(book_operation(), source)
+
+
+def test_python_comment_and_docstring_mention_is_not_evidence(tmp_path: Path) -> None:
+    """#792: naming the operation is not reaching it, however often the file says it."""
+    module = load()
+    source = python_source(
+        tmp_path,
+        "test_comment.py",
+        '"""The `getBook` route is covered elsewhere."""\n'
+        "def test_placeholder() -> None:\n"
+        "    # getBook: read by id, asserted in the repository suite\n"
+        '    assert "getBook" in __doc__\n',
+    )
+    assert module.python_evidence(book_operation(), source) is False
+
+
+def test_python_fixture_key_is_not_an_operation_handle(tmp_path: Path) -> None:
+    """`getVoiceRevision-invalid-request` is another operation's fixture, not this one."""
+    module = load()
+    source = python_source(
+        tmp_path,
+        "test_voice.py",
+        'body = _example("getVoiceRevision-invalid-request")["body"]\n'
+        'assert validate_response("retireVoiceRevision", 422, {"body": body})\n',
+    )
+    operation = {
+        "id": "getVoiceRevision",
+        "method": "get",
+        "path": "/v1/workbench/voices/{voice_id}/revisions/{revision}",
+    }
+    assert module.python_evidence(operation, source) is False
+
+
+def test_python_handle_literal_in_a_routed_table_is_evidence(tmp_path: Path) -> None:
+    module = load()
+    source = python_source(
+        tmp_path,
+        "test_errors.py",
+        'CASES = [(404, "resource_not_found", "getBook")]\n',
+    )
+    assert module.python_evidence(book_operation(), source)
+
+
+def test_python_client_method_word_in_a_domain_call_is_not_evidence(tmp_path: Path) -> None:
+    """#792: `transcript.revise()`/`snapshot.status()` are domain methods, not the client."""
+    module = load()
+    source = python_source(
+        tmp_path,
+        "test_versions.py",
+        "corrected = transcript.revise(expected_revision=1, text=BODY, now=NOW)\n"
+        'assert snapshot.status()["abort_recovery"] is None\n',
+    )
+    revision = {
+        "id": "createTranscriptRevision",
+        "method": "post",
+        "path": "/v1/workbench/transcripts/{transcript_id}/revisions",
+    }
+    assert module.python_evidence(revision, source) is False
+    assert module.python_evidence(status_operation(), source) is False
+
+
+def test_python_live_operation_id_assertion_is_evidence(tmp_path: Path) -> None:
+    module = load()
+    source = python_source(
+        tmp_path,
+        "test_schema.py",
+        'assert schema["paths"]["/v2/workbench/status"]["get"]["operationId"] == '
+        '"getWorkbenchStatusV2"\n',
+    )
+    assert module.python_evidence(status_operation(), source)
+
+
+def test_python_comment_showing_a_binding_call_is_not_evidence(tmp_path: Path) -> None:
+    """A comment that shows the call is still a comment: the tokens never form a call."""
+    module = load()
+    source = python_source(
+        tmp_path,
+        "test_comment_binding.py",
+        "def test_placeholder() -> None:\n"
+        '    # validate_response("getBook", 200, {"body": payload})\n'
+        '    """例：validate_response("getBook", 200, {"body": payload})"""\n'
+        "    assert True\n",
+    )
+    assert module.python_binding_operations(str(source)) == frozenset()
+    assert module.python_evidence(book_operation(), source) is False
+
+
+def test_python_same_quote_f_string_interpolation_does_not_end_the_path(tmp_path: Path) -> None:
+    """PEP 701 lets an f-string interpolate its own quote: masking must be brace-aware.
+
+    A quote-based reader stops at `book["id"]` and reads `/v1/workbench/books/{book[`,
+    which is the book read's own shape; counting braces keeps the sibling route's fifth
+    segment and the read stays uncovered.
+    """
+    module = load()
+    source = python_source(
+        tmp_path,
+        "test_nested_quote.py",
+        "async def test_lists_chapters(client: Any) -> None:\n"
+        '    await client.get(f"/v1/workbench/books/{book["id"]}/chapters")\n',
+    )
+    assert module.request_paths(str(source), "get") == ("/v1/workbench/books/{}/chapters",)
+    assert module.python_evidence(book_operation(), source) is False
+
+
+def test_python_same_quote_f_string_on_the_route_is_evidence(tmp_path: Path) -> None:
+    """The same masking must not lose the operation it does serve."""
+    module = load()
+    source = python_source(
+        tmp_path,
+        "test_nested_quote_hit.py",
+        "async def test_reads(client: Any) -> None:\n"
+        '    await client.get(f"/v1/workbench/books/{book["id"]}")\n',
+    )
+    assert module.python_evidence(book_operation(), source)
+
+
+def test_python_route_constant_is_evidence(tmp_path: Path) -> None:
+    """`PATH` + `c.get(PATH)` is how the backend tests spell a route."""
+    module = load()
+    source = python_source(
+        tmp_path,
+        "test_constants.py",
+        'PATH = "/v1/workbench/books/book-demo"\n\n\n'
+        "async def test_reads(client: Any) -> None:\n"
+        "    await client.get(PATH)\n",
+    )
+    assert module.python_evidence(book_operation(), source)
+
+
+def test_python_constant_plus_suffix_is_evidence(tmp_path: Path) -> None:
+    """`PATH + "?workspace_id=other"` is the same route with a query."""
+    module = load()
+    source = python_source(
+        tmp_path,
+        "test_constant_query.py",
+        'PATH = "/v1/workbench/books/book-demo"\n\n\n'
+        "async def test_reads(client: Any) -> None:\n"
+        '    await client.get(PATH + "?workspace_id=other")\n',
+    )
+    assert module.python_evidence(book_operation(), source)
+
+
+def test_python_constant_for_another_route_is_not_evidence(tmp_path: Path) -> None:
+    module = load()
+    source = python_source(
+        tmp_path,
+        "test_constant_sibling.py",
+        'PATH = "/v1/workbench/books/book-demo/chapters"\n\n\n'
+        "async def test_reads(client: Any) -> None:\n"
+        "    await client.get(PATH)\n",
+    )
+    assert module.python_evidence(book_operation(), source) is False
+
+
+def test_python_httpx_request_call_is_evidence(tmp_path: Path) -> None:
+    """`c.request("GET", path)` is the generic spelling of the same request."""
+    module = load()
+    source = python_source(
+        tmp_path,
+        "test_request_call.py",
+        "async def test_reads(client: Any) -> None:\n"
+        '    await client.request("GET", f"/v1/workbench/books/{book[\'id\']}")\n',
+    )
+    assert module.python_evidence(book_operation(), source)
+
+
+def test_python_httpx_request_call_with_another_verb_is_not_evidence(tmp_path: Path) -> None:
+    module = load()
+    source = python_source(
+        tmp_path,
+        "test_request_verb.py",
+        "async def test_writes(client: Any) -> None:\n"
+        '    await client.request("PUT", "/v1/workbench/books/book-demo")\n',
+    )
+    assert module.python_evidence(book_operation(), source) is False
+
+
+def test_python_helper_parameter_path_is_not_resolved(tmp_path: Path) -> None:
+    """One level of naming only: a helper's parameter is a declared blind spot."""
+    module = load()
+    source = python_source(
+        tmp_path,
+        "test_helper.py",
+        "async def call(app: Any, path: str) -> Any:\n"
+        "    return await client.get(path)\n\n\n"
+        "async def test_reads(app: Any) -> None:\n"
+        '    await call(app, "/v1/workbench/books/book-demo")\n',
+    )
+    assert module.python_evidence(book_operation(), source) is False
+
+
+def test_python_docstring_naming_the_operation_is_not_a_handle(tmp_path: Path) -> None:
+    """A docstring is documentation; it is not the call surface of the test."""
+    module = load()
+    source = python_source(
+        tmp_path,
+        "test_documented.py",
+        "def helper() -> None:\n    '''getBook'''\n",
+    )
+    assert "getBook" not in module.python_operation_handles(str(source))
+    assert module.python_evidence(book_operation(), source) is False
+
+
+def javascript_source(tmp_path: Path, body: str) -> Path:
+    source = tmp_path / "tests/web" / "render.spec.mjs"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text(body)
+    return source
+
+
+def test_javascript_route_table_entry_is_evidence(tmp_path: Path) -> None:
+    """A browser spec serves the route it drives; the entry names path and verb."""
+    module = load()
+    source = javascript_source(
+        tmp_path,
+        "const answer = (path, request) => {\n"
+        '  if (path === "/v1/workbench/projects") return { status: 200 };\n'
+        '  if (request.method() === "GET") return { status: 200 };\n'
+        "  return null;\n"
+        "};\n",
+    )
+    operation = {"id": "listProjects", "method": "get", "path": "/v1/workbench/projects"}
+    assert module.javascript_evidence(operation, source)
+
+
+def test_javascript_route_table_entry_with_another_verb_is_not_evidence(tmp_path: Path) -> None:
+    module = load()
+    source = javascript_source(
+        tmp_path,
+        'page.route("**/*", (route) => {\n'
+        '  if (path === "/v1/workbench/projects" && request.method() === "POST") return null;\n'
+        "});\n",
+    )
+    operation = {"id": "listProjects", "method": "get", "path": "/v1/workbench/projects"}
+    assert module.javascript_evidence(operation, source) is False
+
+
+def test_javascript_fixture_key_is_not_evidence(tmp_path: Path) -> None:
+    """`listRenderUnits-response-200-v2` is a fixture id, not the v1 read."""
+    module = load()
+    source = javascript_source(
+        tmp_path,
+        'const units = body("listRenderUnits-response-200-v2");\n',
+    )
+    operation = {
+        "id": "listRenderUnits",
+        "method": "get",
+        "path": "/v1/workbench/chapters/{chapter_id}/render-units",
+    }
+    assert module.javascript_evidence(operation, source) is False
+
+
+def test_javascript_template_literal_route_is_evidence(tmp_path: Path) -> None:
+    """A table entry with `${…}` segments still names the v2 route it serves."""
+    module = load()
+    source = javascript_source(
+        tmp_path,
+        "const answer = (path) =>\n"
+        "  path === `/v2/workbench/chapters/${ids.chapter}/render-units` &&\n"
+        '  request.method() === "GET";\n',
+    )
+    operation = {
+        "id": "listRenderUnitsV2",
+        "method": "get",
+        "path": "/v2/workbench/chapters/{chapter_id}/render-units",
+    }
+    assert module.javascript_evidence(operation, source)

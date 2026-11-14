@@ -26,6 +26,25 @@ class VersionStoreError(Exception):
 
     sqlstate is optional internal diagnostic metadata, never a public response field.
     Consumers must not infer rollback from it or retry a mutation automatically.
+
+    commit_unknown marks the outcome this request cannot decide. Adapters set it only
+    in these cases:
+
+    * the COMMIT was still in flight when the transaction's own budget ran out, so no
+      server determination was ever read;
+    * the driver reported transport loss or backend shutdown during the COMMIT, or the
+      COMMIT failed with a SQLSTATE that does not prove abort - only class 23 and
+      serialization failure/deadlock (40001, 40P01) prove it, while 40003, 57P01,
+      57014, 55P03 and unclassified failures stay unknown;
+    * the content-write adapter conservatively reuses the flag for business states
+      whose earlier write is undetermined: an export no longer running, an owner
+      already writing or unknown, a lost CAS token. There this request certainly did
+      not commit; the unresolved attempt is the prior one.
+
+    It stays False when the server answered inside that budget: any failure raised
+    before the COMMIT is attempted, and a COMMIT refusal that proves abort. Caller
+    cancellation is outside the flag as well; it escapes as CancelledError with no
+    classification.
     """
 
     def __init__(self, *, sqlstate: str | None, commit_unknown: bool) -> None:

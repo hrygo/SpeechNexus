@@ -3,7 +3,7 @@
   "scope": "workbench HTTP surface only; other surfaces and behaviour review are separate units",
   "contract": "contracts/workbench-openapi.yaml",
   "contract_sha256": "06eaebb54b829bb073fcaa622aa0444fbba52d848005a8a8e36382d01cc475ae",
-  "audited_head": "2a3299baa159f8908e8d18d4b7773223b281d96a",
+  "audited_head": "562f12dcab00e7b16e15caeb8934832914db405d",
   "operations": [
     {
       "id": "cancelAssistantTurn",
@@ -19,6 +19,9 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/integration/test_workbench_assistant_http.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
+        "tests/unit/backend/test_workbench_http_error_fallback.py",
         "web/workbench/src/assistant/assistant-session.test.ts"
       ],
       "status": "bound"
@@ -37,6 +40,9 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/integration/test_workbench_exports_http.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
+        "tests/unit/backend/test_workbench_http_error_fallback.py",
         "web/workbench/src/books/BookExportPanel.test.tsx",
         "web/workbench/src/books/book-export.test.ts",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
@@ -57,6 +63,9 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/integration/test_workbench_assistant_http.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
+        "tests/unit/backend/test_workbench_http_error_fallback.py",
         "web/workbench/src/assistant/AssistantHost.test.tsx",
         "web/workbench/src/assistant/assistant-session.test.ts"
       ],
@@ -75,6 +84,8 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/integration/test_workbench_exports_http.py",
+        "tests/integration/test_workbench_render_units_http.py",
         "web/workbench/src/books/BooksHost.test.tsx",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],
@@ -94,6 +105,9 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/integration/test_workbench_exports_http.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
+        "tests/unit/backend/test_workbench_http_error_fallback.py",
         "web/workbench/src/books/BookExportPanel.test.tsx",
         "web/workbench/src/books/book-export.test.ts",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
@@ -113,6 +127,8 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/integration/test_workbench_exports_http.py",
+        "tests/integration/test_workbench_render_units_http.py",
         "web/workbench/src/books/BooksHost.test.tsx",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],
@@ -132,6 +148,10 @@
         "web/workbench/src/meetings/meeting-journal.ts"
       ],
       "tests": [
+        "tests/contract/test_workbench_http_errors.py",
+        "tests/integration/test_workbench_http_meetings.py",
+        "tests/integration/test_workbench_recovery_postgres.py",
+        "tests/integration/test_workbench_runtime.py",
         "web/workbench/src/meetings/MeetingHost.test.tsx",
         "web/workbench/src/meetings/meeting-client.test.ts",
         "web/workbench/src/meetings/meeting-session.test.ts"
@@ -152,6 +172,9 @@
         "web/workbench/src/meetings/meeting-journal.ts"
       ],
       "tests": [
+        "tests/contract/test_workbench_http_errors.py",
+        "tests/integration/test_workbench_http_meetings.py",
+        "tests/unit/backend/test_workbench_http_error_fallback.py",
         "web/workbench/src/meetings/MeetingHost.test.tsx",
         "web/workbench/src/meetings/meeting-client.test.ts",
         "web/workbench/src/meetings/meeting-session.test.ts"
@@ -172,6 +195,22 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/contract/test_workbench_http_errors.py",
+        "tests/integration/test_workbench_deletion_browser.py",
+        "tests/integration/test_workbench_http_management.py",
+        "tests/integration/test_workbench_http_meetings.py",
+        "tests/integration/test_workbench_http_postgres.py",
+        "tests/integration/test_workbench_meeting_browser.py",
+        "tests/integration/test_workbench_real_runtime_browser.py",
+        "tests/integration/test_workbench_real_runtime_chapter_create_browser.py",
+        "tests/integration/test_workbench_real_runtime_minutes_browser.py",
+        "tests/integration/test_workbench_real_runtime_prompter_state_browser.py",
+        "tests/integration/test_workbench_real_runtime_voice_catalogue_browser.py",
+        "tests/integration/test_workbench_recovery_postgres.py",
+        "tests/integration/test_workbench_runtime.py",
+        "tests/integration/test_workbench_runtime_saved_assets_http.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
+        "tests/unit/backend/test_workbench_http_versions.py",
         "web/workbench/src/manuscripts/ManuscriptHost.test.tsx",
         "web/workbench/src/manuscripts/editor-journal.test.ts",
         "web/workbench/src/manuscripts/editor-session.test.ts",
@@ -194,6 +233,9 @@
       },
       "consumers": [],
       "tests": [
+        "tests/contract/test_workbench_v2_migration.py",
+        "tests/unit/backend/test_workbench_http_contract_migration.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
         "web/workbench/src/books/RenderUnitPanel.test.tsx",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],
@@ -219,6 +261,11 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/contract/test_workbench_v2_migration.py",
+        "tests/integration/test_workbench_exports_http.py",
+        "tests/integration/test_workbench_render_units_http.py",
+        "tests/unit/backend/test_workbench_http_contract_migration.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
         "web/workbench/src/books/RenderUnitPanel.test.tsx",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],
@@ -238,6 +285,15 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/contract/test_workbench_http_errors.py",
+        "tests/integration/test_workbench_deletion_browser.py",
+        "tests/integration/test_workbench_http_management.py",
+        "tests/integration/test_workbench_meeting_browser.py",
+        "tests/integration/test_workbench_real_runtime_browser.py",
+        "tests/integration/test_workbench_real_runtime_minutes_browser.py",
+        "tests/integration/test_workbench_recovery_postgres.py",
+        "tests/integration/test_workbench_runtime.py",
+        "tests/unit/backend/test_workbench_http_versions.py",
         "web/workbench/src/manuscripts/ManuscriptHost.test.tsx",
         "web/workbench/src/manuscripts/editor-session.test.ts",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
@@ -258,6 +314,10 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/contract/test_workbench_http_errors.py",
+        "tests/integration/test_workbench_real_runtime_minutes_browser.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
+        "tests/unit/backend/test_workbench_http_versions.py",
         "web/workbench/src/manuscripts/ManuscriptHost.test.tsx",
         "web/workbench/src/manuscripts/editor-session.test.ts",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
@@ -277,6 +337,12 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/contract/test_workbench_binary_http_bindings.py",
+        "tests/contract/test_workbench_download_errors.py",
+        "tests/contract/test_workbench_streaming.py",
+        "tests/contract/test_workbench_streaming_tcp.py",
+        "tests/unit/backend/test_workbench_http_downloads.py",
+        "tests/unit/backend/test_workbench_http_management.py",
         "web/workbench/src/books/BookExportPanel.test.tsx",
         "web/workbench/src/manuscripts/workbench-download-client.test.ts"
       ],
@@ -295,6 +361,13 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/contract/test_workbench_binary_http_bindings.py",
+        "tests/contract/test_workbench_download_errors.py",
+        "tests/integration/test_workbench_runtime_saved_assets_http.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
+        "tests/unit/backend/test_workbench_http_downloads.py",
+        "tests/unit/backend/test_workbench_http_error_fallback.py",
+        "tests/unit/backend/test_workbench_http_management.py",
         "web/workbench/src/manuscripts/workbench-download-client.test.ts"
       ],
       "status": "bound"
@@ -310,6 +383,8 @@
       },
       "consumers": [],
       "tests": [
+        "tests/contract/test_workbench_v2_migration.py",
+        "tests/unit/backend/test_workbench_render_generation_http.py",
         "web/workbench/src/books/RenderUnitPanel.test.tsx"
       ],
       "status": "consumer_pending",
@@ -334,6 +409,10 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/contract/test_render_unit_text_bound.py",
+        "tests/contract/test_workbench_v2_migration.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
+        "tests/unit/backend/test_workbench_http_error_fallback.py",
         "web/workbench/src/books/RenderUnitPanel.test.tsx"
       ],
       "status": "bound"
@@ -351,6 +430,10 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/integration/test_workbench_assistant_http.py",
+        "tests/unit/backend/test_workbench_assistant_views.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
+        "tests/unit/backend/test_workbench_http_error_fallback.py",
         "web/workbench/src/assistant/assistant-session.test.ts"
       ],
       "status": "bound"
@@ -368,6 +451,9 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/integration/test_workbench_real_runtime_download_browser.py",
+        "tests/integration/test_workbench_runtime_export_dispatch.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
         "web/workbench/src/books/BooksHost.test.tsx",
         "web/workbench/src/books/RenderUnitPanel.test.tsx",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
@@ -387,6 +473,11 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/integration/test_workbench_exports_http.py",
+        "tests/integration/test_workbench_runtime_export_dispatch.py",
+        "tests/unit/backend/test_workbench_export_views.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
+        "tests/unit/backend/test_workbench_http_error_fallback.py",
         "web/workbench/src/books/BookExportPanel.test.tsx",
         "web/workbench/src/books/book-export.test.ts",
         "web/workbench/src/manuscripts/workbench-client.test.ts",
@@ -404,7 +495,10 @@
         "python_http_schema": true
       },
       "consumers": [],
-      "tests": [],
+      "tests": [
+        "tests/integration/test_workbench_real_runtime_chapter_create_browser.py",
+        "tests/unit/backend/test_workbench_http_degradations.py"
+      ],
       "status": "consumer_pending",
       "pending": {
         "owner": "C",
@@ -427,6 +521,9 @@
         "web/workbench/src/meetings/meeting-session.ts"
       ],
       "tests": [
+        "tests/contract/test_workbench_http_errors.py",
+        "tests/integration/test_workbench_recovery_postgres.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
         "web/workbench/src/meetings/MeetingHost.test.tsx",
         "web/workbench/src/meetings/meeting-client.test.ts",
         "web/workbench/src/meetings/meeting-session.test.ts"
@@ -446,6 +543,9 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/contract/test_workbench_http_errors.py",
+        "tests/integration/test_workbench_real_runtime_minutes_browser.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
         "web/workbench/src/meetings/MeetingHost.test.tsx",
         "web/workbench/src/meetings/meeting-client.test.ts",
         "web/workbench/src/meetings/meeting-session.test.ts"
@@ -465,6 +565,15 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/contract/test_workbench_http_bindings.py",
+        "tests/contract/test_workbench_http_errors.py",
+        "tests/integration/test_workbench_real_runtime_chapter_create_browser.py",
+        "tests/integration/test_workbench_real_runtime_minutes_browser.py",
+        "tests/integration/test_workbench_recovery_postgres.py",
+        "tests/integration/test_workbench_runtime.py",
+        "tests/integration/test_workbench_runtime_export_dispatch.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
+        "tests/unit/backend/test_workbench_http_versions.py",
         "web/workbench/src/deletions/DeletionHost.test.tsx",
         "web/workbench/src/deletions/deletion-session.test.ts",
         "web/workbench/src/manuscripts/ManuscriptHost.test.tsx",
@@ -484,7 +593,11 @@
         "python_http_schema": true
       },
       "consumers": [],
-      "tests": [],
+      "tests": [
+        "tests/contract/test_workbench_v2_migration.py",
+        "tests/unit/backend/test_workbench_http_contract_migration.py",
+        "tests/unit/backend/test_workbench_http_degradations.py"
+      ],
       "status": "consumer_pending",
       "pending": {
         "owner": "C（契约 owner 协作）",
@@ -506,6 +619,13 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/integration/test_workbench_real_runtime_chapter_create_browser.py",
+        "tests/integration/test_workbench_real_runtime_download_browser.py",
+        "tests/integration/test_workbench_render_units_http.py",
+        "tests/integration/test_workbench_render_units_postgres.py",
+        "tests/unit/backend/test_workbench_http_contract_migration.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
+        "tests/unit/backend/test_workbench_http_error_fallback.py",
         "web/workbench/src/books/RenderUnitPanel.test.tsx"
       ],
       "status": "bound"
@@ -523,6 +643,8 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/integration/test_workbench_runtime_saved_assets_http.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
         "web/workbench/src/books/RenderUnitPanel.test.tsx",
         "web/workbench/src/manuscripts/workbench-download-client.test.ts"
       ],
@@ -541,6 +663,7 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/unit/backend/test_workbench_http_degradations.py",
         "web/workbench/src/teleprompter/teleprompter-state.test.ts"
       ],
       "status": "bound"
@@ -558,6 +681,10 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/contract/test_workbench_http_errors.py",
+        "tests/integration/test_workbench_http_management.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
+        "tests/unit/backend/test_workbench_http_versions.py",
         "web/workbench/src/manuscripts/FixedTranscriptDownload.test.tsx",
         "web/workbench/src/manuscripts/ManuscriptHost.test.tsx",
         "web/workbench/src/manuscripts/editor-journal.test.ts",
@@ -579,7 +706,11 @@
         "python_http_schema": true
       },
       "consumers": [],
-      "tests": [],
+      "tests": [
+        "tests/contract/test_workbench_http_errors.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
+        "tests/unit/backend/test_workbench_http_versions.py"
+      ],
       "status": "consumer_pending",
       "pending": {
         "owner": "C",
@@ -598,7 +729,14 @@
         "python_http_schema": true
       },
       "consumers": [],
-      "tests": [],
+      "tests": [
+        "tests/contract/test_voice_catalogue_http_bindings.py",
+        "tests/integration/test_speech_voice_catalogue.py",
+        "tests/integration/test_workbench_runtime_voice_catalogue.py",
+        "tests/unit/backend/test_speech_voice_catalogue_http.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
+        "tests/unit/test_route_conformance.py"
+      ],
       "status": "consumer_pending",
       "pending": {
         "owner": "C（契约 owner 协作）",
@@ -620,6 +758,12 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/contract/test_voice_catalogue_http_bindings.py",
+        "tests/integration/test_speech_voice_catalogue.py",
+        "tests/integration/test_workbench_runtime_voice_catalogue.py",
+        "tests/unit/backend/test_workbench_http_management.py",
+        "tests/unit/backend/test_workbench_http_meetings.py",
+        "tests/unit/backend/test_workbench_http_teleprompter.py",
         "web/workbench/src/books/RenderUnitPanel.test.tsx",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],
@@ -635,7 +779,21 @@
         "python_http_schema": true
       },
       "consumers": [],
-      "tests": [],
+      "tests": [
+        "tests/contract/test_workbench_http_errors.py",
+        "tests/contract/test_workbench_v2_migration.py",
+        "tests/integration/test_admin_diagnostics_browser.py",
+        "tests/integration/test_workbench_http_management.py",
+        "tests/integration/test_workbench_real_runtime_assistant_browser.py",
+        "tests/integration/test_workbench_real_runtime_browser.py",
+        "tests/integration/test_workbench_real_runtime_manuscripts_browser.py",
+        "tests/integration/test_workbench_recovery_postgres.py",
+        "tests/integration/test_workbench_runtime.py",
+        "tests/unit/backend/test_workbench_http_contract_migration.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
+        "tests/unit/backend/test_workbench_http_management.py",
+        "tests/unit/backend/test_workbench_runtime_ingress.py"
+      ],
       "status": "consumer_pending",
       "pending": {
         "owner": "C（契约 owner 协作）",
@@ -657,6 +815,14 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/contract/test_workbench_http_errors.py",
+        "tests/contract/test_workbench_v2_migration.py",
+        "tests/integration/test_workbench_http_meetings.py",
+        "tests/integration/test_workbench_minutes_live.py",
+        "tests/integration/test_workbench_runtime_capabilities.py",
+        "tests/unit/backend/test_workbench_http_contract_migration.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
+        "tests/unit/backend/test_workbench_http_meetings.py",
         "web/workbench/src/assistant/AssistantHost.test.tsx",
         "web/workbench/src/assistant/assistant-session.test.ts",
         "web/workbench/src/deletions/DeletionHost.test.tsx",
@@ -683,6 +849,8 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/integration/test_workbench_real_runtime_chapter_create_browser.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
         "web/workbench/src/books/BooksHost.test.tsx",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],
@@ -701,6 +869,8 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/integration/test_workbench_real_runtime_chapter_create_browser.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
         "web/workbench/src/books/BooksHost.test.tsx",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],
@@ -719,6 +889,11 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/contract/test_workbench_http_errors.py",
+        "tests/integration/test_workbench_deletion_browser.py",
+        "tests/integration/test_workbench_http_management.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
+        "tests/unit/backend/test_workbench_http_management.py",
         "web/workbench/src/assistant/AssistantHost.test.tsx",
         "web/workbench/src/books/BooksHost.test.tsx",
         "web/workbench/src/deletions/DeletionHost.test.tsx",
@@ -745,6 +920,7 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/unit/backend/test_workbench_http_degradations.py",
         "web/workbench/src/books/RenderUnitPanel.test.tsx"
       ],
       "status": "bound"
@@ -760,6 +936,7 @@
       },
       "consumers": [],
       "tests": [
+        "tests/unit/backend/test_workbench_http_degradations.py",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],
       "status": "consumer_pending",
@@ -783,6 +960,9 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/integration/test_workbench_real_runtime_chapter_create_browser.py",
+        "tests/integration/test_workbench_render_units_http.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
         "web/workbench/src/books/BooksHost.test.tsx",
         "web/workbench/src/books/RenderUnitPanel.test.tsx",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
@@ -802,6 +982,9 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/contract/test_workbench_http_errors.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
+        "tests/unit/backend/test_workbench_http_management.py",
         "web/workbench/src/deletions/DeletionHost.test.tsx",
         "web/workbench/src/deletions/deletion-session.test.ts",
         "web/workbench/src/manuscripts/ManuscriptHost.test.tsx",
@@ -826,6 +1009,12 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/contract/test_voice_catalogue_http_bindings.py",
+        "tests/integration/test_speech_voice_catalogue.py",
+        "tests/integration/test_workbench_runtime_voice_catalogue.py",
+        "tests/unit/backend/test_speech_voice_catalogue_http.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
+        "tests/unit/test_route_conformance.py",
         "web/workbench/src/assistant/AssistantHost.test.tsx",
         "web/workbench/src/assistant/assistant-session.test.ts",
         "web/workbench/src/books/RenderUnitPanel.test.tsx",
@@ -846,6 +1035,8 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/integration/test_workbench_real_runtime_download_browser.py",
+        "tests/integration/test_workbench_runtime_saved_assets_http.py",
         "web/workbench/src/books/RenderUnitPanel.test.tsx",
         "web/workbench/src/file-workflow/TtsTaskHost.test.tsx",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
@@ -866,6 +1057,8 @@
         "web/workbench/src/meetings/meeting-journal.ts"
       ],
       "tests": [
+        "tests/contract/test_workbench_http_errors.py",
+        "tests/integration/test_workbench_http_meetings.py",
         "web/workbench/src/meetings/meeting-client.test.ts",
         "web/workbench/src/meetings/meeting-session.test.ts"
       ],
@@ -881,7 +1074,11 @@
         "python_http_schema": true
       },
       "consumers": [],
-      "tests": [],
+      "tests": [
+        "tests/contract/test_workbench_streaming.py",
+        "tests/contract/test_workbench_streaming_tcp.py",
+        "tests/fixtures/contracts/workbench-streaming-http.mjs"
+      ],
       "status": "consumer_pending",
       "pending": {
         "owner": "C",
@@ -903,6 +1100,9 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/contract/test_workbench_http_errors.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
+        "tests/unit/backend/test_workbench_http_versions.py",
         "web/workbench/src/books/BooksHost.test.tsx",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],
@@ -919,6 +1119,8 @@
       },
       "consumers": [],
       "tests": [
+        "tests/contract/test_workbench_v2_migration.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
         "web/workbench/src/books/RenderUnitPanel.test.tsx",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],
@@ -944,6 +1146,8 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/integration/test_workbench_render_units_http.py",
+        "tests/unit/backend/test_workbench_http_degradations.py",
         "web/workbench/src/books/RenderUnitPanel.test.tsx",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],
@@ -980,6 +1184,15 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/contract/test_workbench_http_errors.py",
+        "tests/integration/test_workbench_http_management.py",
+        "tests/integration/test_workbench_http_meetings.py",
+        "tests/integration/test_workbench_meeting_browser.py",
+        "tests/integration/test_workbench_real_runtime_minutes_browser.py",
+        "tests/integration/test_workbench_recovery_postgres.py",
+        "tests/integration/test_workbench_runtime.py",
+        "tests/integration/test_workbench_runtime_export_dispatch.py",
+        "tests/integration/test_workbench_runtime_saved_assets_http.py",
         "web/workbench/src/deletions/DeletionHost.test.tsx",
         "web/workbench/src/deletions/deletion-core.test.ts",
         "web/workbench/src/deletions/deletion-session.test.ts"
@@ -1000,6 +1213,16 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/contract/test_workbench_http_errors.py",
+        "tests/integration/test_workbench_http_management.py",
+        "tests/integration/test_workbench_http_meetings.py",
+        "tests/integration/test_workbench_meeting_browser.py",
+        "tests/integration/test_workbench_real_runtime_minutes_browser.py",
+        "tests/integration/test_workbench_recovery_postgres.py",
+        "tests/integration/test_workbench_runtime.py",
+        "tests/integration/test_workbench_runtime_export_dispatch.py",
+        "tests/integration/test_workbench_runtime_saved_assets_http.py",
+        "tests/unit/backend/test_workbench_http_management.py",
         "web/workbench/src/deletions/DeletionHost.test.tsx",
         "web/workbench/src/deletions/deletion-core.test.ts",
         "web/workbench/src/deletions/deletion-session.test.ts"
@@ -1019,6 +1242,9 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "tests/contract/test_workbench_http_errors.py",
+        "tests/integration/test_workbench_recovery_postgres.py",
+        "tests/unit/backend/test_workbench_http_management.py",
         "web/workbench/src/deletions/DeletionHost.test.tsx",
         "web/workbench/src/deletions/deletion-core.test.ts",
         "web/workbench/src/deletions/deletion-session.test.ts"

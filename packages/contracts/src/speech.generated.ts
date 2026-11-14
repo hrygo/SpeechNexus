@@ -381,10 +381,28 @@ export interface paths {
      *     retryable unchanged. Obtain a fresh selection for a new intent only
      *     after resolving any earlier unknown submission.
      *
+     *     `workspace_id` is optional. Omitting it selects `workspace-default`,
+     *     the shared workspace the deployment seeds; the response reports the
+     *     resolved `workspace_id`, and an explicit `workspace-default` is the same
+     *     canonical intent as omitting the field.
+     *
      *     For `asr` and `tts`, the admission operation, attempt, request, lease,
      *     quota and capacity projections, the coordination claim and every public
      *     Job row commit in one transaction. A capacity shortage returns 429
-     *     `job_capacity_exhausted` with `Retry-After` and writes no row. A binding
+     *     `job_capacity_exhausted` with `Retry-After` and writes no row. Admission
+     *     reserves one attempt against the workspace's quota row, which is
+     *     provisioned by registering an engine for that workspace; a workspace
+     *     that exists but has no quota row returns 422 `workspace_not_configured`
+     *     and writes no row. That refusal is deterministic until an operator
+     *     provisions the workspace: retrying the same request cannot succeed
+     *     beforehand, while the same request under its original idempotency key is
+     *     admitted afterwards. It is deliberately not the 503 `job_unavailable`
+     *     answer, which reports a storage read the store rejected or persisted data
+     *     it cannot reconcile -- a condition retrying cannot fix -- and is therefore
+     *     `retryable: false`. A connection-level failure or a timed-out attempt is
+     *     instead 503 `job_outcome_unknown`, which is `retryable: true`; callers
+     *     must read `retryable` rather than infer it from the status.
+     *     `workspace_not_configured` is likewise never retryable. A binding
      *     whose frozen `execution_defaults` cannot complete every execution
      *     parameter returns 422 `job_binding_incomplete`; `tts` input
      *     `text_asset_id` returns 422 `job_text_asset_unsupported` until the
@@ -1389,6 +1407,14 @@ export interface components {
     CleanupState: "not_required" | "pending" | "complete" | "quarantined";
     JobCreateBase: {
       kind?: components["schemas"]["JobKind"];
+      /**
+       * @description Target workspace. `default: workspace-default`: omitting the field
+       *     selects the seeded shared workspace, and the response echoes the
+       *     resolved `workspace_id`. The workspace must exist and have a
+       *     provisioned quota row; otherwise the create is refused with 422
+       *     `workspace_not_found`, `workspace_disabled` or
+       *     `workspace_not_configured` respectively, and no Job row is written.
+       */
       workspace_id?: components["schemas"]["Identifier"];
       client_reference?: string;
       model?: string;

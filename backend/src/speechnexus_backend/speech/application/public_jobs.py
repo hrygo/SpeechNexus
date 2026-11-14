@@ -1477,6 +1477,10 @@ _ADMISSION_REJECTION_CODES = frozenset(
         "unsupported_parameter",
         "model_binding_task_not_supported",
         "idempotency_conflict",
+        # A workspace without a quota row cannot be admitted by retrying; the
+        # admission store reports it as a deterministic refusal rather than the
+        # storage-outage 503 (#702).
+        "workspace_not_configured",
     }
 )
 

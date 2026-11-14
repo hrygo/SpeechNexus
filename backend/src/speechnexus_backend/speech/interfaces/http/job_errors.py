@@ -52,6 +52,15 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
     ),
     "workspace_not_found": (422, "invalid_request_error", "The workspace was not found."),
     "workspace_disabled": (422, "invalid_request_error", "The workspace is disabled."),
+    # The workspace row exists but has no ``workspace_quotas`` row: admission has
+    # no reservation to charge, and no retry can produce one. This is a
+    # deterministic configuration refusal, deliberately distinct from the 503
+    # ``job_unavailable`` storage-outage code.
+    "workspace_not_configured": (
+        422,
+        "invalid_request_error",
+        "The workspace has no provisioned Job quota.",
+    ),
     "model_not_published": (422, "invalid_request_error", "The model is not published."),
     "model_binding_not_published": (
         422,

@@ -242,7 +242,8 @@
           "$ref": "#/$defs/JobKind"
         },
         "workspace_id": {
-          "$ref": "#/$defs/Identifier"
+          "$ref": "#/$defs/Identifier",
+          "description": "Target workspace. `default: workspace-default`: omitting the field\nselects the seeded shared workspace, and the response echoes the\nresolved `workspace_id`. The workspace must exist and have a\nprovisioned quota row; otherwise the create is refused with 422\n`workspace_not_found`, `workspace_disabled` or\n`workspace_not_configured` respectively, and no Job row is written.\n"
         },
         "client_reference": {
           "type": "string",

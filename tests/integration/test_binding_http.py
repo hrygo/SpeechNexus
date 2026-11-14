@@ -32,6 +32,7 @@ from speechnexus_backend import binding_runtime as runtime_module
 from speechnexus_backend.app import create_app
 from speechnexus_backend.binding_runtime import BindingRuntime
 from speechnexus_backend.settings import Settings
+from speechnexus_backend.speech.domain.configuration import document_digest
 from speechnexus_backend.speech.infrastructure.binding_draft_schema import binding_draft_grants
 from speechnexus_backend.speech.infrastructure.binding_publication_evidence_schema import (
     binding_admin_reader_grants,
@@ -455,6 +456,9 @@ def test_sql_deadline_returns_unknown_without_committing_partial_command(
         "INSERT INTO speech_binding_families (binding_id) VALUES (%s)", (body["binding_id"],)
     )
     before = http_db.snapshot()
+    # The competing transaction holds the family row lock for this entire block,
+    # so the 0.1 s budget is guaranteed to expire while the writer waits on that
+    # lock: this 503 is forced by the lock, not by machine speed.
     with TestClient(http_db.app(binding_transaction_timeout_seconds=0.1)) as client:
         blocker = http_db.db.blocker()
         try:
@@ -465,9 +469,17 @@ def test_sql_deadline_returns_unknown_without_committing_partial_command(
         finally:
             blocker.rollback()
             blocker.close()
-        # Only the caller's explicit original-key POST may attempt its original intent again.
+    # The lock is gone. Only the caller's explicit original-key POST may attempt
+    # its original intent again, and that attempt must not inherit the 0.1 s
+    # deadline: that budget exists solely to force the first failure while the
+    # row lock is held. The replay therefore runs with the fixture's normal
+    # budget, so retrying the original key is a behavior assertion, not a race
+    # against how fast one transaction finishes on a loaded machine.
+    with TestClient(http_db.app()) as client:
         assert client.post(PATH, json=body, headers=KEY).status_code == 201
-    assert len(http_db.snapshot()["speech_binding_commands"]) == 1
+    commands = http_db.snapshot()["speech_binding_commands"]
+    assert len(commands) == 1
+    assert commands[0]["key_digest"] == document_digest(KEY["Idempotency-Key"].encode())
 
 
 @pytest.mark.parametrize("login_kind", ["superuser", "schema_owner"])

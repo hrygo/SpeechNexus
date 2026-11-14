@@ -859,16 +859,19 @@ export interface components {
     Sha256Digest: string;
     /**
      * @description Stored source text for one render unit, bounded at 200000 characters.
-     *     This bound is the unit's source capacity, not the size of one synthesis:
-     *     one speech synthesis is bounded at `MAX_SPEECH_TEXT_CHARS` (4096), the
-     *     same bound `input` on `/v1/audio/speech` and the inline `text` of
-     *     `TtsJobInput` declare. A unit whose text exceeds that bound cannot be
-     *     synthesized in one attempt: `generateRenderUnit` refuses it with `422`
-     *     `render_submission_rejected` and submits no Job, instead of truncating or
-     *     silently shortening the text. Text that must be synthesized in one
-     *     attempt has to be split into units of at most 4096 characters; the
-     *     two bounds stay distinct because the unit is the editing and provenance
-     *     boundary while one Job is exactly one synthesis.
+     *     This bound is the unit's source capacity, not a request bound. Dispatch
+     *     inlines the unit text into one public Job request body, and the inline
+     *     text bound of that request is `MAX_SPEECH_TEXT_CHARS` (4096), the same
+     *     bound `input` on `/v1/audio/speech` and the inline `text` of
+     *     `TtsJobInput` declare. A unit whose text exceeds the inline bound cannot
+     *     be dispatched in one request: the registered dispatch operation
+     *     `generateRenderUnitV2` (`POST /v2/workbench/render-units/{unit_id}/generations`)
+     *     refuses it with `422` `render_submission_rejected` and submits no Job,
+     *     instead of truncating or silently shortening the text. Text that must be
+     *     dispatched in one request has to be split into units of at most 4096
+     *     characters; the two bounds stay distinct because the unit is the editing
+     *     and provenance boundary while one Job request body carries one inline
+     *     body.
      */
     RenderUnitText: string;
     ResourceReference: {

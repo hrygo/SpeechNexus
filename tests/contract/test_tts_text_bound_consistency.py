@@ -248,33 +248,69 @@ async def test_the_same_over_bound_body_keeps_each_entry_point_code() -> None:
     assert jobs.submitted == []
 
 
-def _capability_bound_table() -> list[str]:
-    """The cross-entry table a consumer is told to look up in the errors section."""
+def _capability_bound_rows() -> list[dict[str, str]]:
+    """Parse the documented table into columns, so a single cell can be asserted."""
 
     document = (ROOT / "docs" / "architecture" / "speech-api.md").read_text()
     start = document.index("载荷超过能力上界")
     end = document.index("前两行是同一个条件", start)
-    return [line for line in document[start:end].splitlines() if line.startswith("|")]
+    lines = [line for line in document[start:end].splitlines() if line.startswith("|")]
+    header = [cell.strip() for cell in lines[0].strip("|").split("|")]
+    rows: list[dict[str, str]] = []
+    for line in lines[2:]:
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        if len(cells) == len(header):
+            rows.append(dict(zip(header, cells, strict=True)))
+    return rows
 
 
-def _rows_naming(rows: list[str], *tokens: str) -> list[str]:
-    return [row for row in rows if all(token in row for token in tokens)]
+def _capability_bound_row(rows: list[dict[str, str]], entry: str, code: str) -> dict[str, str]:
+    matches = [
+        row for row in rows if row["入口"].startswith(entry) and row["错误码"] == f"`{code}`"
+    ]
+    assert len(matches) == 1, f"expected one row for {entry} naming {code}, got {matches}"
+    return matches[0]
 
 
-def test_the_cross_entry_bound_table_states_each_entry_code() -> None:
-    """The documented table must keep naming the code each measured entry returns.
+def test_the_cross_entry_bound_table_states_each_entry_column() -> None:
+    """Each row's branch-relevant columns must match the measured reply.
 
-    The synchronous and asynchronous one-synthesis refusals stay deliberately
-    different, so the table is the single place a consumer can map them. If the
-    table loses a row or a code, the mapping is no longer discoverable even
-    though both contracts still declare it.
+    A consumer branches on the declared bound, the status, the code and the
+    `param`; a table that keeps the right code but drifts on `param` or the bound
+    would send that consumer to the wrong branch. Every column is asserted
+    separately so a single-cell edit is caught.
     """
 
-    rows = _capability_bound_table()
+    rows = _capability_bound_rows()
 
-    assert _rows_naming(rows, "POST /v1/audio/speech", "400", "`invalid_request`")
-    assert _rows_naming(rows, "POST /v1/nexus/jobs", "422", "`unsupported_parameter`")
-    assert _rows_naming(rows, "POST /v1/nexus/jobs", "413", "`job_request_too_large`")
-    assert _rows_naming(rows, "POST /v1/nexus/assets", "413", "`asset_too_large`")
-    assert _rows_naming(rows, "POST /v1/nexus/assets", "422", "`asset_text_too_long`")
-    assert _rows_naming(rows, "render-units", "422", "`render_submission_rejected`")
+    synchronous = _capability_bound_row(rows, "`POST /v1/audio/speech`", "invalid_request")
+    assert synchronous["状态码"] == "400"
+    assert synchronous["param"] == "`input`"
+    assert "4096" in synchronous["声明上限"]
+    assert synchronous["retryable"] == "否"
+
+    asynchronous = _capability_bound_row(rows, "`POST /v1/nexus/jobs`", "unsupported_parameter")
+    assert asynchronous["状态码"] == "422"
+    assert asynchronous["param"] == "无"
+    assert "4096" in asynchronous["声明上限"]
+
+    body_ceiling = _capability_bound_row(rows, "`POST /v1/nexus/jobs`", "job_request_too_large")
+    assert body_ceiling["状态码"] == "413"
+    assert "262144" in body_ceiling["声明上限"]
+
+    asset_bytes = _capability_bound_row(rows, "`POST /v1/nexus/assets`", "asset_too_large")
+    assert asset_bytes["状态码"] == "413"
+    assert "4 MiB" in asset_bytes["声明上限"]
+
+    asset_text = _capability_bound_row(rows, "`POST /v1/nexus/assets`", "asset_text_too_long")
+    assert asset_text["状态码"] == "422"
+    assert "1000000" in asset_text["声明上限"]
+
+    render = _capability_bound_row(
+        rows, "`POST /v2/workbench/render-units", "render_submission_rejected"
+    )
+    assert render["状态码"] == "422"
+    assert render["param"] == "无"
+    assert "generateRenderUnitV2" in render["入口"]
+    assert "4096" in render["声明上限"]
+    assert "200000" in render["声明上限"]

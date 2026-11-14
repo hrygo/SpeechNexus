@@ -933,8 +933,9 @@ describe("restored alert names exactly the enabled actions", () => {
       // enables and no other.
       expect(namedReads(alert)).toEqual(state.readTarget === null ? [] : [state.readTarget]);
       expect(alert.includes("重放")).toBe(state.canReplay);
-      // A restored intent always names a readable Asset, so no cell may claim otherwise
-      // (#780 review M2: a false negative is as wrong as a false promise).
+      // Every cell here is a task record, which always names its confirmed input Asset, so
+      // no cell may claim otherwise (#780 review M2: a false negative is as wrong as a false
+      // promise).
       expect(alert).not.toContain("没有可核对");
     },
   );

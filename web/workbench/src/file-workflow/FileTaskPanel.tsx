@@ -166,8 +166,8 @@ export function FileTaskPanel({
         </p>
       )}
       <div className="file-task-actions">
-        {/* Disabled while a read is already running, and whenever the page holds no readable
-            identity at all; the alert names that same read handle (#780). */}
+        {/* Disabled while any session action is still running, and whenever the page holds no
+            readable identity at all; the alert is generated from that same read handle (#780). */}
         <button
           type="button"
           disabled={state.busy || state.readTarget === null}

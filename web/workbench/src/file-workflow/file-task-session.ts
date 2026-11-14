@@ -305,8 +305,9 @@ export interface UnconfirmedActions {
 /**
  * The alert for an unconfirmed outcome. Every clause is generated from `actions`, so the
  * sentence can neither omit an enabled action nor name one the page disables. Its negative
- * branch is reserved for the identity-less state (#780 review M2): a restored intent always
- * names its Asset, so the crash window must not be told there is nothing to verify.
+ * branch is reserved for the identity-less shape (#780 review M2): a task record always names
+ * its confirmed Asset, so the crash window must not be told there is nothing to verify --
+ * only an upload that never received an Asset may be.
  */
 export function unconfirmedAlertFor(actions: UnconfirmedActions): string {
   const read =
@@ -655,9 +656,9 @@ export class FileTaskSession {
 
   /** Read existing identities only. Never create or cancel during restoration. */
   async restore() {
-    // The one read predicate gates the action too: the old `#record || #upload` check was a
-    // fourth condition, and a page holding a readable identity outside it claimed a read that
-    // sent nothing (#780 review S1).
+    // Gate the action with the one read predicate. `#record || #upload` duplicated it: both
+    // agree wherever the button is visible, so nothing observable changes, and the two can no
+    // longer drift apart (#780 review S1).
     if (this.#readTarget(this.#view) !== null) await this.refresh();
   }
 

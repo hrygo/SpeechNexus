@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "hrygo/SpeechNexus",
-  "fetched_at": "2026-11-13T02:16:29Z",
+  "fetched_at": "2026-11-14T09:43:25+08:00",
   "issues": [
     {
       "number": 336,
@@ -195,8 +195,8 @@
       "html_url": "https://github.com/hrygo/SpeechNexus/issues/406",
       "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
       "title": "公开同步语音合成遵守请求级音频时长上限",
-      "state": "open",
-      "state_reason": null,
+      "state": "closed",
+      "state_reason": "completed",
       "labels": [
         {
           "name": "enhancement"
@@ -1184,6 +1184,66 @@
       "state_reason": "completed",
       "labels": [],
       "parent_issue_url": "https://api.github.com/repos/hrygo/SpeechNexus/issues/337"
+    },
+    {
+      "number": 696,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/696",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "长文 TTS：支持超过 4096 字符的正文（需先定产品形态）",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": null
+    },
+    {
+      "number": 702,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/702",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "契约合法请求得到 503「Job storage is unavailable」，真实原因是默认 workspace 无配额行",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": null
+    },
+    {
+      "number": 703,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/703",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "POST /v1/nexus/jobs 有未声明的请求体上限，超限返回 400 而非契约已有的 413 PayloadTooLarge",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": null
+    },
+    {
+      "number": 704,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/704",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "RenderUnit text 上界仍为 200000：与「一次合成 4096」的关系需实测并统一",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": null
+    },
+    {
+      "number": 705,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/705",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "同一「正文超上限」在同步与异步入口给出不同错误码，需统一或给出跨入口对照",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": null
+    },
+    {
+      "number": 723,
+      "html_url": "https://github.com/hrygo/SpeechNexus/issues/723",
+      "repository_url": "https://api.github.com/repos/hrygo/SpeechNexus",
+      "title": "取消路径终态拒绝不清理持久 pending:cancel，重载后把已作废的取消复活成未知",
+      "state": "open",
+      "state_reason": null,
+      "labels": [],
+      "parent_issue_url": null
     }
   ]
 }

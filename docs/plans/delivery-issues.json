@@ -100,9 +100,9 @@
           "note": "按 SPEECHNEXUS_ASSET_INSPECTOR 装配，audio 在创建 pool/S3 前完成前置校验"
         },
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/6544a934/backend/src/speechnexus_backend/speech/infrastructure/audio_asset_inspector.py#L72",
-          "label": "音频检查分派",
-          "note": "仅 asr_input 进入音频检查，其余 purpose 直接 available=False"
+          "url": "https://github.com/hrygo/SpeechNexus/blob/cef394336929e4f520d11ebe962034ffc7dd02e2/backend/src/speechnexus_backend/speech/infrastructure/audio_inspection_http.py",
+          "label": "purpose 分派与预算",
+          "note": "按 purpose 选预算并把同一数值下发与复核；不服务的 purpose 报 unsupported"
         },
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/6544a934/docs/components/production-assets.md",
@@ -156,7 +156,7 @@
       ],
       "implementation": "同步语音请求支持 nexus.max_output_audio_ms（100–3600000ms），有效上限贯穿生成校验、HTTP、固定执行计划、完整持久请求及网关；保留源样本、PCM及编码制品边界。自定义声音 TTS 泳道已打通（#519 片 2 / PR #563）：内部 `TtsEffectiveParameters.reference_text` 为可选字段、仅在 custom 命令出现，builtin 命令形状与旧版逐字一致；网关 `CommandFileCustomTts` 走 Base clone lane；未发布/退役/design 声音统一 422 `voice_not_published`（公开状态码由 503 变更）。",
       "integration": "PR #413 已合入主干 7182911f81811c25e0dab546f54fdc80303d9c34，公开请求级上限接通生产提交装配；公共 Job、各 binding 的完整能力上限、长文本处理和发布仍按正式路径校验。",
-      "verification": "2026-11-04 增量核验：固定候选的定向边界、SDK、隔离 PostgreSQL 和适用 CI 已通过，非作者 Sol 及增量复核无阻断；主干与受检候选整树一致。真实引擎验收按用户要求暂缓，#406 保持开放；短输入同步成功不代表长文本或 Base 模型资格。",
+      "verification": "2026-11-04 增量核验：固定候选的定向边界、SDK、隔离 PostgreSQL 和适用 CI 已通过，非作者 Sol 及增量复核无阻断；主干与受检候选整树一致。真实引擎验收按用户要求暂缓；#406 已于 2026-11-13 依代码交付证据关闭（`settings.speech_max_output_audio_ms`、`SpeechSynthesis.synthesize(max_output_audio_ms=...)` 与 `_limits.max_output_audio_ms` 的收紧链均在主干），真实引擎与资格证据仍未取得；短输入同步成功不代表长文本或 Base 模型资格。",
       "gap": "请求级上限真实引擎证据暂缓；公共 Job、各 binding 的完整能力上限、长文本处理和发布仍待完整验收。短输入同步成功不代表长文本或 Base 模型资格。",
       "evidence": [
         {
@@ -177,7 +177,7 @@
         {
           "url": "https://github.com/hrygo/SpeechNexus/pull/413",
           "label": "公开请求级时长上限",
-          "note": "已合入主干；确定性、SDK、隔离持久与CI证据见PR，真实引擎验收暂缓，#406开放"
+          "note": "已合入主干；确定性、SDK、隔离持久与 CI 证据见 PR，真实引擎验收暂缓；#406 已关闭但资格证据仍未取得"
         }
       ],
       "issues": [
@@ -318,7 +318,7 @@
       "gap": "真实删除协调器、音频及跨模块依赖仍需贯通。 合成删除许可和组件测试不证明真实端到端删除。",
       "evidence": [
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/architecture/production-assets.md",
+          "url": "https://github.com/hrygo/SpeechNexus/blob/cef394336929e4f520d11ebe962034ffc7dd02e2/docs/components/production-assets.md",
           "label": "资产与存储",
           "note": "文本资产和恢复路径的实现说明，不证明完整音频生命周期"
         },
@@ -437,7 +437,7 @@
       "gap": "真实策略、批准计划、业务 Worker 和全部 quota 结算尚未完整接线。 隔离事务证据不能代替多调度者的真实业务闭环。",
       "evidence": [
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/architecture/production-coordination-storage.md",
+          "url": "https://github.com/hrygo/SpeechNexus/blob/cef394336929e4f520d11ebe962034ffc7dd02e2/docs/operations/production-coordination-storage.md",
           "label": "协调存储和身份",
           "note": "组件与权限设计不代替真实消费者与目标拓扑资格"
         },
@@ -483,7 +483,7 @@
           "note": "对账说明不等于已取得真实停止与资源释放证据"
         },
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/architecture/production-coordination-storage.md",
+          "url": "https://github.com/hrygo/SpeechNexus/blob/cef394336929e4f520d11ebe962034ffc7dd02e2/docs/operations/production-coordination-storage.md",
           "label": "协调存储和身份",
           "note": "组件与权限设计不代替真实消费者与目标拓扑资格"
         },
@@ -667,7 +667,7 @@
       "gap": "真实删除协调器、音频及跨模块依赖仍需贯通。 合成删除许可和组件测试不证明真实端到端删除；组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
       "evidence": [
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/architecture/production-assets.md",
+          "url": "https://github.com/hrygo/SpeechNexus/blob/cef394336929e4f520d11ebe962034ffc7dd02e2/docs/components/production-assets.md",
           "label": "资产与存储",
           "note": "文本资产和恢复路径的实现说明，不证明完整音频生命周期"
         },
@@ -949,7 +949,7 @@
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/c8cda316e79c74539be10083ba3d4ffc27bd8fce/docs/components/pronunciation-drafts.md",
           "label": "发音草稿",
-          "note": "私有草稿实现及尚未交付的公开生命周期"
+          "note": "私有不可变草稿；公开列表与原子发布已另交付，执行侧消费仍待验收"
         },
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/c8cda316e79c74539be10083ba3d4ffc27bd8fce/docs/components/pronunciation-read-contract.md",
@@ -1193,7 +1193,7 @@
       "gap": "旧 writer 隔离、历史记录采用、生产备份回退和目标拓扑联验待完成。 历史清理未知和失败须先核实当前事实，不以旧记录断言现有残留。",
       "evidence": [
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/architecture/production-assets.md",
+          "url": "https://github.com/hrygo/SpeechNexus/blob/cef394336929e4f520d11ebe962034ffc7dd02e2/docs/components/production-assets.md",
           "label": "资产与存储",
           "note": "文本资产和恢复路径的实现说明，不证明完整音频生命周期"
         },
@@ -1290,15 +1290,25 @@
         "docs/architecture/deployment-units.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "存在 Linux 音频检查进程；跨平台生产消费者和部署协议本轮未核验。",
-      "integration": "已核对静态工厂或配置；运行时与端到端接线未实测。",
-      "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
-      "gap": "已核对静态工厂或配置；运行时与端到端接线未实测。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "implementation": "Linux 媒体检查由独立的 `asset-inspector` 部署单元承担（`asset-inspector/src/speechnexus_asset_inspector`），经 `contracts/internal/asset-inspection.openapi.yaml` 的内部 HTTP 协议解码并回传可复核回执，API 侧由 `HttpAudioAssetInspector` 复核判决。旧 bwrap 本机进程检查器、固定 launcher 及其 5 个单测已删除（#589 / PR #614）；`SPEECHNEXUS_AUDIO_INSPECTION_RUNTIME_ROOT`/`_COMMAND`/`_LAUNCHER_PYTHON`/`_BUBBLEWRAP`/`_PRLIMIT` 被显式设置时启动即失败并点名替代键。",
+      "integration": "Compose 以 `asset-inspection` profile 提供独立服务，镜像由 `asset-inspector/Dockerfile` 构建；容器只读根文件系统、无 capabilities、无 new privileges、无卷与 Docker socket，并位于 `internal: true` 且无默认网关和宿主端口的专用网络，仅 `api` 与 `asset-inspector` 接入，因此解码进程触达不到 PostgreSQL、对象存储与网关。接线由 `tests/unit/backend/test_asset_inspector_wiring.py` 与 `tests/ci/test_asset_inspector_image_ci.py` 覆盖。真实部署的跨平台解码与端到端联调未实测。",
+      "verification": "2026-11-14 增量核验：按源码确认部署单元、内部契约、Compose 服务与接线测试存在，且本机进程检查器路径已删除；本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
+      "gap": "真实部署的 Linux 解码端到端与应用联调仍待验收；镜像构建与接线测试不证明真实容器运行资格。",
       "evidence": [
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/speech/infrastructure/audio_inspection_process.py",
-          "label": "audio_inspection_process.py",
-          "note": "固定基线源码"
+          "label": "asset-inspector 部署单元",
+          "url": "https://github.com/hrygo/SpeechNexus/blob/cef394336929e4f520d11ebe962034ffc7dd02e2/asset-inspector/src/speechnexus_asset_inspector/service.py",
+          "note": "独立 Linux 解码单元；只持单次检查的共享 bearer token"
+        },
+        {
+          "label": "内部检查协议",
+          "url": "https://github.com/hrygo/SpeechNexus/blob/cef394336929e4f520d11ebe962034ffc7dd02e2/contracts/internal/asset-inspection.openapi.yaml",
+          "note": "请求预算与回执字段的机器契约；不证明运行资格"
+        },
+        {
+          "label": "Compose 与内部网络",
+          "url": "https://github.com/hrygo/SpeechNexus/blob/cef394336929e4f520d11ebe962034ffc7dd02e2/deploy/compose.yaml",
+          "note": "opt-in profile、只读根、无 capabilities；internal 网络无默认网关"
         }
       ],
       "issues": []
@@ -1942,19 +1952,19 @@
           "note": "需求基线；不证明现行实现或运行资格。"
         },
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/6544a934/backend/src/speechnexus_backend/speech/infrastructure/audio_asset_inspector.py#L72",
-          "label": "purpose 分派",
-          "note": "voice_reference 落入 available=False 分支，不回退文本检查"
+          "url": "https://github.com/hrygo/SpeechNexus/blob/cef394336929e4f520d11ebe962034ffc7dd02e2/backend/src/speechnexus_backend/speech/infrastructure/audio_inspection_http.py",
+          "label": "purpose 分派与预算",
+          "note": "voice_reference 走同一适配器但使用独立参考音频预算（_duration_budget）"
         },
         {
-          "url": "https://github.com/hrygo/SpeechNexus/blob/6544a934/tests/unit/backend/test_audio_asset_inspector.py#L191",
+          "url": "https://github.com/hrygo/SpeechNexus/blob/cef394336929e4f520d11ebe962034ffc7dd02e2/tests/unit/backend/test_audio_inspection_http.py",
           "label": "行为锁定用例",
-          "note": "显式断言 voice_reference 保持不可用"
+          "note": "参考音频用自有预算的请求与本地复核；不服务 purpose 被点名"
         },
         {
           "url": "https://github.com/hrygo/SpeechNexus/issues/592",
-          "label": "待产品口径",
-          "note": "是否纳入音频检查待定；#519/#529 的真实部署端到端阻断于此；未在部署实测"
+          "label": "参考音频检查口径",
+          "note": "#592 已关闭：voice_reference 纳入音频检查；真实部署端到端仍未实测"
         }
       ],
       "issues": [

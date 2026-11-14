@@ -857,6 +857,20 @@ export interface components {
     Revision: string;
     EventSequence: components["schemas"]["Revision"];
     Sha256Digest: string;
+    /**
+     * @description Stored source text for one render unit, bounded at 200000 characters.
+     *     This bound is the unit's source capacity, not the size of one synthesis:
+     *     one speech synthesis is bounded at `MAX_SPEECH_TEXT_CHARS` (4096), the
+     *     same bound `input` on `/v1/audio/speech` and the inline `text` of
+     *     `TtsJobInput` declare. A unit whose text exceeds that bound cannot be
+     *     synthesized in one attempt: `generateRenderUnit` refuses it with `422`
+     *     `render_submission_rejected` and submits no Job, instead of truncating or
+     *     silently shortening the text. Text that must be synthesized in one
+     *     attempt has to be split into units of at most 4096 characters; the
+     *     two bounds stay distinct because the unit is the editing and provenance
+     *     boundary while one Job is exactly one synthesis.
+     */
+    RenderUnitText: string;
     ResourceReference: {
       id: components["schemas"]["Identifier"];
       revision: components["schemas"]["Revision"];
@@ -1140,7 +1154,7 @@ export interface components {
       chapter_id: components["schemas"]["Identifier"];
       ordinal: number;
       revision: components["schemas"]["Revision"];
-      text: string;
+      text: components["schemas"]["RenderUnitText"];
       voice: components["schemas"]["ResourceReference"];
       pronunciation?: components["schemas"]["ResourceReference"] | null;
       model: string;
@@ -1156,7 +1170,7 @@ export interface components {
     } & (unknown & unknown & unknown & unknown & unknown);
     RenderUnitCreateRequest: {
       ordinal: number;
-      text: string;
+      text: components["schemas"]["RenderUnitText"];
       voice: components["schemas"]["ResourceReference"];
       pronunciation?: components["schemas"]["ResourceReference"];
       model: string;
@@ -1164,7 +1178,7 @@ export interface components {
     };
     RenderUnitPatch: {
       expected_revision: components["schemas"]["Revision"];
-      text?: string;
+      text?: components["schemas"]["RenderUnitText"];
       voice?: components["schemas"]["ResourceReference"];
       pronunciation?: components["schemas"]["ResourceReference"] | null;
       model?: string;
@@ -1522,7 +1536,7 @@ export interface components {
       chapter_id: components["schemas"]["Identifier"];
       ordinal: number;
       revision: components["schemas"]["Revision"];
-      text: string;
+      text: components["schemas"]["RenderUnitText"];
       voice: components["schemas"]["ResourceReference"];
       pronunciation?: components["schemas"]["ResourceReference"] | null;
       model: string;
@@ -1539,7 +1553,7 @@ export interface components {
     RenderUnitCreateRequestV2: {
       model_binding: components["schemas"]["ResourceReference"];
       ordinal: number;
-      text: string;
+      text: components["schemas"]["RenderUnitText"];
       voice: components["schemas"]["ResourceReference"];
       pronunciation?: components["schemas"]["ResourceReference"];
       model: string;
@@ -1548,7 +1562,7 @@ export interface components {
     RenderUnitPatchV2: {
       model_binding?: components["schemas"]["ResourceReference"];
       expected_revision: components["schemas"]["Revision"];
-      text?: string;
+      text?: components["schemas"]["RenderUnitText"];
       voice?: components["schemas"]["ResourceReference"];
       pronunciation?: components["schemas"]["ResourceReference"] | null;
       model?: string;

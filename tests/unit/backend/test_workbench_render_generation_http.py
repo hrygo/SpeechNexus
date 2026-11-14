@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from speechnexus_backend.workbench.app import create_app
 from speechnexus_backend.workbench.application.render_units import (
     RenderDispatchUnavailableError,
+    RenderSubmissionRejectedError,
     RenderSubmissionUnknownError,
 )
 from speechnexus_backend.workbench.domain.render_units import (
@@ -94,6 +95,18 @@ async def test_an_unknown_submission_is_reported_as_unknown_not_absent() -> None
     response = await call(_Service(RenderSubmissionUnknownError()))
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "outcome_unknown"
+
+
+async def test_an_over_bound_unit_is_refused_instead_of_shortened() -> None:
+    """A unit above the one-synthesis bound cannot be dispatched as-is.
+
+    The pinned intent is refused with a stable 422 `render_submission_rejected`
+    and the response carries no accepted attempt, so a caller can never mistake
+    a truncated synthesis for the unit's text. See the RenderUnitText contract.
+    """
+    response = await call(_Service(RenderSubmissionRejectedError()))
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "render_submission_rejected"
 
 
 async def test_without_a_producer_the_route_reports_unavailable() -> None:

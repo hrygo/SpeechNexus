@@ -21,6 +21,7 @@ from httpx import ASGITransport, AsyncClient
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.application.public_jobs import JobAdmissionRejectedError
+from speechnexus_backend.speech.application.speech_synthesis import SpeechUnavailableError
 from speechnexus_backend.speech.domain.speech_synthesis import MAX_SPEECH_TEXT_CHARS
 from speechnexus_gateway.domain.tts import MAX_TTS_TEXT_CHARS
 from tests.support.contracts import validator
@@ -153,4 +154,95 @@ async def test_over_bound_text_is_rejected_with_the_declared_error(text: str) ->
     assert error["code"] == "unsupported_parameter"
     assert error["retryable"] is False
     # Rejection happens at the contract gate: no admission attempt, no Job row.
+    assert jobs.submitted == []
+
+
+def test_both_entries_document_one_limit_and_their_two_codes() -> None:
+    """One limit, two entry points, two declared codes: the contract must say so.
+
+    The synchronous route reports an over-bound body as 400 `invalid_request`
+    with `param: input`; the asynchronous Job route reports the same condition
+    as 422 `unsupported_parameter`. Neither code is free to change alone, so
+    each entry has to name the shared limit and both codes, and each has to name
+    the other entry. Deleting that correspondence would leave a consumer with
+    two unrelated answers for one meaning.
+    """
+
+    schemas = _schemas()
+    synchronous = cast(str, _synchronous_input(schemas).get("description", ""))
+    asynchronous = cast(str, _async_inline_text(schemas).get("description", ""))
+
+    for description, where in (
+        (synchronous, "SpeechRequest.input"),
+        (asynchronous, "TtsJobInput.text"),
+    ):
+        assert description, f"{where} must describe the one-synthesis text bound"
+        assert "MAX_SPEECH_TEXT_CHARS" in description, (
+            f"{where} must name the shared one-synthesis limit instead of declaring a bare number"
+        )
+        assert str(MAX_SPEECH_TEXT_CHARS) in description
+        # Both codes are stated, because the same condition is reported twice.
+        assert "400" in description and "invalid_request" in description
+        assert "422" in description and "unsupported_parameter" in description
+
+    # Each entry points at the other, so the mapping is reachable from either side.
+    assert "/v1/nexus/jobs" in synchronous
+    assert "TtsJobInput" in synchronous
+    assert "/v1/audio/speech" in asynchronous
+
+
+class _UnavailableSpeech:
+    """Records that a synchronous request reached the backend, then refuses it."""
+
+    def __init__(self) -> None:
+        self.commands: list[Any] = []
+
+    def synthesize(self, command: Any, *, request_id: str) -> Any:
+        self.commands.append(command)
+        raise SpeechUnavailableError
+
+    def cancel(self, execution_id: str, reason: str) -> None:
+        raise AssertionError("an unstarted synthesis cannot be cancelled")
+
+
+async def test_the_same_over_bound_body_keeps_each_entry_point_code() -> None:
+    """Measured behaviour behind the documented mapping, on both entries.
+
+    The two replies stay deliberately different: the synchronous route reports
+    the body it cannot accept as 400 `invalid_request`, the asynchronous Job
+    route reports the shape its contract validator refuses as 422
+    `unsupported_parameter`. What must not drift is the bound (both refuse at
+    4097) or the declared envelope of each reply.
+    """
+
+    source = validator("speech-openapi.yaml")
+    jobs = _RecordingJobs()
+    speech = _UnavailableSpeech()
+    app = create_app(settings=_settings(), jobs=cast(Any, jobs), speech=cast(Any, speech))
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        synchronous = await client.post(
+            "/v1/audio/speech",
+            json={"model": "tts-quality", "input": "a" * (MAX_SPEECH_TEXT_CHARS + 1), "voice": "v"},
+        )
+        asynchronous = await client.post(
+            "/v1/nexus/jobs",
+            json=_job_body("a" * (MAX_SPEECH_TEXT_CHARS + 1)),
+            headers={"Idempotency-Key": "synthetic-bound-706"},
+        )
+
+    # Synchronous: 400 invalid_request, naming the offending parameter.
+    assert synchronous.status_code == 400, synchronous.text
+    declared = _declared_response("createSpeech", 400)["content"]["application/json"]["schema"]
+    source.evolve(schema={**DOCUMENT, "allOf": [declared]}).validate(synchronous.json())
+    sync_error = synchronous.json()["error"]
+    assert sync_error["code"] == "invalid_request"
+    assert sync_error["param"] == "input"
+    assert speech.commands == []
+
+    # Asynchronous: 422 unsupported_parameter, still no admission attempt.
+    assert asynchronous.status_code == 422, asynchronous.text
+    declared_async = _declared_response("createJob", 422)["content"]["application/json"]["schema"]
+    source.evolve(schema={**DOCUMENT, "allOf": [declared_async]}).validate(asynchronous.json())
+    assert asynchronous.json()["error"]["code"] == "unsupported_parameter"
     assert jobs.submitted == []

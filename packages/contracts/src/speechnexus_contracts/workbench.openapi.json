@@ -5457,9 +5457,7 @@
             "$ref": "#/components/schemas/Revision"
           },
           "text": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200000
+            "$ref": "#/components/schemas/RenderUnitText"
           },
           "voice": {
             "$ref": "#/components/schemas/RenderUnitVoice"
@@ -5639,6 +5637,12 @@
             }
           }
         ]
+      },
+      "RenderUnitText": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200000,
+        "description": "Stored source text for one render unit, bounded at 200000 characters.\nThis bound is the unit's source capacity, not the size of one synthesis:\none speech synthesis is bounded at `MAX_SPEECH_TEXT_CHARS` (4096), the\nsame bound `input` on `/v1/audio/speech` and the inline `text` of\n`TtsJobInput` declare. A unit whose text exceeds that bound cannot be\nsynthesized in one attempt: `generateRenderUnit` refuses it with `422`\n`render_submission_rejected` and submits no Job, instead of truncating or\nsilently shortening the text. Text that must be synthesized in one\nattempt has to be split into units of at most 4096 characters; the\ntwo bounds stay distinct because the unit is the editing and provenance\nboundary while one Job is exactly one synthesis.\n"
       },
       "RenderUnitVoice": {
         "$ref": "#/components/schemas/ResourceReference"
@@ -5960,9 +5964,7 @@
             "minimum": 0
           },
           "text": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200000
+            "$ref": "#/components/schemas/RenderUnitText"
           },
           "voice": {
             "$ref": "#/components/schemas/RenderUnitVoice"
@@ -5990,9 +5992,7 @@
             "$ref": "#/components/schemas/Revision"
           },
           "text": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200000
+            "$ref": "#/components/schemas/RenderUnitText"
           },
           "voice": {
             "$ref": "#/components/schemas/RenderUnitVoice"
@@ -6798,9 +6798,7 @@
             "$ref": "#/components/schemas/Revision"
           },
           "text": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200000
+            "$ref": "#/components/schemas/RenderUnitText"
           },
           "voice": {
             "$ref": "#/components/schemas/RenderUnitVoice"
@@ -6994,9 +6992,7 @@
             "minimum": 0
           },
           "text": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200000
+            "$ref": "#/components/schemas/RenderUnitText"
           },
           "voice": {
             "$ref": "#/components/schemas/RenderUnitVoice"
@@ -7027,9 +7023,7 @@
             "$ref": "#/components/schemas/Revision"
           },
           "text": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200000
+            "$ref": "#/components/schemas/RenderUnitText"
           },
           "voice": {
             "$ref": "#/components/schemas/RenderUnitVoice"

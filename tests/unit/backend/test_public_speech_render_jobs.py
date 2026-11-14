@@ -1,4 +1,4 @@
-"""Render dispatch keeps one bounded Job create and reports an unknown receipt honestly."""
+"""Render dispatch keeps one bounded Job create, the upstream refusal code and an honest receipt."""
 
 from __future__ import annotations
 
@@ -9,9 +9,12 @@ from typing import Any
 
 import httpx
 import pytest
+from speechnexus_contracts import ContractValidationError
 
 from speechnexus_backend.workbench.application.render_reconcile import RenderJobReadError
 from speechnexus_backend.workbench.application.render_units import (
+    RenderRejection,
+    RenderRejectionCause,
     RenderSubmissionConflictError,
     RenderSubmissionRejectedError,
     RenderSubmissionUnknownError,
@@ -97,6 +100,7 @@ async def test_keyless_submit_omits_the_header_and_keeps_the_reference() -> None
         (409, RenderSubmissionConflictError),
         (400, RenderSubmissionRejectedError),
         (401, RenderSubmissionRejectedError),
+        (413, RenderSubmissionRejectedError),
         (422, RenderSubmissionRejectedError),
     ],
 )
@@ -142,6 +146,105 @@ async def test_an_unrepresentable_unit_never_opens_a_connection() -> None:
             unit=unit(), key=None, reference="gen:" + "x" * 300
         )
     assert calls == 0
+
+
+def upstream_error(code: str | None, *, param: str | None = None) -> dict[str, Any]:
+    """A refusal body in the declared public shape; ``code`` is optional to omit it."""
+    error: dict[str, Any] = {
+        "type": "invalid_request_error",
+        "message": "The voice revision is not published.",
+        "param": param,
+        "request_id": "req_upstream_1",
+        "retryable": False,
+    }
+    if code is not None:
+        error["code"] = code
+    return {"error": error}
+
+
+async def refusal(
+    handler: Callable[[httpx.Request], httpx.Response],
+) -> RenderSubmissionRejectedError:
+    with pytest.raises(RenderSubmissionRejectedError) as caught:
+        await PublicSpeechRenderJobs(client(handler)).submit(
+            unit=unit(), key="key-12345678", reference="gen:abc"
+        )
+    return caught.value
+
+
+async def test_a_coded_refusal_keeps_the_upstream_code_and_param() -> None:
+    """The 422 names what was refused; keeping it is what names the operator's next step."""
+    error = await refusal(
+        lambda _: httpx.Response(
+            422, json=upstream_error("voice_not_published", param="voice.revision")
+        )
+    )
+    assert error.rejection is not None
+    assert error.rejection.cause is RenderRejectionCause.UPSTREAM_CODE
+    assert error.rejection.status_code == 422
+    assert error.rejection.upstream_code == "voice_not_published"
+    assert error.rejection.upstream_param == "voice.revision"
+
+
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [
+        (422, "unsupported_parameter"),
+        (422, "workspace_not_configured"),
+        (422, "workspace_not_found"),
+        (422, "voice_not_published"),
+        (422, "asset_not_ready"),
+        (413, "job_request_too_large"),
+    ],
+)
+async def test_every_refusal_code_reaches_the_caller_unfolded(status: int, code: str) -> None:
+    """Six different operator steps share one status class; none may absorb another."""
+    error = await refusal(lambda _: httpx.Response(status, json=upstream_error(code)))
+    assert error.rejection is not None
+    assert (error.rejection.status_code, error.rejection.upstream_code) == (status, code)
+
+
+@pytest.mark.parametrize(
+    ("status", "body"),
+    [
+        # A refusal generated before the JSON layer, e.g. a proxy's own 413 page.
+        (413, b"<html><h1>413 Request Entity Too Large</h1></html>"),
+        # JSON that is not the declared envelope.
+        (422, upstream_error("voice_not_published")["error"]),
+        # The declared envelope except the code: a refusal that named nothing.
+        (422, upstream_error(None)),
+        # The declared envelope with a value that cannot be a stable code.
+        (422, upstream_error("Voice Not Published")),
+    ],
+)
+async def test_an_unreadable_refusal_states_no_cause(status: int, body: Any) -> None:
+    """Unreadable is not "coded": the refusal stands, but no reason may be claimed for it."""
+    error = await refusal(
+        lambda _: (
+            httpx.Response(status, content=body)
+            if isinstance(body, bytes)
+            else httpx.Response(status, json=body)
+        )
+    )
+    assert error.rejection is not None
+    assert error.rejection.cause is RenderRejectionCause.UPSTREAM_UNREADABLE
+    assert error.rejection.status_code == status
+    assert error.rejection.upstream_code is None
+    assert error.rejection.upstream_param is None
+
+
+def test_a_rejection_cannot_name_a_cause_it_did_not_observe() -> None:
+    """The value type refuses both lies: a code never read, and a code without one."""
+    with pytest.raises(ValueError):
+        RenderRejection(RenderRejectionCause.UPSTREAM_CODE, status_code=422)
+    with pytest.raises(ValueError):
+        RenderRejection(
+            RenderRejectionCause.UPSTREAM_UNREADABLE, status_code=422, upstream_code="refused"
+        )
+    with pytest.raises(ValueError):
+        RenderRejection(RenderRejectionCause.LOCAL_CONTRACT, upstream_code="voice_not_published")
+    with pytest.raises(ValueError):
+        RenderRejection(RenderRejectionCause.LOCAL_CONTRACT, status_code=422)
 
 
 def unit_with_text(text: str) -> RenderUnit:
@@ -196,6 +299,28 @@ async def test_text_at_the_job_bound_is_still_submitted() -> None:
 
     assert job_id == "job_1"
     assert len(seen["body"]["input"]["text"]) == 4096
+
+
+async def test_a_locally_refused_unit_states_no_upstream_cause() -> None:
+    """The refused unit never reached the API; its contract error stays chained, not dropped."""
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(202, json={"id": "job_1"})
+
+    with pytest.raises(RenderSubmissionRejectedError) as caught:
+        await PublicSpeechRenderJobs(client(handler)).submit(
+            unit=unit_with_text("中" * 4097), key="key-12345678", reference="gen:abc"
+        )
+    assert calls == 0
+    assert caught.value.rejection is not None
+    assert caught.value.rejection.cause is RenderRejectionCause.LOCAL_CONTRACT
+    assert caught.value.rejection.status_code is None
+    assert caught.value.rejection.upstream_code is None
+    assert caught.value.rejection.upstream_param is None
+    assert isinstance(caught.value.__cause__, ContractValidationError)
 
 
 def job(**changes: Any) -> dict[str, Any]:

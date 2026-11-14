@@ -22,11 +22,15 @@ export const RENDER_UNIT_SOURCE_LIMIT = 200000;
 export const RENDER_UNIT_DISPATCH_LIMIT = 4096;
 
 /**
- * Text length as `maxLength` counts it: UTF-16 code units (`String#length`),
- * not Unicode code points. Everything the panel shows or compares uses this
- * unit, so an operator reading the counter is measuring exactly what the input
- * bound and the dispatch bound measure.
+ * Text length in the contract's unit: **Unicode code points**, which is what
+ * JSON Schema `maxLength`, the generated validator (AJV) and the speech domain's
+ * `len(text) <= MAX_SPEECH_TEXT_CHARS` all count. HTML `maxLength` counts UTF-16
+ * code units instead, and one astral code point is two code units — counting the
+ * HTML unit would report a 2049-emoji unit as 4098 and call it over the 4096
+ * bound, although the server accepts and dispatches those 2049 code points. The
+ * editor's `maxLength` is therefore only a browser guard, never the number the
+ * panel compares.
  */
 export function renderUnitLength(text: string): number {
-  return text.length;
+  return Array.from(text).length;
 }

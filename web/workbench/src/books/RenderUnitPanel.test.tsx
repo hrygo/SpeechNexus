@@ -752,30 +752,44 @@ describe("render unit text bounds (#745)", () => {
   it("shows the current length against both bounds and names the split step", async () => {
     setup([unit({ text: "旁白".repeat(2500) })]);
     const bounds = await screen.findByLabelText("单元 1 文本 字数");
-    expect(bounds).toHaveTextContent("已 5000 码元（UTF-16 码元，与 maxLength 同单位）");
-    expect(bounds).toHaveTextContent("一次派发上限 4096 码元");
-    expect(bounds).toHaveTextContent("源容量上限 200000 码元");
+    expect(bounds).toHaveTextContent("已 5000 字符（Unicode 码点，与契约 maxLength 同单位）");
+    expect(bounds).toHaveTextContent("一次派发上限 4096 字符");
+    expect(bounds).toHaveTextContent("源容量上限 200000 字符");
     expect(bounds).toHaveTextContent("超过一次派发上限，不能一次派发");
-    expect(bounds).toHaveTextContent("切分为每段不超过 4096 码元的多个单元");
+    expect(bounds).toHaveTextContent("切分为每段不超过 4096 字符的多个单元");
     // The editor keeps the source capacity; the dispatch bound is not an input cap.
     expect(screen.getByLabelText("单元 1 文本")).toHaveAttribute("maxLength", "200000");
+    // The browser guard's own unit is stated, so an astral text is not mistaken
+    // for a text that "has not reached 200000 yet cannot be typed".
+    expect(screen.getByLabelText("单元文本计数口径")).toHaveTextContent(
+      "按 UTF-16 码元计数（星形平面字符占 2 个）",
+    );
   });
 
   it("says a text under the dispatch bound can be dispatched in one request", async () => {
     setup();
     const bounds = await screen.findByLabelText("单元 1 文本 字数");
-    expect(bounds).toHaveTextContent("已 6 码元");
+    expect(bounds).toHaveTextContent("已 6 字符");
     expect(bounds).toHaveTextContent("可一次派发。");
     expect(bounds).not.toHaveTextContent("超过一次派发上限");
   });
 
-  it("counts UTF-16 code units, so astral text is never under-estimated", async () => {
-    // 2049 astral code points are one code point each but 4098 UTF-16 code units:
-    // a code-point count would say 2049 and wrongly promise a single dispatch.
-    setup([unit({ text: "𝐀".repeat(2049) })]);
+  it("counts code points, so astral text the server accepts is not called over-bound", async () => {
+    // 2049 astral code points are 4098 UTF-16 code units: a code-unit count would
+    // say 4098 and wrongly block a dispatch the server accepts.
+    setup([unit({ text: "😀".repeat(2049) })]);
     const bounds = await screen.findByLabelText("单元 1 文本 字数");
-    expect(bounds).toHaveTextContent("已 4098 码元");
-    expect(bounds).toHaveTextContent("超过一次派发上限，不能一次派发");
+    expect(bounds).toHaveTextContent("已 2049 字符");
+    expect(bounds).toHaveTextContent("可一次派发。");
+    expect(bounds).not.toHaveTextContent("超过一次派发上限");
+  });
+
+  it("keeps a full 4096 astral code points dispatchable in one request", async () => {
+    setup([unit({ text: "😀".repeat(4096) })]);
+    const bounds = await screen.findByLabelText("单元 1 文本 字数");
+    expect(bounds).toHaveTextContent("已 4096 字符");
+    expect(bounds).toHaveTextContent("可一次派发。");
+    expect(bounds).not.toHaveTextContent("超过一次派发上限");
   });
 
   it("names text over the inline bound when a dispatch is rejected", async () => {
@@ -783,14 +797,30 @@ describe("render unit text bounds (#745)", () => {
     generate.mockRejectedValueOnce(refusedDispatch());
     fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("该单元文本 5000 码元（UTF-16）");
-    expect(alert.textContent).toContain("超过一次派发上限 4096 码元");
-    expect(alert.textContent).toContain("render_submission_rejected");
-    expect(alert.textContent).toContain("切分为每段不超过 4096 码元的多个单元");
-    expect(alert.textContent).toContain("200000 码元的源容量不必缩小");
+    expect(alert.textContent).toContain("该单元文本 5000 字符");
+    expect(alert.textContent).toContain("超过一次派发上限 4096 字符");
+    expect(alert.textContent).toContain("切分为每段不超过 4096 字符的多个单元");
+    expect(alert.textContent).toContain("200000 字符的源容量不必缩小");
     // The generic advice must not stand in for a cause the panel can name.
     expect(alert.textContent).not.toContain("请核对单元文本或声音");
     expect(alert.textContent).not.toContain("结果尚未确认");
+    // The machine code is offered for diagnosis, not woven into the operator copy.
+    expect(alert.textContent).not.toContain("render_submission_rejected");
+    expect(alert).toHaveAttribute("title", "render_submission_rejected");
+  });
+
+  it("does not blame the text when an astral unit under the bound gets a 422", async () => {
+    // The server accepts these 2049 code points, so a 422 must come from another
+    // cause (unpublished voice/binding, auth, media type); naming the text would
+    // point the operator at something that is not wrong.
+    const { generate } = setup([unit({ text: "😀".repeat(2049) })]);
+    generate.mockRejectedValueOnce(refusedDispatch());
+    fireEvent.click(await screen.findByRole("button", { name: "单元 1 生成配音" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("请求被拒绝");
+    expect(alert.textContent).not.toContain("超过一次派发上限");
+    expect(alert.textContent).not.toContain("该单元文本");
+    expect(alert).not.toHaveAttribute("title");
   });
 
   it("keeps the generic refusal when the local text does not explain the 422", async () => {
@@ -803,20 +833,21 @@ describe("render unit text bounds (#745)", () => {
     expect(alert.textContent).not.toContain("超过一次派发上限");
   });
 
-  it("keeps 200000 code units editable and stops only above the source capacity", async () => {
+  it("keeps 200000 characters editable and stops only above the source capacity", async () => {
     setup([]);
     await screen.findByText("该章节还没有渲染单元。");
     const textarea = screen.getByLabelText("新单元文本");
     expect(textarea).toHaveAttribute("maxLength", "200000");
     fireEvent.change(textarea, { target: { value: "a".repeat(200000) } });
     const bounds = screen.getByLabelText("新单元文本 字数");
-    expect(bounds).toHaveTextContent("已 200000 码元");
+    expect(bounds).toHaveTextContent("已 200000 字符");
     expect(bounds).not.toHaveTextContent("超过源容量上限");
     expect(bounds).toHaveTextContent("超过一次派发上限，不能一次派发");
-    // One code unit more is what the source capacity refuses.
+    // The browser's maxLength stops this by typing, so the test forces the state a
+    // paste-overflow or programmatic write would produce and reads the defence.
     fireEvent.change(textarea, { target: { value: "a".repeat(200001) } });
     expect(screen.getByLabelText("新单元文本 字数")).toHaveTextContent(
-      "超过源容量上限 200000 码元：保存该单元会被契约拒绝。",
+      "超过源容量上限 200000 字符：保存该单元会被契约拒绝。",
     );
   });
 });

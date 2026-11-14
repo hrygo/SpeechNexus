@@ -121,6 +121,10 @@ const unknownAlert = (page) => page.locator(".file-task-detail [role=alert]");
 const finishButton = (page) => page.getByRole("button", { name: "准备新任务", exact: true });
 const replayButton = (page) => page.getByRole("button", { name: "按原键重放" });
 const journal = (page) => page.evaluate((key) => sessionStorage.getItem(key), journalKey);
+const journalRecord = async (page) => {
+  const raw = await journal(page);
+  return raw === null ? null : JSON.parse(raw);
+};
 
 test.beforeEach(async ({ context }) => {
   await lockToPreview(context);
@@ -145,6 +149,13 @@ test("413 首答：显示已作废而非结果未知，两步确认后输入解�
   await expect(replayButton(page)).toBeDisabled();
   await expect(finishButton(page)).toBeVisible();
   await expect(page.locator("#file-task-model")).toBeDisabled();
+
+  // Positive control: the durable record this abandonment deletes must exist first.
+  // Without it the post-abandonment null check would keep passing even if the journal
+  // key or the default task kind changed -- an assertion that silently becomes vacuous.
+  const persistedRefusal = await journalRecord(page);
+  expect(persistedRefusal, "the 413 refusal must be persisted before abandonment").not.toBeNull();
+  expect(persistedRefusal.settled).toBe("unreplayable");
 
   // The abandonment is a real second step: opening it alone must not end the record.
   await finishButton(page).click();
@@ -230,6 +241,11 @@ test("取消被确定拒绝：可放弃，且刷新后仍是作废态而不复�
   await expect(notice(page)).toContainText("该取消请求已被协议确定性拒绝并作废");
   await expect(panel(page).getByText("请求结果尚未确认")).toHaveCount(0);
   await expect(finishButton(page)).toBeVisible();
+
+  // Positive control: the reloaded verdict must come from the durable record itself.
+  const persistedCancel = await journalRecord(page);
+  expect(persistedCancel, "the cancel refusal must be persisted across the reload").not.toBeNull();
+  expect(persistedCancel.settled).toBe("terminal");
 
   await finishButton(page).click();
   const confirmFinish = page.getByRole("group", { name: "确认本页新任务" });

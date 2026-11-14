@@ -858,7 +858,9 @@ jobs:
       # unit/component tests. It runs in this job because it needs the same locked
       # install, the same built preview bundles and the same Chromium; its own
       # configuration selects only `*.behavior.spec.mjs`, so it can neither replace nor
-      # widen the accessibility gate that runs before it.
+      # widen the accessibility gate that runs before it. The two gates must stay
+      # sequential here: both own ports 4173/4174 with `--strictPort`, so a matrix or
+      # parallel job would collide (see tests/web/preview-servers.mjs).
       - name: Check file task state transitions in a real browser
         id: behavior
         run: pnpm test:behavior

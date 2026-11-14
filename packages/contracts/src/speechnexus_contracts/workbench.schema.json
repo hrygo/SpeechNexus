@@ -1939,9 +1939,7 @@
           "$ref": "#/$defs/Revision"
         },
         "text": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 200000
+          "$ref": "#/$defs/RenderUnitText"
         },
         "voice": {
           "$ref": "#/$defs/RenderUnitVoice"
@@ -2121,6 +2119,12 @@
           }
         }
       ]
+    },
+    "RenderUnitText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200000,
+      "description": "Stored source text for one render unit, bounded at 200000 characters.\nThis bound is the unit's source capacity, not a request bound. Dispatch\ninlines the unit text into one public Job request body, and the inline\ntext bound of that request is `MAX_SPEECH_TEXT_CHARS` (4096), the same\nbound `input` on `/v1/audio/speech` and the inline `text` of\n`TtsJobInput` declare. A unit whose text exceeds the inline bound cannot\nbe dispatched in one request: the registered dispatch operation\n`generateRenderUnitV2` (`POST /v2/workbench/render-units/{unit_id}/generations`)\nrefuses it with `422` `render_submission_rejected` and submits no Job,\ninstead of truncating or silently shortening the text. Text that must be\ndispatched in one request has to be split into units of at most 4096\ncharacters; the two bounds stay distinct because the unit is the editing\nand provenance boundary while one Job request body carries one inline\nbody.\n"
     },
     "RenderUnitVoice": {
       "$ref": "#/$defs/ResourceReference"
@@ -2376,9 +2380,7 @@
           "minimum": 0
         },
         "text": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 200000
+          "$ref": "#/$defs/RenderUnitText"
         },
         "voice": {
           "$ref": "#/$defs/RenderUnitVoice"
@@ -2406,9 +2408,7 @@
           "$ref": "#/$defs/Revision"
         },
         "text": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 200000
+          "$ref": "#/$defs/RenderUnitText"
         },
         "voice": {
           "$ref": "#/$defs/RenderUnitVoice"
@@ -3250,9 +3250,7 @@
           "$ref": "#/$defs/Revision"
         },
         "text": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 200000
+          "$ref": "#/$defs/RenderUnitText"
         },
         "voice": {
           "$ref": "#/$defs/RenderUnitVoice"
@@ -3446,9 +3444,7 @@
           "minimum": 0
         },
         "text": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 200000
+          "$ref": "#/$defs/RenderUnitText"
         },
         "voice": {
           "$ref": "#/$defs/RenderUnitVoice"
@@ -3479,9 +3475,7 @@
           "$ref": "#/$defs/Revision"
         },
         "text": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 200000
+          "$ref": "#/$defs/RenderUnitText"
         },
         "voice": {
           "$ref": "#/$defs/RenderUnitVoice"

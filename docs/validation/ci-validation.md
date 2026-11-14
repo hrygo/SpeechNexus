@@ -9,7 +9,7 @@ CI 使用[工作流](../../.github/workflows/ci.yml)和[标准库路由](../../s
 
 | 触发或变更 | 范围 |
 | --- | --- |
-| PR 仅修改根 `README.md` / `README.en.md` / `AGENTS.md`、`docs/` 内 Markdown、`.agents/skills/<skill>/` 内 Markdown / JSON / YAML | 路由回归、Design Token 静态门禁、Markdown 代码块格式检查（独立作业 `docs_format`）、差异检查、矩阵新鲜度检查（仅矩阵、关联源、快照或生成器变化时重渲染）、Node Controller 镜像范围检查与其门禁、最终门禁；镜像构建按独立范围判定，通常跳过。不安装项目依赖、不启动业务测试服务。差异检查以取得准确基线为前提；否则回退全量 |
+| PR 仅修改根 `README.md` / `README.en.md` / `AGENTS.md`、`docs/` 内 Markdown、`.agents/skills/<skill>/` 内 Markdown / JSON / YAML | 路由回归、审查 PR 路径边界、Design Token 静态门禁、Markdown 代码块格式检查（独立作业 `docs_format`）、差异检查、矩阵新鲜度检查（仅矩阵、关联源、快照或生成器变化时重渲染）、Node Controller 镜像范围检查与其门禁、最终门禁；镜像构建按独立范围判定，通常跳过。不安装项目依赖、不启动业务测试服务。差异检查以取得准确基线为前提；否则回退全量 |
 | PR 仅修改已知 Web 源码/静态资产，可混合上述文档 | Python 静态/契约检查、覆盖率数据采集及完整 Web 检查；采集作业仍使用私有 PostgreSQL 和 MinIO，六个双数据库集成分片、覆盖率判定与部署检查不适用 |
 | PR 仅修改已知独立引擎目录或明确列出的引擎单元测试，可混合上述 Web/文档 | `no-db`：保留 Python 静态/契约检查、覆盖率数据采集、完整 Web、构建和部署检查；采集作业仍使用私有 PostgreSQL 和 MinIO，六个双数据库集成分片、覆盖率判定及其汇总不适用 |
 | CI、脚本、测试、依赖、配置、契约、迁移、部署、其他路径或空/不确定差异 | 完整 Python/Web/部署检查，六个 PG/InnoDB/MinIO 分片及证据汇总 |
@@ -46,6 +46,22 @@ Skill 的说明、参考、合成评测数据及展示元数据不参与产品�
 
 **覆盖边界**：这只覆盖 Ruff 能解析的代码块，即标记为 `python`（或 `py`）的围栏；标记为 `text`、`bash`、`yaml`、`json`、`sql` 的围栏从不解析，其中的错误命令、失效路径、非法 JSON／YAML 仍可通过。`ruff check` 不检查 Markdown，因此代码块内的 lint 级问题（未使用变量、导入顺序、命名）也不在范围内。文档结构、链接与 `路径:行号` 引用、双语 README 一致性、`.agents/skills/` 内 JSON／YAML 的有效性同样无人检查：`scripts/dev-env/check-doc-refs.py` 仍是未接入 CI 的本地报告工具。格式检查只保证「能解析且排版一致」，不证明代码块内容可执行、输出正确或与实现同步，仍需人工审查。
 
+审查 PR 的改动路径由 `changes` 作业里的 `scripts/dev-env/check-review-pr-boundary.py` 把控。第 4 步「按风险审查与验证」只给出两条作者自律命令（`git status --porcelain`、`git diff origin/main...HEAD --stat`），CI 对它们从不响应：曾有审查 PR 从被审 head 拉出，报告之外携带了与被审字节相同的实现，squash `f88279dc` 以 `review:` 标题进主干，而被审实现最终又以另一份修订版 `4ad6cad7` 合并——被审代码与进主干的代码不是同一份（#738）。
+
+判据是三条相互独立、命中任意一条即为审查 PR 的信号：标题以 `review:`（或全角 `review：`）开头；head 分支以 `review/` 或 `docs/review` 开头；结构上同时改动 `docs/reviews/` 与其它路径。边界为改动路径必须全部落在 `docs/reviews/` 下（与 SOP 第 4 步同一边界，该步已写明「`docs/reviews/` 下的报告文件」），依据是既有数据：33 个已合并的审查 PR 中 32 个只碰一个 `docs/reviews/*.md`，唯一例外即上述事故；没有任何审查 PR 改过 `docs/validation/`，因此不为它开口子。`REVIEW_ROOT` 由 `tests/ci/test_review_pr_boundary.py` 钉住，放宽边界必须同时改测试而不是只改常量。结构信号在 `main` 的 648 个非空非 merge 变更集上只命中事故那一次提交（全长 729 个提交含 80 个 merge 与 1 个空提交，不计入），历史误报为零。
+
+归属与调度：该检查留在 `changes` 作业内。`changes` 与 `delivery_tracking` 是两条没有作业级 `if:`、每个 PR 都执行的作业（其余作业按范围或依赖过滤）；选 `changes` 的真实理由是它在本步骤之前已经由路由步骤算出精确 base-to-HEAD diff，边界检查因此不需要第二次检出或抓取，红灯也直接归因到路由。审查 PR 恰好都是 `docs` 范围 PR，放进按范围过滤的作业就会恰好在它该跑的地方被跳过。步骤排在路由之后，`changes` 失败使 `Gate: required checks for this change` 因 `ROUTING_RESULT != success` 变红，因此这条门禁自身就受合并门禁约束，不需要也不支持 `--admin` 绕过。
+
+调度证据等级：步骤无 `if:` 且有「docs 路由会到达 `changes`」的既有观测（#736 的 `changes` 作业日志输出 `{"mode": "docs"}`），但**「docs 路由下本步骤真的执行」尚无一份日志观测**——#736 早于该步骤、改动本文件的 PR 是 `full` 路由、按基线 `ci.yml` 运行的审查 PR 里 `check-review-pr-boundary` 出现 0 次（`pull_request` 取的是基线分支的工作流）。因此该结论到此为止是**结构推断**（无作业级 `if:`、docs 到达 `changes`、步骤无 step 级 `if:` 三条同时成立），**合并后第一个 docs-only 审查 PR 的 `changes` 作业日志即为其首次实测**，核对点是该步骤出现在步骤列表里且输出 `review-pr-boundary: ...`。
+
+失败方向：标题或分支已声明为审查 PR 时，精确 diff 取不到即失败关闭（红），因为绿灯的代价正是上面那类事故，而修复动作完全在作者手里；抓取 base 失败会带固定退避重试一次，仍失败时错误写成 `::error title=Review PR boundary unverifiable::` 并保留 git 的退出码与 stderr 首行，可从文案区分「网络/取不到」与「确实越界」（后者是逐条 `Path outside docs/reviews/`），不会把两种红混成一种；未声明的 PR 在 diff 取不到时按不适用处理，不把 Git／网络故障变成全仓库阻塞，路由在同样条件下本就回退全量。红灯会列出每个越界路径，并给出取码方式：`git show <被审 head>:<path>` 输出到管道或仓库外文件（如 `/tmp/<name>`），不得在被审 head 上检出或把其工作树抄回仓库。
+
+边界是前缀而非类型：`docs/reviews/` 内的任意文件类型都算边界内，因此把「实现」也放进该目录（例如 `docs/reviews/impl.py`）不触发门禁——该目录下没有文件被导入或执行，实质无害，但这是第三条残余缺口。
+
+已声明的审查 PR 若精确 diff 为空（或只有 `docs/reviews/` 之外、且一条报告都没有），同样判红，reason 为「reports no file under docs/reviews/」：边界「全部路径落在 `docs/reviews/` 下」对空集是空洞成立，实现额外要求至少一条 `docs/reviews/` 路径，这比 docstring 字面更严也更合理。成功路径的文案可区分 diff 是否取到：`No review signal: ...` 表示 diff 已取到并判过，`No review signal, and the exact diff is unavailable ...` 表示未取到、结构信号没有评估。
+
+**覆盖边界**：这条检查只看路径，不比对 blob 哈希，因此证明不了「报告评审的就是被审 head」，也不验证报告内容、链接或 `路径:行号` 引用。`push` 到 `main` 的历史不再判（事件没有 PR 元数据），事故类问题必须在 PR 阶段拦住。残余缺口有三处：标题与分支都被改名、且报告没有写进 `docs/reviews/` 的 PR 不构成任何信号；未声明 PR 在 diff 不可读时同样无法评估结构信号；边界只认路径前缀，不区分文件类型（见上）。
+
 矩阵新鲜度作业 `delivery_tracking` 每次运行都检出仓库，但只有本次差异触及 `docs/plans/delivery-tracking.md`、`docs/plans/delivery-issues.json`、`docs/plans/github-issues-snapshot.json`、`scripts/dev-env/refresh-implementation-tracker.py` 或 `scripts/dev-env/delivery_tracker.py` 时才执行重渲染；无关 PR 的该步骤 skipped，作业仍成功，不阻塞合并。重渲染只读提交的快照，并以快照的 `fetched_at` 固定表头时间，随后 `git diff --exit-code` 拒绝手改或陈旧矩阵。基线不可取得或差异计算失败时保守执行，不以跳过掩盖；该作业不查询 GitHub，因此不证明快照覆盖未来 issue 变化。
 
 Node Controller 镜像验证由 CI 以同提交的 [reusable workflow](../../.github/workflows/node-controller-image.yml) 调用，不再单独订阅 PR、push 或手动事件。PR 根据准确 base SHA 与 checkout 的差异选择；控制器源码、镜像文件、构建上下文忽略规则、根锁文件和 workspace 元数据，以及镜像路由或门禁文件变更触发镜像验证。使用 NUL 分隔并关闭重命名检测，确保移出受监控目录的旧路径也被检查；空差异保守执行，base 无效或不可获取时失败。`main` push、手动及未知事件始终执行。fork PR 仍使用调用工作流的事件与 checkout，公开仓库取 base，不传私有凭据。
@@ -56,7 +72,7 @@ Node Controller 镜像验证由 CI 以同提交的 [reusable workflow](../../.gi
 
 | job ID | Actions 显示名称 | 实际职责 |
 | --- | --- | --- |
-| `changes` | `Scope routing and CI / design-token checks` | 检查路由边界与 Design Token，按准确差异选择范围 |
+| `changes` | `Scope routing and CI / design-token checks` | 检查路由边界、审查 PR 改动路径边界与 Design Token，按准确差异选择范围 |
 | `python_checks` | `Python: tests, coverage and package build` | Python 单元、契约、CI、Workbench PG/Runtime 及选定 Speech PG 测试，导出两 worker 覆盖率数据集（不判定）、媒体工具链及 Python 包构建 |
 | `python_contracts` | `Python: lint, types and contract compatibility` | Ruff、mypy、模块边界、生成漂移、协议兼容与 schema 校验 |
 | `integration_shards` | `Integration 0–3: PG/MySQL/MinIO`；`Integration 4–5: Web + PG/MySQL/MinIO` | 六个真实隔离服务分片；混合集合中的浏览器与 Node HTTP 消费者只分配到后两片，普通 DB 用例按估算成本分配到全部六片，具体工具需求按各片实际用例计算 |

@@ -21,6 +21,7 @@ from httpx import ASGITransport, AsyncClient
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.application.public_jobs import JobAdmissionRejectedError
+from speechnexus_backend.speech.application.speech_synthesis import SpeechUnavailableError
 from speechnexus_backend.speech.domain.speech_synthesis import MAX_SPEECH_TEXT_CHARS
 from speechnexus_gateway.domain.tts import MAX_TTS_TEXT_CHARS
 from tests.support.contracts import validator
@@ -154,3 +155,162 @@ async def test_over_bound_text_is_rejected_with_the_declared_error(text: str) ->
     assert error["retryable"] is False
     # Rejection happens at the contract gate: no admission attempt, no Job row.
     assert jobs.submitted == []
+
+
+def test_both_entries_document_one_limit_and_their_two_codes() -> None:
+    """One limit, two entry points, two declared codes: the contract must say so.
+
+    The synchronous route reports an over-bound body as 400 `invalid_request`
+    with `param: input`; the asynchronous Job route reports the same condition
+    as 422 `unsupported_parameter`. Neither code is free to change alone, so
+    each entry has to name the shared limit and both codes, and each has to name
+    the other entry. Deleting that correspondence would leave a consumer with
+    two unrelated answers for one meaning.
+    """
+
+    schemas = _schemas()
+    synchronous = cast(str, _synchronous_input(schemas).get("description", ""))
+    asynchronous = cast(str, _async_inline_text(schemas).get("description", ""))
+
+    for description, where in (
+        (synchronous, "SpeechRequest.input"),
+        (asynchronous, "TtsJobInput.text"),
+    ):
+        assert description, f"{where} must describe the one-synthesis text bound"
+        assert "MAX_SPEECH_TEXT_CHARS" in description, (
+            f"{where} must name the shared one-synthesis limit instead of declaring a bare number"
+        )
+        assert str(MAX_SPEECH_TEXT_CHARS) in description
+        # Both codes are stated, because the same condition is reported twice.
+        assert "400" in description and "invalid_request" in description
+        assert "422" in description and "unsupported_parameter" in description
+
+    # Each entry points at the other, so the mapping is reachable from either side.
+    assert "/v1/nexus/jobs" in synchronous
+    assert "TtsJobInput" in synchronous
+    assert "/v1/audio/speech" in asynchronous
+
+
+class _UnavailableSpeech:
+    """Records that a synchronous request reached the backend, then refuses it."""
+
+    def __init__(self) -> None:
+        self.commands: list[Any] = []
+
+    def synthesize(self, command: Any, *, request_id: str) -> Any:
+        self.commands.append(command)
+        raise SpeechUnavailableError
+
+    def cancel(self, execution_id: str, reason: str) -> None:
+        raise AssertionError("an unstarted synthesis cannot be cancelled")
+
+
+async def test_the_same_over_bound_body_keeps_each_entry_point_code() -> None:
+    """Measured behaviour behind the documented mapping, on both entries.
+
+    The two replies stay deliberately different: the synchronous route reports
+    the body it cannot accept as 400 `invalid_request`, the asynchronous Job
+    route reports the shape its contract validator refuses as 422
+    `unsupported_parameter`. What must not drift is the bound (both refuse at
+    4097) or the declared envelope of each reply.
+    """
+
+    source = validator("speech-openapi.yaml")
+    jobs = _RecordingJobs()
+    speech = _UnavailableSpeech()
+    app = create_app(settings=_settings(), jobs=cast(Any, jobs), speech=cast(Any, speech))
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        synchronous = await client.post(
+            "/v1/audio/speech",
+            json={"model": "tts-quality", "input": "a" * (MAX_SPEECH_TEXT_CHARS + 1), "voice": "v"},
+        )
+        asynchronous = await client.post(
+            "/v1/nexus/jobs",
+            json=_job_body("a" * (MAX_SPEECH_TEXT_CHARS + 1)),
+            headers={"Idempotency-Key": "synthetic-bound-706"},
+        )
+
+    # Synchronous: 400 invalid_request, naming the offending parameter.
+    assert synchronous.status_code == 400, synchronous.text
+    declared = _declared_response("createSpeech", 400)["content"]["application/json"]["schema"]
+    source.evolve(schema={**DOCUMENT, "allOf": [declared]}).validate(synchronous.json())
+    sync_error = synchronous.json()["error"]
+    assert sync_error["code"] == "invalid_request"
+    assert sync_error["param"] == "input"
+    assert speech.commands == []
+
+    # Asynchronous: 422 unsupported_parameter, still no admission attempt.
+    assert asynchronous.status_code == 422, asynchronous.text
+    declared_async = _declared_response("createJob", 422)["content"]["application/json"]["schema"]
+    source.evolve(schema={**DOCUMENT, "allOf": [declared_async]}).validate(asynchronous.json())
+    assert asynchronous.json()["error"]["code"] == "unsupported_parameter"
+    assert jobs.submitted == []
+
+
+def _capability_bound_rows() -> list[dict[str, str]]:
+    """Parse the documented table into columns, so a single cell can be asserted."""
+
+    document = (ROOT / "docs" / "architecture" / "speech-api.md").read_text()
+    start = document.index("载荷超过能力上界")
+    end = document.index("前两行是同一个条件", start)
+    lines = [line for line in document[start:end].splitlines() if line.startswith("|")]
+    header = [cell.strip() for cell in lines[0].strip("|").split("|")]
+    rows: list[dict[str, str]] = []
+    for line in lines[2:]:
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        if len(cells) == len(header):
+            rows.append(dict(zip(header, cells, strict=True)))
+    return rows
+
+
+def _capability_bound_row(rows: list[dict[str, str]], entry: str, code: str) -> dict[str, str]:
+    matches = [
+        row for row in rows if row["入口"].startswith(entry) and row["错误码"] == f"`{code}`"
+    ]
+    assert len(matches) == 1, f"expected one row for {entry} naming {code}, got {matches}"
+    return matches[0]
+
+
+def test_the_cross_entry_bound_table_states_each_entry_column() -> None:
+    """Each row's branch-relevant columns must match the measured reply.
+
+    A consumer branches on the declared bound, the status, the code and the
+    `param`; a table that keeps the right code but drifts on `param` or the bound
+    would send that consumer to the wrong branch. Every column is asserted
+    separately so a single-cell edit is caught.
+    """
+
+    rows = _capability_bound_rows()
+
+    synchronous = _capability_bound_row(rows, "`POST /v1/audio/speech`", "invalid_request")
+    assert synchronous["状态码"] == "400"
+    assert synchronous["param"] == "`input`"
+    assert "4096" in synchronous["声明上限"]
+    assert synchronous["retryable"] == "否"
+
+    asynchronous = _capability_bound_row(rows, "`POST /v1/nexus/jobs`", "unsupported_parameter")
+    assert asynchronous["状态码"] == "422"
+    assert asynchronous["param"] == "无"
+    assert "4096" in asynchronous["声明上限"]
+
+    body_ceiling = _capability_bound_row(rows, "`POST /v1/nexus/jobs`", "job_request_too_large")
+    assert body_ceiling["状态码"] == "413"
+    assert "262144" in body_ceiling["声明上限"]
+
+    asset_bytes = _capability_bound_row(rows, "`POST /v1/nexus/assets`", "asset_too_large")
+    assert asset_bytes["状态码"] == "413"
+    assert "4 MiB" in asset_bytes["声明上限"]
+
+    asset_text = _capability_bound_row(rows, "`POST /v1/nexus/assets`", "asset_text_too_long")
+    assert asset_text["状态码"] == "422"
+    assert "1000000" in asset_text["声明上限"]
+
+    render = _capability_bound_row(
+        rows, "`POST /v2/workbench/render-units", "render_submission_rejected"
+    )
+    assert render["状态码"] == "422"
+    assert render["param"] == "无"
+    assert "generateRenderUnitV2" in render["入口"]
+    assert "4096" in render["声明上限"]
+    assert "200000" in render["声明上限"]

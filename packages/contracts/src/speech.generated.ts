@@ -1190,6 +1190,18 @@ export interface components {
     };
     SpeechRequest: {
       model: string;
+      /**
+       * @description Text spoken by one synthesis, bounded at `MAX_SPEECH_TEXT_CHARS`
+       *     (4096) characters: one request synthesizes its `input` exactly once
+       *     and never splits, truncates, or silently shortens it. Text above the
+       *     bound is refused as `400` `invalid_request` with `param: input`.
+       *     `POST /v1/nexus/jobs` enforces the same bound on `TtsJobInput.text`
+       *     but reports the same condition as `422` `unsupported_parameter`
+       *     (the asynchronous entry classifies a body that does not match the
+       *     declared Job shape, the synchronous entry a body this route cannot
+       *     accept). Both codes describe one limit, so a consumer branches on
+       *     `error.code` and `param`, not on the status code.
+       */
       input: string;
       /** @description Published voice ID. OpenAI hosted voice names are not implied. */
       voice: string;
@@ -1510,9 +1522,14 @@ export interface components {
       | {
           /**
            * @description Inline text for one Job. A Job performs exactly one speech
-           *     synthesis, so the body bound is the same as `input` on
-           *     `/v1/audio/speech`; longer text is rejected instead of being
-           *     split, truncated, or silently shortened.
+           *     synthesis, so the body bound is the same `MAX_SPEECH_TEXT_CHARS`
+           *     (4096) that `input` on `/v1/audio/speech` declares; longer text is
+           *     rejected instead of being split, truncated, or silently shortened.
+           *     This asynchronous entry reports an over-bound body as `422`
+           *     `unsupported_parameter`, while `/v1/audio/speech` reports the same
+           *     condition as `400` `invalid_request` with `param: input`. The two
+           *     codes describe one limit and differ by entry point, so a consumer
+           *     branches on `error.code` and `param`, not on the status code.
            */
           text: string;
         }

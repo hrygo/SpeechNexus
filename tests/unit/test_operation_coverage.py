@@ -180,3 +180,43 @@ def test_spy_target_method_name_counts_as_behavior_test(tmp_path: Path) -> None:
         operation, module.client_methods(module.ROOT).get(("GET", operation["path"]))
     )
     assert pattern.search(source.read_text())
+
+
+def status_operation() -> dict[str, str]:
+    return {"id": "getWorkbenchStatusV2", "method": "get", "path": "/v2/workbench/status"}
+
+
+def test_role_string_sharing_the_client_method_word_is_not_evidence(tmp_path: Path) -> None:
+    """#788: `getByRole("status")` asserts an ARIA role, not the client's `status()` method."""
+    module = load()
+    source = tmp_path / "web/workbench/src/realtime/input-device-picker.test.tsx"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        'expect(screen.getByRole("status")).toHaveTextContent("所选设备不在当前列表");\n'
+        'const status = document.querySelector(".file-task-detail > p[role=status]");\n'
+        'const label = "<p role=\\"status\\">";\n'
+    )
+    pattern = module.test_pattern(status_operation(), "status")
+    assert pattern.search(source.read_text()) is None
+
+
+def test_client_method_spy_target_is_evidence(tmp_path: Path) -> None:
+    """The same word is evidence once a spy binds it to the object that owns the method."""
+    module = load()
+    source = tmp_path / "web/workbench/src/manuscripts/editor-session.test.ts"
+    source.parent.mkdir(parents=True)
+    source.write_text('const read = vi.spyOn(client, "status").mockResolvedValue(state());\n')
+    pattern = module.test_pattern(status_operation(), "status")
+    assert pattern.search(source.read_text())
+
+
+def test_unbound_quoted_property_does_not_bind_the_method(tmp_path: Path) -> None:
+    """A fake member typed by name (`WorkbenchClient["status"]`) is a string, not a spy."""
+    module = load()
+    source = tmp_path / "web/workbench/src/file-workflow/tts-task-host.test.tsx"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        'status: vi.fn<WorkbenchClient["status"]>(),\nconst copy = "任务状态：尚未确认";\n'
+    )
+    pattern = module.test_pattern(status_operation(), "status")
+    assert pattern.search(source.read_text()) is None

@@ -3,7 +3,7 @@
   "scope": "workbench HTTP surface only; other surfaces and behaviour review are separate units",
   "contract": "contracts/workbench-openapi.yaml",
   "contract_sha256": "06eaebb54b829bb073fcaa622aa0444fbba52d848005a8a8e36382d01cc475ae",
-  "audited_head": "99fd04109c5375da493e1012c085f63ffae6ff48",
+  "audited_head": "2a3299baa159f8908e8d18d4b7773223b281d96a",
   "operations": [
     {
       "id": "cancelAssistantTurn",
@@ -259,7 +259,6 @@
       ],
       "tests": [
         "web/workbench/src/manuscripts/ManuscriptHost.test.tsx",
-        "web/workbench/src/manuscripts/editor-journal.test.ts",
         "web/workbench/src/manuscripts/editor-session.test.ts",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],
@@ -471,7 +470,6 @@
         "web/workbench/src/manuscripts/ManuscriptHost.test.tsx",
         "web/workbench/src/manuscripts/editor-session.test.ts",
         "web/workbench/src/meetings/MeetingHost.test.tsx",
-        "web/workbench/src/meetings/meeting-journal.test.ts",
         "web/workbench/src/meetings/meeting-session.test.ts"
       ],
       "status": "bound"
@@ -623,7 +621,6 @@
       ],
       "tests": [
         "web/workbench/src/books/RenderUnitPanel.test.tsx",
-        "web/workbench/src/file-workflow/tts-task.test.ts",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],
       "status": "bound"
@@ -662,19 +659,14 @@
       "tests": [
         "web/workbench/src/assistant/AssistantHost.test.tsx",
         "web/workbench/src/assistant/assistant-session.test.ts",
-        "web/workbench/src/books/ContentDownload.test.tsx",
-        "web/workbench/src/books/RenderUnitPanel.test.tsx",
         "web/workbench/src/deletions/DeletionHost.test.tsx",
         "web/workbench/src/deletions/deletion-session.test.ts",
-        "web/workbench/src/manuscripts/FixedTranscriptDownload.test.tsx",
         "web/workbench/src/manuscripts/ManuscriptHost.test.tsx",
         "web/workbench/src/manuscripts/editor-session.test.ts",
         "web/workbench/src/manuscripts/workbench-client.test.ts",
         "web/workbench/src/meetings/MeetingHost.test.tsx",
         "web/workbench/src/meetings/MeetingNavigation.test.tsx",
-        "web/workbench/src/meetings/meeting-session.test.ts",
-        "web/workbench/src/realtime/InputDevicePicker.test.tsx",
-        "web/workbench/src/teleprompter/TeleprompterPanel.test.tsx"
+        "web/workbench/src/meetings/meeting-session.test.ts"
       ],
       "status": "bound"
     },
@@ -731,7 +723,6 @@
         "web/workbench/src/books/BooksHost.test.tsx",
         "web/workbench/src/deletions/DeletionHost.test.tsx",
         "web/workbench/src/deletions/deletion-session.test.ts",
-        "web/workbench/src/file-workflow/TtsTaskHost.test.tsx",
         "web/workbench/src/manuscripts/ManuscriptHost.test.tsx",
         "web/workbench/src/manuscripts/editor-session.test.ts",
         "web/workbench/src/manuscripts/workbench-client.test.ts",

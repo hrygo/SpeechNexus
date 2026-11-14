@@ -551,7 +551,9 @@ describe("production Workbench file host", () => {
     // #782 review M3: this is the pure recovery crash window -- the state that motivated the
     // card. Its status line used to name nothing while the alert asked for the input Asset,
     // so the one page told the reader to look in two places. Both now name the Asset.
-    const status = document.querySelector(".file-task-detail > p[role=status]");
+    // #788: the role query is back -- the coverage scanner no longer reads a quoted role
+    // string as evidence that this page exercises the workbench-status operation.
+    const status = screen.getByRole("status");
     expect(namedReads(status?.textContent ?? "")).toEqual(namedReads(alert.textContent ?? ""));
     expect(namedReads(status?.textContent ?? "")).toEqual(["asset"]);
   });
@@ -566,12 +568,11 @@ describe("production Workbench file host", () => {
     fireEvent.click(screen.getByRole("button", { name: "按原键重放" }));
     await waitFor(() => expect(f.create).toHaveBeenCalledTimes(1));
     const alert = await screen.findByRole("alert");
-    // The panel's own status line (FileTaskPanel.tsx `role=status`), selected by attribute the
-    // way the behavior spec selects it: a quoted role string here would also be read as
-    // evidence for the unrelated workbench-status operation by
-    // `scripts/dev-env/check-operation-coverage.py`, whose committed map must stay current.
-    const status = document.querySelector(".file-task-detail > p[role=status]");
-    expect(status).not.toBeNull();
+    // The panel's own status line (FileTaskPanel.tsx `role=status`), queried by role so the
+    // assertion also depends on the ARIA semantics it claims to test. An attribute selector
+    // used to stand here only to dodge the coverage scanner's false evidence (#786, fixed by
+    // #788: `getByRole("status")` no longer counts as workbench-status coverage).
+    const status = screen.getByRole("status");
     // The same-page assertion: one object for the two sentences, because there is one read.
     expect(namedReads(status?.textContent ?? "")).toEqual(namedReads(alert.textContent ?? ""));
     expect(namedReads(status?.textContent ?? "")).toEqual(["asset"]);
@@ -637,8 +638,9 @@ describe("production Workbench file host", () => {
     expect(copy.includes("重放")).toBe(replay);
     expect(copy.includes("重放")).toBe(!replayButton.hasAttribute("disabled"));
     // #782 review M3: the recovery path is where this defect started, so every reloaded shape
-    // must word its status line from the same target the alert names on that page.
-    const status = document.querySelector(".file-task-detail > p[role=status]");
+    // must word its status line from the same target the alert names on that page. #788 puts
+    // the role query back instead of an attribute selector chosen to dodge the scanner.
+    const status = screen.getByRole("status");
     expect(namedReads(status?.textContent ?? "")).toEqual(named);
     expect(f.getJob).not.toHaveBeenCalled();
   });

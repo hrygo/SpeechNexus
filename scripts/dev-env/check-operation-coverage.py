@@ -88,14 +88,25 @@ def consumer_pattern(operation: dict[str, str]) -> re.Pattern[str]:
 
 
 def test_pattern(operation: dict[str, str], method: str | None) -> re.Pattern[str]:
+    """Match evidence that reaches this operation's real request surface.
+
+    Only four forms count: the contract ``operationId``, the exact method+path the
+    client sends, a call to the client method that performs the request, or that
+    method as a spy target bound to a real object (``vi.spyOn(client, "status")``).
+    A bare quoted name is never evidence: ``getByRole("status")`` asserts an ARIA
+    role that happens to share a word with the client method, and accepting it let
+    any decorative string satisfy the coverage gate (#788).
+    """
     escaped_id = re.escape(operation["id"])
     escaped_path = re.escape(operation["path"])
     requested = rf"\.{operation['method'].upper()}\(\s*[\"']{escaped_path}[\"']"
     patterns = [rf"\b{escaped_id}\b", requested]
     if method:
-        patterns.append(rf"\.{re.escape(method)}\(")
-        # Tests often name the client method as a spy target rather than calling it.
-        patterns.append(rf"[\"']{re.escape(method)}[\"']")
+        escaped_method = re.escape(method)
+        patterns.append(rf"\.{escaped_method}\(")
+        # A spy must name the object whose member it replaces; the object binding is what
+        # ties the method name to this operation instead of to an unrelated string.
+        patterns.append(rf"\bspyOn\(\s*[^,()\n]+,\s*[\"']{escaped_method}[\"']\s*\)")
     return re.compile("|".join(patterns))
 
 

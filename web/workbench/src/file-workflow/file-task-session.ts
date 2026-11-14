@@ -144,7 +144,7 @@ export function rejectionDisposition(
  * `_submit_new` → `_prepare_job` resolves them only after the initial replay
  * (:1046, :741-880), its `except` re-reads the key before re-raising (:624-647), and the
  * contract itself puts the original-key replay before mutable publication facts
- * (contracts/speech-openapi.yaml:847-852). Emission points:
+ * (contracts/speech-openapi.yaml:858-863). Emission points:
  * - `model_not_published`: :783 (model is not a string), :801 (no published binding),
  *   :805 (binding lacks the required task), :837 (no catalogue revision).
  * - `profile_not_published`: :822 (profile revision is not published).

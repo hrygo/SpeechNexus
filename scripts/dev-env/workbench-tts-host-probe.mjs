@@ -320,14 +320,14 @@ try {
   for (const fault of ["voice", "model"]) {
     effectiveFault = fault;
     await button("读取原状态").click();
-    await expect(page.getByText("读取失败，请重新读取。", { exact: true })).toBeVisible();
+    await expect(page.getByText("读取失败。请读取原任务核对。", { exact: true })).toBeVisible();
     await expect(page.getByTestId("file-job-status")).toHaveText("queued");
     assert.equal(await raw(), confirmed);
   }
   // The confirmed model revision must survive reload, rather than trusting a new snapshot.
   await reloadTts();
   await button("读取原状态").click();
-  await expect(page.getByText("读取失败，请重新读取。", { exact: true })).toBeVisible();
+  await expect(page.getByText("读取失败。请读取原任务核对。", { exact: true })).toBeVisible();
   await expect(page.getByTestId("file-job-status")).toHaveText("尚未确认");
   assert.equal(await raw(), confirmed);
   effectiveFault = null;

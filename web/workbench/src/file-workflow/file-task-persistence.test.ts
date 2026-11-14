@@ -58,9 +58,10 @@ const resumedNotice =
   "已找到原任务身份；该请求结果尚未确认，请读取原任务核对，或按原输入与原键重放。";
 const executionResumeNotice =
   "已找到原执行身份；该请求结果尚未确认，请读取原执行核对，不要新建任务。";
-const replayOnlyNotice =
-  "已找到原任务身份；该请求结果尚未确认，请按原输入与原键重放，不要新建任务。";
-const identifiedNotice = "已找到原任务身份；请读取原任务状态。";
+const crashWindowNotice =
+  "已找到原素材身份；该请求结果尚未确认，请核对原素材，或按原输入与原键重放。";
+const identifiedNotice = "已找到原任务身份；请读取原任务核对。";
+const identifiedExecutionNotice = "已找到原执行身份；请读取原执行核对。";
 const terminalCreateNotice = "已找到原任务身份；该意图已被协议确定性拒绝并作废。";
 const terminalCancelNotice =
   "已找到原任务身份；该取消请求已被协议确定性拒绝并作废。请读取原任务核对，再显式收尾。";
@@ -218,11 +219,11 @@ describe("durable file task identities", () => {
     // #771: the crash window (pending create, no observed answer) reloads as one
     // unconfirmed submission. The status line must say so and must never borrow the
     // wording of a refusal, which would contradict the alert and the offered replay.
-    // This shape names no readable Job or execution, so the status line may promise only
-    // the original-key replay (review S1).
-    expect(second.getSnapshot().notice).toBe(replayOnlyNotice);
+    // It names no Job or execution, and #782 review M3: it *does* name the input Asset the
+    // alert asks for -- the previous wording said nothing while the alert beside it said
+    // "请核对原素材", which is the one-page two-objects defect this card removes.
+    expect(second.getSnapshot().notice).toBe(crashWindowNotice);
     expect(second.getSnapshot().notice).not.toContain("确定性拒绝");
-    expect(second.getSnapshot().notice).not.toContain("读取");
     // #780 review M2: the durable record always names its confirmed input Asset
     // (`task-journal.ts`), and `GET /v1/nexus/assets/{id}` answers for it, so "nothing to
     // verify" would be a false negative. One read of that Asset, and it may not clear the
@@ -586,7 +587,7 @@ const restoreMatrix: readonly RestoreRow[] = [
     canReplay: true,
     rejected: false,
     unreplayable: false,
-    notice: replayOnlyNotice,
+    notice: crashWindowNotice,
     mentionsReplay: true,
   },
   {
@@ -659,7 +660,7 @@ const restoreMatrix: readonly RestoreRow[] = [
     canReplay: false,
     rejected: false,
     unreplayable: false,
-    notice: identifiedNotice,
+    notice: identifiedExecutionNotice,
     mentionsReplay: false,
   },
   {
@@ -935,6 +936,10 @@ describe("restored alert names exactly the enabled actions", () => {
       // enables and no other.
       expect(namedReads(alert)).toEqual(state.readTarget === null ? [] : [state.readTarget]);
       expect(alert.includes("重放")).toBe(state.canReplay);
+      // #782: the two sentences render on one page, so an unconfirmed outcome must name the
+      // same read in both. Matching generators alone did not catch the crash window, whose
+      // status line named nothing while the alert asked for the input Asset (review M3).
+      if (state.unknown) expect(namedReads(state.notice)).toEqual(namedReads(alert));
       // Every cell here is a task record, which always names its confirmed input Asset, so
       // no cell may claim otherwise (#780 review M2: a false negative is as wrong as a false
       // promise).

@@ -303,6 +303,41 @@ export interface UnconfirmedActions {
 }
 
 /**
+ * The read this page offers, keyed by `readTarget`. It is the one table every sentence that
+ * names a read is worded from (#782): the alert, the status lines `#run`/`#submit` set, the
+ * restore lines (`resumedNoticeFor`, `settledIdentityNoticeFor`, the settled-cancel line, the
+ * upload-recovery lines), and the panel's settled paragraphs. So one page can neither name two
+ * objects nor a read the button disables. Exported so tests read the product's own strings
+ * instead of copying them.
+ *
+ * Known unconverged: the restored upload that never received an Asset asks for the *input*
+ * (`原上传尚未确认。请重新提供同一输入，按原键恢复。`). That is `requiresInput`, a third
+ * affordance outside read/replay, so no `ReadTarget` could generate it. Nothing else names an
+ * action by hand; a new sentence must come from this table or `actionClauseFor`.
+ */
+export const readTargetAction: Readonly<Record<ReadTarget, string>> = {
+  operation: "读取原执行核对",
+  job: "读取原任务核对",
+  asset: "核对原素材",
+};
+
+/**
+ * The action clause for an unconfirmed outcome, in the order the controls appear: the read this
+ * snapshot enables (if any), then the original-key replay. It takes `#derive`'s `readTarget`
+ * and `canReplay` -- the same values the two buttons are wired to -- so no branch can
+ * hand-write an action the page does not enable (#782). No trailing punctuation: the caller
+ * finishes the sentence with its own tail. `canReplay` may be false while the read is an
+ * execution: an identified execution is queried, never replayed (#782 review M1).
+ */
+function actionClauseFor(actions: UnconfirmedActions): string {
+  const read = actions.read === null ? null : readTargetAction[actions.read];
+  if (read && actions.replay) return `请${read}，或按原输入与原键重放`;
+  if (read) return `请${read}`;
+  if (actions.replay) return "请按原输入与原键重放";
+  return "当前页没有可读取的原素材、原任务或原执行";
+}
+
+/**
  * The alert for an unconfirmed outcome. Every clause is generated from `actions`, so the
  * sentence can neither omit an enabled action nor name one the page disables. Its negative
  * branch is reserved for the identity-less shape (#780 review M2): a task record always names
@@ -310,14 +345,7 @@ export interface UnconfirmedActions {
  * only an upload that never received an Asset may be.
  */
 export function unconfirmedAlertFor(actions: UnconfirmedActions): string {
-  const read =
-    actions.read === "operation"
-      ? "读取原执行核对"
-      : actions.read === "job"
-        ? "读取原任务核对"
-        : actions.read === "asset"
-          ? "核对原素材"
-          : null;
+  const read = actions.read === null ? null : readTargetAction[actions.read];
   if (read && actions.replay) return `请求结果尚未确认。请${read}；若重放，只使用原输入和原键。`;
   if (read) return `请求结果尚未确认。请${read}；不要新建任务。`;
   if (actions.replay)
@@ -370,20 +398,34 @@ interface TaskView {
 
 /**
  * The restored status line for an unconfirmed submission, worded from the same read handle
- * `refresh()` dispatches on (#771, #780). An identified original execution is *queried* --
- * its key cannot be replayed, see `canReplay`; a pending cancel names a readable Job and
- * keeps both paths; an unconfirmed create with no Job/Operation identity is reconciled by
- * its original key only. A reachable input Asset is deliberately not offered here: it
- * verifies the input, never the submission, so the alert names that read and the status
- * line keeps its #771 wording. The copy must name exactly what the page can do and never
- * offer an action it disables.
+ * `refresh()` dispatches on and the same replay flag the buttons use (#771, #780, #782). An
+ * identified original execution is *queried* -- its key cannot be replayed, see `canReplay`;
+ * every other restored shape keeps the original-key replay. The read verb comes from
+ * `readTargetAction`, so this line cannot drift from the alert beside it: it named no read at
+ * all while the alert asked for the input Asset, which is the same one-page two-objects defect
+ * `#782` removes from `#run`. `null` is the shape with no identity at all (unreachable for a
+ * restored record, whose journal always names its Asset), so it may promise only the replay.
  */
 function resumedNoticeFor(read: ReadTarget | null): string {
   if (read === "operation")
-    return "已找到原执行身份；该请求结果尚未确认，请读取原执行核对，不要新建任务。";
+    return `已找到原执行身份；该请求结果尚未确认，请${readTargetAction.operation}，不要新建任务。`;
   if (read === "job")
-    return "已找到原任务身份；该请求结果尚未确认，请读取原任务核对，或按原输入与原键重放。";
+    return `已找到原任务身份；该请求结果尚未确认，请${readTargetAction.job}，或按原输入与原键重放。`;
+  if (read === "asset")
+    return `已找到原素材身份；该请求结果尚未确认，请${readTargetAction.asset}，或按原输入与原键重放。`;
   return "已找到原任务身份；该请求结果尚未确认，请按原输入与原键重放，不要新建任务。";
+}
+
+/**
+ * The read line of a record whose intent already settled (accepted Job, or a refused create
+ * that kept its Job). Same table as every other sentence, so a record restored with an
+ * execution identity queries that execution instead of the Job this line used to name (#782
+ * review M2).
+ */
+function settledIdentityNoticeFor(read: ReadTarget | null): string {
+  if (read === null) return "本页没有可读取的原素材、原任务或原执行。";
+  const subject = read === "operation" ? "原执行" : read === "asset" ? "原素材" : "原任务";
+  return `已找到${subject}身份；请${readTargetAction[read]}。`;
 }
 
 /** A single file intent; explicit replay retains its original keys and payload. */
@@ -480,10 +522,14 @@ export class FileTaskSession {
         assetRecoveryId: this.#assetHintId ?? undefined,
         notice:
           this.#assetHintId && upload.pending === "upload"
-            ? "已保留原素材标识，请显式读取；不会重传或创建替代素材。"
+            ? `已保留原素材标识。请${readTargetAction.asset}。不会重传或创建替代素材。`
             : upload.pending === "upload"
-              ? "原上传尚未确认。请重新提供同一输入，按原键恢复。"
-              : "已找到原素材身份。请恢复读取后继续原任务。",
+              ? // The one restored sentence that asks for neither a read nor a replay: an
+                // unconfirmed upload with no Asset identity is recovered by re-providing the
+                // same input (`requiresInput`), a third affordance `ReadTarget` does not model.
+                // It stays hand-written because there is no predicate to generate it from.
+                "原上传尚未确认。请重新提供同一输入，按原键恢复。"
+              : `已找到原素材身份。请${readTargetAction.asset}后继续原任务。`,
       };
     }
     if (this.#record) {
@@ -520,12 +566,12 @@ export class FileTaskSession {
           settled === "unreplayable"
             ? "已找到原任务身份；该请求因请求体超过本部署的接收上限被拒绝，原意图作废。"
             : settledCancel
-              ? "已找到原任务身份；该取消请求已被协议确定性拒绝并作废。请读取原任务核对，再显式收尾。"
+              ? `已找到原任务身份；该取消请求已被协议确定性拒绝并作废。请${readTargetAction.job}，再显式收尾。`
               : settled === "terminal"
                 ? "已找到原任务身份；该意图已被协议确定性拒绝并作废。"
                 : record.pending !== null
                   ? resumedNoticeFor(this.#readTarget(this.#view))
-                  : "已找到原任务身份；请读取原任务状态。",
+                  : settledIdentityNoticeFor(this.#readTarget(this.#view)),
       };
       if (this.#view.canReplay)
         this.#replay =
@@ -586,6 +632,18 @@ export class FileTaskSession {
     // identity rows and `refresh()` are all consumers of these one values (#780).
     this.#view = { ...next, ...this.#derive(next) };
     this.#listeners.forEach((listener) => listener());
+  }
+
+  /**
+   * Set the status line for an unconfirmed outcome. The branch supplies its own fact and tail;
+   * the actions in between are generated from the snapshot the notice describes -- the same
+   * `readTarget` and `canReplay` the buttons and the alert use -- so a status line can never
+   * hand-write a read the page cannot perform or a replay it disables (#782).
+   */
+  #noticeWithActions(update: Partial<TaskView>, fact: string, tail = "") {
+    const next = { ...this.#view, ...update };
+    const clause = actionClauseFor({ read: this.#readTarget(next), replay: next.canReplay });
+    this.#update({ ...update, notice: `${fact}${clause}。${tail}` });
   }
 
   #persist(
@@ -700,27 +758,30 @@ export class FileTaskSession {
           try {
             this.#rememberAssetHint(error.assetId);
           } catch {
-            this.#update({
-              unknown: true,
-              canReplay: false,
-              notice: "原素材恢复标识未能保存。请保留原请求，修复存储后按原输入和原键恢复。",
-            });
+            // The hint could not be persisted, so this page may hold no readable identity at
+            // all; the action clause is generated rather than assumed (#782).
+            this.#noticeWithActions(
+              { unknown: true, canReplay: false },
+              "原素材恢复标识未能保存。",
+              "请保留原请求，修复本地存储后重新打开本页再核对。",
+            );
             return;
           }
         } else
           this.#replay = async () => {
             await action();
           };
-        this.#update({
-          unknown: true,
-          canReplay: !error.assetId,
-          ...(error.assetId ? { requiresInput: false, assetRecoveryId: error.assetId } : {}),
-          recovery: undefined,
-          operation: undefined,
-          notice: error.assetId
-            ? "原素材上传未决，已保留原标识；请读取素材状态，不要创建替代上传。"
-            : "原上传结果未知，尚无可用素材标识；仅按原输入和原幂等键恢复。",
-        });
+        this.#noticeWithActions(
+          {
+            unknown: true,
+            canReplay: !error.assetId,
+            ...(error.assetId ? { requiresInput: false, assetRecoveryId: error.assetId } : {}),
+            recovery: undefined,
+            operation: undefined,
+          },
+          error.assetId ? "原素材上传未决，已保留原标识。" : "原上传结果未知，尚无可用素材标识。",
+          "不要创建替代上传。",
+        );
       } else if (
         mutation &&
         error instanceof SpeechResponseError &&
@@ -732,46 +793,49 @@ export class FileTaskSession {
         } catch {
           /* Pending original intent remains durable; no replacement is submitted. */
         }
-        this.#update({
-          unknown: true,
-          canReplay: false,
-          recovery: error.detail,
-          operation: undefined,
-          notice: "原执行已有恢复身份。请重新读取原执行状态；不要创建替代执行。",
-        });
+        // The contract requires `error.nexus.operation_id` for both codes
+        // (contracts/speech-openapi.yaml:2904-2906), so the generated read is that execution.
+        this.#noticeWithActions(
+          { unknown: true, canReplay: false, recovery: error.detail, operation: undefined },
+          "原执行已有恢复身份。",
+          "不要创建替代执行。",
+        );
       } else if (mutation && error instanceof OriginalTextUnavailableError) {
         // Nothing was submitted, so the original request is intact: keep it replayable
         // instead of reporting an unknown outcome or creating a substitute task.
         this.#replay = async () => {
           await action();
         };
-        this.#update({
-          unknown: true,
-          canReplay: true,
-          notice: "原文本素材暂不可读取。保留原请求身份；请按原键重试，不要创建替代任务。",
-        });
+        // The input Asset stays readable -- it is what the replay must read back -- so the
+        // clause names that read next to the replay this branch keeps (#782).
+        this.#noticeWithActions(
+          { unknown: true, canReplay: true },
+          "原文本素材暂不可读取。",
+          "不要创建替代任务。",
+        );
       } else if (mutation && !(error instanceof SpeechResponseError)) {
         this.#replay = async () => {
           await action();
         };
-        this.#update({
-          unknown: true,
-          canReplay: true,
-          notice:
-            error instanceof TaskJournalError
-              ? "恢复记录未能确认。保留原请求身份，请恢复读取或按原键重试。"
-              : "操作结果未知。请读取原任务，或按原幂等键重放；不要创建替代任务。",
-        });
+        // A lost answer names no execution, so the read the page can offer is whatever
+        // `#derive` finds -- for a create intent that is its confirmed input Asset, never the
+        // "原任务" this line used to hard-code (#782).
+        this.#noticeWithActions(
+          { unknown: true, canReplay: true },
+          error instanceof TaskJournalError ? "恢复记录未能确认。" : "操作结果未知。",
+          "不要创建替代任务。",
+        );
       } else if (mutation && this.#upload && this.#view.unknown && !this.#view.asset) {
         // An unconfirmed original upload outranks every rejection class below: no class
         // may clear it or pretend this attempt proved anything about it.
         this.#replay = undefined;
-        this.#update({
-          canReplay: false,
-          notice: contractError
-            ? `当前请求被拒绝（${contractError.status}: ${contractError.code}），原上传仍未确认；保留原身份。`
-            : "原上传仍未确认；请保留原身份。",
-        });
+        this.#noticeWithActions(
+          { canReplay: false },
+          contractError
+            ? `当前请求被拒绝（${contractError.status}: ${contractError.code}），原上传仍未确认。`
+            : "原上传仍未确认。",
+          "保留原身份，不要创建替代上传。",
+        );
       } else if (contractError && rejection === "unknown-outcome") {
         // The original submission may already be executing; the contract requires keeping
         // its key and request, then replaying or querying that Job, never a new intent
@@ -793,14 +857,14 @@ export class FileTaskSession {
           : async () => {
               await action();
             };
-        this.#update({
-          unknown: true,
-          canReplay: !operationId,
-          recovery,
-          notice: operationId
-            ? "提交结果未知，但已取得原执行身份。请读取原执行；不要新建任务。"
-            : "提交结果未知，原提交可能已执行。请读取原执行，或按原幂等键重放；不要新建任务。",
-        });
+        // An identified execution is queried, not replayed; a create intent with no execution
+        // identity still names its input Asset and stays replayable. Both facts come from the
+        // same derive the buttons use, so the copy follows the state (#782).
+        this.#noticeWithActions(
+          { unknown: true, canReplay: !operationId, recovery },
+          operationId ? "提交结果未知，但已取得原执行身份。" : "提交结果未知，原提交可能已执行。",
+          "不要新建任务。",
+        );
       } else if (contractError && rejection === "intent-kept") {
         // This attempt was refused before acting on the intent, yet the same intent may
         // still succeed. Keep it replayable and leave any earlier unknown-outcome evidence
@@ -809,10 +873,11 @@ export class FileTaskSession {
         this.#replay = async () => {
           await action();
         };
-        this.#update({
-          canReplay: true,
-          notice: `提交被暂时拒绝（${contractError.status} ${contractError.code}）；原意图已保留，按原键重试不会产生第二次执行，不要新建任务。`,
-        });
+        this.#noticeWithActions(
+          { canReplay: true },
+          `提交被暂时拒绝（${contractError.status} ${contractError.code}）；原意图已保留，按原键重试不会产生第二次执行。`,
+          "不要新建任务。",
+        );
       } else if (contractError && rejection === "unreplayable") {
         // The refusal is about the bytes of this request (#729). Replaying it can only
         // produce the same refusal, so the durable intent is spent *for replay* — but the
@@ -841,24 +906,30 @@ export class FileTaskSession {
           this.#replay = async () => {
             await action();
           };
-          this.#update({
-            unknown: true,
-            canReplay: !identified,
-            recovery: retainRecovery(this.#view.recovery, contractError.detail),
-            notice: identified
-              ? `提交被拒绝（${contractError.status} ${contractError.code}），且已有可查询的执行身份；请读取原执行核对成功、失败或不确定，不要新建任务。`
-              : `提交被拒绝（${contractError.status} ${contractError.code}）：请求体超过本部署的接收上限，但该意图此前已有提交尝试，这次拒绝不能证明原提交未执行；保留原键与未知状态，不要新建任务。`,
-          });
+          this.#noticeWithActions(
+            {
+              unknown: true,
+              canReplay: !identified,
+              recovery: retainRecovery(this.#view.recovery, contractError.detail),
+            },
+            identified
+              ? `提交被拒绝（${contractError.status} ${contractError.code}），且已有可查询的执行身份。`
+              : `提交被拒绝（${contractError.status} ${contractError.code}）：请求体超过本部署的接收上限，但该意图此前已有提交尝试，这次拒绝不能证明原提交未执行。`,
+            identified ? "核对成功、失败或不确定状态，不要新建任务。" : "不要新建任务。",
+          );
         } else if (identified) {
           // Query, do not replay: the identity is the only reconciliation, and re-sending
           // the same bytes would be refused again before it could ever reach that Job.
           this.#replay = undefined;
-          this.#update({
-            unknown: true,
-            canReplay: false,
-            recovery: retainRecovery(this.#view.recovery, contractError.detail),
-            notice: `提交被拒绝（${contractError.status} ${contractError.code}），且已有可查询的执行身份；请读取原执行核对成功、失败或不确定，不要新建任务。`,
-          });
+          this.#noticeWithActions(
+            {
+              unknown: true,
+              canReplay: false,
+              recovery: retainRecovery(this.#view.recovery, contractError.detail),
+            },
+            `提交被拒绝（${contractError.status} ${contractError.code}），且已有可查询的执行身份。`,
+            "核对成功、失败或不确定状态，不要新建任务。",
+          );
         } else {
           this.#replay = undefined;
           try {
@@ -930,21 +1001,38 @@ export class FileTaskSession {
         const refusalProvesNothing =
           (operation === "create" && !settlesCreate) || (operation === "cancel" && !settlesCancel);
         if (refusalProvesNothing) {
-          // Keep the unknown state, its recovery envelope and the replay handle: this
-          // refusal rules out this *answer*, not an earlier submission, so the original
-          // key stays the only reconciliation.
-          this.#replay = async () => {
-            await action();
-          };
-          this.#update({
-            unknown: true,
-            canReplay: true,
-            recovery: retainRecovery(this.#view.recovery, contractError.detail),
-            notice:
-              operation === "cancel"
-                ? `取消请求被拒绝（${contractError.status} ${contractError.code}），但该拒绝不能证明原取消未生效；保留原键与未知状态，请读取原任务。`
-                : `提交被拒绝（${contractError.status} ${contractError.code}），但该拒绝不能证明原提交未执行；保留原键与未知状态，不要新建任务。`,
-          });
+          // The refusal rules out this answer, not an earlier submission, so the page keeps
+          // the unknown state, its original key and whatever read handle it really holds: a
+          // pending cancel names its Job, a create only its input Asset (#782).
+          const recovery = retainRecovery(this.#view.recovery, contractError.detail);
+          // `canReplay` follows the identity the page really holds, not the record field: the
+          // record's key says "replayable" while the kept envelope may already name the
+          // original execution, and that execution is *queried* -- replaying under the key
+          // can only be refused before it could ever reach that execution. Two sources for
+          // one action is how a page offers a replay it must not offer (#782 review M1).
+          const operationId = recovery.error.nexus?.operation_id;
+          const identified = Boolean(operationId);
+          // Persist the identity the page now relies on, exactly like `unknown-outcome`, so a
+          // reload keeps querying it instead of rebuilding a replay from `record.operationId`.
+          if (operationId && recovery === contractError.detail) {
+            try {
+              this.#persist({ operationId });
+            } catch {
+              /* Pending original intent remains durable; no replacement is submitted. */
+            }
+          }
+          this.#replay = identified
+            ? undefined
+            : async () => {
+                await action();
+              };
+          this.#noticeWithActions(
+            { unknown: true, canReplay: !identified, recovery },
+            operation === "cancel"
+              ? `取消请求被拒绝（${contractError.status} ${contractError.code}），但该拒绝不能证明原取消未生效；保留原键与未知状态。`
+              : `提交被拒绝（${contractError.status} ${contractError.code}），但该拒绝不能证明原提交未执行；保留原键与未知状态。`,
+            "不要新建任务。",
+          );
         } else {
           this.#replay = undefined;
           if (settles) {
@@ -967,10 +1055,14 @@ export class FileTaskSession {
             notice: contractError.message,
           });
         }
+      } else if (error instanceof SpeechResponseError) {
+        // Protocol copy, not this page's action list.
+        this.#update({ notice: error.message });
       } else {
-        this.#update({
-          notice: error instanceof SpeechResponseError ? error.message : "读取失败，请重新读取。",
-        });
+        // A failed read is dispatched only when a readable identity exists (`restore()`'s gate
+        // and the disabled button), so the clause names the read that just failed -- or the
+        // replay this snapshot still enables (#782).
+        this.#noticeWithActions({}, "读取失败。");
       }
     } finally {
       this.#update({ busy: false });
@@ -1127,7 +1219,7 @@ export class FileTaskSession {
       const asset = this.#view.asset;
       if (asset) this.#checkAsset(asset);
       if (asset?.status !== "ready") {
-        this.#update({ notice: "素材尚未就绪。请重新读取校验状态。" });
+        this.#noticeWithActions({}, "素材尚未就绪。");
         return;
       }
       const identity = {
@@ -1158,7 +1250,7 @@ export class FileTaskSession {
     this.#createEverIssued = true;
     const job = await this.#client.create(command, this.#createKey, signal);
     this.#acceptJob(job, { jobId: job.id, pending: null, operationId: null });
-    this.#update({ job, notice: "任务已接收。读取当前状态或连接任务事件。" });
+    this.#noticeWithActions({ job }, "任务已接收。", "也可连接任务事件。");
   }
 
   async start(file: File, model: string) {

@@ -1,10 +1,26 @@
 import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { type FileTaskSession, unconfirmedAlertFor } from "./file-task-session";
+import {
+  type FileTaskSession,
+  type ReadTarget,
+  readTargetAction,
+  unconfirmedAlertFor,
+} from "./file-task-session";
 import type { FileContracts } from "./speech-file-client";
 
 import { canFinishTask } from "./file-task-policy";
 
 type Snapshot = ReturnType<FileTaskSession["getSnapshot"]>;
+
+/**
+ * The read a settled refusal still offers (#782). A refusal spends the intent, never the
+ * identities it named, so the paragraph may name only the read `#derive` finds -- the Job of a
+ * settled cancel, the input Asset of a settled create -- and says nothing about an action the
+ * state disables. Generated from the same table as the alert (`readTargetAction`), so the
+ * panel cannot hand-write "读取原任务" over a state whose one read is an Asset.
+ */
+function settledReadAction(read: ReadTarget | null) {
+  return read === null ? "本页没有可读取的原素材、原任务或原执行" : `请${readTargetAction[read]}后`;
+}
 export type ImportTranscript = (
   result: Extract<NonNullable<FileContracts["Job"]["result"]>, { kind: "asr" }>,
 ) => void;
@@ -99,14 +115,16 @@ export function FileTaskPanel({
       )}
       {state.rejected && !state.unreplayable && (
         <p role="status">
-          原请求已被协议确定性拒绝，原意图作废：不能重放，刷新也不会再变回「结果未知」。
-          读取原任务核对后，可用「准备新任务」明确结束；服务端数据不会因此删除。
+          {`原请求已被协议确定性拒绝，原意图作废：不能重放，刷新也不会再变回「结果未知」。` +
+            `${settledReadAction(state.readTarget)}，可用「准备新任务」明确结束；` +
+            `服务端数据不会因此删除。`}
         </p>
       )}
       {state.rejected && state.unreplayable && (
         <p role="status">
-          原请求因请求体超过本部署的接收上限被拒绝，这次请求被拒绝、原意图作废：不能按原键重放，
-          刷新后仍保持作废。本页只能明确结束并重新开始；服务端数据不会因此删除。
+          {`原请求因请求体超过本部署的接收上限被拒绝，这次请求被拒绝、原意图作废：` +
+            `不能按原键重放，刷新后仍保持作废。${settledReadAction(state.readTarget)}，` +
+            `可用「准备新任务」明确结束并重新开始；服务端数据不会因此删除。`}
         </p>
       )}
       <dl>

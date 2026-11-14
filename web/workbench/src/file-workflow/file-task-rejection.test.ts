@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   FileTaskSession,
+  readTargetAction,
   rejectionDisposition,
   retainRecovery,
   settlesCancelAttempt,
@@ -237,7 +238,12 @@ describe("submission rejection classes", () => {
     expect(snapshot.unknown).toBe(true);
     expect(snapshot.canReplay).toBe(true);
     expect(snapshot.recovery?.error.code).toBe("job_outcome_unknown");
-    expect(snapshot.notice).toContain("读取原执行");
+    // A create intent names no execution, so the one read it really offers is its confirmed
+    // input Asset -- not the "原任务" the copy hard-coded before #782.
+    expect(snapshot.readTarget).toBe("asset");
+    expect(snapshot.notice).toContain(readTargetAction.asset);
+    expect(snapshot.notice).not.toContain(readTargetAction.job);
+    expect(snapshot.notice).not.toContain(readTargetAction.operation);
     expect(snapshot.notice).toContain("不要新建");
     // A fresh intent is the duplicated-execution path this card removes.
     expect(canFinishTask(snapshot)).toBe(false);
@@ -843,11 +849,17 @@ describe("submission rejection classes", () => {
     });
     const session = f.make();
     await session.start(file(), "asr-quality");
-    expect(session.getSnapshot()).toMatchObject({ unknown: true, canReplay: true });
+    // #782 review M1: the kept identity is *queried*, so this refusal is neither settled nor
+    // replayable. `canReplay` follows the identity the page holds, not `record.operationId`
+    // (still null here): a replay would be refused before it could reach that execution.
+    expect(session.getSnapshot()).toMatchObject({ unknown: true, canReplay: false });
     expect(session.getSnapshot().rejected).toBeUndefined();
     expect(session.getSnapshot().recovery?.error.nexus?.operation_id).toBe("op-demo");
     expect(canFinishTask(session.getSnapshot())).toBe(false);
     expect(f.stored()).not.toHaveProperty("settled");
+    expect(f.stored()).toMatchObject({ operationId: "op-demo", pending: "create" });
+    await session.replay();
+    expect(f.stats.createKeys).toHaveLength(1);
     session.dispose();
   });
 
@@ -927,7 +939,9 @@ describe("submission rejection classes", () => {
     const snapshot = session.getSnapshot();
     expect(snapshot).toMatchObject({ unknown: true, canReplay: true });
     expect(snapshot.recovery?.error.code).toBe("execution_cleanup_pending");
-    expect(snapshot.notice).toContain("读取原执行");
+    expect(snapshot.readTarget).toBe("asset");
+    expect(snapshot.notice).toContain(readTargetAction.asset);
+    expect(snapshot.notice).not.toContain(readTargetAction.job);
     expect(canFinishTask(snapshot)).toBe(false);
     // It proves a Job exists, so it must never be recorded as a spent intent (#707).
     expect(snapshot.rejected).toBeUndefined();
@@ -1218,12 +1232,17 @@ describe("cancel-attempt settlement", () => {
     await session.start(file(), "asr-quality");
     await session.cancel();
     const snapshot = session.getSnapshot();
-    expect(snapshot).toMatchObject({ unknown: true, canReplay: true });
+    // #782 review M1: an identified execution is queried, never replayed, on this path too.
+    expect(snapshot).toMatchObject({ unknown: true, canReplay: false });
     expect(snapshot.recovery?.error.nexus?.operation_id).toBe("op-demo");
     expect(snapshot.rejected).toBeUndefined();
     expect(canFinishTask(snapshot)).toBe(false);
-    expect(f.stored()).toMatchObject({ pending: "cancel", operationId: null });
+    // The identity the page now relies on is durable, so a reload keeps querying it instead
+    // of rebuilding a replay from a record that still says `operationId: null`.
+    expect(f.stored()).toMatchObject({ pending: "cancel", operationId: "op-demo" });
     expect(f.stored()).not.toHaveProperty("settled");
+    await session.replay();
+    expect(f.stats.cancellations).toBe(1);
     session.dispose();
   });
 });

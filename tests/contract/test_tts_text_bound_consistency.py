@@ -246,3 +246,35 @@ async def test_the_same_over_bound_body_keeps_each_entry_point_code() -> None:
     source.evolve(schema={**DOCUMENT, "allOf": [declared_async]}).validate(asynchronous.json())
     assert asynchronous.json()["error"]["code"] == "unsupported_parameter"
     assert jobs.submitted == []
+
+
+def _capability_bound_table() -> list[str]:
+    """The cross-entry table a consumer is told to look up in the errors section."""
+
+    document = (ROOT / "docs" / "architecture" / "speech-api.md").read_text()
+    start = document.index("载荷超过能力上界")
+    end = document.index("前两行是同一个条件", start)
+    return [line for line in document[start:end].splitlines() if line.startswith("|")]
+
+
+def _rows_naming(rows: list[str], *tokens: str) -> list[str]:
+    return [row for row in rows if all(token in row for token in tokens)]
+
+
+def test_the_cross_entry_bound_table_states_each_entry_code() -> None:
+    """The documented table must keep naming the code each measured entry returns.
+
+    The synchronous and asynchronous one-synthesis refusals stay deliberately
+    different, so the table is the single place a consumer can map them. If the
+    table loses a row or a code, the mapping is no longer discoverable even
+    though both contracts still declare it.
+    """
+
+    rows = _capability_bound_table()
+
+    assert _rows_naming(rows, "POST /v1/audio/speech", "400", "`invalid_request`")
+    assert _rows_naming(rows, "POST /v1/nexus/jobs", "422", "`unsupported_parameter`")
+    assert _rows_naming(rows, "POST /v1/nexus/jobs", "413", "`job_request_too_large`")
+    assert _rows_naming(rows, "POST /v1/nexus/assets", "413", "`asset_too_large`")
+    assert _rows_naming(rows, "POST /v1/nexus/assets", "422", "`asset_text_too_long`")
+    assert _rows_naming(rows, "render-units", "422", "`render_submission_rejected`")

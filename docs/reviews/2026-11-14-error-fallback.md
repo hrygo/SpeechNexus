@@ -24,7 +24,7 @@
 - **`X-Should-Retry` 与 `retryable` 同源**（B4）：两条路径都只从 `retryable` 参数派生，没有第二条来源。
 - **异常文本不进响应体**（B5）：实测响应体只有 `internal_error` 稳定文案；`repr` 只进日志，且 `from None` 抑制过的底层异常文本不会经 `exc_info` 泄漏（下文有 15 行实验）。
 - **11 个入口全部改到**（C6）：`grep "except Exception as error"` 命中 11 个 HTTP 入口，逐一 `_unexpected_error`；`streamExportEvents` 无路由、v1 `generateRenderUnit` 无路由。
-- **例数对上**（D9）：`tests/unit/backend` 3151（基线 3130，+21）、`tests/contract` 3799（基线 3799）、`contracts-{drift,check,http-changes,route-conformance}` 全绿、CI 18 pass / 0 fail。
+- **例数对上**（D9）：`tests/unit/backend` 3151（基线 3130，+21）、`tests/contract` 3799（基线 3799）、`contracts-{drift,check,http-changes,route-conformance}` 全绿、被审 PR #783 的 CI 18 pass / 0 fail。
 - **但**：A1 的「集合登记」缺失是真实缺口；C6 的 `prepared.close()` 逃逸是真实裸 500（已复现）；C7 的未知 code 是同类裸 500（已用构造出的 `LlmError` 复现）。
 
 ## 核心判断 A：缺口会不会变成永久隐形
@@ -329,4 +329,5 @@ OSError: spool close failed
 - `21:37–21:40` head：`pytest tests/contract -q` → `3799 passed`；基线（装 pnpm 依赖后）→ `3799 passed`。
 - `21:41–21:48` A/B/C 原始报文对照（基线 vs head，`raise_app_exceptions=False`）、降级 warning 观测、三条变异、C7 构造 `LlmError` 复现、C6 `prepared.close()` 逃逸复现。
 - `21:49` `make contracts-drift` / `contracts-check` / `contracts-http-changes` / `contracts-route-conformance` 全绿；`gh pr checks 783` → 18 pass / 0 fail。
-- `21:52` 切回 `review/785-error-fallback`（`3fb467a6`），`git diff origin/main...HEAD --stat` 只含本文件。
+- `21:52` 切回 `review/785-error-fallback`（`3fb467a6`），提交本报告（`3adea961`），push 分支并开 PR #785（标题 `review: 兜底错误响应降级的非作者审查`）。
+- `22:0x` PR #785 的 CI：6 pass / 0 fail / 9 skipping（docs-only 变更，Python/Integration/Web 等重 job 按 scope 跳过；`Docs: markdown code block formatting` 与 `docs/reports` 边界检查通过），`git diff origin/main...HEAD --stat` 只含本文件。

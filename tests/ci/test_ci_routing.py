@@ -300,20 +300,19 @@ class ProseRoutingTests(unittest.TestCase):
 
     def test_prose_in_a_web_public_directory_stays_full(self) -> None:
         # Vite copies `public/` verbatim into `dist`, so a Markdown file there is a
-        # shipped product asset, not prose.
+        # shipped product asset, not prose. Any depth below the app root matches.
         for path in (
             "web/workbench/public/AGENTS.md",
             "web/admin/public/README.md",
             "web/workbench/public/notes/AGENTS.md",
-            # The Vite default `publicDir` is the app root's `public`, not any
-            # nested `src/public`; that one is not a bundle input.
-            "web/workbench/src/public/README.md",
         ):
             with self.subTest(path=path):
-                self.assertEqual(
-                    ROUTER.classify([path]),
-                    "docs" if "src/public" in path else "full",
-                )
+                self.assertEqual(ROUTER.classify([path]), "full")
+
+    def test_a_nested_src_public_directory_is_not_a_bundle_input(self) -> None:
+        # The Vite default `publicDir` is the app root's `public`; `src/public`
+        # is not copied into `dist`, so prose there is documentation.
+        self.assertEqual(ROUTER.classify(["web/workbench/src/public/README.md"]), "docs")
 
     def test_readmes_a_unit_test_asserts_keep_the_full_lane(self) -> None:
         # `tests/unit/gateway/test_engine_language_semantics.py` reads both files and

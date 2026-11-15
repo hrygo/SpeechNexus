@@ -136,7 +136,7 @@
     "version": null
   },
   "speech-openapi.yaml": {
-    "sha256": "d6eef0d24003840feb095934bbf13981f8ae937a51aad4f4fe34daf46470e8a1",
+    "sha256": "f161d9dd7323a3714dd15494c0963a35671548b8a20dfb61c4732ac044738450",
     "version": "0.1.0.dev18"
   },
   "voice-resource.schema.json": {

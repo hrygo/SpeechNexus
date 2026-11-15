@@ -350,6 +350,7 @@ B3 的结构性守护（不是"再列一张表"）：
 | 位置 | 变更 |
 | --- | --- |
 | `contracts/speech-openapi.yaml` `createJob` | 503/422/500 响应改为 `allOf` + `code.enum`；`description` 增加引擎侧拒绝表与 `retryable` 规则；补 `Cache-Control: no-store`、`Retry-After` |
+| `contracts/speech-openapi.yaml`（voice-draft 422 与 409 取消冲突） | 五个提交操作的 422 从共享无约束响应改为两个受限组件（枚举新增 `voice_draft_request_expired`），`JobCancellationConflict` 声明 `Retry-After`；`info.description` 记录两面对引擎侧原因的码分组对应关系 |
 | `contracts/shared/errors.schema.json` | 仅 `ErrorBody.retryable.description`（唯一定义，删除旧的第二定义）；`code` 保持 pattern |
 | `contracts/workbench-openapi.yaml` | 分发操作段落陈述同一定义并指向共享文件，删除复述旧第二定义的整段 |
 | `scripts/dev-env/check-http-contract-changes.py` | 新增 `_APPROVED_RESPONSE_VOCABULARY_WIDENINGS`（27 条精确 finding 记录，含 `issue`/`from_version`/`to_version`/`reason`），只放行同名同版本对的行 |
@@ -386,12 +387,12 @@ B3 的结构性守护（不是"再列一张表"）：
 
 | 检查 | 结果（本次实测，2026-11-15，head `52c6b7cf`） | 基线 `6a4d7184` 首轮实测 |
 | --- | --- | --- |
-| `uv run --no-sync pytest tests/unit` | 收集 7203，`7200 passed, 3 skipped` | 7146 |
-| `uv run --no-sync pytest tests/unit/backend` | 收集 3330，`3330 passed` | 3273 |
-| `uv run --no-sync pytest tests/contract` | `3868 passed` | 3815 |
+| `uv run --no-sync pytest tests/unit` | 收集 7204，`7201 passed, 3 skipped` | 7146 |
+| `uv run --no-sync pytest tests/unit/backend` | 收集 3331，`3331 passed` | 3273 |
+| `uv run --no-sync pytest tests/contract` | `3880 passed` | 3815 |
 | `uv run --no-sync pytest tests/ci` | `414 passed, 1418 subtests passed` | 404 |
-| 三者合并（CI 的 Python 面） | `11482 passed, 3 skipped, 1424 subtests passed` | — |
-| `tests/integration` 相关 6 个文件（新增 `test_public_jobs_http.py`） | `208 passed` | — |
+| 三者合并（CI 的 Python 面） | `11495 passed, 3 skipped, 1424 subtests passed` | — |
+| `tests/integration` 相关 6 个文件（新增 `test_public_jobs_http.py`） | `209 passed` | — |
 | `make contracts-check` | `contract validation: passed (37 files)` | — |
 | `make contracts-generate` + bindings `--check` | `Contract bindings: up to date` | — |
 | `CONTRACT_BASE_REF=origin/main make contracts-speech-changes` | `Known HTTP structural checks: passed`（27 条词汇放宽逐条打印为 `approved response vocabulary widening:`） | — |
@@ -400,10 +401,85 @@ B3 的结构性守护（不是"再列一张表"）：
 | `uv run --no-sync mypy --platform linux` | `Success: no issues found in 1484 source files` | — |
 | `uv run --no-sync lint-imports` | `Contracts: 9 kept, 0 broken.` | — |
 | `pnpm typecheck` | admin / workbench / shared / contracts 全部 Done | — |
-| `pnpm test` | workbench `1075 passed`（65 files）、admin `151 passed`（19 files）、contracts SDK 用例全绿 | workbench 1070 / admin 151 |
+| `pnpm test` | workbench `1076 passed`（65 files）、admin `151 passed`（19 files）、contracts SDK 用例全绿 | workbench 1070 / admin 151 |
 | `pnpm exec prettier --check "web/**/*.{css,html,json,ts,tsx}"` | `All matched files use Prettier code style!` | — |
 | GitHub Actions `CI` | run `43719486411`（head `52c6b7cf`）：全部 job success | — |
 | `uv.lock` | 与基线一致（所有 Python 命令走 `uv run --no-sync`，`make` 目标运行后核对并 `git checkout --`） | — |
+
+## 第三轮审查（F1–F7）后的终态
+
+### 未映射码走契约信封，且由真 PG + 生产 HTTP 取证
+
+`rejection_code` 对未映射的准入码抛 `PublicJobAdmissionRejectedError`，而它的调用点在
+`public_jobs_postgres.create()` 自己的 `except AdmissionRejectedError` 处理器体内——
+同一 `try` 的兄弟 `except PublicJobAdmissionRejectedError` 捕不到处理器体内抛出的异常，
+接口层也没有该基础设施类型的处理器，于是 Starlette 兜成裸 `500 text/plain`。现在映射在
+存储层以“拒绝结果”的形式产出（`PublicJobPostgresStore._public_code`），由既有
+`admission_state_invalid` 通路答复，全程不越层。
+
+证据换成往返而不是异常对象：`test_an_unmapped_admission_code_answers_the_declared_envelope`
+（`tests/integration/test_public_job_admission_http_pg.py`）在生产装配 + 真 PostgreSQL 上
+把 `readiness_expired` 从公开映射里摘掉，触发真实的过期收据，断言：状态 `500`、
+`content-type: application/json`、`Cache-Control: no-store`、
+`(code, type, retryable) == ("admission_state_invalid", "api_error", false)`、
+信封字段全集 `{code,type,message,param,request_id,retryable}`、`param` 为 null、
+message 既不含 `storage` 也不含 `unavailable`，且未写入任何行。同层的单元版
+`test_an_undeclared_admission_code_answers_the_envelope_not_a_bare_500`
+（`tests/unit/backend/test_public_job_http_surface.py`）走真实 create 路由再断言一次。
+
+反例：把 `self._public_code(error.code)` 改回 `rejection_code(error.code)` →
+`PublicJobAdmissionRejectedError` 逃出存储层，该测试 1 failed。
+
+### 存储机制码从原因映射派生
+
+`_STORE_MECHANISM_CODES` 不再是手写第二份，而是 `frozenset(_STORE_MECHANISM_REASONS)`，
+`_rejection_reason` 直接查同一张表（缺省 `contract`）。新增
+`test_the_store_mechanism_codes_are_exactly_what_the_reason_mapping_declares`：
+每个成员必须有非 `contract` 原因、集合外码必须判为 `contract`、且集合与公开准入码不相交。
+反例：往映射里加 `engine_retired` → `assert 'facts_changed' == 'contract'`，1 failed。
+
+### 守护覆盖的层与缺陷层对齐
+
+| 守护 | 缺陷层 | 现在的取证据层 | 反例 |
+| --- | --- | --- | --- |
+| 未映射码 | HTTP 响应 | 真 PG + ASGI 往返（状态码、媒体类型、信封全集） | 改回处理器内抛异常 → 1 failed |
+| `jobs_sql` 写入码 | `JobResult(error_code=…)` 的实参 | 非字面量实参直接判 offender（以前静默跳过） | 换成 `cast(str, request.error_code)` → `jobs_sql.py:48 reports a non-literal error code` |
+| 13 模块清单 | 全仓 raise 点 | 遍历 `backend/src/speechnexus_backend/**/*.py` 与清单双向比对（删除 `len == 13`） | 新建第 14 个模块 raise 未登记码 → `unlisted: ['domain/readiness_audit.py']` |
+| `voice_draft_request_expired` | 生成消费者 | 契约枚举 + `speech.generated.ts` / `voice_drafts.openapi.json` / `voice_drafts-http.schema.json` 三处实文检查 | 删枚举项 → 5 failed；改回无约束 422 → 6 failed |
+| 评论里宣称的测试 | 测试是否存在 | `test_the_store_mechanism_codes_are_exactly_what_the_reason_mapping_declares` 已真实存在 | — |
+
+### voice-draft 422 现在是机器可见的受限响应
+
+五个提交操作的 422 由共享无约束 `UnprocessableEntity` 改为两个受限组件：
+`VoiceDraftSubmitUnprocessableEntity`（`voice_draft_input_unavailable`、
+`voice_draft_request_expired`）与 `VoiceDraftCandidateUnprocessableEntity`（再加
+`voice_draft_not_candidate`），并声明 `Cache-Control: no-store` 与
+`X-Should-Retry: "false"`。守卫
+`test_voice_draft_422_enumerates_the_codes_the_surface_can_answer` 从
+`_ERRORS` 的 422 键逐操作推导期望集合，双向比对契约枚举；另一条确认生成产物里确实出现该码。
+
+### 一处码、两处分组：契约写明对应关系
+
+`info.description` 记录：Job 面把四个引擎侧原因分成 `engine_not_ready`、
+`engine_state_mismatch`、`engine_resource_disabled`、`recipe_not_admitted`，voice-draft 面
+合成为 `voice_draft_engine_unavailable`，因为客户端动作相同、原因由 message 承担；两者都是
+503 且 `retryable: false`。
+
+### `Retry-After` 补齐
+
+`execution_cleanup_pending`（409，`retryable: true`）现在带 `Retry-After: 1`——一秒是释放
+路径可观察到的最短粒度——契约 `JobCancellationConflict` 声明该头；
+`test_retry_maps_every_domain_failure_to_its_declared_error` 断言该码与
+`job_capacity_exhausted` 带 1 秒提示、`job_outcome_unknown` 不带（它的恢复是立刻按原键
+查询或重放，不是等待）。
+
+### `unreplayablePriorAttemptClause` 默认分支中性
+
+该函数此前把 413 文案写进默认分支，导致 `admission_deadline_elapsed` 也声称“请求体超过本
+部署的接收上限”。现在只有 `job_request_expired`（准入期限）、`job_request_too_large`（413）
+各自命名原因，其余只陈述类级事实；`file-task-rejection.test.ts` 增加未知码的 pin 测试，
+断言默认分句既不含 `接收上限` 也不含 `准入期限`，且与另一未知码一致。反例：恢复旧默认分支
+→ 1 failed。
 
 ## 未验证项
 

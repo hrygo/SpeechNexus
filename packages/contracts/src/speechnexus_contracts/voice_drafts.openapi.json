@@ -3,7 +3,7 @@
   "info": {
     "title": "SpeechNexus public speech API",
     "version": "0.1.0.dev18",
-    "description": "SpeechNexus public speech protocol.\n\nThe OpenAI-compatible subset is limited to the paths, fields, formats, and\nevents explicitly declared here. A standard OpenAI SDK can use this API by\nsetting base_url to <deployment>/v1 and supplying any api_key value unless\nthe deployment enables a shared service key. SpeechNexus enhancements live\nunder /v1/nexus and the optional `nexus` request field; a standard request\nnever needs an enhancement wrapper. Unsupported standard parameters are\nrejected with 422 `unsupported_parameter`, never silently ignored.\n\nRealtime has two connection modes at GET /v1/realtime: a pre-created\nnexus session (`session_id`) and a compatibility transcription session\nopened with `model`. Both accept the declared standard transcription\nevent subset. TTS, previews, metadata, and operation coordination remain\nnexus.* events and are available only in a nexus-created session.\n"
+    "description": "SpeechNexus public speech protocol.\n\nThe OpenAI-compatible subset is limited to the paths, fields, formats, and\nevents explicitly declared here. A standard OpenAI SDK can use this API by\nsetting base_url to <deployment>/v1 and supplying any api_key value unless\nthe deployment enables a shared service key. SpeechNexus enhancements live\nunder /v1/nexus and the optional `nexus` request field; a standard request\nnever needs an enhancement wrapper. Unsupported standard parameters are\nrejected with 422 `unsupported_parameter`, never silently ignored.\n\nRealtime has two connection modes at GET /v1/realtime: a pre-created\nnexus session (`session_id`) and a compatibility transcription session\nopened with `model`. Both accept the declared standard transcription\nevent subset. TTS, previews, metadata, and operation coordination remain\nnexus.* events and are available only in a nexus-created session.\n\nOne admission cause has one code per surface, and the two surfaces group them\ndifferently: the Job surface separates the four engine-side causes as\n`engine_not_ready`, `engine_state_mismatch`, `engine_resource_disabled` and\n`recipe_not_admitted`, while the voice-draft surface answers all four as\n`voice_draft_engine_unavailable` because the client action is identical and the\nmessage names the cause. Both are 503 with `retryable: false`.\n"
   },
   "security": [
     {
@@ -67,7 +67,7 @@
             "$ref": "#/components/responses/VoiceDraftCreationConflict"
           },
           "422": {
-            "$ref": "#/components/responses/UnprocessableEntity"
+            "$ref": "#/components/responses/VoiceDraftSubmitUnprocessableEntity"
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -76,7 +76,7 @@
             "$ref": "#/components/responses/VoiceDraftContractViolation"
           },
           "503": {
-            "description": "`voice_draft_unavailable`: storage failed before any definite\ncommit, so retrying the same request is safe. The operation is\nimplemented; this is an outage, not a permanently unimplemented operation.\n\n`voice_draft_outcome_unknown`: the submission may have committed\nbut its acknowledgement was lost. This code is returned only for a\nrequest that carried its original Idempotency-Key; retry with that\nexact key so the committed draft is replayed instead of creating a\nsecond draft and generation Job. Do not retry with a new key.\n\n`voice_draft_admission_contended`: admission state had not settled\nwhen the attempt ran (a concurrent version compare-and-set, or an\ninstance gateway still draining an earlier generation). Repeating the\nsame request is the recovery, so `retryable` is true.\n\n`voice_draft_engine_unavailable`: the engine pinned by this request\ncannot admit it, and the recovery is an operator step. The message\nnames which one: an expired readiness receipt (re-register with\n`--renew-readiness` placeholder), a runtime state that no longer\nmatches, an instance/pool/template/recipe approval that is not active,\nor a request whose own admission deadline elapsed. `retryable` is false\nand `X-Should-Retry` is false because repeating the request before that\nstep cannot succeed. It is a server-side condition: the published model\nand the ready input are fine, so this is not the 422 input class.\n",
+            "description": "`voice_draft_unavailable`: storage failed before any definite\ncommit, so retrying the same request is safe. The operation is\nimplemented; this is an outage, not a permanently unimplemented operation.\n\n`voice_draft_outcome_unknown`: the submission may have committed\nbut its acknowledgement was lost. This code is returned only for a\nrequest that carried its original Idempotency-Key; retry with that\nexact key so the committed draft is replayed instead of creating a\nsecond draft and generation Job. Do not retry with a new key.\n\n`voice_draft_admission_contended`: admission state had not settled\nwhen the attempt ran (a concurrent version compare-and-set, or an\ninstance gateway still draining an earlier generation). Repeating the\nsame request is the recovery, so `retryable` is true.\n\n`voice_draft_engine_unavailable`: the engine pinned by this request\ncannot admit it, and the recovery is an operator step. The message\nnames which one: an expired readiness receipt (re-register the engine, renewing the\nreadiness receipt), a runtime state that no longer\nmatches, an instance/pool/template/recipe approval that is not active,\nor a request whose own admission deadline elapsed. `retryable` is false\nand `X-Should-Retry` is false because repeating the request before that\nstep cannot succeed. It is a server-side condition: the published model\nand the ready input are fine, so this is not the 422 input class.\n",
             "headers": {
               "Cache-Control": {
                 "required": true,
@@ -195,7 +195,7 @@
             "$ref": "#/components/responses/VoiceDraftCreationConflict"
           },
           "422": {
-            "$ref": "#/components/responses/UnprocessableEntity"
+            "$ref": "#/components/responses/VoiceDraftSubmitUnprocessableEntity"
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -204,7 +204,7 @@
             "$ref": "#/components/responses/VoiceDraftContractViolation"
           },
           "503": {
-            "description": "`voice_draft_unavailable`: storage failed before any definite\ncommit, so retrying the same request is safe. The operation is\nimplemented; this is an outage, not a permanently unimplemented operation.\n\n`voice_draft_outcome_unknown`: the submission may have committed\nbut its acknowledgement was lost. This code is returned only for a\nrequest that carried its original Idempotency-Key; retry with that\nexact key so the committed draft is replayed instead of creating a\nsecond draft and generation Job. Do not retry with a new key.\n\n`voice_draft_admission_contended`: admission state had not settled\nwhen the attempt ran (a concurrent version compare-and-set, or an\ninstance gateway still draining an earlier generation). Repeating the\nsame request is the recovery, so `retryable` is true.\n\n`voice_draft_engine_unavailable`: the engine pinned by this request\ncannot admit it, and the recovery is an operator step. The message\nnames which one: an expired readiness receipt (re-register with\n`--renew-readiness` placeholder), a runtime state that no longer\nmatches, an instance/pool/template/recipe approval that is not active,\nor a request whose own admission deadline elapsed. `retryable` is false\nand `X-Should-Retry` is false because repeating the request before that\nstep cannot succeed. It is a server-side condition: the published model\nand the ready input are fine, so this is not the 422 input class.\n",
+            "description": "`voice_draft_unavailable`: storage failed before any definite\ncommit, so retrying the same request is safe. The operation is\nimplemented; this is an outage, not a permanently unimplemented operation.\n\n`voice_draft_outcome_unknown`: the submission may have committed\nbut its acknowledgement was lost. This code is returned only for a\nrequest that carried its original Idempotency-Key; retry with that\nexact key so the committed draft is replayed instead of creating a\nsecond draft and generation Job. Do not retry with a new key.\n\n`voice_draft_admission_contended`: admission state had not settled\nwhen the attempt ran (a concurrent version compare-and-set, or an\ninstance gateway still draining an earlier generation). Repeating the\nsame request is the recovery, so `retryable` is true.\n\n`voice_draft_engine_unavailable`: the engine pinned by this request\ncannot admit it, and the recovery is an operator step. The message\nnames which one: an expired readiness receipt (re-register the engine, renewing the\nreadiness receipt), a runtime state that no longer\nmatches, an instance/pool/template/recipe approval that is not active,\nor a request whose own admission deadline elapsed. `retryable` is false\nand `X-Should-Retry` is false because repeating the request before that\nstep cannot succeed. It is a server-side condition: the published model\nand the ready input are fine, so this is not the 422 input class.\n",
             "headers": {
               "Cache-Control": {
                 "required": true,
@@ -568,7 +568,7 @@
             "$ref": "#/components/responses/Conflict"
           },
           "422": {
-            "$ref": "#/components/responses/UnprocessableEntity"
+            "$ref": "#/components/responses/VoiceDraftSubmitUnprocessableEntity"
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -577,7 +577,7 @@
             "$ref": "#/components/responses/VoiceDraftContractViolation"
           },
           "503": {
-            "description": "`voice_draft_unavailable`: storage failed before any definite\ncommit, so retrying the same request is safe. The operation is\nimplemented; this is an outage, not a permanently unimplemented operation.\n\n`voice_draft_outcome_unknown`: the revision submission may have\ncommitted but its acknowledgement was lost. This code is returned\nonly for a request that carried its original Idempotency-Key; retry\nwith that exact key so the committed revision and Job are replayed\ninstead of appending a second revision. Do not retry with a new key.\n\n`voice_draft_admission_contended`: admission state had not settled\nwhen the attempt ran (a concurrent version compare-and-set, or an\ninstance gateway still draining an earlier generation). Repeating the\nsame request is the recovery, so `retryable` is true.\n\n`voice_draft_engine_unavailable`: the engine pinned by this request\ncannot admit it, and the recovery is an operator step. The message\nnames which one: an expired readiness receipt (re-register with\n`--renew-readiness` placeholder), a runtime state that no longer\nmatches, an instance/pool/template/recipe approval that is not active,\nor a request whose own admission deadline elapsed. `retryable` is false\nand `X-Should-Retry` is false because repeating the request before that\nstep cannot succeed. It is a server-side condition: the published model\nand the ready input are fine, so this is not the 422 input class.\n",
+            "description": "`voice_draft_unavailable`: storage failed before any definite\ncommit, so retrying the same request is safe. The operation is\nimplemented; this is an outage, not a permanently unimplemented operation.\n\n`voice_draft_outcome_unknown`: the revision submission may have\ncommitted but its acknowledgement was lost. This code is returned\nonly for a request that carried its original Idempotency-Key; retry\nwith that exact key so the committed revision and Job are replayed\ninstead of appending a second revision. Do not retry with a new key.\n\n`voice_draft_admission_contended`: admission state had not settled\nwhen the attempt ran (a concurrent version compare-and-set, or an\ninstance gateway still draining an earlier generation). Repeating the\nsame request is the recovery, so `retryable` is true.\n\n`voice_draft_engine_unavailable`: the engine pinned by this request\ncannot admit it, and the recovery is an operator step. The message\nnames which one: an expired readiness receipt (re-register the engine, renewing the\nreadiness receipt), a runtime state that no longer\nmatches, an instance/pool/template/recipe approval that is not active,\nor a request whose own admission deadline elapsed. `retryable` is false\nand `X-Should-Retry` is false because repeating the request before that\nstep cannot succeed. It is a server-side condition: the published model\nand the ready input are fine, so this is not the 422 input class.\n",
             "headers": {
               "Cache-Control": {
                 "required": true,
@@ -702,7 +702,7 @@
             "$ref": "#/components/responses/Conflict"
           },
           "422": {
-            "$ref": "#/components/responses/UnprocessableEntity"
+            "$ref": "#/components/responses/VoiceDraftCandidateUnprocessableEntity"
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -711,7 +711,7 @@
             "$ref": "#/components/responses/VoiceDraftContractViolation"
           },
           "503": {
-            "description": "`voice_draft_unavailable`: storage failed before any definite\ncommit, so retrying the same request is safe. The operation is\nimplemented; this is an outage, not a permanently unimplemented operation.\n\n`voice_draft_outcome_unknown`: the preview submission may have\ncommitted but its acknowledgement was lost. This code is returned\nonly for a request that carried its original Idempotency-Key; retry\nwith that exact key so the committed preview Job is replayed\ninstead of submitting a second preview. Do not retry with a new key.\n\n`voice_draft_admission_contended`: admission state had not settled\nwhen the attempt ran (a concurrent version compare-and-set, or an\ninstance gateway still draining an earlier generation). Repeating the\nsame request is the recovery, so `retryable` is true.\n\n`voice_draft_engine_unavailable`: the engine pinned by this request\ncannot admit it, and the recovery is an operator step. The message\nnames which one: an expired readiness receipt (re-register with\n`--renew-readiness` placeholder), a runtime state that no longer\nmatches, an instance/pool/template/recipe approval that is not active,\nor a request whose own admission deadline elapsed. `retryable` is false\nand `X-Should-Retry` is false because repeating the request before that\nstep cannot succeed. It is a server-side condition: the published model\nand the ready input are fine, so this is not the 422 input class.\n",
+            "description": "`voice_draft_unavailable`: storage failed before any definite\ncommit, so retrying the same request is safe. The operation is\nimplemented; this is an outage, not a permanently unimplemented operation.\n\n`voice_draft_outcome_unknown`: the preview submission may have\ncommitted but its acknowledgement was lost. This code is returned\nonly for a request that carried its original Idempotency-Key; retry\nwith that exact key so the committed preview Job is replayed\ninstead of submitting a second preview. Do not retry with a new key.\n\n`voice_draft_admission_contended`: admission state had not settled\nwhen the attempt ran (a concurrent version compare-and-set, or an\ninstance gateway still draining an earlier generation). Repeating the\nsame request is the recovery, so `retryable` is true.\n\n`voice_draft_engine_unavailable`: the engine pinned by this request\ncannot admit it, and the recovery is an operator step. The message\nnames which one: an expired readiness receipt (re-register the engine, renewing the\nreadiness receipt), a runtime state that no longer\nmatches, an instance/pool/template/recipe approval that is not active,\nor a request whose own admission deadline elapsed. `retryable` is false\nand `X-Should-Retry` is false because repeating the request before that\nstep cannot succeed. It is a server-side condition: the published model\nand the ready input are fine, so this is not the 422 input class.\n",
             "headers": {
               "Cache-Control": {
                 "required": true,
@@ -836,7 +836,7 @@
             "$ref": "#/components/responses/Conflict"
           },
           "422": {
-            "$ref": "#/components/responses/UnprocessableEntity"
+            "$ref": "#/components/responses/VoiceDraftCandidateUnprocessableEntity"
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -845,7 +845,7 @@
             "$ref": "#/components/responses/VoiceDraftContractViolation"
           },
           "503": {
-            "description": "`voice_draft_unavailable`: storage failed before any definite\ncommit, so retrying the same request is safe. The operation is\nimplemented; this is an outage, not a permanently unimplemented operation.\n\n`voice_draft_outcome_unknown`: the validation submission may have\ncommitted but its acknowledgement was lost. This code is returned\nonly for a request that carried its original Idempotency-Key; retry\nwith that exact key so the committed Job is replayed instead of\nsubmitting a second validation. Do not retry with a new key.\n\n`voice_draft_admission_contended`: admission state had not settled\nwhen the attempt ran (a concurrent version compare-and-set, or an\ninstance gateway still draining an earlier generation). Repeating the\nsame request is the recovery, so `retryable` is true.\n\n`voice_draft_engine_unavailable`: the engine pinned by this request\ncannot admit it, and the recovery is an operator step. The message\nnames which one: an expired readiness receipt (re-register with\n`--renew-readiness` placeholder), a runtime state that no longer\nmatches, an instance/pool/template/recipe approval that is not active,\nor a request whose own admission deadline elapsed. `retryable` is false\nand `X-Should-Retry` is false because repeating the request before that\nstep cannot succeed. It is a server-side condition: the published model\nand the ready input are fine, so this is not the 422 input class.\n",
+            "description": "`voice_draft_unavailable`: storage failed before any definite\ncommit, so retrying the same request is safe. The operation is\nimplemented; this is an outage, not a permanently unimplemented operation.\n\n`voice_draft_outcome_unknown`: the validation submission may have\ncommitted but its acknowledgement was lost. This code is returned\nonly for a request that carried its original Idempotency-Key; retry\nwith that exact key so the committed Job is replayed instead of\nsubmitting a second validation. Do not retry with a new key.\n\n`voice_draft_admission_contended`: admission state had not settled\nwhen the attempt ran (a concurrent version compare-and-set, or an\ninstance gateway still draining an earlier generation). Repeating the\nsame request is the recovery, so `retryable` is true.\n\n`voice_draft_engine_unavailable`: the engine pinned by this request\ncannot admit it, and the recovery is an operator step. The message\nnames which one: an expired readiness receipt (re-register the engine, renewing the\nreadiness receipt), a runtime state that no longer\nmatches, an instance/pool/template/recipe approval that is not active,\nor a request whose own admission deadline elapsed. `retryable` is false\nand `X-Should-Retry` is false because repeating the request before that\nstep cannot succeed. It is a server-side condition: the published model\nand the ready input are fine, so this is not the 422 input class.\n",
             "headers": {
               "Cache-Control": {
                 "required": true,
@@ -3783,12 +3783,59 @@
           }
         }
       },
-      "UnprocessableEntity": {
-        "description": "Unsupported parameter, incompatible profile, or async_required.",
+      "VoiceDraftSubmitUnprocessableEntity": {
+        "description": "The request's own facts cannot produce this draft: the published model\nbinding, the input asset, the parameters, or the request's admission\ndeadline. Deterministic, so `retryable` is false and `X-Should-Retry` is\nfalse; a new request is the recovery. The enumerated codes are the only\nones this operation answers with 422 -- a declaration without the enum is\ninvisible to a consumer generating types (see also\n`voice_draft_engine_unavailable`, which is a 503 and not this class).\n",
+        "headers": {
+          "Cache-Control": {
+            "required": true,
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            }
+          },
+          "X-Should-Retry": {
+            "required": true,
+            "description": "Always the string \"false\"; every code in this response is deterministic.",
+            "schema": {
+              "type": "string",
+              "const": "false"
+            }
+          }
+        },
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "#/components/schemas/ErrorResponse"
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["error"],
+              "properties": {
+                "error": {
+                  "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorBody"
+                }
+              },
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "enum": ["voice_draft_input_unavailable", "voice_draft_request_expired"]
+                        },
+                        "type": {
+                          "const": "invalid_request_error"
+                        },
+                        "retryable": {
+                          "enum": [true, false]
+                        },
+                        "nexus": false
+                      }
+                    }
+                  }
+                }
+              ]
             }
           }
         }
@@ -3872,6 +3919,77 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "UnprocessableEntity": {
+        "description": "Unsupported parameter, incompatible profile, or async_required.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "VoiceDraftCandidateUnprocessableEntity": {
+        "description": "Same class as `VoiceDraftSubmitUnprocessableEntity`, plus\n`voice_draft_not_candidate`: this operation only accepts a candidate\nrevision, which is a fact about the request's own target.\n",
+        "headers": {
+          "Cache-Control": {
+            "required": true,
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            }
+          },
+          "X-Should-Retry": {
+            "required": true,
+            "description": "Always the string \"false\"; every code in this response is deterministic.",
+            "schema": {
+              "type": "string",
+              "const": "false"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["error"],
+              "properties": {
+                "error": {
+                  "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorBody"
+                }
+              },
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "voice_draft_input_unavailable",
+                            "voice_draft_not_candidate",
+                            "voice_draft_request_expired"
+                          ]
+                        },
+                        "type": {
+                          "const": "invalid_request_error"
+                        },
+                        "retryable": {
+                          "enum": [true, false]
+                        },
+                        "nexus": false
+                      }
+                    }
+                  }
+                }
+              ]
             }
           }
         }

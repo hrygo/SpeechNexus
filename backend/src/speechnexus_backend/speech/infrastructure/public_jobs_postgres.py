@@ -510,6 +510,23 @@ class PostgresPublicJobs:
             raise PublicJobUnavailableError
         return str(rows[0]["revision"])
 
+    @staticmethod
+    def _public_code(code: str) -> str:
+        """Map an admission refusal, keeping an unmapped code inside the declared envelope.
+
+        ``rejection_code`` raises when an admission code has no public answer. Raising it
+        from inside this class's own ``except AdmissionRejectedError`` handler means no
+        sibling handler can catch it -- the exception escapes the store, the interface
+        layer has no handler for it, and the response becomes a bare 500 ``text/plain``
+        instead of the declared ``admission_state_invalid`` envelope. The defect answer
+        is therefore produced here, as a refused result the application already maps
+        (#828 review F1).
+        """
+        try:
+            return rejection_code(code)
+        except PublicJobAdmissionRejectedError:
+            return "admission_state_invalid"
+
     def create(self, job: NewPublicJob) -> JobCreateResult:
         if self._require_admission and self._admission_pool is None:
             # Reads and cancellations remain available without the admission
@@ -590,7 +607,7 @@ class PostgresPublicJobs:
                         except AdmissionRejectedError as error:
                             if error.code == "version_conflict" and attempt == 0:
                                 raise _RetryAdmissionError from None
-                            raise _AdmissionRefusedError(rejection_code(error.code)) from None
+                            raise _AdmissionRefusedError(self._public_code(error.code)) from None
                     _insert(connection, job, admitted=admitted)
                     row = _select_job(connection, job.job_id)
                 return JobCreateResult("created", _job(row))

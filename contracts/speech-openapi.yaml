@@ -18,6 +18,13 @@ info:
     opened with `model`. Both accept the declared standard transcription
     event subset. TTS, previews, metadata, and operation coordination remain
     nexus.* events and are available only in a nexus-created session.
+
+    One admission cause has one code per surface, and the two surfaces group them
+    differently: the Job surface separates the four engine-side causes as
+    `engine_not_ready`, `engine_state_mismatch`, `engine_resource_disabled` and
+    `recipe_not_admitted`, while the voice-draft surface answers all four as
+    `voice_draft_engine_unavailable` because the client action is identical and the
+    message names the cause. Both are 503 with `retryable: false`.
 servers:
   - url: /
 security:
@@ -1862,7 +1869,7 @@ paths:
         "409":
           $ref: "#/components/responses/VoiceDraftCreationConflict"
         "422":
-          $ref: "#/components/responses/UnprocessableEntity"
+          $ref: "#/components/responses/VoiceDraftSubmitUnprocessableEntity"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -1886,8 +1893,8 @@ paths:
 
             `voice_draft_engine_unavailable`: the engine pinned by this request
             cannot admit it, and the recovery is an operator step. The message
-            names which one: an expired readiness receipt (re-register with
-            `--renew-readiness` placeholder), a runtime state that no longer
+            names which one: an expired readiness receipt (re-register the engine, renewing the
+            readiness receipt), a runtime state that no longer
             matches, an instance/pool/template/recipe approval that is not active,
             or a request whose own admission deadline elapsed. `retryable` is false
             and `X-Should-Retry` is false because repeating the request before that
@@ -1969,7 +1976,7 @@ paths:
         "409":
           $ref: "#/components/responses/VoiceDraftCreationConflict"
         "422":
-          $ref: "#/components/responses/UnprocessableEntity"
+          $ref: "#/components/responses/VoiceDraftSubmitUnprocessableEntity"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -1993,8 +2000,8 @@ paths:
 
             `voice_draft_engine_unavailable`: the engine pinned by this request
             cannot admit it, and the recovery is an operator step. The message
-            names which one: an expired readiness receipt (re-register with
-            `--renew-readiness` placeholder), a runtime state that no longer
+            names which one: an expired readiness receipt (re-register the engine, renewing the
+            readiness receipt), a runtime state that no longer
             matches, an instance/pool/template/recipe approval that is not active,
             or a request whose own admission deadline elapsed. `retryable` is false
             and `X-Should-Retry` is false because repeating the request before that
@@ -2264,7 +2271,7 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/UnprocessableEntity"
+          $ref: "#/components/responses/VoiceDraftSubmitUnprocessableEntity"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -2288,8 +2295,8 @@ paths:
 
             `voice_draft_engine_unavailable`: the engine pinned by this request
             cannot admit it, and the recovery is an operator step. The message
-            names which one: an expired readiness receipt (re-register with
-            `--renew-readiness` placeholder), a runtime state that no longer
+            names which one: an expired readiness receipt (re-register the engine, renewing the
+            readiness receipt), a runtime state that no longer
             matches, an instance/pool/template/recipe approval that is not active,
             or a request whose own admission deadline elapsed. `retryable` is false
             and `X-Should-Retry` is false because repeating the request before that
@@ -2374,7 +2381,7 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/UnprocessableEntity"
+          $ref: "#/components/responses/VoiceDraftCandidateUnprocessableEntity"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -2398,8 +2405,8 @@ paths:
 
             `voice_draft_engine_unavailable`: the engine pinned by this request
             cannot admit it, and the recovery is an operator step. The message
-            names which one: an expired readiness receipt (re-register with
-            `--renew-readiness` placeholder), a runtime state that no longer
+            names which one: an expired readiness receipt (re-register the engine, renewing the
+            readiness receipt), a runtime state that no longer
             matches, an instance/pool/template/recipe approval that is not active,
             or a request whose own admission deadline elapsed. `retryable` is false
             and `X-Should-Retry` is false because repeating the request before that
@@ -2484,7 +2491,7 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/UnprocessableEntity"
+          $ref: "#/components/responses/VoiceDraftCandidateUnprocessableEntity"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -2508,8 +2515,8 @@ paths:
 
             `voice_draft_engine_unavailable`: the engine pinned by this request
             cannot admit it, and the recovery is an operator step. The message
-            names which one: an expired readiness receipt (re-register with
-            `--renew-readiness` placeholder), a runtime state that no longer
+            names which one: an expired readiness receipt (re-register the engine, renewing the
+            readiness receipt), a runtime state that no longer
             matches, an instance/pool/template/recipe approval that is not active,
             or a request whose own admission deadline elapsed. `retryable` is false
             and `X-Should-Retry` is false because repeating the request before that
@@ -3250,8 +3257,12 @@ components:
       description: |
         `execution_cleanup_pending`: the Job is terminal but its original execution
         has not confirmed stop, so it is not reported as cancelled and no capacity
-        is released. `idempotency_conflict`: the same key identifies another Job
-        cancellation intent.
+        is released. The cleanup finishes on its own, so `retryable` is true and the
+        reply carries `Retry-After`. `idempotency_conflict`: the same key identifies
+        another Job cancellation intent.
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
       content:
         application/json:
           schema:
@@ -3281,6 +3292,91 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
+    VoiceDraftSubmitUnprocessableEntity:
+      description: |
+        The request's own facts cannot produce this draft: the published model
+        binding, the input asset, the parameters, or the request's admission
+        deadline. Deterministic, so `retryable` is false and `X-Should-Retry` is
+        false; a new request is the recovery. The enumerated codes are the only
+        ones this operation answers with 422 -- a declaration without the enum is
+        invisible to a consumer generating types (see also
+        `voice_draft_engine_unavailable`, which is a 503 and not this class).
+      headers:
+        Cache-Control:
+          required: true
+          schema:
+            type: string
+            const: "no-store"
+        X-Should-Retry:
+          required: true
+          description: Always the string "false"; every code in this response is deterministic.
+          schema:
+            type: string
+            const: "false"
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [error]
+            properties:
+              error:
+                $ref: "./shared/errors.schema.json#/$defs/ErrorBody"
+            allOf:
+              - $ref: "#/components/schemas/ErrorResponse"
+              - properties:
+                  error:
+                    properties:
+                      code:
+                        enum:
+                              - voice_draft_input_unavailable
+                              - voice_draft_request_expired
+                      type:
+                        const: invalid_request_error
+                      retryable:
+                        enum: [true, false]
+                      nexus: false
+    VoiceDraftCandidateUnprocessableEntity:
+      description: |
+        Same class as `VoiceDraftSubmitUnprocessableEntity`, plus
+        `voice_draft_not_candidate`: this operation only accepts a candidate
+        revision, which is a fact about the request's own target.
+      headers:
+        Cache-Control:
+          required: true
+          schema:
+            type: string
+            const: "no-store"
+        X-Should-Retry:
+          required: true
+          description: Always the string "false"; every code in this response is deterministic.
+          schema:
+            type: string
+            const: "false"
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [error]
+            properties:
+              error:
+                $ref: "./shared/errors.schema.json#/$defs/ErrorBody"
+            allOf:
+              - $ref: "#/components/schemas/ErrorResponse"
+              - properties:
+                  error:
+                    properties:
+                      code:
+                        enum:
+                              - voice_draft_input_unavailable
+                              - voice_draft_not_candidate
+                              - voice_draft_request_expired
+                      type:
+                        const: invalid_request_error
+                      retryable:
+                        enum: [true, false]
+                      nexus: false
     UnprocessableEntity:
       description: Unsupported parameter, incompatible profile, or async_required.
       content:

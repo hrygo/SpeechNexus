@@ -1458,15 +1458,9 @@ def _replayed_revision(
 
 def _rejection_reason(error_code: str | None) -> JobRejectionReason:
     """Classify one store refusal; an unknown code is not a client conflict."""
-    if error_code == "job_rejected":
-        return "facts_changed"
-    if error_code == "revision_exhausted":
-        return "revision_exhausted"
-    if error_code == "job_identity_conflict":
-        return "identity_conflict"
-    if error_code == "storage_rejected":
-        return "storage_rejected"
-    return "contract"
+    if error_code is None:
+        return "contract"
+    return _STORE_MECHANISM_REASONS.get(error_code, "contract")
 
 
 # The codes a create may be refused with, split by where the code comes from.
@@ -1502,13 +1496,18 @@ _SUBMIT_REFUSAL_CODES: frozenset[str] = frozenset(
 # set plus the store's own deterministic refusals.
 _CREATE_REFUSAL_CODES: frozenset[str] = _ADMISSION_REJECTION_CODES | _SUBMIT_REFUSAL_CODES
 # The store's own refusal mechanism, which the caller reports through
-# `JobRejectedError(_rejection_reason(code))`. Each of these has a declared reason
-# and answer, so it is not an undeclared code; the mapping is kept in one place and
-# `test_the_store_mechanism_codes_are_exactly_what_the_reason_mapping_declares`
-# pins the two together.
-_STORE_MECHANISM_CODES: frozenset[str] = frozenset(
-    {"job_rejected", "revision_exhausted", "job_identity_conflict", "storage_rejected"}
-)
+# `JobRejectedError(_rejection_reason(code))`. The set is *derived* from the reason
+# mapping below rather than written twice: a hand-maintained second copy is a list that
+# agrees with itself, so adding a code here would silently let any code through this
+# branch -- the #828 outage answer included (#828 review F2). A code is a mechanism code
+# exactly when it has its own reason; every other code must name a public answer.
+_STORE_MECHANISM_REASONS: dict[str, JobRejectionReason] = {
+    "job_rejected": "facts_changed",
+    "revision_exhausted": "revision_exhausted",
+    "job_identity_conflict": "identity_conflict",
+    "storage_rejected": "storage_rejected",
+}
+_STORE_MECHANISM_CODES: frozenset[str] = frozenset(_STORE_MECHANISM_REASONS)
 
 
 def _raise_admission_rejection(code: str | None) -> None:

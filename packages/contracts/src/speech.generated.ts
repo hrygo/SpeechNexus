@@ -3677,11 +3677,13 @@ export interface components {
     /**
      * @description `execution_cleanup_pending`: the Job is terminal but its original execution
      *     has not confirmed stop, so it is not reported as cancelled and no capacity
-     *     is released. `idempotency_conflict`: the same key identifies another Job
-     *     cancellation intent.
+     *     is released. The cleanup finishes on its own, so `retryable` is true and the
+     *     reply carries `Retry-After`. `idempotency_conflict`: the same key identifies
+     *     another Job cancellation intent.
      */
     JobCancellationConflict: {
       headers: {
+        "Retry-After"?: components["headers"]["RetryAfter"];
         [name: string]: unknown;
       };
       content: {
@@ -3722,6 +3724,69 @@ export interface components {
       };
       content: {
         "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /**
+     * @description The request's own facts cannot produce this draft: the published model
+     *     binding, the input asset, the parameters, or the request's admission
+     *     deadline. Deterministic, so `retryable` is false and `X-Should-Retry` is
+     *     false; a new request is the recovery. The enumerated codes are the only
+     *     ones this operation answers with 422 -- a declaration without the enum is
+     *     invisible to a consumer generating types (see also
+     *     `voice_draft_engine_unavailable`, which is a 503 and not this class).
+     */
+    VoiceDraftSubmitUnprocessableEntity: {
+      headers: {
+        "Cache-Control": "no-store";
+        /** @description Always the string "false"; every code in this response is deterministic. */
+        "X-Should-Retry": "false";
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": {
+          error: components["schemas"]["ErrorBody"];
+        } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+          error: {
+            /** @enum {unknown} */
+            code?: "voice_draft_input_unavailable" | "voice_draft_request_expired";
+            /** @constant */
+            type?: "invalid_request_error";
+            /** @enum {unknown} */
+            retryable?: true | false;
+            nexus?: never;
+          };
+        });
+      };
+    };
+    /**
+     * @description Same class as `VoiceDraftSubmitUnprocessableEntity`, plus
+     *     `voice_draft_not_candidate`: this operation only accepts a candidate
+     *     revision, which is a fact about the request's own target.
+     */
+    VoiceDraftCandidateUnprocessableEntity: {
+      headers: {
+        "Cache-Control": "no-store";
+        /** @description Always the string "false"; every code in this response is deterministic. */
+        "X-Should-Retry": "false";
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": {
+          error: components["schemas"]["ErrorBody"];
+        } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+          error: {
+            /** @enum {unknown} */
+            code?:
+              | "voice_draft_input_unavailable"
+              | "voice_draft_not_candidate"
+              | "voice_draft_request_expired";
+            /** @constant */
+            type?: "invalid_request_error";
+            /** @enum {unknown} */
+            retryable?: true | false;
+            nexus?: never;
+          };
+        });
       };
     };
     /** @description Unsupported parameter, incompatible profile, or async_required. */
@@ -5525,7 +5590,7 @@ export interface operations {
       403: components["responses"]["Forbidden"];
       405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["VoiceDraftCreationConflict"];
-      422: components["responses"]["UnprocessableEntity"];
+      422: components["responses"]["VoiceDraftSubmitUnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];
       500: components["responses"]["VoiceDraftContractViolation"];
       /**
@@ -5546,8 +5611,8 @@ export interface operations {
        *
        *     `voice_draft_engine_unavailable`: the engine pinned by this request
        *     cannot admit it, and the recovery is an operator step. The message
-       *     names which one: an expired readiness receipt (re-register with
-       *     `--renew-readiness` placeholder), a runtime state that no longer
+       *     names which one: an expired readiness receipt (re-register the engine, renewing the
+       *     readiness receipt), a runtime state that no longer
        *     matches, an instance/pool/template/recipe approval that is not active,
        *     or a request whose own admission deadline elapsed. `retryable` is false
        *     and `X-Should-Retry` is false because repeating the request before that
@@ -5623,7 +5688,7 @@ export interface operations {
       403: components["responses"]["Forbidden"];
       405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["VoiceDraftCreationConflict"];
-      422: components["responses"]["UnprocessableEntity"];
+      422: components["responses"]["VoiceDraftSubmitUnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];
       500: components["responses"]["VoiceDraftContractViolation"];
       /**
@@ -5644,8 +5709,8 @@ export interface operations {
        *
        *     `voice_draft_engine_unavailable`: the engine pinned by this request
        *     cannot admit it, and the recovery is an operator step. The message
-       *     names which one: an expired readiness receipt (re-register with
-       *     `--renew-readiness` placeholder), a runtime state that no longer
+       *     names which one: an expired readiness receipt (re-register the engine, renewing the
+       *     readiness receipt), a runtime state that no longer
        *     matches, an instance/pool/template/recipe approval that is not active,
        *     or a request whose own admission deadline elapsed. `retryable` is false
        *     and `X-Should-Retry` is false because repeating the request before that
@@ -5875,7 +5940,7 @@ export interface operations {
       404: components["responses"]["NotFound"];
       405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
-      422: components["responses"]["UnprocessableEntity"];
+      422: components["responses"]["VoiceDraftSubmitUnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];
       500: components["responses"]["VoiceDraftContractViolation"];
       /**
@@ -5896,8 +5961,8 @@ export interface operations {
        *
        *     `voice_draft_engine_unavailable`: the engine pinned by this request
        *     cannot admit it, and the recovery is an operator step. The message
-       *     names which one: an expired readiness receipt (re-register with
-       *     `--renew-readiness` placeholder), a runtime state that no longer
+       *     names which one: an expired readiness receipt (re-register the engine, renewing the
+       *     readiness receipt), a runtime state that no longer
        *     matches, an instance/pool/template/recipe approval that is not active,
        *     or a request whose own admission deadline elapsed. `retryable` is false
        *     and `X-Should-Retry` is false because repeating the request before that
@@ -5976,7 +6041,7 @@ export interface operations {
       404: components["responses"]["NotFound"];
       405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
-      422: components["responses"]["UnprocessableEntity"];
+      422: components["responses"]["VoiceDraftCandidateUnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];
       500: components["responses"]["VoiceDraftContractViolation"];
       /**
@@ -5997,8 +6062,8 @@ export interface operations {
        *
        *     `voice_draft_engine_unavailable`: the engine pinned by this request
        *     cannot admit it, and the recovery is an operator step. The message
-       *     names which one: an expired readiness receipt (re-register with
-       *     `--renew-readiness` placeholder), a runtime state that no longer
+       *     names which one: an expired readiness receipt (re-register the engine, renewing the
+       *     readiness receipt), a runtime state that no longer
        *     matches, an instance/pool/template/recipe approval that is not active,
        *     or a request whose own admission deadline elapsed. `retryable` is false
        *     and `X-Should-Retry` is false because repeating the request before that
@@ -6077,7 +6142,7 @@ export interface operations {
       404: components["responses"]["NotFound"];
       405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
-      422: components["responses"]["UnprocessableEntity"];
+      422: components["responses"]["VoiceDraftCandidateUnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];
       500: components["responses"]["VoiceDraftContractViolation"];
       /**
@@ -6098,8 +6163,8 @@ export interface operations {
        *
        *     `voice_draft_engine_unavailable`: the engine pinned by this request
        *     cannot admit it, and the recovery is an operator step. The message
-       *     names which one: an expired readiness receipt (re-register with
-       *     `--renew-readiness` placeholder), a runtime state that no longer
+       *     names which one: an expired readiness receipt (re-register the engine, renewing the
+       *     readiness receipt), a runtime state that no longer
        *     matches, an instance/pool/template/recipe approval that is not active,
        *     or a request whose own admission deadline elapsed. `retryable` is false
        *     and `X-Should-Retry` is false because repeating the request before that

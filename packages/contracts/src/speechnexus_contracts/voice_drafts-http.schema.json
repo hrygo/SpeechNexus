@@ -53,7 +53,10 @@
         },
         "422": {
           "schema": "HttpResponse_createVoiceDesign_422",
-          "headers": {},
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
           "json": true
         },
         "429": {
@@ -133,7 +136,10 @@
         },
         "422": {
           "schema": "HttpResponse_createVoiceClone_422",
-          "headers": {},
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
           "json": true
         },
         "429": {
@@ -360,7 +366,10 @@
         },
         "422": {
           "schema": "HttpResponse_generateVoiceDraftRevision_422",
-          "headers": {},
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
           "json": true
         },
         "429": {
@@ -444,7 +453,10 @@
         },
         "422": {
           "schema": "HttpResponse_createVoicePreview_422",
-          "headers": {},
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
           "json": true
         },
         "429": {
@@ -528,7 +540,10 @@
         },
         "422": {
           "schema": "HttpResponse_validateVoiceDraftRevision_422",
-          "headers": {},
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
           "json": true
         },
         "429": {
@@ -3494,15 +3509,54 @@
       "properties": {
         "headers": {
           "type": "object",
-          "properties": {},
-          "required": [],
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "false"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
           "additionalProperties": true
         },
         "body": {
-          "$ref": "#/$defs/ErrorResponse"
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "enum": ["voice_draft_input_unavailable", "voice_draft_request_expired"]
+                    },
+                    "type": {
+                      "const": "invalid_request_error"
+                    },
+                    "retryable": {
+                      "enum": [true, false]
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
         }
       },
-      "required": ["body"]
+      "required": ["headers", "body"]
     },
     "HttpResponse_createVoiceDesign_429": {
       "type": "object",
@@ -3812,15 +3866,54 @@
       "properties": {
         "headers": {
           "type": "object",
-          "properties": {},
-          "required": [],
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "false"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
           "additionalProperties": true
         },
         "body": {
-          "$ref": "#/$defs/ErrorResponse"
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "enum": ["voice_draft_input_unavailable", "voice_draft_request_expired"]
+                    },
+                    "type": {
+                      "const": "invalid_request_error"
+                    },
+                    "retryable": {
+                      "enum": [true, false]
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
         }
       },
-      "required": ["body"]
+      "required": ["headers", "body"]
     },
     "HttpResponse_createVoiceClone_429": {
       "type": "object",
@@ -4639,15 +4732,54 @@
       "properties": {
         "headers": {
           "type": "object",
-          "properties": {},
-          "required": [],
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "false"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
           "additionalProperties": true
         },
         "body": {
-          "$ref": "#/$defs/ErrorResponse"
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "enum": ["voice_draft_input_unavailable", "voice_draft_request_expired"]
+                    },
+                    "type": {
+                      "const": "invalid_request_error"
+                    },
+                    "retryable": {
+                      "enum": [true, false]
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
         }
       },
-      "required": ["body"]
+      "required": ["headers", "body"]
     },
     "HttpResponse_generateVoiceDraftRevision_429": {
       "type": "object",
@@ -4946,15 +5078,58 @@
       "properties": {
         "headers": {
           "type": "object",
-          "properties": {},
-          "required": [],
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "false"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
           "additionalProperties": true
         },
         "body": {
-          "$ref": "#/$defs/ErrorResponse"
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "voice_draft_input_unavailable",
+                        "voice_draft_not_candidate",
+                        "voice_draft_request_expired"
+                      ]
+                    },
+                    "type": {
+                      "const": "invalid_request_error"
+                    },
+                    "retryable": {
+                      "enum": [true, false]
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
         }
       },
-      "required": ["body"]
+      "required": ["headers", "body"]
     },
     "HttpResponse_createVoicePreview_429": {
       "type": "object",
@@ -5253,15 +5428,58 @@
       "properties": {
         "headers": {
           "type": "object",
-          "properties": {},
-          "required": [],
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "false"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
           "additionalProperties": true
         },
         "body": {
-          "$ref": "#/$defs/ErrorResponse"
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "voice_draft_input_unavailable",
+                        "voice_draft_not_candidate",
+                        "voice_draft_request_expired"
+                      ]
+                    },
+                    "type": {
+                      "const": "invalid_request_error"
+                    },
+                    "retryable": {
+                      "enum": [true, false]
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
         }
       },
-      "required": ["body"]
+      "required": ["headers", "body"]
     },
     "HttpResponse_validateVoiceDraftRevision_429": {
       "type": "object",

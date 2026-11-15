@@ -1311,6 +1311,17 @@ describe("unreplayable copy states the cause the code names", () => {
     expect(cause).not.toContain("准入期限");
   });
 
+  it("states only the class in the prior-attempt clause of an unknown code", () => {
+    // The clause had a default branch that hardcoded the 413 wording, so an elapsed
+    // admission deadline claimed the body bound in the one place the notice no longer
+    // did (#828 review F5). Both helpers now name a cause only for the code that has it.
+    const clause = unreplayablePriorAttemptClause("admission_deadline_elapsed");
+    expect(clause).not.toContain("接收上限");
+    expect(clause).not.toContain("准入期限");
+    expect(clause).toContain("此前已有提交尝试");
+    expect(clause).toBe(unreplayablePriorAttemptClause("execution_cleanup_pending"));
+  });
+
   it("pins the disposition that sends both codes to the unreplayable class", () => {
     expect(rejectionDisposition(422, "job_request_expired", "create")).toBe("unreplayable");
     expect(rejectionDisposition(413, "job_request_too_large", "create")).toBe("unreplayable");

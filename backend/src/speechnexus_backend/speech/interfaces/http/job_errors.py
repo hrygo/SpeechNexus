@@ -234,6 +234,11 @@ def job_error(code: str, request_id: str, *, headers: dict[str, str] | None = No
         # PostgresDispatchQueue: 1_000 <= lease_ms). A capacity refusal is
         # therefore retried no sooner than the next possible lease release.
         response_headers.setdefault("Retry-After", "1")
+    if code == "execution_cleanup_pending":
+        # `retryable` is true here: the cleanup this cancellation waits for finishes on
+        # its own. One second is the shortest granularity the release path can observe,
+        # so the hint stops a client from hot-looping the request (#828 review D10).
+        response_headers.setdefault("Retry-After", "1")
     return JSONResponse(
         status_code=status,
         headers=response_headers,

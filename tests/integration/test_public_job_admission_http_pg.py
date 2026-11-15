@@ -907,3 +907,73 @@ async def test_same_key_replay_returns_the_original_job_without_new_rows(
         # A different key is a second admission: exactly one more attempt, slot and
         # host budget, again addressed to the same known rows.
         _expect_reservation(after_create, _snapshot(db))
+
+
+async def test_an_unmapped_admission_code_answers_the_declared_envelope(
+    admission_database: AdmissionDatabase, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An admission code with no public answer stays inside the declared envelope.
+
+    #828 review F1: ``rejection_code`` raises ``PublicJobAdmissionRejectedError`` for an
+    unmapped code, and the store called it from *inside* its own
+    ``except AdmissionRejectedError`` handler. No sibling handler can catch a raise from
+    another handler's body, and the interface layer has no handler for that
+    infrastructure type, so the response became a bare ``500 text/plain`` -- no envelope,
+    no ``retryable``. The fix answers the declared defect code as a refused *result*.
+
+    The evidence has to be the round trip, not the exception object: a unit test that
+    asserts ``error.code`` passes while the wire answer is still a bare 500. So this
+    drops one real admission cause out of the public mapping on the production assembly,
+    triggers it through real PostgreSQL, and asserts the status, the media type and every
+    envelope field.
+    """
+    from speechnexus_backend.speech.infrastructure import public_job_admission
+
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    _add_spare_host(db)
+    _grant_capacity(db)
+    now_us = admission_database.runtime.now()
+
+    # The same elapsed receipt as the 503 case, but the mapping no longer answers for
+    # it: this is what an admission code added without a public answer looks like.
+    monkeypatch.setattr(
+        public_job_admission,
+        "_PUBLIC_CODES",
+        {
+            key: value
+            for key, value in public_job_admission._PUBLIC_CODES.items()
+            if key != "readiness_expired"
+        },
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=_app(admission_database)), base_url="http://test"
+    ) as client:
+        _rewrite_receipt(db, verified_at_us=now_us - 1000, expires_at_us=now_us - 1)
+        before = _snapshot(db)
+        response = await client.post(
+            PREFIX, json=_body(), headers={"Idempotency-Key": "synthetic-unmapped-code"}
+        )
+        assert _snapshot(db) == before
+
+    # A bare 500 would have no media type of its own and no body to parse.
+    assert response.status_code == 500, response.text
+    assert response.headers["content-type"].startswith("application/json"), response.headers[
+        "content-type"
+    ]
+    assert response.headers["Cache-Control"] == "no-store"
+    assert _error(response) == ("admission_state_invalid", "api_error", False)
+    body = response.json()
+    assert set(body) == {"error"}
+    assert set(body["error"]) == {
+        "code",
+        "type",
+        "message",
+        "param",
+        "request_id",
+        "retryable",
+    }
+    assert body["error"]["param"] is None
+    # The message must not blame the store: the store answered fine, the mapping did not.
+    message = body["error"]["message"].lower()
+    assert "storage" not in message and "unavailable" not in message

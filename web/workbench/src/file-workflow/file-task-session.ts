@@ -149,7 +149,12 @@ export function unreplayableCause(status: number, code: string): string {
 export function unreplayablePriorAttemptClause(code: string): string {
   if (code === "job_request_expired")
     return "该请求自身的准入期限在获准前已过，但该意图此前已有提交尝试，这次拒绝不能证明原提交未执行。";
-  return "请求体超过本部署的接收上限，但该意图此前已有提交尝试，这次拒绝不能证明原提交未执行。";
+  if (code === "job_request_too_large")
+    return "请求体超过本部署的接收上限，但该意图此前已有提交尝试，这次拒绝不能证明原提交未执行。";
+  // Any other code answers the class-level fact and nothing more: naming a 413 here was
+  // the same "hardcoded cause for a code-decided branch" defect the notice had, one
+  // function over (#828 review F5).
+  return "该请求被协议拒绝，但该意图此前已有提交尝试，这次拒绝不能证明原提交未执行。";
 }
 
 /** Exported for the disposition table's own tests; the session is the only caller. */

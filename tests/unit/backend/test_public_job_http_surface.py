@@ -11,6 +11,7 @@ from dataclasses import replace
 from typing import Any, cast
 
 import pytest
+from fastapi import FastAPI, Request
 from httpx import ASGITransport, AsyncClient
 from speechnexus_contracts import parse
 
@@ -28,19 +29,29 @@ from speechnexus_backend.speech.application.public_jobs import (
     ModelNotPublishedError,
     ProfileNotPublishedError,
     PronunciationNotFoundError,
+    PublicJobs,
     UnknownWorkspaceError,
     VoiceNotPublishedError,
 )
 from speechnexus_backend.speech.domain.public_jobs import (
     JobArtifactFact,
+    JobCreateResult,
     JobEventFact,
+    NewPublicJob,
     PublicJob,
     PublicJobNotFoundError,
     PublicJobUnavailableError,
 )
 from speechnexus_backend.speech.interfaces.http import jobs as http
 from tests.unit.backend.test_health import _settings
-from tests.unit.backend.test_public_jobs import NOW, _body, _service
+from tests.unit.backend.test_public_jobs import (
+    NOW,
+    Store,
+    _body,
+    _pin_facts,
+    _pinned_body,
+    _service,
+)
 
 RETRY = "/v1/nexus/jobs/{job_id}/retries"
 EVENTS = "/v1/nexus/jobs/{job_id}/events"
@@ -181,6 +192,16 @@ async def test_retry_maps_every_domain_failure_to_its_declared_error(
     # (#828 review M5).
     retryable_codes = {"job_outcome_unknown", "execution_cleanup_pending"}
     assert response.json()["error"]["retryable"] is (code in retryable_codes)
+    # A refusal that says "wait for a self-finishing step" states when to come back.
+    # Without the hint a client that trusts `retryable` has no reason not to hot-loop the
+    # same request (#828 review D10). `job_outcome_unknown` deliberately carries no hint:
+    # its recovery is to query or replay the original identity now, not to wait.
+    if code in {"execution_cleanup_pending", "job_capacity_exhausted"}:
+        assert response.headers["Retry-After"] == "1"
+    elif code in retryable_codes:
+        assert "Retry-After" not in response.headers
+    else:
+        assert "Retry-After" not in response.headers
 
 
 async def test_retry_rejects_a_malformed_idempotency_key_before_reading_the_job() -> None:
@@ -323,3 +344,48 @@ def test_terminal_projection_carries_the_committed_artifact_and_result() -> None
     projected = http.public_job(succeeded, (artifact,))
     assert projected["artifacts"][0]["kind"] == "audio"
     assert projected["artifacts"][0]["receipt_id"] == artifact.receipt_id
+
+
+async def test_an_undeclared_admission_code_answers_the_envelope_not_a_bare_500() -> None:
+    """The jobs route keeps an undeclared admission code inside the declared envelope.
+
+    #828 review F1: the store answered an unmapped admission code by raising from inside
+    its own `except AdmissionRejectedError` handler, so no sibling handler could catch
+    it, the interface layer had no handler for that infrastructure type, and the wire
+    reply was a bare `500 text/plain`. Asserting the exception object's `code` cannot see
+    that: the defect happens one layer lower, at the response. This drives the real
+    submit path and asserts the status, the media type and every envelope field.
+    """
+    _, facts, _ = _service()
+    _pin_facts(facts)
+
+    class UndeclaredAdmissionCode(Store):
+        def create(self, job: NewPublicJob) -> JobCreateResult:
+            return JobCreateResult("rejected", error_code="engine_retired")
+
+    store = UndeclaredAdmissionCode()
+    undeclared = PublicJobs(facts, store, now_us=lambda: NOW)
+    app = FastAPI()
+
+    @app.middleware("http")
+    async def request_id(request: Request, call_next: Any) -> Any:
+        request.state.request_id = "req-undeclared"
+        return await call_next(request)
+
+    app.include_router(http.create_job_router(lambda: undeclared))
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as client:
+        response = await client.post("/v1/nexus/jobs", json=_pinned_body())
+
+    assert response.status_code == 500, response.text
+    assert response.headers["content-type"].startswith("application/json")
+    body = response.json()
+    assert set(body["error"]) == {"code", "type", "message", "param", "request_id", "retryable"}
+    # An undeclared code answers the declared defect class, and the message never blames
+    # the store for a condition the store did not report.
+    assert body["error"]["code"] == "admission_state_invalid"
+    assert body["error"]["type"] == "api_error"
+    assert body["error"]["retryable"] is False
+    assert body["error"]["request_id"] == "req-undeclared"
+    assert "storage" not in body["error"]["message"].lower()
+    assert "unavailable" not in body["error"]["message"].lower()
+    assert store.requests == []

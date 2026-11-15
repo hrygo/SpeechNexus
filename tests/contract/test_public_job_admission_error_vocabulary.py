@@ -157,6 +157,30 @@ PASSTHROUGH_RAISE_POINTS: dict[tuple[str, str, str, str | None], dict[str, Any]]
 }
 
 
+def _modules_raising_rejection_errors() -> set[str]:
+    """Every product module whose source raises one of the three rejection errors.
+
+    Read from the tree, not from `ADMISSION_MODULES`: the walk is the invariant, and the
+    frozen list is the claim being checked against it.
+    """
+    found: set[str] = set()
+    package = ROOT / "backend" / "src" / "speechnexus_backend"
+    for path in sorted(package.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            function = node.func
+            name = function.id if isinstance(function, ast.Name) else getattr(function, "attr", "")
+            if name in REJECTION_ERRORS:
+                speech = path.relative_to(
+                    ROOT / "backend" / "src" / "speechnexus_backend" / "speech"
+                )
+                found.add(speech.as_posix())
+                break
+    return found
+
+
 def _literal_derived(node: ast.AST) -> bool:
     """True when every possible value of this expression is a string literal."""
     if isinstance(node, ast.Constant):
@@ -287,14 +311,18 @@ def test_the_public_mapping_is_total_over_the_declared_vocabulary() -> None:
     assert set(_PUBLIC_CODES) == ADMISSION_REJECTION_CODES - CAPACITY_REJECTION_CODES
 
 
-def test_the_frozen_module_list_is_exactly_what_raises_rejection_errors() -> None:
-    # Both directions: a module that raises and is not listed (the seven that were
-    # missing) and a listed module that no longer raises (its codes moved somewhere
-    # unscanned) are both red.
-    scanned = sorted({point.module for point in ALL_RAISE_POINTS})
+def test_the_frozen_module_list_is_every_module_that_can_raise_a_rejection() -> None:
+    # The scan must be anchored to the repository, never to the list it checks: comparing
+    # `ADMISSION_MODULES` with the modules it parses is a list agreeing with itself, so a
+    # fourteenth module that raises an undeclared code stayed invisible (#828 review F4).
+    # This walks all product code instead and compares the two directions, so both a new
+    # module and a listed module that stopped raising are red.
+    found = sorted(_modules_raising_rejection_errors())
     declared = sorted(module.split("speech/", 1)[1] for module in ADMISSION_MODULES)
-    assert scanned == declared
-    assert len(ADMISSION_MODULES) == 13
+    assert found == declared, {
+        "unlisted": sorted(set(found) - set(declared)),
+        "listed_but_quiet": sorted(set(declared) - set(found)),
+    }
 
 
 def test_every_raise_point_contributes_only_declared_codes() -> None:
@@ -418,6 +446,7 @@ def test_the_jobs_write_passthrough_is_bounded_by_its_source() -> None:
         encoding="utf-8"
     )
     emitted = set()
+    offenders: list[str] = []
     for node in ast.walk(ast.parse(source)):
         if not isinstance(node, ast.Call):
             continue
@@ -426,8 +455,21 @@ def test_the_jobs_write_passthrough_is_bounded_by_its_source() -> None:
         if name != "JobResult":
             continue
         for keyword in node.keywords:
-            if keyword.arg == "error_code" and isinstance(keyword.value, ast.Constant):
-                emitted.add(keyword.value.value)
+            if keyword.arg != "error_code":
+                continue
+            value = keyword.value
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                emitted.add(value.value)
+            else:
+                # A code decided at runtime is not bounded by this module's literals: only
+                # collecting constants let a value read from the database pass the whole
+                # guard (#828 review F3). It must be a literal, or the site must be
+                # registered as a passthrough with its own producer bound.
+                offenders.append(
+                    f"jobs_sql.py:{keyword.value.lineno} reports a non-literal error code "
+                    f"({ast.unparse(value)})"
+                )
+    assert offenders == [], offenders
     assert emitted, "the jobs write must report its own refusal codes"
     assert emitted <= allowed, emitted - allowed
 
@@ -592,3 +634,32 @@ def test_no_store_refusal_returns_silently(code: str | None) -> None:
         _raise_admission_rejection(code)
     expected = "admission_state_invalid" if code in {None, "workspace_quota_missing"} else str(code)
     assert raised.value.code == expected
+
+
+def test_the_store_mechanism_codes_are_exactly_what_the_reason_mapping_declares() -> None:
+    """A store refusal either has its own reason or must name a public answer.
+
+    #828 review F2: the set used to be a second hand-written literal beside the reason
+    mapping, so `engine_retired` could be added to it and pass the whole guard -- the
+    store's refusal then answered `503 job_unavailable`, "Job storage is unavailable.",
+    which is the #828 response verbatim. The set is now derived from the mapping, and
+    this test proves the two directions: every mechanism code carries a non-`contract`
+    reason, and every code that reaches `_raise_admission_rejection` as a declared answer
+    is *not* a mechanism code (so it cannot be dropped into that branch).
+    """
+    from speechnexus_backend.speech.application import public_jobs
+    from speechnexus_backend.speech.application.public_jobs import _ADMISSION_REJECTION_CODES
+
+    mechanism = public_jobs._STORE_MECHANISM_CODES
+    assert mechanism, "the store must report at least one refusal of its own"
+    # Direction one: each member is exactly the set of codes with a declared reason.
+    assert {code for code in mechanism if public_jobs._rejection_reason(code) != "contract"} == set(
+        mechanism
+    )
+    # Direction two: the mapping is the only source, so every code outside the set is
+    # classified as `contract` -- the caller then has to name a public answer instead.
+    assert public_jobs._rejection_reason("engine_retired") == "contract"
+    assert "engine_retired" not in mechanism
+    # And no mechanism code may also be a public admission answer: that overlap is what
+    # would let a store code stand in for an admission cause.
+    assert not (mechanism & _ADMISSION_REJECTION_CODES)

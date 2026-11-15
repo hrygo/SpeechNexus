@@ -814,9 +814,13 @@ class AdmissionReadiness(TypedDict):
     causes: list[
         Literal[
             "engine_receipt_expired",
+            "engine_state_mismatch",
+            "engine_resource_disabled",
             "capacity_exhausted",
+            "workspace_not_found",
+            "workspace_disabled",
+            "workspace_not_configured",
             "storage_unavailable",
-            "workspace_not_provisioned",
         ]
     ]
     workspace_id: Identifier

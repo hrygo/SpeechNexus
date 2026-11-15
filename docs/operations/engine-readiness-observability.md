@@ -33,20 +33,28 @@ shared `contracts/operations.openapi.yaml` 也因此不改）。
 `status` 与 `causes` 的关系是硬约束：`causes` 为空 **当且仅当** `status: admitting`。
 `400 invalid_job_request` 只表示 `workspace_id` 不是合法标识符，与部署状态无关。
 
-### 三类机器可读原因
+### 机器可读原因（闭合枚举）
 
-`causes[]` 的成员就是机器可读的类，不要解析 `detail` 里的句子。
+`causes[]` 的成员就是机器可读的类，不要解析 `detail` 里的句子。这些类**不是**第二套判定：
+它们由 `decide_admission` 自己抛出的部署态谓词（`deployment_refusals`）映射而来，
+所以「报告说 `admitting`、创建却返回某个码」这种漂移在结构上不成立。
 
 | `cause` | 含义 | 创建时的对外回答 | 处置 |
 | --- | --- | --- | --- |
-| `engine_receipt_expired` | 没有任何 ready 实例持有可用 readiness 回执：已过期、缺失、无法解码，或根本没有注册 ready 实例 | `503 engine_not_ready`（完全不可用的回执为 `503 engine_state_mismatch`） | `speechnexus-register-engine --renew-readiness`；没有回执时重新注册 |
-| `capacity_exhausted` | workspace 配额已占满，或所有可用回执的实例 slot 已满 | `429 job_capacity_exhausted` 带 `Retry-After` | 等待 attempt/slot 释放；不是存储故障 |
+| `engine_receipt_expired` | 创建会钉住的那个 ready 实例，readiness 回执已滑出有效期 | `503 engine_not_ready`，`retryable: false` | `speechnexus-register-engine --renew-readiness` |
+| `engine_state_mismatch` | 实例落库的 intent 无法解码或与准入预期不符，钉住的身份不可信 | `503 engine_state_mismatch`，`retryable: false` | 重新注册或协调该实例 |
+| `engine_resource_disabled` | 实例、其 pool（含 `pool_state` 与 owner 租约）或已批准配方不处于 active | `503 engine_resource_disabled`，`retryable: false` | 恢复 pool / 重新批准配方 |
+| `capacity_exhausted` | 配额已占满、实例 slot 已满，或**根本没有 ready 实例可服务创建** | `429 job_capacity_exhausted` 带 `Retry-After` | 等被持有的 attempt/slot 释放；「没有实例」这一支只能由运维恢复，客户端无限重试只会看到同一个 429 |
+| `workspace_not_found` | 该 workspace 没有 `speech_workspaces` 行 | `422 workspace_not_found` | 创建该 workspace |
+| `workspace_disabled` | workspace 行存在但状态不是 `active` | `422 workspace_disabled` | 启用该 workspace |
+| `workspace_not_configured` | workspace 存在但没有配额行，准入无处记账 | `422 workspace_not_configured` | 为该 workspace 注册引擎以写入配额行 |
 | `storage_unavailable` | 在准入身份上读不到协调库，因此其它事实也读不到；**单独出现** | `503 job_unavailable`，`retryable: false` | 恢复数据库读权限/连接 |
-| `workspace_not_provisioned` | 该 workspace 没有配额行，准入无处记账 | `422 workspace_not_configured` | 为该 workspace 注册引擎以写入配额行 |
 
-`causes` 之间**独立判定、可同时出现**，按枚举定义顺序排列：一个既过期又满载的部署会同时报出两类，
-而不是按某一次请求的判定顺序只报一个。`expiring`（仍在预警窗口内但尚未过期）**不是** cause，
-它仍然可以准入。
+前七类来自创建路径同一份判定；第八类是**这次读本身**失败，不是创建被拒，因此单独出现。
+`expiring`（仍在预警窗口内但尚未过期）**不是** cause，它仍然可以准入。
+
+一个实例正常不足以让报告说 `admitting`：创建按阶段钉住实例，因此**任一条可用实例链路是干净的**
+才报 `admitting`；全部链路都被拒时，报告给出拒绝项最少的那条链路（同数时按码排序）对应的类。
 
 报告不覆盖**请求相关**的拒绝（`recipe_not_admitted`、未发布的 binding、输入制品未就绪等），
 也不评估 host 资源余量（其向量来自请求的 plan）；这些属于具体请求的形状，不是部署状态。
@@ -110,7 +118,9 @@ Docker 从不会因为 healthcheck 失败而重启容器，本服务再把 `rest
 
 - 降级期间 `docker compose ps` 会显示 `job-admission-watch ... (unhealthy)`，同行的 `api` 保持 `Up (healthy)`；
 - `docker inspect` 的 `RestartCount` 保持 `0`（轮询容器与被观测的 `api` 都是）；
-- 观测进程死亡时容器停在 `Exited(4)` 之类的终态而不是重启循环，healthcheck 也会因为状态文件过期而变红。
+- 观测进程死亡时，容器停在 `Exited(4)` 之类的终态，**不会进入重启循环**。Docker 不再评估已退出容器的
+  healthcheck，所以它既不会变红也不会变成 `unhealthy`——要区分「已退出」和「运行中但降级」必须看
+  `docker ps` 的 `State`/`Status` 列（`Exited (4)` 对比 `Up ... (unhealthy)`），不能只看 health 字样。
 
 **`unhealthy` 只说明「不可准入（含读不到）」，不说明容器坏了。** `docker ps` 本身**不区分**这两件事，
 它只是指针；查因用 healthcheck 自己的输出（保留在 health log 里）：
@@ -137,8 +147,9 @@ docker compose -f deploy/compose.yaml --profile admission-watch up -d
 **验收清单**（缺任一步即视为观测未装配）：
 
 1. `docker compose -f deploy/compose.yaml --profile admission-watch ps` 里 `job-admission-watch`
-   必须是 `running` 且 `(healthy)`。它是 `Exited (N)` 或者根本不出现，说明这个部署**没有**在读准入，
-   后面的「报告是 200」不算数。
+   必须是 `running` 且 `(healthy)`。它是 `Exited (N)`、`Restarting` 或者根本不出现，说明这个部署
+   **没有**在读准入，后面的「报告是 200」不算数（已退出的容器没有 healthcheck 状态，`docker ps`
+   的 `Status` 列直接给出 `Exited (N)`）。
 2. `curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/v1/nexus/jobs/admission-readiness`
    必须是 `200`；非 `200` 说明报告本身没装配（`503 job_unavailable`），不是准入门关着。
 3. `curl -sS http://127.0.0.1:8000/v1/nexus/jobs/admission-readiness` 的 `status`/`causes` 必须自洽：
@@ -166,7 +177,7 @@ docker compose --profile engine-readiness run --rm engine-readiness
 
 | 证据 | 位置 |
 | --- | --- |
-| 分类器、三类原因、`expiring` 不降级 | `tests/unit/backend/test_job_admission_readiness.py` |
+| 分类器、报告与创建路径的等价性（含 draining 反例）、`expiring` 不降级 | `tests/unit/backend/test_job_admission_readiness.py` |
 | 轮询者分类、退出码、状态文件与过期护栏 | `tests/unit/backend/test_admission_watch.py` |
 | 契约声明、cause→对外码映射、`/readyz` 保持 200 | `tests/contract/test_job_admission_readiness.py` |
 | 真实 PostgreSQL 上的 `admitting → degraded → admitting`、满载、存储故障与未配置 workspace | `tests/integration/test_job_admission_readiness_pg.py` |

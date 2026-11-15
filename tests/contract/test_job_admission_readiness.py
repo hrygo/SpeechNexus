@@ -21,6 +21,7 @@ The cases below pin the two halves of the answer:
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import Any, cast
 
 import pytest
@@ -35,27 +36,26 @@ from speechnexus_backend.speech.domain.job_admission_readiness import (
     CAUSE_CODES,
     AdmissionReadinessCause,
     AdmissionReadinessFacts,
-    ReadyInstanceFacts,
-    WorkspaceQuotaFacts,
     storage_unavailable_readiness,
 )
 from speechnexus_backend.speech.domain.public_jobs import PublicJobUnavailableError
-from speechnexus_backend.speech.domain.runtime_intents import RuntimeBinding
-from speechnexus_backend.speech.domain.runtime_observations import VerifiedRuntimeReadiness
 from speechnexus_backend.speech.interfaces.http.job_errors import job_error
 from tests.contract.test_speech_http_statuses import assert_error_contract, response_contract
+from tests.fake.admission import RUNTIMES
 from tests.fake.readiness import StaticProbe
 from tests.support.contracts import validator
 from tests.unit.backend.test_health import _settings
+from tests.unit.backend.test_job_admission_readiness import NOW as NOW_US
+from tests.unit.backend.test_job_admission_readiness import WORKSPACE as WORKSPACE_ID
+from tests.unit.backend.test_job_admission_readiness import _facts, _receipt
 
 PREFIX = "/v1/nexus/jobs"
 PATH = f"{PREFIX}/admission-readiness"
 OPERATION = "getJobAdmissionReadiness"
 SOURCE = validator("speech-openapi.yaml")
 DOCUMENT = cast(dict[str, Any], SOURCE.schema)
-WORKSPACE = "workspace-default"
+WORKSPACE = WORKSPACE_ID
 REQUEST_ID = "contract-admission-report"
-NOW_US = 1_700_000_000_000_000
 DAY_US = 86_400_000_000
 
 
@@ -78,28 +78,6 @@ def _causes() -> list[str]:
     )
 
 
-def _receipt(*, verified_at_us: int, expires_at_us: int) -> VerifiedRuntimeReadiness:
-    return VerifiedRuntimeReadiness(
-        binding=RuntimeBinding(
-            target_node_id="host-1",
-            pool_id="asr-batch",
-            gateway_id="gateway-1",
-            approved_template_id="template-asr-1",
-            binding_revision_id="binding-revision-1",
-            manifest_id="manifest-asr-1",
-            config_digest="sha256:" + "a" * 64,
-        ),
-        instance_id="instance-a",
-        instance_generation=1,
-        fencing_token=1,
-        topology_digest="sha256:" + "b" * 64,
-        qualification_digest="sha256:" + "c" * 64,
-        evidence_digest="sha256:" + "d" * 64,
-        verified_at_us=verified_at_us,
-        expires_at_us=expires_at_us,
-    )
-
-
 class _FactsStore:
     def __init__(self, facts: AdmissionReadinessFacts | None) -> None:
         self._facts = facts
@@ -111,30 +89,6 @@ class _FactsStore:
 
     def now_us(self) -> int:
         return NOW_US
-
-
-def _facts(*, expired: bool) -> AdmissionReadinessFacts:
-    return AdmissionReadinessFacts(
-        workspace_id=WORKSPACE,
-        now_us=NOW_US,
-        instances=(
-            ReadyInstanceFacts(
-                instance_id="instance-a",
-                instance_generation=1,
-                readiness=_receipt(
-                    verified_at_us=NOW_US - 2 * DAY_US,
-                    expires_at_us=NOW_US - 1 if expired else NOW_US + DAY_US,
-                ),
-                has_readiness_document=True,
-                max_slots=4,
-                held_slots=0,
-                quarantined_slots=0,
-            ),
-        ),
-        quota=WorkspaceQuotaFacts(
-            workspace_id=WORKSPACE, max_attempts=8, held_attempts=0, quarantined_attempts=0
-        ),
-    )
 
 
 def _client(store: _FactsStore) -> AsyncClient:
@@ -223,7 +177,7 @@ def _status_of(code: str) -> int:
     [
         (AdmissionReadinessCause.ENGINE_RECEIPT_EXPIRED, 503),
         (AdmissionReadinessCause.CAPACITY_EXHAUSTED, 429),
-        (AdmissionReadinessCause.WORKSPACE_NOT_PROVISIONED, 422),
+        (AdmissionReadinessCause.WORKSPACE_NOT_CONFIGURED, 422),
         (AdmissionReadinessCause.STORAGE_UNAVAILABLE, 503),
     ],
 )
@@ -268,7 +222,20 @@ async def test_a_degraded_report_is_a_200_with_a_cause_while_readyz_stays_200() 
 
 
 async def test_an_admitting_report_is_a_200_with_no_causes() -> None:
-    report, readyz = await _read(_FactsStore(_facts(expired=False)))
+    # A receipt with the whole default window left, so the instance reports `valid`
+    # rather than the `expiring` warning threshold.
+    report, readyz = await _read(
+        _FactsStore(
+            _facts(
+                runtimes=(
+                    replace(
+                        RUNTIMES[0],
+                        readiness=replace(_receipt(), expires_at_us=NOW_US + 30 * DAY_US),
+                    ),
+                )
+            )
+        )
+    )
 
     assert report.status_code == 200
     assert readyz.status_code == 200
@@ -352,3 +319,34 @@ def test_the_report_is_not_reachable_as_a_job_identifier() -> None:
     paths = cast(dict[str, Any], DOCUMENT["paths"])
     assert PATH in paths
     assert f"{PREFIX}/{{job_id}}" in paths
+
+
+def test_the_causes_are_exactly_the_declared_deployment_state_answers() -> None:
+    # Bidirectional: every class the report can name is a declared answer, and every
+    # declared "this deployment refuses" answer has a class. A code added to
+    # `job_errors` without a cause fails here -- which is the failure that matters,
+    # because the report would otherwise say `admitting` while a create refuses
+    # (#845 review).
+    from speechnexus_backend.speech.interfaces.http.job_errors import DEPLOYMENT_STATE_CODES
+
+    assert set(CAUSE_CODES.values()) == DEPLOYMENT_STATE_CODES
+
+
+def test_the_capacity_answer_enumerates_its_code() -> None:
+    # The 429 half used to be vacuous: `TooManyRequests` is a shared `ErrorResponse`,
+    # so any code validated against it. `createJob` now enumerates the one capacity
+    # code, so the check above can fail and a foreign code is rejected.
+    schema = response_contract("createJob", 429)["content"]["application/json"]["schema"]
+    assert schema != {"$ref": "#/components/responses/TooManyRequests"}
+    assert _create_job_accepts(429, "job_capacity_exhausted")
+    assert not _create_job_accepts(429, "engine_not_ready")
+    assert not _create_job_accepts(429, "engine_state_mismatch")
+
+
+def test_the_declaration_states_that_the_missing_instance_arm_needs_an_operator() -> None:
+    # A capacity refusal that only clears when an instance becomes ready is not the
+    # "retry and it clears itself" shape `Retry-After` implies, so the declaration
+    # says so instead of leaving a client looping forever (#845 review).
+    description = cast(str, response_contract("createJob", 429)["description"])
+    assert "Retry-After" in description
+    assert "operator" in description

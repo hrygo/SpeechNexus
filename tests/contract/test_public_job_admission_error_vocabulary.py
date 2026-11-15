@@ -105,12 +105,14 @@ PASSTHROUGH_RAISE_POINTS: dict[tuple[str, str, str, str | None], dict[str, Any]]
     },
     (
         "domain/admission.py",
-        "require_live_authority",
+        "require_runtime_live",
         "error.code",
         "RuntimeRejectedError",
     ): {
         "reason": (
-            "Re-raises the readiness-receipt refusal verbatim; the runtime modules are "
+            "Re-raises the readiness-receipt refusal verbatim. The rule moved out of "
+            "require_live_authority so the readiness report can run the same one "
+            "(#845 review) instead of a second comparison; the runtime modules are "
             "scanned, so every code this can carry is a declared literal there or the "
             "bounded `expired_code` of RuntimeReadiness.require_valid."
         ),

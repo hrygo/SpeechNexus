@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -377,6 +378,126 @@ PUBLIC_ADMISSION_CODES: dict[str, str] = {
 }
 
 
+def require_pool_live(pool: AdmissionPool) -> None:
+    """Pool state and owner-lease refusal for one pool, as a create evaluates it."""
+    if pool.pool_state != "active":
+        raise AdmissionRejectedError("policy_or_resource_disabled")
+    if pool.ownership.owner_state != "active":
+        raise AdmissionRejectedError("reconciliation_required")
+
+
+def require_runtime_live(runtime: AdmissionRuntime, now_us: int) -> None:
+    """Readiness and receipt-timing refusal for one runtime, request-independent."""
+    try:
+        # Admission separates an elapsed receipt from a stale identity: the
+        # instance is still the right one, so re-signing readiness admits the
+        # same request, and the refusal must not look like a storage outage.
+        runtime.readiness.require_valid(
+            runtime.observation,
+            runtime.instance.plan,
+            now_us,
+            expired_code="readiness_expired",
+        )
+    except RuntimeRejectedError as error:
+        raise AdmissionRejectedError(error.code) from None
+    if runtime.instance.ready_at_us is None or not (
+        runtime.readiness.verified_at_us <= runtime.instance.ready_at_us <= now_us
+    ):
+        raise AdmissionRejectedError("reconciliation_required")
+
+
+def require_runtime_service(runtime: AdmissionRuntime, pool: AdmissionPool) -> None:
+    """Instance, head and observation refusal for one runtime, request-independent.
+
+    ``decide_admission`` runs these per stage against the instance the request
+    pinned; none of them reads a request field, so the readiness report evaluates
+    the same rules instead of a second copy of them (#845 review).
+    """
+    instance = runtime.instance
+    if (
+        instance.instance_state != "ready"
+        or instance.base_budget_kind != "steady"
+        or instance.stopped_at_us is not None
+        or runtime.head.stop_intent_id is not None
+        or runtime.observation.action != "prepare"
+        or runtime.observation.intent_state != "succeeded"
+        or runtime.observation.observed_instance_state != "ready"
+        or instance.last_fencing_token != runtime.readiness.fencing_token
+        or pool.service_class != instance.plan.service_class
+    ):
+        raise AdmissionRejectedError("policy_or_resource_disabled")
+
+
+def require_runtime_capacity(runtime: AdmissionRuntime) -> None:
+    """No create of any size fits this instance; the request-sized check is stricter.
+
+    ``decide_admission`` charges the request's slot delta and refuses one slot over
+    the bound; this is the deployment-level floor below it, so the report never
+    claims a chain admits work when a single slot cannot fit.
+    """
+    instance = runtime.instance
+    if instance.held_slots + instance.quarantined_slots >= instance.plan.max_slots:
+        raise AdmissionRejectedError("capacity_exhausted")
+
+
+def require_quota(quota: AdmissionQuota) -> None:
+    """Attempt-quota refusal; a released attempt clears it without an operator step."""
+    if quota.held_attempts + quota.quarantined_attempts >= quota.max_attempts:
+        raise AdmissionRejectedError("quota_exceeded")
+
+
+def _refused_by(require: Callable[[], None]) -> tuple[str, ...]:
+    """The code one shared requirement refuses with, or nothing when it passes."""
+    try:
+        require()
+    except AdmissionRejectedError as error:
+        return (error.code,)
+    return ()
+
+
+def deployment_refusals(
+    *,
+    pools: tuple[AdmissionPool, ...],
+    runtimes: tuple[AdmissionRuntime, ...],
+    quota: AdmissionQuota,
+    now_us: int,
+) -> tuple[str, ...]:
+    """Every refusal ``decide_admission`` derives from deployment state alone.
+
+    Each entry is the code one of the ``require_*`` rules above raises, so the
+    create path and this collection read one implementation rather than two; the
+    report maps the codes to public causes and cannot answer a different question
+    than a create does. Request-shaped checks (recipe identity, deadlines,
+    idempotency, pinned authority leases) are deliberately absent: they depend on
+    the request, and the report answers for the deployment (#845 review).
+    """
+    refusals: list[str] = list(_refused_by(lambda: require_quota(quota)))
+    pool_by_id = {pool.ownership.pool_id: pool for pool in pools}
+    for pool in pools:
+        refusals.extend(_refused_by(lambda pool=pool: require_pool_live(pool)))
+    if not runtimes:
+        # No ready engine can serve a create at all; the create path answers the
+        # capacity refusal for this, not a readiness one.
+        refusals.append("capacity_exhausted")
+    for runtime in runtimes:
+        refusals.extend(_refused_by(lambda runtime=runtime: require_runtime_live(runtime, now_us)))
+        refusals.extend(_refused_by(lambda runtime=runtime: require_runtime_capacity(runtime)))
+        pinned = pool_by_id.get(runtime.instance.plan.binding.pool_id)
+        if pinned is not None:
+            refusals.extend(
+                _refused_by(
+                    lambda runtime=runtime, pinned=pinned: require_runtime_service(runtime, pinned)
+                )
+            )
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for code in refusals:
+        if code not in seen:
+            seen.add(code)
+            ordered.append(code)
+    return tuple(ordered)
+
+
 def require_live_authority(
     command: AdmitRecipe,
     pools: tuple[AdmissionPool, ...],
@@ -401,28 +522,9 @@ def require_live_authority(
             require_authority(pool.ownership, authorities[pool.ownership.pool_id], now_us)
         except OwnerRejectedError as error:
             raise AdmissionRejectedError(error.code) from None
-        if pool.pool_state != "active":
-            raise AdmissionRejectedError("policy_or_resource_disabled")
-        if pool.ownership.owner_state != "active":
-            raise AdmissionRejectedError("reconciliation_required")
+        require_pool_live(pool)
     for runtime in runtimes:
-        try:
-            # Admission separates an elapsed receipt from a stale identity: the
-            # instance is still the right one, so re-signing readiness admits the
-            # same request, and the refusal must not look like a storage outage.
-            runtime.readiness.require_valid(
-                runtime.observation,
-                runtime.instance.plan,
-                now_us,
-                expired_code="readiness_expired",
-            )
-        except RuntimeRejectedError as error:
-            raise AdmissionRejectedError(error.code) from None
-        if (
-            runtime.instance.ready_at_us is None
-            or not runtime.readiness.verified_at_us <= runtime.instance.ready_at_us <= now_us
-        ):
-            raise AdmissionRejectedError("reconciliation_required")
+        require_runtime_live(runtime, now_us)
 
 
 def decide_admission(
@@ -454,8 +556,7 @@ def decide_admission(
         raise AdmissionRejectedError("policy_or_resource_disabled")
     if quota.version != request.expected_quota_version:
         raise AdmissionRejectedError("version_conflict")
-    if quota.held_attempts + quota.quarantined_attempts >= quota.max_attempts:
-        raise AdmissionRejectedError("quota_exceeded")
+    require_quota(quota)
     pool_by_id = {p.ownership.pool_id: p for p in pools}
     host_by_id = {h.node_id: h for h in hosts}
     by_instance = {(r.instance.instance_id, r.instance.instance_generation): r for r in runtimes}
@@ -493,19 +594,9 @@ def decide_admission(
                 raise AdmissionRejectedError("recipe_mismatch")
             if instance.version != stage.expected_instance_version:
                 raise AdmissionRejectedError("version_conflict")
-            if (
-                instance.instance_state != "ready"
-                or instance.base_budget_kind != "steady"
-                or instance.stopped_at_us is not None
-                or host.node_state != "active"
-                or runtime.head.stop_intent_id is not None
-                or runtime.observation.action != "prepare"
-                or runtime.observation.intent_state != "succeeded"
-                or runtime.observation.observed_instance_state != "ready"
-                or instance.last_fencing_token != runtime.readiness.fencing_token
-                or pool_by_id[stage.pool_id].service_class != plan.service_class
-            ):
+            if host.node_state != "active":
                 raise AdmissionRejectedError("policy_or_resource_disabled")
+            require_runtime_service(runtime, pool_by_id[stage.pool_id])
             vector = plan.per_slot.scaled(stage.reserved_slots)
             vector.require_architecture(host.memory_architecture)
             host_deltas[host.node_id] = host_deltas[host.node_id].add(vector)

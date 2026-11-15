@@ -784,11 +784,11 @@ def test_a_probe_that_reaches_an_endpoint_fails_the_gate(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "endpoint was invoked during probe" in captured.err
-    # Every declared operation under this template is probed through the same
-    # catch-all route, so the case pins that the concrete probe path was reached
-    # rather than a fixed number of dispatches.
-    assert probe_path in invoked
-    assert all(path.startswith("/v1/nexus/jobs/") for path in invoked)
+    # Exact, not a membership test: the probe dispatches once per declared
+    # operation that this catch-all route matches, so losing the literal report path
+    # (or gaining an unprobed one) changes this list. The 405-envelope evidence keeps
+    # its own count assertion above; this is the dispatch the guard must see.
+    assert sorted(invoked) == sorted([probe_path, "/v1/nexus/jobs/admission-readiness"])
 
 
 def test_dispatch_guard_counts_a_mount_child_the_matcher_cannot_see() -> None:
@@ -918,9 +918,9 @@ def test_a_generator_endpoint_is_counted_and_fails_the_gate(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "endpoint was invoked during probe" in captured.err
-    # The catch-all route answers every declared operation under this template, so
-    # the case pins the dispatch itself, not a fixed count.
-    assert ran and set(ran) == {"generator"}
+    # Exact: one dispatch per declared operation this route matches. A weakened
+    # membership test would pass even if a route stopped being probed.
+    assert ran == ["generator", "generator"]
 
 
 def test_dispatch_guard_counts_an_included_generator_endpoint() -> None:

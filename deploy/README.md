@@ -42,6 +42,12 @@ Additional profiles are opt-in:
   receipt, whose TTL is 24 h by default, so this profile is the periodic path that
   keeps it valid. See
   [Engine readiness renewal](#engine-readiness-renewal-engine-readiness-profile);
+- `admission-watch`: explicitly starts `job-admission-watch`, the poller that turns
+  "can a create be admitted right now?" into a healthcheckable signal. It is absent
+  from the base topology because an in-base observer could be silently absent while
+  nothing in the base set depends on it: the contract is the acceptance step, not
+  the profile. See
+  [Engine readiness observability](../docs/operations/engine-readiness-observability.md).
 - `web`: the static Admin and Workbench frontends;
 - `binding-disable`: explicitly starts the disable worker, which is required to
   process persisted disable intents; it is absent from the base topology.

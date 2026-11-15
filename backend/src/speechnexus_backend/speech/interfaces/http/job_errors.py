@@ -195,6 +195,26 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
 }
 
 
+# The declared answers that describe deployment state rather than the shape of one
+# request: every create in this deployment gets one of these until the named resource
+# changes. ``agent_845_deployment_state`` is the closed set the admission-readiness
+# report must name, and ``tests/contract/test_job_admission_readiness.py`` asserts the
+# report's causes cover exactly this set in both directions, so a code added here
+# without a cause is a red test rather than a report that says "admitting".
+DEPLOYMENT_STATE_CODES: frozenset[str] = frozenset(
+    {
+        "engine_not_ready",
+        "engine_state_mismatch",
+        "engine_resource_disabled",
+        "job_capacity_exhausted",
+        "workspace_not_found",
+        "workspace_disabled",
+        "workspace_not_configured",
+        "job_unavailable",
+    }
+)
+
+
 def job_error(code: str, request_id: str, *, headers: dict[str, str] | None = None) -> JSONResponse:
     """Render one declared Job error, and refuse to invent a storage answer.
 

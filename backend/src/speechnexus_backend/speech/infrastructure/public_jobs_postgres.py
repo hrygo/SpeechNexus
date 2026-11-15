@@ -25,11 +25,14 @@ from speechnexus_backend.speech.application.voice_drafts import (
     voice_input_fits,
     voice_input_shape,
 )
-from speechnexus_backend.speech.domain.admission import AdmissionRejectedError
+from speechnexus_backend.speech.domain.admission import (
+    AdmissionPool,
+    AdmissionQuota,
+    AdmissionRejectedError,
+    AdmissionRuntime,
+)
 from speechnexus_backend.speech.domain.job_admission_readiness import (
     AdmissionReadinessFacts,
-    ReadyInstanceFacts,
-    WorkspaceQuotaFacts,
 )
 from speechnexus_backend.speech.domain.public_jobs import (
     JOB_STATES,
@@ -55,6 +58,15 @@ from speechnexus_backend.speech.domain.publications import (
     PublicationKind,
     PublicationUnavailableError,
 )
+from speechnexus_backend.speech.infrastructure.admission_sql import (
+    _pool as _decode_pool,
+)
+from speechnexus_backend.speech.infrastructure.admission_sql import (
+    _quota as _decode_quota,
+)
+from speechnexus_backend.speech.infrastructure.admission_sql import (
+    _runtime as _decode_runtime,
+)
 from speechnexus_backend.speech.infrastructure.admission_sql import admit_in_transaction
 from speechnexus_backend.speech.infrastructure.binding_disable_barrier import lock_binding
 from speechnexus_backend.speech.infrastructure.catalog_revision_schema import (
@@ -73,9 +85,6 @@ from speechnexus_backend.speech.infrastructure.public_job_admission import (
     PublicJobAdmissionRejectedError,
     build_public_job_admission,
     rejection_code,
-)
-from speechnexus_backend.speech.infrastructure.runtime_observation_codec import (
-    readiness_from_document,
 )
 
 _LATEST_PROGRESS = (
@@ -99,24 +108,21 @@ _ARTIFACT_COLUMNS = (
 # shape the read-only ``speechnexus-engine-readiness`` report uses: the current
 # prepare intent of the current generation carries the receipt, and an elapsed or
 # absent one is visible to both surfaces instead of each re-deriving the window.
-_READY_INSTANCE_QUERY = (
-    "SELECT e.instance_id, e.instance_generation, e.max_slots, e.held_slots, "
-    "e.quarantined_slots, i.readiness_document "
-    "FROM engine_instances AS e "
-    "JOIN runtime_instance_heads AS h ON h.instance_id = e.instance_id "
-    "AND h.current_generation = e.instance_generation "
-    "LEFT JOIN runtime_instance_intents AS i ON i.target_node_id = e.host_node_id "
-    "AND i.intent_id = h.current_prepare_intent_id "
-    "WHERE e.instance_state = 'ready' "
-    "ORDER BY e.instance_id, e.instance_generation"
+# The report reads the same rows the admission transaction reads and decodes them
+# with the admission decoders (`_pool`, `_quota`, `_runtime`), so a create and this
+# surface evaluate one predicate instead of two (#845 review). `SELECT *` is
+# deliberate: a partial projection here is how the two readings drifted apart.
+_READINESS_INSTANCES = (
+    "SELECT * FROM engine_instances WHERE instance_state = 'ready' "
+    "ORDER BY instance_id, instance_generation"
 )
-# The reservation counters one create charges; a missing row is a configuration
-# refusal (422 workspace_not_configured), not a storage fault, so the query returns
-# zero rows instead of raising.
-_WORKSPACE_QUOTA_QUERY = (
-    "SELECT workspace_id, max_attempts, held_attempts, quarantined_attempts "
-    "FROM workspace_quotas WHERE workspace_id = %s"
+_READINESS_HEAD = "SELECT * FROM runtime_instance_heads WHERE instance_id = %s"
+_READINESS_INTENT = (
+    "SELECT * FROM runtime_instance_intents WHERE target_node_id = %s AND intent_id = %s"
 )
+_READINESS_POOL = "SELECT * FROM resource_pools WHERE pool_id = %s"
+_READINESS_QUOTA = "SELECT * FROM workspace_quotas WHERE workspace_id = %s"
+_READINESS_WORKSPACE = "SELECT workspace_state FROM speech_workspaces WHERE workspace_id = %s"
 _PINNED_BINDING_QUERY = (
     "SELECT p.kind, p.object_id, p.revision, p.revision_id, p.published_at_us, "
     "r.definition_json, EXISTS ("
@@ -1019,19 +1025,47 @@ class PostgresPublicJobs:
         admits could not read its own facts", which is the condition a create
         reports as ``job_unavailable``.
 
-        One read-only transaction answers all three fact families against one
-        ``clock_timestamp()``, so the window this report measures and the window
-        admission would measure cannot disagree. ``storage_available`` is not a
-        field here: a failed read raises and the caller renders the storage cause,
-        because with no facts there is nothing else to claim.
+        One read-only transaction answers every fact family against one
+        ``clock_timestamp()``, and the pools, instances and quota are decoded by the
+        admission decoders, so the window this report measures and the window
+        admission would measure cannot disagree.
         """
         deadline = time.monotonic() + self._timeout
         try:
             with self._admission_transaction(deadline) as connection:
                 connection.execute("SET TRANSACTION READ ONLY")
                 now_us = _database_now_us(connection)
-                instance_rows = connection.execute(_READY_INSTANCE_QUERY).fetchall()
-                quota_rows = connection.execute(_WORKSPACE_QUOTA_QUERY, (workspace_id,)).fetchall()
+                cursor = _ReadCursor(connection)
+                workspace_rows = cursor.execute(_READINESS_WORKSPACE, (workspace_id,)).fetchall()
+                quota_rows = cursor.execute(_READINESS_QUOTA, (workspace_id,)).fetchall()
+                pools: dict[str, Any] = {}
+                runtimes: list[Any] = []
+                undecodable: list[str] = []
+                for row in cursor.execute(_READINESS_INSTANCES).fetchall():
+                    head = cursor.execute(_READINESS_HEAD, (row["instance_id"],)).fetchall()
+                    if len(head) != 1:
+                        undecodable.append(row["instance_id"])
+                        continue
+                    intent_id = head[0]["current_prepare_intent_id"]
+                    if intent_id is None:
+                        undecodable.append(row["instance_id"])
+                        continue
+                    intent = cursor.execute(
+                        _READINESS_INTENT, (row["host_node_id"], intent_id)
+                    ).fetchall()
+                    if len(intent) != 1:
+                        undecodable.append(row["instance_id"])
+                        continue
+                    try:
+                        runtimes.append(_admission_runtime(cursor, row, head[0], intent[0]))
+                    except AdmissionRejectedError:
+                        undecodable.append(row["instance_id"])
+                        continue
+                    pool_id = row["pool_id"]
+                    if pool_id not in pools:
+                        pools[pool_id] = _admission_pool(
+                            cursor.execute(_READINESS_POOL, (pool_id,)).fetchall()
+                        )
                 if time.monotonic() >= deadline:
                     raise PublicJobUnavailableError
         except (
@@ -1044,13 +1078,14 @@ class PostgresPublicJobs:
             KeyError,
         ):
             raise PublicJobUnavailableError from None
-        instances = tuple(_ready_instance_facts(row) for row in instance_rows)
-        quota = _quota_facts(quota_rows[0]) if quota_rows else None
         return AdmissionReadinessFacts(
             workspace_id=workspace_id,
+            workspace_state=workspace_rows[0]["workspace_state"] if workspace_rows else None,
+            quota=_admission_quota(quota_rows),
+            pools=tuple(pools[pool_id] for pool_id in sorted(pools)),
+            runtimes=tuple(runtimes),
+            undecodable=tuple(sorted(undecodable)),
             now_us=now_us,
-            instances=instances,
-            quota=quota,
         )
 
     @contextmanager
@@ -1093,39 +1128,52 @@ class _RetryAdmissionError(Exception):
     """A version race rolled the whole transaction back; retry it once."""
 
 
-def _ready_instance_facts(row: dict[str, Any]) -> ReadyInstanceFacts:
-    """Decode one ready instance row without inventing a receipt.
+class _ReadCursor:
+    """Cursor-shaped view of the read-only connection for the admission decoders.
 
-    An undecodable stored receipt is ``invalid`` rather than an exception: admission
-    cannot read it either, and a report that raised would hide the very instance an
-    operator has to repair. The slot counters are read as stored -- a release may
-    quarantine past the bound -- so a report never refuses to describe a row.
+    ``_pool``, ``_quota`` and ``_runtime`` take a cursor and issue their own queries;
+    this adapter keeps them unchanged instead of copying their SQL into the report,
+    which is exactly the duplication that let the two readings drift (#845 review).
     """
-    document = row["readiness_document"]
-    receipt = None
-    if isinstance(document, str):
-        try:
-            receipt = readiness_from_document(document)
-        except ValueError, TypeError, KeyError:
-            receipt = None
-    return ReadyInstanceFacts(
-        instance_id=row["instance_id"],
-        instance_generation=int(row["instance_generation"]),
-        readiness=receipt,
-        has_readiness_document=isinstance(document, str),
-        max_slots=int(row["max_slots"]),
-        held_slots=int(row["held_slots"]),
-        quarantined_slots=int(row["quarantined_slots"]),
-    )
+
+    def __init__(self, connection: _Executor) -> None:
+        self._connection = connection
+        self._rows: list[dict[str, Any]] = []
+
+    @property
+    def rowcount(self) -> int:
+        return 0
+
+    def execute(self, query: str, parameters: tuple[object, ...] = ()) -> _ReadCursor:
+        self._rows = list(self._connection.execute(query, parameters).fetchall())
+        return self
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        return self._rows
 
 
-def _quota_facts(row: dict[str, Any]) -> WorkspaceQuotaFacts:
-    return WorkspaceQuotaFacts(
-        workspace_id=row["workspace_id"],
-        max_attempts=int(row["max_attempts"]),
-        held_attempts=int(row["held_attempts"]),
-        quarantined_attempts=int(row["quarantined_attempts"]),
-    )
+def _admission_pool(found: list[dict[str, Any]]) -> AdmissionPool:
+    if len(found) != 1:
+        raise PublicJobUnavailableError
+    return _decode_pool(found[0])
+
+
+def _admission_quota(found: list[dict[str, Any]]) -> AdmissionQuota | None:
+    """A missing row is the configuration refusal, not a storage fault."""
+    if not found:
+        return None
+    if len(found) != 1:
+        raise PublicJobUnavailableError
+    return _decode_quota(found[0])
+
+
+def _admission_runtime(
+    cursor: _ReadCursor,
+    instance: dict[str, Any],
+    head: dict[str, Any],
+    intent: dict[str, Any],
+) -> AdmissionRuntime:
+    return _decode_runtime(cursor, instance, head, intent)
 
 
 def _database_now_us(connection: _Executor) -> int:

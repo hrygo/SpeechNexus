@@ -1,413 +1,344 @@
-"""The admission report classifies the refusal cause instead of naming "unavailable".
+"""The report and the create must answer one question, not two (#845 review).
 
-An elapsed engine readiness receipt refuses every public Job create while the
-process-health surface stays green (#845). The report's whole value is that its
-causes are a closed, machine-readable enum with one operator action each, so these
-cases pin the classification rather than a message: an elapsed receipt, exhausted
-capacity, an unreadable store and an unprovisioned quota must never collapse into
-one answer, and a window that still admits work (`expiring`) must not be reported
-as a refusal.
+An earlier revision of this surface re-derived "is admission open" from its own SQL:
+it read pool, quota and receipt columns and compared them itself. That is the #845
+defect one layer up -- the report could say ``admitting`` while a create answered
+``429 job_capacity_exhausted``, because the two implementations only agreed on the
+states the tests covered (a draining pool was the measured counter-example).
 
-The last group drives the same classification through ``PublicJobs`` with an
-injected store, so the application's storage-failure fallback -- a report, not an
-exception -- is pinned without a database.
+The classification now runs ``deployment_refusals``, the same predicate
+``require_live_authority`` and ``decide_admission`` raise from, so the cases below are
+*equivalence* cases: for one fixture state they call the create path and the report and
+assert the two verdicts agree, cause code to public code. A new admission rule that
+skips the shared predicate fails here instead of drifting in production.
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
+from typing import Any
+
 import pytest
 
-from speechnexus_backend.speech.application.public_jobs import PublicJobs
+from speechnexus_backend.speech.domain.admission import (
+    PUBLIC_ADMISSION_CODES,
+    AdmissionQuota,
+    AdmissionRejectedError,
+    decide_admission,
+    deployment_refusals,
+    require_live_authority,
+)
 from speechnexus_backend.speech.domain.job_admission_readiness import (
-    CAPACITY_EXHAUSTED_CODE,
-    ENGINE_NOT_READY_CODE,
-    STORAGE_UNAVAILABLE_CODE,
-    WORKSPACE_NOT_CONFIGURED_CODE,
+    CAUSE_BY_REFUSAL_CODE,
+    CAUSE_CODES,
     AdmissionReadiness,
     AdmissionReadinessCause,
     AdmissionReadinessFacts,
     AdmissionReadinessStatus,
-    ReadyInstanceFacts,
-    WorkspaceQuotaFacts,
     classify_admission_readiness,
     storage_unavailable_readiness,
 )
-from speechnexus_backend.speech.domain.public_jobs import PublicJobUnavailableError
-from speechnexus_backend.speech.domain.runtime_intents import RuntimeBinding
-from speechnexus_backend.speech.domain.runtime_observations import VerifiedRuntimeReadiness
+from speechnexus_backend.speech.infrastructure.public_job_admission import rejection_code
+from tests.fake.admission import COMMAND, HOSTS, POOLS, QUOTA, RUNTIMES
+from tests.fake.runtime_intents import NOW
 
-NOW_US = 1_700_000_000_000_000
-DAY_US = 86_400_000_000
-WORKSPACE = "workspace-default"
-
-
-def _binding() -> RuntimeBinding:
-    return RuntimeBinding(
-        pool_id="asr-batch",
-        target_node_id="host-1",
-        gateway_id="gateway-1",
-        approved_template_id="template-asr-1",
-        binding_revision_id="binding-revision-1",
-        manifest_id="manifest-asr-1",
-        config_digest="sha256:" + "a" * 64,
-    )
+WORKSPACE = "workspace-test"
+# Re-exported for the contract test: one fixture matrix means the HTTP surface is
+# pinned against the same facts the equivalence cases use.
+__all__ = ["NOW", "WORKSPACE", "_facts", "_receipt"]
 
 
-def _receipt(*, verified_at_us: int, expires_at_us: int) -> VerifiedRuntimeReadiness:
-    return VerifiedRuntimeReadiness(
-        binding=_binding(),
-        instance_id="instance-a",
-        instance_generation=1,
-        fencing_token=1,
-        topology_digest="sha256:" + "b" * 64,
-        qualification_digest="sha256:" + "c" * 64,
-        evidence_digest="sha256:" + "d" * 64,
-        verified_at_us=verified_at_us,
-        expires_at_us=expires_at_us,
-    )
-
-
-def _valid_instance() -> ReadyInstanceFacts:
-    return ReadyInstanceFacts(
-        instance_id="instance-a",
-        instance_generation=1,
-        readiness=_receipt(verified_at_us=NOW_US - DAY_US, expires_at_us=NOW_US + DAY_US),
-        has_readiness_document=True,
-        max_slots=4,
-        held_slots=0,
-        quarantined_slots=0,
-    )
-
-
-def _quota(*, max_attempts: int = 8, held: int = 0, quarantined: int = 0) -> WorkspaceQuotaFacts:
-    return WorkspaceQuotaFacts(
-        workspace_id=WORKSPACE,
+def _quota(*, max_attempts: int = 4, held: int = 0, quarantined: int = 0) -> AdmissionQuota:
+    return replace(
+        QUOTA,
         max_attempts=max_attempts,
         held_attempts=held,
         quarantined_attempts=quarantined,
+        version=1,
     )
 
 
-_DEFAULT = object()
+def _runtime(
+    *, hidden_slots: int = 0, quarantined_slots: int = 0, instance_state: str = "ready"
+) -> Any:
+    (runtime,) = RUNTIMES
+    return replace(
+        runtime,
+        instance=replace(
+            runtime.instance,
+            held_slots=hidden_slots,
+            quarantined_slots=quarantined_slots,
+            instance_state=instance_state,
+        ),
+    )
 
 
 def _facts(
     *,
-    instances: tuple[ReadyInstanceFacts, ...] | object = _DEFAULT,
-    quota: WorkspaceQuotaFacts | object | None = _DEFAULT,
-    now_us: int = NOW_US,
+    quota: AdmissionQuota | None = None,
+    runtimes: tuple[Any, ...] | None = None,
+    pools: tuple[Any, ...] | None = None,
+    workspace_state: str | None = "active",
+    undecodable: tuple[str, ...] = (),
+    expired: bool = False,
 ) -> AdmissionReadinessFacts:
-    # ``None`` is a meaningful value for both facts (no instance registered, no
-    # quota row), so the sentinel distinguishes "use the healthy default" from
-    # "model an absent row".
+    if expired:
+        runtimes = (replace(RUNTIMES[0], readiness=replace(_receipt(), expires_at_us=NOW - 1)),)
     return AdmissionReadinessFacts(
         workspace_id=WORKSPACE,
-        now_us=now_us,
-        instances=(_valid_instance(),) if instances is _DEFAULT else instances,  # type: ignore[arg-type]
-        quota=_quota() if quota is _DEFAULT else quota,  # type: ignore[arg-type]
+        workspace_state=workspace_state,
+        quota=_quota() if quota is None else quota,
+        pools=POOLS if pools is None else pools,
+        runtimes=RUNTIMES if runtimes is None else runtimes,
+        undecodable=undecodable,
+        now_us=NOW,
     )
 
 
-def _causes(report: AdmissionReadiness) -> list[str]:
-    return [cause.value for cause in report.causes]
+def _create_code(facts: AdmissionReadinessFacts) -> str | None:
+    """The public code a real create answers in this state, ``None`` when admitted.
+
+    The order is the transaction's: ``require_live_authority`` runs first, then
+    ``decide_admission``, exactly as ``admit_in_transaction`` calls them.
+    """
+    quota = facts.quota
+    assert quota is not None
+    if not facts.runtimes:
+        # The create path selects a pinned ready instance before admission runs and
+        # answers the capacity refusal when none exists
+        # (`public_job_admission._instance`), so the empty case never reaches the
+        # decision below.
+        return "job_capacity_exhausted"
+    try:
+        require_live_authority(COMMAND, facts.pools, facts.runtimes, facts.now_us)
+        decide_admission(
+            COMMAND,
+            quota=quota,
+            pools=facts.pools,
+            hosts=HOSTS,
+            runtimes=facts.runtimes,
+            now_us=facts.now_us,
+        )
+    except AdmissionRejectedError as error:
+        # The create path's own mapping, so this test cannot disagree with the API.
+        return rejection_code(error.code)
+    return None
 
 
-def test_a_valid_receipt_and_free_capacity_report_that_a_create_is_admitted() -> None:
+def _receipt() -> Any:
+    (runtime,) = RUNTIMES
+    return runtime.readiness
+
+
+# One row per deployment state. `draining` is the review's measured counter-example:
+# the create answers 429 while the old report said `admitting`, causes `[]`.
+_STATES: dict[str, dict[str, Any]] = {
+    "healthy": {},
+    "pool_draining": {"pools": (replace(POOLS[0], pool_state="draining"),)},
+    "pool_owner_reconciling": {
+        "pools": (
+            replace(
+                POOLS[0],
+                ownership=replace(POOLS[0].ownership, owner_state="reconciling_takeover"),
+            ),
+        ),
+    },
+    "receipt_elapsed": {
+        "runtimes": (replace(RUNTIMES[0], readiness=replace(_receipt(), expires_at_us=NOW - 1)),)
+    },
+    "quota_full": {"quota": _quota(held=4)},
+    "quota_quarantined": {"quota": _quota(held=3, quarantined=1)},
+    "slots_full": {"runtimes": (_runtime(hidden_slots=4),)},
+    "instance_stopped": {"runtimes": (_runtime(instance_state="stopped"),)},
+    "no_ready_instance": {"runtimes": ()},
+    "undecodable_instance": {
+        "runtimes": (
+            replace(RUNTIMES[0], instance=replace(RUNTIMES[0].instance, instance_state="stopped")),
+        ),
+    },
+}
+
+
+@pytest.mark.parametrize("state", sorted(_STATES))
+def test_the_report_answers_exactly_what_a_create_answers(state: str) -> None:
+    facts = _facts(**_STATES[state])
+    report = classify_admission_readiness(facts)
+    create_code = _create_code(facts)
+    if create_code is None:
+        assert report.admitting, (
+            f"{state}: a create succeeds but the report refuses with "
+            f"{[cause.value for cause in report.causes]}"
+        )
+        assert report.causes == ()
+        return
+    assert not report.admitting, (
+        f"{state}: a create answers {create_code} but the report says admitting"
+    )
+    codes = [CAUSE_CODES[cause] for cause in report.causes]
+    assert create_code in codes, (
+        f"{state}: a create answers {create_code} while the report names {codes}"
+    )
+
+
+def test_a_draining_pool_is_reported_instead_of_admitting() -> None:
+    # The measured counter-example, pinned on its own so a regression names itself.
+    facts = _facts(pools=(replace(POOLS[0], pool_state="draining"),))
+    report = classify_admission_readiness(facts)
+
+    assert _create_code(facts) == "engine_resource_disabled"
+    assert report.status is AdmissionReadinessStatus.DEGRADED
+    assert report.causes == (AdmissionReadinessCause.ENGINE_RESOURCE_DISABLED,)
+
+
+def test_an_elapsed_receipt_is_the_only_class_that_asks_for_renewal() -> None:
+    facts = _facts(
+        runtimes=(replace(RUNTIMES[0], readiness=replace(_receipt(), expires_at_us=NOW - 1)),)
+    )
+    report = classify_admission_readiness(facts)
+
+    assert _create_code(facts) == "engine_not_ready"
+    assert report.causes == (AdmissionReadinessCause.ENGINE_RECEIPT_EXPIRED,)
+    assert "speechnexus-register-engine --renew-readiness" in (report.detail or "")
+
+
+def test_an_undecodable_instance_is_a_state_mismatch_not_an_outage() -> None:
+    report = classify_admission_readiness(_facts(runtimes=(), undecodable=("instance-a",)))
+
+    assert report.causes == (AdmissionReadinessCause.ENGINE_STATE_MISMATCH,)
+    assert "engine_state_mismatch" in (report.detail or "")
+
+
+def test_no_ready_instance_is_the_capacity_refusal_the_create_answers() -> None:
+    # The create path answers `job_capacity_exhausted` when no ready instance exists;
+    # the report names the same class instead of claiming a readiness window.
+    report = classify_admission_readiness(_facts(runtimes=()))
+
+    assert report.causes == (AdmissionReadinessCause.CAPACITY_EXHAUSTED,)
+    assert "job_capacity_exhausted" in (report.detail or "")
+
+
+def test_capacity_detail_names_the_counter_that_is_full() -> None:
+    report = classify_admission_readiness(_facts(quota=_quota(held=4)))
+
+    assert report.causes == (AdmissionReadinessCause.CAPACITY_EXHAUSTED,)
+    assert "held 4" in (report.detail or "")
+
+
+def test_healthy_facts_are_admitting_with_no_detail() -> None:
     report = classify_admission_readiness(_facts())
 
     assert report.status is AdmissionReadinessStatus.ADMITTING
-    assert report.admitting
-    assert report.causes == ()
-    # An admitting report carries no sentence: nothing is degraded to explain.
-    assert report.detail is None
-    assert [instance.readiness_state for instance in report.instances] == ["valid"]
-    assert report.instances[0].remaining_seconds == DAY_US // 1_000_000
+    assert report.causes == () and report.detail is None
     assert report.usable_instances == 1
-
-
-def test_an_expiring_receipt_still_admits_and_is_not_a_cause() -> None:
-    # `expiring` is a reporting threshold inside the warning window, never an
-    # admission rule: only an elapsed receipt refuses work.
-    report = classify_admission_readiness(
-        _facts(
-            instances=(
-                ReadyInstanceFacts(
-                    instance_id="instance-a",
-                    instance_generation=1,
-                    readiness=_receipt(
-                        verified_at_us=NOW_US - DAY_US, expires_at_us=NOW_US + 3_600_000_000
-                    ),
-                    has_readiness_document=True,
-                    max_slots=4,
-                    held_slots=0,
-                    quarantined_slots=0,
-                ),
-            )
-        )
-    )
-
-    assert report.status is AdmissionReadinessStatus.ADMITTING
-    assert [instance.readiness_state for instance in report.instances] == ["expiring"]
-
-
-def test_an_elapsed_receipt_is_the_engine_cause_and_names_the_renewal() -> None:
-    report = classify_admission_readiness(
-        _facts(
-            instances=(
-                ReadyInstanceFacts(
-                    instance_id="instance-a",
-                    instance_generation=1,
-                    readiness=_receipt(
-                        verified_at_us=NOW_US - 2 * DAY_US, expires_at_us=NOW_US - 1
-                    ),
-                    has_readiness_document=True,
-                    max_slots=4,
-                    held_slots=0,
-                    quarantined_slots=0,
-                ),
-            )
-        )
-    )
-
-    assert report.status is AdmissionReadinessStatus.DEGRADED
-    assert _causes(report) == ["engine_receipt_expired"]
-    assert report.instances[0].readiness_state == "expired"
-    assert report.instances[0].remaining_seconds == -1
-    # The sentence names the create's code and the renewal, so an operator reading
-    # the report is not sent to another command.
-    assert ENGINE_NOT_READY_CODE in (report.detail or "")
-    assert "speechnexus-register-engine --renew-readiness" in (report.detail or "")
-    assert "speechnexus-engine-readiness" in (report.detail or "")
 
 
 @pytest.mark.parametrize(
-    ("document_present", "state"),
-    [(False, "missing"), (True, "invalid")],
+    ("workspace_state", "quota", "cause"),
+    [
+        (None, None, AdmissionReadinessCause.WORKSPACE_NOT_FOUND),
+        ("disabled", None, AdmissionReadinessCause.WORKSPACE_DISABLED),
+        ("active", None, AdmissionReadinessCause.WORKSPACE_NOT_CONFIGURED),
+    ],
 )
-def test_a_receipt_admission_cannot_read_is_the_engine_cause(
-    document_present: bool, state: str
+def test_the_three_workspace_refusals_stay_distinct(
+    workspace_state: str | None, quota: AdmissionQuota | None, cause: AdmissionReadinessCause
 ) -> None:
-    # A receipt that is absent and one that no longer decodes are both unusable for
-    # admission; the report keeps the two states apart for the operator.
-    report = classify_admission_readiness(
-        _facts(
-            instances=(
-                ReadyInstanceFacts(
-                    instance_id="instance-a",
-                    instance_generation=1,
-                    readiness=None,
-                    has_readiness_document=document_present,
-                    max_slots=4,
-                    held_slots=0,
-                    quarantined_slots=0,
-                ),
+    # Merge them and the operator cannot tell "create the workspace" from "enable it"
+    # from "register an engine so a quota row exists" (#845 review).
+    facts = AdmissionReadinessFacts(
+        workspace_id=WORKSPACE,
+        workspace_state=workspace_state,
+        quota=quota,
+        pools=POOLS,
+        runtimes=RUNTIMES,
+        undecodable=(),
+        now_us=NOW,
+    )
+    report = classify_admission_readiness(facts)
+
+    assert report.causes == (cause,)
+    assert CAUSE_CODES[cause] in (report.detail or "")
+
+
+def test_storage_unavailable_is_the_only_cause_when_nothing_was_read() -> None:
+    report = storage_unavailable_readiness(workspace_id=WORKSPACE, now_us=NOW)
+
+    assert report.causes == (AdmissionReadinessCause.STORAGE_UNAVAILABLE,)
+    assert report.instances == () and report.quota is None
+
+
+def test_every_predicate_code_has_a_reported_cause() -> None:
+    # The report may not drop a refusal the create path can produce: a missing entry
+    # here is `KeyError` in production, and a cause added for a code the predicate
+    # never returns is a class no create can confirm.
+    observed: set[str] = set()
+    for state in _STATES:
+        facts = _facts(**_STATES[state])
+        if facts.quota is None:
+            continue
+        observed.update(
+            deployment_refusals(
+                pools=facts.pools,
+                runtimes=facts.runtimes,
+                quota=facts.quota,
+                now_us=facts.now_us,
             )
         )
+    assert observed <= set(CAUSE_BY_REFUSAL_CODE), (
+        "the shared predicate returns a refusal the report cannot name: "
+        f"{sorted(observed - set(CAUSE_BY_REFUSAL_CODE))}"
+    )
+    # ... and the fixture matrix reaches every class the report can produce, so the
+    # equivalence cases above are not a subset of the classes an operator can see.
+    produced = {CAUSE_BY_REFUSAL_CODE[code] for code in CAUSE_BY_REFUSAL_CODE if code in observed}
+    assert produced == {
+        AdmissionReadinessCause.ENGINE_RECEIPT_EXPIRED,
+        AdmissionReadinessCause.ENGINE_STATE_MISMATCH,
+        AdmissionReadinessCause.ENGINE_RESOURCE_DISABLED,
+        AdmissionReadinessCause.CAPACITY_EXHAUSTED,
+    }
+
+
+def test_cause_codes_are_the_declared_public_vocabulary() -> None:
+    # The one place each code is declared, not a copied string.
+    for cause, code in CAUSE_CODES.items():
+        assert isinstance(code, str) and code, cause
+    assert (
+        CAUSE_CODES[AdmissionReadinessCause.ENGINE_RECEIPT_EXPIRED]
+        == (PUBLIC_ADMISSION_CODES["readiness_expired"])
+    )
+    assert (
+        CAUSE_CODES[AdmissionReadinessCause.ENGINE_STATE_MISMATCH]
+        == (PUBLIC_ADMISSION_CODES["reconciliation_required"])
+    )
+    assert (
+        CAUSE_CODES[AdmissionReadinessCause.ENGINE_RESOURCE_DISABLED]
+        == (PUBLIC_ADMISSION_CODES["policy_or_resource_disabled"])
     )
 
-    assert _causes(report) == ["engine_receipt_expired"]
-    assert report.instances[0].readiness_state == state
-    assert report.instances[0].readiness_expires_at_us is None
-    assert report.instances[0].remaining_seconds is None
 
+def test_two_instances_report_admitting_when_one_chain_is_clean() -> None:
+    # A create pins one instance per stage, so one usable instance is enough; the
+    # worse instance must not turn a working deployment into a degraded verdict.
+    (runtime,) = RUNTIMES
+    elapsed = replace(runtime, readiness=replace(_receipt(), expires_at_us=NOW - 1))
+    report = classify_admission_readiness(_facts(runtimes=(elapsed, runtime)))
 
-def test_no_ready_instance_is_the_engine_cause_and_says_so() -> None:
-    report = classify_admission_readiness(_facts(instances=()))
-
-    assert _causes(report) == ["engine_receipt_expired"]
-    assert report.instances == ()
-    assert "No ready engine instance is registered" in (report.detail or "")
-
-
-def test_one_usable_instance_of_two_keeps_the_report_admitting() -> None:
-    # Admission needs one instance that can take the request; a stale sibling is
-    # reported in `instances` without degrading the verdict.
-    stale = ReadyInstanceFacts(
-        instance_id="instance-b",
-        instance_generation=2,
-        readiness=_receipt(verified_at_us=NOW_US - 2 * DAY_US, expires_at_us=NOW_US - 1),
-        has_readiness_document=True,
-        max_slots=4,
-        held_slots=0,
-        quarantined_slots=0,
-    )
-    report = classify_admission_readiness(_facts(instances=(_valid_instance(), stale)))
-
-    assert report.status is AdmissionReadinessStatus.ADMITTING
-    assert [instance.readiness_state for instance in report.instances] == ["valid", "expired"]
+    assert report.admitting
+    assert report.causes == ()
     assert report.usable_instances == 1
 
 
-def test_an_exhausted_quota_is_the_capacity_cause_not_a_storage_one() -> None:
-    report = classify_admission_readiness(
-        _facts(quota=_quota(max_attempts=2, held=1, quarantined=1))
-    )
-
-    assert _causes(report) == ["capacity_exhausted"]
-    assert CAPACITY_EXHAUSTED_CODE in (report.detail or "")
-    assert STORAGE_UNAVAILABLE_CODE not in (report.detail or "")
-    assert report.quota is not None and report.quota.exhausted
-
-
-def test_an_exhausted_instance_slot_is_the_capacity_cause() -> None:
-    report = classify_admission_readiness(
+def test_every_instance_refusing_names_the_least_bad_chain() -> None:
+    (runtime,) = RUNTIMES
+    elapsed = replace(runtime, readiness=replace(_receipt(), expires_at_us=NOW - 1))
+    report: AdmissionReadiness = classify_admission_readiness(
         _facts(
-            instances=(
-                ReadyInstanceFacts(
-                    instance_id="instance-a",
-                    instance_generation=1,
-                    readiness=_receipt(
-                        verified_at_us=NOW_US - DAY_US, expires_at_us=NOW_US + DAY_US
-                    ),
-                    has_readiness_document=True,
-                    max_slots=4,
-                    held_slots=3,
-                    quarantined_slots=1,
-                ),
-            )
+            runtimes=(elapsed, replace(runtime, instance=replace(runtime.instance, held_slots=4)))
         )
     )
 
-    assert _causes(report) == ["capacity_exhausted"]
-    assert "instance-a" in (report.detail or "")
-
-
-def test_a_half_held_instance_is_not_a_capacity_cause() -> None:
-    # One free slot admits a one-slot request: only "no single-slot request fits"
-    # is capacity exhaustion.
-    report = classify_admission_readiness(
-        _facts(
-            instances=(
-                ReadyInstanceFacts(
-                    instance_id="instance-a",
-                    instance_generation=1,
-                    readiness=_receipt(
-                        verified_at_us=NOW_US - DAY_US, expires_at_us=NOW_US + DAY_US
-                    ),
-                    has_readiness_document=True,
-                    max_slots=4,
-                    held_slots=3,
-                    quarantined_slots=0,
-                ),
-            )
-        )
-    )
-
-    assert report.status is AdmissionReadinessStatus.ADMITTING
-
-
-def test_an_unprovisioned_workspace_is_its_own_cause() -> None:
-    report = classify_admission_readiness(_facts(quota=None))
-
-    assert _causes(report) == ["workspace_not_provisioned"]
-    assert WORKSPACE_NOT_CONFIGURED_CODE in (report.detail or "")
-    assert report.quota is None
-
-
-def test_two_refusals_are_reported_together_in_a_stable_order() -> None:
-    # A deployment both past its window and out of quota must not hide one cause
-    # behind the other: a create answers whichever it reaches first, while the
-    # report names the classes.
-    report = classify_admission_readiness(
-        _facts(
-            instances=(
-                ReadyInstanceFacts(
-                    instance_id="instance-a",
-                    instance_generation=1,
-                    readiness=_receipt(
-                        verified_at_us=NOW_US - 2 * DAY_US, expires_at_us=NOW_US - 1
-                    ),
-                    has_readiness_document=True,
-                    max_slots=4,
-                    held_slots=0,
-                    quarantined_slots=0,
-                ),
-            ),
-            quota=_quota(max_attempts=1, held=1),
-        )
-    )
-
-    assert _causes(report) == ["engine_receipt_expired", "capacity_exhausted"]
-
-
-def test_an_unreadable_store_reports_only_the_storage_cause() -> None:
-    # With no facts read, nothing else may be claimed: reporting "admitting"
-    # because nothing was observed is the same lie as a green healthcheck.
-    report = storage_unavailable_readiness(workspace_id=WORKSPACE, now_us=NOW_US)
-
-    assert report.status is AdmissionReadinessStatus.DEGRADED
-    assert _causes(report) == ["storage_unavailable"]
-    assert STORAGE_UNAVAILABLE_CODE in (report.detail or "")
-    assert report.instances == ()
-    assert report.quota is None
-
-
-class _FactsStore:
-    """One injected store: optionally refusing the readiness read."""
-
-    def __init__(self, facts: AdmissionReadinessFacts | None) -> None:
-        self._facts = facts
-        self.reads = 0
-
-    def admission_readiness_facts(self, workspace_id: str) -> AdmissionReadinessFacts:
-        self.reads += 1
-        if self._facts is None:
-            raise PublicJobUnavailableError
-        return self._facts
-
-    def now_us(self) -> int:
-        return NOW_US
-
-
-def _jobs(store: _FactsStore) -> PublicJobs:
-    return PublicJobs(store, store, readiness=store)  # type: ignore[arg-type]
-
-
-def test_the_application_reports_a_store_outage_instead_of_raising() -> None:
-    jobs = _jobs(_FactsStore(None))
-
-    report = jobs.admission_readiness()
-
-    assert _causes(report) == ["storage_unavailable"]
-    assert report.workspace_id == WORKSPACE
-    assert STORAGE_UNAVAILABLE_CODE in (report.detail or "")
-
-
-def test_the_application_classifies_the_facts_it_read() -> None:
-    store = _FactsStore(_facts(quota=_quota(max_attempts=1, held=1)))
-    jobs = _jobs(store)
-
-    report = jobs.admission_readiness()
-
-    assert _causes(report) == ["capacity_exhausted"]
-    assert store.reads == 1
-
-
-def test_the_application_refuses_a_malformed_workspace_identity() -> None:
-    # A caller error is not a degraded deployment: the identity check happens
-    # before the store is read.
-    store = _FactsStore(_facts())
-
-    with pytest.raises(ValueError, match="Invalid public Job identity"):
-        _jobs(store).admission_readiness(workspace_id="Not A Workspace")
-
-    assert store.reads == 0
-
-
-def test_a_deployment_without_the_read_port_refuses_instead_of_guessing() -> None:
-    # An assembly that never wired the report cannot produce a verdict. Claiming one
-    # (either `admitting` or a cause) would be a fabricated observation, so the
-    # application raises the storage refusal and the route answers the declared 503.
-    jobs = PublicJobs(_FactsStore(_facts()), _FactsStore(_facts()))  # type: ignore[arg-type]
-
-    with pytest.raises(PublicJobUnavailableError):
-        jobs.admission_readiness()
-
-
-def test_every_cause_has_one_public_code() -> None:
-    # The enum is the machine-readable contract; a cause without a code would be a
-    # sentence pretending to be a signal.
-    from speechnexus_backend.speech.domain.job_admission_readiness import CAUSE_CODES
-
-    assert set(CAUSE_CODES) == set(AdmissionReadinessCause)
-    assert len(set(CAUSE_CODES.values())) == len(AdmissionReadinessCause)
+    # Both chains refuse and neither is clean; the reported chain is the
+    # deterministic tie-break (fewest refusals, then the lowest codes), so the
+    # verdict names one class instead of hiding the degradation behind a worse set.
+    assert report.causes == (AdmissionReadinessCause.CAPACITY_EXHAUSTED,)

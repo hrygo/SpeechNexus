@@ -518,10 +518,20 @@ export interface paths {
      *
      *     | cause | meaning | create answers |
      *     | --- | --- | --- |
-     *     | `engine_receipt_expired` | No ready engine instance has a usable readiness receipt: elapsed, absent, undecodable, or no ready instance is registered at all. | 503 `engine_not_ready` (503 `engine_state_mismatch` for a receipt that cannot be used at all). Re-sign with `speechnexus-register-engine --renew-readiness`; register the engine when none exists. |
-     *     | `capacity_exhausted` | The workspace quota holds every attempt, or every instance with a usable receipt is at its slot bound. | 429 `job_capacity_exhausted` with `Retry-After`, until a held attempt or slot is released. |
-     *     | `workspace_not_provisioned` | The reported workspace exists but has no quota row, so admission has nothing to charge. | 422 `workspace_not_configured`, deterministically, until the quota is provisioned. |
+     *     | `engine_receipt_expired` | The ready instance the create would pin holds a readiness receipt outside its window. | 503 `engine_not_ready`, `retryable: false`. Re-sign with `speechnexus-register-engine --renew-readiness`. |
+     *     | `engine_state_mismatch` | The instance's stored intent no longer decodes or matches admission's expectation, so the pin cannot be trusted. | 503 `engine_state_mismatch`, `retryable: false`. Reconcile or re-register the instance. |
+     *     | `engine_resource_disabled` | The instance, its pool (including `pool_state` and the owner lease) or the approved recipe is not active. | 503 `engine_resource_disabled`, `retryable: false`. Re-enable the pool or re-approve the recipe. |
+     *     | `capacity_exhausted` | The workspace quota holds every attempt, an instance is at its slot bound, or no ready engine instance is registered to serve a create at all. | 429 `job_capacity_exhausted` with `Retry-After`. A released attempt or slot clears it; the missing-instance arm only clears when an instance becomes ready, which is an operator action, so a client that retries forever sees the same 429. |
+     *     | `workspace_not_found` | No `speech_workspaces` row exists for the reported workspace. | 422 `workspace_not_found`. |
+     *     | `workspace_disabled` | The workspace row exists but is not `active`. | 422 `workspace_disabled`. Enable the workspace. |
+     *     | `workspace_not_configured` | The workspace exists but has no quota row, so admission has nothing to charge. | 422 `workspace_not_configured`, deterministically, until an engine is registered for the workspace. |
      *     | `storage_unavailable` | The coordination store could not be read on the identity that admits creates, so no other fact could be read either; this cause is reported alone. | 503 `job_unavailable`, `retryable: false`. |
+     *
+     *     The classes are not a second verdict: `causes` is produced by the same
+     *     deployment-state predicate `decide_admission` raises from
+     *     (`deployment_refusals`), so a create and this report cannot answer different
+     *     questions. The one exception is `storage_unavailable`, which is this read
+     *     failing rather than a create being refused.
      *
      *     `causes` are evaluated independently and reported together, so a deployment
      *     that is both past its receipt window and out of quota names both; a create
@@ -2494,9 +2504,13 @@ export interface components {
        */
       causes: (
         | "engine_receipt_expired"
+        | "engine_state_mismatch"
+        | "engine_resource_disabled"
         | "capacity_exhausted"
+        | "workspace_not_found"
+        | "workspace_disabled"
+        | "workspace_not_configured"
         | "storage_unavailable"
-        | "workspace_not_provisioned"
       )[];
       workspace_id: components["schemas"]["Identifier"];
       /**
@@ -5049,7 +5063,29 @@ export interface operations {
           });
         };
       };
-      429: components["responses"]["TooManyRequests"];
+      /**
+       * @description Capacity refuses this create: the workspace quota holds every attempt, the
+       *     pinned instance is at its slot bound, or no ready engine instance is
+       *     registered at all. Follow `Retry-After`: a released attempt or slot clears
+       *     it, while the missing-instance arm waits for an operator to register one,
+       *     so an unbounded retry loop sees the same 429.
+       */
+      429: {
+        headers: {
+          "Retry-After"?: components["headers"]["RetryAfter"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"] & {
+            error?: {
+              /** @enum {string} */
+              code?: "job_capacity_exhausted";
+              /** @constant */
+              retryable?: true;
+            };
+          };
+        };
+      };
       /**
        * @description Admission failed an internal invariant (a clock or version counter left
        *     its declared range). This is a deployment defect rather than a refusal:

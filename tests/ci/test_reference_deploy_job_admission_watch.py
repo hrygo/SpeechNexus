@@ -56,8 +56,16 @@ SERVICE = "job-admission-watch"
 COMMAND = "speechnexus-admission-watch"
 PATH = "/v1/nexus/jobs/admission-readiness"
 OPERATION = "getJobAdmissionReadiness"
-CAUSES = ("engine_receipt_expired", "capacity_exhausted", "storage_unavailable")
-OPTIONAL_CAUSE = "workspace_not_provisioned"
+CAUSES = (
+    "engine_receipt_expired",
+    "engine_state_mismatch",
+    "engine_resource_disabled",
+    "capacity_exhausted",
+    "workspace_not_found",
+    "workspace_disabled",
+    "workspace_not_configured",
+    "storage_unavailable",
+)
 ENV_KEYS = (
     "SPEECHNEXUS_ADMISSION_WATCH_URL",
     "SPEECHNEXUS_ADMISSION_WATCH_INTERVAL_SECONDS",
@@ -212,7 +220,7 @@ class OperatorSurfaceTests(unittest.TestCase):
         self.assertIn(PATH, contract)
         schema = contract[contract.index("    AdmissionReadiness:\n") :]
         enum_block = schema[: schema.index("workspace_id:")]
-        for cause in (*CAUSES, OPTIONAL_CAUSE):
+        for cause in CAUSES:
             self.assertIn(f"- {cause}", enum_block, f"the declared enum must carry {cause}")
         # The document is a declared, generated contract surface, not a free-form one.
         self.assertIn("AdmissionReadiness", read(BINDINGS))
@@ -235,7 +243,7 @@ class OperatorSurfaceTests(unittest.TestCase):
             "PUBLIC_ADMISSION_CODES",
         ):
             self.assertIn(code, domain, f"the domain mapping must single-source {code}")
-        for cause in (*CAUSES, OPTIONAL_CAUSE):
+        for cause in CAUSES:
             self.assertIn(f'{cause}"', domain, f"the domain enum must carry {cause}")
 
     def test_the_operator_doc_states_the_division_of_labour(self) -> None:

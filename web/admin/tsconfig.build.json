@@ -1,4 +1,5 @@
 {
+  "$comment": "The production program: test files, src/test/, src/**/dev/ and test-only fixture modules are excluded. `exclude` here replaces the parent list rather than extending it, so any exclusion added to tsconfig.json must be repeated here.",
   "extends": "./tsconfig.json",
   "exclude": [
     "src/**/*.test.ts",

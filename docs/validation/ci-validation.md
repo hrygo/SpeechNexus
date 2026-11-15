@@ -565,7 +565,9 @@ python3 scripts/dev-env/verify-web-image-context.py --build
 python3 -m unittest tests.ci.test_web_image_context -v
 ```
 
-边界：本门禁在 CI 里不运行 `docker build`，因此不证明 Docker 引擎、BuildKit secret 挂载、`.dockerignore` 的完整语义或镜像最终层内容；`.dockerignore` 匹配按「最后一条匹配规则胜出」实现，是 Docker 语义的子集。它证明的是**构建输入集合**：集合外的依赖会让镜像构建失败，而这一点此前没有任何车道能看见。运行期行为、nginx 模板与镜像内容仍由实际镜像构建与部署验收覆盖。
+边界：本门禁在 CI 里不运行 `docker build`，因此不证明 Docker 引擎、BuildKit secret 挂载、`.dockerignore` 的完整语义或镜像最终层内容；`.dockerignore` 匹配按「最后一条匹配规则胜出」实现，是 Docker 语义的子集（真实 BuildKit 对 15 条路径的对照一致，见 `docs/reviews/2026-11-15-web-image-build.md`）。它证明的是**构建输入集合**：集合外的依赖会让镜像构建失败，而这一点此前没有任何车道能看见。运行期行为、nginx 模板与镜像内容仍由实际镜像构建与部署验收覆盖。
+
+静态与动态两半分的能力不同：静态部分（`tests/ci/test_web_image_context.py`，跑在 `changes` 作业）判断 `COPY` 源是否落在被排除路径、根配置输入是否齐备、以及源文件里是否有**相对**路径或 `tests/**` 的可达导入。它**不解析 bare specifier**，因此删掉 `COPY packages/contracts` 时静态部分仍通过，只有 `--build` 部分会报 `TS2307 '@speechnexus/contracts/admin'`。这是可接受的取舍而非假绿：改动 `COPY` 集合需要改 `deploy/`，按 [CI 路由](ci-validation.md#路由与范围) 走 `full` 车道，动态部分必然执行。
 
 ## Web 无障碍与颜色对比度
 

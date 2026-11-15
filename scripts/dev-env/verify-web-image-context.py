@@ -71,6 +71,11 @@ ROOT_CONFIG_INPUTS = (
 )
 # Test material. The image must not ship it: the criterion is that the product build
 # graph does not reach `tests/**`, not that the copy is small.
+# Root inputs whose absence changes policy rather than breaking the build: `pnpm install`
+# and `tsc` both succeed without them, so a green build says nothing about them. They are
+# still required, because shipping an image that resolves dependencies under different
+# engine/save policy than CI is exactly the divergence this check exists to catch.
+POLICY_ONLY_INPUTS = frozenset({".npmrc"})
 TEST_DATA_ROOTS = ("tests/",)
 SKIP_DIRECTORIES = {"node_modules", "dist", "coverage", "test-results", "playwright-report"}
 # Import-like constructs that put a module into a build graph. `import.meta.glob` is
@@ -453,9 +458,18 @@ def static_checks(root: Path) -> list[str]:
         if (root / entry).exists() and not any(_inside(entry, source) for source in sources)
     ]
     if uncopied:
+        required = [entry for entry in uncopied if entry not in POLICY_ONLY_INPUTS]
+        policy = [entry for entry in uncopied if entry in POLICY_ONLY_INPUTS]
+        if required:
+            raise CheckError(
+                f"{DOCKERFILE}: the install and the typecheck read these root files, but the COPY set "
+                f"omits them: {', '.join(required)}. The image would build differently from CI or "
+                "fail to install"
+            )
         raise CheckError(
-            f"{DOCKERFILE}: the install and the typecheck read these root files, but the COPY set "
-            f"omits them: {', '.join(uncopied)}"
+            f"{DOCKERFILE}: the COPY set omits {', '.join(policy)}. The build still succeeds without "
+            "it, but the image would install and compile under a different policy than CI "
+            "(engine-strict, save-exact): a green build is not evidence the policy matches"
         )
 
     packages = workspace_packages(root)

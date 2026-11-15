@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { createProfileParser } from "../src/profile-runtime.mjs";
+import { createAjvProfileParser } from "./support/ajv-profile-parser.mjs";
 import bundle from "../src/speechnexus_contracts/coordination.schema.json" with { type: "json" };
 
-const parse = createProfileParser(bundle);
+const parse = createAjvProfileParser(bundle);
 const fixtures = JSON.parse(
   readFileSync(
     new URL("../../../tests/fixtures/contracts/execution-recovery.json", import.meta.url),

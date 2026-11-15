@@ -1,1 +1,3 @@
-export function createProfileParser(bundle: object): (name: string, value: unknown) => unknown;
+export function createProfileParser(
+  validators: Record<string, (value: unknown) => boolean>,
+): (name: string, value: unknown) => unknown;

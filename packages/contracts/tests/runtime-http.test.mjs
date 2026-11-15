@@ -5,10 +5,12 @@ import { createHttpValidator } from "../src/http-runtime.mjs";
 import { createProfileParser } from "../src/profile-runtime.mjs";
 import bundle from "../src/speechnexus_contracts/runtime-http.schema.json" with { type: "json" };
 import runtime from "../src/speechnexus_contracts/runtime.schema.json" with { type: "json" };
+import { validators as httpValidators } from "../src/speechnexus_contracts/runtime-http.validators.generated.mjs";
+import { validators as runtimeValidators } from "../src/speechnexus_contracts/runtime.validators.generated.mjs";
 import { createValidatedClient, ContractValidationError } from "../src/runtime-http.ts";
 
-const validator = createHttpValidator(bundle);
-const parse = createProfileParser(runtime);
+const validator = createHttpValidator(bundle, httpValidators);
+const parse = createProfileParser(runtimeValidators);
 const examples = JSON.parse(
   readFileSync(new URL("../../../tests/fixtures/contracts/runtime-http.json", import.meta.url)),
 ).examples;

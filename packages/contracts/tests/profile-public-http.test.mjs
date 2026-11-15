@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createHttpValidator } from "../src/http-runtime.mjs";
 import schema from "../src/speechnexus_contracts/profile_public-http.schema.json" with { type: "json" };
-const validator = createHttpValidator(schema);
+import { validators } from "../src/speechnexus_contracts/profile_public-http.validators.generated.mjs";
+
+const validator = createHttpValidator(schema, validators);
 const summary = {
   id: "synthetic-profile",
   revision: "9999999999999999999",

@@ -2,6 +2,7 @@
 import openapiFetch from "openapi-fetch";
 import { createHttpValidator } from "./http-runtime.mjs";
 import bundle from "./speechnexus_contracts/voice_catalogue-http.schema.json" with { type: "json" };
+import { validators } from "./speechnexus_contracts/voice_catalogue-http.validators.generated.mjs";
 import type { paths } from "./speech.generated";
 export { ContractValidationError } from "./errors.mjs";
 export type HttpOperation = "listVoices" | "getVoiceRevision";
@@ -12,7 +13,7 @@ type HttpPaths = {
     "parameters" | "get"
   >;
 };
-const validator = createHttpValidator(bundle);
+const validator = createHttpValidator(bundle, validators);
 export function validateRequest<T>(operation: HttpOperation, value: T): T {
   return validator.validateRequest(operation, value);
 }

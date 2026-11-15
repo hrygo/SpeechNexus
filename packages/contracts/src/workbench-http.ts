@@ -2,6 +2,7 @@
 import openapiFetch from "openapi-fetch";
 import { createHttpValidator } from "./http-runtime.mjs";
 import bundle from "./speechnexus_contracts/workbench-http.schema.json" with { type: "json" };
+import { validators } from "./speechnexus_contracts/workbench-http.validators.generated.mjs";
 import type { paths, components } from "./workbench.generated";
 export { ContractValidationError } from "./errors.mjs";
 export type HttpOperation =
@@ -101,7 +102,7 @@ type HttpPaths = Pick<
   | "/v1/workbench/exports/{export_id}/content"
   | "/v1/workbench/exports/{export_id}/events"
 >;
-const validator = createHttpValidator(bundle);
+const validator = createHttpValidator(bundle, validators);
 export function validateRequest<T>(operation: HttpOperation, value: T): T {
   return validator.validateRequest(operation, value);
 }

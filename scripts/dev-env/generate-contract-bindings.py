@@ -39,6 +39,46 @@ def generate_typescript_types(source: Path, output: Path) -> None:
     )
 
 
+def generate_standalone_validators(schema: Path) -> list[Path]:
+    """Emit the eval-free validator module (and its declaration) for one bundle.
+
+    The runtime used to call ``ajv.compile()`` on first use, which needs
+    ``new Function()`` and therefore ``'unsafe-eval'`` under the deployment CSP.
+    Compiling at generation time keeps the shipped bundle free of dynamic code
+    evaluation; the artifacts are checked bytes like every other generator output.
+    """
+    output = schema.with_name(
+        schema.name.removesuffix(".schema.json") + ".validators.generated.mjs"
+    )
+    completed = subprocess.run(
+        [
+            "node",
+            str(PACKAGE / "scripts/generate-standalone-validators.mjs"),
+            str(schema),
+            str(output),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    # Ajv only warns about an unregistered `format` and then ignores it, which would
+    # weaken the contract silently. The helper turns that warning into a failure; keep
+    # its diagnostics visible either way instead of dropping them into a captured pipe.
+    if completed.returncode != 0:
+        raise SystemExit(
+            f"standalone validator generation failed for {schema}:\n"
+            f"{completed.stdout}{completed.stderr}"
+        )
+    if "unknown format" in completed.stderr:
+        raise SystemExit(
+            f"standalone validator generation for {schema} reported a format problem:\n"
+            f"{completed.stderr}"
+        )
+    declaration = output.with_name(output.name.removesuffix(".mjs") + ".d.mts")
+    return [output, declaration]
+
+
 def flatten_typed_dicts(path: Path) -> None:
     """Flatten allOf field refinement for mutable TypedDicts (template revision 1).
 
@@ -492,6 +532,7 @@ def generate_http_profile(name: str, config: dict[str, Any], destination: Path) 
     python = destination / "src/speechnexus_contracts"
     schema = python / f"{name}-http.schema.json"
     schema.write_text(json.dumps(bundle, ensure_ascii=False, indent=2) + "\n")
+    validators = generate_standalone_validators(schema)
     wrapper = python / f"{name}_http.py"
     event_imports = (
         "from collections.abc import Iterable, Generator\n"
@@ -550,6 +591,8 @@ def generate_http_profile(name: str, config: dict[str, Any], destination: Path) 
         'import { createHttpValidator } from "./http-runtime.mjs";\n'
         f'import bundle from "./speechnexus_contracts/{name}-http.schema.json" '
         'with { type: "json" };\n'
+        f"import {{ validators }} from "
+        f'"./speechnexus_contracts/{name}-http.validators.generated.mjs";\n'
         f"import type {{ {'paths, components' if events else 'paths'} }} "
         f'from "./{types_source}.generated";\n'
         'export { ContractValidationError } from "./errors.mjs";\n'
@@ -557,7 +600,7 @@ def generate_http_profile(name: str, config: dict[str, Any], destination: Path) 
         + " | ".join(json.dumps(n) for n in bundle["x-nexus-http-operations"])
         + ";\n"
         + path_types
-        + "const validator = createHttpValidator(bundle);\n"
+        + "const validator = createHttpValidator(bundle, validators);\n"
         "export function validateRequest<T>(operation: HttpOperation, value: T): T {\n"
         "  return validator.validateRequest(operation, value);\n}\n"
         "export function validateResponse<T>("
@@ -588,7 +631,8 @@ def generate_http_profile(name: str, config: dict[str, Any], destination: Path) 
                 "  return validator.readEvents(operation, source, request, maxEventBytes) "
                 "as AsyncIterable<HttpEvents[K]>;\n}\n"
             )
-    return [path.relative_to(destination) for path in (schema, wrapper, types)]
+    artifacts = (schema, *validators, wrapper, types)
+    return [path.relative_to(destination) for path in artifacts]
 
 
 def generate_profile(name: str, config: dict[str, Any], destination: Path) -> list[Path]:
@@ -608,6 +652,7 @@ def generate_profile(name: str, config: dict[str, Any], destination: Path) -> li
     python = destination / "src/speechnexus_contracts"
     schema = python / f"{name}.schema.json"
     schema.write_text(json.dumps(bundle, ensure_ascii=False, indent=2) + "\n")
+    validators = generate_standalone_validators(schema)
     generate_python_models(schema, python / f"{name}_models.py", static_projection=True)
     parser = (
         '"""Generated from contracts/bindings.json; do not edit."""\n'
@@ -674,14 +719,13 @@ def generate_profile(name: str, config: dict[str, Any], destination: Path) -> li
         "// Generated from contracts/bindings.json; do not edit.\n"
         'import { createProfileParser } from "./profile-runtime.mjs";\n'
         'export { ContractValidationError } from "./errors.mjs";\n'
-        f'import bundle from "./speechnexus_contracts/{name}.schema.json" '
-        'with { type: "json" };\n'
+        f'import {{ validators }} from "./speechnexus_contracts/{name}.validators.generated.mjs";\n'
         f'import type {{ components }} from "./{types_name}.generated";\n'
         f'export type {{ components }} from "./{types_name}.generated";\n'
         'export type Contracts = Pick<components["schemas"], '
         + " | ".join(json.dumps(entry) for entry in names)
         + ">;\n"
-        "const parseValue = createProfileParser(bundle);\n"
+        "const parseValue = createProfileParser(validators);\n"
         "export function parse<K extends keyof Contracts>("
         "name: K, value: unknown): Contracts[K] {\n"
         "  return parseValue(name, value) as Contracts[K];\n}\n"
@@ -697,6 +741,7 @@ def generate_profile(name: str, config: dict[str, Any], destination: Path) -> li
     (destination / f"src/{name}.ts").write_text(script)
     outputs = [
         schema.relative_to(destination),
+        *[path.relative_to(destination) for path in validators],
         (python / f"{name}_models.py").relative_to(destination),
         (python / f"{name}.py").relative_to(destination),
         Path(f"src/{name}.ts"),
@@ -781,6 +826,7 @@ def generate(destination: Path) -> list[Path]:
     python.mkdir(parents=True, exist_ok=True)
     schema = python / "file.schema.json"
     schema.write_text(json.dumps(bundle_contracts(manifest), ensure_ascii=False, indent=2) + "\n")
+    file_validators = generate_standalone_validators(schema)
     coordination = python / "coordination.schema.json"
     coordination.write_text(
         json.dumps(bundle_contracts(manifest["coordination"]), ensure_ascii=False, indent=2) + "\n"
@@ -876,6 +922,7 @@ def generate(destination: Path) -> list[Path]:
     )
     outputs = [
         Path("src/speechnexus_contracts/file.schema.json"),
+        *[path.relative_to(destination) for path in file_validators],
         Path("src/speechnexus_contracts/coordination.schema.json"),
         Path("src/speechnexus_contracts/models.py"),
         Path("src/speechnexus_contracts/parsers.py"),

@@ -7,6 +7,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { createHttpValidator } from "../../packages/contracts/src/http-runtime.mjs";
+import { validators as workbenchHttpValidators } from "../../packages/contracts/src/speechnexus_contracts/workbench-http.validators.generated.mjs";
 import { parse as parseSpeech } from "../../packages/contracts/src/runtime.mjs";
 
 const { values } = parseArgs({
@@ -32,6 +33,7 @@ const validator = createHttpValidator(
       "utf8",
     ),
   ),
+  workbenchHttpValidators,
 );
 const sample = (operation) =>
   structuredClone(

@@ -677,6 +677,36 @@ python3 -m unittest tests.ci.test_web_image_context -v
 
 静态与动态两半分的能力不同：静态部分（`tests/ci/test_web_image_context.py`，跑在 `changes` 作业）判断 `COPY` 源是否落在被排除路径、根配置输入是否齐备、以及源文件里是否有**相对**路径或 `tests/**` 的可达导入。它**不解析 bare specifier**，因此删掉 `COPY packages/contracts` 时静态部分仍通过，只有 `--build` 部分会报 `TS2307 '@speechnexus/contracts/admin'`。这是可接受的取舍而非假绿：改动 `COPY` 集合需要改 `deploy/`，按 [CI 路由](ci-validation.md#路由与范围) 走 `full` 车道，动态部分必然执行。
 
+## Web 部署安全头首屏门禁
+
+`web`／全量路由在 `pnpm build` 之后、预览类浏览器门禁之外运行 `pnpm test:deployed`。它服务的不是 `vite preview`：用已构建的 `web/<app>/dist` 与 `deploy/web/nginx.conf` 里**实际发送的响应头**起两个静态服务，再用真实 Chromium 打开首屏。原因是预览门禁看不见部署策略：`vite preview` 不带 `Content-Security-Policy`，镜像却发 `script-src 'self'`。#840 中两个入口在镜像里白屏——首个渲染路径上的契约校验器在运行期用 `Function(...)` 从源码文本构造校验函数（Ajv 源码里写作 `new Function`，产物里被压缩成 `Function(...)`），浏览器按 eval 处理并抛 `EvalError`，页面正文为空、无标题；同一份 `dist` 在无 CSP 服务下完整渲染，所以无障碍与行为门禁全绿而缺陷只出现在部署里。
+
+| 覆盖 | 判据 |
+| --- | --- |
+| 真实策略 | 响应头 `Content-Security-Policy` 必须逐字等于 `deploy/web/nginx.conf` 解析出的值；页面不得依赖运行期动态求值 |
+| 首屏渲染 | 两个入口分别断言 `document.body.innerText` 非空、一级标题可见 |
+| 无静默失败 | 断言 0 个 `pageerror` 与 0 个 console error；CSP 拒绝会同时产生两者，不会沉默通过 |
+| 策略一致性 | `nginx.conf` 中每处 `Content-Security-Policy` `add_header` 必须存在（至少 4 处）且取值一致；少一处或取值不同即失败，避免只改部分 location 时门禁按其中一处假绿 |
+| 不削弱策略 | 解析出的策略必须仍含 `default-src 'self'` 与 `script-src 'self'`，且不得含 `'unsafe-eval'`：把 CSP 放宽来让页面通过会直接失败 |
+| 端口隔离 | 静态服务绑定 `127.0.0.1:4280`（admin）与 `:4281`（workbench），与预览门禁的 4173/4174 不同，可与它们同作业顺序执行而不争端口 |
+
+不依赖 Docker：CSP 是 `nginx.conf` 的纯静态字面量（不含 `${…}`），服务端按 `location /` 的 `add_header` 集合回放，SPA 回退与 `/assets/` 的 404 语义按 `try_files` 复刻，`/v1`、`/v2` 返回可被客户端解析的 503 拒绝。门禁自证覆盖策略解析的四条反例（location 间不一致、少一处声明、含 `'unsafe-eval'`、缺 `location /`），并在改动前的构建上验证首屏断言会红。
+
+边界：这不是「在真镜像里跑过浏览器」。nginx 的 `always` 语义、`location` 内 `add_header` 的继承与覆盖规则、重复响应头处理、`envsubst` 对代理变量的替换、真实上游代理与 TLS 均未覆盖；这些仍需实际镜像构建与容器运行按需检查。门禁证明的是：在**部署配置声明的策略**下，两个入口的首屏能渲染且不产生页面错误。
+
+本机复现（需先 `pnpm build`）：
+
+```sh
+pnpm install --frozen-lockfile
+pnpm build
+pnpm exec playwright install --only-shell chromium
+pnpm test:deployed
+```
+
+策略解析的反例（location 间不一致、少一处声明、含 `'unsafe-eval'`、缺 `location /`）与首屏断言在同一个规格内，`pnpm test:deployed` 一并执行。
+
+预编译校验器自身的两条守护不在本门禁里：`packages/contracts/tests/formats.test.mjs` 用非法 `date-time` 断言生成的校验器仍返回 `false`，`make contracts-drift`（CI 的 `python_static` 车道）在生成期拒绝未在 `ajv-formats` 注册的 `format`。体积回归（admin +72%、workbench +75% gzip，首屏单个 2.5／3.3 MB 原始脚本）与拆分的真实成本记录在[契约包 README 的跟踪项](../../packages/contracts/README.md#bundle-size-of-the-precompiled-validators)。
+
 ## Web 无障碍与颜色对比度
 
 Web／全量路由在现有受保护的 Web 作业中，构建后运行 `pnpm test:a11y`。使用锁定的 `@axe-core/playwright` 与现有 Playwright，只安装 Chromium headless shell；两个预览服务绑定 `127.0.0.1`，严格检查端口，不复用其他服务，不启动后端或模型。浏览器请求仅允许这两个回环端口。文档路由不安装浏览器。

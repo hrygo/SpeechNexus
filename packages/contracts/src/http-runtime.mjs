@@ -64,8 +64,8 @@ async function boundedJson(message, limit, errorMessage) {
   }
 }
 
-export function createHttpValidator(bundle) {
-  const parse = createProfileParser(bundle);
+export function createHttpValidator(bundle, validators) {
+  const parse = createProfileParser(validators);
   const operations = bundle["x-nexus-http-operations"];
   function operation(name) {
     if (!Object.hasOwn(operations, name)) throw new Error("Unknown HTTP operation");

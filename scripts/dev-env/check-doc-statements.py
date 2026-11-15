@@ -30,7 +30,6 @@ missing or unreadable.
 from __future__ import annotations
 
 import argparse
-import ast
 import re
 import sys
 from dataclasses import dataclass
@@ -186,7 +185,9 @@ CLAIMS = (
     ),
 )
 
-ROUTE_METHODS = frozenset({"get", "post", "put", "patch", "delete"})
+PREFIX_PATTERN = re.compile(r'^PREFIX = "([^"]+)"$', re.MULTILINE)
+DECORATOR_PATTERN = re.compile(r"@router\.(get|post|put|patch|delete)\(([^)]*)\)")
+MOUNT_PATTERN = re.compile(r"app\.include_router\(\s*create_job_router\(")
 
 
 def _read(root: Path, path: str) -> str:
@@ -201,50 +202,32 @@ def _cited_lines(text: str, path: str) -> list[int]:
     return [int(match.group(1)) for match in re.finditer(re.escape(path) + r":(\d+)", text)]
 
 
-def _job_route_prefix(tree: ast.Module) -> str:
-    for node in tree.body:
-        if (
-            isinstance(node, ast.Assign)
-            and len(node.targets) == 1
-            and isinstance(node.targets[0], ast.Name)
-            and node.targets[0].id == "PREFIX"
-            and isinstance(node.value, ast.Constant)
-            and isinstance(node.value.value, str)
-        ):
-            return node.value.value
-    raise ValueError("jobs.py no longer defines a literal PREFIX")
-
-
-def _path_expression(node: ast.expr, prefix: str) -> str:
-    if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return node.value
-    if isinstance(node, ast.Name) and node.id == "PREFIX":
-        return prefix
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-        return _path_expression(node.left, prefix) + _path_expression(node.right, prefix)
-    raise ValueError("jobs.py registers a route path this guard cannot read")
+def _route_path(expression: str, prefix: str) -> str:
+    """Evaluate one registered path expression without importing the module."""
+    argument = expression.split(",", 1)[0].strip()
+    pieces: list[str] = []
+    for part in argument.split("+"):
+        token = part.strip()
+        if token == "PREFIX":
+            pieces.append(prefix)
+        elif len(token) >= 2 and token[0] == token[-1] and token[0] in "\"'":
+            pieces.append(token[1:-1])
+        else:
+            raise ValueError(f"jobs.py registers a route path this guard cannot read: {argument!r}")
+    return "".join(pieces)
 
 
 def job_routes(root: Path) -> set[tuple[str, str]]:
     """Every (method, path) the public Job router registers."""
-    tree = ast.parse(_read(root, JOBS_ROUTER))
-    prefix = _job_route_prefix(tree)
-    routes: set[tuple[str, str]] = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        for decorator in node.decorator_list:
-            if not (isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Attribute)):
-                continue
-            method = decorator.func.attr
-            if (
-                not isinstance(decorator.func.value, ast.Name)
-                or decorator.func.value.id != "router"
-            ):
-                continue
-            if method not in ROUTE_METHODS or not decorator.args:
-                continue
-            routes.add((method.upper(), _path_expression(decorator.args[0], prefix)))
+    text = _read(root, JOBS_ROUTER)
+    match = PREFIX_PATTERN.search(text)
+    if match is None:
+        raise ValueError("jobs.py no longer defines a literal PREFIX")
+    prefix = match.group(1)
+    routes = {
+        (method.upper(), _route_path(expression, prefix))
+        for method, expression in DECORATOR_PATTERN.findall(text)
+    }
     if not routes:
         raise ValueError("jobs.py no longer registers routes through `router`")
     return routes
@@ -262,20 +245,7 @@ def documented_job_routes(root: Path) -> set[tuple[str, str]]:
 
 def job_router_mounted(root: Path) -> bool:
     """Whether app.py mounts the public Job router itself."""
-    tree = ast.parse(_read(root, APP))
-    for node in ast.walk(tree):
-        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
-            continue
-        if node.func.attr != "include_router" or not node.args:
-            continue
-        first = node.args[0]
-        if (
-            isinstance(first, ast.Call)
-            and isinstance(first.func, ast.Name)
-            and first.func.id == "create_job_router"
-        ):
-            return True
-    return False
+    return MOUNT_PATTERN.search(_read(root, APP)) is not None
 
 
 def _route_set_problems(root: Path) -> list[str]:

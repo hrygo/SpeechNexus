@@ -77,3 +77,52 @@ admin = psycopg.connect(URL, autocommit=True)
 ```
 
 随机 schema 不能抵消这个错误：schema 仍会建在作者本机的 `sn_profile_it`，而不是 CI fixture 指定的数据库；缺少该库时连接在迁移断言前就失败。禁止通过只随机化 schema、保留固定库名或增加本地默认 DSN 来“修复”它。
+
+## 已知 flake 复现条件（`flake_harness`）
+
+`#775` 记录过的“CI 等价条件”曾只存在于一次性会话里：没有入口，下一个人无法重放。现行入口是 [`flake_harness.py`](flake_harness.py) 与其支撑模块 [`tests/support/flake_conditions.py`](../support/flake_conditions.py)，把已确认会踩到的两类慢条件落成**显式触发**的单次运行：
+
+- **提交慢**（slow commit）：PostgreSQL `commit_delay` 与 InnoDB `binlog_group_commit_sync_delay`。
+- **往返慢**（slow round trip）：回环 TCP 延迟代理，两个 DSN 都过代理，每个转发 chunk 在每个方向各延迟一次。
+
+### 何时使用
+
+- 改动 `runtime_intent_deliveries` 的租约/退避窗口、outbox 行锁顺序，或任何在提交完成前读取时钟的断言时，用它确认用例在慢提交与慢往返下仍然成立。
+- 用某条用例证明“有效静默期 = `delay −` 提交延迟”一类时序性质之前，先确认它在 10 ms/chunk 代理下不变。
+
+条件会改写服务器全局参数并持续制造提交负载，因此**不默认开启**：没有 conftest 钩子、没有 marker 自动应用，直接运行 pytest 与 `make integration-test` 都不受影响；必须显式给出 `--condition`。
+
+### 前置条件
+
+- 两个隔离 DSN 必须同时可用，与集成套件一致：`SPEECHNEXUS_TEST_DATABASE_URL`、`SPEECHNEXUS_TEST_MYSQL_URL`。缺任一侧时 harness 以退出码 2 失败并点名变量，不跳过。
+- 起库方式：InnoDB 用 `./scripts/dev-env/mysql-service.sh`（受管容器，`127.0.0.1:55434`）；PG 用项目隔离实例或[本地双库验证](../operations/local-dual-database.md#临时-postgresql-实例)里的一次性 `postgres:16.15` 容器。两者都只跑本机回环，不指向共享实例。
+- PG 侧 DSN 需要超级用户权限（`ALTER SYSTEM` + `pg_reload_conf`）。`commit_delay` 单项无效，且上限为 100000 µs；harness 同时设置 `commit_siblings=1` 并保持 12 个忙提交连接。
+- MySQL 侧需要 `log_bin=ON`（容器/CI 的 8.4 默认值）与 `SET GLOBAL` 权限；`binlog_group_commit_sync_delay` 对单个提交事务即生效，不需要忙提交负载。
+
+### 用法
+
+一条命令，`--` 之后是 pytest 参数（省略时跑本目录为这些条件维护的两条交付用例）：
+
+```bash
+SPEECHNEXUS_TEST_DATABASE_URL=... SPEECHNEXUS_TEST_MYSQL_URL=... \
+  uv run python -m tests.integration.flake_harness --condition latency-proxy
+```
+
+| `--condition` | 机制与生效证据 | 预期 |
+| --- | --- | --- |
+| `latency-proxy` | 回环代理，`--chunk-delay-ms`（默认 10）按 chunk 双向延迟；启动时打印两个 DSN 的代理端口 | `test_mismatched_receipt_and_retry_never_reopen_submission` 稳定绿（`#795` 的退避窗口已提到 30 s）；`test_ack_rechecks_expiration_after_the_actual_outbox_row_lock` 稳定绿（租约窗口 `LEASE_WINDOW_US` = 2.5 s）；把该窗口回退到产品下限 1 s 时稳定红：`Failed: ACK did not encounter the real outbox row lock` |
+| `commit-delay` | PG `commit_delay=100000` + `commit_siblings=1` + 12 个忙提交；InnoDB `binlog_group_commit_sync_delay=200000`；启动时打印基线与条件下的提交中位数 | 提交中位数从 <1 ms 升到约 100 ms（PG）/ 220 ms（InnoDB），statement 往返不变 |
+| `both` | 两类条件叠加 | 用于确认租约窗口同时满足“大于建立耗时”与“阻塞等待小于 3 s `innodb_lock_wait_timeout`” |
+
+`--commit-delay-us` 同时覆盖两个引擎的值；PG 超过 100000 会在启动时被拒绝。条件未达到配置延迟的一半中位提交延迟时 harness 直接失败，防止把“没有生效的条件”当成证据。
+
+### 清理
+
+正常退出与被测用例失败时都由 `ExitStack`/`finally` 收尾：`ALTER SYSTEM RESET commit_delay`、`ALTER SYSTEM RESET commit_siblings` + `pg_reload_conf` 并读回参数值确认，`SET GLOBAL binlog_group_commit_sync_delay` 还原为运行前的值，停止忙提交线程、删除临时 schema、关闭代理监听。若进程在启动条件后被强杀，按同一顺序手工复原并在 `SHOW commit_delay`、`SELECT @@GLOBAL.binlog_group_commit_sync_delay` 上核对。
+
+### 它证明什么、不证明什么
+
+- 证明：指定用例在**对端提交慢**或**TCP 往返慢**时仍给出断言要求的结论；未修用例在这些条件下给出报告里的确定性失败。即“只能由当时那个 agent 重现”变成了任何人可重放的一条命令。
+- 证明：条件确实生效——启动输出包含基线/条件下的提交中位数、代理端口映射，条件不达标即失败。
+- 不证明：真实网络故障、丢包、HA、跨主机时钟偏移、真实慢磁盘或 fsync。代理只延迟字节，`commit_delay` 只延迟提交，两者都不模拟宕机与崩溃恢复。
+- 不证明：租约/退避的产品设计本身正确；它只说明既有断言在这些条件下成立。

@@ -70,9 +70,9 @@ jobs:
             --output="$GITHUB_OUTPUT" --summary="$GITHUB_STEP_SUMMARY"
 
       # Review pull requests carry review artifacts only
-      # (`docs/operations/agent-delivery-sop.md`, step 4). This lane and
-      # `docs_matrix` are the two jobs without a scope filter, so a
-      # docs-only review PR reaches both; only this one already holds a checkout
+      # (`docs/operations/agent-delivery-sop.md`, step 4). This lane,
+      # `docs_matrix` and `docs_refs` are the jobs without a scope filter, so a
+      # docs-only review PR reaches all of them; only this one already holds a checkout
       # and the routing step above, so the boundary check needs no second checkout
       # and its red is attributed to the route. The change set is the pull
       # request's own delta: `base.sha` is frozen at the pull request's last event,
@@ -185,6 +185,31 @@ jobs:
             --snapshot-at "$SNAPSHOT_AT" \
             --output docs/plans/delivery-tracking.md
           git diff --exit-code -- docs/plans/delivery-tracking.md
+
+  # `文件:行号` 引用门禁。终态文档（`docs/` 下除过程记录外的全部 Markdown）按
+  # AGENTS.md 描述当前实现，一条坏引用即红；基线
+  # `scripts/dev-env/doc-refs-baseline.json` 的 `terminal` 列表为空，所以这是全量
+  # 门禁，棘轮只为将来「必须接受一条」留出在 PR diff 里可见的出口。过程记录
+  # （`docs/reviews/`、`docs/archive/`、dated `docs/validation/YYYY-MM-DD-*.md`）
+  # 按约定保留原时点事实：审查报告引用的是当时的代码行、临时 worktree 路径和
+  # 从未提交的探针文件，失效本身是证据，改它们等于篡改证据。因此这些目录只计数、
+  # 不门禁，报告里给出分目录计数与相对基线的增量（#859）。
+  # 没有作业级 `if:`：源码 PR 删改被引用文件同样会让终态文档的引用失效，docs 范围
+  # 的 PR 也必须跑到它，所以它和 `routing`、`docs_matrix` 一样每个 PR 都执行。
+  # 只依赖 runner 的系统 Python 3.12+ 与标准库，不安装项目依赖。
+  docs_refs:
+    name: "Docs: path:line references"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Check documented path:line references against the ratchet baseline
+        run: python3 scripts/dev-env/check-doc-refs.py --baseline scripts/dev-env/doc-refs-baseline.json
 
   python_tests:
     name: "Python: tests, coverage and build"
@@ -884,6 +909,7 @@ jobs:
         routing,
         docs_format,
         docs_matrix,
+        docs_refs,
         python_gate,
         integration_gate,
         integration_shards,
@@ -901,6 +927,7 @@ jobs:
           MODE: ${{ needs.routing.outputs.mode }}
           ROUTING_RESULT: ${{ needs.routing.result }}
           MATRIX_RESULT: ${{ needs.docs_matrix.result }}
+          DOCS_REFS_RESULT: ${{ needs.docs_refs.result }}
           DOCS_FORMAT_RESULT: ${{ needs.docs_format.result }}
           PYTHON_RESULT: ${{ needs.python_gate.result }}
           INTEGRATION_GATE_RESULT: ${{ needs.integration_gate.result }}
@@ -917,6 +944,12 @@ jobs:
           fi
           if [[ "$MATRIX_RESULT" != success ]]; then
             echo "::error::docs_matrix=$MATRIX_RESULT"
+            exit 1
+          fi
+          # `docs_refs` 没有范围过滤，任何 PR 都执行，因此任何结果都不是 success 即为红：
+          # 终态文档的一条新增坏引用必须挡住合并（#859）。
+          if [[ "$DOCS_REFS_RESULT" != success ]]; then
+            echo "::error::docs_refs=$DOCS_REFS_RESULT"
             exit 1
           fi
           if [[ "$CONTROLLER_RESULT" != success ]]; then

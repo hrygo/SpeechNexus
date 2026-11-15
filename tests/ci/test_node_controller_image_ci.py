@@ -85,6 +85,7 @@ class ImageWorkflowTests(unittest.TestCase):
             "MODE": "docs",
             "ROUTING_RESULT": "success",
             "MATRIX_RESULT": "success",
+            "DOCS_REFS_RESULT": "success",
             "DOCS_FORMAT_RESULT": "success",
             "PYTHON_RESULT": "skipped",
             "INTEGRATION_GATE_RESULT": "skipped",
@@ -119,14 +120,41 @@ class ImageWorkflowTests(unittest.TestCase):
         }
         for result in ("success", "failure", "cancelled", "skipped", ""):
             with self.subTest(result=result):
-                actual = execute(FINAL_GATE, {**base, "MATRIX_RESULT": result})
+                actual = execute(
+                    FINAL_GATE, {**base, "MATRIX_RESULT": result, "DOCS_REFS_RESULT": "success"}
+                )
                 self.assertEqual(actual.returncode == 0, result == "success", actual.stderr)
+
+    def test_final_gate_requires_the_document_reference_lane(self) -> None:
+        # `docs_refs` has no scope filter: it runs for every scope, so the gate must
+        # reject anything but success there, including an unexpected skip (#859).
+        base = {
+            "MODE": "full",
+            "ROUTING_RESULT": "success",
+            "MATRIX_RESULT": "success",
+            "DOCS_FORMAT_RESULT": "skipped",
+            "PYTHON_RESULT": "success",
+            "INTEGRATION_GATE_RESULT": "success",
+            "INTEGRATION_RESULT": "success",
+            "WEB_RESULT": "success",
+            "COMPOSE_RESULT": "success",
+            "ACCEPTANCE_RESULT": "success",
+            "CONTROLLER_RESULT": "success",
+            "CONTROLLER_REQUIRED": "false",
+        }
+        actual = execute(FINAL_GATE, {**base, "DOCS_REFS_RESULT": "success"})
+        self.assertEqual(actual.returncode, 0, actual.stdout + actual.stderr)
+        for result in ("skipped", "failure", "cancelled", ""):
+            with self.subTest(result=result):
+                actual = execute(FINAL_GATE, {**base, "DOCS_REFS_RESULT": result})
+                self.assertNotEqual(actual.returncode, 0, actual.stderr)
 
     def test_final_gate_requires_the_reference_acceptance_entry(self) -> None:
         base = {
             "MODE": "docs",
             "ROUTING_RESULT": "success",
             "MATRIX_RESULT": "success",
+            "DOCS_REFS_RESULT": "success",
             "DOCS_FORMAT_RESULT": "success",
             "PYTHON_RESULT": "skipped",
             "INTEGRATION_GATE_RESULT": "skipped",
@@ -151,6 +179,7 @@ class ImageWorkflowTests(unittest.TestCase):
             "MODE": "web",
             "ROUTING_RESULT": "success",
             "MATRIX_RESULT": "success",
+            "DOCS_REFS_RESULT": "success",
             "DOCS_FORMAT_RESULT": "skipped",
             "CONTROLLER_RESULT": "success",
             "CONTROLLER_REQUIRED": "false",
@@ -183,6 +212,7 @@ class ImageWorkflowTests(unittest.TestCase):
         base = {
             "ROUTING_RESULT": "success",
             "MATRIX_RESULT": "success",
+            "DOCS_REFS_RESULT": "success",
             "CONTROLLER_RESULT": "success",
             "CONTROLLER_REQUIRED": "false",
         }
@@ -214,6 +244,7 @@ class ImageWorkflowTests(unittest.TestCase):
             "MODE": "docs",
             "ROUTING_RESULT": "success",
             "MATRIX_RESULT": "success",
+            "DOCS_REFS_RESULT": "success",
             "PYTHON_RESULT": "skipped",
             "INTEGRATION_GATE_RESULT": "skipped",
             "INTEGRATION_RESULT": "skipped",

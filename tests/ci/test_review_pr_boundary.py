@@ -716,11 +716,11 @@ class WiringTests(unittest.TestCase):
         # look compliant in step 4 (#738 review, MF-2).
         self.assertIn("`docs/reviews/` 下的报告文件", SOP_STEP_4)
 
-    def test_both_unfiltered_lanes_are_acknowledged(self) -> None:
-        # `docs_matrix` has no job-level `if:` either; claiming `routing`
-        # is the only unfiltered lane is a fact error the docs must not repeat
-        # (#738 review, MF-1).
-        for job in ("routing", "docs_matrix"):
+    def test_every_unfiltered_lane_is_acknowledged(self) -> None:
+        # `docs_matrix` and `docs_refs` have no job-level `if:` either; claiming
+        # `routing` is the only unfiltered lane is a fact error the docs must not
+        # repeat (#738 review, MF-1; `docs_refs` added in #859).
+        for job in ("routing", "docs_matrix", "docs_refs"):
             with self.subTest(job=job):
                 self.assertNotIn("\n    if:", self.job_block(job))
         self.assertNotIn("唯一没有任何 `if:`", VALIDATION_DOC)

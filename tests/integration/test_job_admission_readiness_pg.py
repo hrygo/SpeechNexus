@@ -323,7 +323,7 @@ async def test_a_workspace_without_a_quota_row_is_its_own_class(
         assert response.status_code == 200, response.text
         report = response.json()
         assert report["status"] == "degraded"
-        assert _causes(report) == ["workspace_not_provisioned"]
+        assert _causes(report) == ["workspace_not_configured"]
         assert report["capacity"] is None
         refused = await client.post(
             PREFIX,
@@ -365,3 +365,42 @@ async def test_an_unreadable_store_is_the_storage_class_alone(
             assert _error(refused) == ("job_unavailable", False)
     finally:
         db.query(f"GRANT SELECT ON workspace_quotas TO {admission_database.admission_role}")
+
+
+async def test_a_draining_pool_answers_the_same_class_in_the_report_and_the_create(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """The load-bearing case: the report's facts are *loaded* correctly, not just classified.
+
+    The unit equivalence matrix proves the create path and the report share one rule.
+    It cannot prove the production loader puts ``pool_state`` into the facts at all --
+    the earlier revision read the instance and quota rows and never loaded the pool,
+    so it answered ``admitting`` while a create answered 429. This case is the same
+    process, one isolated database, one measured state: flip the pool to ``draining``
+    and assert the report's cause names exactly the code the create returns.
+    """
+    db = admission_database.runtime.foundation.database
+    _seed(admission_database)
+    async with AsyncClient(
+        transport=ASGITransport(app=_app(admission_database)), base_url="http://test"
+    ) as client:
+        healthy = await _report(client)
+        assert healthy["status"] == "admitting", healthy
+        db.query("UPDATE resource_pools SET pool_state = 'draining'")
+        report = await _report(client)
+        assert report["status"] == "degraded", report
+        # Measured, not assumed: a draining pool makes the instance unselectable, and
+        # the create answers its capacity refusal (429) for that -- the pool rule
+        # inside admission never runs. The report names the code the create returns.
+        assert _causes(report) == ["capacity_exhausted"], report
+        refused = await client.post(
+            PREFIX, json=_body(), headers={"Idempotency-Key": "synthetic-report-draining"}
+        )
+        assert refused.status_code == 429, refused.text
+        assert _error(refused) == ("job_capacity_exhausted", True)
+        assert db.query("SELECT count(*) AS n FROM speech_jobs")[0]["n"] == 0
+        # Restoring the pool restores both answers, so the class tracks the state
+        # rather than a cached verdict.
+        db.query("UPDATE resource_pools SET pool_state = 'active'")
+        restored = await _report(client)
+        assert restored["status"] == "admitting", restored

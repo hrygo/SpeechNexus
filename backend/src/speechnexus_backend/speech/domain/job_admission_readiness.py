@@ -289,6 +289,16 @@ def _chain_refusals(
     )
 
 
+def _selectable(facts: AdmissionReadinessFacts, runtime: AdmissionRuntime) -> bool:
+    """Whether a create could pin this instance at all."""
+    if runtime.instance.instance_state != "ready":
+        return False
+    pool_id = runtime.instance.plan.binding.pool_id
+    return any(
+        pool.ownership.pool_id == pool_id and pool.pool_state == "active" for pool in facts.pools
+    )
+
+
 def _classify_chains(
     facts: AdmissionReadinessFacts,
     quota: AdmissionQuota,
@@ -300,8 +310,21 @@ def _classify_chains(
     fewest refusals (then the lowest codes), so a degradation is never hidden behind
     a worse-fitting instance while some other instance is genuinely unusable.
     """
-    chains = [_chain_refusals(facts, runtime, quota) for runtime in facts.runtimes]
-    chains.extend(("reconciliation_required",) for _ in facts.undecodable)
+    # Selection runs before admission: the create path refuses a non-active pool or a
+    # non-ready instance with ``job_capacity_exhausted``
+    # (``public_job_admission``'s instance selection), and admission's own pool rule
+    # never sees those rows. Measured on an isolated database, so the report models
+    # the same step instead of the rule that runs after it.
+    chains = [
+        _chain_refusals(facts, runtime, quota)
+        for runtime in facts.runtimes
+        if _selectable(facts, runtime)
+    ]
+    if chains:
+        # A ready instance whose stored intent cannot be decoded is still selected by a
+        # create and then refused by admission, so it counts only where selection
+        # itself can succeed; with nothing selectable the create answers capacity.
+        chains.extend(("reconciliation_required",) for _ in facts.undecodable)
     if not chains:
         # No ready engine at all: the create path answers the capacity refusal.
         return ("capacity_exhausted",), ()

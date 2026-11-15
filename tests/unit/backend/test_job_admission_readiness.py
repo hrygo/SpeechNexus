@@ -103,11 +103,19 @@ def _create_code(facts: AdmissionReadinessFacts) -> str | None:
     """
     quota = facts.quota
     assert quota is not None
+    # Selection runs before admission: no ready instance, a non-ready instance, or a
+    # pool that is not active all answer the capacity refusal
+    # (`public_job_admission`), so those states never reach the decision below.
     if not facts.runtimes:
-        # The create path selects a pinned ready instance before admission runs and
-        # answers the capacity refusal when none exists
-        # (`public_job_admission._instance`), so the empty case never reaches the
-        # decision below.
+        return "job_capacity_exhausted"
+    pinned = facts.runtimes[0]
+    pool_id = pinned.instance.plan.binding.pool_id
+    selected = [
+        pool
+        for pool in facts.pools
+        if pool.ownership.pool_id == pool_id and pool.pool_state == "active"
+    ]
+    if pinned.instance.instance_state != "ready" or not selected:
         return "job_capacity_exhausted"
     try:
         require_live_authority(COMMAND, facts.pools, facts.runtimes, facts.now_us)
@@ -182,12 +190,14 @@ def test_the_report_answers_exactly_what_a_create_answers(state: str) -> None:
 
 def test_a_draining_pool_is_reported_instead_of_admitting() -> None:
     # The measured counter-example, pinned on its own so a regression names itself.
+    # A draining pool makes the instance unselectable, and a create answers its
+    # capacity refusal (429) for that; the pool rule inside admission never runs.
     facts = _facts(pools=(replace(POOLS[0], pool_state="draining"),))
     report = classify_admission_readiness(facts)
 
-    assert _create_code(facts) == "engine_resource_disabled"
+    assert _create_code(facts) == "job_capacity_exhausted"
     assert report.status is AdmissionReadinessStatus.DEGRADED
-    assert report.causes == (AdmissionReadinessCause.ENGINE_RESOURCE_DISABLED,)
+    assert report.causes == (AdmissionReadinessCause.CAPACITY_EXHAUSTED,)
 
 
 def test_an_elapsed_receipt_is_the_only_class_that_asks_for_renewal() -> None:
@@ -201,11 +211,20 @@ def test_an_elapsed_receipt_is_the_only_class_that_asks_for_renewal() -> None:
     assert "speechnexus-register-engine --renew-readiness" in (report.detail or "")
 
 
-def test_an_undecodable_instance_is_a_state_mismatch_not_an_outage() -> None:
+def test_an_undecodable_instance_alone_is_the_capacity_refusal_not_an_outage() -> None:
+    # Nothing selectable: the create answers 429, and the report must say the same
+    # rather than inventing a state-mismatch class no create returns here.
     report = classify_admission_readiness(_facts(runtimes=(), undecodable=("instance-a",)))
 
-    assert report.causes == (AdmissionReadinessCause.ENGINE_STATE_MISMATCH,)
-    assert "engine_state_mismatch" in (report.detail or "")
+    assert report.causes == (AdmissionReadinessCause.CAPACITY_EXHAUSTED,)
+    assert "job_capacity_exhausted" in (report.detail or "")
+
+
+def test_an_undecodable_instance_beside_a_usable_one_still_admits() -> None:
+    facts = _facts(undecodable=("instance-b",))
+
+    assert _create_code(facts) is None
+    assert classify_admission_readiness(facts).admitting
 
 
 def test_no_ready_instance_is_the_capacity_refusal_the_create_answers() -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Literal
 
 from speechnexus_backend.speech.domain.capacity import (
@@ -471,24 +472,20 @@ def deployment_refusals(
     idempotency, pinned authority leases) are deliberately absent: they depend on
     the request, and the report answers for the deployment (#845 review).
     """
-    refusals: list[str] = list(_refused_by(lambda: require_quota(quota)))
+    refusals: list[str] = list(_refused_by(partial(require_quota, quota)))
     pool_by_id = {pool.ownership.pool_id: pool for pool in pools}
     for pool in pools:
-        refusals.extend(_refused_by(lambda pool=pool: require_pool_live(pool)))
+        refusals.extend(_refused_by(partial(require_pool_live, pool)))
     if not runtimes:
         # No ready engine can serve a create at all; the create path answers the
         # capacity refusal for this, not a readiness one.
         refusals.append("capacity_exhausted")
     for runtime in runtimes:
-        refusals.extend(_refused_by(lambda runtime=runtime: require_runtime_live(runtime, now_us)))
-        refusals.extend(_refused_by(lambda runtime=runtime: require_runtime_capacity(runtime)))
+        refusals.extend(_refused_by(partial(require_runtime_live, runtime, now_us)))
+        refusals.extend(_refused_by(partial(require_runtime_capacity, runtime)))
         pinned = pool_by_id.get(runtime.instance.plan.binding.pool_id)
         if pinned is not None:
-            refusals.extend(
-                _refused_by(
-                    lambda runtime=runtime, pinned=pinned: require_runtime_service(runtime, pinned)
-                )
-            )
+            refusals.extend(_refused_by(partial(require_runtime_service, runtime, pinned)))
     seen: set[str] = set()
     ordered: list[str] = []
     for code in refusals:

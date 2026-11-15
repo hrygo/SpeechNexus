@@ -394,9 +394,9 @@ def test_make_requires_a_baseline_and_ci_uses_fetched_base_in_existing_job() -> 
     assert result.returncode != 0 and "CONTRACT_BASE_REF is required" in result.stderr
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
     jobs = workflow["jobs"]
-    steps = jobs["python_contracts"]["steps"]
+    steps = jobs["python_static"]["steps"]
     selected = [step for step in steps if step.get("run") == "make contracts-coordination-requests"]
     assert len(selected) == 1
     assert selected[0]["if"] == "github.event_name == 'pull_request'"
     assert selected[0]["env"] == {"CONTRACT_BASE_REF": "origin/${{ github.base_ref }}"}
-    assert jobs["integration_shards"]["strategy"]["matrix"]["shard"] == [0, 1, 2, 3, 4, 5]
+    assert jobs["integration_shards"]["strategy"]["matrix"]["shard"] == [0, 1, 2, 3, 4, 5, 6, 7]

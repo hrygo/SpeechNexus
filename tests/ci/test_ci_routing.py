@@ -583,9 +583,10 @@ class IntegrationLaneTests(unittest.TestCase):
         self.assertIn(f"shard: [{', '.join(str(index) for index in range(count))}]", workflow)
 
     def test_static_lanes_stay_inside_the_declared_partition_count(self) -> None:
-        self.assertEqual(tuple(range(ROUTER.INTEGRATION_SHARD_COUNT)), tuple(range(6)))
+        self.assertEqual(tuple(range(ROUTER.INTEGRATION_SHARD_COUNT)), tuple(range(8)))
         self.assertEqual(ROUTER.web_lanes(3), (2,))
         self.assertEqual(ROUTER.web_lanes(6), (4, 5))
+        self.assertEqual(ROUTER.web_lanes(8), (6, 7))
         self.assertEqual(ROUTER.web_lanes(16), (11, 12, 13, 14, 15))
 
 

@@ -1,4 +1,4 @@
-"""A rerun must keep the six-shard evidence gate decidable.
+"""A rerun must keep the integration-partition evidence gate decidable.
 
 Rerunning failed jobs leaves the earlier attempt's coverage artifact as a peer of
 the same name inside one run, so the download side selects the attempt by creation

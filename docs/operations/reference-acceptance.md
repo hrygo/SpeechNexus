@@ -94,7 +94,7 @@ reference acceptance: FAIL step=migrate exit=20
 
 ## 机器可读输出（CI 契约）
 
-`.github/workflows/ci.yml` 的 `Deploy: reference acceptance entry (dry-run execution)` 作业解析本入口的日志，
+`.github/workflows/ci.yml` 的 `Deploy: reference acceptance entry (dry run)` 作业解析本入口的日志，
 解析与断言的唯一实现在 `scripts/dev-env/ci-entry-guard.py`（子命令 `log`）。下列行是**契约**，不是偶然措辞：
 改格式必须同时改本节的表格、守卫脚本与作业断言。
 

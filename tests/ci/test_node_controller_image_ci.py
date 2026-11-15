@@ -61,8 +61,8 @@ class ImageWorkflowTests(unittest.TestCase):
         self.assertIn("IMAGE_RESULT: ${{ needs.image.result }}", CALLED)
         self.assertIn("runner: [ubuntu-24.04, ubuntu-24.04-arm]", CALLED)
         self.assertIn("fail-fast: false", CALLED)
-        self.assertIn("needs.node_controller_image.result", CALLER)
-        self.assertIn("needs.node_controller_image.outputs.required", CALLER)
+        self.assertIn("needs.controller_image.result", CALLER)
+        self.assertIn("needs.controller_image.outputs.required", CALLER)
 
     def test_image_gate_truth_table(self) -> None:
         for scope in ("success", "failure", "cancelled", "skipped", ""):
@@ -84,13 +84,13 @@ class ImageWorkflowTests(unittest.TestCase):
         base = {
             "MODE": "docs",
             "ROUTING_RESULT": "success",
-            "DELIVERY_RESULT": "success",
+            "MATRIX_RESULT": "success",
             "DOCS_FORMAT_RESULT": "success",
-            "CHECKS_RESULT": "skipped",
-            "COORDINATION_RESULT": "skipped",
+            "PYTHON_RESULT": "skipped",
+            "INTEGRATION_GATE_RESULT": "skipped",
             "INTEGRATION_RESULT": "skipped",
             "WEB_RESULT": "skipped",
-            "DEPLOYMENT_RESULT": "skipped",
+            "COMPOSE_RESULT": "skipped",
             "ACCEPTANCE_RESULT": "skipped",
         }
         for result in ("success", "failure", "cancelled", "skipped", ""):
@@ -108,31 +108,31 @@ class ImageWorkflowTests(unittest.TestCase):
             "MODE": "docs",
             "ROUTING_RESULT": "success",
             "DOCS_FORMAT_RESULT": "success",
-            "CHECKS_RESULT": "skipped",
-            "COORDINATION_RESULT": "skipped",
+            "PYTHON_RESULT": "skipped",
+            "INTEGRATION_GATE_RESULT": "skipped",
             "INTEGRATION_RESULT": "skipped",
             "WEB_RESULT": "skipped",
-            "DEPLOYMENT_RESULT": "skipped",
+            "COMPOSE_RESULT": "skipped",
             "ACCEPTANCE_RESULT": "skipped",
             "CONTROLLER_RESULT": "success",
             "CONTROLLER_REQUIRED": "false",
         }
         for result in ("success", "failure", "cancelled", "skipped", ""):
             with self.subTest(result=result):
-                actual = execute(FINAL_GATE, {**base, "DELIVERY_RESULT": result})
+                actual = execute(FINAL_GATE, {**base, "MATRIX_RESULT": result})
                 self.assertEqual(actual.returncode == 0, result == "success", actual.stderr)
 
     def test_final_gate_requires_the_reference_acceptance_entry(self) -> None:
         base = {
             "MODE": "docs",
             "ROUTING_RESULT": "success",
-            "DELIVERY_RESULT": "success",
+            "MATRIX_RESULT": "success",
             "DOCS_FORMAT_RESULT": "success",
-            "CHECKS_RESULT": "skipped",
-            "COORDINATION_RESULT": "skipped",
+            "PYTHON_RESULT": "skipped",
+            "INTEGRATION_GATE_RESULT": "skipped",
             "INTEGRATION_RESULT": "skipped",
             "WEB_RESULT": "skipped",
-            "DEPLOYMENT_RESULT": "skipped",
+            "COMPOSE_RESULT": "skipped",
             "ACCEPTANCE_RESULT": "skipped",
             "CONTROLLER_RESULT": "success",
             "CONTROLLER_REQUIRED": "false",
@@ -150,26 +150,26 @@ class ImageWorkflowTests(unittest.TestCase):
         base = {
             "MODE": "web",
             "ROUTING_RESULT": "success",
-            "DELIVERY_RESULT": "success",
+            "MATRIX_RESULT": "success",
             "DOCS_FORMAT_RESULT": "skipped",
             "CONTROLLER_RESULT": "success",
             "CONTROLLER_REQUIRED": "false",
-            "CHECKS_RESULT": "success",
-            "COORDINATION_RESULT": "skipped",
+            "PYTHON_RESULT": "success",
+            "INTEGRATION_GATE_RESULT": "skipped",
             "INTEGRATION_RESULT": "success",
             "WEB_RESULT": "success",
-            "DEPLOYMENT_RESULT": "skipped",
+            "COMPOSE_RESULT": "skipped",
             "ACCEPTANCE_RESULT": "skipped",
         }
         actual = execute(FINAL_GATE, base)
         self.assertEqual(actual.returncode, 0, actual.stdout + actual.stderr)
         wrong = {
             "DOCS_FORMAT_RESULT": "success",
-            "CHECKS_RESULT": "skipped",
-            "COORDINATION_RESULT": "success",
+            "PYTHON_RESULT": "skipped",
+            "INTEGRATION_GATE_RESULT": "success",
             "INTEGRATION_RESULT": "skipped",
             "WEB_RESULT": "skipped",
-            "DEPLOYMENT_RESULT": "success",
+            "COMPOSE_RESULT": "success",
             "ACCEPTANCE_RESULT": "success",
         }
         for name, value in wrong.items():
@@ -182,18 +182,18 @@ class ImageWorkflowTests(unittest.TestCase):
         # operator entry point was not executed, so it cannot satisfy the gate.
         base = {
             "ROUTING_RESULT": "success",
-            "DELIVERY_RESULT": "success",
+            "MATRIX_RESULT": "success",
             "CONTROLLER_RESULT": "success",
             "CONTROLLER_REQUIRED": "false",
         }
         for mode in ("full", "no-db"):
             applied = {
                 "DOCS_FORMAT_RESULT": "skipped",
-                "CHECKS_RESULT": "success",
-                "COORDINATION_RESULT": "success" if mode == "full" else "skipped",
+                "PYTHON_RESULT": "success",
+                "INTEGRATION_GATE_RESULT": "success" if mode == "full" else "skipped",
                 "INTEGRATION_RESULT": "success" if mode == "full" else "skipped",
                 "WEB_RESULT": "success",
-                "DEPLOYMENT_RESULT": "success",
+                "COMPOSE_RESULT": "success",
                 "ACCEPTANCE_RESULT": "success",
             }
             with self.subTest(mode=mode, result="success"):
@@ -213,12 +213,12 @@ class ImageWorkflowTests(unittest.TestCase):
         base = {
             "MODE": "docs",
             "ROUTING_RESULT": "success",
-            "DELIVERY_RESULT": "success",
-            "CHECKS_RESULT": "skipped",
-            "COORDINATION_RESULT": "skipped",
+            "MATRIX_RESULT": "success",
+            "PYTHON_RESULT": "skipped",
+            "INTEGRATION_GATE_RESULT": "skipped",
             "INTEGRATION_RESULT": "skipped",
             "WEB_RESULT": "skipped",
-            "DEPLOYMENT_RESULT": "skipped",
+            "COMPOSE_RESULT": "skipped",
             "ACCEPTANCE_RESULT": "skipped",
             "CONTROLLER_RESULT": "success",
             "CONTROLLER_REQUIRED": "false",

@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = sorted((ROOT / ".github/workflows").glob("*.yml"))
 CI = (ROOT / ".github/workflows/ci.yml").read_text()
-PYTHON_JOB = CI.split("  python_checks:\n")[1].split("  python_contracts:\n")[0]
+PYTHON_JOB = CI.split("  python_tests:\n")[1].split("  python_static:\n")[0]
 PROBE_NAME = "Verify media decoding dependencies before complete regression"
 
 

@@ -16,7 +16,7 @@ than the silence it replaces:
    guard red until the decision is recorded.
 
 The checks are text-only (standard library, no service import, no container, no
-database), which is what lets the ``changes`` job run them before dependencies
+database), which is what lets the ``routing`` job run them before dependencies
 are installed.
 """
 
@@ -262,7 +262,7 @@ class SourceReaderTest(unittest.TestCase):
     """The registry must stay correct when the system interpreter cannot parse.
 
     ``pyproject.toml`` targets Python 3.14, so product sources use PEP 758
-    exception lists (``except A, B:``). The ``changes`` job runs this guard with
+    exception lists (``except A, B:``). The ``routing`` job runs this guard with
     the system interpreter (3.12 on the CI image), which rejects that syntax, so
     reading a settings module cannot depend on being able to parse it. These
     cases pin the text reader: it must reproduce the AST result, it must record

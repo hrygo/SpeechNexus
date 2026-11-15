@@ -31,9 +31,12 @@ ROOT = Path(__file__).resolve().parents[2]
 # so a fixed inner ceiling that is much smaller than the job leaves no failing
 # case and no log, and one that is too close to the job never gets to report.
 # The integration partitions run under 30 minutes and the Python coverage job
-# under 10 minutes in .github/workflows/ci.yml; keep these pairs in sync.
+# under 15 minutes in .github/workflows/ci.yml; keep these pairs in sync. The
+# coverage budget moved from 10 to 15 minutes on 2026-11-15 (measured 471 s and
+# 502 s wall clock left only 1:38-2:09 of headroom); tests/contract/test_ci_workflow.py
+# pins this constant to python_tests.timeout-minutes so the pair cannot drift again.
 INTEGRATION_JOB_TIMEOUT_SECONDS = 30 * 60
-COVERAGE_JOB_TIMEOUT_SECONDS = 10 * 60
+COVERAGE_JOB_TIMEOUT_SECONDS = 15 * 60
 # Setup before the probe starts (container init, checkout, dependency install,
 # MinIO, and on Web lanes pnpm plus Chromium) and the probe's own stop-and-report
 # tail share the same job budget. Reserve five minutes so the inner deadline

@@ -690,7 +690,7 @@ uv run pytest tests/unit/test_route_conformance.py tests/contract/test_ci_workfl
 `known_status_gaps` 0 个操作，退出码 0，无 stale 条目。保留 #466 已清空的状态基线；
 `listJobs` 的框架错误方法 405 已由当前契约声明，GET 的成功/参数/存储分支为 200/400/503。
 
-CI 将 `make contracts-route-conformance` 作为 `python_contracts` 作业
+CI 将 `make contracts-route-conformance` 作为 `python_static` 作业
 （`Python: lint, types and contract compatibility`）的一步，在 Ruff/mypy 前、无 `CONTRACT_BASE_REF` 条件下执行；
 `full`、`web`、`no-db` 三种范围都会运行。详见 [CI 验证范围](../validation/ci-validation.md)。
 

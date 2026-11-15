@@ -564,7 +564,7 @@ class MergeBaseTests(GitFixture):
 class MergeParentFetchTests(GitFixture):
     """The production shape: `fetch-depth: 1` holds the merge commit only.
 
-    `changes` checks out a single commit, so the merge ref's first parent is not
+    `routing` checks out a single commit, so the merge ref's first parent is not
     in the object store and the gate fetches it by SHA - the same mechanism the
     routing step uses for `base.sha`. Every CI run takes this path and it had no
     test; without it the comparison would be red on a fetch that never happened.
@@ -654,10 +654,10 @@ class WiringTests(unittest.TestCase):
         return re.split(r"\n  [a-z_]+:\n", after, maxsplit=1)[0]
 
     def changes_job(self) -> str:
-        return CI.split("\n  changes:\n", 1)[1].split("\n  docs_format:\n", 1)[0]
+        return CI.split("\n  routing:\n", 1)[1].split("\n  docs_format:\n", 1)[0]
 
     def gate_job(self) -> str:
-        return CI.split("\n  python:\n", 1)[1]
+        return CI.split("\n  required_checks:\n", 1)[1]
 
     def test_the_guard_lives_in_the_job_that_runs_for_every_scope(self) -> None:
         changes = self.changes_job()
@@ -699,8 +699,8 @@ class WiringTests(unittest.TestCase):
     def test_the_protected_gate_requires_this_job(self) -> None:
         gate = self.gate_job()
         needs = gate.split("    needs:", 1)[1].split("]", 1)[0]
-        self.assertIn("\n        changes,\n", needs)
-        self.assertIn("ROUTING_RESULT: ${{ needs.changes.result }}", gate)
+        self.assertIn("\n        routing,\n", needs)
+        self.assertIn("ROUTING_RESULT: ${{ needs.routing.result }}", gate)
         self.assertIn('if [[ "$ROUTING_RESULT" != success ]]', gate)
 
     def test_the_check_has_exactly_one_invocation(self) -> None:
@@ -717,10 +717,10 @@ class WiringTests(unittest.TestCase):
         self.assertIn("`docs/reviews/` 下的报告文件", SOP_STEP_4)
 
     def test_both_unfiltered_lanes_are_acknowledged(self) -> None:
-        # `delivery_tracking` has no job-level `if:` either; claiming `changes`
+        # `docs_matrix` has no job-level `if:` either; claiming `routing`
         # is the only unfiltered lane is a fact error the docs must not repeat
         # (#738 review, MF-1).
-        for job in ("changes", "delivery_tracking"):
+        for job in ("routing", "docs_matrix"):
             with self.subTest(job=job):
                 self.assertNotIn("\n    if:", self.job_block(job))
         self.assertNotIn("唯一没有任何 `if:`", VALIDATION_DOC)

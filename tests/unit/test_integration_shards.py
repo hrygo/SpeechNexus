@@ -627,31 +627,35 @@ def test_environment_cannot_silently_select_a_partial_or_unconfigured_suite(
 def test_integration_gate_names_describe_evidence_and_reject_missing_execution(result: str) -> None:
     jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
     assert {
-        "Gate: Python execution and static checks",
-        "Gate: six-shard integration evidence and merged coverage",
+        "Gate: Python tests and static checks",
+        "Gate: integration partitions and merged coverage",
         "Gate: required checks for this change",
         "Web: lint, types, tests, build and accessibility",
         "Compose: configuration validation",
     } <= {job["name"] for job in jobs.values()}
     shards = jobs["integration_shards"]
-    # Six partitions stay declared, so `full` cannot silently shrink. The route
+    # Eight partitions stay declared, so `full` cannot silently shrink. The route
     # removes only lanes it cannot exercise (`web` keeps the Web-capable ones), and
     # the `full` route excludes nothing (#757).
     assert shards["strategy"] == {
         "fail-fast": False,
-        "max-parallel": 6,
+        "max-parallel": 8,
         "matrix": {
-            "shard": [0, 1, 2, 3, 4, 5],
-            "exclude": "${{ fromJSON(needs.changes.outputs.excluded_shards) }}",
+            "shard": [0, 1, 2, 3, 4, 5, 6, 7],
+            "exclude": "${{ fromJSON(needs.routing.outputs.excluded_shards) }}",
         },
     }
     assert shards["if"] == (
-        "${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' }}"
+        "${{ needs.routing.outputs.mode == 'full' || needs.routing.outputs.mode == 'web' }}"
     )
+    # The display name says which partition this is out of the declared total, so a
+    # reader of the run list does not have to know the matrix size.
+    assert "Integration ${{ matrix.shard }}/8:" in shards["name"]
+    assert len(shards["strategy"]["matrix"]["shard"]) == 8
     assert set(shards["services"]) == {"postgres", "mysql"}
-    gate = jobs["coordination"]
-    assert gate["needs"] == ["changes", "python_checks", "integration_shards"]
-    assert "always()" in gate["if"] and "needs.changes.outputs.mode == 'full'" in gate["if"]
+    gate = jobs["integration_gate"]
+    assert gate["needs"] == ["routing", "python_tests", "integration_shards"]
+    assert "always()" in gate["if"] and "needs.routing.outputs.mode == 'full'" in gate["if"]
     condition = gate["steps"][0]["run"]
     executed = subprocess.run(
         ["bash", "-e", "-c", condition],
@@ -753,7 +757,7 @@ def test_actual_node_http_consumer_gets_locked_tools_only_in_its_partition() -> 
         "integration_shards"
     ]["steps"]
     choose = next(step for step in steps if step.get("id") == "integration_tools")
-    assert "requirements" in choose["run"] and '--count 6 >> "$GITHUB_OUTPUT"' in choose["run"]
+    assert "requirements" in choose["run"] and '--count 8 >> "$GITHUB_OUTPUT"' in choose["run"]
     node = next(
         step
         for step in steps
@@ -875,7 +879,7 @@ def test_every_shard_provisions_private_workbench_pg_without_replacing_dual_data
     run = next(step for step in steps if "Run a complete integration partition" in step["name"])
     assert "uv run python scripts/dev-env/workbench-pg-probe.py" in run["run"]
     assert "--pg-bin /usr/lib/postgresql/16/bin" in run["run"]
-    assert '--integration-shard "${{ matrix.shard }}" --shard-count 6' in run["run"]
+    assert '--integration-shard "${{ matrix.shard }}" --shard-count 8' in run["run"]
     assert '--shard-report "$RUNNER_TEMP/integration-shard-${{ matrix.shard }}.json"' in run["run"]
     assert '--shard-coverage "$RUNNER_TEMP/coverage-${{ matrix.shard }}.data"' in run["run"]
     assert '--output "$RUNNER_TEMP/workbench-pg-shard-${{ matrix.shard }}.json"' in run["run"]

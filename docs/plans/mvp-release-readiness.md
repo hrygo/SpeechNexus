@@ -3,6 +3,7 @@
 **核验基线**：`origin/main` @ `6cc8090ad6d8247c4e10cd68d5adfae2bf02066c`（`git fetch` 后实测；任务指定的 `f01b10dd` 为其父提交）。独立工作树 `/private/tmp/sn818`。
 **核验日期**：2026-11-15。核验方式：新工作树内读源码、Compose、契约、测试、CI 与本机文档记录；GitHub issue/PR 状态经 `gh` 读取。
 **增量核验**（2026-11-15，卡 #832）：`origin/main` @ `bfafc8942ba85b6590a79d914959e356bb01013d`，独立工作树 `/private/tmp/sn833`。只重新核验了 F-DELETE 行、B6 与其部署入口相关陈述，其余行沿用上面的基线。
+**增量核验**（2026-11-15，卡 #829）：`origin/main` @ `5cd5a5d0c86a91f73fca6f7cf797e38097b41782`，独立工作树 `/private/tmp/sn841`。重新核验 F-CLIENT 行与 B1：同版镜像构建与前端产物/契约包/API 三方来源一致性按实测更新；工作台同版读取的真实浏览器证据在本机变红（CSP 拒绝 `unsafe-eval`，另见 §4 B7）。其余行沿用上面的基线。
 
 ## §1 结论
 
@@ -11,6 +12,7 @@
 - MVP 界定为 12 个判定行。**其中 10 行没有任何 A 档证据**（A 档＝真实部署或真实引擎上的端到端），见 §3。
 - 唯一存在的 A 档证据是两处：两条同步入口在 **MegaCube（Linux aarch64 + NVIDIA GB10）单次受控窗口**里跑通过（2026-11-02 / 2026-11-03），以及声音引擎在**同一主机上的接受面直连探测**（2026-11-07/08）。三者都不覆盖「公开 Job 从创建到制品可下载」。
 - **最长阻塞链只有一条**：真实引擎/GPU 窗口 → 参考部署完整 `up`（迁移 + `minio-init` + 引擎注册 + 三个 Job 角色与授权）→ `job-dispatch-worker` 启动闸门 → 一条 asr 或 tts Job 从 `queued` 走到 `succeeded` → Artifact 可下载 → 工作台按同版读到。**这条链上没有任何一环有 A 档记录**，其中最关键的一环（#572）自 2026-11-08 开卡至今未执行过。
+- 另有一条 **Web 入口级缺陷**：#829 用同版镜像起真实栈实测，两个前端镜像在自身 `Content-Security-Policy`（`script-src 'self'`，无 `'unsafe-eval'`）下渲染空文档，原因是生成契约校验器走 `ajv.compile`（`new Function`）。`/healthz` 仍 `200`，CI 的浏览器门禁跑 `vite preview`（不带 CSP），因此三方都没发现；修法见 §4 B7 与 #840。
 - 主链之外的第二个硬缺口是**语音侧删除**：`/v1/nexus/deletions` 与 `/v1/nexus/deletion-plans` 是中央占位路由，恒返回 `503 operation_not_implemented`（`backend/src/speechnexus_backend/speech/interfaces/http/unimplemented.py:72`）；语音侧删除**不在首发范围**（实施卡 [#819](https://github.com/hrygo/SpeechNexus/issues/819) 仍 open）。工作台侧删除的实现与部署前提已经具备：参考部署以 `workbench-api` profile 装配独立工作台后端，#832 在真实容器栈上取得该路径的端到端证据（见 §2 第 9 行）。
 
 ### 证据档位
@@ -32,7 +34,7 @@
 | 2 | **F-JOB** 持久 Job（创建/读取/取消/重试/SSE/列表） | 权威状态一致、事件序号续读、取消围栏真库证据 | **B**：路由已装配创建/读取/重试/SSE/取消（`backend/src/speechnexus_backend/speech/interfaces/http/jobs.py`）；隔离 PG 上取消与围栏 24 passed；`tests/integration/test_public_job_admission_http_pg.py`、`test_public_job_list_pg.py`、`test_public_job_event_stream_tcp.py`（真实 PG + 真实 TCP）；以上用例本轮未复跑 | **无** | 未达标 | 无真实部署上的 Job 生命周期；`POST /v1/nexus/jobs` 在参考部署缺 writer/admission DSN 时直接 `503` |
 | 3 | **F-ASYNC** 派发→执行→结果发布→终态 | 真实工作进程消费持久 Job 并走真实引擎 | **C**：生产 planner 与结果发布器已装配且在领取前 fail-closed（`backend/src/speechnexus_backend/job_dispatch_runtime.py:294`），但派发验收用例把网关替换为 `httpx.MockTransport` 合成实现（`tests/integration/test_job_dispatch_pg.py:290`），引擎是 fake。手册明确「以上三条 HTTP 命令**未在本机验证**」（`docs/operations/async-job-runbook.md:705`） | **无** | 未达标 | #572 未执行；无真实引擎窗口 |
 | 4 | **F-ARTIFACT** 发布原子性、下载、保留 | staging 不可公开、固定对象版本、真实对象存储下载、保留/过期可复核 | **B**：先写对象再提交唯一行，对象版本号落库（`backend/src/speechnexus_backend/speech/application/results.py:169`），staging 字节与回执摘要/长度互相校验；发布按 `SPEECHNEXUS_ARTIFACT_RETENTION_SECONDS`（默认 30 天）写 `expires_at_us`（`results.py:347`）；下载按记录期限返回 `410 artifact_expired`、清理确认后 `410 artifact_deleted`、已铸造但未提交 `404 artifact_not_published`（`backend/src/speechnexus_backend/speech/application/artifacts.py`）；有界清理入口 `speechnexus-artifact-retention`（`backend/src/speechnexus_backend/speech/application/artifact_retention.py:75`、`deploy/compose.yaml` 的 `artifact-retention` profile）；真实 PG + 版本化 MinIO 保留期用例 `tests/integration/test_artifact_retention_pg.py:281` 与 真实对象存储下载用例 `tests/integration/test_artifact_http_real_storage.py:231`；工作台真实 Chromium + 生产 bundle + 真实 MinIO 下载 `tests/integration/test_workbench_real_runtime_download_browser.py`（内容为合成 ZIP/WAV，非真实推理） | **无** | 未达标 | ① 无 A 档；② 保留期链路只有隔离 PG + 版本化 MinIO 与进程内证据，参考部署未实际运行 `artifact-retention` profile；③ 30 天默认值未在真实部署上被观测 |
-| 5 | **F-CLIENT** SDK 与工作台同版消费 | 契约 → 生成客户端 → 真实消费者三段同步 | **B + C**：页面确实消费生成包（工作台文件链走 `/v1/nexus/jobs`、`assets`、`artifacts`），但**不经包清单**——36 处非测试 import 全部是跨目录相对路径（如 `web/workbench/src/file-workflow/speech-file-client.ts:8`），`web/*/package.json` 没有 `@speechnexus/contracts` 依赖；`packages/contracts/package.json` 声明的 27 个 `exports` 子路径一个都没被用。真实浏览器侧证据为生产 bundle + 真实 PG/MinIO（`tests/integration/test_workbench_real_runtime_browser.py`），producer 为合成 | **无** | 未达标 | 同版一致性靠单仓库目录结构隐式成立，无版本/依赖声明；主链仍 blocked by #572 |
+| 5 | **F-CLIENT** SDK 与工作台同版消费 | 契约 → 生成客户端 → 真实消费者三段同步；前端产物、契约包与 API 的来源提交一致 | **B + C（2026-11-15 #829 实测）**：`web/*/package.json` 已以 `workspace:*` 显式依赖 `@speechnexus/contracts` 并经生成的校验客户端消费 `/v1/workbench/*`（#822）。**同版镜像与三方同源已验**：`speechnexus/web-workbench:5cd5a5d0`（image ID `4ac8e05c2567`，label `org.speechnexus.source.commit=5cd5a5d0c86a91f73fca6f7cf797e38097b41782`、`dirty=0`）；`--no-cache` 构建与缓存构建的 `web-dist` 树摘要相同（`80ada7a38a4e08dce8c3009cd196482e26d9854b8930c7e44ef9136f2b7d7f9d`，24 文件，宿主 `pnpm build` 同摘要）；契约包 `packages/contracts` tree 摘要 `4d9e968303e8ee77a8f76bc6e954b247417eea2492bd5e3f56d0c7e003892935`（TS 包 `@speechnexus/contracts` 0.1.0、Python 包 `speechnexus-contracts` 0.1.0.dev0）；API 用同一提交构建的 `speechnexus/workbench-api:5cd5a5d0`（image ID `d1e50518136e…`），`workbench-migrate` 报 `revision 11`。**浏览器消费未通过**：真实 Chromium 打开该镜像页面得到空文档（`body_text_length: 0`），pageerror 为 CSP 拒 `unsafe-eval`（`deploy/web/nginx.conf` 的 `script-src 'self'` × `packages/contracts/src/profile-runtime.mjs` 的 `ajv.compile`）；同一 bundle 去掉该响应头后完整渲染，并经前端代理读到真实 `GET /v1/workbench/projects` `200`（`content-length: 389`）、`GET /v1/workbench/projects/{id}` `200`（`320`）、`…/transcripts` `200`（`69`）。`admin` 镜像同样白屏。**工作台读 #572 同一 Job 的同一 Artifact 未验**（见 §4 B1）。 | **无** | 未达标 | ① #840：镜像内浏览器消费被 CSP 阻断；② 消费侧「同一 Job、同一 Artifact」需要一份可读的真实 artifact，本机无引擎且 #572 的栈已 `down -v`，不可重放也不得以注入代读；③ 运行时没有版本握手，同版只能靠构建字节与 label 复核 |
 | 6 | **F-TTS** 同步合成入口 | 真实合成 + 受控输出 + 与异步链共存 | **A（窄口径）**：2026-11-03 第六窗口，MegaCube（Linux aarch64 + GB10），标准 SDK → 公开 HTTP → 真实网关 → 受控 CustomVoice，`200` / `96044 bytes` / 2 s PCM16 24 kHz mono，请求/命令/结果/停止关联齐全（`docs/archive/audits/2026-11-03-controlled-tts-prepare.md:252`、`docs/archive/audits/evidence/2026-11-03-tts-window-6.json`）。范围限固定声音、单节点、单实例、短英文；窗口早于当前 head | **有（窄口径）** | 入口可用，但**参考部署装配不出来** | 参考部署不装配公开 TTS：`deploy/compose.yaml` 无 `SPEECHNEXUS_SPEECH_RECIPE_FILE`，而该键是同步 TTS 的必要输入（`backend/src/speechnexus_backend/speech_runtime.py:50`），`deploy/private/` 也没有 TTS 配方样例，还需独立 settlement 角色。他人照着仓库起不出一套能跑同步 TTS 的部署 |
 | 7 | **F-ASR** 同步转写入口 | 真实引擎 + 源时钟 + 公开调用同版 | **A（窄口径）**：2026-11-02 21:34，MegaCube，`POST /v1/audio/transcriptions` → 真实网关 → 受控 Qwen3-ASR generation 3 → 版本化 MinIO，`200` / 1.237 s，文本与 5.36 s 合成句一致，DB 原生终态 `succeeded` 与租约释放齐全（PR #317 正文）。证据体存 PR 正文与 issue #243，未随仓库提交；窗口早于当前 head | **有（窄口径）** | 入口可用，参考部署未复现 | `docs/operations/compose-minimal.md:20` 明确「本部署未验证」；`deploy/README.md:74` 仍写「blocked by the missing production terminal-state writer」，与当前代码（终态写入者存在于 `execution-gateway/src/speechnexus_gateway/infrastructure/file_execution_worker.py:375`）及同仓库另一份文档冲突，属陈旧陈述 |
 | 8 | **F-SHARED** workspace 作为分组而非身份边界 | 默认 workspace、跨模块引用一致性 | **C**：同步入口允许省略 `nexus` 用默认 workspace、文件 ASR 核对对象与执行身份 workspace 均为源码级事实；无真实部署证据 | **无** | 未达标 | 无 A 档；不构成阻塞主因，随 #572 一并取证 |
@@ -62,6 +64,8 @@
 - 要什么证据：一次可在文档步骤内复现的 `up` + 迁移 + `minio-init` + `engine-register` + `job-dispatch-worker` 启动闸门 `OK` + `POST /v1/nexus/assets` → `POST /v1/nexus/jobs` → `queued→running→succeeded` → artifact `GET` 可读回，全程记录主机、镜像 digest、提交与时间。
 - 现在卡在哪：六项前置（writer/admission DSN、迁移 head、派发角色与五组 grant、真实引擎注册、result 桶、网络与生命周期）只被静态自检覆盖；`POST /v1/nexus/jobs`、Job 轮询与结果读回三条命令从未执行（`docs/operations/async-job-runbook.md:705`）。
 - 谁做：后端（Job/派发）+ 运维（Compose/角色/桶）在同一窗口内配合；窗口由具备 GPU 的部署方提供。
+- **2026-11-15 增补**：ASR 路径的实测证据已转录进 [#572](https://github.com/hrygo/SpeechNexus/issues/572) 的评论（任务系统 `DEL-531`，MegaCube）：`job-410574cd…` `queued→running→succeeded`、`asset-416749…`（195356 bytes / 4429 ms / 22050 Hz / 单声道）、`artifact-ea4fe1b4…`（`content-length: 92`，`etag "sha256:3002c23c5e859f295f3bec557a363a7fe5359a3db50b351bfffc9885e5e21d5d"`，`sha256(file)` 与该 etag 摘要相同）、`lease-410574cd… released`。它证明「API → 派发 → 真实 ASR 引擎 → Artifact 下载」这条链可用。
+  **仍未验的是消费侧同版读取**：该次运行的栈已 `down -v`，artifact 行与对象均不存在，本机（macOS arm64，无引擎）无法重放同一份 artifact，因此不得用注入、改行或 mock 代替。`#829` 在消费侧只走到「同版镜像 + 三方同源 + 读写工作台自身业务后端」；浏览器一层另被 B7 阻断。
 
 **B2 — 声音泳道无 Job 级证据（#529）**
 - 要什么证据：design 与 clone 各一条 Job 到 `succeeded`，preview artifact 被 `GET /voice-drafts/{id}` 读成 candidate；附冷加载、空闲回收、显存峰值、P95、与 asr/tts 混跑不干扰的实测数字，并给出 `start_period` 实测值。
@@ -89,6 +93,12 @@
 - 证据：2026-11-15 在 Compose 项目 `sn832` 起真实栈，`docker compose --profile workbench-api run --rm workbench-migrate` 输出三行 `OK:`；`workbench-api` 健康检查（`GET /v1/workbench/status`）`200`；删除的预检→确认→账本端到端见 §2 第 9 行。身份最小化由启动闸门强制：运行身份在工作台命名空间之外持有任何关系或序列权限即拒绝启动，指向 `sn_api` 这类共用宽身份因此起不来；清理身份另需独立。
 - 仍未覆盖：该单元不配置语音底座、对象区与 LLM，工作台能力因此停在 `teleprompter=available`、其余 `disabled`，含已保存资产的删除停在 `cleanup_state=pending` 等对象区；前端 bundle 的镜像构建在本轮环境里因既有的 `tests/fixtures/contracts/*.json` 未被 `deploy/images/web.Dockerfile` 复制而失败（缺陷另案 #834 处理，与本卡无关），因此「浏览器经前端代理→工作台 API」只有代理层证据（用仓库 `deploy/web/nginx.conf` 起 nginx，指向真实服务为 `200`、指向不存在主机为 `502`），没有完整浏览器链路证据。
 
+**B7 — Web 镜像在自身 CSP 下白屏（#840，2026-11-15 实测）**
+- 事实：`deploy/web/nginx.conf` 发送 `script-src 'self'`（无 `'unsafe-eval'`），而生成契约校验器由 `packages/contracts/src/profile-runtime.mjs` 的 `ajv.compile()` 在首个渲染路径上编译（内部 `new Function`）。真实 Chromium 打开 `speechnexus/web-workbench:5cd5a5d0` 与 `speechnexus/web-admin:5cd5a5d0` 均为空文档，pageerror 为 `EvalError: … 'unsafe-eval' is not an allowed source of script: script-src 'self'`。
+- 隔离对照：把同一镜像的 `/usr/share/nginx/html` 原样导出、用不带 CSP 的静态服务提供，页面完整渲染（正文 734 字符、标题可见、0 pageerror）。因此阻断点是响应头，不是 bundle 与后端。
+- 为什么没被发现：两个浏览器门禁跑 `vite preview`（`tests/web/preview-servers.mjs`），不带任何 CSP；`#832` 的代理证据只 `curl` 不开浏览器；仓库内没有「在镜像里开过浏览器」的记录。
+- 影响：任何人按文档起 `web` profile 都得到白屏 UI，而 `/healthz` 仍 `200`，健康检查不报。属部署入口级缺陷，修法与门禁见 #840（构建期 ajv standalone 预编译，不改 CSP 语义）。
+
 ## §5 发布前必须补的最小动作清单（按可执行顺序）
 
 1. 固定本次发布的候选提交与镜像 digest，把「A 档证据必须落在哪个提交上」写清（否则任何窗口都不能算作本次发布的证据）。
@@ -96,8 +106,9 @@
 3. 在同一窗口顺带执行 B3 的语音侧删除路径（若决定纳入 MVP）与 B2 的泳道 Job，避免二次排队。
 4. 补 B4（同步 TTS 装配样例与 settlement 角色）；B5 的发布写入与清理入口已实现，仍需一次参考部署运行留证——两者都可在无 GPU 窗口时完成。
 5. ~~补 B6 的决定与最小部署入口~~：已完成（#832）。剩余的是该单元之外的下游输入（语音底座地址、对象区、内网 LLM），属于部署方提供项，不在首发阻塞链上。
-6. 修订三处陈旧陈述：`deploy/README.md:74`（同步 ASR 仍称被缺失的终态写入者阻塞，与 `file_execution_worker.py:375` 冲突）、PRD `docs/prd.md:106`「公开 Job 路由仅装配创建与读取」（与 `jobs.py` 已装配取消/重试/SSE 冲突）、矩阵 O-ROLE/F-ASYNC 的「生产 planner 未装配」（与 `job_dispatch_runtime.py:294` 冲突）。
-7. 在参考部署上补一次「照着文档从零起一套」的记录（含 LICENSE 决定），完成后才可宣称 Epic #342 的 MVP 口径达标。
+6. 修 #840：Web 镜像在自身 CSP 下白屏（`ajv.compile` 的 `unsafe-eval`），并把「真实镜像产物 + 真实 CSP 头」的首屏渲染门禁加进 CI。
+7. 修订三处陈旧陈述：`deploy/README.md:74`（同步 ASR 仍称被缺失的终态写入者阻塞，与 `file_execution_worker.py:375` 冲突）、PRD `docs/prd.md:106`「公开 Job 路由仅装配创建与读取」（与 `jobs.py` 已装配取消/重试/SSE 冲突）、矩阵 O-ROLE/F-ASYNC 的「生产 planner 未装配」（与 `job_dispatch_runtime.py:294` 冲突）。
+8. 在参考部署上补一次「照着文档从零起一套」的记录（含 LICENSE 决定），完成后才可宣称 Epic #342 的 MVP 口径达标。
 
 ## §6 建议新建的实施卡（待统一建卡，本卡不创建）
 

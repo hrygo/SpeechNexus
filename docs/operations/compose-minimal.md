@@ -66,7 +66,12 @@ recorder DSN 与报告对象存储读取凭据）。`migrate` 和 `engine-regist
 `binding-disable` profile，`job-dispatch-worker` 属于 `job-dispatch` profile，
 `admin` / `workbench` 属于 `web` profile，因此都不属于上面的基础集合。独立工作台后端
 `workbench-migrate` / `workbench-api` 属于 `workbench-api` profile（见 §6）；它与
-`web` profile 是两件事：`web` 只起前端，`workbench-api` 起前端代理指向的真实服务。Job 派发
+`web` profile 是两件事：`web` 只起前端，`workbench-api` 起前端代理指向的真实服务。两个前端
+镜像的构建命令、来源提交 label 与可复现性结论见
+[deploy/README.md 的 Web images 段](../../deploy/README.md#web-images)。**已知缺陷**：两个前端镜像在自身
+`Content-Security-Policy` 下渲染空文档（`/healthz` 仍 `200`，因此健康检查看不出来），修复与门禁见
+[#840](https://github.com/hrygo/SpeechNexus/issues/840)；在修复合入前，`web` profile 只用于验证代理
+路径与服务装配，不作为可用的界面证据。Job 派发
 profile 的变量与默认 `dispatch_kinds` 见
 [deploy/README.md](../../deploy/README.md#job-dispatcher-job-dispatch-profile)；
 本参考部署只装配 `asr`、`tts` 车道，启动闸门对其它 kind 点名拒绝（见 §6 的异步 Job 段）。

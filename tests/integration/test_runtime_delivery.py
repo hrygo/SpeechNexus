@@ -53,6 +53,31 @@ CLAIM = DeliveryClaimRequest("delivery-test", ("host-test",), 30000000)
 # the window far above any measured commit latency (300x the worst observed
 # ~103 ms) and assert the persisted arithmetic instead of racing the wall clock.
 RETRY_DELAY_US = 30000000
+# The ACK race test needs a lease that is still live when the ACK transaction
+# reads its ledger row, and already dead when it rechecks after acquiring the
+# real outbox row lock; only then does that post-lock recheck -- the behaviour
+# under test -- decide the outcome. Both sides of the window are bounded by real
+# measurements taken with the harness default of 10 ms per proxied chunk:
+#
+#   * lower: the claim and start commits land before the ACK transaction begins,
+#     so the lease must outlive that establishment -- measured 948-1007 ms (PG)
+#     and 1209-1401 ms (MySQL) from claim commit to the ACK's outbox lock, the
+#     upper end being the proxy+slow-commit combination;
+#   * upper: the ACK must finish inside its own 3 s budget. PostgreSQL bounds the
+#     whole ACK transaction (`PostgresRuntimeDelivery(timeout_seconds=3)`) and
+#     InnoDB bounds the blocked lock wait (`innodb_lock_wait_timeout=3`, set per
+#     session by `MySQLJobTransactions`), so the blocked wait plus the post-lock
+#     recheck and both writes must fit in that same 3 s.
+#
+# 2 s leaves 0.6-1.05 s above the measured establishment and 1.0-1.8 s below
+# both 3 s ceilings, so neither side of the window is the tight one. The product
+# floor (1 s) cannot serve as the window: it expires before the ACK transaction
+# starts, `_owned()` returns "stale" without ever requesting the outbox lock,
+# and the test reports "ACK did not encounter the real outbox row lock" instead
+# of exercising the recheck. Raising the harness's `--chunk-delay-ms` far above
+# its 10 ms default shrinks the lower margin; that is a property of this window,
+# not a product defect.
+LEASE_WINDOW_US = 2000000
 
 
 @dataclass
@@ -210,7 +235,7 @@ def test_two_workers_compete_for_exactly_one_private_claim(delivery: DeliveryDat
 def test_ack_rechecks_expiration_after_the_actual_outbox_row_lock(
     delivery: DeliveryDatabase,
 ) -> None:
-    claim = replace(CLAIM, lease_us=1000000)
+    claim = replace(CLAIM, lease_us=LEASE_WINDOW_US)
     acquired = delivery.port.claim(claim)
     assert acquired.ticket is not None
     started = delivery.port.start(acquired.ticket)
@@ -223,26 +248,45 @@ def test_ack_rechecks_expiration_after_the_actual_outbox_row_lock(
             "SELECT event_id FROM coordination_outbox WHERE event_id=%s FOR UPDATE",
             (ticket.event_id,),
         )
+    # The observed wait must be this ACK's wait on this blocker, not merely any
+    # blocked session: only then does releasing the blocker exercise the
+    # post-lock recheck rather than an unrelated lock contention.
+    with blocker.cursor() as blocking_cursor:
+        blocking_cursor.execute(
+            "SELECT pg_backend_pid() AS blocker_id"
+            if db.dialect == "postgresql"
+            else "SELECT CONNECTION_ID() AS blocker_id"
+        )
+        blocker_id = blocking_cursor.fetchone()["blocker_id"]
     before = delivery.physical()
     response = json.dumps(_wire(delivery.runtime))
     try:
         with ThreadPoolExecutor(max_workers=1) as workers:
             pending = workers.submit(delivery.port.acknowledge, ticket, response)
             try:
-                deadline = time.monotonic() + 2
+                # The lease is the only honest budget for observing the lock: once
+                # it has expired the ACK can no longer legitimately contend for the
+                # outbox row it is waiting on.
+                deadline = time.monotonic() + LEASE_WINDOW_US / 1000000
                 while time.monotonic() < deadline:
                     if db.dialect == "postgresql":
                         waiting = db.query(
-                            "SELECT count(*) AS n FROM pg_stat_activity WHERE usename=%s "
-                            "AND cardinality(pg_blocking_pids(pid))>0",
-                            (delivery.role,),
+                            "SELECT count(*) AS n FROM pg_stat_activity a WHERE a.usename=%s "
+                            "AND %s = ANY(pg_blocking_pids(a.pid))",
+                            (delivery.role, blocker_id),
                         )[0]["n"]
                     else:
                         waiting = db.query(
                             "SELECT count(*) AS n FROM performance_schema.data_lock_waits w "
-                            "JOIN performance_schema.data_locks l ON "
-                            "w.REQUESTING_ENGINE_LOCK_ID=l.ENGINE_LOCK_ID WHERE l.OBJECT_SCHEMA=%s",
-                            (db.schema,),
+                            "JOIN performance_schema.data_locks r ON "
+                            "w.REQUESTING_ENGINE_LOCK_ID=r.ENGINE_LOCK_ID "
+                            "JOIN performance_schema.data_locks b ON "
+                            "w.BLOCKING_ENGINE_LOCK_ID=b.ENGINE_LOCK_ID "
+                            "JOIN performance_schema.threads t ON t.THREAD_ID=b.THREAD_ID "
+                            "WHERE r.OBJECT_SCHEMA=%s "
+                            "AND r.OBJECT_NAME='coordination_outbox' "
+                            "AND t.PROCESSLIST_ID=%s",
+                            (db.schema, blocker_id),
                         )[0]["n"]
                     if waiting:
                         break

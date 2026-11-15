@@ -77,3 +77,93 @@ admin = psycopg.connect(URL, autocommit=True)
 ```
 
 随机 schema 不能抵消这个错误：schema 仍会建在作者本机的 `sn_profile_it`，而不是 CI fixture 指定的数据库；缺少该库时连接在迁移断言前就失败。禁止通过只随机化 schema、保留固定库名或增加本地默认 DSN 来“修复”它。
+
+## 已知 flake 复现条件（`flake_harness`）
+
+`#775` 记录过的“CI 等价条件”曾只存在于一次性会话里：没有入口，下一个人无法重放。现行入口是 [`flake_harness.py`](flake_harness.py) 与其支撑模块 [`tests/support/flake_conditions.py`](../support/flake_conditions.py)，把已确认会踩到的两类慢条件落成**显式触发**的单次运行：
+
+- **提交慢**（slow commit）：PostgreSQL `commit_delay` 与 InnoDB `binlog_group_commit_sync_delay`。
+- **往返慢**（slow round trip）：回环 TCP 延迟代理，两个 DSN 都过代理，每个转发 chunk 在每个方向各延迟一次。
+
+### 何时使用
+
+- 改动 `runtime_intent_deliveries` 的租约/退避窗口、outbox 行锁顺序，或任何在提交完成前读取时钟的断言时，用它确认用例在慢提交与慢往返下仍然成立。
+- 用某条用例证明“有效静默期 = `delay −` 提交延迟”一类时序性质之前，先确认它在 10 ms/chunk 代理下不变。
+
+条件会改写服务器全局参数并持续制造提交负载，因此**不默认开启**：没有 conftest 钩子、没有 marker 自动应用，直接运行 pytest 与 `make integration-test` 都不受影响；必须显式给出 `--condition`。
+
+### 条件必须自证生效
+
+配置写下不等于条件生效，两类条件都实测并在不达标时以退出码 1 失败：
+
+- 慢提交：同一提交事务在条件下的中位提交延迟必须 ≥ 配置延迟的一半（本机实测 PG `0.36 → 103 ms`、InnoDB `0.49 → 225 ms`）。
+- 延迟代理：同一 `SELECT 1` 经代理的往返必须比直连多出约两个 chunk 延迟（默认 10 ms/chunk 下实测 PG `0.33 → 24.4 ms`、MySQL `0.43 → 23.4 ms`）；代理静默不睡眠时输出相同、用例照绿，因此必须实测而不是打印配置。
+
+参数读回一律走**新连接**：`pg_reload_conf()` 之后同一会话的 `SHOW` 仍可能返回重载前的值，用它核对等于让守卫必然通过。退出时先 `RESET`，读回仍不等于运行前的生效值时（原值来自 `ALTER SYSTEM`）再显式设回，最后用新连接核对终值。
+
+### 前置条件
+
+- 两个隔离 DSN 必须同时可用，与集成套件一致：`SPEECHNEXUS_TEST_DATABASE_URL`、`SPEECHNEXUS_TEST_MYSQL_URL`。缺任一侧时 harness 以退出码 2 失败并点名变量，不跳过。
+- 起库方式：InnoDB 用 `./scripts/dev-env/mysql-service.sh`（受管容器，`127.0.0.1:55434`）；PG 用项目隔离实例或[本地双库验证](../operations/local-dual-database.md#临时-postgresql-实例)里的一次性 `postgres:16.15` 容器。两者都只跑本机回环，不指向共享实例。
+- PG 侧 DSN 需要超级用户权限（`ALTER SYSTEM` + `pg_reload_conf`）。`commit_delay` 单项无效，且上限为 100000 µs；harness 同时设置 `commit_siblings=1` 并保持 12 个忙提交连接。
+- MySQL 侧需要 `log_bin=ON`（容器/CI 的 8.4 默认值）与 `SET GLOBAL` 权限；`binlog_group_commit_sync_delay` 对单个提交事务即生效，不需要忙提交负载。
+- 条件改的是服务器全局状态（集群级 `commit_delay`、全局 `binlog_group_commit_sync_delay`），因此**同一对数据库同时只允许一次 harness 运行**；并行运行会互相撤销对方的条件。
+
+### 用法
+
+一条命令，`--` 之后是 pytest 参数（省略时跑本目录为这些条件维护的两条交付用例）：
+
+```bash
+SPEECHNEXUS_TEST_DATABASE_URL=... SPEECHNEXUS_TEST_MYSQL_URL=... \
+  uv run python -m tests.integration.flake_harness --condition latency-proxy
+```
+
+| `--condition` | 机制与生效证据 | 预期 |
+| --- | --- | --- |
+| `latency-proxy` | 回环代理，`--chunk-delay-ms`（默认 10）按 chunk 双向延迟；启动时打印两个 DSN 的代理端口与直连/经代理往返实测 | `test_mismatched_receipt_and_retry_never_reopen_submission` 稳定绿（`#795` 的退避窗口已提到 30 s）；`test_ack_rechecks_expiration_after_the_actual_outbox_row_lock` 稳定绿（租约窗口 `LEASE_WINDOW_US` = 2 s）；把该窗口回退到产品下限 1 s 时稳定红：`Failed: ACK did not encounter the real outbox row lock` |
+| `commit-delay` | PG `commit_delay=100000` + `commit_siblings=1` + 12 个忙提交；InnoDB `binlog_group_commit_sync_delay=200000`；启动时打印基线与条件下的提交中位数 | 提交中位数从 <1 ms 升到约 100 ms（PG）/ 225 ms（InnoDB），statement 往返不变 |
+| `both` | 两类条件叠加 | 用于确认租约窗口同时满足“大于建立耗时”与“阻塞等待小于 3 s” |
+
+`--commit-delay-us` 同时覆盖两个引擎的值；PG 超过 100000 会在启动时被拒绝。
+
+### 租约窗口的两侧边界（`LEASE_WINDOW_US` = 2 s）
+
+两侧都由实测夹住，任何一侧都不该成为紧的那一侧（本机实测，括号内为 PG / MySQL）：
+
+| 条件 | 建立耗时（claim 提交 → ACK 取 outbox 锁） | 阻塞等待 | ACK 墙钟 | 下侧余量 | 上侧余量 |
+| --- | --- | --- | --- | --- | --- |
+| 无代理 | 27 / 35 ms | 1978 / 1975 ms | 1994 / 1991 ms | 1.97 s | 1.01 s（PG 整笔 3 s 预算） |
+| 10 ms/chunk | 948 / 1209 ms | 957 / 770 ms | 1194 / 1118 ms | 1.05 / 0.79 s | 1.81 / 2.23 s |
+| 两者叠加 | 1007 / 1401 ms | 846 / 361 ms | 1112 / 695 ms | 0.99 / 0.60 s | 1.89 / 2.64 s |
+
+上侧的两条 3 s 上界分别来自：PG `PostgresRuntimeDelivery(timeout_seconds=3)` 限制整笔 ACK 事务；InnoDB `innodb_lock_wait_timeout=3`（`MySQLJobTransactions` 每会话设置）限制阻塞等待。窗口取 2 s 使两侧余量都在 0.6 s 以上；取产品下限 1 s 会在 10 ms/chunk 下先过期，ACK 直接 `stale`、从不请求 outbox 锁。
+
+该窗口与代理默认值耦合：`--chunk-delay-ms` 远高于 10 ms 时下侧余量会先耗尽，该用例转红。那是窗口耦合失效，不是产品缺陷——要么用默认 10 ms，要么同步评估窗口。
+
+### 清理
+
+正常退出与被测用例失败时都由 `ExitStack`/`finally` 收尾：`ALTER SYSTEM RESET commit_delay`、`ALTER SYSTEM RESET commit_siblings` + `pg_reload_conf`，用新连接读回；`ALTER SYSTEM RESET` 无法复现的运行前值会被显式设回（被污染的服务器被还原而不是被抹平），`SET GLOBAL binlog_group_commit_sync_delay` 还原为运行前的值并读回，停止忙提交线程、删除临时 schema、关闭代理监听。
+
+进程被强杀（`SIGKILL`）时以上都不会执行，按下述顺序手工收尾：
+
+```bash
+# 1. 孤儿 pytest 子进程（harness 被杀后仍会继续跑）
+pkill -f "python -m pytest tests/integration"
+# 2. PG：复位参数并用新连接核对
+psql "$SPEECHNEXUS_TEST_DATABASE_URL" -c "ALTER SYSTEM RESET commit_delay" \
+  -c "ALTER SYSTEM RESET commit_siblings" -c "SELECT pg_reload_conf()"
+psql "$SPEECHNEXUS_TEST_DATABASE_URL" -c "SHOW commit_delay" -c "SHOW commit_siblings"
+# 3. PG：清掉残留的临时 schema（下一次 harness 运行也会自动清扫）
+psql "$SPEECHNEXUS_TEST_DATABASE_URL" -c "SELECT nspname FROM pg_namespace WHERE nspname LIKE 'sn_flake_commit_%' OR nspname LIKE 'sn_commit_probe_%'"
+# 4. InnoDB：还原慢提交参数并清掉探针库
+mysql -h 127.0.0.1 -P 55434 -uroot -p -e "SET GLOBAL binlog_group_commit_sync_delay=0; SELECT @@GLOBAL.binlog_group_commit_sync_delay; SHOW DATABASES LIKE 'sn_commit_probe%';"
+```
+
+`sn_flake_commit_<hex>` schema 与 `sn_commit_probe_<hex>` schema/库只属于本 harness；harness 启动时会清扫这两个前缀的历史残留，因此强杀后最省事的收尾是再跑一次同一 `--condition`（或用上面的查询手工 `DROP`）。
+
+### 它证明什么、不证明什么
+
+- 证明：指定用例在**对端提交慢**或**TCP 往返慢**时仍给出断言要求的结论；未修用例在这些条件下给出报告里的确定性失败。即“只能由当时那个 agent 重现”变成了任何人可重放的一条命令。
+- 证明：条件确实生效——启动输出包含基线/条件下的提交中位数、直连与经代理的往返实测、代理端口映射；不达标直接失败，而不是把“没有生效的条件”当证据。
+- 不证明：真实网络故障、丢包、HA、跨主机时钟偏移、真实慢磁盘或 fsync。代理只延迟字节，`commit_delay` 只延迟提交，两者都不模拟宕机与崩溃恢复。
+- 不证明：租约/退避的产品设计本身正确；它只说明既有断言在这些条件下成立。

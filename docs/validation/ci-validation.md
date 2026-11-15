@@ -526,10 +526,12 @@ node scripts/dev-env/validate-design-tokens.mjs
 
 | 规则 | 检查 |
 | --- | --- |
-| 产物可解析 | `exports` 每个目标必须是包内已存在的生成文件；生成产物改名或移动而 `exports` 未同步时失败，即使相对路径仍可到达 |
-| Web 绑定 | `web/**` 内不得以相对路径导入 `packages/contracts/src/**`；导入必须使用 `@speechnexus/contracts` 或其声明的子路径 |
+| 产物可解析 | `exports` 每个目标必须是包内已存在文件；生成产物改名或移动而 `exports` 未同步时失败。嵌套条件对象缺少字符串 `import`/`types`/`default` 时给出可读错误，不以 `TypeError` 崩溃 |
+| Web 绑定 | `web/**` 内不得以相对路径导入 `packages/contracts/src/**`（按打包器的扩展名/`index` 规则解析并以 `realpath` 规范化，`web/` 内的符号链接不能绕过）；导入必须使用包清单子路径；`web/` 内的动态 `import()`/`require()` 必须带字面量说明符，非字面量或模板字面量失败 |
 | 依赖必需 | 每个 `@speechnexus/contracts[/…]` 导入方的最近包清单必须声明 `"workspace:*"`；删除依赖或改用版本区间即失败 |
-| 两端对齐 | 每个声明子路径必须有经包清单的消费者，或在 [`export-consumers.json`](../../packages/contracts/export-consumers.json) 登记理由；新增无消费者子路径、登记的例外获得消费者（过期登记）都失败 |
+| 两端对齐 | 每个声明子路径必须有经包清单的消费者，或在 [`export-consumers.json`](../../packages/contracts/export-consumers.json) 登记可校验证据：`consumer.path` 必须存在且真的导入由子路径推导出的生成模块（`x-http` → `speechnexus_contracts.x_http`），`consumer.module` 若给出必须等于推导值；无两侧消费者的保留候选使用 `"consumer": null` 加 `retention`（`binding` 为 `client: false` 的 `bindings.json` profile、`basis` 为已存在决定文档、`decision`/`enable`/`delete` 非空）；新增无消费者子路径、登记项获得消费者、消费方路径消失或未导入推导模块、只写理由不给消费方、保留候选实际出现导入或 profile 生成客户端都失败 |
+
+**消费者口径**：出现一个经包清单的 import（静态导入、`import type`、副作用导入与字面量 `require()`）即计为消费者；守卫既不校验该绑定是否被使用，也不证明该导入在运行时会执行。注释、字符串与模板正文中的 import 文本不计入消费者。
 
 独立验证（均无需安装依赖）：
 
@@ -538,7 +540,7 @@ node --test tests/ci/contract-consumers.test.mjs
 node scripts/dev-env/validate-contract-consumers.mjs
 ```
 
-守卫是静态文本检查：它证明导入形态、清单依赖与 `exports` 声明对齐，不证明运行时解析、打包产物体积、Vite/tsc 版本行为或实际页面调用成功；这些仍由 `pnpm typecheck`、`pnpm build`、`pnpm test` 与真实浏览器能力道覆盖。仓库内 `scripts/`、`tests/` 的探针与夹具在检出上直接运行源码，不是 workspace 包消费者，因此不在 Web 绑定规则内；它们使用相对路径不进入本门禁的消费者计数。
+守卫是静态文本检查：它证明导入形态、清单依赖、登记证据与 `exports` 声明对齐，不证明运行时解析、打包产物体积、Vite/tsc 版本行为或实际页面调用成功；这些仍由 `pnpm typecheck`、`pnpm build`、`pnpm test` 与真实浏览器能力道覆盖。仓库内 `scripts/`、`tests/` 的探针与夹具在检出上直接运行源码，不是 workspace 包消费者，因此不在 Web 绑定规则内；它们使用相对路径不进入本门禁的消费者计数。
 
 ## Web 无障碍与颜色对比度
 

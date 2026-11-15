@@ -125,12 +125,35 @@ instead of a copied constant: `@speechnexus/contracts/schemas/workbench`
 (`file.schema.json`). Import them as JSON modules; they are generated artifacts
 and are never edited by hand.
 
-Every declared subpath either has a real consumer through the manifest or is
-registered with its reason in [`export-consumers.json`](export-consumers.json).
-Entries there state the actual consumer (usually the generated Python module
-used by the backend, or a repository fixture that runs from the checkout and is
-not a workspace consumer). Adding an `exports` entry without a consumer, or
-leaving a registration after its subpath gains one, fails the guard.
+Every declared subpath either has a consumer through the manifest or is
+registered in [`export-consumers.json`](export-consumers.json). A registration
+is evidence, not an exemption: `consumer.path` must be a repository file that
+really imports the generated Python module derived from the subpath
+(`./voice-catalogue-http` -> `speechnexus_contracts.voice_catalogue_http`), and
+`consumer.module`, when present, must equal that derived name. A prose reason
+alone is rejected. An export that is a retained candidate with no consumer on
+either side uses `"consumer": null` plus a `retention` entry: `binding` is the
+`contracts/bindings.json` profile (which must be `"client": false`), `basis` is
+the existing decision document, and `decision` / `enable` / `delete` state the
+retention basis and the conditions to activate or delete it.
+
+The consumer count is deliberately literal: **one manifest import counts as a
+consumer, including `import type`, a side-effect import and a literal
+`require()`**. The guard does not check that the binding is used and does not
+prove the import executes at runtime. A registration becomes stale when the
+subpath gains a consumer; a retained candidate becomes stale when anything
+imports its module or when its binding profile starts generating a client.
+
+The scan is lexical but not naive: comments, string bodies and template bodies
+never produce specifiers, a regex literal cannot hide the import after it, and
+imports are located at their specifier line. Under `web/`, a dynamic
+`import()`/`require()` must carry a literal specifier; `import(name)` and
+``import(`@speechnexus/contracts/${name}`)`` fail because the binding cannot be
+statically verified. Relative imports are resolved with the bundler's
+extension/index rules and canonicalized with `realpath`, so a symlink inside
+`web/` cannot reach `packages/contracts/src/**`. Non-code files and the
+repository probes under `scripts/` and `tests/` run from the checkout and are
+not workspace package consumers.
 
 ```sh
 node --test tests/ci/contract-consumers.test.mjs
@@ -142,9 +165,7 @@ pnpm dependencies. It statically checks the `exports` targets, manifest
 imports, declared workspace dependency and the two-way `exports`/consumer
 alignment; it does not prove runtime resolution, bundle contents or that a page
 actually calls an endpoint. Run `pnpm typecheck`, `pnpm build` and the Web tests
-for those. Repository probes under `scripts/` and `tests/` import the sources
-directly from the checkout; they are not package consumers and stay out of the
-binding rule.
+for those.
 
 ## Synchronous speech ceiling handoff
 

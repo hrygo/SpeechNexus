@@ -12,27 +12,37 @@
  * instead of a missing file path.
  *
  * The guard is deliberately dependency-free so the `changes` job can run it
- * before installing project dependencies. It enforces four two-way rules:
+ * before installing project dependencies. It enforces:
  *
  * 1. Every declared `exports` target is an existing file. A generated artifact
  *    that moved without its `exports` entry fails here even though a relative
  *    path would still reach it.
  * 2. Code under `web/` must not import `packages/contracts/src/**` by relative
- *    path; imports go through `@speechnexus/contracts[/<subpath>]`.
- * 3. Every `@speechnexus/contracts[/<subpath>]` specifier maps to a declared
- *    export, and the importing workspace package declares
- *    `"@speechnexus/contracts": "workspace:*"`. Removing that dependency fails
- *    here even before TypeScript does.
- * 4. Every declared subpath has at least one such consumer, or is registered
- *    with a reason in `packages/contracts/export-consumers.json`. A new export
- *    without a consumer fails, and a stale registration (its subpath gained a
- *    consumer) fails too, so the registry cannot silently rot.
+ *    path; imports go through `@speechnexus/contracts[/<subpath>]`. A dynamic
+ *    `import()`/`require()` under `web/` must carry a literal specifier so the
+ *    binding stays statically checkable.
+ * 3. Every `@speechnexus/contracts[/<subpath>]` specifier (static, `import type`,
+ *    side-effect or literal `require()`) maps to a declared export, and the
+ *    importing workspace package declares `"@speechnexus/contracts": "workspace:*"`.
+ * 4. Every declared subpath has at least one such consumer, or is registered in
+ *    `packages/contracts/export-consumers.json` with verifiable evidence:
+ *    either a `consumer.path` file that really imports the generated Python
+ *    module derived from the subpath (`x-http` -> `x_http`), or an explicit
+ *    `consumer: null` plus a `retention` entry whose binding profile is a
+ *    `client: false` candidate, whose decision document exists, and whose
+ *    enable/delete conditions are stated. A registration for a subpath that
+ *    gains a consumer, a consumer path that disappears, a missing derived
+ *    import, a retained candidate that gains a consumer, and a new export
+ *    without any of these all fail.
+ *
+ * The guard is a static text scan: a manifest import counts as a consumer even
+ * when the binding is unused or a side-effect import, and nothing here proves
+ * the import executes at runtime. See `packages/contracts/README.md`.
  */
 
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { withoutComments } from "./design-token-integrity.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -41,8 +51,10 @@ const repoRoot = path.resolve(__dirname, "../..");
 export const CONTRACTS_PACKAGE = "packages/contracts";
 export const PACKAGE_SPECIFIER = "@speechnexus/contracts";
 export const REGISTRY_PATH = `${CONTRACTS_PACKAGE}/export-consumers.json`;
+export const BINDINGS_PATH = "contracts/bindings.json";
 export const SCAN_ROOTS = ["web", "scripts", "tests", "packages"];
-export const CODE_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".mjs", ".js"];
+export const CODE_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".mjs", ".js", ".jsx", ".cjs"];
+export const PYTHON_EXTENSIONS = [".py"];
 export const SKIP_DIRECTORIES = new Set([
   "node_modules",
   "dist",
@@ -53,20 +65,36 @@ export const SKIP_DIRECTORIES = new Set([
   ".venv",
   "__pycache__",
   ".git",
+  ".mypy_cache",
+  ".ruff_cache",
+  ".pytest_cache",
 ]);
 
 const SPECIFIER_PATTERN = /^@speechnexus\/contracts(?:\/|$)/;
-// Anchored at a statement boundary so a string literal that merely contains
-// `import ... from "@speechnexus/contracts"` (fixtures, error text) is not a
-// consumer; `[\s\S]*?` keeps multi-line import/export lists working, and the
-// dynamic-import form is matched separately.
-const IMPORT_PATTERNS = [
-  // `import ... from "x"` / `export ... from "x"`, including multi-line lists.
-  /(?:^|\n)[ \t]*(?:import|export)\b[\s\S]*?\bfrom\s+["']([^"']+)["']/g,
-  // Bare side-effect import and dynamic import.
-  /(?:^|\n)[ \t]*import\s+["']([^"']+)["']/g,
-  /\bimport\s*\(\s*["']([^"']+)["']/g,
-];
+const PYTHON_MODULE_PATTERN = /^[a-z0-9_]+$/;
+
+// `/` starts a regular expression only where an expression may begin.
+const REGEX_PREFIX_CHARS = new Set("([{,;:=!&|?+-*%<>~^/".split(""));
+const REGEX_PREFIX_WORDS = new Set([
+  "return",
+  "typeof",
+  "case",
+  "in",
+  "of",
+  "new",
+  "delete",
+  "void",
+  "throw",
+  "do",
+  "else",
+  "yield",
+  "await",
+]);
+
+// Only clause tokens may sit between the keyword and `from`: identifiers,
+// `as`/`type`/namespace stars, separators. A single character class keeps the
+// check linear; operators, semicolons or JSX tags reject the candidate.
+const IMPORT_CLAUSE_ALLOWED = /^[\s,{}*.\w$]*$/;
 
 function toPosix(value) {
   return value.split(path.sep).join("/");
@@ -76,10 +104,40 @@ function lineOf(content, index) {
   return content.slice(0, index).split("\n").length;
 }
 
-/** List code files under `rootDir` for the configured scan roots. */
+function realpathOr(value) {
+  try {
+    return fs.realpathSync(value);
+  } catch {
+    return value;
+  }
+}
+
+/**
+ * Resolve a relative specifier the way the bundler/tsc do: extensionless
+ * imports and directory `index` files both count, and the result is a real
+ * path so a symlink cannot hide access to the generated package.
+ */
+function resolveImportTarget(resolved) {
+  if (fs.existsSync(resolved)) return realpathOr(resolved);
+  for (const extension of CODE_EXTENSIONS) {
+    const candidate = `${resolved}${extension}`;
+    if (fs.existsSync(candidate)) return realpathOr(candidate);
+  }
+  for (const extension of CODE_EXTENSIONS) {
+    const candidate = path.join(resolved, `index${extension}`);
+    if (fs.existsSync(candidate)) return realpathOr(candidate);
+  }
+  return resolved;
+}
+
+/** List code files under `rootDir`, deduplicated by real path. */
 export function listConsumerFiles(rootDir) {
   const files = [];
+  const seenDirectories = new Set();
   const walk = (dir) => {
+    const real = realpathOr(dir);
+    if (seenDirectories.has(real)) return;
+    seenDirectories.add(real);
     let entries;
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -89,7 +147,13 @@ export function listConsumerFiles(rootDir) {
     for (const entry of entries) {
       if (entry.name.startsWith(".") || SKIP_DIRECTORIES.has(entry.name)) continue;
       const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) walk(full);
+      let stat;
+      try {
+        stat = fs.statSync(full);
+      } catch {
+        continue;
+      }
+      if (stat.isDirectory()) walk(full);
       else if (CODE_EXTENSIONS.includes(path.extname(entry.name))) files.push(full);
     }
   };
@@ -97,25 +161,195 @@ export function listConsumerFiles(rootDir) {
   return files.sort();
 }
 
-/** Extract static, bare and dynamic import/export specifiers from one file. */
-export function extractSpecifiers(content) {
-  const stripped = withoutComments(content, { script: true });
-  const seen = new Set();
-  const specifiers = [];
-  for (const pattern of IMPORT_PATTERNS) {
-    pattern.lastIndex = 0;
-    for (const match of stripped.matchAll(pattern)) {
-      const specifier = match[1];
-      const index = match.index ?? 0;
-      if (seen.has(specifier)) continue;
-      seen.add(specifier);
-      specifiers.push({ specifier, line: lineOf(stripped, index) });
+/** Blank comments, string bodies and template bodies while keeping positions. */
+export function maskSource(code) {
+  const literals = new Map();
+  const chars = code.split("");
+  const blank = (from, to) => {
+    for (let index = from; index < to; index += 1) {
+      if (chars[index] !== "\n") chars[index] = " ";
     }
+  };
+  let previous;
+  let index = 0;
+  while (index < code.length) {
+    const char = code[index];
+    if (char === "/" && code[index + 1] === "/") {
+      const end = code.indexOf("\n", index);
+      const stop = end < 0 ? code.length : end;
+      blank(index, stop);
+      index = stop;
+      continue;
+    }
+    if (char === "/" && code[index + 1] === "*") {
+      const end = code.indexOf("*/", index + 2);
+      const stop = end < 0 ? code.length : end + 2;
+      blank(index, stop);
+      index = stop;
+      continue;
+    }
+    if (char === "/" && regexAllowed(previous)) {
+      let cursor = index + 1;
+      let inClass = false;
+      let closed = false;
+      while (cursor < code.length) {
+        const next = code[cursor];
+        if (next === "\\") {
+          cursor += 2;
+          continue;
+        }
+        if (next === "\n") break;
+        if (next === "[") inClass = true;
+        else if (next === "]") inClass = false;
+        else if (next === "/" && !inClass) {
+          closed = true;
+          break;
+        }
+        cursor += 1;
+      }
+      const stop = closed ? cursor + 1 : cursor;
+      blank(index, stop);
+      index = stop;
+      previous = "regex";
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      let cursor = index + 1;
+      while (cursor < code.length) {
+        if (code[cursor] === "\\") {
+          cursor += 2;
+          continue;
+        }
+        if (code[cursor] === char) break;
+        if (code[cursor] === "\n") break;
+        cursor += 1;
+      }
+      if (code[cursor] === char) {
+        literals.set(index, { end: cursor + 1, value: code.slice(index + 1, cursor) });
+        blank(index + 1, cursor);
+        index = cursor + 1;
+        previous = "string";
+      } else {
+        index += 1;
+      }
+      continue;
+    }
+    if (char === "`") {
+      let cursor = index + 1;
+      let depth = 0;
+      while (cursor < code.length) {
+        const next = code[cursor];
+        if (next === "\\") {
+          cursor += 2;
+          continue;
+        }
+        if (next === "$" && code[cursor + 1] === "{") {
+          depth += 1;
+          cursor += 2;
+          continue;
+        }
+        if (next === "}" && depth > 0) {
+          depth -= 1;
+          cursor += 1;
+          continue;
+        }
+        if (next === "`" && depth === 0) break;
+        cursor += 1;
+      }
+      if (code[cursor] === "`") {
+        literals.set(index, { end: cursor + 1, value: code.slice(index + 1, cursor) });
+        blank(index + 1, cursor);
+        index = cursor + 1;
+        previous = "string";
+      } else {
+        index += 1;
+      }
+      continue;
+    }
+    if (/\s/.test(char)) {
+      index += 1;
+      continue;
+    }
+    const word = /^[A-Za-z_$][\w$]*|^\d+(?:\.\d+)?/.exec(code.slice(index));
+    if (word) {
+      previous = word[0];
+      index += word[0].length;
+      continue;
+    }
+    previous = char;
+    index += 1;
   }
-  return specifiers;
+  return { masked: chars.join(""), literals };
 }
 
-/** Read the package manifest exports as a map of subpath key to target file. */
+function regexAllowed(previous) {
+  if (previous === undefined) return true;
+  if (previous === "regex" || previous === "string") return false;
+  if (previous.length === 1) return REGEX_PREFIX_CHARS.has(previous);
+  return REGEX_PREFIX_WORDS.has(previous);
+}
+
+/**
+ * True when `from` at `index` belongs to an `import`/`export` clause rather than
+ * to ordinary prose or JSX text. The clause may never contain operators, tags
+ * or statements between the keyword and `from`.
+ */
+function looksLikeImportClause(masked, keywordStarts, index) {
+  for (let cursor = keywordStarts.length - 1; cursor >= 0; cursor -= 1) {
+    const start = keywordStarts[cursor];
+    if (start >= index) continue;
+    const between = masked.slice(start, index);
+    return IMPORT_CLAUSE_ALLOWED.test(between.replace(/^(?:import|export)/, ""));
+  }
+  return false;
+}
+
+/**
+ * Extract import/export specifiers and statically unverifiable dynamic imports.
+ * Comments, string bodies and template bodies never produce specifiers.
+ */
+export function scanSource(code) {
+  const { masked, literals } = maskSource(code);
+  const specifiers = [];
+  const unverifiable = [];
+  const addSpecifier = (index, kind) => {
+    const literal = literals.get(index);
+    if (literal === undefined) return;
+    specifiers.push({ specifier: literal.value, line: lineOf(masked, index), kind });
+  };
+
+  const keywordStarts = [...masked.matchAll(/\b(?:import|export)\b/g)].map((match) => match.index);
+  for (const match of masked.matchAll(/\bfrom\s+(["'])/g)) {
+    const quoteIndex = match.index + match[0].length - 1;
+    if (!looksLikeImportClause(masked, keywordStarts, match.index)) continue;
+    addSpecifier(quoteIndex, "static");
+  }
+  for (const match of masked.matchAll(/(?:^|\n)[ \t]*import\s+(["'])/g)) {
+    const quoteIndex = match.index + match[0].length - 1;
+    addSpecifier(quoteIndex, "side-effect");
+  }
+  for (const match of masked.matchAll(/\b(import|require)\s*\(\s*/g)) {
+    const form = match[1] === "import" ? "dynamic import" : "require";
+    const position = match.index + match[0].length;
+    const char = masked[position];
+    if (char === '"' || char === "'") {
+      addSpecifier(position, form);
+    } else if (char === "`") {
+      unverifiable.push({
+        line: lineOf(masked, position),
+        form: `${form} with a template-literal specifier`,
+      });
+    } else if (char !== undefined) {
+      unverifiable.push({
+        line: lineOf(masked, position),
+        form: `${form} with a non-literal specifier`,
+      });
+    }
+  }
+  return { specifiers, unverifiable };
+}
+
+/** Read the package manifest exports as a map of subpath key to declared target. */
 export function readExports(rootDir) {
   const manifestPath = path.join(rootDir, CONTRACTS_PACKAGE, "package.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
@@ -131,13 +365,12 @@ export function readExports(rootDir) {
   return { manifestPath, entries };
 }
 
-/** Resolve the `exports` target for a declared subpath key, or null. */
-export function exportTarget(exportsEntries, key) {
-  const value = exportsEntries.get(key);
-  if (value === undefined) return null;
+/** Resolve a string `exports` target, or null when the declaration is nested. */
+export function exportTarget(value) {
   if (typeof value === "string") return value;
-  if (value && typeof value === "object") {
-    return value.import ?? value.types ?? value.default ?? null;
+  if (value !== null && typeof value === "object") {
+    const target = value.import ?? value.types ?? value.default;
+    if (typeof target === "string") return target;
   }
   return null;
 }
@@ -147,6 +380,14 @@ export function subpathKey(specifier) {
   if (specifier === PACKAGE_SPECIFIER) return ".";
   if (!specifier.startsWith(`${PACKAGE_SPECIFIER}/`)) return null;
   return `./${specifier.slice(PACKAGE_SPECIFIER.length + 1)}`;
+}
+
+/** The generated Python module that mirrors one TypeScript subpath. */
+export function pythonModuleFor(key) {
+  if (!key.startsWith("./") || !PYTHON_MODULE_PATTERN.test(key.slice(2).replaceAll("-", "_"))) {
+    return null;
+  }
+  return `speechnexus_contracts.${key.slice(2).replaceAll("-", "_")}`;
 }
 
 function readJson(file, errors, label) {
@@ -165,9 +406,7 @@ export function owningPackage(rootDir, startDir) {
     const manifestPath = path.join(dir, "package.json");
     if (fs.existsSync(manifestPath)) {
       const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-      if (typeof manifest.name === "string") {
-        return { dir, manifestPath, manifest };
-      }
+      if (typeof manifest.name === "string") return { dir, manifestPath, manifest };
     }
     if (path.resolve(dir) === path.resolve(rootDir)) return null;
     const parent = path.dirname(dir);
@@ -184,19 +423,199 @@ function declaredWorkspaceDependency(manifest) {
   return undefined;
 }
 
+function safeRelative(rootDir, file) {
+  const relative = toPosix(path.relative(rootDir, file));
+  return relative.startsWith("..") || path.isAbsolute(relative) ? null : relative;
+}
+
+/** Python files that import one generated module, outside the package itself. */
+export function findPythonImporters(rootDir, module) {
+  const importers = [];
+  const pattern = new RegExp(
+    `(?:^|\\n)\\s*(?:from\\s+${module.replaceAll(".", "\\.")}\\s+import\\b|import\\s+${module.replaceAll(".", "\\.")}\\b)`,
+  );
+  const walk = (dir) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith(".") || SKIP_DIRECTORIES.has(entry.name)) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        const relative = safeRelative(rootDir, full);
+        if (relative !== null && relative.startsWith(CONTRACTS_PACKAGE)) continue;
+        walk(full);
+      } else if (PYTHON_EXTENSIONS.includes(path.extname(entry.name))) {
+        const relative = safeRelative(rootDir, full);
+        if (relative === null || relative.startsWith(CONTRACTS_PACKAGE)) continue;
+        if (pattern.test(fs.readFileSync(full, "utf8"))) importers.push(relative);
+      }
+    }
+  };
+  walk(rootDir);
+  return importers.sort();
+}
+
+function checkConsumer(rootDir, key, consumer, errors, registryFile) {
+  if (typeof consumer !== "object" || consumer === null || Array.isArray(consumer)) {
+    errors.push({
+      file: registryFile,
+      line: 1,
+      message: `Export '${key}' must declare a consumer object or "consumer": null with retention.`,
+    });
+    return;
+  }
+  if (typeof consumer.path !== "string" || consumer.path === "") {
+    errors.push({
+      file: registryFile,
+      line: 1,
+      message: `Export '${key}' consumer needs a repository-relative "path".`,
+    });
+    return;
+  }
+  const absolute = path.resolve(rootDir, consumer.path);
+  const relative = safeRelative(rootDir, absolute);
+  if (relative === null || relative.startsWith("..")) {
+    errors.push({
+      file: registryFile,
+      line: 1,
+      message: `Export '${key}' consumer path '${consumer.path}' escapes the repository.`,
+    });
+    return;
+  }
+  if (relative.startsWith(CONTRACTS_PACKAGE)) {
+    errors.push({
+      file: registryFile,
+      line: 1,
+      message: `Export '${key}' consumer path '${consumer.path}' is the generated package itself, not a consumer.`,
+    });
+    return;
+  }
+  if (!fs.existsSync(absolute) || !fs.statSync(absolute).isFile()) {
+    errors.push({
+      file: registryFile,
+      line: 1,
+      message: `Export '${key}' consumer path '${consumer.path}' does not exist.`,
+    });
+    return;
+  }
+  const module = pythonModuleFor(key);
+  if (module === null) {
+    errors.push({
+      file: registryFile,
+      line: 1,
+      message: `Export '${key}' has no derivable generated Python module.`,
+    });
+    return;
+  }
+  if (consumer.module !== undefined && consumer.module !== module) {
+    errors.push({
+      file: registryFile,
+      line: 1,
+      message: `Export '${key}' consumer.module '${consumer.module}' must equal the derived '${module}'.`,
+    });
+    return;
+  }
+  if (path.extname(absolute) !== ".py") {
+    errors.push({
+      file: registryFile,
+      line: 1,
+      message: `Export '${key}' consumer '${consumer.path}' must be a Python file importing '${module}'.`,
+    });
+    return;
+  }
+  const pattern = new RegExp(
+    `(?:^|\\n)\\s*(?:from\\s+${module.replaceAll(".", "\\.")}\\s+import\\b|import\\s+${module.replaceAll(".", "\\.")}\\b)`,
+  );
+  if (!pattern.test(fs.readFileSync(absolute, "utf8"))) {
+    errors.push({
+      file: registryFile,
+      line: 1,
+      message: `Export '${key}' consumer '${consumer.path}' does not import ${module}.`,
+    });
+  }
+}
+
+function checkRetention(rootDir, key, retention, errors, registryFile) {
+  if (typeof retention !== "object" || retention === null || Array.isArray(retention)) {
+    errors.push({
+      file: registryFile,
+      line: 1,
+      message: `Export '${key}' with "consumer": null needs a retention object.`,
+    });
+    return;
+  }
+  for (const field of ["decision", "enable", "delete"]) {
+    if (typeof retention[field] !== "string" || retention[field].trim() === "") {
+      errors.push({
+        file: registryFile,
+        line: 1,
+        message: `Export '${key}' retention needs a non-empty '${field}' condition.`,
+      });
+    }
+  }
+  if (typeof retention.basis !== "string" || retention.basis === "") {
+    errors.push({
+      file: registryFile,
+      line: 1,
+      message: `Export '${key}' retention needs a decision document in 'basis'.`,
+    });
+  } else if (!fs.existsSync(path.resolve(rootDir, retention.basis))) {
+    errors.push({
+      file: registryFile,
+      line: 1,
+      message: `Export '${key}' retention basis '${retention.basis}' does not exist.`,
+    });
+  }
+  if (typeof retention.binding !== "string" || retention.binding === "") {
+    errors.push({
+      file: registryFile,
+      line: 1,
+      message: `Export '${key}' retention needs the bindings.json profile in 'binding'.`,
+    });
+    return;
+  }
+  const bindingsFile = path.join(rootDir, BINDINGS_PATH);
+  const bindings = readJson(bindingsFile, errors, "contracts/bindings.json");
+  const profile = bindings?.profiles?.[retention.binding];
+  if (profile === undefined) {
+    errors.push({
+      file: registryFile,
+      line: 1,
+      message: `Export '${key}' retention binding '${retention.binding}' is not a contracts/bindings.json profile.`,
+    });
+  } else if (profile.client !== false) {
+    errors.push({
+      file: registryFile,
+      line: 1,
+      message: `Export '${key}' retention binding '${retention.binding}' generates a client (client != false); a consumerless export is not a retained candidate anymore.`,
+    });
+  }
+}
+
 export function runValidation(rootDir = repoRoot) {
   const errors = [];
   const contractsDir = path.join(rootDir, CONTRACTS_PACKAGE);
+  const contractsReal = realpathOr(contractsDir);
+  const manifestPath = path.join(contractsDir, "package.json");
 
-  // Rule 1: every declared export points at an existing generated artifact.
-  const { manifestPath, entries } = readExports(rootDir);
+  // Rule 1: every declared export points at an existing file.
+  let entries;
+  try {
+    ({ entries } = readExports(rootDir));
+  } catch (error) {
+    return [{ file: manifestPath, line: 1, message: `${error.message}` }];
+  }
   for (const [key, value] of entries) {
-    const target = exportTarget(entries, key);
+    const target = exportTarget(value);
     if (target === null) {
       errors.push({
         file: manifestPath,
         line: 1,
-        message: `Export '${key}' has no string import/types target.`,
+        message: `Export '${key}' has no string import/types target (nested condition objects are not supported).`,
       });
       continue;
     }
@@ -205,7 +624,7 @@ export function runValidation(rootDir = repoRoot) {
       errors.push({
         file: manifestPath,
         line: 1,
-        message: `Export '${key}' targets a missing generated artifact '${target}'.`,
+        message: `Export '${key}' targets a missing artifact '${target}'.`,
       });
     } else if (!fs.statSync(resolved).isFile()) {
       errors.push({
@@ -225,39 +644,63 @@ export function runValidation(rootDir = repoRoot) {
   if (registry?.unbound !== undefined && typeof registry.unbound !== "object") {
     errors.push({ file: registryFile, line: 1, message: "'unbound' must be an object." });
   }
-  for (const [key, reason] of Object.entries(unboundRegistry)) {
-    if (typeof reason !== "string" || reason.trim() === "") {
-      errors.push({
-        file: registryFile,
-        line: 1,
-        message: `Unbound export '${key}' needs a non-empty reason.`,
-      });
-    }
-    if (!entries.has(key)) {
-      errors.push({
-        file: registryFile,
-        line: 1,
-        message: `Registered export '${key}' is not declared in packages/contracts/package.json.`,
-      });
+  if (registry !== null && typeof registry === "object" && !Array.isArray(registry)) {
+    for (const [key, entry] of Object.entries(unboundRegistry)) {
+      if (!entries.has(key)) {
+        errors.push({
+          file: registryFile,
+          line: 1,
+          message: `Registered export '${key}' is not declared in packages/contracts/package.json.`,
+        });
+        continue;
+      }
+      if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+        errors.push({
+          file: registryFile,
+          line: 1,
+          message: `Registered export '${key}' must be an object with 'reason' and 'consumer'.`,
+        });
+        continue;
+      }
+      if (typeof entry.reason !== "string" || entry.reason.trim() === "") {
+        errors.push({
+          file: registryFile,
+          line: 1,
+          message: `Registered export '${key}' needs a non-empty 'reason'.`,
+        });
+      }
+      if (entry.consumer === null) {
+        checkRetention(rootDir, key, entry.retention, errors, registryFile);
+        const module = pythonModuleFor(key);
+        const pythonImporters = module === null ? [] : findPythonImporters(rootDir, module);
+        if (pythonImporters.length > 0) {
+          errors.push({
+            file: registryFile,
+            line: 1,
+            message: `Export '${key}' is registered as consumerless but ${pythonImporters[0]} imports ${module}.`,
+          });
+        }
+      } else {
+        checkConsumer(rootDir, key, entry.consumer, errors, registryFile);
+      }
     }
   }
 
   const consumers = new Map([...entries.keys()].map((key) => [key, []]));
 
-  // Rules 2-3: consumers must bind through the manifest and declare the dependency.
+  // Rules 2-3: manifest imports, declared dependency, no relative package access.
   for (const file of listConsumerFiles(rootDir)) {
     const relative = toPosix(path.relative(rootDir, file));
-    // The package's own tests may exercise its relative sources; they are not consumers.
     if (relative === CONTRACTS_PACKAGE || relative.startsWith(`${CONTRACTS_PACKAGE}/`)) continue;
     const content = fs.readFileSync(file, "utf8");
+    const { specifiers, unverifiable } = scanSource(content);
     const owner = owningPackage(rootDir, path.dirname(file));
 
-    for (const { specifier, line } of extractSpecifiers(content)) {
+    for (const { specifier, line } of specifiers) {
       if (specifier.startsWith(".")) {
         if (!relative.startsWith("web/")) continue;
-        const resolved = path.resolve(path.dirname(file), specifier);
-        const fromContracts = path.relative(contractsDir, resolved);
-        if (!fromContracts.startsWith("..") && !path.isAbsolute(fromContracts)) {
+        const real = resolveImportTarget(path.resolve(path.dirname(file), specifier));
+        if (real === contractsReal || real.startsWith(contractsReal + path.sep)) {
           errors.push({
             file,
             line,
@@ -293,9 +736,19 @@ export function runValidation(rootDir = repoRoot) {
         });
       }
     }
+
+    if (relative.startsWith("web/")) {
+      for (const { line, form } of unverifiable) {
+        errors.push({
+          file,
+          line,
+          message: `Web code uses ${form}; the contract binding must be statically checkable with a literal specifier.`,
+        });
+      }
+    }
   }
 
-  // Rule 4: every export is consumed, or explicitly registered with a reason.
+  // Rule 4: every export is consumed, or registered with verifiable evidence.
   for (const key of entries.keys()) {
     const used = consumers.get(key) ?? [];
     const registered = Object.hasOwn(unboundRegistry, key);
@@ -303,7 +756,7 @@ export function runValidation(rootDir = repoRoot) {
       errors.push({
         file: manifestPath,
         line: 1,
-        message: `Export '${key}' has no consumer. Bind it in web (or a workspace consumer), or register the reason in ${REGISTRY_PATH}.`,
+        message: `Export '${key}' has no consumer. Bind it in web (or a workspace consumer), or register the reason and evidence in ${REGISTRY_PATH}.`,
       });
     } else if (used.length > 0 && registered) {
       errors.push({

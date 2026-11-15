@@ -19,6 +19,8 @@ This file proves three things, in the same spirit as the other approval guards:
 from __future__ import annotations
 
 import importlib.util
+import re
+import subprocess
 from pathlib import Path
 from types import ModuleType
 from typing import cast
@@ -27,6 +29,24 @@ from tests.contract.test_http_contract_changes import repository as repository
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = "contracts/speech-openapi.yaml"
+# The contract as it stood before the `#828` approvals landed: the parent of the
+# squash merge that introduced them (`c7e43f9a`, PR #839). Pinned so the comparison is
+# reproducible at any later head. The second test below proves the baseline really is
+# older than the approvals, so this pin cannot silently make the guard vacuous.
+_PRE_APPROVAL_BASELINE = "f3e9e1b4b5e5397fb2d4af7f59e06dc790614065"
+# One code that the `#828` approvals introduced; seeing it in the current contract but
+# not in the frozen baseline is what proves the baseline predates the approvals.
+_KNOWN_WIDENED_CODE = "voice_draft_engine_unavailable"
+_ADDED_CODES = re.compile(r"enum values added: \[([^\]]*)\]")
+
+
+def _added_codes(table: dict[str, dict[str, str]]) -> set[str]:
+    codes: set[str] = set()
+    for finding in table:
+        match = _ADDED_CODES.search(finding)
+        if match is not None:
+            codes.update(value.strip().strip("'") for value in match.group(1).split(","))
+    return {code for code in codes if code}
 
 
 def module() -> ModuleType:
@@ -49,16 +69,56 @@ def test_the_table_is_not_empty_and_every_entry_is_fully_annotated() -> None:
         assert metadata["from_version"] and metadata["to_version"], finding
 
 
-def test_every_entry_matches_a_finding_of_the_real_comparison() -> None:
-    # The guard only filters an exact line, so an entry that the real comparison does
-    # not produce is dead. Comparing the tree against the merge base is the only way
-    # to prove the entries are live; `make contracts-speech-changes` runs the same
-    # baseline in CI.
+def test_every_entry_matches_a_widening_the_current_contract_still_carries() -> None:
+    """Each approval must still describe a widening relative to the frozen baseline.
+
+    Comparing the tree against ``origin/main`` compared it against itself once the
+    approvals were merged: the diff is empty on ``main``, so that form of the check
+    could never pass again (it failed immediately after the merge). The baseline is
+    therefore the contract *before* the approvals landed, which is reproducible from
+    git at any head, and only the vocabulary-widening class is compared: an unrelated
+    later change to the same file is the PR-time gate's business, not this test's.
+
+    Both directions matter. An approval whose widening disappeared (someone reverted
+    a code or a ``retryable`` value) is dead and turns this red; a widening the table
+    does not name is filtered by nothing and also turns this red.
+    """
     loaded = module()
-    report = loaded.inspect_sources("origin/main", surface="speech")
-    approved = report["approved_response_vocabulary_changes"]
-    assert len(approved) == len(loaded._APPROVED_RESPONSE_VOCABULARY_WIDENINGS)
-    assert report["findings"] == []
+    report = loaded.inspect_sources(_PRE_APPROVAL_BASELINE, surface="speech")
+    # The filter appends " [issue: reason]" to each finding it waves through, so the
+    # identity of an approval is the finding text before that suffix.
+    approved = {item.rsplit(" [", 1)[0] for item in report["approved_response_vocabulary_changes"]}
+    table = set(_table(loaded))
+    assert approved == table, {
+        "widening_not_approved": sorted(approved - table),
+        "approval_without_widening": sorted(table - approved),
+    }
+    # The other direction: a widening the table does not name must still be rejected,
+    # so nothing in this class may be left over as an unfiltered finding. Findings of
+    # other classes are the PR-time gate's business and deliberately not asserted
+    # here, because an unrelated later edit to the same file is not this test's job.
+    leftovers = [
+        finding
+        for finding in report["findings"]
+        if finding.startswith(SOURCE) and "enum values added" in finding
+    ]
+    assert leftovers == [], leftovers
+
+
+def test_the_frozen_baseline_predates_the_widenings_it_is_compared_against() -> None:
+    # A baseline picked at or after the approvals would already carry the widened
+    # vocabulary, so the comparison above would report nothing and pass vacuously.
+    committed = subprocess.check_output(
+        ["git", "-C", str(ROOT), "show", f"{_PRE_APPROVAL_BASELINE}:{SOURCE}"],
+        text=True,
+    )
+    added = _added_codes(_table(module()))
+    assert _KNOWN_WIDENED_CODE in added, added
+    widened = _KNOWN_WIDENED_CODE
+    assert widened in (ROOT / SOURCE).read_text(encoding="utf-8"), widened
+    assert widened not in committed, (
+        f"the frozen baseline already contains {widened}, so it does not predate the approvals"
+    )
 
 
 def test_an_unregistered_widening_is_still_rejected() -> None:

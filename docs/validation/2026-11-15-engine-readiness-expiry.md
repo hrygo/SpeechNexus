@@ -53,13 +53,13 @@ date: 2026-11-15
 | 项 | 值 |
 | --- | --- |
 | 主机 | macOS arm64，2026-11-15 |
-| 基线 | `origin/main` = `6a4d7184`（含 #831 CI 重构、#844 本卡审查文档） |
+| 基线 | `origin/main` = `702e43f2`（含 #831 CI 重构、#844/#848 本卡两轮审查、#843 部署装配） |
 | worktree | `/private/tmp/sn838`，分支 `fix/828-readiness-expiry` |
 | Python / pytest / pnpm | 3.14.9 / 9.1.1 / 12.14.0 |
 | PostgreSQL | 一次性容器 `sn838-pg`（`postgres:16.15-alpine`，`127.0.0.1:55461`），测后删除 |
 | MySQL | 仓库既有隔离容器 `speechnexus-coordination-mysql`（`127.0.0.1:55434`）；每个用例自建唯一 database/schema |
 | DSN 环境变量 | `SPEECHNEXUS_TEST_DATABASE_URL`、`SPEECHNEXUS_TEST_MYSQL_URL` |
-| 基线用例数（在 `origin/main` 上实测） | `tests/ci` 404、`tests/unit` 7146、`tests/unit/backend` 3273、`tests/contract` 3815 |
+| 基线用例数（首轮在 `6a4d7184` 上实测，分支已 rebase 到 `702e43f2`） | `tests/ci` 404、`tests/unit` 7146、`tests/unit/backend` 3273、`tests/contract` 3815 |
 
 本机 `uv` 配置了清华镜像，`uv run` 会重写 `uv.lock`；全部命令使用
 `uv run --no-sync ...`，并在每次运行后确认 `uv.lock` 与基线一致。
@@ -354,6 +354,7 @@ B3 的结构性守护（不是"再列一张表"）：
 | `contracts/workbench-openapi.yaml` | 分发操作段落陈述同一定义并指向共享文件，删除复述旧第二定义的整段 |
 | `scripts/dev-env/check-http-contract-changes.py` | 新增 `_APPROVED_RESPONSE_VOCABULARY_WIDENINGS`（27 条精确 finding 记录，含 `issue`/`from_version`/`to_version`/`reason`），只放行同名同版本对的行 |
 | `packages/contracts/**`（`speech.generated.ts`、`source-inventory.json`、各协议 JSON） | `make contracts-generate` 重出，未手改；`contracts-drift` 报 `up to date` |
+| `packages/contracts/src/speechnexus_contracts/*.validators.generated.{mjs,d.mts}` | rebase 到 `702e43f2` 后按当基线重出（16 个文件，内容随 `ErrorBody.retryable` 描述与 503 枚举变化） |
 | `backend/.../infrastructure/public_job_admission.py` | 删除兜底，`_PUBLIC_CODES` 全量映射，未映射 `KeyError` |
 | `backend/.../domain/admission.py` | 新增 `CAPACITY_REJECTION_CODES`、`ADMISSION_REJECTION_CODES` 词汇表；`require_live_authority()` 传 `expired_code="readiness_expired"` |
 | `backend/.../application/public_jobs.py` | `_ADMISSION_REJECTION_CODES` 补齐 5 个新码，它们以 `JobAdmissionRejectedError` 直达 HTTP |
@@ -379,24 +380,29 @@ B3 的结构性守护（不是"再列一张表"）：
 
 ## 验证
 
-| 检查 | 结果（本次实测，2026-11-15） | 基线 `origin/main` = `6a4d7184` |
+分支已 rebase 到 `origin/main` = `702e43f2`（此前基于 `6a4d7184`；rebase 原因是 `702e43f2`
+的前 5 个提交把 `packages/contracts/src/speechnexus_contracts/*.validators.generated.*`
+纳入版本管理，旧基线缺这 58 个文件会让 `contracts-drift` 在合并树上报漂移）。
+
+| 检查 | 结果（本次实测，2026-11-15，head `52c6b7cf`） | 基线 `6a4d7184` 首轮实测 |
 | --- | --- | --- |
-| `uv run --no-sync pytest tests/unit` | 收集 7176，`7173 passed, 3 skipped` | 7146 |
-| `uv run --no-sync pytest tests/unit/backend` | 收集 3303，`3303 passed` | 3273 |
+| `uv run --no-sync pytest tests/unit` | 收集 7203，`7200 passed, 3 skipped` | 7146 |
+| `uv run --no-sync pytest tests/unit/backend` | 收集 3330，`3330 passed` | 3273 |
 | `uv run --no-sync pytest tests/contract` | `3868 passed` | 3815 |
-| `uv run --no-sync pytest tests/ci` | `414 passed, 1357 subtests passed` | 404 |
-| 三者合并（CI 的 Python 面） | `11455 passed, 3 skipped, 1357 subtests passed` | — |
-| `tests/integration`（本改动相关 5 个文件：`public_job_admission_http_pg` / `engine_registration_pg` / `production_admission` / `voice_drafts_pg` / `public_job_atomic_admission_pg`） | `178 passed` | — |
+| `uv run --no-sync pytest tests/ci` | `414 passed, 1418 subtests passed` | 404 |
+| 三者合并（CI 的 Python 面） | `11482 passed, 3 skipped, 1424 subtests passed` | — |
+| `tests/integration` 相关 6 个文件（新增 `test_public_jobs_http.py`） | `208 passed` | — |
 | `make contracts-check` | `contract validation: passed (37 files)` | — |
 | `make contracts-generate` + bindings `--check` | `Contract bindings: up to date` | — |
 | `CONTRACT_BASE_REF=origin/main make contracts-speech-changes` | `Known HTTP structural checks: passed`（27 条词汇放宽逐条打印为 `approved response vocabulary widening:`） | — |
 | `uv run --no-sync ruff format --check .` | `1905 files already formatted` | — |
 | `uv run --no-sync ruff check .` | `All checks passed!` | — |
-| `uv run --no-sync mypy --platform linux` | `Success: no issues found in 1482 source files` | — |
+| `uv run --no-sync mypy --platform linux` | `Success: no issues found in 1484 source files` | — |
 | `uv run --no-sync lint-imports` | `Contracts: 9 kept, 0 broken.` | — |
 | `pnpm typecheck` | admin / workbench / shared / contracts 全部 Done | — |
 | `pnpm test` | workbench `1075 passed`（65 files）、admin `151 passed`（19 files）、contracts SDK 用例全绿 | workbench 1070 / admin 151 |
 | `pnpm exec prettier --check "web/**/*.{css,html,json,ts,tsx}"` | `All matched files use Prettier code style!` | — |
+| GitHub Actions `CI` | run `43719486411`（head `52c6b7cf`）：全部 job success | — |
 | `uv.lock` | 与基线一致（所有 Python 命令走 `uv run --no-sync`，`make` 目标运行后核对并 `git checkout --`） | — |
 
 ## 未验证项
@@ -413,7 +419,7 @@ B3 的结构性守护（不是"再列一张表"）：
   新失败项，也未修既有项。
 - 未做真实多进程并发下的续期/创建竞争压测：`version_conflict` /
   `job_admission_contended` 的映射与 HTTP 面已覆盖，持续并发不在本片。
-- 完整 `tests/integration` 在本机不可作门禁：`2214 passed, 315 skipped, 9 failed, 97 errors`
+- 完整 `tests/integration` 在本机不可作门禁：`2214 passed, 315 skipped, 9 failed, 97 errors`（rebase 前实测）
   的失败全部落在需要对象存储、网关或真实引擎的文件（`test_assets*`、
   `test_gateway_*`、`test_workbench_*_probes`），与本改动文件无重叠；本片只以相关 5 个文件
   的 `178 passed` 作为集成证据。

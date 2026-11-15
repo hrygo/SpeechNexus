@@ -194,8 +194,9 @@ artifact_expired`，即使清理进程尚未运行；`410 artifact_deleted` 表�
 选择和状态转移都重复同一条期限谓词，处于保留期内的行不会被选中，放宽的查询也无法提前
 删除内容；移除未确认时保留 `expired`，下载答案不变并在下一 pass 重试。行本身保留
 `created_at_us` 与 `expires_at_us`，确认移除时在同一条语句里写入 `deleted_at_us`，
-`artifact_state` 与移除时刻由此不可能互相矛盾（表级 CHECK），删除账本因此是持久记录而不是
-只有日志：每次决策另输出一行 JSON（制品标识、决策、期限、移除时刻、数据库时刻）与 pass
+`artifact_state` 与移除时刻由此不可能互相矛盾（表级 CHECK；迁移前已存在的 `deleted` 行
+因无任何可观测来源而保留 `NULL`，CHECK 以 `NOT VALID` 只约束之后的写入，这段历史按
+「迁移前删除、不可追溯」处理，不用推算值填充），删除账本因此是持久记录而不是只有日志：每次决策另输出一行 JSON（制品标识、决策、期限、移除时刻、数据库时刻）与 pass
 汇总，清理范围可在事后回放到行。该进程使用独立身份 `sn_artifact_retention` 与
 `artifact_retention_grants`（`SELECT` 加 `UPDATE (artifact_state, deleted_at_us)`），启动时
 拒绝任何更宽的写权限，包括 API 运行身份持有的 schema 级权限。

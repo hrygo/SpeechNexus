@@ -291,6 +291,14 @@ database instant, followed by a per-pass summary:
 {"batch_size":10,"blocked":0,"decisions":2,"deleted":1,"event":"artifact_retention_pass","expired":1}
 ```
 
+Migration `0054_artifact_deleted_ledger` adds the column; rows a deployment had
+already marked `deleted` before it keep an honest `NULL` (nothing in the schema
+records when a state changed), and the consistency check is installed `NOT VALID`
+so only writes from now on are constrained. Count them with
+`SELECT count(*) FROM speech_artifacts WHERE artifact_state = 'deleted' AND deleted_at_us IS NULL`
+and treat that number as "deleted before the ledger, not traceable" rather than
+backfilling a computed instant.
+
 The deadline is written from the application clock but judged against the
 database clock, so the observed window is the configured one minus the skew between
 the two (application clock ahead ⇒ earlier expiry, behind ⇒ later). Keep node

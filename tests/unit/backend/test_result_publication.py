@@ -96,12 +96,19 @@ class Blobs:
     versions: dict[str, str] = field(default_factory=dict)
     versioning_required: bool = False
     writes: int = 0
+    calls: list[str] = field(default_factory=list)
+    # Set after the first publication: any later object-storage call is a bug.
+    sealed: bool = False
 
     def check_writes_available(self) -> None:
+        self.calls.append("check_writes_available")
         if self.versioning_required:
             raise ArtifactError("artifact_storage_versioning_required")
 
     def put_verified(self, write: ArtifactObjectWrite) -> str:
+        self.calls.append("put_verified")
+        if self.sealed:
+            raise AssertionError("the replay path reached object storage")
         self.events.append("object")
         existing = self.versions.get(write.object_key)
         if existing is not None:
@@ -116,8 +123,13 @@ class Blobs:
 class Staging:
     body: bytes = BODY
     reads: int = 0
+    # Set after the first publication: the bytes are the producer's, already gone
+    # by the time a crashed dispatcher replays.
+    sealed: bool = False
 
     def read(self, reference: Mapping[str, Any], storage_version: str) -> bytes:
+        if self.sealed:
+            raise AssertionError("the replay path read staging bytes")
         self.reads += 1
         assert storage_version == "version-staging-1"
         return self.body
@@ -199,13 +211,21 @@ async def test_replay_settles_a_committed_result_after_retention_ended(
 
     # The retention sweep expires the row (and may already have removed content).
     rows.records[first.artifact_id] = replace(rows.records[first.artifact_id], status=state)
+    assert blobs.calls == ["put_verified"]
+    assert staging.reads == 1
+
+    # From here on, touching object storage at all is a failure: the bytes may be
+    # gone, which is exactly the "content removed, Job still un-settled" case.
+    blobs.sealed = True
+    staging.sealed = True
 
     replayed = await publisher.publish(job, _submission(), _receipt())
 
     assert replayed == first
     assert rows.inserts == 1
     assert blobs.writes == 1
-    assert staging.reads == 1
+    assert blobs.calls == ["put_verified"], "replay must not call object storage"
+    assert staging.reads == 1, "replay must not read staging bytes"
 
 
 async def test_a_deadline_beyond_the_recorded_clock_range_is_a_protocol_refusal() -> None:

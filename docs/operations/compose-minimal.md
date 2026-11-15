@@ -1089,6 +1089,20 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 
 该查询应无输出。
 
+迁移 `0054_artifact_deleted_ledger` 给 `speech_artifacts` 增加 `deleted_at_us` 作为持久
+删除账本。**迁移前已经是 `deleted` 的行没有账本，也不可追溯**：表里只有发布时刻
+`created_at_us` 与期限 `expires_at_us`，没有任何状态变更时刻（无 `updated_at_us`、无修订
+列、无审计表），迁移因此不回填，历史行保留 `NULL`，一致性 CHECK 以 `NOT VALID` 安装——
+只约束迁移之后的新写入。核对这段历史有多少行：
+
+```bash
+docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc   "select count(*) from speech_artifacts    where artifact_state = 'deleted' and deleted_at_us is null"
+```
+
+该计数就是「迁移前删除、无账本」的行数。不要用 `now()`、`created_at_us` 或
+`VALIDATE CONSTRAINT` 把它补成看起来完整的假时刻；如要补，先由运维确认这些行的真实移除
+时刻来源。列注释同样写明了这一语义。
+
 ### 预设发布资格输入与 sn_profile_writer 角色
 
 `POST /v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/publications` 在写入前只

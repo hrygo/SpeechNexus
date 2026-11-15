@@ -8,9 +8,14 @@ the row ``deleted``, and the added check keeps the state and the timestamp
 inseparable, so a row can neither claim a removal without a time nor carry a
 removal time while still claiming another state.
 
-Rows a deployment already marked ``deleted`` are backfilled from their own
-creation time and the migration clock, so the check can be installed without
-refusing an existing database.
+The check is added ``NOT VALID``, and no historical row is backfilled. A row that
+a deployment already marked ``deleted`` before this migration has no recorded
+removal time anywhere: the table carries only ``created_at_us`` (publication) and
+``expires_at_us`` (deadline), and there is no audit table or revision column for
+state changes. Writing a computed value would record a time nobody observed, so
+those rows keep ``NULL`` and stay outside the validated set -- an honest "deleted
+before 0054, not traceable". Every row written or updated from now on must
+satisfy the check.
 
 The retention grant grows to exactly this column
 (``artifact_retention_grants``); deadlines stay unwritable by the sweep.

@@ -30,21 +30,27 @@ ARTIFACT_RETENTION_UPDATE_COLUMNS = ("artifact_state", "deleted_at_us")
 # by the same statement that makes the row `deleted`, and the check keeps the two
 # facts inseparable (a `deleted` row always says when, and no other state claims
 # a removal time).
+#
+# The constraint is installed `NOT VALID` on purpose. Rows that a deployment
+# already marked `deleted` before this migration have no recorded removal time
+# anywhere in the database -- `speech_artifacts` carries only `created_at_us`
+# (publication) and `expires_at_us` (deadline), and no audit table or revision
+# column records state changes. Backfilling a value would put a time in the
+# ledger that was never observed, so those rows keep an honest `NULL` and stay
+# unvalidated: "deleted before migration 0054, not traceable". New and updated
+# rows must satisfy the check, and `VALIDATE CONSTRAINT` is only correct after an
+# operator decides what to do with the pre-migration rows.
 ARTIFACT_DELETED_LEDGER_DDL = (
     """ALTER TABLE speech_artifacts
         ADD COLUMN deleted_at_us BIGINT CHECK (deleted_at_us > 0)""",
-    # A deployment that already marked rows `deleted` keeps working: the column
-    # starts out empty, so the removal time is backfilled from the row's own
-    # creation and the migration clock before the consistency check is installed.
-    """UPDATE speech_artifacts SET deleted_at_us = GREATEST(
-            created_at_us,
-            CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT)
-        )
-        WHERE artifact_state = 'deleted' AND deleted_at_us IS NULL""",
+    """COMMENT ON COLUMN speech_artifacts.deleted_at_us IS
+        'Database-clock instant of the confirmed content removal, written with the '
+        'deleted state. NULL means no removal was recorded: the row was already '
+        'deleted before migration 0054, or it is not deleted.'""",
     """ALTER TABLE speech_artifacts
         ADD CONSTRAINT speech_artifacts_deleted_ledger_check CHECK (
             (artifact_state = 'deleted') = (deleted_at_us IS NOT NULL)
-        )""",
+        ) NOT VALID""",
 )
 
 ARTIFACT_DDL = (

@@ -98,7 +98,7 @@ def _required_environment() -> tuple[str, str, str, str]:
     return (database, cast(str, objects[0]), cast(str, objects[1]), cast(str, objects[2]))
 
 
-def _migrate(url: str, schema: str) -> None:
+def _migrate(url: str, schema: str, revision: str = "head") -> None:
     engine = create_engine(
         url.replace("postgresql://", "postgresql+psycopg://", 1),
         poolclass=NullPool,
@@ -109,7 +109,7 @@ def _migrate(url: str, schema: str) -> None:
     try:
         with engine.connect() as connection:
             config.attributes["connection"] = connection
-            command.upgrade(config, "head")
+            command.upgrade(config, revision)
     finally:
         engine.dispose()
 
@@ -381,6 +381,71 @@ def test_a_shared_runtime_identity_cannot_run_the_sweep(sandbox: Sandbox) -> Non
         sandbox.admin.execute(f'DROP OWNED BY "{peer}"')
         sandbox.admin.execute(f'DROP ROLE IF EXISTS "{shared}"')
         sandbox.admin.execute(f'DROP ROLE IF EXISTS "{peer}"')
+
+
+def test_a_row_deleted_before_the_ledger_migration_is_not_given_a_fake_time() -> None:
+    """Pre-migration deletions keep an honest NULL instead of an invented instant.
+
+    Nothing in the schema records *when* a row became ``deleted``: there is no
+    ``updated_at_us``, no revision column and no audit table, only the
+    publication time and the deadline. So the ledger migration must not write a
+    computed value for rows that were already deleted -- that would record an
+    event nobody observed. The check is installed ``NOT VALID`` for exactly this
+    reason: history stays untraceable, new writes are constrained.
+    """
+    url, _, _, _ = _required_environment()
+    suffix = uuid.uuid4().hex[:12]
+    schema = "sn_artifact_ledger_" + suffix
+    admin = psycopg.connect(url, row_factory=dict_row, autocommit=True)
+    try:
+        admin.execute(f'CREATE SCHEMA "{schema}"')
+        _migrate(url, schema, "0053_voice_draft_publication")
+        admin.execute(f'SET search_path TO "{schema}"')
+        # A deployment that marked a row `deleted` before this migration existed.
+        admin.execute(
+            "INSERT INTO speech_artifacts "
+            "(artifact_id, workspace_id, artifact_kind, artifact_state, media_type, "
+            "bytes, sha256, receipt_id, source_operation_id, object_key, "
+            "storage_version_id, created_at_us, expires_at_us) VALUES "
+            "('artifact-legacy-deleted', %s, 'audio', 'deleted', 'audio/wav', 5, %s, "
+            "'receipt-legacy', 'operation-legacy', 'private/legacy', 'version-legacy', "
+            "1700000000000000, 1700000000000001)",
+            (WORKSPACE, "sha256:" + "a" * 64),
+        )
+
+        _migrate(url, schema, "head")
+
+        legacy = admin.execute(
+            "SELECT artifact_state, deleted_at_us FROM speech_artifacts "
+            "WHERE artifact_id = 'artifact-legacy-deleted'"
+        ).fetchone()
+        assert legacy is not None
+        assert legacy["artifact_state"] == "deleted"
+        # No observation existed, so the ledger stays empty rather than inventing one.
+        assert legacy["deleted_at_us"] is None
+        # The constraint exists but was deliberately not validated against history.
+        validated = admin.execute(
+            "SELECT convalidated FROM pg_catalog.pg_constraint "
+            "WHERE conname = 'speech_artifacts_deleted_ledger_check' "
+            "AND connamespace = %s::regnamespace",
+            (schema,),
+        ).fetchone()
+        assert validated is not None and validated["convalidated"] is False
+        # A new deletion without a recorded time is refused from now on.
+        with pytest.raises(psycopg.errors.CheckViolation):
+            admin.execute(
+                "INSERT INTO speech_artifacts "
+                "(artifact_id, workspace_id, artifact_kind, artifact_state, media_type, "
+                "bytes, sha256, receipt_id, source_operation_id, object_key, "
+                "storage_version_id, created_at_us, expires_at_us) VALUES "
+                "('artifact-new-deleted', %s, 'audio', 'deleted', 'audio/wav', 5, %s, "
+                "'receipt-new', 'operation-new', 'private/new', 'version-new', "
+                "1700000000000000, 1700000000000001)",
+                (WORKSPACE, "sha256:" + "b" * 64),
+            )
+    finally:
+        admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+        admin.close()
 
 
 def test_retention_role_may_not_widen_into_content_deletion(sandbox: Sandbox) -> None:

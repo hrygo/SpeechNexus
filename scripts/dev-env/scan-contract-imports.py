@@ -71,7 +71,7 @@ def tokenize_file(path: Path) -> list[TokenInfo] | None:
     try:
         with path.open("rb") as handle:
             return list(tokenize.tokenize(handle.readline))
-    except OSError, SyntaxError, UnicodeDecodeError, tokenize.TokenError, IndentationError:
+    except Exception:  # unreadable or untokenizable files are skipped
         return None
 
 

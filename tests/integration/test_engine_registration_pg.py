@@ -15,6 +15,8 @@ import rfc8785
 from tests.integration.test_production_jobs import JobDatabase
 from tests.integration.test_production_jobs import database as database
 
+from speechnexus_backend import engine_readiness
+from speechnexus_backend.engine_registration import EXIT_UNAVAILABLE
 from speechnexus_backend.engine_registration import main as register_main
 from speechnexus_backend.speech.application.admission import AdmissionService
 from speechnexus_backend.speech.application.transcription import AdmittedExecution, StagedAudio
@@ -186,10 +188,18 @@ def _register_args(
 
 
 def _run_registration(capsys: pytest.CaptureFixture[str], args: list[str]) -> dict[str, Any]:
+    document, stderr = _run_registration_with_stderr(capsys, args)
+    assert stderr == "", stderr
+    return document
+
+
+def _run_registration_with_stderr(
+    capsys: pytest.CaptureFixture[str], args: list[str]
+) -> tuple[dict[str, Any], str]:
+    """Run the command and keep both streams: the renewal warning is the operator signal."""
     register_main(args)
     captured = capsys.readouterr()
-    assert captured.err == ""
-    return cast(dict[str, Any], json.loads(captured.out))
+    return cast(dict[str, Any], json.loads(captured.out)), captured.err
 
 
 def _admit(
@@ -380,7 +390,7 @@ def test_expired_readiness_is_refreshed_from_a_new_probe(
         (recipe.instance_id,),
     )
 
-    refreshed = _run_registration(
+    refreshed, stderr = _run_registration_with_stderr(
         capsys,
         [*_register_args(database, recipe_path, engine_origin), "--readiness-ttl-seconds", "3600"],
     )
@@ -390,6 +400,12 @@ def test_expired_readiness_is_refreshed_from_a_new_probe(
     assert readiness["verified_at_us"] > 2
     assert readiness["expires_at_us"] > readiness["verified_at_us"]
     assert readiness["evidence_digest"].startswith("sha256:")
+    # The run reports the window it found and the fact that it re-signed, and the
+    # warning names the refusal an unrenewed deployment would have received (#828).
+    assert (readiness["state"], readiness["renewed"]) == ("expired", True)
+    assert "warning: readiness expired for instance-reg-1 g1" in stderr
+    assert "re-signed by this run" in stderr
+    assert "503 engine_not_ready" in stderr
     instance = refreshed["rows"]["engine_instances"]
     assert instance["ready_at_us"] == readiness["verified_at_us"]
     assert database.query("SELECT count(*) AS n FROM engine_instances")[0]["n"] == 1
@@ -401,3 +417,133 @@ def test_expired_readiness_is_refreshed_from_a_new_probe(
         asset_id="asset-refresh-1",
     )
     assert admitted.instance_id == recipe.instance_id
+
+
+def _run_report(
+    capsys: pytest.CaptureFixture[str], database: JobDatabase, *args: str
+) -> tuple[int, list[dict[str, Any]], str]:
+    """Run the read-only readiness report against this case's real schema."""
+    code = engine_readiness.main(
+        ["--database-url", database.url, "--schema", database.schema, *args]
+    )
+    captured = capsys.readouterr()
+    documents = [json.loads(line) for line in captured.out.splitlines() if line]
+    return code, documents, captured.err
+
+
+def test_the_report_and_the_renewal_expose_an_expiring_then_expired_receipt(
+    database: JobDatabase,
+    engine_origin: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The report names both signals from a real elapsed window, and renewal fixes it.
+
+    A one-second TTL lets the real database clock carry the receipt from `expiring`
+    to `expired` without rewriting the stored document, so the classification and
+    the exit code are measured against the same window admission would check. The
+    renewal then re-signs it from a new `/health` probe -- no clock manipulation and
+    no hand-written document -- and the report returns to `valid`.
+    """
+    import time
+
+    recipe_path = _write_recipe(tmp_path / "recipe.json", _recipe_document())
+    recipe = load_transcription_recipe(recipe_path)
+    registered = _run_registration(
+        capsys,
+        [
+            *_register_args(database, recipe_path, engine_origin),
+            "--readiness-ttl-seconds",
+            "1",
+        ],
+    )
+    assert registered["readiness"]["expires_at_us"] > registered["readiness"]["verified_at_us"]
+
+    # Inside the declared window but inside the warning window as well.
+    code, report, stderr = _run_report(capsys, database, "--warn-within-seconds", "3600")
+    assert code == 0, stderr
+    assert report[-1]["summary"] == {
+        "ready_instances": 1,
+        "valid": 0,
+        "expiring": 1,
+        "expired": 0,
+        "missing": 0,
+        "invalid": 0,
+        "unusable": 0,
+    }
+    assert report[0]["readiness_state"] == "expiring"
+    assert report[0]["remaining_seconds"] >= 0
+    assert recipe.instance_id == report[0]["instance_id"]
+
+    # The real clock passes the one-second expiry; nothing is rewritten.
+    time.sleep(1.2)
+    code, report, stderr = _run_report(capsys, database)
+    assert code == EXIT_UNAVAILABLE, stderr
+    assert report[0]["readiness_state"] == "expired"
+    assert report[0]["remaining_seconds"] < 0
+    assert "error: readiness_expired: " in stderr
+
+    # The renewal entry re-signs from a new probe and reports the window it found.
+    renewed, stderr = _run_registration_with_stderr(
+        capsys,
+        [
+            *_register_args(database, recipe_path, engine_origin),
+            "--readiness-ttl-seconds",
+            "3600",
+            "--renew-readiness",
+        ],
+    )
+    assert renewed["outcome"] == "already_ready"
+    assert (renewed["readiness"]["state"], renewed["readiness"]["renewed"]) == ("expired", True)
+    assert "warning: readiness expired for instance-reg-1 g1" in stderr
+
+    code, report, stderr = _run_report(capsys, database, "--warn-within-seconds", "0")
+    assert code == 0, stderr
+    assert report[0]["readiness_state"] == "valid"
+    assert report[-1]["summary"]["unusable"] == 0
+    # The renewed window is what the report reads back, not the pre-renewal one.
+    assert report[0]["expires_at_us"] == renewed["readiness"]["expires_at_us"]
+
+    # A second renewal on a still-valid receipt is the periodic path: it re-signs
+    # unconditionally instead of depending on how early the timer ran.
+    again, stderr = _run_registration_with_stderr(
+        capsys,
+        [
+            *_register_args(database, recipe_path, engine_origin),
+            "--readiness-ttl-seconds",
+            "3600",
+            "--renew-readiness",
+        ],
+    )
+    assert (again["readiness"]["state"], again["readiness"]["renewed"]) == ("valid", True)
+    assert again["readiness"]["verified_at_us"] > renewed["readiness"]["verified_at_us"]
+    # A warning is only printed for a window that needs one.
+    assert stderr == ""
+
+    # A short TTL lets the real clock carry a fresh receipt into its own warning
+    # window, which is the "renew before it expires" signal the periodic task logs.
+    short, _ = _run_registration_with_stderr(
+        capsys,
+        [
+            *_register_args(database, recipe_path, engine_origin),
+            "--readiness-ttl-seconds",
+            "4",
+            "--renew-readiness",
+        ],
+    )
+    time.sleep(3.2)
+    warning_ready, stderr = _run_registration_with_stderr(
+        capsys,
+        [
+            *_register_args(database, recipe_path, engine_origin),
+            "--readiness-ttl-seconds",
+            "4",
+            "--renew-readiness",
+        ],
+    )
+    assert (warning_ready["readiness"]["state"], warning_ready["readiness"]["renewed"]) == (
+        "expiring",
+        True,
+    )
+    assert "warning: readiness expiring for instance-reg-1 g1" in stderr
+    assert short["readiness"]["verified_at_us"] <= warning_ready["readiness"]["verified_at_us"]

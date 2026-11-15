@@ -125,6 +125,17 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
         "Text asset input is not supported for TTS Jobs.",
     ),
     "job_unavailable": (503, "service_unavailable_error", "Job storage is unavailable."),
+    # The ready instance is the pinned one but its readiness receipt elapsed. No
+    # Job row was written: re-registering the engine re-signs the receipt, so the
+    # same request under the same key is admitted afterwards. That is a known
+    # refusal with a caller-visible recovery, so it is retryable and it keeps its
+    # own code instead of the storage-outage ``job_unavailable`` (#828).
+    "engine_not_ready": (
+        503,
+        "service_unavailable_error",
+        "The engine readiness receipt for the pinned instance has expired; "
+        "register the engine again, then replay the same request.",
+    ),
     "job_admission_contended": (
         503,
         "service_unavailable_error",
@@ -137,13 +148,18 @@ def job_error(code: str, request_id: str, *, headers: dict[str, str] | None = No
     if code not in _ERRORS:
         code = "job_unavailable"
     status, kind, message = _ERRORS[code]
-    # Only an unknown execution outcome promises that retrying can succeed. An
-    # unavailable read may be a permanently expired or deleted result, so clients
-    # reconcile the original identity instead of retrying it blindly.
+    # Every code here is a refusal this deployment observed. ``retryable`` promises
+    # that sending the same request again can succeed, so it covers the unknown
+    # execution outcome (the original identity is replayed), a capacity delay that
+    # a released lease clears, admission contention, and an elapsed engine
+    # readiness receipt that re-registering the engine re-signs. Everything else,
+    # including the ``job_unavailable`` storage outage, cannot be fixed by
+    # retrying, so it must not invite one.
     retryable = code in (
         "job_outcome_unknown",
         "job_capacity_exhausted",
         "job_admission_contended",
+        "engine_not_ready",
     )
     response_headers = {"Cache-Control": "no-store", **(headers or {})}
     if code == "job_capacity_exhausted":

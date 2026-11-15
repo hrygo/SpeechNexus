@@ -607,7 +607,10 @@ def test_last_outbox_unique_wait_rechecks_all_authority_windows(
             "WHERE intent_id='runtime-new'",
             (json.dumps(receipt, separators=(",", ":")),),
         )
-        code = "reconciliation_required"
+        # An elapsed receipt is its own admission code: the same request is
+        # admitted once the receipt is re-signed, so it must not be reported as the
+        # generic reconciliation class (#828).
+        code = "readiness_expired"
     before = admission.snapshot()
     with foundation.connection("speech") as blocker, ThreadPoolExecutor(max_workers=1) as executor:
         _begin(blocker, db.dialect)

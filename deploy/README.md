@@ -36,6 +36,12 @@ Additional profiles are opt-in:
 
 - `migration`: one-shot Alembic migration with the separate migration DSN;
 - `engine-registration`: one-shot `speechnexus-register-engine` invocation;
+- `engine-readiness`: receipt renewal (`engine-readiness-renew`, the same
+  registration with `--renew-readiness`) and a read-only report
+  (`engine-readiness`). Every create re-checks the pinned instance's readiness
+  receipt, whose TTL is 24 h by default, so this profile is the periodic path that
+  keeps it valid. See
+  [Engine readiness renewal](#engine-readiness-renewal-engine-readiness-profile);
 - `web`: the static Admin and Workbench frontends;
 - `binding-disable`: explicitly starts the disable worker, which is required to
   process persisted disable intents; it is absent from the base topology.
@@ -451,9 +457,13 @@ starts. Exactly two inputs are printed as `pending` lines because they are
 deployment inputs this container cannot verify: the real engine and a registered
 `ready` instance, and the API-side writer/admission DSNs — the API already answers
 `503 job_unavailable` at creation for a blank Job writer/admission DSN, which is
-before any claim. Every other prerequisite above is a hard failure. The gate reads
-the gateway configs through `SPEECHNEXUS_JOB_GATE_PRIVATE_DIR`
-(`/run/speechnexus-private` in Compose); it never reads credentials from them.
+before any claim. The registered instance's readiness receipt also carries a TTL
+that only a periodic renewal keeps fresh: an elapsed receipt answers
+`503 engine_not_ready` (retryable) instead of the storage `job_unavailable`, and
+the `engine-readiness` profile is that renewal. Every other prerequisite above is a
+hard failure. The gate reads the gateway configs through
+`SPEECHNEXUS_JOB_GATE_PRIVATE_DIR` (`/run/speechnexus-private` in Compose); it never
+reads credentials from them.
 
 Provision the three Job roles with
 `uv run --all-packages python scripts/dev-env/provision-job-roles.py` after the
@@ -463,6 +473,67 @@ and installs the five dispatch grant groups, the writer baseline and the read-on
 `voice_validation` it also installs that lane's two extra `SELECT`s, which only
 matter once the lane itself is assembled (see below). The step-by-step path
 is [the minimal deployment runbook §6](../docs/operations/compose-minimal.md#异步-job-运行角色与授权).
+
+## Engine readiness renewal (`engine-readiness` profile)
+
+Registration signs a readiness receipt for the one instance it makes `ready`, and
+admission re-reads that receipt's window on every create
+(`VerifiedRuntimeReadiness.require_valid`): `verified_at_us <= now < expires_at_us`.
+`--readiness-ttl-seconds` sets the window and defaults to `86400` (24 h), so a
+deployment that registers once and never renews starts answering
+`503 engine_not_ready` (`retryable: true`) exactly one TTL later. That answer is
+deliberately not `503 job_unavailable` ("Job storage is unavailable",
+non-retryable): the store is healthy and re-signing the receipt admits the same
+body under the same Idempotency-Key. It is also not `429 job_capacity_exhausted`,
+which a released attempt can free.
+
+The receipt cannot be re-signed from the database alone — it records a real
+`/health` probe — so renewal re-runs the registration with an explicit switch:
+
+```bash
+# one renewal: same identity, same generation, fresh receipt from a new probe
+docker compose --env-file deploy/compose.env \
+  -f deploy/compose.yaml --profile engine-readiness run --rm engine-readiness-renew
+
+# read-only report: one JSON line per ready instance, then a summary
+docker compose --env-file deploy/compose.env \
+  -f deploy/compose.yaml --profile engine-readiness run --rm engine-readiness
+```
+
+`engine-readiness-renew` runs the installed `speechnexus-register-engine` with
+`--renew-readiness`, which re-signs the receipt even while it is still valid; that
+is what makes a timer shorter than the TTL work. Without the flag a registration run
+only refreshes an already-elapsed receipt. The renewal updates the receipt and
+`engine_instances.ready_at_us` in one transaction, increments both row versions, and
+never starts a new instance generation, so it is safe to run repeatedly. Compose
+does not schedule it: call it from the host timer, e.g. hourly with cron or a
+systemd timer, at an interval shorter than the TTL and the warning window.
+
+`engine-readiness` runs the installed `speechnexus-engine-readiness`, the surface
+that makes the window observable before a request fails. It writes nothing, probes nothing and opens a read-only session; for
+each `ready` instance it prints `readiness_state` (`valid`, `expiring`, `expired`,
+`missing` or `invalid`), `expires_at_us`, `remaining_seconds` against the database
+clock admission reads, and the command that repairs it, followed by a summary line:
+
+```text
+{"instance_id":"instance-asr-1","instance_generation":1,"target_node_id":"node-local-1","readiness_state":"expiring","expires_at_us":1794664410587133,"remaining_seconds":1800,"remediation":"run speechnexus-register-engine --renew-readiness before expires_at_us"}
+{"summary":{"ready_instances":1,"valid":0,"expiring":1,"expired":0,"missing":0,"invalid":0,"unusable":0}}
+```
+
+`--warn-within-seconds` (`SPEECHNEXUS_READINESS_WARNING_SECONDS`, default `21600`,
+a quarter of the 24 h TTL) sets the `expiring` threshold; it is a reporting choice,
+never an admission rule. The exit code is non-zero when any receipt is `expired`,
+`missing` or `invalid`, so a supervisor can alert on it; `--fail-on-expiring` also
+fails on `expiring`, which lets a probe alert before creates start failing. The
+renewal command writes its own signal: `--renew-readiness` reports the window it
+found and the fact it re-signed in `readiness.state` / `readiness.renewed` on
+stdout, and warns on stderr when that window was `expiring` or `expired`.
+
+The same fact is stated where an operator meets it first: the `job-dispatch`
+startup gate's `pending` line for the real engine names this renewal, and the Job
+create contract declares `engine_not_ready` with its recovery. `deploy/README.md`
+does not claim the renewal is scheduled; a deployment that skips the timer trades a
+24 h grace period for the failure this profile exists to prevent.
 
 ## Artifact retention (`artifact-retention` profile)
 

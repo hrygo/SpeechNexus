@@ -199,6 +199,10 @@ describe("submission rejection disposition", () => {
     [429, "job_capacity_exhausted", "intent-kept"],
     [503, "job_unavailable", "intent-kept"],
     [503, "job_admission_contended", "intent-kept"],
+    // #828: an elapsed engine readiness receipt refuses this attempt without writing a
+    // Job row and is repaired by re-registering the engine, so the intent survives and
+    // the unlisted-5xx "unknown-outcome" fallback must not apply.
+    [503, "engine_not_ready", "intent-kept"],
     // #702 review M1: a workspace without a provisioned quota row is a deterministic
     // refusal, but not a terminal one -- provisioning the workspace admits the same
     // request under the same key, so the intent stays replayable like the 503 outage

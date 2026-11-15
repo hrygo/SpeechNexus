@@ -29,7 +29,7 @@ date: 2026-11-08
 | 1 | API 的 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL` 与 `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL` | `POST /v1/nexus/jobs` 返回 `503 job_unavailable` | 没有 Job 可被 claim |
 | 2 | 迁移到唯一 head（`migration` profile，`speechnexus-job-migrate --schema speech`） | Job/准入关系不存在，迁移版本表为空 | 创建失败或 worker 启动即退出 |
 | 3 | 派发角色与五组 grant（启用 `voice_validation` 再加两张 `SELECT`） | worker 的启动闸门点名缺授权的表/列并退出，`restart: unless-stopped` 下形成重启循环 | 启动期失败，不领取租约 |
-| 4 | 真实引擎与已注册 `ready` 实例（`engine-registration` profile） | 创建返回 `429 job_capacity_exhausted`，或提交必然失败 | 有 Job 但没有可执行实例 |
+| 4 | 真实引擎与已注册 `ready` 实例（`engine-registration` profile），且 readiness 收据未过期（`engine-readiness` profile 定时续期） | 没有实例时创建返回 `429 job_capacity_exhausted`；实例在但收据过期时返回 `503 engine_not_ready`（可重试，非 `job_unavailable`）；或提交必然失败 | 有 Job 但没有可执行实例 |
 | 5 | gateway 的 `result_bucket` 存在、被 `minio-init` 创建并启用版本化，且与 env 一致 | worker 的启动闸门点名缺桶/缺版本化/配置不一致并退出 | 启动期失败，不领取租约 |
 | 6 | `network_mode: service:gateway` 下的启动顺序与网关重建后的 worker 重建 | worker 命名空间失效或指向旧 gateway | 进程在，网关调用全部失败 |
 
@@ -356,6 +356,33 @@ psql "$SPEECHNEXUS_MIGRATION_DATABASE_URL" -Atc \
 | `invalid_recipe` | 配方摘要、`stage.instance_id` 或 binding plan 与实际不一致 |
 | `pool_owner_conflict` / `previous_generation_active` | 旧 owner 或旧 generation 仍 ready；先核对/停止旧实例，不要改 token 假装接管 |
 | 创建返回 `429 job_capacity_exhausted` | 没有 `ready` 实例，或其实例的 binding revision 与请求的发布不一致 |
+| 创建返回 `503 engine_not_ready` | 实例仍 `ready`，但 readiness 收据已过期；跑续期（下方），不要重新注册新 generation |
+
+### readiness 收据续期与观测
+
+注册写入的 readiness 收据有有效期（`--readiness-ttl-seconds`，默认 86400 秒），准入每次
+创建都重新核对。收据过期后创建返回 `503 engine_not_ready`（`retryable: true`），它与存储
+故障的 `503 job_unavailable` 是两个码：前者重签收据即可放行同一请求，后者是存储拒绝。
+收据必须由真实 `/health` 探测重签，不能只改库，所以续期复用注册命令：
+
+```bash
+# 单次续期：同一身份、同一 generation，用本次探测重签
+docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
+  --profile engine-readiness run --rm engine-readiness-renew
+
+# 只读报告：每个 ready 实例一行 JSON，再一行汇总
+docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
+  --profile engine-readiness run --rm engine-readiness
+```
+
+两个 profile 服务分别执行已安装的 `speechnexus-register-engine --renew-readiness` 与
+`speechnexus-engine-readiness`；不经 Compose 时可直接运行这两个命令，参数见
+[引擎注册](register-engine.md)。
+续期输出 `readiness.state`（本次发现的窗口）与 `readiness.renewed`，窗口为 `expiring`
+或 `expired` 时另在 stderr 打 `warning:`。报告在任一收据 `expired` / `missing` /
+`invalid` 时退出码非零，`--fail-on-expiring` 可让 `expiring` 也非零；把它挂到监控上，
+就能在创建开始失败前告警。Compose 不负责调度，须用宿主机 cron 或 systemd timer 以短于
+TTL 的间隔调用续期（例如每小时）。
 
 `engine-health 200` 只证明 HTTP 可达，不证明模型或实例身份；注册命令也不启动任何容器。
 命令执行状态：健康探测与注册命令**未在本机验证**（本片没有真实引擎，见第 14 节）；

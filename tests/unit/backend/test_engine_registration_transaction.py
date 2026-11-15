@@ -863,6 +863,51 @@ def test_existing_result_refreshes_an_expired_readiness_receipt() -> None:
     assert result is not None
     assert result.outcome == "already_ready"
     assert result.readiness_expires_at_us == NOW + 60_000_000
+    # The elapsed window is reported as found, and the run says it re-signed it.
+    assert (result.readiness_state, result.readiness_renewed) == ("expired", True)
+    assert [sql.split(" SET", 1)[0] for sql, _ in store.writes] == [
+        "UPDATE runtime_instance_intents",
+        "UPDATE engine_instances",
+    ]
+
+
+def test_existing_result_renews_a_still_valid_receipt_only_when_asked() -> None:
+    # A receipt that is still inside its window is the normal state, so a plain
+    # re-run must stay a read: otherwise every registration would churn the
+    # instance and intent versions and move ready_at_us.
+    spec = make_spec()
+    store = ready_store(spec, receipt=readiness(spec, verified=NOW - 1, expires=NOW + 10**9))
+    unchanged = _existing_result(
+        store.cursor(),
+        spec,
+        pool=store.pools["asr-batch"],
+        owner_id="speechnexus-operator",
+        evidence_digest=DIGEST,
+        evidence_document={},
+        probe=make_probe(),
+        readiness_ttl_us=60_000_000,
+    )
+    assert unchanged is not None
+    assert unchanged.readiness_renewed is False
+    assert store.writes == []
+
+    # The renewal entry the periodic task calls forces a fresh receipt from this
+    # run's probe, which is the only way an operator re-signs a valid one early.
+    renewed = _existing_result(
+        store.cursor(),
+        spec,
+        pool=store.pools["asr-batch"],
+        owner_id="speechnexus-operator",
+        evidence_digest=DIGEST,
+        evidence_document={},
+        probe=make_probe(),
+        readiness_ttl_us=60_000_000,
+        renew_readiness=True,
+    )
+    assert renewed is not None
+    assert renewed.readiness_renewed is True
+    assert renewed.readiness_verified_at_us == NOW
+    assert renewed.readiness_expires_at_us == NOW + 60_000_000
     assert [sql.split(" SET", 1)[0] for sql, _ in store.writes] == [
         "UPDATE runtime_instance_intents",
         "UPDATE engine_instances",

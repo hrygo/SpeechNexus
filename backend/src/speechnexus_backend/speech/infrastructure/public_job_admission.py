@@ -50,6 +50,17 @@ from speechnexus_backend.speech.infrastructure.voice_validation_submit import (
 )
 
 _CAPACITY_CODES = frozenset({"capacity_exhausted", "quota_exceeded"})
+# Admission refusals that have their own recovery and therefore their own public
+# code. Everything else keeps the storage-outage fallback: this list is the whole
+# set of admission causes a caller can answer differently, so a new entry is a
+# contract change, not a wording change.
+_PUBLIC_CODES = {
+    "idempotency_conflict": "idempotency_conflict",
+    # The ready instance is the pinned one, but its readiness receipt is outside
+    # its validity window. Re-registering the engine re-signs the receipt and the
+    # same request is admitted, so this is not the 503 storage outage.
+    "readiness_expired": "engine_not_ready",
+}
 _ASR_REQUIRED = (
     "language",
     "turn_detection",
@@ -973,12 +984,16 @@ def _empty_admission(
 
 
 def rejection_code(code: str) -> str:
-    """Map an admission refusal to the stable public error class."""
+    """Map an admission refusal to the stable public error class.
+
+    A capacity refusal and the two codes in ``_PUBLIC_CODES`` keep their own
+    answer. Every other admission code stays on ``job_unavailable`` because it
+    reports a store the transaction could not continue against, not a condition
+    with a different caller action.
+    """
     if code in _CAPACITY_CODES:
         return "job_capacity_exhausted"
-    if code == "idempotency_conflict":
-        return "idempotency_conflict"
-    return "job_unavailable"
+    return _PUBLIC_CODES.get(code, "job_unavailable")
 
 
 __all__ = [

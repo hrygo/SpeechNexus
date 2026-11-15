@@ -48,6 +48,11 @@ This module pins current behaviour instead of inventing a new code: #690 landed
 the text-ceiling contract correction, #702 replaced the missing-quota 503 with
 422 ``workspace_not_configured`` while keeping a genuine storage fault on 503,
 and #703 the declared receive bound with its 413 and ``job_request_too_large``.
+#828 (found by the #572 acceptance) narrowed the 503 fallback once more: an
+elapsed engine readiness receipt answers 503 ``engine_not_ready`` with
+``retryable: true`` and no row, and re-signing the receipt admits the same body
+under the same key. The storage fault keeps 503 ``job_unavailable`` with
+``retryable: false``, so the cause -- not the status alone -- separates them.
 
 Boundaries -- what this module does not claim:
 
@@ -70,7 +75,11 @@ Boundaries -- what this module does not claim:
   they do not qualify network, commit-loss or failover behaviour. The storage-fault
   case revokes the admission role's SELECT on ``workspace_quotas``, which models a
   failed read of the reservation row; it is not a network partition or failover
-  qualification. A second storage case terminates that role's session, i.e. a
+  qualification. The readiness case rewrites the stored receipt instead of letting
+  24 h elapse, which reproduces the elapsed state but not the clock passage that
+  produced it; the renewal it replays is the same transaction
+  ``speechnexus-register-engine --renew-readiness`` runs in the test harness, not a
+  real ``/health`` probe. A second storage case terminates that role's session, i.e. a
   connection-level failure: the store reports an unknown outcome and the answer is
   the retryable 503 ``job_outcome_unknown``, so the two storage failures are pinned
   to their own retry rules instead of one shared "storage is down" code. The same 400
@@ -91,7 +100,7 @@ Boundaries -- what this module does not claim:
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from httpx import ASGITransport, AsyncClient, Response
@@ -554,6 +563,138 @@ async def test_create_without_a_provisioned_workspace_quota_is_refused_without_r
         # default workspace, which is the evidence the refusal was the missing
         # reservation target and not an invalid document.
         _expect_reservation(provisioned_before, _snapshot(db), "workspace-default")
+
+
+def _readiness_document(db: JobDatabase) -> str:
+    """The stored receipt admission checks for the fixture's ready instance."""
+    rows = db.query(
+        "SELECT readiness_document FROM runtime_instance_intents WHERE intent_id = 'runtime-new'"
+    )
+    assert len(rows) == 1 and rows[0]["readiness_document"], rows
+    return cast(str, rows[0]["readiness_document"])
+
+
+def _rewrite_receipt(db: JobDatabase, *, verified_at_us: int, expires_at_us: int) -> None:
+    """Re-create the receipt the renewal transaction writes, without an engine probe.
+
+    ``speechnexus-register-engine --renew-readiness`` sets the receipt and
+    ``engine_instances.ready_at_us`` to the probe time in one transaction, because
+    admission requires ``verified_at_us <= ready_at_us <= now``. Writing only the
+    document would test a state the product cannot produce.
+    """
+    document = json.loads(_readiness_document(db))
+    document["verified_at_us"] = verified_at_us
+    document["expires_at_us"] = expires_at_us
+    db.query(
+        "UPDATE runtime_instance_intents SET readiness_document = %s "
+        "WHERE intent_id = 'runtime-new'",
+        (json.dumps(document, separators=(",", ":")),),
+    )
+    db.query(
+        "UPDATE engine_instances SET ready_at_us = %s "
+        "WHERE instance_id = %s AND instance_generation = %s",
+        (verified_at_us, *INSTANCE),
+    )
+
+
+async def test_an_elapsed_readiness_receipt_is_engine_not_ready_not_a_storage_outage(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """An expired receipt answers its own retryable 503 and admits on replay.
+
+    #828 (found by the #572 acceptance): after a resume, the first create answered
+    ``503 job_unavailable`` -- "Job storage is unavailable", ``retryable: false``
+    -- while every storage fact was healthy. The instance's readiness receipt had
+    merely elapsed, and ``rejection_code`` folded the refusal into the outage code.
+    Re-running the registration answered ``202`` for the same body, so the answer
+    named a broken store for a condition a re-registration fixes.
+
+    The case pins the whole round trip over the production HTTP assembly: the
+    elapsed receipt answers ``503 engine_not_ready`` with ``retryable: true`` and
+    writes nothing; re-signing the receipt -- what the renewal entry does -- admits
+    the *same* body under the *same* key with ``202``; and the storage-outage
+    answer keeps its own code and retry rule, so the two 503s stay distinguishable
+    in both directions instead of collapsing into one.
+    """
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    _add_spare_host(db)
+    _grant_capacity(db)
+    now_us = admission_database.runtime.now()
+    body = _body()
+    async with AsyncClient(
+        transport=ASGITransport(app=_app(admission_database)), base_url="http://test"
+    ) as client:
+        # The receipt elapsed one microsecond ago while the instance is still ready.
+        _rewrite_receipt(db, verified_at_us=now_us - 1000, expires_at_us=now_us - 1)
+        before = _snapshot(db)
+        refused = await client.post(
+            PREFIX, json=body, headers={"Idempotency-Key": "synthetic-readiness-expired"}
+        )
+        assert refused.status_code == 503, refused.text
+        code, kind, retryable = _error(refused)
+        assert (code, kind, retryable) == ("engine_not_ready", "service_unavailable_error", True)
+        # The defect itself: the readiness answer must not be the storage-outage one.
+        assert code != "job_unavailable"
+        assert "storage" not in refused.json()["error"]["message"].lower()
+        # No row, counter or version moved: the refusal happened before admission
+        # reserved anything.
+        assert _snapshot(db) == before
+
+        # The renewal the report points at: a fresh receipt from a new probe time.
+        _rewrite_receipt(db, verified_at_us=now_us, expires_at_us=now_us + 86_400_000_000)
+        renewed_before = _snapshot(db)
+        admitted = await client.post(
+            PREFIX, json=body, headers={"Idempotency-Key": "synthetic-readiness-expired"}
+        )
+        assert admitted.status_code == 202, admitted.text
+        # The same body under the same key is admitted and reserves exactly once.
+        _expect_reservation(renewed_before, _snapshot(db))
+        assert admitted.json()["workspace_id"] == WORKSPACE
+
+
+async def test_a_failed_quota_read_keeps_the_storage_answer_while_readiness_is_healthy(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """The other direction: a real storage fault is still ``job_unavailable``.
+
+    Both 503s are produced over the same production HTTP assembly and the same
+    message body, so the codes separate the *cause* rather than the status. A
+    readiness receipt that is valid throughout cannot borrow the retryable
+    readiness answer, and the storage answer must not become retryable.
+    """
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    _add_spare_host(db)
+    _grant_capacity(db)
+    assert admission_database.admission_role is not None
+    async with AsyncClient(
+        transport=ASGITransport(app=_app(admission_database)), base_url="http://test"
+    ) as client:
+        db.query(
+            f'REVOKE SELECT ON "{db.schema}".workspace_quotas '
+            f'FROM "{admission_database.admission_role}"'
+        )
+        try:
+            before = _snapshot(db)
+            faulted = await client.post(
+                PREFIX, json=_body(), headers={"Idempotency-Key": "synthetic-storage-back"}
+            )
+            assert faulted.status_code == 503, faulted.text
+            code, kind, retryable = _error(faulted)
+            assert (code, kind, retryable) == (
+                "job_unavailable",
+                "service_unavailable_error",
+                False,
+            )
+            # Distinct from the readiness answer in code and retry rule.
+            assert code != "engine_not_ready"
+            assert _snapshot(db) == before
+        finally:
+            db.query(
+                f'GRANT SELECT ON "{db.schema}".workspace_quotas '
+                f'TO "{admission_database.admission_role}"'
+            )
 
 
 async def test_a_killed_admission_connection_is_a_retryable_unknown_outcome(

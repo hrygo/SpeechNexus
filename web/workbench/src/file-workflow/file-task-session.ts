@@ -67,6 +67,12 @@ export type RejectionOperation = "create" | "cancel" | "upload";
  *   survives". The client does not consume `error.retryable` at all.
  * - 503 `job_admission_contended`: admission state changed concurrently; retryable by
  *   the same public Job error table.
+ * - 503 `engine_not_ready`: the pinned ready instance's engine readiness receipt
+ *   elapsed, so admission refused before writing any Job row (#828). The same body
+ *   under the same key is admitted after the receipt is re-signed, so the intent is
+ *   kept and this refusal is explicitly *not* `unknown-outcome`; it is also not the
+ *   503 `job_unavailable` storage outage, and the client must not tell the user to
+ *   look at storage.
  * - 503 `asset_inspection_busy`: the only Asset 503 whose "a new request later may
  *   succeed" statement holds (contracts/speech-openapi.yaml:2682-2689).
  * 413 `job_request_too_large` (#703) is deliberately not in this table: unlike every
@@ -85,6 +91,9 @@ const rejectionTable = [
   [503, "job_unavailable", "intent-kept"],
   [503, "job_admission_contended", "intent-kept"],
   [503, "asset_inspection_busy", "intent-kept"],
+  // An elapsed engine readiness receipt refuses this attempt without a Job row and
+  // is repaired by re-registering the engine, so the durable intent survives (#828).
+  [503, "engine_not_ready", "intent-kept"],
   [429, "job_capacity_exhausted", "intent-kept"],
   // A missing quota row is a configuration gap, not a closed door: after an operator
   // registers an engine for the workspace, this same body under this same key is

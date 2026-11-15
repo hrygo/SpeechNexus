@@ -392,7 +392,11 @@ def _execute(
                 return _error("capacity", request_id, operation)
             if error.code == "voice_draft_not_candidate":
                 return _error("not_candidate", request_id, operation)
-            if error.code == "job_admission_contended":
+            if error.code in ("job_admission_contended", "engine_not_ready"):
+                # Admission contention and an elapsed engine readiness receipt are
+                # both recoverable without changing the request: the same key is
+                # admitted later, so they keep the retryable 503 class instead of
+                # the 422 that answers an unusable published input.
                 return _error("unavailable", request_id, operation)
             return _error("input_unavailable", request_id, operation)
         return _error("unavailable", request_id, operation)

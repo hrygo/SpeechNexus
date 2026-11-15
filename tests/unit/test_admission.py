@@ -77,10 +77,17 @@ def test_expired_readiness_rejects_new_admission_even_when_instance_remains_read
     assert fresh.reservations[0].stage == STAGE
 
     # A ready instance and its earlier observation are not a renewed receipt.
+    # Elapsed validity keeps its own code: the instance is still the right one, so
+    # re-signing the receipt admits the same request (#828).
     assert runtime.instance.instance_state == "ready"
     for now_us in (expiry, expiry + 1):
-        with pytest.raises(AdmissionRejectedError, match="reconciliation_required"):
+        with pytest.raises(AdmissionRejectedError, match="readiness_expired"):
             _decide(runtimes=(runtime,), now_us=now_us)
+    # A receipt for another instance generation is a different fact: only a fresh
+    # observation reconciles it, so it must not borrow the recoverable code.
+    stale = replace(RUNTIMES[0], readiness=replace(RUNTIMES[0].readiness, fencing_token=99))
+    with pytest.raises(AdmissionRejectedError, match="reconciliation_required"):
+        _decide(runtimes=(stale,), now_us=NOW)
 
 
 def test_all_stages_sharing_generation_accumulate_every_dimension_once() -> None:
@@ -239,7 +246,7 @@ def test_authority_windows_are_rechecked_after_waits(part: str) -> None:
     runtime = replace(
         RUNTIMES[0], readiness=replace(RUNTIMES[0].readiness, expires_at_us=NOW + 120000000)
     )
-    code = "reconciliation_required"
+    code = "readiness_expired"
     if part == "owner":
         pools = POOLS
         code = "stale_fencing_token"

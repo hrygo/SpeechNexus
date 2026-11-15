@@ -839,7 +839,19 @@ paths:
         `retryable: false`. A connection-level failure or a timed-out attempt is
         instead 503 `job_outcome_unknown`, which is `retryable: true`; callers
         must read `retryable` rather than infer it from the status.
-        `workspace_not_configured` is likewise never retryable. A binding
+        `workspace_not_configured` is likewise never retryable. An elapsed engine
+        readiness receipt is a different answer again: the pinned ready instance
+        is still the right one, but the receipt admission checks is outside its
+        declared validity window, so the create returns 503 `engine_not_ready`
+        with `retryable: true` and writes no row. Re-signing that receipt
+        (`speechnexus-register-engine --renew-readiness`, or the
+        `engine-readiness` deployment profile) admits the same request under the
+        same Idempotency-Key; retrying before the receipt is re-signed cannot
+        succeed, and it is deliberately not the 503 `job_unavailable` storage
+        answer nor the 429 `job_capacity_exhausted` lease answer. A deployment
+        that lets the receipt elapse refuses every create until a renewal runs, so
+        the receipt TTL is an operational deadline rather than a per-request
+        retry delay. A binding
         whose frozen `execution_defaults` cannot complete every execution
         parameter returns 422 `job_binding_incomplete`; `tts` input
         `text_asset_id` returns 422 `job_text_asset_unsupported` until the

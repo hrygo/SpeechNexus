@@ -13,7 +13,9 @@ Every check is a hard failure except two inputs the gate deliberately reports as
 `pending`:
 
 - the real engine and its registered instance (prerequisite 4 of #572) are a
-  deployment input this bootstrap cannot verify without engine credentials;
+  deployment input this bootstrap cannot verify without engine credentials. The
+  instance's readiness receipt also has a TTL that only a periodic renewal keeps
+  fresh, so the pending line names that renewal and the report that exposes it;
 - the API-side Job writer/admission DSNs are only visible to the API container.
   A blank one already fails creation with `503 job_unavailable`, which is before
   any claim.
@@ -638,7 +640,12 @@ def main(
     print(
         "  pending: real engine and a registered ready instance are a deployment "
         "input this gate cannot verify; register one (engine-registration profile) "
-        "before submitting a Job",
+        "before submitting a Job. The readiness receipt of a ready instance has a "
+        "TTL (24 h default) and is what admission checks: once it elapses every "
+        "create answers 503 engine_not_ready until the receipt is re-signed by the "
+        "engine-readiness profile renewal (speechnexus-register-engine "
+        "--renew-readiness), and speechnexus-engine-readiness reports expiring or "
+        "expired receipts",
         file=stream,
     )
     print(

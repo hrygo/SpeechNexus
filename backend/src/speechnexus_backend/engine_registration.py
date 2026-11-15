@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -37,6 +38,8 @@ from speechnexus_backend.speech.domain.runtime_intents import (
     identifier,
 )
 from speechnexus_backend.speech.domain.runtime_observations import (
+    READINESS_EXPIRED,
+    READINESS_EXPIRING,
     ObserveRuntimeIntent,
     VerifiedRuntimeReadiness,
 )
@@ -125,6 +128,11 @@ class RegistrationResult:
     evidence_document: Row
     probe: EngineProbe
     rows: Row = field(repr=False)
+    # How much of the receipt's window was left before this run, and whether this
+    # run re-signed it. A renewal is only observable if the command reports the
+    # state it found, so `readiness_state` is the fact an operator alerts on.
+    readiness_state: str = "valid"
+    readiness_renewed: bool = False
 
 
 def _vector(text: str) -> PhysicalResources:
@@ -553,6 +561,7 @@ def _existing_result(
     evidence_document: Row,
     probe: EngineProbe,
     readiness_ttl_us: int,
+    renew_readiness: bool = False,
 ) -> RegistrationResult | None:
     heads = _rows(
         cursor,
@@ -634,7 +643,14 @@ def _existing_result(
                 "the stored readiness receipt is invalid",
             ) from None
         now_us = cursor.clock()
-        if readiness.expires_at_us <= now_us:
+        # A quarter of the declared TTL is reported as "expiring": enough of a
+        # warning window for a periodic renewal to run before admission refuses.
+        state = readiness.expiry_state(now_us, warning_us=readiness_ttl_us // 4)
+        # An elapsed receipt is always re-signed. A periodic renewal asks for the
+        # same transaction explicitly, so `--renew-readiness` forces a fresh
+        # receipt instead of depending on how early the scheduler ran.
+        renewed = readiness.expires_at_us <= now_us or renew_readiness
+        if renewed:
             refreshed = VerifiedRuntimeReadiness(
                 spec.plan.binding,
                 spec.instance_id,
@@ -693,6 +709,8 @@ def _existing_result(
             evidence_document=evidence_document,
             probe=probe,
             rows=_snapshot(cursor, spec),
+            readiness_state=state,
+            readiness_renewed=renewed,
         )
     previous = _one(
         cursor,
@@ -765,6 +783,7 @@ def _register_in_transaction(
     intent_deadline_us: int,
     intent_id: str | None,
     timeout_seconds: float,
+    renew_readiness: bool = False,
 ) -> RegistrationResult:
     deadline = time.monotonic() + timeout_seconds
     with connection.cursor() as raw:
@@ -790,6 +809,7 @@ def _register_in_transaction(
             evidence_document=evidence_document,
             probe=probe,
             readiness_ttl_us=readiness_ttl_us,
+            renew_readiness=renew_readiness,
         )
         if existing is not None:
             return existing
@@ -934,6 +954,7 @@ def register_engine(
     transaction_timeout_seconds: float = 10.0,
     connect_timeout_seconds: int = 5,
     probe: EngineProbe | None = None,
+    renew_readiness: bool = False,
 ) -> RegistrationResult:
     """Register and activate one engine generation in one database transaction."""
     if not re.fullmatch(r"[a-z][a-z0-9_]{2,62}", schema):
@@ -989,6 +1010,7 @@ def register_engine(
             intent_deadline_us=intent_deadline_us,
             intent_id=intent_id,
             timeout_seconds=transaction_timeout_seconds,
+            renew_readiness=renew_readiness,
         )
         connection.commit()
         return result
@@ -1193,6 +1215,10 @@ def _result_json(result: RegistrationResult) -> str:
                 "verified_at_us": result.readiness_verified_at_us,
                 "expires_at_us": result.readiness_expires_at_us,
                 "evidence_digest": result.evidence_digest,
+                # `state` is the window this run found before it acted; `renewed`
+                # says whether the receipt it reports is a fresh re-signature.
+                "state": result.readiness_state,
+                "renewed": result.readiness_renewed,
             },
             "health_probe": {
                 "url": result.probe.url,
@@ -1246,6 +1272,16 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--readiness-ttl-seconds", type=_positive, default=86_400)
     parser.add_argument("--intent-deadline-seconds", type=_positive, default=300)
     parser.add_argument("--intent-id", default=None)
+    parser.add_argument(
+        "--renew-readiness",
+        action="store_true",
+        help=(
+            "Re-sign the readiness receipt of the already-ready instance with this run's "
+            "health probe, even when the stored receipt has not expired yet. This is the "
+            "renewal entry a periodic task calls; without it an elapsed receipt is still "
+            "re-signed, but a still-valid one is left untouched"
+        ),
+    )
     parser.add_argument("--health-timeout-seconds", type=float, default=5.0)
     parser.add_argument("--transaction-timeout-seconds", type=float, default=10.0)
     # Manual mode mirrors the frozen ApprovedRuntimePlan and binding fields.
@@ -1301,11 +1337,21 @@ def main(argv: Sequence[str] | None = None) -> None:
             intent_id=options.intent_id,
             health_timeout_seconds=options.health_timeout_seconds,
             transaction_timeout_seconds=options.transaction_timeout_seconds,
+            renew_readiness=options.renew_readiness,
         )
     except RegistrationError as error:
         parser.exit(error.exit_code, f"error: {error.code}: {error.message}\n")
     except (ValueError, TypeError) as error:
         parser.exit(EXIT_INVALID, f"error: invalid_request: {error}\n")
+    if result.readiness_state in (READINESS_EXPIRED, READINESS_EXPIRING):
+        # stderr keeps the machine-readable document on stdout unchanged.
+        action = "re-signed by this run" if result.readiness_renewed else "NOT renewed"
+        sys.stderr.write(
+            f"warning: readiness {result.readiness_state} for "
+            f"{result.instance_id} g{result.instance_generation} "
+            f"(expires_at_us={result.readiness_expires_at_us}); {action}; "
+            "admission refuses an elapsed receipt with 503 engine_not_ready\n"
+        )
     print(_result_json(result))
 
 

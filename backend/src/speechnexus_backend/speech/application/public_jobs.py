@@ -1468,6 +1468,11 @@ def _rejection_reason(error_code: str | None) -> JobRejectionReason:
 _ADMISSION_REJECTION_CODES = frozenset(
     {
         "job_capacity_exhausted",
+        # The pinned instance's readiness receipt elapsed. Admission refuses
+        # before writing anything and the same request is admitted after the
+        # engine is registered again, so it is a retryable refusal rather than
+        # the `job_unavailable` storage outage (#828).
+        "engine_not_ready",
         "job_binding_incomplete",
         "job_text_asset_unsupported",
         "job_admission_contended",

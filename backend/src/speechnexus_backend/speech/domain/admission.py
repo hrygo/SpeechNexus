@@ -326,7 +326,15 @@ def require_live_authority(
             raise AdmissionRejectedError("reconciliation_required")
     for runtime in runtimes:
         try:
-            runtime.readiness.require_valid(runtime.observation, runtime.instance.plan, now_us)
+            # Admission separates an elapsed receipt from a stale identity: the
+            # instance is still the right one, so re-signing readiness admits the
+            # same request, and the refusal must not look like a storage outage.
+            runtime.readiness.require_valid(
+                runtime.observation,
+                runtime.instance.plan,
+                now_us,
+                expired_code="readiness_expired",
+            )
         except RuntimeRejectedError as error:
             raise AdmissionRejectedError(error.code) from None
         if (

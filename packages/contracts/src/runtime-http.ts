@@ -2,6 +2,7 @@
 import openapiFetch from "openapi-fetch";
 import { createHttpValidator } from "./http-runtime.mjs";
 import bundle from "./speechnexus_contracts/runtime-http.schema.json" with { type: "json" };
+import { validators } from "./speechnexus_contracts/runtime-http.validators.generated.mjs";
 import type { paths } from "./runtime.generated";
 export { ContractValidationError } from "./errors.mjs";
 export type HttpOperation =
@@ -16,7 +17,7 @@ type HttpPaths = Pick<
   | "/internal/v1/nodes/{node_id}/instance-intents/{intent_id}/qualification-observation"
   | "/internal/v1/nodes/{node_id}/instances/{instance_id}/generations/{instance_generation}/verified-stop"
 >;
-const validator = createHttpValidator(bundle);
+const validator = createHttpValidator(bundle, validators);
 export function validateRequest<T>(operation: HttpOperation, value: T): T {
   return validator.validateRequest(operation, value);
 }

@@ -1057,6 +1057,30 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      # Deployed headers, not the preview. Both gates above serve `dist` with
+      # `vite preview`, which sends no `Content-Security-Policy`; the image sends
+      # `script-src 'self'` from `deploy/web/nginx.conf`. #840 blanked both entries
+      # in the image because the contract validators compiled with `new Function()`
+      # on the first parse, and every CI lane stayed green. This step serves the same
+      # built bytes with the headers parsed from that configuration (no Docker) and
+      # asserts a real first paint of both entries: body text, entry heading, zero
+      # page errors and zero console errors. It owns ports 4280/4281, so it cannot
+      # collide with the 4173/4174 preview gates.
+      - name: Check first paint under the deployed security headers
+        id: deployed
+        run: pnpm test:deployed
+
+      - name: Preserve deployed-headers evidence
+        if: ${{ !cancelled() && (steps.deployed.outcome == 'success' || steps.deployed.outcome == 'failure') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: web-deployed-headers-evidence
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: error
+          retention-days: 7
+
   compose:
     name: "Compose: configuration validation"
     needs: [routing]

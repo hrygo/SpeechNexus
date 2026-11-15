@@ -1,6 +1,9 @@
 import type { Middleware } from "openapi-fetch";
 
-export function createHttpValidator(bundle: object): {
+export function createHttpValidator(
+  bundle: object,
+  validators: Record<string, (value: unknown) => boolean>,
+): {
   validateRequest<T>(operation: string, value: T): T;
   validateResponse<T>(operation: string, status: number, value: T): T;
   validateEvent(operation: string, value: unknown): unknown;

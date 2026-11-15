@@ -1,27 +1,24 @@
-import { Ajv2020 } from "ajv/dist/2020.js";
-import addFormats from "ajv-formats";
 import { ContractValidationError } from "./errors.mjs";
 
-// Constructing/importing a profile never compiles unrelated public/internal schemas.
-export function createProfileParser(bundle) {
-  const entrypoints = new Set(bundle["x-nexus-entrypoints"]);
-  const validators = new Map();
-  const ajv = new Ajv2020({
-    strict: false,
-    coerceTypes: false,
-    useDefaults: false,
-    removeAdditional: false,
-    validateFormats: true,
-  });
-  addFormats(ajv);
+/**
+ * Build one contract parser from a generated validator record.
+ *
+ * Validators are precompiled by `packages/contracts/scripts/generate-standalone-validators.mjs`
+ * at generation time. Compiling at runtime (`ajv.compile()`) needs `new Function()`,
+ * which the deployment CSP forbids (`deploy/web/nginx.conf`: `script-src 'self'`);
+ * a deployed page failed on its first parse with `EvalError`. Nothing here evaluates
+ * strings, so the CSP does not have to be weakened.
+ */
+export function createProfileParser(validators) {
+  if (!validators || typeof validators !== "object") {
+    throw new TypeError(
+      "createProfileParser needs the generated validator record; " +
+        "run `make contracts-generate` and import `<profile>.validators.generated.mjs`",
+    );
+  }
   return (name, value) => {
-    if (!entrypoints.has(name)) throw new Error("Unknown profile contract");
-    let validate = validators.get(name);
-    if (!validate) {
-      validate = ajv.compile({ $ref: `#/$defs/${name}`, $defs: bundle.$defs });
-      validators.set(name, validate);
-    }
-    if (!validate(value)) {
+    if (!Object.hasOwn(validators, name)) throw new Error("Unknown profile contract");
+    if (!validators[name](value)) {
       throw new ContractValidationError(`Invalid ${name}`);
     }
     return value;

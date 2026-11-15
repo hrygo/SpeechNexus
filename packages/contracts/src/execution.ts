@@ -1,7 +1,7 @@
 // Generated from contracts/bindings.json; do not edit.
 import { createProfileParser } from "./profile-runtime.mjs";
 export { ContractValidationError } from "./errors.mjs";
-import bundle from "./speechnexus_contracts/execution.schema.json" with { type: "json" };
+import { validators } from "./speechnexus_contracts/execution.validators.generated.mjs";
 import type { components } from "./execution.generated";
 export type { components } from "./execution.generated";
 export type Contracts = Pick<
@@ -23,7 +23,7 @@ export type Contracts = Pick<
   | "ExecutionAudioStagingResultResponse"
   | "TtsConfigurationEvidence"
 >;
-const parseValue = createProfileParser(bundle);
+const parseValue = createProfileParser(validators);
 export function parse<K extends keyof Contracts>(name: K, value: unknown): Contracts[K] {
   return parseValue(name, value) as Contracts[K];
 }

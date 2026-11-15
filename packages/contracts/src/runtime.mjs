@@ -1,30 +1,25 @@
-import { Ajv2020 } from "ajv/dist/2020.js";
-import addFormats from "ajv-formats";
+import { validators } from "./speechnexus_contracts/file.validators.generated.mjs";
 import { ContractValidationError } from "./errors.mjs";
-import bundle from "./speechnexus_contracts/file.schema.json" with { type: "json" };
 
 export { ContractValidationError } from "./errors.mjs";
 
-// Type generators cannot encode if/then, oneOf exclusivity, or numeric bounds.
-// Keep the schema authoritative and disable all data-changing Ajv features.
-const ajv = new Ajv2020({
-  strict: false,
-  coerceTypes: false,
-  useDefaults: false,
-  removeAdditional: false,
-  validateFormats: true,
-});
-addFormats(ajv);
-const validators = new Map(
-  bundle["x-nexus-entrypoints"].map((name) => [
-    name,
-    ajv.compile({ $ref: `#/$defs/${name}`, $defs: bundle.$defs }),
-  ]),
-);
-
+/**
+ * The file-workflow contracts (`@speechnexus/contracts` itself).
+ *
+ * Validators are precompiled at generation time; see `profile-runtime.mjs` for why
+ * the runtime must not call `ajv.compile()` (it needs `'unsafe-eval'`, which the
+ * deployment CSP forbids).
+ *
+ * Type generators cannot encode if/then, oneOf exclusivity, or numeric bounds.
+ * The generated validators keep the schema authoritative and disable all
+ * data-changing Ajv features (`coerceTypes`, `useDefaults`, `removeAdditional`).
+ */
 export function parse(name, value) {
-  const validate = validators.get(name);
-  if (!validate) throw new Error(`Unknown file contract: ${name}`);
-  if (!validate(value)) throw new ContractValidationError(`Invalid ${name}`);
+  if (!Object.hasOwn(validators, name)) {
+    throw new Error(`Unknown file contract: ${name}`);
+  }
+  if (!validators[name](value)) {
+    throw new ContractValidationError(`Invalid ${name}`);
+  }
   return value;
 }

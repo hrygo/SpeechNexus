@@ -91,12 +91,70 @@ closure. The generator refuses references outside `contracts/` and remote URIs.
 Python uses datamodel-code-generator 0.86.0 with the checked-in TypedDict
 flattening template revision 1. TypeScript uses openapi-typescript 7.13.0.
 Formatter versions are locked. Never edit `*.generated.ts`, `models.py`,
-`parsers.py`, `file.schema.json`, or `source-inventory.json` by hand.
+`parsers.py`, `file.schema.json`, `source-inventory.json`, or
+`speechnexus_contracts/*.validators.generated.mjs` by hand.
+
+Runtime validation does not compile schemas. The generator emits one
+`*.validators.generated.mjs` per profile and HTTP bundle with
+`packages/contracts/scripts/generate-standalone-validators.mjs`; Ajv's standalone
+mode writes the same compiled validation code as source at generation time, so
+`createProfileParser` and `createHttpValidator` only run precompiled functions.
+Runtime compilation builds a function from source text (`Function(...)`), which the
+deployment CSP treats like `eval` (`deploy/web/nginx.conf`: `script-src 'self'`):
+the first parse on a deployed page threw `EvalError` and blanked both entries
+(#840). The emitted modules are checked bytes and `make contracts-drift` covers
+them like every other artifact.
+
+`ajv` and `ajv-formats` stay in `dependencies`, because the emitted modules import
+their runtime helpers: `ajv/dist/runtime/{equal,ucs2length}.js` and
+`ajv-formats/dist/formats.js` (three ESM imports in the large bundles). Only the
+compiler is gone from the shipped graph — `validateFunctionCode` appears zero times
+in a generated module, while `fullFormats` appears in every bundle that uses a
+format. Generation fails when a bundle uses a format that `ajv-formats` does not
+register, because Ajv would otherwise warn and then accept any string in that slot
+without changing a single schema byte.
+
+Web bundle size: the precompiled validators cost admin +72% and workbench +75% gzip
+(179 KB → 303 KB, 267 KB → 426 KB) and put one 2.5 / 3.3 MB raw script on first
+paint, where the compiler used to sit in a 46 KB gzip chunk loaded on demand. See
+[Bundle size of the precompiled validators](#bundle-size-of-the-precompiled-validators)
+for the measured numbers, why the split is not done here, and what it costs.
 
 `source-inventory.json` records hashes and declared versions for every OpenAPI
 and JSON Schema, including admin, workbench and internal protocols. Its diff
 shows source changes; it is not a compatibility verdict. The existing OpenAI
 compatibility gate continues to cover only the declared standard subset.
+
+## Bundle size of the precompiled validators
+
+Tracking item, not done in #842. The precompiled validators trade first-paint bytes
+for a CSP-compatible runtime, and the trade is large enough that it has to be visible
+to whoever touches this package next.
+
+Measured on the built Web applications at `7ce24bba` (before → after, gzip / raw):
+
+| Application | First-paint script (raw) | Whole `dist` (gzip) |
+| --- | --- | --- |
+| admin | 0.78 MB → 2.61 MB | 179 KB → 303 KB (+72%) |
+| workbench | 1.17 MB → 3.96 MB | 267 KB → 426 KB (+75%) |
+
+The compiler used to live in a lazily loaded `errors-*` chunk (46 KB gzip) that the
+first paint never needed; the validators are one flat module per bundle, so all
+workbench entrypoints (55 profiles, 52 HTTP operations) now parse before first paint.
+
+Why the split is not part of this change: it is not a bundler chunking setting.
+Standalone output is one flat module per bundle with the shared `$defs` functions
+emitted once, so splitting by operation needs the **generator** to emit a shared
+`$defs` module plus one module per entrypoint group, and `validateRequest` /
+`validateResponse` in the generated HTTP wrappers would have to stop being
+synchronous (dynamic `import()`, or a lazily resolved validator record) — that
+changes the wrapper API every consumer uses. Optimistic ceiling after such a split:
+303 KB → 150–200 KB gzip for the two applications.
+
+Trigger for doing it: adding another large profile or HTTP surface to the workbench
+or admin entry, or first-paint gzip for either application exceeding 350 KB. The
+generation-time format guard and `make contracts-drift` are unaffected by such a
+split; the split changes how many modules are emitted and when they load.
 
 ## TypeScript consumer binding
 

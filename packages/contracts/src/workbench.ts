@@ -1,7 +1,7 @@
 // Generated from contracts/bindings.json; do not edit.
 import { createProfileParser } from "./profile-runtime.mjs";
 export { ContractValidationError } from "./errors.mjs";
-import bundle from "./speechnexus_contracts/workbench.schema.json" with { type: "json" };
+import { validators } from "./speechnexus_contracts/workbench.validators.generated.mjs";
 import type { components } from "./workbench.generated";
 export type { components } from "./workbench.generated";
 export type Contracts = Pick<
@@ -62,7 +62,7 @@ export type Contracts = Pick<
   | "RenderUnitGenerationListV2"
   | "ExportEvent"
 >;
-const parseValue = createProfileParser(bundle);
+const parseValue = createProfileParser(validators);
 export function parse<K extends keyof Contracts>(name: K, value: unknown): Contracts[K] {
   return parseValue(name, value) as Contracts[K];
 }

@@ -1,5 +1,16 @@
 # 词汇放宽审批基线热修的非作者审查（PR #855）
 
+## 结论（第三轮，覆盖前两轮）
+
+**现在可以合（head `76a7359a`）。** 第二轮的两条阻断都真的解了：只 bump `info.version` 的树 `6 passed`；给另一处 503 码表加未登记 enum 码 → 红并由 `widening_not_approved` 点名该 finding。第一/二轮已验的性质（死审批、删 enum 条目、删 const 条目、回退 const 值、未登记 const 改动、fixture 换成当代契约）全部仍红；浅克隆 `--depth=1` 全绿；head 的 CI run `43739451588` 无 failure（23 个 job：21 success、2 按路径条件 skipped）。**零条必须修**，四条建议都不影响合入。
+
+第三轮的两个新事实：
+
+1. **`carried == table` 源侧够、方向侧过宽。** `inspect_sources(surface="speech")` 只比对 `contracts/speech-openapi.yaml`，`report["findings"]` 里不可能混进别的源，`startswith(SOURCE)` 足够（甚至冗余）。但过滤是「类别 + 源」，没有限定 `/responses/`：实测给请求体 `SpeechRequest.model` 加一个 `const`，该测试会以 `.../requestBody/application/json/properties/model: const value changed` 报 `widening_not_approved`——这不是响应词汇放宽，与 docstring「同一文件的无关改动是 PR 门禁的事」冲突。门禁对同类改动同样红，所以没有漏放，只是报错语义错位，属随修。
+2. **不存在第三类词汇放宽，所以不窄。** 内核只产出两种值词汇类 finding：`const value changed`（方向无关）与 `enum values added`（响应方向；请求方向是 `enum values removed`），其余全是结构类。审批表用的正是这两类，`classes` 又由表推导，因此「表里将来出现第三类会自动被断言」。
+
+**最关键的那条取舍可以接受，但不该说成「版本对仍有守护」。** 版本对在 main 侧的唯一消费者就是这条断言刚绕开的过滤器；PR 时门禁的基线是 `origin/main`（已含 #828 的全部放宽），那 27 条 finding 根本不产生，故版本对记错在 CI 上没有任何可见后果。实测把 27 条里除首条外的 26 条改成 `0.1.0.dev17` → 该文件 `6 passed`、门禁也 `passed`；27 条全改才红，而那是两条合成用例把 `next(iter(table))` 首条硬编码成 `0.1.0.dev18` 的副作用——**只有首条被偶然守住**。取舍成立：fixture 冻结在 dev18、当代契约版本会继续上涨，历史 27 条的 `to_version` 不可能再与真实比对版本对相等，把约束接回断言只会换一种方式再红（等价解耦）。建议改用两个低成本替代：冻结 `classes == {"const value changed", "enum values added"}`，并在注册表注释里写明版本对只对注册当下的比对有意义。
+
 ## 结论（第二轮，覆盖第一轮）
 
 **现在还不能合：第一轮的两条阻断都真的解决了（浅克隆与 CI 全绿、`const` 漏洞补上），但第二轮又查出两处小修，都在测试文件内、合计约 10 行。**
@@ -525,3 +536,242 @@ $ git diff --stat origin/main...1bfc3737
 - **`generate-contract-bindings.py --check` 未跑通**：本 worktree 缺 `node_modules`（`ajv` 缺失）；按输入根 `contracts/` 判定 fixture 不是其输入、且这是环境限制而非本 PR 引入，但未在装有 pnpm 依赖的环境复核该步骤。
 - **版本号递增频率**取自 `git log -L '/version: 0.1.0.dev/,+1:contracts/speech-openapi.yaml'` 的历史命中（12+ 个特性 PR），未核对每一次递增是否都发生在契约 PR 内。
 - 变异全部在 `/private/tmp/shallow855` 内进行并已复原（`git status` 干净、该文件 6 passed）；`/private/tmp/sn858` 只新增了本文档。未启动 PG、未合并、未 push main。
+
+---
+
+# 第三轮审查（head `76a7359a`）
+
+| 项 | 值 |
+| --- | --- |
+| 被审 head | `76a7359a6ea30bf5a88fd7bc480103b994843055`（`fix/855-vocabulary-baseline`） |
+| 基线 | `origin/main` = `c7e43f9a2926507578513029ee8d1ee07ebce688` |
+| CI run | `43739451588`（PR 事件，head `76a7359a`）：23 个 job 无 failure（21 success、2 skipped：docs markdown formatting、node-controller image build），含 `Python: tests, coverage and build` 与三个 Gate；PR 现为 `MERGEABLE` / `CLEAN` |
+| 审查 worktree | `/private/tmp/sn858`（detached 在 head 上跑；全部变异按字节备份复原，`sha256sum -c` 通过） |
+| 浅克隆 | `/private/tmp/shallow855b`（从 GitHub 真实 `--depth=1` 抓同分支，克隆内自建 venv） |
+| 复核时间 | 2026-11-16，Asia/Shanghai |
+
+## 一、阻断 1 真解：`_finding_class` 改成首段切分
+
+解析对三类真实串都稳（新写法 / 旧写法）：
+
+```
+new: 'const value changed'
+old: 'const value changed'
+
+new: 'enum values added'
+old: "['voice_draft_admission_contended', 'voice_draft_engine_unavailable']"
+
+new: 'const value changed'          # retirements POST 503 的 headers/x-should-retry（带 headers 的那类）
+old: 'const value changed'
+
+derived classes: {'enum values added', 'const value changed'}
+has 'enum values added': True | has 'const value changed': True
+```
+
+finding 形态固定为 `<source>:<pointer>: <class>`，source 与 JSON pointer 都不含 `": "`，所以首个 `": "` 就是指针与类别的边界；enum 的类别自带 `": ["`，只有从右切才会取到码表。另核：27 条审批的 `reason` 里没有 `" ["`，`rsplit(" [", 1)` 剥离过滤器后缀仍是单值确定的（`identity == table: True`）。
+
+真实契约实测——给**另一处** 503 码表（不是已登记的那 5 处，避免「已登记条目文本变了」顺带红）加一个未登记码：
+
+```
+MUTATION M2：contracts/speech-openapi.yaml 的 retirements POST 503 码表加 - voice_catalogue_probe_unregistered
+$ .venv/bin/python -m pytest tests/contract/test_approved_http_response_vocabulary_changes.py -q
+E  AssertionError: {'widening_not_approved': ["contracts/speech-openapi.yaml:paths//v1/nexus/voices/{voice_id}/revisions/{revision}/retirements/post/responses/503/application/json/allOf/1/properties/error/properties/code: enum values added: ['voice_catalogue_probe_unregistered']"], 'approval_without_widening': []}
+FAILED ...::test_every_entry_matches_a_widening_the_current_contract_still_carries
+1 failed, 5 passed in 2.12s
+```
+
+红的就是这一条 finding、由 `widening_not_approved` 点名，且只有那条测试失败（其余 5 条不受影响），不是靠别的断言顺带红。同一棵树上 PR 时门禁自己也拒绝：
+
+```
+$ .venv/bin/python scripts/dev-env/check-http-contract-changes.py --base origin/main --surface speech
+  - .../retirements/post/responses/503/.../code: enum values added: ['voice_catalogue_probe_unregistered']
+Known HTTP structural checks: rejected
+```
+
+## 二、阻断 2 真解：只 bump `info.version` 不再红
+
+```
+MUTATION M1：contracts/speech-openapi.yaml 只把 info.version 从 0.1.0.dev18 改成 0.1.0.dev19
+$ .venv/bin/python -m pytest tests/contract/test_approved_http_response_vocabulary_changes.py -q
+......                                                                   [100%]
+6 passed in 2.00s
+```
+
+绿的不是空转——新断言改用原始 finding，而同一次 fixture 比对里过滤器一条也没放行：
+
+```
+rows versions: [('0.1.0.dev18', '0.1.0.dev19')]
+raw findings: 27  approved_filtered: 0
+carried: 27 table: 27
+```
+
+同时确认这个 bump 在 PR 时门禁上本来就不红（门禁基线是 `origin/main`，已含 #828 全部放宽，这 27 条 finding 根本不产生）：
+
+```
+$ .venv/bin/python scripts/dev-env/check-http-contract-changes.py --base origin/main --surface speech
+contracts/speech-openapi.yaml: 0.1.0.dev18 -> 0.1.0.dev19
+Known HTTP structural checks: passed        (gate exit: 0)
+```
+
+即第二轮查出的「版本一升就红 27 条」确实只发生在测试侧，作者的诊断成立；修法也没削弱门禁（门禁脚本未改动）。
+
+## 三、前两轮已验性质：全部仍红
+
+全部变异在 head 上做，跑完按字节复原（`sha256sum -c` 通过、`git status` 干净）。
+
+| # | 变异 | 期望 | 实测 |
+| --- | --- | --- | --- |
+| 0 | 正常树 | 绿 | `6 passed` |
+| A | 插一条死审批（指向 `voice_draft_never_existed`） | 红 | 红，`approval_without_widening` 点名 |
+| B1 | 删一条已登记 enum 条目 | 红 | 红，`widening_not_approved` 点名 |
+| B2 | 删一条已登记 const 条目 | 红 | 红，`widening_not_approved` 点名 |
+| C | 回退已登记 const（`X-Should-Retry` 改回 `const: "true"`） | 红 | 红，`approval_without_widening` 点名 |
+| D | 未登记 const 改动（`Cache-Control` `no-store` → `no-cache`） | 红 | 红，`widening_not_approved` 点名 |
+| E | fixture 换成当代契约 | 红 | 两条都红（防空转 + 集合相等） |
+| M2 | 未登记 enum 码（另一处码表） | 红 | 红，见第一节 |
+
+关键输出（节选）：
+
+```
+A   Extra items in the right set:
+    ".../voice-designs/post/responses/503/.../code: enum values added: ['voice_draft_never_existed']"
+    1 failed, 5 passed
+
+B1  Extra items in the left set:
+    ".../voice-designs/post/responses/503/.../code: enum values added: ['voice_draft_admission_contended', 'voice_draft_engine_unavailable']"
+    1 failed, 5 passed
+
+B2  Extra items in the left set:
+    '.../pronunciation-sets/get/responses/503/headers/x-should-retry: const value changed'
+    1 failed, 5 passed
+
+C   Extra items in the right set:
+    '.../pronunciation-sets/get/responses/503/headers/x-should-retry: const value changed'
+    1 failed, 5 passed
+
+D   AssertionError: {'widening_not_approved': ['.../retirements/post/responses/503/headers/cache-control: const value changed'], 'approval_without_widening': []}
+    1 failed, 5 passed
+
+E   FAILED ...::test_every_entry_matches_a_widening_the_current_contract_still_carries
+    FAILED ...::test_the_frozen_fixture_predates_the_widenings_it_is_compared_against
+    2 failed, 4 passed
+```
+
+第一轮的 B2/W1（「删 const 条目仍绿」）在 `1bfc3737` 之后没再复现，本轮改动也没把它带回来。
+
+## 四、`carried == table` 的宽窄，以及版本对取舍
+
+### 4.1 太宽？
+
+**源侧足够。** 这条测试用 `inspect_sources(baseline, surface="speech")`，而 `surface="speech"` 只选 `(SPEECH_SOURCE,)`，findings 只会来自 `contracts/speech-openapi.yaml`；`startswith(SOURCE)` 冗余但正确，且 `SOURCE` 带 `.yaml` 后缀，不会被同前缀的其它源命中。
+
+**方向侧过宽。** 过滤是「类别 + 源」，没有限定 `/responses/`（27 条审批键却全在 `/responses/` 下）。构造请求侧同类 finding：
+
+```
+MUTATION W：给请求体组件 #/components/schemas/SpeechRequest 的 model 加 const: "tts-1"
+E  Extra items in the left set:
+   'contracts/speech-openapi.yaml:paths//v1/audio/speech/post/requestBody/application/json/properties/model: const value changed'
+1 failed, 5 passed
+```
+
+这不是响应词汇放宽，却被并进 `carried` 并以 `widening_not_approved` 报出，与测试 docstring「同一文件的无关后续改动是 PR 门禁的事，不是这条测试的事」不一致。门禁对同类请求侧改动同样拒绝（实测 `rejected`），所以不存在漏放，只是报错语义错位、把作者引向错误的审批表。属随修：过滤加 `"/responses/" in finding`（或复用审批键的指针前缀），或把 docstring 改成与实现一致。
+
+### 4.2 太窄？
+
+核心里**值词汇类** finding 只有两种：`const value changed`（方向无关）与 `enum values added`（响应方向；请求方向发的是 `enum values removed`）。其余消息全是结构类：`path/operation/parameter/schema removed`、`type changed`、`format changed`、`required`/`response required guarantees removed`、`additionalProperties`/`boolean schema acceptance/guarantee changed`、`$ref changed`、`schema node kind changed`、`response status/header/media type removed`、`event types removed` 等。审批表两类的并集正好等于这两种，`classes` 又从表推导，所以「表里将来出现第三类会自动被断言」成立；表里没有的第三类词汇放宽不会被这条测试发现，但它同样不可能被静默放行——门禁对任何未登记 finding 都会拒绝（第一节 M2 已证）。判断：不窄。
+
+### 4.3 「版本对错了但词汇对」不再红：可接受，但不能说「版本对仍有守护」
+
+版本对在 main 侧的唯一消费者就是这条断言刚绕开的过滤器（`_apply_approved_response_vocabulary_widenings` 的 `(from_version, to_version)` 匹配）。PR 时门禁的基线是 `origin/main`（已含 #828 的放宽），那 27 条 finding 根本不会产生，因此版本对记错在 CI 上没有任何可见后果。
+
+实测（只动审批表的记录、不动词汇）：
+
+```
+V1   把最后一条（非首条）记录的版本对改成 0.1.0.dev17 → 该文件 6 passed；门禁 --base origin/main 也 passed
+V1b  把除首条外的 26 条改成 0.1.0.dev17             → 该文件 6 passed
+V2   把 27 条全改成 0.1.0.dev17                     → 2 failed（test_a_registered_line_filters_only_its_own_source_and_version_pair、
+                                                         test_an_entry_without_its_reason_is_reported_instead_of_filtered）
+```
+
+V2 的红不是「版本对断言」，而是两条合成用例把 `next(iter(table))`（首条）硬编码成 `0.1.0.dev18` 造成的副作用——**只有首条被偶然守住，其余 26 条没有任何守护**；`test_the_table_is_not_empty_and_every_entry_is_fully_annotated` 只检查 `from_version`/`to_version` 非空。因此第二轮必修 2 的解是「解耦」而非「搬走约束」，取舍成立：该字段的语义只剩「注册当下的比对版本对」，而 fixture 冻结在 dev18、当代契约版本会继续上涨，历史 27 条的 `to_version` 事实上不可能再与真实比对版本对相等；把它重新接回断言（我第二轮给的 align 补丁就是这种思路）只是换一种方式再红一次。
+
+替代建议（都不阻断）：
+
+1. 冻结类别集合 `assert classes == {"const value changed", "enum values added"}`——这是第二轮随修 3 的最省事替代：`_finding_class` 再漂移时直接红，而不是靠「另一处码表 + 人工构造」才发现假阴性。
+2. 在注册表注释里写明版本对只对注册当下的比对有意义（`docs/validation/http-contract-change-checks.md` 现有描述「entry 只在其精确版本对下生效」仍然准确，无需改）。
+
+## 五、浅克隆仍全绿（第二轮的构造性证明未失效）
+
+从 GitHub 真实 `--depth=1` 抓同一分支，克隆内自建 venv：
+
+```
+$ git clone --depth=1 --branch fix/855-vocabulary-baseline https://github.com/hrygo/SpeechNexus.git /private/tmp/shallow855b
+$ cd /private/tmp/shallow855b && git rev-parse HEAD && git rev-list --count HEAD && cat .git/shallow
+76a7359a6ea30bf5a88fd7bc480103b994843055
+1
+76a7359a6ea30bf5a88fd7bc480103b994843055
+$ git rev-parse HEAD^
+fatal: ambiguous argument 'HEAD^': unknown revision or path not in the working tree.
+
+ROOT   : /private/tmp/shallow855b
+FIXTURE: /private/tmp/shallow855b/tests/contract/fixtures/speech-openapi.pre-828.yaml True
+table  : 27
+
+$ .venv/bin/python -m pytest tests/contract/test_approved_http_response_vocabulary_changes.py -q
+......                                                                   [100%]
+6 passed in 2.81s
+```
+
+同一浅克隆里把两处修各验一次：只 bump `version` → `6 passed`；加未登记 enum 码 → `1 failed, 5 passed` 且报同一条 finding。测试的 git 调用仍只落在 `tmp_path` 的临时仓库（`init`/`add`/`commit`/`rev-parse`），不读本仓库历史，第二轮的修法没有因本轮改动回退。
+
+## 六、例数
+
+| 范围 | 结果 |
+| --- | --- |
+| `test_approved_http_response_vocabulary_changes.py`（head，正常树，跑三次一致） | `6 passed` |
+| 同上（`--depth=1` 克隆，自建 venv） | `6 passed` |
+| `test_http_contract_changes.py` | `152 passed` |
+| `tests/contract` 全量（head） | `3873 passed, 8 failed` |
+| CI run `43739451588`（PR 事件） | 23 个 job 无 failure（21 success、2 skipped），含 `Python: tests, coverage and build`、`Gate: Python tests and static checks`、`Gate: integration partitions and merged coverage`、`Gate: required checks for this change` |
+
+8 条失败与第二轮同一形状：全为 `typescript` 参数化用例，`ERR_MODULE_NOT_FOUND`（本 worktree 未装 `node_modules`），CI 装了 pnpm 依赖、同一作业为 pass：
+
+```
+FAILED test_binding_defaults_producer_contract.py::...[True-typescript]
+FAILED test_binding_defaults_producer_contract.py::...[False-typescript]
+FAILED test_profile_lifecycle_http_bindings.py::...[True-publish-typescript]
+FAILED test_profile_lifecycle_http_bindings.py::...[True-activate-typescript]
+FAILED test_profile_lifecycle_http_bindings.py::...[False-publish-typescript]
+FAILED test_profile_lifecycle_http_bindings.py::...[False-activate-typescript]
+FAILED test_pronunciation_read_http.py::test_typescript_native_tcp_consumes_generated_read_client_without_automatic_retry
+FAILED test_workbench_streaming_tcp.py::test_native_tcp_download_sse_resume_expiry_and_cancel[typescript]
+```
+
+## 七、改动面
+
+```
+$ git diff --stat origin/main...76a7359a
+ .../contract/fixtures/speech-openapi.pre-828.yaml  | 6043 ++++++++++++++++++++
+ ...st_approved_http_response_vocabulary_changes.py |  124 +-
+ 2 files changed, 6157 insertions(+), 10 deletions(-)
+```
+
+只有该测试文件与新增 fixture；未改产品代码、契约、生成物，`scripts/dev-env/check-http-contract-changes.py`（审批表本体）未动，符合边界。本轮 head 相对 `1bfc3737` 只有该测试文件 `+23/−14`。
+
+## 八、必须修与建议
+
+**必须修：无。**
+
+建议（均不阻断，可随后续 PR 处理）：
+
+1. 残留集合加 `/responses/` 限定，或改 docstring 使其与实现一致（4.1 的 W 形态）。
+2. 冻结类别集合断言 `classes == {"const value changed", "enum values added"}`，替代第二轮随修 3（4.3 第 1 点）。
+3. 在注册表注释中写明版本对只对注册当下的比对有意义（4.3 第 2 点）。
+4. 沿第一/二轮的「审批键不绑定值」问题（同一指针换值后测试与门禁同时绿）：本轮未复验，仍属内核 finding 文本粒度问题，另开 issue 跟踪，不计入本 PR。
+
+## 只能依赖作者陈述 / 未验证的点（第三轮）
+
+- **未在 CI 的 Linux runner 上手工重跑**：CI 证据取自 `gh run view 43739451588` 的 job 结论（全部 success），未拉日志逐字核对；本地证据是真实 `--depth=1` 克隆（第五节）。
+- **未在装有 pnpm 依赖的环境复核** `tests/contract` 里那 8 条 `typescript` 用例；按第二轮同一环境的判定，属 `node_modules` 缺失而非本改动引入。
+- **未复验 GPU / 集成作业**：本轮只跑 Python 契约测试；`Integration*` 与 `Gate: integration partitions and merged coverage` 的绿按 CI 结论采信。
+- 变异全部在 `/private/tmp/sn858`（detached head `76a7359a`）与 `/private/tmp/shallow855b` 内进行，均按字节备份复原并 `sha256sum -c` 校验；`/private/tmp/sn858` 上只新增本文档。未合并、未 push main、未改产品代码/测试/契约。

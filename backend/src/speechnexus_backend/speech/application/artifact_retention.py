@@ -11,6 +11,10 @@ retention deadline rather than by a caller's claim:
    deleted from object storage, and only a confirmed removal marks the row
    ``deleted``. A removal that cannot be confirmed leaves the row ``expired``:
    the public answer stays ``artifact_expired`` and the next pass retries.
+   A confirmed removal writes ``deleted_at_us`` in the same transition, so the
+   durable row -- not just this process's log -- records that and when the bytes
+   went away. When the transition is refused, the sweep reads the row back and
+   reports what actually happened instead of calling it a removal.
 
 No statement here selects, expires or deletes a row whose retention has not
 elapsed, including a row some other path already marked ``expired``. Object I/O
@@ -36,7 +40,9 @@ class ArtifactRetentionRows(Protocol):
 
     def pending_removal(self, limit: int) -> tuple[int, tuple[ArtifactRecord, ...]]: ...
 
-    def mark_deleted(self, artifact_id: str) -> bool: ...
+    def mark_deleted(self, artifact_id: str) -> ArtifactRecord | None: ...
+
+    def current(self, artifact_id: str) -> ArtifactRecord | None: ...
 
 
 class ArtifactContentRemoval(Protocol):
@@ -52,6 +58,7 @@ class RetentionOutcome:
     expires_at_us: int
     observed_at_us: int
     reason: str = ""
+    deleted_at_us: int | None = None
 
 
 class ArtifactRetention:
@@ -110,13 +117,45 @@ class ArtifactRetention:
                 # so the next pass retries instead of claiming a cleanup.
                 outcomes.append(_blocked(row, now_us, "content_remove_unconfirmed"))
                 continue
-            if self._rows.mark_deleted(row.artifact_id):
+            recorded = self._rows.mark_deleted(row.artifact_id)
+            if recorded is not None:
                 outcomes.append(
-                    RetentionOutcome(row.artifact_id, "deleted", _deadline(row), now_us)
+                    RetentionOutcome(
+                        row.artifact_id,
+                        "deleted",
+                        _deadline(row),
+                        now_us,
+                        deleted_at_us=recorded.deleted_at_us,
+                    )
                 )
-            else:
-                outcomes.append(_blocked(row, now_us, "content_already_removed"))
+                continue
+            outcomes.append(self._explain_refusal(row, now_us))
         return tuple(outcomes)
+
+    def _explain_refusal(self, row: ArtifactRecord, now_us: int) -> RetentionOutcome:
+        """Name why the `deleted` transition did not apply.
+
+        A refused transition is not evidence that content was already removed: the
+        deadline may have been re-checked, or another pass may have moved the row
+        first. The durable row decides which explanation is true.
+        """
+        current = self._rows.current(row.artifact_id)
+        if current is None:
+            return _blocked(row, now_us, "row_missing")
+        if current.deleted_at_us is not None:
+            # The ledger says the removal is recorded, so this pass did not need
+            # to perform it; the state is still `deleted`.
+            return RetentionOutcome(
+                row.artifact_id,
+                "deleted",
+                _deadline(row),
+                now_us,
+                "recorded_by_another_pass",
+                current.deleted_at_us,
+            )
+        if not current.retention_elapsed(now_us):
+            return _blocked(row, now_us, "retention_not_elapsed")
+        return _blocked(row, now_us, "row_state_changed")
 
 
 def _blocked(row: ArtifactRecord, now_us: int, reason: str) -> RetentionOutcome:

@@ -5,6 +5,12 @@ database pool and its object client, and it starts only when the runtime role ca
 actually perform the two transitions it needs. A role that could insert, delete
 or rewrite a deadline would widen retention into a content-deletion authority,
 so startup refuses each of those grants by name before the first row is read.
+
+That check is also why this process takes its own DSN
+(``SPEECHNEXUS_ARTIFACT_RETENTION_DATABASE_URL``, the container's
+``SPEECHNEXUS_DATABASE_URL``) instead of the API runtime identity: the reference
+deployment's ``sn_api`` legitimately holds schema-wide privileges the sweep must
+never have, so sharing it would fail the refusal below at startup.
 """
 
 from __future__ import annotations
@@ -13,7 +19,10 @@ import uuid
 
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.artifact_retention import ArtifactRetention
-from speechnexus_backend.speech.infrastructure.artifact_schema import ARTIFACTS
+from speechnexus_backend.speech.infrastructure.artifact_schema import (
+    ARTIFACT_RETENTION_UPDATE_COLUMNS,
+    ARTIFACTS,
+)
 from speechnexus_backend.speech.infrastructure.artifacts_minio import MinioArtifactRemoval
 from speechnexus_backend.speech.infrastructure.artifacts_postgres import PostgresArtifactRetention
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechConnection, speech_pool
@@ -84,7 +93,12 @@ class ArtifactRetentionRuntime:
 
 
 def _verify_retention_authority(connection: SpeechConnection, schema: str) -> None:
-    """The sweep may select rows and change exactly one column, nothing else."""
+    """The sweep may select rows and change exactly the declared columns.
+
+    The declared set is the state column plus the removal ledger; anything else,
+    including the recorded deadline, is a wider authority than a retention pass
+    is allowed to hold.
+    """
     role = current_role(connection)
     require_schema_usage(connection, role, schema, subject=_SUBJECT)
     refuse_schema_create(connection, role, schema, subject=_SUBJECT)
@@ -113,7 +127,7 @@ def _verify_retention_authority(connection: SpeechConnection, schema: str) -> No
         ARTIFACTS,
         ("INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"),
         subject=_SUBJECT,
-        repair="grant UPDATE (artifact_state) instead of a whole-table write",
+        repair="grant the declared column UPDATE instead of a whole-table write",
     )
     refuse_column_privileges(
         connection,
@@ -123,27 +137,27 @@ def _verify_retention_authority(connection: SpeechConnection, schema: str) -> No
         ("INSERT", "REFERENCES"),
         subject=_SUBJECT,
     )
-    updated = connection.execute(
-        "SELECT pg_catalog.has_column_privilege(CURRENT_USER, %s, 'artifact_state', 'UPDATE') "
-        "AS held",
-        (qualified,),
-    ).fetchone()
-    if updated is None or not updated["held"]:
-        raise ValueError(
-            f"{_SUBJECT} lacks UPDATE on {ARTIFACTS}.artifact_state; install "
-            "artifact_retention_grants for this role"
-        )
+    for column in ARTIFACT_RETENTION_UPDATE_COLUMNS:
+        held = connection.execute(
+            "SELECT pg_catalog.has_column_privilege(CURRENT_USER, %s, %s, 'UPDATE') AS held",
+            (qualified, column),
+        ).fetchone()
+        if held is None or not held["held"]:
+            raise ValueError(
+                f"{_SUBJECT} lacks UPDATE on {ARTIFACTS}.{column}; install "
+                "artifact_retention_grants for this role"
+            )
     stray = connection.execute(
         "SELECT count(*) AS total FROM pg_catalog.pg_attribute a "
         "WHERE a.attrelid = %s::regclass AND a.attnum > 0 AND NOT a.attisdropped "
-        "AND a.attname <> 'artifact_state' "
+        "AND NOT (a.attname = ANY(%s)) "
         "AND pg_catalog.has_column_privilege(CURRENT_USER, a.attrelid, a.attnum, 'UPDATE')",
-        (qualified,),
+        (qualified, list(ARTIFACT_RETENTION_UPDATE_COLUMNS)),
     ).fetchone()
     if stray is None or int(stray["total"]):
         raise ValueError(
-            f"{_SUBJECT} must hold UPDATE only on {ARTIFACTS}.artifact_state; revoke the "
-            "extra column grants"
+            f"{_SUBJECT} must hold UPDATE only on the declared {ARTIFACTS} columns; "
+            "revoke the extra column grants"
         )
 
 

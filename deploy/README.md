@@ -269,23 +269,33 @@ selected by either phase, and both the selection and the state transition repeat
 the deadline predicate, so a widened query cannot remove content early. An
 unconfirmed removal leaves the row `expired`: the download answer stays
 `artifact_expired` and the next pass retries. The row keeps `created_at_us` and
-`expires_at_us`, so each decision remains reviewable after the fact.
+`expires_at_us`, and a confirmed removal also writes `deleted_at_us` in the same
+transition, so each decision — including when content went away — remains
+reviewable in the database after the fact, not only in the process log.
 
-The service runs the API runtime identity (`SPEECHNEXUS_API_DATABASE_URL`) with
-`artifact_retention_grants`: `USAGE` on the schema, `SELECT` on `speech_artifacts`
-and `UPDATE (artifact_state)` only. Startup refuses a role that also holds
-`INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `REFERENCES` or `TRIGGER`, or `UPDATE` on
-any other column, because that would widen the sweep into a content-deletion
-authority. `SPEECHNEXUS_ARTIFACT_RETENTION_INTERVAL_SECONDS` and
+The service runs as its own identity, `sn_artifact_retention`
+(`SPEECHNEXUS_ARTIFACT_RETENTION_DATABASE_URL`, forwarded into the container as
+`SPEECHNEXUS_DATABASE_URL`), with `artifact_retention_grants`: `USAGE` on the
+schema, `SELECT` on `speech_artifacts` and `UPDATE (artifact_state, deleted_at_us)`
+only. Startup refuses a role that holds `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`,
+`REFERENCES` or `TRIGGER`, or `UPDATE` on any other column, because that would
+widen the sweep into a content-deletion authority; it also refuses the API runtime
+identity for the same reason, which is why the two DSNs are separate. `SPEECHNEXUS_ARTIFACT_RETENTION_INTERVAL_SECONDS` and
 `SPEECHNEXUS_ARTIFACT_RETENTION_BATCH_SIZE` bound a pass. Each decision logs one
 JSON line with the Artifact id, the decision, the recorded deadline and the
 database instant, followed by a per-pass summary:
 
 ```text
 {"artifact_id":"artifact-…","decision":"expired","event":"artifact_retention","expires_at_us":1767225600000000,"observed_at_us":1767312000000000,"reason":""}
-{"artifact_id":"artifact-…","decision":"deleted","event":"artifact_retention","expires_at_us":1767225600000000,"observed_at_us":1767312000000000,"reason":""}
+{"artifact_id":"artifact-…","decision":"deleted","deleted_at_us":1767312000000000,"event":"artifact_retention","expires_at_us":1767225600000000,"observed_at_us":1767312000000000,"reason":""}
 {"batch_size":10,"blocked":0,"decisions":2,"deleted":1,"event":"artifact_retention_pass","expired":1}
 ```
+
+The deadline is written from the application clock but judged against the
+database clock, so the observed window is the configured one minus the skew between
+the two (application clock ahead ⇒ earlier expiry, behind ⇒ later). Keep node
+clocks within their normal synchronisation error; raising the window is not the
+fix for a skewed host. Rows without a recorded deadline are never selected.
 
 A single pass runs on demand as
 `docker compose … run --rm artifact-retention speechnexus-artifact-retention --once`
@@ -295,9 +305,13 @@ The download route keeps the three outcomes apart: `410 artifact_expired` when t
 recorded window ended, `410 artifact_deleted` after retention removed the content,
 and `404 artifact_not_published` for a minted result identity with no committed
 row (staging content is not addressable). A `404 artifact_not_found` identifier was
-never issued by this API. `GET /v1/nexus/jobs/{job_id}` keeps listing the committed
-Artifact of a succeeded Job together with its `expires_at`, because retention
-removes content, not the Job's terminal state.
+never issued by this API. `GET /v1/nexus/jobs/{job_id}` still requires the
+committed Artifact to be `ready`, so reading a succeeded Job whose content has
+already been retired answers `503 artifact_service_unavailable`: retention moves
+the content, and the Job row itself is never deleted. Settlement is unaffected —
+a dispatcher replay of the same publication still reaches `succeeded` after the
+retention window elapsed, because the replay asks whose publication it is rather
+than whether content is still servable.
 
 The command-by-command path from a blank environment to one submitted Job,
 including the six prerequisites above and a read-only preflight, is

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field, replace
 from threading import Event
 
@@ -14,7 +15,7 @@ from speechnexus_backend.speech.application.artifact_retention import (
     ArtifactRetention,
     RetentionOutcome,
 )
-from speechnexus_backend.speech.application.artifacts import ArtifactService
+from speechnexus_backend.speech.application.artifacts import ArtifactService, ContentReader
 from speechnexus_backend.speech.domain.artifacts import ArtifactError, ArtifactRecord
 
 NOW = 1_700_000_000_000_000
@@ -85,15 +86,18 @@ class Rows:
         )[:limit]
         return self.now_us, selected
 
-    def mark_deleted(self, artifact_id: str) -> bool:
+    def mark_deleted(self, artifact_id: str) -> ArtifactRecord | None:
         row = self.rows.get(artifact_id)
         if row is None or row.status != "expired":
-            return False
+            return None
         if row.expires_at_us is None or row.expires_at_us > self.now_us:
-            return False
+            return None
         self.transitions.append((artifact_id, "deleted"))
-        self.rows[artifact_id] = replace(row, status="deleted")
-        return True
+        self.rows[artifact_id] = replace(row, status="deleted", deleted_at_us=self.now_us)
+        return self.rows[artifact_id]
+
+    def current(self, artifact_id: str) -> ArtifactRecord | None:
+        return self.rows.get(artifact_id)
 
 
 @dataclass
@@ -125,7 +129,7 @@ def test_elapsed_row_is_expired_then_removed_and_retained_row_is_untouched() -> 
 
     assert outcomes == (
         RetentionOutcome(ELAPSED_ID, "expired", NOW - 1, NOW),
-        RetentionOutcome(ELAPSED_ID, "deleted", NOW - 1, NOW),
+        RetentionOutcome(ELAPSED_ID, "deleted", NOW - 1, NOW, "", NOW),
     )
     assert content.removed == [ELAPSED_ID]
     assert rows.transitions == [(ELAPSED_ID, "expired"), (ELAPSED_ID, "deleted")]
@@ -134,6 +138,49 @@ def test_elapsed_row_is_expired_then_removed_and_retained_row_is_untouched() -> 
     assert rows.rows[ELAPSED_ID].status == "deleted"
     # The deadline that justified the decision stays recorded.
     assert rows.rows[ELAPSED_ID].expires_at_us == NOW - 1
+
+
+class RacedRows(Rows):
+    """Rows where another sweep commits the same transition first."""
+
+    def mark_deleted(self, artifact_id: str) -> ArtifactRecord | None:
+        row = self.rows[artifact_id]
+        self.rows[artifact_id] = replace(row, status="deleted", deleted_at_us=self.now_us)
+        return None
+
+
+class VanishedRows(Rows):
+    """Rows where the selected row disappears before the transition."""
+
+    def mark_deleted(self, artifact_id: str) -> ArtifactRecord | None:
+        self.rows.pop(artifact_id, None)
+        return None
+
+
+def test_a_refused_transition_is_explained_by_the_durable_row() -> None:
+    """The sweep must not report "content already removed" for a refusal.
+
+    A concurrent pass and a re-checked deadline are different facts. Each answer
+    is derived from the row as it now stands, and only a durable removal record is
+    reported as a completed removal.
+    """
+    inside = replace(record(ELAPSED_ID, expires_at_us=NOW + 1), status="expired")
+    outcomes = retention(Rows(rows={ELAPSED_ID: inside}, widen=True), Content()).sweep()
+    assert outcomes == (
+        RetentionOutcome(ELAPSED_ID, "blocked", NOW + 1, NOW, "retention_not_elapsed"),
+    )
+
+    elapsed = replace(record(RETAINED_ID, expires_at_us=NOW - 1), status="expired")
+    raced = retention(RacedRows(rows={RETAINED_ID: elapsed}), Content()).sweep()
+    assert raced == (
+        RetentionOutcome(RETAINED_ID, "deleted", NOW - 1, NOW, "recorded_by_another_pass", NOW),
+    )
+
+
+def test_a_row_that_vanished_between_passes_is_not_reported_as_removed() -> None:
+    elapsed = replace(record(ELAPSED_ID, expires_at_us=NOW - 1), status="expired")
+    outcomes = retention(VanishedRows(rows={ELAPSED_ID: elapsed}), Content()).sweep()
+    assert outcomes == (RetentionOutcome(ELAPSED_ID, "blocked", NOW - 1, NOW, "row_missing"),)
 
 
 def test_never_expiring_row_is_never_selected() -> None:
@@ -160,7 +207,7 @@ def test_unconfirmed_content_removal_keeps_the_durable_expired_state() -> None:
     # The next pass retries the same row and completes the cleanup.
     content.unconfirmed = False
     second = retention(rows, content).sweep()
-    assert second == (RetentionOutcome(ELAPSED_ID, "deleted", NOW - 1, NOW),)
+    assert second == (RetentionOutcome(ELAPSED_ID, "deleted", NOW - 1, NOW, "", NOW),)
     assert rows.rows[ELAPSED_ID].status == "deleted"
 
 
@@ -201,7 +248,11 @@ class ServiceObjects:
     def __init__(self, content: Content) -> None:
         self._content = content
 
-    def open(self, artifact: ArtifactRecord, offset: int, length: int) -> object:
+    def open(
+        self, artifact: ArtifactRecord, offset: int, length: int
+    ) -> AbstractContextManager[ContentReader]:
+        # Reaching here would mean content was served for a row that is not
+        # servable.
         raise AssertionError("content must not be opened for an unserveable row")
 
 
@@ -262,6 +313,7 @@ def test_one_pass_logs_each_decision_and_a_summary(caplog: pytest.LogCaptureFixt
             "expires_at_us": NOW - 1,
             "observed_at_us": NOW,
             "reason": "",
+            "deleted_at_us": NOW,
         },
         {
             "event": "artifact_retention_pass",

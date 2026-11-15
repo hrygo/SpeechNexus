@@ -10,6 +10,7 @@ from typing import Literal
 from speechnexus_backend.speech.domain.assets import (
     DIGEST,
     IDENTIFIER,
+    MAX_SAFE,
     counter,
     hash_bytes,
     identifier,
@@ -24,6 +25,10 @@ ARTIFACT_KINDS = frozenset(
     {"transcript", "audio", "preview", "validation_report", "export_manifest"}
 )
 ARTIFACT_STATUSES = frozenset({"ready", "expired", "deleted"})
+# The largest instant a recorded deadline can carry: the safe-integer bound every
+# domain counter uses, which is also what keeps a deadline comparable in every
+# projection. A larger value is refused at the domain edge, not stored.
+ARTIFACT_TIMESTAMP_MAX_US = MAX_SAFE
 _MEDIA_TYPE = re.compile(r"[!-~](?:[ -~]{0,126}[!-~])?\Z")
 _STORAGE_VERSION = re.compile(r"[^\x00-\x1f\x7f]{1,1024}\Z")
 # The dispatcher mints a result identity as ``artifact-`` plus 48 hex digits
@@ -59,6 +64,9 @@ class ArtifactRecord:
     expires_at_us: int | None
     object_key: str = ""
     storage_version_id: str = ""
+    # Durable removal record: set by the same statement that makes a row
+    # `deleted`, so "the content was removed" and "when" cannot disagree.
+    deleted_at_us: int | None = None
 
     def __post_init__(self) -> None:
         identifier(self.artifact_id)
@@ -78,12 +86,18 @@ class ArtifactRecord:
         counter(self.created_at_us)
         if self.expires_at_us is not None and self.expires_at_us <= self.created_at_us:
             raise ValueError("Artifact expiry must follow creation")
+        if self.expires_at_us is not None and self.expires_at_us > ARTIFACT_TIMESTAMP_MAX_US:
+            raise ValueError("Artifact expiry exceeds the recorded clock range")
         if not isinstance(self.object_key, str) or not 1 <= len(self.object_key) <= 512:
             raise ValueError("Invalid artifact object identity")
         if not isinstance(self.storage_version_id, str) or not _STORAGE_VERSION.fullmatch(
             self.storage_version_id
         ):
             raise ValueError("Invalid artifact storage version")
+        if self.deleted_at_us is not None:
+            counter(self.deleted_at_us)
+            if self.status != "deleted":
+                raise ValueError("Artifact removal record requires the deleted state")
 
     def retention_elapsed(self, now_us: int) -> bool:
         """Whether the recorded retention window has ended at ``now_us``."""

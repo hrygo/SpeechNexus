@@ -72,21 +72,23 @@ def run_retention(
 
 
 def _log_outcome(outcome: RetentionOutcome) -> None:
-    """One reviewable line: which Artifact, which deadline, which instants."""
-    _LOG.info(
-        json.dumps(
-            {
-                "event": "artifact_retention",
-                "artifact_id": outcome.artifact_id,
-                "decision": outcome.decision,
-                "expires_at_us": outcome.expires_at_us,
-                "observed_at_us": outcome.observed_at_us,
-                "reason": outcome.reason,
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-    )
+    """One reviewable line: which Artifact, which deadline, which instants.
+
+    The durable row carries the same facts (`expires_at_us` plus, after a
+    removal, `deleted_at_us`), so the line and the database can be compared
+    afterwards instead of trusting the log alone.
+    """
+    line = {
+        "event": "artifact_retention",
+        "artifact_id": outcome.artifact_id,
+        "decision": outcome.decision,
+        "expires_at_us": outcome.expires_at_us,
+        "observed_at_us": outcome.observed_at_us,
+        "reason": outcome.reason,
+    }
+    if outcome.deleted_at_us is not None:
+        line["deleted_at_us"] = outcome.deleted_at_us
+    _LOG.info(json.dumps(line, sort_keys=True, separators=(",", ":")))
 
 
 def _log_pass(outcomes: tuple[RetentionOutcome, ...], *, batch_size: int) -> None:

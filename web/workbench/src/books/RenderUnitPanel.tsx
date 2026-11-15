@@ -215,21 +215,44 @@ function revisionProblemOf(error: unknown): RevisionProblem {
 
 const copyProblems = {
   missing: "该已保存副本已不可读取（404）。",
+  expired: "该副本的来源制品已过保留期，内容不再提供。",
+  removed: "该副本的来源制品内容已按保留期清理。",
   unavailable: "部署或连接不可用，副本读取结果未确认。",
   unknown: "副本读取结果未确认，请稍后重试。",
 } as const;
 
 export type CopyProblem = keyof typeof copyProblems;
 
-const saveProblems: Record<"unavailable" | "rejected" | "unknown" | "missing", string> = {
+const saveProblems: Record<
+  "unavailable" | "rejected" | "unknown" | "missing" | "expired" | "removed" | "unpublished",
+  string
+> = {
   unavailable: "保存服务暂不可用，副本未写入。",
   rejected: "保存被拒绝，未写入副本。请核对项目与来源后重试。",
   unknown: "保存结果尚未确认。请按原键重试，不要重复保存。",
   missing: "来源制品或回执不存在，无法保存副本。",
+  // Retention answers these three instead of one vague 404/410: the source
+  // artifact's content was retained for a window that has ended, was already
+  // removed, or the publication never committed. Only the last one may still
+  // succeed on a later attempt.
+  expired: "来源制品已过保留期，内容不再提供，无法保存副本。",
+  removed: "来源制品的内容已按保留期清理，无法保存副本。",
+  unpublished: "来源结果尚未提交完成，请稍后再试。",
 };
 
+/**
+ * One retention answer, three operator actions.
+ *
+ * A `410` used to read as "不存在" for every cause, so an operator could not tell
+ * an expired window from a removed object or from a publication that never
+ * committed. The envelope's `code` carries that difference, and its `retryable`
+ * flag says whether asking again can change the answer.
+ */
 function saveProblemOf(error: unknown): keyof typeof saveProblems {
   if (error instanceof WorkbenchResponseError) {
+    if (error.code === "artifact_expired") return "expired";
+    if (error.code === "artifact_deleted") return "removed";
+    if (error.code === "artifact_not_published") return "unpublished";
     if (error.status === 404 || error.status === 410) return "missing";
     if (error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status))
       return "rejected";
@@ -240,6 +263,8 @@ function saveProblemOf(error: unknown): keyof typeof saveProblems {
 
 function copyProblemOf(error: unknown): CopyProblem {
   if (error instanceof WorkbenchResponseError) {
+    if (error.code === "artifact_expired") return "expired";
+    if (error.code === "artifact_deleted") return "removed";
     if (error.status === 404) return "missing";
     return "unavailable";
   }

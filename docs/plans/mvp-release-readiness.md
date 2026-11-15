@@ -77,10 +77,10 @@
 - 现在卡在哪：`deploy/compose.yaml` 无该键、无配方样例、无 settlement 角色；两条同步入口的「共存」因此在参考部署里无法演示。
 - 谁做：部署/后端；配方与角色需部署方评审后提供。
 
-**B5 — 制品保留期已实现，缺参考部署实测（F-ARTIFACT，#820）**
-- 要什么证据：发布时写入 `expires_at_us`（PRD：普通生成音频默认 30 天）、过期后下载返回明确不可用，并有复核用的固定版本与清理账本。
-- 当前实现：发布按 `SPEECHNEXUS_ARTIFACT_RETENTION_SECONDS`（默认 30 天，1 小时至 10 年）写 `expires_at_us = created_at_us + 窗口`；下载在记录期限处返回 `410 artifact_expired`，清理确认后返回 `410 artifact_deleted`，已铸造未提交身份返回 `404 artifact_not_published`，未签发标识返回 `404 artifact_not_found`；有界清理入口 `speechnexus-artifact-retention` 分「标记过期 → 确认移除版本 → 标记已删除」两段，只允许 `SELECT` 与 `UPDATE (artifact_state)`，每次决策输出 JSON 日志，行内保留期限与创建时刻供事后复核。参考部署以 `artifact-retention` profile 提供该进程。
-- 还差什么：只在隔离 PG + 版本化 MinIO 上跑过（`tests/integration/test_artifact_retention_pg.py`），未在真实参考部署上启动该 profile 并留存日志，因此不构成 A 档；「照文档从零起一套」仍属 MVP 未覆盖范围。
+**B5 — 制品保留期代码与入口就绪，缺参考部署实测（F-ARTIFACT，#820）**
+- 要什么证据：发布时写入 `expires_at_us`（PRD：普通生成音频默认 30 天）、过期后下载返回明确不可用，并有复核用的固定版本与持久清理账本。
+- 当前实现：发布按 `SPEECHNEXUS_ARTIFACT_RETENTION_SECONDS`（默认 30 天，1 小时至 10 年）写 `expires_at_us = created_at_us + 窗口`；下载在记录期限处返回 `410 artifact_expired`，清理确认后返回 `410 artifact_deleted`，已铸造未提交身份返回 `404 artifact_not_published`，未签发标识返回 `404 artifact_not_found`；有界清理入口 `speechnexus-artifact-retention` 分「标记过期 → 确认移除版本 → 标记已删除」两段，使用独立身份 `sn_artifact_retention`，只允许 `SELECT` 与 `UPDATE (artifact_state, deleted_at_us)`，确认移除时在同一语句写入 `deleted_at_us` 作为持久删除账本，每次决策另输出 JSON 日志。参考部署以 `artifact-retention` profile 提供该进程，runbook 含角色与授权步骤。
+- 还差什么：只在隔离 PG + 版本化 MinIO 上跑过（`tests/integration/test_artifact_retention_pg.py`）以及进程级一次 pass（`--once`），未在真实参考部署上启动该 profile 并留存日志，因此不构成 A 档；「照文档从零起一套」仍属 MVP 未覆盖范围。
 - 谁做：运维（一次真实部署运行与日志留证）。
 
 **B6 — 独立 Workbench API 无部署入口（F-DELETE/F-CLIENT 的工作台部分）**

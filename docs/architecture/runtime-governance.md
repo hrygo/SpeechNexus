@@ -193,11 +193,26 @@ artifact_expired`，即使清理进程尚未运行；`410 artifact_deleted` 表�
 `ready` 的行改为 `expired`，再删除该行固定版本的对象，取得移除确认后才改为 `deleted`。
 选择和状态转移都重复同一条期限谓词，处于保留期内的行不会被选中，放宽的查询也无法提前
 删除内容；移除未确认时保留 `expired`，下载答案不变并在下一 pass 重试。行本身保留
-`created_at_us` 与 `expires_at_us`，每次决策另输出一行 JSON（制品标识、决策、期限、
-数据库时刻）与 pass 汇总，因此清理范围可在事后复核。该进程使用 API 运行身份和
-`artifact_retention_grants`（`SELECT` 加 `UPDATE (artifact_state)`），启动时拒绝任何更宽的
-写权限。Job 终态不受影响：保留期届满只把 Artifact 标为过期，`succeeded` 与其结果引用
-仍可读取。
+`created_at_us` 与 `expires_at_us`，确认移除时在同一条语句里写入 `deleted_at_us`，
+`artifact_state` 与移除时刻由此不可能互相矛盾（表级 CHECK），删除账本因此是持久记录而不是
+只有日志：每次决策另输出一行 JSON（制品标识、决策、期限、移除时刻、数据库时刻）与 pass
+汇总，清理范围可在事后回放到行。该进程使用独立身份 `sn_artifact_retention` 与
+`artifact_retention_grants`（`SELECT` 加 `UPDATE (artifact_state, deleted_at_us)`），启动时
+拒绝任何更宽的写权限，包括 API 运行身份持有的 schema 级权限。
+
+期限由两个时钟共同决定，差值要计入运维预期：`created_at_us` 在发布时取应用时钟
+（`time.time_ns() // 1000`），而到期判定使用数据库时钟（`clock_timestamp()`）。设
+δ = 应用钟 − 数据库钟，则实际保留时长 = 配置窗口 − δ：应用钟偏快会让内容比配置提前 δ
+到期，偏慢则推迟 δ；已写入的 `expires_at_us` 本身不会因此改变，判定始终只对一个数据库时刻
+比较。δ 应保持在节点时间同步误差量级（秒级以内），差异较大时先修时间同步，不要靠调大窗口
+掩盖。
+
+Job 终态不受保留期影响：保留期届满只改 Artifact 的状态，Job 行与其结果引用不被删除，
+`GET /v1/nexus/jobs/{job_id}` 的制品投影仍要求该 Artifact 为 `ready`，因此内容已退休的旧
+Job 读取返回 `503 artifact_service_unavailable`，这是既有投影契约（一个 Job 的结果必须
+仍可服务），不是本次新增的拒绝。结算不受影响：调度器在保留期届满后重放同一发布仍可结算
+为 `succeeded`，因为重放判定的是「这是不是本次 Job 的已提交发布」，而不是「内容是否仍可
+下载」。
 
 | 数据 | 默认行为 / 保留建议 |
 | --- | --- |

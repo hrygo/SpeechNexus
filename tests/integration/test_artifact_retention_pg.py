@@ -52,6 +52,9 @@ from speechnexus_backend.speech.infrastructure.artifact_schema import (
 )
 from speechnexus_backend.speech.infrastructure.artifacts_minio import MinioArtifactObjects
 from speechnexus_backend.speech.infrastructure.artifacts_postgres import PostgresArtifactMetadata
+from speechnexus_backend.speech.infrastructure.coordination_grants import (
+    coordination_runtime_grants,
+)
 from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
 
 pytestmark = pytest.mark.integration
@@ -270,6 +273,15 @@ def _state(
     return str(row["artifact_state"]), cast(int | None, row["expires_at_us"])
 
 
+def _removed_at(admin: psycopg.Connection[dict[str, object]], artifact_id: str) -> int | None:
+    row = admin.execute(
+        "SELECT deleted_at_us FROM speech_artifacts WHERE artifact_id = %s",
+        (artifact_id,),
+    ).fetchone()
+    assert row is not None
+    return cast(int | None, row["deleted_at_us"])
+
+
 def _version_present(sandbox: Sandbox, key: str, version_id: str) -> bool:
     try:
         sandbox.objects.stat_object(sandbox.bucket, key, version_id=version_id)
@@ -299,10 +311,15 @@ def test_expiry_precedes_a_confirmed_removal_and_leaves_retained_rows_alone(
     assert decisions == {(ELAPSED_ID, "expired"), (ELAPSED_ID, "deleted")}
     # The retained row was never selected, so no decision names it.
     assert all(item.artifact_id != RETAINED_ID for item in outcomes)
-    # The elapsed row records the decision durably and keeps its deadline.
+    # The elapsed row records the decision durably and keeps its deadline, and
+    # the removal itself is timestamped in the row (the deletion ledger).
     state, expires_at_us = _state(sandbox.admin, ELAPSED_ID)
     assert state == "deleted"
     assert expires_at_us is not None
+    removed_at = _removed_at(sandbox.admin, ELAPSED_ID)
+    assert removed_at is not None and removed_at >= expires_at_us
+    # A retained row carries no removal record.
+    assert _removed_at(sandbox.admin, RETAINED_ID) is None
     # The retained row keeps its state, its deadline and its bytes.
     retained_state, retained_expires_at_us = _state(sandbox.admin, RETAINED_ID)
     assert retained_state == "ready"
@@ -323,11 +340,56 @@ def test_expiry_precedes_a_confirmed_removal_and_leaves_retained_rows_alone(
     assert _state(sandbox.admin, RETAINED_ID)[0] == "ready"
 
 
+def test_a_shared_runtime_identity_cannot_run_the_sweep(sandbox: Sandbox) -> None:
+    """The sweep refuses the API runtime identity, which is why its DSN is separate.
+
+    `sn_api` legitimately holds memory/schema-wide coordination privileges; a role
+    that can read and write other relations is not a retention role even if it
+    also carries `artifact_retention_grants`. Startup must refuse it by name
+    instead of running with an authority nobody reviewed.
+    """
+    shared = "sn_api_like_" + uuid.uuid4().hex[:8]
+    peer = "sn_gateway_like_" + uuid.uuid4().hex[:8]
+    current = sandbox.admin.execute("SELECT current_schema() AS name").fetchone()
+    assert current is not None
+    schema = str(current["name"])
+    sandbox.admin.execute(f"CREATE ROLE \"{shared}\" LOGIN PASSWORD 'synthetic_shared'")
+    sandbox.admin.execute(f"CREATE ROLE \"{peer}\" LOGIN PASSWORD 'synthetic_peer'")
+    url, endpoint, access, secret = _required_environment()
+    try:
+        for grant in coordination_runtime_grants(schema, speech_role=shared, gateway_role=peer):
+            sandbox.admin.execute(grant)
+        for grant in artifact_retention_grants(schema, shared):
+            sandbox.admin.execute(grant)
+        with pytest.raises(ValueError, match="Artifact retention startup rejected") as refused:
+            ArtifactRetentionRuntime(
+                _settings(
+                    url,
+                    schema,
+                    shared,
+                    "synthetic_shared",
+                    endpoint,
+                    sandbox.bucket,
+                    access,
+                    secret,
+                )
+            ).open()
+        # The refusal names the privilege family, not a bare mismatch.
+        assert "Artifact retention startup rejected" in str(refused.value)
+    finally:
+        sandbox.admin.execute(f'DROP OWNED BY "{shared}"')
+        sandbox.admin.execute(f'DROP OWNED BY "{peer}"')
+        sandbox.admin.execute(f'DROP ROLE IF EXISTS "{shared}"')
+        sandbox.admin.execute(f'DROP ROLE IF EXISTS "{peer}"')
+
+
 def test_retention_role_may_not_widen_into_content_deletion(sandbox: Sandbox) -> None:
     """A table-level write grant is refused before the first row is read."""
     widened = "sn_artifact_retention_wide_" + uuid.uuid4().hex[:8]
     sandbox.admin.execute(f"CREATE ROLE \"{widened}\" LOGIN PASSWORD 'synthetic_wide'")
-    schema = str(sandbox.admin.execute("SELECT current_schema() AS name").fetchone()["name"])
+    current = sandbox.admin.execute("SELECT current_schema() AS name").fetchone()
+    assert current is not None
+    schema = str(current["name"])
     for grant in artifact_retention_grants(schema, widened):
         sandbox.admin.execute(grant)
     sandbox.admin.execute(f'GRANT UPDATE ON "{schema}".speech_artifacts TO "{widened}"')

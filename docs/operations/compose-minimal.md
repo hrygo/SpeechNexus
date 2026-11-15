@@ -330,7 +330,7 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 ```
 
 上述容器名、用户和数据库名对应默认配置；若部署值不同，先核对实际名称再查询。
-仓库当前迁移链的 head 为 `0053_voice_draft_publication`；实际部署必须以所用发布制品中的唯一
+仓库当前迁移链的 head 为 `0054_artifact_deleted_ledger`；实际部署必须以所用发布制品中的唯一
 head 为准，查询结果须与之相符。不要把旧版 `0027_gateway_abort_intents` 或
 `0039_public_job_progress` 当作当前 head，也不要跳过检查或手工修改版本表。
 
@@ -338,8 +338,8 @@ head 为准，查询结果须与之相符。不要把旧版 `0027_gateway_abort_
 
 以下脚本必须使用 **迁移 owner DSN** 运行，创建 API、gateway writer、gateway query、工作区
 writer、审计 reader、实例读取 reader、隔离释放、公开目录 reader、Artifact reader、资源池
-reader、binding 列表 reader、binding 写、binding admin reader 与 binding 生命周期共十四个
-独立非 owner 角色。每个透传键当前是否有预置步骤见文末
+reader、binding 列表 reader、binding 写、binding admin reader、binding 生命周期与 Artifact
+保留期清理共十五个独立非 owner 角色。每个透传键当前是否有预置步骤见文末
 [透传 DSN 覆盖表](#透传-dsn-覆盖表)，未预置的键及其原因见
 [故意不预置的身份](#故意不预置的身份)。预设发布的写角色 `sn_profile_writer` 不在此脚本内：
 它必须与部署方的资格文档同时启用，步骤见
@@ -434,6 +434,7 @@ roles = {
     "sn_binding_writer": os.environ["SPEECHNEXUS_BINDING_WRITER_ROLE_PASSWORD"],
     "sn_binding_admin_reader": os.environ["SPEECHNEXUS_BINDING_ADMIN_READER_ROLE_PASSWORD"],
     "sn_binding_lifecycle": os.environ["SPEECHNEXUS_BINDING_LIFECYCLE_ROLE_PASSWORD"],
+    "sn_artifact_retention": os.environ["SPEECHNEXUS_ARTIFACT_RETENTION_ROLE_PASSWORD"],
 }
 with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     # PostgreSQL 角色属于整个集群，即使数据库是专用的也要先核对。
@@ -492,9 +493,10 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
         conn.execute(statement)
     for statement in asset_runtime_grants(schema, "sn_api"):
         conn.execute(statement)
-    # The retention sweep runs as the API runtime identity (it reuses
-    # SPEECHNEXUS_DATABASE_URL) and may only move artifact_state.
-    for statement in artifact_retention_grants(schema, "sn_api"):
+    # The retention sweep runs as its own identity: SELECT plus
+    # UPDATE(artifact_state, deleted_at_us) and nothing else. It refuses to start on a role that
+    # holds any wider authority, so it cannot share `sn_api`'s schema privileges.
+    for statement in artifact_retention_grants(schema, "sn_artifact_retention"):
         conn.execute(statement)
     for statement in gateway_query_grants(schema, "sn_gateway_query"):
         conn.execute(statement)
@@ -601,7 +603,7 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
         "sn_audit_reader sn_model_instance_reader sn_quarantine_release "
         "sn_catalog_reader sn_artifact_reader sn_resource_pool_reader "
         "sn_binding_list_reader sn_binding_writer sn_binding_admin_reader "
-        "sn_binding_lifecycle"
+        "sn_binding_lifecycle sn_artifact_retention"
     )
 PY
 ```
@@ -610,9 +612,9 @@ PY
 CREATE 权限，停止启动服务；不要用超级用户连接绕过检查。API 启动时还会再次核验
 `sn_api` 不是数据库/表 owner，也不是可继承的 owner 成员。
 
-脚本成功后，把十一个非基线身份的连接地址写回 `deploy/compose.env`（其中
+脚本成功后，把十二个非基线身份的连接地址写回 `deploy/compose.env`（其中
 `sn_workspace_writer`、`sn_audit_reader`、`sn_model_instance_reader` 与
-`sn_quarantine_release` 四个此前已有写回，本节新增七个）；脚本替换同名空行或追加，不打印
+`sn_quarantine_release` 四个此前已有写回，本节新增八个）；脚本替换同名空行或追加，不打印
 口令。写回脚本与上面的口令导出一一对应，必须**在同一个 shell 里执行**：写回脚本用
 `os.environ[...]` 读取导出值，换一个 shell 会因缺少 `SPEECHNEXUS_*_ROLE_PASSWORD` 抛
 `KeyError`。
@@ -679,6 +681,11 @@ values = {
         f"{os.environ['SPEECHNEXUS_BINDING_LIFECYCLE_ROLE_PASSWORD']}"
         "@postgres:5432/speechnexus"
     ),
+    "SPEECHNEXUS_ARTIFACT_RETENTION_DATABASE_URL": (
+        "postgresql://sn_artifact_retention:"
+        f"{os.environ['SPEECHNEXUS_ARTIFACT_RETENTION_ROLE_PASSWORD']}"
+        "@postgres:5432/speechnexus"
+    ),
 }
 path = Path("deploy/compose.env")
 text = path.read_text()
@@ -691,8 +698,8 @@ path.chmod(0o600)
 print(
     "workspace writer, audit reader, instance reader, quarantine release, catalogue "
     "reader, Artifact reader, resource pool reader, binding list reader, binding "
-    "writer, binding admin reader and binding lifecycle DSNs written to "
-    "deploy/compose.env"
+    "writer, binding admin reader, binding lifecycle and Artifact retention DSNs "
+    "written to deploy/compose.env"
 )
 PY
 ```
@@ -1044,6 +1051,44 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 已有部署按[已有部署的授权升级](#已有部署的授权升级)重放：七个身份都在该脚本的
 `new_roles` 与授权重放列表内，`GRANT` 是追加式操作，重复执行不改变既有权限。
 
+### Artifact 保留期清理角色 `sn_artifact_retention`
+
+`artifact-retention` profile 的清理进程不读请求、不写业务行：一次 pass 只把到期且
+`ready` 的制品改成 `expired`，再删除已 `expired` 行的固定对象版本并把行改成 `deleted`。
+它因此使用**独立身份**，而不是 `sn_api`：API 运行身份按设计持有 schema 级读写与
+`coordination_runtime_grants` 的宽权限，清理进程启动时会逐一拒绝这类权限（见下），
+共用同一身份会让 profile 直接起不来。
+
+| 项 | 值 |
+| --- | --- |
+| 键 | `SPEECHNEXUS_ARTIFACT_RETENTION_DATABASE_URL`（容器内为 `SPEECHNEXUS_DATABASE_URL`） |
+| 角色 | `sn_artifact_retention` |
+| 授权 | `artifact_retention_grants`：`USAGE` 于 schema、`SELECT` 于 `speech_artifacts`、列级 `UPDATE (artifact_state, deleted_at_us)` |
+| 未配置 | 为空则容器启动即失败（`SPEECHNEXUS_DATABASE_URL` 无值），不会带着空身份空转 |
+| 启动拒绝 | `Artifact retention startup rejected (<异常类型>)` |
+
+只允许这两条语句所需的最小面：角色若能 `INSERT`、`DELETE`、`TRUNCATE`、`REFERENCES` 或
+改写其它列（包括 `expires_at_us`），清理就从「按记录期限撤内容」变成「可以任意删除或延长
+保留」，因此启动校验会点名列拒绝。核对列级授权：
+
+```bash
+docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
+  "select table_name, column_name from information_schema.column_privileges \
+   where grantee = 'sn_artifact_retention' and privilege_type = 'UPDATE' order by 1, 2"
+```
+
+该查询应只输出 `speech_artifacts|artifact_state` 与 `speech_artifacts|deleted_at_us` 两行：
+前者是保留决策，后者是删除账本（清理确认后写入的移除时刻）。确认没有表级写权限：
+
+```bash
+docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
+  "select table_name, privilege_type from information_schema.table_privileges \
+   where grantee = 'sn_artifact_retention' and privilege_type in \
+     ('INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER') order by 1, 2"
+```
+
+该查询应无输出。
+
 ### 预设发布资格输入与 sn_profile_writer 角色
 
 `POST /v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/publications` 在写入前只
@@ -1289,6 +1334,7 @@ new_roles = {
     "sn_binding_writer": os.environ["SPEECHNEXUS_BINDING_WRITER_ROLE_PASSWORD"],
     "sn_binding_admin_reader": os.environ["SPEECHNEXUS_BINDING_ADMIN_READER_ROLE_PASSWORD"],
     "sn_binding_lifecycle": os.environ["SPEECHNEXUS_BINDING_LIFECYCLE_ROLE_PASSWORD"],
+    "sn_artifact_retention": os.environ["SPEECHNEXUS_ARTIFACT_RETENTION_ROLE_PASSWORD"],
 }
 with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     for role, password in new_roles.items():
@@ -1315,9 +1361,10 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
         conn.execute(statement)
     for statement in model_catalog_reader_grants(schema, "sn_catalog_reader"):
         conn.execute(statement)
-    # The retention sweep reuses the API runtime identity
-    # (SPEECHNEXUS_DATABASE_URL) and may only move artifact_state.
-    for statement in artifact_retention_grants(schema, "sn_api"):
+    # The retention sweep is its own identity: SELECT plus
+    # UPDATE(artifact_state, deleted_at_us) only, and it refuses to start on
+    # anything wider.
+    for statement in artifact_retention_grants(schema, "sn_artifact_retention"):
         conn.execute(statement)
     for statement in artifact_reader_grants(schema, "sn_artifact_reader"):
         conn.execute(statement)
@@ -1461,6 +1508,7 @@ Gateway query 身份仅取得六张执行恢复关系及安装身份表的必要
 | `SPEECHNEXUS_DISABLE_SETTLEMENT_DATABASE_URL` | `sn_disable_settle` | 停用租约结算 | 空值 → worker 启动即退出并点名显式连接（与扫描角色同一条拒绝） | 预置 | 覆盖 |
 | `SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL` | `sn_catalog_reader` | `GET /v1/models`、`GET /v1/models/{model}`、`GET /v1/nexus/voices` | `503 model_catalogue_unavailable`、`503 voice_catalogue_unavailable` | 预置 | 覆盖+角色 |
 | `SPEECHNEXUS_ARTIFACT_READER_DATABASE_URL` | `sn_artifact_reader` | Artifact 元数据与内容 | `503 artifact_service_unavailable` | 预置 | 覆盖+角色 |
+| `SPEECHNEXUS_ARTIFACT_RETENTION_DATABASE_URL` | `sn_artifact_retention` | `artifact-retention` profile 的保留期清理 | 空值 → 容器启动即失败（无身份）；共用 `sn_api` 等宽权限身份时启动点名拒绝 | 预置 | 覆盖+角色 |
 | `SPEECHNEXUS_RESOURCE_POOL_READER_DATABASE_URL` | `sn_resource_pool_reader` | `GET /v1/nexus/admin/resource-pools` | `503 resource_pool_service_unavailable` | 预置 | 覆盖+角色 |
 | `SPEECHNEXUS_BINDING_LIST_READER_DATABASE_URL` | `sn_binding_list_reader` | `GET /v1/nexus/admin/model-bindings` | `503 model_binding_service_unavailable` | 预置 | 覆盖+角色 |
 | `SPEECHNEXUS_BINDING_WRITER_DATABASE_URL` | `sn_binding_writer` | binding draft 写入与 draft 读取 | 空值 → 写入 `503 binding_result_unknown`、draft 读取 `503 binding_unavailable` | 预置 | 覆盖+角色 |
@@ -1472,7 +1520,7 @@ Gateway query 身份仅取得六张执行恢复关系及安装身份表的必要
 | `SPEECHNEXUS_PRONUNCIATION_PUBLISHER_DATABASE_URL` | `sn_pronunciation_publisher`（不创建） | 发音词典原子发布 | `publish: true` → `422 pronunciation_publication_not_supported`；读取与草稿按上面两条 | 故意不预置 | 覆盖 |
 | `SPEECHNEXUS_VOICE_PUBLISHER_DATABASE_URL` | `sn_voice_publisher`（不创建） | voice 发布 | 未配 Job writer 时启动即拒绝并点名两个键（本键已配置、`SPEECHNEXUS_JOB_WRITER_DATABASE_URL` 为空）；两键都为空时发布 `503 voice_draft_unavailable`；writer 已配时跨库启动拒绝并点名同库要求 | 故意不预置 | 覆盖 |
 
-表中没有死键：27 个透传键都有运行时消费者。设置里另有两个不在本表范围的键：
+表中没有死键：28 个透传键都有运行时消费者。设置里另有两个不在本表范围的键：
 `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` 只被未装配的 TTS 结算 worker 读取
 （见[仍不可用的能力](#仍不可用的能力)），本 Compose 不透传；
 `SPEECHNEXUS_PUBLICATION_WRITER_DATABASE_URL` 属于 host 侧 `speechnexus-publish-binding`

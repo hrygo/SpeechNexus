@@ -18,6 +18,7 @@ from speechnexus_backend.speech.application.voice_validation_report import (
     validation_outcome,
 )
 from speechnexus_backend.speech.domain.artifacts import (
+    ARTIFACT_TIMESTAMP_MAX_US,
     ArtifactError,
     ArtifactKind,
     ArtifactObjectWrite,
@@ -272,12 +273,22 @@ class ResultArtifactPublisher:
 
     @staticmethod
     def _published(record: ArtifactRecord, job: DispatchJob) -> PublishedResult:
+        """Accept a committed publication on replay, whatever its retention state.
+
+        A replay means the same Job's result was already committed; the question
+        left is whose publication it is, not whether its content is still
+        servable. Retention moves a row out of ``ready`` independently of any
+        settlement, so requiring ``ready`` here would turn a committed
+        publication into ``outcome_unknown`` forever once the retention window
+        elapsed, and the Job could never reach its terminal state. The identity
+        checks (workspace, kind, media type, receipt) are what refuse a foreign
+        publication.
+        """
         expected_kind = _media_for(job.kind).get(record.media_type)
         if (
             record.workspace_id != job.workspace_id
             or expected_kind is None
             or record.kind != expected_kind
-            or record.status != "ready"
             or record.receipt_id is None
         ):
             raise DispatchProtocolError("Committed Artifact belongs to another result")
@@ -295,11 +306,12 @@ class ResultArtifactPublisher:
     ) -> PublishedResult:
         if self._validation is None:
             raise DispatchProtocolError("Validation report publication is not configured")
+        # Same rule as `_published`: the replay names a committed publication;
+        # its retention state belongs to the retention sweep, not to settlement.
         if (
             record.workspace_id != job.workspace_id
             or record.kind != VALIDATION_OUTPUT_ARTIFACT_KIND
             or record.media_type != VALIDATION_OUTPUT_MEDIA_TYPE
-            or record.status != "ready"
             or record.receipt_id is None
         ):
             raise DispatchProtocolError("Committed validation Artifact belongs to another result")
@@ -347,13 +359,14 @@ def _validation_probe(submission: ExecutionSubmission, facts: ValidationRunFacts
 def _expires_at(created_at_us: int, retention_us: int) -> int:
     """The one retention deadline a published Artifact records.
 
-    Both inputs are already validated, so the only remaining failure is an
-    integer that a BIGINT column could not hold; refuse it here rather than
-    writing an unreadable deadline.
+    Both inputs are already validated, so the only remaining failure is a
+    deadline beyond the instant bound every result projection enforces. That is a
+    configuration error, not a transient one, so it is refused as a protocol
+    violation instead of a retryable outage: retrying would fail identically.
     """
     expires_at_us = created_at_us + retention_us
-    if expires_at_us > 2**63 - 1:
-        raise DispatchUnavailableError("Result retention exceeds the recorded clock range")
+    if expires_at_us > ARTIFACT_TIMESTAMP_MAX_US:
+        raise DispatchProtocolError("Result retention exceeds the recorded clock range")
     return expires_at_us
 
 

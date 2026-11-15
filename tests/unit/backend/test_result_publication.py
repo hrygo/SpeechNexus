@@ -3,16 +3,22 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import pytest
 
-from speechnexus_backend.speech.application.results import ResultArtifactPublisher, _media_for
+from speechnexus_backend.speech.application.results import (
+    MAX_RESULT_RETENTION_US,
+    ResultArtifactPublisher,
+    _media_for,
+)
 from speechnexus_backend.speech.domain.artifacts import (
+    ARTIFACT_TIMESTAMP_MAX_US,
     ArtifactError,
     ArtifactObjectWrite,
     ArtifactRecord,
+    ArtifactStatus,
 )
 from speechnexus_backend.speech.domain.assets import hash_bytes
 from speechnexus_backend.speech.domain.job_dispatch import (
@@ -170,6 +176,71 @@ def test_result_retention_must_be_an_explicit_bounded_window() -> None:
                 Staging(),
                 retention_us=retention_us,  # type: ignore[arg-type]
             )
+
+
+@pytest.mark.parametrize("state", ["ready", "expired", "deleted"])
+async def test_replay_settles_a_committed_result_after_retention_ended(
+    state: ArtifactStatus,
+) -> None:
+    """A committed publication still settles when retention moved the row.
+
+    The retention sweep changes ``artifact_state`` on its own clock, so a crashed
+    dispatcher that replays the same publication hours later may find the row
+    ``expired`` (or already ``deleted``). Settlement asks "is this my committed
+    publication", not "is its content still servable": answering the second
+    question here would leave the Job in ``outcome_unknown`` forever.
+    """
+    rows, blobs, staging = Rows(), Blobs(), Staging()
+    publisher = ResultArtifactPublisher(
+        rows, blobs, staging, retention_us=RETENTION_US, now_us=lambda: 1_700_000_000_000_000
+    )
+    job = _job()
+    first = await publisher.publish(job, _submission(), _receipt())
+
+    # The retention sweep expires the row (and may already have removed content).
+    rows.records[first.artifact_id] = replace(rows.records[first.artifact_id], status=state)
+
+    replayed = await publisher.publish(job, _submission(), _receipt())
+
+    assert replayed == first
+    assert rows.inserts == 1
+    assert blobs.writes == 1
+    assert staging.reads == 1
+
+
+async def test_a_deadline_beyond_the_recorded_clock_range_is_a_protocol_refusal() -> None:
+    """An unreachable deadline is a configuration error, not a retryable outage.
+
+    Retrying would compute the same value, so the publisher must refuse it as a
+    protocol violation instead of inviting the dispatcher to try again.
+    """
+    rows, blobs, staging = Rows(), Blobs(), Staging()
+    publisher = ResultArtifactPublisher(
+        rows,
+        blobs,
+        staging,
+        retention_us=MAX_RESULT_RETENTION_US,
+        now_us=lambda: ARTIFACT_TIMESTAMP_MAX_US - 1,
+    )
+
+    with pytest.raises(DispatchProtocolError):
+        await publisher.publish(_job(), _submission(), _receipt())
+    assert rows.inserts == 0
+
+
+async def test_the_deadline_bound_is_reachable_exactly() -> None:
+    rows, blobs, staging = Rows(), Blobs(), Staging()
+    publisher = ResultArtifactPublisher(
+        rows,
+        blobs,
+        staging,
+        retention_us=1_000_000,
+        now_us=lambda: ARTIFACT_TIMESTAMP_MAX_US - 1_000_000,
+    )
+
+    published = await publisher.publish(_job(), _submission(), _receipt())
+
+    assert rows.records[published.artifact_id].expires_at_us == ARTIFACT_TIMESTAMP_MAX_US
 
 
 async def test_object_is_written_before_the_committed_row() -> None:

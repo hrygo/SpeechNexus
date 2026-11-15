@@ -455,6 +455,34 @@ it("reads a saved copy back by id only when asked, and shows its own record", as
   expect(read).toHaveBeenCalledWith("asset_saved_one");
 });
 
+it("names an expired source artifact instead of calling it missing", async () => {
+  const { save } = setup([
+    unit({
+      status: "ready",
+      revision: "3",
+      speech_job_id: "job_demo",
+      source_artifact_id: "artifact_1",
+      source_receipt_id: "receipt_1",
+    }),
+  ]);
+  save.mockRejectedValue(
+    new WorkbenchResponseError(410, {
+      error: {
+        code: "artifact_expired",
+        type: "not_found_error",
+        message: "合成过期",
+        param: null,
+        request_id: "request_demo",
+        retryable: false,
+      },
+    }),
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "单元 1 保存副本" }));
+  const alert = await screen.findByRole("alert", { name: "单元 1 保存副本错误" });
+  expect(alert).toHaveTextContent("已过保留期");
+  expect(alert).not.toHaveTextContent("不存在");
+});
+
 it("reports an unreadable saved copy instead of inventing its record", async () => {
   const { client } = setup([
     unit({

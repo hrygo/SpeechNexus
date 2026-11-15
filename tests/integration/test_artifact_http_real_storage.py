@@ -104,9 +104,9 @@ def _insert_artifact(
         "INSERT INTO speech_artifacts "
         "(artifact_id, workspace_id, artifact_kind, artifact_state, media_type, bytes, "
         "sha256, receipt_id, source_operation_id, object_key, storage_version_id, "
-        "created_at_us, expires_at_us) VALUES "
+        "created_at_us, expires_at_us, deleted_at_us) VALUES "
         "(%s, %s, 'audio', %s, 'audio/wav', %s, %s, 'receipt-real-1', "
-        "'operation-real-1', %s, %s, 1700000000000000, %s)",
+        "'operation-real-1', %s, %s, 1700000000000000, %s, %s)",
         (
             artifact_id,
             workspace_id,
@@ -116,6 +116,9 @@ def _insert_artifact(
             object_key,
             version_id,
             expires_at_us,
+            # A `deleted` row must carry its durable removal record, and the check
+            # keeps that record after the deadline it ended.
+            (2_000_000_000_000_000 if status == "deleted" else None),
         ),
     )
 

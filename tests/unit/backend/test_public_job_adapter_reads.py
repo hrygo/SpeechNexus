@@ -211,14 +211,6 @@ def test_artifact_only_resolves_a_ready_row_with_a_receipt() -> None:
     pool.artifact_rows = []
     assert _driver(pool).artifact(request.workspace_id, "artifact-unit") is None
 
-    # A committed row keeps its fact after retention: the state travels with the
-    # fact so each reader can decide what it needs.
-    for state in ("expired", "deleted"):
-        pool.artifact_rows = [{**row, "artifact_state": state}]
-        committed = _driver(pool).artifact(request.workspace_id, "artifact-unit")
-        assert committed is not None and committed.state == state
-
-    # `staging` is not a committed state at all.
     pool.artifact_rows = [{**row, "artifact_state": "staging"}]
     assert _driver(pool).artifact(request.workspace_id, "artifact-unit") is None
 

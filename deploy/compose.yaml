@@ -471,12 +471,14 @@ services:
     restart: unless-stopped
 
   # Opt-in bounded Artifact retention. Publication records `expires_at_us`; this
-  # process is the only thing that acts on it. It runs as the API runtime identity
-  # (the same `SPEECHNEXUS_API_DATABASE_URL`) whose `artifact_retention_grants`
-  # allow SELECT plus UPDATE(artifact_state) only, and it refuses to start when
-  # the role holds any wider write. One pass moves elapsed rows to `expired` and
-  # removes the content of rows already `expired`; every decision is logged with
-  # the Artifact identity, the recorded deadline and the database instant. The
+  # process is the only thing that acts on it. It runs as its own identity
+  # (`sn_artifact_retention`, `artifact_retention_grants`: SELECT plus
+  # UPDATE(artifact_state) only) and refuses to start on any wider authority,
+  # including the API runtime role's schema privileges - which is why this DSN is
+  # separate from `SPEECHNEXUS_API_DATABASE_URL`. A blank DSN fails closed before
+  # the first row is read. One pass moves elapsed rows to `expired` and removes
+  # the content of rows already `expired`; every decision is logged with the
+  # Artifact identity, the recorded deadline and the database instant. The
   # interval and batch are the whole bound on a pass.
   artifact-retention:
     profiles: ["artifact-retention"]
@@ -488,11 +490,12 @@ services:
       SPEECHNEXUS_PROCESS_ROLE: scheduler
       SPEECHNEXUS_NODE_ID: ${SPEECHNEXUS_NODE_ID:-node-local-1}
       SPEECHNEXUS_INSTANCE_ID: ${SPEECHNEXUS_INSTANCE_ID:-retention-1}
-      SPEECHNEXUS_DATABASE_URL: ${SPEECHNEXUS_API_DATABASE_URL:?set SPEECHNEXUS_API_DATABASE_URL in compose.env}
+      SPEECHNEXUS_DATABASE_URL: ${SPEECHNEXUS_ARTIFACT_RETENTION_DATABASE_URL:-}
       SPEECHNEXUS_DATABASE_SCHEMA: speech
       SPEECHNEXUS_ARTIFACT_RETENTION_INTERVAL_SECONDS: ${SPEECHNEXUS_ARTIFACT_RETENTION_INTERVAL_SECONDS:-60}
       SPEECHNEXUS_ARTIFACT_RETENTION_BATCH_SIZE: ${SPEECHNEXUS_ARTIFACT_RETENTION_BATCH_SIZE:-10}
       SPEECHNEXUS_OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      SPEECHNEXUS_OBJECT_STORAGE_HEALTHCHECK_URL: http://minio:9000/minio/health/live
       SPEECHNEXUS_OBJECT_STORAGE_BUCKET: ${SPEECHNEXUS_OBJECT_STORAGE_BUCKET:-speechnexus-results}
       # Local bootstrap only, as for the dispatcher: the root MinIO identity is
       # broader than object-layer least privilege.

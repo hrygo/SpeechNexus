@@ -13,7 +13,6 @@ from speechnexus_backend.speech.application.public_jobs import (
     IdempotencyConflictError,
     JobCleanupPendingError,
     PublicJobs,
-    resolve_voice_previews,
 )
 from speechnexus_backend.speech.domain.public_jobs import (
     JobArtifactFact,
@@ -127,54 +126,6 @@ def test_artifacts_are_projected_only_for_a_committed_audio_result() -> None:
     )
     store.fact = _artifact(kind="transcript")
     assert service.artifacts(asr) == (store.fact,)
-
-
-@pytest.mark.parametrize("state", ["expired", "deleted"])
-def test_artifacts_keep_a_committed_result_after_its_retention_ended(state: str) -> None:
-    """Retention removes content, not the succeeded Job's result reference.
-
-    PRD F-JOB keeps the succeeded terminal state and only marks the Artifact
-    expired, so the projection must still name the committed Artifact; the
-    content route states the retention decision. An absent row stays unreadable.
-    """
-    service, _, store = _service()
-    job = _succeeded(
-        "tts",
-        {"kind": "tts", "audio_artifact_id": "artifact-read-1", "receipt_id": "receipt-read-1"},
-    )
-    store.fact = _artifact(state=state)
-    assert service.artifacts(job) == (store.fact,)
-
-    store.fact = None
-    with pytest.raises(PublicJobUnavailableError):
-        service.artifacts(job)
-
-
-@pytest.mark.parametrize("state", ["ready", "expired", "deleted"])
-def test_voice_preview_admission_requires_servable_content(state: str) -> None:
-    """The same fact answers both readers, and only admission needs `ready`."""
-    result = json.dumps(
-        {
-            "kind": "voice_design",
-            "preview_artifact_ids": ["artifact-read-1"],
-            "receipt_id": "receipt-read-1",
-        }
-    )
-    committed = replace(_artifact(kind="preview"), state=state)
-    resolve = lambda require_ready: resolve_voice_previews(  # noqa: E731
-        workspace_id="workspace-default",
-        kind="voice_design",
-        state="succeeded",
-        result_json=result,
-        artifact=lambda workspace_id, artifact_id: committed,
-        require_ready=require_ready,
-    )
-    assert resolve(False) == (committed,)
-    if state == "ready":
-        assert resolve(True) == (committed,)
-    else:
-        with pytest.raises(PublicJobUnavailableError):
-            resolve(True)
 
 
 @pytest.mark.parametrize(

@@ -19,10 +19,25 @@ ARTIFACT_INSERT_COLUMNS = (
     "expires_at_us",
 )
 
-# The only column a retention pass may change. The rows it moves keep
+# The only columns a retention pass may change. The rows it moves keep
 # `created_at_us` and `expires_at_us`, so the decision ("this row's deadline was
-# at or before the database clock") stays readable after the state changes.
-ARTIFACT_RETENTION_UPDATE_COLUMNS = ("artifact_state",)
+# at or before the database clock") stays readable after the state changes, and
+# `deleted_at_us` is the durable record of when the content was removed.
+ARTIFACT_RETENTION_UPDATE_COLUMNS = ("artifact_state", "deleted_at_us")
+
+# Durable deletion ledger. The repository's deletion rule requires a persisted
+# record of an approved removal, not only a log line: `deleted_at_us` is written
+# by the same statement that makes the row `deleted`, and the check keeps the two
+# facts inseparable (a `deleted` row always says when, and no other state claims
+# a removal time).
+ARTIFACT_DELETED_LEDGER_DDL = (
+    """ALTER TABLE speech_artifacts
+        ADD COLUMN deleted_at_us BIGINT CHECK (deleted_at_us > 0)""",
+    """ALTER TABLE speech_artifacts
+        ADD CONSTRAINT speech_artifacts_deleted_ledger_check CHECK (
+            (artifact_state = 'deleted') = (deleted_at_us IS NOT NULL)
+        )""",
+)
 
 ARTIFACT_DDL = (
     """CREATE TABLE speech_artifacts (
@@ -70,9 +85,10 @@ def artifact_reader_grants(schema: str, role: str) -> tuple[str, ...]:
 def artifact_retention_grants(schema: str, role: str) -> tuple[str, ...]:
     """Provisioning declaration for the bounded retention sweep principal.
 
-    The sweep reads committed rows and moves ``artifact_state``; it never inserts,
-    deletes or rewrites a deadline, so no other column is granted. Object removal
-    uses the deployment's object credentials, not this database authority.
+    The sweep reads committed rows, moves ``artifact_state`` and records when it
+    removed the content in ``deleted_at_us``; it never inserts, deletes or
+    rewrites a deadline, so no other column is granted. Object removal uses the
+    deployment's object credentials, not this database authority.
     """
     from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 
@@ -101,6 +117,7 @@ def artifact_publisher_grants(schema: str, role: str) -> tuple[str, ...]:
 __all__ = [
     "ARTIFACTS",
     "ARTIFACT_DDL",
+    "ARTIFACT_DELETED_LEDGER_DDL",
     "ARTIFACT_INSERT_COLUMNS",
     "ARTIFACT_RETENTION_UPDATE_COLUMNS",
     "artifact_publisher_grants",

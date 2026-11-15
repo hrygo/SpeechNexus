@@ -175,7 +175,7 @@ TTS Job 可选 `model_binding={id,revision}` 固定精确版本：新意图要�
 
 `status` 取值为 `queued | running | retry_wait | cancelling | succeeded | failed | cancelled | expired`；cleanup_state 单独报告 not_required / pending / complete / quarantined，未清理的 Operation 以引用返回。取消确认超时为 failed / cancellation_unconfirmed，资源继续隔离，旧执行清理前 retry 返回 execution_cleanup_pending。
 
-`result` 始终存在，非 `succeeded` 状态必须为 null。成功时其判别字段 `kind` 必须与 Job 一致：ASR 返回 transcript Artifact，TTS 返回 audio Artifact，音色 design / clone 返回 draft revision 与 preview Artifact，voice preview 返回 preview Artifact，voice validation 返回完整校验结果与 validation-report Artifact；所有成功结果都携带 receipt。`artifacts` 至少包含结果引用的主产物，结果内 Artifact ID 必须引用 `artifacts` 中的同 kind 项。输入过期或任务超过执行前队列期限，转为 `expired` 且 `cleanup_state=not_required`；成功结果达到保留期限时仍保留成功终态，只将 artifact 标为过期。
+`result` 始终存在，非 `succeeded` 状态必须为 null。成功时其判别字段 `kind` 必须与 Job 一致：ASR 返回 transcript Artifact，TTS 返回 audio Artifact，音色 design / clone 返回 draft revision 与 preview Artifact，voice preview 返回 preview Artifact，voice validation 返回完整校验结果与 validation-report Artifact；所有成功结果都携带 receipt。`artifacts` 至少包含结果引用的主产物，结果内 Artifact ID 必须引用 `artifacts` 中的同 kind 项。输入过期或任务超过执行前队列期限，转为 `expired` 且 `cleanup_state=not_required`；成功结果达到保留期限时仍保留成功终态，只将 artifact 标为过期；读取该 Job 时 `artifacts` 仍按已提交且可服务的 Artifact 投影，因此内容已过期或被清理的既有 Job 读取返回 `503 artifact_service_unavailable`，终态与结果引用不被改写，也不重建内容。
 
 已提交 Artifact 与 Job 结果共享同一 receipt；`JobArtifact.artifact_id` 在单个成功结果中唯一，结果引用的主 Artifact 必须存在、kind 匹配且 `receipt_id` 等于结果 receipt。Artifact / JobArtifact / SavedAsset / ExportArtifact 的内容字节数必须大于零，不能用空文件冒充已提交制品。`job.succeeded` 也须满足这些跨数组规则；生产者须在写入事件前校验，当前证据及 schema 覆盖限制见 §1.6。
 

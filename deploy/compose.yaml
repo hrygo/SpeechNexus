@@ -3,7 +3,15 @@ name: speechnexus
 # Minimal synchronous ASR/TTS deployment surface.
 #
 # Base `docker compose config --services` is intentionally limited to:
-#   postgres, minio, minio-init, api, gateway
+#   postgres, minio, minio-init, api, gateway, job-admission-watch
+#
+# `job-admission-watch` is part of the base topology on purpose: a deployment
+# started from this file must have something actually reading whether a public Job
+# create is admitted. It is an HTTP-only poller of
+# `GET /v1/nexus/jobs/admission-readiness` -- no database DSN, no role, no engine
+# call -- and it carries `restart: "no"` with no health gate on other services,
+# because restarting cannot renew an elapsed readiness receipt: the container going
+# unhealthy is the signal, not the repair (#845).
 #
 # The following production units are deliberately NOT part of this file yet:
 #   - node-controller: engine lifecycle is operator/external in this bootstrap;
@@ -27,9 +35,13 @@ name: speechnexus
 # makes a recorded `expires_at_us` actually remove content; it runs as the API
 # runtime identity and only moves `artifact_state`. The `engine-readiness` profile
 # assembles the receipt renewal one-shot (`engine-readiness-renew`) and a read-only
-# report (`engine-readiness`). Neither is scheduled by this file: an external timer
-# must call the renewal before the receipt TTL elapses, because an elapsed receipt
-# makes every public Job create answer `503 engine_not_ready`.
+# report (`engine-readiness`). Neither is scheduled by this file, and the renewal
+# still needs an operator timer shorter than the receipt TTL: a receipt must come
+# from a real engine probe, so nothing here can re-sign one on a schedule. What the
+# base topology does guarantee is that the window is observed -- `api` keeps
+# `/readyz` for process health only, and `job-admission-watch` reports
+# `engine_receipt_expired` on the admission surface as soon as a create would
+# answer `503 engine_not_ready` (#845).
 #
 # The `workbench-api` profile assembles the independent Workbench API unit:
 # `workbench-migrate` bootstraps/verifies the workbench PostgreSQL namespace and
@@ -676,6 +688,57 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size:8m,mode:1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
+  # Base-topology admission poller (#845). An elapsed readiness receipt refuses
+  # every public Job create with `503 engine_not_ready` while `/readyz`, the
+  # container healthcheck and `docker ps` all stay green; this is the container
+  # that actually reads the surface which says so. It holds no database DSN, no
+  # role and no engine credential: it calls
+  # `GET /v1/nexus/jobs/admission-readiness` on the API over the default network.
+  #
+  # Three decisions are load-bearing:
+  #
+  # * `restart: "no"` and no `depends_on` anywhere pointing at this service. A
+  #   restart cannot renew a receipt, and a health gate that waited on admission
+  #   would make the observation depend on the condition it reports. Docker does
+  #   not restart a container because a healthcheck failed; this policy makes that
+  #   explicit for the case where the poll loop dies and leaves `Exited(4)` behind.
+  # * The healthcheck reads the poller's own last observation instead of polling
+  #   again, so a dead loop reads unhealthy instead of leaving an old green check
+  #   in place; the state file lives on a private tmpfs, so the root stays read-only.
+  # * `api`'s healthcheck is still `/readyz`. It never references this report:
+  #   pointing the API healthcheck at a business surface would remove the whole API
+  #   from a load balancer when only creation is refused, which is the failure
+  #   domain #828 review B8 rejected.
+  job-admission-watch:
+    build: *python-build
+    command: ["speechnexus-admission-watch"]
+    user: "${SPEECHNEXUS_RUNTIME_UID:?set SPEECHNEXUS_RUNTIME_UID from id -u}:${SPEECHNEXUS_RUNTIME_GID:?set SPEECHNEXUS_RUNTIME_GID from id -g}"
+    environment:
+      # The polled workspace defaults to the one engine registration provisions, so
+      # the quota counters and `workspace_not_provisioned` describe the workspace
+      # creates actually select instead of the shared default.
+      SPEECHNEXUS_ADMISSION_WATCH_URL: ${SPEECHNEXUS_ADMISSION_WATCH_URL:-http://api:8000/v1/nexus/jobs/admission-readiness?workspace_id=${SPEECHNEXUS_ADMISSION_WORKSPACE:-workspace-default}}
+      SPEECHNEXUS_ADMISSION_WATCH_INTERVAL_SECONDS: ${SPEECHNEXUS_ADMISSION_WATCH_INTERVAL_SECONDS:-30}
+      SPEECHNEXUS_ADMISSION_WATCH_TIMEOUT_SECONDS: ${SPEECHNEXUS_ADMISSION_WATCH_TIMEOUT_SECONDS:-5}
+      SPEECHNEXUS_ADMISSION_WATCH_STATE_FILE: /run/admission-watch/state.json
+    healthcheck:
+      test: ["CMD", "speechnexus-admission-watch", "--healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    read_only: true
+    tmpfs:
+      # Owned by the runtime uid/gid the service runs as; 0700 keeps the single
+      # state file private. It is RAM charged to the container.
+      - /run/admission-watch:size=1m,mode=0700,uid=${SPEECHNEXUS_RUNTIME_UID:?set SPEECHNEXUS_RUNTIME_UID from id -u},gid=${SPEECHNEXUS_RUNTIME_GID:?set SPEECHNEXUS_RUNTIME_GID from id -g}
+      - /tmp:size=8m,mode=1777
     cap_drop:
       - ALL
     security_opt:

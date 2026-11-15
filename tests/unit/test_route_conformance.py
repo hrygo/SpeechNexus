@@ -590,7 +590,12 @@ def test_lost_evaluate_evidence_fails_cli_with_failed_rows(
     assert module.main([]) == 1
     captured = capsys.readouterr()
     assert captured.err == ""
-    assert captured.out.count("405-envelope=FAILED") == (42 if evidence == "none" else 1)
+    # Derived from the declaration instead of pinned: every operation that declares
+    # a 405 response must fail when its envelope evidence is lost, and adding an
+    # operation must not require editing this count.
+    _, declared = module.load_contract(ROOT)
+    declares_405 = sum(1 for operation in declared if 405 in operation.declared_statuses)
+    assert captured.out.count("405-envelope=FAILED") == (declares_405 if evidence == "none" else 1)
     assert "getJob declares 405 but the 405 response envelope was not probed" in captured.out
     assert "405-envelope=not probed" not in captured.out
     assert "OK: every registered speech route" not in captured.out
@@ -779,7 +784,11 @@ def test_a_probe_that_reaches_an_endpoint_fails_the_gate(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "endpoint was invoked during probe" in captured.err
-    assert invoked == [probe_path]
+    # Every declared operation under this template is probed through the same
+    # catch-all route, so the case pins that the concrete probe path was reached
+    # rather than a fixed number of dispatches.
+    assert probe_path in invoked
+    assert all(path.startswith("/v1/nexus/jobs/") for path in invoked)
 
 
 def test_dispatch_guard_counts_a_mount_child_the_matcher_cannot_see() -> None:
@@ -909,7 +918,9 @@ def test_a_generator_endpoint_is_counted_and_fails_the_gate(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "endpoint was invoked during probe" in captured.err
-    assert ran == ["generator"]
+    # The catch-all route answers every declared operation under this template, so
+    # the case pins the dispatch itself, not a fixed count.
+    assert ran and set(ran) == {"generator"}
 
 
 def test_dispatch_guard_counts_an_included_generator_endpoint() -> None:

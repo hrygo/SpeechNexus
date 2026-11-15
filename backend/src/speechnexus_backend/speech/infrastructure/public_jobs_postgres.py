@@ -26,6 +26,11 @@ from speechnexus_backend.speech.application.voice_drafts import (
     voice_input_shape,
 )
 from speechnexus_backend.speech.domain.admission import AdmissionRejectedError
+from speechnexus_backend.speech.domain.job_admission_readiness import (
+    AdmissionReadinessFacts,
+    ReadyInstanceFacts,
+    WorkspaceQuotaFacts,
+)
 from speechnexus_backend.speech.domain.public_jobs import (
     JOB_STATES,
     TERMINAL_STATES,
@@ -69,6 +74,9 @@ from speechnexus_backend.speech.infrastructure.public_job_admission import (
     build_public_job_admission,
     rejection_code,
 )
+from speechnexus_backend.speech.infrastructure.runtime_observation_codec import (
+    readiness_from_document,
+)
 
 _LATEST_PROGRESS = (
     "(SELECT e.progress_{column} FROM speech_job_events AS e "
@@ -86,6 +94,28 @@ _JOB_COLUMNS = (
 _ARTIFACT_COLUMNS = (
     "artifact_id, artifact_kind, artifact_state, media_type, bytes, "
     "sha256, receipt_id, expires_at_us"
+)
+# Every ready instance with the receipt admission would check, in the same join
+# shape the read-only ``speechnexus-engine-readiness`` report uses: the current
+# prepare intent of the current generation carries the receipt, and an elapsed or
+# absent one is visible to both surfaces instead of each re-deriving the window.
+_READY_INSTANCE_QUERY = (
+    "SELECT e.instance_id, e.instance_generation, e.max_slots, e.held_slots, "
+    "e.quarantined_slots, i.readiness_document "
+    "FROM engine_instances AS e "
+    "JOIN runtime_instance_heads AS h ON h.instance_id = e.instance_id "
+    "AND h.current_generation = e.instance_generation "
+    "LEFT JOIN runtime_instance_intents AS i ON i.target_node_id = e.host_node_id "
+    "AND i.intent_id = h.current_prepare_intent_id "
+    "WHERE e.instance_state = 'ready' "
+    "ORDER BY e.instance_id, e.instance_generation"
+)
+# The reservation counters one create charges; a missing row is a configuration
+# refusal (422 workspace_not_configured), not a storage fault, so the query returns
+# zero rows instead of raising.
+_WORKSPACE_QUOTA_QUERY = (
+    "SELECT workspace_id, max_attempts, held_attempts, quarantined_attempts "
+    "FROM workspace_quotas WHERE workspace_id = %s"
 )
 _PINNED_BINDING_QUERY = (
     "SELECT p.kind, p.object_id, p.revision, p.revision_id, p.published_at_us, "
@@ -979,6 +1009,50 @@ class PostgresPublicJobs:
         ):
             raise PublicJobUnavailableError from None
 
+    def admission_readiness_facts(self, workspace_id: str) -> AdmissionReadinessFacts:
+        """Read the create prerequisites on the identity that admits creates.
+
+        The report is read on the admission pool, not the writer pool: a surface that
+        described admission through a different login would report another
+        identity's privileges, and a revoked grant would then look like healthy
+        admission. ``storage_unavailable`` therefore means "the identity that
+        admits could not read its own facts", which is the condition a create
+        reports as ``job_unavailable``.
+
+        One read-only transaction answers all three fact families against one
+        ``clock_timestamp()``, so the window this report measures and the window
+        admission would measure cannot disagree. ``storage_available`` is not a
+        field here: a failed read raises and the caller renders the storage cause,
+        because with no facts there is nothing else to claim.
+        """
+        deadline = time.monotonic() + self._timeout
+        try:
+            with self._admission_transaction(deadline) as connection:
+                connection.execute("SET TRANSACTION READ ONLY")
+                now_us = _database_now_us(connection)
+                instance_rows = connection.execute(_READY_INSTANCE_QUERY).fetchall()
+                quota_rows = connection.execute(_WORKSPACE_QUOTA_QUERY, (workspace_id,)).fetchall()
+                if time.monotonic() >= deadline:
+                    raise PublicJobUnavailableError
+        except (
+            psycopg.Error,
+            PoolClosed,
+            PoolTimeout,
+            TooManyRequests,
+            ValueError,
+            TypeError,
+            KeyError,
+        ):
+            raise PublicJobUnavailableError from None
+        instances = tuple(_ready_instance_facts(row) for row in instance_rows)
+        quota = _quota_facts(quota_rows[0]) if quota_rows else None
+        return AdmissionReadinessFacts(
+            workspace_id=workspace_id,
+            now_us=now_us,
+            instances=instances,
+            quota=quota,
+        )
+
     @contextmanager
     def _transaction(self, deadline: float) -> Iterator[_DeadlineConnection]:
         with self._connection(self._pool, deadline) as connection:
@@ -1017,6 +1091,41 @@ class _AdmissionRefusedError(Exception):
 
 class _RetryAdmissionError(Exception):
     """A version race rolled the whole transaction back; retry it once."""
+
+
+def _ready_instance_facts(row: dict[str, Any]) -> ReadyInstanceFacts:
+    """Decode one ready instance row without inventing a receipt.
+
+    An undecodable stored receipt is ``invalid`` rather than an exception: admission
+    cannot read it either, and a report that raised would hide the very instance an
+    operator has to repair. The slot counters are read as stored -- a release may
+    quarantine past the bound -- so a report never refuses to describe a row.
+    """
+    document = row["readiness_document"]
+    receipt = None
+    if isinstance(document, str):
+        try:
+            receipt = readiness_from_document(document)
+        except ValueError, TypeError, KeyError:
+            receipt = None
+    return ReadyInstanceFacts(
+        instance_id=row["instance_id"],
+        instance_generation=int(row["instance_generation"]),
+        readiness=receipt,
+        has_readiness_document=isinstance(document, str),
+        max_slots=int(row["max_slots"]),
+        held_slots=int(row["held_slots"]),
+        quarantined_slots=int(row["quarantined_slots"]),
+    )
+
+
+def _quota_facts(row: dict[str, Any]) -> WorkspaceQuotaFacts:
+    return WorkspaceQuotaFacts(
+        workspace_id=row["workspace_id"],
+        max_attempts=int(row["max_attempts"]),
+        held_attempts=int(row["held_attempts"]),
+        quarantined_attempts=int(row["quarantined_attempts"]),
+    )
 
 
 def _database_now_us(connection: _Executor) -> int:

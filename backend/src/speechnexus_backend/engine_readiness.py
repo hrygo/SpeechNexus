@@ -43,6 +43,9 @@ import psycopg
 from psycopg.rows import dict_row
 
 from speechnexus_backend.engine_registration import EXIT_INVALID, EXIT_UNAVAILABLE
+from speechnexus_backend.speech.domain.job_admission_readiness import (
+    DEFAULT_READINESS_WARNING_SECONDS,
+)
 from speechnexus_backend.speech.domain.runtime_observations import (
     READINESS_EXPIRED,
     READINESS_EXPIRING,
@@ -59,8 +62,12 @@ READINESS_MISSING = "missing"
 READINESS_INVALID = "invalid"
 """The stored receipt no longer decodes, so admission cannot use it either."""
 
-DEFAULT_WARNING_SECONDS = 21_600
-"""A quarter of the 24 h default receipt TTL: one renewal interval of warning."""
+DEFAULT_WARNING_SECONDS = DEFAULT_READINESS_WARNING_SECONDS
+"""A quarter of the 24 h default receipt TTL: one renewal interval of warning.
+
+The same constant the admission report uses, so the console report and the polled
+surface never classify ``expiring`` against two different thresholds.
+"""
 
 RENEW_COMMAND = "speechnexus-register-engine --renew-readiness"
 

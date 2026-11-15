@@ -24,6 +24,12 @@ from speechnexus_backend.speech.domain.admission import (
     CAPACITY_REJECTION_CODES,
     PUBLIC_ADMISSION_CODES,
 )
+from speechnexus_backend.speech.domain.job_admission_readiness import (
+    AdmissionReadiness,
+    AdmissionReadinessFacts,
+    classify_admission_readiness,
+    storage_unavailable_readiness,
+)
 from speechnexus_backend.speech.domain.public_jobs import (
     JobArtifactFact,
     JobCancellationReceipt,
@@ -563,6 +569,20 @@ def resolve_voice_validation_report(
     )
 
 
+class AdmissionReadinessFactsStore(Protocol):
+    """The create prerequisites, read on the identity that admits creates.
+
+    A separate port from `JobFacts` because it is a separate read concern: the
+    report answers "would a create be admitted", while `JobFacts` answers the
+    questions one request needs (its workspace, its pinned binding, its artifact).
+    Only the PostgreSQL adapter implements both, so the report never forces a
+    hand-written `JobFacts` stub in a unit test to grow a method it does not use
+    (#845).
+    """
+
+    def admission_readiness_facts(self, workspace_id: str) -> AdmissionReadinessFacts: ...
+
+
 class PublicJobs:
     """One explicit resolution, one atomic write, then bounded reads."""
 
@@ -571,9 +591,10 @@ class PublicJobs:
         facts: JobFacts,
         store: PublicJobStore,
         *,
+        readiness: AdmissionReadinessFactsStore | None = None,
         now_us: Callable[[], int] | None = None,
     ) -> None:
-        self._facts, self._store = facts, store
+        self._facts, self._store, self._readiness = facts, store, readiness
         self._artifact_batch: PublicJobArtifactBatch | None = (
             store if isinstance(store, PublicJobArtifactBatch) else None
         )
@@ -1090,6 +1111,28 @@ class PublicJobs:
             last = page[-1]
             next_cursor = _encode_list_cursor(last.created_at_us, last.job_id, scope)
         return page, next_cursor
+
+    def admission_readiness(self, *, workspace_id: str = DEFAULT_WORKSPACE) -> AdmissionReadiness:
+        """Report what would refuse a create for one workspace right now.
+
+        A failed read is reported as the storage cause instead of raising: the
+        surface exists so an operator can see *why* creation is refused, and an
+        outage of the report itself must not be indistinguishable from a deployment
+        that is admitting normally. The workspace is validated here for the same
+        reason ``list_jobs`` validates it -- a malformed identity is a caller error,
+        not a degraded deployment.
+        """
+        identifier(workspace_id)
+        if self._readiness is None:
+            # This assembly never wired the report. That is the same deployment
+            # state as an unassembled Job surface, so it answers the same refusal
+            # instead of claiming a verdict it cannot read.
+            raise PublicJobUnavailableError
+        try:
+            facts = self._readiness.admission_readiness_facts(workspace_id)
+        except PublicJobUnavailableError:
+            return storage_unavailable_readiness(workspace_id=workspace_id, now_us=self._now_us())
+        return classify_admission_readiness(facts)
 
     def retry(
         self,

@@ -49,6 +49,7 @@ from speechnexus_backend.speech.application.public_jobs import (
     VoiceDraftStaleRevisionError,
     VoiceNotPublishedError,
 )
+from speechnexus_backend.speech.domain.job_admission_readiness import AdmissionReadiness
 from speechnexus_backend.speech.domain.public_jobs import (
     TERMINAL_STATES,
     JobArtifactFact,
@@ -517,6 +518,81 @@ async def _create(
         return job_error("invalid_job_request", request_id)
 
 
+def public_admission_readiness(report: AdmissionReadiness) -> dict[str, Any]:
+    """Project one verdict onto the frozen ``AdmissionReadiness`` document.
+
+    ``status`` is the field a poller asserts on and ``causes`` carries the closed
+    enum, so a monitor never has to parse a sentence to tell an elapsed receipt from
+    exhausted capacity. The per-instance rows keep the readiness window (the same
+    ``valid``/``expiring``/``expired``/``missing``/``invalid`` vocabulary the
+    read-only engine-readiness report prints) plus the slot counters, and
+    ``capacity`` carries the quota counters, so a degraded answer says which lever
+    to move instead of naming one cause called "unavailable" (#845).
+    """
+    return {
+        "status": report.status.value,
+        "causes": [cause.value for cause in report.causes],
+        "workspace_id": report.workspace_id,
+        "checked_at": _stamp(report.now_us),
+        "detail": report.detail,
+        "instances": [
+            {
+                "instance_id": instance.instance_id,
+                "instance_generation": instance.instance_generation,
+                "readiness_state": instance.readiness_state,
+                "readiness_expires_at": (
+                    None
+                    if instance.readiness_expires_at_us is None
+                    else _stamp(instance.readiness_expires_at_us)
+                ),
+                "remaining_seconds": instance.remaining_seconds,
+                "max_slots": instance.max_slots,
+                "held_slots": instance.held_slots,
+                "quarantined_slots": instance.quarantined_slots,
+            }
+            for instance in report.instances
+        ],
+        "capacity": None
+        if report.quota is None
+        else {
+            "max_attempts": report.quota.max_attempts,
+            "held_attempts": report.quota.held_attempts,
+            "quarantined_attempts": report.quota.quarantined_attempts,
+        },
+    }
+
+
+def _admission_readiness(service: PublicJobs, workspace_id: str, request_id: str) -> Response:
+    """Answer the admission report: always 200 when the Job surface is assembled.
+
+    The report is a fact, not a gate. A degraded deployment answers ``200`` with the
+    causes in the body, because the HTTP status of *this* route says whether the
+    report can be produced and nothing else; a 5xx here would make "the report is
+    broken" and "admission is degraded" look identical to a monitor, which is the
+    confusion this surface exists to remove. ``/readyz`` keeps its own meaning:
+    process health, untouched by this route.
+    """
+    try:
+        report = service.admission_readiness(workspace_id=workspace_id)
+    except PublicJobUnavailableError:
+        # This deployment does not assemble the report (no readiness port). It is
+        # the same state as an unassembled Job surface, and it answers the same
+        # refusal instead of a 500 that would look like a broken report.
+        return job_error("job_unavailable", request_id)
+    body = public_admission_readiness(report)
+    return Response(
+        json.dumps(
+            parse("AdmissionReadiness", body),
+            sort_keys=False,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ),
+        status_code=200,
+        media_type="application/json",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 def _list(service: PublicJobs | None, request: Request, request_id: str) -> Response:
     try:
         query = request.query_params
@@ -790,6 +866,26 @@ def create_job_router(
     @router.get(PREFIX, operation_id="listJobs")
     async def list_jobs(request: Request) -> Response:
         return await run_in_threadpool(_list, get_service(), request, str(request.state.request_id))
+
+    # The literal segment is registered before the ``{job_id}`` route: a Job id is
+    # ``[a-z0-9][a-z0-9._:-]*``, which cannot contain ``-``, so
+    # ``admission-readiness`` can never name a Job and the two routes cannot
+    # collide (#845).
+    @router.get(PREFIX + "/admission-readiness", operation_id="getJobAdmissionReadiness")
+    async def get_job_admission_readiness(request: Request) -> Response:
+        service = get_service()
+        request_id = str(request.state.request_id)
+        try:
+            query = request.query_params
+            if any(len(query.getlist(name)) != 1 for name in query):
+                raise ValueError("Duplicate admission report parameter")
+            workspace_id = query.get("workspace_id", DEFAULT_WORKSPACE)
+            identifier(workspace_id)
+        except ValueError:
+            return job_error("invalid_job_request", request_id)
+        if service is None:
+            return job_error("job_unavailable", request_id)
+        return await run_in_threadpool(_admission_readiness, service, workspace_id, request_id)
 
     @router.get(PREFIX + "/{job_id}", operation_id="getJob")
     async def get_job(request: Request, job_id: str) -> Response:

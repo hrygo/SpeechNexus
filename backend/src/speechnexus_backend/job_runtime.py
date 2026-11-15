@@ -256,7 +256,7 @@ class JobRuntime:
                     timeout_seconds=self._settings.job_transaction_timeout_seconds,
                     storage_bucket=self._settings.object_storage_bucket,
                 )
-                self.jobs = PublicJobs(adapter, adapter)
+                self.jobs = PublicJobs(adapter, adapter, readiness=adapter)
                 self.voice_drafts = VoiceDrafts(self.jobs, PostgresVoiceDrafts(pool))
                 self.voice_publications = (
                     VoicePublications(

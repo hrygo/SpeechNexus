@@ -339,6 +339,12 @@ class ModelReadiness(TypedDict):
     admission_state: Literal["available", "queueable", "capacity_full", "unavailable"]
 
 
+class AdmissionReadinessCapacity(TypedDict):
+    max_attempts: int
+    held_attempts: int
+    quarantined_attempts: int
+
+
 type AudioFormat = ExternalSharedCapabilityDomainsSchemaJsonAudioFormat
 type Identifier = ExternalSharedIdentifiersSchemaJsonIdentifier
 type Revision = ExternalSharedIdentifiersSchemaJsonRevision
@@ -604,6 +610,17 @@ type SpeechTaskKind = ExternalSharedCapabilityDomainsSchemaJsonSpeechTaskKind
 type ReleaseTier = ExternalSharedCapabilityDomainsSchemaJsonReleaseTier
 
 
+class AdmissionReadinessInstance(TypedDict):
+    instance_id: Identifier
+    instance_generation: int
+    readiness_state: Literal["valid", "expiring", "expired", "missing", "invalid"]
+    readiness_expires_at: str | None
+    remaining_seconds: int | None
+    max_slots: int
+    held_slots: int
+    quarantined_slots: int
+
+
 class RestTtsOverrides(TypedDict):
     language: NotRequired[str]
     text_commit_mode: NotRequired[TextCommitMode]
@@ -790,6 +807,23 @@ class ModelNexus(TypedDict):
     tasks: list[SpeechTaskKind]
     release_tier: ReleaseTier
     readiness: ModelReadiness
+
+
+class AdmissionReadiness(TypedDict):
+    status: Literal["admitting", "degraded"]
+    causes: list[
+        Literal[
+            "engine_receipt_expired",
+            "capacity_exhausted",
+            "storage_unavailable",
+            "workspace_not_provisioned",
+        ]
+    ]
+    workspace_id: Identifier
+    checked_at: str
+    detail: str | None
+    instances: list[AdmissionReadinessInstance]
+    capacity: AdmissionReadinessCapacity | None
 
 
 class SpeechOverrides(TypedDict):
@@ -1080,4 +1114,5 @@ type FileContract = (
     | PronunciationCreateRequest
     | PronunciationRevision
     | ModelList
+    | AdmissionReadiness
 )

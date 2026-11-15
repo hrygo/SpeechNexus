@@ -3552,6 +3552,160 @@
           "max_output_audio_ms": 100.0
         }
       }
+    },
+    {
+      "id": "admission-readiness-admitting",
+      "schema": "AdmissionReadiness",
+      "valid": true,
+      "value": {
+        "status": "admitting",
+        "causes": [],
+        "workspace_id": "workspace-default",
+        "checked_at": "2026-11-15T00:00:00.000000Z",
+        "detail": null,
+        "instances": [
+          {
+            "instance_id": "instance-asr-1",
+            "instance_generation": 1,
+            "readiness_state": "valid",
+            "readiness_expires_at": "2026-11-16T00:00:00.000000Z",
+            "remaining_seconds": 86400,
+            "max_slots": 4,
+            "held_slots": 0,
+            "quarantined_slots": 0
+          }
+        ],
+        "capacity": {
+          "max_attempts": 8,
+          "held_attempts": 0,
+          "quarantined_attempts": 0
+        }
+      }
+    },
+    {
+      "id": "admission-readiness-degraded",
+      "schema": "AdmissionReadiness",
+      "valid": true,
+      "value": {
+        "status": "degraded",
+        "causes": [
+          "engine_receipt_expired"
+        ],
+        "workspace_id": "workspace-default",
+        "checked_at": "2026-11-15T00:00:00.000000Z",
+        "detail": "1 of 1 ready engine instance(s) have an elapsed readiness receipt.",
+        "instances": [
+          {
+            "instance_id": "instance-asr-1",
+            "instance_generation": 1,
+            "readiness_state": "expired",
+            "readiness_expires_at": "2026-11-14T00:00:00.000000Z",
+            "remaining_seconds": -86400,
+            "max_slots": 4,
+            "held_slots": 0,
+            "quarantined_slots": 0
+          }
+        ],
+        "capacity": null
+      }
+    },
+    {
+      "id": "admission-readiness-missing-fields",
+      "schema": "AdmissionReadiness",
+      "valid": false,
+      "value": {
+        "status": "admitting",
+        "causes": []
+      }
+    },
+    {
+      "id": "admission-readiness-undeclared-cause",
+      "schema": "AdmissionReadiness",
+      "valid": false,
+      "value": {
+        "status": "admitting",
+        "causes": [
+          "engine_not_ready"
+        ],
+        "workspace_id": "workspace-default",
+        "checked_at": "2026-11-15T00:00:00.000000Z",
+        "detail": null,
+        "instances": [
+          {
+            "instance_id": "instance-asr-1",
+            "instance_generation": 1,
+            "readiness_state": "valid",
+            "readiness_expires_at": "2026-11-16T00:00:00.000000Z",
+            "remaining_seconds": 86400,
+            "max_slots": 4,
+            "held_slots": 0,
+            "quarantined_slots": 0
+          }
+        ],
+        "capacity": {
+          "max_attempts": 8,
+          "held_attempts": 0,
+          "quarantined_attempts": 0
+        }
+      }
+    },
+    {
+      "id": "admission-readiness-undeclared-status",
+      "schema": "AdmissionReadiness",
+      "valid": false,
+      "value": {
+        "status": "maybe",
+        "causes": [],
+        "workspace_id": "workspace-default",
+        "checked_at": "2026-11-15T00:00:00.000000Z",
+        "detail": null,
+        "instances": [
+          {
+            "instance_id": "instance-asr-1",
+            "instance_generation": 1,
+            "readiness_state": "valid",
+            "readiness_expires_at": "2026-11-16T00:00:00.000000Z",
+            "remaining_seconds": 86400,
+            "max_slots": 4,
+            "held_slots": 0,
+            "quarantined_slots": 0
+          }
+        ],
+        "capacity": {
+          "max_attempts": 8,
+          "held_attempts": 0,
+          "quarantined_attempts": 0
+        }
+      }
+    },
+    {
+      "id": "admission-readiness-undeclared-instance-state",
+      "schema": "AdmissionReadiness",
+      "valid": false,
+      "value": {
+        "status": "admitting",
+        "causes": [],
+        "workspace_id": "workspace-default",
+        "checked_at": "2026-11-15T00:00:00.000000Z",
+        "detail": null,
+        "instances": [
+          {
+            "instance_id": "instance-asr-1",
+            "instance_generation": 1,
+            "readiness_state": "probably",
+            "readiness_expires_at": "2026-11-16T00:00:00.000000Z",
+            "remaining_seconds": 86400,
+            "max_slots": 4,
+            "held_slots": 0,
+            "quarantined_slots": 0
+          }
+        ],
+        "capacity": {
+          "max_attempts": 8,
+          "held_attempts": 0,
+          "quarantined_attempts": 0
+        }
+      }
     }
   ]
 }

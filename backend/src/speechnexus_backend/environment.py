@@ -175,6 +175,14 @@ PLANES: tuple[NonSettingPlane, ...] = (
         runtime=True,
     ),
     NonSettingPlane(
+        # The admission poller is standard-library only: it reads these three keys
+        # itself and never constructs the API settings object, so the API must not
+        # refuse them when Compose forwards them to that container (#845).
+        prefixes=("SPEECHNEXUS_ADMISSION_WATCH_",),
+        owner="the job-admission poller entrypoint",
+        runtime=True,
+    ),
+    NonSettingPlane(
         prefixes=(
             "SPEECHNEXUS_ASR_",
             "SPEECHNEXUS_TTS_",

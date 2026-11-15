@@ -144,8 +144,15 @@ MIN_FULL_ROUTE_SHARDS = 6
 
 
 def shard_count(run: RunTiming) -> int:
-    """Number of integration partitions a run actually expanded."""
-    return sum(job.name.startswith("Integration ") for job in run.jobs)
+    """Number of integration partitions a run actually expanded.
+
+    The plan job's display name also starts with "Integration " but expands to
+    one runner, not a matrix partition; counting it would overstate the topology.
+    """
+    return sum(
+        job.name.startswith("Integration ") and not job.name.startswith("Integration plan")
+        for job in run.jobs
+    )
 
 
 def is_full_route(run: RunTiming) -> bool:

@@ -132,6 +132,9 @@ def test_full_route_accepts_both_six_and_eight_partitions() -> None:
     raw.extend(_job(f"Integration {i}/8: Web + PG/MySQL/MinIO", 0, 16 + i) for i in (6, 7))
     assert is_full_route(parse_run(3, raw)) is True
     assert shard_count(parse_run(3, raw)) == 8
+    # The plan job shares the display-name prefix but is one runner, not a partition.
+    raw.append(_job("Integration plan: one collection selects every partition's tools", 0, 12))
+    assert shard_count(parse_run(4, raw)) == 8
 
 
 def test_format_report_states_the_critical_path_rule() -> None:

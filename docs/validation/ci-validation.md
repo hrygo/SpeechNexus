@@ -529,9 +529,9 @@ node scripts/dev-env/validate-design-tokens.mjs
 | 产物可解析 | `exports` 每个目标必须是包内已存在文件；生成产物改名或移动而 `exports` 未同步时失败。嵌套条件对象缺少字符串 `import`/`types`/`default` 时给出可读错误，不以 `TypeError` 崩溃 |
 | Web 绑定 | `web/**` 内不得以相对路径导入 `packages/contracts/src/**`（按打包器的扩展名/`index` 规则解析并以 `realpath` 规范化，`web/` 内的符号链接不能绕过）；导入必须使用包清单子路径；`web/` 内的动态 `import()`/`require()` 必须带字面量说明符，非字面量或模板字面量失败 |
 | 依赖必需 | 每个 `@speechnexus/contracts[/…]` 导入方的最近包清单必须声明 `"workspace:*"`；删除依赖或改用版本区间即失败 |
-| 两端对齐 | 每个声明子路径必须有经包清单的消费者，或在 [`export-consumers.json`](../../packages/contracts/export-consumers.json) 登记可校验证据：`consumer.path` 必须存在且真的导入由子路径推导出的生成模块（`x-http` → `speechnexus_contracts.x_http`），`consumer.module` 若给出必须等于推导值；无两侧消费者的保留候选使用 `"consumer": null` 加 `retention`（`binding` 为 `client: false` 的 `bindings.json` profile、`basis` 为已存在决定文档、`decision`/`enable`/`delete` 非空）；新增无消费者子路径、登记项获得消费者、消费方路径消失或未导入推导模块、只写理由不给消费方、保留候选实际出现导入或 profile 生成客户端都失败 |
+| 两端对齐 | 每个声明子路径必须**机械可判**：①有经包清单的消费者；或②由子路径推导出的生成模块（`packages/contracts/src/speechnexus_contracts/<module>.py`）存在，且仓库内至少一个 `.py` 真的 `import` 该模块（用 Python `tokenize` 判定，注释/文档串/字符串不算）；或③无消费者的生成候选——推导模块存在，且 `contracts/bindings.json` 存在名称规范化后等于子路径（`./zero-dispatch` → `zero_dispatch`）、`client: false`、`source` 文件存在的 profile。非 Python 子路径（`schemas/*.json`）没有候选通道，必须有消费者。不存在 `reason`/`basis`/`decision` 自由文本或登记文件：新增无归属子路径、复制其它候选的保留块、profile 名称或 `client` 不符、profile source 缺失、生成模块缺失都失败 |
 
-**消费者口径**：出现一个经包清单的 import（静态导入、`import type`、副作用导入与字面量 `require()`）即计为消费者；守卫既不校验该绑定是否被使用，也不证明该导入在运行时会执行。注释、字符串与模板正文中的 import 文本不计入消费者。
+**消费者口径**：出现一个经包清单的 import（静态导入、`import type`、副作用导入与字面量 `require()`）即计为消费者；守卫既不校验该绑定是否被使用，也不证明该导入在运行时会执行。注释、字符串与模板正文中的 import 文本不计入消费者。Python 侧同口径：仓库内任一 `.py` 的真实 `import` 语句即算（含测试），由 Python `tokenize` 判定。已知边界：`web` 经另一个非消费者模块再相对导入生成包的转发链不在检查范围。
 
 独立验证（均无需安装依赖）：
 
@@ -540,7 +540,7 @@ node --test tests/ci/contract-consumers.test.mjs
 node scripts/dev-env/validate-contract-consumers.mjs
 ```
 
-守卫是静态文本检查：它证明导入形态、清单依赖、登记证据与 `exports` 声明对齐，不证明运行时解析、打包产物体积、Vite/tsc 版本行为或实际页面调用成功；这些仍由 `pnpm typecheck`、`pnpm build`、`pnpm test` 与真实浏览器能力道覆盖。仓库内 `scripts/`、`tests/` 的探针与夹具在检出上直接运行源码，不是 workspace 包消费者，因此不在 Web 绑定规则内；它们使用相对路径不进入本门禁的消费者计数。
+守卫是静态文本检查：它证明导入形态、清单依赖、生成模块/候选归属与 `exports` 声明对齐，不证明运行时解析、打包产物体积、Vite/tsc 版本行为或实际页面调用成功；这些仍由 `pnpm typecheck`、`pnpm build`、`pnpm test` 与真实浏览器能力道覆盖。仓库内 `scripts/`、`tests/` 的探针与夹具在检出上直接运行源码，不是 workspace 包消费者，因此不在 Web 绑定规则内；它们使用相对路径不进入本门禁的消费者计数。
 
 ## Web 无障碍与颜色对比度
 

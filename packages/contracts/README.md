@@ -125,35 +125,49 @@ instead of a copied constant: `@speechnexus/contracts/schemas/workbench`
 (`file.schema.json`). Import them as JSON modules; they are generated artifacts
 and are never edited by hand.
 
-Every declared subpath either has a consumer through the manifest or is
-registered in [`export-consumers.json`](export-consumers.json). A registration
-is evidence, not an exemption: `consumer.path` must be a repository file that
-really imports the generated Python module derived from the subpath
-(`./voice-catalogue-http` -> `speechnexus_contracts.voice_catalogue_http`), and
-`consumer.module`, when present, must equal that derived name. A prose reason
-alone is rejected. An export that is a retained candidate with no consumer on
-either side uses `"consumer": null` plus a `retention` entry: `binding` is the
-`contracts/bindings.json` profile (which must be `"client": false`), `basis` is
-the existing decision document, and `decision` / `enable` / `delete` state the
-retention basis and the conditions to activate or delete it.
+Every declared subpath is accounted for **mechanically**; there is no
+free-text exemption list. A subpath passes when at least one of these holds:
+
+1. it has a consumer through the manifest (`web/` import); or
+2. its derived generated Python module
+   (`packages/contracts/src/speechnexus_contracts/<module>.py`) exists and at
+   least one repository `.py` file really imports it -- Python's own tokenizer
+   decides, so comments, docstrings and string literals never count; or
+3. it is a generated candidate with no consumer: the derived module file exists,
+   and `contracts/bindings.json` has a profile whose normalized name equals the
+   subpath (`./zero-dispatch` -> `zero_dispatch`), declares `"client": false`,
+   and whose `source` contract file exists.
+
+Nothing else can excuse an export. There is no `reason`/`basis`/`decision`
+field and no registry file to copy: adding `exports "./ghost"` with a copied
+retention block fails because `ghost` has no generated module and no matching
+profile. Non-Python subpaths (the `schemas/*.json` bundles) have no candidate
+channel and must be imported through the manifest -- that is why they were
+added as consumed entries in the first place.
 
 The consumer count is deliberately literal: **one manifest import counts as a
 consumer, including `import type`, a side-effect import and a literal
 `require()`**. The guard does not check that the binding is used and does not
-prove the import executes at runtime. A registration becomes stale when the
-subpath gains a consumer; a retained candidate becomes stale when anything
-imports its module or when its binding profile starts generating a client.
+prove the import executes at runtime. Python evidence has the same shape: a real
+`import` statement anywhere in the repository counts, even inside a test.
 
-The scan is lexical but not naive: comments, string bodies and template bodies
-never produce specifiers, a regex literal cannot hide the import after it, and
-imports are located at their specifier line. Under `web/`, a dynamic
-`import()`/`require()` must carry a literal specifier; `import(name)` and
-``import(`@speechnexus/contracts/${name}`)`` fail because the binding cannot be
-statically verified. Relative imports are resolved with the bundler's
+The scan is lexical but not naive: comments, string bodies and template literal
+text never produce specifiers, a regex literal cannot hide the import after it,
+Unicode identifiers are identifiers, and imports are located at their specifier
+line. Under `web/`, a dynamic `import()`/`require()` must carry a literal
+specifier; a string literal and an interpolation-free template literal
+(``import(`@speechnexus/contracts/zero-dispatch`)``) qualify, while `import(name)`
+and ``import(`@speechnexus/contracts/${name}`)`` fail because the binding
+cannot be statically verified. Relative imports are resolved with the bundler's
 extension/index rules and canonicalized with `realpath`, so a symlink inside
 `web/` cannot reach `packages/contracts/src/**`. Non-code files and the
 repository probes under `scripts/` and `tests/` run from the checkout and are
 not workspace package consumers.
+
+Known limit: the guard checks direct `web/` imports and direct consumers. A
+forwarding chain such as `web -> another module -> relative import into
+packages/contracts/src` is not detected; that module is not a package consumer
+and its publication path still needs code review.
 
 ```sh
 node --test tests/ci/contract-consumers.test.mjs
@@ -161,11 +175,12 @@ node scripts/dev-env/validate-contract-consumers.mjs
 ```
 
 The guard runs in the `changes` CI job on every pull request without installing
-pnpm dependencies. It statically checks the `exports` targets, manifest
-imports, declared workspace dependency and the two-way `exports`/consumer
-alignment; it does not prove runtime resolution, bundle contents or that a page
-actually calls an endpoint. Run `pnpm typecheck`, `pnpm build` and the Web tests
-for those.
+pnpm dependencies; it needs Node and the repository's `python3` (standard
+library only) for the Python import evidence. It statically checks the `exports`
+targets, manifest imports, declared workspace dependency and the mechanical
+accounting above; it does not prove runtime resolution, bundle contents or that
+a page actually calls an endpoint. Run `pnpm typecheck`, `pnpm build` and the
+Web tests for those.
 
 ## Synchronous speech ceiling handoff
 

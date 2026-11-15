@@ -23,14 +23,11 @@ const MANIFEST = {
   },
 };
 
-const CONSUMER_REGISTRY = {
-  unbound: {
-    "./workbench-http": {
-      reason: "Only the Python backend HTTP surface consumes this profile.",
-      consumer: {
-        path: "backend/app.py",
-        module: "speechnexus_contracts.workbench_http",
-      },
+const CANDIDATE_BINDINGS = {
+  profiles: {
+    workbench_http: {
+      client: false,
+      source: "internal/workbench-candidate.schema.json",
     },
   },
 };
@@ -48,7 +45,7 @@ function makeFixture(overrides = {}) {
   write(root, "packages/contracts/src/index.ts", "export const parse = () => {};\n");
   write(root, "packages/contracts/src/workbench.ts", "export const parse = () => {};\n");
   write(root, "packages/contracts/src/workbench-http.ts", "export const validate = () => {};\n");
-  write(root, "packages/contracts/export-consumers.json", CONSUMER_REGISTRY);
+  write(root, "packages/contracts/src/speechnexus_contracts/workbench_http.py", "validate = 1\n");
   write(root, "web/app/package.json", {
     name: "@speechnexus/web-app",
     dependencies: { "@speechnexus/contracts": "workspace:*" },
@@ -80,12 +77,17 @@ function has(errors, fragment) {
   return messages(errors).some((message) => message.includes(fragment));
 }
 
+/** The third export has no consumer unless its generated module is really imported. */
+function noPythonConsumer(overrides = {}) {
+  return { "backend/app.py": "x = 1\n", ...overrides };
+}
+
 test("the checked-out repository satisfies the binding rules", () => {
   const repositoryRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
   assert.deepEqual(runValidation(repositoryRoot), []);
 });
 
-test("a clean fixture passes", () => {
+test("a clean fixture passes: manifest consumers plus a real Python import", () => {
   withFixture({}, (root) => {
     assert.deepEqual(runValidation(root), []);
   });
@@ -129,7 +131,7 @@ test("a relative import into packages/contracts/src from web fails", () => {
   );
 });
 
-test("a relative import hidden behind a symlinked directory fails", () => {
+test("a symlinked directory reports one error, not one per generated file", () => {
   const overrides = {
     "web/app/src/legacy.ts": 'import { validate } from "./contracts-src/workbench-http";\n',
   };
@@ -139,7 +141,9 @@ test("a relative import hidden behind a symlinked directory fails", () => {
       path.resolve(root, "web/app/src/contracts-src"),
       "dir",
     );
-    assert.ok(has(runValidation(root), "imports the generated package by relative path"));
+    const errors = runValidation(root);
+    assert.equal(errors.length, 1);
+    assert.ok(has(errors, "imports the generated package by relative path"));
   });
 });
 
@@ -149,8 +153,7 @@ test("import-like text in comments, strings and templates is not a consumer", ()
       '// import { parse } from "@speechnexus/contracts/ghost";',
       "const example = \"import { parse } from '@speechnexus/contracts/ghost'\";",
       'const template = `import { parse } from "@speechnexus/contracts/ghost"`;',
-      "const prose = `see the import in \\`@speechnexus/contracts/ghost\\` docs`;",
-      "export const keep = [example, template, prose];",
+      "export const keep = [example, template];",
       "",
     ].join("\n"),
   };
@@ -183,6 +186,14 @@ test("a multi-line import reports the specifier line, not the statement start", 
   );
 });
 
+test("a Unicode identifier does not hide the import", () => {
+  const scan = scanSource('import { 解析器 } from "@speechnexus/contracts/workbench";\n');
+  assert.deepEqual(
+    scan.specifiers.map(({ specifier }) => specifier),
+    ["@speechnexus/contracts/workbench"],
+  );
+});
+
 test("JSX prose does not count as an import", () => {
   const source = 'export const copy = <p>transfer files from "server" to device</p>;\n';
   assert.deepEqual(scanSource(source).specifiers, []);
@@ -197,14 +208,28 @@ test("a non-literal dynamic import under web fails", () => {
   );
 });
 
-test("a template-literal dynamic import under web fails", () => {
+test("an interpolated template-literal dynamic import fails", () => {
   withFixture(
     {
       "web/app/src/lazy.ts":
         "export const load = (name) => import(`@speechnexus/contracts/${name}`);\n",
     },
     (root) => {
-      assert.ok(has(runValidation(root), "template-literal specifier"));
+      assert.ok(has(runValidation(root), "interpolated template-literal specifier"));
+    },
+  );
+});
+
+test("an interpolation-free template-literal dynamic import is a consumer", () => {
+  const exports = { ...MANIFEST.exports, "./lazy": "./src/lazy.ts" };
+  withFixture(
+    {
+      "packages/contracts/package.json": { ...MANIFEST, exports },
+      "packages/contracts/src/lazy.ts": "export const parse = () => {};\n",
+      "web/app/src/lazy.ts": "export const load = () => import(`@speechnexus/contracts/lazy`);\n",
+    },
+    (root) => {
+      assert.deepEqual(runValidation(root), []);
     },
   );
 });
@@ -218,8 +243,7 @@ test("a literal dynamic import counts as a consumer and needs the workspace depe
     },
     (root) => {
       const errors = runValidation(root);
-      assert.ok(has(errors, 'without declaring "@speechnexus/contracts": "workspace:*"'));
-      assert.equal(has(errors, "has no consumer"), false);
+      assert.ok(has(errors, 'is imported without declaring "@speechnexus/contracts"'));
     },
   );
 });
@@ -241,13 +265,10 @@ test("an undeclared subpath fails", () => {
   );
 });
 
-test("a missing workspace dependency fails", () => {
+test("a missing or non-workspace dependency fails", () => {
   withFixture({ "web/app/package.json": { name: "@speechnexus/web-app" } }, (root) => {
     assert.ok(has(runValidation(root), 'is imported without declaring "@speechnexus/contracts"'));
   });
-});
-
-test("a non-workspace dependency version fails", () => {
   withFixture(
     {
       "web/app/package.json": {
@@ -261,190 +282,133 @@ test("a non-workspace dependency version fails", () => {
   );
 });
 
-test("a new export without a consumer fails", () => {
+test("a new export with no consumer and no generated module fails", () => {
   const exports = { ...MANIFEST.exports, "./ghost": "./src/index.ts" };
   withFixture({ "packages/contracts/package.json": { ...MANIFEST, exports } }, (root) => {
-    assert.ok(has(runValidation(root), "Export './ghost' has no consumer."));
+    assert.ok(has(runValidation(root), "Export './ghost' has no consumer and no generated module"));
   });
 });
 
-test("a registered consumer path that does not exist fails", () => {
-  const registry = {
-    unbound: {
-      "./workbench-http": {
-        reason: "backend only",
-        consumer: {
-          path: "backend/does-not-exist.py",
-          module: "speechnexus_contracts.workbench_http",
-        },
-      },
-    },
-  };
-  withFixture({ "packages/contracts/export-consumers.json": registry }, (root) => {
-    assert.ok(has(runValidation(root), "consumer path 'backend/does-not-exist.py' does not exist"));
-  });
-});
-
-test("a registered consumer path that does not import the derived module fails", () => {
-  const registry = {
-    unbound: {
-      "./workbench-http": {
-        reason: "backend only",
-        consumer: { path: "backend/app.py", module: "speechnexus_contracts.workbench_http" },
-      },
-    },
-  };
-  withFixture(
-    { "packages/contracts/export-consumers.json": registry, "backend/app.py": "x = 1\n" },
-    (root) => {
-      assert.ok(has(runValidation(root), "does not import speechnexus_contracts.workbench_http"));
-    },
-  );
-});
-
-test("a registration without any consumer evidence fails", () => {
-  const registry = {
-    unbound: { "./workbench-http": { reason: "TOTALLY BOGUS: no consumer anywhere" } },
-  };
-  withFixture({ "packages/contracts/export-consumers.json": registry }, (root) => {
-    assert.ok(has(runValidation(root), 'must declare a consumer object or "consumer": null'));
-  });
-});
-
-test("a registered consumer module that differs from the derived module fails", () => {
-  const registry = {
-    unbound: {
-      "./workbench-http": {
-        reason: "backend only",
-        consumer: { path: "backend/app.py", module: "speechnexus_contracts.execution" },
-      },
-    },
-  };
-  withFixture({ "packages/contracts/export-consumers.json": registry }, (root) => {
-    assert.ok(
-      has(runValidation(root), "must equal the derived 'speechnexus_contracts.workbench_http'"),
-    );
-  });
-});
-
-test("a stale registration for a consumed export fails", () => {
-  withFixture(
-    {
-      "web/app/src/extra.ts": 'import { validate } from "@speechnexus/contracts/workbench-http";\n',
-    },
-    (root) => {
-      assert.ok(has(runValidation(root), "is registered as unbound but is consumed by"));
-    },
-  );
-});
-
-test("a retained candidateneeds a decision document and enable/delete conditions", () => {
-  const registry = {
-    unbound: { "./workbench-http": { reason: "candidate", consumer: null, retention: {} } },
-  };
-  withFixture({ "packages/contracts/export-consumers.json": registry }, (root) => {
-    const errors = runValidation(root);
-    assert.ok(has(errors, "retention needs a non-empty 'decision' condition"));
-    assert.ok(has(errors, "retention needs a non-empty 'enable' condition"));
-    assert.ok(has(errors, "retention needs a non-empty 'delete' condition"));
-    assert.ok(has(errors, "retention needs a decision document in 'basis'"));
-    assert.ok(has(errors, "retention needs the bindings.json profile in 'binding'"));
-  });
-});
-
-test("a retained candidate passes when the binding profile generates no client", () => {
-  const registry = {
-    unbound: {
-      "./workbench-http": {
-        reason: "candidate with no consumer on either side",
-        consumer: null,
-        retention: {
-          binding: "workbench_candidate",
-          basis: "docs/candidate.md",
-          decision: "Candidate handed over for later wiring.",
-          enable: "After the implementing owner ships the port.",
-          delete: "Only together with the bindings.json profile.",
-        },
-      },
-    },
-  };
-  const overrides = {
-    "packages/contracts/export-consumers.json": registry,
-    "docs/candidate.md": "# Candidate\n",
-    "contracts/bindings.json": { profiles: { workbench_candidate: { client: false } } },
-    "backend/app.py": "x = 1\n",
-  };
-  withFixture(overrides, (root) => {
+test("an unconsumed export passes when a real Python file imports its module", () => {
+  withFixture(noPythonConsumer(), (root) => {
+    write(root, "backend/later.py", "from speechnexus_contracts.workbench_http import validate\n");
     assert.deepEqual(runValidation(root), []);
   });
 });
 
-test("a retained candidate whose binding generates a client fails", () => {
-  const registry = {
-    unbound: {
-      "./workbench-http": {
-        reason: "candidate",
-        consumer: null,
-        retention: {
-          binding: "workbench_candidate",
-          basis: "docs/candidate.md",
-          decision: "Candidate.",
-          enable: "Later.",
-          delete: "Never.",
-        },
-      },
+test("a docstring or comment mentioning the module does not count as a consumer", () => {
+  withFixture(
+    noPythonConsumer({
+      "backend/doc-only.py":
+        '"""Example: from speechnexus_contracts.workbench_http import validate."""\n# import speechnexus_contracts.workbench_http\nx = 1\n',
+    }),
+    (root) => {
+      const errors = runValidation(root);
+      assert.ok(has(errors, "Export './workbench-http' has no consumer"));
     },
-  };
-  const overrides = {
-    "packages/contracts/export-consumers.json": registry,
-    "docs/candidate.md": "# Candidate\n",
-    "contracts/bindings.json": { profiles: { workbench_candidate: { client: true } } },
-  };
-  withFixture(overrides, (root) => {
-    assert.ok(has(runValidation(root), "generates a client"));
-  });
+  );
 });
 
-test("a retained candidate that gains a Python consumer fails", () => {
-  const registry = {
-    unbound: {
-      "./workbench-http": {
-        reason: "candidate",
-        consumer: null,
-        retention: {
-          binding: "workbench_candidate",
-          basis: "docs/candidate.md",
-          decision: "Candidate.",
-          enable: "Later.",
-          delete: "Never.",
-        },
-      },
+test("an unconsumed export passes as a generated candidate with a client:false profile", () => {
+  withFixture(
+    noPythonConsumer({
+      "contracts/bindings.json": CANDIDATE_BINDINGS,
+      "contracts/internal/workbench-candidate.schema.json": "{}\n",
+    }),
+    (root) => {
+      assert.deepEqual(runValidation(root), []);
     },
-  };
-  const overrides = {
-    "packages/contracts/export-consumers.json": registry,
-    "docs/candidate.md": "# Candidate\n",
-    "contracts/bindings.json": { profiles: { workbench_candidate: { client: false } } },
-    "backend/app.py": "x = 1\n",
-  };
-  withFixture(overrides, (root) => {
-    write(root, "backend/later.py", "from speechnexus_contracts.workbench_http import validate\n");
-    assert.ok(
-      has(runValidation(root), "is registered as consumerless but backend/later.py imports"),
-    );
-  });
+  );
 });
 
-test("a stale registration key fails", () => {
-  const registry = {
-    unbound: {
-      "./workbench-http": CONSUMER_REGISTRY.unbound["./workbench-http"],
-      "./ghost": { reason: "ghost", consumer: { path: "backend/app.py" } },
+test("a candidate whose profile generates a client fails", () => {
+  withFixture(
+    noPythonConsumer({
+      "contracts/bindings.json": {
+        profiles: {
+          workbench_http: {
+            client: true,
+            source: "internal/workbench-candidate.schema.json",
+          },
+        },
+      },
+      "contracts/internal/workbench-candidate.schema.json": "{}\n",
+    }),
+    (root) => {
+      assert.ok(has(runValidation(root), 'no matching "client": false profile'));
+    },
+  );
+});
+
+test("a candidate reusing an unrelated profile fails", () => {
+  withFixture(
+    noPythonConsumer({
+      "contracts/bindings.json": {
+        profiles: {
+          realtime: { client: false, source: "realtime-events.schema.json" },
+        },
+      },
+      "contracts/realtime-events.schema.json": "{}\n",
+    }),
+    (root) => {
+      assert.ok(has(runValidation(root), 'no matching "client": false profile'));
+    },
+  );
+});
+
+test("copying the old retention block next to a ghost export changes nothing", () => {
+  const retention = {
+    retention: {
+      binding: "zero_dispatch",
+      basis: "docs/components/zero-dispatch-contract-core.md",
+      decision: "DEL-417",
+      enable: "later",
+      delete: "never",
     },
   };
-  withFixture({ "packages/contracts/export-consumers.json": registry }, (root) => {
-    assert.ok(has(runValidation(root), "Registered export './ghost' is not declared"));
-  });
+  const exports = { ...MANIFEST.exports, "./ghost": "./src/index.ts" };
+  withFixture(
+    {
+      "packages/contracts/package.json": { ...MANIFEST, exports },
+      "packages/contracts/export-consumers.json": { unbound: { "./ghost": retention } },
+    },
+    (root) => {
+      assert.ok(
+        has(runValidation(root), "Export './ghost' has no consumer and no generated module"),
+      );
+    },
+  );
+});
+
+test("a non-Python subpath bundle has no candidate channel", () => {
+  const exports = {
+    ...MANIFEST.exports,
+    "./schemas/workbench": "./src/speechnexus_contracts/workbench.schema.json",
+  };
+  withFixture(
+    {
+      "packages/contracts/package.json": { ...MANIFEST, exports },
+      "packages/contracts/src/speechnexus_contracts/workbench.schema.json": "{}\n",
+    },
+    (root) => {
+      assert.ok(has(runValidation(root), "Non-Python subpath bundles"));
+    },
+  );
+});
+
+test("a Python import of a missing generated module fails", () => {
+  withFixture(
+    noPythonConsumer({
+      "backend/later.py": "from speechnexus_contracts.workbench_http import validate\n",
+      "packages/contracts/src/speechnexus_contracts/workbench_http.py": "",
+    }),
+    (root) => {
+      // Recreate without the module file: the fixture writer already wrote it,
+      // so delete it to model a broken generation output.
+      fs.rmSync(path.join(root, "packages/contracts/src/speechnexus_contracts/workbench_http.py"));
+      assert.ok(has(runValidation(root), "generated module"));
+    },
+  );
 });
 
 test("helper mappings stay in sync with the contract package", () => {

@@ -11,29 +11,38 @@
  * package removed from the workspace fails as a resolution/declaration error
  * instead of a missing file path.
  *
- * The guard is deliberately dependency-free so the `changes` job can run it
- * before installing project dependencies. It enforces:
+ * The guard is dependency-free Node plus the repository's Python interpreter, so
+ * the `changes` job can run it before installing project dependencies. It
+ * enforces:
  *
  * 1. Every declared `exports` target is an existing file. A generated artifact
  *    that moved without its `exports` entry fails here even though a relative
  *    path would still reach it.
  * 2. Code under `web/` must not import `packages/contracts/src/**` by relative
- *    path; imports go through `@speechnexus/contracts[/<subpath>]`. A dynamic
- *    `import()`/`require()` under `web/` must carry a literal specifier so the
- *    binding stays statically checkable.
+ *    path (resolved with the bundler's extension/index rules and canonicalized
+ *    with `realpath`, so a symlink cannot hide it); imports go through
+ *    `@speechnexus/contracts[/<subpath>]`, and a dynamic `import()`/`require()`
+ *    must carry a literal specifier (an interpolation-free template literal is
+ *    literal).
  * 3. Every `@speechnexus/contracts[/<subpath>]` specifier (static, `import type`,
  *    side-effect or literal `require()`) maps to a declared export, and the
  *    importing workspace package declares `"@speechnexus/contracts": "workspace:*"`.
- * 4. Every declared subpath has at least one such consumer, or is registered in
- *    `packages/contracts/export-consumers.json` with verifiable evidence:
- *    either a `consumer.path` file that really imports the generated Python
- *    module derived from the subpath (`x-http` -> `x_http`), or an explicit
- *    `consumer: null` plus a `retention` entry whose binding profile is a
- *    `client: false` candidate, whose decision document exists, and whose
- *    enable/delete conditions are stated. A registration for a subpath that
- *    gains a consumer, a consumer path that disappears, a missing derived
- *    import, a retained candidate that gains a consumer, and a new export
- *    without any of these all fail.
+ * 4. Every declared subpath is accounted for mechanically -- there is no
+ *    free-text exemption:
+ *      a. it has a manifest consumer; or
+ *      b. its derived generated Python module
+ *         (`packages/contracts/src/speechnexus_contracts/<module>.py`) exists and
+ *         at least one repository `.py` file (outside the generated package)
+ *         really imports it, decided by Python's own `tokenize` so comments,
+ *         docstrings and string literals never count; or
+ *      c. both of the above are false but the subpath is a generated candidate:
+ *         its derived module file exists, and `contracts/bindings.json` has a
+ *         profile whose normalized name equals the subpath, declares
+ *         `"client": false`, and whose `source` file exists. This is the
+ *         mechanical definition of "generated but not consumed yet"; no
+ *         reason/basis/decision text can substitute for it.
+ *    A subpath whose `exports` target is not a Python module (for example a
+ *    `schemas/*.json` bundle) has no candidate channel and needs a consumer.
  *
  * The guard is a static text scan: a manifest import counts as a consumer even
  * when the binding is unused or a side-effect import, and nothing here proves
@@ -42,19 +51,20 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "../..");
+const PYTHON_SCANNER = path.join(__dirname, "scan-contract-imports.py");
 
 export const CONTRACTS_PACKAGE = "packages/contracts";
 export const PACKAGE_SPECIFIER = "@speechnexus/contracts";
-export const REGISTRY_PATH = `${CONTRACTS_PACKAGE}/export-consumers.json`;
 export const BINDINGS_PATH = "contracts/bindings.json";
+export const GENERATED_PYTHON_DIR = path.join(CONTRACTS_PACKAGE, "src", "speechnexus_contracts");
 export const SCAN_ROOTS = ["web", "scripts", "tests", "packages"];
 export const CODE_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".mjs", ".js", ".jsx", ".cjs"];
-export const PYTHON_EXTENSIONS = [".py"];
 export const SKIP_DIRECTORIES = new Set([
   "node_modules",
   "dist",
@@ -91,10 +101,8 @@ const REGEX_PREFIX_WORDS = new Set([
   "await",
 ]);
 
-// Only clause tokens may sit between the keyword and `from`: identifiers,
-// `as`/`type`/namespace stars, separators. A single character class keeps the
-// check linear; operators, semicolons or JSX tags reject the candidate.
-const IMPORT_CLAUSE_ALLOWED = /^[\s,{}*.\w$]*$/;
+const IDENTIFIER = /^[\p{ID_Start}$_][\p{ID_Continue}$\u200C\u200D]*/u;
+const IDENTIFIER_PART = /^[\p{ID_Continue}$\u200C\u200D]$/u;
 
 function toPosix(value) {
   return value.split(path.sep).join("/");
@@ -130,14 +138,15 @@ function resolveImportTarget(resolved) {
   return resolved;
 }
 
-/** List code files under `rootDir`, deduplicated by real path. */
+/**
+ * List code files under `rootDir`. Symlinked directories are not entered (they
+ * would duplicate the real tree and produce one error per generated file);
+ * files are deduplicated by real path.
+ */
 export function listConsumerFiles(rootDir) {
   const files = [];
-  const seenDirectories = new Set();
+  const seenFiles = new Set();
   const walk = (dir) => {
-    const real = realpathOr(dir);
-    if (seenDirectories.has(real)) return;
-    seenDirectories.add(real);
     let entries;
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -146,6 +155,7 @@ export function listConsumerFiles(rootDir) {
     }
     for (const entry of entries) {
       if (entry.name.startsWith(".") || SKIP_DIRECTORIES.has(entry.name)) continue;
+      if (entry.isSymbolicLink()) continue;
       const full = path.join(dir, entry.name);
       let stat;
       try {
@@ -153,15 +163,25 @@ export function listConsumerFiles(rootDir) {
       } catch {
         continue;
       }
-      if (stat.isDirectory()) walk(full);
-      else if (CODE_EXTENSIONS.includes(path.extname(entry.name))) files.push(full);
+      if (stat.isDirectory()) {
+        walk(full);
+      } else if (CODE_EXTENSIONS.includes(path.extname(entry.name))) {
+        const real = realpathOr(full);
+        if (seenFiles.has(real)) continue;
+        seenFiles.add(real);
+        files.push(full);
+      }
     }
   };
   for (const root of SCAN_ROOTS) walk(path.join(rootDir, root));
   return files.sort();
 }
 
-/** Blank comments, string bodies and template bodies while keeping positions. */
+/**
+ * Blank comments, string bodies and template literal text while keeping code
+ * positions. Template interpolations (`${...}`) stay code, so `import(...)`
+ * inside an interpolation is still seen.
+ */
 export function maskSource(code) {
   const literals = new Map();
   const chars = code.split("");
@@ -171,114 +191,139 @@ export function maskSource(code) {
     }
   };
   let previous;
-  let index = 0;
-  while (index < code.length) {
-    const char = code[index];
-    if (char === "/" && code[index + 1] === "/") {
-      const end = code.indexOf("\n", index);
-      const stop = end < 0 ? code.length : end;
-      blank(index, stop);
-      index = stop;
-      continue;
-    }
-    if (char === "/" && code[index + 1] === "*") {
-      const end = code.indexOf("*/", index + 2);
-      const stop = end < 0 ? code.length : end + 2;
-      blank(index, stop);
-      index = stop;
-      continue;
-    }
-    if (char === "/" && regexAllowed(previous)) {
-      let cursor = index + 1;
-      let inClass = false;
-      let closed = false;
-      while (cursor < code.length) {
-        const next = code[cursor];
-        if (next === "\\") {
-          cursor += 2;
-          continue;
-        }
-        if (next === "\n") break;
-        if (next === "[") inClass = true;
-        else if (next === "]") inClass = false;
-        else if (next === "/" && !inClass) {
-          closed = true;
-          break;
+
+  function scanTemplate(index) {
+    const start = index;
+    let cursor = start + 1;
+    let interpolated = false;
+    while (cursor < code.length) {
+      const char = code[cursor];
+      if (char === "\\") {
+        cursor += 2;
+        continue;
+      }
+      if (char === "$" && code[cursor + 1] === "{") {
+        interpolated = true;
+        blank(start + 1, cursor);
+        previous = undefined;
+        cursor = scanCode(cursor + 2, "}");
+        if (cursor >= code.length) {
+          previous = "string";
+          return code.length;
         }
         cursor += 1;
+        previous = undefined;
+        continue;
       }
-      const stop = closed ? cursor + 1 : cursor;
-      blank(index, stop);
-      index = stop;
-      previous = "regex";
-      continue;
-    }
-    if (char === "'" || char === '"') {
-      let cursor = index + 1;
-      while (cursor < code.length) {
-        if (code[cursor] === "\\") {
-          cursor += 2;
-          continue;
-        }
-        if (code[cursor] === char) break;
-        if (code[cursor] === "\n") break;
-        cursor += 1;
-      }
-      if (code[cursor] === char) {
-        literals.set(index, { end: cursor + 1, value: code.slice(index + 1, cursor) });
-        blank(index + 1, cursor);
-        index = cursor + 1;
+      if (char === "`") {
+        blank(start + 1, cursor);
+        literals.set(start, {
+          end: cursor + 1,
+          value: code.slice(start + 1, cursor),
+          template: true,
+          interpolated,
+        });
         previous = "string";
-      } else {
-        index += 1;
+        return cursor + 1;
       }
-      continue;
+      cursor += 1;
     }
-    if (char === "`") {
-      let cursor = index + 1;
-      let depth = 0;
-      while (cursor < code.length) {
-        const next = code[cursor];
-        if (next === "\\") {
-          cursor += 2;
-          continue;
-        }
-        if (next === "$" && code[cursor + 1] === "{") {
-          depth += 1;
-          cursor += 2;
-          continue;
-        }
-        if (next === "}" && depth > 0) {
-          depth -= 1;
-          cursor += 1;
-          continue;
-        }
-        if (next === "`" && depth === 0) break;
-        cursor += 1;
-      }
-      if (code[cursor] === "`") {
-        literals.set(index, { end: cursor + 1, value: code.slice(index + 1, cursor) });
-        blank(index + 1, cursor);
-        index = cursor + 1;
-        previous = "string";
-      } else {
-        index += 1;
-      }
-      continue;
-    }
-    if (/\s/.test(char)) {
-      index += 1;
-      continue;
-    }
-    const word = /^[A-Za-z_$][\w$]*|^\d+(?:\.\d+)?/.exec(code.slice(index));
-    if (word) {
-      previous = word[0];
-      index += word[0].length;
-      continue;
-    }
-    previous = char;
-    index += 1;
+    previous = "string";
+    return code.length;
   }
+
+  function scanCode(index, terminator) {
+    let depth = 0;
+    while (index < code.length) {
+      const char = code[index];
+      if (terminator !== undefined) {
+        if (char === "{" && terminator === "}") depth += 1;
+        else if (char === "}") {
+          if (depth === 0) return index;
+          depth -= 1;
+        }
+      }
+      if (char === "/" && code[index + 1] === "/") {
+        const end = code.indexOf("\n", index);
+        const stop = end < 0 ? code.length : end;
+        blank(index, stop);
+        index = stop;
+        continue;
+      }
+      if (char === "/" && code[index + 1] === "*") {
+        const end = code.indexOf("*/", index + 2);
+        const stop = end < 0 ? code.length : end + 2;
+        blank(index, stop);
+        index = stop;
+        continue;
+      }
+      if (char === "/" && regexAllowed(previous)) {
+        let cursor = index + 1;
+        let inClass = false;
+        let closed = false;
+        while (cursor < code.length) {
+          const next = code[cursor];
+          if (next === "\\") {
+            cursor += 2;
+            continue;
+          }
+          if (next === "\n") break;
+          if (next === "[") inClass = true;
+          else if (next === "]") inClass = false;
+          else if (next === "/" && !inClass) {
+            closed = true;
+            break;
+          }
+          cursor += 1;
+        }
+        const stop = closed ? cursor + 1 : cursor;
+        blank(index, stop);
+        index = stop;
+        previous = "regex";
+        continue;
+      }
+      if (char === "'" || char === '"') {
+        let cursor = index + 1;
+        while (cursor < code.length) {
+          if (code[cursor] === "\\") {
+            cursor += 2;
+            continue;
+          }
+          if (code[cursor] === char) break;
+          if (code[cursor] === "\n") break;
+          cursor += 1;
+        }
+        if (code[cursor] === char) {
+          literals.set(index, { end: cursor + 1, value: code.slice(index + 1, cursor) });
+          blank(index + 1, cursor);
+          index = cursor + 1;
+          previous = "string";
+        } else {
+          index += 1;
+        }
+        continue;
+      }
+      if (char === "`") {
+        index = scanTemplate(index);
+        continue;
+      }
+      if (/\s/.test(char)) {
+        index += 1;
+        continue;
+      }
+      const word = IDENTIFIER.exec(code.slice(index)) ?? /^\d+(?:\.\d+)?/.exec(code.slice(index));
+      if (word !== null) {
+        previous = word[0];
+        index += word[0].length;
+        continue;
+      }
+      previous = char;
+      index += 1;
+    }
+    return index;
+  }
+
+  scanCode(0, undefined);
   return { masked: chars.join(""), literals };
 }
 
@@ -291,22 +336,30 @@ function regexAllowed(previous) {
 
 /**
  * True when `from` at `index` belongs to an `import`/`export` clause rather than
- * to ordinary prose or JSX text. The clause may never contain operators, tags
- * or statements between the keyword and `from`.
+ * to ordinary prose or JSX text. Only clause tokens may sit between the keyword
+ * and `from`; operators, tags and statements reject the candidate.
  */
 function looksLikeImportClause(masked, keywordStarts, index) {
   for (let cursor = keywordStarts.length - 1; cursor >= 0; cursor -= 1) {
     const start = keywordStarts[cursor];
     if (start >= index) continue;
-    const between = masked.slice(start, index);
-    return IMPORT_CLAUSE_ALLOWED.test(between.replace(/^(?:import|export)/, ""));
+    const between = masked.slice(start, index).replace(/^(?:import|export)/, "");
+    for (const char of between) {
+      if (/\s/.test(char)) continue;
+      if ("{},*.$_".includes(char)) continue;
+      if (IDENTIFIER_PART.test(char)) continue;
+      return false;
+    }
+    return true;
   }
   return false;
 }
 
 /**
  * Extract import/export specifiers and statically unverifiable dynamic imports.
- * Comments, string bodies and template bodies never produce specifiers.
+ * Comments, string bodies and template literal text never produce specifiers;
+ * an interpolation-free template literal used as a dynamic import specifier is
+ * static and does produce one.
  */
 export function scanSource(code) {
   const { masked, literals } = maskSource(code);
@@ -335,10 +388,19 @@ export function scanSource(code) {
     if (char === '"' || char === "'") {
       addSpecifier(position, form);
     } else if (char === "`") {
-      unverifiable.push({
-        line: lineOf(masked, position),
-        form: `${form} with a template-literal specifier`,
-      });
+      const literal = literals.get(position);
+      if (literal !== undefined && literal.template && !literal.interpolated) {
+        specifiers.push({
+          specifier: literal.value,
+          line: lineOf(masked, position),
+          kind: `${form} (template literal)`,
+        });
+      } else {
+        unverifiable.push({
+          line: lineOf(masked, position),
+          form: `${form} with an interpolated template-literal specifier`,
+        });
+      }
     } else if (char !== undefined) {
       unverifiable.push({
         line: lineOf(masked, position),
@@ -390,6 +452,44 @@ export function pythonModuleFor(key) {
   return `speechnexus_contracts.${key.slice(2).replaceAll("-", "_")}`;
 }
 
+/** Normalize a subpath or profile name for the mechanical candidate pairing. */
+function normalizedName(value) {
+  return value.toLowerCase().replaceAll("-", "_");
+}
+
+/**
+ * Report which generated Python modules are imported by repository `.py` files.
+ * Python's own tokenizer decides, so comments, docstrings and ordinary string
+ * literals never count as consumers.
+ */
+export function scanPythonImports(rootDir) {
+  const result = spawnSync("python3", [PYTHON_SCANNER, "--root", rootDir], {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (result.error !== undefined) {
+    return {
+      error: `python3 with the standard library is required to verify Python import evidence: ${result.error.message}`,
+    };
+  }
+  if (result.status !== 0) {
+    return {
+      error: `Python import scan failed: ${(result.stderr || result.stdout || "").trim()}`,
+    };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(result.stdout);
+  } catch (error) {
+    return { error: `Python import scan returned invalid JSON: ${error.message}` };
+  }
+  const imports = new Map();
+  for (const [module, occurrences] of Object.entries(parsed.imports ?? {})) {
+    imports.set(module, occurrences);
+  }
+  return { imports, unparsed: parsed.unparsed ?? [] };
+}
+
 function readJson(file, errors, label) {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -428,172 +528,23 @@ function safeRelative(rootDir, file) {
   return relative.startsWith("..") || path.isAbsolute(relative) ? null : relative;
 }
 
-/** Python files that import one generated module, outside the package itself. */
-export function findPythonImporters(rootDir, module) {
-  const importers = [];
-  const pattern = new RegExp(
-    `(?:^|\\n)\\s*(?:from\\s+${module.replaceAll(".", "\\.")}\\s+import\\b|import\\s+${module.replaceAll(".", "\\.")}\\b)`,
-  );
-  const walk = (dir) => {
-    let entries;
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      if (entry.name.startsWith(".") || SKIP_DIRECTORIES.has(entry.name)) continue;
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        const relative = safeRelative(rootDir, full);
-        if (relative !== null && relative.startsWith(CONTRACTS_PACKAGE)) continue;
-        walk(full);
-      } else if (PYTHON_EXTENSIONS.includes(path.extname(entry.name))) {
-        const relative = safeRelative(rootDir, full);
-        if (relative === null || relative.startsWith(CONTRACTS_PACKAGE)) continue;
-        if (pattern.test(fs.readFileSync(full, "utf8"))) importers.push(relative);
-      }
-    }
-  };
-  walk(rootDir);
-  return importers.sort();
-}
-
-function checkConsumer(rootDir, key, consumer, errors, registryFile) {
-  if (typeof consumer !== "object" || consumer === null || Array.isArray(consumer)) {
-    errors.push({
-      file: registryFile,
-      line: 1,
-      message: `Export '${key}' must declare a consumer object or "consumer": null with retention.`,
-    });
-    return;
+/** Find the `client: false` bindings profile that generates this subpath. */
+function candidateProfile(rootDir, key, errors, seen) {
+  if (seen.bindings === undefined) {
+    seen.bindings = readJson(path.join(rootDir, BINDINGS_PATH), errors, BINDINGS_PATH);
   }
-  if (typeof consumer.path !== "string" || consumer.path === "") {
-    errors.push({
-      file: registryFile,
-      line: 1,
-      message: `Export '${key}' consumer needs a repository-relative "path".`,
-    });
-    return;
+  const bindings = seen.bindings;
+  if (bindings === null || typeof bindings !== "object") return null;
+  const wanted = normalizedName(key.slice(2));
+  for (const [name, profile] of Object.entries(bindings.profiles ?? {})) {
+    if (normalizedName(name) !== wanted) continue;
+    if (profile?.client !== false) continue;
+    if (typeof profile.source !== "string") continue;
+    const source = path.resolve(rootDir, "contracts", profile.source);
+    if (!fs.existsSync(source) || !fs.statSync(source).isFile()) continue;
+    return { name, source: profile.source };
   }
-  const absolute = path.resolve(rootDir, consumer.path);
-  const relative = safeRelative(rootDir, absolute);
-  if (relative === null || relative.startsWith("..")) {
-    errors.push({
-      file: registryFile,
-      line: 1,
-      message: `Export '${key}' consumer path '${consumer.path}' escapes the repository.`,
-    });
-    return;
-  }
-  if (relative.startsWith(CONTRACTS_PACKAGE)) {
-    errors.push({
-      file: registryFile,
-      line: 1,
-      message: `Export '${key}' consumer path '${consumer.path}' is the generated package itself, not a consumer.`,
-    });
-    return;
-  }
-  if (!fs.existsSync(absolute) || !fs.statSync(absolute).isFile()) {
-    errors.push({
-      file: registryFile,
-      line: 1,
-      message: `Export '${key}' consumer path '${consumer.path}' does not exist.`,
-    });
-    return;
-  }
-  const module = pythonModuleFor(key);
-  if (module === null) {
-    errors.push({
-      file: registryFile,
-      line: 1,
-      message: `Export '${key}' has no derivable generated Python module.`,
-    });
-    return;
-  }
-  if (consumer.module !== undefined && consumer.module !== module) {
-    errors.push({
-      file: registryFile,
-      line: 1,
-      message: `Export '${key}' consumer.module '${consumer.module}' must equal the derived '${module}'.`,
-    });
-    return;
-  }
-  if (path.extname(absolute) !== ".py") {
-    errors.push({
-      file: registryFile,
-      line: 1,
-      message: `Export '${key}' consumer '${consumer.path}' must be a Python file importing '${module}'.`,
-    });
-    return;
-  }
-  const pattern = new RegExp(
-    `(?:^|\\n)\\s*(?:from\\s+${module.replaceAll(".", "\\.")}\\s+import\\b|import\\s+${module.replaceAll(".", "\\.")}\\b)`,
-  );
-  if (!pattern.test(fs.readFileSync(absolute, "utf8"))) {
-    errors.push({
-      file: registryFile,
-      line: 1,
-      message: `Export '${key}' consumer '${consumer.path}' does not import ${module}.`,
-    });
-  }
-}
-
-function checkRetention(rootDir, key, retention, errors, registryFile) {
-  if (typeof retention !== "object" || retention === null || Array.isArray(retention)) {
-    errors.push({
-      file: registryFile,
-      line: 1,
-      message: `Export '${key}' with "consumer": null needs a retention object.`,
-    });
-    return;
-  }
-  for (const field of ["decision", "enable", "delete"]) {
-    if (typeof retention[field] !== "string" || retention[field].trim() === "") {
-      errors.push({
-        file: registryFile,
-        line: 1,
-        message: `Export '${key}' retention needs a non-empty '${field}' condition.`,
-      });
-    }
-  }
-  if (typeof retention.basis !== "string" || retention.basis === "") {
-    errors.push({
-      file: registryFile,
-      line: 1,
-      message: `Export '${key}' retention needs a decision document in 'basis'.`,
-    });
-  } else if (!fs.existsSync(path.resolve(rootDir, retention.basis))) {
-    errors.push({
-      file: registryFile,
-      line: 1,
-      message: `Export '${key}' retention basis '${retention.basis}' does not exist.`,
-    });
-  }
-  if (typeof retention.binding !== "string" || retention.binding === "") {
-    errors.push({
-      file: registryFile,
-      line: 1,
-      message: `Export '${key}' retention needs the bindings.json profile in 'binding'.`,
-    });
-    return;
-  }
-  const bindingsFile = path.join(rootDir, BINDINGS_PATH);
-  const bindings = readJson(bindingsFile, errors, "contracts/bindings.json");
-  const profile = bindings?.profiles?.[retention.binding];
-  if (profile === undefined) {
-    errors.push({
-      file: registryFile,
-      line: 1,
-      message: `Export '${key}' retention binding '${retention.binding}' is not a contracts/bindings.json profile.`,
-    });
-  } else if (profile.client !== false) {
-    errors.push({
-      file: registryFile,
-      line: 1,
-      message: `Export '${key}' retention binding '${retention.binding}' generates a client (client != false); a consumerless export is not a retained candidate anymore.`,
-    });
-  }
+  return null;
 }
 
 export function runValidation(rootDir = repoRoot) {
@@ -635,63 +586,24 @@ export function runValidation(rootDir = repoRoot) {
     }
   }
 
-  const registryFile = path.join(rootDir, REGISTRY_PATH);
-  const registry = readJson(registryFile, errors, "the export consumer registry");
-  const unboundRegistry = registry?.unbound ?? {};
-  if (registry !== null && (typeof registry !== "object" || Array.isArray(registry))) {
-    errors.push({ file: registryFile, line: 1, message: "Registry must be a JSON object." });
-  }
-  if (registry?.unbound !== undefined && typeof registry.unbound !== "object") {
-    errors.push({ file: registryFile, line: 1, message: "'unbound' must be an object." });
-  }
-  if (registry !== null && typeof registry === "object" && !Array.isArray(registry)) {
-    for (const [key, entry] of Object.entries(unboundRegistry)) {
-      if (!entries.has(key)) {
-        errors.push({
-          file: registryFile,
-          line: 1,
-          message: `Registered export '${key}' is not declared in packages/contracts/package.json.`,
-        });
-        continue;
-      }
-      if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
-        errors.push({
-          file: registryFile,
-          line: 1,
-          message: `Registered export '${key}' must be an object with 'reason' and 'consumer'.`,
-        });
-        continue;
-      }
-      if (typeof entry.reason !== "string" || entry.reason.trim() === "") {
-        errors.push({
-          file: registryFile,
-          line: 1,
-          message: `Registered export '${key}' needs a non-empty 'reason'.`,
-        });
-      }
-      if (entry.consumer === null) {
-        checkRetention(rootDir, key, entry.retention, errors, registryFile);
-        const module = pythonModuleFor(key);
-        const pythonImporters = module === null ? [] : findPythonImporters(rootDir, module);
-        if (pythonImporters.length > 0) {
-          errors.push({
-            file: registryFile,
-            line: 1,
-            message: `Export '${key}' is registered as consumerless but ${pythonImporters[0]} imports ${module}.`,
-          });
-        }
-      } else {
-        checkConsumer(rootDir, key, entry.consumer, errors, registryFile);
-      }
-    }
-  }
-
   const consumers = new Map([...entries.keys()].map((key) => [key, []]));
 
   // Rules 2-3: manifest imports, declared dependency, no relative package access.
   for (const file of listConsumerFiles(rootDir)) {
     const relative = toPosix(path.relative(rootDir, file));
     if (relative === CONTRACTS_PACKAGE || relative.startsWith(`${CONTRACTS_PACKAGE}/`)) continue;
+    const realFile = realpathOr(file);
+    if (
+      relative.startsWith("web/") &&
+      (realFile === contractsReal || realFile.startsWith(contractsReal + path.sep))
+    ) {
+      errors.push({
+        file,
+        line: 1,
+        message: `Web file is a symlink into the generated package; import '${PACKAGE_SPECIFIER}' or a declared exports subpath instead.`,
+      });
+      continue;
+    }
     const content = fs.readFileSync(file, "utf8");
     const { specifiers, unverifiable } = scanSource(content);
     const owner = owningPackage(rootDir, path.dirname(file));
@@ -742,27 +654,67 @@ export function runValidation(rootDir = repoRoot) {
         errors.push({
           file,
           line,
-          message: `Web code uses ${form}; the contract binding must be statically checkable with a literal specifier.`,
+          message: `Web code uses ${form}; the contract binding must be statically checkable (use a string literal or an interpolation-free template literal).`,
         });
       }
     }
   }
 
-  // Rule 4: every export is consumed, or registered with verifiable evidence.
+  // Rule 4: every export has a mechanical account -- consumer, real Python
+  // import, or a generated client-less candidate. No free-text exemption exists.
+  const python = scanPythonImports(rootDir);
+  if (python.error !== undefined) {
+    errors.push({ file: PYTHON_SCANNER, line: 1, message: python.error });
+  } else {
+    for (const relative of python.unparsed) {
+      errors.push({
+        file: path.join(rootDir, relative),
+        line: 1,
+        message: `Cannot tokenize '${relative}' while verifying Python import evidence.`,
+      });
+    }
+  }
+  const seen = {};
   for (const key of entries.keys()) {
     const used = consumers.get(key) ?? [];
-    const registered = Object.hasOwn(unboundRegistry, key);
-    if (used.length === 0 && !registered) {
+    if (used.length > 0) continue;
+    const module = pythonModuleFor(key);
+    if (module === null) {
       errors.push({
         file: manifestPath,
         line: 1,
-        message: `Export '${key}' has no consumer. Bind it in web (or a workspace consumer), or register the reason and evidence in ${REGISTRY_PATH}.`,
+        message: `Export '${key}' has no consumer. Non-Python subpath bundles (for example schemas/*.json) have no candidate channel; add a manifest consumer.`,
       });
-    } else if (used.length > 0 && registered) {
+      continue;
+    }
+    const moduleFile = path.join(rootDir, GENERATED_PYTHON_DIR, `${module.split(".").pop()}.py`);
+    const moduleExists = fs.existsSync(moduleFile) && fs.statSync(moduleFile).isFile();
+    if (python.error === undefined) {
+      const importers = python.imports.get(module) ?? [];
+      if (importers.length > 0) {
+        if (moduleExists) continue;
+        errors.push({
+          file: manifestPath,
+          line: 1,
+          message: `Export '${key}' is imported by ${importers[0].file} but the generated module '${toPosix(path.relative(rootDir, moduleFile))}' is missing.`,
+        });
+        continue;
+      }
+    }
+    if (!moduleExists) {
       errors.push({
-        file: registryFile,
+        file: manifestPath,
         line: 1,
-        message: `Export '${key}' is registered as unbound but is consumed by ${used[0].file}:${used[0].line}; remove the stale registration.`,
+        message: `Export '${key}' has no consumer and no generated module '${toPosix(path.relative(rootDir, moduleFile))}'; it cannot be a generated candidate.`,
+      });
+      continue;
+    }
+    const profile = candidateProfile(rootDir, key, errors, seen);
+    if (profile === null) {
+      errors.push({
+        file: manifestPath,
+        line: 1,
+        message: `Export '${key}' has no consumer and no matching "client": false profile in ${BINDINGS_PATH} (profile name normalized to '${normalizedName(key.slice(2))}' with an existing source).`,
       });
     }
   }
@@ -788,7 +740,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
     process.exit(1);
   }
   console.log(
-    "\x1b[32m[PASSED]\x1b[0m Generated-contract exports, consumers and workspace dependencies are aligned.",
+    "\x1b[32m[PASSED]\x1b[0m Generated-contract exports, consumers and workspace bindings are mechanically accounted for.",
   );
   process.exit(0);
 }

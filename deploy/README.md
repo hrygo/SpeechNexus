@@ -385,6 +385,52 @@ Production entry points, Host/Origin policy, shared service credentials, backup,
 object IAM and capacity qualification remain deployment decisions. The initial
 product has no login, user directory, RBAC or tenant isolation.
 
+### Host and Origin inputs the deployment must cover
+
+The asset, group and draft routes share one Host/Origin guard
+(`backend/src/speechnexus_backend/speech/interfaces/http/origin_policy.py`) that
+runs before any handler and before any database access. Two deployment inputs
+decide it, and neither may stay absent from the deployment unit:
+
+- `SPEECHNEXUS_ASSET_ALLOWED_ORIGINS` is **empty by default**, and an empty list is
+  an empty allow-list, not "same origin only". A request that carries an `Origin`
+  is refused with `403 asset_origin_rejected`, and a browser always sends `Origin`
+  on `POST`. **A deployment that does not configure this key cannot upload from
+  `/workbench` or `/admin` at all**: the stack starts clean and the refusal waits
+  until the first upload. `deploy/compose.yaml` passes the two published Web
+  origins — `http://127.0.0.1:8080` (`/admin`) and `http://127.0.0.1:8081`
+  (`/workbench`), plus their `localhost` spellings — so a copy of this topology
+  works from a browser. Those defaults do not follow `SPEECHNEXUS_ADMIN_HOST_PORT`
+  or `SPEECHNEXUS_WORKBENCH_HOST_PORT`; change the key together with them. A value
+  is a JSON array; a list without a scheme or with a path or credentials stops API
+  startup.
+- `SPEECHNEXUS_ASSET_ALLOWED_HOSTS` defaults to `localhost`, `127.0.0.1` and `::1`.
+  The Web tier forwards the browser's authority without its port (`Host $host`),
+  so the loopback names already match the published Web origins. Every other
+  fronting hostname or address must be added, or requests answer
+  `403 asset_host_rejected`.
+
+The Independent Workbench API has the same pair under its own prefix:
+`SPEECHNEXUS_WORKBENCH_ALLOWED_ORIGINS` is the published Web origin the frontend
+loads from (assembled in `deploy/compose.yaml` from
+`SPEECHNEXUS_WORKBENCH_HOST_PORT`), and `SPEECHNEXUS_WORKBENCH_ALLOWED_HOSTS`
+defaults to the loopback names.
+
+`tests/ci/test_deploy_browser_origin_inputs.py` derives every `*_hosts` and
+`*_origins` field of the settings models and requires each one to be forwarded by
+`deploy/compose.yaml`, or listed in `deploy/compose.env.example`, or named below.
+A new browser-facing boundary key therefore turns CI red until the deployment
+unit or this list covers it.
+
+- `SPEECHNEXUS_ASSET_ALLOWED_ORIGINS` — must name every browser-facing origin of
+  this deployment, not only its default one.
+- `SPEECHNEXUS_ASSET_ALLOWED_HOSTS` — must additionally name a non-loopback
+  hostname or address whenever the Web tier is fronted by one.
+- `SPEECHNEXUS_WORKBENCH_ALLOWED_ORIGINS` — must name the published Web origin
+  because the Workbench runtime keeps no non-empty default.
+- `SPEECHNEXUS_WORKBENCH_ALLOWED_HOSTS` — must additionally name a non-loopback
+  hostname or address whenever the Workbench is fronted by one.
+
 ## Optional writers and background units
 
 Asset HTTP routes can use the local object credentials, but production must

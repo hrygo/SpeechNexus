@@ -174,6 +174,18 @@ services:
       SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL: ${SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL:?set SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL in compose.env}
       SPEECHNEXUS_EXECUTION_GATEWAY_TIMEOUT_SECONDS: ${SPEECHNEXUS_EXECUTION_GATEWAY_TIMEOUT_SECONDS:-10}
       SPEECHNEXUS_ASSET_DEFAULT_TTL_SECONDS: ${SPEECHNEXUS_ASSET_DEFAULT_TTL_SECONDS:-604800}
+      # Host/Origin boundary for POST /v1/nexus/assets (the same guard covers the
+      # group and draft routes). An empty origins list is an empty allow-list, not
+      # "same origin only": every request that carries an Origin answers
+      # 403 asset_origin_rejected, and a browser always sends Origin on POST. The
+      # defaults below are the two published Web origins that serve /admin and
+      # /workbench, in both loopback spellings, because the Web tier forwards the
+      # browser's Host and Origin unchanged. They do not follow
+      # SPEECHNEXUS_ADMIN_HOST_PORT / SPEECHNEXUS_WORKBENCH_HOST_PORT: change them
+      # together when those ports move. Both values are JSON arrays, not comma
+      # separated lists, because the settings field is a tuple.
+      SPEECHNEXUS_ASSET_ALLOWED_ORIGINS: '${SPEECHNEXUS_ASSET_ALLOWED_ORIGINS:-["http://127.0.0.1:8080","http://127.0.0.1:8081","http://localhost:8080","http://localhost:8081"]}'
+      SPEECHNEXUS_ASSET_ALLOWED_HOSTS: '${SPEECHNEXUS_ASSET_ALLOWED_HOSTS:-["localhost","127.0.0.1","::1"]}'
       # text (default) keeps asr_input/voice_reference at 503
       # asset_inspection_unavailable and needs no extra container. audio calls the
       # private inspection container over the `asset-inspection` network and needs

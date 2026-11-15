@@ -22,6 +22,9 @@ _PROBE_SPEC.loader.exec_module(_PROBE)
 _GATE = _WORKFLOW["jobs"]["required_checks"]
 _STATES = ("success", "failure", "skipped", "cancelled", "")
 _DELIVERY = {"MATRIX_RESULT": "success"}
+# `docs_refs` (the `文件:行号` reference gate) has no scope filter: every PR runs
+# it, so every scope owes it a success rather than a skip (#859).
+_REFERENCE = {"DOCS_REFS_RESULT": "success"}
 # `docs_format` is the only lane a prose-only change owes; every heavier scope owes
 # the same file set through `python_static`' `uv run ruff format --check .`.
 # `INTEGRATION_RESULT` is the route's own integration evidence: a `web` change owes
@@ -31,6 +34,7 @@ _DELIVERY = {"MATRIX_RESULT": "success"}
 _EXPECTED = {
     "docs": {
         **_DELIVERY,
+        **_REFERENCE,
         "DOCS_FORMAT_RESULT": "success",
         "PYTHON_RESULT": "skipped",
         "INTEGRATION_GATE_RESULT": "skipped",
@@ -41,6 +45,7 @@ _EXPECTED = {
     },
     "web": {
         **_DELIVERY,
+        **_REFERENCE,
         "DOCS_FORMAT_RESULT": "skipped",
         "PYTHON_RESULT": "success",
         "INTEGRATION_GATE_RESULT": "skipped",
@@ -51,6 +56,7 @@ _EXPECTED = {
     },
     "full": {
         **_DELIVERY,
+        **_REFERENCE,
         "DOCS_FORMAT_RESULT": "skipped",
         "PYTHON_RESULT": "success",
         "INTEGRATION_GATE_RESULT": "success",
@@ -61,6 +67,7 @@ _EXPECTED = {
     },
     "no-db": {
         **_DELIVERY,
+        **_REFERENCE,
         "DOCS_FORMAT_RESULT": "skipped",
         "PYTHON_RESULT": "success",
         "INTEGRATION_GATE_RESULT": "skipped",
@@ -299,7 +306,11 @@ def test_measured_coverage_is_exported_and_each_shard_uploads_its_dataset() -> N
 def _run_gate(
     env: dict[str, str], *, matrix_result: str | None = "success"
 ) -> subprocess.CompletedProcess[str]:
-    defaults = {"CONTROLLER_RESULT": "success", "CONTROLLER_REQUIRED": "false"}
+    defaults = {
+        "CONTROLLER_RESULT": "success",
+        "CONTROLLER_REQUIRED": "false",
+        "DOCS_REFS_RESULT": "success",
+    }
     if matrix_result is not None:
         defaults["MATRIX_RESULT"] = matrix_result
     return subprocess.run(
@@ -327,6 +338,7 @@ def test_protected_status_never_passes_missing_evidence(
         "web",
         "compose",
         "docs_matrix",
+        "docs_refs",
         "reference_acceptance",
         "controller_image",
     }
@@ -336,6 +348,7 @@ def test_protected_status_never_passes_missing_evidence(
         "MODE": "${{ needs.routing.outputs.mode }}",
         "ROUTING_RESULT": "${{ needs.routing.result }}",
         "MATRIX_RESULT": "${{ needs.docs_matrix.result }}",
+        "DOCS_REFS_RESULT": "${{ needs.docs_refs.result }}",
         "DOCS_FORMAT_RESULT": "${{ needs.docs_format.result }}",
         "PYTHON_RESULT": "${{ needs.python_gate.result }}",
         "INTEGRATION_GATE_RESULT": "${{ needs.integration_gate.result }}",
@@ -389,6 +402,15 @@ def test_final_gate_requires_the_reference_acceptance_entry(mode: str, state: st
     result = _run_gate({"MODE": mode, "ROUTING_RESULT": "success", **states})
     expected = "skipped" if mode in ("docs", "web") else "success"
     assert (result.returncode == 0) is (state == expected)
+
+
+@pytest.mark.parametrize("mode", list(_EXPECTED))
+@pytest.mark.parametrize("state", _STATES)
+def test_final_gate_requires_the_document_reference_lane(mode: str, state: str) -> None:
+    # The reference gate is unfiltered, so no scope may treat a skip as applicable.
+    states = {**_EXPECTED[mode], "DOCS_REFS_RESULT": state}
+    result = _run_gate({"MODE": mode, "ROUTING_RESULT": "success", **states})
+    assert (result.returncode == 0) is (state == "success")
 
 
 @pytest.mark.parametrize("mode", list(_EXPECTED))

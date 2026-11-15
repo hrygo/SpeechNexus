@@ -9,7 +9,7 @@ CI 使用[工作流](../../.github/workflows/ci.yml)和[标准库路由](../../s
 
 | 触发或变更 | 范围 |
 | --- | --- |
-| PR 仅修改任意层级的 `AGENTS.md` / `README*`（含 `web/AGENTS.md`、`tests/integration/AGENTS.md`、各级 `README.md`，例外见下）、`docs/` 内 Markdown、`.agents/skills/<skill>/` 内 Markdown / JSON / YAML | 路由回归、审查 PR 路径边界、Design Token 与契约消费者绑定静态门禁、Markdown 代码块格式检查（独立作业 `docs_format`）、差异检查、矩阵新鲜度检查（仅矩阵、关联源、快照或生成器变化时重渲染）、Node Controller 镜像范围检查与其门禁、最终门禁；镜像构建按独立范围判定，通常跳过。不安装项目依赖、不启动业务测试服务。差异检查以取得准确基线为前提；否则回退全量 |
+| PR 仅修改任意层级的 `AGENTS.md` / `README*`（含 `web/AGENTS.md`、`tests/integration/AGENTS.md`、各级 `README.md`，例外见下）、`docs/` 内 Markdown、`.agents/skills/<skill>/` 内 Markdown / JSON / YAML | 路由回归、审查 PR 路径边界、Design Token 与契约消费者绑定静态门禁、Markdown 代码块格式检查（独立作业 `docs_format`）、`路径:行号` 引用门禁（独立作业 `docs_refs`）、差异检查、矩阵新鲜度检查（仅矩阵、关联源、快照或生成器变化时重渲染）、Node Controller 镜像范围检查与其门禁、最终门禁；镜像构建按独立范围判定，通常跳过。不安装项目依赖、不启动业务测试服务。差异检查以取得准确基线为前提；否则回退全量 |
 | PR 仅修改已知 Web 源码/静态资产，可混合上述文档 | Python 静态/契约检查、覆盖率数据采集、完整 Web 检查，以及 Web 能力道 `Integration 4`/`Integration 5`（真实后端 + PostgreSQL/MySQL/MinIO + 真实浏览器）；采集作业仍使用私有 PostgreSQL 和 MinIO，DB-only 分片 0–3、覆盖率判定与部署检查不适用 |
 | PR 仅修改已知独立引擎目录或明确列出的引擎单元测试，可混合上述 Web/文档 | `no-db`：保留 Python 静态/契约检查、覆盖率数据采集、完整 Web、构建和部署检查；采集作业仍使用私有 PostgreSQL 和 MinIO，八个双数据库集成分片、覆盖率判定及其汇总不适用 |
 | CI、脚本、测试、依赖、配置、契约、迁移、部署、其他路径或空/不确定差异 | 完整 Python/Web/部署检查，八个 PG/InnoDB/MinIO 分片及证据汇总 |
@@ -54,7 +54,7 @@ Skill 的说明、参考、合成评测数据及展示元数据不参与产品�
 
 正文范围的 Markdown 代码块格式由独立作业 `docs_format` 把关。Ruff 的格式化器会解析并重排 Markdown 内标记为 `python` 的代码块，而 `docs` 范围不执行 `python_static`，`uv run ruff format --check .` 因而在这条路径上从未运行：PR #659、#661 是单文件 `docs/reviews/` 新增（路由输出 `{"mode": "docs"}`），CI 显示 lint 作业 skipping 后正常合并，随后 `main` 的 push 运行在 `Check Python formatting with Ruff` 上变红（`docs/reviews/2026-11-13-ci-acceptance-gate.md:399`、`docs/reviews/2026-11-13-reference-acceptance-rework.md:399`），并让 #662 的同类红被误判为它自身的问题（#673）。该作业只检出仓库并用 `uvx --from "ruff==${RUFF_VERSION}"` 安装锁定版本（与 `uv.lock` 的 `ruff` 版本一致，`tests/ci/test_ci_ruff_pin.py` 双向核对这一处钉住的版本），不安装项目依赖；命令与 `python_static` 的格式步骤逐字相同（`ruff format --check .`），所以检查的文件集合不会比全量道窄，也不存在第二份会与路由白名单漂移的路径清单。范围映射：`docs` 期望 success，`web`／`no-db`／`full` 期望 skipped——这三种范围已由 `python_static` 执行同一命令，重复运行只增加固定开销；`Gate: required checks for this change` 按此映射核对，`docs` 上失败、取消或意外跳过都使门禁失败。
 
-**覆盖边界**：这只覆盖 Ruff 能解析的代码块，即标记为 `python`（或 `py`）的围栏；标记为 `text`、`bash`、`yaml`、`json`、`sql` 的围栏从不解析，其中的错误命令、失效路径、非法 JSON／YAML 仍可通过。`ruff check` 不检查 Markdown，因此代码块内的 lint 级问题（未使用变量、导入顺序、命名）也不在范围内。文档结构、链接与 `路径:行号` 引用、双语 README 一致性、`.agents/skills/` 内 JSON／YAML 的有效性同样无人检查：`scripts/dev-env/check-doc-refs.py` 仍是未接入 CI 的本地报告工具。格式检查只保证「能解析且排版一致」，不证明代码块内容可执行、输出正确或与实现同步，仍需人工审查。
+**覆盖边界**：这只覆盖 Ruff 能解析的代码块，即标记为 `python`（或 `py`）的围栏；标记为 `text`、`bash`、`yaml`、`json`、`sql` 的围栏从不解析，其中的错误命令、失效路径、非法 JSON／YAML 仍可通过。`ruff check` 不检查 Markdown，因此代码块内的 lint 级问题（未使用变量、导入顺序、命名）也不在范围内。文档结构、普通 Markdown 链接、双语 README 一致性、`.agents/skills/` 内 JSON／YAML 的有效性同样无人检查；`路径:行号` 引用由独立作业 `docs_refs` 把关（见[文档引用门禁](#文档引用门禁)），它的判据不覆盖上述项目，也不证明引用目标行的内容与文档描述相符。格式检查只保证「能解析且排版一致」，不证明代码块内容可执行、输出正确或与实现同步，仍需人工审查。
 
 审查 PR 的改动路径由 `routing` 作业里的 `scripts/dev-env/check-review-pr-boundary.py` 把控。第 4 步「按风险审查与验证」只给出两条作者自律命令（`git status --porcelain`、`git diff origin/main...HEAD --stat`），CI 对它们从不响应：曾有审查 PR 从被审 head 拉出，报告之外携带了与被审字节相同的实现，squash `f88279dc` 以 `review:` 标题进主干，而被审实现最终又以另一份修订版 `4ad6cad7` 合并——被审代码与进主干的代码不是同一份（#738）。
 
@@ -62,7 +62,7 @@ Skill 的说明、参考、合成评测数据及展示元数据不参与产品�
 
 比较端点由检出形态决定。`pull_request` 事件的 `actions/checkout` 默认检出 `refs/pull/<n>/merge`，`HEAD` 是 GitHub 生成的合并提交：主题为 `Merge <head> into <base>`，第一父提交是构建合并引用时的基分支头，第二父提交是 PR head。门禁比较该合并提交与它的第一父提交，得到的正是本 PR 叠加到基分支上的改动；主干在此期间合进的内容已包含在第一父提交里，不进入比较集。`github.event.pull_request.base.sha` 停在该 PR 最近一次事件，主干一动它就落后，`git diff base.sha..HEAD` 会把主干期间的提交算成本 PR 的改动，而三点也无效：`base.sha` 是合并提交第一父提交的祖先，`merge-base(base.sha, HEAD)` 就是 `base.sha` 本身。实测（2026-11-14，运行 43564561839，PR #741）：`base.sha=d58127c0`、合并提交第一父 `4514b65b`、第二父 `c7d924bf`，两点口径得到 31 条路径——三份 `docs/reviews/2026-11-14-*.md` 来自主干，另 28 条是主干合入的契约、工作流、脚本与测试——结构信号据此把标题为 `test:` 的 PR 判成「审查 PR 携带实现」；改按第一父提交比较后，同一输入只剩该 PR 自己的 9 条路径。检出被固定到 `head.sha`（本地运行或显式 `ref`）时没有合并提交，改用三点：`merge-base(base.sha, HEAD)..HEAD`，该 `merge-base` 即分叉点。形态由提交本身判定，且父提交**按顺序**核对：第一父必须是 `into` 之后的基分支头，第二父才是 `Merge` 之后的 head。只比集合不够——主题把两个角色写反时集合仍然相等，比较起点会落到本 PR 的 head 上，恰好看不到它自己携带的实现（审查在 #751 里构造出这条可执行输入：未声明、真混了实现的 PR 被判绿），所以有序比对是父角色倒置的唯一守卫。`--head-sha` 只用于发现事件与检出不一致（re-run 读到旧 payload、push 与检出竞态），不一致时打 `::warning title=Review PR boundary comparison::` 并**仍按第一父比较**：此时退回 `merge-base(base.sha, HEAD)` 恰好就是合并引用下的两点口径，会把一次正常重跑变成假红。`routing` 以 `fetch-depth: 1` 检出，本地只有合并提交本身，第一父提交按 SHA 抓取一次（与路由抓取 `base.sha` 同一机制，失败退避重试一次），取不到即按失败关闭处理。
 
-归属与调度：该检查留在 `routing` 作业内。`routing` 与 `docs_matrix` 是两条没有作业级 `if:`、每个 PR 都执行的作业（其余作业按范围或依赖过滤）；选 `routing` 的真实理由是它在本步骤之前已经检出仓库并算出路由用的精确差异，边界检查因此不需要第二次检出，红灯也直接归因到路由；第一父提交在 `fetch-depth: 1` 下按 SHA 抓取一次，与路由抓取 `base.sha` 是同一机制。审查 PR 恰好都是 `docs` 范围 PR，放进按范围过滤的作业就会恰好在它该跑的地方被跳过。步骤排在路由之后，`routing` 失败使 `Gate: required checks for this change` 因 `ROUTING_RESULT != success` 变红，因此这条门禁自身就受合并门禁约束，不需要也不支持 `--admin` 绕过。
+归属与调度：该检查留在 `routing` 作业内。`routing`、`docs_matrix` 与 `docs_refs` 是没有作业级 `if:`、每个 PR 都执行的作业（其余作业按范围或依赖过滤）；选 `routing` 的真实理由是它在本步骤之前已经检出仓库并算出路由用的精确差异，边界检查因此不需要第二次检出，红灯也直接归因到路由；第一父提交在 `fetch-depth: 1` 下按 SHA 抓取一次，与路由抓取 `base.sha` 是同一机制。审查 PR 恰好都是 `docs` 范围 PR，放进按范围过滤的作业就会恰好在它该跑的地方被跳过。步骤排在路由之后，`routing` 失败使 `Gate: required checks for this change` 因 `ROUTING_RESULT != success` 变红，因此这条门禁自身就受合并门禁约束，不需要也不支持 `--admin` 绕过。
 
 调度证据等级：**已实测**。此前登记的缺口是「docs 路由下本步骤真的执行」没有日志观测，审查 PR #751 的运行 43570172238、43570366503 补上了它：`routing` 先输出 `{"mode": "docs", "reason": "Only prose or skill documents/metadata changed; heavy checks are out of scope."}`，紧接着本步骤输出 `{"applicable": true, "ok": true, "signals": ["title prefix", "branch prefix"], "violations": [], "reports": ["docs/reviews/2026-11-14-boundary-merge-base.md"], "reason": "Review PR changes only docs/reviews/ (1 report file(s))."}` 与 `review-pr-boundary: Review PR changes only docs/reviews/ (1 report file(s)).`，作业成功。**限定**：这两次运行执行的是**基线版**脚本与 `ci.yml`（分支基于当时的主干，未含 #749 的改动），因此它们证明的是**调度与执行**——docs 路由确实到达该作业、步骤无 `if:` 的判断成立——不是新比较端点在 docs 路由下的行为。工作流定义取自 PR 的合并提交（含 head 的 `ci.yml` 改动），不是基线分支的版本：#749 的运行 43567960143 里该步骤命令带 `--head-sha="$HEAD_SHA"`、环境含 `HEAD_SHA: 9d6b08c2485d377917ad553464806771c9e7ae44`，而基线 `cdf60a9e` 的 `ci.yml` 没有这个参数。
 
@@ -94,6 +94,7 @@ Node Controller 镜像验证由 CI 以同提交的 [reusable workflow](../../.gi
 | `controller_image` | `Node Controller: image evidence` | 调用镜像 scope、双架构构建与内部证据门禁，按输入差异决定是否构建 |
 | `docs_format` | `Docs: markdown code block formatting` | 以与 `uv.lock` 一致的锁定 Ruff 复跑 `ruff format --check .`（含 Markdown 内 Python 代码块）；只在 `docs` 范围执行，只装 Ruff 自身，不安装项目依赖 |
 | `docs_matrix` | `Docs: delivery matrix freshness` | 从提交快照离线重渲染矩阵并比对；仅矩阵、关联源、快照或生成器变化时执行渲染 |
+| `docs_refs` | `Docs: path:line references` | 校验 `docs/` 内 `路径:行号` 引用；终态文档全量门禁、过程记录只计数（按基线报增量）；无范围过滤，只用系统 Python 与标准库 |
 | `required_checks` | `Gate: required checks for this change` | 按已验证范围核对全部适用结果，阻止失败、取消与意外跳过 |
 | `web` | `Web: lint, types, tests, build and accessibility` | 格式、lint、TypeScript、SDK 契约、workspace 测试和构建、Web 镜像构建上下文完整性、真实浏览器无障碍与对比度 |
 | `compose` | `Compose: configuration validation` | 执行 `docker compose config --quiet`，不启动服务或发布部署 |
@@ -478,7 +479,7 @@ uv run python scripts/dev-env/python-coverage.py combine \
 | `Python:` | Python 执行或静态检查 | `python_tests`、`python_static` |
 | `Integration <n>/8:` | 八个分片之一，`/8` 明示总数；6/7 两片带真实浏览器 | `integration_shards` |
 | `Gate:` | 只验收证据、不重跑测试 | `integration_gate`、`python_gate`、`required_checks` |
-| `Docs:` | 文档车道的轻量检查 | `docs_format`、`docs_matrix` |
+| `Docs:` | 文档车道的轻量检查 | `docs_format`、`docs_matrix`、`docs_refs` |
 | `Web:` / `Compose:` / `Deploy:` / `Node Controller:` / `Image:` | 对应领域的执行与证据 | `web`、`compose`、`reference_acceptance`、`controller_image` 及两个镜像 reusable workflow |
 
 三个受保护状态名（`Gate: required checks for this change`、`Web: lint, types, tests, build and accessibility`、`Compose: configuration validation`）**保持不变**，它们是分支保护的必需检查，改名必须同步保护列表；其余显示名与内部 job ID 一一对应，本次一并改为可辨识的名称。镜像 reusable workflow 里原先没有 `name:` 的 `scope` 作业原先在列表中只显示为 YAML key `scope`，看不出它决定了「本次是否需要构建」，现补为 `Image: required for this change`；两个镜像 workflow 的 `image` 与 `gate` 也统一为 `Image:` / `Gate:` 前缀并写明是哪个镜像。内部依赖、`needs`、命令、范围映射与超时不随改名改变。
@@ -541,9 +542,96 @@ uv run pytest tests/ci tests/contract/test_ci_workflow.py tests/unit/test_integr
 
 需要完整复核时可在 Actions 手动运行 CI；本机完整检查仍按 [AGENTS.md](../../AGENTS.md) 的宿主和隔离服务前置条件执行。
 
-## 文档引用检查（非门禁）
+## 文档引用门禁
 
-[check-doc-refs.py](../../scripts/dev-env/check-doc-refs.py) 是本地报告工具，检查 `docs/` 内 `路径:行号` 引用是否存在、越界或同名文件歧义；发现问题时打印 `RESULT FAIL` 并以退出码 1 结束。当前 CI 工作流未调用该脚本，它不属于必需检查、作业门禁或路由范围，失败不阻止合并。需要时手工运行 `python3 scripts/dev-env/check-doc-refs.py`；`--show` 会同时打印被引用行原文，便于核对内容是否与文档描述一致。
+[check-doc-refs.py](../../scripts/dev-env/check-doc-refs.py) 校验 `docs/` 内 `路径:行号` 引用的目标是否存在、行号是否越界。判据只有三种，都是机械的：路径在仓库里不存在（`MISSING`）、行号超过文件总行数（`OUT_OF_RANGE`）、只写裸文件名且仓库里同名文件不止一个（`AMBIGUOUS`）。行内标注「外部依赖」的引用不计入问题。
+
+### 终态文档与过程记录
+
+| 类别 | 范围 | 处置 |
+| --- | --- | --- |
+| 终态文档 | `docs/` 下除过程记录外的全部 Markdown（`architecture/`、`operations/`、`components/`、`design/`、`decisions/`、`plans/`、`prd.md`、各级 `README.md`、`validation/` 下的非 dated 文件等） | 全量门禁，一条问题即红 |
+| 过程记录 | `docs/reviews/**`、`docs/archive/**`、`docs/validation/YYYY-MM-DD-*.md` | 只计数，不门禁；按基线报增量 |
+
+依据是 [AGENTS.md](../../AGENTS.md)「文档终态与事实化」对两者的区分。过程记录按约定保留原时点事实：审查报告引用的是当时的代码行、临时 worktree 绝对路径（`/private/tmp/sn772/...`）和从未提交的探针文件，这些引用失效本身就是证据，改动它们等于篡改证据。而长期 `RESULT FAIL` 的检查等于没有检查：接入 CI 前全量扫描的 138 条问题里 137 条出自 `docs/reviews/`、1 条出自 dated 验证记录、**0 条出自终态文档**，真正的终态文档漂移会被这套噪音淹没。判不准的路径一律按终态文档处理，宁可让它变红。
+
+`docs/reviews/` 的豁免有内容守卫，判据两项，都作用在文件自身而不是路径可见性：
+
+- 文件名形如 `<YYYY-MM-DD>-*.md`；
+- 一级标题写明审查／复核／核对，且开头 400 字符引用 issue/PR 编号（`#<数字>`）。
+
+只查文件名不够：把终态文档另存成合规文件名，它的引用就全部降级成「记录」不计门禁。加内容判据后，当前 68 份审查报告全部通过，而 `docs/` 下 123 个终态文档的原文搬到合规文件名下全部被拒（`docs/architecture/speech-api.md` 也在其中——它的首个 `#<数字>` 是目录锚点 `(#1-…`，不是 issue 号）。布局不合约定时检查直接失败，且不能用基线接受——基线只登记引用问题，不登记目录布局。
+
+这条守卫防的是误放，不是对抗伪装：刻意在开头补一句「审查 #859」仍能通过，那样的改动同时改了路径与内容、在 diff 里可见。`tests/ci/test_doc_refs_ratchet.py` 对当前语料逐份核对这两条判据仍然成立（68 份报告通过、123 个终态文档副本被拒），文档里这一句不靠人工记忆保鲜。
+
+### 围栏代码块不算引用
+
+围栏（三个连续反引号或三个波浪号界定）内的 `路径:行号` 不参与检查。围栏里贴的是命令输出、探针摘录或示例片段，是文档引用的别人产物，不是作者对当前文件的指认；按引用计入时，20 条 `MISSING` 来自审查记录里的探针输出与 `/private/tmp` 绝对路径，指向从未提交的 `zz-probe-*.ts` 与临时 worktree。接入 CI 时实测：1427 条 `路径:行号` 文本里有 119 条落在围栏内，若按引用计入会多出 27 条问题（21 `MISSING`、5 `AMBIGUOUS`、1 `OUT_OF_RANGE`）——其中 20 条 `MISSING` 来自审查记录的探针输出与 `/private/tmp` 临时 worktree 路径；终态文档正文（围栏外）的问题数为 0。
+这条规则对终态文档同样生效，也就是「看不见」：终态文档围栏内的文本只计入 `SUMMARY` 的 `fenced_terminal=`，不判定。理想形态是围栏排除只对过程记录生效，但本门禁的证据块本身要在围栏里贴失败的 `RESULT FAIL` 输出（就是本节下文那几段），按范围收窄会把证据块判成坏引用。因此保留统一排除，并用 `fenced_terminal=` 把终态文档这部分规模摆在报告里：当前为 4 条，全部来自本节自己的证据块。收窄到过程记录是未做的后续项。
+
+### 棘轮与基线
+
+`--baseline <json>` 只对基线之外的新增终态问题变红；`terminal` 为空列表时等价全量门禁。[doc-refs-baseline.json](../../scripts/dev-env/doc-refs-baseline.json) 就是这样一份基线：`terminal: []`，`records` 记录过程记录的问题计数（`docs/reviews`：`AMBIGUOUS=88`、`MISSING=23`、`OUT_OF_RANGE=1`；`docs/validation`：`AMBIGUOUS=1`），只用于在报告里显示增量，不参与判定。要接受一条终态问题只能改 `terminal` 列表，那次改动在 PR diff 里可见，不是静默放行；`--write-baseline` 按当前结果重写基线，基线登记的问题消失时报告打印 `BASELINE stale=`，由同一条命令缩短。
+
+输出固定四段：逐条问题（终态问题在前，新增标注 `[新增,基线外]`、基线已接受标注 `[基线已接受]`；过程记录默认只给计数，`--show-records` 逐条打印）、`SUMMARY`（`refs` 参与判定的引用数、`fenced` 围栏内跳过数、`fenced_terminal` 其中来自终态文档的条数、各判定计数）、`SCOPE`／`RECORDS`（终态与过程记录分目录计数，带基线时给出 `旧->新` 增量）、`RESULT PASS|FAIL`。退出码 0 表示没有新增终态问题（过程记录的增长不影响），1 表示有新增终态问题或目录布局不合约定，2 表示环境不可用（不在 git 仓库、扫描路径不存在、基线不可读）。
+
+### 作业与门禁
+
+`docs_refs`（`Docs: path:line references`）只检出仓库，用 runner 的系统 Python 3.12+ 与标准库执行 `python3 scripts/dev-env/check-doc-refs.py --baseline scripts/dev-env/doc-refs-baseline.json`，不安装项目依赖；超时 3 min 是预算，本机实测脚本本身约 0.25 s（接入时 385 份 Markdown、1427 条 `路径:行号` 文本）。它没有范围过滤，和 `routing`、`docs_matrix` 一样每个 PR 都执行：源码 PR 删改被引用文件同样会让终态文档的引用失效，按范围过滤就会恰好在最需要它的地方跳过。`Gate: required checks for this change` 要求该作业 success，不按范围映射——`docs` 与全量范围都执行，失败、取消或跳过都使门禁失败。
+
+### 实测反例
+
+四段都在本机以 Python 3.12（CI runner 的系统 Python 版本）执行，命令与 CI 相同：第一段是基线树；第二、三段分别往终态文档与过程记录里注入坏引用；第四段把终态文档搬到 `docs/reviews/` 的合规文件名下。计数随 `docs/` 内容变化，包括本节自身的改动，以实际运行输出为准：
+
+```text
+$ python3 scripts/dev-env/check-doc-refs.py --baseline scripts/dev-env/doc-refs-baseline.json
+SUMMARY refs=1308 fenced=121 fenced_terminal=4 AMBIGUOUS=89 EXTERNAL=1 MISSING=23 OK=1194 OUT_OF_RANGE=1
+SCOPE terminal problems=0 new=0 accepted=0
+SCOPE record problems=113 docs/reviews AMBIGUOUS=88 MISSING=23 OUT_OF_RANGE=1; docs/validation AMBIGUOUS=1
+RESULT PASS                                    # exit=0
+
+$ # 终态文档注入一条坏引用：docs/architecture/speech-api.md 末尾
+[MISSING] docs/architecture/speech-api.md:616  ->  backend/src/speechnexus_backend/does_not_exist.py:7  (仓库内不存在该文件)  [新增,基线外]
+SUMMARY refs=1309 fenced=121 fenced_terminal=4 AMBIGUOUS=89 EXTERNAL=1 MISSING=24 OK=1194 OUT_OF_RANGE=1
+SCOPE terminal problems=1 new=1 accepted=0
+RESULT FAIL                                    # exit=1
+
+$ # docs/reviews/ 新增一份审查报告（标题写审查、开头带 #859），含一条坏引用
+SUMMARY refs=1309 fenced=121 fenced_terminal=4 AMBIGUOUS=89 EXTERNAL=1 MISSING=24 OK=1194 OUT_OF_RANGE=1
+SCOPE record problems=114 docs/reviews AMBIGUOUS=88 MISSING=24 OUT_OF_RANGE=1; docs/validation AMBIGUOUS=1
+RECORDS docs/reviews MISSING 23->24 (+1)
+RESULT PASS                                    # exit=0，计数 +1
+
+$ # 把终态文档搬进 docs/reviews/ 的合规文件名：cp speech-api.md …/2026-11-16-speech-api-duplicate.md
+LAYOUT docs/reviews/2026-11-16-speech-api-duplicate.md  内容不是审查报告（一级标题须含审查/复核/核对，开头 400 字符须含 #<issue 号>）；过程记录不参与终态门禁，所以 docs/reviews/ 只放审查报告，终态文档请移到 docs/ 的对应目录
+SCOPE terminal problems=0 new=0 accepted=0
+RESULT FAIL                                    # exit=1
+```
+
+第三段是分目录统计的作用：过程记录增长不阻塞合并，但增长量留在日志与基线增量里。第四段是布局守卫的作用：光有合规文件名不够，豁免不能被复制路径拿走。
+
+同一份内容也已在 CI 上跑过两侧（2026-11-16，本门禁建立时的两次运行）：
+
+```text
+# 基线树：运行 43749226457，作业 `Docs: path:line references` success（9s）
+# 反例提交（终态文档追加同一条坏引用）：运行 43748926560，同一作业 fail（12s）
+[MISSING] docs/architecture/speech-api.md:616  ->  backend/src/speechnexus_backend/does_not_exist.py:7  (仓库内不存在该文件)  [新增,基线外]
+SCOPE terminal problems=1 new=1 accepted=0
+RESULT FAIL
+##[error]Process completed with exit code 1.
+# 同一次运行：`Gate: required checks for this change` fail，日志里的归因是 routing=failure（见下）
+```
+
+### 覆盖边界
+
+- 只判「路径存在、行号不越界、裸名不歧义」，不证明目标行内容与文档描述相符；`--show` 打印被引用行原文供人工核对。
+- `AMBIGUOUS` 是写法不足以定位，不是错误路径；判据不解引用符号，也不看被引用文件是否还承担文档所说的职责（行号合法但指向错符号的漂移对它隐形）。
+- 围栏内的 `路径:行号` 完全不可见，包括把真实引用写进围栏的情况；终态文档这部分计入 `fenced_terminal=`（当前 4 条，全部来自本节证据块），把围栏排除收窄到只对过程记录生效是未做的后续项——证据块自身要在围栏里贴失败输出。
+- 只扫 `docs/` 下的 Markdown：根目录与各子目录的 `README`／`AGENTS.md`、`.agents/` 下文档、代码注释里的引用不在范围内（`--path` 可临时扩大）。
+- 只认脚本列出的扩展名（`.py/.sql/.ts/.tsx/.js/.mjs/.sh/.toml/.yaml/.yml/.json/.md`），无扩展名路径、`#L12` 形式与普通 Markdown 链接不在判据内；目标必须在 git 索引中，未跟踪文件不算存在。
+- 过程记录的计数不是门禁：增长不阻塞合并，这是「保留原时点事实」的取舍，不是遗漏。
+
+调度证据等级：**已实测**（2026-11-16 的两次运行，见上）。**限定**：反例提交同时让 `routing` 里的 `tests/ci` 用例（「检出必须与提交的基线一致」）变红，门禁按所见先报 `routing=failure` 后退出。所以那次运行里**直接因本门禁而红的只有 `Docs: path:line references` 作业本身**；`Gate` 的红是同一次运行里另一个作业的红，其日志归因是 `routing`，不能当作「门禁的 `docs_refs` 分支被观测到」的证据。`DOCS_REFS_RESULT != success` 这一分支由 `tests/contract/test_ci_workflow.py` 与 `tests/ci/test_doc_refs_ratchet.py` 的真值表覆盖。
 
 ## 公开语音路由一致性门禁
 

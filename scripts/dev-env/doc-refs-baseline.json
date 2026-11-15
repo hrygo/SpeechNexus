@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "note": "check-doc-refs 棘轮基线:terminal 是已接受的终态文档引用问题(空列表 = 全量门禁),records 是过程记录的问题计数(只用于报告增量,不门禁).由 scripts/dev-env/check-doc-refs.py --write-baseline 生成.",
+  "terminal": [],
+  "records": {
+    "docs/reviews": {
+      "AMBIGUOUS": 88,
+      "MISSING": 23,
+      "OUT_OF_RANGE": 1
+    },
+    "docs/validation": {
+      "AMBIGUOUS": 1
+    }
+  }
+}

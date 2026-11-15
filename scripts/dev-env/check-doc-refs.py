@@ -25,6 +25,17 @@
 的产物,不是作者对当前文件的指认.实测 1427 条 `路径:行号` 文本有 119 条落在
 围栏内,若按引用计入会多出 27 条问题(21 条 MISSING,其中 20 条来自审查记录里
 的探针输出与 `/private/tmp` 绝对路径),它们不是本文档自身的引用.
+这条规则对终态文档同样是「看不见」:终态文档围栏内的文本只计入
+`fenced_terminal=`,不判定.理想形态是「围栏排除只对过程记录生效」,但本门禁的
+证据块本身就要在围栏里贴失败的 `RESULT FAIL` 输出(见
+`docs/validation/ci-validation.md`),按范围收窄会把证据块判成坏引用.因此保留
+统一排除,并用 `fenced_terminal=` 把终态文档的这部分规模摆在报告里,不让它彻底
+静默.
+
+`docs/reviews/` 的豁免有内容守卫:目录下的 Markdown 必须形如 `<YYYY-MM-DD>-*.md`,
+一级标题写明审查/复核/核对,且开头 400 字符引用 issue/PR 编号——只查文件名挡不住
+「把终态文档另存成合规文件名」.当前 68 份审查报告全部通过,`docs/` 下 123 个终态
+文档的原文搬到合规文件名下全部被拒.布局不合约定即失败,不能用基线接受.
 
 棘轮:`--baseline` 只对基线之外(新增)的终态问题变红,基线为空时等价全量门禁.
   当前基线是 `scripts/dev-env/doc-refs-baseline.json`.新增终态问题只能通过改
@@ -39,8 +50,8 @@
   scripts/dev-env/check-doc-refs.py --show           # 连被引用行的原文一起打印
   scripts/dev-env/check-doc-refs.py --json
 
-退出码:0 没有新增终态问题;1 有新增终态问题或过程记录目录布局不合约定;
-2 环境不可用(不在 git 仓库、扫描路径不存在、基线不可读).
+退出码:0 没有新增终态问题;1 有新增终态问题或 `docs/reviews/` 下的文件不是审查
+报告;2 环境不可用(不在 git 仓库、扫描路径不存在、基线不可读).
 只读:只查 git 索引与工作区文件,除 `--write-baseline` 外不改任何东西.
 """
 
@@ -70,8 +81,14 @@ RECORD = "record"
 RECORD_PREFIXES = ("docs/reviews/", "docs/archive/")
 # dated 记录:`docs/validation/2026-11-14-job-workspace-default.md` 形态的验证记录.
 DATED_RECORD = re.compile(r"^docs/validation/\d{4}-\d{2}-\d{2}-.+\.md$")
-# `docs/reviews/` 只放审查报告:文件名必须带日期前缀,否则过程记录就成了藏文档的地方.
+# `docs/reviews/` 只放审查报告,否则过程记录的豁免就成了藏文档的地方.判据有两层,
+# 都作用在文件自身:`<YYYY-MM-DD>-*.md` 的文件名,加上「一级标题写明是审查/复核/
+# 核对,且开头 400 字符引用 issue/PR 编号」的内容特征.只查文件名挡不住「把终态
+# 文档另存成合规文件名」——那种副本文件名合约定、引用却全部降级成记录.
 REVIEW_RECORD_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}-")
+REVIEW_MARKER = re.compile(r"审查|复核|核对|review", re.IGNORECASE)
+RECORD_REFERENCE = re.compile(r"#\d{2,}")
+RECORD_HEAD_CHARS = 400
 
 BASELINE_SCHEMA = 1
 BASELINE_NOTE = (
@@ -172,18 +189,51 @@ def record_bucket(repo_path: str) -> str:
     return "/".join(repo_path.split("/")[:2])
 
 
-def misplaced_records(scanned: list[tuple[str, str]]) -> list[str]:
-    """`docs/reviews/` 下每个 Markdown 必须是 `<YYYY-MM-DD>-*.md` 审查报告.
+def first_heading(text: str) -> str:
+    """第一个一级标题(没有就返回空串)."""
+    for line in text.splitlines():
+        if line.startswith("# "):
+            return line
+    return ""
 
-    过程记录不进终态门禁,所以这里必须挡住唯一的绕过口:把真文档放进
-    `docs/reviews/` 就能免检.文件名不合约定即失败,并且不能用基线接受.
+
+def review_layout_problem(repo_path: str, text: str) -> str | None:
+    """`docs/reviews/` 下的 Markdown 是不是一份审查报告;不是则返回原因.
+
+    过程记录不参与终态门禁,所以这个目录是唯一能把引用从门禁里降级的位置.
+    判据只认文件自身,不靠路径可见性:
+      - 文件名 `<YYYY-MM-DD>-*.md`;
+      - 一级标题写明审查/复核/核对(该目录里 68/68 份报告的写法),
+        且开头 400 字符引用 issue/PR 编号(`#<数字>`,报告要写它对应哪张卡).
+    实测效果:当前 68 份审查报告全部通过,`docs/` 下 123 个终态文档
+    (`docs/architecture/`、`components/`、`operations/`、`plans/`、`prd.md` 等)
+    的原文搬到合规文件名下全部被拒——`docs/architecture/speech-api.md` 就在其中.
+    这条守卫防的是误放;刻意连内容一起伪装的绕过仍需同时改两处、diff 可见.
+    不合约定即失败,并且不能用基线接受.
     """
-    offenders: list[str] = []
-    for repo_path, name in scanned:
+    if not REVIEW_RECORD_NAME.match(Path(repo_path).name):
+        return "文件名不是 <YYYY-MM-DD>-*.md"
+    if not REVIEW_MARKER.search(first_heading(text)) or not RECORD_REFERENCE.search(
+        text[:RECORD_HEAD_CHARS]
+    ):
+        return "内容不是审查报告（一级标题须含审查/复核/核对，开头 400 字符须含 #<issue 号>）"
+    return None
+
+
+def misplaced_records(scanned: list[tuple[str, Path]]) -> list[tuple[str, str]]:
+    """`docs/reviews/` 下不合审查报告约定的文件与原因."""
+    offenders: list[tuple[str, str]] = []
+    for repo_path, doc in scanned:
         if not repo_path.startswith("docs/reviews/"):
             continue
-        if not REVIEW_RECORD_NAME.match(name):
-            offenders.append(repo_path)
+        try:
+            text = doc.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            offenders.append((repo_path, "无法读取，不能确认是审查报告"))
+            continue
+        problem = review_layout_problem(repo_path, text)
+        if problem is not None:
+            offenders.append((repo_path, problem))
     return offenders
 
 
@@ -326,21 +376,24 @@ def main() -> int:
             return 2
 
     results: list[RefResult] = []
-    scanned: list[tuple[str, str]] = []
+    scanned: list[tuple[str, Path]] = []
     total = 0
     fenced = 0
+    fenced_terminal = 0
 
     for doc in sorted(scan_root.rglob("*.md")):
         if not doc.is_file():
             continue
         repo_path = relative_to_repo(doc, root)
-        scanned.append((repo_path, doc.name))
+        scanned.append((repo_path, doc))
         try:
             refs, skipped = scan_document(doc)
         except (OSError, UnicodeDecodeError):
             continue
         fenced += skipped
         scope = scope_of(repo_path)
+        if scope == TERMINAL:
+            fenced_terminal += skipped
         for lineno, line, ref_path, ref_line in refs:
             total += 1
             if "外部依赖" in line:
@@ -376,9 +429,9 @@ def main() -> int:
 
     if args.write_baseline is not None:
         if layout_offenders:
-            for offender in layout_offenders:
-                print(f"LAYOUT {offender}  不是 <YYYY-MM-DD>-*.md 形式的审查报告", file=sys.stderr)
-            print("过程记录目录布局不合约定，未写基线", file=sys.stderr)
+            for repo_path, reason in layout_offenders:
+                print(f"LAYOUT {repo_path}  {reason}", file=sys.stderr)
+            print("过程记录目录不合审查报告约定，未写基线", file=sys.stderr)
             return 1
         payload = baseline_payload(terminal_keys, record_counts)
         try:
@@ -412,6 +465,7 @@ def main() -> int:
                 {
                     "total": total,
                     "fenced": fenced,
+                    "fenced_terminal": fenced_terminal,
                     "problems": problems,
                     "terminal": {
                         "problems": sum(terminal_keys.values()),
@@ -443,15 +497,17 @@ def main() -> int:
             for r in record_problems:
                 print_ref(r, show=False)
 
-    for offender in layout_offenders:
+    for repo_path, reason in layout_offenders:
         print(
-            f"LAYOUT {offender}  不是 <YYYY-MM-DD>-*.md 形式的审查报告；"
-            "过程记录不参与终态门禁，所以 docs/reviews/ 只放审查报告，"
-            "终态文档请移到 docs/ 的对应目录"
+            f"LAYOUT {repo_path}  {reason}；过程记录不参与终态门禁，"
+            "所以 docs/reviews/ 只放审查报告，终态文档请移到 docs/ 的对应目录"
         )
 
     counts: Counter[str] = Counter(r["verdict"] for r in results)
-    print(f"\nSUMMARY refs={total} fenced={fenced} {counts_line(counts)}")
+    print(
+        f"\nSUMMARY refs={total} fenced={fenced} fenced_terminal={fenced_terminal} "
+        f"{counts_line(counts)}"
+    )
     print(
         f"SCOPE {TERMINAL} problems={sum(terminal_keys.values())} "
         f"new={sum(new_keys.values())} accepted={sum(accepted.values())}"

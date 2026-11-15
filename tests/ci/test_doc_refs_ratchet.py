@@ -13,6 +13,7 @@ must block the merge.
 from __future__ import annotations
 
 import ast
+import importlib.util
 import json
 import os
 import re
@@ -26,6 +27,10 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/dev-env/check-doc-refs.py"
 BASELINE = ROOT / "scripts/dev-env/doc-refs-baseline.json"
 WORKFLOW = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+_SPEC = importlib.util.spec_from_file_location("check_doc_refs", SCRIPT)
+assert _SPEC is not None and _SPEC.loader is not None
+CHECK = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(CHECK)
 
 JOB = "docs_refs"
 GATE = "required_checks"
@@ -34,6 +39,7 @@ CI_COMMAND = (
 )
 TERMINAL_DOC = "docs/operations/runbook.md"
 REVIEW_DOC = "docs/reviews/2026-11-16-review.md"
+REVIEW_BODY = "# 引用门禁的非作者审查（#859）\n\n当时指向 `{ref}`。\n"
 REAL_SOURCE = "backend/src/speechnexus_backend/real.py"
 GHOST_REF = "backend/src/speechnexus_backend/ghost.py:7"
 OTHER_GHOST_REF = "backend/src/speechnexus_backend/also_ghost.py:11"
@@ -108,7 +114,7 @@ class ScopeTests(unittest.TestCase):
 
     def test_a_record_reference_is_counted_but_does_not_fail(self) -> None:
         repo = Repository(self)
-        repo.write(REVIEW_DOC, f"当时指向 `{GHOST_REF}`。\n")
+        repo.write(REVIEW_DOC, REVIEW_BODY.format(ref=GHOST_REF))
         repo.write(TERMINAL_DOC, f"实现见 `{REAL_SOURCE}:3`。\n")
         repo.track()
         result = repo.run()
@@ -122,7 +128,7 @@ class ScopeTests(unittest.TestCase):
         repo.write(TERMINAL_DOC, f"实现见 `{REAL_SOURCE}:3`。\n")
         repo.track()
         self.assertEqual(repo.run("--write-baseline", "baseline.json").returncode, 0)
-        repo.write(REVIEW_DOC, f"当时指向 `{GHOST_REF}`。\n")
+        repo.write(REVIEW_DOC, REVIEW_BODY.format(ref=GHOST_REF))
         repo.track()
         result = repo.run("--baseline", "baseline.json")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -150,6 +156,30 @@ class ScopeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("LAYOUT docs/reviews/terminal-notes.md", result.stdout)
         self.assertIn("RESULT FAIL", result.stdout)
+
+    def test_a_terminal_document_copied_under_a_dated_record_name_turns_red(self) -> None:
+        # Only checking the file name would let a real document be parked here and
+        # its references silently demoted to records; the content has to look like a
+        # review report too.
+        repo = Repository(self)
+        repo.write(
+            "docs/reviews/2026-11-16-speech-api-duplicate.md",
+            f"# 语音接口设计\n\n实现见 `{REAL_SOURCE}:3`，另有 `{GHOST_REF}`。\n",
+        )
+        repo.track()
+        result = repo.run()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("LAYOUT docs/reviews/2026-11-16-speech-api-duplicate.md", result.stdout)
+        self.assertIn("内容不是审查报告", result.stdout)
+        self.assertIn("RESULT FAIL", result.stdout)
+
+    def test_a_dated_record_without_an_issue_reference_turns_red(self) -> None:
+        repo = Repository(self)
+        repo.write("docs/reviews/2026-11-16-review.md", "# 引用门禁的非作者审查\n\n没有卡号。\n")
+        repo.track()
+        result = repo.run()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("LAYOUT docs/reviews/2026-11-16-review.md", result.stdout)
 
 
 class RatchetTests(unittest.TestCase):
@@ -233,6 +263,39 @@ class CommittedStateTests(unittest.TestCase):
         ast.parse(SCRIPT.read_text(encoding="utf-8"), filename=str(SCRIPT), feature_version=(3, 12))
 
 
+class LayoutGuardCorpusTests(unittest.TestCase):
+    """The record-layout guard still separates the real corpus, not just a sample."""
+
+    def test_every_review_report_satisfies_the_guard(self) -> None:
+        for doc in sorted((ROOT / "docs/reviews").glob("*.md")):
+            relative = doc.relative_to(ROOT).as_posix()
+            with self.subTest(report=relative):
+                self.assertIsNone(
+                    CHECK.review_layout_problem(relative, doc.read_text(encoding="utf-8"))
+                )
+
+    def test_no_terminal_document_survives_a_copy_into_reviews(self) -> None:
+        # This is the claim the guard and `ci-validation.md` make: a terminal
+        # document parked under a compliant review file name is rejected. If a new
+        # terminal document ever slips through, either its title/heading needs to
+        # stay distinguishable from a review report or this predicate needs to be
+        # revisited - the guard must not claim more than it does.
+        parked = "docs/reviews/2026-11-16-parked.md"
+        documents = [
+            path
+            for path in sorted((ROOT / "docs").rglob("*.md"))
+            if CHECK.scope_of(path.relative_to(ROOT).as_posix()) == CHECK.TERMINAL
+        ]
+        self.assertGreater(len(documents), 100)
+        for doc in documents:
+            relative = doc.relative_to(ROOT).as_posix()
+            with self.subTest(document=relative):
+                self.assertIsNotNone(
+                    CHECK.review_layout_problem(parked, doc.read_text(encoding="utf-8")),
+                    f"{relative} 的副本会绕过 docs/reviews/ 的布局守卫",
+                )
+
+
 class WorkflowTests(unittest.TestCase):
     """The lane exists, has no scope filter, and the protected gate requires it."""
 
@@ -261,7 +324,14 @@ class WorkflowTests(unittest.TestCase):
     def test_the_validation_record_documents_the_gate(self) -> None:
         document = (ROOT / "docs/validation/ci-validation.md").read_text(encoding="utf-8")
         section = document.split("## 文档引用门禁", 1)[1].split("## 公开语音路由一致性门禁", 1)[0]
-        for required in ("docs_refs", "docs/reviews/", "fenced", "doc-refs-baseline.json"):
+        for required in (
+            "docs_refs",
+            "docs/reviews/",
+            "fenced",
+            "fenced_terminal",
+            "doc-refs-baseline.json",
+            "一级标题须含审查",
+        ):
             with self.subTest(required=required):
                 self.assertIn(required, section)
         self.assertNotIn("未接入 CI 的本地报告工具", document)

@@ -555,17 +555,25 @@ uv run pytest tests/ci tests/contract/test_ci_workflow.py tests/unit/test_integr
 
 依据是 [AGENTS.md](../../AGENTS.md)「文档终态与事实化」对两者的区分。过程记录按约定保留原时点事实：审查报告引用的是当时的代码行、临时 worktree 绝对路径（`/private/tmp/sn772/...`）和从未提交的探针文件，这些引用失效本身就是证据，改动它们等于篡改证据。而长期 `RESULT FAIL` 的检查等于没有检查：接入 CI 前全量扫描的 138 条问题里 137 条出自 `docs/reviews/`、1 条出自 dated 验证记录、**0 条出自终态文档**，真正的终态文档漂移会被这套噪音淹没。判不准的路径一律按终态文档处理，宁可让它变红。
 
-`docs/reviews/` 必须只放 `<YYYY-MM-DD>-*.md` 形式的审查报告。该目录不参与终态门禁，若允许别的文件名落地，把真文档放进去即可绕过检查；文件名不合约定时检查直接失败，且不能用基线接受——基线只登记引用问题，不登记目录布局。
+`docs/reviews/` 的豁免有内容守卫，判据两项，都作用在文件自身而不是路径可见性：
+
+- 文件名形如 `<YYYY-MM-DD>-*.md`；
+- 一级标题写明审查／复核／核对，且开头 400 字符引用 issue/PR 编号（`#<数字>`）。
+
+只查文件名不够：把终态文档另存成合规文件名，它的引用就全部降级成「记录」不计门禁。加内容判据后，当前 68 份审查报告全部通过，而 `docs/` 下 123 个终态文档的原文搬到合规文件名下全部被拒（`docs/architecture/speech-api.md` 也在其中——它的首个 `#<数字>` 是目录锚点 `(#1-…`，不是 issue 号）。布局不合约定时检查直接失败，且不能用基线接受——基线只登记引用问题，不登记目录布局。
+
+这条守卫防的是误放，不是对抗伪装：刻意在开头补一句「审查 #859」仍能通过，那样的改动同时改了路径与内容、在 diff 里可见。`tests/ci/test_doc_refs_ratchet.py` 对当前语料逐份核对这两条判据仍然成立（68 份报告通过、123 个终态文档副本被拒），文档里这一句不靠人工记忆保鲜。
 
 ### 围栏代码块不算引用
 
-围栏（三个连续反引号或三个波浪号界定）内的 `路径:行号` 不参与检查。围栏里贴的是命令输出、探针摘录或示例片段，是文档引用的别人产物，不是作者对当前文件的指认；按引用计入时，20 条 `MISSING` 来自审查记录里的探针输出与 `/private/tmp` 绝对路径，指向从未提交的 `zz-probe-*.ts` 与临时 worktree。接入 CI 时实测：1427 条 `路径:行号` 文本里有 119 条落在围栏内，若按引用计入会多出 27 条问题（21 `MISSING`、5 `AMBIGUOUS`、1 `OUT_OF_RANGE`）——其中 20 条 `MISSING` 来自审查记录的探针输出与 `/private/tmp` 临时 worktree 路径；终态文档正文（围栏外）的问题数为 0。这部分计入 `SUMMARY` 的 `fenced=`，不是静默丢弃。
+围栏（三个连续反引号或三个波浪号界定）内的 `路径:行号` 不参与检查。围栏里贴的是命令输出、探针摘录或示例片段，是文档引用的别人产物，不是作者对当前文件的指认；按引用计入时，20 条 `MISSING` 来自审查记录里的探针输出与 `/private/tmp` 绝对路径，指向从未提交的 `zz-probe-*.ts` 与临时 worktree。接入 CI 时实测：1427 条 `路径:行号` 文本里有 119 条落在围栏内，若按引用计入会多出 27 条问题（21 `MISSING`、5 `AMBIGUOUS`、1 `OUT_OF_RANGE`）——其中 20 条 `MISSING` 来自审查记录的探针输出与 `/private/tmp` 临时 worktree 路径；终态文档正文（围栏外）的问题数为 0。
+这条规则对终态文档同样生效，也就是「看不见」：终态文档围栏内的文本只计入 `SUMMARY` 的 `fenced_terminal=`，不判定。理想形态是围栏排除只对过程记录生效，但本门禁的证据块本身要在围栏里贴失败的 `RESULT FAIL` 输出（就是本节下文那几段），按范围收窄会把证据块判成坏引用。因此保留统一排除，并用 `fenced_terminal=` 把终态文档这部分规模摆在报告里：当前为 4 条，全部来自本节自己的证据块。收窄到过程记录是未做的后续项。
 
 ### 棘轮与基线
 
 `--baseline <json>` 只对基线之外的新增终态问题变红；`terminal` 为空列表时等价全量门禁。[doc-refs-baseline.json](../../scripts/dev-env/doc-refs-baseline.json) 就是这样一份基线：`terminal: []`，`records` 记录过程记录的问题计数（`docs/reviews`：`AMBIGUOUS=88`、`MISSING=23`、`OUT_OF_RANGE=1`；`docs/validation`：`AMBIGUOUS=1`），只用于在报告里显示增量，不参与判定。要接受一条终态问题只能改 `terminal` 列表，那次改动在 PR diff 里可见，不是静默放行；`--write-baseline` 按当前结果重写基线，基线登记的问题消失时报告打印 `BASELINE stale=`，由同一条命令缩短。
 
-输出固定四段：逐条问题（终态问题在前，新增标注 `[新增,基线外]`、基线已接受标注 `[基线已接受]`；过程记录默认只给计数，`--show-records` 逐条打印）、`SUMMARY`（`refs` 参与判定的引用数、`fenced` 围栏内跳过数、各判定计数）、`SCOPE`／`RECORDS`（终态与过程记录分目录计数，带基线时给出 `旧->新` 增量）、`RESULT PASS|FAIL`。退出码 0 表示没有新增终态问题（过程记录的增长不影响），1 表示有新增终态问题或目录布局不合约定，2 表示环境不可用（不在 git 仓库、扫描路径不存在、基线不可读）。
+输出固定四段：逐条问题（终态问题在前，新增标注 `[新增,基线外]`、基线已接受标注 `[基线已接受]`；过程记录默认只给计数，`--show-records` 逐条打印）、`SUMMARY`（`refs` 参与判定的引用数、`fenced` 围栏内跳过数、`fenced_terminal` 其中来自终态文档的条数、各判定计数）、`SCOPE`／`RECORDS`（终态与过程记录分目录计数，带基线时给出 `旧->新` 增量）、`RESULT PASS|FAIL`。退出码 0 表示没有新增终态问题（过程记录的增长不影响），1 表示有新增终态问题或目录布局不合约定，2 表示环境不可用（不在 git 仓库、扫描路径不存在、基线不可读）。
 
 ### 作业与门禁
 
@@ -573,29 +581,34 @@ uv run pytest tests/ci tests/contract/test_ci_workflow.py tests/unit/test_integr
 
 ### 实测反例
 
-三段都在本机以 Python 3.12（CI runner 的系统 Python 版本）执行，命令与 CI 相同；第一段是基线树，后两段分别改终态文档与过程记录。计数随 `docs/` 内容变化，包括本节自身的改动，以实际运行输出为准：
+四段都在本机以 Python 3.12（CI runner 的系统 Python 版本）执行，命令与 CI 相同：第一段是基线树；第二、三段分别往终态文档与过程记录里注入坏引用；第四段把终态文档搬到 `docs/reviews/` 的合规文件名下。计数随 `docs/` 内容变化，包括本节自身的改动，以实际运行输出为准：
 
 ```text
 $ python3 scripts/dev-env/check-doc-refs.py --baseline scripts/dev-env/doc-refs-baseline.json
-SUMMARY refs=1308 fenced=117 AMBIGUOUS=89 EXTERNAL=1 MISSING=23 OK=1194 OUT_OF_RANGE=1
+SUMMARY refs=1308 fenced=121 fenced_terminal=4 AMBIGUOUS=89 EXTERNAL=1 MISSING=23 OK=1194 OUT_OF_RANGE=1
 SCOPE terminal problems=0 new=0 accepted=0
 SCOPE record problems=113 docs/reviews AMBIGUOUS=88 MISSING=23 OUT_OF_RANGE=1; docs/validation AMBIGUOUS=1
 RESULT PASS                                    # exit=0
 
 $ # 终态文档注入一条坏引用：docs/architecture/speech-api.md 末尾
 [MISSING] docs/architecture/speech-api.md:616  ->  backend/src/speechnexus_backend/does_not_exist.py:7  (仓库内不存在该文件)  [新增,基线外]
-SUMMARY refs=1309 fenced=117 AMBIGUOUS=89 EXTERNAL=1 MISSING=24 OK=1194 OUT_OF_RANGE=1
+SUMMARY refs=1309 fenced=121 fenced_terminal=4 AMBIGUOUS=89 EXTERNAL=1 MISSING=24 OK=1194 OUT_OF_RANGE=1
 SCOPE terminal problems=1 new=1 accepted=0
 RESULT FAIL                                    # exit=1
 
-$ # docs/reviews/ 新增一份审查报告，含一条坏引用
-SUMMARY refs=1309 fenced=117 AMBIGUOUS=89 EXTERNAL=1 MISSING=24 OK=1194 OUT_OF_RANGE=1
+$ # docs/reviews/ 新增一份审查报告（标题写审查、开头带 #859），含一条坏引用
+SUMMARY refs=1309 fenced=121 fenced_terminal=4 AMBIGUOUS=89 EXTERNAL=1 MISSING=24 OK=1194 OUT_OF_RANGE=1
 SCOPE record problems=114 docs/reviews AMBIGUOUS=88 MISSING=24 OUT_OF_RANGE=1; docs/validation AMBIGUOUS=1
 RECORDS docs/reviews MISSING 23->24 (+1)
 RESULT PASS                                    # exit=0，计数 +1
+
+$ # 把终态文档搬进 docs/reviews/ 的合规文件名：cp speech-api.md …/2026-11-16-speech-api-duplicate.md
+LAYOUT docs/reviews/2026-11-16-speech-api-duplicate.md  内容不是审查报告（一级标题须含审查/复核/核对，开头 400 字符须含 #<issue 号>）；过程记录不参与终态门禁，所以 docs/reviews/ 只放审查报告，终态文档请移到 docs/ 的对应目录
+SCOPE terminal problems=0 new=0 accepted=0
+RESULT FAIL                                    # exit=1
 ```
 
-第三段是分目录统计的作用：过程记录增长不阻塞合并，但增长量留在日志与基线增量里。
+第三段是分目录统计的作用：过程记录增长不阻塞合并，但增长量留在日志与基线增量里。第四段是布局守卫的作用：光有合规文件名不够，豁免不能被复制路径拿走。
 
 同一份内容也已在 CI 上跑过两侧（2026-11-16，本门禁建立时的两次运行）：
 
@@ -606,19 +619,19 @@ RESULT PASS                                    # exit=0，计数 +1
 SCOPE terminal problems=1 new=1 accepted=0
 RESULT FAIL
 ##[error]Process completed with exit code 1.
-# 同一次运行：`Gate: required checks for this change` fail（routing=failure）
+# 同一次运行：`Gate: required checks for this change` fail，日志里的归因是 routing=failure（见下）
 ```
 
 ### 覆盖边界
 
 - 只判「路径存在、行号不越界、裸名不歧义」，不证明目标行内容与文档描述相符；`--show` 打印被引用行原文供人工核对。
 - `AMBIGUOUS` 是写法不足以定位，不是错误路径；判据不解引用符号，也不看被引用文件是否还承担文档所说的职责（行号合法但指向错符号的漂移对它隐形）。
-- 围栏内的 `路径:行号` 完全不可见，包括把真实引用写进围栏的情况。
+- 围栏内的 `路径:行号` 完全不可见，包括把真实引用写进围栏的情况；终态文档这部分计入 `fenced_terminal=`（当前 4 条，全部来自本节证据块），把围栏排除收窄到只对过程记录生效是未做的后续项——证据块自身要在围栏里贴失败输出。
 - 只扫 `docs/` 下的 Markdown：根目录与各子目录的 `README`／`AGENTS.md`、`.agents/` 下文档、代码注释里的引用不在范围内（`--path` 可临时扩大）。
 - 只认脚本列出的扩展名（`.py/.sql/.ts/.tsx/.js/.mjs/.sh/.toml/.yaml/.yml/.json/.md`），无扩展名路径、`#L12` 形式与普通 Markdown 链接不在判据内；目标必须在 git 索引中，未跟踪文件不算存在。
 - 过程记录的计数不是门禁：增长不阻塞合并，这是「保留原时点事实」的取舍，不是遗漏。
 
-调度证据等级：**已实测**（2026-11-16 的两次运行，见上）。**限定**：反例提交同时让 `routing` 里的 `tests/ci` 用例（「检出必须与提交的基线一致」）变红，因此门禁按所见先报 `routing=failure` 后退出；`DOCS_REFS_RESULT != success` 这一分支由 `tests/contract/test_ci_workflow.py` 与 `tests/ci/test_doc_refs_ratchet.py` 的真值表覆盖，不是该次运行日志直接观测到的。
+调度证据等级：**已实测**（2026-11-16 的两次运行，见上）。**限定**：反例提交同时让 `routing` 里的 `tests/ci` 用例（「检出必须与提交的基线一致」）变红，门禁按所见先报 `routing=failure` 后退出。所以那次运行里**直接因本门禁而红的只有 `Docs: path:line references` 作业本身**；`Gate` 的红是同一次运行里另一个作业的红，其日志归因是 `routing`，不能当作「门禁的 `docs_refs` 分支被观测到」的证据。`DOCS_REFS_RESULT != success` 这一分支由 `tests/contract/test_ci_workflow.py` 与 `tests/ci/test_doc_refs_ratchet.py` 的真值表覆盖。
 
 ## 公开语音路由一致性门禁
 

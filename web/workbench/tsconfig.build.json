@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/test/**",
+    "src/**/dev/**",
+    "src/meetings/meeting-fixtures.ts",
+    "src/realtime/realtime-fixtures.ts",
+    "src/realtime/tts-fixtures.ts",
+    "src/voices/voice-fixtures.ts"
+  ]
+}

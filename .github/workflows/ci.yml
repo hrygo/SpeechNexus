@@ -923,6 +923,15 @@ jobs:
       - name: Build workspace packages and Web applications
         run: pnpm build
 
+      # `pnpm build` above runs with the whole repository present, so it cannot see
+      # that `deploy/images/web.Dockerfile` copies a narrower set than the build
+      # reads. #834 shipped exactly that: product sources imported
+      # `tests/fixtures/contracts`, no Web image could be built, and every CI lane
+      # stayed green. This step rebuilds both applications from the COPY set alone,
+      # which is the only input an image build has.
+      - name: Verify the Web image build context is complete
+        run: pnpm verify:web-image
+
       - name: Install Chromium headless shell for accessibility checks
         run: python3 scripts/dev-env/prepare-ci-browser.py
 

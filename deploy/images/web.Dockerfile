@@ -8,10 +8,18 @@ RUN --mount=type=secret,id=proxy_ca \
     npm install --global --allow-scripts=pnpm pnpm@12.14.0
 
 WORKDIR /workspace
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+# This COPY set is the complete input set of `pnpm --filter "@speechnexus/${APP_NAME}"
+# build`: the locked install, one Web application's production TypeScript program
+# (`web/<app>/tsconfig.build.json`) and the workspace packages and root config it
+# reads. Test material under `tests/**` is deliberately absent, so product sources
+# must not import it: the dev scenario pages are Vite-globbed behind
+# `import.meta.env.DEV` and the test-only fixture helpers are outside the production
+# program. `pnpm verify:web-image` builds both applications from this set alone and
+# fails when a source or config outside it is required — CI cannot see that gap,
+# because the Web job builds with the whole repository present (#834).
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json .npmrc ./
 COPY web web
 COPY packages/contracts packages/contracts
-COPY scripts/dev-env/validate-design-tokens.mjs scripts/dev-env/validate-design-tokens.d.mts scripts/dev-env/
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     --mount=type=secret,id=proxy_ca \
     if [ -f /run/secrets/proxy_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/proxy_ca; fi; \

@@ -140,6 +140,28 @@ BuildKit secret `proxy_ca`. The optional secret is mounted only in networked
 dependency-install steps and is not copied into the final image. Do not disable
 TLS verification.
 
+### Web images
+
+`deploy/images/web.Dockerfile` builds one application per image
+(`--build-arg APP_NAME=admin` or `workbench`). Its `COPY` set is the complete input
+set of `pnpm --filter "@speechnexus/${APP_NAME}" build`: the locked install, the
+application's production TypeScript program (`web/<app>/tsconfig.build.json`), the
+workspace packages it imports, and the root configuration `pnpm`/`tsc` read
+(including `.npmrc`, so the image enforces the same engine policy as CI). Test
+material under `tests/**` is deliberately absent — the image must not contain test
+data — so product sources may not import it. The dev scenario pages are reached
+through a Vite glob behind `import.meta.env.DEV`, and the test-only fixture helpers
+sit outside the production program, which is what keeps `tests/fixtures/contracts`
+out of the image.
+
+The `COPY` set is therefore a build input contract, not an incidental list. CI
+builds with the whole repository present, so a source or config outside the set
+fails only when someone builds the image (#834: both Web images were unbuildable
+while every CI lane was green). `pnpm verify:web-image` — also a step of the CI Web
+job — materialises exactly the `COPY` set, installs and builds both applications
+inside it, and fails when anything outside the set is needed. Extend the set
+deliberately, and only with files the build reads.
+
 ## Configuration authority
 
 Every Python process validates its own `pydantic-settings` configuration and

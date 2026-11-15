@@ -234,6 +234,18 @@ test("an interpolation-free template-literal dynamic import is a consumer", () =
   );
 });
 
+test("a dynamic import inside a template interpolation is still seen", () => {
+  withFixture(
+    {
+      "web/app/src/lazy.ts":
+        'export const load = (name) => `${import("@speechnexus/contracts/ghost")}`;\n',
+    },
+    (root) => {
+      assert.ok(has(runValidation(root), "is not a declared exports subpath"));
+    },
+  );
+});
+
 test("a literal dynamic import counts as a consumer and needs the workspace dependency", () => {
   withFixture(
     {

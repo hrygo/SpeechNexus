@@ -194,6 +194,7 @@ export function maskSource(code) {
 
   function scanTemplate(index) {
     const start = index;
+    let segmentStart = start + 1;
     let cursor = start + 1;
     let interpolated = false;
     while (cursor < code.length) {
@@ -204,7 +205,7 @@ export function maskSource(code) {
       }
       if (char === "$" && code[cursor + 1] === "{") {
         interpolated = true;
-        blank(start + 1, cursor);
+        blank(segmentStart, cursor);
         previous = undefined;
         cursor = scanCode(cursor + 2, "}");
         if (cursor >= code.length) {
@@ -212,11 +213,12 @@ export function maskSource(code) {
           return code.length;
         }
         cursor += 1;
+        segmentStart = cursor;
         previous = undefined;
         continue;
       }
       if (char === "`") {
-        blank(start + 1, cursor);
+        blank(segmentStart, cursor);
         literals.set(start, {
           end: cursor + 1,
           value: code.slice(start + 1, cursor),
@@ -228,6 +230,7 @@ export function maskSource(code) {
       }
       cursor += 1;
     }
+    blank(segmentStart, code.length);
     previous = "string";
     return code.length;
   }

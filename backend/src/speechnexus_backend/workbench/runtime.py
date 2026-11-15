@@ -249,9 +249,45 @@ async def _refuse_column_privilege(
         )
 
 
+async def _refuse_role_membership(
+    connection: psycopg.AsyncConnection[dict[str, Any]],
+    subject: str,
+) -> None:
+    """Refuse every role membership, not only the inherited ones.
+
+    ``pg_has_role(..., 'MEMBER')`` in the identity check above already catches an
+    owner, the database owner and the two predefined data roles. It does not catch
+    an ordinary role granted ``WITH INHERIT FALSE``: that grant is not inherited, so
+    no privilege predicate sees it, but the login can still ``SET ROLE`` into it and
+    reach everything the granted role can reach. Membership is therefore refused on
+    its own: a serving or erasing identity is standalone, and anything it can
+    ``SET ROLE`` to is authority the checks below cannot judge.
+    """
+    row = await (
+        await connection.execute(
+            """
+            SELECT g.rolname AS granted, m.inherit_option, m.set_option
+            FROM pg_catalog.pg_auth_members m
+            JOIN pg_catalog.pg_roles g ON g.oid = m.roleid
+            JOIN pg_catalog.pg_roles r ON r.oid = m.member
+            WHERE r.rolname = current_user
+            ORDER BY g.rolname
+            LIMIT 1
+            """
+        )
+    ).fetchone()
+    if row is not None:
+        raise RuntimeStartupError(
+            f"{subject} role must not be a member of {row['granted']}; "
+            "SET ROLE reaches that role's authority whatever this check sees, "
+            "so revoke the membership instead of granting it"
+        )
+
+
 async def _refuse_foreign_relation_privileges(
     connection: psycopg.AsyncConnection[dict[str, Any]],
     schema: str,
+    subject: str = "runtime",
 ) -> None:
     """The workbench identity owns authority on its own schema and nowhere else.
 
@@ -295,7 +331,7 @@ async def _refuse_foreign_relation_privileges(
         # deployment-chosen identifier whereas the foreign relation is product
         # vocabulary an operator can act on.
         raise RuntimeStartupError(
-            f"runtime role must not hold privileges on {row['schema']}.{row['name']}; "
+            f"{subject} role must not hold privileges on {row['schema']}.{row['name']}; "
             "the workbench identity is scoped to its own schema, so revoke the "
             "foreign grant instead of sharing a wider role"
         )
@@ -404,6 +440,7 @@ async def check_database(settings: WorkbenchSettings) -> None:
                 raise RuntimeStartupError
             # A surface that is exact inside its own schema can still be a shared
             # identity; the foreign check is what makes "do not reuse sn_api" a gate.
+            await _refuse_role_membership(connection, "runtime")
             await _refuse_foreign_relation_privileges(connection, settings.database_schema)
             marker = await (
                 await connection.execute(
@@ -427,7 +464,10 @@ async def check_cleanup_identity(settings: WorkbenchSettings) -> None:
 
     Recovery erases confirmed content, so it must never run as the schema owner or any
     privileged role: a cleanup DSN pointed at the owner would silently bypass the narrow
-    grants a deletion worker is supposed to hold.
+    grants a deletion worker is supposed to hold. It is also held to the two boundaries
+    the serving identity is held to — no privileges outside the workbench schema, no role
+    membership — because those are the two ways an otherwise narrow login still reaches
+    the speech product schema.
     """
     if settings.cleanup_database_url is None:
         return
@@ -467,6 +507,15 @@ async def check_cleanup_identity(settings: WorkbenchSettings) -> None:
                 or not identity["usable"]
             ):
                 raise RuntimeStartupError
+            # The erasing identity is judged by the same two boundaries as the
+            # serving one: it may not reach a relation outside the workbench
+            # schema and it may not hold a membership it could SET ROLE into. A
+            # cleanup DSN pointed at the API's wide identity would otherwise pass
+            # every check above while erasing with the API's whole authority.
+            await _refuse_role_membership(connection, "cleanup")
+            await _refuse_foreign_relation_privileges(
+                connection, settings.database_schema, "cleanup"
+            )
     except psycopg.Error, TimeoutError, ValueError, TypeError, KeyError:
         raise RuntimeStartupError from None
     finally:

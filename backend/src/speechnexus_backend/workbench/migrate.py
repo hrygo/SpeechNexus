@@ -66,8 +66,13 @@ class Plan:
     cleanup_role: str
 
 
-def _role_of(dsn: str) -> str | None:
-    """Read the login name out of a DSN without echoing the DSN itself."""
+def role_of(dsn: str) -> str | None:
+    """Read the login name out of a DSN without echoing the DSN itself.
+
+    Public because `deploy/workbench-startup-gate.py` asks the same question: the
+    gate refuses two DSNs that name one role, and it must decide that by the same
+    rule the migration uses rather than with a second parser.
+    """
     try:
         value = conninfo_to_dict(dsn).get("user")
     except psycopg.Error:
@@ -99,9 +104,9 @@ def findings(env: Mapping[str, str]) -> list[str]:
     if problems:
         return problems
     owner_role, runtime_role, cleanup_role = (
-        _role_of(owner),
-        _role_of(runtime),
-        _role_of(cleanup),
+        role_of(owner),
+        role_of(runtime),
+        role_of(cleanup),
     )
     for role, key in (
         (owner_role, OWNER_DSN_ENV),
@@ -150,8 +155,8 @@ def plan(env: Mapping[str, str]) -> Plan:
     problems = findings(env)
     if problems:
         raise ValueError("; ".join(problems))
-    runtime_role = _role_of(env[RUNTIME_DSN_ENV].strip())
-    cleanup_role = _role_of(env[CLEANUP_DSN_ENV].strip())
+    runtime_role = role_of(env[RUNTIME_DSN_ENV].strip())
+    cleanup_role = role_of(env[CLEANUP_DSN_ENV].strip())
     assert runtime_role is not None and cleanup_role is not None
     return Plan(
         owner_dsn=env[OWNER_DSN_ENV].strip(),

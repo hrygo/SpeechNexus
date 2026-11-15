@@ -1525,12 +1525,14 @@ owner 事务里对新命名空间执行一次，不进入 `speech` 的 Alembic �
 | `sn_workbench_runtime` | `runtime_grants_sql` | schema USAGE 加 `TABLES` 声明的每张表的 SELECT/INSERT，加 `_UPDATE_COLUMNS` 声明的逐列 UPDATE；`deletion_ledger`、`erased_mutation_receipts`、`runtime_schema_revision` 只读 |
 | `sn_workbench_cleanup` | `cleanup_grants_sql` | 业务行 DELETE、删除账本与擦除回执 INSERT、`deletion_outbox` 两列 UPDATE |
 
-身份边界是可执行的，不是部署约定：`workbench-api` 启动时由
-`check_database` 核对登录身份、owner/DDL/DML、逐表与逐列权限面、`runtime_schema_revision`，
-并由 `check_cleanup_identity` 核对清理身份不是 owner 或特权角色。运行身份在工作台命名空间
-之外持有任何关系或序列权限都会被点名拒绝，所以把它指向 `sn_api` 这类宽身份不能启动——
-`sn_api` 在 `speech` 中的授权正是在这里被拒绝的；清理身份另需独立，因为它持有删除业务行的
-权威，与运行身份合并也会被拒绝。
+身份边界是可执行的，不是部署约定：`workbench-api` 启动时由 `check_database` 核对运行身份
+的登录身份、owner/DDL/DML、逐表与逐列权限面、`runtime_schema_revision`，由
+`check_cleanup_identity` 核对清理身份不是 owner 或特权角色。两个身份受同样两条边界约束：
+在工作台命名空间之外持有任何关系或序列权限会被点名拒绝；持有任何角色成员关系也会被拒绝——
+普通的 `GRANT` 靠继承就能看见，而 `GRANT wider TO role WITH INHERIT FALSE` 对任何权限判定
+都不可见，却仍能 `SET ROLE wider` 取到那份权威，所以成员关系本身被拒。因此把任一 DSN 指向
+`sn_api` 这类宽身份都不能启动：运行 DSN 由 `check_database` 拒绝，清理 DSN 由
+`check_cleanup_identity` 拒绝，两者都点名越界的关系。
 
 迁移与启动：
 
@@ -1546,9 +1548,15 @@ owner 事务里对新命名空间执行一次，不进入 `speech` 的 Alembic �
 `service_completed_successfully` 保证 API 不会在没有迁移的命名空间上启动。对已迁移的命名
 空间重跑只核对 `runtime_schema_revision` 与重放两份授权（幂等），不改写结构、不回填版本。
 `workbench-api` 的入口闸门先核验必需输入（运行/清理 DSN、workspace、deployment、cursor
-key、schema）与上述权限面，全部成立才打印 `OK:` 并 exec ASGI 工厂；缺键、DSN 指向 owner、
-两个身份同名、或运行身份在别的 schema 有授权，都在启动前以 `FAIL:` 点名，不会带着缺失配置
-起服务。健康检查打 `/v1/workbench/status`，它只在真实 lifespan 预检通过后才可答。
+key、schema）与上述权限面，全部成立才打印 `OK:` 并 exec ASGI 工厂。以下条件在启动前以
+`FAIL:` 点名，不会带着缺失配置起服务：空白键、schema 写成 `speech`、两个 DSN 指向同一角色、
+越界的 schema 授权（点名关系）、以及角色成员关系（点名被授予的角色）。两种失败只给结论不给
+分量：身份是 schema owner 或带特权标志时，闸门打印 `… unavailable or unsafe.` 后退出，不指出
+是哪个标志，因为此时要做的不是逐项修补而是换掉这个身份；迁移步的 owner DSN 若不能建 schema
+或不是命名空间 owner，则以 `FAIL: the owner connection could not complete the workbench
+migration (<异常类型>)` 退出，具名的是要检查的两个输入而不是具体的 SQL 权限。owner、运行、
+清理三个 DSN 指向同一角色这类矛盾由 `workbench-migrate` 在连接前点名（闸门拿不到 owner
+DSN）。健康检查打 `/v1/workbench/status`，它只在真实 lifespan 预检通过后才可答。
 
 本单元装配的是工作台业务后端：项目、稿件、会议、提词器、书稿/章节以及删除的
 预检→确认→账本。它默认不配置语音底座地址、对象区与内网 LLM，因此状态接口按部署事实报告

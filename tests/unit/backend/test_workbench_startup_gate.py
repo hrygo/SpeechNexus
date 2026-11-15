@@ -118,6 +118,26 @@ def test_a_blank_input_is_named_and_never_starts(key: str, detail: str) -> None:
     assert "OK:" not in out
 
 
+def test_two_dsns_naming_one_role_are_refused_by_name() -> None:
+    """The serving identity must not hold the erasing authority.
+
+    The migration step already refuses this pair, but the gate is what decides
+    whether the container starts, so a pair that reached it has to fail there too:
+    an operator who edited only the cleanup DSN sees the two keys named, not a
+    generic database failure.
+    """
+    env = dict(BASE_ENV)
+    env["SPEECHNEXUS_WORKBENCH_CLEANUP_DATABASE_URL"] = env["SPEECHNEXUS_WORKBENCH_DATABASE_URL"]
+    recorder = Recorder()
+    code, out, err = run_gate(env, recorder=recorder)
+    assert code == 1
+    assert "name the same role sn_workbench_runtime" in err
+    assert "SPEECHNEXUS_WORKBENCH_DATABASE_URL" in err
+    assert "SPEECHNEXUS_WORKBENCH_CLEANUP_DATABASE_URL" in err
+    assert recorder.calls == []
+    assert out == ""
+
+
 def test_the_speech_schema_is_refused_by_name() -> None:
     recorder = Recorder()
     code, _, err = run_gate(

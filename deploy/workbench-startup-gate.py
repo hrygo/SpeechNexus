@@ -33,6 +33,7 @@ import sys
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any, TextIO
 
+from speechnexus_backend.workbench.migrate import role_of
 from speechnexus_backend.workbench.runtime import (
     check_cleanup_identity,
     check_database,
@@ -81,6 +82,16 @@ def findings(env: Mapping[str, str]) -> list[str]:
         problems.append(
             f"{SCHEMA_ENV} is `speech`: the workbench owns its own namespace and "
             "never shares the speech product schema"
+        )
+    serving, erasing = (
+        role_of(env.get(DSN_ENV, "").strip()),
+        role_of(env.get(CLEANUP_DSN_ENV, "").strip()),
+    )
+    if serving is not None and serving == erasing:
+        problems.append(
+            f"{DSN_ENV} and {CLEANUP_DSN_ENV} name the same role {serving}: the "
+            "serving identity must never hold the erasing authority the cleanup "
+            "role carries"
         )
     return problems
 

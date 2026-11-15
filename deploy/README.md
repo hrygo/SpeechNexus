@@ -615,11 +615,22 @@ dedicated non-owner roles and no third:
 Neither identity may be the owner, and they may not be one identity: the cleanup
 role carries the erasing authority, so folding it into the serving role would hand
 deletion to the request path. At startup the gate runs the runtime's own
-`check_database` and `check_cleanup_identity`; `check_database` also refuses a role
-that holds privileges on relations *outside* the workbench schema, and
-`check_cleanup_identity` refuses an owner or a privileged login. Pointing either
-DSN at `sn_api` therefore fails closed instead of sharing the API's wide identity,
-which is the case `tests/integration/test_startup_authority_561.py` exercises.
+`check_database` and `check_cleanup_identity`, and both checks judge their identity
+by the same two boundaries:
+
+- no privileges on relations or sequences *outside* the workbench schema, named
+  relation by relation;
+- no role membership at all. An ordinary grant is caught by inheritance, but
+  `GRANT wider TO role WITH INHERIT FALSE` confers nothing any privilege predicate
+  can see while `SET ROLE wider` still reaches it, so membership itself is refused.
+
+Pointing either DSN at `sn_api` therefore fails closed instead of sharing the API's
+wide identity — the serving DSN fails in `check_database`, the cleanup DSN in
+`check_cleanup_identity`, and each names the foreign relation it found. An identity
+that is the schema owner or otherwise privileged is refused by the same checks with
+the generic "unavailable or unsafe" line, because "which flag" is not an operator
+action there: the fix is to stop using that role. Both cases are exercised in
+`tests/integration/test_startup_authority_561.py`.
 Every gate line is `OK: <what is now true>` or `FAIL: <the named prerequisite>`;
 a failure exits 1 and never starts the server.
 

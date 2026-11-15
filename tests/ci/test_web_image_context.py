@@ -108,9 +108,13 @@ class GuardTestCase(unittest.TestCase):
         self._directory.cleanup()
 
     def assert_fails(self, expected: str) -> None:
+        self.assertIn(expected, self.expect_failure(expected))
+
+    def expect_failure(self, expected: str) -> str:
         with self.assertRaises(GUARD.CheckError) as raised:
             GUARD.static_checks(self.repository.root)
         self.assertIn(expected, str(raised.exception))
+        return str(raised.exception)
 
 
 class StageParsingTests(unittest.TestCase):
@@ -179,6 +183,18 @@ class StaticCheckTests(GuardTestCase):
             "package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./", "web web"
         )
         self.assert_fails(".npmrc")
+
+    def test_a_policy_only_root_input_is_reported_as_policy_not_as_a_build_failure(self) -> None:
+        # `.npmrc` does not break the build when missing: `pnpm install` and `tsc`
+        # both succeed without it. Reporting it as a build failure would be a false
+        # claim, and dropping the check entirely would ship an image that resolves
+        # dependencies under a different policy than CI.
+        self.repository.dockerfile(
+            "package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./", "web web"
+        )
+        error = self.expect_failure(".npmrc")
+        self.assertIn("different policy than CI", error)
+        self.assertNotIn("fail to install", error)
 
     def test_dockerignored_copy_source_is_rejected(self) -> None:
         self.repository.write(".dockerignore", "secrets\n")

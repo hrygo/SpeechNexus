@@ -455,3 +455,384 @@ PR 里承认这是放宽而不是等价改写。
 `origin/main` = `45db3910`），被审 head `555f6290`（另核 `bc7c4dc3`，已 orphaned）。
 隔离容器 `sn859-pg`（postgres:16.15-alpine）、`sn859-mysql`（mysql 8.4.8）在集成测试后删除，
 未触碰同机其它评审容器与引擎容器。
+
+---
+
+# 第二轮审查（head `6e4d5b8a`）
+
+审查对象：PR [#857](https://github.com/hrygo/SpeechNexus/pull/857) 的返修 head
+`6e4d5b8a`（`fix/845-admission-observability`）。分支 `review/861-845-v2`，基线
+`origin/main` = `2cc0efa5`。被审分支的合并基是 `45db3910`，**不含**本轮报告所在的
+`2cc0efa5`（#860 合并了第一轮报告），所以 `git diff origin/main...HEAD` 显示的是本 PR
+的全部 34 个文件，而不是只有报告。
+
+本轮报告单独成一个 PR，**只改本文件**。
+
+## R0. 结论
+
+**不能合。** 第一轮的三条阻断里有一条（B3）真正关闭，一条（B2）关闭，一条（B1）只关了一半；
+同时返修新引入两个**会直接把 CI 打红**的问题，以及一处与第一轮同类的装载层缺口：
+
+| 编号 | 事实 | 性质 |
+| --- | --- | --- |
+| **N1** | `uv run mypy` **4 个错误**，全部落在本 PR 新增的 `deployment_refusals` 里（`domain/admission.py:477/483/484/489`，`Cannot infer type of lambda`）。`ci.yml:376` 就是这个门禁。 | **CI 红** |
+| **N2** | `tests/integration/test_job_admission_readiness_pg.py` **1 failed**：第 326 行断言 `["workspace_not_provisioned"]`，产品实际产出 `workspace_not_configured`（cause 已改名，测试没跟）。作者自述「本轮没跑成」，实测确实没跑成。 | **CI 红** |
+| **N3** | 装载层仍缺一项部署态：`AdmissionReadinessFacts` 与 `deployment_refusals` **都不含 hosts**。`host_nodes.node_state` 非 `active` 时，创建 `503 engine_resource_disabled`，报告 **`admitting`**。真库实测。 | **与第一轮 B1 同类，未闭合** |
+| **N4** | 创建路径在**准入之前**还有一层拒绝：`public_job_admission.py:634-637` 把 `pool_state != 'active'` 直接答成 **429 `job_capacity_exhausted`**；报告把它映射成 `engine_resource_disabled`（503）。真库实测：报告说 `engine_resource_disabled`，`POST` 答 429。第一轮 B1 的「状态」半边修好了，「码」半边没修好——而且方向反了：报告现在点名一个创建永远不会返回的码。 | **阻断** |
+| **N5** | `causes` 多值顺序与创建短路顺序不一致，而 `detail` 用 `causes[0]` 断言单一码。两处同时命中时，`detail` 会写一句假话。真库 + 单测双证。 | **阻断** |
+| **N6** | `_classify_chains` 用 `min(chain, key=(len, chain))` 选「创建会走的那条链」。多一个**无法解码的幽灵实例**（长度 1 的链）就能压过真实实例长度 2 的链，把报告的 cause 从 `capacity_exhausted` 翻成 `engine_state_mismatch`。真库 + 单测双证。 | **阻断** |
+
+N3/N5/N6 都是「报告与创建回答不同问题」——本 PR 要消灭的那类缺陷，只是换了位置。
+
+## R1. 审查环境与执行事实
+
+| 项 | 值 |
+| --- | --- |
+| worktree | `/private/tmp/sn861`，分支 `review/861-845-v2` |
+| 被审 head | `6e4d5b8a`（detached 检出后比对；返修报告分支基于 `origin/main` = `2cc0efa5`） |
+| Python | 3.14（worktree 内 `UV_NO_CONFIG=1 uv sync --locked --all-packages --all-groups`，`EXIT=0`） |
+| Node / pnpm | v26.12.1 / 12.14.0（`pnpm install --frozen-lockfile`，`EXIT=0`） |
+| 隔离 PostgreSQL | 自建 `sn861-pg`（`postgres:16.15-alpine`，`127.0.0.1:55471`），用后 `docker rm -f` |
+| 隔离 MySQL | 项目既有 `speechnexus-coordination-mysql`（`127.0.0.1:55434`，未改动其状态） |
+| 未触碰 | 同机其它评审容器（`sn824-*`/`sn838-pg`/`sn832-*`）与共享 GPU 引擎容器 |
+
+`~/.config/uv/uv.toml` 的清华镜像问题用 `UV_NO_CONFIG=1` 绕开，**不作为失败项**。
+
+## R2. 装载层：第一轮的关键缺口有没有被证明
+
+### R2.1 真库实验（重做第一轮的 draining 实验，并扩到其它拒绝态）
+
+构造方式：在隔离 PG 上装好完整协调 schema + 生产 HTTP 组合根
+（`create_app(...)` + `ASGITransport`），**同一个进程内**先 `GET .../admission-readiness`
+再 `POST /v1/nexus/jobs`。探针文件用后即删，`git status --porcelain` 为空。
+
+```
+### pool_state=draining
+  REPORT  status=degraded   causes=['engine_resource_disabled']
+          detail: A ready engine instance, its pool or the approved recipe is not active,
+                  so a create answers engine_resource_disabled unt...
+  CREATE  http=429  code=job_capacity_exhausted  retryable=True
+
+### host node_state=quarantined
+  REPORT  status=admitting  causes=[]
+          detail: None
+  CREATE  http=503  code=engine_resource_disabled  retryable=False
+
+### owner_state=reconciling_takeover
+  REPORT  status=degraded   causes=['engine_state_mismatch']
+  CREATE  http=503  code=engine_state_mismatch  retryable=False
+
+### control: healthy
+  REPORT  status=admitting  causes=[]
+  CREATE  http=202  code=None
+```
+
+读法：
+
+- **owner 租约**：报告与创建一致（`engine_state_mismatch` / 503）。↔ 这一项做对了。
+- **`pool_state='draining'`**：报告 `engine_resource_disabled`（=503 语义），创建 **429
+  `job_capacity_exhausted`**。状态对了，**码错了**，而 `detail` 那句「a create answers
+  engine_resource_disabled」是**假话**。这正是第一轮 PROBE-C 的那台部署。
+- **`node_state='quarantined'`**：报告 **`admitting`**，创建 **503**。**假绿**，与第一轮
+  B1 同一形态。
+
+### R2.2 为什么 `node_state` 结构上不可能出现在报告里
+
+- `AdmissionReadinessFacts`（`domain/job_admission_readiness.py`）字段是
+  `workspace_id / workspace_state / quota / pools / runtimes / undecodable / now_us`——
+  **没有 hosts**。
+- `deployment_refusals(*, pools, runtimes, quota, now_us)`——**没有 hosts**。
+- 装载器 `PostgresPublicJobs.admission_readiness_facts` 一次 SQL 都不读 `host_nodes`：
+  `grep -c "host_nodes" backend/src/speechnexus_backend/speech/infrastructure/public_jobs_postgres.py` = **0**。
+- 创建路径却读：`domain/admission.py:597` `if host.node_state != "active": raise policy_or_resource_disabled`。
+- 三个 readiness 测试文件里 `grep -rn node_state` = **0 命中**，即这条路径零覆盖。
+
+`node_state` 不是「请求形状」，也不是契约里已声明的边界。契约只写了
+「Host-level resource **headroom** is not evaluated」（向量来自请求），**没有**写
+`node_state` 不覆盖。所以这是缺口，不是已声明的边界。
+
+### R2.3 作者自己那条真库测试在本 head 上是红的
+
+```
+$ .venv/bin/python -m pytest tests/integration/test_job_admission_readiness_pg.py -q
+FAILED ...::test_a_workspace_without_a_quota_row_is_its_own_class[postgresql]
+E   AssertionError: assert ['workspace_not_configured'] == ['workspace_not_provisioned']
+1 failed, 4 passed in 3.54s
+```
+
+4 条通过的是：`admitting` 基线、回执过期、配额占满、撤销 `workspace_quotas` SELECT
+（`storage_unavailable`）。**这三类装载确实通了**——所以返修不是无功；但
+`pool_state` / `node_state` / 实例服务态这三类，装载与断言都缺。
+
+## R3. 单一判据是不是真的单一
+
+### R3.1 共享是真的，但只共享了「三层里的后两层」
+
+返修把规则抽成 `require_quota / require_pool_live / require_runtime_live /
+require_runtime_capacity / require_runtime_service`，报告用 `deployment_refusals` 收集，
+创建用同批函数。**这一层是真的单一**，我用双向变异验证过（见 R6 的 M-b1/M-b2：删报告侧
+红 2 条，删创建侧红 5 条）。
+
+但创建路径实际有**三层**拒绝，报告只镜像了后两层：
+
+| 层 | 位置 | 例子 | 报告覆盖 |
+| --- | --- | --- | --- |
+| L1 选择/预检 | `infrastructure/public_job_admission.py:634-637` | `pool_state != 'active'` → **429** | ✗ |
+| L2 `require_live_authority` | `domain/admission.py` | 池状态、owner 租约、回执窗口 | ✓ |
+| L3 `decide_admission` | `domain/admission.py` | host 状态、实例服务态、容量、配额 | 部分（缺 host） |
+
+L1 的存在让 R2.1 的 draining 两行对不上；作者的单测
+`test_a_draining_pool_is_reported_instead_of_admitting` 断言
+`_create_code(facts) == "engine_resource_disabled"`，而它的 `_create_code` 只走 L2+L3
+——**它给创建路径建了一个不含 L1 的模型，于是"等价"是在错误模型上证明的**。真库上
+同一状态创建答 429。
+
+### R3.2 多 cause 的顺序：`deployment_refusals` 顺序 ≠ 创建顺序，且 `detail` 又按字母序取第一个
+
+两条路径的先后不同：
+
+- **创建**：L2（池 → 全部 runtime 的 live）→ 配额版本 → `require_quota` →
+  每 stage 的 host 状态 → `require_runtime_service` → **最后**容量。
+- **`deployment_refusals`**：`require_quota` **最先** → 各池 → 各 runtime 的
+  live → **capacity** → service。
+
+即两处倒序：**配额 vs 池**，**容量 vs 服务态**。更关键的是 `_causes_from` 最后
+`return tuple(sorted(causes))`（`job_admission_readiness.py:319`）——按**字母序**重排，
+而 `_detail` 用 `causes[0]` 去断言一个具体码。
+
+真库实测（同进程）：
+
+```
+### 回执过期 + 配额占满（两类同时命中）
+  REPORT  status=degraded causes=['capacity_exhausted', 'engine_receipt_expired']
+          detail: The workspace quota holds every attempt (held 4 + quarantined 0 of 4);
+                  a create answers job_capacity_exhausted ...
+  CREATE  http=503  code=engine_not_ready  retryable=False
+```
+
+单测层面同样可复现（手搭 facts，不涉及真库）：
+
+```
+A. 回执过期，配额正常
+   status=degraded causes=['engine_receipt_expired']
+   detail=... a create answers engine_not_ready
+B. 回执过期 + 配额占满
+   status=degraded causes=['capacity_exhausted', 'engine_receipt_expired']
+   detail=The workspace quota holds every attempt ... a create answers job_capacity_exhausted
+   # 创建实际答 503 engine_not_ready（配额在 require_live_authority 之后才检查）
+```
+
+契约自己写了这条边界：
+
+> `causes` are evaluated independently and reported together ... a create answers
+> whichever refusal it reaches first, and this surface names the classes rather than
+> mirroring one request's precedence.
+> （`contracts/speech-openapi.yaml`，`AdmissionReadiness` 描述）
+
+**这句话与实现矛盾**：`causes` 确实多值（符合），但 `detail` 用 `causes[0]` 断言
+「a create answers <具体码>」（不符合）。要么 `detail` 不再点名单一码，要么按创建优先级
+排序。当前是「声明按类、文案按序」，两头都不成立。
+
+### R3.3 还有一处：`min(chains, key=(len, chain))` 会选一条创建不会走的链
+
+`_classify_chains`（`job_admission_readiness.py:308`）用「拒绝最少、再按码字母序」挑
+「创建会走的那条链」。`undecodable` 实例被塞成一条长度 1 的 `reconciliation_required` 链。
+于是：真实实例一旦有两类拒绝（长度 2），一条**无关的幽灵实例**就能把报告的 cause 抢走。
+
+单测（同一真实实例，仅追加一个 undecodable）：
+
+```
+A. 回执过期，配额正常          -> causes=['engine_receipt_expired']
+B. 回执过期 + 配额占满          -> causes=['capacity_exhausted','engine_receipt_expired']
+C. B + 一个 undecodable 幽灵    -> causes=['engine_state_mismatch']   ← 翻面
+D. 回执正常 + 配额占满 + 幽灵    -> causes=['capacity_exhausted']
+```
+
+C 是**非单调**的：什么都没变，只多了一个创建根本不会钉住的坏实例，报告从「配额/回执」
+变成「实例状态不符」。
+
+真库里这就是我实测到的那一格：fixture 有 `instance-new`（有回执）与 `instance-test`
+（无 prepare intent → `undecodable`）；创建按 `ORDER BY instance_id LIMIT 1` 钉
+`instance-new`，报告却描述了 `instance-test` 的链：
+
+```
+### 回执过期 + 配额占满（真库）
+  REPORT  causes=['engine_state_mismatch']      ← 幽灵实例抢走了
+  CREATE  http=503 code=engine_not_ready        ← 创建钉的是 instance-new
+```
+
+（`GET .../admission-readiness` 的 `instances[]` 只列 `instance-new`，因为
+`undecodable` 的不进 `instances`——这本身也说明报告知道它不可用，却拿它当结论。）
+
+## R4. 8 类 cause 的双向比对（我自己重做）
+
+从 `contracts/speech-openapi.yaml` 的 `createJob` 逐状态枚举提取（不是手抄）：
+
+```
+422: asset_not_ready, job_binding_incomplete, job_kind_not_supported, job_request_expired,
+     job_text_asset_unsupported, model_binding_mismatch, model_binding_not_current,
+     model_binding_not_published, model_binding_retired, model_binding_task_not_supported,
+     model_not_published, profile_not_published, pronunciation_not_found,
+     unsupported_parameter, voice_draft_not_candidate, voice_not_published,
+     workspace_disabled, workspace_not_configured, workspace_not_found
+429: job_capacity_exhausted                      ← 内联枚举（第一轮 4.3 的空断言已修）
+500: admission_state_invalid
+503: engine_not_ready, engine_resource_disabled, engine_state_mismatch,
+     job_admission_contended, job_outcome_unknown, job_unavailable, recipe_not_admitted
+```
+
+**正向（cause → 它点名的码 → 该码是否在该状态被声明）：8/8 成立。**
+
+```
+engine_receipt_expired   -> engine_not_ready          503 declared=True
+engine_state_mismatch    -> engine_state_mismatch     503 declared=True
+engine_resource_disabled -> engine_resource_disabled  503 declared=True
+capacity_exhausted       -> job_capacity_exhausted    429 declared=True
+workspace_not_found      -> workspace_not_found       422 declared=True
+workspace_disabled       -> workspace_disabled        422 declared=True
+workspace_not_configured -> workspace_not_configured  422 declared=True
+storage_unavailable      -> job_unavailable           503 declared=True
+```
+
+**反向（有 cause 的码 vs 没有的）：** 无 cause 的 5xx 是 `admission_state_invalid`(500)、
+`job_admission_contended`、`job_outcome_unknown`、`recipe_not_admitted`——第一轮已判为
+「缺陷/竞态/请求形状」，可接受。
+
+**集合相等断言成立：** `DEPLOYMENT_STATE_CODES == set(CAUSE_CODES.values())` → `True`，
+两侧差集均为空。第一轮 B3 点名的 `engine_state_mismatch`、`engine_resource_disabled`、
+`workspace_not_found`、`workspace_disabled` **都补上了**，`workspace_not_*` 三种也拆开了。
+↔ **B3 关闭**。
+
+429 那半边也确实有牙了：
+
+```
+_create_job_accepts(429, 'job_capacity_exhausted')  = True
+_create_job_accepts(429, 'engine_not_ready')        = False
+_create_job_accepts(429, 'engine_state_mismatch')   = False
+_create_job_accepts(503, 'job_capacity_exhausted')  = False
+```
+
+一条**保留意见**（不阻断）：`DEPLOYMENT_STATE_CODES` 是 `job_errors.py` 里**手工维护的
+第二个清单**，不是从 `createJob` 的契约枚举派生的。所以
+`test_the_causes_are_exactly_the_declared_deployment_state_answers` 比的是**两个 Python
+常量**；往契约的 503 枚举里加一个新码而不同步这个常量，测试**不会**红。它比第一轮强
+很多，但还不是注释里说的「与 createJob 声明的码集合双向闭」——建议派生自契约枚举。
+
+## R5. 上一轮各项回归
+
+| 上轮项 | 本轮实测 | 判定 |
+| --- | --- | --- |
+| **B1** 池非 active → 报告 admitting | 报告不再 admitting；但创建答 429 而报告点名 503 `engine_resource_disabled` | **半关**（见 N4） |
+| **B2** 无 ready 实例的码与文案 | cause 改 `capacity_exhausted`；契约该行改为「no ready engine instance ... 429」；`_detail` 同步 | ✓ **关闭** |
+| **B3** 两个 503 码无 cause | 8 类补齐，集合相等断言成立 | ✓ **关闭** |
+| **M4** 文档「healthcheck 会变红」 | 第 113 行已改为「Docker 不再评估已退出容器的 healthcheck，既不会变红也不会 `unhealthy`」 | ✓ |
+| **M5** 「三类/四类」计数 | 全文件已无「三类/四类」字样，改为「闭合枚举」 | ✓ |
+| **M6** 孤儿文档 | `deploy/README.md:50` 已挂链；但 `docs/README.md` / `docs/operations/README.md` 仍 **0 命中** | **半关** |
+| **M7/S9** route conformance 精确断言 | `sorted(invoked) == sorted([probe_path, ".../admission-readiness"])`、`ran == ["generator","generator"]` 均为精确相等；`42` 改为契约派生 | ✓ |
+| **S8** `start_period` ≥120s | 仍是 `start_period: 5s` | 未采纳（本就只是建议） |
+| **S10** 反向守卫 | 见 R4 保留意见 | 部分 |
+
+**另外**：文档 cause 表第 46 行现在写「`engine_resource_disabled` … `503
+engine_resource_disabled`」，把 `pool_state` 也归进这一行——**真库证伪**（draining 是
+429）。这是本轮新引入的文档事实错误，与 N4 同源。
+
+残留的同名漂移：`workspace_not_provisioned` 这个**已被改名的** cause 仍留在
+`contracts/speech-openapi.yaml:1234`、`:6682`、生成物
+`packages/contracts/src/speechnexus_contracts/file.schema.json:3858`、
+`deploy/compose.yaml:734`、`tests/contract/test_job_admission_readiness.py:115` 注释，
+以及 N2 的失败断言里。冻结契约里描述了一个枚举中**不存在**的 cause。
+
+## R6. 变异（我自己重做，单点施加、跑完复原）
+
+每次 `git checkout --` 后 `git status --porcelain` 为空。
+
+| # | 变异 | 结果 |
+| --- | --- | --- |
+| M-a | 删掉 `jobs.py` 的 `@router.get(PREFIX + "/admission-readiness", ...)` 整块 | **3 failed, 59 passed**（`test_repository_has_no_unbaselined_deviation`、`test_partial_405_probe_mapping_fails_only_the_missing_operation`、`test_lost_evaluate_evidence_fails_cli_with_failed_rows[none]`） |
+| M-b1 | `deployment_refusals` 里删掉 per-runtime 的 `require_runtime_service`（只删报告侧） | **2 failed**（`[instance_stopped]`、`[undecodable_instance]`） |
+| M-b2 | `decide_admission` 里删掉 `require_runtime_service`（只删创建侧） | **5 failed**（`test_job_admission_readiness` 2 + `test_admission` 3） |
+| M-c | `CAUSE_BY_REFUSAL_CODE["capacity_exhausted"]` 改成 `ENGINE_RECEIPT_EXPIRED` | **4 failed** |
+| M-d | 删掉 `job-admission-watch` 的 `profiles: ["admission-watch"]` | **1 failed**（`test_the_poller_is_its_own_opt_in_profile`），且 base `config --services` 变成含 `job-admission-watch` |
+| — | 复原后 base `config --services` | `api gateway minio minio-init postgres`（与第一轮基线一致）✓ |
+
+M-b1/M-b2 说明「共享谓词」两个方向都有牙——这是本轮**做得最实**的一处。
+M-a 我测到的是 **3 条**，不是作者说的「4 条红」；数量对不上，但门禁确实有牙。
+
+## R7. 实跑（`6e4d5b8a`，macOS arm64，Python 3.14，Node 26.12.1）
+
+| 检查 | 结果 |
+| --- | --- |
+| `pytest tests/ci -q` | **433 passed, 1418 subtests passed** |
+| `pytest tests/contract -q` | **3903 passed** |
+| `pytest tests/unit/backend -q` | **3370 passed, 6 subtests passed** |
+| `pytest tests/integration/test_job_admission_readiness_pg.py`（隔离 PG 16.15 + MySQL 8.4.8） | **1 failed, 4 passed** ← N2 |
+| `uv run mypy` | **4 errors**（`domain/admission.py:477/483/484/489`）← N1 |
+| `ruff check .` / `ruff format --check .` | All checks passed / 1921 files already formatted |
+| `uv run lint-imports` | **9 kept, 0 broken** |
+| `pnpm typecheck` / `pnpm lint` | exit 0 / ESLint passed |
+| `docker compose --env-file deploy/compose.env.example ... config --quiet` | base + 10 个 profile **全部 exit 0** |
+
+环境注记：第一次跑 `tests/contract` 有 8 条 `ERR_MODULE_NOT_FOUND: openapi-fetch` 失败，
+原因是该 worktree 未装 Node 依赖（我只跑了 `uv sync`）；`pnpm install --frozen-lockfile`
+后重跑 **3903 passed**。**这不是本 PR 的问题**，已排除。
+
+## R8. 必须修
+
+**阻断（合入前必须解决）**
+
+1. **N1 mypy 4 红**：`_refused_by(lambda ...)` 的 `Callable[[], None]` 无法推断带默认参数的
+   lambda 类型。用 `functools.partial` 或显式 `def` 包一层。`ci.yml:376` 会红。
+2. **N2 集成测试红**：`tests/integration/test_job_admission_readiness_pg.py:326` 的
+   `workspace_not_provisioned` 改 `workspace_not_configured`；同时清掉 R5 末尾列出的
+   契约/生成物/compose/注释里的同名漂移。**请在提交说明里给出这条测试的实跑输出**——
+   本轮它没跑过。
+3. **N3 装载层补 host**：`AdmissionReadinessFacts` 与 `deployment_refusals` 加 `hosts`，
+   装载器读 `host_nodes`，并让 `require_runtime_service` 承接 `node_state` 判定（与
+   `decide_admission:597` 同一处）。加一条真库用例：`host_nodes.node_state='quarantined'`
+   时报告不得 `admitting`。
+4. **N4 draining 的码对不上**：二选一并写进契约——
+   (a) 报告对 `pool_state` 走 L1 的答案（`capacity_exhausted`），或
+   (b) 把 L1 的 `pool_state` 判定挪进共享谓词，让创建也答 `engine_resource_disabled`。
+   现状是报告点名一个创建不会返回的码，且文档第 46 行按错的写。
+5. **N5 多 cause 与 `detail`**：`detail` 不要再从 `causes[0]` 断言单一码（改为按类描述），
+   或者按创建优先级排序并去掉字母序 `sorted()`。二者取一，并让契约措辞与实现一致。
+6. **N6 链选择**：`min(chains, key=(len, chain))` 改成「创建真正会钉住的那条链」（按
+   `_instance` 的选择规则），或至少让 `undecodable` 不参与「最不坏链」的竞争（它应该是
+   加权重，不是更短的链）。
+
+**必须修（可与上同轮）**
+
+7. 文档第 46 行删掉 `pool_state` 归入 `engine_resource_disabled` 的说法（跟随 N4 的结论）。
+8. 孤儿文档：`docs/README.md` 与 `docs/operations/README.md` 补索引行（第一轮 M6 未全做）。
+9. `DEPLOYMENT_STATE_CODES` 改为从 `createJob` 契约枚举派生（R4 保留意见）。
+10. 更新 PR 说明：本轮的变异实测是 3 条红，不是 4 条。
+
+**建议（S）**
+
+11. `start_period: 5s` → ≥120s（第一轮 S8，仍未采纳，冷启动噪声仍在）。
+12. 给 `deployment_refusals` 补一条「顺序 = 创建顺序」的守卫测试，否则 N5 会复发。
+
+## R9. 未验证 / 只能依赖作者的点
+
+- **真实镜像内 `speechnexus-admission-watch` 入口与只读根 + tmpfs 写状态文件**：未执行
+  `docker build` / `make python-build`，与第一轮相同。
+- **`docker ps` 实际状态迁移与 `RestartCount`**：未起整套栈，只做 `config --quiet`。
+- **回执自然 24h 过期**：与第一轮相同，用就地重写构造。
+- **我构造的 `workspace_quotas`/`resource_pools`/`host_nodes` 行**：都是对真实 schema 的
+  `UPDATE`（不是新建表），但「运维会把池置为 draining / 主机会被 quarantine」的**触发路径**
+  我读到了代码（`domain/leases.py:215-218` 在超阈值时把 `node_state` 置 `quarantined`；
+  `engine_registration.py:387-397` 恢复），**没有**跑一次真实的租约隔离来产生它。
+- **N2 之外是否还有未跑的测试**：我只跑了 CI 覆盖的四个套件 + 该集成文件；本机没有
+  `SPEECHNEXUS_TEST_MINIO_*`，`make integration-test` 的全量门禁未跑。
+- **`check-doc-refs.py` 的 `MISSING`**：本报告按第一轮同样体例用 `路径:行号` 引用**被审分支**的
+  文件（`docs/operations/engine-readiness-observability.md`、`admission_watch.py` 等），这些文件
+  只存在于 PR 分支，在本报告所在的分支上自然解析不到，`MISSING` 从 43 升到 47 全部来自此处。
+  该脚本明示为本地报告工具、不接入 CI、失败不阻止合并（`docs/validation/ci-validation.md:546`）。
+
+---
+
+第二轮审查环境：worktree `/private/tmp/sn861`，分支 `review/861-845-v2`（基于
+`origin/main` = `2cc0efa5`），被审 head `6e4d5b8a`。自建 `sn861-pg`
+（`postgres:16.15-alpine`，`127.0.0.1:55471`）用完即删；MySQL 复用项目既有的
+`speechnexus-coordination-mysql`（未改其状态）。所有变异施加后均已 `git checkout --` 复原，
+`git status --porcelain` 为空。未触碰任何共享 GPU 引擎容器。

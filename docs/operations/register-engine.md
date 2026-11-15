@@ -85,6 +85,7 @@ speechnexus-register-engine \
 | `--readiness-ttl-seconds` | readiness 收据有效期，默认 86400 秒，范围 1–31536000 秒 |
 | `--intent-deadline-seconds` | 注册 prepare intent 的期限，默认 300 秒，范围 1–3600 秒 |
 | `--intent-id` | 可选；缺省为 `register-<instance>-g<generation>` |
+| `--renew-readiness` | 即使存储的 readiness 尚未过期，也用本次 `/health` 重签收据；定时续期的入口 |
 | `--health-timeout-seconds` | 健康探测超时，默认 5 秒，大于 0 且不超过 30 秒 |
 | `--transaction-timeout-seconds` | 数据库事务超时，默认 10 秒 |
 
@@ -153,6 +154,51 @@ readiness 已过期，则用本次 `/health` 重签 readiness 并更新 `ready_a
 generation 返回 `stale_instance_generation`。当前 generation 仍 ready 时注册更高
 generation 返回 `previous_generation_active`。
 
+## 续期与观测
+
+准入每次创建都会核对 readiness 的有效期（`verified_at_us <= 当前时间 < expires_at_us`）。
+收据由 `--readiness-ttl-seconds` 决定（默认 86400 秒），过期后准入返回
+`503 engine_not_ready`（`retryable: false`：重签收据是运维动作，`retryable` 只表示
+"同一请求无需带外改动即可成功"）而不是存储故障的 `job_unavailable`；重新登记同一实例即可
+放行同一请求（同一 Idempotency-Key 重放），不会新建实例。其余引擎侧原因各有自己的码：
+`503 engine_state_mismatch`（身份/世代/拓扑/fencing 不符）、`503
+engine_resource_disabled`（实例、池或审批未激活）、`503 recipe_not_admitted`（与已批准
+配方不一致），它们都不表示存储故障。
+
+续期必须在真实 `/health` 探测后重签收据，不能只改数据库；定期任务用
+`--renew-readiness`，它在收据仍然有效时也强制重签：
+
+```bash
+speechnexus-register-engine \
+  --schema speech --engine-url http://127.0.0.1:18100 \
+  --generation 1 --instance instance-asr-1 \
+  --readiness-ttl-seconds 86400 --renew-readiness
+```
+
+已知缺陷：参考部署没有集群内的自动信号覆盖收据状态（`/readyz` 有意不因过期失败，
+报告命令不被 Compose 调度，启动闸门只打印一次），跟踪
+[#845](https://github.com/hrygo/SpeechNexus/issues/845)。定时续期只缩短窗口，不消除该缺口。
+
+输出 JSON 的 `readiness.state` 是本次运行发现的窗口（`valid` / `expiring` /
+`expired`），`readiness.renewed` 表示是否重签；窗口为 `expiring` 或 `expired` 时
+另在 stderr 输出 `warning: readiness ...`，因此定时任务的日志本身就是预警信号。
+不带 `--renew-readiness` 的登记只在收据已过期时重签，所以定时间隔应短于
+`--readiness-ttl-seconds`。
+
+只读观测用 `speechnexus-engine-readiness`，它不写库、不探测引擎，以只读会话读取
+每个 `ready` 实例的收据，按数据库时钟输出一行 JSON 与一行汇总：
+
+```bash
+speechnexus-engine-readiness --warn-within-seconds 21600
+```
+
+每行给出 `readiness_state`（`valid` / `expiring` / `expired` / `missing` /
+`invalid`）、`expires_at_us`、`remaining_seconds`（已过期为负）和 `remediation`；
+汇总给出各状态计数与 `unusable`。任一实例 `expired` / `missing` / `invalid` 时退出码
+为 `5`（`EXIT_UNAVAILABLE`），`--fail-on-expiring` 让 `expiring` 也返回非零，供监控
+在创建失败前告警。`--warn-within-seconds` 默认 `21600`（TTL 的四分之一），只是上报
+阈值，不改变准入判定。
+
 命令未明确成功时，应查询原实例、generation、intent 和池 owner，再决定是否按原参数重试。
 数据库提交回执丢失时结果可能未知；即使命令输出“no registration was committed”，也不能仅凭
 该错误文案断定事务未提交，更不能换 generation 或身份盲目重试。
@@ -176,8 +222,9 @@ WHERE instance_id = '<instance>';
 `engine_instances.instance_state` 应为 `ready`、`base_budget_kind` 为 `steady`，
 `runtime_instance_heads.current_generation` 等于注册的 generation，intent 为
 `succeeded` 且 observation/readiness 均非空。这些查询只检查登记状态和文档是否存在，
-不检查 readiness 的有效期，也不证明当前仍可准入；还须按当前数据库时间核对收据有效期、
-池 owner 租约及实际资源与资格事实。
+不检查 readiness 的有效期，也不证明当前仍可准入；收据窗口用
+`speechnexus-engine-readiness` 核对（它按数据库时钟分类 `valid` / `expiring` /
+`expired`），池 owner 租约与实际资源、资格事实仍须分别核对。
 
 ## 边界
 
@@ -187,5 +234,6 @@ WHERE instance_id = '<instance>';
 - 该命令不执行真实转写、不启动节点控制器、不验证 GPU 模型；这些仍由对应执行与
   资格任务分别取证。
 - 单元回归（不连数据库）：`uv run pytest tests/unit/backend/test_engine_registration.py
-  tests/unit/backend/test_engine_registration_transaction.py -q`。真实 PostgreSQL 链路
+  tests/unit/backend/test_engine_registration_transaction.py
+  tests/unit/backend/test_engine_readiness_report.py -q`。真实 PostgreSQL 链路
   见 `tests/integration/test_engine_registration_pg.py`。

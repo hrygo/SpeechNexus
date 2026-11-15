@@ -159,7 +159,9 @@ test("413 首答：显示已作废而非结果未知，两步确认后输入解�
 
   // Third state (#731): the refusal is about these bytes, so the page must not claim
   // the outcome is unconfirmed, yet it may not claim "nothing executed" either.
-  await expect(panel(page).getByText("原请求因请求体超过本部署的接收上限被拒绝")).toBeVisible();
+  await expect(
+    panel(page).getByText("原请求已被协议拒绝，这次请求被拒绝、原意图作废"),
+  ).toBeVisible();
   await expect(unknownAlert(page)).toHaveCount(0);
   await expect(panel(page).getByText("请求结果尚未确认")).toHaveCount(0);
   await expect(replayButton(page)).toBeDisabled();
@@ -498,7 +500,9 @@ test("413 首答重载：保持不可重放的作废态，三步显式放弃", a
   // precedes the original key lookup, so it proves nothing about an earlier attempt
   // (file-task-session.ts:717-724). The product shows the verdict only after persisting
   // it, so waiting for the rendered paragraph also waits for the durable write.
-  await expect(panel(page).getByText("原请求因请求体超过本部署的接收上限被拒绝")).toBeVisible();
+  await expect(
+    panel(page).getByText("原请求已被协议拒绝，这次请求被拒绝、原意图作废"),
+  ).toBeVisible();
   expect((await journalRecord(page))?.settled).toBe("unreplayable");
 
   // Reload restores the third class from the journal alone; the restored notice is the
@@ -506,9 +510,11 @@ test("413 首答重载：保持不可重放的作废态，三步显式放弃", a
   await page.reload();
   await expect(page.getByRole("heading", { name: "文件转写" })).toBeVisible();
   await expect(notice(page)).toHaveText(
-    "已找到原任务身份；该请求因请求体超过本部署的接收上限被拒绝，原意图作废。",
+    "已找到原任务身份；协议已拒绝这次请求且不能按原键再次提交，原意图作废。",
   );
-  await expect(panel(page).getByText("原请求因请求体超过本部署的接收上限被拒绝")).toBeVisible();
+  await expect(
+    panel(page).getByText("原请求已被协议拒绝，这次请求被拒绝、原意图作废"),
+  ).toBeVisible();
   await expect(panel(page).getByText("请求结果尚未确认")).toHaveCount(0);
   await expect(unknownAlert(page)).toHaveCount(0);
   await expect(replayButton(page)).toBeDisabled();

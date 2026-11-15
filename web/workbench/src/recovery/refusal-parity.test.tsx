@@ -25,7 +25,7 @@ import type { RecordedRefusal } from "./command-journal";
  *   and the 409 cleanup wait, and both are raised by `generateRenderUnitV2` alone
  *   (`backend/.../workbench/interfaces/http_versions.py` defaults `retryable=False` and
  *   only `http_render_units.py` passes `refusal_retryable`); the contract states the field
- *   as "whether the same dispatch may be retried after the refusal";
+ *   as "whether the same request can succeed without an out-of-band change";
  * - the render panel's per-code mirror of that promise (`books/render-refusals.ts`) is
  *   compared against the backend on all three sides by
  *   `tests/contract/test_render_refusal_vocabulary.py`, so "the panel's table" and "the

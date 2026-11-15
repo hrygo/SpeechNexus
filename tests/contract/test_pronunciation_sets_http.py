@@ -92,11 +92,16 @@ def test_unavailable_is_an_inline_retryable_outage(method: str) -> None:
     assert headers["Cache-Control"]["required"] is True
     assert headers["Cache-Control"]["schema"]["const"] == "no-store"
     assert headers["X-Should-Retry"]["required"] is True
-    assert headers["X-Should-Retry"]["schema"]["const"] == "true"
+    # The retry rule is per code now: a refused storage read answers `false` on this
+    # surface too, matching the Job surface's `job_unavailable` (#828 review M5).
+    assert headers["X-Should-Retry"]["schema"]["enum"] == ["true", "false"]
     variants = unavailable["content"]["application/json"]["schema"]["allOf"]
     assert variants[0] == {"$ref": "#/components/schemas/ErrorResponse"}
     assert codes(variants[1]) == {"pronunciation_unavailable"}
-    assert variants[1]["properties"]["error"]["properties"]["retryable"]["const"] is True
+    assert variants[1]["properties"]["error"]["properties"]["retryable"]["enum"] == [
+        True,
+        False,
+    ]
 
 
 def test_error_codes_are_distinct_and_never_hide_the_request_error() -> None:

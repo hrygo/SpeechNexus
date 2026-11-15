@@ -48,6 +48,14 @@ This module pins current behaviour instead of inventing a new code: #690 landed
 the text-ceiling contract correction, #702 replaced the missing-quota 503 with
 422 ``workspace_not_configured`` while keeping a genuine storage fault on 503,
 and #703 the declared receive bound with its 413 and ``job_request_too_large``.
+#828 (found by the #572 acceptance) removed the 503 fallback altogether: each
+engine-side refusal answers its own code with no row, and re-signing the receipt
+admits the same body under the same key. An elapsed receipt is 503
+``engine_not_ready``; a drifted receipt identity is 503 ``engine_state_mismatch``;
+the storage fault keeps 503 ``job_unavailable``. All three are
+``retryable: false`` -- the readiness recoveries are operator steps -- while
+``job_admission_contended`` is the one admission refusal that retries. The cause,
+not the status alone, separates them.
 
 Boundaries -- what this module does not claim:
 
@@ -70,7 +78,11 @@ Boundaries -- what this module does not claim:
   they do not qualify network, commit-loss or failover behaviour. The storage-fault
   case revokes the admission role's SELECT on ``workspace_quotas``, which models a
   failed read of the reservation row; it is not a network partition or failover
-  qualification. A second storage case terminates that role's session, i.e. a
+  qualification. The readiness case rewrites the stored receipt instead of letting
+  24 h elapse, which reproduces the elapsed state but not the clock passage that
+  produced it; the renewal it replays is the same transaction
+  ``speechnexus-register-engine --renew-readiness`` runs in the test harness, not a
+  real ``/health`` probe. A second storage case terminates that role's session, i.e. a
   connection-level failure: the store reports an unknown outcome and the answer is
   the retryable 503 ``job_outcome_unknown``, so the two storage failures are pinned
   to their own retry rules instead of one shared "storage is down" code. The same 400
@@ -91,7 +103,7 @@ Boundaries -- what this module does not claim:
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from httpx import ASGITransport, AsyncClient, Response
@@ -556,6 +568,182 @@ async def test_create_without_a_provisioned_workspace_quota_is_refused_without_r
         _expect_reservation(provisioned_before, _snapshot(db), "workspace-default")
 
 
+def _readiness_document(db: JobDatabase) -> str:
+    """The stored receipt admission checks for the fixture's ready instance."""
+    rows = db.query(
+        "SELECT readiness_document FROM runtime_instance_intents WHERE intent_id = 'runtime-new'"
+    )
+    assert len(rows) == 1 and rows[0]["readiness_document"], rows
+    return cast(str, rows[0]["readiness_document"])
+
+
+def _rewrite_receipt(db: JobDatabase, *, verified_at_us: int, expires_at_us: int) -> None:
+    """Re-create the receipt the renewal transaction writes, without an engine probe.
+
+    ``speechnexus-register-engine --renew-readiness`` sets the receipt and
+    ``engine_instances.ready_at_us`` to the probe time in one transaction, because
+    admission requires ``verified_at_us <= ready_at_us <= now``. Writing only the
+    document would test a state the product cannot produce.
+    """
+    document = json.loads(_readiness_document(db))
+    document["verified_at_us"] = verified_at_us
+    document["expires_at_us"] = expires_at_us
+    db.query(
+        "UPDATE runtime_instance_intents SET readiness_document = %s "
+        "WHERE intent_id = 'runtime-new'",
+        (json.dumps(document, separators=(",", ":")),),
+    )
+    db.query(
+        "UPDATE engine_instances SET ready_at_us = %s "
+        "WHERE instance_id = %s AND instance_generation = %s",
+        (verified_at_us, *INSTANCE),
+    )
+
+
+async def test_an_elapsed_readiness_receipt_is_engine_not_ready_not_a_storage_outage(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """An expired receipt answers its own 503 and admits after a renewal.
+
+    #828 (found by the #572 acceptance): after a resume, the first create answered
+    ``503 job_unavailable`` -- "Job storage is unavailable", ``retryable: false``
+    -- while every storage fact was healthy. The instance's readiness receipt had
+    merely elapsed, and ``rejection_code`` folded the refusal into the outage code.
+    Re-running the registration answered ``202`` for the same body, so the answer
+    named a broken store for a condition a re-registration fixes.
+
+    The case pins the whole round trip over the production HTTP assembly: the
+    elapsed receipt answers ``503 engine_not_ready`` with ``retryable: false`` and
+    writes nothing; re-signing the receipt -- what the renewal entry does -- admits
+    the *same* body under the *same* key with ``202``; and the storage-outage
+    answer keeps its own code and retry rule, so the two 503s stay distinguishable
+    in both directions instead of collapsing into one.
+    """
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    _add_spare_host(db)
+    _grant_capacity(db)
+    now_us = admission_database.runtime.now()
+    body = _body()
+    async with AsyncClient(
+        transport=ASGITransport(app=_app(admission_database)), base_url="http://test"
+    ) as client:
+        # The receipt elapsed one microsecond ago while the instance is still ready.
+        _rewrite_receipt(db, verified_at_us=now_us - 1000, expires_at_us=now_us - 1)
+        before = _snapshot(db)
+        refused = await client.post(
+            PREFIX, json=body, headers={"Idempotency-Key": "synthetic-readiness-expired"}
+        )
+        assert refused.status_code == 503, refused.text
+        code, kind, retryable = _error(refused)
+        # `retryable` is false: re-signing the receipt is an out-of-band step, so
+        # retrying this exact request before that cannot succeed. The recovery is
+        # stated in the message instead (#828 review B1).
+        assert (code, kind, retryable) == ("engine_not_ready", "service_unavailable_error", False)
+        # The defect itself: the readiness answer must not be the storage-outage one.
+        assert code != "job_unavailable"
+        assert "storage" not in refused.json()["error"]["message"].lower()
+        # No row, counter or version moved: the refusal happened before admission
+        # reserved anything.
+        assert _snapshot(db) == before
+
+        # The renewal the report points at: a fresh receipt from a new probe time.
+        _rewrite_receipt(db, verified_at_us=now_us, expires_at_us=now_us + 86_400_000_000)
+        renewed_before = _snapshot(db)
+        admitted = await client.post(
+            PREFIX, json=body, headers={"Idempotency-Key": "synthetic-readiness-expired"}
+        )
+        assert admitted.status_code == 202, admitted.text
+        # The same body under the same key is admitted and reserves exactly once.
+        _expect_reservation(renewed_before, _snapshot(db))
+        assert admitted.json()["workspace_id"] == WORKSPACE
+
+
+async def test_a_drifted_receipt_identity_is_engine_state_mismatch_not_a_storage_outage(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """A receipt that names another fencing token answers its own 503, not an outage.
+
+    #828 review B3: only the elapsed window had its own code, so every other
+    admission cause still answered ``503 job_unavailable`` -- "Job storage is
+    unavailable." -- for a healthy store. Bumping the receipt's ``fencing_token``
+    by one leaves the window, the instance and the storage untouched and changes
+    only the identity admission compares, which is the cheapest way to reproduce
+    the same symptom with a different cause. It must answer
+    ``503 engine_state_mismatch`` with no row, and the storage fault must keep its
+    own answer, so the two remain distinguishable in both directions.
+    """
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    _add_spare_host(db)
+    _grant_capacity(db)
+    document = json.loads(_readiness_document(db))
+    document["fencing_token"] = int(document["fencing_token"]) + 1
+    db.query(
+        "UPDATE runtime_instance_intents SET readiness_document = %s "
+        "WHERE intent_id = 'runtime-new'",
+        (json.dumps(document, separators=(",", ":")),),
+    )
+    before = _snapshot(db)
+    async with AsyncClient(
+        transport=ASGITransport(app=_app(admission_database)), base_url="http://test"
+    ) as client:
+        refused = await client.post(
+            PREFIX, json=_body(), headers={"Idempotency-Key": "synthetic-fencing-drift"}
+        )
+    assert refused.status_code == 503, refused.text
+    code, kind, retryable = _error(refused)
+    assert (code, kind, retryable) == ("engine_state_mismatch", "service_unavailable_error", False)
+    # The defect this case exists for: a healthy store must not be blamed.
+    assert code != "job_unavailable"
+    assert "storage" not in refused.json()["error"]["message"].lower()
+    assert _snapshot(db) == before
+
+
+async def test_a_failed_quota_read_keeps_the_storage_answer_while_readiness_is_healthy(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """The other direction: a real storage fault is still ``job_unavailable``.
+
+    Both 503s are produced over the same production HTTP assembly and the same
+    message body, so the codes separate the *cause* rather than the status. A
+    readiness receipt that is valid throughout cannot borrow the retryable
+    readiness answer, and the storage answer must not become retryable.
+    """
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    _add_spare_host(db)
+    _grant_capacity(db)
+    assert admission_database.admission_role is not None
+    async with AsyncClient(
+        transport=ASGITransport(app=_app(admission_database)), base_url="http://test"
+    ) as client:
+        db.query(
+            f'REVOKE SELECT ON "{db.schema}".workspace_quotas '
+            f'FROM "{admission_database.admission_role}"'
+        )
+        try:
+            before = _snapshot(db)
+            faulted = await client.post(
+                PREFIX, json=_body(), headers={"Idempotency-Key": "synthetic-storage-back"}
+            )
+            assert faulted.status_code == 503, faulted.text
+            code, kind, retryable = _error(faulted)
+            assert (code, kind, retryable) == (
+                "job_unavailable",
+                "service_unavailable_error",
+                False,
+            )
+            # Distinct from the readiness answer in code and retry rule.
+            assert code != "engine_not_ready"
+            assert _snapshot(db) == before
+        finally:
+            db.query(
+                f'GRANT SELECT ON "{db.schema}".workspace_quotas '
+                f'TO "{admission_database.admission_role}"'
+            )
+
+
 async def test_a_killed_admission_connection_is_a_retryable_unknown_outcome(
     admission_database: AdmissionDatabase,
 ) -> None:
@@ -719,3 +907,73 @@ async def test_same_key_replay_returns_the_original_job_without_new_rows(
         # A different key is a second admission: exactly one more attempt, slot and
         # host budget, again addressed to the same known rows.
         _expect_reservation(after_create, _snapshot(db))
+
+
+async def test_an_unmapped_admission_code_answers_the_declared_envelope(
+    admission_database: AdmissionDatabase, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An admission code with no public answer stays inside the declared envelope.
+
+    #828 review F1: ``rejection_code`` raises ``PublicJobAdmissionRejectedError`` for an
+    unmapped code, and the store called it from *inside* its own
+    ``except AdmissionRejectedError`` handler. No sibling handler can catch a raise from
+    another handler's body, and the interface layer has no handler for that
+    infrastructure type, so the response became a bare ``500 text/plain`` -- no envelope,
+    no ``retryable``. The fix answers the declared defect code as a refused *result*.
+
+    The evidence has to be the round trip, not the exception object: a unit test that
+    asserts ``error.code`` passes while the wire answer is still a bare 500. So this
+    drops one real admission cause out of the public mapping on the production assembly,
+    triggers it through real PostgreSQL, and asserts the status, the media type and every
+    envelope field.
+    """
+    from speechnexus_backend.speech.infrastructure import public_job_admission
+
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    _add_spare_host(db)
+    _grant_capacity(db)
+    now_us = admission_database.runtime.now()
+
+    # The same elapsed receipt as the 503 case, but the mapping no longer answers for
+    # it: this is what an admission code added without a public answer looks like.
+    monkeypatch.setattr(
+        public_job_admission,
+        "_PUBLIC_CODES",
+        {
+            key: value
+            for key, value in public_job_admission._PUBLIC_CODES.items()
+            if key != "readiness_expired"
+        },
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=_app(admission_database)), base_url="http://test"
+    ) as client:
+        _rewrite_receipt(db, verified_at_us=now_us - 1000, expires_at_us=now_us - 1)
+        before = _snapshot(db)
+        response = await client.post(
+            PREFIX, json=_body(), headers={"Idempotency-Key": "synthetic-unmapped-code"}
+        )
+        assert _snapshot(db) == before
+
+    # A bare 500 would have no media type of its own and no body to parse.
+    assert response.status_code == 500, response.text
+    assert response.headers["content-type"].startswith("application/json"), response.headers[
+        "content-type"
+    ]
+    assert response.headers["Cache-Control"] == "no-store"
+    assert _error(response) == ("admission_state_invalid", "api_error", False)
+    body = response.json()
+    assert set(body) == {"error"}
+    assert set(body["error"]) == {
+        "code",
+        "type",
+        "message",
+        "param",
+        "request_id",
+        "retryable",
+    }
+    assert body["error"]["param"] is None
+    # The message must not blame the store: the store answered fine, the mapping did not.
+    message = body["error"]["message"].lower()
+    assert "storage" not in message and "unavailable" not in message

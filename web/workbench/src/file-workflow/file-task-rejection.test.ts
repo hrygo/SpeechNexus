@@ -7,6 +7,8 @@ import {
   retainRecovery,
   settlesCancelAttempt,
   settlesReplayedIntent,
+  unreplayableCause,
+  unreplayablePriorAttemptClause,
 } from "./file-task-session";
 import { canFinishTask } from "./file-task-policy";
 import { SpeechFileClient, parse } from "./speech-file-client";
@@ -199,6 +201,21 @@ describe("submission rejection disposition", () => {
     [429, "job_capacity_exhausted", "intent-kept"],
     [503, "job_unavailable", "intent-kept"],
     [503, "job_admission_contended", "intent-kept"],
+    // #828: an elapsed engine readiness receipt refuses this attempt without writing a
+    // Job row and is repaired by re-registering the engine, so the intent survives and
+    // the unlisted-5xx "unknown-outcome" fallback must not apply.
+    [503, "engine_not_ready", "intent-kept"],
+    // #828 review B3: the other engine-side admission causes used to arrive as the 503
+    // `job_unavailable` storage answer. Each writes no row and is repaired by registering
+    // the engine again, so the durable intent survives; none may be read as an outage.
+    [503, "engine_state_mismatch", "intent-kept"],
+    [503, "engine_resource_disabled", "intent-kept"],
+    [503, "recipe_not_admitted", "intent-kept"],
+    // The request's own admission deadline is part of the pinned intent, so replaying the
+    // body can never succeed while a new request can: unreplayable, not settled.
+    [422, "job_request_expired", "unreplayable"],
+    // A server defect is not proof that nothing committed, so the intent stays unknown.
+    [500, "admission_state_invalid", "unknown-outcome"],
     // #702 review M1: a workspace without a provisioned quota row is a deterministic
     // refusal, but not a terminal one -- provisioning the workspace admits the same
     // request under the same key, so the intent stays replayable like the 503 outage
@@ -1271,5 +1288,42 @@ describe("recovery identity retention", () => {
     const incoming = envelope(503, "job_outcome_unknown");
     expect(retainRecovery(previous, incoming)).toBe(previous);
     expect(retainRecovery(undefined, incoming)).toBe(incoming);
+  });
+});
+
+describe("unreplayable copy states the cause the code names", () => {
+  it("explains an elapsed admission deadline, never the body bound", () => {
+    const cause = unreplayableCause(422, "job_request_expired");
+    expect(cause).toContain("准入期限");
+    expect(cause).not.toContain("接收上限");
+    expect(unreplayablePriorAttemptClause("job_request_expired")).toContain("准入期限");
+  });
+
+  it("keeps the body-bound explanation for the 413 refusal", () => {
+    expect(unreplayableCause(413, "job_request_too_large")).toContain("接收上限");
+    expect(unreplayablePriorAttemptClause("job_request_too_large")).toContain("接收上限");
+  });
+
+  it("states only the class when the code is neither of them", () => {
+    const cause = unreplayableCause(409, "execution_cleanup_pending");
+    expect(cause).toContain("409 execution_cleanup_pending");
+    expect(cause).not.toContain("接收上限");
+    expect(cause).not.toContain("准入期限");
+  });
+
+  it("states only the class in the prior-attempt clause of an unknown code", () => {
+    // The clause had a default branch that hardcoded the 413 wording, so an elapsed
+    // admission deadline claimed the body bound in the one place the notice no longer
+    // did (#828 review F5). Both helpers now name a cause only for the code that has it.
+    const clause = unreplayablePriorAttemptClause("admission_deadline_elapsed");
+    expect(clause).not.toContain("接收上限");
+    expect(clause).not.toContain("准入期限");
+    expect(clause).toContain("此前已有提交尝试");
+    expect(clause).toBe(unreplayablePriorAttemptClause("execution_cleanup_pending"));
+  });
+
+  it("pins the disposition that sends both codes to the unreplayable class", () => {
+    expect(rejectionDisposition(422, "job_request_expired", "create")).toBe("unreplayable");
+    expect(rejectionDisposition(413, "job_request_too_large", "create")).toBe("unreplayable");
   });
 });

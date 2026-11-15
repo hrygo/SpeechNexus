@@ -35,7 +35,7 @@ import pytest
 import yaml
 
 from speechnexus_backend.speech.application.public_jobs import (
-    _ADMISSION_REJECTION_CODES,
+    _CREATE_REFUSAL_CODES,
 )
 from speechnexus_backend.speech.interfaces.http.job_errors import (
     _ERRORS as UPSTREAM_JOB_ERRORS,
@@ -235,7 +235,7 @@ def _dynamic_code_set(exception_name: str) -> frozenset[str]:
     """The codes one exception class can forward through a non-literal `job_error`."""
     if exception_name == "JobAdmissionRejectedError":
         # The admission store answers with a fixed, declared rejection vocabulary.
-        return _ADMISSION_REJECTION_CODES
+        return _CREATE_REFUSAL_CODES
     if exception_name == "ModelBindingError":
         # The class carries one of the codes it is actually constructed with, so the
         # derived set is exact; `test_the_model_binding_family_is_exactly_what_is_raised`

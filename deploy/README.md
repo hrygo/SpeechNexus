@@ -36,6 +36,12 @@ Additional profiles are opt-in:
 
 - `migration`: one-shot Alembic migration with the separate migration DSN;
 - `engine-registration`: one-shot `speechnexus-register-engine` invocation;
+- `engine-readiness`: receipt renewal (`engine-readiness-renew`, the same
+  registration with `--renew-readiness`) and a read-only report
+  (`engine-readiness`). Every create re-checks the pinned instance's readiness
+  receipt, whose TTL is 24 h by default, so this profile is the periodic path that
+  keeps it valid. See
+  [Engine readiness renewal](#engine-readiness-renewal-engine-readiness-profile);
 - `web`: the static Admin and Workbench frontends;
 - `binding-disable`: explicitly starts the disable worker, which is required to
   process persisted disable intents; it is absent from the base topology.
@@ -79,7 +85,6 @@ bundle; install a trusted deployment CA in that bundle when required. Use HTTPS
 for cross-host connections, and separately protect the browser-facing ingress.
 Paths and queries pass through unchanged. This proxy configuration alone does not
 qualify a real service, cross-host TLS, or a physical topology.
-
 
 ## Current capability limits
 
@@ -414,7 +419,7 @@ is ready: confirm the worker is running without restarts, for example with
 The container entrypoint is not the worker: it is `deploy/job-startup-gate.py`,
 mounted read-only and given the worker's own environment. Before it `exec`s
 `speechnexus-job-dispatch-worker`, the gate verifies the prerequisites the worker
-could only discover *after* claiming a lease and names each missing one:
+could only discover _after_ claiming a lease and names each missing one:
 
 - the dispatch DSN is present and its role is not a superuser, does not own schema
   `CREATE`, the database or any schema relation (the same guard the worker runs);
@@ -451,9 +456,13 @@ starts. Exactly two inputs are printed as `pending` lines because they are
 deployment inputs this container cannot verify: the real engine and a registered
 `ready` instance, and the API-side writer/admission DSNs — the API already answers
 `503 job_unavailable` at creation for a blank Job writer/admission DSN, which is
-before any claim. Every other prerequisite above is a hard failure. The gate reads
-the gateway configs through `SPEECHNEXUS_JOB_GATE_PRIVATE_DIR`
-(`/run/speechnexus-private` in Compose); it never reads credentials from them.
+before any claim. The registered instance's readiness receipt also carries a TTL
+that only a periodic renewal keeps fresh: an elapsed receipt answers
+`503 engine_not_ready` (retryable) instead of the storage `job_unavailable`, and
+the `engine-readiness` profile is that renewal. Every other prerequisite above is a
+hard failure. The gate reads the gateway configs through
+`SPEECHNEXUS_JOB_GATE_PRIVATE_DIR` (`/run/speechnexus-private` in Compose); it never
+reads credentials from them.
 
 Provision the three Job roles with
 `uv run --all-packages python scripts/dev-env/provision-job-roles.py` after the
@@ -463,6 +472,87 @@ and installs the five dispatch grant groups, the writer baseline and the read-on
 `voice_validation` it also installs that lane's two extra `SELECT`s, which only
 matter once the lane itself is assembled (see below). The step-by-step path
 is [the minimal deployment runbook §6](../docs/operations/compose-minimal.md#异步-job-运行角色与授权).
+
+## Engine readiness renewal (`engine-readiness` profile)
+
+Registration signs a readiness receipt for the one instance it makes `ready`, and
+admission re-reads that receipt's window on every create
+(`VerifiedRuntimeReadiness.require_valid`): `verified_at_us <= now < expires_at_us`.
+`--readiness-ttl-seconds` sets the window and defaults to `86400` (24 h), so a
+deployment that registers once and never renews starts answering
+`503 engine_not_ready` exactly one TTL later. That answer is deliberately not
+`503 job_unavailable` ("Job storage is unavailable"): the store is healthy and
+re-signing the receipt admits the same body under the same Idempotency-Key. Both
+are `retryable: false` -- `retryable` is true only when the same request succeeds
+without an out-of-band change, and re-signing a receipt is an operator step -- while
+the message names the renewal command. It is also not `429
+job_capacity_exhausted`, which a released attempt can free, nor 503
+`job_admission_contended`, the one admission refusal that does retry.
+
+The other engine-side refusals keep their own codes for the same reason: 503
+`engine_state_mismatch` (the pinned runtime state or receipt identity disagrees),
+503 `engine_resource_disabled` (instance, pool or recipe approval not active) and
+503 `recipe_not_admitted` (the request came from another recipe). None of them means
+the Job store is down, and each message names the step that restores it.
+
+The receipt cannot be re-signed from the database alone — it records a real
+`/health` probe — so renewal re-runs the registration with an explicit switch:
+
+```bash
+# one renewal: same identity, same generation, fresh receipt from a new probe
+docker compose --env-file deploy/compose.env \
+  -f deploy/compose.yaml --profile engine-readiness run --rm engine-readiness-renew
+
+# read-only report: one JSON line per ready instance, then a summary
+docker compose --env-file deploy/compose.env \
+  -f deploy/compose.yaml --profile engine-readiness run --rm engine-readiness
+```
+
+`engine-readiness-renew` runs the installed `speechnexus-register-engine` with
+`--renew-readiness`, which re-signs the receipt even while it is still valid; that
+is what makes a timer shorter than the TTL work. Without the flag a registration run
+only refreshes an already-elapsed receipt. The renewal updates the receipt and
+`engine_instances.ready_at_us` in one transaction, increments both row versions, and
+never starts a new instance generation, so it is safe to run repeatedly. Compose
+does not schedule it: call it from the host timer, e.g. hourly with cron or a
+systemd timer, at an interval shorter than the TTL and the warning window.
+
+`engine-readiness` runs the installed `speechnexus-engine-readiness`, the surface
+that makes the window observable before a request fails. It writes nothing, probes nothing and opens a read-only session; for
+each `ready` instance it prints `readiness_state` (`valid`, `expiring`, `expired`,
+`missing` or `invalid`), `expires_at_us`, `remaining_seconds` against the database
+clock admission reads, and the command that repairs it, followed by a summary line:
+
+```text
+{"instance_id":"instance-asr-1","instance_generation":1,"target_node_id":"node-local-1","readiness_state":"expiring","expires_at_us":1794664410587133,"remaining_seconds":1800,"remediation":"run speechnexus-register-engine --renew-readiness before expires_at_us"}
+{"summary":{"ready_instances":1,"valid":0,"expiring":1,"expired":0,"missing":0,"invalid":0,"unusable":0}}
+```
+
+`--warn-within-seconds` (`SPEECHNEXUS_READINESS_WARNING_SECONDS`, default `21600`,
+a quarter of the 24 h TTL) sets the `expiring` threshold; it is a reporting choice,
+never an admission rule. The exit code is non-zero when any receipt is `expired`,
+`missing` or `invalid`, so a supervisor can alert on it; `--fail-on-expiring` also
+fails on `expiring`, which lets a probe alert before creates start failing. The
+renewal command writes its own signal: `--renew-readiness` reports the window it
+found and the fact it re-signed in `readiness.state` / `readiness.renewed` on
+stdout, and warns on stderr when that window was `expiring` or `expired`.
+
+The same fact is stated where an operator meets it first: the `job-dispatch`
+startup gate's `pending` line for the real engine names this renewal, and the Job
+create contract declares `engine_not_ready` with its recovery. `deploy/README.md`
+does not claim the renewal is scheduled; a deployment that skips the timer trades a
+24 h grace period for the failure this profile exists to prevent.
+
+Known gap, tracked as [#845](https://github.com/hrygo/SpeechNexus/issues/845): this
+deployment has no automatic _within-cluster_ signal for the state itself. `api`'s
+healthcheck is `/readyz`, which deliberately keeps answering 200 because reads and
+cancellations must stay available; the readiness report is a one-shot that compose
+does not schedule; and the startup gate prints its `pending` line once. So a
+deployment that stops renewing answers every create with `503 engine_not_ready`
+while `/readyz` and the container health stay green. The timer above narrows that
+window and `engine-readiness` makes it observable to whatever supervises it, but
+until #845 lands an independent, pollable "can this deployment admit a create?"
+surface, an operator must rely on the externally scheduled report.
 
 ## Artifact retention (`artifact-retention` profile)
 
@@ -736,6 +826,7 @@ FROM <job-writer-role>;
 -- public_job_admission_grants 属于独立的 admission 角色，不要应用到 Job writer：
 -- 它只给 speech_job_events 4/8 列，并额外授予 admission_attempts / requests / leases。
 ```
+
 独立记录角色使用 `voice_evidence_recorder_grants` 和
 `SPEECHNEXUS_VOICE_EVIDENCE_DATABASE_URL`，通过
 `speechnexus-record-voice-evidence` 显式写入证据，或由
@@ -812,10 +903,10 @@ The workbench owns its own PostgreSQL namespace
 `speech`: the unit never shares or writes the speech product schema. It holds two
 dedicated non-owner roles and no third:
 
-| Identity | Declaration | Surface |
-| --- | --- | --- |
-| `sn_workbench_runtime` (`SPEECHNEXUS_WORKBENCH_DATABASE_URL`) | `runtime_grants_sql` | schema `USAGE`, `SELECT`/`INSERT` on the declared tables, column-level `UPDATE` on the declared columns; the ledger, the erasure receipts and the revision marker stay read-only |
-| `sn_workbench_cleanup` (`SPEECHNEXUS_WORKBENCH_CLEANUP_DATABASE_URL`) | `cleanup_grants_sql` | `DELETE` on business rows, `INSERT` on the ledger and erasure receipts, `UPDATE` on the two outbox columns |
+| Identity                                                              | Declaration          | Surface                                                                                                                                                                          |
+| --------------------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sn_workbench_runtime` (`SPEECHNEXUS_WORKBENCH_DATABASE_URL`)         | `runtime_grants_sql` | schema `USAGE`, `SELECT`/`INSERT` on the declared tables, column-level `UPDATE` on the declared columns; the ledger, the erasure receipts and the revision marker stay read-only |
+| `sn_workbench_cleanup` (`SPEECHNEXUS_WORKBENCH_CLEANUP_DATABASE_URL`) | `cleanup_grants_sql` | `DELETE` on business rows, `INSERT` on the ledger and erasure receipts, `UPDATE` on the two outbox columns                                                                       |
 
 Neither identity may be the owner, and they may not be one identity: the cleanup
 role carries the erasing authority, so folding it into the serving role would hand
@@ -823,7 +914,7 @@ deletion to the request path. At startup the gate runs the runtime's own
 `check_database` and `check_cleanup_identity`, and both checks judge their identity
 by the same two boundaries:
 
-- no privileges on relations or sequences *outside* the workbench schema, named
+- no privileges on relations or sequences _outside_ the workbench schema, named
   relation by relation;
 - no privileges reachable by `SET ROLE`, at any membership depth. An ordinary grant
   is visible through inheritance, but `GRANT wider TO role WITH INHERIT FALSE`
@@ -832,7 +923,7 @@ by the same two boundaries:
   switch to and names the one the foreign grant is actually held by. A membership
   that reaches no relation outside the workbench schema stays legal — a group role is
   a normal deployment shape, and both checks settle any DSN `role=` switch back to
-  the login identity, so the boundary is reachable *authority*, not membership.
+  the login identity, so the boundary is reachable _authority_, not membership.
 
 Pointing either DSN at `sn_api` therefore fails closed instead of sharing the API's
 wide identity — the serving DSN fails in `check_database`, the cleanup DSN in

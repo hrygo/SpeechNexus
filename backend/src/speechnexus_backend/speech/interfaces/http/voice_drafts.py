@@ -14,6 +14,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 
 from speechnexus_backend.speech.application.public_jobs import (
+    _SUBMIT_REFUSAL_CODES,
     AssetNotReadyError,
     DisabledWorkspaceError,
     IdempotencyConflictError,
@@ -133,12 +134,86 @@ _ERRORS: dict[str, tuple[int, str, str, str, bool]] = {
         "capacity",
         True,
     ),
+    # The store refused the read or the write. Same semantics as the Job surface's
+    # `job_unavailable`, so the same value: the field states whether the same
+    # request succeeds with no out-of-band change, and a refused storage write is
+    # not something the caller or an operator can repair by acting on the request
+    # (#828 review M5).
     "unavailable": (
         503,
         "service_unavailable_error",
         "Voice draft storage is unavailable.",
         "unavailable",
+        False,
+    ),
+    # Admission state had not settled when this attempt ran: a concurrent write
+    # won the version compare-and-set, or the instance's gateway is still draining
+    # an earlier generation. Repeating the same request is the whole recovery, and
+    # calling it a storage outage was false (#828 review M3).
+    "contended": (
+        503,
+        "service_unavailable_error",
+        "Admission state has not settled; retry the request.",
+        "admission_contended",
         True,
+    ),
+    # The engine pinned by this request cannot admit now, and every recovery is an
+    # operator step: re-sign the readiness receipt, restore the instance, or
+    # register against the approved recipe. Each cause names its own recovery; the
+    # single shared code states the class, and none of them is "Published model or
+    # ready input required." (#828 review M3).
+    "engine_not_ready": (
+        503,
+        "service_unavailable_error",
+        "The pinned engine's readiness receipt expired; re-register the engine "
+        "(speechnexus-register-engine --renew-readiness), then resubmit.",
+        "engine_unavailable",
+        False,
+    ),
+    "engine_state_mismatch": (
+        503,
+        "service_unavailable_error",
+        "The pinned engine no longer matches this request's runtime state; "
+        "re-register the engine, then resubmit.",
+        "engine_unavailable",
+        False,
+    ),
+    "engine_resource_disabled": (
+        503,
+        "service_unavailable_error",
+        "The pinned engine instance, its pool, its template or its recipe approval "
+        "is not active; restore it, then resubmit.",
+        "engine_unavailable",
+        False,
+    ),
+    "recipe_not_admitted": (
+        503,
+        "service_unavailable_error",
+        "The request does not match the recipe approved for the pinned engine; "
+        "register the engine against the approved recipe, then resubmit.",
+        "engine_unavailable",
+        False,
+    ),
+    # This request's own admission deadline elapsed before it was admitted. The
+    # deadline is pinned into the intent, so repeating the request cannot succeed and
+    # a new request is the recovery: a deterministic 4xx, and its own code so the
+    # client does not read "published model or ready input required" (#828 review M3).
+    "request_expired": (
+        422,
+        "invalid_request_error",
+        "The admission deadline for this request elapsed before it was admitted; "
+        "submit a new request.",
+        "request_expired",
+        False,
+    ),
+    # Admission failed an internal invariant: a deployment defect, not a caller
+    # mistake, so it must not be dressed up as a 4xx input error (#828 review M3).
+    "admission_defect": (
+        500,
+        "api_error",
+        "Admission state failed an internal invariant; this is a deployment defect.",
+        "contract_violation",
+        False,
     ),
     # Only a request that carried its original Idempotency-Key reaches this:
     # the same-key replay recovers the committed draft instead of creating a
@@ -170,6 +245,16 @@ _ERRORS: dict[str, tuple[int, str, str, str, bool]] = {
         False,
     ),
 }
+
+
+# The engine-side admission refusals, each to the message that names its recovery.
+# They keep one voice-draft code (`engine_unavailable`) instead of one per cause, so
+# the surface does not grow five codes; the message carries the cause and the step
+# (#828 review M3).
+# Deterministic refusals about the request's own facts: the model binding, the
+# input asset, the parameters, or the workspace's quota row. These keep the 422
+# input class, which is where the published-model/ready-input message is true.
+_INPUT_REFUSAL_CODES = _SUBMIT_REFUSAL_CODES
 
 
 def voice_drafts_http_contract() -> dict[str, Any]:
@@ -378,9 +463,10 @@ def _execute(
         # an implementation defect behind a retryable outage.
         return _error("contract_violation", request_id, operation)
     except JobAdmissionRejectedError as error:
-        # Admission refusals are deterministic facts about the candidate or
-        # capacity, not a storage outage. Only Job-submitting operations
-        # declare the 422/429 surface; other operations keep the 503 fallback.
+        # Only these five operations submit a Job, so only they can meet an admission
+        # refusal. The positive test is deliberate: `check-route-conformance.py` derives
+        # an operation's answerable statuses from the literal `_error` keys inside this
+        # branch, and a read must never appear able to answer 422 or 429.
         if operation in (
             "createVoiceDesign",
             "createVoiceClone",
@@ -388,14 +474,41 @@ def _execute(
             "createVoicePreview",
             "validateVoiceDraftRevision",
         ):
-            if error.code == "job_capacity_exhausted":
-                return _error("capacity", request_id, operation)
+            # Admission refusals are facts about the pinned runtime, the capacity or
+            # the request's own facts -- never about the published model: the model is
+            # published and the input is ready when the engine cannot admit. 4xx on this
+            # surface is the deterministic class, so an engine-side refusal must not go
+            # there -- that hides a recovery that a re-registration performs (#828
+            # review M3). Each cause keeps its own message; the code states the class.
             if error.code == "voice_draft_not_candidate":
                 return _error("not_candidate", request_id, operation)
+            if error.code == "engine_not_ready":
+                return _error("engine_not_ready", request_id, operation)
+            if error.code == "engine_state_mismatch":
+                return _error("engine_state_mismatch", request_id, operation)
+            if error.code == "engine_resource_disabled":
+                return _error("engine_resource_disabled", request_id, operation)
+            if error.code == "recipe_not_admitted":
+                return _error("recipe_not_admitted", request_id, operation)
+            if error.code == "job_request_expired":
+                return _error("request_expired", request_id, operation)
+            if error.code == "admission_state_invalid":
+                return _error("admission_defect", request_id, operation)
+            if error.code == "job_capacity_exhausted":
+                return _error("capacity", request_id, operation)
             if error.code == "job_admission_contended":
-                return _error("unavailable", request_id, operation)
-            return _error("input_unavailable", request_id, operation)
-        return _error("unavailable", request_id, operation)
+                return _error("contended", request_id, operation)
+            if error.code in _INPUT_REFUSAL_CODES:
+                # Deterministic refusals about the request's own facts: the model
+                # binding, the input asset, the parameters or the workspace quota row.
+                # They keep the 422 input class, where the published-model message is
+                # true, and never borrow the storage or engine answer.
+                return _error("input_unavailable", request_id, operation)
+            return _error("admission_defect", request_id, operation)
+        # A read or metadata write never runs admission, so a refusal here cannot
+        # describe this request's current state: an implementation defect, answered by
+        # the declared 500 instead of an invented storage answer (#828 review M1).
+        return _error("contract_violation", request_id, operation)
     except JobRejectedError as error:
         # A refusal carries its reason: only a genuine pre-commit storage outage
         # is retryable; a deterministic refusal or a missing result payload is an
@@ -417,13 +530,13 @@ def _execute(
         # refusal here cannot describe current state: it is an implementation
         # defect, not the retryable 503 it was previously mislabelled as.
         return _error("contract_violation", request_id, operation)
-    except (
-        PublicJobUnavailableError,
-        ValueError,
-        KeyError,
-        TypeError,
-        RecursionError,
-    ):
+    except KeyError:
+        # An admission code with no mapped answer is a deployment defect. Catching
+        # it in the group below dressed the KeyError up as "Voice draft storage is
+        # unavailable." with `retryable: true`, which was worse than the original
+        # defect it replaced (#828 review M1).
+        return _error("admission_defect", request_id, operation)
+    except PublicJobUnavailableError, ValueError, TypeError, RecursionError:
         return _error("unavailable", request_id, operation)
 
 

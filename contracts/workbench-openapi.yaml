@@ -2259,9 +2259,10 @@ paths:
           may add its own measurement to this answer, and must not read it as a
           statement that the text is fine.
 
-        `error.retryable` states whether the same dispatch may be retried after the
-        refusal, and it belongs to the disposition rather than to the status: a
-        cleanup wait is retryable and a spent key is not, though both answer 409. A
+        `error.retryable` states whether the same request can succeed without an
+        out-of-band change, and it belongs to the disposition rather than to the
+        status: a cleanup wait is retryable and a spent key is not, though both answer
+        409. A
         caller must read it instead of inferring retryability from the status. When
         the refusing layer named a delay, a retryable refusal forwards it on the
         `Retry-After` header and in `error.retry_after_ms`; a non-retryable refusal
@@ -2276,16 +2277,12 @@ paths:
           `false` while still requiring the original Idempotency-Key: a 5xx is not a
           refusal, so replaying the original identity is recovery of an unknown
           outcome, not a retry this field permits.
-        - The value is one service's answer, not a shared constant. The public Job
-          contract computes its own `retryable` from the narrower question "may an
-          unknown execution outcome be replayed?" and therefore answers `false` for
-          `execution_cleanup_pending`, whose correct action is to dispatch the same
-          intent again under the same key. This operation publishes that same wait as
-          retryable, `render_submission_cleanup_pending`, because it is stating the
-          operator step; that disposition is declared rather than served today, for
-          the reason stated above. A consumer with no per-code vocabulary reads this
-          field; a consumer that must state the step for one code reads the codes
-          here.
+        - The value is the refusing operation's own answer, not a shared constant.
+          This operation states the disposition for each of its codes, so its wait
+          for a cleanup is retryable, `render_submission_cleanup_pending`, because
+          the same submission is accepted once the cleanup finishes and no operator
+          step is needed. A consumer with no per-code vocabulary reads this field; a
+          consumer that must state the step for one code reads the codes here.
 
         `param` carries the upstream field pointer when the refusing layer named
         one, and is null otherwise; it is a field pointer in both services, never a

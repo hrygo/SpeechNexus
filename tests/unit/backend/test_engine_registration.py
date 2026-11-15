@@ -1014,6 +1014,8 @@ def test_result_json_exposes_identity_readiness_probe_and_rows() -> None:
         evidence_document={"kind": "operator_engine_health_probe_v1"},
         probe=make_probe(),
         rows={"engine_instances": {"instance_state": "ready"}},
+        readiness_state="expiring",
+        readiness_renewed=True,
     )
     document = cast(dict[str, Any], json.loads(_result_json(result)))
     assert set(document) == {
@@ -1038,7 +1040,13 @@ def test_result_json_exposes_identity_readiness_probe_and_rows() -> None:
         "verified_at_us",
         "expires_at_us",
         "evidence_digest",
+        # The renewal path is only observable through these two facts: which window
+        # the run found, and whether it re-signed the receipt (#828).
+        "state",
+        "renewed",
     }
+    assert document["readiness"]["state"] == "expiring"
+    assert document["readiness"]["renewed"] is True
     assert set(document["health_probe"]) == {
         "url",
         "status",
@@ -1140,6 +1148,59 @@ def test_main_prints_the_registration_result_as_json(
     assert document["outcome"] == "registered"
     assert document["instance_id"] == "instance-1"
     assert document["readiness"]["evidence_digest"] == DIGEST
+
+
+def test_main_forwards_the_renewal_flag_to_the_registration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: dict[str, object] = {}
+
+    def capture(**kwargs: object) -> RegistrationResult:
+        seen.update(kwargs)
+        raise RegistrationError("stop_after_capture", "captured arguments", EXIT_CONFLICT)
+
+    monkeypatch.setattr(registration, "register_engine", capture)
+    with pytest.raises(SystemExit) as exited:
+        main([*manual_argv(), "--renew-readiness"])
+    assert exited.value.code == EXIT_CONFLICT
+    # A run without the flag stays the one-shot registration; the periodic renewal
+    # only re-signs a receipt when this explicit switch reaches the transaction.
+    assert seen["renew_readiness"] is True
+
+
+def test_main_reports_an_expiring_receipt_on_stderr(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    result = RegistrationResult(
+        outcome="already_ready",
+        model_id="asr-quality",
+        instance_id="instance-1",
+        instance_generation=1,
+        intent_id="register-instance-1-g1",
+        target_node_id="node-1",
+        pool_id="asr-batch",
+        gateway_id="gateway-1",
+        fencing_token=1,
+        owner_id="speechnexus-operator",
+        workspace_id="workspace-default",
+        ready_at_us=1,
+        readiness_verified_at_us=2,
+        readiness_expires_at_us=3,
+        evidence_digest=DIGEST,
+        evidence_document={},
+        probe=make_probe(),
+        rows={},
+        readiness_state="expiring",
+        readiness_renewed=True,
+    )
+    monkeypatch.setattr(registration, "register_engine", lambda *_, **__: result)
+    main(manual_argv())
+    captured = capsys.readouterr()
+    # The observable signal an operator alerts on; stdout stays the JSON document.
+    assert "readiness expiring for instance-1 g1" in captured.err
+    assert "re-signed by this run" in captured.err
+    assert "503 engine_not_ready" in captured.err
+    assert cast(dict[str, Any], json.loads(captured.out))["readiness"]["state"] == "expiring"
 
 
 def test_main_reads_the_schema_and_workspace_from_flags(

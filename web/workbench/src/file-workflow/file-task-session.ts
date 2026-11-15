@@ -56,17 +56,33 @@ export type RejectionOperation = "create" | "cancel" | "upload";
  * - 429 `job_capacity_exhausted`: admission writes no row and asks for a Retry-After
  *   delay (contracts/speech-openapi.yaml:823-824).
  * - 503 `job_unavailable`: storage refused this attempt without reporting a Job fact.
- *   The public Job error table marks exactly `job_outcome_unknown`,
- *   `job_capacity_exhausted` and `job_admission_contended` retryable
- *   (backend/src/speechnexus_backend/speech/interfaces/http/job_errors.py:129-134), while
- *   `job_unavailable` itself is `retryable: false` (same file:113). The kept intent is
- *   still replayed under its original key, which cannot duplicate an execution; the
- *   disposition is named `intent-kept` rather than `retryable` so that the protocol's
- *   retry permission (`ServiceUnavailable`: "retry only when `retryable` is true",
- *   contracts/speech-openapi.yaml:2897-2901) is not confused with "the durable intent
- *   survives". The client does not consume `error.retryable` at all.
- * - 503 `job_admission_contended`: admission state changed concurrently; retryable by
- *   the same public Job error table.
+ *   `retryable` answers only "can this same request succeed without an out-of-band
+ *   change" (`contracts/shared/errors.schema.json` `ErrorBody.retryable`), and the public
+ *   Job error table marks exactly `job_outcome_unknown`, `job_capacity_exhausted` and
+ *   `job_admission_contended` true in `job_error()`; every other answer, including this
+ *   one, is `false` even when the recovery is known. The kept intent is still replayed
+ *   under its original key, which cannot duplicate an execution; the disposition is named
+ *   `intent-kept` rather than `retryable` so that the protocol's retry permission
+ *   (`ServiceUnavailable`: "retry only when `retryable` is true") is not confused with
+ *   "the durable intent survives". The client does not consume `error.retryable` at all.
+ * - 503 `job_admission_contended`: a quota/instance/host version compare-and-set or the
+ *   pool-owner fencing token moved, so this attempt lost a race and wrote no row; the
+ *   public Job error table marks it retryable.
+ * - 503 `engine_not_ready`: the pinned ready instance's engine readiness receipt
+ *   elapsed, so admission refused before writing any Job row (#828). The same body
+ *   under the same key is admitted after the receipt is re-signed, so the intent is
+ *   kept and this refusal is explicitly *not* `unknown-outcome`; it is also not the
+ *   503 `job_unavailable` storage outage, and the client must not tell the user to
+ *   look at storage. It is `retryable: false` because re-signing the receipt is an
+ *   operator step; the table below still keeps the intent, which is a *durability*
+ *   verdict, not a retry permission (#828 review B1).
+ * - 503 `engine_state_mismatch`, `engine_resource_disabled`, `recipe_not_admitted`: the
+ *   pinned runtime state, its activation or its approved recipe disagrees with the
+ *   request, and admission wrote no row. Registering the engine again (possibly after
+ *   restoring the instance or renewing the approval) admits the same body under the same
+ *   key, so the intent is kept. These are the remaining engine-side causes that used to
+ *   arrive as the `job_unavailable` storage answer (#828 review B3); none of them means
+ *   the Job store is down.
  * - 503 `asset_inspection_busy`: the only Asset 503 whose "a new request later may
  *   succeed" statement holds (contracts/speech-openapi.yaml:2682-2689).
  * 413 `job_request_too_large` (#703) is deliberately not in this table: unlike every
@@ -85,12 +101,61 @@ const rejectionTable = [
   [503, "job_unavailable", "intent-kept"],
   [503, "job_admission_contended", "intent-kept"],
   [503, "asset_inspection_busy", "intent-kept"],
+  // An elapsed engine readiness receipt refuses this attempt without a Job row and
+  // is repaired by re-registering the engine, so the durable intent survives (#828).
+  [503, "engine_not_ready", "intent-kept"],
+  // The pinned runtime state, its activation or its approved recipe disagrees with the
+  // request. Each is repaired by registering the engine again (after restoring the
+  // instance or renewing its approval), so the same body under the same key is admitted
+  // afterwards and the durable intent survives (#828 review B3). They are deliberately
+  // not `unknown-outcome`: admission refused before writing a row, and none of them is
+  // the storage outage.
+  [503, "engine_state_mismatch", "intent-kept"],
+  [503, "engine_resource_disabled", "intent-kept"],
+  [503, "recipe_not_admitted", "intent-kept"],
   [429, "job_capacity_exhausted", "intent-kept"],
+  // The request's own admission deadline elapsed before it was admitted. The deadline is
+  // part of the pinned intent, so replaying this body can never succeed while a new
+  // request can: the intent is *unreplayable* rather than settled, the same third class
+  // as 413 `job_request_too_large` (#828 review B3).
+  [422, "job_request_expired", "unreplayable"],
+  // Admission failed an internal invariant (a clock or version counter left its declared
+  // range). The transaction rolled back, but a server defect must not be trusted to prove
+  // that nothing committed, so the intent stays unknown and is replayed under its key.
+  [500, "admission_state_invalid", "unknown-outcome"],
   // A missing quota row is a configuration gap, not a closed door: after an operator
   // registers an engine for the workspace, this same body under this same key is
   // admitted, so spending the intent would strand a replayable request (#702 review M1).
   [422, "workspace_not_configured", "intent-kept"],
 ] as const satisfies readonly (readonly [number, string, RejectionDisposition])[];
+
+/**
+ * Why this same request can never be replayed, in the words of the code that refused it.
+ *
+ * `unreplayable` is a class, not a cause: the 413 body-limit refusal and an admission
+ * deadline that elapsed are both deterministic refusals of *this* request, and telling
+ * the second one's user that the body was too large explains the wrong fact (#828 review
+ * M4). The cause is stated only where `(status, code)` is known; a restored page or a
+ * component that only sees the class says the class alone.
+ */
+export function unreplayableCause(status: number, code: string): string {
+  if (code === "job_request_expired")
+    return "该请求自身的准入期限在获准前已过，这次请求被拒绝、原意图作废";
+  if (status === 413) return "请求体超过本部署的接收上限，这次请求被拒绝、原意图作废";
+  return `这次请求被协议确定性拒绝（${status} ${code}），原意图作废`;
+}
+
+/** The clause a partially-identified intent adds: the refusal cannot prove no Job exists. */
+export function unreplayablePriorAttemptClause(code: string): string {
+  if (code === "job_request_expired")
+    return "该请求自身的准入期限在获准前已过，但该意图此前已有提交尝试，这次拒绝不能证明原提交未执行。";
+  if (code === "job_request_too_large")
+    return "请求体超过本部署的接收上限，但该意图此前已有提交尝试，这次拒绝不能证明原提交未执行。";
+  // Any other code answers the class-level fact and nothing more: naming a 413 here was
+  // the same "hardcoded cause for a code-decided branch" defect the notice had, one
+  // function over (#828 review F5).
+  return "该请求被协议拒绝，但该意图此前已有提交尝试，这次拒绝不能证明原提交未执行。";
+}
 
 /** Exported for the disposition table's own tests; the session is the only caller. */
 export function rejectionDisposition(
@@ -564,7 +629,7 @@ export class FileTaskSession {
         ...(settled === "unreplayable" ? { unreplayable: true } : {}),
         notice:
           settled === "unreplayable"
-            ? "已找到原任务身份；该请求因请求体超过本部署的接收上限被拒绝，原意图作废。"
+            ? "已找到原任务身份；协议已拒绝这次请求且不能按原键再次提交，原意图作废。"
             : settledCancel
               ? `已找到原任务身份；该取消请求已被协议确定性拒绝并作废。请${readTargetAction.job}，再显式收尾。`
               : settled === "terminal"
@@ -914,7 +979,7 @@ export class FileTaskSession {
             },
             identified
               ? `提交被拒绝（${contractError.status} ${contractError.code}），且已有可查询的执行身份。`
-              : `提交被拒绝（${contractError.status} ${contractError.code}）：请求体超过本部署的接收上限，但该意图此前已有提交尝试，这次拒绝不能证明原提交未执行。`,
+              : `提交被拒绝（${contractError.status} ${contractError.code}）：${unreplayablePriorAttemptClause(contractError.code)}`,
             identified ? "核对成功、失败或不确定状态，不要新建任务。" : "不要新建任务。",
           );
         } else if (identified) {
@@ -946,7 +1011,7 @@ export class FileTaskSession {
             recovery: undefined,
             rejected: true,
             unreplayable: true,
-            notice: `提交被拒绝（${contractError.status} ${contractError.code}）：请求体超过本部署的接收上限，这次请求被拒绝、原意图作废；同一请求不能按原键重放，请结束本页并用新的幂等键新建。`,
+            notice: `提交被拒绝（${contractError.status} ${contractError.code}）：${unreplayableCause(contractError.status, contractError.code)}；同一请求不能按原键重放，请结束本页并用新的幂等键新建。`,
           });
         }
       } else if (contractError && rejection === "terminal") {

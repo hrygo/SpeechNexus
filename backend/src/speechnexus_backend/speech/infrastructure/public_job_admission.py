@@ -19,6 +19,8 @@ from speechnexus_backend.speech.application.voice_validation_report import (
     VALIDATION_PROBE_LANGUAGE,
 )
 from speechnexus_backend.speech.domain.admission import (
+    CAPACITY_REJECTION_CODES,
+    PUBLIC_ADMISSION_CODES,
     AdmissionIdentity,
     AdmissionRequest,
     AdmitRecipe,
@@ -49,7 +51,12 @@ from speechnexus_backend.speech.infrastructure.voice_validation_submit import (
     validation_probe_text,
 )
 
-_CAPACITY_CODES = frozenset({"capacity_exhausted", "quota_exceeded"})
+# The public answer for every admission refusal lives with the vocabulary it maps
+# (`domain.admission.PUBLIC_ADMISSION_CODES`), so the mapping, the accepted public
+# codes and the shipped error table cannot drift apart (#828 review M1). The public
+# code states the recovery the caller needs; ``job_unavailable`` is reserved for a
+# store that really refused the read or the write.
+_PUBLIC_CODES: dict[str, str] = PUBLIC_ADMISSION_CODES
 _ASR_REQUIRED = (
     "language",
     "turn_detection",
@@ -973,12 +980,24 @@ def _empty_admission(
 
 
 def rejection_code(code: str) -> str:
-    """Map an admission refusal to the stable public error class."""
-    if code in _CAPACITY_CODES:
+    """Map an admission refusal to the public error class that states its recovery.
+
+    Capacity refusals share the 429 ``job_capacity_exhausted`` answer; every other
+    code is indexed in ``_PUBLIC_CODES``. A silent default is what turned an elapsed
+    readiness receipt into "Job storage is unavailable." for a healthy store
+    (#828), so an unclassified refusal never borrows the outage answer: it answers
+    the declared 500 defect code, which fails loudly and stays contract-valid
+    (#828 review M1).
+    """
+    if code in CAPACITY_REJECTION_CODES:
         return "job_capacity_exhausted"
-    if code == "idempotency_conflict":
-        return "idempotency_conflict"
-    return "job_unavailable"
+    try:
+        return _PUBLIC_CODES[code]
+    except KeyError:
+        # An admission code without a public answer is a deployment defect, not a
+        # storage fault: answer with the declared defect code so the client sees a
+        # contract-valid envelope instead of a bare 500 (#828 review M1).
+        raise PublicJobAdmissionRejectedError("admission_state_invalid") from None
 
 
 __all__ = [

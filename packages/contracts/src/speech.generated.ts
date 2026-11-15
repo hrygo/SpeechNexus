@@ -402,7 +402,31 @@ export interface paths {
      *     `retryable: false`. A connection-level failure or a timed-out attempt is
      *     instead 503 `job_outcome_unknown`, which is `retryable: true`; callers
      *     must read `retryable` rather than infer it from the status.
-     *     `workspace_not_configured` is likewise never retryable. A binding
+     *     `workspace_not_configured` is likewise never retryable.
+     *
+     *     An engine-side refusal has its own answer per cause, so a caller never has
+     *     to read a storage outage into a healthy store. These all write no row, they
+     *     are 503 with `retryable: false` except the concurrency class, and `message`
+     *     states the recovery:
+     *
+     *     | code | cause | recovery |
+     *     | --- | --- | --- |
+     *     | `engine_not_ready` | The pinned ready instance is the right one, but its readiness receipt is outside its declared validity window. | Re-sign the receipt (`speechnexus-register-engine --renew-readiness`, or the `engine-readiness` deployment profile), then send the request again under its key. |
+     *     | `engine_state_mismatch` | The pinned runtime state (generation, topology, observation or pool-owner identity) disagrees with the request, or the pinned instance row is gone. | Register the engine again so the receipt and the pinned plan agree. |
+     *     | `engine_resource_disabled` | The instance, its pool, its node or its recipe approval is not active (stopped, draining, outside the approval window). | Restore the instance and its approval, then register the engine again. |
+     *     | `recipe_not_admitted` | The request was assembled from a different recipe than the one approved for the pinned instance. | Register the engine against the approved recipe. |
+     *     | `job_admission_contended` | A quota, instance or host version compare-and-set failed, or the pool-owner fencing token moved. | Retry the same request: it is the one admission code with `retryable: true`, because the concurrent writer finishes and the durable intent survives. |
+     *
+     *     None of these is `job_unavailable`, which on this operation reports only the
+     *     Job store refusing the read or the write. A deployment that lets the
+     *     readiness receipt elapse refuses every create with `engine_not_ready` until a
+     *     renewal runs, so the receipt TTL is an operational deadline rather than a
+     *     per-request retry delay. A request whose own admission deadline elapsed
+     *     before it was admitted returns 422 `job_request_expired`, and the deadline is
+     *     part of the pinned intent, so only a new request can succeed. An admission
+     *     counter or clock leaving its declared range returns 500
+     *     `admission_state_invalid`: a deployment defect rather than a refusal, whose
+     *     request must not be replayed as-is. A binding
      *     whose frozen `execution_defaults` cannot complete every execution
      *     parameter returns 422 `job_binding_incomplete`; `tts` input
      *     `text_asset_id` returns 422 `job_text_asset_unsupported` until the
@@ -2553,7 +2577,7 @@ export interface components {
       message: string;
       param: string | null;
       request_id: string;
-      /** @description Whether the same dispatch may be retried after the refusal. The value belongs to the refusing operation's disposition, not to the status or the code: one operation's 409 may ask the caller to wait out a cleanup (retryable) while another 409 in the same operation reports a spent idempotency key (not retryable), so a caller reads this field instead of inferring retryability from the status. It answers only that question, and only for a refusal. A 5xx states an unknown outcome rather than a refusal, so the original identity is replayed because the outcome is unknown, not because this field permits a retry: a 503 `outcome_unknown` is `retryable: false` and must still be replayed under the original Idempotency-Key. The meaning is per operation rather than global: workbench operations publish their disposition in `contracts/workbench-openapi.yaml`, while the speech Job operations compute this field from the narrower question 'may an unknown execution outcome be replayed?', which is why `execution_cleanup_pending` is `false` there although the correct action is to dispatch the same intent again under the same key; a consumer that must state one code's operator step reads that operation's published vocabulary instead of this field. */
+      /** @description Whether the same request can succeed without an out-of-band change. The value belongs to the refusing operation's disposition, not to the status or the code: one operation's 409 may ask the caller to wait out a cleanup (retryable) while another 409 in the same operation reports a spent idempotency key (not retryable), so a caller reads this field instead of inferring retryability from the status. `true` means repeating the same request later can be admitted with no operator, configuration or data change: a released capacity lease, a concurrent writer finishing, a connection-level outcome that the original identity replays, and a cleanup that completes on its own all qualify. `false` means the same request is answered the same way until something outside the request changes, and the operation's published code and message name that change: provisioning the workspace quota, re-signing an engine readiness receipt, restoring a disabled instance, or re-registering against an approved recipe. The field never grants permission to drop an identity: a replayed unknown outcome is recovered under its original Idempotency-Key because the outcome is unknown, not because a value permits it, and every operation states that requirement in its own 5xx vocabulary. The meaning is per operation rather than global, so an operation that publishes a per-code value states it in its own contract (`contracts/workbench-openapi.yaml` for the workbench operations) instead of restating this field. */
       retryable: boolean;
       retry_after_ms?: number | null;
       nexus?: components["schemas"]["OperationRecovery"];
@@ -3653,11 +3677,13 @@ export interface components {
     /**
      * @description `execution_cleanup_pending`: the Job is terminal but its original execution
      *     has not confirmed stop, so it is not reported as cancelled and no capacity
-     *     is released. `idempotency_conflict`: the same key identifies another Job
-     *     cancellation intent.
+     *     is released. The cleanup finishes on its own, so `retryable` is true and the
+     *     reply carries `Retry-After`. `idempotency_conflict`: the same key identifies
+     *     another Job cancellation intent.
      */
     JobCancellationConflict: {
       headers: {
+        "Retry-After"?: components["headers"]["RetryAfter"];
         [name: string]: unknown;
       };
       content: {
@@ -3698,6 +3724,69 @@ export interface components {
       };
       content: {
         "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /**
+     * @description The request's own facts cannot produce this draft: the published model
+     *     binding, the input asset, the parameters, or the request's admission
+     *     deadline. Deterministic, so `retryable` is false and `X-Should-Retry` is
+     *     false; a new request is the recovery. The enumerated codes are the only
+     *     ones this operation answers with 422 -- a declaration without the enum is
+     *     invisible to a consumer generating types (see also
+     *     `voice_draft_engine_unavailable`, which is a 503 and not this class).
+     */
+    VoiceDraftSubmitUnprocessableEntity: {
+      headers: {
+        "Cache-Control": "no-store";
+        /** @description Always the string "false"; every code in this response is deterministic. */
+        "X-Should-Retry": "false";
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": {
+          error: components["schemas"]["ErrorBody"];
+        } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+          error: {
+            /** @enum {unknown} */
+            code?: "voice_draft_input_unavailable" | "voice_draft_request_expired";
+            /** @constant */
+            type?: "invalid_request_error";
+            /** @enum {unknown} */
+            retryable?: true | false;
+            nexus?: never;
+          };
+        });
+      };
+    };
+    /**
+     * @description Same class as `VoiceDraftSubmitUnprocessableEntity`, plus
+     *     `voice_draft_not_candidate`: this operation only accepts a candidate
+     *     revision, which is a fact about the request's own target.
+     */
+    VoiceDraftCandidateUnprocessableEntity: {
+      headers: {
+        "Cache-Control": "no-store";
+        /** @description Always the string "false"; every code in this response is deterministic. */
+        "X-Should-Retry": "false";
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": {
+          error: components["schemas"]["ErrorBody"];
+        } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+          error: {
+            /** @enum {unknown} */
+            code?:
+              | "voice_draft_input_unavailable"
+              | "voice_draft_not_candidate"
+              | "voice_draft_request_expired";
+            /** @constant */
+            type?: "invalid_request_error";
+            /** @enum {unknown} */
+            retryable?: true | false;
+            nexus?: never;
+          };
+        });
       };
     };
     /** @description Unsupported parameter, incompatible profile, or async_required. */
@@ -4502,25 +4591,35 @@ export interface operations {
       405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
-      /** @description The deployment has no lifecycle writer or publication storage is unavailable. The operation is implemented; this 503 is a retryable outage, not a permanently unimplemented operation. */
+      /**
+       * @description The deployment has no lifecycle writer or publication storage is unavailable. The operation is implemented; this 503 is an outage, not a permanently unimplemented operation.
+       *     `voice_draft_unavailable` is `retryable: false`: the store refused this dispatch, so repeating it is answered by the same refusal. The operation is still implemented -- an outage, not a permanently unimplemented operation -- and the value matches the Job surface's `job_unavailable`. `voice_draft_outcome_unknown` stays `true`: the same key is replayed because the outcome is unknown, which is a recovery, not a permission.
+       */
       503: {
         headers: {
           "Cache-Control": "no-store";
-          "X-Should-Retry": "true";
+          /**
+           * @description Mirrors the body's `retryable`: true for
+           *     `voice_draft_outcome_unknown`, false for
+           *     `voice_draft_unavailable`.
+           */
+          "X-Should-Retry": "true" | "false";
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ErrorResponse"] & {
-            error?: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
               /** @enum {unknown} */
               code?: "voice_catalogue_unavailable" | "voice_retirement_unavailable";
               /** @constant */
               type?: "service_unavailable_error";
-              /** @constant */
-              retryable?: true;
+              /** @enum {unknown} */
+              retryable?: true | false;
               nexus?: never;
             };
-          };
+          });
         };
       };
     };
@@ -4554,11 +4653,19 @@ export interface operations {
       403: components["responses"]["PronunciationCollectionForbidden"];
       405: components["responses"]["MethodNotAllowed"];
       500: components["responses"]["PronunciationContractViolation"];
-      /** @description Draft storage is unavailable. A list read carries no body and may be repeated; this is a retryable outage, not a permanently unimplemented operation. */
+      /**
+       * @description Draft storage is unavailable. A list read carries no body and may be repeated; this is an outage, not a permanently unimplemented operation.
+       *     `voice_draft_unavailable` is `retryable: false`: the store refused this dispatch, so repeating it is answered by the same refusal. The operation is still implemented -- an outage, not a permanently unimplemented operation -- and the value matches the Job surface's `job_unavailable`. `voice_draft_outcome_unknown` stays `true`: the same key is replayed because the outcome is unknown, which is a recovery, not a permission.
+       */
       503: {
         headers: {
           "Cache-Control": "no-store";
-          "X-Should-Retry": "true";
+          /**
+           * @description Mirrors the body's `retryable`: true for
+           *     `voice_draft_outcome_unknown`, false for
+           *     `voice_draft_unavailable`.
+           */
+          "X-Should-Retry": "true" | "false";
           "Retry-After"?: components["headers"]["RetryAfter"];
           [name: string]: unknown;
         };
@@ -4569,8 +4676,8 @@ export interface operations {
               code?: "pronunciation_unavailable";
               /** @constant */
               type?: "service_unavailable_error";
-              /** @constant */
-              retryable?: true;
+              /** @enum {unknown} */
+              retryable?: true | false;
               nexus?: never;
             };
           };
@@ -4626,11 +4733,19 @@ export interface operations {
       422: components["responses"]["PronunciationPublicationNotSupported"];
       429: components["responses"]["TooManyRequests"];
       500: components["responses"]["PronunciationContractViolation"];
-      /** @description Draft storage is unavailable. Only a request that carries its original Idempotency-Key may be retried unchanged: replaying that key recovers the committed revision instead of allocating a second one. This is a retryable outage, not a permanently unimplemented operation. */
+      /**
+       * @description Draft storage is unavailable. Only a request that carries its original Idempotency-Key may be replayed unchanged: replaying that key recovers the committed revision instead of allocating a second one, and `voice_draft_outcome_unknown` is the code that says so.
+       *     `voice_draft_unavailable` is `retryable: false`: the store refused this dispatch, so repeating it is answered by the same refusal. The operation is still implemented -- an outage, not a permanently unimplemented operation -- and the value matches the Job surface's `job_unavailable`. `voice_draft_outcome_unknown` stays `true`: the same key is replayed because the outcome is unknown, which is a recovery, not a permission.
+       */
       503: {
         headers: {
           "Cache-Control": "no-store";
-          "X-Should-Retry": "true";
+          /**
+           * @description Mirrors the body's `retryable`: true for
+           *     `voice_draft_outcome_unknown`, false for
+           *     `voice_draft_unavailable`.
+           */
+          "X-Should-Retry": "true" | "false";
           [name: string]: unknown;
         };
         content: {
@@ -4640,8 +4755,8 @@ export interface operations {
               code?: "pronunciation_unavailable";
               /** @constant */
               type?: "service_unavailable_error";
-              /** @constant */
-              retryable?: true;
+              /** @enum {unknown} */
+              retryable?: true | false;
               nexus?: never;
             };
           };
@@ -4754,9 +4869,102 @@ export interface operations {
       405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
       413: components["responses"]["PayloadTooLarge"];
-      422: components["responses"]["UnprocessableEntity"];
+      /**
+       * @description The request is well formed but admission refuses it deterministically.
+       *     Every code here writes no Job row; the recovery differs per code and is
+       *     stated in `message`.
+       */
+      422: {
+        headers: {
+          "Cache-Control": "no-store";
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
+              /** @enum {unknown} */
+              code?:
+                | "unsupported_parameter"
+                | "job_kind_not_supported"
+                | "workspace_not_found"
+                | "workspace_disabled"
+                | "workspace_not_configured"
+                | "model_not_published"
+                | "model_binding_not_published"
+                | "model_binding_retired"
+                | "model_binding_not_current"
+                | "model_binding_mismatch"
+                | "model_binding_task_not_supported"
+                | "voice_not_published"
+                | "profile_not_published"
+                | "pronunciation_not_found"
+                | "asset_not_ready"
+                | "voice_draft_not_candidate"
+                | "job_binding_incomplete"
+                | "job_text_asset_unsupported"
+                | "job_request_expired";
+            };
+          });
+        };
+      };
       429: components["responses"]["TooManyRequests"];
-      503: components["responses"]["ServiceUnavailable"];
+      /**
+       * @description Admission failed an internal invariant (a clock or version counter left
+       *     its declared range). This is a deployment defect rather than a refusal:
+       *     the transaction rolled back, no Job row exists, and the same request must
+       *     not be replayed as-is.
+       */
+      500: {
+        headers: {
+          "Cache-Control": "no-store";
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
+              /** @enum {unknown} */
+              code?: "admission_state_invalid";
+            };
+          });
+        };
+      };
+      /**
+       * @description The create was refused or its outcome is unknown, and the code states
+       *     which: `job_unavailable` is the Job store refusing the read or the write,
+       *     `job_outcome_unknown` is a connection-level failure whose outcome must be
+       *     replayed under the original key, `job_admission_contended` is the one
+       *     retryable admission race, and the `engine_*` and `recipe_not_admitted`
+       *     codes name an engine-side cause with an operator recovery. Retry only
+       *     when `retryable` is true.
+       */
+      503: {
+        headers: {
+          "Retry-After"?: components["headers"]["RetryAfter"];
+          "Cache-Control": "no-store";
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
+              /** @enum {unknown} */
+              code?:
+                | "job_unavailable"
+                | "job_outcome_unknown"
+                | "job_admission_contended"
+                | "engine_not_ready"
+                | "engine_state_mismatch"
+                | "engine_resource_disabled"
+                | "recipe_not_admitted";
+            };
+          });
+        };
+      };
     };
   };
   getJob: {
@@ -5382,39 +5590,65 @@ export interface operations {
       403: components["responses"]["Forbidden"];
       405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["VoiceDraftCreationConflict"];
-      422: components["responses"]["UnprocessableEntity"];
+      422: components["responses"]["VoiceDraftSubmitUnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];
       500: components["responses"]["VoiceDraftContractViolation"];
       /**
        * @description `voice_draft_unavailable`: storage failed before any definite
        *     commit, so retrying the same request is safe. The operation is
-       *     implemented; this is a retryable outage, not a permanently
-       *     unimplemented operation.
+       *     implemented; this is an outage, not a permanently unimplemented operation.
        *
        *     `voice_draft_outcome_unknown`: the submission may have committed
        *     but its acknowledgement was lost. This code is returned only for a
        *     request that carried its original Idempotency-Key; retry with that
        *     exact key so the committed draft is replayed instead of creating a
        *     second draft and generation Job. Do not retry with a new key.
+       *
+       *     `voice_draft_admission_contended`: admission state had not settled
+       *     when the attempt ran (a concurrent version compare-and-set, or an
+       *     instance gateway still draining an earlier generation). Repeating the
+       *     same request is the recovery, so `retryable` is true.
+       *
+       *     `voice_draft_engine_unavailable`: the engine pinned by this request
+       *     cannot admit it, and the recovery is an operator step. The message
+       *     names which one: an expired readiness receipt (re-register the engine, renewing the
+       *     readiness receipt), a runtime state that no longer
+       *     matches, an instance/pool/template/recipe approval that is not active,
+       *     or a request whose own admission deadline elapsed. `retryable` is false
+       *     and `X-Should-Retry` is false because repeating the request before that
+       *     step cannot succeed. It is a server-side condition: the published model
+       *     and the ready input are fine, so this is not the 422 input class.
        */
       503: {
         headers: {
           "Cache-Control": "no-store";
-          "X-Should-Retry": "true";
+          /**
+           * @description Mirrors the body's `retryable`: true for
+           *     `voice_draft_outcome_unknown` and
+           *     `voice_draft_admission_contended`, false for
+           *     `voice_draft_unavailable` and `voice_draft_engine_unavailable`.
+           */
+          "X-Should-Retry": "true" | "false";
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ErrorResponse"] & {
-            error?: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
               /** @enum {unknown} */
-              code?: "voice_draft_unavailable" | "voice_draft_outcome_unknown";
+              code?:
+                | "voice_draft_unavailable"
+                | "voice_draft_outcome_unknown"
+                | "voice_draft_admission_contended"
+                | "voice_draft_engine_unavailable";
               /** @constant */
               type?: "service_unavailable_error";
-              /** @constant */
-              retryable?: true;
+              /** @enum {unknown} */
+              retryable?: true | false;
               nexus?: never;
             };
-          };
+          });
         };
       };
     };
@@ -5454,39 +5688,65 @@ export interface operations {
       403: components["responses"]["Forbidden"];
       405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["VoiceDraftCreationConflict"];
-      422: components["responses"]["UnprocessableEntity"];
+      422: components["responses"]["VoiceDraftSubmitUnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];
       500: components["responses"]["VoiceDraftContractViolation"];
       /**
        * @description `voice_draft_unavailable`: storage failed before any definite
        *     commit, so retrying the same request is safe. The operation is
-       *     implemented; this is a retryable outage, not a permanently
-       *     unimplemented operation.
+       *     implemented; this is an outage, not a permanently unimplemented operation.
        *
        *     `voice_draft_outcome_unknown`: the submission may have committed
        *     but its acknowledgement was lost. This code is returned only for a
        *     request that carried its original Idempotency-Key; retry with that
        *     exact key so the committed draft is replayed instead of creating a
        *     second draft and generation Job. Do not retry with a new key.
+       *
+       *     `voice_draft_admission_contended`: admission state had not settled
+       *     when the attempt ran (a concurrent version compare-and-set, or an
+       *     instance gateway still draining an earlier generation). Repeating the
+       *     same request is the recovery, so `retryable` is true.
+       *
+       *     `voice_draft_engine_unavailable`: the engine pinned by this request
+       *     cannot admit it, and the recovery is an operator step. The message
+       *     names which one: an expired readiness receipt (re-register the engine, renewing the
+       *     readiness receipt), a runtime state that no longer
+       *     matches, an instance/pool/template/recipe approval that is not active,
+       *     or a request whose own admission deadline elapsed. `retryable` is false
+       *     and `X-Should-Retry` is false because repeating the request before that
+       *     step cannot succeed. It is a server-side condition: the published model
+       *     and the ready input are fine, so this is not the 422 input class.
        */
       503: {
         headers: {
           "Cache-Control": "no-store";
-          "X-Should-Retry": "true";
+          /**
+           * @description Mirrors the body's `retryable`: true for
+           *     `voice_draft_outcome_unknown` and
+           *     `voice_draft_admission_contended`, false for
+           *     `voice_draft_unavailable` and `voice_draft_engine_unavailable`.
+           */
+          "X-Should-Retry": "true" | "false";
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ErrorResponse"] & {
-            error?: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
               /** @enum {unknown} */
-              code?: "voice_draft_unavailable" | "voice_draft_outcome_unknown";
+              code?:
+                | "voice_draft_unavailable"
+                | "voice_draft_outcome_unknown"
+                | "voice_draft_admission_contended"
+                | "voice_draft_engine_unavailable";
               /** @constant */
               type?: "service_unavailable_error";
-              /** @constant */
-              retryable?: true;
+              /** @enum {unknown} */
+              retryable?: true | false;
               nexus?: never;
             };
-          };
+          });
         };
       };
     };
@@ -5522,27 +5782,41 @@ export interface operations {
       500: components["responses"]["VoiceDraftContractViolation"];
       /**
        * @description The deployment has no voice draft storage or the stored result is
-       *     unavailable. The operation is implemented; this 503 is a retryable
-       *     outage, not a permanently unimplemented operation.
+       *     unavailable. The operation is implemented; this 503 is an outage,
+       *     not a permanently unimplemented operation.
+       *
+       *     `voice_draft_unavailable` is `retryable: false`: the store refused this
+       *     dispatch, so repeating it is answered by the same refusal. The operation
+       *     is still implemented -- an outage, not a permanently unimplemented
+       *     operation -- and the value matches the Job surface's `job_unavailable`.
+       *     `voice_draft_outcome_unknown` stays `true`: the same key is replayed
+       *     because the outcome is unknown, which is a recovery, not a permission.
        */
       503: {
         headers: {
           "Cache-Control": "no-store";
-          "X-Should-Retry": "true";
+          /**
+           * @description Mirrors the body's `retryable`: true for
+           *     `voice_draft_outcome_unknown`, false for
+           *     `voice_draft_unavailable`.
+           */
+          "X-Should-Retry": "true" | "false";
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ErrorResponse"] & {
-            error?: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
               /** @enum {unknown} */
               code?: "voice_draft_unavailable";
               /** @constant */
               type?: "service_unavailable_error";
-              /** @constant */
-              retryable?: true;
+              /** @enum {unknown} */
+              retryable?: true | false;
               nexus?: never;
             };
-          };
+          });
         };
       };
     };
@@ -5589,27 +5863,41 @@ export interface operations {
       500: components["responses"]["VoiceDraftContractViolation"];
       /**
        * @description The deployment has no voice draft storage or the stored result is
-       *     unavailable. The operation is implemented; this 503 is a retryable
-       *     outage, not a permanently unimplemented operation.
+       *     unavailable. The operation is implemented; this 503 is an outage,
+       *     not a permanently unimplemented operation.
+       *
+       *     `voice_draft_unavailable` is `retryable: false`: the store refused this
+       *     dispatch, so repeating it is answered by the same refusal. The operation
+       *     is still implemented -- an outage, not a permanently unimplemented
+       *     operation -- and the value matches the Job surface's `job_unavailable`.
+       *     `voice_draft_outcome_unknown` stays `true`: the same key is replayed
+       *     because the outcome is unknown, which is a recovery, not a permission.
        */
       503: {
         headers: {
           "Cache-Control": "no-store";
-          "X-Should-Retry": "true";
+          /**
+           * @description Mirrors the body's `retryable`: true for
+           *     `voice_draft_outcome_unknown`, false for
+           *     `voice_draft_unavailable`.
+           */
+          "X-Should-Retry": "true" | "false";
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ErrorResponse"] & {
-            error?: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
               /** @enum {unknown} */
               code?: "voice_draft_unavailable";
               /** @constant */
               type?: "service_unavailable_error";
-              /** @constant */
-              retryable?: true;
+              /** @enum {unknown} */
+              retryable?: true | false;
               nexus?: never;
             };
-          };
+          });
         };
       };
     };
@@ -5652,39 +5940,65 @@ export interface operations {
       404: components["responses"]["NotFound"];
       405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
-      422: components["responses"]["UnprocessableEntity"];
+      422: components["responses"]["VoiceDraftSubmitUnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];
       500: components["responses"]["VoiceDraftContractViolation"];
       /**
        * @description `voice_draft_unavailable`: storage failed before any definite
        *     commit, so retrying the same request is safe. The operation is
-       *     implemented; this is a retryable outage, not a permanently
-       *     unimplemented operation.
+       *     implemented; this is an outage, not a permanently unimplemented operation.
        *
        *     `voice_draft_outcome_unknown`: the revision submission may have
        *     committed but its acknowledgement was lost. This code is returned
        *     only for a request that carried its original Idempotency-Key; retry
        *     with that exact key so the committed revision and Job are replayed
        *     instead of appending a second revision. Do not retry with a new key.
+       *
+       *     `voice_draft_admission_contended`: admission state had not settled
+       *     when the attempt ran (a concurrent version compare-and-set, or an
+       *     instance gateway still draining an earlier generation). Repeating the
+       *     same request is the recovery, so `retryable` is true.
+       *
+       *     `voice_draft_engine_unavailable`: the engine pinned by this request
+       *     cannot admit it, and the recovery is an operator step. The message
+       *     names which one: an expired readiness receipt (re-register the engine, renewing the
+       *     readiness receipt), a runtime state that no longer
+       *     matches, an instance/pool/template/recipe approval that is not active,
+       *     or a request whose own admission deadline elapsed. `retryable` is false
+       *     and `X-Should-Retry` is false because repeating the request before that
+       *     step cannot succeed. It is a server-side condition: the published model
+       *     and the ready input are fine, so this is not the 422 input class.
        */
       503: {
         headers: {
           "Cache-Control": "no-store";
-          "X-Should-Retry": "true";
+          /**
+           * @description Mirrors the body's `retryable`: true for
+           *     `voice_draft_outcome_unknown` and
+           *     `voice_draft_admission_contended`, false for
+           *     `voice_draft_unavailable` and `voice_draft_engine_unavailable`.
+           */
+          "X-Should-Retry": "true" | "false";
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ErrorResponse"] & {
-            error?: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
               /** @enum {unknown} */
-              code?: "voice_draft_unavailable" | "voice_draft_outcome_unknown";
+              code?:
+                | "voice_draft_unavailable"
+                | "voice_draft_outcome_unknown"
+                | "voice_draft_admission_contended"
+                | "voice_draft_engine_unavailable";
               /** @constant */
               type?: "service_unavailable_error";
-              /** @constant */
-              retryable?: true;
+              /** @enum {unknown} */
+              retryable?: true | false;
               nexus?: never;
             };
-          };
+          });
         };
       };
     };
@@ -5727,39 +6041,65 @@ export interface operations {
       404: components["responses"]["NotFound"];
       405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
-      422: components["responses"]["UnprocessableEntity"];
+      422: components["responses"]["VoiceDraftCandidateUnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];
       500: components["responses"]["VoiceDraftContractViolation"];
       /**
        * @description `voice_draft_unavailable`: storage failed before any definite
        *     commit, so retrying the same request is safe. The operation is
-       *     implemented; this is a retryable outage, not a permanently
-       *     unimplemented operation.
+       *     implemented; this is an outage, not a permanently unimplemented operation.
        *
        *     `voice_draft_outcome_unknown`: the preview submission may have
        *     committed but its acknowledgement was lost. This code is returned
        *     only for a request that carried its original Idempotency-Key; retry
        *     with that exact key so the committed preview Job is replayed
        *     instead of submitting a second preview. Do not retry with a new key.
+       *
+       *     `voice_draft_admission_contended`: admission state had not settled
+       *     when the attempt ran (a concurrent version compare-and-set, or an
+       *     instance gateway still draining an earlier generation). Repeating the
+       *     same request is the recovery, so `retryable` is true.
+       *
+       *     `voice_draft_engine_unavailable`: the engine pinned by this request
+       *     cannot admit it, and the recovery is an operator step. The message
+       *     names which one: an expired readiness receipt (re-register the engine, renewing the
+       *     readiness receipt), a runtime state that no longer
+       *     matches, an instance/pool/template/recipe approval that is not active,
+       *     or a request whose own admission deadline elapsed. `retryable` is false
+       *     and `X-Should-Retry` is false because repeating the request before that
+       *     step cannot succeed. It is a server-side condition: the published model
+       *     and the ready input are fine, so this is not the 422 input class.
        */
       503: {
         headers: {
           "Cache-Control": "no-store";
-          "X-Should-Retry": "true";
+          /**
+           * @description Mirrors the body's `retryable`: true for
+           *     `voice_draft_outcome_unknown` and
+           *     `voice_draft_admission_contended`, false for
+           *     `voice_draft_unavailable` and `voice_draft_engine_unavailable`.
+           */
+          "X-Should-Retry": "true" | "false";
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ErrorResponse"] & {
-            error?: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
               /** @enum {unknown} */
-              code?: "voice_draft_unavailable" | "voice_draft_outcome_unknown";
+              code?:
+                | "voice_draft_unavailable"
+                | "voice_draft_outcome_unknown"
+                | "voice_draft_admission_contended"
+                | "voice_draft_engine_unavailable";
               /** @constant */
               type?: "service_unavailable_error";
-              /** @constant */
-              retryable?: true;
+              /** @enum {unknown} */
+              retryable?: true | false;
               nexus?: never;
             };
-          };
+          });
         };
       };
     };
@@ -5802,39 +6142,65 @@ export interface operations {
       404: components["responses"]["NotFound"];
       405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
-      422: components["responses"]["UnprocessableEntity"];
+      422: components["responses"]["VoiceDraftCandidateUnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];
       500: components["responses"]["VoiceDraftContractViolation"];
       /**
        * @description `voice_draft_unavailable`: storage failed before any definite
        *     commit, so retrying the same request is safe. The operation is
-       *     implemented; this is a retryable outage, not a permanently
-       *     unimplemented operation.
+       *     implemented; this is an outage, not a permanently unimplemented operation.
        *
        *     `voice_draft_outcome_unknown`: the validation submission may have
        *     committed but its acknowledgement was lost. This code is returned
        *     only for a request that carried its original Idempotency-Key; retry
        *     with that exact key so the committed Job is replayed instead of
        *     submitting a second validation. Do not retry with a new key.
+       *
+       *     `voice_draft_admission_contended`: admission state had not settled
+       *     when the attempt ran (a concurrent version compare-and-set, or an
+       *     instance gateway still draining an earlier generation). Repeating the
+       *     same request is the recovery, so `retryable` is true.
+       *
+       *     `voice_draft_engine_unavailable`: the engine pinned by this request
+       *     cannot admit it, and the recovery is an operator step. The message
+       *     names which one: an expired readiness receipt (re-register the engine, renewing the
+       *     readiness receipt), a runtime state that no longer
+       *     matches, an instance/pool/template/recipe approval that is not active,
+       *     or a request whose own admission deadline elapsed. `retryable` is false
+       *     and `X-Should-Retry` is false because repeating the request before that
+       *     step cannot succeed. It is a server-side condition: the published model
+       *     and the ready input are fine, so this is not the 422 input class.
        */
       503: {
         headers: {
           "Cache-Control": "no-store";
-          "X-Should-Retry": "true";
+          /**
+           * @description Mirrors the body's `retryable`: true for
+           *     `voice_draft_outcome_unknown` and
+           *     `voice_draft_admission_contended`, false for
+           *     `voice_draft_unavailable` and `voice_draft_engine_unavailable`.
+           */
+          "X-Should-Retry": "true" | "false";
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ErrorResponse"] & {
-            error?: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
               /** @enum {unknown} */
-              code?: "voice_draft_unavailable" | "voice_draft_outcome_unknown";
+              code?:
+                | "voice_draft_unavailable"
+                | "voice_draft_outcome_unknown"
+                | "voice_draft_admission_contended"
+                | "voice_draft_engine_unavailable";
               /** @constant */
               type?: "service_unavailable_error";
-              /** @constant */
-              retryable?: true;
+              /** @enum {unknown} */
+              retryable?: true | false;
               nexus?: never;
             };
-          };
+          });
         };
       };
     };
@@ -5889,24 +6255,34 @@ export interface operations {
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
       500: components["responses"]["VoiceDraftContractViolation"];
-      /** @description `voice_draft_unavailable`: the validation report, its evidence, or publication storage is unavailable before any definite commit, so replaying the same request is safe. The operation is implemented; this is a retryable outage, not a permanently unimplemented operation. A recorded eligibility rejection is 422 instead. */
+      /**
+       * @description `voice_draft_unavailable`: the validation report, its evidence, or publication storage is unavailable before any definite commit, so replaying the same request is safe. The operation is implemented; this is an outage, not a permanently unimplemented operation. A recorded eligibility rejection is 422 instead.
+       *     `voice_draft_unavailable` is `retryable: false`: the store refused this dispatch, so repeating it is answered by the same refusal. The operation is still implemented -- an outage, not a permanently unimplemented operation -- and the value matches the Job surface's `job_unavailable`. `voice_draft_outcome_unknown` stays `true`: the same key is replayed because the outcome is unknown, which is a recovery, not a permission.
+       */
       503: {
         headers: {
           "Cache-Control": "no-store";
-          "X-Should-Retry": "true";
+          /**
+           * @description Mirrors the body's `retryable`: true for
+           *     `voice_draft_outcome_unknown`, false for
+           *     `voice_draft_unavailable`.
+           */
+          "X-Should-Retry": "true" | "false";
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ErrorResponse"] & {
-            error?: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
               /** @enum {unknown} */
               code?: "voice_draft_unavailable";
               /** @constant */
               type?: "service_unavailable_error";
-              /** @constant */
-              retryable?: true;
+              /** @enum {unknown} */
+              retryable?: true | false;
             };
-          };
+          });
         };
       };
     };
@@ -6073,3 +6449,6 @@ export interface operations {
     };
   };
 }
+type WithRequired<T, K extends keyof T> = T & {
+  [P in K]-?: T[P];
+};

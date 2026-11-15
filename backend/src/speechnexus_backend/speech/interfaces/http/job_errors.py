@@ -19,6 +19,9 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
         "invalid_request_error",
         "The key identifies another Job intent.",
     ),
+    # The same request succeeds once the original execution confirms stop, which
+    # needs no operator or configuration step: under the pinned `retryable` rule
+    # that is `true` (#828 review M5).
     "execution_cleanup_pending": (
         409,
         "invalid_request_error",
@@ -124,32 +127,117 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
         "invalid_request_error",
         "Text asset input is not supported for TTS Jobs.",
     ),
+    # The one code that reports the Job store itself: the transaction could not
+    # read or write durable state. Nothing an operator can do to an engine repairs
+    # it, and no admission refusal may borrow it (#828 review B3).
     "job_unavailable": (503, "service_unavailable_error", "Job storage is unavailable."),
+    # The pinned instance is ready, but its readiness receipt elapsed. The store is
+    # healthy and no Job row was written; an operator re-signs the receipt and the
+    # same request is then admitted. Recovery needs that out-of-band step, so the
+    # refusal does not invite a retry of its own (#828, review B1).
+    "engine_not_ready": (
+        503,
+        "service_unavailable_error",
+        "The engine readiness receipt for the pinned instance has expired; "
+        "re-register the engine (speechnexus-register-engine --renew-readiness), "
+        "then send a new request.",
+    ),
+    # The pinned runtime state disagrees with the request (generation, topology,
+    # observation or pool-owner identity): registering the engine again reconciles
+    # it. The refusal is about the runtime, never the Job store.
+    "engine_state_mismatch": (
+        503,
+        "service_unavailable_error",
+        "The pinned engine instance no longer matches this request's runtime state; "
+        "re-register the engine, then send a new request.",
+    ),
+    # The instance, its pool or its recipe approval is not active (stopped,
+    # draining, unapproved or outside its approval window).
+    "engine_resource_disabled": (
+        503,
+        "service_unavailable_error",
+        "The pinned engine instance, its pool, its template or its recipe approval "
+        "is not active; restore the instance, then send a new request.",
+    ),
+    # The request was built from another recipe than the one approved for the
+    # pinned instance.
+    "recipe_not_admitted": (
+        503,
+        "service_unavailable_error",
+        "The request does not match the transcription recipe approved for the "
+        "pinned instance; register the engine against the approved recipe, then "
+        "send a new request.",
+    ),
+    # Version compare-and-set and pool-owner fencing races: the transaction rolled
+    # back and the same request succeeds once the concurrent writer finishes.
     "job_admission_contended": (
         503,
         "service_unavailable_error",
-        "Admission state changed concurrently; retry the request.",
+        "Admission state has not settled (a concurrent write or a draining "
+        "generation); retry the request.",
+    ),
+    # This request's own admission deadline elapsed before it could be admitted:
+    # the deadline is part of the pinned intent, so only a new request can succeed.
+    "job_request_expired": (
+        422,
+        "invalid_request_error",
+        "The Job request's admission deadline elapsed before it was admitted; "
+        "submit a new request.",
+    ),
+    # A clock or version counter left its declared range: an internal invariant
+    # failed, so the answer is a server error and not a retryable refusal.
+    "admission_state_invalid": (
+        500,
+        "api_error",
+        "Admission state failed an internal invariant; this is a deployment defect "
+        "and the request must not be replayed as-is.",
     ),
 }
 
 
 def job_error(code: str, request_id: str, *, headers: dict[str, str] | None = None) -> JSONResponse:
-    if code not in _ERRORS:
-        code = "job_unavailable"
-    status, kind, message = _ERRORS[code]
-    # Only an unknown execution outcome promises that retrying can succeed. An
-    # unavailable read may be a permanently expired or deleted result, so clients
-    # reconcile the original identity instead of retrying it blindly.
+    """Render one declared Job error, and refuse to invent a storage answer.
+
+    An undeclared code is a deployment defect. It used to fall back to
+    ``job_unavailable`` -- "Job storage is unavailable." -- so any unmapped cause
+    in the layers above silently restored the #828 symptom. It now answers the
+    declared 500 ``admission_state_invalid`` envelope and names the bad code in the
+    message (#828 review M1).
+    """
+    undeclared = code not in _ERRORS
+    if undeclared:
+        message = (
+            f"The Job API emitted an undeclared error code ({code}); this is a "
+            "deployment defect and the request must not be replayed as-is."
+        )
+        code = "admission_state_invalid"
+        status, kind, _ = _ERRORS[code]
+    else:
+        status, kind, message = _ERRORS[code]
+    # ``retryable`` answers one question: can this same request succeed without an
+    # out-of-band change? Only the unknown execution outcome (the original identity
+    # is replayed), a capacity delay a released lease clears, and the admission
+    # contention/fencing races qualify. A refusal repaired by an operator step --
+    # re-signing a readiness receipt, restoring a disabled instance, re-registering
+    # against an approved recipe -- is ``false`` even though the recovery is known,
+    # and that recovery lives in the message instead (#828 review B1). The
+    # ``job_unavailable`` storage outage never qualifies.
     retryable = code in (
         "job_outcome_unknown",
         "job_capacity_exhausted",
         "job_admission_contended",
+        "execution_cleanup_pending",
     )
     response_headers = {"Cache-Control": "no-store", **(headers or {})}
     if code == "job_capacity_exhausted":
         # One second is the minimum claim-lease granularity (see
         # PostgresDispatchQueue: 1_000 <= lease_ms). A capacity refusal is
         # therefore retried no sooner than the next possible lease release.
+        response_headers.setdefault("Retry-After", "1")
+    if code == "execution_cleanup_pending":
+        # `retryable` is true here: the cleanup this cancellation waits for finishes on
+        # its own. One second is the shortest granularity the release path can observe,
+        # so the hint stops a client from hot-looping the request (#828 review D10).
         response_headers.setdefault("Retry-After", "1")
     return JSONResponse(
         status_code=status,

@@ -53,7 +53,10 @@
         },
         "422": {
           "schema": "HttpResponse_createVoiceDesign_422",
-          "headers": {},
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
           "json": true
         },
         "429": {
@@ -133,7 +136,10 @@
         },
         "422": {
           "schema": "HttpResponse_createVoiceClone_422",
-          "headers": {},
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
           "json": true
         },
         "429": {
@@ -360,7 +366,10 @@
         },
         "422": {
           "schema": "HttpResponse_generateVoiceDraftRevision_422",
-          "headers": {},
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
           "json": true
         },
         "429": {
@@ -444,7 +453,10 @@
         },
         "422": {
           "schema": "HttpResponse_createVoicePreview_422",
-          "headers": {},
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
           "json": true
         },
         "429": {
@@ -528,7 +540,10 @@
         },
         "422": {
           "schema": "HttpResponse_validateVoiceDraftRevision_422",
-          "headers": {},
+          "headers": {
+            "cache-control": "string",
+            "x-should-retry": "string"
+          },
           "json": true
         },
         "429": {
@@ -2197,7 +2212,7 @@
         },
         "retryable": {
           "type": "boolean",
-          "description": "Whether the same dispatch may be retried after the refusal. The value belongs to the refusing operation's disposition, not to the status or the code: one operation's 409 may ask the caller to wait out a cleanup (retryable) while another 409 in the same operation reports a spent idempotency key (not retryable), so a caller reads this field instead of inferring retryability from the status. It answers only that question, and only for a refusal. A 5xx states an unknown outcome rather than a refusal, so the original identity is replayed because the outcome is unknown, not because this field permits a retry: a 503 `outcome_unknown` is `retryable: false` and must still be replayed under the original Idempotency-Key. The meaning is per operation rather than global: workbench operations publish their disposition in `contracts/workbench-openapi.yaml`, while the speech Job operations compute this field from the narrower question 'may an unknown execution outcome be replayed?', which is why `execution_cleanup_pending` is `false` there although the correct action is to dispatch the same intent again under the same key; a consumer that must state one code's operator step reads that operation's published vocabulary instead of this field."
+          "description": "Whether the same request can succeed without an out-of-band change. The value belongs to the refusing operation's disposition, not to the status or the code: one operation's 409 may ask the caller to wait out a cleanup (retryable) while another 409 in the same operation reports a spent idempotency key (not retryable), so a caller reads this field instead of inferring retryability from the status. `true` means repeating the same request later can be admitted with no operator, configuration or data change: a released capacity lease, a concurrent writer finishing, a connection-level outcome that the original identity replays, and a cleanup that completes on its own all qualify. `false` means the same request is answered the same way until something outside the request changes, and the operation's published code and message name that change: provisioning the workspace quota, re-signing an engine readiness receipt, restoring a disabled instance, or re-registering against an approved recipe. The field never grants permission to drop an identity: a replayed unknown outcome is recovered under its original Idempotency-Key because the outcome is unknown, not because a value permits it, and every operation states that requirement in its own 5xx vocabulary. The meaning is per operation rather than global, so an operation that publishes a per-code value states it in its own contract (`contracts/workbench-openapi.yaml` for the workbench operations) instead of restating this field."
         },
         "retry_after_ms": {
           "type": ["integer", "null"],
@@ -3494,15 +3509,54 @@
       "properties": {
         "headers": {
           "type": "object",
-          "properties": {},
-          "required": [],
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "false"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
           "additionalProperties": true
         },
         "body": {
-          "$ref": "#/$defs/ErrorResponse"
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "enum": ["voice_draft_input_unavailable", "voice_draft_request_expired"]
+                    },
+                    "type": {
+                      "const": "invalid_request_error"
+                    },
+                    "retryable": {
+                      "enum": [true, false]
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
         }
       },
-      "required": ["body"]
+      "required": ["headers", "body"]
     },
     "HttpResponse_createVoiceDesign_429": {
       "type": "object",
@@ -3585,13 +3639,21 @@
             },
             "x-should-retry": {
               "type": "string",
-              "const": "true"
+              "enum": ["true", "false"]
             }
           },
           "required": ["cache-control", "x-should-retry"],
           "additionalProperties": true
         },
         "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
           "allOf": [
             {
               "$ref": "#/$defs/ErrorResponse"
@@ -3601,13 +3663,18 @@
                 "error": {
                   "properties": {
                     "code": {
-                      "enum": ["voice_draft_unavailable", "voice_draft_outcome_unknown"]
+                      "enum": [
+                        "voice_draft_unavailable",
+                        "voice_draft_outcome_unknown",
+                        "voice_draft_admission_contended",
+                        "voice_draft_engine_unavailable"
+                      ]
                     },
                     "type": {
                       "const": "service_unavailable_error"
                     },
                     "retryable": {
-                      "const": true
+                      "enum": [true, false]
                     },
                     "nexus": false
                   }
@@ -3799,15 +3866,54 @@
       "properties": {
         "headers": {
           "type": "object",
-          "properties": {},
-          "required": [],
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "false"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
           "additionalProperties": true
         },
         "body": {
-          "$ref": "#/$defs/ErrorResponse"
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "enum": ["voice_draft_input_unavailable", "voice_draft_request_expired"]
+                    },
+                    "type": {
+                      "const": "invalid_request_error"
+                    },
+                    "retryable": {
+                      "enum": [true, false]
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
         }
       },
-      "required": ["body"]
+      "required": ["headers", "body"]
     },
     "HttpResponse_createVoiceClone_429": {
       "type": "object",
@@ -3890,13 +3996,21 @@
             },
             "x-should-retry": {
               "type": "string",
-              "const": "true"
+              "enum": ["true", "false"]
             }
           },
           "required": ["cache-control", "x-should-retry"],
           "additionalProperties": true
         },
         "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
           "allOf": [
             {
               "$ref": "#/$defs/ErrorResponse"
@@ -3906,13 +4020,18 @@
                 "error": {
                   "properties": {
                     "code": {
-                      "enum": ["voice_draft_unavailable", "voice_draft_outcome_unknown"]
+                      "enum": [
+                        "voice_draft_unavailable",
+                        "voice_draft_outcome_unknown",
+                        "voice_draft_admission_contended",
+                        "voice_draft_engine_unavailable"
+                      ]
                     },
                     "type": {
                       "const": "service_unavailable_error"
                     },
                     "retryable": {
-                      "const": true
+                      "enum": [true, false]
                     },
                     "nexus": false
                   }
@@ -4121,13 +4240,21 @@
             },
             "x-should-retry": {
               "type": "string",
-              "const": "true"
+              "enum": ["true", "false"]
             }
           },
           "required": ["cache-control", "x-should-retry"],
           "additionalProperties": true
         },
         "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
           "allOf": [
             {
               "$ref": "#/$defs/ErrorResponse"
@@ -4143,7 +4270,7 @@
                       "const": "service_unavailable_error"
                     },
                     "retryable": {
-                      "const": true
+                      "enum": [true, false]
                     },
                     "nexus": false
                   }
@@ -4394,13 +4521,21 @@
             },
             "x-should-retry": {
               "type": "string",
-              "const": "true"
+              "enum": ["true", "false"]
             }
           },
           "required": ["cache-control", "x-should-retry"],
           "additionalProperties": true
         },
         "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
           "allOf": [
             {
               "$ref": "#/$defs/ErrorResponse"
@@ -4416,7 +4551,7 @@
                       "const": "service_unavailable_error"
                     },
                     "retryable": {
-                      "const": true
+                      "enum": [true, false]
                     },
                     "nexus": false
                   }
@@ -4597,15 +4732,54 @@
       "properties": {
         "headers": {
           "type": "object",
-          "properties": {},
-          "required": [],
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "false"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
           "additionalProperties": true
         },
         "body": {
-          "$ref": "#/$defs/ErrorResponse"
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "enum": ["voice_draft_input_unavailable", "voice_draft_request_expired"]
+                    },
+                    "type": {
+                      "const": "invalid_request_error"
+                    },
+                    "retryable": {
+                      "enum": [true, false]
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
         }
       },
-      "required": ["body"]
+      "required": ["headers", "body"]
     },
     "HttpResponse_generateVoiceDraftRevision_429": {
       "type": "object",
@@ -4688,13 +4862,21 @@
             },
             "x-should-retry": {
               "type": "string",
-              "const": "true"
+              "enum": ["true", "false"]
             }
           },
           "required": ["cache-control", "x-should-retry"],
           "additionalProperties": true
         },
         "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
           "allOf": [
             {
               "$ref": "#/$defs/ErrorResponse"
@@ -4704,13 +4886,18 @@
                 "error": {
                   "properties": {
                     "code": {
-                      "enum": ["voice_draft_unavailable", "voice_draft_outcome_unknown"]
+                      "enum": [
+                        "voice_draft_unavailable",
+                        "voice_draft_outcome_unknown",
+                        "voice_draft_admission_contended",
+                        "voice_draft_engine_unavailable"
+                      ]
                     },
                     "type": {
                       "const": "service_unavailable_error"
                     },
                     "retryable": {
-                      "const": true
+                      "enum": [true, false]
                     },
                     "nexus": false
                   }
@@ -4891,15 +5078,58 @@
       "properties": {
         "headers": {
           "type": "object",
-          "properties": {},
-          "required": [],
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "false"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
           "additionalProperties": true
         },
         "body": {
-          "$ref": "#/$defs/ErrorResponse"
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "voice_draft_input_unavailable",
+                        "voice_draft_not_candidate",
+                        "voice_draft_request_expired"
+                      ]
+                    },
+                    "type": {
+                      "const": "invalid_request_error"
+                    },
+                    "retryable": {
+                      "enum": [true, false]
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
         }
       },
-      "required": ["body"]
+      "required": ["headers", "body"]
     },
     "HttpResponse_createVoicePreview_429": {
       "type": "object",
@@ -4982,13 +5212,21 @@
             },
             "x-should-retry": {
               "type": "string",
-              "const": "true"
+              "enum": ["true", "false"]
             }
           },
           "required": ["cache-control", "x-should-retry"],
           "additionalProperties": true
         },
         "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
           "allOf": [
             {
               "$ref": "#/$defs/ErrorResponse"
@@ -4998,13 +5236,18 @@
                 "error": {
                   "properties": {
                     "code": {
-                      "enum": ["voice_draft_unavailable", "voice_draft_outcome_unknown"]
+                      "enum": [
+                        "voice_draft_unavailable",
+                        "voice_draft_outcome_unknown",
+                        "voice_draft_admission_contended",
+                        "voice_draft_engine_unavailable"
+                      ]
                     },
                     "type": {
                       "const": "service_unavailable_error"
                     },
                     "retryable": {
-                      "const": true
+                      "enum": [true, false]
                     },
                     "nexus": false
                   }
@@ -5185,15 +5428,58 @@
       "properties": {
         "headers": {
           "type": "object",
-          "properties": {},
-          "required": [],
+          "properties": {
+            "cache-control": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "x-should-retry": {
+              "type": "string",
+              "const": "false"
+            }
+          },
+          "required": ["cache-control", "x-should-retry"],
           "additionalProperties": true
         },
         "body": {
-          "$ref": "#/$defs/ErrorResponse"
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
+          "allOf": [
+            {
+              "$ref": "#/$defs/ErrorResponse"
+            },
+            {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "voice_draft_input_unavailable",
+                        "voice_draft_not_candidate",
+                        "voice_draft_request_expired"
+                      ]
+                    },
+                    "type": {
+                      "const": "invalid_request_error"
+                    },
+                    "retryable": {
+                      "enum": [true, false]
+                    },
+                    "nexus": false
+                  }
+                }
+              }
+            }
+          ]
         }
       },
-      "required": ["body"]
+      "required": ["headers", "body"]
     },
     "HttpResponse_validateVoiceDraftRevision_429": {
       "type": "object",
@@ -5276,13 +5562,21 @@
             },
             "x-should-retry": {
               "type": "string",
-              "const": "true"
+              "enum": ["true", "false"]
             }
           },
           "required": ["cache-control", "x-should-retry"],
           "additionalProperties": true
         },
         "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
           "allOf": [
             {
               "$ref": "#/$defs/ErrorResponse"
@@ -5292,13 +5586,18 @@
                 "error": {
                   "properties": {
                     "code": {
-                      "enum": ["voice_draft_unavailable", "voice_draft_outcome_unknown"]
+                      "enum": [
+                        "voice_draft_unavailable",
+                        "voice_draft_outcome_unknown",
+                        "voice_draft_admission_contended",
+                        "voice_draft_engine_unavailable"
+                      ]
                     },
                     "type": {
                       "const": "service_unavailable_error"
                     },
                     "retryable": {
-                      "const": true
+                      "enum": [true, false]
                     },
                     "nexus": false
                   }
@@ -5569,13 +5868,21 @@
             },
             "x-should-retry": {
               "type": "string",
-              "const": "true"
+              "enum": ["true", "false"]
             }
           },
           "required": ["cache-control", "x-should-retry"],
           "additionalProperties": true
         },
         "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
           "allOf": [
             {
               "$ref": "#/$defs/ErrorResponse"
@@ -5591,7 +5898,7 @@
                       "const": "service_unavailable_error"
                     },
                     "retryable": {
-                      "const": true
+                      "enum": [true, false]
                     }
                   }
                 }

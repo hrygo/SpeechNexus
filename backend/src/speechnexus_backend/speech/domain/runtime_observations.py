@@ -196,6 +196,16 @@ class RuntimeObservation:
         )
 
 
+READINESS_VALID = "valid"
+"""The receipt is inside its own window and no deadline is close."""
+
+READINESS_EXPIRING = "expiring"
+"""The receipt is still usable but its ``expires_at_us`` is within the warning window."""
+
+READINESS_EXPIRED = "expired"
+"""The receipt's ``expires_at_us`` has passed, so admission refuses it."""
+
+
 @dataclass(frozen=True, slots=True)
 class VerifiedRuntimeReadiness:
     """Trusted provider receipt, never a client assertion or proof by construction."""
@@ -219,9 +229,41 @@ class VerifiedRuntimeReadiness:
         integer(self.verified_at_us, minimum=1)
         integer(self.expires_at_us, minimum=self.verified_at_us + 1)
 
+    def expiry_state(self, now_us: int, *, warning_us: int = 0) -> str:
+        """Classify this receipt against one clock without asserting identity facts.
+
+        ``expiry_state`` answers only "how much of the declared window is left", so
+        an operator surface can report ``valid``/``expiring``/``expired`` without
+        re-deriving the window or duplicating the comparison in ``require_valid``.
+        The warning window is a reporting choice, never an admission rule: only
+        ``expired`` refuses work.
+        """
+        integer(now_us, minimum=1)
+        integer(warning_us, minimum=0)
+        if now_us >= self.expires_at_us:
+            return READINESS_EXPIRED
+        if self.expires_at_us - now_us <= warning_us:
+            return READINESS_EXPIRING
+        return READINESS_VALID
+
     def require_valid(
-        self, observation: RuntimeObservation, plan: ApprovedRuntimePlan, now_us: int
+        self,
+        observation: RuntimeObservation,
+        plan: ApprovedRuntimePlan,
+        now_us: int,
+        *,
+        expired_code: str = "reconciliation_required",
     ) -> None:
+        """Refuse a stale identity or a receipt outside its window.
+
+        Identity mismatches keep one code: they say the stored receipt describes a
+        different instance generation, topology or qualification, which only a fresh
+        observation can reconcile. Elapsed validity is a different fact with its own
+        recovery: the same instance is still the right one and its receipt only has
+        to be re-signed. ``expired_code`` lets a caller that must report the
+        recoverable case name it; it defaults to the historical combined code so
+        every existing caller keeps one refusal class.
+        """
         if (
             self.binding != observation.binding
             or self.binding != plan.binding
@@ -230,8 +272,13 @@ class VerifiedRuntimeReadiness:
             or self.fencing_token != observation.fencing_token
             or self.topology_digest != plan.topology_digest
             or self.qualification_digest != plan.qualification_digest
-            or not self.verified_at_us <= now_us < self.expires_at_us
         ):
+            raise RuntimeRejectedError("reconciliation_required")
+        if now_us >= self.expires_at_us:
+            raise RuntimeRejectedError(expired_code)
+        if now_us < self.verified_at_us:
+            # A receipt dated in the future is not an expired one: the observer's
+            # clock disagrees with the store, so only a fresh observation helps.
             raise RuntimeRejectedError("reconciliation_required")
 
 

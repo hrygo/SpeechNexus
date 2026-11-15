@@ -484,7 +484,13 @@ def test_served_openapi_declares_the_implemented_collection() -> None:
     for method in ("get", "post"):
         unavailable = operation[method]["responses"]["503"]
         assert "$ref" not in unavailable
-        assert unavailable["headers"]["X-Should-Retry"]["schema"]["const"] == "true"
+        # The header mirrors the body's per-code `retryable`: this surface answers
+        # `false` for a refused storage read and `true` for an unknown outcome, so the
+        # declaration is the closed set rather than a constant (#828 review M5).
+        assert unavailable["headers"]["X-Should-Retry"]["schema"]["enum"] == [
+            "true",
+            "false",
+        ]
 
 
 def test_writer_settings_are_opt_in_bounded_and_api_only() -> None:

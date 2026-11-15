@@ -90,9 +90,15 @@ qualify a real service, cross-host TLS, or a physical topology.
 
 `/healthz` and `/readyz` are startup/dependency probes, not business acceptance:
 
-- public synchronous ASR is still blocked by the missing production terminal-state
-  writer; a live request can return `504 operation_timeout` even when the gateway
-  staged a result;
+- public synchronous ASR is assembled but not exercised in this deployment: the
+  gateway closes a file execution only from the engine's own terminal fact
+  (`execution-gateway/src/speechnexus_gateway/infrastructure/file_execution_worker.py:380`
+  calls `ExecutionCompletionService.complete`, which records `record_stop(SUCCEEDED)`
+  at `execution-gateway/src/speechnexus_gateway/application/execution_completion.py:55`),
+  and this bootstrap provides no real engine, so no public `200` has been run
+  against it here. The historical local request that answered `504
+  operation_timeout` ran on `c435908` before DEL-115 (PR #284) added that writer;
+  the public entry has not been re-run on this deployment since;
 - public synchronous TTS is assembled here — recipe sample, language, settlement
   role and the API identity's speech grants are all part of this file (see
   "Synchronous TTS assembly" below) — but it is not exercised: this bootstrap

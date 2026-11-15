@@ -296,6 +296,47 @@ class AdmissionRejectedError(Exception):
         super().__init__(code)
 
 
+# The complete refusal vocabulary of the admission decision. Every code below is
+# raised by ``decide_admission`` or ``require_live_authority`` (directly, or by the
+# owner/runtime rejection they re-raise) or by the admission transaction they run
+# in. ``rejection_code`` maps this set one-for-one onto public codes, so the public
+# boundary never folds an unlisted cause into another answer by omission: adding a
+# code here without a public mapping fails the mapping's completeness test, and an
+# unmapped code raises instead of turning into a storage outage (#828 review B3).
+CAPACITY_REJECTION_CODES: frozenset[str] = frozenset({"capacity_exhausted", "quota_exceeded"})
+ADMISSION_REJECTION_CODES: frozenset[str] = CAPACITY_REJECTION_CODES | frozenset(
+    {
+        # The idempotency key belongs to another intent (recovery transactions).
+        "idempotency_conflict",
+        # A clock or version counter left its declared range: an internal defect.
+        "invalid_counter",
+        "invalid_execution_request",
+        "invalid_runtime_request",
+        # Another intent already owns this runtime identity: replay or query it.
+        "intent_conflict",
+        # This request's own admission deadline elapsed before it was admitted.
+        "lease_not_active",
+        # The pinned instance or pool row the refusal refers to is gone.
+        "not_found",
+        # The pool ownership still belongs to another live owner (acquisition path).
+        "owner_busy",
+        # The instance, its pool, its node or its recipe approval is not active.
+        "policy_or_resource_disabled",
+        # The pinned instance is the right one; only its readiness receipt elapsed.
+        "readiness_expired",
+        # The request does not match the approved recipe for the pinned instance.
+        "recipe_mismatch",
+        # Observation, generation, topology or topology-owner identity disagrees.
+        "reconciliation_required",
+        "stale_instance_generation",
+        # The pool owner lease moved: the transaction lost its fencing token.
+        "stale_fencing_token",
+        # A quota/instance/host version compare-and-set failed: pure concurrency noise.
+        "version_conflict",
+    }
+)
+
+
 def require_live_authority(
     command: AdmitRecipe,
     pools: tuple[AdmissionPool, ...],

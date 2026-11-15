@@ -105,12 +105,14 @@ def test_create_job_declares_the_configuration_refusal_separately_from_the_outag
     assert "connection-level failure" in description
     assert "`job_outcome_unknown`" in description
     assert "`retryable: true`" in description
-    # The status the code answers with is declared on the operation.
+    # The status the code answers with is declared on the operation, and the 422
+    # response enumerates the codes it can carry (#828 review B2), so this one is
+    # machine-discoverable instead of prose-only.
     assert "422" in operation["responses"]
     declared = response_contract("createJob", 422)
-    assert declared["content"]["application/json"]["schema"] == {
-        "$ref": "#/components/schemas/ErrorResponse"
-    }
+    schema = declared["content"]["application/json"]["schema"]
+    assert schema["allOf"][0] == {"$ref": "#/components/schemas/ErrorResponse"}
+    assert NOT_CONFIGURED in schema["allOf"][1]["properties"]["error"]["properties"]["code"]["enum"]
 
 
 def test_the_two_storage_answers_keep_their_own_retry_rules() -> None:

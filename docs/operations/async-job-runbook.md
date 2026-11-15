@@ -357,12 +357,21 @@ psql "$SPEECHNEXUS_MIGRATION_DATABASE_URL" -Atc \
 | `pool_owner_conflict` / `previous_generation_active` | 旧 owner 或旧 generation 仍 ready；先核对/停止旧实例，不要改 token 假装接管 |
 | 创建返回 `429 job_capacity_exhausted` | 没有 `ready` 实例，或其实例的 binding revision 与请求的发布不一致 |
 | 创建返回 `503 engine_not_ready` | 实例仍 `ready`，但 readiness 收据已过期；跑续期（下方），不要重新注册新 generation |
+| 创建返回 `503 engine_state_mismatch` | 收据身份（instance / generation / topology / fencing token）与固定实例不符，或实例行已不存在；重新注册同一实例，不要新建 generation |
+| 创建返回 `503 engine_resource_disabled` | 实例、池、节点或配方审批不处于 active（已停止、排水中或超出审批窗口）；先恢复实例与审批再注册 |
+| 创建返回 `503 recipe_not_admitted` | 请求来自另一份配方，与固定实例已批准的配方不一致；按已批准配方重新注册引擎 |
+| 创建返回 `503 job_admission_contended` | 版本 CAS 或池 owner fencing 竞争，本次未写行；重试同一请求即可（唯一可重试的准入拒绝） |
+| 创建返回 `422 job_request_expired` | 该请求自身的准入截止时间已过（截止时间属于固定意图）；只能提交新请求 |
 
 ### readiness 收据续期与观测
 
 注册写入的 readiness 收据有有效期（`--readiness-ttl-seconds`，默认 86400 秒），准入每次
-创建都重新核对。收据过期后创建返回 `503 engine_not_ready`（`retryable: true`），它与存储
+创建都重新核对。收据过期后创建返回 `503 engine_not_ready`（`retryable: false`），它与存储
 故障的 `503 job_unavailable` 是两个码：前者重签收据即可放行同一请求，后者是存储拒绝。
+`retryable` 只有"同一请求无需带外改动即可成功"才为 `true`，重签收据属于运维动作，所以
+该类恢复路径一律是 `false`，恢复方式写在 `message` 里；准入侧唯一可重试的是
+`503 job_admission_contended`。同类引擎侧原因各有自己的码（`engine_state_mismatch` /
+`engine_resource_disabled` / `recipe_not_admitted`），不再折成"存储不可用"。
 收据必须由真实 `/health` 探测重签，不能只改库，所以续期复用注册命令：
 
 ```bash
@@ -383,6 +392,13 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml \
 `invalid` 时退出码非零，`--fail-on-expiring` 可让 `expiring` 也非零；把它挂到监控上，
 就能在创建开始失败前告警。Compose 不负责调度，须用宿主机 cron 或 systemd timer 以短于
 TTL 的间隔调用续期（例如每小时）。
+
+**已知缺陷（跟踪 #845）**：参考部署没有集群内的自动信号覆盖"收据过期"这一状态。
+`api` 的 healthcheck 是 `/readyz`，而它被有意设计成不因收据过期而失败（读取与取消必须继续
+可用）；报告命令是一次性执行的，Compose 不调度；启动闸门只在启动时打印一次 `pending`。因此
+"停止续期 → 所有创建 503 `engine_not_ready`，而 `/readyz` 与容器状态全绿"是可复现的。
+上面的宿主机定时器只是缩短窗口，`engine-readiness` 只让外部监控能看到它；在 #845 提供
+"本部署能否准入创建"的独立可轮询面之前，这一缺口不能算被配置解决。
 
 `engine-health 200` 只证明 HTTP 可达，不证明模型或实例身份；注册命令也不启动任何容器。
 命令执行状态：健康探测与注册命令**未在本机验证**（本片没有真实引擎，见第 14 节）；

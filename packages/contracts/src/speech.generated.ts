@@ -402,19 +402,31 @@ export interface paths {
      *     `retryable: false`. A connection-level failure or a timed-out attempt is
      *     instead 503 `job_outcome_unknown`, which is `retryable: true`; callers
      *     must read `retryable` rather than infer it from the status.
-     *     `workspace_not_configured` is likewise never retryable. An elapsed engine
-     *     readiness receipt is a different answer again: the pinned ready instance
-     *     is still the right one, but the receipt admission checks is outside its
-     *     declared validity window, so the create returns 503 `engine_not_ready`
-     *     with `retryable: true` and writes no row. Re-signing that receipt
-     *     (`speechnexus-register-engine --renew-readiness`, or the
-     *     `engine-readiness` deployment profile) admits the same request under the
-     *     same Idempotency-Key; retrying before the receipt is re-signed cannot
-     *     succeed, and it is deliberately not the 503 `job_unavailable` storage
-     *     answer nor the 429 `job_capacity_exhausted` lease answer. A deployment
-     *     that lets the receipt elapse refuses every create until a renewal runs, so
-     *     the receipt TTL is an operational deadline rather than a per-request
-     *     retry delay. A binding
+     *     `workspace_not_configured` is likewise never retryable.
+     *
+     *     An engine-side refusal has its own answer per cause, so a caller never has
+     *     to read a storage outage into a healthy store. These all write no row, they
+     *     are 503 with `retryable: false` except the concurrency class, and `message`
+     *     states the recovery:
+     *
+     *     | code | cause | recovery |
+     *     | --- | --- | --- |
+     *     | `engine_not_ready` | The pinned ready instance is the right one, but its readiness receipt is outside its declared validity window. | Re-sign the receipt (`speechnexus-register-engine --renew-readiness`, or the `engine-readiness` deployment profile), then send the request again under its key. |
+     *     | `engine_state_mismatch` | The pinned runtime state (generation, topology, observation or pool-owner identity) disagrees with the request, or the pinned instance row is gone. | Register the engine again so the receipt and the pinned plan agree. |
+     *     | `engine_resource_disabled` | The instance, its pool, its node or its recipe approval is not active (stopped, draining, outside the approval window). | Restore the instance and its approval, then register the engine again. |
+     *     | `recipe_not_admitted` | The request was assembled from a different recipe than the one approved for the pinned instance. | Register the engine against the approved recipe. |
+     *     | `job_admission_contended` | A quota, instance or host version compare-and-set failed, or the pool-owner fencing token moved. | Retry the same request: it is the one admission code with `retryable: true`, because the concurrent writer finishes and the durable intent survives. |
+     *
+     *     None of these is `job_unavailable`, which on this operation reports only the
+     *     Job store refusing the read or the write. A deployment that lets the
+     *     readiness receipt elapse refuses every create with `engine_not_ready` until a
+     *     renewal runs, so the receipt TTL is an operational deadline rather than a
+     *     per-request retry delay. A request whose own admission deadline elapsed
+     *     before it was admitted returns 422 `job_request_expired`, and the deadline is
+     *     part of the pinned intent, so only a new request can succeed. An admission
+     *     counter or clock leaving its declared range returns 500
+     *     `admission_state_invalid`: a deployment defect rather than a refusal, whose
+     *     request must not be replayed as-is. A binding
      *     whose frozen `execution_defaults` cannot complete every execution
      *     parameter returns 422 `job_binding_incomplete`; `tts` input
      *     `text_asset_id` returns 422 `job_text_asset_unsupported` until the
@@ -2565,7 +2577,7 @@ export interface components {
       message: string;
       param: string | null;
       request_id: string;
-      /** @description Whether the same dispatch may be retried after the refusal. The value belongs to the refusing operation's disposition, not to the status or the code: one operation's 409 may ask the caller to wait out a cleanup (retryable) while another 409 in the same operation reports a spent idempotency key (not retryable), so a caller reads this field instead of inferring retryability from the status. It answers only that question, and only for a refusal. A 5xx states an unknown outcome rather than a refusal, so the original identity is replayed because the outcome is unknown, not because this field permits a retry: a 503 `outcome_unknown` is `retryable: false` and must still be replayed under the original Idempotency-Key. The meaning is per operation rather than global: workbench operations publish their disposition in `contracts/workbench-openapi.yaml`, while the speech Job operations compute this field from the narrower question 'may an unknown execution outcome be replayed?', which is why `execution_cleanup_pending` is `false` there although the correct action is to dispatch the same intent again under the same key; a consumer that must state one code's operator step reads that operation's published vocabulary instead of this field. */
+      /** @description Whether the same dispatch may be retried after the refusal. The value belongs to the refusing operation's disposition, not to the status or the code: one operation's 409 may ask the caller to wait out a cleanup (retryable) while another 409 in the same operation reports a spent idempotency key (not retryable), so a caller reads this field instead of inferring retryability from the status. It answers only that question, and only for a refusal. A 5xx states an unknown outcome rather than a refusal, so the original identity is replayed because the outcome is unknown, not because this field permits a retry: a 503 `outcome_unknown` is `retryable: false` and must still be replayed under the original Idempotency-Key. The meaning is per operation rather than global: workbench operations publish their disposition in `contracts/workbench-openapi.yaml`, while the speech Job operations compute this field from the narrower question 'may an unknown execution outcome be replayed?', which is why `execution_cleanup_pending` is `false` there although the correct action is to dispatch the same intent again under the same key; a consumer that must state one code's operator step reads that operation's published vocabulary instead of this field. It answers only 'can this same request succeed without an out-of-band change?': a recovery that needs an operator step -- provisioning the workspace quota, re-signing an engine readiness receipt, restoring a disabled instance, re-registering against an approved recipe -- is false even though the recovery is known and repeatable, and the recovery itself is named by the operation's published code and message rather than by this field. */
       retryable: boolean;
       retry_after_ms?: number | null;
       nexus?: components["schemas"]["OperationRecovery"];
@@ -4766,9 +4778,96 @@ export interface operations {
       405: components["responses"]["MethodNotAllowed"];
       409: components["responses"]["Conflict"];
       413: components["responses"]["PayloadTooLarge"];
-      422: components["responses"]["UnprocessableEntity"];
+      /**
+       * @description The request is well formed but admission refuses it deterministically.
+       *     Every code here writes no Job row; the recovery differs per code and is
+       *     stated in `message`.
+       */
+      422: {
+        headers: {
+          "Cache-Control": "no-store";
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"] & {
+            error?: {
+              /** @enum {unknown} */
+              code?:
+                | "unsupported_parameter"
+                | "job_kind_not_supported"
+                | "workspace_not_found"
+                | "workspace_disabled"
+                | "workspace_not_configured"
+                | "model_not_published"
+                | "model_binding_not_published"
+                | "model_binding_retired"
+                | "model_binding_not_current"
+                | "model_binding_mismatch"
+                | "model_binding_task_not_supported"
+                | "voice_not_published"
+                | "profile_not_published"
+                | "pronunciation_not_found"
+                | "asset_not_ready"
+                | "voice_draft_not_candidate"
+                | "job_binding_incomplete"
+                | "job_text_asset_unsupported"
+                | "job_request_expired";
+            };
+          };
+        };
+      };
       429: components["responses"]["TooManyRequests"];
-      503: components["responses"]["ServiceUnavailable"];
+      /**
+       * @description Admission failed an internal invariant (a clock or version counter left
+       *     its declared range). This is a deployment defect rather than a refusal:
+       *     the transaction rolled back, no Job row exists, and the same request must
+       *     not be replayed as-is.
+       */
+      500: {
+        headers: {
+          "Cache-Control": "no-store";
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"] & {
+            error?: {
+              /** @enum {unknown} */
+              code?: "admission_state_invalid";
+            };
+          };
+        };
+      };
+      /**
+       * @description The create was refused or its outcome is unknown, and the code states
+       *     which: `job_unavailable` is the Job store refusing the read or the write,
+       *     `job_outcome_unknown` is a connection-level failure whose outcome must be
+       *     replayed under the original key, `job_admission_contended` is the one
+       *     retryable admission race, and the `engine_*` and `recipe_not_admitted`
+       *     codes name an engine-side cause with an operator recovery. Retry only
+       *     when `retryable` is true.
+       */
+      503: {
+        headers: {
+          "Retry-After"?: components["headers"]["RetryAfter"];
+          "Cache-Control": "no-store";
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"] & {
+            error?: {
+              /** @enum {unknown} */
+              code?:
+                | "job_unavailable"
+                | "job_outcome_unknown"
+                | "job_admission_contended"
+                | "engine_not_ready"
+                | "engine_state_mismatch"
+                | "engine_resource_disabled"
+                | "recipe_not_admitted";
+            };
+          };
+        };
+      };
     };
   };
   getJob: {

@@ -158,8 +158,12 @@ generation 返回 `previous_generation_active`。
 
 准入每次创建都会核对 readiness 的有效期（`verified_at_us <= 当前时间 < expires_at_us`）。
 收据由 `--readiness-ttl-seconds` 决定（默认 86400 秒），过期后准入返回
-`503 engine_not_ready`（`retryable: true`）而不是存储故障的 `job_unavailable`；
-重新登记同一实例即可放行同一请求（同一 Idempotency-Key 重放），不会新建实例。
+`503 engine_not_ready`（`retryable: false`：重签收据是运维动作，`retryable` 只表示
+"同一请求无需带外改动即可成功"）而不是存储故障的 `job_unavailable`；重新登记同一实例即可
+放行同一请求（同一 Idempotency-Key 重放），不会新建实例。其余引擎侧原因各有自己的码：
+`503 engine_state_mismatch`（身份/世代/拓扑/fencing 不符）、`503
+engine_resource_disabled`（实例、池或审批未激活）、`503 recipe_not_admitted`（与已批准
+配方不一致），它们都不表示存储故障。
 
 续期必须在真实 `/health` 探测后重签收据，不能只改数据库；定期任务用
 `--renew-readiness`，它在收据仍然有效时也强制重签：
@@ -170,6 +174,10 @@ speechnexus-register-engine \
   --generation 1 --instance instance-asr-1 \
   --readiness-ttl-seconds 86400 --renew-readiness
 ```
+
+已知缺陷：参考部署没有集群内的自动信号覆盖收据状态（`/readyz` 有意不因过期失败，
+报告命令不被 Compose 调度，启动闸门只打印一次），跟踪
+[#845](https://github.com/hrygo/SpeechNexus/issues/845)。定时续期只缩短窗口，不消除该缺口。
 
 输出 JSON 的 `readiness.state` 是本次运行发现的窗口（`valid` / `expiring` /
 `expired`），`readiness.renewed` 表示是否重签；窗口为 `expiring` 或 `expired` 时

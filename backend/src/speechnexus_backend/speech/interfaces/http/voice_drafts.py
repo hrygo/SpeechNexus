@@ -392,12 +392,16 @@ def _execute(
                 return _error("capacity", request_id, operation)
             if error.code == "voice_draft_not_candidate":
                 return _error("not_candidate", request_id, operation)
-            if error.code in ("job_admission_contended", "engine_not_ready"):
-                # Admission contention and an elapsed engine readiness receipt are
-                # both recoverable without changing the request: the same key is
-                # admitted later, so they keep the retryable 503 class instead of
-                # the 422 that answers an unusable published input.
+            if error.code == "job_admission_contended":
+                # A version or pool-owner race is the one admission refusal that
+                # the same request outlives: it keeps the retryable 503 class.
                 return _error("unavailable", request_id, operation)
+            # Every other admission refusal needs an operator step (re-sign the
+            # readiness receipt, restore the pinned instance, re-register against
+            # the approved recipe, reconcile the runtime). This surface declares
+            # one deterministic 422 class for "the published model or the ready
+            # input is not usable", so they answer there instead of borrowing the
+            # retryable 503 whose message blames storage (#828 review B3).
             return _error("input_unavailable", request_id, operation)
         return _error("unavailable", request_id, operation)
     except JobRejectedError as error:

@@ -1,4 +1,4 @@
-"""An elapsed engine readiness receipt is its own retryable refusal, not an outage.
+"""An elapsed engine readiness receipt is its own refusal, not a storage outage.
 
 #828 (found by the #572 end-to-end acceptance): after a resume the first
 ``POST /v1/nexus/jobs`` answered
@@ -13,16 +13,23 @@ admission code into ``job_unavailable``. Re-running the registration answered
 ``202`` for the same body, so the answer named a broken store for a condition a
 re-registration fixes.
 
+``retryable`` follows one rule (`contracts/shared/errors.schema.json`
+``ErrorBody.retryable``): it is true only when the same request can succeed
+without an out-of-band change. Re-signing the receipt is an operator step, so the
+readiness answer is ``retryable: false`` and the message states the recovery
+(#828 review B1).
+
 The cases below pin the two halves of the fix in the declaration and over real
 HTTP, in both directions:
 
-* an elapsed receipt answers 503 ``engine_not_ready`` with ``retryable: true``
-  and says the receipt must be re-signed;
+* an elapsed receipt answers 503 ``engine_not_ready`` with ``retryable: false``
+  and says the receipt must be re-signed before a new request;
 * a store that really refused the read keeps 503 ``job_unavailable`` with
-  ``retryable: false`` -- the new code must not absorb it, and it must not absorb
-  the new code;
+  ``retryable: false`` -- the readiness code must not absorb it, and it must not
+  absorb the readiness code;
 * the operation description states the refusal, its recovery and that it is
-  neither the storage nor the capacity answer.
+  neither the storage nor the capacity answer, and the 503 response declares the
+  whole set of codes it can carry.
 """
 
 from __future__ import annotations
@@ -56,6 +63,14 @@ def _create_job() -> dict[str, Any]:
     raise AssertionError("the speech contract declares no createJob operation")
 
 
+def _declared_codes(status: str) -> list[str]:
+    schema = _create_job()["responses"][status]["content"]["application/json"]["schema"]
+    return cast(
+        list[str],
+        schema["allOf"][1]["properties"]["error"]["properties"]["code"]["enum"],
+    )
+
+
 def _body() -> dict[str, Any]:
     return {
         "kind": "tts",
@@ -72,32 +87,37 @@ def test_the_operation_declares_the_readiness_refusal_with_its_recovery() -> Non
     assert "readiness receipt" in description
     # The declaration must state the retry rule and the out-of-band recovery, not
     # just name a new code.
-    assert "`retryable: true`" in description
+    assert "`retryable: false`" in description
+    assert "`retryable: true`" in description  # the contention class only
     assert "speechnexus-register-engine --renew-readiness" in description
-    assert "writes no row" in description or "writes no row." in description
+    assert "writes no row" in description
     # The readiness answer must stay distinct from both neighbours it used to hide in.
     assert "`job_unavailable`" in description
     assert "`job_capacity_exhausted`" in description
     assert "receipt TTL" in description
-    # The 503 surface the code answers with is declared on the operation.
+    # The 503 surface declares every code it can carry, so the new one is
+    # machine-discoverable instead of prose-only (#828 review B2).
     assert "503" in _create_job()["responses"]
+    assert CODE in _declared_codes("503")
     declared = response_contract("createJob", 503)
-    assert declared["content"]["application/json"]["schema"] == {
+    assert declared["content"]["application/json"]["schema"]["allOf"][0] == {
         "$ref": "#/components/schemas/ErrorResponse"
     }
 
 
-def test_the_readiness_answer_is_retryable_and_names_the_receipt() -> None:
+def test_the_readiness_answer_is_not_retryable_and_names_the_receipt() -> None:
     response = job_error(CODE, REQUEST_ID)
     assert response.status_code == 503
     body = _json(response)
     assert body["error"]["code"] == CODE
     assert body["error"]["type"] == "service_unavailable_error"
-    assert body["error"]["retryable"] is True, (
-        "re-registering the engine admits the same request, so the refusal must invite a retry"
+    assert body["error"]["retryable"] is False, (
+        "re-signing the receipt is an operator step, so the refusal must not invite a retry"
     )
     assert "readiness" in body["error"]["message"]
     assert "storage" not in body["error"]["message"].lower()
+    # ``retryable: false`` must not hide the recovery: the message names the step.
+    assert "speechnexus-register-engine --renew-readiness" in body["error"]["message"]
 
 
 def test_a_store_that_really_refused_the_read_keeps_the_outage_answer() -> None:
@@ -107,31 +127,31 @@ def test_a_store_that_really_refused_the_read_keeps_the_outage_answer() -> None:
     assert body["error"]["code"] == "job_unavailable"
     assert body["error"]["type"] == "service_unavailable_error"
     assert body["error"]["retryable"] is False
-    # The two 503s stay distinguishable by code, message and retry rule in both
-    # directions; neither may absorb the other.
+    # The two 503s stay distinguishable by code and message in both directions;
+    # neither may absorb the other, and only the store answer blames storage.
     readiness = _json(job_error(CODE, REQUEST_ID))
     assert body["error"]["message"] != readiness["error"]["message"]
-    assert body["error"]["retryable"] is not readiness["error"]["retryable"]
+    assert "storage" in body["error"]["message"].lower()
+    assert "storage" not in readiness["error"]["message"].lower()
 
 
 @pytest.mark.parametrize(
     ("admission_code", "public"),
     [
-        # The elapsed receipt is the one recoverable readiness fact.
+        # The elapsed receipt names its own recovery.
         ("readiness_expired", CODE),
-        # Capacity keeps its own answer, and the other admission causes keep the
-        # storage-outage fallback: this table is the only place they are separated.
+        # The three engine-side neighbours that used to answer the storage outage
+        # are now distinct causes with distinct recoveries (#828 review B3).
+        ("reconciliation_required", "engine_state_mismatch"),
+        ("policy_or_resource_disabled", "engine_resource_disabled"),
+        ("recipe_mismatch", "recipe_not_admitted"),
+        # Capacity keeps its own answer.
         ("capacity_exhausted", "job_capacity_exhausted"),
         ("quota_exceeded", "job_capacity_exhausted"),
         ("idempotency_conflict", "idempotency_conflict"),
-        ("reconciliation_required", "job_unavailable"),
-        ("recipe_mismatch", "job_unavailable"),
-        ("stale_fencing_token", "job_unavailable"),
     ],
 )
-def test_only_the_named_admission_causes_leave_the_unavailable_fallback(
-    admission_code: str, public: str
-) -> None:
+def test_the_readiness_neighbours_keep_distinct_answers(admission_code: str, public: str) -> None:
     assert rejection_code(admission_code) == public
 
 
@@ -164,7 +184,7 @@ async def test_create_answers_the_declared_envelope_over_http() -> None:
     response = await _post(JobAdmissionRejectedError(CODE))
     assert response.status_code == 503, response.text
     assert response.json()["error"]["code"] == CODE
-    assert response.json()["error"]["retryable"] is True
+    assert response.json()["error"]["retryable"] is False
     assert_error_contract("createJob", response)
 
 
@@ -173,5 +193,6 @@ async def test_the_http_layer_does_not_fold_the_new_code_into_the_outage() -> No
     # the mapped refusal or falls back to `job_unavailable`. Omitting the new code
     # here would silently restore the defect without changing any unit expectation.
     response = await _post(JobAdmissionRejectedError(CODE))
+    outage = _json(job_error("job_unavailable", REQUEST_ID))
     assert response.json()["error"]["code"] != "job_unavailable"
-    assert response.json()["error"]["retryable"] is True
+    assert response.json()["error"]["message"] != outage["error"]["message"]

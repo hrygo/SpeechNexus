@@ -203,6 +203,17 @@ describe("submission rejection disposition", () => {
     // Job row and is repaired by re-registering the engine, so the intent survives and
     // the unlisted-5xx "unknown-outcome" fallback must not apply.
     [503, "engine_not_ready", "intent-kept"],
+    // #828 review B3: the other engine-side admission causes used to arrive as the 503
+    // `job_unavailable` storage answer. Each writes no row and is repaired by registering
+    // the engine again, so the durable intent survives; none may be read as an outage.
+    [503, "engine_state_mismatch", "intent-kept"],
+    [503, "engine_resource_disabled", "intent-kept"],
+    [503, "recipe_not_admitted", "intent-kept"],
+    // The request's own admission deadline is part of the pinned intent, so replaying the
+    // body can never succeed while a new request can: unreplayable, not settled.
+    [422, "job_request_expired", "unreplayable"],
+    // A server defect is not proof that nothing committed, so the intent stays unknown.
+    [500, "admission_state_invalid", "unknown-outcome"],
     // #702 review M1: a workspace without a provisioned quota row is a deterministic
     // refusal, but not a terminal one -- provisioning the workspace admits the same
     // request under the same key, so the intent stays replayable like the 503 outage

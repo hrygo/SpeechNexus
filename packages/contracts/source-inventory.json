@@ -92,7 +92,7 @@
     "version": null
   },
   "shared/errors.schema.json": {
-    "sha256": "83c20a76d3652ccfe91ef7ac6f0b1bf853256cc4b54998a7e21e80a106c2e745",
+    "sha256": "fb2779b47aa305468ddef90df409602a90d2fc155b4c45f557c1ec77fa7a3c70",
     "version": null
   },
   "shared/identifiers.schema.json": {
@@ -136,7 +136,7 @@
     "version": null
   },
   "speech-openapi.yaml": {
-    "sha256": "6f48e2bc89e3d8c3c115434614c0e028153a009240b8150757a6d44ec5878af8",
+    "sha256": "2664b99ae6e8d39d190144bfb4647087d1d129e83ad77158a56f3d69e5a5b929",
     "version": "0.1.0.dev18"
   },
   "voice-resource.schema.json": {

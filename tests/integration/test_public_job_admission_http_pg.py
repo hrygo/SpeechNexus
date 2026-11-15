@@ -48,11 +48,14 @@ This module pins current behaviour instead of inventing a new code: #690 landed
 the text-ceiling contract correction, #702 replaced the missing-quota 503 with
 422 ``workspace_not_configured`` while keeping a genuine storage fault on 503,
 and #703 the declared receive bound with its 413 and ``job_request_too_large``.
-#828 (found by the #572 acceptance) narrowed the 503 fallback once more: an
-elapsed engine readiness receipt answers 503 ``engine_not_ready`` with
-``retryable: true`` and no row, and re-signing the receipt admits the same body
-under the same key. The storage fault keeps 503 ``job_unavailable`` with
-``retryable: false``, so the cause -- not the status alone -- separates them.
+#828 (found by the #572 acceptance) removed the 503 fallback altogether: each
+engine-side refusal answers its own code with no row, and re-signing the receipt
+admits the same body under the same key. An elapsed receipt is 503
+``engine_not_ready``; a drifted receipt identity is 503 ``engine_state_mismatch``;
+the storage fault keeps 503 ``job_unavailable``. All three are
+``retryable: false`` -- the readiness recoveries are operator steps -- while
+``job_admission_contended`` is the one admission refusal that retries. The cause,
+not the status alone, separates them.
 
 Boundaries -- what this module does not claim:
 
@@ -600,7 +603,7 @@ def _rewrite_receipt(db: JobDatabase, *, verified_at_us: int, expires_at_us: int
 async def test_an_elapsed_readiness_receipt_is_engine_not_ready_not_a_storage_outage(
     admission_database: AdmissionDatabase,
 ) -> None:
-    """An expired receipt answers its own retryable 503 and admits on replay.
+    """An expired receipt answers its own 503 and admits after a renewal.
 
     #828 (found by the #572 acceptance): after a resume, the first create answered
     ``503 job_unavailable`` -- "Job storage is unavailable", ``retryable: false``
@@ -610,7 +613,7 @@ async def test_an_elapsed_readiness_receipt_is_engine_not_ready_not_a_storage_ou
     named a broken store for a condition a re-registration fixes.
 
     The case pins the whole round trip over the production HTTP assembly: the
-    elapsed receipt answers ``503 engine_not_ready`` with ``retryable: true`` and
+    elapsed receipt answers ``503 engine_not_ready`` with ``retryable: false`` and
     writes nothing; re-signing the receipt -- what the renewal entry does -- admits
     the *same* body under the *same* key with ``202``; and the storage-outage
     answer keeps its own code and retry rule, so the two 503s stay distinguishable
@@ -633,7 +636,10 @@ async def test_an_elapsed_readiness_receipt_is_engine_not_ready_not_a_storage_ou
         )
         assert refused.status_code == 503, refused.text
         code, kind, retryable = _error(refused)
-        assert (code, kind, retryable) == ("engine_not_ready", "service_unavailable_error", True)
+        # `retryable` is false: re-signing the receipt is an out-of-band step, so
+        # retrying this exact request before that cannot succeed. The recovery is
+        # stated in the message instead (#828 review B1).
+        assert (code, kind, retryable) == ("engine_not_ready", "service_unavailable_error", False)
         # The defect itself: the readiness answer must not be the storage-outage one.
         assert code != "job_unavailable"
         assert "storage" not in refused.json()["error"]["message"].lower()
@@ -651,6 +657,47 @@ async def test_an_elapsed_readiness_receipt_is_engine_not_ready_not_a_storage_ou
         # The same body under the same key is admitted and reserves exactly once.
         _expect_reservation(renewed_before, _snapshot(db))
         assert admitted.json()["workspace_id"] == WORKSPACE
+
+
+async def test_a_drifted_receipt_identity_is_engine_state_mismatch_not_a_storage_outage(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """A receipt that names another fencing token answers its own 503, not an outage.
+
+    #828 review B3: only the elapsed window had its own code, so every other
+    admission cause still answered ``503 job_unavailable`` -- "Job storage is
+    unavailable." -- for a healthy store. Bumping the receipt's ``fencing_token``
+    by one leaves the window, the instance and the storage untouched and changes
+    only the identity admission compares, which is the cheapest way to reproduce
+    the same symptom with a different cause. It must answer
+    ``503 engine_state_mismatch`` with no row, and the storage fault must keep its
+    own answer, so the two remain distinguishable in both directions.
+    """
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    _add_spare_host(db)
+    _grant_capacity(db)
+    document = json.loads(_readiness_document(db))
+    document["fencing_token"] = int(document["fencing_token"]) + 1
+    db.query(
+        "UPDATE runtime_instance_intents SET readiness_document = %s "
+        "WHERE intent_id = 'runtime-new'",
+        (json.dumps(document, separators=(",", ":")),),
+    )
+    before = _snapshot(db)
+    async with AsyncClient(
+        transport=ASGITransport(app=_app(admission_database)), base_url="http://test"
+    ) as client:
+        refused = await client.post(
+            PREFIX, json=_body(), headers={"Idempotency-Key": "synthetic-fencing-drift"}
+        )
+    assert refused.status_code == 503, refused.text
+    code, kind, retryable = _error(refused)
+    assert (code, kind, retryable) == ("engine_state_mismatch", "service_unavailable_error", False)
+    # The defect this case exists for: a healthy store must not be blamed.
+    assert code != "job_unavailable"
+    assert "storage" not in refused.json()["error"]["message"].lower()
+    assert _snapshot(db) == before
 
 
 async def test_a_failed_quota_read_keeps_the_storage_answer_while_readiness_is_healthy(

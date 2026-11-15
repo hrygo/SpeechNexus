@@ -19,6 +19,7 @@ from speechnexus_backend.speech.application.voice_validation_report import (
     VALIDATION_PROBE_LANGUAGE,
 )
 from speechnexus_backend.speech.domain.admission import (
+    CAPACITY_REJECTION_CODES,
     AdmissionIdentity,
     AdmissionRequest,
     AdmitRecipe,
@@ -49,17 +50,45 @@ from speechnexus_backend.speech.infrastructure.voice_validation_submit import (
     validation_probe_text,
 )
 
-_CAPACITY_CODES = frozenset({"capacity_exhausted", "quota_exceeded"})
-# Admission refusals that have their own recovery and therefore their own public
-# code. Everything else keeps the storage-outage fallback: this list is the whole
-# set of admission causes a caller can answer differently, so a new entry is a
-# contract change, not a wording change.
-_PUBLIC_CODES = {
+# Every admission refusal names its own public answer: the table is total over
+# ``NON_CAPACITY_REJECTION_CODES`` and ``rejection_code`` indexes it rather than
+# falling back, so no cause can be folded into another answer by omission. The
+# public code states the recovery the caller needs; ``job_unavailable`` is reserved
+# for a store that really refused the read or the write (#828 review B3).
+_PUBLIC_CODES: dict[str, str] = {
+    # The key belongs to another intent: correct the key, not the request.
     "idempotency_conflict": "idempotency_conflict",
+    # A clock, version counter or runtime command left its declared range: a
+    # deployment defect rather than a caller mistake.
+    "invalid_counter": "admission_state_invalid",
+    "invalid_execution_request": "admission_state_invalid",
+    "invalid_runtime_request": "admission_state_invalid",
+    # Another intent already owns this runtime identity: replay or query it.
+    "intent_conflict": "idempotency_conflict",
+    # This request's admission deadline elapsed: only a new request can succeed.
+    "lease_not_active": "job_request_expired",
+    # The pinned instance/pool row disappeared: re-register to restore the plan.
+    "not_found": "engine_state_mismatch",
+    # Another live owner holds the pool lease; the same request succeeds after the
+    # handover, which is the contention class.
+    "owner_busy": "job_admission_contended",
+    # The instance, pool, node or recipe approval is not active right now.
+    "policy_or_resource_disabled": "engine_resource_disabled",
     # The ready instance is the pinned one, but its readiness receipt is outside
     # its validity window. Re-registering the engine re-signs the receipt and the
     # same request is admitted, so this is not the 503 storage outage.
     "readiness_expired": "engine_not_ready",
+    # The request does not match the recipe approved for the pinned instance.
+    "recipe_mismatch": "recipe_not_admitted",
+    # Observation, generation, topology or pool-owner identity disagrees with the
+    # request: the pinned runtime state must be reconciled by registering again.
+    "reconciliation_required": "engine_state_mismatch",
+    "stale_instance_generation": "engine_state_mismatch",
+    # The transaction lost the pool owner lease or the version compare-and-set:
+    # the same request succeeds once the concurrent writer finishes, so this is
+    # the one retryable admission class and it is not a storage fault.
+    "stale_fencing_token": "job_admission_contended",
+    "version_conflict": "job_admission_contended",
 }
 _ASR_REQUIRED = (
     "language",
@@ -984,16 +1013,17 @@ def _empty_admission(
 
 
 def rejection_code(code: str) -> str:
-    """Map an admission refusal to the stable public error class.
+    """Map an admission refusal to the public error class that states its recovery.
 
-    A capacity refusal and the two codes in ``_PUBLIC_CODES`` keep their own
-    answer. Every other admission code stays on ``job_unavailable`` because it
-    reports a store the transaction could not continue against, not a condition
-    with a different caller action.
+    Capacity refusals share the 429 ``job_capacity_exhausted`` answer; every other
+    code is in ``_PUBLIC_CODES``, and an unmapped one raises ``KeyError`` on
+    purpose. A silent default is what turned an elapsed readiness receipt into
+    "Job storage is unavailable." for a healthy store (#828), so an unclassified
+    refusal must fail loudly instead of borrowing the outage answer.
     """
-    if code in _CAPACITY_CODES:
+    if code in CAPACITY_REJECTION_CODES:
         return "job_capacity_exhausted"
-    return _PUBLIC_CODES.get(code, "job_unavailable")
+    return _PUBLIC_CODES[code]
 
 
 __all__ = [

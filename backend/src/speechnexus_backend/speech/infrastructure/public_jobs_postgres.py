@@ -597,11 +597,17 @@ class PostgresPublicJobs:
             except _AdmissionRefusedError as error:
                 return JobCreateResult("rejected", error_code=error.code)
             except _RetryAdmissionError:
-                if attempt == 0:
-                    continue
-                # The transaction rolled back, so this is a safe transient
-                # refusal rather than an unknown execution outcome.
-                return JobCreateResult("rejected", error_code="job_admission_contended")
+                # Raised only by attempt 0 after it lost the version race and its
+                # transaction rolled back, so retrying cannot duplicate a write.
+                # Attempt 1 reports the same condition through ``rejection_code``
+                # (``job_admission_contended``) instead of looping; this branch
+                # stays as the answer for any future raise site that skips the
+                # attempt check.
+                if attempt != 0:
+                    return JobCreateResult(
+                        "rejected", error_code=rejection_code("version_conflict")
+                    )
+                continue
             except psycopg.errors.UniqueViolation:
                 if job.idempotency_key_digest is None:
                     return JobCreateResult("rejected", error_code="job_identity_conflict")

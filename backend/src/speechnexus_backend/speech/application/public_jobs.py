@@ -1470,9 +1470,20 @@ _ADMISSION_REJECTION_CODES = frozenset(
         "job_capacity_exhausted",
         # The pinned instance's readiness receipt elapsed. Admission refuses
         # before writing anything and the same request is admitted after the
-        # engine is registered again, so it is a retryable refusal rather than
-        # the `job_unavailable` storage outage (#828).
+        # engine is registered again, so it keeps its own code instead of the
+        # `job_unavailable` storage outage (#828).
         "engine_not_ready",
+        # The remaining admission refusals: each one names the recovery the
+        # caller needs (restore the engine, re-register against the approved
+        # recipe, reconcile the pinned state, retry the racy request, or fix the
+        # request's own elapsed deadline). They are enumerated rather than folded
+        # because a healthy store must never answer "Job storage is unavailable."
+        # for them (#828 review B3).
+        "engine_state_mismatch",
+        "engine_resource_disabled",
+        "recipe_not_admitted",
+        "job_request_expired",
+        "admission_state_invalid",
         "job_binding_incomplete",
         "job_text_asset_unsupported",
         "job_admission_contended",

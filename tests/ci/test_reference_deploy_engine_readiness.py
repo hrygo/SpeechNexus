@@ -182,6 +182,9 @@ class ContractReadinessTests(unittest.TestCase):
     def test_the_create_description_keeps_both_503_causes_apart(self) -> None:
         description = operation_description(read(CONTRACT), "createJob")
         self.assertIn(f"`{CODE}`", description)
+        # The readiness recovery is an operator step, so the code is not retryable;
+        # only the contention class is, and the description must say both (#828 B1).
+        self.assertIn("`retryable: false`", description)
         self.assertIn("`retryable: true`", description)
         self.assertIn("readiness receipt", description)
         self.assertIn(RENEW_FLAG, description)

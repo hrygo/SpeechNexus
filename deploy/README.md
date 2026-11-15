@@ -86,7 +86,6 @@ for cross-host connections, and separately protect the browser-facing ingress.
 Paths and queries pass through unchanged. This proxy configuration alone does not
 qualify a real service, cross-host TLS, or a physical topology.
 
-
 ## Current capability limits
 
 `/healthz` and `/readyz` are startup/dependency probes, not business acceptance:
@@ -420,7 +419,7 @@ is ready: confirm the worker is running without restarts, for example with
 The container entrypoint is not the worker: it is `deploy/job-startup-gate.py`,
 mounted read-only and given the worker's own environment. Before it `exec`s
 `speechnexus-job-dispatch-worker`, the gate verifies the prerequisites the worker
-could only discover *after* claiming a lease and names each missing one:
+could only discover _after_ claiming a lease and names each missing one:
 
 - the dispatch DSN is present and its role is not a superuser, does not own schema
   `CREATE`, the database or any schema relation (the same guard the worker runs);
@@ -481,11 +480,20 @@ admission re-reads that receipt's window on every create
 (`VerifiedRuntimeReadiness.require_valid`): `verified_at_us <= now < expires_at_us`.
 `--readiness-ttl-seconds` sets the window and defaults to `86400` (24 h), so a
 deployment that registers once and never renews starts answering
-`503 engine_not_ready` (`retryable: true`) exactly one TTL later. That answer is
-deliberately not `503 job_unavailable` ("Job storage is unavailable",
-non-retryable): the store is healthy and re-signing the receipt admits the same
-body under the same Idempotency-Key. It is also not `429 job_capacity_exhausted`,
-which a released attempt can free.
+`503 engine_not_ready` exactly one TTL later. That answer is deliberately not
+`503 job_unavailable` ("Job storage is unavailable"): the store is healthy and
+re-signing the receipt admits the same body under the same Idempotency-Key. Both
+are `retryable: false` -- `retryable` is true only when the same request succeeds
+without an out-of-band change, and re-signing a receipt is an operator step -- while
+the message names the renewal command. It is also not `429
+job_capacity_exhausted`, which a released attempt can free, nor 503
+`job_admission_contended`, the one admission refusal that does retry.
+
+The other engine-side refusals keep their own codes for the same reason: 503
+`engine_state_mismatch` (the pinned runtime state or receipt identity disagrees),
+503 `engine_resource_disabled` (instance, pool or recipe approval not active) and
+503 `recipe_not_admitted` (the request came from another recipe). None of them means
+the Job store is down, and each message names the step that restores it.
 
 The receipt cannot be re-signed from the database alone — it records a real
 `/health` probe — so renewal re-runs the registration with an explicit switch:
@@ -534,6 +542,17 @@ startup gate's `pending` line for the real engine names this renewal, and the Jo
 create contract declares `engine_not_ready` with its recovery. `deploy/README.md`
 does not claim the renewal is scheduled; a deployment that skips the timer trades a
 24 h grace period for the failure this profile exists to prevent.
+
+Known gap, tracked as [#845](https://github.com/hrygo/SpeechNexus/issues/845): this
+deployment has no automatic _within-cluster_ signal for the state itself. `api`'s
+healthcheck is `/readyz`, which deliberately keeps answering 200 because reads and
+cancellations must stay available; the readiness report is a one-shot that compose
+does not schedule; and the startup gate prints its `pending` line once. So a
+deployment that stops renewing answers every create with `503 engine_not_ready`
+while `/readyz` and the container health stay green. The timer above narrows that
+window and `engine-readiness` makes it observable to whatever supervises it, but
+until #845 lands an independent, pollable "can this deployment admit a create?"
+surface, an operator must rely on the externally scheduled report.
 
 ## Artifact retention (`artifact-retention` profile)
 
@@ -807,6 +826,7 @@ FROM <job-writer-role>;
 -- public_job_admission_grants 属于独立的 admission 角色，不要应用到 Job writer：
 -- 它只给 speech_job_events 4/8 列，并额外授予 admission_attempts / requests / leases。
 ```
+
 独立记录角色使用 `voice_evidence_recorder_grants` 和
 `SPEECHNEXUS_VOICE_EVIDENCE_DATABASE_URL`，通过
 `speechnexus-record-voice-evidence` 显式写入证据，或由
@@ -883,10 +903,10 @@ The workbench owns its own PostgreSQL namespace
 `speech`: the unit never shares or writes the speech product schema. It holds two
 dedicated non-owner roles and no third:
 
-| Identity | Declaration | Surface |
-| --- | --- | --- |
-| `sn_workbench_runtime` (`SPEECHNEXUS_WORKBENCH_DATABASE_URL`) | `runtime_grants_sql` | schema `USAGE`, `SELECT`/`INSERT` on the declared tables, column-level `UPDATE` on the declared columns; the ledger, the erasure receipts and the revision marker stay read-only |
-| `sn_workbench_cleanup` (`SPEECHNEXUS_WORKBENCH_CLEANUP_DATABASE_URL`) | `cleanup_grants_sql` | `DELETE` on business rows, `INSERT` on the ledger and erasure receipts, `UPDATE` on the two outbox columns |
+| Identity                                                              | Declaration          | Surface                                                                                                                                                                          |
+| --------------------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sn_workbench_runtime` (`SPEECHNEXUS_WORKBENCH_DATABASE_URL`)         | `runtime_grants_sql` | schema `USAGE`, `SELECT`/`INSERT` on the declared tables, column-level `UPDATE` on the declared columns; the ledger, the erasure receipts and the revision marker stay read-only |
+| `sn_workbench_cleanup` (`SPEECHNEXUS_WORKBENCH_CLEANUP_DATABASE_URL`) | `cleanup_grants_sql` | `DELETE` on business rows, `INSERT` on the ledger and erasure receipts, `UPDATE` on the two outbox columns                                                                       |
 
 Neither identity may be the owner, and they may not be one identity: the cleanup
 role carries the erasing authority, so folding it into the serving role would hand
@@ -894,7 +914,7 @@ deletion to the request path. At startup the gate runs the runtime's own
 `check_database` and `check_cleanup_identity`, and both checks judge their identity
 by the same two boundaries:
 
-- no privileges on relations or sequences *outside* the workbench schema, named
+- no privileges on relations or sequences _outside_ the workbench schema, named
   relation by relation;
 - no privileges reachable by `SET ROLE`, at any membership depth. An ordinary grant
   is visible through inheritance, but `GRANT wider TO role WITH INHERIT FALSE`
@@ -903,7 +923,7 @@ by the same two boundaries:
   switch to and names the one the foreign grant is actually held by. A membership
   that reaches no relation outside the workbench schema stays legal — a group role is
   a normal deployment shape, and both checks settle any DSN `role=` switch back to
-  the login identity, so the boundary is reachable *authority*, not membership.
+  the login identity, so the boundary is reachable _authority_, not membership.
 
 Pointing either DSN at `sn_api` therefore fails closed instead of sharing the API's
 wide identity — the serving DSN fails in `check_database`, the cleanup DSN in

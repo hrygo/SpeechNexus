@@ -204,6 +204,7 @@ class Settings(BaseSettings):
     transcription_max_command_bytes: int = Field(default=65_536, ge=1024, le=1_048_576)
     transcription_storage_timeout_seconds: float = Field(default=3, gt=0, le=30)
 
+    speech_enabled: Literal["true", "false"] = "true"
     speech_recipe_file: Path | None = None
     speech_settlement_database_url: SecretStr | None = Field(default=None, min_length=1)
     speech_default_language: str | None = Field(
@@ -270,6 +271,27 @@ class Settings(BaseSettings):
     @classmethod
     def empty_asset_inspector_is_text(cls, value: Any) -> Any:
         return "text" if isinstance(value, str) and not value.strip() else value
+
+    @field_validator("speech_enabled", mode="before")
+    @classmethod
+    def speech_enabled_names_its_environment_key(cls, value: Any) -> Any:
+        """Unset means "on"; only the literal ``false`` disables, and typos refuse.
+
+        Fail-closed twice over: a deployment that never sets the switch still
+        requires its private recipe at startup, so "TTS off" cannot happen by
+        accident; and a misspelt value is a named startup refusal instead of
+        being read as truthiness (which is what made an unset switch unsafe).
+        """
+        if isinstance(value, str):
+            token = value.strip()
+            if not token:
+                return "true"
+            if token not in ("true", "false"):
+                raise ValueError(
+                    f"SPEECHNEXUS_SPEECH_ENABLED must be 'true' or 'false'; got {value!r}"
+                )
+            return token
+        return value
 
     @model_validator(mode="after")
     def prefixed_environment_names_a_setting(self) -> Self:

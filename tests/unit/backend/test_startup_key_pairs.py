@@ -19,7 +19,7 @@ import logging
 from typing import Any
 
 import pytest
-from pydantic import AnyHttpUrl, SecretStr
+from pydantic import AnyHttpUrl, SecretStr, ValidationError
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.settings import Settings
@@ -183,6 +183,17 @@ def test_both_binding_writer_modes_are_refused() -> None:
         )
 
 
+def _required_fields() -> dict[str, Any]:
+    """A complete required-field set, so assertions fail on the key under test."""
+    return {
+        "service_name": "speechnexus-api-test",
+        "database_url": SecretStr("postgresql://unused@127.0.0.1/unused"),
+        "object_storage_endpoint": AnyHttpUrl("http://127.0.0.1:9000"),
+        "object_storage_healthcheck_url": AnyHttpUrl("http://127.0.0.1:9000/health"),
+        "object_storage_bucket": "test",
+    }
+
+
 def _bare(**changes: Any) -> Settings:
     """Settings without object-storage credentials, for the full-set warnings."""
     return Settings(**_settings().model_dump() | changes)
@@ -225,3 +236,45 @@ def test_partial_speech_configuration_warns_with_every_missing_key(
         "SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY",
     ):
         assert variable in message
+
+
+def test_speech_enabled_is_unset_on_and_only_the_literal_false_disables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The ASR-only switch is fail-closed: unset or blank means enabled."""
+    monkeypatch.delenv("SPEECHNEXUS_SPEECH_ENABLED", raising=False)
+    assert Settings(**_required_fields()).speech_enabled == "true"
+    for value in ("", " ", "true"):
+        monkeypatch.setenv("SPEECHNEXUS_SPEECH_ENABLED", value)
+        assert Settings(**_required_fields()).speech_enabled == "true", value
+    monkeypatch.setenv("SPEECHNEXUS_SPEECH_ENABLED", "false")
+    assert Settings(**_required_fields()).speech_enabled == "false"
+
+
+@pytest.mark.parametrize("value", ["ture", "FALSE", "1", "off", "yes"])
+def test_a_misspelt_speech_enabled_refuses_startup_and_names_the_key(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    """A typo must never be read as "off": it stops the process and names the key."""
+    monkeypatch.setenv("SPEECHNEXUS_SPEECH_ENABLED", value)
+    with pytest.raises(ValidationError) as raised:
+        Settings(**_required_fields())
+    message = str(raised.value)
+    assert "SPEECHNEXUS_SPEECH_ENABLED" in message
+    assert "'true' or 'false'" in message
+
+
+def test_speech_disabled_turns_only_synchronous_tts_off(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """`false` is a deliberate disable: TTS off, the rest of the app still starts."""
+    caplog.set_level(logging.INFO, logger="speechnexus_backend.speech_runtime")
+    settings = Settings(**(_required_fields() | {"speech_enabled": "false"}))
+
+    assert build_speech(settings) is None
+
+    assert [record.getMessage() for record in caplog.records if record.levelno == logging.INFO] == [
+        "Synchronous speech disabled by SPEECHNEXUS_SPEECH_ENABLED=false"
+    ]
+    # The deliberate disable must not disturb the rest of the composition.
+    assert create_app(settings=settings) is not None

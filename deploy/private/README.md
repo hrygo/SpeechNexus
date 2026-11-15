@@ -27,13 +27,17 @@ endpoint's `target` (node/gateway/pool/instance/binding revision), and
 synchronous TTS switched off rather than starting it. The committed example holds
 no credential at all: the engine token lives in
 `gateway-file-tts-endpoint.json`, and
-`scripts/dev-env/check-tts-assembly.py` lists every field as「仍是样例值 /
-不一致 / 无法从文件判定 / 本地检查通过」; it rejects an assembly that still carries
-the example's synthetic identities or its all-zero token, and it reports values with
-no local oracle (budgets, the real engine address) as undecidable instead of a pass.
-The compose-level preconditions a replaced assembly still has to satisfy — TTS
-instance registration, plan digests equal to the registered instance,
-`policy_revision_id` matching the voice qualification — are in
+`scripts/dev-env/check-tts-assembly.py` puts all three files through their own
+production loaders and lists every field as「仍是样例值 / 不一致 / 本地检查通过 /
+无法从文件判定」, plus a named list of the leaves only their loader checks. It rejects
+an assembly that still carries the example's synthetic identities or its all-zero
+token, names the gateway policy fields its loader refuses (`task`, `sample_rate_hz`,
+`speed`, …), and keeps values with no local oracle (budgets, the real engine
+address, the registration generation) undecidable instead of a pass. `exit 0` only
+means the files were replaced and agree with each other. The preconditions a
+replaced assembly still has to satisfy — a non-blank settlement DSN, TTS instance
+registration, plan digests equal to the registered instance, `policy_revision_id`
+matching the voice qualification, a published non-retired voice — are in
 [deploy/README.md](../README.md) "Synchronous TTS assembly".
 
 `transcription-recipe.json` must use the exact approved runtime plan and

@@ -23,16 +23,20 @@
 
 `build_speech` 在配置完整且资格有效时启动 API 生命周期内的 settlement worker；结算循环启动失败则工厂不启用。启用须显式配置私有准入配方、默认语言、执行网关和对象存储凭据，检查当前实例与独立声音资格；缺少配置或有效资格时保持不可用。配方只声明部署分配，不授予资格。请求解析使用已发布、未退役且匹配当前实例的声音，准入事务在声锁内校验资格和实际参数，并在预算与结算写入的等待结束后、提交前再次核对有效期；已有原身份重放保留历史授权；应用关闭时释放该链路持有的连接池与客户端。
 
-配置键为 `SPEECHNEXUS_SPEECH_RECIPE_FILE`、`SPEECHNEXUS_SPEECH_DEFAULT_LANGUAGE`、独立身份的 `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` 和既有执行网关及对象存储配置；配方必须是受限权限的私有文件。运行角色需要既有协调事务权限及 `speech_synthesis_reader_grants` 声明的读权限及 settlement 根写入权限，部署阶段负责配置；缺失资格时工厂不会轮询自动开启，新增资格后须重启进程。
+配置键为 `SPEECHNEXUS_SPEECH_ENABLED`、`SPEECHNEXUS_SPEECH_RECIPE_FILE`、`SPEECHNEXUS_SPEECH_DEFAULT_LANGUAGE`、独立身份的 `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` 和既有执行网关及对象存储配置；配方必须是受限权限的私有文件。`SPEECHNEXUS_SPEECH_ENABLED` 是 `Literal["true","false"]`、默认 `true`：未设置即开启（缺配方照样启动失败），只有字面 `false` 关闭同步合成，拼错则配置校验失败并点名该键。运行角色需要既有协调事务权限及 `speech_synthesis_reader_grants` 声明的读权限及 settlement 根写入权限，部署阶段负责配置；缺失资格时工厂不会轮询自动开启，新增资格后须重启进程。
 
 参考部署面提供这条装配路径：配方样例在
 `deploy/private/speech-recipe.example.json`（copy 到 `speech-recipe.json`、`0600`、
 替换全部合成身份并按 RFC 8785 重算摘要），`deploy/compose.yaml` 固定
-`SPEECHNEXUS_SPEECH_RECIPE_FILE` 与 `SPEECHNEXUS_SPEECH_DEFAULT_LANGUAGE` 并空值透传
+`SPEECHNEXUS_SPEECH_RECIPE_FILE`、透传 `SPEECHNEXUS_SPEECH_ENABLED`（默认 `true`）与
+`SPEECHNEXUS_SPEECH_DEFAULT_LANGUAGE` 并空值透传
 `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL`，独立结算角色 `sn_speech_settlement` 与
 `sn_api` 的 `speech_synthesis_reader_grants` 由[最小部署运行手册](../operations/compose-minimal.md)
-§3 与 §6 的安装/升级两条路径重放。装配检查入口为
-`scripts/dev-env/check-tts-assembly.py`（逐字段四态，不判受理）。装配通过后受理还需要：注册到
+§6 的两条路径（新建安装与已有部署的授权升级）重放。装配检查入口为
+`scripts/dev-env/check-tts-assembly.py`：三份私有文件分别过各自的生产 loader，逐字段输出
+「仍是样例值 / 不一致 / 本地检查通过 / 无法从文件判定」并单独列出只由 loader 校验的叶子；
+`exit 0` 只表示文件已替换且相互一致，不代表可受理。装配通过后受理还需要：结算 DSN 让
+`build_speech` 真正装配（空值即关闭）、注册到
 `runtime_instance_heads` 的 TTS 实例、注册值与配方 plan 逐项相等、`policy_revision_id` 同时等于
 工作区配额行的 `policy_revision` 与内建声音资格的 `gateway_policy_revision_id`、该 binding 下
 已发布且未退役的声音，以及真实引擎；逐条来源见

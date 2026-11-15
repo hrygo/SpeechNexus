@@ -138,20 +138,33 @@ reports no qualified voice, and keeps TTS off even with every key present.
 ### Checking a copied assembly
 
 `uv run --all-packages python scripts/dev-env/check-tts-assembly.py --private-dir deploy/.runtime/private`
-loads the copied recipe and endpoint descriptor through the production loaders, then
-reports every field in four states: which values are still the committed example's,
-which disagree with each other or are expired, which pass a local check, and which
-**cannot be decided from the files at all**. Values with no local oracle — plan
-budgets, the real engine address, whether a policy revision matches the voice
-qualification — are listed as undecidable rather than folded into a pass. There is
-no "ready" verdict: exit 0 means "no field still carries the example's value and the
-files agree", nothing more.
+puts **all three documents through their own production loaders** — `load_tts_recipe`,
+`load_controlled_tts_endpoint` and the gateway's `load_file_tts_configuration` — so a
+value a loader refuses is red, and the gateway fields its own rules can name
+(`tts_policy.task`, `sample_rate_hz`, `speed`, …) are named one by one. Above that it
+reports every field in four states: still the committed example's value, inconsistent
+(with another file, with a domain constant, or expired), decided by a local check
+(a domain constant, a legal set, a mutual relation, the clock), or **undecidable from
+the files**. A fifth, explicitly listed group holds the leaves only their loader
+checks, so a field never disappears from the output. Every leaf in the three
+documents lands in exactly one of those groups.
+
+There is no "ready" verdict. `exit 0` means "nothing is still the example's value and
+the files agree" — it does **not** mean the deployment can accept a request, and the
+tool prints that sentence itself. Values with no local oracle (plan budgets, the real
+engine address, the registration generation, whether a policy revision matches the
+voice qualification) stay undecidable no matter how the file is edited.
 
 ### What acceptance still needs
 
 Replacing every field is necessary and not sufficient. A first request additionally
 requires, in order, all of it verifiable only against a running deployment:
 
+0. **A settlement DSN that actually composes the factory.** With
+   `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` blank, `build_speech` logs every
+   missing key and returns `None` (`speech_runtime.py:49-66`), so `/v1/audio/speech`
+   answers `503 backend_unavailable` no matter how perfect the three files are. The
+   `sn_speech_settlement` role and its two grants are in runbook §6.
 1. **A registered TTS instance.** `runtime_instance_heads` must hold
    `recipe.stage.instance_id` at the generation the endpoint descriptor pins
    (`qualified_speech_facts_postgres.py:76` selects `current_generation` and raises
@@ -191,14 +204,27 @@ reference deployment has not re-run it.
 
 ### An ASR-only deployment
 
-The recipe path is set unconditionally so that "TTS is off" cannot happen by
-accident. A deployment that only wants synchronous ASR can still opt out: delete
-the three `SPEECHNEXUS_SPEECH_*` lines from its own copy of `deploy/compose.yaml`.
-`build_speech` then logs `Synchronous speech unavailable; missing configuration`
-naming the missing keys and returns `None`, which is the documented "not assembled"
-state. There is deliberately no environment switch for this: a switch would
-reintroduce exactly the silent-disable path that made this issue necessary, because
-an unset or misspelled switch is indistinguishable from "off on purpose".
+`SPEECHNEXUS_SPEECH_ENABLED` is the one supported way to run without synchronous
+TTS. It is a `Literal["true", "false"]` with the default `true`, so it is
+fail-closed in both directions:
+
+- **unset, blank or `true`** — enabled. `compose.yaml` always forwards the fixed
+  recipe path, so a deployment that never touches the switch still refuses to start
+  when the private recipe is missing, and "TTS off" cannot happen by accident. (A
+  deployment that also deletes `SPEECHNEXUS_SPEECH_RECIPE_FILE` itself falls back to
+  the pre-existing "missing configuration" warn-and-off path; this switch neither
+  adds nor widens that path.)
+- **`false`** — disabled on purpose. `build_speech` logs
+  `Synchronous speech disabled by SPEECHNEXUS_SPEECH_ENABLED=false` and returns
+  `None`; the rest of the process composes normally and ASR, Jobs and the UIs are
+  unaffected;
+- **anything else** (`ture`, `FALSE`, `1`, `off`) — the settings refuse startup with
+  `SPEECHNEXUS_SPEECH_ENABLED must be 'true' or 'false'; got 'ture'`. A typo can
+  never be read as "off", which is exactly what makes an explicit switch safe here.
+
+Set it in `deploy/compose.env`; do not edit `deploy/compose.yaml`. The scripted
+golden path is only reachable by adding the key, so no fork of the repository file
+has to be maintained across upgrades.
 
 ## Local endpoints
 

@@ -147,7 +147,10 @@ services:
       # so the base topology renders before that role exists; while it is blank the
       # API logs which TTS keys are missing and keeps synchronous TTS off. The
       # default language is the only synthesized speech input with a reference
-      # value, because the recipe does not carry one.
+      # value, because the recipe does not carry one. The enable switch is the one
+      # supported way to run ASR-only: unset keeps TTS on (and therefore fails
+      # without the recipe), and only the literal `false` disables it.
+      SPEECHNEXUS_SPEECH_ENABLED: ${SPEECHNEXUS_SPEECH_ENABLED:-true}
       SPEECHNEXUS_SPEECH_RECIPE_FILE: /run/speechnexus-private/speech-recipe.json
       SPEECHNEXUS_SPEECH_DEFAULT_LANGUAGE: ${SPEECHNEXUS_SPEECH_DEFAULT_LANGUAGE:-en}
       SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL: ${SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL:-}

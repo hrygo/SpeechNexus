@@ -219,8 +219,9 @@ chmod 600 "$D/transcription-recipe.json" "$D/gateway-file-asr.json" \
    `runtime_plan.binding` 内的值、`service_class` 与 `runtime_plan.service_class` 一致、
    `quota_dimensions` 恰为 `["concurrent_attempts"]`、`stage.reserved_slots` 不小于
    `minimum_slots`，且 `admission_expires_at_us` 尚未过期；样例里的
-   `model_id`/`pool_id`/`approved_template_id`/`instance_id` 必须与部署的 TTS
-   模板、资源池与实例一致，`tts-batch` 等取值只是占位；
+   `model_id`/`approved_template_id`/`instance_id` 必须与部署的 TTS 模板与实例一致；
+   `pool_id` 相反**必须保持 `tts-batch`**，它是 `file_tts_v2` 的域常量
+   （`domain/tts.py:129` 改了即拒），不是占位；
 2. ASR endpoint 的 `target` 与 recipe 的 node/gateway/pool/instance/generation 一致；
 3. TTS endpoint 的 `target` 与 TTS policy revision、instance/generation 一致；
    使用 `file_tts_v2`，`builtin_voice_binding` 的公开 id/revision、内部 revision id 来自
@@ -299,10 +300,13 @@ for path in sys.argv[1:]:
 PY
 ```
 
-上述检查不需要同步 TTS（只要同步 ASR）的部署：从自己那份 `deploy/compose.yaml` 删掉三行
-`SPEECHNEXUS_SPEECH_*`（配方路径、默认语言、结算 DSN）。这样 `build_speech` 只告警点名缺失键并
-返回空装配，是文档化的「未装配」态。本仓库不提供环境开关：未设置/拼错的开关与「故意关闭」在
-启动期无法区分，正是本装配要消灭的静默关闭路径。
+只要同步 ASR（不要同步 TTS）的部署在 `deploy/compose.env` 里设
+`SPEECHNEXUS_SPEECH_ENABLED=false`，不要改 `deploy/compose.yaml`。该键是
+`Literal["true","false"]`、默认 `true`：未设置或留空仍是开启（compose 始终透传固定的配方路径，
+因此缺文件照样启动失败，fail-closed），只有字面 `false` 关闭并在 API 日志留下
+`Synchronous speech disabled by SPEECHNEXUS_SPEECH_ENABLED=false`，拼错则配置校验失败并点名该键
+（`SPEECHNEXUS_SPEECH_ENABLED must be 'true' or 'false'; got 'ture'`）。改仓库文件的副本会在每次
+升级时产生无法校验的漂移，因此不作为受支持做法。
 
 只解析四个 JSON，并检查两份 recipe 的权限位；它不检查两份 endpoint JSON、
 文件所有者、符号链接、摘要或配置间的身份一致性。`os.stat` 会跟随链接；API 读取
@@ -1376,8 +1380,8 @@ curl -sS -w '\nhttp=%{http_code}\n' -X POST \
 后，用同一个迁移 owner 连接对既有角色重放对应的授权函数即可，`GRANT` 是追加式操作，
 重复执行不改变既有权限。`0049_workspace_commands` 之后新增的工作区写、审计读取、实例读取、
 隔离释放，以及本节新增的公开目录、Artifact、资源池、binding 列表、binding 写、
-binding admin 读取、binding 生命周期、同步 TTS 结算与工作台运行/清理两个身份共十四个角色在既有部署上
-同样需要预置：下面的脚本先按需创建这十四个角色，再重放全部相关授权。工作台授权针对工作台
+binding admin 读取、binding 生命周期、同步 TTS 结算、Artifact 保留清理与工作台运行/清理两个身份共十五个角色在既有部署上
+同样需要预置：下面的脚本先按需创建这十五个角色，再重放全部相关授权。工作台授权针对工作台
 命名空间，由 §6 的 `speechnexus-workbench-migrate` 幂等重放，不在本脚本内。角色尚不存在时先按上文生成口令；已存在时
 改用其现有口令，脚本不会修改已存在角色的口令，用新生成的口令写连接地址会连不上。实例
 读取、资源池读取与 binding 列表读取三个面按上文的显式 `GRANT` 重放，因为它们没有对应的
@@ -1877,7 +1881,7 @@ instance 来“绕过”冲突；先核对旧 head、owner 和 readiness 证据�
 | 同一端点返回 `503 quarantine_release_privilege_missing` | 运行期授权被回收或与声明面不符；重放 `quarantine_release_grants`，不要改为授予 owner 或整表写权 |
 | 同一端点返回 `503 quarantine_release_schema_not_migrated` | 该库未迁移到当前 head（或 `SPEECHNEXUS_DATABASE_SCHEMA` 指错）；先迁移再重试 |
 | 同一端点返回 `503 quarantine_release_failed` | 存储以未声明的错误拒绝了事务，已确认回滚且未释放容量；按 API 日志的 `sqlstate` 定位，不要当业务冲突处理 |
-| 公开 `/v1/audio/speech` 返回 `503 backend_unavailable`（`retryable: false`）且 API 日志有 `Synchronous speech unavailable` | 先修装配，不要重试：`speech-recipe.json` 缺失/摘要不符时 API 启动即失败；`SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` 为空或资格缺失时工厂保持关闭（API 日志点名缺失键与「no current qualified voice」）。用 `uv run --all-packages python scripts/dev-env/check-tts-assembly.py --private-dir deploy/.runtime/private` 逐字段核对：输出按「仍是样例值 / 不一致 / 无法从文件判定 / 本地检查通过」四类列出，只有前两类为空才 exit 0；它不判断能否受理。装配后仍需真实引擎与合格声音版本；另见[同步 TTS 装配要求](../components/synchronous-speech.md) |
+| 公开 `/v1/audio/speech` 返回 `503 backend_unavailable`（`retryable: false`）且 API 日志有 `Synchronous speech unavailable` | 先修装配，不要重试：`speech-recipe.json` 缺失/摘要不符时 API 启动即失败；`SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` 为空或资格缺失时工厂保持关闭（API 日志点名缺失键与「no current qualified voice」）。用 `uv run --all-packages python scripts/dev-env/check-tts-assembly.py --private-dir deploy/.runtime/private` 逐字段核对：三份私有文件各自过生产 loader，输出按「仍是样例值 / 不一致 / 本地检查通过 / 无法从文件判定」四类列出，另单列只由 loader 校验的叶子；只有前两类为空才 exit 0，而 `exit 0` 只说明文件已替换且相互一致，**不代表可受理**（结算 DSN、实例注册、声音资格、真实引擎仍未验证）。装配后仍需真实引擎与合格声音版本；另见[同步 TTS 装配要求](../components/synchronous-speech.md) |
 | 音频上传（`asr_input`、`voice_reference`）返回 `503 asset_inspection_unavailable` | `SPEECHNEXUS_ASSET_INSPECTOR` 默认 `text`，只校验 `text_input`；要接收音频须同时配置 `audio`、检查器 URL 与令牌。这是刻意 fail-closed 的默认值，不是同步 TTS 或文本 ASR 的故障 |
 
 ## 10. 停止与清理边界

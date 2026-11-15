@@ -12,9 +12,9 @@ These cases make the drift visible in two directions:
   its RFC 8785 `recipe_digest`;
 - removing a required field is an explicit rejection, never a defaulted value —
   the loaders forbid extra keys and require every one of them;
-- the deployment-side checker reports which fields still carry the example's
-  value and which are undecidable, rejects a partial replacement, and never
-  claims more than "the files were replaced".
+- the deployment-side checker puts all three documents through their production
+  loaders, names the gateway fields its loader rules reject, lists every leaf it
+  only loader-validates, and never claims more than "the files were replaced".
 
 The examples themselves must stay credential-free: a real token, host path or
 bucket in git is a leak, not a fixture.
@@ -95,6 +95,7 @@ def write_assembly(directory: Path, *, replace: bool, keep: tuple[str, ...] = ()
     ``replace`` is true, so a partial replacement is expressible instead of being
     a special-case branch in a test body.
     """
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     recipe = json.loads(TTS_RECIPE.read_text(encoding="utf-8"))
     endpoint = json.loads(TTS_ENDPOINT.read_text(encoding="utf-8"))
     gateway = json.loads(TTS_GATEWAY.read_text(encoding="utf-8"))
@@ -148,6 +149,20 @@ def write_assembly(directory: Path, *, replace: bool, keep: tuple[str, ...] = ()
     for path in directory.iterdir():
         path.chmod(0o600)
     return directory
+
+
+def mutate(assembly: Path, name: str, dotted: str, value: object) -> Path:
+    """Set one dotted field in one of the assembly's JSON files."""
+    path = assembly / name
+    document = json.loads(path.read_text(encoding="utf-8"))
+    node = document
+    parts = dotted.split(".")
+    for part in parts[:-1]:
+        node = node[part]
+    node[parts[-1]] = value
+    path.write_text(json.dumps(document), encoding="utf-8")
+    path.chmod(0o600)
+    return assembly
 
 
 class RecipeExampleLoadsTests(unittest.TestCase):
@@ -248,14 +263,14 @@ class AssemblyCheckerTests(unittest.TestCase):
             result = self._run(write_assembly(Path(directory), replace=True))
         message = result.stdout + result.stderr
         self.assertEqual(result.returncode, 0, message)
-        self.assertIn("0 仍是样例值", message)
-        self.assertIn("0 不一致", message)
+        self.assertIn("仍是样例值 0 项", message)
+        self.assertIn("不一致 0 项", message)
         # The checker must not promise serviceability, let alone "ready".
         self.assertIn("scope:", message)
+        self.assertIn("exit 0 不代表可受理", message)
         self.assertNotIn("replace-ready", message)
-        summary = re.search(r"summary: (\d+) 本地检查通过", message)
+        summary = re.search(r"summary: 仍是样例值 \d+ 项 / 不一致 \d+ 项", message)
         assert summary is not None, message
-        self.assertGreater(int(summary.group(1)), 20)
 
     def test_one_field_left_at_the_example_value_is_red(self) -> None:
         # The review's counter-example: everything replaced except policy_revision_id.
@@ -266,8 +281,8 @@ class AssemblyCheckerTests(unittest.TestCase):
         message = result.stdout + result.stderr
         self.assertEqual(result.returncode, 1, message)
         self.assertIn("policy_revision_id", message)
-        self.assertIn("1 仍是样例值", message)
-        self.assertNotIn("0 仍是样例值", message)
+        self.assertIn("仍是样例值 1 项", message)
+        self.assertNotIn("仍是样例值 0 项", message)
 
     def test_an_unreplaced_example_is_rejected_by_name(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -288,7 +303,7 @@ class AssemblyCheckerTests(unittest.TestCase):
             result = self._run(assembly)
         message = result.stdout + result.stderr
         self.assertEqual(result.returncode, 1, message)
-        self.assertIn("admission_expires_at_us: 1 is already in the past", message)
+        self.assertIn("recipe.admission_expires_at_us: 1 is already in the past", message)
 
     def test_disagreeing_files_are_inconsistent(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -304,6 +319,114 @@ class AssemblyCheckerTests(unittest.TestCase):
         message = result.stdout + result.stderr
         self.assertEqual(result.returncode, 1, message)
         self.assertIn("agreement: recipe.stage.instance_id == endpoint.target.instance_id", message)
+
+    def test_the_gateway_counts_are_uncovered_until_its_loader_runs(self) -> None:
+        # Every leaf is either judged or named as loader-only: the sum is the whole
+        # document set, so "no line about it" can never read as "checked".
+        with tempfile.TemporaryDirectory() as directory:
+            result = self._run(write_assembly(Path(directory), replace=True))
+        message = result.stdout
+        self.assertIn("仅由生产 loader 校验，无独立 oracle (", message)
+        self.assertIn("objects.result_timeout_seconds", message)
+        # 82 leaves in the three documents: 26 identity, 19 decided, 22 undecidable
+        # and 15 loader-only in the committed examples.
+        numbers = re.search(
+            r"仍是样例值 (\d+) 项 / 不一致 (\d+) 项 / 本地检查通过 (\d+) 项 / "
+            r"无法从文件判定 (\d+) 项",
+            message,
+        )
+        assert numbers is not None, message
+        loader_only = re.search(r"仅由生产 loader 校验，无独立 oracle \((\d+)\)", message)
+        assert loader_only is not None, message
+        total = sum(int(group) for group in numbers.groups()) + int(loader_only.group(1))
+        self.assertEqual(total, 82, message)
+
+    def test_every_leaf_is_accounted_for_even_when_a_loader_rejects(self) -> None:
+        # A rejected document has no coverage claim at all, so its remaining leaves
+        # get their own heading instead of disappearing from the output.
+        with tempfile.TemporaryDirectory() as directory:
+            assembly = write_assembly(Path(directory), replace=True)
+            mutate(assembly, "gateway-file-tts.json", "tts_policy.task", "Base")
+            result = self._run(assembly)
+        message = result.stdout
+        self.assertEqual(result.returncode, 1, message)
+        self.assertIn("完全未被校验：该文件的 loader 拒绝了它 (", message)
+        numbers = re.search(
+            r"仍是样例值 (\d+) 项 / 不一致 (\d+) 项 / 本地检查通过 (\d+) 项 / "
+            r"无法从文件判定 (\d+) 项",
+            message,
+        )
+        assert numbers is not None, message
+        unchecked = re.search(r"完全未被校验：该文件的 loader 拒绝了它 \((\d+)\)", message)
+        assert unchecked is not None, message
+        loader_only = re.search(r"仅由生产 loader 校验，无独立 oracle \((\d+)\)", message)
+        extra = int(loader_only.group(1)) if loader_only is not None else 0
+        # The rejection itself is one extra item that maps to no leaf.
+        loader_items = message.count("  loader: gateway-file-tts.json")
+        total = (
+            sum(int(group) for group in numbers.groups())
+            + extra
+            + int(unchecked.group(1))
+            - loader_items
+        )
+        self.assertEqual(total, 82, message)
+
+    def test_a_gateway_policy_the_loader_rejects_is_red_and_named(self) -> None:
+        # The review's three mutations: task, sample rate and speed are all decided
+        # by the gateway's own loader, so none of them may pass.
+        cases = (
+            ("tts_policy.task", "Base", "gateway.tts_policy.task"),
+            ("tts_policy.sample_rate_hz", 8000, "gateway.tts_policy.sample_rate_hz"),
+            ("tts_policy.speed", 99, "gateway.tts_policy.speed"),
+        )
+        for field, value, named in cases:
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                assembly = write_assembly(Path(directory), replace=True)
+                mutate(assembly, "gateway-file-tts.json", field, value)
+                result = self._run(assembly)
+                message = result.stdout + result.stderr
+                self.assertEqual(result.returncode, 1, message)
+                self.assertIn(named, message)
+
+    def test_a_gateway_field_only_its_loader_checks_reddens_the_assembly(self) -> None:
+        # `objects.result_timeout_seconds` is strict-typed only inside the gateway
+        # loader: no local rule of this tool looks at it, so this case fails only
+        # if the loader really runs.
+        cases = (
+            ("objects.result_timeout_seconds", "soon"),
+            ("worker_limits.max_result_bytes", 1),
+            ("tts_policy.instructions", "bad\u0000text"),
+        )
+        for field, value in cases:
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                assembly = write_assembly(Path(directory), replace=True)
+                mutate(assembly, "gateway-file-tts.json", field, value)
+                result = self._run(assembly)
+                message = result.stdout + result.stderr
+                self.assertEqual(result.returncode, 1, message)
+                self.assertIn("生产 loader（load_file_tts_configuration）拒绝整个配置", message)
+
+    def test_a_relative_private_directory_is_resolved_before_loading(self) -> None:
+        # The only command the docs show uses a relative directory; the recipe
+        # loader requires an absolute path, so a legitimate assembly must still be
+        # exit 0 through that command.
+        with tempfile.TemporaryDirectory() as directory:
+            write_assembly(Path(directory) / "private", replace=True)
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(CHECKER),
+                    "--private-dir",
+                    "private",
+                ],
+                capture_output=True,
+                text=True,
+                cwd=directory,
+                check=False,
+            )
+        message = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, message)
+        self.assertIn("仍是样例值 0 项", message)
 
     def test_an_absent_private_directory_is_unreadable_not_passed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

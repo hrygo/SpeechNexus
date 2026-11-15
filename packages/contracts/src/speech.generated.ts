@@ -483,6 +483,105 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/nexus/jobs/admission-readiness": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Report whether a public Job create would be admitted right now
+     * @description One read-only verdict on whether a create sent at this instant would be
+     *     admitted, so an orchestrator or a monitor can see a deployment that cannot
+     *     admit without reading a refusal out of a create response. This surface
+     *     exists because an elapsed engine readiness receipt refuses every create with
+     *     503 `engine_not_ready` while `/readyz`, the container healthcheck and
+     *     `docker ps` all stay green (#845). `/readyz` deliberately keeps meaning "this
+     *     process can serve traffic": a receipt that elapsed refuses only creation, so
+     *     failing `/readyz` would remove the whole API from a load balancer and answer
+     *     a create-only degradation with a total outage (#828 review B8). The two
+     *     surfaces divide the work: `/readyz` is process and dependency health, this
+     *     route is whether a create is admitted.
+     *
+     *     The verdict is one value, never a set. `cause` is the single refusal class a
+     *     create would answer right now, or null when it would be admitted; `status`
+     *     is `admitting` if and only if `cause` is null, and `admitting` holds if and
+     *     only if a create sent now would be admitted. The create path answers one
+     *     code, so a report naming several could only invent a precedence the API does
+     *     not have -- which of the observed refusals a create reached first -- and
+     *     would let the report describe a class the create never returns. Naming one
+     *     makes "this is the code a create would answer at this instant" the only
+     *     shape the response can take, and the two fields cannot disagree; the schema
+     *     rejects a body that does.
+     *
+     *     Every public code that means "this deployment refuses every create" has
+     *     exactly one cause here, and every cause names exactly one of those codes, so
+     *     the two closed sets are equal. That equality is the whole guarantee: a
+     *     refusal class missing from the report would let it answer `admitting` while
+     *     every create is refused (the failure this surface exists to remove), and a
+     *     cause without a declared create code would point an operator at an answer the
+     *     API does not produce.
+     *
+     *     The response is `200` whenever the Job surface is assembled, and the verdict
+     *     is in the body. A degraded deployment therefore answers 200 with a cause, and
+     *     the HTTP status of this route means only whether the report could be produced
+     *     -- a 5xx would make "the report is broken" and "admission is degraded"
+     *     identical to a monitor. When this deployment does not assemble the Job
+     *     surface at all, the route answers the same 503 `job_unavailable` every other
+     *     Job route answers in that state.
+     *
+     *     Each cause has one create answer and one operator action behind it:
+     *
+     *     | cause | what a create would answer |
+     *     | --- | --- |
+     *     | `engine_receipt_expired` | 503 `engine_not_ready`, `retryable: false`. The ready instance the create would pin holds a readiness receipt outside its window. Re-sign it with `speechnexus-register-engine --renew-readiness`; `speechnexus-engine-readiness` prints the remaining window. |
+     *     | `engine_state_mismatch` | 503 `engine_state_mismatch`, `retryable: false`. The pinned instance's stored intent no longer decodes or no longer matches admission's expectation, its generation moved, or the pool owner lease is being reconciled or transferred, so the pin cannot be trusted. Reconcile or re-register the instance. |
+     *     | `engine_resource_disabled` | 503 `engine_resource_disabled`, `retryable: false`. The instance's runtime service state, the host node it runs on, the approved recipe (including its approval window) or the runtime template approval is not active. Re-enable the instance or re-approve the recipe. |
+     *     | `capacity_exhausted` | 429 `job_capacity_exhausted` with `Retry-After`. The workspace quota holds every attempt, an instance is at its slot bound, or no ready instance can serve a create: none is registered, the pool that would own it does not admit work, or its lease identity is absent. A released attempt or slot clears it; the missing-instance arms only clear when an instance becomes ready or a pool becomes active, which is an operator action, so a client that retries forever sees the same 429. |
+     *     | `workspace_not_found` | 422 `workspace_not_found`. No workspace catalog row exists for the reported workspace. |
+     *     | `workspace_disabled` | 422 `workspace_disabled`. The workspace row exists but is not active. Enable the workspace. |
+     *     | `workspace_not_configured` | 422 `workspace_not_configured`. The workspace exists but has no quota row, so admission has nothing to charge. Registering an engine for the workspace writes one. |
+     *     | `storage_unavailable` | 503 `job_unavailable`, `retryable: false`. The coordination store could not be read on the identity that admits creates, so no other fact could be read either; this cause is the only one reported. |
+     *
+     *     The value is the refusal the create path reaches *first*, not a ranking of its
+     *     own: the create path short-circuits, so a deployment that is both past a
+     *     receipt window and out of quota answers one of the two and the report names
+     *     that one. A report that re-ordered the observed refusals would describe a
+     *     refusal the same request never sees.
+     *
+     *     Boundaries: the report speaks for the deployment and for the reported
+     *     `workspace_id`, not for one request body. `workspace_id` selects the
+     *     workspace to report on and defaults to the same `workspace-default` a create
+     *     selects by omitting the field; a deployment that creates in another workspace
+     *     must pass it, otherwise the quota counters and the workspace causes describe a
+     *     workspace nothing creates in. A `workspace_id` that is not a valid identifier
+     *     is 400 `invalid_job_request`, the same refusal `GET /v1/nexus/jobs` answers
+     *     for a malformed one. What is *not* classified is every request-shaped refusal
+     *     (`recipe_not_admitted`, `unsupported_parameter`, an unpublished binding, an
+     *     input artifact that is not ready), the single-request answers
+     *     (`job_outcome_unknown`, `job_admission_contended`, `job_request_expired`), and
+     *     the deployment defect `admission_state_invalid`: the first two classes depend
+     *     on the body, the third changes with the request's own identity or deadline,
+     *     and the fourth is a 500 rather than a refusal. Host-level resource headroom
+     *     is not evaluated, because its required vector comes from the request's plan.
+     *     Receipt identity is not classified: a receipt that names another fencing
+     *     token answers 503 `engine_state_mismatch` from a create and is reported here
+     *     as the instance's readiness *window* state. The per-instance rows carry the
+     *     same `valid`/`expiring`/`expired`/`missing`/`invalid` vocabulary the read-only
+     *     `speechnexus-engine-readiness` report prints, plus the slot counters, and
+     *     `capacity` carries the quota counters, so a degraded answer names the lever
+     *     to move.
+     */
+    get: operations["getJobAdmissionReadiness"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/nexus/jobs/{job_id}": {
     parameters: {
       query?: never;
@@ -2404,6 +2503,83 @@ export interface components {
       /** @constant */
       manual_confirmation: true;
       display_name?: string;
+    };
+    AdmissionReadiness: {
+      /**
+       * @description `admitting` if and only if `cause` is null, and if and only if a create
+       *     sent at this instant would be admitted; `degraded` otherwise. This is the
+       *     one field a poller has to assert on. The two conditions are not a second
+       *     verdict beside `cause`: the schema below constrains them together, so a
+       *     body cannot claim a cause while admitting or be degraded without naming
+       *     one.
+       * @enum {string}
+       */
+      status: "admitting" | "degraded";
+      /**
+       * @description The refusal class a create sent at this instant would answer, or null when
+       *     it would be admitted. One value, never a set: the create path answers one
+       *     code and the report repeats that one code. `storage_unavailable` is the
+       *     only member reported for an unreadable store, because no other fact could
+       *     have been read.
+       */
+      cause:
+        | null
+        | (
+            | "engine_receipt_expired"
+            | "engine_state_mismatch"
+            | "engine_resource_disabled"
+            | "capacity_exhausted"
+            | "workspace_not_found"
+            | "workspace_disabled"
+            | "workspace_not_configured"
+            | "storage_unavailable"
+          );
+      workspace_id: components["schemas"]["Identifier"];
+      /**
+       * Format: date-time
+       * @description The coordination store's clock reading the verdict used.
+       */
+      checked_at: string;
+      /**
+       * @description One sentence naming the cause, the public create code it answers and the
+       *     recovery, or null exactly when `status` is `admitting`. Machine consumers
+       *     read `cause`; this is the sentence an operator reads.
+       */
+      detail: string | null;
+      /**
+       * @description Every `ready` engine instance with the receipt admission would check, in
+       *     ascending `(instance_id, instance_generation)` order. Empty when the
+       *     store could not be read.
+       */
+      instances: components["schemas"]["AdmissionReadinessInstance"][];
+      /**
+       * @description The reported workspace's quota counters, or null when it has no quota row
+       *     (`workspace_not_configured`) or the store could not be read.
+       */
+      capacity: components["schemas"]["AdmissionReadinessCapacity"] | null;
+    } & (unknown & unknown);
+    AdmissionReadinessInstance: {
+      instance_id: components["schemas"]["Identifier"];
+      instance_generation: number;
+      /**
+       * @description The readiness *window*, the same vocabulary the read-only
+       *     `speechnexus-engine-readiness` report prints. `expiring` is inside the
+       *     warning interval but still admits work; `missing` and `invalid` are
+       *     receipts admission cannot read at all.
+       * @enum {string}
+       */
+      readiness_state: "valid" | "expiring" | "expired" | "missing" | "invalid";
+      readiness_expires_at: string | null;
+      /** @description Whole seconds left before `readiness_expires_at`; negative once elapsed. */
+      remaining_seconds: number | null;
+      max_slots: number;
+      held_slots: number;
+      quarantined_slots: number;
+    };
+    AdmissionReadinessCapacity: {
+      max_attempts: number;
+      held_attempts: number;
+      quarantined_attempts: number;
     };
     VoiceRetirementRequest: components["schemas"]["RetirementRequest"];
     /** @enum {string} */
@@ -4909,7 +5085,29 @@ export interface operations {
           });
         };
       };
-      429: components["responses"]["TooManyRequests"];
+      /**
+       * @description Capacity refuses this create: the workspace quota holds every attempt, the
+       *     pinned instance is at its slot bound, or no ready engine instance is
+       *     registered at all. Follow `Retry-After`: a released attempt or slot clears
+       *     it, while the missing-instance arm waits for an operator to register one,
+       *     so an unbounded retry loop sees the same 429.
+       */
+      429: {
+        headers: {
+          "Retry-After"?: components["headers"]["RetryAfter"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"] & {
+            error?: {
+              /** @enum {string} */
+              code?: "job_capacity_exhausted";
+              /** @constant */
+              retryable?: true;
+            };
+          };
+        };
+      };
       /**
        * @description Admission failed an internal invariant (a clock or version counter left
        *     its declared range). This is a deployment defect rather than a refusal:
@@ -4965,6 +5163,40 @@ export interface operations {
           });
         };
       };
+    };
+  };
+  getJobAdmissionReadiness: {
+    parameters: {
+      query?: {
+        workspace_id?: components["parameters"]["WorkspaceIdQuery"];
+      };
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /**
+       * @description The admission verdict for this deployment: `status: admitting` with a
+       *     null `cause` and a null `detail`, or `status: degraded` with the one
+       *     cause a create would answer and the sentence naming its recovery. The
+       *     status code is 200 in both cases.
+       */
+      200: {
+        headers: {
+          "X-Request-ID"?: components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdmissionReadiness"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      405: components["responses"]["MethodNotAllowed"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   getJob: {

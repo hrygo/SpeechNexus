@@ -378,10 +378,14 @@ Starlette 307 到规范路径（复核实测见
 错误码、`retryable` 与 `X-Request-ID`；下表为 #473 前后同口径实测。
 
 【#473 已交付】PR #474（`7e539980`）合入占位路由与专用错误码，随后的 #476（`176ddb06`）补可证伪的映射扫描守卫、
-#477（`88aabdd5`）补 405 信封与移除路径白名单。当前实测口径：9 条未实现操作全部返回
+#477（`88aabdd5`）补 405 信封与移除路径白名单。当前实测口径：10 条未实现操作全部返回
 `503 operation_not_implemented`（`service_unavailable_error`、`retryable=false`、`X-Should-Retry: false`、
 `Cache-Control: no-store`、回显 `X-Request-ID`）；其中 6 条指向 `OperationNotImplemented` 组件，
 `getOperation`/`createRealtimeSession`/`connectRealtime` 三条沿用 `ServiceUnavailable` 声明。
+【#845 契约切片】第 10 条 `getJobAdmissionReadiness`（`GET /v1/nexus/jobs/admission-readiness`）同样沿用
+`ServiceUnavailable`：该路由冻结的 503 是 Job 面未装配时的 `job_unavailable`，占位错误只是它尚未装配时的回答。
+报告本身未实现，`status`/`cause` 的语义已在契约中冻结，注册入口在以 `getJob` 的动态段为前缀的
+`/v1/nexus/jobs/` 下，因此占位路由先于 Job 路由挂载。
 **可辨识性只能靠 `error.code`**：已实现但依赖未装配的 `GET /v1/nexus/jobs` 同样返回 503
 `service_unavailable_error`/`retryable=false`（错误码 `job_unavailable`），状态码、类型与重试标记三者完全不足以区分。
 本表 36–39 行的占位值属 #473 基线：#514/#495/#519 已把这些操作交给真实实现（分别为 400

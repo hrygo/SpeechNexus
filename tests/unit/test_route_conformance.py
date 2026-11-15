@@ -56,7 +56,7 @@ def test_repository_has_no_unbaselined_deviation() -> None:
     # unregistered" is now empty; the unimplemented set is proven by route shape.
     assert contract_ids - registered_ids == set()
     assert report.known_unimplemented == tuple(sorted(module.KNOWN_UNIMPLEMENTED_OPERATIONS))
-    assert len(module.KNOWN_UNIMPLEMENTED_OPERATIONS) == 9
+    assert len(module.KNOWN_UNIMPLEMENTED_OPERATIONS) == 10
     assert module.KNOWN_UNDECLARED_STATUSES == {}
     assert report.known_status_gaps == ()
     # Every operation declares 405; each one is probed for the public envelope,
@@ -590,7 +590,12 @@ def test_lost_evaluate_evidence_fails_cli_with_failed_rows(
     assert module.main([]) == 1
     captured = capsys.readouterr()
     assert captured.err == ""
-    assert captured.out.count("405-envelope=FAILED") == (42 if evidence == "none" else 1)
+    # Derived from the declaration instead of pinned: every operation that declares
+    # a 405 response fails when its envelope evidence is lost, so declaring another
+    # operation must not require editing this count.
+    _, declared = module.load_contract(ROOT)
+    declares_405 = sum(1 for operation in declared if 405 in operation.declared_statuses)
+    assert captured.out.count("405-envelope=FAILED") == (declares_405 if evidence == "none" else 1)
     assert "getJob declares 405 but the 405 response envelope was not probed" in captured.out
     assert "405-envelope=not probed" not in captured.out
     assert "OK: every registered speech route" not in captured.out
@@ -779,7 +784,20 @@ def test_a_probe_that_reaches_an_endpoint_fails_the_gate(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "endpoint was invoked during probe" in captured.err
-    assert invoked == [probe_path]
+    # One dispatch per declared operation that declares 405 and whose concrete path
+    # this catch-all route matches: `getJob`'s own probe path plus every literal
+    # operation declared directly under `/v1/nexus/jobs/`. Derived, so a new literal
+    # operation under that prefix changes the expectation instead of the gate.
+    _, declared = module.load_contract(ROOT)
+    expected = [
+        module.fill_path_parameters(operation.path)
+        for operation in declared
+        if 405 in operation.declared_statuses
+        and operation.path.startswith("/v1/nexus/jobs/")
+        and operation.path.count("/") == 4
+    ]
+    assert invoked == expected
+    assert probe_path in invoked
 
 
 def test_dispatch_guard_counts_a_mount_child_the_matcher_cannot_see() -> None:
@@ -909,7 +927,17 @@ def test_a_generator_endpoint_is_counted_and_fails_the_gate(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "endpoint was invoked during probe" in captured.err
-    assert ran == ["generator"]
+    # Same derivation as above: the generator route answers every method, so the
+    # probe reaches it once per declared 405 operation under this prefix.
+    _, declared = module.load_contract(ROOT)
+    expected = sum(
+        1
+        for operation in declared
+        if 405 in operation.declared_statuses
+        and operation.path.startswith("/v1/nexus/jobs/")
+        and operation.path.count("/") == 4
+    )
+    assert ran == ["generator"] * expected
 
 
 def test_dispatch_guard_counts_an_included_generator_endpoint() -> None:

@@ -724,6 +724,15 @@ def create_app(
         allowed_origins=resolved_settings.asset_allowed_origins,
     )
     app.add_middleware(RequestIdMiddleware)
+    # Declared operations without an owning feature answer one stable 503
+    # instead of a framework 404 that reads like "unknown resource". Mounted
+    # before the feature routers because a declared literal path can share a
+    # prefix with a dynamic sibling: `GET /v1/nexus/jobs/admission-readiness`
+    # would otherwise be answered by `GET /v1/nexus/jobs/{job_id}`. Ordering
+    # cannot let a placeholder own a shipped operation instead: the ownership
+    # guard below rejects any placeholder whose method and template a real route
+    # also registers.
+    app.include_router(create_unimplemented_router())
     app.include_router(create_asset_router(lambda: asset_service))
     app.include_router(create_artifact_router(get_artifacts))
     app.include_router(create_model_router(get_catalogue, capability_policy))
@@ -787,9 +796,6 @@ def create_app(
             receive_timeout_seconds=resolved_settings.quarantine_release_receive_timeout_seconds,
         )
     )
-    # Declared operations without an owning feature answer one stable 503
-    # instead of a framework 404 that reads like "unknown resource".
-    app.include_router(create_unimplemented_router())
 
     def allowed_methods(path: str, reported: str | None) -> dict[str, str]:
         """Merge the framework's Allow with every method registered on this path.

@@ -101,6 +101,8 @@ KNOWN_UNIMPLEMENTED_OPERATIONS: dict[str, str] = {
     "speechCreateDeletionPlan": "speech deletion plan route is not implemented",
     "speechCreateDeletion": "speech deletion route is not implemented",
     "speechGetDeletion": "speech deletion read route is not implemented",
+    # Declared and frozen by the #845 contract slice; the report is not assembled.
+    "getJobAdmissionReadiness": "the admission readiness report is not implemented",
 }
 
 # #462 declared every observed status, including framework 405 replies.

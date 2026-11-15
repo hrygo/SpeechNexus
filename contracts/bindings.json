@@ -17,7 +17,8 @@
     "ErrorResponse",
     "PronunciationCreateRequest",
     "PronunciationRevision",
-    "ModelList"
+    "ModelList",
+    "AdmissionReadiness"
   ],
   "coordination": {
     "version": "1.0.0",

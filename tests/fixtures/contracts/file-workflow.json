@@ -3553,5 +3553,167 @@
         }
       }
     }
+,
+    {
+      "id": "admission-readiness-degraded",
+      "schema": "AdmissionReadiness",
+      "valid": true,
+      "value": {
+        "status": "degraded",
+        "cause": "capacity_exhausted",
+        "workspace_id": "workspace_default",
+        "checked_at": "2026-11-16T00:00:00Z",
+        "detail": "The workspace quota holds every attempt (held 4 + quarantined 0 of 4); a create answers job_capacity_exhausted until one is released.",
+        "instances": [
+          {
+            "instance_id": "instance-demo",
+            "instance_generation": 1,
+            "readiness_state": "expired",
+            "readiness_expires_at": "2026-11-15T00:00:00Z",
+            "remaining_seconds": -3600,
+            "max_slots": 2,
+            "held_slots": 1,
+            "quarantined_slots": 0
+          }
+        ],
+        "capacity": {
+          "max_attempts": 4,
+          "held_attempts": 4,
+          "quarantined_attempts": 0
+        }
+      }
+    },
+    {
+      "id": "admission-readiness-admitting",
+      "schema": "AdmissionReadiness",
+      "valid": true,
+      "value": {
+        "status": "admitting",
+        "cause": null,
+        "workspace_id": "workspace_default",
+        "checked_at": "2026-11-16T00:00:00Z",
+        "detail": null,
+        "instances": [],
+        "capacity": null
+      }
+    },
+    {
+      "id": "admission-readiness-admitting-with-cause",
+      "schema": "AdmissionReadiness",
+      "valid": false,
+      "value": {
+        "status": "admitting",
+        "cause": "capacity_exhausted",
+        "workspace_id": "workspace_default",
+        "checked_at": "2026-11-16T00:00:00Z",
+        "detail": "The workspace quota holds every attempt (held 4 + quarantined 0 of 4); a create answers job_capacity_exhausted until one is released.",
+        "instances": [
+          {
+            "instance_id": "instance-demo",
+            "instance_generation": 1,
+            "readiness_state": "expired",
+            "readiness_expires_at": "2026-11-15T00:00:00Z",
+            "remaining_seconds": -3600,
+            "max_slots": 2,
+            "held_slots": 1,
+            "quarantined_slots": 0
+          }
+        ],
+        "capacity": {
+          "max_attempts": 4,
+          "held_attempts": 4,
+          "quarantined_attempts": 0
+        }
+      }
+    },
+    {
+      "id": "admission-readiness-degraded-without-cause",
+      "schema": "AdmissionReadiness",
+      "valid": false,
+      "value": {
+        "status": "degraded",
+        "cause": null,
+        "workspace_id": "workspace_default",
+        "checked_at": "2026-11-16T00:00:00Z",
+        "detail": null,
+        "instances": [
+          {
+            "instance_id": "instance-demo",
+            "instance_generation": 1,
+            "readiness_state": "expired",
+            "readiness_expires_at": "2026-11-15T00:00:00Z",
+            "remaining_seconds": -3600,
+            "max_slots": 2,
+            "held_slots": 1,
+            "quarantined_slots": 0
+          }
+        ],
+        "capacity": {
+          "max_attempts": 4,
+          "held_attempts": 4,
+          "quarantined_attempts": 0
+        }
+      }
+    },
+    {
+      "id": "admission-readiness-causes-list",
+      "schema": "AdmissionReadiness",
+      "valid": false,
+      "value": {
+        "status": "degraded",
+        "workspace_id": "workspace_default",
+        "checked_at": "2026-11-16T00:00:00Z",
+        "detail": "The workspace quota holds every attempt (held 4 + quarantined 0 of 4); a create answers job_capacity_exhausted until one is released.",
+        "instances": [
+          {
+            "instance_id": "instance-demo",
+            "instance_generation": 1,
+            "readiness_state": "expired",
+            "readiness_expires_at": "2026-11-15T00:00:00Z",
+            "remaining_seconds": -3600,
+            "max_slots": 2,
+            "held_slots": 1,
+            "quarantined_slots": 0
+          }
+        ],
+        "capacity": {
+          "max_attempts": 4,
+          "held_attempts": 4,
+          "quarantined_attempts": 0
+        },
+        "causes": [
+          "capacity_exhausted"
+        ]
+      }
+    },
+    {
+      "id": "admission-readiness-undeclared-cause",
+      "schema": "AdmissionReadiness",
+      "valid": false,
+      "value": {
+        "status": "degraded",
+        "cause": "engine_not_ready",
+        "workspace_id": "workspace_default",
+        "checked_at": "2026-11-16T00:00:00Z",
+        "detail": "The workspace quota holds every attempt (held 4 + quarantined 0 of 4); a create answers job_capacity_exhausted until one is released.",
+        "instances": [
+          {
+            "instance_id": "instance-demo",
+            "instance_generation": 1,
+            "readiness_state": "expired",
+            "readiness_expires_at": "2026-11-15T00:00:00Z",
+            "remaining_seconds": -3600,
+            "max_slots": 2,
+            "held_slots": 1,
+            "quarantined_slots": 0
+          }
+        ],
+        "capacity": {
+          "max_attempts": 4,
+          "held_attempts": 4,
+          "quarantined_attempts": 0
+        }
+      }
+    }
   ]
 }

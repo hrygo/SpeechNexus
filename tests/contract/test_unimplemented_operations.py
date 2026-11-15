@@ -42,15 +42,19 @@ SOURCE = validator("speech-openapi.yaml")
 DOCUMENT = cast(dict[str, Any], SOURCE.schema)
 PLACEHOLDER_RESPONSE = "#/components/responses/OperationNotImplemented"
 REQUEST_ID = "unimplemented-473"
-# These remaining placeholders already declared `ServiceUnavailable` before #473.
-# Replacing that declaration would drop the compatible `Retry-After` header
-# from the versioned surface, which both structural gates reject as breaking,
-# so they keep it: that schema accepts the same placeholder body.
+# These placeholders declare `ServiceUnavailable` rather than the dedicated
+# component. Replacing that declaration would drop the compatible `Retry-After`
+# header from the versioned surface, which both structural gates reject as
+# breaking, so they keep it: that schema accepts the same placeholder body.
 PREDECLARED_SERVICE_UNAVAILABLE = frozenset(
     {
         "getOperation",
         "createRealtimeSession",
         "connectRealtime",
+        # Declared by the #845 contract slice with the 503 this route answers when the
+        # Job surface is not assembled, which the dedicated placeholder component
+        # cannot state.
+        "getJobAdmissionReadiness",
     }
 )
 # Every placeholder answers at runtime, including the compatible-surface one.
@@ -195,7 +199,7 @@ def concrete(path: str) -> str:
 
 
 def test_contract_and_placeholder_table_agree() -> None:
-    assert len(CASES) == 9
+    assert len(CASES) == 10
     assert {operation for operation, _, _ in CASES} == set(UNIMPLEMENTED_OPERATIONS)
     declared = {operation for operation, _, _ in declared_operations()}
     # retireVoiceRevision and the six voice-draft operations now answer their

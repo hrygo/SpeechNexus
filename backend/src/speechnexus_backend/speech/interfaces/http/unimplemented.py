@@ -72,6 +72,11 @@ UNIMPLEMENTED_OPERATIONS: dict[str, tuple[str, str]] = {
     "speechCreateDeletionPlan": ("POST", "/v1/nexus/deletion-plans"),
     "speechCreateDeletion": ("POST", "/v1/nexus/deletions"),
     "speechGetDeletion": ("GET", "/v1/nexus/deletions/{deletion_id}"),
+    # Declared by #845 and frozen by its contract slice; the report itself is not
+    # assembled yet. The literal segment shares the `/v1/nexus/jobs/` prefix with the
+    # dynamic `{job_id}` route, so this placeholder is mounted before that router
+    # (see `app.py`); otherwise `getJob` would answer for it.
+    "getJobAdmissionReadiness": ("GET", "/v1/nexus/jobs/admission-readiness"),
 }
 
 

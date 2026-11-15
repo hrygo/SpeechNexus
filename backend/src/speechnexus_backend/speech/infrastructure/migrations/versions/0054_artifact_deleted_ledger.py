@@ -8,6 +8,10 @@ the row ``deleted``, and the added check keeps the state and the timestamp
 inseparable, so a row can neither claim a removal without a time nor carry a
 removal time while still claiming another state.
 
+Rows a deployment already marked ``deleted`` are backfilled from their own
+creation time and the migration clock, so the check can be installed without
+refusing an existing database.
+
 The retention grant grows to exactly this column
 (``artifact_retention_grants``); deadlines stay unwritable by the sweep.
 """

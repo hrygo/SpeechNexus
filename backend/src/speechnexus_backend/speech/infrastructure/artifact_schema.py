@@ -33,6 +33,14 @@ ARTIFACT_RETENTION_UPDATE_COLUMNS = ("artifact_state", "deleted_at_us")
 ARTIFACT_DELETED_LEDGER_DDL = (
     """ALTER TABLE speech_artifacts
         ADD COLUMN deleted_at_us BIGINT CHECK (deleted_at_us > 0)""",
+    # A deployment that already marked rows `deleted` keeps working: the column
+    # starts out empty, so the removal time is backfilled from the row's own
+    # creation and the migration clock before the consistency check is installed.
+    """UPDATE speech_artifacts SET deleted_at_us = GREATEST(
+            created_at_us,
+            CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT)
+        )
+        WHERE artifact_state = 'deleted' AND deleted_at_us IS NULL""",
     """ALTER TABLE speech_artifacts
         ADD CONSTRAINT speech_artifacts_deleted_ledger_check CHECK (
             (artifact_state = 'deleted') = (deleted_at_us IS NOT NULL)

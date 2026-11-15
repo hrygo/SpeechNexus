@@ -38,9 +38,17 @@ WEB_LANE_SHARE_DIVISOR = 3
 #    `tests/unit/gateway/test_engine_language_semantics.py`, which runs in the
 #    Python lanes only; a docs route would stop checking the wording it pins.
 #
-# `tests/ci/test_ci_routing.py::ProseRoutingTests` derives the `COPY`ed set from the
-# Dockerfiles and pins the remaining two positions, so a new build consumer of a
-# README turns that test red instead of silently narrowing the gate.
+# `tests/ci/test_ci_routing.py::ProseRoutingTests` derives the expected lane from the
+# three rules independently (Dockerfile `COPY` tokens, the unit-test readers and the
+# `public/` bundle rule) and compares it with `classify` both ways, so an exception
+# added here without a matching rule — or the reverse — turns that test red.
+#
+# Limits: the Dockerfile derivation sees literal `COPY <path>.md` tokens only.
+# Directory copies (`COPY web web`), `ADD` and globs are outside it; a prose file
+# such a copy carries still routes as prose (today the Web image's only published
+# output is `dist`), and a new one has to be registered in `_IMAGE_COPY_PROSE` by
+# hand. Only the exact `AGENTS.md`/`README*.md` names are prose: `agents.md`,
+# `README.rst`, `README` and every other variant stay `full` (fail-closed).
 _PROSE_BASENAME = re.compile(r"^(?:AGENTS\.md|README(?:\.[^/]+)?\.md)$")
 _IMAGE_COPY_PROSE = frozenset(
     {

@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/dev-env/ci-routing.py"
@@ -159,7 +159,13 @@ def prose_paths() -> list[str]:
 
 
 def dockerfile_readme_copies() -> set[str]:
-    """README paths a Dockerfile `COPY`s: the build-input set, derived not restated."""
+    """README paths a Dockerfile `COPY`s: the build-input set, derived not restated.
+
+    Only literal `COPY <path>.md` tokens are derived. Directory copies
+    (`COPY web web`), `ADD` and globs are invisible here; today no such copy
+    publishes a prose path (the Web image's only published output is `dist`), but
+    a future one has to be registered in `_IMAGE_COPY_PROSE` by hand.
+    """
     copies: set[str] = set()
     for name in tracked_paths():
         base = name.rsplit("/", 1)[-1]
@@ -176,6 +182,36 @@ def dockerfile_readme_copies() -> set[str]:
     return copies
 
 
+# Any module input that would make a `.md` part of a bundle: static import,
+# dynamic import, CommonJS require, Vite glob or a `new URL(..., import.meta.url)`
+# asset reference. Markdown is not one of these today; the regression below keeps
+# the "in-tree rules are not inputs" premise honest instead of leaving it a grep
+# fact recorded in a review.
+MARKDOWN_IMPORT = re.compile(
+    r"""(?:import\s[^;\n]*?from|import\s*\(|require\s*\(|import\.meta\.glob\s*\(|new\s+URL\s*\(\s*)"""
+    r"""\s*["'][^"'\n]+\.md(?:[?#][^"'\n]*)?["']"""
+)
+
+
+def is_web_public_prose(path: str) -> bool:
+    """`web/<app>/public/**` prose: Vite copies that directory verbatim into `dist`."""
+    parts = PurePosixPath(path).parts
+    return len(parts) >= 4 and parts[0] == "web" and parts[2] == "public"
+
+
+def expected_prose_lanes(paths: list[str]) -> dict[str, str]:
+    """The lane each document needs, derived from the three independent rules."""
+    copies = dockerfile_readme_copies()
+    return {
+        name: (
+            "full"
+            if name in copies or name in ROUTER._TEST_READ_PROSE or is_web_public_prose(name)
+            else "docs"
+        )
+        for name in paths
+    }
+
+
 class ProseRoutingTests(unittest.TestCase):
     """`AGENTS.md`/`README*` route by content, not by directory depth (#812).
 
@@ -184,7 +220,24 @@ class ProseRoutingTests(unittest.TestCase):
     of document paid the whole matrix by accident of location. The lane is now
     decided by what the file is; only a real build or test consumer keeps a
     heavier route, and each such position is pinned below.
+
+    The expected lanes are derived from three independent rules — the Dockerfile
+    `COPY`list, the unit-test readers and the `public/` bundle rule — and compared
+    in both directions with `classify` and `_prose_route`, so adding an exception
+    to the router without teaching this test about it is red, and a new legitimate
+    document is not. Directory-form `COPY`, `ADD` and glob inputs are outside the
+    derivation and need manual registration.
     """
+
+    def assert_lanes(self, paths: list[str]) -> None:
+        routed = {name: ROUTER.classify([name]) for name in paths}
+        expected = expected_prose_lanes(paths)
+        self.assertEqual(routed, expected, "classify disagrees with the derived lane")
+        for name in paths:
+            with self.subTest(path=name):
+                # The judgment itself must agree too: `classify` picking the right
+                # answer through another branch would hide a broken prose rule.
+                self.assertEqual(ROUTER._prose_route(PurePosixPath(name)), expected[name])
 
     def test_web_agents_is_no_longer_full(self) -> None:
         mode = ROUTER.classify(["web/AGENTS.md"])
@@ -198,11 +251,13 @@ class ProseRoutingTests(unittest.TestCase):
             "contracts/AGENTS.md",
             "tests/integration/AGENTS.md",
             # Documentation inside a source tree is still documentation: Vite
-            # follows imports (no `.md` is imported anywhere), `tsc` compiles only
-            # TS/TSX, ESLint globs only TS/TSX/MJS and the Web image ships `dist`.
+            # follows imports (no `.md` is imported anywhere, pinned below), `tsc`
+            # compiles only TS/TSX, ESLint globs only TS/TSX, Prettier's
+            # `format:check` skips `*.md` and the Web image publishes `dist`.
             "web/workbench/src/AGENTS.md",
             "web/shared/src/README.md",
             "README.md",
+            "README.zh-CN.md",
             "contracts/README.md",
             "tests/integration/README.md",
             "deploy/README.md",
@@ -223,21 +278,17 @@ class ProseRoutingTests(unittest.TestCase):
                 self.assertEqual(ROUTER.classify(["web/AGENTS.md", source]), "full")
 
     def test_every_tracked_document_has_a_content_lane(self) -> None:
-        routed = {name: ROUTER.classify([name]) for name in prose_paths()}
-        self.assertIn("web/AGENTS.md", routed)
-        self.assertIn("deploy/README.md", routed)
-        self.assertEqual(
-            {name for name, mode in routed.items() if mode not in {"docs", "full"}},
-            set(),
-            "a rule file/README took a source lane instead of docs or full",
-        )
-        # The only documents that keep `full` are ones whose bytes reach a build or
-        # a check. Deriving the image inputs from the Dockerfiles means a new
-        # `COPY` turns this red instead of silently routing the file as prose.
-        self.assertEqual(
-            {name for name, mode in routed.items() if mode == "full"},
-            dockerfile_readme_copies() | ROUTER._TEST_READ_PROSE,
-        )
+        tracked = prose_paths()
+        self.assertIn("web/AGENTS.md", tracked)
+        self.assertIn("deploy/README.md", tracked)
+        self.assert_lanes(tracked)
+
+    def test_a_new_tracked_document_keeps_the_sweep_green(self) -> None:
+        # Regression for #816: the sweep's expectation used to list only the
+        # Dockerfile and unit-test inputs, so committing a legitimate
+        # `web/<app>/public/README.md` (correctly `full`) turned it red with a
+        # message about "a source lane". Derive the expected lane instead.
+        self.assert_lanes([*prose_paths(), "web/workbench/public/README.md"])
 
     def test_readmes_copied_into_an_image_keep_the_full_lane(self) -> None:
         copies = dockerfile_readme_copies()
@@ -254,9 +305,15 @@ class ProseRoutingTests(unittest.TestCase):
             "web/workbench/public/AGENTS.md",
             "web/admin/public/README.md",
             "web/workbench/public/notes/AGENTS.md",
+            # The Vite default `publicDir` is the app root's `public`, not any
+            # nested `src/public`; that one is not a bundle input.
+            "web/workbench/src/public/README.md",
         ):
             with self.subTest(path=path):
-                self.assertEqual(ROUTER.classify([path]), "full")
+                self.assertEqual(
+                    ROUTER.classify([path]),
+                    "docs" if "src/public" in path else "full",
+                )
 
     def test_readmes_a_unit_test_asserts_keep_the_full_lane(self) -> None:
         # `tests/unit/gateway/test_engine_language_semantics.py` reads both files and
@@ -273,6 +330,46 @@ class ProseRoutingTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(ROUTER.classify([path]), "full")
                 self.assertEqual(ROUTER.classify([path, "web/AGENTS.md"]), "full")
+
+    def test_unrecognised_names_stay_fail_closed(self) -> None:
+        # Only `AGENTS.md` and `README*.md` are prose. Variants keep the heavier
+        # lane so a typo can never buy a narrower route; #812's same-document
+        # complaint still holds for these names and is documented as such.
+        for path in (
+            "web/agents.md",
+            "web/AGENTS.MD",
+            "web/Readme.md",
+            "web/readme.md",
+            "web/README",
+            "web/README.rst",
+            "web/README.en.txt",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(ROUTER.classify([path]), "full")
+
+    def test_web_sources_do_not_import_markdown(self) -> None:
+        """In-tree rules stay non-inputs only while nothing imports them.
+
+        If a `.md` becomes a module/glob/URL input, changing it changes the bundle
+        while the document still routes as prose (#816). This turns that moment
+        red so the routing decision is revisited, instead of leaving the premise a
+        `grep` fact recorded in a review.
+        """
+        offenders: list[str] = []
+        for name in tracked_paths():
+            if not name.startswith("web/") or Path(name).suffix not in {
+                ".ts",
+                ".tsx",
+                ".mjs",
+                ".js",
+            }:
+                continue
+            for number, line in enumerate(
+                (ROOT / name).read_text(encoding="utf-8").splitlines(), 1
+            ):
+                if MARKDOWN_IMPORT.search(line):
+                    offenders.append(f"{name}:{number}: {line.strip()}")
+        self.assertEqual(offenders, [])
 
 
 class GitRoutingTests(unittest.TestCase):

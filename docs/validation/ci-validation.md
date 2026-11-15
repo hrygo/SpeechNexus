@@ -23,7 +23,9 @@ CI 使用[工作流](../../.github/workflows/ci.yml)和[标准库路由](../../s
 - `web/<app>/public/` 内的说明文件：Vite 把 `public/` 原样复制进构建产物（`dist`），文件本身是产品资产，仍走 `full`。
 - `deploy/engines/file-voice-clone/README.md`、`deploy/engines/file-voice-design/README.md`：`tests/unit/gateway/test_engine_language_semantics.py` 直接读取并断言其措辞，`docs` 车道不执行 pytest，仍走 `full`。
 
-其余说明文件没有构建或检查读取，包括源码树内的 `web/workbench/src/AGENTS.md`：Vite 只跟随导入（没有对 `.md` 的 `?raw`／`import.meta.glob` 导入），`tsc` 与 ESLint 只处理 TS/TSX/MJS，Web 镜像最终只发布 `dist`。`deploy/README.md` 虽被 `tests/ci` 的 unittest 守卫读取，但 `docs` 车道的 `changes` 作业本来就执行 `python3 -m unittest discover -s tests/ci`，守卫在轻量路径上继续运行。镜像 `COPY` 集合由 `tests/ci/test_ci_routing.py::ProseRoutingTests` 从 Dockerfile 派生比对，新增构建消费者会使该用例变红，而不是静默把文件划成说明文字。
+其余说明文件不被任何构建或检查读取：Vite 只跟随导入（全仓库没有对 `.md` 的 `?raw`／`import.meta.glob`／`new URL` 导入，并由 `tests/ci` 的回归守住），`tsc` 与 ESLint 只处理 TS/TSX，Prettier 的 `format:check` glob 不含 `*.md`；`deploy/images/web.Dockerfile:12` 的 `COPY web web` 会把 `web/AGENTS.md` 的字节带进 builder 层，但最终阶段只发布 `dist`。这类文件包括源码树内的 `web/workbench/src/AGENTS.md`。`deploy/README.md` 虽被 `tests/ci` 的 unittest 守卫读取，但 `docs` 车道的 `changes` 作业本来就执行 `python3 -m unittest discover -s tests/ci`，守卫在轻量路径上继续运行。
+
+例外集合由 `tests/ci/test_ci_routing.py::ProseRoutingTests` 双向核对：期望车道从三条独立规则派生（Dockerfile 字面量 `COPY`、单测读者、`web/<app>/public/`），再与 `classify` 和 `_prose_route` 逐条比对，新增例外而不补规则（或反之）都会变红。派生只认字面量 `COPY <path>.md`：目录形式复制（如 `COPY web web`、`COPY packages/contracts packages/contracts`）、`ADD` 与 glob 不在派生内，新增这类消费者须人工登记到 `_IMAGE_COPY_PROSE`。仅 `AGENTS.md` 与 `README*.md` 按内容归类，`agents.md`、`AGENTS.MD`、`Readme.md`、`README.rst`、`README` 等命名变体仍走 `full`（fail-closed，不会漏跑验证）。
 
 Skill 的说明、参考、合成评测数据及展示元数据不参与产品构建，复用文档轻量路径。技能内的 Python、Shell、JavaScript 等脚本和未知文件仍走全量；混合业务代码时按业务范围选择，其他 `.agents/` 配置不在白名单内。轻量路径不执行 skill 行为评测，也不证明 JSON/YAML 内容或引用有效，维护者须按变更核对。`main` push 仍按既有约定全量验证。
 

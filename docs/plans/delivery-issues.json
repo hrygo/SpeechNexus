@@ -124,9 +124,9 @@
         "docs/architecture/runtime-governance.md"
       ],
       "implementation": "网关命令边界读取固定输入；结果收集核验 binding、策略、序列和源时钟，现有逻辑不猜测重叠去重。",
-      "integration": "同步转写构造需显式配方与网关配置；文件媒体组件存在不代表异步生产 planner 已装配。",
+      "integration": "同步转写构造需显式配方与网关配置；文件媒体组件存在不代表异步链已在真实部署验收。",
       "verification": "已验 JSON 最小链不代表所有格式、时间戳或长音频资格。",
-      "gap": "同步转写构造需显式配方与网关配置；文件媒体组件存在不代表异步生产 planner 已装配。 已验 JSON 最小链不代表所有格式、时间戳或长音频资格。",
+      "gap": "同步转写构造需显式配方与网关配置；文件媒体组件存在不代表异步链已在真实部署验收。 已验 JSON 最小链不代表所有格式、时间戳或长音频资格。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/pull/317",
@@ -224,9 +224,9 @@
         "docs/architecture/runtime-governance.md"
       ],
       "implementation": "API 已装配 Job router，注册创建、读取、重试、事件流与取消（POST /v1/nexus/jobs/{job_id}/cancellations）；取消受理在同一事务写受理回执与围栏投影，执行网关在创建执行的同一事务读取围栏并以既有 gateway_barrier_fenced 落终态，不派发、不写输出流；公开列表按 (created_at_us, job_id) keyset 游标分页，整页 artifact 以 artifact_id = ANY 一次批读，0042 迁移删除被 keyset 索引前缀覆盖的 speech_jobs_workspace_created。公共错误面：#473（PR #474/#476/#477）为 9 条未实现操作建立中央占位路由与专用错误码 `operation_not_implemented`（503、`retryable=false`、`X-Should-Retry: false`），并以「未实现不得与真实故障共用错误码」的测试守住可辨识性；该响应组件 `OperationNotImplemented` 属语音公共契约面，与 C-CONTRACT 交叉，主责仍按 F-JOB（消费者是 Job/Operation 面）保留。派发期确定性结构拒绝已与传输未知分离（#566 / PR #568）：确定性拒绝落 `invalid_execution_request`（`failed`/`not_required`/不保留容量/不可重试），传输失败落 `unknown_quarantined` 并保留容量；两桶不变量随 #569 的 PR #573 落地（`execution_cleanup_pending` 承接已外发桶，`FileStageUnavailableError` 归本地拒绝并释放容量）；残留：`invalid_execution_request` 仍非「未外发」的充分条件，原因分三类——其一，该码仍聚合「阶段未配置」这类部署事实；其二，泳道在引擎请求之后抛基类 `InvalidExecutionRequestError` 时只能保守隔离（`file_execution_worker.py` 的 `_run` 的两个拒绝分支只承接 `FileCommandInvalidError`/`FileStageUnavailableError`：内层 `except` 元组与外层 `except FileCommandInvalidError` 均走 `_reject_without_quarantine`）；其三，legacy 行读路径不改写，判别需按 `state`/`cleanup`/`dispatched_at` 组合。新写入不受该残留影响：`UNSENT_EXECUTION_ERROR_CODES` 只允许关闭从未派发的执行（`mark_not_dispatched_failure` 拒绝其它码），`HELD_EXECUTION_ERROR_CODES` 只能描述可能已外发的执行，写入期跨桶组合被拒。 公开创建路径声明接收上限，超出返回 413 `job_request_too_large`（#703，PR #725）；workspace 行存在但无配额行走 422 `workspace_not_configured`，与 503 `job_unavailable` 存储故障分离（#702，PR #732）。",
-      "integration": "派发器在任何提交前退出统一写 not-submitted 观察，对账 worker 仅在\"该观察 + 网关 404\"或\"aborted + cleanup complete + 白名单停止证据\"时结算为 cancelled；重试与 SSE 事件路由已随 Job router 注册，对账 worker 默认关闭，生产 planner 未装配。",
+      "integration": "派发器在任何提交前退出统一写 not-submitted 观察，对账 worker 仅在\"该观察 + 网关 404\"或\"aborted + cleanup complete + 白名单停止证据\"时结算为 cancelled；重试与 SSE 事件路由已随 Job router 注册，对账 worker 默认关闭；2026-11-15 增量核验：生产 planner 与结果发布器由 `build_dispatch_dependencies` 装配（`backend/src/speechnexus_backend/job_dispatch_runtime.py:321`），前置缺失时在领取前退出。",
       "verification": "隔离 PG 上取消与围栏 24 passed（含受理先于提交、真实锁等待、重启收敛、三类提交前退出收敛）；历史 schema 消费者 100 passed；契约检查与 3373 项契约测试通过。公开列表以隔离 PG 上 100 条 succeeded 页断言整页 2 次事务读，并对适配器真实 SQL 断言单次 Index Scan、无 Sort、keyset 谓词进入 Index Cond。未做真实引擎停止证据注入。 2026-11-14 增量核验：`tests/contract/test_public_job_body_bound.py` 与 `tests/contract/test_public_job_workspace_default.py` 分别钉住 413 `job_request_too_large` 与 422 `workspace_not_configured` 的声明与分码，未在目标部署实测接收上限。",
-      "gap": "生产 planner 与对账 worker 未在生产装配中启用；真实引擎/网关故障注入与物理拓扑验收未完成；公开列表的查询计划与索引体积未在目标环境验收。",
+      "gap": "`job-dispatch-worker` 与对账 worker 默认不启用，完整异步链未在真实部署跑通；真实引擎/网关故障注入与物理拓扑验收未完成；公开列表的查询计划与索引体积未在目标环境验收。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/0b8e85a5/backend/src/speechnexus_backend/speech/infrastructure/job_cancellation_fence_schema.py",
@@ -282,7 +282,7 @@
         "docs/architecture/runtime-governance.md"
       ],
       "implementation": "已有制品元数据和单 Range 下载路由；正式读取运行时按数据库读取身份与对象存储配置启用。",
-      "integration": "公开 Job 派发的生产 planner 尚未装配，真实制品发布与下载消费者须同版联验。",
+      "integration": "公开 Job 派发的生产 planner 已装配（`backend/src/speechnexus_backend/job_dispatch_runtime.py:321`），真实制品发布与下载消费者须同版联验。",
       "verification": "未取得当前真实部署验收证据。",
       "gap": "原子发布、固定对象版本、保留期限及实际下载须按完整链路验收；路由存在不证明生产资格。",
       "evidence": [
@@ -374,7 +374,7 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/runtime-governance.md"
       ],
-      "implementation": "已有 worker 入口与结果 publisher；生产派发依赖工厂仍直接 fail-closed。",
+      "implementation": "已有 worker 入口、生产 planner 与结果发布器（`backend/src/speechnexus_backend/job_dispatch_runtime.py:321`）；依赖工厂在任一前置缺失时 fail-closed。",
       "integration": "公开 Job 到实际派发、结果发布和终态尚未贯通。",
       "verification": "现有组件证据不证明异步生产闭环。",
       "gap": "公开 Job 到实际派发、结果发布和终态尚未贯通。 现有组件证据不证明异步生产闭环。",
@@ -382,7 +382,7 @@
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/job_dispatch_runtime.py",
           "label": "异步派发装配",
-          "note": "生产 planner 未装配，入口 fail-closed"
+          "note": "生产 planner 与结果发布器已装配，前置缺失时入口 fail-closed"
         },
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/application/job_dispatcher.py",
@@ -517,9 +517,9 @@
         "docs/architecture/technical-blueprint.md"
       ],
       "implementation": "取消先持久接收及原身份只读恢复已有交付证据；真实停止与释放仍需验证。派发期确定性结构拒绝已与传输未知分离（#566 / PR #568）：确定性拒绝落 `invalid_execution_request`（`failed`/`not_required`/`dispatched_at=NULL`/不保留容量/不可重试），未预期本地异常仍 `NOT_SENT`，真实传输失败落 `unknown_quarantined` 并保留容量；覆盖七个文件泳道。 终态两桶不变量已落地（#569 / PR #573）：未外发码（`invalid_execution_request`/`lease_not_active`/`policy_or_resource_disabled`/`gateway_barrier_fenced`）对应 `failed`/`not_required`/不占容量；已外发码（`engine_transport_unknown`/`cancellation_unconfirmed`/`execution_cleanup_pending`）对应 `unknown_quarantined`/`quarantined`/占容量；观察写入路径同样受约束，阶段故障类型化为 `FileStageUnavailableError`。残留：legacy 行读路径不改写、需按 state/cleanup/dispatched_at 组合判别；三个码仍聚合多原因。",
-      "integration": "Job dispatcher 有网关适配器，但生产 planner 未装配，worker 不领取任务；真实 submit/observe/abort 与停止证据仍需生产联验。",
+      "integration": "Job dispatcher 有网关适配器，生产 planner 已装配（`backend/src/speechnexus_backend/job_dispatch_runtime.py:321`），前置缺失时 worker 不领取任务；真实 submit/observe/abort 与停止证据仍需生产联验。",
       "verification": "组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
-      "gap": "Job dispatcher 有网关适配器，但生产 planner 未装配，worker 不领取任务；真实 submit/observe/abort 与停止证据仍需生产联验。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
+      "gap": "Job dispatcher 有网关适配器，生产 planner 已装配（`backend/src/speechnexus_backend/job_dispatch_runtime.py:321`），前置缺失时 worker 不领取任务；真实 submit/observe/abort 与停止证据仍需生产联验。 组件和隔离证据各有边界；完整验收按对应 PRD 的验收条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/speech/application/job_dispatcher.py",
@@ -1226,7 +1226,7 @@
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/job_dispatch_runtime.py",
           "label": "异步派发装配",
-          "note": "生产 planner 未装配，入口 fail-closed"
+          "note": "生产 planner 与结果发布器已装配，前置缺失时入口 fail-closed"
         },
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/operations/reconciliation-recovery.md",

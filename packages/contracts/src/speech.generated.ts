@@ -4534,8 +4534,10 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ErrorResponse"] & {
-            error?: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
               /** @enum {unknown} */
               code?: "voice_catalogue_unavailable" | "voice_retirement_unavailable";
               /** @constant */
@@ -4544,7 +4546,7 @@ export interface operations {
               retryable?: true;
               nexus?: never;
             };
-          };
+          });
         };
       };
     };
@@ -4789,8 +4791,10 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ErrorResponse"] & {
-            error?: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
               /** @enum {unknown} */
               code?:
                 | "unsupported_parameter"
@@ -4813,7 +4817,7 @@ export interface operations {
                 | "job_text_asset_unsupported"
                 | "job_request_expired";
             };
-          };
+          });
         };
       };
       429: components["responses"]["TooManyRequests"];
@@ -4829,12 +4833,14 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ErrorResponse"] & {
-            error?: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
               /** @enum {unknown} */
               code?: "admission_state_invalid";
             };
-          };
+          });
         };
       };
       /**
@@ -4853,8 +4859,10 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ErrorResponse"] & {
-            error?: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
               /** @enum {unknown} */
               code?:
                 | "job_unavailable"
@@ -4865,7 +4873,7 @@ export interface operations {
                 | "engine_resource_disabled"
                 | "recipe_not_admitted";
             };
-          };
+          });
         };
       };
     };
@@ -5515,8 +5523,10 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ErrorResponse"] & {
-            error?: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
               /** @enum {unknown} */
               code?: "voice_draft_unavailable" | "voice_draft_outcome_unknown";
               /** @constant */
@@ -5525,7 +5535,7 @@ export interface operations {
               retryable?: true;
               nexus?: never;
             };
-          };
+          });
         };
       };
     };
@@ -5587,8 +5597,10 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ErrorResponse"] & {
-            error?: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
               /** @enum {unknown} */
               code?: "voice_draft_unavailable" | "voice_draft_outcome_unknown";
               /** @constant */
@@ -5597,7 +5609,7 @@ export interface operations {
               retryable?: true;
               nexus?: never;
             };
-          };
+          });
         };
       };
     };
@@ -5643,8 +5655,10 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ErrorResponse"] & {
-            error?: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
               /** @enum {unknown} */
               code?: "voice_draft_unavailable";
               /** @constant */
@@ -5653,7 +5667,7 @@ export interface operations {
               retryable?: true;
               nexus?: never;
             };
-          };
+          });
         };
       };
     };
@@ -5710,8 +5724,10 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ErrorResponse"] & {
-            error?: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
               /** @enum {unknown} */
               code?: "voice_draft_unavailable";
               /** @constant */
@@ -5720,7 +5736,7 @@ export interface operations {
               retryable?: true;
               nexus?: never;
             };
-          };
+          });
         };
       };
     };
@@ -5785,8 +5801,10 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ErrorResponse"] & {
-            error?: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
               /** @enum {unknown} */
               code?: "voice_draft_unavailable" | "voice_draft_outcome_unknown";
               /** @constant */
@@ -5795,7 +5813,7 @@ export interface operations {
               retryable?: true;
               nexus?: never;
             };
-          };
+          });
         };
       };
     };
@@ -5860,8 +5878,10 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ErrorResponse"] & {
-            error?: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
               /** @enum {unknown} */
               code?: "voice_draft_unavailable" | "voice_draft_outcome_unknown";
               /** @constant */
@@ -5870,7 +5890,7 @@ export interface operations {
               retryable?: true;
               nexus?: never;
             };
-          };
+          });
         };
       };
     };
@@ -5935,8 +5955,10 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ErrorResponse"] & {
-            error?: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
               /** @enum {unknown} */
               code?: "voice_draft_unavailable" | "voice_draft_outcome_unknown";
               /** @constant */
@@ -5945,7 +5967,7 @@ export interface operations {
               retryable?: true;
               nexus?: never;
             };
-          };
+          });
         };
       };
     };
@@ -6008,8 +6030,10 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ErrorResponse"] & {
-            error?: {
+          "application/json": {
+            error: components["schemas"]["ErrorBody"];
+          } & (WithRequired<components["schemas"]["ErrorResponse"], "error"> & {
+            error: {
               /** @enum {unknown} */
               code?: "voice_draft_unavailable";
               /** @constant */
@@ -6017,7 +6041,7 @@ export interface operations {
               /** @constant */
               retryable?: true;
             };
-          };
+          });
         };
       };
     };
@@ -6184,3 +6208,6 @@ export interface operations {
     };
   };
 }
+type WithRequired<T, K extends keyof T> = T & {
+  [P in K]-?: T[P];
+};

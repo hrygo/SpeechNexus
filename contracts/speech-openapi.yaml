@@ -537,6 +537,12 @@ paths:
           content:
             application/json:
               schema:
+                type: object
+                additionalProperties: false
+                required: [error]
+                properties:
+                  error:
+                    $ref: "./shared/errors.schema.json#/$defs/ErrorBody"
                 allOf:
                   - $ref: "#/components/schemas/ErrorResponse"
                   - properties:
@@ -963,6 +969,12 @@ paths:
           content:
             application/json:
               schema:
+                type: object
+                additionalProperties: false
+                required: [error]
+                properties:
+                  error:
+                    $ref: "./shared/errors.schema.json#/$defs/ErrorBody"
                 allOf:
                   - $ref: "#/components/schemas/ErrorResponse"
                   - properties:
@@ -1006,6 +1018,12 @@ paths:
           content:
             application/json:
               schema:
+                type: object
+                additionalProperties: false
+                required: [error]
+                properties:
+                  error:
+                    $ref: "./shared/errors.schema.json#/$defs/ErrorBody"
                 allOf:
                   - $ref: "#/components/schemas/ErrorResponse"
                   - properties:
@@ -1034,6 +1052,12 @@ paths:
           content:
             application/json:
               schema:
+                type: object
+                additionalProperties: false
+                required: [error]
+                properties:
+                  error:
+                    $ref: "./shared/errors.schema.json#/$defs/ErrorBody"
                 allOf:
                   - $ref: "#/components/schemas/ErrorResponse"
                   - properties:
@@ -1838,6 +1862,12 @@ paths:
           content:
             application/json:
               schema:
+                type: object
+                additionalProperties: false
+                required: [error]
+                properties:
+                  error:
+                    $ref: "./shared/errors.schema.json#/$defs/ErrorBody"
                 allOf:
                   - $ref: "#/components/schemas/ErrorResponse"
                   - properties:
@@ -1918,6 +1948,12 @@ paths:
           content:
             application/json:
               schema:
+                type: object
+                additionalProperties: false
+                required: [error]
+                properties:
+                  error:
+                    $ref: "./shared/errors.schema.json#/$defs/ErrorBody"
                 allOf:
                   - $ref: "#/components/schemas/ErrorResponse"
                   - properties:
@@ -1990,6 +2026,12 @@ paths:
           content:
             application/json:
               schema:
+                type: object
+                additionalProperties: false
+                required: [error]
+                properties:
+                  error:
+                    $ref: "./shared/errors.schema.json#/$defs/ErrorBody"
                 allOf:
                   - $ref: "#/components/schemas/ErrorResponse"
                   - properties:
@@ -2066,6 +2108,12 @@ paths:
           content:
             application/json:
               schema:
+                type: object
+                additionalProperties: false
+                required: [error]
+                properties:
+                  error:
+                    $ref: "./shared/errors.schema.json#/$defs/ErrorBody"
                 allOf:
                   - $ref: "#/components/schemas/ErrorResponse"
                   - properties:
@@ -2152,6 +2200,12 @@ paths:
           content:
             application/json:
               schema:
+                type: object
+                additionalProperties: false
+                required: [error]
+                properties:
+                  error:
+                    $ref: "./shared/errors.schema.json#/$defs/ErrorBody"
                 allOf:
                   - $ref: "#/components/schemas/ErrorResponse"
                   - properties:
@@ -2235,6 +2289,12 @@ paths:
           content:
             application/json:
               schema:
+                type: object
+                additionalProperties: false
+                required: [error]
+                properties:
+                  error:
+                    $ref: "./shared/errors.schema.json#/$defs/ErrorBody"
                 allOf:
                   - $ref: "#/components/schemas/ErrorResponse"
                   - properties:
@@ -2318,6 +2378,12 @@ paths:
           content:
             application/json:
               schema:
+                type: object
+                additionalProperties: false
+                required: [error]
+                properties:
+                  error:
+                    $ref: "./shared/errors.schema.json#/$defs/ErrorBody"
                 allOf:
                   - $ref: "#/components/schemas/ErrorResponse"
                   - properties:
@@ -2410,6 +2476,12 @@ paths:
           content:
             application/json:
               schema:
+                type: object
+                additionalProperties: false
+                required: [error]
+                properties:
+                  error:
+                    $ref: "./shared/errors.schema.json#/$defs/ErrorBody"
                 allOf:
                   - $ref: "#/components/schemas/ErrorResponse"
                   - properties:

@@ -101,6 +101,14 @@ date: 2026-11-15
 - `description` 给出引擎侧拒绝表（码 / 原因 / 恢复）并声明"这些都不是
   `job_unavailable`"、`retryable: false` 除竞争类之外、TTL 属运维截止时间。
 
+收窄的写法有约束：结构变更检查器按"解析后的形状"比对，只把 `$ref` 换成 `allOf` 会让同一响应
+看起来丢了 `required` / `properties`（`make contracts-speech-changes` 报
+`type changed from ['object'] to []`）。因此每个收窄响应保留
+`type: object` + `additionalProperties: false` + `required: [error]` +
+`properties.error`（指向共享 `ErrorBody`），再把 `allOf: [ErrorResponse, code.enum]` 当作
+附加约束挂上；语义等价（`allOf` 只会更严），结构检查器报 `Known HTTP structural checks:
+passed`。这也是"加枚举"与"不制造假破坏"能同时成立的原因。
+
 `contracts/shared/errors.schema.json` 的 `ErrorBody.retryable.description` 追加了取值
 定义（本次唯一改动该文件的字段）：
 

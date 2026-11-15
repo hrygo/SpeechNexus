@@ -3592,6 +3592,14 @@
           "additionalProperties": true
         },
         "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
           "allOf": [
             {
               "$ref": "#/$defs/ErrorResponse"
@@ -3897,6 +3905,14 @@
           "additionalProperties": true
         },
         "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
           "allOf": [
             {
               "$ref": "#/$defs/ErrorResponse"
@@ -4128,6 +4144,14 @@
           "additionalProperties": true
         },
         "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
           "allOf": [
             {
               "$ref": "#/$defs/ErrorResponse"
@@ -4401,6 +4425,14 @@
           "additionalProperties": true
         },
         "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
           "allOf": [
             {
               "$ref": "#/$defs/ErrorResponse"
@@ -4695,6 +4727,14 @@
           "additionalProperties": true
         },
         "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
           "allOf": [
             {
               "$ref": "#/$defs/ErrorResponse"
@@ -4989,6 +5029,14 @@
           "additionalProperties": true
         },
         "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
           "allOf": [
             {
               "$ref": "#/$defs/ErrorResponse"
@@ -5283,6 +5331,14 @@
           "additionalProperties": true
         },
         "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
           "allOf": [
             {
               "$ref": "#/$defs/ErrorResponse"
@@ -5576,6 +5632,14 @@
           "additionalProperties": true
         },
         "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+            }
+          },
           "allOf": [
             {
               "$ref": "#/$defs/ErrorResponse"

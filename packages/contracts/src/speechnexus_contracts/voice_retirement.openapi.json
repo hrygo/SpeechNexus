@@ -97,6 +97,14 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorBody"
+                    }
+                  },
                   "allOf": [
                     {
                       "$ref": "#/components/schemas/ErrorResponse"

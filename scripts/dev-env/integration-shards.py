@@ -3,7 +3,7 @@
 Every partition also exports the coverage data its own pytest run measures, so the
 global gate is judged on one dataset instead of on the fraction the Python job can
 reach. The check subcommand also runs on the GitHub runner's system Python (3.12).
-The requirements and run commands import pytest. Reports contain test identities and
+The plan and run commands import pytest. Reports contain test identities and
 coverage digests, not DSNs, credentials, request bodies, or captured test output.
 """
 
@@ -687,9 +687,11 @@ def shard_distribution(evidence: Evidence, count: int) -> tuple[list[str], list[
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    tools = commands.add_parser("requirements", help="Select tools for this integration partition")
-    tools.add_argument("--index", type=int, required=True)
-    tools.add_argument("--count", type=int, required=True)
+    plan = commands.add_parser(
+        "plan",
+        help="Publish every partition's external tool requirements from one collection",
+    )
+    plan.add_argument("--count", type=int, required=True)
     run = commands.add_parser("run", help="Run one complete integration partition")
     run.add_argument("--index", type=int, required=True)
     run.add_argument("--count", type=int, required=True)
@@ -712,13 +714,13 @@ def main() -> int:
     check.add_argument("--reports-dir", type=Path, required=True)
     args = parser.parse_args()
     try:
-        if args.command == "requirements":
+        if args.command == "plan":
             check_count(args.count)
-            partition([], args.index, args.count)
-            for name, needed in tool_requirements(
-                collect_integration_nodeids(), args.index, args.count
-            ).items():
-                print(name + "=" + str(needed).lower())
+            partition([], 0, args.count)
+            nodeids = collect_integration_nodeids()
+            for index in range(args.count):
+                for name, needed in tool_requirements(nodeids, index, args.count).items():
+                    print(f"{name}_{index}=" + str(needed).lower())
             return 0
         if args.command == "run":
             return run_shard(args)

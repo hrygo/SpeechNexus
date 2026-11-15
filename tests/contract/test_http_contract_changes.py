@@ -1080,7 +1080,7 @@ def test_unprovable_reference_is_not_accepted_even_when_unchanged(
 
 def test_ci_checks_the_fetched_base_in_the_independent_contract_job() -> None:
     jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
-    steps = jobs["python_contracts"]["steps"]
+    steps = jobs["python_static"]["steps"]
     step = next(
         value
         for value in steps
@@ -1093,8 +1093,8 @@ def test_ci_checks_the_fetched_base_in_the_independent_contract_job() -> None:
         value for value in steps if value["name"] == "Fetch only the compatibility baseline"
     )
     assert steps.index(fetch) < steps.index(step)
-    assert jobs["python"]["name"] == "Gate: required checks for this change"
-    assert jobs["integration_shards"]["strategy"]["matrix"]["shard"] == list(range(6))
+    assert jobs["required_checks"]["name"] == "Gate: required checks for this change"
+    assert jobs["integration_shards"]["strategy"]["matrix"]["shard"] == list(range(8))
 
 
 def test_make_rejects_an_omitted_comparison_baseline() -> None:

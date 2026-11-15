@@ -133,7 +133,21 @@ def download_shards(
         print(f"Verified integration artifact {index}: {size} bytes", flush=True)
 
     with ThreadPoolExecutor(max_workers=min(3, count)) as workers:
-        list(workers.map(fetch_one, selected))
+        # Submit every shard up front and join all futures before propagating.
+        # Raising on the first result used to race with the remaining downloads:
+        # the exception could unwind while another partition's attempts were still
+        # running, so the gate saw a nondeterministic attempt count and reported
+        # only one failing shard. Waiting for every attempt makes the retrieval
+        # cost and the reported shard deterministic.
+        futures = [workers.submit(fetch_one, artifact) for artifact in selected]
+        failures: list[Exception] = []
+        for future in futures:
+            try:
+                future.result()
+            except Exception as error:  # collected and re-raised below
+                failures.append(error)
+        if failures:
+            raise failures[0]
     output.mkdir()
     for report in reports.iterdir():
         report.rename(output / report.name)

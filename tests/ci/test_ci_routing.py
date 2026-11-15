@@ -583,9 +583,10 @@ class IntegrationLaneTests(unittest.TestCase):
         self.assertIn(f"shard: [{', '.join(str(index) for index in range(count))}]", workflow)
 
     def test_static_lanes_stay_inside_the_declared_partition_count(self) -> None:
-        self.assertEqual(tuple(range(ROUTER.INTEGRATION_SHARD_COUNT)), tuple(range(6)))
+        self.assertEqual(tuple(range(ROUTER.INTEGRATION_SHARD_COUNT)), tuple(range(8)))
         self.assertEqual(ROUTER.web_lanes(3), (2,))
         self.assertEqual(ROUTER.web_lanes(6), (4, 5))
+        self.assertEqual(ROUTER.web_lanes(8), (6, 7))
         self.assertEqual(ROUTER.web_lanes(16), (11, 12, 13, 14, 15))
 
 
@@ -646,13 +647,14 @@ class WebLaneGuardTests(unittest.TestCase):
         self.assertIn("node_contracts=false", result.stdout)
 
     def test_missing_selection_outputs_fail_closed(self) -> None:
-        # `steps.<id>.outputs.<name>` is empty when the requirements step did not
-        # publish it; an empty value must not read as "selected something".
+        # A plan output that was not published (or a plan job that never ran)
+        # reaches the guard as an empty value; an empty value must not read as
+        # "selected something".
         result = self._guard(None)
         self.assertEqual(result.returncode, 1)
         self.assertIn("<empty>", result.stdout)
 
-    def test_the_two_kinds_come_from_the_requirements_step(self) -> None:
+    def test_the_two_kinds_come_from_the_partition_plan(self) -> None:
         script = guard_script()
         self.assertIn("${BROWSER:-}", script)
         self.assertIn("${NODE_CONTRACTS:-}", script)

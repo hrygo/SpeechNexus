@@ -23,7 +23,7 @@ LOCKED_RUFF = next(
     if package["name"] == "ruff"
 )
 PIN = re.search(r'^      RUFF_VERSION: "([^"]+)"$', CI, re.MULTILINE)
-DOCS_JOB = CI.split("\n  docs_format:\n", 1)[1].split("\n  delivery_tracking:\n", 1)[0]
+DOCS_JOB = CI.split("\n  docs_format:\n", 1)[1].split("\n  docs_matrix:\n", 1)[0]
 FORMAT_COMMAND = 'uvx --from "ruff==${RUFF_VERSION}" ruff format --check .'
 
 
@@ -47,7 +47,7 @@ class RuffPinTests(unittest.TestCase):
     def test_the_merge_gate_requires_the_lane(self) -> None:
         # The lane is only binding because `Gate: required checks for this change`
         # waits on it; a job nobody's gate needs reports red without blocking a merge.
-        gate = CI.split("\n  python:\n", 1)[1]
+        gate = CI.split("\n  required_checks:\n", 1)[1]
         needs = gate.split("    needs:", 1)[1].split("]", 1)[0]
         self.assertIn("\n        docs_format,\n", needs)
         self.assertIn("DOCS_FORMAT_RESULT: ${{ needs.docs_format.result }}", gate)

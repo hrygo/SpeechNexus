@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = (ROOT / ".github/workflows/ci.yml").read_text()
-JOB = "delivery_tracking"
+JOB = "docs_matrix"
 SNAPSHOT = "docs/plans/github-issues-snapshot.json"
 MATRIX = "docs/plans/delivery-tracking.md"
 GENERATOR = "scripts/dev-env/refresh-implementation-tracker.py"
@@ -64,7 +64,7 @@ class DeliveryTrackingWorkflowTests(unittest.TestCase):
                 self.assertIn(path, inputs)
 
     def test_required_gate_depends_on_the_freshness_job(self) -> None:
-        needs = job_block("python").split("needs:", 1)[1].split("if:", 1)[0]
+        needs = job_block("required_checks").split("needs:", 1)[1].split("if:", 1)[0]
         self.assertIn(JOB, needs)
 
 

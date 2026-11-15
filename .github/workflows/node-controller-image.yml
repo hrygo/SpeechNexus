@@ -11,7 +11,10 @@ permissions:
   contents: read
 
 jobs:
+  # Every job carries a display name: an unnamed job shows as its YAML key
+  # (`scope`), which says nothing about what it decided in the run list.
   scope:
+    name: "Image: required for this change"
     runs-on: ubuntu-24.04
     outputs:
       required: ${{ steps.scope.outputs.required }}
@@ -58,7 +61,7 @@ jobs:
           echo "required=$required" >> "$GITHUB_OUTPUT"
 
   image:
-    name: Build and probe (${{ matrix.runner }})
+    name: "Image: build and probe (${{ matrix.runner }})"
     needs: [scope]
     if: ${{ needs.scope.outputs.required == 'true' }}
     strategy:

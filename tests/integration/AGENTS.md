@@ -27,6 +27,8 @@ Make 目标可能启动受管服务。先核对实际宿主、服务、端口与
 
 需要独立 schema 的用例必须自行生成唯一名称（例如 `"sn_retry_mig_" + uuid.uuid4().hex[:12]`），不得复用固定 schema 或共享表状态。在 `try` 中创建 schema，在 `finally` 中执行 `DROP SCHEMA IF EXISTS "<schema>" CASCADE`，并在同一清理段关闭连接、释放 engine。创建失败、断言失败和并发分片都必须走这条清理路径。
 
+模块级共享 schema 是唯一允许的共享表状态例外，参照 `test_quarantine_release.py` 与 `test_voice_drafts_pg.py` 的模式：schema 仍须唯一命名并走上述清理路径；迁移、角色与连接池提升到 module 级只执行一次，每个用例开始前必须把该模块（及复用该 fixture 的消费者模块）写入的全部业务表 `TRUNCATE ... RESTART IDENTITY CASCADE` 复位并重新 seed 固定数据；用例内故意遗留的约束、触发器等 schema 对象必须在复位步骤中恢复（`DROP CONSTRAINT IF EXISTS` 等）。视图不能 TRUNCATE，随基表复位即可。复位清单与 seed 必须覆盖消费者模块的全表断言，否则不得提升 scope。
+
 ### 双 DSN
 
 同时需要 PostgreSQL 与 MySQL 的用例必须把 `SPEECHNEXUS_TEST_DATABASE_URL`、`SPEECHNEXUS_TEST_MYSQL_URL` 作为一个整体检查。两者都配置时才执行数据库分支；被选中执行的用例缺少任一侧时 `pytest.fail` 并点名缺失变量，不得只跑已配置的一侧，也不得用 `pytest.skip` 把配置错误降级为未执行。skip 只能表示“未验证”，不能作为单库或双库验收证据。

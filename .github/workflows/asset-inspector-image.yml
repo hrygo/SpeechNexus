@@ -49,6 +49,7 @@ concurrency:
 
 jobs:
   scope:
+    name: "Image: required for this change"
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     outputs:
@@ -99,7 +100,7 @@ jobs:
           echo "required=$required" >> "$GITHUB_OUTPUT"
 
   image:
-    name: Build and probe (${{ matrix.runner }})
+    name: "Image: build and probe (${{ matrix.runner }})"
     needs: [scope]
     if: ${{ needs.scope.outputs.required == 'true' }}
     strategy:

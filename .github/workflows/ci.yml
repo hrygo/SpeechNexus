@@ -9,17 +9,26 @@ on:
 permissions:
   contents: read
 
+# Superseded pull-request runs are worthless: only the newest commit is a
+# candidate for merge. A `main` push is not superseded by the next merge — it is
+# the only run that verifies the squashed commit actually on `main`, and
+# cancelling it leaves that commit without post-merge evidence. Measured over 20
+# `main` pushes ending 2026-11-15, 3 were cancelled this way (15%).
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   UV_VERSION: "0.13.5"
   PNPM_VERSION: "12.14.0"
 
 jobs:
-  changes:
-    name: "Scope routing and CI / design-token checks"
+  # Selects the verification scope for the exact checked-out diff and owns the
+  # dependency-free guards that must run for *every* scope, including `docs`.
+  # The display name lists what can turn it red, so a failure is attributable
+  # without opening the log.
+  routing:
+    name: "Route: scope, review boundary and design tokens"
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
@@ -62,7 +71,7 @@ jobs:
 
       # Review pull requests carry review artifacts only
       # (`docs/operations/agent-delivery-sop.md`, step 4). This lane and
-      # `delivery_tracking` are the two jobs without a scope filter, so a
+      # `docs_matrix` are the two jobs without a scope filter, so a
       # docs-only review PR reaches both; only this one already holds a checkout
       # and the routing step above, so the boundary check needs no second checkout
       # and its red is attributed to the route. The change set is the pull
@@ -74,7 +83,7 @@ jobs:
       # `docs`-scope PR
       # (#738: implementation that was byte-identical to the reviewed head merged
       # under a `review:` title, and the reviewed code then landed as a different
-      # revision). `changes` failing fails `Gate: required checks for this
+      # revision). `routing` failing fails `Gate: required checks for this
       # change`; `--admin` is not needed and is not the supported path.
       - name: Reject review pull requests that carry non-review paths
         env:
@@ -96,8 +105,8 @@ jobs:
   # full static lane uses, so its file set can never be narrower than that lane's.
   docs_format:
     name: "Docs: markdown code block formatting"
-    needs: [changes]
-    if: ${{ needs.changes.outputs.mode == 'docs' }}
+    needs: [routing]
+    if: ${{ needs.routing.outputs.mode == 'docs' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
@@ -124,7 +133,7 @@ jobs:
   # The committed snapshot is the only render input, so a hand-edited matrix or a
   # stale snapshot-derived view fails here without querying GitHub. Unrelated
   # changes skip the regeneration step and cannot be blocked by this gate.
-  delivery_tracking:
+  docs_matrix:
     name: "Docs: delivery matrix freshness"
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -177,12 +186,19 @@ jobs:
             --output docs/plans/delivery-tracking.md
           git diff --exit-code -- docs/plans/delivery-tracking.md
 
-  python_checks:
-    name: "Python: tests, coverage and package build"
-    needs: [changes]
-    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' || needs.changes.outputs.mode == 'no-db' }}
+  python_tests:
+    name: "Python: tests, coverage and build"
+    needs: [routing]
+    if: ${{ needs.routing.outputs.mode == 'full' || needs.routing.outputs.mode == 'web' || needs.routing.outputs.mode == 'no-db' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # Budget, not a target: measured 471 s and 502 s wall clock on 2026-11-15
+    # (7:51 and 8:22), of which the two-worker coverage measurement is 413 s. The
+    # old 10 min left 1:38-2:09 of headroom on a protected lane, so one slow
+    # runner attempt would cancel the job instead of failing a test. The project
+    # rule for partitions ("ceiling at least 5 min above the normal slow value",
+    # docs/validation/ci-validation.md) gives 8:22 + 5 min = 15 min. This changes
+    # no selection, assertion or fail-fast behaviour; only a hang reaches it.
+    timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -205,7 +221,7 @@ jobs:
           prune-cache: true
 
       - name: Install locked dependencies
-        run: uv sync --locked --all-packages --all-groups
+        run: bash scripts/dev-env/uv-sync-retry.sh
 
       - name: Set up Node.js for reproducible contract generation
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -269,10 +285,10 @@ jobs:
           uv build --all-packages --out-dir dist/python
           uv build --wheel --no-sources deploy/engines/vllm-asr-lifecycle --out-dir dist/python
 
-  python_contracts:
+  python_static:
     name: "Python: lint, types and contract compatibility"
-    needs: [changes]
-    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' || needs.changes.outputs.mode == 'no-db' }}
+    needs: [routing]
+    if: ${{ needs.routing.outputs.mode == 'full' || needs.routing.outputs.mode == 'web' || needs.routing.outputs.mode == 'no-db' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -297,7 +313,7 @@ jobs:
           prune-cache: true
 
       - name: Install locked dependencies
-        run: uv sync --locked --all-packages --all-groups
+        run: bash scripts/dev-env/uv-sync-retry.sh
 
       - name: Set up Node.js for reproducible contract generation
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -366,18 +382,72 @@ jobs:
       - name: Validate API and event schemas
         run: uv run python scripts/dev-env/validate-contracts.py
 
+  # One collection instead of eight. Every shard used to run the full pytest
+  # collection just to pick its external tools — measured 10-14 s per shard,
+  # ~98 runner seconds per full route, all serial before the partition run.
+  # The partitioner is deterministic over the same commit, so one plan job
+  # publishes every shard's tool requirements and the shards only read them.
+  # Fidelity is unchanged: evidence verification still recomputes each shard's
+  # partition from the run's own collection, so plan/collection divergence
+  # cannot pass the gate. The plan runs only on routes that expand shards.
+  integration_plan:
+    name: "Integration plan: one collection selects every partition's tools"
+    needs: [routing]
+    if: ${{ needs.routing.outputs.mode == 'full' || needs.routing.outputs.mode == 'web' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      browser_0: ${{ steps.plan.outputs.browser_0 }}
+      browser_1: ${{ steps.plan.outputs.browser_1 }}
+      browser_2: ${{ steps.plan.outputs.browser_2 }}
+      browser_3: ${{ steps.plan.outputs.browser_3 }}
+      browser_4: ${{ steps.plan.outputs.browser_4 }}
+      browser_5: ${{ steps.plan.outputs.browser_5 }}
+      browser_6: ${{ steps.plan.outputs.browser_6 }}
+      browser_7: ${{ steps.plan.outputs.browser_7 }}
+      node_contracts_0: ${{ steps.plan.outputs.node_contracts_0 }}
+      node_contracts_1: ${{ steps.plan.outputs.node_contracts_1 }}
+      node_contracts_2: ${{ steps.plan.outputs.node_contracts_2 }}
+      node_contracts_3: ${{ steps.plan.outputs.node_contracts_3 }}
+      node_contracts_4: ${{ steps.plan.outputs.node_contracts_4 }}
+      node_contracts_5: ${{ steps.plan.outputs.node_contracts_5 }}
+      node_contracts_6: ${{ steps.plan.outputs.node_contracts_6 }}
+      node_contracts_7: ${{ steps.plan.outputs.node_contracts_7 }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          prune-cache: true
+
+      - name: Install locked dependencies
+        run: bash scripts/dev-env/uv-sync-retry.sh
+
+      - name: Collect partition tool requirements once
+        id: plan
+        run: |
+          uv run python scripts/dev-env/integration-shards.py plan \
+            --count 8 >> "$GITHUB_OUTPUT"
+
   # A Web-only change must reach the partitions that select the browser and
   # Node-contract consumers: only there does a real browser drive the built
   # bundles against the real backend, PostgreSQL/MySQL and MinIO. #745 changed
   # only `web/workbench/src/**`, merged with every check green, and broke `main`
   # afterwards; the fix PR #756 had to start a manual run to obtain that evidence
-  # (#757). The six-partition universe stays declared below and `full` keeps all
+  # (#757). The eight-partition universe stays declared below and `full` keeps all
   # of it; a `web` route removes only the lanes that cannot exercise it, through
   # the route-derived `exclude` (docs/validation/ci-validation.md).
   integration_shards:
-    name: "Integration ${{ matrix.shard }}: ${{ matrix.shard >= 4 && 'Web + PG/MySQL/MinIO' || 'PG/MySQL/MinIO' }}"
-    needs: [changes]
-    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' }}
+    name: "Integration ${{ matrix.shard }}/8: ${{ matrix.shard >= 6 && 'Web + PG/MySQL/MinIO' || 'PG/MySQL/MinIO' }}"
+    needs: [routing, integration_plan]
+    if: ${{ needs.routing.outputs.mode == 'full' || needs.routing.outputs.mode == 'web' }}
     runs-on: ubuntu-24.04
     # Baseline: the four database partitions need 7-9.5 min of job wall clock.
     # PR #498's Integration 2 attempt 1 stalled at 84% and hit the old 18 min
@@ -390,16 +460,16 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      max-parallel: 6
+      max-parallel: 8
       matrix:
         # The canonical partitioner groups Web consumers into two lanes and
-        # ordinary DB cases into four; tools still follow the actual collection.
-        shard: [0, 1, 2, 3, 4, 5]
+        # ordinary DB cases into six; tools still follow the actual collection.
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
         # Route-derived rows that keep only the lanes the route can exercise
-        # (empty for `full`, lanes 0-3 for `web`). Never empty unless it is meant
+        # (empty for `full`, lanes 0-5 for `web`). Never empty unless it is meant
         # to be, and never the reason a matrix comes out empty: every route that
         # expands this job keeps at least the two Web-capable lanes.
-        exclude: ${{ fromJSON(needs.changes.outputs.excluded_shards) }}
+        exclude: ${{ fromJSON(needs.routing.outputs.excluded_shards) }}
     services:
       postgres:
         image: postgres:16.15-alpine
@@ -446,7 +516,7 @@ jobs:
           prune-cache: true
 
       - name: Install locked dependencies
-        run: uv sync --locked --all-packages --all-groups
+        run: bash scripts/dev-env/uv-sync-retry.sh
 
       - name: Ensure PostgreSQL 16 tools for the private integration cluster
         run: |
@@ -456,11 +526,21 @@ jobs:
           fi
           test -x /usr/lib/postgresql/16/bin/initdb
 
-      - name: Select external tools for this integration partition
-        id: integration_tools
+      - name: Validate the partition tool plan
+        # Fail closed: a missing or malformed plan value must stop the shard here,
+        # before any install step can silently skip Chromium or the Node runtime.
+        env:
+          REQUIRE_BROWSER: ${{ needs.integration_plan.outputs[format('browser_{0}', matrix.shard)] }}
+          REQUIRE_NODE_CONTRACTS: ${{ needs.integration_plan.outputs[format('node_contracts_{0}', matrix.shard)] }}
         run: |
-          uv run python scripts/dev-env/integration-shards.py requirements \
-            --index "${{ matrix.shard }}" --count 6 >> "$GITHUB_OUTPUT"
+          case "$REQUIRE_BROWSER" in
+            true|false) ;;
+            *) echo "::error::Partition plan published no boolean browser requirement (got '${REQUIRE_BROWSER:-<empty>}')"; exit 1 ;;
+          esac
+          case "$REQUIRE_NODE_CONTRACTS" in
+            true|false) ;;
+            *) echo "::error::Partition plan published no boolean node_contracts requirement (got '${REQUIRE_NODE_CONTRACTS:-<empty>}')"; exit 1 ;;
+          esac
 
       - name: Require the Web lanes to select actual Web consumers
         # The Web-capable lanes are the only place the cases they select can run:
@@ -478,11 +558,11 @@ jobs:
         # `tests/ci/test_ci_routing.py::IntegrationLaneTests`), or anything about
         # coverage — the `coverage-<shard>.data` files these lanes upload are kept
         # as failure evidence only. The merged `fail_under=80` judgement is the
-        # `coordination` gate, which stays `full`-only.
-        if: ${{ needs.changes.outputs.mode == 'web' }}
+        # `integration_gate` gate, which stays `full`-only.
+        if: ${{ needs.routing.outputs.mode == 'web' }}
         env:
-          BROWSER: ${{ steps.integration_tools.outputs.browser }}
-          NODE_CONTRACTS: ${{ steps.integration_tools.outputs.node_contracts }}
+          BROWSER: ${{ needs.integration_plan.outputs[format('browser_{0}', matrix.shard)] }}
+          NODE_CONTRACTS: ${{ needs.integration_plan.outputs[format('node_contracts_{0}', matrix.shard)] }}
           SHARD: ${{ matrix.shard }}
         run: |
           if [[ "${BROWSER:-}" != "true" && "${NODE_CONTRACTS:-}" != "true" ]]; then
@@ -491,31 +571,31 @@ jobs:
           fi
 
       - name: Set up Node.js for actual contract HTTP consumption
-        if: steps.integration_tools.outputs.node_contracts == 'true' || steps.integration_tools.outputs.browser == 'true'
+        if: ${{ needs.integration_plan.outputs[format('node_contracts_{0}', matrix.shard)] == 'true' || needs.integration_plan.outputs[format('browser_{0}', matrix.shard)] == 'true' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version-file: .nvmrc
 
       - name: Activate pnpm for integration consumers
-        if: steps.integration_tools.outputs.node_contracts == 'true' || steps.integration_tools.outputs.browser == 'true'
+        if: ${{ needs.integration_plan.outputs[format('node_contracts_{0}', matrix.shard)] == 'true' || needs.integration_plan.outputs[format('browser_{0}', matrix.shard)] == 'true' }}
         run: |
           npm install --global --allow-scripts=pnpm pnpm@${PNPM_VERSION}
 
       - name: Install locked contract runtime dependencies
-        if: steps.integration_tools.outputs.node_contracts == 'true' && steps.integration_tools.outputs.browser != 'true'
+        if: ${{ needs.integration_plan.outputs[format('node_contracts_{0}', matrix.shard)] == 'true' && needs.integration_plan.outputs[format('browser_{0}', matrix.shard)] != 'true' }}
         run: |
           pnpm --filter @speechnexus/contracts --prod install --frozen-lockfile --ignore-scripts
 
       - name: Install locked Web dependencies for browser consumers
-        if: steps.integration_tools.outputs.browser == 'true'
+        if: ${{ needs.integration_plan.outputs[format('browser_{0}', matrix.shard)] == 'true' }}
         run: pnpm install --frozen-lockfile
 
       - name: Build actual Web bundles for browser consumers
-        if: steps.integration_tools.outputs.browser == 'true'
+        if: ${{ needs.integration_plan.outputs[format('browser_{0}', matrix.shard)] == 'true' }}
         run: pnpm build
 
       - name: Install Chromium for browser consumers
-        if: steps.integration_tools.outputs.browser == 'true'
+        if: ${{ needs.integration_plan.outputs[format('browser_{0}', matrix.shard)] == 'true' }}
         run: python3 scripts/dev-env/prepare-ci-browser.py
 
       - name: Start isolated versioned object storage
@@ -535,7 +615,7 @@ jobs:
           test -n "$SPEECHNEXUS_TEST_MYSQL_URL"
           uv run python scripts/dev-env/workbench-pg-probe.py \
             --pg-bin /usr/lib/postgresql/16/bin \
-            --integration-shard "${{ matrix.shard }}" --shard-count 6 \
+            --integration-shard "${{ matrix.shard }}" --shard-count 8 \
             --shard-report "$RUNNER_TEMP/integration-shard-${{ matrix.shard }}.json" \
             --shard-coverage "$RUNNER_TEMP/coverage-${{ matrix.shard }}.data" \
             --output "$RUNNER_TEMP/workbench-pg-shard-${{ matrix.shard }}.json"
@@ -596,13 +676,13 @@ jobs:
           overwrite: true
 
   # Full scope still requires actual execution, a complete disjoint inventory, and
-  # one coverage judgment over the measured dataset plus all six partitions. The
+  # one coverage judgment over the measured dataset plus all eight partitions. The
   # gate keeps failing closed: absent shards or absent coverage data stop it exactly
   # like a test failure does.
-  coordination:
-    name: "Gate: six-shard integration evidence and merged coverage"
-    needs: [changes, python_checks, integration_shards]
-    if: ${{ always() && needs.changes.result == 'success' && needs.changes.outputs.mode == 'full' }}
+  integration_gate:
+    name: "Gate: integration partitions and merged coverage"
+    needs: [routing, python_tests, integration_shards]
+    if: ${{ always() && needs.routing.result == 'success' && needs.routing.outputs.mode == 'full' }}
     runs-on: ubuntu-24.04
     # Setup and a locked install are new here: the merged judgment needs the same
     # coverage version the measurement used. Download plus combine stay in seconds.
@@ -622,7 +702,7 @@ jobs:
 
       - name: Require the Python coverage measurement
         env:
-          MEASUREMENT_RESULT: ${{ needs.python_checks.result }}
+          MEASUREMENT_RESULT: ${{ needs.python_tests.result }}
         run: |
           if [[ "$MEASUREMENT_RESULT" != success ]]; then
             echo "::error::Python coverage measurement=$MEASUREMENT_RESULT"
@@ -643,7 +723,7 @@ jobs:
           prune-cache: true
 
       - name: Install locked dependencies for the coverage judgment
-        run: uv sync --locked --all-packages --all-groups
+        run: bash scripts/dev-env/uv-sync-retry.sh
 
       - name: Download integration partition evidence
         # The Node action hung after successful downloads in both client modes.
@@ -655,24 +735,24 @@ jobs:
         run: |
           python3 scripts/dev-env/download-integration-evidence.py \
             --repository "$CI_REPOSITORY" --run-id "$CI_RUN_ID" \
-            --count 6 --output "$RUNNER_TEMP/integration-shards" \
+            --count 8 --output "$RUNNER_TEMP/integration-shards" \
             --coverage-output "$RUNNER_TEMP/coverage-evidence"
 
       - name: Verify same-commit collection, partition coverage and actual test outcomes
         run: |
           python3 scripts/dev-env/integration-shards.py check \
-            --count 6 --head "$(git rev-parse HEAD)" \
+            --count 8 --head "$(git rev-parse HEAD)" \
             --reports-dir "$RUNNER_TEMP/integration-shards"
 
       - name: Merge the measured and integration coverage and enforce the unchanged gate
-        # Measured dataset plus six partition datasets, then one report through
+        # Measured dataset plus eight partition datasets, then one report through
         # pyproject.toml. Missing or digest-divergent data fails before any report.
         run: |
           uv run python scripts/dev-env/python-coverage.py combine \
             --job-summary "$RUNNER_TEMP/coverage-evidence/workbench-pg-coverage.json" \
             --job-parts "$RUNNER_TEMP/coverage-evidence/workbench-pg-coverage-parts" \
             --integration-dir "$RUNNER_TEMP/integration-shards" \
-            --count 6 --output "$RUNNER_TEMP/coverage-merge"
+            --count 8 --output "$RUNNER_TEMP/coverage-merge"
 
       - name: Publish the merged coverage result
         # Observation only: reads what the judgment above wrote and never decides.
@@ -701,7 +781,7 @@ jobs:
           lines.extend(f"| {name} | {value} |" for name, value in entry.items())
           lines.extend([
               "",
-              "The six integration partitions are the only source of integration-only",
+              "The eight integration partitions are the only source of integration-only",
               "coverage; a missing dataset fails this gate instead of shrinking it.",
               "",
           ])
@@ -766,48 +846,51 @@ jobs:
               output.write("\n".join(lines))
           PY
 
-  # Require both Python execution and independent static/contract checks.
-  python_checks_gate:
-    name: "Gate: Python execution and static checks"
-    needs: [changes, python_checks, python_contracts]
-    if: ${{ always() && needs.changes.result == 'success' && (needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' || needs.changes.outputs.mode == 'no-db') }}
+  # Requires both Python execution and independent static/contract checks, so
+  # neither lane alone can satisfy the protected status.
+  python_gate:
+    name: "Gate: Python tests and static checks"
+    needs: [routing, python_tests, python_static]
+    if: ${{ always() && needs.routing.result == 'success' && (needs.routing.outputs.mode == 'full' || needs.routing.outputs.mode == 'web' || needs.routing.outputs.mode == 'no-db') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Require Python test/build and static/contract jobs to succeed
         env:
-          CHECKS_RESULT: ${{ needs.python_checks.result }}
-          CONTRACTS_RESULT: ${{ needs.python_contracts.result }}
+          TESTS_RESULT: ${{ needs.python_tests.result }}
+          STATIC_RESULT: ${{ needs.python_static.result }}
         run: |
-          if [[ "$CHECKS_RESULT" != success || "$CONTRACTS_RESULT" != success ]]; then
-            echo "::error::Python execution=$CHECKS_RESULT; contracts=$CONTRACTS_RESULT"
+          if [[ "$TESTS_RESULT" != success || "$STATIC_RESULT" != success ]]; then
+            echo "::error::Python tests=$TESTS_RESULT; static=$STATIC_RESULT"
             exit 1
           fi
 
   # The reusable workflow always reports its scope; its own gate requires both
   # matrix members when applicable and only accepts a skip when inapplicable.
-  node_controller_image:
-    name: "Node Controller image evidence"
-    needs: [changes]
-    if: ${{ always() && needs.changes.result == 'success' }}
+  controller_image:
+    name: "Node Controller: image evidence"
+    needs: [routing]
+    if: ${{ always() && needs.routing.result == 'success' }}
     uses: ./.github/workflows/node-controller-image.yml
 
   # Branch protection must use this gate's display name. Only a successful route
-  # can make a lane inapplicable; unexpected skipping or failure cannot pass.
-  python:
+  # can make a lane inapplicable; unexpected skipping or failure cannot pass. The
+  # job id and lane variable names describe the merge decision; the display name
+  # is a required status check and does not change here.
+  required_checks:
     name: "Gate: required checks for this change"
     needs:
       [
-        changes,
+        routing,
         docs_format,
-        delivery_tracking,
-        python_checks_gate,
-        coordination,
+        docs_matrix,
+        python_gate,
+        integration_gate,
         integration_shards,
         web,
-        deployment,
+        compose,
         reference_acceptance,
-        node_controller_image,
+        controller_image,
       ]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
@@ -815,75 +898,76 @@ jobs:
     steps:
       - name: Require successful routing and every applicable CI result
         env:
-          MODE: ${{ needs.changes.outputs.mode }}
-          ROUTING_RESULT: ${{ needs.changes.result }}
-          DELIVERY_RESULT: ${{ needs.delivery_tracking.result }}
+          MODE: ${{ needs.routing.outputs.mode }}
+          ROUTING_RESULT: ${{ needs.routing.result }}
+          MATRIX_RESULT: ${{ needs.docs_matrix.result }}
           DOCS_FORMAT_RESULT: ${{ needs.docs_format.result }}
-          CHECKS_RESULT: ${{ needs.python_checks_gate.result }}
-          COORDINATION_RESULT: ${{ needs.coordination.result }}
+          PYTHON_RESULT: ${{ needs.python_gate.result }}
+          INTEGRATION_GATE_RESULT: ${{ needs.integration_gate.result }}
           INTEGRATION_RESULT: ${{ needs.integration_shards.result }}
           WEB_RESULT: ${{ needs.web.result }}
-          DEPLOYMENT_RESULT: ${{ needs.deployment.result }}
+          COMPOSE_RESULT: ${{ needs.compose.result }}
           ACCEPTANCE_RESULT: ${{ needs.reference_acceptance.result }}
-          CONTROLLER_RESULT: ${{ needs.node_controller_image.result }}
-          CONTROLLER_REQUIRED: ${{ needs.node_controller_image.outputs.required }}
+          CONTROLLER_RESULT: ${{ needs.controller_image.result }}
+          CONTROLLER_REQUIRED: ${{ needs.controller_image.outputs.required }}
         run: |
           if [[ "$ROUTING_RESULT" != success ]]; then
-            echo "::error::CI routing=$ROUTING_RESULT"
+            echo "::error::routing=$ROUTING_RESULT"
             exit 1
           fi
-          if [[ "$DELIVERY_RESULT" != success ]]; then
-            echo "::error::Delivery matrix freshness=$DELIVERY_RESULT"
+          if [[ "$MATRIX_RESULT" != success ]]; then
+            echo "::error::docs_matrix=$MATRIX_RESULT"
             exit 1
           fi
           if [[ "$CONTROLLER_RESULT" != success ]]; then
-            echo "::error::Node Controller image evidence=$CONTROLLER_RESULT"
+            echo "::error::controller_image=$CONTROLLER_RESULT"
             exit 1
           fi
           case "$CONTROLLER_REQUIRED" in
             true|false) ;;
-            *) echo '::error::Missing or invalid Node Controller image scope'; exit 1 ;;
+            *) echo '::error::Missing or invalid controller_image scope'; exit 1 ;;
           esac
-          # `integration` is the route's own evidence, not the six-shard gate:
-          # `coordination` keeps requiring all six partitions plus merged coverage
-          # and stays `skipped` outside `full`. A `web` route owes the two
+          # `integration` is the route's own evidence, not the eight-partition gate:
+          # `integration_gate` keeps requiring all eight partitions plus merged
+          # coverage and stays `skipped` outside `full`. A `web` route owes the two
           # Web-capable partitions because they are the only ones selecting the
           # browser consumers (#757); the other routes owe no integration lane.
           case "$MODE" in
             docs)
-              checks=skipped; coordination=skipped; integration=skipped;
-              web=skipped; deployment=skipped; acceptance=skipped;
+              python=skipped; integration_gate=skipped; integration=skipped;
+              web=skipped; compose_lane=skipped; acceptance=skipped;
               docs_format=success ;;
             web)
-              checks=success; coordination=skipped; integration=success;
-              web=success; deployment=skipped; acceptance=skipped;
+              python=success; integration_gate=skipped; integration=success;
+              web=success; compose_lane=skipped; acceptance=skipped;
               docs_format=skipped ;;
             no-db)
-              checks=success; coordination=skipped; integration=skipped;
-              web=success; deployment=success; acceptance=success;
+              python=success; integration_gate=skipped; integration=skipped;
+              web=success; compose_lane=success; acceptance=success;
               docs_format=skipped ;;
             full)
-              checks=success; coordination=success; integration=success;
-              web=success; deployment=success; acceptance=success;
+              python=success; integration_gate=success; integration=success;
+              web=success; compose_lane=success; acceptance=success;
               docs_format=skipped ;;
             *)
               echo "::error::Missing or invalid CI scope"
               exit 1 ;;
           esac
-          if [[ "$CHECKS_RESULT" != "$checks" || "$COORDINATION_RESULT" != "$coordination" ||
+          if [[ "$PYTHON_RESULT" != "$python" ||
+                "$INTEGRATION_GATE_RESULT" != "$integration_gate" ||
                 "$INTEGRATION_RESULT" != "$integration" ||
-                "$WEB_RESULT" != "$web" || "$DEPLOYMENT_RESULT" != "$deployment" ||
+                "$WEB_RESULT" != "$web" || "$COMPOSE_RESULT" != "$compose_lane" ||
                 "$ACCEPTANCE_RESULT" != "$acceptance" ||
                 "$DOCS_FORMAT_RESULT" != "$docs_format" ]]; then
-            echo "::error::Scope=$MODE; Python=$CHECKS_RESULT; PG/InnoDB=$COORDINATION_RESULT; integration=$INTEGRATION_RESULT; Web=$WEB_RESULT; deployment=$DEPLOYMENT_RESULT; acceptance=$ACCEPTANCE_RESULT; docs_format=$DOCS_FORMAT_RESULT"
+            echo "::error::Scope=$MODE; python_gate=$PYTHON_RESULT; integration_gate=$INTEGRATION_GATE_RESULT; integration_shards=$INTEGRATION_RESULT; web=$WEB_RESULT; compose=$COMPOSE_RESULT; reference_acceptance=$ACCEPTANCE_RESULT; docs_format=$DOCS_FORMAT_RESULT"
             exit 1
           fi
           echo "Verified scope=$MODE; inapplicable lanes are not application-test evidence."
 
   web:
     name: "Web: lint, types, tests, build and accessibility"
-    needs: [changes]
-    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' || needs.changes.outputs.mode == 'no-db' }}
+    needs: [routing]
+    if: ${{ needs.routing.outputs.mode == 'full' || needs.routing.outputs.mode == 'web' || needs.routing.outputs.mode == 'no-db' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
 
@@ -973,10 +1057,10 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  deployment:
+  compose:
     name: "Compose: configuration validation"
-    needs: [changes]
-    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'no-db' }}
+    needs: [routing]
+    if: ${{ needs.routing.outputs.mode == 'full' || needs.routing.outputs.mode == 'no-db' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 
@@ -1055,9 +1139,9 @@ jobs:
   # therefore covers what "Compose: configuration validation" does not: not the
   # Compose file, but the Python entry point that reads it.
   reference_acceptance:
-    name: "Deploy: reference acceptance entry (dry-run execution)"
-    needs: [changes]
-    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'no-db' }}
+    name: "Deploy: reference acceptance entry (dry run)"
+    needs: [routing]
+    if: ${{ needs.routing.outputs.mode == 'full' || needs.routing.outputs.mode == 'no-db' }}
     runs-on: ubuntu-24.04
     # The entry point plus the four structural guards measured under 2 s; checkout,
     # setup-uv and the three `docker compose config` renders dominate. The job runs

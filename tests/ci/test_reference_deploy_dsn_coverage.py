@@ -183,6 +183,18 @@ PROVISIONED_ANCHORS: dict[str, tuple[str, ...]] = {
         'artifact_retention_grants(schema, "sn_artifact_retention")',
         '"sn_artifact_retention": os.environ["SPEECHNEXUS_ARTIFACT_RETENTION_ROLE_PASSWORD"]',
     ),
+    # The workbench identities are created by the runbook and granted by the
+    # workbench migration, because their grants target the workbench namespace.
+    "SPEECHNEXUS_WORKBENCH_DATABASE_URL": (
+        '"SPEECHNEXUS_WORKBENCH_DATABASE_URL": (',
+        '"sn_workbench_runtime": os.environ["SPEECHNEXUS_WORKBENCH_RUNTIME_ROLE_PASSWORD"]',
+        "runtime_grants_sql",
+    ),
+    "SPEECHNEXUS_WORKBENCH_CLEANUP_DATABASE_URL": (
+        '"SPEECHNEXUS_WORKBENCH_CLEANUP_DATABASE_URL": (',
+        '"sn_workbench_cleanup": os.environ["SPEECHNEXUS_WORKBENCH_CLEANUP_ROLE_PASSWORD"]',
+        "cleanup_grants_sql",
+    ),
     "SPEECHNEXUS_RESOURCE_POOL_READER_DATABASE_URL": (
         '"SPEECHNEXUS_RESOURCE_POOL_READER_DATABASE_URL": (',
         '"sn_resource_pool_reader": os.environ["SPEECHNEXUS_RESOURCE_POOL_READER_ROLE_PASSWORD"]',
@@ -264,6 +276,8 @@ UPGRADE_PATH_ROLES = {
     "sn_binding_admin_reader",
     "sn_binding_lifecycle",
     "sn_artifact_retention",
+    "sn_workbench_runtime",
+    "sn_workbench_cleanup",
 }
 
 # Read-only projections with no *_grants function: the runbook grants them inline,
@@ -312,6 +326,9 @@ ROW_HANDLER_MODULES: dict[str, tuple[str, ...]] = {
     "SPEECHNEXUS_ARTIFACT_READER_DATABASE_URL": ("artifacts.py", "artifact_errors.py"),
     "SPEECHNEXUS_ARTIFACT_RETENTION_DATABASE_URL": (),
     "SPEECHNEXUS_RESOURCE_POOL_READER_DATABASE_URL": ("resource_pools.py",),
+    # The workbench rows state a startup refusal, so no speech handler answers them.
+    "SPEECHNEXUS_WORKBENCH_DATABASE_URL": (),
+    "SPEECHNEXUS_WORKBENCH_CLEANUP_DATABASE_URL": (),
     "SPEECHNEXUS_BINDING_LIST_READER_DATABASE_URL": ("model_bindings.py",),
     "SPEECHNEXUS_BINDING_WRITER_DATABASE_URL": ("bindings.py", "binding_errors.py"),
     "SPEECHNEXUS_BINDING_ADMIN_READER_DATABASE_URL": (
@@ -355,6 +372,8 @@ WRITE_BACK_KEYS = {
     "SPEECHNEXUS_BINDING_ADMIN_READER_DATABASE_URL",
     "SPEECHNEXUS_BINDING_LIFECYCLE_DATABASE_URL",
     "SPEECHNEXUS_ARTIFACT_RETENTION_DATABASE_URL",
+    "SPEECHNEXUS_WORKBENCH_DATABASE_URL",
+    "SPEECHNEXUS_WORKBENCH_CLEANUP_DATABASE_URL",
 }
 
 # `POST /v1/...` and `GET .../content`: the ellipsis form names a suffix of a

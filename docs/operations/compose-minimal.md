@@ -64,7 +64,9 @@ api
 recorder DSN 与报告对象存储读取凭据）。`migrate` 和 `engine-register` 分别属于按需启用的
 `migration` 和 `engine-registration` profile；`binding-disable-worker` 属于
 `binding-disable` profile，`job-dispatch-worker` 属于 `job-dispatch` profile，
-`admin` / `workbench` 属于 `web` profile，因此都不属于上面的基础集合。Job 派发
+`admin` / `workbench` 属于 `web` profile，因此都不属于上面的基础集合。独立工作台后端
+`workbench-migrate` / `workbench-api` 属于 `workbench-api` profile（见 §6）；它与
+`web` profile 是两件事：`web` 只起前端，`workbench-api` 起前端代理指向的真实服务。Job 派发
 profile 的变量与默认 `dispatch_kinds` 见
 [deploy/README.md](../../deploy/README.md#job-dispatcher-job-dispatch-profile)；
 本参考部署只装配 `asr`、`tts` 车道，启动闸门对其它 kind 点名拒绝（见 §6 的异步 Job 段）。
@@ -111,6 +113,8 @@ value = {
     "SPEECHNEXUS_GATEWAY_ROLE_PASSWORD": secrets.token_urlsafe(32),
     "SPEECHNEXUS_GATEWAY_QUERY_ROLE_PASSWORD": secrets.token_urlsafe(32),
     "SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL": secrets.token_hex(32),
+    # Signs the workbench list cursors; the workbench unit fails closed without it.
+    "SPEECHNEXUS_WORKBENCH_CURSOR_KEY": secrets.token_urlsafe(32),
 }
 value["SPEECHNEXUS_API_DATABASE_URL"] = (
     f"postgresql://sn_api:{value['SPEECHNEXUS_API_ROLE_PASSWORD']}@postgres:5432/speechnexus"
@@ -172,7 +176,8 @@ PY
 只读查询。API 的 profile、Job 与 audio inspection 等可选数据库连接默认为空；启用对应能力时须按
 各自要求另行配置身份与授权，不能假定基础角色已覆盖。工作区写、审计读取、实例读取、隔离
 释放、公开目录、Artifact、资源池、binding 列表、binding 写、binding admin 读取与 binding
-生命周期的连接地址由第 6 节的角色预置步骤写入本文件；每类身份的当前处置见
+生命周期以及独立工作台后端的运行/清理身份的连接地址由第 6 节的角色预置步骤写入本文件；
+每类身份的当前处置见
 [透传 DSN 覆盖表](#透传-dsn-覆盖表)。生产部署必须把迁移和注册连接
 换成独立、受审计的 operator 凭据，不能复用运行角色。
 
@@ -338,8 +343,9 @@ head 为准，查询结果须与之相符。不要把旧版 `0027_gateway_abort_
 
 以下脚本必须使用 **迁移 owner DSN** 运行，创建 API、gateway writer、gateway query、工作区
 writer、审计 reader、实例读取 reader、隔离释放、公开目录 reader、Artifact reader、资源池
-reader、binding 列表 reader、binding 写、binding admin reader、binding 生命周期与 Artifact
-保留期清理共十五个独立非 owner 角色。每个透传键当前是否有预置步骤见文末
+reader、binding 列表 reader、binding 写、binding admin reader、binding 生命周期、Artifact
+保留期清理与独立工作台后端的运行/清理两个身份共十七个独立非 owner 角色。工作台两个角色的
+授权目标是工作台自己的命名空间，本脚本只创建角色，授权由 §6 的迁移步安装。每个透传键当前是否有预置步骤见文末
 [透传 DSN 覆盖表](#透传-dsn-覆盖表)，未预置的键及其原因见
 [故意不预置的身份](#故意不预置的身份)。预设发布的写角色 `sn_profile_writer` 不在此脚本内：
 它必须与部署方的资格文档同时启用，步骤见
@@ -355,8 +361,8 @@ reader、binding 列表 reader、binding 写、binding admin reader、binding �
 恢复步骤处理；直接重跑会因已有角色而停止，不能假设数据库仍处于执行前状态。
 
 工作区 writer、审计 reader、实例读取 reader、隔离释放、公开目录 reader、Artifact reader、
-资源池 reader、binding 列表 reader、binding 写、binding admin reader 与 binding 生命周期
-角色的口令不在 `deploy/compose.env.example` 中给出可用值（那里只有 `change-me-*` 占位），
+资源池 reader、binding 列表 reader、binding 写、binding admin reader、binding 生命周期与
+工作台运行/清理角色的口令不在 `deploy/compose.env.example` 中给出可用值（那里只有 `change-me-*` 占位），
 先在本轮重新生成，口令不打印到终端，只在下面的脚本和写回环境文件时使用：
 
 ```bash
@@ -372,6 +378,8 @@ export SPEECHNEXUS_BINDING_LIST_READER_ROLE_PASSWORD="$(python3 -c 'import secre
 export SPEECHNEXUS_BINDING_WRITER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 export SPEECHNEXUS_BINDING_ADMIN_READER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 export SPEECHNEXUS_BINDING_LIFECYCLE_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export SPEECHNEXUS_WORKBENCH_RUNTIME_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export SPEECHNEXUS_WORKBENCH_CLEANUP_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 ```
 
 先在当前 shell 载入环境文件：
@@ -434,6 +442,11 @@ roles = {
     "sn_binding_writer": os.environ["SPEECHNEXUS_BINDING_WRITER_ROLE_PASSWORD"],
     "sn_binding_admin_reader": os.environ["SPEECHNEXUS_BINDING_ADMIN_READER_ROLE_PASSWORD"],
     "sn_binding_lifecycle": os.environ["SPEECHNEXUS_BINDING_LIFECYCLE_ROLE_PASSWORD"],
+    # The workbench unit's two roles: the serving identity and the erasing one.
+    # Their grants target the workbench namespace, which the §6 migration step
+    # bootstraps and grants; this script only creates the logins.
+    "sn_workbench_runtime": os.environ["SPEECHNEXUS_WORKBENCH_RUNTIME_ROLE_PASSWORD"],
+    "sn_workbench_cleanup": os.environ["SPEECHNEXUS_WORKBENCH_CLEANUP_ROLE_PASSWORD"],
     "sn_artifact_retention": os.environ["SPEECHNEXUS_ARTIFACT_RETENTION_ROLE_PASSWORD"],
 }
 with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
@@ -603,7 +616,8 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
         "sn_audit_reader sn_model_instance_reader sn_quarantine_release "
         "sn_catalog_reader sn_artifact_reader sn_resource_pool_reader "
         "sn_binding_list_reader sn_binding_writer sn_binding_admin_reader "
-        "sn_binding_lifecycle sn_artifact_retention"
+        "sn_binding_lifecycle sn_artifact_retention sn_workbench_runtime "
+        "sn_workbench_cleanup"
     )
 PY
 ```
@@ -612,9 +626,9 @@ PY
 CREATE 权限，停止启动服务；不要用超级用户连接绕过检查。API 启动时还会再次核验
 `sn_api` 不是数据库/表 owner，也不是可继承的 owner 成员。
 
-脚本成功后，把十二个非基线身份的连接地址写回 `deploy/compose.env`（其中
+脚本成功后，把十四个非基线身份的连接地址写回 `deploy/compose.env`（其中
 `sn_workspace_writer`、`sn_audit_reader`、`sn_model_instance_reader` 与
-`sn_quarantine_release` 四个此前已有写回，本节新增八个）；脚本替换同名空行或追加，不打印
+`sn_quarantine_release` 四个此前已有写回，本节新增十个）；脚本替换同名空行或追加，不打印
 口令。写回脚本与上面的口令导出一一对应，必须**在同一个 shell 里执行**：写回脚本用
 `os.environ[...]` 读取导出值，换一个 shell 会因缺少 `SPEECHNEXUS_*_ROLE_PASSWORD` 抛
 `KeyError`。
@@ -686,6 +700,16 @@ values = {
         f"{os.environ['SPEECHNEXUS_ARTIFACT_RETENTION_ROLE_PASSWORD']}"
         "@postgres:5432/speechnexus"
     ),
+    "SPEECHNEXUS_WORKBENCH_DATABASE_URL": (
+        "postgresql://sn_workbench_runtime:"
+        f"{os.environ['SPEECHNEXUS_WORKBENCH_RUNTIME_ROLE_PASSWORD']}"
+        "@postgres:5432/speechnexus"
+    ),
+    "SPEECHNEXUS_WORKBENCH_CLEANUP_DATABASE_URL": (
+        "postgresql://sn_workbench_cleanup:"
+        f"{os.environ['SPEECHNEXUS_WORKBENCH_CLEANUP_ROLE_PASSWORD']}"
+        "@postgres:5432/speechnexus"
+    ),
 }
 path = Path("deploy/compose.env")
 text = path.read_text()
@@ -698,8 +722,8 @@ path.chmod(0o600)
 print(
     "workspace writer, audit reader, instance reader, quarantine release, catalogue "
     "reader, Artifact reader, resource pool reader, binding list reader, binding "
-    "writer, binding admin reader, binding lifecycle and Artifact retention DSNs "
-    "written to deploy/compose.env"
+    "writer, binding admin reader, binding lifecycle, Artifact retention and "
+    "workbench runtime/cleanup DSNs written to deploy/compose.env"
 )
 PY
 ```
@@ -1297,8 +1321,9 @@ curl -sS -w '\nhttp=%{http_code}\n' -X POST \
 后，用同一个迁移 owner 连接对既有角色重放对应的授权函数即可，`GRANT` 是追加式操作，
 重复执行不改变既有权限。`0049_workspace_commands` 之后新增的工作区写、审计读取、实例读取、
 隔离释放，以及本节新增的公开目录、Artifact、资源池、binding 列表、binding 写、
-binding admin 读取与 binding 生命周期共十一个角色在既有部署上同样需要预置：下面的脚本
-先按需创建这十一个角色，再重放全部相关授权。角色尚不存在时先按上文生成口令；已存在时
+binding admin 读取、binding 生命周期与工作台运行/清理两个身份共十三个角色在既有部署上
+同样需要预置：下面的脚本先按需创建这十三个角色，再重放全部相关授权。工作台授权针对工作台
+命名空间，由 §6 的 `speechnexus-workbench-migrate` 幂等重放，不在本脚本内。角色尚不存在时先按上文生成口令；已存在时
 改用其现有口令，脚本不会修改已存在角色的口令，用新生成的口令写连接地址会连不上。实例
 读取、资源池读取与 binding 列表读取三个面按上文的显式 `GRANT` 重放，因为它们没有对应的
 仓库授权函数；隔离释放面按 `quarantine_release_grants` 重放，binding 生命周期面按
@@ -1349,6 +1374,11 @@ new_roles = {
     "sn_binding_admin_reader": os.environ["SPEECHNEXUS_BINDING_ADMIN_READER_ROLE_PASSWORD"],
     "sn_binding_lifecycle": os.environ["SPEECHNEXUS_BINDING_LIFECYCLE_ROLE_PASSWORD"],
     "sn_artifact_retention": os.environ["SPEECHNEXUS_ARTIFACT_RETENTION_ROLE_PASSWORD"],
+    # The workbench unit's roles are created here too; their grants live in the
+    # workbench namespace and are replayed idempotently by
+    # `speechnexus-workbench-migrate` (§6 独立 Workbench API 部署单元).
+    "sn_workbench_runtime": os.environ["SPEECHNEXUS_WORKBENCH_RUNTIME_ROLE_PASSWORD"],
+    "sn_workbench_cleanup": os.environ["SPEECHNEXUS_WORKBENCH_CLEANUP_ROLE_PASSWORD"],
 }
 with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     for role, password in new_roles.items():
@@ -1476,9 +1506,59 @@ Gateway query 身份仅取得六张执行恢复关系及安装身份表的必要
 对应配置，再按保存的 ACL 恢复受影响的其他角色；不要通过给 reader 加写权、owner
 身份或切回 writer 凭据绕过启动检查。此变更不修改既有执行或预算数据。
 
+### 独立 Workbench API 部署单元 `workbench-api`
+
+参考部署以 `workbench-api` profile 装配独立工作台后端：`workbench-migrate` 一次性执行
+工作台命名空间的 owner 迁移并授予两个专用非 owner 角色，`workbench-api` 是前端
+`/v1`、`/v2/workbench/*` 代理指向的真实服务，入口为
+`deploy/workbench-startup-gate.py`。它与 `web` profile 是两件事：`web` 只起两个前端，
+前端在 `WEB_WORKBENCH_UPSTREAM` 上的请求由本单元回答。
+
+工作台拥有自己的 PostgreSQL 命名空间（`SPEECHNEXUS_WORKBENCH_DATABASE_SCHEMA`，默认
+`workbench`），与 `speech` 分开。它的 DDL 由
+`backend/src/speechnexus_backend/workbench/infrastructure/runtime_schema.py` 组装，只在
+owner 事务里对新命名空间执行一次，不进入 `speech` 的 Alembic 链，也不在运行期建表。两个
+身份各自只有一个授权声明：
+
+| 角色 | 授权声明 | 权限面 |
+| --- | --- | --- |
+| `sn_workbench_runtime` | `runtime_grants_sql` | schema USAGE 加 `TABLES` 声明的每张表的 SELECT/INSERT，加 `_UPDATE_COLUMNS` 声明的逐列 UPDATE；`deletion_ledger`、`erased_mutation_receipts`、`runtime_schema_revision` 只读 |
+| `sn_workbench_cleanup` | `cleanup_grants_sql` | 业务行 DELETE、删除账本与擦除回执 INSERT、`deletion_outbox` 两列 UPDATE |
+
+身份边界是可执行的，不是部署约定：`workbench-api` 启动时由
+`check_database` 核对登录身份、owner/DDL/DML、逐表与逐列权限面、`runtime_schema_revision`，
+并由 `check_cleanup_identity` 核对清理身份不是 owner 或特权角色。运行身份在工作台命名空间
+之外持有任何关系或序列权限都会被点名拒绝，所以把它指向 `sn_api` 这类宽身份不能启动——
+`sn_api` 在 `speech` 中的授权正是在这里被拒绝的；清理身份另需独立，因为它持有删除业务行的
+权威，与运行身份合并也会被拒绝。
+
+迁移与启动：
+
+```bash
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
+  --profile workbench-api run --rm workbench-migrate
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
+  --profile web --profile workbench-api up -d
+```
+
+`workbench-migrate` 对每一步打印一行 `OK: ...`（命名空间、版本、两份授权、授权后复核），
+任一步不成立时打印 `FAIL: <具名条件>` 并以非零退出；`depends_on` 的
+`service_completed_successfully` 保证 API 不会在没有迁移的命名空间上启动。对已迁移的命名
+空间重跑只核对 `runtime_schema_revision` 与重放两份授权（幂等），不改写结构、不回填版本。
+`workbench-api` 的入口闸门先核验必需输入（运行/清理 DSN、workspace、deployment、cursor
+key、schema）与上述权限面，全部成立才打印 `OK:` 并 exec ASGI 工厂；缺键、DSN 指向 owner、
+两个身份同名、或运行身份在别的 schema 有授权，都在启动前以 `FAIL:` 点名，不会带着缺失配置
+起服务。健康检查打 `/v1/workbench/status`，它只在真实 lifespan 预检通过后才可答。
+
+本单元装配的是工作台业务后端：项目、稿件、会议、提词器、书稿/章节以及删除的
+预检→确认→账本。它默认不配置语音底座地址、对象区与内网 LLM，因此状态接口按部署事实报告
+能力——`teleprompter` 为 `available`，转写、助手、纪要与有声书导出为 `disabled`。绑定语音
+底座、保存/下载与纪要生成需要部署方另外提供 `SPEECHNEXUS_WORKBENCH_SPEECH_BASE_URL`、
+对象区四键与 `SPEECHNEXUS_WORKBENCH_LLM_*`；缺失时对应能力保持 `disabled`，不自行猜默认值。
+
 ### 透传 DSN 覆盖表
 
-`deploy/compose.yaml` 透传的全部 27 个 `*_DATABASE_URL` 键按下表处置：要么本文有可执行的
+`deploy/compose.yaml` 透传的全部 29 个 `*_DATABASE_URL` 键按下表处置：要么本文有可执行的
 预置步骤，要么在[故意不预置的身份](#故意不预置的身份)里写明原因与「部署方怎么判断它已经
 启用」。`未配置时的实际行为` 一列只写未配置时可观察到的稳定结果——渲染期失败、具名启动
 拒绝、或固定的 HTTP 状态与错误码，不写无法从报文核对的「能力未启用」。有行关闭的是叠加
@@ -1523,6 +1603,8 @@ Gateway query 身份仅取得六张执行恢复关系及安装身份表的必要
 | `SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL` | `sn_catalog_reader` | `GET /v1/models`、`GET /v1/models/{model}`、`GET /v1/nexus/voices` | `503 model_catalogue_unavailable`、`503 voice_catalogue_unavailable` | 预置 | 覆盖+角色 |
 | `SPEECHNEXUS_ARTIFACT_READER_DATABASE_URL` | `sn_artifact_reader` | Artifact 元数据与内容 | `503 artifact_service_unavailable` | 预置 | 覆盖+角色 |
 | `SPEECHNEXUS_ARTIFACT_RETENTION_DATABASE_URL` | `sn_artifact_retention` | `artifact-retention` profile 的保留期清理 | 空值 → 容器启动即失败（无身份）；共用 `sn_api` 等宽权限身份时启动点名拒绝 | 预置 | 覆盖+角色 |
+| `SPEECHNEXUS_WORKBENCH_DATABASE_URL` | `sn_workbench_runtime` | `workbench-api` profile 的服务身份：`/v1/workbench/projects`、`/v1/workbench/projects/{project_id}/transcripts` 与 `POST /v1/workbench/deletion-plans`、`POST /v1/workbench/deletions` | 空值或 DSN 指向 owner/宽身份时启动闸门点名拒绝启动，不服务 | 预置 | 覆盖+角色 |
+| `SPEECHNEXUS_WORKBENCH_CLEANUP_DATABASE_URL` | `sn_workbench_cleanup` | `workbench-api` 的删除确认后清理与启动期账本重放 | 空值 → 删除路由保持不可用、启动闸门拒绝启动；与运行身份同名时点名拒绝启动 | 预置 | 覆盖+角色 |
 | `SPEECHNEXUS_RESOURCE_POOL_READER_DATABASE_URL` | `sn_resource_pool_reader` | `GET /v1/nexus/admin/resource-pools` | `503 resource_pool_service_unavailable` | 预置 | 覆盖+角色 |
 | `SPEECHNEXUS_BINDING_LIST_READER_DATABASE_URL` | `sn_binding_list_reader` | `GET /v1/nexus/admin/model-bindings` | `503 model_binding_service_unavailable` | 预置 | 覆盖+角色 |
 | `SPEECHNEXUS_BINDING_WRITER_DATABASE_URL` | `sn_binding_writer` | binding draft 写入与 draft 读取 | 空值 → 写入 `503 binding_result_unknown`、draft 读取 `503 binding_unavailable` | 预置 | 覆盖+角色 |

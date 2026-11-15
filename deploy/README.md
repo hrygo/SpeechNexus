@@ -53,18 +53,27 @@ Additional profiles are opt-in:
   non-empty `SPEECHNEXUS_ASSET_INSPECTION_TOKEN` in `compose.env`. The design and
   the verified assembly facts are in the
   [asset inspection container](../docs/components/asset-inspection-container.md#44-compose-装配).
+- `workbench-api`: explicitly starts the independent Workbench API unit:
+  `workbench-migrate` (one-shot owner migration of the workbench namespace plus
+  the grants for its two dedicated roles) and `workbench-api` (the service
+  `WEB_WORKBENCH_UPSTREAM` names), behind
+  `deploy/workbench-startup-gate.py`. See
+  [Workbench API](#independent-workbench-api-workbench-api-profile).
 
-The `workbench` container serves only the frontend; it does not start the
-independent Workbench API. Setting `SPEECHNEXUS_PROCESS_ROLE` identifies a
-process; it does not switch the backend command to another service factory.
+The `workbench` container serves only the frontend; the independent Workbench API
+is the separate `workbench-api` profile described below. Setting
+`SPEECHNEXUS_PROCESS_ROLE` identifies a process; it does not switch the backend
+command to another service factory.
 
 Both Web images require `WEB_SPEECH_UPSTREAM`, `WEB_WORKBENCH_UPSTREAM` and
 `WEB_DNS_RESOLVER`. Origins must be `http://` or `https://` followed by a DNS
 name or IPv4 address and an explicit port, without a path or credentials. DNS
 resolver is an IPv4 address. Invalid or missing values stop startup; there is no
-Workbench fallback. The example Workbench hostname is deliberately unassembled,
-so its requests fail until an operator configures an actual service. DNS lookup
-occurs on requests so an unavailable Workbench does not prevent Speech startup.
+Workbench fallback. The example Workbench hostname is the `workbench-api` service
+this file assembles when its profile is enabled, so the frontend has a real
+upstream address; without that profile the name does not resolve and the requests
+fail visibly. DNS lookup occurs on requests so an unavailable Workbench does not
+prevent Speech startup.
 HTTPS verifies the upstream certificate and hostname against the image system CA
 bundle; install a trusted deployment CA in that bundle when required. Use HTTPS
 for cross-host connections, and separately protect the browser-facing ingress.
@@ -571,6 +580,64 @@ execution gateway，再升级 backend/worker；回退时先停用自定义声音
 Release preflight C9 checks only the parsed Compose service set and the presence
 of the gateway's private ASR/TTS configuration keys. It does not start these
 containers; runtime and business evidence remain separate.
+
+## Independent Workbench API (`workbench-api` profile)
+
+`WEB_WORKBENCH_UPSTREAM` used to name a host this file never assembled. The
+`workbench-api` profile is that unit:
+
+```bash
+docker compose --env-file deploy/compose.env \
+  -f deploy/compose.yaml --profile workbench-api run --rm workbench-migrate
+docker compose --env-file deploy/compose.env \
+  -f deploy/compose.yaml --profile web --profile workbench-api up -d
+```
+
+`workbench-migrate` is `speechnexus-workbench-migrate`, one owner transaction that
+either bootstraps a fresh workbench namespace (its fragments are fresh-only, so
+they never modify one that exists) or verifies the recorded revision of an
+existing one, then replays the two grant declarations and probes the resulting
+surface. `workbench-api` is the real service behind the Web tier's
+`/v1`/`/v2/workbench/*` proxy; its entrypoint is `deploy/workbench-startup-gate.py`
+and it `exec`s
+`python -m uvicorn speechnexus_backend.workbench.runtime:create_app_from_env --factory`.
+
+The workbench owns its own PostgreSQL namespace
+(`SPEECHNEXUS_WORKBENCH_DATABASE_SCHEMA`, default `workbench`), which must not be
+`speech`: the unit never shares or writes the speech product schema. It holds two
+dedicated non-owner roles and no third:
+
+| Identity | Declaration | Surface |
+| --- | --- | --- |
+| `sn_workbench_runtime` (`SPEECHNEXUS_WORKBENCH_DATABASE_URL`) | `runtime_grants_sql` | schema `USAGE`, `SELECT`/`INSERT` on the declared tables, column-level `UPDATE` on the declared columns; the ledger, the erasure receipts and the revision marker stay read-only |
+| `sn_workbench_cleanup` (`SPEECHNEXUS_WORKBENCH_CLEANUP_DATABASE_URL`) | `cleanup_grants_sql` | `DELETE` on business rows, `INSERT` on the ledger and erasure receipts, `UPDATE` on the two outbox columns |
+
+Neither identity may be the owner, and they may not be one identity: the cleanup
+role carries the erasing authority, so folding it into the serving role would hand
+deletion to the request path. At startup the gate runs the runtime's own
+`check_database` and `check_cleanup_identity`; `check_database` also refuses a role
+that holds privileges on relations *outside* the workbench schema, and
+`check_cleanup_identity` refuses an owner or a privileged login. Pointing either
+DSN at `sn_api` therefore fails closed instead of sharing the API's wide identity,
+which is the case `tests/integration/test_startup_authority_561.py` exercises.
+Every gate line is `OK: <what is now true>` or `FAIL: <the named prerequisite>`;
+a failure exits 1 and never starts the server.
+
+The container publishes one loopback host port
+(`SPEECHNEXUS_WORKBENCH_API_HOST_PORT`, default `8082`) and its healthcheck probes
+`GET /v1/workbench/status`, which answers only after the real lifespan preflight
+passed — the workbench has no unauthenticated `/healthz`. Browser requests arrive
+through the Web tier, so `SPEECHNEXUS_WORKBENCH_ALLOWED_ORIGINS` is the published
+Web origin (`http://127.0.0.1:<SPEECHNEXUS_WORKBENCH_HOST_PORT>`); the runtime
+rejects a request whose `Host` or `Origin` is not allowed rather than serving it.
+
+This unit assembles the workbench business backend: projects, manuscripts,
+meetings, the teleprompter, books and chapters, and the deletion
+preflight→confirmation→ledger path. It intentionally configures no speech base
+URL, no object zone and no LLM, so `/v1/workbench/status` reports those
+capabilities as `disabled` rather than guessing endpoints. Enabling them is a
+deployment input: `SPEECHNEXUS_WORKBENCH_SPEECH_BASE_URL`, the four object-zone
+keys and `SPEECHNEXUS_WORKBENCH_LLM_*`.
 
 ## Binding disable worker
 

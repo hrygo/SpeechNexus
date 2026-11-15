@@ -28,6 +28,7 @@ speechnexus-artifact-retention = "speechnexus_backend.artifact_retention_worker:
 speechnexus-job-dispatch-worker = "speechnexus_backend.job_dispatch_worker:main"
 speechnexus-voice-evidence-worker = "speechnexus_backend.voice_evidence_worker:main"
 speechnexus-job-migrate = "speechnexus_backend.speech.infrastructure.migrate_jobs:main"
+speechnexus-workbench-migrate = "speechnexus_backend.workbench.migrate:main"
 speechnexus-record-voice-evidence = "speechnexus_backend.record_voice_capability_evidence:main"
 speechnexus-run-builtin-qualification = "speechnexus_backend.run_builtin_voice_qualification:main"
 speechnexus-approve-builtin-source = "speechnexus_backend.approve_builtin_voice_source:main"

@@ -249,6 +249,58 @@ async def _refuse_column_privilege(
         )
 
 
+async def _refuse_foreign_relation_privileges(
+    connection: psycopg.AsyncConnection[dict[str, Any]],
+    schema: str,
+) -> None:
+    """The workbench identity owns authority on its own schema and nowhere else.
+
+    Granting the workbench surface to a wide runtime identity (the API's ``sn_api``
+    holds schema-wide privileges on ``speech``) would satisfy every check that only
+    looks at the configured schema while the same login could still read or write
+    the speech product tables. The reference deployment therefore provisions two
+    dedicated non-owner roles, and sharing one is a startup failure here, not a
+    deployment convention: the identity's authority is exactly its declared
+    relations, so any grant in another product schema is a stray grant to revoke.
+    ``CURRENT_USER`` is the login identity the connection already reset to, and the
+    configured workbench schema is excluded by parameter because its surface is
+    judged by the declared set above.
+    """
+    row = await (
+        await connection.execute(
+            """
+            SELECT n.nspname AS schema, c.relname AS name, c.relkind AS kind
+            FROM pg_catalog.pg_class c
+            JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+            WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'
+                AND n.nspname <> %s
+                AND c.relkind IN ('r','p','v','m','f','S')
+                AND (
+                    (c.relkind='S' AND pg_catalog.has_sequence_privilege(
+                        c.oid,'USAGE,SELECT,UPDATE'))
+                    OR (c.relkind<>'S' AND (
+                        pg_catalog.has_table_privilege(c.oid,
+                            'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+                        OR pg_catalog.has_any_column_privilege(c.oid,
+                            'SELECT,INSERT,UPDATE,REFERENCES')))
+                )
+            ORDER BY n.nspname, c.relname
+            LIMIT 1
+            """,
+            (schema,),
+        )
+    ).fetchone()
+    if row is not None:
+        # The configured schema is deliberately absent from the message: it is a
+        # deployment-chosen identifier whereas the foreign relation is product
+        # vocabulary an operator can act on.
+        raise RuntimeStartupError(
+            f"runtime role must not hold privileges on {row['schema']}.{row['name']}; "
+            "the workbench identity is scoped to its own schema, so revoke the "
+            "foreign grant instead of sharing a wider role"
+        )
+
+
 async def check_database(settings: WorkbenchSettings) -> None:
     """Read-only, bounded preflight; never create roles, grant, migrate or repair."""
     connection: psycopg.AsyncConnection[dict[str, Any]] | None = None
@@ -350,6 +402,9 @@ async def check_database(settings: WorkbenchSettings) -> None:
                 (table, column) for table, columns in _UPDATE_COLUMNS.items() for column in columns
             }:
                 raise RuntimeStartupError
+            # A surface that is exact inside its own schema can still be a shared
+            # identity; the foreign check is what makes "do not reuse sn_api" a gate.
+            await _refuse_foreign_relation_privileges(connection, settings.database_schema)
             marker = await (
                 await connection.execute(
                     sql.SQL("SELECT singleton,revision FROM {}.runtime_schema_revision").format(

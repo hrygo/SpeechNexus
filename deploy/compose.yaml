@@ -25,6 +25,13 @@ name: speechnexus
 # the bounded Artifact sweep (`speechnexus-artifact-retention`), which is what
 # makes a recorded `expires_at_us` actually remove content; it runs as the API
 # runtime identity and only moves `artifact_state`.
+#
+# The `workbench-api` profile assembles the independent Workbench API unit:
+# `workbench-migrate` bootstraps/verifies the workbench PostgreSQL namespace and
+# grants its two dedicated non-owner roles, and `workbench-api` is the real
+# service the `workbench` frontend proxies `/v1`/`/v2/workbench/*` to. Its
+# entrypoint is `deploy/workbench-startup-gate.py`, which names a missing input,
+# a blank role or a widened identity before the server starts.
 
 x-python-build: &python-build
   context: ..
@@ -623,6 +630,102 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
+
+  # Opt-in independent Workbench API unit. The frontend-only `workbench` service
+  # below is the Web tier; this is the service its `/v1`/`/v2/workbench/*` proxy
+  # answers from, so `WEB_WORKBENCH_UPSTREAM` names a host that exists.
+  #
+  # One-shot owner migration first: the workbench owns its own PostgreSQL
+  # namespace (`workbench`, not `speech`) and its fragments are fresh-only, so
+  # they run in one owner transaction instead of the speech Alembic chain. It
+  # grants the two dedicated non-owner roles and prints an `OK:`/`FAIL:` line per
+  # step; a failing step exits non-zero, and `depends_on` keeps the API from
+  # starting on a namespace that was never migrated.
+  workbench-migrate:
+    profiles: ["workbench-api"]
+    build: *python-build
+    command: ["speechnexus-workbench-migrate"]
+    environment:
+      SPEECHNEXUS_MIGRATION_DATABASE_URL: ${SPEECHNEXUS_MIGRATION_DATABASE_URL:?set SPEECHNEXUS_MIGRATION_DATABASE_URL in compose.env}
+      SPEECHNEXUS_WORKBENCH_DATABASE_SCHEMA: ${SPEECHNEXUS_WORKBENCH_DATABASE_SCHEMA:-workbench}
+      # Both role DSNs are read for their login names only; the migration grants
+      # the declared surface to those identities and never connects as them.
+      SPEECHNEXUS_WORKBENCH_DATABASE_URL: ${SPEECHNEXUS_WORKBENCH_DATABASE_URL:-}
+      SPEECHNEXUS_WORKBENCH_CLEANUP_DATABASE_URL: ${SPEECHNEXUS_WORKBENCH_CLEANUP_DATABASE_URL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
+  # The real Workbench API. It is a separate composition root (`create_app_from_env`
+  # over `WorkbenchSettings`), not the speech API with a different role, and it holds
+  # two narrow identities: the serving role (workbench schema only) and the cleanup
+  # role that may erase confirmed content. Sharing `sn_api` — or any identity with
+  # privileges outside the workbench schema — fails the startup gate, which is why
+  # the two DSNs are separate from `SPEECHNEXUS_API_DATABASE_URL`.
+  #
+  # Both DSNs keep an empty default because Compose interpolates every service,
+  # including the ones an inactive profile excludes: a `:?` guard would break
+  # `docker compose config` for every deployment that never enables this profile.
+  # The gate fails closed and names the blank key instead.
+  workbench-api:
+    profiles: ["workbench-api"]
+    build: *python-build
+    entrypoint: ["python", "/opt/speechnexus/workbench-startup-gate.py"]
+    user: "${SPEECHNEXUS_RUNTIME_UID:?set SPEECHNEXUS_RUNTIME_UID from id -u}:${SPEECHNEXUS_RUNTIME_GID:?set SPEECHNEXUS_RUNTIME_GID from id -g}"
+    environment:
+      SPEECHNEXUS_WORKBENCH_DATABASE_URL: ${SPEECHNEXUS_WORKBENCH_DATABASE_URL:-}
+      SPEECHNEXUS_WORKBENCH_DATABASE_SCHEMA: ${SPEECHNEXUS_WORKBENCH_DATABASE_SCHEMA:-workbench}
+      # Deletion routes and the startup ledger replay exist only with a cleanup
+      # identity, so this deployment unit always configures one.
+      SPEECHNEXUS_WORKBENCH_CLEANUP_DATABASE_URL: ${SPEECHNEXUS_WORKBENCH_CLEANUP_DATABASE_URL:-}
+      SPEECHNEXUS_WORKBENCH_WORKSPACE_ID: ${SPEECHNEXUS_WORKBENCH_WORKSPACE_ID:-workspace-default}
+      SPEECHNEXUS_WORKBENCH_DEPLOYMENT_ID: ${SPEECHNEXUS_WORKBENCH_DEPLOYMENT_ID:-deployment-reference}
+      SPEECHNEXUS_WORKBENCH_CURSOR_KEY: ${SPEECHNEXUS_WORKBENCH_CURSOR_KEY:-}
+      # The Web tier proxies same-origin requests from the published host port, so
+      # that exact origin is the only browser origin this unit accepts. A missing or
+      # different origin answers `invalid_request` instead of serving the request.
+      SPEECHNEXUS_WORKBENCH_ALLOWED_ORIGINS: '["http://127.0.0.1:${SPEECHNEXUS_WORKBENCH_HOST_PORT:-8081}"]'
+    ports:
+      - "127.0.0.1:${SPEECHNEXUS_WORKBENCH_API_HOST_PORT:-8082}:8000"
+    volumes:
+      - ./workbench-startup-gate.py:/opt/speechnexus/workbench-startup-gate.py:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      workbench-migrate:
+        condition: service_completed_successfully
+    # `/v1/workbench/status` is served only after the real lifespan preflight passed,
+    # so this probe is the dependency check, not a liveness stub. The workbench has no
+    # unauthenticated `/healthz`; the Host header is the container's loopback literal
+    # because the runtime rejects a Host outside the configured allow-list.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/v1/workbench/status', timeout=2)",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
 volumes:

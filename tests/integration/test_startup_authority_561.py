@@ -137,13 +137,13 @@ def jobs_db() -> Iterator[JobSandbox]:
         admin.close()
 
 
-def _create_role(db: JobSandbox, prefix: str) -> str:
+def _create_role(db: JobSandbox | WorkbenchSandbox, prefix: str) -> str:
     role = SUBJECT_PREFIX + prefix + "_" + uuid.uuid4().hex[:8]
     db.admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{ROLE_PASSWORD}'")
     return role
 
 
-def _drop_role(db: JobSandbox, role: str) -> None:
+def _drop_role(db: JobSandbox | WorkbenchSandbox, role: str) -> None:
     db.admin.execute(f'DROP OWNED BY "{role}"')
     db.admin.execute(f'DROP ROLE IF EXISTS "{role}"')
 
@@ -852,6 +852,71 @@ async def test_workbench_startup_rejects_each_single_misgrant(
     if detail:
         assert detail in message
     assert workbench_db.schema not in message
+
+
+def _foreign_relation(db: WorkbenchSandbox) -> str:
+    """Pick a real relation outside the workbench schema, in this same database.
+
+    The migration this fixture ran created the speech product tables in their own
+    namespace, which is exactly the surface a shared `sn_api` identity holds
+    privileges on. Naming it here keeps the case about the *identity* rather than
+    about one hard-coded table.
+    """
+    row = db.admin.execute(
+        "SELECT n.nspname, c.relname FROM pg_catalog.pg_class c "
+        "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE c.relkind = 'r' AND left(n.nspname, 3) <> 'pg_' "
+        "AND n.nspname <> 'information_schema' AND n.nspname <> %s "
+        "ORDER BY n.nspname, c.relname LIMIT 1",
+        (db.schema,),
+    ).fetchone()
+    assert row is not None, "the fixture left no relation outside the workbench schema"
+    schema, relation = row["nspname"], row["relname"]
+    return f"{schema}.{relation}"
+
+
+async def test_workbench_startup_refuses_an_identity_with_foreign_privileges(
+    workbench_db: WorkbenchSandbox,
+) -> None:
+    """The exact surface plus one outside grant is a shared identity, so it fails.
+
+    `check_database` inspects the configured workbench schema only, which cannot
+    see a role that also holds authority over the speech product tables. Pointing
+    `SPEECHNEXUS_WORKBENCH_DATABASE_URL` at the API's `sn_api` identity is that
+    shape: the workbench surface would pass while the identity stays broad. The
+    startup check must refuse the wider identity instead of serving with it.
+    """
+    relation = _foreign_relation(workbench_db)
+    workbench_db.admin.execute(f'GRANT SELECT ON {relation} TO "{workbench_db.role}"')
+    with pytest.raises(RuntimeStartupError) as caught:
+        await check_database(workbench_db.settings())
+    message = str(caught.value)
+    assert message.startswith("Workbench runtime database is unavailable or unsafe.")
+    assert relation in message
+    assert "revoke the foreign grant" in message
+    assert workbench_db.schema not in message
+
+
+async def test_workbench_startup_also_refuses_inherited_foreign_privileges(
+    workbench_db: WorkbenchSandbox,
+) -> None:
+    """Inheritance is the same identity: the gate must not be fooled by indirection.
+
+    A workbench DSN whose login is granted a role that holds privileges on the
+    speech tables is still an identity with that authority, so `NOINHERIT` or a
+    membership grant is not a way to share the API's role.
+    """
+    relation = _foreign_relation(workbench_db)
+    wider = _create_role(workbench_db, "wbwider")
+    try:
+        workbench_db.admin.execute(f'GRANT SELECT ON {relation} TO "{wider}"')
+        workbench_db.admin.execute(f'GRANT "{wider}" TO "{workbench_db.role}"')
+        with pytest.raises(RuntimeStartupError) as caught:
+            await check_database(workbench_db.settings())
+        assert relation in str(caught.value)
+    finally:
+        workbench_db.admin.execute(f'REVOKE "{wider}" FROM "{workbench_db.role}"')
+        _drop_role(workbench_db, wider)
 
 
 async def test_workbench_minimum_role_starts_and_creates_one_project(

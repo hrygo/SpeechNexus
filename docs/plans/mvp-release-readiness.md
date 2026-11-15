@@ -2,6 +2,7 @@
 
 **核验基线**：`origin/main` @ `6cc8090ad6d8247c4e10cd68d5adfae2bf02066c`（`git fetch` 后实测；任务指定的 `f01b10dd` 为其父提交）。独立工作树 `/private/tmp/sn818`。
 **核验日期**：2026-11-15。核验方式：新工作树内读源码、Compose、契约、测试、CI 与本机文档记录；GitHub issue/PR 状态经 `gh` 读取。
+**增量核验**（2026-11-15，卡 #832）：`origin/main` @ `bfafc8942ba85b6590a79d914959e356bb01013d`，独立工作树 `/private/tmp/sn833`。只重新核验了 F-DELETE 行、B6 与其部署入口相关陈述，其余行沿用上面的基线。
 
 ## §1 结论
 
@@ -10,7 +11,7 @@
 - MVP 界定为 12 个判定行。**其中 10 行没有任何 A 档证据**（A 档＝真实部署或真实引擎上的端到端），见 §3。
 - 唯一存在的 A 档证据是两处：两条同步入口在 **MegaCube（Linux aarch64 + NVIDIA GB10）单次受控窗口**里跑通过（2026-11-02 / 2026-11-03），以及声音引擎在**同一主机上的接受面直连探测**（2026-11-07/08）。三者都不覆盖「公开 Job 从创建到制品可下载」。
 - **最长阻塞链只有一条**：真实引擎/GPU 窗口 → 参考部署完整 `up`（迁移 + `minio-init` + 引擎注册 + 三个 Job 角色与授权）→ `job-dispatch-worker` 启动闸门 → 一条 asr 或 tts Job 从 `queued` 走到 `succeeded` → Artifact 可下载 → 工作台按同版读到。**这条链上没有任何一环有 A 档记录**，其中最关键的一环（#572）自 2026-11-08 开卡至今未执行过。
-- 主链之外的第二个硬缺口是**删除**：`/v1/nexus/deletions` 与 `/v1/nexus/deletion-plans` 是中央占位路由，恒返回 `503 operation_not_implemented`（`backend/src/speechnexus_backend/speech/interfaces/http/unimplemented.py:72`）；唯一真实的删除实现挂在 Workbench API 上，而参考部署不含独立 Workbench API。
+- 主链之外的第二个硬缺口是**语音侧删除**：`/v1/nexus/deletions` 与 `/v1/nexus/deletion-plans` 是中央占位路由，恒返回 `503 operation_not_implemented`（`backend/src/speechnexus_backend/speech/interfaces/http/unimplemented.py:72`）；语音侧删除**不在首发范围**（实施卡 [#819](https://github.com/hrygo/SpeechNexus/issues/819) 仍 open）。工作台侧删除的实现与部署前提已经具备：参考部署以 `workbench-api` profile 装配独立工作台后端，#832 在真实容器栈上取得该路径的端到端证据（见 §2 第 9 行）。
 
 ### 证据档位
 
@@ -35,10 +36,10 @@
 | 6 | **F-TTS** 同步合成入口 | 真实合成 + 受控输出 + 与异步链共存 | **A（窄口径）**：2026-11-03 第六窗口，MegaCube（Linux aarch64 + GB10），标准 SDK → 公开 HTTP → 真实网关 → 受控 CustomVoice，`200` / `96044 bytes` / 2 s PCM16 24 kHz mono，请求/命令/结果/停止关联齐全（`docs/archive/audits/2026-11-03-controlled-tts-prepare.md:252`、`docs/archive/audits/evidence/2026-11-03-tts-window-6.json`）。范围限固定声音、单节点、单实例、短英文；窗口早于当前 head | **有（窄口径）** | 入口可用，但**参考部署装配不出来** | 参考部署不装配公开 TTS：`deploy/compose.yaml` 无 `SPEECHNEXUS_SPEECH_RECIPE_FILE`，而该键是同步 TTS 的必要输入（`backend/src/speechnexus_backend/speech_runtime.py:50`），`deploy/private/` 也没有 TTS 配方样例，还需独立 settlement 角色。他人照着仓库起不出一套能跑同步 TTS 的部署 |
 | 7 | **F-ASR** 同步转写入口 | 真实引擎 + 源时钟 + 公开调用同版 | **A（窄口径）**：2026-11-02 21:34，MegaCube，`POST /v1/audio/transcriptions` → 真实网关 → 受控 Qwen3-ASR generation 3 → 版本化 MinIO，`200` / 1.237 s，文本与 5.36 s 合成句一致，DB 原生终态 `succeeded` 与租约释放齐全（PR #317 正文）。证据体存 PR 正文与 issue #243，未随仓库提交；窗口早于当前 head | **有（窄口径）** | 入口可用，参考部署未复现 | `docs/operations/compose-minimal.md:20` 明确「本部署未验证」；`deploy/README.md:74` 仍写「blocked by the missing production terminal-state writer」，与当前代码（终态写入者存在于 `execution-gateway/src/speechnexus_gateway/infrastructure/file_execution_worker.py:375`）及同仓库另一份文档冲突，属陈旧陈述 |
 | 8 | **F-SHARED** workspace 作为分组而非身份边界 | 默认 workspace、跨模块引用一致性 | **C**：同步入口允许省略 `nexus` 用默认 workspace、文件 ASR 核对对象与执行身份 workspace 均为源码级事实；无真实部署证据 | **无** | 未达标 | 无 A 档；不构成阻塞主因，随 #572 一并取证 |
-| 9 | **F-DELETE** 预检/确认/持久账本 | 固定版本预检 + 明确范围确认 + 幂等账本 + 真实执行路径 | **B（仅工作台单元）/ D（语音侧）**：工作台删除有真实的 plan→accept→ledger（`backend/src/speechnexus_backend/workbench/application/deletions.py`、`backend/src/speechnexus_backend/workbench/infrastructure/postgres_deletions.py`），并有真实 PG + 真实 Chromium 用例（`tests/integration/test_workbench_real_runtime_browser.py`）。**语音侧删除恒 503**（`backend/src/speechnexus_backend/speech/interfaces/http/unimplemented.py:72`）；PRD 自述「语音删除路由和跨模块停止协调尚未实现」（`docs/prd.md:123`）；资产到期清理进程 `speechnexus-asset-maintain` 不在参考部署 | **无** | 未达标 | ① 语音侧无实现；② 工作台删除所属的 Workbench API 无部署入口（参考部署只起前端，`deploy/README.md:53`）；③ #540 仍 open（`speech_job_intents` 未纳入删除面） |
+| 9 | **F-DELETE** 预检/确认/持久账本 | 固定版本预检 + 明确范围确认 + 幂等账本 + 真实执行路径 | **A（工作台单元，窄口径）/ D（语音侧）**：2026-11-15 在参考部署 Compose 项目 `sn832`（真实 `postgres:16.15-alpine`、`workbench-migrate`、`workbench-api`，起栈命令见 `docs/operations/compose-minimal.md` §6）用真实 HTTP 跑通 `POST /v1/workbench/deletion-plans` → `200`、以 `plan_id`/`plan_revision`/`plan_digest` 固定的 `POST /v1/workbench/deletions` → `202`、`GET /v1/workbench/deletions/{id}` → `succeeded`/`complete`，`workbench.deletion_ledger` 落一行且 `workbench.projects` 归零；错 `plan_revision` 与错 `plan_digest` 均返回 `409 deletion_plan_changed`，同一 plan 用固定值重提仍 `202`；`Host`/`Origin` 违规返回 `400 invalid_request`。实现为 `backend/src/speechnexus_backend/workbench/application/deletions.py`、`backend/src/speechnexus_backend/workbench/infrastructure/postgres_deletions.py`，另有真实 PG + 真实 Chromium 用例 `tests/integration/test_workbench_real_runtime_browser.py`。**语音侧删除恒 503**（`backend/src/speechnexus_backend/speech/interfaces/http/unimplemented.py:72`），**不在首发范围**；资产到期清理进程 `speechnexus-asset-maintain` 不在参考部署 | **有（工作台单元窄口径；语音侧无）** | 工作台侧达标；语音侧不在首发范围 | ① 语音侧无实现，按 #819 的实施范围另案处理；② 工作台单元部署入口已由 #832 补齐（此前 `WEB_WORKBENCH_UPSTREAM` 指向不存在的主机）；③ #540 仍 open（`speech_job_intents` 未纳入删除面） |
 | 10 | **Gate：#572** 参考部署跑通一次异步 Job 端到端 | 完整 `up` + 迁移 + 桶 + 引擎注册 + worker 闸门 + 三个 HTTP 调用 | **D**：前置自检、runbook、启动闸门、验收入口与 CI 结构守卫都已合并（PR #575/#579/#642/#648/#649/#653/#654/#655/#658/#668/#672/#679/#682），`#572` 仍 **open**；手册写「真实部署端到端（完整 up、Compose 迁移、minio-init、engine-register、worker 启动与命名空间、三个 HTTP 调用）仍未跑通」 | **无** | 未达标 | 需要可跑真实引擎的主机窗口 + 一次完整执行。这是 MVP 的单点最长阻塞 |
 | 11 | **Gate：#529** 声音泳道真实引擎/GPU 验收 | design 与 clone 各一条 Job 到 `succeeded`，preview artifact 可读成 candidate；冷加载/显存/P95 实测 | **A（仅引擎接受面）/ 无（Job 级）**：网关 VoiceDesign stage、Base 克隆泳道与节点模板已合并（PR #543、#545，`execution-gateway/src/speechnexus_gateway/file_speech_runtime.py:89`）；真实引擎接受面在 MegaCube DEL-521/DEL-522 实测（数字落在 `deploy/engines/file-voice-design/README.md`）。但两条泳道**从未经网关产生过一条 `succeeded` Job**；`deploy/engines/file-voice-design`、`file-voice-clone` 只有 `template.example.json`，无 `artifact-pin.json`/`runtime-pin.json`，`start_period` 无实测值 | **无（Job 级）** | 未达标 | #529 仍 open；缺模型制品 pin、GPU 窗口与一次泳道端到端 |
-| 12 | **部署入口**（Epic #342）「他人可照着起一套」 | 从零起库起服务、健康检查、跑一次 Job 的完整可执行步骤 | **C**：`deploy/compose.yaml` 有 6 个显式 profile（7 处服务声明），`docs/operations/compose-minimal.md`（1730 行）与 `async-job-runbook.md`（965 行）逐步可读；`scripts/dev-env/reference-acceptance.py` 有 `--dry-run` 并在 CI 真实执行；CI 另有 `docker compose config --quiet`。但 CI **从不启动栈**（`.github/workflows/ci.yml` 的 `deployment` 作业只做 config 校验，`reference_acceptance` 只跑 `--dry-run`），验收入口自述「不证明：真实引擎与已注册 ready 实例、真实 ASR/TTS 业务成功…端到端异步 Job」（`docs/operations/reference-acceptance.md:26`） | **无** | 未达标 | ① 无一次「照着文档从零起一套并跑通」的记录；② 仓库 **无 LICENSE**（O-RELEASE 未满足）；③ 示例私有配方原样加载会失败，需部署方自造；④ 独立 Workbench API 无部署入口，承接卡 #389 以 `not_planned` 关闭且 AC 未勾 |
+| 12 | **部署入口**（Epic #342）「他人可照着起一套」 | 从零起库起服务、健康检查、跑一次 Job 的完整可执行步骤 | **C**：`deploy/compose.yaml` 有 6 个显式 profile（7 处服务声明），`docs/operations/compose-minimal.md`（1730 行）与 `async-job-runbook.md`（965 行）逐步可读；`scripts/dev-env/reference-acceptance.py` 有 `--dry-run` 并在 CI 真实执行；CI 另有 `docker compose config --quiet`。但 CI **从不启动栈**（`.github/workflows/ci.yml` 的 `deployment` 作业只做 config 校验，`reference_acceptance` 只跑 `--dry-run`），验收入口自述「不证明：真实引擎与已注册 ready 实例、真实 ASR/TTS 业务成功…端到端异步 Job」（`docs/operations/reference-acceptance.md:26`） | **无** | 未达标 | ① 无一次「照着文档从零起一套并跑通」的记录；② 仓库 **无 LICENSE**（O-RELEASE 未满足）；③ 示例私有配方原样加载会失败，需部署方自造；④ 独立 Workbench API 的部署入口已由 #832 补齐并有真实起栈证据，但该单元只装配工作台业务后端（无语音底座/对象区/LLM 配置），且「照着文档从零起一套」仍未完成 |
 
 ## §3 A 档为 0 的行（MVP 硬阻塞集合）
 
@@ -83,10 +84,10 @@
 - 还差什么：只在隔离 PG + 版本化 MinIO 上跑过（`tests/integration/test_artifact_retention_pg.py`）以及进程级一次 pass（`--once`），未在真实参考部署上启动该 profile 并留存日志，因此不构成 A 档；「照文档从零起一套」仍属 MVP 未覆盖范围。
 - 谁做：运维（一次真实部署运行与日志留证）。
 
-**B6 — 独立 Workbench API 无部署入口（F-DELETE/F-CLIENT 的工作台部分）**
-- 要什么证据：工作台 API 的部署单元与入口，或明确 MVP 只依赖 Speech API 而不依赖工作台 API。
-- 现在卡在哪：参考部署只起前端，`WEB_WORKBENCH_UPSTREAM=http://workbench-api:8000` 指向不存在的主机（`deploy/compose.env.example:305`）；承接卡 #389 以 `not_planned` 关闭、AC 全部未勾，当前无在办卡。
-- 谁做：架构/运维；先要一个「是否纳入 MVP」的决定。
+**B6 — 独立 Workbench API 部署入口（已解决，#832）**
+- 结论：纳入 MVP，部署单元已给出。参考部署新增 `workbench-api` profile：`workbench-migrate` 一次性执行/核对工作台命名空间与两份授权，`workbench-api` 以 `deploy/workbench-startup-gate.py` 为入口起真实的 ASGI 工厂；`WEB_WORKBENCH_UPSTREAM` 现在指向该 profile 装配的服务，前端代理到它的请求由真实服务回答。
+- 证据：2026-11-15 在 Compose 项目 `sn832` 起真实栈，`docker compose --profile workbench-api run --rm workbench-migrate` 输出三行 `OK:`；`workbench-api` 健康检查（`GET /v1/workbench/status`）`200`；删除的预检→确认→账本端到端见 §2 第 9 行。身份最小化由启动闸门强制：运行身份在工作台命名空间之外持有任何关系或序列权限即拒绝启动，指向 `sn_api` 这类共用宽身份因此起不来；清理身份另需独立。
+- 仍未覆盖：该单元不配置语音底座、对象区与 LLM，工作台能力因此停在 `teleprompter=available`、其余 `disabled`；前端 bundle 的镜像构建在本轮环境里因既有的 `tests/fixtures/contracts/*.json` 未被 `deploy/images/web.Dockerfile` 复制而失败（与本卡无关），因此「浏览器经前端代理→工作台 API」只有代理层证据（用仓库 `deploy/web/nginx.conf` 起 nginx，指向真实服务为 `200`、指向不存在主机为 `502`），没有完整浏览器链路证据。
 
 ## §5 发布前必须补的最小动作清单（按可执行顺序）
 
@@ -94,7 +95,7 @@
 2. 申请一次真实引擎窗口，在同一窗口内按 B1 的步骤执行并留存原始输出；任一步失败先修，不换环境重跑掩盖。
 3. 在同一窗口顺带执行 B3 的语音侧删除路径（若决定纳入 MVP）与 B2 的泳道 Job，避免二次排队。
 4. 补 B4（同步 TTS 装配样例与 settlement 角色）；B5 的发布写入与清理入口已实现，仍需一次参考部署运行留证——两者都可在无 GPU 窗口时完成。
-5. 补 B6 的决定与最小部署入口；若决定 MVP 不含独立工作台 API，则把工作台相关行（U-* / F-DELETE 工作台侧）从 MVP 验收里显式剔除并在 PRD 中标注。
+5. ~~补 B6 的决定与最小部署入口~~：已完成（#832）。剩余的是该单元之外的下游输入（语音底座地址、对象区、内网 LLM），属于部署方提供项，不在首发阻塞链上。
 6. 修订三处陈旧陈述：`deploy/README.md:74`（同步 ASR 仍称被缺失的终态写入者阻塞，与 `file_execution_worker.py:375` 冲突）、PRD `docs/prd.md:106`「公开 Job 路由仅装配创建与读取」（与 `jobs.py` 已装配取消/重试/SSE 冲突）、矩阵 O-ROLE/F-ASYNC 的「生产 planner 未装配」（与 `job_dispatch_runtime.py:294` 冲突）。
 7. 在参考部署上补一次「照着文档从零起一套」的记录（含 LICENSE 决定），完成后才可宣称 Epic #342 的 MVP 口径达标。
 
@@ -105,7 +106,7 @@
 | 语音侧删除：预检、确认与删除账本的最小可验收实现 | 把 `/v1/nexus/deletion-plans`、`/v1/nexus/deletions` 从占位换成真实预检+账本，覆盖 `speech_job_intents`（并吸收 #540），带真实部署重启重放证据 |
 | ~~制品保留期：发布写入 `expires_at_us` 并让过期下载可复核~~（#820 已实施，待参考部署留证） | 发布路径按 PRD 30 天写保留期，补过期判定与清理入口，附过期后下载反例 |
 | 同步 TTS 参考部署装配：配方样例、settlement 角色与一次 200 | 让同步 TTS 能从仓库起得来，并在真实部署上取得一次 HTTP 200 |
-| 独立 Workbench API 部署入口（或明确 MVP 不含） | 给出工作台 API 的部署单元与入口，或把该范围从 MVP 验收中显式移出 |
+| ~~独立 Workbench API 部署入口（或明确 MVP 不含）~~（#832 已实施） | 参考部署以 `workbench-api` profile 装配工作台后端、迁移与启动闸门，`WEB_WORKBENCH_UPSTREAM` 指向真实主机 |
 | 生成契约包的消费者绑定：把 36 处相对路径导入改为声明依赖 | 让 `@speechnexus/contracts` 成为 web 的显式依赖并使用声明的 `exports`，消除「同版」只靠目录结构的隐式性 |
 | 文档陈旧陈述对齐：同步 ASR 终态、公开 Job 路由、生产 planner | 三处与当前代码冲突的陈述就地订正，并加最小守护防止再漂移 |
 

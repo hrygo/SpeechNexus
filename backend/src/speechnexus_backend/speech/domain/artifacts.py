@@ -10,6 +10,7 @@ from typing import Literal
 from speechnexus_backend.speech.domain.assets import (
     DIGEST,
     IDENTIFIER,
+    MAX_SAFE,
     counter,
     hash_bytes,
     identifier,
@@ -24,8 +25,20 @@ ARTIFACT_KINDS = frozenset(
     {"transcript", "audio", "preview", "validation_report", "export_manifest"}
 )
 ARTIFACT_STATUSES = frozenset({"ready", "expired", "deleted"})
+# The largest instant a recorded deadline can carry: the safe-integer bound every
+# domain counter uses, which is also what keeps a deadline comparable in every
+# projection. A larger value is refused at the domain edge, not stored.
+ARTIFACT_TIMESTAMP_MAX_US = MAX_SAFE
 _MEDIA_TYPE = re.compile(r"[!-~](?:[ -~]{0,126}[!-~])?\Z")
 _STORAGE_VERSION = re.compile(r"[^\x00-\x1f\x7f]{1,1024}\Z")
+# The dispatcher mints a result identity as ``artifact-`` plus 48 hex digits
+# (``job_dispatch.result_artifact_identity``). That is the only Artifact identity
+# this platform creates, so the pattern is also the read path's test for "a
+# result identity was requested": an identifier inside the minted space with no
+# committed row is an uncommitted publication, while anything outside it was
+# never a public Artifact at all. Recognizing the shape never probes storage and
+# never confirms a row, so it cannot disclose another workspace's content.
+_RESULT_ARTIFACT_IDENTITY = re.compile(r"artifact-[0-9a-f]{48}\Z")
 
 
 class ArtifactError(Exception):
@@ -51,6 +64,9 @@ class ArtifactRecord:
     expires_at_us: int | None
     object_key: str = ""
     storage_version_id: str = ""
+    # Durable removal record: set by the same statement that makes a row
+    # `deleted`, so "the content was removed" and "when" cannot disagree.
+    deleted_at_us: int | None = None
 
     def __post_init__(self) -> None:
         identifier(self.artifact_id)
@@ -70,17 +86,39 @@ class ArtifactRecord:
         counter(self.created_at_us)
         if self.expires_at_us is not None and self.expires_at_us <= self.created_at_us:
             raise ValueError("Artifact expiry must follow creation")
+        if self.expires_at_us is not None and self.expires_at_us > ARTIFACT_TIMESTAMP_MAX_US:
+            raise ValueError("Artifact expiry exceeds the recorded clock range")
         if not isinstance(self.object_key, str) or not 1 <= len(self.object_key) <= 512:
             raise ValueError("Invalid artifact object identity")
         if not isinstance(self.storage_version_id, str) or not _STORAGE_VERSION.fullmatch(
             self.storage_version_id
         ):
             raise ValueError("Invalid artifact storage version")
+        if self.deleted_at_us is not None:
+            counter(self.deleted_at_us)
+            if self.status != "deleted":
+                raise ValueError("Artifact removal record requires the deleted state")
+
+    def retention_elapsed(self, now_us: int) -> bool:
+        """Whether the recorded retention window has ended at ``now_us``."""
+        return self.expires_at_us is not None and self.expires_at_us <= now_us
 
     def content_available(self, now_us: int) -> bool:
-        return self.status == "ready" and (
-            self.expires_at_us is None or self.expires_at_us > now_us
-        )
+        return self.status == "ready" and not self.retention_elapsed(now_us)
+
+    def unavailable_code(self) -> str:
+        """The public refusal for a committed Artifact whose content is not served.
+
+        The three cases stay apart on purpose: an elapsed retention window, a
+        content removal performed by retention cleanup, and content that the
+        storage layer cannot return are different answers for a caller, so none
+        of them may collapse into one vague code.
+        """
+        if self.status == "expired":
+            return "artifact_expired"
+        if self.status == "deleted":
+            return "artifact_deleted"
+        return "artifact_unavailable"
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +147,17 @@ class ArtifactObjectWrite:
             raise ValueError("Invalid artifact body")
         if len(self.body) != self.bytes or hash_bytes(self.body) != self.sha256:
             raise ValueError("Artifact body disagrees with its size or digest")
+
+
+def is_result_artifact_identity(value: str) -> bool:
+    """Whether ``value`` is inside the identity space the dispatcher mints.
+
+    Used only to name the refusal: an absent row for a minted identity is an
+    uncommitted (staging-only) publication, an absent row for any other value is
+    an identifier this API never issued. Neither answer reads a row or an object
+    it does not already own.
+    """
+    return isinstance(value, str) and _RESULT_ARTIFACT_IDENTITY.fullmatch(value) is not None
 
 
 def artifact_range(value: str | None, size: int) -> tuple[int, int, bool]:
@@ -163,4 +212,5 @@ __all__ = [
     "ArtifactStatus",
     "artifact_range",
     "download_filename",
+    "is_result_artifact_identity",
 ]

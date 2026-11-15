@@ -101,6 +101,10 @@ pytestmark = [
     pytest.mark.parametrize("database", ["postgresql"], indirect=True),
 ]
 
+# The retention window these publication tests hand the publisher explicitly;
+# the sweep and the read path are exercised by their own modules.
+RETENTION_US = 30 * 24 * 60 * 60 * 1_000_000
+
 VALIDATION_WORKSPACE = "workspace-default"
 REFERENCE_ASSET = "synthetic-reference"
 REFERENCE_SHA = "sha256:" + "b" * 64
@@ -362,6 +366,7 @@ def _dispatcher(
         PostgresArtifactWriter(pool),
         blobs,
         _Staging(staging_body),
+        retention_us=RETENTION_US,
         validation=PostgresValidationRunFacts(pool),
         report_reader=blobs,
     )

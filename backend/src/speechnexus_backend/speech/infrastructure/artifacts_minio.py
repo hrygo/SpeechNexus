@@ -199,4 +199,34 @@ class MinioArtifactPublisher(MinioArtifactObjects):
             raise ArtifactError("artifact_object_integrity_mismatch")
 
 
-__all__ = ["MinioArtifactObjects", "MinioArtifactPublisher"]
+class MinioArtifactRemoval(MinioArtifactObjects):
+    """Remove exactly one committed object version and prove it is gone.
+
+    Retention cleanup deletes the version the Artifact row pins, never a key:
+    an unrecognized object under the same key is not this Artifact's content.
+    The removal is only confirmed when a follow-up stat reports the version is
+    absent; anything else raises ``artifact_cleanup_unconfirmed`` so the caller
+    keeps the durable ``expired`` state instead of claiming a cleanup.
+    """
+
+    def delete_version(self, artifact: ArtifactRecord) -> None:
+        if not artifact.storage_version_id or artifact.storage_version_id == "null":
+            raise ArtifactError("artifact_cleanup_unconfirmed")
+        try:
+            self._client.remove_object(
+                self._bucket, artifact.object_key, version_id=artifact.storage_version_id
+            )
+            try:
+                self._client.stat_object(
+                    self._bucket, artifact.object_key, version_id=artifact.storage_version_id
+                )
+            except S3Error as error:
+                if error.code in ("NoSuchKey", "NoSuchObject", "NoSuchVersion"):
+                    return
+                raise
+        except Exception:
+            raise ArtifactError("artifact_cleanup_unconfirmed") from None
+        raise ArtifactError("artifact_cleanup_unconfirmed")
+
+
+__all__ = ["MinioArtifactObjects", "MinioArtifactPublisher", "MinioArtifactRemoval"]

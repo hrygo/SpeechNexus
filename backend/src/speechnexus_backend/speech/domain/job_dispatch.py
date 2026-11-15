@@ -10,6 +10,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from speechnexus_backend.speech.domain.artifacts import is_result_artifact_identity
+
 DispatchState = Literal[
     "pending", "running", "cancelling", "succeeded", "failed", "cancelled", "expired"
 ]
@@ -144,9 +146,14 @@ def result_artifact_identity(job_id: str, kind: DispatchJobKind) -> str:
     identifier(job_id)
     if kind not in DISPATCHABLE_JOB_KIND_UNION:
         raise ValueError("Invalid result Job kind")
-    return (
+    minted = (
         "artifact-" + hashlib.sha256(f"public-job-result:{job_id}:{kind}".encode()).hexdigest()[:48]
     )
+    if not is_result_artifact_identity(minted):
+        # The read path recognizes the minted space to tell an uncommitted
+        # publication apart from an identifier this API never issued.
+        raise ValueError("Result Artifact identity is outside the minted space")
+    return minted
 
 
 def result_receipt_identity(job_id: str) -> str:

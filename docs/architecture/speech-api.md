@@ -65,7 +65,7 @@ SpeechCommand
 | `POST /v1/nexus/operations/{operation_id}/cancellations` | 取消指定实时 / 同步操作；Job 内操作转为所属 Job 的取消命令，避免留下无结果的 required 步骤；进行中 `202`，已终结 `200` |
 | `POST /v1/nexus/assets`、`GET /v1/nexus/assets/{asset_id}` | 有界流式上传文件与读取元数据；上传结束校验后才为 `ready` |
 | `GET /v1/nexus/assets/{asset_id}/content` | 按部署功能策略下载 ready 输入，支持 Range；不暴露对象存储 key 或服务器路径 |
-| `GET /v1/nexus/artifacts/{artifact_id}`、`GET .../{artifact_id}/content` | 读取已提交产物的元数据 / 内容；内容支持 Range，过期或已删除返回 `410 artifact_unavailable`，staging 不可见 |
+| `GET /v1/nexus/artifacts/{artifact_id}`、`GET .../{artifact_id}/content` | 读取已提交产物的元数据 / 内容；内容支持 Range；保留期届满返回 `410 artifact_expired`，清理已移除内容返回 `410 artifact_deleted`，已铸造成品身份但尚无提交行返回 `404 artifact_not_published`，从未签发的标识返回 `404 artifact_not_found`；staging 不可寻址 |
 | `POST /v1/nexus/realtime/sessions` | 验证并固定会话配置，返回 `201`、会话 `id`、连接地址和过期时间 |
 | `GET /v1/nexus/realtime/sessions/{session_id}` | 查询会话与 operation 终态；输入确认位置 `input_ack_sample` 是可选字段，首期没有人级 owner 授权 |
 | `POST /v1/nexus/realtime/sessions/{session_id}/cancellations` | 从 HTTP 请求关闭会话，便于 WS 不可达时停止执行 |
@@ -175,7 +175,7 @@ TTS Job 可选 `model_binding={id,revision}` 固定精确版本：新意图要�
 
 `status` 取值为 `queued | running | retry_wait | cancelling | succeeded | failed | cancelled | expired`；cleanup_state 单独报告 not_required / pending / complete / quarantined，未清理的 Operation 以引用返回。取消确认超时为 failed / cancellation_unconfirmed，资源继续隔离，旧执行清理前 retry 返回 execution_cleanup_pending。
 
-`result` 始终存在，非 `succeeded` 状态必须为 null。成功时其判别字段 `kind` 必须与 Job 一致：ASR 返回 transcript Artifact，TTS 返回 audio Artifact，音色 design / clone 返回 draft revision 与 preview Artifact，voice preview 返回 preview Artifact，voice validation 返回完整校验结果与 validation-report Artifact；所有成功结果都携带 receipt。`artifacts` 至少包含结果引用的主产物，结果内 Artifact ID 必须引用 `artifacts` 中的同 kind 项。输入过期或任务超过执行前队列期限，转为 `expired` 且 `cleanup_state=not_required`；成功结果达到保留期限时仍保留成功终态，只将 artifact 标为过期。
+`result` 始终存在，非 `succeeded` 状态必须为 null。成功时其判别字段 `kind` 必须与 Job 一致：ASR 返回 transcript Artifact，TTS 返回 audio Artifact，音色 design / clone 返回 draft revision 与 preview Artifact，voice preview 返回 preview Artifact，voice validation 返回完整校验结果与 validation-report Artifact；所有成功结果都携带 receipt。`artifacts` 至少包含结果引用的主产物，结果内 Artifact ID 必须引用 `artifacts` 中的同 kind 项。输入过期或任务超过执行前队列期限，转为 `expired` 且 `cleanup_state=not_required`；成功结果达到保留期限时仍保留成功终态，只将 artifact 标为过期；读取该 Job 时 `artifacts` 仍按已提交且可服务的 Artifact 投影，因此内容已过期或被清理的既有 Job 读取返回 `503 artifact_service_unavailable`，终态与结果引用不被改写，也不重建内容。
 
 已提交 Artifact 与 Job 结果共享同一 receipt；`JobArtifact.artifact_id` 在单个成功结果中唯一，结果引用的主 Artifact 必须存在、kind 匹配且 `receipt_id` 等于结果 receipt。Artifact / JobArtifact / SavedAsset / ExportArtifact 的内容字节数必须大于零，不能用空文件冒充已提交制品。`job.succeeded` 也须满足这些跨数组规则；生产者须在写入事件前校验，当前证据及 schema 覆盖限制见 §1.6。
 
@@ -230,7 +230,7 @@ Profile、voice 和 model binding revision 不可变；升级只影响后续新�
 | 400 | `invalid_json`、`invalid_audio` | 修正输入；不直接重试 |
 | 401 / 403 | `service_credential_required` / `origin_rejected`、`feature_disabled` | 仅在配置服务入口凭据或功能 / Origin 策略时适用；不跳转登录 |
 | 404 | `resource_not_found` | 对象不存在或不属于该请求工作空间；不据此宣称用户隔离 |
-| 410 | `artifact_unavailable`、`event_history_expired` | 内容 / 事件已过保留期；读取当前状态，不重建已删除内容 |
+| 410 | `artifact_expired`、`artifact_deleted`、`artifact_unavailable`、`event_history_expired` | 内容 / 事件已过保留期；`artifact_expired` 表示记录的 `expires_at_us` 已过而内容尚未清理，`artifact_deleted` 表示保留期清理已移除内容，`artifact_unavailable` 表示存储无法返回内容；均不重建已删除内容 |
 | 409 | `configuration_changed`、`idempotency_conflict`、`operation_in_progress`、`execution_cleanup_pending` | 按响应协调版本或查询原意图 |
 | 413 | `payload_too_large` | 分段或改用有配额的文件上传 |
 | 422 | `unsupported_parameter`、`incompatible_profile`、`async_required` | 改请求；不得静默删参数 |

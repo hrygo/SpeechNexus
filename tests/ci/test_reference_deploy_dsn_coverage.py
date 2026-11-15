@@ -178,6 +178,11 @@ PROVISIONED_ANCHORS: dict[str, tuple[str, ...]] = {
         '"SPEECHNEXUS_ARTIFACT_READER_DATABASE_URL": (',
         'artifact_reader_grants(schema, "sn_artifact_reader")',
     ),
+    "SPEECHNEXUS_ARTIFACT_RETENTION_DATABASE_URL": (
+        '"SPEECHNEXUS_ARTIFACT_RETENTION_DATABASE_URL": (',
+        'artifact_retention_grants(schema, "sn_artifact_retention")',
+        '"sn_artifact_retention": os.environ["SPEECHNEXUS_ARTIFACT_RETENTION_ROLE_PASSWORD"]',
+    ),
     "SPEECHNEXUS_RESOURCE_POOL_READER_DATABASE_URL": (
         '"SPEECHNEXUS_RESOURCE_POOL_READER_DATABASE_URL": (',
         '"sn_resource_pool_reader": os.environ["SPEECHNEXUS_RESOURCE_POOL_READER_ROLE_PASSWORD"]',
@@ -238,6 +243,7 @@ ROLE_GRANT_BINDINGS: dict[str, tuple[tuple[str, ...], int]] = {
     "sn_workspace_writer": (("workspace_writer_grants",), 2),
     "sn_audit_reader": (("audit_reader_grants",), 2),
     "sn_quarantine_release": (("quarantine_release_grants",), 2),
+    "sn_artifact_retention": (("artifact_retention_grants",), 2),
 }
 
 # Roles the runbook creates after the three base identities: the fresh-install
@@ -257,6 +263,7 @@ UPGRADE_PATH_ROLES = {
     "sn_binding_writer",
     "sn_binding_admin_reader",
     "sn_binding_lifecycle",
+    "sn_artifact_retention",
 }
 
 # Read-only projections with no *_grants function: the runbook grants them inline,
@@ -303,6 +310,7 @@ ROW_HANDLER_MODULES: dict[str, tuple[str, ...]] = {
         "voices.py",
     ),
     "SPEECHNEXUS_ARTIFACT_READER_DATABASE_URL": ("artifacts.py", "artifact_errors.py"),
+    "SPEECHNEXUS_ARTIFACT_RETENTION_DATABASE_URL": (),
     "SPEECHNEXUS_RESOURCE_POOL_READER_DATABASE_URL": ("resource_pools.py",),
     "SPEECHNEXUS_BINDING_LIST_READER_DATABASE_URL": ("model_bindings.py",),
     "SPEECHNEXUS_BINDING_WRITER_DATABASE_URL": ("bindings.py", "binding_errors.py"),
@@ -346,6 +354,7 @@ WRITE_BACK_KEYS = {
     "SPEECHNEXUS_BINDING_WRITER_DATABASE_URL",
     "SPEECHNEXUS_BINDING_ADMIN_READER_DATABASE_URL",
     "SPEECHNEXUS_BINDING_LIFECYCLE_DATABASE_URL",
+    "SPEECHNEXUS_ARTIFACT_RETENTION_DATABASE_URL",
 }
 
 # `POST /v1/...` and `GET .../content`: the ellipsis form names a suffix of a

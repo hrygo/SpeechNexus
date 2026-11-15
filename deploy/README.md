@@ -27,9 +27,10 @@ The following production units are deliberately **not** part of this file:
 `node-controller`, `runtime-delivery-worker`, `asset-maintain` and
 `voice-evidence-worker`. Their absence is a scope statement, not an assertion that
 those capabilities work elsewhere. They are excluded because controller lifecycle,
-runtime delivery, retention maintenance and automatic evidence recording (which
-needs a recorder DSN plus report object storage) are not on the synchronous request
-path or are not assembled here.
+runtime delivery, asset retention maintenance and automatic evidence recording
+(which needs a recorder DSN plus report object storage) are not on the synchronous
+request path or are not assembled here. Artifact retention is separate: it is
+assembled by the opt-in `artifact-retention` profile described below.
 
 Additional profiles are opt-in:
 
@@ -41,6 +42,10 @@ Additional profiles are opt-in:
 - `job-dispatch`: explicitly starts the public Job dispatcher
   `job-dispatch-worker`; it is absent from the base topology and the base `up`
   never starts it.
+- `artifact-retention`: explicitly starts `artifact-retention`, the bounded sweep
+  that acts on the `expires_at_us` every published Result Artifact records. It is
+  absent from the base topology: without it, publication records a deadline but
+  nothing removes content. See [Artifact retention](#artifact-retention-artifact-retention-profile).
 - `asset-inspection`: explicitly starts the private audio inspection container
   `asset-inspector`; it is absent from the base topology, publishes no host port
   and joins only a dedicated `internal: true` network. Enabling it requires
@@ -244,6 +249,77 @@ and installs the five dispatch grant groups, the writer baseline and the read-on
 `voice_validation` it also installs that lane's two extra `SELECT`s, which only
 matter once the lane itself is assembled (see below). The step-by-step path
 is [the minimal deployment runbook §6](../docs/operations/compose-minimal.md#异步-job-运行角色与授权).
+
+## Artifact retention (`artifact-retention` profile)
+
+Publication writes `expires_at_us = created_at_us + SPEECHNEXUS_ARTIFACT_RETENTION_SECONDS`
+on every committed Result Artifact, so the window is a recorded fact rather than a
+process default. `artifact-retention` is what acts on it:
+
+```bash
+docker compose --env-file deploy/compose.env \
+  -f deploy/compose.yaml --profile artifact-retention up -d
+```
+
+One pass has two bounded phases. It first moves committed `ready` rows whose
+`expires_at_us` the database clock has passed to `expired`, then removes the exact
+object version each `expired` row pins and records `deleted` only after a
+follow-up stat confirms the version is gone. A row inside its window is never
+selected by either phase, and both the selection and the state transition repeat
+the deadline predicate, so a widened query cannot remove content early. An
+unconfirmed removal leaves the row `expired`: the download answer stays
+`artifact_expired` and the next pass retries. The row keeps `created_at_us` and
+`expires_at_us`, and a confirmed removal also writes `deleted_at_us` in the same
+transition, so each decision — including when content went away — remains
+reviewable in the database after the fact, not only in the process log.
+
+The service runs as its own identity, `sn_artifact_retention`
+(`SPEECHNEXUS_ARTIFACT_RETENTION_DATABASE_URL`, forwarded into the container as
+`SPEECHNEXUS_DATABASE_URL`), with `artifact_retention_grants`: `USAGE` on the
+schema, `SELECT` on `speech_artifacts` and `UPDATE (artifact_state, deleted_at_us)`
+only. Startup refuses a role that holds `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`,
+`REFERENCES` or `TRIGGER`, or `UPDATE` on any other column, because that would
+widen the sweep into a content-deletion authority; it also refuses the API runtime
+identity for the same reason, which is why the two DSNs are separate. `SPEECHNEXUS_ARTIFACT_RETENTION_INTERVAL_SECONDS` and
+`SPEECHNEXUS_ARTIFACT_RETENTION_BATCH_SIZE` bound a pass. Each decision logs one
+JSON line with the Artifact id, the decision, the recorded deadline and the
+database instant, followed by a per-pass summary:
+
+```text
+{"artifact_id":"artifact-…","decision":"expired","event":"artifact_retention","expires_at_us":1767225600000000,"observed_at_us":1767312000000000,"reason":""}
+{"artifact_id":"artifact-…","decision":"deleted","deleted_at_us":1767312000000000,"event":"artifact_retention","expires_at_us":1767225600000000,"observed_at_us":1767312000000000,"reason":""}
+{"batch_size":10,"blocked":0,"decisions":2,"deleted":1,"event":"artifact_retention_pass","expired":1}
+```
+
+Migration `0054_artifact_deleted_ledger` adds the column; rows a deployment had
+already marked `deleted` before it keep an honest `NULL` (nothing in the schema
+records when a state changed), and the consistency check is installed `NOT VALID`
+so only writes from now on are constrained. Count them with
+`SELECT count(*) FROM speech_artifacts WHERE artifact_state = 'deleted' AND deleted_at_us IS NULL`
+and treat that number as "deleted before the ledger, not traceable" rather than
+backfilling a computed instant.
+
+The deadline is written from the application clock but judged against the
+database clock, so the observed window is the configured one minus the skew between
+the two (application clock ahead ⇒ earlier expiry, behind ⇒ later). Keep node
+clocks within their normal synchronisation error; raising the window is not the
+fix for a skewed host. Rows without a recorded deadline are never selected.
+
+A single pass runs on demand as
+`docker compose … run --rm artifact-retention speechnexus-artifact-retention --once`
+(or `uv run speechnexus-artifact-retention --once` against a prepared environment).
+
+The download route keeps the three outcomes apart: `410 artifact_expired` when the
+recorded window ended, `410 artifact_deleted` after retention removed the content,
+and `404 artifact_not_published` for a minted result identity with no committed
+row (staging content is not addressable). A `404 artifact_not_found` identifier was
+never issued by this API. `GET /v1/nexus/jobs/{job_id}` still requires the
+committed Artifact to be `ready`, so reading a succeeded Job whose content has
+already been retired answers `503 artifact_service_unavailable`: retention moves
+the content, and the Job row itself is never deleted. Settlement is unaffected —
+a dispatcher replay of the same publication still reaches `succeeded` after the
+retention window elapsed, because the replay asks whose publication it is rather
+than whether content is still servable.
 
 The command-by-command path from a blank environment to one submitted Job,
 including the six prerequisites above and a read-only preflight, is

@@ -64,6 +64,7 @@ pytestmark = pytest.mark.integration
 VARIABLE = "SPEECHNEXUS_TEST_DATABASE_URL"
 DIGEST = "sha256:" + "b" * 64
 CLOCK_US = 1_700_000_000_000_000
+RETENTION_US = 30 * 24 * 60 * 60 * 1_000_000
 PREVIEW_BODY = b"synthetic-voice-preview-bytes"
 
 
@@ -300,6 +301,7 @@ def _dispatcher(
             PostgresArtifactWriter(db.pool),
             _Blobs(),
             _Staging(),
+            retention_us=RETENTION_US,
             now_us=lambda: CLOCK_US,
         ),
         limits=limits or DispatchLimits(poll_seconds=0.01, job_timeout_seconds=60),
@@ -667,7 +669,11 @@ async def test_repeated_voice_publication_is_one_row_and_one_version(
     job = claims[0].job
     blobs, staging = _Blobs(), _Staging()
     publisher = ResultArtifactPublisher(
-        PostgresArtifactWriter(db.pool), blobs, staging, now_us=lambda: CLOCK_US
+        PostgresArtifactWriter(db.pool),
+        blobs,
+        staging,
+        retention_us=RETENTION_US,
+        now_us=lambda: CLOCK_US,
     )
 
     first = await publisher.publish(

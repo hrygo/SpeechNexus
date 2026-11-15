@@ -19,6 +19,40 @@ ARTIFACT_INSERT_COLUMNS = (
     "expires_at_us",
 )
 
+# The only columns a retention pass may change. The rows it moves keep
+# `created_at_us` and `expires_at_us`, so the decision ("this row's deadline was
+# at or before the database clock") stays readable after the state changes, and
+# `deleted_at_us` is the durable record of when the content was removed.
+ARTIFACT_RETENTION_UPDATE_COLUMNS = ("artifact_state", "deleted_at_us")
+
+# Durable deletion ledger. The repository's deletion rule requires a persisted
+# record of an approved removal, not only a log line: `deleted_at_us` is written
+# by the same statement that makes the row `deleted`, and the check keeps the two
+# facts inseparable (a `deleted` row always says when, and no other state claims
+# a removal time).
+#
+# The constraint is installed `NOT VALID` on purpose. Rows that a deployment
+# already marked `deleted` before this migration have no recorded removal time
+# anywhere in the database -- `speech_artifacts` carries only `created_at_us`
+# (publication) and `expires_at_us` (deadline), and no audit table or revision
+# column records state changes. Backfilling a value would put a time in the
+# ledger that was never observed, so those rows keep an honest `NULL` and stay
+# unvalidated: "deleted before migration 0054, not traceable". New and updated
+# rows must satisfy the check, and `VALIDATE CONSTRAINT` is only correct after an
+# operator decides what to do with the pre-migration rows.
+ARTIFACT_DELETED_LEDGER_DDL = (
+    """ALTER TABLE speech_artifacts
+        ADD COLUMN deleted_at_us BIGINT CHECK (deleted_at_us > 0)""",
+    """COMMENT ON COLUMN speech_artifacts.deleted_at_us IS
+        'Database-clock instant of the confirmed content removal, written with the '
+        'deleted state. NULL means no removal was recorded: the row was already '
+        'deleted before migration 0054, or it is not deleted.'""",
+    """ALTER TABLE speech_artifacts
+        ADD CONSTRAINT speech_artifacts_deleted_ledger_check CHECK (
+            (artifact_state = 'deleted') = (deleted_at_us IS NOT NULL)
+        ) NOT VALID""",
+)
+
 ARTIFACT_DDL = (
     """CREATE TABLE speech_artifacts (
         artifact_id VARCHAR(128) COLLATE "C" PRIMARY KEY,
@@ -62,6 +96,25 @@ def artifact_reader_grants(schema: str, role: str) -> tuple[str, ...]:
     )
 
 
+def artifact_retention_grants(schema: str, role: str) -> tuple[str, ...]:
+    """Provisioning declaration for the bounded retention sweep principal.
+
+    The sweep reads committed rows, moves ``artifact_state`` and records when it
+    removed the content in ``deleted_at_us``; it never inserts, deletes or
+    rewrites a deadline, so no other column is granted. Object removal uses the
+    deployment's object credentials, not this database authority.
+    """
+    from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
+
+    schema, role = checked_sql_name(schema), checked_sql_name(role)
+    columns = ", ".join(ARTIFACT_RETENTION_UPDATE_COLUMNS)
+    return (
+        f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
+        f'GRANT SELECT ON "{schema}".{ARTIFACTS} TO "{role}"',
+        f'GRANT UPDATE ({columns}) ON "{schema}".{ARTIFACTS} TO "{role}"',
+    )
+
+
 def artifact_publisher_grants(schema: str, role: str) -> tuple[str, ...]:
     """Provisioning declaration for the dispatcher's committed Artifact writes."""
     from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
@@ -78,7 +131,10 @@ def artifact_publisher_grants(schema: str, role: str) -> tuple[str, ...]:
 __all__ = [
     "ARTIFACTS",
     "ARTIFACT_DDL",
+    "ARTIFACT_DELETED_LEDGER_DDL",
     "ARTIFACT_INSERT_COLUMNS",
+    "ARTIFACT_RETENTION_UPDATE_COLUMNS",
     "artifact_publisher_grants",
     "artifact_reader_grants",
+    "artifact_retention_grants",
 ]

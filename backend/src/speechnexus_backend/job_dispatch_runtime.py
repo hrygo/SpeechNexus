@@ -123,6 +123,18 @@ class JobDispatchSettings(BaseSettings):
         le=30,
         allow_inf_nan=False,
     )
+    # Retention window recorded on every Artifact this worker publishes. It is a
+    # product default, not a machine-identity value: PRD F-ARTIFACT (docs/prd.md)
+    # and the retention table in docs/architecture/runtime-governance.md §2.3 both
+    # put a generated audio target at 30 days. A deployment may narrow or widen it
+    # without touching the publication branch, and the value a row was published
+    # with never changes afterwards.
+    result_retention_seconds: int = Field(
+        validation_alias="SPEECHNEXUS_ARTIFACT_RETENTION_SECONDS",
+        default=30 * 24 * 60 * 60,
+        ge=3_600,
+        le=10 * 365 * 24 * 60 * 60,
+    )
     dispatch_kinds: str = Field(
         validation_alias="SPEECHNEXUS_JOB_DISPATCH_KINDS",
         default=",".join(DISPATCHABLE_JOB_KINDS),
@@ -260,6 +272,7 @@ def build_result_publisher(
         PostgresArtifactWriter(pool, timeout_seconds=settings.storage_timeout_seconds),
         artifacts,
         _StagingResultReader(staging),
+        retention_us=settings.result_retention_seconds * 1_000_000,
         validation=PostgresValidationRunFacts(
             pool, timeout_seconds=settings.storage_timeout_seconds
         ),

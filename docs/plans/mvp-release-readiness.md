@@ -30,7 +30,7 @@
 | 1 | **F-ASSET** 受控输入资产（`asr_input`/`voice_reference` → `ready`） | 真实音频检查事实 + 固定对象版本 + 真实 HTTP 上传 | **B**：2026-11-13 在 Compose 项目 `sn680` 用真实容器、真实检查器、真实 PG/MinIO 跑通 `POST /v1/nexus/assets` → `201 ready`（`duration_ms`/`sample_rate_hz` 来自回执），并有 `text` 选择器 → `503`、无残留行的反例（[runbook `docs/operations/async-job-runbook.md:922`](../operations/async-job-runbook.md) 起）。同轮为让 API 起来用了两处**非生产**改动（清空 `depends_on`、合成配方 + 超范围授权）。另有进程内 HTTP + 真实解码子进程用例 `tests/unit/backend/test_voice_reference_upload.py` | **无** | 未达标 | 缺 A 档：未在真实参考部署上验过；默认部署 `SPEECHNEXUS_ASSET_INSPECTOR=text`（`deploy/compose.env.example:118`）使音频上传恒 `503` |
 | 2 | **F-JOB** 持久 Job（创建/读取/取消/重试/SSE/列表） | 权威状态一致、事件序号续读、取消围栏真库证据 | **B**：路由已装配创建/读取/重试/SSE/取消（`backend/src/speechnexus_backend/speech/interfaces/http/jobs.py`）；隔离 PG 上取消与围栏 24 passed；`tests/integration/test_public_job_admission_http_pg.py`、`test_public_job_list_pg.py`、`test_public_job_event_stream_tcp.py`（真实 PG + 真实 TCP）；以上用例本轮未复跑 | **无** | 未达标 | 无真实部署上的 Job 生命周期；`POST /v1/nexus/jobs` 在参考部署缺 writer/admission DSN 时直接 `503` |
 | 3 | **F-ASYNC** 派发→执行→结果发布→终态 | 真实工作进程消费持久 Job 并走真实引擎 | **C**：生产 planner 与结果发布器已装配且在领取前 fail-closed（`backend/src/speechnexus_backend/job_dispatch_runtime.py:294`），但派发验收用例把网关替换为 `httpx.MockTransport` 合成实现（`tests/integration/test_job_dispatch_pg.py:290`），引擎是 fake。手册明确「以上三条 HTTP 命令**未在本机验证**」（`docs/operations/async-job-runbook.md:705`） | **无** | 未达标 | #572 未执行；无真实引擎窗口 |
-| 4 | **F-ARTIFACT** 发布原子性、下载、保留 | staging 不可公开、固定对象版本、真实对象存储下载、保留/过期可复核 | **B**：先写对象再提交唯一行，对象版本号落库（`backend/src/speechnexus_backend/speech/application/results.py:149`），staging 字节与回执摘要/长度互相校验；真实 PG + 版本化 MinIO + Range 下载用例 `tests/integration/test_artifact_http_real_storage.py:231`；工作台真实 Chromium + 生产 bundle + 真实 MinIO 下载 `tests/integration/test_workbench_real_runtime_download_browser.py`（内容为合成 ZIP/WAV，非真实推理） | **无** | 未达标 | ① 无 A 档；② **保留期未实现**：发布时 `expires_at_us` 恒写 `None`（`results.py:165`），PRD 要求的 30 天保留与过期复核无落点，参考部署也不启动任何清理进程 |
+| 4 | **F-ARTIFACT** 发布原子性、下载、保留 | staging 不可公开、固定对象版本、真实对象存储下载、保留/过期可复核 | **B**：先写对象再提交唯一行，对象版本号落库（`backend/src/speechnexus_backend/speech/application/results.py:169`），staging 字节与回执摘要/长度互相校验；发布按 `SPEECHNEXUS_ARTIFACT_RETENTION_SECONDS`（默认 30 天）写 `expires_at_us`（`results.py:347`）；下载按记录期限返回 `410 artifact_expired`、清理确认后 `410 artifact_deleted`、已铸造但未提交 `404 artifact_not_published`（`backend/src/speechnexus_backend/speech/application/artifacts.py`）；有界清理入口 `speechnexus-artifact-retention`（`backend/src/speechnexus_backend/speech/application/artifact_retention.py:75`、`deploy/compose.yaml` 的 `artifact-retention` profile）；真实 PG + 版本化 MinIO 保留期用例 `tests/integration/test_artifact_retention_pg.py:281` 与 真实对象存储下载用例 `tests/integration/test_artifact_http_real_storage.py:231`；工作台真实 Chromium + 生产 bundle + 真实 MinIO 下载 `tests/integration/test_workbench_real_runtime_download_browser.py`（内容为合成 ZIP/WAV，非真实推理） | **无** | 未达标 | ① 无 A 档；② 保留期链路只有隔离 PG + 版本化 MinIO 与进程内证据，参考部署未实际运行 `artifact-retention` profile；③ 30 天默认值未在真实部署上被观测 |
 | 5 | **F-CLIENT** SDK 与工作台同版消费 | 契约 → 生成客户端 → 真实消费者三段同步 | **B + C**：页面确实消费生成包（工作台文件链走 `/v1/nexus/jobs`、`assets`、`artifacts`），但**不经包清单**——36 处非测试 import 全部是跨目录相对路径（如 `web/workbench/src/file-workflow/speech-file-client.ts:8`），`web/*/package.json` 没有 `@speechnexus/contracts` 依赖；`packages/contracts/package.json` 声明的 27 个 `exports` 子路径一个都没被用。真实浏览器侧证据为生产 bundle + 真实 PG/MinIO（`tests/integration/test_workbench_real_runtime_browser.py`），producer 为合成 | **无** | 未达标 | 同版一致性靠单仓库目录结构隐式成立，无版本/依赖声明；主链仍 blocked by #572 |
 | 6 | **F-TTS** 同步合成入口 | 真实合成 + 受控输出 + 与异步链共存 | **A（窄口径）**：2026-11-03 第六窗口，MegaCube（Linux aarch64 + GB10），标准 SDK → 公开 HTTP → 真实网关 → 受控 CustomVoice，`200` / `96044 bytes` / 2 s PCM16 24 kHz mono，请求/命令/结果/停止关联齐全（`docs/archive/audits/2026-11-03-controlled-tts-prepare.md:252`、`docs/archive/audits/evidence/2026-11-03-tts-window-6.json`）。范围限固定声音、单节点、单实例、短英文；窗口早于当前 head | **有（窄口径）** | 入口可用，但**参考部署装配不出来** | 参考部署不装配公开 TTS：`deploy/compose.yaml` 无 `SPEECHNEXUS_SPEECH_RECIPE_FILE`，而该键是同步 TTS 的必要输入（`backend/src/speechnexus_backend/speech_runtime.py:50`），`deploy/private/` 也没有 TTS 配方样例，还需独立 settlement 角色。他人照着仓库起不出一套能跑同步 TTS 的部署 |
 | 7 | **F-ASR** 同步转写入口 | 真实引擎 + 源时钟 + 公开调用同版 | **A（窄口径）**：2026-11-02 21:34，MegaCube，`POST /v1/audio/transcriptions` → 真实网关 → 受控 Qwen3-ASR generation 3 → 版本化 MinIO，`200` / 1.237 s，文本与 5.36 s 合成句一致，DB 原生终态 `succeeded` 与租约释放齐全（PR #317 正文）。证据体存 PR 正文与 issue #243，未随仓库提交；窗口早于当前 head | **有（窄口径）** | 入口可用，参考部署未复现 | `docs/operations/compose-minimal.md:20` 明确「本部署未验证」；`deploy/README.md:74` 仍写「blocked by the missing production terminal-state writer」，与当前代码（终态写入者存在于 `execution-gateway/src/speechnexus_gateway/infrastructure/file_execution_worker.py:375`）及同仓库另一份文档冲突，属陈旧陈述 |
@@ -77,10 +77,11 @@
 - 现在卡在哪：`deploy/compose.yaml` 无该键、无配方样例、无 settlement 角色；两条同步入口的「共存」因此在参考部署里无法演示。
 - 谁做：部署/后端；配方与角色需部署方评审后提供。
 
-**B5 — 制品保留期未实现（F-ARTIFACT）**
-- 要什么证据：发布时写入 `expires_at_us`（PRD：普通生成音频默认 30 天）、过期后下载返回明确不可用，并有复核用的固定版本与清理账本。
-- 现在卡在哪：`results.py:165` 恒写 `None`，即无限保留；参考部署也不启动任何清理进程。
-- 谁做：后端（发布路径）+ 运维（清理入口）。
+**B5 — 制品保留期代码与入口就绪，缺参考部署实测（F-ARTIFACT，#820）**
+- 要什么证据：发布时写入 `expires_at_us`（PRD：普通生成音频默认 30 天）、过期后下载返回明确不可用，并有复核用的固定版本与持久清理账本。
+- 当前实现：发布按 `SPEECHNEXUS_ARTIFACT_RETENTION_SECONDS`（默认 30 天，1 小时至 10 年）写 `expires_at_us = created_at_us + 窗口`；下载在记录期限处返回 `410 artifact_expired`，清理确认后返回 `410 artifact_deleted`，已铸造未提交身份返回 `404 artifact_not_published`，未签发标识返回 `404 artifact_not_found`；有界清理入口 `speechnexus-artifact-retention` 分「标记过期 → 确认移除版本 → 标记已删除」两段，使用独立身份 `sn_artifact_retention`，只允许 `SELECT` 与 `UPDATE (artifact_state, deleted_at_us)`，确认移除时在同一语句写入 `deleted_at_us` 作为持久删除账本，每次决策另输出 JSON 日志。参考部署以 `artifact-retention` profile 提供该进程，runbook 含角色与授权步骤。
+- 还差什么：只在隔离 PG + 版本化 MinIO 上跑过（`tests/integration/test_artifact_retention_pg.py`）以及进程级一次 pass（`--once`），未在真实参考部署上启动该 profile 并留存日志，因此不构成 A 档；「照文档从零起一套」仍属 MVP 未覆盖范围。
+- 谁做：运维（一次真实部署运行与日志留证）。
 
 **B6 — 独立 Workbench API 无部署入口（F-DELETE/F-CLIENT 的工作台部分）**
 - 要什么证据：工作台 API 的部署单元与入口，或明确 MVP 只依赖 Speech API 而不依赖工作台 API。
@@ -92,7 +93,7 @@
 1. 固定本次发布的候选提交与镜像 digest，把「A 档证据必须落在哪个提交上」写清（否则任何窗口都不能算作本次发布的证据）。
 2. 申请一次真实引擎窗口，在同一窗口内按 B1 的步骤执行并留存原始输出；任一步失败先修，不换环境重跑掩盖。
 3. 在同一窗口顺带执行 B3 的语音侧删除路径（若决定纳入 MVP）与 B2 的泳道 Job，避免二次排队。
-4. 补 B4（同步 TTS 装配样例与 settlement 角色）与 B5（`expires_at_us` 写入）——两者都可在无 GPU 窗口时完成。
+4. 补 B4（同步 TTS 装配样例与 settlement 角色）；B5 的发布写入与清理入口已实现，仍需一次参考部署运行留证——两者都可在无 GPU 窗口时完成。
 5. 补 B6 的决定与最小部署入口；若决定 MVP 不含独立工作台 API，则把工作台相关行（U-* / F-DELETE 工作台侧）从 MVP 验收里显式剔除并在 PRD 中标注。
 6. 修订三处陈旧陈述：`deploy/README.md:74`（同步 ASR 仍称被缺失的终态写入者阻塞，与 `file_execution_worker.py:375` 冲突）、PRD `docs/prd.md:106`「公开 Job 路由仅装配创建与读取」（与 `jobs.py` 已装配取消/重试/SSE 冲突）、矩阵 O-ROLE/F-ASYNC 的「生产 planner 未装配」（与 `job_dispatch_runtime.py:294` 冲突）。
 7. 在参考部署上补一次「照着文档从零起一套」的记录（含 LICENSE 决定），完成后才可宣称 Epic #342 的 MVP 口径达标。
@@ -102,7 +103,7 @@
 | 标题 | 一句话范围 |
 | --- | --- |
 | 语音侧删除：预检、确认与删除账本的最小可验收实现 | 把 `/v1/nexus/deletion-plans`、`/v1/nexus/deletions` 从占位换成真实预检+账本，覆盖 `speech_job_intents`（并吸收 #540），带真实部署重启重放证据 |
-| 制品保留期：发布写入 `expires_at_us` 并让过期下载可复核 | 发布路径按 PRD 30 天写保留期，补过期判定与清理入口，附过期后下载反例 |
+| ~~制品保留期：发布写入 `expires_at_us` 并让过期下载可复核~~（#820 已实施，待参考部署留证） | 发布路径按 PRD 30 天写保留期，补过期判定与清理入口，附过期后下载反例 |
 | 同步 TTS 参考部署装配：配方样例、settlement 角色与一次 200 | 让同步 TTS 能从仓库起得来，并在真实部署上取得一次 HTTP 200 |
 | 独立 Workbench API 部署入口（或明确 MVP 不含） | 给出工作台 API 的部署单元与入口，或把该范围从 MVP 验收中显式移出 |
 | 生成契约包的消费者绑定：把 36 处相对路径导入改为声明依赖 | 让 `@speechnexus/contracts` 成为 web 的显式依赖并使用声明的 `exports`，消除「同版」只靠目录结构的隐式性 |

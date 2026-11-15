@@ -515,3 +515,25 @@ def test_unpinned_legacy_request_keeps_binding_id_resolution() -> None:
     assert "model_binding" not in json.loads(store.requests[0].request_document)
     with pytest.raises(ModelNotPublishedError):
         service.submit(_body(model="narrator-tts"), request_id="req-old", idempotency_key=None)
+
+
+def test_a_store_that_cannot_reach_admission_keeps_the_storage_answer() -> None:
+    """A store-level `job_unavailable` is the outage, not an undeclared code.
+
+    Without an admission role the adapter refuses the create before admission runs and
+    reports `job_unavailable` itself, so no admission mapping applies. The strict
+    "undeclared code is a defect" rule must not swallow this one: the caller reads the
+    retryable storage answer, exactly as it did before the strictness landed (#828
+    review M1, caught by the composition-root integration test).
+    """
+
+    class NoAdmissionRole(Store):
+        def create(self, job: NewPublicJob) -> JobCreateResult:
+            return JobCreateResult("rejected", error_code="job_unavailable")
+
+    facts = Facts()
+    service = PublicJobs(facts, NoAdmissionRole(), now_us=lambda: NOW)
+    with pytest.raises(PublicJobUnavailableError):
+        service.submit(
+            parse("JobCreateRequest", _body()), request_id="req-create", idempotency_key=None
+        )

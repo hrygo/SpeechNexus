@@ -1560,6 +1560,12 @@ def _submission_result(result: JobCreateResult) -> PublicJob:
             raise VoiceDraftNotGeneratableError
         if result.error_code == "not_found":
             raise PublicJobNotFoundError
+        if result.error_code == "job_unavailable":
+            # The store could not even reach admission (for example no admission role
+            # is configured). That is the storage outage, not a contract violation, and
+            # it is not an admission code: the mapping has no entry for it precisely
+            # because the store never wrote one (#828 review M1).
+            raise PublicJobUnavailableError
         _raise_admission_rejection(result.error_code)
         raise JobRejectedError(_rejection_reason(result.error_code))
     if result.job is None:

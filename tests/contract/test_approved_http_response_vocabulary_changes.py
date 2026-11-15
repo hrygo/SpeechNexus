@@ -20,24 +20,33 @@ from __future__ import annotations
 
 import importlib.util
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from types import ModuleType
 from typing import cast
 
+import pytest
+
 from tests.contract.test_http_contract_changes import repository as repository
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = "contracts/speech-openapi.yaml"
-# The contract as it stood before the `#828` approvals landed: the parent of the
-# squash merge that introduced them (`c7e43f9a`, PR #839). Pinned so the comparison is
-# reproducible at any later head. The second test below proves the baseline really is
-# older than the approvals, so this pin cannot silently make the guard vacuous.
-_PRE_APPROVAL_BASELINE = "f3e9e1b4b5e5397fb2d4af7f59e06dc790614065"
-# One code that the `#828` approvals introduced; seeing it in the current contract but
-# not in the frozen baseline is what proves the baseline predates the approvals.
+# The contract as it stood before the `#828` approvals landed, committed as a fixture
+# (`git show c7e43f9a^:contracts/speech-openapi.yaml`). A fixture rather than a commit
+# reference on purpose: CI checks out with `fetch-depth: 1`, so the parent of the merge
+# is not in the object database and a pinned SHA there reads as `bad object`. The
+# fixture also keeps this test independent of how main moves afterwards.
+_PRE_APPROVAL_FIXTURE = ROOT / "tests/contract/fixtures/speech-openapi.pre-828.yaml"
+
 _KNOWN_WIDENED_CODE = "voice_draft_engine_unavailable"
 _ADDED_CODES = re.compile(r"enum values added: \[([^\]]*)\]")
+
+
+def _finding_class(finding: str) -> str:
+    """The kind of change a finding names, e.g. `enum values added`."""
+    tail = finding.rsplit(": ", 1)[-1]
+    return tail.split(":", 1)[0]
 
 
 def _added_codes(table: dict[str, dict[str, str]]) -> set[str]:
@@ -69,55 +78,81 @@ def test_the_table_is_not_empty_and_every_entry_is_fully_annotated() -> None:
         assert metadata["from_version"] and metadata["to_version"], finding
 
 
-def test_every_entry_matches_a_widening_the_current_contract_still_carries() -> None:
-    """Each approval must still describe a widening relative to the frozen baseline.
+def _real_contract_against_the_frozen_baseline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[ModuleType, str]:
+    """Point the gate at a throwaway repository whose baseline is the pre-#828 contract.
 
-    Comparing the tree against ``origin/main`` compared it against itself once the
-    approvals were merged: the diff is empty on ``main``, so that form of the check
-    could never pass again (it failed immediately after the merge). The baseline is
-    therefore the contract *before* the approvals landed, which is reproducible from
-    git at any head, and only the vocabulary-widening class is compared: an unrelated
-    later change to the same file is the PR-time gate's business, not this test's.
-
-    Both directions matter. An approval whose widening disappeared (someone reverted
-    a code or a ``retryable`` value) is dead and turns this red; a widening the table
-    does not name is filtered by nothing and also turns this red.
+    The repository holds the fixture as its only committed contract; the working tree
+    then carries the real one, so the comparison is the real one and needs no history
+    from the checkout CI actually runs in.
     """
-    loaded = module()
-    report = loaded.inspect_sources(_PRE_APPROVAL_BASELINE, surface="speech")
+    # The shared schemas are copied as they are: every approval names
+    # `contracts/speech-openapi.yaml`, so the rest of the directory is identical on both
+    # sides of the comparison.
+    shutil.copytree(ROOT / "contracts", tmp_path / "contracts")
+    shutil.copyfile(_PRE_APPROVAL_FIXTURE, tmp_path / SOURCE)
+    git = ["git", "-C", str(tmp_path)]
+    subprocess.run([*git, "init", "-q"], check=True)
+    subprocess.run([*git, "config", "user.name", "Vocabulary baseline"], check=True)
+    subprocess.run([*git, "config", "user.email", "baseline@example.invalid"], check=True)
+    subprocess.run([*git, "add", "."], check=True)
+    subprocess.run([*git, "commit", "-q", "-m", "Pre-#828 contract"], check=True)
+    baseline = subprocess.check_output([*git, "rev-parse", "HEAD"], text=True).strip()
+    shutil.copyfile(ROOT / SOURCE, tmp_path / SOURCE)
+    spec = importlib.util.spec_from_file_location(
+        "http_change_cli_vocabulary_live",
+        ROOT / "scripts/dev-env/check-http-contract-changes.py",
+    )
+    assert spec is not None and spec.loader is not None
+    loaded = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(loaded)
+    monkeypatch.setattr(loaded, "_ROOT", tmp_path)
+    return loaded, baseline
+
+
+def test_every_entry_matches_a_widening_the_current_contract_still_carries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each approval must still describe a widening relative to the pre-#828 contract.
+
+    The baseline is the committed fixture, not ``origin/main``: comparing the tree
+    against ``origin/main`` compared it against itself once the approvals were merged,
+    so that form could never pass on ``main`` again (it failed immediately after the
+    merge). Only the vocabulary-widening class is compared; an unrelated later change
+    to the same file is the PR-time gate's business, not this test's.
+    """
+    module, baseline = _real_contract_against_the_frozen_baseline(tmp_path, monkeypatch)
+    report = module.inspect_sources(baseline, surface="speech")
     # The filter appends " [issue: reason]" to each finding it waves through, so the
     # identity of an approval is the finding text before that suffix.
     approved = {item.rsplit(" [", 1)[0] for item in report["approved_response_vocabulary_changes"]}
-    table = set(_table(loaded))
+    table = set(_table(module))
     assert approved == table, {
         "widening_not_approved": sorted(approved - table),
         "approval_without_widening": sorted(table - approved),
     }
-    # The other direction: a widening the table does not name must still be rejected,
-    # so nothing in this class may be left over as an unfiltered finding. Findings of
-    # other classes are the PR-time gate's business and deliberately not asserted
-    # here, because an unrelated later edit to the same file is not this test's job.
+    # The other direction: a widening the table does not name must still be rejected.
+    # Every class the table uses is asserted, derived from the entries themselves, so a
+    # new class cannot pass unguarded (22 of the 27 approvals are `const` changes).
+    classes = {_finding_class(finding) for finding in table}
     leftovers = [
         finding
         for finding in report["findings"]
-        if finding.startswith(SOURCE) and "enum values added" in finding
+        if finding.startswith(SOURCE) and _finding_class(finding) in classes
     ]
     assert leftovers == [], leftovers
 
 
-def test_the_frozen_baseline_predates_the_widenings_it_is_compared_against() -> None:
-    # A baseline picked at or after the approvals would already carry the widened
+def test_the_frozen_fixture_predates_the_widenings_it_is_compared_against() -> None:
+    # A fixture captured after the approvals would already carry the widened
     # vocabulary, so the comparison above would report nothing and pass vacuously.
-    committed = subprocess.check_output(
-        ["git", "-C", str(ROOT), "show", f"{_PRE_APPROVAL_BASELINE}:{SOURCE}"],
-        text=True,
-    )
+    committed = _PRE_APPROVAL_FIXTURE.read_text(encoding="utf-8")
     added = _added_codes(_table(module()))
     assert _KNOWN_WIDENED_CODE in added, added
-    widened = _KNOWN_WIDENED_CODE
-    assert widened in (ROOT / SOURCE).read_text(encoding="utf-8"), widened
-    assert widened not in committed, (
-        f"the frozen baseline already contains {widened}, so it does not predate the approvals"
+    assert _KNOWN_WIDENED_CODE in (ROOT / SOURCE).read_text(encoding="utf-8")
+    assert _KNOWN_WIDENED_CODE not in committed, (
+        f"the fixture already contains {_KNOWN_WIDENED_CODE}, so it does not predate the approvals"
     )
 
 

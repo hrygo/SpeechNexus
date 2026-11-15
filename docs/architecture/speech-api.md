@@ -612,3 +612,5 @@ finish_text 不重新合成已经 commit 的文本，只关闭输入并提交未
 
 主动删除、依赖预检、明确级联与恢复后的删除账本重放使用[数据删除协议](data-deletion.md)，
 不可用 retirement、TTL、archive 或取消完成代替内容删除。
+
+反例（临时提交，稍后回退）：`backend/src/speechnexus_backend/does_not_exist.py:7`。

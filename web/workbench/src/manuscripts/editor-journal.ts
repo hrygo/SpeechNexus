@@ -1,4 +1,4 @@
-import { validateRequest } from "../../../../packages/contracts/src/workbench-http";
+import { validateRequest } from "@speechnexus/contracts/workbench-http";
 import { parse, type Contracts } from "./workbench-client";
 
 export const journalKey = "speechnexus.workbench.manuscripts.v1";

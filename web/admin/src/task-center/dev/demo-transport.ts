@@ -1,5 +1,5 @@
 import fixtures from "../../../../../tests/fixtures/contracts/file-workflow.json";
-import { parse, type FileContracts } from "../../../../../packages/contracts/src";
+import { parse, type FileContracts } from "@speechnexus/contracts";
 
 export type TaskScenario =
   | "normal"

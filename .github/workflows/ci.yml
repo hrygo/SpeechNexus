@@ -45,6 +45,11 @@ jobs:
           node --test tests/ci/design-tokens.test.mjs
           node scripts/dev-env/validate-design-tokens.mjs
 
+      - name: Verify generated-contract consumer bindings without installing project dependencies
+        run: |
+          node --test tests/ci/contract-consumers.test.mjs
+          node scripts/dev-env/validate-contract-consumers.mjs
+
       - name: Route the exact checked-out diff
         id: route
         env:

@@ -1,5 +1,5 @@
-import { parse, type Contracts } from "../../../../packages/contracts/src/realtime_events";
-import type { Contracts as RestContracts } from "../../../../packages/contracts/src/realtime";
+import { parse, type Contracts } from "@speechnexus/contracts/realtime-events";
+import type { Contracts as RestContracts } from "@speechnexus/contracts/realtime";
 
 export type RealtimeEvent = Contracts["RealtimeEvent"];
 type Ready = Extract<RealtimeEvent, { type: "nexus.session.ready" }>;

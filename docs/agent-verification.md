@@ -20,7 +20,7 @@ pnpm install --frozen-lockfile
 | 文档、`AGENTS.md`、无脚本的 skill、Issue / PR 模板 | 核对本地链接、frontmatter、命令、规则衔接与声明；表单额外检查 YAML、字段类型、唯一 ID 和必填项；`git diff --check`。不默认安装依赖、初始化服务或运行业务测试；本地结构检查不代表 GitHub 页面已生效 |
 | skill 中的脚本 | 在隔离样例中运行受影响分支、失败与重试出口；再按脚本语言选择检查 |
 | Python | `uv run ruff format --check .`、`uv run ruff check .`、`uv run mypy`、`uv run lint-imports`，以及覆盖改动的 `uv run pytest` 测试 |
-| Web | `pnpm format:check`、`pnpm lint`（含设计 Token 门禁）、`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm test:a11y`；真实浏览器前置与证据范围见 [CI 规则](validation/ci-validation.md) |
+| Web | `pnpm format:check`、`pnpm lint`（含设计 Token 门禁）、`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm test:a11y`；契约包消费者绑定另跑 `node --test tests/ci/contract-consumers.test.mjs` 与 `node scripts/dev-env/validate-contract-consumers.mjs`（CI 在 `changes` 作业执行）；真实浏览器前置与证据范围见 [CI 规则](validation/ci-validation.md) |
 | 机器契约 | `make contracts-check`、`uv run pytest tests/contract`；生成类型受影响时先 `make contracts-generate`，再 `make contracts-drift` 并核对消费者 |
 | 版本化 HTTP 源 | 设置已核实的 `CONTRACT_BASE_REF`，按[结构检查范围](validation/http-contract-change-checks.md)运行 `make contracts-http-changes`；完整 speech HTTP 表面另用 `make contracts-speech-changes`，不以结构检查替代语义和消费者验收 |
 | 公开实时 runtime 声明 | 设置已核实的 `CONTRACT_BASE_REF`，运行 `make contracts-realtime-changes`；[实时结构检查](validation/realtime-contract-change-checks.md)保守拒绝约束变化，不替代时序与真实消费者验收 |

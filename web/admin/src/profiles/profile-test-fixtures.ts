@@ -1,6 +1,6 @@
 /** Synthetic contract material imported only by tests. */
-import { parse } from "../../../../packages/contracts/src/admin";
-import { parse as parseProfile } from "../../../../packages/contracts/src/scenario_profiles";
+import { parse } from "@speechnexus/contracts/admin";
+import { parse as parseProfile } from "@speechnexus/contracts/scenario-profiles";
 import fixtures from "../../../../tests/fixtures/contracts/consumer-profiles.json";
 import type { ProfileRequest } from "./profile-client";
 

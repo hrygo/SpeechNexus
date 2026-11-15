@@ -1,9 +1,9 @@
-import { createValidatedClient } from "../../../../packages/contracts/src/workbench-http";
-import { parse, type Contracts } from "../../../../packages/contracts/src/workbench";
+import { createValidatedClient } from "@speechnexus/contracts/workbench-http";
+import { parse, type Contracts } from "@speechnexus/contracts/workbench";
 import { checkDeletion, targetKey } from "../deletions/deletion-plan";
 import { verifiedDownload } from "./download-content";
 
-export { parse, type Contracts } from "../../../../packages/contracts/src/workbench";
+export { parse, type Contracts } from "@speechnexus/contracts/workbench";
 
 export class WorkbenchResponseError extends Error {
   readonly code: string;

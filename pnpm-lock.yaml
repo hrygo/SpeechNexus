@@ -304,6 +304,9 @@ importers:
 
   web/admin:
     dependencies:
+      "@speechnexus/contracts":
+        specifier: workspace:*
+        version: link:../../packages/contracts
       "@speechnexus/shared":
         specifier: workspace:*
         version: link:../shared
@@ -362,6 +365,9 @@ importers:
 
   web/workbench:
     dependencies:
+      "@speechnexus/contracts":
+        specifier: workspace:*
+        version: link:../../packages/contracts
       "@speechnexus/shared":
         specifier: workspace:*
         version: link:../shared

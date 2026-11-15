@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
-import { parse } from "../../../../packages/contracts/src/realtime";
+import { parse } from "@speechnexus/contracts/realtime";
 import { RealtimeClient } from "./realtime-client";
 import type { RealtimeStorage } from "./realtime-journal";
 import { TtsJournal } from "./tts-journal";

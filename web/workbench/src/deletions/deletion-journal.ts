@@ -1,4 +1,4 @@
-import { validateRequest } from "../../../../packages/contracts/src/workbench-http";
+import { validateRequest } from "@speechnexus/contracts/workbench-http";
 import { parse, type Contracts } from "../manuscripts/workbench-client";
 import { checkDeletion, confirmation, matchesConfirmation, targetKey } from "./deletion-plan";
 

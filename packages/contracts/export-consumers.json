@@ -1,0 +1,23 @@
+{
+  "unbound": {
+    "./audio-inspection": "TS 入口无外部消费者：私有媒体检查的调用方是 Python（backend/src/speechnexus_backend/speech/infrastructure/audio_inspection_http.py 经 speechnexus_contracts.audio_inspection），Web 不直接检查媒体。",
+    "./binding-defaults": "TS 入口无外部消费者：默认绑定快照由 Python 生产端消费（backend/src/speechnexus_backend/speech/interfaces/binding_default_drafts.py 经 speechnexus_contracts.binding_defaults）；Web 尚无绑定默认值界面。",
+    "./binding-defaults-http": "TS 入口无外部消费者：HTTP 校验由 Python 生产端消费（backend/src/speechnexus_backend/speech/interfaces/http/binding_errors.py 经 speechnexus_contracts.binding_defaults_http），唯一 TS 使用方是 tests/fixtures/contracts/binding-defaults-producer-http.mjs 原生 HTTP 夹具，以相对路径导入、不构成 workspace 消费者。",
+    "./binding-defaults-producer": "TS 入口无外部消费者：生产者草稿请求由 Python 消费（backend/src/speechnexus_backend/speech/application/binding_documents.py 经 speechnexus_contracts.binding_defaults_producer）；Web 不创建绑定默认值。",
+    "./binding-http": "TS 入口无外部消费者：绑定写入/停用信封由 Python 校验（backend/src/speechnexus_backend/speech/interfaces/http/binding_errors.py 经 speechnexus_contracts.binding_http）；Web 不写绑定。",
+    "./builtin-voice-qualification": "TS 入口无外部消费者：内置音色授权由 Python 准入链路消费（backend/src/speechnexus_backend/speech/infrastructure/qualification_admission_postgres.py 经 speechnexus_contracts.builtin_voice_qualification）；Web 只读发布状态。",
+    "./execution": "TS 入口无外部消费者：执行提交/中止协议由 Python 生产端与执行网关消费（backend/src/speechnexus_backend/speech/infrastructure/admission_postgres.py 等经 speechnexus_contracts.execution）；Web 不经执行平面。",
+    "./gateway-recovery": "TS 入口无外部消费者：恢复配置由执行网关 Python 消费（execution-gateway/src/speechnexus_gateway/infrastructure/recovery_configuration.py 经 speechnexus_contracts.gateway_recovery）；Web 不参与恢复决策。",
+    "./model-bindings": "TS 入口无外部消费者：模型绑定 DTO 由 Python 目录与绑定草稿消费（backend/src/speechnexus_backend/speech/application/model_catalog.py 经 speechnexus_contracts.model_bindings）；Web 尚无绑定管理消费者。",
+    "./profile-lifecycle-http": "TS 入口无外部消费者：Profile 生命周期 HTTP 信封由 Python 消费（backend/src/speechnexus_backend/speech/interfaces/profile_lifecycle.py 经 speechnexus_contracts.profile_lifecycle_http），唯一 TS 使用方是 tests/fixtures/contracts/profile-lifecycle-http.mjs 原生 HTTP 夹具，以相对路径导入、不构成 workspace 消费者。",
+    "./profile-public-http": "TS 入口无外部消费者：公开 Profile 读取信封由 Python 消费（backend/src/speechnexus_backend/speech/interfaces/http/profile_contract.py 经 speechnexus_contracts.profile_public_http）；Web 尚不读公开 Profile。",
+    "./pronunciation-read-http": "TS 入口无外部消费者：发音修订读取由 Python 路由消费（backend/src/speechnexus_backend/speech/interfaces/http/pronunciations.py 经 speechnexus_contracts.pronunciation_read_http）；Web 尚无发音界面。",
+    "./pronunciation-sets-http": "TS 入口无外部消费者：发音集合读取/创建由 Python 路由消费（backend/src/speechnexus_backend/speech/interfaces/http/pronunciation_sets.py 经 speechnexus_contracts.pronunciation_sets_http）；Web 尚无发音界面。",
+    "./release-evidence": "TS 入口无外部消费者：资格报告与容量清单由 Python 接口消费（backend/src/speechnexus_backend/speech/interfaces/binding_release_evidence.py 经 speechnexus_contracts.release_evidence）；Web 只展示发布状态。",
+    "./runtime": "TS 入口无外部消费者：runtime 控制协议由 Python 控制器链路消费（tests/contract/test_runtime_http_bindings.py 经 speechnexus_contracts.runtime）；Web 不持有 runtime 控制权。",
+    "./runtime-http": "TS 入口无外部消费者：runtime HTTP 校验由 Python 后端与执行网关消费（backend/src/speechnexus_backend/speech/infrastructure/runtime_controller_http.py 经 speechnexus_contracts.runtime_http）；Web 不直连节点控制器。",
+    "./voice-catalogue-http": "TS 入口无外部消费者：声音目录读取由 Python 路由消费（backend/src/speechnexus_backend/speech/application/voice_capability_evidence.py 经 speechnexus_contracts.voice_catalogue_http）；工作台经 admin/workbench 客户端间接读取目录。",
+    "./voice-drafts-http": "TS 入口无外部消费者：声音草稿写入由 Python 路由消费（backend/src/speechnexus_backend/speech/interfaces/http/voice_drafts.py 经 speechnexus_contracts.voice_drafts_http）；Web 尚无草稿编辑消费者。",
+    "./zero-dispatch": "TS 入口无外部消费者：零派发是默认关闭的候选契约，没有生产者或网络客户端；Python 侧只由 tests/contract/test_zero_dispatch_contract.py 经生成包做契约校验，Web 不使用。"
+  }
+}

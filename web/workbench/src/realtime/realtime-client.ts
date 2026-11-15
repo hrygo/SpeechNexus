@@ -1,10 +1,6 @@
-import {
-  createSpeechClient,
-  parse as parseError,
-  type components,
-} from "../../../../packages/contracts/src";
-import { parse, type Contracts } from "../../../../packages/contracts/src/realtime";
-import { parse as parseEvent } from "../../../../packages/contracts/src/realtime_events";
+import { createSpeechClient, parse as parseError, type components } from "@speechnexus/contracts";
+import { parse, type Contracts } from "@speechnexus/contracts/realtime";
+import { parse as parseEvent } from "@speechnexus/contracts/realtime-events";
 
 export type RealtimeRequest = Contracts["RealtimeSessionCreateRequest"];
 export type RealtimeSession = Contracts["RealtimeSession"];

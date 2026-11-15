@@ -1,5 +1,5 @@
 import traces from "../../../../tests/fixtures/contracts/transcription-sequences.json";
-import { parse, type Contracts } from "../../../../packages/contracts/src/realtime";
+import { parse, type Contracts } from "@speechnexus/contracts/realtime";
 
 /** Synthetic test inputs only; no production defaults or capability claims. */
 export function request(): Contracts["RealtimeSessionCreateRequest"] {

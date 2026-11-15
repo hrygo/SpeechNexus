@@ -98,6 +98,54 @@ and JSON Schema, including admin, workbench and internal protocols. Its diff
 shows source changes; it is not a compatibility verdict. The existing OpenAI
 compatibility gate continues to cover only the declared standard subset.
 
+## TypeScript consumer binding
+
+Web entries consume this package through the package manifest, not through a
+relative path into `packages/contracts/src/**`. `web/admin` and
+`web/workbench` declare `"@speechnexus/contracts": "workspace:*"` and import the
+declared `exports` subpaths:
+
+```ts
+import { createSpeechClient, parse } from "@speechnexus/contracts";
+import { parse as parseProfile } from "@speechnexus/contracts/admin";
+import { createValidatedClient } from "@speechnexus/contracts/workbench-http";
+import { parse as parseEvent } from "@speechnexus/contracts/realtime-events";
+```
+
+"Same version" therefore follows from the declared workspace dependency and the
+`exports` map: renaming the package, moving a generated artifact, or dropping
+the package from the workspace fails as a resolution or declaration error, not
+as a missing file path. Importing by relative path from `web/` is rejected by the
+guard below.
+
+Two `schemas` subpaths expose the generated, drift-protected schema bundles to
+consumers that pin UI bounds or descriptors against the authoritative contract
+instead of a copied constant: `@speechnexus/contracts/schemas/workbench`
+(`workbench.schema.json`) and `@speechnexus/contracts/schemas/file`
+(`file.schema.json`). Import them as JSON modules; they are generated artifacts
+and are never edited by hand.
+
+Every declared subpath either has a real consumer through the manifest or is
+registered with its reason in [`export-consumers.json`](export-consumers.json).
+Entries there state the actual consumer (usually the generated Python module
+used by the backend, or a repository fixture that runs from the checkout and is
+not a workspace consumer). Adding an `exports` entry without a consumer, or
+leaving a registration after its subpath gains one, fails the guard.
+
+```sh
+node --test tests/ci/contract-consumers.test.mjs
+node scripts/dev-env/validate-contract-consumers.mjs
+```
+
+The guard runs in the `changes` CI job on every pull request without installing
+pnpm dependencies. It statically checks the `exports` targets, manifest
+imports, declared workspace dependency and the two-way `exports`/consumer
+alignment; it does not prove runtime resolution, bundle contents or that a page
+actually calls an endpoint. Run `pnpm typecheck`, `pnpm build` and the Web tests
+for those. Repository probes under `scripts/` and `tests/` import the sources
+directly from the checkout; they are not package consumers and stay out of the
+binding rule.
+
 ## Synchronous speech ceiling handoff
 
 The root Python / TypeScript `parse("SpeechRequest", value)` and generated

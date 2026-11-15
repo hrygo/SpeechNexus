@@ -3,15 +3,16 @@ name: speechnexus
 # Minimal synchronous ASR/TTS deployment surface.
 #
 # Base `docker compose config --services` is intentionally limited to:
-#   postgres, minio, minio-init, api, gateway, job-admission-watch
+#   postgres, minio, minio-init, api, gateway
 #
-# `job-admission-watch` is part of the base topology on purpose: a deployment
-# started from this file must have something actually reading whether a public Job
-# create is admitted. It is an HTTP-only poller of
-# `GET /v1/nexus/jobs/admission-readiness` -- no database DSN, no role, no engine
-# call -- and it carries `restart: "no"` with no health gate on other services,
-# because restarting cannot renew an elapsed readiness receipt: the container going
-# unhealthy is the signal, not the repair (#845).
+# The base list is the minimum needed to serve traffic. An observer that can be
+# absent without failing anything does not belong in it: a container that is
+# declared here but silently `Exited` would look exactly like #845 -- a stack that
+# appears green while nothing reads whether a create is admitted. The admission
+# poller is therefore the `admission-watch` profile, and "the poller is actually
+# running and healthy" is an acceptance step (see
+# `docs/operations/engine-readiness-observability.md`), not an assumption of this
+# file (#845).
 #
 # The following production units are deliberately NOT part of this file yet:
 #   - node-controller: engine lifecycle is operator/external in this bootstrap;
@@ -21,9 +22,9 @@ name: speechnexus
 #     report object storage, which this bootstrap surface does not assemble.
 # Adding any of them here would incorrectly claim those capabilities are assembled.
 # `migrate`, `engine-register`, `engine-readiness` (readiness renewal and its
-# read-only report), `binding-disable-worker`, `job-dispatch-worker`, `admin`,
-# `workbench` and `asset-inspector` are opt-in profiles and therefore do not
-# appear in the base service list. The `job-dispatch` profile assembles the
+# read-only report), `admission-watch` (the admission poller), `binding-disable-worker`,
+# `job-dispatch-worker`, `admin`, `workbench` and `asset-inspector` are opt-in
+# profiles and therefore do not appear in the base service list. The `job-dispatch` profile assembles the
 # public Job dispatcher process behind a startup gate that names a missing dispatch
 # grant, migration head or Job bucket before any lease is claimed, but it still
 # requires a real engine behind the execution gateway; it does not by itself make
@@ -37,11 +38,14 @@ name: speechnexus
 # assembles the receipt renewal one-shot (`engine-readiness-renew`) and a read-only
 # report (`engine-readiness`). Neither is scheduled by this file, and the renewal
 # still needs an operator timer shorter than the receipt TTL: a receipt must come
-# from a real engine probe, so nothing here can re-sign one on a schedule. What the
-# base topology does guarantee is that the window is observed -- `api` keeps
-# `/readyz` for process health only, and `job-admission-watch` reports
-# `engine_receipt_expired` on the admission surface as soon as a create would
-# answer `503 engine_not_ready` (#845).
+# from a real engine probe, so nothing here can re-sign one on a schedule. The
+# `admission-watch` profile assembles `job-admission-watch`, an HTTP-only poller of
+# `GET /v1/nexus/jobs/admission-readiness` -- no database DSN, no role, no engine
+# call -- that carries `restart: "no"` and no health gate on other services,
+# because restarting cannot renew an elapsed readiness receipt: the container going
+# unhealthy is the signal, not the repair. `api` keeps `/readyz` for process health
+# only; the poller reports `engine_receipt_expired` on the admission surface as soon
+# as a create would answer `503 engine_not_ready` (#845).
 #
 # The `workbench-api` profile assembles the independent Workbench API unit:
 # `workbench-migrate` bootstraps/verifies the workbench PostgreSQL namespace and
@@ -715,7 +719,13 @@ services:
   #   pointing the API healthcheck at a business surface would remove the whole API
   #   from a load balancer when only creation is refused, which is the failure
   #   domain #828 review B8 rejected.
+  # Opt-in: `docker compose --profile admission-watch up`. It is not in the base
+  # list because a poller that is absent (or silently `Exited`) would leave the
+  # stack looking healthy with no observation at all -- the very shape #845 removes.
+  # The acceptance step that requires it to be running/healthy is what makes its
+  # absence fail; the profile alone would not.
   job-admission-watch:
+    profiles: ["admission-watch"]
     build: *python-build
     command: ["speechnexus-admission-watch"]
     user: "${SPEECHNEXUS_RUNTIME_UID:?set SPEECHNEXUS_RUNTIME_UID from id -u}:${SPEECHNEXUS_RUNTIME_GID:?set SPEECHNEXUS_RUNTIME_GID from id -g}"

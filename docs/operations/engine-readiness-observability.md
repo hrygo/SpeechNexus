@@ -8,7 +8,15 @@
 `/readyz` 会让一次只影响创建的事件把整个 API 从负载均衡摘掉（#828 review B8 的结论，
 shared `contracts/operations.openapi.yaml` 也因此不改）。
 
-本文档描述这条信号的两个面：**报告**（API 上的只读路由）和**轮询者**（参考部署里真正在读它的容器）。
+本文档描述这条信号的两个面：**报告**（API 上的只读路由）、**轮询者**（参考部署里真正在读它的容器），
+以及让轮询者「有没有在跑」变成会失败的那一步——**验收**。
+
+两个边界先写在前面，免得后来人误读这套东西的能力：
+
+- **「状态可读」≠「状态会被看到」。** 参考部署没有日志采集，也没有告警消费者。这一版做到的是：
+  有人去看的那一刻，状态是机器可读的，并且能分清 `degraded` / `unreachable` / 观测过期三种结论。
+  #845 消灭的是「完全没有信号」，**不是**「信号会被主动推送」。
+- **它不报「进程坏了」，只报「建 Job 的门是开的还是关的」。** 进程是否还能服务流量仍然只看 `/readyz`。
 
 ## 1. 报告：`GET /v1/nexus/jobs/admission-readiness`
 
@@ -53,14 +61,24 @@ shared `contracts/operations.openapi.yaml` 也因此不改）。
 两者**互不替代**：`/readyz` 保持只回答进程健康，本路由不改变任何准入判定
 （`decide_admission`、配额与回执校验逻辑都没有改动）。
 
-## 2. 轮询者：`job-admission-watch`
+## 2. 轮询者：`job-admission-watch`（`--profile admission-watch`）
 
-参考部署的 base 拓扑里有 `job-admission-watch`（`docker compose up` 即启动，不需要 profile）。
+`job-admission-watch` 是 **opt-in profile**：base 拓扑（`postgres, minio, minio-init, api, gateway`）
+只保留「服务流量所必需」的组件。把一个「缺席也不会让任何东西失败」的观测者放进 base，等于用一个
+不成立的断言换一个更小的面——那正是 #845 要消除的形态。所以它进 profile，而「它必须在跑」由下一节的
+验收步骤保证：**profile 不是安全来源，验收检查才是。**
+
+它和 `api` 用**同一个仓库镜像**（`deploy/images/python.Dockerfile`，`build: *python-build`）：
+脚本以 console script 装在镜像里（`backend/pyproject.toml` 的 `project.scripts`），
+**没有 bind-mount，也不依赖从哪个目录执行 compose**（`context: ..` 相对 compose 文件解析）。
+构建上下文与 `api` 相同，所以两者不会各自漂移。
+
 它是一个 HTTP 客户端，只调用上面的路由：
 
 | 项目 | 事实 |
 | --- | --- |
-| 入口 | `speechnexus-admission-watch`（`backend/src/speechnexus_backend/admission_watch.py`） |
+| 入口 | console script `speechnexus-admission-watch`（实现 `backend/src/speechnexus_backend/admission_watch.py`，装在镜像里，不挂载） |
+| 镜像 | 与 `api` 同一个构建（`deploy/images/python.Dockerfile`），不额外引入基础镜像 |
 | 依赖 | 仅标准库。**没有**数据库 DSN、没有角色、没有引擎凭据、没有 `depends_on` |
 | 输出 | 每轮一行 JSON `{"event":"job_admission_observation",...}`；状态切换额外一行 `job_admission_transition` |
 | 状态文件 | `/run/admission-watch/state.json`（私有 tmpfs，原子替换），供 healthcheck 读取 |
@@ -90,9 +108,46 @@ shared `contracts/operations.openapi.yaml` 也因此不改）。
 Docker 从不会因为 healthcheck 失败而重启容器，本服务再把 `restart` 显式设为 `"no"`，
 并且没有任何其它服务以它为 `depends_on`。因此：
 
-- 降级期间 `docker ps` 会显示 `job-admission-watch (unhealthy)`，同行的 `api` 保持 `Up (healthy)`；
+- 降级期间 `docker compose ps` 会显示 `job-admission-watch ... (unhealthy)`，同行的 `api` 保持 `Up (healthy)`；
 - `docker inspect` 的 `RestartCount` 保持 `0`（轮询容器与被观测的 `api` 都是）；
 - 观测进程死亡时容器停在 `Exited(4)` 之类的终态而不是重启循环，healthcheck 也会因为状态文件过期而变红。
+
+**`unhealthy` 只说明「不可准入（含读不到）」，不说明容器坏了。** `docker ps` 本身**不区分**这两件事，
+它只是指针；查因用 healthcheck 自己的输出（保留在 health log 里）：
+
+```bash
+docker inspect --format '{{json .State.Health}}' "$(docker compose -p speechnexus ps -q job-admission-watch)" |
+  python3 -c 'import json,sys; h=json.load(sys.stdin); print(h["Log"][-1]["Output"])'
+```
+
+输出是 JSON，`state` 给出三种不同结论：`degraded`（创建会被拒，`causes` 说明哪一类）、
+`unreachable`（读不到报告）、以及 `reason` 为观测过期的「循环已经不再产出」（读不到 ≠ 降级）。
+完整的逐轮观测在容器日志里（`job_admission_observation`，状态切换时额外一行
+`job_admission_transition`），但那需要 `docker logs`——**这也是上面那条边界的具体含义：
+它可查，不保证被看到。**
+
+## 3. 参考装配与验收
+
+参考启动命令（`deploy/compose.yaml` 的 profile 形式）：
+
+```bash
+docker compose -f deploy/compose.yaml --profile admission-watch up -d
+```
+
+**验收清单**（缺任一步即视为观测未装配）：
+
+1. `docker compose -f deploy/compose.yaml --profile admission-watch ps` 里 `job-admission-watch`
+   必须是 `running` 且 `(healthy)`。它是 `Exited (N)` 或者根本不出现，说明这个部署**没有**在读准入，
+   后面的「报告是 200」不算数。
+2. `curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/v1/nexus/jobs/admission-readiness`
+   必须是 `200`；非 `200` 说明报告本身没装配（`503 job_unavailable`），不是准入门关着。
+3. `curl -sS http://127.0.0.1:8000/v1/nexus/jobs/admission-readiness` 的 `status`/`causes` 必须自洽：
+   `causes` 为空当且仅当 `status` 为 `admitting`。
+4. `docker inspect` 的 `RestartCount` 为 `0`，且 `api` 的 healthcheck 仍指向 `/readyz`
+   （准入降级不该把 `api` 从负载均衡摘掉）。
+
+第 1 步是这套东西里唯一会把「观测者缺席」变成一次可见失败的地方：没有它，profile、文档、
+报告都可以是对的，而部署里什么都没有。
 
 ### 轮询不等于修复
 
@@ -107,7 +162,7 @@ docker compose --profile engine-readiness run --rm engine-readiness
 轮询者解决的是“降级不可见”，不是“降级会自动好”。收到 `engine_receipt_expired` 后按上面的命令续签，
 下一次轮询会回到 `admitting`。
 
-## 3. 验证
+## 4. 验证
 
 | 证据 | 位置 |
 | --- | --- |
@@ -115,4 +170,4 @@ docker compose --profile engine-readiness run --rm engine-readiness
 | 轮询者分类、退出码、状态文件与过期护栏 | `tests/unit/backend/test_admission_watch.py` |
 | 契约声明、cause→对外码映射、`/readyz` 保持 200 | `tests/contract/test_job_admission_readiness.py` |
 | 真实 PostgreSQL 上的 `admitting → degraded → admitting`、满载、存储故障与未配置 workspace | `tests/integration/test_job_admission_readiness_pg.py` |
-| 参考部署仍然装配报告与轮询者 | `tests/ci/test_reference_deploy_job_admission_watch.py` |
+| 参考部署装配报告与轮询者、profile 与验收步骤不被悄悄删掉 | `tests/ci/test_reference_deploy_job_admission_watch.py` |

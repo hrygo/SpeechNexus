@@ -10,8 +10,11 @@ This module parses text only, like the other ``tests/ci`` guards. It runs under 
 system interpreter and never imports the backend, renders Compose, connects to
 PostgreSQL or starts a container. Mutations that must turn it red:
 
-- deleting the ``job-admission-watch`` service, or giving it a ``profiles:`` entry
-  so a plain ``docker compose up`` no longer polls it;
+- deleting the ``job-admission-watch`` service, or dropping its ``profiles:`` entry
+  so the minimal base surface silently grows an observer it cannot guarantee;
+- dropping ``--profile admission-watch`` from the documented reference start
+  command, or dropping the acceptance step that requires the poller to be
+  running/healthy (a profile without that step is a silent absence);
 - changing its ``restart: "no"`` to a restart policy, adding a ``depends_on`` so the
   observation waits on the condition it reports, or dropping the healthcheck that
   reads its own last observation;
@@ -90,12 +93,15 @@ class ComposePollerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.compose = read(COMPOSE)
 
-    def test_the_poller_is_part_of_the_base_topology(self) -> None:
+    def test_the_poller_is_its_own_opt_in_profile(self) -> None:
         block = service_block(self.compose, SERVICE)
-        # A profile would put the poller back where this issue found it: assembled
-        # only when an operator remembers to ask for it.
-        self.assertNotIn("profiles:", block, "the poller must start with a plain docker compose up")
+        # The base surface is the minimum needed to serve traffic: an observer that
+        # can be absent (or silently `Exited`) without failing anything must not be
+        # declared there. Its absence is caught by the acceptance step instead.
+        self.assertIn('profiles: ["admission-watch"]', block)
         self.assertIn(f'command: ["{COMMAND}"]', block)
+        header = self.compose[: self.compose.index("services:")]
+        self.assertIn("`admission-watch`", header, "the header must list the profile")
 
     def test_the_poller_cannot_restart_anything(self) -> None:
         block = service_block(self.compose, SERVICE)
@@ -136,10 +142,14 @@ class ComposePollerTests(unittest.TestCase):
             "no service may depend on the poller",
         )
 
-    def test_the_base_service_list_names_the_poller(self) -> None:
+    def test_the_base_service_list_stays_minimal(self) -> None:
         header = self.compose[: self.compose.index("services:")]
         base = header[header.index("Base `docker compose config --services`") :]
-        self.assertIn(SERVICE, base.split("\n\n")[0])
+        # The listing is the commented block up to the first bare `#` line.
+        listing = base.split("\n#\n", 1)[0]
+        for name in ("postgres", "minio", "minio-init", "api", "gateway"):
+            self.assertIn(name, listing)
+        self.assertNotIn(SERVICE, listing, "the poller is opt-in, not part of the base surface")
 
 
 class PollerEntryPointTests(unittest.TestCase):
@@ -237,6 +247,47 @@ class OperatorSurfaceTests(unittest.TestCase):
         self.assertIn("decide_admission", doc)
         self.assertIn('restart: "no"', doc)
         self.assertIn("RestartCount", doc)
+
+    def test_the_operator_doc_states_the_two_boundaries_of_the_signal(self) -> None:
+        doc = read(OPERATOR_DOC)
+        # "Readable" is not "will be seen": this deployment ships no log shipping and
+        # no alert consumer, and a later reader must not assume one exists.
+        self.assertIn("没有日志采集", doc)
+        self.assertIn("不是**「信号会被主动推送」", doc)
+        # And it does not report process health: that stays `/readyz`'s question.
+        self.assertIn("不报「进程坏了」", doc)
+
+    def test_the_operator_doc_ships_the_reference_profile_command(self) -> None:
+        # Forgetting the profile must be a doc failure, not a silent absence: the
+        # documented reference start command has to enable the poller.
+        doc = read(OPERATOR_DOC)
+        commands = [
+            line.strip() for line in doc.splitlines() if "docker compose" in line and " up" in line
+        ]
+        self.assertTrue(commands, "the doc must ship a reference start command")
+        self.assertTrue(
+            any(re.search(r"--profile\s+admission-watch", line) for line in commands),
+            f"the reference start command must enable the profile: {commands}",
+        )
+
+    def test_the_operator_doc_has_an_acceptance_step_for_the_poller(self) -> None:
+        # This is the only place where "the observer is absent" becomes a visible
+        # failure. Without it the profile, the doc and the report can all be right
+        # while the deployment observes nothing -- the #845 shape again.
+        doc = read(OPERATOR_DOC)
+        start = doc.index("**验收清单**")
+        end = doc.index("\n## ", start)
+        section = doc[start:end]
+        self.assertIn("ps", section, "the acceptance list must query the service state")
+        # Wrapped list items are one step: the numbering is the step boundary.
+        steps = re.split(r"(?m)^\d+\.\s+", section)[1:]
+        checked = [
+            step for step in steps if SERVICE in step and ("healthy" in step or "running" in step)
+        ]
+        self.assertTrue(
+            checked,
+            "the acceptance list must have a step requiring the poller running/healthy",
+        )
 
 
 if __name__ == "__main__":

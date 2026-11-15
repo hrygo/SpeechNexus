@@ -36,6 +36,10 @@ from speechnexus_backend.speech.domain.job_dispatch import (
 )
 
 MAX_RESULT_BYTES = 64 * 1024 * 1024
+# The longest retention window a caller may configure: ten years, in
+# microseconds. A larger value would only create expiry timestamps no clock can
+# reach, so it is refused instead of stored.
+MAX_RESULT_RETENTION_US = 10 * 365 * 24 * 60 * 60 * 1_000_000
 # A voice generation result commits the draft preview the engine synthesized;
 # the public result references it as ``preview_artifact_ids``.
 _VOICE_PREVIEW_MEDIA: dict[str, ArtifactKind] = {
@@ -86,7 +90,15 @@ class CommittedReportReader(Protocol):
 
 
 class ResultArtifactPublisher:
-    """Write object bytes first, then one deterministic committed Artifact row."""
+    """Write object bytes first, then one deterministic committed Artifact row.
+
+    ``retention_us`` is the deployment's retention window for a published result
+    (PRD F-ARTIFACT: a generated audio target is retained by default for 30
+    days). It arrives from configuration at the composition root, so the
+    publication branch never decides a retention policy of its own; the row's
+    ``expires_at_us`` is ``created_at_us + retention_us`` and stays fixed for the
+    life of that Artifact, an unchanged replay included.
+    """
 
     def __init__(
         self,
@@ -94,12 +106,16 @@ class ResultArtifactPublisher:
         blobs: ArtifactBlobs,
         staging: StagingResultObjects,
         *,
+        retention_us: int,
         validation: ValidationRunFactsReader | None = None,
         report_reader: CommittedReportReader | None = None,
         now_us: Callable[[], int] | None = None,
         close: Callable[[], None] | None = None,
     ) -> None:
+        if type(retention_us) is not int or not 1 <= retention_us <= MAX_RESULT_RETENTION_US:
+            raise ValueError("Result retention must be an explicit bounded window")
         self._rows, self._blobs, self._staging = rows, blobs, staging
+        self._retention_us = retention_us
         self._validation = validation
         self._report_reader = report_reader
         self._now_us = now_us or (lambda: time.time_ns() // 1_000)
@@ -150,6 +166,7 @@ class ResultArtifactPublisher:
             created_at_us = self._now_us()
             if type(created_at_us) is not int or created_at_us < 0:
                 raise DispatchUnavailableError("Result publication clock is unavailable")
+            expires_at_us = _expires_at(created_at_us, self._retention_us)
             committed = self._rows.insert_ready(
                 ArtifactRecord(
                     artifact_id,
@@ -162,7 +179,7 @@ class ResultArtifactPublisher:
                     result_receipt_identity(job.job_id),
                     job.job_id,
                     created_at_us,
-                    None,
+                    expires_at_us,
                     object_key,
                     version_id,
                 )
@@ -228,7 +245,7 @@ class ResultArtifactPublisher:
                     receipt_id,
                     job.job_id,
                     created_at_us,
-                    None,
+                    _expires_at(created_at_us, self._retention_us),
                     object_key,
                     version_id,
                 )
@@ -325,6 +342,19 @@ def _validation_probe(submission: ExecutionSubmission, facts: ValidationRunFacts
         # reusable TTS on new text even if the engine returns audio.
         raise DispatchProtocolError("Validation probe reuses the generation preview text")
     return preview_text
+
+
+def _expires_at(created_at_us: int, retention_us: int) -> int:
+    """The one retention deadline a published Artifact records.
+
+    Both inputs are already validated, so the only remaining failure is an
+    integer that a BIGINT column could not hold; refuse it here rather than
+    writing an unreadable deadline.
+    """
+    expires_at_us = created_at_us + retention_us
+    if expires_at_us > 2**63 - 1:
+        raise DispatchUnavailableError("Result retention exceeds the recorded clock range")
+    return expires_at_us
 
 
 def _media_for(kind: str) -> dict[str, ArtifactKind]:

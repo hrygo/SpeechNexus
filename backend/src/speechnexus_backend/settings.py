@@ -113,6 +113,15 @@ class Settings(BaseSettings):
 
     artifact_reader_database_url: SecretStr | None = Field(default=None, min_length=1)
     artifact_read_timeout_seconds: float = Field(default=3, gt=0, le=30)
+    # The retention sweep is a separate process that reads committed Artifact rows
+    # and moves their state through the same API runtime role
+    # (`artifact_retention_grants`), so it reuses `database_url` rather than
+    # introducing a second identity. The interval and the batch are the whole
+    # bound on one pass; the retention window itself is recorded per row at
+    # publication (`SPEECHNEXUS_ARTIFACT_RETENTION_SECONDS`) and is never
+    # re-derived here.
+    artifact_retention_interval_seconds: float = Field(default=60, gt=0, le=3600)
+    artifact_retention_batch_size: int = Field(default=10, ge=1, le=100)
 
     resource_pool_reader_database_url: SecretStr | None = Field(default=None, min_length=1)
     resource_pool_read_concurrency: int = Field(default=2, ge=1, le=4)

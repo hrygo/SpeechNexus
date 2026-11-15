@@ -415,11 +415,16 @@ def resolve_voice_previews(
     state: str,
     result_json: str | None,
     artifact: Callable[[str, str], JobArtifactFact | None],
+    require_ready: bool = True,
 ) -> tuple[JobArtifactFact, ...]:
     """Resolve the preview facts a succeeded voice result references.
 
     One rule serves the public GET projection and the metadata transaction, so a
-    candidate cannot be accepted by one path while rejected by the other.
+    candidate cannot be accepted by one path while rejected by the other. The two
+    readers ask different questions about the same fact: a metadata transaction
+    needs servable content, while the read projection must still list a committed
+    preview whose retention window ended, or a succeeded Job would become
+    unreadable the moment retention ran.
     """
     if state != "succeeded":
         return ()
@@ -448,6 +453,7 @@ def resolve_voice_previews(
             receipt_id=receipt_id,
             kind="preview",
             artifact=artifact,
+            require_ready=require_ready,
         )
         for artifact_id in artifact_ids
     )
@@ -460,6 +466,7 @@ def resolve_voice_preview(
     state: str,
     result_json: str | None,
     artifact: Callable[[str, str], JobArtifactFact | None],
+    require_ready: bool = True,
 ) -> tuple[JobArtifactFact, ...]:
     """Resolve the single ready preview a succeeded ``voice_preview`` Job names.
 
@@ -489,6 +496,7 @@ def resolve_voice_preview(
             receipt_id=receipt_id,
             kind="preview",
             artifact=artifact,
+            require_ready=require_ready,
         ),
     )
 
@@ -500,8 +508,15 @@ def _ready_artifact(
     receipt_id: str,
     kind: str,
     artifact: Callable[[str, str], JobArtifactFact | None],
+    require_ready: bool = True,
 ) -> JobArtifactFact:
-    """One committed, ready Artifact with the exact declared kind and receipt."""
+    """One committed Artifact with the exact declared kind and receipt.
+
+    ``require_ready`` is the whole difference between the two readers: admission
+    needs content that can still be served, while the read projection accepts a
+    committed fact whose retention window ended. Both refuse an absent row, a
+    mismatched kind and a mismatched receipt, so neither can invent a result.
+    """
     try:
         identifier(artifact_id)
     except ValueError:
@@ -512,6 +527,7 @@ def _ready_artifact(
         or fact.artifact_id != artifact_id
         or fact.kind != kind
         or fact.receipt_id != receipt_id
+        or (require_ready and fact.state != "ready")
     ):
         raise PublicJobUnavailableError
     return fact
@@ -524,11 +540,13 @@ def resolve_voice_validation_report(
     state: str,
     result_json: str | None,
     artifact: Callable[[str, str], JobArtifactFact | None],
+    require_ready: bool = True,
 ) -> tuple[JobArtifactFact, ...]:
     """Resolve the single ready validation report a succeeded result references.
 
     The result is never trusted on its own: the referenced Artifact row must be
-    committed, ready, carry the validation_report kind and the same receipt.
+    committed, carry the validation_report kind and the same receipt. Admission
+    additionally requires servable content; the read projection does not.
     """
     if state != "succeeded":
         return ()
@@ -555,6 +573,7 @@ def resolve_voice_validation_report(
             receipt_id=receipt_id,
             kind="validation_report",
             artifact=artifact,
+            require_ready=require_ready,
         ),
     )
 
@@ -1213,7 +1232,14 @@ class PublicJobs:
         job: PublicJob,
         artifact: Callable[[str, str], JobArtifactFact | None],
     ) -> tuple[JobArtifactFact, ...]:
-        """One verification rule for the single and batched reads."""
+        """One verification rule for the single and batched reads.
+
+        This is the public projection, so it accepts a committed fact whose
+        retention window ended: PRD §F-JOB keeps a succeeded Job's terminal state
+        and only marks the Artifact expired, and the content route states that
+        decision. Only an absent row, a mismatched kind or a mismatched receipt
+        makes the result unreadable.
+        """
         if job.state != "succeeded":
             return ()
         if job.result_json is None:
@@ -1231,6 +1257,7 @@ class PublicJobs:
                 state=job.state,
                 result_json=job.result_json,
                 artifact=artifact,
+                require_ready=False,
             )
         if job.kind == "voice_preview":
             return resolve_voice_preview(
@@ -1239,6 +1266,7 @@ class PublicJobs:
                 state=job.state,
                 result_json=job.result_json,
                 artifact=artifact,
+                require_ready=False,
             )
         if job.kind == "voice_validation":
             return resolve_voice_validation_report(
@@ -1247,6 +1275,7 @@ class PublicJobs:
                 state=job.state,
                 result_json=job.result_json,
                 artifact=artifact,
+                require_ready=False,
             )
         name, kind = (
             ("transcript_artifact_id", "transcript")

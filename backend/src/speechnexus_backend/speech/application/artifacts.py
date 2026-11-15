@@ -12,6 +12,7 @@ from speechnexus_backend.speech.domain.artifacts import (
     ArtifactRecord,
     artifact_range,
     download_filename,
+    is_result_artifact_identity,
 )
 from speechnexus_backend.speech.domain.assets import identifier
 
@@ -55,22 +56,30 @@ class ArtifactService:
         return artifact
 
     def _load(self, artifact_id: str) -> tuple[ArtifactRecord, int]:
+        """Read one committed row, naming an absent one without inventing it.
+
+        A committed row is the only public evidence of a publication. Without
+        one, the identifier's shape decides the answer: an identifier inside the
+        minted result space can only be a publication that never committed (its
+        bytes, if any, stay in private staging and are not addressable here),
+        while anything else was never an Artifact this API issued. Neither
+        branch reads an object or a row it does not already serve, so the
+        refusal distinguishes the two cases without disclosing staging content.
+        """
         identifier(artifact_id)
         artifact, now = self._metadata.get(artifact_id, self.workspace_id)
         if artifact is None:
+            if is_result_artifact_identity(artifact_id):
+                raise ArtifactError("artifact_not_published")
             raise ArtifactError("artifact_not_found")
-        if (
-            artifact.status == "ready"
-            and artifact.expires_at_us is not None
-            and artifact.expires_at_us <= now
-        ):
+        if artifact.status == "ready" and artifact.retention_elapsed(now):
             artifact = replace(artifact, status="expired")
         return artifact, now
 
     def download(self, artifact_id: str, range_header: str | None = None) -> ArtifactDownload:
         artifact, now = self._load(artifact_id)
         if not artifact.content_available(now):
-            raise ArtifactError("artifact_unavailable")
+            raise ArtifactError(artifact.unavailable_code())
         offset, length, partial = artifact_range(range_header, artifact.bytes)
         return ArtifactDownload(artifact, offset, length, partial)
 

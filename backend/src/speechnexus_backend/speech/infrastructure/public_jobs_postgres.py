@@ -27,6 +27,7 @@ from speechnexus_backend.speech.application.voice_drafts import (
 )
 from speechnexus_backend.speech.domain.admission import AdmissionRejectedError
 from speechnexus_backend.speech.domain.public_jobs import (
+    ARTIFACT_STATES,
     JOB_STATES,
     TERMINAL_STATES,
     JobArtifactFact,
@@ -1334,8 +1335,15 @@ def _progress(row: dict[str, Any]) -> JobProgressFact | None:
 
 
 def _artifact(row: dict[str, Any]) -> JobArtifactFact | None:
-    """A ready Artifact with a committed receipt; anything else has no fact."""
-    if row["artifact_state"] != "ready" or row["receipt_id"] is None:
+    """A committed Artifact with a receipt; an absent row has no fact.
+
+    Retention is a property of the fact, not a reason to hide it (PRD §F-JOB,
+    "succeeded" keeps its terminal state and only marks the Artifact expired), so
+    the row's state travels with the fact and each reader decides what it needs:
+    the metadata transaction requires ``ready``, the read projection does not.
+    A row without a committed receipt never becomes a public fact.
+    """
+    if row["artifact_state"] not in ARTIFACT_STATES or row["receipt_id"] is None:
         return None
     try:
         return JobArtifactFact(
@@ -1346,6 +1354,7 @@ def _artifact(row: dict[str, Any]) -> JobArtifactFact | None:
             sha256=row["sha256"],
             receipt_id=row["receipt_id"],
             expires_at_us=(None if row["expires_at_us"] is None else int(row["expires_at_us"])),
+            state=row["artifact_state"],
         )
     except ValueError, TypeError, KeyError:
         raise PublicJobUnavailableError from None

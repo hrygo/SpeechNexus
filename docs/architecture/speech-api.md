@@ -65,7 +65,7 @@ SpeechCommand
 | `POST /v1/nexus/operations/{operation_id}/cancellations` | 取消指定实时 / 同步操作；Job 内操作转为所属 Job 的取消命令，避免留下无结果的 required 步骤；进行中 `202`，已终结 `200` |
 | `POST /v1/nexus/assets`、`GET /v1/nexus/assets/{asset_id}` | 有界流式上传文件与读取元数据；上传结束校验后才为 `ready` |
 | `GET /v1/nexus/assets/{asset_id}/content` | 按部署功能策略下载 ready 输入，支持 Range；不暴露对象存储 key 或服务器路径 |
-| `GET /v1/nexus/artifacts/{artifact_id}`、`GET .../{artifact_id}/content` | 读取已提交产物的元数据 / 内容；内容支持 Range，过期或已删除返回 `410 artifact_unavailable`，staging 不可见 |
+| `GET /v1/nexus/artifacts/{artifact_id}`、`GET .../{artifact_id}/content` | 读取已提交产物的元数据 / 内容；内容支持 Range；保留期届满返回 `410 artifact_expired`，清理已移除内容返回 `410 artifact_deleted`，已铸造成品身份但尚无提交行返回 `404 artifact_not_published`，从未签发的标识返回 `404 artifact_not_found`；staging 不可寻址 |
 | `POST /v1/nexus/realtime/sessions` | 验证并固定会话配置，返回 `201`、会话 `id`、连接地址和过期时间 |
 | `GET /v1/nexus/realtime/sessions/{session_id}` | 查询会话与 operation 终态；输入确认位置 `input_ack_sample` 是可选字段，首期没有人级 owner 授权 |
 | `POST /v1/nexus/realtime/sessions/{session_id}/cancellations` | 从 HTTP 请求关闭会话，便于 WS 不可达时停止执行 |
@@ -230,7 +230,7 @@ Profile、voice 和 model binding revision 不可变；升级只影响后续新�
 | 400 | `invalid_json`、`invalid_audio` | 修正输入；不直接重试 |
 | 401 / 403 | `service_credential_required` / `origin_rejected`、`feature_disabled` | 仅在配置服务入口凭据或功能 / Origin 策略时适用；不跳转登录 |
 | 404 | `resource_not_found` | 对象不存在或不属于该请求工作空间；不据此宣称用户隔离 |
-| 410 | `artifact_unavailable`、`event_history_expired` | 内容 / 事件已过保留期；读取当前状态，不重建已删除内容 |
+| 410 | `artifact_expired`、`artifact_deleted`、`artifact_unavailable`、`event_history_expired` | 内容 / 事件已过保留期；`artifact_expired` 表示记录的 `expires_at_us` 已过而内容尚未清理，`artifact_deleted` 表示保留期清理已移除内容，`artifact_unavailable` 表示存储无法返回内容；均不重建已删除内容 |
 | 409 | `configuration_changed`、`idempotency_conflict`、`operation_in_progress`、`execution_cleanup_pending` | 按响应协调版本或查询原意图 |
 | 413 | `payload_too_large` | 分段或改用有配额的文件上传 |
 | 422 | `unsupported_parameter`、`incompatible_profile`、`async_required` | 改请求；不得静默删参数 |

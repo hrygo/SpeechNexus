@@ -182,6 +182,23 @@ delivered/played 不减少消耗，但其存在也阻止后续声称从未外发
 处理引用、未决写入和删除账本。存在对象证明时，须确认固定版本已清理；无对象证明且
 没有写入者时可无需删除对象完成清理，写入结果未决则保持阻断。
 
+普通生成音频的制品保留已按同一原则落到 Artifact 上。结果发布时按配置
+`SPEECHNEXUS_ARTIFACT_RETENTION_SECONDS`（默认 30 天，范围 1 小时至 10 年）写入
+`expires_at_us = created_at_us + 窗口`，截止时刻随行固化；更改进程配置不会改写已记录
+的期限。读取按数据库时钟判定：到达 `expires_at_us` 后内容即返回 `410
+artifact_expired`，即使清理进程尚未运行；`410 artifact_deleted` 表示清理已确认移除该
+版本；两者都不重建内容，也不隐藏已提交行的元数据。
+
+清理是独立的 `artifact-retention` 进程，一次 pass 有界且分两段：先把已到期且仍为
+`ready` 的行改为 `expired`，再删除该行固定版本的对象，取得移除确认后才改为 `deleted`。
+选择和状态转移都重复同一条期限谓词，处于保留期内的行不会被选中，放宽的查询也无法提前
+删除内容；移除未确认时保留 `expired`，下载答案不变并在下一 pass 重试。行本身保留
+`created_at_us` 与 `expires_at_us`，每次决策另输出一行 JSON（制品标识、决策、期限、
+数据库时刻）与 pass 汇总，因此清理范围可在事后复核。该进程使用 API 运行身份和
+`artifact_retention_grants`（`SELECT` 加 `UPDATE (artifact_state)`），启动时拒绝任何更宽的
+写权限。Job 终态不受影响：保留期届满只把 Artifact 标为过期，`succeeded` 与其结果引用
+仍可读取。
+
 | 数据 | 默认行为 / 保留建议 |
 | --- | --- |
 | 实时 PCM / TTS 网络音频块 | 只在受限内存缓冲；不永久保存，不进入日志和调试导出 |

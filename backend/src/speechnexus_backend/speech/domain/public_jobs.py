@@ -45,6 +45,10 @@ ARTIFACT_KINDS = (
     "validation_report",
     "export_manifest",
 )
+# The committed Artifact states a Job fact may carry. `ready` content is
+# servable; `expired` and `deleted` are committed results whose retention window
+# ended, which is a different fact from an absent Artifact row.
+ARTIFACT_STATES = ("ready", "expired", "deleted")
 _ALLOWED_TRANSITIONS: dict[JobState, frozenset[JobState]] = {
     "pending": frozenset({"running", "cancelling", "failed", "cancelled", "expired"}),
     "running": frozenset({"succeeded", "failed", "cancelling", "cancelled"}),
@@ -423,7 +427,16 @@ class JobEventFact:
 
 @dataclass(frozen=True, slots=True)
 class JobArtifactFact:
-    """One committed Artifact row referenced by a succeeded Job result."""
+    """One committed Artifact row referenced by a succeeded Job result.
+
+    ``state`` is the committed Artifact state, not a wire field: retention moves
+    a row to ``expired`` and then ``deleted`` while the succeeded Job keeps its
+    terminal state (PRD §F-JOB), so a reader has to tell "committed but no longer
+    served" apart from "no committed fact at all". Operations that need servable
+    content (admission of a Job that references it) require ``ready``; the public
+    read projection still lists the fact and lets the content route state the
+    retention decision.
+    """
 
     artifact_id: str
     kind: str
@@ -432,6 +445,7 @@ class JobArtifactFact:
     sha256: str
     receipt_id: str
     expires_at_us: int | None = None
+    state: str = "ready"
 
     def __post_init__(self) -> None:
         identifier(self.artifact_id)
@@ -444,6 +458,8 @@ class JobArtifactFact:
         if not isinstance(self.sha256, str) or not _DIGEST.fullmatch(self.sha256):
             raise ValueError("Invalid Artifact digest")
         identifier(self.receipt_id)
+        if self.state not in ARTIFACT_STATES:
+            raise ValueError("Invalid Artifact state")
         if self.expires_at_us is not None and (
             type(self.expires_at_us) is not int or not 0 < self.expires_at_us <= _TIMESTAMP
         ):

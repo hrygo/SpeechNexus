@@ -23,6 +23,7 @@ from speechnexus_backend.speech.domain.job_dispatch import (
     result_artifact_identity,
 )
 
+RETENTION_US = 30 * 24 * 60 * 60 * 1_000_000
 DIGEST = "sha256:" + "a" * 64
 BODY = b'{"text":"synthetic transcript","language":null,"duration_ms":null}'
 
@@ -118,7 +119,9 @@ class Staging:
 
 async def test_repeat_publication_is_one_row_one_object() -> None:
     rows, blobs, staging = Rows(), Blobs(), Staging()
-    publisher = ResultArtifactPublisher(rows, blobs, staging, now_us=lambda: 1_700_000_000_000_000)
+    publisher = ResultArtifactPublisher(
+        rows, blobs, staging, retention_us=RETENTION_US, now_us=lambda: 1_700_000_000_000_000
+    )
     job = _job()
 
     first = await publisher.publish(job, _submission(), _receipt())
@@ -133,18 +136,56 @@ async def test_repeat_publication_is_one_row_one_object() -> None:
     assert rows.events == ["row"]
 
 
+async def test_publication_records_the_configured_retention_deadline() -> None:
+    """`expires_at_us` comes from configuration, not from the publication branch.
+
+    Two publishers built with different windows must record different deadlines
+    for the same clock, and the committed value must be exactly
+    ``created_at_us + retention_us``. This is the assertion that stays red if the
+    publication path goes back to writing ``None``.
+    """
+    created_at_us = 1_700_000_000_000_000
+    for retention_us in (RETENTION_US, 7 * 24 * 60 * 60 * 1_000_000):
+        rows, blobs, staging = Rows(), Blobs(), Staging()
+        publisher = ResultArtifactPublisher(
+            rows,
+            blobs,
+            staging,
+            retention_us=retention_us,
+            now_us=lambda: created_at_us,
+        )
+        published = await publisher.publish(_job(), _submission(), _receipt())
+        committed = rows.records[published.artifact_id]
+        assert committed.expires_at_us is not None
+        assert committed.expires_at_us == created_at_us + retention_us
+        assert committed.created_at_us == created_at_us
+
+
+def test_result_retention_must_be_an_explicit_bounded_window() -> None:
+    for retention_us in (0, -1, 10 * 365 * 24 * 60 * 60 * 1_000_000 + 1, True, 1.5):
+        with pytest.raises(ValueError, match="explicit bounded window"):
+            ResultArtifactPublisher(
+                Rows(),
+                Blobs(),
+                Staging(),
+                retention_us=retention_us,  # type: ignore[arg-type]
+            )
+
+
 async def test_object_is_written_before_the_committed_row() -> None:
     events: list[str] = []
     rows, blobs, staging = Rows(events=events), Blobs(events=events), Staging()
 
-    await ResultArtifactPublisher(rows, blobs, staging).publish(_job(), _submission(), _receipt())
+    await ResultArtifactPublisher(rows, blobs, staging, retention_us=RETENTION_US).publish(
+        _job(), _submission(), _receipt()
+    )
 
     assert events == ["object", "row"]
 
 
 async def test_database_failure_after_object_write_retries_to_one_row_one_version() -> None:
     rows, blobs, staging = Rows(fail_next=True), Blobs(), Staging()
-    publisher = ResultArtifactPublisher(rows, blobs, staging)
+    publisher = ResultArtifactPublisher(rows, blobs, staging, retention_us=RETENTION_US)
 
     with pytest.raises(DispatchUnavailableError):
         await publisher.publish(_job(), _submission(), _receipt())
@@ -162,7 +203,7 @@ async def test_database_failure_after_object_write_retries_to_one_row_one_versio
 
 async def test_invalid_media_type_never_writes_an_object_or_row() -> None:
     rows, blobs, staging = Rows(), Blobs(), Staging()
-    publisher = ResultArtifactPublisher(rows, blobs, staging)
+    publisher = ResultArtifactPublisher(rows, blobs, staging, retention_us=RETENTION_US)
 
     with pytest.raises(DispatchProtocolError):
         await publisher.publish(_job(), _submission(), _receipt(media_type="audio/wav"))
@@ -174,7 +215,7 @@ async def test_receipt_workspace_must_match_the_job() -> None:
     rows, blobs, staging = Rows(), Blobs(), Staging()
     receipt = _receipt()
     receipt["reference"]["workspace_id"] = "workspace-other"
-    publisher = ResultArtifactPublisher(rows, blobs, staging)
+    publisher = ResultArtifactPublisher(rows, blobs, staging, retention_us=RETENTION_US)
 
     with pytest.raises(DispatchProtocolError):
         await publisher.publish(_job(), _submission(), receipt)
@@ -196,6 +237,8 @@ def test_artifact_identity_is_deterministic_and_kind_specific() -> None:
 
 
 def test_startup_requires_bucket_versioning() -> None:
-    publisher = ResultArtifactPublisher(Rows(), Blobs(versioning_required=True), Staging())
+    publisher = ResultArtifactPublisher(
+        Rows(), Blobs(versioning_required=True), Staging(), retention_us=RETENTION_US
+    )
     with pytest.raises(ArtifactError):
         publisher.check_ready()

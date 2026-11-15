@@ -110,7 +110,13 @@ PLANES: tuple[NonSettingPlane, ...] = (
     ),
     NonSettingPlane(
         prefixes=("SPEECHNEXUS_JOB_DISPATCH_",),
-        keys=("SPEECHNEXUS_EXECUTION_RESULT_BUCKET",),
+        keys=(
+            "SPEECHNEXUS_EXECUTION_RESULT_BUCKET",
+            # The dispatch entrypoint owns the publication window: it is read by
+            # `JobDispatchSettings`, not by the API settings object, so the API
+            # must not refuse it when Compose forwards it to that container.
+            "SPEECHNEXUS_ARTIFACT_RETENTION_SECONDS",
+        ),
         owner="the job-dispatch worker entrypoint",
         runtime=True,
     ),

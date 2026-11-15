@@ -7,6 +7,29 @@ from starlette.responses import JSONResponse
 
 _ERRORS: dict[str, tuple[int, str, str]] = {
     "artifact_not_found": (404, "not_found_error", "The artifact was not found."),
+    # An identifier inside the minted result space with no committed row is a
+    # publication that has not committed (its bytes stay in private staging),
+    # not an identifier this API never issued. Both 404s stay distinguishable.
+    "artifact_not_published": (
+        404,
+        "not_found_error",
+        "The artifact has no committed publication in this workspace.",
+    ),
+    # The retention window ended: the metadata row still exists and stays
+    # readable, so this refusal names the retention decision rather than
+    # claiming the artifact never existed.
+    "artifact_expired": (
+        410,
+        "not_found_error",
+        "The artifact content retention period has ended.",
+    ),
+    # Retention cleanup removed the content after the window ended. This is a
+    # different fact from `expired`: the bytes are gone, not merely unserved.
+    "artifact_deleted": (
+        410,
+        "not_found_error",
+        "The artifact content was removed after its retention period.",
+    ),
     "artifact_unavailable": (410, "not_found_error", "The artifact content is unavailable."),
     "artifact_range_not_satisfiable": (
         416,
@@ -44,7 +67,13 @@ def artifact_error(
         # collapse it to the retryable storage-unavailable response.
         code = "artifact_storage_unavailable"
     status, kind, message = _ERRORS[code]
-    retryable = code in ("artifact_service_unavailable", "artifact_storage_unavailable")
+    # Publication may still commit, so the same request may succeed later. The
+    # three terminal content refusals never become available again.
+    retryable = code in (
+        "artifact_service_unavailable",
+        "artifact_storage_unavailable",
+        "artifact_not_published",
+    )
     return JSONResponse(
         status_code=status,
         headers={"Cache-Control": "no-store", **(headers or {})},

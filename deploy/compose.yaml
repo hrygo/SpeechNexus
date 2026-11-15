@@ -21,7 +21,10 @@ name: speechnexus
 # asynchronous Jobs an accepted end-to-end capability. The
 # `asset-inspection` profile assembles the private HTTP audio inspector; audio
 # inspection additionally needs `SPEECHNEXUS_ASSET_INSPECTOR=audio` plus the
-# inspection URL/token in compose.env.
+# inspection URL/token in compose.env. The `artifact-retention` profile assembles
+# the bounded Artifact sweep (`speechnexus-artifact-retention`), which is what
+# makes a recorded `expires_at_us` actually remove content; it runs as the API
+# runtime identity and only moves `artifact_state`.
 
 x-python-build: &python-build
   context: ..
@@ -432,6 +435,10 @@ services:
       SPEECHNEXUS_JOB_DISPATCH_INTERVAL_SECONDS: ${SPEECHNEXUS_JOB_DISPATCH_INTERVAL_SECONDS:-5}
       SPEECHNEXUS_JOB_DISPATCH_STORAGE_TIMEOUT_SECONDS: ${SPEECHNEXUS_JOB_DISPATCH_STORAGE_TIMEOUT_SECONDS:-3}
       SPEECHNEXUS_JOB_DISPATCH_KINDS: ${SPEECHNEXUS_JOB_DISPATCH_KINDS:-asr,tts}
+      # The recorded deadline every published Result Artifact carries. It is read
+      # here, at publication, so the retention sweep never re-derives a window
+      # from process state; PRD F-ARTIFACT fixes the default at 30 days.
+      SPEECHNEXUS_ARTIFACT_RETENTION_SECONDS: ${SPEECHNEXUS_ARTIFACT_RETENTION_SECONDS:-2592000}
       SPEECHNEXUS_OBJECT_STORAGE_ENDPOINT: http://minio:9000
       SPEECHNEXUS_OBJECT_STORAGE_BUCKET: ${SPEECHNEXUS_OBJECT_STORAGE_BUCKET:-speechnexus-results}
       SPEECHNEXUS_EXECUTION_RESULT_BUCKET: ${SPEECHNEXUS_EXECUTION_RESULT_BUCKET:-speechnexus-results}
@@ -454,6 +461,48 @@ services:
       gateway:
         condition: service_healthy
         restart: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  # Opt-in bounded Artifact retention. Publication records `expires_at_us`; this
+  # process is the only thing that acts on it. It runs as the API runtime identity
+  # (the same `SPEECHNEXUS_API_DATABASE_URL`) whose `artifact_retention_grants`
+  # allow SELECT plus UPDATE(artifact_state) only, and it refuses to start when
+  # the role holds any wider write. One pass moves elapsed rows to `expired` and
+  # removes the content of rows already `expired`; every decision is logged with
+  # the Artifact identity, the recorded deadline and the database instant. The
+  # interval and batch are the whole bound on a pass.
+  artifact-retention:
+    profiles: ["artifact-retention"]
+    build: *python-build
+    command: ["speechnexus-artifact-retention"]
+    user: "${SPEECHNEXUS_RUNTIME_UID:?set SPEECHNEXUS_RUNTIME_UID from id -u}:${SPEECHNEXUS_RUNTIME_GID:?set SPEECHNEXUS_RUNTIME_GID from id -g}"
+    network_mode: "service:gateway"
+    environment:
+      SPEECHNEXUS_PROCESS_ROLE: scheduler
+      SPEECHNEXUS_NODE_ID: ${SPEECHNEXUS_NODE_ID:-node-local-1}
+      SPEECHNEXUS_INSTANCE_ID: ${SPEECHNEXUS_INSTANCE_ID:-retention-1}
+      SPEECHNEXUS_DATABASE_URL: ${SPEECHNEXUS_API_DATABASE_URL:?set SPEECHNEXUS_API_DATABASE_URL in compose.env}
+      SPEECHNEXUS_DATABASE_SCHEMA: speech
+      SPEECHNEXUS_ARTIFACT_RETENTION_INTERVAL_SECONDS: ${SPEECHNEXUS_ARTIFACT_RETENTION_INTERVAL_SECONDS:-60}
+      SPEECHNEXUS_ARTIFACT_RETENTION_BATCH_SIZE: ${SPEECHNEXUS_ARTIFACT_RETENTION_BATCH_SIZE:-10}
+      SPEECHNEXUS_OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      SPEECHNEXUS_OBJECT_STORAGE_BUCKET: ${SPEECHNEXUS_OBJECT_STORAGE_BUCKET:-speechnexus-results}
+      # Local bootstrap only, as for the dispatcher: the root MinIO identity is
+      # broader than object-layer least privilege.
+      SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-speechnexus}
+      SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in compose.env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777

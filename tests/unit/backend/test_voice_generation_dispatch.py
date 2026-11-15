@@ -37,6 +37,7 @@ from speechnexus_backend.speech.infrastructure.job_dispatch_postgres import (
 )
 
 NOW = 1_700_000_000_000_000
+RETENTION_US = 30 * 24 * 60 * 60 * 1_000_000
 DIGEST = "sha256:" + "a" * 64
 BODY = b"synthetic-voice-preview"
 
@@ -303,7 +304,9 @@ def _submission() -> ExecutionSubmission:
 @pytest.mark.parametrize("kind", VOICE_GENERATION_JOB_KINDS)
 def test_voice_result_publication_commits_one_preview_artifact(kind: str) -> None:
     rows, blobs, staging = _Rows(), _Blobs(), _Staging()
-    publisher = ResultArtifactPublisher(rows, blobs, staging, now_us=lambda: NOW)
+    publisher = ResultArtifactPublisher(
+        rows, blobs, staging, retention_us=RETENTION_US, now_us=lambda: NOW
+    )
     job = _job(kind, state="running")
 
     published = publisher._publish(job, _submission(), _receipt())
@@ -314,11 +317,14 @@ def test_voice_result_publication_commits_one_preview_artifact(kind: str) -> Non
     assert published.artifact_id == result_artifact_identity(job.job_id, job.kind)
     assert published.receipt_id == commit.receipt_id
     assert staging.reads == 1 and blobs.writes == 1
+    # A preview is a published result like any other: it records the retention
+    # deadline it was configured with, so its content can expire and be reviewed.
+    assert commit.expires_at_us == NOW + RETENTION_US
 
 
 def test_voice_publication_rejects_a_non_preview_media_type() -> None:
     rows, blobs, staging = _Rows(), _Blobs(), _Staging()
-    publisher = ResultArtifactPublisher(rows, blobs, staging)
+    publisher = ResultArtifactPublisher(rows, blobs, staging, retention_us=RETENTION_US)
 
     with pytest.raises(DispatchProtocolError):
         publisher._publish(

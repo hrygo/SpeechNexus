@@ -386,7 +386,10 @@ uv run --all-packages python - <<'PY'
 import os
 from psycopg import sql
 import psycopg
-from speechnexus_backend.speech.infrastructure.artifact_schema import artifact_reader_grants
+from speechnexus_backend.speech.infrastructure.artifact_schema import (
+    artifact_reader_grants,
+    artifact_retention_grants,
+)
 from speechnexus_backend.speech.infrastructure.asset_schema import asset_runtime_grants
 from speechnexus_backend.speech.infrastructure.binding_draft_schema import binding_draft_grants
 from speechnexus_backend.speech.infrastructure.binding_publication_evidence_schema import (
@@ -488,6 +491,10 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     ):
         conn.execute(statement)
     for statement in asset_runtime_grants(schema, "sn_api"):
+        conn.execute(statement)
+    # The retention sweep runs as the API runtime identity (it reuses
+    # SPEECHNEXUS_DATABASE_URL) and may only move artifact_state.
+    for statement in artifact_retention_grants(schema, "sn_api"):
         conn.execute(statement)
     for statement in gateway_query_grants(schema, "sn_gateway_query"):
         conn.execute(statement)
@@ -1244,7 +1251,10 @@ import os
 
 import psycopg
 from psycopg import sql
-from speechnexus_backend.speech.infrastructure.artifact_schema import artifact_reader_grants
+from speechnexus_backend.speech.infrastructure.artifact_schema import (
+    artifact_reader_grants,
+    artifact_retention_grants,
+)
 from speechnexus_backend.speech.infrastructure.binding_draft_schema import binding_draft_grants
 from speechnexus_backend.speech.infrastructure.binding_publication_evidence_schema import (
     binding_admin_reader_grants,
@@ -1304,6 +1314,10 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     for statement in quarantine_release_grants(schema, "sn_quarantine_release"):
         conn.execute(statement)
     for statement in model_catalog_reader_grants(schema, "sn_catalog_reader"):
+        conn.execute(statement)
+    # The retention sweep reuses the API runtime identity
+    # (SPEECHNEXUS_DATABASE_URL) and may only move artifact_state.
+    for statement in artifact_retention_grants(schema, "sn_api"):
         conn.execute(statement)
     for statement in artifact_reader_grants(schema, "sn_artifact_reader"):
         conn.execute(statement)

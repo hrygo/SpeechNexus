@@ -19,6 +19,11 @@ ARTIFACT_INSERT_COLUMNS = (
     "expires_at_us",
 )
 
+# The only column a retention pass may change. The rows it moves keep
+# `created_at_us` and `expires_at_us`, so the decision ("this row's deadline was
+# at or before the database clock") stays readable after the state changes.
+ARTIFACT_RETENTION_UPDATE_COLUMNS = ("artifact_state",)
+
 ARTIFACT_DDL = (
     """CREATE TABLE speech_artifacts (
         artifact_id VARCHAR(128) COLLATE "C" PRIMARY KEY,
@@ -62,6 +67,24 @@ def artifact_reader_grants(schema: str, role: str) -> tuple[str, ...]:
     )
 
 
+def artifact_retention_grants(schema: str, role: str) -> tuple[str, ...]:
+    """Provisioning declaration for the bounded retention sweep principal.
+
+    The sweep reads committed rows and moves ``artifact_state``; it never inserts,
+    deletes or rewrites a deadline, so no other column is granted. Object removal
+    uses the deployment's object credentials, not this database authority.
+    """
+    from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
+
+    schema, role = checked_sql_name(schema), checked_sql_name(role)
+    columns = ", ".join(ARTIFACT_RETENTION_UPDATE_COLUMNS)
+    return (
+        f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
+        f'GRANT SELECT ON "{schema}".{ARTIFACTS} TO "{role}"',
+        f'GRANT UPDATE ({columns}) ON "{schema}".{ARTIFACTS} TO "{role}"',
+    )
+
+
 def artifact_publisher_grants(schema: str, role: str) -> tuple[str, ...]:
     """Provisioning declaration for the dispatcher's committed Artifact writes."""
     from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
@@ -79,6 +102,8 @@ __all__ = [
     "ARTIFACTS",
     "ARTIFACT_DDL",
     "ARTIFACT_INSERT_COLUMNS",
+    "ARTIFACT_RETENTION_UPDATE_COLUMNS",
     "artifact_publisher_grants",
     "artifact_reader_grants",
+    "artifact_retention_grants",
 ]

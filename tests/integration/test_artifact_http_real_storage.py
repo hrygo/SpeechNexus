@@ -273,16 +273,24 @@ def test_real_pg_and_minio_download_semantics(sandbox: Sandbox) -> None:
     expired = sandbox.client.get(f"/v1/nexus/artifacts/{EXPIRED_ARTIFACT_ID}/content")
     past = sandbox.client.get(f"/v1/nexus/artifacts/{PAST_ARTIFACT_ID}/content")
     deleted = sandbox.client.get(f"/v1/nexus/artifacts/{DELETED_ARTIFACT_ID}/content")
-    for response in (expired, past, deleted):
+    # Retention elapsed is told apart from cleanup that already removed content.
+    for response, code in ((expired, "artifact_expired"), (past, "artifact_expired")):
         assert response.status_code == 410
-        assert response.json()["error"]["code"] == "artifact_unavailable"
+        assert response.json()["error"]["code"] == code
+    assert deleted.status_code == 410
+    assert deleted.json()["error"]["code"] == "artifact_deleted"
+    # A result identity with no committed row is a publication that has not
+    # committed, not an identifier this API never issued.
+    unpublished = sandbox.client.get("/v1/nexus/artifacts/artifact-" + "f" * 48 + "/content")
+    assert unpublished.status_code == 404
+    assert unpublished.json()["error"]["code"] == "artifact_not_published"
 
     sandbox.objects.remove_object(sandbox.bucket, OBJECT_KEY, version_id=sandbox.version_id)
     missing_version = sandbox.client.get(content_path)
     assert missing_version.status_code == 410
     assert missing_version.json()["error"]["code"] == "artifact_unavailable"
 
-    errors = (unsatisfiable, unknown, foreign, expired, past, deleted, missing_version)
+    errors = (unsatisfiable, unknown, foreign, unpublished, expired, past, deleted, missing_version)
     for response in errors:
         _assert_private_storage_absent(
             response.text, sandbox.bucket, os.environ["SPEECHNEXUS_TEST_MINIO_ENDPOINT"]

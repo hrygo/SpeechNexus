@@ -165,27 +165,53 @@ async def test_ranges_are_exact_and_invalid_ranges_have_a_stable_416() -> None:
     assert objects.calls == [(3, 6)]
 
 
-async def test_unknown_foreign_staging_and_unavailable_content_are_hidden() -> None:
+async def test_absent_identities_split_unknown_from_unpublished() -> None:
+    """A result identity that never committed is not the same answer as junk.
+
+    ``result_artifact_identity`` mints ``artifact-`` plus 48 hex digits; a
+    requested identifier in that space has no committed row when its publication
+    has not committed (staging stays private and unaddressable). An identifier
+    outside the space was never issued by this API. Neither branch may read a row
+    or an object it does not own, and both are distinguishable on the wire.
+    """
+    minted = "artifact-" + "a" * 48
     artifacts, _, objects = service(record(workspace_id="workspace-other"))
-    expired = record(status="expired")
-    deleted = record(status="deleted")
-    past = record(expires_at_us=CREATED + 10)
     async with client(artifacts) as http:
         unknown = await http.get("/v1/nexus/artifacts/artifact-missing")
         foreign = await http.get(f"/v1/nexus/artifacts/{ARTIFACT_ID}")
+        unpublished = await http.get(f"/v1/nexus/artifacts/{minted}/content")
+        unpublished_metadata = await http.get(f"/v1/nexus/artifacts/{minted}")
     assert unknown.status_code == 404 and unknown.json()["error"]["code"] == "artifact_not_found"
     assert foreign.status_code == 404 and foreign.json()["error"]["code"] == "artifact_not_found"
-    for value, expected_status in ((expired, "expired"), (deleted, "deleted"), (past, "expired")):
+    for reply in (unpublished, unpublished_metadata):
+        assert reply.status_code == 404
+        assert reply.json()["error"]["code"] == "artifact_not_published"
+        assert reply.json()["error"]["retryable"] is True
+    assert unknown.json()["error"]["retryable"] is False
+    assert "private" not in unpublished.text
+    assert not objects.calls
+
+
+async def test_expired_deleted_and_unreadable_content_are_distinguishable() -> None:
+    """Retention elapsed, cleaned content and unreadable content are three facts."""
+    cases = (
+        (record(status="expired"), "artifact_expired"),
+        (record(expires_at_us=CREATED + 10), "artifact_expired"),
+        (record(status="deleted"), "artifact_deleted"),
+    )
+    for value, expected_code in cases:
         artifacts, _, objects = service(value, now=CREATED + 100)
         async with client(artifacts) as http:
             reply = await http.get(f"/v1/nexus/artifacts/{ARTIFACT_ID}/content")
             metadata = await http.get(f"/v1/nexus/artifacts/{ARTIFACT_ID}")
         assert reply.status_code == 410
-        assert reply.json()["error"]["code"] == "artifact_unavailable"
+        assert reply.json()["error"]["code"] == expected_code
+        assert reply.json()["error"]["retryable"] is False
+        # The metadata row keeps the retention decision readable after the fact.
         assert metadata.status_code == 200
-        assert metadata.json()["status"] == expected_status
+        assert metadata.json()["status"] == ("deleted" if value.status == "deleted" else "expired")
+        # The content was never opened for a row that is not servable.
         assert not objects.calls
-    assert not objects.calls
 
 
 async def test_storage_failure_never_echoes_object_details() -> None:

@@ -6,6 +6,7 @@ import ast
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -91,8 +92,9 @@ class PathRoutingTests(unittest.TestCase):
             "web/admin/package.json",
             "web/admin/vite.config.ts",
             "docs/schema.json",
+            # A README `COPY`ed into an image build is still a build input.
             "backend/README.md",
-            "new-component/README.md",
+            "new-component/component.ts",
         ):
             with self.subTest(path=path):
                 self.assertEqual(ROUTER.classify(["README.md", path]), "full")
@@ -140,6 +142,137 @@ class PathRoutingTests(unittest.TestCase):
 
     def test_script_is_compatible_with_runner_python_312(self) -> None:
         ast.parse(SCRIPT.read_text(), feature_version=(3, 12))
+
+
+PROSE_BASENAME = re.compile(r"^(?:AGENTS\.md|README(?:\.[^/]+)?\.md)$")
+
+
+def tracked_paths() -> list[str]:
+    """Tracked files, so a sweep never walks `node_modules`/`.venv`."""
+    listing = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT, text=True)
+    return [name for name in listing.split("\0") if name]
+
+
+def prose_paths() -> list[str]:
+    """Every tracked agent-rules or README document in the repository."""
+    return [name for name in tracked_paths() if PROSE_BASENAME.match(name.rsplit("/", 1)[-1])]
+
+
+def dockerfile_readme_copies() -> set[str]:
+    """README paths a Dockerfile `COPY`s: the build-input set, derived not restated."""
+    copies: set[str] = set()
+    for name in tracked_paths():
+        base = name.rsplit("/", 1)[-1]
+        if base != "Dockerfile" and not base.endswith(".Dockerfile"):
+            continue
+        for line in (ROOT / name).read_text(encoding="utf-8").splitlines():
+            if not line.lstrip().upper().startswith("COPY "):
+                continue
+            # Drop flags such as `--from=...`; the final token is the destination.
+            tokens = [token for token in line.split()[1:] if not token.startswith("--")]
+            for token in tokens[:-1]:
+                if PROSE_BASENAME.match(token.rsplit("/", 1)[-1]):
+                    copies.add(token)
+    return copies
+
+
+class ProseRoutingTests(unittest.TestCase):
+    """`AGENTS.md`/`README*` route by content, not by directory depth (#812).
+
+    The defect: `classify(["web/AGENTS.md"])` answered `full` while
+    `classify(["AGENTS.md"])` answered `docs`, so the most frequently edited class
+    of document paid the whole matrix by accident of location. The lane is now
+    decided by what the file is; only a real build or test consumer keeps a
+    heavier route, and each such position is pinned below.
+    """
+
+    def test_web_agents_is_no_longer_full(self) -> None:
+        mode = ROUTER.classify(["web/AGENTS.md"])
+        self.assertEqual(mode, "docs")
+        self.assertNotEqual(mode, "full")
+
+    def test_the_same_document_gets_the_same_lane_at_every_level(self) -> None:
+        for path in (
+            "AGENTS.md",
+            "web/AGENTS.md",
+            "contracts/AGENTS.md",
+            "tests/integration/AGENTS.md",
+            # Documentation inside a source tree is still documentation: Vite
+            # follows imports (no `.md` is imported anywhere), `tsc` compiles only
+            # TS/TSX, ESLint globs only TS/TSX/MJS and the Web image ships `dist`.
+            "web/workbench/src/AGENTS.md",
+            "web/shared/src/README.md",
+            "README.md",
+            "contracts/README.md",
+            "tests/integration/README.md",
+            "deploy/README.md",
+            "deploy/private/README.md",
+            "deploy/engines/cpu-vad/README.md",
+            "deploy/engines/file-asr-audio/evidence/gb10-20261027/README.md",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(ROUTER.classify([path]), "docs")
+
+    def test_a_document_never_hides_a_code_change(self) -> None:
+        self.assertEqual(ROUTER.classify(["web/AGENTS.md", "web/workbench/src/App.tsx"]), "web")
+        self.assertEqual(
+            ROUTER.classify(["web/AGENTS.md", "deploy/engines/cpu-vad/requirements.in"]), "no-db"
+        )
+        for source in ("backend/src/module.py", "scripts/dev-env/ci-routing.py", "uv.lock"):
+            with self.subTest(source=source):
+                self.assertEqual(ROUTER.classify(["web/AGENTS.md", source]), "full")
+
+    def test_every_tracked_document_has_a_content_lane(self) -> None:
+        routed = {name: ROUTER.classify([name]) for name in prose_paths()}
+        self.assertIn("web/AGENTS.md", routed)
+        self.assertIn("deploy/README.md", routed)
+        self.assertEqual(
+            {name for name, mode in routed.items() if mode not in {"docs", "full"}},
+            set(),
+            "a rule file/README took a source lane instead of docs or full",
+        )
+        # The only documents that keep `full` are ones whose bytes reach a build or
+        # a check. Deriving the image inputs from the Dockerfiles means a new
+        # `COPY` turns this red instead of silently routing the file as prose.
+        self.assertEqual(
+            {name for name, mode in routed.items() if mode == "full"},
+            dockerfile_readme_copies() | ROUTER._TEST_READ_PROSE,
+        )
+
+    def test_readmes_copied_into_an_image_keep_the_full_lane(self) -> None:
+        copies = dockerfile_readme_copies()
+        self.assertTrue(copies, "no `COPY <path>.md` was parsed out of the Dockerfiles")
+        self.assertEqual(copies, ROUTER._IMAGE_COPY_PROSE)
+        for name in sorted(copies):
+            with self.subTest(path=name):
+                self.assertEqual(ROUTER.classify([name]), "full")
+
+    def test_prose_in_a_web_public_directory_stays_full(self) -> None:
+        # Vite copies `public/` verbatim into `dist`, so a Markdown file there is a
+        # shipped product asset, not prose.
+        for path in (
+            "web/workbench/public/AGENTS.md",
+            "web/admin/public/README.md",
+            "web/workbench/public/notes/AGENTS.md",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(ROUTER.classify([path]), "full")
+
+    def test_readmes_a_unit_test_asserts_keep_the_full_lane(self) -> None:
+        # `tests/unit/gateway/test_engine_language_semantics.py` reads both files and
+        # fails on wording that promises reproducible seed bytes. The docs lane does
+        # not run pytest, so these two cannot take the prose route.
+        self.assertEqual(
+            ROUTER._TEST_READ_PROSE,
+            {
+                "deploy/engines/file-voice-clone/README.md",
+                "deploy/engines/file-voice-design/README.md",
+            },
+        )
+        for path in sorted(ROUTER._TEST_READ_PROSE):
+            with self.subTest(path=path):
+                self.assertEqual(ROUTER.classify([path]), "full")
+                self.assertEqual(ROUTER.classify([path, "web/AGENTS.md"]), "full")
 
 
 class GitRoutingTests(unittest.TestCase):

@@ -22,7 +22,42 @@ Mode = Literal["docs", "web", "no-db", "full"]
 # either side turns that test red before the workflow can run the wrong lanes.
 INTEGRATION_SHARD_COUNT = 6
 WEB_LANE_SHARE_DIVISOR = 3
-_ROOT_PROSE = {"AGENTS.md", "README.md", "README.en.md"}
+# Agent rules and READMEs are prose wherever they live, so the same document is
+# routed the same way at every level: `web/AGENTS.md` and root `AGENTS.md` are one
+# kind of change, and #812 measured the two getting different lanes purely from
+# position. Three positions make such a file a build or test input instead, and
+# each keeps the lane that exercises its real consumer:
+#
+#  * `_IMAGE_COPY_PROSE` is `COPY`ed into the Python/Controller/inspector images
+#    (`deploy/images/python.Dockerfile`, `deploy/images/node-controller.Dockerfile`,
+#    `asset-inspector/Dockerfile`) and declared as image build inputs by the image
+#    workflows, so its content changes the built artifact.
+#  * Prose under `web/<app>/public/` is copied verbatim into the built bundle
+#    (Vite's `publicDir`), so it ships as a product asset.
+#  * `_TEST_READ_PROSE` is read and asserted by
+#    `tests/unit/gateway/test_engine_language_semantics.py`, which runs in the
+#    Python lanes only; a docs route would stop checking the wording it pins.
+#
+# `tests/ci/test_ci_routing.py::ProseRoutingTests` derives the `COPY`ed set from the
+# Dockerfiles and pins the remaining two positions, so a new build consumer of a
+# README turns that test red instead of silently narrowing the gate.
+_PROSE_BASENAME = re.compile(r"^(?:AGENTS\.md|README(?:\.[^/]+)?\.md)$")
+_IMAGE_COPY_PROSE = frozenset(
+    {
+        "asset-inspector/README.md",
+        "backend/README.md",
+        "execution-gateway/README.md",
+        "node-controller/README.md",
+        "packages/contracts/README.md",
+        "packages/media/README.md",
+    }
+)
+_TEST_READ_PROSE = frozenset(
+    {
+        "deploy/engines/file-voice-clone/README.md",
+        "deploy/engines/file-voice-design/README.md",
+    }
+)
 _SKILL_DOCUMENT_SUFFIXES = {".md", ".json", ".yaml", ".yml"}
 _WEB_SUFFIXES = {".ts", ".tsx", ".css", ".html", ".svg", ".png", ".webp", ".jpg", ".woff2"}
 # These standalone engine packages are built/tested by the Python and deployment
@@ -32,6 +67,24 @@ _ENGINE_TESTS = {
     "tests/unit/gateway/test_native_asr_scope.py",
     "tests/unit/gateway/test_worker_fence.py",
 }
+
+
+def _prose_route(path: PurePosixPath) -> Mode | None:
+    """Lane a rule file/README needs, or `None` when the path is not such a document.
+
+    Content decides, not location: `AGENTS.md` and `README*` are documentation at
+    every level. Only the three build/test-input positions declared above keep a
+    heavier lane, because there the document's bytes reach the product or a check.
+    """
+    if _PROSE_BASENAME.match(path.name) is None:
+        return None
+    name = path.as_posix()
+    if name in _IMAGE_COPY_PROSE or name in _TEST_READ_PROSE:
+        return "full"
+    parts = path.parts
+    if len(parts) >= 4 and parts[0] == "web" and parts[2] == "public":
+        return "full"
+    return "docs"
 
 
 def classify(paths: Sequence[str]) -> Mode:
@@ -54,12 +107,15 @@ def classify(paths: Sequence[str]) -> Mode:
             and parts[:2] == (".agents", "skills")
             and path.suffix in _SKILL_DOCUMENT_SUFFIXES
         )
+        prose_route = _prose_route(path)
         if (
-            name in _ROOT_PROSE
+            prose_route == "docs"
             or (name.startswith("docs/") and path.suffix == ".md")
             or skill_document
         ):
             continue
+        if prose_route == "full":
+            return "full"
         engine_source = (
             len(parts) >= 4 and parts[:2] == ("deploy", "engines") and parts[2] in _ENGINE_PACKAGES
         )

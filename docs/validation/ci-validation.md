@@ -559,7 +559,7 @@ uv run pytest tests/ci tests/contract/test_ci_workflow.py tests/unit/test_integr
 
 ### 围栏代码块不算引用
 
-围栏（三个连续反引号或三个波浪号界定）内的 `路径:行号` 不参与检查。围栏里贴的是命令输出、探针摘录或示例片段，是文档引用的别人产物，不是作者对当前文件的指认；按引用计入时，20 条 `MISSING` 来自审查记录里的探针输出与 `/private/tmp` 绝对路径，指向从未提交的 `zz-probe-*.ts` 与临时 worktree。实测：1427 条 `路径:行号` 文本里有 119 条落在围栏内，若按引用计入会多出 27 条问题（21 `MISSING`、5 `AMBIGUOUS`、1 `OUT_OF_RANGE`）——其中 20 条 `MISSING` 来自审查记录的探针输出与 `/private/tmp` 临时 worktree 路径；终态文档正文（围栏外）的问题数为 0。这部分计入 `SUMMARY` 的 `fenced=`，不是静默丢弃。
+围栏（三个连续反引号或三个波浪号界定）内的 `路径:行号` 不参与检查。围栏里贴的是命令输出、探针摘录或示例片段，是文档引用的别人产物，不是作者对当前文件的指认；按引用计入时，20 条 `MISSING` 来自审查记录里的探针输出与 `/private/tmp` 绝对路径，指向从未提交的 `zz-probe-*.ts` 与临时 worktree。接入 CI 时实测：1427 条 `路径:行号` 文本里有 119 条落在围栏内，若按引用计入会多出 27 条问题（21 `MISSING`、5 `AMBIGUOUS`、1 `OUT_OF_RANGE`）——其中 20 条 `MISSING` 来自审查记录的探针输出与 `/private/tmp` 临时 worktree 路径；终态文档正文（围栏外）的问题数为 0。这部分计入 `SUMMARY` 的 `fenced=`，不是静默丢弃。
 
 ### 棘轮与基线
 
@@ -569,7 +569,7 @@ uv run pytest tests/ci tests/contract/test_ci_workflow.py tests/unit/test_integr
 
 ### 作业与门禁
 
-`docs_refs`（`Docs: path:line references`）只检出仓库，用 runner 的系统 Python 3.12+ 与标准库执行 `python3 scripts/dev-env/check-doc-refs.py --baseline scripts/dev-env/doc-refs-baseline.json`，不安装项目依赖；超时 3 min 是预算，本机实测脚本本身约 0.25 s（385 份 Markdown、1427 条 `路径:行号` 文本）。它没有范围过滤，和 `routing`、`docs_matrix` 一样每个 PR 都执行：源码 PR 删改被引用文件同样会让终态文档的引用失效，按范围过滤就会恰好在最需要它的地方跳过。`Gate: required checks for this change` 要求该作业 success，不按范围映射——`docs` 与全量范围都执行，失败、取消或跳过都使门禁失败。
+`docs_refs`（`Docs: path:line references`）只检出仓库，用 runner 的系统 Python 3.12+ 与标准库执行 `python3 scripts/dev-env/check-doc-refs.py --baseline scripts/dev-env/doc-refs-baseline.json`，不安装项目依赖；超时 3 min 是预算，本机实测脚本本身约 0.25 s（接入时 385 份 Markdown、1427 条 `路径:行号` 文本）。它没有范围过滤，和 `routing`、`docs_matrix` 一样每个 PR 都执行：源码 PR 删改被引用文件同样会让终态文档的引用失效，按范围过滤就会恰好在最需要它的地方跳过。`Gate: required checks for this change` 要求该作业 success，不按范围映射——`docs` 与全量范围都执行，失败、取消或跳过都使门禁失败。
 
 ### 实测反例
 
@@ -597,6 +597,18 @@ RESULT PASS                                    # exit=0，计数 +1
 
 第三段是分目录统计的作用：过程记录增长不阻塞合并，但增长量留在日志与基线增量里。
 
+同一份内容也已在 CI 上跑过两侧（2026-11-16，本门禁建立时的两次运行）：
+
+```text
+# 基线树：运行 43749226457，作业 `Docs: path:line references` success（9s）
+# 反例提交（终态文档追加同一条坏引用）：运行 43748926560，同一作业 fail（12s）
+[MISSING] docs/architecture/speech-api.md:616  ->  backend/src/speechnexus_backend/does_not_exist.py:7  (仓库内不存在该文件)  [新增,基线外]
+SCOPE terminal problems=1 new=1 accepted=0
+RESULT FAIL
+##[error]Process completed with exit code 1.
+# 同一次运行：`Gate: required checks for this change` fail（routing=failure）
+```
+
 ### 覆盖边界
 
 - 只判「路径存在、行号不越界、裸名不歧义」，不证明目标行内容与文档描述相符；`--show` 打印被引用行原文供人工核对。
@@ -606,7 +618,7 @@ RESULT PASS                                    # exit=0，计数 +1
 - 只认脚本列出的扩展名（`.py/.sql/.ts/.tsx/.js/.mjs/.sh/.toml/.yaml/.yml/.json/.md`），无扩展名路径、`#L12` 形式与普通 Markdown 链接不在判据内；目标必须在 git 索引中，未跟踪文件不算存在。
 - 过程记录的计数不是门禁：增长不阻塞合并，这是「保留原时点事实」的取舍，不是遗漏。
 
-调度证据等级：**未实测**。判定与三段反例在本机以 Python 3.12 复现，但本作业尚未在 GitHub Actions 运行中被观测到红、绿两侧。
+调度证据等级：**已实测**（2026-11-16 的两次运行，见上）。**限定**：反例提交同时让 `routing` 里的 `tests/ci` 用例（「检出必须与提交的基线一致」）变红，因此门禁按所见先报 `routing=failure` 后退出；`DOCS_REFS_RESULT != success` 这一分支由 `tests/contract/test_ci_workflow.py` 与 `tests/ci/test_doc_refs_ratchet.py` 的真值表覆盖，不是该次运行日志直接观测到的。
 
 ## 公开语音路由一致性门禁
 

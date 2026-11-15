@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from typing import Any, cast
 
+import psycopg
 import pytest
 from alembic import command
 from httpx import ASGITransport, AsyncClient
@@ -45,8 +46,126 @@ from speechnexus_backend.speech.infrastructure.voice_drafts_postgres import Post
 pytestmark = pytest.mark.integration
 
 
-@pytest.fixture
-def voice_db() -> Iterator[JobSandbox]:
+# Every business table this module's tests can write, so the function-level
+# fixture can reset the shared module schema between cases. CASCADE covers the
+# admission/coordination tables the Job path fills transitively.
+_VOICE_RESET_TABLES = (
+    "coordination_jobs",
+    "coordination_outbox",
+    "admission_operations",
+    "admission_attempts",
+    "speech_jobs",
+    "speech_job_events",
+    "speech_voice_drafts",
+    "speech_voice_draft_revisions",
+    "speech_voice_metadata_commands",
+    "speech_assets",
+    "speech_artifacts",
+    "speech_binding_families",
+    "speech_binding_commands",
+    "speech_binding_revisions",
+    "speech_publications",
+    "speech_publication_heads",
+    "speech_publication_retirements",
+    "speech_catalog_state",
+    # The consumer module (test_voice_publications_pg.py) reuses voice_db and
+    # asserts against whole tables, so its own writes must reset too.
+    "speech_voice_revisions",
+    "speech_voice_publication_intents",
+    "speech_voice_capability_evidence",
+    "speech_asset_objects",
+    "speech_asset_references",
+    "speech_builtin_voice_approvals",
+    "speech_builtin_voice_qualifications",
+    "speech_builtin_voice_source_approvals",
+)
+
+
+def _seed_voice_bindings(admin: psycopg.Connection[dict[str, Any]]) -> None:
+    """Publish the immutable voice-model/asr-model bindings and reference asset."""
+    # New immutable publication rather than changing an existing binding.
+    digest = "sha256:" + "b" * 64
+    definition = json.dumps(
+        {
+            "logical_model": "voice-model",
+            "tasks": ["voice_design", "voice_clone", "voice_validation"],
+        }
+    )
+    admin.execute(
+        "INSERT INTO speech_binding_families (binding_id,latest_revision) "
+        "VALUES ('voice-model','1')"
+    )
+    admin.execute(
+        "INSERT INTO speech_binding_commands "
+        "(key_digest,binding_id,document_version,intent_json,request_digest) "
+        "VALUES (%s,'voice-model',1,'{}',%s)",
+        (digest, digest),
+    )
+    admin.execute(
+        "INSERT INTO speech_binding_revisions "
+        "(binding_id,revision,revision_id,key_digest,document_version,definition_json,"
+        "definition_digest,request_digest,created_at_us) "
+        "VALUES ('voice-model','1','voice-model-rev-1',%s,1,%s,%s,%s,1)",
+        (digest, definition, digest, digest),
+    )
+    admin.execute(
+        "INSERT INTO speech_publications (kind,object_id,revision,revision_id,published_at_us) "
+        "VALUES ('binding','voice-model','1','voice-model-rev-1',1)"
+    )
+    admin.execute(
+        "INSERT INTO speech_publication_heads "
+        "(kind,object_id,revision,revision_id,updated_at_us) "
+        "VALUES ('binding','voice-model','1','voice-model-rev-1',1)"
+    )
+    asr_digest = "sha256:" + "e" * 64
+    admin.execute(
+        "INSERT INTO speech_binding_families (binding_id,latest_revision) VALUES ('asr-model','1')"
+    )
+    admin.execute(
+        "INSERT INTO speech_binding_commands "
+        "(key_digest,binding_id,document_version,intent_json,request_digest) "
+        "VALUES (%s,'asr-model',1,'{}',%s)",
+        (asr_digest, asr_digest),
+    )
+    admin.execute(
+        "INSERT INTO speech_binding_revisions "
+        "(binding_id,revision,revision_id,key_digest,document_version,definition_json,"
+        "definition_digest,request_digest,created_at_us) "
+        "VALUES ('asr-model','1','asr-model-rev-1',%s,1,%s,%s,%s,1)",
+        (
+            asr_digest,
+            json.dumps({"tasks": ["asr_file"]}),
+            asr_digest,
+            asr_digest,
+        ),
+    )
+    admin.execute(
+        "INSERT INTO speech_publications (kind,object_id,revision,revision_id,published_at_us) "
+        "VALUES ('binding','asr-model','1','asr-model-rev-1',1)"
+    )
+    admin.execute(
+        "INSERT INTO speech_publication_heads "
+        "(kind,object_id,revision,revision_id,updated_at_us) "
+        "VALUES ('binding','asr-model','1','asr-model-rev-1',1)"
+    )
+    admin.execute(
+        "INSERT INTO speech_assets (asset_id,workspace_id,purpose,asset_state,upload_phase,"
+        "bytes,sha256,request_digest,object_key,media_type,duration_ms,sample_rate_hz,channels,"
+        "created_at_us,expires_at_us) VALUES ('synthetic-reference','workspace-default',"
+        "'voice_reference','ready','settled',64,%s,%s,'synthetic-reference','audio/wav',"
+        "10,16000,1,1,253402300799999999)",
+        (digest, digest),
+    )
+
+
+@pytest.fixture(scope="module")
+def voice_sandbox() -> Iterator[JobSandbox]:
+    """One migrated schema and one pool for the whole module.
+
+    The migration is the dominant per-case cost when it is function-scoped;
+    instead every case resets the business tables through ``voice_db``, the
+    same module-sandbox pattern test_quarantine_release.py already uses.
+    """
     url = os.environ.get("SPEECHNEXUS_TEST_DATABASE_URL")
     if not url:
         pytest.fail("Configure an isolated PostgreSQL DSN; skip is not migration evidence")
@@ -55,84 +174,37 @@ def voice_db() -> Iterator[JobSandbox]:
     with _isolated_schema(url) as (config, admin):
         command.upgrade(config, "head")
         schema = str(config.attributes["schema"])
-        _seed_binding(admin)
-        # New immutable publication rather than changing an existing binding.
-        digest = "sha256:" + "b" * 64
-        definition = json.dumps(
-            {
-                "logical_model": "voice-model",
-                "tasks": ["voice_design", "voice_clone", "voice_validation"],
-            }
-        )
-        admin.execute(
-            "INSERT INTO speech_binding_families (binding_id,latest_revision) "
-            "VALUES ('voice-model','1')"
-        )
-        admin.execute(
-            "INSERT INTO speech_binding_commands "
-            "(key_digest,binding_id,document_version,intent_json,request_digest) "
-            "VALUES (%s,'voice-model',1,'{}',%s)",
-            (digest, digest),
-        )
-        admin.execute(
-            "INSERT INTO speech_binding_revisions "
-            "(binding_id,revision,revision_id,key_digest,document_version,definition_json,"
-            "definition_digest,request_digest,created_at_us) "
-            "VALUES ('voice-model','1','voice-model-rev-1',%s,1,%s,%s,%s,1)",
-            (digest, definition, digest, digest),
-        )
-        admin.execute(
-            "INSERT INTO speech_publications (kind,object_id,revision,revision_id,published_at_us) "
-            "VALUES ('binding','voice-model','1','voice-model-rev-1',1)"
-        )
-        admin.execute(
-            "INSERT INTO speech_publication_heads "
-            "(kind,object_id,revision,revision_id,updated_at_us) "
-            "VALUES ('binding','voice-model','1','voice-model-rev-1',1)"
-        )
-        asr_digest = "sha256:" + "e" * 64
-        admin.execute(
-            "INSERT INTO speech_binding_families (binding_id,latest_revision) "
-            "VALUES ('asr-model','1')"
-        )
-        admin.execute(
-            "INSERT INTO speech_binding_commands "
-            "(key_digest,binding_id,document_version,intent_json,request_digest) "
-            "VALUES (%s,'asr-model',1,'{}',%s)",
-            (asr_digest, asr_digest),
-        )
-        admin.execute(
-            "INSERT INTO speech_binding_revisions "
-            "(binding_id,revision,revision_id,key_digest,document_version,definition_json,"
-            "definition_digest,request_digest,created_at_us) "
-            "VALUES ('asr-model','1','asr-model-rev-1',%s,1,%s,%s,%s,1)",
-            (
-                asr_digest,
-                json.dumps({"tasks": ["asr_file"]}),
-                asr_digest,
-                asr_digest,
-            ),
-        )
-        admin.execute(
-            "INSERT INTO speech_publications (kind,object_id,revision,revision_id,published_at_us) "
-            "VALUES ('binding','asr-model','1','asr-model-rev-1',1)"
-        )
-        admin.execute(
-            "INSERT INTO speech_publication_heads "
-            "(kind,object_id,revision,revision_id,updated_at_us) "
-            "VALUES ('binding','asr-model','1','asr-model-rev-1',1)"
-        )
-        admin.execute(
-            "INSERT INTO speech_assets (asset_id,workspace_id,purpose,asset_state,upload_phase,"
-            "bytes,sha256,request_digest,object_key,media_type,duration_ms,sample_rate_hz,channels,"
-            "created_at_us,expires_at_us) VALUES ('synthetic-reference','workspace-default',"
-            "'voice_reference','ready','settled',64,%s,%s,'synthetic-reference','audio/wav',"
-            "10,16000,1,1,253402300799999999)",
-            (digest, digest),
-        )
         with speech_pool(url, schema=schema, name="voice-drafts-test") as pool:
             adapter = PostgresPublicJobs(pool)
             yield JobSandbox(url, schema, "", admin, PublicJobs(adapter, adapter), pool)
+
+
+@pytest.fixture
+def voice_db(voice_sandbox: JobSandbox) -> Iterator[JobSandbox]:
+    """Reset the shared module schema and reseed the binding fixtures."""
+    db = voice_sandbox
+    # These cases leak schema objects on purpose and would poison later cases
+    # in a shared schema; the synthetic_* rejections are re-added per case.
+    for table, constraint in (
+        ("speech_voice_drafts", "synthetic_rejection"),
+        ("speech_jobs", "synthetic_preview_rejection"),
+        ("speech_voice_draft_revisions", "synthetic_revision_rejection"),
+    ):
+        db.query(
+            f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS {constraint}",
+        )
+    db.query(
+        "TRUNCATE TABLE " + ", ".join(_VOICE_RESET_TABLES) + " RESTART IDENTITY CASCADE",
+    )
+    # The migration seeds the singleton catalogue row from an empty publications
+    # table, so the reset state is exactly revision 1; _seed_binding CASes on it.
+    db.query(
+        "INSERT INTO speech_catalog_state (singleton, revision, generated_at_us) "
+        "VALUES (TRUE, 1, 0)",
+    )
+    _seed_binding(db.admin)
+    _seed_voice_bindings(db.admin)
+    yield db
 
 
 def _provider(db: JobSandbox) -> VoiceDrafts:

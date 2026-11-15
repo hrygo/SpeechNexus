@@ -24,6 +24,9 @@ from tests.integration.test_voice_drafts_pg import (
 from tests.integration.test_voice_drafts_pg import (
     voice_db as voice_db,
 )
+from tests.integration.test_voice_drafts_pg import (
+    voice_sandbox as voice_sandbox,
+)
 from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app

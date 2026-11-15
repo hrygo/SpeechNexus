@@ -23,7 +23,7 @@ CI 使用[工作流](../../.github/workflows/ci.yml)和[标准库路由](../../s
 - `web/<app>/public/` 内的说明文件：Vite 把 `public/` 原样复制进构建产物（`dist`），文件本身是产品资产，仍走 `full`。
 - `deploy/engines/file-voice-clone/README.md`、`deploy/engines/file-voice-design/README.md`：`tests/unit/gateway/test_engine_language_semantics.py` 直接读取并断言其措辞，`docs` 车道不执行 pytest，仍走 `full`。
 
-其余说明文件不被任何构建或检查读取：Vite 只跟随导入（全仓库没有对 `.md` 的 `?raw`／`import.meta.glob`／`new URL` 导入，并由 `tests/ci` 的回归守住），`tsc` 与 ESLint 只处理 TS/TSX，Prettier 的 `format:check` glob 不含 `*.md`；`deploy/images/web.Dockerfile:12` 的 `COPY web web` 会把 `web/AGENTS.md` 的字节带进 builder 层，但最终阶段只发布 `dist`。这类文件包括源码树内的 `web/workbench/src/AGENTS.md`。`deploy/README.md` 虽被 `tests/ci` 的 unittest 守卫读取，但 `docs` 车道的 `changes` 作业本来就执行 `python3 -m unittest discover -s tests/ci`，守卫在轻量路径上继续运行。
+其余说明文件不被任何构建或检查读取：Vite 只跟随导入（全仓库没有对 `.md` 的 `?raw`／`import.meta.glob`／`new URL` 导入，并由 `tests/ci` 的回归守住），`tsc` 与 ESLint 只处理 TS/TSX，Prettier 的 `format:check` glob 不含 `*.md`；`deploy/images/web.Dockerfile` 的 `COPY web web` 会把 `web/AGENTS.md` 的字节带进 builder 层，但最终阶段只发布 `dist`。这类文件包括源码树内的 `web/workbench/src/AGENTS.md`。`deploy/README.md` 虽被 `tests/ci` 的 unittest 守卫读取，但 `docs` 车道的 `changes` 作业本来就执行 `python3 -m unittest discover -s tests/ci`，守卫在轻量路径上继续运行。
 
 例外集合由 `tests/ci/test_ci_routing.py::ProseRoutingTests` 双向核对：期望车道从三条独立规则派生（Dockerfile 字面量 `COPY`、单测读者、`web/<app>/public/`），再与 `classify` 和 `_prose_route` 逐条比对，新增例外而不补规则（或反之）都会变红。派生只认字面量 `COPY <path>.md`：目录形式复制（如 `COPY web web`、`COPY packages/contracts packages/contracts`）、`ADD` 与 glob 不在派生内，新增这类消费者须人工登记到 `_IMAGE_COPY_PROSE`。仅 `AGENTS.md` 与 `README*.md` 按内容归类，`agents.md`、`AGENTS.MD`、`Readme.md`、`README.rst`、`README` 等命名变体仍走 `full`（fail-closed，不会漏跑验证）。
 
@@ -94,7 +94,7 @@ Node Controller 镜像验证由 CI 以同提交的 [reusable workflow](../../.gi
 | `docs_format` | `Docs: markdown code block formatting` | 以与 `uv.lock` 一致的锁定 Ruff 复跑 `ruff format --check .`（含 Markdown 内 Python 代码块）；只在 `docs` 范围执行，只装 Ruff 自身，不安装项目依赖 |
 | `delivery_tracking` | `Docs: delivery matrix freshness` | 从提交快照离线重渲染矩阵并比对；仅矩阵、关联源、快照或生成器变化时执行渲染 |
 | `python` | `Gate: required checks for this change` | 按已验证范围核对全部适用结果，阻止失败、取消与意外跳过 |
-| `web` | `Web: lint, types, tests, build and accessibility` | 格式、lint、TypeScript、SDK 契约、workspace 测试和构建、真实浏览器无障碍与对比度 |
+| `web` | `Web: lint, types, tests, build and accessibility` | 格式、lint、TypeScript、SDK 契约、workspace 测试和构建、Web 镜像构建上下文完整性、真实浏览器无障碍与对比度 |
 | `deployment` | `Compose: configuration validation` | 执行 `docker compose config --quiet`，不启动服务或发布部署 |
 | `reference_acceptance` | `Deploy: reference acceptance entry (dry-run execution)` | 真实执行 `scripts/dev-env/reference-acceptance.py --dry-run`：工具版本、派生环境键、compose 渲染、三条 Job DSN 身份、迁移 head、桶名与派生出的私有输入；`ci-entry-guard.py` 的 `log`/`sites`/`probe`/`wiring` 四条结构守卫（输出契约与延后项登记、写命令清单与 `ctx.read` 只读边界、纯判定函数探针、作业接线），并比对文档锚点块里的登记表与自检语料；另做一条损坏环境的负对照，不启动服务或执行写步骤 |
 
@@ -541,6 +541,31 @@ node scripts/dev-env/validate-contract-consumers.mjs
 ```
 
 守卫是静态文本检查：它证明导入形态、清单依赖、生成模块/候选归属与 `exports` 声明对齐，不证明运行时解析、打包产物体积、Vite/tsc 版本行为或实际页面调用成功；这些仍由 `pnpm typecheck`、`pnpm build`、`pnpm test` 与真实浏览器能力道覆盖。仓库内 `scripts/`、`tests/` 的探针与夹具在检出上直接运行源码，不是 workspace 包消费者，因此不在 Web 绑定规则内；它们使用相对路径不进入本门禁的消费者计数。
+
+## Web 镜像构建上下文门禁
+
+`deploy/images/web.Dockerfile` 只复制仓库的一部分再在镜像内 `pnpm install --frozen-lockfile` 与 `pnpm --filter "@speechnexus/${APP_NAME}" build`。Web 作业用整仓执行同样的命令，因此 **COPY 集合比真实构建输入窄**这类缺口在 CI 里不可见：#834 让产品源码（`web/admin/src/profiles/profile-test-fixtures.ts` 与 dev 场景页）导入 `tests/fixtures/contracts`，两个 Web 镜像都无法构建，而所有车道全绿——「CI 绿 ≠ 部署能起」。
+
+`web` 作业在 `pnpm build` 之后执行 `pnpm verify:web-image`：它按 Dockerfile 的字面量 `COPY` 集合物化一个只含这些文件的目录，在其中安装锁定依赖并构建每个声明 `build` 的 workspace 应用。构建读到集合外的任何文件（测试夹具、文档、根配置）都会在这里失败，不需要整仓兜底。`changes` 作业（不安装依赖）用 `tests/ci/test_web_image_context.py` 复核静态部分。
+
+| 检查 | 判据 |
+| --- | --- |
+| 上下文完整性 | 只含 `COPY` 集合的目录内 `pnpm install --frozen-lockfile` 与 `pnpm --filter @speechnexus/<app> build` 全部成功；集合外缺失的输入直接点名 |
+| `.dockerignore` | 每个 `COPY` 源都不被 `.dockerignore` 排除；被排除的源在真实构建里复制不到任何东西 |
+| 根配置输入 | `package.json`、`pnpm-lock.yaml`、`pnpm-workspace.yaml`、`tsconfig.base.json`、`.npmrc` 必须在 `COPY` 集合内，否则镜像内的安装与类型检查策略与 CI 不同 |
+| 无测试数据 | `COPY` 源不得落在 `tests/**`；镜像不包含测试数据是验收判据，不以「复制集合够小」代替 |
+| 生产程序 | 每个 Web 应用的 `build` 必须类型检查 `tsconfig.build.json`，且该程序内没有源文件导入 `tests/**`。测试、`src/test/`、`src/**/dev/` 与测试专用夹具模块不在该程序内，dev 场景页经 `import.meta.env.DEV` 门控的 Vite glob 加载，因此不进入镜像构建图 |
+| `APP_NAME` | `ARG APP_NAME` 的默认值必须是有 `build` 脚本的 workspace 包 |
+
+独立验证（`--build` 需要 `pnpm` 与已填充的 store；静态部分只需 Python）：
+
+```sh
+python3 scripts/dev-env/verify-web-image-context.py
+python3 scripts/dev-env/verify-web-image-context.py --build
+python3 -m unittest tests.ci.test_web_image_context -v
+```
+
+边界：本门禁在 CI 里不运行 `docker build`，因此不证明 Docker 引擎、BuildKit secret 挂载、`.dockerignore` 的完整语义或镜像最终层内容；`.dockerignore` 匹配按「最后一条匹配规则胜出」实现，是 Docker 语义的子集。它证明的是**构建输入集合**：集合外的依赖会让镜像构建失败，而这一点此前没有任何车道能看见。运行期行为、nginx 模板与镜像内容仍由实际镜像构建与部署验收覆盖。
 
 ## Web 无障碍与颜色对比度
 

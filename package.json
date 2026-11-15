@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "pnpm --parallel --filter @speechnexus/admin --filter @speechnexus/workbench dev",
     "build": "pnpm -r --if-present build",
+    "verify:web-image": "python3 scripts/dev-env/verify-web-image-context.py --build",
     "lint:tokens": "node scripts/dev-env/validate-design-tokens.mjs",
     "test:tokens": "node --test tests/ci/design-tokens.test.mjs",
     "test:a11y": "playwright test --config playwright.a11y.config.mjs",

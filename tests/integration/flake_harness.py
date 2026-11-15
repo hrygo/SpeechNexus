@@ -23,16 +23,25 @@ Conditions:
 
 Extra arguments after `--` are passed to pytest; without them the harness runs
 the two delivery tests it was built for: the `#795` retry-window case and the
-adjacent lease-window case. Both are expected green under every condition. The
-lease case is what reproduced `Failed: ACK did not encounter the real outbox
-row lock` under `latency-proxy` while its lease was still the 1 s product floor;
-restoring a 1 s lease there makes this harness red again.
+adjacent lease-window case (`LEASE_WINDOW_US` = 2 s in
+`tests/integration/test_runtime_delivery.py`). Both are expected green under
+every condition. The lease case is what reproduced `Failed: ACK did not
+encounter the real outbox row lock` under `latency-proxy` while its lease was
+the 1 s product floor; setting `LEASE_WINDOW_US` back to 1000000 makes this
+harness red again with that exact message.
 
 Exit status is pytest's; the harness itself exits 2 when a prerequisite is
-missing or a condition silently fails to take effect. Cleanup runs in every
-path: `ALTER SYSTEM RESET commit_delay/commit_siblings` + `pg_reload_conf`,
-`SET GLOBAL binlog_group_commit_sync_delay` restored to its previous value, the
-proxy's listeners closed, and all synthetic committers stopped.
+missing, and exits 1 with the measurement when a condition silently fails to
+take effect (measured commit median below the configured delay, or a proxied
+round trip that did not grow by the chunk delay). Cleanup runs in every path:
+`ALTER SYSTEM RESET commit_delay/commit_siblings` + `pg_reload_conf` verified by
+a *fresh* connection (a session's own `SHOW` reports the pre-reload value, so it
+cannot confirm anything), the exact pre-run value put back when the reset cannot
+reproduce it, `SET GLOBAL binlog_group_commit_sync_delay` restored to its
+previous value, scratch schemas and probe databases of a hard-killed run
+swept, the proxy's listeners closed, and all synthetic committers stopped. A `SIGKILL` of this
+process cannot run any of that, so an orphaned pytest child and the leftover
+server state are covered by the manual steps in `tests/integration/AGENTS.md`.
 """
 
 from __future__ import annotations
@@ -51,6 +60,7 @@ from tests.support.flake_conditions import (
     MySQLSlowCommits,
     PostgresSlowCommits,
     TcpLatencyProxy,
+    proxy_roundtrip_evidence,
 )
 
 POSTGRES_VARIABLE = "SPEECHNEXUS_TEST_DATABASE_URL"
@@ -118,14 +128,17 @@ def main(argv: list[str]) -> int:
             proxy = stack.enter_context(TcpLatencyProxy(chunk_delay_ms=arguments.chunk_delay_ms))
             environment[POSTGRES_VARIABLE] = proxy.rewrite(postgres_dsn)
             environment[MYSQL_VARIABLE] = proxy.rewrite(mysql_dsn)
-            conditions.append(
-                {
-                    "condition": "tcp-latency-proxy",
-                    "chunk_delay_ms": arguments.chunk_delay_ms,
-                    "postgres_via": environment[POSTGRES_VARIABLE],
-                    "mysql_via": environment[MYSQL_VARIABLE],
-                }
-            )
+            evidence: dict[str, object] = {
+                "condition": "tcp-latency-proxy",
+                "chunk_delay_ms": arguments.chunk_delay_ms,
+                "postgres_via": environment[POSTGRES_VARIABLE],
+                "mysql_via": environment[MYSQL_VARIABLE],
+            }
+            # A proxy that forwards without sleeping looks exactly like a working
+            # one, so the delay is measured through each proxied DSN.
+            evidence.update(proxy_roundtrip_evidence(proxy, postgres_dsn, label="postgres"))
+            evidence.update(proxy_roundtrip_evidence(proxy, mysql_dsn, label="mysql"))
+            conditions.append(evidence)
         if arguments.condition in ("commit-delay", "both"):
             conditions.append(
                 stack.enter_context(

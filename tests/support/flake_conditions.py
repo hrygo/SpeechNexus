@@ -18,9 +18,14 @@ statements at all, and the proxy delays bytes rather than commits, so a test
 that only races its own commit latency is red under one and green under the
 other.
 
-Both conditions modify server-global state and background load, so each context
-manager restores exactly what it changed and exposes the measurement that
-proves it was actually in effect.
+A condition that silently fails to take effect would make every green run
+meaningless evidence, so each one measures itself and fails loudly: the commit
+conditions compare a measured median commit latency against the configured
+delay, and `proxy_roundtrip_evidence` compares a measured statement round trip
+through the proxy against the configured chunk delay. PostgreSQL parameters are
+read back on *fresh connections* -- a session's own `SHOW` can still return the
+pre-reload value right after `pg_reload_conf()`, which would turn the restore
+verification into a check that always passes.
 """
 
 from __future__ import annotations
@@ -55,11 +60,19 @@ POSTGRES_BUSY_COMMITTERS = 12
 # busy load is required for this side.
 MYSQL_COMMIT_DELAY_US = 200_000
 
-# The measured median must reach half the configured delay, otherwise the
+# A measured median must reach half the configured delay, otherwise the commit
 # condition is not in effect and a green run would be meaningless evidence.
 _MINIMUM_EFFECT_RATIO = 0.5
+# One small statement crosses the proxy as one request chunk plus one response
+# chunk, so its round trip must grow by roughly two chunk delays; 0.75 keeps
+# the guard strict without depending on exact framing.
+_MINIMUM_PROXY_EFFECT_RATIO = 0.75
 _READ_SIZE = 65536
 _TIMEOUT_S = 10.0
+_RELOAD_SETTLE_S = 0.2
+_POSTGRES_SETTINGS = ("commit_delay", "commit_siblings")
+_POSTGRES_SCRATCH_PREFIXES = ("sn_flake_commit_", "sn_commit_probe_")
+_MYSQL_SCRATCH_PREFIX = "sn_commit_probe_"
 
 
 def _host_port(dsn: str) -> tuple[str, int]:
@@ -99,6 +112,10 @@ class TcpLatencyProxy:
         with TcpLatencyProxy(chunk_delay_ms=10) as proxy:
             environment["SPEECHNEXUS_TEST_DATABASE_URL"] = proxy.rewrite(pg_dsn)
             environment["SPEECHNEXUS_TEST_MYSQL_URL"] = proxy.rewrite(mysql_dsn)
+            evidence = proxy_roundtrip_evidence(proxy, pg_dsn, label="postgres")
+
+    `proxy_roundtrip_evidence` is the "the condition is really in effect" guard;
+    the proxy alone cannot prove that it delayed anything.
     """
 
     def __init__(self, chunk_delay_ms: float = DEFAULT_CHUNK_DELAY_MS) -> None:
@@ -246,6 +263,66 @@ class TcpLatencyProxy:
         asyncio.get_running_loop().stop()
 
 
+def measure_roundtrip_ms(dsn: str, samples: int = 5) -> list[float]:
+    """Time one trivial statement on an already established connection."""
+    parsed = urlsplit(dsn)
+    samples = max(3, samples)
+    latencies: list[float] = []
+    if parsed.scheme.startswith("postgres"):
+        connection = psycopg.connect(dsn, autocommit=True)
+        try:
+            for _ in range(samples):
+                started = time.perf_counter()
+                connection.execute("SELECT 1").fetchall()
+                latencies.append((time.perf_counter() - started) * 1000)
+        finally:
+            connection.close()
+        return latencies
+    mysql_connection = pymysql.connect(
+        host=parsed.hostname or "127.0.0.1",
+        port=parsed.port or 3306,
+        user=parsed.username or "root",
+        password=parsed.password or "",
+        autocommit=True,
+    )
+    try:
+        with mysql_connection.cursor() as cursor:
+            for _ in range(samples):
+                started = time.perf_counter()
+                cursor.execute("SELECT 1")
+                cursor.fetchall()
+                latencies.append((time.perf_counter() - started) * 1000)
+    finally:
+        mysql_connection.close()
+    return latencies
+
+
+def proxy_roundtrip_evidence(
+    proxy: TcpLatencyProxy, dsn: str, *, label: str, samples: int = 5
+) -> dict[str, float]:
+    """Prove the proxy really delays this DSN, and return the measurement.
+
+    A proxy that silently forwards without sleeping produces exactly the same
+    configuration as a working one, so the delay is measured, not assumed: the
+    same statement runs on a direct connection and through the proxy, and the
+    proxied round trip must grow by at least ~two chunk delays.
+    """
+    direct = statistics.median(measure_roundtrip_ms(dsn, samples))
+    proxied = statistics.median(measure_roundtrip_ms(proxy.rewrite(dsn), samples))
+    minimum = proxy.chunk_delay_ms * 2 * _MINIMUM_PROXY_EFFECT_RATIO
+    if proxied < minimum:
+        raise RuntimeError(
+            f"TCP latency proxy is not in effect for {label}: proxied round trip "
+            f"{proxied:.2f} ms < {minimum:.2f} ms "
+            f"({proxy.chunk_delay_ms} ms/chunk), direct round trip {direct:.2f} ms"
+        )
+    return {
+        f"{label}_direct_roundtrip_ms": round(direct, 2),
+        f"{label}_proxied_roundtrip_ms": round(proxied, 2),
+        f"{label}_roundtrip_slowdown": round(proxied / max(direct, 0.001), 1),
+    }
+
+
 def measure_commit_latency_ms(dsn: str, samples: int = 5) -> list[float]:
     """Commit latency, in milliseconds, for one committing transaction.
 
@@ -280,7 +357,7 @@ def measure_commit_latency_ms(dsn: str, samples: int = 5) -> list[float]:
                 connection.commit()
             connection.close()
         return latencies
-    database = "sn_commit_probe_" + uuid.uuid4().hex[:12]
+    database = _MYSQL_SCRATCH_PREFIX + uuid.uuid4().hex[:12]
     admin = pymysql.connect(
         host=parsed.hostname or "127.0.0.1",
         port=parsed.port or 3306,
@@ -316,13 +393,27 @@ def measure_commit_latency_ms(dsn: str, samples: int = 5) -> list[float]:
     return latencies
 
 
-def _wait_for(probe: Callable[[], bool], description: str) -> None:
-    deadline = time.monotonic() + _TIMEOUT_S
+def _wait_for(probe: Callable[[], bool], description: str, timeout_s: float = _TIMEOUT_S) -> None:
+    deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         if probe():
             return
         time.sleep(0.05)
     raise RuntimeError(f"Timed out waiting for {description}")
+
+
+def _fresh_postgres_setting(dsn: str, name: str) -> int:
+    """Read a parameter the way a new backend will see it.
+
+    A session's own `SHOW` can still return the pre-reload value immediately
+    after `pg_reload_conf()`, so it cannot be used to confirm a change or a
+    restore: right after a reset it reports the value being reset unless the
+    probe waits, and a probe that compares against the pre-run value passes on
+    the stale read.
+    """
+    with psycopg.connect(dsn, autocommit=True) as connection:
+        rows = connection.execute(f"SHOW {name}").fetchall()
+    return int(str(rows[0][0]))
 
 
 class PostgresSlowCommits:
@@ -334,8 +425,11 @@ class PostgresSlowCommits:
     `POSTGRES_BUSY_COMMITTERS` synthetic committers committing in a loop, and
     measures a real commit to prove the delay is actually observed.
 
-    Cleanup uses `ALTER SYSTEM RESET` plus `pg_reload_conf`, then reads the
-    parameters back so a leftover delay cannot silently outlive the run.
+    Enter and exit both verify through fresh connections. On exit the parameters
+    are reset, then read back by a new session; a value that `ALTER SYSTEM
+    RESET` cannot reproduce (the pre-run override came from
+    `postgresql.auto.conf`) is set explicitly to the value that was in effect
+    before the run, so a polluted server is restored instead of flattened.
     """
 
     def __init__(
@@ -354,8 +448,7 @@ class PostgresSlowCommits:
         self.committers = committers
         self.baseline_latency_ms = 0.0
         self.commit_latency_ms = 0.0
-        self._original_delay = 0
-        self._original_siblings = 0
+        self._original: dict[str, int] = {}
         self._admin: psycopg.Connection[tuple[object, ...]] | None = None
         self._schema = "sn_flake_commit_" + uuid.uuid4().hex[:12]
         self._stop = threading.Event()
@@ -365,13 +458,18 @@ class PostgresSlowCommits:
         admin = psycopg.connect(self.dsn, autocommit=True)
         self._admin = admin
         try:
-            self._original_delay = self._parameter(admin, "commit_delay")
-            self._original_siblings = self._parameter(admin, "commit_siblings")
+            self._original = {
+                name: _fresh_postgres_setting(self.dsn, name) for name in _POSTGRES_SETTINGS
+            }
             self.baseline_latency_ms = statistics.median(measure_commit_latency_ms(self.dsn))
+            self._drop_stale_schemas(admin)
             admin.execute(f"ALTER SYSTEM SET commit_delay = '{self.commit_delay_us}'")
             admin.execute(f"ALTER SYSTEM SET commit_siblings = '{self.commit_siblings}'")
             admin.execute("SELECT pg_reload_conf()")
-            self._wait_for_parameter(admin, "commit_delay", self.commit_delay_us)
+            self._wait_for_settings(
+                {"commit_delay": self.commit_delay_us, "commit_siblings": self.commit_siblings},
+                phase="take effect for new sessions",
+            )
             admin.execute(f"CREATE SCHEMA {self._schema}")
             admin.execute(f"CREATE TABLE {self._schema}.busy (payload int)")
             for _ in range(self.committers):
@@ -408,16 +506,25 @@ class PostgresSlowCommits:
         failure: str | None = None
         try:
             admin.execute(f"DROP SCHEMA IF EXISTS {self._schema} CASCADE")
-            admin.execute("ALTER SYSTEM RESET commit_delay")
-            admin.execute("ALTER SYSTEM RESET commit_siblings")
+            for name in self._original:
+                admin.execute(f"ALTER SYSTEM RESET {name}")
             admin.execute("SELECT pg_reload_conf()")
+            # A reset cannot reproduce a value that came from another
+            # `ALTER SYSTEM`, so give the reload one settle and put back
+            # whatever no longer matches the value read before this run.
+            time.sleep(_RELOAD_SETTLE_S)
+            changed = [
+                name
+                for name, original in self._original.items()
+                if _fresh_postgres_setting(self.dsn, name) != original
+            ]
+            for name in changed:
+                admin.execute(f"ALTER SYSTEM SET {name} = '{self._original[name]}'")
+            if changed:
+                admin.execute("SELECT pg_reload_conf()")
             try:
-                _wait_for(
-                    lambda: (
-                        self._parameter(admin, "commit_delay") == self._original_delay
-                        and self._parameter(admin, "commit_siblings") == self._original_siblings
-                    ),
-                    "PostgreSQL commit_delay/commit_siblings to be reset",
+                self._wait_for_settings(
+                    self._original, phase="be restored for new sessions", timeout_s=5.0
                 )
             except RuntimeError as error:
                 failure = str(error)
@@ -435,20 +542,33 @@ class PostgresSlowCommits:
             "busy_committers": self.committers,
             "baseline_commit_median_ms": round(self.baseline_latency_ms, 2),
             "slow_commit_median_ms": round(self.commit_latency_ms, 2),
+            "pre_run_settings": dict(self._original),
         }
 
-    @staticmethod
-    def _parameter(admin: psycopg.Connection[tuple[object, ...]], name: str) -> int:
-        rows = admin.execute(f"SHOW {name}").fetchall()
-        return int(str(rows[0][0]))
-
-    def _wait_for_parameter(
-        self, admin: psycopg.Connection[tuple[object, ...]], name: str, value: int
+    def _wait_for_settings(
+        self, target: dict[str, int], *, phase: str, timeout_s: float = _TIMEOUT_S
     ) -> None:
-        _wait_for(
-            lambda: self._parameter(admin, name) == value,
-            f"PostgreSQL {name}={value} (only a superuser DSN can reload postgresql.auto.conf)",
+        actual: dict[str, int] = {}
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            actual = {name: _fresh_postgres_setting(self.dsn, name) for name in target}
+            if actual == target:
+                return
+            time.sleep(0.05)
+        raise RuntimeError(
+            f"PostgreSQL settings did not {phase}: expected {target}, new sessions read {actual}"
         )
+
+    def _drop_stale_schemas(self, admin: psycopg.Connection[tuple[object, ...]]) -> None:
+        # These prefixes belong to this harness; only one run at a time is
+        # supported because the condition is server-global. A hard-killed run
+        # leaves its scratch schema behind, and a later run sweeps it.
+        for prefix in _POSTGRES_SCRATCH_PREFIXES:
+            rows = admin.execute(
+                "SELECT nspname FROM pg_namespace WHERE nspname LIKE %s", (prefix + "%",)
+            ).fetchall()
+            for row in rows:
+                admin.execute(f'DROP SCHEMA IF EXISTS "{row[0]}" CASCADE')
 
     def _require_effect(self) -> None:
         minimum = self.commit_delay_us / 1000.0 * _MINIMUM_EFFECT_RATIO
@@ -503,6 +623,7 @@ class MySQLSlowCommits:
 
     def __enter__(self) -> MySQLSlowCommits:
         try:
+            self._drop_stale_probe_databases()
             with self._connection.cursor() as cursor:
                 cursor.execute("SELECT @@GLOBAL.log_bin, @@GLOBAL.binlog_group_commit_sync_delay")
                 row = cursor.fetchone()
@@ -554,7 +675,18 @@ class MySQLSlowCommits:
             "binlog_group_commit_sync_delay_us": self.commit_delay_us,
             "baseline_commit_median_ms": round(self.baseline_latency_ms, 2),
             "slow_commit_median_ms": round(self.commit_latency_ms, 2),
+            "pre_run_delay_us": self._original_delay,
         }
+
+    def _drop_stale_probe_databases(self) -> None:
+        # Only a hard-killed run leaves one of these behind; the prefix is
+        # owned by this harness and the condition is server-global, so one run
+        # at a time is the supported arrangement.
+        with self._connection.cursor() as cursor:
+            cursor.execute("SHOW DATABASES LIKE %s", (_MYSQL_SCRATCH_PREFIX + "%",))
+            rows = cursor.fetchall()
+            for row in rows:
+                cursor.execute(f"DROP DATABASE IF EXISTS `{row[0]}`")
 
     @staticmethod
     def _expect_delay(row: tuple[object, ...] | None, expected: int) -> None:

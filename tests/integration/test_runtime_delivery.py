@@ -56,15 +56,28 @@ RETRY_DELAY_US = 30000000
 # The ACK race test needs a lease that is still live when the ACK transaction
 # reads its ledger row, and already dead when it rechecks after acquiring the
 # real outbox row lock; only then does that post-lock recheck -- the behaviour
-# under test -- decide the outcome. The product floor (1 s) cannot be that
-# window: under the 10 ms/chunk latency proxy of
-# `tests/integration/flake_harness.py` claim+start alone cost ~0.8 s on both
-# engines, so a 1 s lease has expired before the ACK transaction starts and
-# `_owned()` returns "stale" without ever requesting the outbox lock (observed
-# failure: "ACK did not encounter the real outbox row lock"). 2.5 s stays above
-# the measured establishment time and keeps the blocked wait near 1 s, below the
-# 3 s `innodb_lock_wait_timeout` that `MySQLJobTransactions` sets per session.
-LEASE_WINDOW_US = 1000000
+# under test -- decide the outcome. Both sides of the window are bounded by real
+# measurements taken with the harness default of 10 ms per proxied chunk:
+#
+#   * lower: the claim and start commits land before the ACK transaction begins,
+#     so the lease must outlive that establishment -- measured 948-1007 ms (PG)
+#     and 1209-1401 ms (MySQL) from claim commit to the ACK's outbox lock, the
+#     upper end being the proxy+slow-commit combination;
+#   * upper: the ACK must finish inside its own 3 s budget. PostgreSQL bounds the
+#     whole ACK transaction (`PostgresRuntimeDelivery(timeout_seconds=3)`) and
+#     InnoDB bounds the blocked lock wait (`innodb_lock_wait_timeout=3`, set per
+#     session by `MySQLJobTransactions`), so the blocked wait plus the post-lock
+#     recheck and both writes must fit in that same 3 s.
+#
+# 2 s leaves 0.6-1.05 s above the measured establishment and 1.0-1.8 s below
+# both 3 s ceilings, so neither side of the window is the tight one. The product
+# floor (1 s) cannot serve as the window: it expires before the ACK transaction
+# starts, `_owned()` returns "stale" without ever requesting the outbox lock,
+# and the test reports "ACK did not encounter the real outbox row lock" instead
+# of exercising the recheck. Raising the harness's `--chunk-delay-ms` far above
+# its 10 ms default shrinks the lower margin; that is a property of this window,
+# not a product defect.
+LEASE_WINDOW_US = 2000000
 
 
 @dataclass

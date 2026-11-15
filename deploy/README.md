@@ -88,8 +88,11 @@ qualify a real service, cross-host TLS, or a physical topology.
 - public synchronous ASR is still blocked by the missing production terminal-state
   writer; a live request can return `504 operation_timeout` even when the gateway
   staged a result;
-- public TTS remains blocked by the missing public dispatch path; this Compose only
-  prepares the gateway's private file-TTS references;
+- public synchronous TTS is assembled here — recipe sample, language, settlement
+  role and the API identity's speech grants are all part of this file (see
+  "Synchronous TTS assembly" below) — but it is not exercised: this bootstrap
+  provides no real engine, no published and qualified builtin voice, and no
+  public `200` has been run against it;
 - public asynchronous Job execution is not qualified here: the opt-in
   `job-dispatch` profile only runs the dispatcher, this bootstrap provides no real
   engine, and submission still needs the Job writer and admission roles below;
@@ -106,6 +109,97 @@ qualify a real service, cross-host TLS, or a physical topology.
 
 Do not use a green Compose health check to close any of those items.
 
+## Synchronous TTS assembly
+
+`synchronous TTS` is assembled by this file, and that is all it means: the four
+inputs exist in the topology, not that a synthesis succeeds. The inputs are
+
+- `SPEECHNEXUS_SPEECH_RECIPE_FILE`, fixed to
+  `/run/speechnexus-private/speech-recipe.json` and copied from
+  [private/speech-recipe.example.json](private/speech-recipe.example.json). It is
+  set unconditionally for the same reason as the transcription recipe: an
+  operator who forgets to copy it gets an explicit startup failure from the loader
+  (`Invalid private speech admission recipe /run/speechnexus-private/speech-recipe.json
+  (FileNotFoundError)`), not a silent "TTS off";
+- `SPEECHNEXUS_SPEECH_DEFAULT_LANGUAGE`, forwarded with the reference value `en`
+  because the recipe does not carry a language;
+- `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL`, the independent
+  `sn_speech_settlement` role the runbook's §6 creates. It is forwarded with an
+  empty default so the base topology renders before that role exists; a blank
+  value keeps synchronous TTS off, and the API logs every missing TTS key by name
+  instead of guessing;
+- the existing gateway URL, component credential and object-storage keys, which
+  synchronous ASR already requires.
+
+The API identity also needs `speech_synthesis_reader_grants(schema, "sn_api")`;
+both provisioning paths in the runbook replay it. Without it the factory starts,
+reports no qualified voice, and keeps TTS off even with every key present.
+
+### Checking a copied assembly
+
+`uv run --all-packages python scripts/dev-env/check-tts-assembly.py --private-dir deploy/.runtime/private`
+loads the copied recipe and endpoint descriptor through the production loaders, then
+reports every field in four states: which values are still the committed example's,
+which disagree with each other or are expired, which pass a local check, and which
+**cannot be decided from the files at all**. Values with no local oracle — plan
+budgets, the real engine address, whether a policy revision matches the voice
+qualification — are listed as undecidable rather than folded into a pass. There is
+no "ready" verdict: exit 0 means "no field still carries the example's value and the
+files agree", nothing more.
+
+### What acceptance still needs
+
+Replacing every field is necessary and not sufficient. A first request additionally
+requires, in order, all of it verifiable only against a running deployment:
+
+1. **A registered TTS instance.** `runtime_instance_heads` must hold
+   `recipe.stage.instance_id` at the generation the endpoint descriptor pins
+   (`qualified_speech_facts_postgres.py:76` selects `current_generation` and raises
+   `missing instance head` otherwise). Registration is
+   `speechnexus-register-engine`; this Compose's `engine-register` service only
+   loads the **transcription** recipe (`engine_registration.py:1136` calls
+   `load_transcription_recipe`), so a TTS instance is registered in manual mode
+   (`_spec_from_manual`, `engine_registration.py:1072`) with `--model --node --pool
+   --gateway --instance --template-id --binding-revision-id --manifest-id
+   --config-digest --topology-digest --qualification-digest --architecture
+   --service-class --loading-policy --max-slots --policy-revision --peak --steady
+   --per-slot`. The async lane and the TTS lane register different instances.
+2. **Registration values equal to the recipe.** Admission reads
+   `engine_instances` joined with `runtime_instance_heads` and refuses unless
+   `current_generation == instance_generation`, `(host_node_id, pool_id,
+   gateway_id)` equals the recipe's plan binding, and `binding_revision_id`,
+   `manifest_id`, `approved_template_id`, `config_digest` all equal the recipe's
+   values (`transcription_admission.py:88-123`, surfaced as
+   `TranscriptionUnavailableError … disagree with the private recipe`). Registration
+   also refuses a plan whose budget does not fit the host's declared capacity
+   (`_require_capacity`, `host_capacity_insufficient`, `engine_registration.py:494`),
+   so the recipe's budget must be the one registration accepted.
+3. **`policy_revision_id` matching two independent facts.** The workspace quota row's
+   `policy_revision` must equal it (`transcription_admission.py:116`), and the
+   builtin voice approval's `gateway_policy_revision_id` must equal it
+   (`backend/src/speechnexus_backend/speech/infrastructure/builtin_voice_qualification.py:54`). A mismatch is
+   `AdmissionRejectedError("policy_or_resource_disabled")`.
+4. **A published, non-retired builtin voice under that binding**, with a live source
+   approval (`has_qualified_voice`, `qualified_speech_facts_postgres.py:56-62`);
+   otherwise the factory logs `no current qualified voice` and keeps TTS off.
+5. **A live engine behind the descriptor.** `address`/`port`/`served_model` and the
+   64-hex token are only proven by a request: nothing in the files reaches the
+   engine.
+
+The narrow-scope real `200` was observed on MegaCube in the 2026-11-03 window; this
+reference deployment has not re-run it.
+
+### An ASR-only deployment
+
+The recipe path is set unconditionally so that "TTS is off" cannot happen by
+accident. A deployment that only wants synchronous ASR can still opt out: delete
+the three `SPEECHNEXUS_SPEECH_*` lines from its own copy of `deploy/compose.yaml`.
+`build_speech` then logs `Synchronous speech unavailable; missing configuration`
+naming the missing keys and returns `None`, which is the documented "not assembled"
+state. There is deliberately no environment switch for this: a switch would
+reintroduce exactly the silent-disable path that made this issue necessary, because
+an unset or misspelled switch is indistinguishable from "off on purpose".
+
 ## Local endpoints
 
 Published ports bind to loopback only:
@@ -116,6 +210,21 @@ Published ports bind to loopback only:
 - MinIO S3: `127.0.0.1:59000`; console: `127.0.0.1:59001`
 - Admin UI (`web` profile): `http://127.0.0.1:8080`
 - Workbench UI (`web` profile): `http://127.0.0.1:8081`
+
+**`SPEECHNEXUS_ASSET_INSPECTOR=text` is the shipped default and it makes audio
+uploads fail.** With `text`, `TextAssetInspector` returns `available=False` for
+every purpose other than `text_input`, so an `asr_input` or `voice_reference`
+upload answers `503 asset_inspection_unavailable`; only `text_input` validates.
+This does not affect synchronous TTS (text in, audio out) or text ASR — it blocks
+audio *uploads* until `audio` is selected together with the inspection URL and
+token. The default stays `text` deliberately: `audio` needs a separate container
+(the opt-in `asset-inspection` profile), a shared token generated outside the
+repository, and it refuses startup when either is missing, so flipping the
+default would ship a topology that cannot start without those inputs and would
+turn a documented fail-closed 503 into a runtime surprise. A deployment that
+needs audio uploads selects `audio` explicitly; the failure mode is named in the
+runbook and in
+[asset inspection](../docs/components/asset-inspection-container.md#44-compose-装配).
 
 The `asset-inspection` profile publishes nothing: `asset-inspector` is reachable
 only as `http://asset-inspector:8080` from containers on its `internal: true`

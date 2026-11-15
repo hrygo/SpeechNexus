@@ -25,6 +25,20 @@
 
 配置键为 `SPEECHNEXUS_SPEECH_RECIPE_FILE`、`SPEECHNEXUS_SPEECH_DEFAULT_LANGUAGE`、独立身份的 `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` 和既有执行网关及对象存储配置；配方必须是受限权限的私有文件。运行角色需要既有协调事务权限及 `speech_synthesis_reader_grants` 声明的读权限及 settlement 根写入权限，部署阶段负责配置；缺失资格时工厂不会轮询自动开启，新增资格后须重启进程。
 
+参考部署面提供这条装配路径：配方样例在
+`deploy/private/speech-recipe.example.json`（copy 到 `speech-recipe.json`、`0600`、
+替换全部合成身份并按 RFC 8785 重算摘要），`deploy/compose.yaml` 固定
+`SPEECHNEXUS_SPEECH_RECIPE_FILE` 与 `SPEECHNEXUS_SPEECH_DEFAULT_LANGUAGE` 并空值透传
+`SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL`，独立结算角色 `sn_speech_settlement` 与
+`sn_api` 的 `speech_synthesis_reader_grants` 由[最小部署运行手册](../operations/compose-minimal.md)
+§3 与 §6 的安装/升级两条路径重放。装配检查入口为
+`scripts/dev-env/check-tts-assembly.py`（逐字段四态，不判受理）。装配通过后受理还需要：注册到
+`runtime_instance_heads` 的 TTS 实例、注册值与配方 plan 逐项相等、`policy_revision_id` 同时等于
+工作区配额行的 `policy_revision` 与内建声音资格的 `gateway_policy_revision_id`、该 binding 下
+已发布且未退役的声音，以及真实引擎；逐条来源见
+[deploy/README.md](../../deploy/README.md) 的「Synchronous TTS assembly」。装配不等于可用：
+真实引擎、已发布且合格的内建声音版本和一次公开 `200` 仍需单独窗口。
+
 准入同事务写入不含内容的 settlement 根；取消意图与 admission 按 operation 锁关联并固定首次原因，后台扫描原身份，由 LeaseService 核验停止证据后释放。该链路已接入应用生命周期；API 停止或工厂未启用时，内嵌循环不会继续处理待结算记录。独立入口 `python -m speechnexus_backend.tts_settlement_worker` 可按部署配置运行，要求独立数据库身份和明确的网关、节点，不能仅凭 API 停止推断结算完成。资格的网关策略摘要与 native speaker 随私有命令固定，首次提交或 404 重放前与认证网关现场配置比对；已存在的提交继续按原身份恢复。此检查依赖运行窗口内同一 gateway、instance 和 generation 使用同一进程中不可变的配置快照；网关重启或复用同一身份更换配置属于部署边界，须重新取得资格。不能以合成测试替代真实引擎停止、多机或高可用验证。
 
 正式原身份恢复入口为 `python -m speechnexus_backend.recover_tts REQUEST_ID --timeout-seconds N --output-file /absolute/private/path`，使用独立配置的数据库、执行网关及版本化对象存储连接，不读取当前配方、声音资格或语言默认值。`REQUEST_ID` 是原私有命令中的服务端生成身份，可由有权检查原 intent 的操作者按 operation 定位；它不是客户端提供的追踪头。命令将音频写入用户指定的绝对路径；父目录须归当前用户且仅其可访问，文件以 0600 创建且不覆盖，标准输出仅含脱敏摘要。恢复调用预算从入口计时，不延长原执行截止时间；执行已存在时按原身份读取结果，404 重放仍须现场证据匹配原固定策略。

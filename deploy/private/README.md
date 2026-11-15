@@ -14,6 +14,28 @@ The ASR `vad_model_file` must point to the approved Silero ONNX artifact, and
 `vad_model_sha256` must be its real SHA-256. The zeros below are intentionally
 invalid for a real execution.
 
+`speech-recipe.json` is the synchronous-TTS allocation input behind
+`SPEECHNEXUS_SPEECH_RECIPE_FILE`. It has no `asr` block and no
+`binding_publication_id`: TTS publication facts are read inside the admission
+transaction, so the recipe carries only the binding revision, manifest, policy
+revision and runtime plan. `recipe_digest` is the same RFC 8785 canonical JSON
+SHA-256 with `recipe_digest` removed. The replacement list is the same as for the
+transcription recipe, plus these TTS-specific ones: `model_id` must match the
+gateway's `served_model`, `runtime_plan.binding` must match the controlled
+endpoint's `target` (node/gateway/pool/instance/binding revision), and
+`admission_expires_at_us` must still be in the future — an expired recipe leaves
+synchronous TTS switched off rather than starting it. The committed example holds
+no credential at all: the engine token lives in
+`gateway-file-tts-endpoint.json`, and
+`scripts/dev-env/check-tts-assembly.py` lists every field as「仍是样例值 /
+不一致 / 无法从文件判定 / 本地检查通过」; it rejects an assembly that still carries
+the example's synthetic identities or its all-zero token, and it reports values with
+no local oracle (budgets, the real engine address) as undecidable instead of a pass.
+The compose-level preconditions a replaced assembly still has to satisfy — TTS
+instance registration, plan digests equal to the registered instance,
+`policy_revision_id` matching the voice qualification — are in
+[deploy/README.md](../README.md) "Synchronous TTS assembly".
+
 `transcription-recipe.json` must use the exact approved runtime plan and
 binding/manifest identities. `recipe_digest` is the RFC 8785 canonical JSON
 SHA-256 with `recipe_digest` removed, as described in
@@ -61,6 +83,7 @@ recompute the node template's warmup body digest. See
 | Source example | Required runtime name |
 | --- | --- |
 | `transcription-recipe.example.json` | `transcription-recipe.json` |
+| `speech-recipe.example.json` | `speech-recipe.json` |
 | `gateway-file-asr.example.json` | `gateway-file-asr.json` |
 | `gateway-file-asr-endpoint.example.json` | `gateway-file-asr-endpoint.json` |
 | `gateway-file-tts.example.json` | `gateway-file-tts.json` |

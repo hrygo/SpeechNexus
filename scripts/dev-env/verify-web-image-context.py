@@ -462,13 +462,14 @@ def static_checks(root: Path) -> list[str]:
         policy = [entry for entry in uncopied if entry in POLICY_ONLY_INPUTS]
         if required:
             raise CheckError(
-                f"{DOCKERFILE}: the install and the typecheck read these root files, but the COPY set "
-                f"omits them: {', '.join(required)}. The image would build differently from CI or "
-                "fail to install"
+                f"{DOCKERFILE}: the install and the typecheck read these root files, but the "
+                f"COPY set omits them: {', '.join(required)}. The image would build "
+                "differently from CI or fail to install"
             )
         raise CheckError(
-            f"{DOCKERFILE}: the COPY set omits {', '.join(policy)}. The build still succeeds without "
-            "it, but the image would install and compile under a different policy than CI "
+            f"{DOCKERFILE}: the COPY set omits {', '.join(policy)}. The build still succeeds "
+            "without it, but the image would install and compile under a different policy "
+            "than CI "
             "(engine-strict, save-exact): a green build is not evidence the policy matches"
         )
 

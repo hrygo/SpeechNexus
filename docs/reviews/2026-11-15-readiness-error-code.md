@@ -8,10 +8,15 @@ date: 2026-11-15
 # PR #839 非作者审查：readiness 过期错误码与续期路径（#828）
 
 审查对象：PR [#839](https://github.com/hrygo/SpeechNexus/pull/839)
-`fix/828-readiness-expiry`，head `956b43d426a840b750f405a043a325950089df15`，
-base `origin/main` = `c672b6b2`（分支 merge-base = `5cd5a5d0`，即 #833 之后、#838/#841 之前）。
-被审内容 32 文件、+2032/−41。审查分支 `review/843-readiness-error-code`（本报告是它与
-`origin/main` 的唯一差异）。
+`fix/828-readiness-expiry`，head `956b43d426a840b750f405a043a325950089df15`。
+GitHub 记录的 base 是 `5cd5a5d0`（该 PR 的 merge-base，即 #833 之后、#838/#841 之前）。
+被审内容 32 文件、+2032/−41。审查分支 `review/843-readiness-error-code` 基于 `origin/main`
+= `32498ccc`（#831），本报告是它与 `origin/main` 的唯一差异
+（`git diff origin/main...HEAD --stat` 只有 1 文件 +560）。
+
+> 审查期间 `origin/main` 从 `c672b6b2` 前进到 `32498ccc`（#831 CI 重构）。该提交**不在**
+> 本 PR 的 diff 里，但会移动测试例数，所以 §D12 把三个时点分开列：#831 之前的
+> `c672b6b2`、PR 的 merge-base `5cd5a5d0`、以及当前 `32498ccc`。
 
 ## 结论
 
@@ -44,15 +49,17 @@ base `origin/main` = `c672b6b2`（分支 merge-base = `5cd5a5d0`，即 #833 之�
   `/readyz` 仍 `200` 而所有创建 `503`，与 #840「健康检查看不见」同类。文档已声明需要自建
   cron/systemd，但这属于「声明了残余风险」，不是「消除了风险」（§B8）。
 - 反例强度足够：四条反例我都独立复现真红（含真实 PG 上两条）(§C9)。
-- 例数全部与我的实测一致，且作者未定位的「基线差值」可以定位到 **#841（`fb8f8fa8`）在
-  merge-base 之后新增 1 个 `tests/ci` 用例**，与本 PR 无关（§D13）。
+- 例数全部与作者自报一致（相对其 merge-base `5cd5a5d0`：+21/+21/+12/+10），且作者未定位的
+  「基线差值」可以完整归因到**任务口径过旧 + merge-base 之后的主干前进**
+  （#841 在 `tests/ci` +1、#831 重排 `tests/ci`/`tests/unit`/`tests/contract`），
+  与本 PR 无关（§D13）。
 
 ## 环境
 
 | 项 | 值 |
 | --- | --- |
 | 主机 / 时间 | macOS arm64，2026-11-15（Asia/Shanghai），16:30 起 |
-| 审查 worktree | `/private/tmp/sn843`，分支 `review/843-readiness-error-code`（基于 `origin/main` = `c672b6b2`） |
+| 审查 worktree | `/private/tmp/sn843`，分支 `review/843-readiness-error-code`（基于 `origin/main` = `32498ccc`；起手时是 `c672b6b2`，中途 rebase） |
 | 被审代码 worktree | `/private/tmp/sn843-run`，detached 于 `956b43d4`（只读上下文；变异只在此副本内，逐次 `git checkout --` 复原） |
 | Python / pytest / pnpm | 3.14.9 / 9.1.1 / 12.14.0 |
 | PostgreSQL | 一次性容器 `sn843-pg`（`postgres:16.15-alpine`，`127.0.0.1:55443`），审查结束 `docker rm -f` |
@@ -80,6 +87,8 @@ base `origin/main` = `c672b6b2`（分支 merge-base = `5cd5a5d0`，即 #833 之�
 | 16:47 | 身份漂移（`fencing_token+1`）后创建（A1 同类余量实证） | 仍 `503 job_unavailable` + "Job storage is unavailable." |
 | 16:48 | `tests/unit tests/contract tests/ci` 全量 | `11384 passed, 3 skipped, 1357 subtests` |
 | 16:49 | 删 probe、清 worktree、`DROP` 容器 | 无残留 |
+| 16:51 | 发现 `origin/main` 前进到 `32498ccc`（#831）；提交报告并 rebase 到当前 `origin/main` | 两/三点 diff 均只含本报告 |
+| 16:52 | 在当前 `origin/main` 与 PR head 上重采四套例数 | 见 §D12 三列 |
 
 ## A. 契约变更与消费者
 
@@ -414,43 +423,52 @@ state unchanged: True
 
 ### D12 例数与 `gh pr checks 839`
 
-| 套件 | PR head 实测 | `origin/main`（`c672b6b2`）实测 | 差值 | 作者自报 | 一致 |
-| --- | --- | --- | --- | --- | --- |
-| `tests/unit/backend` | **3294** | **3273** | +21 | 3294 / 基线 3273 | ✓ |
-| `tests/unit` | 7154（含 3 skip → **7151 passed**） | 7133 | +21 | 7151 passed + 3 skipped | ✓ |
-| `tests/contract` | **3825** | **3813** | +12 | 3825 / 基线 3813 | ✓ |
-| `tests/ci` | **408** | **399** | +9 | 408 / 基线 398 | ✓（基线见 D13） |
-| 集成 `test_engine_registration_pg.py`（5）+ `test_public_job_admission_http_pg.py`（8） | **13 passed** | — | — | 13 passed | ✓ |
-| `test_production_admission.py -k authority_windows` | **8 passed** | — | — | 8 passed | ✓ |
+三个时点分开列，避免把 #831 也算成本 PR 的增量：
 
-全量跑：`uv run pytest tests/unit tests/contract tests/ci -q` →
+| 套件 | PR head `956b43d4` | merge-base `5cd5a5d0` | 当前 `origin/main` `32498ccc` | 相对 merge-base | 作者自报 | 一致 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `tests/unit/backend` | **3294** | 3273 | 3273 | +21 | 3294 / 基线 3273 | ✓ |
+| `tests/unit` | 7154（3 skip → **7151 passed**） | 7133 | 7146 | +21 | 7151 passed + 3 skipped | ✓ |
+| `tests/contract` | **3825** | 3813 | 3815 | +12 | 3825 / 基线 3813 | ✓ |
+| `tests/ci` | **408** | 398 | 404 | +10 | 408 / 基线 398 | ✓ |
+| 集成 `test_engine_registration_pg.py`（5）+ `test_public_job_admission_http_pg.py`（8） | **13 passed** | — | — | — | 13 passed | ✓ |
+| `test_production_admission.py -k authority_windows` | **8 passed** | — | — | — | 8 passed | ✓ |
+
+作者的四个基线数字（3273 / 3813 / 398，以及 `7151 + 3 skipped`）与**它自己的 merge-base
+`5cd5a5d0` 完全一致**；与当前 `origin/main` 不一致只是因为 #831 之后主干的例数又变了
+（`tests/unit` +13、`tests/contract` +2、`tests/ci` +5）。本 PR 的 diff 不含 #831，
+所以正确口径是「相对 merge-base」。
+
+全量跑（PR head）：`uv run pytest tests/unit tests/contract tests/ci -q` →
 `11384 passed, 3 skipped, 1357 subtests passed in 287.01s`（7151+3825+408=11384 ✓）。
 
 `gh pr checks 839`（2026-11-15 16:34）：26 项 **pass**、0 fail、1 项 skipping
 （`Docs: markdown code block formatting`）。Python tests、Python lint/types/contract
 compatibility、Web、六个 Integration shard、Compose 校验、六项兄弟门禁全绿。
+#831 落地后复查 `mergeable: MERGEABLE` / `mergeStateStatus: CLEAN`（GitHub 仍按
+`baseRefOid = 5cd5a5d0` 计算），两 PR 的文件集不重叠，但**合入前应 rebase 一次并重跑门禁**，
+因为 #831 重排了 CI 工作流与若干 `tests/ci` 文件。
 
 ### D13 作者未定位的基线差值
 
 作者写「rebase 前本机 `unit/backend=3245`、`ci=370`，与任务给出的 `3272`/`390` 有差；rebase 到
 `5cd5a5d0` 后为 `3273`/`398`（#833 多 28 个用例），差值来源仍未定位」。
 
-我在**干净 `origin/main` 检出**上实测：`tests/unit/backend = 3273`、`tests/ci = 399`。
-定位结果：
+**这个差值可以定位，且与本 PR 无关。** 我在干净检出上实测了三个点：
 
-- `3272 → 3273`：**不是差值**。干净 `origin/main` 与小写基线都是 3273，任务给的 `3272` 只是
-  一个偏一的口径（`5cd5a5d0..origin/main` 对 `tests/unit/**` 无任何改动，只有
-  `tests/ci/test_web_image_context.py` 变了）。与本 PR 无关。
-- `390 → 398 → 399` 的全部来源：`merge-base = 5cd5a5d0`；它到 `origin/main` 之间只有两个提交，
-  `#838`（`c672b6b2`，纯文档）与 `#841`（`fb8f8fa8`），后者在
-  `tests/ci/test_web_image_context.py` 新增 **1** 个用例
-  （`test_a_policy_only_root_input_is_reported_as_policy_not_as_a_build_failure`）。
-  所以：`390`（任务给的旧口径）→ `398`（`5cd5a5d0`，含 #833 的 workbench-api 用例）→ `399`
-  （当前 `origin/main`，含 #841 的 +1）。**作者的 398 对他自己的 merge-base 是对的，
-  只是 `origin/main` 在此之后又 +1；与本 PR 无关。**
+- **`3272 → 3273` 不是差值。** `5cd5a5d0`、`c672b6b2`、`32498ccc` 三个提交的
+  `tests/unit/backend` 都是 **3273**；任务给的 `3272` 是一个偏一的口径。与本 PR 无关。
+- **`390 → 398`：`merge-base 5cd5a5d0` 之前就有 #833。** 作者自己已归因正确（#833 的
+  workbench-api 部署单元多出 28 个用例，`unit/backend` 3245→3273、`ci` 370→398 同为 +28）。
+- **`398 → 404`（当前 `origin/main`）：是 #831 与 #841，都发生在 PR 的 merge-base 之后。**
+  `5cd5a5d0..c672b6b2` 只有两个提交：`#838`（`c672b6b2`，纯文档）与 `#841`（`fb8f8fa8`），
+  后者在 `tests/ci/test_web_image_context.py` 新增 **1** 个用例
+  （`test_a_policy_only_root_input_is_reported_as_policy_not_as_a_build_failure`），所以那里
+  `ci = 399`；随后 `#831`（`32498ccc`）把 CI 工作流与若干 `tests/ci`/`tests/unit` 文件重排，
+  `ci` 到 404、`unit` 到 7146、`contract` 到 3815。
 
-结论：作者那句「差值来源未定位」可以撤销——是任务口径过旧 + merge-base 之后的 #841，
-两项都与本 PR 无关。这一点我在报告里给出实测值，不需要作者再猜。
+结论：作者那句「差值来源未定位」可以撤销——是任务口径过旧（`3272` 偏一、`390` 属 #833 之前）
+加上 merge-base 之后主干前进（#841 +1、#831 重排），三项都与本 PR 无关。
 
 ## 必须修清单
 

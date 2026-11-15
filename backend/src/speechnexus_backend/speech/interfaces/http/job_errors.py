@@ -19,6 +19,9 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
         "invalid_request_error",
         "The key identifies another Job intent.",
     ),
+    # The same request succeeds once the original execution confirms stop, which
+    # needs no operator or configuration step: under the pinned `retryable` rule
+    # that is `true` (#828 review M5).
     "execution_cleanup_pending": (
         409,
         "invalid_request_error",
@@ -153,8 +156,8 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
     "engine_resource_disabled": (
         503,
         "service_unavailable_error",
-        "The pinned engine instance, its pool or its recipe approval is not active; "
-        "restore the instance, then send a new request.",
+        "The pinned engine instance, its pool, its template or its recipe approval "
+        "is not active; restore the instance, then send a new request.",
     ),
     # The request was built from another recipe than the one approved for the
     # pinned instance.
@@ -170,7 +173,8 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
     "job_admission_contended": (
         503,
         "service_unavailable_error",
-        "Admission state changed concurrently; retry the request.",
+        "Admission state has not settled (a concurrent write or a draining "
+        "generation); retry the request.",
     ),
     # This request's own admission deadline elapsed before it could be admitted:
     # the deadline is part of the pinned intent, so only a new request can succeed.
@@ -192,9 +196,24 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
 
 
 def job_error(code: str, request_id: str, *, headers: dict[str, str] | None = None) -> JSONResponse:
-    if code not in _ERRORS:
-        code = "job_unavailable"
-    status, kind, message = _ERRORS[code]
+    """Render one declared Job error, and refuse to invent a storage answer.
+
+    An undeclared code is a deployment defect. It used to fall back to
+    ``job_unavailable`` -- "Job storage is unavailable." -- so any unmapped cause
+    in the layers above silently restored the #828 symptom. It now answers the
+    declared 500 ``admission_state_invalid`` envelope and names the bad code in the
+    message (#828 review M1).
+    """
+    undeclared = code not in _ERRORS
+    if undeclared:
+        message = (
+            f"The Job API emitted an undeclared error code ({code}); this is a "
+            "deployment defect and the request must not be replayed as-is."
+        )
+        code = "admission_state_invalid"
+        status, kind, _ = _ERRORS[code]
+    else:
+        status, kind, message = _ERRORS[code]
     # ``retryable`` answers one question: can this same request succeed without an
     # out-of-band change? Only the unknown execution outcome (the original identity
     # is replayed), a capacity delay a released lease clears, and the admission
@@ -207,6 +226,7 @@ def job_error(code: str, request_id: str, *, headers: dict[str, str] | None = No
         "job_outcome_unknown",
         "job_capacity_exhausted",
         "job_admission_contended",
+        "execution_cleanup_pending",
     )
     response_headers = {"Cache-Control": "no-store", **(headers or {})}
     if code == "job_capacity_exhausted":

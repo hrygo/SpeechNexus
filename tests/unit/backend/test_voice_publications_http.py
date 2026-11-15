@@ -116,7 +116,7 @@ async def test_wrong_method_is_405() -> None:
             False,
         ),
         (VoicePublicationConflictError("head_moved"), 409, "voice_draft_conflict", False),
-        (VoicePublicationUnavailableError(), 503, "voice_draft_unavailable", True),
+        (VoicePublicationUnavailableError(), 503, "voice_draft_unavailable", False),
     ],
 )
 async def test_failures_keep_their_declared_status_and_code(

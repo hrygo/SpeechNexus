@@ -129,6 +129,29 @@ const rejectionTable = [
   [422, "workspace_not_configured", "intent-kept"],
 ] as const satisfies readonly (readonly [number, string, RejectionDisposition])[];
 
+/**
+ * Why this same request can never be replayed, in the words of the code that refused it.
+ *
+ * `unreplayable` is a class, not a cause: the 413 body-limit refusal and an admission
+ * deadline that elapsed are both deterministic refusals of *this* request, and telling
+ * the second one's user that the body was too large explains the wrong fact (#828 review
+ * M4). The cause is stated only where `(status, code)` is known; a restored page or a
+ * component that only sees the class says the class alone.
+ */
+export function unreplayableCause(status: number, code: string): string {
+  if (code === "job_request_expired")
+    return "该请求自身的准入期限在获准前已过，这次请求被拒绝、原意图作废";
+  if (status === 413) return "请求体超过本部署的接收上限，这次请求被拒绝、原意图作废";
+  return `这次请求被协议确定性拒绝（${status} ${code}），原意图作废`;
+}
+
+/** The clause a partially-identified intent adds: the refusal cannot prove no Job exists. */
+export function unreplayablePriorAttemptClause(code: string): string {
+  if (code === "job_request_expired")
+    return "该请求自身的准入期限在获准前已过，但该意图此前已有提交尝试，这次拒绝不能证明原提交未执行。";
+  return "请求体超过本部署的接收上限，但该意图此前已有提交尝试，这次拒绝不能证明原提交未执行。";
+}
+
 /** Exported for the disposition table's own tests; the session is the only caller. */
 export function rejectionDisposition(
   status: number,
@@ -601,7 +624,7 @@ export class FileTaskSession {
         ...(settled === "unreplayable" ? { unreplayable: true } : {}),
         notice:
           settled === "unreplayable"
-            ? "已找到原任务身份；该请求因请求体超过本部署的接收上限被拒绝，原意图作废。"
+            ? "已找到原任务身份；协议已拒绝这次请求且不能按原键再次提交，原意图作废。"
             : settledCancel
               ? `已找到原任务身份；该取消请求已被协议确定性拒绝并作废。请${readTargetAction.job}，再显式收尾。`
               : settled === "terminal"
@@ -951,7 +974,7 @@ export class FileTaskSession {
             },
             identified
               ? `提交被拒绝（${contractError.status} ${contractError.code}），且已有可查询的执行身份。`
-              : `提交被拒绝（${contractError.status} ${contractError.code}）：请求体超过本部署的接收上限，但该意图此前已有提交尝试，这次拒绝不能证明原提交未执行。`,
+              : `提交被拒绝（${contractError.status} ${contractError.code}）：${unreplayablePriorAttemptClause(contractError.code)}`,
             identified ? "核对成功、失败或不确定状态，不要新建任务。" : "不要新建任务。",
           );
         } else if (identified) {
@@ -983,7 +1006,7 @@ export class FileTaskSession {
             recovery: undefined,
             rejected: true,
             unreplayable: true,
-            notice: `提交被拒绝（${contractError.status} ${contractError.code}）：请求体超过本部署的接收上限，这次请求被拒绝、原意图作废；同一请求不能按原键重放，请结束本页并用新的幂等键新建。`,
+            notice: `提交被拒绝（${contractError.status} ${contractError.code}）：${unreplayableCause(contractError.status, contractError.code)}；同一请求不能按原键重放，请结束本页并用新的幂等键新建。`,
           });
         }
       } else if (contractError && rejection === "terminal") {

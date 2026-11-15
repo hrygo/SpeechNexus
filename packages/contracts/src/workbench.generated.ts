@@ -913,9 +913,10 @@ export interface paths {
      *       may add its own measurement to this answer, and must not read it as a
      *       statement that the text is fine.
      *
-     *     `error.retryable` states whether the same dispatch may be retried after the
-     *     refusal, and it belongs to the disposition rather than to the status: a
-     *     cleanup wait is retryable and a spent key is not, though both answer 409. A
+     *     `error.retryable` states whether the same request can succeed without an
+     *     out-of-band change, and it belongs to the disposition rather than to the
+     *     status: a cleanup wait is retryable and a spent key is not, though both answer
+     *     409. A
      *     caller must read it instead of inferring retryability from the status. When
      *     the refusing layer named a delay, a retryable refusal forwards it on the
      *     `Retry-After` header and in `error.retry_after_ms`; a non-retryable refusal
@@ -930,16 +931,12 @@ export interface paths {
      *       `false` while still requiring the original Idempotency-Key: a 5xx is not a
      *       refusal, so replaying the original identity is recovery of an unknown
      *       outcome, not a retry this field permits.
-     *     - The value is one service's answer, not a shared constant. The public Job
-     *       contract computes its own `retryable` from the narrower question "may an
-     *       unknown execution outcome be replayed?" and therefore answers `false` for
-     *       `execution_cleanup_pending`, whose correct action is to dispatch the same
-     *       intent again under the same key. This operation publishes that same wait as
-     *       retryable, `render_submission_cleanup_pending`, because it is stating the
-     *       operator step; that disposition is declared rather than served today, for
-     *       the reason stated above. A consumer with no per-code vocabulary reads this
-     *       field; a consumer that must state the step for one code reads the codes
-     *       here.
+     *     - The value is the refusing operation's own answer, not a shared constant.
+     *       This operation states the disposition for each of its codes, so its wait
+     *       for a cleanup is retryable, `render_submission_cleanup_pending`, because
+     *       the same submission is accepted once the cleanup finishes and no operator
+     *       step is needed. A consumer with no per-code vocabulary reads this field; a
+     *       consumer that must state the step for one code reads the codes here.
      *
      *     `param` carries the upstream field pointer when the refusing layer named
      *     one, and is null otherwise; it is a field pointer in both services, never a
@@ -1898,7 +1895,7 @@ export interface components {
       message: string;
       param: string | null;
       request_id: string;
-      /** @description Whether the same dispatch may be retried after the refusal. The value belongs to the refusing operation's disposition, not to the status or the code: one operation's 409 may ask the caller to wait out a cleanup (retryable) while another 409 in the same operation reports a spent idempotency key (not retryable), so a caller reads this field instead of inferring retryability from the status. It answers only that question, and only for a refusal. A 5xx states an unknown outcome rather than a refusal, so the original identity is replayed because the outcome is unknown, not because this field permits a retry: a 503 `outcome_unknown` is `retryable: false` and must still be replayed under the original Idempotency-Key. The meaning is per operation rather than global: workbench operations publish their disposition in `contracts/workbench-openapi.yaml`, while the speech Job operations compute this field from the narrower question 'may an unknown execution outcome be replayed?', which is why `execution_cleanup_pending` is `false` there although the correct action is to dispatch the same intent again under the same key; a consumer that must state one code's operator step reads that operation's published vocabulary instead of this field. It answers only 'can this same request succeed without an out-of-band change?': a recovery that needs an operator step -- provisioning the workspace quota, re-signing an engine readiness receipt, restoring a disabled instance, re-registering against an approved recipe -- is false even though the recovery is known and repeatable, and the recovery itself is named by the operation's published code and message rather than by this field. */
+      /** @description Whether the same request can succeed without an out-of-band change. The value belongs to the refusing operation's disposition, not to the status or the code: one operation's 409 may ask the caller to wait out a cleanup (retryable) while another 409 in the same operation reports a spent idempotency key (not retryable), so a caller reads this field instead of inferring retryability from the status. `true` means repeating the same request later can be admitted with no operator, configuration or data change: a released capacity lease, a concurrent writer finishing, a connection-level outcome that the original identity replays, and a cleanup that completes on its own all qualify. `false` means the same request is answered the same way until something outside the request changes, and the operation's published code and message name that change: provisioning the workspace quota, re-signing an engine readiness receipt, restoring a disabled instance, or re-registering against an approved recipe. The field never grants permission to drop an identity: a replayed unknown outcome is recovered under its original Idempotency-Key because the outcome is unknown, not because a value permits it, and every operation states that requirement in its own 5xx vocabulary. The meaning is per operation rather than global, so an operation that publishes a per-code value states it in its own contract (`contracts/workbench-openapi.yaml` for the workbench operations) instead of restating this field. */
       retryable: boolean;
       retry_after_ms?: number | null;
       nexus?: components["schemas"]["OperationRecovery"];

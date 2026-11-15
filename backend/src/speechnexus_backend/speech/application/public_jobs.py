@@ -20,6 +20,10 @@ from speechnexus_backend.speech.application.effective_configuration import (
 from speechnexus_backend.speech.application.voice_validation_report import (
     validate_voice_validation_result,
 )
+from speechnexus_backend.speech.domain.admission import (
+    CAPACITY_REJECTION_CODES,
+    PUBLIC_ADMISSION_CODES,
+)
 from speechnexus_backend.speech.domain.public_jobs import (
     JobArtifactFact,
     JobCancellationReceipt,
@@ -1465,47 +1469,60 @@ def _rejection_reason(error_code: str | None) -> JobRejectionReason:
     return "contract"
 
 
-_ADMISSION_REJECTION_CODES = frozenset(
+# The codes a create may be refused with, split by where the code comes from.
+# ``_ADMISSION_REJECTION_CODES`` is *derived* from the domain's public mapping, so
+# an admission cause has exactly one public answer: adding a vocabulary code without
+# a mapped answer fails the mapping's completeness test, and adding an answer only
+# here is impossible (#828 review M1).
+_ADMISSION_REJECTION_CODES: frozenset[str] = (
+    frozenset(PUBLIC_ADMISSION_CODES.values())
+    | CAPACITY_REJECTION_CODES
+    # Capacity is answered by its own public code rather than through the mapping:
+    # a released lease clears it, so it keeps the retryable 429 (#828 review B1).
+    | {"job_capacity_exhausted"}
+)
+# Deterministic refusals the store reports from its own validation of the request
+# against published facts. They are not admission causes and carry their own codes
+# (#702, #715, #729); a new one must be added here deliberately.
+_SUBMIT_REFUSAL_CODES: frozenset[str] = frozenset(
     {
-        "job_capacity_exhausted",
-        # The pinned instance's readiness receipt elapsed. Admission refuses
-        # before writing anything and the same request is admitted after the
-        # engine is registered again, so it keeps its own code instead of the
-        # `job_unavailable` storage outage (#828).
-        "engine_not_ready",
-        # The remaining admission refusals: each one names the recovery the
-        # caller needs (restore the engine, re-register against the approved
-        # recipe, reconcile the pinned state, retry the racy request, or fix the
-        # request's own elapsed deadline). They are enumerated rather than folded
-        # because a healthy store must never answer "Job storage is unavailable."
-        # for them (#828 review B3).
-        "engine_state_mismatch",
-        "engine_resource_disabled",
-        "recipe_not_admitted",
-        "job_request_expired",
-        "admission_state_invalid",
         "job_binding_incomplete",
         "job_text_asset_unsupported",
-        "job_admission_contended",
         "voice_not_published",
         "voice_draft_not_candidate",
         "asset_not_ready",
         "unsupported_parameter",
         "model_binding_task_not_supported",
-        "idempotency_conflict",
-        # A workspace without a quota row cannot be admitted by retrying; the
-        # admission store reports it as a deterministic refusal rather than the
-        # storage-outage 503 (#702).
         "workspace_not_configured",
     }
 )
 
 
+# Every code the create route may answer with, in one name: the derived admission
+# set plus the store's own deterministic refusals.
+_CREATE_REFUSAL_CODES: frozenset[str] = _ADMISSION_REJECTION_CODES | _SUBMIT_REFUSAL_CODES
+# The store's own refusal mechanism, which the caller reports through
+# `JobRejectedError(_rejection_reason(code))`. Each of these has a declared reason
+# and answer, so it is not an undeclared code; the mapping is kept in one place and
+# `test_the_store_mechanism_codes_are_exactly_what_the_reason_mapping_declares`
+# pins the two together.
+_STORE_MECHANISM_CODES: frozenset[str] = frozenset(
+    {"job_rejected", "revision_exhausted", "job_identity_conflict", "storage_rejected"}
+)
+
+
 def _raise_admission_rejection(code: str | None) -> None:
-    if code in _ADMISSION_REJECTION_CODES:
-        if code == "idempotency_conflict":
-            raise IdempotencyConflictError
+    """Turn a store refusal into the public answer, never into a silent success."""
+    if code == "idempotency_conflict":
+        raise IdempotencyConflictError
+    if code in _CREATE_REFUSAL_CODES:
         raise JobAdmissionRejectedError(str(code))
+    if code in _STORE_MECHANISM_CODES:
+        return  # The caller raises the declared mechanism reason for this code.
+    # An undeclared or missing refusal code is a deployment defect. Returning
+    # silently let the caller fall through to `JobRejectedError("contract")`, which
+    # answered the storage outage for a healthy store (#828 review M1).
+    raise JobAdmissionRejectedError("admission_state_invalid")
 
 
 def _revision_result(result: RevisionCreateResult) -> tuple[PublicJob, str]:

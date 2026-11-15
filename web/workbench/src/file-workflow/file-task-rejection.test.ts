@@ -7,6 +7,8 @@ import {
   retainRecovery,
   settlesCancelAttempt,
   settlesReplayedIntent,
+  unreplayableCause,
+  unreplayablePriorAttemptClause,
 } from "./file-task-session";
 import { canFinishTask } from "./file-task-policy";
 import { SpeechFileClient, parse } from "./speech-file-client";
@@ -1286,5 +1288,31 @@ describe("recovery identity retention", () => {
     const incoming = envelope(503, "job_outcome_unknown");
     expect(retainRecovery(previous, incoming)).toBe(previous);
     expect(retainRecovery(undefined, incoming)).toBe(incoming);
+  });
+});
+
+describe("unreplayable copy states the cause the code names", () => {
+  it("explains an elapsed admission deadline, never the body bound", () => {
+    const cause = unreplayableCause(422, "job_request_expired");
+    expect(cause).toContain("准入期限");
+    expect(cause).not.toContain("接收上限");
+    expect(unreplayablePriorAttemptClause("job_request_expired")).toContain("准入期限");
+  });
+
+  it("keeps the body-bound explanation for the 413 refusal", () => {
+    expect(unreplayableCause(413, "job_request_too_large")).toContain("接收上限");
+    expect(unreplayablePriorAttemptClause("job_request_too_large")).toContain("接收上限");
+  });
+
+  it("states only the class when the code is neither of them", () => {
+    const cause = unreplayableCause(409, "execution_cleanup_pending");
+    expect(cause).toContain("409 execution_cleanup_pending");
+    expect(cause).not.toContain("接收上限");
+    expect(cause).not.toContain("准入期限");
+  });
+
+  it("pins the disposition that sends both codes to the unreplayable class", () => {
+    expect(rejectionDisposition(422, "job_request_expired", "create")).toBe("unreplayable");
+    expect(rejectionDisposition(413, "job_request_too_large", "create")).toBe("unreplayable");
   });
 });

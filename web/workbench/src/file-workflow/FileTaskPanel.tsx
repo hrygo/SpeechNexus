@@ -122,7 +122,7 @@ export function FileTaskPanel({
       )}
       {state.rejected && state.unreplayable && (
         <p role="status">
-          {`原请求因请求体超过本部署的接收上限被拒绝，这次请求被拒绝、原意图作废：` +
+          {`原请求已被协议拒绝，这次请求被拒绝、原意图作废：` +
             `不能按原键重放，刷新后仍保持作废。${settledReadAction(state.readTarget)}，` +
             `可用「准备新任务」明确结束并重新开始；服务端数据不会因此删除。`}
         </p>

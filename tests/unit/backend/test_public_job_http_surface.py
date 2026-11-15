@@ -175,9 +175,12 @@ async def test_retry_maps_every_domain_failure_to_its_declared_error(
         response = await client.post(RETRY.format(job_id=parent.job_id))
     assert response.status_code == status, response.text
     assert response.json()["error"]["code"] == code
-    # Only an unknown execution outcome stays retryable; an unavailable read may
-    # describe a result that is permanently gone.
-    assert response.json()["error"]["retryable"] is (code == "job_outcome_unknown")
+    # `retryable` states whether repeating the same request can succeed without an
+    # out-of-band step: an unknown outcome and a cleanup that finishes on its own do,
+    # while an unavailable read may describe a result that is permanently gone
+    # (#828 review M5).
+    retryable_codes = {"job_outcome_unknown", "execution_cleanup_pending"}
+    assert response.json()["error"]["retryable"] is (code in retryable_codes)
 
 
 async def test_retry_rejects_a_malformed_idempotency_key_before_reading_the_job() -> None:

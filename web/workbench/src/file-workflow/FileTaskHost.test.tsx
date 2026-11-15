@@ -288,6 +288,41 @@ describe("production Workbench file host", () => {
     expect(f.create).not.toHaveBeenCalled();
   });
 
+  it("names an elapsed admission deadline instead of the body bound", async () => {
+    // #828 review M4: `unreplayable` is a class shared by the 413 body refusal and a 422
+    // whose own admission deadline elapsed. The copy must state the cause the code names,
+    // or the user reads an explanation of a limit that was never exceeded.
+    const f = fixture();
+    f.create.mockRejectedValue(
+      new SpeechResponseError(
+        422,
+        parse("ErrorResponse", {
+          error: {
+            code: "job_request_expired",
+            type: "invalid_request_error",
+            message: "The admission deadline for this request elapsed before it was admitted.",
+            retryable: false,
+            request_id: "req-demo",
+            param: null,
+          },
+        }),
+      ),
+    );
+    const view = render(<FileTaskHost client={f.client} storage={f.storage} />);
+    selectInput();
+    fireEvent.submit(screen.getByLabelText("音频文件").closest("form")!);
+    await screen.findByRole("button", { name: "准备新任务" });
+    expect(screen.getAllByText(/准入期限在获准前已过/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/请求体超过本部署的接收上限/)).not.toBeInTheDocument();
+    expect(f.data.get(key)).toContain('"settled":"unreplayable"');
+    view.unmount();
+    render(<FileTaskHost client={f.client} storage={f.storage} />);
+    expect(screen.queryByText(/请求体超过本部署的接收上限/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/不能按原键再次提交，原意图作废/).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "准备新任务" })).toBeInTheDocument();
+    expect(f.create).toHaveBeenCalledTimes(1);
+  });
+
   it("gives the user an exit after a 413 body-bound refusal, without claiming no execution", async () => {
     // #729: the 413 is answered before the key lookup, so the intent cannot be "settled"
     // like a post-key 4xx; but replaying the same oversized body can never succeed. The
@@ -327,7 +362,11 @@ describe("production Workbench file host", () => {
     // unknown submission whose only action is a guaranteed-failing replay.
     view.unmount();
     render(<FileTaskHost client={f.client} storage={f.storage} />);
-    expect(screen.getAllByText(/请求体超过本部署的接收上限/).length).toBeGreaterThan(0);
+    // A restored page knows the class, not the cause: it must not keep claiming the body
+    // bound, which would explain the wrong fact after a 422 whose deadline elapsed
+    // (#828 review M4).
+    expect(screen.getAllByText(/不能按原键再次提交，原意图作废/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/请求体超过本部署的接收上限/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "准备新任务" })).toBeInTheDocument();
     expect(screen.getByLabelText("音频文件")).toBeDisabled();
     expect(f.create).toHaveBeenCalledTimes(1);

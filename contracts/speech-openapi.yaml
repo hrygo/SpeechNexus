@@ -521,8 +521,15 @@ paths:
         "503":
           description: >-
             The deployment has no lifecycle writer or publication storage is
-            unavailable. The operation is implemented; this 503 is a retryable
-            outage, not a permanently unimplemented operation.
+            unavailable. The operation is implemented; this 503 is an outage,
+            not a permanently unimplemented operation.
+
+            `voice_draft_unavailable` is `retryable: false`: the store refused this
+            dispatch, so repeating it is answered by the same refusal. The operation
+            is still implemented -- an outage, not a permanently unimplemented
+            operation -- and the value matches the Job surface's `job_unavailable`.
+            `voice_draft_outcome_unknown` stays `true`: the same key is replayed
+            because the outcome is unknown, which is a recovery, not a permission.
           headers:
             Cache-Control:
               required: true
@@ -531,9 +538,13 @@ paths:
                 const: "no-store"
             X-Should-Retry:
               required: true
+              description: |
+                Mirrors the body's `retryable`: true for
+                `voice_draft_outcome_unknown`, false for
+                `voice_draft_unavailable`.
               schema:
                 type: string
-                const: "true"
+                enum: ["true", "false"]
           content:
             application/json:
               schema:
@@ -555,7 +566,7 @@ paths:
                           type:
                             const: service_unavailable_error
                           retryable:
-                            const: true
+                            enum: [true, false]
                           nexus: false
   /v1/nexus/pronunciation-sets:
     get:
@@ -605,8 +616,14 @@ paths:
         "503":
           description: >-
             Draft storage is unavailable. A list read carries no body and may be
-            repeated; this is a retryable outage, not a permanently unimplemented
-            operation.
+            repeated; this is an outage, not a permanently unimplemented operation.
+
+            `voice_draft_unavailable` is `retryable: false`: the store refused this
+            dispatch, so repeating it is answered by the same refusal. The operation
+            is still implemented -- an outage, not a permanently unimplemented
+            operation -- and the value matches the Job surface's `job_unavailable`.
+            `voice_draft_outcome_unknown` stays `true`: the same key is replayed
+            because the outcome is unknown, which is a recovery, not a permission.
           headers:
             Cache-Control:
               required: true
@@ -615,9 +632,13 @@ paths:
                 const: "no-store"
             X-Should-Retry:
               required: true
+              description: |
+                Mirrors the body's `retryable`: true for
+                `voice_draft_outcome_unknown`, false for
+                `voice_draft_unavailable`.
               schema:
                 type: string
-                const: "true"
+                enum: ["true", "false"]
             Retry-After:
               $ref: "#/components/headers/RetryAfter"
           content:
@@ -633,7 +654,7 @@ paths:
                           type:
                             const: service_unavailable_error
                           retryable:
-                            const: true
+                            enum: [true, false]
                           nexus: false
     post:
       tags: [voices]
@@ -715,10 +736,16 @@ paths:
         "503":
           description: >-
             Draft storage is unavailable. Only a request that carries its
-            original Idempotency-Key may be retried unchanged: replaying that key
-            recovers the committed revision instead of allocating a second one.
-            This is a retryable outage, not a permanently unimplemented
-            operation.
+            original Idempotency-Key may be replayed unchanged: replaying that key
+            recovers the committed revision instead of allocating a second one, and
+            `voice_draft_outcome_unknown` is the code that says so.
+
+            `voice_draft_unavailable` is `retryable: false`: the store refused this
+            dispatch, so repeating it is answered by the same refusal. The operation
+            is still implemented -- an outage, not a permanently unimplemented
+            operation -- and the value matches the Job surface's `job_unavailable`.
+            `voice_draft_outcome_unknown` stays `true`: the same key is replayed
+            because the outcome is unknown, which is a recovery, not a permission.
           headers:
             Cache-Control:
               required: true
@@ -727,9 +754,13 @@ paths:
                 const: "no-store"
             X-Should-Retry:
               required: true
+              description: |
+                Mirrors the body's `retryable`: true for
+                `voice_draft_outcome_unknown`, false for
+                `voice_draft_unavailable`.
               schema:
                 type: string
-                const: "true"
+                enum: ["true", "false"]
           content:
             application/json:
               schema:
@@ -743,7 +774,7 @@ paths:
                           type:
                             const: service_unavailable_error
                           retryable:
-                            const: true
+                            enum: [true, false]
                           nexus: false
   /v1/nexus/pronunciation-sets/{pronunciation_id}/revisions/{revision}:
     get:
@@ -1840,14 +1871,28 @@ paths:
           description: |
             `voice_draft_unavailable`: storage failed before any definite
             commit, so retrying the same request is safe. The operation is
-            implemented; this is a retryable outage, not a permanently
-            unimplemented operation.
+            implemented; this is an outage, not a permanently unimplemented operation.
 
             `voice_draft_outcome_unknown`: the submission may have committed
             but its acknowledgement was lost. This code is returned only for a
             request that carried its original Idempotency-Key; retry with that
             exact key so the committed draft is replayed instead of creating a
             second draft and generation Job. Do not retry with a new key.
+
+            `voice_draft_admission_contended`: admission state had not settled
+            when the attempt ran (a concurrent version compare-and-set, or an
+            instance gateway still draining an earlier generation). Repeating the
+            same request is the recovery, so `retryable` is true.
+
+            `voice_draft_engine_unavailable`: the engine pinned by this request
+            cannot admit it, and the recovery is an operator step. The message
+            names which one: an expired readiness receipt (re-register with
+            `--renew-readiness` placeholder), a runtime state that no longer
+            matches, an instance/pool/template/recipe approval that is not active,
+            or a request whose own admission deadline elapsed. `retryable` is false
+            and `X-Should-Retry` is false because repeating the request before that
+            step cannot succeed. It is a server-side condition: the published model
+            and the ready input are fine, so this is not the 422 input class.
           headers:
             Cache-Control:
               required: true
@@ -1856,9 +1901,14 @@ paths:
                 const: "no-store"
             X-Should-Retry:
               required: true
+              description: |
+                Mirrors the body's `retryable`: true for
+                `voice_draft_outcome_unknown` and
+                `voice_draft_admission_contended`, false for
+                `voice_draft_unavailable` and `voice_draft_engine_unavailable`.
               schema:
                 type: string
-                const: "true"
+                enum: ["true", "false"]
           content:
             application/json:
               schema:
@@ -1877,10 +1927,12 @@ paths:
                             enum:
                               - voice_draft_unavailable
                               - voice_draft_outcome_unknown
+                              - voice_draft_admission_contended
+                              - voice_draft_engine_unavailable
                           type:
                             const: service_unavailable_error
                           retryable:
-                            const: true
+                            enum: [true, false]
                           nexus: false
   /v1/nexus/voice-clones:
     post:
@@ -1926,14 +1978,28 @@ paths:
           description: |
             `voice_draft_unavailable`: storage failed before any definite
             commit, so retrying the same request is safe. The operation is
-            implemented; this is a retryable outage, not a permanently
-            unimplemented operation.
+            implemented; this is an outage, not a permanently unimplemented operation.
 
             `voice_draft_outcome_unknown`: the submission may have committed
             but its acknowledgement was lost. This code is returned only for a
             request that carried its original Idempotency-Key; retry with that
             exact key so the committed draft is replayed instead of creating a
             second draft and generation Job. Do not retry with a new key.
+
+            `voice_draft_admission_contended`: admission state had not settled
+            when the attempt ran (a concurrent version compare-and-set, or an
+            instance gateway still draining an earlier generation). Repeating the
+            same request is the recovery, so `retryable` is true.
+
+            `voice_draft_engine_unavailable`: the engine pinned by this request
+            cannot admit it, and the recovery is an operator step. The message
+            names which one: an expired readiness receipt (re-register with
+            `--renew-readiness` placeholder), a runtime state that no longer
+            matches, an instance/pool/template/recipe approval that is not active,
+            or a request whose own admission deadline elapsed. `retryable` is false
+            and `X-Should-Retry` is false because repeating the request before that
+            step cannot succeed. It is a server-side condition: the published model
+            and the ready input are fine, so this is not the 422 input class.
           headers:
             Cache-Control:
               required: true
@@ -1942,9 +2008,14 @@ paths:
                 const: "no-store"
             X-Should-Retry:
               required: true
+              description: |
+                Mirrors the body's `retryable`: true for
+                `voice_draft_outcome_unknown` and
+                `voice_draft_admission_contended`, false for
+                `voice_draft_unavailable` and `voice_draft_engine_unavailable`.
               schema:
                 type: string
-                const: "true"
+                enum: ["true", "false"]
           content:
             application/json:
               schema:
@@ -1963,10 +2034,12 @@ paths:
                             enum:
                               - voice_draft_unavailable
                               - voice_draft_outcome_unknown
+                              - voice_draft_admission_contended
+                              - voice_draft_engine_unavailable
                           type:
                             const: service_unavailable_error
                           retryable:
-                            const: true
+                            enum: [true, false]
                           nexus: false
   /v1/nexus/voice-drafts/{draft_id}:
     get:
@@ -2010,8 +2083,15 @@ paths:
         "503":
           description: |
             The deployment has no voice draft storage or the stored result is
-            unavailable. The operation is implemented; this 503 is a retryable
-            outage, not a permanently unimplemented operation.
+            unavailable. The operation is implemented; this 503 is an outage,
+            not a permanently unimplemented operation.
+
+            `voice_draft_unavailable` is `retryable: false`: the store refused this
+            dispatch, so repeating it is answered by the same refusal. The operation
+            is still implemented -- an outage, not a permanently unimplemented
+            operation -- and the value matches the Job surface's `job_unavailable`.
+            `voice_draft_outcome_unknown` stays `true`: the same key is replayed
+            because the outcome is unknown, which is a recovery, not a permission.
           headers:
             Cache-Control:
               required: true
@@ -2020,9 +2100,13 @@ paths:
                 const: "no-store"
             X-Should-Retry:
               required: true
+              description: |
+                Mirrors the body's `retryable`: true for
+                `voice_draft_outcome_unknown`, false for
+                `voice_draft_unavailable`.
               schema:
                 type: string
-                const: "true"
+                enum: ["true", "false"]
           content:
             application/json:
               schema:
@@ -2043,7 +2127,7 @@ paths:
                           type:
                             const: service_unavailable_error
                           retryable:
-                            const: true
+                            enum: [true, false]
                           nexus: false
     patch:
       tags: [voice-creation]
@@ -2092,8 +2176,15 @@ paths:
         "503":
           description: |
             The deployment has no voice draft storage or the stored result is
-            unavailable. The operation is implemented; this 503 is a retryable
-            outage, not a permanently unimplemented operation.
+            unavailable. The operation is implemented; this 503 is an outage,
+            not a permanently unimplemented operation.
+
+            `voice_draft_unavailable` is `retryable: false`: the store refused this
+            dispatch, so repeating it is answered by the same refusal. The operation
+            is still implemented -- an outage, not a permanently unimplemented
+            operation -- and the value matches the Job surface's `job_unavailable`.
+            `voice_draft_outcome_unknown` stays `true`: the same key is replayed
+            because the outcome is unknown, which is a recovery, not a permission.
           headers:
             Cache-Control:
               required: true
@@ -2102,9 +2193,13 @@ paths:
                 const: "no-store"
             X-Should-Retry:
               required: true
+              description: |
+                Mirrors the body's `retryable`: true for
+                `voice_draft_outcome_unknown`, false for
+                `voice_draft_unavailable`.
               schema:
                 type: string
-                const: "true"
+                enum: ["true", "false"]
           content:
             application/json:
               schema:
@@ -2125,7 +2220,7 @@ paths:
                           type:
                             const: service_unavailable_error
                           retryable:
-                            const: true
+                            enum: [true, false]
                           nexus: false
   /v1/nexus/voice-drafts/{draft_id}/generations:
     post:
@@ -2178,14 +2273,28 @@ paths:
           description: |
             `voice_draft_unavailable`: storage failed before any definite
             commit, so retrying the same request is safe. The operation is
-            implemented; this is a retryable outage, not a permanently
-            unimplemented operation.
+            implemented; this is an outage, not a permanently unimplemented operation.
 
             `voice_draft_outcome_unknown`: the revision submission may have
             committed but its acknowledgement was lost. This code is returned
             only for a request that carried its original Idempotency-Key; retry
             with that exact key so the committed revision and Job are replayed
             instead of appending a second revision. Do not retry with a new key.
+
+            `voice_draft_admission_contended`: admission state had not settled
+            when the attempt ran (a concurrent version compare-and-set, or an
+            instance gateway still draining an earlier generation). Repeating the
+            same request is the recovery, so `retryable` is true.
+
+            `voice_draft_engine_unavailable`: the engine pinned by this request
+            cannot admit it, and the recovery is an operator step. The message
+            names which one: an expired readiness receipt (re-register with
+            `--renew-readiness` placeholder), a runtime state that no longer
+            matches, an instance/pool/template/recipe approval that is not active,
+            or a request whose own admission deadline elapsed. `retryable` is false
+            and `X-Should-Retry` is false because repeating the request before that
+            step cannot succeed. It is a server-side condition: the published model
+            and the ready input are fine, so this is not the 422 input class.
           headers:
             Cache-Control:
               required: true
@@ -2194,9 +2303,14 @@ paths:
                 const: "no-store"
             X-Should-Retry:
               required: true
+              description: |
+                Mirrors the body's `retryable`: true for
+                `voice_draft_outcome_unknown` and
+                `voice_draft_admission_contended`, false for
+                `voice_draft_unavailable` and `voice_draft_engine_unavailable`.
               schema:
                 type: string
-                const: "true"
+                enum: ["true", "false"]
           content:
             application/json:
               schema:
@@ -2215,10 +2329,12 @@ paths:
                             enum:
                               - voice_draft_unavailable
                               - voice_draft_outcome_unknown
+                              - voice_draft_admission_contended
+                              - voice_draft_engine_unavailable
                           type:
                             const: service_unavailable_error
                           retryable:
-                            const: true
+                            enum: [true, false]
                           nexus: false
   /v1/nexus/voice-drafts/{draft_id}/previews:
     post:
@@ -2267,14 +2383,28 @@ paths:
           description: |
             `voice_draft_unavailable`: storage failed before any definite
             commit, so retrying the same request is safe. The operation is
-            implemented; this is a retryable outage, not a permanently
-            unimplemented operation.
+            implemented; this is an outage, not a permanently unimplemented operation.
 
             `voice_draft_outcome_unknown`: the preview submission may have
             committed but its acknowledgement was lost. This code is returned
             only for a request that carried its original Idempotency-Key; retry
             with that exact key so the committed preview Job is replayed
             instead of submitting a second preview. Do not retry with a new key.
+
+            `voice_draft_admission_contended`: admission state had not settled
+            when the attempt ran (a concurrent version compare-and-set, or an
+            instance gateway still draining an earlier generation). Repeating the
+            same request is the recovery, so `retryable` is true.
+
+            `voice_draft_engine_unavailable`: the engine pinned by this request
+            cannot admit it, and the recovery is an operator step. The message
+            names which one: an expired readiness receipt (re-register with
+            `--renew-readiness` placeholder), a runtime state that no longer
+            matches, an instance/pool/template/recipe approval that is not active,
+            or a request whose own admission deadline elapsed. `retryable` is false
+            and `X-Should-Retry` is false because repeating the request before that
+            step cannot succeed. It is a server-side condition: the published model
+            and the ready input are fine, so this is not the 422 input class.
           headers:
             Cache-Control:
               required: true
@@ -2283,9 +2413,14 @@ paths:
                 const: "no-store"
             X-Should-Retry:
               required: true
+              description: |
+                Mirrors the body's `retryable`: true for
+                `voice_draft_outcome_unknown` and
+                `voice_draft_admission_contended`, false for
+                `voice_draft_unavailable` and `voice_draft_engine_unavailable`.
               schema:
                 type: string
-                const: "true"
+                enum: ["true", "false"]
           content:
             application/json:
               schema:
@@ -2304,10 +2439,12 @@ paths:
                             enum:
                               - voice_draft_unavailable
                               - voice_draft_outcome_unknown
+                              - voice_draft_admission_contended
+                              - voice_draft_engine_unavailable
                           type:
                             const: service_unavailable_error
                           retryable:
-                            const: true
+                            enum: [true, false]
                           nexus: false
   /v1/nexus/voice-drafts/{draft_id}/validations:
     post:
@@ -2356,14 +2493,28 @@ paths:
           description: |
             `voice_draft_unavailable`: storage failed before any definite
             commit, so retrying the same request is safe. The operation is
-            implemented; this is a retryable outage, not a permanently
-            unimplemented operation.
+            implemented; this is an outage, not a permanently unimplemented operation.
 
             `voice_draft_outcome_unknown`: the validation submission may have
             committed but its acknowledgement was lost. This code is returned
             only for a request that carried its original Idempotency-Key; retry
             with that exact key so the committed Job is replayed instead of
             submitting a second validation. Do not retry with a new key.
+
+            `voice_draft_admission_contended`: admission state had not settled
+            when the attempt ran (a concurrent version compare-and-set, or an
+            instance gateway still draining an earlier generation). Repeating the
+            same request is the recovery, so `retryable` is true.
+
+            `voice_draft_engine_unavailable`: the engine pinned by this request
+            cannot admit it, and the recovery is an operator step. The message
+            names which one: an expired readiness receipt (re-register with
+            `--renew-readiness` placeholder), a runtime state that no longer
+            matches, an instance/pool/template/recipe approval that is not active,
+            or a request whose own admission deadline elapsed. `retryable` is false
+            and `X-Should-Retry` is false because repeating the request before that
+            step cannot succeed. It is a server-side condition: the published model
+            and the ready input are fine, so this is not the 422 input class.
           headers:
             Cache-Control:
               required: true
@@ -2372,9 +2523,14 @@ paths:
                 const: "no-store"
             X-Should-Retry:
               required: true
+              description: |
+                Mirrors the body's `retryable`: true for
+                `voice_draft_outcome_unknown` and
+                `voice_draft_admission_contended`, false for
+                `voice_draft_unavailable` and `voice_draft_engine_unavailable`.
               schema:
                 type: string
-                const: "true"
+                enum: ["true", "false"]
           content:
             application/json:
               schema:
@@ -2393,10 +2549,12 @@ paths:
                             enum:
                               - voice_draft_unavailable
                               - voice_draft_outcome_unknown
+                              - voice_draft_admission_contended
+                              - voice_draft_engine_unavailable
                           type:
                             const: service_unavailable_error
                           retryable:
-                            const: true
+                            enum: [true, false]
                           nexus: false
   /v1/nexus/voice-drafts/{draft_id}/publications:
     post:
@@ -2460,8 +2618,14 @@ paths:
             `voice_draft_unavailable`: the validation report, its evidence, or
             publication storage is unavailable before any definite commit, so
             replaying the same request is safe. The operation is implemented;
-            this is a retryable outage, not a permanently unimplemented
-            operation. A recorded eligibility rejection is 422 instead.
+            this is an outage, not a permanently unimplemented operation. A recorded eligibility rejection is 422 instead.
+
+            `voice_draft_unavailable` is `retryable: false`: the store refused this
+            dispatch, so repeating it is answered by the same refusal. The operation
+            is still implemented -- an outage, not a permanently unimplemented
+            operation -- and the value matches the Job surface's `job_unavailable`.
+            `voice_draft_outcome_unknown` stays `true`: the same key is replayed
+            because the outcome is unknown, which is a recovery, not a permission.
           headers:
             Cache-Control:
               required: true
@@ -2470,9 +2634,13 @@ paths:
                 const: "no-store"
             X-Should-Retry:
               required: true
+              description: |
+                Mirrors the body's `retryable`: true for
+                `voice_draft_outcome_unknown`, false for
+                `voice_draft_unavailable`.
               schema:
                 type: string
-                const: "true"
+                enum: ["true", "false"]
           content:
             application/json:
               schema:
@@ -2493,7 +2661,8 @@ paths:
                           type:
                             const: service_unavailable_error
                           retryable:
-                            const: true
+                            enum: [true, false]
+
   /v1/nexus/deletion-plans:
     post:
       operationId: speechCreateDeletionPlan

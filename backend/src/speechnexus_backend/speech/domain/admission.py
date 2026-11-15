@@ -333,8 +333,48 @@ ADMISSION_REJECTION_CODES: frozenset[str] = CAPACITY_REJECTION_CODES | frozenset
         "stale_fencing_token",
         # A quota/instance/host version compare-and-set failed: pure concurrency noise.
         "version_conflict",
+        # The pinned template was never approved for execution (runtime loaders).
+        "unapproved_runtime_template",
+        # The instance's gateway is still draining an earlier generation's work.
+        "gateway_drain_incomplete",
     }
 )
+
+# The public answer for every non-capacity admission refusal. This is the single
+# source of the public vocabulary: ``rejection_code`` reads it, the HTTP layer
+# derives the codes it accepts from it, and the shipped error table is checked
+# against it, so a new admission code cannot acquire a second, different answer by
+# being added in only one place (#828 review M1). Capacity keeps its own answer
+# because a released lease clears it without any out-of-band step.
+PUBLIC_ADMISSION_CODES: dict[str, str] = {
+    # The key belongs to another intent: correct the key, not the request.
+    "idempotency_conflict": "idempotency_conflict",
+    "intent_conflict": "idempotency_conflict",
+    # A clock, version counter or runtime command left its declared range: a
+    # deployment defect rather than a caller mistake.
+    "invalid_counter": "admission_state_invalid",
+    "invalid_execution_request": "admission_state_invalid",
+    "invalid_runtime_request": "admission_state_invalid",
+    # This request's admission deadline elapsed: only a new request can succeed.
+    "lease_not_active": "job_request_expired",
+    # The pinned instance/pool row is gone: re-register to restore the plan.
+    "not_found": "engine_state_mismatch",
+    "stale_instance_generation": "engine_state_mismatch",
+    "reconciliation_required": "engine_state_mismatch",
+    # The instance, pool, node, template or recipe approval is not active.
+    "policy_or_resource_disabled": "engine_resource_disabled",
+    "unapproved_runtime_template": "engine_resource_disabled",
+    # The ready instance is the pinned one, but its receipt is outside the window.
+    "readiness_expired": "engine_not_ready",
+    # The request does not match the recipe approved for the pinned instance.
+    "recipe_mismatch": "recipe_not_admitted",
+    # Concurrency/fencing races and a draining gateway both clear themselves, so
+    # the same request succeeds without an operator step: the retryable class.
+    "owner_busy": "job_admission_contended",
+    "stale_fencing_token": "job_admission_contended",
+    "version_conflict": "job_admission_contended",
+    "gateway_drain_incomplete": "job_admission_contended",
+}
 
 
 def require_live_authority(

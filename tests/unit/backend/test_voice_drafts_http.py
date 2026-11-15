@@ -223,6 +223,9 @@ async def test_voice_provider_absence_is_a_real_unavailable_error() -> None:
         response = await http.get("/v1/nexus/voice-drafts/missing-draft")
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "voice_draft_unavailable"
+    # A refused storage read is not a permission to repeat the same dispatch; the
+    # value matches the Job surface's `job_unavailable` (#828 review M5).
+    assert response.json()["error"]["retryable"] is False
     validate_response(
         "getVoiceDraft", 503, {"body": response.json(), "headers": dict(response.headers)}
     )
@@ -449,7 +452,9 @@ async def test_candidate_keeps_only_committed_ready_preview_artifacts(
         read = await http.get("/v1/nexus/voice-drafts/" + draft_id)
     assert read.status_code == 503, (mode, read.text)
     assert read.json()["error"]["code"] == "voice_draft_unavailable"
-    assert read.json()["error"]["retryable"] is True
+    # A refused storage read is not a permission to repeat the same dispatch; the
+    # value matches the Job surface's `job_unavailable` (#828 review M5).
+    assert read.json()["error"]["retryable"] is False
     validate_response("getVoiceDraft", 503, {"body": read.json(), "headers": dict(read.headers)})
 
 
@@ -783,4 +788,154 @@ async def test_validation_admission_refusals_are_declared_not_500(
         assert response.headers["Retry-After"] == "1"
     validate_response(
         "validateVoiceDraftRevision", status, {"body": body, "headers": dict(response.headers)}
+    )
+
+
+# The engine-side admission causes on a submitting operation. None of them is an
+# input error: the published model is published and the input is ready, so answering
+# 4xx hid a recovery that re-registering the engine performs, and the storage copy
+# blamed the wrong component (#828 review M3).
+@pytest.mark.parametrize(
+    ("code", "status", "wire", "retryable", "recovery"),
+    [
+        (
+            "engine_not_ready",
+            503,
+            "voice_draft_engine_unavailable",
+            False,
+            "--renew-readiness",
+        ),
+        (
+            "engine_state_mismatch",
+            503,
+            "voice_draft_engine_unavailable",
+            False,
+            "re-register the engine",
+        ),
+        (
+            "engine_resource_disabled",
+            503,
+            "voice_draft_engine_unavailable",
+            False,
+            "restore it",
+        ),
+        (
+            "recipe_not_admitted",
+            503,
+            "voice_draft_engine_unavailable",
+            False,
+            "approved recipe",
+        ),
+        (
+            "job_request_expired",
+            422,
+            "voice_draft_request_expired",
+            False,
+            "submit a new request",
+        ),
+        (
+            "admission_state_invalid",
+            500,
+            "voice_draft_contract_violation",
+            False,
+            "deployment defect",
+        ),
+    ],
+)
+async def test_engine_side_admission_causes_state_their_own_recovery(
+    code: str, status: int, wire: str, retryable: bool, recovery: str
+) -> None:
+    provider = VoiceDrafts(
+        cast(Any, _RejectingValidationJobs(code)), cast(Any, _ValidationTargetStore())
+    )
+    app = create_app(settings=_settings(), voice_drafts=provider)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        response = await http.post(
+            "/v1/nexus/voice-drafts/draft-1/validations",
+            json={"expected_draft_revision": "1", "validation_set_revision": "1"},
+        )
+    assert response.status_code == status, response.text
+    body = response.json()
+    assert body["error"]["code"] == wire
+    assert body["error"]["retryable"] is retryable
+    assert response.headers["X-Should-Retry"] == ("true" if retryable else "false")
+    message = body["error"]["message"]
+    # The message names the true cause and the step that clears it, and it never
+    # claims the model or the input is the problem.
+    assert recovery in message, message
+    assert "Published model or ready input required." not in message
+    if code != "admission_state_invalid":
+        assert body["error"]["type"] == "service_unavailable_error" or status == 422
+    validate_response(
+        "validateVoiceDraftRevision", status, {"body": body, "headers": dict(response.headers)}
+    )
+
+
+async def test_the_five_engine_causes_do_not_share_one_message() -> None:
+    # One code may carry several causes, but the message is what tells the operator
+    # which step to take, so the causes must not collapse into one sentence.
+    messages = {}
+    for code in (
+        "engine_not_ready",
+        "engine_state_mismatch",
+        "engine_resource_disabled",
+        "recipe_not_admitted",
+    ):
+        provider = VoiceDrafts(
+            cast(Any, _RejectingValidationJobs(code)), cast(Any, _ValidationTargetStore())
+        )
+        app = create_app(settings=_settings(), voice_drafts=provider)
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://localhost"
+        ) as http:
+            response = await http.post(
+                "/v1/nexus/voice-drafts/draft-1/validations",
+                json={"expected_draft_revision": "1", "validation_set_revision": "1"},
+            )
+        messages[code] = response.json()["error"]["message"]
+    assert len(set(messages.values())) == len(messages), messages
+
+
+async def test_a_concurrency_race_is_not_called_a_storage_outage() -> None:
+    provider = VoiceDrafts(
+        cast(Any, _RejectingValidationJobs("job_admission_contended")),
+        cast(Any, _ValidationTargetStore()),
+    )
+    app = create_app(settings=_settings(), voice_drafts=provider)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        response = await http.post(
+            "/v1/nexus/voice-drafts/draft-1/validations",
+            json={"expected_draft_revision": "1", "validation_set_revision": "1"},
+        )
+    assert response.status_code == 503
+    body = response.json()
+    assert body["error"]["code"] == "voice_draft_admission_contended"
+    # A race is the one admission refusal the same request outlives.
+    assert body["error"]["retryable"] is True
+    assert response.headers["X-Should-Retry"] == "true"
+    assert "settled" in body["error"]["message"]
+    assert "storage" not in body["error"]["message"]
+    validate_response(
+        "validateVoiceDraftRevision", 503, {"body": body, "headers": dict(response.headers)}
+    )
+
+
+async def test_an_unmapped_admission_code_is_a_declared_defect_not_a_storage_answer() -> None:
+    provider = VoiceDrafts(
+        cast(Any, _RejectingValidationJobs("engine_retired")),
+        cast(Any, _ValidationTargetStore()),
+    )
+    app = create_app(settings=_settings(), voice_drafts=provider)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as http:
+        response = await http.post(
+            "/v1/nexus/voice-drafts/draft-1/validations",
+            json={"expected_draft_revision": "1", "validation_set_revision": "1"},
+        )
+    assert response.status_code == 500
+    body = response.json()
+    assert body["error"]["code"] == "voice_draft_contract_violation"
+    assert body["error"]["type"] == "api_error"
+    assert body["error"]["retryable"] is False
+    validate_response(
+        "validateVoiceDraftRevision", 500, {"body": body, "headers": dict(response.headers)}
     )

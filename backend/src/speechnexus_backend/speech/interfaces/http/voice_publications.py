@@ -77,12 +77,15 @@ _ERRORS: dict[str, tuple[int, str, str, str, bool]] = {
         "voice_publication_not_eligible",
         False,
     ),
+    # The store refused this dispatch, so the same request is answered by the same
+    # refusal: `false`, matching the Job surface's `job_unavailable` and the voice
+    # draft surface's own storage answer (#828 review M5).
     "unavailable": (
         503,
         "service_unavailable_error",
         "Voice publication storage or the validation report is unavailable.",
         "voice_draft_unavailable",
-        True,
+        False,
     ),
     "contract_violation": (
         500,

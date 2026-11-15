@@ -92,7 +92,7 @@
     "version": null
   },
   "shared/errors.schema.json": {
-    "sha256": "fb2779b47aa305468ddef90df409602a90d2fc155b4c45f557c1ec77fa7a3c70",
+    "sha256": "2ba6b197253f49f559c8cedd43fa336e881886f12549818bc494c6aa970e43a4",
     "version": null
   },
   "shared/identifiers.schema.json": {
@@ -136,7 +136,7 @@
     "version": null
   },
   "speech-openapi.yaml": {
-    "sha256": "4a2fcedb1bf4c46abd5252ec3d5ffb1bdcb4bafc28ed0bbdd00475f176be74dc",
+    "sha256": "d6eef0d24003840feb095934bbf13981f8ae937a51aad4f4fe34daf46470e8a1",
     "version": "0.1.0.dev18"
   },
   "voice-resource.schema.json": {
@@ -144,7 +144,7 @@
     "version": null
   },
   "workbench-openapi.yaml": {
-    "sha256": "65bab45ddbc591479e087d52f7db9324d3cbcbc0769fc3a1cc0097bcdd079980",
+    "sha256": "dcf5d6014670c63c3785306d48c1ccdde7dc8461179b203955556e11ed2d775f",
     "version": "0.1.0.dev2"
   }
 }

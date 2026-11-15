@@ -65,8 +65,9 @@ const identifiedExecutionNotice = "已找到原执行身份；请读取原执行
 const terminalCreateNotice = "已找到原任务身份；该意图已被协议确定性拒绝并作废。";
 const terminalCancelNotice =
   "已找到原任务身份；该取消请求已被协议确定性拒绝并作废。请读取原任务核对，再显式收尾。";
-const unreplayableNotice =
-  "已找到原任务身份；该请求因请求体超过本部署的接收上限被拒绝，原意图作废。";
+// A restored page knows the class, not which code produced it, so it states only what
+// it can still prove (#828 review M4).
+const unreplayableNotice = "已找到原任务身份；协议已拒绝这次请求且不能按原键再次提交，原意图作废。";
 
 describe("durable file task identities", () => {
   it("keeps the confirmed cursor if storage fails while handling expired event history", async () => {

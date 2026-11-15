@@ -194,6 +194,34 @@ listed in `approved_request_bound_narrowings` in JSON mode. New entries must add
 matching negative cases and update the frozen assertion in
 [`tests/contract/test_approved_http_request_bound_narrowings.py`](../../tests/contract/test_approved_http_request_bound_narrowings.py).
 
+## Approved response-vocabulary widenings
+
+A response may grow vocabulary — a new code in a `code` enum, a `const` turned into
+a closed enum, or a retry rule that becomes per-code — only through the literal
+`_APPROVED_RESPONSE_VOCABULARY_WIDENINGS` registry. Each key is the exact finding
+string the comparison kernel emits: source, path, method, response status and the
+pointer suffix, so an entry covers one line of one response and nothing beside it.
+The entry is active only for its exact `(from_version, to_version)` pair and only
+in its own source document.
+
+A widening is a real structural change without a declaration removal: a client
+written against the frozen baseline may meet a value the old declaration excluded,
+so the gate rejects it like any other unforeseen change. The registry exists
+because some widenings are the intended repair of a wrong declaration, and the
+per-entry audit trail is what distinguishes "reviewed widening" from "silently
+relaxed": `issue` and `reason` are required, an entry without them is reported
+instead of applied, and an entry whose finding the kernel no longer produces stays
+silent — the kernel already tolerates it, so it can neither filter nor reject.
+
+The filtering is exact-line: the entry removes only the finding it names, so any
+other vocabulary change under the same response, in another response or for
+another version pair still rejects. Each approval is printed as
+`approved response vocabulary widening:` and listed in
+`approved_response_vocabulary_changes` in JSON mode. New entries must add matching
+negative cases in
+[`tests/contract/test_approved_http_response_vocabulary_changes.py`](../../tests/contract/test_approved_http_response_vocabulary_changes.py),
+which also proves every entry still matches a finding of the real comparison.
+
 ## What the check establishes
 
 The existing directional comparison kernel is reused: reject known request

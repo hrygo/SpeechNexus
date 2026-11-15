@@ -63,18 +63,24 @@ ROOT = Path(__file__).resolve().parents[2]
 SHARED = ROOT / "contracts" / "shared" / "errors.schema.json"
 WORKBENCH = ROOT / "contracts" / "workbench-openapi.yaml"
 DISPATCH_PATH = "/v2/workbench/render-units/{unit_id}/generations"
-# The phrase the field must state, and the two readings it must rule out where a consumer
-# of the envelope reads it.
-MEANING = "same dispatch may be retried after the refusal"
-# What the shared definition must keep saying: the field is a refusal's own promise, the
-# 503 is replayed although it is false, and the Job side computes the same field from a
-# narrower question.
+# The one question the field answers. It is stated once, in the shared schema, so a
+# consumer never has to work out which of two definitions its operation meant (#828
+# review M5).
+MEANING = "same request can succeed without an out-of-band change"
+# What the shared definition must keep saying: the field is a refusal's own promise, an
+# identity replay is not a permission it grants, and each operation that publishes a
+# per-code value states it in its own contract.
 REQUIRED_PHRASES = (
     MEANING,
     "Idempotency-Key",
-    "outcome_unknown",
-    "execution_cleanup_pending",
     "workbench-openapi.yaml",
+)
+# The deleted second definition. It described a narrower rule the speech Job operations
+# followed at the same time, and the two readings disagreed about
+# `execution_cleanup_pending`; it must not come back as a "special case" paragraph.
+DELETED_DEFINITIONS = (
+    "narrower question",
+    "may an unknown execution outcome be replayed",
 )
 
 
@@ -113,6 +119,11 @@ def test_the_shared_field_carries_the_same_dispatch_rule_and_its_two_limits() ->
     flat = _flat(description)
     missing = [phrase for phrase in REQUIRED_PHRASES if phrase not in flat]
     assert missing == [], f"the retryable description no longer states {missing}"
+    # Exactly one definition: the field must not carry a second, narrower reading that a
+    # consumer could apply to some operations and not others.
+    assert flat.count(MEANING) == 1, "the field must state its one rule exactly once"
+    resurrected = [phrase for phrase in DELETED_DEFINITIONS if phrase in flat]
+    assert resurrected == [], f"the retryable description restates a deleted rule: {resurrected}"
 
 
 def test_every_error_body_still_requires_the_field() -> None:
@@ -152,20 +163,24 @@ def test_the_503_that_keeps_its_key_is_not_a_settled_refusal() -> None:
     assert "Preserve the original idempotency key" in message
 
 
-def test_the_job_side_publishes_false_for_the_cleanup_wait() -> None:
-    """The Job field answers "may an unknown outcome be replayed", so this is `false`."""
+def test_the_job_side_publishes_true_for_the_cleanup_wait() -> None:
+    """Waiting out the cleanup needs no out-of-band change, so the pinned rule says true.
+
+    The field states whether repeating the same request can succeed without an
+    operator or configuration step. The cleanup finishes on its own and the same
+    request then succeeds, which is exactly that case; the older speech-Job reading
+    ("may an unknown execution outcome be replayed?") answered `false` here and is
+    gone with the rest of that definition (#828 review M5).
+    """
     response = job_error("execution_cleanup_pending", "rid-806-probe")
     assert response.status_code == 409
     error = json.loads(bytes(response.body))["error"]
     assert error["code"] == "execution_cleanup_pending"
-    assert error["retryable"] is False, (
-        "the Job handler's allow-list answers a different question; if the cleanup wait "
-        "became retryable there, the shared description's counterexample would be wrong"
-    )
+    assert error["retryable"] is True
 
 
 def test_the_workbench_publishes_retryable_for_the_same_wait() -> None:
-    """The same refusal keeps the opposite value where the operator step is stated."""
+    """The consumer table states the same value for the same wait, not the opposite."""
     rejection = RenderRejection.upstream(
         status_code=409, code="execution_cleanup_pending", param=None
     )

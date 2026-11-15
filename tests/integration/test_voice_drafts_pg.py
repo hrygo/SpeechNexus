@@ -567,7 +567,9 @@ async def test_candidate_requires_a_matching_receipt_and_ready_artifact(
         read = await http.get("/v1/nexus/voice-drafts/" + draft["id"])
     assert read.status_code == 503, (mode, read.text)
     assert read.json()["error"]["code"] == "voice_draft_unavailable"
-    assert read.json()["error"]["retryable"] is True
+    # A refused storage read is not a permission to repeat the same dispatch; the
+    # value matches the Job surface's `job_unavailable` (#828 review M5).
+    assert read.json()["error"]["retryable"] is False
     validate_response("getVoiceDraft", 503, {"body": read.json(), "headers": dict(read.headers)})
 
 
@@ -632,7 +634,9 @@ async def test_candidate_validation_is_shared_by_get_and_patch(
     else:
         for body in (read.json(), patch.json(), replay.json()):
             assert body["error"]["code"] == "voice_draft_unavailable"
-            assert body["error"]["retryable"] is True
+            # A refused storage read is not a permission to repeat the same dispatch; the
+            # value matches the Job surface's `job_unavailable` (#828 review M5).
+            assert body["error"]["retryable"] is False
         assert after == before
         assert voice_db.count("speech_voice_metadata_commands") == 0
         validate_response(

@@ -6,13 +6,14 @@
 **增量核验**（2026-11-15，卡 #829）：`origin/main` @ `5cd5a5d0c86a91f73fca6f7cf797e38097b41782`，独立工作树 `/private/tmp/sn841`。重新核验 F-CLIENT 行与 B1：同版镜像构建与前端产物/契约包/API 三方来源一致性按实测更新；工作台同版读取的真实浏览器证据在本机变红（CSP 拒绝 `unsafe-eval`，另见 §4 B7）。其余行沿用上面的基线。
 **增量核验**（2026-11-15，卡 #823）：`origin/main` @ `c7e43f9a2926507578513029ee8d1ee07ebce688`，独立工作树 `/private/tmp/sn855`。只重新核验三处陈旧陈述（同步 ASR 终态写入、公开 Job 路由集合、生产 planner）并就地订正，其余行沿用上面的基线。
 **增量核验**（2026-11-16，卡 #851）：`origin/main` @ `76300ad56`（`#851` 合入后），独立工作树 `/private/tmp/sn867`。只重新核验 F-ASSET 行、部署入口行与 §1 里已修复的 Web 入口缺陷陈述，其余行沿用上面的基线。
+**增量核验**（2026-11-16，卡 #867）：`origin/main` @ `44b41647`（`#867` 合入后），独立工作树 `/private/tmp/sn872`。只把 F-ASSET 行按部署级证据改为 A 档，并相应更新 §1 与 §3；其余行沿用上面的基线。
 
 ## §1 结论
 
 **MVP 现在不能发布。**
 
-- MVP 界定为 12 个判定行。**其中 10 行没有任何 A 档证据**（A 档＝真实部署或真实引擎上的端到端），见 §3。
-- 唯一存在的 A 档证据是两处：两条同步入口在 **MegaCube（Linux aarch64 + NVIDIA GB10）单次受控窗口**里跑通过（2026-11-02 / 2026-11-03），以及声音引擎在**同一主机上的接受面直连探测**（2026-11-07/08）。三者都不覆盖「公开 Job 从创建到制品可下载」。
+- MVP 界定为 12 个判定行。**其中 9 行没有任何 A 档证据**（A 档＝真实部署或真实引擎上的端到端），见 §3。
+- 存在的 A 档证据是三处：两条同步入口在 **MegaCube（Linux aarch64 + NVIDIA GB10）单次受控窗口**里跑通过（2026-11-02 / 2026-11-03）；声音引擎在**同一主机上的接受面直连探测**（2026-11-07/08）；以及 **F-ASSET 的受控输入资产在参考部署上跑通三类用途**（`#867` 的 `asr_input`/`voice_reference`、`#851` 的 `text_input`，2026-11-16）。三者都不覆盖「公开 Job 从创建到制品可下载」——但第三条把那条链的**入口**从「未取证」变成了「已取证」，即 `#572` 现在的前置只剩引擎侧。
 - **最长阻塞链只有一条**：真实引擎/GPU 窗口 → 参考部署完整 `up`（迁移 + `minio-init` + 引擎注册 + 三个 Job 角色与授权）→ `job-dispatch-worker` 启动闸门 → 一条 asr 或 tts Job 从 `queued` 走到 `succeeded` → Artifact 可下载 → 工作台按同版读到。**这条链上没有任何一环有 A 档记录**，其中最关键的一环（#572）自 2026-11-08 开卡至今未执行过。
 - **Web 入口级缺陷已修，剩余缺口是证据不是缺陷**：`#829` 用同版镜像起真实栈实测时，两个前端镜像在自身 `Content-Security-Policy`（`script-src 'self'`，无 `'unsafe-eval'`）下渲染空文档，原因是生成契约校验器走 `ajv.compile`（`new Function`）。`#842`（`c9a48963`）改为预编译 standalone 校验器后该路径消失：`admin` 1208 字符、`workbench` 752 字符、`pageerror` 0，**未放开 `'unsafe-eval'`**。F-CLIENT 仍缺的不是渲染，而是**同版消费同一 Job 的同一 Artifact**（需一份可读的真实 artifact，随 `#572` 一并取证）。
 - 主链之外的第二个硬缺口是**语音侧删除**：`/v1/nexus/deletions` 与 `/v1/nexus/deletion-plans` 是中央占位路由，恒返回 `503 operation_not_implemented`（`backend/src/speechnexus_backend/speech/interfaces/http/unimplemented.py:72`）；语音侧删除**不在首发范围**（实施卡 [#819](https://github.com/hrygo/SpeechNexus/issues/819) 仍 open）。工作台侧删除的实现与部署前提已经具备：参考部署以 `workbench-api` profile 装配独立工作台后端，#832 在真实容器栈上取得该路径的端到端证据（见 §2 第 9 行）。
@@ -32,7 +33,7 @@
 
 | # | MVP 需求行 | 要求什么证据 | 当前真实证据（档位 + 出处） | A 档 | 判定 | 阻塞在谁/什么 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | **F-ASSET** 受控输入资产（`asr_input`/`voice_reference` → `ready`） | 真实音频检查事实 + 固定对象版本 + 真实 HTTP 上传 | **B**：2026-11-13 在 Compose 项目 `sn680` 用真实容器、真实检查器、真实 PG/MinIO 跑通 `POST /v1/nexus/assets` → `201 ready`（`duration_ms`/`sample_rate_hz` 来自回执），并有 `text` 选择器 → `503`、无残留行的反例（[runbook `docs/operations/async-job-runbook.md:922`](../operations/async-job-runbook.md) 起）。同轮为让 API 起来用了两处**非生产**改动（清空 `depends_on`、合成配方 + 超范围授权）。另有进程内 HTTP + 真实解码子进程用例 `tests/unit/backend/test_voice_reference_upload.py` | **部分（`text_input` 有；音频用途无）** | 未达标（音频用途） | **新增 A 档（`#851`，2026-11-16）**：从 `docs/operations/compose-minimal.md` §6 原样起参考部署（真实 `postgres:16.15-alpine` + `minio` + `minio-init` + `migrate` @ `0054_artifact_deleted_ledger` + 18 个非 owner 角色授权 + `api`，`/readyz` 200），用带 `Origin` 的浏览器式请求打 `POST /v1/nexus/assets`：合入前 **`403 asset_origin_rejected`**，同一部署同一请求去掉 `Origin` 头即 `201`（证明差异只来自该头）；换成本次补上 `SPEECHNEXUS_ASSET_ALLOWED_ORIGINS` 的 `compose.yaml` 后同一请求 **`201 Created`**（`asset-fbf6a780…`，`status: ready`）。**仍未达标的部分**：该证据的 `purpose` 是 `text_input`；参考部署默认 `SPEECHNEXUS_ASSET_INSPECTOR=text`（`deploy/compose.env.example:176`），而 `TextAssetInspector.inspect` 对 `purpose != "text_input"` 直接返回 `Inspection(available=False)`（`backend/src/speechnexus_backend/speech/application/assets.py:91`），所以 **`asr_input` / `voice_reference` 仍不可用**——需要 `SPEECHNEXUS_ASSET_INSPECTOR=audio` 与音频检查器的前置（该 profile 在 `deploy/compose.env.example:182` 起有说明），本行缺的正是这一次音频上传的 A 档 |
+| 1 | **F-ASSET** 受控输入资产（`asr_input`/`voice_reference` → `ready`） | 真实音频检查事实 + 固定对象版本 + 真实 HTTP 上传 | **B**：2026-11-13 在 Compose 项目 `sn680` 用真实容器、真实检查器、真实 PG/MinIO 跑通 `POST /v1/nexus/assets` → `201 ready`（`duration_ms`/`sample_rate_hz` 来自回执），并有 `text` 选择器 → `503`、无残留行的反例（[runbook `docs/operations/async-job-runbook.md:922`](../operations/async-job-runbook.md) 起）。同轮为让 API 起来用了两处**非生产**改动（清空 `depends_on`、合成配方 + 超范围授权）。另有进程内 HTTP + 真实解码子进程用例 `tests/unit/backend/test_voice_reference_upload.py` | **A（`asr_input` / `voice_reference` / `text_input` 三类均有）** | **达标** | **A 档（`#867`，2026-11-16）**：独立 Compose 项目 `sn869`，真实 `postgres:16.15-alpine` + MinIO + `migrate` @ `0054_artifact_deleted_ledger` + 文档 §6 的 18 个非 owner 角色 + `provision-job-roles.py`（221 条授权）+ 从仓库源码构建的 `api` 与 `asset-inspector`（`asset-inspection` profile）。`asr_input` 上传 32044 B / 1 s / 16 kHz 单声道 WAV → **`201 Created`、`status=ready`、`duration_ms=1000`、`sample_rate_hz=16000`、`channels=1`**，`sha256` 与源文件一致，对象 `storage_version_id` 固定，下载 32044 B 且 SHA-256 一致；同文件改 `voice_reference` → 同样 `201 ready` 与三列事实。反例齐备：随机字节 → `422 invalid_asset_audio` 且无新行；默认 `text` → `503 asset_inspection_unavailable`（`retryable:false`，行数不变）；停掉检查器 → 同一 503 响应体逐字相同且 `api` 保持 `Up (healthy)`；`text` 却配了 URL/令牌 → **api 启动失败并点名变量**（不降级）。`#851` 另给了 `text_input` 用途在带 `Origin` 的浏览器式请求下 `201`（且证明差异只来自该头）。检查器容器为 `Privileged=false`、`CapDrop=[ALL]`、`ReadonlyRootfs=true`、`no-new-privileges`、`PidsLimit=64`、`Memory=768MiB`、`NanoCpus=2.0`、无宿主端口、只接 `internal: true` 网络——**不含任何提权**。**与旧 B 档的差别**：2026-11-13 那次（`sn680`）为让 API 起来用了两处非生产改动（清空 `depends_on`、合成配方 + 超范围授权），本轮两者都不需要（`--no-deps` 只是命令行范围控制；私有样例原样通过生产 loader）。**本行仍未覆盖**：带 `Origin` 的音频上传（`#851` 只实测了 `text_input`）；超时/取消/令牌不一致三项验收（`#867` §8 A4/A5/A7）
 | 2 | **F-JOB** 持久 Job（创建/读取/取消/重试/SSE/列表） | 权威状态一致、事件序号续读、取消围栏真库证据 | **B**：路由已装配创建/读取/重试/SSE/取消（`backend/src/speechnexus_backend/speech/interfaces/http/jobs.py`）；隔离 PG 上取消与围栏 24 passed；`tests/integration/test_public_job_admission_http_pg.py`、`test_public_job_list_pg.py`、`test_public_job_event_stream_tcp.py`（真实 PG + 真实 TCP）；以上用例本轮未复跑 | **无** | 未达标 | 无真实部署上的 Job 生命周期；`POST /v1/nexus/jobs` 在参考部署缺 writer/admission DSN 时直接 `503` |
 | 3 | **F-ASYNC** 派发→执行→结果发布→终态 | 真实工作进程消费持久 Job 并走真实引擎 | **C**：生产 planner 与结果发布器已装配且在领取前 fail-closed（`backend/src/speechnexus_backend/job_dispatch_runtime.py:294`），但派发验收用例把网关替换为 `httpx.MockTransport` 合成实现（`tests/integration/test_job_dispatch_pg.py:290`），引擎是 fake。手册明确「以上三条 HTTP 命令**未在本机验证**」（`docs/operations/async-job-runbook.md:705`） | **无** | 未达标 | #572 未执行；无真实引擎窗口 |
 | 4 | **F-ARTIFACT** 发布原子性、下载、保留 | staging 不可公开、固定对象版本、真实对象存储下载、保留/过期可复核 | **B**：先写对象再提交唯一行，对象版本号落库（`backend/src/speechnexus_backend/speech/application/results.py:169`），staging 字节与回执摘要/长度互相校验；发布按 `SPEECHNEXUS_ARTIFACT_RETENTION_SECONDS`（默认 30 天）写 `expires_at_us`（`results.py:347`）；下载按记录期限返回 `410 artifact_expired`、清理确认后 `410 artifact_deleted`、已铸造但未提交 `404 artifact_not_published`（`backend/src/speechnexus_backend/speech/application/artifacts.py`）；有界清理入口 `speechnexus-artifact-retention`（`backend/src/speechnexus_backend/speech/application/artifact_retention.py:75`、`deploy/compose.yaml` 的 `artifact-retention` profile）；真实 PG + 版本化 MinIO 保留期用例 `tests/integration/test_artifact_retention_pg.py:281` 与 真实对象存储下载用例 `tests/integration/test_artifact_http_real_storage.py:231`；工作台真实 Chromium + 生产 bundle + 真实 MinIO 下载 `tests/integration/test_workbench_real_runtime_download_browser.py`（内容为合成 ZIP/WAV，非真实推理） | **无** | 未达标 | ① 无 A 档；② 保留期链路只有隔离 PG + 版本化 MinIO 与进程内证据，参考部署未实际运行 `artifact-retention` profile；③ 30 天默认值未在真实部署上被观测 |
@@ -47,18 +48,17 @@
 
 ## §3 A 档为 0 的行（MVP 硬阻塞集合）
 
-1. **F-ASSET** 受控输入资产 —— **`text_input` 已有 A 档（`#851`，参考部署上带 `Origin` 的上传 `201`），`asr_input`/`voice_reference` 仍为 0**（默认 `SPEECHNEXUS_ASSET_INSPECTOR=text` 下音频用途返回 `available=False`）
-2. **F-JOB** 持久 Job 生命周期
-3. **F-ASYNC** 异步执行闭环
-4. **F-ARTIFACT** 制品发布与下载
-5. **F-CLIENT** SDK/工作台同版消费
-6. **F-SHARED** workspace 分组语义
-7. **F-DELETE** 删除语义
-8. **#572** 参考部署异步 Job 端到端
-9. **#529** 声音泳道（Job 级；引擎接受面另有 A 档）
-10. **部署入口**「他人可照着起一套」
+1. **F-JOB** 持久 Job 生命周期
+2. **F-ASYNC** 异步执行闭环
+3. **F-ARTIFACT** 制品发布与下载
+4. **F-CLIENT** SDK/工作台同版消费
+5. **F-SHARED** workspace 分组语义
+6. **F-DELETE** 删除语义
+7. **#572** 参考部署异步 Job 端到端
+8. **#529** 声音泳道（Job 级；引擎接受面另有 A 档）
+9. **部署入口**「他人可照着起一套」
 
-有 A 档的只有 F-TTS、F-ASR 两条同步入口（各为单次受控窗口、范围受限；两条入口在参考部署里的装配此前缺失，TTS 一侧已在 #821 补齐但未复跑真实 `200`），以及 F-ASSET 的 `text_input` 用途（`#851`：参考部署上带 `Origin` 的上传从 `403` 变为 `201`）——**它不覆盖 `asr_input`/`voice_reference`**，所以上表第 1 条只标为部分。
+有 A 档的只有 F-TTS、F-ASR 两条同步入口（各为单次受控窗口、范围受限；两条入口在参考部署里的装配此前缺失，TTS 一侧已在 #821 补齐但未复跑真实 `200`），以及 **F-ASSET（`#867` 三类用途在参考部署上跑通、`#851` 补上浏览器 Origin 输入）——这是 MVP 判定表里第一行达到「达标」的需求行**。
 
 ## §4 硬阻塞清单
 

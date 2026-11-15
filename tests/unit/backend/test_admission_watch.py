@@ -291,9 +291,7 @@ def test_the_state_file_is_replaced_atomically(tmp_path: Path) -> None:
     assert not (tmp_path / "state.json.tmp").exists()
 
 
-def test_the_loop_sleeps_between_polls(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_the_loop_sleeps_between_polls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # A tight retry loop against a dead API is a self-inflicted outage; the
     # interval is a hard floor.
     sleeps: list[float] = []

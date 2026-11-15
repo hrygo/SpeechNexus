@@ -18,8 +18,8 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
     "test:contracts-sdk": "node --test tests/contract/test_openai_js_sdk.mjs",
-    "format": "prettier --write \"web/**/*.{css,html,json,ts,tsx}\" \"*.{js,json,mjs,ts,yaml,yml}\" \"pnpm-workspace.yaml\" \".github/**/*.{yaml,yml}\" \"deploy/**/*.yaml\" \"packages/contracts/**/*.{ts,mts,mjs,json}\" \"scripts/dev-env/*design-token*.mjs\" \"tests/{ci,web}/*.mjs\"",
-    "format:check": "prettier --check \"web/**/*.{css,html,json,ts,tsx}\" \"*.{js,json,mjs,ts,yaml,yml}\" \"pnpm-workspace.yaml\" \".github/**/*.{yaml,yml}\" \"deploy/**/*.yaml\" \"packages/contracts/**/*.{ts,mts,mjs,json}\" \"scripts/dev-env/*design-token*.mjs\" \"tests/{ci,web}/*.mjs\"",
+    "format": "prettier --write \"web/**/*.{css,html,json,ts,tsx}\" \"*.{js,json,mjs,ts,yaml,yml}\" \"pnpm-workspace.yaml\" \".github/**/*.{yaml,yml}\" \"deploy/**/*.yaml\" \"packages/contracts/**/*.{ts,mts,mjs,json}\" \"scripts/dev-env/*design-token*.mjs\" \"scripts/dev-env/validate-contract-consumers.mjs\" \"tests/{ci,web}/*.mjs\"",
+    "format:check": "prettier --check \"web/**/*.{css,html,json,ts,tsx}\" \"*.{js,json,mjs,ts,yaml,yml}\" \"pnpm-workspace.yaml\" \".github/**/*.{yaml,yml}\" \"deploy/**/*.yaml\" \"packages/contracts/**/*.{ts,mts,mjs,json}\" \"scripts/dev-env/*design-token*.mjs\" \"scripts/dev-env/validate-contract-consumers.mjs\" \"tests/{ci,web}/*.mjs\"",
     "browser:install": "playwright install chromium",
     "browser:smoke": "node scripts/dev-env/browser-smoke.mjs"
   },

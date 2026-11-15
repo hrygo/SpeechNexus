@@ -1,5 +1,5 @@
 import { type MeetingJournal, type MeetingRecord, type MeetingCommand } from "./meeting-journal";
-import { validateRequest } from "../../../../packages/contracts/src/workbench-http";
+import { validateRequest } from "@speechnexus/contracts/workbench-http";
 import {
   type WorkbenchClient,
   WorkbenchResponseError,

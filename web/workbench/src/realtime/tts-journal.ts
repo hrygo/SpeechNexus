@@ -1,4 +1,4 @@
-import { parse } from "../../../../packages/contracts/src/realtime";
+import { parse } from "@speechnexus/contracts/realtime";
 import {
   checkKey,
   checkMode,

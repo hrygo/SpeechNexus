@@ -1,13 +1,13 @@
-import { parse, type Contracts } from "../../../../packages/contracts/src/admin";
+import { parse, type Contracts } from "@speechnexus/contracts/admin";
 import {
   parse as parseProfile,
   type Contracts as Profiles,
-} from "../../../../packages/contracts/src/scenario_profiles";
+} from "@speechnexus/contracts/scenario-profiles";
 import {
   createValidatedClient,
   validateRequest,
   validateResponse,
-} from "../../../../packages/contracts/src/profile-http";
+} from "@speechnexus/contracts/profile-http";
 
 export type ProfileRequest = Contracts["ProfileRevisionCreateRequest"];
 export type ProfileRevision = Profiles["ScenarioProfileRevision"];

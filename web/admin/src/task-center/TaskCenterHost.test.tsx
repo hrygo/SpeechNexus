@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { StrictMode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import fixtures from "../../../../tests/fixtures/contracts/file-workflow.json";
-import { parse } from "../../../../packages/contracts/src";
+import { parse } from "@speechnexus/contracts";
 import { App } from "../App";
 import { TaskCenterHost } from "./TaskCenterHost";
 import type { TaskApi } from "./job-client";

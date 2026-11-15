@@ -1,16 +1,11 @@
-// Consume Team A's public package entrypoint directly in this monorepo checkout.
-// Package-manifest/lockfile integration remains coordinated by A; no DTO is copied here.
-import {
-  createSpeechClient,
-  uploadAsset,
-  parse,
-  type FileContracts,
-} from "../../../../packages/contracts/src";
+// Consume Team A's generated package through the declared workspace dependency
+// and its `exports` subpaths; no DTO is copied here.
+import { createSpeechClient, uploadAsset, parse, type FileContracts } from "@speechnexus/contracts";
 import { readSse } from "@speechnexus/shared";
 import { textUploadFile } from "./input-fingerprint";
 
-export type { FileContracts } from "../../../../packages/contracts/src";
-export { parse } from "../../../../packages/contracts/src";
+export type { FileContracts } from "@speechnexus/contracts";
+export { parse } from "@speechnexus/contracts";
 
 export class SpeechResponseError extends Error {
   readonly code: string;

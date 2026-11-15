@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@speechnexus/contracts": "workspace:*",
     "@speechnexus/shared": "workspace:*",
     "react": "catalog:",
     "react-dom": "catalog:"

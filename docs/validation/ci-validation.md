@@ -9,7 +9,7 @@ CI 使用[工作流](../../.github/workflows/ci.yml)和[标准库路由](../../s
 
 | 触发或变更 | 范围 |
 | --- | --- |
-| PR 仅修改任意层级的 `AGENTS.md` / `README*`（含 `web/AGENTS.md`、`tests/integration/AGENTS.md`、各级 `README.md`，例外见下）、`docs/` 内 Markdown、`.agents/skills/<skill>/` 内 Markdown / JSON / YAML | 路由回归、审查 PR 路径边界、Design Token 静态门禁、Markdown 代码块格式检查（独立作业 `docs_format`）、差异检查、矩阵新鲜度检查（仅矩阵、关联源、快照或生成器变化时重渲染）、Node Controller 镜像范围检查与其门禁、最终门禁；镜像构建按独立范围判定，通常跳过。不安装项目依赖、不启动业务测试服务。差异检查以取得准确基线为前提；否则回退全量 |
+| PR 仅修改任意层级的 `AGENTS.md` / `README*`（含 `web/AGENTS.md`、`tests/integration/AGENTS.md`、各级 `README.md`，例外见下）、`docs/` 内 Markdown、`.agents/skills/<skill>/` 内 Markdown / JSON / YAML | 路由回归、审查 PR 路径边界、Design Token 与契约消费者绑定静态门禁、Markdown 代码块格式检查（独立作业 `docs_format`）、差异检查、矩阵新鲜度检查（仅矩阵、关联源、快照或生成器变化时重渲染）、Node Controller 镜像范围检查与其门禁、最终门禁；镜像构建按独立范围判定，通常跳过。不安装项目依赖、不启动业务测试服务。差异检查以取得准确基线为前提；否则回退全量 |
 | PR 仅修改已知 Web 源码/静态资产，可混合上述文档 | Python 静态/契约检查、覆盖率数据采集、完整 Web 检查，以及 Web 能力道 `Integration 4`/`Integration 5`（真实后端 + PostgreSQL/MySQL/MinIO + 真实浏览器）；采集作业仍使用私有 PostgreSQL 和 MinIO，DB-only 分片 0–3、覆盖率判定与部署检查不适用 |
 | PR 仅修改已知独立引擎目录或明确列出的引擎单元测试，可混合上述 Web/文档 | `no-db`：保留 Python 静态/契约检查、覆盖率数据采集、完整 Web、构建和部署检查；采集作业仍使用私有 PostgreSQL 和 MinIO，六个双数据库集成分片、覆盖率判定及其汇总不适用 |
 | CI、脚本、测试、依赖、配置、契约、迁移、部署、其他路径或空/不确定差异 | 完整 Python/Web/部署检查，六个 PG/InnoDB/MinIO 分片及证据汇总 |
@@ -84,7 +84,7 @@ Node Controller 镜像验证由 CI 以同提交的 [reusable workflow](../../.gi
 
 | job ID | Actions 显示名称 | 实际职责 |
 | --- | --- | --- |
-| `changes` | `Scope routing and CI / design-token checks` | 检查路由边界、审查 PR 改动路径边界与 Design Token，按准确差异选择范围 |
+| `changes` | `Scope routing and CI / design-token checks` | 检查路由边界、审查 PR 改动路径边界、Design Token 与生成契约消费者绑定，按准确差异选择范围 |
 | `python_checks` | `Python: tests, coverage and package build` | Python 单元、契约、CI、Workbench PG/Runtime 及选定 Speech PG 测试，导出两 worker 覆盖率数据集（不判定）、媒体工具链及 Python 包构建 |
 | `python_contracts` | `Python: lint, types and contract compatibility` | Ruff、mypy、模块边界、生成漂移、协议兼容与 schema 校验 |
 | `integration_shards` | `Integration 0–3: PG/MySQL/MinIO`；`Integration 4–5: Web + PG/MySQL/MinIO` | 六个真实隔离服务分片；混合集合中的浏览器与 Node HTTP 消费者只分配到后两片，普通 DB 用例按估算成本分配到全部六片，具体工具需求按各片实际用例计算。`full` 展开六片；`web` 只展开 4、5 两片（`excluded_shards` 排除 0–3），`docs`/`no-db` 跳过整个作业 |
@@ -519,6 +519,28 @@ node scripts/dev-env/validate-design-tokens.mjs
 生产扫描排除 `.test.*` / `.spec.*` / `__tests__` 和构建/依赖目录。规则是静态字面量门禁，不能证明动态拼接、CSS 转义、浏览器级联/跨规则循环、视觉效果、对比度或所有出站请求正确。当前注册表是 CSS 字符串项目格式，**不是完整 DTCG 2025.10 交换格式**；不使用标准合规表述替代实际验证。
 
 依据（2026-10-25）：[CSS Variables 的引用与 fallback 语义](https://www.w3.org/TR/css-variables-1/)、[DTCG 2025.10 格式与别名要求](https://www.designtokens.org/tr/2025.10/format/)。本门禁对未声明 fallback 的限制是项目策略，比浏览器 fallback 语义更严格。
+
+## 生成契约消费者绑定门禁
+
+`packages/contracts` 是生成契约包；Web 入口经 `web/<app>/package.json` 的 `"@speechnexus/contracts": "workspace:*"` 依赖与包内 `exports` 子路径消费它，不得以相对路径进入 `packages/contracts/src/**`。同一 `changes` 作业在任何路由上运行独立回归与全仓扫描，不安装 pnpm 依赖；规则细节与例外登记见[生成契约包说明](../../packages/contracts/README.md#typescript-consumer-binding)。
+
+| 规则 | 检查 |
+| --- | --- |
+| 产物可解析 | `exports` 每个目标必须是包内已存在文件；生成产物改名或移动而 `exports` 未同步时失败。嵌套条件对象缺少字符串 `import`/`types`/`default` 时给出可读错误，不以 `TypeError` 崩溃 |
+| Web 绑定 | `web/**` 内不得以相对路径导入 `packages/contracts/src/**`（按打包器的扩展名/`index` 规则解析并以 `realpath` 规范化，`web/` 内的符号链接不能绕过）；导入必须使用包清单子路径；`web/` 内的动态 `import()`/`require()` 必须带字面量说明符，非字面量或模板字面量失败 |
+| 依赖必需 | 每个 `@speechnexus/contracts[/…]` 导入方的最近包清单必须声明 `"workspace:*"`；删除依赖或改用版本区间即失败 |
+| 两端对齐 | 每个声明子路径必须**机械可判**：①有经包清单的消费者；或②由子路径推导出的生成模块（`packages/contracts/src/speechnexus_contracts/<module>.py`）存在，且仓库内至少一个 `.py` 真的 `import` 该模块（用 Python `tokenize` 判定，注释/文档串/字符串不算）；或③无消费者的生成候选——推导模块存在，且 `contracts/bindings.json` 存在名称规范化后等于子路径（`./zero-dispatch` → `zero_dispatch`）、`client: false`、`source` 文件存在的 profile。非 Python 子路径（`schemas/*.json`）没有候选通道，必须有消费者。不存在 `reason`/`basis`/`decision` 自由文本或登记文件：新增无归属子路径、复制其它候选的保留块、profile 名称或 `client` 不符、profile source 缺失、生成模块缺失都失败 |
+
+**消费者口径**：出现一个经包清单的 import（静态导入、`import type`、副作用导入与字面量 `require()`）即计为消费者；守卫既不校验该绑定是否被使用，也不证明该导入在运行时会执行。注释、字符串与模板正文中的 import 文本不计入消费者。Python 侧同口径：仓库内任一 `.py` 的真实 `import` 语句即算（含测试），由 Python `tokenize` 判定。已知边界：`web` 经另一个非消费者模块再相对导入生成包的转发链不在检查范围。
+
+独立验证（均无需安装依赖）：
+
+```sh
+node --test tests/ci/contract-consumers.test.mjs
+node scripts/dev-env/validate-contract-consumers.mjs
+```
+
+守卫是静态文本检查：它证明导入形态、清单依赖、生成模块/候选归属与 `exports` 声明对齐，不证明运行时解析、打包产物体积、Vite/tsc 版本行为或实际页面调用成功；这些仍由 `pnpm typecheck`、`pnpm build`、`pnpm test` 与真实浏览器能力道覆盖。仓库内 `scripts/`、`tests/` 的探针与夹具在检出上直接运行源码，不是 workspace 包消费者，因此不在 Web 绑定规则内；它们使用相对路径不进入本门禁的消费者计数。
 
 ## Web 无障碍与颜色对比度
 

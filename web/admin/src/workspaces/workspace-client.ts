@@ -1,5 +1,5 @@
-import { parse, type Contracts } from "../../../../packages/contracts/src/admin";
-import { createValidatedClient } from "../../../../packages/contracts/src/admin-http";
+import { parse, type Contracts } from "@speechnexus/contracts/admin";
+import { createValidatedClient } from "@speechnexus/contracts/admin-http";
 export type Workspace = Contracts["Workspace"];
 export type WorkspaceList = Contracts["WorkspaceList"];
 export interface WorkspaceApi {

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { parse } from "../../../../packages/contracts/src/workbench";
+import { parse } from "@speechnexus/contracts/workbench";
 import { DiagnosticsHost } from "./DiagnosticsHost";
 import { asState, designState } from "./copy";
 import { WorkbenchStatusError, type WorkbenchStatus } from "./workbench-status";

@@ -1,4 +1,4 @@
-import { parse, type Contracts } from "../../../../packages/contracts/src/workbench";
+import { parse, type Contracts } from "@speechnexus/contracts/workbench";
 
 export type WorkbenchStatus = Contracts["WorkbenchStatusV2"];
 

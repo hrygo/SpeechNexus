@@ -1,4 +1,4 @@
-import { createSpeechClient, parse, type FileContracts } from "../../../../packages/contracts/src";
+import { createSpeechClient, parse, type FileContracts } from "@speechnexus/contracts";
 import { readSse } from "@speechnexus/shared";
 
 export type Job = FileContracts["Job"];

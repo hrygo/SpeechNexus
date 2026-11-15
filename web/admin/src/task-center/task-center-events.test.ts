@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 import fixtures from "../../../../tests/fixtures/contracts/file-workflow.json";
-import { parse } from "../../../../packages/contracts/src";
+import { parse } from "@speechnexus/contracts";
 import { TaskResponseError, type JobEvent, type TaskApi } from "./job-client";
 import { TaskCenterSession } from "./task-center-session";
 

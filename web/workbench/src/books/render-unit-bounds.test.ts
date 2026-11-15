@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import workbenchSchema from "../../../../packages/contracts/src/speechnexus_contracts/workbench.schema.json" with { type: "json" };
-import speechSchema from "../../../../packages/contracts/src/speechnexus_contracts/file.schema.json" with { type: "json" };
-import { parse } from "../../../../packages/contracts/src/runtime.mjs";
+import workbenchSchema from "@speechnexus/contracts/schemas/workbench" with { type: "json" };
+import speechSchema from "@speechnexus/contracts/schemas/file" with { type: "json" };
+import { parse } from "@speechnexus/contracts";
 import {
   RENDER_UNIT_DISPATCH_LIMIT,
   RENDER_UNIT_SOURCE_LIMIT,

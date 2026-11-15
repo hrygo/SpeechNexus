@@ -1,4 +1,4 @@
-import { parse, type Contracts } from "../../../../packages/contracts/src/realtime_events";
+import { parse, type Contracts } from "@speechnexus/contracts/realtime-events";
 import type { RealtimeSession } from "./realtime-client";
 import { freeze } from "./asr-stream";
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import runpy
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -24,7 +25,9 @@ def _stamp(second: int) -> str:
     return f"2026-01-01T00:{minutes:02d}:{rest:02d}Z"
 
 
-def _job(name: str, start: int, end: int, steps: list[dict] | None = None) -> dict:
+def _job(
+    name: str, start: int, end: int, steps: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
     return {
         "name": name,
         "started_at": _stamp(start),
@@ -33,7 +36,7 @@ def _job(name: str, start: int, end: int, steps: list[dict] | None = None) -> di
     }
 
 
-def _step(name: str, start: int, end: int) -> dict:
+def _step(name: str, start: int, end: int) -> dict[str, Any]:
     return {"name": name, "started_at": _stamp(start), "completed_at": _stamp(end)}
 
 

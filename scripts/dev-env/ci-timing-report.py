@@ -18,6 +18,7 @@ import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from statistics import median
+from typing import Any, cast
 
 REPO = "hrygo/SpeechNexus"
 FIXED_PREFIXES = (
@@ -91,7 +92,7 @@ class RunTiming:
         return last.name, last.completed - self.started
 
 
-def parse_job(raw: dict) -> JobTiming | None:
+def parse_job(raw: dict[str, Any]) -> JobTiming | None:
     """Convert one API job into timings; skip jobs without both timestamps."""
     started_at = raw.get("started_at")
     completed_at = raw.get("completed_at")
@@ -119,7 +120,7 @@ def parse_job(raw: dict) -> JobTiming | None:
     )
 
 
-def parse_run(run_id: int, raw_jobs: list[dict]) -> RunTiming | None:
+def parse_run(run_id: int, raw_jobs: list[dict[str, Any]]) -> RunTiming | None:
     """Convert API jobs into one run; return None when no job is measurable."""
     parsed = [job for raw in raw_jobs if (job := parse_job(raw)) is not None]
     if not parsed:
@@ -176,7 +177,7 @@ def fetch_runs(limit: int) -> list[int]:
     ]
 
 
-def fetch_jobs(run_id: int, repo: str = REPO) -> list[dict]:
+def fetch_jobs(run_id: int, repo: str = REPO) -> list[dict[str, Any]]:
     payload = subprocess.check_output(
         [
             "gh",
@@ -188,7 +189,7 @@ def fetch_jobs(run_id: int, repo: str = REPO) -> list[dict]:
         ],
         text=True,
     )
-    return json.loads(payload)
+    return cast(list[dict[str, Any]], json.loads(payload))
 
 
 def format_report(runs: list[RunTiming]) -> str:

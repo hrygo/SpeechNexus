@@ -382,6 +382,60 @@ jobs:
       - name: Validate API and event schemas
         run: uv run python scripts/dev-env/validate-contracts.py
 
+  # One collection instead of eight. Every shard used to run the full pytest
+  # collection just to pick its external tools — measured 10-14 s per shard,
+  # ~98 runner seconds per full route, all serial before the partition run.
+  # The partitioner is deterministic over the same commit, so one plan job
+  # publishes every shard's tool requirements and the shards only read them.
+  # Fidelity is unchanged: evidence verification still recomputes each shard's
+  # partition from the run's own collection, so plan/collection divergence
+  # cannot pass the gate. The plan runs only on routes that expand shards.
+  integration_plan:
+    name: "Integration plan: one collection selects every partition's tools"
+    needs: [routing]
+    if: ${{ needs.routing.outputs.mode == 'full' || needs.routing.outputs.mode == 'web' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      browser_0: ${{ steps.plan.outputs.browser_0 }}
+      browser_1: ${{ steps.plan.outputs.browser_1 }}
+      browser_2: ${{ steps.plan.outputs.browser_2 }}
+      browser_3: ${{ steps.plan.outputs.browser_3 }}
+      browser_4: ${{ steps.plan.outputs.browser_4 }}
+      browser_5: ${{ steps.plan.outputs.browser_5 }}
+      browser_6: ${{ steps.plan.outputs.browser_6 }}
+      browser_7: ${{ steps.plan.outputs.browser_7 }}
+      node_contracts_0: ${{ steps.plan.outputs.node_contracts_0 }}
+      node_contracts_1: ${{ steps.plan.outputs.node_contracts_1 }}
+      node_contracts_2: ${{ steps.plan.outputs.node_contracts_2 }}
+      node_contracts_3: ${{ steps.plan.outputs.node_contracts_3 }}
+      node_contracts_4: ${{ steps.plan.outputs.node_contracts_4 }}
+      node_contracts_5: ${{ steps.plan.outputs.node_contracts_5 }}
+      node_contracts_6: ${{ steps.plan.outputs.node_contracts_6 }}
+      node_contracts_7: ${{ steps.plan.outputs.node_contracts_7 }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          prune-cache: true
+
+      - name: Install locked dependencies
+        run: bash scripts/dev-env/uv-sync-retry.sh
+
+      - name: Collect partition tool requirements once
+        id: plan
+        run: |
+          uv run python scripts/dev-env/integration-shards.py plan \
+            --count 8 >> "$GITHUB_OUTPUT"
+
   # A Web-only change must reach the partitions that select the browser and
   # Node-contract consumers: only there does a real browser drive the built
   # bundles against the real backend, PostgreSQL/MySQL and MinIO. #745 changed
@@ -392,7 +446,7 @@ jobs:
   # the route-derived `exclude` (docs/validation/ci-validation.md).
   integration_shards:
     name: "Integration ${{ matrix.shard }}/8: ${{ matrix.shard >= 6 && 'Web + PG/MySQL/MinIO' || 'PG/MySQL/MinIO' }}"
-    needs: [routing]
+    needs: [routing, integration_plan]
     if: ${{ needs.routing.outputs.mode == 'full' || needs.routing.outputs.mode == 'web' }}
     runs-on: ubuntu-24.04
     # Baseline: the four database partitions need 7-9.5 min of job wall clock.
@@ -472,11 +526,21 @@ jobs:
           fi
           test -x /usr/lib/postgresql/16/bin/initdb
 
-      - name: Select external tools for this integration partition
-        id: integration_tools
+      - name: Validate the partition tool plan
+        # Fail closed: a missing or malformed plan value must stop the shard here,
+        # before any install step can silently skip Chromium or the Node runtime.
+        env:
+          REQUIRE_BROWSER: ${{ needs.integration_plan.outputs[format('browser_{0}', matrix.shard)] }}
+          REQUIRE_NODE_CONTRACTS: ${{ needs.integration_plan.outputs[format('node_contracts_{0}', matrix.shard)] }}
         run: |
-          uv run python scripts/dev-env/integration-shards.py requirements \
-            --index "${{ matrix.shard }}" --count 8 >> "$GITHUB_OUTPUT"
+          case "$REQUIRE_BROWSER" in
+            true|false) ;;
+            *) echo "::error::Partition plan published no boolean browser requirement (got '${REQUIRE_BROWSER:-<empty>}')"; exit 1 ;;
+          esac
+          case "$REQUIRE_NODE_CONTRACTS" in
+            true|false) ;;
+            *) echo "::error::Partition plan published no boolean node_contracts requirement (got '${REQUIRE_NODE_CONTRACTS:-<empty>}')"; exit 1 ;;
+          esac
 
       - name: Require the Web lanes to select actual Web consumers
         # The Web-capable lanes are the only place the cases they select can run:
@@ -497,8 +561,8 @@ jobs:
         # `integration_gate` gate, which stays `full`-only.
         if: ${{ needs.routing.outputs.mode == 'web' }}
         env:
-          BROWSER: ${{ steps.integration_tools.outputs.browser }}
-          NODE_CONTRACTS: ${{ steps.integration_tools.outputs.node_contracts }}
+          BROWSER: ${{ needs.integration_plan.outputs[format('browser_{0}', matrix.shard)] }}
+          NODE_CONTRACTS: ${{ needs.integration_plan.outputs[format('node_contracts_{0}', matrix.shard)] }}
           SHARD: ${{ matrix.shard }}
         run: |
           if [[ "${BROWSER:-}" != "true" && "${NODE_CONTRACTS:-}" != "true" ]]; then
@@ -507,31 +571,31 @@ jobs:
           fi
 
       - name: Set up Node.js for actual contract HTTP consumption
-        if: steps.integration_tools.outputs.node_contracts == 'true' || steps.integration_tools.outputs.browser == 'true'
+        if: ${{ needs.integration_plan.outputs[format('node_contracts_{0}', matrix.shard)] == 'true' || needs.integration_plan.outputs[format('browser_{0}', matrix.shard)] == 'true' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version-file: .nvmrc
 
       - name: Activate pnpm for integration consumers
-        if: steps.integration_tools.outputs.node_contracts == 'true' || steps.integration_tools.outputs.browser == 'true'
+        if: ${{ needs.integration_plan.outputs[format('node_contracts_{0}', matrix.shard)] == 'true' || needs.integration_plan.outputs[format('browser_{0}', matrix.shard)] == 'true' }}
         run: |
           npm install --global --allow-scripts=pnpm pnpm@${PNPM_VERSION}
 
       - name: Install locked contract runtime dependencies
-        if: steps.integration_tools.outputs.node_contracts == 'true' && steps.integration_tools.outputs.browser != 'true'
+        if: ${{ needs.integration_plan.outputs[format('node_contracts_{0}', matrix.shard)] == 'true' && needs.integration_plan.outputs[format('browser_{0}', matrix.shard)] != 'true' }}
         run: |
           pnpm --filter @speechnexus/contracts --prod install --frozen-lockfile --ignore-scripts
 
       - name: Install locked Web dependencies for browser consumers
-        if: steps.integration_tools.outputs.browser == 'true'
+        if: ${{ needs.integration_plan.outputs[format('browser_{0}', matrix.shard)] == 'true' }}
         run: pnpm install --frozen-lockfile
 
       - name: Build actual Web bundles for browser consumers
-        if: steps.integration_tools.outputs.browser == 'true'
+        if: ${{ needs.integration_plan.outputs[format('browser_{0}', matrix.shard)] == 'true' }}
         run: pnpm build
 
       - name: Install Chromium for browser consumers
-        if: steps.integration_tools.outputs.browser == 'true'
+        if: ${{ needs.integration_plan.outputs[format('browser_{0}', matrix.shard)] == 'true' }}
         run: python3 scripts/dev-env/prepare-ci-browser.py
 
       - name: Start isolated versioned object storage

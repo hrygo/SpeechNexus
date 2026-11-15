@@ -121,7 +121,9 @@ def test_browser_preparation_keeps_partition_selection_and_original_budgets() ->
     jobs = _WORKFLOW["jobs"]
     shards = jobs["integration_shards"]
     install = next(s for s in shards["steps"] if "prepare-ci-browser.py" in s.get("run", ""))
-    assert install["if"] == "steps.integration_tools.outputs.browser == 'true'"
+    assert install["if"] == (
+        "${{ needs.integration_plan.outputs[format('browser_{0}', matrix.shard)] == 'true' }}"
+    )
     assert install["run"] == "python3 scripts/dev-env/prepare-ci-browser.py"
     assert "continue-on-error" not in install
     # #452 and #502: only the shard budget grew; the Web lane keeps its own budget.
@@ -157,16 +159,29 @@ def test_a_web_route_runs_the_partitions_that_select_the_browser_consumers() -> 
     )
     assert guard["if"] == "${{ needs.routing.outputs.mode == 'web' }}"
     assert guard["env"] == {
-        "BROWSER": "${{ steps.integration_tools.outputs.browser }}",
-        "NODE_CONTRACTS": "${{ steps.integration_tools.outputs.node_contracts }}",
+        "BROWSER": "${{ needs.integration_plan.outputs[format('browser_{0}', matrix.shard)] }}",
+        "NODE_CONTRACTS": (
+            "${{ needs.integration_plan.outputs[format('node_contracts_{0}', matrix.shard)] }}"
+        ),
         "SHARD": "${{ matrix.shard }}",
     }
     assert (
         'if [[ "${BROWSER:-}" != "true" && "${NODE_CONTRACTS:-}" != "true" ]]; then' in guard["run"]
     )
     assert "exit 1" in guard["run"] and "continue-on-error" not in guard
-    tools = next(s for s in shards["steps"] if s.get("id") == "integration_tools")
-    assert shards["steps"].index(tools) < shards["steps"].index(guard)
+    # The plan is published once for every partition; each shard consumes its own
+    # requirements and fails closed on a missing or malformed value before any
+    # install step can silently skip Chromium or the Node runtime.
+    assert shards["needs"] == ["routing", "integration_plan"]
+    plan = _WORKFLOW["jobs"]["integration_plan"]
+    assert plan["if"] == shards["if"]
+    collect = next(s for s in plan["steps"] if s.get("id") == "plan")
+    assert "integration-shards.py plan" in collect["run"]
+    validate = next(
+        s for s in shards["steps"] if s.get("name") == "Validate the partition tool plan"
+    )
+    assert "Partition plan published no boolean" in validate["run"]
+    assert shards["steps"].index(validate) < shards["steps"].index(guard)
 
 
 def test_integration_shard_budget_matches_the_workflow_job_timeout() -> None:

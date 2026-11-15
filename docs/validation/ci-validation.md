@@ -87,7 +87,8 @@ Node Controller 镜像验证由 CI 以同提交的 [reusable workflow](../../.gi
 | `routing` | `Route: scope, review boundary and design tokens` | 检查路由边界、审查 PR 改动路径边界、Design Token 与生成契约消费者绑定，按准确差异选择范围 |
 | `python_tests` | `Python: tests, coverage and build` | Python 单元、契约、CI、Workbench PG/Runtime 及选定 Speech PG 测试，导出两 worker 覆盖率数据集（不判定）、媒体工具链及 Python 包构建 |
 | `python_static` | `Python: lint, types and contract compatibility` | Ruff、mypy、模块边界、生成漂移、协议兼容与 schema 校验 |
-| `integration_shards` | `Integration 0/8`–`5/8: PG/MySQL/MinIO`；`Integration 6/8`–`7/8: Web + PG/MySQL/MinIO` | 八个真实隔离服务分片；混合集合中的浏览器与 Node HTTP 消费者只分配到后两片（6、7），普通 DB 用例按估算成本分配到全部八片，具体工具需求按各片实际用例计算。`full` 展开八片；`web` 只展开 6、7 两片（`excluded_shards` 排除 0–5），`docs`/`no-db` 跳过整个作业 |
+| `integration_plan` | `Integration plan: one collection selects every partition's tools` | 只在展开分片的路由（`full`/`web`）执行：一次 pytest 完整收集发布八片的 `browser`/`node_contracts` 工具需求，供各分片读取；分片自身的执行与证据校验不依赖它 |
+| `integration_shards` | `Integration 0/8`–`5/8: PG/MySQL/MinIO`；`Integration 6/8`–`7/8: Web + PG/MySQL/MinIO` | 八个真实隔离服务分片；混合集合中的浏览器与 Node HTTP 消费者只分配到后两片（6、7），普通 DB 用例按估算成本分配到全部八片，工具需求读取 `integration_plan` 的发布结果并 fail-closed 校验。`full` 展开八片；`web` 只展开 6、7 两片（`excluded_shards` 排除 0–5），`docs`/`no-db` 跳过整个作业 |
 | `integration_gate` | `Gate: integration partitions and merged coverage` | 验收八片成功及同提交、完整互斥集合、实际执行证据；下载八份分片覆盖数据与采集作业数据集，合并后按 80% 判定一次，不在此节点重新执行测试。仍只在 `full` 范围执行 |
 | `python_gate` | `Gate: Python tests and static checks` | 要求 Python 执行与静态/契约两个作业均成功，不执行测试 |
 | `controller_image` | `Node Controller: image evidence` | 调用镜像 scope、双架构构建与内部证据门禁，按输入差异决定是否构建 |
@@ -104,7 +105,7 @@ Python 测试作业通过 `python-coverage.py run --workers 2` 在同一 runner 
 
 每片保留原完整覆盖源与 branch 配置，只在片内使用 `--cov-fail-under=0` 采集局部数据，并固定导出到 `coverage-<shard>.data`。父进程必须确认两片执行成功、私有 PG 已停止、同一 SHA/配置、相同完整 collection、精确分配且互斥并集覆盖全集、每个结果实际通过及覆盖数据摘要一致，然后复制各片原始数据并按 worker 归档为 `workbench-pg-coverage-parts/coverage-<worker>.data`，连同汇总以 `workbench-pg-full-coverage` 上传；覆盖率不足不由该作业判定，因此数据照常保留。若采集步骤已运行且失败、作业未取消，工作流尝试上传已生成的日志及分片／生命周期／汇总报告；步骤未运行、作业取消或上传失败时不能保证留存。测试或执行证据校验失败不会生成合格的覆盖数据集。入口拒绝任何非空 `PYTEST_ADDOPTS`，即使其选项不缩小集合；完整集合以 pytest 收集时各 worker 观察到的结果为准，同一插件或配置在两片共同遗漏用例时，同集与分配校验不能独立发现，仍须审查测试根目录、pytest 配置和插件变更。直接使用 `scripts/dev-env/workbench-pg-probe.py` 的 `--full-coverage` 模式是单次 pytest、只覆盖非集成范围的本地检查，仍沿用项目 `fail_under = 80`：只被集成测试执行的新增代码会让它失败，而 CI 的合并门禁通过。本机要按门禁口径复核时使用上文的 `combine` 路径，或在该模式下自行加 `--cov-fail-under=0` 只看数据。`--coverage` 仍是独立的 C 层 90% 检查。两种模式都须安装锁定依赖并提供 `--pg-bin`，运行前置条件见[验证指南](../agent-verification.md)，具体参数可用 `uv run python scripts/dev-env/workbench-pg-probe.py --help` 查看。
 
-集成分片在安装 Python 依赖后，通过 `uv run python scripts/dev-env/integration-shards.py requirements --index 0 --count 6` 等命令实际收集完整 integration nodeid（包括参数化身份），以执行时相同的资源分组与成本加权分片算法输出对应分片的 `node_contracts` 与 `browser` 需求；工作流分别传入各分片的 index。`*_browser.py` 与两个合成浏览器探针模块声明浏览器依赖；回归核对当前所有 Node 浏览器探针消费者均被分类。收集错误或设置了非空 `PYTEST_ADDOPTS` 均会失败，即使该选项本身不缩小选择，也不能输出“无需工具”放行。该步骤只收集，实际执行和六份报告的互斥并集核验仍独立必需。预检记录 pytest 最终收集结果，未单独校验所有插件对收集的影响；汇总比较各片报告的相同全集，也不能独立发现所有分片共同遗漏的用例。须保持受控依赖与 pytest 配置，并审查收集范围的变更。
+分片不再各自收集：`integration_plan` 作业在安装锁定依赖后用 `uv run python scripts/dev-env/integration-shards.py plan --count 8` 实际收集完整 integration nodeid（包括参数化身份），一次性为八片发布 `browser_<i>` 与 `node_contracts_<i>` 布尔需求；此前每片在测试执行前串行重复一次完整收集，实测 10–14 s/片、每 full 路由约 98 runner 秒。`*_browser.py` 与两个合成浏览器探针模块声明浏览器依赖；回归核对当前所有 Node 浏览器探针消费者均被分类。收集错误或设置了非空 `PYTEST_ADDOPTS` 均会失败，即使该选项本身不缩小选择，也不能输出“无需工具”放行。各分片在读取需求前先校验本片的两个取值严格为 `true`/`false`，缺失或畸形取值在安装任何 Web/Node 依赖之前直接红灯。计划作业失败或被跳过时，分片随之跳过、两级门禁照常变红（fail closed）。证据保真不变：实际执行和报告的互斥并集核验仍从每片自身 collection 独立重算，plan 与实际收集的分歧无法通过门禁。预检记录 pytest 最终收集结果，未单独校验所有插件对收集的影响；汇总比较各片报告的相同全集，也不能独立发现所有分片共同遗漏的用例。须保持受控依赖与 pytest 配置，并审查收集范围的变更。
 
 完整集合同时含普通用例与 Web 工具消费者时，仍保留六条 DB-only 道和 Web 能力道：浏览器与显式 Node 契约用例只落在 Web 能力道，普通 DB 用例按估算成本分配到全部八片。每片的目标是等量估算成本，而不是等量用例数：一个 Web 用案例按 `WEB_CASE_WEIGHT = 5` 折算（2026-11-06 两次完整运行中两类用例的实测单例耗时比为 3.4–6.4 倍，类均值为 4.6–5.5 倍，取 5），Web 能力道因此少收普通用例。分配使用 nodeid 的 SHA-256 排序、最大余数法配额和确定性取整；八片各自从完整收集独立算出同一结果，不依赖共享状态或历史制品。Web 用例在 Web 能力道间按 hash 顺序轮转，使各道用例数最多相差 1。一类用例单独存在时，仍按 nodeid 的 SHA-256 取模使用全部分片。通用入口仍接受 1–16 片，混合类别为 Web 工具保留 `max(1, count // 3)` 片；单片执行整个集合。预检、执行和报告检查使用同一个 `partition`，工具需求仍根据实际选中用例计算，不能在工作流里按编号跳过工具或业务测试。
 
@@ -179,7 +180,7 @@ python3 -m unittest discover -s tests/ci -v
 - 同改动只加一个 `web/` 注释后推成 `web` 路由：run `43577755898` 全绿，`Integration 4`/`Integration 5` 实际执行（`browser=true` 守卫通过），最终门禁 success。
 - **条件改回 `mode == 'full'`**：基线工作流（`26fd8b39`）加回 #745 的 `aria-label`，`web` 路由 run `43577811710` 全绿、`integration_shards` 整体 skipping —— 证明红灯来自展开条件，而不是别的东西。
 - **`web` 判成 `full`**：同一 `web` 改动按 `full` 判定的作业集就是上表最后一行的实测值（21 行 / 20 执行 / 67.9 runner 分钟），相对本方案多 5 个作业行与约 38 runner 分钟。
-- **守卫的判据向量**：`tests/ci/test_ci_routing.py::WebLaneGuardTests` 直接执行工作流里该步骤的脚本，输入取自真实 `requirements` 输出——只有 Node 契约消费者（`browser=false, node_contracts=true`，浏览器分类器失效时的真实分区结果）与只有浏览器消费者都通过；两类都没有（DB-only 分片）与 output 缺失都失败关闭，并把实际取值写进错误文案。
+- **守卫的判据向量**：`tests/ci/test_ci_routing.py::WebLaneGuardTests` 直接执行工作流里该步骤的脚本，输入取自真实 `plan` 输出——只有 Node 契约消费者（`browser=false, node_contracts=true`，浏览器分类器失效时的真实分区结果）与只有浏览器消费者都通过；两类都没有（DB-only 分片）与 output 缺失都失败关闭，并把实际取值写进错误文案。
 - **复现 #745**：在 `web` 路由 head 上把 `aria-label="新单元文本 字数"` 加回去，run `43577800599` 里 `web` 作业 green、`Integration 4` 失败于 `workbench-chapter-create-probe.mjs` 的 Playwright strict mode violation，最终门禁 failure。这是本改动要堵的那一层：组件侧守卫（#756）不存在时，只有真实后端 + 真实数据库 + 真实浏览器那条链能看见它。
 
 ## 覆盖率门禁、采集边界与结构性余量
@@ -449,7 +450,7 @@ uv run python scripts/dev-env/python-coverage.py combine \
 
 `3/8` 由 264 → 467 → 477 s、`4/8` 由 438 → 265 → 343 s，快片身份在 run 间轮换；同一轮内 `0/8` 与 `1/8` 用例数同为 370 条、净工作却是 192 s 与 385 s。前两轮最慢片都是 Web 能力道 `6/8`，曾提示 Web lane 有系统性负担，但第三轮 `6/8` 仅 350 s、最慢片变成 `3/8`，**该提示已被第三个样本证伪**。按用例数分区是弱代理，但静态地针对编号分片或 Web 道重分配同样无效；若要调整 `WEB_CASE_WEIGHT`，须先采集每用例耗时并做多样本方差分解。
 
-**依赖源单点已解耦（2026-11-15）。** `uv.lock` 曾把 841 个 wheel URL 与 109 条 registry 钉在 `pypi.tuna.tsinghua.edu.cn`——那是开发者本机 `~/.config/uv/uv.toml` 的镜像配置，在生成 lock 时被带入主干，导致所有 CI runner 依赖单一镜像。PR #831 的 run `43674410931` 中 `Integration 3/6` 因该镜像对 `click==8.5.0` 返回 403，安装 3 秒后失败、整片约 9 分钟白跑。现将 URL 切回官方 `files.pythonhosted.org` / `pypi.org`（包版本与 sha256 全部不变，官方 CDN 对同一路径实测 HTTP 200，显式指定官方源后 `uv lock --check` 与 `uv sync --locked --dry-run` 均通过），并由 `tests/ci/test_dependency_source.py` 钉住「lock 中不得出现非官方源」。四个 `Install locked dependencies` 步骤统一改为 `bash scripts/dev-env/uv-sync-retry.sh`：只对 403/429/5xx、下载失败、超时与连接重置重试最多 3 次，lock 漂移或非网络错误立即失败，避免用重试掩盖真实缺陷。该脚本支持 `UV_SYNC_ATTEMPTS` / `UV_SYNC_RETRY_DELAY` 覆盖，测试用假 `uv` 验证成功、瞬态与非瞬态三条路径。
+**依赖源单点已解耦（2026-11-15）。** `uv.lock` 曾把 841 个 wheel URL 与 109 条 registry 钉在 `pypi.tuna.tsinghua.edu.cn`——那是开发者本机 `~/.config/uv/uv.toml` 的镜像配置，在生成 lock 时被带入主干，导致所有 CI runner 依赖单一镜像。PR #831 的 run `43674410931` 中 `Integration 3/6` 因该镜像对 `click==8.5.0` 返回 403，安装 3 秒后失败、整片约 9 分钟白跑。现将 URL 切回官方 `files.pythonhosted.org` / `pypi.org`（包版本与 sha256 全部不变，官方 CDN 对同一路径实测 HTTP 200，显式指定官方源后 `uv lock --check` 与 `uv sync --locked --dry-run` 均通过），并由 `tests/ci/test_dependency_source.py` 钉住「lock 中不得出现非官方源」。四个 `Install locked dependencies` 步骤（后随 `integration_plan` 作业增为五处）统一改为 `bash scripts/dev-env/uv-sync-retry.sh`：只对 403/429/5xx、下载失败、超时与连接重置重试最多 3 次，lock 漂移或非网络错误立即失败，避免用重试掩盖真实缺陷。该脚本支持 `UV_SYNC_ATTEMPTS` / `UV_SYNC_RETRY_DELAY` 覆盖，测试用假 `uv` 验证成功、瞬态与非瞬态三条路径。
 
 **有效结论率是比几十秒 wall clock 更大的损耗。** 60 次运行中 45 成功、7 取消、5 失败、3 进行中；失败率 8.3%，且约 72% 的运行展开 full 路由（21 或 20 个作业，每次约 65 runner 分钟）。一次依赖安装失败会让整片约 9 分钟白跑，并使本次 PR 不产出有效结论。
 
@@ -457,6 +458,7 @@ uv run python scripts/dev-env/python-coverage.py combine \
 | --- | --- | --- | --- |
 | 依赖源解耦 + 瞬态重试 | 消除 403 类整片白跑，提升有效结论率 | 上述失败日志 | **已实施**：官方源 + 仅网络类错误有限重试，5 项合约测试钉住 |
 | 提高并行度（6 → 8 片） | 实测中位 −134 s（−19.7%），**仅 3 样本，待更多样本确认** | 每片用例数 −25%，绝对波动随之下降；三次 wall clock 均低于 6 分片最小值 | **已实施**；runner 秒数中位 +308 s / +8.0%，与按固定开销推算的 +188 s 同一量级，属成本换速度 |
+| 消除每分片重复 collection | 每片串行前缀 −10~14 s；runner 净变化约 −78 s/次（−98 s 重复收集 + 新计划作业 +~20 s） | run `43681245311` 八片 requirements 步骤实测合计 98 s；partition 对同一提交确定性 | **已实施**：新增 `integration_plan` 作业单次收集并发布八片工具需求；证据校验仍从每片自身 collection 重算，fail closed 不变 |
 | 按历史耗时确定性加权分区 | ≤45 s（≤6%），易被噪声淹没 | 分片均值差 45 s vs run 间标准差 110 s | **不推荐**；静态分区无法消除 run 间波动 |
 | 缓存 Web 分片浏览器 / 依赖 | 关键路径约 −43 s（6%） | 121 s vs 78 s 固定开销 | 固定开销本身稳定，缓存只降均值不降波动，**不优先** |
 | 收窄 full 路由判据 | 显著减少 runner 分钟 | 72% 运行走 full | 直接影响验证完整性，须与路由安全边界一并审查，**待决策** |
@@ -464,7 +466,7 @@ uv run python scripts/dev-env/python-coverage.py combine \
 
 **本节口径**：除「改造后 8 分片实测」小节外，上面所有墙钟、分片耗时与方差数据都取自**改造前 6 分片**的 21 个样本，作为基线保留，不因本轮改动重写；该小节是 n=3 的改造后样本快照，样本量与基线不可等同看待。文中历史章节（#507、#757、2026-11-07 run、`4/5` 两片、「六个分片」等）同样记录原时点事实；当前行为规范以本节与作业表为准。
 
-**本轮结论**：依赖源与重试改善的是**有效结论率**（但 mypy 漏检造成的返工说明本地验证必须覆盖全部 CI 门禁）；提高并行度针对 **wall clock**，代价是 **runner 分钟上升**。两者都不是免费提速。后续任何「提速」主张都必须说明优化的是三个量中的哪一个，并给出改造前后同口径、**样本量可比**的数据；只报「作业更快」而不报关键路径变化，或用单次运行外推稳定收益，都不构成效率结论。
+**本轮结论**：依赖源与重试改善的是**有效结论率**（但 mypy 漏检造成的返工说明本地验证必须覆盖全部 CI 门禁）；提高并行度针对 **wall clock**，代价是 **runner 分钟上升**；消除重复 collection 同时改善 wall clock 与 runner 秒（每片少付一次收集、全局只付一次）。两者都不是免费提速。后续任何「提速」主张都必须说明优化的是三个量中的哪一个，并给出改造前后同口径、**样本量可比**的数据；只报「作业更快」而不报关键路径变化，或用单次运行外推稳定收益，都不构成效率结论。
 
 ## 作业命名规范
 

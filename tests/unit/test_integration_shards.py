@@ -753,41 +753,66 @@ def test_actual_node_http_consumer_gets_locked_tools_only_in_its_partition() -> 
             selected.append(index)
     assert sorted(observed) == nodeids
     assert selected == [4, 5]
-    steps = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"][
-        "integration_shards"
-    ]["steps"]
-    choose = next(step for step in steps if step.get("id") == "integration_tools")
-    assert "requirements" in choose["run"] and '--count 8 >> "$GITHUB_OUTPUT"' in choose["run"]
+    jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
+    plan = jobs["integration_plan"]
+    assert plan["if"] == (
+        "${{ needs.routing.outputs.mode == 'full' || needs.routing.outputs.mode == 'web' }}"
+    )
+    collect = next(step for step in plan["steps"] if step.get("id") == "plan")
+    assert "integration-shards.py plan" in collect["run"]
+    assert '--count 8 >> "$GITHUB_OUTPUT"' in collect["run"]
+    for name in ("browser", "node_contracts"):
+        for index in range(8):
+            assert plan["outputs"][f"{name}_{index}"] == (
+                "${{ steps.plan.outputs." + f"{name}_{index}" + " }}"
+            )
+    shards = jobs["integration_shards"]
+    assert "integration_plan" in shards["needs"]
     node = next(
         step
-        for step in steps
+        for step in shards["steps"]
         if step["name"] == "Set up Node.js for actual contract HTTP consumption"
     )
     deps = next(
-        step for step in steps if step["name"] == "Install locked contract runtime dependencies"
+        step
+        for step in shards["steps"]
+        if step["name"] == "Install locked contract runtime dependencies"
     )
     activate = next(
-        step for step in steps if step["name"] == "Activate pnpm for integration consumers"
+        step
+        for step in shards["steps"]
+        if step["name"] == "Activate pnpm for integration consumers"
     )
     for step in (node, activate):
         assert step["if"] == (
-            "steps.integration_tools.outputs.node_contracts == 'true' || "
-            "steps.integration_tools.outputs.browser == 'true'"
+            "${{ needs.integration_plan.outputs[format('node_contracts_{0}', matrix.shard)]"
+            " == 'true' || needs.integration_plan.outputs[format('browser_{0}', matrix.shard)]"
+            " == 'true' }}"
         )
     assert deps["if"] == (
-        "steps.integration_tools.outputs.node_contracts == 'true' && "
-        "steps.integration_tools.outputs.browser != 'true'"
+        "${{ needs.integration_plan.outputs[format('node_contracts_{0}', matrix.shard)]"
+        " == 'true' && needs.integration_plan.outputs[format('browser_{0}', matrix.shard)]"
+        " != 'true' }}"
     )
-    assert "uv run python scripts/dev-env/integration-shards.py requirements" in choose["run"]
+    assert "integration-shards.py plan" in collect["run"]
     assert node["with"]["node-version-file"] == ".nvmrc"
     assert "pnpm@${PNPM_VERSION}" in activate["run"]
     assert (
         "--filter @speechnexus/contracts --prod install --frozen-lockfile --ignore-scripts"
         in deps["run"]
     )
-    assert steps.index(choose) < steps.index(node) < steps.index(activate) < steps.index(deps)
-    assert steps.index(deps) < next(
-        i for i, step in enumerate(steps) if "Run a complete integration partition" in step["name"]
+    validate = next(
+        step for step in shards["steps"] if step["name"] == "Validate the partition tool plan"
+    )
+    assert "Partition plan published no boolean" in validate["run"]
+    assert shards["steps"].index(validate) < shards["steps"].index(node)
+    assert (
+        shards["steps"].index(node) < shards["steps"].index(activate) < shards["steps"].index(deps)
+    )
+    assert shards["steps"].index(deps) < next(
+        i
+        for i, step in enumerate(shards["steps"])
+        if "Run a complete integration partition" in step["name"]
     )
 
 
@@ -807,7 +832,9 @@ def test_browser_consumers_get_locked_web_build_and_chromium_before_execution() 
         step for step in steps if step["name"] == "Install Chromium for browser consumers"
     )
     for step in (dependencies, build, chromium):
-        assert step["if"] == "steps.integration_tools.outputs.browser == 'true'"
+        assert step["if"] == (
+            "${{ needs.integration_plan.outputs[format('browser_{0}', matrix.shard)] == 'true' }}"
+        )
         assert "continue-on-error" not in step
     assert dependencies["run"] == "pnpm install --frozen-lockfile"
     assert build["run"] == "pnpm build"
@@ -836,19 +863,22 @@ def test_requirement_collection_routes_real_parameterized_browser_nodeids(tmp_pa
             for db in ("postgresql", "mysql")
         ),
     ]
+    # One fresh process publishes every partition's requirements from one collection.
+    result = subprocess.run(
+        [sys.executable, str(target), "plan", "--count", "6"],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    expected: list[str] = []
     for index in range(6):
-        result = subprocess.run(
-            [sys.executable, str(target), "requirements", "--index", str(index), "--count", "6"],
-            cwd=root,
-            env=env,
-            capture_output=True,
-            text=True,
-            check=True,
+        expected.extend(
+            f"{name}_{index}={str(value).lower()}\n"
+            for name, value in GATE.tool_requirements(nodeids, index, 6).items()
         )
-        expected = GATE.tool_requirements(nodeids, index, 6)
-        assert result.stdout == "".join(
-            f"{name}={str(value).lower()}\n" for name, value in expected.items()
-        )
+    assert result.stdout == "".join(expected)
 
 
 @pytest.mark.parametrize("failure", ["collection-error", "partial-addopts"])
@@ -861,7 +891,7 @@ def test_requirement_collection_cannot_claim_missing_dependencies_are_unneeded(
     else:
         env["PYTEST_ADDOPTS"] = "-k nonexistent"
     result = subprocess.run(
-        [sys.executable, str(target), "requirements", "--index", "0", "--count", "6"],
+        [sys.executable, str(target), "plan", "--count", "6"],
         cwd=root,
         env=env,
         capture_output=True,

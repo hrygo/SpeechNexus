@@ -25,7 +25,7 @@ def test_lock_contains_only_official_pypi_sources() -> None:
 def test_every_locked_sync_step_uses_the_retry_wrapper() -> None:
     ci = CI.read_text(encoding="utf-8")
     assert "run: uv sync --locked" not in ci
-    assert ci.count(WRAPPER) == 4
+    assert ci.count(WRAPPER) == 5
     assert RETRY.is_file()
     script = RETRY.read_text(encoding="utf-8")
     assert "uv sync --locked --all-packages --all-groups" in script

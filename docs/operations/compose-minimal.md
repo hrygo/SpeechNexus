@@ -1528,10 +1528,12 @@ owner 事务里对新命名空间执行一次，不进入 `speech` 的 Alembic �
 身份边界是可执行的，不是部署约定：`workbench-api` 启动时由 `check_database` 核对运行身份
 的登录身份、owner/DDL/DML、逐表与逐列权限面、`runtime_schema_revision`，由
 `check_cleanup_identity` 核对清理身份不是 owner 或特权角色。两个身份受同样两条边界约束：
-在工作台命名空间之外持有任何关系或序列权限会被点名拒绝；持有任何角色成员关系也会被拒绝——
-普通的 `GRANT` 靠继承就能看见，而 `GRANT wider TO role WITH INHERIT FALSE` 对任何权限判定
-都不可见，却仍能 `SET ROLE wider` 取到那份权威，所以成员关系本身被拒。因此把任一 DSN 指向
-`sn_api` 这类宽身份都不能启动：运行 DSN 由 `check_database` 拒绝，清理 DSN 由
+在工作台命名空间之外持有任何关系或序列权限会被点名拒绝，判定范围包含身份能 `SET ROLE` 到达
+的每个角色——普通的 `GRANT` 靠继承就能看见，而 `GRANT wider TO role WITH INHERIT FALSE`
+对任何针对登录身份的权限判定都不可见，却仍能 `SET ROLE wider` 取到那份权威，所以扫描按
+「能到达的权威」判定，并点名越界授权实际挂在哪个角色上。成员关系本身不禁止：只授予工作台
+命名空间权限的组角色是正常部署形态，边界是可达权威而不是成员关系的有无。因此把任一 DSN
+指向 `sn_api` 这类宽身份都不能启动：运行 DSN 由 `check_database` 拒绝，清理 DSN 由
 `check_cleanup_identity` 拒绝，两者都点名越界的关系。
 
 迁移与启动：
@@ -1550,7 +1552,7 @@ owner 事务里对新命名空间执行一次，不进入 `speech` 的 Alembic �
 `workbench-api` 的入口闸门先核验必需输入（运行/清理 DSN、workspace、deployment、cursor
 key、schema）与上述权限面，全部成立才打印 `OK:` 并 exec ASGI 工厂。以下条件在启动前以
 `FAIL:` 点名，不会带着缺失配置起服务：空白键、schema 写成 `speech`、两个 DSN 指向同一角色、
-越界的 schema 授权（点名关系）、以及角色成员关系（点名被授予的角色）。两种失败只给结论不给
+越界的 schema 授权（点名关系，以及能 `SET ROLE` 到达该授权的角色）。两种失败只给结论不给
 分量：身份是 schema owner 或带特权标志时，闸门打印 `… unavailable or unsafe.` 后退出，不指出
 是哪个标志，因为此时要做的不是逐项修补而是换掉这个身份；迁移步的 owner DSN 若不能建 schema
 或不是命名空间 owner，则以 `FAIL: the owner connection could not complete the workbench

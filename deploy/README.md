@@ -620,9 +620,14 @@ by the same two boundaries:
 
 - no privileges on relations or sequences *outside* the workbench schema, named
   relation by relation;
-- no role membership at all. An ordinary grant is caught by inheritance, but
-  `GRANT wider TO role WITH INHERIT FALSE` confers nothing any privilege predicate
-  can see while `SET ROLE wider` still reaches it, so membership itself is refused.
+- no privileges reachable by `SET ROLE`, at any membership depth. An ordinary grant
+  is visible through inheritance, but `GRANT wider TO role WITH INHERIT FALSE`
+  confers nothing any privilege predicate over the login can see while
+  `SET ROLE wider` still reaches it, so the scan judges every role the login can
+  switch to and names the one the foreign grant is actually held by. A membership
+  that reaches no relation outside the workbench schema stays legal — a group role is
+  a normal deployment shape, and both checks settle any DSN `role=` switch back to
+  the login identity, so the boundary is reachable *authority*, not membership.
 
 Pointing either DSN at `sn_api` therefore fails closed instead of sharing the API's
 wide identity — the serving DSN fails in `check_database`, the cleanup DSN in

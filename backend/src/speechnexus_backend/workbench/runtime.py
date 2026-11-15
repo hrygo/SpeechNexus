@@ -249,39 +249,16 @@ async def _refuse_column_privilege(
         )
 
 
-async def _refuse_role_membership(
-    connection: psycopg.AsyncConnection[dict[str, Any]],
-    subject: str,
-) -> None:
-    """Refuse every role membership, not only the inherited ones.
-
-    ``pg_has_role(..., 'MEMBER')`` in the identity check above already catches an
-    owner, the database owner and the two predefined data roles. It does not catch
-    an ordinary role granted ``WITH INHERIT FALSE``: that grant is not inherited, so
-    no privilege predicate sees it, but the login can still ``SET ROLE`` into it and
-    reach everything the granted role can reach. Membership is therefore refused on
-    its own: a serving or erasing identity is standalone, and anything it can
-    ``SET ROLE`` to is authority the checks below cannot judge.
-    """
-    row = await (
-        await connection.execute(
-            """
-            SELECT g.rolname AS granted, m.inherit_option, m.set_option
-            FROM pg_catalog.pg_auth_members m
-            JOIN pg_catalog.pg_roles g ON g.oid = m.roleid
-            JOIN pg_catalog.pg_roles r ON r.oid = m.member
-            WHERE r.rolname = current_user
-            ORDER BY g.rolname
-            LIMIT 1
-            """
-        )
-    ).fetchone()
-    if row is not None:
-        raise RuntimeStartupError(
-            f"{subject} role must not be a member of {row['granted']}; "
-            "SET ROLE reaches that role's authority whatever this check sees, "
-            "so revoke the membership instead of granting it"
-        )
+_REACHABLE_ROLES = """
+WITH RECURSIVE reachable(oid, name) AS (
+    SELECT r.oid, r.rolname FROM pg_catalog.pg_roles r WHERE r.rolname = current_user
+  UNION
+    SELECT g.oid, g.rolname
+    FROM reachable
+    JOIN pg_catalog.pg_auth_members m ON m.member = reachable.oid
+    JOIN pg_catalog.pg_roles g ON g.oid = m.roleid
+)
+"""
 
 
 async def _refuse_foreign_relation_privileges(
@@ -298,27 +275,52 @@ async def _refuse_foreign_relation_privileges(
     dedicated non-owner roles, and sharing one is a startup failure here, not a
     deployment convention: the identity's authority is exactly its declared
     relations, so any grant in another product schema is a stray grant to revoke.
-    ``CURRENT_USER`` is the login identity the connection already reset to, and the
-    configured workbench schema is excluded by parameter because its surface is
-    judged by the declared set above.
+
+    The scan judges the login *and* every role it can `SET ROLE` into, because that
+    is the reach a request would get: a wide role granted `WITH INHERIT FALSE`
+    confers nothing to the login and is invisible to every privilege predicate over
+    it, yet one `SET ROLE` makes the session that role. It waits for the reach to
+    carry a relation privilege rather than refusing the membership itself: both the
+    runtime and the cleanup path reset the session to the login identity (a DSN
+    `role=` switch is settled the same way, `tests/integration/test_workbench_runtime.py`
+    and `tests/integration/test_workbench_recovery_postgres.py` carry those cases), so
+    a group role confined to the workbench schema — or one whose only distinction is a
+    role attribute — is a normal deployment shape and stays legal.
+    ``current_user`` is the login identity the connection already reset to.
     """
     row = await (
         await connection.execute(
-            """
-            SELECT n.nspname AS schema, c.relname AS name, c.relkind AS kind
+            _REACHABLE_ROLES
+            + """
+            SELECT n.nspname AS schema, c.relname AS name, current_user AS login,
+                (
+                    SELECT rt.name FROM reachable rt
+                    WHERE CASE WHEN c.relkind = 'S'
+                        THEN pg_catalog.has_sequence_privilege(
+                            rt.oid, c.oid, 'USAGE,SELECT,UPDATE')
+                        ELSE pg_catalog.has_table_privilege(rt.oid, c.oid,
+                                'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+                            OR pg_catalog.has_any_column_privilege(rt.oid, c.oid,
+                                'SELECT,INSERT,UPDATE,REFERENCES')
+                    END
+                    ORDER BY rt.name
+                    LIMIT 1
+                ) AS via
             FROM pg_catalog.pg_class c
             JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
             WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'
                 AND n.nspname <> %s
                 AND c.relkind IN ('r','p','v','m','f','S')
-                AND (
-                    (c.relkind='S' AND pg_catalog.has_sequence_privilege(
-                        c.oid,'USAGE,SELECT,UPDATE'))
-                    OR (c.relkind<>'S' AND (
-                        pg_catalog.has_table_privilege(c.oid,
-                            'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
-                        OR pg_catalog.has_any_column_privilege(c.oid,
-                            'SELECT,INSERT,UPDATE,REFERENCES')))
+                AND EXISTS (
+                    SELECT 1 FROM reachable rt
+                    WHERE CASE WHEN c.relkind = 'S'
+                        THEN pg_catalog.has_sequence_privilege(
+                            rt.oid, c.oid, 'USAGE,SELECT,UPDATE')
+                        ELSE pg_catalog.has_table_privilege(rt.oid, c.oid,
+                                'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+                            OR pg_catalog.has_any_column_privilege(rt.oid, c.oid,
+                                'SELECT,INSERT,UPDATE,REFERENCES')
+                    END
                 )
             ORDER BY n.nspname, c.relname
             LIMIT 1
@@ -330,10 +332,11 @@ async def _refuse_foreign_relation_privileges(
         # The configured schema is deliberately absent from the message: it is a
         # deployment-chosen identifier whereas the foreign relation is product
         # vocabulary an operator can act on.
+        via = "" if row["via"] == row["login"] else f"; reachable through role {row['via']}"
         raise RuntimeStartupError(
-            f"{subject} role must not hold privileges on {row['schema']}.{row['name']}; "
-            "the workbench identity is scoped to its own schema, so revoke the "
-            "foreign grant instead of sharing a wider role"
+            f"{subject} role must not hold privileges on {row['schema']}.{row['name']}"
+            f"{via}; the workbench identity is scoped to its own schema, so revoke "
+            "the foreign grant instead of sharing a wider role"
         )
 
 
@@ -440,7 +443,6 @@ async def check_database(settings: WorkbenchSettings) -> None:
                 raise RuntimeStartupError
             # A surface that is exact inside its own schema can still be a shared
             # identity; the foreign check is what makes "do not reuse sn_api" a gate.
-            await _refuse_role_membership(connection, "runtime")
             await _refuse_foreign_relation_privileges(connection, settings.database_schema)
             marker = await (
                 await connection.execute(
@@ -465,9 +467,9 @@ async def check_cleanup_identity(settings: WorkbenchSettings) -> None:
     Recovery erases confirmed content, so it must never run as the schema owner or any
     privileged role: a cleanup DSN pointed at the owner would silently bypass the narrow
     grants a deletion worker is supposed to hold. It is also held to the two boundaries
-    the serving identity is held to — no privileges outside the workbench schema, no role
-    membership — because those are the two ways an otherwise narrow login still reaches
-    the speech product schema.
+    the serving identity is held to — no privileges outside the workbench schema, counting
+    every role it can SET ROLE into — because that reach is how an otherwise narrow login
+    still gets at the speech product schema.
     """
     if settings.cleanup_database_url is None:
         return
@@ -512,7 +514,6 @@ async def check_cleanup_identity(settings: WorkbenchSettings) -> None:
             # schema and it may not hold a membership it could SET ROLE into. A
             # cleanup DSN pointed at the API's wide identity would otherwise pass
             # every check above while erasing with the API's whole authority.
-            await _refuse_role_membership(connection, "cleanup")
             await _refuse_foreign_relation_privileges(
                 connection, settings.database_schema, "cleanup"
             )

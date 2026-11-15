@@ -913,19 +913,19 @@ async def test_workbench_startup_refuses_an_identity_with_foreign_privileges(
     ),
     ids=("inherit", "no-inherit"),
 )
-async def test_workbench_startup_refuses_any_role_membership(
+async def test_workbench_startup_refuses_a_role_reachable_into_another_schema(
     workbench_db: WorkbenchSandbox,
     grant: str,
     inherits_any_privilege: bool,
 ) -> None:
-    """Membership is authority the privilege checks above cannot see, so it is refused.
+    """`SET ROLE` is the authority a request reaches, so the scan follows it.
 
     The `no-inherit` arm is the case that used to pass: with `WITH INHERIT FALSE`
     the login inherits nothing, so every `has_*_privilege` predicate over the
     foreign relation answers false and the declared surface stays exact — yet
-    `SET ROLE {wider}` still turns the session into that role. A membership is
-    therefore refused on its own and by name, whatever the inherit flag says,
-    rather than inferred from the privileges it happens to confer today.
+    `SET ROLE {wider}` still turns the session into that role. The scan therefore
+    judges the login *and* the roles it can switch to, and names the role the
+    foreign grant is actually held by.
     """
     relation = _foreign_relation(workbench_db)
     wider = _create_role(workbench_db, "wbwider")
@@ -940,9 +940,11 @@ async def test_workbench_startup_refuses_any_role_membership(
         with pytest.raises(RuntimeStartupError) as caught:
             await check_database(workbench_db.settings())
         message = str(caught.value)
-        assert f"must not be a member of {wider}" in message
-        assert "SET ROLE" in message
-        assert relation not in message
+        assert f"must not hold privileges on {relation}" in message
+        assert "revoke the foreign grant" in message
+        # An inherited grant is already the login's own authority, so only the
+        # invisible arm has to say which role the reach comes through.
+        assert (f"reachable through role {wider}" in message) is not inherits_any_privilege
     finally:
         workbench_db.admin.execute(f'REVOKE "{wider}" FROM "{workbench_db.role}"')
         _drop_role(workbench_db, wider)
@@ -969,21 +971,51 @@ async def test_workbench_cleanup_identity_refuses_foreign_privileges(
     assert workbench_db.schema not in message
 
 
-async def test_workbench_cleanup_identity_refuses_role_membership(
+async def test_workbench_cleanup_identity_refuses_a_role_reachable_into_another_schema(
     workbench_db: WorkbenchSandbox,
 ) -> None:
-    """A membership on the erasing identity is the same bypass as on the serving one."""
+    """A reachable wide role on the erasing identity is the same bypass as on the serving one."""
+    relation = _foreign_relation(workbench_db)
     wider = _create_role(workbench_db, "wbwider")
     try:
+        workbench_db.admin.execute(f'GRANT SELECT ON {relation} TO "{wider}"')
         workbench_db.admin.execute(
             f'GRANT "{wider}" TO "{workbench_db.role}" WITH INHERIT FALSE, SET TRUE'
         )
         with pytest.raises(RuntimeStartupError) as caught:
             await check_cleanup_identity(workbench_db.settings())
-        assert f"cleanup role must not be a member of {wider}" in str(caught.value)
+        message = str(caught.value)
+        assert "cleanup role must not hold privileges on" in message
+        assert relation in message
+        assert f"reachable through role {wider}" in message
     finally:
         workbench_db.admin.execute(f'REVOKE "{wider}" FROM "{workbench_db.role}"')
         _drop_role(workbench_db, wider)
+
+
+async def test_workbench_startup_accepts_a_group_role_confined_to_the_workbench_schema(
+    workbench_db: WorkbenchSandbox,
+) -> None:
+    """Refusing every membership would forbid a normal group-role deployment.
+
+    A login that belongs to a group holding only workbench grants can `SET ROLE` to
+    it and reach nothing new, so the scan must pass: the boundary is the reachable
+    authority, not the existence of a membership. `tests/integration/test_workbench_re-
+    covery_postgres.py` and `tests/integration/test_workbench_runtime.py` cover the
+    same shape through a DSN `role=` switch on the cleanup and runtime identities.
+    """
+    group = _create_role(workbench_db, "wbgroup")
+    try:
+        workbench_db.admin.execute(
+            f'GRANT SELECT ON ALL TABLES IN SCHEMA "{workbench_db.schema}" TO "{group}"'
+        )
+        workbench_db.admin.execute(
+            f'GRANT "{group}" TO "{workbench_db.role}" WITH INHERIT FALSE, SET TRUE'
+        )
+        await check_database(workbench_db.settings())
+    finally:
+        workbench_db.admin.execute(f'REVOKE "{group}" FROM "{workbench_db.role}"')
+        _drop_role(workbench_db, group)
 
 
 async def test_workbench_minimum_role_starts_and_creates_one_project(

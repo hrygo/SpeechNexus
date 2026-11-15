@@ -93,6 +93,14 @@ qualify a real service, cross-host TLS, or a physical topology.
 - public asynchronous Job execution is not qualified here: the opt-in
   `job-dispatch` profile only runs the dispatcher, this bootstrap provides no real
   engine, and submission still needs the Job writer and admission roles below;
+- both Web images render a blank document in a real browser under their own
+  Content-Security-Policy: `deploy/web/nginx.conf` sends `script-src 'self'` with no
+  `'unsafe-eval'`, while the generated contract validators compile through `ajv`,
+  which builds its functions with `new Function`. Verified 2026-11-15 against
+  same-version `speechnexus/web-workbench` and `speechnexus/web-admin` images (empty
+  body, `EvalError` on the CSP directive), with the same bundle rendering fully when
+  served without that header. The CI browser gates drive `vite preview`, which sends
+  no CSP header, so they cannot observe this; tracked as #840.
 - real model quality, CUDA capacity, physical multi-node recovery, content-network
   isolation and final Gate approval require separate evidence.
 
@@ -170,6 +178,46 @@ while every CI lane was green). `pnpm verify:web-image` — also a step of the C
 job — materialises exactly the `COPY` set, installs and builds both applications
 inside it, and fails when anything outside the set is needed. Extend the set
 deliberately, and only with files the build reads.
+
+Build one application per invocation and record the source commit in the image, so a
+running deployment can be traced back to the tree that produced it:
+
+```bash
+sha="$(git rev-parse HEAD)"
+docker build -f deploy/images/web.Dockerfile \
+  --build-arg APP_NAME=workbench \
+  --label "org.speechnexus.source.commit=${sha}" \
+  --label "org.speechnexus.source.dirty=$(git status --porcelain | wc -l | tr -d ' ')" \
+  --label org.speechnexus.app=workbench \
+  -t "speechnexus/web-workbench:${sha}" .
+```
+
+Builds complete without a mirror change and without an extended window: on
+2026-11-15 `docker pull node:26.12.1-bookworm-slim` took 4.24 s, an uncached
+(`--no-cache`) build of the Workbench image took 53.44 s with exit code 0, and the
+per-tarball `registry.npmjs.org` warnings the install prints (1–45 KiB/s on
+individual packages) do not set the pace because `pnpm` fetches in parallel. A warm
+`pnpm` store only shortens repeat builds. The earlier "stuck on the node layer at
+about 50 KB/s" report (#572) does not reproduce on this host.
+
+The build is reproducible at the bundle level: a cached build and a `--no-cache`
+build produce the same 24-file `web-dist` tree
+(`80ada7a38a4e08dce8c3009cd196482e26d9854b8930c7e44ef9136f2b7d7f9d`), which is also
+the tree a host `pnpm --filter @speechnexus/workbench build` produces, so that
+digest identifies source bytes rather than build cache. The nginx base image adds
+one further file, `50x.html`, that is not part of the application bundle.
+
+To deploy an image built this way instead of letting Compose build once more, pin it
+in a deployment-side override file and pass it alongside the repository file:
+
+```yaml
+services:
+  workbench:
+    image: speechnexus/web-workbench:<commit>
+```
+
+The `web` profile still selects the service; adding `--no-deps` starts the frontend
+without pulling the base API topology in, which is how a frontend-only check runs.
 
 ## Configuration authority
 

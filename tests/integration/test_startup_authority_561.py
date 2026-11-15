@@ -68,7 +68,11 @@ from speechnexus_backend.workbench.infrastructure.runtime_schema import (
     bootstrap_sql,
     runtime_grants_sql,
 )
-from speechnexus_backend.workbench.runtime import RuntimeStartupError, check_database
+from speechnexus_backend.workbench.runtime import (
+    RuntimeStartupError,
+    check_cleanup_identity,
+    check_database,
+)
 from speechnexus_backend.workbench.runtime_settings import WorkbenchSettings
 
 pytestmark = pytest.mark.integration
@@ -137,13 +141,13 @@ def jobs_db() -> Iterator[JobSandbox]:
         admin.close()
 
 
-def _create_role(db: JobSandbox, prefix: str) -> str:
+def _create_role(db: JobSandbox | WorkbenchSandbox, prefix: str) -> str:
     role = SUBJECT_PREFIX + prefix + "_" + uuid.uuid4().hex[:8]
     db.admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{ROLE_PASSWORD}'")
     return role
 
 
-def _drop_role(db: JobSandbox, role: str) -> None:
+def _drop_role(db: JobSandbox | WorkbenchSandbox, role: str) -> None:
     db.admin.execute(f'DROP OWNED BY "{role}"')
     db.admin.execute(f'DROP ROLE IF EXISTS "{role}"')
 
@@ -779,9 +783,13 @@ class WorkbenchSandbox:
     role: str
     admin: Any
 
-    def settings(self) -> WorkbenchSettings:
+    def settings(self, *, cleanup_role: str | None = None) -> WorkbenchSettings:
+        cleanup = self.role if cleanup_role is None else cleanup_role
         return WorkbenchSettings(
             database_url=SecretStr(make_conninfo(self.url, user=self.role, password=ROLE_PASSWORD)),
+            cleanup_database_url=SecretStr(
+                make_conninfo(self.url, user=cleanup, password=ROLE_PASSWORD)
+            ),
             database_schema=self.schema,
             workspace_id="workspace-runtime",
             deployment_id="synthetic-561",
@@ -852,6 +860,162 @@ async def test_workbench_startup_rejects_each_single_misgrant(
     if detail:
         assert detail in message
     assert workbench_db.schema not in message
+
+
+def _foreign_relation(db: WorkbenchSandbox) -> str:
+    """Pick a real relation outside the workbench schema, in this same database.
+
+    The migration this fixture ran created the speech product tables in their own
+    namespace, which is exactly the surface a shared `sn_api` identity holds
+    privileges on. Naming it here keeps the case about the *identity* rather than
+    about one hard-coded table.
+    """
+    row = db.admin.execute(
+        "SELECT n.nspname, c.relname FROM pg_catalog.pg_class c "
+        "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE c.relkind = 'r' AND left(n.nspname, 3) <> 'pg_' "
+        "AND n.nspname <> 'information_schema' AND n.nspname <> %s "
+        "ORDER BY n.nspname, c.relname LIMIT 1",
+        (db.schema,),
+    ).fetchone()
+    assert row is not None, "the fixture left no relation outside the workbench schema"
+    schema, relation = row["nspname"], row["relname"]
+    return f"{schema}.{relation}"
+
+
+async def test_workbench_startup_refuses_an_identity_with_foreign_privileges(
+    workbench_db: WorkbenchSandbox,
+) -> None:
+    """The exact surface plus one outside grant is a shared identity, so it fails.
+
+    `check_database` inspects the configured workbench schema only, which cannot
+    see a role that also holds authority over the speech product tables. Pointing
+    `SPEECHNEXUS_WORKBENCH_DATABASE_URL` at the API's `sn_api` identity is that
+    shape: the workbench surface would pass while the identity stays broad. The
+    startup check must refuse the wider identity instead of serving with it.
+    """
+    relation = _foreign_relation(workbench_db)
+    workbench_db.admin.execute(f'GRANT SELECT ON {relation} TO "{workbench_db.role}"')
+    with pytest.raises(RuntimeStartupError) as caught:
+        await check_database(workbench_db.settings())
+    message = str(caught.value)
+    assert message.startswith("Workbench runtime database is unavailable or unsafe.")
+    assert relation in message
+    assert "revoke the foreign grant" in message
+    assert workbench_db.schema not in message
+
+
+@pytest.mark.parametrize(
+    ("grant", "inherits_any_privilege"),
+    (
+        ('GRANT "{wider}" TO "{role}"', True),
+        ('GRANT "{wider}" TO "{role}" WITH INHERIT FALSE, SET TRUE', False),
+    ),
+    ids=("inherit", "no-inherit"),
+)
+async def test_workbench_startup_refuses_a_role_reachable_into_another_schema(
+    workbench_db: WorkbenchSandbox,
+    grant: str,
+    inherits_any_privilege: bool,
+) -> None:
+    """`SET ROLE` is the authority a request reaches, so the scan follows it.
+
+    The `no-inherit` arm is the case that used to pass: with `WITH INHERIT FALSE`
+    the login inherits nothing, so every `has_*_privilege` predicate over the
+    foreign relation answers false and the declared surface stays exact — yet
+    `SET ROLE {wider}` still turns the session into that role. The scan therefore
+    judges the login *and* the roles it can switch to, and names the role the
+    foreign grant is actually held by.
+    """
+    relation = _foreign_relation(workbench_db)
+    wider = _create_role(workbench_db, "wbwider")
+    try:
+        workbench_db.admin.execute(f'GRANT SELECT ON {relation} TO "{wider}"')
+        workbench_db.admin.execute(grant.format(wider=wider, role=workbench_db.role))
+        inherited = workbench_db.admin.execute(
+            "SELECT pg_catalog.has_table_privilege(%s, %s, 'SELECT') AS inherited",
+            (workbench_db.role, relation),
+        ).fetchone()
+        assert inherited["inherited"] is inherits_any_privilege
+        with pytest.raises(RuntimeStartupError) as caught:
+            await check_database(workbench_db.settings())
+        message = str(caught.value)
+        assert f"must not hold privileges on {relation}" in message
+        assert "revoke the foreign grant" in message
+        # An inherited grant is already the login's own authority, so only the
+        # invisible arm has to say which role the reach comes through.
+        assert (f"reachable through role {wider}" in message) is not inherits_any_privilege
+    finally:
+        workbench_db.admin.execute(f'REVOKE "{wider}" FROM "{workbench_db.role}"')
+        _drop_role(workbench_db, wider)
+
+
+async def test_workbench_cleanup_identity_refuses_foreign_privileges(
+    workbench_db: WorkbenchSandbox,
+) -> None:
+    """The erasing identity is held to the same boundary as the serving one.
+
+    A cleanup DSN pointed at the API's wide identity passes every check that only
+    looks at the workbench schema, yet it would erase with the API's whole
+    authority. `check_cleanup_identity` must refuse it and name the relation
+    outside the workbench schema that it can still reach.
+    """
+    relation = _foreign_relation(workbench_db)
+    workbench_db.admin.execute(f'GRANT SELECT ON {relation} TO "{workbench_db.role}"')
+    with pytest.raises(RuntimeStartupError) as caught:
+        await check_cleanup_identity(workbench_db.settings())
+    message = str(caught.value)
+    assert "cleanup role must not hold privileges on" in message
+    assert relation in message
+    assert "revoke the foreign grant" in message
+    assert workbench_db.schema not in message
+
+
+async def test_workbench_cleanup_identity_refuses_a_role_reachable_into_another_schema(
+    workbench_db: WorkbenchSandbox,
+) -> None:
+    """A reachable wide role on the erasing identity is the same bypass as on the serving one."""
+    relation = _foreign_relation(workbench_db)
+    wider = _create_role(workbench_db, "wbwider")
+    try:
+        workbench_db.admin.execute(f'GRANT SELECT ON {relation} TO "{wider}"')
+        workbench_db.admin.execute(
+            f'GRANT "{wider}" TO "{workbench_db.role}" WITH INHERIT FALSE, SET TRUE'
+        )
+        with pytest.raises(RuntimeStartupError) as caught:
+            await check_cleanup_identity(workbench_db.settings())
+        message = str(caught.value)
+        assert "cleanup role must not hold privileges on" in message
+        assert relation in message
+        assert f"reachable through role {wider}" in message
+    finally:
+        workbench_db.admin.execute(f'REVOKE "{wider}" FROM "{workbench_db.role}"')
+        _drop_role(workbench_db, wider)
+
+
+async def test_workbench_startup_accepts_a_group_role_confined_to_the_workbench_schema(
+    workbench_db: WorkbenchSandbox,
+) -> None:
+    """Refusing every membership would forbid a normal group-role deployment.
+
+    A login that belongs to a group holding only workbench grants can `SET ROLE` to
+    it and reach nothing new, so the scan must pass: the boundary is the reachable
+    authority, not the existence of a membership. `tests/integration/test_workbench_re-
+    covery_postgres.py` and `tests/integration/test_workbench_runtime.py` cover the
+    same shape through a DSN `role=` switch on the cleanup and runtime identities.
+    """
+    group = _create_role(workbench_db, "wbgroup")
+    try:
+        workbench_db.admin.execute(
+            f'GRANT SELECT ON ALL TABLES IN SCHEMA "{workbench_db.schema}" TO "{group}"'
+        )
+        workbench_db.admin.execute(
+            f'GRANT "{group}" TO "{workbench_db.role}" WITH INHERIT FALSE, SET TRUE'
+        )
+        await check_database(workbench_db.settings())
+    finally:
+        workbench_db.admin.execute(f'REVOKE "{group}" FROM "{workbench_db.role}"')
+        _drop_role(workbench_db, group)
 
 
 async def test_workbench_minimum_role_starts_and_creates_one_project(

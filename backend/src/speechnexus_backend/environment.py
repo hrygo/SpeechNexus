@@ -224,12 +224,15 @@ PLANES: tuple[NonSettingPlane, ...] = (
 # test names inside that namespace; everything else must be a declared field.
 WORKBENCH_PLANES: tuple[NonSettingPlane, ...] = (
     NonSettingPlane(
-        suffixes=("_HOST_PORT",),
+        suffixes=("_HOST_PORT", "_ROLE_PASSWORD"),
         keys=(
             "SPEECHNEXUS_WORKBENCH_TEST_DSN",
             "SPEECHNEXUS_WORKBENCH_BROWSER_OUTPUT",
         ),
-        owner="Compose interpolation, the browser probes and the test harness",
+        # The two workbench role passwords are host-side inputs of the
+        # role-provisioning runbook; the port is Compose interpolation. Neither is
+        # ever passed into a container, so the service never sees them.
+        owner="Compose interpolation, the role-provisioning runbook and the browser probes",
     ),
 )
 

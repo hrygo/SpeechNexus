@@ -1,7 +1,7 @@
 {
   "protocol": "transcription_admission_v1",
   "model_id": "asr-compose-example",
-  "binding_publication_id": "binding-publication-compose-example",
+  "binding_publication_id": "binding-revision-compose-example",
   "binding_revision_id": "binding-revision-compose-example",
   "manifest_id": "capacity-manifest-compose-example",
   "policy_revision_id": "policy-revision-compose-example",
@@ -63,5 +63,5 @@
     "final_deadline_ms": 1000,
     "auxiliary_deadline_ms": 5000
   },
-  "recipe_digest": "sha256:8d520c7de6dcf516809f483141f8eaa183df86c00a5695d74d285f61f6bd9366"
+  "recipe_digest": "sha256:de85ebca291f1c7ed660a155092bfd74327d956201a0ba0b4bf61001d28d08f2"
 }

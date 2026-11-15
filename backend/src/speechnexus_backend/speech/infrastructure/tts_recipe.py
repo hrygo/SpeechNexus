@@ -77,5 +77,10 @@ def load_tts_recipe(path: Path) -> TtsRecipe:
             recipe.stage.reserved_slots,
             approved,
         )
-    except ValueError, TypeError, KeyError, UnicodeError, RecursionError, OSError:
-        raise ValueError("Invalid private speech admission recipe") from None
+    except (ValueError, TypeError, KeyError, UnicodeError, RecursionError, OSError) as error:
+        # Name the file and the failure class: an operator who forgot to copy the
+        # recipe and one whose digest is stale need different actions, and neither
+        # should have to guess which private input the process rejected.
+        raise ValueError(
+            f"Invalid private speech admission recipe {path} ({type(error).__name__})"
+        ) from None

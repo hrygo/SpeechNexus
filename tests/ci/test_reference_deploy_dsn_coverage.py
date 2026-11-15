@@ -170,6 +170,11 @@ PROVISIONED_ANCHORS: dict[str, tuple[str, ...]] = {
         'disable_settlement_grants("speech", "sn_disable_settle")',
         "SPEECHNEXUS_DISABLE_SETTLEMENT_DATABASE_URL",
     ),
+    "SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL": (
+        '"SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL": (',
+        'disable_settlement_grants(schema, "sn_speech_settlement")',
+        'tts_settlement_worker_grants(schema, "sn_speech_settlement")',
+    ),
     "SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL": (
         '"SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL": (',
         'model_catalog_reader_grants(schema, "sn_catalog_reader")',
@@ -256,6 +261,14 @@ ROLE_GRANT_BINDINGS: dict[str, tuple[tuple[str, ...], int]] = {
     "sn_audit_reader": (("audit_reader_grants",), 2),
     "sn_quarantine_release": (("quarantine_release_grants",), 2),
     "sn_artifact_retention": (("artifact_retention_grants",), 2),
+    # Synchronous TTS: the api identity keeps its voice/binding reads and its
+    # settlement-root write in one declaration, and the settlement runtime only
+    # accepts the exact column surface the two worker declarations hand out.
+    "sn_api": (("speech_synthesis_reader_grants",), 2),
+    "sn_speech_settlement": (
+        ("disable_settlement_grants", "tts_settlement_worker_grants"),
+        2,
+    ),
 }
 
 # Roles the runbook creates after the three base identities: the fresh-install
@@ -276,6 +289,7 @@ UPGRADE_PATH_ROLES = {
     "sn_binding_admin_reader",
     "sn_binding_lifecycle",
     "sn_artifact_retention",
+    "sn_speech_settlement",
     "sn_workbench_runtime",
     "sn_workbench_cleanup",
 }
@@ -290,7 +304,7 @@ INLINE_READERS: dict[str, str] = {
 
 # Settings that exist but are not part of this Compose surface; the runbook must
 # say so instead of leaving a reader to guess whether the key is dead.
-NON_COMPOSE_SETTINGS_KEYS = {"SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL"}
+NON_COMPOSE_SETTINGS_KEYS: set[str] = set()
 
 # The dead-key scan scope. Kept as data so the runbook's own statement of the
 # boundary can be compared with what the scanner actually reads.
@@ -318,6 +332,10 @@ ROW_HANDLER_MODULES: dict[str, tuple[str, ...]] = {
     "SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL": (),
     "SPEECHNEXUS_DISABLE_DATABASE_URL": (),
     "SPEECHNEXUS_DISABLE_SETTLEMENT_DATABASE_URL": (),
+    # The settlement runtime runs inside the API process; it answers no route of
+    # its own, so a blank or unreachable settlement identity shows up as the
+    # factory's missing-input warning (or a startup refusal), not as a wire code.
+    "SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL": (),
     "SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL": (
         "models.py",
         "model_errors.py",
@@ -372,6 +390,7 @@ WRITE_BACK_KEYS = {
     "SPEECHNEXUS_BINDING_ADMIN_READER_DATABASE_URL",
     "SPEECHNEXUS_BINDING_LIFECYCLE_DATABASE_URL",
     "SPEECHNEXUS_ARTIFACT_RETENTION_DATABASE_URL",
+    "SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL",
     "SPEECHNEXUS_WORKBENCH_DATABASE_URL",
     "SPEECHNEXUS_WORKBENCH_CLEANUP_DATABASE_URL",
 }

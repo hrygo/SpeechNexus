@@ -140,6 +140,20 @@ services:
       SPEECHNEXUS_TRANSCRIPTION_TIMEOUT_SECONDS: ${SPEECHNEXUS_TRANSCRIPTION_TIMEOUT_SECONDS:-120}
       SPEECHNEXUS_TRANSCRIPTION_MAX_COMMAND_BYTES: ${SPEECHNEXUS_TRANSCRIPTION_MAX_COMMAND_BYTES:-65536}
       SPEECHNEXUS_TRANSCRIPTION_STORAGE_TIMEOUT_SECONDS: ${SPEECHNEXUS_TRANSCRIPTION_STORAGE_TIMEOUT_SECONDS:-3}
+      # Synchronous TTS inputs. The recipe path is assembled unconditionally for
+      # the same reason as the transcription one: it is the file the operator must
+      # copy and replace in §3, and a missing file stops API startup instead of
+      # silently leaving TTS unassembled. The settlement DSN keeps an empty default
+      # so the base topology renders before that role exists; while it is blank the
+      # API logs which TTS keys are missing and keeps synchronous TTS off. The
+      # default language is the only synthesized speech input with a reference
+      # value, because the recipe does not carry one. The enable switch is the one
+      # supported way to run ASR-only: unset keeps TTS on (and therefore fails
+      # without the recipe), and only the literal `false` disables it.
+      SPEECHNEXUS_SPEECH_ENABLED: ${SPEECHNEXUS_SPEECH_ENABLED:-true}
+      SPEECHNEXUS_SPEECH_RECIPE_FILE: /run/speechnexus-private/speech-recipe.json
+      SPEECHNEXUS_SPEECH_DEFAULT_LANGUAGE: ${SPEECHNEXUS_SPEECH_DEFAULT_LANGUAGE:-en}
+      SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL: ${SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL:-}
       SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL: http://gateway:8010
       SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL: ${SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL:?set SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL in compose.env}
       SPEECHNEXUS_EXECUTION_GATEWAY_TIMEOUT_SECONDS: ${SPEECHNEXUS_EXECUTION_GATEWAY_TIMEOUT_SECONDS:-10}

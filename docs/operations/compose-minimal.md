@@ -15,7 +15,7 @@ date: 2026-10-28
 
 | 能力 | 当前结论 | 依赖 / 原因 |
 | --- | --- | --- |
-| 公开 TTS `POST /v1/audio/speech` | **本 Compose 未装配** | 同步 TTS 工厂已实现，但本配置只预置 gateway 私有 file-TTS 配置引用，未提供 API 配方及结算数据库配置；其他部署的受控实测见[窗口记录](../archive/audits/2026-11-03-controlled-tts-prepare.md) |
+| 公开 TTS `POST /v1/audio/speech` | **已装配，未在本机验证** | 配方样例、`SPEECHNEXUS_SPEECH_RECIPE_FILE`、`SPEECHNEXUS_SPEECH_DEFAULT_LANGUAGE` 与独立结算角色 `sn_speech_settlement` 都在本部署面内（§3、§6），API 侧运行时授权由 `speech_synthesis_reader_grants` 为 `sn_api` 预置。装配不等于可用：仍需真实引擎、已发布且合格的内置声音版本与一次 `200` 实测，本机（macOS，无 GPU）无法提供那次窗口。其他部署的受控实测见[窗口记录](../archive/audits/2026-11-03-controlled-tts-prepare.md) |
 | 异步 Job 完整执行链 | **未贯通** | 默认 `up` 不启动 `job-dispatch-worker`；`job-dispatch` profile 可按需启动该派发进程，但需要单独的 worker DSN（`SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL`，示例中默认为空，空值在领取租约前 fail-closed）与真实引擎。派发车道限定为参考部署装配的 `asr`、`tts`；`SPEECHNEXUS_JOB_DISPATCH_KINDS` 写其它 kind 时启动闸门点名拒绝，不会认领该车道的 Job（要启用别的车道需先装配 gateway 车道，见 [§6](#异步-job-运行角色与授权)）。API 的创建和读取路由需要另配 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL`；原子准入还需独立的 `SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL` 与同库 admission 角色，未配置时创建返回 503（读取与取消仍可用）。派发入口已装配生产 planner 与结果发布器，容器 entrypoint 是 `deploy/job-startup-gate.py`：迁移 head、派发角色写入列、Artifact 桶与 gateway staging 结果桶缺失或未版本化时在启动期点名退出，不会先领取 Job；三个 Job 角色由 [§6 的异步 Job 运行角色](#异步-job-运行角色与授权) 预置。本配置不提供真实引擎。当前范围见 [F-JOB](../prd.md#f-job) 和 [F-ASYNC](../prd.md#f-async) |
 | 公开同步 ASR 成功响应 | **本部署未验证** | 文件 worker 已有成功终态写入；历史部署曾返回 `504 operation_timeout`，见[本机端到端记录](../archive/operations/local-end-to-end.md#112-公开-v1audiotranscriptions已执行504未成功)。不能将那次结果或组件实现推定为当前部署的公开链路验收 |
 | 节点控制器、runtime delivery、asset maintenance | **未装配** | 本配置有意排除这些服务；不能以本 Compose 的探活结果证明完整部署与发布资格 |
@@ -193,7 +193,7 @@ PY
 ```bash
 D=deploy/.runtime/private
 for name in transcription-recipe.json gateway-file-asr.json gateway-file-asr-endpoint.json \
-  gateway-file-tts.json gateway-file-tts-endpoint.json; do
+  gateway-file-tts.json gateway-file-tts-endpoint.json speech-recipe.json; do
   if [ -e "$D/$name" ] || [ -L "$D/$name" ]; then
     printf '目标已存在：%s\n' "$D/$name" >&2
     exit 1
@@ -204,15 +204,24 @@ cp deploy/private/gateway-file-asr.example.json "$D/gateway-file-asr.json"
 cp deploy/private/gateway-file-asr-endpoint.example.json "$D/gateway-file-asr-endpoint.json"
 cp deploy/private/gateway-file-tts.example.json "$D/gateway-file-tts.json"
 cp deploy/private/gateway-file-tts-endpoint.example.json "$D/gateway-file-tts-endpoint.json"
+cp deploy/private/speech-recipe.example.json "$D/speech-recipe.json"
 chmod 600 "$D/transcription-recipe.json" "$D/gateway-file-asr.json" \
   "$D/gateway-file-asr-endpoint.json" "$D/gateway-file-tts.json" \
-  "$D/gateway-file-tts-endpoint.json"
+  "$D/gateway-file-tts-endpoint.json" "$D/speech-recipe.json"
 ```
 
 按[私有部署输入说明](../../deploy/private/README.md)替换全部合成字段。最少要逐项核对：
 
 1. recipe 的 `binding_publication_id`、`binding_revision_id`、`manifest_id`、
    `policy_revision_id`、`stage.instance_id` 与 `runtime_plan.binding` 一致；
+   `speech-recipe.json` 没有 `binding_publication_id`（TTS 的发布事实在准入事务中读取），
+   但同样要求 `binding_revision_id` 与 `manifest_id` 同时等于
+   `runtime_plan.binding` 内的值、`service_class` 与 `runtime_plan.service_class` 一致、
+   `quota_dimensions` 恰为 `["concurrent_attempts"]`、`stage.reserved_slots` 不小于
+   `minimum_slots`，且 `admission_expires_at_us` 尚未过期；样例里的
+   `model_id`/`approved_template_id`/`instance_id` 必须与部署的 TTS 模板与实例一致；
+   `pool_id` 相反**必须保持 `tts-batch`**，它是 `file_tts_v2` 的域常量
+   （`domain/tts.py:129` 改了即拒），不是占位；
 2. ASR endpoint 的 `target` 与 recipe 的 node/gateway/pool/instance/generation 一致；
 3. TTS endpoint 的 `target` 与 TTS policy revision、instance/generation 一致；
    使用 `file_tts_v2`，`builtin_voice_binding` 的公开 id/revision、内部 revision id 来自
@@ -258,15 +267,16 @@ from pathlib import Path
 
 import rfc8785
 
-path = Path("deploy/.runtime/private/transcription-recipe.json")
-document = json.loads(path.read_text())
-document.pop("recipe_digest", None)
-digest = "sha256:" + hashlib.sha256(rfc8785.dumps(document)).hexdigest()
-original = json.loads(path.read_text())
-original["recipe_digest"] = digest
-path.write_text(json.dumps(original, indent=2) + "\n")
-path.chmod(0o600)
-print("recipe_digest:", digest)
+for name in ("transcription-recipe.json", "speech-recipe.json"):
+    path = Path("deploy/.runtime/private") / name
+    document = json.loads(path.read_text())
+    document.pop("recipe_digest", None)
+    digest = "sha256:" + hashlib.sha256(rfc8785.dumps(document)).hexdigest()
+    original = json.loads(path.read_text())
+    original["recipe_digest"] = digest
+    path.write_text(json.dumps(original, indent=2) + "\n")
+    path.chmod(0o600)
+    print(f"{name} recipe_digest:", digest)
 PY
 ```
 
@@ -274,22 +284,31 @@ PY
 
 ```bash
 python3 -m json.tool "$D/transcription-recipe.json" >/dev/null
+python3 -m json.tool "$D/speech-recipe.json" >/dev/null
 python3 -m json.tool "$D/gateway-file-asr.json" >/dev/null
 python3 -m json.tool "$D/gateway-file-tts.json" >/dev/null
-python3 - "$D/transcription-recipe.json" <<'PY'
+python3 - "$D/transcription-recipe.json" "$D/speech-recipe.json" <<'PY'
 import os
 import stat
 import sys
 
-path = sys.argv[1]
-mode = stat.S_IMODE(os.stat(path).st_mode)
-if mode != 0o600:
-    raise SystemExit(f"{path} must be mode 0600, got {mode:04o}")
-print(f"private mode ok: {path} 0600")
+for path in sys.argv[1:]:
+    mode = stat.S_IMODE(os.stat(path).st_mode)
+    if mode != 0o600:
+        raise SystemExit(f"{path} must be mode 0600, got {mode:04o}")
+    print(f"private mode ok: {path} 0600")
 PY
 ```
 
-上述检查只解析三个 JSON，并检查 recipe 的权限位；它不检查两份 endpoint JSON、
+只要同步 ASR（不要同步 TTS）的部署在 `deploy/compose.env` 里设
+`SPEECHNEXUS_SPEECH_ENABLED=false`，不要改 `deploy/compose.yaml`。该键是
+`Literal["true","false"]`、默认 `true`：未设置或留空仍是开启（compose 始终透传固定的配方路径，
+因此缺文件照样启动失败，fail-closed），只有字面 `false` 关闭并在 API 日志留下
+`Synchronous speech disabled by SPEECHNEXUS_SPEECH_ENABLED=false`，拼错则配置校验失败并点名该键
+（`SPEECHNEXUS_SPEECH_ENABLED must be 'true' or 'false'; got 'ture'`）。改仓库文件的副本会在每次
+升级时产生无法校验的漂移，因此不作为受支持做法。
+
+只解析四个 JSON，并检查两份 recipe 的权限位；它不检查两份 endpoint JSON、
 文件所有者、符号链接、摘要或配置间的身份一致性。`os.stat` 会跟随链接；API 读取
 recipe 时另要求当前运行 UID 拥有的普通文件，且拒绝最终路径为符号链接。须结合上面的
 逐项核对与实际运行身份验证，不能把这段检查通过当作配置已获批准或启动必然成功。
@@ -349,7 +368,7 @@ head 为准，查询结果须与之相符。不要把旧版 `0027_gateway_abort_
 以下脚本必须使用 **迁移 owner DSN** 运行，创建 API、gateway writer、gateway query、工作区
 writer、审计 reader、实例读取 reader、隔离释放、公开目录 reader、Artifact reader、资源池
 reader、binding 列表 reader、binding 写、binding admin reader、binding 生命周期、Artifact
-保留期清理与独立工作台后端的运行/清理两个身份共十七个独立非 owner 角色。工作台两个角色的
+保留期清理、同步 TTS 结算与独立工作台后端的运行/清理两个身份共十八个独立非 owner 角色。工作台两个角色的
 授权目标是工作台自己的命名空间，本脚本只创建角色，授权由 §6 的迁移步安装。每个透传键当前是否有预置步骤见文末
 [透传 DSN 覆盖表](#透传-dsn-覆盖表)，未预置的键及其原因见
 [故意不预置的身份](#故意不预置的身份)。预设发布的写角色 `sn_profile_writer` 不在此脚本内：
@@ -366,8 +385,8 @@ reader、binding 列表 reader、binding 写、binding admin reader、binding �
 恢复步骤处理；直接重跑会因已有角色而停止，不能假设数据库仍处于执行前状态。
 
 工作区 writer、审计 reader、实例读取 reader、隔离释放、公开目录 reader、Artifact reader、
-资源池 reader、binding 列表 reader、binding 写、binding admin reader、binding 生命周期与
-工作台运行/清理角色的口令不在 `deploy/compose.env.example` 中给出可用值（那里只有 `change-me-*` 占位），
+资源池 reader、binding 列表 reader、binding 写、binding admin reader、binding 生命周期、
+同步 TTS 结算与工作台运行/清理角色的口令不在 `deploy/compose.env.example` 中给出可用值（那里只有 `change-me-*` 占位），
 先在本轮重新生成，口令不打印到终端，只在下面的脚本和写回环境文件时使用：
 
 ```bash
@@ -383,6 +402,7 @@ export SPEECHNEXUS_BINDING_LIST_READER_ROLE_PASSWORD="$(python3 -c 'import secre
 export SPEECHNEXUS_BINDING_WRITER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 export SPEECHNEXUS_BINDING_ADMIN_READER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 export SPEECHNEXUS_BINDING_LIFECYCLE_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export SPEECHNEXUS_SPEECH_SETTLEMENT_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 export SPEECHNEXUS_WORKBENCH_RUNTIME_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 export SPEECHNEXUS_WORKBENCH_CLEANUP_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 ```
@@ -429,6 +449,15 @@ from speechnexus_backend.speech.infrastructure.publication_schema import (
 from speechnexus_backend.speech.infrastructure.quarantine_release_schema import (
     quarantine_release_grants,
 )
+from speechnexus_backend.speech.infrastructure.binding_disable_targets_schema import (
+    disable_settlement_grants,
+)
+from speechnexus_backend.speech.infrastructure.qualified_speech_facts_postgres import (
+    speech_synthesis_reader_grants,
+)
+from speechnexus_backend.speech.infrastructure.tts_settlement_schema import (
+    tts_settlement_worker_grants,
+)
 from speechnexus_backend.speech.infrastructure.workspace_schema import workspace_writer_grants
 
 schema = "speech"
@@ -447,6 +476,10 @@ roles = {
     "sn_binding_writer": os.environ["SPEECHNEXUS_BINDING_WRITER_ROLE_PASSWORD"],
     "sn_binding_admin_reader": os.environ["SPEECHNEXUS_BINDING_ADMIN_READER_ROLE_PASSWORD"],
     "sn_binding_lifecycle": os.environ["SPEECHNEXUS_BINDING_LIFECYCLE_ROLE_PASSWORD"],
+    # Synchronous TTS settlement runs in its own pool, so it must not reuse
+    # `sn_api`: that would put the API's schema-wide authority on a second
+    # connection and the worker would refuse to start on the wider surface.
+    "sn_speech_settlement": os.environ["SPEECHNEXUS_SPEECH_SETTLEMENT_ROLE_PASSWORD"],
     # The workbench unit's two roles: the serving identity and the erasing one.
     # Their grants target the workbench namespace, which the §6 migration step
     # bootstraps and grants; this script only creates the logins.
@@ -510,6 +543,22 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     ):
         conn.execute(statement)
     for statement in asset_runtime_grants(schema, "sn_api"):
+        conn.execute(statement)
+    # Synchronous TTS reads published voice/binding facts and writes its own
+    # settlement root in the admission transaction, so one declaration covers both
+    # halves. Without it the factory reports no qualified voice and keeps TTS off
+    # even when every TTS key and the recipe file are present.
+    for statement in speech_synthesis_reader_grants(schema, "sn_api"):
+        conn.execute(statement)
+    # The settlement runtime opens a second pool under its own identity. The
+    # lease-settlement reads/writes come from disable_settlement_grants and the
+    # TTS root/cancellation surface from tts_settlement_worker_grants; the worker
+    # verifies that exact column set at startup, so both declarations belong to
+    # one role and nothing else may be granted to it.
+    for statement in (
+        *disable_settlement_grants(schema, "sn_speech_settlement"),
+        *tts_settlement_worker_grants(schema, "sn_speech_settlement"),
+    ):
         conn.execute(statement)
     # The retention sweep runs as its own identity: SELECT plus
     # UPDATE(artifact_state, deleted_at_us) and nothing else. It refuses to start on a role that
@@ -621,8 +670,8 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
         "sn_audit_reader sn_model_instance_reader sn_quarantine_release "
         "sn_catalog_reader sn_artifact_reader sn_resource_pool_reader "
         "sn_binding_list_reader sn_binding_writer sn_binding_admin_reader "
-        "sn_binding_lifecycle sn_artifact_retention sn_workbench_runtime "
-        "sn_workbench_cleanup"
+        "sn_binding_lifecycle sn_artifact_retention sn_speech_settlement "
+        "sn_workbench_runtime sn_workbench_cleanup"
     )
 PY
 ```
@@ -631,9 +680,9 @@ PY
 CREATE 权限，停止启动服务；不要用超级用户连接绕过检查。API 启动时还会再次核验
 `sn_api` 不是数据库/表 owner，也不是可继承的 owner 成员。
 
-脚本成功后，把十四个非基线身份的连接地址写回 `deploy/compose.env`（其中
+脚本成功后，把十五个非基线身份的连接地址写回 `deploy/compose.env`（其中
 `sn_workspace_writer`、`sn_audit_reader`、`sn_model_instance_reader` 与
-`sn_quarantine_release` 四个此前已有写回，本节新增十个）；脚本替换同名空行或追加，不打印
+`sn_quarantine_release` 四个此前已有写回，本节新增十一个）；脚本替换同名空行或追加，不打印
 口令。写回脚本与上面的口令导出一一对应，必须**在同一个 shell 里执行**：写回脚本用
 `os.environ[...]` 读取导出值，换一个 shell 会因缺少 `SPEECHNEXUS_*_ROLE_PASSWORD` 抛
 `KeyError`。
@@ -700,6 +749,11 @@ values = {
         f"{os.environ['SPEECHNEXUS_BINDING_LIFECYCLE_ROLE_PASSWORD']}"
         "@postgres:5432/speechnexus"
     ),
+    "SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL": (
+        "postgresql://sn_speech_settlement:"
+        f"{os.environ['SPEECHNEXUS_SPEECH_SETTLEMENT_ROLE_PASSWORD']}"
+        "@postgres:5432/speechnexus"
+    ),
     "SPEECHNEXUS_ARTIFACT_RETENTION_DATABASE_URL": (
         "postgresql://sn_artifact_retention:"
         f"{os.environ['SPEECHNEXUS_ARTIFACT_RETENTION_ROLE_PASSWORD']}"
@@ -727,8 +781,8 @@ path.chmod(0o600)
 print(
     "workspace writer, audit reader, instance reader, quarantine release, catalogue "
     "reader, Artifact reader, resource pool reader, binding list reader, binding "
-    "writer, binding admin reader, binding lifecycle, Artifact retention and "
-    "workbench runtime/cleanup DSNs written to deploy/compose.env"
+    "writer, binding admin reader, binding lifecycle, speech settlement, Artifact "
+    "retention and workbench runtime/cleanup DSNs written to deploy/compose.env"
 )
 PY
 ```
@@ -1326,8 +1380,8 @@ curl -sS -w '\nhttp=%{http_code}\n' -X POST \
 后，用同一个迁移 owner 连接对既有角色重放对应的授权函数即可，`GRANT` 是追加式操作，
 重复执行不改变既有权限。`0049_workspace_commands` 之后新增的工作区写、审计读取、实例读取、
 隔离释放，以及本节新增的公开目录、Artifact、资源池、binding 列表、binding 写、
-binding admin 读取、binding 生命周期与工作台运行/清理两个身份共十三个角色在既有部署上
-同样需要预置：下面的脚本先按需创建这十三个角色，再重放全部相关授权。工作台授权针对工作台
+binding admin 读取、binding 生命周期、同步 TTS 结算、Artifact 保留清理与工作台运行/清理两个身份共十五个角色在既有部署上
+同样需要预置：下面的脚本先按需创建这十五个角色，再重放全部相关授权。工作台授权针对工作台
 命名空间，由 §6 的 `speechnexus-workbench-migrate` 幂等重放，不在本脚本内。角色尚不存在时先按上文生成口令；已存在时
 改用其现有口令，脚本不会修改已存在角色的口令，用新生成的口令写连接地址会连不上。实例
 读取、资源池读取与 binding 列表读取三个面按上文的显式 `GRANT` 重放，因为它们没有对应的
@@ -1363,6 +1417,15 @@ from speechnexus_backend.speech.infrastructure.publication_schema import (
 from speechnexus_backend.speech.infrastructure.quarantine_release_schema import (
     quarantine_release_grants,
 )
+from speechnexus_backend.speech.infrastructure.binding_disable_targets_schema import (
+    disable_settlement_grants,
+)
+from speechnexus_backend.speech.infrastructure.qualified_speech_facts_postgres import (
+    speech_synthesis_reader_grants,
+)
+from speechnexus_backend.speech.infrastructure.tts_settlement_schema import (
+    tts_settlement_worker_grants,
+)
 from speechnexus_backend.speech.infrastructure.workspace_schema import workspace_writer_grants
 
 schema = "speech"
@@ -1379,6 +1442,7 @@ new_roles = {
     "sn_binding_admin_reader": os.environ["SPEECHNEXUS_BINDING_ADMIN_READER_ROLE_PASSWORD"],
     "sn_binding_lifecycle": os.environ["SPEECHNEXUS_BINDING_LIFECYCLE_ROLE_PASSWORD"],
     "sn_artifact_retention": os.environ["SPEECHNEXUS_ARTIFACT_RETENTION_ROLE_PASSWORD"],
+    "sn_speech_settlement": os.environ["SPEECHNEXUS_SPEECH_SETTLEMENT_ROLE_PASSWORD"],
     # The workbench unit's roles are created here too; their grants live in the
     # workbench namespace and are replayed idempotently by
     # `speechnexus-workbench-migrate` (§6 独立 Workbench API 部署单元).
@@ -1414,6 +1478,16 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     # UPDATE(artifact_state, deleted_at_us) only, and it refuses to start on
     # anything wider.
     for statement in artifact_retention_grants(schema, "sn_artifact_retention"):
+        conn.execute(statement)
+    # Synchronous TTS: the api identity needs the same voice/binding reads plus the
+    # settlement root write, and the settlement runtime its own exact surface. Both
+    # are replayed here so an upgraded deployment reaches the same ACL as a fresh one.
+    for statement in speech_synthesis_reader_grants(schema, "sn_api"):
+        conn.execute(statement)
+    for statement in (
+        *disable_settlement_grants(schema, "sn_speech_settlement"),
+        *tts_settlement_worker_grants(schema, "sn_speech_settlement"),
+    ):
         conn.execute(statement)
     for statement in artifact_reader_grants(schema, "sn_artifact_reader"):
         conn.execute(statement)
@@ -1615,6 +1689,7 @@ DSN）。健康检查打 `/v1/workbench/status`，它只在真实 lifespan 预�
 | `SPEECHNEXUS_JOB_DISPATCH_DATABASE_URL` | `sn_job_dispatch` | `job-dispatch` profile 派发 | 空值 → 启动闸门点名拒绝启动，不领取 Job | 预置 | 覆盖+Job |
 | `SPEECHNEXUS_DISABLE_DATABASE_URL` | `sn_disable_scan` | `binding-disable` profile 扫描 | 空值 → worker 启动即退出并点名显式连接 | 预置 | 覆盖 |
 | `SPEECHNEXUS_DISABLE_SETTLEMENT_DATABASE_URL` | `sn_disable_settle` | 停用租约结算 | 空值 → worker 启动即退出并点名显式连接（与扫描角色同一条拒绝） | 预置 | 覆盖 |
+| `SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` | `sn_speech_settlement` | 同步 TTS 的结算运行时（独立连接池）：租约结算的列级读写与 `speech_tts_settlement`/`speech_tts_cancellation` 的结算面 | 空值 → 同步 TTS 保持关闭：启动告警点名该键；配了 DSN 但角色授权与声明不符时启动拒绝服务 | 预置 | 覆盖+角色 |
 | `SPEECHNEXUS_MODEL_CATALOG_READER_DATABASE_URL` | `sn_catalog_reader` | `GET /v1/models`、`GET /v1/models/{model}`、`GET /v1/nexus/voices` | `503 model_catalogue_unavailable`、`503 voice_catalogue_unavailable` | 预置 | 覆盖+角色 |
 | `SPEECHNEXUS_ARTIFACT_READER_DATABASE_URL` | `sn_artifact_reader` | Artifact 元数据与内容 | `503 artifact_service_unavailable` | 预置 | 覆盖+角色 |
 | `SPEECHNEXUS_ARTIFACT_RETENTION_DATABASE_URL` | `sn_artifact_retention` | `artifact-retention` profile 的保留期清理 | 空值 → 容器启动即失败（无身份）；共用 `sn_api` 等宽权限身份时启动点名拒绝 | 预置 | 覆盖+角色 |
@@ -1631,11 +1706,15 @@ DSN）。健康检查打 `/v1/workbench/status`，它只在真实 lifespan 预�
 | `SPEECHNEXUS_PRONUNCIATION_PUBLISHER_DATABASE_URL` | `sn_pronunciation_publisher`（不创建） | 发音词典原子发布 | `publish: true` → `422 pronunciation_publication_not_supported`；读取与草稿按上面两条 | 故意不预置 | 覆盖 |
 | `SPEECHNEXUS_VOICE_PUBLISHER_DATABASE_URL` | `sn_voice_publisher`（不创建） | voice 发布 | 未配 Job writer 时启动即拒绝并点名两个键（本键已配置、`SPEECHNEXUS_JOB_WRITER_DATABASE_URL` 为空）；两键都为空时发布 `503 voice_draft_unavailable`；writer 已配时跨库启动拒绝并点名同库要求 | 故意不预置 | 覆盖 |
 
-表中没有死键：28 个透传键都有运行时消费者。设置里另有两个不在本表范围的键：
-`SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` 只被未装配的 TTS 结算 worker 读取
-（见[仍不可用的能力](#仍不可用的能力)），本 Compose 不透传；
+表中没有死键：29 个透传键都有运行时消费者。设置里另有一个不在本表范围的键：
 `SPEECHNEXUS_PUBLICATION_WRITER_DATABASE_URL` 属于 host 侧 `speechnexus-publish-binding`
-CLI 的配置，同样不经过本 Compose。两者都不是死键，只是不属于本部署面。
+CLI 的配置，不经过本 Compose；它不是死键，只是不属于本部署面。
+
+`SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` 是同步 TTS 的必要输入：缺失时
+`backend/src/speechnexus_backend/speech_runtime.py:50` 的必填清单不完整，工厂按
+「启动告警点名全部缺失键」返回空装配（同步 TTS 关闭），API 其余路由照常。因此本条在
+基座拓扑里以空值转发（`:?` 守卫会让从未启用同步 TTS 的部署连 `docker compose config`
+都过不去），预置 `sn_speech_settlement` 并写回值后重启 API 才装配同步 TTS。
 
 ### 故意不预置的身份
 
@@ -1802,7 +1881,8 @@ instance 来“绕过”冲突；先核对旧 head、owner 和 readiness 证据�
 | 同一端点返回 `503 quarantine_release_privilege_missing` | 运行期授权被回收或与声明面不符；重放 `quarantine_release_grants`，不要改为授予 owner 或整表写权 |
 | 同一端点返回 `503 quarantine_release_schema_not_migrated` | 该库未迁移到当前 head（或 `SPEECHNEXUS_DATABASE_SCHEMA` 指错）；先迁移再重试 |
 | 同一端点返回 `503 quarantine_release_failed` | 存储以未声明的错误拒绝了事务，已确认回滚且未释放容量；按 API 日志的 `sqlstate` 定位，不要当业务冲突处理 |
-| 公开 `/v1/audio/speech` 不可用 | 本 Compose 没有提供 API 侧同步 TTS 所需配方及结算数据库配置；另见[同步 TTS 装配要求](../components/synchronous-speech.md) |
+| 公开 `/v1/audio/speech` 返回 `503 backend_unavailable`（`retryable: false`）且 API 日志有 `Synchronous speech unavailable` | 先修装配，不要重试：`speech-recipe.json` 缺失/摘要不符时 API 启动即失败；`SPEECHNEXUS_SPEECH_SETTLEMENT_DATABASE_URL` 为空或资格缺失时工厂保持关闭（API 日志点名缺失键与「no current qualified voice」）。用 `uv run --all-packages python scripts/dev-env/check-tts-assembly.py --private-dir deploy/.runtime/private` 逐字段核对：三份私有文件各自过生产 loader，输出按「仍是样例值 / 不一致 / 本地检查通过 / 无法从文件判定」四类列出，另单列只由 loader 校验的叶子；只有前两类为空才 exit 0，而 `exit 0` 只说明文件已替换且相互一致，**不代表可受理**（结算 DSN、实例注册、声音资格、真实引擎仍未验证）。装配后仍需真实引擎与合格声音版本；另见[同步 TTS 装配要求](../components/synchronous-speech.md) |
+| 音频上传（`asr_input`、`voice_reference`）返回 `503 asset_inspection_unavailable` | `SPEECHNEXUS_ASSET_INSPECTOR` 默认 `text`，只校验 `text_input`；要接收音频须同时配置 `audio`、检查器 URL 与令牌。这是刻意 fail-closed 的默认值，不是同步 TTS 或文本 ASR 的故障 |
 
 ## 10. 停止与清理边界
 

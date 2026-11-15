@@ -1229,6 +1229,15 @@ def stack_private_inputs(ctx: Context, config: Mapping[str, object]) -> list[str
         recipe_path = container_private_path(ctx, recipe)
         if not recipe_path.is_file():
             problems.append(f"缺少转写 recipe: {recipe_path}")
+    # The speech recipe is assembled unconditionally for the same reason as the
+    # transcription one: a declared path with no file stops API startup, so the
+    # acceptance run must satisfy it before `up` rather than discover it in a
+    # traceback.
+    speech_recipe = service_environment(config, "api").get("SPEECHNEXUS_SPEECH_RECIPE_FILE")
+    if speech_recipe:
+        speech_path = container_private_path(ctx, speech_recipe)
+        if not speech_path.is_file():
+            problems.append(f"缺少同步 TTS recipe: {speech_path}")
     return problems
 
 

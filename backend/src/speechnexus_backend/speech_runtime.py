@@ -46,6 +46,12 @@ _LOGGER = logging.getLogger(__name__)
 
 def build_speech(settings: Settings) -> SpeechSynthesis | None:
     """Compose only explicit deployment inputs and an independently qualified voice."""
+    if settings.speech_enabled == "false":
+        # Deliberate disable: an ASR-only deployment keeps every other runtime.
+        # Unset stays "on" and a misspelt value never reaches here (the Literal
+        # in Settings refuses it at startup), so this cannot mask a typo.
+        _LOGGER.info("Synchronous speech disabled by SPEECHNEXUS_SPEECH_ENABLED=false")
+        return None
     required = (
         ("SPEECHNEXUS_SPEECH_RECIPE_FILE", settings.speech_recipe_file),
         ("SPEECHNEXUS_SPEECH_DEFAULT_LANGUAGE", settings.speech_default_language),

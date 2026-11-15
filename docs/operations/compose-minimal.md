@@ -156,6 +156,10 @@ print("compose.env written with generated local credentials (values not printed)
 PY
 ```
 
+生成的口令在第一次引导时写入 `deploy/compose.env`，此后复用；重新生成就是轮换，必须同时改
+角色口令与使用它的 DSN，只改文件里的口令会让 DSN 与角色口令不一致、连接直接失败。§6 预置的
+十五个非基线角色口令按同一规则在 §6 首次引导时生成并写回同一文件。
+
 上面的 Python 片段必须通过环境变量 `SN_ROOT` 取得仓库绝对路径；若直接手工执行，
 先运行 `export SN_ROOT="$ROOT"`。编辑 `deploy/compose.env`，按实际部署核对以下配置：
 
@@ -386,35 +390,101 @@ reader、binding 列表 reader、binding 写、binding admin reader、binding �
 
 工作区 writer、审计 reader、实例读取 reader、隔离释放、公开目录 reader、Artifact reader、
 资源池 reader、binding 列表 reader、binding 写、binding admin reader、binding 生命周期、
-同步 TTS 结算与工作台运行/清理角色的口令不在 `deploy/compose.env.example` 中给出可用值（那里只有 `change-me-*` 占位），
-先在本轮重新生成，口令不打印到终端，只在下面的脚本和写回环境文件时使用：
+Artifact 保留期清理、同步 TTS 结算与工作台运行/清理共十五个角色的口令在
+`deploy/compose.env.example` 里只有 `change-me-*` 占位。口令在第一次引导时生成并写入
+`deploy/compose.env`，此后复用；重新生成就是轮换，必须同时 `ALTER ROLE ... PASSWORD`
+并改写对应 DSN，只改文件里的口令会让连接失败。口令不打印到终端，只在建角色脚本和下面的
+DSN 写回里从环境读取。
 
-```bash
-umask 077
-export SPEECHNEXUS_WORKSPACE_WRITER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-export SPEECHNEXUS_AUDIT_READER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-export SPEECHNEXUS_MODEL_INSTANCE_READER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-export SPEECHNEXUS_QUARANTINE_RELEASE_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-export SPEECHNEXUS_CATALOG_READER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-export SPEECHNEXUS_ARTIFACT_READER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-export SPEECHNEXUS_RESOURCE_POOL_READER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-export SPEECHNEXUS_BINDING_LIST_READER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-export SPEECHNEXUS_BINDING_WRITER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-export SPEECHNEXUS_BINDING_ADMIN_READER_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-export SPEECHNEXUS_BINDING_LIFECYCLE_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-export SPEECHNEXUS_SPEECH_SETTLEMENT_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-export SPEECHNEXUS_WORKBENCH_RUNTIME_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-export SPEECHNEXUS_WORKBENCH_CLEANUP_ROLE_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-```
+**顺序不能反**：`. deploy/compose.env` 会用文件里的值覆盖同名变量，所以先载入环境文件，
+再生成并写回口令。先导出再载入会把这些变量换回文件里的 `change-me-*` 占位，于是本轮
+「重新生成」的口令一个都没生效，建角色与拼 DSN 用的都是仓库里的公开占位值——整个流程
+自洽、不报错，这正是它危险的地方。
 
-先在当前 shell 载入环境文件：
+先在当前 shell 载入环境文件，并准备迁移 owner 连接：
 
 ```bash
 set -a
 . deploy/compose.env
 set +a
 export SN_ADMIN_DSN="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:${SPEECHNEXUS_POSTGRES_HOST_PORT:-55432}/${POSTGRES_DB}"
+```
 
+生成这十五个口令并写回 `deploy/compose.env`：只替换空值和 `change-me-*` 占位，已经是随机
+值的键原样保留，因此重跑本步不会把已建角色的口令换成新值（换口令要按轮换步骤同时改 DSN）。
+值来自 `secrets.token_urlsafe(32)`，字母表是 `A-Za-z0-9_-`，不含引号、空白、`#`、`$` 和
+换行，所以按 `KEY=value` 原样落盘即可，既不需要引号也不需要转义，放进
+`postgresql://role:pass@` 的 userinfo 也不需要百分号编码；脚本仍会核对生成值的字符集，
+不符合就停止，不会写出半截配置。文件以 `0600` 落盘，脚本结束前核对不再有占位值。这十五个
+键是 host 侧输入：`deploy/compose.yaml` 不引用它们、也没有 `env_file`，只有 DSN 会按需透传
+给容器，口令本身不进任何容器环境。
+
+```bash
+umask 077
+python3 - <<'PY'
+import re
+import secrets
+from pathlib import Path
+
+KEYS = (
+    "SPEECHNEXUS_WORKSPACE_WRITER_ROLE_PASSWORD",
+    "SPEECHNEXUS_AUDIT_READER_ROLE_PASSWORD",
+    "SPEECHNEXUS_MODEL_INSTANCE_READER_ROLE_PASSWORD",
+    "SPEECHNEXUS_QUARANTINE_RELEASE_ROLE_PASSWORD",
+    "SPEECHNEXUS_CATALOG_READER_ROLE_PASSWORD",
+    "SPEECHNEXUS_ARTIFACT_READER_ROLE_PASSWORD",
+    "SPEECHNEXUS_RESOURCE_POOL_READER_ROLE_PASSWORD",
+    "SPEECHNEXUS_BINDING_LIST_READER_ROLE_PASSWORD",
+    "SPEECHNEXUS_BINDING_WRITER_ROLE_PASSWORD",
+    "SPEECHNEXUS_BINDING_ADMIN_READER_ROLE_PASSWORD",
+    "SPEECHNEXUS_BINDING_LIFECYCLE_ROLE_PASSWORD",
+    "SPEECHNEXUS_SPEECH_SETTLEMENT_ROLE_PASSWORD",
+    "SPEECHNEXUS_ARTIFACT_RETENTION_ROLE_PASSWORD",
+    "SPEECHNEXUS_WORKBENCH_RUNTIME_ROLE_PASSWORD",
+    "SPEECHNEXUS_WORKBENCH_CLEANUP_ROLE_PASSWORD",
+)
+PLACEHOLDER = "change-me"
+# token_urlsafe(32) 固定产出 43 个 URL-safe 字符；改生成方式时这里会先失败。
+SAFE = re.compile(r"^[A-Za-z0-9_-]{43}$")
+
+path = Path("deploy/compose.env")
+text = path.read_text()
+for key in KEYS:
+    found = re.search(rf"(?m)^{re.escape(key)}=(.*)$", text)
+    value = found.group(1).strip() if found is not None else ""
+    state = "reused"
+    if not value or value.startswith(PLACEHOLDER):
+        value = secrets.token_urlsafe(32)
+        if SAFE.match(value) is None:
+            raise SystemExit(f"generated value for {key} is not dotenv/URL safe")
+        state = "generated"
+    line = f"{key}={value}"
+    text = (
+        re.sub(rf"(?m)^{re.escape(key)}=.*$", line, text, count=1)
+        if found is not None
+        else text + line + "\n"
+    )
+    print(f"{key}: {state}, length {len(value)}")
+path.write_text(text)
+path.chmod(0o600)
+left = [key for key in KEYS if re.search(rf"(?m)^{re.escape(key)}=(?:change-me.*)?$", text)]
+if left:
+    raise SystemExit(f"placeholder role passwords remain in deploy/compose.env: {sorted(left)}")
+print(f"{len(KEYS)} role passwords in deploy/compose.env, placeholders remaining: 0")
+PY
+set -a
+. deploy/compose.env
+set +a
+```
+
+写回后重新载入一次环境文件：此后 shell 里的 `SPEECHNEXUS_*_ROLE_PASSWORD` 就是文件里的那份
+值，建角色与 DSN 写回都用它。口令已持久化，换 shell 只要先 `. deploy/compose.env` 就拿到同一
+组值。已存在的角色不要靠重跑本步换口令：本步只填空值和占位值，轮换要 `ALTER ROLE` 并同步改
+DSN。
+
+建角色与授权（口令只从环境读取，不打印）：
+
+```bash
 uv run --all-packages python - <<'PY'
 import os
 from psycopg import sql
@@ -683,9 +753,9 @@ CREATE 权限，停止启动服务；不要用超级用户连接绕过检查。A
 脚本成功后，把十五个非基线身份的连接地址写回 `deploy/compose.env`（其中
 `sn_workspace_writer`、`sn_audit_reader`、`sn_model_instance_reader` 与
 `sn_quarantine_release` 四个此前已有写回，本节新增十一个）；脚本替换同名空行或追加，不打印
-口令。写回脚本与上面的口令导出一一对应，必须**在同一个 shell 里执行**：写回脚本用
-`os.environ[...]` 读取导出值，换一个 shell 会因缺少 `SPEECHNEXUS_*_ROLE_PASSWORD` 抛
-`KeyError`。
+口令。写回脚本用 `os.environ[...]` 读取上面已写回文件的那十五个口令变量，两者必须一一对应；
+变量已持久化，所以换 shell 后先 `. deploy/compose.env` 再执行即可，未载入环境文件时它会因
+缺少 `SPEECHNEXUS_*_ROLE_PASSWORD` 抛 `KeyError` 而不是写出一组空口令。
 
 ```bash
 python3 - <<'PY'
@@ -1382,8 +1452,9 @@ curl -sS -w '\nhttp=%{http_code}\n' -X POST \
 隔离释放，以及本节新增的公开目录、Artifact、资源池、binding 列表、binding 写、
 binding admin 读取、binding 生命周期、同步 TTS 结算、Artifact 保留清理与工作台运行/清理两个身份共十五个角色在既有部署上
 同样需要预置：下面的脚本先按需创建这十五个角色，再重放全部相关授权。工作台授权针对工作台
-命名空间，由 §6 的 `speechnexus-workbench-migrate` 幂等重放，不在本脚本内。角色尚不存在时先按上文生成口令；已存在时
-改用其现有口令，脚本不会修改已存在角色的口令，用新生成的口令写连接地址会连不上。实例
+命名空间，由 §6 的 `speechnexus-workbench-migrate` 幂等重放，不在本脚本内。角色尚不存在时，
+先用 §6 的口令步骤生成口令（该步只填空值和占位值，已有随机值原样保留）；角色已存在时用其
+现有口令，脚本不会修改已存在角色的口令，用新生成的口令写连接地址会连不上。实例
 读取、资源池读取与 binding 列表读取三个面按上文的显式 `GRANT` 重放，因为它们没有对应的
 仓库授权函数；隔离释放面按 `quarantine_release_grants` 重放，binding 生命周期面按
 `binding_lifecycle_grants` 与 `binding_publication_grants` 两份声明一起重放。

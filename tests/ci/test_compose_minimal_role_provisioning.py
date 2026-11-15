@@ -1,6 +1,6 @@
 """Guard the compose-minimal role provisioning steps against doc/code drift.
 
-The runbook creates fourteen non-owner roles (three base identities plus eleven
+The runbook creates eighteen non-owner roles (three base identities plus fifteen
 that arrived with later migrations), calls repository grant functions by name,
 states the current migration head, and runs host commands that import the
 workspace members. A renamed grant function, a re-pointed head, or a host
@@ -46,6 +46,16 @@ DATABASE_URL = re.compile(r"\bSPEECHNEXUS_[A-Z0-9_]*_DATABASE_URL\b")
 ROLE_PASSWORD_USE = re.compile(
     r'"(sn_[a-z_]+)": os\.environ\["(SPEECHNEXUS_[A-Z0-9_]*_ROLE_PASSWORD)"\]'
 )
+SECTION_TWO_GENERATED = re.compile(r"^value = \{\n(.*?)\n\}$", re.DOTALL | re.MULTILINE)
+SECTION_SIX_GENERATED = re.compile(r"^KEYS = \(\n(.*?)\n\)$", re.DOTALL | re.MULTILINE)
+GENERATED_VALUE = re.compile(r'^\s+"([A-Z0-9_]+)": secrets\.token_(?:urlsafe|hex)\(', re.MULTILINE)
+GENERATED_ROLE_KEY = re.compile(r'^    "([A-Z0-9_]+)",$', re.MULTILINE)
+EXAMPLE_PLACEHOLDER = re.compile(r"^([A-Z0-9_]+)=change-me", re.MULTILINE)
+LOAD_COMMAND = re.compile(r"^\. deploy/compose\.env$", re.MULTILINE)
+GENERATOR = re.compile(r"^KEYS = \($", re.MULTILINE)
+PROVISIONING = re.compile(r"^uv run --all-packages python", re.MULTILINE)
+SECTION_SIX_HEADING = "## 6. 创建非 owner 运行角色与最小授权"
+SECTION_SIX_END = "### 工作区写角色 `sn_workspace_writer`"
 SETTINGS_FIELD = re.compile(r"^\s*([a-z0-9_]+_database_url)\s*:", re.MULTILINE)
 SHELL_BLOCK = re.compile(r"```bash\n(.*?)```", re.DOTALL)
 REVISION = re.compile(r'^revision = "([^"]+)"$', re.MULTILINE)
@@ -102,6 +112,39 @@ def migration_head() -> str:
     return heads[0]
 
 
+def required(document: str, pattern: re.Pattern[str], missing: str) -> int:
+    match = pattern.search(document)
+    if match is None:
+        raise AssertionError(missing)
+    return match.start()
+
+
+def generated_keys(block: re.Match[str], entry: re.Pattern[str]) -> set[str]:
+    return set(entry.findall(block.group(1)))
+
+
+def section_two_generated_keys(document: str) -> set[str]:
+    """Keys the §2 environment step writes into ``deploy/compose.env`` as random values."""
+    block = SECTION_TWO_GENERATED.search(document)
+    if block is None:
+        raise AssertionError("the §2 environment step no longer declares its generated values")
+    keys = generated_keys(block, GENERATED_VALUE)
+    if not keys:
+        raise AssertionError("the §2 environment step generates no random value")
+    return keys
+
+
+def section_six_generated_keys(document: str) -> set[str]:
+    """Role passwords the §6 step generates and writes back into ``deploy/compose.env``."""
+    block = SECTION_SIX_GENERATED.search(document)
+    if block is None:
+        raise AssertionError("the §6 password step no longer lists the keys it writes")
+    keys = generated_keys(block, GENERATED_ROLE_KEY)
+    if not keys:
+        raise AssertionError("the §6 password step lists no role password key")
+    return keys
+
+
 class ComposeMinimalRoleProvisioningTests(unittest.TestCase):
     def setUp(self) -> None:
         self.document = read(DOC)
@@ -140,20 +183,77 @@ class ComposeMinimalRoleProvisioningTests(unittest.TestCase):
         self.assertEqual(unknown, [], f"runbook names unknown database URLs: {unknown}")
 
     def test_each_provisioned_role_has_a_password_source(self) -> None:
+        """A key the example only carries as ``change-me-*`` is not a source.
+
+        The runbook loads ``deploy/compose.env`` into the shell, so a placeholder
+        left in that file replaces whatever the step exported earlier. A role
+        password therefore counts as provided only when a documented step writes a
+        generated value into the file (the §2 environment step for the three base
+        identities, the §6 generator for the optional ones), or when the example
+        does not carry the key at all, so loading the file cannot overwrite it.
+        """
         example = read(ENV_EXAMPLE)
-        documented = set(
-            re.findall(
-                r"^export (SPEECHNEXUS_[A-Z0-9_]*_ROLE_PASSWORD)=", self.document, re.MULTILINE
-            )
+        generated = section_two_generated_keys(self.document) | section_six_generated_keys(
+            self.document
         )
+        placeholders = set(EXAMPLE_PLACEHOLDER.findall(example))
         roles = set(ROLE_PASSWORD_USE.findall(self.document))
         self.assertTrue(roles, "runbook must read each role password from the environment")
         missing = sorted(
             f"{role} -> {password}"
             for role, password in roles
-            if password not in example and password not in documented
+            if password not in generated and password in placeholders
         )
-        self.assertEqual(missing, [], f"roles read passwords no step provides: {missing}")
+        self.assertEqual(
+            missing,
+            [],
+            "these roles would be created with the file's change-me placeholder: " + repr(missing),
+        )
+
+    def test_the_generated_password_list_covers_every_optional_role(self) -> None:
+        """The §6 generator must list exactly the roles the provisioning script creates."""
+        consumed = {password for _, password in ROLE_PASSWORD_USE.findall(self.document)}
+        base = section_two_generated_keys(self.document)
+        generated = section_six_generated_keys(self.document)
+        self.assertEqual(
+            sorted(generated),
+            sorted(consumed - base),
+            "the §6 password step does not cover exactly the optional identities",
+        )
+
+    def test_the_role_passwords_are_generated_after_the_environment_is_loaded(self) -> None:
+        """Loading the file after exporting would restore the ``change-me-*`` values.
+
+        This is the defect the step order used to carry: fourteen passwords were
+        exported first and ``. deploy/compose.env`` then put the file's placeholders
+        back, so every role and DSN silently used a value committed to the
+        repository. The generated values are written into the file instead, and the
+        shell reloads it, so a later session reuses the same set.
+        """
+        start = self.document.index(SECTION_SIX_HEADING)
+        section = self.document[start : self.document.index(SECTION_SIX_END)]
+        # Match the commands themselves: the prose discusses `. deploy/compose.env`
+        # too, and an unanchored search would measure the explanation, not the step.
+        load = required(section, LOAD_COMMAND, "no `. deploy/compose.env` step in §6")
+        generate = required(section, GENERATOR, "no §6 role-password generator")
+        provisioning = required(section, PROVISIONING, "no §6 role-provisioning command")
+        self.assertLess(load, generate, "role passwords must be generated after the file is loaded")
+        self.assertLess(generate, provisioning, "the generator must run before the roles exist")
+        early = [
+            match.start()
+            for match in re.finditer(
+                r"^export SPEECHNEXUS_[A-Z0-9_]*_ROLE_PASSWORD=", section, re.MULTILINE
+            )
+            if match.start() < load
+        ]
+        self.assertEqual(
+            early,
+            [],
+            "a role password exported before `. deploy/compose.env` is overwritten by the "
+            "file's placeholder",
+        )
+        self.assertIn("path.write_text(text)", section, "the generator must persist the values")
+        self.assertIn("placeholders remaining: 0", section, "the generator must verify the file")
 
     def test_documented_error_codes_are_declared_by_a_handler_with_that_status(self) -> None:
         """A quoted code must be a code some handler raises with that status.

@@ -4,6 +4,7 @@ The caller holds the voice catalogue advisory lock in its admission transaction.
 This module never creates or updates qualification evidence.
 """
 
+import logging
 from typing import Any, cast
 
 from speechnexus_contracts import ContractValidationError
@@ -14,8 +15,11 @@ from speechnexus_backend.speech.domain.builtin_voice_qualification import Builti
 from speechnexus_backend.speech.infrastructure.publications_sql import PublicationCursor
 from speechnexus_backend.speech.infrastructure.qualification_source_evidence import (
     SOURCE_UNVERIFIED,
+    SOURCE_UNVERIFIED_DETAIL,
     qualification_source_evidenced_sql,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def require_builtin_voice(
@@ -87,7 +91,16 @@ def require_builtin_voice(
         # The row is published, unexpired and matches this request, but nothing
         # evidences where its qualification came from: name that instead of
         # answering the generic refusal an operator would read as "nothing here".
-        raise AdmissionRejectedError(SOURCE_UNVERIFIED)
+        # The log line keeps the code: "revoked qualification" and "no evidence for
+        # this qualification" reach the sync TTS surface as the same 404, and only
+        # the log can tell an operator which one happened.
+        _LOGGER.warning(
+            "builtin voice qualification refused: voice=%s revision=%s code=%s",
+            voice_id,
+            revision,
+            SOURCE_UNVERIFIED,
+        )
+        raise AdmissionRejectedError(SOURCE_UNVERIFIED, SOURCE_UNVERIFIED_DETAIL)
     try:
         BuiltinVoiceFacts(rows[0]["facts"])
         validate_response("getVoiceRevision", 200, {"body": rows[0]["facts"]["public_document"]})

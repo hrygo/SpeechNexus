@@ -227,11 +227,19 @@ speech_builtin_voice_qualification_provenance   -- 每条已发布内建资格�
 `speech_builtin_voice_qualification_provenance` 没有任何 `INSERT` 权限（见 §7），所以
 「已发布但没有 provenance 行」只能是 0055 之前的历史，不是可伪造的形状。
 
-拒绝码：内部 `qualification_source_unverified` 进入
+拒绝码与文案：内部 `qualification_source_unverified` 进入
 `ADMISSION_REJECTION_CODES`，按既有 `PUBLIC_ADMISSION_CODES` 映射为公开
-`engine_resource_disabled`（部署侧待修、不可重试），不新增公开码、不改契约。
-同步 TTS 侧该拒绝发生在语音解析阶段，按既有语义答 `voice_not_found`（已撤销资格的既有
-行为一致），不是笼统的 `backend_unavailable`。
+`engine_resource_disabled`（部署侧待修、不可重试），不新增公开码、不改契约。**公开文案点名真实原因**：
+`SOURCE_UNVERIFIED_DETAIL` 说明资格缺少证据支撑以及修复方式，不沿用该码「资源被禁用」的默认文案，
+否则运维会去翻开关而不是查证据链（与 #877/#880 的点名规则一致）。
+
+| 消费方 | 线上答案 | 名字落在哪里 |
+| --- | --- | --- |
+| 公开 Job 内建兜底 | `422 voice_not_published`（该 revision 确实不可用、确定性、不可重试） | 响应 `message` 点名「资格没有证据支撑，按控制器探针路径或已接受的运维声明重新发布」 |
+| 同步 TTS | `404 voice_not_found`（与已撤销资格的既有行为一致，不是 503） | 日志行 `builtin voice qualification refused: voice=… revision=… code=qualification_source_unverified` |
+
+两处都必须保留可区分的名字：同步 TTS 的两种起因（已撤销 / 无证据）在线上是同一个 404，只有日志能分开；
+公开 Job 的 `voice_not_published` 默认文案说的是「未发布」，而这件事是「已发布但无证据」。
 
 ## 4. 两种来源的边界对比
 
@@ -374,6 +382,10 @@ provenance 行保留为历史事实。
   共用，语义见 §3.6。
 - 用例：`tests/unit/backend/test_operator_attested_qualification.py`（27 项）、
   `tests/integration/test_operator_attested_qualification_pg.py`（26 项，隔离 PostgreSQL）。
+- 线上两跳端到端：`tests/integration/test_public_job_admission_http_pg.py`
+  （真实 `create_app` + httpx：422 + 点名文案 + 删除 provenance 后同请求被接受）与
+  `tests/integration/test_tts_factory_pg.py`（真实 `create_app_from_env` + httpx：404 +
+  日志 `qualification_source_unverified`）。
 - 部署装配：`sn_operator_attestation` 由
   [最小部署 §6](../operations/compose-minimal.md#外部托管引擎的资格声明角色-sn_operator_attestation)
   在新建与升级两条路径创建并按 `operator_attestation_writer_grants` 授权，两个路径的存在性由

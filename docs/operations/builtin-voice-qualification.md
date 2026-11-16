@@ -52,7 +52,7 @@ controller 制品摘要是受信不可变部署前提下的磁盘 Python 源或�
 
 **准入读取来源证据。** 读面标签同时是准入判据：`require_builtin_voice`（同步 TTS 准入与启动门）与公开 Job 的内建兜底共用 `qualification_source_evidence.qualification_source_evidenced_sql`，只有两条正向证据之一成立才接受——控制器观测必须带 `probe_authorization_id`，运维自证必须在其 `[observed_at_us, expires_at_us)` 窗口内。因此：
 
-- 已发布但来源无证据（`source_kind='unverified'`）的资格不被任何准入消费，报 `qualification_source_unverified`（内部码，公开答 `engine_resource_disabled`；同步 TTS 在语音解析阶段按既有语义答 `voice_not_found`），不是 `backend_unavailable`；
+- 已发布但来源无证据（`source_kind='unverified'`）的资格不被任何准入消费：公开 Job 答 `422 voice_not_published`，响应 `message` 点名「资格没有证据支撑、按控制器探针路径或已接受的运维声明重新发布」；同步 TTS 答 `404 voice_not_found`（与已撤销资格一致），并在日志里留 `code=qualification_source_unverified` 与语音身份，两种起因靠日志区分；两者都不是 `backend_unavailable`；
 - 声明窗口过期后，该资格立即停止准入，不需要也不允许改写已记录的行，续期靠发布新的 voice revision；
 - `0055` 之前没有 provenance 行的真历史资格继续被接受（grandfather），读面标 `legacy_pre_0055`；声明身份对 provenance 表没有 `INSERT` 权限，所以「已发布且无 provenance」只能是历史。
 

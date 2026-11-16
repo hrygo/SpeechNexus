@@ -291,8 +291,19 @@ class AdmissionDecision:
 
 
 class AdmissionRejectedError(Exception):
-    def __init__(self, code: str) -> None:
+    """One admission refusal; ``detail`` names the concrete missing item.
+
+    The code class alone cannot say *which* deployment fact is absent, and an
+    operator who reads "engine_resource_disabled" looks for a switch instead of the
+    qualification evidence that actually failed (#877). ``detail`` only ever
+    replaces the public message of the code it accompanies: it never changes the
+    code, the status or the retryability, and it never carries a DSN, credential or
+    other internal value.
+    """
+
+    def __init__(self, code: str, detail: str | None = None) -> None:
         self.code = code
+        self.detail = detail
         super().__init__(code)
 
 

@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import io
 import json
+import logging
 import socket
 import time
 import uuid
@@ -373,6 +374,7 @@ async def test_factory_http_uses_real_postgres_qualification_and_admission(
     admission_database: AdmissionDatabase,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
     settlement_database_url: str,
     audio_format: str,
     transport: str,
@@ -566,6 +568,34 @@ async def test_factory_http_uses_real_postgres_qualification_and_admission(
         )
         assert forbidden.status_code == 503
         assert forbidden.json()["error"]["code"] == "backend_unavailable"
+        assert db.query("SELECT count(*) AS n FROM admission_operations")[0]["n"] == 1
+        # A published qualification whose source has no evidence is refused on the
+        # same 404 branch as a revoked one, so the *log* has to carry the difference:
+        # an operator cannot tell "revoked" from "no evidence" from the wire answer.
+        db.query(
+            "INSERT INTO speech_builtin_voice_qualification_provenance "
+            "(voice_id,revision,source_kind,evidence_kind,attestation_id,probe_authorization_id) "
+            "VALUES ('voice-vivian','1','unverified','absent',NULL,NULL)"
+        )
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            unbacked = await client.post(
+                "/v1/audio/speech",
+                json={
+                    "model": "asr-quality",
+                    "voice": "voice-vivian",
+                    "input": "synthetic unbacked",
+                    "response_format": audio_format,
+                    "nexus": {"workspace_id": "workspace-test"},
+                },
+            )
+        assert unbacked.status_code == 404
+        assert unbacked.json()["error"]["code"] == "voice_not_found"
+        assert "qualification_source_unverified" in caplog.text, caplog.text
+        assert "voice-vivian" in caplog.text
+        db.query("DELETE FROM speech_builtin_voice_qualification_provenance")
+        # Control: the same request succeeds again once the unevidenced row is gone,
+        # so the refusal came from the evidence row and not from the publication.
         assert db.query("SELECT count(*) AS n FROM admission_operations")[0]["n"] == 1
         db.query(
             "INSERT INTO speech_builtin_voice_revocations (approval_id,reason) "

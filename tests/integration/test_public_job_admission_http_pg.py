@@ -977,3 +977,71 @@ async def test_an_unmapped_admission_code_answers_the_declared_envelope(
     # The message must not blame the store: the store answered fine, the mapping did not.
     message = body["error"]["message"].lower()
     assert "storage" not in message and "unavailable" not in message
+
+
+async def test_a_builtin_qualification_without_source_evidence_is_refused_by_name(
+    admission_database: AdmissionDatabase,
+) -> None:
+    """A published qualification with no evidence behind its source is not usable.
+
+    The public code stays ``voice_not_published`` -- the revision really is not
+    usable, and it is a deterministic answer, not a retry -- but the message must name
+    the qualification evidence: an operator sent to "the voice is not published" goes
+    looking for a publication that is in fact right there. The control half of the
+    test deletes the provenance row and the same request is admitted, so the refusal
+    is caused by the evidence and not by the qualification row's existence.
+    """
+    _seed(admission_database)
+    db = admission_database.runtime.foundation.database
+    _add_spare_host(db)
+    _grant_capacity(db)
+    db.query(
+        "INSERT INTO speech_builtin_voice_source_approvals (source_approval_id,voice_id,"
+        "source_revision,source_digest,native_speaker_id,expires_at) "
+        "VALUES ('source-evidence','voice-vivian','source-rev',%s,'Vivian',"
+        "clock_timestamp()+interval '1 day')",
+        ("sha256:" + "a" * 64,),
+    )
+    db.query(
+        "INSERT INTO speech_builtin_voice_approvals (approval_id,voice_id,revision,revision_id,"
+        "binding_revision_id,source_approval_id,facts,expires_at) "
+        "VALUES ('approval-evidence','voice-vivian','2','voice-rev-2','binding-test',"
+        "'source-evidence','{}'::jsonb,clock_timestamp()+interval '1 day')"
+    )
+    db.query(
+        "INSERT INTO speech_builtin_voice_qualifications VALUES "
+        "('voice-vivian','2','voice-rev-2','binding-test','approval-evidence','{}'::jsonb,'Vivian')"
+    )
+    db.query(
+        "INSERT INTO speech_builtin_voice_qualification_provenance "
+        "(voice_id,revision,source_kind,evidence_kind,attestation_id,probe_authorization_id) "
+        "VALUES ('voice-vivian','2','unverified','absent',NULL,NULL)"
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=_app(admission_database)), base_url="http://test"
+    ) as client:
+        before = _snapshot(db)
+        refused = await client.post(
+            PREFIX, json=_body(), headers={"Idempotency-Key": "synthetic-no-evidence"}
+        )
+        assert _snapshot(db) == before
+        assert refused.status_code == 422, refused.text
+        code, _type, retryable = _error(refused)
+        assert code == "voice_not_published"
+        assert retryable is False
+        message = refused.json()["error"]["message"]
+        # The message names what is missing. A generic "The voice revision is not
+        # published." passes every other assertion here while sending the operator to
+        # the wrong fact, which is the #877/#880 defect this pins.
+        assert "no backing evidence" in message, message
+        assert "attestation" in message, message
+        # Control: the same published revision, with the evidence row removed, is
+        # admitted -- so the refusal above came from the provenance row.
+        db.query(
+            "DELETE FROM speech_builtin_voice_qualification_provenance "
+            "WHERE voice_id='voice-vivian' AND revision='2'"
+        )
+        admitted = await client.post(
+            PREFIX, json=_body(), headers={"Idempotency-Key": "synthetic-legacy-evidence"}
+        )
+        assert admitted.status_code == 202, admitted.text

@@ -28,6 +28,17 @@ window closes.
 # not a caller correction or a retry.
 SOURCE_UNVERIFIED = "qualification_source_unverified"
 
+# The operator-facing sentence for that refusal. It names the item to fix instead of
+# the class of failure, because the public answer for it is an existing code whose
+# default text points at the wrong place: "engine_resource_disabled" sends an
+# operator to look for a switch, while the actual missing thing is the qualification
+# evidence chain (#877, and the same ruling as the Job-surface naming in #880).
+SOURCE_UNVERIFIED_DETAIL = (
+    "the builtin voice's qualification has no backing evidence: publish it through "
+    "the controller probe path, or record an accepted operator attestation for it, "
+    "then send a new request"
+)
+
 
 _NOW_US = "floor(extract(epoch FROM clock_timestamp())*1000000)::bigint"
 

@@ -230,7 +230,18 @@ jobs:
         run: python3 scripts/dev-env/check-doc-refs.py --baseline scripts/dev-env/doc-refs-baseline.json
 
   python_tests:
-    name: "Python: tests, coverage and build"
+    name: "Python: tests, coverage and build (part ${{ matrix.part }})"
+    # Two jobs of four workers cover eight partitions: the measurement is the
+    # longest job, and halving it also halves the wall clock of the critical
+    # path without changing a single selected test or the merged gate.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: a
+            index_base: 0
+          - part: b
+            index_base: 4
     needs: [routing]
     if: ${{ needs.routing.outputs.mode == 'full' || needs.routing.outputs.mode == 'web' || needs.routing.outputs.mode == 'no-db' }}
     runs-on: ubuntu-24.04
@@ -307,13 +318,14 @@ jobs:
         run: |
           uv run python scripts/dev-env/python-coverage.py run \
             --pg-bin /usr/lib/postgresql/16/bin --workers 4 \
+            --partitions 8 --index-base ${{ matrix.index_base }} \
             --output "$RUNNER_TEMP/workbench-pg-coverage.json"
 
       - name: Preserve full coverage execution evidence
         if: ${{ !cancelled() && (steps.coverage.outcome == 'success' || steps.coverage.outcome == 'failure') }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: workbench-pg-full-coverage
+          name: workbench-pg-full-coverage-${{ matrix.part }}
           path: |
             ${{ runner.temp }}/workbench-pg-coverage.json
             ${{ runner.temp }}/workbench-pg-coverage-parts/
@@ -788,6 +800,8 @@ jobs:
           python3 scripts/dev-env/download-integration-evidence.py \
             --repository "$CI_REPOSITORY" --run-id "$CI_RUN_ID" \
             --count 12 --coverage-workers 4 --output "$RUNNER_TEMP/integration-shards" \
+            --coverage-artifact workbench-pg-full-coverage-a \
+            --coverage-artifact workbench-pg-full-coverage-b \
             --coverage-output "$RUNNER_TEMP/coverage-evidence"
 
       - name: Verify same-commit collection, partition coverage and actual test outcomes
@@ -801,8 +815,10 @@ jobs:
         # pyproject.toml. Missing or digest-divergent data fails before any report.
         run: |
           uv run python scripts/dev-env/python-coverage.py combine \
-            --job-summary "$RUNNER_TEMP/coverage-evidence/workbench-pg-coverage.json" \
-            --job-parts "$RUNNER_TEMP/coverage-evidence/workbench-pg-coverage-parts" \
+            --job-summary "$RUNNER_TEMP/coverage-evidence/workbench-pg-full-coverage-a/workbench-pg-coverage.json" \
+            --job-parts "$RUNNER_TEMP/coverage-evidence/workbench-pg-full-coverage-a/workbench-pg-coverage-parts" \
+            --job-summary "$RUNNER_TEMP/coverage-evidence/workbench-pg-full-coverage-b/workbench-pg-coverage.json" \
+            --job-parts "$RUNNER_TEMP/coverage-evidence/workbench-pg-full-coverage-b/workbench-pg-coverage-parts" \
             --integration-dir "$RUNNER_TEMP/integration-shards" \
             --count 12 --output "$RUNNER_TEMP/coverage-merge"
 

@@ -160,6 +160,8 @@ def job_evidence(root: Path, head: str, *, workers: int = 2) -> tuple[Path, Path
         "source_head": head,
         "config_digest": GATE.digest(root / "pyproject.toml"),
         "workers": workers,
+        "partitions": workers,
+        "index_base": 0,
         "tests_passed": True,
         "stopped": True,
         "collected": len(NODEIDS),
@@ -206,8 +208,8 @@ def combine_args(
     integration = root / "integration"
     shard_evidence(root, integration, head, count=count)
     return argparse.Namespace(
-        job_summary=summary,
-        job_parts=parts,
+        job_summary=[summary],
+        job_parts=[parts],
         integration_dir=integration,
         count=count,
         output=root / "merged",
@@ -238,7 +240,7 @@ def test_merge_requires_every_dataset_before_it_judges(
     head = git_repository(root)
     args = combine_args(root, head)
     report = args.integration_dir / "integration-shard-1.json"
-    summary = args.job_summary
+    summary = args.job_summary[0]
     if failure == "missing-shard":
         report.unlink()
     elif failure == "missing-shard-data":
@@ -248,9 +250,9 @@ def test_merge_requires_every_dataset_before_it_judges(
     elif failure == "stray-shard-data":
         (args.integration_dir / "coverage-7.data").write_bytes(b"stray")
     elif failure == "missing-job-part":
-        (args.job_parts / "coverage-0.data").unlink()
+        (args.job_parts[0] / "coverage-0.data").unlink()
     elif failure == "changed-job-part":
-        (args.job_parts / "coverage-0.data").write_bytes(b"replaced")
+        (args.job_parts[0] / "coverage-0.data").write_bytes(b"replaced")
     elif failure == "wrong-head":
         data = json.loads(summary.read_text())
         data["source_head"] = "b" * 40
@@ -290,7 +292,7 @@ def test_merge_judges_the_merged_percentage_through_the_project_configuration(
     measured_only = root / "measured-only"
     measured_only.mkdir()
     GATE.combine_data(
-        sorted(args.job_parts.glob("coverage-*.data")),
+        sorted(args.job_parts[0].glob("coverage-*.data")),
         measured_only,
         config_file=root / "pyproject.toml",
     )
@@ -364,7 +366,13 @@ def test_parent_requires_both_probe_lifecycles_before_combining(
         )
 
     monkeypatch.setattr(GATE.subprocess, "run", run)
-    args = argparse.Namespace(output=root / "result.json", pg_bin=root / "pg", workers=2)
+    args = argparse.Namespace(
+        output=root / "result.json",
+        pg_bin=root / "pg",
+        workers=2,
+        partitions=None,
+        index_base=0,
+    )
     if condition == "success":
         assert GATE.run_parallel(args) == 0
     else:

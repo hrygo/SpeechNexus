@@ -261,12 +261,10 @@ def test_integration_evidence_uses_bounded_same_run_cli_with_read_only_access() 
     assert "if" not in check and "continue-on-error" not in check
     merge = job["steps"][job["steps"].index(check) + 1]
     assert "uv run python scripts/dev-env/python-coverage.py combine" in merge["run"]
-    assert (
-        '--job-summary "$RUNNER_TEMP/coverage-evidence/workbench-pg-coverage.json"' in merge["run"]
-    )
-    assert (
-        '--job-parts "$RUNNER_TEMP/coverage-evidence/workbench-pg-coverage-parts"' in merge["run"]
-    )
+    for part in ("a", "b"):
+        base = f'"$RUNNER_TEMP/coverage-evidence/workbench-pg-full-coverage-{part}'
+        assert f'--job-summary {base}/workbench-pg-coverage.json"' in merge["run"]
+        assert f'--job-parts {base}/workbench-pg-coverage-parts"' in merge["run"]
     assert '--integration-dir "$RUNNER_TEMP/integration-shards"' in merge["run"]
     assert '--count 12 --output "$RUNNER_TEMP/coverage-merge"' in merge["run"]
     # The gate must never be redirected to a different configuration or threshold.
@@ -304,7 +302,9 @@ def test_measured_coverage_is_exported_and_each_shard_uploads_its_dataset() -> N
     coverage = next(step for step in steps if step.get("id") == "coverage")
     assert "uv run python scripts/dev-env/python-coverage.py run" in coverage["run"]
     artifact = next(
-        step for step in steps if step.get("with", {}).get("name") == "workbench-pg-full-coverage"
+        step
+        for step in steps
+        if str(step.get("with", {}).get("name", "")).startswith("workbench-pg-full-coverage-")
     )
     assert artifact["with"]["if-no-files-found"] == "error"
     shards = _WORKFLOW["jobs"]["integration_shards"]
@@ -528,6 +528,7 @@ def test_full_coverage_and_every_contract_check_run_independently_on_the_same_so
     coverage = next(step for step in execution["steps"] if step.get("id") == "coverage")
     assert "uv run python scripts/dev-env/python-coverage.py run" in coverage["run"]
     assert "--pg-bin /usr/lib/postgresql/16/bin --workers 4" in coverage["run"]
+    assert "--partitions 8 --index-base ${{ matrix.index_base }}" in coverage["run"]
     assert '--output "$RUNNER_TEMP/workbench-pg-coverage.json"' in coverage["run"]
     assert coverage["run"] not in contract_commands
     assert "--cov-fail-under" not in coverage["run"]
@@ -545,7 +546,9 @@ def test_full_coverage_and_every_contract_check_run_independently_on_the_same_so
     assert storage["run"] == "./scripts/dev-env/minio-test-service.sh"
     assert steps.index(pg) < steps.index(storage) < steps.index(coverage)
     artifact = next(
-        step for step in steps if step.get("with", {}).get("name") == "workbench-pg-full-coverage"
+        step
+        for step in steps
+        if str(step.get("with", {}).get("name", "")).startswith("workbench-pg-full-coverage-")
     )
     assert "steps.coverage.outcome == 'success'" in artifact["if"]
     assert "steps.coverage.outcome == 'failure'" in artifact["if"]

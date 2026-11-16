@@ -193,7 +193,7 @@ def test_coverage_artifact_is_verified_and_published_under_its_own_names(
         "owner/repo", 123, tmp_path / "coverage", staging, data["artifacts"], 2
     )
     assert sorted(
-        str(path.relative_to(tmp_path / "coverage"))
+        str(path.relative_to(tmp_path / "coverage" / MODULE.COVERAGE_ARTIFACT))
         for path in (tmp_path / "coverage").rglob("*")
         if path.is_file()
     ) == [
@@ -299,8 +299,9 @@ def test_download_combines_both_artifact_sets_in_one_run(
         ),
         *(f"coverage-{i}.data" for i in range(2)),
     }
-    assert (coverage / MODULE.COVERAGE_SUMMARY).is_file()
-    assert (coverage / MODULE.COVERAGE_PARTS_DIR / "coverage-1.data").is_file()
+    published = coverage / MODULE.COVERAGE_ARTIFACT
+    assert (published / MODULE.COVERAGE_SUMMARY).is_file()
+    assert (published / MODULE.COVERAGE_PARTS_DIR / "coverage-1.data").is_file()
 
 
 def test_cli_process_is_bounded_and_never_receives_a_token_argument(

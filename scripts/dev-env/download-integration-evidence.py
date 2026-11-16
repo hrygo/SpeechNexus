@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
@@ -168,7 +169,9 @@ def artifact_created_at(artifact: Any) -> datetime:
     return stamp
 
 
-def select_coverage_artifact(artifacts: list[Any]) -> tuple[Any, int]:
+def select_coverage_artifact(
+    artifacts: list[Any], name: str = COVERAGE_ARTIFACT
+) -> tuple[Any, int]:
     """Pick the attempt that produced the evidence when a rerun left a peer behind.
 
     One job uploads this name once per attempt, so peers can only come from an
@@ -176,7 +179,7 @@ def select_coverage_artifact(artifacts: list[Any]) -> tuple[Any, int]:
     evidence. Anything else stays fatal: no artifact, an unusable or ambiguous
     inventory, and every later verification failure all refuse the gate.
     """
-    matches = [artifact for artifact in artifacts if artifact["name"] == COVERAGE_ARTIFACT]
+    matches = [artifact for artifact in artifacts if artifact["name"] == name]
     if not matches:
         raise ValueError("Python coverage artifact is missing")
     if len(matches) == 1:
@@ -189,12 +192,21 @@ def select_coverage_artifact(artifacts: list[Any]) -> tuple[Any, int]:
 
 
 def download_coverage(
-    repository: str, run_id: int, output: Path, root: Path, artifacts: list[Any], workers: int
+    repository: str,
+    run_id: int,
+    output: Path,
+    root: Path,
+    artifacts: list[Any],
+    workers: int,
+    name: str = COVERAGE_ARTIFACT,
 ) -> None:
-    """Fetch the measured dataset; an absent artifact is a failing gate, not a smaller one."""
+    """Fetch one measured dataset; an absent artifact is a failing gate, not a smaller one."""
     if type(workers) is not int or not 1 <= workers <= COVERAGE_WORKERS_MAX:
         raise ValueError("Invalid Python coverage worker count")
-    artifact, inventory = select_coverage_artifact(artifacts)
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,120}", name):
+        raise ValueError("Invalid Python coverage artifact name")
+    output = output / name
+    artifact, inventory = select_coverage_artifact(artifacts, name)
     artifact_id = artifact["id"]
     size = artifact["size_in_bytes"]
     digest = artifact["digest"]
@@ -267,6 +279,7 @@ def download(
     *,
     coverage_output: Path | None = None,
     coverage_workers: int = 2,
+    coverage_artifacts: Sequence[str] = (COVERAGE_ARTIFACT,),
 ) -> None:
     if not re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9_.-]+", repository):
         raise ValueError("Invalid repository")
@@ -290,9 +303,11 @@ def download(
             raise ValueError("Artifact inventory is incomplete")
         download_shards(repository, run_id, count, output, root, artifacts)
         if coverage_output is not None:
-            download_coverage(
-                repository, run_id, coverage_output, root, artifacts, coverage_workers
-            )
+            coverage_output.mkdir(parents=True)
+            for name in coverage_artifacts:
+                download_coverage(
+                    repository, run_id, coverage_output, root, artifacts, coverage_workers, name
+                )
 
 
 def main() -> int:
@@ -303,6 +318,11 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--coverage-output", type=Path)
     parser.add_argument("--coverage-workers", type=int, default=2)
+    parser.add_argument(
+        "--coverage-artifact",
+        action="append",
+        help="measured coverage artifact name; repeat for a split measurement",
+    )
     args = parser.parse_args()
     try:
         download(
@@ -312,6 +332,7 @@ def main() -> int:
             args.output,
             coverage_output=args.coverage_output,
             coverage_workers=args.coverage_workers,
+            coverage_artifacts=tuple(args.coverage_artifact or (COVERAGE_ARTIFACT,)),
         )
     except ArtifactFetchError as error:
         shard = "metadata" if error.shard is None else str(error.shard)

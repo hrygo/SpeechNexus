@@ -247,7 +247,7 @@ def test_shard_command_delegates_the_complete_run_and_report_to_the_original_run
         "--count",
         "6",
         "--workers",
-        "2",
+        "3",
         "--report",
         str(report),
         "--coverage-data",

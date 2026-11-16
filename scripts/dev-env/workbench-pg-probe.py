@@ -39,7 +39,7 @@ INTEGRATION_JOB_TIMEOUT_SECONDS = 30 * 60
 COVERAGE_JOB_TIMEOUT_SECONDS = 15 * 60
 # Pytest workers inside one integration partition. The canonical runner owns the
 # validation and the isolation rule; the probe only forwards the requested value.
-INTEGRATION_SHARD_WORKERS = 2
+INTEGRATION_SHARD_WORKERS = 3
 # Setup before the probe starts (container init, checkout, dependency install,
 # MinIO, and on Web lanes pnpm plus Chromium) and the probe's own stop-and-report
 # tail share the same job budget. Reserve five minutes so the inner deadline

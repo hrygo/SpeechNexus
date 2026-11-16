@@ -667,7 +667,7 @@ jobs:
           uv run python scripts/dev-env/workbench-pg-probe.py \
             --pg-bin /usr/lib/postgresql/16/bin \
             --integration-shard "${{ matrix.shard }}" --shard-count 12 \
-            --shard-workers 2 \
+            --shard-workers 3 \
             --shard-report "$RUNNER_TEMP/integration-shard-${{ matrix.shard }}.json" \
             --shard-coverage "$RUNNER_TEMP/coverage-${{ matrix.shard }}.data" \
             --output "$RUNNER_TEMP/workbench-pg-shard-${{ matrix.shard }}.json"

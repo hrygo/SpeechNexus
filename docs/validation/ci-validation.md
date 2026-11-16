@@ -89,7 +89,7 @@ Node Controller 镜像验证由 CI 以同提交的 [reusable workflow](../../.gi
 | `python_tests` | `Python: tests, coverage and build` | Python 单元、契约、CI 测试，导出四 worker 覆盖率数据集（不判定）、媒体工具链及 Python 包构建；集成标记的 Workbench/Speech PG 模块由十二个分片执行并采集覆盖数据，此作业不重复执行 |
 | `python_static` | `Python: lint, types and contract compatibility` | Ruff、mypy、模块边界、生成漂移、协议兼容与 schema 校验 |
 | `integration_plan` | `Integration plan: one collection selects every partition's tools` | 只在展开分片的路由（`full`/`web`）执行：一次 pytest 完整收集发布十二片的 `browser`/`node_contracts` 工具需求，供各分片读取；分片自身的执行与证据校验不依赖它 |
-| `integration_shards` | `Integration 0/12`–`7/12: PG/MySQL/MinIO`；`Integration 8/12`–`11/12: Web + PG/MySQL/MinIO` | 十二个真实隔离服务分片，`max-parallel: 12` 同时启动；混合集合中的浏览器与 Node HTTP 消费者只分配到后四片（8–11），普通 DB 用例按估算成本分配到全部十二片，工具需求读取 `integration_plan` 的发布结果并 fail-closed 校验。`full` 展开十二片；`web` 只展开 8–11 四片（`excluded_shards` 排除 0–7），`docs`/`no-db` 跳过整个作业。每片内部再用 pytest-xdist `-n 2 --dist loadfile` 并发两个 worker |
+| `integration_shards` | `Integration 0/12`–`7/12: PG/MySQL/MinIO`；`Integration 8/12`–`11/12: Web + PG/MySQL/MinIO` | 十二个真实隔离服务分片，`max-parallel: 12` 同时启动；混合集合中的浏览器与 Node HTTP 消费者只分配到后四片（8–11），普通 DB 用例按估算成本分配到全部十二片，工具需求读取 `integration_plan` 的发布结果并 fail-closed 校验。`full` 展开十二片；`web` 只展开 8–11 四片（`excluded_shards` 排除 0–7），`docs`/`no-db` 跳过整个作业。每片内部再用 pytest-xdist `-n 3 --dist loadfile` 并发三个 worker |
 | `integration_gate` | `Gate: integration partitions and merged coverage` | 验收十二片成功及同提交、完整互斥集合、实际执行证据；下载十二份分片覆盖数据与采集作业数据集，合并后按 80% 判定一次，不在此节点重新执行测试。仍只在 `full` 范围执行 |
 | `python_gate` | `Gate: Python tests and static checks` | 要求 Python 执行与静态/契约两个作业均成功，不执行测试 |
 | `controller_image` | `Node Controller: image evidence` | 调用镜像 scope、双架构构建与内部证据门禁，按输入差异决定是否构建 |
@@ -111,7 +111,7 @@ Python 测试作业通过 `python-coverage.py run --workers 4` 在同一 runner 
 
 完整集合同时含普通用例与 Web 工具消费者时，仍保留八条 DB-only 道和 Web 能力道：浏览器与显式 Node 契约用例只落在 Web 能力道，普通 DB 用例按估算成本分配到全部十二片。每片的目标是等量估算成本，而不是等量用例数：一个 Web 用案例按 `WEB_CASE_WEIGHT = 5` 折算（2026-11-06 两次完整运行中两类用例的实测单例耗时比为 3.4–6.4 倍，类均值为 4.6–5.5 倍，取 5），Web 能力道因此少收普通用例。分配使用 nodeid 的 SHA-256 排序、最大余数法配额和确定性取整；十二片各自从完整收集独立算出同一结果，不依赖共享状态或历史制品。Web 用例在 Web 能力道间按 hash 顺序轮转，使各道用例数最多相差 1。一类用例单独存在时，仍按 nodeid 的 SHA-256 取模使用全部分片。通用入口仍接受 1–16 片，混合类别为 Web 工具保留 `max(1, count // 3)` 片（十二片时为 8–11 四片）；单片执行整个集合。预检、执行和报告检查使用同一个 `partition`，工具需求仍根据实际选中用例计算，不能在工作流里按编号跳过工具或业务测试。
 
-片内并发：每片以显式 nodeid 调用 pytest，并加 `-n 2 --dist loadfile` 让两个 worker 分担用例。分片器先在同进程内解析一次完整 inventory，再把自己那份 nodeid 作为参数交给 pytest；xdist 下 collection 由 worker 完成，控制端等到调度之后才 deselect 会让每个 worker 跑完整套件，因此选择必须体现在命令行上。`loadfile` 保证同文件用例（含模块级 fixture 与 TRUNCATE 复位）留在同一 worker。`tests/integration/AGENTS.md` 要求每个用例使用唯一 schema/数据库名，这是片内并发的前提。`--workers` 由 `workbench-pg-probe.py --shard-workers` 透传，默认 2、上限 4。共享固定桶名的模块改用 `tests/support/minio_bucket.py::ensure_bucket`：`bucket_exists` + `make_bucket` 是 check-then-act，两个 worker 同时启动模块 fixture 时后者会拿到 `BucketAlreadyOwnedByYou`，该结果按成功处理，其它 S3 错误照常上抛。对象仍按随机 project 前缀隔离，因此同桶并发不改变断言。
+片内并发：每片以显式 nodeid 调用 pytest，并加 `-n 3 --dist loadfile` 让三个 worker 分担用例。分片器先在同进程内解析一次完整 inventory，再把自己那份 nodeid 作为参数交给 pytest；xdist 下 collection 由 worker 完成，控制端等到调度之后才 deselect 会让每个 worker 跑完整套件，因此选择必须体现在命令行上。`loadfile` 保证同文件用例（含模块级 fixture 与 TRUNCATE 复位）留在同一 worker。`tests/integration/AGENTS.md` 要求每个用例使用唯一 schema/数据库名，这是片内并发的前提。`--workers` 由 `workbench-pg-probe.py --shard-workers` 透传，默认 3、上限 4。共享固定桶名的模块改用 `tests/support/minio_bucket.py::ensure_bucket`：`bucket_exists` + `make_bucket` 是 check-then-act，两个 worker 同时启动模块 fixture 时后者会拿到 `BucketAlreadyOwnedByYou`，该结果按成功处理，其它 S3 错误照常上抛。对象仍按随机 project 前缀隔离，因此同桶并发不改变断言。
 
 该分组的目的不是把 Web 用例移入 DB 道，而是让 Web 能力道承担普通 DB 工作，从而使十二个分片的实测 pytest 执行时间接近。Web 能力道另需安装 Web 依赖、构建入口并安装 Chromium，这部分固定开销不计入 `elapsed_seconds`；划分只均衡实测执行时间，不试图抵消该开销，也不改变 job 预算。
 
@@ -496,7 +496,7 @@ uv run python scripts/dev-env/python-coverage.py combine \
 
 ### 本轮改动
 
-1. **十二片 + 片内两 worker。** `INTEGRATION_SHARD_COUNT` 由 8 改为 12，矩阵 `[0..11]`、`max-parallel: 12`；`integration_plan` 发布 12 组 `browser_<i>`/`node_contracts_<i>`，`plan`、证据下载、`check`、覆盖率 `combine` 与探测器的 `--shard-count` 五处参数同步。每片用显式 nodeid 调用 pytest 并加 `-n 2 --dist loadfile`，普通分片用例数由约 371 降到约 248；`web` 路由仍只展开 8–11 四片。
+1. **十二片 + 片内两 worker。** `INTEGRATION_SHARD_COUNT` 由 8 改为 12，矩阵 `[0..11]`、`max-parallel: 12`；`integration_plan` 发布 12 组 `browser_<i>`/`node_contracts_<i>`，`plan`、证据下载、`check`、覆盖率 `combine` 与探测器的 `--shard-count` 五处参数同步。每片用显式 nodeid 调用 pytest 并加 `-n 3 --dist loadfile`，普通分片用例数由约 371 降到约 248；`web` 路由仍只展开 8–11 四片。
 2. **路由与守卫拆分。** 原先挂在 `routing` 里的 `tests/ci` 回归、Design Token、契约消费者绑定迁到并行且不筛范围的 `guards` 作业，`routing` 只保留 checkout 与范围判定；`guards` 结果被最终门禁无条件要求（意外 `skipped` 也算失败）。
 3. **覆盖率采集 2 → 4 worker。** `python-coverage.py` 的 `PYTHON_COVERAGE_WORKERS_MAX`、CLI `choices`、分片元数据校验与 `workbench-pg-probe.py` 的 `coverage_count` 上限一并放宽到 4；四份 worker 数据加十二份分片数据共十六份合并判定。
 4. **并发预算。** 同时运行的长作业为 12 分片 + `python_tests` + `python_static` + `web` + `controller_image` 的两个构建作业，加上接近完成的 docs/compose/reference 作业，峰值约 19，低于账号的 20 个并发作业上限；16 片会到 22，因此停在 12。
@@ -514,7 +514,7 @@ uv run python scripts/dev-env/python-coverage.py combine \
 改动其中任一侧都必须同时改另一侧，`tests/ci` 与 `tests/contract` 会拦下不一致：
 
 - `INTEGRATION_SHARD_COUNT`（`ci-routing.py`）↔ 矩阵 `shard`、`max-parallel`、显示名、`integration_plan` 的 12 组输出、`plan`/下载/`check`/`combine` 的 `--count` 与探测器的 `--shard-count`；`tests/ci/test_ci_routing.py` 钉住常量与工作流参数，`tests/unit/test_integration_shards.py` 与 `tests/contract/test_ci_workflow.py` 钉住矩阵与计数。
-- `SHARD_WORKERS_DEFAULT`/`SHARD_WORKERS_MAX`（`integration-shards.py`）↔ `workbench-pg-probe.py` 的 `INTEGRATION_SHARD_WORKERS` 与 `--shard-workers` ↔ 工作流的 `--shard-workers 2`。
+- `SHARD_WORKERS_DEFAULT`/`SHARD_WORKERS_MAX`（`integration-shards.py`）↔ `workbench-pg-probe.py` 的 `INTEGRATION_SHARD_WORKERS` 与 `--shard-workers` ↔ 工作流的 `--shard-workers 3`。
 - `PYTHON_COVERAGE_WORKERS_MAX`（`python-coverage.py`）↔ CLI `choices` ↔ `workbench-pg-probe.py` 的 `coverage_count` 上限 ↔ `download-integration-evidence.py` 的 `COVERAGE_WORKERS_MAX` 与门禁的 `--coverage-workers` ↔ 工作流的 `--workers 4`；`tests/ci/test_ci_inspection_retirement.py` 与 `tests/contract/test_ci_workflow.py` 分别钉住工作流里的 worker 数与下载参数。
 - `guards` 作业 ↔ `required_checks` 的 `needs`、`GUARDS_RESULT` 环境变量与无条件校验；`tests/contract/test_ci_workflow.py` 与 `tests/ci/test_node_controller_image_ci.py` 各有一组真值表。
 - 分片内并发的前提是唯一 schema/数据库名（`tests/integration/AGENTS.md`）与固定桶名的竞态处理（`tests/support/minio_bucket.py`）；新增共用固定名资源的模块必须走同一约定，否则只能在该片降为单 worker。

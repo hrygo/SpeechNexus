@@ -730,9 +730,14 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
         conn.execute(statement)
     # The release transaction writes B's stop evidence and A's capacity counters,
     # so its identity is declared by quarantine_release_grants(): schema USAGE
-    # plus the exact column surface of the nine relations it reads, updates and
+    # plus the exact column surface of the twelve relations it reads, updates and
     # inserts. Do not hand-write this GRANT and do not reuse the owner, the api
-    # runtime role or any gateway/worker writer.
+    # runtime role or any gateway/worker writer. Upgrading an existing deployment
+    # must re-run this function and cancellation_debt_reader_grants: the declared
+    # surface now reads three more relations column-level (speech_jobs, the
+    # cancellation fence and the reconciliation ledger), and the optional debt
+    # probe additionally reads execution_stop_evidence and
+    # submit_intents.submit_intent_id.
     for statement in quarantine_release_grants(schema, "sn_quarantine_release"):
         conn.execute(statement)
     # No grants function declares these three projections yet, so mirror the
@@ -1108,7 +1113,7 @@ Artifact 桶与 gateway staging 结果桶的存在和版本化，全部通过后
 复用迁移 owner、`sn_api` 运行时角色或任一 gateway/worker 写入身份。
 
 授权由 `quarantine_release_grants(schema, role)` 声明：schema `USAGE`（无 `CREATE`）加
-九张关系的列级 `SELECT`/`UPDATE`/`INSERT`，其中只有
+十二张关系的列级 `SELECT`/`UPDATE`/`INSERT`，其中只有
 `execution_stop_evidence` 与 `admission_quarantine_releases` 两张表有 `INSERT`，账本表只有
 `SELECT + INSERT`（append-only 触发器保证不可改写，故连该表的 `UPDATE` 都不授予）。
 不要手写额外的表、列或序列授权，也不要给 `DELETE`、`TRUNCATE`、`TRIGGER`、
@@ -1117,6 +1122,19 @@ Artifact 桶与 gateway staging 结果桶的存在和版本化，全部通过后
 进程启动时逐列核对实际 ACL 与声明面：多给一列、少给一列、schema 内任何序列的
 `USAGE`/`SELECT`/`UPDATE`、`admission_quarantine_releases_append_only` 触发器缺失或被
 禁用，任一情况都以 `Quarantine release startup rejected` 拒绝启动，不会带着错误身份上线。
+
+**升级必做**：该身份现在自己核验「围栏已受理、账本未 `settled`、Job 仍 `cancelling`」，
+声明面因此新增 `speech_jobs`、`speech_job_cancellation_fences`、
+`speech_job_cancellation_reconciliations` 三张关系的列级只读；可选的取消债务探针身份
+（`SPEECHNEXUS_READINESS_CANCELLATION_DSN`）同时新增 `execution_stop_evidence` 与
+`submit_intents.submit_intent_id`。任何配置了这两个键的环境，升级时都必须以 owner 重跑
+`quarantine_release_grants` 与 `cancellation_debt_reader_grants`。漏跑只有三种可自查的
+信号：API 启动被拒并点名表列（`Quarantine release startup rejected (... declared surface
+at <table>.<column>)`）；只跑操作员 CLI 时退出码 3、输出
+`unavailable: quarantine_release_privilege_missing`；探针降级为
+`cancellation_debt: … (jobs: lease-unread=1) … [lease detail unavailable: permission]`，
+且不让 `/readyz` 失败。
+
 未配置 `SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL` 时该端点返回
 `503 quarantine_release_unavailable`（`retryable: true`），所以运维脚本反复看到它时先确认
 这个键是否配置，而不是继续轮询。已配置但授权被回收时返回

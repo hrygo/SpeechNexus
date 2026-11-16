@@ -464,9 +464,14 @@ JOIN submit_intents AS i ON i.lease_id = l.lease_id
 LEFT JOIN execution_stop_evidence AS e ON e.submit_intent_id = i.submit_intent_id
 WHERE j.state = 'cancelling';"
 
-# 2. 复读确认：跨一个结算周期（默认 60 s 起）再跑一次第 1 步，仍停在同一处才继续。
+# 2. 复读确认：跨一个结算周期再跑一次第 1 步，仍停在同一处才继续。
 #    TtsSettlementWorker 对网关终态 succeeded 调用的就是同一个 LeaseService.release：
 #    它先跑完时租约已经是 released，此时 drain 会误伤该实例上仍在服务的其它 Job。
+#    周期取决于本部署实际启用的两个 worker：
+#      SPEECHNEXUS_TTS_SETTLEMENT_POLL_SECONDS（默认 1 s）
+#      SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_INTERVAL_SECONDS（默认 15 s，
+#        且 SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED 默认为 false）
+#    两个都没启用时，「复读仍停在同一处」只能说明这一瞬间没人动它，不构成等待依据。
 
 # 3. 收口：对识别出的**那一个** instance/generation 现场 drain，应答原样存盘
 #    请求体五项全部必填，缺一即 422；凭据是网关组件凭据，不是 API key。
@@ -484,7 +489,7 @@ curl -fsS -X POST \
 SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL=... SPEECHNEXUS_DATABASE_SCHEMA=speech \
 python -m speechnexus_backend.completed_release_cli \
   --lease-id <lease_id> --drain-response "/tmp/drain-<lease_id>.json" \
-  --observed-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --observed-at "$(python3 -c 'import datetime as d;print(d.datetime.now(d.UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ"))')" \
   --reason "ticket #852: drained <instance_id> generation <n>"
 
 # 5. 核对：held_slots 归零，且证词行钉在同一条租约与同一个 instance/generation
@@ -506,11 +511,22 @@ WHERE n.instance_id = '<instance_id>' AND n.instance_generation = <n>;"
 （`completed_release_drain_mismatch`）——这就是「钉住实例代次」：给相邻代次做的 drain
 不能授权这条租约的释放。
 
-**drain 必须现场取，且落在执行结束与记录之间**。应答的 `updated_at` 是网关自己的读取
-时间，必须满足 `terminated_at_us <= updated_at <= observed_at`（无终止时间时下界退到
-派发时间），否则得到 `completed_release_drain_stale`。理由是摘要的性质：它只证明证词
-与它携带的字段一致，**不是网关签名**——一份执行结束前取到的 drain 无法说明实例上已经
-没有活，一份记录之后取到的 drain 也不描述证词声称的那个状态。
+**时间窗强制的是先后，不是新鲜度**。应答的 `updated_at` 是网关自己的读取时间，必须满足
+`terminated_at_us <= updated_at <= observed_at`（`terminated_at_us` 为空时下界退到派发
+时间），否则得到 `completed_release_drain_stale`。它证明这份 drain 发生在这条执行结束
+之后、记录之前，**不证明它是刚取的**：上界就是操作员自己填的 `observed_at`，因此一份
+执行结束之后任意久取到的**真** drain 仍然通过（实测 24 小时前取的应答照样释放成功）。
+「现场取 drain」是操作要求，不是工具能证明的性质——这正是摘要的性质决定的：它只证明
+证词与它携带的字段一致，**不是网关签名**。
+
+精度要求（否则脚本化连跑会假拒绝）：`--observed-at` 不得早于 drain 的 `updated_at`。
+`date -u +%Y-%m-%dT%H:%M:%SZ` 截到秒，遇到 `updated_at` 带微秒（例如 `…:06.700000Z`
+配 `…:06Z`）就会被判成 `drain_stale`，所以第 4 步用微秒精度的 `python3` 一行
+（BSD `date` 不支持 `%N`）；最小可接受做法是让 drain 与 CLI 之间至少隔 1 秒。
+
+已知限制（不在本片修）：`terminated_at_us` 为空时下界退到派发时间，比需要的更宽。在
+判据形状里它不可达——`engine_terminal_response` 证据与 `terminated_at_us` 由网关同一条
+`UPDATE` 写入；若哪天可达，下界应改用 `execution_stop_evidence.observed_at_us`。
 
 第 4 步把证词写进既有的 `admission_quarantine_releases` 账本
 （`evidence_kind=operator_verified_instance_terminated`），并复用

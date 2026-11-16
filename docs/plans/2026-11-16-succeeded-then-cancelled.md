@@ -126,8 +126,10 @@
 复审对同一实现提出三处实质缺口，均已按「工具自己证明，不依赖手册」落地：
 
 - **drain 的时间窗**：`drain.updated_at` 必须落在执行结束与 `observed_at` 之间
-  （`completed_release_drain_stale`）。摘要只证明证词与字段一致，不是网关签名，
-  因此「现场取 drain」由时间窗强制，而不是写在手册里的自觉。
+  （`completed_release_drain_stale`）。摘要只证明证词与字段一致、不是网关签名，所以
+  时间窗**只强制先后**（drain 在本次执行结束之后、记录之前），不强制新鲜度：上界是操作员
+  自填的 `observed_at`，执行结束后任意久取到的真 drain 仍然通过。「现场取 drain」仍是
+  操作要求，是明示限制而非工具保证。
 - **判据与标签对齐**：`completed-without-release` 的判定补上终止证据（
   `engine_terminal_response` + 两个 flag）；无该证据的 `succeeded` 保持
   `execution-unknown`，不再被指向必然拒绝它的出口。工具同时自己核验

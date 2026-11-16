@@ -504,6 +504,7 @@ uv run python scripts/dev-env/python-coverage.py combine \
 3. **覆盖率采集 2 → 4 worker。** `python-coverage.py` 的 `PYTHON_COVERAGE_WORKERS_MAX`、CLI `choices`、分片元数据校验与 `workbench-pg-probe.py` 的 `coverage_count` 上限一并放宽到 4；四份 worker 数据加十二份分片数据共十六份合并判定。
 5. **按成本而非用例数分区。** 分片器用 `HEAVY_CASE_WEIGHT = 3` 给需要真实 PostgreSQL/MySQL 或 Workbench 运行时的模块加权（`_pg`/`_postgres`/`_mysql`/`_migration_pg` 文件、`workbench_runtime`、`test_gateway_submit_ledger`），再按每道目标的成本切连续区间，而不是先算用例配额。2026-11-16 用同一次完整 inventory（2769 例、其中 928 例属于重模块）对比：旧算法八条 DB 道的估算成本为 388–438（跨度 1.42x），新算法八条全部为 402（1.00x），四条 Web 道 309–345 升到 350–359，再加各自约 12 例五倍权重的浏览器用例后仍在 410–419；整体成本跨度 1.42x → 1.15x。用例数跨度基本不变（1.27x → 1.26x），因为均衡目标已经从数量换成成本。
    首次运行（run 43821357681，2026-11-16）全绿：十二片 143–282 s、启动跨 +51…+53 s、端到端 370 s。各道估算成本已经相等，而实测跨度仍有 1.97x（lane 4 的 143 s 与 lane 3 的 267 s 同为 DB 道、成本同为 402），印证了本节前面的判断：剩余方差来自每片独占的 runner 主机，继续调分区没有收益，要压尾部只能压每片固定成本。
+   对象存储启动随后改为后台执行、只在需要时等待就绪（run 43823979448 全绿，377 s）：实测只有带 Node 步骤的 Web 道真正重叠——lane 8 的等待降为 0 s，代价被 42 s 的 Node／pnpm／打包／Chromium 步骤吸收；DB 道没有可重叠的步骤，等待仍是 9–11 s。这项收益是 4 条 Web 道各约 9–11 s，不是每条道 9 s；Web 道因此成为新的尾部（270–285 s）。
 4. **并发预算。** 同时运行的长作业为 12 分片 + `python_tests` + `python_static` + `web` + `controller_image` 的两个构建作业，加上接近完成的 docs/compose/reference 作业，峰值约 19，低于账号的 20 个并发作业上限；16 片会到 22，因此停在 12。
 
 ### 实测与预期

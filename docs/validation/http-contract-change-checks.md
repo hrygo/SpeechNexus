@@ -204,6 +204,15 @@ pointer suffix, so an entry covers one line of one response and nothing beside i
 The entry is active only for its exact `(from_version, to_version)` pair and only
 in its own source document.
 
+Every key binds the values themselves, because an approval that only recorded "this
+pointer changed" would cover any later value at that pointer. A `const` change is
+reported as `const value changed: <baseline value> -> <service value>` (for
+example `const value changed: 'true' -> ['true', 'false']` when a constant header
+becomes a closed enum) and an enum addition as
+`enum values added: ['<code>', ...]`. Replacing a reviewed value with a third one
+therefore emits a different, unregistered line and rejects; the same shape of
+change can only pass after its own value is registered.
+
 A widening is a real structural change without a declaration removal: a client
 written against the frozen baseline may meet a value the old declaration excluded,
 so the gate rejects it like any other unforeseen change. The registry exists

@@ -22,11 +22,13 @@ import importlib.util
 import re
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
-from typing import cast
+from typing import Any, cast
 
 import pytest
+import yaml
 
 from tests.contract.test_http_contract_changes import repository as repository
 
@@ -147,10 +149,16 @@ def test_every_entry_matches_a_widening_the_current_contract_still_carries(
         for finding in report["findings"]
         if finding.startswith(SOURCE) and _finding_class(finding) in classes
     }
-    assert carried == table, {
-        "widening_not_approved": sorted(carried - table),
-        "approval_without_widening": sorted(table - carried),
-    }
+    # One finding per line: a value-less or swapped approval is exactly what the
+    # reader has to see here, and pytest truncates a long dict's values.
+    assert carried == table, "\n".join(
+        [
+            "widening_not_approved:",
+            *sorted(carried - table),
+            "approval_without_widening:",
+            *sorted(table - carried),
+        ]
+    )
 
 
 def test_the_frozen_fixture_predates_the_widenings_it_is_compared_against() -> None:
@@ -222,3 +230,141 @@ def test_an_entry_without_its_reason_is_reported_instead_of_filtered() -> None:
         setattr(loaded, "_APPROVED_RESPONSE_VOCABULARY_WIDENINGS", original)  # noqa: B010
     assert approved == []
     assert any(item.endswith("has no issue or reason") for item in remaining)
+
+
+_REVIEWED_CONST = re.compile(r"const value changed: (.+) -> (.+)$")
+_HEADER_POINTER = (
+    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/validations/"
+    "post/responses/503/headers/x-should-retry"
+)
+
+
+def _inspect_a_mutated_working_tree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutate: Callable[[dict[str, Any]], None],
+) -> dict[str, Any]:
+    """Compare the frozen baseline against the real contract after one mutation.
+
+    The mutation lands in the throwaway repository's working tree only, so the
+    comparison is the same one the gate runs at PR time: baseline help, no history.
+    """
+    loaded, baseline = _real_contract_against_the_frozen_baseline(tmp_path, monkeypatch)
+    contract = yaml.safe_load((tmp_path / SOURCE).read_text(encoding="utf-8"))
+    mutate(contract)
+    (tmp_path / SOURCE).write_text(yaml.safe_dump(contract, sort_keys=False), encoding="utf-8")
+    return cast("dict[str, Any]", loaded.inspect_sources(baseline, surface="speech"))
+
+
+def _set_header_vocabulary(value: dict[str, Any]) -> Callable[[dict[str, Any]], None]:
+    def mutate(contract: dict[str, Any]) -> None:
+        header = contract["paths"]["/v1/nexus/voice-drafts/{draft_id}/validations"]["post"][
+            "responses"
+        ]["503"]["headers"]["X-Should-Retry"]
+        header["schema"] = {"type": "string", **value}
+
+    return mutate
+
+
+def _set_retryable_vocabulary(value: dict[str, Any]) -> Callable[[dict[str, Any]], None]:
+    def mutate(contract: dict[str, Any]) -> None:
+        error = contract["paths"]["/v1/nexus/voice-drafts/{draft_id}/validations"]["post"][
+            "responses"
+        ]["503"]["content"]["application/json"]["schema"]["allOf"][1]["properties"]["error"][
+            "properties"
+        ]
+        error["retryable"] = value
+
+    return mutate
+
+
+def test_the_unmutated_contract_still_passes_so_every_mutation_below_is_the_cause(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    report = _inspect_a_mutated_working_tree(tmp_path, monkeypatch, lambda contract: None)
+    assert report["findings"] == []
+    assert len(report["approved_response_vocabulary_changes"]) == 27
+
+
+@pytest.mark.parametrize(
+    ("mutate", "expected"),
+    [
+        # The reviewed change widened the header from `const: "true"` to the closed
+        # enum `["true", "false"]`. A third vocabulary - a single other value, or an
+        # enum carrying a code nobody reviewed - is not that change, so its finding
+        # has to name the unreviewed value and reject.
+        (
+            _set_header_vocabulary({"const": "false"}),
+            f"{_HEADER_POINTER}: const value changed: 'true' -> 'false'",
+        ),
+        (
+            _set_header_vocabulary({"const": "maybe"}),
+            f"{_HEADER_POINTER}: const value changed: 'true' -> 'maybe'",
+        ),
+        (
+            _set_header_vocabulary({"enum": ["true", "maybe"]}),
+            f"{_HEADER_POINTER}: const value changed: 'true' -> ['true', 'maybe']",
+        ),
+        # The body's `retryable` was reviewed as the per-code enum `[true, false]`;
+        # collapsing it back to one constant swaps the reviewed vocabulary.
+        (
+            _set_retryable_vocabulary({"const": False}),
+            "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/"
+            "validations/post/responses/503/application/json/allOf/1/properties/error/"
+            "properties/retryable: const value changed: True -> False",
+        ),
+    ],
+)
+def test_a_value_swapped_away_from_the_reviewed_vocabulary_rejects(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutate: Callable[[dict[str, Any]], None],
+    expected: str,
+) -> None:
+    report = _inspect_a_mutated_working_tree(tmp_path, monkeypatch, mutate)
+    assert report["findings"] == [expected]
+    # The mutated pointer's own approval no longer matches; the other 26 still do.
+    approved = {item.rsplit(" [", 1)[0] for item in report["approved_response_vocabulary_changes"]}
+    assert expected not in approved
+    assert len(approved) == 26
+
+
+def test_the_reviewed_vocabulary_relisted_verbatim_stays_green(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The positive control: the value the entry reviews, restated with the same
+    # meaning, is still approved. Binding values must not make a dormant entry
+    # reject an unchanged declaration.
+    report = _inspect_a_mutated_working_tree(
+        tmp_path, monkeypatch, _set_header_vocabulary({"enum": ["true", "false"]})
+    )
+    assert report["findings"] == []
+    assert any(_HEADER_POINTER in item for item in report["approved_response_vocabulary_changes"])
+
+
+def test_every_reviewed_const_entry_names_both_values() -> None:
+    # A value-less key is the defect for issue #858: it would cover any later value
+    # at that pointer. The class prefix stays `const value changed` so the class
+    # guard above keeps working; the values follow it, as the enum form already does.
+    table = _table(module())
+    const_entries = [key for key in table if ": const value changed" in key]
+    assert len(const_entries) == 22
+    for key in const_entries:
+        match = _REVIEWED_CONST.search(key)
+        assert match is not None, key
+        old, new = match.group(1), match.group(2)
+        assert old and new and old != new, key
+        assert key.split(": const value changed")[1].startswith(": "), key
+
+
+def test_the_const_finding_names_the_value_it_replaced() -> None:
+    kernel = module()._kernel()
+    issues: list[str] = []
+    kernel._compare_schema(
+        {"type": "string", "const": "false"},
+        {"type": "string", "const": "true"},
+        "probe",
+        issues,
+        direction="response",
+    )
+    assert issues == ["probe: const value changed: 'false' -> 'true'"]

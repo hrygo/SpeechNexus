@@ -260,19 +260,35 @@ speech_builtin_voice_qualification_provenance   -- 每条已发布内建资格�
 | `gateway_policy_evidence_unavailable` | live gateway policy 不符 | 是 |
 | `writer_identity_forbidden` | 写入身份拥有超范围权限（含 publication head 写权限） | 是 |
 | `attestation_conflict` | 同一 attestation/approval 身份已用不同原件记录 | 是 |
+| `attestation_revision_already_attested` | 该 voice revision 已有一条声明；一条 revision 只承载一条声明，续期须发新 revision | 是 |
 | `attestation_missing` / `attestation_mismatch` | 发布时声明与 approval 不符，或探针 approval 被塞入声明记录 | 是 |
 
 读面（`speechnexus-qualification-provenance`）只读，不写、不探测引擎。它逐行输出
-`source_kind`/`provenance_recorded`/`attestation_id`/`declared_by`/窗口/摘要，
-`operator_attested` 且窗口已过或缺失的行给出重述提示与 `attestation_state`；有
-`--fail-on-expired-attestation` 时以退出码 `3` 失败。它只要求 SELECT 四张表
-（qualifications、approvals、provenance、attestations），不写、不探测引擎。
+`source_kind`/`source_evidence`/`provenance_recorded`/`probe_authorization_id`/
+`attestation_id`/`declared_by`/窗口/摘要，`operator_attested` 且窗口已过或缺失的行给出
+`attestation_state` 与「发新 revision 才能续期」的提示。它只要求
+`qualification_reader_grants` 声明的 SELECT 面（qualifications、approvals、provenance、
+attestations、probe authorizations），以 `sn_qualification_reader` 身份运行，不写、不探测引擎。
+读失败退出码 `3`，从不把「没读出来」当成资格结论。
 
 读面语义：
 
-- `source_kind='controller_observed'` + `provenance_recorded=true`：0055 之后由 controller 发布。
-- `source_kind='operator_attested'`：运维自证；附 attestation 明细，运维能看出「这不是 controller 观测来的」。
-- `provenance_recorded=false`：0055 之前的历史行（当时只有 controller 路径）。
+- `source_kind='controller_observed'`：必须带 `probe_authorization_id`，且
+  `provenance_recorded=true` 时 provenance 行记录的 probe 授权必须与 approval 自带的相同；
+  0055 之前的历史行按 approval 自身是否带 probe 授权归入此标签（`evidence=legacy_pre_0055`）。
+- `source_kind='operator_attested'`：运维自证，附 attestation 明细，运维能看出「这不是
+  controller 观测来的」。
+- `source_kind='unverified'`（`source_evidence='absent'`）：既没有 probe 授权也没有声明记录，
+  显式标为来源未知而不是算作 controller 观测。
+
+### 6.1 续期与一次性语义
+
+一条 voice revision 只承载一条声明：`(voice_id, revision, revision_id,
+binding_revision_id)` 上的唯一约束是反替代规则——否则第二条声明会被读成第一条的替换。
+声明到期不释放该 revision，再次声明同一 revision 以
+`attestation_revision_already_attested` 拒绝（退出码 `4`，不是「结果未知」）。续期流程是
+发布新的 voice revision（新 `revision` 与 `revision_id`）并对其声明，旧 revision 的资格与
+provenance 行保留为历史事实。
 
 ## 7. 迁移方案
 
@@ -306,15 +322,16 @@ speech_builtin_voice_qualification_provenance   -- 每条已发布内建资格�
 - 写入事务：`operator_attested_qualification.py`；CLI：`attest_builtin_voice.py`；
   读面：`qualification_provenance.py`；发布入口在 `builtin_voice_publication.py` 写 provenance。
 - 迁移：`0055_operator_attestation`；授予：`builtin_voice_grants.py`。
-- 用例：`tests/unit/backend/test_operator_attested_qualification.py`（20 项）、
-  `tests/integration/test_operator_attested_qualification_pg.py`（19 项，隔离 PostgreSQL）。
+- 用例：`tests/unit/backend/test_operator_attested_qualification.py`（25 项）、
+  `tests/integration/test_operator_attested_qualification_pg.py`（24 项，隔离 PostgreSQL）。
 - 部署装配：`sn_operator_attestation` 由
   [最小部署 §6](../operations/compose-minimal.md#外部托管引擎的资格声明角色-sn_operator_attestation)
   在新建与升级两条路径创建并按 `operator_attestation_writer_grants` 授权，两个路径的存在性由
   `tests/ci/test_reference_deploy_dsn_coverage.py` 的 `UPGRADE_PATH_ROLES` 与
   `ROLE_GRANT_BINDINGS` 钉住。口令由 §6 的十六键生成步骤写入 `deploy/compose.env`；连接地址
   是 host 侧导出（host 端口），`deploy/compose.yaml` 不转发它，`deploy/compose.env.example`
-  只有口令占位。未导出连接地址时命令在连接前退出并点名
+  只有口令占位。资格来源审计用另一个只读身份 `sn_qualification_reader`
+  （`qualification_reader_grants`）执行，DSN 同样是 host 侧导出。未导出连接地址时命令在连接前退出并点名
   `SPEECHNEXUS_OPERATOR_ATTESTATION_WRITER_DATABASE_URL`（退出码 `2`），这是本路径唯一的
   「未启用」形态，不会降级为 controller 观测。
 

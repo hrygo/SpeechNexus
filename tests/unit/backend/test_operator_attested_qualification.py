@@ -253,6 +253,53 @@ def test_the_cli_refuses_before_connecting_when_trust_is_not_declared(
     assert captured.out == ""
 
 
+def test_the_cli_rejects_an_unparseable_writer_dsn_as_a_configuration_error(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A DSN libpq cannot parse is configuration, not an unknown outcome."""
+    monkeypatch.setenv("SPEECHNEXUS_OPERATOR_ATTESTATION_WRITER_DATABASE_URL", "not-a-dsn-at-all")
+    paths: dict[str, str] = {}
+    for name in (
+        "artifact-pin",
+        "manifest",
+        "report",
+        "scenario-evidence",
+        "request",
+        "declaration",
+    ):
+        path = tmp_path / name
+        path.write_text("{}", encoding="utf-8")
+        path.chmod(0o600)
+        paths[name] = str(path)
+    code = attest_main(
+        [
+            "--schema",
+            "speech",
+            "--workspace-id",
+            "wsp-synthetic",
+            "--trust-declaration-file",
+            paths["declaration"],
+            "--attestation-request-file",
+            paths["request"],
+            "--artifact-pin",
+            paths["artifact-pin"],
+            "--manifest",
+            paths["manifest"],
+            "--report",
+            paths["report"],
+            "--scenario-evidence",
+            paths["scenario-evidence"],
+        ]
+    )
+    captured = capsys.readouterr()
+    assert code == 2
+    assert (
+        "error: SPEECHNEXUS_OPERATOR_ATTESTATION_WRITER_DATABASE_URL is not a valid "
+        "connection string" in captured.err
+    )
+    assert captured.out == ""
+
+
 def test_the_cli_names_the_missing_writer_dsn_before_connecting(
     tmp_path: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

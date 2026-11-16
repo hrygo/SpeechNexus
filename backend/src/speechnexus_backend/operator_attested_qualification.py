@@ -194,6 +194,19 @@ def record_operator_attestation(
         existing = _replay(cursor, request, evidence_digest)
         if existing is not None:
             return existing
+        # One attestation per voice revision is the anti-substitution rule: a second
+        # declaration for the same (voice, revision, revision_id, binding revision)
+        # could otherwise be read as a replacement for the first. Reject it by name
+        # instead of letting the unique constraint surface as an unknown outcome, and
+        # name the only cure -- a new voice revision -- because expiry does not make
+        # the revision reusable.
+        cursor.execute(
+            "SELECT attestation_id FROM speech_builtin_voice_operator_attestations "
+            "WHERE voice_id=%s AND revision=%s AND revision_id=%s AND binding_revision_id=%s",
+            (request.voice_id, request.revision, request.revision_id, request.binding_revision_id),
+        )
+        if cursor.fetchall():
+            raise OperatorAttestationError("attestation_revision_already_attested")
         cursor.execute(
             "SELECT floor(extract(epoch FROM clock_timestamp())*1000000)::bigint AS now_us"
         )
@@ -397,8 +410,7 @@ def _replay(
 ) -> dict[str, Any] | None:
     """Return the original result for the identical attestation, or refuse a conflict."""
     cursor.execute(
-        "SELECT attestation_id,approval_id,declaration_digest,"
-        "floor(extract(epoch FROM clock_timestamp())*1000000)::bigint AS now_us "
+        "SELECT attestation_id,approval_id,declaration_digest,expires_at_us "
         "FROM speech_builtin_voice_operator_attestations WHERE attestation_id=%s",
         (request.attestation_id,),
     )
@@ -418,7 +430,7 @@ def _replay(
             "voice_id": request.voice_id,
             "revision": request.revision,
             "declaration_digest": evidence_digest,
-            "expires_at_us": request.window.expires_at_us,
+            "expires_at_us": int(row["expires_at_us"]),
         }
     cursor.execute(
         "SELECT attestation_id FROM speech_builtin_voice_operator_attestations "

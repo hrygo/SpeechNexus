@@ -21,6 +21,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+import psycopg
 from psycopg.conninfo import conninfo_to_dict
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -149,6 +150,17 @@ def prepare_attestation(
     )
 
 
+_REMEDIATION = {
+    # Expiring an attestation does not free its voice revision: the unique
+    # identity is (voice, revision, revision_id, binding revision) and it is what
+    # stops a second declaration from being read as a replacement for the first.
+    "attestation_revision_already_attested": (
+        "; this voice revision already has an attestation and one revision carries "
+        "exactly one; publish a new voice revision and attest that instead"
+    ),
+}
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--schema", required=True)
@@ -173,7 +185,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     try:
         settings = OperatorAttestationSettings()
+    except ValueError, TypeError, KeyError, OverflowError:
+        print("error: operator attestation settings are invalid", file=sys.stderr)
+        return 2
+    try:
         conninfo_to_dict(settings.database_url.get_secret_value())
+    except psycopg.ProgrammingError, psycopg.OperationalError:
+        # A DSN that libpq cannot parse is a configuration error, not a result: it
+        # must name the key and exit 2 before any connection is attempted.
+        print(
+            "error: SPEECHNEXUS_OPERATOR_ATTESTATION_WRITER_DATABASE_URL is not a valid "
+            "connection string",
+            file=sys.stderr,
+        )
+        return 2
+    try:
         prepared = prepare_attestation(
             trust_declaration_file=options.trust_declaration_file,
             attestation_request_file=options.attestation_request_file,
@@ -203,19 +229,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("error: gateway_policy_evidence_unavailable", file=sys.stderr)
         return 4
     pool_name = "operator-attestation-" + uuid.uuid4().hex
-    pool = speech_pool(
-        settings.database_url.get_secret_value(),
-        schema=options.schema,
-        max_size=1,
-        name=pool_name,
-    )
+    try:
+        pool = speech_pool(
+            settings.database_url.get_secret_value(),
+            schema=options.schema,
+            max_size=1,
+            name=pool_name,
+        )
+        pool.open()
+    except Exception:
+        # Nothing was written: an unreachable writer is a deployment fact, not an
+        # unknown outcome, and must not be reported as one.
+        print(
+            "error: operator attestation writer is unreachable; check "
+            "SPEECHNEXUS_OPERATOR_ATTESTATION_WRITER_DATABASE_URL",
+            file=sys.stderr,
+        )
+        return 3
     logger = logging.getLogger("psycopg.pool")
     diagnostics = _PoolDiagnostics(pool_name)
     logger.addFilter(diagnostics)
     outcome: dict[str, object] | None = None
     failure: tuple[int, str] | None = None
     try:
-        pool.open()
         outcome = record_operator_attestation(
             PostgresPublications(pool, timeout_seconds=settings.timeout_seconds),
             declaration=declaration,
@@ -225,7 +261,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             **release,
         )
     except OperatorAttestationError as error:
-        failure = (4, f"attestation rejected: {error.code}\n")
+        failure = (4, f"attestation rejected: {error.code}{_REMEDIATION.get(error.code, '')}\n")
     except Exception:
         failure = (
             5,

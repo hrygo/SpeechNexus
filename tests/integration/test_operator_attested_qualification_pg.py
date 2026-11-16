@@ -499,7 +499,12 @@ class Ledger:
             **release,
         )
 
-    def publish(self, store: PostgresPublications) -> dict[str, Any]:
+    def publish(
+        self,
+        store: PostgresPublications,
+        approval_id: str = APPROVAL,
+        key_digest: str = "sha256:" + "f" * 64,
+    ) -> dict[str, Any]:
         head = self.db.execute(
             "SELECT revision FROM speech_publication_heads WHERE kind='voice' AND object_id=%s",
             (VOICE,),
@@ -507,8 +512,8 @@ class Ledger:
         expected_head = None if head is None else str(head["revision"])
         return publish_builtin_voice(
             store,
-            key_digest="sha256:" + "f" * 64,
-            approval_id=APPROVAL,
+            key_digest=key_digest,
+            approval_id=approval_id,
             database=self.database,
             schema=self.schema,
             installation_id=self.installation_id,
@@ -796,6 +801,94 @@ def test_attestation_opens_no_compute_release_and_no_native_evidence(
         "SELECT instance_state, base_budget_kind FROM engine_instances"
     ).fetchone()
     assert instance == {"instance_state": "ready", "base_budget_kind": "steady"}
+
+
+def _renewal(ledger: Ledger) -> tuple[dict[str, Any], dict[str, Any]]:
+    """A second, independent declaration for revision 2 of the same voice."""
+    request = ledger.request(
+        attestation_id=ATTESTATION + "-2",
+        approval_id=APPROVAL + "-2",
+        voice={
+            "voice_id": VOICE,
+            "revision": "2",
+            "revision_id": "voice-rev-2",
+            "source_approval_id": SOURCE,
+        },
+    )
+    evidence = ledger.gateway_evidence(voice_revision="2", voice_revision_id="voice-rev-2")
+    return request, evidence
+
+
+def test_a_second_attestation_for_the_same_voice_revision_is_refused_by_name(
+    pg: tuple[psycopg.Connection[dict[str, Any]], str, str],
+) -> None:
+    """One voice revision carries one attestation; renewal needs a new revision."""
+    db, schema, role = pg
+    ledger = Ledger(db, schema)
+    writer = ledger.writer(role)
+    try:
+        ledger.attest(writer)
+        with pytest.raises(OperatorAttestationError) as error:
+            ledger.attest(
+                writer,
+                request=ledger.request(
+                    attestation_id=ATTESTATION + "-again",
+                    approval_id=APPROVAL + "-again",
+                ),
+            )
+        assert error.value.code == "attestation_revision_already_attested"
+        assert ledger.count("speech_builtin_voice_operator_attestations") == 1
+        assert ledger.count("speech_builtin_voice_approvals") == 1
+    finally:
+        _close(ledger)
+
+
+def test_renewal_publishes_a_second_qualification_under_a_new_voice_revision(
+    pg: tuple[psycopg.Connection[dict[str, Any]], str, str],
+) -> None:
+    """The documented cure for an expiring attestation, executed end to end."""
+    db, schema, role = pg
+    ledger = Ledger(db, schema)
+    writer = ledger.writer(role)
+    try:
+        ledger.attest(writer)
+        publisher = ledger.publisher(role)
+        ledger.publish(publisher)
+        request, evidence = _renewal(ledger)
+        outcome = ledger.attest(writer, request=request, gateway_evidence=evidence)
+        assert outcome["outcome"] == "committed"
+        assert outcome["revision"] == "2"
+        ledger.publish(publisher, approval_id=APPROVAL + "-2", key_digest="sha256:" + "e" * 64)
+        qualifications = db.execute(
+            "SELECT revision FROM speech_builtin_voice_qualifications "
+            "WHERE voice_id=%s ORDER BY revision",
+            (VOICE,),
+        ).fetchall()
+        assert [row["revision"] for row in qualifications] == ["1", "2"]
+        provenance = db.execute(
+            "SELECT revision, source_kind, evidence_kind FROM "
+            "speech_builtin_voice_qualification_provenance WHERE voice_id=%s ORDER BY revision",
+            (VOICE,),
+        ).fetchall()
+        assert provenance == [
+            {
+                "revision": "1",
+                "source_kind": "operator_attested",
+                "evidence_kind": "operator_attestation",
+            },
+            {
+                "revision": "2",
+                "source_kind": "operator_attested",
+                "evidence_kind": "operator_attestation",
+            },
+        ]
+        head = db.execute(
+            "SELECT revision FROM speech_publication_heads WHERE kind='voice' AND object_id=%s",
+            (VOICE,),
+        ).fetchone()
+        assert head == {"revision": "2"}
+    finally:
+        _close(ledger)
 
 
 def test_the_attested_identity_cannot_publish_a_controller_label(

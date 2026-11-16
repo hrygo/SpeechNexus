@@ -4,6 +4,8 @@
 对比基 `origin/main...HEAD`，21 文件 +4202/−33。审查在独立 worktree `/private/tmp/sn883` 完成，
 隔离 PostgreSQL `sn876-oa-pg:55470`、MySQL `sn876-oa-mysql:55471`。
 
+> 本报告分两轮：**第一轮**针对 `6f118956`（下至「第二轮」标记之前，保持该时点原样），**第二轮**针对返修后的 `82d55a82`（文末「第二轮：返修核实」）。两轮结论都不能合，但第二轮的阻塞理由换成了新的一条：`unverified` 标签在准入侧没有消费者。
+
 **结论：不能合。** 这条路径的关闭状态、写入边界与迁移都做得很干净，运行态快照也确实是零变化；
 但「两种来源在读面上分得开」这个本 PR 的唯一卖点有两条硬缺陷：
 
@@ -489,3 +491,180 @@ INSERT 权限（§7），所以真实控制器观测必然 `probe_authorization_
 - 变异只做 3 处代码 + 3 处文档守卫；不做组合变异，也不据此推断守卫强度。
 - 结论时效：核验于 2026-11-16，针对 head `6f118956`。`origin/main` 在本轮期间前进到 `9b2a1219`，
   三方 diff 的 merge-base 未变，结论不受影响。
+
+---
+
+## 第二轮：返修核实（head `82d55a82`）
+
+核验于 2026-11-16 11:20–11:40（Asia/Shanghai），对象 `82d55a82`：在 `6f118956` 之上新增 6 个作者提交
+（`1e0da73a` 标签由证据、`56547e37` 只读审计身份、`65dd0780` 单 revision 单声明、`ccc08c0a` 让两条薄弱用例能失败、
+`046ed971`/`82d55a82` 文档）。第一轮的记录保持 `6f118956` 时点，不做改写。
+
+### 结论（第二轮）：仍然不能合，但理由换了
+
+第一轮两条 P1 都真的关上了，而且关法比我建议的更硬：
+
+- **P1-①** 改为「标签由证据决定」+ 账本三态 `CHECK`。伪造行现在读成 `unverified/absent`，
+  手工改标签被 `CheckViolation` 拒绝，声明身份对 provenance 与 `probe_authorization_id` 都没有写权限。
+  这比原建议（发布端一个 `if`）好：不变量写进了数据库，且不必改既有控制器路径用例的列清单。
+- **P1-②** 真的用文档身份跑通了：`sn_qualification_reader` 在两条 provisioning 路径都建、
+  有口令键与宿主侧 DSN，一份报告同时读出 `controller_observed` 与 `operator_attested` 各一条，
+  且该身份 `INSERT provenance` 被拒。
+
+**但返修把问题推到了下一层，那里更严重（本轮新 P1）：`unverified` 只是一个标签，没有任何消费者读它。**
+一条既无 probe 授权、也无声明记录的资格，仍会被同步 TTS 准入接受、被启动闸门算作已资格、
+被 public job 的 builtin 兜底当成内建声音。于是 fail-closed 只存在于写命令与读面；
+「部署方信任声明 + 来源批准 + 发布证据 + 网关策略」这条链在**准入侧不承重**。
+
+### A. P1-① 是否真的关上 —— **PASS**
+
+用 `sn_operator_attestation` 角色自己的凭据，只写它拿到的 8 列（`probe_authorization_id` 空、无 attestation）：
+
+```
+A1 最小身份写 8 列 probe 形状批准: 成功（无 probe_authorization_id）
+A2 行内 probe_authorization_id = None
+A3 provenance: {'source_kind': 'unverified', 'evidence_kind': 'absent',
+                'attestation_id': None, 'probe_authorization_id': None}
+A4 读面 source_kind = unverified | note = recorded as unverified: neither a probe
+   authorization nor an attestation backs a source label
+A5 标签是否已不可能读成 controller_observed: True
+A6 owner 只改标签: CheckViolation
+A6 writer 身份改 provenance: InsufficientPrivilege
+A6 writer 身份补 probe_authorization_id: InsufficientPrivilege
+A6 writer 身份直接插 provenance: InsufficientPrivilege
+```
+
+`provenance` 的三态 `CHECK` 把「标签必须有对应证据行」写进了账本：
+`controller_observed` 必须带 `probe_authorization_id`、`operator_attested` 必须带 `attestation_id`、
+否则只能 `unverified/absent` 且两列皆空。任何只改标签不改证据的写法都被数据库拒绝——
+这条不变量不再依赖任何一层应用代码。
+
+### B. P1-② 是否用文档身份跑通 —— **PASS**
+
+`qualification_reader_grants` 现在放行 provenance、attestation、probe 授权三张只读表；
+`sn_qualification_reader` 在 runbook **两条** provisioning 路径都建（第 590、1636 行），
+口令键进了 §6 `KEYS`（该块已 17 个键），宿主侧 DSN 导出与命令齐备，
+CI 守卫 `test_reference_deploy_dsn_contract` 把它登记为 2 处。实测（用该身份自己的 DSN，不是夹具 owner）：
+
+```
+B1 reader 身份读出 source_kind = ['controller_observed', 'operator_attested']
+   voice-controller -> controller_observed | evidence: legacy_pre_0055
+   voice-vivian     -> operator_attested    | evidence: provenance_row
+   note: operator-attested external engine: not a controller observation;
+         declared_* values are the declaration's snapshot, not live runtime state
+B2 两种来源各一条: {'operator_attested': 1, 'controller_observed': 1}
+B3 reader 身份插 provenance: InsufficientPrivilege
+B4 CLI exit=0（真入口 speechnexus-qualification-provenance，三行 JSON + summary）
+```
+
+一点说明：controller 那一行的 `evidence=legacy_pre_0055`，因为同一份 release 证据只能覆盖一个 voice，
+本 schema 内无法用真实发布路径再造第二个 controller 资格（作者新用例用同款造法）。
+这不影响 B 的结论——读面确实通过最小身份把两种来源分开读出，且该身份不可写。
+
+### C. 新 P1：`unverified` 仍被准入接受 —— **FAIL**
+
+同一份账本里，A 步骤伪造并发布出来的那条 `unverified` 资格：
+
+```
+C1 provenance: {'source_kind': 'unverified', 'evidence_kind': 'absent'}
+C2 同步 TTS 准入 require_builtin_voice: 通过, verifier_id = builtin-customvoice-v1
+C3 public job builtin 兜底 _custom_voice: 返回 None（当作已验证的内建声音）
+C4 has_qualified_voice 存在性 SQL 命中资格行: 2 | _voice 发布查找命中: 1
+C5 unverified 是否被准入接受: 是 → fail-closed 只在 CLI 层
+```
+
+三个消费者逐个看（**本轮均未被本 PR 修改**，`public_job_admission.py` 的差异只来自已合并的 #880）：
+
+| 消费者 | 判定依据 | 是否看来源 | 结果 |
+| --- | --- | --- | --- |
+| `speech/infrastructure/builtin_voice_qualification.py` `require_builtin_voice` | qualifications ⋈ approvals ⋈ source_approvals 的 facts、身份绑定、时效 | **否** | 接受（C2 实测） |
+| `qualified_speech_facts_postgres.py:56` `has_qualified_voice` | `SELECT voice_id,revision FROM speech_builtin_voice_qualifications WHERE binding_revision_id=%s` + `_voice()` 的发布查找 | **否** | 两条 SQL 都命中（C4），且后续 `_voice` 只查 publications |
+| `public_job_admission.py:331` `_custom_voice` 的 builtin 兜底 | `SELECT 1 FROM speech_builtin_voice_qualifications WHERE voice_id,revision,revision_id` | **否，且不看时效** | 接受（C3 实测） |
+
+**影响**：持有 `sn_operator_attestation` 凭据（8 列 INSERT 足够）+ 发布身份凭据的人，可以绕过整个
+信任声明链条，产出一条同步 TTS 可用的内建声音资格：
+
+- 不需要 `--trust-declaration-file`，即不需要部署方对「这些实例的生命周期由运维掌握」的显式决定；
+- 不需要 release/gateway 证据与来源批准的新鲜度以外的任何声明输入（来源批准仍需在有效期内，
+  这是 `require_builtin_voice` 自带的条件；facts 里的实例身份也仍需与运行态 head 一致，
+  而这两个表声明身份都能读）；
+- 也不需要走 `speechnexus-attest-builtin-voice`，因此不触发 `writer_identity_forbidden`、
+  目标安装比对、窗口上限等所有写入侧检查。
+
+也就是说：**「来源可读」做到了，「来源可信」在准入侧没有落地。** 读面会诚实地说"来源未知"，
+但 TTS 照样能用这条资格合成。
+
+**为什么不能简单地在准入侧拒 `unverified`**（只陈述事实，不设计修法）：作者自己的用例
+`test_rows_published_before_the_migration_are_reported_as_recorded_history` 断言「0055 之前发布、
+且批准不带 probe 授权」的历史行合法地读成 `unverified`。任何「准入拒绝 unverified」的写法
+都会让这类历史部署在升级后失去同步 TTS；所以修法必须能区分「历史遗留」与「证据缺失」，
+这需要比一个标签更多的信息。
+
+### D. 续期处置 —— **PASS**
+
+```
+D1 UNIQUE 约束: ['UNIQUE (approval_id)',
+                 'UNIQUE (voice_id, revision, revision_id, binding_revision_id)']
+D2 首次声明: committed att-tts-1
+D3 续期: OperatorAttestationError code = attestation_revision_already_attested
+D4 attestations 行数: 1 | 冗余唯一约束已去掉: True
+```
+
+反替代约束 `UNIQUE (voice_id, revision, revision_id, binding_revision_id)` **原样保留**（没有为了续期放宽），
+冗余的 `UNIQUE (attestation_id, …)` 已删。错误码具名且 CLI 映射到退出码 4，附
+`_REMEDIATION` 文案「publish a new voice revision and attest that instead」，不再是「结果未知，请重放」。
+作者另附 revision 1 → 2 的集成用例。
+
+### E. 命名 —— **PASS**
+
+`controller_artifact_digest` 已改名 `declared_lifecycle_digest`，读面对声明快照字段统一 `declared_` 前缀
+（`declared_by`/`declared_expires_at_us`/`declared_fencing_token`/`declared_instance_generation`/
+`declared_observed_at_us`/`declared_lifecycle_digest`），且异常行 `note` 明写
+「declared_* values are the declaration's snapshot, not live runtime state」——
+第一轮担心的「把旧值当当前状态打印」已经说清。
+
+### F. 另外三项
+
+| 项 | 变异/命令 | 结果 |
+| --- | --- | --- |
+| `attestation_missing` 分支覆盖（第一轮 M2 存活） | 注释掉 1 处 `raise … attestation_missing` | **1 红**：`test_an_operator_approval_without_its_attestation_is_refused`。覆盖缺口已补 |
+| 「native 门无 operator 入参」是否真能红 | 给 `require_native_ready` 加 `operator_declaration: object \| None = None` | **1 红**：`test_the_native_gate_has_no_operator_input`（断言签名恰为四个参数）。装饰断言确实换成了结构不变式 |
+| 不可解析 DSN 的退出码（第一轮 P3-⑥） | `not-a-dsn` / `host=… password=X dbname` | **exit 2** + `error: SPEECHNEXUS_OPERATOR_ATTESTATION_WRITER_DATABASE_URL is not a valid connection string`（不再是 traceback + exit 1） |
+| PR 描述（第一轮 P2-④） | `gh pr view 878 --json body` | 已改为「设计文档即正文…本 PR 新增一条信任根，不是补文档步骤」 |
+
+本轮基线：单元 24 passed、隔离 PG 集成 24 passed、`tests/ci` 459 passed / 1647 subtests；
+两次变异都在还原后确认 `git status --porcelain` 为空。
+
+### G. 第一轮 P3 里仍未处理的
+
+- `public_job_admission.py:331` 的 builtin 兜底仍只看存在性（现在成了 C 这条链上的关键一环）。
+- `0055:54` `declared_by NAME` 仍会在超过 63 字节时静默截断（`_identifier` 允许 127 字符）。
+- 读面对 operator 行仍打印 `probe_authorization_id`（恒为 NULL），对账时容易读成"有授权但为空"。
+
+### H. 第二轮后的必须修清单（替代第一轮 §10）
+
+**P1（阻塞合并）**
+
+1. **`unverified` 在准入侧没有消费者（§C）**：同步 TTS 准入、启动闸门、public job builtin 兜底
+   三处都只读 `speech_builtin_voice_qualifications`，因此一条无证据的资格可被合成使用。
+   影响与修法约束（需区分历史遗留行）见 §C。
+
+**P2（合并前应修）**
+
+2. 若短期不修 P1，至少让三处消费者在读面之外也能看见来源：例如 `public_job_admission` 的
+   builtin 兜底与 `has_qualified_voice` 的存在性查询同时要求 provenance 证据（这是方向性建议，
+   具体做法由作者决定）。
+3. 读面 `probe_authorization_id` 对 operator 行应省略或标 `null` 原因，避免"有授权但为空"的误读。
+
+**已关闭**：第一轮 P1-①（§A）、P1-②（§B）、P2-③ 续期（§D）、P2-④ PR 描述（§F）、
+P2-⑤ 命名（§E）、P3-⑥ DSN 退出码（§F）、P3-⑦ 两条薄弱用例（§F）、P3-⑩ 冗余唯一约束（§D）、
+P3-⑪ 授权函数 docstring（`046ed971`）。
+
+### 覆盖限制（第二轮）
+
+- C 的 public job 分支用「SQL 直接落一条 `vrev-` 资格行」触发（`_custom_voice` 只查资格存在性，
+  不看发布表），未跑完整异步 job；同步 TTS 准入那条是真实调用。
+- `has_qualified_voice` 按函数体逐句复现其两条 SQL，未实例化 `SpeechPool`/`TtsRecipe`。
+- B 的 controller 行用 0054 形状落库（同一 schema 内无法用同一份 release 证据发布第二个 voice）。
+- 结论时效：核验于 2026-11-16，针对 `82d55a82`；`origin/main` 在此期间前进了 #879/#880 等提交，
+  三方 diff 的 merge-base 随之变化，第一轮记录的基线与上下文保持原样。

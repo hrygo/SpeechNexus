@@ -14,6 +14,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from psycopg import sql
+from tests.integration.bundle_identity import version_identity_response
 from tests.integration.test_workbench_deletion_cleanup import Cleanup
 from tests.integration.test_workbench_deletion_cleanup import cleanup as cleanup
 from tests.integration.test_workbench_deletions_postgres import service
@@ -41,6 +42,9 @@ async def test_browser_deletion_original_intents_complete_confirmation_and_clean
         max_json_bytes=4096,
         body_timeout_seconds=1,
     )
+    # The page asks for this deployment's same-version identity (#853); the production
+    # web tier takes that path to the speech base, which this harness does not run.
+    app.get("/v1/nexus/version")(version_identity_response)
     lost: set[str] = set()
     writes: list[tuple[str, str | None, bytes]] = []
 

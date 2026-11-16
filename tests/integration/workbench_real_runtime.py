@@ -24,10 +24,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
+from tests.integration.bundle_identity import version_identity_response
 from tests.integration.test_workbench_runtime import Database
 
-from speechnexus_backend import __version__
-from speechnexus_backend.speech.interfaces.http.version_identity import version_identity_body
 from speechnexus_backend.workbench.application.export_worker import ExportProducer
 from speechnexus_backend.workbench.runtime import create_runtime_app
 from speechnexus_backend.workbench.runtime_settings import WorkbenchSettings
@@ -180,14 +179,8 @@ class Tier:
         @front.get("/v1/nexus/version")
         async def version_identity() -> Response:
             # The production web tier routes this path to the speech base, which this
-            # harness does not run: forwarding it to the workbench API answers 404 and
-            # would make every page here report an unconfirmed version, an artefact of
-            # the harness rather than of the deployment. The body comes from the same
-            # function the base answers with, over the same generated digest, so the
-            # browser gates still see the single-revision deployment they model.
-            return JSONResponse(
-                version_identity_body(__version__), headers={"Cache-Control": "no-store"}
-            )
+            # harness does not run; see tests/integration/bundle_identity.py.
+            return version_identity_response()
 
         @front.api_route(
             "/v2/workbench/{rest:path}",

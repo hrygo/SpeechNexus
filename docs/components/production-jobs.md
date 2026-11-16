@@ -527,8 +527,8 @@ WHERE n.instance_id = '<instance_id>' AND n.instance_generation = <n>;"
 
 工具只**读** Job 的 `state` 来核验判据，从不写 Job：释放身份对 `speech_jobs` 只有
 `job_id/state` 两列 SELECT。租约 `released` 之后，下一次取消对账领取会发现「全部租约
-已落地」，按既有第 2 步规则把 Job 推进到 `failed`/`error_code=cancellation_unconfirmed`，
-`attempts` 记 `exhausted`，账本不再领取。
+已落地」，按既有的取消判定规则（全部租约落地即收口）把 Job 推进到
+`failed`/`error_code=cancellation_unconfirmed`，`attempts` 记 `exhausted`，账本不再领取。
 
 读模型在这个窗口里的取值按实测陈述：从释放完成到下一次判定领取之间，Job 仍是
 `cancelling`，`cleanup_state` 报 `pending`（与释放前相同）；判定写入终态之后才汇总为

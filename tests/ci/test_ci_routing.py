@@ -521,10 +521,19 @@ class IntegrationLaneTests(unittest.TestCase):
     """The route's integration lanes must be the partitioner's Web-capable lanes (#757)."""
 
     def _collection(self) -> list[str]:
+        # Every Web-capable lane must see both consumer kinds. Four lanes share the
+        # cases round-robin over a hash order, so this synthetic collection carries
+        # at least two browser cases per lane and enough Node contracts to reach
+        # every lane; the exact assignment stays deterministic.
         browser = [
             "tests/integration/test_workbench_example_browser.py::test_page[postgresql]",
             "tests/integration/test_workbench_example_browser.py::test_page[mysql]",
             "tests/integration/test_workbench_orphan_probes.py::test_probe",
+            "tests/integration/test_workbench_orphan_probes.py::test_second_probe",
+            "tests/integration/test_workbench_orphan_probes.py::test_third_probe",
+            "tests/integration/test_workbench_orphan_probes.py::test_fourth_probe",
+            "tests/integration/test_workbench_realtime_synthetic_probes.py::test_realtime",
+            "tests/integration/test_workbench_realtime_synthetic_probes.py::test_realtime_two",
         ]
         node = list(PARTITIONER.NODE_CONTRACT_TESTS)
         ordinary = [f"tests/integration/test_plain_{index}.py::test_db" for index in range(40)]
@@ -583,10 +592,11 @@ class IntegrationLaneTests(unittest.TestCase):
         self.assertIn(f"shard: [{', '.join(str(index) for index in range(count))}]", workflow)
 
     def test_static_lanes_stay_inside_the_declared_partition_count(self) -> None:
-        self.assertEqual(tuple(range(ROUTER.INTEGRATION_SHARD_COUNT)), tuple(range(8)))
+        self.assertEqual(tuple(range(ROUTER.INTEGRATION_SHARD_COUNT)), tuple(range(12)))
         self.assertEqual(ROUTER.web_lanes(3), (2,))
         self.assertEqual(ROUTER.web_lanes(6), (4, 5))
         self.assertEqual(ROUTER.web_lanes(8), (6, 7))
+        self.assertEqual(ROUTER.web_lanes(12), (8, 9, 10, 11))
         self.assertEqual(ROUTER.web_lanes(16), (11, 12, 13, 14, 15))
 
 

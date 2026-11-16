@@ -21,6 +21,7 @@ from tests.integration.test_workbench_exports_postgres import book, create
 from tests.integration.test_workbench_exports_postgres import export_store as export_store
 from tests.integration.test_workbench_versions_postgres import Store
 from tests.integration.test_workbench_versions_postgres import store as store
+from tests.support.minio_bucket import ensure_bucket
 
 from speechnexus_backend.workbench.application.export_worker import (
     ExportCancelledError,
@@ -94,8 +95,7 @@ def zone() -> Iterator[_Zone]:
         secret_key=secret,
         secure=endpoint.startswith("https://"),
     )
-    if not client.bucket_exists(BUCKET):
-        client.make_bucket(BUCKET)
+    ensure_bucket(client, BUCKET)
     zone = MinioObjectZone(endpoint, BUCKET, access, secret, prefix="exports")
     try:
         yield _Zone(zone, client)

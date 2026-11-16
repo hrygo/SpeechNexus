@@ -23,12 +23,13 @@ env:
   PNPM_VERSION: "12.14.0"
 
 jobs:
-  # Selects the verification scope for the exact checked-out diff and owns the
-  # dependency-free guards that must run for *every* scope, including `docs`.
-  # The display name lists what can turn it red, so a failure is attributable
-  # without opening the log.
+  # Selects the verification scope for the exact checked-out diff and checks the
+  # pull request's review-boundary delta. It runs on every event and installs no
+  # project dependency, so the scope decision and every heavy lane start after
+  # checkout plus two short scripts. The dependency-free guards that must run for
+  # *every* scope (including `docs`) live in the `guards` job beside it.
   routing:
-    name: "Route: scope, review boundary and design tokens"
+    name: "Route: scope and review boundary"
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
@@ -40,24 +41,6 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1
-
-      - name: Verify routing boundaries without installing project dependencies
-        run: python3 -m unittest discover -s tests/ci -v
-
-      - name: Set up Node.js for dependency-free design checks
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-        with:
-          node-version-file: .nvmrc
-
-      - name: Verify design token guardrails without installing project dependencies
-        run: |
-          node --test tests/ci/design-tokens.test.mjs
-          node scripts/dev-env/validate-design-tokens.mjs
-
-      - name: Verify generated-contract consumer bindings without installing project dependencies
-        run: |
-          node --test tests/ci/contract-consumers.test.mjs
-          node scripts/dev-env/validate-contract-consumers.mjs
 
       - name: Route the exact checked-out diff
         id: route
@@ -97,6 +80,41 @@ jobs:
             --event="$EVENT_NAME" --base="$BASE_SHA" --head-sha="$HEAD_SHA" \
             --title="$PR_TITLE" --head-ref="$PR_HEAD_REF" \
             --summary="$GITHUB_STEP_SUMMARY"
+
+  # Dependency-free guards that do not select scope: routing-boundary regressions,
+  # design-token guardrails and generated-contract consumer bindings. They used to
+  # share the routing job, which made every dependency-installing lane wait for
+  # ~25 s of checks it does not consume. They hold no routing outputs, so the
+  # scope decision and every heavy lane start after checkout plus one short
+  # script; this job still runs for `docs` changes and its result is required.
+  guards:
+    name: "Guards: routing boundaries, design tokens and contract consumers"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify routing boundaries without installing project dependencies
+        run: python3 -m unittest discover -s tests/ci -v
+
+      - name: Set up Node.js for dependency-free design checks
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+
+      - name: Verify design token guardrails without installing project dependencies
+        run: |
+          node --test tests/ci/design-tokens.test.mjs
+          node scripts/dev-env/validate-design-tokens.mjs
+
+      - name: Verify generated-contract consumer bindings without installing project dependencies
+        run: |
+          node --test tests/ci/contract-consumers.test.mjs
+          node scripts/dev-env/validate-contract-consumers.mjs
 
   # `docs` scope skips every job that installs project dependencies, but Ruff's
   # formatter also formats the Python code blocks inside Markdown; that is the one
@@ -288,7 +306,7 @@ jobs:
           SPEECHNEXUS_TEST_MINIO_SECRET_KEY: synthetic_asset_test_secret
         run: |
           uv run python scripts/dev-env/python-coverage.py run \
-            --pg-bin /usr/lib/postgresql/16/bin --workers 2 \
+            --pg-bin /usr/lib/postgresql/16/bin --workers 4 \
             --output "$RUNNER_TEMP/workbench-pg-coverage.json"
 
       - name: Preserve full coverage execution evidence
@@ -407,7 +425,7 @@ jobs:
       - name: Validate API and event schemas
         run: uv run python scripts/dev-env/validate-contracts.py
 
-  # One collection instead of eight. Every shard used to run the full pytest
+  # One collection instead of twelve. Every shard used to run the full pytest
   # collection just to pick its external tools — measured 10-14 s per shard,
   # ~98 runner seconds per full route, all serial before the partition run.
   # The partitioner is deterministic over the same commit, so one plan job
@@ -430,6 +448,10 @@ jobs:
       browser_5: ${{ steps.plan.outputs.browser_5 }}
       browser_6: ${{ steps.plan.outputs.browser_6 }}
       browser_7: ${{ steps.plan.outputs.browser_7 }}
+      browser_8: ${{ steps.plan.outputs.browser_8 }}
+      browser_9: ${{ steps.plan.outputs.browser_9 }}
+      browser_10: ${{ steps.plan.outputs.browser_10 }}
+      browser_11: ${{ steps.plan.outputs.browser_11 }}
       node_contracts_0: ${{ steps.plan.outputs.node_contracts_0 }}
       node_contracts_1: ${{ steps.plan.outputs.node_contracts_1 }}
       node_contracts_2: ${{ steps.plan.outputs.node_contracts_2 }}
@@ -438,6 +460,10 @@ jobs:
       node_contracts_5: ${{ steps.plan.outputs.node_contracts_5 }}
       node_contracts_6: ${{ steps.plan.outputs.node_contracts_6 }}
       node_contracts_7: ${{ steps.plan.outputs.node_contracts_7 }}
+      node_contracts_8: ${{ steps.plan.outputs.node_contracts_8 }}
+      node_contracts_9: ${{ steps.plan.outputs.node_contracts_9 }}
+      node_contracts_10: ${{ steps.plan.outputs.node_contracts_10 }}
+      node_contracts_11: ${{ steps.plan.outputs.node_contracts_11 }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -459,41 +485,41 @@ jobs:
         id: plan
         run: |
           uv run python scripts/dev-env/integration-shards.py plan \
-            --count 8 >> "$GITHUB_OUTPUT"
+            --count 12 >> "$GITHUB_OUTPUT"
 
   # A Web-only change must reach the partitions that select the browser and
   # Node-contract consumers: only there does a real browser drive the built
   # bundles against the real backend, PostgreSQL/MySQL and MinIO. #745 changed
   # only `web/workbench/src/**`, merged with every check green, and broke `main`
   # afterwards; the fix PR #756 had to start a manual run to obtain that evidence
-  # (#757). The eight-partition universe stays declared below and `full` keeps all
+  # (#757). The twelve-partition universe stays declared below and `full` keeps all
   # of it; a `web` route removes only the lanes that cannot exercise it, through
   # the route-derived `exclude` (docs/validation/ci-validation.md).
   integration_shards:
-    name: "Integration ${{ matrix.shard }}/8: ${{ matrix.shard >= 6 && 'Web + PG/MySQL/MinIO' || 'PG/MySQL/MinIO' }}"
+    name: "Integration ${{ matrix.shard }}/12: ${{ matrix.shard >= 8 && 'Web + PG/MySQL/MinIO' || 'PG/MySQL/MinIO' }}"
     needs: [routing, integration_plan]
     if: ${{ needs.routing.outputs.mode == 'full' || needs.routing.outputs.mode == 'web' }}
     runs-on: ubuntu-24.04
-    # Baseline: the four database partitions need 7-9.5 min of job wall clock.
-    # PR #498's Integration 2 attempt 1 stalled at 84% and hit the old 18 min
-    # inner ceiling; the same commit passed on retry in 760 s. The old 20 min job
-    # left only ~9 s from the inner deadline to job completion. The probe now
-    # derives a 25 min ceiling from this 30 min budget with a five-minute
-    # setup/cleanup reserve (docs/validation/ci-validation.md). This is headroom
-    # for the slow tail and the same work, not a different selection or weaker
-    # assertion.
+    # Budget, not a target. Twelve partitions plus two pytest workers each run the
+    # same complete collection; a partition's pytest wall clock is now well under
+    # five minutes in the normal case (docs/validation/ci-validation.md), and this
+    # ceiling only has to survive a degenerate runner. The probe derives a 25 min
+    # inner ceiling from this 30 min budget with a five-minute setup/cleanup
+    # reserve, so a hang fails a test before the runner kills the job. This is
+    # headroom for the slow tail and the same work, not a different selection or
+    # weaker assertion.
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      max-parallel: 8
+      max-parallel: 12
       matrix:
-        # The canonical partitioner groups Web consumers into two lanes and
-        # ordinary DB cases into six; tools still follow the actual collection.
-        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+        # The canonical partitioner keeps four Web-capable lanes and splits the
+        # ordinary DB cases across all twelve; tools follow the actual collection.
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
         # Route-derived rows that keep only the lanes the route can exercise
-        # (empty for `full`, lanes 0-5 for `web`). Never empty unless it is meant
+        # (empty for `full`, lanes 0-7 for `web`). Never empty unless it is meant
         # to be, and never the reason a matrix comes out empty: every route that
-        # expands this job keeps at least the two Web-capable lanes.
+        # expands this job keeps all four Web-capable lanes.
         exclude: ${{ fromJSON(needs.routing.outputs.excluded_shards) }}
     services:
       postgres:
@@ -640,7 +666,8 @@ jobs:
           test -n "$SPEECHNEXUS_TEST_MYSQL_URL"
           uv run python scripts/dev-env/workbench-pg-probe.py \
             --pg-bin /usr/lib/postgresql/16/bin \
-            --integration-shard "${{ matrix.shard }}" --shard-count 8 \
+            --integration-shard "${{ matrix.shard }}" --shard-count 12 \
+            --shard-workers 2 \
             --shard-report "$RUNNER_TEMP/integration-shard-${{ matrix.shard }}.json" \
             --shard-coverage "$RUNNER_TEMP/coverage-${{ matrix.shard }}.data" \
             --output "$RUNNER_TEMP/workbench-pg-shard-${{ matrix.shard }}.json"
@@ -701,7 +728,7 @@ jobs:
           overwrite: true
 
   # Full scope still requires actual execution, a complete disjoint inventory, and
-  # one coverage judgment over the measured dataset plus all eight partitions. The
+  # one coverage judgment over the measured dataset plus all twelve partitions. The
   # gate keeps failing closed: absent shards or absent coverage data stop it exactly
   # like a test failure does.
   integration_gate:
@@ -760,24 +787,24 @@ jobs:
         run: |
           python3 scripts/dev-env/download-integration-evidence.py \
             --repository "$CI_REPOSITORY" --run-id "$CI_RUN_ID" \
-            --count 8 --output "$RUNNER_TEMP/integration-shards" \
+            --count 12 --output "$RUNNER_TEMP/integration-shards" \
             --coverage-output "$RUNNER_TEMP/coverage-evidence"
 
       - name: Verify same-commit collection, partition coverage and actual test outcomes
         run: |
           python3 scripts/dev-env/integration-shards.py check \
-            --count 8 --head "$(git rev-parse HEAD)" \
+            --count 12 --head "$(git rev-parse HEAD)" \
             --reports-dir "$RUNNER_TEMP/integration-shards"
 
       - name: Merge the measured and integration coverage and enforce the unchanged gate
-        # Measured dataset plus eight partition datasets, then one report through
+        # Measured dataset plus twelve partition datasets, then one report through
         # pyproject.toml. Missing or digest-divergent data fails before any report.
         run: |
           uv run python scripts/dev-env/python-coverage.py combine \
             --job-summary "$RUNNER_TEMP/coverage-evidence/workbench-pg-coverage.json" \
             --job-parts "$RUNNER_TEMP/coverage-evidence/workbench-pg-coverage-parts" \
             --integration-dir "$RUNNER_TEMP/integration-shards" \
-            --count 8 --output "$RUNNER_TEMP/coverage-merge"
+            --count 12 --output "$RUNNER_TEMP/coverage-merge"
 
       - name: Publish the merged coverage result
         # Observation only: reads what the judgment above wrote and never decides.
@@ -806,7 +833,7 @@ jobs:
           lines.extend(f"| {name} | {value} |" for name, value in entry.items())
           lines.extend([
               "",
-              "The eight integration partitions are the only source of integration-only",
+              "The twelve integration partitions are the only source of integration-only",
               "coverage; a missing dataset fails this gate instead of shrinking it.",
               "",
           ])
@@ -907,6 +934,7 @@ jobs:
     needs:
       [
         routing,
+        guards,
         docs_format,
         docs_matrix,
         docs_refs,
@@ -926,6 +954,7 @@ jobs:
         env:
           MODE: ${{ needs.routing.outputs.mode }}
           ROUTING_RESULT: ${{ needs.routing.result }}
+          GUARDS_RESULT: ${{ needs.guards.result }}
           MATRIX_RESULT: ${{ needs.docs_matrix.result }}
           DOCS_REFS_RESULT: ${{ needs.docs_refs.result }}
           DOCS_FORMAT_RESULT: ${{ needs.docs_format.result }}
@@ -940,6 +969,12 @@ jobs:
         run: |
           if [[ "$ROUTING_RESULT" != success ]]; then
             echo "::error::routing=$ROUTING_RESULT"
+            exit 1
+          fi
+          # `guards` has no scope filter: routing-boundary, design-token and
+          # contract-consumer regressions fail here for every route, including `docs`.
+          if [[ "$GUARDS_RESULT" != success ]]; then
+            echo "::error::guards=$GUARDS_RESULT"
             exit 1
           fi
           if [[ "$MATRIX_RESULT" != success ]]; then
@@ -960,9 +995,9 @@ jobs:
             true|false) ;;
             *) echo '::error::Missing or invalid controller_image scope'; exit 1 ;;
           esac
-          # `integration` is the route's own evidence, not the eight-partition gate:
-          # `integration_gate` keeps requiring all eight partitions plus merged
-          # coverage and stays `skipped` outside `full`. A `web` route owes the two
+          # `integration` is the route's own evidence, not the twelve-partition gate:
+          # `integration_gate` keeps requiring all twelve partitions plus merged
+          # coverage and stays `skipped` outside `full`. A `web` route owes the four
           # Web-capable partitions because they are the only ones selecting the
           # browser consumers (#757); the other routes owe no integration lane.
           case "$MODE" in

@@ -22,6 +22,9 @@ _PROBE_SPEC.loader.exec_module(_PROBE)
 _GATE = _WORKFLOW["jobs"]["required_checks"]
 _STATES = ("success", "failure", "skipped", "cancelled", "")
 _DELIVERY = {"MATRIX_RESULT": "success"}
+# `guards` (routing boundaries, design tokens, generated-contract consumers) has
+# no scope filter, so every route owes it a success rather than a skip.
+_GUARDS = {"GUARDS_RESULT": "success"}
 # `docs_refs` (the `文件:行号` reference gate) has no scope filter: every PR runs
 # it, so every scope owes it a success rather than a skip (#859).
 _REFERENCE = {"DOCS_REFS_RESULT": "success"}
@@ -34,6 +37,7 @@ _REFERENCE = {"DOCS_REFS_RESULT": "success"}
 _EXPECTED = {
     "docs": {
         **_DELIVERY,
+        **_GUARDS,
         **_REFERENCE,
         "DOCS_FORMAT_RESULT": "success",
         "PYTHON_RESULT": "skipped",
@@ -45,6 +49,7 @@ _EXPECTED = {
     },
     "web": {
         **_DELIVERY,
+        **_GUARDS,
         **_REFERENCE,
         "DOCS_FORMAT_RESULT": "skipped",
         "PYTHON_RESULT": "success",
@@ -56,6 +61,7 @@ _EXPECTED = {
     },
     "full": {
         **_DELIVERY,
+        **_GUARDS,
         **_REFERENCE,
         "DOCS_FORMAT_RESULT": "skipped",
         "PYTHON_RESULT": "success",
@@ -67,6 +73,7 @@ _EXPECTED = {
     },
     "no-db": {
         **_DELIVERY,
+        **_GUARDS,
         **_REFERENCE,
         "DOCS_FORMAT_RESULT": "skipped",
         "PYTHON_RESULT": "success",
@@ -79,16 +86,23 @@ _EXPECTED = {
 }
 
 
-def test_design_token_guard_runs_before_routing_without_dependency_install() -> None:
-    steps = _WORKFLOW["jobs"]["routing"]["steps"]
+def test_design_token_guard_runs_in_the_dependency_free_guards_lane() -> None:
+    # The token, routing-boundary and contract-consumer guards used to share the
+    # routing job, which made every dependency-installing lane wait for them. They
+    # now own a separate unfiltered lane, still install no project dependency,
+    # still fail closed, and stay required by the merge gate.
+    steps = _WORKFLOW["jobs"]["guards"]["steps"]
     guard = next(
         s for s in steps if "node --test tests/ci/design-tokens.test.mjs" in s.get("run", "")
     )
     assert "node scripts/dev-env/validate-design-tokens.mjs" in guard["run"]
     assert "if" not in guard and "continue-on-error" not in guard
-    assert steps.index(guard) < next(i for i, s in enumerate(steps) if s.get("id") == "route")
     assert any(s.get("with", {}).get("node-version-file") == ".nvmrc" for s in steps)
     assert not any("install" in s.get("run", "") for s in steps)
+    assert "if" not in _WORKFLOW["jobs"]["guards"]
+    assert "guards" in _WORKFLOW["jobs"]["required_checks"]["needs"]
+    routing_runs = "\n".join(s.get("run", "") for s in _WORKFLOW["jobs"]["routing"]["steps"])
+    assert "design-tokens" not in routing_runs and "tests/ci" not in routing_runs
 
 
 def test_accessibility_checks_run_in_protected_web_lane_after_build() -> None:
@@ -136,7 +150,7 @@ def test_browser_preparation_keeps_partition_selection_and_original_budgets() ->
     # #452 and #502: only the shard budget grew; the Web lane keeps its own budget.
     assert shards["timeout-minutes"] == 30
     assert jobs["web"]["timeout-minutes"] == 10
-    assert shards["strategy"]["matrix"]["shard"] == [0, 1, 2, 3, 4, 5, 6, 7]
+    assert shards["strategy"]["matrix"]["shard"] == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 
 
 def test_a_web_route_runs_the_partitions_that_select_the_browser_consumers() -> None:
@@ -148,9 +162,9 @@ def test_a_web_route_runs_the_partitions_that_select_the_browser_consumers() -> 
         "${{ needs.routing.outputs.mode == 'full' || needs.routing.outputs.mode == 'web' }}"
     )
     matrix = shards["strategy"]["matrix"]
-    # The eight-partition universe stays declared in the workflow, so `full` cannot
+    # The twelve-partition universe stays declared in the workflow, so `full` cannot
     # silently shrink; the route only removes lanes it cannot exercise.
-    assert matrix["shard"] == [0, 1, 2, 3, 4, 5, 6, 7]
+    assert matrix["shard"] == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     assert matrix["exclude"] == "${{ fromJSON(needs.routing.outputs.excluded_shards) }}"
     assert _WORKFLOW["jobs"]["routing"]["outputs"]["excluded_shards"] == (
         "${{ steps.route.outputs.excluded_shards }}"
@@ -204,7 +218,7 @@ def test_integration_shard_budget_matches_the_workflow_job_timeout() -> None:
 def test_python_coverage_budget_matches_the_workflow_job_timeout() -> None:
     """The full-coverage probe inherits the Python job ceiling; they must not drift.
 
-    `python-coverage.py run --workers 2` invokes the probe with `--full-coverage`,
+    `python-coverage.py run --workers 4` invokes the probe with `--full-coverage`,
     so a stale 10-minute constant would kill pytest at 600 s even though the job
     now allows 900 s -- the extra headroom would never reach a slow runner. The
     no-reserve relationship (inner ceiling == job ceiling) is pre-existing and
@@ -235,13 +249,13 @@ def test_integration_evidence_uses_bounded_same_run_cli_with_read_only_access() 
         "CI_RUN_ID": "${{ github.run_id }}",
     }
     assert '--repository "$CI_REPOSITORY" --run-id "$CI_RUN_ID"' in step["run"]
-    assert '--count 8 --output "$RUNNER_TEMP/integration-shards"' in step["run"]
+    assert '--count 12 --output "$RUNNER_TEMP/integration-shards"' in step["run"]
     assert '--coverage-output "$RUNNER_TEMP/coverage-evidence"' in step["run"]
     assert not any("actions/download-artifact@" in s.get("uses", "") for s in job["steps"])
     assert "if" not in step and "continue-on-error" not in step
     check = job["steps"][job["steps"].index(step) + 1]
     assert "scripts/dev-env/integration-shards.py check" in check["run"]
-    assert '--count 8 --head "$(git rev-parse HEAD)"' in check["run"]
+    assert '--count 12 --head "$(git rev-parse HEAD)"' in check["run"]
     assert "if" not in check and "continue-on-error" not in check
     merge = job["steps"][job["steps"].index(check) + 1]
     assert "uv run python scripts/dev-env/python-coverage.py combine" in merge["run"]
@@ -252,7 +266,7 @@ def test_integration_evidence_uses_bounded_same_run_cli_with_read_only_access() 
         '--job-parts "$RUNNER_TEMP/coverage-evidence/workbench-pg-coverage-parts"' in merge["run"]
     )
     assert '--integration-dir "$RUNNER_TEMP/integration-shards"' in merge["run"]
-    assert '--count 8 --output "$RUNNER_TEMP/coverage-merge"' in merge["run"]
+    assert '--count 12 --output "$RUNNER_TEMP/coverage-merge"' in merge["run"]
     # The gate must never be redirected to a different configuration or threshold.
     assert "--probe-rcfile" not in merge["run"] and "--fail-under" not in merge["run"]
     assert "if" not in merge and "continue-on-error" not in merge
@@ -331,6 +345,7 @@ def test_protected_status_never_passes_missing_evidence(
     assert _GATE["name"] == "Gate: required checks for this change"
     assert set(_GATE["needs"]) == {
         "routing",
+        "guards",
         "docs_format",
         "python_gate",
         "integration_gate",
@@ -347,6 +362,7 @@ def test_protected_status_never_passes_missing_evidence(
     assert step["env"] == {
         "MODE": "${{ needs.routing.outputs.mode }}",
         "ROUTING_RESULT": "${{ needs.routing.result }}",
+        "GUARDS_RESULT": "${{ needs.guards.result }}",
         "MATRIX_RESULT": "${{ needs.docs_matrix.result }}",
         "DOCS_REFS_RESULT": "${{ needs.docs_refs.result }}",
         "DOCS_FORMAT_RESULT": "${{ needs.docs_format.result }}",
@@ -509,7 +525,7 @@ def test_full_coverage_and_every_contract_check_run_independently_on_the_same_so
     assert not expected.intersection(execution_commands)
     coverage = next(step for step in execution["steps"] if step.get("id") == "coverage")
     assert "uv run python scripts/dev-env/python-coverage.py run" in coverage["run"]
-    assert "--pg-bin /usr/lib/postgresql/16/bin --workers 2" in coverage["run"]
+    assert "--pg-bin /usr/lib/postgresql/16/bin --workers 4" in coverage["run"]
     assert '--output "$RUNNER_TEMP/workbench-pg-coverage.json"' in coverage["run"]
     assert coverage["run"] not in contract_commands
     assert "--cov-fail-under" not in coverage["run"]
@@ -552,7 +568,12 @@ def test_required_workflow_is_never_filtered_out_and_classification_is_lightweig
     jobs = _WORKFLOW["jobs"]
     routing = jobs["routing"]
     commands = "\n".join(step.get("run", "") for step in routing["steps"])
-    assert "python3 -m unittest discover -s tests/ci" in commands
+    # The routing-boundary suite owns its own unfiltered lane; the routing job keeps
+    # only checkout and the scope decision, so heavy lanes start sooner.
+    guards_commands = "\n".join(step.get("run", "") for step in jobs["guards"]["steps"])
+    assert "python3 -m unittest discover -s tests/ci" in guards_commands
+    assert "python3 -m unittest discover -s tests/ci" not in commands
+    assert "if" not in jobs["guards"] and "needs" not in jobs["guards"]
     assert "scripts/dev-env/ci-routing.py" in commands
     assert "github.event.pull_request.base.sha" in str(routing)
     assert "uv sync" not in commands and "pnpm install" not in commands

@@ -23,6 +23,7 @@ from tests.integration.test_workbench_saved_assets_cleanup import (
     DIGEST,
     Objects,
 )
+from tests.support.minio_bucket import ensure_bucket
 
 from speechnexus_backend.workbench.application.deletions import WorkbenchDeletions
 from speechnexus_backend.workbench.application.saved_assets import ObjectZoneUnavailableError
@@ -315,8 +316,7 @@ def minio() -> Iterator[Objects]:
     zone = MinioObjectZone(endpoint, BUCKET, access, secret, prefix="saved")
     host = endpoint.split("://", 1)[-1]
     client = Minio(host, access_key=access, secret_key=secret, secure=False)
-    if not client.bucket_exists(BUCKET):
-        client.make_bucket(BUCKET)
+    ensure_bucket(client, BUCKET)
     try:
         yield Objects(zone, client)
     finally:

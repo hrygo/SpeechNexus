@@ -634,14 +634,16 @@ def test_integration_gate_names_describe_evidence_and_reject_missing_execution(r
         "Compose: configuration validation",
     } <= {job["name"] for job in jobs.values()}
     shards = jobs["integration_shards"]
-    # Eight partitions stay declared, so `full` cannot silently shrink. The route
+    # Twelve partitions stay declared, so `full` cannot silently shrink. The route
     # removes only lanes it cannot exercise (`web` keeps the Web-capable ones), and
-    # the `full` route excludes nothing (#757).
+    # the `full` route excludes nothing (#757). All twelve start together: the
+    # account's 20-job ceiling already hosts them, and a lower cap would serialise
+    # the partitions into waves.
     assert shards["strategy"] == {
         "fail-fast": False,
-        "max-parallel": 8,
+        "max-parallel": 12,
         "matrix": {
-            "shard": [0, 1, 2, 3, 4, 5, 6, 7],
+            "shard": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
             "exclude": "${{ fromJSON(needs.routing.outputs.excluded_shards) }}",
         },
     }
@@ -650,8 +652,8 @@ def test_integration_gate_names_describe_evidence_and_reject_missing_execution(r
     )
     # The display name says which partition this is out of the declared total, so a
     # reader of the run list does not have to know the matrix size.
-    assert "Integration ${{ matrix.shard }}/8:" in shards["name"]
-    assert len(shards["strategy"]["matrix"]["shard"]) == 8
+    assert "Integration ${{ matrix.shard }}/12:" in shards["name"]
+    assert len(shards["strategy"]["matrix"]["shard"]) == 12
     assert set(shards["services"]) == {"postgres", "mysql"}
     gate = jobs["integration_gate"]
     assert gate["needs"] == ["routing", "python_tests", "integration_shards"]
@@ -760,7 +762,7 @@ def test_actual_node_http_consumer_gets_locked_tools_only_in_its_partition() -> 
     )
     collect = next(step for step in plan["steps"] if step.get("id") == "plan")
     assert "integration-shards.py plan" in collect["run"]
-    assert '--count 8 >> "$GITHUB_OUTPUT"' in collect["run"]
+    assert '--count 12 >> "$GITHUB_OUTPUT"' in collect["run"]
     for name in ("browser", "node_contracts"):
         for index in range(8):
             assert plan["outputs"][f"{name}_{index}"] == (
@@ -909,7 +911,7 @@ def test_every_shard_provisions_private_workbench_pg_without_replacing_dual_data
     run = next(step for step in steps if "Run a complete integration partition" in step["name"])
     assert "uv run python scripts/dev-env/workbench-pg-probe.py" in run["run"]
     assert "--pg-bin /usr/lib/postgresql/16/bin" in run["run"]
-    assert '--integration-shard "${{ matrix.shard }}" --shard-count 8' in run["run"]
+    assert '--integration-shard "${{ matrix.shard }}" --shard-count 12' in run["run"]
     assert '--shard-report "$RUNNER_TEMP/integration-shard-${{ matrix.shard }}.json"' in run["run"]
     assert '--shard-coverage "$RUNNER_TEMP/coverage-${{ matrix.shard }}.data"' in run["run"]
     assert '--output "$RUNNER_TEMP/workbench-pg-shard-${{ matrix.shard }}.json"' in run["run"]

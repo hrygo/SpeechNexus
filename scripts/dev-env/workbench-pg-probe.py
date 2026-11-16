@@ -37,6 +37,9 @@ ROOT = Path(__file__).resolve().parents[2]
 # pins this constant to python_tests.timeout-minutes so the pair cannot drift again.
 INTEGRATION_JOB_TIMEOUT_SECONDS = 30 * 60
 COVERAGE_JOB_TIMEOUT_SECONDS = 15 * 60
+# Pytest workers inside one integration partition. The canonical runner owns the
+# validation and the isolation rule; the probe only forwards the requested value.
+INTEGRATION_SHARD_WORKERS = 2
 # Setup before the probe starts (container init, checkout, dependency install,
 # MinIO, and on Web lanes pnpm plus Chromium) and the probe's own stop-and-report
 # tail share the same job budget. Reserve five minutes so the inner deadline
@@ -171,7 +174,7 @@ def build_pytest_command(
         if (
             not full_coverage
             or type(coverage_count) is not int
-            or coverage_count not in (1, 2)
+            or not 1 <= coverage_count <= 4
             or type(coverage_index) is not int
             or not 0 <= coverage_index < coverage_count
             or coverage_report is None
@@ -205,12 +208,15 @@ def build_integration_shard_command(
     report: Path,
     coverage_data: Path,
     progress: Path | None = None,
+    workers: int = INTEGRATION_SHARD_WORKERS,
 ) -> list[str]:
     """Delegate inventory, partitioning and same-head evidence to the canonical runner."""
     if type(count) is not int or not 1 <= count <= 16:
         raise ValueError("shard count must be within 1..16")
     if type(index) is not int or not 0 <= index < count:
         raise ValueError("shard index is outside the partition")
+    if type(workers) is not int or not 1 <= workers <= 4:
+        raise ValueError("shard workers must be within 1..4")
     if coverage_data.name != f"coverage-{index}.data":
         raise ValueError("shard coverage data must be named coverage-<index>.data")
     command = [
@@ -221,6 +227,8 @@ def build_integration_shard_command(
         str(index),
         "--count",
         str(count),
+        "--workers",
+        str(workers),
         "--report",
         str(report),
         "--coverage-data",
@@ -332,6 +340,13 @@ def argument_parser() -> argparse.ArgumentParser:
         help="run the canonical complete integration partition with private Workbench PG",
     )
     parser.add_argument("--shard-count", type=int, metavar="COUNT")
+    parser.add_argument(
+        "--shard-workers",
+        type=int,
+        default=INTEGRATION_SHARD_WORKERS,
+        metavar="N",
+        help="pytest workers inside this integration partition",
+    )
     parser.add_argument("--shard-report", type=Path, metavar="PATH")
     parser.add_argument(
         "--shard-coverage",
@@ -401,6 +416,7 @@ def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
                 count=args.shard_count,
                 report=args.shard_report,
                 coverage_data=args.shard_coverage,
+                workers=args.shard_workers,
             )
         except ValueError as error:
             parser.error(str(error))

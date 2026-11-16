@@ -2,7 +2,7 @@
 
 Each worker is hosted by the existing disposable-PG probe. Neither a passing
 fragment nor a collect-only report can replace complete execution. This job only
-measures and exports its data; the integration summary job merges the six
+measures and exports its data; the integration summary job merges the twelve
 partitions' data with it and enforces the unchanged global gate, so a partition
 that was skipped or exported nothing fails the gate instead of shrinking it.
 """
@@ -76,9 +76,19 @@ FIELDS = {
 }
 
 
+# Each worker owns a private PostgreSQL cluster, Unix socket and coverage database,
+# so the ceiling is about runner memory and lock contention, not shared state. The
+# four-vCPU hosted runner feeds four independent single-threaded workers; the
+# two-worker baseline in the 2026-11-16 measurement took 306 s, so four workers are
+# the next step before the job ceiling matters.
+PYTHON_COVERAGE_WORKERS_MAX = 4
+
+
 def check_partition(index: int, count: int) -> None:
-    if type(count) is not int or count not in (1, 2):
-        raise ValueError("Python coverage supports one or two isolated workers")
+    if type(count) is not int or not 1 <= count <= PYTHON_COVERAGE_WORKERS_MAX:
+        raise ValueError(
+            f"Python coverage supports one to {PYTHON_COVERAGE_WORKERS_MAX} isolated workers"
+        )
     if type(index) is not int or not 0 <= index < count:
         raise ValueError("Invalid Python coverage worker identity")
 
@@ -438,7 +448,7 @@ def run_parallel(args: argparse.Namespace) -> int:
             copy = directory / f"coverage-{index}.data"
             shutil.copyfile(path, copy)
             parts.append({"index": index, "file": copy.name, "digest": require_branch_data(copy)})
-        # Measurement only: the merged judgment runs where all eight datasets exist.
+        # Measurement only: the merged judgment runs where every dataset exists.
         # The combined probe stays beside (not inside) the exported parts directory,
         # so the uploaded artifact holds only data files and execution logs.
         combined = directory.with_name(directory.name + "-combined")
@@ -466,7 +476,7 @@ def verify_job_evidence(summary_path: Path, parts_dir: Path, *, head: str) -> li
         or data["source_head"] != head
         or data["config_digest"] != digest(combined_config())
         or type(data["workers"]) is not int
-        or data["workers"] not in (1, 2)
+        or not 1 <= data["workers"] <= PYTHON_COVERAGE_WORKERS_MAX
     ):
         raise ValueError("Python coverage summary came from another source or configuration")
     if (
@@ -597,7 +607,9 @@ def main() -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run")
     run.add_argument("--pg-bin", type=Path, required=True)
-    run.add_argument("--workers", type=int, choices=(1, 2), default=2)
+    run.add_argument(
+        "--workers", type=int, choices=tuple(range(1, PYTHON_COVERAGE_WORKERS_MAX + 1)), default=4
+    )
     run.add_argument("--output", type=Path, required=True)
     worker = commands.add_parser("worker")
     worker.add_argument("--index", type=int, required=True)

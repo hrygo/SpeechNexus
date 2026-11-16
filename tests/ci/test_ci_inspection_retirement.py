@@ -43,7 +43,7 @@ class RetiredInspectionCase(unittest.TestCase):
 
     def test_the_complete_coverage_gate_and_media_toolchain_remain(self) -> None:
         self.assertIn("scripts/dev-env/python-coverage.py run", PYTHON_JOB)
-        self.assertIn("--workers 2", PYTHON_JOB)
+        self.assertIn("--workers 4", PYTHON_JOB)
         self.assertIn("uv run python scripts/dev-env/media-smoke.py", PYTHON_JOB)
         self.assertIn("uv build --all-packages", PYTHON_JOB)
         self.assertIn("runs-on: ubuntu-24.04", PYTHON_JOB)

@@ -16,6 +16,7 @@ from minio import Minio
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
 from tests.integration.test_workbench_versions_postgres import Store
+from tests.support.minio_bucket import ensure_bucket
 
 from speechnexus_backend.workbench.application.saved_assets import WorkbenchSavedAssets
 from speechnexus_backend.workbench.application.speech_sources import SpeechSourceError
@@ -125,8 +126,7 @@ def objects() -> Iterator[Objects]:
         secret_key=secret,
         secure=endpoint.startswith("https://"),
     )
-    if not client.bucket_exists(BUCKET):
-        client.make_bucket(BUCKET)
+    ensure_bucket(client, BUCKET)
     try:
         yield Objects(zone, client)
     finally:

@@ -124,6 +124,25 @@ def test_python_coverage_fragment_keeps_canonical_roots_and_combines_before_gate
         ]
     )
     assert args.python_shard == 1 and args.python_shard_count == 2
+    # The four-vCPU runner feeds four isolated coverage workers; the ceiling is a
+    # memory/lock bound, so both interior values must parse.
+    for workers in (3, 4):
+        accepted = DRIVER.parse_arguments(
+            [
+                "--pg-bin",
+                "/synthetic/pg/bin",
+                "--full-coverage",
+                "--python-shard",
+                "0",
+                "--python-shard-count",
+                str(workers),
+                "--python-shard-report",
+                str(report),
+                "--output",
+                str(tmp_path / "postgres.json"),
+            ]
+        )
+        assert accepted.python_shard_count == workers
 
 
 @pytest.mark.parametrize(
@@ -137,7 +156,7 @@ def test_python_coverage_fragment_keeps_canonical_roots_and_combines_before_gate
             "--python-shard",
             "0",
             "--python-shard-count",
-            "3",
+            "5",
             "--python-shard-report",
             "worker.json",
             "--output",
@@ -221,6 +240,8 @@ def test_shard_command_delegates_the_complete_run_and_report_to_the_original_run
         "2",
         "--count",
         "6",
+        "--workers",
+        "2",
         "--report",
         str(report),
         "--coverage-data",

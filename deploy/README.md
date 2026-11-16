@@ -338,20 +338,125 @@ docker build -f deploy/images/web.Dockerfile \
   -t "speechnexus/web-workbench:${sha}" .
 ```
 
-Builds complete without a mirror change and without an extended window: on
-2026-11-15 `docker pull node:26.12.1-bookworm-slim` took 4.24 s, an uncached
-(`--no-cache`) build of the Workbench image took 53.44 s with exit code 0, and the
-per-tarball `registry.npmjs.org` warnings the install prints (1–45 KiB/s on
-individual packages) do not set the pace because `pnpm` fetches in parallel. A warm
-`pnpm` store only shortens repeat builds. The earlier "stuck on the node layer at
-about 50 KB/s" report (#572) does not reproduce on this host.
+#### Build window and registry route
 
-The build is reproducible at the bundle level: a cached build and a `--no-cache`
-build produce the same 24-file `web-dist` tree
-(`80ada7a38a4e08dce8c3009cd196482e26d9854b8930c7e44ef9136f2b7d7f9d`), which is also
-the tree a host `pnpm --filter @speechnexus/workbench build` produces, so that
-digest identifies source bytes rather than build cache. The nginx base image adds
-one further file, `50x.html`, that is not part of the application bundle.
+How long a Web image takes is a property of the building host's route to Docker Hub
+and to `registry.npmjs.org`, not of the source tree. Every row below is an uncached
+(`--no-cache`) build of the Workbench image, and the spread between the extremes is
+two orders of magnitude, so decide which case you are in before starting — not after
+a timeout.
+
+| Host | `docker pull node:26.12.1-bookworm-slim` | Uncached `--no-cache` build | Outcome |
+| --- | --- | --- | --- |
+| macOS arm64, macOS 27.0.1, Docker 29.9.3 — image removed first, 2026-11-16 | 5.26 s | 93.12 s | exit 0 |
+| same macOS arm64 host, 2026-11-15 (#829 evidence) | 4.24 s | 53.44 s | exit 0 |
+| MegaCube, Linux aarch64 + NVIDIA GB10, 2026-11-15 (#572/#829 evidence) | node layer pinned at 13.27 KiB/s, 42.99 of 55.89 MB — about 70 min for that layer alone | did not complete; the 900 s Compose build window expired | exit 124 |
+
+The per-tarball `registry.npmjs.org` warnings the install prints (1–45 KiB/s on
+individual packages) do not set the pace, because `pnpm` fetches in parallel; a warm
+`pnpm` store only shortens repeat builds. The "stuck on the node layer at about
+50 KB/s" report (#572) is the MegaCube row of that table, not a contradiction of the
+macOS rows.
+
+**Criteria for "this host is on a throttled route".** Run the pull on a host that
+does not have the image cached, and time it:
+
+```bash
+docker image rm node:26.12.1-bookworm-slim 2>/dev/null || true
+time docker pull node:26.12.1-bookworm-slim
+```
+
+- **up to ~30 s** (roughly 2 MiB/s over the ~56 MB node layer — the macOS row is 23×
+  inside this bound): the ordinary path. Build the product Dockerfile directly, as
+  above.
+- **~30 s to ~5 min**: usable but slow. Build with a warm cache and an extended
+  window; do not pass `--no-cache` (that flag exists for digest evidence, and it
+  throws away the layer cache that makes a repeat build cheap).
+- **over ~5 min, or a single layer stops moving for more than a couple of minutes**:
+  a throttled route. At 13.27 KiB/s the 55.89 MB node layer alone needs about 70
+  minutes, which no 900 s Compose window survives. Use the mirror build below.
+
+The build's own output confirms the same conclusion without a separate pull: with
+`--progress=plain`, a `FROM` step that sits on "Downloading" for minutes at well
+under 100 KiB/s is the same measurement.
+
+#### Mirror build (build-only)
+
+Two files exist for the throttled case and for nothing else:
+[images/web.mirror.Dockerfile](images/web.mirror.Dockerfile) and
+[compose.build-mirror.override.yaml](compose.build-mirror.override.yaml). The second is
+passed *in addition to* the repository Compose file:
+
+```bash
+export SPEECHNEXUS_NODE_BASE_IMAGE=docker.m.daocloud.io/library/node:26.12.1-bookworm-slim
+export SPEECHNEXUS_NGINX_BASE_IMAGE=docker.m.daocloud.io/nginxinc/nginx-unprivileged:1.31-alpine
+export SPEECHNEXUS_NPM_REGISTRY=https://registry.npmmirror.com
+docker compose -f deploy/compose.yaml \
+  -f deploy/compose.build-mirror.override.yaml \
+  --profile web build workbench
+```
+
+The equivalent direct build, when Compose is not in play:
+
+```bash
+docker build -f deploy/images/web.mirror.Dockerfile \
+  --build-arg APP_NAME=workbench \
+  --build-arg NODE_BASE_IMAGE=docker.m.daocloud.io/library/node:26.12.1-bookworm-slim \
+  --build-arg NGINX_BASE_IMAGE=docker.m.daocloud.io/nginxinc/nginx-unprivileged:1.31-alpine \
+  --build-arg NPM_REGISTRY=https://registry.npmmirror.com \
+  -t speechnexus/web-workbench:<commit> .
+```
+
+What the two files are and are not:
+
+- **build-only.** `deploy/compose.yaml` never references either file, and Compose only
+  auto-loads a file named `compose.override.yaml`, so their presence changes nothing:
+  `docker compose --profile web config` renders the same document with and without
+  them, and adding the override to the command line changes only the Web services'
+  `build.dockerfile` and three build arguments (whose unset defaults are the product
+  values). The default build path is therefore unchanged instruction for instruction.
+- **the product Dockerfile stays the definition.** `images/web.Dockerfile` is not
+  modified, `images/python.Dockerfile` is not modified, and the mirror file is
+  compared against the product file by `tests/ci/test_web_mirror_build.py`, which
+  fails when the product build changes and the twin does not follow.
+- **it moves where bytes come from, not how they are trusted.** No `strict-ssl=false`,
+  no `NODE_TLS_REJECT_UNAUTHORIZED`, no `--insecure`: a private or session CA still
+  arrives as the `proxy_ca` BuildKit secret. No credential belongs in either file; a
+  mirror that needs authentication is configured on the Docker daemon.
+- **the Python images are out of scope here.** Their registry inputs are redirected on
+  the Docker daemon (`registry-mirrors`), which needs no repository file, and the pypi
+  route is not part of the measured failure above.
+
+**The bundle is the same, measured rather than assumed.** Hash the build stage's
+`web-dist` tree and compare; this is the exact command used below:
+
+```bash
+docker build --target build -f deploy/images/web.Dockerfile \
+  --build-arg APP_NAME=workbench -t speechnexus/web-dist:check . \
+&& docker run --rm --entrypoint sh speechnexus/web-dist:check -c \
+  'cd /workspace/web-dist && find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum'
+```
+
+On the macOS host above, three `--no-cache` builds produced the same 24-file
+`web-dist` tree,
+`5310e398a263e48effdce29887291dc2664f41c8db9bc45ee7198a020b2a3088`: the product
+Dockerfile (93.12 s), the mirror Dockerfile with no arguments (93.58 s), and the
+mirror Dockerfile redirected to the daocloud registry and `registry.npmmirror.com`
+(47.37 s). The digest identifies source bytes, so it changes with the tree — at
+`5cd5a5d0` the same method gave `80ada7a38a4e08dce8c3009cd196482e26d9854b8930c7e44ef9136f2b7d7f9d`
+(#829), and a cached and an uncached build agreed there too. The nginx base image
+adds one further file, `50x.html`, that is not part of the application bundle.
+
+A mirror is not necessarily a transparent proxy, and that boundary is worth checking
+because it is the one thing the bundle digest does not cover: compare the base-image
+manifests. The daocloud mirror above served the same manifests as Docker Hub
+(`node@sha256:88e480776c6149ff1d098cd304f44bf18057fb5d284a3329b78162d29821e28c`,
+`nginxinc/nginx-unprivileged@sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e`),
+so those images differ from the public-registry build only by name. A mirror that
+serves a *different* manifest puts that base into the image instead: the runtime layer
+is then the mirror's, and if it is the **node** base the bundle digest above is no
+longer promised either, because the toolchain that produced it changed. Check the two
+manifests and record the ones you shipped rather than the public ones.
 
 To deploy an image built this way instead of letting Compose build once more, pin it
 in a deployment-side override file and pass it alongside the repository file:

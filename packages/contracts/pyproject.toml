@@ -1,6 +1,7 @@
 [project]
 name = "speechnexus-contracts"
 version = "0.1.0.dev0"
+license = "MIT"
 description = "Generated SpeechNexus boundary types and offline wire validation"
 requires-python = ">=3.14,<3.15"
 dependencies = ["jsonschema[format]>=4.23,<5"]

@@ -35,7 +35,6 @@ from speechnexus_backend.publish_binding import (
 )
 from speechnexus_backend.speech.application.binding_documents import (
     decode_document,
-    document_digest,
     encode_document,
 )
 from speechnexus_backend.speech.application.binding_publication import (
@@ -53,6 +52,7 @@ from speechnexus_backend.speech.domain.binding_publication_evidence import (
     BindingCapacityManifestMismatchError,
     BindingEvidenceConflictError,
 )
+from speechnexus_backend.speech.domain.configuration import document_digest
 from speechnexus_backend.speech.domain.publications import PublicationUnavailableError
 from speechnexus_backend.speech.infrastructure.binding_draft_schema import binding_draft_grants
 from speechnexus_backend.speech.infrastructure.binding_drafts_postgres import PostgresBindingDrafts

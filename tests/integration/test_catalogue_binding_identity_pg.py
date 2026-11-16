@@ -360,7 +360,10 @@ async def test_the_deployed_api_footprint_serves_the_catalogue(sandbox: Sandbox)
         (writer, binding_draft_grants(sandbox.schema, writer)),
         (
             life,
-            (*binding_lifecycle_grants(sandbox.schema, life), *binding_publication_grants(sandbox.schema, life)),
+            (
+                *binding_lifecycle_grants(sandbox.schema, life),
+                *binding_publication_grants(sandbox.schema, life),
+            ),
         ),
         (reader, model_catalog_reader_grants(sandbox.schema, reader)),
     ):
@@ -384,31 +387,31 @@ async def test_the_deployed_api_footprint_serves_the_catalogue(sandbox: Sandbox)
             }
         )
         app = create_app(settings=settings)
-        async with app.router.lifespan_context(app):
-            async with AsyncClient(
-                transport=ASGITransport(app=app), base_url="http://test"
-            ) as http:
-                created = await http.post(
-                    CREATE_URL,
-                    json=_create_body(),
-                    headers={"Idempotency-Key": "deployed-footprint-1"},
-                )
-                assert created.status_code == 201, created.text
-                published = await http.post(
-                    PUBLISH_URL,
-                    json=PUBLISH_BODY,
-                    headers={"Idempotency-Key": "deployed-footprint-2"},
-                )
-                assert published.status_code == 201, published.text
-                activated = await http.post(
-                    ACTIVATE_URL,
-                    json={"expected_current_revision": "1"},
-                    headers={"Idempotency-Key": "deployed-footprint-3"},
-                )
-                assert activated.status_code == 200, activated.text
-                listed = await http.get("/v1/models")
-                assert listed.status_code == 200, listed.text
-                body = _models(sandbox, listed.json())
+        async with (
+            app.router.lifespan_context(app),
+            AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http,
+        ):
+            created = await http.post(
+                CREATE_URL,
+                json=_create_body(),
+                headers={"Idempotency-Key": "deployed-footprint-1"},
+            )
+            assert created.status_code == 201, created.text
+            published = await http.post(
+                PUBLISH_URL,
+                json=PUBLISH_BODY,
+                headers={"Idempotency-Key": "deployed-footprint-2"},
+            )
+            assert published.status_code == 201, published.text
+            activated = await http.post(
+                ACTIVATE_URL,
+                json={"expected_current_revision": "1"},
+                headers={"Idempotency-Key": "deployed-footprint-3"},
+            )
+            assert activated.status_code == 200, activated.text
+            listed = await http.get("/v1/models")
+            assert listed.status_code == 200, listed.text
+            body = _models(sandbox, listed.json())
         assert [entry["id"] for entry in body["data"]] == [MODEL]
     finally:
         for role in (writer, life, reader):

@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from speechnexus_backend.job_cancellation_runtime import (
     JobCancellationRuntime,
     JobCancellationSettings,
+    UnconfirmedCancellationSettlement,
     _PublicJobsSettlement,
     _PublicJobsStop,
     build_cancellation_runtime,
@@ -142,3 +143,139 @@ def test_settings_repr_hides_connection_and_credential() -> None:
     text = repr(settings)
     assert "synthetic-password" not in text
     assert "synthetic-token" not in text
+
+
+class _SettleableJob:
+    def __init__(self, state: str, error_code: str | None = None, version: int = 3) -> None:
+        self.state, self.error_code, self.status_version = state, error_code, version
+        self.job_id = "job-1"
+
+
+class _SettleableJobs:
+    def __init__(self, current: _SettleableJob, *, conflict: bool = False) -> None:
+        self.current = current
+        self.conflict = conflict
+        self.advances: list[tuple[str, str | None]] = []
+        self.reads = 0
+
+    def get(self, job_id: str) -> _SettleableJob:
+        self.reads += 1
+        return self.current
+
+    def advance(self, job_id: str, target: str, *, error_code: str | None = None) -> _SettleableJob:
+        if self.conflict:
+            from speechnexus_backend.speech.domain.public_jobs import PublicJobConflictError
+
+            raise PublicJobConflictError("version moved")
+        self.advances.append((target, error_code))
+        self.current = _SettleableJob(target, error_code, self.current.status_version + 1)
+        return self.current
+
+
+class _QuarantiningCapacity:
+    def __init__(self, *, quarantined: bool = True, fail: bool = False) -> None:
+        self.quarantined, self.fail = quarantined, fail
+        self.calls: list[tuple[str, str]] = []
+
+    def quarantine_sync(self, operation_id: str, *, reason_code: str) -> bool:
+        self.calls.append((operation_id, reason_code))
+        if self.fail:
+            raise RuntimeError("lease storage unavailable")
+        return self.quarantined
+
+
+class _OrderedJobs:
+    """Public Job port that records the advance after the isolation attempt."""
+
+    def __init__(self, inner: _SettleableJobs, order: list[str]) -> None:
+        self._inner, self._order = inner, order
+
+    def get(self, job_id: str) -> _SettleableJob:
+        return self._inner.get(job_id)
+
+    def advance(self, job_id: str, target: str, *, error_code: str | None = None) -> _SettleableJob:
+        self._order.append("advance")
+        return self._inner.advance(job_id, target, error_code=error_code)
+
+
+class _OrderedCapacity:
+    def __init__(self, order: list[str]) -> None:
+        self._order = order
+
+    def quarantine_sync(self, operation_id: str, *, reason_code: str) -> bool:
+        self._order.append("quarantine")
+        return True
+
+
+def test_unconfirmed_settlement_quarantines_the_lease_before_failing_the_job() -> None:
+    order: list[str] = []
+    jobs = _SettleableJobs(_SettleableJob("cancelling"))
+    settlement = UnconfirmedCancellationSettlement(
+        cast(Any, _OrderedJobs(jobs, order)), cast(Any, _OrderedCapacity(order))
+    )
+
+    assert settlement.settle("job-1") is True
+    # Isolation first: the slot must stop looking held before the Job is closed.
+    assert order == ["quarantine", "advance"]
+    assert (jobs.current.state, jobs.current.error_code) == ("failed", "cancellation_unconfirmed")
+
+
+def test_unconfirmed_settlement_judges_the_job_even_when_isolation_is_refused() -> None:
+    jobs = _SettleableJobs(_SettleableJob("cancelling"))
+    settlement = UnconfirmedCancellationSettlement(
+        cast(Any, jobs), cast(Any, _QuarantiningCapacity(quarantined=False))
+    )
+
+    assert settlement.settle("job-1") is True
+    assert jobs.advances == [("failed", "cancellation_unconfirmed")]
+
+
+def test_unconfirmed_settlement_tolerates_unavailable_lease_storage() -> None:
+    jobs = _SettleableJobs(_SettleableJob("cancelling"))
+    settlement = UnconfirmedCancellationSettlement(
+        cast(Any, jobs), cast(Any, _QuarantiningCapacity(fail=True))
+    )
+
+    assert settlement.settle("job-1") is True
+    assert jobs.advances == [("failed", "cancellation_unconfirmed")]
+
+
+def test_unconfirmed_settlement_never_rewrites_another_terminal_fact() -> None:
+    for state, error_code in (
+        ("cancelled", None),
+        ("succeeded", None),
+        ("failed", "internal_error"),
+        ("running", None),
+    ):
+        jobs = _SettleableJobs(_SettleableJob(state, error_code))
+        settlement = UnconfirmedCancellationSettlement(
+            cast(Any, jobs), cast(Any, _QuarantiningCapacity())
+        )
+        assert settlement.settle("job-1") is (state == "cancelled"), state
+        assert jobs.advances == [], state
+
+
+def test_unconfirmed_settlement_is_idempotent_for_its_own_failure() -> None:
+    jobs = _SettleableJobs(_SettleableJob("failed", "cancellation_unconfirmed"))
+    capacity = _QuarantiningCapacity()
+    settlement = UnconfirmedCancellationSettlement(cast(Any, jobs), cast(Any, capacity))
+
+    assert settlement.settle("job-1") is True
+    # The already-committed judgment is not replayed, but the isolation is retried.
+    assert jobs.advances == []
+    assert capacity.calls == [("job-1", "cancellation_unconfirmed")]
+
+
+def test_unconfirmed_settlement_reports_a_lost_version_guard_as_unsettled() -> None:
+    jobs = _SettleableJobs(_SettleableJob("cancelling"), conflict=True)
+    settlement = UnconfirmedCancellationSettlement(
+        cast(Any, jobs), cast(Any, _QuarantiningCapacity())
+    )
+
+    assert settlement.settle("job-1") is False
+
+
+def test_confirmation_window_is_bounded() -> None:
+    for value in (0, 3601):
+        with pytest.raises(ValidationError):
+            _settings(confirm_timeout_seconds=value)

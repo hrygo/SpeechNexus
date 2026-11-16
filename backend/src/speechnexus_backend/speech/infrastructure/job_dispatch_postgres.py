@@ -24,6 +24,7 @@ from speechnexus_backend.speech.domain.job_dispatch import (
     identifier,
 )
 from speechnexus_backend.speech.domain.lease_release import ReleaseLease
+from speechnexus_backend.speech.domain.leases import QuarantineLease
 from speechnexus_backend.speech.infrastructure.job_cancellation_fence_schema import (
     NOT_SUBMITTED_TABLE,
 )
@@ -531,6 +532,59 @@ class PostgresLeaseSettler:
             # whole attempt for reconciliation instead of releasing one stage.
             return ""
         return str(rows[0]["lease_id"])
+
+    def lease_ids_sync(self, operation_id: str) -> tuple[str, ...]:
+        """Every admission lease of one Job, in a stable order."""
+        identifier(operation_id)
+        try:
+            with self._pool.connection(timeout=self._timeout) as connection:
+                connection.execute("SET TRANSACTION READ ONLY")
+                rows = connection.execute(
+                    "SELECT lease_id FROM admission_leases WHERE operation_id = %s "
+                    "ORDER BY lease_id",
+                    (operation_id,),
+                ).fetchall()
+        except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
+            raise DispatchUnavailableError("Lease settlement storage is unavailable") from None
+        return tuple(str(row["lease_id"]) for row in rows)
+
+    def clock_sync(self) -> int:
+        """Read the database clock used to validate an observed timestamp."""
+        try:
+            with self._pool.connection(timeout=self._timeout) as connection:
+                connection.execute("SET TRANSACTION READ ONLY")
+                row = connection.execute(
+                    "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) "
+                    "AS now_us"
+                ).fetchone()
+        except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
+            raise DispatchUnavailableError("Lease settlement storage is unavailable") from None
+        if row is None:
+            raise DispatchUnavailableError("Lease settlement storage returned no clock")
+        return int(row["now_us"])
+
+    def quarantine_sync(self, operation_id: str, *, reason_code: str) -> bool:
+        """Isolate every lease of a Job whose execution stop cannot be proven.
+
+        Quarantine moves the reserved slots and attempt quota from ``held`` to
+        ``quarantined``: the capacity stays unavailable, but it is no longer
+        reported as held by an execution that is still running. The domain rule
+        decides whether the persisted execution facts authorize this, so a lease
+        whose execution never became ``unknown_quarantined``/``quarantined`` is
+        refused here and stays exactly as its owner recorded it.
+        """
+        try:
+            lease_ids, now_us = self.lease_ids_sync(operation_id), self.clock_sync()
+        except DispatchUnavailableError:
+            return False
+        if not lease_ids:
+            return True
+        for lease_id in lease_ids:
+            result = self._leases.quarantine(QuarantineLease(lease_id, reason_code, now_us))
+            fact = result.fact
+            if fact is None or fact.lease_state != "quarantined":
+                return False
+        return True
 
     def _release(self, operation_id: str) -> bool:
         lease_id = self._lease_id(operation_id)

@@ -70,6 +70,23 @@
 - **2026-11-15 增补**：ASR 路径的实测证据已转录进 [#572](https://github.com/hrygo/SpeechNexus/issues/572) 的评论（任务系统 `DEL-531`，MegaCube）：`job-410574cd…` `queued→running→succeeded`、`asset-416749…`（195356 bytes / 4429 ms / 22050 Hz / 单声道）、`artifact-ea4fe1b4…`（`content-length: 92`，`etag "sha256:3002c23c5e859f295f3bec557a363a7fe5359a3db50b351bfffc9885e5e21d5d"`，`sha256(file)` 与该 etag 摘要相同）、`lease-410574cd… released`。它证明「API → 派发 → 真实 ASR 引擎 → Artifact 下载」这条链可用。
   **仍未验的是消费侧同版读取**：该次运行的栈已 `down -v`，artifact 行与对象均不存在，本机（macOS arm64，无引擎）无法重放同一份 artifact，因此不得用注入、改行或 mock 代替。`#829` 在消费侧只走到「同版镜像 + 三方同源 + 读写工作台自身业务后端」；浏览器一层另被 B7 阻断。
 
+- **2026-11-16 增补（#852，同一次参考部署窗口实测）：取消受理后可以永久占住实例槽位。**
+  窗口里观察到一次公开取消（`POST /v1/nexus/jobs/{id}/cancel` → `202 cancelling`）之后的稳定状态：
+  `speech_jobs.state=cancelling`、`admission_leases.lease_state=reserved`、
+  `submit_intents.execution_state=unknown_quarantined`、`engine_instances.held_slots=1`，
+  此后无人推进。用真实 `JobCancellationReconciler` + `GatewayCancellationConfirmer` +
+  `PostgresCancellationReconciliationStore` 在隔离栈复现了同一条链：受理后每轮向网关提问
+  得到 `pending`，`max_attempts` 用尽即写 `exhausted`，而领取条件排除 `exhausted`，于是
+  该行永不再被领取；网关侧不改写 `unknown_quarantined`，租约到期只是过期而不是回归容量，
+  派发器又早已不在该 Job 上，`cancelling` 因此无主。参考部署 `deploy/compose.yaml` 里没有
+  取消对账服务、该 worker 也默认关闭，所以真实窗口连推进者都不存在。
+  现已收口（#852）：确认窗口（默认 300 秒）或尝试预算任一到达即做一次终态判定——
+  租约按 `cancellation_unconfirmed` 隔离、Job 落 `failed/cancellation_unconfirmed`，
+  `held_slots` 减一、`quarantined_slots` 加一，重试按 `409 execution_cleanup_pending` 拒绝。
+  仍未覆盖：参考部署未运行该 worker（`deploy/compose.yaml` 无该服务，`ENABLED` 默认 `false`），
+  因此「默认部署里取消能自愈」没有部署级证据；执行仍活跃且没有停止证据的租约仍保持
+  `reserved`，需 #338 的停止确认或操作员证词解除。
+
 **B2 — 声音泳道无 Job 级证据（#529）**
 - 要什么证据：design 与 clone 各一条 Job 到 `succeeded`，preview artifact 被 `GET /voice-drafts/{id}` 读成 candidate；附冷加载、空闲回收、显存峰值、P95、与 asr/tts 混跑不干扰的实测数字，并给出 `start_period` 实测值。
 - 现在卡在哪：网关 stage 与节点模板已合并，但模型侧 `artifact-pin.json`/`runtime-pin.json` 与 `start_period` 未固定，泳道从未接真实引擎生成过 Job。

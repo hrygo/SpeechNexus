@@ -27,6 +27,7 @@ from speechnexus_backend.speech.application.voice_drafts import (
 )
 from speechnexus_backend.speech.domain.admission import AdmissionRejectedError
 from speechnexus_backend.speech.domain.public_jobs import (
+    CANCELLATION_UNCONFIRMED,
     JOB_STATES,
     TERMINAL_STATES,
     JobArtifactFact,
@@ -819,7 +820,7 @@ class PostgresPublicJobs:
                         return JobCancellationResult("conflict")
                 # A terminal failure whose execution never confirmed stop holds
                 # capacity and must not be reported as a clean cancellation.
-                if job.state == "failed" and job.error_code == "cancellation_unconfirmed":
+                if job.state == "failed" and job.error_code == CANCELLATION_UNCONFIRMED:
                     return JobCancellationResult("cleanup_pending")
                 receipt_row = _cancellation_by_job(connection, job.job_id)
                 if receipt_row is not None:

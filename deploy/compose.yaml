@@ -87,7 +87,7 @@ services:
       - minio-data:/data
     networks:
       default:
-        ipv4_address: 172.28.0.10
+        ipv4_address: ${SPEECHNEXUS_MINIO_STATIC_IP:-172.28.0.10} # 10th host of SPEECHNEXUS_COMPOSE_SUBNET; private IP literal, no DNS (#897)
     healthcheck:
       test:
         [
@@ -847,7 +847,7 @@ networks:
   default:
     ipam:
       config:
-        - subnet: 172.28.0.0/24
+        - subnet: ${SPEECHNEXUS_COMPOSE_SUBNET:-172.28.0.0/24} # default unchanged; derive both values with deploy/compose-network.py (#897)
   # No default gateway and no host port: the inspection container can neither
   # reach the internet nor be reached from the host. Only `api` (client) and
   # `asset-inspector` join it, so a decoder compromise cannot reach PostgreSQL,

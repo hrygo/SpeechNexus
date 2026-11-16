@@ -53,6 +53,7 @@ from speechnexus_backend.speech.domain.operator_attestation import (
 from speechnexus_backend.speech.infrastructure.builtin_voice_grants import (
     builtin_publisher_grants,
     operator_attestation_writer_grants,
+    qualification_reader_grants,
 )
 from speechnexus_backend.speech.infrastructure.builtin_voice_qualification import (
     require_builtin_voice,
@@ -412,13 +413,19 @@ class Ledger:
     def snapshot(self) -> dict[str, int]:
         return {table: self.count(table) for table in RUNTIME_TABLES}
 
-    def probe_authorization(self, authorization: str = "probe-auth-1") -> str:
+    def probe_authorization(
+        self,
+        authorization: str = "probe-auth-1",
+        *,
+        source_approval_id: str = SOURCE,
+        voice_id: str = VOICE,
+    ) -> str:
         """The row only the controller path can write; it is what backs the label."""
         self.db.execute(
             "INSERT INTO speech_builtin_voice_probe_authorizations "
             "(authorization_id,source_approval_id,voice_id,intent) "
             "VALUES (%s,%s,%s,'{}'::jsonb)",
-            (authorization, SOURCE, VOICE),
+            (authorization, source_approval_id, voice_id),
         )
         return authorization
 
@@ -431,6 +438,30 @@ class Ledger:
             self.db.execute(grant)
         return self._store(identity, password)
 
+    def reader(self, suffix: str = "_qr", password: str = PASSWORD) -> str:
+        """Provision the read-only audit identity from ``qualification_reader_grants``."""
+        identity = f"{self.schema[:20]}{suffix}"
+        self.db.execute(f'CREATE ROLE "{identity}"')
+        self.db.execute(f"ALTER ROLE \"{identity}\" LOGIN PASSWORD '{password}'")
+        for grant in qualification_reader_grants(self.schema, identity):
+            self.db.execute(grant)
+        return identity
+
+    def read_rows_as(self, identity: str, password: str = PASSWORD) -> list[dict[str, Any]]:
+        """Run the shipped report SQL as that identity, not as the schema owner."""
+        with psycopg.connect(
+            make_conninfo(
+                os.environ["SPEECHNEXUS_TEST_DATABASE_URL"],
+                user=identity,
+                password=password,
+            ),
+            autocommit=True,
+            row_factory=dict_row,
+        ) as connection:
+            connection.execute("SET TRANSACTION READ ONLY")
+            connection.execute(f'SET search_path TO "{self.schema}", pg_catalog')
+            return connection.execute(REPORT_SQL).fetchall()
+
     def publisher(self, role: str, password: str = PASSWORD) -> PostgresPublications:
         self.db.execute(f"ALTER ROLE \"{role}\" LOGIN PASSWORD '{password}'")
         for grant in (
@@ -439,9 +470,6 @@ class Ledger:
         ):
             self.db.execute(grant)
         return self._store(role, password)
-
-    def _debug_publish(self) -> None:
-        raise NotImplementedError
 
     def _store(self, role: str, password: str) -> PostgresPublications:
         pool = speech_pool(
@@ -1048,6 +1076,116 @@ def test_rows_published_before_the_migration_are_reported_as_recorded_history(
     assert entries[-1]["summary"]["legacy_pre_0055"] == 1
     assert entries[-1]["summary"]["controller_observed"] == 0
     _close(ledger)
+
+
+def test_the_read_surface_separates_both_sources_through_the_reader_identity(
+    pg: tuple[psycopg.Connection[dict[str, Any]], str, str],
+) -> None:
+    """The audit runs as `sn_qualification_reader`, never as the schema owner.
+
+    That identity holds only ``qualification_reader_grants``: it reads the ledger,
+    the provenance labels and the evidence rows behind them, and writes nothing.
+    Reading an operator-sourced and a controller-sourced qualification through it
+    is what a deployment auditor actually does, so the report is proven to fit the
+    least-privilege surface instead of the schema owner's.
+    """
+    db, schema, role = pg
+    ledger = Ledger(db, schema)
+    writer = ledger.writer(role)
+    try:
+        ledger.attest(writer)
+        publisher = ledger.publisher(role)
+        ledger.publish(publisher)
+        # A second voice whose controller-source approval names its probe
+        # authorization: the pre-0055 shape, attributed by positive evidence.
+        controller_voice = "voice-controller"
+        db.execute(
+            "INSERT INTO speech_builtin_voice_source_approvals VALUES (%s,%s,%s,%s,%s,%s)",
+            (
+                "source-controller",
+                controller_voice,
+                "source-rev",
+                ledger.digest,
+                "Vivian",
+                ledger.expires_at,
+            ),
+        )
+        probe = ledger.probe_authorization(
+            "probe-auth-2", source_approval_id="source-controller", voice_id=controller_voice
+        )
+        db.execute(
+            "INSERT INTO speech_builtin_voice_approvals "
+            "(approval_id,voice_id,revision,revision_id,binding_revision_id,"
+            "source_approval_id,facts,expires_at,probe_authorization_id,result_intent) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,'{}'::jsonb)",
+            (
+                "approval-controller",
+                controller_voice,
+                REVISION,
+                "voice-rev-controller",
+                BINDING_REVISION_ID,
+                "source-controller",
+                json.dumps(_probe_facts(ledger)),
+                ledger.expires_at,
+                probe,
+            ),
+        )
+        db.execute(
+            "INSERT INTO speech_builtin_voice_qualifications VALUES "
+            "(%s,%s,%s,%s,%s,%s::jsonb,'Vivian')",
+            (
+                controller_voice,
+                REVISION,
+                "voice-rev-controller",
+                BINDING_REVISION_ID,
+                "approval-controller",
+                json.dumps(_public_document(ledger, ledger.capabilities)),
+            ),
+        )
+    finally:
+        _close(ledger)
+
+    identity = ledger.reader()
+    rows = ledger.read_rows_as(identity)
+    assert len(rows) == 2
+    out, err = io.StringIO(), io.StringIO()
+    code = provenance_main(
+        ["--database-url", "postgresql://unused/synthetic", "--schema", schema],
+        env={},
+        connect=lambda url, name: (rows, int(rows[0]["now_us"])),
+        stdout=out,
+        stderr=err,
+    )
+    assert code == 0, err.getvalue()
+    report = [json.loads(line) for line in out.getvalue().splitlines()]
+    by_voice = {entry["voice_id"]: entry for entry in report[:-1]}
+    operator_entry = by_voice[VOICE]
+    assert operator_entry["source_kind"] == "operator_attested"
+    assert operator_entry["source_evidence"] == "operator_attestation"
+    assert operator_entry["attestation_id"]
+    controller_entry = by_voice["voice-controller"]
+    assert controller_entry["source_kind"] == "controller_observed"
+    assert controller_entry["source_evidence"] == "probe_authorization"
+    assert controller_entry["probe_authorization_id"] == probe
+    assert report[-1]["summary"]["operator_attested"] == 1
+    assert report[-1]["summary"]["controller_observed"] == 1
+    assert report[-1]["summary"]["unverified"] == 0
+    # The same identity cannot write: the report surface is read-only by grant,
+    # not by the report choosing to issue only SELECT.
+    with psycopg.connect(
+        make_conninfo(
+            os.environ["SPEECHNEXUS_TEST_DATABASE_URL"], user=identity, password=PASSWORD
+        ),
+        autocommit=True,
+        row_factory=dict_row,
+    ) as connection:
+        connection.execute(f'SET search_path TO "{schema}", pg_catalog')
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            connection.execute(
+                "INSERT INTO speech_builtin_voice_qualification_provenance "
+                "(voice_id,revision,source_kind,evidence_kind) "
+                "VALUES ('voice-x','1','unverified','absent')"
+            )
 
 
 def _probe_facts(ledger: Ledger) -> dict[str, Any]:

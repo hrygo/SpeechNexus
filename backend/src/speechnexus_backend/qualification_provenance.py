@@ -98,7 +98,14 @@ def _labelled_source(row: Row, *, provenance_recorded: bool) -> tuple[str, str, 
                 EVIDENCE_ABSENT,
                 ("recorded as operator-attested without its attestation"),
             )
-        return SOURCE_UNVERIFIED, EVIDENCE_ABSENT, "recorded source is not a known producer"
+        return (
+            SOURCE_UNVERIFIED,
+            EVIDENCE_ABSENT,
+            (
+                "recorded as unverified: neither a probe authorization nor an "
+                "attestation backs a source label"
+            ),
+        )
     if approval_probe is not None:
         return SOURCE_CONTROLLER, EVIDENCE_PROBE, None
     return (

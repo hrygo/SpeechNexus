@@ -43,7 +43,13 @@ def qualification_reader_grants(schema: str, role: str) -> tuple[str, ...]:
         f'"{schema}".speech_builtin_voice_source_revocations, '
         f'"{schema}".speech_builtin_voice_approvals, '
         f'"{schema}".speech_builtin_voice_revocations, '
-        f'"{schema}".speech_builtin_voice_qualifications TO "{role}"',
+        f'"{schema}".speech_builtin_voice_qualifications, '
+        # Provenance is read, never inferred: an auditor needs both the label and
+        # the attestation row that backs it, and the probe authorization the
+        # controller label names.
+        f'"{schema}".speech_builtin_voice_qualification_provenance, '
+        f'"{schema}".speech_builtin_voice_operator_attestations, '
+        f'"{schema}".speech_builtin_voice_probe_authorizations TO "{role}"',
     )
 
 

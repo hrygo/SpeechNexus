@@ -92,6 +92,37 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/nexus/version": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Report the API version and canonical contract digest
+     * @description Returns the API package version and the digest of the canonical contract
+     *     sources this process was generated from. A browser consumer bakes in the
+     *     same digest at build time and compares it on start-up, so a deployment
+     *     whose frontend and API came from different contract revisions shows the
+     *     difference instead of interpreting new responses with old types.
+     *
+     *     The digest covers the machine contract sources under `contracts/` (every
+     *     `*.yaml` and `*.json` file): SHA-256 over each file's relative path and
+     *     its own SHA-256, in sorted path order. It is not a git revision and
+     *     exposes no endpoint, identity, credential or filesystem path.
+     *     `scripts/dev-env/print-contract-digest.py` recomputes it offline. A
+     *     consumer must never cache this response.
+     */
+    get: operations["getVersionIdentity"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/nexus/capabilities": {
     parameters: {
       query?: never;
@@ -1177,6 +1208,16 @@ export interface components {
     AuxiliaryMode: "off" | "required" | "best_effort";
     ErrorResponse: {
       error: components["schemas"]["ErrorBody"];
+    };
+    VersionIdentity: {
+      /** @description API package version, the same value `/healthz` reports. */
+      version: string;
+      /**
+       * @description Digest of the canonical contract sources this process was generated
+       *     from. Equal digest values mean the API and the browser consumer
+       *     compiled the same contracts.
+       */
+      contract_digest: components["schemas"]["Sha256Digest"];
     };
     ModelList: {
       /** @constant */
@@ -4529,6 +4570,31 @@ export interface operations {
       429: components["responses"]["TooManyRequests"];
       503: components["responses"]["ServiceUnavailable"];
       504: components["responses"]["GatewayTimeout"];
+    };
+  };
+  getVersionIdentity: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description API package version and canonical contract digest. */
+      200: {
+        headers: {
+          "Cache-Control": "no-store";
+          "X-Request-ID"?: components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["VersionIdentity"];
+        };
+      };
+      405: components["responses"]["MethodNotAllowed"];
     };
   };
   getCapabilities: {

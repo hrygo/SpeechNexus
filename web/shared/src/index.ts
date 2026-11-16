@@ -1,6 +1,7 @@
 export { AppShell } from "./ui/app-shell";
 export { CapabilityCard } from "./ui/capability-card";
 export { BrandMark } from "./ui/brand-mark";
+export { ContractIdentityAlert } from "./ui/contract-identity";
 export { readSse } from "./protocol/sse";
 
 export type { AppShellProps } from "./ui/app-shell";

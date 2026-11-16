@@ -133,7 +133,9 @@ for (const application of applications) {
       const consoleErrors = [];
       page.on("pageerror", (error) => pageErrors.push(String(error)));
       page.on("console", (message) => {
-        if (message.type() === "error") consoleErrors.push(message.text());
+        if (message.type() === "error") {
+          consoleErrors.push({ text: message.text(), url: message.location()?.url ?? "" });
+        }
       });
 
       const response = await page.goto(application.origin, { waitUntil: "load" });
@@ -155,7 +157,26 @@ for (const application of applications) {
 
       // A CSP refusal surfaces as a thrown error and a console error, never as silence.
       expect(pageErrors, `${application.name} page errors`).toEqual([]);
-      expect(consoleErrors, `${application.name} console errors`).toEqual([]);
+
+      // A fresh page makes exactly one request of its own: the same-version
+      // identity probe (#853). This origin has no API attached, so that request
+      // fails by design and the browser logs the failed resource; the failure
+      // must stay silent in the interface instead of becoming a version warning.
+      // Every other console error still fails this gate.
+      const identityProbe = (entry) => entry.url.endsWith("/v1/nexus/version");
+      const unexpected = consoleErrors.filter((entry) => !identityProbe(entry));
+      expect(
+        unexpected.map((entry) => entry.text),
+        `${application.name} console errors`,
+      ).toEqual([]);
+      expect(
+        consoleErrors.length - unexpected.length,
+        `${application.name} made no same-version identity request`,
+      ).toBeLessThanOrEqual(1);
+      await expect(
+        page.locator("[data-nexus-contract-check]"),
+        `${application.name} warned about versions although no API answered`,
+      ).toHaveCount(0);
     });
   });
 }

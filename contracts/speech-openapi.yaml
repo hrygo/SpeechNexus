@@ -41,6 +41,7 @@ tags:
   - name: artifacts
   - name: realtime
   - name: voice-creation
+  - name: version
 paths:
   /v1/models:
     get:
@@ -264,6 +265,43 @@ paths:
           $ref: "#/components/responses/ServiceUnavailable"
         "504":
           $ref: "#/components/responses/GatewayTimeout"
+  /v1/nexus/version:
+    get:
+      tags: [version]
+      operationId: getVersionIdentity
+      summary: Report the API version and canonical contract digest
+      description: |
+        Returns the API package version and the digest of the canonical contract
+        sources this process was generated from. A browser consumer bakes in the
+        same digest at build time and compares it on start-up, so a deployment
+        whose frontend and API came from different contract revisions shows the
+        difference instead of interpreting new responses with old types.
+
+        The digest covers the machine contract sources under `contracts/` (every
+        `*.yaml` and `*.json` file): SHA-256 over each file's relative path and
+        its own SHA-256, in sorted path order. It is not a git revision and
+        exposes no endpoint, identity, credential or filesystem path.
+        `scripts/dev-env/print-contract-digest.py` recomputes it offline. A
+        consumer must never cache this response.
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: API package version and canonical contract digest.
+          headers:
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+                const: "no-store"
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VersionIdentity"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
   /v1/nexus/capabilities:
     get:
       tags: [capabilities]
@@ -3942,6 +3980,21 @@ components:
       $ref: "shared/capability-domains.schema.json#/$defs/AuxiliaryMode"
     ErrorResponse:
       $ref: "shared/errors.schema.json#/$defs/ErrorResponse"
+    VersionIdentity:
+      type: object
+      additionalProperties: false
+      required: [version, contract_digest]
+      properties:
+        version:
+          type: string
+          minLength: 1
+          description: API package version, the same value `/healthz` reports.
+        contract_digest:
+          $ref: "#/components/schemas/Sha256Digest"
+          description: |
+            Digest of the canonical contract sources this process was generated
+            from. Equal digest values mean the API and the browser consumer
+            compiled the same contracts.
     ModelList:
       type: object
       additionalProperties: false

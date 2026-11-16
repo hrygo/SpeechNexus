@@ -582,6 +582,17 @@
         "createModelBindingDraft",
         "getModelBindingParameterDefaults"
       ]
+    },
+    "version": {
+      "source": "speech-openapi.yaml",
+      "validate": true,
+      "typescript_source": "speech",
+      "paths": [
+        "/v1/nexus/version"
+      ],
+      "operations": [
+        "getVersionIdentity"
+      ]
     }
   },
   "schema_refs": {

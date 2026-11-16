@@ -10,6 +10,9 @@ from speechnexus_backend.speech.interfaces.http.schemas import (
     ReadinessCheckResponse,
     ReadinessResponse,
 )
+from speechnexus_backend.speech.interfaces.http.version_identity import (
+    create_version_identity_router,
+)
 
 _REQUEST_ID_RESPONSE_HEADER = {
     "X-Request-ID": {
@@ -26,6 +29,11 @@ def create_health_router(
     readiness: ReadinessService,
 ) -> APIRouter:
     router = APIRouter(tags=["operations"])
+    # The composition root already hands this factory the API version, and it is
+    # the one operations surface app.py mounts unconditionally, so the version
+    # identity route is attached here instead of taking a second wiring path
+    # through app.py (#853). Its contract lives in contracts/speech-openapi.yaml.
+    router.include_router(create_version_identity_router(version=version))
 
     @router.get(
         "/healthz",

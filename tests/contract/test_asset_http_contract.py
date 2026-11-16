@@ -66,6 +66,7 @@ def test_packaged_http_surface_is_closed_and_matches_real_operations() -> None:
         "/v1/nexus/pronunciation-sets",
         "/v1/nexus/pronunciation-sets/{pronunciation_id}/revisions/{revision}",
         "/v1/nexus/capabilities",
+        "/v1/nexus/version",
         "/v1/nexus/voice-designs",
         "/v1/nexus/voice-clones",
         "/v1/nexus/voice-drafts/{draft_id}",

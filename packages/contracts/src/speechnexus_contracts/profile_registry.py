@@ -34,5 +34,6 @@ HTTP_PROFILES = frozenset(
         "profile_lifecycle",
         "binding",
         "binding_defaults",
+        "version",
     )
 )

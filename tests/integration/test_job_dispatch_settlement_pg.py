@@ -352,6 +352,18 @@ class _Gateway:
             document: dict[str, Any] = {
                 "submit_intent_id": submit_id,
                 "execution_state": self.terminal,
+                # The row this fake writes decides the evidence it may report: a
+                # `failed` execution whose submit was refused before dispatch is the
+                # `not_required` + `none` shape with no dispatch identity, and a
+                # `succeeded` one carries the engine's terminal response.
+                "cleanup_state": "not_required" if self.terminal == "failed" else "complete",
+                "stop_evidence_kind": "none"
+                if self.terminal == "failed"
+                else ("engine_terminal_response"),
+                "dispatched_at": None if self.terminal == "failed" else "2026-11-17T11:00:00Z",
+                "engine_request_id": (
+                    None if self.terminal == "failed" else "engine-request-synthetic"
+                ),
             }
             if self.terminal != "succeeded":
                 document["error_code"] = "engine_execution_failed"

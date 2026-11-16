@@ -10,6 +10,7 @@ instance is stopped: the reclaim answer authorizes the Scheduler, it does not ac
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -92,7 +93,7 @@ class Harness:
 
 
 @pytest.fixture
-def live(foundation: Foundation, tmp_path: Path) -> Harness:
+def live(foundation: Foundation, tmp_path: Path) -> Iterator[Harness]:
     pool: GatewayPool = new_pool(foundation)
     owner = ProcessIngressOwnership(tmp_path, node_id=NODE, gateway_id=GATEWAY)
     ingress = GatewayIngress(owner, timeout_seconds=0.1)
@@ -251,6 +252,36 @@ def test_verified_release_evidence_reports_the_generation_reclaimed(
 
     assert snapshot.decision.state is ReclaimState.RECLAIMED
     assert snapshot.decision.reclaimed is True
+
+
+def test_a_verified_release_with_a_reserved_lease_is_held_not_reclaimed(
+    foundation: Foundation, live: Harness
+) -> None:
+    """The real-PG shape of the ordering bug: the node released, the lease did not."""
+    at = datetime.now(UTC) - timedelta(minutes=10)
+    set_ready_at(foundation, at=at)
+    settle_every_intent(foundation, at=at)
+    foundation.database.query(
+        "UPDATE admission_leases SET lease_state = 'reserved', budget_released_at_us = NULL "
+        "WHERE instance_id = %s AND instance_generation = %s",
+        (INSTANCE, GENERATION),
+    )
+    live.releases.value = VoiceDesignReleaseEvidence(
+        kind=ReleaseEvidenceKind.CONTAINER_STOP,
+        observed_at=datetime.now(UTC) - timedelta(seconds=5),
+        exited=True,
+        release_confirmed=True,
+    )
+
+    snapshot = live.evaluate()
+
+    assert snapshot.record.holds_capacity is True
+    assert snapshot.record.facts(cooldown_ms=COOLDOWN_MS, release=live.releases.value).release is (
+        live.releases.value
+    )
+    assert snapshot.decision.state is ReclaimState.HELD
+    assert snapshot.decision.reclaimed is False
+    assert snapshot.decision.refusal is ReclaimRefusal.CAPACITY_HELD
 
 
 def test_a_sleep_acknowledgment_leaves_the_generation_held(

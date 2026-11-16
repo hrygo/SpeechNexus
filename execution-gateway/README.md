@@ -24,14 +24,18 @@ The authenticated submit, abort and instance-drain HTTP routes are served: witho
 adapter the two engine routes refuse, and the drain reports the recorded in-flight work of one
 instance generation without claiming a stop. The instance-reclaim service reads the same
 recorded inventory once together with the generation's readiness instant, newest execution
-activity, held capacity and the manifest `idle_reclaim_cooldown_ms`, and applies one fixed
-judgement table: resident policy, an unconfirmed stop, unfinished work, an unconfirmed release,
-a held lease, an unknown idle anchor and an active cooldown all keep the generation, and only
-verified container/process termination reports `reclaimed`. It writes nothing, stops nothing
-and returns no budget; the scheduler still issues the stop. Release evidence is the released
-node checkpoint read through the verified-stop source and converted once by
-`whole_instance_stop_evidence`; an engine sleep acknowledgment is not release evidence, and a
-store that cannot answer raises instead of reporting an idle instance.
+activity and held capacity, and applies one fixed judgement table whose order is the
+answer: resident policy, an unconfirmed stop, unfinished work and a lease that still
+reserves the slot all hold the generation before any release report is considered, then a
+verified container/process termination reports `reclaimed`, anything weaker (an engine
+sleep acknowledgment, an unconfirmed exit) is held, and an unknown idle anchor or an active
+cooldown delays the rest. The cooldown is the caller's value and must be the manifest
+`idle_reclaim_cooldown_ms` within the contract's bounds; this service reads no manifest and
+invents no default. It writes nothing, stops nothing and returns no budget, and it has no
+public route: the scheduler still issues the stop, and it would need a frozen-contract
+change before it could call in. Release evidence is the released node checkpoint read
+through the verified-stop source and converted by `whole_instance_stop_evidence`; a store
+that cannot answer raises instead of reporting an idle instance.
 The [default file-ASR composition](../docs/operations/file-asr-runtime.md) can now connect
 the existing durable worker through an explicit private deployment file and separate object
 credentials. It validates configuration before acquiring control resources, loads the pinned

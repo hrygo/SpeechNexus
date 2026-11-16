@@ -200,6 +200,70 @@ def test_a_terminated_generation_still_holding_gateway_work_is_not_reported_recl
     assert decision.refusal is ReclaimRefusal.UNCONFIRMED_STOP
 
 
+def test_a_terminated_generation_with_a_reserved_lease_is_not_reported_reclaimed() -> None:
+    """Verified release and a held lease cannot both be true of a ``reclaimed`` answer.
+
+    The stop producer's fact and the admission lease are separate records: the node can
+    have released its container while the lease that reserved the slot is still
+    ``reserved``. ``reclaimed`` promises the generation's capacity is free, so the
+    weaker record decides and the lease check outranks the release report.
+    """
+    decision = decide(facts(release=stopped_evidence(), holds_capacity=True))
+
+    assert decision.state is ReclaimState.HELD
+    assert decision.reclaimed is False
+    assert decision.refusal is ReclaimRefusal.CAPACITY_HELD
+
+
+def test_a_reserved_lease_outranks_a_sleep_acknowledgment_too() -> None:
+    sleep_ack = VoiceDesignReleaseEvidence.engine_sleep_ack(
+        observed_at=NOW - timedelta(seconds=5), status="SUCCESS", freed_bytes=0
+    )
+
+    decision = decide(facts(release=sleep_ack, holds_capacity=True))
+
+    assert decision.state is ReclaimState.HELD
+    assert decision.refusal is ReclaimRefusal.CAPACITY_HELD
+
+
+@pytest.mark.parametrize(
+    ("change", "refusal"),
+    [
+        ({"loading_policy": "resident"}, ReclaimRefusal.RESIDENT_POLICY),
+        ({"inventory": inventory(quarantined=("submit-c",))}, ReclaimRefusal.UNCONFIRMED_STOP),
+        ({"inventory": inventory(active=("submit-b",))}, ReclaimRefusal.UNFINISHED_WORK),
+        ({"holds_capacity": True}, ReclaimRefusal.CAPACITY_HELD),
+    ],
+)
+def test_the_table_order_decides_a_verified_release_too(
+    change: dict[str, Any], refusal: ReclaimRefusal
+) -> None:
+    """Every row above the release report outranks a verified termination."""
+    decision = decide(facts(release=stopped_evidence(), **change))
+
+    assert decision.state is ReclaimState.HELD
+    assert decision.refusal is refusal
+
+
+@pytest.mark.parametrize("change", [{"idle_anchor": None}, {"idle_anchor": NOW}])
+def test_the_idle_rows_stay_below_the_release_report(change: dict[str, Any]) -> None:
+    """A generation that is already gone needs no idle span to be reported reclaimed."""
+    decision = decide(facts(release=stopped_evidence(), **change))
+
+    assert decision.state is ReclaimState.RECLAIMED
+
+
+def test_every_row_above_the_release_report_outranks_a_sleep_acknowledgment() -> None:
+    """The weaker stop report does not change which protection wins."""
+    sleep_ack = VoiceDesignReleaseEvidence.engine_sleep_ack(
+        observed_at=NOW - timedelta(seconds=5), status="SUCCESS", freed_bytes=0
+    )
+
+    decision = decide(facts(release=sleep_ack, inventory=inventory(submitting=("submit-a",))))
+
+    assert decision.refusal is ReclaimRefusal.UNFINISHED_WORK
+
+
 # --- fact validation -----------------------------------------------------------------
 
 

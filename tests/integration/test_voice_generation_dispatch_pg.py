@@ -195,6 +195,47 @@ def _receipt() -> dict[str, Any]:
     }
 
 
+#: Per-state evidence the coordination contract requires of one execution document.
+#: A terminal answer carries the stop fact its `cleanup_state` claims; an in-flight
+#: answer carries none and no dispatch identity until the request is dispatched.
+_CLEANUP = {
+    "submitting": "pending",
+    "executing": "pending",
+    "stopping": "pending",
+    "succeeded": "complete",
+    "failed": "complete",
+    "aborted": "complete",
+    "unknown_quarantined": "quarantined",
+}
+_STOP_EVIDENCE = {
+    "submitting": "none",
+    "executing": "none",
+    "stopping": "none",
+    "succeeded": "engine_terminal_response",
+    "failed": "engine_terminal_response",
+    "aborted": "engine_terminal_response",
+    "unknown_quarantined": "unconfirmed_timeout",
+}
+_DISPATCHED = {
+    "submitting": None,
+    "executing": "2026-11-17T11:00:00Z",
+    "stopping": "2026-11-17T11:00:00Z",
+    "succeeded": "2026-11-17T11:00:00Z",
+    "failed": None,
+    "aborted": None,
+    "unknown_quarantined": "2026-11-17T11:00:00Z",
+}
+_ENGINE_REQUEST = {
+    "submitting": None,
+    "executing": "engine-request-synthetic",
+    "stopping": "engine-request-synthetic",
+    "succeeded": "engine-request-synthetic",
+    "failed": "engine-request-synthetic",
+    "aborted": "engine-request-synthetic",
+    "unknown_quarantined": "engine-request-synthetic",
+}
+
+
 class _Gateway:
     """Minimal execution-gateway transport; the voice engine is a later slice."""
 
@@ -215,9 +256,21 @@ class _Gateway:
         self._query_index = 0
 
     def _status(self, state: str) -> dict[str, Any]:
+        """One contract-valid execution document, shaped after the state it reports.
+
+        The dispatcher reads the gateway document without a schema projection, so a fake
+        that omits `cleanup_state` and `stop_evidence_kind` would describe a shape the
+        coordination contract forbids. The dispatcher then correctly refuses to settle a
+        failure it cannot back, which is why these fields are part of the fake: a test
+        double has to produce the same document a real gateway produces.
+        """
         status: dict[str, Any] = {
             "submit_intent_id": self.submit_id,
             "execution_state": state,
+            "cleanup_state": _CLEANUP[state],
+            "stop_evidence_kind": _STOP_EVIDENCE[state],
+            "dispatched_at": _DISPATCHED[state],
+            "engine_request_id": _ENGINE_REQUEST[state],
         }
         if state in ("failed", "aborted") and self._engine_error is not None:
             status["error_code"] = self._engine_error

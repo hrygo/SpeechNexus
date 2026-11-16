@@ -81,6 +81,7 @@ from speechnexus_backend.speech.infrastructure.readiness import (
     CancellationDebtProbe,
     ObjectStorageReadinessProbe,
     PostgresReadinessProbe,
+    StopEvidenceDebtProbe,
 )
 from speechnexus_backend.speech.interfaces.http.artifact_contract import artifact_http_contract
 from speechnexus_backend.speech.interfaces.http.artifact_errors import artifact_error
@@ -266,6 +267,20 @@ def _build_readiness(settings: Settings) -> ReadinessService:
         # identity keeps its minimum data face; without one it reports
         # `unavailable (not configured)` instead of guessing.
         CancellationDebtProbe(
+            (
+                None
+                if settings.readiness_cancellation_dsn is None
+                else settings.readiness_cancellation_dsn.get_secret_value()
+            ),
+            schema=settings.database_schema,
+            timeout_seconds=settings.readiness_timeout_seconds,
+        ),
+        # Reports `running` Jobs whose gateway reported failed/aborted without a verified
+        # stop: the dispatch gate holds them rather than returning capacity nothing
+        # proved released, and that refusal must be visible before it is fixed. Same
+        # non-failing discipline and the same optional read-only DSN as the debt probe
+        # above (#917 review M4).
+        StopEvidenceDebtProbe(
             (
                 None
                 if settings.readiness_cancellation_dsn is None

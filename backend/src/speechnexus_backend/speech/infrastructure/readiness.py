@@ -368,3 +368,192 @@ WHERE j.state = 'cancelling'
 ORDER BY f.accepted_at_us, f.job_id, l.lease_id
 LIMIT %(limit)s
 """
+
+
+#: Prefix an operator alert matches on for the dispatch gate's stuck Jobs. Sibling of
+#: ``CANCELLATION_DEBT_PREFIX`` and deliberately distinct: this class has no automatic
+#: exit, and its remedy is the producer, not a settlement command.
+STOP_EVIDENCE_DEBT_PREFIX = "stop_evidence_debt"
+#: The stop-evidence kinds the coordination contract accepts as a verified stop.
+_VERIFIED_STOP_EVIDENCE = (
+    "engine_abort_ack",
+    "engine_terminal_response",
+    "instance_terminated_by_controller",
+    "operator_verified_instance_terminated",
+)
+
+_STOP_EVIDENCE_DEBT = f"""
+SELECT j.job_id, i.submit_intent_id, i.execution_state, i.cleanup_state, e.evidence_kind
+FROM {public_job_schema.JOBS} AS j
+-- Only a lease that still holds capacity is a blocker: `quarantined` is an accounted
+-- state and `released` returned the capacity.
+JOIN admission_leases AS l
+  ON l.operation_id = j.job_id
+ AND l.lease_state NOT IN ('released', 'quarantined')
+JOIN submit_intents AS i ON i.lease_id = l.lease_id
+LEFT JOIN execution_stop_evidence AS e ON e.submit_intent_id = i.submit_intent_id
+WHERE j.state = 'running'
+  AND i.execution_state IN ('failed', 'aborted')
+  -- The provable non-dispatch shape is not this debt: the dispatcher settles it.
+  AND NOT (
+        i.cleanup_state = 'not_required'
+    AND i.dispatched_at_us IS NULL
+    AND i.engine_request_id IS NULL
+  )
+  -- Neither is a verified stop: a lease that outlived its own verified release is the
+  -- `cancellation_debt` completed-without-release shape, not a missing evidence fact.
+  -- COALESCE is load-bearing: a missing evidence row leaves every joined column NULL,
+  -- and `NOT NULL` is NULL, which would silently drop the one class this probe exists
+  -- to report. "No row" means "no verified stop", i.e. TRUE here.
+  AND NOT COALESCE(
+        e.evidence_kind IN {_VERIFIED_STOP_EVIDENCE}
+    AND e.execution_stopped = 1
+    AND e.resources_released = 1,
+    FALSE
+  )
+  AND j.updated_at_us
+      <= CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) - %(grace_us)s
+ORDER BY j.updated_at_us, j.job_id
+LIMIT %(limit)s
+"""
+
+
+def stop_evidence_unavailable_detail(error: BaseException) -> str:
+    """One bounded sentence naming what this probe could not read, and why."""
+    return f"{STOP_EVIDENCE_DEBT_PREFIX}: {_UNAVAILABLE} ({_failure_category(error)})"
+
+
+def _describe_stop_evidence_debt(
+    rows: Sequence[tuple[Any, ...]], *, missing: str | None = None
+) -> str | None:
+    """One bounded sentence naming every `running` Job the dispatch gate refused to settle.
+
+    The gate holds a Job whose gateway reported ``failed``/``aborted`` without a verified
+    stop, because projecting the failure would return capacity for a slot nothing proved
+    released. That refusal is correct and has no automatic exit, so it must be visible:
+    this detail is the operator's list, the fixed prefix is the alerting key, and the
+    remedy is always the producer's status document.
+    """
+    if not rows:
+        return None
+    jobs: dict[str, list[str]] = {}
+    for row in rows:
+        job_id, intent_id, execution_state, cleanup_state = row[0], row[1], row[2], row[3]
+        kind = row[4] if len(row) > 4 else None
+        jobs.setdefault(job_id, []).append(
+            f"{intent_id}(execution={execution_state or 'not_submitted'}, "
+            f"cleanup={cleanup_state or 'unrecorded'}, "
+            f"evidence={kind or 'none'})"
+        )
+    shown = list(jobs.items())[:3]
+    detail = "; ".join(f"{job} -> {', '.join(intents)}" for job, intents in shown)
+    hidden = len(jobs) - len(shown)
+    suffix = f" (+{hidden} more)" if hidden else ""
+    note = f" [lease detail {_UNAVAILABLE}: {missing}]" if missing else ""
+    executions = sum(len(intents) for intents in jobs.values())
+    head = (
+        f"{STOP_EVIDENCE_DEBT_PREFIX}: {len(jobs)} running Job(s) hold capacity while the "
+        f"gateway reports no verified stop"
+    )
+    head += f" over {executions} execution(s)" if executions else ""
+    return f"{head}: {detail}{suffix}{note}"
+
+
+class StopEvidenceDebtProbe:
+    """Name `running` Jobs whose failure cannot be projected for want of stop evidence.
+
+    Read-only and non-failing for the same reason as :class:`CancellationDebtProbe`:
+    ``/readyz`` is the deployment healthcheck, so one Job the dispatch gate had to hold
+    -- or a missing privilege, relation, connection or timeout -- must not take the API
+    out of service. The observed fact is reported in the probe detail instead, which
+    reaches both ``/readyz`` and ``GET /v1/nexus/admin/diagnostics``, and the alerting
+    rule matches the ``stop_evidence_debt:`` prefix.
+
+    It shares the optional read-only DSN with the cancellation debt probe: the tables it
+    reads are the same ones, and the API identity is not granted them. A deployment
+    without such a role gets ``stop_evidence_debt: unavailable (not configured)``.
+
+    The disposition is deliberately *not* a settlement: nothing here decides the Job.
+    The operator fixes the producer -- the gateway, or a test double, must report
+    ``cleanup_state`` and ``stop_evidence_kind`` as the frozen contract requires -- and
+    the next dispatch pass then settles the Job through the normal path.
+    """
+
+    def __init__(
+        self,
+        dsn: str | None,
+        *,
+        schema: str,
+        timeout_seconds: float,
+        grace_seconds: float = 300,
+        limit: int = 96,
+    ) -> None:
+        if not re.fullmatch(r"[a-z][a-z0-9_]{2,62}", schema):
+            raise ValueError("Invalid readiness schema")
+        if not 0 < grace_seconds <= 86_400:
+            raise ValueError("Stop evidence debt grace must be bounded")
+        if type(limit) is not int or not 1 <= limit <= 512:
+            raise ValueError("Stop evidence debt report must be bounded")
+        self._dsn = dsn
+        self._schema = schema
+        self._timeout_seconds = timeout_seconds
+        self._grace_us = int(grace_seconds * 1_000_000)
+        self._limit = limit
+        self._connection: psycopg.AsyncConnection[Any] | None = None
+        self._lock = asyncio.Lock()
+
+    @property
+    def name(self) -> str:
+        return STOP_EVIDENCE_DEBT_PREFIX
+
+    async def check(self) -> str | None:
+        """Report the debt, never the probe's own trouble as unreadiness."""
+        if self._dsn is None:
+            return f"{STOP_EVIDENCE_DEBT_PREFIX}: {_UNAVAILABLE} (not configured)"
+        try:
+            async with asyncio.timeout(self._timeout_seconds), self._lock:
+                try:
+                    return await self._inspect()
+                except BaseException:
+                    # A connection that failed mid-query must not be reused: its
+                    # transaction state is unknown.
+                    await self._discard()
+                    raise
+        except Exception as error:
+            return stop_evidence_unavailable_detail(error)
+
+    async def _inspect(self) -> str | None:
+        connection = await self._connection_or_connect()
+        async with connection.cursor() as cursor:
+            await cursor.execute(
+                _STOP_EVIDENCE_DEBT, {"grace_us": self._grace_us, "limit": self._limit}
+            )
+            rows = await cursor.fetchall()
+        # End the read transaction so the reused session stays idle between polls.
+        await connection.rollback()
+        return _describe_stop_evidence_debt(rows)
+
+    async def _connection_or_connect(self) -> psycopg.AsyncConnection[Any]:
+        connection = self._connection
+        if connection is None or connection.closed or connection.broken:
+            assert self._dsn is not None  # guarded by ``check``
+            connection = await psycopg.AsyncConnection.connect(
+                self._dsn,
+                connect_timeout=max(1, round(self._timeout_seconds)),
+                options=f"-c search_path={self._schema},pg_catalog,pg_temp",
+                application_name=_APPLICATION_NAME,
+            )
+            self._connection = connection
+        return connection
+
+    async def _discard(self) -> None:
+        connection, self._connection = self._connection, None
+        if connection is None:
+            return
+        with contextlib.suppress(Exception):  # a close failure has no caller to inform
+            await connection.close()
+
+    async def aclose(self) -> None:
+        """Release the reused session; callers own the process lifetime."""
+        async with self._lock:
+            await self._discard()

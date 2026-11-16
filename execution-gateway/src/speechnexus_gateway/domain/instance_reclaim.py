@@ -52,7 +52,8 @@ class ReclaimState(StrEnum):
 
     #: Idle past its cooldown with nothing left to prove; the scheduler may stop it.
     RECLAIM_DUE = "reclaim_due"
-    #: The generation is already terminated and its resources are confirmed released.
+    #: The generation is terminated, its resources are confirmed released and no lease
+    #: still reserves its capacity, so the whole generation's capacity is free.
     RECLAIMED = "reclaimed"
     #: A recorded condition forbids reclaiming; ``refusal`` names which one.
     HELD = "held"
@@ -67,7 +68,8 @@ class ReclaimRefusal(StrEnum):
     UNFINISHED_WORK = "unfinished_work"
     #: An execution of this generation is quarantined, so its stop was never verified.
     UNCONFIRMED_STOP = "unconfirmed_stop"
-    #: A lease admitted against this generation still reserves its capacity.
+    #: A lease admitted against this generation still reserves its capacity, so even a
+    #: verified termination cannot report ``reclaimed``.
     CAPACITY_HELD = "capacity_held"
     #: Neither readiness nor execution activity was recorded, so idleness is unknown.
     ACTIVITY_UNKNOWN = "activity_unknown"
@@ -151,7 +153,7 @@ class ReclaimDecision:
 
     @property
     def reclaimed(self) -> bool:
-        """Whether the generation is already terminated and its capacity is free."""
+        """Whether the generation is terminated, released and holding no lease."""
         return self.state is ReclaimState.RECLAIMED
 
     def value(self) -> dict[str, object]:
@@ -256,9 +258,23 @@ class ReclaimRequest:
 def decide(facts: ReclaimFacts) -> ReclaimDecision:
     """Apply the reclaim judgement table to one generation's recorded facts.
 
-    Release evidence is checked after the gateway's own unfinished work: a terminated
-    generation whose executions this gateway has not closed yet is not fully released
-    here, and the recovery sweep must close them first.
+    The order of the checks is the table's order, and it is load-bearing:
+
+    1. a resident policy never reclaims on idleness;
+    2. a quarantined execution means this generation's stop was never verified;
+    3. unfinished work means the gateway still owns executions here;
+    4. a lease that still reserves the slot means the capacity was not returned, so
+       even a verified release cannot report ``reclaimed`` -- ``reclaimed`` promises
+       capacity is free, and a held lease contradicts that promise;
+    5. only then does the release report decide: a verified termination reclaims, and
+       anything weaker (an engine sleep acknowledgment, an unconfirmed exit) is held;
+    6. an unknown idle anchor or an active cooldown delays an otherwise reclaimable
+       generation.
+
+    Checks 2 and 3 come before 5 because a terminated generation whose executions this
+    gateway has not closed yet is not fully released here. Check 4 comes before 5 for
+    the same reason from the other side: the stop producer's fact and the admission
+    lease are different records, and the weaker of the two decides the answer.
     """
     if facts.loading_policy != _ON_DEMAND:
         return _held(ReclaimRefusal.RESIDENT_POLICY, cooldown_ms=facts.cooldown_ms)
@@ -267,13 +283,13 @@ def decide(facts: ReclaimFacts) -> ReclaimDecision:
         return _held(ReclaimRefusal.UNCONFIRMED_STOP, cooldown_ms=facts.cooldown_ms)
     if drain_state is DrainState.DRAINING:
         return _held(ReclaimRefusal.UNFINISHED_WORK, cooldown_ms=facts.cooldown_ms)
+    if facts.holds_capacity:
+        return _held(ReclaimRefusal.CAPACITY_HELD, cooldown_ms=facts.cooldown_ms)
     release = facts.release
     if release is not None:
         if release.is_release_evidence:
             return ReclaimDecision(state=ReclaimState.RECLAIMED, cooldown_ms=facts.cooldown_ms)
         return _held(ReclaimRefusal.RELEASE_UNCONFIRMED, cooldown_ms=facts.cooldown_ms)
-    if facts.holds_capacity:
-        return _held(ReclaimRefusal.CAPACITY_HELD, cooldown_ms=facts.cooldown_ms)
     anchor = facts.idle_anchor
     if anchor is None:
         return _held(ReclaimRefusal.ACTIVITY_UNKNOWN, cooldown_ms=facts.cooldown_ms)

@@ -15,6 +15,7 @@ from speechnexus_backend.speech.application.binding_documents import (
     check_command,
     decode_document,
     encode_document,
+    same_document,
 )
 from speechnexus_backend.speech.domain.binding_drafts import (
     BindingDraft,
@@ -195,3 +196,33 @@ def test_frozen_execution_defaults_are_retained_and_digest_covered() -> None:
         prepare_binding_draft(changed, "execution-defaults-key").request_digest
         != first.request_digest
     )
+
+
+def test_the_stored_document_names_its_binding_and_satisfies_the_create_contract() -> None:
+    request = binding_request()
+    command = prepare_binding_draft(request, "identity-key")
+    stored = decode_document(command.definition)
+    # The published revision exposes the immutable document; its contract
+    # requires the identity, so the draft must not keep it in columns alone.
+    assert stored["binding_id"] == command.binding_id
+    parse_admin("ModelBindingCreateRequest", stored)
+    wire = draft_to_wire(
+        BindingDraft(command.binding_id, "1", "binding-original-revision-id", command.definition, 0)
+    )
+    assert wire["binding_id"] == command.binding_id
+    parse_binding("ModelBindingRevision", wire)
+
+
+def test_a_pre_identity_document_is_recoverable_but_can_never_name_another_binding() -> None:
+    command = prepare_binding_draft(binding_request(), "legacy-recovery-key")
+    legacy = decode_document(command.definition)
+    legacy.pop("binding_id")
+    legacy_raw = encode_document(legacy)
+    # Rows written before identity was retained keep it only in columns: their
+    # command/document invariant still holds, and replay recognizes the shape.
+    check_command(replace(command, definition=legacy_raw))
+    assert same_document(legacy_raw, command.definition)
+    with pytest.raises(ValueError):
+        check_command(
+            replace(command, definition=encode_document({**legacy, "binding_id": "another"}))
+        )

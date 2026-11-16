@@ -15,7 +15,10 @@ from starlette.responses import JSONResponse, Response
 
 from speechnexus_backend.speech.application.binding_documents import encode_document
 from speechnexus_backend.speech.application.binding_publication import PublishedBinding
-from speechnexus_backend.speech.domain.binding_drafts import BindingDraft
+from speechnexus_backend.speech.domain.binding_drafts import (
+    BindingDefinitionIdentityError,
+    BindingDraft,
+)
 from speechnexus_backend.speech.domain.binding_lifecycle import (
     BindingActivationCommand,
     BindingActivationConflictError,
@@ -83,6 +86,11 @@ _ERRORS = {
         "invalid_request_error",
         "The capacity manifest does not describe the draft binding revision.",
     ),
+    "invalid_binding_definition": (
+        422,
+        "invalid_request_error",
+        "The stored binding definition does not name its own binding.",
+    ),
     "binding_result_unknown": (
         503,
         "service_unavailable_error",
@@ -123,6 +131,7 @@ def _error(
     *,
     retryable: bool | None = None,
     message: str | None = None,
+    param: str | None = None,
 ) -> JSONResponse:
     status, kind, default_message = _ERRORS.get(code, _ERRORS["binding_result_unknown"])
     should_retry = status == 503 if retryable is None else retryable
@@ -135,7 +144,7 @@ def _error(
                     "code": code,
                     "type": kind,
                     "message": default_message if message is None else message,
-                    "param": None,
+                    "param": param,
                     "request_id": request_id,
                     "retryable": should_retry,
                 }
@@ -272,6 +281,10 @@ def _run(
         )
     except BindingPublicationEvidenceError:
         return _error("capacity_manifest_mismatch", request_id, operation)
+    except BindingDefinitionIdentityError:
+        # The stored document, not the caller's request, is what disagrees with
+        # the binding in the path; name the field that is missing or wrong.
+        return _error("invalid_binding_definition", request_id, operation, param="binding_id")
     except BindingLifecycleConflictError as error:
         return _error(error.code, request_id, operation)
     except BindingLifecycleUnavailableError:

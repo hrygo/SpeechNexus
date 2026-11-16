@@ -11,7 +11,11 @@ from typing import Any, Literal, cast
 import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
-from speechnexus_backend.speech.application.binding_documents import decode_document
+from speechnexus_backend.speech.application.binding_documents import (
+    decode_document,
+    require_published_identity,
+)
+from speechnexus_backend.speech.domain.binding_drafts import BindingDefinitionIdentityError
 from speechnexus_backend.speech.domain.binding_lifecycle import (
     BindingActivationCommand,
     BindingActivationConflictError,
@@ -97,6 +101,7 @@ class PostgresBindingLifecycle:
                 BindingLifecycleConflictError,
                 BindingLifecycleNotFoundError,
                 BindingPublicationEvidenceError,
+                BindingDefinitionIdentityError,
             ),
         )
 
@@ -288,6 +293,9 @@ class PostgresBindingLifecycle:
         draft = drafts[0]
         revision_id = str(draft["revision_id"])
         definition = decode_document(str(draft["definition_json"]).encode("utf-8"))
+        # A published revision is read as a contract document that names its own
+        # binding; promoting one that does not would make the catalog unreadable.
+        require_published_identity(definition, command.binding_id)
         recipe = definition.get("execution_recipe")
         declared = recipe.get("capacity_manifest_id") if isinstance(recipe, dict) else None
         if not isinstance(declared, str) or declared != command.capacity_manifest_id:

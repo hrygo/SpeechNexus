@@ -8,6 +8,7 @@ from typing import Any, cast
 import pytest
 
 from speechnexus_backend.speech.application.binding_documents import encode_document
+from speechnexus_backend.speech.domain.binding_drafts import BindingDefinitionIdentityError
 from speechnexus_backend.speech.domain.binding_lifecycle import (
     BindingLifecycleConflictError,
     BindingLifecycleNotFoundError,
@@ -25,9 +26,13 @@ NOW = 1_700_000_000_000_003
 
 
 def stored_definition(capacity_manifest_id: str = "cap-asr-quality-7") -> str:
+    return stored_definition_for("asr-quality", capacity_manifest_id)
+
+
+def stored_definition_for(binding_id: str, capacity_manifest_id: str = "cap-asr-quality-7") -> str:
+    """The exact document the fixed draft writer stores for one binding."""
     body = binding_request()
-    body.pop("binding_id")
-    body["execution_requirement"] = {}
+    body["binding_id"] = binding_id
     body["execution_recipe"] = {
         **body["execution_recipe"],
         "capacity_manifest_id": capacity_manifest_id,
@@ -183,6 +188,23 @@ def test_a_retired_target_cannot_be_republished() -> None:
 def test_publishing_an_absent_revision_is_not_found() -> None:
     with pytest.raises(BindingLifecycleNotFoundError):
         adapter()._publish(cast(Any, Cursor(draft=False)), command())
+
+
+def test_a_document_that_does_not_name_its_binding_is_never_published() -> None:
+    legacy = binding_request()
+    legacy.pop("binding_id")
+    cursor = Cursor(definition=encode_document(legacy).decode("utf-8"))
+    with pytest.raises(BindingDefinitionIdentityError) as rejected:
+        adapter()._publish(cast(Any, cursor), command())
+    assert rejected.value.binding_id == "asr-quality"
+    assert cursor.writes == []
+
+
+def test_a_document_naming_another_binding_is_never_published() -> None:
+    cursor = Cursor(definition=stored_definition_for("other-binding"))
+    with pytest.raises(BindingDefinitionIdentityError):
+        adapter()._publish(cast(Any, cursor), command())
+    assert cursor.writes == []
 
 
 def test_the_capacity_manifest_must_describe_the_stored_draft() -> None:

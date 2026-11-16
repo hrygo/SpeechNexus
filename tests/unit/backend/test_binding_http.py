@@ -128,6 +128,32 @@ async def test_complete_definition_semantics_and_ambiguous_headers_are_rejected(
     port.create.assert_not_called()
 
 
+async def test_a_create_without_binding_identity_is_refused_before_any_write() -> None:
+    port = provider()
+    body = binding_request()
+    body.pop("binding_id")
+    async with client(port) as http:
+        response = await http.post(PATH, json=body, headers={"Idempotency-Key": "original-key"})
+    # The contract requires binding_id, so the refusal names the request rather
+    # than storing a document that no published revision could expose.
+    assert error(response, 400)["code"] == "invalid_binding_request"
+    port.create.assert_not_called()
+
+
+async def test_the_writer_stores_the_identity_the_published_revision_exposes() -> None:
+    port = provider()
+    body = binding_request()
+    async with client(port) as http:
+        created = await http.post(PATH, json=body, headers={"Idempotency-Key": "original-key"})
+    assert created.status_code == 201, created.text
+    command = port.create.call_args.args[0]
+    from speechnexus_backend.speech.application.binding_documents import decode_document
+
+    stored = decode_document(command.definition)
+    assert stored["binding_id"] == command.binding_id == body["binding_id"]
+    assert created.json()["binding_id"] == command.binding_id
+
+
 @pytest.mark.parametrize(
     "method,path,status,headers",
     [

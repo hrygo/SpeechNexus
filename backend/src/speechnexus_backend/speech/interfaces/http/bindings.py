@@ -21,7 +21,11 @@ from starlette.requests import ClientDisconnect
 from starlette.responses import Response
 
 from speechnexus_backend.speech.application.binding_default_drafts import BindingDefaultDrafts
-from speechnexus_backend.speech.application.binding_documents import encode_json, parse_integer
+from speechnexus_backend.speech.application.binding_documents import (
+    encode_json,
+    parse_integer,
+    same_document,
+)
 from speechnexus_backend.speech.application.binding_drafts import BindingDrafts
 from speechnexus_backend.speech.application.binding_publication import (
     BindingPublicationFacts,
@@ -118,9 +122,10 @@ def _create(
             )
         if result.outcome not in ("created", "replayed") or result.draft is None:
             raise BindingUnavailableError
-        if (
-            result.draft.binding_id != command.binding_id
-            or result.draft.definition != command.definition
+        # A replayed original may predate the retained document identity; its
+        # `binding_id` column still has to agree, and nothing else may differ.
+        if result.draft.binding_id != command.binding_id or not same_document(
+            result.draft.definition, command.definition
         ):
             raise BindingUnavailableError
         wire = draft_to_wire(result.draft)

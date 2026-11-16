@@ -121,7 +121,9 @@ def test_0022_upgrade_preserves_publications_and_legacy_visibility() -> None:
         for revision in (2, 10):
             create_binding_revision(
                 admin,
-                {**DEFINITION, "revision": str(revision), "revision_id": f"binding-rev-{revision}"},
+                DEFINITION,
+                revision=str(revision),
+                revision_id=f"binding-rev-{revision}",
             )
         # Timestamps deliberately disagree with revision order. The latest
         # retired voice must remain absent rather than exposing revision 2.
@@ -317,11 +319,11 @@ def _seed(sandbox: Sandbox) -> None:
         sandbox.admin,
         {
             **DEFINITION,
-            "revision": "2",
-            "revision_id": "binding-rev-2",
             "logical_model": "qwen3-tts-customvoice-v2",
             "execution_recipe": {**recipe, "capacity_manifest_id": "cap-tts-quality-2"},
         },
+        revision="2",
+        revision_id="binding-rev-2",
     )
     with sandbox.admin.transaction(), sandbox.admin.cursor(row_factory=dict_row) as cursor:
         assert append_publication(
@@ -678,11 +680,11 @@ def _draft(sandbox: Sandbox, revision: str, revision_id: str) -> None:
         sandbox.admin,
         {
             **DEFINITION,
-            "revision": revision,
-            "revision_id": revision_id,
             "logical_model": "qwen3-tts-customvoice-" + revision,
             "execution_recipe": {**recipe, "capacity_manifest_id": "cap-tts-quality-" + revision},
         },
+        revision=revision,
+        revision_id=revision_id,
     )
 
 

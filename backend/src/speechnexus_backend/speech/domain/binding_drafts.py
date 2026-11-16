@@ -17,6 +17,19 @@ class BindingUnavailableError(Exception):
     """An original result or fixed revision cannot be established safely."""
 
 
+class BindingDefinitionIdentityError(ValueError):
+    """A stored draft document does not name the binding it is stored under.
+
+    The immutable draft document is the fact a published revision exposes, so it
+    must carry its own identity; rows written before that was retained keep it
+    only in columns and can no longer be promoted to a published revision.
+    """
+
+    def __init__(self, binding_id: str) -> None:
+        self.binding_id = binding_id
+        super().__init__(f"stored binding definition does not name binding_id={binding_id}")
+
+
 @dataclass(frozen=True, slots=True)
 class CreateBindingDraft:
     binding_id: str

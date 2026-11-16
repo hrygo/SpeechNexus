@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -233,6 +234,20 @@ def test_python_coverage_budget_matches_the_workflow_job_timeout() -> None:
     assert _PROBE.pytest_job_timeout_seconds(full_coverage=True, integration_shard=None) == (
         _PROBE.COVERAGE_JOB_TIMEOUT_SECONDS
     )
+
+
+def test_playwright_browsers_are_cached_by_lockfile_in_both_jobs() -> None:
+    for job in ("integration_shards", "web"):
+        steps = _WORKFLOW["jobs"][job]["steps"]
+        cache = next(
+            step for step in steps if step["name"] == "Restore the Playwright browser package"
+        )
+        install = next(step for step in steps if step["name"].startswith("Install Chromium"))
+        assert re.fullmatch(r"actions/cache@[0-9a-f]{40}", cache["uses"])
+        assert cache["with"]["path"] == "~/.cache/ms-playwright"
+        assert "hashFiles('pnpm-lock.yaml')" in cache["with"]["key"]
+        # A stale browser must never be reused: the key carries the lockfile.
+        assert steps.index(cache) < steps.index(install)
 
 
 def test_shard_object_storage_starts_before_the_runner_sets_up_node() -> None:

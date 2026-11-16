@@ -582,6 +582,16 @@ jobs:
       - name: Install locked dependencies
         run: bash scripts/dev-env/uv-sync-retry.sh
 
+      - name: Start isolated versioned object storage in the background
+        # The container needs thirteen seconds to become ready, and the Node,
+        # pnpm, bundle and Chromium steps below need the same runner; start it
+        # here and only await readiness at the point the partition needs it.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          ./scripts/dev-env/minio-test-service.sh > "$RUNNER_TEMP/minio-start.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/minio-start.pid"
+
       - name: Ensure PostgreSQL 16 tools for the private integration cluster
         run: |
           if [[ ! -x /usr/lib/postgresql/16/bin/initdb ]]; then
@@ -662,10 +672,30 @@ jobs:
         if: ${{ needs.integration_plan.outputs[format('browser_{0}', matrix.shard)] == 'true' }}
         run: python3 scripts/dev-env/prepare-ci-browser.py
 
-      - name: Start isolated versioned object storage
+      - name: Await isolated versioned object storage
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: ./scripts/dev-env/minio-test-service.sh
+        run: |
+          log="$RUNNER_TEMP/minio-start.log"
+          pid_file="$RUNNER_TEMP/minio-start.pid"
+          if [[ -f "$pid_file" ]]; then
+            for _ in $(seq 1 90); do
+              if grep -q 'isolated MinIO ready' "$log" 2>/dev/null; then
+                grep 'isolated MinIO ready' "$log"
+                exit 0
+              fi
+              if ! kill -0 "$(cat "$pid_file")" 2>/dev/null; then
+                break
+              fi
+              sleep 1
+            done
+            echo 'background object storage startup did not report readiness' >&2
+            cat "$log" >&2 || true
+          fi
+          # Fallback keeps the service a hard prerequisite: if the background
+          # start did not survive its step, pay the full startup here instead of
+          # failing a partition for a missing service.
+          ./scripts/dev-env/minio-test-service.sh
 
       - name: Run a complete integration partition with PG, InnoDB and MinIO
         env:

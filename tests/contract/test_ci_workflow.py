@@ -235,6 +235,29 @@ def test_python_coverage_budget_matches_the_workflow_job_timeout() -> None:
     )
 
 
+def test_shard_object_storage_starts_before_the_runner_sets_up_node() -> None:
+    steps = _WORKFLOW["jobs"]["integration_shards"]["steps"]
+    background = next(
+        step
+        for step in steps
+        if step["name"] == "Start isolated versioned object storage in the background"
+    )
+    await_step = next(
+        step for step in steps if step["name"] == "Await isolated versioned object storage"
+    )
+    run_step = next(
+        step for step in steps if step["name"].startswith("Run a complete integration partition")
+    )
+    node = next(step for step in steps if step["name"].startswith("Set up Node.js"))
+    assert "./scripts/dev-env/minio-test-service.sh" in background["run"]
+    assert "minio-start.log" in await_step["run"]
+    assert steps.index(background) < steps.index(node)
+    assert steps.index(background) < steps.index(await_step) < steps.index(run_step)
+    # The await step must stay a hard prerequisite even when the background
+    # process did not survive its step: it falls back to the blocking start.
+    assert "./scripts/dev-env/minio-test-service.sh" in await_step["run"]
+
+
 def test_integration_evidence_uses_bounded_same_run_cli_with_read_only_access() -> None:
     job = _WORKFLOW["jobs"]["integration_gate"]
     assert _WORKFLOW["permissions"] == {"contents": "read"}

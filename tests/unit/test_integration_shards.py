@@ -764,7 +764,7 @@ def test_actual_node_http_consumer_gets_locked_tools_only_in_its_partition() -> 
     assert "integration-shards.py plan" in collect["run"]
     assert '--count 12 >> "$GITHUB_OUTPUT"' in collect["run"]
     for name in ("browser", "node_contracts"):
-        for index in range(8):
+        for index in range(12):
             assert plan["outputs"][f"{name}_{index}"] == (
                 "${{ steps.plan.outputs." + f"{name}_{index}" + " }}"
             )

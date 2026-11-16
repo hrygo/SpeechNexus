@@ -45,7 +45,7 @@ def test_scoped_coverage_retains_its_sources_and_ninety_percent_gate(tmp_path: P
     assert "--cov-report=term-missing" in command
 
 
-def test_full_coverage_combines_original_python_gate_and_all_real_pg_tests(tmp_path: Path) -> None:
+def test_full_coverage_keeps_only_the_non_integration_roots(tmp_path: Path) -> None:
     command = DRIVER.build_pytest_command(full_coverage=True, coverage_output=tmp_path / "cov.json")
     assert command[:3] == [DRIVER.sys.executable, "-m", "pytest"]
     for path in (
@@ -55,14 +55,20 @@ def test_full_coverage_combines_original_python_gate_and_all_real_pg_tests(tmp_p
         "tests/integration/test_probe_inventory.py",
     ):
         assert command.count(path) == 1
-    for path in DRIVER.WORKBENCH_PG_TESTS + DRIVER.WORKBENCH_RUNTIME_TESTS:
-        assert command.count(path) == 1
+    # The integration-marked PostgreSQL modules belong to the twelve partitions, which
+    # export coverage into the same merged gate; the measured job must not run them twice.
+    for path in (
+        *DRIVER.WORKBENCH_PG_TESTS,
+        *DRIVER.WORKBENCH_RUNTIME_TESTS,
+        *DRIVER.SPEECH_PG_COVERAGE_TESTS,
+    ):
+        assert path not in command
     for path in (
         "tests/integration/test_binding_publication_evidence.py",
         "tests/integration/test_binding_lifecycle_pg.py",
         "tests/integration/test_binding_disable_intent_pg.py",
     ):
-        assert command.count(path) == 1
+        assert path not in command
         assert path not in DRIVER.build_pytest_command()
         assert path not in DRIVER.build_pytest_command(coverage=True)
     assert "--cov" in command and "--cov-report=term-missing" in command

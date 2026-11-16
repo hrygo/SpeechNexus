@@ -147,11 +147,16 @@ def build_pytest_command(
         raise ValueError("coverage modes are mutually exclusive")
     paths = list(WORKBENCH_PG_TESTS)
     if full_coverage:
-        paths = list(NON_INTEGRATION_TEST_PATHS) + paths + list(SPEECH_PG_COVERAGE_TESTS)
+        # The 39 workbench/speech PostgreSQL modules below are integration-marked and
+        # are executed by the twelve partitions, which export their own coverage data
+        # into the same merged gate. Running them here again doubled the heaviest
+        # database work in every run without adding a covered line; the measured job
+        # therefore owns only the non-integration roots.
+        paths = list(NON_INTEGRATION_TEST_PATHS)
     else:
         paths.extend(DEFAULT_EXTRA_TESTS)
-    if workbench_runtime or full_coverage:
-        paths.extend(WORKBENCH_RUNTIME_TESTS)
+        if workbench_runtime:
+            paths.extend(WORKBENCH_RUNTIME_TESTS)
     command = [sys.executable, "-m", "pytest", *dict.fromkeys(paths), "-q"]
     if coverage:
         # Retain the existing opt-in C storage qualification without weakening its gate.

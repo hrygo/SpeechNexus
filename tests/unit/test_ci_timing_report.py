@@ -52,7 +52,7 @@ def test_parse_timestamp_is_utc_and_relative() -> None:
         ("Install locked dependencies", True),
         ("Check out repository", True),
         ("Run a complete integration partition with PG, InnoDB and MinIO", False),
-        ("Measure Python unit, contract, CI and Workbench PG tests", False),
+        ("Measure Python unit, contract and CI tests", False),
     ],
 )
 def test_fixed_step_classification(name: str, fixed: bool) -> None:
@@ -100,7 +100,7 @@ def test_non_integration_jobs_report_their_own_work_time() -> None:
         100,
         [
             _step("Set up uv", 0, 5),
-            _step("Measure Python unit, contract, CI and Workbench PG tests", 5, 95),
+            _step("Measure Python unit, contract and CI tests", 5, 95),
             _step("Post Set up uv", 95, 100),
         ],
     )

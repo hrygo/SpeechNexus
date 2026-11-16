@@ -298,7 +298,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: ./scripts/dev-env/minio-test-service.sh
 
-      - name: Measure Python unit, contract, CI and Workbench PG tests for the merged gate
+      - name: Measure Python unit, contract and CI tests for the merged gate
         id: coverage
         env:
           SPEECHNEXUS_TEST_MINIO_ENDPOINT: http://127.0.0.1:59000

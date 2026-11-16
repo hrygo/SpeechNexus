@@ -5,10 +5,14 @@ Copy them to the ignored `deploy/.runtime/private/` directory, replace every
 synthetic identity, digest, endpoint, bucket and model, then make each file
 owner-only (`0600`, owned by `SPEECHNEXUS_RUNTIME_UID`).
 
-The gateway examples use the fixed bootstrap MinIO address `172.28.0.10:9000`
-because the file-speech S3 adapter rejects DNS names. If `172.28.0.0/24` is not
-available on the host, change the Compose subnet and all private object
-endpoints together.
+The gateway examples pin the bootstrap MinIO address `172.28.0.10:9000` because
+the file-speech S3 adapter rejects DNS names. That literal is the default of
+`SPEECHNEXUS_MINIO_STATIC_IP`, the 10th host of the default Compose subnet
+`SPEECHNEXUS_COMPOSE_SUBNET=172.28.0.0/24`; the committed examples always keep the
+default. A host that already uses `172.28.0.0/24` sets both variables in
+`deploy/compose.env`, and rewrites `objects.endpoint` in every copied JSON to the
+address `python3 deploy/compose-network.py <subnet>` prints. The runbook step is
+`docs/operations/compose-minimal.md` §1.1.
 
 The two bucket keys are not interchangeable. A lane that declares
 `objects.input_bucket` (`file_asr_v1`, `file_voice_clone_v1`) reads the **Job

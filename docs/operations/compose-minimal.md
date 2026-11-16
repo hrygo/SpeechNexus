@@ -35,16 +35,28 @@ docker compose version
 docker buildx version
 ```
 
-本目录的 `--build` 使用 Dockerfile 1.18 frontend 和 BuildKit cache mount；缺少 Buildx
-时 `up --build` 会在解析 Dockerfile 前失败。先修好 Docker Desktop 的 Buildx 插件或
-Linux 的 `docker-buildx-plugin`，不要改用关闭 BuildKit 的构建来绕过。
+本目录的镜像构建使用 Dockerfile 1.18 frontend 与 BuildKit cache mount；缺少 Buildx 时会在
+解析 Dockerfile 前失败。先修好 Docker Desktop 的 Buildx 插件或 Linux 的
+`docker-buildx-plugin`，不要改用关闭 BuildKit 的构建来绕过。
 
-`deploy/images/minio.Dockerfile` 另有一条构建期出网要求：它按两个通道下载 release 包并按固定
-`sha256` 校验，再取同 tag 的 LICENSE 做第二次校验，后者走 `raw.githubusercontent.com`。
-构建窗口没有这条通路时构建失败。构建失败且本机已有同 tag 镜像
-（`speechnexus-minio:RELEASE.2025-09-07T16-13-09Z`）时，可不起 `--build`、让 Compose 复用
-该镜像继续本轮，其余步骤不变。**这条「无外网复用既有镜像」路径未经本仓库任何窗口取证**，
-它是构建失败时的已知替代，不是受支持的构建方式；有外网时仍按 Dockerfile 构建。
+**首次 `up` 之前显式构建一次产品镜像，之后所有 `up -d` 都不带 `--build`。** 在 §2 生成
+`deploy/compose.env` 之后执行：
+
+```bash
+docker compose --env-file deploy/compose.env -f deploy/compose.yaml build \
+  api gateway migrate engine-register job-dispatch-worker minio-init asset-inspector
+```
+
+服务名必须逐个列出，不能省成 `docker compose build`（那会构建整个项目），也不能把
+`--build` 加回 `up`：`api` 与 `gateway` 通过 `depends_on` 带出 `minio`，`up --build` 会连带
+构建 `minio`；而 `deploy/images/minio.Dockerfile` 在构建期取 `raw.githubusercontent.com` 的
+LICENSE 做校验，受限网络主机上会以 `target minio: failed to solve` 失败，并让整条 `up` 失败。
+显式点名服务时 Compose 只构建点到的镜像，上面这条命令里没有 `minio`。
+
+`minio` 仍需要一份可用镜像：本机已有同 tag 镜像
+（`speechnexus-minio:RELEASE.2025-09-07T16-13-09Z`）时直接复用；没有时须先在能访问那两个下载
+通道的窗口构建，再把镜像导入受限主机。镜像缺失时 `up -d postgres minio` 会尝试现场构建该镜像
+并失败，因此这一步不能跳过。`minio` 的构建只发生在那样的出网窗口，本文件不把它写成交付步骤。
 
 ## 1. 固定服务集合
 
@@ -90,17 +102,88 @@ profile 的变量与默认 `dispatch_kinds` 见
 [deploy/README.md](../../deploy/README.md#job-dispatcher-job-dispatch-profile)；
 本参考部署只装配 `asr`、`tts` 车道，启动闸门对其它 kind 点名拒绝（见 §6 的异步 Job 段）。
 
-默认网络固定使用 `172.28.0.0/24`（`deploy/compose.yaml:850`），MinIO 地址为
+默认网络使用 `172.28.0.0/24`（`deploy/compose.yaml:850` 的 `ipam`），MinIO 地址为
 `172.28.0.10`（`deploy/compose.yaml:90` 的 `ipv4_address`）；启动前须核对该网段不会与
-宿主机路由或其他容器网络冲突。这两处目前都**没有环境变量入口**，所以换网段只能改仓库里的
-Compose 文件——这正是「他人照着起一套」在 `172.28.0.0/24` 已被占用的主机上被挡住的原因
-（该限制的部署单元级修复另立卡，见 `docs/operations/compose-minimal-from-zero.md` 的 D2）。
+宿主机路由或其他容器网络冲突。两项都由本机插值的环境变量承载，默认值就是上面两个：
+
+| 变量 | 默认值 | 作用 |
+| --- | --- | --- |
+| `SPEECHNEXUS_COMPOSE_SUBNET` | `172.28.0.0/24` | `networks.default` 的子网 |
+| `SPEECHNEXUS_MINIO_STATIC_IP` | `172.28.0.10` | `minio` 的 `ipv4_address`，必须是同一子网的第 10 个主机地址 |
+
+两者都不进容器，只影响 Compose 渲染；不设置时渲染结果与引入变量前逐字节相同。它们必须一起
+改，第二项不需要也不应该手算：`deploy/compose-network.py` 从一个 CIDR 推导出这一对值与私有
+配置要写的 `objects.endpoint`。本机 `172.28.0.0/24` 已被占用的照抄步骤见 §1.1。
+
 与之成组改的还有四份 gateway 私有配置的 `objects.endpoint`（复制到私有目录后改副本）：
 `deploy/private/gateway-file-asr.example.json:8`、`deploy/private/gateway-file-tts.example.json:11`、
 `deploy/private/gateway-file-voice-clone.example.json:5`、`deploy/private/gateway-file-voice-design.example.json:5`。
-只改其中一处会让网关连不上对象存储。文件语音对象
+提交在仓库里的示例固定写默认地址 `http://172.28.0.10:9000`，换子网时改的是私有副本，不是这些
+示例；副本里漏改任何一处都会让网关连不上对象存储。文件语音对象
 适配器要求私有 IP 地址，不能直接改成 `minio` DNS 名称；API 使用的 Compose 服务名
 `minio` 是另一条配置路径。详见[私有部署输入说明](../../deploy/private/README.md)。
+
+### 1.1 本机 `172.28.0.0/24` 被占用时
+
+下面是照抄即可的换网段路径。示例把子网换成 `172.30.0.0/24`、把宿主 API 端口换成 `8099`；
+本机值不同时整段替换成自己的值，不要照抄任何内网地址。项目名仍按本节开头单独设置。
+
+1. 用一个 CIDR 推导两行赋值和私有配置要写的 endpoint，不手算 MinIO 地址：
+
+```bash
+python3 deploy/compose-network.py 172.30.0.0/24
+```
+
+预期输出（前两行写进环境文件，后两行是注释）：
+
+```text
+SPEECHNEXUS_COMPOSE_SUBNET=172.30.0.0/24
+SPEECHNEXUS_MINIO_STATIC_IP=172.30.0.10
+# objects.endpoint for the copies of deploy/private/gateway-file-*.json:
+# http://172.30.0.10:9000
+```
+
+2. 在 §2 生成 `deploy/compose.env` 之后，把该文件里这三行的值改成示例值（§2 从当前
+`deploy/compose.env.example` 复制，三行都已存在；用编辑器改值等价）：
+
+```bash
+sed -i.bak \
+  -e 's/^SPEECHNEXUS_COMPOSE_SUBNET=.*/SPEECHNEXUS_COMPOSE_SUBNET=172.30.0.0\/24/' \
+  -e 's/^SPEECHNEXUS_MINIO_STATIC_IP=.*/SPEECHNEXUS_MINIO_STATIC_IP=172.30.0.10/' \
+  -e 's/^SPEECHNEXUS_API_HOST_PORT=.*/SPEECHNEXUS_API_HOST_PORT=8099/' \
+  deploy/compose.env
+rm -f deploy/compose.env.bak
+```
+
+3. 按 §3 复制私有文件之后，把这些副本里的 `objects.endpoint` 从默认地址换成第 1 步打印的
+地址；§3 复制了 asr 与 tts 两份，若另外复制了 voice-clone/voice-design 的 lane 配置，同样处理：
+
+```bash
+D=deploy/.runtime/private
+sed -i.bak 's#http://172.28.0.10:9000#http://172.30.0.10:9000#' \
+  "$D/gateway-file-asr.json" "$D/gateway-file-tts.json"
+rm -f "$D"/*.bak
+```
+
+4. 启动前确认渲染值就是刚写的这两个（`grep` 只挑这三行）：
+
+```bash
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml config \
+  | grep -E 'ipv4_address:|subnet:|published: "8099"'
+```
+
+预期输出（顺序可不同）：
+
+```text
+        published: "8099"
+        ipv4_address: 172.30.0.10
+        - subnet: 172.30.0.0/24
+```
+
+端口 `8000` 也被占用的主机同样按上面的写法改宿主端口；容器内端口不变。同一台机器上并行起
+第二套参考部署时，子网与全部宿主端口都要与本机已占用的那套不同，默认值会让第二套在创建网络
+时报 `Pool overlaps`。
+
 
 ## 2. 准备环境文件
 
@@ -178,7 +261,7 @@ PY
 
 生成的口令在第一次引导时写入 `deploy/compose.env`，此后复用；重新生成就是轮换，必须同时改
 角色口令与使用它的 DSN，只改文件里的口令会让 DSN 与角色口令不一致、连接直接失败。§6 预置的
-十六个非基线角色口令按同一规则在 §6 首次引导时生成并写回同一文件。
+十七个非基线角色口令按同一规则在 §6 首次引导时生成并写回同一文件。
 
 上面的 Python 片段必须通过环境变量 `SN_ROOT` 取得仓库绝对路径；若直接手工执行，
 先运行 `export SN_ROOT="$ROOT"`。编辑 `deploy/compose.env`，按实际部署核对以下配置：
@@ -188,8 +271,10 @@ PY
   以及 recipe 的 `runtime_plan.binding` 完全一致；
 - `SPEECHNEXUS_ENGINE_INSTANCE_ID` / `SPEECHNEXUS_ENGINE_GENERATION`：注册使用的实例与代次；
   实例须与 recipe 的 `stage.instance_id` 和 ASR endpoint 一致，代次须与 ASR endpoint 一致；
-- `SPEECHNEXUS_OBJECT_STORAGE_BUCKET` / `SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET`：两份
-  私有 JSON 的桶名必须同步。
+- `SPEECHNEXUS_OBJECT_STORAGE_BUCKET` / `SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET`：前者是
+  Job 输入资产桶，后者是同步转写的上传桶，两者不是同一个桶；私有 JSON 里
+  `objects.input_bucket` 绑定前者、`objects.result_bucket` 绑定
+  `SPEECHNEXUS_EXECUTION_RESULT_BUCKET`，分绑关系见 §3 第 4 项。
 - `SPEECHNEXUS_EXECUTION_RESULT_BUCKET`：gateway 私有 JSON 的 `result_bucket` 与
   `job-dispatch` profile 的 staging 读取桶；`minio-init` 会一并创建并启用版本化。
 
@@ -354,11 +439,12 @@ recipe 时另要求当前运行 UID 拥有的普通文件，且拒绝最终路�
 
 ## 4. 启动数据库与对象存储
 
-构建并启动 PostgreSQL、MinIO，然后执行一次桶初始化：
+启动 PostgreSQL 与 MinIO，然后执行一次桶初始化。镜像来自 §0 的一次性构建（`postgres` 用
+官方镜像、`minio` 用已导入的同 tag 镜像），这里不再带 `--build`：
 
 ```bash
 "${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
-  up -d --build postgres minio
+  up -d postgres minio
 "${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
   run --rm minio-init
 ```
@@ -411,7 +497,10 @@ head 为准，查询结果须与之相符。不要把旧版 `0027_gateway_abort_
 writer、审计 reader、实例读取 reader、隔离释放、公开目录 reader、Artifact reader、资源池
 reader、binding 列表 reader、binding 写、binding admin reader、binding 生命周期、Artifact
 保留期清理、同步 TTS 结算、外部托管引擎的资格声明、资格来源审计读取与独立工作台后端的
-运行/清理两个身份共二十个独立非 owner 角色。工作台两个角色的
+运行/清理两个身份共二十个独立非 owner 角色（三个基线角色 + 十七个其它身份，其中
+`sn_qualification_reader` 只服务宿主侧审计命令）；另有三个 Job 角色由
+[异步 Job 运行角色](#异步-job-运行角色与授权) 的 `provision-job-roles.py` 预置，因此
+`deploy/compose.env.example` 共有二十三个 `*_ROLE_PASSWORD`。工作台两个角色的
 授权目标是工作台自己的命名空间，本脚本只创建角色，授权由 §6 的迁移步安装。每个透传键当前是否有预置步骤见文末
 [透传 DSN 覆盖表](#透传-dsn-覆盖表)，未预置的键及其原因见
 [故意不预置的身份](#故意不预置的身份)。预设发布的写角色 `sn_profile_writer` 不在此脚本内：
@@ -1548,7 +1637,7 @@ path.write_text(text)
 path.chmod(0o600)
 print("publication evidence path written to deploy/compose.env")
 PY
-"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml up -d --build api
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml up -d api
 ```
 
 只写 writer DSN 而不写文档路径，或路径指向不可读、格式非法的文档时，API 启动失败并点名
@@ -2016,9 +2105,11 @@ voice 发布要求先有 `voice_design` / `voice_validation` 车道产生的证�
 
 ## 7. 启动 API 与 gateway
 
+`api` 与 `gateway` 的镜像来自 §0 的一次性构建命令，这里只启动，不再带 `--build`：
+
 ```bash
 "${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
-  up -d --build api gateway
+  up -d api gateway
 ```
 
 Compose 会让 `api` 等待 `gateway` healthy，并让两者等待 `minio-init` 成功。检查容器：
@@ -2287,7 +2378,9 @@ PYROLE
 
 ```bash
 "${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
-  --profile binding-disable up -d --build gateway binding-disable-worker
+  build gateway binding-disable-worker
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
+  --profile binding-disable up -d gateway binding-disable-worker
 "${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
   --profile binding-disable ps gateway binding-disable-worker
 ```

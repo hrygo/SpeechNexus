@@ -113,7 +113,8 @@ class ProfilePublicationAuthorityTests(unittest.TestCase):
             "private evidence path": (
                 f"{VARIABLE}=/run/speechnexus-private/profile-publication-evidence.json"
             ),
-            "api restart": "up -d --build api",
+            # `#900`: the runbook builds once in §0 and never puts `--build` on an `up`.
+            "api restart": "-f deploy/compose.yaml up -d api",
             "publish verification": "/publications",
             "named startup refusal": f"ValueError: {VARIABLE} is required",
             "unreviewed revision refusal": "422 profile_not_eligible",

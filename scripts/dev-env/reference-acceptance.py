@@ -36,9 +36,11 @@ role, a bucket or a database row.
 
 Read-only boundary: this script does not edit `deploy/`,
 `docs/operations/compose-minimal.md`, backend or contract files. Containers and
-volumes are named per `--project-name`, but `deploy/compose.yaml` pins the stack
-network to `172.28.0.0/24`, so two reference stacks cannot run concurrently on
-one host; `--project-name` isolates reruns of the same stack, not a parallel one.
+volumes are named per `--project-name`. The stack network is the default
+`172.28.0.0/24` unless `deploy/compose.env` sets `SPEECHNEXUS_COMPOSE_SUBNET` and
+`SPEECHNEXUS_MINIO_STATIC_IP` (derive both with `deploy/compose-network.py`), so a
+parallel reference stack on one host also needs a different subnet and host ports;
+`--project-name` isolates reruns of the same stack, not a parallel one.
 """
 
 from __future__ import annotations

@@ -300,9 +300,17 @@ at startup naming `SPEECHNEXUS_INSPECTION_TOKEN`; the resulting restart loop is 
 configuration error, not a ready service.
 
 The gateway's private file-ASR/file-TTS object adapter requires a private IP
-literal rather than a DNS name, so MinIO receives the fixed Compose-network
-address `172.28.0.10`. If `172.28.0.0/24` conflicts with the host, change the
-subnet and both private JSON object endpoints together. The examples and
+literal rather than a DNS name, so MinIO keeps a fixed address on the default
+Compose network. Both addresses of that network are host-side interpolation whose
+defaults are the shipped topology: `SPEECHNEXUS_COMPOSE_SUBNET=172.28.0.0/24`
+for the subnet and `SPEECHNEXUS_MINIO_STATIC_IP=172.28.0.10` for MinIO, the 10th
+host of that subnet. Unset, they render exactly the previous network. On a host
+that already uses `172.28.0.0/24`, run
+`python3 deploy/compose-network.py <subnet>`: it prints the two assignments for
+`deploy/compose.env` and the `objects.endpoint` every copied private JSON must
+carry, so the MinIO address is never computed by hand. The runbook step is
+`docs/operations/compose-minimal.md` §1.1; the defaults and the derivation are
+kept in step by `tests/ci/test_compose_network_addresses.py`. The examples and
 private-file rules are in [deploy/private](private/README.md).
 
 `postgres-data` and `minio-data` are named volumes. `minio-init` creates and

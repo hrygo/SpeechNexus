@@ -5,9 +5,11 @@
 预期输出 / 实际结论**，任一步失败即以该步的退出码结束并列出未执行的步骤；结尾再记录各步
 PASS/FAIL/未运行、环境（checkout commit、项目名、gate 模式、schema）与服务镜像。它只读取
 部署输入、不改 `deploy/`、`docs/operations/compose-minimal.md`、后端或契约文件。容器、卷与
-网络按 `--project-name` 命名隔离，可反复运行与清理；但 `deploy/compose.yaml` 固定
-`172.28.0.0/24`，第二个参考部署栈在同机会因网络重叠（`Pool overlaps`）起不来，因此「与同机
-其它参考栈并行」不成立。`--project-name` 用于同一栈的重跑与清理隔离，不用于并行部署。
+网络按 `--project-name` 命名隔离，可反复运行与清理；默认子网仍是
+`172.28.0.0/24`，第二套参考部署栈要在同机并行，必须把 `SPEECHNEXUS_COMPOSE_SUBNET` 与
+`SPEECHNEXUS_MINIO_STATIC_IP`（`python3 deploy/compose-network.py <subnet>` 给出这一对）连同
+宿主端口换成另一组值，否则创建网络时报 `Pool overlaps`。`--project-name` 只用于同一栈的重跑与
+清理隔离，不改变网段与端口。
 
 ## 能证明什么
 

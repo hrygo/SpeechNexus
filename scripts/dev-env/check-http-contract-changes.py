@@ -293,81 +293,88 @@ _BOUND_DIRECTIONS: dict[str, Literal["down", "up"]] = {
 # correspond to a live finding rejects the comparison, so a stale approval cannot
 # be reused to wave through an unrelated change. Recording a vocabulary here
 # narrows nothing: it records that the larger vocabulary was reviewed on purpose.
+#
+# Every key names the values, not only the fact that they changed, so one entry
+# approves the vocabulary it names and nothing else: a `const` change reads
+# `const value changed: <baseline value> -> <service value>` and an enum change
+# reads `enum values added: [<codes>]`. Swapping the registered value for a third
+# one therefore produces a different, unregistered line and rejects; the entry can
+# never mean "this pointer changed and someone looked at it once".
 # Tests: tests/contract/test_approved_http_response_vocabulary_changes.py.
 _APPROVED_RESPONSE_VOCABULARY_WIDENINGS: dict[str, dict[str, str]] = {
-    "contracts/speech-openapi.yaml:paths//v1/nexus/voices/{voice_id}/revisions/{revision}/retirements/post/responses/503/headers/x-should-retry: const value changed": {  # noqa: E501
+    "contracts/speech-openapi.yaml:paths//v1/nexus/voices/{voice_id}/revisions/{revision}/retirements/post/responses/503/headers/x-should-retry: const value changed: 'true' -> ['true', 'false']": {  # noqa: E501
         "issue": "#828",
         "from_version": "0.1.0.dev18",
         "to_version": "0.1.0.dev18",
         "reason": "X-Should-Retry mirrors the per-code retryable: a storage refusal is `false`, so this surface states the same value as the Job surface's `job_unavailable` (#828 review M5).",  # noqa: E501
     },
-    "contracts/speech-openapi.yaml:paths//v1/nexus/voices/{voice_id}/revisions/{revision}/retirements/post/responses/503/application/json/allOf/1/properties/error/properties/retryable: const value changed": {  # noqa: E501
+    "contracts/speech-openapi.yaml:paths//v1/nexus/voices/{voice_id}/revisions/{revision}/retirements/post/responses/503/application/json/allOf/1/properties/error/properties/retryable: const value changed: True -> [True, False]": {  # noqa: E501
         "issue": "#828",
         "from_version": "0.1.0.dev18",
         "to_version": "0.1.0.dev18",
         "reason": "retryable is per code: `false` for the storage refusal and `true` for an unknown outcome, matching the Job surface's values for the same semantics (#828 review M5).",  # noqa: E501
     },
-    "contracts/speech-openapi.yaml:paths//v1/nexus/pronunciation-sets/get/responses/503/headers/x-should-retry: const value changed": {  # noqa: E501
+    "contracts/speech-openapi.yaml:paths//v1/nexus/pronunciation-sets/get/responses/503/headers/x-should-retry: const value changed: 'true' -> ['true', 'false']": {  # noqa: E501
         "issue": "#828",
         "from_version": "0.1.0.dev18",
         "to_version": "0.1.0.dev18",
         "reason": "X-Should-Retry mirrors the per-code retryable: a storage refusal is `false`, so this surface states the same value as the Job surface's `job_unavailable` (#828 review M5).",  # noqa: E501
     },
-    "contracts/speech-openapi.yaml:paths//v1/nexus/pronunciation-sets/get/responses/503/application/json/allOf/1/properties/error/properties/retryable: const value changed": {  # noqa: E501
+    "contracts/speech-openapi.yaml:paths//v1/nexus/pronunciation-sets/get/responses/503/application/json/allOf/1/properties/error/properties/retryable: const value changed: True -> [True, False]": {  # noqa: E501
         "issue": "#828",
         "from_version": "0.1.0.dev18",
         "to_version": "0.1.0.dev18",
         "reason": "retryable is per code: `false` for the storage refusal and `true` for an unknown outcome, matching the Job surface's values for the same semantics (#828 review M5).",  # noqa: E501
     },
-    "contracts/speech-openapi.yaml:paths//v1/nexus/pronunciation-sets/post/responses/503/headers/x-should-retry: const value changed": {  # noqa: E501
+    "contracts/speech-openapi.yaml:paths//v1/nexus/pronunciation-sets/post/responses/503/headers/x-should-retry: const value changed: 'true' -> ['true', 'false']": {  # noqa: E501
         "issue": "#828",
         "from_version": "0.1.0.dev18",
         "to_version": "0.1.0.dev18",
         "reason": "X-Should-Retry mirrors the per-code retryable: a storage refusal is `false`, so this surface states the same value as the Job surface's `job_unavailable` (#828 review M5).",  # noqa: E501
     },
-    "contracts/speech-openapi.yaml:paths//v1/nexus/pronunciation-sets/post/responses/503/application/json/allOf/1/properties/error/properties/retryable: const value changed": {  # noqa: E501
+    "contracts/speech-openapi.yaml:paths//v1/nexus/pronunciation-sets/post/responses/503/application/json/allOf/1/properties/error/properties/retryable: const value changed: True -> [True, False]": {  # noqa: E501
         "issue": "#828",
         "from_version": "0.1.0.dev18",
         "to_version": "0.1.0.dev18",
         "reason": "retryable is per code: `false` for the storage refusal and `true` for an unknown outcome, matching the Job surface's values for the same semantics (#828 review M5).",  # noqa: E501
     },
-    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/get/responses/503/headers/x-should-retry: const value changed": {  # noqa: E501
+    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/get/responses/503/headers/x-should-retry: const value changed: 'true' -> ['true', 'false']": {  # noqa: E501
         "issue": "#828",
         "from_version": "0.1.0.dev18",
         "to_version": "0.1.0.dev18",
         "reason": "X-Should-Retry mirrors the per-code retryable: a storage refusal is `false`, so this surface states the same value as the Job surface's `job_unavailable` (#828 review M5).",  # noqa: E501
     },
-    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/get/responses/503/application/json/allOf/1/properties/error/properties/retryable: const value changed": {  # noqa: E501
+    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/get/responses/503/application/json/allOf/1/properties/error/properties/retryable: const value changed: True -> [True, False]": {  # noqa: E501
         "issue": "#828",
         "from_version": "0.1.0.dev18",
         "to_version": "0.1.0.dev18",
         "reason": "retryable is per code: `false` for the storage refusal and `true` for an unknown outcome, matching the Job surface's values for the same semantics (#828 review M5).",  # noqa: E501
     },
-    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/patch/responses/503/headers/x-should-retry: const value changed": {  # noqa: E501
+    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/patch/responses/503/headers/x-should-retry: const value changed: 'true' -> ['true', 'false']": {  # noqa: E501
         "issue": "#828",
         "from_version": "0.1.0.dev18",
         "to_version": "0.1.0.dev18",
         "reason": "X-Should-Retry mirrors the per-code retryable: a storage refusal is `false`, so this surface states the same value as the Job surface's `job_unavailable` (#828 review M5).",  # noqa: E501
     },
-    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/patch/responses/503/application/json/allOf/1/properties/error/properties/retryable: const value changed": {  # noqa: E501
+    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/patch/responses/503/application/json/allOf/1/properties/error/properties/retryable: const value changed: True -> [True, False]": {  # noqa: E501
         "issue": "#828",
         "from_version": "0.1.0.dev18",
         "to_version": "0.1.0.dev18",
         "reason": "retryable is per code: `false` for the storage refusal and `true` for an unknown outcome, matching the Job surface's values for the same semantics (#828 review M5).",  # noqa: E501
     },
-    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/publications/post/responses/503/headers/x-should-retry: const value changed": {  # noqa: E501
+    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/publications/post/responses/503/headers/x-should-retry: const value changed: 'true' -> ['true', 'false']": {  # noqa: E501
         "issue": "#828",
         "from_version": "0.1.0.dev18",
         "to_version": "0.1.0.dev18",
         "reason": "X-Should-Retry mirrors the per-code retryable: a storage refusal is `false`, so this surface states the same value as the Job surface's `job_unavailable` (#828 review M5).",  # noqa: E501
     },
-    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/publications/post/responses/503/application/json/allOf/1/properties/error/properties/retryable: const value changed": {  # noqa: E501
+    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/publications/post/responses/503/application/json/allOf/1/properties/error/properties/retryable: const value changed: True -> [True, False]": {  # noqa: E501
         "issue": "#828",
         "from_version": "0.1.0.dev18",
         "to_version": "0.1.0.dev18",
         "reason": "retryable is per code: `false` for the storage refusal and `true` for an unknown outcome, matching the Job surface's values for the same semantics (#828 review M5).",  # noqa: E501
     },
-    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-designs/post/responses/503/headers/x-should-retry: const value changed": {  # noqa: E501
+    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-designs/post/responses/503/headers/x-should-retry: const value changed: 'true' -> ['true', 'false']": {  # noqa: E501
         "issue": "#828",
         "from_version": "0.1.0.dev18",
         "to_version": "0.1.0.dev18",
@@ -379,13 +386,13 @@ _APPROVED_RESPONSE_VOCABULARY_WIDENINGS: dict[str, dict[str, str]] = {
         "to_version": "0.1.0.dev18",
         "reason": "Two new 503 codes: a retryable admission race and the operator-step engine refusals. The voice-draft submission surface answered engine-side admission refusals with a 422 input error and a concurrency race with the storage code; it now answers both as 503 with their own codes and a per-code retry rule (#828 review M3).",  # noqa: E501
     },
-    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-designs/post/responses/503/application/json/allOf/1/properties/error/properties/retryable: const value changed": {  # noqa: E501
+    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-designs/post/responses/503/application/json/allOf/1/properties/error/properties/retryable: const value changed: True -> [True, False]": {  # noqa: E501
         "issue": "#828",
         "from_version": "0.1.0.dev18",
         "to_version": "0.1.0.dev18",
         "reason": "retryable is per code now: false for storage and engine refusals, true for an unknown outcome and the admission race. The voice-draft submission surface answered engine-side admission refusals with a 422 input error and a concurrency race with the storage code; it now answers both as 503 with their own codes and a per-code retry rule (#828 review M3).",  # noqa: E501
     },
-    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-clones/post/responses/503/headers/x-should-retry: const value changed": {  # noqa: E501
+    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-clones/post/responses/503/headers/x-should-retry: const value changed: 'true' -> ['true', 'false']": {  # noqa: E501
         "issue": "#828",
         "from_version": "0.1.0.dev18",
         "to_version": "0.1.0.dev18",
@@ -397,13 +404,13 @@ _APPROVED_RESPONSE_VOCABULARY_WIDENINGS: dict[str, dict[str, str]] = {
         "to_version": "0.1.0.dev18",
         "reason": "Two new 503 codes: a retryable admission race and the operator-step engine refusals. The voice-draft submission surface answered engine-side admission refusals with a 422 input error and a concurrency race with the storage code; it now answers both as 503 with their own codes and a per-code retry rule (#828 review M3).",  # noqa: E501
     },
-    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-clones/post/responses/503/application/json/allOf/1/properties/error/properties/retryable: const value changed": {  # noqa: E501
+    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-clones/post/responses/503/application/json/allOf/1/properties/error/properties/retryable: const value changed: True -> [True, False]": {  # noqa: E501
         "issue": "#828",
         "from_version": "0.1.0.dev18",
         "to_version": "0.1.0.dev18",
         "reason": "retryable is per code now: false for storage and engine refusals, true for an unknown outcome and the admission race. The voice-draft submission surface answered engine-side admission refusals with a 422 input error and a concurrency race with the storage code; it now answers both as 503 with their own codes and a per-code retry rule (#828 review M3).",  # noqa: E501
     },
-    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/generations/post/responses/503/headers/x-should-retry: const value changed": {  # noqa: E501
+    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/generations/post/responses/503/headers/x-should-retry: const value changed: 'true' -> ['true', 'false']": {  # noqa: E501
         "issue": "#828",
         "from_version": "0.1.0.dev18",
         "to_version": "0.1.0.dev18",
@@ -415,13 +422,13 @@ _APPROVED_RESPONSE_VOCABULARY_WIDENINGS: dict[str, dict[str, str]] = {
         "to_version": "0.1.0.dev18",
         "reason": "Two new 503 codes: a retryable admission race and the operator-step engine refusals. The voice-draft submission surface answered engine-side admission refusals with a 422 input error and a concurrency race with the storage code; it now answers both as 503 with their own codes and a per-code retry rule (#828 review M3).",  # noqa: E501
     },
-    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/generations/post/responses/503/application/json/allOf/1/properties/error/properties/retryable: const value changed": {  # noqa: E501
+    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/generations/post/responses/503/application/json/allOf/1/properties/error/properties/retryable: const value changed: True -> [True, False]": {  # noqa: E501
         "issue": "#828",
         "from_version": "0.1.0.dev18",
         "to_version": "0.1.0.dev18",
         "reason": "retryable is per code now: false for storage and engine refusals, true for an unknown outcome and the admission race. The voice-draft submission surface answered engine-side admission refusals with a 422 input error and a concurrency race with the storage code; it now answers both as 503 with their own codes and a per-code retry rule (#828 review M3).",  # noqa: E501
     },
-    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/previews/post/responses/503/headers/x-should-retry: const value changed": {  # noqa: E501
+    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/previews/post/responses/503/headers/x-should-retry: const value changed: 'true' -> ['true', 'false']": {  # noqa: E501
         "issue": "#828",
         "from_version": "0.1.0.dev18",
         "to_version": "0.1.0.dev18",
@@ -433,13 +440,13 @@ _APPROVED_RESPONSE_VOCABULARY_WIDENINGS: dict[str, dict[str, str]] = {
         "to_version": "0.1.0.dev18",
         "reason": "Two new 503 codes: a retryable admission race and the operator-step engine refusals. The voice-draft submission surface answered engine-side admission refusals with a 422 input error and a concurrency race with the storage code; it now answers both as 503 with their own codes and a per-code retry rule (#828 review M3).",  # noqa: E501
     },
-    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/previews/post/responses/503/application/json/allOf/1/properties/error/properties/retryable: const value changed": {  # noqa: E501
+    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/previews/post/responses/503/application/json/allOf/1/properties/error/properties/retryable: const value changed: True -> [True, False]": {  # noqa: E501
         "issue": "#828",
         "from_version": "0.1.0.dev18",
         "to_version": "0.1.0.dev18",
         "reason": "retryable is per code now: false for storage and engine refusals, true for an unknown outcome and the admission race. The voice-draft submission surface answered engine-side admission refusals with a 422 input error and a concurrency race with the storage code; it now answers both as 503 with their own codes and a per-code retry rule (#828 review M3).",  # noqa: E501
     },
-    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/validations/post/responses/503/headers/x-should-retry: const value changed": {  # noqa: E501
+    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/validations/post/responses/503/headers/x-should-retry: const value changed: 'true' -> ['true', 'false']": {  # noqa: E501
         "issue": "#828",
         "from_version": "0.1.0.dev18",
         "to_version": "0.1.0.dev18",
@@ -451,7 +458,7 @@ _APPROVED_RESPONSE_VOCABULARY_WIDENINGS: dict[str, dict[str, str]] = {
         "to_version": "0.1.0.dev18",
         "reason": "Two new 503 codes: a retryable admission race and the operator-step engine refusals. The voice-draft submission surface answered engine-side admission refusals with a 422 input error and a concurrency race with the storage code; it now answers both as 503 with their own codes and a per-code retry rule (#828 review M3).",  # noqa: E501
     },
-    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/validations/post/responses/503/application/json/allOf/1/properties/error/properties/retryable: const value changed": {  # noqa: E501
+    "contracts/speech-openapi.yaml:paths//v1/nexus/voice-drafts/{draft_id}/validations/post/responses/503/application/json/allOf/1/properties/error/properties/retryable: const value changed: True -> [True, False]": {  # noqa: E501
         "issue": "#828",
         "from_version": "0.1.0.dev18",
         "to_version": "0.1.0.dev18",

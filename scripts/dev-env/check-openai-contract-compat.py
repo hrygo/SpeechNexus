@@ -675,6 +675,24 @@ def _type_set(value: object) -> set[str]:
     return {item for item in values or [] if isinstance(item, str)}
 
 
+def _declared_values(schema: Mapping[str, Any]) -> str:
+    """The literal values one schema admits, rendered for a change message.
+
+    A message that only states *that* a value changed lets an approval cover an
+    unbounded set of values: the same line would still match after the value was
+    swapped for another one. Rendering the vocabulary keeps a review entry bound
+    to the value it reviewed. `const` is rendered as the single admitted value and
+    `enum` as its value list; a schema that declares neither admits values the
+    comparison does not enumerate.
+    """
+    if "const" in schema:
+        return repr(schema["const"])
+    values = _sequence(schema.get("enum"))
+    if values is not None:
+        return repr(list(values))
+    return "unconstrained"
+
+
 def _constraint_break(base: Mapping[str, Any], current: Mapping[str, Any]) -> str | None:
     checks: tuple[tuple[str, str], ...] = (
         ("minimum", ">"),
@@ -1396,7 +1414,15 @@ def _compare_schema(
             accepted.get("enum"), [constrained["const"]], numeric_equivalent=True
         )
     ):
-        _issue(issues, pointer, "const value changed")
+        # The finding names both values, never only the fact that something changed:
+        # an approval registered against this line covers exactly these two
+        # vocabularies, so a later third value yields a different, unregistered line.
+        _issue(
+            issues,
+            pointer,
+            f"const value changed: {_declared_values(base_schema)} -> "
+            f"{_declared_values(current_schema)}",
+        )
 
     default_change: str | None = None
     if ("default" in base_schema) != ("default" in current_schema):

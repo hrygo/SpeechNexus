@@ -39,7 +39,7 @@ INTEGRATION_JOB_TIMEOUT_SECONDS = 30 * 60
 COVERAGE_JOB_TIMEOUT_SECONDS = 15 * 60
 # Pytest workers inside one integration partition. The canonical runner owns the
 # validation and the isolation rule; the probe only forwards the requested value.
-INTEGRATION_SHARD_WORKERS = 3
+INTEGRATION_SHARD_WORKERS = 2
 # The measured dataset may be split across two jobs of four workers; per-worker
 # coverage partitions therefore go up to eight, not four.
 PYTHON_PARTITION_MAX = 8

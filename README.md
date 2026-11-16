@@ -180,6 +180,6 @@ SpeechNexus 的接口设计采用 **OpenAI Audio 兼容子集 + `nexus` 扩展**
 
 ## 许可证与致谢
 
-当前仓库尚未提供项目 `LICENSE` 文件。模型权重、第三方依赖与声音素材的许可需分别核对。
+本项目以 [MIT 许可证](LICENSE)发布（2026-11-16 由项目所有者决定）。模型权重、第三方依赖与声音素材的许可**不在本许可证覆盖范围内**，需分别核对。
 
 SpeechNexus 受 [SpeechRail](https://github.com/hrygo/SpeechRail) 的产品与架构经验启发，作为独立项目演进。来源与复用要求见[SpeechRail 复用边界](docs/architecture/speechrail-reuse.md)。

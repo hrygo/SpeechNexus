@@ -1,6 +1,7 @@
 [project]
 name = "speechnexus-asset-inspector"
 version = "0.1.0.dev0"
+license = "MIT"
 description = "Isolated, network-free audio asset inspection service"
 readme = "README.md"
 requires-python = ">=3.14,<3.15"

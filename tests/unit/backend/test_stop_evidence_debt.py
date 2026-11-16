@@ -82,6 +82,54 @@ def test_the_detail_bounds_how_many_jobs_it_names() -> None:
     assert len(detail) < 500
 
 
+def test_a_detail_with_long_identifiers_is_cut_to_a_bounded_size() -> None:
+    """Row counts are bounded, but 96 long identifiers are still ~17 kB of detail.
+
+    A readiness detail reaches `/readyz` and the diagnostics body on every poll, so its
+    size has to be bounded independently of how many rows the query returns. The cut keeps
+    a readable prefix and says it was cut, instead of ending mid-identifier.
+    """
+    rows = [
+        (
+            f"job-{index:03d}" + "a" * 119,
+            f"submit-{index:03d}" + "b" * 115,
+            "failed",
+            "complete",
+            None,
+        )
+        for index in range(96)
+    ]
+    detail = _describe_stop_evidence_debt(rows)
+
+    assert detail is not None
+    assert len(detail) <= 512
+    assert detail.endswith("... (truncated)")
+    assert detail.startswith("stop_evidence_debt: 96 running Job(s)")
+    # The cut lands on a job boundary, so the first identifier is reported in full.
+    assert rows[0][0] in detail
+
+
+def test_the_cancellation_detail_is_bounded_the_same_way() -> None:
+    from speechnexus_backend.speech.infrastructure.readiness import _describe_debt
+
+    long_job = "job-" + "a" * 122
+    long_lease = "lease-" + "b" * 122
+    detail = _describe_debt(
+        [(long_job, long_lease, "reserved", "executing", None, None, None) for _ in range(96)]
+    )
+
+    assert detail is not None
+    assert len(detail) <= 512
+    assert detail.endswith("... (truncated)")
+
+
+def test_a_short_detail_is_not_marked_truncated() -> None:
+    detail = _describe_stop_evidence_debt([("job-a", "intent-1", "failed", "complete", None)])
+
+    assert detail is not None
+    assert not detail.endswith("... (truncated)")
+
+
 def test_no_debt_means_no_detail() -> None:
     assert _describe_stop_evidence_debt([]) is None
 

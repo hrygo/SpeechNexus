@@ -2,6 +2,9 @@
 
 from dataclasses import dataclass, replace
 
+from speechnexus_backend.speech.domain.job_dispatch import (
+    VERIFIED_STOP_EVIDENCE_KINDS,
+)
 from speechnexus_backend.speech.domain.leases import (
     LeaseAccounting,
     LeaseRecord,
@@ -34,12 +37,7 @@ class LeaseStop:
         identifier(self.submit_intent_id)
         digest(self.evidence_digest)
         integer(self.observed_at_us)
-        if self.kind not in (
-            "engine_abort_ack",
-            "engine_terminal_response",
-            "instance_terminated_by_controller",
-            "operator_verified_instance_terminated",
-        ):
+        if self.kind not in VERIFIED_STOP_EVIDENCE_KINDS:
             raise ValueError("Unverified lease stop kind")
 
 

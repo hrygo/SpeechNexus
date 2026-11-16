@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import math
 import re
 from collections.abc import Sequence
 from typing import Any
@@ -12,6 +13,7 @@ import httpx
 import psycopg
 from pydantic import AnyHttpUrl
 
+from speechnexus_backend.speech.domain.job_dispatch import VERIFIED_STOP_EVIDENCE_KINDS
 from speechnexus_backend.speech.infrastructure import (
     job_cancellation_fence_schema,
     public_job_schema,
@@ -63,6 +65,21 @@ class ObjectStorageReadinessProbe:
             response = await client.get(str(self._healthcheck_url))
             response.raise_for_status()
 
+
+#: Fraction of the service's per-probe budget a non-failing diagnostic spends on its own
+#: work. ``ReadinessService`` wraps every probe in ``asyncio.timeout(timeout_seconds)``, so a
+#: probe whose own budget equals the service budget races it: the outer timeout wins, the
+#: probe's ``except Exception`` never runs, and ``/readyz`` reports ``failed``/``timed out``.
+#: That turns a diagnostic into an outage -- exactly what these probes promise never to do.
+#: Spending 80% leaves the probe room to convert its own timeout into the
+#: ``unavailable (timeout)`` detail it documents.
+_PROBE_BUDGET_FRACTION = 0.8
+#: Hard character bound on a debt detail. Row and job counts are already bounded, but 96 rows
+#: of long identifiers still produce a ~17 kB string, and a readiness detail that large is a
+#: payload problem rather than a diagnostic. ASCII identifiers make characters equal bytes.
+_DETAIL_MAX_CHARS = 512
+#: Appended when the detail is cut, so a truncated sentence never looks complete.
+_DETAIL_TRUNCATED = "... (truncated)"
 
 #: Prefix an operator alert matches on. Kept stable and secret-free.
 CANCELLATION_DEBT_PREFIX = "cancellation_debt"
@@ -146,7 +163,11 @@ class CancellationDebtProbe:
             raise ValueError("Cancellation debt report must be bounded")
         self._dsn = dsn
         self._schema = schema
-        self._timeout_seconds = timeout_seconds
+        # Spend only part of the service budget, and give libpq a longer connect timeout than
+        # that: the probe's own deadline must be the one that fires, so a hung endpoint becomes
+        # this probe's ``unavailable (timeout)`` detail instead of the service's ``failed``.
+        self._timeout_seconds = timeout_seconds * _PROBE_BUDGET_FRACTION
+        self._connect_timeout_seconds = max(1, math.ceil(timeout_seconds) + 1)
         self._grace_us = int(grace_seconds * 1_000_000)
         self._limit = limit
         self._connection: psycopg.AsyncConnection[Any] | None = None
@@ -196,7 +217,7 @@ class CancellationDebtProbe:
             assert self._dsn is not None  # guarded by ``check``
             connection = await psycopg.AsyncConnection.connect(
                 self._dsn,
-                connect_timeout=max(1, round(self._timeout_seconds)),
+                connect_timeout=self._connect_timeout_seconds,
                 options=f"-c search_path={self._schema},pg_catalog,pg_temp",
                 application_name=_APPLICATION_NAME,
             )
@@ -242,6 +263,21 @@ def _failure_category(error: BaseException) -> str:
     if isinstance(error, psycopg.OperationalError | psycopg.InterfaceError | OSError):
         return "connection"
     return "error"
+
+
+def _bounded_detail(text: str) -> str:
+    """Cut a debt detail at a separator so the result stays a readable, bounded sentence."""
+    if len(text) <= _DETAIL_MAX_CHARS:
+        return text
+    budget = _DETAIL_MAX_CHARS - len(_DETAIL_TRUNCATED)
+    window = text[:budget]
+    # Prefer a job/lease boundary, then a token boundary: a mid-identifier cut reads as a
+    # different identifier, which is worse than a shorter list.
+    for separator in ("; ", ", ", " "):
+        cut = window.rfind(separator)
+        if cut > budget // 2:
+            return window[:cut].rstrip() + _DETAIL_TRUNCATED
+    return window.rstrip() + _DETAIL_TRUNCATED
 
 
 def debt_subclass(
@@ -327,7 +363,7 @@ def _describe_debt(rows: Sequence[tuple[Any, ...]], *, missing: str | None = Non
                 f"{name}={job_counts[name]}" for name in _JOB_CLASSES if job_counts.get(name)
             )
         )
-    return f"{head} ({'; '.join(scopes)}): {detail}{suffix}{note}"
+    return _bounded_detail(f"{head} ({'; '.join(scopes)}): {detail}{suffix}{note}")
 
 
 _JOB_LEVEL_DEBT = f"""
@@ -374,12 +410,12 @@ LIMIT %(limit)s
 #: ``CANCELLATION_DEBT_PREFIX`` and deliberately distinct: this class has no automatic
 #: exit, and its remedy is the producer, not a settlement command.
 STOP_EVIDENCE_DEBT_PREFIX = "stop_evidence_debt"
-#: The stop-evidence kinds the coordination contract accepts as a verified stop.
-_VERIFIED_STOP_EVIDENCE = (
-    "engine_abort_ack",
-    "engine_terminal_response",
-    "instance_terminated_by_controller",
-    "operator_verified_instance_terminated",
+#: The stop-evidence kinds the coordination contract accepts as a verified stop, as one
+#: SQL tuple. It is derived from the domain's single definition: a second literal here
+#: would drift, and drift in this direction is silent -- the probe would stop matching the
+#: kind the dispatch gate accepts and report no debt for the Jobs that need it.
+_SQL_VERIFIED_STOP_EVIDENCE = (
+    "(" + ", ".join(f"'{kind}'" for kind in sorted(VERIFIED_STOP_EVIDENCE_KINDS)) + ")"
 )
 
 _STOP_EVIDENCE_DEBT = f"""
@@ -406,7 +442,7 @@ WHERE j.state = 'running'
   -- and `NOT NULL` is NULL, which would silently drop the one class this probe exists
   -- to report. "No row" means "no verified stop", i.e. TRUE here.
   AND NOT COALESCE(
-        e.evidence_kind IN {_VERIFIED_STOP_EVIDENCE}
+        e.evidence_kind IN {_SQL_VERIFIED_STOP_EVIDENCE}
     AND e.execution_stopped = 1
     AND e.resources_released = 1,
     FALSE
@@ -456,7 +492,7 @@ def _describe_stop_evidence_debt(
         f"gateway reports no verified stop"
     )
     head += f" over {executions} execution(s)" if executions else ""
-    return f"{head}: {detail}{suffix}{note}"
+    return _bounded_detail(f"{head}: {detail}{suffix}{note}")
 
 
 class StopEvidenceDebtProbe:
@@ -496,7 +532,11 @@ class StopEvidenceDebtProbe:
             raise ValueError("Stop evidence debt report must be bounded")
         self._dsn = dsn
         self._schema = schema
-        self._timeout_seconds = timeout_seconds
+        # Spend only part of the service budget, and give libpq a longer connect timeout than
+        # that: the probe's own deadline must be the one that fires, so a hung endpoint becomes
+        # this probe's ``unavailable (timeout)`` detail instead of the service's ``failed``.
+        self._timeout_seconds = timeout_seconds * _PROBE_BUDGET_FRACTION
+        self._connect_timeout_seconds = max(1, math.ceil(timeout_seconds) + 1)
         self._grace_us = int(grace_seconds * 1_000_000)
         self._limit = limit
         self._connection: psycopg.AsyncConnection[Any] | None = None
@@ -539,7 +579,7 @@ class StopEvidenceDebtProbe:
             assert self._dsn is not None  # guarded by ``check``
             connection = await psycopg.AsyncConnection.connect(
                 self._dsn,
-                connect_timeout=max(1, round(self._timeout_seconds)),
+                connect_timeout=self._connect_timeout_seconds,
                 options=f"-c search_path={self._schema},pg_catalog,pg_temp",
                 application_name=_APPLICATION_NAME,
             )

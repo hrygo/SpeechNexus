@@ -8,6 +8,7 @@ from typing import Any
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.job_cancellation import StopObservation
 from speechnexus_backend.speech.domain.job_dispatch import (
+    VERIFIED_STOP_EVIDENCE_KINDS,
     gateway_failure_code,
     submit_intent_identity,
 )
@@ -27,14 +28,6 @@ from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
 
 _ABORT_WAIT_MS = 5_000
 _ABORTABLE = frozenset({"submitting", "executing", "stopping"})
-_STOP_EVIDENCE = frozenset(
-    {
-        "engine_abort_ack",
-        "engine_terminal_response",
-        "instance_terminated_by_controller",
-        "operator_verified_instance_terminated",
-    }
-)
 
 
 class GatewayJobCancellationStopper:
@@ -121,7 +114,7 @@ def _verified_stop(document: Mapping[str, Any]) -> bool:
     return (
         document.get("execution_state") == "aborted"
         and document.get("cleanup_state") == "complete"
-        and document.get("stop_evidence_kind") in _STOP_EVIDENCE
+        and document.get("stop_evidence_kind") in VERIFIED_STOP_EVIDENCE_KINDS
     )
 
 

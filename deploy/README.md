@@ -935,11 +935,14 @@ SELECT 且拒绝任何写权限，未配置时列表返回 `503 model_binding_se
 `execution_stop_evidence` 与 `submit_intents.submit_intent_id`。任何配置了
 `SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL` 或 `SPEECHNEXUS_READINESS_CANCELLATION_DSN`
 的环境，升级时都必须以 owner 重跑 `quarantine_release_grants` 与
-`cancellation_debt_reader_grants` 两个函数。漏跑只有三种可自查的信号：API 启动被拒并
+`cancellation_debt_reader_grants` 两个函数。漏跑只有四种可自查的信号：API 启动被拒并
 点名表列（`app.py` 的组合根拒绝装配，不会带错身份上线）；只跑操作员 CLI 时退出码 3、
 输出 `unavailable: quarantine_release_privilege_missing`；探针降级为
-`cancellation_debt: … (jobs: lease-unread=1) … [lease detail unavailable: permission]`，
-且**不会**让 `/readyz` 失败。
+`cancellation_debt: … (jobs: lease-unread=1) … [lease detail unavailable: permission]`；
+派发债务探针整体报 `stop_evidence_debt: unavailable (permission)`——它比
+`cancellation_debt` 多读四列（`speech_jobs.updated_at_us` 与
+`submit_intents.cleanup_state`/`dispatched_at_us`/`engine_request_id`），旧授权面下会整体降级，
+而 `cancellation_debt` 不受影响。四种都**不会**让 `/readyz` 失败。
 
 `compose.yaml` 的 api 环境以空默认透传本变量，未配置的既有部署仍可渲染并启动，此时
 `POST /v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases` 返回

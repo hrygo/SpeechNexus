@@ -7,11 +7,17 @@ after 300 s, so the acknowledgment neither released memory nor kept the endpoint
 usable. Callers must stop the container or terminate the process and keep the
 capacity until that stop is verified elsewhere.
 
-This is the one voice-design release gate, and it writes no evidence of its own: a
-receipt wraps the node's checkpoint-backed stop fact and delegates to the shared
-``whole_instance_stop_evidence`` converter, which is what appends the row to
-``execution_stop_evidence``. The idle reclaim decision and the recovery sweep read the
-same receipt, so "the instance is gone" has one representation in the gateway.
+This is the one voice-design release gate, and it writes nothing: a receipt wraps the
+node's checkpoint-backed stop fact and validates it here, and the write path that turns a
+verified stop into an ``execution_stop_evidence`` row is the recovery sweep's
+``whole_instance_stop_evidence`` converter plus ``record_stop`` -- not this module. The
+receipt's ``verified_stop`` hands that converter exactly the fact it validated, so both
+paths write the same ``evidence_id``/``evidence_digest``.
+
+The idle reclaim decision does *not* read this receipt: it reads the node's checkpoint
+projection directly (``NodeStopEvidenceSource.release_evidence``) and takes the release
+fact from it, because reclaim runs before any execution row exists to convert. What the
+two paths share is the node fact, not a Python object.
 """
 
 from __future__ import annotations

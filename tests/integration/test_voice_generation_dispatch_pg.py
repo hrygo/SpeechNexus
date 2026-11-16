@@ -19,6 +19,7 @@ import pytest
 from alembic import command
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
+from tests.fake.execution_status import ENGINE_FAILURE_CODE, execution_status
 from tests.integration.test_public_job_progress_migration_pg import _isolated_schema
 from tests.integration.test_public_jobs_http import JobSandbox, _seed_binding
 from tests.unit.backend.test_health import _settings
@@ -195,47 +196,6 @@ def _receipt() -> dict[str, Any]:
     }
 
 
-#: Per-state evidence the coordination contract requires of one execution document.
-#: A terminal answer carries the stop fact its `cleanup_state` claims; an in-flight
-#: answer carries none and no dispatch identity until the request is dispatched.
-_CLEANUP = {
-    "submitting": "pending",
-    "executing": "pending",
-    "stopping": "pending",
-    "succeeded": "complete",
-    "failed": "complete",
-    "aborted": "complete",
-    "unknown_quarantined": "quarantined",
-}
-_STOP_EVIDENCE = {
-    "submitting": "none",
-    "executing": "none",
-    "stopping": "none",
-    "succeeded": "engine_terminal_response",
-    "failed": "engine_terminal_response",
-    "aborted": "engine_terminal_response",
-    "unknown_quarantined": "unconfirmed_timeout",
-}
-_DISPATCHED = {
-    "submitting": None,
-    "executing": "2026-11-17T11:00:00Z",
-    "stopping": "2026-11-17T11:00:00Z",
-    "succeeded": "2026-11-17T11:00:00Z",
-    "failed": None,
-    "aborted": None,
-    "unknown_quarantined": "2026-11-17T11:00:00Z",
-}
-_ENGINE_REQUEST = {
-    "submitting": None,
-    "executing": "engine-request-synthetic",
-    "stopping": "engine-request-synthetic",
-    "succeeded": "engine-request-synthetic",
-    "failed": "engine-request-synthetic",
-    "aborted": "engine-request-synthetic",
-    "unknown_quarantined": "engine-request-synthetic",
-}
-
-
 class _Gateway:
     """Minimal execution-gateway transport; the voice engine is a later slice."""
 
@@ -253,28 +213,29 @@ class _Gateway:
         )
         self.submit_calls = 0
         self.submit_id: str | None = None
+        self._submission: dict[str, Any] | None = None
         self._query_index = 0
 
     def _status(self, state: str) -> dict[str, Any]:
         """One contract-valid execution document, shaped after the state it reports.
 
-        The dispatcher reads the gateway document without a schema projection, so a fake
-        that omits `cleanup_state` and `stop_evidence_kind` would describe a shape the
-        coordination contract forbids. The dispatcher then correctly refuses to settle a
-        failure it cannot back, which is why these fields are part of the fake: a test
-        double has to produce the same document a real gateway produces.
+        The dispatcher reads the gateway document without a schema projection, so the double
+        must publish a shape the frozen contract allows. The factory validates every document
+        with the generated `parse`, which is what stops this fake from drifting into a
+        cross-field combination (for example `complete` with a null `dispatched_at`) that no
+        gateway can produce.
         """
-        status: dict[str, Any] = {
-            "submit_intent_id": self.submit_id,
-            "execution_state": state,
-            "cleanup_state": _CLEANUP[state],
-            "stop_evidence_kind": _STOP_EVIDENCE[state],
-            "dispatched_at": _DISPATCHED[state],
-            "engine_request_id": _ENGINE_REQUEST[state],
-        }
-        if state in ("failed", "aborted") and self._engine_error is not None:
-            status["error_code"] = self._engine_error
-        return status
+        assert self.submit_id is not None
+        assert self._submission is not None
+        error_code = self._engine_error if state in ("failed", "aborted") else None
+        return execution_status(
+            submit_intent_id=self.submit_id,
+            state=state,
+            error_code=error_code,
+            # The dispatcher compares the document's digest with the command it submitted,
+            # so the double has to echo the real one.
+            command_digest=self._submission["command_digest"],
+        )
 
     def _next_state(self) -> str:
         index = min(self._query_index, len(self._states) - 1)
@@ -298,7 +259,8 @@ class _Gateway:
                         }
                     },
                 )
-            self.submit_id = json.loads(request.content)["submit_intent_id"]
+            self._submission = json.loads(request.content)
+            self.submit_id = self._submission["submit_intent_id"]
             return httpx.Response(200, json=self._status("executing"))
         if request.method == "GET" and path.startswith("/internal/v1/executions/"):
             if self.submit_calls == 0 or path.endswith("/audio-staging-result"):
@@ -535,21 +497,28 @@ async def test_engine_submit_rejection_fails_the_job_with_its_code(
     assert read.json()["revision"]["failure"]["code"] == "policy_or_resource_disabled"
 
 
-async def test_engine_reported_timeout_is_projected_failed(
+async def test_an_engine_reported_failure_is_projected_failed(
     voice_dispatch_db: JobSandbox,
 ) -> None:
+    """A failure the gateway can back with verified termination settles the Job.
+
+    The status document is contract-validated by the fake, so the failure code it carries
+    has to be one the frozen contract allows: a gateway reports `engine_transport_unknown`,
+    not a job-level invented code. What this test pins is that the code reaches the Job and
+    the draft verbatim, and that the gate does not hold a failure it can back.
+    """
     db = voice_dispatch_db
     draft, created = _voice_draft(db)
 
     batch = await _dispatcher(
-        db, _Gateway(states=("failed",), engine_error="voice_generation_timeout")
+        db, _Gateway(states=("failed",), engine_error=ENGINE_FAILURE_CODE)
     ).run_once("worker-voice-engine-timeout")
 
     assert batch.failed == 1 and batch.unknown == 0
-    assert _job_row(db, created.job_id)["error_code"] == "voice_generation_timeout"
+    assert _job_row(db, created.job_id)["error_code"] == ENGINE_FAILURE_CODE
     read = await _draft_read(db, draft["id"])
     assert read.status_code == 200, read.text
-    assert read.json()["revision"]["failure"]["code"] == "voice_generation_timeout"
+    assert read.json()["revision"]["failure"]["code"] == ENGINE_FAILURE_CODE
 
 
 async def test_dispatcher_timeout_leaves_the_job_running_and_unknown(

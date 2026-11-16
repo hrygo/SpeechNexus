@@ -133,9 +133,9 @@ VoiceDesign 无预算时创建任务有界排队，不能挤出实时实例或�
 
 表中顺序即判定顺序：前四行（常驻、隔离、在途、未归还租约）优先于释放报告，空闲锚点与冷却两行在释放报告之后。已终止的代次若仍持有租约，答案是"不回收（容量未归还）"而不是"已回收"，因为"已回收"承诺该代次容量已空。
 
-回收答案只是判断：它不写任何行、不发停止命令、不归还预算。停止仍由调度器在满足 drain 后发起，并与实例身份和当前 fencing 对齐。`reclaim_due` / `reclaimed` / `held` 是 gateway 内部推导值，不是机器契约枚举；该答案目前没有公开路由，也没有生产调用方——调度器侧的调用需要先改冻结的内部契约。它读取的事实都在既有链路上：代次、租约与执行行与 drain 报告同源，释放报告取自既有 verified-stop 投影（恢复扫描已在生产使用的同一接口与同一 `whole_instance_stop_evidence` 转换）。
+回收答案只是判断：它不写任何行、不发停止命令、不归还预算。停止仍由调度器在满足 drain 后发起，并与实例身份和当前 fencing 对齐。`reclaim_due` / `reclaimed` / `held` 是 gateway 内部推导值，不是机器契约枚举；该答案目前没有公开路由，也没有生产调用方——调度器侧的调用需要先改冻结的内部契约。它读取的事实都在既有链路上：代次、租约与执行行与 drain 报告同源；释放报告取自 node-controller 的 verified-stop 投影（恢复扫描已在生产使用的同一接口），由 `NodeStopEvidenceSource.release_evidence` 校验节点/网关/池/绑定/代次/fencing 与时间窗后**直接构造** `VoiceDesignReleaseEvidence`——回收路径不经 `whole_instance_stop_evidence`，那个转换器只在恢复扫描把已验证停止写成 `execution_stop_evidence` 行时使用。
 
-`execution_stop_evidence` 由两条既有车道写入：gateway 的 `record_stop`（经内部 verified-stop 接口读取 node-controller 到达 released 的 stop checkpoint）与 backend 的隔离释放车道（`quarantine_release_sql` 按既定预检写入同一张表）。回收路径只读这张表与 verified-stop 投影，不新增写者、不新增表。音色设计的停止回执复用同一次转换，不另存证据；引擎 sleep 应答、状态码变化、超时与断连都不构成释放证据，只有容器或进程终止且资源确认释放才记 `reclaimed`。
+`execution_stop_evidence` 由两条既有车道写入：gateway 的 `record_stop`（恢复扫描把经内部 verified-stop 接口读到的 released checkpoint 交给 `whole_instance_stop_evidence` 转换后写入）与 backend 的隔离释放车道（`quarantine_release_sql` 按既定预检写入同一张表）。回收路径**不读** `execution_stop_evidence`：它的租约与执行行来自 `admission_leases` / `submit_intents`，释放报告来自 verified-stop 投影；整条回收链不新增写者、不新增表。音色设计的停止回执只做校验、不写行，写入仍归恢复扫描的转换器；引擎 sleep 应答、状态码变化、超时与断连都不构成释放证据，只有容器或进程终止且资源确认释放才记 `reclaimed`。
 
 缺少停止证据不能把公开 Job 投影成失败。gateway 状态为 failed / aborted 时，backend 派发只接受两类形状：`cleanup_state = complete` 且停止证据是已验证种类（abort 应答、引擎终态应答、实例被控制器终止、运维核实终止），或 `not_required` 且未产生任何引擎请求。其余形状记稳定事件 `dispatch_stop_evidence_unverified`（含 Job、原因码、领取次数与租约仍持有）并返回 `stop_evidence_unverified`，Job 保持 running、租约继续持有。这是有意的挂住而不是自动终态：既有取消协调与 `cancellation_debt` 只覆盖 `cancelling` 且有 fence 的 Job，**不会**替 `running` 的这类 Job 收尾。可见面是与 `cancellation_debt` 同族的只读就绪探针 `stop_evidence_debt`，它把这类 Job 计数并逐个列名，永不因此让 `/readyz` 失败。处置是修生产端——让网关（或测试替身）的状态文档带上契约要求的 `cleanup_state` 与 `stop_evidence_kind`——而不是等它自己好；具体判定、detail 形态与处置见[生产 Job 文档的可见面一节](../components/production-jobs.md#隔离不了的时候可见面与处置)。
 

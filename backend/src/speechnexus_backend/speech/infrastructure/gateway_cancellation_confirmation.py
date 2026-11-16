@@ -22,7 +22,10 @@ from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.job_cancellation_reconciliation import (
     Confirmation,
 )
-from speechnexus_backend.speech.domain.job_dispatch import submit_intent_identity
+from speechnexus_backend.speech.domain.job_dispatch import (
+    VERIFIED_STOP_EVIDENCE_KINDS,
+    submit_intent_identity,
+)
 from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
     GatewayConnectionError,
     GatewayExecutionClient,
@@ -34,14 +37,6 @@ from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
 
 _NOT_FOUND = "control_execution_not_found"
 _ACTIVE = frozenset({"submitting", "executing", "stopping"})
-_STOP_EVIDENCE = frozenset(
-    {
-        "engine_abort_ack",
-        "engine_terminal_response",
-        "instance_terminated_by_controller",
-        "operator_verified_instance_terminated",
-    }
-)
 
 
 class CancellationSettlementPort(Protocol):
@@ -74,7 +69,7 @@ def verified_stop(document: Mapping[str, Any]) -> bool:
     return (
         document.get("execution_state") == "aborted"
         and document.get("cleanup_state") == "complete"
-        and document.get("stop_evidence_kind") in _STOP_EVIDENCE
+        and document.get("stop_evidence_kind") in VERIFIED_STOP_EVIDENCE_KINDS
     )
 
 

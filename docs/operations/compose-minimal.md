@@ -1499,6 +1499,66 @@ uv run speechnexus-qualification-provenance --schema speech
 周期收敛，同步 TTS 仍要求执行网关与该实例的 live 策略一致。边界与具名错误码见
 [builtin voice qualification](builtin-voice-qualification.md#外部托管引擎的-operator-声明资格)。
 
+### 同步 TTS 资格的部署前置
+
+§0–§7 装配的是**异步主链**与同步语音的基座。同步 TTS 要返回 `200`，还需要一组只由部署方
+提供的事实：四件测量原件、信任声明与声明请求、三个受限身份，以及一个真实引擎。它们不是本
+文件省略的步骤，也不由任何容器自动生成：`deploy/compose.yaml` 不转发这三条资格 DSN，角色
+口令与连接串都留在宿主。参考部署预置的资格相关内容只有 `sn_operator_attestation`（写入声明）
+与 `sn_qualification_reader`（只读审计）。因此在一套刚按 §0–§7 起好的栈上，同步 TTS 的稳定
+结果是 `503 backend_unavailable`。那是尚未提供的部署输入，既不是这套栈上可以现场修好的
+缺陷，也不是「本部署不支持 TTS」。
+
+**四件测量原件。** `speechnexus-attest-builtin-voice`、`speechnexus-publish-builtin-voice` 与
+`speechnexus-run-builtin-qualification` 读同一组原文件：artifact pin、
+`capacity-manifest.json`、`qualification-report.json` 与 `scenario-evidence.json`。仓库的
+`deploy/engines/file-tts-customvoice/` 只有 `README.md`、`artifact-pin.json`、
+`binding-definition.json`、`runtime-pin.json`、`template.example.json` 与
+`warmup-request.json`，没有这三份测量原件：它们只能由部署方在自己的 GPU 窗口测得，manifest
+的字段、产出与核对方式见 [capacity manifest](capacity-manifest.md)。
+
+**信任声明与声明请求。** 两份文件都是部署方的显式决定，不是命令能自行推导的输入：
+`speechnexus-operator-attested-engine-v1` 声明目标 installation、逐实例白名单、能力缺口与
+声明时长上限，`speechnexus-operator-attested-qualification-v1` 记录 voice/revision、binding
+与 revision、instance 与 generation、fencing、模板、镜像与模型制品摘要。格式与具名拒绝码见
+[外部托管引擎的资格声明角色](#外部托管引擎的资格声明角色-sn_operator_attestation)。
+
+**三个受限身份。** 由数据库 owner 按部署自己的评审结论创建，普通业务角色不得继承，也不得
+获得审批或发布写权限：
+
+| 身份 | 授权声明 | 服务入口 |
+| --- | --- | --- |
+| `sn_qualification_admission` | `public_job_admission_grants` + `qualification_admission_grants` | `speechnexus-run-builtin-qualification`：正常完整配方预算准入，加 probe 授权、准入与终止证据的受限读写 |
+| `sn_builtin_source_approval` | `builtin_source_approval_writer_grants` | `speechnexus-approve-builtin-source`：只追加来源批准 |
+| `sn_builtin_voice_publisher` | `publication_grants` + `builtin_publisher_grants` | `speechnexus-publish-builtin-voice`：写资格、`provenance`、publication 与 publication head |
+
+三条命令的连接串按 host 端口导出，与 `sn_operator_attestation` 同一条路径（本 Compose 不
+转发）：`SPEECHNEXUS_QUALIFICATION_ADMISSION_DATABASE_URL`、
+`SPEECHNEXUS_SOURCE_APPROVAL_WRITER_DATABASE_URL` 与 `SPEECHNEXUS_PUBLICATION_WRITER_DATABASE_URL`。
+`speechnexus-run-builtin-qualification` 的 `--issue` 与 `--approval-id` 另用独立资格 writer
+身份（`qualification_writer_grants`，`SPEECHNEXUS_QUALIFICATION_WRITER_DATABASE_URL`），
+不在这三个之内；写审批资格与发布权限分开是刻意的，见
+[builtin voice qualification](builtin-voice-qualification.md)。
+
+**真实引擎。** 执行网关私有 TTS 端点配置的 `address`/`port` 必须是 Compose 网络可达的真实
+引擎，`bearer_token` 必须是该引擎的 `VLLM_API_KEY`；
+`deploy/private/gateway-file-tts-endpoint.example.json` 的 `10.0.0.11:18101` 与 64 个 0 只是
+形状占位，直接使用会得到引擎的 `401`。
+
+**缺什么 → 观察到什么 → 怎么补：**
+
+| 缺的输入 | 观察到的现象 | 怎么补 |
+| --- | --- | --- |
+| 四件测量原件 | 两条 CLI 在任何写入前退出：`error: invalid attestation input: attestation_request_invalid`（退出码 `2`）与 `invalid private qualification input`（退出码 `2`） | 在真实 GPU 窗口按 [capacity manifest](capacity-manifest.md) 与 [qualification report](qualification-report.md) 测出原件，放仓库外、权限 `0600` |
+| 信任声明或声明请求 | 声明缺失为 `error: trust_declaration_missing`（退出码 `4`）；请求原件不合规同样是 `attestation_request_invalid`（退出码 `2`）。两者都零写入 | 按上文的声明格式准备两份文件，交由部署方评审并签署 |
+| 三个受限身份 | `pg_roles` 里没有这三个角色，资格事实表全为 `0`；`speechnexus-qualification-provenance` 输出全 `0`，`controller_observed` 与 `operator_attested` 皆无 | 建三个非 owner 角色并重放上表各自的授权声明，再按 host 端口导出连接串 |
+| 已发布且合格的内建声音 | 同步 TTS `503 backend_unavailable`，API 日志为 `Synchronous speech unavailable; no current qualified voice`（`backend/src/speechnexus_backend/speech_runtime.py:100`） | 先写来源批准与资格（控制器探针或 operator 声明），再用 `speechnexus-publish-builtin-voice` 发布 |
+| 真实引擎地址与 token | 照抄样例的 `10.0.0.11:18101` 与 64 个 0，引擎的 `/v1/models` 与 `/v1/audio/speech` 都回 `401`；换成真实地址与 `VLLM_API_KEY` 后两者都 `200` | 换成本部署引擎的地址、端口与该引擎的 `VLLM_API_KEY` |
+
+补齐顺序是身份与原件 → 来源批准 → 资格（控制器探针或 operator 声明）→ 发布 → 一次真实请求。
+五者齐备之前不会出现同步 TTS 的 `200`：[§11](#11-验证边界) 已把公开 TTS 排除在本 runbook 的
+本地验证范围之外，此处说明的正是它要求另取证的那部分。
+
 ### 预设发布资格输入与 sn_profile_writer 角色
 
 `POST /v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/publications` 在写入前只

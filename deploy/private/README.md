@@ -56,6 +56,14 @@ registration, plan digests equal to the registered instance, `policy_revision_id
 matching the voice qualification, a published non-retired voice — are in
 [deploy/README.md](../README.md) "Synchronous TTS assembly".
 
+The TTS endpoint descriptor next to it is what makes those preconditions reachable:
+`address` and `port` must be the real engine address reachable from the Compose
+network, and `bearer_token` must be that engine's `VLLM_API_KEY`. The 64 zeros in
+`gateway-file-tts-endpoint.example.json` are a shape placeholder only — used as
+committed, the engine answers `401` on the first request. Nothing in the file
+reaches the engine, so that `401` is not a startup error and no local checker can
+decide it; only a real request proves the address, the port and the token.
+
 `transcription-recipe.json` must use the exact approved runtime plan and
 binding/manifest identities. `recipe_digest` is the RFC 8785 canonical JSON
 SHA-256 with `recipe_digest` removed, as described in

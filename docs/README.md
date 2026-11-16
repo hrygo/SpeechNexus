@@ -16,6 +16,7 @@
 | [配置前提扫描](operations/configuration-prerequisites.md) | 哪些键配置了却不生效、当前是点名拒绝还是文档声明；含元守护的覆盖与盲区 |
 | [验证规则](validation/README.md) | CI 调度与契约变更结构检查的范围和限制 |
 | [上线前检查脚本](operations/release-preflight.md) | C0–C11 局部检查和 C12 独立验收要求；默认不写产品数据库，但会加载 shell 配置，可能访问网络及写缓存；另有历史候选假设 |
+| [MVP 0.1.0 发布说明](releases/mvp-0.1.0.md) | 版本标识（镜像 tag、包版本、契约 `info.version`、`contract_digest`）及其关系、已取证能力、部署入口、升级与回滚步骤（含迁移不可回退的核实过程）、11 条已知限制及逐条处置 |
 | [产品与架构设计](speechnexus-product-architecture.md)                                               | 产品范围、AdminUI / 工作台、领域与模块、场景预设、共享访问、部署与验收          |
 | [整体技术方案](architecture/technical-blueprint.md)                                                 | 技术基线、内部协议、执行配方、事务 / 迁移、Web / 内网 LLM、观测、发布与工程交接 |
 | [部署单元与平台规划](architecture/deployment-units.md) | 独立服务、平台与节点边界、当前入口/缺口及跨平台和多机验收 |

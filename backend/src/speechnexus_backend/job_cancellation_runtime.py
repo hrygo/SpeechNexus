@@ -5,11 +5,20 @@ PostgreSQL pool, reads the reconciliation schedule, confirms the gateway's
 durable execution fact, and closes a Job only through the public Job state
 machine. It is disabled unless explicitly enabled, and opening the runtime is
 the only place that creates a pool or a gateway client.
+
+Two ways out of `cancelling` are assembled here, and they are not
+interchangeable: a confirmed stop settles `cancelled` and releases the lease,
+while an acceptance whose confirmation window elapses is judged --
+`UnconfirmedCancellationSettlement` isolates the lease and closes the Job as
+`failed`/`cancellation_unconfirmed`. The judgment exists so that an accepted
+cancellation always reaches a definite capacity answer; without it the slot
+stayed reserved and reported as held by an execution nobody could vouch for.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 import uuid
 from collections.abc import Callable, Mapping
@@ -33,7 +42,9 @@ from speechnexus_backend.speech.application.public_jobs import (
     PublicJobs,
 )
 from speechnexus_backend.speech.domain.public_jobs import (
+    CANCELLATION_UNCONFIRMED,
     JobCancellationReceipt,
+    PublicJobConflictError,
     PublicJobNotFoundError,
     PublicJobUnavailableError,
 )
@@ -112,6 +123,13 @@ class JobCancellationSettings(BaseSettings):
         default=5.0,
         validation_alias="SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_MIN_AGE_SECONDS",
         ge=0,
+        le=3600,
+        allow_inf_nan=False,
+    )
+    confirm_timeout_seconds: float = Field(
+        default=300.0,
+        validation_alias="SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_CONFIRM_TIMEOUT_SECONDS",
+        gt=0,
         le=3600,
         allow_inf_nan=False,
     )
@@ -226,6 +244,60 @@ class _PublicJobsSettlement(CancellationSettlementPort):
             return False
 
 
+class UnconfirmedCancellationSettlement:
+    """Judge an accepted cancellation that never produced a verified stop.
+
+    The order matters. The lease is quarantined first, so a slot stops being
+    reported as held by an execution nobody can vouch for, and only then is the
+    Job closed as ``failed`` with ``error_code=cancellation_unconfirmed``. That
+    is the documented terminal for an unconfirmed cancel (see
+    ``docs/architecture/runtime-governance.md``), it makes ``cleanup_state``
+    report ``quarantined``, and it is what stops the public Job/cancel/retry
+    surfaces from claiming progress that is never going to arrive (#852).
+
+    Quarantine is authoritative only where the persisted execution facts allow
+    it: the domain refuses a lease whose execution never became
+    ``unknown_quarantined``/``quarantined``. Those cases are still judged -- the
+    Job must reach a terminal state -- but the lease keeps what its owner
+    recorded, because no release is sound without verified stop evidence
+    (#338). ``settle`` returns True only for a durably terminal Job, so the
+    caller keeps retrying a storage failure instead of forgetting the Job.
+    """
+
+    def __init__(
+        self,
+        jobs: PublicJobs,
+        capacity: PostgresLeaseSettler,
+        *,
+        reason_code: str = CANCELLATION_UNCONFIRMED,
+    ) -> None:
+        self._jobs, self._capacity, self._reason_code = jobs, capacity, reason_code
+
+    def settle(self, job_id: str) -> bool:
+        try:
+            job = self._jobs.get(job_id)
+        except PublicJobNotFoundError, PublicJobUnavailableError:
+            return False
+        if job.state == "cancelled":
+            return True
+        if job.state not in ("cancelling", "failed"):
+            return False
+        if job.state == "failed" and job.error_code != self._reason_code:
+            return False
+        # Best effort by design: the facts that authorize isolation are the
+        # gateway's, so a refusal here is a real "stop unproven" answer and must
+        # not prevent the terminal Job judgment below.
+        with contextlib.suppress(Exception):
+            self._capacity.quarantine_sync(job.job_id, reason_code=self._reason_code)
+        if job.state == "failed":
+            return True  # The judgment already committed; only the isolation was retried.
+        try:
+            current = self._jobs.advance(job.job_id, "failed", error_code=self._reason_code)
+        except JobOutcomeUnknownError, PublicJobConflictError, PublicJobUnavailableError:
+            return False
+        return current.state == "failed" and current.error_code == self._reason_code
+
+
 class _PublicJobsStop:
     """One stop through the existing acceptance service, never a new execution."""
 
@@ -319,10 +391,12 @@ class JobCancellationRuntime:
             self._reconciler = JobCancellationReconciler(
                 store=store,
                 confirmer=confirmer,
+                unconfirmed=UnconfirmedCancellationSettlement(jobs, capacity),
                 max_attempts=settings.max_attempts,
                 batch_size=settings.batch_size,
                 lease_seconds=settings.lease_seconds,
                 min_age_seconds=settings.min_age_seconds,
+                confirm_timeout_seconds=settings.confirm_timeout_seconds,
             )
             self._worker = CancellationReconciliationWorker(
                 self._reconciler, interval_seconds=settings.interval_seconds
@@ -364,5 +438,6 @@ __all__ = [
     "CancellationRuntimeUnavailableError",
     "JobCancellationRuntime",
     "JobCancellationSettings",
+    "UnconfirmedCancellationSettlement",
     "build_cancellation_runtime",
 ]

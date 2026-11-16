@@ -558,6 +558,13 @@ def test_reconciliation_store_lease_retry_settle_and_restart(fence_db: FenceSand
     assert row["settled_at_us"] == now + 2_000_000
 
 
+class _NoJudgment:
+    """Stand-in for the terminal judgment: these cases settle or stay pending."""
+
+    def settle(self, job_id: str) -> bool:
+        return False
+
+
 class _SettledAfterRestart:
     def __init__(self) -> None:
         self.calls = 0
@@ -577,6 +584,7 @@ def test_worker_restart_converges_and_does_not_repeat_settlement(fence_db: Fence
     first = JobCancellationReconciler(
         store=store,
         confirmer=confirmer,
+        unconfirmed=_NoJudgment(),
         max_attempts=3,
         batch_size=8,
         base_backoff_seconds=1,
@@ -590,6 +598,7 @@ def test_worker_restart_converges_and_does_not_repeat_settlement(fence_db: Fence
     restarted = JobCancellationReconciler(
         store=PostgresCancellationReconciliationStore(fence_db.speech),
         confirmer=confirmer,
+        unconfirmed=_NoJudgment(),
         max_attempts=3,
         batch_size=8,
         base_backoff_seconds=1,

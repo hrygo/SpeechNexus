@@ -262,10 +262,41 @@ request ID，不覆盖他人事实。
 记录 `attempts`、`next_check_at_us`、`last_outcome` 和 `settled_at_us`。worker 以短事务
 `INSERT … ON CONFLICT DO UPDATE … WHERE next_check_at_us <= now` 领取到期行，
 因此同一行不会被两个 worker 同时领取；处理在事务外进行，结果再按 job 条件写回。
-退避从 1 秒起翻倍并封顶，`max_attempts` 用尽后写 `exhausted`，不再无限重试；
+退避从 1 秒起翻倍并封顶；`exhausted` 是该账本唯一的「不再领取」标记，只有确认
+受理已被判定为终态时才写入，它表示判定已落库，不再表示 worker 放弃重试。
 进程重启从账本恢复，已 `settled` 的行不再领取。`CancellationReconciliationWorker` 按有界 interval 驱动 `run_once`；默认只领取受理
 超过 5 秒的围栏，避免与受理侧的即时停止重复竞争。未注入 `on_error` 时存储异常向上
 抛出，注入后记录并继续下一轮，便于组合根显式决定告警与退出策略。
+
+### 取消失败的终态判定
+
+受理过的取消必须在有界时间内到达一个明确的算力结论，不能停在 `cancelling`。
+判定有两条独立边界，任一到达即触发：受理时间加
+`SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_CONFIRM_TIMEOUT_SECONDS`（默认 300 秒，
+有界 1–3600），或 `max_attempts` 用尽。届时不再向网关提问——有界重试证明不了
+尚未证明的停止，继续提问只是推迟结论——而是执行一次终态判定：
+
+1. 先隔离租约：按 operation 找出全部租约，对每个租约调用 `LeaseService.quarantine`，
+   `reason_code=cancellation_unconfirmed`，`observed_at_us` 取数据库时钟。领域规则只
+   接受执行事实已是 `unknown_quarantined`/`quarantined` 的租约，其余拒绝并保持原状。
+2. 再把 Job 推进到 `failed`，`error_code=cancellation_unconfirmed`。`cleanup_state`
+   因此汇总为 `quarantined`：公开读模型显示 `failed/cancellation_unconfirmed`，再次取消
+   与自动重试都被拒绝为 `409 execution_cleanup_pending`（`retryable()` 为假），不再
+   回报「正在取消」。
+
+隔离使 `engine_instances.held_slots` 与 `workspace_quotas.held_attempts` 减一、
+`quarantined_slots`/`quarantined_attempts` 加一：容量仍然不可用，但不再被记成
+「某个执行正持有它」。这与「取消后等租约自然过期」不同：过期后仍未知的租约不得回归
+可用容量，只能经 `QuarantineReleaseService` 与 `/v1/nexus/...` 的操作员证词
+（`operator_verified_instance_terminated`）显式解除隔离。
+
+判定本身幂等：Job 已是 `cancelled` 时只补做隔离并返回成功，不把 `cancelled` 倒改写；
+Job 已是本错误码的 `failed` 时只补做隔离；其它终态或他人写入的 `failed` 不覆盖。
+隔离被拒绝或存储不可用不会阻止 Job 的终态判定——判定必须落库，隔离按退避重试，
+此时租约保持其持有者记录的状态，需 #338 的停止证据或操作员处置。
+
+执行已 `succeeded` 而后到的取消仍按同一判定收口，不再停在 `cancelling`；
+`settle_cancelled` 只在有停止证据时使用，判定路径从不把 `succeeded` 改写成 `cancelled`。
 
 只有两类事实允许推进 `cancelled`：网关回报上述“没有执行”终态，或既有停止路径
 验证到 `aborted`、`cleanup_state=complete` 且证据在 `engine_abort_ack`、
@@ -307,7 +338,8 @@ worker 角色使用 `public_job_grants` 与 `cancellation_reconciliation_grants`
    `GatewayCancellationConfirmer` 和 `CancellationReconciliationWorker` 装配在一起；
    `settle_cancelled` 走 `PublicJobs` 的 `status_version` 条件更新并随后归还租约，活跃
    执行通过 `JobCancellationService` + `GatewayJobCancellationStopper` 注入一次有界停止
-   尝试。
+   尝试；确认窗口到期的受理由 `UnconfirmedCancellationSettlement` 隔离租约并把 Job 落
+   `failed/cancellation_unconfirmed`（见上一节）。
 3. 派发器在提交点前观察到 Job 已是 `cancelling` 时写入 not-submitted 观察并返回
    `claim_lost`；收到 `gateway_barrier_fenced` 且 Job 仍是 `cancelling` 时返回 `skipped`，
    不调用 `_fail`。两种情况都由对账 worker 以网关“没有执行”事实结算为 `cancelled`。
@@ -325,8 +357,8 @@ worker 角色使用 `public_job_grants` 与 `cancellation_reconciliation_grants`
 `job_cancellation_worker.py` 是独立进程入口，默认关闭：
 `SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED=false` 时只打印关闭状态，
 不创建连接池、不读取网关；设置为 `true` 时才要求数据库 URL/schema、网关 URL 和
-credential 齐全。间隔、批量、最大尝试、最小受理年龄、租约和事务超时分别由
-`SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_{INTERVAL_SECONDS,BATCH_SIZE,MAX_ATTEMPTS,MIN_AGE_SECONDS,LEASE_SECONDS,TRANSACTION_TIMEOUT_SECONDS}`
+credential 齐全。间隔、批量、最大尝试、最小受理年龄、确认窗口、租约和事务超时分别由
+`SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_{INTERVAL_SECONDS,BATCH_SIZE,MAX_ATTEMPTS,MIN_AGE_SECONDS,CONFIRM_TIMEOUT_SECONDS,LEASE_SECONDS,TRANSACTION_TIMEOUT_SECONDS}`
 控制，均有上界。`--once` 只跑一轮，便于部署探针；常驻模式由 SIGINT/SIGTERM 停止。
 
 ```bash
@@ -334,8 +366,11 @@ SPEECHNEXUS_JOB_CANCELLATION_RECONCILIATION_ENABLED=true SPEECHNEXUS_DATABASE_UR
 ```
 
 worker 与派发器共享同一条 gateway 契约和停止服务；它不会创建新 execution，也不会把
-单独的 404、传输失败或未验证的 abort 当作停止。worker 角色需要 `public_job_grants`
-（读取 Job/submission、cancellation receipt 并条件更新 `state/status_version`）与
+单独的 404、传输失败或未验证的 abort 当作停止。未开启该 worker 的部署没有取消结论的
+推进者：受理后的 `cancelling` 会一直保留，租约继续计入 `held_slots`。参考部署
+`deploy/compose.yaml` 目前不包含该服务，需要按本节命令单独运行并确认开关为 `true`。
+worker 角色需要 `public_job_grants`（读取 Job/submission、cancellation receipt
+并条件更新 `state/status_version`）与
 `cancellation_reconciliation_grants`（围栏列 SELECT、账本读写、not-submitted SELECT）；
 两者都必须在升级到 `0035` 之后应用。启动探针同时检查 `speech_jobs`、
 `speech_job_submissions`、`speech_job_cancellations`、围栏、对账账本和 not-submitted 表，

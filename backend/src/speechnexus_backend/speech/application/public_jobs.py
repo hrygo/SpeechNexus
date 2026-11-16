@@ -25,6 +25,7 @@ from speechnexus_backend.speech.domain.admission import (
     PUBLIC_ADMISSION_CODES,
 )
 from speechnexus_backend.speech.domain.public_jobs import (
+    CANCELLATION_UNCONFIRMED,
     JobArtifactFact,
     JobCancellationReceipt,
     JobCancellationResult,
@@ -1155,7 +1156,7 @@ class PublicJobs:
         """
         identifier(job_id)
         parent = self.get(job_id)
-        if parent.state == "failed" and parent.error_code == "cancellation_unconfirmed":
+        if parent.state == "failed" and parent.error_code == CANCELLATION_UNCONFIRMED:
             raise JobCleanupPendingError
         if not retryable(parent):
             raise JobRetryNotAllowedError

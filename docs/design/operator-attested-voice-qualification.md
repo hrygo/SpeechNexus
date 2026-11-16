@@ -122,7 +122,7 @@ no_lifecycle_convergence_by_attestation  # 自证不收敛实例生命周期
 | `engine.template_id` | 节点模板 | 等于注册的 `approved_template_id` |
 | `engine.image_digest` | 节点模板镜像 | 等于 release 证据中该 stage pin 的 `image_digest`（独立来源） |
 | `engine.template_document` | 运维模板原件（`speechnexus-template-v1`） | 现场重算规范化摘要 = `template_digest`；`template.template_id`/`image_digest`/`engine_auth` 与注册、release 证据相符 |
-| `engine.lifecycle_document` | 运维生命周期原件（`speechnexus-external-lifecycle-v1`） | 现场重算规范化摘要 = `controller_artifact_digest`（沿用 `require_native_ready` 的字段名与语义位置）；文档内 `instance_id/instance_generation/fencing_token/image_digest/template_id/declared_by` 必须与其余输入相等 |
+| `engine.lifecycle_document` | 运维生命周期原件（`speechnexus-external-lifecycle-v1`） | 现场重算规范化摘要 = `declared_lifecycle_digest`（落库名；与 `require_native_ready` 的 `controller_artifact_digest` 在语义位置上对应，但前缀显式标明它是**声明**的快照）；文档内 `instance_id/instance_generation/fencing_token/image_digest/template_id/declared_by` 必须与其余输入相等 |
 | `model.{model_id,model_revision,model_artifact_digest}` | artifact pin + release 证据 | `model_artifact_digest` 必须命中 release 证据同一 stage pin 的 `model_digest`；`model_id/revision` 等于 artifact pin 的 `model` |
 | `capabilities` | 运维声明 | 逐项 ⊆ binding 定义 `parameter_domains.tts`；`max_input_codepoints` ≤ 域上限 |
 | `window.{observed_at,expires_at}` | 运维声明 | 带时区；`observed_at <= now < expires_at`；`expires_at-observed_at <= 声明上限`；`expires_at` ≤ 来源批准/ release 证据有效期 |

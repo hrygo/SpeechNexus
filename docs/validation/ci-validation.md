@@ -9,10 +9,10 @@ CI 使用[工作流](../../.github/workflows/ci.yml)和[标准库路由](../../s
 
 | 触发或变更 | 范围 |
 | --- | --- |
-| PR 仅修改任意层级的 `AGENTS.md` / `README*`（含 `web/AGENTS.md`、`tests/integration/AGENTS.md`、各级 `README.md`，例外见下）、`docs/` 内 Markdown、`.agents/skills/<skill>/` 内 Markdown / JSON / YAML | 路由回归、审查 PR 路径边界、Design Token 与契约消费者绑定静态门禁、Markdown 代码块格式检查（独立作业 `docs_format`）、`路径:行号` 引用门禁（独立作业 `docs_refs`）、差异检查、矩阵新鲜度检查（仅矩阵、关联源、快照或生成器变化时重渲染）、Node Controller 镜像范围检查与其门禁、最终门禁；镜像构建按独立范围判定，通常跳过。不安装项目依赖、不启动业务测试服务。差异检查以取得准确基线为前提；否则回退全量 |
-| PR 仅修改已知 Web 源码/静态资产，可混合上述文档 | Python 静态/契约检查、覆盖率数据采集、完整 Web 检查，以及 Web 能力道 `Integration 4`/`Integration 5`（真实后端 + PostgreSQL/MySQL/MinIO + 真实浏览器）；采集作业仍使用私有 PostgreSQL 和 MinIO，DB-only 分片 0–3、覆盖率判定与部署检查不适用 |
-| PR 仅修改已知独立引擎目录或明确列出的引擎单元测试，可混合上述 Web/文档 | `no-db`：保留 Python 静态/契约检查、覆盖率数据采集、完整 Web、构建和部署检查；采集作业仍使用私有 PostgreSQL 和 MinIO，八个双数据库集成分片、覆盖率判定及其汇总不适用 |
-| CI、脚本、测试、依赖、配置、契约、迁移、部署、其他路径或空/不确定差异 | 完整 Python/Web/部署检查，八个 PG/InnoDB/MinIO 分片及证据汇总 |
+| PR 仅修改任意层级的 `AGENTS.md` / `README*`（含 `web/AGENTS.md`、`tests/integration/AGENTS.md`、各级 `README.md`，例外见下）、`docs/` 内 Markdown、`.agents/skills/<skill>/` 内 Markdown / JSON / YAML | 路由回归、审查 PR 路径边界、Design Token 与契约消费者绑定静态门禁（以上合并为一个不筛范围、不安装依赖的 `guards` 作业）、Markdown 代码块格式检查（独立作业 `docs_format`）、`路径:行号` 引用门禁（独立作业 `docs_refs`）、差异检查、矩阵新鲜度检查（仅矩阵、关联源、快照或生成器变化时重渲染）、Node Controller 镜像范围检查与其门禁、最终门禁；镜像构建按独立范围判定，通常跳过。不安装项目依赖、不启动业务测试服务。差异检查以取得准确基线为前提；否则回退全量 |
+| PR 仅修改已知 Web 源码/静态资产，可混合上述文档 | Python 静态/契约检查、覆盖率数据采集、完整 Web 检查，以及 Web 能力道 `Integration 8`–`Integration 11`（真实后端 + PostgreSQL/MySQL/MinIO + 真实浏览器）；采集作业仍使用私有 PostgreSQL 和 MinIO，DB-only 分片 0–7、覆盖率判定与部署检查不适用 |
+| PR 仅修改已知独立引擎目录或明确列出的引擎单元测试，可混合上述 Web/文档 | `no-db`：保留 Python 静态/契约检查、覆盖率数据采集、完整 Web、构建和部署检查；采集作业仍使用私有 PostgreSQL 和 MinIO，十二个双数据库集成分片、覆盖率判定及其汇总不适用 |
+| CI、脚本、测试、依赖、配置、契约、迁移、部署、其他路径或空/不确定差异 | 完整 Python/Web/部署检查，十二个 PG/InnoDB/MinIO 分片及证据汇总 |
 | `main` push、手动运行及未知事件 | 始终全量 |
 
 精确白名单以路由脚本为准。新增应用、资源类型或目录默认全量；缩窄范围前先证明其不依赖被省略的验证，并添加回归。
@@ -84,12 +84,13 @@ Node Controller 镜像验证由 CI 以同提交的 [reusable workflow](../../.gi
 
 | job ID | Actions 显示名称 | 实际职责 |
 | --- | --- | --- |
-| `routing` | `Route: scope, review boundary and design tokens` | 检查路由边界、审查 PR 改动路径边界、Design Token 与生成契约消费者绑定，按准确差异选择范围 |
-| `python_tests` | `Python: tests, coverage and build` | Python 单元、契约、CI、Workbench PG/Runtime 及选定 Speech PG 测试，导出两 worker 覆盖率数据集（不判定）、媒体工具链及 Python 包构建 |
+| `routing` | `Route: scope and review boundary` | 按准确差异选择范围，并审查 PR 改动路径边界；不安装项目依赖、不跑任何测试，因此它在 checkout 后十余秒内发布 `mode`/`excluded_shards`，所有重作业随即启动 |
+| `guards` | `Guards: routing boundaries, design tokens and contract consumers` | 不筛范围的轻量守卫：`tests/ci` 路由回归、Design Token 校验、生成契约消费者绑定。只用系统 Python 与 Node，不安装项目依赖；结果被最终门禁无条件要求；与 `routing` 并行，因此不再把重作业挡在约 25 秒的串行前缀之后 |
+| `python_tests`（矩阵两腿） | `Python: tests, coverage and build (part a|b)` | Python 单元、契约、CI 测试，导出四 worker 覆盖率数据集（不判定）、媒体工具链及 Python 包构建；集成标记的 Workbench/Speech PG 模块由十二个分片执行并采集覆盖数据，此作业不重复执行 |
 | `python_static` | `Python: lint, types and contract compatibility` | Ruff、mypy、模块边界、生成漂移、协议兼容与 schema 校验 |
-| `integration_plan` | `Integration plan: one collection selects every partition's tools` | 只在展开分片的路由（`full`/`web`）执行：一次 pytest 完整收集发布八片的 `browser`/`node_contracts` 工具需求，供各分片读取；分片自身的执行与证据校验不依赖它 |
-| `integration_shards` | `Integration 0/8`–`5/8: PG/MySQL/MinIO`；`Integration 6/8`–`7/8: Web + PG/MySQL/MinIO` | 八个真实隔离服务分片；混合集合中的浏览器与 Node HTTP 消费者只分配到后两片（6、7），普通 DB 用例按估算成本分配到全部八片，工具需求读取 `integration_plan` 的发布结果并 fail-closed 校验。`full` 展开八片；`web` 只展开 6、7 两片（`excluded_shards` 排除 0–5），`docs`/`no-db` 跳过整个作业 |
-| `integration_gate` | `Gate: integration partitions and merged coverage` | 验收八片成功及同提交、完整互斥集合、实际执行证据；下载八份分片覆盖数据与采集作业数据集，合并后按 80% 判定一次，不在此节点重新执行测试。仍只在 `full` 范围执行 |
+| `integration_plan` | `Integration plan: one collection selects every partition's tools` | 只在展开分片的路由（`full`/`web`）执行：一次 pytest 完整收集发布十二片的 `browser`/`node_contracts` 工具需求，供各分片读取；分片自身的执行与证据校验不依赖它 |
+| `integration_shards` | `Integration 0/12`–`7/12: PG/MySQL/MinIO`；`Integration 8/12`–`11/12: Web + PG/MySQL/MinIO` | 十二个真实隔离服务分片，`max-parallel: 12` 同时启动；混合集合中的浏览器与 Node HTTP 消费者只分配到后四片（8–11），普通 DB 用例按估算成本分配到全部十二片，工具需求读取 `integration_plan` 的发布结果并 fail-closed 校验。`full` 展开十二片；`web` 只展开 8–11 四片（`excluded_shards` 排除 0–7），`docs`/`no-db` 跳过整个作业。每片内部再用 pytest-xdist `-n 2 --dist loadfile` 并发两个 worker |
+| `integration_gate` | `Gate: integration partitions and merged coverage` | 验收十二片成功及同提交、完整互斥集合、实际执行证据；下载十二份分片覆盖数据与采集作业数据集，合并后按 80% 判定一次，不在此节点重新执行测试。仍只在 `full` 范围执行 |
 | `python_gate` | `Gate: Python tests and static checks` | 要求 Python 执行与静态/契约两个作业均成功，不执行测试 |
 | `controller_image` | `Node Controller: image evidence` | 调用镜像 scope、双架构构建与内部证据门禁，按输入差异决定是否构建 |
 | `docs_format` | `Docs: markdown code block formatting` | 以与 `uv.lock` 一致的锁定 Ruff 复跑 `ruff format --check .`（含 Markdown 内 Python 代码块）；只在 `docs` 范围执行，只装 Ruff 自身，不安装项目依赖 |
@@ -100,17 +101,22 @@ Node Controller 镜像验证由 CI 以同提交的 [reusable workflow](../../.gi
 | `compose` | `Compose: configuration validation` | 执行 `docker compose config --quiet`，不启动服务或发布部署 |
 | `reference_acceptance` | `Deploy: reference acceptance entry (dry run)` | 真实执行 `scripts/dev-env/reference-acceptance.py --dry-run`：工具版本、派生环境键、compose 渲染、三条 Job DSN 身份、迁移 head、桶名与派生出的私有输入；`ci-entry-guard.py` 的 `log`/`sites`/`probe`/`wiring` 四条结构守卫（输出契约与延后项登记、写命令清单与 `ctx.read` 只读边界、纯判定函数探针、作业接线），并比对文档锚点块里的登记表与自检语料；另做一条损坏环境的负对照，不启动服务或执行写步骤 |
 
-完整范围要求覆盖率、契约生成漂移及八个真实双数据库分片；契约兼容和结构变更的基线比较仅在 PR 执行，`main` push 与手动全量运行不会执行这些 PR 专属步骤。比较步骤获取当时的目标分支头作为基线，与路由使用的事件准确 base SHA 是不同依据。集成汇总继续核对同一提交、完整收集、互斥并集和实际执行结果，不以数量或仅收集代替证据。唯一允许的跳过是 `tests/integration/test_gateway_submit_ledger.py` 中以 `[mysql]` 结尾的既有 PostgreSQL 专属产品适配器参数；这不构成 MySQL 协调路径通过的证据，其他必需用例跳过会使汇总失败。
+完整范围要求覆盖率、契约生成漂移及十二个真实双数据库分片；契约兼容和结构变更的基线比较仅在 PR 执行，`main` push 与手动全量运行不会执行这些 PR 专属步骤。比较步骤获取当时的目标分支头作为基线，与路由使用的事件准确 base SHA 是不同依据。集成汇总继续核对同一提交、完整收集、互斥并集和实际执行结果，不以数量或仅收集代替证据。唯一允许的跳过是 `tests/integration/test_gateway_submit_ledger.py` 中以 `[mysql]` 结尾的既有 PostgreSQL 专属产品适配器参数；这不构成 MySQL 协调路径通过的证据，其他必需用例跳过会使汇总失败。
 
-Python 测试作业通过 `python-coverage.py run --workers 2` 在同一 runner 内并发两个 `workbench-pg-probe.py --full-coverage` 进程，运行配置的非集成测试目录、脚本显式列出的 Workbench PG／Runtime 文件，以及发布证据、绑定生命周期和停用意图三个 Speech PG 测试文件；该作业只测量并导出数据，不做覆盖率判定。Workbench 文件按 `WORKBENCH_PG_TESTS` 和 `WORKBENCH_RUNTIME_TESTS` 清单选择，新增文件不会自动进入此作业；标记为 `integration` 的用例由独立分片收集和执行；未带该标记的用例不因此自动进入分片，真实模型资格测试见下文。各进程独占临时 PG、Unix socket 与 coverage 文件；Speech PG 测试在 full coverage 模式使用同一 worker 的私有 socket，不连接 runner 的系统数据库。集成分片仍使用显式配置的双库地址。作业仍只准备一次依赖及隔离 MinIO。父进程先准备四个 fixture 共用的 `speechnexus-workbench-saved` 测试桶，避免两个进程首次创建竞态；其对象按随机 project 前缀隔离，其余桶按文件独占或随机命名。测试按完整收集的文件分组，文件内用例不拆开，较大文件先分到当前用例数较少的一组；这是确定性的数量均衡，不是耗时均衡。
 
-每片保留原完整覆盖源与 branch 配置，只在片内使用 `--cov-fail-under=0` 采集局部数据，并固定导出到 `coverage-<shard>.data`。父进程必须确认两片执行成功、私有 PG 已停止、同一 SHA/配置、相同完整 collection、精确分配且互斥并集覆盖全集、每个结果实际通过及覆盖数据摘要一致，然后复制各片原始数据并按 worker 归档为 `workbench-pg-coverage-parts/coverage-<worker>.data`，连同汇总以 `workbench-pg-full-coverage` 上传；覆盖率不足不由该作业判定，因此数据照常保留。若采集步骤已运行且失败、作业未取消，工作流尝试上传已生成的日志及分片／生命周期／汇总报告；步骤未运行、作业取消或上传失败时不能保证留存。测试或执行证据校验失败不会生成合格的覆盖数据集。入口拒绝任何非空 `PYTEST_ADDOPTS`，即使其选项不缩小集合；完整集合以 pytest 收集时各 worker 观察到的结果为准，同一插件或配置在两片共同遗漏用例时，同集与分配校验不能独立发现，仍须审查测试根目录、pytest 配置和插件变更。直接使用 `scripts/dev-env/workbench-pg-probe.py` 的 `--full-coverage` 模式是单次 pytest、只覆盖非集成范围的本地检查，仍沿用项目 `fail_under = 80`：只被集成测试执行的新增代码会让它失败，而 CI 的合并门禁通过。本机要按门禁口径复核时使用上文的 `combine` 路径，或在该模式下自行加 `--cov-fail-under=0` 只看数据。`--coverage` 仍是独立的 C 层 90% 检查。两种模式都须安装锁定依赖并提供 `--pg-bin`，运行前置条件见[验证指南](../agent-verification.md)，具体参数可用 `uv run python scripts/dev-env/workbench-pg-probe.py --help` 查看。
 
-分片不再各自收集：`integration_plan` 作业在安装锁定依赖后用 `uv run python scripts/dev-env/integration-shards.py plan --count 8` 实际收集完整 integration nodeid（包括参数化身份），一次性为八片发布 `browser_<i>` 与 `node_contracts_<i>` 布尔需求；此前每片在测试执行前串行重复一次完整收集，实测 10–14 s/片、每 full 路由约 98 runner 秒。`*_browser.py` 与两个合成浏览器探针模块声明浏览器依赖；回归核对当前所有 Node 浏览器探针消费者均被分类。收集错误或设置了非空 `PYTEST_ADDOPTS` 均会失败，即使该选项本身不缩小选择，也不能输出“无需工具”放行。各分片在读取需求前先校验本片的两个取值严格为 `true`/`false`，缺失或畸形取值在安装任何 Web/Node 依赖之前直接红灯。计划作业失败或被跳过时，分片随之跳过、两级门禁照常变红（fail closed）。证据保真不变：实际执行和报告的互斥并集核验仍从每片自身 collection 独立重算，plan 与实际收集的分歧无法通过门禁。预检记录 pytest 最终收集结果，未单独校验所有插件对收集的影响；汇总比较各片报告的相同全集，也不能独立发现所有分片共同遗漏的用例。须保持受控依赖与 pytest 配置，并审查收集范围的变更。
+拆分后的首次绿色运行（2026-11-16，run 43813742783）：两腿分别为 245 s 与 183 s，十二个分片全部通过（146–272 s，启动跨 +48…+117 s），端到端 402 s；门禁 41 s。此前单作业测量稳定占用 285–451 s，是最长作业；现在关键路径回到分片尾部与门禁。同期观察：三 worker 片内并行会让 `test_startup_authority_561.py` 在共享集群上触发PostgreSQL `tuple concurrently updated`，因此片内并行为 2。
+Python 测试作业是两个矩阵腿：每腿执行 `python-coverage.py run --workers 4 --partitions 8 --index-base {0|4}`，在 runner 内并发四个 `workbench-pg-probe.py --full-coverage` 进程，只运行非集成测试目录（`tests/unit`、`tests/contract`、`tests/ci` 与 `tests/integration/test_probe_inventory.py`）；该作业只测量并导出数据，不做覆盖率判定。集成标记的 39 个 Workbench／Runtime／Speech PG 模块由十二个分片执行，其覆盖数据在同一门禁里合并，因此在测量作业里再跑一遍只增加时长、不增加被覆盖的代码行（2026-11-16 之后不再重复）。标记为 `integration` 的用例由独立分片收集和执行；未带该标记的用例不因此自动进入分片，真实模型资格测试见下文。各进程独占临时 PG、Unix socket 与 coverage 文件；Speech PG 测试在 full coverage 模式使用同一 worker 的私有 socket，不连接 runner 的系统数据库。集成分片仍使用显式配置的双库地址。作业仍只准备一次依赖及隔离 MinIO。父进程先准备四个 fixture 共用的 `speechnexus-workbench-saved` 测试桶，避免四个进程首次创建竞态；其对象按随机 project 前缀隔离，其余桶按文件独占或随机命名。测试按完整收集的文件分组，文件内用例不拆开，较大文件先分到当前用例数较少的一组；这是确定性的数量均衡，不是耗时均衡。
 
-完整集合同时含普通用例与 Web 工具消费者时，仍保留六条 DB-only 道和 Web 能力道：浏览器与显式 Node 契约用例只落在 Web 能力道，普通 DB 用例按估算成本分配到全部八片。每片的目标是等量估算成本，而不是等量用例数：一个 Web 用案例按 `WEB_CASE_WEIGHT = 5` 折算（2026-11-06 两次完整运行中两类用例的实测单例耗时比为 3.4–6.4 倍，类均值为 4.6–5.5 倍，取 5），Web 能力道因此少收普通用例。分配使用 nodeid 的 SHA-256 排序、最大余数法配额和确定性取整；八片各自从完整收集独立算出同一结果，不依赖共享状态或历史制品。Web 用例在 Web 能力道间按 hash 顺序轮转，使各道用例数最多相差 1。一类用例单独存在时，仍按 nodeid 的 SHA-256 取模使用全部分片。通用入口仍接受 1–16 片，混合类别为 Web 工具保留 `max(1, count // 3)` 片；单片执行整个集合。预检、执行和报告检查使用同一个 `partition`，工具需求仍根据实际选中用例计算，不能在工作流里按编号跳过工具或业务测试。
+每片保留原完整覆盖源与 branch 配置，只在片内使用 `--cov-fail-under=0` 采集局部数据，并固定导出到 `coverage-<shard>.data`。父进程必须确认四片执行成功、私有 PG 已停止、同一 SHA/配置、相同完整 collection、精确分配且互斥并集覆盖全集、每个结果实际通过及覆盖数据摘要一致，然后复制各片原始数据并按 worker 归档为 `workbench-pg-coverage-parts/coverage-<worker>.data`，连同汇总以 `workbench-pg-full-coverage` 上传；覆盖率不足不由该作业判定，因此数据照常保留。若采集步骤已运行且失败、作业未取消，工作流尝试上传已生成的日志及分片／生命周期／汇总报告；步骤未运行、作业取消或上传失败时不能保证留存。测试或执行证据校验失败不会生成合格的覆盖数据集。入口拒绝任何非空 `PYTEST_ADDOPTS`，即使其选项不缩小集合；完整集合以 pytest 收集时各 worker 观察到的结果为准，同一插件或配置在四片共同遗漏用例时，同集与分配校验不能独立发现，仍须审查测试根目录、pytest 配置和插件变更。直接使用 `scripts/dev-env/workbench-pg-probe.py` 的 `--full-coverage` 模式是单次 pytest、只覆盖非集成范围的本地检查，仍沿用项目 `fail_under = 80`：只被集成测试执行的新增代码会让它失败，而 CI 的合并门禁通过。本机要按门禁口径复核时使用上文的 `combine` 路径，或在该模式下自行加 `--cov-fail-under=0` 只看数据。`--coverage` 仍是独立的 C 层 90% 检查。两种模式都须安装锁定依赖并提供 `--pg-bin`，运行前置条件见[验证指南](../agent-verification.md)，具体参数可用 `uv run python scripts/dev-env/workbench-pg-probe.py --help` 查看。
 
-该分组的目的不是把 Web 用例移入 DB 道，而是让 Web 能力道承担普通 DB 工作，从而使八个分片的实测 pytest 执行时间接近。Web 能力道另需安装 Web 依赖、构建入口并安装 Chromium，这部分固定开销不计入 `elapsed_seconds`；划分只均衡实测执行时间，不试图抵消该开销，也不改变 job 预算。
+分片不再各自收集：`integration_plan` 作业在安装锁定依赖后用 `uv run python scripts/dev-env/integration-shards.py plan --count 12` 实际收集完整 integration nodeid（包括参数化身份），一次性为十二片发布 `browser_<i>` 与 `node_contracts_<i>` 布尔需求；此前每片在测试执行前串行重复一次完整收集，实测 10–14 s/片（2026-11-16 的十二片拓扑下为 12 片 × 10–14 s ≈ 120–170 runner 秒）。`*_browser.py` 与两个合成浏览器探针模块声明浏览器依赖；回归核对当前所有 Node 浏览器探针消费者均被分类。收集错误或设置了非空 `PYTEST_ADDOPTS` 均会失败，即使该选项本身不缩小选择，也不能输出“无需工具”放行。各分片在读取需求前先校验本片的两个取值严格为 `true`/`false`，缺失或畸形取值在安装任何 Web/Node 依赖之前直接红灯。计划作业失败或被跳过时，分片随之跳过、两级门禁照常变红（fail closed）。证据保真不变：实际执行和报告的互斥并集核验仍从每片自身 collection 独立重算，plan 与实际收集的分歧无法通过门禁。预检记录 pytest 最终收集结果，未单独校验所有插件对收集的影响；汇总比较各片报告的相同全集，也不能独立发现所有分片共同遗漏的用例。须保持受控依赖与 pytest 配置，并审查收集范围的变更。
+
+完整集合同时含普通用例与 Web 工具消费者时，仍保留八条 DB-only 道和 Web 能力道：浏览器与显式 Node 契约用例只落在 Web 能力道，普通 DB 用例按估算成本分配到全部十二片。每片的目标是等量估算成本，而不是等量用例数：一个 Web 用案例按 `WEB_CASE_WEIGHT = 5` 折算（2026-11-06 两次完整运行中两类用例的实测单例耗时比为 3.4–6.4 倍，类均值为 4.6–5.5 倍，取 5），Web 能力道因此少收普通用例。分配使用 nodeid 的 SHA-256 排序、最大余数法配额和确定性取整；十二片各自从完整收集独立算出同一结果，不依赖共享状态或历史制品。Web 用例在 Web 能力道间按 hash 顺序轮转，使各道用例数最多相差 1。一类用例单独存在时，仍按 nodeid 的 SHA-256 取模使用全部分片。通用入口仍接受 1–16 片，混合类别为 Web 工具保留 `max(1, count // 3)` 片（十二片时为 8–11 四片）；单片执行整个集合。预检、执行和报告检查使用同一个 `partition`，工具需求仍根据实际选中用例计算，不能在工作流里按编号跳过工具或业务测试。
+
+片内并发：每片以显式 nodeid 调用 pytest，并加 `-n 2 --dist loadfile` 让两个 worker 分担用例。分片器先在同进程内解析一次完整 inventory，再把自己那份 nodeid 作为参数交给 pytest；xdist 下 collection 由 worker 完成，控制端等到调度之后才 deselect 会让每个 worker 跑完整套件，因此选择必须体现在命令行上。`loadfile` 保证同文件用例（含模块级 fixture 与 TRUNCATE 复位）留在同一 worker。`tests/integration/AGENTS.md` 要求每个用例使用唯一 schema/数据库名，这是片内并发的前提。`--workers` 由 `workbench-pg-probe.py --shard-workers` 透传，默认 2、上限 4。共享固定桶名的模块改用 `tests/support/minio_bucket.py::ensure_bucket`：`bucket_exists` + `make_bucket` 是 check-then-act，两个 worker 同时启动模块 fixture 时后者会拿到 `BucketAlreadyOwnedByYou`，该结果按成功处理，其它 S3 错误照常上抛。对象仍按随机 project 前缀隔离，因此同桶并发不改变断言。
+
+该分组的目的不是把 Web 用例移入 DB 道，而是让 Web 能力道承担普通 DB 工作，从而使十二个分片的实测 pytest 执行时间接近。Web 能力道另需安装 Web 依赖、构建入口并安装 Chromium，这部分固定开销不计入 `elapsed_seconds`；划分只均衡实测执行时间，不试图抵消该开销，也不改变 job 预算。
 
 有 `browser` 需求的分片安装完整锁定 Web 依赖、构建两个实际入口，并安装相同版本 Chromium headless shell 及系统依赖后运行测试；只有 Node 契约消费者的分片保留锁定生产依赖安装；数据库分片不安装浏览器。需求随真实 nodeid 分区计算，不在 workflow 中固定某几个分片号。汇总 `check` 子命令与 `tests/ci` 轻量路由回归继续仅依赖 Python 标准库。
 
@@ -186,11 +192,11 @@ python3 -m unittest discover -s tests/ci -v
 
 ## 覆盖率门禁、采集边界与结构性余量
 
-覆盖率数据在 `python_tests` 作业采集、在 `integration_gate` 汇总作业判定一次。判定对象是 `[tool.coverage.run].source` 列出的全部生产包，参数为 `branch = true`、`[tool.coverage.report].fail_under = 80`、`skip_covered = true`、`show_missing = true`。数据来源是全量路由实际执行的两类覆盖数据：`python-coverage.py run --workers 2` 导出的两份 `coverage-<worker>.data`，覆盖上文列出的四个测试集合（`tests/unit`、`tests/contract`、`tests/ci`、`tests/integration/test_probe_inventory.py`）加 `WORKBENCH_PG_TESTS`、`WORKBENCH_RUNTIME_TESTS` 与 `SPEECH_PG_COVERAGE_TESTS`；以及八个集成分片各自导出的 `coverage-<shard>.data`，覆盖 `tests/integration` 下其余用例。汇总用 `python-coverage.py combine` 合并十份数据（两份 Python worker 加八份分片），再以 `coverage report --rcfile pyproject.toml` 判定。采集作业与分片都不判定，同一门槛只在一处生效。
+覆盖率数据在 `python_tests` 作业采集、在 `integration_gate` 汇总作业判定一次。判定对象是 `[tool.coverage.run].source` 列出的全部生产包，参数为 `branch = true`、`[tool.coverage.report].fail_under = 80`、`skip_covered = true`、`show_missing = true`。数据来源是全量路由实际执行的两类覆盖数据：`python-coverage.py run --workers 4` 导出的四份 `coverage-<worker>.data`，覆盖上文列出的四个测试集合（`tests/unit`、`tests/contract`、`tests/ci`、`tests/integration/test_probe_inventory.py`）加 `WORKBENCH_PG_TESTS`、`WORKBENCH_RUNTIME_TESTS` 与 `SPEECH_PG_COVERAGE_TESTS`；以及十二个集成分片各自导出的 `coverage-<shard>.data`，覆盖 `tests/integration` 下其余用例。汇总用 `python-coverage.py combine` 合并十六份数据（四份 Python worker 加十二份分片），再以 `coverage report --rcfile pyproject.toml` 判定。采集作业与分片都不判定，同一门槛只在一处生效。
 
-汇总作业对每份数据校验名称、存在性、大小、SHA-256 与 branch 数据，并要求采集作业结果为成功、八片结果均为成功、数据摘要与分片报告一致；任一份缺失、为空、被替换或采集作业未成功都直接失败，不会退化为「只用采集作业的数据判定通过」。合并结果写入 `merged.json`（数据份数、合并百分比、判定结果），同时以 `merged-python-coverage` 制品留存。
+汇总作业对每份数据校验名称、存在性、大小、SHA-256 与 branch 数据，并要求采集作业结果为成功、十二片结果均为成功、数据摘要与分片报告一致；任一份缺失、为空、被替换或采集作业未成功都直接失败，不会退化为「只用采集作业的数据判定通过」。合并结果写入 `merged.json`（数据份数、合并百分比、判定结果），同时以 `merged-python-coverage` 制品留存。
 
-覆盖率判定只存在于执行八个分片的全量路由（`full`）。`web` 与 `no-db` 路由仍采集数据但不判定，这是「判定与采集同源」的直接结果，作为已知覆盖缺口记入下文维护事项。
+覆盖率判定只存在于执行十二个分片的全量路由（`full`）。`web` 与 `no-db` 路由仍采集数据但不判定，这是「判定与采集同源」的直接结果，作为已知覆盖缺口记入下文维护事项。
 
 判定函数是 `coverage.results.should_fail_under`，语义为 `round(total, 0) < fail_under`：**79.5%–79.99% 通过、低于 79.5% 失败**，失败输出 `Coverage failure: total of N is less than fail-under=80`。`total` 是语句与分支的加权覆盖率 `(已覆盖语句 + 已覆盖分支) / (语句 + 分支)`，不是语句覆盖率。
 
@@ -281,8 +287,8 @@ python3 -m unittest discover -s tests/ci -v
 | --- | --- |
 | [.github/workflows/ci.yml](../../.github/workflows/ci.yml) | 分片步骤导出 `coverage-<shard>.data` 并随分片制品上传；`integration_gate` 下载两类数据、校验、合并并判定；超时 10 分钟 |
 | [scripts/dev-env/integration-shards.py](../../scripts/dev-env/integration-shards.py) | `run` 子命令以 `--cov --cov-fail-under=0 --cov-report=` 采集，固定 `COVERAGE_FILE`，在报告里记录数据文件名与 SHA-256；`check` 校验执行证据与数据摘要 |
-| [scripts/dev-env/download-integration-evidence.py](../../scripts/dev-env/download-integration-evidence.py) | 分片制品按三份固定成员下载；`workbench-pg-full-coverage` 按白名单提取汇总与两份 worker 数据；名称、数量、大小、摘要不符即失败 |
-| [scripts/dev-env/python-coverage.py](../../scripts/dev-env/python-coverage.py) | `run` 只测量并导出两 worker 数据与 `workbench-pg-full-coverage`；`combine` 校验八份数据、合并、按 `pyproject.toml` 判定，并写 `merged.json` |
+| [scripts/dev-env/download-integration-evidence.py](../../scripts/dev-env/download-integration-evidence.py) | 分片制品按三份固定成员下载；`workbench-pg-full-coverage` 按白名单提取汇总与各 worker 数据（当前四份）；名称、数量、大小、摘要不符即失败 |
+| [scripts/dev-env/python-coverage.py](../../scripts/dev-env/python-coverage.py) | `run` 只测量并导出四 worker 数据与 `workbench-pg-full-coverage`；`combine` 校验十六份数据（四份 worker 加十二份分片）、合并、按 `pyproject.toml` 判定，并写 `merged.json` |
 | [pyproject.toml](../../pyproject.toml) | **不改**：`fail_under = 80`、`source`、`branch` 均维持现状 |
 
 这属于门禁治理变更（改变判定所在作业与必要检查的证据构成）；`ci.yml` 的判定位置变化须与本节、`main` 的 required status checks 说明保持同步。
@@ -292,8 +298,8 @@ python3 -m unittest discover -s tests/ci -v
 两条命令即可复现（本机需可用的隔离 PostgreSQL、MinIO、MySQL 与 `SPEECHNEXUS_TEST_*` 变量；采集范围还需 `--pg-bin` 指向含 `initdb`/`pg_ctl` 的目录）：
 
 ```sh
-# 1) 采集作业范围：两 worker 数据写到 /tmp/cov/job-parts，汇总在 /tmp/cov/job.json
-uv run python scripts/dev-env/python-coverage.py run --pg-bin <pg-bin> --workers 2 --output /tmp/cov/job.json
+# 1) 采集作业范围：四 worker 数据写到 /tmp/cov/job-parts，汇总在 /tmp/cov/job.json
+uv run python scripts/dev-env/python-coverage.py run --pg-bin <pg-bin> --workers 4 --output /tmp/cov/job.json
 
 # 2) 合并判定：--job-parts 与 --integration-dir 指向两类数据目录，输出 merged.json 与合并数据
 uv run python scripts/dev-env/python-coverage.py combine \
@@ -469,6 +475,59 @@ uv run python scripts/dev-env/python-coverage.py combine \
 
 **本轮结论**：依赖源与重试改善的是**有效结论率**（但 mypy 漏检造成的返工说明本地验证必须覆盖全部 CI 门禁）；提高并行度针对 **wall clock**，代价是 **runner 分钟上升**；消除重复 collection 同时改善 wall clock 与 runner 秒（每片少付一次收集、全局只付一次）。两者都不是免费提速。后续任何「提速」主张都必须说明优化的是三个量中的哪一个，并给出改造前后同口径、**样本量可比**的数据；只报「作业更快」而不报关键路径变化，或用单次运行外推稳定收益，都不构成效率结论。
 
+## 端到端 5 分钟目标与十二片拓扑（2026-11-16）
+
+目标是把 `full` 路由的端到端墙钟（workflow 启动到 `Gate: required checks for this change` 完成）从约 8:49 压到 5 分钟以内，并且只用真实执行时间的缩减：不改用例选择、断言、`fail_under`、证据校验或 `required_checks` 语义。
+
+### 基线与关键路径
+
+取 run `43781129694`（`full` 路由，全部检查 success）作为同口径基线：总墙钟 529 s（8:49）。
+
+| 作业 | 墙钟 | 说明 |
+| --- | --- | --- |
+| `routing` | 31 s | checkout 3 s、`tests/ci` 11 s、setup-node 4 s、Token 与契约消费者约 8 s、路由判定 1 s |
+| `integration_plan` | 26 s | 一次完整收集并发布工具需求 |
+| 分片（最慢片） | 435 s | 起点 +65 s；容器初始化 34 s、每片步骤约 20 s、pytest 最长 377 s |
+| `integration_gate` | 22 s | +502 s 开始，下载 8 份证据并合并覆盖率 |
+| `python_tests` | 353 s | 覆盖率步骤 306 s，不在关键路径 |
+| `web` / `python_static` | 230 s / 115 s | 不在关键路径 |
+| `required_checks` | 3 s | 收尾 |
+
+关键路径由分片作业决定：分片之前是 routing（约 10 s）、plan（约 26 s）与排队，实测 +65 s 起步；分片之后是 25 s 证据汇总。本轮把 routing 里的守卫挪走，前缀由「31 s routing + 26 s plan」变成「10 s routing + 26 s plan」，约省 20 s。plan 仍是分片的前置依赖（分片要用它发布的 `browser_<i>`/`node_contracts_<i>` 决定装不装浏览器），因此没有把它从 `needs` 里去掉：去掉后每片要自己多付 10–14 s 收集，净收益只剩 10 s 左右，却多花 12 × 12 s 的 runner 时间。
+
+同一分片在不同运行中的 pytest 耗时相差 2–2.4 倍（分片 0 的六个样本为 190、192、299、359、463、469 s），而用例构成只解释约 ±20%（按类内均值归一化后 0.84–1.31x）。**端到端时间的主要方差来自 runner 主机，不是分区偏斜。**因此「5 分钟」只能按常态（中位数）表述，尾部仍可能超出；把单次样本当作稳定收益，或把一次慢运行当作分区失败，都不成立。
+
+### 本轮改动
+
+1. **十二片 + 片内两 worker。** `INTEGRATION_SHARD_COUNT` 由 8 改为 12，矩阵 `[0..11]`、`max-parallel: 12`；`integration_plan` 发布 12 组 `browser_<i>`/`node_contracts_<i>`，`plan`、证据下载、`check`、覆盖率 `combine` 与探测器的 `--shard-count` 五处参数同步。每片用显式 nodeid 调用 pytest 并加 `-n 2 --dist loadfile`，普通分片用例数由约 371 降到约 248；`web` 路由仍只展开 8–11 四片。
+2. **路由与守卫拆分。** 原先挂在 `routing` 里的 `tests/ci` 回归、Design Token、契约消费者绑定迁到并行且不筛范围的 `guards` 作业，`routing` 只保留 checkout 与范围判定；`guards` 结果被最终门禁无条件要求（意外 `skipped` 也算失败）。
+3. **覆盖率采集 2 → 4 worker。** `python-coverage.py` 的 `PYTHON_COVERAGE_WORKERS_MAX`、CLI `choices`、分片元数据校验与 `workbench-pg-probe.py` 的 `coverage_count` 上限一并放宽到 4；四份 worker 数据加十二份分片数据共十六份合并判定。
+5. **按成本而非用例数分区。** 分片器用 `HEAVY_CASE_WEIGHT = 3` 给需要真实 PostgreSQL/MySQL 或 Workbench 运行时的模块加权（`_pg`/`_postgres`/`_mysql`/`_migration_pg` 文件、`workbench_runtime`、`test_gateway_submit_ledger`），再按每道目标的成本切连续区间，而不是先算用例配额。2026-11-16 用同一次完整 inventory（2769 例、其中 928 例属于重模块）对比：旧算法八条 DB 道的估算成本为 388–438（跨度 1.42x），新算法八条全部为 402（1.00x），四条 Web 道 309–345 升到 350–359，再加各自约 12 例五倍权重的浏览器用例后仍在 410–419；整体成本跨度 1.42x → 1.15x。用例数跨度基本不变（1.27x → 1.26x），因为均衡目标已经从数量换成成本。
+   首次运行（run 43821357681，2026-11-16）全绿：十二片 143–282 s、启动跨 +51…+53 s、端到端 370 s。各道估算成本已经相等，而实测跨度仍有 1.97x（lane 4 的 143 s 与 lane 3 的 267 s 同为 DB 道、成本同为 402），印证了本节前面的判断：剩余方差来自每片独占的 runner 主机，继续调分区没有收益，要压尾部只能压每片固定成本。
+   对象存储启动随后改为后台执行、只在需要时等待就绪（run 43823979448 全绿，377 s）：实测只有带 Node 步骤的 Web 道真正重叠——lane 8 的等待降为 0 s，代价被 42 s 的 Node／pnpm／打包／Chromium 步骤吸收；DB 道没有可重叠的步骤，等待仍是 9–11 s。这项收益是 4 条 Web 道各约 9–11 s，不是每条道 9 s；Web 道因此成为新的尾部（270–285 s）。
+   Web 道那 42 s 里最大的一块是 `Install Chromium`（22 s），但它不是浏览器下载：缓存 `~/.cache/ms-playwright` 后（run 43830012103 的冷跑与重跑对比），缓存恢复只花 2–4 s，而 `Install Chromium` 仍是 15–31 s——时间花在`playwright install --with-deps` 的 APT 系统依赖上，缓存浏览器包省不到它。该缓存已回退：它只增加 2–4 s 恢复时间。要让这 22 s 消失，得让 runner 自带这些系统库（预置镜像或更大 runner 的基础镜像），不是工作流能改的。
+4. **并发预算。** 同时运行的长作业为 12 分片 + `python_tests` + `python_static` + `web` + `controller_image` 的两个构建作业，加上接近完成的 docs/compose/reference 作业，峰值约 19，低于账号的 20 个并发作业上限；16 片会到 22，因此停在 12。
+
+### 实测与预期
+
+本机按 CI 口径验证（macOS，PG 16.15 / MySQL 8.4 / MinIO 容器；本机核数与宿主 runner 不同，耗时不可直接比较）：分片 0/12 选中 248 例，`-n 2 --dist loadfile` 下 88.9 s 完成（含一次完整 inventory 收集 2769 条），`coverage-0.data` 摘要写入报告，`selected` 与 `outcomes` 各 248 项；分片 2/12 走完整探针路径（私有 workbench PG + 双 worker）245 passed / 3 skipped（均为允许的 `[mysql]` 参数）、75.6 s。`tests/ci` 455 项、`tests/unit/test_integration_shards.py` 59 项、`tests/unit/test_workbench_pg_probe_driver.py` 41 项、`tests/contract/test_ci_workflow.py` 298 项全部通过。片内并行单独实测：7 个数据库模块 106 例，串行 83.4 s、`-n 2` 49.9 s（1.67x），结果集合一致。
+
+按基线分解推算的常态值：分片起点由 +65 s 提前到约 +45 s，容器初始化 34 s 与步骤约 20 s 不变，pytest 约 248 例 ÷ 2 worker × 每例约 0.9–1.1 s ≈ 110–140 s，收尾约 15 s，单分片作业耗时约 3:00–3:30（0:45 启动，3:44–4:14 完成）；加 `integration_gate` 22 s 与 `required_checks` 3 s，端到端约 4:10–4:40。5 分钟是常态上限，不是保证。覆盖率作业由 306 s 降到约 200–260 s（四 worker，非线性），仍在关键路径之外。
+
+这些是推算与单机实测，不是 GitHub 宿主上的样本：真实收益须在同一工作流参数下用多次 `full` 运行核对，并把每次的分片 `elapsed_seconds`、作业墙钟与总墙钟一起看。分片报告的 `elapsed_seconds` 已包含新的 inventory 收集，与旧口径可直接比较「每片付出多少」。
+
+### 同步点
+
+改动其中任一侧都必须同时改另一侧，`tests/ci` 与 `tests/contract` 会拦下不一致：
+
+- `INTEGRATION_SHARD_COUNT`（`ci-routing.py`）↔ 矩阵 `shard`、`max-parallel`、显示名、`integration_plan` 的 12 组输出、`plan`/下载/`check`/`combine` 的 `--count` 与探测器的 `--shard-count`；`tests/ci/test_ci_routing.py` 钉住常量与工作流参数，`tests/unit/test_integration_shards.py` 与 `tests/contract/test_ci_workflow.py` 钉住矩阵与计数。
+- `WEB_CASE_WEIGHT`/`HEAVY_CASE_WEIGHT`（`integration-shards.py`）↔ 分区的成本模型 ↔ `integration_plan` 发布的每片用例数与工具需求；改权重会改所有分片的 `selected`，`check` 按同一模型重算，两边不一致即失败。
+- `SHARD_WORKERS_DEFAULT`/`SHARD_WORKERS_MAX`（`integration-shards.py`）↔ `workbench-pg-probe.py` 的 `INTEGRATION_SHARD_WORKERS` 与 `--shard-workers` ↔ 工作流的 `--shard-workers 2`。
+- `PYTHON_COVERAGE_PARTITIONS_MAX`（`python-coverage.py`）与 `PYTHON_PARTITION_MAX`（`workbench-pg-probe.py`）↔ 工作流 `python_tests` 矩阵的 `--partitions 8` 与两腿的 `--index-base` ↔ 门禁 `combine` 的两次 `--job-summary/--job-parts` ↔ 证据下载器的两次 `--coverage-artifact`。两侧分片数满足 `sum(workers) == partitions` 且索引互不重叠，合并仍按一份数据集判定。
+- `PYTHON_COVERAGE_WORKERS_MAX`（`python-coverage.py`）↔ CLI `choices` ↔ `workbench-pg-probe.py` 的 `coverage_count` 上限 ↔ `download-integration-evidence.py` 的 `COVERAGE_WORKERS_MAX` 与门禁的 `--coverage-workers` ↔ 工作流的 `--workers 4`；`tests/ci/test_ci_inspection_retirement.py` 与 `tests/contract/test_ci_workflow.py` 分别钉住工作流里的 worker 数与下载参数。
+- `guards` 作业 ↔ `required_checks` 的 `needs`、`GUARDS_RESULT` 环境变量与无条件校验；`tests/contract/test_ci_workflow.py` 与 `tests/ci/test_node_controller_image_ci.py` 各有一组真值表。
+- 分片内并发的前提是唯一 schema/数据库名（`tests/integration/AGENTS.md`）与固定桶名的竞态处理（`tests/support/minio_bucket.py`）；新增共用固定名资源的模块必须走同一约定，否则只能在该片降为单 worker。
+
 ## 作业命名规范
 
 作业名按「**领域: 实际动作**」组织，让运行列表里每一项都能看出它做了什么、红灯该找谁，不必展开日志：
@@ -477,7 +536,8 @@ uv run python scripts/dev-env/python-coverage.py combine \
 | --- | --- | --- |
 | `Route:` | 决定本次验证范围，不执行业务测试 | `routing` |
 | `Python:` | Python 执行或静态检查 | `python_tests`、`python_static` |
-| `Integration <n>/8:` | 八个分片之一，`/8` 明示总数；6/7 两片带真实浏览器 | `integration_shards` |
+| `Integration <n>/12:` | 十二个分片之一，`/12` 明示总数；8–11 四片带真实浏览器 | `integration_shards` |
+| `Guards:` | 不筛范围的依赖无关守卫 | `guards` |
 | `Gate:` | 只验收证据、不重跑测试 | `integration_gate`、`python_gate`、`required_checks` |
 | `Docs:` | 文档车道的轻量检查 | `docs_format`、`docs_matrix`、`docs_refs` |
 | `Web:` / `Compose:` / `Deploy:` / `Node Controller:` / `Image:` | 对应领域的执行与证据 | `web`、`compose`、`reference_acceptance`、`controller_image` 及两个镜像 reusable workflow |
@@ -486,7 +546,7 @@ uv run python scripts/dev-env/python-coverage.py combine \
 
 ## 集成分片耗时与超时
 
-`integration_shards` 的作业超时为 30 分钟。超时是作业预算：改变它不改变用例选择、断言、`fail-fast`、分片算法或证据验收，也不放松任何检查。该预算与两级超时对 `web` 路由的 4、5 两片同样适用：`web` 只改变展开哪些片，不改变片的执行内容、内层上限或收尾预留。
+`integration_shards` 的作业超时为 30 分钟。超时是作业预算：改变它不改变用例选择、断言、`fail-fast`、分片算法或证据验收，也不放松任何检查。该预算与两级超时对 `web` 路由的 8–11 四片同样适用：`web` 只改变展开哪些片，不改变片的执行内容、内层上限或收尾预留。
 
 分片执行有两级超时，二者必须成对调整：
 
@@ -516,9 +576,9 @@ uv run python scripts/dev-env/python-coverage.py combine \
 | --- | --- | --- |
 | 分片作业墙钟时间 | 各分片 job summary 的 `Job wall clock` | 安装、构建、服务启动等作业整体是否变慢 |
 | pytest 执行时间 | 各分片 job summary 的 `pytest execution`，以及制品 `integration-shard-<n>.json` 的 `elapsed_seconds` | 某片的用例集是否独胖 |
-| 分片用例数 | `integration-shards.py check` 输出 | 八片用例数是否均衡；按 DB/Web 资源类内均值比较，某片超过同类均值 1.25 倍时打印 warning，不改变门禁结论 |
+| 分片用例数 | `integration-shards.py check` 输出 | 十二片用例数是否均衡；按 DB/Web 资源类内均值比较，某片超过同类均值 1.25 倍时打印 warning，不改变门禁结论 |
 | 分片耗时 | `integration-shards.py check` 输出与 `integration-shard-<n>.json` 的 `elapsed_seconds` | 某片是否超过 15 分钟预警线或同类均值 1.25 倍；只告警，不改变门禁结论 |
-| 八片横向对比 | 各分片 job summary 的 `Job wall clock`、`pytest execution`、`Selected cases` | 八片相对耗时、最慢片与用例数 |
+| 十二片横向对比 | 各分片 job summary 的 `Job wall clock`、`pytest execution`、`Selected cases` | 十二片相对耗时、最慢片与用例数 |
 
 `integration-shards.py check` 逐片打印用例数、`elapsed_seconds`、相对同类均值倍数；每片运行结束时也打印自己的用例数与耗时。用例数超过同类均值 1.25 倍、耗时超过 15 分钟或同类均值 1.25 倍时打印 warning，不失败。各分片 job summary 的指标表由 workflow 的 `Publish integration partition timing` 提供（每片的 Job wall clock、pytest execution、Selected cases）；check 只把 warning 与 skipped 写入汇总 summary，避免两份重复表。
 

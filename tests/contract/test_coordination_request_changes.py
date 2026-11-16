@@ -399,4 +399,17 @@ def test_make_requires_a_baseline_and_ci_uses_fetched_base_in_existing_job() -> 
     assert len(selected) == 1
     assert selected[0]["if"] == "github.event_name == 'pull_request'"
     assert selected[0]["env"] == {"CONTRACT_BASE_REF": "origin/${{ github.base_ref }}"}
-    assert jobs["integration_shards"]["strategy"]["matrix"]["shard"] == [0, 1, 2, 3, 4, 5, 6, 7]
+    assert jobs["integration_shards"]["strategy"]["matrix"]["shard"] == [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+    ]

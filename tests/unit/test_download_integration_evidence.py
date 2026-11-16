@@ -193,7 +193,7 @@ def test_coverage_artifact_is_verified_and_published_under_its_own_names(
         "owner/repo", 123, tmp_path / "coverage", staging, data["artifacts"], 2
     )
     assert sorted(
-        str(path.relative_to(tmp_path / "coverage"))
+        str(path.relative_to(tmp_path / "coverage" / MODULE.COVERAGE_ARTIFACT))
         for path in (tmp_path / "coverage").rglob("*")
         if path.is_file()
     ) == [
@@ -299,8 +299,23 @@ def test_download_combines_both_artifact_sets_in_one_run(
         ),
         *(f"coverage-{i}.data" for i in range(2)),
     }
-    assert (coverage / MODULE.COVERAGE_SUMMARY).is_file()
-    assert (coverage / MODULE.COVERAGE_PARTS_DIR / "coverage-1.data").is_file()
+    published = coverage / MODULE.COVERAGE_ARTIFACT
+    assert (published / MODULE.COVERAGE_SUMMARY).is_file()
+    assert (published / MODULE.COVERAGE_PARTS_DIR / "coverage-1.data").is_file()
+
+
+def test_coverage_artifact_reference_carries_its_first_worker_index() -> None:
+    assert MODULE.parse_coverage_artifact("workbench-pg-full-coverage-b:4") == (
+        "workbench-pg-full-coverage-b",
+        4,
+    )
+    assert MODULE.parse_coverage_artifact("workbench-pg-full-coverage") == (
+        "workbench-pg-full-coverage",
+        0,
+    )
+    for value in ("bad name:0", "coverage:-1", "coverage:x"):
+        with pytest.raises(ValueError):
+            MODULE.parse_coverage_artifact(value)
 
 
 def test_cli_process_is_bounded_and_never_receives_a_token_argument(

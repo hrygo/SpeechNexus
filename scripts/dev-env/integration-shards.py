@@ -63,6 +63,28 @@ REPORT_NAME_PATTERN = re.compile(r"integration-shard-\d+\.json")
 # resource class.
 WEB_CASE_WEIGHT = 5
 
+# A case that drives a real PostgreSQL/MySQL service or the Workbench runtime
+# costs several times a unit case, and case counts alone left the twelve lanes
+# 1.9x apart (measured 146-275 s for ~248 cases on 2026-11-16). The module names
+# below are the ones that own a private cluster, a service MySQL schema or the
+# Workbench runtime; three is the centre of the measured per-module ratio and it
+# only decides how many ordinary cases a lane receives.
+HEAVY_CASE_WEIGHT = 3
+HEAVY_MODULE_PATTERN = re.compile(
+    r"(_pg|_postgres|_mysql|_migration_pg)\.py$|workbench_runtime|test_gateway_submit_ledger"
+)
+
+# Test files whose cases share one service database are isolated by unique schema or
+# database names (tests/integration/AGENTS.md), so a shard can run several pytest
+# workers against the same PostgreSQL/MySQL/MinIO services. The suite is dominated
+# by per-test database round trips, so two workers already halve a shard's wall
+# clock (measured 1.67x on the database modules); four is the ceiling because the
+# runner has four vCPUs and more workers only add lock and DDL contention.
+# `--dist loadfile` keeps a file's module fixtures and their TRUNCATE reset in one
+# worker.
+SHARD_WORKERS_DEFAULT = 2
+SHARD_WORKERS_MAX = 4
+
 # Imbalance is a warning, not a gate. The requirement after the 2026-11
 # repartition is 1.25x inside a resource class; a shard above it needs a
 # repartition, not a larger timeout.
@@ -111,6 +133,11 @@ def check_count(count: int) -> None:
         raise ValueError("Shard count must be within 1..16")
 
 
+def check_workers(workers: int) -> None:
+    if type(workers) is not int or not 1 <= workers <= SHARD_WORKERS_MAX:
+        raise ValueError(f"Shard workers must be within 1..{SHARD_WORKERS_MAX}")
+
+
 def requires_browser(nodeid: str) -> bool:
     module = nodeid.split("::", 1)[0]
     return module.endswith("_browser.py") or module in BROWSER_PROBE_MODULES
@@ -120,17 +147,25 @@ def _hash_bucket(nodeid: str, count: int) -> int:
     return int.from_bytes(hashlib.sha256(nodeid.encode()).digest(), "big") % count
 
 
-def _lane_quotas(*, ordinary: int, web_cases: Sequence[int], count: int) -> list[int]:
-    """Choose how many ordinary cases each lane receives.
+def case_cost(nodeid: str) -> int:
+    """Estimated execution cost of one case; only relative weight matters."""
+    path = nodeid.split("::", 1)[0]
+    return HEAVY_CASE_WEIGHT if HEAVY_MODULE_PATTERN.search(path) else 1
 
-    Web cases stay on the Web-capable lanes, but each one is already worth
-    WEB_CASE_WEIGHT ordinary cases, so those lanes receive proportionally fewer
-    ordinary cases. Quotas are whole nodeids and sum exactly to ordinary;
-    largest remainder keeps totals exact and breaks ties by lane index.
+
+def _lane_targets(*, costs: Sequence[int], web_cases: Sequence[int], count: int) -> list[float]:
+    """Split the estimated total cost evenly across lanes.
+
+    Each ordinary case contributes its own cost, so a lane that receives:
+    database modules is asked for proportionally fewer cases. Web cases stay on
+    the Web-capable lanes and are already worth WEB_CASE_WEIGHT, so those lanes
+    ask for less ordinary cost. Targets are floats; the walk below turns them
+    into whole cases and keeps the totals exact.
     """
     web_lanes = len(web_cases)
-    target = (ordinary + WEB_CASE_WEIGHT * sum(web_cases)) / count
-    desired = [
+    total = sum(costs) + WEB_CASE_WEIGHT * sum(web_cases)
+    target = total / count
+    return [
         (
             target
             if lane < count - web_lanes
@@ -138,20 +173,26 @@ def _lane_quotas(*, ordinary: int, web_cases: Sequence[int], count: int) -> list
         )
         for lane in range(count)
     ]
-    total = sum(desired)
-    if total <= 0:
-        # The Web cases alone exhaust every target; spread ordinary cases evenly.
-        desired = [1.0] * count
-        total = float(count)
-    scaled = [value * ordinary / total for value in desired]
-    quotas = [math.floor(value) for value in scaled]
-    remainder = ordinary - sum(quotas)
-    order = sorted(
-        range(count), key=lambda lane: (scaled[lane] - quotas[lane], -lane), reverse=True
-    )
-    for lane in order[:remainder]:
-        quotas[lane] += 1
-    return quotas
+
+
+def _lane_slice(costs: Sequence[int], cursor: int, target: float, lanes_left: int) -> int:
+    """How many cases this lane takes: as many as its target allows, never all.
+
+    Every later lane needs at least one case, so the walk stops early when only
+    that many remain; a lane always takes at least one case of its own.
+    """
+    remaining = len(costs) - cursor
+    if lanes_left <= 0:
+        return remaining
+    limit = remaining - lanes_left
+    if limit <= 0:
+        return 0
+    taken = 0
+    spent = 0.0
+    while taken < limit and spent + costs[cursor + taken] <= target:
+        spent += costs[cursor + taken]
+        taken += 1
+    return max(1, taken)
 
 
 def partition(nodeids: Sequence[str], index: int, count: int) -> list[str]:
@@ -177,19 +218,19 @@ def partition(nodeids: Sequence[str], index: int, count: int) -> list[str]:
         )
         for position, nodeid in enumerate(web_order):
             web_lanes[position % web_lane_count].append(nodeid)
-        quotas = _lane_quotas(
-            ordinary=len(ordinary),
-            web_cases=[len(lane) for lane in web_lanes],
-            count=count,
-        )
         ordinary_order = sorted(
             ordinary, key=lambda nodeid: (hashlib.sha256(nodeid.encode()).digest(), nodeid)
         )
+        costs = [case_cost(nodeid) for nodeid in ordinary_order]
+        targets = _lane_targets(
+            costs=costs, web_cases=[len(lane) for lane in web_lanes], count=count
+        )
         selected: list[str] = []
         cursor = 0
-        for lane, quota in enumerate(quotas):
-            lane_cases = ordinary_order[cursor : cursor + quota]
-            cursor += quota
+        for lane, target in enumerate(targets):
+            span = _lane_slice(costs, cursor, target, count - lane - 1)
+            lane_cases = ordinary_order[cursor : cursor + span]
+            cursor += span
             if lane >= count - web_lane_count:
                 lane_cases = lane_cases + web_lanes[lane - (count - web_lane_count)]
             if lane == index:
@@ -461,6 +502,7 @@ def run_shard(args: argparse.Namespace) -> int:
     import pytest
 
     check_count(args.count)
+    check_workers(args.workers)
     partition([], args.index, args.count)
     if os.environ.get("PYTEST_ADDOPTS"):
         raise ValueError("PYTEST_ADDOPTS cannot narrow the complete integration run")
@@ -479,11 +521,18 @@ def run_shard(args: argparse.Namespace) -> int:
     os.chdir(ROOT)
     source_head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     started = time.monotonic()
+    # Resolve the complete inventory here and pass this partition's nodeids to
+    # pytest. Under xdist the workers own the collection, so a controller-side
+    # deselection would arrive after scheduling and every worker would run the
+    # whole suite; explicit nodeids keep the executed set identical to the
+    # reported one and let each worker collect only its own files.
+    full = collect_integration_nodeids()
+    selected = partition(full, args.index, args.count)
 
     class ShardPlugin:
         def __init__(self) -> None:
-            self.full: list[str] = []
-            self.selected: list[str] = []
+            self.full: list[str] = list(full)
+            self.selected: list[str] = list(selected)
             self.outcomes: dict[str, str] = {}
             self.completed = 0
             self.passed = 0
@@ -492,9 +541,12 @@ def run_shard(args: argparse.Namespace) -> int:
             self.last_started: str | None = None
             self.last_completed: str | None = None
             self.coverage_error: str | None = None
+            # xdist workers re-run every hook for their own share. Only the
+            # controller may publish progress or write the one shard report.
+            self.controller = True
 
         def _publish(self) -> None:
-            if args.progress is None:
+            if args.progress is None or not self.controller:
                 return
             write_progress(
                 args.progress,
@@ -512,6 +564,9 @@ def run_shard(args: argparse.Namespace) -> int:
             )
 
         def pytest_configure(self, config: pytest.Config) -> None:
+            self.controller = not hasattr(config, "workerinput")
+            if not self.controller:
+                return
             if (
                 config.getoption("keyword")
                 or config.getoption("markexpr") != "integration"
@@ -526,27 +581,31 @@ def run_shard(args: argparse.Namespace) -> int:
         def pytest_collection_modifyitems(
             self, config: pytest.Config, items: list[pytest.Item]
         ) -> None:
-            self.full = sorted(item.nodeid for item in items)
-            if len(self.full) != len(set(self.full)):
+            # The partition is passed to pytest as explicit nodeids, so a change in
+            # what was actually collected means a config, plugin or rootdir change
+            # moved the partition. Fail instead of running a different set.
+            if not self.controller:
+                return
+            found = sorted(item.nodeid for item in items)
+            if found != self.selected:
+                raise pytest.UsageError(
+                    "Integration shard collected a different nodeid set than its partition"
+                )
+            if len(found) != len(set(found)):
                 raise pytest.UsageError("Integration nodeids must be unique")
-            self.selected = partition(self.full, args.index, args.count)
-            allowed = set(self.selected)
-            deselected = [item for item in items if item.nodeid not in allowed]
-            items[:] = [item for item in items if item.nodeid in allowed]
-            config.hook.pytest_deselected(items=deselected)
             self._publish()
-
-        def pytest_collection_finish(self, session: pytest.Session) -> None:
-            if sorted(item.nodeid for item in session.items) != self.selected:
-                raise pytest.UsageError("A later plugin changed the selected integration partition")
 
         def pytest_runtest_logstart(
             self, nodeid: str, location: tuple[str, int | None, str]
         ) -> None:
+            if not self.controller:
+                return
             self.last_started = nodeid
             self._publish()
 
         def pytest_runtest_logreport(self, report: pytest.TestReport) -> None:
+            if not self.controller:
+                return
             nodeid = report.nodeid
             if (
                 report.failed
@@ -570,8 +629,9 @@ def run_shard(args: argparse.Namespace) -> int:
                 self.last_completed = nodeid
                 self._publish()
 
-        @pytest.hookimpl(trylast=True)
-        def pytest_sessionfinish(self, session: pytest.Session, exitstatus: int) -> None:
+        def finalize(self, exitstatus: int) -> None:
+            if not self.controller:
+                return
             elapsed = time.monotonic() - started
             # A collect-only probe is a diagnostic, never shard evidence; it carries
             # empty coverage fields so the checker rejects it on `executed` first.
@@ -606,13 +666,19 @@ def run_shard(args: argparse.Namespace) -> int:
                 f"{len(self.selected)} selected cases, {elapsed:.1f} s"
             )
 
-    options = ["-m", "integration", "tests/integration", "-q", "--durations=20"]
+    options = ["-m", "integration", *selected, "-q", "--durations=20"]
+    if args.workers > 1:
+        options.extend(["-n", str(args.workers), "--dist", "loadfile"])
     if args.collect_only:
         options.append("--collect-only")
     else:
         options.extend(COVERAGE_OPTIONS)
     plugin = ShardPlugin()
     code = int(pytest.main(options, plugins=[plugin]))
+    # pytest-cov merges the per-worker databases into COVERAGE_FILE when the
+    # session ends; an xdist worker finishes before that merge, so the digest is
+    # read here instead of from a session hook.
+    plugin.finalize(code)
     if plugin.coverage_error is not None:
         raise ValueError(plugin.coverage_error)
     return code
@@ -707,6 +773,12 @@ def main() -> int:
         type=Path,
         help="live position for timeout diagnostics; never part of the gate",
     )
+    run.add_argument(
+        "--workers",
+        type=int,
+        default=SHARD_WORKERS_DEFAULT,
+        help="pytest workers inside this shard; isolated by unique schema and database names",
+    )
     run.add_argument("--collect-only", action="store_true")
     check = commands.add_parser("check", help="Require complete, disjoint, successful evidence")
     check.add_argument("--count", type=int, required=True)
@@ -751,7 +823,7 @@ def main() -> int:
     if destination := os.environ.get("GITHUB_STEP_SUMMARY"):
         with Path(destination).open("a", encoding="utf-8") as output:
             output.write(summary + "\n\n")
-            # The six per-shard job summaries already publish wall clock, pytest
+            # The per-shard job summaries already publish wall clock, pytest
             # execution and selected cases; do not duplicate that table here.
             if warnings:
                 output.write("\n".join(warnings) + "\n\n")

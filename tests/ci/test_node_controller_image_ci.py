@@ -84,6 +84,7 @@ class ImageWorkflowTests(unittest.TestCase):
         base = {
             "MODE": "docs",
             "ROUTING_RESULT": "success",
+            "GUARDS_RESULT": "success",
             "MATRIX_RESULT": "success",
             "DOCS_REFS_RESULT": "success",
             "DOCS_FORMAT_RESULT": "success",
@@ -108,6 +109,7 @@ class ImageWorkflowTests(unittest.TestCase):
         base = {
             "MODE": "docs",
             "ROUTING_RESULT": "success",
+            "GUARDS_RESULT": "success",
             "DOCS_FORMAT_RESULT": "success",
             "PYTHON_RESULT": "skipped",
             "INTEGRATION_GATE_RESULT": "skipped",
@@ -131,6 +133,7 @@ class ImageWorkflowTests(unittest.TestCase):
         base = {
             "MODE": "full",
             "ROUTING_RESULT": "success",
+            "GUARDS_RESULT": "success",
             "MATRIX_RESULT": "success",
             "DOCS_FORMAT_RESULT": "skipped",
             "PYTHON_RESULT": "success",
@@ -149,10 +152,38 @@ class ImageWorkflowTests(unittest.TestCase):
                 actual = execute(FINAL_GATE, {**base, "DOCS_REFS_RESULT": result})
                 self.assertNotEqual(actual.returncode, 0, actual.stderr)
 
+    def test_final_gate_requires_the_guards_lane(self) -> None:
+        # The guards lane has no scope filter: routing-boundary, design-token and
+        # contract-consumer regressions run for every route, so anything but
+        # success -- including an unexpected skip -- must fail the merge gate.
+        base = {
+            "MODE": "docs",
+            "ROUTING_RESULT": "success",
+            "GUARDS_RESULT": "success",
+            "MATRIX_RESULT": "success",
+            "DOCS_REFS_RESULT": "success",
+            "DOCS_FORMAT_RESULT": "success",
+            "PYTHON_RESULT": "skipped",
+            "INTEGRATION_GATE_RESULT": "skipped",
+            "INTEGRATION_RESULT": "skipped",
+            "WEB_RESULT": "skipped",
+            "COMPOSE_RESULT": "skipped",
+            "ACCEPTANCE_RESULT": "skipped",
+            "CONTROLLER_RESULT": "success",
+            "CONTROLLER_REQUIRED": "false",
+        }
+        actual = execute(FINAL_GATE, base)
+        self.assertEqual(actual.returncode, 0, actual.stdout + actual.stderr)
+        for result in ("skipped", "failure", "cancelled", ""):
+            with self.subTest(result=result):
+                actual = execute(FINAL_GATE, {**base, "GUARDS_RESULT": result})
+                self.assertNotEqual(actual.returncode, 0, actual.stderr)
+
     def test_final_gate_requires_the_reference_acceptance_entry(self) -> None:
         base = {
             "MODE": "docs",
             "ROUTING_RESULT": "success",
+            "GUARDS_RESULT": "success",
             "MATRIX_RESULT": "success",
             "DOCS_REFS_RESULT": "success",
             "DOCS_FORMAT_RESULT": "success",
@@ -178,6 +209,7 @@ class ImageWorkflowTests(unittest.TestCase):
         base = {
             "MODE": "web",
             "ROUTING_RESULT": "success",
+            "GUARDS_RESULT": "success",
             "MATRIX_RESULT": "success",
             "DOCS_REFS_RESULT": "success",
             "DOCS_FORMAT_RESULT": "skipped",
@@ -211,6 +243,7 @@ class ImageWorkflowTests(unittest.TestCase):
         # operator entry point was not executed, so it cannot satisfy the gate.
         base = {
             "ROUTING_RESULT": "success",
+            "GUARDS_RESULT": "success",
             "MATRIX_RESULT": "success",
             "DOCS_REFS_RESULT": "success",
             "CONTROLLER_RESULT": "success",
@@ -243,6 +276,7 @@ class ImageWorkflowTests(unittest.TestCase):
         base = {
             "MODE": "docs",
             "ROUTING_RESULT": "success",
+            "GUARDS_RESULT": "success",
             "MATRIX_RESULT": "success",
             "DOCS_REFS_RESULT": "success",
             "PYTHON_RESULT": "skipped",

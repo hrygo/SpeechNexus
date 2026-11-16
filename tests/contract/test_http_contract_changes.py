@@ -1094,7 +1094,7 @@ def test_ci_checks_the_fetched_base_in_the_independent_contract_job() -> None:
     )
     assert steps.index(fetch) < steps.index(step)
     assert jobs["required_checks"]["name"] == "Gate: required checks for this change"
-    assert jobs["integration_shards"]["strategy"]["matrix"]["shard"] == list(range(8))
+    assert jobs["integration_shards"]["strategy"]["matrix"]["shard"] == list(range(12))
 
 
 def test_make_rejects_an_omitted_comparison_baseline() -> None:

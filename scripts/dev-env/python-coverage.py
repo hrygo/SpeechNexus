@@ -2,7 +2,7 @@
 
 Each worker is hosted by the existing disposable-PG probe. Neither a passing
 fragment nor a collect-only report can replace complete execution. This job only
-measures and exports its data; the integration summary job merges the six
+measures and exports its data; the integration summary job merges the twelve
 partitions' data with it and enforces the unchanged global gate, so a partition
 that was skipped or exported nothing fails the gate instead of shrinking it.
 """
@@ -34,6 +34,8 @@ SUMMARY_FIELDS = frozenset(
         "source_head",
         "config_digest",
         "workers",
+        "partitions",
+        "index_base",
         "tests_passed",
         "stopped",
         "collected",
@@ -76,9 +78,23 @@ FIELDS = {
 }
 
 
+# Each worker owns a private PostgreSQL cluster, Unix socket and coverage database,
+# so the ceiling is about runner memory and lock contention, not shared state. The
+# four-vCPU hosted runner feeds four independent single-threaded workers; the
+# two-worker baseline in the 2026-11-16 measurement took 306 s, so four workers are
+# the next step before the job ceiling matters.
+PYTHON_COVERAGE_WORKERS_MAX = 4
+# A single job may own only part of the measurement: two jobs of four workers cover
+# eight partitions, which halves the wall clock of the longest job without changing
+# what the merged gate sees (the parts still tile one complete dataset).
+PYTHON_COVERAGE_PARTITIONS_MAX = 8
+
+
 def check_partition(index: int, count: int) -> None:
-    if type(count) is not int or count not in (1, 2):
-        raise ValueError("Python coverage supports one or two isolated workers")
+    if type(count) is not int or not 1 <= count <= PYTHON_COVERAGE_PARTITIONS_MAX:
+        raise ValueError(
+            f"Python coverage supports one to {PYTHON_COVERAGE_PARTITIONS_MAX} partitions"
+        )
     if type(index) is not int or not 0 <= index < count:
         raise ValueError("Invalid Python coverage worker identity")
 
@@ -210,11 +226,24 @@ def nodeids(value: Any) -> list[str]:
     return cast(list[str], value)
 
 
-def verify_reports(paths: Sequence[Path], *, head: str, count: int) -> tuple[list[Path], int]:
+def verify_reports(
+    paths: Sequence[Path], *, head: str, count: int, base: int = 0, workers: int | None = None
+) -> tuple[list[Path], int]:
+    """Verify one job's slice of a possibly split measurement.
+
+    count is how many partitions the dataset is cut into; workers is how many of
+    them this job owns, starting at base. A single-job measurement passes neither
+    and keeps the original all-workers semantics.
+    """
     from coverage import CoverageData
 
+    expected = count if workers is None else workers
     check_partition(0, count)
-    if len(paths) != count:
+    if type(expected) is not int or not 1 <= expected <= count:
+        raise ValueError("Python evidence declares an impossible worker slice")
+    if type(base) is not int or base < 0 or base + expected > count:
+        raise ValueError("Python evidence slice is outside the partition set")
+    if len(paths) != expected:
         raise ValueError("Every Python coverage worker is required")
     full: list[str] | None = None
     observed: set[str] = set()
@@ -279,7 +308,14 @@ def verify_reports(paths: Sequence[Path], *, head: str, count: int) -> tuple[lis
         if not coverage_data.has_arcs() or not coverage_data.measured_files():
             raise ValueError("Python worker has no branch coverage data")
         files.append(coverage_file)
-    if full is None or observed != set(full) or indices != set(range(count)):
+    if full is None or indices != set(range(base, base + expected)):
+        raise ValueError("Python execution did not cover the complete collection exactly once")
+    # A job owns a contiguous slice, so equal-union is the exact-once invariant:
+    # every worker already proved it ran its own partition and overlapped nobody.
+    expected_selection: set[str] = set()
+    for index in range(base, base + expected):
+        expected_selection.update(partition(full, index, count))
+    if observed != expected_selection:
         raise ValueError("Python execution did not cover the complete collection exactly once")
     return files, len(full)
 
@@ -363,6 +399,15 @@ def prepare_shared_bucket() -> None:
 
 def run_parallel(args: argparse.Namespace) -> int:
     check_partition(0, args.workers)
+    partitions = args.partitions if args.partitions is not None else args.workers
+    base = args.index_base
+    if (
+        type(partitions) is not int
+        or not args.workers <= partitions <= PYTHON_COVERAGE_PARTITIONS_MAX
+    ):
+        raise ValueError("Python coverage partitions must cover this job's workers")
+    if type(base) is not int or base < 0 or base + args.workers > partitions:
+        raise ValueError("Python coverage worker range is outside the partition set")
     if os.environ.get("PYTEST_ADDOPTS"):
         raise ValueError("PYTEST_ADDOPTS cannot narrow the complete Python gate")
     args.output = args.output.resolve()
@@ -376,6 +421,8 @@ def run_parallel(args: argparse.Namespace) -> int:
         "source_head": head,
         "config_digest": config_digest,
         "workers": args.workers,
+        "partitions": partitions,
+        "index_base": base,
         "tests_passed": False,
         "stopped": False,
         "collected": None,
@@ -386,7 +433,8 @@ def run_parallel(args: argparse.Namespace) -> int:
     try:
         prepare_shared_bucket()
 
-        def run(index: int) -> subprocess.CompletedProcess[str]:
+        def run(offset: int) -> subprocess.CompletedProcess[str]:
+            index = base + offset
             return subprocess.run(
                 [
                     sys.executable,
@@ -397,7 +445,7 @@ def run_parallel(args: argparse.Namespace) -> int:
                     "--python-shard",
                     str(index),
                     "--python-shard-count",
-                    str(args.workers),
+                    str(partitions),
                     "--python-shard-report",
                     str(directory / f"worker-{index}.json"),
                     "--output",
@@ -412,21 +460,25 @@ def run_parallel(args: argparse.Namespace) -> int:
         # Every probe finishes its own finally/stop/cleanup, including after a sibling fails.
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
             results = list(pool.map(run, range(args.workers)))
-        for index, result in enumerate(results):
+        for offset, result in enumerate(results):
+            index = base + offset
             print(f"Python coverage worker {index}: exit={result.returncode}", flush=True)
             log = result.stdout + result.stderr
             (directory / f"worker-{index}.log").write_text(log, encoding="utf-8")
             print(log, end="", flush=True)
         if any(result.returncode != 0 for result in results):
             raise ValueError("A Python probe failed; combined coverage cannot qualify it")
-        for index in range(args.workers):
+        indices = [base + offset for offset in range(args.workers)]
+        for index in indices:
             lifecycle = json.loads((directory / f"postgres-{index}.json").read_text())
             if lifecycle.get("tests_passed") is not True or lifecycle.get("stopped") is not True:
                 raise ValueError("A Python worker lacks execution or shutdown evidence")
         files, count = verify_reports(
-            [directory / f"worker-{index}.json" for index in range(args.workers)],
+            [directory / f"worker-{index}.json" for index in indices],
             head=head,
-            count=args.workers,
+            count=partitions,
+            base=base,
+            workers=args.workers,
         )
         if source_head() != head:
             raise ValueError("Source changed while the Python gate was executing")
@@ -434,11 +486,11 @@ def run_parallel(args: argparse.Namespace) -> int:
             raise ValueError("Coverage configuration changed while the Python gate was executing")
         summary.update(tests_passed=True, stopped=True, collected=count, passed=count)
         parts = []
-        for index, path in enumerate(files):
+        for index, path in zip(indices, files, strict=True):
             copy = directory / f"coverage-{index}.data"
             shutil.copyfile(path, copy)
             parts.append({"index": index, "file": copy.name, "digest": require_branch_data(copy)})
-        # Measurement only: the merged judgment runs where all eight datasets exist.
+        # Measurement only: the merged judgment runs where every dataset exists.
         # The combined probe stays beside (not inside) the exported parts directory,
         # so the uploaded artifact holds only data files and execution logs.
         combined = directory.with_name(directory.name + "-combined")
@@ -454,7 +506,9 @@ def run_parallel(args: argparse.Namespace) -> int:
         args.output.write_text(json.dumps(summary, sort_keys=True, indent=2) + "\n")
 
 
-def verify_job_evidence(summary_path: Path, parts_dir: Path, *, head: str) -> list[Path]:
+def verify_job_evidence(
+    summary_path: Path, parts_dir: Path, *, head: str
+) -> tuple[list[Path], int, int, int]:
     """The measured dataset must come from this source, configuration and full run."""
     if summary_path.stat().st_size > 16 * 1024 * 1024:
         raise ValueError("Python coverage summary is oversized")
@@ -466,7 +520,12 @@ def verify_job_evidence(summary_path: Path, parts_dir: Path, *, head: str) -> li
         or data["source_head"] != head
         or data["config_digest"] != digest(combined_config())
         or type(data["workers"]) is not int
-        or data["workers"] not in (1, 2)
+        or not 1 <= data["workers"] <= PYTHON_COVERAGE_WORKERS_MAX
+        or type(data["partitions"]) is not int
+        or not data["workers"] <= data["partitions"] <= PYTHON_COVERAGE_PARTITIONS_MAX
+        or type(data["index_base"]) is not int
+        or data["index_base"] < 0
+        or data["index_base"] + data["workers"] > data["partitions"]
     ):
         raise ValueError("Python coverage summary came from another source or configuration")
     if (
@@ -487,7 +546,11 @@ def verify_job_evidence(summary_path: Path, parts_dir: Path, *, head: str) -> li
         if not isinstance(part, dict) or set(part) != {"index", "file", "digest"}:
             raise ValueError("Python coverage summary has an unsupported worker entry")
         index = part["index"]
-        if type(index) is not int or index in indices or not 0 <= index < data["workers"]:
+        if (
+            type(index) is not int
+            or index in indices
+            or not data["index_base"] <= index < data["index_base"] + data["workers"]
+        ):
             raise ValueError("Python coverage summary has a duplicate or invalid worker")
         indices.add(index)
         if part["file"] != f"coverage-{index}.data":
@@ -500,9 +563,14 @@ def verify_job_evidence(summary_path: Path, parts_dir: Path, *, head: str) -> li
         if part_digest != part["digest"]:
             raise ValueError(f"Python worker {index} coverage data is changed")
         files.append(path)
-    if indices != set(range(data["workers"])):
+    if indices != set(range(data["index_base"], data["index_base"] + data["workers"])):
         raise ValueError("Python coverage summary omitted a worker dataset")
-    return sorted(files, key=lambda path: path.name)
+    return (
+        sorted(files, key=lambda path: path.name),
+        data["index_base"],
+        data["workers"],
+        data["partitions"],
+    )
 
 
 def verify_shard_evidence(directory: Path, count: int, *, head: str) -> list[Path]:
@@ -570,7 +638,22 @@ def run_combine(args: argparse.Namespace) -> int:
         "coverage_passed": False,
     }
     try:
-        measured = verify_job_evidence(args.job_summary, args.job_parts, head=head)
+        measured: list[Path] = []
+        covered: set[int] = set()
+        partitions: int | None = None
+        for summary_path, parts_dir in zip(args.job_summary, args.job_parts, strict=True):
+            files, base, workers, declared = verify_job_evidence(summary_path, parts_dir, head=head)
+            if partitions is None:
+                partitions = declared
+            elif declared != partitions:
+                raise ValueError("Python coverage jobs disagree on the partition count")
+            for index in range(base, base + workers):
+                if index in covered:
+                    raise ValueError("Python coverage jobs overlap a measured worker")
+                covered.add(index)
+            measured.extend(files)
+        if partitions is None or covered != set(range(partitions)):
+            raise ValueError("Python coverage jobs do not cover every measured worker")
         shards = verify_shard_evidence(args.integration_dir, args.count, head=head)
         percent = combine_data([*measured, *shards], output, config_file=rcfile)
         code = gate_report(output, rcfile=rcfile)
@@ -597,7 +680,13 @@ def main() -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run")
     run.add_argument("--pg-bin", type=Path, required=True)
-    run.add_argument("--workers", type=int, choices=(1, 2), default=2)
+    run.add_argument(
+        "--workers", type=int, choices=tuple(range(1, PYTHON_COVERAGE_WORKERS_MAX + 1)), default=4
+    )
+    run.add_argument("--partitions", type=int, help="total measured partitions across jobs")
+    run.add_argument(
+        "--index-base", type=int, default=0, help="first worker index owned by this job"
+    )
     run.add_argument("--output", type=Path, required=True)
     worker = commands.add_parser("worker")
     worker.add_argument("--index", type=int, required=True)
@@ -607,8 +696,8 @@ def main() -> int:
     combine = commands.add_parser(
         "combine", help="merge the measured and integration datasets and enforce the gate"
     )
-    combine.add_argument("--job-summary", type=Path, required=True)
-    combine.add_argument("--job-parts", type=Path, required=True)
+    combine.add_argument("--job-summary", type=Path, required=True, action="append")
+    combine.add_argument("--job-parts", type=Path, required=True, action="append")
     combine.add_argument("--integration-dir", type=Path, required=True)
     combine.add_argument("--count", type=int, required=True)
     combine.add_argument("--output", type=Path, required=True)

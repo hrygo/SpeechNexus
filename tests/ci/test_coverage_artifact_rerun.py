@@ -145,7 +145,7 @@ class SingleAttemptTests(CoverageDownloadCase):
         api = FakeArtifactApi([entry(7, payload)], {7: payload})
         downloads, published, _ = self.publish(api)
         self.assertEqual(downloads, [7])
-        self.assertEqual(set(published), set(coverage_members()))
+        self.assertEqual(set(published), {f"{ARTIFACT}/{name}" for name in coverage_members()})
 
 
 class RerunInventoryTests(CoverageDownloadCase):
@@ -158,7 +158,7 @@ class RerunInventoryTests(CoverageDownloadCase):
         )
         downloads, published, log = self.publish(api)
         self.assertEqual(downloads, [12])
-        self.assertIn(f"{PARTS}/coverage-1.data", published)
+        self.assertIn(f"{ARTIFACT}/{PARTS}/coverage-1.data", published)
         self.assertIn("inventory=2", log)
 
     def test_selection_does_not_depend_on_inventory_order(self) -> None:
@@ -170,7 +170,7 @@ class RerunInventoryTests(CoverageDownloadCase):
         )
         downloads, published, _ = self.publish(api)
         self.assertEqual(downloads, [21])
-        self.assertIn(f"{PARTS}/coverage-1.data", published)
+        self.assertIn(f"{ARTIFACT}/{PARTS}/coverage-1.data", published)
 
     def test_the_selected_attempt_is_verified_and_never_falls_back(self) -> None:
         stale = archive(coverage_members())
@@ -285,8 +285,9 @@ class GateEntryPointTests(CoverageDownloadCase):
                     coverage_output=coverage,
                     coverage_workers=2,
                 )
-            self.assertTrue((coverage / SUMMARY).is_file())
-            self.assertTrue((coverage / PARTS / "coverage-1.data").is_file())
+            published = coverage / ARTIFACT
+            self.assertTrue((published / SUMMARY).is_file())
+            self.assertTrue((published / PARTS / "coverage-1.data").is_file())
             self.assertEqual(
                 {path.name for path in reports.iterdir()},
                 {*shard_members(0), *shard_members(1)},

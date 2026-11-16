@@ -18,6 +18,7 @@ from tests.integration.test_workbench_deletion_cleanup import cleanup as cleanup
 from tests.integration.test_workbench_deletions_postgres import content, service, target
 from tests.integration.test_workbench_versions_postgres import Store
 from tests.integration.test_workbench_versions_postgres import store as store
+from tests.support.minio_bucket import ensure_bucket
 
 from speechnexus_backend.workbench.application.saved_assets import ObjectZoneUnavailableError
 from speechnexus_backend.workbench.domain.deletion import DeletionTarget
@@ -110,8 +111,7 @@ def objects() -> Iterator[Objects]:
         secret_key=secret,
         secure=endpoint.startswith("https://"),
     )
-    if not client.bucket_exists(BUCKET):
-        client.make_bucket(BUCKET)
+    ensure_bucket(client, BUCKET)
     try:
         yield Objects(zone, client)
     finally:

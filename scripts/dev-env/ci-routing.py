@@ -20,7 +20,7 @@ Mode = Literal["docs", "web", "no-db", "full"]
 # partitions a real-shaped collection and asserts that the lanes named here are
 # exactly the lanes that select browser/Node-contract consumers, so a change to
 # either side turns that test red before the workflow can run the wrong lanes.
-INTEGRATION_SHARD_COUNT = 8
+INTEGRATION_SHARD_COUNT = 12
 WEB_LANE_SHARE_DIVISOR = 3
 # Agent rules and READMEs are prose wherever they live, so the same document is
 # routed the same way at every level: `web/AGENTS.md` and root `AGENTS.md` are one
@@ -165,9 +165,9 @@ def excluded_shards(mode: Mode) -> tuple[dict[str, int], ...]:
     merges with no signal from that chain — #745 did, and broke `main`; the fix PR
     #756 could only obtain evidence from a manual run (#757).
 
-    Every other route keeps the whole eight-partition universe, and so does `full`:
-    the job's mode gate, not this list, excludes `docs`/`no-db`. Removing the four
-    DB-only lanes under `web` is the cheapest way to run every browser consumer;
+    Every other route keeps the whole twelve-partition universe, and so does
+    `full`: the job's mode gate, not this list, excludes `docs`/`no-db`. Removing the
+    eight DB-only lanes under `web` is the cheapest way to run every browser consumer;
     the measured cost is recorded in `docs/validation/ci-validation.md`.
     """
     if mode != "web":

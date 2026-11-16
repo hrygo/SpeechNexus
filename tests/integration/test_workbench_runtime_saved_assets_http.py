@@ -25,6 +25,7 @@ from pydantic import SecretStr
 from tests.integration.test_workbench_http_management import acceptance
 from tests.integration.test_workbench_runtime import Database, serve
 from tests.integration.test_workbench_runtime import database as database
+from tests.support.minio_bucket import ensure_bucket
 
 from speechnexus_backend.workbench.domain.saved_assets import saved_object_key
 from speechnexus_backend.workbench.runtime import create_runtime_app
@@ -123,8 +124,7 @@ def runtime_settings(database: Database, base_origin: str, *, objects: bool) -> 
             secret_key=os.environ["SPEECHNEXUS_TEST_MINIO_SECRET_KEY"],
             secure=endpoint.startswith("https://"),
         )
-        if not client.bucket_exists(BUCKET):
-            client.make_bucket(BUCKET)
+        ensure_bucket(client, BUCKET)
         update |= {
             "object_endpoint": endpoint,
             "object_bucket": BUCKET,

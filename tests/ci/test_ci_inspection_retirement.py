@@ -43,11 +43,15 @@ class RetiredInspectionCase(unittest.TestCase):
 
     def test_the_complete_coverage_gate_and_media_toolchain_remain(self) -> None:
         self.assertIn("scripts/dev-env/python-coverage.py run", PYTHON_JOB)
-        self.assertIn("--workers 2", PYTHON_JOB)
+        self.assertIn("--workers 4", PYTHON_JOB)
         self.assertIn("uv run python scripts/dev-env/media-smoke.py", PYTHON_JOB)
         self.assertIn("uv build --all-packages", PYTHON_JOB)
         self.assertIn("runs-on: ubuntu-24.04", PYTHON_JOB)
-        self.assertNotIn("strategy:", PYTHON_JOB)
+        # The measurement is split across two jobs of four workers that together
+        # cover eight partitions of one dataset; neither leg reaches the gate alone.
+        self.assertIn("--partitions 8", PYTHON_JOB)
+        self.assertIn("strategy:", PYTHON_JOB)
+        self.assertEqual(PYTHON_JOB.count("index_base:"), 2)
 
 
 if __name__ == "__main__":

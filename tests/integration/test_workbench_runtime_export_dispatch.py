@@ -22,6 +22,7 @@ from tests.integration.test_workbench_exports_http import create, prepared
 from tests.integration.test_workbench_http_management import acceptance
 from tests.integration.test_workbench_runtime import Database, serve
 from tests.integration.test_workbench_runtime import database as database
+from tests.support.minio_bucket import ensure_bucket
 
 from speechnexus_backend.workbench.application.export_worker import ProducedExport
 from speechnexus_backend.workbench.infrastructure.minio_object_zone import MinioObjectZone
@@ -69,8 +70,7 @@ def objects() -> Iterator[_Zone]:
         secret_key=secret,
         secure=endpoint.startswith("https://"),
     )
-    if not client.bucket_exists(BUCKET):
-        client.make_bucket(BUCKET)
+    ensure_bucket(client, BUCKET)
     zone = MinioObjectZone(endpoint, BUCKET, access, secret, prefix="exports")
     try:
         yield _Zone(zone, client)

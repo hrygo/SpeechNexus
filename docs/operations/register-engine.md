@@ -29,6 +29,15 @@ GPU 主机、不发布 binding，也不代表模型/硬件资格。
    `SPEECHNEXUS_MIGRATION_DATABASE_URL`）。
 2. 已有 owner-only 私有同步转写配方（`SPEECHNEXUS_TRANSCRIPTION_RECIPE_FILE`），
    且其 `runtime_plan` / `binding` / `stage.instance_id` 是本次要注册的实例事实。
+   配方（或手动模式参数）里的 binding 身份必须等于**已发布**的那个 revision，否则实例
+   虽然 `ready`，公开 Job 准入仍找不到它：配方 `binding_revision_id` /
+   `binding_publication_id` 对应已发布 revision 的 `revision_id`，配方 `manifest_id`
+   对应该 binding 的 `execution_recipe.capacity_manifest_id`，配方 `policy_revision_id`
+   写进 `workspace_quotas.policy_revision` 并被准入当作执行的 `policy_revision_id`。
+   发布步骤见[异步 Job 手册 §7.1](async-job-runbook.md#71-发布-binding注册与创建-job-的前置)。
+   本命令**不检查** binding 是否已发布——它不查询 `speech_binding_revisions` 或
+   `speech_publication_heads`，`--binding-revision-id` 只是调用方声明的字符串，所以
+   `outcome=registered` 不能当作 binding 已发布的证据。
 3. 引擎健康端点可从执行命令的主机访问；命令会把 origin 补成 `/health`，也接受
    显式 `/health` URL。执行者须先独立核对该端点确实属于目标实例及 generation；
    健康检查只要求 HTTP 200 和有界响应，不解析响应以验证模型或实例身份。
@@ -132,11 +141,13 @@ host 的 allocatable 向量不会被静默放大。
 一个事务内：
 
 - `host_nodes`：按 node 幂等插入；校验 architecture / topology，拒绝 quarantined，
-  必要时把非 active 节点置为 active。
+  必要时把非 active 节点置为 active。这是宿主机容量登记的唯一产品写入入口。
 - `resource_pools`：按 pool 幂等插入；校验 service class；同 owner 保留 token，租约剩余时间足够时不更新，否则续租；
   另一个存活 owner 直接 `pool_owner_conflict`；过期 owner 接管时 token 必须更大。
 - `workspace_quotas`：按 workspace 幂等插入；已有 policy revision 必须一致，
-  已有上限不得更小。
+  已有上限不得更小。工作空间配额同样只有本命令写入：`POST /v1/nexus/workspaces`
+  只建 `speech_workspaces` 行，不产生配额；配额缺失时公开 Job 创建返回
+  `422 workspace_not_configured`，重试不会改变结果。
 - `engine_instances` / `runtime_instance_heads` / `runtime_instance_intents` /
   `coordination_outbox` / `runtime_intent_deliveries`：走既有
   `create_in_transaction` + `observe_in_transaction`，所以 generation 单调、

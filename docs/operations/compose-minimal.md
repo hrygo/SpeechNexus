@@ -41,13 +41,20 @@ Linux 的 `docker-buildx-plugin`，不要改用关闭 BuildKit 的构建来绕�
 
 ## 1. 固定服务集合
 
-在仓库根目录执行：
+在仓库根目录执行。先给本次部署一个独占的 Compose 项目名：`deploy/compose.yaml` 第 1 行自带
+`name: speechnexus`，两套部署直接相遇时会争抢同名容器、卷与网络，第二次 `up` 会接管或
+报冲突。`COMPOSE_PROJECT_NAME` 覆盖该 `name:` 字段，且下面每次 `"${COMPOSE[@]}"` 调用都会
+沿用它：
 
 ```bash
+export COMPOSE_PROJECT_NAME=speechnexus-ref   # 每套部署唯一；不设置则回落到 speechnexus
 COMPOSE=(docker compose)
 "${COMPOSE[@]}" --env-file deploy/compose.env.example \
   -f deploy/compose.yaml config --services
 ```
+
+项目名只隔离容器/卷/网络命名，不改变端口占用与网段：项目名（本节）、宿主端口（§2）、
+Compose 子网与 MinIO 静态地址（本节末尾）三者要一起确定，任何一项撞车都起不完全。
 
 预期输出（顺序可不同）：
 
@@ -76,9 +83,15 @@ profile 的变量与默认 `dispatch_kinds` 见
 [deploy/README.md](../../deploy/README.md#job-dispatcher-job-dispatch-profile)；
 本参考部署只装配 `asr`、`tts` 车道，启动闸门对其它 kind 点名拒绝（见 §6 的异步 Job 段）。
 
-默认网络固定使用 `172.28.0.0/24`，MinIO 地址为 `172.28.0.10`；启动前须核对该网段
-不会与宿主机路由或其他容器网络冲突。若需使用其他网段，部署配置中的 Compose 子网、
-MinIO 静态地址和两份 gateway 私有配置的对象存储 endpoint 必须一起调整。文件语音对象
+默认网络固定使用 `172.28.0.0/24`（`deploy/compose.yaml:850`），MinIO 地址为
+`172.28.0.10`（`deploy/compose.yaml:90` 的 `ipv4_address`）；启动前须核对该网段不会与
+宿主机路由或其他容器网络冲突。这两处目前都**没有环境变量入口**，所以换网段只能改仓库里的
+Compose 文件——这正是「他人照着起一套」在 `172.28.0.0/24` 已被占用的主机上被挡住的原因
+（该限制的部署单元级修复另立卡，见 `docs/operations/compose-minimal-from-zero.md` 的 D2）。
+与之成组改的还有四份 gateway 私有配置的 `objects.endpoint`（复制到私有目录后改副本）：
+`deploy/private/gateway-file-asr.example.json:8`、`deploy/private/gateway-file-tts.example.json:11`、
+`deploy/private/gateway-file-voice-clone.example.json:5`、`deploy/private/gateway-file-voice-design.example.json:5`。
+只改其中一处会让网关连不上对象存储。文件语音对象
 适配器要求私有 IP 地址，不能直接改成 `minio` DNS 名称；API 使用的 Compose 服务名
 `minio` 是另一条配置路径。详见[私有部署输入说明](../../deploy/private/README.md)。
 
@@ -358,11 +371,14 @@ curl -fsS http://127.0.0.1:59000/minio/health/live
 预期退出码为 `0`，容器内打印的迁移日志可能为空。核对版本表：
 
 ```bash
-docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
+  exec -T postgres psql -U speechnexus -d speechnexus -Atc \
   'select version_num from speech.alembic_version'
 ```
 
-上述容器名、用户和数据库名对应默认配置；若部署值不同，先核对实际名称再查询。
+上述命令经 Compose 服务名 `postgres` 进入容器，因此不绑定容器名：项目名取自 §1 的
+`COMPOSE_PROJECT_NAME`，容器实际叫 `<项目名>-postgres-1`，直接写死它会得到
+`No such container`。用户与数据库名对应默认配置；若部署值不同，先核对实际名称再查询。
 仓库当前迁移链的 head 为 `0054_artifact_deleted_ledger`；实际部署必须以所用发布制品中的唯一
 head 为准，查询结果须与之相符。不要把旧版 `0027_gateway_abort_intents` 或
 `0039_public_job_progress` 当作当前 head，也不要跳过检查或手工修改版本表。
@@ -877,7 +893,8 @@ PY
 读取路径验证）：
 
 ```bash
-docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
+  exec -T postgres psql -U speechnexus -d speechnexus -Atc \
   "select table_name, privilege_type, column_name from information_schema.column_privileges \
    where grantee = 'sn_workspace_writer' and privilege_type in ('INSERT','UPDATE') order by 1, 2, 3"
 ```
@@ -917,7 +934,8 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 `404 model_instance_generation_unknown`。核对写权限确实没有落到该角色（含列级授权）：
 
 ```bash
-docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
+  exec -T postgres psql -U speechnexus -d speechnexus -Atc \
   "select table_name, privilege_type, column_name from information_schema.column_privileges \
    where grantee = 'sn_model_instance_reader' and privilege_type in ('INSERT','UPDATE','REFERENCES') order by 1, 2, 3"
 ```
@@ -1061,7 +1079,8 @@ Artifact 桶与 gateway staging 结果桶的存在和版本化，全部通过后
 容器不需要改动。核对列级授权（表级 `SELECT` 由启动校验和事务读取路径验证）：
 
 ```bash
-docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
+  exec -T postgres psql -U speechnexus -d speechnexus -Atc \
   "select table_name, privilege_type, column_name from information_schema.column_privileges \
    where grantee = 'sn_quarantine_release' and privilege_type in ('INSERT','UPDATE') order by 1, 2, 3"
 ```
@@ -1074,7 +1093,8 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 `NULL`）。再确认没有 `DELETE`/`TRUNCATE`/`REFERENCES` 落到该角色：
 
 ```bash
-docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
+  exec -T postgres psql -U speechnexus -d speechnexus -Atc \
   "select table_name, privilege_type from information_schema.table_privileges \
    where grantee = 'sn_quarantine_release' and privilege_type in \
      ('DELETE','TRUNCATE','REFERENCES','TRIGGER') order by 1, 2"
@@ -1140,7 +1160,8 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 核对这七个身份的实际表级授权（列级 `UPDATE` 不出现在这个视图里，单独看下一条）：
 
 ```bash
-docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
+  exec -T postgres psql -U speechnexus -d speechnexus -Atc \
   "select grantee, table_name, privilege_type from information_schema.table_privileges \
    where grantee in ('sn_catalog_reader','sn_artifact_reader','sn_resource_pool_reader', \
      'sn_binding_list_reader','sn_binding_writer','sn_binding_admin_reader', \
@@ -1169,7 +1190,8 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 五个只读 identity 必须没有任何写权限：
 
 ```bash
-docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
+  exec -T postgres psql -U speechnexus -d speechnexus -Atc \
   "select grantee, table_name, privilege_type from information_schema.table_privileges \
    where grantee in ('sn_catalog_reader','sn_artifact_reader','sn_resource_pool_reader', \
      'sn_binding_list_reader','sn_binding_admin_reader') \
@@ -1181,7 +1203,8 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 `speech_binding_families.latest_revision`：
 
 ```bash
-docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
+  exec -T postgres psql -U speechnexus -d speechnexus -Atc \
   "select table_name, column_name from information_schema.column_privileges \
    where grantee = 'sn_binding_writer' and privilege_type = 'UPDATE' order by 1, 2"
 ```
@@ -1191,7 +1214,8 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 （发布指针、目录版本与素材引用释放），同样不体现在表级视图里：
 
 ```bash
-docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
+  exec -T postgres psql -U speechnexus -d speechnexus -Atc \
   "select table_name, column_name from information_schema.column_privileges \
    where grantee = 'sn_binding_lifecycle' and privilege_type = 'UPDATE' order by 1, 2"
 ```
@@ -1225,7 +1249,8 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 保留」，因此启动校验会点名列拒绝。核对列级授权：
 
 ```bash
-docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
+  exec -T postgres psql -U speechnexus -d speechnexus -Atc \
   "select table_name, column_name from information_schema.column_privileges \
    where grantee = 'sn_artifact_retention' and privilege_type = 'UPDATE' order by 1, 2"
 ```
@@ -1234,7 +1259,8 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 前者是保留决策，后者是删除账本（清理确认后写入的移除时刻）。确认没有表级写权限：
 
 ```bash
-docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
+  exec -T postgres psql -U speechnexus -d speechnexus -Atc \
   "select table_name, privilege_type from information_schema.table_privileges \
    where grantee = 'sn_artifact_retention' and privilege_type in \
      ('INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER') order by 1, 2"
@@ -1249,7 +1275,9 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
 只约束迁移之后的新写入。核对这段历史有多少行：
 
 ```bash
-docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc   "select count(*) from speech_artifacts    where artifact_state = 'deleted' and deleted_at_us is null"
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
+  exec -T postgres psql -U speechnexus -d speechnexus -Atc \
+  "select count(*) from speech_artifacts where artifact_state = 'deleted' and deleted_at_us is null"
 ```
 
 该计数就是「迁移前删除、无账本」的行数。不要用 `now()`、`created_at_us` 或
@@ -1911,6 +1939,19 @@ http=200
 
 ## 8. 一次性注册引擎
 
+注册不是「起一个容器」：它在同一个事务里写入准入读取的四类事实——`host_nodes`（宿主机容量
+向量）、`workspace_quotas`（该工作空间的并发 attempt 配额）、`resource_pools`（池 owner 与
+fencing token）与 `engine_instances` / `runtime_instance_heads`（ready 实例与 generation）。
+因此它是**容量登记与工作空间配额唯一的产生入口**，也是从空库到「`POST /v1/nexus/jobs`
+返回 `202`」这条路上的第二段：`host_nodes` 只在这里插入（`engine_registration.py:359`，表结构见
+`speech/infrastructure/coordination_schema.py:29`），`workspace_quotas` 也只在这里插入
+（`engine_registration.py:479`，表结构见 `speech/infrastructure/coordination_schema.py:20`）。
+
+注册之前必须已经有一个**已发布** binding，且注册写入的 binding 身份要与它逐字相同，否则实例
+虽然 `ready`，准入仍以 `422 job_binding_incomplete` / `429 job_capacity_exhausted` 拒绝。
+发布 binding、`execution_defaults`、配额与容量的完整顺序和每条参数的取值来源见
+[异步 Job 手册 §7.1–§7.3](async-job-runbook.md#71-发布-binding注册与创建-job-的前置)。
+
 只有目标引擎已经在 `SPEECHNEXUS_ENGINE_HEALTH_URL` 上返回 `200`，且已独立核对端点
 属于目标实例和 generation 时才执行。健康响应本身不验证实例身份或模型。命令使用
 环境文件中的 node、gateway、instance、generation，并核对前三者与 recipe；重复执行
@@ -1932,6 +1973,30 @@ http=200
 数据库。健康探测失败、存在停止意图或原证据不一致时仍可能失败。不要修改 generation 或
 instance 来“绕过”冲突；先核对旧 head、owner 和 readiness 证据。
 
+注册成功后核对四类事实（只读，`registered` 输出的 `rows` 里也有同样的行）：
+
+```bash
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
+  exec -T postgres psql -U speechnexus -d speechnexus -Atc \
+  "select q.workspace_id, q.max_attempts, q.policy_revision from speech.workspace_quotas q"
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
+  exec -T postgres psql -U speechnexus -d speechnexus -Atc \
+  "select host_node_id, node_state, allocatable_device_memory_bytes from speech.host_nodes"
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
+  exec -T postgres psql -U speechnexus -d speechnexus -Atc \
+  "select instance_id, instance_generation, instance_state, binding_revision_id, manifest_id \
+   from speech.engine_instances"
+```
+
+预期 `workspace-default` 一行（`max_attempts` 取自 `SPEECHNEXUS_ADMISSION_MAX_ATTEMPTS`，
+`policy_revision` 取自私有配方的 `policy_revision_id`）、`node-local-1` 一行 `active`、
+`instance-asr-1|1|ready` 一行，且 `binding_revision_id` 等于已发布 binding 的 `revision_id`
+（形如 `mbrev-…`）、`manifest_id` 等于该 binding 的 `execution_recipe.capacity_manifest_id`。
+`workspace_quotas` 没有独立的管理入口：`POST /v1/nexus/workspaces` 只写
+`speech_workspaces`（`workspaces_postgres.py:275`），配额行只由本节的注册写入
+（`engine_registration.py:477` 的 `_ensure_quota`）；同一工作空间重复注册时 `policy_revision`
+必须一致，否则注册以 `quota_policy_conflict` 失败。
+
 ## 9. 失败时先看什么
 
 | 现象 | 优先检查 |
@@ -1946,6 +2011,11 @@ instance 来“绕过”冲突；先核对旧 head、owner 和 readiness 证据�
 | `minio-init` 报 `bucket versioning was not enabled` | 检查 MinIO 健康、root 凭据和 bucket policy；不能删除版本化要求后继续 |
 | `engine-register` 报 `engine_unreachable` | 从 Compose 网络探测 `SPEECHNEXUS_ENGINE_HEALTH_URL`；该 URL 必须能从容器访问，不能只从宿主机访问 |
 | `engine-register` 报 `invalid_recipe` | recipe 结构、摘要、stage/instance 或 binding plan 不一致 |
+| `engine-register` 报 `quota_policy_conflict` / `quota_capacity_conflict` | 该工作空间已有配额行：`policy_revision` 必须与本次注册提供的值一致、`max_attempts` 不得更小；不要用改行的方式绕过，先确认哪个部署先写了这行 |
+| `engine-register` 报 `host_capacity_insufficient` | `--host-capacity`（缺省 `steady + per_slot × max_slots`，至少覆盖 `peak`）小于计划需求，或该节点已有 held/quarantined 占用；先核对实际容量再调整计划 |
+| `POST /v1/nexus/jobs` 返回 `422 model_not_published` | 没有任何已发布 binding 作为该 `model` 的 head，或 `execution_recipe` / catalogue 尚未就绪；先按[异步 Job 手册 §7.1](async-job-runbook.md#71-发布-binding注册与创建-job-的前置) 发布（从空库首次创建时这是最先出现的错误，早于引擎与容量判定） |
+| `POST /v1/nexus/jobs` 返回 `422 workspace_not_configured` | 该工作空间没有 `workspace_quotas` 行——即没为它注册过引擎；配额只由 §8 的注册写入，重试不会改变结果 |
+| `POST /v1/nexus/jobs` 返回 `422 job_binding_incomplete` | 已发布 binding 的不可变定义缺少 `execution_defaults.<kind>` 字段，或实例的 `manifest_id` / `binding_revision_id` 与该 binding 不一致；`execution_defaults` 在 admin 响应里不回显（`speech/interfaces/binding_drafts.py:56`），须回到创建草稿时的请求体核对 |
 | `engine-register` 报 `pool_owner_conflict` / `previous_generation_active` | 已有活动 owner 或旧 generation 仍 ready；先核对/停止旧实例，不能修改 token 假装接管 |
 | 容器已启动但 API 转写返回 `504 operation_timeout` | 按原身份检查准入、网关、worker 和终态事实；历史超时原因不能直接套用到新运行，也不要用增加超时或重提新执行掩盖 |
 | `POST .../quarantine-releases` 持续 `503 quarantine_release_unavailable` | 先查 `SPEECHNEXUS_QUARANTINE_RELEASE_DATABASE_URL` 是否配置：空值使端点永久停在可重试的 503，不会自愈；再查角色口令、DNS 与连接池 |

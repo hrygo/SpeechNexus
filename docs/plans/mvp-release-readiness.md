@@ -145,7 +145,9 @@
 5. ~~补 B6 的决定与最小部署入口~~：已完成（#832）。剩余的是该单元之外的下游输入（语音底座地址、对象区、内网 LLM），属于部署方提供项，不在首发阻塞链上。
 6. 修 #840：Web 镜像在自身 CSP 下白屏（`ajv.compile` 的 `unsafe-eval`），并把「真实镜像产物 + 真实 CSP 头」的首屏渲染门禁加进 CI。
 7. ~~修订三处陈旧陈述~~：已完成（#823）。同步 ASR 的终态写入者、公开 Job 六个路由的装配范围与生产 planner 的装配状态都已按代码就地订正（`execution-gateway/src/speechnexus_gateway/infrastructure/file_execution_worker.py:380`、`backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:802` 起、`backend/src/speechnexus_backend/job_dispatch_runtime.py:321`），矩阵按 `delivery-issues.json` 重渲染；三处均只声明装配/实现证据，未升格为真实部署验证。
-8. 在参考部署上补一次「照着文档从零起一套」的记录（含 LICENSE 决定），完成后才可宣称 Epic #342 的 MVP 口径达标。
+8. 在参考部署上补一次「照着文档从零起一套」的记录，完成后才可宣称 Epic #342 的 MVP 口径达标。
+   **现状**：记录已有两次（`DEL-535` / `DEL-536`，真实 GPU、真实 Job），但**两次都不是零修正**——`DEL-535` 需改样例桶名，`DEL-536` 需自行拆出「只 build 非 minio 镜像」的序列。样例桶名与`compose-minimal.md` 的构建序列已修（`#893`、`#903`），剩余 `async-job-runbook.md` §7.1/§7.2 与`reference-acceptance.py` 的同类 `--build`（`#905`）尚未合入，故本项**仍未达标**。LICENSE 已定（MIT，`LICENSE` 文件），不再是待决项。
+10. 发布说明写明同版判据的覆盖边界（`#853`，`0f2f18f5`）：`GET /v1/nexus/version` 只覆盖「两侧都带该端点、契约修订不同」这一类混搭；① 整套部署都早于该校验时两侧都没有检测代码，② 新页面 + 未升级接口（`404`）按「未知」处理而**不告警**（`404` 无法与反向代理/静态服务器的`404` 区分），③ workbench 页面的 `/v1/workbench/*` 由另一个进程服务且无此路由，**该进程单独升降级时不告警**，④ 只在页面加载时比对一次，长开页面期间后端被换版不重查。上述四类只剩人工核对清单（`docs/operations/same-version-check.md` 四项）。
 9. 发布说明写明 0055 的资格证据限制：0055 之前产生、没有 provenance 行的内建资格不再自动被准入接受（同步 TTS 与公开 Job 均拒绝），恢复须**发布新的 voice revision** 并为该 revision 走控制器探测路径或运维自证路径取得资格（同一 revision 不能补发，重复发布报 `publication_conflict`）；条目随发行版一起对外。
 
 ## §6 建议新建的实施卡（待统一建卡，本卡不创建）

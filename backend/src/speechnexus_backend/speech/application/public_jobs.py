@@ -104,7 +104,16 @@ class DisabledWorkspaceError(ValueError):
 
 
 class ModelNotPublishedError(LookupError):
-    pass
+    """No published binding revision serves the requested model.
+
+    ``detail`` states the deployment step that produces one (publish the binding,
+    register the engine) so the 422 does not send an operator to the model
+    catalogue; the declared code stays ``model_not_published`` (#877 item 4).
+    """
+
+    def __init__(self, detail: str | None = None) -> None:
+        self.detail = detail
+        super().__init__(detail or "")
 
 
 class ModelBindingError(ValueError):
@@ -186,8 +195,9 @@ class JobRejectedError(RuntimeError):
 class JobAdmissionRejectedError(RuntimeError):
     """A create was refused by the frozen binding, admission or capacity facts."""
 
-    def __init__(self, code: str) -> None:
+    def __init__(self, code: str, detail: str | None = None) -> None:
         self.code = code
+        self.detail = detail
         super().__init__(code)
 
 
@@ -282,6 +292,15 @@ class JobFacts(Protocol):
     def workspace(self, workspace_id: str) -> WorkspaceFact | None: ...
 
     def latest_binding(self, model_id: str) -> BindingFact | None: ...
+
+    def engine_instance_states(self, model_id: str) -> tuple[str, ...]:
+        """States of every registered engine instance serving this model binding.
+
+        Empty means no engine was ever registered for the model, so the missing
+        prerequisite is registration; a non-empty tuple names the states that keep
+        admission from selecting one (#877 item 4).
+        """
+        ...
 
     def binding_revision(self, binding_id: str, revision: int) -> BindingFact | None: ...
 
@@ -802,7 +821,7 @@ class PublicJobs:
         else:
             latest = self._facts.latest_binding(model_id)
             if latest is None:
-                raise ModelNotPublishedError
+                raise self._unpublished_binding(model_id)
             binding = latest
             tasks = binding.definition.get("tasks")
             if not isinstance(tasks, list) or _REQUIRED_TASK[typed_kind] not in tasks:
@@ -881,6 +900,36 @@ class PublicJobs:
             submission=submission,
             expected_binding=binding.publication if pin is not None else None,
             retry_of_job_id=retry_of_job_id,
+        )
+
+    def _unpublished_binding(self, model_id: str) -> ModelNotPublishedError:
+        """Name the deployment step that produces the publication, not "the model".
+
+        ``latest_binding`` returning None means no published binding revision serves
+        this model. From zero that is two missing inputs at once: the publication and
+        the engine registration admission later selects an instance from. A plain
+        "The model is not published." sent the operator to the on-demand model
+        catalogue while the missing item was the engine (#877 item 4). The declared
+        code stays ``model_not_published``.
+        """
+        try:
+            states = self._facts.engine_instance_states(model_id)
+        except PublicJobUnavailableError:
+            # The registration fact is an explanation, not what decides the refusal:
+            # an unreadable one must not replace the 422 with a storage answer.
+            states = ()
+        if states:
+            return ModelNotPublishedError(
+                f"The model '{model_id}' has registered engine instance(s) in state "
+                f"{', '.join(sorted(states))} but no published binding revision: "
+                "publish the binding for this model (binding lifecycle/publications), "
+                "then send a new request."
+            )
+        return ModelNotPublishedError(
+            f"The model '{model_id}' has no published binding revision and no engine "
+            "instance is registered for it: publish the binding and register the "
+            "engine (engine-registration profile), so admission has a ready instance "
+            "to select. Retrying the same request cannot create either."
         )
 
     def _validation_intent(self, payload: Mapping[str, Any], workspace_id: str) -> dict[str, Any]:
@@ -1510,12 +1559,12 @@ _STORE_MECHANISM_REASONS: dict[str, JobRejectionReason] = {
 _STORE_MECHANISM_CODES: frozenset[str] = frozenset(_STORE_MECHANISM_REASONS)
 
 
-def _raise_admission_rejection(code: str | None) -> None:
+def _raise_admission_rejection(code: str | None, detail: str | None = None) -> None:
     """Turn a store refusal into the public answer, never into a silent success."""
     if code == "idempotency_conflict":
         raise IdempotencyConflictError
     if code in _CREATE_REFUSAL_CODES:
-        raise JobAdmissionRejectedError(str(code))
+        raise JobAdmissionRejectedError(str(code), detail)
     if code in _STORE_MECHANISM_CODES:
         return  # The caller raises the declared mechanism reason for this code.
     # An undeclared or missing refusal code is a deployment defect. Returning
@@ -1537,8 +1586,8 @@ def _revision_result(result: RevisionCreateResult) -> tuple[PublicJob, str]:
         if result.error_code == "job_unavailable":
             # No admission role is configured: this is a retryable deployment
             # outage, never a contract violation.
-            raise PublicJobUnavailableError
-        _raise_admission_rejection(result.error_code)
+            raise PublicJobUnavailableError(result.detail)
+        _raise_admission_rejection(result.error_code, result.detail)
         raise JobRejectedError(_rejection_reason(result.error_code))
     if result.job is None or result.revision is None:
         raise JobRejectedError("contract")
@@ -1563,9 +1612,10 @@ def _submission_result(result: JobCreateResult) -> PublicJob:
             # The store could not even reach admission (for example no admission role
             # is configured). That is the storage outage, not a contract violation, and
             # it is not an admission code: the mapping has no entry for it precisely
-            # because the store never wrote one (#828 review M1).
-            raise PublicJobUnavailableError
-        _raise_admission_rejection(result.error_code)
+            # because the store never wrote one (#828 review M1). The detail, when the
+            # store knows the blank key, names that key and never a value (#877).
+            raise PublicJobUnavailableError(result.detail)
+        _raise_admission_rejection(result.error_code, result.detail)
         raise JobRejectedError(_rejection_reason(result.error_code))
     if result.job is None:
         raise JobRejectedError("contract")

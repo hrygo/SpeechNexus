@@ -217,8 +217,20 @@ DEPLOYMENT_STATE_CODES: frozenset[str] = frozenset(
 )
 
 
-def job_error(code: str, request_id: str, *, headers: dict[str, str] | None = None) -> JSONResponse:
+def job_error(
+    code: str,
+    request_id: str,
+    *,
+    headers: dict[str, str] | None = None,
+    detail: str | None = None,
+) -> JSONResponse:
     """Render one declared Job error, and refuse to invent a storage answer.
+
+    ``detail`` replaces the code's default message when this build knows the
+    concrete missing item (a blank Job DSN, an unpublished binding, no registered
+    engine instance). It never changes the declared code, status or retryability,
+    and it must never carry a DSN value, credential or other internal fact -- the
+    key name is what an operator needs (#877).
 
     An undeclared code is a deployment defect. It used to fall back to
     ``job_unavailable`` -- "Job storage is unavailable." -- so any unmapped cause
@@ -236,6 +248,8 @@ def job_error(code: str, request_id: str, *, headers: dict[str, str] | None = No
         status, kind, _ = _ERRORS[code]
     else:
         status, kind, message = _ERRORS[code]
+    if detail is not None:
+        message = detail
     # ``retryable`` answers one question: can this same request succeed without an
     # out-of-band change? Only the unknown execution outcome (the original identity
     # is replayed), a capacity delay a released lease clears, and the admission

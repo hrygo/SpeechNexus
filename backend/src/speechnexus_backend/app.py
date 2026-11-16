@@ -513,6 +513,39 @@ def create_app(
             return jobs
         return job_runtime.jobs if job_runtime is not None else None
 
+    def job_unavailable_detail() -> str | None:
+        """Name the blank Job DSNs that leave the whole surface unassembled.
+
+        Both DSNs are optional at the settings layer, so a deployment can start
+        without them. Every Job route then answered the same
+        ``503 job_unavailable`` / "Job storage is unavailable.", which names no
+        configuration item and reads like an outage; the key names tell an operator
+        what to set (#877 item 1). Values never leave the settings object.
+        """
+        if jobs is not None or job_runtime is not None:
+            # The surface is assembled; a request-time failure of this kind has no
+            # configuration cause to name.
+            return None
+        blank = [
+            key
+            for key, value in (
+                ("SPEECHNEXUS_JOB_WRITER_DATABASE_URL", resolved_settings.job_writer_database_url),
+                (
+                    "SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL",
+                    resolved_settings.job_admission_database_url,
+                ),
+            )
+            if value is None
+        ]
+        if not blank:
+            return None
+        return (
+            "The Job surface is not assembled because these keys are blank: "
+            + ", ".join(blank)
+            + ". Set both Job DSNs for the api process; without them the deployment "
+            "cannot create, read or cancel a Job."
+        )
+
     def get_voice_drafts() -> VoiceDrafts | None:
         if voice_drafts is not None:
             return voice_drafts
@@ -758,6 +791,7 @@ def create_app(
         create_job_router(
             get_jobs,
             get_confirmation=get_job_confirmation,
+            unavailable_detail=job_unavailable_detail,
             max_bytes=resolved_settings.job_receive_max_bytes,
             receive_timeout_seconds=resolved_settings.job_receive_timeout_seconds,
             event_heartbeat_seconds=resolved_settings.job_event_heartbeat_seconds,

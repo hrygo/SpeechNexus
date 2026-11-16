@@ -119,7 +119,7 @@
 4. 补 B4（同步 TTS 装配样例与 settlement 角色）；B5 的发布写入与清理入口已实现，仍需一次参考部署运行留证——两者都可在无 GPU 窗口时完成。
 5. ~~补 B6 的决定与最小部署入口~~：已完成（#832）。剩余的是该单元之外的下游输入（语音底座地址、对象区、内网 LLM），属于部署方提供项，不在首发阻塞链上。
 6. 修 #840：Web 镜像在自身 CSP 下白屏（`ajv.compile` 的 `unsafe-eval`），并把「真实镜像产物 + 真实 CSP 头」的首屏渲染门禁加进 CI。
-7. ~~修订三处陈旧陈述~~：已完成（#823）。同步 ASR 的终态写入者、公开 Job 六个路由的装配范围与生产 planner 的装配状态都已按代码就地订正（`execution-gateway/src/speechnexus_gateway/infrastructure/file_execution_worker.py:380`、`backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:783` 起、`backend/src/speechnexus_backend/job_dispatch_runtime.py:321`），矩阵按 `delivery-issues.json` 重渲染；三处均只声明装配/实现证据，未升格为真实部署验证。
+7. ~~修订三处陈旧陈述~~：已完成（#823）。同步 ASR 的终态写入者、公开 Job 六个路由的装配范围与生产 planner 的装配状态都已按代码就地订正（`execution-gateway/src/speechnexus_gateway/infrastructure/file_execution_worker.py:380`、`backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:802` 起、`backend/src/speechnexus_backend/job_dispatch_runtime.py:321`），矩阵按 `delivery-issues.json` 重渲染；三处均只声明装配/实现证据，未升格为真实部署验证。
 8. 在参考部署上补一次「照着文档从零起一套」的记录（含 LICENSE 决定），完成后才可宣称 Epic #342 的 MVP 口径达标。
 
 ## §6 建议新建的实施卡（待统一建卡，本卡不创建）

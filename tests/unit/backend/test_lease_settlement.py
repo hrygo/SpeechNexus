@@ -237,3 +237,42 @@ def test_preflight_refuses_a_public_lease_on_its_identity() -> None:
 def test_preflight_requires_a_bounded_timeout() -> None:
     with pytest.raises(ValueError):
         require_complete_tts_roots(cast(SpeechPool, _PreflightPool(None)), timeout_seconds=0)
+
+
+class _UnmigratedConnection:
+    """A connection whose schema was never migrated: the SELECT cannot resolve."""
+
+    def __enter__(self) -> _UnmigratedConnection:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+    def execute(self, statement: str, parameters: object = None) -> _PreflightResult:
+        if statement.startswith("SET TRANSACTION") or statement.startswith("SELECT set_config"):
+            return _PreflightResult(None)
+        raise psycopg.errors.UndefinedTable('relation "admission_leases" does not exist')
+
+
+class _UnmigratedPool:
+    def connection(self, *, timeout: float) -> _UnmigratedConnection:
+        return _UnmigratedConnection()
+
+
+def test_the_preflight_names_a_missing_migration_instead_of_a_driver_error() -> None:
+    """#877 item 3: an unmigrated database is refused with the repair, not a traceback.
+
+    The driver error names one table and stops there. The operator needs the
+    migration profile, and the startup must be a named refusal rather than an
+    uncaught ``UndefinedTable`` that restarts the API container.
+    """
+    from speechnexus_backend.speech.infrastructure import tts_settlement_preflight as preflight
+
+    with pytest.raises(preflight.SettlementPreflightUnavailableError) as raised:
+        require_complete_tts_roots(cast(SpeechPool, _UnmigratedPool()), timeout_seconds=1)
+
+    message = str(raised.value)
+    assert "migration profile" in message
+    assert "admission_leases" in message
+    # The refusal is this module's own type, not a driver exception escaping.
+    assert not isinstance(raised.value, psycopg.Error)

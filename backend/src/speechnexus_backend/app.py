@@ -78,6 +78,7 @@ from speechnexus_backend.speech.infrastructure.gateway_job_cancellation import (
     GatewayJobCancellationStopper,
 )
 from speechnexus_backend.speech.infrastructure.readiness import (
+    CancellationDebtProbe,
     ObjectStorageReadinessProbe,
     PostgresReadinessProbe,
 )
@@ -256,6 +257,14 @@ def _build_readiness(settings: Settings) -> ReadinessService:
         ),
         ObjectStorageReadinessProbe(
             settings.object_storage_healthcheck_url,
+            timeout_seconds=settings.readiness_timeout_seconds,
+        ),
+        # Reports accepted cancellations that cannot yet return capacity. It is
+        # not a failing probe: /readyz is the deployment healthcheck, and one
+        # Job's stuck reservation must not take the API out of service (#852).
+        CancellationDebtProbe(
+            settings.database_url.get_secret_value(),
+            schema=settings.database_schema,
             timeout_seconds=settings.readiness_timeout_seconds,
         ),
     ]

@@ -258,22 +258,21 @@ def job_error(
     # against an approved recipe -- is ``false`` even though the recovery is known,
     # and that recovery lives in the message instead (#828 review B1). The
     # ``job_unavailable`` storage outage never qualifies.
+    # ``execution_cleanup_pending`` is not retryable: the Job body reports
+    # ``retryable: false`` for the same state, and nothing finishes the cleanup on
+    # its own -- the capacity stays held until the gateway records a stop it can
+    # prove or the accepted cancellation is judged against facts that authorize
+    # isolation (#852 review P2).
     retryable = code in (
         "job_outcome_unknown",
         "job_capacity_exhausted",
         "job_admission_contended",
-        "execution_cleanup_pending",
     )
     response_headers = {"Cache-Control": "no-store", **(headers or {})}
     if code == "job_capacity_exhausted":
         # One second is the minimum claim-lease granularity (see
         # PostgresDispatchQueue: 1_000 <= lease_ms). A capacity refusal is
         # therefore retried no sooner than the next possible lease release.
-        response_headers.setdefault("Retry-After", "1")
-    if code == "execution_cleanup_pending":
-        # `retryable` is true here: the cleanup this cancellation waits for finishes on
-        # its own. One second is the shortest granularity the release path can observe,
-        # so the hint stops a client from hot-looping the request (#828 review D10).
         response_headers.setdefault("Retry-After", "1")
     return JSONResponse(
         status_code=status,

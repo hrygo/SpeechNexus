@@ -103,7 +103,7 @@
 **验收：**
 
 - 查询、取消、重试、Operation/receipt 与 SSE 的权威状态一致；断线时以持久事件序号和 `Last-Event-ID` 从该序号之后续读，事件历史过期返回 `410 event_history_expired` 后读取当前 Job 状态，不伪造历史；幂等与取消语义一致。当前创建路径在写入事务前读取工作空间和资产状态，事务内未重新核验这两类事实；资源状态变化与创建竞争须另行接入权威裁决并验收。
-- 显式重试创建新的 Job 及独立 attempt 历史，不复活旧 Job；旧执行尚未确认停止时返回 `409 execution_cleanup_pending`。公开 Job 路由已装配六个操作：创建（`POST /v1/nexus/jobs`）、列表（`GET /v1/nexus/jobs`）、读取（`GET /v1/nexus/jobs/{job_id}`）、取消（`POST /v1/nexus/jobs/{job_id}/cancellations`）、重试（`POST /v1/nexus/jobs/{job_id}/retries`）与 SSE 事件流（`GET /v1/nexus/jobs/{job_id}/events`），注册在 `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:802` 起，并由 `backend/src/speechnexus_backend/app.py:791` 装配进应用；取消、重试与事件流另有隔离 PG 与真实 TCP 测试，这些路由尚未在参考部署上实际调用。
+- 显式重试创建新的 Job 及独立 attempt 历史，不复活旧 Job；旧执行尚未确认停止时返回 `409 execution_cleanup_pending`。公开 Job 路由已装配六个操作：创建（`POST /v1/nexus/jobs`）、列表（`GET /v1/nexus/jobs`）、读取（`GET /v1/nexus/jobs/{job_id}`）、取消（`POST /v1/nexus/jobs/{job_id}/cancellations`）、重试（`POST /v1/nexus/jobs/{job_id}/retries`）与 SSE 事件流（`GET /v1/nexus/jobs/{job_id}/events`），注册在 `backend/src/speechnexus_backend/speech/interfaces/http/jobs.py:802` 起，并由 `backend/src/speechnexus_backend/app.py:800` 装配进应用；取消、重试与事件流另有隔离 PG 与真实 TCP 测试，这些路由尚未在参考部署上实际调用。
 
 设计依据：[speech-api.md](architecture/speech-api.md)、[runtime-governance.md](architecture/runtime-governance.md)。
 

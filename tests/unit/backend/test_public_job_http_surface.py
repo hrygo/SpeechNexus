@@ -187,19 +187,16 @@ async def test_retry_maps_every_domain_failure_to_its_declared_error(
     assert response.status_code == status, response.text
     assert response.json()["error"]["code"] == code
     # `retryable` states whether repeating the same request can succeed without an
-    # out-of-band step: an unknown outcome and a cleanup that finishes on its own do,
-    # while an unavailable read may describe a result that is permanently gone
-    # (#828 review M5).
-    retryable_codes = {"job_outcome_unknown", "execution_cleanup_pending"}
+    # out-of-band step. An unknown outcome and a capacity delay a lease release clears
+    # do; a pending execution cleanup does not, because nothing finishes it on its own
+    # and the Job body reports the same `retryable: false` (#852 review P2).
+    retryable_codes = {"job_outcome_unknown", "job_capacity_exhausted"}
     assert response.json()["error"]["retryable"] is (code in retryable_codes)
-    # A refusal that says "wait for a self-finishing step" states when to come back.
-    # Without the hint a client that trusts `retryable` has no reason not to hot-loop the
-    # same request (#828 review D10). `job_outcome_unknown` deliberately carries no hint:
-    # its recovery is to query or replay the original identity now, not to wait.
-    if code in {"execution_cleanup_pending", "job_capacity_exhausted"}:
+    # Only the refusal that names a self-finishing wait states when to come back. The
+    # cleanup refusal carries no hint: a client that trusted `retryable` has no reason to
+    # hot-loop a request whose answer is "capacity is still held".
+    if code == "job_capacity_exhausted":
         assert response.headers["Retry-After"] == "1"
-    elif code in retryable_codes:
-        assert "Retry-After" not in response.headers
     else:
         assert "Retry-After" not in response.headers
 

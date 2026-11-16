@@ -15,6 +15,7 @@ from speechnexus_backend.job_cancellation_runtime import (
     _PublicJobsStop,
     build_cancellation_runtime,
 )
+from speechnexus_backend.speech.application.leases import LeaseIsolation, LeaseIsolationGap
 
 
 def _settings(**changes: Any) -> JobCancellationSettings:
@@ -172,16 +173,60 @@ class _SettleableJobs:
         return self.current
 
 
-class _QuarantiningCapacity:
-    def __init__(self, *, quarantined: bool = True, fail: bool = False) -> None:
-        self.quarantined, self.fail = quarantined, fail
+class _Isolation:
+    """Records every isolation attempt and returns a scripted answer."""
+
+    def __init__(self, *answers: LeaseIsolation | None) -> None:
+        self.answers = list(answers)
         self.calls: list[tuple[str, str]] = []
 
-    def quarantine_sync(self, operation_id: str, *, reason_code: str) -> bool:
+    def isolate_sync(self, operation_id: str, *, reason_code: str) -> LeaseIsolation | None:
         self.calls.append((operation_id, reason_code))
-        if self.fail:
-            raise RuntimeError("lease storage unavailable")
-        return self.quarantined
+        return self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]
+
+
+def _isolated(*lease_ids: str) -> LeaseIsolation:
+    return LeaseIsolation(operation_id="job-1", quarantined=lease_ids, gaps=())
+
+
+def _gap(
+    *,
+    reason: str = "execution_cleanup_pending",
+    lease_state: str = "reserved",
+    execution_state: str | None = "executing",
+    lease_id: str = "lease-1",
+) -> LeaseIsolation:
+    return LeaseIsolation(
+        operation_id="job-1",
+        quarantined=(),
+        gaps=(
+            LeaseIsolationGap(
+                lease_id=lease_id,
+                lease_state=lease_state,
+                cleanup_state="pending",
+                execution_state=execution_state,
+                execution_cleanup_state="pending",
+                reserved_slots=1,
+                reason=reason,
+            ),
+        ),
+    )
+
+
+def test_unconfirmed_settlement_quarantines_every_lease_before_failing_the_job() -> None:
+    order: list[str] = []
+    jobs = _SettleableJobs(_SettleableJob("cancelling"))
+    isolation = _Isolation(_isolated("lease-1", "lease-2"))
+    settlement = UnconfirmedCancellationSettlement(
+        cast(Any, _OrderedJobs(jobs, order)), cast(Any, _OrderedCapacity(isolation, order))
+    )
+
+    judgment = settlement.settle("job-1")
+
+    assert judgment.settled is True and judgment.outcome == "exhausted"
+    # Isolation first: capacity must stop looking held before the Job closes.
+    assert order == ["isolate", "advance"]
+    assert (jobs.current.state, jobs.current.error_code) == ("failed", "cancellation_unconfirmed")
 
 
 class _OrderedJobs:
@@ -199,80 +244,127 @@ class _OrderedJobs:
 
 
 class _OrderedCapacity:
-    def __init__(self, order: list[str]) -> None:
-        self._order = order
+    def __init__(self, isolation: _Isolation, order: list[str]) -> None:
+        self._isolation, self._order = isolation, order
 
-    def quarantine_sync(self, operation_id: str, *, reason_code: str) -> bool:
-        self._order.append("quarantine")
-        return True
+    def isolate_sync(self, operation_id: str, *, reason_code: str) -> LeaseIsolation | None:
+        self._order.append("isolate")
+        return self._isolation.isolate_sync(operation_id, reason_code=reason_code)
 
 
-def test_unconfirmed_settlement_quarantines_the_lease_before_failing_the_job() -> None:
-    order: list[str] = []
+def test_a_lease_that_cannot_be_isolated_blocks_the_terminal_judgment() -> None:
+    """#852 review P1: no `failed/cancellation_unconfirmed` while capacity is held.
+
+    Writing the terminal anyway made `cleanup_state` report `quarantined` for a
+    lease that was still `reserved`, and left that lease with no supported exit.
+    """
+    jobs = _SettleableJobs(_SettleableJob("cancelling"))
+    settlement = UnconfirmedCancellationSettlement(cast(Any, jobs), cast(Any, _Isolation(_gap())))
+
+    judgment = settlement.settle("job-1")
+
+    assert judgment.settled is False
+    assert judgment.outcome == "stop_unconfirmed"
+    assert "lease-1" in judgment.detail and "executing" in judgment.detail
+    assert jobs.advances == []
+    assert jobs.current.state == "cancelling"
+
+
+def test_one_isolatable_lease_does_not_excuse_the_others() -> None:
     jobs = _SettleableJobs(_SettleableJob("cancelling"))
     settlement = UnconfirmedCancellationSettlement(
-        cast(Any, _OrderedJobs(jobs, order)), cast(Any, _OrderedCapacity(order))
+        cast(Any, jobs), cast(Any, _Isolation(_gap(lease_id="lease-2")))
     )
 
-    assert settlement.settle("job-1") is True
-    # Isolation first: the slot must stop looking held before the Job is closed.
-    assert order == ["quarantine", "advance"]
-    assert (jobs.current.state, jobs.current.error_code) == ("failed", "cancellation_unconfirmed")
+    judgment = settlement.settle("job-1")
+
+    assert judgment.settled is False
+    assert jobs.advances == []
 
 
-def test_unconfirmed_settlement_judges_the_job_even_when_isolation_is_refused() -> None:
+def test_unavailable_isolation_storage_is_retryable_not_a_judgment() -> None:
     jobs = _SettleableJobs(_SettleableJob("cancelling"))
-    settlement = UnconfirmedCancellationSettlement(
-        cast(Any, jobs), cast(Any, _QuarantiningCapacity(quarantined=False))
+    settlement = UnconfirmedCancellationSettlement(cast(Any, jobs), cast(Any, _Isolation(None)))
+    assert settlement.settle("job-1").outcome == "unavailable"
+
+    storage_gap = UnconfirmedCancellationSettlement(
+        cast(Any, jobs), cast(Any, _Isolation(_gap(reason="lease_storage_unavailable")))
     )
-
-    assert settlement.settle("job-1") is True
-    assert jobs.advances == [("failed", "cancellation_unconfirmed")]
-
-
-def test_unconfirmed_settlement_tolerates_unavailable_lease_storage() -> None:
-    jobs = _SettleableJobs(_SettleableJob("cancelling"))
-    settlement = UnconfirmedCancellationSettlement(
-        cast(Any, jobs), cast(Any, _QuarantiningCapacity(fail=True))
-    )
-
-    assert settlement.settle("job-1") is True
-    assert jobs.advances == [("failed", "cancellation_unconfirmed")]
+    judgment = storage_gap.settle("job-1")
+    assert judgment.settled is False and judgment.outcome == "unavailable"
+    assert jobs.advances == []
 
 
-def test_unconfirmed_settlement_never_rewrites_another_terminal_fact() -> None:
-    for state, error_code in (
-        ("cancelled", None),
-        ("succeeded", None),
-        ("failed", "internal_error"),
-        ("running", None),
-    ):
-        jobs = _SettleableJobs(_SettleableJob(state, error_code))
-        settlement = UnconfirmedCancellationSettlement(
-            cast(Any, jobs), cast(Any, _QuarantiningCapacity())
-        )
-        assert settlement.settle("job-1") is (state == "cancelled"), state
-        assert jobs.advances == [], state
-
-
-def test_unconfirmed_settlement_is_idempotent_for_its_own_failure() -> None:
+def test_a_judged_job_only_retries_its_outstanding_isolation() -> None:
     jobs = _SettleableJobs(_SettleableJob("failed", "cancellation_unconfirmed"))
-    capacity = _QuarantiningCapacity()
+    isolation = _Isolation(_gap(), _isolated("lease-1"))
+    settlement = UnconfirmedCancellationSettlement(cast(Any, jobs), cast(Any, isolation))
+
+    assert settlement.settle("job-1").settled is False
+    assert jobs.advances == []
+    assert settlement.settle("job-1").settled is True
+    # The committed judgment is never rewritten, only its isolation finished.
+    assert jobs.advances == []
+
+
+def test_a_cancelled_job_needs_no_judgment() -> None:
+    jobs = _SettleableJobs(_SettleableJob("cancelled"))
+    capacity = _Isolation(_isolated("lease-1"))
     settlement = UnconfirmedCancellationSettlement(cast(Any, jobs), cast(Any, capacity))
 
-    assert settlement.settle("job-1") is True
-    # The already-committed judgment is not replayed, but the isolation is retried.
+    judgment = settlement.settle("job-1")
+    assert (judgment.settled, judgment.outcome) == (True, "exhausted")
     assert jobs.advances == []
+    assert capacity.calls == []
+
+
+def test_another_terminal_failure_is_not_overwritten() -> None:
+    jobs = _SettleableJobs(_SettleableJob("failed", "internal_error"))
+    capacity = _Isolation(_isolated("lease-1"))
+    settlement = UnconfirmedCancellationSettlement(cast(Any, jobs), cast(Any, capacity))
+
+    judgment = settlement.settle("job-1")
+
+    assert judgment.settled is True  # Another owner closed the acceptance.
+    assert jobs.advances == []
+    # Capacity of that Job is still booked as quarantined rather than left
+    # reported as held by an execution nobody is judging.
     assert capacity.calls == [("job-1", "cancellation_unconfirmed")]
 
 
-def test_unconfirmed_settlement_reports_a_lost_version_guard_as_unsettled() -> None:
-    jobs = _SettleableJobs(_SettleableJob("cancelling"), conflict=True)
+def test_a_job_that_is_not_cancelling_cannot_be_judged() -> None:
+    for state in ("succeeded", "running", "pending"):
+        jobs = _SettleableJobs(_SettleableJob(state))
+        settlement = UnconfirmedCancellationSettlement(
+            cast(Any, jobs), cast(Any, _Isolation(_isolated("lease-1")))
+        )
+        judgment = settlement.settle("job-1")
+        assert judgment.settled is False, state
+        assert judgment.outcome == "stop_unconfirmed", state
+        assert jobs.advances == [], state
+
+
+def test_an_unreadable_job_is_retried_rather_than_judged() -> None:
+    from speechnexus_backend.speech.domain.public_jobs import PublicJobUnavailableError
+
+    class _Missing:
+        def get(self, job_id: str) -> Any:
+            raise PublicJobUnavailableError
+
     settlement = UnconfirmedCancellationSettlement(
-        cast(Any, jobs), cast(Any, _QuarantiningCapacity())
+        cast(Any, _Missing()), cast(Any, _Isolation(_isolated("lease-1")))
     )
 
-    assert settlement.settle("job-1") is False
+    assert settlement.settle("job-1").outcome == "unavailable"
+
+
+def test_a_lost_version_guard_is_reported_as_unsettled() -> None:
+    jobs = _SettleableJobs(_SettleableJob("cancelling"), conflict=True)
+    settlement = UnconfirmedCancellationSettlement(
+        cast(Any, jobs), cast(Any, _Isolation(_isolated("lease-1")))
+    )
+
+    assert settlement.settle("job-1").settled is False
 
 
 def test_confirmation_window_is_bounded() -> None:

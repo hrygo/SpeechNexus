@@ -40,12 +40,17 @@ class ReadinessReport:
 
 
 class ReadinessProbe(Protocol):
-    """A dependency that must be reachable before accepting traffic."""
+    """A dependency that must be reachable before accepting traffic.
+
+    ``check`` returns an optional bounded detail: a probe that also *observes*
+    something an operator must act on can name it there without turning the
+    whole API unhealthy (``/readyz`` is the deployment healthcheck).
+    """
 
     @property
     def name(self) -> str: ...
 
-    async def check(self) -> None: ...
+    async def check(self) -> str | None: ...
 
 
 class ReadinessService:
@@ -62,7 +67,7 @@ class ReadinessService:
     async def _inspect_probe(self, probe: ReadinessProbe) -> ProbeResult:
         try:
             async with asyncio.timeout(self._timeout_seconds):
-                await probe.check()
+                detail = await probe.check()
         except TimeoutError:
             logger.warning("readiness probe timed out", extra={"probe": probe.name})
             return ProbeResult(name=probe.name, status=ProbeStatus.FAILED, detail="timed out")
@@ -72,4 +77,4 @@ class ReadinessService:
                 extra={"probe": probe.name, "exception_type": type(error).__name__},
             )
             return ProbeResult(name=probe.name, status=ProbeStatus.FAILED, detail="unavailable")
-        return ProbeResult(name=probe.name, status=ProbeStatus.OK)
+        return ProbeResult(name=probe.name, status=ProbeStatus.OK, detail=detail)

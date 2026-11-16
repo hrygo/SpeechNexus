@@ -18,7 +18,6 @@ stayed reserved and reported as held by an execution nobody could vouch for.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import time
 import uuid
 from collections.abc import Callable, Mapping
@@ -34,6 +33,7 @@ from speechnexus_backend.speech.application.job_cancellation import (
 from speechnexus_backend.speech.application.job_cancellation_reconciliation import (
     CancellationReconciliationWorker,
     JobCancellationReconciler,
+    Judgment,
     ReconciliationBatch,
 )
 from speechnexus_backend.speech.application.public_jobs import (
@@ -247,21 +247,21 @@ class _PublicJobsSettlement(CancellationSettlementPort):
 class UnconfirmedCancellationSettlement:
     """Judge an accepted cancellation that never produced a verified stop.
 
-    The order matters. The lease is quarantined first, so a slot stops being
-    reported as held by an execution nobody can vouch for, and only then is the
-    Job closed as ``failed`` with ``error_code=cancellation_unconfirmed``. That
-    is the documented terminal for an unconfirmed cancel (see
-    ``docs/architecture/runtime-governance.md``), it makes ``cleanup_state``
-    report ``quarantined``, and it is what stops the public Job/cancel/retry
-    surfaces from claiming progress that is never going to arrive (#852).
+    Order matters and so does the gate. Every lease of the Job must first move
+    into the quarantined bucket; only then is the Job closed as ``failed`` with
+    ``error_code=cancellation_unconfirmed``. That is the documented terminal for
+    an unconfirmed cancel (see ``docs/architecture/runtime-governance.md``), it
+    makes ``cleanup_state`` report ``quarantined``, and it is what stops the
+    public Job/cancel/retry surfaces from claiming progress that is never going
+    to arrive (#852).
 
-    Quarantine is authoritative only where the persisted execution facts allow
-    it: the domain refuses a lease whose execution never became
-    ``unknown_quarantined``/``quarantined``. Those cases are still judged -- the
-    Job must reach a terminal state -- but the lease keeps what its owner
-    recorded, because no release is sound without verified stop evidence
-    (#338). ``settle`` returns True only for a durably terminal Job, so the
-    caller keeps retrying a storage failure instead of forgetting the Job.
+    A lease whose execution never became ``unknown_quarantined``/``quarantined``
+    -- still executing, still stopping, or already succeeded -- is refused by the
+    domain. That refusal is *not* overridden: the Job keeps ``cancelling``, the
+    fence stays claimable, and this method reports the gap. Writing the terminal
+    anyway would report ``cleanup_state=quarantined`` for capacity that is still
+    held, which is exactly the lie the review rejected, and it would leave the
+    lease with no supported way out.
     """
 
     def __init__(
@@ -273,29 +273,54 @@ class UnconfirmedCancellationSettlement:
     ) -> None:
         self._jobs, self._capacity, self._reason_code = jobs, capacity, reason_code
 
-    def settle(self, job_id: str) -> bool:
+    def settle(self, job_id: str) -> Judgment:
         try:
             job = self._jobs.get(job_id)
         except PublicJobNotFoundError, PublicJobUnavailableError:
-            return False
+            return Judgment(settled=False, outcome="unavailable", detail="job unreadable")
         if job.state == "cancelled":
-            return True
+            # Capacity of a cancelled Job belongs to the release path; isolating
+            # it here would race the release this worker already scheduled.
+            return Judgment(settled=True, outcome="exhausted", detail="already cancelled")
         if job.state not in ("cancelling", "failed"):
-            return False
-        if job.state == "failed" and job.error_code != self._reason_code:
-            return False
-        # Best effort by design: the facts that authorize isolation are the
-        # gateway's, so a refusal here is a real "stop unproven" answer and must
-        # not prevent the terminal Job judgment below.
-        with contextlib.suppress(Exception):
-            self._capacity.quarantine_sync(job.job_id, reason_code=self._reason_code)
+            return Judgment(
+                settled=False,
+                outcome="stop_unconfirmed",
+                detail=f"job state {job.state} is not an accepted cancellation",
+            )
+        isolation = self._capacity.isolate_sync(job.job_id, reason_code=self._reason_code)
+        if isolation is None:
+            return Judgment(
+                settled=False, outcome="unavailable", detail="lease storage unavailable"
+            )
+        if not isolation.complete:
+            # Capacity that is still held must never be described as quarantined,
+            # so the Job keeps `cancelling` (or its other terminal reason) and the
+            # fence stays claimable until every lease has landed.
+            return Judgment(
+                settled=False,
+                outcome=(
+                    "unavailable"
+                    if any(gap.reason == "lease_storage_unavailable" for gap in isolation.gaps)
+                    else "stop_unconfirmed"
+                ),
+                detail=isolation.detail(),
+            )
         if job.state == "failed":
-            return True  # The judgment already committed; only the isolation was retried.
+            # Another owner's terminal already closes the acceptance; only the
+            # isolation was outstanding and it is now done.
+            return Judgment(settled=True, outcome="exhausted", detail=f"already {job.error_code}")
         try:
             current = self._jobs.advance(job.job_id, "failed", error_code=self._reason_code)
         except JobOutcomeUnknownError, PublicJobConflictError, PublicJobUnavailableError:
-            return False
-        return current.state == "failed" and current.error_code == self._reason_code
+            return Judgment(settled=False, outcome="unavailable", detail="job advance unavailable")
+        if current.state == "failed" and current.error_code == self._reason_code:
+            return Judgment(settled=True, outcome="exhausted")
+        return Judgment(
+            settled=False,
+            outcome="unavailable",
+            detail=f"job settled as {current.state}/{current.error_code}",
+        )
 
 
 class _PublicJobsStop:

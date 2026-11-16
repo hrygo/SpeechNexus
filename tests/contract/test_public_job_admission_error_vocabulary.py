@@ -581,7 +581,9 @@ def test_the_retry_rule_follows_the_published_semantics() -> None:
     # `retryable` is true only when the same request can succeed without an
     # out-of-band change: the contention races, a capacity delay and the unknown
     # execution outcome. Operator-step recoveries are false and say so in `message`
-    # (#828 review B1).
+    # (#828 review B1). The pending execution cleanup is one of those: #852 measured
+    # that nothing finishes it on its own, so repeating the same request cannot
+    # succeed until a gateway stop fact or an operator step arrives.
     import json
 
     from speechnexus_backend.speech.interfaces.http.job_errors import job_error
@@ -595,9 +597,6 @@ def test_the_retry_rule_follows_the_published_semantics() -> None:
         "job_outcome_unknown",
         "job_capacity_exhausted",
         "job_admission_contended",
-        # The cleanup wait needs no out-of-band step: the same request succeeds once
-        # the original execution confirms stop (#828 review M5).
-        "execution_cleanup_pending",
     }
 
 

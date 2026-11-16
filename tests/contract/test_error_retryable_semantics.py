@@ -33,7 +33,10 @@ says *where* the block is.
    param and `Retry-After` only, `RenderRejection` has no `retryable` field, and the panel
    renders the workbench's own disposition table, in which the same wait is retryable
    (`render_submission_cleanup_pending`). Each value is correct *for its own question*, so
-   copying either one into the other would be wrong in both directions.
+   copying either one into the other would be wrong in both directions. The Job side
+   answered `true` for a while on the claim that the cleanup finishes on its own; #852
+   measured that it does not (the capacity stayed held with no advancer), so the Job side
+   is back to `false` -- see `test_the_job_side_publishes_false_for_the_cleanup_wait`.
 
 Neither counterexample can be expressed as a schema constraint, so this module asserts the
 facts that keep them true: the shared description states both, the 503 stays a 5xx, the
@@ -163,20 +166,22 @@ def test_the_503_that_keeps_its_key_is_not_a_settled_refusal() -> None:
     assert "Preserve the original idempotency key" in message
 
 
-def test_the_job_side_publishes_true_for_the_cleanup_wait() -> None:
-    """Waiting out the cleanup needs no out-of-band change, so the pinned rule says true.
+def test_the_job_side_publishes_false_for_the_cleanup_wait() -> None:
+    """The cleanup does not finish on its own, so the field cannot promise a retry.
 
-    The field states whether repeating the same request can succeed without an
-    operator or configuration step. The cleanup finishes on its own and the same
-    request then succeeds, which is exactly that case; the older speech-Job reading
-    ("may an unknown execution outcome be replayed?") answered `false` here and is
-    gone with the rest of that definition (#828 review M5).
+    #852 measured the previous `true`: the reference deployment answered
+    `retryable: true` and `Retry-After: 1` while the Job body answered
+    `retryable: false` and the capacity stayed held, because nothing advanced the
+    accepted cancellation. The wait is ended by gateway stop evidence or by an
+    operator step, so the same request cannot succeed without an out-of-band
+    change, and the Job side reports `false` with no `Retry-After`.
     """
     response = job_error("execution_cleanup_pending", "rid-806-probe")
     assert response.status_code == 409
     error = json.loads(bytes(response.body))["error"]
     assert error["code"] == "execution_cleanup_pending"
-    assert error["retryable"] is True
+    assert error["retryable"] is False
+    assert "Retry-After" not in response.headers
 
 
 def test_the_workbench_publishes_retryable_for_the_same_wait() -> None:

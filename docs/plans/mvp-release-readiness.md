@@ -80,12 +80,18 @@
   该行永不再被领取；网关侧不改写 `unknown_quarantined`，租约到期只是过期而不是回归容量，
   派发器又早已不在该 Job 上，`cancelling` 因此无主。参考部署 `deploy/compose.yaml` 里没有
   取消对账服务、该 worker 也默认关闭，所以真实窗口连推进者都不存在。
-  现已收口（#852）：确认窗口（默认 300 秒）或尝试预算任一到达即做一次终态判定——
-  租约按 `cancellation_unconfirmed` 隔离、Job 落 `failed/cancellation_unconfirmed`，
-  `held_slots` 减一、`quarantined_slots` 加一，重试按 `409 execution_cleanup_pending` 拒绝。
+  现已收口（#852）：确认窗口（默认 300 秒）或尝试预算任一到达即做一次终态判定，且判定
+  以「全部租约都已落地」为条件——逐条按 `cancellation_unconfirmed` 隔离，每条租约把自己的
+  `reserved_slots` 从 held 桶移到 quarantined 桶（`held_attempts` 只在同一 attempt 首次
+  隔离时移动一次），全部落地后 Job 才落 `failed/cancellation_unconfirmed`，重试按
+  `409 execution_cleanup_pending` 拒绝（`retryable` 为假、不带 `Retry-After`）。任一租约
+  被拒时 Job 保持 `cancelling`、账本保持可领取，`/readyz` 与
+  `GET /v1/nexus/admin/diagnostics` 的 `cancellation_debt` 检查以 detail 报出
+  「Job → 租约 → 两侧状态」，worker 每轮向 stderr 输出一条明细，处置走网关
+  abort/drain（见 [production-jobs.md](../components/production-jobs.md#隔离不了的时候可见面与处置)）。
   仍未覆盖：参考部署未运行该 worker（`deploy/compose.yaml` 无该服务，`ENABLED` 默认 `false`），
-  因此「默认部署里取消能自愈」没有部署级证据；执行仍活跃且没有停止证据的租约仍保持
-  `reserved`，需 #338 的停止确认或操作员证词解除。
+  因此「默认部署里取消能自愈」没有部署级证据；执行仍活跃或已 `succeeded` 的租约在没有停止
+  证据时仍保持 `reserved`，需 #338 或操作员处置；本切片不新增告警规则与自动扫描（#528）。
 
 **B2 — 声音泳道无 Job 级证据（#529）**
 - 要什么证据：design 与 clone 各一条 Job 到 `succeeded`，preview artifact 被 `GET /voice-drafts/{id}` 读成 candidate；附冷加载、空闲回收、显存峰值、P95、与 asr/tts 混跑不干扰的实测数字，并给出 `start_period` 实测值。

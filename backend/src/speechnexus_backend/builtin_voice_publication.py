@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -132,7 +133,7 @@ def publish_builtin_voice(
         now_us = int(cursor.fetchall()[0]["now_us"])
         if f["checked_at_us"] > now_us:
             raise BuiltinVoicePublicationRejectedError("qualification_from_future")
-        attestation_id = _recorded_source(cursor, approval_id, a, f, now_us)
+        source = _recorded_source(cursor, approval_id, a, f, now_us)
         # Match the actual independently stored approval expiry, not caller JSON.
         expiry_delta = a["expires_at"] - datetime(1970, 1, 1, tzinfo=UTC)
         expiry_us = (
@@ -280,12 +281,15 @@ def publish_builtin_voice(
         }
         cursor.execute(
             "INSERT INTO speech_builtin_voice_qualification_provenance "
-            "(voice_id,revision,source_kind,attestation_id) VALUES (%s,%s,%s,%s)",
+            "(voice_id,revision,source_kind,evidence_kind,attestation_id,"
+            "probe_authorization_id) VALUES (%s,%s,%s,%s,%s,%s)",
             (
                 a["voice_id"],
                 a["revision"],
-                "operator_attested" if attestation_id else "controller_observed",
-                attestation_id,
+                source.source_kind,
+                source.evidence_kind,
+                source.attestation_id,
+                source.probe_authorization_id,
             ),
         )
         cursor.execute(
@@ -298,29 +302,49 @@ def publish_builtin_voice(
     return store._run(operation, preserve=(BuiltinVoicePublicationRejectedError,))
 
 
+@dataclass(frozen=True, slots=True)
+class RecordedSource:
+    """The producer an approval is evidenced by, plus the row that proves it."""
+
+    source_kind: str
+    evidence_kind: str
+    attestation_id: str | None
+    probe_authorization_id: str | None
+
+
 def _recorded_source(
     cursor: Any, approval_id: str, approval: dict[str, Any], facts: dict[str, Any], now_us: int
-) -> str | None:
-    """Return the attestation that proves an operator source, or None for a probe.
+) -> RecordedSource:
+    """Classify an approval by evidence, never by the absence of a row.
 
-    The provenance row is an explicit fact, not an inference: an operator-attested
-    approval must have its attestation record agree with the approval it names, and
-    a probe approval must not carry one. Every published qualification therefore
-    records which of the two producers created it.
+    A ``controller_observed`` label requires the probe authorization the approval
+    names: the attestation identity holds column-level INSERT on this ledger but no
+    right to ``probe_authorization_id``, so a row it forges cannot carry one and can
+    never be read as an observation. An operator-attested approval must have its
+    attestation record agree with the approval it names and must not name a probe
+    authorization. Anything else is recorded as ``unverified`` -- a third, explicit
+    label rather than a silent attribution to the controller.
     """
+    probe = approval["probe_authorization_id"]
+    operator = facts.get("verifier_id") == "operator-attested-customvoice-v1"
     cursor.execute(
         "SELECT attestation_id,approval_id,voice_id,revision,revision_id,binding_revision_id,"
         "source_approval_id,instance_id,instance_generation,fencing_token,image_digest,"
-        "template_digest,controller_artifact_digest,model_artifact_digest,observed_at_us,"
+        "template_digest,declared_lifecycle_digest,model_artifact_digest,observed_at_us,"
         "expires_at_us,declaration_digest "
         "FROM speech_builtin_voice_operator_attestations WHERE approval_id=%s",
         (approval_id,),
     )
     rows = cursor.fetchall()
-    if not rows:
-        if facts.get("verifier_id") == "operator-attested-customvoice-v1":
-            raise BuiltinVoicePublicationRejectedError("attestation_missing")
-        return None
+    if not operator:
+        # A probe-shaped approval must not own an attestation record: the two
+        # producers write disjoint approvals, so a row here means the ledger was
+        # tampered with and the provenance write must not proceed.
+        if rows:
+            raise BuiltinVoicePublicationRejectedError("attestation_mismatch")
+        if probe is None:
+            return RecordedSource("unverified", "absent", None, None)
+        return RecordedSource("controller_observed", "probe_authorization", None, probe)
     if len(rows) != 1:
         raise BuiltinVoicePublicationRejectedError("attestation_missing")
     attestation = rows[0]
@@ -340,9 +364,12 @@ def _recorded_source(
         or attestation["image_digest"] != facts.get("image_digest")
         or attestation["model_artifact_digest"] != facts.get("model_artifact_digest")
         or attestation["declaration_digest"] != facts.get("declaration_digest")
+        or probe is not None
         or attestation["observed_at_us"] != facts.get("checked_at_us")
         or attestation["expires_at_us"] != facts.get("expires_at_us")
         or not attestation["observed_at_us"] <= now_us < attestation["expires_at_us"]
     ):
         raise BuiltinVoicePublicationRejectedError("attestation_mismatch")
-    return cast(str, attestation["attestation_id"])
+    return RecordedSource(
+        "operator_attested", "operator_attestation", cast(str, attestation["attestation_id"]), None
+    )

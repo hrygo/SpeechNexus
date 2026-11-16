@@ -412,6 +412,16 @@ class Ledger:
     def snapshot(self) -> dict[str, int]:
         return {table: self.count(table) for table in RUNTIME_TABLES}
 
+    def probe_authorization(self, authorization: str = "probe-auth-1") -> str:
+        """The row only the controller path can write; it is what backs the label."""
+        self.db.execute(
+            "INSERT INTO speech_builtin_voice_probe_authorizations "
+            "(authorization_id,source_approval_id,voice_id,intent) "
+            "VALUES (%s,%s,%s,'{}'::jsonb)",
+            (authorization, SOURCE, VOICE),
+        )
+        return authorization
+
     def writer(self, role: str, password: str = PASSWORD) -> PostgresPublications:
         """The separate minimal identity that may only append one attestation."""
         identity = role + "_oa"
@@ -429,6 +439,9 @@ class Ledger:
         ):
             self.db.execute(grant)
         return self._store(role, password)
+
+    def _debug_publish(self) -> None:
+        raise NotImplementedError
 
     def _store(self, role: str, password: str) -> PostgresPublications:
         pool = speech_pool(
@@ -757,13 +770,108 @@ def test_attestation_opens_no_compute_release_and_no_native_evidence(
     assert instance == {"instance_state": "ready", "base_budget_kind": "steady"}
 
 
+def test_the_attested_identity_cannot_publish_a_controller_label(
+    pg: tuple[psycopg.Connection[dict[str, Any]], str, str],
+) -> None:
+    """The forgery the review found: a probe-shaped approval from the attested identity.
+
+    That identity may insert the eight approval columns but not
+    ``probe_authorization_id``, so the row it writes cannot name a probe
+    authorization. Publication records it as ``unverified`` -- never as a controller
+    observation -- and the ledger itself refuses to store a controller label without
+    the evidence.
+    """
+    db, schema, role = pg
+    ledger = Ledger(db, schema)
+    ledger.writer(role)  # provisions the minimal identity this test logs in as
+    password = PASSWORD
+    forged = psycopg.connect(
+        make_conninfo(
+            os.environ["SPEECHNEXUS_TEST_DATABASE_URL"],
+            user=role + "_oa",
+            password=password,
+        ),
+        autocommit=True,
+        row_factory=dict_row,
+    )
+    try:
+        forged.execute("SELECT set_config('search_path', %s, false)", (schema,))
+        forged.execute(
+            "INSERT INTO speech_builtin_voice_approvals "
+            "(approval_id,voice_id,revision,revision_id,binding_revision_id,"
+            "source_approval_id,facts,expires_at) VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s)",
+            (
+                APPROVAL,
+                VOICE,
+                REVISION,
+                REVISION_ID,
+                BINDING_REVISION_ID,
+                SOURCE,
+                json.dumps(_probe_facts(ledger)),
+                ledger.expires_at,
+            ),
+        )
+        recorded = forged.execute(
+            "SELECT probe_authorization_id FROM speech_builtin_voice_approvals "
+            "WHERE approval_id=%s",
+            (APPROVAL,),
+        ).fetchone()
+        assert recorded is not None
+        assert recorded["probe_authorization_id"] is None
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            forged.execute(
+                "UPDATE speech_builtin_voice_approvals SET probe_authorization_id=%s "
+                "WHERE approval_id=%s",
+                ("probe-auth-forged", APPROVAL),
+            )
+    finally:
+        forged.close()
+    publisher = ledger.publisher(role)
+    try:
+        ledger.publish(publisher)
+        provenance = db.execute(
+            "SELECT source_kind, evidence_kind, attestation_id, probe_authorization_id FROM "
+            "speech_builtin_voice_qualification_provenance WHERE voice_id=%s AND revision=%s",
+            (VOICE, REVISION),
+        ).fetchone()
+        assert provenance == {
+            "source_kind": "unverified",
+            "evidence_kind": "absent",
+            "attestation_id": None,
+            "probe_authorization_id": None,
+        }
+        entries = _report(db, schema)
+        assert entries[0]["source_kind"] == "unverified"
+        verdicts = {
+            "controller_observed"
+            for entry in entries
+            if entry.get("source_kind") == "controller_observed"
+        }
+        assert verdicts == set()
+        # The ledger backstops the writer: a controller label without its evidence
+        # cannot be stored even if a future writer tried.
+        with pytest.raises(psycopg.errors.CheckViolation):
+            db.execute(
+                "UPDATE speech_builtin_voice_qualification_provenance "
+                "SET source_kind='controller_observed', evidence_kind='probe_authorization' "
+                "WHERE voice_id=%s AND revision=%s",
+                (VOICE, REVISION),
+            )
+    finally:
+        _close(ledger)
+
+
 def test_controller_probe_publication_still_records_its_own_source(
     pg: tuple[psycopg.Connection[dict[str, Any]], str, str],
 ) -> None:
     db, schema, role = pg
     ledger = Ledger(db, schema)
+    probe = ledger.probe_authorization()
     db.execute(
-        "INSERT INTO speech_builtin_voice_approvals VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s)",
+        "INSERT INTO speech_builtin_voice_approvals "
+        "(approval_id,voice_id,revision,revision_id,binding_revision_id,source_approval_id,"
+        "facts,expires_at,probe_authorization_id,result_intent) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,'{}'::jsonb)",
         (
             APPROVAL,
             VOICE,
@@ -773,19 +881,27 @@ def test_controller_probe_publication_still_records_its_own_source(
             SOURCE,
             json.dumps(_probe_facts(ledger)),
             ledger.expires_at,
+            probe,
         ),
     )
     publisher = ledger.publisher(role)
     try:
         ledger.publish(publisher)
         provenance = db.execute(
-            "SELECT source_kind, attestation_id FROM "
+            "SELECT source_kind, evidence_kind, attestation_id, probe_authorization_id FROM "
             "speech_builtin_voice_qualification_provenance WHERE voice_id=%s AND revision=%s",
             (VOICE, REVISION),
         ).fetchone()
-        assert provenance == {"source_kind": "controller_observed", "attestation_id": None}
+        assert provenance == {
+            "source_kind": "controller_observed",
+            "evidence_kind": "probe_authorization",
+            "attestation_id": None,
+            "probe_authorization_id": probe,
+        }
         entries = _report(db, schema)
         assert entries[0]["source_kind"] == "controller_observed"
+        assert entries[0]["source_evidence"] == "probe_authorization"
+        assert entries[0]["probe_authorization_id"] == probe
         assert entries[0]["provenance_recorded"] is True
         assert "attestation_id" not in entries[0]
     finally:
@@ -797,7 +913,7 @@ def test_controller_probe_publication_still_records_its_own_source(
         "(attestation_id,approval_id,voice_id,revision,revision_id,binding_revision_id,"
         "source_approval_id,instance_id,instance_generation,fencing_token,host_node_id,"
         "gateway_id,pool_id,policy_revision_id,gateway_policy_digest,template_id,image_digest,"
-        "template_digest,controller_artifact_digest,model_id,model_revision,"
+        "template_digest,declared_lifecycle_digest,model_id,model_revision,"
         "model_artifact_digest,observed_at_us,expires_at_us,declaration,declaration_digest,"
         "attestation_intent,declared_by) VALUES "
         "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
@@ -840,6 +956,28 @@ def test_controller_probe_publication_still_records_its_own_source(
         pytest.raises(BuiltinVoicePublicationRejectedError, match="attestation_mismatch"),
     ):
         _recorded_source(cursor, APPROVAL, approval, approval["facts"], now_us)
+
+
+def test_an_operator_approval_without_its_attestation_is_refused(
+    pg: tuple[psycopg.Connection[dict[str, Any]], str, str],
+) -> None:
+    """The fail-closed branch: operator facts with no attestation row never publish."""
+    db, schema, role = pg
+    ledger = Ledger(db, schema)
+    writer = ledger.writer(role)
+    try:
+        ledger.attest(writer)
+        db.execute(
+            "DELETE FROM speech_builtin_voice_operator_attestations WHERE approval_id=%s",
+            (APPROVAL,),
+        )
+        publisher = ledger.publisher(role)
+        with pytest.raises(BuiltinVoicePublicationRejectedError, match="attestation_missing"):
+            ledger.publish(publisher)
+        assert ledger.count("speech_builtin_voice_qualification_provenance") == 0
+        assert ledger.count("speech_builtin_voice_qualifications") == 0
+    finally:
+        _close(ledger)
 
 
 def test_downgrade_refuses_to_discard_attestation_history(
@@ -901,10 +1039,14 @@ def test_rows_published_before_the_migration_are_reported_as_recorded_history(
         ),
     )
     entries = _report(db, schema)
-    assert entries[0]["source_kind"] == "controller_observed"
+    # No provenance row and no probe authorization: the source cannot be attributed,
+    # so the read surface refuses to call it a controller observation.
+    assert entries[0]["source_kind"] == "unverified"
     assert entries[0]["provenance_recorded"] is False
     assert entries[0]["evidence"] == "legacy_pre_0055"
+    assert "source unknown" in entries[0]["note"]
     assert entries[-1]["summary"]["legacy_pre_0055"] == 1
+    assert entries[-1]["summary"]["controller_observed"] == 0
     _close(ledger)
 
 

@@ -18,8 +18,11 @@ from speechnexus_backend.attest_builtin_voice import load_trust_declaration
 from speechnexus_backend.attest_builtin_voice import main as attest_main
 from speechnexus_backend.qualification_provenance import (
     EVIDENCE_LEGACY,
+    EVIDENCE_OPERATOR,
+    EVIDENCE_PROBE,
     SOURCE_CONTROLLER,
     SOURCE_OPERATOR,
+    SOURCE_UNVERIFIED,
     provenance_report,
     summarize,
 )
@@ -736,17 +739,20 @@ def _row(**changes: Any) -> dict[str, Any]:
         "revision_id": "voice-rev-1",
         "binding_revision_id": "binding-rev-1",
         "recorded_source_kind": None,
+        "recorded_evidence_kind": None,
         "attestation_id": None,
+        "recorded_probe_authorization_id": None,
+        "approval_probe_authorization_id": None,
         "recorded_at": None,
         "instance_id": "instance-tts-1",
         "instance_generation": "1",
         "fencing_token": None,
+        "declared_lifecycle_digest": None,
         "approval_expires_at_us": NOW + 3_600_000_000,
         "declared_by": None,
         "declaration_digest": None,
         "image_digest": None,
         "template_digest": None,
-        "controller_artifact_digest": None,
         "observed_at_us": None,
         "expires_at_us": None,
         "now_us": NOW,
@@ -755,20 +761,31 @@ def _row(**changes: Any) -> dict[str, Any]:
     return row
 
 
-def test_read_surface_distinguishes_both_sources_and_legacy_rows() -> None:
+def test_read_surface_attributes_each_source_only_through_its_evidence() -> None:
     operator_row = _row(
         recorded_source_kind=SOURCE_OPERATOR,
+        recorded_evidence_kind=EVIDENCE_OPERATOR,
         attestation_id="att-tts-1",
         declared_by="ops-oncall",
         declaration_digest=DECLARATION_DIGEST,
         observed_at_us=NOW - 1_000_000,
         expires_at_us=NOW + 3_600_000_000,
     )
+    controller_row = _row(
+        recorded_source_kind=SOURCE_CONTROLLER,
+        recorded_evidence_kind=EVIDENCE_PROBE,
+        recorded_probe_authorization_id="probe-auth-1",
+        approval_probe_authorization_id="probe-auth-1",
+    )
     report = provenance_report(
         [
-            _row(recorded_source_kind=SOURCE_CONTROLLER),
+            controller_row,
             operator_row,
-            _row(voice_id="voice-legacy"),
+            # Pre-0055 row whose approval names a probe authorization: attributed to
+            # the controller by positive evidence, not by the missing provenance row.
+            _row(voice_id="voice-legacy-probe", approval_probe_authorization_id="probe-auth-2"),
+            # Pre-0055 row with no probe authorization: cannot be attributed at all.
+            _row(voice_id="voice-legacy-absent"),
         ],
         now_us=NOW,
     )
@@ -776,16 +793,51 @@ def test_read_surface_distinguishes_both_sources_and_legacy_rows() -> None:
         SOURCE_CONTROLLER,
         SOURCE_OPERATOR,
         SOURCE_CONTROLLER,
+        SOURCE_UNVERIFIED,
     ]
+    assert report[0]["source_evidence"] == EVIDENCE_PROBE
+    assert report[0]["probe_authorization_id"] == "probe-auth-1"
     assert report[1]["provenance_recorded"] is True
     assert report[1]["attestation_id"] == "att-tts-1"
     assert report[1]["attestation_state"] == "live"
+    assert report[1]["declared_fencing_token"] == report[1]["declared_fencing_token"]
     assert "not a controller observation" in report[1]["note"]
     assert report[2]["provenance_recorded"] is False
     assert report[2]["evidence"] == EVIDENCE_LEGACY
+    assert report[3]["provenance_recorded"] is False
+    assert "source unknown" in report[3]["note"]
     summary = summarize(report)
     assert (summary[SOURCE_CONTROLLER], summary[SOURCE_OPERATOR]) == (2, 1)
-    assert summary[EVIDENCE_LEGACY] == 1
+    assert summary[SOURCE_UNVERIFIED] == 1
+    assert summary[EVIDENCE_LEGACY] == 2
+
+
+def test_a_controller_label_without_its_probe_authorization_is_reported_unverified() -> None:
+    """The exact forgery: an attested identity writes a probe-shaped approval.
+
+    It cannot write ``probe_authorization_id`` (no column privilege), so the recorded
+    label must not be trusted: the read surface refuses to call it an observation.
+    """
+    forged = _row(
+        recorded_source_kind=SOURCE_CONTROLLER,
+        recorded_evidence_kind=EVIDENCE_PROBE,
+        recorded_probe_authorization_id=None,
+        approval_probe_authorization_id=None,
+    )
+    stale_provenance = _row(
+        voice_id="voice-stale-provenance",
+        recorded_source_kind=SOURCE_CONTROLLER,
+        recorded_evidence_kind=EVIDENCE_PROBE,
+        recorded_probe_authorization_id="probe-auth-1",
+        approval_probe_authorization_id="probe-auth-other",
+    )
+    report = provenance_report([forged, stale_provenance], now_us=NOW)
+    assert [entry["source_kind"] for entry in report] == [
+        SOURCE_UNVERIFIED,
+        SOURCE_UNVERIFIED,
+    ]
+    assert "without a matching probe authorization" in report[0]["note"]
+    assert summarize(report)[SOURCE_CONTROLLER] == 0
 
 
 def test_read_surface_marks_an_elapsed_attestation() -> None:
@@ -793,6 +845,7 @@ def test_read_surface_marks_an_elapsed_attestation() -> None:
         [
             _row(
                 recorded_source_kind=SOURCE_OPERATOR,
+                recorded_evidence_kind=EVIDENCE_OPERATOR,
                 attestation_id="att-tts-1",
                 declared_by="ops-oncall",
                 declaration_digest=DECLARATION_DIGEST,
@@ -803,7 +856,7 @@ def test_read_surface_marks_an_elapsed_attestation() -> None:
         now_us=NOW,
     )
     assert report[0]["attestation_state"] == "expired"
-    assert "re-attest" in report[0]["note"]
+    assert "publish a new voice revision" in report[0]["note"]
 
 
 def test_attestation_request_rejects_unknown_or_missing_fields() -> None:

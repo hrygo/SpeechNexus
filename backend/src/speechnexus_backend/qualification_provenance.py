@@ -31,8 +31,12 @@ from psycopg.rows import dict_row
 
 SOURCE_CONTROLLER = "controller_observed"
 SOURCE_OPERATOR = "operator_attested"
+SOURCE_UNVERIFIED = "unverified"
 EVIDENCE_RECORDED = "provenance_row"
 EVIDENCE_LEGACY = "legacy_pre_0055"
+EVIDENCE_PROBE = "probe_authorization"
+EVIDENCE_OPERATOR = "operator_attestation"
+EVIDENCE_ABSENT = "absent"
 
 ATTESTATION_LIVE = "live"
 ATTESTATION_EXPIRED = "expired"
@@ -44,13 +48,16 @@ EXIT_UNAVAILABLE = 3
 type Row = dict[str, Any]
 
 REPORT_SQL = (
-    "SELECT q.voice_id, q.revision, q.revision_id, q.binding_revision_id, "
-    "p.source_kind AS recorded_source_kind, p.attestation_id, p.recorded_at, "
+    "SELECT q.voice_id, q.revision, q.revision_id, q.binding_revision_id, q.approval_id, "
+    "p.source_kind AS recorded_source_kind, p.evidence_kind AS recorded_evidence_kind, "
+    "p.attestation_id, p.probe_authorization_id AS recorded_probe_authorization_id, "
+    "p.recorded_at, "
+    "a.probe_authorization_id AS approval_probe_authorization_id, "
     "a.facts->>'instance_id' AS instance_id, a.facts->>'generation' AS instance_generation, "
     "a.facts->'attestation'->>'fencing_token' AS fencing_token, "
     "floor(extract(epoch FROM a.expires_at)*1000000)::bigint AS approval_expires_at_us, "
     "t.declared_by, t.declaration_digest, t.image_digest, t.template_digest, "
-    "t.controller_artifact_digest, t.observed_at_us, t.expires_at_us, "
+    "t.declared_lifecycle_digest, t.observed_at_us, t.expires_at_us, "
     "floor(extract(epoch FROM clock_timestamp())*1000000)::bigint AS now_us "
     "FROM speech_builtin_voice_qualifications q "
     "LEFT JOIN speech_builtin_voice_qualification_provenance p "
@@ -61,10 +68,52 @@ REPORT_SQL = (
 )
 
 
+def _labelled_source(row: Row, *, provenance_recorded: bool) -> tuple[str, str, str | None]:
+    """Return ``(source_kind, evidence_kind, note)`` from evidence, not absence.
+
+    A recorded row is trusted only when its evidence names the row it claims. A row
+    without provenance (published before migration ``0055``) is attributed to the
+    controller only when the approval itself names a probe authorization -- the one
+    column the attestation identity cannot write. Everything else is ``unverified``.
+    """
+    approval_probe = row.get("approval_probe_authorization_id")
+    if provenance_recorded:
+        recorded = cast(str, row["recorded_source_kind"])
+        evidence = cast(str, row.get("recorded_evidence_kind") or EVIDENCE_ABSENT)
+        attested = row.get("attestation_id")
+        probe = row.get("recorded_probe_authorization_id")
+        if recorded == SOURCE_CONTROLLER:
+            if evidence == EVIDENCE_PROBE and probe is not None and probe == approval_probe:
+                return SOURCE_CONTROLLER, EVIDENCE_PROBE, None
+            return (
+                SOURCE_UNVERIFIED,
+                EVIDENCE_ABSENT,
+                ("recorded as controller-observed without a matching probe authorization"),
+            )
+        if recorded == SOURCE_OPERATOR:
+            if evidence == EVIDENCE_OPERATOR and attested is not None:
+                return SOURCE_OPERATOR, EVIDENCE_OPERATOR, None
+            return (
+                SOURCE_UNVERIFIED,
+                EVIDENCE_ABSENT,
+                ("recorded as operator-attested without its attestation"),
+            )
+        return SOURCE_UNVERIFIED, EVIDENCE_ABSENT, "recorded source is not a known producer"
+    if approval_probe is not None:
+        return SOURCE_CONTROLLER, EVIDENCE_PROBE, None
+    return (
+        SOURCE_UNVERIFIED,
+        EVIDENCE_ABSENT,
+        ("published before 0055 and no probe authorization is recorded; source unknown"),
+    )
+
+
 def _entry(row: Row, *, now_us: int) -> Row:
     recorded = row.get("recorded_source_kind")
-    provenance_recorded = recorded in (SOURCE_CONTROLLER, SOURCE_OPERATOR)
-    source_kind = recorded if provenance_recorded else SOURCE_CONTROLLER
+    provenance_recorded = recorded in (SOURCE_CONTROLLER, SOURCE_OPERATOR, SOURCE_UNVERIFIED)
+    source_kind, evidence_kind, note = _labelled_source(
+        row, provenance_recorded=provenance_recorded
+    )
     expires_at_us = row.get("expires_at_us")
     if source_kind == SOURCE_OPERATOR and expires_at_us is None:
         state = ATTESTATION_MISSING
@@ -78,29 +127,35 @@ def _entry(row: Row, *, now_us: int) -> Row:
         "revision_id": row["revision_id"],
         "binding_revision_id": row["binding_revision_id"],
         "source_kind": source_kind,
+        "source_evidence": evidence_kind,
         "provenance_recorded": provenance_recorded,
         "evidence": EVIDENCE_RECORDED if provenance_recorded else EVIDENCE_LEGACY,
         "instance_id": row.get("instance_id"),
-        "instance_generation": row.get("instance_generation"),
+        "declared_instance_generation": row.get("instance_generation"),
         "approval_expires_at_us": row.get("approval_expires_at_us"),
+        "probe_authorization_id": row.get("approval_probe_authorization_id"),
     }
+    if note is not None:
+        entry["note"] = note
     if source_kind == SOURCE_OPERATOR:
         entry.update(
             {
                 "attestation_id": row.get("attestation_id"),
                 "declared_by": row.get("declared_by"),
                 "declaration_digest": row.get("declaration_digest"),
-                "fencing_token": row.get("fencing_token"),
+                "declared_fencing_token": row.get("fencing_token"),
                 "attestation_state": state,
-                "attestation_observed_at_us": row.get("observed_at_us"),
-                "attestation_expires_at_us": expires_at_us,
+                "declared_observed_at_us": row.get("observed_at_us"),
+                "declared_expires_at_us": expires_at_us,
                 "image_digest": row.get("image_digest"),
                 "template_digest": row.get("template_digest"),
-                "controller_artifact_digest": row.get("controller_artifact_digest"),
+                "declared_lifecycle_digest": row.get("declared_lifecycle_digest"),
                 "note": (
-                    "operator-attested external engine: not a controller observation"
+                    "operator-attested external engine: not a controller observation; "
+                    "declared_* values are the declaration's snapshot, not live runtime state"
                     if state == ATTESTATION_LIVE
-                    else "attestation is outside its declared window; re-attest and republish"
+                    else "attestation is outside its declared window; publish a new voice "
+                    "revision and attest it (one attestation per voice revision)"
                 ),
             }
         )
@@ -117,6 +172,7 @@ def summarize(report: Sequence[Row]) -> Row:
         "qualifications": len(report),
         SOURCE_CONTROLLER: 0,
         SOURCE_OPERATOR: 0,
+        SOURCE_UNVERIFIED: 0,
         "provenance_recorded": 0,
         EVIDENCE_LEGACY: 0,
         ATTESTATION_LIVE: 0,

@@ -343,7 +343,7 @@ def record_operator_attestation(
             "(attestation_id,approval_id,voice_id,revision,revision_id,binding_revision_id,"
             "source_approval_id,instance_id,instance_generation,fencing_token,host_node_id,"
             "gateway_id,pool_id,policy_revision_id,gateway_policy_digest,template_id,image_digest,"
-            "template_digest,controller_artifact_digest,model_id,model_revision,"
+            "template_digest,declared_lifecycle_digest,model_id,model_revision,"
             "model_artifact_digest,observed_at_us,expires_at_us,declaration,declaration_digest,"
             "attestation_intent,declared_by) "
             "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"

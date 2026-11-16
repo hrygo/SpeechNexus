@@ -39,8 +39,8 @@ def upgrade() -> None:
         template_id VARCHAR(128) COLLATE "C" NOT NULL,
         image_digest VARCHAR(71) COLLATE "C" NOT NULL CHECK (image_digest ~ '{_DIGEST}'),
         template_digest VARCHAR(71) COLLATE "C" NOT NULL CHECK (template_digest ~ '{_DIGEST}'),
-        controller_artifact_digest VARCHAR(71) COLLATE "C" NOT NULL
-            CHECK (controller_artifact_digest ~ '{_DIGEST}'),
+        declared_lifecycle_digest VARCHAR(71) COLLATE "C" NOT NULL
+            CHECK (declared_lifecycle_digest ~ '{_DIGEST}'),
         model_id TEXT NOT NULL,
         model_revision TEXT NOT NULL,
         model_artifact_digest VARCHAR(71) COLLATE "C" NOT NULL
@@ -55,22 +55,40 @@ def upgrade() -> None:
         declared_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
         FOREIGN KEY (source_approval_id, voice_id)
             REFERENCES speech_builtin_voice_source_approvals (source_approval_id, voice_id),
-        UNIQUE (voice_id, revision, revision_id, binding_revision_id),
-        UNIQUE (attestation_id, voice_id, revision, revision_id, binding_revision_id)
+        UNIQUE (voice_id, revision, revision_id, binding_revision_id)
     )""")
     op.execute("""CREATE TABLE speech_builtin_voice_qualification_provenance (
         voice_id VARCHAR(128) COLLATE "C" NOT NULL,
         revision VARCHAR(19) COLLATE "C" NOT NULL,
         source_kind TEXT NOT NULL
-            CHECK (source_kind IN ('controller_observed', 'operator_attested')),
+            CHECK (source_kind IN (
+                'controller_observed', 'operator_attested', 'unverified'
+            )),
+        evidence_kind TEXT NOT NULL
+            CHECK (evidence_kind IN (
+                'probe_authorization', 'operator_attestation', 'absent'
+            )),
         attestation_id VARCHAR(128) COLLATE "C"
             REFERENCES speech_builtin_voice_operator_attestations (attestation_id),
+        probe_authorization_id VARCHAR(128) COLLATE "C"
+            REFERENCES speech_builtin_voice_probe_authorizations (authorization_id),
         recorded_by NAME NOT NULL DEFAULT CURRENT_USER,
         recorded_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
         PRIMARY KEY (voice_id, revision),
         FOREIGN KEY (voice_id, revision)
             REFERENCES speech_builtin_voice_qualifications (voice_id, revision),
-        CHECK ((source_kind = 'operator_attested') = (attestation_id IS NOT NULL))
+        -- The label is backed by evidence, never by absence: a controller row names
+        -- the probe authorization that the attestation identity cannot forge, an
+        -- operator row names its attestation, and anything else is explicitly
+        -- unverified instead of being attributed to the controller.
+        CHECK (
+            (source_kind = 'controller_observed' AND evidence_kind = 'probe_authorization'
+                AND probe_authorization_id IS NOT NULL AND attestation_id IS NULL)
+            OR (source_kind = 'operator_attested' AND evidence_kind = 'operator_attestation'
+                AND attestation_id IS NOT NULL AND probe_authorization_id IS NULL)
+            OR (source_kind = 'unverified' AND evidence_kind = 'absent'
+                AND attestation_id IS NULL AND probe_authorization_id IS NULL)
+        )
     )""")
 
 

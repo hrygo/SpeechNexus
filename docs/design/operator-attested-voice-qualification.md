@@ -165,7 +165,7 @@ speech_builtin_voice_operator_attestations      -- 一次运维自证的完整�
   voice_id/revision/revision_id/binding_revision_id/source_approval_id
   instance_id, instance_generation, fencing_token, host_node_id, gateway_id, pool_id
   policy_revision_id, gateway_policy_digest
-  template_id, image_digest, template_digest, controller_artifact_digest
+  template_id, image_digest, template_digest, declared_lifecycle_digest
   model_id, model_revision, model_artifact_digest
   observed_at_us, expires_at_us
   declaration JSONB, declaration_digest
@@ -174,17 +174,26 @@ speech_builtin_voice_operator_attestations      -- 一次运维自证的完整�
 
 speech_builtin_voice_qualification_provenance   -- 每条已发布内建资格的来源
   (voice_id, revision) PK FK-> speech_builtin_voice_qualifications
-  source_kind CHECK IN ('controller_observed','operator_attested')
-  attestation_id FK NULL  -- 仅 operator_attested
-  CHECK ((source_kind='operator_attested') = (attestation_id IS NOT NULL))
+  source_kind CHECK IN ('controller_observed','operator_attested','unverified')
+  evidence_kind CHECK IN ('probe_authorization','operator_attestation','absent')
+  attestation_id FK NULL            -- 仅 operator_attested
+  probe_authorization_id FK NULL    -- 仅 controller_observed
+  CHECK 三态一一对应（见下）
   recorded_by, recorded_at
 ```
 
 - **不回填、不改写历史**：迁移只在 `speech_builtin_voice_qualifications` /
   `speech_builtin_voice_approvals` 之外新增两张表，不改任何既有列与既有行。
-  0055 之前发布的资格没有 provenance 行，读面把它标为
-  `source_kind=controller_observed, provenance_recorded=false, evidence=legacy_pre_0055`
-  —— 那时运维自证路径尚不存在，这是版本事实而非推断。
+  **来源标签由证据支撑，不由缺席推出**。`controller_observed` 必须同时给出
+  `probe_authorization_id`：该批准列由 probe 路径写入，而声明身份没有该列的
+  `INSERT` 权限，所以它伪造不出来。带 operator facts 的批准必须给出与自身逐项一致的
+  attestation 且不得携带 probe 授权；两者都不成立时记 `source_kind='unverified'`、
+  `evidence_kind='absent'`，读面显示为「来源未知」，而不是悄悄算作控制器观测。
+  0055 之前发布的资格没有 provenance 行：读面按批准自身是否带 `probe_authorization_id`
+  归为 `controller_observed`（`evidence=legacy_pre_0055`）或 `unverified`，同样是正向证据。
+- **`declared_*` 命名**：`declared_lifecycle_digest`／读面的 `declared_fencing_token`、
+  `declared_instance_generation`、`declared_observed_at_us`、`declared_expires_at_us`
+  都是声明的快照，不是当前运行态；读面注释与字段前缀同时表达这一点。
 - **downgrade**：无 attestation 行时 `DROP` 两张新表即可（不改既有表）；
   已有 attestation 行时拒绝降级（`RuntimeError`，与 0029/0030 的历史保全策略一致），
   避免把 operator 证据降级成「看起来是 controller 观测」的孤儿版本。

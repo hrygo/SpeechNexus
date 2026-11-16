@@ -2,7 +2,7 @@
 
 当前受控资格范围是 `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` / `Vivian`；来源批准、资格探针和发布入口已有实现，实际可用性仍取决于部署配置和有效资格。来源批准和执行资格是不同事实：来源批准固定来源修订、摘要、speaker 与期限；独立 qualification producer 核验实际原证据后记录完整 `BuiltinVoiceFacts`。
 
-资格有两个互相独立、机器可区分且持久化的来源：node-controller 观测的受控探针（`builtin-customvoice-v1` / `1`，八项固定检查，见下文「资格探针准入」）与外部托管引擎的 operator 声明（`operator-attested-customvoice-v1`，见「外部托管引擎的 operator 声明资格」）。两者写入同一个 approval 账本和同一份公开资格，但 facts 键集互斥、verifier 不同，发布时在 `speech_builtin_voice_qualification_provenance` 记录本次资格由哪个来源产出。生产者未取得所选来源要求的完整证据时不得写入 approval；普通探针通过不自动等于此资格。
+资格有两个互相独立、机器可区分且持久化的来源：node-controller 观测的受控探针（`builtin-customvoice-v1` / `1`，八项固定检查，见下文「资格探针准入」）与外部托管引擎的 operator 声明（`operator-attested-customvoice-v1`，见「外部托管引擎的 operator 声明资格」）。两者写入同一个 approval 账本和同一份公开资格，但 facts 键集互斥、verifier 不同，发布时在 `speech_builtin_voice_qualification_provenance` 记录本次资格由哪个来源产出，且标签必须有对应证据行：`controller_observed` 带 probe 授权 ID，`operator_attested` 带声明记录；两者都不成立时记为 `unverified`（`evidence_kind='absent'`），不会因为缺少某行而被算作控制器观测。生产者未取得所选来源要求的完整证据时不得写入 approval；普通探针通过不自动等于此资格。
 
 公开 `backend_unavailable` 不携带内部拒绝原因。隔离验收须同时保全有界私有应用日志：HTTP 记录服务端生成的 execution UUID 和固定失败类别；普通准入记录原 operation、失败阶段及受控拒绝码，未知码仅记 `unknown_code`；异常存储记录异常类型和五位 SQLSTATE，不记录异常正文、SQL、参数、请求内容、客户端头或连接串。仅有 503 或准入记录为空不能证明 readiness 过期；须结合原持久有效期和具体失败证据定位。诊断不重发未知请求，也不改变停止与结算要求。
 

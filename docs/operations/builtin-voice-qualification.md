@@ -48,7 +48,13 @@ controller 制品摘要是受信不可变部署前提下的磁盘 Python 源或�
 
 **一条 revision 一条声明。** 声明与 voice revision 一一对应：`(voice_id, revision, revision_id, binding_revision_id)` 的唯一约束是反替代规则，第二条声明不得被读成第一条的替换。声明到期不释放该 revision，重复声明同一 revision 以 `attestation_revision_already_attested` 拒绝（退出码 `4`，不是「结果未知」）；续期是发布新的 voice revision 并对新 revision 声明，旧 revision 的资格、provenance 与声明记录都保留为历史事实。
 
-**持久与读面。** 迁移 `0055_operator_attestation` 新增 `speech_builtin_voice_operator_attestations`（按 approval 唯一，含 instance/generation/fencing/策略摘要/四个制品摘要/窗口/声明原件与其摘要/声明人）与 `speech_builtin_voice_qualification_provenance`（每个已发布资格一行，`source_kind` 取 `controller_observed` 或 `operator_attested`，后者必须带 attestation 外键）。发布入口对两个来源都写 provenance，并在写入前复核算出声明的 approval 与声明记录逐项一致，不一致即 `attestation_mismatch` 回滚。`speechnexus-qualification-provenance` 只读打印每个语音的 `source_kind`、`provenance_recorded` 与声明细节；迁移 `0055` 之前已发布的资格没有 provenance 行，报告为 `evidence=legacy_pre_0055` 且 `source_kind=controller_observed`（当时不存在声明路径），不推断、不回填、不改写既有记录。`--fail-on-expired-attestation` 在声明窗口已过时以退出码 `3` 失败。
+**持久与读面。** 迁移 `0055_operator_attestation` 新增 `speech_builtin_voice_operator_attestations`（按 approval 唯一，含 instance/generation/fencing/策略摘要/四个制品摘要/窗口/声明原件与其摘要/声明人）与 `speech_builtin_voice_qualification_provenance`（每个已发布资格一行，`source_kind` 取 `controller_observed` 或 `operator_attested`，后者必须带 attestation 外键）。发布入口对两个来源都写 provenance，并在写入前复核算出声明的 approval 与声明记录逐项一致，不一致即 `attestation_mismatch` 回滚。`speechnexus-qualification-provenance` 只读打印每个语音的 `source_kind`、`provenance_recorded` 与声明细节；迁移 `0055` 之前已发布的资格没有 provenance 行，报告为 `evidence=legacy_pre_0055`：批准自身带 `probe_authorization_id` 时标签为 `controller_observed`，否则为 `unverified`（按证据，不按缺席），不回填、不改写既有记录。`--fail-on-expired-attestation` 在声明窗口已过时以退出码 `3` 失败。
+
+**准入读取来源证据。** 读面标签同时是准入判据：`require_builtin_voice`（同步 TTS 准入与启动门）与公开 Job 的内建兜底共用 `qualification_source_evidence.qualification_source_evidenced_sql`，只有两条正向证据之一成立才接受——控制器观测必须带 `probe_authorization_id`，运维自证必须在其 `[observed_at_us, expires_at_us)` 窗口内。因此：
+
+- 已发布但来源无证据（`source_kind='unverified'`）的资格不被任何准入消费，报 `qualification_source_unverified`（内部码，公开答 `engine_resource_disabled`；同步 TTS 在语音解析阶段按既有语义答 `voice_not_found`），不是 `backend_unavailable`；
+- 声明窗口过期后，该资格立即停止准入，不需要也不允许改写已记录的行，续期靠发布新的 voice revision；
+- `0055` 之前没有 provenance 行的真历史资格继续被接受（grandfather），读面标 `legacy_pre_0055`；声明身份对 provenance 表没有 `INSERT` 权限，所以「已发布且无 provenance」只能是历史。
 
 **不开放的能力。** 声明不是 controller 观测，因此不放行：`require_native_ready` 与探针签发（仍要求 node-controller 的 native runtime 证据，缺失即 `native_runtime_evidence_unavailable`）；算力预算归还与租约结算（`release()` 仍要求授权 stop kind，缺少实测停止即 `execution_cleanup_pending`）；`execution_cleanup_pending` 的清偿；实例生命周期收敛与新 generation（仍要求上一代 `stopped` 且预算 `released`）；`execution_stop_evidence`、`runtime_intent_deliveries` 与 `admission_leases` 的任何写入。声明事务的写目标是且只是 approval 与声明记录两行；`tests/integration/test_operator_attested_qualification_pg.py` 对运行态账本做前后快照以固定这一点。
 

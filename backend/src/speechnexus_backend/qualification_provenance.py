@@ -140,10 +140,13 @@ def _entry(row: Row, *, now_us: int) -> Row:
         "instance_id": row.get("instance_id"),
         "declared_instance_generation": row.get("instance_generation"),
         "approval_expires_at_us": row.get("approval_expires_at_us"),
-        "probe_authorization_id": row.get("approval_probe_authorization_id"),
     }
     if note is not None:
         entry["note"] = note
+    if source_kind == SOURCE_CONTROLLER:
+        # Only an observation names a probe authorization. Printing the column for
+        # every row made an operator entry look like "authorized but empty".
+        entry["probe_authorization_id"] = row.get("approval_probe_authorization_id")
     if source_kind == SOURCE_OPERATOR:
         entry.update(
             {

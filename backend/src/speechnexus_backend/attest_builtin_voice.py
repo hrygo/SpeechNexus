@@ -158,6 +158,12 @@ _REMEDIATION = {
         "; this voice revision already has an attestation and one revision carries "
         "exactly one; publish a new voice revision and attest that instead"
     ),
+    # The `NAME` column holds 63 bytes; a longer principal would be truncated into
+    # a different name than the one the declaration signs.
+    "trust_declaration_declared_by_too_long": (
+        "; declared_by must be at most 63 bytes in UTF-8, which is the width of the "
+        "column that records it"
+    ),
 }
 
 

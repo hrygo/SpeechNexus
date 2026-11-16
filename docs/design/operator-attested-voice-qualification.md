@@ -198,6 +198,41 @@ speech_builtin_voice_qualification_provenance   -- 每条已发布内建资格�
   已有 attestation 行时拒绝降级（`RuntimeError`，与 0029/0030 的历史保全策略一致），
   避免把 operator 证据降级成「看起来是 controller 观测」的孤儿版本。
 
+### 3.6 准入侧读取来源证据
+
+「来源可读」不等于「来源可信」。写进读面而不进准入，等于把信任决定留在审计报告里：
+持凭据者可以绕过信任声明、release 证据与窗口直接合成一条可用的内建资格，读面诚实地写
+「来源未知」，而同步 TTS 与公开 Job 照常使用。所以准入侧与读面共用同一个判据。
+
+判据只有一份，位于 `speech/infrastructure/qualification_source_evidence.py`
+（`qualification_source_evidenced_sql`），由三处准入消费方共用，不允许各自重写：
+
+| 消费方 | 用途 |
+| --- | --- |
+| `require_builtin_voice`（`builtin_voice_qualification.py`） | 同步 TTS 解析与准入事务、`has_qualified_voice` 启动门（后者复用同一函数） |
+| `public_job_admission._custom_voice` | 公开 Job 的内建兜底判定 |
+| `qualification_source_evidence` 自身 | 上面两处引用的唯一实现；`tests/unit` 用例断言没有消费方重新内联判据 |
+
+接受与拒绝（判别器是 **provenance 行是否存在**，不是标签）：
+
+| 情形 | provenance 行 | 准入 |
+| --- | --- | --- |
+| 控制器观测 | 有，`controller_observed` 且 `probe_authorization_id` 非空 | 接受 |
+| 运维自证（窗口内） | 有，`operator_attested` 且 attestation 在 `[observed_at_us, expires_at_us)` | 接受 |
+| 运维自证（已过期） | 有，`operator_attested` 但窗口已过 | 拒绝，`qualification_source_unverified` |
+| 伪造/证据缺失 | 有，`unverified` | 拒绝，`qualification_source_unverified` |
+| 0055 之前的真历史行 | **没有** | 接受（grandfather），读面标 `legacy_pre_0055` |
+
+放行「无 provenance 行」不是放宽：正常发布路径一定写 provenance 行，而声明身份对
+`speech_builtin_voice_qualification_provenance` 没有任何 `INSERT` 权限（见 §7），所以
+「已发布但没有 provenance 行」只能是 0055 之前的历史，不是可伪造的形状。
+
+拒绝码：内部 `qualification_source_unverified` 进入
+`ADMISSION_REJECTION_CODES`，按既有 `PUBLIC_ADMISSION_CODES` 映射为公开
+`engine_resource_disabled`（部署侧待修、不可重试），不新增公开码、不改契约。
+同步 TTS 侧该拒绝发生在语音解析阶段，按既有语义答 `voice_not_found`（已撤销资格的既有
+行为一致），不是笼统的 `backend_unavailable`。
+
 ## 4. 两种来源的边界对比
 
 | 维度 | controller_observed | operator_attested |
@@ -267,6 +302,8 @@ speech_builtin_voice_qualification_provenance   -- 每条已发布内建资格�
 | `attestation_conflict` | 同一 attestation/approval 身份已用不同原件记录 | 是 |
 | `attestation_revision_already_attested` | 该 voice revision 已有一条声明；一条 revision 只承载一条声明，续期须发新 revision | 是 |
 | `attestation_missing` / `attestation_mismatch` | 发布时声明与 approval 不符，或探针 approval 被塞入声明记录 | 是 |
+| `trust_declaration_declared_by_too_long` | `declared_by` 超过 `NAME` 列的 63 字节（否则会被静默截断成另一个名字） | 是 |
+| `qualification_source_unverified`（准入） | 资格行仍在，但其来源没有证据支撑，或运维声明窗口已过 | — （准入拒绝，非写入） |
 
 读面（`speechnexus-qualification-provenance`）只读，不写、不探测引擎。它逐行输出
 `source_kind`/`source_evidence`/`provenance_recorded`/`probe_authorization_id`/
@@ -284,7 +321,10 @@ attestations、probe authorizations），以 `sn_qualification_reader` 身份运
 - `source_kind='operator_attested'`：运维自证，附 attestation 明细，运维能看出「这不是
   controller 观测来的」。
 - `source_kind='unverified'`（`source_evidence='absent'`）：既没有 probe 授权也没有声明记录，
-  显式标为来源未知而不是算作 controller 观测。
+  显式标为来源未知而不是算作 controller 观测；这类行在准入侧被拒绝（见 §3.6），标签与准入
+  结论一致。
+- 只有 `controller_observed` 行输出 `probe_authorization_id`；operator 行不输出该字段，
+  避免「有授权但为空」的误读。
 
 ### 6.1 续期与一次性语义
 
@@ -318,6 +358,8 @@ provenance 行保留为历史事实。
 | 反例 3（时效） | 窗口过期 / 超上限用例 |
 | 反例 4（不能顶替 controller 语义） | 算力释放与 `execution_cleanup_pending` 的 domain 用例 + 运行时账本前后快照 |
 | 反例 5（不能静默降级） | `require_native_ready` / probe 授权对自证实例仍拒绝；既有 controller 负例原样保持 |
+| 反例 6（准入不吃无证据的行） | 伪造发布 → `require_builtin_voice` 返回 `qualification_source_unverified`、Job 兜底不选中该行；真历史行（无 provenance）仍接受；声明过期后同样拒绝 |
+| 正例 2（controller 回归） | 同一文件用例：probe 支撑的发布在带 provenance 与降级为历史行两种状态下都接受 |
 
 ## 9. 实现与验收状态
 
@@ -327,8 +369,11 @@ provenance 行保留为历史事实。
 - 写入事务：`operator_attested_qualification.py`；CLI：`attest_builtin_voice.py`；
   读面：`qualification_provenance.py`；发布入口在 `builtin_voice_publication.py` 写 provenance。
 - 迁移：`0055_operator_attestation`；授予：`builtin_voice_grants.py`。
-- 用例：`tests/unit/backend/test_operator_attested_qualification.py`（24 项）、
-  `tests/integration/test_operator_attested_qualification_pg.py`（24 项，隔离 PostgreSQL）。
+- 准入判据：`speech/infrastructure/qualification_source_evidence.py`，由
+  `require_builtin_voice`（同步 TTS 准入与启动门）与 `public_job_admission._custom_voice`
+  共用，语义见 §3.6。
+- 用例：`tests/unit/backend/test_operator_attested_qualification.py`（27 项）、
+  `tests/integration/test_operator_attested_qualification_pg.py`（26 项，隔离 PostgreSQL）。
 - 部署装配：`sn_operator_attestation` 由
   [最小部署 §6](../operations/compose-minimal.md#外部托管引擎的资格声明角色-sn_operator_attestation)
   在新建与升级两条路径创建并按 `operator_attestation_writer_grants` 授权，两个路径的存在性由

@@ -322,6 +322,9 @@ ADMISSION_REJECTION_CODES: frozenset[str] = CAPACITY_REJECTION_CODES | frozenset
         "owner_busy",
         # The instance, its pool, its node or its recipe approval is not active.
         "policy_or_resource_disabled",
+        # The builtin voice qualification exists but no evidence backs its source
+        # (or its operator declaration elapsed): re-declare, do not retry.
+        "qualification_source_unverified",
         # The pinned instance is the right one; only its readiness receipt elapsed.
         "readiness_expired",
         # The request does not match the approved recipe for the pinned instance.
@@ -361,8 +364,11 @@ PUBLIC_ADMISSION_CODES: dict[str, str] = {
     "not_found": "engine_state_mismatch",
     "stale_instance_generation": "engine_state_mismatch",
     "reconciliation_required": "engine_state_mismatch",
-    # The instance, pool, node, template or recipe approval is not active.
+    # The instance, pool, node, template or recipe approval is not active, and a
+    # builtin qualification whose source is unevidenced or elapsed is no approval
+    # at all: both are deployment-side states a retry cannot clear.
     "policy_or_resource_disabled": "engine_resource_disabled",
+    "qualification_source_unverified": "engine_resource_disabled",
     "unapproved_runtime_template": "engine_resource_disabled",
     # The ready instance is the pinned one, but its receipt is outside the window.
     "readiness_expired": "engine_not_ready",

@@ -44,6 +44,7 @@ from speechnexus_backend.qualification_provenance import (
 from speechnexus_backend.qualification_provenance import (
     main as provenance_main,
 )
+from speechnexus_backend.speech.domain.admission import AdmissionRejectedError
 from speechnexus_backend.speech.domain.operator_attestation import (
     OPERATOR_CHECKS,
     AttestationRequest,
@@ -61,6 +62,10 @@ from speechnexus_backend.speech.infrastructure.builtin_voice_qualification impor
 from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
 from speechnexus_backend.speech.infrastructure.publication_schema import publication_grants
 from speechnexus_backend.speech.infrastructure.publications_postgres import PostgresPublications
+from speechnexus_backend.speech.infrastructure.qualification_source_evidence import (
+    SOURCE_UNVERIFIED,
+    qualification_source_evidenced_sql,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -543,6 +548,43 @@ def _report_rows(db: psycopg.Connection[dict[str, Any]], schema: str) -> list[di
         return cursor.fetchall()
 
 
+def _admit(db: psycopg.Connection[dict[str, Any]], **overrides: Any) -> dict[str, Any]:
+    """Run the lookup synchronous TTS admission and the Job path both call."""
+    with db.cursor() as cursor:
+        return require_builtin_voice(
+            cursor,
+            voice_id=overrides.pop("voice_id", VOICE),
+            revision=overrides.pop("revision", int(REVISION)),
+            revision_id=overrides.pop("revision_id", REVISION_ID),
+            binding_revision_id=BINDING_REVISION_ID,
+            instance_id=INSTANCE,
+            instance_generation=GENERATION,
+            host_node_id=HOST,
+            gateway_id=GATEWAY,
+            policy_revision_id=POLICY,
+        )
+
+
+def _admission_answer(db: psycopg.Connection[dict[str, Any]], **overrides: Any) -> str:
+    """The refusal code, or ``accepted`` when the lookup returns the facts."""
+    try:
+        _admit(db, **overrides)
+    except AdmissionRejectedError as error:
+        return error.code
+    return "accepted"
+
+
+def _job_fallback_selects_the_row(db: psycopg.Connection[dict[str, Any]]) -> bool:
+    """Whether the public Job builtin fallback would treat this as a builtin voice."""
+    row = db.execute(
+        "SELECT 1 FROM speech_builtin_voice_qualifications q "
+        "WHERE q.voice_id=%s AND q.revision=%s AND q.revision_id=%s "
+        f"AND ({qualification_source_evidenced_sql('q')})",
+        (VOICE, REVISION, REVISION_ID),
+    ).fetchone()
+    return row is not None
+
+
 def test_attested_qualification_publishes_and_is_read_back_as_operator_sourced(
     pg: tuple[psycopg.Connection[dict[str, Any]], str, str],
 ) -> None:
@@ -983,6 +1025,17 @@ def test_the_attested_identity_cannot_publish_a_controller_label(
             "attestation_id": None,
             "probe_authorization_id": None,
         }
+        # The forgery is published but admitted nowhere: the lookup synchronous TTS
+        # admission calls refuses it by name, and the public Job builtin fallback
+        # does not select the row -- so a published, honest-looking "unverified"
+        # qualification cannot synthesize.
+        assert _admission_answer(db) == SOURCE_UNVERIFIED
+        assert _job_fallback_selects_the_row(db) is False
+        assert db.execute(
+            "SELECT count(*) AS n FROM speech_builtin_voice_qualifications "
+            "WHERE voice_id=%s AND revision=%s",
+            (VOICE, REVISION),
+        ).fetchone() == {"n": 1}
         entries = _report(db, schema)
         assert entries[0]["source_kind"] == "unverified"
         verdicts = {
@@ -1000,6 +1053,107 @@ def test_the_attested_identity_cannot_publish_a_controller_label(
                 "WHERE voice_id=%s AND revision=%s",
                 (VOICE, REVISION),
             )
+    finally:
+        _close(ledger)
+
+
+def test_an_elapsed_declaration_stops_admitting_work(
+    pg: tuple[psycopg.Connection[dict[str, Any]], str, str],
+) -> None:
+    """P3-⑧: qualification rows outlive their window, so admission must read it.
+
+    Publication happened while the declaration was live; the ledger row is
+    immutable, so the only way an elapsed declaration can stop work is if the
+    admission lookup reads the attestation window. Moving the window into the past
+    therefore has to change the answer from "accepted" to the named refusal, even
+    though the qualification, the approval and the publication are all untouched.
+    """
+    db, schema, role = pg
+    ledger = Ledger(db, schema)
+    writer = ledger.writer(role)
+    try:
+        ledger.attest(writer)
+    finally:
+        _close(ledger)
+    publisher = ledger.publisher(role)
+    try:
+        ledger.publish(publisher)
+        assert _admission_answer(db) == "accepted"
+        assert _job_fallback_selects_the_row(db) is True
+        db.execute(
+            "UPDATE speech_builtin_voice_operator_attestations SET expires_at_us=%s "
+            "WHERE attestation_id=%s",
+            (int(datetime.now(UTC).timestamp() * 1_000_000) - 1, ATTESTATION),
+        )
+        assert _admission_answer(db) == SOURCE_UNVERIFIED
+        assert _job_fallback_selects_the_row(db) is False
+        # The qualification itself is still published: the refusal is about its
+        # source window, not about the row having vanished.
+        assert db.execute(
+            "SELECT count(*) AS n FROM speech_builtin_voice_qualifications "
+            "WHERE voice_id=%s AND revision=%s",
+            (VOICE, REVISION),
+        ).fetchone() == {"n": 1}
+    finally:
+        _close(ledger)
+
+
+def test_a_historical_row_without_provenance_stays_admitted(
+    pg: tuple[psycopg.Connection[dict[str, Any]], str, str],
+) -> None:
+    """Grandfathering keys on the absence of a provenance row, not on a label.
+
+    A real pre-0055 row has no provenance row at all, which no writer can forge: the
+    declaration identity holds no INSERT on that table. So absence stays admitted
+    (and the read surface labels it ``legacy_pre_0055``), while a row that carries an
+    ``unverified`` provenance row -- published with no evidence at all -- is refused
+    by the same lookup.
+    """
+    db, schema, role = pg
+    ledger = Ledger(db, schema)
+    probe = ledger.probe_authorization()
+    db.execute(
+        "INSERT INTO speech_builtin_voice_approvals "
+        "(approval_id,voice_id,revision,revision_id,binding_revision_id,source_approval_id,"
+        "facts,expires_at,probe_authorization_id,result_intent) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,'{}'::jsonb)",
+        (
+            APPROVAL,
+            VOICE,
+            REVISION,
+            REVISION_ID,
+            BINDING_REVISION_ID,
+            SOURCE,
+            json.dumps(_probe_facts(ledger)),
+            ledger.expires_at,
+            probe,
+        ),
+    )
+    publisher = ledger.publisher(role)
+    try:
+        ledger.publish(publisher)
+        # Controller regression: a probe-backed publication is admitted.
+        assert _admission_answer(db) == "accepted"
+        assert _job_fallback_selects_the_row(db) is True
+        db.execute(
+            "DELETE FROM speech_builtin_voice_qualification_provenance "
+            "WHERE voice_id=%s AND revision=%s",
+            (VOICE, REVISION),
+        )
+        assert _admission_answer(db) == "accepted"
+        assert _job_fallback_selects_the_row(db) is True
+        entries = _report(db, schema)
+        assert entries[0]["provenance_recorded"] is False
+        assert entries[0]["evidence"] == "legacy_pre_0055"
+        # Same row, now carrying an unverified provenance row: refused.
+        db.execute(
+            "INSERT INTO speech_builtin_voice_qualification_provenance "
+            "(voice_id,revision,source_kind,evidence_kind,attestation_id,"
+            "probe_authorization_id) VALUES (%s,%s,'unverified','absent',NULL,NULL)",
+            (VOICE, REVISION),
+        )
+        assert _admission_answer(db) == SOURCE_UNVERIFIED
+        assert _job_fallback_selects_the_row(db) is False
     finally:
         _close(ledger)
 
@@ -1190,6 +1344,12 @@ def test_rows_published_before_the_migration_are_reported_as_recorded_history(
     assert "source unknown" in entries[0]["note"]
     assert entries[-1]["summary"]["legacy_pre_0055"] == 1
     assert entries[-1]["summary"]["controller_observed"] == 0
+    # The label is honest, not a refusal: this row has no provenance at all, which
+    # no writer can forge, so the shared admission predicate keeps accepting it as
+    # history. (The full lookup additionally requires a published row and an
+    # unexpired source approval; `test_a_historical_row_without_provenance_stays_
+    # admitted` exercises it end to end through a real publication.)
+    assert _job_fallback_selects_the_row(db) is True
     _close(ledger)
 
 

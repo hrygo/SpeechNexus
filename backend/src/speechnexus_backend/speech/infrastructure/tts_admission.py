@@ -60,6 +60,10 @@ _DIAGNOSTIC_CODES = frozenset(
         "lease_not_active",
         "stale_fencing_token",
         "stale_instance_generation",
+        # The voice qualification exists but its source is unevidenced or elapsed;
+        # without this the log says "unknown_code" for a deterministic deployment
+        # state an operator has to fix.
+        "qualification_source_unverified",
     }
 )
 

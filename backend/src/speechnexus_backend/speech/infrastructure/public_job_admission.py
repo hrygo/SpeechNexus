@@ -42,6 +42,9 @@ from speechnexus_backend.speech.infrastructure.admission_codec import (
     prepare_admission,
 )
 from speechnexus_backend.speech.infrastructure.catalog_revision_schema import RETIREMENT_TABLE
+from speechnexus_backend.speech.infrastructure.qualification_source_evidence import (
+    qualification_source_evidenced_sql,
+)
 from speechnexus_backend.speech.infrastructure.runtime_codec import decode_record
 from speechnexus_backend.speech.infrastructure.transcription_submit import build_asr_submit
 from speechnexus_backend.speech.infrastructure.tts_submit import build_tts_submit_from_parameters
@@ -327,9 +330,14 @@ def _custom_voice(
         # publication identity; otherwise a partial restore could synthesize a
         # clone through the builtin speaker.
         if voice["revision_id"].startswith("vrev-"):
+            # The fallback is only the builtin path when the qualification's source
+            # is evidenced: a published row with an `unverified` provenance would
+            # otherwise reach the shared speaker without a controller observation
+            # and without an accepted operator declaration.
             cursor.execute(
-                "SELECT 1 FROM speech_builtin_voice_qualifications "
-                "WHERE voice_id=%s AND revision=%s AND revision_id=%s",
+                "SELECT 1 FROM speech_builtin_voice_qualifications q "
+                "WHERE q.voice_id=%s AND q.revision=%s AND q.revision_id=%s "
+                f"AND ({qualification_source_evidenced_sql('q')})",
                 (voice["id"], str(voice["revision"]), voice["revision_id"]),
             )
             if not cursor.fetchall():

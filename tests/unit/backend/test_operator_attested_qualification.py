@@ -11,6 +11,7 @@ import inspect
 import json
 from dataclasses import replace
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -858,6 +859,10 @@ def test_read_surface_attributes_each_source_only_through_its_evidence() -> None
     assert report[0]["probe_authorization_id"] == "probe-auth-1"
     assert report[1]["provenance_recorded"] is True
     assert report[1]["attestation_id"] == "att-tts-1"
+    # Only an observation names a probe authorization; printing an always-NULL one
+    # for an operator row read as "authorized but empty".
+    assert "probe_authorization_id" not in report[1]
+    assert "probe_authorization_id" not in report[3]
     assert report[1]["attestation_state"] == "live"
     assert report[1]["declared_fencing_token"] == report[1]["declared_fencing_token"]
     assert "not a controller observation" in report[1]["note"]
@@ -945,3 +950,55 @@ def test_window_text_round_trips_to_the_facts_timestamp() -> None:
         }
     )
     assert shifted.window.observed_at_us == NOW - 3_600_000_000
+
+
+def test_a_declaration_cannot_name_a_principal_wider_than_its_column() -> None:
+    """`declared_by` lands in a 63-byte NAME column: no silent truncation.
+
+    A longer value would be cut by PostgreSQL, so the recorded declaration would
+    name a different principal than the signed document.
+    """
+    with pytest.raises(OperatorAttestationError, match="declared_by_too_long"):
+        TrustDeclaration.parse(_declaration(declared_by="o" * 64))
+    widest = TrustDeclaration.parse(_declaration(declared_by="o" * 63))
+    assert widest.declared_by == "o" * 63
+
+
+def test_every_admission_consumer_uses_the_one_source_evidence_predicate() -> None:
+    """Three consumers, one decision: a re-inlined check is the drift this prevents.
+
+    The gate/observation path already paid for a drift between two hand-written
+    copies of one rule; the source label must not repeat it. This asserts each
+    consumer references the shared predicate instead of restating it.
+    """
+    root = Path(__file__).resolve().parents[3]
+    consumers = (
+        "backend/src/speechnexus_backend/speech/infrastructure/builtin_voice_qualification.py",
+        "backend/src/speechnexus_backend/speech/infrastructure/public_job_admission.py",
+    )
+    for name in consumers:
+        source = (root / name).read_text()
+        assert "qualification_source_evidenced_sql" in source, name
+        assert "source_kind='controller_observed'" not in source, name
+    # `has_qualified_voice` delegates to `require_builtin_voice`; assert that too so
+    # a future edit cannot give the startup gate its own existence-only check.
+    facts = (
+        root
+        / "backend/src/speechnexus_backend/speech/infrastructure/qualified_speech_facts_postgres.py"
+    ).read_text()
+    assert "require_builtin_voice(" in facts
+    assert "speech_builtin_voice_qualifications" in facts  # the candidate list only
+
+
+def test_the_unverified_admission_refusal_has_its_own_internal_code() -> None:
+    """The refusal is named internally and answers with an existing public code."""
+    from speechnexus_backend.speech.domain.admission import (
+        ADMISSION_REJECTION_CODES,
+        PUBLIC_ADMISSION_CODES,
+    )
+    from speechnexus_backend.speech.infrastructure.qualification_source_evidence import (
+        SOURCE_UNVERIFIED,
+    )
+
+    assert SOURCE_UNVERIFIED in ADMISSION_REJECTION_CODES
+    assert PUBLIC_ADMISSION_CODES[SOURCE_UNVERIFIED] == "engine_resource_disabled"

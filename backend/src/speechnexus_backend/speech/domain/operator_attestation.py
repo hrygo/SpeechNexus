@@ -37,6 +37,11 @@ LIFECYCLE_FORMAT = "speechnexus-external-lifecycle-v1"
 OPERATOR_VERIFIER_ID = "operator-attested-customvoice-v1"
 OPERATOR_VERIFIER_VERSION = "1"
 
+# `declared_by` lands in a `NAME` column (63 bytes). A longer value would be
+# silently truncated by PostgreSQL, so the recorded declaration would name a
+# different principal than the signed document.
+MAX_DECLARED_BY_BYTES = 63
+
 MAX_DECLARATION_VALIDITY_SECONDS = 2_592_000
 """Thirty days: an attestation is a bounded statement, never an enduring one."""
 
@@ -212,8 +217,11 @@ class TrustDeclaration:
             raise
         except ValueError, TypeError, KeyError, OverflowError:
             raise OperatorAttestationError("trust_declaration_format_invalid") from None
+        declared_by = _identifier(root["declared_by"])
+        if len(declared_by.encode()) > MAX_DECLARED_BY_BYTES:
+            raise OperatorAttestationError("trust_declaration_declared_by_too_long")
         return cls(
-            declared_by=_identifier(root["declared_by"]),
+            declared_by=declared_by,
             declared_at_us=declared_at_us,
             database=database,
             schema=schema,

@@ -91,30 +91,28 @@ def qualification_source_evidenced_sql(qualifications: str, *, now_us: str = _NO
 # default text points elsewhere: "engine_resource_disabled" sends an operator to
 # look for a switch, and "voice_not_published" says the voice is not published when
 # it plainly is (#877, and the same ruling as the Job-surface naming in #880).
+_NEW_REVISION = (
+    "publish a new voice revision and record its source there (controller probe path or "
+    "an accepted operator attestation), then send a new request"
+)
 _DETAILS: dict[str, str] = {
     STATE_ABSENT: (
-        "the published builtin voice has no qualification source recorded: publish it "
-        "again through the controller probe path, or record an accepted operator "
-        "attestation for it, then send a new request"
+        "the published builtin voice has no qualification source recorded: " + _NEW_REVISION
     ),
     STATE_UNVERIFIED: (
-        "the published builtin voice's qualification has no backing evidence: publish it "
-        "through the controller probe path, or record an accepted operator attestation "
-        "for it, then send a new request"
+        "the published builtin voice's qualification has no backing evidence: " + _NEW_REVISION
     ),
     STATE_CONTROLLER_WITHOUT_PROBE: (
         "the published builtin voice claims a controller observation without the probe "
-        "authorization it must name; publish it again through the controller probe path, "
-        "then send a new request"
+        "authorization it must name: " + _NEW_REVISION
     ),
     STATE_OPERATOR_WITHOUT_ATTESTATION: (
         "the published builtin voice claims an operator declaration that is not recorded: "
-        "record the attestation for this revision, then send a new request"
+        + _NEW_REVISION
     ),
     STATE_OPERATOR_ELAPSED: (
         "the operator attestation behind the published builtin voice declared an elapsed "
-        "window: publish a new voice revision and record a fresh attestation for it, then "
-        "send a new request"
+        "window; a window cannot be extended on a published qualification: " + _NEW_REVISION
     ),
 }
 

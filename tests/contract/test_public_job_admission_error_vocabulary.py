@@ -142,6 +142,23 @@ PASSTHROUGH_RAISE_POINTS: dict[tuple[str, str, str, str | None], dict[str, Any]]
         "allowed": ("idempotency_conflict", "reconciliation_required"),
     },
     (
+        "infrastructure/builtin_voice_qualification.py",
+        "require_builtin_voice",
+        "SOURCE_UNVERIFIED",
+        None,
+    ): {
+        "reason": (
+            "The refusal for a published qualification whose source has no evidence is "
+            "one named internal code, held as the `SOURCE_UNVERIFIED` constant in "
+            "`qualification_source_evidence.py` so the logging path, the consumers and "
+            "the tests share one spelling. The entry bounds this site to that code: the "
+            "lookup raises it only after the row matched the request and failed the "
+            "evidence check. It maps to the existing public `engine_resource_disabled` "
+            "answer, so the contract vocabulary gains nothing here."
+        ),
+        "allowed": ("qualification_source_unverified",),
+    },
+    (
         "domain/runtime_observations.py",
         "require_valid",
         "expired_code",

@@ -1160,11 +1160,13 @@ def test_an_elapsed_declaration_stops_admitting_work(
         )
         assert _admission_answer(db) == SOURCE_UNVERIFIED
         assert _job_fallback_selects_the_row(db) is False
-        # The sentence names the elapsed declaration, not a generic "no evidence":
-        # the repair is a fresh attestation, not a re-publication of the same window.
+        # The sentence names the elapsed declaration, not a generic "no evidence", and
+        # the repair it states is a new revision: a published qualification's window
+        # cannot be extended in place (republishing the same revision is a
+        # `publication_conflict`).
         detail = cast(str, _refusal_detail(db))
         assert "elapsed window" in detail, detail
-        assert "fresh attestation" in detail, detail
+        assert "a new voice revision" in detail, detail
         # The qualification itself is still published: the refusal is about its
         # source window, not about the row having vanished.
         assert db.execute(
@@ -1226,7 +1228,9 @@ def test_a_qualification_without_a_provenance_row_is_refused(
         assert _admission_answer(db) == SOURCE_UNVERIFIED
         assert _job_fallback_selects_the_row(db) is False
         assert _refusal_detail(db) is not None
-        assert "publish it again" in cast(str, _refusal_detail(db))
+        absent = cast(str, _refusal_detail(db))
+        assert "no qualification source recorded" in absent
+        assert "a new voice revision" in absent
         entries = _report(db, schema)
         # Audit fact, not an admission permit: the row is still labelled history.
         assert entries[0]["provenance_recorded"] is False

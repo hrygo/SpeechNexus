@@ -228,16 +228,18 @@ speech_builtin_voice_qualification_provenance   -- 每条已发布内建资格�
 「没有 provenance 行」不构成历史豁免：provenance 是资格行的子表，数据库层没有「资格行必须有
 provenance 行」的约束，而写资格行是发布身份的必需权限。因此手写资格行、或删掉 provenance 行、
 或走不通发布命令的 `DELETE`，都能得到「已发布但无 provenance 行」这种形状——它只说明这一行不是
-发布命令写的。真历史行同样需要重新发布（控制器探测路径或运维自证路径）才能重新被准入；
+发布命令写的。真历史行同样要先**发布一个新的 voice revision**、再走控制器探测路径或运维自证路径
+取得该 revision 的资格，才能重新被准入（同一 revision 不能补发，重复发布会以 `publication_conflict`
+拒绝）；
 审计读面仍按事实标 `legacy_pre_0055`，那是读面的记录，不是准入许可。发布说明必须写明这条限制
 （见 §9 与运维手册的发布说明）。
 
 拒绝码与文案：内部 `qualification_source_unverified` 进入
 `ADMISSION_REJECTION_CODES`，按既有 `PUBLIC_ADMISSION_CODES` 映射为公开
 `engine_resource_disabled`（部署侧待修、不可重试），不新增公开码、不改契约。**公开文案按状态点名**：
-`source_refusal_detail(state)` 给出具体修复动作（无 provenance 行→重新发布；声明过期→发新版本
-并重新声明；缺探针授权/缺 attestation 各自点名），不沿用「资源被禁用」的默认文案，否则运维会去翻
-开关而不是查证据链（与 #877/#880 的点名规则一致）。
+`source_refusal_detail(state)` 给出具体修复动作（都以「发布新的 voice revision 并在其上取得来源」
+为落点：无 provenance 行、声明已过期、缺探针授权、缺 attestation 各自点名），不沿用「资源被禁用」
+的默认文案，否则运维会去翻开关而不是查证据链（与 #877/#880 的点名规则一致）。
 
 | 消费方 | 线上答案 | 名字落在哪里 |
 | --- | --- | --- |
@@ -337,7 +339,7 @@ attestations、probe authorizations），以 `sn_qualification_reader` 身份运
 - `source_kind='unverified'`（`source_evidence='absent'`）：既没有 probe 授权也没有声明记录，
   显式标为来源未知而不是算作 controller 观测；这类行在准入侧被拒绝（见 §3.6）。
 - `evidence=legacy_pre_0055`：0055 之前没有 provenance 行的历史行。读面照实标出这段历史；
-  准入不因标签放行，这类行同样要重新发布才能被接受。
+  准入不因标签放行，这类行同样要发布新的 voice revision 才能被接受。
 - 只有 `controller_observed` 行输出 `probe_authorization_id`；operator 行不输出该字段，
   避免「有授权但为空」的误读。
 

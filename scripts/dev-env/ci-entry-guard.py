@@ -108,7 +108,17 @@ MUTATE_SITES: tuple[SiteRow, ...] = (
     ),
     SiteRow("step_gate:argv", "`gate_verdict`：闸门 ok/FAIL 判定", "probe:gate_verdict-fail"),
     SiteRow(
-        "step_stack:ctx.compose('up', '-d', '--build', '--wait', 'api', 'gateway')",
+        "step_gate:build",
+        "`step_gate`：worker 镜像 build 退出码判失败（不带 --build 的 up 之前先构建）",
+        "test:test_gate_compose_step_builds_the_worker_before_running_it",
+    ),
+    SiteRow(
+        "step_stack:build",
+        "`step_stack`：api + gateway 显式 build 的退出码判失败",
+        "test:test_stack_builds_api_and_gateway_by_name_before_up",
+    ),
+    SiteRow(
+        "step_stack:start",
         "`step_stack`：compose up 退出码判失败",
         "test:test_up_exit_nonzero_with_healthy_ps_is_red",
     ),
@@ -176,7 +186,7 @@ class DeferralRow:
 # Row counts are pinned so a table cannot shrink silently: deleting a row means
 # lowering a pin here *and* changing the documentation anchor in the same diff.
 PINNED_COUNTS: Mapping[str, int] = {
-    "MUTATE_SITES": 8,
+    "MUTATE_SITES": 10,
     "READ_ARGUMENTS": 4,
     "WRITE_TOKENS": 7,
     "PROBE_CASES": 9,

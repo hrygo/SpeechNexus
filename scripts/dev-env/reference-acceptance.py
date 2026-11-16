@@ -41,6 +41,15 @@ volumes are named per `--project-name`. The stack network is the default
 `SPEECHNEXUS_MINIO_STATIC_IP` (derive both with `deploy/compose-network.py`), so a
 parallel reference stack on one host also needs a different subnet and host ports;
 `--project-name` isolates reruns of the same stack, not a parallel one.
+
+Build sequences: every image is built by an argv that names the service it builds
+(`stack_build_argv`, `gate_compose_build_argv`, `migrate_argv`, and the direct-gate
+`run --build --no-deps`). No `up` carries `--build`: Compose resolves `--build` to
+the whole dependency chain, and `api`/`gateway` reach `minio` through
+`depends_on`, whose Dockerfile fetches a LICENSE from `raw.githubusercontent.com`
+and therefore fails on a host without that egress (#900/#905). `--build` stays on
+`compose run` where the alternative is judging this checkout by an already built
+image.
 """
 
 from __future__ import annotations
@@ -923,12 +932,24 @@ def step_tools(ctx: Context) -> str:
     )
 
 
+def migrate_argv(ctx: Context) -> tuple[str, ...]:
+    """Run the migration image built from this checkout, not an older one.
+
+    ``--build`` stays on this ``run``: ``compose run`` otherwise reuses whatever
+    image is already tagged, so a checkout that moved the migration head could be
+    judged by an old image. It is safe here because ``migrate`` has exactly one
+    dependency, ``postgres``, which has no build section: ``docker compose --dry-run``
+    plans only ``migrate`` for this argv, so nothing reaches ``deploy/images/minio.Dockerfile``.
+    """
+    return ctx.compose("--profile", "migration", "run", "--build", "--rm", "migrate")
+
+
 def step_migrate(ctx: Context) -> str:
     head, _parents = migration_heads(migration_versions_dir(ctx.repo_root))
     schema = ctx.schema()
     dsn_identity(ctx.env, "SPEECHNEXUS_MIGRATION_DATABASE_URL", consumer="migration profile")
     start = ctx.compose("up", "-d", "--wait", "postgres")
-    migrate = ctx.compose("--profile", "migration", "run", "--build", "--rm", "migrate")
+    migrate = migrate_argv(ctx)
     version_sql = f"SELECT version_num FROM {schema}.alembic_version"
     if ctx.dry_run:
         ctx.plan(start)
@@ -1083,11 +1104,28 @@ def step_buckets(ctx: Context) -> str:
     return f"{', '.join(names)} 存在且已版本化；minio-init 输出 {len(ready)} 行 bucket ready"
 
 
+def gate_compose_build_argv(ctx: Context) -> tuple[str, ...]:
+    """Build only the worker image, so the gate runs this checkout's code.
+
+    The "not a stale image" guarantee cannot come from ``run --build``: that form
+    also builds the service's dependencies, and ``job-dispatch-worker`` has
+    ``network_mode: service:gateway``, so ``--build`` reaches ``gateway``,
+    ``minio-init`` and ``minio`` (measured: ``docker compose --dry-run`` plans
+    ``Image …minio… Building`` for it). ``minio`` builds by fetching a LICENSE from
+    ``raw.githubusercontent.com``, so that plan fails on a host without egress
+    (#900/#905). A ``build`` that names one service builds exactly that image.
+    """
+    return ctx.compose("--profile", "job-dispatch", "build", "job-dispatch-worker")
+
+
 def gate_compose_argv(ctx: Context) -> tuple[str, ...]:
-    # --build: `compose run` reuses an already built image otherwise, so a
-    # checkout that moved the migration head could be judged by an old image.
+    """Run the gate through the worker service, after ``gate_compose_build_argv``.
+
+    The build moved out because ``run --build`` drags in the dependency chain
+    described there; the image this argv starts is the one just built.
+    """
     return ctx.compose(
-        "--profile", "job-dispatch", "run", "--build", "--rm", "-T", "job-dispatch-worker", "true"
+        "--profile", "job-dispatch", "run", "--rm", "-T", "job-dispatch-worker", "true"
     )
 
 
@@ -1105,6 +1143,11 @@ def gate_direct_argv(
     argv: list[str] = [
         *ctx.compose_argv,
         "run",
+        # --build keeps the "judged by this checkout's code" guarantee for the
+        # rotated image. `--no-deps` (already required here: the gate must not
+        # start the gateway netns dependency) also keeps the build local to the
+        # named service — measured with `docker compose --dry-run`, which plans
+        # only `Image …minio-init Building` and no `minio` target.
         "--build",
         "--rm",
         "-T",
@@ -1163,6 +1206,7 @@ def gate_verdict(result: CommandResult) -> tuple[list[str], list[str]]:
 def step_gate(ctx: Context) -> str:
     config = compose_config(ctx)
     if ctx.gate_mode == "compose":
+        build = gate_compose_build_argv(ctx)
         argv = gate_compose_argv(ctx)
         environment = ctx.child_env
         ctx.require(
@@ -1177,6 +1221,7 @@ def step_gate(ctx: Context) -> str:
         argv, environment = gate_direct_argv(ctx, config)
     if ctx.dry_run:
         if ctx.gate_mode == "compose":
+            ctx.plan(build)
             ctx.plan(argv)
         else:
             ctx.plan_text(
@@ -1184,6 +1229,14 @@ def step_gate(ctx: Context) -> str:
                 f"/opt/speechnexus/{GATE_CONTAINER_PATH} true（沿用 worker 的同源 env）"
             )
         return f"计划：以 {ctx.gate_mode} 方式运行 deploy/job-startup-gate.py，读取 ok/FAIL 判定"
+    if ctx.gate_mode == "compose":
+        built = ctx.mutate(build)
+        if not built.ok:
+            raise StepFailureError(
+                f"闸门镜像构建失败（docker compose build 退出码 {built.code}）：{built.tail(5)}",
+                inputs=["看构建输出修复 Dockerfile/构建参数；闸门不会在旧镜像上判定"],
+            )
+        surface_command_output(built, label="构建输出")
     result = ctx.mutate(argv, env=environment)
     ok_lines, pending = gate_verdict(result)
     detail = "; ".join(ok_lines) if ok_lines else "no ok line"
@@ -1254,15 +1307,44 @@ def surface_command_output(result: CommandResult, *, label: str, lines: int = 6)
         print(f"        {line}")
 
 
+def stack_build_argv(ctx: Context) -> tuple[str, ...]:
+    """Build the stack's images once, by explicit name.
+
+    ``up -d --build api gateway`` also builds ``minio``: both services pull it in
+    through ``depends_on`` (``api`` → ``minio-init`` → ``minio``, ``gateway`` →
+    ``minio-init``), and ``deploy/images/minio.Dockerfile`` fetches a LICENSE from
+    ``raw.githubusercontent.com`` while building, so the whole ``up`` fails with
+    ``target minio: failed to solve`` on a host without that egress (#900/#905).
+    ``build`` builds exactly the services it names; the guarantee that the stack
+    runs this checkout's code comes from building here, not from ``--build`` on the
+    following ``up -d``.
+    """
+    return ctx.compose("build", "api", "gateway")
+
+
+def stack_up_argv(ctx: Context) -> tuple[str, ...]:
+    """Start api and gateway from the images ``stack_build_argv`` just built.
+
+    No ``--build``: that flag is what makes Compose build the dependency chain
+    before it starts anything (see ``stack_build_argv``). A missing ``minio`` image
+    is the prerequisite compose-minimal §0 documents — an import or an egress
+    window — not something this step is allowed to build on a restricted host.
+    """
+    return ctx.compose("up", "-d", "--wait", "api", "gateway")
+
+
 def step_stack(ctx: Context) -> str:
     config = compose_config(ctx)
     problems = stack_private_inputs(ctx, config)
+    build = stack_build_argv(ctx)
+    start = stack_up_argv(ctx)
     if ctx.dry_run:
         for problem in problems:
             ctx.pending.append(problem)
             print(f"      待输入: {problem}")
-        ctx.plan(ctx.compose("up", "-d", "--build", "--wait", "api", "gateway"))
-        return "计划：api + gateway 启动到 healthy"
+        ctx.plan(build)
+        ctx.plan(start)
+        return "计划：显式 build api + gateway → up -d 启动到 healthy"
     if problems:
         raise StepFailureError(
             "; ".join(problems),
@@ -1277,16 +1359,23 @@ def step_stack(ctx: Context) -> str:
             "基线运行角色缺失: " + ", ".join(sorted(baseline - present)),
             inputs=["按 docs/operations/compose-minimal.md §6 预置基线角色"],
         )
-    started = ctx.mutate(ctx.compose("up", "-d", "--build", "--wait", "api", "gateway"))
+    built = ctx.mutate(build)
+    if not built.ok:
+        raise StepFailureError(
+            f"栈镜像构建失败（docker compose build 退出码 {built.code}）：{built.tail(6)}",
+            inputs=["看上面构建输出修复 Dockerfile/构建参数；构建覆盖 api 与 gateway，不含 minio"],
+        )
+    surface_command_output(built, label="构建输出")
+    started = ctx.mutate(start)
     if not started.ok:
         raise StepFailureError(
             f"栈未起来（docker compose up 退出码 {started.code}）：{started.tail(6)}",
             inputs=[
-                "看上面构建输出修复 Dockerfile/构建参数；"
+                "看上面启动输出修复容器/配置；"
                 "旧容器仍可能是 running/healthy，ps 的状态不能替代 up 的退出码",
             ],
         )
-    surface_command_output(started, label="构建/启动输出")
+    surface_command_output(started, label="启动输出")
     states = compose_services(ctx)
 
     def describe(service: str) -> str:
@@ -1307,7 +1396,7 @@ def step_stack(ctx: Context) -> str:
             + f"；compose 退出码 {started.code}：{started.tail(4)}",
             inputs=["核对 api/gateway 容器日志与 §9 失败对照表"],
         )
-    return "api 与 gateway 均 running/healthy（compose up 退出 0）"
+    return "api 与 gateway 均 running/healthy（build 与 up 退出 0）"
 
 
 def host_port(ctx: Context, key: str, default: str) -> str:
@@ -1399,7 +1488,8 @@ STEPS: tuple[Step, ...] = (
         "API 与 gateway 起来",
         EXIT_STACK,
         "私有配置与批准模型齐备；api/gateway 的基线角色已预置",
-        "docker compose up -d --build --wait api gateway 退出 0；两个服务 running/healthy",
+        "docker compose build api gateway 与 docker compose up -d --wait api gateway "
+        "退出 0（构建不含 minio）；两个服务 running/healthy",
         step_stack,
     ),
     Step(

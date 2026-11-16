@@ -93,8 +93,13 @@ cp deploy/compose.env.example deploy/compose.env
 
 ### 2. 构建并启动
 
+镜像先按[最小部署面 §0](docs/operations/compose-minimal.md#0-构建前提) 的一次性序列构建：
+`build` 逐个点名服务，不含 `minio`。之后的 `up` 不带 `--build`——`api` 与 `gateway` 经
+`depends_on` 带出 `minio`，`up --build` 会连带构建 `deploy/images/minio.Dockerfile`，而它在
+构建期取 `raw.githubusercontent.com` 的 LICENSE 做校验，取不到时整条 `up` 失败（#900、#905）。
+
 ```bash
-docker compose --env-file deploy/compose.env -f deploy/compose.yaml up --build -d
+docker compose --env-file deploy/compose.env -f deploy/compose.yaml up -d
 ```
 
 等待服务启动后，在浏览器中打开：

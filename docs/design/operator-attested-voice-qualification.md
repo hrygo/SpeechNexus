@@ -322,7 +322,7 @@ provenance 行保留为历史事实。
 - 写入事务：`operator_attested_qualification.py`；CLI：`attest_builtin_voice.py`；
   读面：`qualification_provenance.py`；发布入口在 `builtin_voice_publication.py` 写 provenance。
 - 迁移：`0055_operator_attestation`；授予：`builtin_voice_grants.py`。
-- 用例：`tests/unit/backend/test_operator_attested_qualification.py`（25 项）、
+- 用例：`tests/unit/backend/test_operator_attested_qualification.py`（24 项）、
   `tests/integration/test_operator_attested_qualification_pg.py`（24 项，隔离 PostgreSQL）。
 - 部署装配：`sn_operator_attestation` 由
   [最小部署 §6](../operations/compose-minimal.md#外部托管引擎的资格声明角色-sn_operator_attestation)

@@ -801,6 +801,28 @@ def test_attestation_opens_no_compute_release_and_no_native_evidence(
         "SELECT instance_state, base_budget_kind FROM engine_instances"
     ).fetchone()
     assert instance == {"instance_state": "ready", "base_budget_kind": "steady"}
+    # The invariant is the grant surface, not the code path: the declaration
+    # identity cannot even read the evidence a native qualification needs, so a
+    # defect in the writer still cannot manufacture runtime state. `resource_pools`
+    # and `workspace_quotas` are the only runtime relations it may read at all.
+    with psycopg.connect(
+        make_conninfo(
+            os.environ["SPEECHNEXUS_TEST_DATABASE_URL"], user=role + "_oa", password=PASSWORD
+        ),
+        autocommit=True,
+        row_factory=dict_row,
+    ) as identity:
+        identity.execute(f'SET search_path TO "{schema}", pg_catalog')
+        for table in (
+            "host_nodes",
+            "admission_leases",
+            "execution_stop_evidence",
+            "runtime_instance_intents",
+        ):
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                identity.execute(f"SELECT 1 FROM {table} LIMIT 0")
+        for table in ("resource_pools", "workspace_quotas"):
+            identity.execute(f"SELECT 1 FROM {table} LIMIT 0")
 
 
 def _renewal(ledger: Ledger) -> tuple[dict[str, Any], dict[str, Any]]:

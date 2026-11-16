@@ -7,6 +7,7 @@ the capabilities an attestation cannot open are pure domain facts.
 
 from __future__ import annotations
 
+import inspect
 import json
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -652,7 +653,22 @@ def _manual_registration_observation() -> Any:
     return prepare_observation(wire).observation
 
 
-def test_operator_attestation_does_not_unlock_the_native_probe_path() -> None:
+def test_the_native_gate_has_no_operator_input() -> None:
+    """`require_native_ready` cannot be taught a declaration: it takes no such input.
+
+    The earlier version of this test called the gate twice with identical arguments
+    and a parsed fact set that is not an input, so it could not fail. The invariant
+    that actually protects the native path is structural -- the gate's parameters
+    admit nothing but the observation, the expectation and two clock bounds -- plus
+    the integration proof that the declaration identity cannot read the native
+    evidence tables at all. Adding an operator input here turns this test red.
+    """
+    assert list(inspect.signature(require_native_ready).parameters) == [
+        "observation",
+        "expected",
+        "now_us",
+        "max_age_us",
+    ]
     observation = _manual_registration_observation()
     assert observation.native_runtime_evidence is None
     expected = ExpectedNativeRuntime(
@@ -664,10 +680,6 @@ def test_operator_attestation_does_not_unlock_the_native_probe_path() -> None:
         TEMPLATE_DIGEST,
         LIFECYCLE_DIGEST,
     )
-    with pytest.raises(ValueError, match="native_runtime_evidence_unavailable"):
-        require_native_ready(observation, expected, now_us=NOW, max_age_us=86_400_000_000)
-    # Even a fully consistent operator declaration changes nothing here.
-    BuiltinVoiceFacts(_facts())
     with pytest.raises(ValueError, match="native_runtime_evidence_unavailable"):
         require_native_ready(observation, expected, now_us=NOW, max_age_us=86_400_000_000)
 

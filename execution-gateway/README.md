@@ -22,7 +22,16 @@ consumes VAD candidates through a fixed vLLM endpoint and verifies terminal iden
 finish reason and token usage. Both ASR models were exercised on authorized local inputs.
 The authenticated submit, abort and instance-drain HTTP routes are served: without an engine
 adapter the two engine routes refuse, and the drain reports the recorded in-flight work of one
-instance generation without claiming a stop.
+instance generation without claiming a stop. The instance-reclaim service reads the same
+recorded inventory once together with the generation's readiness instant, newest execution
+activity, held capacity and the manifest `idle_reclaim_cooldown_ms`, and applies one fixed
+judgement table: resident policy, an unconfirmed stop, unfinished work, an unconfirmed release,
+a held lease, an unknown idle anchor and an active cooldown all keep the generation, and only
+verified container/process termination reports `reclaimed`. It writes nothing, stops nothing
+and returns no budget; the scheduler still issues the stop. Release evidence is the released
+node checkpoint read through the verified-stop source and converted once by
+`whole_instance_stop_evidence`; an engine sleep acknowledgment is not release evidence, and a
+store that cannot answer raises instead of reporting an idle instance.
 The [default file-ASR composition](../docs/operations/file-asr-runtime.md) can now connect
 the existing durable worker through an explicit private deployment file and separate object
 credentials. It validates configuration before acquiring control resources, loads the pinned

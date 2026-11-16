@@ -27,6 +27,10 @@ from speechnexus_gateway.domain.submission import (
     SubmissionIntent,
     contract_instant_text,
 )
+from speechnexus_gateway.domain.voice_design_release import (
+    ReleaseEvidenceKind,
+    VoiceDesignReleaseEvidence,
+)
 
 _IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]")
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
@@ -174,6 +178,98 @@ class NodeStopEvidenceSource:
         self._now = now
         self._transport = _transport
 
+    def release_evidence(
+        self,
+        *,
+        instance_id: str,
+        instance_generation: int,
+        pool_id: str,
+        binding_revision_id: str,
+        fencing_token: int,
+    ) -> VoiceDesignReleaseEvidence | None:
+        """Report the node's own release fact for one instance generation.
+
+        The answer is the same checkpoint-backed document ``termination_evidence`` reads,
+        so the instance-level release and the per-execution stop cannot disagree. This
+        method never answers from a status, a timeout or a disconnect: only a 200 whose
+        identity and time window match produces a fact, and the fact keeps the node's own
+        exit/release booleans, so an unconfirmed termination stays visible as such.
+        """
+        binding = self._bindings.get((pool_id, binding_revision_id))
+        if binding is None or binding.node_id != self._endpoint.node_id:
+            return None
+        if not self._slots.acquire(blocking=False):
+            return None
+        try:
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                pass
+            else:
+                raise RuntimeError("run synchronous instance reclaim in a worker thread")
+            return asyncio.run(
+                self._release(
+                    instance_id=instance_id,
+                    instance_generation=instance_generation,
+                    binding=binding,
+                    fencing_token=fencing_token,
+                )
+            )
+        except (
+            httpx.HTTPError,
+            OSError,
+            TimeoutError,
+            ValueError,
+            TypeError,
+            KeyError,
+            UnicodeError,
+            RecursionError,
+            OverflowError,
+        ):
+            return None
+        finally:
+            self._slots.release()
+
+    async def _release(
+        self,
+        *,
+        instance_id: str,
+        instance_generation: int,
+        binding: NodeStopBinding,
+        fencing_token: int,
+    ) -> VoiceDesignReleaseEvidence | None:
+        value = await self._fetch(instance_id=instance_id, instance_generation=instance_generation)
+        if value is None:
+            return None
+        expected = {
+            "target_node_id": binding.node_id,
+            "gateway_id": binding.gateway_id,
+            "pool_id": binding.pool_id,
+            "binding_revision_id": binding.binding_revision_id,
+            "approved_template_id": binding.approved_template_id,
+            "manifest_id": binding.manifest_id,
+            "config_digest": binding.config_digest,
+            "instance_id": instance_id,
+            "instance_generation": instance_generation,
+        }
+        if any(value[name] != expected_value for name, expected_value in expected.items()):
+            return None
+        if value["fencing_token"] < fencing_token:
+            return None
+        proof = value["stop_evidence"]
+        observed = _instant(proof["verified_at"])
+        if not (
+            observed <= self._now()
+            and _instant(value["created_at"]) <= observed <= _instant(value["updated_at"])
+        ):
+            return None
+        return VoiceDesignReleaseEvidence(
+            kind=ReleaseEvidenceKind.CONTAINER_STOP,
+            observed_at=observed,
+            exited=proof["process_or_container_exited"] is True,
+            release_confirmed=proof["resources_released_confirmed"] is True,
+        )
+
     def termination_evidence(self, intent: SubmissionIntent) -> InstanceTerminationEvidence | None:
         identity = intent.identity
         binding = self._bindings.get((identity.pool_id, identity.binding_revision_id))
@@ -210,8 +306,18 @@ class NodeStopEvidenceSource:
     async def _query(
         self, intent: SubmissionIntent, binding: NodeStopBinding
     ) -> InstanceTerminationEvidence | None:
-        _tls(self._context)  # A supplied SSLContext remains mutable.
         identity = intent.identity
+        value = await self._fetch(
+            instance_id=identity.instance_id,
+            instance_generation=identity.instance_generation,
+        )
+        if value is None:
+            return None
+        return self._evidence(intent, binding, value)
+
+    async def _fetch(self, *, instance_id: str, instance_generation: int) -> dict[str, Any] | None:
+        """Read one generation's verified stop document; ``None`` for any non-200 answer."""
+        _tls(self._context)  # A supplied SSLContext remains mutable.
         request_id = secrets.token_hex(16)
         headers = {
             "Authorization": "Bearer " + self._endpoint.bearer_token,
@@ -221,14 +327,14 @@ class NodeStopEvidenceSource:
         }
         path = {
             "node_id": self._endpoint.node_id,
-            "instance_id": identity.instance_id,
-            "instance_generation": identity.instance_generation,
+            "instance_id": instance_id,
+            "instance_generation": instance_generation,
         }
         validate_request(_OPERATION, {"path": path, "headers": headers})
         suffix = (
             f"/internal/v1/nodes/{quote(self._endpoint.node_id, safe='')}/instances/"
-            f"{quote(identity.instance_id, safe='')}/generations/"
-            f"{identity.instance_generation}/verified-stop"
+            f"{quote(instance_id, safe='')}/generations/"
+            f"{instance_generation}/verified-stop"
         )
         async with asyncio.timeout(self._timeout):
             async with (
@@ -244,7 +350,7 @@ class NodeStopEvidenceSource:
                 value = await self._response(response, request_id)
         if response.status_code != 200:
             return None
-        return self._evidence(intent, binding, value)
+        return value
 
     async def _response(self, response: httpx.Response, request_id: str) -> dict[str, Any]:
         headers = response.headers

@@ -36,6 +36,7 @@ from speechnexus_backend.speech.domain.job_dispatch import (
     submit_intent_identity,
     terminal_result,
     validate_voice_dispatch_request,
+    verified_failure_evidence,
 )
 
 
@@ -382,6 +383,23 @@ class JobDispatcher:
             if state == "succeeded":
                 return await self._complete(claim, job, submission, should_stop)
             if state in ("failed", "aborted"):
+                evidence = verified_failure_evidence(status)
+                if evidence is None:
+                    # The execution reached the engine and the gateway proved neither a
+                    # stop nor a non-dispatch, so this status cannot settle the Job: a
+                    # failure returns capacity and would hide a still-reserved slot.
+                    # Report the shape instead; reconciliation and the verified-stop
+                    # paths own the terminal outcome.
+                    _LOG.warning(
+                        "execution failure without verified stop evidence",
+                        extra={
+                            "job_id": job.job_id,
+                            "submit_intent_id": submission.submit_intent_id,
+                            "stop_evidence_kind": status.get("stop_evidence_kind"),
+                            "execution_state": state,
+                        },
+                    )
+                    return DispatchResult(job.job_id, "unknown", "stop_evidence_unverified")
                 return await self._fail(claim, job, gateway_failure_code(status))
             if state == "unknown_quarantined":
                 return DispatchResult(job.job_id, "unknown", "outcome_unknown")

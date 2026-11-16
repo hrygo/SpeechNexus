@@ -6,6 +6,12 @@ answered ``SUCCESS`` with ``freed_bytes=0`` and the next inference timed out
 after 300 s, so the acknowledgment neither released memory nor kept the endpoint
 usable. Callers must stop the container or terminate the process and keep the
 capacity until that stop is verified elsewhere.
+
+This is the one voice-design release gate, and it writes no evidence of its own: a
+receipt wraps the node's checkpoint-backed stop fact and delegates to the shared
+``whole_instance_stop_evidence`` converter, which is what appends the row to
+``execution_stop_evidence``. The idle reclaim decision and the recovery sweep read the
+same receipt, so "the instance is gone" has one representation in the gateway.
 """
 
 from __future__ import annotations
@@ -13,6 +19,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+
+from speechnexus_gateway.domain.recovery import (
+    InstanceTerminationEvidence,
+    whole_instance_stop_evidence,
+)
+from speechnexus_gateway.domain.submission import (
+    StopEvidenceKind,
+    SubmissionIntent,
+    VerifiedStopEvidence,
+)
 
 
 class ReleaseEvidenceKind(StrEnum):
@@ -94,12 +110,59 @@ class VoiceDesignReleaseEvidence:
 
 @dataclass(frozen=True, slots=True)
 class VoiceDesignStopReceipt:
-    """A stop receipt that may release only from verified termination evidence."""
+    """A stop receipt that may release only from verified termination evidence.
+
+    Production builds it from the node controller's checkpoint-backed stop fact, so the
+    release kind is always a process/container termination. ``termination`` is the source
+    fact the node reported, retained so the receipt can hand the shared converter exactly
+    what it validated instead of a re-derived summary.
+    """
 
     submit_intent_id: str
     release: VoiceDesignReleaseEvidence
+    termination: InstanceTerminationEvidence | None = None
 
     def __post_init__(self) -> None:
         if type(self.submit_intent_id) is not str or not 1 <= len(self.submit_intent_id) <= 128:
             raise ValueError("invalid VoiceDesign stop receipt identity")
         self.release.require_release()
+        if self.termination is not None and not self.termination.is_complete:
+            raise ReleaseEvidenceError("termination_unconfirmed")
+
+    @classmethod
+    def from_instance_termination(
+        cls, *, submit_intent_id: str, evidence: InstanceTerminationEvidence | None
+    ) -> VoiceDesignStopReceipt:
+        """Wrap one whole-instance termination the node controller reported.
+
+        Nothing weaker becomes a receipt: a missing fact, a partial confirmation or a
+        producer that answered with anything but a whole-instance termination raises
+        instead of releasing a voice-design reservation.
+        """
+        if evidence is None or not evidence.is_complete:
+            raise ReleaseEvidenceError("termination_unconfirmed")
+        if evidence.evidence_kind not in {
+            StopEvidenceKind.INSTANCE_TERMINATED_BY_CONTROLLER,
+            StopEvidenceKind.OPERATOR_VERIFIED_INSTANCE_TERMINATED,
+        }:
+            raise ReleaseEvidenceError("termination_unconfirmed")
+        return cls(
+            submit_intent_id,
+            VoiceDesignReleaseEvidence(
+                kind=ReleaseEvidenceKind.CONTAINER_STOP,
+                observed_at=evidence.observed_at,
+                exited=True,
+                release_confirmed=True,
+            ),
+            evidence,
+        )
+
+    def verified_stop(self, intent: SubmissionIntent) -> VerifiedStopEvidence | None:
+        """Return the shared stop-evidence row for ``intent``, or nothing.
+
+        The conversion is the one the recovery sweep already uses, so a voice-design
+        release never introduces a second evidence identity, digest or column.
+        """
+        if self.termination is None:
+            return None
+        return whole_instance_stop_evidence(intent, self.termination)

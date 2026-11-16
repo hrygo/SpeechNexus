@@ -29,6 +29,7 @@ from speechnexus_gateway.domain.command_redaction import (
 )
 from speechnexus_gateway.domain.fencing import BarrierSnapshot, IngressFence
 from speechnexus_gateway.domain.instance_drain import DrainInventory, InstanceIdentity
+from speechnexus_gateway.domain.instance_reclaim import ReclaimRecord
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.output_intervals import (
     OutputIntervalConflictError,
@@ -71,6 +72,9 @@ from speechnexus_gateway.infrastructure.drain_sql import (
 )
 from speechnexus_gateway.infrastructure.drain_sql import (
     read_instance_identity as read_instance_identity_row,
+)
+from speechnexus_gateway.infrastructure.drain_sql import (
+    read_reclaim_record as read_reclaim_record_row,
 )
 from speechnexus_gateway.infrastructure.observation_sql import (
     record_execution_observation_in_transaction,
@@ -363,6 +367,12 @@ class PostgresSubmissionLedger:
         return self._run(
             read_only=True,
             work=lambda cursor: read_drain_inventory_rows(cursor, identity),
+        )
+
+    def read_reclaim_record(self, identity: InstanceIdentity) -> ReclaimRecord | None:
+        return self._run(
+            read_only=True,
+            work=lambda cursor: read_reclaim_record_row(cursor, identity),
         )
 
     def _run(self, *, read_only: bool, work: Callable[[SubmitCursor], _Result]) -> _Result:

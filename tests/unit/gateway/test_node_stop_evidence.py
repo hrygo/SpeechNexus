@@ -20,6 +20,7 @@ from speechnexus_gateway.domain.submission import (
     ExecutionState,
     SubmissionIntent,
 )
+from speechnexus_gateway.domain.voice_design_release import ReleaseEvidenceKind
 from speechnexus_gateway.infrastructure.node_stop_evidence import (
     NodeStopBinding,
     NodeStopEndpoint,
@@ -387,3 +388,93 @@ def test_concurrent_queries_are_bounded_without_an_unbounded_waiting_queue() -> 
         assert running.result(timeout=1) is not None
     assert adapter.termination_evidence(intent()) is not None
     assert calls == ["GET", "GET"]
+
+
+# --- generation-scoped release evidence ---------------------------------------------
+
+
+def test_a_verified_stop_document_is_the_generation_release_evidence() -> None:
+    calls: list[httpx.Request] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return reply(request, response_body())
+
+    release = source(answer).release_evidence(
+        instance_id="instance-asr-1",
+        instance_generation=1,
+        pool_id=BINDING.pool_id,
+        binding_revision_id=BINDING.binding_revision_id,
+        fencing_token=2,
+    )
+
+    assert release is not None
+    assert release.is_release_evidence is True
+    assert release.kind is ReleaseEvidenceKind.CONTAINER_STOP
+    assert release.observed_at == NOW + timedelta(seconds=30)
+    assert len(calls) == 1
+    assert calls[0].url.path.endswith("/instances/instance-asr-1/generations/1/verified-stop")
+
+
+@pytest.mark.parametrize("status", [404, 401, 500])
+def test_any_non_200_answer_is_not_release_evidence(status: int) -> None:
+    release = source(lambda request: httpx.Response(status, headers={"X-Request-ID": "x"}))
+    assert (
+        release.release_evidence(
+            instance_id="instance-asr-1",
+            instance_generation=1,
+            pool_id=BINDING.pool_id,
+            binding_revision_id=BINDING.binding_revision_id,
+            fencing_token=2,
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"gateway_id": "other-gateway"},
+        {"pool_id": "asr-realtime"},
+        {"instance_id": "other-instance"},
+        {"instance_generation": 2},
+        {"binding_revision_id": "binding-other"},
+        {"fencing_token": 1},
+    ],
+)
+def test_another_generations_verified_stop_is_not_release_evidence(
+    changes: dict[str, Any],
+) -> None:
+    value = response_body()
+    value.update(changes)
+
+    assert (
+        source(lambda request: reply(request, value)).release_evidence(
+            instance_id="instance-asr-1",
+            instance_generation=1,
+            pool_id=BINDING.pool_id,
+            binding_revision_id=BINDING.binding_revision_id,
+            fencing_token=2,
+        )
+        is None
+    )
+
+
+def test_an_unconfigured_binding_sends_no_request() -> None:
+    calls: list[httpx.Request] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return reply(request, response_body())
+
+    assert (
+        source(answer).release_evidence(
+            instance_id="instance-asr-1",
+            instance_generation=1,
+            pool_id=BINDING.pool_id,
+            binding_revision_id="binding-unconfigured",
+            fencing_token=2,
+        )
+        is None
+    )
+    assert calls == []

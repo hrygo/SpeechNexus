@@ -470,13 +470,24 @@ curl -sS -X POST \
 curl -sS http://127.0.0.1:8000/v1/models
 ```
 
-**预期值已按实测订正：当前实现返回 `503 model_catalogue_unavailable`。** `DEL-535` 从零实跑
-（基线 `origin/main` `c0172a22`）在 `sn_catalog_reader` 已配置、binding 已发布且已激活的情况下
-仍拿到 `503`，**不是角色没配**。根因是产品缺陷（`#891`）：catalog 要求不可变定义里的
-`binding_id` 等于发布的 `object_id`（`model_catalog.py:79`），而本步创建出的 binding 持久化的
-定义里没有 `binding_id`，整份目录读面因此报不可用。修复前这条核对**不可用**，`503` 不能当作
-「binding 没发布」的证据，改用下面三条 SQL 核对已发布事实。也不要在部署侧放宽 catalog 校验来
-换一个 `200`：那条校验是对的，缺字段的是生产路径。
+预期 `200`，`data` 里是该 binding 的目录项：`id` 为 `binding_id`、`nexus.binding` 为
+`{"id": …, "revision": "<十进制文本>"}`（`publication.reference`，`speech/domain/publications.py:61`；**没有
+`revision_id`**，`revision_id` 只在 `speech_publication_heads` 与私有输入里用），
+`nexus.readiness.admission_state` 在未注册实例时是 `unavailable`。
+
+`DEL-535`（基线 `origin/main` `c0172a22`）当时在这里拿到的是 `503 model_catalogue_unavailable`，
+**不是角色没配**：catalog 要求定义里的 `binding_id` 等于发布的 `object_id`
+（`model_catalog.py:79`），而那时写路径把 `binding_id` 摘进列、没写进文档，整份目录读面报不可用
+（`#891`）。`#894`（`f888cf7c`）已把校验前移到写路径，**此后新建的 binding 都能读到 `200`**。
+
+**仍有一条边界**：`#894` 之前发布的 binding，其不可变文档里没有 `binding_id`，只要它还是该
+family 的当前 head，目录就仍然 `503`。目录只列 head 选中的 revision（`model_catalog_sql.py` 的
+`list_published_bindings` 与 `speech_publication_heads` 内联），所以恢复方式是**为这个 binding
+发布新的 revision**（head 前移即恢复）或**退役该 revision**（退役是可见性墓碑，不回退到旧行）。
+历史行不会回填，也不改写不可变记录。
+
+因此 `503` 有两种含义，**不要混**：「head 是本修复之前的发布」与「binding 没发布」。区分它们用
+下面三条 SQL。也不要在部署侧放宽 catalog 校验来换一个 `200`：那条校验是对的，缺字段的是生产路径。
 
 ```bash
 docker compose --env-file deploy/compose.env -f deploy/compose.yaml \

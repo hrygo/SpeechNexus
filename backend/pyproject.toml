@@ -1,6 +1,7 @@
 [project]
 name = "speechnexus-backend"
 version = "0.1.0.dev0"
+license = "MIT"
 description = "SpeechNexus speech service and administrative API"
 readme = "README.md"
 requires-python = ">=3.14,<3.15"

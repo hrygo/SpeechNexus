@@ -18,7 +18,8 @@
     "ErrorResponse",
     "PronunciationCreateRequest",
     "PronunciationRevision",
-    "ModelList"
+    "ModelList",
+    "AdmissionReadiness"
   ],
   "$defs": {
     "SpeechRequest": {
@@ -3788,6 +3789,194 @@
           "description": "available means currently admissible; queueable means the binding can\naccept work that waits for capacity; capacity_full means a required\nreservation is currently unavailable; unavailable means the model\ncannot be admitted now. None of these fields implies quality.\n"
         }
       }
+    },
+    "AdmissionReadiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "cause",
+        "workspace_id",
+        "checked_at",
+        "detail",
+        "instances",
+        "capacity"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["admitting", "degraded"],
+          "description": "`admitting` if and only if `cause` is null, and if and only if a create\nsent at this instant would be admitted; `degraded` otherwise. This is the\none field a poller has to assert on. The two conditions are not a second\nverdict beside `cause`: the schema below constrains them together, so a\nbody cannot claim a cause while admitting or be degraded without naming\none.\n"
+        },
+        "cause": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "enum": [
+                "engine_receipt_expired",
+                "engine_state_mismatch",
+                "engine_resource_disabled",
+                "capacity_exhausted",
+                "workspace_not_found",
+                "workspace_disabled",
+                "workspace_not_configured",
+                "storage_unavailable"
+              ]
+            }
+          ],
+          "description": "The refusal class a create sent at this instant would answer, or null when\nit would be admitted. One value, never a set: the create path answers one\ncode and the report repeats that one code. `storage_unavailable` is the\nonly member reported for an unreadable store, because no other fact could\nhave been read.\n"
+        },
+        "workspace_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "checked_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The coordination store's clock reading the verdict used."
+        },
+        "detail": {
+          "type": ["string", "null"],
+          "maxLength": 1024,
+          "description": "One sentence naming the cause, the public create code it answers and the\nrecovery, or null exactly when `status` is `admitting`. Machine consumers\nread `cause`; this is the sentence an operator reads.\n"
+        },
+        "instances": {
+          "type": "array",
+          "description": "Every `ready` engine instance with the receipt admission would check, in\nascending `(instance_id, instance_generation)` order. Empty when the\nstore could not be read.\n",
+          "items": {
+            "$ref": "#/$defs/AdmissionReadinessInstance"
+          }
+        },
+        "capacity": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AdmissionReadinessCapacity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The reported workspace's quota counters, or null when it has no quota row\n(`workspace_not_configured`) or the store could not be read.\n"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "admitting"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "cause": {
+                "type": "null"
+              },
+              "detail": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "degraded"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "cause": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "AdmissionReadinessInstance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "instance_id",
+        "instance_generation",
+        "readiness_state",
+        "readiness_expires_at",
+        "remaining_seconds",
+        "max_slots",
+        "held_slots",
+        "quarantined_slots"
+      ],
+      "properties": {
+        "instance_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "instance_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "readiness_state": {
+          "type": "string",
+          "enum": ["valid", "expiring", "expired", "missing", "invalid"],
+          "description": "The readiness *window*, the same vocabulary the read-only\n`speechnexus-engine-readiness` report prints. `expiring` is inside the\nwarning interval but still admits work; `missing` and `invalid` are\nreceipts admission cannot read at all.\n"
+        },
+        "readiness_expires_at": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "remaining_seconds": {
+          "type": ["integer", "null"],
+          "description": "Whole seconds left before `readiness_expires_at`; negative once elapsed."
+        },
+        "max_slots": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "held_slots": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "quarantined_slots": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "AdmissionReadinessCapacity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_attempts", "held_attempts", "quarantined_attempts"],
+      "properties": {
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "held_attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "quarantined_attempts": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
     }
   },
   "anyOf": [
@@ -3838,6 +4027,9 @@
     },
     {
       "$ref": "#/$defs/ModelList"
+    },
+    {
+      "$ref": "#/$defs/AdmissionReadiness"
     }
   ]
 }

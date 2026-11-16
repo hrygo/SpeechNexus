@@ -195,8 +195,42 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
 }
 
 
-def job_error(code: str, request_id: str, *, headers: dict[str, str] | None = None) -> JSONResponse:
+# The declared answers that describe deployment state rather than the shape of one
+# request: every create in this deployment gets one of these until the named
+# resource changes, so they are the closed set the admission-readiness report has
+# to cover. The report's cause enum is pinned to exactly this set in both
+# directions (``tests/contract/test_job_admission_readiness.py``): a code added
+# here without a cause would let the report answer `admitting` while every create
+# is refused, and a cause naming a code outside this set would point an operator
+# at an answer the create operation does not produce.
+DEPLOYMENT_STATE_CODES: frozenset[str] = frozenset(
+    {
+        "engine_not_ready",
+        "engine_state_mismatch",
+        "engine_resource_disabled",
+        "job_capacity_exhausted",
+        "workspace_not_found",
+        "workspace_disabled",
+        "workspace_not_configured",
+        "job_unavailable",
+    }
+)
+
+
+def job_error(
+    code: str,
+    request_id: str,
+    *,
+    headers: dict[str, str] | None = None,
+    detail: str | None = None,
+) -> JSONResponse:
     """Render one declared Job error, and refuse to invent a storage answer.
+
+    ``detail`` replaces the code's default message when this build knows the
+    concrete missing item (a blank Job DSN, an unpublished binding, no registered
+    engine instance). It never changes the declared code, status or retryability,
+    and it must never carry a DSN value, credential or other internal fact -- the
+    key name is what an operator needs (#877).
 
     An undeclared code is a deployment defect. It used to fall back to
     ``job_unavailable`` -- "Job storage is unavailable." -- so any unmapped cause
@@ -214,6 +248,8 @@ def job_error(code: str, request_id: str, *, headers: dict[str, str] | None = No
         status, kind, _ = _ERRORS[code]
     else:
         status, kind, message = _ERRORS[code]
+    if detail is not None:
+        message = detail
     # ``retryable`` answers one question: can this same request succeed without an
     # out-of-band change? Only the unknown execution outcome (the original identity
     # is replayed), a capacity delay a released lease clears, and the admission

@@ -513,6 +513,39 @@ def create_app(
             return jobs
         return job_runtime.jobs if job_runtime is not None else None
 
+    def job_unavailable_detail() -> str | None:
+        """Name the blank Job DSNs that leave the whole surface unassembled.
+
+        Both DSNs are optional at the settings layer, so a deployment can start
+        without them. Every Job route then answered the same
+        ``503 job_unavailable`` / "Job storage is unavailable.", which names no
+        configuration item and reads like an outage; the key names tell an operator
+        what to set (#877 item 1). Values never leave the settings object.
+        """
+        if jobs is not None or job_runtime is not None:
+            # The surface is assembled; a request-time failure of this kind has no
+            # configuration cause to name.
+            return None
+        blank = [
+            key
+            for key, value in (
+                ("SPEECHNEXUS_JOB_WRITER_DATABASE_URL", resolved_settings.job_writer_database_url),
+                (
+                    "SPEECHNEXUS_JOB_ADMISSION_DATABASE_URL",
+                    resolved_settings.job_admission_database_url,
+                ),
+            )
+            if value is None
+        ]
+        if not blank:
+            return None
+        return (
+            "The Job surface is not assembled because these keys are blank: "
+            + ", ".join(blank)
+            + ". Set both Job DSNs for the api process; without them the deployment "
+            "cannot create, read or cancel a Job."
+        )
+
     def get_voice_drafts() -> VoiceDrafts | None:
         if voice_drafts is not None:
             return voice_drafts
@@ -724,6 +757,18 @@ def create_app(
         allowed_origins=resolved_settings.asset_allowed_origins,
     )
     app.add_middleware(RequestIdMiddleware)
+    # Declared operations without an owning feature answer one stable 503
+    # instead of a framework 404 that reads like "unknown resource". Mounted
+    # before the feature routers because a declared literal path can share a
+    # prefix with a dynamic sibling: `GET /v1/nexus/jobs/admission-readiness`
+    # would otherwise be answered by `GET /v1/nexus/jobs/{job_id}`. That case is
+    # not left to this comment: the guard at the end of this function reads the
+    # assembled table in registration order and fails when an earlier route
+    # answers the concrete path a later one serves, which covers a placeholder
+    # swallowing a shipped literal route as well. When the report ships, its
+    # literal handler has to be registered before the `{job_id}` handler for the
+    # same reason (#863): a parameter matches any single segment.
+    app.include_router(create_unimplemented_router())
     app.include_router(create_asset_router(lambda: asset_service))
     app.include_router(create_artifact_router(get_artifacts))
     app.include_router(create_model_router(get_catalogue, capability_policy))
@@ -746,6 +791,7 @@ def create_app(
         create_job_router(
             get_jobs,
             get_confirmation=get_job_confirmation,
+            unavailable_detail=job_unavailable_detail,
             max_bytes=resolved_settings.job_receive_max_bytes,
             receive_timeout_seconds=resolved_settings.job_receive_timeout_seconds,
             event_heartbeat_seconds=resolved_settings.job_event_heartbeat_seconds,
@@ -787,9 +833,6 @@ def create_app(
             receive_timeout_seconds=resolved_settings.quarantine_release_receive_timeout_seconds,
         )
     )
-    # Declared operations without an owning feature answer one stable 503
-    # instead of a framework 404 that reads like "unknown resource".
-    app.include_router(create_unimplemented_router())
 
     def allowed_methods(path: str, reported: str | None) -> dict[str, str]:
         """Merge the framework's Allow with every method registered on this path.
@@ -912,8 +955,8 @@ def create_app(
     app.state.speech = speech
     app.state.transcriptions = transcriptions
     require_request_abort_capture(app)
-    # Checked last, once every router is mounted: ordering is load-bearing, and
-    # a feature router included after the placeholders would be shadowed by them
-    # and answer 503 for an operation that ships.
+    # Checked last, once every router is mounted: ordering is load-bearing. A
+    # literal route registered after the template that matches it is unreachable
+    # whichever side of the placeholders it sits on.
     assert_placeholder_ownership(app.router.routes)
     return app

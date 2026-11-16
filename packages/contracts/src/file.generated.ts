@@ -18,4 +18,5 @@ export type FileContracts = Pick<
   | "PronunciationCreateRequest"
   | "PronunciationRevision"
   | "ModelList"
+  | "AdmissionReadiness"
 >;

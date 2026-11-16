@@ -182,6 +182,7 @@ class PostgresPublicJobs:
         timeout_seconds: float = 3,
         storage_bucket: str = "",
         max_command_bytes: int = 1048576,
+        admission_unavailable_detail: str | None = None,
     ) -> None:
         if type(timeout_seconds) not in (int, float) or not 0 < timeout_seconds <= 30:
             raise ValueError("Public Job transactions require bounded deadlines")
@@ -191,6 +192,11 @@ class PostgresPublicJobs:
         self._require_admission = require_admission or admission_pool is not None
         self._storage_bucket = storage_bucket
         self._max_command_bytes = max_command_bytes
+        # A create that cannot reach the admission role used to answer the bare
+        # storage-outage code, so "the writer is configured but the admission DSN is
+        # blank" read like a database outage. The runtime that left the pool out
+        # names the key here; the value never travels (#877 item 1).
+        self._admission_unavailable_detail = admission_unavailable_detail
 
     def now_us(self) -> int:
         return time.time_ns() // 1_000
@@ -239,6 +245,21 @@ class PostgresPublicJobs:
         if not isinstance(definition, dict):
             raise PublicJobUnavailableError
         return BindingFact(_publication(row), definition)
+
+    def engine_instance_states(self, model_id: str) -> tuple[str, ...]:
+        """Name the registered instances serving this model, whatever their state.
+
+        ``engine_instances.binding_revision_id`` is the only durable link from an
+        instance to the binding family, so it is the fact that tells "nothing was
+        ever registered" apart from "the binding is unpublished" (#877 item 4).
+        """
+        rows = self._read(
+            "SELECT e.instance_state FROM engine_instances AS e "
+            "JOIN speech_binding_revisions AS r ON r.revision_id = e.binding_revision_id "
+            "WHERE r.binding_id = %s ORDER BY e.instance_state",
+            (model_id,),
+        )
+        return tuple(str(row["instance_state"]) for row in rows)
 
     def binding_revision(self, binding_id: str, revision: int) -> BindingFact | None:
         return _pinned_binding(self._read(_PINNED_BINDING_QUERY, (binding_id, str(revision))))
@@ -531,7 +552,11 @@ class PostgresPublicJobs:
         if self._require_admission and self._admission_pool is None:
             # Reads and cancellations remain available without the admission
             # role; a create that cannot reserve must not write a visible Job.
-            return JobCreateResult("rejected", error_code="job_unavailable")
+            return JobCreateResult(
+                "rejected",
+                error_code="job_unavailable",
+                detail=self._admission_unavailable_detail,
+            )
         deadline = time.monotonic() + self._timeout
         for attempt in range(2):
             remaining = deadline - time.monotonic()
@@ -603,7 +628,7 @@ class PostgresPublicJobs:
                                         )
                                     admitted = True
                         except PublicJobAdmissionRejectedError as error:
-                            raise _AdmissionRefusedError(error.code) from None
+                            raise _AdmissionRefusedError(error.code, error.detail) from None
                         except AdmissionRejectedError as error:
                             if error.code == "version_conflict" and attempt == 0:
                                 raise _RetryAdmissionError from None
@@ -612,7 +637,7 @@ class PostgresPublicJobs:
                     row = _select_job(connection, job.job_id)
                 return JobCreateResult("created", _job(row))
             except _AdmissionRefusedError as error:
-                return JobCreateResult("rejected", error_code=error.code)
+                return JobCreateResult("rejected", error_code=error.code, detail=error.detail)
             except _RetryAdmissionError:
                 # Raised only by attempt 0 after it lost the version race and its
                 # transaction rolled back, so retrying cannot duplicate a write.
@@ -648,7 +673,11 @@ class PostgresPublicJobs:
         turn a same-key replay into a stale conflict.
         """
         if self._require_admission and self._admission_pool is None:
-            return RevisionCreateResult("rejected", error_code="job_unavailable")
+            return RevisionCreateResult(
+                "rejected",
+                error_code="job_unavailable",
+                detail=self._admission_unavailable_detail,
+            )
         deadline = time.monotonic() + self._timeout
         selected: dict[str, Any] | None = None
         revision: str | None = None
@@ -1011,8 +1040,9 @@ class PostgresPublicJobs:
 class _AdmissionRefusedError(Exception):
     """Exit the transaction so no partial reservation can commit."""
 
-    def __init__(self, code: str) -> None:
+    def __init__(self, code: str, detail: str | None = None) -> None:
         self.code = code
+        self.detail = detail
 
 
 class _RetryAdmissionError(Exception):

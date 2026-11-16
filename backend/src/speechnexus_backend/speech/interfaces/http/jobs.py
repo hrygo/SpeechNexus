@@ -485,8 +485,8 @@ async def _create(
         return job_error("workspace_not_found", request_id)
     except DisabledWorkspaceError:
         return job_error("workspace_disabled", request_id)
-    except ModelNotPublishedError:
-        return job_error("model_not_published", request_id)
+    except ModelNotPublishedError as error:
+        return job_error("model_not_published", request_id, detail=error.detail)
     except ModelBindingError as error:
         return job_error(error.code, request_id)
     except VoiceNotPublishedError:
@@ -510,14 +510,16 @@ async def _create(
     except VoiceDraftNotGeneratableError:
         return job_error("voice_draft_not_generatable", request_id)
     except JobAdmissionRejectedError as error:
-        return job_error(error.code, request_id)
-    except JobRejectedError, PublicJobUnavailableError:
+        return job_error(error.code, request_id, detail=error.detail)
+    except PublicJobUnavailableError as error:
+        return job_error("job_unavailable", request_id, detail=error.detail)
+    except JobRejectedError:
         return job_error("job_unavailable", request_id)
     except ValueError, TypeError, ContractValidationError:
         return job_error("invalid_job_request", request_id)
 
 
-def _list(service: PublicJobs | None, request: Request, request_id: str) -> Response:
+def _list(service: PublicJobs, request: Request, request_id: str) -> Response:
     try:
         query = request.query_params
         if any(len(query.getlist(name)) != 1 for name in query):
@@ -532,8 +534,6 @@ def _list(service: PublicJobs | None, request: Request, request_id: str) -> Resp
             raise ValueError("Invalid Job limit")
         workspace_id = query.get("workspace_id", DEFAULT_WORKSPACE)
         identifier(workspace_id)
-        if service is None:
-            return job_error("job_unavailable", request_id)
         state = "pending" if status == "queued" else status
         page, next_cursor = service.list_jobs(
             workspace_id=workspace_id,
@@ -619,7 +619,9 @@ def _cancel(
         return job_error("job_outcome_unknown", request_id)
     except PublicJobNotFoundError, ValueError:
         return job_error("job_not_found", request_id)
-    except PublicJobUnavailableError, ContractValidationError:
+    except PublicJobUnavailableError as error:
+        return job_error("job_unavailable", request_id, detail=error.detail)
+    except ContractValidationError:
         return job_error("job_unavailable", request_id)
 
 
@@ -650,8 +652,8 @@ def _retry(
         return job_error("workspace_not_found", request_id)
     except DisabledWorkspaceError:
         return job_error("workspace_disabled", request_id)
-    except ModelNotPublishedError:
-        return job_error("model_not_published", request_id)
+    except ModelNotPublishedError as error:
+        return job_error("model_not_published", request_id, detail=error.detail)
     except ModelBindingError as error:
         return job_error(error.code, request_id)
     except VoiceNotPublishedError:
@@ -669,12 +671,14 @@ def _retry(
     except VoiceDraftNotGeneratableError:
         return job_error("voice_draft_not_generatable", request_id)
     except JobAdmissionRejectedError as error:
-        return job_error(error.code, request_id)
+        return job_error(error.code, request_id, detail=error.detail)
     except JobRejectedError:
         return job_error("job_unavailable", request_id)
     except PublicJobNotFoundError, ValueError:
         return job_error("job_not_found", request_id)
-    except PublicJobUnavailableError, ContractValidationError:
+    except PublicJobUnavailableError as error:
+        return job_error("job_unavailable", request_id, detail=error.detail)
+    except ContractValidationError:
         return job_error("job_unavailable", request_id)
 
 
@@ -694,7 +698,9 @@ def _open_stream(
         service.get(job_id)
     except PublicJobNotFoundError, ValueError:
         return job_error("job_not_found", request_id)
-    except PublicJobUnavailableError, ContractValidationError:
+    except PublicJobUnavailableError as error:
+        return job_error("job_unavailable", request_id, detail=error.detail)
+    except ContractValidationError:
         return job_error("job_unavailable", request_id)
     return _EventStreamResponse(
         _event_stream(service, job_id, after_seq, heartbeat_seconds=heartbeat_seconds),
@@ -761,6 +767,11 @@ async def _event_stream(
         await asyncio.sleep(_pause_seconds(now, beat, heartbeat, poll))
 
 
+def _unavailable(request_id: str, detail: Callable[[], str | None] | None) -> Response:
+    """The declared ``job_unavailable`` answer, naming the blank key when known."""
+    return job_error("job_unavailable", request_id, detail=None if detail is None else detail())
+
+
 def create_job_router(
     get_service: Callable[[], PublicJobs | None],
     *,
@@ -769,7 +780,15 @@ def create_job_router(
     receive_timeout_seconds: float = 5,
     event_heartbeat_seconds: float | None = None,
     event_send_timeout_seconds: float | None = None,
+    unavailable_detail: Callable[[], str | None] | None = None,
 ) -> APIRouter:
+    """Mount the public Job surface.
+
+    ``unavailable_detail`` names why the composition root left the service out --
+    a blank Job DSN, for example. Every route answers the declared
+    ``job_unavailable`` code; the detail only makes the missing item readable
+    instead of reporting a storage outage for unset configuration (#877 item 1).
+    """
     if not 1 <= max_bytes <= 1048576:
         raise ValueError("Public Job body limit must be bounded")
     if not 0 < receive_timeout_seconds <= 30:
@@ -784,19 +803,23 @@ def create_job_router(
     async def create_job(request: Request) -> Response:
         service = get_service()
         if service is None:
-            return job_error("job_unavailable", str(request.state.request_id))
+            return _unavailable(str(request.state.request_id), unavailable_detail)
         return await _create(service, request, max_bytes, receive_timeout_seconds)
 
     @router.get(PREFIX, operation_id="listJobs")
     async def list_jobs(request: Request) -> Response:
-        return await run_in_threadpool(_list, get_service(), request, str(request.state.request_id))
+        service = get_service()
+        request_id = str(request.state.request_id)
+        if service is None:
+            return _unavailable(request_id, unavailable_detail)
+        return await run_in_threadpool(_list, service, request, request_id)
 
     @router.get(PREFIX + "/{job_id}", operation_id="getJob")
     async def get_job(request: Request, job_id: str) -> Response:
         service = get_service()
         request_id = str(request.state.request_id)
         if service is None:
-            return job_error("job_unavailable", request_id)
+            return _unavailable(request_id, unavailable_detail)
         return await run_in_threadpool(_read, service, job_id, request_id)
 
     @router.post(PREFIX + "/{job_id}/cancellations", operation_id="cancelJob")
@@ -804,7 +827,7 @@ def create_job_router(
         service = get_service()
         request_id = str(request.state.request_id)
         if service is None:
-            return job_error("job_unavailable", request_id)
+            return _unavailable(request_id, unavailable_detail)
         try:
             key = _idempotency_key(request)
         except ValueError:
@@ -832,7 +855,7 @@ def create_job_router(
         service = get_service()
         request_id = str(request.state.request_id)
         if service is None:
-            return job_error("job_unavailable", request_id)
+            return _unavailable(request_id, unavailable_detail)
         try:
             key = _idempotency_key(request)
         except ValueError:
@@ -844,7 +867,7 @@ def create_job_router(
         service = get_service()
         request_id = str(request.state.request_id)
         if service is None:
-            return job_error("job_unavailable", request_id)
+            return _unavailable(request_id, unavailable_detail)
         try:
             after_seq = _last_event_id(request)
         except ValueError:

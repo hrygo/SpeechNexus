@@ -22,6 +22,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import psycopg
+
 ROOT = Path(__file__).resolve().parents[2]
 GATE_SPEC = importlib.util.spec_from_file_location(
     "job_startup_gate", ROOT / "deploy/job-startup-gate.py"
@@ -110,6 +112,8 @@ class ScriptedConnection:
 
     def execute(self, statement: str, parameters: Any = None) -> Rows:
         self.statements.append(statement)
+        if "to_regnamespace" in statement:
+            return Rows([("speech",)])
         if "has_schema_privilege" in statement:
             return Rows([(self.forbidden,)])
         if "SESSION_USER" in statement:
@@ -441,8 +445,9 @@ def test_voice_validation_probes_are_added_only_for_that_lane() -> None:
 
 
 def test_the_role_guard_names_superuser_and_ddl_roles() -> None:
-    # A superuser, schema CREATE or owner membership rejects the role.
-    connection = Connection(replies=[Rows([(True,)])])
+    # A superuser, schema CREATE or owner membership rejects the role. The guard
+    # first resolves the schema, which must exist for the privilege question.
+    connection = Connection(replies=[Rows([("speech",)]), Rows([(True,)])])
     findings = GATE.role_guard_findings(connection, "speech", "sn_job_dispatch", "sn_job_dispatch")
     assert findings and "sn_job_dispatch is a superuser" in findings[0]
 
@@ -545,9 +550,10 @@ def test_database_findings_runs_the_head_the_probes_and_the_writes(
         HEAD,
     )
     assert findings == []
-    # The head is compared before the column probes: a stale database names itself
-    # instead of surfacing as a missing column or a crashed probe.
-    assert calls == ["guard", "head", "probe", "writes"]
+    # The head is compared before the role guard and the column probes: a database
+    # that was never migrated names itself instead of surfacing as a crashed guard
+    # (or a missing column) in a surface the gate happens to check first.
+    assert calls == ["head", "guard", "probe", "writes"]
     assert passed and "7 post-claim write columns" in passed[0]
     assert passed[0].startswith(f"migration head {HEAD}")
 
@@ -695,3 +701,57 @@ def test_main_rejects_a_probe_failure_before_the_write_check(
     assert executed == []
     assert calls == ["probe"]
     assert "  FAIL: boom" in output
+
+
+class MissingSchemaConnection:
+    """A database whose coordinated schema was never created.
+
+    ``has_schema_privilege(role, 'speech', 'CREATE')`` resolves the schema name in
+    PostgreSQL, so it raises ``InvalidSchemaName`` instead of answering a boolean.
+    Before #877 the role guard ran first, so this exception escaped the gate as a
+    traceback and the designed ``alembic_version is missing`` finding was
+    unreachable.
+    """
+
+    def __init__(self) -> None:
+        self.statements: list[str] = []
+
+    def execute(self, statement: str, parameters: Any = None) -> Rows:
+        self.statements.append(statement)
+        if "set_config" in statement:
+            return Rows([(None,)])
+        if "to_regnamespace" in statement:
+            return Rows([(None,)])
+        if "SESSION_USER" in statement:
+            return Rows([("sn_job_dispatch", "sn_job_dispatch")])
+        if "to_regclass" in statement:
+            return Rows([(None,)])
+        if "has_schema_privilege" in statement:
+            raise psycopg.errors.InvalidSchemaName('schema "speech" does not exist')
+        raise AssertionError(f"unexpected statement after a missing schema: {statement}")
+
+    def close(self) -> None:
+        pass
+
+
+def test_a_missing_schema_is_named_by_the_migration_check_not_a_traceback() -> None:
+    findings, passed = GATE.database_findings(
+        lambda dsn: MissingSchemaConnection(),
+        {GATE.RUNTIME_DSN_ENV: "postgresql://sn_job_dispatch:pw@postgres:5432/speechnexus"},
+        HEAD,
+    )
+
+    assert passed == []
+    assert findings and "speech.alembic_version is missing" in findings[0]
+    assert "migration profile" in findings[0]
+
+
+def test_the_role_guard_separates_a_missing_schema_from_its_own_verdict() -> None:
+    """Called before the migration check, the guard names the migration, not a crash."""
+    connection = MissingSchemaConnection()
+
+    findings = GATE.role_guard_findings(connection, "speech", "sn_job_dispatch", "sn_job_dispatch")
+
+    assert findings and "does not exist" in findings[0]
+    assert "migration profile" in findings[0]
+    assert not any("has_schema_privilege" in statement for statement in connection.statements)

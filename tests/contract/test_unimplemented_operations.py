@@ -42,15 +42,19 @@ SOURCE = validator("speech-openapi.yaml")
 DOCUMENT = cast(dict[str, Any], SOURCE.schema)
 PLACEHOLDER_RESPONSE = "#/components/responses/OperationNotImplemented"
 REQUEST_ID = "unimplemented-473"
-# These remaining placeholders already declared `ServiceUnavailable` before #473.
-# Replacing that declaration would drop the compatible `Retry-After` header
-# from the versioned surface, which both structural gates reject as breaking,
-# so they keep it: that schema accepts the same placeholder body.
+# These placeholders declare `ServiceUnavailable` rather than the dedicated
+# component. Replacing that declaration would drop the compatible `Retry-After`
+# header from the versioned surface, which both structural gates reject as
+# breaking, so they keep it: that schema accepts the same placeholder body.
 PREDECLARED_SERVICE_UNAVAILABLE = frozenset(
     {
         "getOperation",
         "createRealtimeSession",
         "connectRealtime",
+        # Declared by the #845 contract slice with the 503 this route answers when the
+        # Job surface is not assembled, which the dedicated placeholder component
+        # cannot state.
+        "getJobAdmissionReadiness",
     }
 )
 # Every placeholder answers at runtime, including the compatible-surface one.
@@ -195,7 +199,7 @@ def concrete(path: str) -> str:
 
 
 def test_contract_and_placeholder_table_agree() -> None:
-    assert len(CASES) == 9
+    assert len(CASES) == 10
     assert {operation for operation, _, _ in CASES} == set(UNIMPLEMENTED_OPERATIONS)
     declared = {operation for operation, _, _ in declared_operations()}
     # retireVoiceRevision and the six voice-draft operations now answer their
@@ -473,6 +477,54 @@ async def test_a_trailing_slash_route_is_shadowed_at_runtime() -> None:
     assert aliased.json() == {"draft_id": "synthetic-id"}
     with pytest.raises(RuntimeError):
         assert_placeholder_ownership(app.router.routes)
+
+
+async def test_a_parameter_shadows_a_literal_route_registered_after_it() -> None:
+    """A parameter and a literal segment compete without sharing a template.
+
+    ``{deletion_id}`` matches ``/v1/nexus/deletions/plan-literal``, so a placeholder
+    registered first answers that path and the real route is unreachable. Nothing in
+    the templates is equal, so the method+template comparison cannot see it; the
+    assembly is checked against the concrete path instead.
+    """
+    app = create_app(settings=_settings())
+
+    async def plan(**params: str) -> dict[str, str]:
+        return params
+
+    app.add_api_route("/v1/nexus/deletions/plan-literal", plan, methods=["GET"])
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost"
+    ) as http:
+        # Measured: the placeholder answers, and the real route never runs.
+        response = await http.get("/v1/nexus/deletions/plan-literal")
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == OPERATION_NOT_IMPLEMENTED
+    with pytest.raises(RuntimeError) as raised:
+        assert_placeholder_ownership(app.routes)
+    message = raised.value.args[0]
+    assert "an earlier route must not answer the requests a later route serves" in message
+    assert "/v1/nexus/deletions/{deletion_id} answers /v1/nexus/deletions/plan-literal" in message
+
+
+def test_a_placeholder_registered_after_its_matching_template_is_rejected() -> None:
+    """The reverse order is rejected too: the placeholder would answer nothing.
+
+    This is the arrangement #845's contract slice had to fix: with
+    ``GET /v1/nexus/jobs/{job_id}`` registered first, the literal report path was
+    answered as a Job id and the declared operation was unreachable.
+    """
+    app = FastAPI()
+
+    async def get_job(**params: str) -> dict[str, str]:
+        return params
+
+    app.add_api_route("/v1/nexus/jobs/{job_id}", get_job, methods=["GET"])
+    app.include_router(create_unimplemented_router())
+    with pytest.raises(RuntimeError) as raised:
+        assert_placeholder_ownership(app.routes)
+    message = raised.value.args[0]
+    assert "/v1/nexus/jobs/{job_id} answers /v1/nexus/jobs/admission-readiness" in message
 
 
 @pytest.mark.parametrize(

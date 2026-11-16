@@ -181,6 +181,6 @@ See the [contribution and issue guide (Chinese)](CONTRIBUTING.md) for feedback t
 
 ## License and acknowledgments
 
-The repository does not currently include a project `LICENSE` file. Model weights, third-party dependencies, and voice materials require separate license review.
+This project is released under the [MIT License](LICENSE) (decided by the project owner on 2026-11-16). Model weights, third-party dependencies, and voice materials are **not** covered by this license and require separate review.
 
 SpeechNexus is an independent project inspired by the product and architecture experience of [SpeechRail](https://github.com/hrygo/SpeechRail). See the [SpeechRail reuse boundaries (Chinese)](docs/architecture/speechrail-reuse.md) for attribution and reuse requirements.
